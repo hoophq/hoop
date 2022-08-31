@@ -1,14 +1,21 @@
 package main
 
 import (
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/gateway/api"
 )
 
-func serveHTTP() {
-	a, err := api.NewAPI()
+const MemDb = "../plugins/storage/mem_db.so"
+
+func startAPI(storagePlugin string) {
+	a, err := api.NewAPI(storagePlugin)
 	if err != nil {
-		panic("Failed to create API spec")
+		fmt.Printf("No storage plugin found. Starting with in-memory persistence")
+		a, err = api.NewAPI(MemDb)
+		if err != nil {
+			panic("Failed lo load storage module")
+		}
 	}
 
 	route := gin.Default()

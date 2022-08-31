@@ -3,8 +3,12 @@ module github.com/runopsio/hoop/gateway
 go 1.18
 
 require (
+	github.com/gin-gonic/gin v1.8.1
+	github.com/runopsio/hoop/domain v0.0.0-00010101000000-000000000000
+)
+
+require (
 	github.com/gin-contrib/sse v0.1.0 // indirect
-	github.com/gin-gonic/gin v1.8.1 // indirect
 	github.com/go-playground/locales v0.14.0 // indirect
 	github.com/go-playground/universal-translator v0.18.0 // indirect
 	github.com/go-playground/validator/v10 v10.11.0 // indirect
@@ -23,3 +27,5 @@ require (
 	google.golang.org/protobuf v1.28.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
+
+replace github.com/runopsio/hoop/domain => ../domain
