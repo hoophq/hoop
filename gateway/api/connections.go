@@ -2,19 +2,12 @@ package api
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/runopsio/hoop/domain"
 	"net/http"
 )
 
-type (
-	Connection struct {
-		Name   string `json:"name"`
-		Type   string `json:"type"`
-		Secret string `json:"secret"`
-	}
-)
-
 func (a *Api) GetConnections(c *gin.Context) {
-	connections, err := a.repository.GetConnections()
+	connections, err := a.storage.getConnections()
 	if err != nil {
 		c.Error(err)
 	}
@@ -22,13 +15,13 @@ func (a *Api) GetConnections(c *gin.Context) {
 }
 
 func (a *Api) PostConnection(c *gin.Context) {
-	var connection Connection
+	var connection domain.Connection
 	if err := c.ShouldBindJSON(&connection); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 
-	if err := a.repository.PersistConnection(connection); err != nil {
+	if err := a.storage.persistConnection(connection); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 	}
 
