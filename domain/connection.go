@@ -1,9 +1,7 @@
 package domain
 
 type (
-	Secret map[string]interface{}
-
-	Connection struct {
+	ConnectionXtdb struct {
 		Id          string         `edn:"xt/id"`
 		OrgId       string         `edn:"connection/org"`
 		Name        string         `edn:"connection/name" `
@@ -14,11 +12,6 @@ type (
 		CreatedById string         `edn:"connection/created-by"`
 	}
 
-	ConnectionOne struct {
-		ConnectionList
-		Secret Secret `json:"secret" edn:"connection/secret"`
-	}
-
 	ConnectionList struct {
 		Id       string         `json:"id"       edn:"xt/id"`
 		Name     string         `json:"name"     edn:"connection/name"    binding:"required"`
@@ -26,6 +19,13 @@ type (
 		Type     ConnectionType `json:"type"     edn:"connection/type"    binding:"required"`
 		Provider SecretProvider `json:"provider" edn:"connection/provider"`
 	}
+
+	ConnectionOne struct {
+		ConnectionList
+		Secret Secret `json:"secret" edn:"connection/secret"`
+	}
+
+	Secret map[string]interface{}
 
 	ConnectionType string
 	SecretProvider string

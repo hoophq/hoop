@@ -12,7 +12,7 @@ func (s *Storage) PersistConnection(context *domain.Context, c *domain.Connectio
 	connectionId := uuid.New().String()
 	secretId := uuid.New().String()
 
-	conn := domain.Connection{
+	conn := domain.ConnectionXtdb{
 		Id:          connectionId,
 		OrgId:       context.Org.Id,
 		Name:        c.Name,
@@ -65,7 +65,7 @@ func (s *Storage) GetConnection(context *domain.Context, name string) (*domain.C
 		return nil, err
 	}
 
-	var connections []domain.Connection
+	var connections []domain.ConnectionXtdb
 	if err := edn.Unmarshal(b, &connections); err != nil {
 		return nil, err
 	}
