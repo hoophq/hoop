@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/domain"
@@ -11,7 +12,7 @@ func (s *Storage) PersistConnection(context *domain.Context, c *domain.Connectio
 	connectionId := uuid.New().String()
 	secretId := uuid.New().String()
 
-	conn := domain.ConnectionWrite{
+	conn := domain.Connection{
 		Id:          connectionId,
 		OrgId:       context.Org.Id,
 		Name:        c.Name,
@@ -50,19 +51,67 @@ func (s *Storage) GetConnections(context *domain.Context) ([]domain.ConnectionLi
 		return nil, err
 	}
 
-	//for i, c := range connections {
-	//	secrets := make(map[string]interface{})
-	//	for k, v := range c.Secret {
-	//		secrets[strings.Split(k, "/")[1]] = v
-	//	}
-	//	connections[i].Secret = secrets
-	//}
-
 	return connections, nil
 }
 
 func (s *Storage) GetConnection(context *domain.Context, name string) (*domain.ConnectionOne, error) {
-	return nil, nil
+	var payload = `{:query {
+		:find [(pull ?connection [*])] 
+		:where [[?connection :connection/name "` + name + `"]
+                [?connection :connection/org "` + context.Org.Id + `"]]}}`
+
+	b, err := s.query([]byte(payload))
+	if err != nil {
+		return nil, err
+	}
+
+	var connections []domain.Connection
+	if err := edn.Unmarshal(b, &connections); err != nil {
+		return nil, err
+	}
+
+	if len(connections) == 0 {
+		return nil, nil
+	}
+
+	conn := connections[0]
+	secret, err := s.getSecret(conn.SecretId)
+	if err != nil {
+		return nil, err
+	}
+
+	return &domain.ConnectionOne{
+		ConnectionList: domain.ConnectionList{
+			Id:       conn.Id,
+			Name:     conn.Name,
+			Command:  conn.Command,
+			Type:     conn.Type,
+			Provider: conn.Provider,
+		},
+		Secret: secret,
+	}, nil
+}
+
+func (s *Storage) getSecret(secretId string) (domain.Secret, error) {
+	var payload = `{:query {
+		:find [(pull ?secret [*])] 
+		:where [[?secret :xt/id "` + secretId + `"]]}}`
+
+	b, err := s.queryAsJson([]byte(payload))
+	if err != nil {
+		return nil, err
+	}
+
+	var secrets []domain.Secret
+	if err := json.Unmarshal(b, &secrets); err != nil {
+		return nil, err
+	}
+
+	if len(secrets) == 0 {
+		return make(map[string]interface{}), nil
+	}
+
+	return secrets[0], nil
 }
 
 func buildSecretMap(secrets map[string]interface{}, xtId string) map[string]interface{} {

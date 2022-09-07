@@ -7,6 +7,20 @@ import (
 	"net/http"
 )
 
+func (a *Api) GetConnection(c *gin.Context) {
+	ctx, _ := c.Get("context")
+	context := ctx.(*domain.Context)
+
+	name := c.Param("name")
+	connections, err := a.storage.GetConnection(context, name)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	c.PureJSON(http.StatusOK, connections)
+}
+
 func (a *Api) GetConnections(c *gin.Context) {
 	ctx, _ := c.Get("context")
 	context := ctx.(*domain.Context)

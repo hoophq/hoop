@@ -3,7 +3,7 @@ package domain
 type (
 	Secret map[string]interface{}
 
-	ConnectionWrite struct {
+	Connection struct {
 		Id          string         `edn:"xt/id"`
 		OrgId       string         `edn:"connection/org"`
 		Name        string         `edn:"connection/name" `

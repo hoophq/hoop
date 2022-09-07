@@ -24,5 +24,6 @@ func startAPI() {
 
 func buildRoutes(route *gin.Engine, api *api.Api) {
 	route.GET("/connections", api.GetConnections)
+	route.GET("/connections/:name", api.GetConnection)
 	route.POST("/connections", api.PostConnection)
 }
