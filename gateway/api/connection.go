@@ -12,13 +12,18 @@ func (a *Api) GetConnection(c *gin.Context) {
 	context := ctx.(*domain.Context)
 
 	name := c.Param("name")
-	connections, err := a.storage.GetConnection(context, name)
+	connection, err := a.storage.GetConnection(context, name)
 	if err != nil {
 		c.Error(err)
 		return
 	}
 
-	c.PureJSON(http.StatusOK, connections)
+	if connection == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+		return
+	}
+
+	c.PureJSON(http.StatusOK, connection)
 }
 
 func (a *Api) GetConnections(c *gin.Context) {
