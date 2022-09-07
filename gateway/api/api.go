@@ -1,9 +1,9 @@
 package api
 
 import (
-	"fmt"
+	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/domain"
-	"plugin"
+	xtdb "github.com/runopsio/hoop/gateway/storage"
 )
 
 type (
@@ -11,61 +11,44 @@ type (
 		storage storage
 	}
 
-	storage struct {
-		connect           func() error
-		getSecrets        func() (*domain.Secrets, error)
-		persistSecrets    func(secrets domain.Secrets) error
-		getConnections    func() ([]domain.Connection, error)
-		persistConnection func(connection domain.Connection) error
+	storage interface {
+		Connect() error
+
+		PersistConnection(context *domain.Context, connection *domain.ConnectionOne) (int64, error)
+		GetConnections(context *domain.Context) ([]domain.ConnectionList, error)
+		GetConnection(context *domain.Context, name string) (*domain.ConnectionOne, error)
+
+		Signup(org *domain.Org, user *domain.User) (int64, error)
+		GetLoggedUser(email string) (*domain.Context, error)
 	}
 )
 
-func NewAPI(storagePlugin string) (*Api, error) {
-	p, err := plugin.Open(storagePlugin)
-	if err != nil {
-		fmt.Println(err)
+func NewAPI() (*Api, error) {
+	a := &Api{storage: &xtdb.Storage{}}
+
+	if err := a.storage.Connect(); err != nil {
 		return nil, err
 	}
 
-	connectFn, err := p.Lookup("Connect")
-	if err != nil {
-		fmt.Println(err)
-		return nil, err
-	}
-
-	getSecretsFn, err := p.Lookup("GetSecrets")
-	if err != nil {
-		fmt.Println(err)
-		return nil, err
-	}
-
-	persistSecretsFn, err := p.Lookup("PersistSecrets")
-	if err != nil {
-		fmt.Println(err)
-		return nil, err
-	}
-
-	getConnectionsFn, err := p.Lookup("GetConnections")
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	persistConnectionFn, err := p.Lookup("PersistConnection")
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	a := &Api{storage: storage{
-		connect:           connectFn.(func() error),
-		getSecrets:        getSecretsFn.(func() (*domain.Secrets, error)),
-		persistSecrets:    persistSecretsFn.(func(secrets domain.Secrets) error),
-		getConnections:    getConnectionsFn.(func() ([]domain.Connection, error)),
-		persistConnection: persistConnectionFn.(func(connection domain.Connection) error),
-	}}
-
-	if err := a.storage.connect(); err != nil {
-		return nil, err
-	}
+	a.storage.Signup(&domain.Org{
+		Name: "hoop",
+	}, &domain.User{
+		Name:  "hooper",
+		Email: "tester@hoop.dev",
+	})
 
 	return a, nil
+}
+
+func (a *Api) Authenticate(c *gin.Context) {
+	email := "tester@hoop.dev"
+
+	ctx, err := a.storage.GetLoggedUser(email)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	c.Set("context", ctx)
+	c.Next()
 }
