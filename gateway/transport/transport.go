@@ -4,6 +4,8 @@ import (
 	pb "github.com/runopsio/hoop/domain/proto"
 	"io"
 	"log"
+	"strconv"
+	"time"
 )
 
 type Server struct {
@@ -15,6 +17,7 @@ func (s Server) Connect(srv pb.Transport_ConnectServer) error {
 	ctx := srv.Context()
 
 	for {
+		log.Println("start of iteration")
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -25,26 +28,27 @@ func (s Server) Connect(srv pb.Transport_ConnectServer) error {
 		req, err := srv.Recv()
 		if err == io.EOF {
 			// return will close stream from server side
-			log.Println("exit")
+			log.Println("EOF sent: exit")
 			return nil
 		}
 		if err != nil {
-			log.Printf("receive error %v", err)
+			log.Printf("received error %v", err)
 			continue
 		}
 
-		// continue if number reveived from stream
-		// less than max
-		log.Printf("receive request type: %s", req.Type)
+		log.Printf("receive request type [%s] and component [%s]", req.Type, req.Component)
 
 		// update max and send it to stream
 		resp := pb.Packet{
 			Component: "server",
-			Type:      "generic-response",
+			Type:      req.Type,
 			Spec:      make(map[string][]byte),
 			Payload:   []byte("payload as bytes"),
 		}
 
+		seconds, _ := strconv.Atoi(req.Type)
+		time.Sleep(time.Millisecond * 1000 * time.Duration(seconds))
+		log.Printf("sending response type [%s] and component [%s]", resp.Type, resp.Component)
 		if err := srv.Send(&resp); err != nil {
 			log.Printf("send error %v", err)
 		}
