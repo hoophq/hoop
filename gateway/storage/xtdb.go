@@ -32,20 +32,6 @@ func (s *Storage) Connect() error {
 	return nil
 }
 
-func buildPersistPayload(payloads []map[string]interface{}) ([]byte, error) {
-	txOps := make([]interface{}, 0)
-	for _, payload := range payloads {
-		txOps = append(txOps, []interface{}{
-			"put", payload,
-		})
-	}
-	b, err := json.Marshal(map[string]interface{}{"tx-ops": txOps})
-	if err != nil {
-		return nil, err
-	}
-	return b, nil
-}
-
 func (s *Storage) persistEntities(payloads []map[string]interface{}) (int64, error) {
 	url := fmt.Sprintf("%s/_xtdb/submit-tx", s.host)
 
@@ -102,20 +88,6 @@ func (s *Storage) queryRequest(ednQuery []byte, contentType string) ([]byte, err
 	}
 
 	return b, nil
-}
-
-func entityToMap(obj interface{}) map[string]interface{} {
-	payload := make(map[string]interface{})
-
-	v := reflect.ValueOf(obj).Elem()
-	for i := 0; i < v.NumField(); i++ {
-		f := v.Field(i)
-		xtdbName := v.Type().Field(i).Tag.Get("edn")
-		if xtdbName != "" && xtdbName != "-" {
-			payload[xtdbName] = f.Interface()
-		}
-	}
-	return payload
 }
 
 func (s *Storage) query(ednQuery []byte) ([]byte, error) {
@@ -199,4 +171,32 @@ func (s *Storage) getEntity(xtId string) (interface{}, error) {
 	}
 
 	return nil, nil
+}
+
+func entityToMap(obj interface{}) map[string]interface{} {
+	payload := make(map[string]interface{})
+
+	v := reflect.ValueOf(obj).Elem()
+	for i := 0; i < v.NumField(); i++ {
+		f := v.Field(i)
+		xtdbName := v.Type().Field(i).Tag.Get("edn")
+		if xtdbName != "" && xtdbName != "-" {
+			payload[xtdbName] = f.Interface()
+		}
+	}
+	return payload
+}
+
+func buildPersistPayload(payloads []map[string]interface{}) ([]byte, error) {
+	txOps := make([]interface{}, 0)
+	for _, payload := range payloads {
+		txOps = append(txOps, []interface{}{
+			"put", payload,
+		})
+	}
+	b, err := json.Marshal(map[string]interface{}{"tx-ops": txOps})
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
 }

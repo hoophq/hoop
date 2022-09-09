@@ -17,7 +17,7 @@ func startRPCServer() {
 	}
 
 	s := grpc.NewServer()
-	pb.RegisterTransportServer(s, &transport.Server{})
+	pb.RegisterTransportServer(s, transport.NewGrpcServer())
 	if err := s.Serve(listener); err != nil {
 		log.Fatalf("failed to serve: %v", err)
 	}

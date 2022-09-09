@@ -5,10 +5,8 @@ import (
 	"fmt"
 	pb "github.com/runopsio/hoop/domain/proto"
 	"google.golang.org/grpc"
-	"io"
 	"log"
 	"math/rand"
-	"strconv"
 	"time"
 )
 
@@ -29,54 +27,20 @@ func main() {
 		log.Fatalf("openn stream error %v", err)
 	}
 
-	var max int32
 	ctx := stream.Context()
 	done := make(chan bool)
+	agent := Agent{
+		stream:      stream,
+		ctx:         ctx,
+		closeSignal: done,
+	}
 
-	// first goroutine sends random increasing numbers to stream
-	// and closes it after 10 iterations
-	go func() {
-		for i := 1; i <= 10; i++ {
-			req := pb.Packet{
-				Component: "agent",
-				Type:      strconv.Itoa(i),
-				Spec:      nil,
-				Payload:   nil,
-			}
-			log.Printf("sending request type [%s] and component [%s]", req.Type, req.Component)
-			if err := stream.Send(&req); err != nil {
-				log.Fatalf("can not send %v", err)
-			}
-			time.Sleep(time.Millisecond * 200)
-		}
-		if err := stream.CloseSend(); err != nil {
-			log.Println(err)
-		}
-	}()
+	go agent.listen()
 
-	// second goroutine receives data from stream
-	// and saves result in max variable
-	//
-	// if stream is finished it closes done channel
-	go func() {
-		for {
-			resp, err := stream.Recv()
-			if err == io.EOF {
-				close(done)
-				return
-			}
-			if err != nil {
-				log.Fatalf("can not receive %v", err)
-			}
-			log.Printf("receive request type [%s] from component [%s]", resp.Type, resp.Component)
-
-		}
-	}()
-
-	// third goroutine closes done channel
-	// if context is done
+	// if the server closes the connection
 	go func() {
 		<-ctx.Done()
+		log.Println("Server closed the connection... exiting...")
 		if err := ctx.Err(); err != nil {
 			log.Println(err)
 		}
@@ -84,5 +48,5 @@ func main() {
 	}()
 
 	<-done
-	log.Printf("finished with max=%d", max)
+	log.Println("Server terminated connection... exiting...")
 }

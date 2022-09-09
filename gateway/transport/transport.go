@@ -2,15 +2,31 @@ package transport
 
 import (
 	pb "github.com/runopsio/hoop/domain/proto"
+	"github.com/runopsio/hoop/gateway/domain"
+	xtdb "github.com/runopsio/hoop/gateway/storage"
 	"io"
 	"log"
 	"strconv"
 	"time"
 )
 
-type Server struct {
-	pb.UnimplementedTransportServer
+func NewGrpcServer() *Server {
+	return &Server{
+		storage: &xtdb.Storage{},
+	}
 }
+
+type (
+	Server struct {
+		pb.UnimplementedTransportServer
+		storage storage
+	}
+
+	storage interface {
+		PersistAgent(agent *domain.Agent) (int64, error)
+		GetAgents(context *domain.Context) ([]domain.Agent, error)
+	}
+)
 
 func (s Server) Connect(stream pb.Transport_ConnectServer) error {
 	log.Println("connecting grpc server")
