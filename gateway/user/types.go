@@ -1,4 +1,4 @@
-package domain
+package user
 
 type (
 	Context struct {
@@ -17,8 +17,4 @@ type (
 		Name  string `json:"name"  edn:"user/name"`
 		Email string `json:"email" edn:"user/email" binding:"required"`
 	}
-)
-
-const (
-	DBSecretProvider SecretProvider = "database"
 )

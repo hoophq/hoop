@@ -3,27 +3,27 @@ package api
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/domain"
 	xtdb "github.com/runopsio/hoop/gateway/storage"
+	"github.com/runopsio/hoop/gateway/user"
 )
 
 type (
 	Api struct {
-		storage storage
+		AgentService agent.Service
+		storage      storage
 	}
 
 	storage interface {
 		Connect() error
 
-		Signup(org *domain.Org, user *domain.User) (int64, error)
-		GetLoggedUser(email string) (*domain.Context, error)
+		Signup(org *user.Org, user *user.User) (int64, error)
+		GetLoggedUser(email string) (*user.Context, error)
 
-		PersistConnection(context *domain.Context, connection *domain.Connection) (int64, error)
-		GetConnections(context *domain.Context) ([]domain.ConnectionList, error)
-		GetConnection(context *domain.Context, name string) (*domain.Connection, error)
-
-		PersistAgent(agent *domain.Agent) (int64, error)
-		GetAgents(context *domain.Context) ([]domain.Agent, error)
+		PersistConnection(context *user.Context, connection *domain.Connection) (int64, error)
+		GetConnections(context *user.Context) ([]domain.ConnectionList, error)
+		GetConnection(context *user.Context, name string) (*domain.Connection, error)
 	}
 )
 
@@ -31,19 +31,19 @@ func createTrialEntities(api *Api) error {
 	orgId := uuid.New().String()
 	userId := uuid.New().String()
 
-	org := domain.Org{
+	org := user.Org{
 		Id:   orgId,
 		Name: "hoop",
 	}
 
-	user := domain.User{
+	user := user.User{
 		Id:    userId,
 		Org:   orgId,
 		Name:  "hooper",
 		Email: "tester@hoop.dev",
 	}
 
-	agent := domain.Agent{
+	agent := agent.Agent{
 		Token:       "x-agt-test-token",
 		Name:        "test-agent",
 		OrgId:       orgId,
@@ -51,7 +51,7 @@ func createTrialEntities(api *Api) error {
 	}
 
 	_, err := api.storage.Signup(&org, &user)
-	_, err = api.storage.PersistAgent(&agent)
+	_, err = api.AgentService.Persist(&agent)
 
 	if err != nil {
 		return err

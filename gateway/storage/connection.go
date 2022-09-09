@@ -22,7 +22,7 @@ func (s *Storage) PersistConnection(context *domain.Context, c *domain.Connectio
 		CreatedById: context.User.Id,
 	}
 
-	connectionPayload := entityToMap(&conn)
+	connectionPayload := EntityToMap(&conn)
 	secretPayload := buildSecretMap(c.Secret, secretId)
 
 	entities := []map[string]interface{}{secretPayload, connectionPayload}

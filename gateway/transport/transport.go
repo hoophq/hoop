@@ -28,24 +28,22 @@ type (
 	storage interface {
 		PersistAgent(agent *domain.Agent) (int64, error)
 		GetAgents(context *domain.Context) ([]domain.Agent, error)
+		GetAgentByToken(token string) (*domain.Agent, error)
 	}
 )
 
 func (s Server) Connect(stream pb.Transport_ConnectServer) error {
-	log.Println("connecting grpc server")
+	log.Println("starting new grpc connection...")
 	ctx := stream.Context()
 
 	md, _ := metadata.FromIncomingContext(ctx)
 	token := md.Get("authorization")[0]
 	hostname := md.Get("hostname")[0]
-	log.Printf("token received: %s", token)
-	log.Printf("hostname received: %s", hostname)
 
-	if token != "x-agt-test-token" {
-		//err := ctx.Err()
-		//if err != nil {
-		//	return err
-		//}
+	log.Printf("token: %s, hostname [%s]", token, hostname)
+
+	agent, err := s.storage.GetAgentByToken(token)
+	if err != nil || agent == nil {
 		return status.Errorf(codes.Unauthenticated, "invalid token")
 	}
 

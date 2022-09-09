@@ -6,8 +6,8 @@ import (
 )
 
 func (s *Storage) Signup(org *domain.Org, user *domain.User) (txId int64, err error) {
-	orgPayload := entityToMap(org)
-	userPayload := entityToMap(user)
+	orgPayload := EntityToMap(org)
+	userPayload := EntityToMap(user)
 
 	entities := []map[string]interface{}{orgPayload, userPayload}
 	txId, err = s.persistEntities(entities)

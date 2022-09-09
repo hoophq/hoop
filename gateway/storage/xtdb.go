@@ -32,10 +32,15 @@ func (s *Storage) Connect() error {
 	return nil
 }
 
-func (s *Storage) persistEntities(payloads []map[string]interface{}) (int64, error) {
+func (s *Storage) PersistEntities(payloads []interface{}) (int64, error) {
 	url := fmt.Sprintf("%s/_xtdb/submit-tx", s.host)
 
-	bytePayload, err := buildPersistPayload(payloads)
+	items := make([]map[string]interface{}, 0)
+	for _, o := range payloads {
+		items = append(items, entityToMap(o))
+	}
+
+	bytePayload, err := buildPersistPayload(items)
 	if err != nil {
 		return 0, err
 	}
@@ -90,7 +95,7 @@ func (s *Storage) queryRequest(ednQuery []byte, contentType string) ([]byte, err
 	return b, nil
 }
 
-func (s *Storage) query(ednQuery []byte) ([]byte, error) {
+func (s *Storage) Query(ednQuery []byte) ([]byte, error) {
 	b, err := s.queryRequest(ednQuery, "application/edn")
 	if err != nil {
 		return nil, err
@@ -114,7 +119,7 @@ func (s *Storage) query(ednQuery []byte) ([]byte, error) {
 	return response, nil
 }
 
-func (s *Storage) queryAsJson(ednQuery []byte) ([]byte, error) {
+func (s *Storage) QueryAsJson(ednQuery []byte) ([]byte, error) {
 	b, err := s.queryRequest(ednQuery, "application/json")
 	if err != nil {
 		return nil, err
@@ -138,7 +143,7 @@ func (s *Storage) queryAsJson(ednQuery []byte) ([]byte, error) {
 	return response, nil
 }
 
-func (s *Storage) getEntity(xtId string) (interface{}, error) {
+func (s *Storage) GetEntity(xtId string) ([]byte, error) {
 	url := fmt.Sprintf("%s/_xtdb/entity", s.host)
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
@@ -163,11 +168,7 @@ func (s *Storage) getEntity(xtId string) (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
-
-		var result interface{}
-		if err := edn.Unmarshal(b, result); err != nil {
-			return nil, err
-		}
+		return b, nil
 	}
 
 	return nil, nil
