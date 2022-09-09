@@ -3,7 +3,7 @@ package api
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/domain"
+	"github.com/runopsio/hoop/gateway/domain"
 	xtdb "github.com/runopsio/hoop/gateway/storage"
 )
 
@@ -44,7 +44,7 @@ func createTrialEntities(api *Api) error {
 	}
 
 	agent := domain.Agent{
-		Token:       "xagt-test-token",
+		Token:       "x-agt-test-token",
 		Name:        "test-agent",
 		OrgId:       orgId,
 		CreatedById: userId,

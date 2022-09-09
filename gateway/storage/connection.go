@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/domain"
+	"github.com/runopsio/hoop/gateway/domain"
 	"olympos.io/encoding/edn"
 )
 

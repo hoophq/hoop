@@ -1,7 +1,7 @@
 package storage
 
 import (
-	"github.com/runopsio/hoop/domain"
+	"github.com/runopsio/hoop/gateway/domain"
 	"olympos.io/encoding/edn"
 )
 
