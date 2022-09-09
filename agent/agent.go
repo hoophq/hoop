@@ -18,6 +18,7 @@ func (a *Agent) listen() {
 	for {
 		msg, err := a.stream.Recv()
 		if err != nil {
+			log.Printf("%s", err.Error())
 			close(a.closeSignal)
 			return
 		}

@@ -2,17 +2,14 @@ package main
 
 import (
 	"context"
-	"fmt"
 	pb "github.com/runopsio/hoop/domain/proto"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"log"
-	"math/rand"
-	"time"
 )
 
 func main() {
-	fmt.Println("starting hoop agent...")
-	rand.Seed(time.Now().Unix())
+	log.Println("starting hoop agent...")
 
 	// dail server
 	conn, err := grpc.Dial(":9090", grpc.WithInsecure())
@@ -21,10 +18,14 @@ func main() {
 	}
 
 	// create stream
+	requestCtx := metadata.AppendToOutgoingContext(context.Background(),
+		"authorization", "x-agt-test-token",
+		"hostname", "localhost")
+
 	client := pb.NewTransportClient(conn)
-	stream, err := client.Connect(context.Background())
+	stream, err := client.Connect(requestCtx)
 	if err != nil {
-		log.Fatalf("openn stream error %v", err)
+		log.Fatalf("server rejected the connection: %v", err)
 	}
 
 	ctx := stream.Context()
@@ -40,9 +41,8 @@ func main() {
 	// if the server closes the connection
 	go func() {
 		<-ctx.Done()
-		log.Println("Server closed the connection... exiting...")
 		if err := ctx.Err(); err != nil {
-			log.Println(err)
+			log.Printf("error message: %s", err.Error())
 		}
 		close(done)
 	}()

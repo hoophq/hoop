@@ -4,6 +4,9 @@ import (
 	pb "github.com/runopsio/hoop/domain/proto"
 	"github.com/runopsio/hoop/gateway/domain"
 	xtdb "github.com/runopsio/hoop/gateway/storage"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"io"
 	"log"
 	"strconv"
@@ -31,6 +34,20 @@ type (
 func (s Server) Connect(stream pb.Transport_ConnectServer) error {
 	log.Println("connecting grpc server")
 	ctx := stream.Context()
+
+	md, _ := metadata.FromIncomingContext(ctx)
+	token := md.Get("authorization")[0]
+	hostname := md.Get("hostname")[0]
+	log.Printf("token received: %s", token)
+	log.Printf("hostname received: %s", hostname)
+
+	if token != "x-agt-test-token" {
+		//err := ctx.Err()
+		//if err != nil {
+		//	return err
+		//}
+		return status.Errorf(codes.Unauthenticated, "invalid token")
+	}
 
 	for {
 		log.Println("start of iteration")
