@@ -165,3 +165,38 @@ func (s *Storage) queryAsJson(ednQuery []byte) ([]byte, error) {
 
 	return response, nil
 }
+
+func (s *Storage) getEntity(xtId string) (interface{}, error) {
+	url := fmt.Sprintf("%s/_xtdb/entity", s.host)
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("accept", "application/edn")
+
+	q := req.URL.Query()
+	q.Add("eid", xtId)
+	req.URL.RawQuery = q.Encode()
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		b, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return nil, err
+		}
+
+		var result interface{}
+		if err := edn.Unmarshal(b, result); err != nil {
+			return nil, err
+		}
+	}
+
+	return nil, nil
+}

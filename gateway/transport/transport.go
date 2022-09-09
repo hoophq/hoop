@@ -12,20 +12,21 @@ type Server struct {
 	pb.UnimplementedTransportServer
 }
 
-func (s Server) Connect(srv pb.Transport_ConnectServer) error {
+func (s Server) Connect(stream pb.Transport_ConnectServer) error {
 	log.Println("connecting grpc server")
-	ctx := srv.Context()
+	ctx := stream.Context()
 
 	for {
 		log.Println("start of iteration")
 		select {
 		case <-ctx.Done():
+			log.Println("received DONE")
 			return ctx.Err()
 		default:
 		}
 
 		// receive data from stream
-		req, err := srv.Recv()
+		req, err := stream.Recv()
 		if err == io.EOF {
 			// return will close stream from server side
 			log.Println("EOF sent: exit")
@@ -47,10 +48,16 @@ func (s Server) Connect(srv pb.Transport_ConnectServer) error {
 		}
 
 		seconds, _ := strconv.Atoi(req.Type)
-		time.Sleep(time.Millisecond * 1000 * time.Duration(seconds))
-		log.Printf("sending response type [%s] and component [%s]", resp.Type, resp.Component)
-		if err := srv.Send(&resp); err != nil {
-			log.Printf("send error %v", err)
+		if seconds == 8 {
+			return ctx.Err()
 		}
+
+		go func(stream pb.Transport_ConnectServer) {
+			time.Sleep(time.Millisecond * 1000 * time.Duration(seconds))
+			log.Printf("sending response type [%s] and component [%s]", resp.Type, resp.Component)
+			if err := stream.Send(&resp); err != nil {
+				log.Printf("send error %v", err)
+			}
+		}(stream)
 	}
 }

@@ -14,12 +14,15 @@ type (
 	storage interface {
 		Connect() error
 
-		PersistConnection(context *domain.Context, connection *domain.ConnectionOne) (int64, error)
-		GetConnections(context *domain.Context) ([]domain.ConnectionList, error)
-		GetConnection(context *domain.Context, name string) (*domain.ConnectionOne, error)
-
 		Signup(org *domain.Org, user *domain.User) (int64, error)
 		GetLoggedUser(email string) (*domain.Context, error)
+
+		PersistConnection(context *domain.Context, connection *domain.Connection) (int64, error)
+		GetConnections(context *domain.Context) ([]domain.ConnectionList, error)
+		GetConnection(context *domain.Context, name string) (*domain.Connection, error)
+
+		PersistAgent(context *domain.Context, agent *domain.Agent) (int64, error)
+		GetAgent(context *domain.Context, token string) (*domain.Agent, error)
 	}
 )
 

@@ -20,7 +20,7 @@ type (
 		Provider SecretProvider `json:"provider" edn:"connection/provider"`
 	}
 
-	ConnectionOne struct {
+	Connection struct {
 		ConnectionList
 		Secret Secret `json:"secret" edn:"connection/secret"`
 	}

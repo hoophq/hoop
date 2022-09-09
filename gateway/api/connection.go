@@ -1,8 +1,8 @@
 package api
 
 import (
-	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/runopsio/hoop/domain"
 	"net/http"
 )
@@ -43,7 +43,7 @@ func (a *Api) PostConnection(c *gin.Context) {
 	ctx, _ := c.Get("context")
 	context := ctx.(*domain.Context)
 
-	var connection domain.ConnectionOne
+	var connection domain.Connection
 	if err := c.ShouldBindJSON(&connection); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
@@ -60,13 +60,14 @@ func (a *Api) PostConnection(c *gin.Context) {
 		return
 	}
 
-	tx, err := a.storage.PersistConnection(context, &connection)
+	connection.Id = uuid.NewString()
+	connection.Provider = domain.DBSecretProvider
+
+	_, err = a.storage.PersistConnection(context, &connection)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
-
-	fmt.Printf("tx: %d", tx)
 
 	c.JSON(http.StatusCreated, connection)
 }

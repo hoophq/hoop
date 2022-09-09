@@ -36,7 +36,7 @@ func main() {
 	// first goroutine sends random increasing numbers to stream
 	// and closes it after 10 iterations
 	go func() {
-		for i := 1; i <= 10; i++ {
+		for i := 1; i <= 7; i++ {
 			req := pb.Packet{
 				Component: "client",
 				Type:      strconv.Itoa(i),
