@@ -8,11 +8,11 @@ import (
 
 type (
 	Storage struct {
-		st.Storage
+		*st.Storage
 	}
 )
 
-func (s *Storage) FindAll(context user.Context) ([]Agent, error) {
+func (s *Storage) FindAll(context *user.Context) ([]Agent, error) {
 	var payload = `{:query {
 		:find [(pull ?Agent [*])] 
 		:where [[?Agent :Agent/org "` +
@@ -31,7 +31,7 @@ func (s *Storage) FindAll(context user.Context) ([]Agent, error) {
 	return agents, nil
 }
 
-func (s *Storage) GetByToken(token string) (*Agent, error) {
+func (s *Storage) FindOne(token string) (*Agent, error) {
 	maybeAgent, err := s.GetEntity(token)
 	if err != nil {
 		return nil, err
@@ -47,4 +47,15 @@ func (s *Storage) GetByToken(token string) (*Agent, error) {
 	}
 
 	return &agent, nil
+}
+
+func (s *Storage) Persist(agent *Agent) (int64, error) {
+	agentPayload := st.EntityToMap(agent)
+
+	txId, err := s.PersistEntities([]map[string]interface{}{agentPayload})
+	if err != nil {
+		return 0, err
+	}
+
+	return txId, nil
 }

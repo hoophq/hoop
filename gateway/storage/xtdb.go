@@ -32,15 +32,24 @@ func (s *Storage) Connect() error {
 	return nil
 }
 
-func (s *Storage) PersistEntities(payloads []interface{}) (int64, error) {
+func EntityToMap(obj interface{}) map[string]interface{} {
+	payload := make(map[string]interface{})
+
+	v := reflect.ValueOf(obj).Elem()
+	for i := 0; i < v.NumField(); i++ {
+		f := v.Field(i)
+		xtdbName := v.Type().Field(i).Tag.Get("edn")
+		if xtdbName != "" && xtdbName != "-" {
+			payload[xtdbName] = f.Interface()
+		}
+	}
+	return payload
+}
+
+func (s *Storage) PersistEntities(payloads []map[string]interface{}) (int64, error) {
 	url := fmt.Sprintf("%s/_xtdb/submit-tx", s.host)
 
-	items := make([]map[string]interface{}, 0)
-	for _, o := range payloads {
-		items = append(items, entityToMap(o))
-	}
-
-	bytePayload, err := buildPersistPayload(items)
+	bytePayload, err := buildPersistPayload(payloads)
 	if err != nil {
 		return 0, err
 	}
@@ -70,16 +79,19 @@ func (s *Storage) PersistEntities(payloads []interface{}) (int64, error) {
 	return 0, errors.New("not 202")
 }
 
-func (s *Storage) queryRequest(ednQuery []byte, contentType string) ([]byte, error) {
-	url := fmt.Sprintf("%s/_xtdb/query", s.host)
+func (s *Storage) GetEntity(xtId string) ([]byte, error) {
+	url := fmt.Sprintf("%s/_xtdb/entity", s.host)
 
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(ednQuery))
+	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	req.Header.Set("accept", contentType)
-	req.Header.Set("content-type", "application/edn")
+	req.Header.Set("accept", "application/edn")
+
+	q := req.URL.Query()
+	q.Add("eid", xtId)
+	req.URL.RawQuery = q.Encode()
 
 	resp, err := s.client.Do(req)
 	if err != nil {
@@ -87,12 +99,15 @@ func (s *Storage) queryRequest(ednQuery []byte, contentType string) ([]byte, err
 	}
 	defer resp.Body.Close()
 
-	b, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
+	if resp.StatusCode == http.StatusOK {
+		b, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return nil, err
+		}
+		return b, nil
 	}
 
-	return b, nil
+	return nil, nil
 }
 
 func (s *Storage) Query(ednQuery []byte) ([]byte, error) {
@@ -143,19 +158,16 @@ func (s *Storage) QueryAsJson(ednQuery []byte) ([]byte, error) {
 	return response, nil
 }
 
-func (s *Storage) GetEntity(xtId string) ([]byte, error) {
-	url := fmt.Sprintf("%s/_xtdb/entity", s.host)
+func (s *Storage) queryRequest(ednQuery []byte, contentType string) ([]byte, error) {
+	url := fmt.Sprintf("%s/_xtdb/query", s.host)
 
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(ednQuery))
 	if err != nil {
 		return nil, err
 	}
 
-	req.Header.Set("accept", "application/edn")
-
-	q := req.URL.Query()
-	q.Add("eid", xtId)
-	req.URL.RawQuery = q.Encode()
+	req.Header.Set("accept", contentType)
+	req.Header.Set("content-type", "application/edn")
 
 	resp, err := s.client.Do(req)
 	if err != nil {
@@ -163,29 +175,12 @@ func (s *Storage) GetEntity(xtId string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusOK {
-		b, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return nil, err
-		}
-		return b, nil
+	b, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
 	}
 
-	return nil, nil
-}
-
-func entityToMap(obj interface{}) map[string]interface{} {
-	payload := make(map[string]interface{})
-
-	v := reflect.ValueOf(obj).Elem()
-	for i := 0; i < v.NumField(); i++ {
-		f := v.Field(i)
-		xtdbName := v.Type().Field(i).Tag.Get("edn")
-		if xtdbName != "" && xtdbName != "-" {
-			payload[xtdbName] = f.Interface()
-		}
-	}
-	return payload
+	return b, nil
 }
 
 func buildPersistPayload(payloads []map[string]interface{}) ([]byte, error) {

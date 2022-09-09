@@ -9,7 +9,12 @@ import (
 
 type (
 	Handler struct {
-		Service Service
+		Service service
+	}
+
+	service interface {
+		Persist(agent *Agent) (int64, error)
+		FindAll(context *user.Context) ([]Agent, error)
 	}
 )
 

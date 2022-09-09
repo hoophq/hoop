@@ -1,17 +1,24 @@
-package storage
+package connection
 
 import (
 	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/gateway/domain"
+	st "github.com/runopsio/hoop/gateway/storage"
+	"github.com/runopsio/hoop/gateway/user"
 	"olympos.io/encoding/edn"
 )
 
-func (s *Storage) PersistConnection(context *domain.Context, c *domain.Connection) (int64, error) {
+type (
+	Storage struct {
+		*st.Storage
+	}
+)
+
+func (s *Storage) Persist(context *user.Context, c *Connection) (int64, error) {
 	secretId := uuid.New().String()
 
-	conn := domain.ConnectionXtdb{
+	conn := Xtdb{
 		Id:          c.Id,
 		OrgId:       context.Org.Id,
 		Name:        c.Name,
@@ -22,11 +29,11 @@ func (s *Storage) PersistConnection(context *domain.Context, c *domain.Connectio
 		CreatedById: context.User.Id,
 	}
 
-	connectionPayload := EntityToMap(&conn)
+	connectionPayload := st.EntityToMap(&conn)
 	secretPayload := buildSecretMap(c.Secret, secretId)
 
 	entities := []map[string]interface{}{secretPayload, connectionPayload}
-	txId, err := s.persistEntities(entities)
+	txId, err := s.PersistEntities(entities)
 	if err != nil {
 		return 0, err
 	}
@@ -34,18 +41,18 @@ func (s *Storage) PersistConnection(context *domain.Context, c *domain.Connectio
 	return txId, nil
 }
 
-func (s *Storage) GetConnections(context *domain.Context) ([]domain.ConnectionList, error) {
+func (s *Storage) FindAll(context *user.Context) ([]BaseConnection, error) {
 	var payload = `{:query {
 		:find [(pull ?connection [*])] 
 		:where [[?connection :connection/org "` +
 		context.Org.Id + `"]]}}`
 
-	b, err := s.query([]byte(payload))
+	b, err := s.Query([]byte(payload))
 	if err != nil {
 		return nil, err
 	}
 
-	var connections []domain.ConnectionList
+	var connections []BaseConnection
 	if err := edn.Unmarshal(b, &connections); err != nil {
 		return nil, err
 	}
@@ -53,18 +60,18 @@ func (s *Storage) GetConnections(context *domain.Context) ([]domain.ConnectionLi
 	return connections, nil
 }
 
-func (s *Storage) GetConnection(context *domain.Context, name string) (*domain.Connection, error) {
+func (s *Storage) FindOne(context *user.Context, name string) (*Connection, error) {
 	var payload = `{:query {
 		:find [(pull ?connection [*])] 
 		:where [[?connection :connection/name "` + name + `"]
                 [?connection :connection/org "` + context.Org.Id + `"]]}}`
 
-	b, err := s.query([]byte(payload))
+	b, err := s.Query([]byte(payload))
 	if err != nil {
 		return nil, err
 	}
 
-	var connections []domain.ConnectionXtdb
+	var connections []Xtdb
 	if err := edn.Unmarshal(b, &connections); err != nil {
 		return nil, err
 	}
@@ -79,8 +86,8 @@ func (s *Storage) GetConnection(context *domain.Context, name string) (*domain.C
 		return nil, err
 	}
 
-	return &domain.Connection{
-		ConnectionList: domain.ConnectionList{
+	return &Connection{
+		BaseConnection: BaseConnection{
 			Id:       conn.Id,
 			Name:     conn.Name,
 			Command:  conn.Command,
@@ -91,17 +98,17 @@ func (s *Storage) GetConnection(context *domain.Context, name string) (*domain.C
 	}, nil
 }
 
-func (s *Storage) getSecret(secretId string) (domain.Secret, error) {
+func (s *Storage) getSecret(secretId string) (Secret, error) {
 	var payload = `{:query {
 		:find [(pull ?secret [*])]
 		:where [[?secret :xt/id "` + secretId + `"]]}}`
 
-	b, err := s.queryAsJson([]byte(payload))
+	b, err := s.QueryAsJson([]byte(payload))
 	if err != nil {
 		return nil, err
 	}
 
-	var secrets []domain.Secret
+	var secrets []Secret
 	if err := json.Unmarshal(b, &secrets); err != nil {
 		return nil, err
 	}

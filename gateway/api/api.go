@@ -4,30 +4,19 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/gateway/agent"
-	"github.com/runopsio/hoop/gateway/domain"
-	xtdb "github.com/runopsio/hoop/gateway/storage"
+	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
 type (
 	Api struct {
-		AgentService agent.Service
-		storage      storage
-	}
-
-	storage interface {
-		Connect() error
-
-		Signup(org *user.Org, user *user.User) (int64, error)
-		GetLoggedUser(email string) (*user.Context, error)
-
-		PersistConnection(context *user.Context, connection *domain.Connection) (int64, error)
-		GetConnections(context *user.Context) ([]domain.ConnectionList, error)
-		GetConnection(context *user.Context, name string) (*domain.Connection, error)
+		AgentHandler      agent.Handler
+		ConnectionHandler connection.Handler
+		UserHandler       user.Handler
 	}
 )
 
-func createTrialEntities(api *Api) error {
+func (api *Api) CreateTrialEntities() error {
 	orgId := uuid.New().String()
 	userId := uuid.New().String()
 
@@ -36,22 +25,22 @@ func createTrialEntities(api *Api) error {
 		Name: "hoop",
 	}
 
-	user := user.User{
+	u := user.User{
 		Id:    userId,
 		Org:   orgId,
 		Name:  "hooper",
 		Email: "tester@hoop.dev",
 	}
 
-	agent := agent.Agent{
+	a := agent.Agent{
 		Token:       "x-agt-test-token",
 		Name:        "test-agent",
 		OrgId:       orgId,
 		CreatedById: userId,
 	}
 
-	_, err := api.storage.Signup(&org, &user)
-	_, err = api.AgentService.Persist(&agent)
+	_, err := api.UserHandler.Service.Signup(&org, &u)
+	_, err = api.AgentHandler.Service.Persist(&a)
 
 	if err != nil {
 		return err
@@ -60,29 +49,22 @@ func createTrialEntities(api *Api) error {
 	return nil
 }
 
-func NewAPI() (*Api, error) {
-	a := &Api{storage: &xtdb.Storage{}}
+func (api *Api) StartAPI() {
+	route := gin.Default()
+	route.Use(api.Authenticate, CORSMiddleware())
 
-	if err := a.storage.Connect(); err != nil {
-		return nil, err
+	api.buildRoutes(route)
+
+	if err := route.Run(); err != nil {
+		panic("Failed to start HTTP server")
 	}
-
-	if err := createTrialEntities(a); err != nil {
-		return nil, err
-	}
-
-	return a, nil
 }
 
-func (a *Api) Authenticate(c *gin.Context) {
-	email := "tester@hoop.dev"
+func (api *Api) buildRoutes(route *gin.Engine) {
+	route.POST("/connections", api.ConnectionHandler.Post)
+	route.GET("/connections", api.ConnectionHandler.FindAll)
+	route.GET("/connections/:name", api.ConnectionHandler.FindOne)
 
-	ctx, err := a.storage.GetLoggedUser(email)
-	if err != nil {
-		c.Error(err)
-		return
-	}
-
-	c.Set("context", ctx)
-	c.Next()
+	route.POST("/agents", api.AgentHandler.Post)
+	route.GET("/agents", api.AgentHandler.FindAll)
 }

@@ -1,6 +1,15 @@
 package user
 
 type (
+	Service struct {
+		Storage storage
+	}
+
+	storage interface {
+		Signup(org *Org, user *User) (txId int64, err error)
+		ContextByEmail(email string) (*Context, error)
+	}
+
 	Context struct {
 		Org  *Org
 		User *User
@@ -18,3 +27,11 @@ type (
 		Email string `json:"email" edn:"user/email" binding:"required"`
 	}
 )
+
+func (s *Service) Signup(org *Org, user *User) (txId int64, err error) {
+	return s.Storage.Signup(org, user)
+}
+
+func (s *Service) ContextByEmail(email string) (*Context, error) {
+	return s.Storage.ContextByEmail(email)
+}
