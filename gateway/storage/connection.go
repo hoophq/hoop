@@ -4,21 +4,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/domain"
+	"github.com/runopsio/hoop/gateway/domain"
 	"olympos.io/encoding/edn"
 )
 
-func (s *Storage) PersistConnection(context *domain.Context, c *domain.ConnectionOne) (int64, error) {
-	connectionId := uuid.New().String()
+func (s *Storage) PersistConnection(context *domain.Context, c *domain.Connection) (int64, error) {
 	secretId := uuid.New().String()
 
-	conn := domain.Connection{
-		Id:          connectionId,
+	conn := domain.ConnectionXtdb{
+		Id:          c.Id,
 		OrgId:       context.Org.Id,
 		Name:        c.Name,
 		Command:     c.Command,
 		Type:        c.Type,
-		Provider:    domain.DBSecretProvider,
+		Provider:    c.Provider,
 		SecretId:    secretId,
 		CreatedById: context.User.Id,
 	}
@@ -54,7 +53,7 @@ func (s *Storage) GetConnections(context *domain.Context) ([]domain.ConnectionLi
 	return connections, nil
 }
 
-func (s *Storage) GetConnection(context *domain.Context, name string) (*domain.ConnectionOne, error) {
+func (s *Storage) GetConnection(context *domain.Context, name string) (*domain.Connection, error) {
 	var payload = `{:query {
 		:find [(pull ?connection [*])] 
 		:where [[?connection :connection/name "` + name + `"]
@@ -65,7 +64,7 @@ func (s *Storage) GetConnection(context *domain.Context, name string) (*domain.C
 		return nil, err
 	}
 
-	var connections []domain.Connection
+	var connections []domain.ConnectionXtdb
 	if err := edn.Unmarshal(b, &connections); err != nil {
 		return nil, err
 	}
@@ -80,7 +79,7 @@ func (s *Storage) GetConnection(context *domain.Context, name string) (*domain.C
 		return nil, err
 	}
 
-	return &domain.ConnectionOne{
+	return &domain.Connection{
 		ConnectionList: domain.ConnectionList{
 			Id:       conn.Id,
 			Name:     conn.Name,
@@ -94,7 +93,7 @@ func (s *Storage) GetConnection(context *domain.Context, name string) (*domain.C
 
 func (s *Storage) getSecret(secretId string) (domain.Secret, error) {
 	var payload = `{:query {
-		:find [(pull ?secret [*])] 
+		:find [(pull ?secret [*])]
 		:where [[?secret :xt/id "` + secretId + `"]]}}`
 
 	b, err := s.queryAsJson([]byte(payload))

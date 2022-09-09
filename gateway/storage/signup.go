@@ -1,16 +1,11 @@
 package storage
 
 import (
-	"github.com/google/uuid"
-	"github.com/runopsio/hoop/domain"
+	"github.com/runopsio/hoop/gateway/domain"
 	"olympos.io/encoding/edn"
 )
 
 func (s *Storage) Signup(org *domain.Org, user *domain.User) (txId int64, err error) {
-	org.Id = uuid.New().String()
-	user.Id = uuid.New().String()
-	user.Org = org.Id
-
 	orgPayload := entityToMap(org)
 	userPayload := entityToMap(user)
 

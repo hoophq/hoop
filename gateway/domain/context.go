@@ -1,6 +1,11 @@
 package domain
 
 type (
+	Context struct {
+		Org  *Org
+		User *User
+	}
+
 	Org struct {
 		Id   string `json:"id"   edn:"xt/id"`
 		Name string `json:"name" edn:"org/name" binding:"required"`
