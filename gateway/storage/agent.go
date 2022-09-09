@@ -5,7 +5,7 @@ import (
 	"olympos.io/encoding/edn"
 )
 
-func (s *Storage) PersistAgent(context *domain.Context, agent *domain.Agent) (int64, error) {
+func (s *Storage) PersistAgent(agent *domain.Agent) (int64, error) {
 	agentPayload := entityToMap(agent)
 	entities := []map[string]interface{}{agentPayload}
 	txId, err := s.persistEntities(entities)
@@ -16,10 +16,10 @@ func (s *Storage) PersistAgent(context *domain.Context, agent *domain.Agent) (in
 	return txId, nil
 }
 
-func (s *Storage) GetAgent(context *domain.Context, token string) (*domain.Agent, error) {
+func (s *Storage) GetAgents(context *domain.Context) ([]domain.Agent, error) {
 	var payload = `{:query {
-		:find [(pull ?connection [*])] 
-		:where [[?connection :connection/org "` +
+		:find [(pull ?agent [*])] 
+		:where [[?agent :agent/org "` +
 		context.Org.Id + `"]]}}`
 
 	b, err := s.query([]byte(payload))
@@ -27,10 +27,10 @@ func (s *Storage) GetAgent(context *domain.Context, token string) (*domain.Agent
 		return nil, err
 	}
 
-	var connections []domain.ConnectionList
-	if err := edn.Unmarshal(b, &connections); err != nil {
+	var agents []domain.Agent
+	if err := edn.Unmarshal(b, &agents); err != nil {
 		return nil, err
 	}
 
-	return nil, nil
+	return agents, nil
 }

@@ -2,6 +2,7 @@ package api
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/runopsio/hoop/domain"
 	xtdb "github.com/runopsio/hoop/gateway/storage"
 )
@@ -21,10 +22,43 @@ type (
 		GetConnections(context *domain.Context) ([]domain.ConnectionList, error)
 		GetConnection(context *domain.Context, name string) (*domain.Connection, error)
 
-		PersistAgent(context *domain.Context, agent *domain.Agent) (int64, error)
-		GetAgent(context *domain.Context, token string) (*domain.Agent, error)
+		PersistAgent(agent *domain.Agent) (int64, error)
+		GetAgents(context *domain.Context) ([]domain.Agent, error)
 	}
 )
+
+func createTrialEntities(api *Api) error {
+	orgId := uuid.New().String()
+	userId := uuid.New().String()
+
+	org := domain.Org{
+		Id:   orgId,
+		Name: "hoop",
+	}
+
+	user := domain.User{
+		Id:    userId,
+		Org:   orgId,
+		Name:  "hooper",
+		Email: "tester@hoop.dev",
+	}
+
+	agent := domain.Agent{
+		Token:       "xagt-test-token",
+		Name:        "test-agent",
+		OrgId:       orgId,
+		CreatedById: userId,
+	}
+
+	_, err := api.storage.Signup(&org, &user)
+	_, err = api.storage.PersistAgent(&agent)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
 
 func NewAPI() (*Api, error) {
 	a := &Api{storage: &xtdb.Storage{}}
@@ -33,12 +67,9 @@ func NewAPI() (*Api, error) {
 		return nil, err
 	}
 
-	a.storage.Signup(&domain.Org{
-		Name: "hoop",
-	}, &domain.User{
-		Name:  "hooper",
-		Email: "tester@hoop.dev",
-	})
+	if err := createTrialEntities(a); err != nil {
+		return nil, err
+	}
 
 	return a, nil
 }

@@ -9,7 +9,7 @@ func startAPI() {
 
 	a, err := api.NewAPI()
 	if err != nil {
-		panic("Failed lo load storage module")
+		panic("Failed lo load API module")
 	}
 
 	route := gin.Default()
@@ -29,4 +29,5 @@ func buildRoutes(route *gin.Engine, api *api.Api) {
 	route.GET("/connections/:name", api.GetConnection)
 
 	route.POST("/agents", api.PostAgent)
+	route.GET("/agents", api.GetAgents)
 }

@@ -20,11 +20,24 @@ func (a *Api) PostAgent(c *gin.Context) {
 	agent.Token = "x-agt-" + uuid.NewString()
 	agent.OrgId = context.Org.Id
 
-	_, err := a.storage.PersistAgent(context, &agent)
+	_, err := a.storage.PersistAgent(&agent)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusCreated, agent)
+}
+
+func (a *Api) GetAgents(c *gin.Context) {
+	ctx, _ := c.Get("context")
+	context := ctx.(*domain.Context)
+
+	connections, err := a.storage.GetAgents(context)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, connections)
 }
