@@ -2,58 +2,28 @@ package transport
 
 import (
 	pb "github.com/runopsio/hoop/domain/proto"
-	"github.com/runopsio/hoop/gateway/agent"
-	"github.com/runopsio/hoop/gateway/connection"
-	"github.com/runopsio/hoop/gateway/user"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"io"
 	"log"
-	"net"
-	"strconv"
-	"time"
 )
 
-type (
-	Server struct {
-		pb.UnimplementedTransportServer
-		AgentService      agent.Service
-		ConnectionService connection.Service
-		UserService       user.Service
-	}
-)
-
-func (s *Server) StartRPCServer() {
-	log.Println("Starting gRPC server...")
-
-	listener, err := net.Listen("tcp", ":9090")
-	if err != nil {
-		panic(err)
-	}
-
-	svr := grpc.NewServer()
-	pb.RegisterTransportServer(svr, s)
-	if err := svr.Serve(listener); err != nil {
-		log.Fatalf("failed to serve: %v", err)
-	}
-}
-
-func (s Server) Connect(stream pb.Transport_ConnectServer) error {
-	log.Println("starting new grpc connection...")
+func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer) error {
 	ctx := stream.Context()
-
 	md, _ := metadata.FromIncomingContext(ctx)
-	token := md.Get("authorization")[0]
-	hostname := md.Get("hostname")[0]
 
-	log.Printf("token: %s, hostname [%s]", token, hostname)
+	token := extractData(md, "authorization")
+	hostname := extractData(md, "hostname")
+	machineId := extractData(md, "machine_id")
+	kernelVersion := extractData(md, "kernel_version")
 
 	agent, err := s.AgentService.FindOne(token)
 	if err != nil || agent == nil {
 		return status.Errorf(codes.Unauthenticated, "invalid token")
 	}
+
+	log.Printf("hostname: %s, machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
 
 	for {
 		log.Println("start of iteration")
@@ -86,17 +56,20 @@ func (s Server) Connect(stream pb.Transport_ConnectServer) error {
 			Payload:   []byte("payload as bytes"),
 		}
 
-		seconds, _ := strconv.Atoi(req.Type)
-		if seconds == 8 {
-			return ctx.Err()
-		}
-
 		go func(stream pb.Transport_ConnectServer) {
-			time.Sleep(time.Millisecond * 1000 * time.Duration(seconds))
 			log.Printf("sending response type [%s] and component [%s]", resp.Type, resp.Component)
 			if err := stream.Send(&resp); err != nil {
 				log.Printf("send error %v", err)
 			}
 		}(stream)
 	}
+}
+
+func extractData(md metadata.MD, metaName string) string {
+	data := md.Get(metaName)
+	if len(data) == 0 {
+		return ""
+	}
+
+	return data[0]
 }

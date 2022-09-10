@@ -19,7 +19,7 @@ func main() {
 
 	// create stream
 	requestCtx := metadata.AppendToOutgoingContext(context.Background(),
-		"authorization", "x-agt-test-token",
+		"authorization", "x-agt-test-tokenn",
 		"hostname", "localhost")
 
 	client := pb.NewTransportClient(conn)
