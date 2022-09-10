@@ -32,20 +32,6 @@ func (s *Storage) Connect() error {
 	return nil
 }
 
-func EntityToMap(obj interface{}) map[string]interface{} {
-	payload := make(map[string]interface{})
-
-	v := reflect.ValueOf(obj).Elem()
-	for i := 0; i < v.NumField(); i++ {
-		f := v.Field(i)
-		xtdbName := v.Type().Field(i).Tag.Get("edn")
-		if xtdbName != "" && xtdbName != "-" {
-			payload[xtdbName] = f.Interface()
-		}
-	}
-	return payload
-}
-
 func (s *Storage) PersistEntities(payloads []map[string]interface{}) (int64, error) {
 	url := fmt.Sprintf("%s/_xtdb/submit-tx", s.host)
 
@@ -156,6 +142,20 @@ func (s *Storage) QueryAsJson(ednQuery []byte) ([]byte, error) {
 	}
 
 	return response, nil
+}
+
+func EntityToMap(obj interface{}) map[string]interface{} {
+	payload := make(map[string]interface{})
+
+	v := reflect.ValueOf(obj).Elem()
+	for i := 0; i < v.NumField(); i++ {
+		f := v.Field(i)
+		xtdbName := v.Type().Field(i).Tag.Get("edn")
+		if xtdbName != "" && xtdbName != "-" {
+			payload[xtdbName] = f.Interface()
+		}
+	}
+	return payload
 }
 
 func (s *Storage) queryRequest(ednQuery []byte, contentType string) ([]byte, error) {

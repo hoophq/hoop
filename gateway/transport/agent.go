@@ -2,6 +2,7 @@ package transport
 
 import (
 	pb "github.com/runopsio/hoop/domain/proto"
+	agent2 "github.com/runopsio/hoop/gateway/agent"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -23,13 +24,31 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer) error {
 		return status.Errorf(codes.Unauthenticated, "invalid token")
 	}
 
-	log.Printf("hostname: %s, machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
+	agent.Hostname = hostname
+	agent.MachineId = machineId
+	agent.KernelVersion = kernelVersion
+	agent.Status = agent2.StatusConnected
+
+	_, err = s.AgentService.Persist(agent)
+	if err != nil {
+		return status.Errorf(codes.Internal, "internal error")
+	}
+
+	log.Printf("new connection from hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
+
+	return s.listenMessages(agent, stream)
+}
+
+func (s *Server) listenMessages(agent *agent2.Agent, stream pb.Transport_ConnectServer) error {
+	ctx := stream.Context()
 
 	for {
 		log.Println("start of iteration")
 		select {
 		case <-ctx.Done():
-			log.Println("received DONE")
+			log.Println("agent disconnected...")
+			agent.Status = agent2.StatusDisconnected
+			s.AgentService.Persist(agent)
 			return ctx.Err()
 		default:
 		}
