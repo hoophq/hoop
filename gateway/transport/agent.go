@@ -1,8 +1,8 @@
 package transport
 
 import (
-	pb "github.com/runopsio/hoop/domain/proto"
 	agent2 "github.com/runopsio/hoop/gateway/agent"
+	pb "github.com/runopsio/hoop/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
