@@ -6,7 +6,9 @@ import (
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"log"
 	"net"
 	"strings"
@@ -46,7 +48,18 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 	ctx := stream.Context()
 
 	md, _ := metadata.FromIncomingContext(ctx)
-	token := md.Get("authorization")[0]
+	t := md.Get("authorization")
+	if len(t) == 0 {
+		return status.Errorf(codes.Unauthenticated, "invalid authentication")
+	}
+
+	tokenValue := t[0]
+	tokenParts := strings.Split(tokenValue, " ")
+	if len(tokenParts) != 2 || tokenParts[0] != "Bearer" || tokenParts[1] == "" {
+		return status.Errorf(codes.Unauthenticated, "invalid authentication")
+	}
+
+	token := tokenParts[1]
 
 	origin := clientOrigin
 	if strings.HasPrefix(token, "x-agt") {
@@ -54,7 +67,7 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 	}
 
 	if origin == agentOrigin {
-		err := s.subscribeAgent(stream)
+		err := s.subscribeAgent(stream, token)
 		if err != nil {
 			return err
 		}

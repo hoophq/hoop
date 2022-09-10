@@ -19,7 +19,7 @@ func main() {
 
 	// create stream
 	requestCtx := metadata.AppendToOutgoingContext(context.Background(),
-		"authorization", "x-agt-test-token",
+		"authorization", "Bearer x-agt-test-token",
 		"hostname", "localhost",
 		"machine_id", "machine_my",
 		"kernel_version", "who knows?")

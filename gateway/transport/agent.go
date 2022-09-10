@@ -10,18 +10,17 @@ import (
 	"log"
 )
 
-func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer) error {
+func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string) error {
 	ctx := stream.Context()
 	md, _ := metadata.FromIncomingContext(ctx)
 
-	token := extractData(md, "authorization")
 	hostname := extractData(md, "hostname")
 	machineId := extractData(md, "machine_id")
 	kernelVersion := extractData(md, "kernel_version")
 
 	agent, err := s.AgentService.FindOne(token)
 	if err != nil || agent == nil {
-		return status.Errorf(codes.Unauthenticated, "invalid token")
+		return status.Errorf(codes.Unauthenticated, "invalid authentication")
 	}
 
 	agent.Hostname = hostname
@@ -34,8 +33,7 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer) error {
 		return status.Errorf(codes.Internal, "internal error")
 	}
 
-	log.Printf("new connection from hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
-
+	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
 	return s.listenMessages(agent, stream)
 }
 
@@ -56,8 +54,9 @@ func (s *Server) listenMessages(agent *agent2.Agent, stream pb.Transport_Connect
 		// receive data from stream
 		req, err := stream.Recv()
 		if err == io.EOF {
-			// return will close stream from server side
-			log.Println("EOF sent: exit")
+			log.Println("agent disconnected...")
+			agent.Status = agent2.StatusDisconnected
+			s.AgentService.Persist(agent)
 			return nil
 		}
 		if err != nil {
