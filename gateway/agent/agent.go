@@ -14,12 +14,22 @@ type (
 	}
 
 	Agent struct {
-		Token       string `json:"token"    edn:"xt/id"`
-		OrgId       string `json:"-"        edn:"Agent/org"`
-		Name        string `json:"name"     edn:"Agent/name"`
-		Hostname    string `json:"hostname" edn:"Agent/hostname"`
-		CreatedById string `json:"-"        edn:"Agent/created-by"`
+		Token         string `json:"token"          edn:"xt/id"`
+		OrgId         string `json:"-"              edn:"agent/org"`
+		Name          string `json:"name"           edn:"agent/name"`
+		Hostname      string `json:"hostname"       edn:"agent/hostname"`
+		MachineId     string `json:"machine-id"     edn:"agent/machine-id"`
+		KernelVersion string `json:"kernel_version" edn:"agent/kernel-version"`
+		CreatedById   string `json:"-"              edn:"agent/created-by"`
+		Status        Status `json:"status"         edn:"agent/status"`
 	}
+
+	Status string
+)
+
+const (
+	StatusConnected    Status = "CONNECTED"
+	StatusDisconnected Status = "DISCONNECTED"
 )
 
 func (s *Service) FindOne(token string) (*Agent, error) {

@@ -5,7 +5,8 @@ go 1.18
 require (
 	github.com/gin-gonic/gin v1.8.1
 	github.com/google/uuid v1.3.0
-	github.com/runopsio/hoop/domain v0.0.0-00010101000000-000000000000
+	github.com/runopsio/hoop/proto v0.0.0-00010101000000-000000000000
+	google.golang.org/grpc v1.49.0
 	olympos.io/encoding/edn v0.0.0-20201019073823-d3554ca0b0a3
 )
 
@@ -28,9 +29,8 @@ require (
 	golang.org/x/sys v0.0.0-20220907062415-87db552b00fd // indirect
 	golang.org/x/text v0.3.7 // indirect
 	google.golang.org/genproto v0.0.0-20220902135211-223410557253 // indirect
-	google.golang.org/grpc v1.49.0 // indirect
 	google.golang.org/protobuf v1.28.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
 
-replace github.com/runopsio/hoop/domain => ../domain
+replace github.com/runopsio/hoop/proto => ../proto

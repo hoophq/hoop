@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	pb "github.com/runopsio/hoop/domain/proto"
+	pb "github.com/runopsio/hoop/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"log"
@@ -19,8 +19,10 @@ func main() {
 
 	// create stream
 	requestCtx := metadata.AppendToOutgoingContext(context.Background(),
-		"authorization", "x-agt-test-token",
-		"hostname", "localhost")
+		"authorization", "Bearer x-agt-test-token",
+		"hostname", "localhost",
+		"machine_id", "machine_my",
+		"kernel_version", "who knows?")
 
 	client := pb.NewTransportClient(conn)
 	stream, err := client.Connect(requestCtx)

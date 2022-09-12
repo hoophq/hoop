@@ -19,14 +19,14 @@ func (s *Storage) Persist(context *user.Context, c *Connection) (int64, error) {
 	secretId := uuid.New().String()
 
 	conn := Xtdb{
-		Id:          c.Id,
-		OrgId:       context.Org.Id,
-		Name:        c.Name,
-		Command:     c.Command,
-		Type:        c.Type,
-		Provider:    c.Provider,
-		SecretId:    secretId,
-		CreatedById: context.User.Id,
+		Id:             c.Id,
+		OrgId:          context.Org.Id,
+		Name:           c.Name,
+		Command:        c.Command,
+		Type:           c.Type,
+		SecretProvider: c.SecretProvider,
+		SecretId:       secretId,
+		CreatedById:    context.User.Id,
 	}
 
 	connectionPayload := st.EntityToMap(&conn)
@@ -88,11 +88,11 @@ func (s *Storage) FindOne(context *user.Context, name string) (*Connection, erro
 
 	return &Connection{
 		BaseConnection: BaseConnection{
-			Id:       conn.Id,
-			Name:     conn.Name,
-			Command:  conn.Command,
-			Type:     conn.Type,
-			Provider: conn.Provider,
+			Id:             conn.Id,
+			Name:           conn.Name,
+			Command:        conn.Command,
+			Type:           conn.Type,
+			SecretProvider: conn.SecretProvider,
 		},
 		Secret: secret,
 	}, nil

@@ -2,7 +2,6 @@ package api
 
 import (
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/user"
@@ -17,8 +16,8 @@ type (
 )
 
 func (api *Api) CreateTrialEntities() error {
-	orgId := uuid.New().String()
-	userId := uuid.New().String()
+	orgId := "test-org"
+	userId := "test-user"
 
 	org := user.Org{
 		Id:   orgId,

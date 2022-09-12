@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	pb "github.com/runopsio/hoop/domain/proto"
+	pb "github.com/runopsio/hoop/proto"
 	"log"
 )
 

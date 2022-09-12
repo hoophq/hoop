@@ -14,8 +14,8 @@ type (
 
 func (s *Storage) FindAll(context *user.Context) ([]Agent, error) {
 	var payload = `{:query {
-		:find [(pull ?Agent [*])] 
-		:where [[?Agent :Agent/org "` +
+		:find [(pull ?agent [*])] 
+		:where [[?agent :agent/org "` +
 		context.Org.Id + `"]]}}`
 
 	b, err := s.Query([]byte(payload))

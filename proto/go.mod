@@ -1,6 +1,11 @@
-module github.com/runopsio/hoop/domain
+module github.com/runopsio/hoop/proto
 
 go 1.18
+
+require (
+	google.golang.org/grpc v1.49.0
+	google.golang.org/protobuf v1.28.1
+)
 
 require (
 	github.com/golang/protobuf v1.5.2 // indirect
@@ -8,6 +13,4 @@ require (
 	golang.org/x/sys v0.0.0-20220907062415-87db552b00fd // indirect
 	golang.org/x/text v0.3.7 // indirect
 	google.golang.org/genproto v0.0.0-20220902135211-223410557253 // indirect
-	google.golang.org/grpc v1.49.0 // indirect
-	google.golang.org/protobuf v1.28.1 // indirect
 )
