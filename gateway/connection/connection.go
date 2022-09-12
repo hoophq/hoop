@@ -14,6 +14,7 @@ type (
 		Persist(context *user.Context, c *Connection) (int64, error)
 		FindAll(context *user.Context) ([]BaseConnection, error)
 		FindOne(context *user.Context, name string) (*Connection, error)
+		FindOneById(context *user.Context, id string) (*Connection, error)
 	}
 
 	Xtdb struct {
@@ -61,6 +62,16 @@ func (s *Service) Persist(context *user.Context, c *Connection) (int64, error) {
 	return s.Storage.Persist(context, c)
 }
 
+func (s *Service) Update(context *user.Context, c *Connection) (int64, error) {
+	c.Provider = DBSecretProvider
+
+	return s.Storage.Persist(context, c)
+}
+
 func (s *Service) FindOne(context *user.Context, name string) (*Connection, error) {
 	return s.Storage.FindOne(context, name)
+}
+
+func (s *Service) FindOneById(context *user.Context, id string) (*Connection, error) {
+	return s.Storage.FindOneById(context, id)
 }

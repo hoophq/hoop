@@ -60,6 +60,7 @@ func (api *Api) StartAPI() {
 }
 
 func (api *Api) buildRoutes(route *gin.Engine) {
+	route.PUT("/connections/:id", api.ConnectionHandler.Update)
 	route.POST("/connections", api.ConnectionHandler.Post)
 	route.GET("/connections", api.ConnectionHandler.FindAll)
 	route.GET("/connections/:name", api.ConnectionHandler.FindOne)

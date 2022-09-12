@@ -3,6 +3,7 @@ package connection
 import (
 	"encoding/json"
 	"fmt"
+
 	"github.com/google/uuid"
 	st "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/user"
@@ -93,6 +94,44 @@ func (s *Storage) FindOne(context *user.Context, name string) (*Connection, erro
 			Command:        conn.Command,
 			Type:           conn.Type,
 			SecretProvider: conn.SecretProvider,
+		},
+		Secret: secret,
+	}, nil
+}
+
+func (s *Storage) FindOneById(context *user.Context, id string) (*Connection, error) {
+	var payload = `{:query {
+		:find [(pull ?connection [*])] 
+		:where [[?connection :xt/id "` + id + `"]
+                [?connection :connection/org "` + context.Org.Id + `"]]}}`
+
+	b, err := s.Query([]byte(payload))
+	if err != nil {
+		return nil, err
+	}
+
+	var connections []Xtdb
+	if err := edn.Unmarshal(b, &connections); err != nil {
+		return nil, err
+	}
+
+	if len(connections) == 0 {
+		return nil, nil
+	}
+
+	conn := connections[0]
+	secret, err := s.getSecret(conn.SecretId)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Connection{
+		BaseConnection: BaseConnection{
+			Id:       conn.Id,
+			Name:     conn.Name,
+			Command:  conn.Command,
+			Type:     conn.Type,
+			Provider: conn.Provider,
 		},
 		Secret: secret,
 	}, nil
