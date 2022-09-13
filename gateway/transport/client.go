@@ -2,8 +2,8 @@ package transport
 
 import (
 	"github.com/google/uuid"
-	agent2 "github.com/runopsio/hoop/gateway/agent"
-	client "github.com/runopsio/hoop/gateway/client"
+	"github.com/runopsio/hoop/gateway/agent"
+	"github.com/runopsio/hoop/gateway/client"
 	"github.com/runopsio/hoop/gateway/connection"
 	pb "github.com/runopsio/hoop/proto"
 	"google.golang.org/grpc/codes"
@@ -76,11 +76,11 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		return status.Errorf(codes.NotFound, "connection not found")
 	}
 
-	agent, err := s.AgentService.FindById(conn.AgentId)
+	ag, err := s.AgentService.FindById(conn.AgentId)
 	if err != nil {
 		return status.Errorf(codes.Internal, err.Error())
 	}
-	if agent == nil || agent.Status != agent2.StatusConnected {
+	if ag == nil || ag.Status != agent.StatusConnected {
 		return status.Errorf(codes.FailedPrecondition, "agent is offline")
 	}
 

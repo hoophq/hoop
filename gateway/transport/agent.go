@@ -1,7 +1,7 @@
 package transport
 
 import (
-	agent2 "github.com/runopsio/hoop/gateway/agent"
+	"github.com/runopsio/hoop/gateway/agent"
 	pb "github.com/runopsio/hoop/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -53,17 +53,17 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 	machineId := extractData(md, "machine_id")
 	kernelVersion := extractData(md, "kernel_version")
 
-	agent, err := s.AgentService.FindByToken(token)
-	if err != nil || agent == nil {
+	ag, err := s.AgentService.FindByToken(token)
+	if err != nil || ag == nil {
 		return status.Errorf(codes.Unauthenticated, "invalid authentication")
 	}
 
-	agent.Hostname = hostname
-	agent.MachineId = machineId
-	agent.KernelVersion = kernelVersion
-	agent.Status = agent2.StatusConnected
+	ag.Hostname = hostname
+	ag.MachineId = machineId
+	ag.KernelVersion = kernelVersion
+	ag.Status = agent.StatusConnected
 
-	_, err = s.AgentService.Persist(agent)
+	_, err = s.AgentService.Persist(ag)
 	if err != nil {
 		return status.Errorf(codes.Internal, "internal error")
 	}
@@ -73,13 +73,13 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
 
 	done := make(chan bool)
-	go s.listenAgentMessages(agent, stream, done)
-
+	go s.listenAgentMessages(ag, stream, done)
 	<-done
+
 	return nil
 }
 
-func (s *Server) listenAgentMessages(agent *agent2.Agent, stream pb.Transport_ConnectServer, done chan bool) {
+func (s *Server) listenAgentMessages(ag *agent.Agent, stream pb.Transport_ConnectServer, done chan bool) {
 	ctx := stream.Context()
 
 	// keep alive msg
@@ -105,9 +105,9 @@ func (s *Server) listenAgentMessages(agent *agent2.Agent, stream pb.Transport_Co
 		select {
 		case <-ctx.Done():
 			log.Println("agent disconnected...")
-			ca.unbind(agent.Token)
-			agent.Status = agent2.StatusDisconnected
-			s.AgentService.Persist(agent)
+			ca.unbind(ag.Token)
+			ag.Status = agent.StatusDisconnected
+			s.AgentService.Persist(ag)
 			done <- true
 		default:
 		}
@@ -116,9 +116,9 @@ func (s *Server) listenAgentMessages(agent *agent2.Agent, stream pb.Transport_Co
 		req, err := stream.Recv()
 		if err == io.EOF {
 			log.Println("agent disconnected...")
-			ca.unbind(agent.Token)
-			agent.Status = agent2.StatusDisconnected
-			s.AgentService.Persist(agent)
+			ca.unbind(ag.Token)
+			ag.Status = agent.StatusDisconnected
+			s.AgentService.Persist(ag)
 			done <- true
 		}
 		if err != nil {
