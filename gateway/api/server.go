@@ -18,6 +18,7 @@ type (
 func (api *Api) CreateTrialEntities() error {
 	orgId := "test-org"
 	userId := "test-user"
+	agentId := "test-agent"
 
 	org := user.Org{
 		Id:   orgId,
@@ -32,6 +33,7 @@ func (api *Api) CreateTrialEntities() error {
 	}
 
 	a := agent.Agent{
+		Id:          agentId,
 		Token:       "x-agt-test-token",
 		Name:        "test-agent",
 		OrgId:       orgId,

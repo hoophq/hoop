@@ -31,8 +31,8 @@ func (s *Storage) FindAll(context *user.Context) ([]Agent, error) {
 	return agents, nil
 }
 
-func (s *Storage) FindOne(token string) (*Agent, error) {
-	maybeAgent, err := s.GetEntity(token)
+func (s *Storage) FindById(id string) (*Agent, error) {
+	maybeAgent, err := s.GetEntity(id)
 	if err != nil {
 		return nil, err
 	}
@@ -47,6 +47,28 @@ func (s *Storage) FindOne(token string) (*Agent, error) {
 	}
 
 	return &agent, nil
+}
+
+func (s *Storage) FindByToken(token string) (*Agent, error) {
+	var payload = `{:query {
+		:find [(pull ?agent [*])] 
+		:where [[?agent :agent/token "` + token + `"]]}}`
+
+	b, err := s.Query([]byte(payload))
+	if err != nil {
+		return nil, err
+	}
+
+	var agents []*Agent
+	if err := edn.Unmarshal(b, &agents); err != nil {
+		return nil, err
+	}
+
+	if len(agents) == 0 {
+		return nil, nil
+	}
+
+	return agents[0], nil
 }
 
 func (s *Storage) Persist(agent *Agent) (int64, error) {

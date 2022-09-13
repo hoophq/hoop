@@ -28,6 +28,7 @@ func (s *Handler) Post(c *gin.Context) {
 		return
 	}
 
+	a.Id = uuid.NewString()
 	a.Token = "x-agt-" + uuid.NewString()
 	a.OrgId = context.Org.Id
 

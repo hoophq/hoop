@@ -2,19 +2,14 @@ package main
 
 import (
 	"context"
-	"fmt"
-	pb "github.com/runopsio/hoop/domain/proto"
+	pb "github.com/runopsio/hoop/proto"
 	"google.golang.org/grpc"
-	"io"
+	"google.golang.org/grpc/metadata"
 	"log"
-	"math/rand"
-	"strconv"
-	"time"
 )
 
 func main() {
-	fmt.Println("starting hoop client...")
-	rand.Seed(time.Now().Unix())
+	log.Println("starting hoop agent...")
 
 	// dail server
 	conn, err := grpc.Dial(":9090", grpc.WithInsecure())
@@ -23,66 +18,38 @@ func main() {
 	}
 
 	// create stream
-	client := pb.NewTransportClient(conn)
-	stream, err := client.Connect(context.Background())
+	requestCtx := metadata.AppendToOutgoingContext(context.Background(),
+		"authorization", "Bearer x-hooper-test-token",
+		"hostname", "localhost",
+		"machine_id", "machine_my",
+		"kernel_version", "who knows?",
+		"connection_name", "my-conn")
+
+	c := pb.NewTransportClient(conn)
+	stream, err := c.Connect(requestCtx)
 	if err != nil {
-		log.Fatalf("openn stream error %v", err)
+		log.Fatalf("server rejected the connection: %v", err)
 	}
 
-	var max int32
 	ctx := stream.Context()
 	done := make(chan bool)
+	client := client{
+		stream:      stream,
+		ctx:         ctx,
+		closeSignal: done,
+	}
 
-	// first goroutine sends random increasing numbers to stream
-	// and closes it after 10 iterations
-	go func() {
-		for i := 1; i <= 7; i++ {
-			req := pb.Packet{
-				Component: "client",
-				Type:      strconv.Itoa(i),
-				Spec:      nil,
-				Payload:   nil,
-			}
-			log.Printf("sending request type [%s] and component [%s]", req.Type, req.Component)
-			if err := stream.Send(&req); err != nil {
-				log.Fatalf("can not send %v", err)
-			}
-			time.Sleep(time.Millisecond * 200)
-		}
-		if err := stream.CloseSend(); err != nil {
-			log.Println(err)
-		}
-	}()
+	go client.listen()
 
-	// second goroutine receives data from stream
-	// and saves result in max variable
-	//
-	// if stream is finished it closes done channel
-	go func() {
-		for {
-			resp, err := stream.Recv()
-			if err == io.EOF {
-				close(done)
-				return
-			}
-			if err != nil {
-				log.Fatalf("can not receive %v", err)
-			}
-			log.Printf("receive request type [%s] from component [%s]", resp.Type, resp.Component)
-
-		}
-	}()
-
-	// third goroutine closes done channel
-	// if context is done
+	// if the server closes the connection
 	go func() {
 		<-ctx.Done()
 		if err := ctx.Err(); err != nil {
-			log.Println(err)
+			log.Printf("error message: %s", err.Error())
 		}
 		close(done)
 	}()
 
 	<-done
-	log.Printf("finished with max=%d", max)
+	log.Println("Server terminated connection... exiting...")
 }

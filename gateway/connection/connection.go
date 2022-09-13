@@ -25,6 +25,7 @@ type (
 		SecretProvider SecretProvider `edn:"connection/secret-provider"`
 		SecretId       string         `edn:"connection/secret"`
 		CreatedById    string         `edn:"connection/created-by"`
+		AgentId        string         `edn:"connection/agent"`
 	}
 
 	BaseConnection struct {
@@ -33,6 +34,7 @@ type (
 		Command        []string       `json:"command"  edn:"connection/command" binding:"required"`
 		Type           Type           `json:"type"     edn:"connection/type"    binding:"required"`
 		SecretProvider SecretProvider `json:"provider" edn:"connection/secret-provider"`
+		AgentId        string         `json:"agent_id" edn:"connection/agent"`
 	}
 
 	Connection struct {

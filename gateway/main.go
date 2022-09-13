@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/api"
+	"github.com/runopsio/hoop/gateway/client"
 	"github.com/runopsio/hoop/gateway/connection"
 	xtdb "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/transport"
@@ -19,6 +20,7 @@ func main() {
 	agentService := agent.Service{Storage: &agent.Storage{Storage: s}}
 	connectionService := connection.Service{Storage: &connection.Storage{Storage: s}}
 	userService := user.Service{Storage: &user.Storage{Storage: s}}
+	clientService := client.Service{Storage: &client.Storage{Storage: s}}
 
 	a := &api.Api{
 		AgentHandler:      agent.Handler{Service: &agentService},
@@ -30,6 +32,7 @@ func main() {
 		AgentService:      agentService,
 		ConnectionService: connectionService,
 		UserService:       userService,
+		ClientService:     clientService,
 	}
 
 	err = a.CreateTrialEntities()
