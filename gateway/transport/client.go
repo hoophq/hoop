@@ -4,6 +4,7 @@ import (
 	"github.com/google/uuid"
 	agent2 "github.com/runopsio/hoop/gateway/agent"
 	client "github.com/runopsio/hoop/gateway/client"
+	"github.com/runopsio/hoop/gateway/connection"
 	pb "github.com/runopsio/hoop/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -16,21 +17,24 @@ import (
 
 type (
 	connectedClients struct {
-		clients map[string]pb.Transport_ConnectServer
-		mu      sync.Mutex
+		clients     map[string]pb.Transport_ConnectServer
+		connections map[string]*connection.Connection
+		mu          sync.Mutex
 	}
 )
 
 var cc = connectedClients{
-	clients: make(map[string]pb.Transport_ConnectServer),
-	mu:      sync.Mutex{},
+	clients:     make(map[string]pb.Transport_ConnectServer),
+	connections: make(map[string]*connection.Connection),
+	mu:          sync.Mutex{},
 }
 
-func (cc *connectedClients) bind(client *client.Client, stream pb.Transport_ConnectServer) {
+func (cc *connectedClients) bind(client *client.Client, stream pb.Transport_ConnectServer, connection *connection.Connection) {
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
 
 	cc.clients[client.Id] = stream
+	cc.connections[client.Id] = connection
 }
 
 func (cc *connectedClients) unbind(id string) {
@@ -38,6 +42,14 @@ func (cc *connectedClients) unbind(id string) {
 	defer cc.mu.Unlock()
 
 	delete(cc.clients, id)
+	delete(cc.connections, id)
+}
+
+func (cc *connectedClients) getClientStream(id string) pb.Transport_ConnectServer {
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+
+	return cc.clients[id]
 }
 
 func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string) error {
@@ -56,19 +68,19 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		return status.Errorf(codes.Unauthenticated, "invalid authentication")
 	}
 
-	connection, err := s.ConnectionService.FindOne(context, connectionName)
+	conn, err := s.ConnectionService.FindOne(context, connectionName)
 	if err != nil {
 		return status.Errorf(codes.Internal, err.Error())
 	}
-	if connection == nil {
+	if conn == nil {
 		return status.Errorf(codes.NotFound, "connection not found")
 	}
 
-	agent, err := s.AgentService.FindById(connection.AgentId)
+	agent, err := s.AgentService.FindById(conn.AgentId)
 	if err != nil {
 		return status.Errorf(codes.Internal, err.Error())
 	}
-	if agent == nil || agent.Status == agent2.StatusDisconnected {
+	if agent == nil || agent.Status != agent2.StatusConnected {
 		return status.Errorf(codes.FailedPrecondition, "agent is offline")
 	}
 
@@ -80,20 +92,24 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		MachineId:     machineId,
 		KernelVersion: kernelVersion,
 		Status:        client.StatusConnected,
-		ConnectionId:  connection.Id,
-		AgentId:       connection.AgentId,
+		ConnectionId:  conn.Id,
+		AgentId:       conn.AgentId,
+		Connection:    conn,
 	}
 
 	s.ClientService.Persist(c)
-	cc.bind(c, stream)
+	cc.bind(c, stream, conn)
 
 	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
-	s.listenClientMessages(stream, c)
+
+	done := make(chan bool)
+	go s.listenClientMessages(stream, c, done)
+	<-done
 
 	return nil
 }
 
-func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, c *client.Client) {
+func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, c *client.Client, done chan bool) {
 	ctx := stream.Context()
 
 	// keep alive msg
@@ -122,7 +138,7 @@ func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, c *clie
 			c.Status = client.StatusDisconnected
 			s.ClientService.Persist(c)
 			cc.unbind(c.Id)
-			return
+			done <- true
 		default:
 		}
 
@@ -133,7 +149,7 @@ func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, c *clie
 			c.Status = client.StatusDisconnected
 			s.ClientService.Persist(c)
 			cc.unbind(c.Id)
-			return
+			done <- true
 		}
 		if err != nil {
 			log.Printf("received error %v", err)
@@ -144,19 +160,6 @@ func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, c *clie
 
 		// find original client and send response back
 
-		//resp := pb.Packet{
-		//	Component: "server",
-		//	Type:      req.Type,
-		//	Spec:      make(map[string][]byte),
-		//	Payload:   []byte("payload as bytes"),
-		//}
-		//
-		//go func(stream pb.Transport_ConnectServer) {
-		//	log.Printf("sending response type [%s] and component [%s]", resp.Type, resp.Component)
-		//	if err := stream.Send(&resp); err != nil {
-		//		log.Printf("send error %v", err)
-		//	}
-		//}(stream)
 	}
 }
 

@@ -24,18 +24,25 @@ var ca = connectedAgents{
 	mu:     sync.Mutex{},
 }
 
-func (ca *connectedAgents) bind(token string, stream pb.Transport_ConnectServer) {
+func (ca *connectedAgents) bind(agentId string, stream pb.Transport_ConnectServer) {
 	ca.mu.Lock()
 	defer ca.mu.Unlock()
 
-	ca.agents[token] = stream
+	ca.agents[agentId] = stream
 }
 
-func (ca *connectedAgents) unbind(token string) {
+func (ca *connectedAgents) unbind(agentId string) {
 	ca.mu.Lock()
 	defer ca.mu.Unlock()
 
-	delete(ca.agents, token)
+	delete(ca.agents, agentId)
+}
+
+func (ca *connectedAgents) getAgentStream(id string) pb.Transport_ConnectServer {
+	ca.mu.Lock()
+	defer ca.mu.Unlock()
+
+	return ca.agents[id]
 }
 
 func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string) error {
@@ -64,12 +71,15 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 	ca.bind(token, stream)
 
 	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
-	s.listenAgentMessages(agent, stream)
 
+	done := make(chan bool)
+	go s.listenAgentMessages(agent, stream, done)
+
+	<-done
 	return nil
 }
 
-func (s *Server) listenAgentMessages(agent *agent2.Agent, stream pb.Transport_ConnectServer) {
+func (s *Server) listenAgentMessages(agent *agent2.Agent, stream pb.Transport_ConnectServer, done chan bool) {
 	ctx := stream.Context()
 
 	// keep alive msg
@@ -98,7 +108,7 @@ func (s *Server) listenAgentMessages(agent *agent2.Agent, stream pb.Transport_Co
 			ca.unbind(agent.Token)
 			agent.Status = agent2.StatusDisconnected
 			s.AgentService.Persist(agent)
-			return
+			done <- true
 		default:
 		}
 
@@ -109,7 +119,7 @@ func (s *Server) listenAgentMessages(agent *agent2.Agent, stream pb.Transport_Co
 			ca.unbind(agent.Token)
 			agent.Status = agent2.StatusDisconnected
 			s.AgentService.Persist(agent)
-			return
+			done <- true
 		}
 		if err != nil {
 			log.Printf("received error %v", err)
