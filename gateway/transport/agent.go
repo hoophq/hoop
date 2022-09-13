@@ -8,7 +8,35 @@ import (
 	"google.golang.org/grpc/status"
 	"io"
 	"log"
+	"sync"
+	"time"
 )
+
+type (
+	connectedAgents struct {
+		agents map[string]pb.Transport_ConnectServer
+		mu     sync.Mutex
+	}
+)
+
+var ca = connectedAgents{
+	agents: make(map[string]pb.Transport_ConnectServer),
+	mu:     sync.Mutex{},
+}
+
+func (ca *connectedAgents) bind(token string, stream pb.Transport_ConnectServer) {
+	ca.mu.Lock()
+	defer ca.mu.Unlock()
+
+	ca.agents[token] = stream
+}
+
+func (ca *connectedAgents) unbind(token string) {
+	ca.mu.Lock()
+	defer ca.mu.Unlock()
+
+	delete(ca.agents, token)
+}
 
 func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string) error {
 	ctx := stream.Context()
@@ -18,7 +46,7 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 	machineId := extractData(md, "machine_id")
 	kernelVersion := extractData(md, "kernel_version")
 
-	agent, err := s.AgentService.FindOne(token)
+	agent, err := s.AgentService.FindByToken(token)
 	if err != nil || agent == nil {
 		return status.Errorf(codes.Unauthenticated, "invalid authentication")
 	}
@@ -33,21 +61,44 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 		return status.Errorf(codes.Internal, "internal error")
 	}
 
+	ca.bind(token, stream)
+
 	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
-	return s.listenMessages(agent, stream)
+	s.listenAgentMessages(agent, stream)
+
+	return nil
 }
 
-func (s *Server) listenMessages(agent *agent2.Agent, stream pb.Transport_ConnectServer) error {
+func (s *Server) listenAgentMessages(agent *agent2.Agent, stream pb.Transport_ConnectServer) {
 	ctx := stream.Context()
+
+	// keep alive msg
+	go func() {
+		for {
+			proto := &pb.Packet{
+				Component: pb.PacketGatewayComponent,
+				Type:      pb.PacketKeepAliveType,
+			}
+			log.Println("sending keep alive command")
+			if err := stream.Send(proto); err != nil {
+				if err != nil {
+					log.Printf("failed sending keep alive command, err=%v", err)
+					break
+				}
+			}
+			time.Sleep(time.Second * 10)
+		}
+	}()
 
 	for {
 		log.Println("start of iteration")
 		select {
 		case <-ctx.Done():
 			log.Println("agent disconnected...")
+			ca.unbind(agent.Token)
 			agent.Status = agent2.StatusDisconnected
 			s.AgentService.Persist(agent)
-			return ctx.Err()
+			return
 		default:
 		}
 
@@ -55,9 +106,10 @@ func (s *Server) listenMessages(agent *agent2.Agent, stream pb.Transport_Connect
 		req, err := stream.Recv()
 		if err == io.EOF {
 			log.Println("agent disconnected...")
+			ca.unbind(agent.Token)
 			agent.Status = agent2.StatusDisconnected
 			s.AgentService.Persist(agent)
-			return nil
+			return
 		}
 		if err != nil {
 			log.Printf("received error %v", err)
@@ -66,28 +118,20 @@ func (s *Server) listenMessages(agent *agent2.Agent, stream pb.Transport_Connect
 
 		log.Printf("receive request type [%s] and component [%s]", req.Type, req.Component)
 
-		// update max and send it to stream
-		resp := pb.Packet{
-			Component: "server",
-			Type:      req.Type,
-			Spec:      make(map[string][]byte),
-			Payload:   []byte("payload as bytes"),
-		}
+		// find original client and send response back
 
-		go func(stream pb.Transport_ConnectServer) {
-			log.Printf("sending response type [%s] and component [%s]", resp.Type, resp.Component)
-			if err := stream.Send(&resp); err != nil {
-				log.Printf("send error %v", err)
-			}
-		}(stream)
+		//resp := pb.Packet{
+		//	Component: "server",
+		//	Type:      req.Type,
+		//	Spec:      make(map[string][]byte),
+		//	Payload:   []byte("payload as bytes"),
+		//}
+		//
+		//go func(stream pb.Transport_ConnectServer) {
+		//	log.Printf("sending response type [%s] and component [%s]", resp.Type, resp.Component)
+		//	if err := stream.Send(&resp); err != nil {
+		//		log.Printf("send error %v", err)
+		//	}
+		//}(stream)
 	}
-}
-
-func extractData(md metadata.MD, metaName string) string {
-	data := md.Get(metaName)
-	if len(data) == 0 {
-		return ""
-	}
-
-	return data[0]
 }

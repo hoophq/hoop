@@ -2,6 +2,7 @@ package transport
 
 import (
 	"github.com/runopsio/hoop/gateway/agent"
+	"github.com/runopsio/hoop/gateway/client"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/user"
 	pb "github.com/runopsio/hoop/proto"
@@ -18,6 +19,7 @@ type (
 	Server struct {
 		pb.UnimplementedTransportServer
 		AgentService      agent.Service
+		ClientService     client.Service
 		ConnectionService connection.Service
 		UserService       user.Service
 	}
@@ -71,7 +73,21 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 		if err != nil {
 			return err
 		}
+	} else {
+		err := s.subscribeClient(stream, token)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
+}
+
+func extractData(md metadata.MD, metaName string) string {
+	data := md.Get(metaName)
+	if len(data) == 0 {
+		return ""
+	}
+
+	return data[0]
 }

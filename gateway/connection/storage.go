@@ -27,6 +27,7 @@ func (s *Storage) Persist(context *user.Context, c *Connection) (int64, error) {
 		SecretProvider: c.SecretProvider,
 		SecretId:       secretId,
 		CreatedById:    context.User.Id,
+		AgentId:        c.AgentId,
 	}
 
 	connectionPayload := st.EntityToMap(&conn)
@@ -93,6 +94,7 @@ func (s *Storage) FindOne(context *user.Context, name string) (*Connection, erro
 			Command:        conn.Command,
 			Type:           conn.Type,
 			SecretProvider: conn.SecretProvider,
+			AgentId:        conn.AgentId,
 		},
 		Secret: secret,
 	}, nil

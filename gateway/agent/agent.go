@@ -10,11 +10,13 @@ type (
 	storage interface {
 		Persist(agent *Agent) (int64, error)
 		FindAll(context *user.Context) ([]Agent, error)
-		FindOne(token string) (*Agent, error)
+		FindById(id string) (*Agent, error)
+		FindByToken(token string) (*Agent, error)
 	}
 
 	Agent struct {
-		Token         string `json:"token"          edn:"xt/id"`
+		Id            string `json:"id"             edn:"xt/id"`
+		Token         string `json:"token"          edn:"agent/token"`
 		OrgId         string `json:"-"              edn:"agent/org"`
 		Name          string `json:"name"           edn:"agent/name"`
 		Hostname      string `json:"hostname"       edn:"agent/hostname"`
@@ -32,8 +34,12 @@ const (
 	StatusDisconnected Status = "DISCONNECTED"
 )
 
-func (s *Service) FindOne(token string) (*Agent, error) {
-	return s.Storage.FindOne(token)
+func (s *Service) FindById(id string) (*Agent, error) {
+	return s.Storage.FindById(id)
+}
+
+func (s *Service) FindByToken(token string) (*Agent, error) {
+	return s.Storage.FindByToken(token)
 }
 
 func (s *Service) Persist(agent *Agent) (int64, error) {

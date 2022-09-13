@@ -32,7 +32,7 @@ func main() {
 
 	ctx := stream.Context()
 	done := make(chan bool)
-	agent := Agent{
+	agent := agent{
 		stream:      stream,
 		ctx:         ctx,
 		closeSignal: done,

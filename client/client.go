@@ -8,22 +8,22 @@ import (
 )
 
 type (
-	agent struct {
+	client struct {
 		stream      pb.Transport_ConnectClient
 		ctx         context.Context
 		closeSignal chan bool
 	}
 )
 
-func (a *agent) listen() {
+func (c *client) listen() {
 	go func() {
 		for {
 			proto := &pb.Packet{
-				Component: pb.PacketAgentComponent,
+				Component: pb.PacketClientComponent,
 				Type:      pb.PacketKeepAliveType,
 			}
 			log.Println("sending keep alive command")
-			if err := a.stream.Send(proto); err != nil {
+			if err := c.stream.Send(proto); err != nil {
 				if err != nil {
 					break
 				}
@@ -34,10 +34,10 @@ func (a *agent) listen() {
 	}()
 
 	for {
-		msg, err := a.stream.Recv()
+		msg, err := c.stream.Recv()
 		if err != nil {
 			log.Printf("%s", err.Error())
-			close(a.closeSignal)
+			close(c.closeSignal)
 			return
 		}
 		log.Printf("receive request type [%s] from component [%s]", msg.Type, msg.Component)
