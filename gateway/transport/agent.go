@@ -6,10 +6,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"io"
 	"log"
 	"sync"
-	"time"
 )
 
 type (
@@ -24,24 +22,21 @@ var ca = connectedAgents{
 	mu:     sync.Mutex{},
 }
 
-func (ca *connectedAgents) bind(agentId string, stream pb.Transport_ConnectServer) {
+func bindAgent(agentId string, stream pb.Transport_ConnectServer) {
 	ca.mu.Lock()
 	defer ca.mu.Unlock()
 
 	ca.agents[agentId] = stream
 }
 
-func (ca *connectedAgents) unbind(agentId string) {
+func unbindAgent(agentId string) {
 	ca.mu.Lock()
 	defer ca.mu.Unlock()
 
 	delete(ca.agents, agentId)
 }
 
-func (ca *connectedAgents) getAgentStream(id string) pb.Transport_ConnectServer {
-	ca.mu.Lock()
-	defer ca.mu.Unlock()
-
+func getAgentStream(id string) pb.Transport_ConnectServer {
 	return ca.agents[id]
 }
 
@@ -68,80 +63,62 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 		return status.Errorf(codes.Internal, "internal error")
 	}
 
-	ca.bind(token, stream)
+	bindAgent(ag.Id, stream)
 
 	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
 
-	done := make(chan bool)
-	go s.listenAgentMessages(ag, stream, done)
-	<-done
+	go s.startKeepAlive(stream)
+	s.listenAgentMessages(ag, stream)
 
 	return nil
 }
 
-func (s *Server) listenAgentMessages(ag *agent.Agent, stream pb.Transport_ConnectServer, done chan bool) {
+func (s *Server) listenAgentMessages(ag *agent.Agent, stream pb.Transport_ConnectServer) {
 	ctx := stream.Context()
 
-	// keep alive msg
-	go func() {
-		for {
-			proto := &pb.Packet{
-				Component: pb.PacketGatewayComponent,
-				Type:      pb.PacketKeepAliveType,
-			}
-			log.Println("sending keep alive command")
-			if err := stream.Send(proto); err != nil {
-				if err != nil {
-					log.Printf("failed sending keep alive command, err=%v", err)
-					break
-				}
-			}
-			time.Sleep(time.Second * 10)
-		}
-	}()
-
 	for {
-		log.Println("start of iteration")
 		select {
 		case <-ctx.Done():
-			log.Println("agent disconnected...")
-			ca.unbind(ag.Token)
-			ag.Status = agent.StatusDisconnected
-			s.AgentService.Persist(ag)
-			done <- true
+			s.disconnectAgent(ag)
+			return
 		default:
 		}
 
 		// receive data from stream
-		req, err := stream.Recv()
-		if err == io.EOF {
-			log.Println("agent disconnected...")
-			ca.unbind(ag.Token)
-			ag.Status = agent.StatusDisconnected
-			s.AgentService.Persist(ag)
-			done <- true
-		}
+		reqPacket, err := stream.Recv()
 		if err != nil {
-			log.Printf("received error %v", err)
-			continue
+			log.Printf("received error from agent: %v", err)
+			s.disconnectAgent(ag)
+			return
 		}
 
-		log.Printf("receive request type [%s] and component [%s]", req.Type, req.Component)
-
-		// find original client and send response back
-
-		//resp := pb.Packet{
-		//	Component: "server",
-		//	Type:      req.Type,
-		//	Spec:      make(map[string][]byte),
-		//	Payload:   []byte("payload as bytes"),
-		//}
-		//
-		//go func(stream pb.Transport_ConnectServer) {
-		//	log.Printf("sending response type [%s] and component [%s]", resp.Type, resp.Component)
-		//	if err := stream.Send(&resp); err != nil {
-		//		log.Printf("send error %v", err)
-		//	}
-		//}(stream)
+		go s.processAgentMsg(reqPacket)
 	}
+}
+
+func (s *Server) processAgentMsg(packet *pb.Packet) {
+	log.Printf("receive request type [%s] and component [%s]", packet.Type, packet.Component)
+
+	// find original client and send response back
+
+	//resp := pb.Packet{
+	//	Component: "server",
+	//	Type:      req.Type,
+	//	Spec:      make(map[string][]byte),
+	//	Payload:   []byte("payload as bytes"),
+	//}
+	//
+	//go func(stream pb.Transport_ConnectServer) {
+	//	log.Printf("sending response type [%s] and component [%s]", resp.Type, resp.Component)
+	//	if err := stream.Send(&resp); err != nil {
+	//		log.Printf("send error %v", err)
+	//	}
+	//}(stream)
+}
+
+func (s *Server) disconnectAgent(ag *agent.Agent) {
+	unbindAgent(ag.Token)
+	ag.Status = agent.StatusDisconnected
+	s.AgentService.Persist(ag)
+	log.Println("agent disconnected...")
 }

@@ -1,7 +1,6 @@
 package client
 
 import (
-	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
@@ -25,7 +24,6 @@ type (
 		Status        Status `json:"status"         edn:"client/status"`
 		ConnectionId  string `json:"-"              edn:"client/connection"`
 		AgentId       string `json:"-"              edn:"client/agent"`
-		Connection    *connection.Connection
 	}
 
 	Status string

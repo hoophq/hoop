@@ -9,10 +9,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"io"
 	"log"
 	"sync"
-	"time"
 )
 
 type (
@@ -29,7 +27,7 @@ var cc = connectedClients{
 	mu:          sync.Mutex{},
 }
 
-func (cc *connectedClients) bind(client *client.Client, stream pb.Transport_ConnectServer, connection *connection.Connection) {
+func bindClient(client *client.Client, stream pb.Transport_ConnectServer, connection *connection.Connection) {
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
 
@@ -37,7 +35,7 @@ func (cc *connectedClients) bind(client *client.Client, stream pb.Transport_Conn
 	cc.connections[client.Id] = connection
 }
 
-func (cc *connectedClients) unbind(id string) {
+func unbindClient(id string) {
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
 
@@ -45,7 +43,7 @@ func (cc *connectedClients) unbind(id string) {
 	delete(cc.connections, id)
 }
 
-func (cc *connectedClients) getClientStream(id string) pb.Transport_ConnectServer {
+func getClientStream(id string) pb.Transport_ConnectServer {
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
 
@@ -94,73 +92,68 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		Status:        client.StatusConnected,
 		ConnectionId:  conn.Id,
 		AgentId:       conn.AgentId,
-		Connection:    conn,
 	}
 
 	s.ClientService.Persist(c)
-	cc.bind(c, stream, conn)
+	bindClient(c, stream, conn)
 
 	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
 
-	done := make(chan bool)
-	go s.listenClientMessages(stream, c, done)
-	<-done
+	go s.startKeepAlive(stream)
+	s.listenClientMessages(stream, c)
 
 	return nil
 }
 
-func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, c *client.Client, done chan bool) {
+func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, c *client.Client) {
 	ctx := stream.Context()
 
-	// keep alive msg
-	go func() {
-		for {
-			proto := &pb.Packet{
-				Component: pb.PacketGatewayComponent,
-				Type:      pb.PacketKeepAliveType,
-			}
-			log.Println("sending keep alive command")
-			if err := stream.Send(proto); err != nil {
-				if err != nil {
-					log.Printf("failed sending keep alive command, err=%v", err)
-					break
-				}
-			}
-			time.Sleep(time.Second * 10)
-		}
-	}()
-
 	for {
-		log.Println("start of iteration")
 		select {
 		case <-ctx.Done():
-			log.Println("client disconnected...")
-			c.Status = client.StatusDisconnected
-			s.ClientService.Persist(c)
-			cc.unbind(c.Id)
-			done <- true
+			s.disconnectClient(c)
+			return
 		default:
 		}
 
 		// receive data from stream
-		req, err := stream.Recv()
-		if err == io.EOF {
-			log.Println("client disconnected...")
-			c.Status = client.StatusDisconnected
-			s.ClientService.Persist(c)
-			cc.unbind(c.Id)
-			done <- true
-		}
+		reqPacket, err := stream.Recv()
 		if err != nil {
-			log.Printf("received error %v", err)
-			continue
+			log.Printf("received error from client: %v", err)
+			s.disconnectClient(c)
+			return
 		}
 
-		log.Printf("receive request type [%s] and component [%s]", req.Type, req.Component)
-
-		// find original client and send response back
-
+		go s.processClientMsg(reqPacket)
 	}
+}
+
+func (s *Server) processClientMsg(packet *pb.Packet) {
+	log.Printf("receive request type [%s] and component [%s]", packet.Type, packet.Component)
+
+	// check agent still online
+	// find original client and send response back
+
+	//resp := pb.Packet{
+	//	Component: "server",
+	//	Type:      req.Type,
+	//	Spec:      make(map[string][]byte),
+	//	Payload:   []byte("payload as bytes"),
+	//}
+	//
+	//go func(stream pb.Transport_ConnectServer) {
+	//	log.Printf("sending response type [%s] and component [%s]", resp.Type, resp.Component)
+	//	if err := stream.Send(&resp); err != nil {
+	//		log.Printf("send error %v", err)
+	//	}
+	//}(stream)
+}
+
+func (s *Server) disconnectClient(c *client.Client) {
+	unbindClient(c.Id)
+	c.Status = client.StatusDisconnected
+	s.ClientService.Persist(c)
+	log.Println("client disconnected...")
 }
 
 func (s *Server) exchangeUserToken(token string) (string, error) {
