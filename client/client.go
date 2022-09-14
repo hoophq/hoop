@@ -15,23 +15,22 @@ type (
 	}
 )
 
+func (c *client) processResponse(packet *pb.Packet) {
+	log.Printf("receive response type [%s] from component [%s] and payload [%s]",
+		packet.Type, packet.Component, string(packet.Payload))
+
+	switch t := packet.Type; t {
+
+	case pb.PacketKeepAliveType:
+		return
+
+	case pb.PacketDataStreamType:
+		log.Println("show outcome to final user...")
+	}
+}
+
 func (c *client) listen() {
-	go func() {
-		for {
-			proto := &pb.Packet{
-				Component: pb.PacketClientComponent,
-				Type:      pb.PacketKeepAliveType,
-			}
-			log.Println("sending keep alive command")
-			if err := c.stream.Send(proto); err != nil {
-				if err != nil {
-					break
-				}
-				log.Printf("failed sending keep alive command, err=%v", err)
-			}
-			time.Sleep(time.Second * 10)
-		}
-	}()
+	go c.startKeepAlive()
 
 	for {
 		msg, err := c.stream.Recv()
@@ -45,16 +44,19 @@ func (c *client) listen() {
 	}
 }
 
-func (c *client) processResponse(packet *pb.Packet) {
-	log.Printf("receive response type [%s] from component [%s] and payload [%s]",
-		packet.Type, packet.Component, string(packet.Payload))
-
-	switch t := packet.Type; t {
-
-	case pb.PacketKeepAliveType:
-		return
-
-	case pb.PacketDataStreamType:
-		log.Println("show here the outcome to the final user...")
+func (c *client) startKeepAlive() {
+	for {
+		proto := &pb.Packet{
+			Component: pb.PacketClientComponent,
+			Type:      pb.PacketKeepAliveType,
+		}
+		log.Println("sending keep alive command")
+		if err := c.stream.Send(proto); err != nil {
+			if err != nil {
+				log.Printf("failed sending keep alive command, err=%v", err)
+				break
+			}
+		}
+		time.Sleep(pb.DefaultKeepAliveSeconds)
 	}
 }

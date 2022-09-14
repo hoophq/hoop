@@ -1,5 +1,7 @@
 package proto
 
+import "time"
+
 const (
 	PacketGatewayComponent string = "gateway"
 	PacketAgentComponent   string = "agent"
@@ -7,4 +9,6 @@ const (
 
 	PacketKeepAliveType  string = "KeepAlive"
 	PacketDataStreamType string = "DataStream"
+
+	DefaultKeepAliveSeconds time.Duration = 10 * time.Second
 )
