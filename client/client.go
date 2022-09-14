@@ -40,6 +40,21 @@ func (c *client) listen() {
 			close(c.closeSignal)
 			return
 		}
-		log.Printf("receive request type [%s] from component [%s]", msg.Type, msg.Component)
+
+		go c.processResponse(msg)
+	}
+}
+
+func (c *client) processResponse(packet *pb.Packet) {
+	log.Printf("receive response type [%s] from component [%s] and payload [%s]",
+		packet.Type, packet.Component, string(packet.Payload))
+
+	switch t := packet.Type; t {
+
+	case pb.PacketKeepAliveType:
+		return
+
+	case pb.PacketDataStreamType:
+		log.Println("show here the outcome to the final user...")
 	}
 }

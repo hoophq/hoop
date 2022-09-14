@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	pb "github.com/runopsio/hoop/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -49,6 +50,15 @@ func main() {
 		}
 		close(done)
 	}()
+
+	for i := 0; i < 3; i++ {
+		stream.Send(&pb.Packet{
+			Component: pb.PacketClientComponent,
+			Type:      pb.PacketDataStreamType,
+			Spec:      nil,
+			Payload:   []byte(fmt.Sprintf("please process my request id [%d]", i)),
+		})
+	}
 
 	<-done
 	log.Println("Server terminated connection... exiting...")
