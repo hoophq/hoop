@@ -13,6 +13,7 @@ import (
 	"log"
 	"net"
 	"strings"
+	"time"
 )
 
 type (
@@ -81,6 +82,23 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 	}
 
 	return nil
+}
+
+func (s *Server) startKeepAlive(stream pb.Transport_ConnectServer) {
+	for {
+		proto := &pb.Packet{
+			Component: pb.PacketGatewayComponent,
+			Type:      pb.PacketKeepAliveType,
+		}
+		log.Println("sending keep alive command")
+		if err := stream.Send(proto); err != nil {
+			if err != nil {
+				log.Printf("failed sending keep alive command, err=%v", err)
+				break
+			}
+		}
+		time.Sleep(time.Second * 10)
+	}
 }
 
 func extractData(md metadata.MD, metaName string) string {

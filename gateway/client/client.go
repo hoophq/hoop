@@ -1,6 +1,8 @@
 package client
 
-import "github.com/runopsio/hoop/gateway/user"
+import (
+	"github.com/runopsio/hoop/gateway/user"
+)
 
 type (
 	Service struct {
