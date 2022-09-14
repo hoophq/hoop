@@ -97,23 +97,23 @@ func (s *Server) listenAgentMessages(ag *agent.Agent, stream pb.Transport_Connec
 }
 
 func (s *Server) processAgentMsg(packet *pb.Packet) {
-	log.Printf("receive request type [%s] and component [%s]", packet.Type, packet.Component)
+	clientId := string(packet.Spec["client_id"])
+	log.Printf("received agent msg type [%s] and component [%s] and client_id [%s]", packet.Type, packet.Component, clientId)
 
-	// find original client and send response back
+	switch t := packet.Type; t {
 
-	//resp := pb.Packet{
-	//	Component: "server",
-	//	Type:      req.Type,
-	//	Spec:      make(map[string][]byte),
-	//	Payload:   []byte("payload as bytes"),
-	//}
-	//
-	//go func(stream pb.Transport_ConnectServer) {
-	//	log.Printf("sending response type [%s] and component [%s]", resp.Type, resp.Component)
-	//	if err := stream.Send(&resp); err != nil {
-	//		log.Printf("send error %v", err)
-	//	}
-	//}(stream)
+	case pb.PacketKeepAliveType:
+		return
+
+	case pb.PacketDataStreamType:
+		cliStream := getClientStream(clientId)
+		if cliStream == nil {
+			return
+		}
+		if err := cliStream.Send(packet); err != nil {
+			log.Printf("send error %v", err)
+		}
+	}
 }
 
 func (s *Server) disconnectAgent(ag *agent.Agent) {

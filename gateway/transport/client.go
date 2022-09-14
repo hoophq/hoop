@@ -44,10 +44,11 @@ func unbindClient(id string) {
 }
 
 func getClientStream(id string) pb.Transport_ConnectServer {
-	cc.mu.Lock()
-	defer cc.mu.Unlock()
-
 	return cc.clients[id]
+}
+
+func getClientConnection(id string) *connection.Connection {
+	return cc.connections[id]
 }
 
 func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string) error {
@@ -124,29 +125,43 @@ func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, c *clie
 			return
 		}
 
-		go s.processClientMsg(reqPacket)
+		if reqPacket.Spec == nil {
+			reqPacket.Spec = make(map[string][]byte)
+		}
+		reqPacket.Spec["client_id"] = []byte(c.Id)
+
+		conn := getClientConnection(c.Id)
+		if conn == nil {
+			log.Printf("connection not found for client_id [%s]", c.Id)
+			s.disconnectClient(c)
+			return
+		}
+
+		agStream := getAgentStream(conn.AgentId)
+		if agStream == nil {
+			log.Printf("agent not found for client_id [%s]", c.Id)
+			s.disconnectClient(c)
+			return
+		}
+
+		go s.processClientMsg(reqPacket, agStream)
 	}
 }
 
-func (s *Server) processClientMsg(packet *pb.Packet) {
-	log.Printf("receive request type [%s] and component [%s]", packet.Type, packet.Component)
+func (s *Server) processClientMsg(packet *pb.Packet, agStream pb.Transport_ConnectServer) {
+	clientId := string(packet.Spec["client_id"])
+	log.Printf("receive client msg type [%s] and component [%s] and client_id [%s]", packet.Type, packet.Component, clientId)
 
-	// check agent still online
-	// find original client and send response back
+	switch t := packet.Type; t {
 
-	//resp := pb.Packet{
-	//	Component: "server",
-	//	Type:      req.Type,
-	//	Spec:      make(map[string][]byte),
-	//	Payload:   []byte("payload as bytes"),
-	//}
-	//
-	//go func(stream pb.Transport_ConnectServer) {
-	//	log.Printf("sending response type [%s] and component [%s]", resp.Type, resp.Component)
-	//	if err := stream.Send(&resp); err != nil {
-	//		log.Printf("send error %v", err)
-	//	}
-	//}(stream)
+	case pb.PacketKeepAliveType:
+		return
+
+	case pb.PacketDataStreamType:
+		if err := agStream.Send(packet); err != nil {
+			log.Printf("send error %v", err)
+		}
+	}
 }
 
 func (s *Server) disconnectClient(c *client.Client) {

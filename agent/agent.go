@@ -40,6 +40,26 @@ func (a *agent) listen() {
 			close(a.closeSignal)
 			return
 		}
-		log.Printf("receive request type [%s] from component [%s]", msg.Type, msg.Component)
+
+		go a.processRequest(msg)
+	}
+}
+
+func (a *agent) processRequest(packet *pb.Packet) {
+	log.Printf("receive request type [%s] from component [%s] and client_id [%s] and payload [%s]",
+		packet.Type, packet.Component, packet.Spec["client_id"], string(packet.Payload))
+
+	switch t := packet.Type; t {
+
+	case pb.PacketKeepAliveType:
+		return
+
+	case pb.PacketDataStreamType:
+		packet.Payload = []byte("here is my response")
+		packet.Component = pb.PacketAgentComponent
+
+		if err := a.stream.Send(packet); err != nil {
+			log.Printf("send error %v", err)
+		}
 	}
 }

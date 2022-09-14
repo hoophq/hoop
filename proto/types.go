@@ -5,5 +5,6 @@ const (
 	PacketAgentComponent   string = "agent"
 	PacketClientComponent  string = "client"
 
-	PacketKeepAliveType string = "KeepAlive"
+	PacketKeepAliveType  string = "KeepAlive"
+	PacketDataStreamType string = "DataStream"
 )
