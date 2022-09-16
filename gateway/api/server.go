@@ -15,6 +15,26 @@ type (
 	}
 )
 
+func (api *Api) StartAPI() {
+	route := gin.Default()
+	route.Use(api.Authenticate, CORSMiddleware())
+
+	api.buildRoutes(route)
+
+	if err := route.Run(); err != nil {
+		panic("Failed to start HTTP server")
+	}
+}
+
+func (api *Api) buildRoutes(route *gin.Engine) {
+	route.POST("/connections", api.ConnectionHandler.Post)
+	route.GET("/connections", api.ConnectionHandler.FindAll)
+	route.GET("/connections/:name", api.ConnectionHandler.FindOne)
+
+	route.POST("/agents", api.AgentHandler.Post)
+	route.GET("/agents", api.AgentHandler.FindAll)
+}
+
 func (api *Api) CreateTrialEntities() error {
 	orgId := "test-org"
 	userId := "test-user"
@@ -48,24 +68,4 @@ func (api *Api) CreateTrialEntities() error {
 	}
 
 	return nil
-}
-
-func (api *Api) StartAPI() {
-	route := gin.Default()
-	route.Use(api.Authenticate, CORSMiddleware())
-
-	api.buildRoutes(route)
-
-	if err := route.Run(); err != nil {
-		panic("Failed to start HTTP server")
-	}
-}
-
-func (api *Api) buildRoutes(route *gin.Engine) {
-	route.POST("/connections", api.ConnectionHandler.Post)
-	route.GET("/connections", api.ConnectionHandler.FindAll)
-	route.GET("/connections/:name", api.ConnectionHandler.FindOne)
-
-	route.POST("/agents", api.AgentHandler.Post)
-	route.GET("/agents", api.AgentHandler.FindAll)
 }

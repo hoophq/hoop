@@ -86,6 +86,7 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 
 func (s *Server) startKeepAlive(stream pb.Transport_ConnectServer) {
 	for {
+		time.Sleep(pb.DefaultKeepAlive)
 		proto := &pb.Packet{
 			Component: pb.PacketGatewayComponent,
 			Type:      pb.PacketKeepAliveType,
@@ -97,7 +98,6 @@ func (s *Server) startKeepAlive(stream pb.Transport_ConnectServer) {
 				break
 			}
 		}
-		time.Sleep(time.Second * 10)
 	}
 }
 

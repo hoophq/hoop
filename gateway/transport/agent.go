@@ -108,8 +108,10 @@ func (s *Server) processAgentMsg(packet *pb.Packet) {
 	case pb.PacketDataStreamType:
 		cliStream := getClientStream(clientId)
 		if cliStream == nil {
+			log.Println("Client stream not available, dropping msg...")
 			return
 		}
+
 		if err := cliStream.Send(packet); err != nil {
 			log.Printf("send error %v", err)
 		}
