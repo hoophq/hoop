@@ -33,9 +33,6 @@ func (a *agent) processRequest(packet *pb.Packet) {
 		packet.Payload = []byte(strings.ToUpper(string(packet.Payload)))
 		packet.Component = pb.PacketAgentComponent
 
-		//payload := string(packet.Payload)
-		//exec.Command(payload[0], payload[1:])
-
 		if err := a.stream.Send(packet); err != nil {
 			log.Printf("send error %v", err)
 		}

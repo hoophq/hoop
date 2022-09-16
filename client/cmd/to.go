@@ -1,7 +1,3 @@
-/*
-Copyright © 2022 NAME HERE <EMAIL ADDRESS>
-
-*/
 package cmd
 
 import (
@@ -24,13 +20,14 @@ var toCmd = &cobra.Command{
 
 If the connection is valid, and there is an started agent 
 associated with it, you will connect if authenticated.`,
+
 	Run: func(cmd *cobra.Command, args []string) {
 		loader := spinner.New(spinner.CharSets[78], 70*time.Millisecond)
 		loader.Color("yellow")
 		loader.Start()
 		loader.Suffix = " connecting to gateway..."
 
-		time.Sleep(time.Second * 2)
+		time.Sleep(time.Second * 1)
 		client, err := grpc.ConnectGrpc(args[0])
 		if err != nil {
 			loader.Stop()
@@ -40,10 +37,9 @@ associated with it, you will connect if authenticated.`,
 		loader.Stop()
 
 		go listen(client)
+		go client.WaitCloseSignal()
 		go client.StartKeepAlive()
 		//go sendDemoMessages(client) // remove later
-
-		loader.Color("green")
 
 		reader := bufio.NewReader(os.Stdin)
 		fmt.Print("> ")
