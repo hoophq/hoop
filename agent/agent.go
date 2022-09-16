@@ -69,6 +69,6 @@ func (a *agent) startKeepAlive() {
 				break
 			}
 		}
-		time.Sleep(pb.DefaultKeepAliveSeconds)
+		time.Sleep(pb.DefaultKeepAlive)
 	}
 }

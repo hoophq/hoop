@@ -10,5 +10,5 @@ const (
 	PacketKeepAliveType  string = "KeepAlive"
 	PacketDataStreamType string = "DataStream"
 
-	DefaultKeepAliveSeconds time.Duration = 10 * time.Second
+	DefaultKeepAlive time.Duration = 10 * time.Second
 )

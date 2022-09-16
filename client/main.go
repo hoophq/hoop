@@ -10,12 +10,33 @@ import (
 )
 
 func main() {
-	log.Println("starting hoop agent...")
+	log.Println("starting hoop client...")
 
-	// dail server
+	done := make(chan bool)
+
+	client, err := connectGrpc()
+	if err != nil {
+		log.Printf("exiting...error connecting with server  %v", err)
+		close(done)
+		return
+	}
+
+	client.closeSignal = done
+
+	go waitCloseSignal(client)
+	go client.listen()
+
+	go sendDemoMessages(client) // remove later
+
+	<-done
+	log.Println("Server terminated connection... exiting...")
+}
+
+func connectGrpc() (*client, error) {
+	// dial server
 	conn, err := grpc.Dial(":9090", grpc.WithInsecure())
 	if err != nil {
-		log.Fatalf("can not connect with server %v", err)
+		return nil, err
 	}
 
 	// create stream
@@ -29,37 +50,33 @@ func main() {
 	c := pb.NewTransportClient(conn)
 	stream, err := c.Connect(requestCtx)
 	if err != nil {
-		log.Fatalf("server rejected the connection: %v", err)
+		return nil, err
 	}
 
 	ctx := stream.Context()
-	done := make(chan bool)
 	client := client{
-		stream:      stream,
-		ctx:         ctx,
-		closeSignal: done,
+		stream: stream,
+		ctx:    ctx,
 	}
 
-	go client.listen()
+	return &client, nil
+}
 
-	// if the server closes the connection
-	go func() {
-		<-ctx.Done()
-		if err := ctx.Err(); err != nil {
-			log.Printf("error message: %s", err.Error())
-		}
-		close(done)
-	}()
+func waitCloseSignal(client *client) {
+	<-client.ctx.Done()
+	if err := client.ctx.Err(); err != nil {
+		log.Printf("error message: %s", err.Error())
+	}
+	close(client.closeSignal)
+}
 
+func sendDemoMessages(client *client) {
 	for i := 0; i < 3; i++ {
-		stream.Send(&pb.Packet{
+		client.stream.Send(&pb.Packet{
 			Component: pb.PacketClientComponent,
 			Type:      pb.PacketDataStreamType,
 			Spec:      nil,
 			Payload:   []byte(fmt.Sprintf("please process my request id [%d]", i)),
 		})
 	}
-
-	<-done
-	log.Println("Server terminated connection... exiting...")
 }

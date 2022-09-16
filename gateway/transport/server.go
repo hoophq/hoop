@@ -97,7 +97,7 @@ func (s *Server) startKeepAlive(stream pb.Transport_ConnectServer) {
 				break
 			}
 		}
-		time.Sleep(pb.DefaultKeepAliveSeconds)
+		time.Sleep(pb.DefaultKeepAlive)
 	}
 }
 

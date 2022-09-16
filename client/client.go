@@ -57,6 +57,6 @@ func (c *client) startKeepAlive() {
 				break
 			}
 		}
-		time.Sleep(pb.DefaultKeepAliveSeconds)
+		time.Sleep(pb.DefaultKeepAlive)
 	}
 }

@@ -38,17 +38,17 @@ func main() {
 		closeSignal: done,
 	}
 
+	go waitCloseSignal(&agent)
 	go agent.listen()
-
-	// if the server closes the connection
-	go func() {
-		<-ctx.Done()
-		if err := ctx.Err(); err != nil {
-			log.Printf("error message: %s", err.Error())
-		}
-		close(done)
-	}()
 
 	<-done
 	log.Println("Server terminated connection... exiting...")
+}
+
+func waitCloseSignal(agent *agent) {
+	<-agent.ctx.Done()
+	if err := agent.ctx.Err(); err != nil {
+		log.Printf("error message: %s", err.Error())
+	}
+	close(agent.closeSignal)
 }
