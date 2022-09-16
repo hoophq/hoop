@@ -4,6 +4,7 @@ import (
 	"context"
 	pb "github.com/runopsio/hoop/proto"
 	"log"
+	"strings"
 	"time"
 )
 
@@ -29,7 +30,7 @@ func (a *agent) processRequest(packet *pb.Packet) {
 	case pb.PacketDataStreamType:
 		log.Printf("sending response to client_id [%s]", clientId)
 
-		packet.Payload = []byte("here is my response")
+		packet.Payload = []byte(strings.ToUpper(string(packet.Payload)))
 		packet.Component = pb.PacketAgentComponent
 
 		//payload := string(packet.Payload)
@@ -58,6 +59,7 @@ func (a *agent) listen() {
 
 func (a *agent) startKeepAlive() {
 	for {
+		time.Sleep(pb.DefaultKeepAlive)
 		proto := &pb.Packet{
 			Component: pb.PacketAgentComponent,
 			Type:      pb.PacketKeepAliveType,
@@ -69,6 +71,5 @@ func (a *agent) startKeepAlive() {
 				break
 			}
 		}
-		time.Sleep(pb.DefaultKeepAlive)
 	}
 }

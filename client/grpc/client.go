@@ -59,17 +59,16 @@ func (c *Client) WaitCloseSignal() {
 
 func (c *Client) StartKeepAlive() {
 	for {
+		time.Sleep(pb.DefaultKeepAlive)
 		proto := &pb.Packet{
 			Component: pb.PacketClientComponent,
 			Type:      pb.PacketKeepAliveType,
 		}
-		log.Println("sending keep alive command")
 		if err := c.Stream.Send(proto); err != nil {
 			if err != nil {
 				log.Printf("failed sending keep alive command, err=%v", err)
 				break
 			}
 		}
-		time.Sleep(pb.DefaultKeepAlive)
 	}
 }
