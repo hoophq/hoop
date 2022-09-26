@@ -1,6 +1,10 @@
 package transport
 
 import (
+	"log"
+	"net"
+	"strings"
+
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/client"
 	"github.com/runopsio/hoop/gateway/connection"
@@ -10,10 +14,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"log"
-	"net"
-	"strings"
-	"time"
 )
 
 type (
@@ -70,35 +70,9 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 	}
 
 	if origin == agentOrigin {
-		err := s.subscribeAgent(stream, token)
-		if err != nil {
-			return err
-		}
-	} else {
-		err := s.subscribeClient(stream, token)
-		if err != nil {
-			return err
-		}
+		return s.subscribeAgent(stream, token)
 	}
-
-	return nil
-}
-
-func (s *Server) startKeepAlive(stream pb.Transport_ConnectServer) {
-	for {
-		time.Sleep(pb.DefaultKeepAlive)
-		proto := &pb.Packet{
-			Component: pb.PacketGatewayComponent,
-			Type:      pb.PacketKeepAliveType,
-		}
-		log.Println("sending keep alive command")
-		if err := stream.Send(proto); err != nil {
-			if err != nil {
-				log.Printf("failed sending keep alive command, err=%v", err)
-				break
-			}
-		}
-	}
+	return s.subscribeClient(stream, token)
 }
 
 func extractData(md metadata.MD, metaName string) string {

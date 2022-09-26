@@ -1,13 +1,15 @@
 package transport
 
 import (
+	"io"
+	"log"
+	"sync"
+
 	"github.com/runopsio/hoop/gateway/agent"
 	pb "github.com/runopsio/hoop/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"log"
-	"sync"
 )
 
 type (
@@ -67,7 +69,6 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 
 	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
 
-	go s.startKeepAlive(stream)
 	s.listenAgentMessages(ag, stream)
 
 	return nil
@@ -85,37 +86,32 @@ func (s *Server) listenAgentMessages(ag *agent.Agent, stream pb.Transport_Connec
 		}
 
 		// receive data from stream
-		reqPacket, err := stream.Recv()
+		pkt, err := stream.Recv()
 		if err != nil {
+			if err == io.EOF {
+				return
+			}
 			log.Printf("received error from agent: %v", err)
 			s.disconnectAgent(ag)
 			return
 		}
-
-		go s.processAgentMsg(reqPacket)
+		if pb.PacketType(pkt.Type) == pb.PacketKeepAliveType {
+			continue
+		}
+		gwID := string(pkt.Spec[pb.SpecGatewayConnectionID])
+		clientStream := getClientStream(gwID)
+		if clientStream == nil {
+			// TODO: warn!
+			log.Printf("client connection not found for gateway connection id [%s]", gwID)
+			continue
+		}
+		log.Printf("received agent msg type [%s] and gateway connection id [%s]", pkt.Type, gwID)
+		s.processAgentPacket(pkt, clientStream)
 	}
 }
 
-func (s *Server) processAgentMsg(packet *pb.Packet) {
-	clientId := string(packet.Spec["client_id"])
-	log.Printf("received agent msg type [%s] and component [%s] and client_id [%s]", packet.Type, packet.Component, clientId)
-
-	switch t := packet.Type; t {
-
-	case pb.PacketKeepAliveType:
-		return
-
-	case pb.PacketDataStreamType:
-		cliStream := getClientStream(clientId)
-		if cliStream == nil {
-			log.Println("Client stream not available, dropping msg...")
-			return
-		}
-
-		if err := cliStream.Send(packet); err != nil {
-			log.Printf("send error %v", err)
-		}
-	}
+func (s *Server) processAgentPacket(pkt *pb.Packet, clientStream pb.Transport_ConnectServer) {
+	_ = clientStream.Send(pkt)
 }
 
 func (s *Server) disconnectAgent(ag *agent.Agent) {

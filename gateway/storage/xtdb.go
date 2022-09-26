@@ -7,33 +7,34 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"olympos.io/encoding/edn"
 	"os"
 	"reflect"
+
+	"olympos.io/encoding/edn"
 )
 
 const (
-	defaultHost = "http://localhost:3000"
+	defaultAddress = "http://localhost:3000"
 )
 
 type (
 	Storage struct {
-		client http.Client
-		host   string
+		client  http.Client
+		address string
 	}
 )
 
 func (s *Storage) Connect() error {
 	s.client = http.Client{}
-	s.host = os.Getenv("XTDB_HOST")
-	if s.host == "" {
-		s.host = defaultHost
+	s.address = os.Getenv("XTDB_ADDRESS")
+	if s.address == "" {
+		s.address = defaultAddress
 	}
 	return nil
 }
 
 func (s *Storage) PersistEntities(payloads []map[string]interface{}) (int64, error) {
-	url := fmt.Sprintf("%s/_xtdb/submit-tx", s.host)
+	url := fmt.Sprintf("%s/_xtdb/submit-tx", s.address)
 
 	bytePayload, err := buildPersistPayload(payloads)
 	if err != nil {
@@ -66,7 +67,7 @@ func (s *Storage) PersistEntities(payloads []map[string]interface{}) (int64, err
 }
 
 func (s *Storage) GetEntity(xtId string) ([]byte, error) {
-	url := fmt.Sprintf("%s/_xtdb/entity", s.host)
+	url := fmt.Sprintf("%s/_xtdb/entity", s.address)
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -159,7 +160,7 @@ func EntityToMap(obj interface{}) map[string]interface{} {
 }
 
 func (s *Storage) queryRequest(ednQuery []byte, contentType string) ([]byte, error) {
-	url := fmt.Sprintf("%s/_xtdb/query", s.host)
+	url := fmt.Sprintf("%s/_xtdb/query", s.address)
 
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(ednQuery))
 	if err != nil {
