@@ -9,7 +9,6 @@ import (
 	"log"
 	"strings"
 
-	// "github.com/lib/pq/scram"
 	"github.com/lib/pq/scram"
 	"github.com/runopsio/hoop/proto/pg"
 	pgtypes "github.com/runopsio/hoop/proto/pg/types"

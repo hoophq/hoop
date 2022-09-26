@@ -2,7 +2,6 @@ package memory
 
 import (
 	"sync"
-	// "github.com/runopsio/runops-proxy/internal/types"
 )
 
 type Store interface {

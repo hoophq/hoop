@@ -25,7 +25,6 @@ var postgresCmd = &cobra.Command{
 			fmt.Println("hoop postgres <connection>")
 			os.Exit(1)
 		}
-		// return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		loader := spinner.New(spinner.CharSets[78], 70*time.Millisecond)
@@ -41,10 +40,6 @@ var postgresCmd = &cobra.Command{
 		}
 		loader.Stop()
 		log.Fatal(Run(proxyPort, client))
-		// go listen(client)
-		// go client.WaitCloseSignal()
-		// go client.StartKeepAlive()
-		//go sendDemoMessages(client) // remove later
 	},
 }
 
