@@ -88,11 +88,11 @@ func (s *Server) listenAgentMessages(ag *agent.Agent, stream pb.Transport_Connec
 		// receive data from stream
 		pkt, err := stream.Recv()
 		if err != nil {
+			defer s.disconnectAgent(ag)
 			if err == io.EOF {
 				return
 			}
 			log.Printf("received error from agent: %v", err)
-			s.disconnectAgent(ag)
 			return
 		}
 		if pb.PacketType(pkt.Type) == pb.PacketKeepAliveType {
