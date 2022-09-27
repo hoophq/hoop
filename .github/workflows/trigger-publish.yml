@@ -1,0 +1,36 @@
+name: Trigger Client Publish
+
+on:
+  push:
+    tags:
+    - '[0-9]+.[0-9]+.[0-9]+'
+
+jobs:
+  publish:
+    name: Trigger Publish Release
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - uses: actions/setup-go@v3
+        with:
+          go-version: '>=1.18.3'
+
+      - name: Test
+        run: |-
+          go test -v ./...
+
+      - name: Trigger Publish Release
+        uses: benc-uk/workflow-dispatch@v1
+        with:
+          workflow: Publish Release
+          # there must be a workflow dispatch configured
+          # in the targer repository
+          # see: https://docs.github.com/en/actions/managing-workflow-runs/manually-running-a-workflow
+          repo: runopsio/rproxy
+          token: ${{ secrets.GH_PAT }}
+          ref: main
+          inputs: '{}'
