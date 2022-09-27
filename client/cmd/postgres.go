@@ -127,8 +127,6 @@ func (p PG) Serve() error {
 		pgClient, err := lis.Accept()
 		if err != nil {
 			log.Fatalf("listener accept err: %s\n", err)
-			time.Sleep(time.Second * 5)
-			continue
 		}
 		go p.serveConn(pgClient)
 	}
