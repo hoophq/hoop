@@ -2,11 +2,12 @@ package grpc
 
 import (
 	"context"
+	"log"
+	"time"
+
 	pb "github.com/runopsio/hoop/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
-	"log"
-	"time"
 )
 
 type (
@@ -17,7 +18,7 @@ type (
 	}
 )
 
-func ConnectGrpc(connectionName string) (*Client, error) {
+func ConnectGrpc(connectionName string, protocol pb.ProtocolType) (*Client, error) {
 	// dial server
 	conn, err := grpc.Dial(":9090", grpc.WithInsecure())
 	if err != nil {
@@ -30,6 +31,7 @@ func ConnectGrpc(connectionName string) (*Client, error) {
 		"hostname", "localhost",
 		"machine_id", "machine_my",
 		"kernel_version", "who knows?",
+		"protocol", string(protocol),
 		"connection_name", connectionName)
 
 	c := pb.NewTransportClient(conn)
@@ -60,10 +62,7 @@ func (c *Client) WaitCloseSignal() {
 func (c *Client) StartKeepAlive() {
 	for {
 		time.Sleep(pb.DefaultKeepAlive)
-		proto := &pb.Packet{
-			Component: pb.PacketClientComponent,
-			Type:      pb.PacketKeepAliveType,
-		}
+		proto := &pb.Packet{Type: pb.PacketKeepAliveType.String()}
 		if err := c.Stream.Send(proto); err != nil {
 			if err != nil {
 				log.Printf("failed sending keep alive command, err=%v", err)

@@ -1,16 +1,18 @@
 package transport
 
 import (
+	"fmt"
+	"io"
+	"log"
+	"sync"
+
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/client"
 	"github.com/runopsio/hoop/gateway/connection"
 	pb "github.com/runopsio/hoop/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"log"
-	"sync"
 )
 
 type (
@@ -27,12 +29,12 @@ var cc = connectedClients{
 	mu:          sync.Mutex{},
 }
 
-func bindClient(client *client.Client, stream pb.Transport_ConnectServer, connection *connection.Connection) {
+func bindClient(gwID string, stream pb.Transport_ConnectServer, connection *connection.Connection) {
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
 
-	cc.clients[client.Id] = stream
-	cc.connections[client.Id] = connection
+	cc.clients[gwID] = stream
+	cc.connections[gwID] = connection
 }
 
 func unbindClient(id string) {
@@ -60,8 +62,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	kernelVersion := extractData(md, "kernel_version")
 	connectionName := extractData(md, "connection_name")
 
-	email, err := s.exchangeUserToken(token)
-
+	email, _ := s.exchangeUserToken(token)
 	context, err := s.UserService.ContextByEmail(email)
 	if err != nil || context == nil {
 		return status.Errorf(codes.Unauthenticated, "invalid authentication")
@@ -71,20 +72,14 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	if err != nil {
 		return status.Errorf(codes.Internal, err.Error())
 	}
+
 	if conn == nil {
-		return status.Errorf(codes.NotFound, "connection not found")
+		return status.Errorf(codes.NotFound, fmt.Sprintf("connection '%v' not found", connectionName))
 	}
 
-	ag, err := s.AgentService.FindById(conn.AgentId)
-	if err != nil {
-		return status.Errorf(codes.Internal, err.Error())
-	}
-	if ag == nil || ag.Status != agent.StatusConnected {
-		return status.Errorf(codes.FailedPrecondition, "agent is offline")
-	}
-
+	gatewayConnectionID := uuid.NewString()
 	c := &client.Client{
-		Id:            uuid.NewString(),
+		Id:            gatewayConnectionID,
 		OrgId:         context.Org.Id,
 		UserId:        context.User.Id,
 		Hostname:      hostname,
@@ -94,73 +89,81 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		ConnectionId:  conn.Id,
 		AgentId:       conn.AgentId,
 	}
-
 	s.ClientService.Persist(c)
-	bindClient(c, stream, conn)
+	bindClient(gatewayConnectionID, stream, conn)
 
 	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
-
-	go s.startKeepAlive(stream)
-	s.listenClientMessages(stream, c)
-
-	return nil
+	return s.listenClientMessages(stream, c, conn)
 }
 
-func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, c *client.Client) {
+func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, c *client.Client, conn *connection.Connection) error {
 	ctx := stream.Context()
 
 	for {
 		select {
 		case <-ctx.Done():
 			s.disconnectClient(c)
-			return
+			return nil
 		default:
 		}
 
 		// receive data from stream
-		reqPacket, err := stream.Recv()
+		pkt, err := stream.Recv()
 		if err != nil {
+			defer s.disconnectClient(c)
+			if err == io.EOF {
+				return nil
+			}
 			log.Printf("received error from client: %v", err)
-			s.disconnectClient(c)
-			return
+			return err
+		}
+		if pb.PacketType(pkt.Type) == pb.PacketKeepAliveType {
+			continue
 		}
 
-		if reqPacket.Spec == nil {
-			reqPacket.Spec = make(map[string][]byte)
+		if pkt.Spec == nil {
+			pkt.Spec = make(map[string][]byte)
 		}
-		reqPacket.Spec["client_id"] = []byte(c.Id)
+		pkt.Spec[pb.SpecGatewayConnectionID] = []byte(c.Id)
 
-		conn := getClientConnection(c.Id)
-		if conn == nil {
-			log.Printf("connection not found for client_id [%s]", c.Id)
-			s.disconnectClient(c)
-			return
-		}
-
+		// TODO: process router connect
 		agStream := getAgentStream(conn.AgentId)
 		if agStream == nil {
-			log.Printf("agent not found for client_id [%s]", c.Id)
-			s.disconnectClient(c)
-			return
+			log.Printf("agent connection not found for gateway connection id [%s]", c.Id)
+			s.disconnectClient(c) // could we send a disconnect with an error?
+			// TODO: send error back to client
+			return nil
 		}
-
-		go s.processClientMsg(reqPacket, agStream)
+		log.Printf("receive client packet type [%s] and gateway connection id [%s]",
+			pkt.Type, c.Id)
+		s.processClientPacket(pkt, c.Id, conn, agStream)
 	}
 }
 
-func (s *Server) processClientMsg(packet *pb.Packet, agStream pb.Transport_ConnectServer) {
-	clientId := string(packet.Spec["client_id"])
-	log.Printf("receive client msg type [%s] and component [%s] and client_id [%s]", packet.Type, packet.Component, clientId)
-
-	switch t := packet.Type; t {
-
-	case pb.PacketKeepAliveType:
-		return
-
-	case pb.PacketDataStreamType:
-		if err := agStream.Send(packet); err != nil {
-			log.Printf("send error %v", err)
+func (s *Server) processClientPacket(
+	pkt *pb.Packet,
+	gwID string,
+	conn *connection.Connection,
+	agentStream pb.Transport_ConnectServer) {
+	switch pb.PacketType(pkt.Type) {
+	case pb.PacketGatewayConnectType:
+		encEnvVars, err := pb.GobEncodeMap(conn.Secret)
+		if err != nil {
+			// TODO: send error back to client
+			log.Printf("failed encoding secrets/env-var, err=%v", err)
+			return
 		}
+		// TODO: deal with errors
+		_ = agentStream.Send(&pb.Packet{
+			Type: pb.PacketAgentConnectType.String(),
+			Spec: map[string][]byte{
+				pb.SpecGatewayConnectionID: []byte(gwID),
+				pb.SpecAgentEnvVars:        encEnvVars,
+			},
+		})
+	default:
+		// default send to agent everything
+		_ = agentStream.Send(pkt)
 	}
 }
 
