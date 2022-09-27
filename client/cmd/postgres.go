@@ -17,12 +17,13 @@ import (
 )
 
 var postgresCmd = &cobra.Command{
-	Use:          "postgres",
+	Use:          "postgres CONNECTION",
 	Short:        "Connect to a postgres server",
-	SilenceUsage: true,
+	Aliases:      []string{"pg"},
+	SilenceUsage: false,
 	PreRun: func(cmd *cobra.Command, args []string) {
-		if len(args) < 1 {
-			fmt.Println("hoop postgres <connection>")
+		if len(args) != 1 {
+			cmd.Usage()
 			os.Exit(1)
 		}
 	},

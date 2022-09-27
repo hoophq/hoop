@@ -19,10 +19,10 @@ import (
 )
 
 const (
-	EnvVarPGHostKey string = "PG_HOST"
-	EnvVarPGUserKey string = "PG_USER"
-	EnvVarPGPassKey string = "PG_PASS"
-	EnvVarPGPortKey string = "PG_PORT"
+	EnvVarDBHostKey string = "HOST"
+	EnvVarDBUserKey string = "USER"
+	EnvVarDBPassKey string = "PASS"
+	EnvVarDBPortKey string = "PORT"
 )
 
 type (
@@ -76,22 +76,22 @@ func parseEnvVars(envVars map[string]any) (*pgEnv, error) {
 			continue
 		}
 		switch parts[1] {
-		case EnvVarPGHostKey:
+		case EnvVarDBHostKey:
 			env.host, _ = val.(string)
-		case EnvVarPGPortKey:
+		case EnvVarDBPortKey:
 			env.port, _ = val.(string)
 			if env.port == "" {
 				env.port = "5432"
 			}
-		case EnvVarPGUserKey:
+		case EnvVarDBUserKey:
 			env.user, _ = val.(string)
-		case EnvVarPGPassKey:
+		case EnvVarDBPassKey:
 			env.pass, _ = val.(string)
 		}
 	}
 	if env.host == "" || env.pass == "" || env.user == "" {
 		return nil, fmt.Errorf("missing required secrets for postgres connection (%v, %v, %v)",
-			EnvVarPGHostKey, EnvVarPGUserKey, EnvVarPGPassKey)
+			EnvVarDBHostKey, EnvVarDBUserKey, EnvVarDBPassKey)
 	}
 	return env, nil
 }
