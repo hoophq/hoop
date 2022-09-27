@@ -4,7 +4,6 @@ import "time"
 
 const (
 	PacketKeepAliveType       PacketType = "KeepAlive"
-	PacketDataStreamType      PacketType = "DataStream"
 	PacketCloseConnectionType PacketType = "CloseConnection"
 
 	PacketGatewayConnectType    PacketType = "Gateway::Connect"
