@@ -49,7 +49,7 @@ func (api *Api) CreateTrialEntities() error {
 		Id:    userId,
 		Org:   orgId,
 		Name:  "hooper",
-		Email: "tester@hoop.dev",
+		Email: "daniel@runops.io",
 	}
 
 	a := agent.Agent{
