@@ -48,5 +48,5 @@ Requirements:
 - access to dockerhub organization
 
 ```sh
-VERSION=make publish-snapshot
+VERSION=X.X.X make publish-snapshot
 ```
