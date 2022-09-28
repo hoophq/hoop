@@ -2,16 +2,18 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"github.com/runopsio/hoop/agent"
+	"github.com/runopsio/hoop/agent/version"
 	pb "github.com/runopsio/hoop/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
 
 func main() {
-	log.Println("starting hoop agent...")
+	fmt.Println(string(version.JSON()))
 
 	// dail server
 	conn, err := grpc.Dial(":9090", grpc.WithInsecure())

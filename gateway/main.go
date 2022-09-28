@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/api"
 	"github.com/runopsio/hoop/gateway/client"
@@ -8,9 +10,11 @@ import (
 	xtdb "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/transport"
 	"github.com/runopsio/hoop/gateway/user"
+	"github.com/runopsio/hoop/gateway/version"
 )
 
 func main() {
+	fmt.Println(string(version.JSON()))
 	s := &xtdb.Storage{}
 	err := s.Connect()
 	if err != nil {
