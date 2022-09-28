@@ -18,3 +18,4 @@
 # vendor/
 
 dist/
+rootfs/ui
