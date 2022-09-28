@@ -69,9 +69,33 @@ archives:
   #   name: hoop
 dockers:
   - dockerfile: Dockerfile
+    use: buildx
+    goos: linux
+    goarch: arm64
     image_templates:
-    - "runops/hoop:{{ .Tag }}"
-    - "runops/hoop:latest"
+    - "runops/hoop:{{ .Tag }}-arm64v8"
+    - "runops/hoop:latest-arm64v8"
+    build_flag_templates:
+      - "--platform=linux/arm64/v8"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+    extra_files:
+    - rootfs
+  - dockerfile: Dockerfile
+    use: buildx
+    goos: linux
+    goarch: amd64
+    image_templates:
+    - "runops/hoop:{{ .Tag }}-amd64"
+    - "runops/hoop:latest-amd64"
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
     extra_files:
     - rootfs
 # brews:
