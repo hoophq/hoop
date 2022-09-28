@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+
 	"github.com/gin-gonic/gin"
 )
 
