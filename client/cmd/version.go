@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/runopsio/hoop/client/version"
+	"github.com/runopsio/hoop/proto/version"
 	"github.com/spf13/cobra"
 )
 

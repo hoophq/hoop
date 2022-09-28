@@ -10,7 +10,7 @@ import (
 	xtdb "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/transport"
 	"github.com/runopsio/hoop/gateway/user"
-	"github.com/runopsio/hoop/gateway/version"
+	"github.com/runopsio/hoop/proto/version"
 )
 
 func main() {

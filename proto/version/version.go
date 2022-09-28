@@ -19,6 +19,7 @@ type Info struct {
 
 var (
 	version   string
+	appName   string
 	gitCommit = "$Format:%H$"          // sha1 from git, output of $(git rev-parse HEAD)
 	buildDate = "1970-01-01T00:00:00Z" // build date in ISO8601 format, output of $(date -u +'%Y-%m-%dT%H:%M:%SZ')
 )
@@ -33,7 +34,7 @@ func Get() Info {
 		GoVersion: runtime.Version(),
 		Compiler:  runtime.Compiler,
 		Platform:  fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH),
-		App:       "gateway",
+		App:       appName,
 	}
 }
 

@@ -6,8 +6,8 @@ import (
 	"log"
 
 	"github.com/runopsio/hoop/agent"
-	"github.com/runopsio/hoop/agent/version"
 	pb "github.com/runopsio/hoop/proto"
+	"github.com/runopsio/hoop/proto/version"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )

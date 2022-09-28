@@ -13,9 +13,10 @@ builds:
     binary: hoop
     ldflags:
     - -s -w
-    - -X github.com/runopsio/hoop/client/version.version={{ .Version }}
-    - -X github.com/runopsio/hoop/client/version.gitCommit={{ .Commit }}
-    - -X github.com/runopsio/hoop/client/version.buildDate={{ .Date }}
+    - -X github.com/runopsio/hoop/proto/version.version={{ .Version }}
+    - -X github.com/runopsio/hoop/proto/version.gitCommit={{ .Commit }}
+    - -X github.com/runopsio/hoop/proto/version.buildDate={{ .Date }}
+    - -X github.com/runopsio/hoop/proto/version.appName=client
   - id: hoop-agent
     env:
       - CGO_ENABLED=0
@@ -30,9 +31,10 @@ builds:
     binary: hoop-agent
     ldflags:
     - -s -w
-    - -X github.com/runopsio/hoop/agent/version.version={{ .Version }}
-    - -X github.com/runopsio/hoop/agent/version.gitCommit={{ .Commit }}
-    - -X github.com/runopsio/hoop/agent/version.buildDate={{ .Date }}
+    - -X github.com/runopsio/hoop/proto/version.version={{ .Version }}
+    - -X github.com/runopsio/hoop/proto/version.gitCommit={{ .Commit }}
+    - -X github.com/runopsio/hoop/proto/version.buildDate={{ .Date }}
+    - -X github.com/runopsio/hoop/proto/version.appName=agent
   - id: hoop-gateway
     env:
       - CGO_ENABLED=0
@@ -47,9 +49,10 @@ builds:
     binary: hoop-gateway
     ldflags:
     - -s -w
-    - -X github.com/runopsio/hoop/gateway/version.version={{ .Version }}
-    - -X github.com/runopsio/hoop/gateway/version.gitCommit={{ .Commit }}
-    - -X github.com/runopsio/hoop/gateway/version.buildDate={{ .Date }}
+    - -X github.com/runopsio/hoop/proto/version.version={{ .Version }}
+    - -X github.com/runopsio/hoop/proto/version.gitCommit={{ .Commit }}
+    - -X github.com/runopsio/hoop/proto/version.buildDate={{ .Date }}
+    - -X github.com/runopsio/hoop/proto/version.appName=gateway
 archives:
 - replacements:
     darwin: Darwin
