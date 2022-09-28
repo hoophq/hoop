@@ -1,6 +1,11 @@
 package api
 
 import (
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/gin-contrib/static"
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/connection"
@@ -17,16 +22,30 @@ type (
 
 func (api *Api) StartAPI() {
 	route := gin.Default()
-	route.Use(api.Authenticate, CORSMiddleware())
+	// UI
+	staticUiPath := os.Getenv("STATIC_UI_PATH")
+	if staticUiPath == "" {
+		staticUiPath = "/app/ui/public"
+	}
+	route.Use(static.Serve("/", static.LocalFile(staticUiPath, false)))
+	route.NoRoute(func(c *gin.Context) {
+		if !strings.HasPrefix(c.Request.RequestURI, "/api") {
+			c.File(fmt.Sprintf("%s/index.html", staticUiPath))
+			return
+		}
+		CORSMiddleware()(c)
+	})
 
-	api.buildRoutes(route)
+	rg := route.Group("/api")
+	rg.Use(api.Authenticate, CORSMiddleware())
+	api.buildRoutes(rg)
 
 	if err := route.Run(); err != nil {
 		panic("Failed to start HTTP server")
 	}
 }
 
-func (api *Api) buildRoutes(route *gin.Engine) {
+func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.POST("/connections", api.ConnectionHandler.Post)
 	route.GET("/connections", api.ConnectionHandler.FindAll)
 	route.GET("/connections/:name", api.ConnectionHandler.FindOne)
@@ -60,12 +79,7 @@ func (api *Api) CreateTrialEntities() error {
 		CreatedById: userId,
 	}
 
-	_, err := api.UserHandler.Service.Signup(&org, &u)
-	_, err = api.AgentHandler.Service.Persist(&a)
-
-	if err != nil {
-		return err
-	}
-
-	return nil
+	_, _ = api.UserHandler.Service.Signup(&org, &u)
+	_, err := api.AgentHandler.Service.Persist(&a)
+	return err
 }

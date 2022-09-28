@@ -67,6 +67,7 @@ ENV LC_ALL en_US.UTF-8
 ENV PATH="/opt/mssql-tools/bin:/app:${PATH}"
 
 ADD rootfs/app/start.sh /app/
+COPY rootfs/ui /app/ui
 COPY hoop* /app/
 RUN chmod +x /app/*
 
