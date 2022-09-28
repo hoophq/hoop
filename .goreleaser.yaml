@@ -1,9 +1,3 @@
-# This is an example .goreleaser.yml file with some sensible defaults.
-# Make sure to check the documentation at https://goreleaser.com
-# before:
-  # hooks:
-    # You may remove this if you don't use go modules.
-    # - go mod tidy
 builds:
   - id: hoop
     env:
@@ -78,9 +72,9 @@ dockers:
     build_flag_templates:
       - "--platform=linux/arm64/v8"
       - "--label=org.opencontainers.image.created={{.Date}}"
-      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.title=hoop"
       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.version={{.Tag}}"
     extra_files:
     - rootfs
   - dockerfile: Dockerfile
@@ -93,11 +87,21 @@ dockers:
     build_flag_templates:
       - "--platform=linux/amd64"
       - "--label=org.opencontainers.image.created={{.Date}}"
-      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.title=hoop"
       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.version={{.Tag}}"
     extra_files:
     - rootfs
+docker_manifests:
+  # https://goreleaser.com/customization/docker_manifest/
+  - name_template: runops/hoop:{{ .Tag }}
+    image_templates:
+      - runops/hoop:{{ .Tag }}-amd64
+      - runops/hoop:{{ .Tag }}-arm64v8
+  - name_template: runops/hoop:latest
+    image_templates:
+      - runops/hoop:latest-amd64
+      - runops/hoop:latest-arm64v8
 # brews:
 #   - tap:
 #       owner: runopsio
