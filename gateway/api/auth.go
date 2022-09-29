@@ -7,9 +7,11 @@ import (
 	"time"
 )
 
+const jwksURL = "https://runops.us.auth0.com/.well-known/jwks.json"
+
 var jwks *keyfunc.JWKS
 
-func (api *Api) DownloadAuthPublicKey() {
+func DownloadAuthPublicKey() {
 	options := keyfunc.Options{
 		Ctx: context.Background(),
 		RefreshErrorHandler: func(err error) {

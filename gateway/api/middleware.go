@@ -23,8 +23,6 @@ func CORSMiddleware() gin.HandlerFunc {
 	}
 }
 
-const jwksURL = "https://runops.us.auth0.com/.well-known/jwks.json"
-
 func (api *Api) Authenticate(c *gin.Context) {
 	tokenHeader := c.GetHeader("authorization")
 

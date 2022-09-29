@@ -40,7 +40,7 @@ func main() {
 		panic(err)
 	}
 
-	a.DownloadAuthPublicKey()
+	api.DownloadAuthPublicKey()
 
 	go g.StartRPCServer()
 	a.StartAPI()
