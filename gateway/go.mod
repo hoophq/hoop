@@ -5,6 +5,7 @@ go 1.19
 replace github.com/runopsio/hoop/proto => ../proto
 
 require (
+	github.com/MicahParks/keyfunc v1.4.0
 	github.com/gin-contrib/static v0.0.1
 	github.com/gin-gonic/gin v1.8.1
 	github.com/golang-jwt/jwt/v4 v4.4.2
@@ -15,7 +16,6 @@ require (
 )
 
 require (
-	github.com/MicahParks/keyfunc v1.4.0 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
 	github.com/go-playground/locales v0.14.0 // indirect
 	github.com/go-playground/universal-translator v0.18.0 // indirect

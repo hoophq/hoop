@@ -3,6 +3,7 @@ package api
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v4"
+	pb "github.com/runopsio/hoop/proto"
 	"net/http"
 	"strings"
 )
@@ -24,6 +25,26 @@ func CORSMiddleware() gin.HandlerFunc {
 }
 
 func (api *Api) Authenticate(c *gin.Context) {
+	email := parseEmail(c)
+
+	ctx, err := api.UserHandler.Service.ContextByEmail(email)
+	if err != nil {
+		c.AbortWithStatus(http.StatusUnauthorized)
+	}
+
+	if ctx == nil {
+		c.AbortWithStatus(http.StatusUnauthorized)
+	}
+
+	c.Set("context", ctx)
+	c.Next()
+}
+
+func parseEmail(c *gin.Context) string {
+	if MODE == pb.DevProfile {
+		return "tester@hoop.dev"
+	}
+
 	tokenHeader := c.GetHeader("authorization")
 
 	tokenParts := strings.Split(tokenHeader, " ")
@@ -45,15 +66,5 @@ func (api *Api) Authenticate(c *gin.Context) {
 		c.AbortWithStatus(http.StatusUnauthorized)
 	}
 
-	ctx, err := api.UserHandler.Service.ContextByEmail(email)
-	if err != nil {
-		c.AbortWithStatus(http.StatusUnauthorized)
-	}
-
-	if ctx == nil {
-		c.AbortWithStatus(http.StatusUnauthorized)
-	}
-
-	c.Set("context", ctx)
-	c.Next()
+	return email
 }
