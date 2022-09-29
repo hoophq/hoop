@@ -12,7 +12,8 @@ do
 done
 echo " done!"
 echo "--> STARTING GATEWAY ..."
-GIN_MODE=release XTDB_ADDRESS=http://127.0.0.1:3000 /app/hoop-gateway &
+
+PROFILE=dev GIN_MODE=release XTDB_ADDRESS=http://127.0.0.1:3000 /app/hoop-gateway &
 
 until curl -s -f -o /dev/null "http://127.0.0.1:8080/agents"
 do

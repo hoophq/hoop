@@ -75,4 +75,4 @@ EXPOSE 8080
 EXPOSE 9090
 
 ENTRYPOINT ["tini", "--"]
-CMD ["/app/start.sh"]
+CMD ["/app/start-dev.sh"]

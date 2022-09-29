@@ -22,4 +22,6 @@ const (
 	ProtocolPostgresType ProtocolType = "postgres"
 
 	DefaultKeepAlive time.Duration = 10 * time.Second
+
+	DevProfile = "dev"
 )
