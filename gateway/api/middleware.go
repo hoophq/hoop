@@ -41,7 +41,7 @@ func (api *Api) Authenticate(c *gin.Context) {
 }
 
 func parseEmail(c *gin.Context) string {
-	if MODE == pb.DevProfile {
+	if PROFILE == pb.DevProfile {
 		return "tester@hoop.dev"
 	}
 

@@ -40,9 +40,9 @@ func main() {
 		ClientService:     clientService,
 	}
 
-	mode := os.Getenv("PROFILE")
-	if mode == pb.DevProfile {
-		api.MODE = pb.DevProfile
+	profile := os.Getenv("PROFILE")
+	if profile == pb.DevProfile {
+		api.PROFILE = pb.DevProfile
 
 		err = a.CreateTrialEntities()
 		if err != nil {

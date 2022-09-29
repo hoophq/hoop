@@ -12,7 +12,7 @@ import (
 	"github.com/runopsio/hoop/gateway/user"
 )
 
-var MODE string
+var PROFILE string
 
 type (
 	Api struct {
