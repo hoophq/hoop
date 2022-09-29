@@ -29,12 +29,12 @@ type (
 const (
 	agentOrigin  = "agent"
 	clientOrigin = "client"
+	listenAddr   = "0.0.0.0:9090"
 )
 
 func (s *Server) StartRPCServer() {
-	log.Println("Starting gRPC server...")
-
-	listener, err := net.Listen("tcp", ":9090")
+	log.Printf("starting gateway at %v", listenAddr)
+	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		panic(err)
 	}

@@ -1,0 +1,128 @@
+builds:
+  - id: hoop
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+    - amd64
+    - arm64
+    main: ./client/main.go
+    binary: hoop
+    ldflags:
+    - -s -w
+    - -X github.com/runopsio/hoop/proto/version.version={{ .Version }}
+    - -X github.com/runopsio/hoop/proto/version.gitCommit={{ .Commit }}
+    - -X github.com/runopsio/hoop/proto/version.buildDate={{ .Date }}
+    - -X github.com/runopsio/hoop/proto/version.appName=client
+  - id: hoop-agent
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+    - amd64
+    - arm64
+    main: ./agent/cmd/main.go
+    binary: hoop-agent
+    ldflags:
+    - -s -w
+    - -X github.com/runopsio/hoop/proto/version.version={{ .Version }}
+    - -X github.com/runopsio/hoop/proto/version.gitCommit={{ .Commit }}
+    - -X github.com/runopsio/hoop/proto/version.buildDate={{ .Date }}
+    - -X github.com/runopsio/hoop/proto/version.appName=agent
+  - id: hoop-gateway
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+    - amd64
+    - arm64
+    main: ./gateway/main.go
+    binary: hoop-gateway
+    ldflags:
+    - -s -w
+    - -X github.com/runopsio/hoop/proto/version.version={{ .Version }}
+    - -X github.com/runopsio/hoop/proto/version.gitCommit={{ .Commit }}
+    - -X github.com/runopsio/hoop/proto/version.buildDate={{ .Date }}
+    - -X github.com/runopsio/hoop/proto/version.appName=gateway
+archives:
+- replacements:
+    darwin: Darwin
+    linux: Linux
+    windows: Windows
+    amd64: x86_64
+# release:
+  # it will publish on a public repo
+  # github:
+  #   owner: runopsio
+  #   name: hoop
+dockers:
+  - dockerfile: Dockerfile
+    use: buildx
+    goos: linux
+    goarch: arm64
+    image_templates:
+    - "runops/hoop:{{ .Tag }}-arm64v8"
+    - "runops/hoop:latest-arm64v8"
+    build_flag_templates:
+      - "--platform=linux/arm64/v8"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title=hoop"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Tag}}"
+    extra_files:
+    - rootfs
+  - dockerfile: Dockerfile
+    use: buildx
+    goos: linux
+    goarch: amd64
+    image_templates:
+    - "runops/hoop:{{ .Tag }}-amd64"
+    - "runops/hoop:latest-amd64"
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title=hoop"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Tag}}"
+    extra_files:
+    - rootfs
+docker_manifests:
+  # https://goreleaser.com/customization/docker_manifest/
+  - name_template: runops/hoop:{{ .Tag }}
+    image_templates:
+      - runops/hoop:{{ .Tag }}-amd64
+      - runops/hoop:{{ .Tag }}-arm64v8
+  - name_template: runops/hoop:latest
+    image_templates:
+      - runops/hoop:latest-amd64
+      - runops/hoop:latest-arm64v8
+# brews:
+#   - tap:
+#       owner: runopsio
+#       name: hoop
+#     url_template: "https://github.com/runopsio/hoop/releases/download/{{ .Version }}/{{ .ArtifactName }}"
+#     commit_author:
+#       name: runopsteam
+#       email: team@runops.io
+#     commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
+#     homepage: "https://github.com/runopsio/hoop"
+#     description: "Runops Proxy forwards remote tcp connections locally."
+checksum:
+  name_template: 'checksums.txt'
+snapshot:
+  name_template: "{{ incpatch .Version }}-{{ .Prerelease }}"
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
