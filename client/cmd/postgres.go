@@ -33,14 +33,13 @@ var postgresCmd = &cobra.Command{
 		loader.Start()
 		loader.Suffix = " connecting to gateway..."
 
-		time.Sleep(time.Second * 1)
 		client, err := grpc.ConnectGrpc(args[0], pb.ProtocolPostgresType)
+		defer loader.Stop()
 		if err != nil {
-			loader.Stop()
+			log.Fatal(err)
 			return
 		}
-		loader.Stop()
-		log.Fatal(Run(proxyPort, client))
+		log.Fatal(runPGProxy(proxyPort, client))
 	},
 }
 
@@ -49,7 +48,7 @@ func init() {
 	rootCmd.AddCommand(postgresCmd)
 }
 
-func Run(proxyPort string, grpcClient *grpc.Client) error {
+func runPGProxy(proxyPort string, grpcClient *grpc.Client) error {
 	proxy := PG{
 		ProxyPort: proxyPort,
 		cli:       grpcClient,

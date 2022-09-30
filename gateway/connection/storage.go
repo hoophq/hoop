@@ -3,6 +3,7 @@ package connection
 import (
 	"encoding/json"
 	"fmt"
+
 	"github.com/google/uuid"
 	st "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/user"

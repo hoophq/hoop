@@ -6,6 +6,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"io"
+	reflect "reflect"
 )
 
 type (
@@ -19,6 +20,10 @@ type (
 		streamSendFn func(p *Packet) error
 		packetType   PacketType
 		packetSpec   map[string][]byte
+	}
+	AgentConnectionParams struct {
+		EnvVars map[string]interface{}
+		CmdList []string
 	}
 )
 
@@ -73,6 +78,7 @@ func (s *streamWriter) Close() error {
 	return nil
 }
 
+// Deprecated: use GobDecodeInto
 func GobDecodeMap(data []byte) (map[string]any, error) {
 	res := map[string]any{}
 	if data == nil || string(data) == "" {
@@ -82,10 +88,27 @@ func GobDecodeMap(data []byte) (map[string]any, error) {
 		Decode(&res)
 }
 
+// Deprecated: use GobEncode
 func GobEncodeMap(data map[string]any) ([]byte, error) {
 	buf := &bytes.Buffer{}
 	err := gob.NewEncoder(buf).Encode(data)
 	return buf.Bytes(), err
+}
+
+func GobEncode(data any) ([]byte, error) {
+	buf := &bytes.Buffer{}
+	err := gob.NewEncoder(buf).Encode(data)
+	return buf.Bytes(), err
+}
+
+func GobDecodeInto(data []byte, into any) error {
+	if data == nil || string(data) == "" {
+		return fmt.Errorf("nothing to decode")
+	}
+	if reflect.ValueOf(into).Kind() != reflect.Ptr {
+		return fmt.Errorf("the decoded object must be a pointer")
+	}
+	return gob.NewDecoder(bytes.NewBuffer(data)).Decode(into)
 }
 
 func BufferedPayload(payload []byte) *bufio.Reader {

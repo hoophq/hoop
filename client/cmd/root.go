@@ -1,18 +1,17 @@
 package cmd
 
 import (
-	"github.com/spf13/cobra"
 	"os"
+
+	"github.com/spf13/cobra"
 )
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "hoop",
-	Short: "Hoop into private servers in one command",
-	Long: `Hoop is here to save you. For example:
-
-You can run production queries at your favorite IDE.
-Nice and easy, you will love it.`,
+	Use:               "hoop",
+	CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
+	Long: `Connect to private infra-structure without the need of a VPN.
+https://docs.runops.io/docs`,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
