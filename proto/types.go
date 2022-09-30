@@ -22,8 +22,9 @@ type (
 		packetSpec   map[string][]byte
 	}
 	AgentConnectionParams struct {
-		EnvVars map[string]interface{}
-		CmdList []string
+		EnvVars    map[string]interface{}
+		CmdList    []string
+		ClientArgs []string
 	}
 )
 

@@ -25,7 +25,8 @@ func (a *Agent) processExec(pkt *pb.Packet) {
 			}).Write([]byte(`internal error, failed decoding connection params`))
 			return
 		}
-		cmd, err := pbexec.NewCommand(connParams.EnvVars, connParams.CmdList...)
+		cmd, err := pbexec.NewCommand(connParams.EnvVars,
+			append(connParams.CmdList, connParams.ClientArgs...)...)
 		if err != nil {
 			log.Printf("failed executing command, err=%v", err)
 			_, _ = pb.NewStreamWriter(a.stream.Send, pb.PacketExecCloseTermType, map[string][]byte{
@@ -33,7 +34,7 @@ func (a *Agent) processExec(pkt *pb.Packet) {
 			}).Write([]byte(`failed executing command`))
 			return
 		}
-		log.Printf("gatewayid=%v, tty=false - executing command=%q, envs=%v", string(gwID), cmd.String(), cmd.Environ())
+		log.Printf("gatewayid=%v, tty=false - executing command=%q", string(gwID), cmd.String())
 		spec := map[string][]byte{pb.SpecGatewayConnectionID: gwID}
 		stdoutWriter := pb.NewStreamWriter(a.stream.Send, pb.PacketExecClientWriteStdoutType, spec)
 		onExecEnd := func(exitCode int, errMsg string, v ...any) {
@@ -53,16 +54,12 @@ func (a *Agent) processExec(pkt *pb.Packet) {
 		log.Printf("gatewayid=%v, tty=true - payload=% X", string(gwID), string(pkt.Payload))
 		storeID := fmt.Sprintf("terminal:%s", gwID)
 		cmdObj := a.connStore.Get(storeID)
-
 		cmd, ok := cmdObj.(*pbexec.Command)
 		if ok {
 			// Write to tty stdin content
 			if _, err := cmd.WriteTTY(pkt.Payload); err != nil {
 				log.Printf("gatewayid=%v, tty=true - failed copying stdin to tty, err=%v", string(gwID), err)
 			}
-			// if _, err := ptty.File().Write(p.GetPayload()); err != nil {
-			// 	log.Printf("connection=%v - failed copying stdin to tty, err=%v", p.GetRouterConnectionID(), err)
-			// }
 			return
 		}
 		var connParams pb.AgentConnectionParams
@@ -75,7 +72,9 @@ func (a *Agent) processExec(pkt *pb.Packet) {
 			}).Write([]byte(`internal error, failed decoding connection params`))
 			return
 		}
-		cmd, err := pbexec.NewCommand(connParams.EnvVars, connParams.CmdList...)
+
+		cmd, err := pbexec.NewCommand(connParams.EnvVars,
+			append(connParams.CmdList, connParams.ClientArgs...)...)
 		if err != nil {
 			log.Printf("gatewayid=%v, tty=true - failed executing command, err=%v", gwID, err)
 			_, _ = pb.NewStreamWriter(a.stream.Send, pb.PacketExecCloseTermType, map[string][]byte{
@@ -96,69 +95,11 @@ func (a *Agent) processExec(pkt *pb.Packet) {
 			log.Printf("gatewayid=%v, tty=true - err=%v", string(gwID), err)
 		}
 		a.connStore.Set(storeID, cmd)
-
-		// rawEnvJSON, err := parseProviderConfig(p)
-		// if err != nil {
-		// 	log.Errorf("gatewayid=%v - failed obtaining secrets, err=%v", gwID, err)
-		// 	_ = s.Send(types.NewProxyPacket().
-		// 		Type(types.PacketExecCloseTermType).
-		// 		FromSpec(p.GetSpec()).
-		// 		Proto())
-		// 	return
-		// }
-		// argsEnc := p.GetSpecVal(types.SpecExecArgsKey)
-		// args, err := byteutils.GobDecodeStringSlice([]byte(argsEnc))
-		// if err != nil {
-		// 	log.Warnf("failed decoding args, err=%v", err)
-		// }
-		// ptty, err = proxyexec.RunProcessOnTTY(
-		// 	p.GetSpecVal(types.SpecTargetTypeKey),
-		// 	p.GetSpecVal(types.SpecCustomCommandKey),
-		// 	rawEnvJSON,
-		// 	args)
-		// if err != nil {
-		// 	log.Errorf("gatewayid=%v - failed creating tty, err=%v", gwID, err)
-		// 	_ = s.Send(types.NewProxyPacket().
-		// 		Type(types.PacketExecCloseTermType).
-		// 		FromSpec(p.GetSpec()).
-		// 		Proto())
-		// 	return
-		// }
-		// store.Set(key, ptty)
-
-		// go func() {
-		// 	// Copy stdout from tty to grpc stream
-		// 	w := &streamWriter{stream: s, packetType: types.PacketExecWriteStdoutType, spec: p.GetSpec()}
-		// 	if _, err := io.Copy(w, ptty.File()); err != nil {
-		// 		log.Warnf("gatewayid=%v - failed copying stdout from tty, err=%v", gwID, err)
-		// 	}
-
-		// 	exitCode := 0
-		// 	if err := ptty.ProcWait(); err != nil {
-		// 		if exErr, ok := err.(*exec.ExitError); ok {
-		// 			exitCode = exErr.ExitCode()
-		// 			// assume that it was killed or interrupted
-		// 			// because the process is probably started already
-		// 			if exitCode == -1 {
-		// 				exitCode = 1
-		// 			}
-		// 		}
-		// 	}
-		// 	log.Debugf("gatewayid=%v, exit-code=%v - closing tty ...", gwID, exitCode)
-		// 	if err := ptty.Close(); err != nil {
-		// 		log.Warnf("gatewayid=%s - failed closing tty, err=%v", gwID, err)
-		// 	}
-		// 	_ = s.Send(types.NewProxyPacket().
-		// 		Type(types.PacketExecCloseTermType).
-		// 		FromSpec(p.GetSpec()).
-		// 		SetSpecVal(types.SpecExecExitCodeKey, []byte(strconv.Itoa(exitCode))).
-		// 		Proto())
-		// }()
 	case pb.PacketExecCloseTermType:
 		gwID := pkt.Spec[pb.SpecGatewayConnectionID]
-		log.Printf("gatewayid=%v - received %v", gwID, pb.PacketExecCloseTermType)
-		// pttyObj := store.Get(fmt.Sprintf("terminal:%s", gwID))
-		// if ptty, ok := pttyObj.(*proxyexec.TTY); ok {
+		log.Printf("gatewayid=%v - received %v", string(gwID), pb.PacketExecCloseTermType)
+		// cmdObj := a.connStore.Get(fmt.Sprintf("terminal:%s", gwID))
+		// if cmd, ok := cmdObj.(*pbexec.Command); ok {
 		// 	log.Printf("cleanup tty process ...")
 		// 	if err := ptty.Close(); err != nil {
 		// 		log.Printf("gatewayid=%s - failed closing tty, err=%v", gwID, err)

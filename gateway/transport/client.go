@@ -171,9 +171,19 @@ func (s *Server) processClientPacket(
 		})
 	default:
 		if startup && client.Protocol == string(pb.ProtocoTerminalType) {
+			var clientArgs []string
+			if pkt.Spec != nil {
+				encArgs := pkt.Spec[pb.SpecClientExecArgsKey]
+				if len(encArgs) > 0 {
+					if err := pb.GobDecodeInto(encArgs, &clientArgs); err != nil {
+						log.Printf("failed decoding args, err=%v", err)
+					}
+				}
+			}
 			encConnectionParams, err := pb.GobEncode(&pb.AgentConnectionParams{
-				EnvVars: conn.Secret,
-				CmdList: conn.Command,
+				EnvVars:    conn.Secret,
+				CmdList:    conn.Command,
+				ClientArgs: clientArgs,
 			})
 			if err != nil {
 				// TODO: send error back to client

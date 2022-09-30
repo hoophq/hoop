@@ -26,7 +26,7 @@ var execCmd = &cobra.Command{
 	Short:        "Execute a command or start a interactive shell",
 	SilenceUsage: false,
 	PreRun: func(cmd *cobra.Command, args []string) {
-		if len(args) != 1 {
+		if len(args) < 1 {
 			cmd.Usage()
 			os.Exit(1)
 		}
@@ -51,6 +51,7 @@ var execCmd = &cobra.Command{
 }
 
 func init() {
+	execCmd.Flags().BoolVarP(&ttyFlag, "tty", "t", false, "Stdin is a TTY")
 	rootCmd.AddCommand(execCmd)
 }
 
@@ -61,18 +62,20 @@ func runExec(stream pb.Transport_ConnectClient, args []string, loader *spinner.S
 		panic(err)
 	}
 	spec := map[string][]byte{}
-	if len(args) > 0 {
-		encArgs, err := pb.GobEncode(args)
+	if len(args) > 1 {
+		encArgs, err := pb.GobEncode(args[1:])
 		if err != nil {
 			log.Fatalf("failed encoding args, err=%v", err)
 		}
 		spec[string(pb.SpecClientExecArgsKey)] = encArgs
 	}
 
-	ttyMode := true
 	var output []byte
 	if info.Mode()&os.ModeCharDevice == 0 || info.Size() > 0 {
-		ttyMode = false
+		if ttyFlag {
+			loader.Stop()
+			log.Fatalf("could not pass stdin when tty is enabled.")
+		}
 		stdinPipe := os.NewFile(uintptr(syscall.Stdin), "/dev/stdin")
 		reader := bufio.NewReader(stdinPipe)
 		for {
@@ -82,8 +85,8 @@ func runExec(stream pb.Transport_ConnectClient, args []string, loader *spinner.S
 			}
 			output = append(output, input)
 		}
-		stdinPipe.Close()
-		pb.NewStreamWriter(stream.Send, pb.PacketExecRunProcType, spec).
+		_ = stdinPipe.Close()
+		_, _ = pb.NewStreamWriter(stream.Send, pb.PacketExecRunProcType, spec).
 			Write([]byte(string(output)))
 		loader.Suffix = " executing command"
 	}
@@ -133,7 +136,8 @@ func runExec(stream pb.Transport_ConnectClient, args []string, loader *spinner.S
 	ch <- pbexec.SIGWINCH
 	defer func() { signal.Stop(ch); close(ch) }() // Cleanup signals when done.
 
-	if ttyMode {
+	switch {
+	case ttyFlag:
 		// Copy stdin to the pty and the pty to stdout.
 		// NOTE: The goroutine will keep reading until the next keystroke before returning.
 		go func() {
@@ -144,6 +148,10 @@ func runExec(stream pb.Transport_ConnectClient, args []string, loader *spinner.S
 			// TODO: check errors
 			_, _ = io.Copy(sw, os.Stdin)
 		}()
+	case len(output) == 0:
+		loader.Suffix = " executing command"
+		_, _ = pb.NewStreamWriter(stream.Send, pb.PacketExecRunProcType, spec).Write(nil)
+		_ = term.Restore(int(os.Stdin.Fd()), oldState)
 	}
 
 	for {
@@ -168,7 +176,7 @@ func runExec(stream pb.Transport_ConnectClient, args []string, loader *spinner.S
 			if exitCodeStr == "" || err != nil {
 				// End with a custom exit code, because we don't
 				// know what returned from the remote terminal
-				exitCode = pbexec.InternalErroExitCode
+				exitCode = pbexec.InternalErrorExitCode
 			}
 			if exitCode != 0 && pkt.Payload != nil {
 				os.Stderr.Write(pkt.Payload)
@@ -180,6 +188,7 @@ func runExec(stream pb.Transport_ConnectClient, args []string, loader *spinner.S
 			if loader.Active() && !bytes.Equal(pkt.Payload, []byte{13, 10}) {
 				loader.Stop()
 			}
+			// TODO: implement write from stderr also!
 			_, _ = os.Stdout.Write(pkt.Payload)
 		}
 	}

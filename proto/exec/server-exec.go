@@ -79,27 +79,21 @@ func (c *Command) OnPostExec() error {
 func (c *Command) Run(streamWriter io.WriteCloser, stdinInput []byte, onExecEnd OnExecEndFn, clientArgs ...string) error {
 	pipeStdout, err := c.cmd.StdoutPipe()
 	if err != nil {
-		onExecEnd(InternalErroExitCode, "internal error, failed returning stdout pipe")
+		onExecEnd(InternalErrorExitCode, "internal error, failed returning stdout pipe")
 		return err
 	}
 	pipeStderr, err := c.cmd.StderrPipe()
 	if err != nil {
-		onExecEnd(InternalErroExitCode, "internal error, failed returning stderr pipe")
+		onExecEnd(InternalErrorExitCode, "internal error, failed returning stderr pipe")
 		return err
 	}
 	if err := c.OnPreExec(); err != nil {
-		onExecEnd(InternalErroExitCode, "internal error, failed executing pre command")
+		onExecEnd(InternalErrorExitCode, "internal error, failed executing pre command")
 		return fmt.Errorf("failed executing pre command, err=%v", err)
-
 	}
-	defer func() {
-		if err := c.OnPostExec(); err != nil {
-			fmt.Printf("failed executing post command, err=%v", err)
-		}
-	}()
 	var stdin bytes.Buffer
 	c.cmd.Stdin = &stdin
-	exitCode := InternalErroExitCode
+	exitCode := InternalErrorExitCode
 	if err := c.cmd.Start(); err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
 			// path not found error exit code
@@ -109,7 +103,7 @@ func (c *Command) Run(streamWriter io.WriteCloser, stdinInput []byte, onExecEnd 
 		return err
 	}
 	if _, err := stdin.Write(stdinInput); err != nil {
-		onExecEnd(InternalErroExitCode, "internal error, failed writing input")
+		onExecEnd(InternalErrorExitCode, "internal error, failed writing input")
 		return err
 	}
 	copyBuffer(pipeStdout, streamWriter, 1024)
@@ -122,23 +116,25 @@ func (c *Command) Run(streamWriter io.WriteCloser, stdinInput []byte, onExecEnd 
 			if exErr, ok := err.(*exec.ExitError); ok {
 				exitCode = exErr.ExitCode()
 				if exitCode == -1 {
-					exitCode = InternalErroExitCode
+					exitCode = InternalErrorExitCode
 				}
 			}
+		}
+		if err := c.OnPostExec(); err != nil {
+			fmt.Printf("failed executing post command, err=%v", err)
 		}
 		onExecEnd(exitCode, "failed executing command, err=%v", err)
 	}()
 	return nil
 }
 
-// TODO: make me
 func (c *Command) RunOnTTY(stdoutWriter io.WriteCloser, onExecEnd OnExecEndFn, clientArgs ...string) error {
 	// Start the command with a pty.
 	if err := c.OnPreExec(); err != nil {
 		return fmt.Errorf("failed executing pre execution command, err=%v", err)
 	}
 
-	ptmx, err := pty.Start(exec.Command("bash"))
+	ptmx, err := pty.Start(c.cmd)
 	if err != nil {
 		return fmt.Errorf("failed starting pty, err=%v", err)
 	}
@@ -157,9 +153,6 @@ func (c *Command) RunOnTTY(stdoutWriter io.WriteCloser, onExecEnd OnExecEndFn, c
 	defer func() { signal.Stop(ch); close(ch) }() // Cleanup signals when done.
 
 	go func() {
-		// Copy stdout from tty to grpc stream
-		// w := &streamWriter{stream: s, packetType: types.PacketExecWriteStdoutType, spec: p.GetSpec()}
-		// ptmx.
 		exitCode := 0
 		defer func() {
 			log.Printf("exit-code=%v - closing tty ...", exitCode)
@@ -189,11 +182,6 @@ func (c *Command) RunOnTTY(stdoutWriter io.WriteCloser, onExecEnd OnExecEndFn, c
 			}
 		}
 		onExecEnd(exitCode, "failed executing command, err=%v", err)
-		// _ = s.Send(types.NewProxyPacket().
-		// 	Type(types.PacketExecCloseTermType).
-		// 	FromSpec(p.GetSpec()).
-		// 	SetSpecVal(types.SpecExecExitCodeKey, []byte(strconv.Itoa(exitCode))).
-		// 	Proto())
 	}()
 
 	return nil
@@ -226,6 +214,7 @@ func NewCommand(rawEnvVarList map[string]interface{}, args ...string) (*Command,
 	c := &Command{envStore: envStore}
 	c.cmd = exec.Command(mainCmd, execArgs...)
 	c.cmd.Env = envStore.ParseToKeyVal()
+	c.cmd.Env = append(c.cmd.Env, fmt.Sprintf("PATH=%v", os.Getenv("PATH")))
 	return c, nil
 }
 
