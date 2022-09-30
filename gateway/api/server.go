@@ -12,6 +12,8 @@ import (
 	"github.com/runopsio/hoop/gateway/user"
 )
 
+var PROFILE string
+
 type (
 	Api struct {
 		AgentHandler      agent.Handler

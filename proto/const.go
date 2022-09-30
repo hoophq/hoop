@@ -33,4 +33,6 @@ const (
 	ProtocoTerminalType  ProtocolType = "terminal"
 
 	DefaultKeepAlive time.Duration = 10 * time.Second
+
+	DevProfile = "dev"
 )

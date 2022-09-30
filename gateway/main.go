@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/api"
 	"github.com/runopsio/hoop/gateway/client"
@@ -10,7 +9,9 @@ import (
 	xtdb "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/transport"
 	"github.com/runopsio/hoop/gateway/user"
+	pb "github.com/runopsio/hoop/proto"
 	"github.com/runopsio/hoop/proto/version"
+	"os"
 )
 
 func main() {
@@ -39,9 +40,16 @@ func main() {
 		ClientService:     clientService,
 	}
 
-	err = a.CreateTrialEntities()
-	if err != nil {
-		panic(err)
+	profile := os.Getenv("PROFILE")
+	if profile == pb.DevProfile {
+		api.PROFILE = pb.DevProfile
+
+		err = a.CreateTrialEntities()
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		api.DownloadAuthPublicKey()
 	}
 
 	go g.StartRPCServer()

@@ -66,7 +66,7 @@ ENV LC_ALL en_US.UTF-8
 
 ENV PATH="/opt/mssql-tools/bin:/app:${PATH}"
 
-ADD rootfs/app/start.sh /app/
+ADD rootfs/app/start-dev.sh /app/
 COPY rootfs/ui /app/ui
 COPY hoop* /app/
 RUN chmod +x /app/*
@@ -75,4 +75,4 @@ EXPOSE 8080
 EXPOSE 9090
 
 ENTRYPOINT ["tini", "--"]
-CMD ["/app/start.sh"]
+CMD ["/app/start-dev.sh"]
