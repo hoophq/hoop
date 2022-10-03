@@ -92,7 +92,7 @@ func (p *PG) GetConnection(pkt *pb.Packet) io.WriteCloser {
 }
 
 func (p PG) Serve() error {
-	listenAddr := fmt.Sprintf("0.0.0.0:%s", p.ProxyPort)
+	listenAddr := fmt.Sprintf("127.0.0.1:%s", p.ProxyPort)
 	lis, err := net.Listen("tcp4", listenAddr)
 	if err != nil {
 		return fmt.Errorf("failed listening to address %v, err=%v", listenAddr, err)

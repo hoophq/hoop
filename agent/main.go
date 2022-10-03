@@ -1,22 +1,22 @@
-package main
+package agent
 
 import (
 	"context"
 	"fmt"
 	"log"
 
-	"github.com/runopsio/hoop/agent"
+	// "github.com/runopsio/hoop/agent"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/common/version"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
 
-func main() {
+func Run() {
 	fmt.Println(string(version.JSON()))
 
 	// dail server
-	conn, err := grpc.Dial(":9090", grpc.WithInsecure())
+	conn, err := grpc.Dial(":8010", grpc.WithInsecure())
 	if err != nil {
 		log.Fatalf("can not connect with server %v", err)
 	}
@@ -36,7 +36,7 @@ func main() {
 
 	ctx := stream.Context()
 	done := make(chan struct{})
-	agt := agent.New(ctx, stream, done)
+	agt := New(ctx, stream, done)
 	defer agt.Close()
 
 	go agt.Run()

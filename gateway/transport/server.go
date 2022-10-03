@@ -29,7 +29,7 @@ type (
 const (
 	agentOrigin  = "agent"
 	clientOrigin = "client"
-	listenAddr   = "0.0.0.0:9090"
+	listenAddr   = "0.0.0.0:8010"
 )
 
 func (s *Server) StartRPCServer() {
