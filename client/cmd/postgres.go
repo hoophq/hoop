@@ -11,8 +11,8 @@ import (
 	"github.com/briandowns/spinner"
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/client/grpc"
-	pb "github.com/runopsio/hoop/proto"
-	"github.com/runopsio/hoop/proto/memory"
+	"github.com/runopsio/hoop/common/memory"
+	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/spf13/cobra"
 )
 
@@ -33,14 +33,13 @@ var postgresCmd = &cobra.Command{
 		loader.Start()
 		loader.Suffix = " connecting to gateway..."
 
-		time.Sleep(time.Second * 1)
 		client, err := grpc.ConnectGrpc(args[0], pb.ProtocolPostgresType)
+		defer loader.Stop()
 		if err != nil {
-			loader.Stop()
+			log.Fatal(err)
 			return
 		}
-		loader.Stop()
-		log.Fatal(Run(proxyPort, client))
+		log.Fatal(runPGProxy(proxyPort, client))
 	},
 }
 
@@ -49,7 +48,7 @@ func init() {
 	rootCmd.AddCommand(postgresCmd)
 }
 
-func Run(proxyPort string, grpcClient *grpc.Client) error {
+func runPGProxy(proxyPort string, grpcClient *grpc.Client) error {
 	proxy := PG{
 		ProxyPort: proxyPort,
 		cli:       grpcClient,

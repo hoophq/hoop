@@ -7,9 +7,9 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
+	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/client"
 	"github.com/runopsio/hoop/gateway/connection"
-	pb "github.com/runopsio/hoop/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -49,10 +49,6 @@ func getClientStream(id string) pb.Transport_ConnectServer {
 	return cc.clients[id]
 }
 
-func getClientConnection(id string) *connection.Connection {
-	return cc.connections[id]
-}
-
 func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string) error {
 	ctx := stream.Context()
 	md, _ := metadata.FromIncomingContext(ctx)
@@ -61,6 +57,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	machineId := extractData(md, "machine_id")
 	kernelVersion := extractData(md, "kernel_version")
 	connectionName := extractData(md, "connection_name")
+	protocolName := extractData(md, "protocol_name")
 
 	email, _ := s.exchangeUserToken(token)
 	context, err := s.UserService.ContextByEmail(email)
@@ -88,6 +85,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		Status:        client.StatusConnected,
 		ConnectionId:  conn.Id,
 		AgentId:       conn.AgentId,
+		Protocol:      protocolName,
 	}
 	s.ClientService.Persist(c)
 	bindClient(gatewayConnectionID, stream, conn)
@@ -98,6 +96,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 
 func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, c *client.Client, conn *connection.Connection) error {
 	ctx := stream.Context()
+	startup := true
 
 	for {
 		select {
@@ -110,11 +109,17 @@ func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, c *clie
 		// receive data from stream
 		pkt, err := stream.Recv()
 		if err != nil {
-			defer s.disconnectClient(c)
 			if err == io.EOF {
+				s.disconnectClient(c)
 				return nil
 			}
-			log.Printf("received error from client: %v", err)
+			if status, ok := status.FromError(err); ok && status.Code() == codes.Canceled {
+				// TODO: send packet to agent to clean up resources
+				log.Printf("gatewayid=%v - client disconnected", c.ConnectionId)
+				return nil
+			}
+			s.disconnectClient(c)
+			log.Printf("received error from client, err=%v", err)
 			return err
 		}
 		if pb.PacketType(pkt.Type) == pb.PacketKeepAliveType {
@@ -136,15 +141,17 @@ func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, c *clie
 		}
 		log.Printf("receive client packet type [%s] and gateway connection id [%s]",
 			pkt.Type, c.Id)
-		s.processClientPacket(pkt, c.Id, conn, agStream)
+		s.processClientPacket(pkt, c, conn, agStream, startup)
 	}
 }
 
 func (s *Server) processClientPacket(
 	pkt *pb.Packet,
-	gwID string,
+	client *client.Client,
 	conn *connection.Connection,
-	agentStream pb.Transport_ConnectServer) {
+	agentStream pb.Transport_ConnectServer,
+	startup bool) {
+
 	switch pb.PacketType(pkt.Type) {
 	case pb.PacketGatewayConnectType:
 		encEnvVars, err := pb.GobEncodeMap(conn.Secret)
@@ -157,21 +164,53 @@ func (s *Server) processClientPacket(
 		_ = agentStream.Send(&pb.Packet{
 			Type: pb.PacketAgentConnectType.String(),
 			Spec: map[string][]byte{
-				pb.SpecGatewayConnectionID: []byte(gwID),
-				pb.SpecAgentEnvVars:        encEnvVars,
+				pb.SpecGatewayConnectionID: []byte(client.Id),
+				// TODO: refactor to use agent connection params!
+				pb.SpecAgentEnvVarsKey: encEnvVars,
 			},
 		})
 	default:
+		if err := s.addConnectionParams(&startup, client, conn, pkt); err != nil {
+			s.disconnectClient(client)
+			return
+		}
 		// default send to agent everything
 		_ = agentStream.Send(pkt)
 	}
+}
+
+func (s *Server) addConnectionParams(startup *bool, c *client.Client, conn *connection.Connection, pkt *pb.Packet) error {
+	if *startup && c.Protocol == string(pb.ProtocoTerminalType) {
+		var clientArgs []string
+		if pkt.Spec != nil {
+			encArgs := pkt.Spec[pb.SpecClientExecArgsKey]
+			if len(encArgs) > 0 {
+				if err := pb.GobDecodeInto(encArgs, &clientArgs); err != nil {
+					log.Printf("failed decoding args, err=%v", err)
+				}
+			}
+		}
+		encConnectionParams, err := pb.GobEncode(&pb.AgentConnectionParams{
+			EnvVars:    conn.Secret,
+			CmdList:    conn.Command,
+			ClientArgs: clientArgs,
+		})
+		if err != nil {
+			return fmt.Errorf("failed encoding command exec params err=%v", err)
+		}
+
+		pkt.Spec[pb.SpecGatewayConnectionID] = []byte(c.Id)
+		pkt.Spec[pb.SpecAgentConnectionParamsKey] = encConnectionParams
+		*startup = false
+	}
+	return nil
 }
 
 func (s *Server) disconnectClient(c *client.Client) {
 	unbindClient(c.Id)
 	c.Status = client.StatusDisconnected
 	s.ClientService.Persist(c)
-	log.Println("client disconnected...")
+	log.Println("disconnecting client...")
 }
 
 func (s *Server) exchangeUserToken(token string) (string, error) {

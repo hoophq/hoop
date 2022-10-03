@@ -4,5 +4,5 @@ use (
 	./agent
 	./client
 	./gateway
-	./proto
+	./common
 )

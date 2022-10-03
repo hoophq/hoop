@@ -13,10 +13,10 @@ builds:
     binary: hoop
     ldflags:
     - -s -w
-    - -X github.com/runopsio/hoop/proto/version.version={{ .Version }}
-    - -X github.com/runopsio/hoop/proto/version.gitCommit={{ .Commit }}
-    - -X github.com/runopsio/hoop/proto/version.buildDate={{ .Date }}
-    - -X github.com/runopsio/hoop/proto/version.appName=client
+    - -X github.com/runopsio/hoop/common/version.version={{ .Version }}
+    - -X github.com/runopsio/hoop/common/version.gitCommit={{ .Commit }}
+    - -X github.com/runopsio/hoop/common/version.buildDate={{ .Date }}
+    - -X github.com/runopsio/hoop/common/version.appName=client
   - id: hoop-agent
     env:
       - CGO_ENABLED=0
@@ -31,10 +31,10 @@ builds:
     binary: hoop-agent
     ldflags:
     - -s -w
-    - -X github.com/runopsio/hoop/proto/version.version={{ .Version }}
-    - -X github.com/runopsio/hoop/proto/version.gitCommit={{ .Commit }}
-    - -X github.com/runopsio/hoop/proto/version.buildDate={{ .Date }}
-    - -X github.com/runopsio/hoop/proto/version.appName=agent
+    - -X github.com/runopsio/hoop/common/version.version={{ .Version }}
+    - -X github.com/runopsio/hoop/common/version.gitCommit={{ .Commit }}
+    - -X github.com/runopsio/hoop/common/version.buildDate={{ .Date }}
+    - -X github.com/runopsio/hoop/common/version.appName=agent
   - id: hoop-gateway
     env:
       - CGO_ENABLED=0
@@ -49,10 +49,10 @@ builds:
     binary: hoop-gateway
     ldflags:
     - -s -w
-    - -X github.com/runopsio/hoop/proto/version.version={{ .Version }}
-    - -X github.com/runopsio/hoop/proto/version.gitCommit={{ .Commit }}
-    - -X github.com/runopsio/hoop/proto/version.buildDate={{ .Date }}
-    - -X github.com/runopsio/hoop/proto/version.appName=gateway
+    - -X github.com/runopsio/hoop/common/version.version={{ .Version }}
+    - -X github.com/runopsio/hoop/common/version.gitCommit={{ .Commit }}
+    - -X github.com/runopsio/hoop/common/version.buildDate={{ .Date }}
+    - -X github.com/runopsio/hoop/common/version.appName=gateway
 archives:
 - replacements:
     darwin: Darwin

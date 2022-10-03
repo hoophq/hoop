@@ -3,7 +3,7 @@ package middlewares
 import (
 	"log"
 
-	"github.com/runopsio/hoop/proto/pg"
+	"github.com/runopsio/hoop/common/pg"
 )
 
 // HexDumpPacket is a simple middleware that dumps packet to stdout

@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	pb "github.com/runopsio/hoop/proto"
+	pb "github.com/runopsio/hoop/common/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
@@ -15,6 +15,7 @@ type (
 		Stream      pb.Transport_ConnectClient
 		Ctx         context.Context
 		CloseSignal chan bool
+		Close       func() error
 	}
 )
 
@@ -31,7 +32,7 @@ func ConnectGrpc(connectionName string, protocol pb.ProtocolType) (*Client, erro
 		"hostname", "localhost",
 		"machine_id", "machine_my",
 		"kernel_version", "who knows?",
-		"protocol", string(protocol),
+		"protocol_name", string(protocol),
 		"connection_name", connectionName)
 
 	c := pb.NewTransportClient(conn)
@@ -46,6 +47,7 @@ func ConnectGrpc(connectionName string, protocol pb.ProtocolType) (*Client, erro
 		Stream:      stream,
 		Ctx:         ctx,
 		CloseSignal: done,
+		Close:       conn.Close,
 	}
 
 	return client, nil

@@ -5,8 +5,8 @@ import (
 	"log"
 	"sync"
 
+	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/agent"
-	pb "github.com/runopsio/hoop/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -68,32 +68,35 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 	bindAgent(ag.Id, stream)
 
 	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
-
-	s.listenAgentMessages(ag, stream)
-
-	return nil
+	return s.listenAgentMessages(ag, stream)
 }
 
-func (s *Server) listenAgentMessages(ag *agent.Agent, stream pb.Transport_ConnectServer) {
+func (s *Server) listenAgentMessages(ag *agent.Agent, stream pb.Transport_ConnectServer) error {
 	ctx := stream.Context()
 
 	for {
 		select {
 		case <-ctx.Done():
 			s.disconnectAgent(ag)
-			return
+			return nil
 		default:
 		}
 
 		// receive data from stream
 		pkt, err := stream.Recv()
 		if err != nil {
-			defer s.disconnectAgent(ag)
 			if err == io.EOF {
-				return
+				s.disconnectAgent(ag)
+				return nil
 			}
-			log.Printf("received error from agent: %v", err)
-			return
+			if status, ok := status.FromError(err); ok && status.Code() == codes.Canceled {
+				// TODO: send packet to agent to clean up resources
+				log.Printf("id=%v - agent disconnected", ag.Id)
+				return nil
+			}
+			log.Printf("received error from agent, err=%v", err)
+			s.disconnectAgent(ag)
+			return err
 		}
 		if pb.PacketType(pkt.Type) == pb.PacketKeepAliveType {
 			continue

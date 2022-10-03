@@ -12,9 +12,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/runopsio/hoop/proto/pg"
-	"github.com/runopsio/hoop/proto/pg/middlewares"
-	"github.com/runopsio/hoop/proto/pg/types"
+	"github.com/runopsio/hoop/common/pg"
+	"github.com/runopsio/hoop/common/pg/middlewares"
+	"github.com/runopsio/hoop/common/pg/types"
 )
 
 const (

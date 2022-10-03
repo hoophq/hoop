@@ -9,11 +9,8 @@ import (
 	"strings"
 	"time"
 
-	pb "github.com/runopsio/hoop/proto"
-	"github.com/runopsio/hoop/proto/memory"
-	"github.com/runopsio/hoop/proto/pg"
-	"github.com/runopsio/hoop/proto/pg/middlewares"
-	pgtypes "github.com/runopsio/hoop/proto/pg/types"
+	"github.com/runopsio/hoop/common/memory"
+	pb "github.com/runopsio/hoop/common/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -112,34 +109,6 @@ func (a *Agent) Close() {
 	close(a.closeSignal)
 }
 
-func (p *Agent) GatewayLocalConnectionID() string {
-	obj := p.connStore.Get(pb.SpecGatewayConnectionID)
-	gwID, _ := obj.(string)
-	if gwID == "" {
-		// TODO: log/warn
-		log.Printf("gateway id is empty")
-	}
-	return gwID
-}
-
-func (p *Agent) SetGatewayLocalConnectionID(gwID string) {
-	p.connStore.Set(pb.SpecGatewayConnectionID, gwID)
-}
-
-func (p *Agent) GetConnection(pkt *pb.Packet) io.WriteCloser {
-	if pkt.Spec == nil {
-		return nil
-	}
-	clientConnectionID := pkt.Spec[pb.SpecClientConnectionID]
-	if clientConnectionID == nil {
-		// TODO: warn empty
-		return nil
-	}
-	obj := p.connStore.Get(string(clientConnectionID))
-	c, _ := obj.(io.WriteCloser)
-	return c
-}
-
 func (a *Agent) Run() {
 	go a.startKeepAlive()
 
@@ -172,7 +141,8 @@ func (a *Agent) Run() {
 		}
 		a.processAgentConnect(pkt)
 		a.processPGProtocol(pkt)
-		a.processCloseConnection(pkt)
+		a.processTCPCloseConnection(pkt)
+		a.processExec(pkt)
 	}
 }
 
@@ -181,7 +151,7 @@ func (a *Agent) processAgentConnect(pkt *pb.Packet) {
 	case pb.PacketAgentConnectType:
 		gwID := pkt.Spec[pb.SpecGatewayConnectionID]
 		log.Printf("gatewayid=%v - received [%s]", string(gwID), pkt.Type)
-		envVars, err := pb.GobDecodeMap(pkt.Spec[pb.SpecAgentEnvVars])
+		envVars, err := pb.GobDecodeMap(pkt.Spec[pb.SpecAgentEnvVarsKey])
 		if err != nil {
 			log.Printf("failed decoding env vars, err=%v", err)
 			return
@@ -212,7 +182,7 @@ func (a *Agent) processAgentConnect(pkt *pb.Packet) {
 	}
 }
 
-func (a *Agent) processCloseConnection(pkt *pb.Packet) {
+func (a *Agent) processTCPCloseConnection(pkt *pb.Packet) {
 	if pb.PacketType(pkt.Type) != pb.PacketCloseConnectionType {
 		return
 	}
@@ -230,85 +200,6 @@ func (a *Agent) processCloseConnection(pkt *pb.Packet) {
 			}()
 			a.connStore.Del(key)
 		}
-	}
-}
-
-func (a *Agent) processPGProtocol(pkt *pb.Packet) {
-	if pb.PacketType(pkt.Type) != pb.PacketPGWriteServerType {
-		return
-	}
-	gwID := pkt.Spec[pb.SpecGatewayConnectionID]
-	swPgClient := pb.NewStreamWriter(a.stream.Send, pb.PacketPGWriteClientType, pkt.Spec)
-	envObj := a.connStore.Get(string(gwID))
-	pgEnv, _ := envObj.(*pgEnv)
-	if pgEnv == nil {
-		log.Println("postgres credentials not found in memory")
-		writePGClientErr(swPgClient,
-			pg.NewFatalError("credentials is empty, contact the administrator").Encode())
-		return
-	}
-	clientConnectionID := pkt.Spec[pb.SpecClientConnectionID]
-	clientObj := a.connStore.Get(string(clientConnectionID))
-	if proxyServerWriter, ok := clientObj.(pg.Proxy); ok {
-		if err := proxyServerWriter.Send(pkt.Payload); err != nil {
-			log.Println(err)
-			proxyServerWriter.Cancel()
-		}
-		return
-	}
-	// startup phase
-	_, pgPkt, err := pg.DecodeStartupPacket(pb.BufferedPayload(pkt.Payload))
-	if err != nil {
-		log.Printf("failed decoding startup packet: %v", err)
-		writePGClientErr(swPgClient,
-			pg.NewFatalError("failed decoding startup packet (1), contact the administrator").Encode())
-		return
-	}
-
-	if pgPkt.IsFrontendSSLRequest() {
-		err := a.stream.Send(&pb.Packet{
-			Type:    pb.PacketPGWriteClientType.String(),
-			Spec:    pkt.Spec,
-			Payload: []byte{pgtypes.ServerSSLNotSupported.Byte()},
-		})
-		if err != nil {
-			log.Printf("failed sending ssl response back, err=%v", err)
-		}
-		return
-	}
-
-	startupPkt, err := pg.DecodeStartupPacketWithUsername(pb.BufferedPayload(pkt.Payload), pgEnv.user)
-	if err != nil {
-		log.Printf("failed decoding startup packet with username, err=%v", err)
-		writePGClientErr(swPgClient,
-			pg.NewFatalError("failed decoding startup packet (2), contact the administrator").Encode())
-		return
-	}
-
-	log.Printf("starting postgres connection for %s", gwID)
-	pgServer, err := newTCPConn(pgEnv.host, pgEnv.port)
-	if err != nil {
-		log.Printf("failed obtaining connection with postgres server, err=%v", err)
-		writePGClientErr(swPgClient,
-			pg.NewFatalError("failed connecting with postgres server, contact the administrator").Encode())
-		return
-	}
-	if _, err := pgServer.Write(startupPkt.Encode()); err != nil {
-		log.Printf("failed writing startup packet, err=%v", err)
-		writePGClientErr(swPgClient,
-			pg.NewFatalError("failed writing startup packet, contact the administrator").Encode())
-	}
-	log.Println("finish startup phase")
-	mid := middlewares.New(swPgClient, pgServer, pgEnv.user, pgEnv.pass)
-	pg.NewProxy(context.Background(), swPgClient, mid.ProxyCustomAuth).
-		RunWithReader(pg.NewReader(pgServer))
-	proxyServerWriter := pg.NewProxy(context.Background(), pgServer, mid.DenyChangePassword).Run()
-	a.connStore.Set(string(clientConnectionID), proxyServerWriter)
-}
-
-func writePGClientErr(w io.Writer, msg []byte) {
-	if _, err := w.Write(msg); err != nil {
-		log.Printf("failed writing error back to client, err=%v", err)
 	}
 }
 

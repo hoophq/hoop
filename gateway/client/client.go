@@ -22,6 +22,7 @@ type (
 		MachineId     string `json:"machine-id"     edn:"client/machine-id"`
 		KernelVersion string `json:"kernel_version" edn:"client/kernel-version"`
 		Status        Status `json:"status"         edn:"client/status"`
+		Protocol      string `json:"protocol"       edn:"client/protocol"`
 		ConnectionId  string `json:"-"              edn:"client/connection"`
 		AgentId       string `json:"-"              edn:"client/agent"`
 	}

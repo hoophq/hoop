@@ -1,6 +1,6 @@
 package cmd
 
 var (
-	proxyPort      string
-	connectionName string
+	ttyFlag   bool
+	proxyPort string
 )

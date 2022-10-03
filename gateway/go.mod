@@ -2,7 +2,7 @@ module github.com/runopsio/hoop/gateway
 
 go 1.19
 
-replace github.com/runopsio/hoop/proto => ../proto
+replace github.com/runopsio/hoop/common => ../common
 
 require (
 	github.com/MicahParks/keyfunc v1.4.0
@@ -10,7 +10,7 @@ require (
 	github.com/gin-gonic/gin v1.8.1
 	github.com/golang-jwt/jwt/v4 v4.4.2
 	github.com/google/uuid v1.3.0
-	github.com/runopsio/hoop/proto v0.0.0-00010101000000-000000000000
+	github.com/runopsio/hoop/common v0.0.0-00010101000000-000000000000
 	google.golang.org/grpc v1.49.0
 	olympos.io/encoding/edn v0.0.0-20201019073823-d3554ca0b0a3
 )
