@@ -12,13 +12,10 @@ const (
 	PacketGatewayConnectErrType PacketType = "Gateway::ConnectErr"
 
 	PacketExecRunProcType           PacketType = "Exec::RunProc"
-	PacketExecClientWriteStdinType  PacketType = "Exec::WriteClientStdin"
 	PacketExecClientWriteStdoutType PacketType = "Exec::WriteClientStdout"
 	PacketExecWriteAgentStdinType   PacketType = "Exec::WriteAgentStdin"
-	PacketExecWriteAgentStdoutType  PacketType = "Exec::WriteAgentStdout"
 	PacketExecCloseTermType         PacketType = "Exec::CloseTerm"
 
-	PacketPGConnectType     PacketType = "PG::Connect"
 	PacketPGWriteServerType PacketType = "PG::WriteServer"
 	PacketPGWriteClientType PacketType = "PG::WriteClient"
 

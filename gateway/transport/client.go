@@ -170,35 +170,40 @@ func (s *Server) processClientPacket(
 			},
 		})
 	default:
-		if startup && client.Protocol == string(pb.ProtocoTerminalType) {
-			var clientArgs []string
-			if pkt.Spec != nil {
-				encArgs := pkt.Spec[pb.SpecClientExecArgsKey]
-				if len(encArgs) > 0 {
-					if err := pb.GobDecodeInto(encArgs, &clientArgs); err != nil {
-						log.Printf("failed decoding args, err=%v", err)
-					}
-				}
-			}
-			encConnectionParams, err := pb.GobEncode(&pb.AgentConnectionParams{
-				EnvVars:    conn.Secret,
-				CmdList:    conn.Command,
-				ClientArgs: clientArgs,
-			})
-			if err != nil {
-				// TODO: send error back to client
-				log.Printf("failed encoding command exec params err=%v", err)
-				s.disconnectClient(client)
-				return
-			}
-
-			pkt.Spec[pb.SpecGatewayConnectionID] = []byte(client.Id)
-			pkt.Spec[pb.SpecAgentConnectionParamsKey] = encConnectionParams
-			startup = false
+		if err := s.addConnectionParams(&startup, client, conn, pkt); err != nil {
+			s.disconnectClient(client)
+			return
 		}
 		// default send to agent everything
 		_ = agentStream.Send(pkt)
 	}
+}
+
+func (s *Server) addConnectionParams(startup *bool, c *client.Client, conn *connection.Connection, pkt *pb.Packet) error {
+	if *startup && c.Protocol == string(pb.ProtocoTerminalType) {
+		var clientArgs []string
+		if pkt.Spec != nil {
+			encArgs := pkt.Spec[pb.SpecClientExecArgsKey]
+			if len(encArgs) > 0 {
+				if err := pb.GobDecodeInto(encArgs, &clientArgs); err != nil {
+					log.Printf("failed decoding args, err=%v", err)
+				}
+			}
+		}
+		encConnectionParams, err := pb.GobEncode(&pb.AgentConnectionParams{
+			EnvVars:    conn.Secret,
+			CmdList:    conn.Command,
+			ClientArgs: clientArgs,
+		})
+		if err != nil {
+			return fmt.Errorf("failed encoding command exec params err=%v", err)
+		}
+
+		pkt.Spec[pb.SpecGatewayConnectionID] = []byte(c.Id)
+		pkt.Spec[pb.SpecAgentConnectionParamsKey] = encConnectionParams
+		*startup = false
+	}
+	return nil
 }
 
 func (s *Server) disconnectClient(c *client.Client) {
