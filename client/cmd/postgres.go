@@ -11,8 +11,8 @@ import (
 	"github.com/briandowns/spinner"
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/client/grpc"
-	pb "github.com/runopsio/hoop/proto"
-	"github.com/runopsio/hoop/proto/memory"
+	"github.com/runopsio/hoop/common/memory"
+	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/spf13/cobra"
 )
 

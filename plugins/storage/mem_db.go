@@ -1,8 +1,9 @@
 package main
 
 import (
-	"github.com/runopsio/hoop/domain"
 	"sync"
+
+	"github.com/runopsio/hoop/domain"
 )
 
 type MemDB struct {

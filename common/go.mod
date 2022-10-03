@@ -1,4 +1,4 @@
-module github.com/runopsio/hoop/proto
+module github.com/runopsio/hoop/common
 
 go 1.19
 

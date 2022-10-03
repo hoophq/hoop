@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	pb "github.com/runopsio/hoop/proto"
+	pb "github.com/runopsio/hoop/common/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )

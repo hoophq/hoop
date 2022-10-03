@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"io"
 
-	pgtypes "github.com/runopsio/hoop/proto/pg/types"
+	pgtypes "github.com/runopsio/hoop/common/pg/types"
 )
 
 type Packet struct {

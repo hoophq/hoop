@@ -2,6 +2,10 @@ package main
 
 import (
 	"fmt"
+	"os"
+
+	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/common/version"
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/api"
 	"github.com/runopsio/hoop/gateway/client"
@@ -9,9 +13,6 @@ import (
 	xtdb "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/transport"
 	"github.com/runopsio/hoop/gateway/user"
-	pb "github.com/runopsio/hoop/proto"
-	"github.com/runopsio/hoop/proto/version"
-	"os"
 )
 
 func main() {

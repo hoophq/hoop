@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/lib/pq/scram"
-	"github.com/runopsio/hoop/proto/pg"
-	pgtypes "github.com/runopsio/hoop/proto/pg/types"
+	"github.com/runopsio/hoop/common/pg"
+	pgtypes "github.com/runopsio/hoop/common/pg/types"
 )
 
 type middleware struct {

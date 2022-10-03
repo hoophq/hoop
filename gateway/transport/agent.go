@@ -5,8 +5,8 @@ import (
 	"log"
 	"sync"
 
+	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/agent"
-	pb "github.com/runopsio/hoop/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -91,7 +91,7 @@ func (s *Server) listenAgentMessages(ag *agent.Agent, stream pb.Transport_Connec
 			}
 			if status, ok := status.FromError(err); ok && status.Code() == codes.Canceled {
 				// TODO: send packet to agent to clean up resources
-				log.Printf("gatewayid=%v - agent disconnected", ag.Id)
+				log.Printf("id=%v - agent disconnected", ag.Id)
 				return nil
 			}
 			log.Printf("received error from agent, err=%v", err)

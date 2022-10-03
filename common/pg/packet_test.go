@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/runopsio/hoop/proto/pg/types"
+	"github.com/runopsio/hoop/common/pg/types"
 )
 
 func TestDecodeStartupPacketSSLRequest(t *testing.T) {

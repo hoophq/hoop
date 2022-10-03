@@ -2,10 +2,10 @@ module github.com/runopsio/hoop/agent
 
 go 1.19
 
-replace github.com/runopsio/hoop/proto => ../proto
+replace github.com/runopsio/hoop/common => ../common
 
 require (
-	github.com/runopsio/hoop/proto v0.0.0-00010101000000-000000000000
+	github.com/runopsio/hoop/common v0.0.0-00010101000000-000000000000
 	google.golang.org/grpc v1.49.0
 )
 

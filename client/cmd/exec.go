@@ -15,8 +15,8 @@ import (
 	"github.com/briandowns/spinner"
 	"github.com/creack/pty"
 	"github.com/runopsio/hoop/client/grpc"
-	pb "github.com/runopsio/hoop/proto"
-	pbexec "github.com/runopsio/hoop/proto/exec"
+	pbexec "github.com/runopsio/hoop/common/exec"
+	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )

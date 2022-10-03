@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"syscall"
 
-	pb "github.com/runopsio/hoop/proto"
-	pbexec "github.com/runopsio/hoop/proto/exec"
-	"github.com/runopsio/hoop/proto/runtime"
+	exec "github.com/runopsio/hoop/common/exec"
+	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/common/runtime"
 )
 
 func (a *Agent) processExec(pkt *pb.Packet) {
@@ -34,7 +34,7 @@ func (a *Agent) doExecRunProc(pkt *pb.Packet) {
 		}).Write([]byte(`internal error, failed decoding connection params`))
 		return
 	}
-	cmd, err := pbexec.NewCommand(connParams.EnvVars,
+	cmd, err := exec.NewCommand(connParams.EnvVars,
 		append(connParams.CmdList, connParams.ClientArgs...)...)
 	if err != nil {
 		log.Printf("failed executing command, err=%v", err)
@@ -64,7 +64,7 @@ func (a *Agent) doExecWriteAgentStdin(pkt *pb.Packet) {
 	log.Printf("gatewayid=%v, tty=true - payload=% X", string(gwID), string(pkt.Payload))
 	storeID := fmt.Sprintf("terminal:%s", gwID)
 	cmdObj := a.connStore.Get(storeID)
-	cmd, ok := cmdObj.(*pbexec.Command)
+	cmd, ok := cmdObj.(*exec.Command)
 	if ok {
 		// Write to tty stdin content
 		if _, err := cmd.WriteTTY(pkt.Payload); err != nil {
@@ -83,7 +83,7 @@ func (a *Agent) doExecWriteAgentStdin(pkt *pb.Packet) {
 		return
 	}
 
-	cmd, err := pbexec.NewCommand(connParams.EnvVars,
+	cmd, err := exec.NewCommand(connParams.EnvVars,
 		append(connParams.CmdList, connParams.ClientArgs...)...)
 	if err != nil {
 		log.Printf("gatewayid=%v, tty=true - failed executing command, err=%v", gwID, err)

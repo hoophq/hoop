@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	pb "github.com/runopsio/hoop/proto"
-	"github.com/runopsio/hoop/proto/memory"
+	"github.com/runopsio/hoop/common/memory"
+	pb "github.com/runopsio/hoop/common/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

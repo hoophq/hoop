@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package protobuf;
 
-option go_package="github.com/runopsio/hoop/proto";
+option go_package="github.com/runopsio/hoop/common";
 
 service Transport {
   rpc Connect (stream Packet) returns (stream Packet);

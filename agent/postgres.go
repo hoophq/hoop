@@ -5,10 +5,10 @@ import (
 	"io"
 	"log"
 
-	pb "github.com/runopsio/hoop/proto"
-	"github.com/runopsio/hoop/proto/pg"
-	"github.com/runopsio/hoop/proto/pg/middlewares"
-	pgtypes "github.com/runopsio/hoop/proto/pg/types"
+	"github.com/runopsio/hoop/common/pg"
+	"github.com/runopsio/hoop/common/pg/middlewares"
+	pgtypes "github.com/runopsio/hoop/common/pg/types"
+	pb "github.com/runopsio/hoop/common/proto"
 )
 
 func (a *Agent) processPGProtocol(pkt *pb.Packet) {
