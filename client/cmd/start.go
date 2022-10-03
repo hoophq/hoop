@@ -24,8 +24,8 @@ var startCmd = &cobra.Command{
 			imageName = "hoophq/hoop"
 		}
 		containerName := "hoopdemo"
-		_ = exec.Command("docker", "stop", "hoopdemo").Run()
-		_ = exec.Command("docker", "rm", "hoopdemo").Run()
+		_ = exec.Command("docker", "stop", containerName).Run()
+		_ = exec.Command("docker", "rm", containerName).Run()
 		if stdout, err := exec.Command("docker", "pull", imageName).CombinedOutput(); err != nil {
 			fmt.Printf("failed pulling image %v, err=%v, stdout=%v\n", imageName, err, string(stdout))
 			os.Exit(1)
