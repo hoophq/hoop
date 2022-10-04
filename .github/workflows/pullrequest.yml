@@ -2,7 +2,7 @@ name: Test
 
 on:
   pull_request:
-    branches: [ feat/automation ]
+    branches: [ 'feat/automation' ]
 
 jobs:
   test:
