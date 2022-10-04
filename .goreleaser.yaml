@@ -13,10 +13,9 @@ builds:
     binary: hoop
     ldflags:
     - -s -w
-    - -X github.com/runopsio/hoop/common/version.version={{ .Version }}
+    - -X github.com/runopsio/hoop/common/version.version={{ .Tag }}
     - -X github.com/runopsio/hoop/common/version.gitCommit={{ .Commit }}
     - -X github.com/runopsio/hoop/common/version.buildDate={{ .Date }}
-    - -X github.com/runopsio/hoop/common/version.appName=client
 archives:
 - replacements:
     darwin: Darwin
@@ -28,6 +27,13 @@ archives:
   # github:
   #   owner: runopsio
   #   name: hoop
+blobs:
+  provider: s3
+  region: us-east-1
+  bucket: hoopartifacts
+  folder: "release/{{ .ProjectName }}/{{ .Tag }}"
+  ids:
+    - hoop
 dockers:
   - dockerfile: Dockerfile
     use: buildx

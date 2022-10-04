@@ -1,15 +1,9 @@
 name: Release
 
-# on:
-#   push:
-#     tags:
-#     - '[0-9]+.[0-9]+.[0-9]+'
-
-# on:
-#   pull_request:
-#     branches: [ 'feat/automation' ]
-
-on: pull_request
+on:
+  push:
+    tags:
+    - '[0-9]+.[0-9]+.[0-9]+'
 
 jobs:
   publish:
@@ -55,4 +49,7 @@ jobs:
       - name: Publish Release
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: make publish

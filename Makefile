@@ -15,7 +15,7 @@ publish-snapshot: clean
 publish: clean
 	cd ./webapp && npm install && npm run release:hoop-ui
 	mv ./webapp/resources ./rootfs/ui
-	goreleaser release --rm-dist
+	goreleaser release --rm-dist --snapshot
 
 clean:
 	rm -rf ./rootfs/ui
@@ -23,4 +23,4 @@ clean:
 test:
 	go test -v github.com/runopsio/hoop/...
 
-.PHONY: build release publish test publish-snapshot
+.PHONY: publish-snapshot publish clean test
