@@ -19,7 +19,9 @@ publish: clean
 	echo "-----"
 	ls -l webapp || true
 	echo "-----"
+	cd ./webapp
 	npm install && npm run release:hoop-ui
+	cd -
 	mv ./webapp/resources ../rootfs/ui
 	goreleaser release --rm-dist --snapshot
 
