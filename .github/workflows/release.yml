@@ -42,7 +42,7 @@ jobs:
           java-version: '11'
 
       - name: Setup Node
-        uses: actions/setup-java@v2
+        uses: actions/setup-node@v3
         with:
           node-version: 16
 
