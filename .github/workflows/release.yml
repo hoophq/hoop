@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    tags:
+    - '[0-9]+.[0-9]+.[0-9]+'
+
+jobs:
+  publish:
+    name: Publish Release
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: '>=1.19.0'
+
+      - name: Test
+        run: make test
+
+      - name: Install GoReleaser
+        uses: goreleaser/goreleaser-action@v3
+        with:
+          install-only: true
+
+      - name: Checkout Webapp
+        uses: actions/checkout@v3
+        with:
+          repository: runopsio/webapp
+          token: ${{ secrets.GH_TOKEN }}
+          path: './webapp'
+      
+      - name: Setup Java
+        uses: actions/setup-java@v2
+        with:
+          distribution: 'zulu'
+          java-version: '11'
+
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16
+
+      - name: Publish Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: make publish
