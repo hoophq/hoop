@@ -12,8 +12,12 @@
 *.out
 
 # IDE related
-*/.idea/
-
+agent/.idea/*
+client/.idea/*
+gateway/.idea/*
+plugins/.idea/*
+proto/.idea/*
+.idea/*
 # Dependency directories (remove the comment below to include it)
 # vendor/
 

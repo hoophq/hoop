@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"github.com/runopsio/hoop/gateway"
 	"net/http"
 	"os"
 	"os/exec"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/briandowns/spinner"
 	"github.com/runopsio/hoop/agent"
-	"github.com/runopsio/hoop/gateway"
 	"github.com/spf13/cobra"
 )
 
