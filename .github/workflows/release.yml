@@ -1,0 +1,48 @@
+name: Release
+
+# on:
+#   push:
+#     tags:
+#     - '[0-9]+.[0-9]+.[0-9]+'
+
+on:
+  pull_request:
+    branches: [ feat/automation ]
+
+jobs:
+  publish:
+    name: Publish Release
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: '>=1.19.0'
+
+      - name: Test
+        run: make test
+
+      - uses: actions/checkout@v3
+        with:
+          repository: runopsio/webapp
+          token: ${{ secrets.GH_TOKEN }}
+          path: './webapp'
+      
+      - name: Setup Java
+        uses: actions/setup-java@v2
+        with:
+          distribution: 'zulu'
+          java-version: '11'
+
+      - name: Setup Node
+        uses: actions/setup-java@v2
+        with:
+          node-version: 16
+
+      - name: Publish Release
+        run: make publish
