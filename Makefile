@@ -13,15 +13,9 @@ publish-snapshot: clean
 	docker manifest push runops/hoop:${VERSION}
 
 publish: clean
-	ls -l ../
-	echo "-----"
-	ls -l
-	echo "-----"
-	ls -l webapp || true
-	echo "-----"
 	cd ./webapp && npm install && npm run release:hoop-ui
-	mv ./webapp/resources ../rootfs/ui
-	goreleaser release --rm-dist --snapshot
+	mv ./webapp/resources ./rootfs/ui
+	goreleaser release --rm-dist
 
 clean:
 	rm -rf ./rootfs/ui
