@@ -28,12 +28,11 @@ archives:
   #   owner: runopsio
   #   name: hoop
 blobs:
-  provider: s3
+- provider: s3
   region: us-east-1
   bucket: hoopartifacts
-  folder: "release/{{ .ProjectName }}/{{ .Tag }}"
   ids:
-    - hoop
+  - hoop
 dockers:
   - dockerfile: Dockerfile
     use: buildx
