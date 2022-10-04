@@ -71,8 +71,8 @@ COPY rootfs/ui /app/ui
 COPY hoop* /app/
 RUN chmod +x /app/*
 
-EXPOSE 8080
-EXPOSE 9090
+EXPOSE 8009
+EXPOSE 8010
 
 ENTRYPOINT ["tini", "--"]
 CMD ["/app/start-dev.sh"]

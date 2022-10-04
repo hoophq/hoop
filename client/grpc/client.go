@@ -21,7 +21,7 @@ type (
 
 func ConnectGrpc(connectionName string, protocol pb.ProtocolType) (*Client, error) {
 	// dial server
-	conn, err := grpc.Dial(":9090", grpc.WithInsecure())
+	conn, err := grpc.Dial(":8010", grpc.WithInsecure())
 	if err != nil {
 		return nil, err
 	}

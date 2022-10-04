@@ -23,6 +23,9 @@ type (
 )
 
 func (api *Api) StartAPI() {
+	if os.Getenv("PORT") == "" {
+		os.Setenv("PORT", "8009")
+	}
 	route := gin.Default()
 	// UI
 	staticUiPath := os.Getenv("STATIC_UI_PATH")

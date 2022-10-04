@@ -1,4 +1,4 @@
-package main
+package gateway
 
 import (
 	"fmt"
@@ -15,7 +15,7 @@ import (
 	"github.com/runopsio/hoop/gateway/user"
 )
 
-func main() {
+func Run() {
 	fmt.Println(string(version.JSON()))
 	s := &xtdb.Storage{}
 	err := s.Connect()
