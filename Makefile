@@ -20,7 +20,7 @@ publish: clean
 	ls -l webapp || true
 	echo "-----"
 	cd ./webapp
-	npm cache clean -f
+	pwd
 	npm install && npm run release:hoop-ui
 	cd -
 	mv ./webapp/resources ../rootfs/ui
