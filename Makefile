@@ -1,11 +1,7 @@
-build-snapshot:
-	goreleaser release --rm-dist --snapshot
-
 # manual build/deploy
-publish-snapshot:
-	rm -rf rootfs/ui
-	curl -sL https://hoopartifacts.s3.amazonaws.com/ui/hoop-ui-latest.tar.gz -o hoop-ui-latest.tar.gz
-	tar -xf hoop-ui-latest.tar.gz && rm -f hoop-ui-latest.tar.gz
+publish-snapshot: clean
+	git clone https://github.com/runopsio/webapp.git && cd webapp
+	npm install && npm run release:hoop-ui
 	mv resources rootfs/ui
 	goreleaser release --rm-dist --snapshot
 	docker tag runops/hoop:v0.0.0-arm64v8 runops/hoop:${VERSION}-arm64v8
@@ -16,10 +12,17 @@ publish-snapshot:
 	docker manifest create runops/hoop:${VERSION} --amend runops/hoop:${VERSION}-arm64v8 --amend runops/hoop:${VERSION}-amd64
 	docker manifest push runops/hoop:${VERSION}
 
-publish:
-	goreleaser release --rm-dist
+publish: clean
+	pushd webapp
+	npm install && npm run release:hoop-ui
+	popd
+	mv webapp/resources rootfs/ui
+	goreleaser release --rm-dist --snapshot
 
-release:
-	echo "TODO"
+clean:
+	rm -rf ./rootfs/ui
 
-.PHONY: build release
+test:
+	go test -v github.com/runopsio/hoop/...
+
+.PHONY: build release publish test publish-snapshot
