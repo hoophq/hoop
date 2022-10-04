@@ -18,7 +18,7 @@ jobs:
     environment: production
 
     steps:
-      - name: Checkout
+      - name: Checkout Hoop
         uses: actions/checkout@v3
 
       - name: Setup Go
@@ -29,7 +29,8 @@ jobs:
       - name: Test
         run: make test
 
-      - uses: actions/checkout@v3
+      - name: Checkout Webapp
+        uses: actions/checkout@v3
         with:
           repository: runopsio/webapp
           token: ${{ secrets.GH_TOKEN }}
