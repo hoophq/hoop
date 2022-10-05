@@ -12,11 +12,14 @@ publish-snapshot: clean
 	docker manifest create runops/hoop:${VERSION} --amend runops/hoop:${VERSION}-arm64v8 --amend runops/hoop:${VERSION}-amd64
 	docker manifest push runops/hoop:${VERSION}
 
-publish: clean
+release: clean
 	cd ./build/webapp && npm install && npm run release:hoop-ui
 	mv ./build/webapp/resources ./rootfs/ui
-	goreleaser release --rm-dist
+	goreleaser release
 	aws s3 cp ./dist/ s3://hoopartifacts/release/${GIT_TAG} --recursive
+
+publish:
+	./scripts/publish-release.sh
 
 clean:
 	rm -rf ./rootfs/ui
