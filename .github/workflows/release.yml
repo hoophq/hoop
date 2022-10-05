@@ -46,6 +46,11 @@ jobs:
         with:
           node-version: 16
 
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v2
+        with:
+          platforms: 'linux/amd64,linux/arm64'
+
       - name: Publish Release
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
