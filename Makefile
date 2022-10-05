@@ -17,6 +17,10 @@ publish: clean
 	mv ./build/webapp/resources ./rootfs/ui
 	goreleaser release --rm-dist --debug
 
+buildui: clean
+	cd ./build/webapp && npm install && npm run release:hoop-ui
+	mv ./build/webapp/resources ./rootfs/ui
+
 clean:
 	rm -rf ./rootfs/ui
 
