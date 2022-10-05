@@ -61,7 +61,7 @@ jobs:
 
       - name: Publish Release
         env:
-          GIT_TAG: ${{ secrets.GIT_TAG }}
+          GIT_TAG: ${{ env.GIT_TAG }}
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           AWS_REGION: us-east-1
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
