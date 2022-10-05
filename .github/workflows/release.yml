@@ -27,6 +27,8 @@ jobs:
         uses: goreleaser/goreleaser-action@v3
         with:
           install-only: true
+          distribution: goreleaser
+          version: latest
 
       - name: Checkout Webapp
         uses: actions/checkout@v3

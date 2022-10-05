@@ -15,7 +15,7 @@ publish-snapshot: clean
 publish: clean
 	cd ./build/webapp && npm install && npm run release:hoop-ui
 	mv ./build/webapp/resources ./rootfs/ui
-	goreleaser release --rm-dist
+	goreleaser release --rm-dist --debug
 
 clean:
 	rm -rf ./rootfs/ui
