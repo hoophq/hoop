@@ -51,6 +51,9 @@ jobs:
         with:
           platforms: 'linux/amd64,linux/arm64'
 
+      - name: Docker Login
+        run: docker login -u=${{ secrets.DOCKER_LOGIN }} -p=${{ secrets.DOCKER_PASSWORD }}
+
       - name: Publish Release
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
