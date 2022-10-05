@@ -3,11 +3,12 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"github.com/runopsio/hoop/gateway"
 	"net/http"
 	"os"
 	"os/exec"
 	"time"
+
+	"github.com/runopsio/hoop/gateway"
 
 	"github.com/briandowns/spinner"
 	"github.com/runopsio/hoop/agent"
@@ -19,10 +20,7 @@ var startCmd = &cobra.Command{
 	Short:        "Runs hoop local demo",
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
-		imageName := os.Getenv("START_IMAGE")
-		if imageName == "" {
-			imageName = "hoophq/hoop"
-		}
+		imageName := "hoophq/hoop"
 		containerName := "hoopdemo"
 		_ = exec.Command("docker", "stop", containerName).Run()
 		_ = exec.Command("docker", "rm", containerName).Run()
@@ -34,8 +32,8 @@ var startCmd = &cobra.Command{
 			"run",
 			"-p", "8009:8009",
 			"-p", "8010:8010",
-			"-d", imageName,
 			"--name", containerName,
+			"-d", imageName,
 		}
 
 		execmd := exec.Command("docker", dockerArgs...)
@@ -72,6 +70,9 @@ var startCmd = &cobra.Command{
 						loader.Stop()
 						fmt.Println("hoop started!")
 						fmt.Println("open http://127.0.0.1:8009 to begin")
+						fmt.Println("")
+						fmt.Println("stop the demo")
+						fmt.Println("docker stop hoopdemo")
 						fmt.Println("")
 						os.Exit(0)
 					}
