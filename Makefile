@@ -1,22 +1,25 @@
+PUBLIC_IMAGE := "hoophq/hoop"
+VERSION ?=
+
 # manual build/deploy
 publish-snapshot: clean
-	git clone https://github.com/runopsio/webapp.git build/webapp && cd build/webapp
-	npm install && npm run release:hoop-ui
+	git clone https://github.com/runopsio/webapp.git build/webapp
+	cd build/webapp && npm install && npm run release:hoop-ui
 	mv resources rootfs/ui
 	goreleaser release --rm-dist --snapshot
-	docker tag runops/hoop:v0.0.0-arm64v8 runops/hoop:${VERSION}-arm64v8
-	docker tag runops/hoop:v0.0.0-amd64 runops/hoop:${VERSION}-amd64
-	docker push runops/hoop:${VERSION}-arm64v8
-	docker push runops/hoop:${VERSION}-amd64
-	docker manifest rm runops/hoop:${VERSION} || true
-	docker manifest create runops/hoop:${VERSION} --amend runops/hoop:${VERSION}-arm64v8 --amend runops/hoop:${VERSION}-amd64
-	docker manifest push runops/hoop:${VERSION}
+	docker tag ${PUBLIC_IMAGE}:v0.0.0-arm64v8 ${PUBLIC_IMAGE}:${VERSION}-arm64v8
+	docker tag ${PUBLIC_IMAGE}:v0.0.0-amd64 ${PUBLIC_IMAGE}:${VERSION}-amd64
+	docker push ${PUBLIC_IMAGE}:${VERSION}-arm64v8
+	docker push ${PUBLIC_IMAGE}:${VERSION}-amd64
+	docker manifest rm ${PUBLIC_IMAGE}:${VERSION} || true
+	docker manifest create ${PUBLIC_IMAGE}:${VERSION} --amend ${PUBLIC_IMAGE}:${VERSION}-arm64v8 --amend ${PUBLIC_IMAGE}:${VERSION}-amd64
+	docker manifest push ${PUBLIC_IMAGE}:${VERSION}
 
 release: clean
 	cd ./build/webapp && npm install && npm run release:hoop-ui
 	mv ./build/webapp/resources ./rootfs/ui
 	goreleaser release
-	aws s3 cp ./dist/ s3://hoopartifacts/release/${GIT_TAG}/ --recursive
+	aws s3 cp . s3://hoopartifacts/release/${GIT_TAG}/ --exclude "*" --include "*.tar.gz" --include "checksums.txt" --recursive
 
 publish:
 	./scripts/publish-release.sh
