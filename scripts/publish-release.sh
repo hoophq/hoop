@@ -25,18 +25,18 @@ $NOTE_CONTENT
 
 ## Assets
 
-- [Darwin arm64](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/hoop_${GIT_TAG}_Darwin_arm64.tar.gz)
-- [Darwin amd64](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/hoop_${GIT_TAG}_Darwin_x86_64.tar.gz)
-- [Linux arm64](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/hoop_${GIT_TAG}_Linux_arm64.tar.gz)
-- [Linux amd64](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/hoop_${GIT_TAG}_Linux_x86_64.tar.gz)
-- [Windows arm64](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/hoop_${GIT_TAG}_Windows_arm64.tar.gz)
-- [Windows amd64](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/hoop_${GIT_TAG}_Windows_x86_64.tar.gz)
+- [hoop-darwin-arm64](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/hoop_${GIT_TAG}_Darwin_arm64.tar.gz)
+- [hoop-darwin-amd64](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/hoop_${GIT_TAG}_Darwin_x86_64.tar.gz)
+- [hoop-linux-arm64](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/hoop_${GIT_TAG}_Linux_arm64.tar.gz)
+- [hoop-linux-amd64](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/hoop_${GIT_TAG}_Linux_x86_64.tar.gz)
+- [hoop-windows-arm64](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/hoop_${GIT_TAG}_Windows_arm64.tar.gz)
+- [hoop-windows-amd64](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/hoop_${GIT_TAG}_Windows_x86_64.tar.gz)
 - [checksums.txt](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/checksums.txt)
 
 ## Docker Images
 
-- hoophq/hoop:latest
-- hoophq/hoop:${GIT_TAG}
+- [hoophq/hoop:latest](https://hub.docker.com/repository/docker/hoophq/hoop)
+- [hoophq/hoop:${GIT_TAG}](https://hub.docker.com/repository/docker/hoophq/hoop)
 
 EOF
 
