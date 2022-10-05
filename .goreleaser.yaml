@@ -64,17 +64,17 @@ docker_manifests:
     image_templates:
       - hoophq/hoop:latest-amd64
       - hoophq/hoop:latest-arm64v8
-# brews:
-#   - tap:
-#       owner: runopsio
-#       name: hoop
-#     url_template: "https://github.com/runopsio/hoop/releases/download/{{ .Version }}/{{ .ArtifactName }}"
-#     commit_author:
-#       name: runopsteam
-#       email: team@runops.io
-#     commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
-#     homepage: "https://github.com/runopsio/hoop"
-#     description: "Runops Proxy forwards remote tcp connections locally."
+brews:
+  - tap:
+      owner: hoophq
+      name: hoopcli
+    url_template: "https://hoopartifacts.s3.amazonaws.com/release/{{ .Version }}/{{ .ArtifactName }}"
+    commit_author:
+      name: hoophq
+      email: team@runops.io
+    commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
+    homepage: "https://github.com/hoophq/hoopcli"
+    description: "Hoop allows acessing any infra-structure resource easily and secure."
 checksum:
   name_template: 'checksums.txt'
 snapshot:

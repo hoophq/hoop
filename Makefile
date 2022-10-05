@@ -16,7 +16,7 @@ publish: clean
 	cd ./build/webapp && npm install && npm run release:hoop-ui
 	mv ./build/webapp/resources ./rootfs/ui
 	goreleaser release --rm-dist
-	aws s3 cp ./dist/ s3://hoopartifacts/release/${GITHUB_REF} --recursive
+	aws s3 cp ./dist/ s3://hoopartifacts/release/${GIT_TAG} --recursive
 
 clean:
 	rm -rf ./rootfs/ui
