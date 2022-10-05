@@ -1,6 +1,6 @@
 # manual build/deploy
 publish-snapshot: clean
-	git clone https://github.com/runopsio/webapp.git && cd webapp
+	git clone https://github.com/runopsio/webapp.git build/webapp && cd build/webapp
 	npm install && npm run release:hoop-ui
 	mv resources rootfs/ui
 	goreleaser release --rm-dist --snapshot

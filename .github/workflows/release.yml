@@ -33,7 +33,7 @@ jobs:
         with:
           repository: runopsio/webapp
           token: ${{ secrets.GH_TOKEN }}
-          path: './webapp'
+          path: './build/webapp'
       
       - name: Setup Java
         uses: actions/setup-java@v2
