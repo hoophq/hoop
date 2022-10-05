@@ -23,12 +23,6 @@ archives:
     linux: Linux
     windows: Windows
     amd64: x86_64
-blobs:
-- provider: s3
-  region: us-east-1
-  bucket: hoopartifacts
-  ids:
-  - hoop
 dockers:
   - dockerfile: Dockerfile
     use: buildx
