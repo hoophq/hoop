@@ -33,6 +33,11 @@ $NOTE_CONTENT
 - [Windows amd64](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/hoop_${GIT_TAG}_Windows_x86_64.tar.gz)
 - [checksums.txt](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/checksums.txt)
 
+## Docker Images
+
+- hoophq/hoop:latest
+- hoophq/hoop:${GIT_TAG}
+
 EOF
 
 cat - <<EOF
