@@ -19,7 +19,7 @@ release: clean
 	cd ./build/webapp && npm install && npm run release:hoop-ui
 	mv ./build/webapp/resources ./rootfs/ui
 	goreleaser release
-	aws s3 cp . s3://hoopartifacts/release/${GIT_TAG}/ --exclude "*" --include "*.tar.gz" --include "checksums.txt" --recursive
+	aws s3 cp .dist/ s3://hoopartifacts/release/${GIT_TAG}/ --exclude "*" --include "*.tar.gz" --include "checksums.txt" --recursive
 
 publish:
 	./scripts/publish-release.sh
