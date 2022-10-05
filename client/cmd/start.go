@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/runopsio/hoop/gateway"
@@ -20,8 +22,29 @@ var startCmd = &cobra.Command{
 	Short:        "Runs hoop local demo",
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
+		loader := spinner.New(spinner.CharSets[78], 70*time.Millisecond)
+		loader.Color("green")
+		loader.Start()
+		defer loader.Stop()
+		loader.Suffix = " starting hoop -> downloading docker image ..."
 		imageName := "hoophq/hoop"
 		containerName := "hoopdemo"
+
+		done := make(chan os.Signal, 1)
+		signal.Notify(done, syscall.SIGTERM, syscall.SIGINT)
+		// TODO: make resize to propagate remotely!
+		go func() {
+			for {
+				switch <-done {
+				case syscall.SIGTERM, syscall.SIGINT:
+					loader.Stop() // this fixes terminal restore
+					os.Exit(1)
+				}
+			}
+		}()
+		// Cleanup signals when done.
+		defer func() { signal.Stop(done); close(done) }()
+
 		_ = exec.Command("docker", "stop", containerName).Run()
 		_ = exec.Command("docker", "rm", containerName).Run()
 		if stdout, err := exec.Command("docker", "pull", imageName).CombinedOutput(); err != nil {
@@ -44,11 +67,7 @@ var startCmd = &cobra.Command{
 		}
 		ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*45)
 		defer cancelFn()
-		done := make(chan struct{})
-		loader := spinner.New(spinner.CharSets[78], 70*time.Millisecond)
-		loader.Color("green")
-		loader.Start()
-		loader.Suffix = " starting hoop ..."
+		loader.Suffix = " starting hoop -> running container ..."
 		go func() {
 			index := 0
 			for {
@@ -68,7 +87,7 @@ var startCmd = &cobra.Command{
 					_, err := http.Get("http://127.0.0.1:8009")
 					if err == nil {
 						loader.Stop()
-						fmt.Println("hoop started!")
+						fmt.Println("-> hoop started!")
 						fmt.Println("open http://127.0.0.1:8009 to begin")
 						fmt.Println("")
 						fmt.Println("stop the demo")
@@ -78,7 +97,7 @@ var startCmd = &cobra.Command{
 					}
 					index++
 					if index == 10 {
-						loader.Suffix = " still starting, hang it there ..."
+						loader.Suffix = " starting hoop -> still starting, hang it there ..."
 					}
 					time.Sleep(time.Second * 1)
 				}
