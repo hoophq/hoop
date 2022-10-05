@@ -16,7 +16,7 @@ agent/.idea/*
 client/.idea/*
 gateway/.idea/*
 plugins/.idea/*
-proto/.idea/*
+common/.idea/*
 .idea/*
 # Dependency directories (remove the comment below to include it)
 # vendor/
