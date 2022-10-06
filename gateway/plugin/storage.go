@@ -10,6 +10,29 @@ type (
 	Storage struct {
 		*st.Storage
 	}
+
+	xtdbList struct {
+		Plugin
+		Connections []xtdbListConnection `edn:"plugin/connection-ids"`
+	}
+
+	xtdbListConnection struct {
+		Conn xtdbListConnectionName `edn:"plugin-connection/id"`
+	}
+
+	xtdbListConnectionName struct {
+		Name string `edn:"connection/name"`
+	}
+
+	xtdbPlugin struct {
+		Plugin
+		XtdbConnection []xtdbConnection `edn:"plugin/connection-ids"`
+	}
+
+	xtdbConnection struct {
+		Connection
+		Groups map[edn.Keyword][]string `edn:"plugin-connection/groups"`
+	}
 )
 
 func (s *Storage) Persist(context *user.Context, plugin *Plugin, connConfigs []Connection) (int64, error) {
@@ -56,6 +79,7 @@ func (s *Storage) FindAll(context *user.Context) ([]ListPlugin, error) {
 
 		plugins = append(plugins, ListPlugin{
 			Plugin: Plugin{
+				Id:   p.Id,
 				Name: p.Name,
 			},
 			Connections: connections,
@@ -76,9 +100,7 @@ func (s *Storage) FindOne(context *user.Context, name string) (*Plugin, error) {
 		return nil, err
 	}
 
-	b = sanitizeEdnGroups(b)
-
-	var plugins []Plugin
+	var plugins []xtdbPlugin
 	if err := edn.Unmarshal(b, &plugins); err != nil {
 		return nil, err
 	}
@@ -87,9 +109,40 @@ func (s *Storage) FindOne(context *user.Context, name string) (*Plugin, error) {
 		return nil, nil
 	}
 
-	return &plugins[0], nil
+	xtdbPlugin := plugins[0]
+
+	connections := make([]Connection, 0)
+	for _, c := range xtdbPlugin.XtdbConnection {
+		connections = append(connections, Connection{
+			Id:           c.Id,
+			ConnectionId: c.ConnectionId,
+			Name:         c.Name,
+			Config:       c.Config,
+			Groups:       sanitizeEdnGroups(c.Groups),
+		})
+	}
+
+	plugin := &Plugin{
+		Id:             xtdbPlugin.Id,
+		OrgId:          xtdbPlugin.OrgId,
+		Name:           xtdbPlugin.Name,
+		Connections:    connections,
+		ConnectionsIDs: xtdbPlugin.ConnectionsIDs,
+		InstalledById:  xtdbPlugin.InstalledById,
+	}
+
+	return plugin, nil
 }
 
-func sanitizeEdnGroups(b []byte) []byte {
-	return b
+func sanitizeEdnGroups(groups map[edn.Keyword][]string) map[string][]string {
+	strGroups := make(map[string][]string)
+	for k, v := range groups {
+		strGroups[removeKeyword(k)] = v
+	}
+	return strGroups
+}
+
+func removeKeyword(keyword edn.Keyword) string {
+	s := keyword.String()
+	return s[1:]
 }

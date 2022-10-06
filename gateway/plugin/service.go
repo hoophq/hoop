@@ -37,19 +37,6 @@ type (
 		Plugin
 		Connections []string `json:"connections" edn:"plugin/connection-ids"`
 	}
-
-	xtdbList struct {
-		Plugin
-		Connections []xtdbConnection `edn:"plugin/connection-ids"`
-	}
-
-	xtdbConnection struct {
-		Conn xtdbConnectionName `edn:"plugin-connection/id"`
-	}
-
-	xtdbConnectionName struct {
-		Name string `edn:"connection/name"`
-	}
 )
 
 func (s *Service) FindAll(context *user.Context) ([]ListPlugin, error) {
