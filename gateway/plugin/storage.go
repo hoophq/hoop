@@ -35,14 +35,14 @@ type (
 	}
 )
 
-func (s *Storage) Persist(context *user.Context, plugin *Plugin, connConfigs []Connection) (int64, error) {
+func (s *Storage) Persist(context *user.Context, plugin *Plugin) (int64, error) {
 	plugin.OrgId = context.Org.Id
 	plugin.InstalledById = context.User.Id
 
 	payloads := make([]map[string]interface{}, 0)
 	payloads = append(payloads, st.EntityToMap(plugin))
 
-	for _, c := range connConfigs {
+	for _, c := range plugin.Connections {
 		payloads = append(payloads, st.EntityToMap(&c))
 	}
 
