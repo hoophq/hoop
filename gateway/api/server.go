@@ -61,6 +61,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.GET("/agents", api.AgentHandler.FindAll)
 
 	route.POST("/plugins", api.PluginHandler.Post)
+	route.PUT("/plugins/:name", api.PluginHandler.Put)
 	route.GET("/plugins", api.PluginHandler.FindAll)
 	route.GET("/plugins/:name", api.PluginHandler.FindOne)
 }

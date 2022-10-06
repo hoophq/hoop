@@ -12,7 +12,7 @@ type (
 	}
 
 	service interface {
-		Persist(context *user.Context, c *Plugin) (int64, error)
+		Persist(context *user.Context, plugin *Plugin) error
 		FindAll(context *user.Context) ([]ListPlugin, error)
 		FindOne(context *user.Context, name string) (*Plugin, error)
 	}
@@ -23,31 +23,31 @@ func (a *Handler) FindOne(c *gin.Context) {
 	context := ctx.(*user.Context)
 
 	name := c.Param("name")
-	connection, err := a.Service.FindOne(context, name)
+	plugin, err := a.Service.FindOne(context, name)
 	if err != nil {
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 
-	if connection == nil {
+	if plugin == nil {
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 		return
 	}
 
-	c.PureJSON(http.StatusOK, connection)
+	c.PureJSON(http.StatusOK, plugin)
 }
 
 func (a *Handler) FindAll(c *gin.Context) {
 	ctx, _ := c.Get("context")
 	context := ctx.(*user.Context)
 
-	connections, err := a.Service.FindAll(context)
+	plugins, err := a.Service.FindAll(context)
 	if err != nil {
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 
-	c.PureJSON(http.StatusOK, connections)
+	c.PureJSON(http.StatusOK, plugins)
 }
 
 func (a *Handler) Post(c *gin.Context) {
@@ -71,11 +71,44 @@ func (a *Handler) Post(c *gin.Context) {
 		return
 	}
 
-	_, err = a.Service.Persist(context, &plugin)
-	if err != nil {
+	if err = a.Service.Persist(context, &plugin); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusCreated, plugin)
+}
+
+func (a *Handler) Put(c *gin.Context) {
+	ctx, _ := c.Get("context")
+	context := ctx.(*user.Context)
+
+	name := c.Param("name")
+	existingPlugin, err := a.Service.FindOne(context, name)
+	if err != nil {
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	if existingPlugin == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+		return
+	}
+
+	var plugin Plugin
+	if err := c.ShouldBindJSON(&plugin); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
+	if plugin.Id == "" {
+		plugin.Id = existingPlugin.Id
+	}
+
+	if err = a.Service.Persist(context, &plugin); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
+	c.PureJSON(http.StatusOK, plugin)
 }
