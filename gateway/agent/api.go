@@ -48,7 +48,7 @@ func (s *Handler) FindAll(c *gin.Context) {
 
 	connections, err := s.Service.FindAll(context)
 	if err != nil {
-		c.Error(err)
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 

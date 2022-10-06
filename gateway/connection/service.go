@@ -16,18 +16,6 @@ type (
 		FindOne(context *user.Context, name string) (*Connection, error)
 	}
 
-	Xtdb struct {
-		Id             string         `edn:"xt/id"`
-		OrgId          string         `edn:"connection/org"`
-		Name           string         `edn:"connection/name" `
-		Command        []string       `edn:"connection/command"`
-		Type           Type           `edn:"connection/type"`
-		SecretProvider SecretProvider `edn:"connection/secret-provider"`
-		SecretId       string         `edn:"connection/secret"`
-		CreatedById    string         `edn:"connection/created-by"`
-		AgentId        string         `edn:"connection/agent"`
-	}
-
 	BaseConnection struct {
 		Id             string         `json:"id"       edn:"xt/id"`
 		Name           string         `json:"name"     edn:"connection/name"    binding:"required"`

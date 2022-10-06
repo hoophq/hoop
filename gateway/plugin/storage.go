@@ -1,0 +1,148 @@
+package plugin
+
+import (
+	st "github.com/runopsio/hoop/gateway/storage"
+	"github.com/runopsio/hoop/gateway/user"
+	"olympos.io/encoding/edn"
+)
+
+type (
+	Storage struct {
+		*st.Storage
+	}
+
+	xtdbList struct {
+		Plugin
+		Connections []xtdbListConnection `edn:"plugin/connection-ids"`
+	}
+
+	xtdbListConnection struct {
+		Conn xtdbListConnectionName `edn:"plugin-connection/id"`
+	}
+
+	xtdbListConnectionName struct {
+		Name string `edn:"connection/name"`
+	}
+
+	xtdbPlugin struct {
+		Plugin
+		XtdbConnection []xtdbConnection `edn:"plugin/connection-ids"`
+	}
+
+	xtdbConnection struct {
+		Connection
+		Groups map[edn.Keyword][]string `edn:"plugin-connection/groups"`
+	}
+)
+
+func (s *Storage) Persist(context *user.Context, plugin *Plugin, connConfigs []Connection) (int64, error) {
+	plugin.OrgId = context.Org.Id
+	plugin.InstalledById = context.User.Id
+
+	payloads := make([]map[string]interface{}, 0)
+	payloads = append(payloads, st.EntityToMap(plugin))
+
+	for _, c := range connConfigs {
+		payloads = append(payloads, st.EntityToMap(&c))
+	}
+
+	txId, err := s.PersistEntities(payloads)
+	if err != nil {
+		return 0, err
+	}
+
+	return txId, nil
+}
+
+func (s *Storage) FindAll(context *user.Context) ([]ListPlugin, error) {
+	var payload = `{:query {
+		:find [(pull ?plugin [* {:plugin/connection-ids [{:plugin-connection/id [:connection/name]}]}])] 
+		:where [[?plugin :plugin/org "` +
+		context.Org.Id + `"]]}}`
+
+	b, err := s.Query([]byte(payload))
+	if err != nil {
+		return nil, err
+	}
+
+	var xtdbPlugins []xtdbList
+	if err := edn.Unmarshal(b, &xtdbPlugins); err != nil {
+		return nil, err
+	}
+
+	plugins := make([]ListPlugin, 0)
+	for _, p := range xtdbPlugins {
+		connections := make([]string, 0)
+		for _, c := range p.Connections {
+			connections = append(connections, c.Conn.Name)
+		}
+
+		plugins = append(plugins, ListPlugin{
+			Plugin: Plugin{
+				Id:   p.Id,
+				Name: p.Name,
+			},
+			Connections: connections,
+		})
+	}
+
+	return plugins, nil
+}
+
+func (s *Storage) FindOne(context *user.Context, name string) (*Plugin, error) {
+	var payload = `{:query {
+		:find [(pull ?plugin [* {:plugin/connection-ids [*]}])] 
+		:where [[?plugin :plugin/name "` + name + `"]
+                [?plugin :plugin/org "` + context.Org.Id + `"]]}}`
+
+	b, err := s.Query([]byte(payload))
+	if err != nil {
+		return nil, err
+	}
+
+	var plugins []xtdbPlugin
+	if err := edn.Unmarshal(b, &plugins); err != nil {
+		return nil, err
+	}
+
+	if len(plugins) == 0 {
+		return nil, nil
+	}
+
+	xtdbPlugin := plugins[0]
+
+	connections := make([]Connection, 0)
+	for _, c := range xtdbPlugin.XtdbConnection {
+		connections = append(connections, Connection{
+			Id:           c.Id,
+			ConnectionId: c.ConnectionId,
+			Name:         c.Name,
+			Config:       c.Config,
+			Groups:       sanitizeEdnGroups(c.Groups),
+		})
+	}
+
+	plugin := &Plugin{
+		Id:             xtdbPlugin.Id,
+		OrgId:          xtdbPlugin.OrgId,
+		Name:           xtdbPlugin.Name,
+		Connections:    connections,
+		ConnectionsIDs: xtdbPlugin.ConnectionsIDs,
+		InstalledById:  xtdbPlugin.InstalledById,
+	}
+
+	return plugin, nil
+}
+
+func sanitizeEdnGroups(groups map[edn.Keyword][]string) map[string][]string {
+	strGroups := make(map[string][]string)
+	for k, v := range groups {
+		strGroups[removeKeyword(k)] = v
+	}
+	return strGroups
+}
+
+func removeKeyword(keyword edn.Keyword) string {
+	s := keyword.String()
+	return s[1:]
+}

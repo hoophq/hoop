@@ -14,12 +14,24 @@ type (
 	Storage struct {
 		*st.Storage
 	}
+
+	xtdb struct {
+		Id             string         `edn:"xt/id"`
+		OrgId          string         `edn:"connection/org"`
+		Name           string         `edn:"connection/name" `
+		Command        []string       `edn:"connection/command"`
+		Type           Type           `edn:"connection/type"`
+		SecretProvider SecretProvider `edn:"connection/secret-provider"`
+		SecretId       string         `edn:"connection/secret"`
+		CreatedById    string         `edn:"connection/created-by"`
+		AgentId        string         `edn:"connection/agent"`
+	}
 )
 
 func (s *Storage) Persist(context *user.Context, c *Connection) (int64, error) {
 	secretId := uuid.New().String()
 
-	conn := Xtdb{
+	conn := xtdb{
 		Id:             c.Id,
 		OrgId:          context.Org.Id,
 		Name:           c.Name,
@@ -73,7 +85,7 @@ func (s *Storage) FindOne(context *user.Context, name string) (*Connection, erro
 		return nil, err
 	}
 
-	var connections []Xtdb
+	var connections []xtdb
 	if err := edn.Unmarshal(b, &connections); err != nil {
 		return nil, err
 	}

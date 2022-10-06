@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"fmt"
+	"github.com/runopsio/hoop/gateway/plugin"
 	"os"
 
 	pb "github.com/runopsio/hoop/common/proto"
@@ -27,11 +28,13 @@ func Run() {
 	connectionService := connection.Service{Storage: &connection.Storage{Storage: s}}
 	userService := user.Service{Storage: &user.Storage{Storage: s}}
 	clientService := client.Service{Storage: &client.Storage{Storage: s}}
+	pluginService := plugin.Service{Storage: &plugin.Storage{Storage: s}}
 
 	a := &api.Api{
 		AgentHandler:      agent.Handler{Service: &agentService},
 		ConnectionHandler: connection.Handler{Service: &connectionService},
 		UserHandler:       user.Handler{Service: &userService},
+		PluginHandler:     plugin.Handler{Service: &pluginService},
 	}
 
 	g := &transport.Server{
@@ -39,6 +42,7 @@ func Run() {
 		ConnectionService: connectionService,
 		UserService:       userService,
 		ClientService:     clientService,
+		PluginService:     pluginService,
 	}
 
 	profile := os.Getenv("PROFILE")

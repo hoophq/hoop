@@ -1,4 +1,4 @@
-package connection
+package plugin
 
 import (
 	"github.com/gin-gonic/gin"
@@ -12,9 +12,9 @@ type (
 	}
 
 	service interface {
-		Persist(context *user.Context, c *Connection) (int64, error)
-		FindAll(context *user.Context) ([]BaseConnection, error)
-		FindOne(context *user.Context, name string) (*Connection, error)
+		Persist(context *user.Context, c *Plugin) (int64, error)
+		FindAll(context *user.Context) ([]ListPlugin, error)
+		FindOne(context *user.Context, name string) (*Plugin, error)
 	}
 )
 
@@ -54,28 +54,28 @@ func (a *Handler) Post(c *gin.Context) {
 	ctx, _ := c.Get("context")
 	context := ctx.(*user.Context)
 
-	var connection Connection
-	if err := c.ShouldBindJSON(&connection); err != nil {
+	var plugin Plugin
+	if err := c.ShouldBindJSON(&plugin); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 
-	existingCon, err := a.Service.FindOne(context, connection.Name)
+	existingPlugin, err := a.Service.FindOne(context, plugin.Name)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
 
-	if existingCon != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "Connection already exists."})
+	if existingPlugin != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Plugin already installed."})
 		return
 	}
 
-	_, err = a.Service.Persist(context, &connection)
+	_, err = a.Service.Persist(context, &plugin)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusCreated, connection)
+	c.JSON(http.StatusCreated, plugin)
 }

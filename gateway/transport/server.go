@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"github.com/runopsio/hoop/gateway/plugin"
 	"log"
 	"net"
 	"strings"
@@ -23,6 +24,7 @@ type (
 		ClientService     client.Service
 		ConnectionService connection.Service
 		UserService       user.Service
+		PluginService     plugin.Service
 	}
 )
 
