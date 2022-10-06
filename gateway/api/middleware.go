@@ -46,12 +46,7 @@ func validateClaims(c *gin.Context) (string, error) {
 	if len(tokenParts) != 2 || tokenParts[0] != "Bearer" || tokenParts[1] == "" {
 		return "", invalidAuthErr
 	}
-	email, err := parseClaims(tokenParts[1])
-	if err != nil {
-		return "", err
-	}
-
-	return email, nil
+	return parseClaims(tokenParts[1])
 }
 
 func parseClaims(tokenValue string) (string, error) {
