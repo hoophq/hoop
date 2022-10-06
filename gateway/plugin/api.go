@@ -13,7 +13,7 @@ type (
 
 	service interface {
 		Persist(context *user.Context, c *Plugin) (int64, error)
-		FindAll(context *user.Context) ([]Plugin, error)
+		FindAll(context *user.Context) ([]ListPlugin, error)
 		FindOne(context *user.Context, name string) (*Plugin, error)
 	}
 )
