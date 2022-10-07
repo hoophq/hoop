@@ -32,21 +32,24 @@ The Gateway manages connections and users that are allowed to access resources. 
 
 To facilitate the deployment, it's possible to configure most of options using environment variables
 
-| ENVIRONMENT          | DESCRIPTION                                | AGENT | PROXY | ROUTER |
-| -------------------- | ------------------------------------------ | ----- | ----- | ------ |
-| XTDB_ADDRESS         | Database server address                    | no    | no    | yes    |
-| STATIC_UI_PATH       | The path where the UI assets resides       | no    | no    | yes    |
+| ENVIRONMENT          | DESCRIPTION                                | AGENT | CLIENT | GATEWAY |
+| -------------------- | ------------------------------------------ | ----- | ------ | ------- |
+| XTDB_ADDRESS         | Database server address                    | no    | no     | yes     |
+| STATIC_UI_PATH       | The path where the UI assets resides       | no    | no     | yes     |
+| PROFILE              | "dev" runs gateway without authentication  | no    | no     | yes     |
 
-## Manual Deployment
+## Development QuickStart
 
-For now we provide a manual deployment for releasing new versions.
+> Need golang and docker to start the development environment
 
-Requirements:
-- goreleaser
-- curl
-- docker
-- access to dockerhub organization
+Execute the command below to start the database, gateway and the agent
 
 ```sh
-VERSION=X.X.X make publish-snapshot
+./scripts/run-dev.sh
 ```
+
+To test the client:
+
+./scripts/run-client-dev.sh -h
+
+> The commands are compiled on the fly, thus any changes in the *.go files will be reflected executing the scripts.
