@@ -50,6 +50,8 @@ Execute the command below to start the database, gateway and the agent
 
 To test the client:
 
+```sh
 ./scripts/run-client-dev.sh -h
+```
 
 > The commands are compiled on the fly, thus any changes in the *.go files will be reflected executing the scripts.
