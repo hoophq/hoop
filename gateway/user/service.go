@@ -2,12 +2,17 @@ package user
 
 type (
 	Service struct {
-		Storage storage
+		Storage  storage
+		Provider provider
 	}
 
 	storage interface {
 		Signup(org *Org, user *User) (txId int64, err error)
 		ContextByEmail(email string) (*Context, error)
+	}
+
+	provider interface {
+		ListOrgs(context *Context) error
 	}
 
 	Context struct {
@@ -34,4 +39,8 @@ func (s *Service) Signup(org *Org, user *User) (txId int64, err error) {
 
 func (s *Service) ContextByEmail(email string) (*Context, error) {
 	return s.Storage.ContextByEmail(email)
+}
+
+func (s *Service) ListOrgs(context *Context) error {
+	return s.Provider.ListOrgs(context)
 }

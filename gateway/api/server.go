@@ -64,6 +64,8 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.PUT("/plugins/:name", api.PluginHandler.Put)
 	route.GET("/plugins", api.PluginHandler.FindAll)
 	route.GET("/plugins/:name", api.PluginHandler.FindOne)
+
+	route.GET("/orgs", api.UserHandler.ListOrgs)
 }
 
 func (api *Api) CreateTrialEntities() error {

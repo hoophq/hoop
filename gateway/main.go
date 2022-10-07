@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"fmt"
+	"github.com/runopsio/hoop/gateway/idp"
 	"github.com/runopsio/hoop/gateway/plugin"
 	"os"
 
@@ -26,7 +27,7 @@ func Run() {
 
 	agentService := agent.Service{Storage: &agent.Storage{Storage: s}}
 	connectionService := connection.Service{Storage: &connection.Storage{Storage: s}}
-	userService := user.Service{Storage: &user.Storage{Storage: s}}
+	userService := user.Service{Storage: &user.Storage{Storage: s}, Provider: idp.NewAuth0Provider()}
 	clientService := client.Service{Storage: &client.Storage{Storage: s}}
 	pluginService := plugin.Service{Storage: &plugin.Storage{Storage: s}}
 
