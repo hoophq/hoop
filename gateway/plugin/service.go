@@ -11,7 +11,7 @@ type (
 	}
 
 	storage interface {
-		Persist(context *user.Context, plugin *Plugin, connConfigs []Connection) (int64, error)
+		Persist(context *user.Context, plugin *Plugin) (int64, error)
 		FindAll(context *user.Context) ([]ListPlugin, error)
 		FindOne(context *user.Context, name string) (*Plugin, error)
 	}
@@ -39,35 +39,37 @@ type (
 	}
 )
 
+func (s *Service) FindOne(context *user.Context, name string) (*Plugin, error) {
+	return s.Storage.FindOne(context, name)
+}
+
 func (s *Service) FindAll(context *user.Context) ([]ListPlugin, error) {
 	return s.Storage.FindAll(context)
 }
 
-func (s *Service) Persist(context *user.Context, plugin *Plugin) (int64, error) {
-	connIDs := make([]string, 0)
-	connConfigs := make([]Connection, 0)
+func (s *Service) Persist(context *user.Context, plugin *Plugin) error {
+	if plugin.Id == "" {
+		plugin.Id = uuid.NewString()
+	}
+
 	connections := plugin.Connections
+	connectionIDs := make([]string, 0)
+	connConfigs := make([]Connection, 0)
 
 	for i := range plugin.Connections {
 		connConfigID := uuid.NewString()
 		connections[i].Id = connConfigID
-		connIDs = append(connIDs, connConfigID)
+		connectionIDs = append(connectionIDs, connConfigID)
 		connConfigs = append(connConfigs, plugin.Connections[i])
 	}
 
-	plugin.Id = uuid.NewString()
-	plugin.ConnectionsIDs = connIDs
-	plugin.Connections = nil
+	plugin.ConnectionsIDs = connectionIDs
+	plugin.Connections = connConfigs
 
-	tx, err := s.Storage.Persist(context, plugin, connConfigs)
+	_, err := s.Storage.Persist(context, plugin)
 	if err != nil {
-		return 0, err
+		return err
 	}
 
-	plugin.Connections = connections
-	return tx, nil
-}
-
-func (s *Service) FindOne(context *user.Context, name string) (*Plugin, error) {
-	return s.Storage.FindOne(context, name)
+	return nil
 }
