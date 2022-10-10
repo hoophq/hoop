@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"errors"
 	"fmt"
 	"github.com/runopsio/hoop/gateway/idp"
 	"github.com/runopsio/hoop/gateway/plugin"
@@ -20,14 +21,21 @@ import (
 func Run() {
 	fmt.Println(string(version.JSON()))
 	s := &xtdb.Storage{}
-	err := s.Connect()
-	if err != nil {
+	if err := s.Connect(); err != nil {
 		panic(err)
 	}
 
+	if idpProvider := idp.NewAuth0Provider(); idpProvider == nil {
+		panic(errors.New("invalid auth0provider"))
+	}
+
+	idpAuthenticator, err := idp.NewAuthenticator()
+	if err != nil {
+		panic(errors.New("invalid Identity Manager Provider"))
+	}
 	agentService := agent.Service{Storage: &agent.Storage{Storage: s}}
 	connectionService := connection.Service{Storage: &connection.Storage{Storage: s}}
-	userService := user.Service{Storage: &user.Storage{Storage: s}, Provider: idp.NewAuth0Provider()}
+	userService := user.Service{Storage: &user.Storage{Storage: s}, Authenticator: idpAuthenticator}
 	clientService := client.Service{Storage: &client.Storage{Storage: s}}
 	pluginService := plugin.Service{Storage: &plugin.Storage{Storage: s}}
 
@@ -50,8 +58,7 @@ func Run() {
 	if profile == pb.DevProfile {
 		api.PROFILE = pb.DevProfile
 
-		err = a.CreateTrialEntities()
-		if err != nil {
+		if err := a.CreateTrialEntities(); err != nil {
 			panic(err)
 		}
 	} else {

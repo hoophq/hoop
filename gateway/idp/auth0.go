@@ -1,9 +1,8 @@
 package idp
 
 import (
-	"fmt"
-	"github.com/runopsio/hoop/gateway/user"
 	"gopkg.in/auth0.v5/management"
+	"os"
 )
 
 type (
@@ -13,22 +12,27 @@ type (
 )
 
 func NewAuth0Provider() *Auth0Provider {
+	providerDomain := os.Getenv("AUTH0_DOMAIN")
+	if providerDomain == "" {
+		providerDomain = "hoophq.us.auth0.com"
+	}
 
-	m, err := management.New("hoophq.us.auth0.com",
+	clientID := os.Getenv("AUTH0_CLIENT_ID")
+	if clientID == "" {
+		return nil
+	}
+
+	clientSecret := os.Getenv("AUTH0_CLIENT_SECRET")
+	if clientSecret == "" {
+		return nil
+	}
+
+	m, err := management.New(providerDomain,
 		management.WithClientCredentials(
-			"oqtgd5V9oaibJ2MYybaNT3fcOSx3Bm0I",
-			"tLDlJNw00poqZ5oe8RYx3mlhIZXdDGA6Jm0eqq_wq0jggPA8vAguQ2-xasv3gudm"))
+			clientID,
+			clientSecret))
 	if err != nil {
 		return nil
 	}
 	return &Auth0Provider{client: m}
-}
-
-func (a *Auth0Provider) ListOrgs(context *user.Context) error {
-	result, err := a.client.Organization.List()
-	if err != nil {
-		return err
-	}
-	fmt.Printf("result: %v", result)
-	return nil
 }
