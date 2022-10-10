@@ -18,7 +18,7 @@ type (
 	}
 )
 
-const redirectLogin = "http://localhost:3000"
+const redirectLogin = "http://localhost:3333/callback"
 
 func (h *Handler) Login(c *gin.Context) {
 	email := c.Query("email")
@@ -50,5 +50,5 @@ func (h *Handler) Callback(c *gin.Context) {
 		return
 	}
 
-	c.Redirect(http.StatusOK, redirect)
+	c.Redirect(http.StatusTemporaryRedirect, redirect)
 }

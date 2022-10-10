@@ -52,8 +52,9 @@ const (
 	typeLogin  loginType = "login"
 	typeSignup loginType = "signup"
 
-	outcomeSuccess outcomeType = "success"
-	outcomeFailure outcomeType = "failure"
+	outcomeSuccess       outcomeType = "success"
+	outcomeError         outcomeType = "error"
+	outcomeEmailMismatch outcomeType = "email_mismatch"
 )
 
 func (s *Service) Signup(org *Org, user *User) (txId int64, err error) {
@@ -83,24 +84,39 @@ func (s *Service) Login(email, redirect string) (string, error) {
 func (s *Service) Callback(state, code string) (string, error) {
 	login, err := s.Storage.FindLogin(state)
 	if err != nil {
+		s.loginOutcome(login, outcomeError)
 		return "", err
 	}
 
 	ctx := context.Background()
 	token, err := s.Authenticator.Exchange(ctx, code)
 	if err != nil {
-		return "", err
+		s.loginOutcome(login, outcomeError)
+		return login.Redirect + "?error=" + err.Error(), nil
 	}
 
 	idToken, err := s.Authenticator.VerifyIDToken(ctx, token)
 	if err != nil {
-		return "", err
+		s.loginOutcome(login, outcomeError)
+		return login.Redirect + "?error=" + err.Error(), nil
 	}
 
 	var profile map[string]interface{}
 	if err := idToken.Claims(&profile); err != nil {
-		return "", err
+		s.loginOutcome(login, outcomeError)
+		return login.Redirect + "?error=" + err.Error(), nil
 	}
 
-	return login.Redirect, nil
+	if profile["email"] != login.Email {
+		s.loginOutcome(login, outcomeEmailMismatch)
+		return login.Redirect + "?error=email_mismatch", nil
+	}
+
+	s.loginOutcome(login, outcomeSuccess)
+	return login.Redirect + "?token=" + token.AccessToken, nil
+}
+
+func (s *Service) loginOutcome(login *login, outcome outcomeType) {
+	login.Outcome = outcome
+	s.Storage.PersistLogin(login)
 }
