@@ -41,6 +41,11 @@ func (h *Handler) Login(c *gin.Context) {
 }
 
 func (h *Handler) Callback(c *gin.Context) {
+	errorMsg := c.Query("error")
+	if errorMsg != "" {
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
 	state := c.Query("state")
 	code := c.Query("code")
 

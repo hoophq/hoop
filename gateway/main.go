@@ -44,6 +44,7 @@ func Run() {
 		ConnectionHandler: connection.Handler{Service: &connectionService},
 		UserHandler:       user.Handler{Service: &userService},
 		PluginHandler:     plugin.Handler{Service: &pluginService},
+		Authenticator:     idpAuthenticator,
 	}
 
 	g := &transport.Server{

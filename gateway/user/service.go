@@ -2,8 +2,13 @@ package user
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"fmt"
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/gateway/idp"
+	"golang.org/x/oauth2"
+	"os"
 )
 
 type (
@@ -37,11 +42,12 @@ type (
 	}
 
 	login struct {
-		Id       string      `edn:"xt/id"`
-		Email    string      `edn:"login/email"`
-		Redirect string      `edn:"login/redirect"`
-		Type     loginType   `edn:"login/type"`
-		Outcome  outcomeType `edn:"login/outcome"`
+		Id        string      `edn:"xt/id"`
+		Email     string      `edn:"login/email"`
+		Challenge string      `edn:"login/challenge"`
+		Redirect  string      `edn:"login/redirect"`
+		Type      loginType   `edn:"login/type"`
+		Outcome   outcomeType `edn:"login/outcome"`
 	}
 
 	loginType   string
@@ -67,15 +73,31 @@ func (s *Service) ContextByEmail(email string) (*Context, error) {
 
 func (s *Service) Login(email, redirect string) (string, error) {
 	login := &login{
-		Id:       uuid.NewString(),
-		Email:    email,
-		Type:     typeLogin,
-		Redirect: redirect,
+		Id:        uuid.NewString(),
+		Challenge: uuid.NewString() + "-" + uuid.NewString(),
+		Email:     email,
+		Type:      typeLogin,
+		Redirect:  redirect,
 	}
 
 	_, err := s.Storage.PersistLogin(login)
 	if err != nil {
 		return "", err
+	}
+
+	hash := sha256.Sum256([]byte(login.Challenge))
+	hashStr := []byte(fmt.Sprintf("%x", hash[:]))
+	b64Challenge := base64.RawURLEncoding.EncodeToString(hashStr)
+
+	fmt.Println(login.Challenge)
+	fmt.Println(b64Challenge)
+
+	audience := os.Getenv("IDP_AUDIENCE")
+	if audience != "" {
+		codeChallengeParams := []oauth2.AuthCodeOption{
+			oauth2.SetAuthURLParam("audience", audience),
+		}
+		return s.Authenticator.AuthCodeURL(login.Id, codeChallengeParams...), nil
 	}
 
 	return s.Authenticator.AuthCodeURL(login.Id), nil
@@ -84,7 +106,9 @@ func (s *Service) Login(email, redirect string) (string, error) {
 func (s *Service) Callback(state, code string) (string, error) {
 	login, err := s.Storage.FindLogin(state)
 	if err != nil {
-		s.loginOutcome(login, outcomeError)
+		if login != nil {
+			s.loginOutcome(login, outcomeError)
+		}
 		return "", err
 	}
 

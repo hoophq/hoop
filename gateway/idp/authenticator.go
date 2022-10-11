@@ -3,6 +3,7 @@ package idp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 	"os"
@@ -11,12 +12,12 @@ import (
 type Authenticator struct {
 	*oidc.Provider
 	oauth2.Config
+	*oidc.IDTokenVerifier
 }
 
 func NewAuthenticator() (*Authenticator, error) {
 	provider, err := oidc.NewProvider(
-		context.Background(),
-		"https://"+os.Getenv("IDP_DOMAIN")+"/",
+		context.Background(), "https://"+os.Getenv("IDP_DOMAIN")+"/",
 	)
 	if err != nil {
 		return nil, err
@@ -30,9 +31,16 @@ func NewAuthenticator() (*Authenticator, error) {
 		Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
 	}
 
+	oidcConfig := &oidc.Config{
+		ClientID: conf.ClientID,
+	}
+
+	verifier := provider.Verifier(oidcConfig)
+
 	return &Authenticator{
-		Provider: provider,
-		Config:   conf,
+		Provider:        provider,
+		Config:          conf,
+		IDTokenVerifier: verifier,
 	}, nil
 }
 
@@ -42,9 +50,48 @@ func (a *Authenticator) VerifyIDToken(ctx context.Context, token *oauth2.Token) 
 		return nil, errors.New("no id_token field in oauth2 token")
 	}
 
-	oidcConfig := &oidc.Config{
-		ClientID: a.ClientID,
+	return a.Verify(ctx, rawIDToken)
+}
+
+func (a *Authenticator) VerifyAccessToken(accessToken string) error {
+	token, err := a.Verify(context.Background(), accessToken)
+	if err != nil {
+		return err
 	}
 
-	return a.Verifier(oidcConfig).Verify(ctx, rawIDToken)
+	fmt.Printf("%v", token)
+	return nil
+	//issuerURL, err := url.Parse(os.Getenv("IDP_DOMAIN"))
+	//if err != nil {
+	//	log.Fatalf("Failed to parse the issuer url: %v", err)
+	//}
+	//
+	//provider := jwks.NewCachingProvider(issuerURL, 5*time.Minute)
+	//
+	//jwtValidator, err := validator.New(
+	//	provider.KeyFunc,
+	//	validator.RS256,
+	//	issuerURL.String(),
+	//	[]string{os.Getenv("AUTH0_AUDIENCE")},
+	//	validator.WithCustomClaims(
+	//		func() validator.CustomClaims {
+	//			return &CustomClaims{}
+	//		},
+	//	),
+	//	validator.WithAllowedClockSkew(time.Minute),
+	//)
+	//if err != nil {
+	//	log.Fatalf("Failed to set up the jwt validator")
+	//}
+	//
+	//validatedToken, err := jwtValidator.ValidateToken(context.Background(), token)
+	//if err != nil {
+	//	return err
+	//}
+	//
+	//
+	//
+	//fmt.Printf("%v", validatedToken)
+
+	return nil
 }

@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"github.com/runopsio/hoop/gateway/idp"
 	"os"
 	"strings"
 
@@ -21,6 +22,7 @@ type (
 		ConnectionHandler connection.Handler
 		UserHandler       user.Handler
 		PluginHandler     plugin.Handler
+		Authenticator     *idp.Authenticator
 	}
 )
 
