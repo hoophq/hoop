@@ -1,10 +1,10 @@
 package gateway
 
 import (
-	"errors"
 	"fmt"
-	"github.com/runopsio/hoop/gateway/idp"
 	"github.com/runopsio/hoop/gateway/plugin"
+	"github.com/runopsio/hoop/gateway/security"
+	"github.com/runopsio/hoop/gateway/security/idp"
 	"os"
 
 	pb "github.com/runopsio/hoop/common/proto"
@@ -25,26 +25,23 @@ func Run() {
 		panic(err)
 	}
 
-	if idpProvider := idp.NewAuth0Provider(); idpProvider == nil {
-		panic(errors.New("invalid auth0provider"))
-	}
+	setProfile()
+	idProvider := idp.NewProvider(api.PROFILE)
 
-	idpAuthenticator, err := idp.NewAuthenticator()
-	if err != nil {
-		panic(errors.New("invalid Identity Manager Provider"))
-	}
 	agentService := agent.Service{Storage: &agent.Storage{Storage: s}}
 	connectionService := connection.Service{Storage: &connection.Storage{Storage: s}}
-	userService := user.Service{Storage: &user.Storage{Storage: s}, Authenticator: idpAuthenticator}
+	userService := user.Service{Storage: &user.Storage{Storage: s}}
 	clientService := client.Service{Storage: &client.Storage{Storage: s}}
 	pluginService := plugin.Service{Storage: &plugin.Storage{Storage: s}}
+	securityService := security.Service{Storage: &security.Storage{Storage: s}, Provider: idProvider}
 
 	a := &api.Api{
 		AgentHandler:      agent.Handler{Service: &agentService},
 		ConnectionHandler: connection.Handler{Service: &connectionService},
 		UserHandler:       user.Handler{Service: &userService},
 		PluginHandler:     plugin.Handler{Service: &pluginService},
-		Authenticator:     idpAuthenticator,
+		SecurityHandler:   security.Handler{Service: &securityService},
+		IDProvider:        idProvider,
 	}
 
 	g := &transport.Server{
@@ -53,19 +50,23 @@ func Run() {
 		UserService:       userService,
 		ClientService:     clientService,
 		PluginService:     pluginService,
+		IDProvider:        idProvider,
 	}
 
-	profile := os.Getenv("PROFILE")
-	if profile == pb.DevProfile {
-		api.PROFILE = pb.DevProfile
-
+	if api.PROFILE == pb.DevProfile {
 		if err := a.CreateTrialEntities(); err != nil {
 			panic(err)
 		}
-	} else {
-		api.DownloadAuthPublicKey()
 	}
 
 	go g.StartRPCServer()
 	a.StartAPI()
+}
+
+func setProfile() {
+	profile := os.Getenv("PROFILE")
+	if profile == "" {
+		profile = pb.DevProfile
+	}
+	api.PROFILE = profile
 }

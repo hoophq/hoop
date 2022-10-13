@@ -2,7 +2,8 @@ package api
 
 import (
 	"fmt"
-	"github.com/runopsio/hoop/gateway/idp"
+	"github.com/runopsio/hoop/gateway/security"
+	"github.com/runopsio/hoop/gateway/security/idp"
 	"os"
 	"strings"
 
@@ -22,7 +23,8 @@ type (
 		ConnectionHandler connection.Handler
 		UserHandler       user.Handler
 		PluginHandler     plugin.Handler
-		Authenticator     *idp.Authenticator
+		SecurityHandler   security.Handler
+		IDProvider        *idp.Provider
 	}
 )
 
@@ -55,8 +57,8 @@ func (api *Api) StartAPI() {
 }
 
 func (api *Api) buildRoutes(route *gin.RouterGroup) {
-	route.POST("/login", api.UserHandler.Login)
-	route.GET("/callback", api.UserHandler.Callback)
+	route.POST("/login", api.SecurityHandler.Login)
+	route.GET("/callback", api.SecurityHandler.Callback)
 
 	route.POST("/connections", api.Authenticate, api.ConnectionHandler.Post)
 	route.GET("/connections", api.Authenticate, api.ConnectionHandler.FindAll)

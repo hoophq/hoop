@@ -2,6 +2,7 @@ package transport
 
 import (
 	"github.com/runopsio/hoop/gateway/plugin"
+	"github.com/runopsio/hoop/gateway/security/idp"
 	"log"
 	"net"
 	"strings"
@@ -25,6 +26,7 @@ type (
 		ConnectionService connection.Service
 		UserService       user.Service
 		PluginService     plugin.Service
+		IDProvider        *idp.Provider
 	}
 )
 

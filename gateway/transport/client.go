@@ -60,7 +60,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	protocolName := extractData(md, "protocol_name")
 
 	email, _ := s.exchangeUserToken(token)
-	context, err := s.UserService.ContextByEmail(email)
+	context, err := s.UserService.UserContext(email)
 	if err != nil || context == nil {
 		return status.Errorf(codes.Unauthenticated, "invalid authentication")
 	}

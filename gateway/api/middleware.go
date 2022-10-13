@@ -20,7 +20,7 @@ func (api *Api) Authenticate(c *gin.Context) {
 		return
 	}
 
-	ctx, err := api.UserHandler.Service.ContextByEmail(email)
+	ctx, err := api.UserHandler.Service.UserContext(email)
 	if err != nil {
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
@@ -45,30 +45,7 @@ func (api *Api) validateClaims(c *gin.Context) (string, error) {
 	if len(tokenParts) != 2 || tokenParts[0] != "Bearer" || tokenParts[1] == "" {
 		return "", invalidAuthErr
 	}
-	return api.parseClaims(tokenParts[1])
-}
-
-func (api *Api) parseClaims(tokenValue string) (string, error) {
-	err := api.Authenticator.VerifyAccessToken(tokenValue)
-	if err != nil {
-		return "", err
-	}
-
-	return "", nil
-	//token, err := jwt.Parse(tokenValue, jwks.Keyfunc)
-	//if err != nil {
-	//	return "", invalidAuthErr
-	//}
-	//
-	//if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-	//	email, ok := claims["https://hoop.dev/email"].(string)
-	//	if !ok || email == "" {
-	//		return "", invalidAuthErr
-	//	}
-	//	return email, nil
-	//}
-	//
-	//return "", invalidAuthErr
+	return api.IDProvider.VerifyAccessToken(tokenParts[1])
 }
 
 func CORSMiddleware() gin.HandlerFunc {
