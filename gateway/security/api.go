@@ -12,7 +12,7 @@ type (
 
 	service interface {
 		Login(email, callback string) (string, error)
-		Callback(state, code string) (string, error)
+		Callback(state, code string) string
 	}
 )
 
@@ -41,12 +41,7 @@ func (h *Handler) Callback(c *gin.Context) {
 	state := c.Query("state")
 	code := c.Query("code")
 
-	redirect, err := h.Service.Callback(state, code)
-	if err != nil {
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-
+	redirect := h.Service.Callback(state, code)
 	c.Redirect(http.StatusTemporaryRedirect, redirect)
 }
 

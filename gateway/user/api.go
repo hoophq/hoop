@@ -7,6 +7,6 @@ type (
 
 	service interface {
 		Signup(org *Org, user *User) (txId int64, err error)
-		UserContext(email string) (*Context, error)
+		FindBySub(sub string) (*Context, error)
 	}
 )

@@ -13,20 +13,15 @@ import (
 var invalidAuthErr = errors.New("invalid auth")
 
 func (api *Api) Authenticate(c *gin.Context) {
-	email, err := api.validateClaims(c)
+	sub, err := api.validateClaims(c)
 	if err != nil {
 		log.Printf("failed authenticating, err=%v", err)
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
 
-	ctx, err := api.UserHandler.Service.UserContext(email)
-	if err != nil {
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
-
-	if ctx == nil {
+	ctx, err := api.UserHandler.Service.FindBySub(sub)
+	if err != nil || ctx == nil {
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}

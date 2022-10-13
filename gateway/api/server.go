@@ -84,10 +84,11 @@ func (api *Api) CreateTrialEntities() error {
 	}
 
 	u := user.User{
-		Id:    userId,
-		Org:   orgId,
-		Name:  "hooper",
-		Email: "tester@hoop.dev",
+		Id:     userId,
+		Org:    orgId,
+		Name:   "hooper",
+		Email:  "tester@hoop.dev",
+		Status: "active",
 	}
 
 	a := agent.Agent{

@@ -33,7 +33,10 @@ func Run() {
 	userService := user.Service{Storage: &user.Storage{Storage: s}}
 	clientService := client.Service{Storage: &client.Storage{Storage: s}}
 	pluginService := plugin.Service{Storage: &plugin.Storage{Storage: s}}
-	securityService := security.Service{Storage: &security.Storage{Storage: s}, Provider: idProvider}
+	securityService := security.Service{
+		Storage:     &security.Storage{Storage: s},
+		Provider:    idProvider,
+		UserService: &userService}
 
 	a := &api.Api{
 		AgentHandler:      agent.Handler{Service: &agentService},
