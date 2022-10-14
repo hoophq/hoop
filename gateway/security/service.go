@@ -192,5 +192,35 @@ func (s *Service) loginOutcome(login *login, outcome outcomeType) {
 }
 
 func extractDomain(email string) string {
-	return "hoop"
+	emailsParts := strings.Split(email, "@")
+	domainParts := strings.Split(emailsParts[1], ".")
+	orgName := domainParts[0]
+
+	if isPublicDomain(orgName) {
+		orgName = emailsParts[0]
+	}
+
+	return orgName
+}
+
+func isPublicDomain(domain string) bool {
+	publicDomains := []string{
+		"gmail",
+		"outlook",
+		"hotmail",
+		"yahoo",
+		"protonmail",
+		"zoho",
+		"aim",
+		"gmx",
+		"icloud",
+		"yandex",
+	}
+
+	for _, d := range publicDomains {
+		if domain == d {
+			return true
+		}
+	}
+	return false
 }

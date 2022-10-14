@@ -92,7 +92,7 @@ func NewProvider(profile string) *Provider {
 	}
 
 	if jwksURL == "" {
-		jwksURL = domain + "/.well-known/jwks.json"
+		jwksURL = "https://" + domain + "/.well-known/jwks.json"
 	}
 
 	if clientSecret == "" {
