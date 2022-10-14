@@ -6,6 +6,7 @@ import (
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/user"
 	"golang.org/x/oauth2"
+	"strings"
 )
 
 type (
@@ -97,7 +98,11 @@ func (s *Service) Callback(state, code string) string {
 		return login.Redirect + "?error=unexpected_error"
 	}
 
-	context, err := s.UserService.FindBySub(profile["sub"].(string))
+	if strings.Contains(s.Provider.Domain, "okta") {
+		sub = email
+	}
+
+	context, err := s.UserService.FindBySub(sub)
 	if err != nil {
 		s.loginOutcome(login, outcomeError)
 		return login.Redirect + "?error=unexpected_error"
@@ -135,6 +140,7 @@ func (s *Service) exchangeCodeByToken(code string) (*oauth2.Token, *oidc.IDToken
 
 func (s *Service) signup(context *user.Context, sub string, profile map[string]interface{}) error {
 	email := profile["email"].(string)
+	newOrg := false
 
 	if context.Org == nil {
 		org, ok := profile["https://hoophq.dev/org"].(string)
@@ -150,17 +156,34 @@ func (s *Service) signup(context *user.Context, sub string, profile map[string]i
 		if err := s.UserService.Persist(context.Org); err != nil {
 			return err
 		}
+
+		newOrg = true
 	}
 
-	context.User = &user.User{
-		Id:     sub,
-		Org:    context.Org.Id,
-		Name:   profile["name"].(string),
-		Email:  email,
-		Status: user.StatusActive,
+	if context.User == nil {
+		groups := make([]string, 0)
+		status := user.StatusReviewing
+
+		if newOrg {
+			status = user.StatusActive
+			groups = append(groups, user.GroupAdmin)
+		}
+
+		context.User = &user.User{
+			Id:     sub,
+			Org:    context.Org.Id,
+			Name:   profile["name"].(string),
+			Email:  email,
+			Status: status,
+			Groups: groups,
+		}
+
+		if err := s.UserService.Persist(context.User); err != nil {
+			return err
+		}
 	}
 
-	return s.UserService.Persist(context.User)
+	return nil
 }
 
 func (s *Service) loginOutcome(login *login, outcome outcomeType) {

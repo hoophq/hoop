@@ -27,13 +27,17 @@ type (
 		Name   string     `json:"name"   edn:"user/name"`
 		Email  string     `json:"email"  edn:"user/email" binding:"required"`
 		Status StatusType `json:"status" edn:"user/status"`
+		Groups []string   `json:"groups" edn:"user/groups"`
 	}
 
 	StatusType string
 )
 
 const (
-	StatusActive StatusType = "active"
+	StatusActive    StatusType = "active"
+	StatusReviewing StatusType = "reviewing"
+
+	GroupAdmin string = "admin"
 )
 
 func (s *Service) Signup(org *Org, user *User) (txId int64, err error) {

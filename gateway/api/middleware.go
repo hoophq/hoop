@@ -21,7 +21,7 @@ func (api *Api) Authenticate(c *gin.Context) {
 	}
 
 	ctx, err := api.UserHandler.Service.FindBySub(sub)
-	if err != nil || ctx == nil {
+	if err != nil || ctx.User == nil {
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
@@ -32,7 +32,7 @@ func (api *Api) Authenticate(c *gin.Context) {
 
 func (api *Api) validateClaims(c *gin.Context) (string, error) {
 	if PROFILE == pb.DevProfile {
-		return "tester@hoop.dev", nil
+		return "test-user", nil
 	}
 
 	tokenHeader := c.GetHeader("authorization")

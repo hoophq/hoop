@@ -220,7 +220,7 @@ func (s *Server) disconnectClient(c *client.Client) {
 
 func (s *Server) exchangeUserToken(token string) (string, error) {
 	if api.PROFILE == pb.DevProfile {
-		return "tester@hoop.dev", nil
+		return "test-user", nil
 	}
 
 	sub, err := s.IDProvider.VerifyAccessToken(token)

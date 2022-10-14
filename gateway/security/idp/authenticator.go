@@ -8,11 +8,17 @@ import (
 	pb "github.com/runopsio/hoop/common/proto"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/golang-jwt/jwt/v4"
 	"golang.org/x/oauth2"
+)
+
+const (
+	defaultProviderDomain   = "https://hoophq.us.auth0.com"
+	defaultProviderClientID = "DatIOCxntNv8AZrQLVnLb3tr1Y3oVwGW"
 )
 
 type Provider struct {
@@ -77,12 +83,25 @@ func NewProvider(profile string) *Provider {
 	audience := os.Getenv("IDP_AUDIENCE")
 	jwksURL := os.Getenv("IDP_JWKS_URL")
 
-	if domain == "" || clientID == "" || clientSecret == "" {
-		panic(errors.New("missing required ID provider variables"))
+	if domain == "" {
+		domain = defaultProviderDomain
+	}
+
+	if clientID == "" {
+		clientID = defaultProviderClientID
 	}
 
 	if jwksURL == "" {
-		jwksURL = "https://hoophq.us.auth0.com/.well-known/jwks.json"
+		jwksURL = domain + "/.well-known/jwks.json"
+	}
+
+	if clientSecret == "" {
+		panic(errors.New("missing required ID provider variables"))
+	}
+
+	if strings.Contains(domain, "okta") {
+		ctx = oidc.InsecureIssuerURLContext(ctx, "https://"+domain+"/")
+		provider.Context = ctx
 	}
 
 	provider.Domain = domain
@@ -109,17 +128,26 @@ func NewProvider(profile string) *Provider {
 		ClientID: provider.ClientID,
 	}
 
+	if strings.Contains(domain, "okta") {
+		oidcConfig.SkipIssuerCheck = true
+		conf.Endpoint = oauth2.Endpoint{
+			AuthURL:   os.Getenv("IDP_AUTHORIZE_ENDPOINT"),
+			TokenURL:  os.Getenv("IDP_TOKEN_ENDPOINT"),
+			AuthStyle: 0,
+		}
+	}
+
 	provider.Config = conf
 	provider.Provider = oidcProvider
 	provider.IDTokenVerifier = provider.Verifier(oidcConfig)
-	provider.JWKS = downloadValidationPublicKey(jwksURL)
+	provider.JWKS = downloadJWKS(jwksURL)
 
 	return provider
 }
 
 var invalidAuthErr = errors.New("invalid auth")
 
-func downloadValidationPublicKey(jwksURL string) *keyfunc.JWKS {
+func downloadJWKS(jwksURL string) *keyfunc.JWKS {
 	fmt.Println("Downloading provider public key")
 	options := keyfunc.Options{
 		Ctx: context.Background(),
