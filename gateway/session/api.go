@@ -14,12 +14,32 @@ type (
 	Handler struct {
 		Service service
 	}
-
+	SessionOptionKey string
+	SessionOption    struct {
+		optionKey SessionOptionKey
+		optionVal any
+	}
 	service interface {
 		FindAll(*user.Context, ...*SessionOption) (*SessionList, error)
 		FindOne(context *user.Context, name string) (*Session, error)
 	}
 )
+
+const (
+	OptionUser       SessionOptionKey = "user"
+	OptionType       SessionOptionKey = "type"
+	OptionConnection SessionOptionKey = "connection"
+	OptionStartDate  SessionOptionKey = "start_date"
+	OptionEndDate    SessionOptionKey = "end_date"
+	OptionOffset     SessionOptionKey = "offset"
+	OptionLimit      SessionOptionKey = "limit"
+)
+
+var availableSessionOptions = []SessionOptionKey{
+	OptionUser, OptionType, OptionConnection,
+	OptionStartDate, OptionEndDate,
+	OptionLimit, OptionOffset,
+}
 
 func (a *Handler) FindOne(c *gin.Context) {
 	ctx, _ := c.Get("context")

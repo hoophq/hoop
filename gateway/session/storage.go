@@ -12,37 +12,18 @@ import (
 	"olympos.io/encoding/edn"
 )
 
-const (
-	OptionUser       SessionOptionKey = "user"
-	OptionType       SessionOptionKey = "type"
-	OptionConnection SessionOptionKey = "connection"
-	OptionStartDate  SessionOptionKey = "start_date"
-	OptionEndDate    SessionOptionKey = "end_date"
-	OptionOffset     SessionOptionKey = "offset"
-	OptionLimit      SessionOptionKey = "limit"
-
-	defaultLimit  int = 100
-	defaultOffset int = 0
-)
-
-var availableSessionOptions = []SessionOptionKey{
-	OptionUser, OptionType, OptionConnection,
-	OptionStartDate, OptionEndDate,
-	OptionLimit, OptionOffset,
-}
-
 type (
-	SessionOptionKey string
-	Storage          struct {
+	Storage struct {
 		*st.Storage
-	}
-	SessionOption struct {
-		optionKey SessionOptionKey
-		optionVal any
 	}
 	GenericStorageWriter struct {
 		persistFn func(*user.Context, *Session) (*st.TxResponse, error)
 	}
+)
+
+const (
+	defaultLimit  int = 100
+	defaultOffset int = 0
 )
 
 func WithOption(optKey SessionOptionKey, val any) *SessionOption {
