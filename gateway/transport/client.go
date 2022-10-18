@@ -116,7 +116,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	bindClient(c.SessionID, stream, conn)
 
 	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
-	err = s.listenClientMessages(stream, c, conn)
+	clientErr := s.listenClientMessages(stream, c, conn)
 	if err := s.pluginOnDisconnectPhase(pluginscore.ParamsData{
 		"org_id":     context.Org.Id,
 		"session_id": sessionID,
@@ -125,7 +125,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	}
 
 	s.disconnectClient(c)
-	return err
+	return clientErr
 }
 
 func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, c *client.Client, conn *connection.Connection) error {

@@ -69,11 +69,12 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 	bindAgent(ag.Id, stream)
 
 	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
+	agentErr := s.listenAgentMessages(ag, stream)
 	if err := s.pluginOnDisconnectPhase(pluginscore.ParamsData{}); err != nil {
 		log.Printf("ua=agent - failed processing plugin on-disconnect phase, err=%v", err)
 	}
 	s.disconnectAgent(ag)
-	return s.listenAgentMessages(ag, stream)
+	return agentErr
 }
 
 func (s *Server) listenAgentMessages(ag *agent.Agent, stream pb.Transport_ConnectServer) error {
