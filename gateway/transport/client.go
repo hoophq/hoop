@@ -2,10 +2,11 @@ package transport
 
 import (
 	"fmt"
-	"github.com/runopsio/hoop/gateway/api"
 	"io"
 	"log"
 	"sync"
+
+	"github.com/runopsio/hoop/gateway/api"
 
 	"github.com/google/uuid"
 	pluginscore "github.com/runopsio/hoop/common/plugins/core"
@@ -17,18 +18,11 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type DbWriter struct{}
-
-func (w DbWriter) Write(data []byte) (int, error) {
-	return 0, nil
-}
-
 type (
 	connectedClients struct {
 		clients     map[string]pb.Transport_ConnectServer
 		connections map[string]*connection.Connection
-		// pluginState map[string]any
-		mu sync.Mutex
+		mu          sync.Mutex
 	}
 )
 
