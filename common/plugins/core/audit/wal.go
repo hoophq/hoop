@@ -111,7 +111,6 @@ func (p *auditPlugin) writeOnReceive(sessionID string, eventType byte, event []b
 	if err != nil || lastIndex == 0 {
 		return fmt.Errorf("failed retrieving wal file content, lastindex=%v, err=%v", lastIndex, err)
 	}
-	log.Printf("lastindex=%v - auditing, length=%v", lastIndex, len(event))
 	eventHeader := addEventStreamHeader(time.Now().UTC(), eventType)
 
 	if err := walog.Write(lastIndex+1, append(eventHeader, event...)); err != nil {
