@@ -119,7 +119,6 @@ func (s *Server) listenAgentMessages(ag *agent.Agent, stream pb.Transport_Connec
 			log.Printf("client connection not found for session id [%s]", sessionID)
 			continue
 		}
-		// DEBUG
 		// log.Printf("received agent msg type [%s] and session id [%s]", pkt.Type, sessionID)
 		s.processAgentPacket(pkt, clientStream)
 	}
