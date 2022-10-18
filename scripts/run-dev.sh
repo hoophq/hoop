@@ -11,7 +11,7 @@ function ctrl_c() {
 echo "--> STARTING XTDB..."
 docker rm xtdb 2>/dev/null || true
 docker stop xtdb 2>/dev/null || true
-docker run --name xtdb --rm -d -p 3000:3000 runops/xtdb-in-memory > /dev/null
+docker run --name xtdb --rm -d -p 3000:3000 runops/xtdb-in-memory:$(uname -m) > /dev/null
 until curl -s -f -o /dev/null "http://127.0.0.1:3000/_xtdb/status"
 do
   echo -n "."
