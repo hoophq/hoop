@@ -1,8 +1,6 @@
 package plugin
 
 import (
-	"fmt"
-
 	st "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/user"
 	"olympos.io/encoding/edn"
@@ -99,12 +97,12 @@ func (s *Storage) FindOne(context *user.Context, name string) (*Plugin, error) {
 
 	b, err := s.Query([]byte(payload))
 	if err != nil {
-		return nil, fmt.Errorf("failed querying xtdb, err=%v", err)
+		return nil, err
 	}
 
 	var plugins []xtdbPlugin
 	if err := edn.Unmarshal(b, &plugins); err != nil {
-		return nil, fmt.Errorf("failed unmarshaling data, err=%v", err)
+		return nil, err
 	}
 
 	if len(plugins) == 0 {
