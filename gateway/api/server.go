@@ -10,6 +10,7 @@ import (
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/plugin"
+	"github.com/runopsio/hoop/gateway/session"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
@@ -21,6 +22,7 @@ type (
 		ConnectionHandler connection.Handler
 		UserHandler       user.Handler
 		PluginHandler     plugin.Handler
+		SessionHandler    session.Handler
 	}
 )
 
@@ -64,6 +66,9 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.PUT("/plugins/:name", api.PluginHandler.Put)
 	route.GET("/plugins", api.PluginHandler.FindAll)
 	route.GET("/plugins/:name", api.PluginHandler.FindOne)
+
+	route.GET("/sessions/:session_id", api.SessionHandler.FindOne)
+	route.GET("/sessions", api.SessionHandler.FindAll)
 }
 
 func (api *Api) CreateTrialEntities() error {

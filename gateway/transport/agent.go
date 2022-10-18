@@ -5,6 +5,7 @@ import (
 	"log"
 	"sync"
 
+	pluginscore "github.com/runopsio/hoop/common/plugins/core"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/agent"
 	"google.golang.org/grpc/codes"
@@ -68,6 +69,10 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 	bindAgent(ag.Id, stream)
 
 	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
+	if err := s.pluginOnDisconnectPhase(pluginscore.ParamsData{}); err != nil {
+		log.Printf("ua=agent - failed processing plugin on-disconnect phase, err=%v", err)
+	}
+	s.disconnectAgent(ag)
 	return s.listenAgentMessages(ag, stream)
 }
 
@@ -77,7 +82,6 @@ func (s *Server) listenAgentMessages(ag *agent.Agent, stream pb.Transport_Connec
 	for {
 		select {
 		case <-ctx.Done():
-			s.disconnectAgent(ag)
 			return nil
 		default:
 		}
@@ -86,7 +90,6 @@ func (s *Server) listenAgentMessages(ag *agent.Agent, stream pb.Transport_Connec
 		pkt, err := stream.Recv()
 		if err != nil {
 			if err == io.EOF {
-				s.disconnectAgent(ag)
 				return nil
 			}
 			if status, ok := status.FromError(err); ok && status.Code() == codes.Canceled {
@@ -95,20 +98,28 @@ func (s *Server) listenAgentMessages(ag *agent.Agent, stream pb.Transport_Connec
 				return nil
 			}
 			log.Printf("received error from agent, err=%v", err)
-			s.disconnectAgent(ag)
 			return err
 		}
 		if pb.PacketType(pkt.Type) == pb.PacketKeepAliveType {
 			continue
 		}
-		gwID := string(pkt.Spec[pb.SpecGatewayConnectionID])
-		clientStream := getClientStream(gwID)
+		sessionID := string(pkt.Spec[pb.SpecGatewayConnectionID])
+		if err := s.pluginOnReceivePhase(pluginscore.ParamsData{
+			"session_id":   sessionID,
+			"packet_type":  pkt.Type,
+			"event_stream": pkt.Payload,
+		}); err != nil {
+			log.Printf("plugin reject packet, err=%v", err)
+			return status.Errorf(codes.Internal, "internal error, plugin reject packet")
+		}
+		clientStream := getClientStream(sessionID)
 		if clientStream == nil {
 			// TODO: warn!
-			log.Printf("client connection not found for gateway connection id [%s]", gwID)
+			log.Printf("client connection not found for session id [%s]", sessionID)
 			continue
 		}
-		log.Printf("received agent msg type [%s] and gateway connection id [%s]", pkt.Type, gwID)
+		// DEBUG
+		// log.Printf("received agent msg type [%s] and session id [%s]", pkt.Type, sessionID)
 		s.processAgentPacket(pkt, clientStream)
 	}
 }

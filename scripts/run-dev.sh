@@ -22,12 +22,12 @@ echo "--> STARTING GATEWAY ..."
 
 export PORT=8009
 export PROFILE=dev
-export GIN_MODE=release
 export XTDB_ADDRESS=http://127.0.0.1:3000
+export PLUGIN_AUDIT_PATH=/tmp/hoopsessions
 go build -o /tmp/hoop github.com/runopsio/hoop/client
 /tmp/hoop start gateway &
 
-unset PORT PROFILE GIN_MODE XTDB_ADDRESS
+unset PORT PROFILE XTDB_ADDRESS PLUGIN_AUDIT_PATH
 
 until curl -s -f -o /dev/null "http://127.0.0.1:8009/api/agents"
 do

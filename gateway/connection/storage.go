@@ -99,7 +99,6 @@ func (s *Storage) FindOne(context *user.Context, name string) (*Connection, erro
 	if err != nil {
 		return nil, err
 	}
-
 	return &Connection{
 		BaseConnection: BaseConnection{
 			Id:             conn.Id,
