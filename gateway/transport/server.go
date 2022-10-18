@@ -6,6 +6,9 @@ import (
 	"strings"
 
 	"github.com/runopsio/hoop/gateway/plugin"
+	"github.com/runopsio/hoop/gateway/security/idp"
+
+	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/session"
 
 	pb "github.com/runopsio/hoop/common/proto"
@@ -28,6 +31,7 @@ type (
 		UserService       user.Service
 		PluginService     plugin.Service
 		SessionService    session.Service
+		IDProvider        *idp.Provider
 	}
 )
 

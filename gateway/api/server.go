@@ -5,6 +5,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/runopsio/hoop/gateway/security"
+	"github.com/runopsio/hoop/gateway/security/idp"
+
 	"github.com/gin-contrib/static"
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/gateway/agent"
@@ -23,6 +26,8 @@ type (
 		UserHandler       user.Handler
 		PluginHandler     plugin.Handler
 		SessionHandler    session.Handler
+		SecurityHandler   security.Handler
+		IDProvider        *idp.Provider
 	}
 )
 
@@ -46,7 +51,7 @@ func (api *Api) StartAPI() {
 	})
 
 	rg := route.Group("/api")
-	rg.Use(api.Authenticate, CORSMiddleware())
+	rg.Use(CORSMiddleware())
 	api.buildRoutes(rg)
 
 	if err := route.Run(); err != nil {
@@ -55,17 +60,20 @@ func (api *Api) StartAPI() {
 }
 
 func (api *Api) buildRoutes(route *gin.RouterGroup) {
-	route.POST("/connections", api.ConnectionHandler.Post)
-	route.GET("/connections", api.ConnectionHandler.FindAll)
-	route.GET("/connections/:name", api.ConnectionHandler.FindOne)
+	route.POST("/login", api.SecurityHandler.Login)
+	route.GET("/callback", api.SecurityHandler.Callback)
 
-	route.POST("/agents", api.AgentHandler.Post)
-	route.GET("/agents", api.AgentHandler.FindAll)
+	route.POST("/connections", api.Authenticate, api.ConnectionHandler.Post)
+	route.GET("/connections", api.Authenticate, api.ConnectionHandler.FindAll)
+	route.GET("/connections/:name", api.Authenticate, api.ConnectionHandler.FindOne)
 
-	route.POST("/plugins", api.PluginHandler.Post)
-	route.PUT("/plugins/:name", api.PluginHandler.Put)
-	route.GET("/plugins", api.PluginHandler.FindAll)
-	route.GET("/plugins/:name", api.PluginHandler.FindOne)
+	route.POST("/agents", api.Authenticate, api.AgentHandler.Post)
+	route.GET("/agents", api.Authenticate, api.AgentHandler.FindAll)
+
+	route.POST("/plugins", api.Authenticate, api.PluginHandler.Post)
+	route.PUT("/plugins/:name", api.Authenticate, api.PluginHandler.Put)
+	route.GET("/plugins", api.Authenticate, api.PluginHandler.FindAll)
+	route.GET("/plugins/:name", api.Authenticate, api.PluginHandler.FindOne)
 
 	route.GET("/sessions/:session_id", api.SessionHandler.FindOne)
 	route.GET("/sessions", api.SessionHandler.FindAll)
@@ -82,10 +90,11 @@ func (api *Api) CreateTrialEntities() error {
 	}
 
 	u := user.User{
-		Id:    userId,
-		Org:   orgId,
-		Name:  "hooper",
-		Email: "tester@hoop.dev",
+		Id:     userId,
+		Org:    orgId,
+		Name:   "hooper",
+		Email:  "tester@hoop.dev",
+		Status: "active",
 	}
 
 	a := agent.Agent{

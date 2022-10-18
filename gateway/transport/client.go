@@ -2,6 +2,7 @@ package transport
 
 import (
 	"fmt"
+	"github.com/runopsio/hoop/gateway/api"
 	"io"
 	"log"
 	"sync"
@@ -67,9 +68,13 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	connectionName := extractData(md, "connection_name")
 	protocolName := extractData(md, "protocol_name")
 
-	email, _ := s.exchangeUserToken(token)
-	context, err := s.UserService.ContextByEmail(email)
-	if err != nil || context == nil {
+	sub, err := s.exchangeUserToken(token)
+	if err != nil {
+		return status.Errorf(codes.Unauthenticated, "invalid authentication")
+	}
+
+	context, err := s.UserService.FindBySub(sub)
+	if err != nil || context.User == nil {
 		return status.Errorf(codes.Unauthenticated, "invalid authentication")
 	}
 
@@ -255,5 +260,14 @@ func (s *Server) disconnectClient(c *client.Client) {
 }
 
 func (s *Server) exchangeUserToken(token string) (string, error) {
-	return "tester@hoop.dev", nil
+	if api.PROFILE == pb.DevProfile {
+		return "test-user", nil
+	}
+
+	sub, err := s.IDProvider.VerifyAccessToken(token)
+	if err != nil {
+		return "", err
+	}
+
+	return sub, nil
 }

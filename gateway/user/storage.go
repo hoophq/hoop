@@ -11,14 +11,21 @@ type (
 	}
 )
 
-func (s *Storage) ContextByEmail(email string) (*Context, error) {
-	u, err := s.getUser(email)
+func (s *Storage) FindById(identifier string) (*Context, error) {
+	c := &Context{}
+
+	b, err := s.GetEntity(identifier)
 	if err != nil {
 		return nil, err
 	}
 
-	if u == nil {
-		return nil, nil
+	if b == nil {
+		return c, nil
+	}
+
+	var u User
+	if err := edn.Unmarshal(b, &u); err != nil {
+		return nil, err
 	}
 
 	o, err := s.getOrg(u.Org)
@@ -26,10 +33,10 @@ func (s *Storage) ContextByEmail(email string) (*Context, error) {
 		return nil, err
 	}
 
-	return &Context{
-		Org:  o,
-		User: u,
-	}, nil
+	c.User = &u
+	c.Org = o
+
+	return c, nil
 }
 
 func (s *Storage) Signup(org *Org, user *User) (txId int64, err error) {
@@ -45,7 +52,18 @@ func (s *Storage) Signup(org *Org, user *User) (txId int64, err error) {
 	return txId, nil
 }
 
-func (s *Storage) getUser(email string) (*User, error) {
+func (s *Storage) Persist(user interface{}) (int64, error) {
+	payload := st.EntityToMap(user)
+
+	txId, err := s.PersistEntities([]map[string]interface{}{payload})
+	if err != nil {
+		return 0, err
+	}
+
+	return txId, nil
+}
+
+func (s *Storage) GetByEmail(email string) (*User, error) {
 	var payload = `{:query {
 		:find [(pull ?user [*])] 
 		:where [[?user :user/email "` +
@@ -82,6 +100,10 @@ func (s *Storage) getOrg(orgId string) (*Org, error) {
 	var org []Org
 	if err := edn.Unmarshal(b, &org); err != nil {
 		return nil, err
+	}
+
+	if len(org) == 0 {
+		return nil, nil
 	}
 
 	return &org[0], nil
