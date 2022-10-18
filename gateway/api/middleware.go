@@ -7,27 +7,21 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v4"
 	pb "github.com/runopsio/hoop/common/proto"
 )
 
 var invalidAuthErr = errors.New("invalid auth")
 
 func (api *Api) Authenticate(c *gin.Context) {
-	email, err := validateClaims(c)
+	sub, err := api.validateClaims(c)
 	if err != nil {
 		log.Printf("failed authenticating, err=%v", err)
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
 
-	ctx, err := api.UserHandler.Service.ContextByEmail(email)
-	if err != nil {
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
-
-	if ctx == nil {
+	ctx, err := api.UserHandler.Service.FindBySub(sub)
+	if err != nil || ctx.User == nil {
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
@@ -36,9 +30,9 @@ func (api *Api) Authenticate(c *gin.Context) {
 	c.Next()
 }
 
-func validateClaims(c *gin.Context) (string, error) {
+func (api *Api) validateClaims(c *gin.Context) (string, error) {
 	if PROFILE == pb.DevProfile {
-		return "tester@hoop.dev", nil
+		return "test-user", nil
 	}
 
 	tokenHeader := c.GetHeader("authorization")
@@ -46,24 +40,7 @@ func validateClaims(c *gin.Context) (string, error) {
 	if len(tokenParts) != 2 || tokenParts[0] != "Bearer" || tokenParts[1] == "" {
 		return "", invalidAuthErr
 	}
-	return parseClaims(tokenParts[1])
-}
-
-func parseClaims(tokenValue string) (string, error) {
-	token, err := jwt.Parse(tokenValue, jwks.Keyfunc)
-	if err != nil {
-		return "", invalidAuthErr
-	}
-
-	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-		email, ok := claims["https://hoop.dev/email"].(string)
-		if !ok || email == "" {
-			return "", invalidAuthErr
-		}
-		return email, nil
-	}
-
-	return "", invalidAuthErr
+	return api.IDProvider.VerifyAccessToken(tokenParts[1])
 }
 
 func CORSMiddleware() gin.HandlerFunc {
