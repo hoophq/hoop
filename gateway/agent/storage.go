@@ -15,8 +15,9 @@ type (
 func (s *Storage) FindAll(context *user.Context) ([]Agent, error) {
 	var payload = `{:query {
 		:find [(pull ?agent [*])] 
-		:where [[?agent :agent/org "` +
-		context.Org.Id + `"]]}}`
+		:in [org]
+		:where [[?agent :agent/org org]]}
+		:in-args ["` + context.Org.Id + `"]}`
 
 	b, err := s.Query([]byte(payload))
 	if err != nil {
@@ -52,7 +53,9 @@ func (s *Storage) FindById(id string) (*Agent, error) {
 func (s *Storage) FindByToken(token string) (*Agent, error) {
 	var payload = `{:query {
 		:find [(pull ?agent [*])] 
-		:where [[?agent :agent/token "` + token + `"]]}}`
+		:in [token]
+		:where [[?agent :agent/token token]]}
+        :in-args ["` + token + `"]}`
 
 	b, err := s.Query([]byte(payload))
 	if err != nil {

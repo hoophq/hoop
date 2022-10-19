@@ -66,8 +66,9 @@ func (s *Storage) Persist(user interface{}) (int64, error) {
 func (s *Storage) GetByEmail(email string) (*User, error) {
 	var payload = `{:query {
 		:find [(pull ?user [*])] 
-		:where [[?user :user/email "` +
-		email + `"]]}}`
+		:in [email]
+		:where [[?user :user/email email]]}
+		:in-args ["` + email + `"]}`
 
 	b, err := s.Query([]byte(payload))
 	if err != nil {

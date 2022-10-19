@@ -15,8 +15,9 @@ type (
 func (s *Storage) FindAll(context *user.Context) ([]Client, error) {
 	var payload = `{:query {
 		:find [(pull ?client [*])] 
-		:where [[?client :client/user "` +
-		context.User.Id + `"]]}}`
+		:id [id]
+		:where [[?client :client/user id]]}
+		:in-args ["` + context.User.Id + `"]}`
 
 	b, err := s.Query([]byte(payload))
 	if err != nil {

@@ -58,8 +58,9 @@ func (s *Storage) Persist(context *user.Context, c *Connection) (int64, error) {
 func (s *Storage) FindAll(context *user.Context) ([]BaseConnection, error) {
 	var payload = `{:query {
 		:find [(pull ?connection [*])] 
-		:where [[?connection :connection/org "` +
-		context.Org.Id + `"]]}}`
+		:in [org]
+		:where [[?connection :connection/org org]]}
+		:in-args ["` + context.Org.Id + `"]}`
 
 	b, err := s.Query([]byte(payload))
 	if err != nil {
@@ -77,8 +78,10 @@ func (s *Storage) FindAll(context *user.Context) ([]BaseConnection, error) {
 func (s *Storage) FindOne(context *user.Context, name string) (*Connection, error) {
 	var payload = `{:query {
 		:find [(pull ?connection [*])] 
-		:where [[?connection :connection/name "` + name + `"]
-                [?connection :connection/org "` + context.Org.Id + `"]]}}`
+		:in [name org]
+		:where [[?connection :connection/name name]
+                [?connection :connection/org org]]}
+		:in-args ["` + name + `" "` + context.Org.Id + `"]}`
 
 	b, err := s.Query([]byte(payload))
 	if err != nil {
@@ -115,7 +118,9 @@ func (s *Storage) FindOne(context *user.Context, name string) (*Connection, erro
 func (s *Storage) getSecret(secretId string) (Secret, error) {
 	var payload = `{:query {
 		:find [(pull ?secret [*])]
-		:where [[?secret :xt/id "` + secretId + `"]]}}`
+		:in [id]
+		:where [[?secret :xt/id id]]}
+		:in-args ["` + secretId + `"]}`
 
 	b, err := s.QueryAsJson([]byte(payload))
 	if err != nil {
