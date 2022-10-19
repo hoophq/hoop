@@ -4,8 +4,8 @@ import (
 	"log"
 
 	"github.com/runopsio/hoop/common/memory"
-	pluginscore "github.com/runopsio/hoop/common/plugins/core"
-	pluginsaudit "github.com/runopsio/hoop/common/plugins/core/audit"
+	pluginscore "github.com/runopsio/hoop/gateway/plugins/core"
+	pluginsaudit "github.com/runopsio/hoop/gateway/plugins/core/audit"
 	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -70,7 +70,7 @@ func (s *Server) pluginOnConnectPhase(onConnectParams pluginscore.ParamsData, us
 	return nil
 }
 
-func (s *Server) pluginOnReceivePhase(p pluginscore.ParamsData) error {
+func (s *Server) pluginOnReceivePhase(sessionID string, pkt pluginscore.PacketData) error {
 	for _, obj := range pluginMemStore.List() {
 		plugin, ok := obj.(pluginscore.Plugin)
 		if !ok {
@@ -78,13 +78,9 @@ func (s *Server) pluginOnReceivePhase(p pluginscore.ParamsData) error {
 			log.Printf("skipping, found a non-plugin in the store, type=%T, obj=%#v", obj, obj)
 			continue
 		}
-		err := plugin.OnReceive(
-			p.GetString("session_id"),
-			p.GetString("packet_type"),
-			p.GetByte("event_stream"))
-		if err != nil {
+		if err := plugin.OnReceive(sessionID, pkt); err != nil {
 			log.Printf("sessionid=%v - plugin %q rejected packet, err=%v",
-				p.GetString("session_id"), plugin.Name(), err)
+				sessionID, plugin.Name(), err)
 			return err
 		}
 	}

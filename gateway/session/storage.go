@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	pluginscore "github.com/runopsio/hoop/common/plugins/core"
+	pluginscore "github.com/runopsio/hoop/gateway/plugins/core"
 	st "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/user"
 	"olympos.io/encoding/edn"

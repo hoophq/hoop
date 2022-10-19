@@ -9,10 +9,10 @@ import (
 	"github.com/runopsio/hoop/gateway/api"
 
 	"github.com/google/uuid"
-	pluginscore "github.com/runopsio/hoop/common/plugins/core"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/client"
 	"github.com/runopsio/hoop/gateway/connection"
+	pluginscore "github.com/runopsio/hoop/gateway/plugins/core"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -156,11 +156,7 @@ func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, c *clie
 		if pb.PacketType(pkt.Type) == pb.PacketKeepAliveType {
 			continue
 		}
-		if err := s.pluginOnReceivePhase(pluginscore.ParamsData{
-			"session_id":   c.SessionID,
-			"packet_type":  pkt.Type,
-			"event_stream": pkt.Payload,
-		}); err != nil {
+		if err := s.pluginOnReceivePhase(c.SessionID, pkt); err != nil {
 			log.Printf("plugin reject packet, err=%v", err)
 			return status.Errorf(codes.Internal, "internal error, packet rejected, contact the administrator")
 		}

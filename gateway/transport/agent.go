@@ -5,9 +5,9 @@ import (
 	"log"
 	"sync"
 
-	pluginscore "github.com/runopsio/hoop/common/plugins/core"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/agent"
+	pluginscore "github.com/runopsio/hoop/gateway/plugins/core"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -105,11 +105,7 @@ func (s *Server) listenAgentMessages(ag *agent.Agent, stream pb.Transport_Connec
 			continue
 		}
 		sessionID := string(pkt.Spec[pb.SpecGatewayConnectionID])
-		if err := s.pluginOnReceivePhase(pluginscore.ParamsData{
-			"session_id":   sessionID,
-			"packet_type":  pkt.Type,
-			"event_stream": pkt.Payload,
-		}); err != nil {
+		if err := s.pluginOnReceivePhase(sessionID, pkt); err != nil {
 			log.Printf("plugin reject packet, err=%v", err)
 			return status.Errorf(codes.Internal, "internal error, plugin reject packet")
 		}
