@@ -6,8 +6,6 @@ import (
 	"log"
 	"sync"
 
-	"github.com/runopsio/hoop/gateway/api"
-
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/client"
@@ -250,7 +248,7 @@ func (s *Server) disconnectClient(c *client.Client) {
 }
 
 func (s *Server) exchangeUserToken(token string) (string, error) {
-	if api.PROFILE == pb.DevProfile {
+	if s.Profile == pb.DevProfile {
 		return "test-user", nil
 	}
 

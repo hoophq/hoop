@@ -32,4 +32,6 @@ const (
 	DefaultKeepAlive time.Duration = 10 * time.Second
 
 	DevProfile = "dev"
+
+	ProviderOkta = "okta"
 )

@@ -30,6 +30,7 @@ type (
 		PluginService     plugin.Service
 		SessionService    session.Service
 		IDProvider        *idp.Provider
+		Profile           string
 	}
 )
 
