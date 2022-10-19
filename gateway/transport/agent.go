@@ -7,7 +7,7 @@ import (
 
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/agent"
-	pluginscore "github.com/runopsio/hoop/gateway/plugins/core"
+	"github.com/runopsio/hoop/gateway/transport/plugins"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -70,7 +70,7 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 
 	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
 	agentErr := s.listenAgentMessages(ag, stream)
-	if err := s.pluginOnDisconnectPhase(pluginscore.ParamsData{}); err != nil {
+	if err := s.pluginOnDisconnectPhase(plugins.ParamsData{}); err != nil {
 		log.Printf("ua=agent - failed processing plugin on-disconnect phase, err=%v", err)
 	}
 	s.disconnectAgent(ag)

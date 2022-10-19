@@ -4,8 +4,8 @@ import (
 	"log"
 
 	"github.com/runopsio/hoop/common/memory"
-	pluginscore "github.com/runopsio/hoop/gateway/plugins/core"
-	pluginsaudit "github.com/runopsio/hoop/gateway/plugins/core/audit"
+	"github.com/runopsio/hoop/gateway/transport/plugins"
+	pluginsaudit "github.com/runopsio/hoop/gateway/transport/plugins/audit"
 	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -21,20 +21,20 @@ func init() {
 
 type pluginConfig struct {
 	enabled    bool
-	configData pluginscore.ParamsData
+	configData plugins.ParamsData
 }
 
 func (c *pluginConfig) Enabled() bool {
 	return c.enabled
 }
 
-func (c *pluginConfig) Config() pluginscore.ParamsData {
+func (c *pluginConfig) Config() plugins.ParamsData {
 	return c.configData
 }
 
-func (s *Server) pluginOnConnectPhase(onConnectParams pluginscore.ParamsData, usrCtx *user.Context) error {
+func (s *Server) pluginOnConnectPhase(onConnectParams plugins.ParamsData, usrCtx *user.Context) error {
 	for _, obj := range pluginMemStore.List() {
-		plugin, ok := obj.(pluginscore.Plugin)
+		plugin, ok := obj.(plugins.Plugin)
 		if !ok {
 			continue
 		}
@@ -70,9 +70,9 @@ func (s *Server) pluginOnConnectPhase(onConnectParams pluginscore.ParamsData, us
 	return nil
 }
 
-func (s *Server) pluginOnReceivePhase(sessionID string, pkt pluginscore.PacketData) error {
+func (s *Server) pluginOnReceivePhase(sessionID string, pkt plugins.PacketData) error {
 	for _, obj := range pluginMemStore.List() {
-		plugin, ok := obj.(pluginscore.Plugin)
+		plugin, ok := obj.(plugins.Plugin)
 		if !ok {
 			// WARN
 			log.Printf("skipping, found a non-plugin in the store, type=%T, obj=%#v", obj, obj)
@@ -87,9 +87,9 @@ func (s *Server) pluginOnReceivePhase(sessionID string, pkt pluginscore.PacketDa
 	return nil
 }
 
-func (s *Server) pluginOnDisconnectPhase(onDisconnectParams pluginscore.ParamsData) error {
+func (s *Server) pluginOnDisconnectPhase(onDisconnectParams plugins.ParamsData) error {
 	for _, obj := range pluginMemStore.List() {
-		plugin, ok := obj.(pluginscore.Plugin)
+		plugin, ok := obj.(plugins.Plugin)
 		if !ok {
 			// WARN
 			log.Printf("skipping, found a non-plugin in the store, type=%T, obj=%#v", obj, obj)

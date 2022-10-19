@@ -12,7 +12,7 @@ import (
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/client"
 	"github.com/runopsio/hoop/gateway/connection"
-	pluginscore "github.com/runopsio/hoop/gateway/plugins/core"
+	"github.com/runopsio/hoop/gateway/transport/plugins"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -96,7 +96,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		Protocol:      protocolName,
 	}
 
-	err = s.pluginOnConnectPhase(pluginscore.ParamsData{
+	err = s.pluginOnConnectPhase(plugins.ParamsData{
 		"session_id":      sessionID,
 		"connection_id":   conn.Id,
 		"connection_name": connectionName,
@@ -117,7 +117,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 
 	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
 	clientErr := s.listenClientMessages(stream, c, conn)
-	if err := s.pluginOnDisconnectPhase(pluginscore.ParamsData{
+	if err := s.pluginOnDisconnectPhase(plugins.ParamsData{
 		"org_id":     context.Org.Id,
 		"session_id": sessionID,
 	}); err != nil {

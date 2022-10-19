@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	pluginscore "github.com/runopsio/hoop/gateway/plugins/core"
 	st "github.com/runopsio/hoop/gateway/storage"
+	"github.com/runopsio/hoop/gateway/transport/plugins"
 	"github.com/runopsio/hoop/gateway/user"
 	"olympos.io/encoding/edn"
 )
@@ -181,7 +181,7 @@ func (s *Storage) NewGenericStorageWriter() *GenericStorageWriter {
 	}
 }
 
-func (s *GenericStorageWriter) Write(p pluginscore.ParamsData) error {
+func (s *GenericStorageWriter) Write(p plugins.ParamsData) error {
 	log.Printf("writing session=%v, org-id=%v\n", p.Get("session_id"), p.Get("org_id"))
 	eventStartDate := p.GetTime("start_date")
 	if eventStartDate == nil {
