@@ -95,7 +95,7 @@ func (s *Storage) SubmitPutTx(trxs ...TxEdnStruct) (*TxResponse, error) {
 	return nil, fmt.Errorf("received unknown status code=%v", resp.StatusCode)
 }
 
-func (s *Storage) PersistEntities(payloads []map[string]interface{}) (int64, error) {
+func (s *Storage) PersistEntities(payloads []map[string]any) (int64, error) {
 	url := fmt.Sprintf("%s/_xtdb/submit-tx", s.address)
 
 	bytePayload, err := buildPersistPayload(payloads)
@@ -118,7 +118,7 @@ func (s *Storage) PersistEntities(payloads []map[string]interface{}) (int64, err
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusAccepted {
-		var j map[string]interface{}
+		var j map[string]any
 		if err = json.NewDecoder(resp.Body).Decode(&j); err != nil {
 			return 0, err
 		}
@@ -169,12 +169,12 @@ func (s *Storage) Query(ednQuery []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	var p [][]map[edn.Keyword]interface{}
+	var p [][]map[edn.Keyword]any
 	if err = edn.Unmarshal(b, &p); err != nil {
 		return nil, err
 	}
 
-	r := make([]map[edn.Keyword]interface{}, 0)
+	r := make([]map[edn.Keyword]any, 0)
 	for _, l := range p {
 		r = append(r, l[0])
 	}
@@ -193,12 +193,12 @@ func (s *Storage) QueryAsJson(ednQuery []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	var p [][]map[string]interface{}
+	var p [][]map[string]any
 	if err = json.Unmarshal(b, &p); err != nil {
 		return nil, err
 	}
 
-	r := make([]map[string]interface{}, 0)
+	r := make([]map[string]any, 0)
 	for _, l := range p {
 		r = append(r, l[0])
 	}
@@ -211,8 +211,8 @@ func (s *Storage) QueryAsJson(ednQuery []byte) ([]byte, error) {
 	return response, nil
 }
 
-func EntityToMap(obj interface{}) map[string]interface{} {
-	payload := make(map[string]interface{})
+func EntityToMap(obj any) map[string]any {
+	payload := make(map[string]any)
 
 	v := reflect.ValueOf(obj).Elem()
 	for i := 0; i < v.NumField(); i++ {
@@ -250,14 +250,14 @@ func (s *Storage) queryRequest(ednQuery []byte, contentType string) ([]byte, err
 	return b, nil
 }
 
-func buildPersistPayload(payloads []map[string]interface{}) ([]byte, error) {
-	txOps := make([]interface{}, 0)
+func buildPersistPayload(payloads []map[string]any) ([]byte, error) {
+	txOps := make([]any, 0)
 	for _, payload := range payloads {
-		txOps = append(txOps, []interface{}{
+		txOps = append(txOps, []any{
 			"put", payload,
 		})
 	}
-	b, err := json.Marshal(map[string]interface{}{"tx-ops": txOps})
+	b, err := json.Marshal(map[string]any{"tx-ops": txOps})
 	if err != nil {
 		return nil, err
 	}

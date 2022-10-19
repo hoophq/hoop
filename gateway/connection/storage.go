@@ -3,6 +3,7 @@ package connection
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	st "github.com/runopsio/hoop/gateway/storage"
@@ -46,7 +47,7 @@ func (s *Storage) Persist(context *user.Context, c *Connection) (int64, error) {
 	connectionPayload := st.EntityToMap(&conn)
 	secretPayload := buildSecretMap(c.Secret, secretId)
 
-	entities := []map[string]interface{}{secretPayload, connectionPayload}
+	entities := []map[string]any{secretPayload, connectionPayload}
 	txId, err := s.PersistEntities(entities)
 	if err != nil {
 		return 0, err
@@ -133,14 +134,16 @@ func (s *Storage) getSecret(secretId string) (Secret, error) {
 	}
 
 	if len(secrets) == 0 {
-		return make(map[string]interface{}), nil
+		return make(map[string]any), nil
 	}
 
-	return secrets[0], nil
+	sanitizedSecrets := removeSecretsPrefix(secrets[0])
+
+	return sanitizedSecrets, nil
 }
 
-func buildSecretMap(secrets map[string]interface{}, xtId string) map[string]interface{} {
-	secretPayload := map[string]interface{}{
+func buildSecretMap(secrets map[string]any, xtId string) map[string]any {
+	secretPayload := map[string]any{
 		"xt/id": xtId,
 	}
 
@@ -149,4 +152,15 @@ func buildSecretMap(secrets map[string]interface{}, xtId string) map[string]inte
 	}
 
 	return secretPayload
+}
+
+func removeSecretsPrefix(secret map[string]any) map[string]any {
+	n := make(map[string]any)
+	for k, v := range secret {
+		if strings.HasPrefix(k, "xt/id") {
+			continue
+		}
+		n[k[7:]] = v
+	}
+	return n
 }

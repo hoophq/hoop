@@ -21,8 +21,8 @@ type (
 		Name           string         `json:"name"     edn:"connection/name"    binding:"required"`
 		Command        []string       `json:"command"  edn:"connection/command" binding:"required"`
 		Type           Type           `json:"type"     edn:"connection/type"    binding:"required"`
-		SecretProvider SecretProvider `json:"provider" edn:"connection/secret-provider"`
 		AgentId        string         `json:"agent_id" edn:"connection/agent"`
+		SecretProvider SecretProvider `json:"-"        edn:"connection/secret-provider"`
 	}
 
 	Connection struct {
@@ -30,7 +30,7 @@ type (
 		Secret Secret `json:"secret" edn:"connection/secret"`
 	}
 
-	Secret map[string]interface{}
+	Secret map[string]any
 
 	Type           string
 	SecretProvider string

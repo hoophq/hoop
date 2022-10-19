@@ -77,7 +77,7 @@ func (s *Storage) FindByToken(token string) (*Agent, error) {
 func (s *Storage) Persist(agent *Agent) (int64, error) {
 	agentPayload := st.EntityToMap(agent)
 
-	txId, err := s.PersistEntities([]map[string]interface{}{agentPayload})
+	txId, err := s.PersistEntities([]map[string]any{agentPayload})
 	if err != nil {
 		return 0, err
 	}
