@@ -7,8 +7,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"strconv"
-	"time"
 
 	"github.com/runopsio/hoop/common/memory"
 	"github.com/runopsio/hoop/common/pg"
@@ -24,17 +22,11 @@ const (
 )
 
 var (
-	pluginAuditPath          string
-	pluginAuditFlushDuration time.Duration
+	pluginAuditPath string
 )
 
 func init() {
 	pluginAuditPath = os.Getenv("PLUGIN_AUDIT_PATH")
-	flushDuration, _ := strconv.Atoi(os.Getenv("PLUGIN_AUDIT_FLUSH_SECS"))
-	if flushDuration == 0 {
-		flushDuration = defaultFlushSec
-	}
-	pluginAuditFlushDuration = time.Second * time.Duration(flushDuration)
 	if pluginAuditPath == "" {
 		pluginAuditPath = defaultAuditPath
 	}
