@@ -75,8 +75,8 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.GET("/plugins", api.Authenticate, api.PluginHandler.FindAll)
 	route.GET("/plugins/:name", api.Authenticate, api.PluginHandler.FindOne)
 
-	route.GET("/sessions/:session_id", api.Authenticate, api.SessionHandler.FindOne)
-	route.GET("/sessions", api.Authenticate, api.SessionHandler.FindAll)
+	route.GET("/plugins/audit/sessions/:name", api.Authenticate, api.PluginHandler.FindOne)
+	route.GET("/plugins/audit/sessions", api.Authenticate, api.SessionHandler.FindAll)
 }
 
 func (api *Api) CreateTrialEntities() error {
