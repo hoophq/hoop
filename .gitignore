@@ -24,3 +24,4 @@ common/.idea/*
 dist/
 rootfs/ui
 build
+go.work.sum

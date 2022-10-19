@@ -1,11 +1,13 @@
 package transport
 
 import (
-	"github.com/runopsio/hoop/gateway/plugin"
-	"github.com/runopsio/hoop/gateway/security/idp"
 	"log"
 	"net"
 	"strings"
+
+	"github.com/runopsio/hoop/gateway/plugin"
+	"github.com/runopsio/hoop/gateway/security/idp"
+	"github.com/runopsio/hoop/gateway/session"
 
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/agent"
@@ -26,6 +28,7 @@ type (
 		ConnectionService connection.Service
 		UserService       user.Service
 		PluginService     plugin.Service
+		SessionService    session.Service
 		IDProvider        *idp.Provider
 	}
 )

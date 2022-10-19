@@ -7,6 +7,7 @@ import (
 
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/agent"
+	"github.com/runopsio/hoop/gateway/transport/plugins"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -68,7 +69,12 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 	bindAgent(ag.Id, stream)
 
 	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
-	return s.listenAgentMessages(ag, stream)
+	agentErr := s.listenAgentMessages(ag, stream)
+	if err := s.pluginOnDisconnectPhase(plugins.ParamsData{}); err != nil {
+		log.Printf("ua=agent - failed processing plugin on-disconnect phase, err=%v", err)
+	}
+	s.disconnectAgent(ag)
+	return agentErr
 }
 
 func (s *Server) listenAgentMessages(ag *agent.Agent, stream pb.Transport_ConnectServer) error {
@@ -77,7 +83,6 @@ func (s *Server) listenAgentMessages(ag *agent.Agent, stream pb.Transport_Connec
 	for {
 		select {
 		case <-ctx.Done():
-			s.disconnectAgent(ag)
 			return nil
 		default:
 		}
@@ -86,7 +91,6 @@ func (s *Server) listenAgentMessages(ag *agent.Agent, stream pb.Transport_Connec
 		pkt, err := stream.Recv()
 		if err != nil {
 			if err == io.EOF {
-				s.disconnectAgent(ag)
 				return nil
 			}
 			if status, ok := status.FromError(err); ok && status.Code() == codes.Canceled {
@@ -95,20 +99,23 @@ func (s *Server) listenAgentMessages(ag *agent.Agent, stream pb.Transport_Connec
 				return nil
 			}
 			log.Printf("received error from agent, err=%v", err)
-			s.disconnectAgent(ag)
 			return err
 		}
 		if pb.PacketType(pkt.Type) == pb.PacketKeepAliveType {
 			continue
 		}
-		gwID := string(pkt.Spec[pb.SpecGatewayConnectionID])
-		clientStream := getClientStream(gwID)
+		sessionID := string(pkt.Spec[pb.SpecGatewayConnectionID])
+		if err := s.pluginOnReceivePhase(sessionID, pkt); err != nil {
+			log.Printf("plugin reject packet, err=%v", err)
+			return status.Errorf(codes.Internal, "internal error, plugin reject packet")
+		}
+		clientStream := getClientStream(sessionID)
 		if clientStream == nil {
 			// TODO: warn!
-			log.Printf("client connection not found for gateway connection id [%s]", gwID)
+			log.Printf("client connection not found for session id [%s]", sessionID)
 			continue
 		}
-		log.Printf("received agent msg type [%s] and gateway connection id [%s]", pkt.Type, gwID)
+		// log.Printf("received agent msg type [%s] and session id [%s]", pkt.Type, sessionID)
 		s.processAgentPacket(pkt, clientStream)
 	}
 }

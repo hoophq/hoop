@@ -34,7 +34,7 @@ var postgresCmd = &cobra.Command{
 		loader.Suffix = " connecting to gateway..."
 
 		client, err := grpc.ConnectGrpc(args[0], pb.ProtocolPostgresType)
-		defer loader.Stop()
+		loader.Disable()
 		if err != nil {
 			log.Fatal(err)
 			return
@@ -181,7 +181,7 @@ func (p *PG) processAgentConnectPhase(pkt *pb.Packet) {
 			return
 		}
 		p.SetGatewayLocalConnectionID(string(gwID))
-		log.Printf("gatewayid=%s - ready to accept connections!", string(gwID))
+		log.Printf("gatewayid=%s - ready to accept connections at 127.0.0.1:%s", string(gwID), p.ProxyPort)
 	case pb.PacketGatewayConnectErrType:
 		gwID := pkt.Spec[pb.SpecGatewayConnectionID]
 		log.Fatalf("gatewayid=%s - found an error connecting with gateway, err=%v",

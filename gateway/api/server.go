@@ -2,16 +2,18 @@ package api
 
 import (
 	"fmt"
-	"github.com/runopsio/hoop/gateway/security"
-	"github.com/runopsio/hoop/gateway/security/idp"
 	"os"
 	"strings"
+
+	"github.com/runopsio/hoop/gateway/security"
+	"github.com/runopsio/hoop/gateway/security/idp"
 
 	"github.com/gin-contrib/static"
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/plugin"
+	"github.com/runopsio/hoop/gateway/session"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
@@ -23,6 +25,7 @@ type (
 		ConnectionHandler connection.Handler
 		UserHandler       user.Handler
 		PluginHandler     plugin.Handler
+		SessionHandler    session.Handler
 		SecurityHandler   security.Handler
 		IDProvider        *idp.Provider
 	}
@@ -71,6 +74,9 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.PUT("/plugins/:name", api.Authenticate, api.PluginHandler.Put)
 	route.GET("/plugins", api.Authenticate, api.PluginHandler.FindAll)
 	route.GET("/plugins/:name", api.Authenticate, api.PluginHandler.FindOne)
+
+	route.GET("/plugins/audit/sessions/:name", api.Authenticate, api.PluginHandler.FindOne)
+	route.GET("/plugins/audit/sessions", api.Authenticate, api.SessionHandler.FindAll)
 }
 
 func (api *Api) CreateTrialEntities() error {

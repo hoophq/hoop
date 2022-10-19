@@ -2,10 +2,12 @@ package gateway
 
 import (
 	"fmt"
+	"os"
+
 	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/security"
 	"github.com/runopsio/hoop/gateway/security/idp"
-	"os"
+	"github.com/runopsio/hoop/gateway/session"
 
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/common/version"
@@ -33,6 +35,7 @@ func Run() {
 	userService := user.Service{Storage: &user.Storage{Storage: s}}
 	clientService := client.Service{Storage: &client.Storage{Storage: s}}
 	pluginService := plugin.Service{Storage: &plugin.Storage{Storage: s}}
+	sessionService := session.Service{Storage: &session.Storage{Storage: s}}
 	securityService := security.Service{
 		Storage:     &security.Storage{Storage: s},
 		Provider:    idProvider,
@@ -43,6 +46,7 @@ func Run() {
 		ConnectionHandler: connection.Handler{Service: &connectionService},
 		UserHandler:       user.Handler{Service: &userService},
 		PluginHandler:     plugin.Handler{Service: &pluginService},
+		SessionHandler:    session.Handler{Service: &sessionService},
 		SecurityHandler:   security.Handler{Service: &securityService},
 		IDProvider:        idProvider,
 	}
@@ -53,6 +57,7 @@ func Run() {
 		UserService:       userService,
 		ClientService:     clientService,
 		PluginService:     pluginService,
+		SessionService:    sessionService,
 		IDProvider:        idProvider,
 	}
 

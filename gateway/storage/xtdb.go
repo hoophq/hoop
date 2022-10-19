@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"reflect"
+	"strings"
+	"time"
 
 	"olympos.io/encoding/edn"
 )
@@ -22,6 +25,13 @@ type (
 		client  http.Client
 		address string
 	}
+	// TxEdnStruct must be a struct containing edn fields.
+	// See https://github.com/go-edn/edn.
+	TxEdnStruct any
+	TxResponse  struct {
+		TxID   int       `edn:"xtdb.api/tx-id"`
+		TxTime time.Time `edn:"xtdb.api/tx-time"`
+	}
 )
 
 func (s *Storage) Connect() error {
@@ -31,6 +41,58 @@ func (s *Storage) Connect() error {
 		s.address = defaultAddress
 	}
 	return nil
+}
+
+// buildTrxPutEdn build transaction put operation as string
+func (s *Storage) buildTrxPutEdn(trxs ...TxEdnStruct) (string, error) {
+	var trxVector []string
+	for _, tx := range trxs {
+		txEdn, err := edn.Marshal(tx)
+		if err != nil {
+			return "", err
+		}
+		trxVector = append(trxVector, fmt.Sprintf(`[:xtdb.api/put %v]`, string(txEdn)))
+	}
+	return fmt.Sprintf(`{:tx-ops [%v]}`, strings.Join(trxVector, "")), nil
+}
+
+// SubmitPutTx sends put transactions to the xtdb API
+// https://docs.xtdb.com/clients/1.22.0/http/#submit-tx
+func (s *Storage) SubmitPutTx(trxs ...TxEdnStruct) (*TxResponse, error) {
+	url := fmt.Sprintf("%s/_xtdb/submit-tx", s.address)
+	txOpsEdn, err := s.buildTrxPutEdn(trxs...)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBufferString(txOpsEdn))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("content-type", "application/edn")
+	req.Header.Set("accept", "application/edn")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp == nil {
+		return nil, fmt.Errorf("http response is empty")
+	}
+	defer resp.Body.Close()
+
+	var txResponse TxResponse
+	if resp.StatusCode == http.StatusAccepted {
+		if err := edn.NewDecoder(resp.Body).Decode(&txResponse); err != nil {
+			fmt.Printf("error decoding transaction response, err=%v\n", err)
+		}
+		return &txResponse, nil
+	} else {
+		data, _ := io.ReadAll(resp.Body)
+		fmt.Printf("unknown status code=%v, body=%v\n", resp.StatusCode, string(data))
+	}
+	return nil, fmt.Errorf("received unknown status code=%v", resp.StatusCode)
 }
 
 func (s *Storage) PersistEntities(payloads []map[string]interface{}) (int64, error) {
@@ -95,6 +157,10 @@ func (s *Storage) GetEntity(xtId string) ([]byte, error) {
 	}
 
 	return nil, nil
+}
+
+func (s *Storage) QueryRaw(ednQuery []byte) ([]byte, error) {
+	return s.queryRequest(ednQuery, "application/edn")
 }
 
 func (s *Storage) Query(ednQuery []byte) ([]byte, error) {
