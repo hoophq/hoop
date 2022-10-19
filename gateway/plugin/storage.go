@@ -96,7 +96,7 @@ func (s *Storage) FindOne(context *user.Context, name string) (*Plugin, error) {
 		:in [name org]
 		:where [[?plugin :plugin/name name]
                 [?plugin :plugin/org org]]}
-		:in args ["` + name + `" "` + context.Org.Id + `"]}`
+		:in-args ["` + name + `" "` + context.Org.Id + `"]}`
 
 	b, err := s.Query([]byte(payload))
 	if err != nil {
