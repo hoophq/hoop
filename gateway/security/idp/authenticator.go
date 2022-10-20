@@ -19,6 +19,7 @@ import (
 const (
 	defaultProviderDomain   = "hoophq.us.auth0.com"
 	defaultProviderClientID = "DatIOCxntNv8AZrQLVnLb3tr1Y3oVwGW"
+	defaultProviderAudience = "https://" + defaultProviderDomain + "/api/v2/"
 )
 
 type Provider struct {
@@ -96,6 +97,10 @@ func NewProvider(profile string) *Provider {
 
 	if provider.ClientID == "" {
 		provider.ClientID = defaultProviderClientID
+	}
+
+	if provider.Audience == "" {
+		provider.Audience = defaultProviderAudience
 	}
 
 	if jwksURL == "" {
