@@ -28,7 +28,7 @@ func (s *Storage) FindLogin(state string) (*login, error) {
 func (s *Storage) PersistLogin(login *login) (int64, error) {
 	payload := st.EntityToMap(login)
 
-	txId, err := s.PersistEntities([]map[string]interface{}{payload})
+	txId, err := s.PersistEntities([]map[string]any{payload})
 	if err != nil {
 		return 0, err
 	}

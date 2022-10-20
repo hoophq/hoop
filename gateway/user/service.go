@@ -8,7 +8,7 @@ type (
 	storage interface {
 		Signup(org *Org, user *User) (txId int64, err error)
 		FindById(email string) (*Context, error)
-		Persist(user interface{}) (int64, error)
+		Persist(user any) (int64, error)
 	}
 
 	Context struct {
@@ -48,7 +48,7 @@ func (s *Service) FindBySub(sub string) (*Context, error) {
 	return s.Storage.FindById(sub)
 }
 
-func (s *Service) Persist(user interface{}) error {
+func (s *Service) Persist(user any) error {
 	_, err := s.Storage.Persist(user)
 	if err != nil {
 		return err

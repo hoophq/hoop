@@ -39,7 +39,7 @@ func (s *Storage) Persist(context *user.Context, plugin *Plugin) (int64, error) 
 	plugin.OrgId = context.Org.Id
 	plugin.InstalledById = context.User.Id
 
-	payloads := make([]map[string]interface{}, 0)
+	payloads := make([]map[string]any, 0)
 	payloads = append(payloads, st.EntityToMap(plugin))
 
 	for _, c := range plugin.Connections {
@@ -57,8 +57,9 @@ func (s *Storage) Persist(context *user.Context, plugin *Plugin) (int64, error) 
 func (s *Storage) FindAll(context *user.Context) ([]ListPlugin, error) {
 	var payload = `{:query {
 		:find [(pull ?plugin [* {:plugin/connection-ids [{:plugin-connection/id [:connection/name]}]}])] 
-		:where [[?plugin :plugin/org "` +
-		context.Org.Id + `"]]}}`
+		:in [org]
+		:where [[?plugin :plugin/org org]]}
+		:in-args ["` + context.Org.Id + `"]}`
 
 	b, err := s.Query([]byte(payload))
 	if err != nil {
@@ -92,8 +93,10 @@ func (s *Storage) FindAll(context *user.Context) ([]ListPlugin, error) {
 func (s *Storage) FindOne(context *user.Context, name string) (*Plugin, error) {
 	var payload = `{:query {
 		:find [(pull ?plugin [* {:plugin/connection-ids [*]}])] 
-		:where [[?plugin :plugin/name "` + name + `"]
-                [?plugin :plugin/org "` + context.Org.Id + `"]]}}`
+		:in [name org]
+		:where [[?plugin :plugin/name name]
+                [?plugin :plugin/org org]]}
+		:in-args ["` + name + `" "` + context.Org.Id + `"]}`
 
 	b, err := s.Query([]byte(payload))
 	if err != nil {

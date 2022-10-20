@@ -31,7 +31,7 @@ func (api *Api) Authenticate(c *gin.Context) {
 }
 
 func (api *Api) validateClaims(c *gin.Context) (string, error) {
-	if PROFILE == pb.DevProfile {
+	if api.Profile == pb.DevProfile {
 		return "test-user", nil
 	}
 

@@ -27,8 +27,8 @@ func Run() {
 		panic(err)
 	}
 
-	setProfile()
-	idProvider := idp.NewProvider(api.PROFILE)
+	profile := setProfile()
+	idProvider := idp.NewProvider(profile)
 
 	agentService := agent.Service{Storage: &agent.Storage{Storage: s}}
 	connectionService := connection.Service{Storage: &connection.Storage{Storage: s}}
@@ -49,6 +49,7 @@ func Run() {
 		SessionHandler:    session.Handler{Service: &sessionService},
 		SecurityHandler:   security.Handler{Service: &securityService},
 		IDProvider:        idProvider,
+		Profile:           profile,
 	}
 
 	g := &transport.Server{
@@ -59,9 +60,10 @@ func Run() {
 		PluginService:     pluginService,
 		SessionService:    sessionService,
 		IDProvider:        idProvider,
+		Profile:           profile,
 	}
 
-	if api.PROFILE == pb.DevProfile {
+	if profile == pb.DevProfile {
 		if err := a.CreateTrialEntities(); err != nil {
 			panic(err)
 		}
@@ -71,10 +73,10 @@ func Run() {
 	a.StartAPI()
 }
 
-func setProfile() {
+func setProfile() string {
 	profile := os.Getenv("PROFILE")
 	if profile == "" {
 		profile = pb.DevProfile
 	}
-	api.PROFILE = profile
+	return profile
 }

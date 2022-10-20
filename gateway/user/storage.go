@@ -43,7 +43,7 @@ func (s *Storage) Signup(org *Org, user *User) (txId int64, err error) {
 	orgPayload := st.EntityToMap(org)
 	userPayload := st.EntityToMap(user)
 
-	entities := []map[string]interface{}{orgPayload, userPayload}
+	entities := []map[string]any{orgPayload, userPayload}
 	txId, err = s.PersistEntities(entities)
 	if err != nil {
 		return 0, err
@@ -52,10 +52,10 @@ func (s *Storage) Signup(org *Org, user *User) (txId int64, err error) {
 	return txId, nil
 }
 
-func (s *Storage) Persist(user interface{}) (int64, error) {
+func (s *Storage) Persist(user any) (int64, error) {
 	payload := st.EntityToMap(user)
 
-	txId, err := s.PersistEntities([]map[string]interface{}{payload})
+	txId, err := s.PersistEntities([]map[string]any{payload})
 	if err != nil {
 		return 0, err
 	}
@@ -66,8 +66,9 @@ func (s *Storage) Persist(user interface{}) (int64, error) {
 func (s *Storage) GetByEmail(email string) (*User, error) {
 	var payload = `{:query {
 		:find [(pull ?user [*])] 
-		:where [[?user :user/email "` +
-		email + `"]]}}`
+		:in [email]
+		:where [[?user :user/email email]]}
+		:in-args ["` + email + `"]}`
 
 	b, err := s.Query([]byte(payload))
 	if err != nil {
