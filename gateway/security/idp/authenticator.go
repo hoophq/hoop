@@ -19,6 +19,7 @@ import (
 const (
 	defaultProviderDomain   = "hoophq.us.auth0.com"
 	defaultProviderClientID = "DatIOCxntNv8AZrQLVnLb3tr1Y3oVwGW"
+	defaultProviderAudience = "https://" + defaultProviderDomain + "/api/v2/"
 )
 
 type Provider struct {
@@ -27,6 +28,7 @@ type Provider struct {
 	Audience     string
 	ClientID     string
 	ClientSecret string
+	Profile      string
 
 	*oidc.Provider
 	oauth2.Config
@@ -71,46 +73,47 @@ func NewProvider(profile string) *Provider {
 
 	provider := &Provider{
 		Context: ctx,
-		ApiURL:  apiURL}
+		ApiURL:  apiURL,
+		Profile: profile,
+	}
 
 	if profile == pb.DevProfile {
 		return provider
 	}
 
-	domain := os.Getenv("IDP_DOMAIN")
-	clientID := os.Getenv("IDP_CLIENT_ID")
-	clientSecret := os.Getenv("IDP_CLIENT_SECRET")
-	audience := os.Getenv("IDP_AUDIENCE")
+	provider.Domain = os.Getenv("IDP_DOMAIN")
+	provider.ClientID = os.Getenv("IDP_CLIENT_ID")
+	provider.ClientSecret = os.Getenv("IDP_CLIENT_SECRET")
+	provider.Audience = os.Getenv("IDP_AUDIENCE")
 	jwksURL := os.Getenv("IDP_JWKS_URL")
 
-	if domain == "" {
-		domain = defaultProviderDomain
-	}
-
-	if clientID == "" {
-		clientID = defaultProviderClientID
-	}
-
-	if jwksURL == "" {
-		jwksURL = "https://" + domain + "/.well-known/jwks.json"
-	}
-
-	if clientSecret == "" {
+	if provider.ClientSecret == "" {
 		panic(errors.New("missing required ID provider variables"))
 	}
 
-	if strings.Contains(domain, "okta") {
-		ctx = oidc.InsecureIssuerURLContext(ctx, "https://"+domain+"/")
+	if provider.Domain == "" {
+		provider.Domain = defaultProviderDomain
+	}
+
+	if provider.ClientID == "" {
+		provider.ClientID = defaultProviderClientID
+	}
+
+	if provider.Audience == "" {
+		provider.Audience = defaultProviderAudience
+	}
+
+	if jwksURL == "" {
+		jwksURL = "https://" + provider.Domain + "/.well-known/jwks.json"
+	}
+
+	if strings.Contains(provider.Domain, pb.ProviderOkta) {
+		ctx = oidc.InsecureIssuerURLContext(ctx, providerDomain(provider.Domain))
 		provider.Context = ctx
 	}
 
-	provider.Domain = domain
-	provider.ClientID = clientID
-	provider.ClientSecret = clientSecret
-	provider.Audience = audience
-
 	oidcProvider, err := oidc.NewProvider(
-		provider.Context, "https://"+provider.Domain+"/",
+		provider.Context, providerDomain(provider.Domain),
 	)
 	if err != nil {
 		panic(err)
@@ -128,11 +131,16 @@ func NewProvider(profile string) *Provider {
 		ClientID: provider.ClientID,
 	}
 
-	if strings.Contains(domain, "okta") {
+	if strings.Contains(provider.Domain, pb.ProviderOkta) {
 		oidcConfig.SkipIssuerCheck = true
+		authorizeEndpoint := os.Getenv("IDP_AUTHORIZE_ENDPOINT")
+		tokenEndpoint := os.Getenv("IDP_TOKEN_ENDPOINT")
+		if authorizeEndpoint == "" || tokenEndpoint == "" {
+			panic(errors.New("missing authorization and token endpoints urls"))
+		}
 		conf.Endpoint = oauth2.Endpoint{
-			AuthURL:   os.Getenv("IDP_AUTHORIZE_ENDPOINT"),
-			TokenURL:  os.Getenv("IDP_TOKEN_ENDPOINT"),
+			AuthURL:   authorizeEndpoint,
+			TokenURL:  tokenEndpoint,
 			AuthStyle: 0,
 		}
 	}
@@ -166,4 +174,8 @@ func downloadJWKS(jwksURL string) *keyfunc.JWKS {
 		panic(err)
 	}
 	return jwks
+}
+
+func providerDomain(domain string) string {
+	return "https://" + domain + "/"
 }

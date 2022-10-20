@@ -15,8 +15,9 @@ type (
 func (s *Storage) FindAll(context *user.Context) ([]Client, error) {
 	var payload = `{:query {
 		:find [(pull ?client [*])] 
-		:where [[?client :client/user "` +
-		context.User.Id + `"]]}}`
+		:id [id]
+		:where [[?client :client/user id]]}
+		:in-args ["` + context.User.Id + `"]}`
 
 	b, err := s.Query([]byte(payload))
 	if err != nil {
@@ -34,7 +35,7 @@ func (s *Storage) FindAll(context *user.Context) ([]Client, error) {
 func (s *Storage) Persist(client *Client) (int64, error) {
 	clientPayload := st.EntityToMap(client)
 
-	txId, err := s.PersistEntities([]map[string]interface{}{clientPayload})
+	txId, err := s.PersistEntities([]map[string]any{clientPayload})
 	if err != nil {
 		return 0, err
 	}

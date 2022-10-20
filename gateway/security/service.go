@@ -23,7 +23,7 @@ type (
 
 	UserService interface {
 		FindBySub(sub string) (*user.Context, error)
-		Persist(u interface{}) error
+		Persist(u any) error
 	}
 
 	login struct {
@@ -80,7 +80,7 @@ func (s *Service) Callback(state, code string) string {
 		return login.Redirect + "?error=unexpected_error"
 	}
 
-	var profile map[string]interface{}
+	var profile map[string]any
 	if err := idToken.Claims(&profile); err != nil {
 		s.loginOutcome(login, outcomeError)
 		return login.Redirect + "?error=unexpected_error"
@@ -138,7 +138,7 @@ func (s *Service) exchangeCodeByToken(code string) (*oauth2.Token, *oidc.IDToken
 	return token, idToken, nil
 }
 
-func (s *Service) signup(context *user.Context, sub string, profile map[string]interface{}) error {
+func (s *Service) signup(context *user.Context, sub string, profile map[string]any) error {
 	email := profile["email"].(string)
 	newOrg := false
 

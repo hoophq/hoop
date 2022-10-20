@@ -17,8 +17,6 @@ import (
 	"github.com/runopsio/hoop/gateway/user"
 )
 
-var PROFILE string
-
 type (
 	Api struct {
 		AgentHandler      agent.Handler
@@ -28,6 +26,7 @@ type (
 		SessionHandler    session.Handler
 		SecurityHandler   security.Handler
 		IDProvider        *idp.Provider
+		Profile           string
 	}
 )
 
@@ -60,7 +59,7 @@ func (api *Api) StartAPI() {
 }
 
 func (api *Api) buildRoutes(route *gin.RouterGroup) {
-	route.POST("/login", api.SecurityHandler.Login)
+	route.GET("/login", api.SecurityHandler.Login)
 	route.GET("/callback", api.SecurityHandler.Callback)
 
 	route.POST("/connections", api.Authenticate, api.ConnectionHandler.Post)
