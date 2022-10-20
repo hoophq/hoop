@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	defaultProviderDomain   = "https://hoophq.us.auth0.com"
+	defaultProviderDomain   = "hoophq.us.auth0.com"
 	defaultProviderClientID = "DatIOCxntNv8AZrQLVnLb3tr1Y3oVwGW"
 )
 
