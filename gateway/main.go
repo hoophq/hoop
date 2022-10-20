@@ -31,10 +31,10 @@ func Run() {
 	idProvider := idp.NewProvider(profile)
 
 	agentService := agent.Service{Storage: &agent.Storage{Storage: s}}
-	connectionService := connection.Service{Storage: &connection.Storage{Storage: s}}
+	pluginService := plugin.Service{Storage: &plugin.Storage{Storage: s}}
+	connectionService := connection.Service{PluginService: &pluginService, Storage: &connection.Storage{Storage: s}}
 	userService := user.Service{Storage: &user.Storage{Storage: s}}
 	clientService := client.Service{Storage: &client.Storage{Storage: s}}
-	pluginService := plugin.Service{Storage: &plugin.Storage{Storage: s}}
 	sessionService := session.Service{Storage: &session.Storage{Storage: s}}
 	securityService := security.Service{
 		Storage:     &security.Storage{Storage: s},

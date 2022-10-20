@@ -31,7 +31,13 @@ type (
 
 	xtdbConnection struct {
 		Connection
-		Groups map[edn.Keyword][]string `edn:"plugin-connection/groups"`
+		ConnData xtdbConnectionData       `edn:"plugin-connection/id"`
+		Groups   map[edn.Keyword][]string `edn:"plugin-connection/groups"`
+	}
+
+	xtdbConnectionData struct {
+		Id   string `edn:"xt/id"`
+		Name string `edn:"connection/name"`
 	}
 )
 
@@ -92,7 +98,7 @@ func (s *Storage) FindAll(context *user.Context) ([]ListPlugin, error) {
 
 func (s *Storage) FindOne(context *user.Context, name string) (*Plugin, error) {
 	var payload = `{:query {
-		:find [(pull ?plugin [* {:plugin/connection-ids [*]}])] 
+		:find [(pull ?plugin [* {:plugin/connection-ids [* {:plugin-connection/id [*]}]}])] 
 		:in [name org]
 		:where [[?plugin :plugin/name name]
                 [?plugin :plugin/org org]]}
@@ -118,8 +124,8 @@ func (s *Storage) FindOne(context *user.Context, name string) (*Plugin, error) {
 	for _, c := range xtdbPlugin.XtdbConnection {
 		connections = append(connections, Connection{
 			Id:           c.Id,
-			ConnectionId: c.ConnectionId,
-			Name:         c.Name,
+			ConnectionId: c.ConnData.Id,
+			Name:         c.ConnData.Name,
 			Config:       c.Config,
 			Groups:       sanitizeEdnGroups(c.Groups),
 		})
