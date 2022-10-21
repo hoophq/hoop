@@ -154,25 +154,21 @@ func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, c *clie
 		if pb.PacketType(pkt.Type) == pb.PacketKeepAliveType {
 			continue
 		}
-		if err := s.pluginOnReceivePhase(c.SessionID, pkt); err != nil {
-			log.Printf("plugin reject packet, err=%v", err)
-			return status.Errorf(codes.Internal, "internal error, packet rejected, contact the administrator")
-		}
-
 		if pkt.Spec == nil {
 			pkt.Spec = make(map[string][]byte)
 		}
 		// TODO: change spec to session id
 		pkt.Spec[pb.SpecGatewayConnectionID] = []byte(c.SessionID)
-
-		// TODO: process router connect
 		agStream := getAgentStream(conn.AgentId)
 		if agStream == nil {
-			log.Printf("agent connection not found for %v", c.AgentId)
+			log.Printf("agent connection not found for %q", c.AgentId)
 			return status.Errorf(codes.FailedPrecondition, fmt.Sprintf("agent not found for %v", c.AgentId))
 		}
-		log.Printf("receive client packet type [%s] and session id [%s]",
-			pkt.Type, c.SessionID)
+		log.Printf("receive client packet type [%s] and session id [%s]", pkt.Type, c.SessionID)
+		if err := s.pluginOnReceivePhase(c.SessionID, pkt); err != nil {
+			log.Printf("plugin reject packet, err=%v", err)
+			return status.Errorf(codes.Internal, "internal error, packet rejected, contact the administrator")
+		}
 		err = s.processClientPacket(pkt, c, conn, agStream, startup)
 		if err != nil {
 			fmt.Printf("sessionid=%v - failed processing client packet, err=%v", c.SessionID, err)

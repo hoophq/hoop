@@ -74,7 +74,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.GET("/plugins", api.Authenticate, api.PluginHandler.FindAll)
 	route.GET("/plugins/:name", api.Authenticate, api.PluginHandler.FindOne)
 
-	route.GET("/plugins/audit/sessions/:name", api.Authenticate, api.PluginHandler.FindOne)
+	route.GET("/plugins/audit/sessions/:session_id", api.Authenticate, api.SessionHandler.FindOne)
 	route.GET("/plugins/audit/sessions", api.Authenticate, api.SessionHandler.FindAll)
 }
 

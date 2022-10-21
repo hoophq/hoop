@@ -7,7 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
-	"strconv"
+	"sync"
 	"time"
 
 	"github.com/runopsio/hoop/common/memory"
@@ -23,18 +23,10 @@ const (
 	defaultFlushSec  int    = 30
 )
 
-var (
-	pluginAuditPath          string
-	pluginAuditFlushDuration time.Duration
-)
+var pluginAuditPath string
 
 func init() {
 	pluginAuditPath = os.Getenv("PLUGIN_AUDIT_PATH")
-	flushDuration, _ := strconv.Atoi(os.Getenv("PLUGIN_AUDIT_FLUSH_SECS"))
-	if flushDuration == 0 {
-		flushDuration = defaultFlushSec
-	}
-	pluginAuditFlushDuration = time.Second * time.Duration(flushDuration)
 	if pluginAuditPath == "" {
 		pluginAuditPath = defaultAuditPath
 	}
@@ -48,6 +40,7 @@ type auditPlugin struct {
 	walSessionStore memory.Store
 	enabled         bool
 	started         bool
+	mu              sync.RWMutex
 }
 
 func New() pluginscore.Plugin {
@@ -76,7 +69,6 @@ func (p *auditPlugin) OnStartup(c pluginscore.PluginConfig) error {
 	p.enabled = true
 	p.started = true
 	p.storageWriter = storageWriter
-	// go p.commitWalSessions()
 	return nil
 }
 
@@ -84,9 +76,9 @@ func (p *auditPlugin) OnConnect(i pluginscore.ParamsData) error {
 	if !p.enabled {
 		return nil
 	}
-	log.Println("audit - processing on-connect")
 	orgID := i.GetString("org_id")
 	sessionID := i.GetString("session_id")
+	log.Printf("sessionid=%v | audit | processing on-connect", sessionID)
 	if orgID == "" || sessionID == "" {
 		return fmt.Errorf("failed processing audit plugin, missing org_id and session_id params")
 	}
@@ -95,10 +87,12 @@ func (p *auditPlugin) OnConnect(i pluginscore.ParamsData) error {
 		i.GetString("connection_name"), i.GetString("connection_type")); err != nil {
 		return err
 	}
+	i["start_date"] = func() *time.Time { d := time.Now().UTC(); return &d }()
 	// Persist the session in the storage
 	if err := p.storageWriter.Write(i); err != nil {
 		return err
 	}
+	p.mu = sync.RWMutex{}
 	return nil
 }
 
@@ -112,17 +106,20 @@ func (p *auditPlugin) OnReceive(sessionID string, pkt pluginscore.PacketData) er
 		if !isSimpleQuery {
 			break
 		}
-		log.Println("audit - processing postgres audit")
 		if err != nil {
 			return fmt.Errorf("session-id=%v - failed obtaining simple query data, err=%v", sessionID, err)
 		}
 		return p.writeOnReceive(sessionID, 'i', queryBytes)
+	case pb.PacketExecClientWriteStdoutType:
+		return p.writeOnReceive(sessionID, 'o', pkt.GetPayload())
+	case pb.PacketExecWriteAgentStdinType, pb.PacketExecRunProcType:
+		return p.writeOnReceive(sessionID, 'i', pkt.GetPayload())
 	}
 	return nil
 }
 
 func (p *auditPlugin) OnDisconnect(i pluginscore.ParamsData) error {
-	if !p.enabled {
+	if !p.enabled || i.GetString("client") == "agent" {
 		return nil
 	}
 	orgID := i.GetString("org_id")
@@ -130,21 +127,18 @@ func (p *auditPlugin) OnDisconnect(i pluginscore.ParamsData) error {
 	if orgID == "" || sessionID == "" {
 		return fmt.Errorf("missing org_id and session_id")
 	}
-	return p.writeOnClose(sessionID)
+	go func() {
+		// give some time to disconnect it, otherwise the on-receive process will
+		// catch up a wal close file
+		time.Sleep(time.Second * 3)
+		if err := p.writeOnClose(sessionID); err != nil {
+			log.Printf("sessionid=%v audit - %v", sessionID, err)
+		}
+	}()
+	return nil
 }
 
-func (p *auditPlugin) OnShutdown() {
-	log.Println("audit - processing on-shutdown")
-}
-
-func (p *auditPlugin) commitWalSessions() {
-	// TODO(san): this function must flush any sessions that aren't commited to the storage
-	// It should handle closing p.walSessionStore objects
-	// for {
-	// 	fmt.Println("flushing blobs to store ...")
-	// 	time.Sleep(pluginAuditFlushDuration)
-	// }
-}
+func (p *auditPlugin) OnShutdown() {}
 
 func simpleQueryContent(payload []byte) (bool, []byte, error) {
 	r := pg.NewReader(bytes.NewBuffer(payload))

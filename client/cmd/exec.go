@@ -157,13 +157,13 @@ func runExec(stream pb.Transport_ConnectClient, args []string, loader *spinner.S
 	for {
 		pkt, err := stream.Recv()
 		if err == io.EOF {
+			loader.Stop()
 			_ = term.Restore(int(os.Stdin.Fd()), oldState)
-			_, _ = os.Stdout.Write(pbexec.TermEnterKeyStrokeType)
 			break
 		}
 		if err != nil {
+			loader.Stop()
 			_ = term.Restore(int(os.Stdin.Fd()), oldState)
-			os.Stdout.Write(pbexec.TermEnterKeyStrokeType)
 			log.Fatalf("closing client proxy, err=%v", err)
 		}
 		switch pb.PacketType(pkt.Type) {

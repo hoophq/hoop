@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
 
 	st "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/transport/plugins"
@@ -182,11 +181,10 @@ func (s *Storage) NewGenericStorageWriter() *GenericStorageWriter {
 }
 
 func (s *GenericStorageWriter) Write(p plugins.ParamsData) error {
-	log.Printf("writing session=%v, org-id=%v\n", p.Get("session_id"), p.Get("org_id"))
+	log.Printf("saving session=%v, org-id=%v\n", p.Get("session_id"), p.Get("org_id"))
 	eventStartDate := p.GetTime("start_date")
 	if eventStartDate == nil {
-		now := time.Now().UTC()
-		eventStartDate = &now
+		return fmt.Errorf(`missing "start_date" param`)
 	}
 	sess := &Session{
 		ID:               p.GetString("session_id"),

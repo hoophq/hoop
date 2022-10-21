@@ -67,12 +67,7 @@ func parseEnvVars(envVars map[string]any) (*pgEnv, error) {
 	}
 	env := &pgEnv{}
 	for key, val := range envVars {
-		// key = secret/REALKEY
-		parts := strings.Split(key, "/")
-		if len(parts) != 2 {
-			continue
-		}
-		switch parts[1] {
+		switch key {
 		case EnvVarDBHostKey:
 			env.host, _ = val.(string)
 		case EnvVarDBPortKey:
@@ -156,7 +151,6 @@ func (a *Agent) processAgentConnect(pkt *pb.Packet) {
 			log.Printf("failed decoding env vars, err=%v", err)
 			return
 		}
-		// log.Printf("decoded env-vars %#v", envVars)
 		pgEnv, err := parseEnvVars(envVars)
 		if err != nil {
 			_ = a.stream.Send(&pb.Packet{
