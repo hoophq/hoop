@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"log"
+	"os"
 	"time"
 
 	pb "github.com/runopsio/hoop/common/proto"
@@ -21,7 +22,11 @@ type (
 
 func ConnectGrpc(connectionName string, protocol pb.ProtocolType) (*Client, error) {
 	// dial server
-	conn, err := grpc.Dial(":8010", grpc.WithInsecure())
+	addr := os.Getenv("API_URL")
+	if addr == "" {
+		addr = "127.0.0.1"
+	}
+	conn, err := grpc.Dial(addr+":8010", grpc.WithInsecure())
 	if err != nil {
 		return nil, err
 	}
