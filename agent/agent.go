@@ -67,12 +67,7 @@ func parseEnvVars(envVars map[string]any) (*pgEnv, error) {
 	}
 	env := &pgEnv{}
 	for key, val := range envVars {
-		// key = secret/REALKEY
-		parts := strings.Split(key, "/")
-		if len(parts) != 2 {
-			continue
-		}
-		switch parts[1] {
+		switch key {
 		case EnvVarDBHostKey:
 			env.host, _ = val.(string)
 		case EnvVarDBPortKey:
