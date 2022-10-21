@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"sync"
 	"time"
 
 	"github.com/runopsio/hoop/gateway/session"
@@ -12,28 +14,32 @@ import (
 	"github.com/tidwall/wal"
 )
 
-const (
-	CommitStatusOpen  string = "open"
-	CommitStatusError string = "error"
-	CommitStatusOK    string = "ok"
-)
+const walFolderTmpl string = `%s/%s-%s-wal`
 
-type walHeader struct {
-	OrgID          string     `json:"org_id"`
-	SessionID      string     `json:"session_id"`
-	UserID         string     `json:"user_id"`
-	ConnectionName string     `json:"connection_name"`
-	ConnectionType string     `json:"connection_type"`
-	CommitStatus   string     `json:"commit_status"`
-	CommitError    string     `json:"commit_error"`
-	StartDate      *time.Time `json:"start_date"`
-	EndDate        *time.Time `json:"end_date"`
-}
+type (
+	walHeader struct {
+		OrgID          string     `json:"org_id"`
+		SessionID      string     `json:"session_id"`
+		UserID         string     `json:"user_id"`
+		ConnectionName string     `json:"connection_name"`
+		ConnectionType string     `json:"connection_type"`
+		StartDate      *time.Time `json:"start_date"`
+	}
+	walFooter struct {
+		CommitError string     `json:"commit_error"`
+		EndDate     *time.Time `json:"end_date"`
+	}
+	walLogRWMutex struct {
+		log        *wal.Log
+		mu         sync.RWMutex
+		folderName string
+	}
+)
 
 func (w *walHeader) validate() error {
 	if w.OrgID == "" || w.SessionID == "" ||
-		w.CommitStatus == "" || w.ConnectionName == "" ||
-		w.ConnectionType == "" || w.StartDate == nil {
+		w.ConnectionType == "" || w.ConnectionName == "" ||
+		w.StartDate == nil {
 		return fmt.Errorf(`missing required values for wal session`)
 	}
 	return nil
@@ -55,7 +61,7 @@ func decodeWalHeader(data []byte) (*walHeader, error) {
 }
 
 func addEventStreamHeader(d time.Time, eventType byte) []byte {
-	return append([]byte(d.Format(time.RFC3339)), '\000', eventType, '\000')
+	return append([]byte(d.Format(time.RFC3339Nano)), '\000', eventType, '\000')
 }
 
 func parseEventStream(eventStream []byte) (session.EventStream, error) {
@@ -64,7 +70,7 @@ func parseEventStream(eventStream []byte) (session.EventStream, error) {
 		return nil, fmt.Errorf("event stream in wrong format [event-time]")
 	}
 	eventTimeBytes := eventStream[:position]
-	eventTime, err := time.Parse(time.RFC3339, string(eventTimeBytes))
+	eventTime, err := time.Parse(time.RFC3339Nano, string(eventTimeBytes))
 	if err != nil {
 		return nil, fmt.Errorf("failed parsing event time, err=%v", err)
 	}
@@ -77,8 +83,8 @@ func parseEventStream(eventStream []byte) (session.EventStream, error) {
 }
 
 func (p *auditPlugin) writeOnConnect(orgID, sessionID, userID, connName, connType string) error {
-	walFile := fmt.Sprintf("%s.%s.wal", orgID, sessionID)
-	walog, err := wal.Open(fmt.Sprintf("%s/%s", pluginAuditPath, walFile), wal.DefaultOptions)
+	walFolder := fmt.Sprintf(walFolderTmpl, pluginAuditPath, orgID, sessionID)
+	walog, err := wal.Open(walFolder, wal.DefaultOptions)
 	if err != nil {
 		return fmt.Errorf("failed opening wal file, err=%v", err)
 	}
@@ -88,7 +94,6 @@ func (p *auditPlugin) writeOnConnect(orgID, sessionID, userID, connName, connTyp
 		UserID:         userID,
 		ConnectionName: connName,
 		ConnectionType: connType,
-		CommitStatus:   CommitStatusOpen,
 		StartDate:      func() *time.Time { d := time.Now().UTC(); return &d }(),
 	})
 	if err != nil {
@@ -97,23 +102,24 @@ func (p *auditPlugin) writeOnConnect(orgID, sessionID, userID, connName, connTyp
 	if err := walog.Write(1, walHeader); err != nil {
 		return fmt.Errorf("failed writing header to wal, err=%v", err)
 	}
-	p.walSessionStore.Set(sessionID, walog)
+	p.walSessionStore.Set(sessionID, &walLogRWMutex{walog, sync.RWMutex{}, walFolder})
 	return nil
 }
 
 func (p *auditPlugin) writeOnReceive(sessionID string, eventType byte, event []byte) error {
 	walLogObj := p.walSessionStore.Get(sessionID)
-	walog, ok := walLogObj.(*wal.Log)
+	walogm, ok := walLogObj.(*walLogRWMutex)
 	if !ok {
-		return fmt.Errorf("failed obtaining wal log, obj=%v", walLogObj)
+		return fmt.Errorf("failed obtaining wallog, obj=%v", walLogObj)
 	}
-	lastIndex, err := walog.LastIndex()
+	walogm.mu.Lock()
+	defer walogm.mu.Unlock()
+	lastIndex, err := walogm.log.LastIndex()
 	if err != nil || lastIndex == 0 {
 		return fmt.Errorf("failed retrieving wal file content, lastindex=%v, err=%v", lastIndex, err)
 	}
 	eventHeader := addEventStreamHeader(time.Now().UTC(), eventType)
-
-	if err := walog.Write(lastIndex+1, append(eventHeader, event...)); err != nil {
+	if err := walogm.log.Write(lastIndex+1, append(eventHeader, event...)); err != nil {
 		return fmt.Errorf("failed writing into wal file, position=%v, err=%v", lastIndex+1, err)
 	}
 	return nil
@@ -121,12 +127,17 @@ func (p *auditPlugin) writeOnReceive(sessionID string, eventType byte, event []b
 
 func (p *auditPlugin) writeOnClose(sessionID string) error {
 	walLogObj := p.walSessionStore.Get(sessionID)
-	walog, ok := walLogObj.(*wal.Log)
+	walogm, ok := walLogObj.(*walLogRWMutex)
 	if !ok {
-		return fmt.Errorf("failed obtaining walog, obj=%v", walLogObj)
+		return fmt.Errorf("failed obtaining wallog, obj=%v", walLogObj)
 	}
-	defer walog.Close()
-	walHeaderData, err := walog.Read(1)
+	walogm.mu.Lock()
+	defer func() {
+		p.walSessionStore.Del(sessionID)
+		_ = walogm.log.Close()
+		walogm.mu.Unlock()
+	}()
+	walHeaderData, err := walogm.log.Read(1)
 	if err != nil {
 		return fmt.Errorf("failed obtaining header from wal, err=%v", err)
 	}
@@ -141,7 +152,7 @@ func (p *auditPlugin) writeOnClose(sessionID string) error {
 	idx := uint64(2)
 	var eventStreamList []session.EventStream
 	for {
-		eventStreamBytes, err := walog.Read(idx)
+		eventStreamBytes, err := walogm.log.Read(idx)
 		if err != nil && err != wal.ErrNotFound {
 			return fmt.Errorf("failed reading full session data err=%v", err)
 		}
@@ -166,16 +177,18 @@ func (p *auditPlugin) writeOnClose(sessionID string) error {
 		"start_date":      wh.StartDate,
 		"end_time":        &endDate,
 	})
-	wh.EndDate = &endDate
-	wh.CommitStatus = CommitStatusOK
 	if err != nil {
-		wh.CommitError = err.Error()
-		wh.CommitStatus = CommitStatusError
-	}
-	// add a footer indicating if the log was commited
-	walHeaderData, _ = encodeWalHeader(wh)
-	if err := walog.Write(idx, walHeaderData); err != nil {
-		log.Printf("failed writing wal footer, err=%v", err)
+		walFooterBytes, _ := json.Marshal(&walFooter{
+			CommitError: err.Error(),
+			EndDate:     &endDate,
+		})
+		if err := walogm.log.Write(idx, walFooterBytes); err != nil {
+			log.Printf("failed writing wal footer, err=%v", err)
+		}
+	} else {
+		if err := os.RemoveAll(walogm.folderName); err != nil {
+			log.Printf("failed removing wal file %q, err=%v", walogm.folderName, err)
+		}
 	}
 	return err
 }

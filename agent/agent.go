@@ -151,7 +151,6 @@ func (a *Agent) processAgentConnect(pkt *pb.Packet) {
 			log.Printf("failed decoding env vars, err=%v", err)
 			return
 		}
-		// log.Printf("decoded env-vars %#v", envVars)
 		pgEnv, err := parseEnvVars(envVars)
 		if err != nil {
 			_ = a.stream.Send(&pb.Packet{

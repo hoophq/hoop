@@ -16,7 +16,7 @@ var pluginMemStore memory.Store
 func init() {
 	pluginMemStore = memory.New()
 	auditPlugin := pluginsaudit.New()
-	pluginMemStore.Set(auditPlugin.Name(), pluginsaudit.New())
+	pluginMemStore.Set(auditPlugin.Name(), auditPlugin)
 }
 
 type pluginConfig struct {
