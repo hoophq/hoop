@@ -1,14 +1,12 @@
 package proxyexec
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"os/signal"
 	"strconv"
-	"syscall"
 
 	"github.com/creack/pty"
 	pbexec "github.com/runopsio/hoop/common/exec"
@@ -77,40 +75,6 @@ func (t *Terminal) ConnecWithTTY(spec map[string][]byte) error {
 		_ = ptty.Close()
 		_ = tty.Close()
 	}()
-	return nil
-}
-
-func (t *Terminal) Connect(spec map[string][]byte) error {
-	info, err := os.Stdin.Stat()
-	if err != nil {
-		return fmt.Errorf("failed obtaining stdin file description, err=%v", err)
-	}
-	var output []byte
-	if info.Mode()&os.ModeCharDevice == 0 || info.Size() > 0 {
-		stdinPipe := os.NewFile(uintptr(syscall.Stdin), "/dev/stdin")
-		reader := bufio.NewReader(stdinPipe)
-		for {
-			input, err := reader.ReadByte()
-			if err != nil && err == io.EOF {
-				break
-			}
-			output = append(output, input)
-		}
-		_ = stdinPipe.Close()
-		_, _ = pb.NewStreamWriter(t.client, pb.PacketExecRunProcType, spec).
-			Write([]byte(string(output)))
-	}
-	// Set stdin in raw mode.
-	t.oldState, err = term.MakeRaw(int(os.Stdin.Fd()))
-	if err != nil {
-		return fmt.Errorf("failed connecting terminal, err=%v", err)
-	}
-	ptty, tty, err := pty.Open()
-	if err != nil {
-		return fmt.Errorf("failed open a new tty, err=%v", err)
-	}
-	defer ptty.Close()
-	defer tty.Close()
 	return nil
 }
 
