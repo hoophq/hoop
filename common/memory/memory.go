@@ -30,8 +30,8 @@ func (s *store) Del(key string) {
 }
 
 func (s *store) List() map[string]interface{} {
-	s.mutex.RLock()
-	defer s.mutex.RUnlock()
+	// s.mutex.RLock()
+	// defer s.mutex.RUnlock()
 	return s.m
 }
 

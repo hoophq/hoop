@@ -9,9 +9,9 @@ function ctrl_c() {
 }
 
 echo "--> STARTING XTDB..."
-docker rm xtdb 2>/dev/null || true
-docker stop xtdb 2>/dev/null || true
-docker run --name xtdb --rm -d -p 3000:3000 runops/xtdb-in-memory:$(uname -m) > /dev/null
+#docker rm xtdb 2>/dev/null || true
+#docker stop xtdb 2>/dev/null || true
+#docker run --name xtdb --rm -d -p 3000:3000 runops/xtdb-in-memory:$(uname -m) > /dev/null
 until curl -s -f -o /dev/null "http://127.0.0.1:3000/_xtdb/status"
 do
   echo -n "."
@@ -25,7 +25,7 @@ export PROFILE=dev
 export XTDB_ADDRESS=http://127.0.0.1:3000
 export PLUGIN_AUDIT_PATH=/tmp/hoopsessions
 go build -o /tmp/hoop github.com/runopsio/hoop/client
-/tmp/hoop start gateway &
+/tmp/hoop start gateway
 
 unset PORT PROFILE XTDB_ADDRESS PLUGIN_AUDIT_PATH
 
@@ -35,4 +35,4 @@ do
 done
 echo "--> GATEWAY IS READY!"
 echo "--> STARTING AGENT ..."
-/tmp/hoop start agent
+#/tmp/hoop start agent

@@ -67,6 +67,16 @@ func (p *Packet) IsFrontendSSLRequest() bool {
 	return false
 }
 
+func (p *Packet) IsCancelRequest() bool {
+	if len(p.frame) > 4 {
+		v := make([]byte, 4)
+		_ = copy(v, p.frame[:4])
+		cancelRequest := binary.BigEndian.Uint32(v)
+		return cancelRequest == pgtypes.ClientCancelRequestMessage
+	}
+	return false
+}
+
 func NewReader(rd io.Reader) Reader {
 	return bufio.NewReaderSize(rd, DefaultBufferSize)
 }

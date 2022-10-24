@@ -78,7 +78,7 @@ func (p *auditPlugin) OnConnect(i pluginscore.ParamsData) error {
 	}
 	orgID := i.GetString("org_id")
 	sessionID := i.GetString("session_id")
-	log.Printf("sessionid=%v | audit | processing on-connect", sessionID)
+	log.Printf("session=%v | audit | processing on-connect", sessionID)
 	if orgID == "" || sessionID == "" {
 		return fmt.Errorf("failed processing audit plugin, missing org_id and session_id params")
 	}
@@ -132,7 +132,7 @@ func (p *auditPlugin) OnDisconnect(i pluginscore.ParamsData) error {
 		// catch up a wal close file
 		time.Sleep(time.Second * 3)
 		if err := p.writeOnClose(sessionID); err != nil {
-			log.Printf("sessionid=%v audit - %v", sessionID, err)
+			log.Printf("session=%v audit - %v", sessionID, err)
 		}
 	}()
 	return nil

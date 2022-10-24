@@ -104,7 +104,7 @@ func (s *Server) listenAgentMessages(ag *agent.Agent, stream pb.Transport_Connec
 		if pb.PacketType(pkt.Type) == pb.PacketKeepAliveType {
 			continue
 		}
-		sessionID := string(pkt.Spec[pb.SpecGatewayConnectionID])
+		sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 		if err := s.pluginOnReceivePhase(sessionID, pkt); err != nil {
 			log.Printf("plugin reject packet, err=%v", err)
 			return status.Errorf(codes.Internal, "internal error, plugin reject packet")
