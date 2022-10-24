@@ -203,9 +203,7 @@ func (s *Server) processClientPacket(
 		_ = agentStream.Send(&pb.Packet{
 			Type: pb.PacketAgentConnectType.String(),
 			Spec: map[string][]byte{
-				pb.SpecGatewaySessionID: []byte(client.SessionID),
-				// TODO: refactor to use agent connection params!
-				// pb.SpecAgentEnvVarsKey: encEnvVars,
+				pb.SpecGatewaySessionID:         []byte(client.SessionID),
 				pb.SpecConnectionType:           []byte(conn.Type),
 				pb.SpecAgentConnectionParamsKey: encConnectionParams,
 			},
