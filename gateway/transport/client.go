@@ -30,12 +30,12 @@ var cc = connectedClients{
 	mu:          sync.Mutex{},
 }
 
-func bindClient(gwID string, stream pb.Transport_ConnectServer, connection *connection.Connection) {
+func bindClient(sessionID string, stream pb.Transport_ConnectServer, connection *connection.Connection) {
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
 
-	cc.clients[gwID] = stream
-	cc.connections[gwID] = connection
+	cc.clients[sessionID] = stream
+	cc.connections[sessionID] = connection
 }
 
 func unbindClient(id string) {
@@ -119,7 +119,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		"org_id":     context.Org.Id,
 		"session_id": sessionID,
 	}); err != nil {
-		log.Printf("sessionid=%v ua=client - failed processing plugin on-disconnect phase, err=%v", sessionID, err)
+		log.Printf("session=%v ua=client - failed processing plugin on-disconnect phase, err=%v", sessionID, err)
 	}
 
 	s.disconnectClient(c)
@@ -128,7 +128,6 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 
 func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, c *client.Client, conn *connection.Connection) error {
 	ctx := stream.Context()
-	startup := true
 
 	for {
 		select {
@@ -145,7 +144,7 @@ func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, c *clie
 			}
 			if status, ok := status.FromError(err); ok && status.Code() == codes.Canceled {
 				// TODO: send packet to agent to clean up resources
-				log.Printf("sessionid=%v - client disconnected", c.SessionID)
+				log.Printf("session=%v - client disconnected", c.SessionID)
 				return nil
 			}
 			log.Printf("received error from client, err=%v", err)
@@ -157,8 +156,7 @@ func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, c *clie
 		if pkt.Spec == nil {
 			pkt.Spec = make(map[string][]byte)
 		}
-		// TODO: change spec to session id
-		pkt.Spec[pb.SpecGatewayConnectionID] = []byte(c.SessionID)
+		pkt.Spec[pb.SpecGatewaySessionID] = []byte(c.SessionID)
 		agStream := getAgentStream(conn.AgentId)
 		if agStream == nil {
 			log.Printf("agent connection not found for %q", c.AgentId)
@@ -169,9 +167,9 @@ func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, c *clie
 			log.Printf("plugin reject packet, err=%v", err)
 			return status.Errorf(codes.Internal, "internal error, packet rejected, contact the administrator")
 		}
-		err = s.processClientPacket(pkt, c, conn, agStream, startup)
+		err = s.processClientPacket(pkt, c, conn, agStream)
 		if err != nil {
-			fmt.Printf("sessionid=%v - failed processing client packet, err=%v", c.SessionID, err)
+			fmt.Printf("session=%v - failed processing client packet, err=%v", c.SessionID, err)
 			return status.Errorf(codes.FailedPrecondition, "internal error, failed processing packet")
 		}
 	}
@@ -181,59 +179,46 @@ func (s *Server) processClientPacket(
 	pkt *pb.Packet,
 	client *client.Client,
 	conn *connection.Connection,
-	agentStream pb.Transport_ConnectServer,
-	startup bool) error {
+	agentStream pb.Transport_ConnectServer) error {
 	switch pb.PacketType(pkt.Type) {
 	case pb.PacketGatewayConnectType:
-		encEnvVars, err := pb.GobEncodeMap(conn.Secret)
-		if err != nil {
-			// TODO: send error back to client
-			return fmt.Errorf("failed encoding secrets/env-var, err=%v", err)
-		}
-		// TODO: deal with errors
-		_ = agentStream.Send(&pb.Packet{
-			Type: pb.PacketAgentConnectType.String(),
-			Spec: map[string][]byte{
-				// TODO: change spec to session id
-				pb.SpecGatewayConnectionID: []byte(client.SessionID),
-				// TODO: refactor to use agent connection params!
-				pb.SpecAgentEnvVarsKey: encEnvVars,
-			},
-		})
+		return s.processPacketGatewayConnect(pkt, client, conn, agentStream)
 	default:
-		if err := s.addConnectionParams(&startup, client, conn, pkt); err != nil {
-			return err
-		}
-		// default send to agent everything
 		_ = agentStream.Send(pkt)
 	}
 	return nil
 }
 
-func (s *Server) addConnectionParams(startup *bool, c *client.Client, conn *connection.Connection, pkt *pb.Packet) error {
-	if *startup && c.Protocol == string(pb.ProtocoTerminalType) {
-		var clientArgs []string
-		if pkt.Spec != nil {
-			encArgs := pkt.Spec[pb.SpecClientExecArgsKey]
-			if len(encArgs) > 0 {
-				if err := pb.GobDecodeInto(encArgs, &clientArgs); err != nil {
-					log.Printf("failed decoding args, err=%v", err)
-				}
+func (s *Server) processPacketGatewayConnect(pkt *pb.Packet,
+	client *client.Client,
+	conn *connection.Connection,
+	agentStream pb.Transport_ConnectServer) error {
+	var clientArgs []string
+	if pkt.Spec != nil {
+		encArgs := pkt.Spec[pb.SpecClientExecArgsKey]
+		if len(encArgs) > 0 {
+			if err := pb.GobDecodeInto(encArgs, &clientArgs); err != nil {
+				log.Printf("failed decoding args, err=%v", err)
 			}
 		}
-		encConnectionParams, err := pb.GobEncode(&pb.AgentConnectionParams{
-			EnvVars:    conn.Secret,
-			CmdList:    conn.Command,
-			ClientArgs: clientArgs,
-		})
-		if err != nil {
-			return fmt.Errorf("failed encoding command exec params err=%v", err)
-		}
-
-		pkt.Spec[pb.SpecGatewayConnectionID] = []byte(c.SessionID)
-		pkt.Spec[pb.SpecAgentConnectionParamsKey] = encConnectionParams
-		*startup = false
 	}
+	encConnectionParams, err := pb.GobEncode(&pb.AgentConnectionParams{
+		EnvVars:    conn.Secret,
+		CmdList:    conn.Command,
+		ClientArgs: clientArgs,
+	})
+	if err != nil {
+		return fmt.Errorf("failed encoding connection params err=%v", err)
+	}
+	// TODO: deal with errors
+	_ = agentStream.Send(&pb.Packet{
+		Type: pb.PacketAgentConnectType.String(),
+		Spec: map[string][]byte{
+			pb.SpecGatewaySessionID:         []byte(client.SessionID),
+			pb.SpecConnectionType:           []byte(conn.Type),
+			pb.SpecAgentConnectionParamsKey: encConnectionParams,
+		},
+	})
 	return nil
 }
 

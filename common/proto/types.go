@@ -3,6 +3,7 @@ package proto
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/gob"
 	"fmt"
 	"io"
@@ -10,6 +11,13 @@ import (
 )
 
 type (
+	ClientTransport interface {
+		Send(*Packet) error
+		Recv() (*Packet, error)
+		StreamContext() context.Context
+		StartKeepAlive()
+		Close() (error, error)
+	}
 	PacketType        string
 	ProtocolType      string
 	ConnectionWrapper struct {
@@ -17,12 +25,12 @@ type (
 		doneC chan struct{}
 	}
 	streamWriter struct {
-		streamSendFn func(p *Packet) error
-		packetType   PacketType
-		packetSpec   map[string][]byte
+		client     ClientTransport
+		packetType PacketType
+		packetSpec map[string][]byte
 	}
 	AgentConnectionParams struct {
-		EnvVars    map[string]interface{}
+		EnvVars    map[string]any
 		CmdList    []string
 		ClientArgs []string
 	}
@@ -56,9 +64,8 @@ func (c *ConnectionWrapper) Write(p []byte) (int, error) {
 	return c.conn.Write(p)
 }
 
-// TODO: must be writer closer???
-func NewStreamWriter(sendFn func(*Packet) error, packetType PacketType, spec map[string][]byte) io.WriteCloser {
-	return &streamWriter{streamSendFn: sendFn, packetType: packetType, packetSpec: spec}
+func NewStreamWriter(client ClientTransport, packetType PacketType, spec map[string][]byte) io.WriteCloser {
+	return &streamWriter{client: client, packetType: packetType, packetSpec: spec}
 }
 
 func (s *streamWriter) Write(data []byte) (int, error) {
@@ -66,16 +73,14 @@ func (s *streamWriter) Write(data []byte) (int, error) {
 	if s.packetType == "" {
 		return 0, fmt.Errorf("packet type must not be empty")
 	}
-	if s.streamSendFn == nil {
-		return 0, fmt.Errorf("send func must not empty")
-	}
 	p.Type = s.packetType.String()
 	p.Spec = s.packetSpec
 	p.Payload = data
-	return len(data), s.streamSendFn(p)
+	return len(data), s.client.Send(p)
 }
 
 func (s *streamWriter) Close() error {
+	_, _ = s.client.Close()
 	return nil
 }
 

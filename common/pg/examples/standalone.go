@@ -111,7 +111,5 @@ func serveConn(pgClient, pgServer net.Conn) {
 
 	<-clientRouter.Done()
 	<-serverRouter.Done()
-	fmt.Printf("srv err-> %v\n", serverRouter.Error())
-	fmt.Printf("cli err-> %v\n", clientRouter.Error())
 	fmt.Println("END CONNECTION!!")
 }
