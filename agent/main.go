@@ -4,10 +4,8 @@ import (
 	"fmt"
 	"log"
 
-	// "github.com/runopsio/hoop/agent"
-	"github.com/runopsio/hoop/client/grpc"
+	"github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/version"
-	// "google.golang.org/grpc"
 )
 
 func Run() {

@@ -11,9 +11,9 @@ import (
 	"github.com/briandowns/spinner"
 	"github.com/muesli/termenv"
 	_ "github.com/muesli/termenv"
-	"github.com/runopsio/hoop/client/grpc"
 	"github.com/runopsio/hoop/client/proxyexec"
 	"github.com/runopsio/hoop/client/proxypg"
+	"github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/memory"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/spf13/cobra"
@@ -63,7 +63,7 @@ func runConnect(args []string) {
 		connectionName: args[0],
 		loader:         loader,
 	}
-	client, err := grpc.Connect("x-hooper-test-token", "connection_name", args[0])
+	client, err := grpc.Connect("x-hooper-test-token", grpc.WithOption(grpc.OptionConnectionName, args[0]))
 	if err != nil {
 		c.printErrorAndExit(err.Error())
 	}

@@ -182,35 +182,43 @@ func (s *Server) processClientPacket(
 	agentStream pb.Transport_ConnectServer) error {
 	switch pb.PacketType(pkt.Type) {
 	case pb.PacketGatewayConnectType:
-		var clientArgs []string
-		if pkt.Spec != nil {
-			encArgs := pkt.Spec[pb.SpecClientExecArgsKey]
-			if len(encArgs) > 0 {
-				if err := pb.GobDecodeInto(encArgs, &clientArgs); err != nil {
-					log.Printf("failed decoding args, err=%v", err)
-				}
-			}
-		}
-		encConnectionParams, err := pb.GobEncode(&pb.AgentConnectionParams{
-			EnvVars:    conn.Secret,
-			CmdList:    conn.Command,
-			ClientArgs: clientArgs,
-		})
-		if err != nil {
-			return fmt.Errorf("failed encoding connection params err=%v", err)
-		}
-		// TODO: deal with errors
-		_ = agentStream.Send(&pb.Packet{
-			Type: pb.PacketAgentConnectType.String(),
-			Spec: map[string][]byte{
-				pb.SpecGatewaySessionID:         []byte(client.SessionID),
-				pb.SpecConnectionType:           []byte(conn.Type),
-				pb.SpecAgentConnectionParamsKey: encConnectionParams,
-			},
-		})
+		return s.processPacketGatewayConnect(pkt, client, conn, agentStream)
 	default:
 		_ = agentStream.Send(pkt)
 	}
+	return nil
+}
+
+func (s *Server) processPacketGatewayConnect(pkt *pb.Packet,
+	client *client.Client,
+	conn *connection.Connection,
+	agentStream pb.Transport_ConnectServer) error {
+	var clientArgs []string
+	if pkt.Spec != nil {
+		encArgs := pkt.Spec[pb.SpecClientExecArgsKey]
+		if len(encArgs) > 0 {
+			if err := pb.GobDecodeInto(encArgs, &clientArgs); err != nil {
+				log.Printf("failed decoding args, err=%v", err)
+			}
+		}
+	}
+	encConnectionParams, err := pb.GobEncode(&pb.AgentConnectionParams{
+		EnvVars:    conn.Secret,
+		CmdList:    conn.Command,
+		ClientArgs: clientArgs,
+	})
+	if err != nil {
+		return fmt.Errorf("failed encoding connection params err=%v", err)
+	}
+	// TODO: deal with errors
+	_ = agentStream.Send(&pb.Packet{
+		Type: pb.PacketAgentConnectType.String(),
+		Spec: map[string][]byte{
+			pb.SpecGatewaySessionID:         []byte(client.SessionID),
+			pb.SpecConnectionType:           []byte(conn.Type),
+			pb.SpecAgentConnectionParamsKey: encConnectionParams,
+		},
+	})
 	return nil
 }
 
