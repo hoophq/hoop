@@ -71,13 +71,7 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 	}
 
 	token := tokenParts[1]
-
-	origin := clientOrigin
 	if strings.HasPrefix(token, "x-agt") {
-		origin = agentOrigin
-	}
-
-	if origin == agentOrigin {
 		return s.subscribeAgent(stream, token)
 	}
 	return s.subscribeClient(stream, token)
