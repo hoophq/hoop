@@ -3,6 +3,7 @@ package agent
 import (
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/version"
@@ -10,7 +11,11 @@ import (
 
 func Run() {
 	fmt.Println(string(version.JSON()))
-	client, err := grpc.Connect("x-agt-test-token")
+	token := os.Getenv("TOKEN")
+	if token == "" {
+		token = "x-agt-test-token"
+	}
+	client, err := grpc.Connect(os.Getenv("SERVER_ADDRESS"), token)
 	if err != nil {
 		log.Fatal(err)
 	}
