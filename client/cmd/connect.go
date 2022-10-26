@@ -65,18 +65,10 @@ func runConnect(args []string) {
 	}
 
 	token := parseToken()
-	if token == "" {
-		p := termenv.ColorProfile()
-		out := termenv.String(fmt.Sprintf("\nRunning in DEV mode!\n")).
-			Foreground(p.Color("0")).
-			Background(p.Color("#DBAB79"))
-		fmt.Println(out.String())
 
-		fmt.Println("Please run 'hoop login {email}' for production\n.")
-		token = "x-hooper-test-token"
-	}
-
-	client, err := grpc.Connect(token, grpc.WithOption(grpc.OptionConnectionName, args[0]))
+	client, err := grpc.Connect(token,
+		grpc.WithOption(grpc.OptionConnectionName, args[0]),
+		grpc.WithOption("origin", pb.ConnectionOriginClient))
 	if err != nil {
 		c.printErrorAndExit(err.Error())
 	}

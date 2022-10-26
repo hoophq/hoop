@@ -35,9 +35,7 @@ type (
 )
 
 const (
-	agentOrigin  = "agent"
-	clientOrigin = "client"
-	listenAddr   = "0.0.0.0:8010"
+	listenAddr = "0.0.0.0:8010"
 )
 
 func (s *Server) StartRPCServer() {
@@ -58,26 +56,38 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 	log.Println("starting new grpc connection...")
 	ctx := stream.Context()
 
+	var token string
+
 	md, _ := metadata.FromIncomingContext(ctx)
-	t := md.Get("authorization")
-	if len(t) == 0 {
-		return status.Errorf(codes.Unauthenticated, "invalid authentication")
+	o := md.Get("origin")
+	if len(o) == 0 {
+		return status.Errorf(codes.InvalidArgument, "missing origin")
 	}
 
-	tokenValue := t[0]
-	tokenParts := strings.Split(tokenValue, " ")
-	if len(tokenParts) != 2 || tokenParts[0] != "Bearer" || tokenParts[1] == "" {
-		return status.Errorf(codes.Unauthenticated, "invalid authentication")
+	origin := o[0]
+
+	if s.Profile == pb.DevProfile {
+		if origin == pb.ConnectionOriginAgent {
+			token = "x-agt-test-token"
+		} else {
+			token = "x-hooper-test-token"
+		}
+	} else {
+		t := md.Get("authorization")
+		if len(t) == 0 {
+			return status.Errorf(codes.Unauthenticated, "invalid authentication")
+		}
+
+		tokenValue := t[0]
+		tokenParts := strings.Split(tokenValue, " ")
+		if len(tokenParts) != 2 || tokenParts[0] != "Bearer" || tokenParts[1] == "" {
+			return status.Errorf(codes.Unauthenticated, "invalid authentication")
+		}
+
+		token = tokenParts[1]
 	}
 
-	token := tokenParts[1]
-
-	origin := clientOrigin
-	if strings.HasPrefix(token, "x-agt") {
-		origin = agentOrigin
-	}
-
-	if origin == agentOrigin {
+	if origin == pb.ConnectionOriginAgent {
 		return s.subscribeAgent(stream, token)
 	}
 	return s.subscribeClient(stream, token)

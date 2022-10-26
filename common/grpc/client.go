@@ -46,7 +46,6 @@ func Connect(token string, opts ...*ClientOptions) (pb.ClientTransport, error) {
 		return nil, fmt.Errorf("failed dialing to grpc server, err=%v", err)
 	}
 
-	// x-hooper-test-token
 	contextOptions := []string{
 		"authorization", fmt.Sprintf("Bearer %s", token),
 		"hostname", "localhost",
