@@ -58,7 +58,6 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	machineId := extractData(md, "machine_id")
 	kernelVersion := extractData(md, "kernel_version")
 	connectionName := extractData(md, "connection_name")
-	protocolName := extractData(md, "protocol_name")
 
 	sub, err := s.exchangeUserToken(token)
 	if err != nil {
@@ -91,7 +90,6 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		Status:        client.StatusConnected,
 		ConnectionId:  conn.Id,
 		AgentId:       conn.AgentId,
-		Protocol:      protocolName,
 	}
 
 	err = s.pluginOnConnectPhase(plugins.ParamsData{

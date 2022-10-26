@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"sync"
 	"time"
 
 	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/common/runtime"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
@@ -36,21 +36,21 @@ func WithOption(optKey OptionKey, val string) *ClientOptions {
 	return &ClientOptions{optionKey: optKey, optionVal: val}
 }
 
-func Connect(token string, opts ...*ClientOptions) (pb.ClientTransport, error) {
-	addr := os.Getenv("API_URL")
-	if addr == "" {
-		addr = "127.0.0.1"
+func Connect(serverAddress, token string, opts ...*ClientOptions) (pb.ClientTransport, error) {
+	if serverAddress == "" {
+		serverAddress = "127.0.0.1:8010"
 	}
-	conn, err := grpc.Dial(addr+":8010", grpc.WithInsecure())
+	conn, err := grpc.Dial(serverAddress, grpc.WithInsecure())
 	if err != nil {
 		return nil, fmt.Errorf("failed dialing to grpc server, err=%v", err)
 	}
 
+	osmap := runtime.OS()
 	contextOptions := []string{
 		"authorization", fmt.Sprintf("Bearer %s", token),
-		"hostname", "localhost",
-		"machine_id", "machine_my",
-		"kernel_version", "who knows?",
+		"hostname", osmap["hostname"],
+		"machine_id", osmap["machine_id"],
+		"kernel_version", osmap["kernel_version"],
 	}
 	for _, opt := range opts {
 		contextOptions = append(contextOptions, []string{

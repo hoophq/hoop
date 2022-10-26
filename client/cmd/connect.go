@@ -20,7 +20,6 @@ import (
 )
 
 var (
-	proxyPort  string
 	connectCmd = &cobra.Command{
 		Use:          "connect CONNECTION",
 		Short:        "Connect to a remote resource",
@@ -30,6 +29,7 @@ var (
 				cmd.Usage()
 				os.Exit(1)
 			}
+
 		},
 		Run: func(cmd *cobra.Command, args []string) {
 			runConnect(args)
@@ -38,7 +38,8 @@ var (
 )
 
 func init() {
-	connectCmd.Flags().StringVarP(&proxyPort, "proxy-port", "p", "", "The port to bind the proxy if it's a native database connection")
+	connectCmd.Flags().StringVarP(&connectFlags.serverAddress, "server", "s", os.Getenv("SERVER_ADDRESS"), "The gateway gRPC server address HOST:PORT")
+	connectCmd.Flags().StringVarP(&connectFlags.proxyPort, "port", "p", "", "The port to bind the proxy if it's a native database connection")
 	rootCmd.AddCommand(connectCmd)
 }
 
@@ -57,7 +58,7 @@ func runConnect(args []string) {
 	loader.Start()
 	loader.Suffix = " connecting to gateway..."
 	c := &connect{
-		proxyPort:      proxyPort,
+		proxyPort:      connectFlags.proxyPort,
 		connStore:      memory.New(),
 		clientArgs:     args,
 		connectionName: args[0],
@@ -66,7 +67,9 @@ func runConnect(args []string) {
 
 	token := parseToken()
 
-	client, err := grpc.Connect(token,
+	client, err := grpc.Connect(
+		connectFlags.serverAddress,
+		token,
 		grpc.WithOption(grpc.OptionConnectionName, args[0]),
 		grpc.WithOption("origin", pb.ConnectionOriginClient))
 	if err != nil {
