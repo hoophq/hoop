@@ -3,7 +3,7 @@ package proto
 import "time"
 
 const (
-	DefaultHost string = "https://api.hoop.dev"
+	DefaultHost string = "app.hoop.dev"
 
 	PacketKeepAliveType       PacketType = "KeepAlive"
 	PacketCloseConnectionType PacketType = "CloseConnection"

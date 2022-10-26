@@ -63,7 +63,20 @@ func runConnect(args []string) {
 		connectionName: args[0],
 		loader:         loader,
 	}
-	client, err := grpc.Connect("x-hooper-test-token", grpc.WithOption(grpc.OptionConnectionName, args[0]))
+
+	token := parseToken()
+	if token == "" {
+		p := termenv.ColorProfile()
+		out := termenv.String(fmt.Sprintf("\nRunning in DEV mode!\n")).
+			Foreground(p.Color("0")).
+			Background(p.Color("#DBAB79"))
+		fmt.Println(out.String())
+
+		fmt.Println("Please run 'hoop login {email}' for production\n.")
+		token = "x-hooper-test-token"
+	}
+
+	client, err := grpc.Connect(token, grpc.WithOption(grpc.OptionConnectionName, args[0]))
 	if err != nil {
 		c.printErrorAndExit(err.Error())
 	}
@@ -231,4 +244,33 @@ func (c *connect) printErrorAndExit(format string, v ...any) {
 		Background(p.Color("#DBAB79"))
 	fmt.Println(out.String())
 	os.Exit(1)
+}
+
+func parseToken() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	f, err := os.Open(fmt.Sprintf("%s/.hoop/config", home))
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	buf := make([]byte, 1024)
+	for {
+		_, err := f.Read(buf)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return ""
+		}
+	}
+
+	if len(buf) > 0 {
+		return string(buf)
+	}
+	return ""
 }

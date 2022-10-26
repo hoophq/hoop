@@ -60,6 +60,12 @@ func doLogin(args []string) error {
 		apiUrl = pb.DefaultHost
 	}
 
+	if strings.HasPrefix(apiUrl, "localhost") {
+		apiUrl = "http://" + apiUrl
+	} else {
+		apiUrl = "https://" + apiUrl
+	}
+
 	loginUrl, err := requestForUrl(email, apiUrl)
 	if err != nil {
 		return err
