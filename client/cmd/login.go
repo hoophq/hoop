@@ -7,6 +7,7 @@ import (
 	"fmt"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/spf13/cobra"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -21,7 +22,6 @@ type (
 	}
 )
 
-// loginCmd represents the login command
 var loginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Authenticate at Hoop",
@@ -38,7 +38,10 @@ var loginCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(loginCmd)
 	loginCmd.Flags().BoolP("email", "u", false, "The email used to authenticate at hoop")
+	done = make(chan bool)
 }
+
+var done chan bool
 
 func doLogin(args []string) error {
 	var email string
@@ -65,13 +68,14 @@ func doLogin(args []string) error {
 		return errors.New("missing login url")
 	}
 
-	// start server
+	http.HandleFunc("/callback", loginCallback)
+	go http.ListenAndServe(":3333", nil)
 
 	if err := openBrowser(loginUrl); err != nil {
 		fmt.Printf("Browser failed to open. \nPlease click on the link below:\n\n%s\n\n", loginUrl)
 	}
 
-	// wait callback
+	<-done
 
 	return nil
 }
@@ -129,4 +133,26 @@ func openBrowser(url string) error {
 	}
 
 	return err
+}
+
+func loginCallback(resp http.ResponseWriter, req *http.Request) {
+	err := req.URL.Query().Get("error")
+	token := req.URL.Query().Get("token")
+	var browserMsg string
+	var userMsg string
+
+	if err != "" {
+		browserMsg = fmt.Sprintf("Login failed: %s", err)
+		userMsg = fmt.Sprintf("Login failed: %s\n", err)
+	}
+
+	if token != "" {
+		browserMsg = fmt.Sprintf("Login succeeded. You can close this tab now.")
+		userMsg = "Login successful\n"
+	}
+
+	io.WriteString(resp, browserMsg)
+	fmt.Println(userMsg)
+
+	done <- true
 }
