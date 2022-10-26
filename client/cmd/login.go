@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -151,8 +152,35 @@ func loginCallback(resp http.ResponseWriter, req *http.Request) {
 		userMsg = "Login successful\n"
 	}
 
+	persistTokenFilesystem(token)
+
 	io.WriteString(resp, browserMsg)
 	fmt.Println(userMsg)
 
 	done <- true
+}
+
+func persistTokenFilesystem(token string) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	path := fmt.Sprintf("%s/.hoop", home)
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		os.MkdirAll(path, 0700)
+	}
+
+	f, err := os.Create(fmt.Sprintf("%s/config", path))
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer f.Close()
+
+	_, err = f.WriteString(token)
+	if err != nil {
+		panic(err)
+		return
+	}
 }
