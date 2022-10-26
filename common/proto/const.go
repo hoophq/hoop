@@ -21,7 +21,8 @@ const (
 	PacketPGWriteServerType PacketType = "PG::WriteServer"
 	PacketPGWriteClientType PacketType = "PG::WriteClient"
 
-	SpecGatewayConnectionID      string = "gateway.connection_id"
+	SpecGatewaySessionID         string = "gateway.session_id"
+	SpecConnectionType           string = "gateway.connection_type"
 	SpecClientConnectionID       string = "client.connection_id"
 	SpecClientExecExitCodeKey    string = "exec.exit_code"
 	SpecClientExecArgsKey        string = "exec.args"

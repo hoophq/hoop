@@ -70,7 +70,7 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 
 	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
 	agentErr := s.listenAgentMessages(ag, stream)
-	if err := s.pluginOnDisconnectPhase(plugins.ParamsData{}); err != nil {
+	if err := s.pluginOnDisconnectPhase(plugins.ParamsData{"client": "agent"}); err != nil {
 		log.Printf("ua=agent - failed processing plugin on-disconnect phase, err=%v", err)
 	}
 	s.disconnectAgent(ag)
@@ -104,7 +104,7 @@ func (s *Server) listenAgentMessages(ag *agent.Agent, stream pb.Transport_Connec
 		if pb.PacketType(pkt.Type) == pb.PacketKeepAliveType {
 			continue
 		}
-		sessionID := string(pkt.Spec[pb.SpecGatewayConnectionID])
+		sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 		if err := s.pluginOnReceivePhase(sessionID, pkt); err != nil {
 			log.Printf("plugin reject packet, err=%v", err)
 			return status.Errorf(codes.Internal, "internal error, plugin reject packet")
@@ -125,7 +125,7 @@ func (s *Server) processAgentPacket(pkt *pb.Packet, clientStream pb.Transport_Co
 }
 
 func (s *Server) disconnectAgent(ag *agent.Agent) {
-	unbindAgent(ag.Token)
+	unbindAgent(ag.Id)
 	ag.Status = agent.StatusDisconnected
 	s.AgentService.Persist(ag)
 	log.Println("agent disconnected...")

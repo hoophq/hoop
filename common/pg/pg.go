@@ -5,32 +5,37 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 )
 
-type ResponseWriter io.WriteCloser
-type Reader interface {
-	ReadByte() (byte, error)
-	Read(p []byte) (int, error)
-}
-type NextFn func()
-type MiddlewareFn func(nextFn NextFn, pkt *Packet, w ResponseWriter)
+type (
+	contextKey     int
+	ResponseWriter io.WriteCloser
+	Reader         interface {
+		ReadByte() (byte, error)
+		Read(p []byte) (int, error)
+	}
+	NextFn       func()
+	MiddlewareFn func(nextFn NextFn, pkt *Packet, w ResponseWriter)
+	Proxy        interface {
+		Run() Proxy
+		RunWithReader(pgClientReader Reader) Proxy
+		Write(b []byte) (int, error)
+		Send(b []byte) error
+		Done() <-chan struct{}
+		Cancel()
+		Close() error
+	}
+)
 
 var ErrNoop = errors.New("NOOP")
 
-const DefaultBufferSize = 1 << 24 // 16777216 bytes
-
-type Proxy interface {
-	Run() Proxy
-	RunWithReader(pgClientReader Reader) Proxy
-	Write(b []byte) (int, error)
-	Send(b []byte) error
-	Done() <-chan struct{}
-	Cancel()
-	Close() error
-	Error() error
-}
+const (
+	DefaultBufferSize              = 1 << 24 // 16777216 bytes
+	sessionIDContextKey contextKey = iota
+)
 
 type proxy struct {
 	ctx         context.Context
@@ -38,16 +43,23 @@ type proxy struct {
 	packetChan  *chan []byte
 	middlewares []MiddlewareFn
 	cancelFn    context.CancelFunc
+	sessionID   any
 	err         error
 }
 
 func NewProxy(ctx context.Context, w ResponseWriter, fns ...MiddlewareFn) Proxy {
+	sessionID := ctx.Value(sessionIDContextKey)
 	cancelCtx, cancelFn := context.WithCancel(ctx)
 	return &proxy{
 		ctx:         cancelCtx,
 		w:           w,
 		middlewares: fns,
+		sessionID:   sessionID,
 		cancelFn:    cancelFn}
+}
+
+func NewContext(ctx context.Context, sessionID string) context.Context {
+	return context.WithValue(ctx, sessionIDContextKey, sessionID)
 }
 
 func (r *proxy) processPacket(data Reader) error {
@@ -64,33 +76,36 @@ func (r *proxy) processPacket(data Reader) error {
 			return nil
 		}
 	}
-	_, err = r.w.Write(pkt.Encode())
+	_, err = r.Write(pkt.Encode())
 	return err
 }
 
 func (r *proxy) RunWithReader(pgClientReader Reader) Proxy {
+	log.Printf("session=%v | pgrw - started", r.sessionID)
 	go func() {
 	exit:
 		for {
 			select {
 			case <-r.Done():
-				log.Printf("run reader - context done, err=%v", r.ctx.Err())
-				r.err = r.ctx.Err()
+				log.Printf("session=%v | pgrw - context done, err=%v", r.sessionID, r.ctx.Err())
 				break exit
 			default:
 				if err := r.processPacket(pgClientReader); err != nil {
-					r.err = err
+					if err != io.EOF {
+						log.Printf("session=%v | pgrw - failed processing packet, err=%v", r.sessionID, err)
+					}
 					break exit
 				}
 			}
 		}
-		r.cancelFn()
-		log.Printf("run reader - done reading, err=%v", r.err)
+		r.Cancel()
+		log.Printf("session=%v | pgrw - done reading, err=%v", r.sessionID, r.err)
 	}()
 	return r
 }
 
 func (r *proxy) Run() Proxy {
+	log.Printf("session=%v | chanpgrw - started", r.sessionID)
 	packetChan := make(chan []byte)
 	r.packetChan = &packetChan
 	go func() {
@@ -98,19 +113,20 @@ func (r *proxy) Run() Proxy {
 		for {
 			select {
 			case <-r.ctx.Done():
-				log.Printf("run - context done, err=%v", r.ctx.Err())
-				r.err = r.ctx.Err()
+				log.Printf("session=%v | chanpgrw - context done, err=%v", r.sessionID, r.ctx.Err())
 				break exit
 			case rawPkt := <-packetChan:
 				data := bufio.NewReaderSize(bytes.NewBuffer(rawPkt), len(rawPkt))
 				if err := r.processPacket(data); err != nil {
-					r.err = err
+					if err != io.EOF {
+						log.Printf("session=%v | chanpgrw - failed processing packet, err=%v", r.sessionID, err)
+					}
 					break exit
 				}
 			}
 		}
-		r.cancelFn()
-		log.Printf("run - done reading")
+		r.Cancel()
+		log.Printf("session=%v | chanpgrw - done reading", r.sessionID)
 	}()
 	return r
 }
@@ -125,14 +141,13 @@ func (r *proxy) Cancel() {
 
 // Closes the ResponseWriter if it's set
 func (r *proxy) Close() error {
+	if r.packetChan != nil {
+		close(*r.packetChan)
+	}
 	if r.w != nil {
 		return r.w.Close()
 	}
 	return nil
-}
-
-func (r *proxy) Error() error {
-	return r.err
 }
 
 // Write writes b directly to the pg.ResponseWriter object
@@ -143,8 +158,13 @@ func (r *proxy) Write(b []byte) (int, error) {
 // Send sends b to be processed by the defined middlewares
 func (r *proxy) Send(b []byte) error {
 	if r.packetChan != nil {
-		// TODO: check if is not closed!
-		*r.packetChan <- b
+		select {
+		case <-r.Done():
+			log.Printf("session=%v | chanpgrw-send - context done, err=%v", r.sessionID, r.ctx.Err())
+		case *r.packetChan <- b:
+		default:
+			return fmt.Errorf("channel is not available")
+		}
 		return nil
 	}
 	return ErrNoop

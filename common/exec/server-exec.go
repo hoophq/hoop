@@ -1,7 +1,6 @@
 package exec
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
@@ -106,8 +105,8 @@ func (c *Command) Run(streamWriter io.WriteCloser, stdinInput []byte, onExecEnd 
 		onExecEnd(InternalErrorExitCode, "internal error, failed writing input")
 		return err
 	}
-	copyBuffer(pipeStdout, streamWriter, 1024)
-	copyBuffer(pipeStderr, streamWriter, 1024)
+	copyBuffer(streamWriter, pipeStdout, 1024, "stdout")
+	copyBuffer(streamWriter, pipeStderr, 1024, "stderr")
 
 	go func() {
 		exitCode = 0
@@ -218,23 +217,15 @@ func NewCommand(rawEnvVarList map[string]interface{}, args ...string) (*Command,
 	return c, nil
 }
 
-func copyBuffer(reader io.ReadCloser, w io.Writer, bufSize int) {
-	r := bufio.NewReader(reader)
-	buf := make([]byte, bufSize)
+func copyBuffer(dst io.Writer, src io.Reader, bufSize int, stream string) {
 	go func() {
-		for {
-			n, err := r.Read(buf[:])
-			if n > 0 {
-				if _, err := w.Write(buf[:n]); err != nil {
-					panic(err)
-				}
-				continue
-			}
-			if err != nil {
-				if err == io.EOF {
-					break
-				}
-			}
+		wb, err := io.CopyBuffer(dst, src, make([]byte, bufSize))
+		switch err {
+		case io.EOF: // noop
+		case nil:
+			log.Printf("[%s] - done copying, written=%v", stream, wb)
+		default:
+			log.Printf("[%s] - fail to copy, written=%v, err=%v", stream, wb, err)
 		}
 	}()
 }

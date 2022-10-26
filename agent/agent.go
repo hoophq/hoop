@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"log"
@@ -24,8 +23,7 @@ const (
 
 type (
 	Agent struct {
-		ctx         context.Context
-		stream      pb.Transport_ConnectClient
+		client      pb.ClientTransport
 		closeSignal chan struct{}
 		connStore   memory.Store
 	}
@@ -67,12 +65,7 @@ func parseEnvVars(envVars map[string]any) (*pgEnv, error) {
 	}
 	env := &pgEnv{}
 	for key, val := range envVars {
-		// key = secret/REALKEY
-		parts := strings.Split(key, "/")
-		if len(parts) != 2 {
-			continue
-		}
-		switch parts[1] {
+		switch key {
 		case EnvVarDBHostKey:
 			env.host, _ = val.(string)
 		case EnvVarDBPortKey:
@@ -93,16 +86,11 @@ func parseEnvVars(envVars map[string]any) (*pgEnv, error) {
 	return env, nil
 }
 
-func New(ctx context.Context, s pb.Transport_ConnectClient, closeSig chan struct{}) *Agent {
+func New(client pb.ClientTransport, closeSig chan struct{}) *Agent {
 	return &Agent{
-		ctx:         ctx,
-		stream:      s,
+		client:      client,
 		closeSignal: closeSig,
 		connStore:   memory.New()}
-}
-
-func (a *Agent) Context() context.Context {
-	return a.ctx
 }
 
 func (a *Agent) Close() {
@@ -110,10 +98,10 @@ func (a *Agent) Close() {
 }
 
 func (a *Agent) Run() {
-	go a.startKeepAlive()
+	a.client.StartKeepAlive()
 
 	for {
-		pkt, err := a.stream.Recv()
+		pkt, err := a.client.Recv()
 		if err != nil {
 			if err == io.EOF {
 				break
@@ -146,49 +134,88 @@ func (a *Agent) Run() {
 	}
 }
 
+func (a *Agent) decodeConnectionParams(sessionID []byte, pkt *pb.Packet) *pb.AgentConnectionParams {
+	var connParams pb.AgentConnectionParams
+	encConnectionParams := pkt.Spec[pb.SpecAgentConnectionParamsKey]
+	if err := pb.GobDecodeInto(encConnectionParams, &connParams); err != nil {
+		log.Printf("session=%v - failed decoding connection params=%#v, err=%v",
+			string(sessionID), string(encConnectionParams), err)
+		_ = a.client.Send(&pb.Packet{
+			Type:    pb.PacketGatewayConnectErrType.String(),
+			Payload: []byte(`internal error, failed decoding connection params`),
+			Spec:    map[string][]byte{pb.SpecGatewaySessionID: sessionID},
+		})
+	}
+	return &connParams
+}
+
 func (a *Agent) processAgentConnect(pkt *pb.Packet) {
-	switch pb.PacketType(pkt.Type) {
-	case pb.PacketAgentConnectType:
-		gwID := pkt.Spec[pb.SpecGatewayConnectionID]
-		log.Printf("gatewayid=%v - received [%s]", string(gwID), pkt.Type)
-		envVars, err := pb.GobDecodeMap(pkt.Spec[pb.SpecAgentEnvVarsKey])
-		if err != nil {
-			log.Printf("failed decoding env vars, err=%v", err)
+	if pb.PacketType(pkt.Type) != pb.PacketAgentConnectType {
+		return
+	}
+	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
+	log.Printf("session=%v - received connect request", string(sessionID))
+	sessionIDKey := string(sessionID)
+	switch connType := string(pkt.Spec[pb.SpecConnectionType]); {
+	case connType == "postgres":
+		connParams := a.decodeConnectionParams(sessionID, pkt)
+		if connParams == nil {
 			return
 		}
-		// log.Printf("decoded env-vars %#v", envVars)
-		pgEnv, err := parseEnvVars(envVars)
+		pgEnv, err := parseEnvVars(connParams.EnvVars)
 		if err != nil {
-			_ = a.stream.Send(&pb.Packet{
+			_ = a.client.Send(&pb.Packet{
 				Type:    pb.PacketGatewayConnectErrType.String(),
 				Payload: []byte(err.Error()),
-				Spec:    map[string][]byte{pb.SpecGatewayConnectionID: gwID},
+				Spec:    map[string][]byte{pb.SpecGatewaySessionID: sessionID},
 			})
 			return
 		}
-		a.connStore.Set(string(gwID), pgEnv)
 		if err := isPortActive(pgEnv.host, pgEnv.port); err != nil {
-			_ = a.stream.Send(&pb.Packet{
+			_ = a.client.Send(&pb.Packet{
 				Type:    pb.PacketGatewayConnectErrType.String(),
 				Payload: []byte(err.Error()),
-				Spec:    map[string][]byte{pb.SpecGatewayConnectionID: gwID},
+				Spec:    map[string][]byte{pb.SpecGatewaySessionID: sessionID},
 			})
 			log.Printf("failed connecting to postgres host=%q, port=%q, err=%v", pgEnv.host, pgEnv.port, err)
 			return
 		}
-		_ = a.stream.Send(&pb.Packet{
-			Type: pb.PacketGatewayConnectOKType.String(),
-			Spec: map[string][]byte{pb.SpecGatewayConnectionID: gwID}})
+		a.connStore.Set(sessionIDKey, pgEnv)
+	case connType == "command-line":
+		sessionIDKey = fmt.Sprintf(connectionStoreParamsKey, string(sessionID))
+		connParams := a.decodeConnectionParams(sessionID, pkt)
+		if connParams == nil {
+			return
+		}
+		a.connStore.Set(sessionIDKey, connParams)
+	default:
+		_ = a.client.Send(&pb.Packet{
+			Type:    pb.PacketGatewayConnectErrType.String(),
+			Payload: []byte(fmt.Sprintf("unknown connection type %q", connType)),
+			Spec:    map[string][]byte{pb.SpecGatewaySessionID: sessionID},
+		})
+		log.Printf("unknown connection type %q", connType)
+		return
 	}
+	err := a.client.Send(&pb.Packet{
+		Type: pb.PacketGatewayConnectOKType.String(),
+		Spec: map[string][]byte{
+			pb.SpecGatewaySessionID: sessionID,
+			pb.SpecConnectionType:   pkt.Spec[pb.SpecConnectionType]}})
+	if err != nil {
+		a.connStore.Del(string(sessionIDKey))
+		log.Printf("failed sending %v, err=%v", pb.PacketGatewayConnectOKType, err)
+	}
+	log.Printf("session=%v - sent gateway connect ok", string(sessionID))
 }
 
 func (a *Agent) processTCPCloseConnection(pkt *pb.Packet) {
 	if pb.PacketType(pkt.Type) != pb.PacketCloseConnectionType {
 		return
 	}
-	gwID := pkt.Spec[pb.SpecGatewayConnectionID]
+	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 	clientConnID := pkt.Spec[pb.SpecClientConnectionID]
-	filterKey := fmt.Sprintf("%s:%s", string(gwID), string(clientConnID))
+	filterKey := fmt.Sprintf("%s:%s", string(sessionID), string(clientConnID))
 	log.Printf("received %s, filter-by=%s", pb.PacketCloseConnectionType, filterKey)
 	filterFn := func(k string) bool { return strings.HasPrefix(k, filterKey) }
 	for key, obj := range a.connStore.Filter(filterFn) {
@@ -199,25 +226,6 @@ func (a *Agent) processTCPCloseConnection(pkt *pb.Packet) {
 				}
 			}()
 			a.connStore.Del(key)
-		}
-	}
-}
-
-func (a *Agent) startKeepAlive() {
-	for {
-		time.Sleep(pb.DefaultKeepAlive)
-		proto := &pb.Packet{
-			Type: pb.PacketKeepAliveType.String(),
-		}
-		// log.Println("sending keep alive command")
-		if err := a.stream.Send(proto); err != nil {
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				log.Printf("failed sending keep alive command, err=%v", err)
-				break
-			}
 		}
 	}
 }

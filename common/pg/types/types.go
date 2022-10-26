@@ -45,6 +45,7 @@ const (
 const (
 	ClientSSLRequestMessage    uint32 = 80877103
 	ClientGSSENCRequestMessage uint32 = 80877104
+	ClientCancelRequestMessage uint32 = 80877102
 )
 
 type AuthPacketType int

@@ -1,47 +1,28 @@
 package agent
 
 import (
-	"context"
 	"fmt"
 	"log"
 
-	// "github.com/runopsio/hoop/agent"
-	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/version"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
 )
 
 func Run() {
 	fmt.Println(string(version.JSON()))
-
-	// dail server
-	conn, err := grpc.Dial(":8010", grpc.WithInsecure())
+	client, err := grpc.Connect("x-agt-test-token")
 	if err != nil {
-		log.Fatalf("can not connect with server %v", err)
+		log.Fatal(err)
 	}
 
-	// create stream
-	requestCtx := metadata.AppendToOutgoingContext(context.Background(),
-		"authorization", "Bearer x-agt-test-token",
-		"hostname", "localhost",
-		"machine_id", "machine_my",
-		"kernel_version", "who knows?")
-
-	client := pb.NewTransportClient(conn)
-	stream, err := client.Connect(requestCtx)
-	if err != nil {
-		log.Fatalf("server rejected the connection: %v", err)
-	}
-
-	ctx := stream.Context()
+	ctx := client.StreamContext()
 	done := make(chan struct{})
-	agt := New(ctx, stream, done)
+	agt := New(client, done)
 	defer agt.Close()
 
 	go agt.Run()
-	<-agt.Context().Done()
-	if err := agt.Context().Err(); err != nil {
+	<-ctx.Done()
+	if err := ctx.Err(); err != nil {
 		log.Printf("error: %s", err.Error())
 	}
 	log.Println("Server terminated connection... exiting...")

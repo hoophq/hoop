@@ -16,7 +16,7 @@ var pluginMemStore memory.Store
 func init() {
 	pluginMemStore = memory.New()
 	auditPlugin := pluginsaudit.New()
-	pluginMemStore.Set(auditPlugin.Name(), pluginsaudit.New())
+	pluginMemStore.Set(auditPlugin.Name(), auditPlugin)
 }
 
 type pluginConfig struct {
@@ -79,7 +79,7 @@ func (s *Server) pluginOnReceivePhase(sessionID string, pkt plugins.PacketData) 
 			continue
 		}
 		if err := plugin.OnReceive(sessionID, pkt); err != nil {
-			log.Printf("sessionid=%v - plugin %q rejected packet, err=%v",
+			log.Printf("session=%v - plugin %q rejected packet, err=%v",
 				sessionID, plugin.Name(), err)
 			return err
 		}

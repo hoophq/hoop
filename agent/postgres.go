@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
 
@@ -15,9 +16,9 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	if pb.PacketType(pkt.Type) != pb.PacketPGWriteServerType {
 		return
 	}
-	gwID := pkt.Spec[pb.SpecGatewayConnectionID]
-	swPgClient := pb.NewStreamWriter(a.stream.Send, pb.PacketPGWriteClientType, pkt.Spec)
-	envObj := a.connStore.Get(string(gwID))
+	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
+	swPgClient := pb.NewStreamWriter(a.client, pb.PacketPGWriteClientType, pkt.Spec)
+	envObj := a.connStore.Get(string(sessionID))
 	pgEnv, _ := envObj.(*pgEnv)
 	if pgEnv == nil {
 		log.Println("postgres credentials not found in memory")
@@ -25,8 +26,15 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 			pg.NewFatalError("credentials is empty, contact the administrator").Encode())
 		return
 	}
-	clientConnectionID := pkt.Spec[pb.SpecClientConnectionID]
-	clientObj := a.connStore.Get(string(clientConnectionID))
+	clientConnectionID := string(pkt.Spec[pb.SpecClientConnectionID])
+	if clientConnectionID == "" {
+		log.Println("connection id not found in memory")
+		writePGClientErr(swPgClient,
+			pg.NewFatalError("connection id not found, contact the administrator").Encode())
+		return
+	}
+	clientConnectionIDKey := fmt.Sprintf("%s:%s", string(sessionID), string(clientConnectionID))
+	clientObj := a.connStore.Get(clientConnectionIDKey)
 	if proxyServerWriter, ok := clientObj.(pg.Proxy); ok {
 		if err := proxyServerWriter.Send(pkt.Payload); err != nil {
 			log.Println(err)
@@ -44,13 +52,32 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	}
 
 	if pgPkt.IsFrontendSSLRequest() {
-		err := a.stream.Send(&pb.Packet{
+		err := a.client.Send(&pb.Packet{
 			Type:    pb.PacketPGWriteClientType.String(),
 			Spec:    pkt.Spec,
 			Payload: []byte{pgtypes.ServerSSLNotSupported.Byte()},
 		})
 		if err != nil {
 			log.Printf("failed sending ssl response back, err=%v", err)
+		}
+		return
+	}
+
+	// https://www.postgresql.org/docs/current/protocol-flow.html#id-1.10.6.7.10
+	if pgPkt.IsCancelRequest() {
+		// TODO(san): send the packet back to the connection which initiate the cancel request.
+		// Storing the PID in memory may allow to track the connection between client/agent
+		log.Printf("session=%v - starting cancel request", sessionID)
+		pgServer, err := newTCPConn(pgEnv.host, pgEnv.port)
+		if err != nil {
+			log.Printf("failed creating a cancel connection with postgres server, err=%v", err)
+			return
+		}
+		defer pgServer.Close()
+		if _, err := pgServer.Write(pgPkt.Encode()); err != nil {
+			log.Printf("failed sending cancel request, err=%v", err)
+			writePGClientErr(swPgClient,
+				pg.NewFatalError("failed canceling request in the postgres server").Encode())
 		}
 		return
 	}
@@ -63,7 +90,7 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 		return
 	}
 
-	log.Printf("starting postgres connection for %s", gwID)
+	log.Printf("starting postgres connection for %s", sessionID)
 	pgServer, err := newTCPConn(pgEnv.host, pgEnv.port)
 	if err != nil {
 		log.Printf("failed obtaining connection with postgres server, err=%v", err)
@@ -78,10 +105,18 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	}
 	log.Println("finish startup phase")
 	mid := middlewares.New(swPgClient, pgServer, pgEnv.user, pgEnv.pass)
-	pg.NewProxy(context.Background(), swPgClient, mid.ProxyCustomAuth).
-		RunWithReader(pg.NewReader(pgServer))
-	proxyServerWriter := pg.NewProxy(context.Background(), pgServer, mid.DenyChangePassword).Run()
-	a.connStore.Set(string(clientConnectionID), proxyServerWriter)
+
+	pg.NewProxy(
+		pg.NewContext(context.Background(), string(sessionID)),
+		swPgClient,
+		mid.ProxyCustomAuth,
+	).RunWithReader(pg.NewReader(pgServer))
+	proxyServerWriter := pg.NewProxy(
+		pg.NewContext(context.Background(), string(sessionID)),
+		pgServer,
+		mid.DenyChangePassword,
+	).Run()
+	a.connStore.Set(clientConnectionIDKey, proxyServerWriter)
 }
 
 func writePGClientErr(w io.Writer, msg []byte) {
