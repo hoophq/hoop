@@ -8,7 +8,7 @@ fi
 
 # change which API to call in the UI on runtime
 if [[ "$API_URL" != "" ]]; then
-    sed "s/http:\/\/localhost:8009/$API_URL/g" -i app/ui/public/js/app.js
+    sed "s|http://localhost:8009|$API_URL|g" -i app/ui/public/js/app.js
 fi
 
 "${@}"
