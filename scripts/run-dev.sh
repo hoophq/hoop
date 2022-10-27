@@ -24,6 +24,7 @@ export PORT=8009
 export PROFILE=dev
 export XTDB_ADDRESS=http://127.0.0.1:3000
 export PLUGIN_AUDIT_PATH=/tmp/hoopsessions
+export GIN_MODE=debug
 go build -o /tmp/hoop github.com/runopsio/hoop/client
 /tmp/hoop start gateway &
 

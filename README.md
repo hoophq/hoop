@@ -48,7 +48,7 @@ To customize the identity provider, the following variables can be set:
 | IDP_AUDIENCE            | Audience of identity provider               | no    | no     | yes     |
 | IDP_JWKS_URL            | Public keys endpoint of identity provider   | no    | no     | yes     |
 | IDP_AUTHORIZE_ENDPOINT  | Authorization endpoint of identity provider | no    | no     | yes     |
-| IDP_TOKEN_ENDPOINTs     | Token endpoint of identity provider         | no    | no     | yes     |
+| IDP_TOKEN_ENDPOINT      | Token endpoint of identity provider         | no    | no     | yes     |
 
 
 ## Development QuickStart

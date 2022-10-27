@@ -6,7 +6,9 @@ ENV ACCEPT_EULA=y
 ADD rootfs/tmp/* /tmp/
 
 # Common
-RUN mkdir -p /app && apt-get update -y && \
+RUN mkdir -p /app && \
+    mkdir -p /opt/hoop/sessions && \
+    apt-get update -y && \
     apt-get install -y \
         locales \
         tini \
@@ -67,6 +69,7 @@ ENV LC_ALL en_US.UTF-8
 ENV PATH="/opt/mssql-tools/bin:/app:${PATH}"
 
 ADD rootfs/app/start-dev.sh /app/
+ADD rootfs/app/entrypoint.sh /app/
 COPY rootfs/ui /app/ui
 COPY hoop* /app/
 RUN chmod +x /app/*
@@ -75,4 +78,4 @@ EXPOSE 8009
 EXPOSE 8010
 
 ENTRYPOINT ["tini", "--"]
-CMD ["/app/start-dev.sh"]
+CMD ["/app/entrypoint.sh"]
