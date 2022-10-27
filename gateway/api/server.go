@@ -35,6 +35,8 @@ func (api *Api) StartAPI() {
 		os.Setenv("PORT", "8009")
 	}
 	route := gin.Default()
+	// https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies
+	route.SetTrustedProxies(nil)
 	// UI
 	staticUiPath := os.Getenv("STATIC_UI_PATH")
 	if staticUiPath == "" {

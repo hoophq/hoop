@@ -10,7 +10,6 @@ import (
 
 	"github.com/briandowns/spinner"
 	"github.com/muesli/termenv"
-	_ "github.com/muesli/termenv"
 	"github.com/runopsio/hoop/client/proxyexec"
 	"github.com/runopsio/hoop/client/proxypg"
 	"github.com/runopsio/hoop/common/grpc"

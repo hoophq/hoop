@@ -53,6 +53,7 @@ var startCmd = &cobra.Command{
 		}
 		dockerArgs := []string{
 			"run",
+			"-e", "PROFILE=dev",
 			"-p", "8009:8009",
 			"-p", "8010:8010",
 			"--name", containerName,
