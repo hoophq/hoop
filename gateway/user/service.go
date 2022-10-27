@@ -1,5 +1,7 @@
 package user
 
+import "strings"
+
 type (
 	Service struct {
 		Storage storage
@@ -8,6 +10,7 @@ type (
 	storage interface {
 		Signup(org *Org, user *User) (txId int64, err error)
 		FindById(email string) (*Context, error)
+		GetOrgByName(name string) (*Org, error)
 		Persist(user any) (int64, error)
 	}
 
@@ -45,7 +48,26 @@ func (s *Service) Signup(org *Org, user *User) (txId int64, err error) {
 }
 
 func (s *Service) FindBySub(sub string) (*Context, error) {
-	return s.Storage.FindById(sub)
+	context, err := s.Storage.FindById(sub)
+	if err != nil {
+		return nil, err
+	}
+
+	if context.User == nil {
+		return context, nil
+	}
+
+	orgName := ExtractDomain(context.User.Email)
+
+	if context.Org == nil {
+		org, err := s.Storage.GetOrgByName(orgName)
+		if err != nil {
+			return nil, err
+		}
+		context.Org = org
+	}
+
+	return context, nil
 }
 
 func (s *Service) Persist(user any) error {
@@ -54,4 +76,38 @@ func (s *Service) Persist(user any) error {
 		return err
 	}
 	return nil
+}
+
+func ExtractDomain(email string) string {
+	emailsParts := strings.Split(email, "@")
+	domainParts := strings.Split(emailsParts[1], ".")
+	orgName := domainParts[0]
+
+	if isPublicDomain(orgName) {
+		orgName = emailsParts[0]
+	}
+
+	return orgName
+}
+
+func isPublicDomain(domain string) bool {
+	publicDomains := []string{
+		"gmail",
+		"outlook",
+		"hotmail",
+		"yahoo",
+		"protonmail",
+		"zoho",
+		"aim",
+		"gmx",
+		"icloud",
+		"yandex",
+	}
+
+	for _, d := range publicDomains {
+		if domain == d {
+			return true
+		}
+	}
+	return false
 }

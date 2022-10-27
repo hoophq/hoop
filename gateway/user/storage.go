@@ -87,6 +87,30 @@ func (s *Storage) GetByEmail(email string) (*User, error) {
 	return &u[0], nil
 }
 
+func (s *Storage) GetOrgByName(name string) (*Org, error) {
+	var payload = `{:query {
+		:find [(pull ?org [*])] 
+		:in [name]
+		:where [[?user :org/name name]]}
+		:in-args ["` + name + `"]}`
+
+	b, err := s.Query([]byte(payload))
+	if err != nil {
+		return nil, err
+	}
+
+	var u []Org
+	if err := edn.Unmarshal(b, &u); err != nil {
+		return nil, err
+	}
+
+	if len(u) == 0 {
+		return nil, nil
+	}
+
+	return &u[0], nil
+}
+
 func (s *Storage) getOrg(orgId string) (*Org, error) {
 	var payload = `{:query {
 		:find [(pull ?org [*])] 

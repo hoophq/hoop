@@ -145,7 +145,7 @@ func (s *Service) signup(context *user.Context, sub string, profile map[string]a
 	if context.Org == nil {
 		org, ok := profile["https://hoophq.dev/org"].(string)
 		if !ok || org == "" {
-			org = extractDomain(email)
+			org = user.ExtractDomain(email)
 		}
 
 		context.Org = &user.Org{
@@ -189,38 +189,4 @@ func (s *Service) signup(context *user.Context, sub string, profile map[string]a
 func (s *Service) loginOutcome(login *login, outcome outcomeType) {
 	login.Outcome = outcome
 	s.Storage.PersistLogin(login)
-}
-
-func extractDomain(email string) string {
-	emailsParts := strings.Split(email, "@")
-	domainParts := strings.Split(emailsParts[1], ".")
-	orgName := domainParts[0]
-
-	if isPublicDomain(orgName) {
-		orgName = emailsParts[0]
-	}
-
-	return orgName
-}
-
-func isPublicDomain(domain string) bool {
-	publicDomains := []string{
-		"gmail",
-		"outlook",
-		"hotmail",
-		"yahoo",
-		"protonmail",
-		"zoho",
-		"aim",
-		"gmx",
-		"icloud",
-		"yandex",
-	}
-
-	for _, d := range publicDomains {
-		if domain == d {
-			return true
-		}
-	}
-	return false
 }
