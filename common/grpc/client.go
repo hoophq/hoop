@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log"
 	"sync"
@@ -9,7 +10,12 @@ import (
 
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/common/runtime"
+	"github.com/runopsio/hoop/common/version"
+	"golang.org/x/oauth2"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/credentials/oauth"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -30,6 +36,7 @@ type (
 
 const (
 	OptionConnectionName OptionKey = "connection_name"
+	defaultAddress                 = "127.0.0.1:8010"
 )
 
 func WithOption(optKey OptionKey, val string) *ClientOptions {
@@ -38,27 +45,36 @@ func WithOption(optKey OptionKey, val string) *ClientOptions {
 
 func Connect(serverAddress, token string, opts ...*ClientOptions) (pb.ClientTransport, error) {
 	if serverAddress == "" {
-		serverAddress = "127.0.0.1:8010"
+		serverAddress = defaultAddress
 	}
-	conn, err := grpc.Dial(serverAddress, grpc.WithInsecure())
+	rpcCred := oauth.NewOauthAccess(&oauth2.Token{AccessToken: token})
+	dialOptions := []grpc.DialOption{
+		grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{})),
+		grpc.WithPerRPCCredentials(rpcCred),
+	}
+	var contextOptions []string
+	if serverAddress == defaultAddress {
+		dialOptions = []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+		contextOptions = append(contextOptions, "authorization", fmt.Sprintf("Bearer %s", token))
+	}
+	conn, err := grpc.Dial(serverAddress, dialOptions...)
 	if err != nil {
 		return nil, fmt.Errorf("failed dialing to grpc server, err=%v", err)
 	}
 
 	osmap := runtime.OS()
-	contextOptions := []string{
-		"authorization", fmt.Sprintf("Bearer %s", token),
+	contextOptions = append(contextOptions,
+		"client_version", string(version.JSON()),
 		"hostname", osmap["hostname"],
 		"machine_id", osmap["machine_id"],
 		"kernel_version", osmap["kernel_version"],
-	}
+	)
 	for _, opt := range opts {
 		contextOptions = append(contextOptions, []string{
 			string(opt.optionKey),
 			opt.optionVal}...)
 	}
 	requestCtx := metadata.AppendToOutgoingContext(context.Background(), contextOptions...)
-
 	c := pb.NewTransportClient(conn)
 	stream, err := c.Connect(requestCtx)
 	if err != nil {
