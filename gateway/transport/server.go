@@ -69,10 +69,9 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 	origin := o[0]
 
 	if s.Profile == pb.DevProfile {
+		token = "x-hooper-test-token"
 		if origin == pb.ConnectionOriginAgent {
 			token = "x-agt-test-token"
-		} else {
-			token = "x-hooper-test-token"
 		}
 	} else {
 		t := md.Get("authorization")

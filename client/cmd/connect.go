@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/briandowns/spinner"
@@ -38,7 +39,6 @@ var (
 )
 
 func init() {
-	connectCmd.Flags().StringVarP(&connectFlags.serverAddress, "server", "s", os.Getenv("SERVER_ADDRESS"), "The gateway gRPC server address HOST:PORT")
 	connectCmd.Flags().StringVarP(&connectFlags.proxyPort, "port", "p", "", "The port to bind the proxy if it's a native database connection")
 	rootCmd.AddCommand(connectCmd)
 }
@@ -53,6 +53,20 @@ type connect struct {
 }
 
 func runConnect(args []string) {
+	config := loadConfig()
+
+	if config.Token == "" {
+		if err := doLogin(nil); err != nil {
+			panic(err)
+		}
+	}
+
+	config = loadConfig()
+
+	serverAddr := config.Host
+	serverAddr = strings.Replace(serverAddr, "https://", "", -1)
+	serverAddr = strings.Replace(serverAddr, "http://", "", -1)
+
 	loader := spinner.New(spinner.CharSets[78], 70*time.Millisecond)
 	loader.Color("green")
 	loader.Start()
@@ -65,11 +79,9 @@ func runConnect(args []string) {
 		loader:         loader,
 	}
 
-	token := parseToken()
-
 	client, err := grpc.Connect(
-		connectFlags.serverAddress,
-		token,
+		serverAddr+":8010",
+		config.Token,
 		grpc.WithOption(grpc.OptionConnectionName, args[0]),
 		grpc.WithOption("origin", pb.ConnectionOriginClient))
 	if err != nil {
@@ -239,33 +251,4 @@ func (c *connect) printErrorAndExit(format string, v ...any) {
 		Background(p.Color("#DBAB79"))
 	fmt.Println(out.String())
 	os.Exit(1)
-}
-
-func parseToken() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	f, err := os.Open(fmt.Sprintf("%s/.hoop/config", home))
-	if err != nil {
-		return ""
-	}
-	defer f.Close()
-
-	buf := make([]byte, 1024)
-	for {
-		_, err := f.Read(buf)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return ""
-		}
-	}
-
-	if len(buf) > 0 {
-		return string(buf)
-	}
-	return ""
 }

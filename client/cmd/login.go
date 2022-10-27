@@ -9,7 +9,6 @@ import (
 	"github.com/spf13/cobra"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -45,28 +44,40 @@ func init() {
 var done chan bool
 
 func doLogin(args []string) error {
-	var email string
-	if len(args) == 0 {
+	config := loadConfig()
+
+	if config.Host == "" {
 		reader := bufio.NewReader(os.Stdin)
-		fmt.Print("Email > ")
-		email, _ = reader.ReadString('\n')
-		email = strings.Trim(email, " \n")
-	} else {
-		email = args[0]
+		fmt.Print("No server address configured.\n")
+		fmt.Printf("Server address [https://%s]: ", pb.DefaultHost)
+		host, _ := reader.ReadString('\n')
+		host = strings.Trim(config.Email, " \n")
+		if host == "" {
+			host = "https://" + pb.DefaultHost
+		}
+		config.Host = host
 	}
 
-	apiUrl := os.Getenv("API_URL")
-	if apiUrl == "" {
-		apiUrl = pb.DefaultHost
+	if !strings.HasPrefix(config.Host, "https://") {
+		config.Host = "https://" + config.Host
 	}
 
-	if strings.HasPrefix(apiUrl, "localhost") {
-		apiUrl = "http://" + apiUrl
-	} else {
-		apiUrl = "https://" + apiUrl
+	if len(args) > 0 {
+		config.Email = args[0]
 	}
 
-	loginUrl, err := requestForUrl(email, apiUrl)
+	if config.Email == "" {
+		reader := bufio.NewReader(os.Stdin)
+		fmt.Print("Email: ")
+		config.Email, _ = reader.ReadString('\n')
+		config.Email = strings.Trim(config.Email, " \n")
+	}
+
+	saveConfig(config)
+
+	fmt.Printf("To use a different email, please run 'hoop login {email}'.\n\nLogging with [%s] at [%s]\n\n.", config.Email, config.Host)
+
+	loginUrl, err := requestForUrl(config.Email, config.Host)
 	if err != nil {
 		return err
 	}
@@ -145,17 +156,14 @@ func openBrowser(url string) error {
 func loginCallback(resp http.ResponseWriter, req *http.Request) {
 	err := req.URL.Query().Get("error")
 	token := req.URL.Query().Get("token")
-	var browserMsg string
-	var userMsg string
+
+	browserMsg := fmt.Sprintf("Login succeeded. You can close this tab now.")
+	userMsg := "Login succeeded\n"
 
 	if err != "" {
 		browserMsg = fmt.Sprintf("Login failed: %s", err)
 		userMsg = fmt.Sprintf("Login failed: %s\n", err)
-	}
 
-	if token != "" {
-		browserMsg = fmt.Sprintf("Login succeeded. You can close this tab now.")
-		userMsg = "Login successful\n"
 	}
 
 	persistTokenFilesystem(token)
@@ -167,26 +175,8 @@ func loginCallback(resp http.ResponseWriter, req *http.Request) {
 }
 
 func persistTokenFilesystem(token string) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatal(err)
-	}
+	config := loadConfig()
+	config.Token = token
 
-	path := fmt.Sprintf("%s/.hoop", home)
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		os.MkdirAll(path, 0700)
-	}
-
-	f, err := os.Create(fmt.Sprintf("%s/config", path))
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	defer f.Close()
-
-	_, err = f.WriteString(token)
-	if err != nil {
-		panic(err)
-		return
-	}
+	saveConfig(config)
 }
