@@ -48,26 +48,11 @@ func (s *Service) Signup(org *Org, user *User) (txId int64, err error) {
 }
 
 func (s *Service) FindBySub(sub string) (*Context, error) {
-	context, err := s.Storage.FindById(sub)
-	if err != nil {
-		return nil, err
-	}
+	return s.Storage.FindById(sub)
+}
 
-	if context.User == nil {
-		return context, nil
-	}
-
-	orgName := ExtractDomain(context.User.Email)
-
-	if context.Org == nil {
-		org, err := s.Storage.GetOrgByName(orgName)
-		if err != nil {
-			return nil, err
-		}
-		context.Org = org
-	}
-
-	return context, nil
+func (s *Service) GetOrgByName(name string) (*Org, error) {
+	return s.Storage.GetOrgByName(name)
 }
 
 func (s *Service) Persist(user any) error {

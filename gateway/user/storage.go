@@ -91,7 +91,7 @@ func (s *Storage) GetOrgByName(name string) (*Org, error) {
 	var payload = `{:query {
 		:find [(pull ?org [*])] 
 		:in [name]
-		:where [[?user :org/name name]]}
+		:where [[?org :org/name name]]}
 		:in-args ["` + name + `"]}`
 
 	b, err := s.Query([]byte(payload))
