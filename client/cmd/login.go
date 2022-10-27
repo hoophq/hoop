@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/spf13/cobra"
 	"io"
 	"io/ioutil"
@@ -44,16 +43,18 @@ func init() {
 var done chan bool
 
 func doLogin(args []string) error {
+	defaultHost := "app.hoop.dev"
+
 	config := loadConfig()
 
 	if config.Host == "" {
 		reader := bufio.NewReader(os.Stdin)
-		fmt.Print("No server address configured.\n")
-		fmt.Printf("Server address [https://%s]: ", pb.DefaultHost)
+		fmt.Print("Press enter to leave the default\n")
+		fmt.Printf("Server address [https://%s]: ", defaultHost)
 		host, _ := reader.ReadString('\n')
 		host = strings.Trim(config.Email, " \n")
 		if host == "" {
-			host = "https://" + pb.DefaultHost
+			host = "https://" + defaultHost
 		}
 		config.Host = host
 	}
