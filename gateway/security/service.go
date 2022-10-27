@@ -23,6 +23,7 @@ type (
 
 	UserService interface {
 		FindBySub(sub string) (*user.Context, error)
+		GetOrgByName(name string) (*user.Org, error)
 		Persist(u any) error
 	}
 
@@ -148,16 +149,25 @@ func (s *Service) signup(context *user.Context, sub string, profile map[string]a
 			org = user.ExtractDomain(email)
 		}
 
-		context.Org = &user.Org{
-			Id:   uuid.NewString(),
-			Name: org,
-		}
-
-		if err := s.UserService.Persist(context.Org); err != nil {
+		orgData, err := s.UserService.GetOrgByName(org)
+		if err != nil {
 			return err
 		}
 
-		newOrg = true
+		if orgData == nil {
+			orgData = &user.Org{
+				Id:   uuid.NewString(),
+				Name: org,
+			}
+
+			if err := s.UserService.Persist(orgData); err != nil {
+				return err
+			}
+
+			newOrg = true
+		}
+
+		context.Org = orgData
 	}
 
 	if context.User == nil {
