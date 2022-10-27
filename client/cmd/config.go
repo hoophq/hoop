@@ -9,9 +9,9 @@ import (
 
 type (
 	Config struct {
-		Token string
-		Host  string
-		Email string
+		Token         string
+		ServerAddress string
+		Email         string
 	}
 )
 

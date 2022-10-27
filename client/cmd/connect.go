@@ -63,7 +63,7 @@ func runConnect(args []string) {
 
 	config = loadConfig()
 
-	serverAddr := config.Host
+	serverAddr := config.ServerAddress
 	serverAddr = strings.Replace(serverAddr, "https://", "", -1)
 	serverAddr = strings.Replace(serverAddr, "http://", "", -1)
 

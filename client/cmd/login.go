@@ -43,24 +43,24 @@ func init() {
 var done chan bool
 
 func doLogin(args []string) error {
-	defaultHost := "app.hoop.dev"
+	defaultServerAddress := "app.hoop.dev"
 
 	config := loadConfig()
 
-	if config.Host == "" {
+	if config.ServerAddress == "" {
 		reader := bufio.NewReader(os.Stdin)
 		fmt.Print("Press enter to leave the default\n")
-		fmt.Printf("Server address [https://%s]: ", defaultHost)
+		fmt.Printf("Server address [https://%s]: ", defaultServerAddress)
 		host, _ := reader.ReadString('\n')
 		host = strings.Trim(config.Email, " \n")
 		if host == "" {
-			host = "https://" + defaultHost
+			host = "https://" + defaultServerAddress
 		}
-		config.Host = host
+		config.ServerAddress = host
 	}
 
-	if !strings.HasPrefix(config.Host, "https://") {
-		config.Host = "https://" + config.Host
+	if !strings.HasPrefix(config.ServerAddress, "https://") {
+		config.ServerAddress = "https://" + config.ServerAddress
 	}
 
 	if len(args) > 0 {
@@ -76,9 +76,9 @@ func doLogin(args []string) error {
 
 	saveConfig(config)
 
-	fmt.Printf("To use a different email, please run 'hoop login {email}'.\n\nLogging with [%s] at [%s]\n\n.", config.Email, config.Host)
+	fmt.Printf("To use a different email, please run 'hoop login {email}'.\n\nLogging with [%s] at [%s]\n\n.", config.Email, config.ServerAddress)
 
-	loginUrl, err := requestForUrl(config.Email, config.Host)
+	loginUrl, err := requestForUrl(config.Email, config.ServerAddress)
 	if err != nil {
 		return err
 	}
