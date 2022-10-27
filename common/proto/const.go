@@ -35,4 +35,7 @@ const (
 	DevProfile = "dev"
 
 	ProviderOkta = "okta"
+
+	ConnectionOriginAgent  = "agent"
+	ConnectionOriginClient = "client"
 )

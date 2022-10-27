@@ -37,8 +37,6 @@ var (
 )
 
 func init() {
-	connectCmd.Flags().StringVar(&connectFlags.token, "token", os.Getenv("TOKEN"), "The token to authenticate on gateway")
-	connectCmd.Flags().StringVarP(&connectFlags.serverAddress, "server", "s", os.Getenv("SERVER_ADDRESS"), "The gateway gRPC server address HOST:PORT")
 	connectCmd.Flags().StringVarP(&connectFlags.proxyPort, "port", "p", "", "The port to bind the proxy if it's a native database connection")
 	rootCmd.AddCommand(connectCmd)
 }
@@ -53,6 +51,15 @@ type connect struct {
 }
 
 func runConnect(args []string) {
+	config := loadConfig()
+
+	if config.Token == "" {
+		if err := doLogin(nil); err != nil {
+			panic(err)
+		}
+		config = loadConfig()
+	}
+
 	loader := spinner.New(spinner.CharSets[78], 70*time.Millisecond)
 	loader.Color("green")
 	loader.Start()
@@ -64,10 +71,12 @@ func runConnect(args []string) {
 		connectionName: args[0],
 		loader:         loader,
 	}
+
 	client, err := grpc.Connect(
-		connectFlags.serverAddress,
-		connectFlags.token,
-		grpc.WithOption(grpc.OptionConnectionName, args[0]))
+		config.Host+":"+config.Port,
+		config.Token,
+		grpc.WithOption(grpc.OptionConnectionName, args[0]),
+		grpc.WithOption("origin", pb.ConnectionOriginClient))
 	if err != nil {
 		c.printErrorAndExit(err.Error())
 	}

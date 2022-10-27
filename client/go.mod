@@ -5,14 +5,13 @@ go 1.19
 require (
 	github.com/briandowns/spinner v1.19.0
 	github.com/creack/pty v1.1.18
-	github.com/google/uuid v1.3.0
 	github.com/runopsio/hoop/common v0.0.0-00010101000000-000000000000
 	github.com/spf13/cobra v1.5.0
 	golang.org/x/term v0.0.0-20220919170432-7a66f970e087
-	google.golang.org/grpc v1.49.0
 )
 
 require (
+	github.com/BurntSushi/toml v1.2.1 // indirect
 	github.com/aymanbagabas/go-osc52 v1.0.3 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/mattn/go-runewidth v0.0.14 // indirect

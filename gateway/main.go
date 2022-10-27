@@ -27,7 +27,7 @@ func Run() {
 		panic(err)
 	}
 
-	profile := setProfile()
+	profile := os.Getenv("PROFILE")
 	idProvider := idp.NewProvider(profile)
 
 	agentService := agent.Service{Storage: &agent.Storage{Storage: s}}
@@ -71,12 +71,4 @@ func Run() {
 
 	go g.StartRPCServer()
 	a.StartAPI()
-}
-
-func setProfile() string {
-	profile := os.Getenv("PROFILE")
-	if profile == "" {
-		profile = pb.DevProfile
-	}
-	return profile
 }
