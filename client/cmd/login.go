@@ -21,6 +21,10 @@ type (
 	}
 )
 
+const (
+	httpsProtocol = "https://"
+)
+
 var loginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Authenticate at Hoop",
@@ -43,24 +47,35 @@ func init() {
 var done chan bool
 
 func doLogin(args []string) error {
-	defaultServerAddress := "app.hoop.dev"
+	defaultHost := "app.hoop.dev"
+	defaultPort := "8443"
 
 	config := loadConfig()
 
-	if config.ServerAddress == "" {
+	if config.Host == "" {
 		reader := bufio.NewReader(os.Stdin)
-		fmt.Print("Press enter to leave the default\n")
-		fmt.Printf("Server address [https://%s]: ", defaultServerAddress)
+		fmt.Print("Press enter to leave the defaults\n")
+		fmt.Printf("Host [%s]: ", defaultHost)
 		host, _ := reader.ReadString('\n')
-		host = strings.Trim(config.Email, " \n")
+		host = strings.Trim(host, " \n")
+
 		if host == "" {
-			host = "https://" + defaultServerAddress
+			host = defaultHost
 		}
-		config.ServerAddress = host
+
+		host = strings.Replace(host, httpsProtocol, "", -1)
+		config.Host = host
 	}
 
-	if !strings.HasPrefix(config.ServerAddress, "https://") {
-		config.ServerAddress = "https://" + config.ServerAddress
+	if config.Port == "" {
+		reader := bufio.NewReader(os.Stdin)
+		fmt.Printf("Port [%s]: ", defaultPort)
+		port, _ := reader.ReadString('\n')
+		port = strings.Trim(port, " \n")
+		if port == "" {
+			port = defaultPort
+		}
+		config.Port = port
 	}
 
 	if len(args) > 0 {
@@ -70,15 +85,16 @@ func doLogin(args []string) error {
 	if config.Email == "" {
 		reader := bufio.NewReader(os.Stdin)
 		fmt.Print("Email: ")
-		config.Email, _ = reader.ReadString('\n')
-		config.Email = strings.Trim(config.Email, " \n")
+		email, _ := reader.ReadString('\n')
+		email = strings.Trim(email, " \n")
+		config.Email = email
 	}
 
 	saveConfig(config)
 
-	fmt.Printf("To use a different email, please run 'hoop login {email}'.\n\nLogging with [%s] at [%s]\n\n.", config.Email, config.ServerAddress)
+	fmt.Printf("To use a different email, please run 'hoop login {email}'.\n\nLogging with [%s] at [%s]\n\n", config.Email, config.Host)
 
-	loginUrl, err := requestForUrl(config.Email, config.ServerAddress)
+	loginUrl, err := requestForUrl(config.Email, httpsProtocol+config.Host)
 	if err != nil {
 		return err
 	}
@@ -134,7 +150,7 @@ func requestForUrl(email, apiUrl string) (string, error) {
 		return l.Url, nil
 	}
 
-	return "https://", nil
+	return httpsProtocol, nil
 }
 
 func openBrowser(url string) error {
@@ -167,7 +183,7 @@ func loginCallback(resp http.ResponseWriter, req *http.Request) {
 
 	}
 
-	persistTokenFilesystem(token)
+	persistToken(token)
 
 	io.WriteString(resp, browserMsg)
 	fmt.Println(userMsg)
@@ -175,7 +191,7 @@ func loginCallback(resp http.ResponseWriter, req *http.Request) {
 	done <- true
 }
 
-func persistTokenFilesystem(token string) {
+func persistToken(token string) {
 	config := loadConfig()
 	config.Token = token
 

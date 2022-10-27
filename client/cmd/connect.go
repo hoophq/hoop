@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/briandowns/spinner"
@@ -59,13 +58,8 @@ func runConnect(args []string) {
 		if err := doLogin(nil); err != nil {
 			panic(err)
 		}
+		config = loadConfig()
 	}
-
-	config = loadConfig()
-
-	serverAddr := config.ServerAddress
-	serverAddr = strings.Replace(serverAddr, "https://", "", -1)
-	serverAddr = strings.Replace(serverAddr, "http://", "", -1)
 
 	loader := spinner.New(spinner.CharSets[78], 70*time.Millisecond)
 	loader.Color("green")
@@ -80,7 +74,7 @@ func runConnect(args []string) {
 	}
 
 	client, err := grpc.Connect(
-		serverAddr+":8010",
+		config.Host+":"+config.Port,
 		config.Token,
 		grpc.WithOption(grpc.OptionConnectionName, args[0]),
 		grpc.WithOption("origin", pb.ConnectionOriginClient))
