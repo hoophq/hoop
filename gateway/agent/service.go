@@ -50,5 +50,12 @@ func (s *Service) Persist(agent *Agent) (int64, error) {
 }
 
 func (s *Service) FindAll(context *user.Context) ([]Agent, error) {
-	return s.Storage.FindAll(context)
+	result, err := s.Storage.FindAll(context)
+	if err != nil {
+		return nil, err
+	}
+	for i := range result {
+		result[i].Token = ""
+	}
+	return result, nil
 }
