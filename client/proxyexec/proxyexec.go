@@ -26,7 +26,7 @@ func New(client pb.ClientTransport) *Terminal {
 }
 
 // Connect control the current terminal connecting with the remote one
-func (t *Terminal) ConnecWithTTY(spec map[string][]byte) error {
+func (t *Terminal) ConnecWithTTY() error {
 	info, err := os.Stdin.Stat()
 	if err != nil {
 		return fmt.Errorf("failed obtaining stdin file description, err=%v", err)
@@ -61,7 +61,7 @@ func (t *Terminal) ConnecWithTTY(spec map[string][]byte) error {
 	sig <- pbexec.SIGWINCH
 
 	go func() {
-		sw := pb.NewStreamWriter(t.client, pb.PacketExecWriteAgentStdinType, spec)
+		sw := pb.NewStreamWriter(t.client, pb.PacketExecWriteAgentStdinType, nil)
 		_, _ = sw.Write(pbexec.TermEnterKeyStrokeType)
 		// TODO: check errors
 		_, _ = io.Copy(sw, os.Stdin)

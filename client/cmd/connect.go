@@ -24,11 +24,10 @@ var (
 		Short:        "Connect to a remote resource",
 		SilenceUsage: false,
 		PreRun: func(cmd *cobra.Command, args []string) {
-			if len(args) != 1 {
+			if len(args) < 1 {
 				cmd.Usage()
 				os.Exit(1)
 			}
-
 		},
 		Run: func(cmd *cobra.Command, args []string) {
 			runConnect(args)
@@ -67,7 +66,7 @@ func runConnect(args []string) {
 	c := &connect{
 		proxyPort:      connectFlags.proxyPort,
 		connStore:      memory.New(),
-		clientArgs:     args,
+		clientArgs:     args[1:],
 		connectionName: args[0],
 		loader:         loader,
 	}
@@ -81,9 +80,18 @@ func runConnect(args []string) {
 		c.printErrorAndExit(err.Error())
 	}
 	loader.Suffix = " validating connection..."
+	spec := map[string][]byte{}
+	if len(c.clientArgs) > 0 {
+		encArgs, err := pb.GobEncode(c.clientArgs)
+		if err != nil {
+			log.Fatalf("failed encoding args, err=%v", err)
+		}
+		spec[string(pb.SpecClientExecArgsKey)] = encArgs
+	}
 	c.client = client
 	if err := client.Send(&pb.Packet{
 		Type: pb.PacketGatewayConnectType.String(),
+		Spec: spec,
 	}); err != nil {
 		_, _ = client.Close()
 		c.printErrorAndExit("failed connecting to gateway, err=%v", err)
@@ -169,17 +177,9 @@ func (c *connect) processAgentConnectPhase(pkt *pb.Packet) {
 			c.loader.Stop()
 			c.client.StartKeepAlive()
 			term := proxyexec.New(c.client)
-			spec := map[string][]byte{}
-			if len(c.clientArgs) > 0 {
-				encArgs, err := pb.GobEncode(c.clientArgs)
-				if err != nil {
-					log.Fatalf("failed encoding args, err=%v", err)
-				}
-				spec[string(pb.SpecClientExecArgsKey)] = encArgs
-			}
 			c.printHeader(string(sessionID))
 			c.connStore.Set(string(sessionID), term)
-			if err := term.ConnecWithTTY(spec); err != nil {
+			if err := term.ConnecWithTTY(); err != nil {
 				c.processGracefulExit(err)
 			}
 		default:
