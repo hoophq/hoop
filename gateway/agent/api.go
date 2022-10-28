@@ -32,6 +32,7 @@ func (s *Handler) Post(c *gin.Context) {
 	a.Id = uuid.NewString()
 	a.Token = "x-agt-" + uuid.NewString()
 	a.OrgId = context.Org.Id
+	a.CreatedById = context.User.Id
 
 	_, err := s.Service.Persist(&a)
 	if err != nil {

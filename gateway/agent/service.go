@@ -43,6 +43,9 @@ func (s *Service) FindByToken(token string) (*Agent, error) {
 }
 
 func (s *Service) Persist(agent *Agent) (int64, error) {
+	if agent.Name == "" && agent.Hostname != "" {
+		agent.Name = agent.Hostname
+	}
 	return s.Storage.Persist(agent)
 }
 

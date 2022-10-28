@@ -69,6 +69,8 @@ func Run() {
 		}
 	}
 
+	fmt.Printf("Running with PROFILE [%s]\n", profile)
+
 	go g.StartRPCServer()
 	a.StartAPI()
 }
