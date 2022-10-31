@@ -26,7 +26,7 @@ export XTDB_ADDRESS=http://127.0.0.1:3001
 export PLUGIN_AUDIT_PATH=/tmp/hoopsessions
 export GIN_MODE=debug
 go build -o /tmp/hoop github.com/runopsio/hoop/client
-/tmp/hoop start gateway
+/tmp/hoop start gateway &
 
 unset PORT PROFILE XTDB_ADDRESS PLUGIN_AUDIT_PATH
 
@@ -36,4 +36,4 @@ do
 done
 echo "--> GATEWAY IS READY!"
 echo "--> STARTING AGENT ..."
-#/tmp/hoop start agent
+/tmp/hoop start agent
