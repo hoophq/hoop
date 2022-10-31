@@ -5,14 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/spf13/cobra"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
+
+	"github.com/spf13/cobra"
 )
 
 type (
@@ -31,7 +31,7 @@ var loginCmd = &cobra.Command{
 	Long:  `Login to gain access to hoop usage.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := doLogin(args); err != nil {
-			fmt.Println("Failed to login. Please try again")
+			fmt.Printf("Failed to login, err=%v\n", err)
 			os.Exit(1)
 		}
 		os.Exit(0)
@@ -137,7 +137,7 @@ func requestForUrl(email, apiUrl string) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusOK {
-		b, err := ioutil.ReadAll(resp.Body)
+		b, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return "", err
 		}
@@ -150,7 +150,7 @@ func requestForUrl(email, apiUrl string) (string, error) {
 		return l.Url, nil
 	}
 
-	return httpsProtocol, nil
+	return "", fmt.Errorf("failed authenticating, code=%v", resp.StatusCode)
 }
 
 func openBrowser(url string) error {
@@ -174,7 +174,7 @@ func loginCallback(resp http.ResponseWriter, req *http.Request) {
 	err := req.URL.Query().Get("error")
 	token := req.URL.Query().Get("token")
 
-	browserMsg := fmt.Sprintf("Login succeeded. You can close this tab now.")
+	browserMsg := "Login succeeded. You can close this tab now."
 	userMsg := "Login succeeded\n"
 
 	if err != "" {

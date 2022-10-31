@@ -3,7 +3,10 @@ package transport
 import (
 	"io"
 	"log"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/agent"
@@ -67,6 +70,7 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 	}
 
 	bindAgent(ag.Id, stream)
+	s.agentGracefulShutdown(ag)
 
 	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
 	agentErr := s.listenAgentMessages(ag, stream)
@@ -129,4 +133,19 @@ func (s *Server) disconnectAgent(ag *agent.Agent) {
 	ag.Status = agent.StatusDisconnected
 	s.AgentService.Persist(ag)
 	log.Println("agent disconnected...")
+}
+
+func (s *Server) agentGracefulShutdown(ag *agent.Agent) {
+	sigc := make(chan os.Signal, 1)
+	signal.Notify(sigc,
+		syscall.SIGHUP,
+		syscall.SIGINT,
+		syscall.SIGTERM,
+		syscall.SIGQUIT,
+		syscall.SIGKILL)
+	go func() {
+		<-sigc
+		s.disconnectAgent(ag)
+		os.Exit(143)
+	}()
 }

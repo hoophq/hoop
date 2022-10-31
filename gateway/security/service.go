@@ -1,12 +1,13 @@
 package security
 
 import (
+	"strings"
+
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/user"
 	"golang.org/x/oauth2"
-	"strings"
 )
 
 type (
@@ -99,7 +100,7 @@ func (s *Service) Callback(state, code string) string {
 		return login.Redirect + "?error=unexpected_error"
 	}
 
-	if strings.Contains(s.Provider.Domain, "okta") {
+	if strings.Contains(s.Provider.Issuer, "okta.com") {
 		sub = email
 	}
 
@@ -140,7 +141,8 @@ func (s *Service) exchangeCodeByToken(code string) (*oauth2.Token, *oidc.IDToken
 }
 
 func (s *Service) signup(context *user.Context, sub string, profile map[string]any) error {
-	email := profile["email"].(string)
+	email, _ := profile["email"].(string)
+	profileName, _ := profile["name"].(string)
 	newOrg := false
 
 	if context.Org == nil {
@@ -182,7 +184,7 @@ func (s *Service) signup(context *user.Context, sub string, profile map[string]a
 		context.User = &user.User{
 			Id:     sub,
 			Org:    context.Org.Id,
-			Name:   profile["name"].(string),
+			Name:   profileName,
 			Email:  email,
 			Status: status,
 			Groups: groups,
