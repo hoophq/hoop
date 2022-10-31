@@ -250,10 +250,18 @@ func (s *Server) clientGracefulShutdown(c *client.Client) {
 		syscall.SIGHUP,
 		syscall.SIGINT,
 		syscall.SIGTERM,
-		syscall.SIGQUIT)
+		syscall.SIGQUIT,
+		syscall.SIGKILL)
 	go func() {
-		<-sigc
+		sig := <-sigc
 		s.disconnectClient(c)
-		os.Exit(0)
+		switch sig.String() {
+		case syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT:
+			os.Exit(143)
+		case syscall.SIGKILL:
+			os.Exit(137)
+		default:
+			os.Exit(1)
+		}
 	}()
 }
