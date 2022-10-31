@@ -31,7 +31,7 @@ var loginCmd = &cobra.Command{
 	Long:  `Login to gain access to hoop usage.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := doLogin(args); err != nil {
-			fmt.Printf("Failed to login, err=%v", err)
+			fmt.Printf("Failed to login, err=%v\n", err)
 			os.Exit(1)
 		}
 		os.Exit(0)
