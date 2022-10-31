@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -96,7 +99,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		"session_id":      sessionID,
 		"connection_id":   conn.Id,
 		"connection_name": connectionName,
-		"connection_type": string(conn.Type),
+		"connection_type": conn.Type,
 		"org_id":          context.Org.Id,
 		"user_id":         context.User.Id,
 		"hostname":        hostname,
@@ -110,6 +113,8 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 
 	s.ClientService.Persist(c)
 	bindClient(c.SessionID, stream, conn)
+
+	s.clientGracefulShutdown(c)
 
 	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
 	clientErr := s.listenClientMessages(stream, c, conn)
@@ -237,4 +242,19 @@ func (s *Server) exchangeUserToken(token string) (string, error) {
 	}
 
 	return sub, nil
+}
+
+func (s *Server) clientGracefulShutdown(c *client.Client) {
+	sigc := make(chan os.Signal, 1)
+	signal.Notify(sigc,
+		syscall.SIGHUP,
+		syscall.SIGINT,
+		syscall.SIGTERM,
+		syscall.SIGQUIT,
+		syscall.SIGKILL)
+	go func() {
+		<-sigc
+		s.disconnectClient(c)
+		os.Exit(143)
+	}()
 }
