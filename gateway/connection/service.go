@@ -52,7 +52,9 @@ func (s *Service) FindAll(context *user.Context) ([]BaseConnection, error) {
 }
 
 func (s *Service) Persist(context *user.Context, c *Connection) (int64, error) {
-	c.Id = uuid.NewString()
+	if c.Id == "" {
+		c.Id = uuid.NewString()
+	}
 	c.SecretProvider = DBSecretProvider
 
 	result, err := s.Storage.Persist(context, c)
@@ -76,7 +78,15 @@ func (s *Service) bindAuditPlugin(context *user.Context, conn *Connection) {
 	}
 
 	if p != nil {
-		p.Connections = append(p.Connections, plugin.Connection{ConnectionId: conn.Id})
+		registered := false
+		for _, c := range p.Connections {
+			if c.ConnectionId == conn.Id {
+				registered = true
+			}
+		}
+		if !registered {
+			p.Connections = append(p.Connections, plugin.Connection{ConnectionId: conn.Id})
+		}
 	} else {
 		p = &plugin.Plugin{
 			Name:        "audit",

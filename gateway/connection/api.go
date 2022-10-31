@@ -79,3 +79,36 @@ func (a *Handler) Post(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, connection)
 }
+
+func (a *Handler) Put(c *gin.Context) {
+	ctx, _ := c.Get("context")
+	context := ctx.(*user.Context)
+
+	name := c.Param("name")
+	existingConnection, err := a.Service.FindOne(context, name)
+	if err != nil {
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	if existingConnection == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+		return
+	}
+
+	var connection Connection
+	if err := c.ShouldBindJSON(&connection); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
+	connection.Id = existingConnection.Id
+
+	_, err = a.Service.Persist(context, &connection)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, connection)
+}
