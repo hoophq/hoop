@@ -1,7 +1,6 @@
 package transport
 
 import (
-	"github.com/runopsio/hoop/gateway/client"
 	"io"
 	"log"
 	"os"
@@ -136,7 +135,7 @@ func (s *Server) disconnectAgent(ag *agent.Agent) {
 	log.Println("agent disconnected...")
 }
 
-func (s *Server) agentGracefulShutdown(c *client.Client) {
+func (s *Server) agentGracefulShutdown(ag *agent.Agent) {
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc,
 		syscall.SIGHUP,
@@ -146,7 +145,7 @@ func (s *Server) agentGracefulShutdown(c *client.Client) {
 		syscall.SIGKILL)
 	go func() {
 		sig := <-sigc
-		s.disconnectClient(c)
+		s.disconnectAgent(ag)
 		switch sig.String() {
 		case syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT:
 			os.Exit(143)
