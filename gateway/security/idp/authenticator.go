@@ -70,7 +70,7 @@ func NewProvider(profile string) *Provider {
 	// https://www.oauth.com/oauth2-servers/redirect-uris/
 	apiURL := os.Getenv("API_URL")
 	if apiURL == "" {
-		apiURL = "http://localhost:3333"
+		apiURL = "http://localhost:3333/callback"
 	}
 	apiURL = strings.TrimSuffix(apiURL, "/")
 
