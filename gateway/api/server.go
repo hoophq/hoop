@@ -67,6 +67,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.POST("/connections", api.Authenticate, api.ConnectionHandler.Post)
 	route.GET("/connections", api.Authenticate, api.ConnectionHandler.FindAll)
 	route.GET("/connections/:name", api.Authenticate, api.ConnectionHandler.FindOne)
+	route.PUT("/connections/:name", api.Authenticate, api.ConnectionHandler.Put)
 
 	route.POST("/agents", api.Authenticate, api.AgentHandler.Post)
 	route.GET("/agents", api.Authenticate, api.AgentHandler.FindAll)
