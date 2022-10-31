@@ -26,7 +26,6 @@ const (
 var invalidAuthErr = errors.New("invalid auth")
 
 type Provider struct {
-	ApiURL       string
 	Issuer       string
 	Audience     string
 	ClientID     string
