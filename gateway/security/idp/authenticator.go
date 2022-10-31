@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/MicahParks/keyfunc"
-	pb "github.com/runopsio/hoop/common/proto"
 	"log"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/MicahParks/keyfunc"
+	pb "github.com/runopsio/hoop/common/proto"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/golang-jwt/jwt/v4"
@@ -17,14 +18,16 @@ import (
 )
 
 const (
-	defaultProviderDomain   = "hoophq.us.auth0.com"
+	defaultProviderIssuer   = "https://hoophq.us.auth0.com/"
 	defaultProviderClientID = "DatIOCxntNv8AZrQLVnLb3tr1Y3oVwGW"
-	defaultProviderAudience = "https://" + defaultProviderDomain + "/api/v2/"
+	defaultProviderAudience = defaultProviderIssuer + "api/v2/"
 )
+
+var invalidAuthErr = errors.New("invalid auth")
 
 type Provider struct {
 	ApiURL       string
-	Domain       string
+	Issuer       string
 	Audience     string
 	ClientID     string
 	ClientSecret string
@@ -65,15 +68,15 @@ func (a *Provider) VerifyAccessToken(accessToken string) (string, error) {
 
 func NewProvider(profile string) *Provider {
 	ctx := context.Background()
+	// https://www.oauth.com/oauth2-servers/redirect-uris/
 	apiURL := os.Getenv("API_URL")
-
 	if apiURL == "" {
-		apiURL = "http://localhost:3333"
+		apiURL = "http://localhost:3333/api/callback"
 	}
+	apiURL = strings.TrimSuffix(apiURL, "/")
 
 	provider := &Provider{
 		Context: ctx,
-		ApiURL:  apiURL,
 		Profile: profile,
 	}
 
@@ -81,18 +84,17 @@ func NewProvider(profile string) *Provider {
 		return provider
 	}
 
-	provider.Domain = os.Getenv("IDP_DOMAIN")
+	provider.Issuer = os.Getenv("IDP_ISSUER")
 	provider.ClientID = os.Getenv("IDP_CLIENT_ID")
 	provider.ClientSecret = os.Getenv("IDP_CLIENT_SECRET")
 	provider.Audience = os.Getenv("IDP_AUDIENCE")
-	jwksURL := os.Getenv("IDP_JWKS_URL")
 
 	if provider.ClientSecret == "" {
 		panic(errors.New("missing required ID provider variables"))
 	}
 
-	if provider.Domain == "" {
-		provider.Domain = defaultProviderDomain
+	if provider.Issuer == "" {
+		provider.Issuer = defaultProviderIssuer
 	}
 
 	if provider.ClientID == "" {
@@ -102,58 +104,29 @@ func NewProvider(profile string) *Provider {
 	if provider.Audience == "" {
 		provider.Audience = defaultProviderAudience
 	}
-
-	if jwksURL == "" {
-		jwksURL = "https://" + provider.Domain + "/.well-known/jwks.json"
-	}
-
-	if strings.Contains(provider.Domain, pb.ProviderOkta) {
-		ctx = oidc.InsecureIssuerURLContext(ctx, providerDomain(provider.Domain))
-		provider.Context = ctx
-	}
-
-	oidcProvider, err := oidc.NewProvider(
-		provider.Context, providerDomain(provider.Domain),
-	)
+	oidcProviderConfig, err := newProviderConfig(provider.Context, provider.Issuer)
 	if err != nil {
 		panic(err)
 	}
-
+	oidcProvider := oidcProviderConfig.NewProvider(ctx)
 	conf := oauth2.Config{
 		ClientID:     provider.ClientID,
 		ClientSecret: provider.ClientSecret,
-		RedirectURL:  provider.ApiURL + "/api/callback",
+		RedirectURL:  apiURL + "/api/callback",
 		Endpoint:     oidcProvider.Endpoint(),
 		Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
 	}
 
 	oidcConfig := &oidc.Config{
-		ClientID: provider.ClientID,
+		ClientID:             provider.ClientID,
+		SupportedSigningAlgs: oidcProviderConfig.Algorithms,
 	}
-
-	if strings.Contains(provider.Domain, pb.ProviderOkta) {
-		oidcConfig.SkipIssuerCheck = true
-		authorizeEndpoint := os.Getenv("IDP_AUTHORIZE_ENDPOINT")
-		tokenEndpoint := os.Getenv("IDP_TOKEN_ENDPOINT")
-		if authorizeEndpoint == "" || tokenEndpoint == "" {
-			panic(errors.New("missing authorization and token endpoints urls"))
-		}
-		conf.Endpoint = oauth2.Endpoint{
-			AuthURL:   authorizeEndpoint,
-			TokenURL:  tokenEndpoint,
-			AuthStyle: 0,
-		}
-	}
-
 	provider.Config = conf
 	provider.Provider = oidcProvider
 	provider.IDTokenVerifier = provider.Verifier(oidcConfig)
-	provider.JWKS = downloadJWKS(jwksURL)
-
+	provider.JWKS = downloadJWKS(oidcProviderConfig.JWKSURL)
 	return provider
 }
-
-var invalidAuthErr = errors.New("invalid auth")
 
 func downloadJWKS(jwksURL string) *keyfunc.JWKS {
 	fmt.Println("Downloading provider public key")
@@ -174,8 +147,4 @@ func downloadJWKS(jwksURL string) *keyfunc.JWKS {
 		panic(err)
 	}
 	return jwks
-}
-
-func providerDomain(domain string) string {
-	return "https://" + domain + "/"
 }
