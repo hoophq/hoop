@@ -77,4 +77,4 @@ RUN chmod +x /app/*
 EXPOSE 8009
 EXPOSE 8010
 
-ENTRYPOINT ["/app/entrypoint.sh"]
+ENTRYPOINT ["tini", "--", "/app/entrypoint.sh"]

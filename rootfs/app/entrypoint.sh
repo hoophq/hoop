@@ -15,4 +15,4 @@ if [[ "$API_URL" != "" ]]; then
     sed "s|http://localhost:8009|$API_URL|g" -i app/ui/public/js/app.js
 fi
 
-tini -- "${@}"
+"${@}"
