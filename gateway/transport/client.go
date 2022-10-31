@@ -99,7 +99,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		"session_id":      sessionID,
 		"connection_id":   conn.Id,
 		"connection_name": connectionName,
-		"connection_type": conn.Type,
+		"connection_type": string(conn.Type),
 		"org_id":          context.Org.Id,
 		"user_id":         context.User.Id,
 		"hostname":        hostname,
