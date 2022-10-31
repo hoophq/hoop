@@ -144,15 +144,8 @@ func (s *Server) agentGracefulShutdown(ag *agent.Agent) {
 		syscall.SIGQUIT,
 		syscall.SIGKILL)
 	go func() {
-		sig := <-sigc
+		<-sigc
 		s.disconnectAgent(ag)
-		switch sig.String() {
-		case syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT:
-			os.Exit(143)
-		case syscall.SIGKILL:
-			os.Exit(137)
-		default:
-			os.Exit(1)
-		}
+		os.Exit(143)
 	}()
 }
