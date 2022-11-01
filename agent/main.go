@@ -14,15 +14,8 @@ func Run() {
 	fmt.Println(string(version.JSON()))
 
 	svrAddr := os.Getenv("SERVER_ADDRESS")
-	if svrAddr == "" {
-		log.Fatal("missing required SERVER_ADDRESS variable")
-	}
-
 	token := os.Getenv("TOKEN")
-	if token == "" {
-		log.Fatal("missing required TOKEN variable")
-	}
-
+	
 	client, err := grpc.Connect(svrAddr, token, grpc.WithOption("origin", pb.ConnectionOriginAgent))
 	if err != nil {
 		log.Fatal(err)
