@@ -67,10 +67,14 @@ func (a *Provider) VerifyAccessToken(accessToken string) (string, error) {
 
 func NewProvider(profile string) *Provider {
 	ctx := context.Background()
-	// https://www.oauth.com/oauth2-servers/redirect-uris/
+
 	apiURL := os.Getenv("API_URL")
 	if apiURL == "" {
-		panic("API_URL environment variable is required")
+		if profile == pb.DevProfile {
+			apiURL = "http://localhost:8009"
+		} else {
+			panic("API_URL environment variable is required")
+		}
 	}
 	apiURL = strings.TrimSuffix(apiURL, "/")
 
