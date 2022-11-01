@@ -12,9 +12,11 @@ import (
 
 func Run() {
 	fmt.Println(string(version.JSON()))
+
+	svrAddr := os.Getenv("SERVER_ADDRESS")
 	token := os.Getenv("TOKEN")
 
-	client, err := grpc.Connect(os.Getenv("SERVER_ADDRESS"), token, grpc.WithOption("origin", pb.ConnectionOriginAgent))
+	client, err := grpc.Connect(svrAddr, token, grpc.WithOption("origin", pb.ConnectionOriginAgent))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -24,7 +26,7 @@ func Run() {
 	agt := New(client, done)
 	defer agt.Close()
 
-	go agt.Run()
+	go agt.Run(svrAddr, token)
 	<-ctx.Done()
 	if err := ctx.Err(); err != nil {
 		log.Printf("error: %s", err.Error())
