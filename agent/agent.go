@@ -97,12 +97,20 @@ func (a *Agent) Close() {
 	close(a.closeSignal)
 }
 
-func (a *Agent) Run() {
+func (a *Agent) Run(svrAddr, token string) {
 	a.client.StartKeepAlive()
 
 	for {
 		pkt, err := a.client.Recv()
 		if err != nil {
+			if e, ok := status.FromError(err); ok {
+				switch e.Code() {
+				case codes.Unauthenticated:
+					fmt.Println("** UNREGISTERED AGENT **")
+					fmt.Println("Please validate the Agent in the URL: " + buildAgentRegisterURL(svrAddr, token))
+				default:
+				}
+			}
 			if err == io.EOF {
 				break
 			}
@@ -228,4 +236,8 @@ func (a *Agent) processTCPCloseConnection(pkt *pb.Packet) {
 			a.connStore.Del(key)
 		}
 	}
+}
+
+func buildAgentRegisterURL(svrAddr, token string) string {
+	return fmt.Sprintf("https://%s/agents/new/%s", svrAddr, token)
 }
