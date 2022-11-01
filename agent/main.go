@@ -15,7 +15,7 @@ func Run() {
 
 	svrAddr := os.Getenv("SERVER_ADDRESS")
 	token := os.Getenv("TOKEN")
-	
+
 	client, err := grpc.Connect(svrAddr, token, grpc.WithOption("origin", pb.ConnectionOriginAgent))
 	if err != nil {
 		log.Fatal(err)

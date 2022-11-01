@@ -239,5 +239,6 @@ func (a *Agent) processTCPCloseConnection(pkt *pb.Packet) {
 }
 
 func buildAgentRegisterURL(svrAddr, token string) string {
-	return fmt.Sprintf("https://%s/agents/new/%s", svrAddr, token)
+	addr := strings.Split(svrAddr, ":")
+	return fmt.Sprintf("https://%s/agents/new/%s", addr[0], token)
 }
