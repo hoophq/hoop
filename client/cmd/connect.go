@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/briandowns/spinner"
@@ -50,9 +51,24 @@ type connect struct {
 }
 
 func runConnect(args []string) {
+	defaultHost := "127.0.0.1"
+	defaultLocalhost := "localhost"
+	defaultPort := "8010"
+
 	config := loadConfig()
 
-	if config.Token == "" {
+	if config.Host == "" {
+		config.Host = defaultHost
+	}
+
+	if config.Port == "" {
+		config.Port = defaultPort
+	}
+
+	if config.Host != "" &&
+		!strings.HasPrefix(config.Host, defaultLocalhost) &&
+		!strings.HasPrefix(config.Host, defaultHost) &&
+		config.Token == "" {
 		if err := doLogin(nil); err != nil {
 			panic(err)
 		}
