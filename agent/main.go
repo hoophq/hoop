@@ -2,6 +2,7 @@ package agent
 
 import (
 	"fmt"
+	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
 	"log"
 	"os"
@@ -15,6 +16,9 @@ func Run() {
 
 	svrAddr := os.Getenv("SERVER_ADDRESS")
 	token := os.Getenv("TOKEN")
+	if token == "" {
+		token = "x-agt-" + uuid.NewString()
+	}
 
 	client, err := grpc.Connect(svrAddr, token, grpc.WithOption("origin", pb.ConnectionOriginAgent))
 	if err != nil {
