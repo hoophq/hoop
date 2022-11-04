@@ -64,6 +64,10 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.GET("/login", api.SecurityHandler.Login)
 	route.GET("/callback", api.SecurityHandler.Callback)
 
+	route.GET("/users", api.Authenticate, api.UserHandler.FindAll)
+	route.GET("/users/:id", api.Authenticate, api.UserHandler.FindOne)
+	route.PUT("/users/:id", api.Authenticate, api.UserHandler.Put)
+
 	route.POST("/connections", api.Authenticate, api.ConnectionHandler.Post)
 	route.GET("/connections", api.Authenticate, api.ConnectionHandler.FindAll)
 	route.GET("/connections/:name", api.Authenticate, api.ConnectionHandler.FindOne)

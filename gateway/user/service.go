@@ -9,9 +9,11 @@ type (
 
 	storage interface {
 		Signup(org *Org, user *User) (txId int64, err error)
-		FindById(email string) (*Context, error)
-		GetOrgByName(name string) (*Org, error)
+		FindById(identifier string) (*Context, error)
 		Persist(user any) (int64, error)
+		FindAll(context *Context) ([]User, error)
+
+		GetOrgByName(name string) (*Org, error)
 	}
 
 	Context struct {
@@ -28,7 +30,7 @@ type (
 		Id     string     `json:"id"     edn:"xt/id"`
 		Org    string     `json:"-"      edn:"user/org"`
 		Name   string     `json:"name"   edn:"user/name"`
-		Email  string     `json:"email"  edn:"user/email" binding:"required"`
+		Email  string     `json:"email"  edn:"user/email"`
 		Status StatusType `json:"status" edn:"user/status"`
 		Groups []string   `json:"groups" edn:"user/groups"`
 	}
@@ -39,20 +41,37 @@ type (
 const (
 	StatusActive    StatusType = "active"
 	StatusReviewing StatusType = "reviewing"
+	StatusInactive  StatusType = "inactive"
 
 	GroupAdmin string = "admin"
 )
 
-func (s *Service) Signup(org *Org, user *User) (txId int64, err error) {
-	return s.Storage.Signup(org, user)
+var statuses = []StatusType{
+	StatusActive,
+	StatusReviewing,
+	StatusInactive,
+}
+
+func (s *Service) FindAll(context *Context) ([]User, error) {
+	return s.Storage.FindAll(context)
+}
+
+func (s *Service) FindOne(context *Context, id string) (*User, error) {
+	ctx, err := s.Storage.FindById(id)
+	if err != nil {
+		return nil, err
+	}
+
+	if ctx.User == nil || ctx.User.Org != context.Org.Id {
+		return nil, nil
+	}
+
+	return ctx.User, nil
+
 }
 
 func (s *Service) FindBySub(sub string) (*Context, error) {
 	return s.Storage.FindById(sub)
-}
-
-func (s *Service) GetOrgByName(name string) (*Org, error) {
-	return s.Storage.GetOrgByName(name)
 }
 
 func (s *Service) Persist(user any) error {
@@ -61,6 +80,14 @@ func (s *Service) Persist(user any) error {
 		return err
 	}
 	return nil
+}
+
+func (s *Service) Signup(org *Org, user *User) (txId int64, err error) {
+	return s.Storage.Signup(org, user)
+}
+
+func (s *Service) GetOrgByName(name string) (*Org, error) {
+	return s.Storage.GetOrgByName(name)
 }
 
 func ExtractDomain(email string) string {
@@ -91,6 +118,33 @@ func isPublicDomain(domain string) bool {
 
 	for _, d := range publicDomains {
 		if domain == d {
+			return true
+		}
+	}
+	return false
+}
+
+func inStatus(status StatusType) bool {
+	for _, s := range statuses {
+		if s == status {
+			return true
+		}
+	}
+	return false
+}
+
+func (user *User) isAdmin() bool {
+	for _, i := range user.Groups {
+		if i == GroupAdmin {
+			return true
+		}
+	}
+	return false
+}
+
+func inList(item string, items []string) bool {
+	for _, i := range items {
+		if i == item {
 			return true
 		}
 	}
