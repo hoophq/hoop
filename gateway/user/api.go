@@ -73,7 +73,7 @@ func (a *Handler) Put(c *gin.Context) {
 		return
 	}
 
-	if !inStatus(user.Status) {
+	if !isInStatus(user.Status) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid status"})
 		return
 	}
@@ -81,7 +81,7 @@ func (a *Handler) Put(c *gin.Context) {
 	// for admins to not auto-exclude themselves from admin by mistake
 	if existingUser.Id == context.User.Id &&
 		existingUser.isAdmin() &&
-		!inList(GroupAdmin, user.Groups) {
+		!isInList(GroupAdmin, user.Groups) {
 		user.Groups = append(user.Groups, GroupAdmin)
 	}
 

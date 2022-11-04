@@ -125,10 +125,10 @@ func isPublicDomain(domain string) bool {
 }
 
 func (user *User) isAdmin() bool {
-	return inList(GroupAdmin, user.Groups)
+	return isInList(GroupAdmin, user.Groups)
 }
 
-func inList(item string, items []string) bool {
+func isInList(item string, items []string) bool {
 	for _, i := range items {
 		if i == item {
 			return true
@@ -137,7 +137,7 @@ func inList(item string, items []string) bool {
 	return false
 }
 
-func inStatus(status StatusType) bool {
+func isInStatus(status StatusType) bool {
 	for _, s := range statuses {
 		if s == status {
 			return true
