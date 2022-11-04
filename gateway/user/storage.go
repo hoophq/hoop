@@ -39,17 +39,24 @@ func (s *Storage) FindById(identifier string) (*Context, error) {
 	return c, nil
 }
 
-func (s *Storage) Signup(org *Org, user *User) (txId int64, err error) {
-	orgPayload := st.EntityToMap(org)
-	userPayload := st.EntityToMap(user)
+func (s *Storage) FindAll(context *Context) ([]User, error) {
+	var payload = `{:query {
+		:find [(pull ?user [*])] 
+		:in [org]
+		:where [[?user :user/org org]]}
+		:in-args ["` + context.Org.Id + `"]}`
 
-	entities := []map[string]any{orgPayload, userPayload}
-	txId, err = s.PersistEntities(entities)
+	b, err := s.Query([]byte(payload))
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
-	return txId, nil
+	var users []User
+	if err := edn.Unmarshal(b, &users); err != nil {
+		return nil, err
+	}
+
+	return users, nil
 }
 
 func (s *Storage) Persist(user any) (int64, error) {
@@ -63,28 +70,17 @@ func (s *Storage) Persist(user any) (int64, error) {
 	return txId, nil
 }
 
-func (s *Storage) GetByEmail(email string) (*User, error) {
-	var payload = `{:query {
-		:find [(pull ?user [*])] 
-		:in [email]
-		:where [[?user :user/email email]]}
-		:in-args ["` + email + `"]}`
+func (s *Storage) Signup(org *Org, user *User) (txId int64, err error) {
+	orgPayload := st.EntityToMap(org)
+	userPayload := st.EntityToMap(user)
 
-	b, err := s.Query([]byte(payload))
+	entities := []map[string]any{orgPayload, userPayload}
+	txId, err = s.PersistEntities(entities)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 
-	var u []User
-	if err := edn.Unmarshal(b, &u); err != nil {
-		return nil, err
-	}
-
-	if len(u) == 0 {
-		return nil, nil
-	}
-
-	return &u[0], nil
+	return txId, nil
 }
 
 func (s *Storage) GetOrgByName(name string) (*Org, error) {
