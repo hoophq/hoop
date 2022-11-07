@@ -16,6 +16,7 @@ done
 echo " done!"
 echo "--> STARTING GATEWAY ..."
 
+# these credentials is for development only, should not be a problem.
 export IDP_CLIENT_ID=hAgCLsLJeuEQLhNLpjrddd7NmSDHBIKF
 export IDP_CLIENT_SECRET=A9xw9TOXTr_YvGoA_UA4jPoqYS2GQVF7RfUptvCYwiHIKkHx11ZATRX2mQ0_1tm8
 export IDP_ISSUER=https://runops.us.auth0.com/
