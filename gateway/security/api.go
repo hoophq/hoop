@@ -1,8 +1,11 @@
 package security
 
 import (
-	"github.com/gin-gonic/gin"
+	"fmt"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
+	pb "github.com/runopsio/hoop/common/proto"
 )
 
 type (
@@ -46,8 +49,7 @@ func (h *Handler) Callback(c *gin.Context) {
 }
 
 func defaultRedirect(c *gin.Context) string {
-	defaultUrl := "http://localhost:3333/callback"
-
+	defaultUrl := fmt.Sprintf("http://%s/callback", pb.ClientLoginCallbackAddress)
 	redirect := c.Query("redirect")
 	if redirect == "" {
 		redirect = defaultUrl

@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 
+	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/spf13/cobra"
 )
 
@@ -104,8 +105,7 @@ func doLogin(args []string) error {
 	}
 
 	http.HandleFunc("/callback", loginCallback)
-	go http.ListenAndServe(":3333", nil)
-
+	go http.ListenAndServe(pb.ClientLoginCallbackAddress, nil)
 	if err := openBrowser(loginUrl); err != nil {
 		fmt.Printf("Browser failed to open. \nPlease click on the link below:\n\n%s\n\n", loginUrl)
 	}
@@ -144,7 +144,7 @@ func requestForUrl(email, apiUrl string) (string, error) {
 
 		var l login
 		if err := json.Unmarshal(b, &l); err != nil {
-			return "", nil
+			return "", err
 		}
 
 		return l.Url, nil
