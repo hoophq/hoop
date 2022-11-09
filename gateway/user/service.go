@@ -1,6 +1,8 @@
 package user
 
-import "strings"
+import (
+	"strings"
+)
 
 type (
 	Service struct {
@@ -12,7 +14,7 @@ type (
 		FindById(identifier string) (*Context, error)
 		Persist(user any) (int64, error)
 		FindAll(context *Context) ([]User, error)
-
+		FindInvitedUser(email string) (*InvitedUser, error)
 		GetOrgByName(name string) (*Org, error)
 	}
 
@@ -33,6 +35,14 @@ type (
 		Email  string     `json:"email"  edn:"user/email"`
 		Status StatusType `json:"status" edn:"user/status"`
 		Groups []string   `json:"groups" edn:"user/groups"`
+	}
+
+	InvitedUser struct {
+		Id     string   `json:"id"     edn:"xt/id"`
+		Org    string   `json:"-"      edn:"invited-user/org"`
+		Email  string   `json:"email"  edn:"invited-user/email"`
+		Name   string   `json:"name"   end:"invited-user/name`
+		Groups []string `json:"groups" edn:"invited-user/groups"`
 	}
 
 	StatusType string
@@ -88,6 +98,10 @@ func (s *Service) Signup(org *Org, user *User) (txId int64, err error) {
 
 func (s *Service) GetOrgByName(name string) (*Org, error) {
 	return s.Storage.GetOrgByName(name)
+}
+
+func (s *Service) FindInvitedUser(email string) (*InvitedUser, error) {
+	return s.Storage.FindInvitedUser(email)
 }
 
 func ExtractDomain(email string) string {
