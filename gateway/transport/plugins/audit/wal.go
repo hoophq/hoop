@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/runopsio/hoop/gateway/plugin"
 	"log"
 	"os"
 	"sync"
 	"time"
 
 	"github.com/runopsio/hoop/gateway/session"
-	pluginscore "github.com/runopsio/hoop/gateway/transport/plugins"
 	"github.com/tidwall/wal"
 )
 
@@ -167,15 +167,17 @@ func (p *auditPlugin) writeOnClose(sessionID string) error {
 		idx++
 	}
 	endDate := time.Now().UTC()
-	err = p.storageWriter.Write(pluginscore.ParamsData{
-		"org_id":          wh.OrgID,
-		"session_id":      wh.SessionID,
-		"user_id":         wh.UserID,
-		"event_stream":    eventStreamList,
-		"connection_name": wh.ConnectionName,
-		"connection_type": wh.ConnectionType,
-		"start_date":      wh.StartDate,
-		"end_time":        &endDate,
+	err = p.storageWriter.Write(plugin.Config{
+		Org:            wh.OrgID,
+		SessionId:      wh.SessionID,
+		User:           wh.UserID,
+		ConnectionName: wh.ConnectionName,
+		ConnectionType: wh.ConnectionType,
+		ParamsData: map[string]any{
+			"event_stream": eventStreamList,
+			"start_date":   wh.StartDate,
+			"end_time":     &endDate,
+		},
 	})
 	if err != nil {
 		walFooterBytes, _ := json.Marshal(&walFooter{

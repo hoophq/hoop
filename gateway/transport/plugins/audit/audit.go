@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"github.com/runopsio/hoop/gateway/plugin"
 	"io"
 	"log"
 	"os"
@@ -14,13 +15,11 @@ import (
 	"github.com/runopsio/hoop/common/pg"
 	pgtypes "github.com/runopsio/hoop/common/pg/types"
 	pb "github.com/runopsio/hoop/common/proto"
-	pluginscore "github.com/runopsio/hoop/gateway/transport/plugins"
 )
 
 const (
 	Name             string = "audit"
 	defaultAuditPath string = "/opt/hoop/auditdb"
-	defaultFlushSec  int    = 30
 )
 
 var pluginAuditPath string
@@ -35,24 +34,31 @@ func init() {
 	}
 }
 
-type auditPlugin struct {
-	storageWriter   pluginscore.StorageWriter
-	walSessionStore memory.Store
-	enabled         bool
-	started         bool
-	mu              sync.RWMutex
-}
+type (
+	auditPlugin struct {
+		name            string
+		storageWriter   StorageWriter
+		walSessionStore memory.Store
+		enabled         bool
+		started         bool
+		mu              sync.RWMutex
+	}
 
-func New() pluginscore.Plugin {
-	return &auditPlugin{walSessionStore: memory.New()}
+	StorageWriter interface {
+		Write(config plugin.Config) error
+	}
+)
+
+func New() *auditPlugin {
+	return &auditPlugin{name: Name, walSessionStore: memory.New()}
 }
 
 func (p *auditPlugin) Name() string {
-	return Name
+	return p.name
 }
 
-func (p *auditPlugin) OnStartup(c pluginscore.PluginConfig) error {
-	if !c.Enabled() || p.started {
+func (p *auditPlugin) OnStartup(config plugin.Config) error {
+	if p.started {
 		return nil
 	}
 
@@ -60,8 +66,8 @@ func (p *auditPlugin) OnStartup(c pluginscore.PluginConfig) error {
 		return fmt.Errorf("failed creating audit path %v, err=%v", pluginAuditPath, err)
 	}
 
-	storageWriterObj := c.Config().Get("audit_storage_writer")
-	storageWriter, ok := storageWriterObj.(pluginscore.StorageWriter)
+	storageWriterObj := config.ParamsData["audit_storage_writer"]
+	storageWriter, ok := storageWriterObj.(StorageWriter)
 
 	if !ok {
 		return fmt.Errorf("audit_storage_writer config must be an pluginscore.StorageWriter instance")
@@ -72,34 +78,26 @@ func (p *auditPlugin) OnStartup(c pluginscore.PluginConfig) error {
 	return nil
 }
 
-func (p *auditPlugin) OnConnect(i pluginscore.ParamsData) error {
-	if !p.enabled {
-		return nil
-	}
-	orgID := i.GetString("org_id")
-	sessionID := i.GetString("session_id")
-	log.Printf("session=%v | audit | processing on-connect", sessionID)
-	if orgID == "" || sessionID == "" {
+func (p *auditPlugin) OnConnect(config plugin.Config) error {
+	log.Printf("session=%v | audit | processing on-connect", config.SessionId)
+	if config.Org == "" || config.SessionId == "" {
 		return fmt.Errorf("failed processing audit plugin, missing org_id and session_id params")
 	}
 
-	if err := p.writeOnConnect(orgID, sessionID, i.GetString("user_id"),
-		i.GetString("connection_name"), i.GetString("connection_type")); err != nil {
+	if err := p.writeOnConnect(config.Org, config.SessionId, config.User,
+		config.ConnectionName, config.ConnectionType); err != nil {
 		return err
 	}
-	i["start_date"] = func() *time.Time { d := time.Now().UTC(); return &d }()
+	config.ParamsData["start_date"] = func() *time.Time { d := time.Now().UTC(); return &d }()
 	// Persist the session in the storage
-	if err := p.storageWriter.Write(i); err != nil {
+	if err := p.storageWriter.Write(config); err != nil {
 		return err
 	}
 	p.mu = sync.RWMutex{}
 	return nil
 }
 
-func (p *auditPlugin) OnReceive(sessionID string, pkt pluginscore.PacketData) error {
-	if !p.enabled {
-		return nil
-	}
+func (p *auditPlugin) OnReceive(sessionId string, pkt *pb.Packet) error {
 	switch pb.PacketType(pkt.GetType()) {
 	case pb.PacketPGWriteServerType:
 		isSimpleQuery, queryBytes, err := simpleQueryContent(pkt.GetPayload())
@@ -107,32 +105,27 @@ func (p *auditPlugin) OnReceive(sessionID string, pkt pluginscore.PacketData) er
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("session-id=%v - failed obtaining simple query data, err=%v", sessionID, err)
+			return fmt.Errorf("session-id=%v - failed obtaining simple query data, err=%v", sessionId, err)
 		}
-		return p.writeOnReceive(sessionID, 'i', queryBytes)
+		return p.writeOnReceive(sessionId, 'i', queryBytes)
 	case pb.PacketExecClientWriteStdoutType:
-		return p.writeOnReceive(sessionID, 'o', pkt.GetPayload())
+		return p.writeOnReceive(sessionId, 'o', pkt.GetPayload())
 	case pb.PacketExecWriteAgentStdinType, pb.PacketExecRunProcType:
-		return p.writeOnReceive(sessionID, 'i', pkt.GetPayload())
+		return p.writeOnReceive(sessionId, 'i', pkt.GetPayload())
 	}
 	return nil
 }
 
-func (p *auditPlugin) OnDisconnect(i pluginscore.ParamsData) error {
-	if !p.enabled || i.GetString("client") == "agent" {
-		return nil
-	}
-	orgID := i.GetString("org_id")
-	sessionID := i.GetString("session_id")
-	if orgID == "" || sessionID == "" {
+func (p *auditPlugin) OnDisconnect(config plugin.Config) error {
+	if config.Org == "" || config.SessionId == "" {
 		return fmt.Errorf("missing org_id and session_id")
 	}
 	go func() {
 		// give some time to disconnect it, otherwise the on-receive process will
 		// catch up a wal close file
 		time.Sleep(time.Second * 3)
-		if err := p.writeOnClose(sessionID); err != nil {
-			log.Printf("session=%v audit - %v", sessionID, err)
+		if err := p.writeOnClose(config.SessionId); err != nil {
+			log.Printf("session=%v audit - %v", config.SessionId, err)
 		}
 	}()
 	return nil

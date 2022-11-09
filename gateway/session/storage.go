@@ -2,11 +2,11 @@ package session
 
 import (
 	"fmt"
+	"github.com/runopsio/hoop/gateway/plugin"
 	"log"
 	"strings"
 
 	st "github.com/runopsio/hoop/gateway/storage"
-	"github.com/runopsio/hoop/gateway/transport/plugins"
 	"github.com/runopsio/hoop/gateway/user"
 	"olympos.io/encoding/edn"
 )
@@ -180,17 +180,17 @@ func (s *Storage) NewGenericStorageWriter() *GenericStorageWriter {
 	}
 }
 
-func (s *GenericStorageWriter) Write(p plugins.ParamsData) error {
-	log.Printf("saving session=%v, org-id=%v\n", p.Get("session_id"), p.Get("org_id"))
+func (s *GenericStorageWriter) Write(p plugin.Config) error {
+	log.Printf("saving session=%v, org-id=%v\n", p.SessionId, p.Org)
 	eventStartDate := p.GetTime("start_date")
 	if eventStartDate == nil {
 		return fmt.Errorf(`missing "start_date" param`)
 	}
 	sess := &Session{
-		ID:               p.GetString("session_id"),
-		User:             p.GetString("user_id"),
-		Type:             p.GetString("connection_type"),
-		Connection:       p.GetString("connection_name"),
+		ID:               p.SessionId,
+		User:             p.User,
+		Type:             p.ConnectionType,
+		Connection:       p.ConnectionName,
 		NonIndexedStream: nil,
 		StartSession:     *eventStartDate,
 		EndSession:       p.GetTime("end_time"),
@@ -204,6 +204,6 @@ func (s *GenericStorageWriter) Write(p plugins.ParamsData) error {
 		}
 		sess.NonIndexedStream = nonIndexedEventStream
 	}
-	_, err := s.persistFn(&user.Context{Org: &user.Org{Id: p.GetString("org_id")}}, sess)
+	_, err := s.persistFn(&user.Context{Org: &user.Org{Id: p.Org}}, sess)
 	return err
 }
