@@ -97,7 +97,7 @@ func (p *auditPlugin) OnConnect(config plugin.Config) error {
 	return nil
 }
 
-func (p *auditPlugin) OnReceive(sessionId string, pkt *pb.Packet) error {
+func (p *auditPlugin) OnReceive(sessionId string, config []string, pkt *pb.Packet) error {
 	switch pb.PacketType(pkt.GetType()) {
 	case pb.PacketPGWriteServerType:
 		isSimpleQuery, queryBytes, err := simpleQueryContent(pkt.GetPayload())
@@ -117,6 +117,9 @@ func (p *auditPlugin) OnReceive(sessionId string, pkt *pb.Packet) error {
 }
 
 func (p *auditPlugin) OnDisconnect(config plugin.Config) error {
+	if config.GetString("client") == "agent" {
+		return nil
+	}
 	if config.Org == "" || config.SessionId == "" {
 		return fmt.Errorf("missing org_id and session_id")
 	}

@@ -33,13 +33,13 @@ type (
 	pluginConfig struct {
 		EnabledPlugin
 		config []string
-		groups map[string][]string
 	}
 
 	EnabledPlugin interface {
 		Name() string
+		OnStartup(config plugin.Config) error
 		OnConnect(p plugin.Config) error
-		OnReceive(sessionId string, packet *pb.Packet) error
+		OnReceive(sessionId string, config []string, packet *pb.Packet) error
 		OnDisconnect(p plugin.Config) error
 	}
 )
@@ -52,6 +52,7 @@ var allPlugins = []EnabledPlugin{
 var cc = connectedClients{
 	clients:     make(map[string]pb.Transport_ConnectServer),
 	connections: make(map[string]*connection.Connection),
+	plugins:     make(map[string][]pluginConfig),
 	mu:          sync.Mutex{},
 }
 
@@ -310,14 +311,25 @@ func (s *Server) loadEnabledPlugins(ctx *user.Context, config plugin.Config) ([]
 
 		for _, c := range p1.Connections {
 			if c.Name == config.ConnectionName {
+				cfg := c.Config
+				if len(c.Groups) > 0 {
+					cfg = make([]string, 0)
+					for _, u := range ctx.User.Groups {
+						cfg = append(cfg, c.Groups[u]...)
+					}
+				}
+				cfg = removeDuplicates(cfg)
 				ep := pluginConfig{
 					EnabledPlugin: p,
-					config:        c.Config,
-					groups:        c.Groups,
+					config:        cfg,
 				}
 
-				err = p.OnConnect(config)
-				if err != nil {
+				if err := p.OnStartup(config); err != nil {
+					log.Printf("failed starting plugin %q, err=%v", p.Name(), err)
+					return nil, status.Errorf(codes.Internal, "failed starting plugin")
+				}
+
+				if err = p.OnConnect(config); err != nil {
 					log.Printf("plugin %q refused to accept connection %q, err=%v", p1.Name, config.SessionId, err)
 					return nil, status.Errorf(codes.FailedPrecondition, err.Error())
 				}
@@ -341,11 +353,23 @@ func (s *Server) pluginOnDisconnectPhase(config plugin.Config) error {
 func (s *Server) pluginOnReceivePhase(sessionID string, pkt *pb.Packet) error {
 	plugins := getPlugins(sessionID)
 	for _, p := range plugins {
-		if err := p.OnReceive(sessionID, pkt); err != nil {
+		if err := p.OnReceive(sessionID, p.config, pkt); err != nil {
 			log.Printf("session=%v - plugin %q rejected packet, err=%v",
 				sessionID, p.Name(), err)
 			return err
 		}
 	}
 	return nil
+}
+
+func removeDuplicates(strSlice []string) []string {
+	allKeys := make(map[string]bool)
+	list := make([]string, 0)
+	for _, item := range strSlice {
+		if _, value := allKeys[item]; !value {
+			allKeys[item] = true
+			list = append(list, item)
+		}
+	}
+	return list
 }
