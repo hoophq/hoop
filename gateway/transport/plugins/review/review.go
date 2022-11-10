@@ -38,8 +38,8 @@ func (r *reviewPlugin) OnConnect(config plugin.Config) error {
 	return nil
 }
 
-func (r *reviewPlugin) OnReceive(sessionId string, config []string, pkt *pb.Packet) error {
-	log.Printf("[%s] Review OnReceive plugin with config %v", sessionId, config)
+func (r *reviewPlugin) OnReceive(sessionID string, config []string, pkt *pb.Packet) error {
+	log.Printf("[%s] Review OnReceive plugin with config %v and pkt %v", sessionID, config, pkt)
 	switch pb.PacketType(pkt.GetType()) {
 	case pb.PacketPGWriteServerType:
 		return nil

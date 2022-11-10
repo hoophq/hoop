@@ -2,6 +2,8 @@ package gateway
 
 import (
 	"fmt"
+	pluginsaudit "github.com/runopsio/hoop/gateway/transport/plugins/audit"
+	pluginsreview "github.com/runopsio/hoop/gateway/transport/plugins/review"
 	"os"
 
 	"github.com/runopsio/hoop/gateway/plugin"
@@ -25,6 +27,11 @@ func Run() {
 	s := &xtdb.Storage{}
 	if err := s.Connect(); err != nil {
 		panic(err)
+	}
+
+	transport.AllPlugins = []transport.EnabledPlugin{
+		pluginsaudit.New(),
+		pluginsreview.New(),
 	}
 
 	profile := os.Getenv("PROFILE")

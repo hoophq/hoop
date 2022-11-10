@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/runopsio/hoop/gateway/plugin"
 	pluginsaudit "github.com/runopsio/hoop/gateway/transport/plugins/audit"
-	pluginsreview "github.com/runopsio/hoop/gateway/transport/plugins/review"
 	"github.com/runopsio/hoop/gateway/user"
 	"io"
 	"log"
@@ -39,15 +38,12 @@ type (
 		Name() string
 		OnStartup(config plugin.Config) error
 		OnConnect(p plugin.Config) error
-		OnReceive(sessionId string, config []string, packet *pb.Packet) error
+		OnReceive(sessionID string, config []string, packet *pb.Packet) error
 		OnDisconnect(p plugin.Config) error
 	}
 )
 
-var allPlugins = []EnabledPlugin{
-	pluginsaudit.New(),
-	pluginsreview.New(),
-}
+var AllPlugins []EnabledPlugin
 
 var cc = connectedClients{
 	clients:     make(map[string]pb.Transport_ConnectServer),
@@ -141,7 +137,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		ParamsData:     make(map[string]any),
 	}
 
-	enabledPlugins, err := s.loadEnabledPlugins(context, pConfig)
+	enabledPlugins, err := s.loadConnectPlugins(context, pConfig)
 	if err != nil {
 		return status.Errorf(codes.FailedPrecondition, err.Error())
 	}
@@ -292,9 +288,9 @@ func (s *Server) clientGracefulShutdown(c *client.Client) {
 	}()
 }
 
-func (s *Server) loadEnabledPlugins(ctx *user.Context, config plugin.Config) ([]pluginConfig, error) {
+func (s *Server) loadConnectPlugins(ctx *user.Context, config plugin.Config) ([]pluginConfig, error) {
 	pluginsConfig := make([]pluginConfig, 0)
-	for _, p := range allPlugins {
+	for _, p := range AllPlugins {
 		p1, err := s.PluginService.FindOne(ctx, p.Name())
 		if err != nil {
 			log.Printf("failed retrieving plugin %q, err=%v", p.Name(), err)
@@ -312,7 +308,7 @@ func (s *Server) loadEnabledPlugins(ctx *user.Context, config plugin.Config) ([]
 		for _, c := range p1.Connections {
 			if c.Name == config.ConnectionName {
 				cfg := c.Config
-				if len(c.Groups) > 0 {
+				if len(ctx.User.Groups) > 0 && len(c.Groups) > 0 {
 					cfg = make([]string, 0)
 					for _, u := range ctx.User.Groups {
 						cfg = append(cfg, c.Groups[u]...)

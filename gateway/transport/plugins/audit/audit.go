@@ -97,7 +97,7 @@ func (p *auditPlugin) OnConnect(config plugin.Config) error {
 	return nil
 }
 
-func (p *auditPlugin) OnReceive(sessionId string, config []string, pkt *pb.Packet) error {
+func (p *auditPlugin) OnReceive(sessionID string, config []string, pkt *pb.Packet) error {
 	switch pb.PacketType(pkt.GetType()) {
 	case pb.PacketPGWriteServerType:
 		isSimpleQuery, queryBytes, err := simpleQueryContent(pkt.GetPayload())
@@ -105,13 +105,13 @@ func (p *auditPlugin) OnReceive(sessionId string, config []string, pkt *pb.Packe
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("session-id=%v - failed obtaining simple query data, err=%v", sessionId, err)
+			return fmt.Errorf("session-id=%v - failed obtaining simple query data, err=%v", sessionID, err)
 		}
-		return p.writeOnReceive(sessionId, 'i', queryBytes)
+		return p.writeOnReceive(sessionID, 'i', queryBytes)
 	case pb.PacketExecClientWriteStdoutType:
-		return p.writeOnReceive(sessionId, 'o', pkt.GetPayload())
+		return p.writeOnReceive(sessionID, 'o', pkt.GetPayload())
 	case pb.PacketExecWriteAgentStdinType, pb.PacketExecRunProcType:
-		return p.writeOnReceive(sessionId, 'i', pkt.GetPayload())
+		return p.writeOnReceive(sessionID, 'i', pkt.GetPayload())
 	}
 	return nil
 }

@@ -29,8 +29,6 @@ func (c Config) GetByte(key string) []byte {
 	return val.([]byte)
 }
 
-// GetString returns the underlying value as string, it returns empty
-// if the key isn't found
 func (c Config) GetString(key string) string {
 	val, ok := c.ParamsData[key]
 	if !ok {
@@ -39,8 +37,6 @@ func (c Config) GetString(key string) string {
 	return val.(string)
 }
 
-// GetDuration returns the underlying value as duration, it returns 0
-// if the key isn't found
 func (c Config) GetDuration(key string) time.Duration {
 	val, ok := c.ParamsData[key]
 	if !ok {
