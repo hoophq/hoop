@@ -27,6 +27,8 @@ func Run() {
 		panic(err)
 	}
 
+	transport.LoadPlugins()
+
 	profile := os.Getenv("PROFILE")
 	idProvider := idp.NewProvider(profile)
 
