@@ -150,7 +150,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
 	clientErr := s.listenClientMessages(stream, c, conn)
 
-	if err := s.pluginOnDisconnectPhase(pConfig); err != nil {
+	if err := s.pluginOnDisconnect(pConfig); err != nil {
 		log.Printf("session=%v ua=client - failed processing plugin on-disconnect phase, err=%v", sessionID, err)
 	}
 
@@ -195,7 +195,7 @@ func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, c *clie
 			return status.Errorf(codes.FailedPrecondition, fmt.Sprintf("agent not found for %v", c.AgentId))
 		}
 		log.Printf("receive client packet type [%s] and session id [%s]", pkt.Type, c.SessionID)
-		if err := s.pluginOnReceivePhase(c.SessionID, pkt); err != nil {
+		if err := s.pluginOnReceive(c.SessionID, pkt); err != nil {
 			log.Printf("plugin reject packet, err=%v", err)
 			return status.Errorf(codes.Internal, "internal error, packet rejected, contact the administrator")
 		}
@@ -338,7 +338,7 @@ func (s *Server) loadConnectPlugins(ctx *user.Context, config plugin.Config) ([]
 	return pluginsConfig, nil
 }
 
-func (s *Server) pluginOnDisconnectPhase(config plugin.Config) error {
+func (s *Server) pluginOnDisconnect(config plugin.Config) error {
 	plugins := getPlugins(config.SessionId)
 	for _, p := range plugins {
 		return p.OnDisconnect(config)
@@ -346,7 +346,7 @@ func (s *Server) pluginOnDisconnectPhase(config plugin.Config) error {
 	return nil
 }
 
-func (s *Server) pluginOnReceivePhase(sessionID string, pkt *pb.Packet) error {
+func (s *Server) pluginOnReceive(sessionID string, pkt *pb.Packet) error {
 	plugins := getPlugins(sessionID)
 	for _, p := range plugins {
 		if err := p.OnReceive(sessionID, p.config, pkt); err != nil {
