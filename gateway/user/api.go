@@ -109,7 +109,7 @@ func (a *Handler) Post(c *gin.Context) {
 		return
 	}
 
-	if len(newUser.Email) == 0 {
+	if newUser.Email == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "email can't be empty"})
 		return
 	}
