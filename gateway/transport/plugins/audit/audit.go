@@ -39,7 +39,6 @@ type (
 		name            string
 		storageWriter   StorageWriter
 		walSessionStore memory.Store
-		enabled         bool
 		started         bool
 		mu              sync.RWMutex
 	}
@@ -72,7 +71,6 @@ func (p *auditPlugin) OnStartup(config plugin.Config) error {
 	if !ok {
 		return fmt.Errorf("audit_storage_writer config must be an pluginscore.StorageWriter instance")
 	}
-	p.enabled = true
 	p.started = true
 	p.storageWriter = storageWriter
 	return nil

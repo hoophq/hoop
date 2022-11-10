@@ -4,6 +4,7 @@ import (
 	"fmt"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/plugin"
+	"github.com/runopsio/hoop/gateway/user"
 	"log"
 )
 
@@ -13,7 +14,19 @@ const (
 
 type (
 	reviewPlugin struct {
-		name string
+		name    string
+		storage storage
+	}
+
+	review struct {
+		Id        string `edn:"xt/id"`
+		Org       string `edn:"review/org"`
+		CreatedBy string `edn:"review/created-by"`
+	}
+
+	storage interface {
+		FindAll(context *user.Context) ([]review, error)
+		Persist(context)
 	}
 )
 
@@ -41,11 +54,10 @@ func (r *reviewPlugin) OnConnect(config plugin.Config) error {
 func (r *reviewPlugin) OnReceive(sessionID string, config []string, pkt *pb.Packet) error {
 	log.Printf("[%s] Review OnReceive plugin with config %v and pkt %v", sessionID, config, pkt)
 	switch pb.PacketType(pkt.GetType()) {
-	case pb.PacketPGWriteServerType:
+	case pb.PacketExecWriteAgentStdinType:
+
 		return nil
-	case pb.PacketExecClientWriteStdoutType:
-		return nil
-	case pb.PacketExecWriteAgentStdinType, pb.PacketExecRunProcType:
+	default:
 		return nil
 	}
 
