@@ -2,8 +2,6 @@ package gateway
 
 import (
 	"fmt"
-	pluginsaudit "github.com/runopsio/hoop/gateway/transport/plugins/audit"
-	pluginsreview "github.com/runopsio/hoop/gateway/transport/plugins/review"
 	"os"
 
 	"github.com/runopsio/hoop/gateway/plugin"
@@ -29,10 +27,7 @@ func Run() {
 		panic(err)
 	}
 
-	transport.AllPlugins = []transport.EnabledPlugin{
-		pluginsaudit.New(),
-		pluginsreview.New(),
-	}
+	transport.LoadPlugins()
 
 	profile := os.Getenv("PROFILE")
 	idProvider := idp.NewProvider(profile)
