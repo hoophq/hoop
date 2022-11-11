@@ -11,13 +11,13 @@ type (
 		*st.Storage
 	}
 
-	ReviewXtdb struct {
-		Id           string   `json:"id"            edn:"xt/id"`
-		OrgId        string   `json:"-"             edn:"review/org"`
-		CreatedById  string   `json:"-"             edn:"review/created-by"`
-		Script       string   `json:"script"        edn:"review/script"`
-		Status       Status   `json:"status"        edn:"review/status"`
-		ReviewGroups []string `json:"review_groups" edn:"review/review-groups"`
+	XtdbReview struct {
+		Id           string   `edn:"xt/id"`
+		OrgId        string   `edn:"review/org"`
+		CreatedBy    string   `edn:"review/created-by"`
+		Command      string   `edn:"review/command"`
+		Status       Status   `edn:"review/status"`
+		ReviewGroups []string `edn:"review/review-groups"`
 	}
 )
 
@@ -59,10 +59,29 @@ func (s *Storage) FindById(id string) (*Review, error) {
 	return &review, nil
 }
 
-func (s *Storage) Persist(review *Review) (int64, error) {
-	reviewPayload := st.EntityToMap(review)
+func (s *Storage) Persist(context *user.Context, review *Review) (int64, error) {
+	reviewGroupIds := make([]string, 0)
+	payload := make([]map[string]any, 0)
 
-	txId, err := s.PersistEntities([]map[string]any{reviewPayload})
+	for _, r := range review.ReviewGroups {
+		reviewGroupIds = append(reviewGroupIds, r.Id)
+		rp := st.EntityToMap(r)
+		payload = append(payload, rp)
+	}
+
+	xtdbReview := &XtdbReview{
+		Id:           review.Id,
+		OrgId:        context.Org.Id,
+		CreatedBy:    context.User.Id,
+		Command:      review.Command,
+		Status:       review.Status,
+		ReviewGroups: reviewGroupIds,
+	}
+
+	reviewPayload := st.EntityToMap(xtdbReview)
+	payload = append(payload, reviewPayload)
+
+	txId, err := s.PersistEntities(payload)
 	if err != nil {
 		return 0, err
 	}

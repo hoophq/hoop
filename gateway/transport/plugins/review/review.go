@@ -26,7 +26,7 @@ type (
 
 	storage interface {
 		FindAll(context *user.Context) ([]review, error)
-		Persist(context)
+		Persist()
 	}
 )
 
