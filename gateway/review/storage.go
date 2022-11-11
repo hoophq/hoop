@@ -31,8 +31,8 @@ func (s *Storage) FindAll(context *user.Context) ([]Review, error) {
                               :review/session
 		                      :review/connection
 		                      :review/created-by 
-		                      {:review/created-by [:xt/id :user/name :user/email]}
-                              {:review/connection [:xt/id :connection/name]}])]
+		                      {:review/created-by [:user/email]}
+                              {:review/connection [:connection/name]}])]
 		:in [org]
 		:where [[?review :review/org org]]}
 		:in-args ["` + context.Org.Id + `"]}`
