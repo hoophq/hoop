@@ -15,6 +15,7 @@ type (
 		Id           string   `edn:"xt/id"`
 		OrgId        string   `edn:"review/org"`
 		SessionId    string   `edn:"review/session"`
+		ConnectionId string   `edn:"review/connection"`
 		CreatedBy    string   `edn:"review/created-by"`
 		Command      string   `edn:"review/command"`
 		Status       Status   `edn:"review/status"`
@@ -24,7 +25,14 @@ type (
 
 func (s *Storage) FindAll(context *user.Context) ([]Review, error) {
 	var payload = `{:query {
-		:find [(pull ?review [*])] 
+		:find [(pull ?review [:xt/id
+                              :review/status
+		                      :review/command
+                              :review/session
+		                      :review/connection
+		                      :review/created-by 
+		                      {:review/created-by [:xt/id :user/name :user/email]}
+                              {:review/connection [:xt/id :connection/name]}])]
 		:in [org]
 		:where [[?review :review/org org]]}
 		:in-args ["` + context.Org.Id + `"]}`
@@ -43,21 +51,30 @@ func (s *Storage) FindAll(context *user.Context) ([]Review, error) {
 }
 
 func (s *Storage) FindById(context *user.Context, id string) (*Review, error) {
-	maybeReview, err := s.GetEntity(id)
+	var payload = `{:query {
+		:find [(pull ?review [* {:review/connection [:xt/id :connection/name]}
+                                 {:review/review-groups [*]}
+                                 {:review/created-by [:xt/id :user/name :user/email]}])]
+		:in [id org]
+		:where [[?review :xt/id id]
+                [?review :review/org org]]}
+        :in-args ["` + id + `" "` + context.Org.Id + `"]}`
+
+	b, err := s.Query([]byte(payload))
 	if err != nil {
 		return nil, err
 	}
 
-	if maybeReview == nil {
-		return nil, nil
-	}
-
-	var review Review
-	if err := edn.Unmarshal(maybeReview, &review); err != nil {
+	var reviews []*Review
+	if err := edn.Unmarshal(b, &reviews); err != nil {
 		return nil, err
 	}
 
-	return &review, nil
+	if len(reviews) == 0 {
+		return nil, nil
+	}
+
+	return reviews[0], nil
 }
 
 func (s *Storage) Persist(context *user.Context, review *Review) (int64, error) {
@@ -73,7 +90,8 @@ func (s *Storage) Persist(context *user.Context, review *Review) (int64, error) 
 	xtdbReview := &XtdbReview{
 		Id:           review.Id,
 		OrgId:        context.Org.Id,
-		SessionId:    review.SessionId,
+		SessionId:    review.Session,
+		ConnectionId: review.Connection.Id,
 		CreatedBy:    context.User.Id,
 		Command:      review.Command,
 		Status:       review.Status,

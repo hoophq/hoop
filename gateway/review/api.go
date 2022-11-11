@@ -66,3 +66,22 @@ func (h *Handler) FindAll(c *gin.Context) {
 
 	c.JSON(http.StatusOK, reviews)
 }
+
+func (a *Handler) FindOne(c *gin.Context) {
+	ctx, _ := c.Get("context")
+	context := ctx.(*user.Context)
+
+	id := c.Param("id")
+	review, err := a.Service.FindOne(context, id)
+	if err != nil {
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	if review == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+		return
+	}
+
+	c.PureJSON(http.StatusOK, review)
+}

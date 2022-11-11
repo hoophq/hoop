@@ -17,17 +17,24 @@ type (
 	}
 
 	Review struct {
-		Id           string        `json:"id"`
-		SessionId    string        `json:"session_id"`
-		Command      string        `json:"command"`
-		Status       Status        `json:"status"`
-		ReviewGroups []ReviewGroup `json:"review_groups"`
+		Id           string        `json:"id"            edn:"xt/id"`
+		Session      string        `json:"session"       edn:"review/session"`
+		Command      string        `json:"command"       edn:"review/command"`
+		Status       Status        `json:"status"        edn:"review/status"`
+		CreatedBy    Owner         `json:"created_by"    edn:"review/created-by"`
+		Connection   Connection    `json:"connection"    edn:"review/connection"`
+		ReviewGroups []ReviewGroup `json:"review_groups" edn:"review/review-groups"`
 	}
 
 	Owner struct {
-		Id    string `json:"id"`
-		Name  string `json:"name"`
-		Email string `json:"email"`
+		Id    string `json:"id"    edn:"xt/id"`
+		Name  string `json:"name"  edn:"user/name"`
+		Email string `json:"email" edn:"user/email"`
+	}
+
+	Connection struct {
+		Id   string `json:"id"   edn:"xt/id"`
+		Name string `json:"name" edn:"connection/name"`
 	}
 
 	ReviewGroup struct {
@@ -52,7 +59,7 @@ func (s *Service) FindOne(context *user.Context, id string) (*Review, error) {
 }
 
 func (s *Service) FindAll(context *user.Context) ([]Review, error) {
-	return nil, nil
+	return s.Storage.FindAll(context)
 }
 
 func (s *Service) Persist(context *user.Context, review *Review) error {

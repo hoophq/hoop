@@ -72,7 +72,11 @@ func (r *reviewPlugin) OnReceive(pluginConfig plugin.Config, config []string, pk
 		}
 
 		review := &rv.Review{
-			SessionId:    pluginConfig.SessionId,
+			Session: pluginConfig.SessionId,
+			Connection: rv.Connection{
+				Id:   pluginConfig.ConnectionId,
+				Name: pluginConfig.ConnectionName,
+			},
 			Command:      string(pkt.Payload),
 			Status:       rv.StatusPending,
 			ReviewGroups: reviewGroups,
