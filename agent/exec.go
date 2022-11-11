@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"syscall"
 
-	"github.com/runopsio/hoop/common/dlp"
+	"github.com/runopsio/hoop/agent/dlp"
 	exec "github.com/runopsio/hoop/common/exec"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/common/runtime"
@@ -95,7 +95,7 @@ func (a *Agent) doExecWriteAgentStdin(pkt *pb.Packet) {
 	}
 	stdoutWriter := pb.NewStreamWriter(a.client, pb.PacketExecClientWriteStdoutType, spec)
 	if dlpClient, ok := a.connStore.Get(dlpClientKey).(*dlp.Client); ok {
-		stdoutWriter = pb.NewDLPStreamWriter(a.client, dlpClient, pb.PacketExecClientWriteStdoutType, spec)
+		stdoutWriter = dlp.NewDLPStreamWriter(a.client, dlpClient, pb.PacketExecClientWriteStdoutType, spec)
 	}
 	if err := cmd.RunOnTTY(stdoutWriter, onExecEnd); err != nil {
 		log.Printf("session=%s, tty=true - err=%v", string(sessionID), err)

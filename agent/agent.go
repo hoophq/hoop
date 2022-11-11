@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runopsio/hoop/common/dlp"
+	"github.com/runopsio/hoop/agent/dlp"
 	"github.com/runopsio/hoop/common/memory"
 	pb "github.com/runopsio/hoop/common/proto"
 	"google.golang.org/grpc/codes"

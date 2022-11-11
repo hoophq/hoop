@@ -6,6 +6,7 @@ import (
 
 	dlp "cloud.google.com/go/dlp/apiv2"
 	"cloud.google.com/go/dlp/apiv2/dlppb"
+	pb "github.com/runopsio/hoop/common/proto"
 )
 
 const (
@@ -70,6 +71,12 @@ type (
 		*dlp.Client
 		projectID string
 	}
+	streamWriter struct {
+		client     pb.ClientTransport
+		dlpClient  *Client
+		packetType pb.PacketType
+		packetSpec map[string][]byte
+	}
 	DeidentifyConfig struct {
 		// Character to use to mask the sensitive values, for example, `*` for an
 		// alphabetic string such as a name, or `0` for a numeric string such as ZIP
@@ -98,10 +105,6 @@ type (
 		InfoTypes    []*dlppb.InfoType
 	}
 )
-
-func (c *Chunk) GetData() *bytes.Buffer {
-	return c.data
-}
 
 func (c *Client) GetProjectID() string {
 	return c.projectID

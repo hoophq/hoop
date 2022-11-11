@@ -10,6 +10,7 @@ import (
 
 	dlp "cloud.google.com/go/dlp/apiv2"
 	"cloud.google.com/go/dlp/apiv2/dlppb"
+	pb "github.com/runopsio/hoop/common/proto"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
 )
@@ -27,6 +28,47 @@ func NewDLPClient(ctx context.Context, credentialsJSON []byte) (*Client, error) 
 		return nil, err
 	}
 	return &Client{client, creds.ProjectID}, nil
+}
+
+func NewDLPStreamWriter(client pb.ClientTransport,
+	dlpClient *Client,
+	packetType pb.PacketType,
+	spec map[string][]byte) io.WriteCloser {
+	return &streamWriter{
+		client:     client,
+		dlpClient:  dlpClient,
+		packetType: packetType,
+		packetSpec: spec,
+	}
+}
+
+func (s *streamWriter) Write(data []byte) (int, error) {
+	p := &pb.Packet{Spec: map[string][]byte{}}
+	if s.packetType == "" {
+		return 0, fmt.Errorf("packet type must not be empty")
+	}
+	p.Type = s.packetType.String()
+	p.Spec = s.packetSpec
+	if s.dlpClient != nil && len(data) > 30 {
+		chunksBuffer := BreakPayloadIntoChunks(bytes.NewBuffer(data))
+		redactedChunks := RedactChunks(s.dlpClient, s.dlpClient.GetProjectID(), chunksBuffer)
+		dataBuffer, tsList, err := JoinChunks(redactedChunks)
+		if err != nil {
+			return 0, fmt.Errorf("failed joining chunks, err=%v", err)
+		}
+		if tsEnc, _ := pb.GobEncode(tsList); tsEnc != nil {
+			p.Spec[pb.SpecDLPTransformationSummary] = tsEnc
+		}
+		p.Payload = dataBuffer.Bytes()
+		return len(p.Payload), s.client.Send(p)
+	}
+	p.Payload = data
+	return len(data), s.client.Send(p)
+}
+
+func (s *streamWriter) Close() error {
+	_, _ = s.client.Close()
+	return nil
 }
 
 // newDeindentifyContentRequest creates a new DeindentifyContentRequest with InspectConfig
