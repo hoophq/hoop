@@ -25,6 +25,7 @@ type (
 	UserService interface {
 		FindBySub(sub string) (*user.Context, error)
 		GetOrgByName(name string) (*user.Org, error)
+		FindInvitedUser(email string) (*user.InvitedUser, error)
 		Persist(u any) error
 	}
 
@@ -179,6 +180,16 @@ func (s *Service) signup(context *user.Context, sub string, profile map[string]a
 		if newOrg {
 			status = user.StatusActive
 			groups = append(groups, user.GroupAdmin)
+		}
+
+		invitedUser, err := s.UserService.FindInvitedUser(email)
+		if err != nil {
+			return err
+		}
+		if invitedUser != nil {
+			status = user.StatusActive
+			groups = invitedUser.Groups
+
 		}
 
 		context.User = &user.User{

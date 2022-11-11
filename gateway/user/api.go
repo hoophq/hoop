@@ -1,8 +1,10 @@
 package user
 
 import (
-	"github.com/gin-gonic/gin"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 type (
@@ -95,4 +97,31 @@ func (a *Handler) Put(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, existingUser)
+}
+
+func (a *Handler) Post(c *gin.Context) {
+	ctx, _ := c.Get("context")
+	context := ctx.(*Context)
+
+	var newUser InvitedUser
+	if err := c.ShouldBindJSON(&newUser); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
+	if newUser.Email == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "email can't be empty"})
+		return
+	}
+
+	newUser.Id = uuid.NewString()
+	newUser.Org = context.Org.Id
+
+	err := a.Service.Persist(&newUser)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, newUser)
 }

@@ -55,9 +55,6 @@ func (r *reviewPlugin) OnReceive(sessionID string, config []string, pkt *pb.Pack
 	log.Printf("[%s] Review OnReceive plugin with config %v and pkt %v", sessionID, config, pkt)
 	switch pb.PacketType(pkt.GetType()) {
 	case pb.PacketExecWriteAgentStdinType:
-
-		return nil
-	default:
 		return nil
 	}
 

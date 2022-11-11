@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/runopsio/hoop/gateway/plugin"
 	pluginsaudit "github.com/runopsio/hoop/gateway/transport/plugins/audit"
+	pluginsreview "github.com/runopsio/hoop/gateway/transport/plugins/review"
 	"github.com/runopsio/hoop/gateway/user"
 	"io"
 	"log"
@@ -30,11 +31,11 @@ type (
 	}
 
 	pluginConfig struct {
-		EnabledPlugin
+		Plugin
 		config []string
 	}
 
-	EnabledPlugin interface {
+	Plugin interface {
 		Name() string
 		OnStartup(config plugin.Config) error
 		OnConnect(p plugin.Config) error
@@ -43,13 +44,20 @@ type (
 	}
 )
 
-var AllPlugins []EnabledPlugin
+var allPlugins []Plugin
 
 var cc = connectedClients{
 	clients:     make(map[string]pb.Transport_ConnectServer),
 	connections: make(map[string]*connection.Connection),
 	plugins:     make(map[string][]pluginConfig),
 	mu:          sync.Mutex{},
+}
+
+func LoadPlugins() {
+	allPlugins = []Plugin{
+		pluginsaudit.New(),
+		pluginsreview.New(),
+	}
 }
 
 func bindClient(sessionID string,
@@ -137,13 +145,13 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		ParamsData:     make(map[string]any),
 	}
 
-	enabledPlugins, err := s.loadConnectPlugins(context, pConfig)
+	plugins, err := s.loadConnectPlugins(context, pConfig)
 	if err != nil {
 		return status.Errorf(codes.FailedPrecondition, err.Error())
 	}
 
 	s.ClientService.Persist(c)
-	bindClient(c.SessionID, stream, conn, enabledPlugins)
+	bindClient(c.SessionID, stream, conn, plugins)
 
 	s.clientGracefulShutdown(c)
 
@@ -242,14 +250,17 @@ func (s *Server) processPacketGatewayConnect(pkt *pb.Packet,
 	if err != nil {
 		return fmt.Errorf("failed encoding connection params err=%v", err)
 	}
-	// TODO: deal with errors
+	pktSpec := map[string][]byte{
+		pb.SpecGatewaySessionID:         []byte(client.SessionID),
+		pb.SpecConnectionType:           []byte(conn.Type),
+		pb.SpecAgentConnectionParamsKey: encConnectionParams,
+	}
+	if s.GcpDLPRawCredentials != "" {
+		pktSpec[pb.SpecAgentGCPRawCredentialsKey] = []byte(s.GcpDLPRawCredentials)
+	}
 	_ = agentStream.Send(&pb.Packet{
 		Type: pb.PacketAgentConnectType.String(),
-		Spec: map[string][]byte{
-			pb.SpecGatewaySessionID:         []byte(client.SessionID),
-			pb.SpecConnectionType:           []byte(conn.Type),
-			pb.SpecAgentConnectionParamsKey: encConnectionParams,
-		},
+		Spec: pktSpec,
 	})
 	return nil
 }
@@ -290,7 +301,7 @@ func (s *Server) clientGracefulShutdown(c *client.Client) {
 
 func (s *Server) loadConnectPlugins(ctx *user.Context, config plugin.Config) ([]pluginConfig, error) {
 	pluginsConfig := make([]pluginConfig, 0)
-	for _, p := range AllPlugins {
+	for _, p := range allPlugins {
 		p1, err := s.PluginService.FindOne(ctx, p.Name())
 		if err != nil {
 			log.Printf("failed retrieving plugin %q, err=%v", p.Name(), err)
@@ -316,8 +327,8 @@ func (s *Server) loadConnectPlugins(ctx *user.Context, config plugin.Config) ([]
 				}
 				cfg = removeDuplicates(cfg)
 				ep := pluginConfig{
-					EnabledPlugin: p,
-					config:        cfg,
+					Plugin: p,
+					config: cfg,
 				}
 
 				if err := p.OnStartup(config); err != nil {

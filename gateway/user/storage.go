@@ -39,6 +39,30 @@ func (s *Storage) FindById(identifier string) (*Context, error) {
 	return c, nil
 }
 
+func (s *Storage) FindInvitedUser(email string) (*InvitedUser, error) {
+	var payload = `{:query {
+		:find [(pull ?invited-user [*])] 
+		:in [email]
+		:where [[?invited-user :invited-user/email email]]}
+		:in-args ["` + email + `"]}`
+
+	b, err := s.Query([]byte(payload))
+	if err != nil {
+		return nil, err
+	}
+
+	var invitedUser []InvitedUser
+	if err := edn.Unmarshal(b, &invitedUser); err != nil {
+		return nil, err
+	}
+
+	if len(invitedUser) == 0 {
+		return nil, nil
+	}
+
+	return &invitedUser[0], nil
+}
+
 func (s *Storage) FindAll(context *Context) ([]User, error) {
 	var payload = `{:query {
 		:find [(pull ?user [*])] 

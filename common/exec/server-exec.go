@@ -127,7 +127,7 @@ func (c *Command) Run(streamWriter io.WriteCloser, stdinInput []byte, onExecEnd 
 	return nil
 }
 
-func (c *Command) RunOnTTY(stdoutWriter io.WriteCloser, onExecEnd OnExecEndFn, clientArgs ...string) error {
+func (c *Command) RunOnTTY(stdoutWriter io.WriteCloser, onExecEnd OnExecEndFn) error {
 	// Start the command with a pty.
 	if err := c.OnPreExec(); err != nil {
 		return fmt.Errorf("failed executing pre execution command, err=%v", err)
@@ -182,15 +182,24 @@ func (c *Command) RunOnTTY(stdoutWriter io.WriteCloser, onExecEnd OnExecEndFn, c
 		}
 		onExecEnd(exitCode, "failed executing command, err=%v", err)
 	}()
-
 	return nil
 }
 
-func (c *Command) WriteTTY(data []byte) (int, error) {
-	if c.ptty != nil {
-		return c.ptty.Write(data)
+func (c *Command) WriteTTY(data []byte) error {
+	if c.ptty == nil {
+		return fmt.Errorf("tty is empty")
 	}
-	return 0, nil
+	// this is required to avoid redacting inputs (e.g.: paste content)
+	if len(data) >= 29 {
+		for _, b := range data {
+			if _, err := c.ptty.Write([]byte{b}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	_, err := c.ptty.Write(data)
+	return err
 }
 
 func NewCommand(rawEnvVarList map[string]interface{}, args ...string) (*Command, error) {

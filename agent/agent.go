@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -8,17 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/runopsio/hoop/agent/dlp"
 	"github.com/runopsio/hoop/common/memory"
 	pb "github.com/runopsio/hoop/common/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-)
-
-const (
-	EnvVarDBHostKey string = "HOST"
-	EnvVarDBUserKey string = "USER"
-	EnvVarDBPassKey string = "PASS"
-	EnvVarDBPortKey string = "PORT"
 )
 
 type (
@@ -163,6 +158,23 @@ func (a *Agent) processAgentConnect(pkt *pb.Packet) {
 	}
 	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 	log.Printf("session=%v - received connect request", string(sessionID))
+	if gcpRawCred, ok := pkt.Spec[pb.SpecAgentGCPRawCredentialsKey]; ok {
+		if _, ok := a.connStore.Get(dlpClientKey).(*dlp.Client); !ok {
+			dlpClient, err := dlp.NewDLPClient(context.Background(), gcpRawCred)
+			if err != nil {
+				_ = a.client.Send(&pb.Packet{
+					Type:    pb.PacketGatewayConnectErrType.String(),
+					Payload: []byte(`failed creating dlp client`),
+					Spec:    map[string][]byte{pb.SpecGatewaySessionID: sessionID},
+				})
+				log.Printf("failed creating dlp client, err=%v", err)
+				return
+			}
+			log.Printf("session=%v - created dlp client with success", string(sessionID))
+			a.connStore.Set(dlpClientKey, dlpClient)
+		}
+	}
+
 	sessionIDKey := string(sessionID)
 	switch connType := string(pkt.Spec[pb.SpecConnectionType]); {
 	case connType == "postgres":

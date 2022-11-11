@@ -1,6 +1,8 @@
 package transport
 
 import (
+	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"strings"
@@ -23,14 +25,15 @@ import (
 type (
 	Server struct {
 		pb.UnimplementedTransportServer
-		AgentService      agent.Service
-		ClientService     client.Service
-		ConnectionService connection.Service
-		UserService       user.Service
-		PluginService     plugin.Service
-		SessionService    session.Service
-		IDProvider        *idp.Provider
-		Profile           string
+		AgentService         agent.Service
+		ClientService        client.Service
+		ConnectionService    connection.Service
+		UserService          user.Service
+		PluginService        plugin.Service
+		SessionService       session.Service
+		IDProvider           *idp.Provider
+		Profile              string
+		GcpDLPRawCredentials string
 	}
 )
 
@@ -44,7 +47,11 @@ func (s *Server) StartRPCServer() {
 	log.Printf("starting gateway at %v", listenAddr)
 	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
+	}
+
+	if err := s.ValidateConfiguration(); err != nil {
+		log.Fatal(err)
 	}
 
 	svr := grpc.NewServer()
@@ -92,6 +99,17 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 		return s.subscribeAgent(stream, token)
 	}
 	return s.subscribeClient(stream, token)
+}
+
+func (s *Server) ValidateConfiguration() error {
+	var js json.RawMessage
+	if s.GcpDLPRawCredentials == "" {
+		return nil
+	}
+	if err := json.Unmarshal([]byte(s.GcpDLPRawCredentials), &js); err != nil {
+		return fmt.Errorf("failed to parse env GOOGLE_APPLICATION_CREDENTIALS_JSON, it should be a valid JSON")
+	}
+	return nil
 }
 
 func extractData(md metadata.MD, metaName string) string {
