@@ -250,14 +250,17 @@ func (s *Server) processPacketGatewayConnect(pkt *pb.Packet,
 	if err != nil {
 		return fmt.Errorf("failed encoding connection params err=%v", err)
 	}
-	// TODO: deal with errors
+	pktSpec := map[string][]byte{
+		pb.SpecGatewaySessionID:         []byte(client.SessionID),
+		pb.SpecConnectionType:           []byte(conn.Type),
+		pb.SpecAgentConnectionParamsKey: encConnectionParams,
+	}
+	if s.GcpDLPRawCredentials != "" {
+		pktSpec[pb.SpecAgentGCPRawCredentialsKey] = []byte(s.GcpDLPRawCredentials)
+	}
 	_ = agentStream.Send(&pb.Packet{
 		Type: pb.PacketAgentConnectType.String(),
-		Spec: map[string][]byte{
-			pb.SpecGatewaySessionID:         []byte(client.SessionID),
-			pb.SpecConnectionType:           []byte(conn.Type),
-			pb.SpecAgentConnectionParamsKey: encConnectionParams,
-		},
+		Spec: pktSpec,
 	})
 	return nil
 }
