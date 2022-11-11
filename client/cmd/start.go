@@ -54,6 +54,8 @@ var startCmd = &cobra.Command{
 		dockerArgs := []string{
 			"run",
 			"-e", "PROFILE=dev",
+			"-e", fmt.Sprintf("GOOGLE_APPLICATION_CREDENTIALS_JSON=%v",
+				os.Getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")),
 			"-p", "8009:8009",
 			"-p", "8010:8010",
 			"--name", containerName,
