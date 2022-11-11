@@ -60,7 +60,7 @@ func (s *streamWriter) Write(data []byte) (int, error) {
 			p.Spec[pb.SpecDLPTransformationSummary] = tsEnc
 		}
 		p.Payload = dataBuffer.Bytes()
-		return len(p.Payload), s.client.Send(p)
+		return len(data), s.client.Send(p)
 	}
 	p.Payload = data
 	return len(data), s.client.Send(p)
