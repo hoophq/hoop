@@ -18,8 +18,7 @@ type (
 
 	Review struct {
 		Id           string        `json:"id"`
-		OrgId        string        `json:"-"`
-		CreatedById  Owner         `json:"created_by"`
+		SessionId    string        `json:"session_id"`
 		Command      string        `json:"command"`
 		Status       Status        `json:"status"`
 		ReviewGroups []ReviewGroup `json:"review_groups"`

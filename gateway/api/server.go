@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"github.com/runopsio/hoop/gateway/review"
 	"os"
 	"strings"
 
@@ -24,6 +25,7 @@ type (
 		UserHandler       user.Handler
 		PluginHandler     plugin.Handler
 		SessionHandler    session.Handler
+		ReviewHandler     review.Handler
 		SecurityHandler   security.Handler
 		IDProvider        *idp.Provider
 		Profile           string

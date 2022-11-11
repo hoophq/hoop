@@ -14,6 +14,7 @@ type (
 	XtdbReview struct {
 		Id           string   `edn:"xt/id"`
 		OrgId        string   `edn:"review/org"`
+		SessionId    string   `edn:"review/session"`
 		CreatedBy    string   `edn:"review/created-by"`
 		Command      string   `edn:"review/command"`
 		Status       Status   `edn:"review/status"`
@@ -41,7 +42,7 @@ func (s *Storage) FindAll(context *user.Context) ([]Review, error) {
 	return reviews, nil
 }
 
-func (s *Storage) FindById(id string) (*Review, error) {
+func (s *Storage) FindById(context *user.Context, id string) (*Review, error) {
 	maybeReview, err := s.GetEntity(id)
 	if err != nil {
 		return nil, err
@@ -65,13 +66,14 @@ func (s *Storage) Persist(context *user.Context, review *Review) (int64, error) 
 
 	for _, r := range review.ReviewGroups {
 		reviewGroupIds = append(reviewGroupIds, r.Id)
-		rp := st.EntityToMap(r)
+		rp := st.EntityToMap(&r)
 		payload = append(payload, rp)
 	}
 
 	xtdbReview := &XtdbReview{
 		Id:           review.Id,
 		OrgId:        context.Org.Id,
+		SessionId:    review.SessionId,
 		CreatedBy:    context.User.Id,
 		Command:      review.Command,
 		Status:       review.Status,

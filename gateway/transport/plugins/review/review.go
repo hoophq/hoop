@@ -4,34 +4,29 @@ import (
 	"fmt"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/plugin"
+	rv "github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/user"
 	"log"
 )
 
 const (
-	name string = "review"
+	Name         string = "review"
+	ServiceParam string = "review_service"
 )
 
 type (
 	reviewPlugin struct {
 		name    string
-		storage storage
+		service Service
 	}
 
-	review struct {
-		Id        string `edn:"xt/id"`
-		Org       string `edn:"review/org"`
-		CreatedBy string `edn:"review/created-by"`
-	}
-
-	storage interface {
-		FindAll(context *user.Context) ([]review, error)
-		Persist()
+	Service interface {
+		Persist(context *user.Context, review *rv.Review) error
 	}
 )
 
 func New() *reviewPlugin {
-	return &reviewPlugin{name: name}
+	return &reviewPlugin{name: Name}
 }
 
 func (r *reviewPlugin) Name() string {
@@ -39,23 +34,56 @@ func (r *reviewPlugin) Name() string {
 }
 
 func (r *reviewPlugin) OnStartup(config plugin.Config) error {
+	log.Printf("session=%v | review noop | processing on-startup", config.SessionId)
+	if config.Org == "" || config.SessionId == "" {
+		return fmt.Errorf("failed processing review plugin, missing org_id and session_id params")
+	}
+
+	reviewServiceParam := config.ParamsData[ServiceParam]
+	reviewService, ok := reviewServiceParam.(Service)
+	if !ok {
+		return fmt.Errorf("review plugin failed to start")
+	}
+
+	r.service = reviewService
 	return nil
 }
 
 func (r *reviewPlugin) OnConnect(config plugin.Config) error {
 	log.Printf("session=%v | review noop | processing on-connect", config.SessionId)
 	if config.Org == "" || config.SessionId == "" {
-		return fmt.Errorf("failed processing audit plugin, missing org_id and session_id params")
+		return fmt.Errorf("failed processing review plugin, missing org_id and session_id params")
 	}
 
 	return nil
 }
 
-func (r *reviewPlugin) OnReceive(sessionID string, config []string, pkt *pb.Packet) error {
-	log.Printf("[%s] Review OnReceive plugin with config %v and pkt %v", sessionID, config, pkt)
+func (r *reviewPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *pb.Packet) error {
+	log.Printf("[%s] Review OnReceive plugin with config %v and pkt %v", pluginConfig.SessionId, config, pkt)
 	switch pb.PacketType(pkt.GetType()) {
 	case pb.PacketExecWriteAgentStdinType:
-		return nil
+		reviewGroups := make([]rv.ReviewGroup, 0)
+
+		for _, s := range config {
+			reviewGroups = append(reviewGroups, rv.ReviewGroup{
+				Group:  s,
+				Status: rv.StatusPending,
+			})
+		}
+
+		review := &rv.Review{
+			SessionId:    pluginConfig.SessionId,
+			Command:      string(pkt.Payload),
+			Status:       rv.StatusPending,
+			ReviewGroups: reviewGroups,
+		}
+
+		if err := r.service.Persist(&user.Context{
+			Org:  &user.Org{Id: pluginConfig.Org},
+			User: &user.User{Id: pluginConfig.User},
+		}, review); err != nil {
+			return err
+		}
 	}
 
 	return nil
