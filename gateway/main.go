@@ -55,14 +55,15 @@ func Run() {
 	}
 
 	g := &transport.Server{
-		AgentService:      agentService,
-		ConnectionService: connectionService,
-		UserService:       userService,
-		ClientService:     clientService,
-		PluginService:     pluginService,
-		SessionService:    sessionService,
-		IDProvider:        idProvider,
-		Profile:           profile,
+		AgentService:         agentService,
+		ConnectionService:    connectionService,
+		UserService:          userService,
+		ClientService:        clientService,
+		PluginService:        pluginService,
+		SessionService:       sessionService,
+		IDProvider:           idProvider,
+		Profile:              profile,
+		GcpDLPRawCredentials: os.Getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"),
 	}
 
 	if profile == pb.DevProfile {

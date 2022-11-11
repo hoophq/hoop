@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	reflect "reflect"
+
+	"github.com/runopsio/hoop/common/dlp"
 )
 
 type (
@@ -26,6 +28,7 @@ type (
 	}
 	streamWriter struct {
 		client     ClientTransport
+		dlpClient  *dlp.Client
 		packetType PacketType
 		packetSpec map[string][]byte
 	}
@@ -68,6 +71,18 @@ func NewStreamWriter(client ClientTransport, packetType PacketType, spec map[str
 	return &streamWriter{client: client, packetType: packetType, packetSpec: spec}
 }
 
+func NewDLPStreamWriter(client ClientTransport,
+	dlpClient *dlp.Client,
+	packetType PacketType,
+	spec map[string][]byte) io.WriteCloser {
+	return &streamWriter{
+		client:     client,
+		dlpClient:  dlpClient,
+		packetType: packetType,
+		packetSpec: spec,
+	}
+}
+
 func (s *streamWriter) Write(data []byte) (int, error) {
 	p := &Packet{Spec: map[string][]byte{}}
 	if s.packetType == "" {
@@ -75,6 +90,19 @@ func (s *streamWriter) Write(data []byte) (int, error) {
 	}
 	p.Type = s.packetType.String()
 	p.Spec = s.packetSpec
+	if s.dlpClient != nil && len(data) > 30 {
+		chunksBuffer := dlp.BreakPayloadIntoChunks(bytes.NewBuffer(data))
+		redactedChunks := dlp.RedactChunks(s.dlpClient, s.dlpClient.GetProjectID(), chunksBuffer)
+		dataBuffer, tsList, err := dlp.JoinChunks(redactedChunks)
+		if err != nil {
+			return 0, fmt.Errorf("failed joining chunks, err=%v", err)
+		}
+		if tsEnc, _ := GobEncode(tsList); tsEnc != nil {
+			p.Spec[SpecDLPTransformationSummary] = tsEnc
+		}
+		p.Payload = dataBuffer.Bytes()
+		return len(p.Payload), s.client.Send(p)
+	}
 	p.Payload = data
 	return len(data), s.client.Send(p)
 }

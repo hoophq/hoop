@@ -19,16 +19,14 @@ const (
 	PacketPGWriteServerType PacketType = "PG::WriteServer"
 	PacketPGWriteClientType PacketType = "PG::WriteClient"
 
-	SpecGatewaySessionID         string = "gateway.session_id"
-	SpecConnectionType           string = "gateway.connection_type"
-	SpecClientConnectionID       string = "client.connection_id"
-	SpecClientExecExitCodeKey    string = "exec.exit_code"
-	SpecClientExecArgsKey        string = "exec.args"
-	SpecAgentConnectionParamsKey string = "agent.connection_params"
-	SpecAgentEnvVarsKey          string = "agent.env_vars"
-
-	ProtocolPostgresType ProtocolType = "postgres"
-	ProtocoTerminalType  ProtocolType = "terminal"
+	SpecGatewaySessionID          string = "gateway.session_id"
+	SpecConnectionType            string = "gateway.connection_type"
+	SpecDLPTransformationSummary  string = "dlp.transformation_summary"
+	SpecClientConnectionID        string = "client.connection_id"
+	SpecClientExecExitCodeKey     string = "exec.exit_code"
+	SpecClientExecArgsKey         string = "exec.args"
+	SpecAgentConnectionParamsKey  string = "agent.connection_params"
+	SpecAgentGCPRawCredentialsKey string = "agent.gcp_credentials"
 
 	DefaultKeepAlive time.Duration = 10 * time.Second
 

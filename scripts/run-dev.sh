@@ -4,14 +4,11 @@ trap ctrl_c INT
 
 function ctrl_c() {
     ps aux |grep -i /tmp/hoop |awk {'print $2'} |xargs kill -9
-    docker stop xtdb 2> /dev/null || true
     exit 130
 }
 
 echo "--> STARTING XTDB..."
-docker rm xtdb 2>/dev/null || true
-docker stop xtdb 2>/dev/null || true
-docker run --name xtdb --rm -d -p 3001:3000 runops/xtdb-in-memory:$(uname -m) > /dev/null
+docker run --name xtdb --rm -d -p 3001:3000 runops/xtdb-in-memory:$(uname -m) 2&> /dev/null
 until curl -s -f -o /dev/null "http://127.0.0.1:3001/_xtdb/status"
 do
   echo -n "."
@@ -20,6 +17,7 @@ done
 echo " done!"
 echo "--> STARTING GATEWAY ..."
 
+# export GOOGLE_APPLICATION_CREDENTIALS_JSON=$(cat ../misc/profiles/hoop/dlp-serviceaccount.json)
 export PORT=8009
 export PROFILE=dev
 export XTDB_ADDRESS=http://127.0.0.1:3001

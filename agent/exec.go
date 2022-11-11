@@ -6,15 +6,10 @@ import (
 	"strconv"
 	"syscall"
 
+	"github.com/runopsio/hoop/common/dlp"
 	exec "github.com/runopsio/hoop/common/exec"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/common/runtime"
-)
-
-const (
-	connectionStoreParamsKey string = "params:%s"
-	procStoreKey             string = "proc:%s"
-	cmdStoreKey              string = "cmd:%s"
 )
 
 func (a *Agent) processExec(pkt *pb.Packet) {
@@ -72,7 +67,7 @@ func (a *Agent) doExecWriteAgentStdin(pkt *pb.Packet) {
 	cmd, ok := cmdObj.(*exec.Command)
 	if ok {
 		// Write to tty stdin content
-		if _, err := cmd.WriteTTY(pkt.Payload); err != nil {
+		if err := cmd.WriteTTY(pkt.Payload); err != nil {
 			log.Printf("session=%v | tty=true - failed copying stdin to tty, err=%v", string(sessionID), err)
 			a.sendCloseTerm(sessionID, "", "")
 		}
@@ -99,6 +94,9 @@ func (a *Agent) doExecWriteAgentStdin(pkt *pb.Packet) {
 		a.sendCloseTerm(sessionID, fmt.Sprintf(errMsg, v...), strconv.Itoa(exitCode))
 	}
 	stdoutWriter := pb.NewStreamWriter(a.client, pb.PacketExecClientWriteStdoutType, spec)
+	if dlpClient, ok := a.connStore.Get(dlpClientKey).(*dlp.Client); ok {
+		stdoutWriter = pb.NewDLPStreamWriter(a.client, dlpClient, pb.PacketExecClientWriteStdoutType, spec)
+	}
 	if err := cmd.RunOnTTY(stdoutWriter, onExecEnd); err != nil {
 		log.Printf("session=%s, tty=true - err=%v", string(sessionID), err)
 	}
