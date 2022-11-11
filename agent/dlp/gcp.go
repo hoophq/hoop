@@ -33,7 +33,7 @@ func NewDLPClient(ctx context.Context, credentialsJSON []byte) (*Client, error) 
 func NewDLPStreamWriter(client pb.ClientTransport,
 	dlpClient *Client,
 	packetType pb.PacketType,
-	spec map[string][]byte) io.WriteCloser {
+	spec map[string][]byte) *streamWriter {
 	return &streamWriter{
 		client:     client,
 		dlpClient:  dlpClient,
@@ -50,9 +50,9 @@ func (s *streamWriter) Write(data []byte) (int, error) {
 	p.Type = s.packetType.String()
 	p.Spec = s.packetSpec
 	if s.dlpClient != nil && len(data) > 30 {
-		chunksBuffer := BreakPayloadIntoChunks(bytes.NewBuffer(data))
-		redactedChunks := RedactChunks(s.dlpClient, s.dlpClient.GetProjectID(), chunksBuffer)
-		dataBuffer, tsList, err := JoinChunks(redactedChunks)
+		chunksBuffer := breakPayloadIntoChunks(bytes.NewBuffer(data))
+		redactedChunks := redactChunks(s.dlpClient, s.dlpClient.GetProjectID(), chunksBuffer)
+		dataBuffer, tsList, err := joinChunks(redactedChunks)
 		if err != nil {
 			return 0, fmt.Errorf("failed joining chunks, err=%v", err)
 		}
@@ -135,10 +135,10 @@ func deidentifyContent(ctx context.Context, client *Client, conf *DeidentifyConf
 	return chunk
 }
 
-// RedactChunks process chunks in parallel reordering after the end of each execution.
+// redactChunks process chunks in parallel reordering after the end of each execution.
 // A default timeout is applied for each chunk. If a requests timeout or returns an error the chunk is returned
 // without redacting its content.
-func RedactChunks(client *Client, projectID string, chunksBuffer []*bytes.Buffer) []*Chunk {
+func redactChunks(client *Client, projectID string, chunksBuffer []*bytes.Buffer) []*Chunk {
 	conf := &DeidentifyConfig{
 		MaskingCharacter: defaultMaskingCharacter,
 		NumberToMask:     defaultNumberToMask,
@@ -167,9 +167,9 @@ func RedactChunks(client *Client, projectID string, chunksBuffer []*bytes.Buffer
 	return redactedChunks
 }
 
-// JoinChunks will recompose the chunks into a unique buffer along with a list of
+// joinChunks will recompose the chunks into a unique buffer along with a list of
 // Transformations Summaries
-func JoinChunks(chunks []*Chunk) (*bytes.Buffer, []*TransformationSummary, error) {
+func joinChunks(chunks []*Chunk) (*bytes.Buffer, []*TransformationSummary, error) {
 	var tsList []*TransformationSummary
 	res := bytes.NewBuffer([]byte{})
 	for _, c := range chunks {
@@ -181,7 +181,7 @@ func JoinChunks(chunks []*Chunk) (*bytes.Buffer, []*TransformationSummary, error
 	return res, tsList, nil
 }
 
-func BreakPayloadIntoChunks(payload *bytes.Buffer) []*bytes.Buffer {
+func breakPayloadIntoChunks(payload *bytes.Buffer) []*bytes.Buffer {
 	chunkSize := payload.Len()
 	if chunkSize < maxChunkSize {
 		return []*bytes.Buffer{payload}
