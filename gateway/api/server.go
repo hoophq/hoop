@@ -78,6 +78,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 
 	route.GET("/reviews", api.Authenticate, api.ReviewHandler.FindAll)
 	route.GET("/reviews/:id", api.Authenticate, api.ReviewHandler.FindOne)
+	route.PUT("/reviews/:id", api.Authenticate, api.ReviewHandler.Put)
 
 	route.POST("/agents", api.Authenticate, api.AgentHandler.Post)
 	route.GET("/agents", api.Authenticate, api.AgentHandler.FindAll)

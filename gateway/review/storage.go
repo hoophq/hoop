@@ -21,6 +21,14 @@ type (
 		Status       Status   `edn:"review/status"`
 		ReviewGroups []string `edn:"review/review-groups"`
 	}
+
+	XtdbGroup struct {
+		Id         string  `json:"id"          edn:"xt/id"`
+		Group      string  `json:"group"       edn:"review-group/group"`
+		Status     Status  `json:"status"      edn:"review-group/status"`
+		ReviewedBy *string `json:"reviewed_by" edn:"review-group/reviewed-by"`
+		ReviewDate *string `json:"review_date" edn:"review-group/review_date"`
+	}
 )
 
 func (s *Storage) FindAll(context *user.Context) ([]Review, error) {
@@ -53,7 +61,8 @@ func (s *Storage) FindAll(context *user.Context) ([]Review, error) {
 func (s *Storage) FindById(context *user.Context, id string) (*Review, error) {
 	var payload = `{:query {
 		:find [(pull ?review [* {:review/connection [:xt/id :connection/name]}
-                                 {:review/review-groups [*]}
+                                 {:review/review-groups [*
+                                     {:review-group/reviewed-by [:xt/id :user/name :user/email]}]}
                                  {:review/created-by [:xt/id :user/name :user/email]}])]
 		:in [id org]
 		:where [[?review :xt/id id]
@@ -83,7 +92,16 @@ func (s *Storage) Persist(context *user.Context, review *Review) (int64, error) 
 
 	for _, r := range review.ReviewGroups {
 		reviewGroupIds = append(reviewGroupIds, r.Id)
-		rp := st.EntityToMap(&r)
+		xg := &XtdbGroup{
+			Id:         r.Id,
+			Group:      r.Group,
+			Status:     r.Status,
+			ReviewDate: r.ReviewDate,
+		}
+		if r.ReviewedBy != nil {
+			xg.ReviewedBy = &r.ReviewedBy.Id
+		}
+		rp := st.EntityToMap(xg)
 		payload = append(payload, rp)
 	}
 

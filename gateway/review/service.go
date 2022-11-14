@@ -2,7 +2,9 @@ package review
 
 import (
 	"github.com/google/uuid"
+	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/user"
+	"time"
 )
 
 type (
@@ -17,13 +19,13 @@ type (
 	}
 
 	Review struct {
-		Id           string        `json:"id"                      edn:"xt/id"`
-		Session      string        `json:"session"                 edn:"review/session"`
-		Command      string        `json:"command"                 edn:"review/command"`
-		Status       Status        `json:"status"                  edn:"review/status"`
-		CreatedBy    Owner         `json:"created_by"              edn:"review/created-by"`
-		Connection   Connection    `json:"connection"              edn:"review/connection"`
-		ReviewGroups []ReviewGroup `json:"review_groups,omitempty" edn:"review/review-groups"`
+		Id           string     `json:"id"                      edn:"xt/id"`
+		Session      string     `json:"session"                 edn:"review/session"`
+		Command      string     `json:"command"                 edn:"review/command"`
+		Status       Status     `json:"status"                  edn:"review/status"`
+		CreatedBy    Owner      `json:"created_by"              edn:"review/created-by"`
+		Connection   Connection `json:"connection"              edn:"review/connection"`
+		ReviewGroups []Group    `json:"review_groups,omitempty" edn:"review/review-groups"`
 	}
 
 	Owner struct {
@@ -37,12 +39,12 @@ type (
 		Name string `json:"name"         edn:"connection/name"`
 	}
 
-	ReviewGroup struct {
-		Id         string `json:"id"          edn:"xt/id"`
-		Group      string `json:"group"       edn:"review-group/group"`
-		Status     Status `json:"status"      edn:"review-group/status"`
-		ReviewedBy string `json:"reviewed_by" edn:"review-group/reviewed-by"`
-		ReviewDate string `json:"review_date" edn:"review-group/review_date"`
+	Group struct {
+		Id         string  `json:"id"          edn:"xt/id"`
+		Group      string  `json:"group"       edn:"review-group/group"`
+		Status     Status  `json:"status"      edn:"review-group/status"`
+		ReviewedBy *Owner  `json:"reviewed_by" edn:"review-group/reviewed-by"`
+		ReviewDate *string `json:"review_date" edn:"review-group/review_date"`
 	}
 
 	Status string
@@ -80,5 +82,28 @@ func (s *Service) Persist(context *user.Context, review *Review) error {
 }
 
 func (s *Service) Review(context *user.Context, existingReview *Review, status Status) error {
-	return nil
+	reviewsCount := len(existingReview.ReviewGroups)
+	approvedCount := 0
+
+	if status == StatusRejected {
+		existingReview.Status = status
+	}
+
+	for i, r := range existingReview.ReviewGroups {
+		if pb.IsInList(r.Group, context.User.Groups) {
+			t := time.Now().String()
+			existingReview.ReviewGroups[i].Status = status
+			existingReview.ReviewGroups[i].ReviewedBy = &Owner{Id: context.User.Id}
+			existingReview.ReviewGroups[i].ReviewDate = &t
+		}
+		if existingReview.ReviewGroups[i].Status == StatusApproved {
+			approvedCount++
+		}
+	}
+
+	if reviewsCount == approvedCount {
+		existingReview.Status = StatusApproved
+	}
+
+	return s.Persist(context, existingReview)
 }

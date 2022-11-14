@@ -62,10 +62,10 @@ func (r *reviewPlugin) OnReceive(pluginConfig plugin.Config, config []string, pk
 	log.Printf("[%s] Review OnReceive plugin with config %v and pkt %v", pluginConfig.SessionId, config, pkt)
 	switch pb.PacketType(pkt.GetType()) {
 	case pb.PacketExecWriteAgentStdinType:
-		reviewGroups := make([]rv.ReviewGroup, 0)
+		reviewGroups := make([]rv.Group, 0)
 
 		for _, s := range config {
-			reviewGroups = append(reviewGroups, rv.ReviewGroup{
+			reviewGroups = append(reviewGroups, rv.Group{
 				Group:  s,
 				Status: rv.StatusPending,
 			})

@@ -333,6 +333,9 @@ func (s *Server) loadConnectPlugins(ctx *user.Context, config plugin.Config) ([]
 					for _, u := range ctx.User.Groups {
 						cfg = append(cfg, c.Groups[u]...)
 					}
+					if len(cfg) == 0 {
+						cfg = c.Config
+					}
 				}
 				cfg = removeDuplicates(cfg)
 				ep := pluginConfig{

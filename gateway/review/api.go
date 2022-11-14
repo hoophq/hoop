@@ -1,7 +1,9 @@
 package review
 
 import (
+	pb "github.com/runopsio/hoop/common/proto"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/gateway/user"
@@ -35,11 +37,27 @@ func (h *Handler) Put(c *gin.Context) {
 		return
 	}
 
+	isEligibleReviewer := false
+	for _, r := range existingReview.ReviewGroups {
+		if pb.IsInList(r.Group, context.User.Groups) {
+			isEligibleReviewer = true
+			break
+		}
+	}
+
+	if !isEligibleReviewer {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "not eligible for review"})
+		return
+	}
+
 	var r Review
 	if err := c.ShouldBindJSON(&r); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
+
+	status := strings.ToUpper(string(r.Status))
+	r.Status = Status(status)
 
 	if !(r.Status == StatusApproved || r.Status == StatusRejected) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid status"})
@@ -51,7 +69,7 @@ func (h *Handler) Put(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, r)
+	c.JSON(http.StatusOK, existingReview)
 }
 
 func (h *Handler) FindAll(c *gin.Context) {
