@@ -37,6 +37,11 @@ func (h *Handler) Put(c *gin.Context) {
 		return
 	}
 
+	if existingReview.Status != StatusPending {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "review must be at PENDING status"})
+		return
+	}
+
 	isEligibleReviewer := false
 	for _, r := range existingReview.ReviewGroups {
 		if pb.IsInList(r.Group, context.User.Groups) {
