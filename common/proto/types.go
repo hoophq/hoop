@@ -120,3 +120,12 @@ func GobDecodeInto(data []byte, into any) error {
 func BufferedPayload(payload []byte) *bufio.Reader {
 	return bufio.NewReaderSize(bytes.NewBuffer(payload), len(payload))
 }
+
+func IsInList(item string, items []string) bool {
+	for _, i := range items {
+		if i == item {
+			return true
+		}
+	}
+	return false
+}

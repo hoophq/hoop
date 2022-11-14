@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"github.com/runopsio/hoop/gateway/review"
 	"os"
 	"strings"
 
@@ -24,6 +25,7 @@ type (
 		UserHandler       user.Handler
 		PluginHandler     plugin.Handler
 		SessionHandler    session.Handler
+		ReviewHandler     review.Handler
 		SecurityHandler   security.Handler
 		IDProvider        *idp.Provider
 		Profile           string
@@ -73,6 +75,10 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.GET("/connections", api.Authenticate, api.ConnectionHandler.FindAll)
 	route.GET("/connections/:name", api.Authenticate, api.ConnectionHandler.FindOne)
 	route.PUT("/connections/:name", api.Authenticate, api.ConnectionHandler.Put)
+
+	route.GET("/reviews", api.Authenticate, api.ReviewHandler.FindAll)
+	route.GET("/reviews/:id", api.Authenticate, api.ReviewHandler.FindOne)
+	route.PUT("/reviews/:id", api.Authenticate, api.ReviewHandler.Put)
 
 	route.POST("/agents", api.Authenticate, api.AgentHandler.Post)
 	route.GET("/agents", api.Authenticate, api.AgentHandler.FindAll)

@@ -1,6 +1,7 @@
 package user
 
 import (
+	pb "github.com/runopsio/hoop/common/proto"
 	"strings"
 )
 
@@ -139,16 +140,7 @@ func isPublicDomain(domain string) bool {
 }
 
 func (user *User) isAdmin() bool {
-	return isInList(GroupAdmin, user.Groups)
-}
-
-func isInList(item string, items []string) bool {
-	for _, i := range items {
-		if i == item {
-			return true
-		}
-	}
-	return false
+	return pb.IsInList(GroupAdmin, user.Groups)
 }
 
 func isInStatus(status StatusType) bool {

@@ -1,6 +1,7 @@
 package user
 
 import (
+	pb "github.com/runopsio/hoop/common/proto"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -83,7 +84,7 @@ func (a *Handler) Put(c *gin.Context) {
 	// for admins to not auto-exclude themselves from admin by mistake
 	if existingUser.Id == context.User.Id &&
 		existingUser.isAdmin() &&
-		!isInList(GroupAdmin, user.Groups) {
+		!pb.IsInList(GroupAdmin, user.Groups) {
 		user.Groups = append(user.Groups, GroupAdmin)
 	}
 

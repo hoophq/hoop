@@ -39,7 +39,7 @@ type (
 		Name() string
 		OnStartup(config plugin.Config) error
 		OnConnect(p plugin.Config) error
-		OnReceive(sessionID string, config []string, packet *pb.Packet) error
+		OnReceive(pluginConfig plugin.Config, config []string, packet *pb.Packet) error
 		OnDisconnect(p plugin.Config) error
 	}
 )
@@ -156,7 +156,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	s.clientGracefulShutdown(c)
 
 	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
-	clientErr := s.listenClientMessages(stream, c, conn)
+	clientErr := s.listenClientMessages(stream, c, conn, pConfig)
 
 	if err := s.pluginOnDisconnect(pConfig); err != nil {
 		log.Printf("session=%v ua=client - failed processing plugin on-disconnect phase, err=%v", sessionID, err)
@@ -166,7 +166,12 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	return clientErr
 }
 
-func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, c *client.Client, conn *connection.Connection) error {
+func (s *Server) listenClientMessages(
+	stream pb.Transport_ConnectServer,
+	c *client.Client,
+	conn *connection.Connection,
+	config plugin.Config) error {
+
 	ctx := stream.Context()
 
 	for {
@@ -203,7 +208,7 @@ func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, c *clie
 			return status.Errorf(codes.FailedPrecondition, fmt.Sprintf("agent not found for %v", c.AgentId))
 		}
 		log.Printf("receive client packet type [%s] and session id [%s]", pkt.Type, c.SessionID)
-		if err := s.pluginOnReceive(c.SessionID, pkt); err != nil {
+		if err := s.pluginOnReceive(config, pkt); err != nil {
 			log.Printf("plugin reject packet, err=%v", err)
 			return status.Errorf(codes.Internal, "internal error, packet rejected, contact the administrator")
 		}
@@ -313,7 +318,11 @@ func (s *Server) loadConnectPlugins(ctx *user.Context, config plugin.Config) ([]
 		}
 
 		if p.Name() == pluginsaudit.Name {
-			config.ParamsData["audit_storage_writer"] = s.SessionService.Storage.NewGenericStorageWriter()
+			config.ParamsData[pluginsaudit.StorageWriterParam] = s.SessionService.Storage.NewGenericStorageWriter()
+		}
+
+		if p.Name() == pluginsreview.Name {
+			config.ParamsData[pluginsreview.ServiceParam] = &s.ReviewService
 		}
 
 		for _, c := range p1.Connections {
@@ -323,6 +332,9 @@ func (s *Server) loadConnectPlugins(ctx *user.Context, config plugin.Config) ([]
 					cfg = make([]string, 0)
 					for _, u := range ctx.User.Groups {
 						cfg = append(cfg, c.Groups[u]...)
+					}
+					if len(cfg) == 0 {
+						cfg = c.Config
 					}
 				}
 				cfg = removeDuplicates(cfg)
@@ -357,12 +369,12 @@ func (s *Server) pluginOnDisconnect(config plugin.Config) error {
 	return nil
 }
 
-func (s *Server) pluginOnReceive(sessionID string, pkt *pb.Packet) error {
-	plugins := getPlugins(sessionID)
+func (s *Server) pluginOnReceive(config plugin.Config, pkt *pb.Packet) error {
+	plugins := getPlugins(config.SessionId)
 	for _, p := range plugins {
-		if err := p.OnReceive(sessionID, p.config, pkt); err != nil {
+		if err := p.OnReceive(config, p.config, pkt); err != nil {
 			log.Printf("session=%v - plugin %q rejected packet, err=%v",
-				sessionID, p.Name(), err)
+				config.SessionId, p.Name(), err)
 			return err
 		}
 	}

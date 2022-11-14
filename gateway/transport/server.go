@@ -3,6 +3,7 @@ package transport
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/runopsio/hoop/gateway/review"
 	"log"
 	"net"
 	"strings"
@@ -31,6 +32,7 @@ type (
 		UserService          user.Service
 		PluginService        plugin.Service
 		SessionService       session.Service
+		ReviewService        review.Service
 		IDProvider           *idp.Provider
 		Profile              string
 		GcpDLPRawCredentials string

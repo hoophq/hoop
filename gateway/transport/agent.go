@@ -69,19 +69,27 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 		return status.Errorf(codes.Internal, "internal error")
 	}
 
+	config := plugin.Config{
+		Org:           ag.OrgId,
+		Hostname:      ag.Hostname,
+		MachineId:     ag.MachineId,
+		KernelVersion: ag.KernelVersion,
+		ParamsData:    map[string]any{"client": pb.ConnectionOriginAgent},
+	}
+
 	bindAgent(ag.Id, stream)
 	s.agentGracefulShutdown(ag)
 
 	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
-	agentErr := s.listenAgentMessages(ag, stream)
-	if err := s.pluginOnDisconnect(plugin.Config{ParamsData: map[string]any{"client": "agent"}}); err != nil {
+	agentErr := s.listenAgentMessages(config, ag, stream)
+	if err := s.pluginOnDisconnect(config); err != nil {
 		log.Printf("ua=agent - failed processing plugin on-disconnect phase, err=%v", err)
 	}
 	s.disconnectAgent(ag)
 	return agentErr
 }
 
-func (s *Server) listenAgentMessages(ag *agent.Agent, stream pb.Transport_ConnectServer) error {
+func (s *Server) listenAgentMessages(config plugin.Config, ag *agent.Agent, stream pb.Transport_ConnectServer) error {
 	ctx := stream.Context()
 
 	for {
@@ -109,7 +117,7 @@ func (s *Server) listenAgentMessages(ag *agent.Agent, stream pb.Transport_Connec
 			continue
 		}
 		sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
-		if err := s.pluginOnReceive(sessionID, pkt); err != nil {
+		if err := s.pluginOnReceive(config, pkt); err != nil {
 			log.Printf("plugin reject packet, err=%v", err)
 			return status.Errorf(codes.Internal, "internal error, plugin reject packet")
 		}

@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	Name             string = "audit"
-	defaultAuditPath string = "/opt/hoop/auditdb"
+	Name               string = "audit"
+	StorageWriterParam string = "audit_storage_writer"
+	defaultAuditPath   string = "/opt/hoop/auditdb"
 )
 
 var pluginAuditPath string
@@ -65,7 +66,7 @@ func (p *auditPlugin) OnStartup(config plugin.Config) error {
 		return fmt.Errorf("failed creating audit path %v, err=%v", pluginAuditPath, err)
 	}
 
-	storageWriterObj := config.ParamsData["audit_storage_writer"]
+	storageWriterObj := config.ParamsData[StorageWriterParam]
 	storageWriter, ok := storageWriterObj.(StorageWriter)
 
 	if !ok {
@@ -95,7 +96,7 @@ func (p *auditPlugin) OnConnect(config plugin.Config) error {
 	return nil
 }
 
-func (p *auditPlugin) OnReceive(sessionID string, config []string, pkt *pb.Packet) error {
+func (p *auditPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *pb.Packet) error {
 	switch pb.PacketType(pkt.GetType()) {
 	case pb.PacketPGWriteServerType:
 		isSimpleQuery, queryBytes, err := simpleQueryContent(pkt.GetPayload())
@@ -103,13 +104,13 @@ func (p *auditPlugin) OnReceive(sessionID string, config []string, pkt *pb.Packe
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("session-id=%v - failed obtaining simple query data, err=%v", sessionID, err)
+			return fmt.Errorf("session-id=%v - failed obtaining simple query data, err=%v", pluginConfig.SessionId, err)
 		}
-		return p.writeOnReceive(sessionID, 'i', queryBytes)
+		return p.writeOnReceive(pluginConfig.SessionId, 'i', queryBytes)
 	case pb.PacketExecClientWriteStdoutType:
-		return p.writeOnReceive(sessionID, 'o', pkt.GetPayload())
+		return p.writeOnReceive(pluginConfig.SessionId, 'o', pkt.GetPayload())
 	case pb.PacketExecWriteAgentStdinType, pb.PacketExecRunProcType:
-		return p.writeOnReceive(sessionID, 'i', pkt.GetPayload())
+		return p.writeOnReceive(pluginConfig.SessionId, 'i', pkt.GetPayload())
 	}
 	return nil
 }
