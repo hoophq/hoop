@@ -60,7 +60,13 @@ func (s *Storage) FindAll(context *user.Context) ([]Review, error) {
 
 func (s *Storage) FindById(context *user.Context, id string) (*Review, error) {
 	var payload = `{:query {
-		:find [(pull ?review [* {:review/connection [:xt/id :connection/name]}
+		:find [(pull ?review [:xt/id
+                              :review/status
+							  :review/command
+							  :review/session
+							  :review/connection
+							  :review/created-by
+                                 {:review/connection [:xt/id :connection/name]}
                                  {:review/review-groups [*
                                      {:review-group/reviewed-by [:xt/id :user/name :user/email]}]}
                                  {:review/created-by [:xt/id :user/name :user/email]}])]
