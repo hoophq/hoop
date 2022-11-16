@@ -30,9 +30,10 @@ type (
 		packetSpec map[string][]byte
 	}
 	AgentConnectionParams struct {
-		EnvVars    map[string]any
-		CmdList    []string
-		ClientArgs []string
+		EnvVars      map[string]any
+		CmdList      []string
+		ClientArgs   []string
+		DLPInfoTypes []string
 	}
 )
 

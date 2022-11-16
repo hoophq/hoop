@@ -2,16 +2,18 @@ package transport
 
 import (
 	"fmt"
-	"github.com/runopsio/hoop/gateway/plugin"
-	pluginsaudit "github.com/runopsio/hoop/gateway/transport/plugins/audit"
-	pluginsreview "github.com/runopsio/hoop/gateway/transport/plugins/review"
-	"github.com/runopsio/hoop/gateway/user"
 	"io"
 	"log"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
+
+	"github.com/runopsio/hoop/gateway/plugin"
+	pluginsaudit "github.com/runopsio/hoop/gateway/transport/plugins/audit"
+	pluginsdlp "github.com/runopsio/hoop/gateway/transport/plugins/dlp"
+	pluginsreview "github.com/runopsio/hoop/gateway/transport/plugins/review"
+	"github.com/runopsio/hoop/gateway/user"
 
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -57,6 +59,7 @@ func LoadPlugins() {
 	allPlugins = []Plugin{
 		pluginsaudit.New(),
 		pluginsreview.New(),
+		pluginsdlp.New(),
 	}
 }
 
@@ -247,10 +250,18 @@ func (s *Server) processPacketGatewayConnect(pkt *pb.Packet,
 			}
 		}
 	}
+	var infoTypes []string
+	for _, p := range getPlugins(client.SessionID) {
+		if p.Plugin.Name() == pluginsdlp.Name {
+			infoTypes = p.config
+			break
+		}
+	}
 	encConnectionParams, err := pb.GobEncode(&pb.AgentConnectionParams{
-		EnvVars:    conn.Secret,
-		CmdList:    conn.Command,
-		ClientArgs: clientArgs,
+		EnvVars:      conn.Secret,
+		CmdList:      conn.Command,
+		ClientArgs:   clientArgs,
+		DLPInfoTypes: infoTypes,
 	})
 	if err != nil {
 		return fmt.Errorf("failed encoding connection params err=%v", err)
@@ -295,8 +306,7 @@ func (s *Server) clientGracefulShutdown(c *client.Client) {
 		syscall.SIGHUP,
 		syscall.SIGINT,
 		syscall.SIGTERM,
-		syscall.SIGQUIT,
-		syscall.SIGKILL)
+		syscall.SIGQUIT)
 	go func() {
 		<-sigc
 		s.disconnectClient(c)
