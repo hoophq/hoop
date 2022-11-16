@@ -95,7 +95,6 @@ func (a *Agent) doExecWriteAgentStdin(pkt *pb.Packet) {
 	}
 	stdoutWriter := pb.NewStreamWriter(a.client, pb.PacketExecClientWriteStdoutType, spec)
 	if dlpClient, ok := a.connStore.Get(dlpClientKey).(*dlp.Client); ok {
-		fmt.Println("DLPINFO-TYPES->>", connParams.DLPInfoTypes)
 		stdoutWriter = dlp.NewDLPStreamWriter(
 			a.client,
 			dlpClient,
