@@ -1,12 +1,24 @@
-package types
+package proxy
 
-type PacketType byte
+type (
+	contextKey int
+)
+
+const (
+	DefaultBufferSize              = 1 << 24 // 16777216 bytes
+	SessionIDContextKey contextKey = iota
+)
+
+type (
+	PacketType     byte
+	AuthPacketType int
+)
 
 func (t PacketType) Byte() byte {
 	return byte(t)
 }
 
-// http://www.postgresql.org/docs/9.4/static/protocol-message-formats.html
+// client
 const (
 	ClientBind        PacketType = 'B'
 	ClientClose       PacketType = 'C'
@@ -48,8 +60,6 @@ const (
 	ClientCancelRequestMessage uint32 = 80877102
 )
 
-type AuthPacketType int
-
 const (
 	ServerAuthenticationSASL              AuthPacketType = 10
 	ServerAuthenticationSASLContinue      AuthPacketType = 11
@@ -57,4 +67,40 @@ const (
 	ServerAuthenticationMD5Password       AuthPacketType = 5
 	ServerAuthenticationCleartextPassword AuthPacketType = 3
 	ServerAuthenticationOK                AuthPacketType = 0
+)
+
+// server
+type (
+	Severity string
+	Code     string
+)
+
+const (
+	LevelError   Severity = "ERROR"
+	LevelFatal   Severity = "FATAL"
+	LevelPanic   Severity = "PANIC"
+	LevelWarning Severity = "WARNING"
+	LevelNotice  Severity = "NOTICE"
+	LevelDebug   Severity = "DEBUG"
+	LevelInfo    Severity = "INFO"
+	LevelLog     Severity = "LOG"
+)
+
+// Possible values are 'I' if idle (not in a transaction block); 'T' if in a
+// transaction block; or 'E' if in a failed transaction block
+// (queries will be rejected until block is ended).
+const (
+	ServerIdle              = 'I'
+	ServerTransactionBlock  = 'T'
+	ServerTransactionFailed = 'E'
+)
+
+const (
+	// Class 08 - Connection Exception
+	ConnectionFailure Code = "08006"
+	// Class 0A — Feature Not Supported
+	FeatureNotSupported Code = "0A000"
+	// Class 28 — Invalid Authorization Specification
+	InvalidPassword                   Code = "28P01"
+	InvalidAuthorizationSpecification Code = "28000"
 )

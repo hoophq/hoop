@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/binary"
 	"fmt"
@@ -12,9 +13,8 @@ import (
 	"time"
 
 	"github.com/runopsio/hoop/common/memory"
-	"github.com/runopsio/hoop/common/pg"
-	pgtypes "github.com/runopsio/hoop/common/pg/types"
 	pb "github.com/runopsio/hoop/common/proto"
+	pg "github.com/runopsio/hoop/common/proxy"
 )
 
 const (
@@ -136,12 +136,12 @@ func (p *auditPlugin) OnDisconnect(config plugin.Config) error {
 func (p *auditPlugin) OnShutdown() {}
 
 func simpleQueryContent(payload []byte) (bool, []byte, error) {
-	r := pg.NewReader(bytes.NewBuffer(payload))
+	r := bufio.NewReaderSize(bytes.NewBuffer(payload), pg.DefaultBufferSize)
 	typ, err := r.ReadByte()
 	if err != nil {
 		return false, nil, fmt.Errorf("failed reading first byte: %v", err)
 	}
-	if pgtypes.PacketType(typ) != pgtypes.ClientSimpleQuery {
+	if pg.PacketType(typ) != pg.ClientSimpleQuery {
 		return false, nil, nil
 	}
 

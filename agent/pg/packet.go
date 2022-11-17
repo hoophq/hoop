@@ -6,9 +6,10 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	pgtypes "github.com/runopsio/hoop/common/proxy"
 	"io"
 
-	pgtypes "github.com/runopsio/hoop/common/pg/types"
+	pg "github.com/runopsio/hoop/common/proxy"
 )
 
 type Packet struct {
@@ -78,7 +79,7 @@ func (p *Packet) IsCancelRequest() bool {
 }
 
 func NewReader(rd io.Reader) Reader {
-	return bufio.NewReaderSize(rd, DefaultBufferSize)
+	return bufio.NewReaderSize(rd, pg.DefaultBufferSize)
 }
 
 func newPacketWithType(t pgtypes.PacketType) *Packet {
@@ -97,7 +98,7 @@ func DecodeTypedPacket(r Reader) (int, *Packet, error) {
 		return nread, nil, err
 	}
 	pktLen := p.Length() - 4 // length includes itself.
-	if pktLen > DefaultBufferSize || pktLen < 0 {
+	if pktLen > pg.DefaultBufferSize || pktLen < 0 {
 		return nread, nil, fmt.Errorf("max size reached")
 	}
 	p.frame = make([]byte, pktLen)
@@ -115,7 +116,7 @@ func DecodeStartupPacket(startupPacket Reader) (int, *Packet, error) {
 		return nread, nil, err
 	}
 	pktLen := p.Length() - 4 // length includes itself.
-	if pktLen > DefaultBufferSize || pktLen < 0 {
+	if pktLen > pg.DefaultBufferSize || pktLen < 0 {
 		return nread, nil, fmt.Errorf("max size reached")
 	}
 	p.frame = make([]byte, pktLen)

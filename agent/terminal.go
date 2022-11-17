@@ -7,7 +7,7 @@ import (
 	"syscall"
 
 	"github.com/runopsio/hoop/agent/dlp"
-	exec "github.com/runopsio/hoop/common/exec"
+	term "github.com/runopsio/hoop/agent/terminal"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/common/runtime"
 )
@@ -24,7 +24,7 @@ func (a *Agent) doTerminalRunProc(pkt *pb.Packet) {
 		}).Write([]byte(`internal error, failed decoding connection params`))
 		return
 	}
-	cmd, err := exec.NewCommand(connParams.EnvVars,
+	cmd, err := term.NewCommand(connParams.EnvVars,
 		append(connParams.CmdList, connParams.ClientArgs...)...)
 	if err != nil {
 		log.Printf("failed executing command, err=%v", err)
@@ -53,7 +53,7 @@ func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 	sessionIDKey := fmt.Sprintf(cmdStoreKey, sessionID)
 	cmdObj := a.connStore.Get(sessionIDKey)
-	cmd, ok := cmdObj.(*exec.Command)
+	cmd, ok := cmdObj.(*term.Command)
 	if ok {
 		// Write to tty stdin content
 		if err := cmd.WriteTTY(pkt.Payload); err != nil {
@@ -70,7 +70,7 @@ func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {
 		return
 	}
 
-	cmd, err := exec.NewCommand(connParams.EnvVars,
+	cmd, err := term.NewCommand(connParams.EnvVars,
 		append(connParams.CmdList, connParams.ClientArgs...)...)
 	if err != nil {
 		log.Printf("session=%s, tty=true - failed executing command, err=%v", sessionID, err)

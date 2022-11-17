@@ -31,8 +31,8 @@ const (
 	SpecConnectionType            string = "gateway.connection_type"
 	SpecDLPTransformationSummary  string = "dlp.transformation_summary"
 	SpecClientConnectionID        string = "client.connection_id"
-	SpecClientExecExitCodeKey     string = "exec.exit_code"
-	SpecClientExecArgsKey         string = "exec.args"
+	SpecClientExecExitCodeKey     string = "terminal.exit_code"
+	SpecClientExecArgsKey         string = "terminal.args"
 	SpecAgentConnectionParamsKey  string = "agent.connection_params"
 	SpecAgentGCPRawCredentialsKey string = "agent.gcp_credentials"
 

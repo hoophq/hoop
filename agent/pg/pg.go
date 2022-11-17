@@ -6,12 +6,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	pg "github.com/runopsio/hoop/common/proxy"
 	"io"
 	"log"
 )
 
 type (
-	contextKey     int
 	ResponseWriter io.WriteCloser
 	Reader         interface {
 		ReadByte() (byte, error)
@@ -32,11 +32,6 @@ type (
 
 var ErrNoop = errors.New("NOOP")
 
-const (
-	DefaultBufferSize              = 1 << 24 // 16777216 bytes
-	sessionIDContextKey contextKey = iota
-)
-
 type proxy struct {
 	ctx         context.Context
 	w           ResponseWriter
@@ -48,7 +43,7 @@ type proxy struct {
 }
 
 func NewProxy(ctx context.Context, w ResponseWriter, fns ...MiddlewareFn) Proxy {
-	sessionID := ctx.Value(sessionIDContextKey)
+	sessionID := ctx.Value(pg.SessionIDContextKey)
 	cancelCtx, cancelFn := context.WithCancel(ctx)
 	return &proxy{
 		ctx:         cancelCtx,
@@ -59,7 +54,7 @@ func NewProxy(ctx context.Context, w ResponseWriter, fns ...MiddlewareFn) Proxy 
 }
 
 func NewContext(ctx context.Context, sessionID string) context.Context {
-	return context.WithValue(ctx, sessionIDContextKey, sessionID)
+	return context.WithValue(ctx, pg.SessionIDContextKey, sessionID)
 }
 
 func (r *proxy) processPacket(data Reader) error {

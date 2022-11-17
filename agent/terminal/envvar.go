@@ -1,4 +1,4 @@
-package exec
+package terminal
 
 import (
 	"encoding/base64"
