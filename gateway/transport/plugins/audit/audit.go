@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"github.com/runopsio/hoop/common/pg"
 	"github.com/runopsio/hoop/gateway/plugin"
 	"io"
 	"log"
@@ -14,7 +15,6 @@ import (
 
 	"github.com/runopsio/hoop/common/memory"
 	pb "github.com/runopsio/hoop/common/proto"
-	pg "github.com/runopsio/hoop/common/proxy"
 )
 
 const (

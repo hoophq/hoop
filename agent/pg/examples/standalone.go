@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"fmt"
+	proxypg "github.com/runopsio/hoop/common/pg"
 	"log"
 	"net"
 	"os"
@@ -14,7 +15,6 @@ import (
 
 	"github.com/runopsio/hoop/agent/pg"
 	"github.com/runopsio/hoop/agent/pg/middlewares"
-	proxypg "github.com/runopsio/hoop/common/proxy"
 )
 
 const (

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	term "github.com/runopsio/hoop/common/proxy"
+	term "github.com/runopsio/hoop/common/terminal"
 	"io"
 	"log"
 	"os"

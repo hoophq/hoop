@@ -75,7 +75,6 @@ func runConnect(args []string) {
 }
 
 func (c *connect) processPacket(pkt *pb.Packet) {
-	// client agent first connect
 	switch pb.PacketType(pkt.Type) {
 	case pb.PacketClientAgentConnectOKType:
 		sessionID, ok := pkt.Spec[pb.SpecGatewaySessionID]

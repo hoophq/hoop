@@ -1,4 +1,4 @@
-package proxy
+package pg
 
 type (
 	contextKey int
@@ -19,6 +19,7 @@ func (t PacketType) Byte() byte {
 }
 
 // client
+// http://www.postgresql.org/docs/9.4/static/protocol-message-formats.html
 const (
 	ClientBind        PacketType = 'B'
 	ClientClose       PacketType = 'C'

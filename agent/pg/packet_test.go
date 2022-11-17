@@ -2,9 +2,8 @@ package pg
 
 import (
 	"bytes"
+	pgtypes "github.com/runopsio/hoop/common/pg"
 	"testing"
-
-	pgtypes "github.com/runopsio/hoop/common/proxy"
 )
 
 func TestDecodeStartupPacketSSLRequest(t *testing.T) {

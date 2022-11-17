@@ -6,7 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	pg "github.com/runopsio/hoop/common/proxy"
+	"github.com/runopsio/hoop/common/pg"
 	"io"
 	"log"
 )

@@ -3,13 +3,13 @@ package agent
 import (
 	"context"
 	"fmt"
+	pgtypes "github.com/runopsio/hoop/common/pg"
 	"io"
 	"log"
 
 	"github.com/runopsio/hoop/agent/pg"
 	"github.com/runopsio/hoop/agent/pg/middlewares"
 	pb "github.com/runopsio/hoop/common/proto"
-	pgtypes "github.com/runopsio/hoop/common/proxy"
 )
 
 func (a *Agent) processPGProtocol(pkt *pb.Packet) {

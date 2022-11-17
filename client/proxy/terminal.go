@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"fmt"
+	pbterm "github.com/runopsio/hoop/common/terminal"
 	"io"
 	"log"
 	"os"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/creack/pty"
 	pb "github.com/runopsio/hoop/common/proto"
-	pbterm "github.com/runopsio/hoop/common/proxy"
 	"golang.org/x/term"
 )
 

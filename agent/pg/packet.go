@@ -6,10 +6,8 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	pgtypes "github.com/runopsio/hoop/common/proxy"
+	"github.com/runopsio/hoop/common/pg"
 	"io"
-
-	pg "github.com/runopsio/hoop/common/proxy"
 )
 
 type Packet struct {
@@ -49,8 +47,8 @@ func (p *Packet) Length() int {
 	return int(pktLen)
 }
 
-func (p *Packet) Type() pgtypes.PacketType {
-	return pgtypes.PacketType(*p.typ)
+func (p *Packet) Type() pg.PacketType {
+	return pg.PacketType(*p.typ)
 }
 
 func (p *Packet) Dump() {
@@ -62,8 +60,8 @@ func (p *Packet) IsFrontendSSLRequest() bool {
 		v := make([]byte, 4)
 		_ = copy(v, p.frame)
 		sslRequest := binary.BigEndian.Uint32(v)
-		return sslRequest == pgtypes.ClientSSLRequestMessage ||
-			sslRequest == pgtypes.ClientGSSENCRequestMessage
+		return sslRequest == pg.ClientSSLRequestMessage ||
+			sslRequest == pg.ClientGSSENCRequestMessage
 	}
 	return false
 }
@@ -73,7 +71,7 @@ func (p *Packet) IsCancelRequest() bool {
 		v := make([]byte, 4)
 		_ = copy(v, p.frame[:4])
 		cancelRequest := binary.BigEndian.Uint32(v)
-		return cancelRequest == pgtypes.ClientCancelRequestMessage
+		return cancelRequest == pg.ClientCancelRequestMessage
 	}
 	return false
 }
@@ -82,7 +80,7 @@ func NewReader(rd io.Reader) Reader {
 	return bufio.NewReaderSize(rd, pg.DefaultBufferSize)
 }
 
-func newPacketWithType(t pgtypes.PacketType) *Packet {
+func newPacketWithType(t pg.PacketType) *Packet {
 	typ := byte(t)
 	return &Packet{typ: &typ}
 }
@@ -152,7 +150,7 @@ func DecodeStartupPacketWithUsername(startupPacket Reader, pgUsername string) (*
 }
 
 func NewSASLInitialResponsePacket(authData []byte) *Packet {
-	p := newPacketWithType(pgtypes.ClientPassword)
+	p := newPacketWithType(pg.ClientPassword)
 	p.frame = append(p.frame, "SCRAM-SHA-256"...)
 	p.frame = append(p.frame, byte(0))
 	authLength := make([]byte, 4)
@@ -163,27 +161,27 @@ func NewSASLInitialResponsePacket(authData []byte) *Packet {
 }
 
 func NewSASLResponse(authData []byte) *Packet {
-	return newPacketWithType(pgtypes.ClientPassword).
+	return newPacketWithType(pg.ClientPassword).
 		setFrame(authData).
 		setHeaderLength(len(authData) + 4)
 }
 
 func NewPasswordMessage(authData []byte) *Packet {
-	p := newPacketWithType(pgtypes.ClientPassword)
+	p := newPacketWithType(pg.ClientPassword)
 	p.frame = append(p.frame, authData...)
 	return p.setHeaderLength(len(p.frame) + 4)
 }
 
 func NewAuthenticationOK() *Packet {
 	var okPacket [4]byte
-	return newPacketWithType(pgtypes.ServerAuth).
+	return newPacketWithType(pg.ServerAuth).
 		setFrame(okPacket[:]).
 		setHeaderLength(8)
 }
 
 // https://www.postgresql.org/docs/current/protocol-error-fields.html
-func NewErrorPacketResponse(msg string, sev pgtypes.Severity, errCode pgtypes.Code) []*Packet {
-	p := newPacketWithType(pgtypes.ServerErrorResponse)
+func NewErrorPacketResponse(msg string, sev pg.Severity, errCode pg.Code) []*Packet {
+	p := newPacketWithType(pg.ServerErrorResponse)
 	// Severity: ERROR, FATAL, INFO, etc
 	p.frame = append(p.frame, 'S')
 	p.frame = append(p.frame, sev...)
@@ -202,24 +200,24 @@ func NewErrorPacketResponse(msg string, sev pgtypes.Severity, errCode pgtypes.Co
 	p.frame = append(p.frame, '\000', '\000')
 
 	p.setHeaderLength(len(p.frame) + 4)
-	readyPkt := newPacketWithType(pgtypes.ServerReadyForQuery).
-		setFrame([]byte{pgtypes.ServerIdle}).
+	readyPkt := newPacketWithType(pg.ServerReadyForQuery).
+		setFrame([]byte{pg.ServerIdle}).
 		setHeaderLength(1 + 4)
 	return []*Packet{p, readyPkt}
 }
 
 func NewFatalError(msg string) *Packet {
-	p := newPacketWithType(pgtypes.ServerErrorResponse)
+	p := newPacketWithType(pg.ServerErrorResponse)
 	// Severity: ERROR, FATAL, INFO, etc
 	p.frame = append(p.frame, 'S')
-	p.frame = append(p.frame, pgtypes.LevelFatal...)
+	p.frame = append(p.frame, pg.LevelFatal...)
 	p.frame = append(p.frame, '\000')
 	p.frame = append(p.frame, 'V')
-	p.frame = append(p.frame, pgtypes.LevelFatal...)
+	p.frame = append(p.frame, pg.LevelFatal...)
 	p.frame = append(p.frame, '\000')
 	// the SQLSTATE code for the error
 	p.frame = append(p.frame, 'C')
-	p.frame = append(p.frame, pgtypes.ConnectionFailure...)
+	p.frame = append(p.frame, pg.ConnectionFailure...)
 	p.frame = append(p.frame, '\000')
 	// Message: the primary human-readable error message.
 	// This should be accurate but terse (typically one line).

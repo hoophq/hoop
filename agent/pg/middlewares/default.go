@@ -6,12 +6,12 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	pgtypes "github.com/runopsio/hoop/common/pg"
 	"log"
 	"strings"
 
 	"github.com/lib/pq/scram"
 	"github.com/runopsio/hoop/agent/pg"
-	pgtypes "github.com/runopsio/hoop/common/proxy"
 )
 
 type middleware struct {
