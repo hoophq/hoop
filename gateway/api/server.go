@@ -2,9 +2,10 @@ package api
 
 import (
 	"fmt"
-	"github.com/runopsio/hoop/gateway/review"
 	"os"
 	"strings"
+
+	"github.com/runopsio/hoop/gateway/review"
 
 	"github.com/runopsio/hoop/gateway/security"
 	"github.com/runopsio/hoop/gateway/security/idp"
@@ -108,6 +109,7 @@ func (api *Api) CreateTrialEntities() error {
 		Name:   "hooper",
 		Email:  "tester@hoop.dev",
 		Status: "active",
+		Groups: []string{"admin"},
 	}
 
 	a := agent.Agent{

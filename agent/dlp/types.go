@@ -18,41 +18,6 @@ const (
 	maxChunkSize = 62500
 )
 
-var defaultInfoTypes = []*dlppb.InfoType{
-	{Name: "PHONE_NUMBER"},
-	{Name: "AGE"},
-	{Name: "CREDIT_CARD_NUMBER"},
-	{Name: "CREDIT_CARD_TRACK_NUMBER"},
-	{Name: "DATE_OF_BIRTH"},
-	{Name: "EMAIL_ADDRESS"},
-	{Name: "ETHNIC_GROUP"},
-	{Name: "GENDER"},
-	{Name: "IBAN_CODE"},
-	{Name: "HTTP_COOKIE"},
-	{Name: "ICD9_CODE"},
-	{Name: "ICD10_CODE"},
-	{Name: "IMEI_HARDWARE_ID"},
-	{Name: "IP_ADDRESS"},
-	{Name: "STORAGE_SIGNED_URL"},
-	{Name: "URL"},
-	{Name: "VEHICLE_IDENTIFICATION_NUMBER"},
-	{Name: "BRAZIL_CPF_NUMBER"},
-	{Name: "AMERICAN_BANKERS_CUSIP_ID"},
-	{Name: "FDA_CODE"},
-	{Name: "US_ADOPTION_TAXPAYER_IDENTIFICATION_NUMBER"},
-	{Name: "US_BANK_ROUTING_MICR"},
-	{Name: "US_DEA_NUMBER"},
-	{Name: "US_DRIVERS_LICENSE_NUMBER"},
-	{Name: "US_EMPLOYER_IDENTIFICATION_NUMBER"},
-	{Name: "US_HEALTHCARE_NPI"},
-	{Name: "US_INDIVIDUAL_TAXPAYER_IDENTIFICATION_NUMBER"},
-	{Name: "US_PASSPORT"},
-	{Name: "US_PREPARER_TAXPAYER_IDENTIFICATION_NUMBER"},
-	{Name: "US_SOCIAL_SECURITY_NUMBER"},
-	{Name: "US_TOLLFREE_PHONE_NUMBER"},
-	{Name: "US_VEHICLE_IDENTIFICATION_NUMBER"},
-}
-
 type (
 	TransformationSummary struct {
 		Index int
@@ -76,6 +41,8 @@ type (
 		dlpClient  *Client
 		packetType pb.PacketType
 		packetSpec map[string][]byte
+		infoTypes  []string
+		dlpConfig  *DeidentifyConfig
 	}
 	DeidentifyConfig struct {
 		// Character to use to mask the sensitive values, for example, `*` for an

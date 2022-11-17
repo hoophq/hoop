@@ -95,7 +95,12 @@ func (a *Agent) doExecWriteAgentStdin(pkt *pb.Packet) {
 	}
 	stdoutWriter := pb.NewStreamWriter(a.client, pb.PacketExecClientWriteStdoutType, spec)
 	if dlpClient, ok := a.connStore.Get(dlpClientKey).(*dlp.Client); ok {
-		stdoutWriter = dlp.NewDLPStreamWriter(a.client, dlpClient, pb.PacketExecClientWriteStdoutType, spec)
+		stdoutWriter = dlp.NewDLPStreamWriter(
+			a.client,
+			dlpClient,
+			pb.PacketExecClientWriteStdoutType,
+			spec,
+			connParams.DLPInfoTypes)
 	}
 	if err := cmd.RunOnTTY(stdoutWriter, onExecEnd); err != nil {
 		log.Printf("session=%s, tty=true - err=%v", string(sessionID), err)

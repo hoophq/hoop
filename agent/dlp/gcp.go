@@ -33,12 +33,20 @@ func NewDLPClient(ctx context.Context, credentialsJSON []byte) (*Client, error) 
 func NewDLPStreamWriter(client pb.ClientTransport,
 	dlpClient *Client,
 	packetType pb.PacketType,
-	spec map[string][]byte) *streamWriter {
+	spec map[string][]byte,
+	infoTypeList []string) *streamWriter {
+	dlpConfig := &DeidentifyConfig{
+		MaskingCharacter: defaultMaskingCharacter,
+		NumberToMask:     defaultNumberToMask,
+		InfoTypes:        parseInfoTypes(infoTypeList),
+		ProjectID:        dlpClient.GetProjectID(),
+	}
 	return &streamWriter{
 		client:     client,
 		dlpClient:  dlpClient,
 		packetType: packetType,
 		packetSpec: spec,
+		dlpConfig:  dlpConfig,
 	}
 }
 
@@ -49,9 +57,9 @@ func (s *streamWriter) Write(data []byte) (int, error) {
 	}
 	p.Type = s.packetType.String()
 	p.Spec = s.packetSpec
-	if s.dlpClient != nil && len(data) > 30 {
+	if s.dlpClient != nil && len(data) > 30 && len(s.dlpConfig.InfoTypes) > 0 {
 		chunksBuffer := breakPayloadIntoChunks(bytes.NewBuffer(data))
-		redactedChunks := redactChunks(s.dlpClient, s.dlpClient.GetProjectID(), chunksBuffer)
+		redactedChunks := redactChunks(s.dlpClient, s.dlpConfig, chunksBuffer)
 		dataBuffer, tsList, err := joinChunks(redactedChunks)
 		if err != nil {
 			return 0, fmt.Errorf("failed joining chunks, err=%v", err)
@@ -138,13 +146,7 @@ func deidentifyContent(ctx context.Context, client *Client, conf *DeidentifyConf
 // redactChunks process chunks in parallel reordering after the end of each execution.
 // A default timeout is applied for each chunk. If a requests timeout or returns an error the chunk is returned
 // without redacting its content.
-func redactChunks(client *Client, projectID string, chunksBuffer []*bytes.Buffer) []*Chunk {
-	conf := &DeidentifyConfig{
-		MaskingCharacter: defaultMaskingCharacter,
-		NumberToMask:     defaultNumberToMask,
-		InfoTypes:        defaultInfoTypes,
-		ProjectID:        projectID,
-	}
+func redactChunks(client *Client, conf *DeidentifyConfig, chunksBuffer []*bytes.Buffer) []*Chunk {
 	chunkCh := make(chan *Chunk)
 	for idx, chunkBuf := range chunksBuffer {
 		go func(idx int, chunkB *bytes.Buffer) {
@@ -199,4 +201,15 @@ func breakPayloadIntoChunks(payload *bytes.Buffer) []*bytes.Buffer {
 		chunks = append(chunks, bytes.NewBuffer(chunk))
 	}
 	return chunks
+}
+
+func parseInfoTypes(infoTypesList []string) []*dlppb.InfoType {
+	var infoTypes []*dlppb.InfoType
+	for _, infoType := range infoTypesList {
+		if infoType == "" {
+			continue
+		}
+		infoTypes = append(infoTypes, &dlppb.InfoType{Name: infoType})
+	}
+	return infoTypes
 }
