@@ -107,9 +107,9 @@ func (p *auditPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt
 			return fmt.Errorf("session-id=%v - failed obtaining simple query data, err=%v", pluginConfig.SessionId, err)
 		}
 		return p.writeOnReceive(pluginConfig.SessionId, 'i', queryBytes)
-	case pb.PacketExecClientWriteStdoutType:
+	case pb.PacketTerminalClientWriteStdoutType:
 		return p.writeOnReceive(pluginConfig.SessionId, 'o', pkt.GetPayload())
-	case pb.PacketExecWriteAgentStdinType, pb.PacketExecRunProcType:
+	case pb.PacketTerminalWriteAgentStdinType, pb.PacketTerminalRunProcType:
 		return p.writeOnReceive(pluginConfig.SessionId, 'i', pkt.GetPayload())
 	}
 	return nil

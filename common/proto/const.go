@@ -3,19 +3,27 @@ package proto
 import "time"
 
 const (
-	PacketKeepAliveType       PacketType = "KeepAlive"
-	PacketCloseConnectionType PacketType = "CloseConnection"
+	PacketKeepAliveType          PacketType = "KeepAlive"
+	PacketCloseTCPConnectionType PacketType = "CloseTCPConnection"
 
-	PacketGatewayConnectType    PacketType = "Gateway::Connect"
-	PacketAgentConnectType      PacketType = "Agent::Connect"
-	PacketGatewayConnectOKType  PacketType = "Gateway::ConnectOK"
-	PacketGatewayConnectErrType PacketType = "Gateway::ConnectErr"
+	// client starting new connection
+	PacketClientGatewayExecType    PacketType = "Client::Gateway::Exec"
+	PacketClientGatewayConnectType PacketType = "Client::Gateway::Connect"
 
-	PacketExecRunProcType           PacketType = "Exec::RunProc"
-	PacketExecClientWriteStdoutType PacketType = "Exec::WriteClientStdout"
-	PacketExecWriteAgentStdinType   PacketType = "Exec::WriteAgentStdin"
-	PacketExecCloseTermType         PacketType = "Exec::CloseTerm"
+	// agent receiving new client connection
+	PacketClientAgentConnectType PacketType = "Client::Agent::Connect"
 
+	// agent response to client connection
+	PacketClientAgentConnectOKType  PacketType = "Client::Agent::ConnectOK"
+	PacketClientAgentConnectErrType PacketType = "Client::Agent::ConnectErr"
+
+	// terminal messages
+	PacketTerminalRunProcType           PacketType = "Terminal::RunProc"
+	PacketTerminalClientWriteStdoutType PacketType = "Terminal::Client::WriteStdout"
+	PacketTerminalWriteAgentStdinType   PacketType = "Terminal::Agent::WriteStdin"
+	PacketTerminalCloseType             PacketType = "Terminal::Close"
+
+	// PG protocol messages
 	PacketPGWriteServerType PacketType = "PG::WriteServer"
 	PacketPGWriteClientType PacketType = "PG::WriteClient"
 

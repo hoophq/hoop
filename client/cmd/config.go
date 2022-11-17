@@ -3,8 +3,13 @@ package cmd
 import (
 	"fmt"
 	"github.com/BurntSushi/toml"
+	"github.com/briandowns/spinner"
+	"github.com/runopsio/hoop/common/grpc"
+	"github.com/runopsio/hoop/common/memory"
+	pb "github.com/runopsio/hoop/common/proto"
 	"log"
 	"os"
+	"strings"
 )
 
 type (
@@ -67,4 +72,59 @@ func getFilepath() string {
 	}
 
 	return filepath
+}
+
+func clientLogin() *Config {
+	defaultHost := "127.0.0.1"
+	defaultPort := "8010"
+
+	config := loadConfig()
+
+	if config.Host == "" {
+		config.Host = defaultHost
+	}
+
+	if config.Port == "" {
+		config.Port = defaultPort
+	}
+
+	if config.Host != "" &&
+		!strings.HasPrefix(config.Host, defaultHost) &&
+		config.Token == "" {
+		if err := doLogin(nil); err != nil {
+			panic(err)
+		}
+		config = loadConfig()
+	}
+
+	return config
+}
+
+func connectionClient(config *Config, loader *spinner.Spinner, args []string) (*connect, map[string][]byte) {
+	c := &connect{
+		proxyPort:      connectFlags.proxyPort,
+		connStore:      memory.New(),
+		clientArgs:     args[1:],
+		connectionName: args[0],
+		loader:         loader,
+	}
+
+	client, err := grpc.Connect(
+		config.Host+":"+config.Port,
+		config.Token,
+		grpc.WithOption(grpc.OptionConnectionName, args[0]),
+		grpc.WithOption("origin", pb.ConnectionOriginClient))
+	if err != nil {
+		c.printErrorAndExit(err.Error())
+	}
+	spec := map[string][]byte{}
+	if len(c.clientArgs) > 0 {
+		encArgs, err := pb.GobEncode(c.clientArgs)
+		if err != nil {
+			log.Fatalf("failed encoding args, err=%v", err)
+		}
+		spec[string(pb.SpecClientExecArgsKey)] = encArgs
+	}
+	c.client = client
+	return c, spec
 }

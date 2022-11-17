@@ -6,14 +6,11 @@ import (
 	"log"
 	"os"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/briandowns/spinner"
 	"github.com/muesli/termenv"
-	"github.com/runopsio/hoop/client/proxyexec"
-	"github.com/runopsio/hoop/client/proxypg"
-	"github.com/runopsio/hoop/common/grpc"
+	"github.com/runopsio/hoop/client/proxy"
 	"github.com/runopsio/hoop/common/memory"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/spf13/cobra"
@@ -51,67 +48,25 @@ type connect struct {
 }
 
 func runConnect(args []string) {
-	defaultHost := "127.0.0.1"
-	defaultPort := "8010"
-
-	config := loadConfig()
-
-	if config.Host == "" {
-		config.Host = defaultHost
-	}
-
-	if config.Port == "" {
-		config.Port = defaultPort
-	}
-
-	if config.Host != "" &&
-		!strings.HasPrefix(config.Host, defaultHost) &&
-		config.Token == "" {
-		if err := doLogin(nil); err != nil {
-			panic(err)
-		}
-		config = loadConfig()
-	}
+	config := clientLogin()
 
 	loader := spinner.New(spinner.CharSets[78], 70*time.Millisecond)
 	loader.Color("green")
 	loader.Start()
 	loader.Suffix = " connecting to gateway..."
-	c := &connect{
-		proxyPort:      connectFlags.proxyPort,
-		connStore:      memory.New(),
-		clientArgs:     args[1:],
-		connectionName: args[0],
-		loader:         loader,
-	}
 
-	client, err := grpc.Connect(
-		config.Host+":"+config.Port,
-		config.Token,
-		grpc.WithOption(grpc.OptionConnectionName, args[0]),
-		grpc.WithOption("origin", pb.ConnectionOriginClient))
-	if err != nil {
-		c.printErrorAndExit(err.Error())
-	}
-	loader.Suffix = " validating connection..."
-	spec := map[string][]byte{}
-	if len(c.clientArgs) > 0 {
-		encArgs, err := pb.GobEncode(c.clientArgs)
-		if err != nil {
-			log.Fatalf("failed encoding args, err=%v", err)
-		}
-		spec[string(pb.SpecClientExecArgsKey)] = encArgs
-	}
-	c.client = client
-	if err := client.Send(&pb.Packet{
-		Type: pb.PacketGatewayConnectType.String(),
+	c, spec := connectionClient(config, loader, args)
+
+	if err := c.client.Send(&pb.Packet{
+		Type: pb.PacketClientGatewayConnectType.String(),
 		Spec: spec,
 	}); err != nil {
-		_, _ = client.Close()
+		_, _ = c.client.Close()
 		c.printErrorAndExit("failed connecting to gateway, err=%v", err)
 	}
+
 	for {
-		pkt, err := client.Recv()
+		pkt, err := c.client.Recv()
 		c.processGracefulExit(err)
 		if pkt != nil {
 			c.processPacket(pkt)
@@ -120,47 +75,9 @@ func runConnect(args []string) {
 }
 
 func (c *connect) processPacket(pkt *pb.Packet) {
-	c.processAgentConnectPhase(pkt)
-	c.processPGProtocol(pkt)
-	c.processExec(pkt)
-}
-
-func (c *connect) processGracefulExit(err error) {
-	if err == nil {
-		return
-	}
-	c.loader.Stop()
-	for sessionID, obj := range c.connStore.List() {
-		switch v := obj.(type) {
-		case *proxyexec.Terminal:
-			v.Close()
-			if err == io.EOF {
-				os.Exit(0)
-			}
-			fmt.Printf("\n\n")
-			c.printErrorAndExit(err.Error())
-		case *proxypg.Server:
-			v.PacketCloseConnection(sessionID)
-			time.Sleep(time.Millisecond * 500)
-			if err == io.EOF {
-				os.Exit(0)
-			}
-			c.printErrorAndExit(err.Error())
-		}
-	}
-	c.printErrorAndExit(err.Error())
-}
-
-func (c *connect) printHeader(sessionID string) {
-	termenv.NewOutput(os.Stdout).ClearScreen()
-	s := termenv.String("connection: %s | session: %s").Faint()
-	fmt.Printf(s.String(), c.connectionName, string(sessionID))
-	fmt.Println()
-}
-
-func (c *connect) processAgentConnectPhase(pkt *pb.Packet) {
+	// client agent first connect
 	switch pb.PacketType(pkt.Type) {
-	case pb.PacketGatewayConnectOKType:
+	case pb.PacketClientAgentConnectOKType:
 		sessionID, ok := pkt.Spec[pb.SpecGatewaySessionID]
 		if !ok || sessionID == nil {
 			c.processGracefulExit(fmt.Errorf("internal error, session not found"))
@@ -169,7 +86,7 @@ func (c *connect) processAgentConnectPhase(pkt *pb.Packet) {
 		switch string(connnectionType) {
 		case "postgres":
 			// start postgres server
-			pgp := proxypg.New(c.proxyPort, c.client)
+			pgp := proxy.NewPGServer(c.proxyPort, c.client)
 			if err := pgp.Serve(string(sessionID)); err != nil {
 				c.processGracefulExit(err)
 			}
@@ -190,7 +107,7 @@ func (c *connect) processAgentConnectPhase(pkt *pb.Packet) {
 			// c.handleCmdInterrupt()
 			c.loader.Stop()
 			c.client.StartKeepAlive()
-			term := proxyexec.New(c.client)
+			term := proxy.NewTerminal(c.client)
 			c.printHeader(string(sessionID))
 			c.connStore.Set(string(sessionID), term)
 			if err := term.ConnecWithTTY(); err != nil {
@@ -199,20 +116,17 @@ func (c *connect) processAgentConnectPhase(pkt *pb.Packet) {
 		default:
 			c.processGracefulExit(fmt.Errorf(`connection type %q not implemented`, string(connnectionType)))
 		}
-	case pb.PacketGatewayConnectErrType:
+	case pb.PacketClientAgentConnectErrType:
 		sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 		errMsg := fmt.Errorf("session=%s - failed connecting with gateway, err=%v",
 			string(sessionID), string(pkt.GetPayload()))
 		c.processGracefulExit(errMsg)
-	}
-}
 
-func (c *connect) processPGProtocol(pkt *pb.Packet) {
-	switch pb.PacketType(pkt.Type) {
+	// pg protocol messages
 	case pb.PacketPGWriteClientType:
 		sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 		pgpObj := c.connStore.Get(string(sessionID))
-		pgp, ok := pgpObj.(*proxypg.Server)
+		pgp, ok := pgpObj.(*proxy.PGServer)
 		if !ok {
 			return
 		}
@@ -221,33 +135,59 @@ func (c *connect) processPGProtocol(pkt *pb.Packet) {
 		if err != nil {
 			c.processGracefulExit(fmt.Errorf("failed writing to client, err=%v", err))
 		}
-	case pb.PacketCloseConnectionType:
+	case pb.PacketCloseTCPConnectionType:
 		sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 		pgpObj := c.connStore.Get(string(sessionID))
-		if pgp, ok := pgpObj.(*proxypg.Server); ok {
+		if pgp, ok := pgpObj.(*proxy.PGServer); ok {
 			pgp.PacketCloseConnection(string(pkt.Spec[pb.SpecClientConnectionID]))
 		}
-	}
-}
 
-func (c *connect) processExec(pkt *pb.Packet) {
-	if pb.PacketType(pkt.Type) != pb.PacketExecCloseTermType &&
-		pb.PacketType(pkt.Type) != pb.PacketExecClientWriteStdoutType {
-		return
-	}
-	switch pb.PacketType(pkt.Type) {
-	case pb.PacketExecClientWriteStdoutType:
+	// process exec
+	case pb.PacketTerminalClientWriteStdoutType:
 		sessionID := pkt.Spec[pb.SpecGatewaySessionID]
-		if term, ok := c.connStore.Get(string(sessionID)).(*proxyexec.Terminal); ok {
+		if term, ok := c.connStore.Get(string(sessionID)).(*proxy.Terminal); ok {
 			_, _ = term.ProcessPacketWriteStdout(pkt)
 		}
-	case pb.PacketExecCloseTermType:
+	case pb.PacketTerminalCloseType:
 		sessionID := pkt.Spec[pb.SpecGatewaySessionID]
-		if term, ok := c.connStore.Get(string(sessionID)).(*proxyexec.Terminal); ok {
+		if term, ok := c.connStore.Get(string(sessionID)).(*proxy.Terminal); ok {
 			exitCode := term.ProcessPacketCloseTerm(pkt)
 			os.Exit(exitCode)
 		}
 	}
+}
+
+func (c *connect) processGracefulExit(err error) {
+	if err == nil {
+		return
+	}
+	c.loader.Stop()
+	for sessionID, obj := range c.connStore.List() {
+		switch v := obj.(type) {
+		case *proxy.Terminal:
+			v.Close()
+			if err == io.EOF {
+				os.Exit(0)
+			}
+			fmt.Printf("\n\n")
+			c.printErrorAndExit(err.Error())
+		case *proxy.PGServer:
+			v.PacketCloseConnection(sessionID)
+			time.Sleep(time.Millisecond * 500)
+			if err == io.EOF {
+				os.Exit(0)
+			}
+			c.printErrorAndExit(err.Error())
+		}
+	}
+	c.printErrorAndExit(err.Error())
+}
+
+func (c *connect) printHeader(sessionID string) {
+	termenv.NewOutput(os.Stdout).ClearScreen()
+	s := termenv.String("connection: %s | session: %s").Faint()
+	fmt.Printf(s.String(), c.connectionName, string(sessionID))
+	fmt.Println()
 }
 
 func (c *connect) printErrorAndExit(format string, v ...any) {

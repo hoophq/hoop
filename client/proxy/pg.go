@@ -1,4 +1,4 @@
-package proxypg
+package proxy
 
 import (
 	"fmt"
@@ -13,25 +13,25 @@ import (
 
 const defaultPostgresPort = "5433"
 
-type Server struct {
+type PGServer struct {
 	listenPort      string
 	client          pb.ClientTransport
 	connectionStore memory.Store
 	listener        net.Listener
 }
 
-func New(listenPort string, client pb.ClientTransport) *Server {
+func NewPGServer(listenPort string, client pb.ClientTransport) *PGServer {
 	if listenPort == "" {
 		listenPort = defaultPostgresPort
 	}
-	return &Server{
+	return &PGServer{
 		listenPort:      listenPort,
 		client:          client,
 		connectionStore: memory.New(),
 	}
 }
 
-func (p *Server) Serve(sessionID string) error {
+func (p *PGServer) Serve(sessionID string) error {
 	listenAddr := fmt.Sprintf("127.0.0.1:%s", p.listenPort)
 	lis, err := net.Listen("tcp4", listenAddr)
 	if err != nil {
@@ -53,7 +53,7 @@ func (p *Server) Serve(sessionID string) error {
 	return nil
 }
 
-func (p *Server) serveConn(sessionID, connectionID string, pgClient net.Conn) {
+func (p *PGServer) serveConn(sessionID, connectionID string, pgClient net.Conn) {
 	defer func() {
 		log.Printf("session=%v | conn=%s | remote=%s - closing tcp connection",
 			sessionID, connectionID, pgClient.RemoteAddr())
@@ -63,7 +63,7 @@ func (p *Server) serveConn(sessionID, connectionID string, pgClient net.Conn) {
 			log.Printf("failed closing client connection, err=%v", err)
 		}
 		_ = p.client.Send(&pb.Packet{
-			Type: pb.PacketCloseConnectionType.String(),
+			Type: pb.PacketCloseTCPConnectionType.String(),
 			Spec: map[string][]byte{
 				pb.SpecClientConnectionID: []byte(connectionID),
 				pb.SpecGatewaySessionID:   []byte(sessionID),
@@ -83,7 +83,7 @@ func (p *Server) serveConn(sessionID, connectionID string, pgClient net.Conn) {
 	}
 }
 
-func (p *Server) PacketWriteClient(connectionID string, pkt *pb.Packet) (int, error) {
+func (p *PGServer) PacketWriteClient(connectionID string, pkt *pb.Packet) (int, error) {
 	conn, err := p.getConnection(connectionID)
 	if err != nil {
 		return 0, err
@@ -91,14 +91,14 @@ func (p *Server) PacketWriteClient(connectionID string, pkt *pb.Packet) (int, er
 	return conn.Write(pkt.Payload)
 }
 
-func (p *Server) PacketCloseConnection(connectionID string) {
+func (p *PGServer) PacketCloseConnection(connectionID string) {
 	if conn, err := p.getConnection(connectionID); err == nil {
 		_ = conn.Close()
 	}
 	_ = p.listener.Close()
 }
 
-func (p *Server) getConnection(connectionID string) (io.WriteCloser, error) {
+func (p *PGServer) getConnection(connectionID string) (io.WriteCloser, error) {
 	connWrapperObj := p.connectionStore.Get(connectionID)
 	conn, ok := connWrapperObj.(io.WriteCloser)
 	if !ok {
@@ -107,6 +107,6 @@ func (p *Server) getConnection(connectionID string) (io.WriteCloser, error) {
 	return conn, nil
 }
 
-func (p *Server) ListenPort() string {
+func (p *PGServer) ListenPort() string {
 	return p.listenPort
 }

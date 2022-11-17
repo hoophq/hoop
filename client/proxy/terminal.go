@@ -1,4 +1,4 @@
-package proxyexec
+package proxy
 
 import (
 	"fmt"
@@ -21,7 +21,7 @@ type (
 	}
 )
 
-func New(client pb.ClientTransport) *Terminal {
+func NewTerminal(client pb.ClientTransport) *Terminal {
 	return &Terminal{client: client}
 }
 
@@ -61,7 +61,7 @@ func (t *Terminal) ConnecWithTTY() error {
 	sig <- pbexec.SIGWINCH
 
 	go func() {
-		sw := pb.NewStreamWriter(t.client, pb.PacketExecWriteAgentStdinType, nil)
+		sw := pb.NewStreamWriter(t.client, pb.PacketTerminalWriteAgentStdinType, nil)
 		_, _ = sw.Write(pbexec.TermEnterKeyStrokeType)
 		// TODO: check errors
 		_, _ = io.Copy(sw, os.Stdin)

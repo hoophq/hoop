@@ -229,15 +229,15 @@ func (s *Server) processClientPacket(
 	conn *connection.Connection,
 	agentStream pb.Transport_ConnectServer) error {
 	switch pb.PacketType(pkt.Type) {
-	case pb.PacketGatewayConnectType:
-		return s.processPacketGatewayConnect(pkt, client, conn, agentStream)
+	case pb.PacketClientGatewayConnectType:
+		return s.processClientConnect(pkt, client, conn, agentStream)
 	default:
 		_ = agentStream.Send(pkt)
 	}
 	return nil
 }
 
-func (s *Server) processPacketGatewayConnect(pkt *pb.Packet,
+func (s *Server) processClientConnect(pkt *pb.Packet,
 	client *client.Client,
 	conn *connection.Connection,
 	agentStream pb.Transport_ConnectServer) error {
@@ -275,7 +275,7 @@ func (s *Server) processPacketGatewayConnect(pkt *pb.Packet,
 		pktSpec[pb.SpecAgentGCPRawCredentialsKey] = []byte(s.GcpDLPRawCredentials)
 	}
 	_ = agentStream.Send(&pb.Packet{
-		Type: pb.PacketAgentConnectType.String(),
+		Type: pb.PacketClientAgentConnectType.String(),
 		Spec: pktSpec,
 	})
 	return nil

@@ -12,25 +12,14 @@ import (
 	"github.com/runopsio/hoop/common/runtime"
 )
 
-func (a *Agent) processExec(pkt *pb.Packet) {
-	switch pb.PacketType(pkt.Type) {
-	case pb.PacketExecRunProcType:
-		a.doExecRunProc(pkt)
-	case pb.PacketExecWriteAgentStdinType:
-		a.doExecWriteAgentStdin(pkt)
-	case pb.PacketExecCloseTermType:
-		a.doExecCloseTerm(pkt)
-	}
-}
-
-func (a *Agent) doExecRunProc(pkt *pb.Packet) {
+func (a *Agent) doTerminalRunProc(pkt *pb.Packet) {
 	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 	encConnectionParams := pkt.Spec[pb.SpecAgentConnectionParamsKey]
 	var connParams pb.AgentConnectionParams
 	if err := pb.GobDecodeInto(encConnectionParams, &connParams); err != nil {
 		// TODO: send error
 		log.Printf("failed decoding connection params=%#v, err=%v", encConnectionParams, err)
-		_, _ = pb.NewStreamWriter(a.client, pb.PacketExecCloseTermType, map[string][]byte{
+		_, _ = pb.NewStreamWriter(a.client, pb.PacketTerminalCloseType, map[string][]byte{
 			pb.SpecGatewaySessionID: sessionID,
 		}).Write([]byte(`internal error, failed decoding connection params`))
 		return
@@ -39,18 +28,18 @@ func (a *Agent) doExecRunProc(pkt *pb.Packet) {
 		append(connParams.CmdList, connParams.ClientArgs...)...)
 	if err != nil {
 		log.Printf("failed executing command, err=%v", err)
-		_, _ = pb.NewStreamWriter(a.client, pb.PacketExecCloseTermType, map[string][]byte{
+		_, _ = pb.NewStreamWriter(a.client, pb.PacketTerminalCloseType, map[string][]byte{
 			pb.SpecGatewaySessionID: sessionID,
 		}).Write([]byte(`failed executing command`))
 		return
 	}
 	log.Printf("session=%v, tty=false - executing command=%q", string(sessionID), cmd.String())
 	spec := map[string][]byte{pb.SpecGatewaySessionID: sessionID}
-	stdoutWriter := pb.NewStreamWriter(a.client, pb.PacketExecClientWriteStdoutType, spec)
+	stdoutWriter := pb.NewStreamWriter(a.client, pb.PacketTerminalClientWriteStdoutType, spec)
 	onExecEnd := func(exitCode int, errMsg string, v ...any) {
 		errMsg = fmt.Sprintf(errMsg, v...)
 		spec[pb.SpecClientExecExitCodeKey] = []byte(strconv.Itoa(exitCode))
-		_, _ = pb.NewStreamWriter(a.client, pb.PacketExecCloseTermType, spec).
+		_, _ = pb.NewStreamWriter(a.client, pb.PacketTerminalCloseType, spec).
 			Write([]byte(errMsg))
 	}
 	// TODO: add client args
@@ -60,7 +49,7 @@ func (a *Agent) doExecRunProc(pkt *pb.Packet) {
 	a.connStore.Set(fmt.Sprintf("proc:%v", sessionID), cmd.Pid())
 }
 
-func (a *Agent) doExecWriteAgentStdin(pkt *pb.Packet) {
+func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 	sessionIDKey := fmt.Sprintf(cmdStoreKey, sessionID)
 	cmdObj := a.connStore.Get(sessionIDKey)
@@ -93,12 +82,12 @@ func (a *Agent) doExecWriteAgentStdin(pkt *pb.Packet) {
 	onExecEnd := func(exitCode int, errMsg string, v ...any) {
 		a.sendCloseTerm(sessionID, fmt.Sprintf(errMsg, v...), strconv.Itoa(exitCode))
 	}
-	stdoutWriter := pb.NewStreamWriter(a.client, pb.PacketExecClientWriteStdoutType, spec)
+	stdoutWriter := pb.NewStreamWriter(a.client, pb.PacketTerminalClientWriteStdoutType, spec)
 	if dlpClient, ok := a.connStore.Get(dlpClientKey).(*dlp.Client); ok {
 		stdoutWriter = dlp.NewDLPStreamWriter(
 			a.client,
 			dlpClient,
-			pb.PacketExecClientWriteStdoutType,
+			pb.PacketTerminalClientWriteStdoutType,
 			spec,
 			connParams.DLPInfoTypes)
 	}
@@ -108,9 +97,9 @@ func (a *Agent) doExecWriteAgentStdin(pkt *pb.Packet) {
 	a.connStore.Set(sessionIDKey, cmd)
 }
 
-func (a *Agent) doExecCloseTerm(pkt *pb.Packet) {
+func (a *Agent) doTerminalCloseTerm(pkt *pb.Packet) {
 	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
-	log.Printf("session=%v - received %v", string(sessionID), pb.PacketExecCloseTermType)
+	log.Printf("session=%v - received %v", string(sessionID), pb.PacketTerminalCloseType)
 	procPidObj := a.connStore.Get(fmt.Sprintf("proc:%s", sessionID))
 	if procPid, _ := procPidObj.(int); procPid > 0 {
 		log.Printf("sending SIGINT signal to process %v ...", procPid)
@@ -123,5 +112,5 @@ func (a *Agent) sendCloseTerm(sessionID, msg string, exitCode string) {
 	if exitCode != "" {
 		spec[pb.SpecClientExecExitCodeKey] = []byte(exitCode)
 	}
-	_, _ = pb.NewStreamWriter(a.client, pb.PacketExecCloseTermType, spec).Write([]byte(msg))
+	_, _ = pb.NewStreamWriter(a.client, pb.PacketTerminalCloseType, spec).Write([]byte(msg))
 }
