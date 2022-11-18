@@ -7,14 +7,14 @@ package main
 import (
 	"context"
 	"fmt"
+	proxypg "github.com/runopsio/hoop/common/pg"
 	"log"
 	"net"
 	"os"
 	"time"
 
-	"github.com/runopsio/hoop/common/pg"
-	"github.com/runopsio/hoop/common/pg/middlewares"
-	"github.com/runopsio/hoop/common/pg/types"
+	"github.com/runopsio/hoop/agent/pg"
+	"github.com/runopsio/hoop/agent/pg/middlewares"
 )
 
 const (
@@ -76,7 +76,7 @@ func serveConn(pgClient, pgServer net.Conn) {
 	if pkt.IsFrontendSSLRequest() {
 		fmt.Println("--> ssl request packet")
 		// intercept and send back to client that the serve does not accept ssl!
-		if _, err := pgClient.Write([]byte{types.ServerSSLNotSupported.Byte()}); err != nil {
+		if _, err := pgClient.Write([]byte{proxypg.ServerSSLNotSupported.Byte()}); err != nil {
 			log.Println(err)
 			return
 		}

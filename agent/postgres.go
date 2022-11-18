@@ -3,19 +3,16 @@ package agent
 import (
 	"context"
 	"fmt"
+	pgtypes "github.com/runopsio/hoop/common/pg"
 	"io"
 	"log"
 
-	"github.com/runopsio/hoop/common/pg"
-	"github.com/runopsio/hoop/common/pg/middlewares"
-	pgtypes "github.com/runopsio/hoop/common/pg/types"
+	"github.com/runopsio/hoop/agent/pg"
+	"github.com/runopsio/hoop/agent/pg/middlewares"
 	pb "github.com/runopsio/hoop/common/proto"
 )
 
 func (a *Agent) processPGProtocol(pkt *pb.Packet) {
-	if pb.PacketType(pkt.Type) != pb.PacketPGWriteServerType {
-		return
-	}
 	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 	swPgClient := pb.NewStreamWriter(a.client, pb.PacketPGWriteClientType, pkt.Spec)
 	envObj := a.connStore.Get(string(sessionID))

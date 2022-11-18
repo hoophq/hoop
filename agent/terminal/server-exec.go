@@ -1,9 +1,10 @@
-package exec
+package terminal
 
 import (
 	"bytes"
 	"errors"
 	"fmt"
+	term "github.com/runopsio/hoop/common/terminal"
 	"io"
 	"log"
 	"os"
@@ -49,7 +50,7 @@ func (c *Command) Pid() int {
 	return -1
 }
 
-// OnPreExec execute all pre exec env functions
+// OnPreExec execute all pre terminal env functions
 func (c *Command) OnPreExec() error {
 	for _, env := range c.envStore.store {
 		if env.OnPreExec == nil {
@@ -62,7 +63,7 @@ func (c *Command) OnPreExec() error {
 	return nil
 }
 
-// OnPostExec execute all post exec env functions
+// OnPostExec execute all post terminal env functions
 func (c *Command) OnPostExec() error {
 	for _, env := range c.envStore.store {
 		if env.OnPostExec == nil {
@@ -78,21 +79,21 @@ func (c *Command) OnPostExec() error {
 func (c *Command) Run(streamWriter io.WriteCloser, stdinInput []byte, onExecEnd OnExecEndFn, clientArgs ...string) error {
 	pipeStdout, err := c.cmd.StdoutPipe()
 	if err != nil {
-		onExecEnd(InternalErrorExitCode, "internal error, failed returning stdout pipe")
+		onExecEnd(term.InternalErrorExitCode, "internal error, failed returning stdout pipe")
 		return err
 	}
 	pipeStderr, err := c.cmd.StderrPipe()
 	if err != nil {
-		onExecEnd(InternalErrorExitCode, "internal error, failed returning stderr pipe")
+		onExecEnd(term.InternalErrorExitCode, "internal error, failed returning stderr pipe")
 		return err
 	}
 	if err := c.OnPreExec(); err != nil {
-		onExecEnd(InternalErrorExitCode, "internal error, failed executing pre command")
+		onExecEnd(term.InternalErrorExitCode, "internal error, failed executing pre command")
 		return fmt.Errorf("failed executing pre command, err=%v", err)
 	}
 	var stdin bytes.Buffer
 	c.cmd.Stdin = &stdin
-	exitCode := InternalErrorExitCode
+	exitCode := term.InternalErrorExitCode
 	if err := c.cmd.Start(); err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
 			// path not found error exit code
@@ -102,7 +103,7 @@ func (c *Command) Run(streamWriter io.WriteCloser, stdinInput []byte, onExecEnd 
 		return err
 	}
 	if _, err := stdin.Write(stdinInput); err != nil {
-		onExecEnd(InternalErrorExitCode, "internal error, failed writing input")
+		onExecEnd(term.InternalErrorExitCode, "internal error, failed writing input")
 		return err
 	}
 	copyBuffer(streamWriter, pipeStdout, 1024, "stdout")
@@ -115,7 +116,7 @@ func (c *Command) Run(streamWriter io.WriteCloser, stdinInput []byte, onExecEnd 
 			if exErr, ok := err.(*exec.ExitError); ok {
 				exitCode = exErr.ExitCode()
 				if exitCode == -1 {
-					exitCode = InternalErrorExitCode
+					exitCode = term.InternalErrorExitCode
 				}
 			}
 		}
@@ -140,7 +141,7 @@ func (c *Command) RunOnTTY(stdoutWriter io.WriteCloser, onExecEnd OnExecEndFn) e
 	c.ptty = ptmx
 	// Handle pty size.
 	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, SIGWINCH)
+	signal.Notify(ch, term.SIGWINCH)
 	go func() {
 		for range ch {
 			if err := pty.InheritSize(os.Stdin, ptmx); err != nil {
@@ -148,7 +149,7 @@ func (c *Command) RunOnTTY(stdoutWriter io.WriteCloser, onExecEnd OnExecEndFn) e
 			}
 		}
 	}()
-	ch <- SIGWINCH                                // Initial resize.
+	ch <- term.SIGWINCH                           // Initial resize.
 	defer func() { signal.Stop(ch); close(ch) }() // Cleanup signals when done.
 
 	go func() {

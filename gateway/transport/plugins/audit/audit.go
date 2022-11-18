@@ -1,9 +1,11 @@
 package audit
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"github.com/runopsio/hoop/common/pg"
 	"github.com/runopsio/hoop/gateway/plugin"
 	"io"
 	"log"
@@ -12,8 +14,6 @@ import (
 	"time"
 
 	"github.com/runopsio/hoop/common/memory"
-	"github.com/runopsio/hoop/common/pg"
-	pgtypes "github.com/runopsio/hoop/common/pg/types"
 	pb "github.com/runopsio/hoop/common/proto"
 )
 
@@ -107,9 +107,9 @@ func (p *auditPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt
 			return fmt.Errorf("session-id=%v - failed obtaining simple query data, err=%v", pluginConfig.SessionId, err)
 		}
 		return p.writeOnReceive(pluginConfig.SessionId, 'i', queryBytes)
-	case pb.PacketExecClientWriteStdoutType:
+	case pb.PacketTerminalClientWriteStdoutType:
 		return p.writeOnReceive(pluginConfig.SessionId, 'o', pkt.GetPayload())
-	case pb.PacketExecWriteAgentStdinType, pb.PacketExecRunProcType:
+	case pb.PacketTerminalWriteAgentStdinType, pb.PacketTerminalRunProcType:
 		return p.writeOnReceive(pluginConfig.SessionId, 'i', pkt.GetPayload())
 	}
 	return nil
@@ -136,12 +136,12 @@ func (p *auditPlugin) OnDisconnect(config plugin.Config) error {
 func (p *auditPlugin) OnShutdown() {}
 
 func simpleQueryContent(payload []byte) (bool, []byte, error) {
-	r := pg.NewReader(bytes.NewBuffer(payload))
+	r := bufio.NewReaderSize(bytes.NewBuffer(payload), pg.DefaultBufferSize)
 	typ, err := r.ReadByte()
 	if err != nil {
 		return false, nil, fmt.Errorf("failed reading first byte: %v", err)
 	}
-	if pgtypes.PacketType(typ) != pgtypes.ClientSimpleQuery {
+	if pg.PacketType(typ) != pg.ClientSimpleQuery {
 		return false, nil, nil
 	}
 

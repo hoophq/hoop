@@ -61,7 +61,7 @@ func (r *reviewPlugin) OnConnect(config plugin.Config) error {
 func (r *reviewPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *pb.Packet) error {
 	log.Printf("[%s] Review OnReceive plugin with config %v and pkt %v", pluginConfig.SessionId, config, pkt)
 	switch pb.PacketType(pkt.GetType()) {
-	case pb.PacketExecWriteAgentStdinType:
+	case pb.PacketTerminalWriteAgentStdinType:
 		reviewGroups := make([]rv.Group, 0)
 
 		for _, s := range config {

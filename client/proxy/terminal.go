@@ -1,7 +1,8 @@
-package proxyexec
+package proxy
 
 import (
 	"fmt"
+	pbterm "github.com/runopsio/hoop/common/terminal"
 	"io"
 	"log"
 	"os"
@@ -9,7 +10,6 @@ import (
 	"strconv"
 
 	"github.com/creack/pty"
-	pbexec "github.com/runopsio/hoop/common/exec"
 	pb "github.com/runopsio/hoop/common/proto"
 	"golang.org/x/term"
 )
@@ -21,7 +21,7 @@ type (
 	}
 )
 
-func New(client pb.ClientTransport) *Terminal {
+func NewTerminal(client pb.ClientTransport) *Terminal {
 	return &Terminal{client: client}
 }
 
@@ -46,23 +46,23 @@ func (t *Terminal) ConnecWithTTY() error {
 
 	// Handle pty size.
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, pbexec.SIGWINCH)
+	signal.Notify(sig, pbterm.SIGWINCH)
 	// TODO: make resize to propagate remotely!
 	go func() {
 		for {
 			switch <-sig {
-			case pbexec.SIGWINCH:
+			case pbterm.SIGWINCH:
 				if err := pty.InheritSize(os.Stdin, ptty); err != nil {
 					log.Printf("error resizing pty, err=%v", err)
 				}
 			}
 		}
 	}()
-	sig <- pbexec.SIGWINCH
+	sig <- pbterm.SIGWINCH
 
 	go func() {
-		sw := pb.NewStreamWriter(t.client, pb.PacketExecWriteAgentStdinType, nil)
-		_, _ = sw.Write(pbexec.TermEnterKeyStrokeType)
+		sw := pb.NewStreamWriter(t.client, pb.PacketTerminalWriteAgentStdinType, nil)
+		_, _ = sw.Write(pbterm.TermEnterKeyStrokeType)
 		// TODO: check errors
 		_, _ = io.Copy(sw, os.Stdin)
 	}()
@@ -85,7 +85,7 @@ func (t *Terminal) ProcessPacketCloseTerm(pkt *pb.Packet) int {
 	if exitCodeStr == "" || err != nil {
 		// End with a custom exit code, because we don't
 		// know what returned from the remote terminal
-		exitCode = pbexec.InternalErrorExitCode
+		exitCode = pbterm.InternalErrorExitCode
 	}
 	if exitCode != 0 && pkt.Payload != nil {
 		os.Stderr.Write(pkt.Payload)

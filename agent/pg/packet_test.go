@@ -2,9 +2,8 @@ package pg
 
 import (
 	"bytes"
+	pgtypes "github.com/runopsio/hoop/common/pg"
 	"testing"
-
-	"github.com/runopsio/hoop/common/pg/types"
 )
 
 func TestDecodeStartupPacketSSLRequest(t *testing.T) {
@@ -80,8 +79,8 @@ func TestDecodeEncodeTypedPacket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("don't expect error on decode, got=%v", err)
 	}
-	if pkt.Type() != types.ServerAuth {
-		t.Fatalf("decoded wrong type of packet, want=% X, got=% X", types.ServerAuth, pkt.Type())
+	if pkt.Type() != pgtypes.ServerAuth {
+		t.Fatalf("decoded wrong type of packet, want=% X, got=% X", pgtypes.ServerAuth, pkt.Type())
 	}
 	if !bytes.Contains(pkt.Encode(), pkt.Encode()) {
 		t.Fatalf("packet not re-encoded properly, want=%v, got=%v", pkt.Encode(), authRequestTypedPacket)
