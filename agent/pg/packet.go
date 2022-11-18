@@ -51,6 +51,10 @@ func (p *Packet) Type() pg.PacketType {
 	return pg.PacketType(*p.typ)
 }
 
+func (p *Packet) Frame() []byte {
+	return p.frame
+}
+
 func (p *Packet) Dump() {
 	fmt.Print(hex.Dump(p.Encode()))
 }

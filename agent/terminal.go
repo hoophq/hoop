@@ -83,7 +83,7 @@ func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {
 		a.sendCloseTerm(sessionID, fmt.Sprintf(errMsg, v...), strconv.Itoa(exitCode))
 	}
 	stdoutWriter := pb.NewStreamWriter(a.client, pb.PacketTerminalClientWriteStdoutType, spec)
-	if dlpClient, ok := a.connStore.Get(dlpClientKey).(*dlp.Client); ok {
+	if dlpClient, ok := a.connStore.Get(dlpClientKey).(dlp.Client); ok {
 		stdoutWriter = dlp.NewDLPStreamWriter(
 			a.client,
 			dlpClient,

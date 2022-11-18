@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"time"
 
 	dlp "cloud.google.com/go/dlp/apiv2"
@@ -15,7 +14,7 @@ import (
 	"google.golang.org/api/option"
 )
 
-func NewDLPClient(ctx context.Context, credentialsJSON []byte) (*Client, error) {
+func NewDLPClient(ctx context.Context, credentialsJSON []byte) (*client, error) {
 	creds, err := google.CredentialsFromJSON(
 		ctx,
 		credentialsJSON,
@@ -23,23 +22,23 @@ func NewDLPClient(ctx context.Context, credentialsJSON []byte) (*Client, error) 
 	if err != nil {
 		return nil, err
 	}
-	client, err := dlp.NewClient(ctx, option.WithCredentials(creds))
+	dlpClient, err := dlp.NewClient(ctx, option.WithCredentials(creds))
 	if err != nil {
 		return nil, err
 	}
-	return &Client{client, creds.ProjectID}, nil
+	return &client{dlpClient, creds.ProjectID}, nil
 }
 
 func NewDLPStreamWriter(client pb.ClientTransport,
-	dlpClient *Client,
+	dlpClient Client,
 	packetType pb.PacketType,
 	spec map[string][]byte,
 	infoTypeList []string) *streamWriter {
-	dlpConfig := &DeidentifyConfig{
-		MaskingCharacter: defaultMaskingCharacter,
-		NumberToMask:     defaultNumberToMask,
-		InfoTypes:        parseInfoTypes(infoTypeList),
-		ProjectID:        dlpClient.GetProjectID(),
+	dlpConfig := &deidentifyConfig{
+		maskingCharacter: defaultMaskingCharacter,
+		numberToMask:     defaultNumberToMask,
+		infoTypes:        parseInfoTypes(infoTypeList),
+		projectID:        dlpClient.ProjectID(),
 	}
 	return &streamWriter{
 		client:     client,
@@ -57,8 +56,8 @@ func (s *streamWriter) Write(data []byte) (int, error) {
 	}
 	p.Type = s.packetType.String()
 	p.Spec = s.packetSpec
-	if s.dlpClient != nil && len(data) > 30 && len(s.dlpConfig.InfoTypes) > 0 {
-		chunksBuffer := breakPayloadIntoChunks(bytes.NewBuffer(data))
+	if s.dlpClient != nil && len(data) > 30 && len(s.dlpConfig.infoTypes) > 0 {
+		chunksBuffer := breakPayloadIntoChunks(bytes.NewBuffer(data), defaultMaxChunkSize)
 		redactedChunks := redactChunks(s.dlpClient, s.dlpConfig, chunksBuffer)
 		dataBuffer, tsList, err := joinChunks(redactedChunks)
 		if err != nil {
@@ -79,65 +78,39 @@ func (s *streamWriter) Close() error {
 	return nil
 }
 
-// newDeindentifyContentRequest creates a new DeindentifyContentRequest with InspectConfig
-// and DeidentifyConfig set
-func newDeindentifyContentRequest(conf *DeidentifyConfig) *dlppb.DeidentifyContentRequest {
-	return &dlppb.DeidentifyContentRequest{
-		Parent: fmt.Sprintf("projects/%s/locations/global", conf.ProjectID),
-		InspectConfig: &dlppb.InspectConfig{
-			InfoTypes:     conf.InfoTypes,
-			MinLikelihood: dlppb.Likelihood_POSSIBLE,
-		},
-		DeidentifyConfig: &dlppb.DeidentifyConfig{
-			Transformation: &dlppb.DeidentifyConfig_InfoTypeTransformations{
-				InfoTypeTransformations: &dlppb.InfoTypeTransformations{
-					Transformations: []*dlppb.InfoTypeTransformations_InfoTypeTransformation{
-						{
-							InfoTypes: conf.InfoTypes, // Match all info types.
-							PrimitiveTransformation: &dlppb.PrimitiveTransformation{
-								Transformation: &dlppb.PrimitiveTransformation_CharacterMaskConfig{
-									CharacterMaskConfig: &dlppb.CharacterMaskConfig{
-										MaskingCharacter: conf.MaskingCharacter,
-										NumberToMask:     conf.NumberToMask,
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-}
-
-func deidentifyContent(ctx context.Context, client *Client, conf *DeidentifyConfig, chunkIndex int, data *bytes.Buffer) *Chunk {
+func (c *client) DeidentifyContent(ctx context.Context, conf *deidentifyConfig, chunkIndex int, data *inputData) *Chunk {
 	req := newDeindentifyContentRequest(conf)
-	req.Item = &dlppb.ContentItem{
-		DataItem: &dlppb.ContentItem_Value{
-			Value: data.String(),
-		},
-	}
-	r, err := client.DeidentifyContent(ctx, req)
+	req.Item = data.contentItem()
+	r, err := c.dlpClient.DeidentifyContent(ctx, req)
 	if err != nil {
-		log.Printf("failed deidentify chunk (%v), err=%v", chunkIndex, err)
 		return &Chunk{
-			Index:                 chunkIndex,
-			TransformationSummary: &TransformationSummary{Index: chunkIndex, Err: err},
-			// return the chunk as non-redacted on errors
-			data: data}
+			index:                 chunkIndex,
+			transformationSummary: &transformationSummary{index: chunkIndex, err: err}}
 	}
 
-	chunk := &Chunk{Index: chunkIndex, TransformationSummary: &TransformationSummary{Index: chunkIndex}}
+	chunk := &Chunk{index: chunkIndex, transformationSummary: &transformationSummary{index: chunkIndex}}
 	for _, s := range r.GetOverview().GetTransformationSummaries() {
 		for _, r := range s.Results {
 			result := []string{fmt.Sprintf("%v", r.Count), r.Code.String(), r.Details}
-			chunk.TransformationSummary.SummaryResult = append(
-				chunk.TransformationSummary.SummaryResult,
+			chunk.transformationSummary.summaryResult = append(
+				chunk.transformationSummary.summaryResult,
 				result)
 		}
-		chunk.TransformationSummary.Summary = []string{
+		chunk.transformationSummary.summary = []string{
 			s.InfoType.GetName(),
 			fmt.Sprintf("%v", s.TransformedBytes)}
+	}
+
+	responseTable := r.GetItem().GetTable()
+	if responseTable != nil {
+		dataRowsBuffer, err := encodeToDataRow(responseTable)
+		responseChunk := &Chunk{index: chunkIndex, transformationSummary: &transformationSummary{}}
+		if err != nil {
+			responseChunk.transformationSummary = &transformationSummary{index: chunkIndex, err: err}
+			return responseChunk
+		}
+		responseChunk.data = dataRowsBuffer
+		return responseChunk
 	}
 	chunk.data = bytes.NewBufferString(r.Item.GetValue())
 	return chunk
@@ -146,13 +119,18 @@ func deidentifyContent(ctx context.Context, client *Client, conf *DeidentifyConf
 // redactChunks process chunks in parallel reordering after the end of each execution.
 // A default timeout is applied for each chunk. If a requests timeout or returns an error the chunk is returned
 // without redacting its content.
-func redactChunks(client *Client, conf *DeidentifyConfig, chunksBuffer []*bytes.Buffer) []*Chunk {
+func redactChunks(client Client, conf *deidentifyConfig, chunksBuffer []*bytes.Buffer) []*Chunk {
 	chunkCh := make(chan *Chunk)
 	for idx, chunkBuf := range chunksBuffer {
 		go func(idx int, chunkB *bytes.Buffer) {
 			ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*defaultRequestTimeoutInSec)
 			defer cancelFn()
-			redactedChunk := deidentifyContent(ctx, client, conf, idx, chunkB)
+			redactedChunk := client.DeidentifyContent(
+				ctx, conf, idx,
+				newBufferInputData(bytes.NewBuffer(chunkB.Bytes())))
+			if redactedChunk.transformationSummary.err != nil {
+				redactedChunk.data = chunkB
+			}
 			chunkCh <- redactedChunk
 		}(idx, chunkBuf)
 	}
@@ -160,8 +138,9 @@ func redactChunks(client *Client, conf *DeidentifyConfig, chunksBuffer []*bytes.
 	redactedChunks := make([]*Chunk, len(chunksBuffer))
 	idx := 1
 	for c := range chunkCh {
-		redactedChunks[c.Index] = c
+		redactedChunks[c.index] = c
 		if idx == len(chunksBuffer) {
+			close(chunkCh)
 			break
 		}
 		idx++
@@ -171,19 +150,19 @@ func redactChunks(client *Client, conf *DeidentifyConfig, chunksBuffer []*bytes.
 
 // joinChunks will recompose the chunks into a unique buffer along with a list of
 // Transformations Summaries
-func joinChunks(chunks []*Chunk) (*bytes.Buffer, []*TransformationSummary, error) {
-	var tsList []*TransformationSummary
+func joinChunks(chunks []*Chunk) (*bytes.Buffer, []*transformationSummary, error) {
+	var tsList []*transformationSummary
 	res := bytes.NewBuffer([]byte{})
 	for _, c := range chunks {
 		if _, err := res.Write(c.data.Bytes()); err != nil {
-			return nil, nil, fmt.Errorf("[dlp] failed writing chunk (%v) to buffer, err=%v", c.Index, err)
+			return nil, nil, fmt.Errorf("[dlp] failed writing chunk (%v) to buffer, err=%v", c.index, err)
 		}
-		tsList = append(tsList, c.TransformationSummary)
+		tsList = append(tsList, c.transformationSummary)
 	}
 	return res, tsList, nil
 }
 
-func breakPayloadIntoChunks(payload *bytes.Buffer) []*bytes.Buffer {
+func breakPayloadIntoChunks(payload *bytes.Buffer, maxChunkSize int) []*bytes.Buffer {
 	chunkSize := payload.Len()
 	if chunkSize < maxChunkSize {
 		return []*bytes.Buffer{payload}
@@ -192,12 +171,28 @@ func breakPayloadIntoChunks(payload *bytes.Buffer) []*bytes.Buffer {
 	if chunkSize > maxChunkSize {
 		chunkSize = maxChunkSize
 	}
+	read := payload.Len()
 	for {
-		chunk := make([]byte, chunkSize)
-		_, err := io.ReadFull(payload, chunk)
-		if err != nil {
+		if chunkSize > read {
+			chunkSize = read
+		}
+		if chunkSize == 0 {
 			break
 		}
+
+		chunk := make([]byte, chunkSize)
+		n, err := io.ReadFull(payload, chunk)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+
+			for _, c := range chunks {
+				fmt.Println(c.String())
+			}
+			panic(err)
+		}
+		read -= n
 		chunks = append(chunks, bytes.NewBuffer(chunk))
 	}
 	return chunks
@@ -212,4 +207,33 @@ func parseInfoTypes(infoTypesList []string) []*dlppb.InfoType {
 		infoTypes = append(infoTypes, &dlppb.InfoType{Name: infoType})
 	}
 	return infoTypes
+}
+
+func newDeindentifyContentRequest(conf *deidentifyConfig) *dlppb.DeidentifyContentRequest {
+	return &dlppb.DeidentifyContentRequest{
+		Parent: fmt.Sprintf("projects/%s/locations/global", conf.projectID),
+		InspectConfig: &dlppb.InspectConfig{
+			InfoTypes:     conf.infoTypes,
+			MinLikelihood: dlppb.Likelihood_POSSIBLE,
+		},
+		DeidentifyConfig: &dlppb.DeidentifyConfig{
+			Transformation: &dlppb.DeidentifyConfig_InfoTypeTransformations{
+				InfoTypeTransformations: &dlppb.InfoTypeTransformations{
+					Transformations: []*dlppb.InfoTypeTransformations_InfoTypeTransformation{
+						{
+							InfoTypes: conf.infoTypes, // Match all info types.
+							PrimitiveTransformation: &dlppb.PrimitiveTransformation{
+								Transformation: &dlppb.PrimitiveTransformation_CharacterMaskConfig{
+									CharacterMaskConfig: &dlppb.CharacterMaskConfig{
+										MaskingCharacter: conf.maskingCharacter,
+										NumberToMask:     conf.numberToMask,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
 }
