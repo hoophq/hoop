@@ -20,10 +20,11 @@ func NewRedactMiddleware(c Client, infoTypes ...string) (*redactPostgresMiddlewa
 		return nil, fmt.Errorf("max (%v) info types reached", maxInfoTypes)
 	}
 	return &redactPostgresMiddleware{
-		dlpClient:      c,
-		infoTypes:      parseInfoTypes(infoTypes),
-		dataRowPackets: bytes.NewBuffer([]byte{}),
-		typedPackets:   bytes.NewBuffer([]byte{}),
+		dlpClient:       c,
+		infoTypes:       parseInfoTypes(infoTypes),
+		dataRowPackets:  bytes.NewBuffer([]byte{}),
+		typedPackets:    bytes.NewBuffer([]byte{}),
+		maxPacketLength: 100000, // 0.10MB
 	}, nil
 }
 
@@ -56,8 +57,7 @@ func (m *redactPostgresMiddleware) Handler(next pg.NextFn, pkt *pg.Packet, w pg.
 	} else {
 		_, _ = m.typedPackets.Write(pkt.Encode())
 	}
-	// if the pkt length is above 0.10MB or the amount of rows reached its max
-	if pktLength > 100000 || m.rowCount >= m.maxRows {
+	if pktLength > m.maxPacketLength || m.rowCount >= m.maxRows {
 		log.Printf("redact and write, buffersize=%v, rows=%v/%v", pktLength, m.maxRows, m.rowCount)
 		m.redactAndWrite(w)
 		return
@@ -90,25 +90,17 @@ func (m *redactPostgresMiddleware) redactAndWrite(w pg.ResponseWriter) {
 	}
 }
 
-func encodeToDataRow(table *dlppb.Table) (*bytes.Buffer, error) {
-	dataRowPackets := bytes.NewBuffer([]byte{})
+func encodeToDataRow(table *dlppb.Table) *bytes.Buffer {
+	var dataRowPackets []byte
 	for _, row := range table.Rows {
-		var fieldCount [2]byte
-		binary.BigEndian.PutUint16(fieldCount[:], uint16(len(row.Values)))
-		dataRow := []byte{pgtypes.ServerDataRow.Byte(), 0x00, 0x00, 0x00, 0x00}
-		dataRow = append(dataRow, fieldCount[:]...)
+		var dataRowValues []string
 		for _, val := range row.Values {
-			var columnLen [4]byte
-			binary.BigEndian.PutUint32(columnLen[:], uint32(len(val.GetStringValue())))
-			dataRow = append(dataRow, columnLen[:]...)
-			dataRow = append(dataRow, []byte(val.GetStringValue())...)
+			dataRowValues = append(dataRowValues, val.GetStringValue())
 		}
-		binary.BigEndian.PutUint32(dataRow[1:5], uint32(len(dataRow)-1))
-		if _, err := dataRowPackets.Write(dataRow); err != nil {
-			return nil, fmt.Errorf("failed writing data row byte to buffer, err=%v", err)
-		}
+		pktBytes := pg.NewDataRowPacket(uint16(len(row.Values)), dataRowValues...).Encode()
+		dataRowPackets = append(dataRowPackets, pktBytes...)
 	}
-	return dataRowPackets, nil
+	return bytes.NewBuffer(dataRowPackets)
 }
 
 func redactDataRow(dlpclient Client, conf *deidentifyConfig, dataRows *bytes.Buffer) (*bytes.Buffer, error) {
@@ -116,7 +108,6 @@ func redactDataRow(dlpclient Client, conf *deidentifyConfig, dataRows *bytes.Buf
 	if dataRows.Len() < 15 {
 		return dataRows, nil
 	}
-	chunkData := bytes.NewBuffer([]byte{})
 	tableInput := &dlppb.Table{
 		Headers: []*dlppb.FieldId{},
 		Rows:    []*dlppb.Table_Row{},
@@ -151,9 +142,6 @@ func redactDataRow(dlpclient Client, conf *deidentifyConfig, dataRows *bytes.Buf
 			}
 			tableRowValues = append(tableRowValues,
 				&dlppb.Value{Type: &dlppb.Value_StringValue{StringValue: string(columnData)}})
-			if _, err := chunkData.Write(columnData); err != nil {
-				return dataRows, fmt.Errorf("failed writing column (%v) to buffer, err=%v", i, err)
-			}
 		}
 		tableInput.Rows = append(tableInput.Rows, &dlppb.Table_Row{Values: tableRowValues})
 	}
@@ -161,7 +149,6 @@ func redactDataRow(dlpclient Client, conf *deidentifyConfig, dataRows *bytes.Buf
 	go func() {
 		ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*defaultRequestTimeoutInSec)
 		defer cancelFn()
-
 		redactedChunk := dlpclient.DeidentifyContent(ctx, conf, 0, newTableInputData(tableInput))
 		chunkCh <- redactedChunk
 	}()

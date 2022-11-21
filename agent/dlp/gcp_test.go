@@ -13,7 +13,12 @@ type fakeClient struct {
 
 func (c *fakeClient) DeidentifyContent(ctx context.Context, conf *deidentifyConfig, chunkIdx int, input *inputData) *Chunk {
 	chunk := &Chunk{index: chunkIdx, transformationSummary: &transformationSummary{}}
-	chunk.data = input.inputBuffer
+	if input.inputTable != nil {
+		chunk.data = encodeToDataRow(input.inputTable)
+	}
+	if input.inputBuffer != nil {
+		chunk.data = input.inputBuffer
+	}
 	if c.err != nil {
 		chunk.transformationSummary.err = c.err
 	}

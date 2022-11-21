@@ -195,6 +195,8 @@ func (a *Agent) processClientConnect(pkt *pb.Packet) {
 		if connParams == nil {
 			return
 		}
+		log.Printf("session=%v - connection params decoded with success, dlp-info-types=%v",
+			sessionIDKey, connParams.DLPInfoTypes)
 		pgEnv, err := parseEnvVars(connParams.EnvVars)
 		if err != nil {
 			_ = a.client.Send(&pb.Packet{
@@ -210,16 +212,19 @@ func (a *Agent) processClientConnect(pkt *pb.Packet) {
 				Payload: []byte(err.Error()),
 				Spec:    map[string][]byte{pb.SpecGatewaySessionID: sessionID},
 			})
-			log.Printf("failed connecting to postgres host=%q, port=%q, err=%v", pgEnv.host, pgEnv.port, err)
+			log.Printf("session=%v - failed connecting to postgres host=%q, port=%q, err=%v",
+				sessionIDKey, pgEnv.host, pgEnv.port, err)
 			return
 		}
-		a.connStore.Set(sessionIDKey, pgEnv)
+		connParams.EnvVars["pgenv"] = pgEnv
+		a.connStore.Set(sessionIDKey, connParams)
 	case connType == "command-line":
 		sessionIDKey = fmt.Sprintf(connectionStoreParamsKey, string(sessionID))
 		connParams := a.decodeConnectionParams(sessionID, pkt)
 		if connParams == nil {
 			return
 		}
+		log.Printf("connection params decoded with success, dlp-info-types=%v", connParams.DLPInfoTypes)
 		a.connStore.Set(sessionIDKey, connParams)
 	default:
 		_ = a.client.Send(&pb.Packet{

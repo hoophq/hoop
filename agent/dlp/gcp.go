@@ -103,14 +103,11 @@ func (c *client) DeidentifyContent(ctx context.Context, conf *deidentifyConfig, 
 
 	responseTable := r.GetItem().GetTable()
 	if responseTable != nil {
-		dataRowsBuffer, err := encodeToDataRow(responseTable)
-		responseChunk := &Chunk{index: chunkIndex, transformationSummary: &transformationSummary{}}
-		if err != nil {
-			responseChunk.transformationSummary = &transformationSummary{index: chunkIndex, err: err}
-			return responseChunk
-		}
-		responseChunk.data = dataRowsBuffer
-		return responseChunk
+		dataRowsBuffer := encodeToDataRow(responseTable)
+		return &Chunk{
+			index:                 chunkIndex,
+			transformationSummary: &transformationSummary{},
+			data:                  dataRowsBuffer}
 	}
 	chunk.data = bytes.NewBufferString(r.Item.GetValue())
 	return chunk
@@ -179,18 +176,10 @@ func breakPayloadIntoChunks(payload *bytes.Buffer, maxChunkSize int) []*bytes.Bu
 		if chunkSize == 0 {
 			break
 		}
-
 		chunk := make([]byte, chunkSize)
 		n, err := io.ReadFull(payload, chunk)
 		if err != nil {
-			if err == io.EOF {
-				break
-			}
-
-			for _, c := range chunks {
-				fmt.Println(c.String())
-			}
-			panic(err)
+			break
 		}
 		read -= n
 		chunks = append(chunks, bytes.NewBuffer(chunk))

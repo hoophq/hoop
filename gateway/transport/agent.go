@@ -1,13 +1,14 @@
 package transport
 
 import (
-	"github.com/runopsio/hoop/gateway/plugin"
 	"io"
 	"log"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
+
+	"github.com/runopsio/hoop/gateway/plugin"
 
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/agent"
@@ -117,6 +118,7 @@ func (s *Server) listenAgentMessages(config plugin.Config, ag *agent.Agent, stre
 			continue
 		}
 		sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
+		config.SessionId = sessionID
 		if err := s.pluginOnReceive(config, pkt); err != nil {
 			log.Printf("plugin reject packet, err=%v", err)
 			return status.Errorf(codes.Internal, "internal error, plugin reject packet")
@@ -149,8 +151,7 @@ func (s *Server) agentGracefulShutdown(ag *agent.Agent) {
 		syscall.SIGHUP,
 		syscall.SIGINT,
 		syscall.SIGTERM,
-		syscall.SIGQUIT,
-		syscall.SIGKILL)
+		syscall.SIGQUIT)
 	go func() {
 		<-sigc
 		s.disconnectAgent(ag)

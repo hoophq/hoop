@@ -22,9 +22,6 @@ const (
 )
 
 type (
-	// InputData interface {
-	// 	contentItem() *dlppb.ContentItem
-	// }
 	Client interface {
 		DeidentifyContent(context.Context, *deidentifyConfig, int, *inputData) *Chunk
 		ProjectID() string
@@ -34,12 +31,13 @@ type (
 		inputBuffer *bytes.Buffer
 	}
 	redactPostgresMiddleware struct {
-		dlpClient      Client
-		dataRowPackets *bytes.Buffer
-		typedPackets   *bytes.Buffer
-		infoTypes      []*dlppb.InfoType
-		maxRows        int
-		rowCount       int
+		dlpClient       Client
+		dataRowPackets  *bytes.Buffer
+		typedPackets    *bytes.Buffer
+		infoTypes       []*dlppb.InfoType
+		maxRows         int
+		maxPacketLength int
+		rowCount        int
 	}
 	transformationSummary struct {
 		index int
