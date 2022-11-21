@@ -3,6 +3,7 @@ package connection
 import (
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/gateway/plugin"
+	"github.com/runopsio/hoop/gateway/transport/plugins/dlp"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
@@ -101,7 +102,7 @@ func (s *Service) bindAuditPlugin(context *user.Context, conn *Connection) {
 }
 
 func (s *Service) bindDLPPlugin(context *user.Context, conn *Connection) {
-	p, err := s.PluginService.FindOne(context, "dlp")
+	p, err := s.PluginService.FindOne(context, dlp.Name)
 	if err != nil {
 		return
 	}
@@ -118,7 +119,7 @@ func (s *Service) bindDLPPlugin(context *user.Context, conn *Connection) {
 		}
 	} else {
 		p = &plugin.Plugin{
-			Name:        "dlp",
+			Name:        dlp.Name,
 			Connections: []plugin.Connection{{ConnectionId: conn.Id}},
 		}
 	}

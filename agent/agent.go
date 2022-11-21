@@ -171,8 +171,9 @@ func (a *Agent) decodeConnectionParams(sessionID []byte, pkt *pb.Packet) *pb.Age
 func (a *Agent) processClientConnect(pkt *pb.Packet) {
 	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 	log.Printf("session=%v - received connect request", string(sessionID))
+
 	if gcpRawCred, ok := pkt.Spec[pb.SpecAgentGCPRawCredentialsKey]; ok {
-		if _, ok := a.connStore.Get(dlpClientKey).(*dlp.Client); !ok {
+		if _, ok := a.connStore.Get(dlpClientKey).(dlp.Client); !ok {
 			dlpClient, err := dlp.NewDLPClient(context.Background(), gcpRawCred)
 			if err != nil {
 				_ = a.client.Send(&pb.Packet{
