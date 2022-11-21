@@ -120,7 +120,7 @@ func (s *Service) bindDLPPlugin(context *user.Context, conn *Connection) {
 	} else {
 		p = &plugin.Plugin{
 			Name:        dlp.Name,
-			Connections: []plugin.Connection{{ConnectionId: conn.Id}},
+			Connections: []plugin.Connection{{ConnectionId: conn.Id, Config: defaultInfoTypes}},
 		}
 	}
 
