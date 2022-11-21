@@ -16,6 +16,7 @@ type (
 		Persist(context *user.Context, review *Review) (int64, error)
 		FindById(context *user.Context, id string) (*Review, error)
 		FindAll(context *user.Context) ([]Review, error)
+		FindBySessionID(sessionID string) (*Review, error)
 	}
 
 	Review struct {
@@ -58,6 +59,10 @@ const (
 
 func (s *Service) FindOne(context *user.Context, id string) (*Review, error) {
 	return s.Storage.FindById(context, id)
+}
+
+func (s *Service) FindBySessionID(sessionID string) (*Review, error) {
+	return s.Storage.FindBySessionID(sessionID)
 }
 
 func (s *Service) FindAll(context *user.Context) ([]Review, error) {

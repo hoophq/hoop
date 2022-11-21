@@ -37,7 +37,7 @@ func runExec(args []string) {
 	loader.Start()
 	loader.Suffix = "exec'ing command..."
 
-	c, spec := newClientConnect(config, loader, args)
+	c, spec := newClientConnect(config, loader, args, pb.ClientVerbExec)
 
 	pkt := &pb.Packet{
 		Type: pb.PacketClientGatewayExecType.String(),

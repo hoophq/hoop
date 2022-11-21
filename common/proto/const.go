@@ -18,6 +18,7 @@ const (
 	PacketClientGatewayExecErrType   PacketType = "Client::Gateway::ExecErr"
 	PacketClientGatewayExecWaitType  PacketType = "Client::Gateway::ExecWait"
 	PacketClientGatewayExecAllowType PacketType = "Client::Gateway::ExecAllow"
+	PacketClientExecAgentOfflineType PacketType = "Client::Gateway::ExecAgentOffline"
 	PacketClientAgentExecType        PacketType = "Client::Agent::Exec"
 	PacketClientAgentExecOKType      PacketType = "Client::Agent::ExecOK"
 	PacketClientAgentExecErrType     PacketType = "Client::Agent::ExecErr"
@@ -40,6 +41,7 @@ const (
 	SpecClientExecArgsKey         string = "terminal.args"
 	SpecAgentConnectionParamsKey  string = "agent.connection_params"
 	SpecAgentGCPRawCredentialsKey string = "agent.gcp_credentials"
+	SpecReviewDataKey             string = "review.data"
 
 	SpecClientGatewayExecPayload string = "exec.payload"
 
@@ -53,4 +55,7 @@ const (
 	ConnectionOriginClient = "client"
 
 	ClientLoginCallbackAddress string = "127.0.0.1:3587"
+
+	ClientVerbConnect = "connect"
+	ClientVerbExec = "exec"
 )

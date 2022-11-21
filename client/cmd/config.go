@@ -100,7 +100,7 @@ func getClientConfig() *Config {
 	return config
 }
 
-func newClientConnect(config *Config, loader *spinner.Spinner, args []string) (*connect, map[string][]byte) {
+func newClientConnect(config *Config, loader *spinner.Spinner, args []string, verb string) (*connect, map[string][]byte) {
 	c := &connect{
 		proxyPort:      connectFlags.proxyPort,
 		connStore:      memory.New(),
@@ -113,7 +113,8 @@ func newClientConnect(config *Config, loader *spinner.Spinner, args []string) (*
 		config.Host+":"+config.Port,
 		config.Token,
 		grpc.WithOption(grpc.OptionConnectionName, args[0]),
-		grpc.WithOption("origin", pb.ConnectionOriginClient))
+		grpc.WithOption("origin", pb.ConnectionOriginClient),
+		grpc.WithOption("verb", verb))
 	if err != nil {
 		c.printErrorAndExit(err.Error())
 	}

@@ -2,6 +2,7 @@ package transport
 
 import (
 	"fmt"
+	rv "github.com/runopsio/hoop/gateway/review"
 	"io"
 	"log"
 	"os"
@@ -101,6 +102,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	machineId := extractData(md, "machine_id")
 	kernelVersion := extractData(md, "kernel_version")
 	connectionName := extractData(md, "connection_name")
+	clientVerb := extractData(md, "verb")
 
 	sub, err := s.exchangeUserToken(token)
 	if err != nil {
@@ -153,13 +155,27 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		return status.Errorf(codes.FailedPrecondition, err.Error())
 	}
 
+	agentStream := getAgentStream(conn.AgentId)
+	if agentStream == nil {
+		log.Printf("agent not found for connection %s", connectionName)
+		return status.Errorf(codes.FailedPrecondition, fmt.Sprintf("agent not found for %v", c.AgentId))
+	}
+
+	if clientVerb == pb.ClientVerbConnect {
+		for _, p := range plugins {
+			if p.Plugin.Name() == pluginsreview.Name {
+				return status.Errorf(codes.PermissionDenied, fmt.Sprintf("this connection have the review plugin installed and cannot be connected.\n\nPlease use 'hoop exec %s {command}' instead", conn.Name))
+			}
+		}
+	}
+
 	s.ClientService.Persist(c)
 	bindClient(c.SessionID, stream, conn, plugins)
 
 	s.clientGracefulShutdown(c)
 
 	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
-	clientErr := s.listenClientMessages(stream, c, conn, pConfig)
+	clientErr := s.listenClientMessages(stream, c, conn, pConfig, agentStream)
 
 	if err := s.pluginOnDisconnect(pConfig); err != nil {
 		log.Printf("session=%v ua=client - failed processing plugin on-disconnect phase, err=%v", sessionID, err)
@@ -173,7 +189,8 @@ func (s *Server) listenClientMessages(
 	stream pb.Transport_ConnectServer,
 	c *client.Client,
 	conn *connection.Connection,
-	config plugin.Config) error {
+	config plugin.Config,
+	agentStream pb.Transport_ConnectServer) error {
 
 	ctx := stream.Context()
 
@@ -205,17 +222,13 @@ func (s *Server) listenClientMessages(
 			pkt.Spec = make(map[string][]byte)
 		}
 		pkt.Spec[pb.SpecGatewaySessionID] = []byte(c.SessionID)
-		agStream := getAgentStream(conn.AgentId)
-		if agStream == nil {
-			log.Printf("agent connection not found for %q", c.AgentId)
-			return status.Errorf(codes.FailedPrecondition, fmt.Sprintf("agent not found for %v", c.AgentId))
-		}
+
 		log.Printf("receive client packet type [%s] and session id [%s]", pkt.Type, c.SessionID)
 		if err := s.pluginOnReceive(config, pkt); err != nil {
 			log.Printf("plugin reject packet, err=%v", err)
 			return status.Errorf(codes.Internal, "internal error, packet rejected, contact the administrator")
 		}
-		err = s.processClientPacket(pkt, c, conn, agStream)
+		err = s.processClientPacket(pkt, c, conn, agentStream)
 		if err != nil {
 			fmt.Printf("session=%v - failed processing client packet, err=%v", c.SessionID, err)
 			return status.Errorf(codes.FailedPrecondition, "internal error, failed processing packet")
@@ -228,9 +241,12 @@ func (s *Server) processClientPacket(
 	client *client.Client,
 	conn *connection.Connection,
 	agentStream pb.Transport_ConnectServer) error {
+
 	switch pb.PacketType(pkt.Type) {
 	case pb.PacketClientGatewayConnectType:
 		return s.processClientConnect(pkt, client, conn, agentStream)
+	case pb.PacketClientGatewayExecType:
+		return s.processClientExec(pkt, client, agentStream)
 	default:
 		_ = agentStream.Send(pkt)
 	}
@@ -241,6 +257,7 @@ func (s *Server) processClientConnect(pkt *pb.Packet,
 	client *client.Client,
 	conn *connection.Connection,
 	agentStream pb.Transport_ConnectServer) error {
+
 	var clientArgs []string
 	if pkt.Spec != nil {
 		encArgs := pkt.Spec[pb.SpecClientExecArgsKey]
@@ -254,9 +271,9 @@ func (s *Server) processClientConnect(pkt *pb.Packet,
 	for _, p := range getPlugins(client.SessionID) {
 		if p.Plugin.Name() == pluginsdlp.Name {
 			infoTypes = p.config
-			break
 		}
 	}
+
 	encConnectionParams, err := pb.GobEncode(&pb.AgentConnectionParams{
 		EnvVars:      conn.Secret,
 		CmdList:      conn.Command,
@@ -278,6 +295,29 @@ func (s *Server) processClientConnect(pkt *pb.Packet,
 		Type: pb.PacketClientAgentConnectType.String(),
 		Spec: pktSpec,
 	})
+	return nil
+}
+
+func (s *Server) processClientExec(pkt *pb.Packet,
+	client *client.Client,
+	agentStream pb.Transport_ConnectServer) error {
+
+	existingReviewData := pkt.Spec[pb.SpecReviewDataKey]
+	if existingReviewData != nil {
+		var review rv.Review
+		if err := pb.GobDecodeInto(existingReviewData, &review); err != nil {
+			return err
+		}
+		if review.Status != rv.StatusApproved {
+			pkt.Type = string(pb.PacketClientGatewayExecWaitType)
+			clientStream := getClientStream(client.SessionID)
+			_ = clientStream.Send(pkt)
+			return nil
+		}
+	}
+
+	pkt.Type = string(pb.PacketClientAgentExecType)
+	_ = agentStream.Send(pkt)
 	return nil
 }
 

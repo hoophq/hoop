@@ -1,11 +1,14 @@
 package cmd
 
 import (
+	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/briandowns/spinner"
@@ -55,7 +58,7 @@ func runConnect(args []string) {
 	loader.Start()
 	loader.Suffix = " connecting to gateway..."
 
-	c, spec := newClientConnect(config, loader, args)
+	c, spec := newClientConnect(config, loader, args, pb.ClientVerbConnect)
 
 	if err := c.client.Send(&pb.Packet{
 		Type: pb.PacketClientGatewayConnectType.String(),
@@ -76,6 +79,8 @@ func runConnect(args []string) {
 
 func (c *connect) processPacket(pkt *pb.Packet) {
 	switch pb.PacketType(pkt.Type) {
+
+	// connect
 	case pb.PacketClientAgentConnectOKType:
 		sessionID, ok := pkt.Spec[pb.SpecGatewaySessionID]
 		if !ok || sessionID == nil {
@@ -120,6 +125,43 @@ func (c *connect) processPacket(pkt *pb.Packet) {
 		errMsg := fmt.Errorf("session=%s - failed connecting with gateway, err=%v",
 			string(sessionID), string(pkt.GetPayload()))
 		c.processGracefulExit(errMsg)
+
+	// exec
+	case pb.PacketClientExecAgentOfflineType:
+		fmt.Print("Agent is offline. Do you want to try again?\n (y/n) [y] ")
+		reader := bufio.NewReader(os.Stdin)
+		result := "y"
+		for {
+			c, _ := reader.ReadByte()
+			result = strings.Trim(string(c), " \n")
+			break
+		}
+
+		if result == "y" {
+			pkt.Type = string(pb.PacketClientGatewayExecType)
+			_ = c.client.Send(pkt)
+			return
+		}
+		c.processGracefulExit(errors.New("user aborted"))
+	case pb.PacketClientGatewayExecWaitType:
+		fmt.Println("This command requires review. We will notify you right here when it is approved")
+		return
+	case pb.PacketClientGatewayExecAllowType:
+		fmt.Print("The command was approved! Do you want to run it now?\n (y/n) [y] ")
+		reader := bufio.NewReader(os.Stdin)
+		result := "y"
+		for {
+			c, _ := reader.ReadByte()
+			result = strings.Trim(string(c), " \n")
+			break
+		}
+
+		if result == "y" {
+			pkt.Type = string(pb.PacketClientGatewayExecType)
+			_ = c.client.Send(pkt)
+			return
+		}
+		c.processGracefulExit(errors.New("user aborted"))
 
 	// pg protocol messages
 	case pb.PacketPGWriteClientType:

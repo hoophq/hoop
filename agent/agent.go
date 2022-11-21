@@ -136,6 +136,10 @@ func (a *Agent) Run(svrAddr, token string) {
 		case pb.PacketClientAgentConnectType:
 			a.processClientConnect(pkt)
 
+		// client exec
+		case pb.PacketClientAgentExecType:
+			a.processClientExec(pkt)
+
 		// PG protocol
 		case pb.PacketPGWriteServerType:
 			a.processPGProtocol(pkt)
@@ -240,6 +244,10 @@ func (a *Agent) processClientConnect(pkt *pb.Packet) {
 		log.Printf("failed sending %v, err=%v", pb.PacketClientAgentConnectOKType, err)
 	}
 	log.Printf("session=%v - sent gateway connect ok", string(sessionID))
+}
+
+func (a *Agent) processClientExec(pkt *pb.Packet) {
+	fmt.Printf("Received %s\n", pkt.String())
 }
 
 func (a *Agent) processTCPCloseConnection(pkt *pb.Packet) {

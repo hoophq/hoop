@@ -92,6 +92,39 @@ func (s *Storage) FindById(context *user.Context, id string) (*Review, error) {
 	return reviews[0], nil
 }
 
+func (s *Storage) FindBySessionID(sessionID string) (*Review, error) {
+	var payload = `{:query {
+		:find [(pull ?review [:xt/id
+                              :review/status
+							  :review/command
+							  :review/session
+							  :review/connection
+							  :review/created-by
+                                 {:review/connection [:xt/id :connection/name]}
+                                 {:review/review-groups [*
+                                     {:review-group/reviewed-by [:xt/id :user/name :user/email]}]}
+                                 {:review/created-by [:xt/id :user/name :user/email]}])]
+		:in [sessionID]
+		:where [[?review :review/session sessionID]]}
+        :in-args ["` + sessionID + `"]}`
+
+	b, err := s.Query([]byte(payload))
+	if err != nil {
+		return nil, err
+	}
+
+	var reviews []*Review
+	if err := edn.Unmarshal(b, &reviews); err != nil {
+		return nil, err
+	}
+
+	if len(reviews) == 0 {
+		return nil, nil
+	}
+
+	return reviews[0], nil
+}
+
 func (s *Storage) Persist(context *user.Context, review *Review) (int64, error) {
 	reviewGroupIds := make([]string, 0)
 	payload := make([]map[string]any, 0)
