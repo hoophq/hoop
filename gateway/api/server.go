@@ -5,12 +5,13 @@ import (
 	"os"
 	"strings"
 
+	"github.com/gin-contrib/static"
+	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/review"
 
 	"github.com/runopsio/hoop/gateway/security"
 	"github.com/runopsio/hoop/gateway/security/idp"
 
-	"github.com/gin-contrib/static"
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/connection"
@@ -38,6 +39,10 @@ func (api *Api) StartAPI() {
 		os.Setenv("PORT", "8009")
 	}
 	route := gin.Default()
+	if api.Profile == pb.DevProfile {
+		route = gin.New()
+		route.Use(gin.Recovery())
+	}
 	// https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies
 	route.SetTrustedProxies(nil)
 	// UI
