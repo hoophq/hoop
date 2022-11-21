@@ -2,6 +2,7 @@ package dlp
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 
 	dlp "cloud.google.com/go/dlp/apiv2"
@@ -14,42 +15,60 @@ const (
 	defaultMaskingCharacter    = "*"
 	defaultNumberToMask        = 5
 	// this values needs to be low to avoid the max limit of findings per chunk
-	// https://cloud.google.com/dlp/limits#content-limits
-	maxChunkSize = 62500
+	// https://cloud.google.com/dlp/docs/deidentify-sensitive-data#findings-limit
+	defaultMaxChunkSize = 62500
+	maxFindings         = 3000
+	maxInfoTypes        = 30
 )
 
 type (
-	TransformationSummary struct {
-		Index int
-		Err   error
+	Client interface {
+		DeidentifyContent(context.Context, *deidentifyConfig, int, *inputData) *Chunk
+		ProjectID() string
+	}
+	inputData struct {
+		inputTable  *dlppb.Table
+		inputBuffer *bytes.Buffer
+	}
+	redactPostgresMiddleware struct {
+		dlpClient       Client
+		dataRowPackets  *bytes.Buffer
+		typedPackets    *bytes.Buffer
+		infoTypes       []*dlppb.InfoType
+		maxRows         int
+		maxPacketLength int
+		rowCount        int
+	}
+	transformationSummary struct {
+		index int
+		err   error
 		// [info-type, transformed-bytes]
-		Summary []string
+		summary []string
 		// [[count, code, details] ...]
-		SummaryResult [][]string
+		summaryResult [][]string
 	}
 	Chunk struct {
-		Index                 int
-		TransformationSummary *TransformationSummary
+		index                 int
+		transformationSummary *transformationSummary
 		data                  *bytes.Buffer
 	}
-	Client struct {
-		*dlp.Client
+	client struct {
+		dlpClient *dlp.Client
 		projectID string
 	}
 	streamWriter struct {
 		client     pb.ClientTransport
-		dlpClient  *Client
+		dlpClient  Client
 		packetType pb.PacketType
 		packetSpec map[string][]byte
-		infoTypes  []string
-		dlpConfig  *DeidentifyConfig
+		dlpConfig  *deidentifyConfig
 	}
-	DeidentifyConfig struct {
+	deidentifyConfig struct {
 		// Character to use to mask the sensitive values, for example, `*` for an
 		// alphabetic string such as a name, or `0` for a numeric string such as ZIP
 		// code or credit card number. This string must have a length of 1. If not
 		// supplied, this value defaults to `*`.
-		MaskingCharacter string
+		maskingCharacter string
 		// Number of characters to mask. If not set, all matching chars will be
 		// masked. Skipped characters do not count towards this tally.
 		//
@@ -67,23 +86,55 @@ type (
 		// `****-****-****-3456`. Cloud DLP masks all but the last four characters.
 		// If `reverse_order` is `true`, all but the first four characters are masked
 		// as `1234-****-****-****`.
-		NumberToMask int32
-		ProjectID    string
-		InfoTypes    []*dlppb.InfoType
+		numberToMask int32
+		projectID    string
+		infoTypes    []*dlppb.InfoType
 	}
 )
 
-func (c *Client) GetProjectID() string {
+func newTableInputData(data *dlppb.Table) *inputData {
+	return &inputData{
+		inputTable: data,
+	}
+}
+
+func newBufferInputData(data *bytes.Buffer) *inputData {
+	return &inputData{
+		inputBuffer: data,
+	}
+}
+
+func (i *inputData) contentItem() *dlppb.ContentItem {
+	switch {
+	case i.inputTable != nil:
+		return &dlppb.ContentItem{DataItem: &dlppb.ContentItem_Table{Table: i.inputTable}}
+	case i.inputBuffer != nil:
+		defer i.inputBuffer.Reset()
+		return &dlppb.ContentItem{
+			DataItem: &dlppb.ContentItem_Value{
+				Value: i.inputBuffer.String(),
+			},
+		}
+	default:
+		return nil
+	}
+}
+
+func (c *Chunk) Data() *bytes.Buffer {
+	return c.data
+}
+
+func (c *client) ProjectID() string {
 	return c.projectID
 }
 
-func (t *TransformationSummary) String() string {
-	if len(t.Summary) == 2 {
+func (t *transformationSummary) String() string {
+	if len(t.summary) == 2 {
 		return fmt.Sprintf("chunk:%v, infotype:%v, transformedbytes:%v, result:%v",
-			t.Index, t.Summary[0], t.Summary[1], t.SummaryResult)
+			t.index, t.summary[0], t.summary[1], t.summaryResult)
 	}
-	if t.Err != nil {
-		return fmt.Sprintf("chunk:%v, err:%v", t.Index, t.Err)
+	if t.err != nil {
+		return fmt.Sprintf("chunk:%v, err:%v", t.index, t.err)
 	}
 	return ""
 }

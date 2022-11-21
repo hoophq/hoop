@@ -6,8 +6,9 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"github.com/runopsio/hoop/common/pg"
 	"io"
+
+	"github.com/runopsio/hoop/common/pg"
 )
 
 type Packet struct {
@@ -51,6 +52,10 @@ func (p *Packet) Type() pg.PacketType {
 	return pg.PacketType(*p.typ)
 }
 
+func (p *Packet) Frame() []byte {
+	return p.frame
+}
+
 func (p *Packet) Dump() {
 	fmt.Print(hex.Dump(p.Encode()))
 }
@@ -80,7 +85,7 @@ func NewReader(rd io.Reader) Reader {
 	return bufio.NewReaderSize(rd, pg.DefaultBufferSize)
 }
 
-func newPacketWithType(t pg.PacketType) *Packet {
+func NewPacketWithType(t pg.PacketType) *Packet {
 	typ := byte(t)
 	return &Packet{typ: &typ}
 }
@@ -150,7 +155,7 @@ func DecodeStartupPacketWithUsername(startupPacket Reader, pgUsername string) (*
 }
 
 func NewSASLInitialResponsePacket(authData []byte) *Packet {
-	p := newPacketWithType(pg.ClientPassword)
+	p := NewPacketWithType(pg.ClientPassword)
 	p.frame = append(p.frame, "SCRAM-SHA-256"...)
 	p.frame = append(p.frame, byte(0))
 	authLength := make([]byte, 4)
@@ -161,27 +166,42 @@ func NewSASLInitialResponsePacket(authData []byte) *Packet {
 }
 
 func NewSASLResponse(authData []byte) *Packet {
-	return newPacketWithType(pg.ClientPassword).
+	return NewPacketWithType(pg.ClientPassword).
 		setFrame(authData).
 		setHeaderLength(len(authData) + 4)
 }
 
 func NewPasswordMessage(authData []byte) *Packet {
-	p := newPacketWithType(pg.ClientPassword)
+	p := NewPacketWithType(pg.ClientPassword)
 	p.frame = append(p.frame, authData...)
 	return p.setHeaderLength(len(p.frame) + 4)
 }
 
 func NewAuthenticationOK() *Packet {
 	var okPacket [4]byte
-	return newPacketWithType(pg.ServerAuth).
+	return NewPacketWithType(pg.ServerAuth).
 		setFrame(okPacket[:]).
 		setHeaderLength(8)
 }
 
+func NewDataRowPacket(fieldCount uint16, dataRowValues ...string) *Packet {
+	typ := pg.ServerDataRow.Byte()
+	p := &Packet{typ: &typ}
+	var fieldCountBytes [2]byte
+	binary.BigEndian.PutUint16(fieldCountBytes[:], fieldCount)
+	p.frame = append(p.frame, fieldCountBytes[:]...)
+	for _, val := range dataRowValues {
+		var columnLen [4]byte
+		binary.BigEndian.PutUint32(columnLen[:], uint32(len(val)))
+		p.frame = append(p.frame, columnLen[:]...)
+		p.frame = append(p.frame, []byte(val)...)
+	}
+	return p.setHeaderLength(len(p.frame) + 4)
+}
+
 // https://www.postgresql.org/docs/current/protocol-error-fields.html
 func NewErrorPacketResponse(msg string, sev pg.Severity, errCode pg.Code) []*Packet {
-	p := newPacketWithType(pg.ServerErrorResponse)
+	p := NewPacketWithType(pg.ServerErrorResponse)
 	// Severity: ERROR, FATAL, INFO, etc
 	p.frame = append(p.frame, 'S')
 	p.frame = append(p.frame, sev...)
@@ -200,14 +220,14 @@ func NewErrorPacketResponse(msg string, sev pg.Severity, errCode pg.Code) []*Pac
 	p.frame = append(p.frame, '\000', '\000')
 
 	p.setHeaderLength(len(p.frame) + 4)
-	readyPkt := newPacketWithType(pg.ServerReadyForQuery).
+	readyPkt := NewPacketWithType(pg.ServerReadyForQuery).
 		setFrame([]byte{pg.ServerIdle}).
 		setHeaderLength(1 + 4)
 	return []*Packet{p, readyPkt}
 }
 
 func NewFatalError(msg string) *Packet {
-	p := newPacketWithType(pg.ServerErrorResponse)
+	p := NewPacketWithType(pg.ServerErrorResponse)
 	// Severity: ERROR, FATAL, INFO, etc
 	p.frame = append(p.frame, 'S')
 	p.frame = append(p.frame, pg.LevelFatal...)

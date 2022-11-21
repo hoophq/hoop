@@ -5,13 +5,14 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/runopsio/hoop/common/pg"
-	"github.com/runopsio/hoop/gateway/plugin"
 	"io"
 	"log"
 	"os"
 	"sync"
 	"time"
+
+	"github.com/runopsio/hoop/common/pg"
+	"github.com/runopsio/hoop/gateway/plugin"
 
 	"github.com/runopsio/hoop/common/memory"
 	pb "github.com/runopsio/hoop/common/proto"
