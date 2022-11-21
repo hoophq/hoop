@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/runopsio/hoop/agent/dlp"
+	"github.com/runopsio/hoop/agent/terminal"
 	"github.com/runopsio/hoop/common/memory"
 	pb "github.com/runopsio/hoop/common/proto"
 	"google.golang.org/grpc/codes"
@@ -58,25 +59,21 @@ func parseEnvVars(envVars map[string]any) (*pgEnv, error) {
 	if envVars == nil {
 		return nil, fmt.Errorf("empty env vars")
 	}
-	env := &pgEnv{}
-	for key, val := range envVars {
-		switch key {
-		case EnvVarDBHostKey:
-			env.host, _ = val.(string)
-		case EnvVarDBPortKey:
-			env.port, _ = val.(string)
-			if env.port == "" {
-				env.port = "5432"
-			}
-		case EnvVarDBUserKey:
-			env.user, _ = val.(string)
-		case EnvVarDBPassKey:
-			env.pass, _ = val.(string)
-		}
+	envVarS, err := terminal.NewEnvVarStore(envVars)
+	if err != nil {
+		return nil, err
+	}
+	env := &pgEnv{
+		host: envVarS.Getenv("HOST"),
+		user: envVarS.Getenv("USER"),
+		pass: envVarS.Getenv("PASS"),
+		port: envVarS.Getenv("PORT"),
+	}
+	if env.port == "" {
+		env.port = "5432"
 	}
 	if env.host == "" || env.pass == "" || env.user == "" {
-		return nil, fmt.Errorf("missing required secrets for postgres connection (%v, %v, %v)",
-			EnvVarDBHostKey, EnvVarDBUserKey, EnvVarDBPassKey)
+		return nil, fmt.Errorf("missing required secrets for postgres connection [HOST, USER, PASS]")
 	}
 	return env, nil
 }
@@ -198,6 +195,7 @@ func (a *Agent) processClientConnect(pkt *pb.Packet) {
 		}
 		log.Printf("session=%v - connection params decoded with success, dlp-info-types=%v",
 			sessionIDKey, connParams.DLPInfoTypes)
+		// envVarS, err :=
 		pgEnv, err := parseEnvVars(connParams.EnvVars)
 		if err != nil {
 			_ = a.client.Send(&pb.Packet{

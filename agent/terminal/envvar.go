@@ -50,13 +50,12 @@ func (s *EnvVarStore) Add(env *EnvVar) {
 	s.store[env.Key] = env
 }
 
-func newEnvVarStore(rawEnvVarList map[string]interface{}) (*EnvVarStore, error) {
+func NewEnvVarStore(rawEnvVarList map[string]any) (*EnvVarStore, error) {
 	store := &EnvVarStore{store: make(map[string]*EnvVar)}
 	for key, objVal := range rawEnvVarList {
 		if key == "xt/id" {
 			continue
 		}
-		key = strings.Replace(key, "secret/", "", 1)
 		keyType := strings.Split(key, ":")
 		if len(keyType) != 2 {
 			return nil, fmt.Errorf("environment variable key type in unknown format, want=[keytype:key], got=%v", key)
