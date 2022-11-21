@@ -321,6 +321,22 @@ func (s *Server) processClientExec(pkt *pb.Packet,
 	return nil
 }
 
+func (s *Server) ReviewStatusChange(sessionID string, status rv.Status, command []byte) error {
+	clientStream := getClientStream(sessionID)
+	if clientStream != nil {
+		t := pb.PacketClientGatewayExecApproveType
+		if status == rv.StatusRejected {
+			t = pb.PacketClientGatewayExecRejectType
+		}
+		_ = clientStream.Send(&pb.Packet{
+			Type:    string(t),
+			Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)},
+			Payload: command,
+		})
+	}
+	return nil
+}
+
 func (s *Server) disconnectClient(c *client.Client) {
 	unbindClient(c.SessionID)
 	c.Status = client.StatusDisconnected

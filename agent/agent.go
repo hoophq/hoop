@@ -247,7 +247,10 @@ func (a *Agent) processClientConnect(pkt *pb.Packet) {
 }
 
 func (a *Agent) processClientExec(pkt *pb.Packet) {
-	fmt.Printf("Received %s\n", pkt.String())
+	pkt.Type = pb.PacketClientAgentExecOKType.String()
+	pkt.Payload = []byte("This is a nice response")
+	a.client.Send(pkt)
+
 }
 
 func (a *Agent) processTCPCloseConnection(pkt *pb.Packet) {

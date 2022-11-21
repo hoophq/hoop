@@ -146,7 +146,7 @@ func (c *connect) processPacket(pkt *pb.Packet) {
 	case pb.PacketClientGatewayExecWaitType:
 		fmt.Println("This command requires review. We will notify you right here when it is approved")
 		return
-	case pb.PacketClientGatewayExecAllowType:
+	case pb.PacketClientGatewayExecApproveType:
 		fmt.Print("The command was approved! Do you want to run it now?\n (y/n) [y] ")
 		reader := bufio.NewReader(os.Stdin)
 		result := "y"
@@ -162,6 +162,10 @@ func (c *connect) processPacket(pkt *pb.Packet) {
 			return
 		}
 		c.processGracefulExit(errors.New("user aborted"))
+	case pb.PacketClientGatewayExecRejectType:
+		c.processGracefulExit(errors.New("task rejected. Sorry"))
+	case pb.PacketClientAgentExecOKType:
+		c.printOutputAndExit(pkt.Payload)
 
 	// pg protocol messages
 	case pb.PacketPGWriteClientType:
@@ -239,4 +243,10 @@ func (c *connect) printErrorAndExit(format string, v ...any) {
 		Background(p.Color("#DBAB79"))
 	fmt.Println(out.String())
 	os.Exit(1)
+}
+
+func (c *connect) printOutputAndExit(output []byte) {
+	c.loader.Disable()
+	fmt.Println(string(output))
+	os.Exit(0)
 }

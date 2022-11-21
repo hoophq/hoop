@@ -16,8 +16,9 @@ const (
 	// client->agent exec
 	PacketClientGatewayExecType      PacketType = "Client::Gateway::Exec"
 	PacketClientGatewayExecErrType   PacketType = "Client::Gateway::ExecErr"
-	PacketClientGatewayExecWaitType  PacketType = "Client::Gateway::ExecWait"
-	PacketClientGatewayExecAllowType PacketType = "Client::Gateway::ExecAllow"
+	PacketClientGatewayExecWaitType    PacketType = "Client::Gateway::ExecWait"
+	PacketClientGatewayExecApproveType PacketType = "Client::Gateway::ExecApprove"
+	PacketClientGatewayExecRejectType  PacketType = "Client::Gateway::ExecReject"
 	PacketClientExecAgentOfflineType PacketType = "Client::Gateway::ExecAgentOffline"
 	PacketClientAgentExecType        PacketType = "Client::Agent::Exec"
 	PacketClientAgentExecOKType      PacketType = "Client::Agent::ExecOK"

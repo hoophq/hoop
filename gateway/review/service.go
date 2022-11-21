@@ -9,7 +9,8 @@ import (
 
 type (
 	Service struct {
-		Storage storage
+		Storage          storage
+		TransportService transportService
 	}
 
 	storage interface {
@@ -17,6 +18,10 @@ type (
 		FindById(context *user.Context, id string) (*Review, error)
 		FindAll(context *user.Context) ([]Review, error)
 		FindBySessionID(sessionID string) (*Review, error)
+	}
+
+	transportService interface {
+		ReviewStatusChange(sessionID string, status Status, command []byte) error
 	}
 
 	Review struct {
@@ -110,5 +115,14 @@ func (s *Service) Review(context *user.Context, existingReview *Review, status S
 		existingReview.Status = StatusApproved
 	}
 
-	return s.Persist(context, existingReview)
+	if err := s.Persist(context, existingReview); err != nil {
+		return err
+	}
+
+	if existingReview.Status == StatusApproved || existingReview.Status == StatusRejected {
+		if err := s.TransportService.ReviewStatusChange(existingReview.Session, existingReview.Status, []byte(existingReview.Command)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
