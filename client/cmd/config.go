@@ -74,7 +74,7 @@ func getFilepath() string {
 	return filepath
 }
 
-func clientLogin() *Config {
+func getClientConfig() *Config {
 	defaultHost := "127.0.0.1"
 	defaultPort := "8010"
 
@@ -100,7 +100,7 @@ func clientLogin() *Config {
 	return config
 }
 
-func connectionClient(config *Config, loader *spinner.Spinner, args []string) (*connect, map[string][]byte) {
+func newClientConnect(config *Config, loader *spinner.Spinner, args []string) (*connect, map[string][]byte) {
 	c := &connect{
 		proxyPort:      connectFlags.proxyPort,
 		connStore:      memory.New(),

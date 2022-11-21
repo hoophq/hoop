@@ -6,16 +6,21 @@ const (
 	PacketKeepAliveType          PacketType = "KeepAlive"
 	PacketCloseTCPConnectionType PacketType = "CloseTCPConnection"
 
-	// client starting new connection
-	PacketClientGatewayExecType    PacketType = "Client::Gateway::Exec"
-	PacketClientGatewayConnectType PacketType = "Client::Gateway::Connect"
+	// client->agent connection
+	PacketClientGatewayConnectType    PacketType = "Client::Gateway::Connect"
+	PacketClientGatewayConnectErrType PacketType = "Client::Gateway::ConnectErr"
+	PacketClientAgentConnectType      PacketType = "Client::Agent::Connect"
+	PacketClientAgentConnectOKType    PacketType = "Client::Agent::ConnectOK"
+	PacketClientAgentConnectErrType   PacketType = "Client::Agent::ConnectErr"
 
-	// agent receiving new client connection
-	PacketClientAgentConnectType PacketType = "Client::Agent::Connect"
-
-	// agent response to client connection
-	PacketClientAgentConnectOKType  PacketType = "Client::Agent::ConnectOK"
-	PacketClientAgentConnectErrType PacketType = "Client::Agent::ConnectErr"
+	// client->agent exec
+	PacketClientGatewayExecType      PacketType = "Client::Gateway::Exec"
+	PacketClientGatewayExecErrType   PacketType = "Client::Gateway::ExecErr"
+	PacketClientGatewayExecWaitType  PacketType = "Client::Gateway::ExecWait"
+	PacketClientGatewayExecAllowType PacketType = "Client::Gateway::ExecAllow"
+	PacketClientAgentExecType        PacketType = "Client::Agent::Exec"
+	PacketClientAgentExecOKType      PacketType = "Client::Agent::ExecOK"
+	PacketClientAgentExecErrType     PacketType = "Client::Agent::ExecErr"
 
 	// terminal messages
 	PacketTerminalRunProcType           PacketType = "Terminal::RunProc"
@@ -35,6 +40,8 @@ const (
 	SpecClientExecArgsKey         string = "terminal.args"
 	SpecAgentConnectionParamsKey  string = "agent.connection_params"
 	SpecAgentGCPRawCredentialsKey string = "agent.gcp_credentials"
+
+	SpecClientGatewayExecPayload string = "exec.payload"
 
 	DefaultKeepAlive time.Duration = 10 * time.Second
 

@@ -48,14 +48,14 @@ type connect struct {
 }
 
 func runConnect(args []string) {
-	config := clientLogin()
+	config := getClientConfig()
 
 	loader := spinner.New(spinner.CharSets[78], 70*time.Millisecond)
 	loader.Color("green")
 	loader.Start()
 	loader.Suffix = " connecting to gateway..."
 
-	c, spec := connectionClient(config, loader, args)
+	c, spec := newClientConnect(config, loader, args)
 
 	if err := c.client.Send(&pb.Packet{
 		Type: pb.PacketClientGatewayConnectType.String(),
