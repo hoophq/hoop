@@ -39,7 +39,7 @@ func (api *Api) StartAPI() {
 		os.Setenv("PORT", "8009")
 	}
 	route := gin.Default()
-	if api.Profile == pb.DevProfile {
+	if api.Profile != pb.DevProfile {
 		route = gin.New()
 		route.Use(gin.Recovery())
 	}
