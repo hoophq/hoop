@@ -1,11 +1,13 @@
 package cmd
 
 import (
-	"fmt"
+	"bufio"
 	"github.com/briandowns/spinner"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/spf13/cobra"
+	"io"
 	"os"
+	"syscall"
 	"time"
 )
 
@@ -59,26 +61,35 @@ func runExec(args []string) {
 	}
 
 	if pkt.Payload == nil {
-		var s []string
-		if _, err := fmt.Scanf("%s", &s); err != nil {
-			c.printErrorAndExit("failed parsing stdin, err=%v", err)
+		info, err := os.Stdin.Stat()
+		if err != nil {
+			panic(err)
 		}
-		fmt.Printf(">>>>>>> ARGS >>>>>>> %s\n", args)
-		fmt.Printf(">>>>>>> S >>>>>>> %s\n", s)
 
-		//pkt.Payload = []byte(...s)
+		if info.Mode()&os.ModeCharDevice == 0 || info.Size() > 0 {
+			stdinPipe := os.NewFile(uintptr(syscall.Stdin), "/dev/stdin")
+			reader := bufio.NewReader(stdinPipe)
+			for {
+				input, err := reader.ReadByte()
+				if err != nil && err == io.EOF {
+					break
+				}
+				pkt.Payload = append(pkt.Payload, input)
+			}
+			stdinPipe.Close()
+		}
 	}
 
-	if err := c.client.Send(&pb.Packet{
-		Type: pb.PacketClientGatewayExecType.String(),
-		Spec: spec,
-	}); err != nil {
+	if pkt.Payload == nil {
+		c.printErrorAndExit("missing command, please run 'hoop exec help'")
+	}
+
+	if err := c.client.Send(pkt); err != nil {
 		_, _ = c.client.Close()
-		c.printErrorAndExit("failed connecting to gateway, err=%v", err)
+		c.printErrorAndExit("failed exec'ing command, err=%v", err)
 	}
 
 	loader.Stop()
-	fmt.Printf(">>>>>>>>>>>>>> %d %s\n", len(args), string(pkt.Payload))
 
 	for {
 		pkt, err := c.client.Recv()
