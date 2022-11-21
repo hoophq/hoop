@@ -324,9 +324,9 @@ func (s *Server) processClientExec(pkt *pb.Packet,
 func (s *Server) ReviewStatusChange(sessionID string, status rv.Status, command []byte) error {
 	clientStream := getClientStream(sessionID)
 	if clientStream != nil {
-		t := pb.PacketClientGatewayExecApproveType
+		t := string(pb.PacketClientGatewayExecApproveType)
 		if status == rv.StatusRejected {
-			t = pb.PacketClientGatewayExecRejectType
+			t = string(pb.PacketClientGatewayExecRejectType)
 		}
 		_ = clientStream.Send(&pb.Packet{
 			Type:    string(t),

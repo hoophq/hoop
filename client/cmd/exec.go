@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 	"io"
 	"os"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -83,6 +84,8 @@ func runExec(args []string) {
 	if pkt.Payload == nil {
 		c.printErrorAndExit("missing command, please run 'hoop exec help'")
 	}
+
+	pkt.Payload = []byte(strings.Trim(string(pkt.Payload), " \n"))
 
 	if err := c.client.Send(pkt); err != nil {
 		_, _ = c.client.Close()

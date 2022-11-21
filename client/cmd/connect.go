@@ -47,6 +47,7 @@ type connect struct {
 	connStore      memory.Store
 	clientArgs     []string
 	connectionName string
+	waitingReview  *pb.Packet
 	loader         *spinner.Spinner
 }
 
@@ -144,24 +145,33 @@ func (c *connect) processPacket(pkt *pb.Packet) {
 		}
 		c.processGracefulExit(errors.New("user aborted"))
 	case pb.PacketClientGatewayExecWaitType:
+		c.waitingReview = pkt
 		fmt.Println("This command requires review. We will notify you right here when it is approved")
 		return
 	case pb.PacketClientGatewayExecApproveType:
 		fmt.Print("The command was approved! Do you want to run it now?\n (y/n) [y] ")
-		reader := bufio.NewReader(os.Stdin)
-		result := "y"
-		for {
-			c, _ := reader.ReadByte()
-			result = strings.Trim(string(c), " \n")
-			break
+		consolescanner := bufio.NewScanner(os.Stdin)
+
+		// by default, bufio.Scanner scans newline-separated lines
+		var input string
+		for consolescanner.Scan() {
+			input = consolescanner.Text()
 		}
 
-		if result == "y" {
-			pkt.Type = string(pb.PacketClientGatewayExecType)
-			_ = c.client.Send(pkt)
+		input = strings.Trim(input, " \n")
+		if input == "" {
+			input = "y"
+		}
+
+		input = input[0:1]
+
+		if input == "y" || input == "" {
+			c.waitingReview.Type = string(pb.PacketClientGatewayExecType)
+			_ = c.client.Send(c.waitingReview)
+			c.waitingReview = nil
 			return
 		}
-		c.processGracefulExit(errors.New("user aborted"))
+		c.processGracefulExit(errors.New("user cancelled the action"))
 	case pb.PacketClientGatewayExecRejectType:
 		c.processGracefulExit(errors.New("task rejected. Sorry"))
 	case pb.PacketClientAgentExecOKType:
