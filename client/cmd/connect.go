@@ -89,7 +89,7 @@ func (c *connect) processPacket(pkt *pb.Packet) {
 		}
 		connnectionType := pkt.Spec[pb.SpecConnectionType]
 		switch string(connnectionType) {
-		case "postgres":
+		case pb.ConnectionTypePostgres:
 			// start postgres server
 			pgp := proxy.NewPGServer(c.proxyPort, c.client)
 			if err := pgp.Serve(string(sessionID)); err != nil {
@@ -104,7 +104,25 @@ func (c *connect) processPacket(pkt *pb.Packet) {
 			fmt.Printf("      host=127.0.0.1 port=%s user=noop password=noop\n", pgp.ListenPort())
 			fmt.Println("------------------------------------------------------------")
 			log.Println("ready to accept connections!")
-		case "command-line":
+		case pb.ConnectionTypeTCP:
+			proxyPort := "8999"
+			if c.proxyPort != "" {
+				proxyPort = c.proxyPort
+			}
+			tcp := proxy.NewTCPServer(proxyPort, c.client, pb.PacketTCPWriteServerType)
+			if err := tcp.Serve(string(sessionID)); err != nil {
+				c.processGracefulExit(err)
+			}
+			c.loader.Stop()
+			c.client.StartKeepAlive()
+			c.connStore.Set(string(sessionID), tcp)
+			c.printHeader(string(sessionID))
+			fmt.Println()
+			fmt.Println("--------------------tcp-connection--------------------")
+			fmt.Printf("               host=127.0.0.1 port=%s\n", tcp.ListenPort())
+			fmt.Println("------------------------------------------------------")
+			log.Println("ready to accept connections!")
+		case pb.ConnectionTypeCommandLine:
 			if runtime.GOOS == "windows" {
 				fmt.Println("command line is not supported on Windows")
 				os.Exit(1)
@@ -190,6 +208,15 @@ func (c *connect) processPacket(pkt *pb.Packet) {
 		if err != nil {
 			c.processGracefulExit(fmt.Errorf("failed writing to client, err=%v", err))
 		}
+	case pb.PacketTCPWriteClientType:
+		sessionID := pkt.Spec[pb.SpecGatewaySessionID]
+		connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
+		if tcp, ok := c.connStore.Get(string(sessionID)).(*proxy.TCPServer); ok {
+			_, err := tcp.PacketWriteClient(connectionID, pkt)
+			if err != nil {
+				c.processGracefulExit(fmt.Errorf("failed writing to client, err=%v", err))
+			}
+		}
 	case pb.PacketCloseTCPConnectionType:
 		sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 		pgpObj := c.connStore.Get(string(sessionID))
@@ -227,6 +254,13 @@ func (c *connect) processGracefulExit(err error) {
 			fmt.Printf("\n\n")
 			c.printErrorAndExit(err.Error())
 		case *proxy.PGServer:
+			v.PacketCloseConnection(sessionID)
+			time.Sleep(time.Millisecond * 500)
+			if err == io.EOF {
+				os.Exit(0)
+			}
+			c.printErrorAndExit(err.Error())
+		case *proxy.TCPServer:
 			v.PacketCloseConnection(sessionID)
 			time.Sleep(time.Millisecond * 500)
 			if err == io.EOF {

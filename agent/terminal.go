@@ -12,7 +12,7 @@ import (
 	"github.com/runopsio/hoop/common/runtime"
 )
 
-func (a *Agent) doTerminalRunProc(pkt *pb.Packet) {
+func (a *Agent) doExec(pkt *pb.Packet) {
 	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 	encConnectionParams := pkt.Spec[pb.SpecAgentConnectionParamsKey]
 	var connParams pb.AgentConnectionParams
@@ -83,7 +83,7 @@ func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {
 		a.sendCloseTerm(sessionID, fmt.Sprintf(errMsg, v...), strconv.Itoa(exitCode))
 	}
 	stdoutWriter := pb.NewStreamWriter(a.client, pb.PacketTerminalClientWriteStdoutType, spec)
-	if dlpClient, ok := a.connStore.Get(dlpClientKey).(*dlp.Client); ok {
+	if dlpClient, ok := a.connStore.Get(dlpClientKey).(dlp.Client); ok {
 		stdoutWriter = dlp.NewDLPStreamWriter(
 			a.client,
 			dlpClient,

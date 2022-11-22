@@ -5,13 +5,14 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/runopsio/hoop/common/pg"
-	"github.com/runopsio/hoop/gateway/plugin"
 	"io"
 	"log"
 	"os"
 	"sync"
 	"time"
+
+	"github.com/runopsio/hoop/common/pg"
+	"github.com/runopsio/hoop/gateway/plugin"
 
 	"github.com/runopsio/hoop/common/memory"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -109,7 +110,8 @@ func (p *auditPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt
 		return p.writeOnReceive(pluginConfig.SessionId, 'i', queryBytes)
 	case pb.PacketTerminalClientWriteStdoutType:
 		return p.writeOnReceive(pluginConfig.SessionId, 'o', pkt.GetPayload())
-	case pb.PacketTerminalWriteAgentStdinType, pb.PacketTerminalRunProcType:
+	case pb.PacketTerminalWriteAgentStdinType,
+		pb.PacketTCPWriteServerType:
 		return p.writeOnReceive(pluginConfig.SessionId, 'i', pkt.GetPayload())
 	}
 	return nil

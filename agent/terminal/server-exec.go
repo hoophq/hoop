@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	term "github.com/runopsio/hoop/common/terminal"
 	"io"
 	"log"
 	"os"
 	"os/exec"
 	"os/signal"
+
+	term "github.com/runopsio/hoop/common/terminal"
 
 	"github.com/creack/pty"
 )
@@ -207,7 +208,7 @@ func NewCommand(rawEnvVarList map[string]interface{}, args ...string) (*Command,
 	if len(args) == 0 {
 		return nil, fmt.Errorf("connection must be at least one argument")
 	}
-	envStore, err := newEnvVarStore(rawEnvVarList)
+	envStore, err := NewEnvVarStore(rawEnvVarList)
 	if err != nil {
 		return nil, err
 	}

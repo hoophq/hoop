@@ -14,21 +14,24 @@ const (
 	PacketClientAgentConnectErrType   PacketType = "Client::Agent::ConnectErr"
 
 	// client->agent exec
-	PacketClientGatewayExecType      PacketType = "Client::Gateway::Exec"
-	PacketClientGatewayExecErrType   PacketType = "Client::Gateway::ExecErr"
+	PacketClientGatewayExecType        PacketType = "Client::Gateway::Exec"
+	PacketClientGatewayExecErrType     PacketType = "Client::Gateway::ExecErr"
 	PacketClientGatewayExecWaitType    PacketType = "Client::Gateway::ExecWait"
 	PacketClientGatewayExecApproveType PacketType = "Client::Gateway::ExecApprove"
 	PacketClientGatewayExecRejectType  PacketType = "Client::Gateway::ExecReject"
-	PacketClientExecAgentOfflineType PacketType = "Client::Gateway::ExecAgentOffline"
-	PacketClientAgentExecType        PacketType = "Client::Agent::Exec"
-	PacketClientAgentExecOKType      PacketType = "Client::Agent::ExecOK"
-	PacketClientAgentExecErrType     PacketType = "Client::Agent::ExecErr"
+	PacketClientExecAgentOfflineType   PacketType = "Client::Gateway::ExecAgentOffline"
+	PacketClientAgentExecType          PacketType = "Client::Agent::Exec"
+	PacketClientAgentExecOKType        PacketType = "Client::Agent::ExecOK"
+	PacketClientAgentExecErrType       PacketType = "Client::Agent::ExecErr"
 
 	// terminal messages
-	PacketTerminalRunProcType           PacketType = "Terminal::RunProc"
 	PacketTerminalClientWriteStdoutType PacketType = "Terminal::Client::WriteStdout"
 	PacketTerminalWriteAgentStdinType   PacketType = "Terminal::Agent::WriteStdin"
 	PacketTerminalCloseType             PacketType = "Terminal::Close"
+
+	// Raw TCP
+	PacketTCPWriteServerType PacketType = "TCP::WriteServer"
+	PacketTCPWriteClientType PacketType = "TCP::WriteClient"
 
 	// PG protocol messages
 	PacketPGWriteServerType PacketType = "PG::WriteServer"
@@ -42,11 +45,14 @@ const (
 	SpecClientExecArgsKey         string = "terminal.args"
 	SpecAgentConnectionParamsKey  string = "agent.connection_params"
 	SpecAgentGCPRawCredentialsKey string = "agent.gcp_credentials"
+	SpecTCPServerConnectKey       string = "tcp.server_connect"
 	SpecReviewDataKey             string = "review.data"
 
-	SpecClientGatewayExecPayload string = "exec.payload"
-
 	DefaultKeepAlive time.Duration = 10 * time.Second
+
+	ConnectionTypeCommandLine string = "command-line"
+	ConnectionTypePostgres    string = "postgres"
+	ConnectionTypeTCP         string = "tcp"
 
 	DevProfile = "dev"
 
@@ -58,5 +64,5 @@ const (
 	ClientLoginCallbackAddress string = "127.0.0.1:3587"
 
 	ClientVerbConnect = "connect"
-	ClientVerbExec = "exec"
+	ClientVerbExec    = "exec"
 )
