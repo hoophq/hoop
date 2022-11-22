@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"fmt"
 	"github.com/briandowns/spinner"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/spf13/cobra"
@@ -69,6 +70,8 @@ func runExec(args []string) {
 
 		if info.Mode()&os.ModeCharDevice == 0 || info.Size() > 0 {
 			stdinPipe := os.NewFile(uintptr(syscall.Stdin), "/dev/stdin")
+			defer stdinPipe.Close()
+
 			reader := bufio.NewReader(stdinPipe)
 			for {
 				input, err := reader.ReadByte()
@@ -77,7 +80,8 @@ func runExec(args []string) {
 				}
 				pkt.Payload = append(pkt.Payload, input)
 			}
-			stdinPipe.Close()
+			fmt.Println(string(pkt.Payload))
+			pkt.Payload = []byte(strings.Trim(string(pkt.Payload), " \n"))
 		}
 	}
 
