@@ -23,6 +23,10 @@ const (
 	PacketTerminalWriteAgentStdinType   PacketType = "Terminal::Agent::WriteStdin"
 	PacketTerminalCloseType             PacketType = "Terminal::Close"
 
+	// Raw TCP
+	PacketTCPWriteServerType PacketType = "TCP::WriteServer"
+	PacketTCPWriteClientType PacketType = "TCP::WriteClient"
+
 	// PG protocol messages
 	PacketPGWriteServerType PacketType = "PG::WriteServer"
 	PacketPGWriteClientType PacketType = "PG::WriteClient"
@@ -35,8 +39,13 @@ const (
 	SpecClientExecArgsKey         string = "terminal.args"
 	SpecAgentConnectionParamsKey  string = "agent.connection_params"
 	SpecAgentGCPRawCredentialsKey string = "agent.gcp_credentials"
+	SpecTCPServerConnectKey       string = "tcp.server_connect"
 
 	DefaultKeepAlive time.Duration = 10 * time.Second
+
+	ConnectionTypeCommandLine string = "command-line"
+	ConnectionTypePostgres    string = "postgres"
+	ConnectionTypeTCP         string = "tcp"
 
 	DevProfile = "dev"
 

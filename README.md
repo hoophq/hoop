@@ -32,24 +32,22 @@ The Gateway manages connections and users that are allowed to access resources. 
 
 To facilitate the deployment, it's possible to configure most of options using environment variables
 
-| ENVIRONMENT          | DESCRIPTION                                | AGENT | CLIENT | GATEWAY        |
-| -------------------- | ------------------------------------------ | ----- | ------ | -------------- |
-| XTDB_ADDRESS         | Database server address                    | no    | no     | yes            |
-| STATIC_UI_PATH       | The path where the UI assets resides       | no    | no     | yes            |
-| PROFILE              | "dev" runs gateway without authentication  | no    | no     | yes            |
-| IDP_CLIENT_SECRET    | required if not in 'dev' mode              | no    | no     | yes (required) |
+| ENVIRONMENT                          | DESCRIPTION                                | AGENT | CLIENT | GATEWAY  |
+| ------------------------------------ | ------------------------------------------ | ----- | ------ | -------- |
+| XTDB_ADDRESS                         | Database server address                    | no    | no     | yes      |
+| STATIC_UI_PATH                       | The path where the UI assets resides       | no    | no     | yes      |
+| PROFILE                              | "dev" runs gateway without authentication  | no    | no     | yes      |
+| GOOGLE_APPLICATION_CREDENTIALS_JSON  | GCP DLP credentials                        | no    | no     | yes      |
 
 To customize the identity provider, the following variables can be set:
 
 | ENVIRONMENT             | DESCRIPTION                                 | AGENT | CLIENT | GATEWAY |
 | ----------------------- | ------------------------------------------- | ----- | ------ | ------- |
-| IDP_DOMAIN              | Domain of identity provider                 | no    | no     | yes     |
-| IDP_CLIENT_ID           | ClientID of identity provider               | no    | no     | yes     |
-| IDP_AUDIENCE            | Audience of identity provider               | no    | no     | yes     |
-| IDP_JWKS_URL            | Public keys endpoint of identity provider   | no    | no     | yes     |
-| IDP_AUTHORIZE_ENDPOINT  | Authorization endpoint of identity provider | no    | no     | yes     |
-| IDP_TOKEN_ENDPOINT      | Token endpoint of identity provider         | no    | no     | yes     |
-
+| API_URL                 | The public address of the API               | no    | no     | yes     |
+| IDP_ISSUER              | The issuer of the application               | no    | no     | yes     |
+| IDP_CLIENT_ID           | The oauth2 client  id                       | no    | no     | yes     |
+| IDP_CLIENT_SECRET       | The oauth2 client secret                    | no    | no     | yes     |
+| IDP_AUDIENCE            | The audience name                           | no    | no     | yes     |
 
 ## Development QuickStart
 

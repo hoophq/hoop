@@ -2,9 +2,10 @@ package session
 
 import (
 	"fmt"
-	"github.com/runopsio/hoop/gateway/plugin"
 	"log"
 	"strings"
+
+	"github.com/runopsio/hoop/gateway/plugin"
 
 	st "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/user"
@@ -105,15 +106,16 @@ func (s *Storage) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionLi
 	}
 	err := s.queryDecoder(`
 		{:query {
-			:find [id usr typ conn start-date end-date]
+			:find [id usr typ conn event-size start-date end-date]
 			:keys [xt/id session/user session/type session/connection
-				   session/start-date session/end-date]
+				   session/event-size session/start-date session/end-date]
 			:in [org-id arg-user arg-type arg-conn arg-start-date arg-end-date]
 			:where [[a :session/org-id org-id]
 					[a :xt/id id]
 					[a :session/user usr]
 					[a :session/type typ]
 					[a :session/connection conn]
+					[a :session/event-size event-size]
 					[a :session/start-date start-date]
 					[a :session/start-date end-date]
 					(or [(= arg-user nil)]
@@ -140,9 +142,10 @@ func (s *Storage) FindOne(ctx *user.Context, sessionID string) (*Session, error)
 	var session []Session
 	err := s.queryDecoder(`
 	{:query {
-		:find [s user type connection event-stream start-date end-date]
+		:find [s user type connection event-stream event-size start-date end-date]
 		:keys [xt/id session/user session/type session/connection
-			   session/event-stream session/start-date session/end-date]
+			   session/event-stream session/event-size
+			   session/start-date session/end-date]
 		:in [org-id arg-session-id]
 		:where [[s :session/org-id org-id]
 				[s :xt/id arg-session-id]
@@ -151,6 +154,7 @@ func (s *Storage) FindOne(ctx *user.Context, sessionID string) (*Session, error)
 				[s :session/connection connection]
 				[s :session/xtdb-stream xtdb-stream]
 				[(get xtdb-stream :stream) event-stream]
+				[s :session/event-size event-size]
 				[s :session/start-date start-date]
 				[s :session/end-date end-date]]}
 	:in-args [%q %q]}`, &session, ctx.Org.Id, sessionID)
@@ -192,6 +196,7 @@ func (s *GenericStorageWriter) Write(p plugin.Config) error {
 		Type:             p.ConnectionType,
 		Connection:       p.ConnectionName,
 		NonIndexedStream: nil,
+		EventSize:        p.Int64("event_size"),
 		StartSession:     *eventStartDate,
 		EndSession:       p.GetTime("end_time"),
 	}

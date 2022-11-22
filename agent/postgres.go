@@ -17,20 +17,7 @@ import (
 func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 	swPgClient := pb.NewStreamWriter(a.client, pb.PacketPGWriteClientType, pkt.Spec)
-	connParams, _ := a.connStore.Get(sessionID).(*pb.AgentConnectionParams)
-	if connParams == nil {
-		log.Printf("session=%s - connection params not found", sessionID)
-		writePGClientErr(swPgClient,
-			pg.NewFatalError("credentials is empty, contact the administrator").Encode())
-		return
-	}
-	pgEnv, _ := connParams.EnvVars["pgenv"].(*pgEnv)
-	if pgEnv == nil {
-		log.Println("postgres credentials not found in memory")
-		writePGClientErr(swPgClient,
-			pg.NewFatalError("credentials is empty, contact the administrator").Encode())
-		return
-	}
+
 	clientConnectionID := string(pkt.Spec[pb.SpecClientConnectionID])
 	if clientConnectionID == "" {
 		log.Println("connection id not found in memory")
@@ -47,6 +34,22 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 		}
 		return
 	}
+
+	connParams, _ := a.connStore.Get(sessionID).(*pb.AgentConnectionParams)
+	if connParams == nil {
+		log.Printf("session=%s - connection params not found", sessionID)
+		writePGClientErr(swPgClient,
+			pg.NewFatalError("credentials is empty, contact the administrator").Encode())
+		return
+	}
+	connenv, _ := connParams.EnvVars[connEnvKey].(*connEnv)
+	if connenv == nil {
+		log.Println("postgres credentials not found in memory")
+		writePGClientErr(swPgClient,
+			pg.NewFatalError("credentials is empty, contact the administrator").Encode())
+		return
+	}
+
 	// startup phase
 	_, pgPkt, err := pg.DecodeStartupPacket(pb.BufferedPayload(pkt.Payload))
 	if err != nil {
@@ -73,7 +76,7 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 		// TODO(san): send the packet back to the connection which initiate the cancel request.
 		// Storing the PID in memory may allow to track the connection between client/agent
 		log.Printf("session=%v - starting cancel request", sessionID)
-		pgServer, err := newTCPConn(pgEnv.host, pgEnv.port)
+		pgServer, err := newTCPConn(connenv.host, connenv.port)
 		if err != nil {
 			log.Printf("failed creating a cancel connection with postgres server, err=%v", err)
 			return
@@ -87,7 +90,7 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 		return
 	}
 
-	startupPkt, err := pg.DecodeStartupPacketWithUsername(pb.BufferedPayload(pkt.Payload), pgEnv.user)
+	startupPkt, err := pg.DecodeStartupPacketWithUsername(pb.BufferedPayload(pkt.Payload), connenv.user)
 	if err != nil {
 		log.Printf("failed decoding startup packet with username, err=%v", err)
 		writePGClientErr(swPgClient,
@@ -96,7 +99,7 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	}
 
 	log.Printf("starting postgres connection for %s", sessionID)
-	pgServer, err := newTCPConn(pgEnv.host, pgEnv.port)
+	pgServer, err := newTCPConn(connenv.host, connenv.port)
 	if err != nil {
 		log.Printf("failed obtaining connection with postgres server, err=%v", err)
 		writePGClientErr(swPgClient,
@@ -109,7 +112,7 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 			pg.NewFatalError("failed writing startup packet, contact the administrator").Encode())
 	}
 	log.Println("finish startup phase")
-	mid := middlewares.New(swPgClient, pgServer, pgEnv.user, pgEnv.pass)
+	mid := middlewares.New(swPgClient, pgServer, connenv.user, connenv.pass)
 	var dlpClient dlp.Client
 	if dlpc, ok := a.connStore.Get(dlpClientKey).(dlp.Client); ok {
 		dlpClient = dlpc
