@@ -34,6 +34,7 @@ type (
 		EventStream EventStream `json:"event_stream" edn:"session/event-stream"`
 		// Must NOT index streams (all top keys are indexed in xtdb)
 		NonIndexedStream NonIndexedEventStreamList `json:"-"          edn:"session/xtdb-stream"`
+		EventSize        int64                     `json:"event_size" edn:"session/event-size"`
 		StartSession     time.Time                 `json:"start_date" edn:"session/start-date"`
 		EndSession       *time.Time                `json:"end_date"   edn:"session/end-date"`
 	}

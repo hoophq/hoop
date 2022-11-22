@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/runopsio/hoop/gateway/plugin"
 	"log"
 	"os"
 	"sync"
 	"time"
 
+	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/session"
 	"github.com/tidwall/wal"
 )
@@ -64,22 +65,24 @@ func addEventStreamHeader(d time.Time, eventType byte) []byte {
 	return append([]byte(d.Format(time.RFC3339Nano)), '\000', eventType, '\000')
 }
 
-func parseEventStream(eventStream []byte) (session.EventStream, error) {
+func parseEventStream(eventStream []byte) (session.EventStream, int, error) {
 	position := bytes.IndexByte(eventStream, '\000')
 	if position == -1 {
-		return nil, fmt.Errorf("event stream in wrong format [event-time]")
+		return nil, -1, fmt.Errorf("event stream in wrong format [event-time]")
 	}
 	eventTimeBytes := eventStream[:position]
 	eventTime, err := time.Parse(time.RFC3339Nano, string(eventTimeBytes))
 	if err != nil {
-		return nil, fmt.Errorf("failed parsing event time, err=%v", err)
+		return nil, -1, fmt.Errorf("failed parsing event time, err=%v", err)
 	}
 	position += 2
 	if len(eventStream) <= position {
-		return nil, fmt.Errorf("event stream in wrong format [event-type]")
+		return nil, -1, fmt.Errorf("event stream in wrong format [event-type]")
 	}
 	eventType := eventStream[position-1]
-	return session.EventStream{eventTime, eventType, eventStream[position:]}, nil
+	eventStreamLength := len(eventStream[position:])
+	return session.EventStream{eventTime, eventType, eventStream[position:]},
+		eventStreamLength, nil
 }
 
 func (p *auditPlugin) writeOnConnect(orgID, sessionID, userID, connName, connType string) error {
@@ -151,19 +154,23 @@ func (p *auditPlugin) writeOnClose(sessionID string) error {
 	}
 	idx := uint64(2)
 	var eventStreamList []session.EventStream
+	eventSize := int64(0)
 	for {
 		eventStreamBytes, err := walogm.log.Read(idx)
 		if err != nil && err != wal.ErrNotFound {
 			return fmt.Errorf("failed reading full session data err=%v", err)
 		}
+		// truncate when event is greater than 5000 bytes for tcp type
+		eventStreamBytes = p.truncateEventStream(eventStreamBytes, wh.ConnectionType)
 		if err == wal.ErrNotFound {
 			break
 		}
-		eventStream, err := parseEventStream(eventStreamBytes)
+		eventStream, size, err := parseEventStream(eventStreamBytes)
 		if err != nil {
 			return err
 		}
 		eventStreamList = append(eventStreamList, eventStream)
+		eventSize += int64(size)
 		idx++
 	}
 	endDate := time.Now().UTC()
@@ -175,6 +182,7 @@ func (p *auditPlugin) writeOnClose(sessionID string) error {
 		ConnectionType: wh.ConnectionType,
 		ParamsData: map[string]any{
 			"event_stream": eventStreamList,
+			"event_size":   eventSize,
 			"start_date":   wh.StartDate,
 			"end_time":     &endDate,
 		},
@@ -193,4 +201,11 @@ func (p *auditPlugin) writeOnClose(sessionID string) error {
 		}
 	}
 	return err
+}
+
+func (p *auditPlugin) truncateEventStream(eventStream []byte, connType string) []byte {
+	if len(eventStream) > 5000 && connType == pb.ConnectionTypeTCP {
+		return eventStream[0:5000]
+	}
+	return eventStream
 }

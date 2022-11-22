@@ -23,7 +23,7 @@ type (
 		closeSignal chan struct{}
 		connStore   memory.Store
 	}
-	pgEnv struct {
+	connEnv struct {
 		host string
 		user string
 		pass string
@@ -49,13 +49,13 @@ func newTCPConn(host, port string) (net.Conn, error) {
 		return nil, fmt.Errorf("failed dialing server: %s", err)
 	}
 
-	log.Printf("tcp connection stablished with postgres server. address=%v, local-addr=%v\n",
+	log.Printf("tcp connection stablished with server. address=%v, local-addr=%v\n",
 		serverConn.LocalAddr(),
 		serverConn.RemoteAddr())
 	return serverConn, nil
 }
 
-func parseEnvVars(envVars map[string]any) (*pgEnv, error) {
+func parseEnvVars(envVars map[string]any, connType string) (*connEnv, error) {
 	if envVars == nil {
 		return nil, fmt.Errorf("empty env vars")
 	}
@@ -63,17 +63,24 @@ func parseEnvVars(envVars map[string]any) (*pgEnv, error) {
 	if err != nil {
 		return nil, err
 	}
-	env := &pgEnv{
+	env := &connEnv{
 		host: envVarS.Getenv("HOST"),
 		user: envVarS.Getenv("USER"),
 		pass: envVarS.Getenv("PASS"),
 		port: envVarS.Getenv("PORT"),
 	}
-	if env.port == "" {
-		env.port = "5432"
-	}
-	if env.host == "" || env.pass == "" || env.user == "" {
-		return nil, fmt.Errorf("missing required secrets for postgres connection [HOST, USER, PASS]")
+	switch connType {
+	case pb.ConnectionTypePostgres:
+		if env.port == "" {
+			env.port = "5432"
+		}
+		if env.host == "" || env.pass == "" || env.user == "" {
+			return nil, fmt.Errorf("missing required secrets for postgres connection [HOST, USER, PASS]")
+		}
+	case pb.ConnectionTypeTCP:
+		if env.host == "" || env.port == "" {
+			return nil, fmt.Errorf("missing required environment for connection [HOST, PORT]")
+		}
 	}
 	return env, nil
 }
@@ -146,6 +153,10 @@ func (a *Agent) Run(svrAddr, token string) {
 			a.doTerminalWriteAgentStdin(pkt)
 		case pb.PacketTerminalCloseType:
 			a.doTerminalCloseTerm(pkt)
+
+		// raw tcp
+		case pb.PacketTCPWriteServerType:
+			a.processTCPWriteServer(pkt)
 		}
 	}
 }
@@ -188,7 +199,7 @@ func (a *Agent) processClientConnect(pkt *pb.Packet) {
 
 	sessionIDKey := string(sessionID)
 	switch connType := string(pkt.Spec[pb.SpecConnectionType]); {
-	case connType == "postgres":
+	case connType == pb.ConnectionTypePostgres || connType == pb.ConnectionTypeTCP:
 		connParams := a.decodeConnectionParams(sessionID, pkt)
 		if connParams == nil {
 			return
@@ -196,7 +207,7 @@ func (a *Agent) processClientConnect(pkt *pb.Packet) {
 		log.Printf("session=%v - connection params decoded with success, dlp-info-types=%v",
 			sessionIDKey, connParams.DLPInfoTypes)
 		// envVarS, err :=
-		pgEnv, err := parseEnvVars(connParams.EnvVars)
+		connenv, err := parseEnvVars(connParams.EnvVars, connType)
 		if err != nil {
 			_ = a.client.Send(&pb.Packet{
 				Type:    pb.PacketClientAgentConnectErrType.String(),
@@ -205,19 +216,19 @@ func (a *Agent) processClientConnect(pkt *pb.Packet) {
 			})
 			return
 		}
-		if err := isPortActive(pgEnv.host, pgEnv.port); err != nil {
+		if err := isPortActive(connenv.host, connenv.port); err != nil {
 			_ = a.client.Send(&pb.Packet{
 				Type:    pb.PacketClientAgentConnectErrType.String(),
 				Payload: []byte(err.Error()),
 				Spec:    map[string][]byte{pb.SpecGatewaySessionID: sessionID},
 			})
-			log.Printf("session=%v - failed connecting to postgres host=%q, port=%q, err=%v",
-				sessionIDKey, pgEnv.host, pgEnv.port, err)
+			log.Printf("session=%v - failed connecting to host=%q, port=%q, err=%v",
+				sessionIDKey, connenv.host, connenv.port, err)
 			return
 		}
-		connParams.EnvVars["pgenv"] = pgEnv
+		connParams.EnvVars[connEnvKey] = connenv
 		a.connStore.Set(sessionIDKey, connParams)
-	case connType == "command-line":
+	case connType == pb.ConnectionTypeCommandLine:
 		sessionIDKey = fmt.Sprintf(connectionStoreParamsKey, string(sessionID))
 		connParams := a.decodeConnectionParams(sessionID, pkt)
 		if connParams == nil {
