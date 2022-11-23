@@ -194,6 +194,8 @@ func (c *connect) processPacket(pkt *pb.Packet) {
 		c.processGracefulExit(errors.New("task rejected. Sorry"))
 	case pb.PacketClientAgentExecOKType:
 		c.printOutputAndExit(pkt.Payload)
+	case pb.PacketClientAgentExecErrType:
+		c.processGracefulExit(errors.New(string(pkt.Payload)))
 
 	// pg protocol messages
 	case pb.PacketPGWriteClientType:
