@@ -59,11 +59,11 @@ func runConnect(args []string) {
 	loader.Start()
 	loader.Suffix = " connecting to gateway..."
 
-	c, spec := newClientConnect(config, loader, args, pb.ClientVerbConnect)
+	c := newClientConnect(config, loader, args, pb.ClientVerbConnect)
 
 	if err := c.client.Send(&pb.Packet{
 		Type: pb.PacketClientGatewayConnectType.String(),
-		Spec: spec,
+		Spec: newClientArgsSpec(c.clientArgs),
 	}); err != nil {
 		_, _ = c.client.Close()
 		c.printErrorAndExit("failed connecting to gateway, err=%v", err)
@@ -149,11 +149,16 @@ func (c *connect) processPacket(pkt *pb.Packet) {
 	case pb.PacketClientExecAgentOfflineType:
 		fmt.Print("Agent is offline. Do you want to try again?\n (y/n) [y] ")
 		reader := bufio.NewReader(os.Stdin)
-		result := "y"
+		var result string
 		for {
 			c, _ := reader.ReadByte()
-			result = strings.Trim(string(c), " \n")
+			result = string(c)
+			result = strings.Trim(result, " \n")
 			break
+		}
+
+		if result == "" {
+			result = "y"
 		}
 
 		if result == "y" {
@@ -165,7 +170,6 @@ func (c *connect) processPacket(pkt *pb.Packet) {
 	case pb.PacketClientGatewayExecWaitType:
 		c.waitingReview = pkt
 		fmt.Println("This command requires review. We will notify you right here when it is approved")
-		return
 	case pb.PacketClientGatewayExecApproveType:
 		fmt.Print("The command was approved! Do you want to run it now?\n (y/n) [y] ")
 

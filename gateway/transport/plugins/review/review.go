@@ -89,7 +89,7 @@ func (r *reviewPlugin) OnReceive(pluginConfig plugin.Config, config []string, pk
 				Id:   pluginConfig.ConnectionId,
 				Name: pluginConfig.ConnectionName,
 			},
-			Command:      string(pkt.Payload),
+			Input:        string(pkt.Payload),
 			Status:       rv.StatusPending,
 			ReviewGroups: reviewGroups,
 		}

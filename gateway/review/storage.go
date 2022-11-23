@@ -17,7 +17,7 @@ type (
 		SessionId    string   `edn:"review/session"`
 		ConnectionId string   `edn:"review/connection"`
 		CreatedBy    string   `edn:"review/created-by"`
-		Command      string   `edn:"review/command"`
+		Input        string   `edn:"review/input"`
 		Status       Status   `edn:"review/status"`
 		ReviewGroups []string `edn:"review/review-groups"`
 	}
@@ -35,7 +35,7 @@ func (s *Storage) FindAll(context *user.Context) ([]Review, error) {
 	var payload = `{:query {
 		:find [(pull ?review [:xt/id
                               :review/status
-		                      :review/command
+		                      :review/input
                               :review/session
 		                      :review/connection
 		                      :review/created-by 
@@ -62,7 +62,7 @@ func (s *Storage) FindById(context *user.Context, id string) (*Review, error) {
 	var payload = `{:query {
 		:find [(pull ?review [:xt/id
                               :review/status
-							  :review/command
+							  :review/input
 							  :review/session
 							  :review/connection
 							  :review/created-by
@@ -96,7 +96,7 @@ func (s *Storage) FindBySessionID(sessionID string) (*Review, error) {
 	var payload = `{:query {
 		:find [(pull ?review [:xt/id
                               :review/status
-							  :review/command
+							  :review/input
 							  :review/session
 							  :review/connection
 							  :review/created-by
@@ -150,7 +150,7 @@ func (s *Storage) Persist(context *user.Context, review *Review) (int64, error) 
 		SessionId:    review.Session,
 		ConnectionId: review.Connection.Id,
 		CreatedBy:    context.User.Id,
-		Command:      review.Command,
+		Input:        review.Input,
 		Status:       review.Status,
 		ReviewGroups: reviewGroupIds,
 	}

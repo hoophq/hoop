@@ -27,7 +27,7 @@ type (
 	Review struct {
 		Id           string     `json:"id"                      edn:"xt/id"`
 		Session      string     `json:"session"                 edn:"review/session"`
-		Command      string     `json:"command"                 edn:"review/command"`
+		Input        string     `json:"input"                   edn:"review/input"`
 		Status       Status     `json:"status"                  edn:"review/status"`
 		CreatedBy    Owner      `json:"created_by"              edn:"review/created-by"`
 		Connection   Connection `json:"connection"              edn:"review/connection"`
@@ -120,7 +120,7 @@ func (s *Service) Review(context *user.Context, existingReview *Review, status S
 	}
 
 	if existingReview.Status == StatusApproved || existingReview.Status == StatusRejected {
-		if err := s.TransportService.ReviewStatusChange(existingReview.Session, existingReview.Status, []byte(existingReview.Command)); err != nil {
+		if err := s.TransportService.ReviewStatusChange(existingReview.Session, existingReview.Status, []byte(existingReview.Input)); err != nil {
 			return err
 		}
 	}

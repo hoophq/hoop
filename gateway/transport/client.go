@@ -155,16 +155,16 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		return status.Errorf(codes.FailedPrecondition, err.Error())
 	}
 
-	agentStream := getAgentStream(conn.AgentId)
-	if agentStream == nil {
-		log.Printf("agent not found for connection %s", connectionName)
-		return status.Errorf(codes.FailedPrecondition, fmt.Sprintf("agent not found for %v", c.AgentId))
-	}
+	//agentStream := getAgentStream(conn.AgentId)
+	//if agentStream == nil {
+	//	log.Printf("agent not found for connection %s", connectionName)
+	//	return status.Errorf(codes.FailedPrecondition, fmt.Sprintf("agent not found for %v", c.AgentId))
+	//}
 
 	if clientVerb == pb.ClientVerbConnect {
 		for _, p := range plugins {
 			if p.Plugin.Name() == pluginsreview.Name {
-				return status.Errorf(codes.PermissionDenied, fmt.Sprintf("this connection have the review plugin installed and cannot be connected.\n\nPlease use 'hoop exec %s {command}' instead", conn.Name))
+				return status.Errorf(codes.PermissionDenied, fmt.Sprintf("This connection is subject to review. Please, use 'hoop exec %s` to interact", conn.Name))
 			}
 		}
 	}
@@ -175,7 +175,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	s.clientGracefulShutdown(c)
 
 	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
-	clientErr := s.listenClientMessages(stream, c, conn, pConfig, agentStream)
+	clientErr := s.listenClientMessages(stream, c, conn, pConfig)
 
 	if err := s.pluginOnDisconnect(pConfig); err != nil {
 		log.Printf("session=%v ua=client - failed processing plugin on-disconnect phase, err=%v", sessionID, err)
@@ -189,8 +189,7 @@ func (s *Server) listenClientMessages(
 	stream pb.Transport_ConnectServer,
 	c *client.Client,
 	conn *connection.Connection,
-	config plugin.Config,
-	agentStream pb.Transport_ConnectServer) error {
+	config plugin.Config) error {
 
 	ctx := stream.Context()
 
@@ -228,7 +227,7 @@ func (s *Server) listenClientMessages(
 			log.Printf("plugin reject packet, err=%v", err)
 			return status.Errorf(codes.Internal, "internal error, packet rejected, contact the administrator")
 		}
-		err = s.processClientPacket(pkt, c, conn, agentStream)
+		err = s.processClientPacket(pkt, c, conn)
 		if err != nil {
 			fmt.Printf("session=%v - failed processing client packet, err=%v", c.SessionID, err)
 			return status.Errorf(codes.FailedPrecondition, "internal error, failed processing packet")
@@ -236,74 +235,52 @@ func (s *Server) listenClientMessages(
 	}
 }
 
-func (s *Server) processClientPacket(
-	pkt *pb.Packet,
-	client *client.Client,
-	conn *connection.Connection,
-	agentStream pb.Transport_ConnectServer) error {
-
+func (s *Server) processClientPacket(pkt *pb.Packet, client *client.Client, conn *connection.Connection) error {
 	switch pb.PacketType(pkt.Type) {
 	case pb.PacketClientGatewayConnectType:
-		return s.processClientConnect(pkt, client, conn, agentStream)
+		return s.processClientConnect(pkt, client, conn)
 	case pb.PacketClientGatewayExecType:
-		return s.processClientExec(pkt, client, conn, agentStream)
+		return s.processClientExec(pkt, client, conn)
 	default:
-		_ = agentStream.Send(pkt)
+		//_ = agentStream.Send(pkt)
 	}
 	return nil
 }
 
-func (s *Server) processClientConnect(pkt *pb.Packet,
-	client *client.Client,
-	conn *connection.Connection,
-	agentStream pb.Transport_ConnectServer) error {
-
-	var clientArgs []string
-	if pkt.Spec != nil {
-		encArgs := pkt.Spec[pb.SpecClientExecArgsKey]
-		if len(encArgs) > 0 {
-			if err := pb.GobDecodeInto(encArgs, &clientArgs); err != nil {
-				log.Printf("failed decoding args, err=%v", err)
-			}
-		}
-	}
-	var infoTypes []string
-	for _, p := range getPlugins(client.SessionID) {
-		if p.Plugin.Name() == pluginsdlp.Name {
-			infoTypes = p.config
-		}
-	}
-
-	encConnectionParams, err := pb.GobEncode(&pb.AgentConnectionParams{
-		EnvVars:      conn.Secret,
-		CmdList:      conn.Command,
-		ClientArgs:   clientArgs,
-		DLPInfoTypes: infoTypes,
-	})
-	if err != nil {
-		return fmt.Errorf("failed encoding connection params err=%v", err)
-	}
-	pktSpec := map[string][]byte{
-		pb.SpecGatewaySessionID:         []byte(client.SessionID),
-		pb.SpecConnectionType:           []byte(conn.Type),
-		pb.SpecAgentConnectionParamsKey: encConnectionParams,
+func (s *Server) processClientConnect(pkt *pb.Packet, client *client.Client, conn *connection.Connection) error {
+	spec := map[string][]byte{
+		pb.SpecGatewaySessionID: []byte(client.SessionID),
+		pb.SpecConnectionType:   []byte(conn.Type),
 	}
 	if s.GcpDLPRawCredentials != "" {
-		pktSpec[pb.SpecAgentGCPRawCredentialsKey] = []byte(s.GcpDLPRawCredentials)
+		spec[pb.SpecAgentGCPRawCredentialsKey] = []byte(s.GcpDLPRawCredentials)
 	}
+
+	connParams, err := addConnectionParams(pkt, conn, client.SessionID)
+	if err != nil {
+		return err
+	}
+	spec[pb.SpecAgentConnectionParamsKey] = connParams
+
+	agentStream := getAgentStream(conn.AgentId)
+	if agentStream == nil {
+		log.Printf("agent not found for connection %s", conn.Name)
+		return status.Errorf(codes.FailedPrecondition, fmt.Sprintf("agent not found for connection %s", conn.Name))
+	}
+
 	_ = agentStream.Send(&pb.Packet{
 		Type: pb.PacketClientAgentConnectType.String(),
-		Spec: pktSpec,
+		Spec: spec,
 	})
 	return nil
 }
 
-func (s *Server) processClientExec(pkt *pb.Packet,
-	client *client.Client,
-	conn *connection.Connection,
-	agentStream pb.Transport_ConnectServer) error {
-
-	pkt.Type = pb.PacketClientAgentExecType.String()
+func (s *Server) processClientExec(pkt *pb.Packet, client *client.Client, conn *connection.Connection) error {
+	payload := pkt.Payload
+	spec := map[string][]byte{
+		pb.SpecGatewaySessionID: []byte(client.SessionID),
+		pb.SpecConnectionType:   []byte(conn.Type),
+	}
 
 	existingReviewData := pkt.Spec[pb.SpecReviewDataKey]
 	if existingReviewData != nil {
@@ -312,37 +289,86 @@ func (s *Server) processClientExec(pkt *pb.Packet,
 			return err
 		}
 		if review.Status != rv.StatusApproved {
-			pkt.Type = string(pb.PacketClientGatewayExecWaitType)
+			spec[pb.SpecClientExecArgsKey] = pkt.Spec[pb.SpecClientExecArgsKey]
 			clientStream := getClientStream(client.SessionID)
-			_ = clientStream.Send(pkt)
+			_ = clientStream.Send(&pb.Packet{
+				Type:    string(pb.PacketClientGatewayExecWaitType),
+				Spec:    spec,
+				Payload: payload,
+			})
 			return nil
 		}
+		payload = []byte(review.Input)
 	}
 
+	if s.GcpDLPRawCredentials != "" {
+		spec[pb.SpecAgentGCPRawCredentialsKey] = []byte(s.GcpDLPRawCredentials)
+	}
+
+	agentStream := getAgentStream(conn.AgentId)
+	if agentStream == nil {
+		spec[pb.SpecClientExecArgsKey] = pkt.Spec[pb.SpecClientExecArgsKey]
+		clientStream := getClientStream(client.SessionID)
+		_ = clientStream.Send(&pb.Packet{
+			Type:    string(pb.PacketClientExecAgentOfflineType),
+			Spec:    spec,
+			Payload: payload,
+		})
+		return nil
+	}
+
+	connParams, err := addConnectionParams(pkt, conn, client.SessionID)
+	if err != nil {
+		return err
+	}
+	spec[pb.SpecAgentConnectionParamsKey] = connParams
+
+	_ = agentStream.Send(&pb.Packet{
+		Type:    string(pb.PacketClientAgentExecType),
+		Spec:    spec,
+		Payload: payload,
+	})
+	return nil
+}
+
+func clientArgsDecode(spec map[string][]byte) []string {
 	var clientArgs []string
-	if pkt.Spec != nil {
-		encArgs := pkt.Spec[pb.SpecClientExecArgsKey]
+	if spec != nil {
+		encArgs := spec[pb.SpecClientExecArgsKey]
 		if len(encArgs) > 0 {
 			if err := pb.GobDecodeInto(encArgs, &clientArgs); err != nil {
 				log.Printf("failed decoding args, err=%v", err)
 			}
 		}
 	}
+	return clientArgs
+}
+
+func getInfoTypes(sessionID string) []string {
+	var infoTypes []string
+	for _, p := range getPlugins(sessionID) {
+		if p.Plugin.Name() == pluginsdlp.Name {
+			infoTypes = p.config
+		}
+	}
+	return infoTypes
+}
+
+func addConnectionParams(pkt *pb.Packet, conn *connection.Connection, sessionID string) ([]byte, error) {
+	clientArgs := clientArgsDecode(pkt.Spec)
+	infoTypes := getInfoTypes(sessionID)
 
 	encConnectionParams, err := pb.GobEncode(&pb.AgentConnectionParams{
-		EnvVars:    conn.Secret,
-		CmdList:    conn.Command,
-		ClientArgs: clientArgs,
+		EnvVars:      conn.Secret,
+		CmdList:      conn.Command,
+		ClientArgs:   clientArgs,
+		DLPInfoTypes: infoTypes,
 	})
 	if err != nil {
-		return fmt.Errorf("failed encoding connection params err=%v", err)
+		return nil, fmt.Errorf("failed encoding connection params err=%v", err)
 	}
 
-	pkt.Spec[pb.SpecConnectionType] = []byte(conn.Type)
-	pkt.Spec[pb.SpecAgentConnectionParamsKey] = encConnectionParams
-
-	_ = agentStream.Send(pkt)
-	return nil
+	return encConnectionParams, nil
 }
 
 func (s *Server) ReviewStatusChange(sessionID string, status rv.Status, command []byte) error {

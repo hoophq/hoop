@@ -2,32 +2,30 @@ package cmd
 
 import (
 	"bufio"
-	"fmt"
 	"github.com/briandowns/spinner"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/spf13/cobra"
-	"io"
 	"os"
 	"strings"
 	"syscall"
 	"time"
 )
 
-var commandPath string
-var command string
+var inputFilepath string
+var inputStdin string
 
 // execCmd represents the exec command
 var execCmd = &cobra.Command{
 	Use:   "exec",
-	Short: "Execute a command on a remote resource",
+	Short: "Execute a given input in a remote resource",
 	Run: func(cmd *cobra.Command, args []string) {
 		runExec(args)
 	},
 }
 
 func init() {
-	execCmd.Flags().StringVarP(&commandPath, "file", "f", "", "The path of the file containing the command")
-	execCmd.Flags().StringVarP(&command, "command", "c", "", "The command to run remotely")
+	execCmd.Flags().StringVarP(&inputFilepath, "file", "f", "", "The path of the file containing the command")
+	execCmd.Flags().StringVarP(&inputStdin, "input", "i", "", "The input to be executed remotely")
 	rootCmd.AddCommand(execCmd)
 }
 
@@ -37,29 +35,25 @@ func runExec(args []string) {
 	loader := spinner.New(spinner.CharSets[78], 70*time.Millisecond)
 	loader.Color("green")
 	loader.Start()
-	loader.Suffix = "exec'ing command..."
+	loader.Suffix = "executing input..."
 
-	c, spec := newClientConnect(config, loader, args, pb.ClientVerbExec)
+	c := newClientConnect(config, loader, args, pb.ClientVerbExec)
 
 	pkt := &pb.Packet{
 		Type: pb.PacketClientGatewayExecType.String(),
-		Spec: spec,
+		Spec: newClientArgsSpec(c.clientArgs),
 	}
 
-	if pkt.Payload == nil && commandPath != "" {
-		b, err := os.ReadFile(commandPath)
+	if pkt.Payload == nil && inputFilepath != "" {
+		b, err := os.ReadFile(inputFilepath)
 		if err != nil {
-			c.printErrorAndExit("failed parsing command file [%s], err=%v", commandPath, err)
+			c.printErrorAndExit("failed parsing input file [%s], err=%v", inputFilepath, err)
 		}
 		pkt.Payload = b
 	}
 
-	if pkt.Payload == nil && command != "" {
-		pkt.Payload = []byte(command)
-	}
-
-	if pkt.Payload == nil && len(args) == 2 {
-		pkt.Payload = []byte(args[1])
+	if pkt.Payload == nil && inputStdin != "" {
+		pkt.Payload = []byte(inputStdin)
 	}
 
 	if pkt.Payload == nil {
@@ -75,25 +69,21 @@ func runExec(args []string) {
 			reader := bufio.NewReader(stdinPipe)
 			for {
 				input, err := reader.ReadByte()
-				if err != nil && err == io.EOF {
+				if err != nil {
 					break
 				}
 				pkt.Payload = append(pkt.Payload, input)
 			}
-			fmt.Println(string(pkt.Payload))
-			pkt.Payload = []byte(strings.Trim(string(pkt.Payload), " \n"))
 		}
 	}
 
-	if pkt.Payload == nil {
-		c.printErrorAndExit("missing command, please run 'hoop exec help'")
+	if len(pkt.Payload) > 0 {
+		pkt.Payload = []byte(strings.Trim(string(pkt.Payload), " \n"))
 	}
-
-	pkt.Payload = []byte(strings.Trim(string(pkt.Payload), " \n"))
 
 	if err := c.client.Send(pkt); err != nil {
 		_, _ = c.client.Close()
-		c.printErrorAndExit("failed exec'ing command, err=%v", err)
+		c.printErrorAndExit("failed executing command, err=%v", err)
 	}
 
 	loader.Stop()

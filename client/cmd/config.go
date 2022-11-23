@@ -100,7 +100,7 @@ func getClientConfig() *Config {
 	return config
 }
 
-func newClientConnect(config *Config, loader *spinner.Spinner, args []string, verb string) (*connect, map[string][]byte) {
+func newClientConnect(config *Config, loader *spinner.Spinner, args []string, verb string) *connect {
 	c := &connect{
 		proxyPort:      connectFlags.proxyPort,
 		connStore:      memory.New(),
@@ -112,20 +112,25 @@ func newClientConnect(config *Config, loader *spinner.Spinner, args []string, ve
 	client, err := grpc.Connect(
 		config.Host+":"+config.Port,
 		config.Token,
-		grpc.WithOption(grpc.OptionConnectionName, args[0]),
+		grpc.WithOption(grpc.OptionConnectionName, c.connectionName),
 		grpc.WithOption("origin", pb.ConnectionOriginClient),
 		grpc.WithOption("verb", verb))
 	if err != nil {
 		c.printErrorAndExit(err.Error())
 	}
+
+	c.client = client
+	return c
+}
+
+func newClientArgsSpec(clientArgs []string) map[string][]byte {
 	spec := map[string][]byte{}
-	if len(c.clientArgs) > 0 {
-		encArgs, err := pb.GobEncode(c.clientArgs)
+	if len(clientArgs) > 0 {
+		encArgs, err := pb.GobEncode(clientArgs)
 		if err != nil {
 			log.Fatalf("failed encoding args, err=%v", err)
 		}
-		spec[string(pb.SpecClientExecArgsKey)] = encArgs
+		spec[pb.SpecClientExecArgsKey] = encArgs
 	}
-	c.client = client
-	return c, spec
+	return spec
 }

@@ -8,14 +8,12 @@ const (
 
 	// client->agent connection
 	PacketClientGatewayConnectType    PacketType = "Client::Gateway::Connect"
-	PacketClientGatewayConnectErrType PacketType = "Client::Gateway::ConnectErr"
 	PacketClientAgentConnectType      PacketType = "Client::Agent::Connect"
 	PacketClientAgentConnectOKType    PacketType = "Client::Agent::ConnectOK"
 	PacketClientAgentConnectErrType   PacketType = "Client::Agent::ConnectErr"
 
 	// client->agent exec
 	PacketClientGatewayExecType        PacketType = "Client::Gateway::Exec"
-	PacketClientGatewayExecErrType     PacketType = "Client::Gateway::ExecErr"
 	PacketClientGatewayExecWaitType    PacketType = "Client::Gateway::ExecWait"
 	PacketClientGatewayExecApproveType PacketType = "Client::Gateway::ExecApprove"
 	PacketClientGatewayExecRejectType  PacketType = "Client::Gateway::ExecReject"

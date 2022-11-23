@@ -21,7 +21,7 @@ type Command struct {
 	ptty     *os.File
 }
 
-type OnExecEndFn func(exitCode int, errMsg string, a ...any)
+type OnExecErrFn func(exitCode int, errMsg string, a ...any)
 
 func (c *Command) Environ() []string {
 	if c.cmd != nil {
@@ -77,19 +77,19 @@ func (c *Command) OnPostExec() error {
 	return nil
 }
 
-func (c *Command) Run(streamWriter io.WriteCloser, stdinInput []byte, onExecEnd OnExecEndFn, clientArgs ...string) error {
+func (c *Command) Run(streamWriter io.WriteCloser, stdinInput []byte, onExecErr OnExecErrFn, clientArgs ...string) error {
 	pipeStdout, err := c.cmd.StdoutPipe()
 	if err != nil {
-		onExecEnd(term.InternalErrorExitCode, "internal error, failed returning stdout pipe")
+		onExecErr(term.InternalErrorExitCode, "internal error, failed returning stdout pipe")
 		return err
 	}
 	pipeStderr, err := c.cmd.StderrPipe()
 	if err != nil {
-		onExecEnd(term.InternalErrorExitCode, "internal error, failed returning stderr pipe")
+		onExecErr(term.InternalErrorExitCode, "internal error, failed returning stderr pipe")
 		return err
 	}
 	if err := c.OnPreExec(); err != nil {
-		onExecEnd(term.InternalErrorExitCode, "internal error, failed executing pre command")
+		onExecErr(term.InternalErrorExitCode, "internal error, failed executing pre command")
 		return fmt.Errorf("failed executing pre command, err=%v", err)
 	}
 	var stdin bytes.Buffer
@@ -100,11 +100,11 @@ func (c *Command) Run(streamWriter io.WriteCloser, stdinInput []byte, onExecEnd 
 			// path not found error exit code
 			exitCode = 127
 		}
-		onExecEnd(exitCode, "failed starting command")
+		onExecErr(exitCode, "failed starting command")
 		return err
 	}
 	if _, err := stdin.Write(stdinInput); err != nil {
-		onExecEnd(term.InternalErrorExitCode, "internal error, failed writing input")
+		onExecErr(term.InternalErrorExitCode, "internal error, failed writing input")
 		return err
 	}
 	copyBuffer(streamWriter, pipeStdout, 1024, "stdout")
@@ -124,12 +124,12 @@ func (c *Command) Run(streamWriter io.WriteCloser, stdinInput []byte, onExecEnd 
 		if err := c.OnPostExec(); err != nil {
 			fmt.Printf("failed executing post command, err=%v", err)
 		}
-		onExecEnd(exitCode, "failed executing command, err=%v", err)
+		onExecErr(exitCode, "failed executing command, err=%v", err)
 	}()
 	return nil
 }
 
-func (c *Command) RunOnTTY(stdoutWriter io.WriteCloser, onExecEnd OnExecEndFn) error {
+func (c *Command) RunOnTTY(stdoutWriter io.WriteCloser, onExecErr OnExecErrFn) error {
 	// Start the command with a pty.
 	if err := c.OnPreExec(); err != nil {
 		return fmt.Errorf("failed executing pre execution command, err=%v", err)
@@ -182,7 +182,7 @@ func (c *Command) RunOnTTY(stdoutWriter io.WriteCloser, onExecEnd OnExecEndFn) e
 				}
 			}
 		}
-		onExecEnd(exitCode, "failed executing command, err=%v", err)
+		onExecErr(exitCode, "failed executing command, err=%v", err)
 	}()
 	return nil
 }
