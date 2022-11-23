@@ -168,22 +168,22 @@ func (c *connect) processPacket(pkt *pb.Packet) {
 		return
 	case pb.PacketClientGatewayExecApproveType:
 		fmt.Print("The command was approved! Do you want to run it now?\n (y/n) [y] ")
-		consolescanner := bufio.NewScanner(os.Stdin)
 
-		// by default, bufio.Scanner scans newline-separated lines
+		reader := bufio.NewReader(os.Stdin)
 		var input string
-		for consolescanner.Scan() {
-			input = consolescanner.Text()
+		for {
+			c, _ := reader.ReadByte()
+			input = strings.Trim(string(c), " \n")
+			break
 		}
 
-		input = strings.Trim(input, " \n")
 		if input == "" {
 			input = "y"
 		}
 
 		input = input[0:1]
 
-		if input == "y" || input == "" {
+		if input == "y" {
 			c.waitingReview.Type = string(pb.PacketClientGatewayExecType)
 			_ = c.client.Send(c.waitingReview)
 			c.waitingReview = nil
@@ -224,7 +224,7 @@ func (c *connect) processPacket(pkt *pb.Packet) {
 			pgp.PacketCloseConnection(string(pkt.Spec[pb.SpecClientConnectionID]))
 		}
 
-	// process exec
+	// process terminal
 	case pb.PacketTerminalClientWriteStdoutType:
 		sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 		if term, ok := c.connStore.Get(string(sessionID)).(*proxy.Terminal); ok {

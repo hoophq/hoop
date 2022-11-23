@@ -246,7 +246,7 @@ func (s *Server) processClientPacket(
 	case pb.PacketClientGatewayConnectType:
 		return s.processClientConnect(pkt, client, conn, agentStream)
 	case pb.PacketClientGatewayExecType:
-		return s.processClientExec(pkt, client, agentStream)
+		return s.processClientExec(pkt, client, conn, agentStream)
 	default:
 		_ = agentStream.Send(pkt)
 	}
@@ -300,7 +300,10 @@ func (s *Server) processClientConnect(pkt *pb.Packet,
 
 func (s *Server) processClientExec(pkt *pb.Packet,
 	client *client.Client,
+	conn *connection.Connection,
 	agentStream pb.Transport_ConnectServer) error {
+
+	pkt.Type = pb.PacketClientAgentExecType.String()
 
 	existingReviewData := pkt.Spec[pb.SpecReviewDataKey]
 	if existingReviewData != nil {
@@ -316,7 +319,28 @@ func (s *Server) processClientExec(pkt *pb.Packet,
 		}
 	}
 
-	pkt.Type = string(pb.PacketClientAgentExecType)
+	var clientArgs []string
+	if pkt.Spec != nil {
+		encArgs := pkt.Spec[pb.SpecClientExecArgsKey]
+		if len(encArgs) > 0 {
+			if err := pb.GobDecodeInto(encArgs, &clientArgs); err != nil {
+				log.Printf("failed decoding args, err=%v", err)
+			}
+		}
+	}
+
+	encConnectionParams, err := pb.GobEncode(&pb.AgentConnectionParams{
+		EnvVars:    conn.Secret,
+		CmdList:    conn.Command,
+		ClientArgs: clientArgs,
+	})
+	if err != nil {
+		return fmt.Errorf("failed encoding connection params err=%v", err)
+	}
+
+	pkt.Spec[pb.SpecConnectionType] = []byte(conn.Type)
+	pkt.Spec[pb.SpecAgentConnectionParamsKey] = encConnectionParams
+
 	_ = agentStream.Send(pkt)
 	return nil
 }

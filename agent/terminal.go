@@ -15,6 +15,7 @@ import (
 func (a *Agent) doExec(pkt *pb.Packet) {
 	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 	encConnectionParams := pkt.Spec[pb.SpecAgentConnectionParamsKey]
+
 	var connParams pb.AgentConnectionParams
 	if err := pb.GobDecodeInto(encConnectionParams, &connParams); err != nil {
 		// TODO: send error
@@ -24,6 +25,7 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 		}).Write([]byte(`internal error, failed decoding connection params`))
 		return
 	}
+
 	cmd, err := term.NewCommand(connParams.EnvVars,
 		append(connParams.CmdList, connParams.ClientArgs...)...)
 	if err != nil {
@@ -34,19 +36,19 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 		return
 	}
 	log.Printf("session=%v, tty=false - executing command=%q", string(sessionID), cmd.String())
-	spec := map[string][]byte{pb.SpecGatewaySessionID: sessionID}
-	stdoutWriter := pb.NewStreamWriter(a.client, pb.PacketTerminalClientWriteStdoutType, spec)
+
+	stdoutWriter := pb.NewStreamWriter(a.client, pb.PacketClientAgentExecOKType, pkt.Spec)
 	onExecEnd := func(exitCode int, errMsg string, v ...any) {
 		errMsg = fmt.Sprintf(errMsg, v...)
-		spec[pb.SpecClientExecExitCodeKey] = []byte(strconv.Itoa(exitCode))
-		_, _ = pb.NewStreamWriter(a.client, pb.PacketTerminalCloseType, spec).
+		pkt.Spec[pb.SpecClientExecExitCodeKey] = []byte(strconv.Itoa(exitCode))
+		_, _ = pb.NewStreamWriter(a.client, pb.PacketTerminalCloseType, pkt.Spec).
 			Write([]byte(errMsg))
 	}
+
 	// TODO: add client args
 	if err = cmd.Run(stdoutWriter, pkt.Payload, onExecEnd); err != nil {
 		log.Printf("session=%v - err=%v", string(sessionID), err)
 	}
-	a.connStore.Set(fmt.Sprintf("proc:%v", sessionID), cmd.Pid())
 }
 
 func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {
