@@ -115,7 +115,10 @@ func (s *Service) bindDLPPlugin(context *user.Context, conn *Connection) {
 			}
 		}
 		if !registered {
-			p.Connections = append(p.Connections, plugin.Connection{ConnectionId: conn.Id})
+			p.Connections = append(p.Connections, plugin.Connection{
+				ConnectionId: conn.Id,
+				Config:       defaultInfoTypes,
+			})
 		}
 	} else {
 		p = &plugin.Plugin{
