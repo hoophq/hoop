@@ -12,46 +12,6 @@ import (
 	"github.com/runopsio/hoop/common/runtime"
 )
 
-func (a *Agent) doExec(pkt *pb.Packet) {
-	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
-	encConnectionParams := pkt.Spec[pb.SpecAgentConnectionParamsKey]
-
-	var connParams pb.AgentConnectionParams
-	if err := pb.GobDecodeInto(encConnectionParams, &connParams); err != nil {
-		// TODO: send error
-		log.Printf("failed decoding connection params=%#v, err=%v", encConnectionParams, err)
-		_, _ = pb.NewStreamWriter(a.client, pb.PacketClientAgentExecErrType, map[string][]byte{
-			pb.SpecGatewaySessionID: sessionID,
-		}).Write([]byte(`internal error, failed decoding connection params`))
-		return
-	}
-
-	cmd, err := term.NewCommand(connParams.EnvVars, append(connParams.CmdList, connParams.ClientArgs...)...)
-	if err != nil {
-		log.Printf("failed executing command, err=%v", err)
-		_, _ = pb.NewStreamWriter(a.client, pb.PacketClientAgentExecErrType, map[string][]byte{
-			pb.SpecGatewaySessionID: sessionID,
-		}).Write([]byte(err.Error()))
-		return
-	}
-	log.Printf("session=%v, tty=false - executing command=%q", string(sessionID), cmd.String())
-
-	spec := map[string][]byte{pb.SpecGatewaySessionID: sessionID}
-	stdoutWriter := pb.NewStreamWriter(a.client, pb.PacketClientAgentExecOKType, spec)
-
-	onExecErr := func(exitCode int, errMsg string, v ...any) {
-		errMsg = fmt.Sprintf(errMsg, v...)
-		spec[pb.SpecClientExecExitCodeKey] = []byte(strconv.Itoa(exitCode))
-		_, _ = pb.NewStreamWriter(a.client, pb.PacketClientAgentExecErrType, spec).
-			Write([]byte(errMsg))
-	}
-
-	// TODO: add client args
-	if err = cmd.Run(stdoutWriter, pkt.Payload, onExecErr); err != nil {
-		log.Printf("session=%v - err=%v", string(sessionID), err)
-	}
-}
-
 func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 	sessionIDKey := fmt.Sprintf(cmdStoreKey, sessionID)
@@ -65,6 +25,7 @@ func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {
 		}
 		return
 	}
+
 	connParamsObj := a.connStore.Get(fmt.Sprintf(connectionStoreParamsKey, string(sessionID)))
 	connParams, ok := connParamsObj.(*pb.AgentConnectionParams)
 	if !ok {

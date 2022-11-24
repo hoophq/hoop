@@ -155,12 +155,6 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		return status.Errorf(codes.FailedPrecondition, err.Error())
 	}
 
-	//agentStream := getAgentStream(conn.AgentId)
-	//if agentStream == nil {
-	//	log.Printf("agent not found for connection %s", connectionName)
-	//	return status.Errorf(codes.FailedPrecondition, fmt.Sprintf("agent not found for %v", c.AgentId))
-	//}
-
 	if clientVerb == pb.ClientVerbConnect {
 		for _, p := range plugins {
 			if p.Plugin.Name() == pluginsreview.Name {
