@@ -9,19 +9,25 @@ import (
 
 type (
 	Service struct {
-		Storage storage
+		Storage          storage
+		TransportService transportService
 	}
 
 	storage interface {
 		Persist(context *user.Context, review *Review) (int64, error)
 		FindById(context *user.Context, id string) (*Review, error)
 		FindAll(context *user.Context) ([]Review, error)
+		FindBySessionID(sessionID string) (*Review, error)
+	}
+
+	transportService interface {
+		ReviewStatusChange(sessionID string, status Status, command []byte) error
 	}
 
 	Review struct {
 		Id           string     `json:"id"                      edn:"xt/id"`
 		Session      string     `json:"session"                 edn:"review/session"`
-		Command      string     `json:"command"                 edn:"review/command"`
+		Input        string     `json:"input"                   edn:"review/input"`
 		Status       Status     `json:"status"                  edn:"review/status"`
 		CreatedBy    Owner      `json:"created_by"              edn:"review/created-by"`
 		Connection   Connection `json:"connection"              edn:"review/connection"`
@@ -58,6 +64,10 @@ const (
 
 func (s *Service) FindOne(context *user.Context, id string) (*Review, error) {
 	return s.Storage.FindById(context, id)
+}
+
+func (s *Service) FindBySessionID(sessionID string) (*Review, error) {
+	return s.Storage.FindBySessionID(sessionID)
 }
 
 func (s *Service) FindAll(context *user.Context) ([]Review, error) {
@@ -105,5 +115,14 @@ func (s *Service) Review(context *user.Context, existingReview *Review, status S
 		existingReview.Status = StatusApproved
 	}
 
-	return s.Persist(context, existingReview)
+	if err := s.Persist(context, existingReview); err != nil {
+		return err
+	}
+
+	if existingReview.Status == StatusApproved || existingReview.Status == StatusRejected {
+		if err := s.TransportService.ReviewStatusChange(existingReview.Session, existingReview.Status, []byte(existingReview.Input)); err != nil {
+			return err
+		}
+	}
+	return nil
 }

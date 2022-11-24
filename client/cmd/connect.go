@@ -1,11 +1,14 @@
 package cmd
 
 import (
+	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/briandowns/spinner"
@@ -44,22 +47,23 @@ type connect struct {
 	connStore      memory.Store
 	clientArgs     []string
 	connectionName string
+	waitingReview  *pb.Packet
 	loader         *spinner.Spinner
 }
 
 func runConnect(args []string) {
-	config := clientLogin()
+	config := getClientConfig()
 
 	loader := spinner.New(spinner.CharSets[78], 70*time.Millisecond)
 	loader.Color("green")
 	loader.Start()
 	loader.Suffix = " connecting to gateway..."
 
-	c, spec := connectionClient(config, loader, args)
+	c := newClientConnect(config, loader, args, pb.ClientVerbConnect)
 
 	if err := c.client.Send(&pb.Packet{
 		Type: pb.PacketClientGatewayConnectType.String(),
-		Spec: spec,
+		Spec: newClientArgsSpec(c.clientArgs),
 	}); err != nil {
 		_, _ = c.client.Close()
 		c.printErrorAndExit("failed connecting to gateway, err=%v", err)
@@ -76,6 +80,8 @@ func runConnect(args []string) {
 
 func (c *connect) processPacket(pkt *pb.Packet) {
 	switch pb.PacketType(pkt.Type) {
+
+	// connect
 	case pb.PacketClientAgentConnectOKType:
 		sessionID, ok := pkt.Spec[pb.SpecGatewaySessionID]
 		if !ok || sessionID == nil {
@@ -127,7 +133,7 @@ func (c *connect) processPacket(pkt *pb.Packet) {
 			term := proxy.NewTerminal(c.client)
 			c.printHeader(string(sessionID))
 			c.connStore.Set(string(sessionID), term)
-			if err := term.ConnecWithTTY(); err != nil {
+			if err := term.ConnectWithTTY(); err != nil {
 				c.processGracefulExit(err)
 			}
 		default:
@@ -138,6 +144,62 @@ func (c *connect) processPacket(pkt *pb.Packet) {
 		errMsg := fmt.Errorf("session=%s - failed connecting with gateway, err=%v",
 			string(sessionID), string(pkt.GetPayload()))
 		c.processGracefulExit(errMsg)
+
+	// exec
+	case pb.PacketClientExecAgentOfflineType:
+		fmt.Print("Agent is offline. Do you want to try again?\n (y/n) [y] ")
+		reader := bufio.NewReader(os.Stdin)
+		var result string
+		for {
+			c, _ := reader.ReadByte()
+			result = string(c)
+			result = strings.Trim(result, " \n")
+			break
+		}
+
+		if result == "" {
+			result = "y"
+		}
+
+		if result == "y" {
+			pkt.Type = string(pb.PacketClientGatewayExecType)
+			_ = c.client.Send(pkt)
+			return
+		}
+		c.processGracefulExit(errors.New("user aborted"))
+	case pb.PacketClientGatewayExecWaitType:
+		c.waitingReview = pkt
+		fmt.Println("This command requires review. We will notify you right here when it is approved")
+	case pb.PacketClientGatewayExecApproveType:
+		fmt.Print("The command was approved! Do you want to run it now?\n (y/n) [y] ")
+
+		reader := bufio.NewReader(os.Stdin)
+		var input string
+		for {
+			c, _ := reader.ReadByte()
+			input = strings.Trim(string(c), " \n")
+			break
+		}
+
+		if input == "" {
+			input = "y"
+		}
+
+		input = input[0:1]
+
+		if input == "y" {
+			c.waitingReview.Type = string(pb.PacketClientGatewayExecType)
+			_ = c.client.Send(c.waitingReview)
+			c.waitingReview = nil
+			return
+		}
+		c.processGracefulExit(errors.New("user cancelled the action"))
+	case pb.PacketClientGatewayExecRejectType:
+		c.processGracefulExit(errors.New("task rejected. Sorry"))
+	case pb.PacketClientAgentExecOKType:
+		c.printOutputAndExit(pkt.Payload)
+	case pb.PacketClientAgentExecErrType:
+		c.processGracefulExit(errors.New(string(pkt.Payload)))
 
 	// pg protocol messages
 	case pb.PacketPGWriteClientType:
@@ -168,7 +230,7 @@ func (c *connect) processPacket(pkt *pb.Packet) {
 			pgp.PacketCloseConnection(string(pkt.Spec[pb.SpecClientConnectionID]))
 		}
 
-	// process exec
+	// process terminal
 	case pb.PacketTerminalClientWriteStdoutType:
 		sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 		if term, ok := c.connStore.Get(string(sessionID)).(*proxy.Terminal); ok {
@@ -231,4 +293,10 @@ func (c *connect) printErrorAndExit(format string, v ...any) {
 		Background(p.Color("#DBAB79"))
 	fmt.Println(out.String())
 	os.Exit(1)
+}
+
+func (c *connect) printOutputAndExit(output []byte) {
+	c.loader.Disable()
+	fmt.Println(string(output))
+	os.Exit(0)
 }

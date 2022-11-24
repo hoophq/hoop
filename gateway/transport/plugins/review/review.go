@@ -22,6 +22,7 @@ type (
 
 	Service interface {
 		Persist(context *user.Context, review *rv.Review) error
+		FindBySessionID(sessionID string) (*rv.Review, error)
 	}
 )
 
@@ -61,9 +62,20 @@ func (r *reviewPlugin) OnConnect(config plugin.Config) error {
 func (r *reviewPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *pb.Packet) error {
 	log.Printf("[%s] Review OnReceive plugin with config %v and pkt %v", pluginConfig.SessionId, config, pkt)
 	switch pb.PacketType(pkt.GetType()) {
-	case pb.PacketTerminalWriteAgentStdinType:
-		reviewGroups := make([]rv.Group, 0)
+	case pb.PacketClientGatewayExecType:
+		sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
+		existingReview, err := r.service.FindBySessionID(sessionID)
+		if err != nil {
+			return err
+		}
 
+		if existingReview != nil {
+			b, _ := pb.GobEncode(existingReview)
+			pkt.Spec[pb.SpecReviewDataKey] = b
+			return nil
+		}
+
+		reviewGroups := make([]rv.Group, 0)
 		for _, s := range config {
 			reviewGroups = append(reviewGroups, rv.Group{
 				Group:  s,
@@ -77,7 +89,7 @@ func (r *reviewPlugin) OnReceive(pluginConfig plugin.Config, config []string, pk
 				Id:   pluginConfig.ConnectionId,
 				Name: pluginConfig.ConnectionName,
 			},
-			Command:      string(pkt.Payload),
+			Input:        string(pkt.Payload),
 			Status:       rv.StatusPending,
 			ReviewGroups: reviewGroups,
 		}
@@ -88,6 +100,9 @@ func (r *reviewPlugin) OnReceive(pluginConfig plugin.Config, config []string, pk
 		}, review); err != nil {
 			return err
 		}
+
+		b, _ := pb.GobEncode(review)
+		pkt.Spec[pb.SpecReviewDataKey] = b
 	}
 
 	return nil

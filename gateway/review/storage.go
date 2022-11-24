@@ -17,7 +17,7 @@ type (
 		SessionId    string   `edn:"review/session"`
 		ConnectionId string   `edn:"review/connection"`
 		CreatedBy    string   `edn:"review/created-by"`
-		Command      string   `edn:"review/command"`
+		Input        string   `edn:"review/input"`
 		Status       Status   `edn:"review/status"`
 		ReviewGroups []string `edn:"review/review-groups"`
 	}
@@ -35,7 +35,7 @@ func (s *Storage) FindAll(context *user.Context) ([]Review, error) {
 	var payload = `{:query {
 		:find [(pull ?review [:xt/id
                               :review/status
-		                      :review/command
+		                      :review/input
                               :review/session
 		                      :review/connection
 		                      :review/created-by 
@@ -62,7 +62,7 @@ func (s *Storage) FindById(context *user.Context, id string) (*Review, error) {
 	var payload = `{:query {
 		:find [(pull ?review [:xt/id
                               :review/status
-							  :review/command
+							  :review/input
 							  :review/session
 							  :review/connection
 							  :review/created-by
@@ -74,6 +74,39 @@ func (s *Storage) FindById(context *user.Context, id string) (*Review, error) {
 		:where [[?review :xt/id id]
                 [?review :review/org org]]}
         :in-args ["` + id + `" "` + context.Org.Id + `"]}`
+
+	b, err := s.Query([]byte(payload))
+	if err != nil {
+		return nil, err
+	}
+
+	var reviews []*Review
+	if err := edn.Unmarshal(b, &reviews); err != nil {
+		return nil, err
+	}
+
+	if len(reviews) == 0 {
+		return nil, nil
+	}
+
+	return reviews[0], nil
+}
+
+func (s *Storage) FindBySessionID(sessionID string) (*Review, error) {
+	var payload = `{:query {
+		:find [(pull ?review [:xt/id
+                              :review/status
+							  :review/input
+							  :review/session
+							  :review/connection
+							  :review/created-by
+                                 {:review/connection [:xt/id :connection/name]}
+                                 {:review/review-groups [*
+                                     {:review-group/reviewed-by [:xt/id :user/name :user/email]}]}
+                                 {:review/created-by [:xt/id :user/name :user/email]}])]
+		:in [sessionID]
+		:where [[?review :review/session sessionID]]}
+        :in-args ["` + sessionID + `"]}`
 
 	b, err := s.Query([]byte(payload))
 	if err != nil {
@@ -117,7 +150,7 @@ func (s *Storage) Persist(context *user.Context, review *Review) (int64, error) 
 		SessionId:    review.Session,
 		ConnectionId: review.Connection.Id,
 		CreatedBy:    context.User.Id,
-		Command:      review.Command,
+		Input:        review.Input,
 		Status:       review.Status,
 		ReviewGroups: reviewGroupIds,
 	}

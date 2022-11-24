@@ -6,19 +6,23 @@ const (
 	PacketKeepAliveType          PacketType = "KeepAlive"
 	PacketCloseTCPConnectionType PacketType = "CloseTCPConnection"
 
-	// client starting new connection
-	PacketClientGatewayExecType    PacketType = "Client::Gateway::Exec"
-	PacketClientGatewayConnectType PacketType = "Client::Gateway::Connect"
+	// client->agent connection
+	PacketClientGatewayConnectType    PacketType = "Client::Gateway::Connect"
+	PacketClientAgentConnectType      PacketType = "Client::Agent::Connect"
+	PacketClientAgentConnectOKType    PacketType = "Client::Agent::ConnectOK"
+	PacketClientAgentConnectErrType   PacketType = "Client::Agent::ConnectErr"
 
-	// agent receiving new client connection
-	PacketClientAgentConnectType PacketType = "Client::Agent::Connect"
-
-	// agent response to client connection
-	PacketClientAgentConnectOKType  PacketType = "Client::Agent::ConnectOK"
-	PacketClientAgentConnectErrType PacketType = "Client::Agent::ConnectErr"
+	// client->agent exec
+	PacketClientGatewayExecType        PacketType = "Client::Gateway::Exec"
+	PacketClientGatewayExecWaitType    PacketType = "Client::Gateway::ExecWait"
+	PacketClientGatewayExecApproveType PacketType = "Client::Gateway::ExecApprove"
+	PacketClientGatewayExecRejectType  PacketType = "Client::Gateway::ExecReject"
+	PacketClientExecAgentOfflineType   PacketType = "Client::Gateway::ExecAgentOffline"
+	PacketClientAgentExecType          PacketType = "Client::Agent::Exec"
+	PacketClientAgentExecOKType        PacketType = "Client::Agent::ExecOK"
+	PacketClientAgentExecErrType       PacketType = "Client::Agent::ExecErr"
 
 	// terminal messages
-	PacketTerminalRunProcType           PacketType = "Terminal::RunProc"
 	PacketTerminalClientWriteStdoutType PacketType = "Terminal::Client::WriteStdout"
 	PacketTerminalWriteAgentStdinType   PacketType = "Terminal::Agent::WriteStdin"
 	PacketTerminalCloseType             PacketType = "Terminal::Close"
@@ -40,6 +44,7 @@ const (
 	SpecAgentConnectionParamsKey  string = "agent.connection_params"
 	SpecAgentGCPRawCredentialsKey string = "agent.gcp_credentials"
 	SpecTCPServerConnectKey       string = "tcp.server_connect"
+	SpecReviewDataKey             string = "review.data"
 
 	DefaultKeepAlive time.Duration = 10 * time.Second
 
@@ -55,4 +60,7 @@ const (
 	ConnectionOriginClient = "client"
 
 	ClientLoginCallbackAddress string = "127.0.0.1:3587"
+
+	ClientVerbConnect = "connect"
+	ClientVerbExec    = "exec"
 )

@@ -111,7 +111,6 @@ func (p *auditPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt
 	case pb.PacketTerminalClientWriteStdoutType:
 		return p.writeOnReceive(pluginConfig.SessionId, 'o', pkt.GetPayload())
 	case pb.PacketTerminalWriteAgentStdinType,
-		pb.PacketTerminalRunProcType,
 		pb.PacketTCPWriteServerType:
 		return p.writeOnReceive(pluginConfig.SessionId, 'i', pkt.GetPayload())
 	}

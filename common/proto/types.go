@@ -65,15 +65,12 @@ func (c *ConnectionWrapper) Write(p []byte) (int, error) {
 	return c.conn.Write(p)
 }
 
-func NewStreamWriter(client ClientTransport, packetType PacketType, spec map[string][]byte) io.WriteCloser {
-	return &streamWriter{client: client, packetType: packetType, packetSpec: spec}
+func NewStreamWriter(client ClientTransport, pktType PacketType, spec map[string][]byte) io.WriteCloser {
+	return &streamWriter{client: client, packetType: pktType, packetSpec: spec}
 }
 
 func (s *streamWriter) Write(data []byte) (int, error) {
 	p := &Packet{Spec: map[string][]byte{}}
-	if s.packetType == "" {
-		return 0, fmt.Errorf("packet type must not be empty")
-	}
 	p.Type = s.packetType.String()
 	p.Spec = s.packetSpec
 	p.Payload = data
