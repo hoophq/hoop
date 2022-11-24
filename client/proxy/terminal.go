@@ -75,7 +75,6 @@ func (t *Terminal) ConnectWithTTY() error {
 		_ = ptty.Close()
 		_ = tty.Close()
 	}()
-	log.Println("FINISHED CONNECT_WITH_TTY")
 	return nil
 }
 

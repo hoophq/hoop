@@ -165,13 +165,13 @@ func (a *Agent) Run(svrAddr, token string) {
 	}
 }
 
-func (a *Agent) buildConnectionParams(pkt *pb.Packet, packetErrType pb.PacketType) (*pb.AgentConnectionParams, error) {
+func (a *Agent) buildConnectionParams(pkt *pb.Packet, packetErrType pb.PacketType) (*pb.AgentConnectionParams, *connEnv, error) {
 	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 	sessionIDKey := string(sessionID)
 
 	connParams := a.decodeConnectionParams(sessionID, pkt, packetErrType)
 	if connParams == nil {
-		return nil, fmt.Errorf("session %s failed to decode connection params", sessionIDKey)
+		return nil, nil, fmt.Errorf("session %s failed to decode connection params", sessionIDKey)
 	}
 	log.Printf("session=%s - connection params decoded with success, dlp-info-types=%d",
 		sessionIDKey, len(connParams.DLPInfoTypes))
@@ -179,19 +179,17 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet, packetErrType pb.PacketTyp
 	connType := string(pkt.Spec[pb.SpecConnectionType])
 	connEnvVars, err := parseConnectionEnvVars(connParams.EnvVars, connType)
 	if err != nil {
-		return nil, fmt.Errorf("session %s failed to parse env vars", sessionIDKey)
+		return nil, nil, fmt.Errorf("session %s failed to parse env vars", sessionIDKey)
 	}
 	if connType == pb.ConnectionTypePostgres || connType == pb.ConnectionTypeTCP {
 		if err := isPortActive(connEnvVars.host, connEnvVars.port); err != nil {
 			msg := fmt.Sprintf("session=%s - failed connecting to host=%q, port=%q, err=%v",
 				sessionIDKey, connEnvVars.host, connEnvVars.port, err)
 			log.Printf(msg)
-			return nil, fmt.Errorf("%s", msg)
+			return nil, nil, fmt.Errorf("%s", msg)
 		}
 	}
-
-	//connParams.EnvVars[connEnvKey] = connEnvVars
-	return connParams, nil
+	return connParams, connEnvVars, nil
 }
 
 func (a *Agent) decodeConnectionParams(sessionID []byte, pkt *pb.Packet, packetType pb.PacketType) *pb.AgentConnectionParams {
@@ -236,7 +234,7 @@ func (a *Agent) processClientConnect(pkt *pb.Packet) {
 	packetErrType := pb.PacketClientAgentConnectErrType
 	log.Printf("session=%s - received connect request", sessionIDKey)
 
-	connParams, err := a.buildConnectionParams(pkt, packetErrType)
+	connParams, connEnvVars, err := a.buildConnectionParams(pkt, packetErrType)
 	if err != nil {
 		_ = a.client.Send(&pb.Packet{
 			Type:    packetErrType.String(),
@@ -246,6 +244,15 @@ func (a *Agent) processClientConnect(pkt *pb.Packet) {
 	}
 
 	dlpClient := a.decodeDLPCredentials(sessionID, pkt, packetErrType)
+
+	connType := string(pkt.Spec[pb.SpecConnectionType])
+	if connType == pb.ConnectionTypePostgres || connType == pb.ConnectionTypeTCP {
+		connParams.EnvVars[connEnvKey] = connEnvVars
+	}
+
+	if connType == pb.ConnectionTypeCommandLine {
+		sessionIDKey = fmt.Sprintf(connectionStoreParamsKey, string(sessionID))
+	}
 
 	a.connStore.Set(dlpClientKey, dlpClient)
 	a.connStore.Set(sessionIDKey, connParams)
@@ -281,7 +288,7 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 	packetErrType := pb.PacketClientAgentExecErrType
 	log.Printf("session=%v - received execution request", string(sessionID))
 
-	connParams, err := a.buildConnectionParams(pkt, packetErrType)
+	connParams, _, err := a.buildConnectionParams(pkt, packetErrType)
 	if err != nil {
 		_ = a.client.Send(&pb.Packet{
 			Type:    packetErrType.String(),

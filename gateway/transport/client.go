@@ -236,7 +236,12 @@ func (s *Server) processClientPacket(pkt *pb.Packet, client *client.Client, conn
 	case pb.PacketClientGatewayExecType:
 		return s.processClientExec(pkt, client, conn)
 	default:
-		//_ = agentStream.Send(pkt)
+		agentStream := getAgentStream(conn.AgentId)
+		if agentStream == nil {
+			log.Printf("agent not found for connection %s", conn.Name)
+			return status.Errorf(codes.FailedPrecondition, fmt.Sprintf("agent not found for connection %s", conn.Name))
+		}
+		_ = agentStream.Send(pkt)
 	}
 	return nil
 }
