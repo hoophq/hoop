@@ -34,8 +34,7 @@ func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {
 		return
 	}
 
-	cmd, err := term.NewCommand(connParams.EnvVars,
-		append(connParams.CmdList, connParams.ClientArgs...)...)
+	cmd, err := term.NewCommand(connParams.EnvVars, append(connParams.CmdList, connParams.ClientArgs...)...)
 	if err != nil {
 		log.Printf("session=%s, tty=true - failed executing command, err=%v", sessionID, err)
 		a.sendCloseTerm(sessionID, "failed executing command", "")
@@ -43,7 +42,7 @@ func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {
 	}
 	log.Printf("session=%s, tty=true - executing command %q", sessionID, cmd.String())
 	spec := map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)}
-	onExecEnd := func(exitCode int, errMsg string, v ...any) {
+	onExecErr := func(exitCode int, errMsg string, v ...any) {
 		a.sendCloseTerm(sessionID, fmt.Sprintf(errMsg, v...), strconv.Itoa(exitCode))
 	}
 	stdoutWriter := pb.NewStreamWriter(a.client, pb.PacketTerminalClientWriteStdoutType, spec)
@@ -55,7 +54,7 @@ func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {
 			spec,
 			connParams.DLPInfoTypes)
 	}
-	if err := cmd.RunOnTTY(stdoutWriter, onExecEnd); err != nil {
+	if err := cmd.RunOnTTY(stdoutWriter, onExecErr); err != nil {
 		log.Printf("session=%s, tty=true - err=%v", string(sessionID), err)
 	}
 	a.connStore.Set(sessionIDKey, cmd)

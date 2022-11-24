@@ -26,7 +26,7 @@ func NewTerminal(client pb.ClientTransport) *Terminal {
 }
 
 // Connect control the current terminal connecting with the remote one
-func (t *Terminal) ConnecWithTTY() error {
+func (t *Terminal) ConnectWithTTY() error {
 	info, err := os.Stdin.Stat()
 	if err != nil {
 		return fmt.Errorf("failed obtaining stdin file description, err=%v", err)
@@ -75,6 +75,7 @@ func (t *Terminal) ConnecWithTTY() error {
 		_ = ptty.Close()
 		_ = tty.Close()
 	}()
+	log.Println("FINISHED CONNECT_WITH_TTY")
 	return nil
 }
 

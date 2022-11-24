@@ -133,7 +133,7 @@ func (c *connect) processPacket(pkt *pb.Packet) {
 			term := proxy.NewTerminal(c.client)
 			c.printHeader(string(sessionID))
 			c.connStore.Set(string(sessionID), term)
-			if err := term.ConnecWithTTY(); err != nil {
+			if err := term.ConnectWithTTY(); err != nil {
 				c.processGracefulExit(err)
 			}
 		default:
