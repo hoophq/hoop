@@ -2,6 +2,7 @@ package connection
 
 import (
 	"github.com/google/uuid"
+	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/transport/plugins/dlp"
 	"github.com/runopsio/hoop/gateway/user"
@@ -117,13 +118,13 @@ func (s *Service) bindDLPPlugin(context *user.Context, conn *Connection) {
 		if !registered {
 			p.Connections = append(p.Connections, plugin.Connection{
 				ConnectionId: conn.Id,
-				Config:       defaultInfoTypes,
+				Config:       pb.DefaultInfoTypes,
 			})
 		}
 	} else {
 		p = &plugin.Plugin{
 			Name:        dlp.Name,
-			Connections: []plugin.Connection{{ConnectionId: conn.Id, Config: defaultInfoTypes}},
+			Connections: []plugin.Connection{{ConnectionId: conn.Id, Config: pb.DefaultInfoTypes}},
 		}
 	}
 
