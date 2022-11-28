@@ -40,7 +40,7 @@ func Run() {
 
 	firstTry := true
 	for i := 1; i < 100; i++ {
-		client, err := connect(conf)
+		client, err := grpc.Connect(conf.ServerAddress, conf.Token, grpc.WithOption("origin", pb.ConnectionOriginAgent))
 		if err != nil {
 			log.Printf("disconnecting, msg=%v", err.Error())
 			os.Exit(1)
@@ -69,15 +69,6 @@ func runWithError(ctx context.Context, conf *Config, agt *Agent, firstTry bool) 
 		return err
 	}
 	return nil
-}
-
-func connect(conf *Config) (pb.ClientTransport, error) {
-	client, err := grpc.Connect(conf.ServerAddress, conf.Token, grpc.WithOption("origin", pb.ConnectionOriginAgent))
-	if err != nil {
-		return nil, err
-	}
-
-	return client, nil
 }
 
 type (
