@@ -98,51 +98,41 @@ func (a *Agent) Close() {
 	close(a.closeSignal)
 }
 
-func (a *Agent) Run(svrAddr, token string) {
+func (a *Agent) Run(svrAddr, token string, firstConnTry bool) {
 	a.client.StartKeepAlive()
 
 	for {
 		pkt, err := a.client.Recv()
 		if err != nil {
-			if e, ok := status.FromError(err); ok {
-				switch e.Code() {
-				case codes.Unauthenticated:
-					fmt.Println("** UNREGISTERED AGENT **")
-					fmt.Println("Please validate the Agent in the URL: " + buildAgentRegisterURL(svrAddr, token))
-				default:
-				}
-			}
 			if err == io.EOF {
 				break
 			}
-			if err != nil {
-				msg := err.Error()
-				code := codes.Code(0)
-				s, ok := status.FromError(err)
-				if ok {
-					msg = s.Message()
-					code = s.Code()
-					if s.Code() == codes.Unavailable {
-						log.Println("disconnecting, server unavailable")
-						time.Sleep(time.Second * 5)
-						break
+			if e, ok := status.FromError(err); ok {
+				switch e.Code() {
+				case codes.Unauthenticated:
+					if firstConnTry {
+						fmt.Println("\n** UNREGISTERED AGENT **")
+						fmt.Printf("Please validate the Agent in the URL: %s\n", buildAgentRegisterURL(svrAddr, token))
 					}
+				default:
+					log.Printf("disconnecting, code=%v, msg=%v", e.Code(), err.Error())
 				}
-				log.Printf("disconnecting, code=%v, msg=%v", code, msg)
-				time.Sleep(time.Second * 20)
-				break
+
 			}
-			log.Println(err.Error())
-			close(a.closeSignal)
+
 			return
 		}
 
 		switch pb.PacketType(pkt.Type) {
-		// client connect
+		// gateway->agent connection ok
+		case pb.PacketAgentGatewayConnectOK:
+			fmt.Println("connected...")
+
+		// client->agent connect
 		case pb.PacketClientAgentConnectType:
 			a.processClientConnect(pkt)
 
-		// client exec
+		// client->agent exec
 		case pb.PacketClientAgentExecType:
 			a.doExec(pkt)
 
@@ -241,6 +231,7 @@ func (a *Agent) processClientConnect(pkt *pb.Packet) {
 			Payload: []byte(err.Error()),
 			Spec:    map[string][]byte{pb.SpecGatewaySessionID: sessionID},
 		})
+		return
 	}
 
 	dlpClient := a.decodeDLPCredentials(sessionID, pkt, packetErrType)

@@ -5,6 +5,7 @@ import "time"
 const (
 	PacketKeepAliveType          PacketType = "KeepAlive"
 	PacketCloseTCPConnectionType PacketType = "CloseTCPConnection"
+	PacketAgentGatewayConnectOK  PacketType = "Agent::Gateway::ConnectOK"
 
 	// client->agent connection
 	PacketClientGatewayConnectType  PacketType = "Client::Gateway::Connect"

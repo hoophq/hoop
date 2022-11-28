@@ -72,7 +72,7 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 	md, _ := metadata.FromIncomingContext(ctx)
 	o := md.Get("origin")
 	if len(o) == 0 {
-		return status.Errorf(codes.InvalidArgument, "missing origin")
+		return status.Error(codes.InvalidArgument, "missing origin")
 	}
 
 	origin := o[0]
@@ -85,13 +85,13 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 	} else {
 		t := md.Get("authorization")
 		if len(t) == 0 {
-			return status.Errorf(codes.Unauthenticated, "invalid authentication")
+			return status.Error(codes.Unauthenticated, "invalid authentication")
 		}
 
 		tokenValue := t[0]
 		tokenParts := strings.Split(tokenValue, " ")
 		if len(tokenParts) != 2 || tokenParts[0] != "Bearer" || tokenParts[1] == "" {
-			return status.Errorf(codes.Unauthenticated, "invalid authentication")
+			return status.Error(codes.Unauthenticated, "invalid authentication")
 		}
 
 		token = tokenParts[1]
