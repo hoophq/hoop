@@ -56,6 +56,7 @@ func Run() {
 			firstTry = false
 			continue
 		}
+		break
 	}
 
 	log.Println("Server terminated connection... exiting...")

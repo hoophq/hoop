@@ -111,7 +111,7 @@ func (a *Agent) Run(svrAddr, token string, firstConnTry bool) {
 				switch e.Code() {
 				case codes.Unauthenticated:
 					if firstConnTry {
-						fmt.Println("** UNREGISTERED AGENT **")
+						fmt.Println("\n** UNREGISTERED AGENT **")
 						fmt.Printf("Please validate the Agent in the URL: %s\n", buildAgentRegisterURL(svrAddr, token))
 					}
 				default:
@@ -124,6 +124,9 @@ func (a *Agent) Run(svrAddr, token string, firstConnTry bool) {
 		}
 
 		switch pb.PacketType(pkt.Type) {
+		// connection ok
+		case pb.PacketAgentGatewayConnectOK:
+			fmt.Println("\nconnected")
 
 		// client connect
 		case pb.PacketClientAgentConnectType:

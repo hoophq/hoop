@@ -82,6 +82,11 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 	s.agentGracefulShutdown(ag)
 
 	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
+	stream.Send(&pb.Packet{
+		Type:    string(pb.PacketAgentGatewayConnectOK),
+		Spec:    nil,
+		Payload: nil,
+	})
 	agentErr := s.listenAgentMessages(config, ag, stream)
 	if err := s.pluginOnDisconnect(config); err != nil {
 		log.Printf("ua=agent - failed processing plugin on-disconnect phase, err=%v", err)
