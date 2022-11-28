@@ -124,15 +124,15 @@ func (a *Agent) Run(svrAddr, token string, firstConnTry bool) {
 		}
 
 		switch pb.PacketType(pkt.Type) {
-		// connection ok
+		// gateway->agent connection ok
 		case pb.PacketAgentGatewayConnectOK:
-			fmt.Println("\nconnected")
+			fmt.Println("connected...")
 
-		// client connect
+		// client->agent connect
 		case pb.PacketClientAgentConnectType:
 			a.processClientConnect(pkt)
 
-		// client exec
+		// client->agent exec
 		case pb.PacketClientAgentExecType:
 			a.doExec(pkt)
 
@@ -231,6 +231,7 @@ func (a *Agent) processClientConnect(pkt *pb.Packet) {
 			Payload: []byte(err.Error()),
 			Spec:    map[string][]byte{pb.SpecGatewaySessionID: sessionID},
 		})
+		return
 	}
 
 	dlpClient := a.decodeDLPCredentials(sessionID, pkt, packetErrType)

@@ -224,7 +224,7 @@ func (s *Server) listenClientMessages(
 		err = s.processClientPacket(pkt, c, conn)
 		if err != nil {
 			fmt.Printf("session=%v - failed processing client packet, err=%v", c.SessionID, err)
-			return status.Errorf(codes.FailedPrecondition, "internal error, failed processing packet")
+			return err
 		}
 	}
 }
@@ -239,7 +239,7 @@ func (s *Server) processClientPacket(pkt *pb.Packet, client *client.Client, conn
 		agentStream := getAgentStream(conn.AgentId)
 		if agentStream == nil {
 			log.Printf("agent not found for connection %s", conn.Name)
-			return status.Errorf(codes.FailedPrecondition, fmt.Sprintf("agent not found for connection %s", conn.Name))
+			return status.Errorf(codes.FailedPrecondition, "agent not found for connection %s", conn.Name)
 		}
 		_ = agentStream.Send(pkt)
 	}
@@ -264,7 +264,7 @@ func (s *Server) processClientConnect(pkt *pb.Packet, client *client.Client, con
 	agentStream := getAgentStream(conn.AgentId)
 	if agentStream == nil {
 		log.Printf("agent not found for connection %s", conn.Name)
-		return status.Errorf(codes.FailedPrecondition, fmt.Sprintf("agent not found for connection %s", conn.Name))
+		return status.Errorf(codes.FailedPrecondition, "agent is offline")
 	}
 
 	_ = agentStream.Send(&pb.Packet{
