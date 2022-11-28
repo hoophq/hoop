@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"github.com/BurntSushi/toml"
 	"github.com/google/uuid"
@@ -9,6 +10,7 @@ import (
 	"github.com/runopsio/hoop/common/version"
 	"log"
 	"os"
+	"time"
 )
 
 func Run() {
@@ -33,22 +35,48 @@ func Run() {
 
 	saveConfig(conf)
 
-	client, err := grpc.Connect(conf.ServerAddress, conf.Token, grpc.WithOption("origin", pb.ConnectionOriginAgent))
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	ctx := client.StreamContext()
-	done := make(chan struct{})
-	agt := New(client, done)
+	var agt *Agent
 	defer agt.Close()
 
-	go agt.Run(conf.ServerAddress, conf.Token)
+	firstTry := true
+	for i := 1; i < 100; i++ {
+		client, err := connect(conf)
+		if err != nil {
+			log.Printf("disconnecting, msg=%v", err.Error())
+			os.Exit(1)
+		}
+
+		ctx := client.StreamContext()
+		done := make(chan struct{})
+		agt = New(client, done)
+
+		if err := runWithError(ctx, conf, agt, firstTry); err != nil {
+			time.Sleep(time.Second * 5)
+			fmt.Print(".")
+			firstTry = false
+			continue
+		}
+	}
+
+	log.Println("Server terminated connection... exiting...")
+}
+
+func runWithError(ctx context.Context, conf *Config, agt *Agent, firstTry bool) error {
+	go agt.Run(conf.ServerAddress, conf.Token, firstTry)
 	<-ctx.Done()
 	if err := ctx.Err(); err != nil {
-		log.Printf("error: %s", err.Error())
+		return err
 	}
-	log.Println("Server terminated connection... exiting...")
+	return nil
+}
+
+func connect(conf *Config) (pb.ClientTransport, error) {
+	client, err := grpc.Connect(conf.ServerAddress, conf.Token, grpc.WithOption("origin", pb.ConnectionOriginAgent))
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
 }
 
 type (

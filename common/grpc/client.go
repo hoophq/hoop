@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
@@ -51,10 +50,12 @@ func Connect(serverAddress, token string, opts ...*ClientOptions) (pb.ClientTran
 	dialOptions := []grpc.DialOption{
 		grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{})),
 		grpc.WithPerRPCCredentials(rpcCred),
+		grpc.WithBlock(),
 	}
 	var contextOptions []string
 	if serverAddress == defaultAddress {
-		dialOptions = []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+		dialOptions = []grpc.DialOption{
+			grpc.WithTransportCredentials(insecure.NewCredentials())}
 		contextOptions = append(contextOptions, "authorization", fmt.Sprintf("Bearer %s", token))
 	}
 	conn, err := grpc.Dial(serverAddress, dialOptions...)
@@ -118,7 +119,6 @@ func (c *mutexClient) StartKeepAlive() {
 			proto := &pb.Packet{Type: pb.PacketKeepAliveType.String()}
 			if err := c.Send(proto); err != nil {
 				if err != nil {
-					log.Printf("failed sending keep alive command, err=%v", err)
 					break
 				}
 			}
