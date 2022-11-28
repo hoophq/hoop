@@ -224,7 +224,7 @@ func (s *Server) listenClientMessages(
 		err = s.processClientPacket(pkt, c, conn)
 		if err != nil {
 			fmt.Printf("session=%v - failed processing client packet, err=%v", c.SessionID, err)
-			return err
+			return status.Errorf(codes.FailedPrecondition, err.Error())
 		}
 	}
 }
