@@ -7,10 +7,10 @@ const (
 	PacketCloseTCPConnectionType PacketType = "CloseTCPConnection"
 
 	// client->agent connection
-	PacketClientGatewayConnectType    PacketType = "Client::Gateway::Connect"
-	PacketClientAgentConnectType      PacketType = "Client::Agent::Connect"
-	PacketClientAgentConnectOKType    PacketType = "Client::Agent::ConnectOK"
-	PacketClientAgentConnectErrType   PacketType = "Client::Agent::ConnectErr"
+	PacketClientGatewayConnectType  PacketType = "Client::Gateway::Connect"
+	PacketClientAgentConnectType    PacketType = "Client::Agent::Connect"
+	PacketClientAgentConnectOKType  PacketType = "Client::Agent::ConnectOK"
+	PacketClientAgentConnectErrType PacketType = "Client::Agent::ConnectErr"
 
 	// client->agent exec
 	PacketClientGatewayExecType        PacketType = "Client::Gateway::Exec"
@@ -64,3 +64,22 @@ const (
 	ClientVerbConnect = "connect"
 	ClientVerbExec    = "exec"
 )
+
+var DefaultInfoTypes = []string{
+	"PHONE_NUMBER",
+	"CREDIT_CARD_NUMBER",
+	"CREDIT_CARD_TRACK_NUMBER",
+	"EMAIL_ADDRESS",
+	"IBAN_CODE",
+	"HTTP_COOKIE",
+	"IMEI_HARDWARE_ID",
+	"IP_ADDRESS",
+	"STORAGE_SIGNED_URL",
+	"URL",
+	"VEHICLE_IDENTIFICATION_NUMBER",
+	"BRAZIL_CPF_NUMBER",
+	"AMERICAN_BANKERS_CUSIP_ID",
+	"FDA_CODE",
+	"US_PASSPORT",
+	"US_SOCIAL_SECURITY_NUMBER",
+}

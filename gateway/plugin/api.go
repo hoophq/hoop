@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
@@ -104,6 +105,14 @@ func (a *Handler) Put(c *gin.Context) {
 
 	if plugin.Id == "" {
 		plugin.Id = existingPlugin.Id
+	}
+
+	if plugin.Name == "dlp" {
+		for i, conn := range plugin.Connections {
+			if len(conn.Config) == 0 {
+				plugin.Connections[i].Config = pb.DefaultInfoTypes
+			}
+		}
 	}
 
 	if err = a.Service.Persist(context, &plugin); err != nil {
