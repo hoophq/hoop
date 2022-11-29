@@ -182,6 +182,10 @@ func (c *Command) RunOnTTY(stdoutWriter io.WriteCloser, onExecErr OnExecErrFn) e
 				}
 			}
 		}
+		if exitCode == 0 {
+			onExecErr(exitCode, "")
+			return
+		}
 		onExecErr(exitCode, "failed executing command, err=%v", err)
 	}()
 	return nil
