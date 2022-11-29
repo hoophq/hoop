@@ -1,1 +1,1 @@
-ls -la run main.go exec bash2
+ls -la run main.go exec bash

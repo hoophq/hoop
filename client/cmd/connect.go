@@ -8,7 +8,6 @@ import (
 	"log"
 	"os"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/briandowns/spinner"
@@ -147,53 +146,71 @@ func (c *connect) processPacket(pkt *pb.Packet, config *Config) {
 
 	// exec
 	case pb.PacketClientExecAgentOfflineType:
-		fmt.Print("Agent is offline. Do you want to try again?\n (y/n) [y] ")
-		reader := bufio.NewReader(os.Stdin)
-
-		var result string
-		for {
-			c, _ := reader.ReadByte()
-			result = string(c)
-			result = strings.Trim(result, " \n")
-			break
+		tty, err := os.Open("/dev/tty")
+		if err != nil {
+			log.Fatal(err)
 		}
+		defer tty.Close()
 
-		if result == "" {
-			result = "y"
-		}
+		oldStdin := os.Stdin
+		defer func() { os.Stdin = oldStdin }()
 
-		if result == "y" {
-			pkt.Type = string(pb.PacketClientGatewayExecType)
-			_ = c.client.Send(pkt)
-			return
-		}
-		c.processGracefulExit(errors.New("user aborted"))
-	case pb.PacketClientGatewayExecWaitType:
-		c.waitingReview = pkt
-		reviewID := string(pkt.Spec[pb.SpecGatewayReviewID])
-		fmt.Println("This command requires review. We will notify you here when it is approved.")
-		fmt.Printf("Check the status at: %s\n\n", buildReviewUrl(config, reviewID))
-	case pb.PacketClientGatewayExecApproveType:
-		fmt.Println("The command was approved! Do you want to run it now?\n (y/n) [y] ")
+		os.Stdin = tty
 
-		reader := bufio.NewReader(os.Stdin)
 		var input string
-		for {
-			c, _ := reader.ReadByte()
-			fmt.Println("> " + string(c))
-			input = strings.Trim(string(c), " \n")
-			fmt.Println(">> " + input)
+		fmt.Print("Agent is offline. Do you want to try again?\n (y/n) [y] ")
+
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			s := scanner.Text()
+			input += s
 			break
 		}
-		fmt.Println(">>> " + input)
 
 		if input == "" {
 			input = "y"
 		}
-		fmt.Println(">>>> " + input)
 
 		input = input[0:1]
-		fmt.Println(">>>>> " + input)
+
+		if input == "y" {
+			pkt.Type = string(pb.PacketClientGatewayExecType)
+			_ = c.client.Send(pkt)
+			return
+		}
+		c.processGracefulExit(errors.New("user cancelled the action"))
+	case pb.PacketClientGatewayExecWaitType:
+		c.waitingReview = pkt
+		reviewID := string(pkt.Spec[pb.SpecGatewayReviewID])
+		fmt.Println("\nThis command requires review. We will notify you here when it is approved.")
+		fmt.Printf("Check the status at: %s\n\n", buildReviewUrl(config, reviewID))
+	case pb.PacketClientGatewayExecApproveType:
+		tty, err := os.Open("/dev/tty")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer tty.Close()
+
+		oldStdin := os.Stdin
+		defer func() { os.Stdin = oldStdin }()
+
+		os.Stdin = tty
+
+		var input string
+		fmt.Print("The command was approved! Do you want to run it now?\n (y/n) [y] ")
+
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			s := scanner.Text()
+			input += s
+			break
+		}
+
+		if input == "" {
+			input = "y"
+		}
+
+		input = input[0:1]
 
 		if input == "y" {
 			c.waitingReview.Type = string(pb.PacketClientGatewayExecType)

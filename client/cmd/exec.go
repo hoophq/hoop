@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/cobra"
 	"os"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -58,29 +57,20 @@ func runExec(args []string) {
 	}
 
 	if pkt.Payload == nil {
-		info, err := os.Stdin.Stat()
-		if err != nil {
-			panic(err)
+		var input string
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			s := scanner.Text()
+			input += s
 		}
-
-		if info.Mode()&os.ModeCharDevice == 0 || info.Size() > 0 {
-			stdinPipe := os.NewFile(uintptr(syscall.Stdin), "/dev/stdin")
-			defer stdinPipe.Close()
-
-			reader := bufio.NewReader(stdinPipe)
-			for {
-				input, err := reader.ReadByte()
-				if err != nil {
-					break
-				}
-				pkt.Payload = append(pkt.Payload, input)
-			}
-		}
+		pkt.Payload = []byte(input)
 	}
 
 	if len(pkt.Payload) > 0 {
 		pkt.Payload = []byte(strings.Trim(string(pkt.Payload), " \n"))
 	}
+
+	fmt.Println("### " + string(pkt.Payload))
 
 	if err := c.client.Send(pkt); err != nil {
 		_, _ = c.client.Close()
