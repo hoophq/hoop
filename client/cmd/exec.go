@@ -69,9 +69,7 @@ func runExec(args []string) {
 	if len(pkt.Payload) > 0 {
 		pkt.Payload = []byte(strings.Trim(string(pkt.Payload), " \n"))
 	}
-
-	fmt.Println("### " + string(pkt.Payload))
-
+	
 	if err := c.client.Send(pkt); err != nil {
 		_, _ = c.client.Close()
 		c.printErrorAndExit("failed executing command, err=%v", err)
