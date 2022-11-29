@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"fmt"
 	"github.com/briandowns/spinner"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/spf13/cobra"
@@ -92,7 +93,15 @@ func runExec(args []string) {
 		pkt, err := c.client.Recv()
 		c.processGracefulExit(err)
 		if pkt != nil {
-			c.processPacket(pkt)
+			c.processPacket(pkt, config)
 		}
 	}
+}
+
+func buildReviewUrl(conf *Config, reviewID string) string {
+	protocol := "https"
+	if strings.HasPrefix(conf.Host, "127.0.0.1") {
+		protocol = "http"
+	}
+	return fmt.Sprintf("%s://%s/plugins/reviews/%s", protocol, conf.Host, reviewID)
 }

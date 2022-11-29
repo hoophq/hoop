@@ -73,12 +73,12 @@ func runConnect(args []string) {
 		pkt, err := c.client.Recv()
 		c.processGracefulExit(err)
 		if pkt != nil {
-			c.processPacket(pkt)
+			c.processPacket(pkt, config)
 		}
 	}
 }
 
-func (c *connect) processPacket(pkt *pb.Packet) {
+func (c *connect) processPacket(pkt *pb.Packet, config *Config) {
 	switch pb.PacketType(pkt.Type) {
 
 	// connect
@@ -149,6 +149,7 @@ func (c *connect) processPacket(pkt *pb.Packet) {
 	case pb.PacketClientExecAgentOfflineType:
 		fmt.Print("Agent is offline. Do you want to try again?\n (y/n) [y] ")
 		reader := bufio.NewReader(os.Stdin)
+
 		var result string
 		for {
 			c, _ := reader.ReadByte()
@@ -169,23 +170,30 @@ func (c *connect) processPacket(pkt *pb.Packet) {
 		c.processGracefulExit(errors.New("user aborted"))
 	case pb.PacketClientGatewayExecWaitType:
 		c.waitingReview = pkt
-		fmt.Println("This command requires review. We will notify you right here when it is approved")
+		reviewID := string(pkt.Spec[pb.SpecGatewayReviewID])
+		fmt.Println("This command requires review. We will notify you here when it is approved.")
+		fmt.Printf("Check the status at: %s\n\n", buildReviewUrl(config, reviewID))
 	case pb.PacketClientGatewayExecApproveType:
-		fmt.Print("The command was approved! Do you want to run it now?\n (y/n) [y] ")
+		fmt.Println("The command was approved! Do you want to run it now?\n (y/n) [y] ")
 
 		reader := bufio.NewReader(os.Stdin)
 		var input string
 		for {
 			c, _ := reader.ReadByte()
+			fmt.Println("> " + string(c))
 			input = strings.Trim(string(c), " \n")
+			fmt.Println(">> " + input)
 			break
 		}
+		fmt.Println(">>> " + input)
 
 		if input == "" {
 			input = "y"
 		}
+		fmt.Println(">>>> " + input)
 
 		input = input[0:1]
+		fmt.Println(">>>>> " + input)
 
 		if input == "y" {
 			c.waitingReview.Type = string(pb.PacketClientGatewayExecType)
