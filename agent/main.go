@@ -10,6 +10,7 @@ import (
 	"github.com/runopsio/hoop/common/version"
 	"log"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -17,6 +18,7 @@ func Run() {
 	fmt.Println(string(version.JSON()))
 
 	defaultServerAddress := "127.0.0.1:8010"
+	secondaryServerAddres := "app.hoop.dev:8443"
 
 	conf := loadConfig()
 	if conf.Token == "" {
@@ -33,6 +35,22 @@ func Run() {
 		}
 	}
 
+	client, err := grpc.Connect(conf.ServerAddress, conf.Token, grpc.WithOption("origin", pb.ConnectionOriginAgent))
+	if err != nil {
+		if strings.HasPrefix(conf.ServerAddress, defaultServerAddress) {
+			conf.ServerAddress = secondaryServerAddres
+			fmt.Printf("Trying remote server...")
+			client, err = grpc.Connect(conf.ServerAddress, conf.Token, grpc.WithOption("origin", pb.ConnectionOriginAgent))
+			if err != nil {
+				log.Printf("disconnecting, msg=%v", err.Error())
+				os.Exit(1)
+			}
+		} else {
+			log.Printf("failed to connect to [%s], msg=%v", conf.ServerAddress, err.Error())
+			os.Exit(1)
+		}
+	}
+
 	saveConfig(conf)
 
 	var agt *Agent
@@ -40,12 +58,6 @@ func Run() {
 
 	firstTry := true
 	for i := 1; i < 100; i++ {
-		client, err := grpc.Connect(conf.ServerAddress, conf.Token, grpc.WithOption("origin", pb.ConnectionOriginAgent))
-		if err != nil {
-			log.Printf("disconnecting, msg=%v", err.Error())
-			os.Exit(1)
-		}
-
 		ctx := client.StreamContext()
 		done := make(chan struct{})
 		agt = New(client, done)
@@ -54,6 +66,11 @@ func Run() {
 			time.Sleep(time.Second * 5)
 			fmt.Print(".")
 			firstTry = false
+			client, err = grpc.Connect(conf.ServerAddress, conf.Token, grpc.WithOption("origin", pb.ConnectionOriginAgent))
+			if err != nil {
+				log.Printf("failed to connect to [%s], msg=%v", conf.ServerAddress, err.Error())
+				os.Exit(1)
+			}
 			continue
 		}
 		break
