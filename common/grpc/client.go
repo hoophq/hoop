@@ -119,7 +119,6 @@ func (c *mutexClient) StartKeepAlive() {
 			proto := &pb.Packet{Type: pb.PacketKeepAliveType.String()}
 			if err := c.Send(proto); err != nil {
 				if err != nil {
-					fmt.Errorf("Error sending keep alive")
 					break
 				}
 			}
