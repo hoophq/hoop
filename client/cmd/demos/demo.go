@@ -29,6 +29,6 @@ func printErrorAndExit(format string, v ...any) {
 	out := termenv.String(fmt.Sprintf(format, v...)).
 		Foreground(p.Color("0")).
 		Background(p.Color("#DBAB79"))
-	fmt.Print(out.String())
+	fmt.Println(out.String())
 	os.Exit(1)
 }
