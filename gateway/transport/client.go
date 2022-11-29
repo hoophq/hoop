@@ -289,6 +289,7 @@ func (s *Server) processClientExec(pkt *pb.Packet, client *client.Client, conn *
 		}
 		if review.Status != rv.StatusApproved {
 			spec[pb.SpecClientExecArgsKey] = pkt.Spec[pb.SpecClientExecArgsKey]
+			spec[pb.SpecGatewayReviewID] = []byte(review.Id)
 			clientStream := getClientStream(client.SessionID)
 			_ = clientStream.Send(&pb.Packet{
 				Type:    string(pb.PacketClientGatewayExecWaitType),

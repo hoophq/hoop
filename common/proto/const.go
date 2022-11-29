@@ -46,6 +46,7 @@ const (
 	SpecAgentGCPRawCredentialsKey string = "agent.gcp_credentials"
 	SpecTCPServerConnectKey       string = "tcp.server_connect"
 	SpecReviewDataKey             string = "review.data"
+	SpecGatewayReviewID           string = "review.id"
 
 	DefaultKeepAlive time.Duration = 10 * time.Second
 

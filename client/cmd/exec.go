@@ -2,12 +2,12 @@ package cmd
 
 import (
 	"bufio"
+	"fmt"
 	"github.com/briandowns/spinner"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/spf13/cobra"
 	"os"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -57,30 +57,19 @@ func runExec(args []string) {
 	}
 
 	if pkt.Payload == nil {
-		info, err := os.Stdin.Stat()
-		if err != nil {
-			panic(err)
+		var input string
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			s := scanner.Text()
+			input += s
 		}
-
-		if info.Mode()&os.ModeCharDevice == 0 || info.Size() > 0 {
-			stdinPipe := os.NewFile(uintptr(syscall.Stdin), "/dev/stdin")
-			defer stdinPipe.Close()
-
-			reader := bufio.NewReader(stdinPipe)
-			for {
-				input, err := reader.ReadByte()
-				if err != nil {
-					break
-				}
-				pkt.Payload = append(pkt.Payload, input)
-			}
-		}
+		pkt.Payload = []byte(input)
 	}
 
 	if len(pkt.Payload) > 0 {
 		pkt.Payload = []byte(strings.Trim(string(pkt.Payload), " \n"))
 	}
-
+	
 	if err := c.client.Send(pkt); err != nil {
 		_, _ = c.client.Close()
 		c.printErrorAndExit("failed executing command, err=%v", err)
@@ -92,7 +81,15 @@ func runExec(args []string) {
 		pkt, err := c.client.Recv()
 		c.processGracefulExit(err)
 		if pkt != nil {
-			c.processPacket(pkt)
+			c.processPacket(pkt, config)
 		}
 	}
+}
+
+func buildReviewUrl(conf *Config, reviewID string) string {
+	protocol := "https"
+	if strings.HasPrefix(conf.Host, "127.0.0.1") {
+		protocol = "http"
+	}
+	return fmt.Sprintf("%s://%s/plugins/reviews/%s", protocol, conf.Host, reviewID)
 }

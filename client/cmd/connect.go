@@ -8,7 +8,6 @@ import (
 	"log"
 	"os"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/briandowns/spinner"
@@ -73,12 +72,12 @@ func runConnect(args []string) {
 		pkt, err := c.client.Recv()
 		c.processGracefulExit(err)
 		if pkt != nil {
-			c.processPacket(pkt)
+			c.processPacket(pkt, config)
 		}
 	}
 }
 
-func (c *connect) processPacket(pkt *pb.Packet) {
+func (c *connect) processPacket(pkt *pb.Packet, config *Config) {
 	switch pb.PacketType(pkt.Type) {
 
 	// connect
@@ -147,37 +146,63 @@ func (c *connect) processPacket(pkt *pb.Packet) {
 
 	// exec
 	case pb.PacketClientExecAgentOfflineType:
+		tty, err := os.Open("/dev/tty")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer tty.Close()
+
+		oldStdin := os.Stdin
+		defer func() { os.Stdin = oldStdin }()
+
+		os.Stdin = tty
+
+		var input string
 		fmt.Print("Agent is offline. Do you want to try again?\n (y/n) [y] ")
-		reader := bufio.NewReader(os.Stdin)
-		var result string
-		for {
-			c, _ := reader.ReadByte()
-			result = string(c)
-			result = strings.Trim(result, " \n")
+
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			s := scanner.Text()
+			input += s
 			break
 		}
 
-		if result == "" {
-			result = "y"
+		if input == "" {
+			input = "y"
 		}
 
-		if result == "y" {
+		input = input[0:1]
+
+		if input == "y" {
 			pkt.Type = string(pb.PacketClientGatewayExecType)
 			_ = c.client.Send(pkt)
 			return
 		}
-		c.processGracefulExit(errors.New("user aborted"))
+		c.processGracefulExit(errors.New("user cancelled the action"))
 	case pb.PacketClientGatewayExecWaitType:
 		c.waitingReview = pkt
-		fmt.Println("This command requires review. We will notify you right here when it is approved")
+		reviewID := string(pkt.Spec[pb.SpecGatewayReviewID])
+		fmt.Println("\nThis command requires review. We will notify you here when it is approved.")
+		fmt.Printf("Check the status at: %s\n\n", buildReviewUrl(config, reviewID))
 	case pb.PacketClientGatewayExecApproveType:
+		tty, err := os.Open("/dev/tty")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer tty.Close()
+
+		oldStdin := os.Stdin
+		defer func() { os.Stdin = oldStdin }()
+
+		os.Stdin = tty
+
+		var input string
 		fmt.Print("The command was approved! Do you want to run it now?\n (y/n) [y] ")
 
-		reader := bufio.NewReader(os.Stdin)
-		var input string
-		for {
-			c, _ := reader.ReadByte()
-			input = strings.Trim(string(c), " \n")
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			s := scanner.Text()
+			input += s
 			break
 		}
 
