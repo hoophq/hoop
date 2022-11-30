@@ -3,15 +3,16 @@ package agent
 import (
 	"context"
 	"fmt"
+	"log"
+	"os"
+	"strings"
+	"time"
+
 	"github.com/BurntSushi/toml"
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/grpc"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/common/version"
-	"log"
-	"os"
-	"strings"
-	"time"
 )
 
 func Run() {

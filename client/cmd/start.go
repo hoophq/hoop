@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/runopsio/hoop/client/cmd/demos"
+	"github.com/runopsio/hoop/client/cmd/styles"
 	"github.com/runopsio/hoop/gateway"
 
 	"github.com/briandowns/spinner"
@@ -87,22 +89,28 @@ var startCmd = &cobra.Command{
 					}
 					os.Exit(1)
 				default:
-					_, err := http.Get("http://127.0.0.1:8009")
-					if err == nil {
+					resp, err := http.Get("http://127.0.0.1:8009/api/agents")
+					if err == nil && resp.StatusCode == 200 {
 						loader.Stop()
-						fmt.Println("-> hoop started!")
-						fmt.Println("open http://127.0.0.1:8009 to begin")
-						fmt.Println("")
-						fmt.Println("stop the demo")
-						fmt.Println("docker stop hoopdemo")
-						fmt.Println("")
+						fmt.Println()
+						fmt.Println(styles.Default.Render("  hoop started at " + styles.Keyword(" http://127.0.0.1:8009 ")))
+						fmt.Println()
+						fmt.Println(styles.Fainted.Render("  • Connect to an interactive audited bash session"))
+						fmt.Println(styles.Default.Render("  $ hoop start demo bash"))
+						fmt.Println()
+						fmt.Println(styles.Fainted.Render("  • Access Kubernetes resources"))
+						fmt.Println(styles.Default.Render("  $ hoop start demo k8s"))
+						fmt.Println()
+						fmt.Println(styles.Fainted.Render("  • Stop the demo"))
+						fmt.Println(styles.Default.Render("  $ docker stop hoopdemo"))
+						fmt.Println()
 						os.Exit(0)
 					}
 					index++
-					if index == 10 {
+					if index == 20 {
 						loader.Suffix = " starting hoop -> still starting, hang it there ..."
 					}
-					time.Sleep(time.Second * 1)
+					time.Sleep(time.Millisecond * 500)
 				}
 			}
 		}()
@@ -131,5 +139,6 @@ var startGatewayCmd = &cobra.Command{
 func init() {
 	startCmd.AddCommand(startAgentCmd)
 	startCmd.AddCommand(startGatewayCmd)
+	startCmd.AddCommand(demos.DemoCmd)
 	rootCmd.AddCommand(startCmd)
 }

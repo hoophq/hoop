@@ -1,9 +1,10 @@
 package connection
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/gateway/user"
-	"net/http"
 )
 
 type (
@@ -67,7 +68,7 @@ func (a *Handler) Post(c *gin.Context) {
 	}
 
 	if existingCon != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "Connection already exists."})
+		c.JSON(http.StatusConflict, gin.H{"message": "Connection already exists."})
 		return
 	}
 
