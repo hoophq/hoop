@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	k8sConnectionName  = "k8s-demo"
-	bashConnectionName = "bash-demo"
+	defaultK8sConnectionName  = "k8s-demo"
+	defaultBashConnectionName = "bash-demo"
 )
 
 var DemoCmd = &cobra.Command{
@@ -18,6 +18,8 @@ var DemoCmd = &cobra.Command{
 	Short:        "Demo applications",
 	SilenceUsage: false,
 }
+
+var connectionNameFlag string
 
 func init() {
 	DemoCmd.AddCommand(bashCmd)

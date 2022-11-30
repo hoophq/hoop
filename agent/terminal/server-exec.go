@@ -107,11 +107,14 @@ func (c *Command) Run(streamWriter io.WriteCloser, stdinInput []byte, onExecErr 
 		onExecErr(term.InternalErrorExitCode, "internal error, failed writing input")
 		return err
 	}
-	copyBuffer(streamWriter, pipeStdout, 1024, "stdout")
-	copyBuffer(streamWriter, pipeStderr, 1024, "stderr")
+	stdoutCh := copyBuffer(streamWriter, pipeStdout, 1024, "stdout")
+	stderrCh := copyBuffer(streamWriter, pipeStderr, 1024, "stderr")
 
 	go func() {
 		exitCode = 0
+		// wait must be called after reading all contents from pipes (stdout,stderr)
+		<-stdoutCh
+		<-stderrCh
 		err := c.cmd.Wait()
 		if err != nil {
 			if exErr, ok := err.(*exec.ExitError); ok {
@@ -123,6 +126,10 @@ func (c *Command) Run(streamWriter io.WriteCloser, stdinInput []byte, onExecErr 
 		}
 		if err := c.OnPostExec(); err != nil {
 			fmt.Printf("failed executing post command, err=%v", err)
+		}
+		if exitCode == 0 {
+			onExecErr(exitCode, "")
+			return
 		}
 		onExecErr(exitCode, "failed executing command, err=%v", err)
 	}()
@@ -232,7 +239,8 @@ func NewCommand(rawEnvVarList map[string]interface{}, args ...string) (*Command,
 	return c, nil
 }
 
-func copyBuffer(dst io.Writer, src io.Reader, bufSize int, stream string) {
+func copyBuffer(dst io.Writer, src io.Reader, bufSize int, stream string) chan struct{} {
+	doneCh := make(chan struct{})
 	go func() {
 		wb, err := io.CopyBuffer(dst, src, make([]byte, bufSize))
 		switch err {
@@ -242,5 +250,7 @@ func copyBuffer(dst io.Writer, src io.Reader, bufSize int, stream string) {
 		default:
 			log.Printf("[%s] - fail to copy, written=%v, err=%v", stream, wb, err)
 		}
+		close(doneCh)
 	}()
+	return doneCh
 }

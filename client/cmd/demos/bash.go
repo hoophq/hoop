@@ -30,7 +30,7 @@ var connectionPayload = fmt.Sprintf(`
 	  "/bin/bash"
 	],
 	"secret": {}
-}`, bashConnectionName)
+}`, defaultBashConnectionName)
 
 func runBashDemo() {
 	req, err := http.NewRequest(
@@ -49,7 +49,7 @@ func runBashDemo() {
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
 		printErrorAndExit("status-code=%v, resp-err=%v", resp.Status, string(respErr))
 	}
-	c := exec.Command("hoop", "connect", bashConnectionName)
+	c := exec.Command("hoop", "connect", defaultBashConnectionName)
 	c.Stdin = os.Stdin
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
@@ -60,6 +60,6 @@ func runBashDemo() {
 	fmt.Println("  " + styles.Keyword(" http://127.0.0.1:8009/plugins/audit "))
 	fmt.Println()
 	fmt.Println(styles.Fainted.Render("  • You can now run the command in another terminal"))
-	fmt.Printf("  $ hoop connect %s\n", bashConnectionName)
+	fmt.Printf("  $ hoop connect %s\n", defaultBashConnectionName)
 	fmt.Println()
 }

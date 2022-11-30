@@ -8,13 +8,16 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"strconv"
 	"time"
 
 	"github.com/briandowns/spinner"
 	"github.com/muesli/termenv"
+	"github.com/runopsio/hoop/client/cmd/styles"
 	"github.com/runopsio/hoop/client/proxy"
 	"github.com/runopsio/hoop/common/memory"
 	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/common/terminal"
 	"github.com/spf13/cobra"
 )
 
@@ -224,8 +227,14 @@ func (c *connect) processPacket(pkt *pb.Packet, config *Config) {
 	case pb.PacketClientAgentExecOKType:
 		c.printOutputAndExit(pkt.Payload)
 	case pb.PacketClientAgentExecErrType:
-		c.processGracefulExit(errors.New(string(pkt.Payload)))
-
+		if len(pkt.Payload) > 0 {
+			_, _ = os.Stderr.Write([]byte(styles.ClientError(string(pkt.Payload)) + "\n"))
+		}
+		exitCode, err := strconv.Atoi(string(pkt.Spec[pb.SpecClientExecExitCodeKey]))
+		if err != nil {
+			os.Exit(terminal.InternalErrorExitCode)
+		}
+		os.Exit(exitCode)
 	// pg protocol messages
 	case pb.PacketPGWriteClientType:
 		sessionID := pkt.Spec[pb.SpecGatewaySessionID]
@@ -312,16 +321,12 @@ func (c *connect) printHeader(sessionID string) {
 
 func (c *connect) printErrorAndExit(format string, v ...any) {
 	c.loader.Disable()
-	p := termenv.ColorProfile()
-	out := termenv.String(fmt.Sprintf(format, v...)).
-		Foreground(p.Color("0")).
-		Background(p.Color("#DBAB79"))
-	fmt.Println(out.String())
+	errOutput := styles.ClientError(fmt.Sprintf(format, v...))
+	fmt.Println(errOutput)
 	os.Exit(1)
 }
 
 func (c *connect) printOutputAndExit(output []byte) {
 	c.loader.Disable()
-	fmt.Println(string(output))
-	os.Exit(0)
+	fmt.Print(string(output))
 }
