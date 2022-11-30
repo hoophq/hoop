@@ -3,12 +3,15 @@ package cmd
 import (
 	"bufio"
 	"fmt"
+	"io"
+	"os"
+	"strings"
+	"syscall"
+	"time"
+
 	"github.com/briandowns/spinner"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/spf13/cobra"
-	"os"
-	"strings"
-	"time"
 )
 
 var inputFilepath string
@@ -29,6 +32,51 @@ func init() {
 	rootCmd.AddCommand(execCmd)
 }
 
+func parseFlagInputs(c *connect) []byte {
+	if inputFilepath != "" && inputStdin != "" {
+		c.printErrorAndExit("accept only one option: --file (-f) or --input (-i)")
+	}
+	switch {
+	case inputFilepath != "":
+		input, err := os.ReadFile(inputFilepath)
+		if err != nil {
+			c.printErrorAndExit("failed parsing input file [%s], err=%v", inputFilepath, err)
+		}
+		return input
+	case inputStdin != "":
+		return []byte(inputStdin)
+	}
+	return nil
+}
+
+func parseExecInput(c *connect) []byte {
+	info, err := os.Stdin.Stat()
+	if err != nil {
+		c.printErrorAndExit(err.Error())
+	}
+	var input []byte
+	// stdin input
+	if info.Mode()&os.ModeCharDevice == 0 || info.Size() > 0 {
+		if inputFilepath != "" || inputStdin != "" {
+			c.printErrorAndExit("flags not allowed when reading from stdin")
+		}
+		stdinPipe := os.NewFile(uintptr(syscall.Stdin), "/dev/stdin")
+		reader := bufio.NewReader(stdinPipe)
+		for {
+			stdinInput, err := reader.ReadByte()
+			if err != nil && err == io.EOF {
+				break
+			}
+			input = append(input, stdinInput)
+		}
+		stdinPipe.Close()
+	}
+	if len(input) > 0 {
+		return input
+	}
+	return parseFlagInputs(c)
+}
+
 func runExec(args []string) {
 	config := getClientConfig()
 
@@ -38,38 +86,14 @@ func runExec(args []string) {
 	loader.Suffix = "executing input..."
 
 	c := newClientConnect(config, loader, args, pb.ClientVerbExec)
-
 	pkt := &pb.Packet{
 		Type: pb.PacketClientGatewayExecType.String(),
 		Spec: newClientArgsSpec(c.clientArgs),
 	}
-
-	if pkt.Payload == nil && inputFilepath != "" {
-		b, err := os.ReadFile(inputFilepath)
-		if err != nil {
-			c.printErrorAndExit("failed parsing input file [%s], err=%v", inputFilepath, err)
-		}
-		pkt.Payload = b
-	}
-
-	if pkt.Payload == nil && inputStdin != "" {
-		pkt.Payload = []byte(inputStdin)
-	}
-
-	if pkt.Payload == nil {
-		var input string
-		scanner := bufio.NewScanner(os.Stdin)
-		for scanner.Scan() {
-			s := scanner.Text()
-			input += s
-		}
-		pkt.Payload = []byte(input)
-	}
-
+	pkt.Payload = parseExecInput(c)
 	if len(pkt.Payload) > 0 {
 		pkt.Payload = []byte(strings.Trim(string(pkt.Payload), " \n"))
 	}
-	
 	if err := c.client.Send(pkt); err != nil {
 		_, _ = c.client.Close()
 		c.printErrorAndExit("failed executing command, err=%v", err)

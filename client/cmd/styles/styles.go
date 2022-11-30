@@ -6,9 +6,12 @@ import (
 )
 
 var (
-	Fainted = lipgloss.NewStyle().Faint(true)
-	Default = lipgloss.NewStyle()
-	color   = termenv.EnvColorProfile().Color
+	color       = termenv.EnvColorProfile().Color
+	Fainted     = lipgloss.NewStyle().Faint(true)
+	Default     = lipgloss.NewStyle()
+	ClientError = termenv.Style{}.
+			Foreground(color("0")).
+			Background(color("#DBAB79")).Styled
 	Keyword = termenv.Style{}.
 		Foreground(color("204")).
 		Background(color("235")).Styled
