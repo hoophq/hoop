@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"time"
 
-	authenticationv1 "k8s.io/api/authentication/v1"
 	v1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -32,7 +31,6 @@ const (
 type TokenGranterOptions struct {
 	Namespace         string
 	KubeconfigContext string
-	Expiration        time.Duration
 	ClusterRole       string
 }
 
@@ -70,7 +68,7 @@ func BootstrapTokenGranter(opts *TokenGranterOptions) (string, error) {
 		return "", fmt.Errorf("failed creating service account, err=%v", err)
 	}
 
-	accessToken, err := createServiceAccountToken(clientset, opts.Namespace, &opts.Expiration)
+	accessToken, err := getSecretFromServiceAccount(clientset, opts.Namespace)
 	if err != nil {
 		return "", fmt.Errorf("failed creating service account token, err=%v", err)
 	}
@@ -114,8 +112,36 @@ func createNamespace(clientset *kubernetes.Clientset, namespace string) error {
 	return err
 }
 
+func shouldCreateClusterRoleBinding(clientset *kubernetes.Clientset, clusterrole string) (bool, error) {
+	name := DefaultClusterRoleBindingName
+	cr, err := clientset.RbacV1().ClusterRoleBindings().Get(
+		context.Background(), name, metav1.GetOptions{})
+	if err != nil && !errors.IsNotFound(err) {
+		return false, err
+	}
+	if errors.IsNotFound(err) {
+		return true, nil
+	}
+	if cr.RoleRef.Name != clusterrole {
+		err := clientset.RbacV1().ClusterRoleBindings().Delete(
+			context.Background(), name, metav1.DeleteOptions{})
+		if err != nil {
+			return false, fmt.Errorf("failed removing/conciliating clusterrolebinding %v, err=%v", name, err)
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
 func createClusterRoleBinding(clientset *kubernetes.Clientset, clusterrole, namespace string) error {
-	_, err := clientset.RbacV1().ClusterRoleBindings().Create(
+	shouldCreate, err := shouldCreateClusterRoleBinding(clientset, clusterrole)
+	if err != nil {
+		return err
+	}
+	if !shouldCreate {
+		return nil
+	}
+	_, err = clientset.RbacV1().ClusterRoleBindings().Create(
 		context.Background(),
 		&rbacv1.ClusterRoleBinding{
 			ObjectMeta: metav1.ObjectMeta{Name: DefaultClusterRoleBindingName},
@@ -134,9 +160,6 @@ func createClusterRoleBinding(clientset *kubernetes.Clientset, clusterrole, name
 		},
 		metav1.CreateOptions{},
 	)
-	if errors.IsAlreadyExists(err) || err == nil {
-		return nil
-	}
 	return err
 }
 
@@ -156,25 +179,31 @@ func createServiceAccount(clientset *kubernetes.Clientset, namespace string) err
 	return err
 }
 
-func createServiceAccountToken(clientset *kubernetes.Clientset, namespace string, expiration *time.Duration) (string, error) {
-	tokenRequest, err := clientset.CoreV1().ServiceAccounts(namespace).CreateToken(
-		context.Background(),
-		defaultServiceAccountName,
-		&authenticationv1.TokenRequest{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: namespace,
-			},
-			Spec: authenticationv1.TokenRequestSpec{},
-		},
-		metav1.CreateOptions{},
-	)
-	if *expiration > 0 {
-		tokenRequest.Spec.ExpirationSeconds = (*int64)(expiration)
+func getSecretFromServiceAccount(clientset *kubernetes.Clientset, namespace string) (string, error) {
+	attempts := 5
+	for {
+		secretList, err := clientset.CoreV1().Secrets(namespace).List(context.Background(), metav1.ListOptions{})
+		if err != nil {
+			return "", err
+		}
+		// var secretServiceAccount string
+		var secret *v1.Secret
+		for _, s := range secretList.Items {
+			if s.Annotations["kubernetes.io/service-account.name"] == defaultServiceAccountName {
+				secret = &s
+				break
+			}
+		}
+		if secret == nil {
+			attempts--
+			if attempts == 0 {
+				return "", fmt.Errorf("couldn't find secret for service account %s/%v", namespace, defaultServiceAccountName)
+			}
+			time.Sleep(time.Millisecond * 500)
+			continue
+		}
+		return string(secret.Data["token"]), nil
 	}
-	if err != nil {
-		return "", err
-	}
-	return tokenRequest.Status.Token, nil
 }
 
 func getKubeConfigPath() (string, error) {
