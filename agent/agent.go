@@ -211,6 +211,7 @@ func (a *Agent) decodeDLPCredentials(sessionID []byte, pkt *pb.Packet, packetTyp
 			return dlpClient
 		}
 	}
+	log.Printf("session=%v - dlp is unavailable for this connection, missing gcp credentials", string(sessionID))
 	return nil
 }
 
@@ -230,8 +231,6 @@ func (a *Agent) processClientConnect(pkt *pb.Packet) {
 		return
 	}
 
-	dlpClient := a.decodeDLPCredentials(sessionID, pkt, packetErrType)
-
 	connType := string(pkt.Spec[pb.SpecConnectionType])
 	if connType == pb.ConnectionTypePostgres || connType == pb.ConnectionTypeTCP {
 		connParams.EnvVars[connEnvKey] = connEnvVars
@@ -241,7 +240,12 @@ func (a *Agent) processClientConnect(pkt *pb.Packet) {
 		sessionIDKey = fmt.Sprintf(connectionStoreParamsKey, string(sessionID))
 	}
 
-	a.connStore.Set(dlpClientKey, dlpClient)
+	if a.connStore.Get(dlpClientKey) == nil {
+		dlpClient := a.decodeDLPCredentials(sessionID, pkt, packetErrType)
+		if dlpClient != nil {
+			a.connStore.Set(dlpClientKey, dlpClient)
+		}
+	}
 	a.connStore.Set(sessionIDKey, connParams)
 
 	a.client.Send(&pb.Packet{
