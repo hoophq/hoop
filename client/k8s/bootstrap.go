@@ -186,7 +186,6 @@ func getSecretFromServiceAccount(clientset *kubernetes.Clientset, namespace stri
 		if err != nil {
 			return "", err
 		}
-		// var secretServiceAccount string
 		var secret *v1.Secret
 		for _, s := range secretList.Items {
 			if s.Annotations["kubernetes.io/service-account.name"] == defaultServiceAccountName {
