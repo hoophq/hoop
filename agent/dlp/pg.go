@@ -134,7 +134,7 @@ func redactDataRow(dlpclient Client, conf *deidentifyConfig, dataRows *bytes.Buf
 			columnData := make([]byte, columnLength)
 			_, err := io.ReadFull(dataRowBuf, columnData[:])
 			if err != nil {
-				return dataRows, fmt.Errorf("failed reading column (%v), err=%v", i, err)
+				return dataRows, fmt.Errorf("failed reading column (idx=%v,len=%v), err=%v", i, columnLength, err)
 			}
 			// must append it only once
 			if len(tableInput.Headers) < int(columnNumbers) {

@@ -21,9 +21,8 @@ import (
 
 type (
 	Agent struct {
-		client      pb.ClientTransport
-		closeSignal chan struct{}
-		connStore   memory.Store
+		client    pb.ClientTransport
+		connStore memory.Store
 	}
 	connEnv struct {
 		host string
@@ -87,15 +86,10 @@ func parseConnectionEnvVars(envVars map[string]any, connType string) (*connEnv, 
 	return env, nil
 }
 
-func New(client pb.ClientTransport, closeSig chan struct{}) *Agent {
+func New(client pb.ClientTransport) *Agent {
 	return &Agent{
-		client:      client,
-		closeSignal: closeSig,
-		connStore:   memory.New()}
-}
-
-func (a *Agent) Close() {
-	close(a.closeSignal)
+		client:    client,
+		connStore: memory.New()}
 }
 
 func (a *Agent) Run(svrAddr, token string, firstConnTry bool) {
