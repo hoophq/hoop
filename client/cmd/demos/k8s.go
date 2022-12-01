@@ -53,7 +53,6 @@ func connectionExists(connectionName string) (bool, error) {
 }
 
 func runK8sDemo() {
-	// TODO: check if connection is created before boostraping the token
 	exists, err := connectionExists(connectionNameFlag)
 	if exists {
 		printErrorAndExit("connection %s already exists, to use a distinct one: hoop start demo k8s -c <mynewconn>",

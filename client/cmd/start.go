@@ -55,6 +55,7 @@ var startCmd = &cobra.Command{
 		}
 		dockerArgs := []string{
 			"run",
+			"-t", // required for resizing the tty in the agent properly
 			"-e", "PROFILE=dev",
 			"-e", fmt.Sprintf("GOOGLE_APPLICATION_CREDENTIALS_JSON=%v",
 				os.Getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")),

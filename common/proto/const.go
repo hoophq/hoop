@@ -26,6 +26,7 @@ const (
 	// terminal messages
 	PacketTerminalClientWriteStdoutType PacketType = "Terminal::Client::WriteStdout"
 	PacketTerminalWriteAgentStdinType   PacketType = "Terminal::Agent::WriteStdin"
+	PacketTerminalResizeTTYType         PacketType = "Terminal::Agent::ResizeTTY"
 	PacketTerminalCloseType             PacketType = "Terminal::Close"
 
 	// Raw TCP

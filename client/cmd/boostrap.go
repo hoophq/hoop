@@ -27,7 +27,7 @@ var tokenGranterCmd = &cobra.Command{
 	Short:        "Setup an access token for managing tokens on Kubernetes",
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
-		kubeconfig, err := k8s.BootstrapTokenGranter(&k8s.TokenGranterOptions{})
+		kubeconfig, err := k8s.BootstrapTokenGranter(tokenGranterOptions)
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(1)

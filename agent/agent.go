@@ -145,6 +145,8 @@ func (a *Agent) Run(svrAddr, token string, firstConnTry bool) {
 		// terminal
 		case pb.PacketTerminalWriteAgentStdinType:
 			a.doTerminalWriteAgentStdin(pkt)
+		case pb.PacketTerminalResizeTTYType:
+			a.doTerminalResizeTTY(pkt)
 		case pb.PacketTerminalCloseType:
 			a.doTerminalCloseTerm(pkt)
 
@@ -175,7 +177,7 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet, packetErrType pb.PacketTyp
 		if err := isPortActive(connEnvVars.host, connEnvVars.port); err != nil {
 			msg := fmt.Sprintf("session=%s - failed connecting to host=%q, port=%q, err=%v",
 				sessionIDKey, connEnvVars.host, connEnvVars.port, err)
-			log.Printf(msg)
+			log.Println(msg)
 			return nil, nil, fmt.Errorf("%s", msg)
 		}
 	}

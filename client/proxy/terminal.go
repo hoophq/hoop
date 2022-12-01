@@ -2,12 +2,12 @@ package proxy
 
 import (
 	"fmt"
-	pbterm "github.com/runopsio/hoop/common/terminal"
 	"io"
-	"log"
 	"os"
 	"os/signal"
 	"strconv"
+
+	pbterm "github.com/runopsio/hoop/common/terminal"
 
 	"github.com/creack/pty"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -44,28 +44,27 @@ func (t *Terminal) ConnectWithTTY() error {
 		return fmt.Errorf("failed open a new tty, err=%v", err)
 	}
 
+	go func() {
+		sw := pb.NewStreamWriter(t.client, pb.PacketTerminalWriteAgentStdinType, nil)
+		_, _ = sw.Write(pbterm.TermEnterKeyStrokeType)
+		_, _ = io.Copy(sw, os.Stdin)
+	}()
+
 	// Handle pty size.
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, pbterm.SIGWINCH)
-	// TODO: make resize to propagate remotely!
 	go func() {
-		for {
-			switch <-sig {
-			case pbterm.SIGWINCH:
-				if err := pty.InheritSize(os.Stdin, ptty); err != nil {
-					log.Printf("error resizing pty, err=%v", err)
-				}
+		for range sig {
+			_ = pty.InheritSize(os.Stdin, ptty)
+			size, err := pty.GetsizeFull(ptty)
+			if err == nil {
+				resizeMsg := fmt.Sprintf("%v,%v,%v,%v", size.Rows, size.Cols, size.X, size.Y)
+				_, _ = pb.NewStreamWriter(t.client, pb.PacketTerminalResizeTTYType, nil).
+					Write([]byte(resizeMsg))
 			}
 		}
 	}()
 	sig <- pbterm.SIGWINCH
-
-	go func() {
-		sw := pb.NewStreamWriter(t.client, pb.PacketTerminalWriteAgentStdinType, nil)
-		_, _ = sw.Write(pbterm.TermEnterKeyStrokeType)
-		// TODO: check errors
-		_, _ = io.Copy(sw, os.Stdin)
-	}()
 
 	go func() {
 		<-t.client.StreamContext().Done()

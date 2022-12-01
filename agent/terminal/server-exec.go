@@ -8,7 +8,6 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"os/signal"
 
 	term "github.com/runopsio/hoop/common/terminal"
 
@@ -147,19 +146,6 @@ func (c *Command) RunOnTTY(stdoutWriter io.WriteCloser, onExecErr OnExecErrFn) e
 		return fmt.Errorf("failed starting pty, err=%v", err)
 	}
 	c.ptty = ptmx
-	// Handle pty size.
-	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, term.SIGWINCH)
-	go func() {
-		for range ch {
-			if err := pty.InheritSize(os.Stdin, ptmx); err != nil {
-				log.Printf("error resizing pty: %s", err)
-			}
-		}
-	}()
-	ch <- term.SIGWINCH                           // Initial resize.
-	defer func() { signal.Stop(ch); close(ch) }() // Cleanup signals when done.
-
 	go func() {
 		exitCode := 0
 		defer func() {
@@ -213,6 +199,10 @@ func (c *Command) WriteTTY(data []byte) error {
 	}
 	_, err := c.ptty.Write(data)
 	return err
+}
+
+func (c *Command) ResizeTTY(size *pty.Winsize) error {
+	return pty.InheritSize(os.Stdin, c.ptty)
 }
 
 func NewCommand(rawEnvVarList map[string]interface{}, args ...string) (*Command, error) {
