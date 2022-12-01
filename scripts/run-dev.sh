@@ -26,7 +26,7 @@ export GIN_MODE=debug
 go build -o /tmp/hoop github.com/runopsio/hoop/client
 /tmp/hoop start gateway &
 
-unset PORT PROFILE XTDB_ADDRESS PLUGIN_AUDIT_PATH
+unset PORT XTDB_ADDRESS PLUGIN_AUDIT_PATH
 
 until curl -s -f -o /dev/null "http://127.0.0.1:8009/api/agents"
 do

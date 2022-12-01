@@ -54,14 +54,10 @@ func Run() {
 
 	saveConfig(conf)
 
-	var agt *Agent
-	defer agt.Close()
-
 	firstTry := true
 	for i := 1; i < 100; i++ {
 		ctx := client.StreamContext()
-		done := make(chan struct{})
-		agt = New(client, done)
+		agt := New(client)
 
 		if err := runWithError(ctx, conf, agt, firstTry); err != nil {
 			time.Sleep(time.Second * 5)
