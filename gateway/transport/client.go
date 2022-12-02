@@ -2,13 +2,14 @@ package transport
 
 import (
 	"fmt"
-	rv "github.com/runopsio/hoop/gateway/review"
 	"io"
 	"log"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
+
+	rv "github.com/runopsio/hoop/gateway/review"
 
 	"github.com/runopsio/hoop/gateway/plugin"
 	pluginsaudit "github.com/runopsio/hoop/gateway/transport/plugins/audit"
@@ -223,7 +224,7 @@ func (s *Server) listenClientMessages(
 		}
 		err = s.processClientPacket(pkt, c, conn)
 		if err != nil {
-			fmt.Printf("session=%v - failed processing client packet, err=%v", c.SessionID, err)
+			log.Printf("session=%v - failed processing client packet, err=%v", c.SessionID, err)
 			return status.Errorf(codes.FailedPrecondition, err.Error())
 		}
 	}
