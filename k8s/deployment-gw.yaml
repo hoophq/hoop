@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hoopgateway
+  namespace: hoophq
+spec:
+  selector:
+    matchLabels:
+      app: hoopgateway
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: hoopgateway
+    spec:
+      containers:
+      - image: hoophq/hoop
+        name: hoopgateway
+        command:
+        - hoop
+        - start
+        - gateway
+        env:
+        - name: PROFILE
+          value: 'prod'
+        envFrom:
+        - secretRef:
+            name: hoop-config
+        resources:
+          requests:
+            cpu: 1024m
+            memory: 1Gi
+        ports:
+        - containerPort: 8010
+          name: grpc
+        - containerPort: 8009
+          name: api
+      - image: hoophq/xtdb
+        name: xtdb
+        envFrom:
+        - secretRef:
+            name: xtdb-config
+        resources:
+          requests:
+            cpu: 1024m
+            memory: 1Gi
+        ports:
+        - containerPort: 3001
+          name: api

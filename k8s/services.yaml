@@ -1,0 +1,27 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: hoopdb
+  namespace: hoophq
+spec:
+  type: ExternalName
+  externalName: hoopdb.ch707rnaizjg.us-east-1.rds.amazonaws.com
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hoopgateway
+  namespace: hoophq
+spec:
+  selector:
+    app: hoopgateway
+  clusterIP: None
+  ports:
+    - port: 8010
+      name: grpc
+      protocol: TCP
+      targetPort: 8010
+    - port: 8009
+      name: http
+      protocol: TCP
+      targetPort: 8009
