@@ -40,8 +40,6 @@ func init() {
 	tokenGranterCmd.Flags().StringVarP(&tokenGranterOptions.KubeconfigContext, "context", "c", "", "Context of kubeconfig to use when bootstraping resources, defaults to the current context")
 	tokenGranterCmd.Flags().StringVarP(&tokenGranterOptions.Namespace, "namespace", "n", k8s.DefaultNamespaceName, "The name of the namespace to provision all resources")
 	tokenGranterCmd.Flags().StringVar(&tokenGranterOptions.ClusterRole, "clusterrole", k8s.DefaultClusterRole, "The name of the cluster role which will be bound to the token")
-	tokenGranterCmd.Flags().DurationVar(&tokenGranterOptions.Expiration, "duration", 0, "Requested lifetime of the issued token. The server may return a token with a longer or shorter lifetime.")
-
 	bootstrapCmd.AddCommand(k8sCmd)
 	k8sCmd.AddCommand(tokenGranterCmd)
 	rootCmd.AddCommand(bootstrapCmd)
