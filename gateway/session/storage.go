@@ -117,7 +117,7 @@ func (s *Storage) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionLi
 					[a :session/connection conn]
 					[a :session/event-size event-size]
 					[a :session/start-date start-date]
-					[a :session/start-date end-date]
+					[a :session/end-date end-date]
 					(or [(= arg-user nil)]
 						[(= usr arg-user)])
 					(or [(= arg-type nil)]
@@ -185,7 +185,7 @@ func (s *Storage) NewGenericStorageWriter() *GenericStorageWriter {
 }
 
 func (s *GenericStorageWriter) Write(p plugin.Config) error {
-	log.Printf("saving session=%v, org-id=%v\n", p.SessionId, p.Org)
+	log.Printf("saving session=%v, org-id=%v", p.SessionId, p.Org)
 	eventStartDate := p.GetTime("start_date")
 	if eventStartDate == nil {
 		return fmt.Errorf(`missing "start_date" param`)
