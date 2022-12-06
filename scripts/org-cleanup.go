@@ -279,7 +279,7 @@ func getItems(ednQuery []byte) ([]string, error) {
 func buildSubmitTxPayload(IDs []string) ([]byte, error) {
 	txOps := make([]any, 0)
 	for _, id := range IDs {
-		txOps = append(txOps, []any{"delete", id})
+		txOps = append(txOps, []any{"evict", id})
 	}
 	return json.Marshal(map[string]any{"tx-ops": txOps})
 }
