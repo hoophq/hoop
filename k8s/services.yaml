@@ -25,3 +25,7 @@ spec:
       name: http
       protocol: TCP
       targetPort: 8009
+    - port: 3001
+      name: xtdb
+      protocol: TCP
+      targetPort: 3001
