@@ -49,8 +49,9 @@ RUN apt-get update -y && \
         openjdk-11-jre \
         heroku \
         default-mysql-client \
-        postgresql-client-13 && \
-        mssql-tools unixodbc-dev && \
+        postgresql-client-13 \
+        mssql-tools \
+        unixodbc-dev && \
         rm -rf /var/lib/apt/lists/*
 
 # clojure
