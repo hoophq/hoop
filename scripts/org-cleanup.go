@@ -64,6 +64,11 @@ func cleanupOrg(org string) error {
 		return err
 	}
 
+	sessionIDs, err := getSessions(orgID)
+	if err != nil {
+		return err
+	}
+
 	connectionIDs, err := getConnections(orgID)
 	if err != nil {
 		return err
@@ -86,10 +91,12 @@ func cleanupOrg(org string) error {
 
 	deleteList := assembleIDs(
 		reviewIDs,
+		sessionIDs,
 		connectionIDs,
 		pluginIDs,
 		agentIDs,
-		userIDs)
+		userIDs,
+		[]string{orgID})
 
 	if err := submitTx(deleteList); err != nil {
 		return err
@@ -125,6 +132,18 @@ func getReviews(orgID string) ([]string, error) {
 		 {:find [?obj]
 			:in [orgID]
 		  :where [[?obj :review/org orgID]]}
+		  :in-args ["%s"]}`, orgID))
+
+	return getItems(ednBody)
+}
+
+func getSessions(orgID string) ([]string, error) {
+	fmt.Println("Getting sessions...")
+	ednBody := []byte(fmt.Sprintf(`
+		{:query 
+		 {:find [?obj]
+			:in [orgID]
+		  :where [[?obj :session/org-id orgID]]}
 		  :in-args ["%s"]}`, orgID))
 
 	return getItems(ednBody)
@@ -190,6 +209,31 @@ func assembleIDs(items ...[]string) []string {
 
 func submitTx(items []string) error {
 	fmt.Printf("Deleting %d items\n", len(items))
+
+	payload, err := buildSubmitTxPayload(items)
+	if err != nil {
+		return err
+	}
+
+	requestURL := fmt.Sprintf(c.host, "_xtdb/submit-tx")
+	req, err := http.NewRequest(http.MethodPost, requestURL, bytes.NewBuffer(payload))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("content-type", "application/json")
+	req.Header.Set("accept", "application/json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusAccepted {
+		return errors.New("not 202")
+	}
+
 	return nil
 }
 
@@ -230,4 +274,12 @@ func getItems(ednQuery []byte) ([]string, error) {
 
 	fmt.Printf("Found %d items\n", len(innerResult))
 	return innerResult, nil
+}
+
+func buildSubmitTxPayload(IDs []string) ([]byte, error) {
+	txOps := make([]any, 0)
+	for _, id := range IDs {
+		txOps = append(txOps, []any{"delete", id})
+	}
+	return json.Marshal(map[string]any{"tx-ops": txOps})
 }
