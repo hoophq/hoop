@@ -21,7 +21,7 @@ type (
 )
 
 var c = httpClient{
-	host:   "http://127.0.0.1:8999/%s",
+	host:   "http://127.0.0.1:3000/%s",
 	client: http.Client{Timeout: 3 * time.Second},
 }
 
@@ -44,6 +44,7 @@ func main() {
 	}
 
 	fmt.Printf("Cleaning up org [%s]...\n", org)
+
 	if err := cleanupOrg(org); err != nil {
 		fmt.Printf("Failed with error: %s\n", err.Error())
 		os.Exit(1)
@@ -51,29 +52,154 @@ func main() {
 }
 
 func cleanupOrg(org string) error {
-	orgIDs, err := getOrgID(org)
+	orgID, err := getOrgID(org)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Found org ID [%s]\n", orgIDs)
+	fmt.Printf("Found org ID [%s]\n", orgID)
+
+	reviewIDs, err := getReviews(orgID)
+	if err != nil {
+		return err
+	}
+
+	connectionIDs, err := getConnections(orgID)
+	if err != nil {
+		return err
+	}
+
+	pluginIDs, err := getPlugins(orgID)
+	if err != nil {
+		return err
+	}
+
+	agentIDs, err := getAgents(orgID)
+	if err != nil {
+		return err
+	}
+
+	userIDs, err := getUsers(orgID)
+	if err != nil {
+		return err
+	}
+
+	deleteList := assembleIDs(
+		reviewIDs,
+		connectionIDs,
+		pluginIDs,
+		agentIDs,
+		userIDs)
+
+	if err := submitTx(deleteList); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func getOrgID(org string) (string, error) {
-	ednBody := []byte(`
+	ednQuery := []byte(`
 		{:query 
-		 {:find [(pull ?org [*])]
+		 {:find [?org]
 			:in [name]
 		  :where [[?org :org/name name]]}
 		  :in-args ["` + org + `"]}`)
 
-	bodyReader := bytes.NewReader(ednBody)
+	result, err := getItems(ednQuery)
+	if err != nil {
+		return "", err
+	}
+
+	if len(result) == 0 {
+		return "", errors.New("not found")
+	}
+
+	return result[0], nil
+}
+
+func getReviews(orgID string) ([]string, error) {
+	fmt.Println("Getting reviews...")
+	ednBody := []byte(fmt.Sprintf(`
+		{:query 
+		 {:find [?obj]
+			:in [orgID]
+		  :where [[?obj :review/org orgID]]}
+		  :in-args ["%s"]}`, orgID))
+
+	return getItems(ednBody)
+}
+
+func getConnections(orgID string) ([]string, error) {
+	fmt.Println("Getting connections...")
+	ednBody := []byte(fmt.Sprintf(`
+		{:query 
+		 {:find [?obj]
+			:in [orgID]
+		  :where [[?obj :connection/org orgID]]}
+		  :in-args ["%s"]}`, orgID))
+
+	return getItems(ednBody)
+}
+
+func getPlugins(orgID string) ([]string, error) {
+	fmt.Println("Getting plugins...")
+	ednBody := []byte(fmt.Sprintf(`
+		{:query 
+		 {:find [?obj]
+			:in [orgID]
+		  :where [[?obj :plugin/org orgID]]}
+		  :in-args ["%s"]}`, orgID))
+
+	return getItems(ednBody)
+}
+
+func getAgents(orgID string) ([]string, error) {
+	fmt.Println("Getting agents...")
+	ednBody := []byte(fmt.Sprintf(`
+		{:query 
+		 {:find [?obj]
+			:in [orgID]
+		  :where [[?obj :agent/org orgID]]}
+		  :in-args ["%s"]}`, orgID))
+
+	return getItems(ednBody)
+}
+
+func getUsers(orgID string) ([]string, error) {
+	fmt.Println("Getting users...")
+	ednBody := []byte(fmt.Sprintf(`
+		{:query 
+		 {:find [?obj]
+			:in [orgID]
+		  :where [[?obj :user/org orgID]]}
+		  :in-args ["%s"]}`, orgID))
+
+	return getItems(ednBody)
+}
+
+func assembleIDs(items ...[]string) []string {
+	var result []string
+
+	for _, i := range items {
+		result = append(result, i...)
+	}
+
+	return result
+}
+
+func submitTx(items []string) error {
+	fmt.Printf("Deleting %d items\n", len(items))
+	return nil
+}
+
+func getItems(ednQuery []byte) ([]string, error) {
+	bodyReader := bytes.NewReader(ednQuery)
 
 	requestURL := fmt.Sprintf(c.host, "_xtdb/query")
 	req, err := http.NewRequest(http.MethodPost, requestURL, bodyReader)
 	if err != nil {
-		return "", nil
+		return nil, nil
 	}
 
 	req.Header.Set("Content-type", "application/edn")
@@ -81,31 +207,27 @@ func getOrgID(org string) (string, error) {
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	defer resp.Body.Close()
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	var result [][]map[string]string
+	var result [][]string
 	if err := json.Unmarshal(b, &result); err != nil {
-		return "", nil
+		return nil, err
 	}
 
-	if len(result) == 0 {
-		return "", errors.New("org not found")
+	var innerResult []string
+	for _, i := range result {
+		for _, j := range i {
+			innerResult = append(innerResult, j)
+		}
 	}
 
-	orgList := result[0]
-	if len(orgList) == 0 {
-		return "", errors.New("org not found")
-	}
-
-	orgMap := orgList[0]
-	orgID := orgMap["xt/id"]
-
-	return orgID, nil
+	fmt.Printf("Found %d items\n", len(innerResult))
+	return innerResult, nil
 }
