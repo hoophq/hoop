@@ -54,13 +54,13 @@ dockers:
       - "--label=org.opencontainers.image.version={{.Tag}}"
     extra_files:
     - rootfs
-  - dockerfile: Dockerfile.amd64
+  - dockerfile: Dockerfile.dev
     use: buildx
     goos: linux
     goarch: amd64
     image_templates:
-    - "hoophq/hoop-amd64:{{ .Tag }}-amd64"
-    - "hoophq/hoop-amd64:latest-amd64"
+    - "hoophq/hoopdev:{{ .Tag }}-amd64"
+    - "hoophq/hoopdev:latest-amd64"
     build_flag_templates:
       - "--platform=linux/amd64"
       - "--label=org.opencontainers.image.created={{.Date}}"
@@ -74,13 +74,13 @@ docker_manifests:
   - name_template: hoophq/hoop:{{ .Tag }}
     image_templates:
       # temporary image
-      - hoophq/hoop-amd64:{{ .Tag }}-amd64
+      - hoophq/hoopdev:{{ .Tag }}-amd64
       - hoophq/hoop:{{ .Tag }}-amd64
       - hoophq/hoop:{{ .Tag }}-arm64v8
   - name_template: hoophq/hoop:latest
     image_templates:
       # temporary image
-      - hoophq/hoop-amd64::latest-amd64
+      - hoophq/hoopdev::latest-amd64
       - hoophq/hoop:latest-amd64
       - hoophq/hoop:latest-arm64v8
 brews:
