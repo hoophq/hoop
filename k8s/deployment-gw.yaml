@@ -17,7 +17,7 @@ spec:
       containers:
       - image: hoophq/hoop
         name: hoopgateway
-        command:
+        args:
         - hoop
         - start
         - gateway
