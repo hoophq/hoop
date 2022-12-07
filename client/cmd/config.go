@@ -1,15 +1,16 @@
 package cmd
 
 import (
-	"fmt"
-	"github.com/BurntSushi/toml"
-	"github.com/briandowns/spinner"
-	"github.com/runopsio/hoop/common/grpc"
-	"github.com/runopsio/hoop/common/memory"
-	pb "github.com/runopsio/hoop/common/proto"
 	"log"
 	"os"
 	"strings"
+
+	"github.com/BurntSushi/toml"
+	"github.com/briandowns/spinner"
+	"github.com/runopsio/hoop/common/clientconfig"
+	"github.com/runopsio/hoop/common/grpc"
+	"github.com/runopsio/hoop/common/memory"
+	pb "github.com/runopsio/hoop/common/proto"
 )
 
 type (
@@ -50,27 +51,10 @@ func saveConfig(conf *Config) {
 }
 
 func getFilepath() string {
-	home, err := os.UserHomeDir()
+	filepath, err := clientconfig.NewPath(clientconfig.ProxyFile)
 	if err != nil {
 		panic(err)
 	}
-
-	path := fmt.Sprintf("%s/.hoop", home)
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		if err := os.MkdirAll(path, 0700); err != nil {
-			panic(err)
-		}
-	}
-
-	filepath := fmt.Sprintf("%s/config.toml", path)
-	if _, err := os.Stat(filepath); os.IsNotExist(err) {
-		f, err := os.Create(filepath)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer f.Close()
-	}
-
 	return filepath
 }
 
