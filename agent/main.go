@@ -10,6 +10,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/google/uuid"
+	"github.com/runopsio/hoop/common/clientconfig"
 	"github.com/runopsio/hoop/common/grpc"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/common/version"
@@ -121,26 +122,9 @@ func saveConfig(conf *Config) {
 }
 
 func getFilepath() string {
-	home, err := os.UserHomeDir()
+	filepath, err := clientconfig.NewPath(clientconfig.AgentFile)
 	if err != nil {
 		panic(err)
 	}
-
-	path := fmt.Sprintf("%s/.hoop", home)
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		if err := os.MkdirAll(path, 0700); err != nil {
-			panic(err)
-		}
-	}
-
-	filepath := fmt.Sprintf("%s/agent.toml", path)
-	if _, err := os.Stat(filepath); os.IsNotExist(err) {
-		f, err := os.Create(filepath)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer f.Close()
-	}
-
 	return filepath
 }

@@ -83,7 +83,7 @@ func runExec(args []string) {
 	loader := spinner.New(spinner.CharSets[78], 70*time.Millisecond)
 	loader.Color("green")
 	loader.Start()
-	loader.Suffix = "executing input..."
+	loader.Suffix = " executing input ..."
 
 	c := newClientConnect(config, loader, args, pb.ClientVerbExec)
 	pkt := &pb.Packet{

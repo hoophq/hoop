@@ -12,6 +12,7 @@ import (
 
 	"github.com/runopsio/hoop/client/cmd/demos"
 	"github.com/runopsio/hoop/client/cmd/styles"
+	"github.com/runopsio/hoop/common/clientconfig"
 	"github.com/runopsio/hoop/gateway"
 
 	"github.com/briandowns/spinner"
@@ -105,6 +106,9 @@ var startCmd = &cobra.Command{
 						fmt.Println(styles.Fainted.Render("  • Stop the demo"))
 						fmt.Println(styles.Default.Render("  $ docker stop hoopdemo"))
 						fmt.Println()
+						// best-effort to rename the config file when starting the demo.
+						// this fixes errors when trying the demo if the user has logged in before.
+						renameClientConfigs()
 						os.Exit(0)
 					}
 					index++
@@ -117,6 +121,19 @@ var startCmd = &cobra.Command{
 		}()
 		<-done
 	},
+}
+
+func renameClientConfigs() {
+	if filepath, err := clientconfig.NewPath(clientconfig.AgentFile); err == nil {
+		if fi, _ := os.Stat(filepath); fi != nil && fi.Size() > 0 {
+			_ = os.Rename(filepath, fmt.Sprintf("%s-bkp", filepath))
+		}
+	}
+	if filepath, err := clientconfig.NewPath(clientconfig.ClientFile); err == nil {
+		if fi, _ := os.Stat(filepath); fi != nil && fi.Size() > 0 {
+			_ = os.Rename(filepath, fmt.Sprintf("%s-bkp", filepath))
+		}
+	}
 }
 
 var startAgentCmd = &cobra.Command{
