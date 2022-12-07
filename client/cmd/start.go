@@ -106,6 +106,9 @@ var startCmd = &cobra.Command{
 						fmt.Println(styles.Fainted.Render("  • Stop the demo"))
 						fmt.Println(styles.Default.Render("  $ docker stop hoopdemo"))
 						fmt.Println()
+						// best-effort to rename the config file when starting the demo.
+						// this fixes errors when trying the demo if the user has logged in before.
+						renameClientConfigs()
 						os.Exit(0)
 					}
 					index++
@@ -116,9 +119,6 @@ var startCmd = &cobra.Command{
 				}
 			}
 		}()
-		// best-effort to rename the config file when starting the demo.
-		// this fixes errors when trying the demo if the user has logged in before.
-		renameClientConfigs()
 		<-done
 	},
 }
