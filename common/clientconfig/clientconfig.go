@@ -6,8 +6,8 @@ import (
 )
 
 const (
-	AgentFile string = "agent.toml"
-	ProxyFile string = "config.toml"
+	AgentFile  string = "agent.toml"
+	ClientFile string = "config.toml"
 )
 
 func NewPath(configFile string) (string, error) {

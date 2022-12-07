@@ -129,7 +129,7 @@ func renameClientConfigs() {
 			_ = os.Rename(filepath, fmt.Sprintf("%s-bkp", filepath))
 		}
 	}
-	if filepath, err := clientconfig.NewPath(clientconfig.ProxyFile); err == nil {
+	if filepath, err := clientconfig.NewPath(clientconfig.ClientFile); err == nil {
 		if fi, _ := os.Stat(filepath); fi != nil && fi.Size() > 0 {
 			_ = os.Rename(filepath, fmt.Sprintf("%s-bkp", filepath))
 		}

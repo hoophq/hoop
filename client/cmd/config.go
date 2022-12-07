@@ -51,7 +51,7 @@ func saveConfig(conf *Config) {
 }
 
 func getFilepath() string {
-	filepath, err := clientconfig.NewPath(clientconfig.ProxyFile)
+	filepath, err := clientconfig.NewPath(clientconfig.ClientFile)
 	if err != nil {
 		panic(err)
 	}
