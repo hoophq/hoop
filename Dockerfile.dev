@@ -70,6 +70,7 @@ ENV LC_ALL en_US.UTF-8
 ENV PATH="/opt/mssql-tools/bin:/app:${PATH}"
 
 COPY rootfs /
+COPY hoop* /app/
 
 EXPOSE 8009
 EXPOSE 8010
