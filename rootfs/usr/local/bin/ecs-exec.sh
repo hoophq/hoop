@@ -99,6 +99,8 @@ if [ "$SHELL_INTERACTIVE" == "1" ]; then
   exit $?
 fi
 
+# unbuffer is required when running one-off tasks
+# https://github.com/aws/amazon-ssm-agent/issues/354#issuecomment-817274498
 STDIN_INPUT=$(cat -)
 if [ -n "$PIPE_EXEC" ]; then
   STDIN_INPUT="$(base64 <<< $STDIN_INPUT)"
