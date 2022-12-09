@@ -77,6 +77,9 @@ func NewEnvVarStore(rawEnvVarList map[string]any) (*EnvVarStore, error) {
 				if err != nil {
 					return fmt.Errorf("failed creating temp file for %v, err=%v", env.Key, err)
 				}
+				if err := f.Chmod(0600); err != nil {
+					return fmt.Errorf("failed changing permission of env var file, err=%v", err)
+				}
 				_, err = f.Write(val)
 				return err
 			}

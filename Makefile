@@ -17,7 +17,7 @@ publish-snapshot: clean
 
 release: clean
 	cd ./build/webapp && npm install && npm run release:hoop-ui
-	mv ./build/webapp/resources ./rootfs/ui
+	mv ./build/webapp/resources ./rootfs/app/ui
 	goreleaser release
 	aws s3 cp ./dist/ s3://hoopartifacts/release/${GIT_TAG}/ --exclude "*" --include "*.tar.gz" --recursive
 	aws s3 cp ./dist/checksums.txt s3://hoopartifacts/release/${GIT_TAG}/checksums.txt
@@ -26,7 +26,7 @@ publish:
 	./scripts/publish-release.sh
 
 clean:
-	rm -rf ./rootfs/ui
+	rm -rf ./rootfs/app/ui
 
 test:
 	go test -v github.com/runopsio/hoop/...

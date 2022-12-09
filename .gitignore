@@ -22,6 +22,6 @@ common/.idea/*
 # vendor/
 
 dist/
-rootfs/ui
+rootfs/app/ui
 build
 go.work.sum
