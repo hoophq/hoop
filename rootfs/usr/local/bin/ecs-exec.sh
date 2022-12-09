@@ -1,4 +1,5 @@
-#!/bin/bash -e
+#!/usr/bin/env bash
+set -e
 
 [[ "$CONNECTION_DEBUG" == "1" ]] && set -x
 
@@ -28,15 +29,12 @@ OPTIONS
           The Amazon Resource Name (ARN) or ID of the task the container is
           part of. Defaults to the first task ID found by its service
 
-       --shell (shellpath)
-          The shell to use to execute commands in the container. Defaults to /bin/sh
+       --pipe (command)
+          The command which will be used against the input. This mode requires that
+          a base64 command is available in the image.
 
        --interactive
           Use this flag to run your command in interactive mode.
-
-       --base64
-          Base64 the input command and decode it before executing inside the container.
-          It assumes that the container has 'base64' command line in the PATH.
 
        --help
           Show this help
@@ -46,7 +44,7 @@ EOF
 # read arguments
 PARSED_ARGUMENTS=$(getopt \
   --options "" \
-  --long cluster:,service-name:,task:,shell:,interactive,base64,help \
+  --long cluster:,service-name:,task:,pipe:,interactive,help \
   --name "$(basename "$0")" \
   -- "$@"
 )
@@ -60,8 +58,7 @@ eval set -- "$PARSED_ARGUMENTS"
 CLUSTER_NAME=
 SERVICE_NAME=
 TASK_ID=
-SHELL_EXEC=/bin/bash
-BASE64_INPUT=0
+PIPE_EXEC=
 SHELL_INTERACTIVE=0
 
 while :
@@ -70,9 +67,8 @@ do
     --cluster)      CLUSTER_NAME="$2"; shift 2;;
     --service-name) SERVICE_NAME="$2"; shift 2;;
     --task)         TASK_ID="$2"; shift 2;;
-    --shell)        SHELL_EXEC="$2"; shift 2;;
+    --pipe)         PIPE_EXEC="$2"; shift 2;;
     --interactive)  SHELL_INTERACTIVE=1; shift;;
-    --base64)       BASE64_INPUT=1; shift;;
     --help)         Help; exit 0 ;;
     # -- means the end of the arguments; drop this, and break out of the while loop
     --) shift; break ;;
@@ -94,22 +90,23 @@ fi
 
 
 if [ "$SHELL_INTERACTIVE" == "1" ]; then
+  : "${PIPE_EXEC:? Required argument --pipe not set}"
   aws ecs execute-command \
     --cluster $CLUSTER_NAME \
     --task $TASK_ID \
     --interactive \
-    --command $SHELL_EXEC
+    --command "$PIPE_EXEC"
   exit $?
 fi
 
 STDIN_INPUT=$(cat -)
-if [ "$BASE64_INPUT" == "1" ]; then
+if [ -n "$PIPE_EXEC" ]; then
   STDIN_INPUT="$(base64 <<< $STDIN_INPUT)"
   unbuffer aws ecs execute-command \
     --cluster $CLUSTER_NAME \
     --task $TASK_ID \
     --interactive \
-    --command "/bin/sh -c 'echo '$STDIN_INPUT' | base64 -d | '$SHELL_EXEC''"
+    --command "/bin/sh -e -c 'echo -n '$STDIN_INPUT' | base64 -d | '$PIPE_EXEC''"
   exit $?
 fi
 
@@ -117,4 +114,4 @@ unbuffer aws ecs execute-command \
   --cluster $CLUSTER_NAME \
   --task $TASK_ID \
   --interactive \
-  --command "$STDIN_INPUT | $SHELL_EXEC"
+  --command "$STDIN_INPUT"

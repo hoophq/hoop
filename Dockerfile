@@ -3,8 +3,6 @@ FROM ubuntu:focal-20220801
 ENV DEBIAN_FRONTEND=noninteractive
 ENV ACCEPT_EULA=y
 
-ADD rootfs/tmp/* /tmp/
-
 # Common
 RUN mkdir -p /app && \
     mkdir -p /opt/hoop/sessions && \
@@ -17,14 +15,15 @@ RUN mkdir -p /app && \
         gnupg \
         gnupg2 \
         groff \
+        jq \
+        openssh-client \
         unzip \
         expect \
         lsb-release
 
-# 
 # kubectl / aws-cli / aws-session-manager
 RUN curl -sL "https://dl.k8s.io/release/v1.22.1/bin/linux/amd64/kubectl" -o kubectl && \
-        sha256sum -c /tmp/checksum-kubectl.txt --ignore-missing --strict && \
+        echo '78178a8337fc6c76780f60541fca7199f0f1a2e9c41806bded280a4a5ef665c9  kubectl' | sha256sum -c --ignore-missing --strict - && \
         chmod 755 kubectl && \
         mv kubectl /usr/local/bin/kubectl
     # curl -sL "https://s3.amazonaws.com/session-manager-downloads/plugin/1.2.245.0/ubuntu_64bit/session-manager-plugin.deb" -o session-manager-plugin.deb && \
@@ -48,7 +47,7 @@ RUN apt-get update -y && \
         openjdk-11-jre \
         # heroku \
         default-mysql-client \
-        postgresql-client-13 && \
+        postgresql-client-15 && \
         # mssql-tools unixodbc-dev && \
         rm -rf /var/lib/apt/lists/*
 
@@ -68,11 +67,7 @@ ENV LC_ALL en_US.UTF-8
 
 ENV PATH="/opt/mssql-tools/bin:/app:${PATH}"
 
-ADD rootfs/app/start-dev.sh /app/
-ADD rootfs/app/entrypoint.sh /app/
-COPY rootfs/ui /app/ui
-COPY hoop* /app/
-RUN chmod +x /app/*
+COPY rootfs /
 
 EXPOSE 8009
 EXPOSE 8010
