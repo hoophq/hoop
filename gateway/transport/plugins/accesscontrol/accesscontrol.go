@@ -1,4 +1,4 @@
-package access_control
+package accesscontrol
 
 import (
 	pb "github.com/runopsio/hoop/common/proto"

@@ -4,7 +4,7 @@ import (
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/plugin"
-	pluginsrbac "github.com/runopsio/hoop/gateway/transport/plugins/access_control"
+	pluginsrbac "github.com/runopsio/hoop/gateway/transport/plugins/accesscontrol"
 	pluginsaudit "github.com/runopsio/hoop/gateway/transport/plugins/audit"
 	pluginsdlp "github.com/runopsio/hoop/gateway/transport/plugins/dlp"
 	"github.com/runopsio/hoop/gateway/user"
