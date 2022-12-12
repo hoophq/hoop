@@ -139,7 +139,7 @@ func isPublicDomain(domain string) bool {
 	return false
 }
 
-func (user *User) isAdmin() bool {
+func (user *User) IsAdmin() bool {
 	return pb.IsInList(GroupAdmin, user.Groups)
 }
 

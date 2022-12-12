@@ -78,13 +78,16 @@ func (s *Service) FindOne(context *user.Context, name string) (*Connection, erro
 		return nil, err
 	}
 
+	if result == nil {
+		return nil, nil
+	}
+
 	p, err := s.PluginService.FindOne(context, pluginsrbac.Name)
 	if err != nil {
 		return nil, err
 	}
 
-	isAdmin := pb.IsInList("admin", context.User.Groups)
-	if p == nil || isAdmin {
+	if p == nil || context.User.IsAdmin() {
 		return result, nil
 	}
 
