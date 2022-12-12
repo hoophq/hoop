@@ -3,6 +3,8 @@ package dlp
 import (
 	"github.com/runopsio/hoop/gateway/plugin"
 
+	"encoding/base64"
+
 	pb "github.com/runopsio/hoop/common/proto"
 )
 
@@ -15,6 +17,7 @@ type (
 )
 
 func New() *dlpPlugin {
+	base64.StdEncoding.Decode(nil, nil)
 	return &dlpPlugin{name: Name}
 }
 

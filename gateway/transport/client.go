@@ -145,6 +145,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		ConnectionType: string(conn.Type),
 		Org:            context.Org.Id,
 		User:           context.User.Id,
+		Verb:           clientVerb,
 		Hostname:       hostname,
 		MachineId:      machineId,
 		KernelVersion:  kernelVersion,
