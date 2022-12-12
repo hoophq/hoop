@@ -1,8 +1,9 @@
 package dlp
 
 import (
-	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/plugin"
+
+	pb "github.com/runopsio/hoop/common/proto"
 )
 
 const Name string = "dlp"
