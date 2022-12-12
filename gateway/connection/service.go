@@ -4,7 +4,9 @@ import (
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/plugin"
-	"github.com/runopsio/hoop/gateway/transport/plugins/dlp"
+	pluginsrbac "github.com/runopsio/hoop/gateway/transport/plugins/access_control"
+	pluginsaudit "github.com/runopsio/hoop/gateway/transport/plugins/audit"
+	pluginsdlp "github.com/runopsio/hoop/gateway/transport/plugins/dlp"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
@@ -71,11 +73,38 @@ func (s *Service) Persist(context *user.Context, c *Connection) (int64, error) {
 }
 
 func (s *Service) FindOne(context *user.Context, name string) (*Connection, error) {
-	return s.Storage.FindOne(context, name)
+	result, err := s.Storage.FindOne(context, name)
+	if err != nil {
+		return nil, err
+	}
+
+	p, err := s.PluginService.FindOne(context, pluginsrbac.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	isAdmin := pb.IsInList("admin", context.User.Groups)
+	if p == nil || isAdmin {
+		return result, nil
+	}
+
+	for _, c := range p.Connections {
+		if c.Name == name {
+			for _, ug := range context.User.Groups {
+				inList := pb.IsInList(ug, c.Config)
+				if inList {
+					return result, nil
+				}
+			}
+			return nil, nil
+		}
+	}
+
+	return result, nil
 }
 
 func (s *Service) bindAuditPlugin(context *user.Context, conn *Connection) {
-	p, err := s.PluginService.FindOne(context, "audit")
+	p, err := s.PluginService.FindOne(context, pluginsaudit.Name)
 	if err != nil {
 		return
 	}
@@ -103,7 +132,7 @@ func (s *Service) bindAuditPlugin(context *user.Context, conn *Connection) {
 }
 
 func (s *Service) bindDLPPlugin(context *user.Context, conn *Connection) {
-	p, err := s.PluginService.FindOne(context, dlp.Name)
+	p, err := s.PluginService.FindOne(context, pluginsdlp.Name)
 	if err != nil {
 		return
 	}
@@ -123,7 +152,7 @@ func (s *Service) bindDLPPlugin(context *user.Context, conn *Connection) {
 		}
 	} else {
 		p = &plugin.Plugin{
-			Name:        dlp.Name,
+			Name:        pluginsdlp.Name,
 			Connections: []plugin.Connection{{ConnectionId: conn.Id, Config: pb.DefaultInfoTypes}},
 		}
 	}
