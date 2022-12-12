@@ -12,6 +12,7 @@ import (
 	rv "github.com/runopsio/hoop/gateway/review"
 
 	"github.com/runopsio/hoop/gateway/plugin"
+	pluginsrbac "github.com/runopsio/hoop/gateway/transport/plugins/accesscontrol"
 	pluginsaudit "github.com/runopsio/hoop/gateway/transport/plugins/audit"
 	pluginsdlp "github.com/runopsio/hoop/gateway/transport/plugins/dlp"
 	pluginsreview "github.com/runopsio/hoop/gateway/transport/plugins/review"
@@ -62,6 +63,7 @@ func LoadPlugins() {
 		pluginsaudit.New(),
 		pluginsreview.New(),
 		pluginsdlp.New(),
+		pluginsrbac.New(),
 	}
 }
 
