@@ -52,7 +52,40 @@ const (
 )
 
 func (s *Service) FindAll(context *user.Context) ([]BaseConnection, error) {
-	return s.Storage.FindAll(context)
+	result, err := s.Storage.FindAll(context)
+	if err != nil {
+		return nil, err
+	}
+
+	p, err := s.PluginService.FindOne(context, pluginsrbac.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	if p == nil || context.User.IsAdmin() {
+		return result, nil
+	}
+
+	allowedConnections := make([]BaseConnection, 0)
+	for _, bc := range result {
+		pluginEnabled := false
+		pluginAllowed := false
+		for _, c := range p.Connections {
+			if c.Name == bc.Name {
+				pluginEnabled = true
+			}
+			for _, ug := range context.User.Groups {
+				if pb.IsInList(ug, c.Config) {
+					pluginAllowed = true
+				}
+			}
+			if !pluginEnabled || pluginAllowed {
+				allowedConnections = append(allowedConnections, bc)
+			}
+		}
+	}
+
+	return allowedConnections, nil
 }
 
 func (s *Service) Persist(context *user.Context, c *Connection) (int64, error) {
@@ -94,8 +127,7 @@ func (s *Service) FindOne(context *user.Context, name string) (*Connection, erro
 	for _, c := range p.Connections {
 		if c.Name == name {
 			for _, ug := range context.User.Groups {
-				inList := pb.IsInList(ug, c.Config)
-				if inList {
+				if pb.IsInList(ug, c.Config) {
 					return result, nil
 				}
 			}
