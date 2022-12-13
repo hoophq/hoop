@@ -38,6 +38,11 @@ $NOTE_CONTENT
 - [hoophq/hoop:latest](https://hub.docker.com/repository/docker/hoophq/hoop)
 - [hoophq/hoop:${GIT_TAG}](https://hub.docker.com/repository/docker/hoophq/hoop)
 
+### Agent Image | amd64
+
+- [hoophq/hoopdev:latest](https://hub.docker.com/repository/docker/hoophq/hoopdev)
+- [hoophq/hoopdev:${GIT_TAG}](https://hub.docker.com/repository/docker/hoophq/hoopdev)
+
 EOF
 
 cat - <<EOF
