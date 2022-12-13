@@ -31,6 +31,7 @@ type (
 		User        string      `json:"user"         edn:"session/user"`
 		Type        string      `json:"type"         edn:"session/type"`
 		Connection  string      `json:"connection"   edn:"session/connection"`
+		Verb        string      `json:"verb"         edn:"session/verb"`
 		EventStream EventStream `json:"event_stream" edn:"session/event-stream"`
 		// Must NOT index streams (all top keys are indexed in xtdb)
 		NonIndexedStream NonIndexedEventStreamList `json:"-"          edn:"session/xtdb-stream"`

@@ -10,6 +10,7 @@ type (
 		ConnectionType string
 		Org            string
 		User           string
+		Verb           string
 		Hostname       string
 		MachineId      string
 		KernelVersion  string

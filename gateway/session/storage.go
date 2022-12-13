@@ -106,15 +106,17 @@ func (s *Storage) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionLi
 	}
 	err := s.queryDecoder(`
 		{:query {
-			:find [id usr typ conn event-size start-date end-date]
+			:find [id usr typ conn verb event-size start-date end-date]
 			:keys [xt/id session/user session/type session/connection
-				   session/event-size session/start-date session/end-date]
+				   session/verb session/event-size
+				   session/start-date session/end-date]
 			:in [org-id arg-user arg-type arg-conn arg-start-date arg-end-date]
 			:where [[a :session/org-id org-id]
 					[a :xt/id id]
 					[a :session/user usr]
 					[a :session/type typ]
 					[a :session/connection conn]
+					[a :session/verb verb]
 					[a :session/event-size event-size]
 					[a :session/start-date start-date]
 					[a :session/end-date end-date]
@@ -142,9 +144,9 @@ func (s *Storage) FindOne(ctx *user.Context, sessionID string) (*Session, error)
 	var session []Session
 	err := s.queryDecoder(`
 	{:query {
-		:find [s user type connection event-stream event-size start-date end-date]
+		:find [s user type connection verb event-stream event-size start-date end-date]
 		:keys [xt/id session/user session/type session/connection
-			   session/event-stream session/event-size
+			   session/verb session/event-stream session/event-size
 			   session/start-date session/end-date]
 		:in [org-id arg-session-id]
 		:where [[s :session/org-id org-id]
@@ -152,6 +154,7 @@ func (s *Storage) FindOne(ctx *user.Context, sessionID string) (*Session, error)
 				[s :session/user user]
 				[s :session/type type]
 				[s :session/connection connection]
+				[s :session/verb verb]
 				[s :session/xtdb-stream xtdb-stream]
 				[(get xtdb-stream :stream) event-stream]
 				[s :session/event-size event-size]
@@ -195,6 +198,7 @@ func (s *GenericStorageWriter) Write(p plugin.Config) error {
 		User:             p.User,
 		Type:             p.ConnectionType,
 		Connection:       p.ConnectionName,
+		Verb:             p.Verb,
 		NonIndexedStream: nil,
 		EventSize:        p.Int64("event_size"),
 		StartSession:     *eventStartDate,

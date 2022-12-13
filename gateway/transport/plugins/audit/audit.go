@@ -85,7 +85,7 @@ func (p *auditPlugin) OnConnect(config plugin.Config) error {
 	}
 
 	if err := p.writeOnConnect(config.Org, config.SessionId, config.User,
-		config.ConnectionName, config.ConnectionType); err != nil {
+		config.ConnectionName, config.ConnectionType, config.Verb); err != nil {
 		return err
 	}
 	config.ParamsData["start_date"] = func() *time.Time { d := time.Now().UTC(); return &d }()
@@ -108,10 +108,18 @@ func (p *auditPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt
 			return fmt.Errorf("session-id=%v - failed obtaining simple query data, err=%v", pluginConfig.SessionId, err)
 		}
 		return p.writeOnReceive(pluginConfig.SessionId, 'i', queryBytes)
-	case pb.PacketTerminalClientWriteStdoutType:
+	case pb.PacketTerminalClientWriteStdoutType,
+		pb.PacketClientAgentExecOKType:
 		return p.writeOnReceive(pluginConfig.SessionId, 'o', pkt.GetPayload())
+	case pb.PacketClientAgentExecErrType:
+		if string(pkt.Spec[pb.SpecClientExecExitCodeKey]) == "0" {
+			// noop - exit code 0 payload is empty
+			return nil
+		}
+		return p.writeOnReceive(pluginConfig.SessionId, 'e', pkt.GetPayload())
 	case pb.PacketTerminalWriteAgentStdinType,
-		pb.PacketTCPWriteServerType:
+		pb.PacketTCPWriteServerType,
+		pb.PacketClientGatewayExecType:
 		return p.writeOnReceive(pluginConfig.SessionId, 'i', pkt.GetPayload())
 	}
 	return nil

@@ -24,6 +24,7 @@ type (
 		UserID         string     `json:"user_id"`
 		ConnectionName string     `json:"connection_name"`
 		ConnectionType string     `json:"connection_type"`
+		Verb           string     `json:"verb"`
 		StartDate      *time.Time `json:"start_date"`
 	}
 	walFooter struct {
@@ -85,7 +86,7 @@ func parseEventStream(eventStream []byte) (session.EventStream, int, error) {
 		eventStreamLength, nil
 }
 
-func (p *auditPlugin) writeOnConnect(orgID, sessionID, userID, connName, connType string) error {
+func (p *auditPlugin) writeOnConnect(orgID, sessionID, userID, connName, connType, verb string) error {
 	walFolder := fmt.Sprintf(walFolderTmpl, pluginAuditPath, orgID, sessionID)
 	walog, err := wal.Open(walFolder, wal.DefaultOptions)
 	if err != nil {
@@ -97,6 +98,7 @@ func (p *auditPlugin) writeOnConnect(orgID, sessionID, userID, connName, connTyp
 		UserID:         userID,
 		ConnectionName: connName,
 		ConnectionType: connType,
+		Verb:           verb,
 		StartDate:      func() *time.Time { d := time.Now().UTC(); return &d }(),
 	})
 	if err != nil {
@@ -180,6 +182,7 @@ func (p *auditPlugin) writeOnClose(sessionID string) error {
 		User:           wh.UserID,
 		ConnectionName: wh.ConnectionName,
 		ConnectionType: wh.ConnectionType,
+		Verb:           wh.Verb,
 		ParamsData: map[string]any{
 			"event_stream": eventStreamList,
 			"event_size":   eventSize,
