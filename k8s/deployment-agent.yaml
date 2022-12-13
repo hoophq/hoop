@@ -15,13 +15,9 @@ spec:
         app: defaultagent
     spec:
       containers:
-      - args:
-        - hoop
-        - start
-        - agent
+      - name: defaultagent
         envFrom:
         - secretRef:
             name: default-agent
         image: hoophq/hoopdev
-        name: defaultagent
         tty: true

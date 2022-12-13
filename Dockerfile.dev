@@ -86,4 +86,4 @@ EXPOSE 8010
 
 ENTRYPOINT ["tini", "--", "/app/entrypoint.sh"]
 # start agent by default for this image
-CMD ["tini", "--", "hoop", "start", "agent"]
+CMD ["hoop", "start", "agent"]
