@@ -3,6 +3,8 @@ FROM ubuntu:focal-20220801
 ENV DEBIAN_FRONTEND=noninteractive
 ENV ACCEPT_EULA=y
 ARG CLOJURE_VERSION=1.10.3.1040
+ARG AWS_CLI_VERSION=2.9.6
+ARG AWS_SM_VERSION=1.2.398.0
 
 # Common
 RUN mkdir -p /app && \
@@ -27,10 +29,18 @@ RUN curl -sL "https://dl.k8s.io/release/v1.22.1/bin/linux/amd64/kubectl" -o kube
         echo '78178a8337fc6c76780f60541fca7199f0f1a2e9c41806bded280a4a5ef665c9  kubectl' | sha256sum -c --ignore-missing --strict - && \
         chmod 755 kubectl && \
         mv kubectl /usr/local/bin/kubectl && \
-    curl -sL "https://s3.amazonaws.com/session-manager-downloads/plugin/1.2.245.0/ubuntu_64bit/session-manager-plugin.deb" -o session-manager-plugin.deb && \
-        echo 'f1c03d2aaad9f89f73fc70f1c1cdef0e2877a03b86cca3c8b5c97992c6344449  session-manager-plugin.deb' | sha256sum -c --ignore-missing --strict - && \
+    curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64-$AWS_CLI_VERSION.zip" -o awscli-exe-linux-x86_64-$AWS_CLI_VERSION.zip && \
+        echo '8f1de286d2c66cc0d0d26f205fdb17d5ed073f1e97f305c522e2d1fd89d5c854  awscli-exe-linux-x86_64-2.9.6.zip' | sha256sum \
+            -c --ignore-missing --strict - && \
+        unzip -q awscli-exe-linux-x86_64-$AWS_CLI_VERSION.zip && \
+        aws/install && \
+        aws --version && \
+        rm -rf aws && \
+    curl -sL "https://s3.amazonaws.com/session-manager-downloads/plugin/$AWS_SM_VERSION/ubuntu_64bit/session-manager-plugin.deb" -o session-manager-plugin.deb && \
+        echo 'aae58e58fcfbba465231086766d236ce8d032ae73b9335690e1faba704af2f9a  session-manager-plugin.deb' | sha256sum \
+            -c --ignore-missing --strict - && \
         dpkg -i session-manager-plugin.deb && \
-        rm -f /tmp/* session-manager-plugin.deb
+        rm -rf /tmp/* session-manager-plugin.deb
 
 RUN echo "deb http://apt.postgresql.org/pub/repos/apt/ focal-pgdg main" | tee /etc/apt/sources.list.d/pgdg.list && \
     echo "deb [arch=amd64,arm64] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/5.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-5.0.list && \
@@ -44,7 +54,6 @@ RUN echo "deb http://apt.postgresql.org/pub/repos/apt/ focal-pgdg main" | tee /e
 RUN apt-get update -y && \
     apt-get install -y \
         mongodb-mongosh mongodb-org-tools mongodb-org-shell \
-        awscli \
         openjdk-11-jre \
         heroku \
         default-mysql-client \

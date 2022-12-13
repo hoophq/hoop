@@ -43,7 +43,6 @@ RUN echo "deb http://apt.postgresql.org/pub/repos/apt/ focal-pgdg main" | tee /e
 RUN apt-get update -y && \
     apt-get install -y \
         mongodb-mongosh mongodb-org-tools mongodb-org-shell \
-        awscli \
         openjdk-11-jre \
         # heroku \
         default-mysql-client \

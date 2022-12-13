@@ -60,6 +60,7 @@ dockers:
     goarch: amd64
     image_templates:
     - "hoophq/hoopdev:{{ .Tag }}-amd64"
+    - "hoophq/hoopdev:{{ .Tag }}"
     - "hoophq/hoopdev:latest-amd64"
     build_flag_templates:
       - "--platform=linux/amd64"
