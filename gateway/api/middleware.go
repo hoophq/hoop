@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"github.com/runopsio/hoop/gateway/user"
 	"log"
 	"net/http"
 	"strings"
@@ -41,6 +42,18 @@ func (api *Api) validateClaims(c *gin.Context) (string, error) {
 		return "", invalidAuthErr
 	}
 	return api.IDProvider.VerifyAccessToken(tokenParts[1])
+}
+
+func (api *Api) AdminOnly(c *gin.Context) {
+	ctx, _ := c.Get("context")
+	context := ctx.(*user.Context)
+
+	if !context.User.IsAdmin() {
+		c.AbortWithStatus(401)
+		return
+	}
+
+	c.Next()
 }
 
 func CORSMiddleware() gin.HandlerFunc {
