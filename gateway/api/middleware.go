@@ -49,7 +49,7 @@ func (api *Api) AdminOnly(c *gin.Context) {
 	context := ctx.(*user.Context)
 
 	if !context.User.IsAdmin() {
-		c.AbortWithStatus(403)
+		c.AbortWithStatus(401)
 		return
 	}
 
