@@ -74,7 +74,7 @@ func (a *Handler) Post(c *gin.Context) {
 	}
 
 	if err = a.Service.Persist(context, &plugin); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 
@@ -116,7 +116,7 @@ func (a *Handler) Put(c *gin.Context) {
 	}
 
 	if err = a.Service.Persist(context, &plugin); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 

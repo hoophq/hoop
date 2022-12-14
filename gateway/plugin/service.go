@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"errors"
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/gateway/user"
 )
@@ -56,7 +57,10 @@ func (s *Service) Persist(context *user.Context, plugin *Plugin) error {
 	connectionIDs := make([]string, 0)
 	connConfigs := make([]Connection, 0)
 
-	for i := range plugin.Connections {
+	for i, c := range plugin.Connections {
+		if c.ConnectionId == "" {
+			return errors.New("missing connection ID")
+		}
 		connConfigID := uuid.NewString()
 		connections[i].Id = connConfigID
 		connectionIDs = append(connectionIDs, connConfigID)
