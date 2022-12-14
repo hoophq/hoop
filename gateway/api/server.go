@@ -72,30 +72,80 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.GET("/login", api.SecurityHandler.Login)
 	route.GET("/callback", api.SecurityHandler.Callback)
 
-	route.GET("/users", api.Authenticate, api.UserHandler.FindAll)
-	route.GET("/users/:id", api.Authenticate, api.UserHandler.FindOne)
-	route.PUT("/users/:id", api.Authenticate, api.UserHandler.Put)
-	route.POST("/users", api.Authenticate, api.UserHandler.Post)
+	route.GET("/users",
+		api.Authenticate,
+		api.AdminOnly,
+		api.UserHandler.FindAll)
+	route.GET("/users/:id",
+		api.Authenticate,
+		api.AdminOnly,
+		api.UserHandler.FindOne)
+	route.PUT("/users/:id",
+		api.Authenticate,
+		api.AdminOnly,
+		api.UserHandler.Put)
+	route.POST("/users",
+		api.Authenticate,
+		api.AdminOnly,
+		api.UserHandler.Post)
 
-	route.POST("/connections", api.Authenticate, api.ConnectionHandler.Post)
-	route.GET("/connections", api.Authenticate, api.ConnectionHandler.FindAll)
-	route.GET("/connections/:name", api.Authenticate, api.ConnectionHandler.FindOne)
-	route.PUT("/connections/:name", api.Authenticate, api.ConnectionHandler.Put)
+	route.POST("/connections",
+		api.Authenticate,
+		api.AdminOnly,
+		api.ConnectionHandler.Post)
+	route.PUT("/connections/:name",
+		api.Authenticate,
+		api.AdminOnly,
+		api.ConnectionHandler.Put)
+	route.GET("/connections",
+		api.Authenticate,
+		api.ConnectionHandler.FindAll)
+	route.GET("/connections/:name",
+		api.Authenticate,
+		api.ConnectionHandler.FindOne)
 
-	route.GET("/reviews", api.Authenticate, api.ReviewHandler.FindAll)
-	route.GET("/reviews/:id", api.Authenticate, api.ReviewHandler.FindOne)
-	route.PUT("/reviews/:id", api.Authenticate, api.ReviewHandler.Put)
+	route.GET("/reviews",
+		api.Authenticate,
+		api.ReviewHandler.FindAll)
+	route.GET("/reviews/:id",
+		api.Authenticate,
+		api.ReviewHandler.FindOne)
+	route.PUT("/reviews/:id",
+		api.Authenticate,
+		api.ReviewHandler.Put)
 
-	route.POST("/agents", api.Authenticate, api.AgentHandler.Post)
-	route.GET("/agents", api.Authenticate, api.AgentHandler.FindAll)
+	route.POST("/agents",
+		api.Authenticate,
+		api.AdminOnly,
+		api.AgentHandler.Post)
+	route.GET("/agents",
+		api.Authenticate,
+		api.AdminOnly,
+		api.AgentHandler.FindAll)
 
-	route.POST("/plugins", api.Authenticate, api.PluginHandler.Post)
-	route.PUT("/plugins/:name", api.Authenticate, api.PluginHandler.Put)
-	route.GET("/plugins", api.Authenticate, api.PluginHandler.FindAll)
-	route.GET("/plugins/:name", api.Authenticate, api.PluginHandler.FindOne)
+	route.POST("/plugins",
+		api.Authenticate,
+		api.AdminOnly,
+		api.PluginHandler.Post)
+	route.PUT("/plugins/:name",
+		api.Authenticate,
+		api.AdminOnly,
+		api.PluginHandler.Put)
+	route.GET("/plugins",
+		api.Authenticate,
+		api.PluginHandler.FindAll)
+	route.GET("/plugins/:name",
+		api.Authenticate,
+		api.PluginHandler.FindOne)
 
-	route.GET("/plugins/audit/sessions/:session_id", api.Authenticate, api.SessionHandler.FindOne)
-	route.GET("/plugins/audit/sessions", api.Authenticate, api.SessionHandler.FindAll)
+	route.GET("/plugins/audit/sessions/:session_id",
+		api.Authenticate,
+		api.AdminOnly,
+		api.SessionHandler.FindOne)
+	route.GET("/plugins/audit/sessions",
+		api.Authenticate,
+		api.AdminOnly,
+		api.SessionHandler.FindAll)
 }
 
 func (api *Api) CreateTrialEntities() error {
