@@ -80,6 +80,9 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.AdminOnly,
 		api.UserHandler.FindOne)
+	route.GET("/userinfo",
+		api.Authenticate,
+		api.UserHandler.Userinfo)
 	route.PUT("/users/:id",
 		api.Authenticate,
 		api.AdminOnly,

@@ -126,3 +126,10 @@ func (a *Handler) Post(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, newUser)
 }
+
+func (a *Handler) Userinfo(c *gin.Context) {
+	ctx, _ := c.Get("context")
+	context := ctx.(*Context)
+
+	c.JSON(http.StatusOK, context.User)
+}
