@@ -51,6 +51,7 @@ func buildPayload(notification Notification) io.Reader {
 	p := map[string]any{
 		"notification": map[string]any{
 			"title":      notification.Title,
+			"content":    notification.Message,
 			"recipients": buildRecipients(notification.Recipients),
 		},
 	}
