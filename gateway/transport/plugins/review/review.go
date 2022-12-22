@@ -2,7 +2,9 @@ package review
 
 import (
 	"fmt"
+	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/plugin"
 	rv "github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/user"
@@ -10,24 +12,36 @@ import (
 )
 
 const (
-	Name         string = "review"
-	ServiceParam string = "review_service"
+	Name                     string = "review"
+	ReviewServiceParam       string = "review_service"
+	UserServiceParam         string = "user_service"
+	NotificationServiceParam string = "notification_service"
 )
 
 type (
 	reviewPlugin struct {
-		name    string
-		service Service
+		name                string
+		apiURL              string
+		reviewService       ReviewService
+		userService         UserService
+		notificationService notification.Service
 	}
 
-	Service interface {
+	ReviewService interface {
 		Persist(context *user.Context, review *rv.Review) error
 		FindBySessionID(sessionID string) (*rv.Review, error)
 	}
+
+	UserService interface {
+		FindByGroups(context *user.Context, groups []string) ([]user.User, error)
+	}
 )
 
-func New() *reviewPlugin {
-	return &reviewPlugin{name: Name}
+func New(apiURL string) *reviewPlugin {
+	return &reviewPlugin{
+		name:   Name,
+		apiURL: apiURL,
+	}
 }
 
 func (r *reviewPlugin) Name() string {
@@ -40,13 +54,27 @@ func (r *reviewPlugin) OnStartup(config plugin.Config) error {
 		return fmt.Errorf("failed processing review plugin, missing org_id and session_id params")
 	}
 
-	reviewServiceParam := config.ParamsData[ServiceParam]
-	reviewService, ok := reviewServiceParam.(Service)
+	reviewServiceParam := config.ParamsData[ReviewServiceParam]
+	reviewService, ok := reviewServiceParam.(ReviewService)
 	if !ok {
 		return fmt.Errorf("review plugin failed to start")
 	}
 
-	r.service = reviewService
+	userServiceParam := config.ParamsData[UserServiceParam]
+	userService, ok := userServiceParam.(UserService)
+	if !ok {
+		return fmt.Errorf("review plugin failed to start")
+	}
+
+	notificationServiceParam := config.ParamsData[NotificationServiceParam]
+	notificationService, ok := notificationServiceParam.(notification.Service)
+	if !ok {
+		return fmt.Errorf("review plugin failed to start")
+	}
+
+	r.reviewService = reviewService
+	r.userService = userService
+	r.notificationService = notificationService
 	return nil
 }
 
@@ -63,8 +91,13 @@ func (r *reviewPlugin) OnReceive(pluginConfig plugin.Config, config []string, pk
 	log.Printf("[%s] Review OnReceive plugin with config %v and pkt %v", pluginConfig.SessionId, config, pkt)
 	switch pb.PacketType(pkt.GetType()) {
 	case pb.PacketClientGatewayExecType:
+		context := &user.Context{
+			Org:  &user.Org{Id: pluginConfig.Org},
+			User: &user.User{Id: pluginConfig.User},
+		}
+
 		sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
-		existingReview, err := r.service.FindBySessionID(sessionID)
+		existingReview, err := r.reviewService.FindBySessionID(sessionID)
 		if err != nil {
 			return err
 		}
@@ -76,7 +109,9 @@ func (r *reviewPlugin) OnReceive(pluginConfig plugin.Config, config []string, pk
 		}
 
 		reviewGroups := make([]rv.Group, 0)
+		groups := make([]string, 0)
 		for _, s := range config {
+			groups = append(groups, s)
 			reviewGroups = append(reviewGroups, rv.Group{
 				Group:  s,
 				Status: rv.StatusPending,
@@ -84,6 +119,7 @@ func (r *reviewPlugin) OnReceive(pluginConfig plugin.Config, config []string, pk
 		}
 
 		review := &rv.Review{
+			Id:      uuid.NewString(),
 			Session: pluginConfig.SessionId,
 			Connection: rv.Connection{
 				Id:   pluginConfig.ConnectionId,
@@ -94,15 +130,25 @@ func (r *reviewPlugin) OnReceive(pluginConfig plugin.Config, config []string, pk
 			ReviewGroups: reviewGroups,
 		}
 
-		if err := r.service.Persist(&user.Context{
-			Org:  &user.Org{Id: pluginConfig.Org},
-			User: &user.User{Id: pluginConfig.User},
-		}, review); err != nil {
+		if err := r.reviewService.Persist(context, review); err != nil {
 			return err
 		}
 
 		b, _ := pb.GobEncode(review)
 		pkt.Spec[pb.SpecReviewDataKey] = b
+
+		reviewers, err := r.userService.FindByGroups(context, groups)
+		if err != nil {
+			return err
+		}
+
+		reviewersEmail := listEmails(reviewers)
+		r.notificationService.Send(notification.Notification{
+			Title:        "[hoop.dev] Pending review",
+			Message:      r.buildReviewUrl(review.Id),
+			Destinations: reviewersEmail,
+		})
+
 	}
 
 	return nil
@@ -113,3 +159,16 @@ func (r *reviewPlugin) OnDisconnect(config plugin.Config) error {
 }
 
 func (r *reviewPlugin) OnShutdown() {}
+
+func (r *reviewPlugin) buildReviewUrl(reviewID string) string {
+	url := fmt.Sprintf("%s/plugins/reviews/%s", r.apiURL, reviewID)
+	return fmt.Sprintf("A user is waiting for your review at hoop.dev.\n\n Visit %s for more information.\n\n Hoop Team.", url)
+}
+
+func listEmails(reviewers []user.User) []string {
+	emails := make([]string, 0)
+	for _, r := range reviewers {
+		emails = append(emails, r.Email)
+	}
+	return emails
+}

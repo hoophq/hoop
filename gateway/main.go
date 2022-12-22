@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"fmt"
+	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/review"
 	"os"
 
@@ -28,10 +29,10 @@ func Run() {
 		panic(err)
 	}
 
-	transport.LoadPlugins()
-
 	profile := os.Getenv("PROFILE")
 	idProvider := idp.NewProvider(profile)
+
+	transport.LoadPlugins(idProvider.ApiURL)
 
 	agentService := agent.Service{Storage: &agent.Storage{Storage: s}}
 	pluginService := plugin.Service{Storage: &plugin.Storage{Storage: s}}
@@ -40,6 +41,7 @@ func Run() {
 	clientService := client.Service{Storage: &client.Storage{Storage: s}}
 	sessionService := session.Service{Storage: &session.Storage{Storage: s}}
 	reviewService := review.Service{Storage: &review.Storage{Storage: s}}
+	notificationService := notification.NewMagicBell()
 	securityService := security.Service{
 		Storage:     &security.Storage{Storage: s},
 		Provider:    idProvider,
@@ -65,6 +67,7 @@ func Run() {
 		PluginService:        pluginService,
 		SessionService:       sessionService,
 		ReviewService:        reviewService,
+		NotificationService:  notificationService,
 		IDProvider:           idProvider,
 		Profile:              profile,
 		GcpDLPRawCredentials: os.Getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"),

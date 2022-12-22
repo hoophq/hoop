@@ -31,6 +31,7 @@ type Provider struct {
 	ClientID     string
 	ClientSecret string
 	Profile      string
+	ApiURL       string
 
 	*oidc.Provider
 	oauth2.Config
@@ -81,6 +82,7 @@ func NewProvider(profile string) *Provider {
 	provider := &Provider{
 		Context: ctx,
 		Profile: profile,
+		ApiURL:  apiURL,
 	}
 
 	if profile == pb.DevProfile {
