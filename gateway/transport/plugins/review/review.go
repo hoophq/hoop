@@ -144,9 +144,9 @@ func (r *reviewPlugin) OnReceive(pluginConfig plugin.Config, config []string, pk
 
 		reviewersEmail := listEmails(reviewers)
 		r.notificationService.Send(notification.Notification{
-			Title:        "[hoop.dev] Pending review",
-			Message:      r.buildReviewUrl(review.Id),
-			Destinations: reviewersEmail,
+			Title:      "[hoop.dev] Pending review",
+			Message:    r.buildReviewUrl(review.Id),
+			Recipients: reviewersEmail,
 		})
 
 	}
