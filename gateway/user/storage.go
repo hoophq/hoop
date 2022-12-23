@@ -137,11 +137,12 @@ func (s *Storage) FindByGroups(context *Context, groups []string) ([]User, error
 		return make([]User, 0), nil
 	}
 
-	var payload = `{:query {
-		:find [(pull ?user [*])] 
-		:where [[?user :user/org "` + context.Org.Id + `"]
-		` + buildGroupsClause(groups) + `
-		]}}`
+	var payload = fmt.Sprintf(`{:query {
+		:find [(pull ?user [*])]
+	  	:in [org [g ...]]
+    	:where [[?user :user/org org]
+				[?user :user/groups g]]}
+		:in-args ["%s" %q]}}`, context.Org.Id, groups)
 
 	b, err := s.Query([]byte(payload))
 	if err != nil {
@@ -154,16 +155,6 @@ func (s *Storage) FindByGroups(context *Context, groups []string) ([]User, error
 	}
 
 	return users, nil
-}
-
-func buildGroupsClause(groups []string) string {
-	s := "(or "
-	for _, g := range groups {
-		s += fmt.Sprintf(`[?user :user/groups "%s"]`, g)
-	}
-
-	s += ")"
-	return s
 }
 
 func (s *Storage) getOrg(orgId string) (*Org, error) {
