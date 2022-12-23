@@ -68,6 +68,7 @@ const (
 	ServerAuthenticationMD5Password       AuthPacketType = 5
 	ServerAuthenticationCleartextPassword AuthPacketType = 3
 	ServerAuthenticationOK                AuthPacketType = 0
+	ServerDataRowNull                     uint32         = 4294967295 // FF FF FF FF
 )
 
 // server
