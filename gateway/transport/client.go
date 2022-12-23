@@ -58,10 +58,10 @@ var cc = connectedClients{
 	mu:          sync.Mutex{},
 }
 
-func LoadPlugins() {
+func LoadPlugins(apiURL string) {
 	allPlugins = []Plugin{
 		pluginsaudit.New(),
-		pluginsreview.New(),
+		pluginsreview.New(apiURL),
 		pluginsdlp.New(),
 		pluginsrbac.New(),
 	}
@@ -442,7 +442,9 @@ func (s *Server) loadConnectPlugins(ctx *user.Context, config plugin.Config) ([]
 		}
 
 		if p.Name() == pluginsreview.Name {
-			config.ParamsData[pluginsreview.ServiceParam] = &s.ReviewService
+			config.ParamsData[pluginsreview.ReviewServiceParam] = &s.ReviewService
+			config.ParamsData[pluginsreview.UserServiceParam] = &s.UserService
+			config.ParamsData[pluginsreview.NotificationServiceParam] = s.NotificationService
 		}
 
 		for _, c := range p1.Connections {

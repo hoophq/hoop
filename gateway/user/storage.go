@@ -1,6 +1,7 @@
 package user
 
 import (
+	"fmt"
 	st "github.com/runopsio/hoop/gateway/storage"
 	"olympos.io/encoding/edn"
 )
@@ -129,6 +130,31 @@ func (s *Storage) GetOrgByName(name string) (*Org, error) {
 	}
 
 	return &u[0], nil
+}
+
+func (s *Storage) FindByGroups(context *Context, groups []string) ([]User, error) {
+	if len(groups) == 0 {
+		return make([]User, 0), nil
+	}
+
+	var payload = fmt.Sprintf(`{:query {
+		:find [(pull ?user [*])]
+	  	:in [org [g ...]]
+    	:where [[?user :user/org org]
+				[?user :user/groups g]]}
+		:in-args ["%s" %q]}}`, context.Org.Id, groups)
+
+	b, err := s.Query([]byte(payload))
+	if err != nil {
+		return nil, err
+	}
+
+	var users []User
+	if err := edn.Unmarshal(b, &users); err != nil {
+		return nil, err
+	}
+
+	return users, nil
 }
 
 func (s *Storage) getOrg(orgId string) (*Org, error) {
