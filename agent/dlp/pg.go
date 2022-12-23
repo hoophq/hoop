@@ -131,6 +131,10 @@ func redactDataRow(dlpclient Client, conf *deidentifyConfig, dataRows *bytes.Buf
 		// iterate in each row field
 		for i := 1; i <= int(columnNumbers); i++ {
 			columnLength := binary.BigEndian.Uint32(dataRowBuf.Next(4))
+			// -1 means it's a NULL value
+			if columnLength == pgtypes.ServerDataRowNull {
+				columnLength = 0
+			}
 			columnData := make([]byte, columnLength)
 			_, err := io.ReadFull(dataRowBuf, columnData[:])
 			if err != nil {

@@ -82,7 +82,7 @@ func (p *Packet) IsCancelRequest() bool {
 }
 
 func NewReader(rd io.Reader) Reader {
-	return bufio.NewReaderSize(rd, pg.DefaultBufferSize)
+	return bufio.NewReader(rd)
 }
 
 func NewPacketWithType(t pg.PacketType) *Packet {

@@ -31,6 +31,9 @@ spec:
           requests:
             cpu: 1024m
             memory: 1Gi
+        volumeMounts:
+        - mountPath: /opt/hoop/sessions
+          name: sessions
         ports:
         - containerPort: 8010
           name: grpc
@@ -48,3 +51,7 @@ spec:
         ports:
         - containerPort: 3001
           name: api
+      volumes:
+      - name: sessions
+        emptyDir:
+          sizeLimit: 10Gi
