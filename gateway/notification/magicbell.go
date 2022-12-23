@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
+	"time"
 )
 
 type (
@@ -19,7 +21,7 @@ type (
 
 func NewMagicBell() *MagicBell {
 	return &MagicBell{
-		client:    http.Client{},
+		client:    http.Client{Timeout: 2 * time.Second},
 		apiKey:    os.Getenv("MAGIC_BELL_API_KEY"),
 		apiSecret: os.Getenv("MAGIC_BELL_API_SECRET"),
 	}
@@ -30,7 +32,7 @@ func (m *MagicBell) Send(notification Notification) {
 		url := "https://api.magicbell.com/notifications"
 		req, err := http.NewRequest(http.MethodPost, url, buildPayload(notification))
 		if err != nil {
-			fmt.Printf("failed to send magic bell notification: %s", err.Error())
+			log.Printf("Failed building http request, err=%v", err)
 			return
 		}
 
