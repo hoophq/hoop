@@ -3,7 +3,6 @@ package notification
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -42,7 +41,7 @@ func (m *MagicBell) Send(notification Notification) {
 
 		resp, err := m.client.Do(req)
 		if err != nil {
-			fmt.Printf("failed to send magic bell notification: %s", err.Error())
+			log.Printf("failed to send magic bell notification: %v", err)
 			return
 		}
 		defer resp.Body.Close()
