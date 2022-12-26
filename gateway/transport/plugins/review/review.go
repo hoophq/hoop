@@ -2,13 +2,14 @@ package review
 
 import (
 	"fmt"
+	"log"
+
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/plugin"
 	rv "github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/user"
-	"log"
 )
 
 const (
@@ -93,7 +94,7 @@ func (r *reviewPlugin) OnReceive(pluginConfig plugin.Config, config []string, pk
 	case pb.PacketClientGatewayExecType:
 		context := &user.Context{
 			Org:  &user.Org{Id: pluginConfig.Org},
-			User: &user.User{Id: pluginConfig.User},
+			User: &user.User{Id: pluginConfig.UserID},
 		}
 
 		sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])

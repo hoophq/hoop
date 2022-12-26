@@ -9,7 +9,8 @@ type (
 		ConnectionName string
 		ConnectionType string
 		Org            string
-		User           string
+		UserID         string
+		UserName       string
 		Verb           string
 		Hostname       string
 		MachineId      string
