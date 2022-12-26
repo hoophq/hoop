@@ -3,6 +3,7 @@ package notification
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -37,13 +38,14 @@ func (m *MagicBell) Send(notification Notification) {
 
 		req.Header.Set("content-type", "application/json")
 		req.Header.Set("X-MAGICBELL-API-KEY", m.apiKey)
-		req.Header.Set("X-MAGICBELL-API-SECRETY", m.apiSecret)
+		req.Header.Set("X-MAGICBELL-API-SECRET", m.apiSecret)
 
 		resp, err := m.client.Do(req)
 		if err != nil {
 			log.Printf("failed to send magic bell notification: %v", err)
 			return
 		}
+		fmt.Printf("Sent notification to %d recipients", len(notification.Recipients))
 		defer resp.Body.Close()
 	}
 }
