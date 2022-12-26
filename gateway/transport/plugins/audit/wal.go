@@ -22,6 +22,7 @@ type (
 		OrgID          string     `json:"org_id"`
 		SessionID      string     `json:"session_id"`
 		UserID         string     `json:"user_id"`
+		UserName       string     `json:"user_name"`
 		ConnectionName string     `json:"connection_name"`
 		ConnectionType string     `json:"connection_type"`
 		Verb           string     `json:"verb"`
@@ -86,7 +87,7 @@ func parseEventStream(eventStream []byte) (session.EventStream, int, error) {
 		eventStreamLength, nil
 }
 
-func (p *auditPlugin) writeOnConnect(orgID, sessionID, userID, connName, connType, verb string) error {
+func (p *auditPlugin) writeOnConnect(orgID, sessionID, userID, userName, connName, connType, verb string) error {
 	walFolder := fmt.Sprintf(walFolderTmpl, pluginAuditPath, orgID, sessionID)
 	walog, err := wal.Open(walFolder, wal.DefaultOptions)
 	if err != nil {
@@ -96,6 +97,7 @@ func (p *auditPlugin) writeOnConnect(orgID, sessionID, userID, connName, connTyp
 		OrgID:          orgID,
 		SessionID:      sessionID,
 		UserID:         userID,
+		UserName:       userName,
 		ConnectionName: connName,
 		ConnectionType: connType,
 		Verb:           verb,
@@ -163,7 +165,8 @@ func (p *auditPlugin) writeOnClose(sessionID string) error {
 			return fmt.Errorf("failed reading full session data err=%v", err)
 		}
 		// truncate when event is greater than 5000 bytes for tcp type
-		eventStreamBytes = p.truncateEventStream(eventStreamBytes, wh.ConnectionType)
+		// it avoids auditing blob content for TCP (files, images, etc)
+		eventStreamBytes = p.truncateTCPEventStream(eventStreamBytes, wh.ConnectionType)
 		if err == wal.ErrNotFound {
 			break
 		}
@@ -179,7 +182,8 @@ func (p *auditPlugin) writeOnClose(sessionID string) error {
 	err = p.storageWriter.Write(plugin.Config{
 		Org:            wh.OrgID,
 		SessionId:      wh.SessionID,
-		User:           wh.UserID,
+		UserID:         wh.UserID,
+		UserName:       wh.UserName,
 		ConnectionName: wh.ConnectionName,
 		ConnectionType: wh.ConnectionType,
 		Verb:           wh.Verb,
@@ -206,7 +210,7 @@ func (p *auditPlugin) writeOnClose(sessionID string) error {
 	return err
 }
 
-func (p *auditPlugin) truncateEventStream(eventStream []byte, connType string) []byte {
+func (p *auditPlugin) truncateTCPEventStream(eventStream []byte, connType string) []byte {
 	if len(eventStream) > 5000 && connType == pb.ConnectionTypeTCP {
 		return eventStream[0:5000]
 	}

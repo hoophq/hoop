@@ -82,12 +82,12 @@ func (s *Storage) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionLi
 		:in [org-id arg-user arg-type arg-conn arg-start-date arg-end-date]
 		:where [[a :session/org-id org-id]
 				[a :xt/id id]
-				[a :session/user usr]
+				[a :session/user-id usr-id]
 				[a :session/type typ]
 				[a :session/connection conn]
 				[a :session/start-date start-date]
 				(or [(= arg-user nil)]
-					[(= usr arg-user)])
+					[(= usr-id arg-user)])
 				(or [(= arg-type nil)]
 					[(= typ arg-type)])
 				(or [(= arg-conn nil)]
@@ -106,14 +106,16 @@ func (s *Storage) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionLi
 	}
 	err := s.queryDecoder(`
 		{:query {
-			:find [id usr typ conn verb event-size start-date end-date]
-			:keys [xt/id session/user session/type session/connection
-				   session/verb session/event-size
+			:find [id usr usr-id usr-name typ conn verb event-size start-date end-date]
+			:keys [xt/id session/user session/user-id session/user-name
+				   session/type session/connection session/verb session/event-size
 				   session/start-date session/end-date]
 			:in [org-id arg-user arg-type arg-conn arg-start-date arg-end-date]
 			:where [[a :session/org-id org-id]
 					[a :xt/id id]
 					[a :session/user usr]
+					[a :session/user-id usr-id]
+					[a :session/user-name usr-name]
 					[a :session/type typ]
 					[a :session/connection conn]
 					[a :session/verb verb]
@@ -121,7 +123,7 @@ func (s *Storage) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionLi
 					[a :session/start-date start-date]
 					[a :session/end-date end-date]
 					(or [(= arg-user nil)]
-						[(= usr arg-user)])
+						[(= usr-id arg-user)])
 					(or [(= arg-type nil)]
 						[(= typ arg-type)])
 					(or [(= arg-conn nil)]
@@ -144,14 +146,16 @@ func (s *Storage) FindOne(ctx *user.Context, sessionID string) (*Session, error)
 	var session []Session
 	err := s.queryDecoder(`
 	{:query {
-		:find [s user type connection verb event-stream event-size start-date end-date]
-		:keys [xt/id session/user session/type session/connection
+		:find [s user user-id user-name type connection verb event-stream event-size start-date end-date]
+		:keys [xt/id session/user session/user-id session/user-name session/type session/connection
 			   session/verb session/event-stream session/event-size
 			   session/start-date session/end-date]
 		:in [org-id arg-session-id]
 		:where [[s :session/org-id org-id]
 				[s :xt/id arg-session-id]
 				[s :session/user user]
+				[s :session/user-id user-id]
+				[s :session/user-name user-name]
 				[s :session/type type]
 				[s :session/connection connection]
 				[s :session/verb verb]
@@ -195,7 +199,9 @@ func (s *GenericStorageWriter) Write(p plugin.Config) error {
 	}
 	sess := &Session{
 		ID:               p.SessionId,
-		User:             p.User,
+		User:             p.UserID,
+		UserID:           p.UserID,
+		UserName:         p.UserName,
 		Type:             p.ConnectionType,
 		Connection:       p.ConnectionName,
 		Verb:             p.Verb,

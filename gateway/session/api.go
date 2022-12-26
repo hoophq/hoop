@@ -86,6 +86,7 @@ func (a *Handler) FindAll(c *gin.Context) {
 	}
 	sessionList, err := a.Service.FindAll(context, options...)
 	if err != nil {
+		log.Printf("failed listing sessions, err=%v", err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}

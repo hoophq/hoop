@@ -84,7 +84,7 @@ func (p *auditPlugin) OnConnect(config plugin.Config) error {
 		return fmt.Errorf("failed processing audit plugin, missing org_id and session_id params")
 	}
 
-	if err := p.writeOnConnect(config.Org, config.SessionId, config.User,
+	if err := p.writeOnConnect(config.Org, config.SessionId, config.UserID, config.UserName,
 		config.ConnectionName, config.ConnectionType, config.Verb); err != nil {
 		return err
 	}
