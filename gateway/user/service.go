@@ -43,7 +43,7 @@ type (
 		Id     string   `json:"id"     edn:"xt/id"`
 		Org    string   `json:"-"      edn:"invited-user/org"`
 		Email  string   `json:"email"  edn:"invited-user/email"`
-		Name   string   `json:"name"   end:"invited-user/name`
+		Name   string   `json:"name"   end:"invited-user/name"`
 		Groups []string `json:"groups" edn:"invited-user/groups"`
 	}
 
@@ -55,7 +55,13 @@ const (
 	StatusReviewing StatusType = "reviewing"
 	StatusInactive  StatusType = "inactive"
 
-	GroupAdmin string = "admin"
+	GroupAdmin       string = "admin"
+	GroupSecurity    string = "security"
+	GroupSRE         string = "sre"
+	GroupDBA         string = "dba"
+	GroupDevops      string = "devops"
+	GroupSupport     string = "support"
+	GroupEngineering string = "engineering"
 )
 
 var statuses = []StatusType{

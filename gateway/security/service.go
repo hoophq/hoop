@@ -146,7 +146,12 @@ func (s *Service) signup(context *user.Context, sub string, profile map[string]a
 	profileName, _ := profile["name"].(string)
 	newOrg := false
 
-	if context.Org == nil {
+	invitedUser, err := s.UserService.FindInvitedUser(email)
+	if err != nil {
+		return err
+	}
+
+	if context.Org == nil && invitedUser == nil {
 		org, ok := profile["https://hoophq.dev/org"].(string)
 		if !ok || org == "" {
 			org = user.ExtractDomain(email)
@@ -177,24 +182,32 @@ func (s *Service) signup(context *user.Context, sub string, profile map[string]a
 		groups := make([]string, 0)
 		status := user.StatusReviewing
 
-		if newOrg {
-			status = user.StatusActive
-			groups = append(groups, user.GroupAdmin)
+		var org string
+		if context.Org != nil {
+			org = context.Org.Id
 		}
 
-		invitedUser, err := s.UserService.FindInvitedUser(email)
-		if err != nil {
-			return err
+		if newOrg {
+			status = user.StatusActive
+			groups = append(groups,
+				user.GroupAdmin,
+				user.GroupSecurity,
+				user.GroupSRE,
+				user.GroupDBA,
+				user.GroupDevops,
+				user.GroupSupport,
+				user.GroupEngineering)
 		}
+
 		if invitedUser != nil {
 			status = user.StatusActive
 			groups = invitedUser.Groups
-
+			org = invitedUser.Org
 		}
 
 		context.User = &user.User{
 			Id:     sub,
-			Org:    context.Org.Id,
+			Org:    org,
 			Name:   profileName,
 			Email:  email,
 			Status: status,
