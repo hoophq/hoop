@@ -2,6 +2,7 @@ package user
 
 import (
 	pb "github.com/runopsio/hoop/common/proto"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -141,6 +142,7 @@ func (a *Handler) UsersGroups(c *gin.Context) {
 
 	groups, err := a.Service.ListAllGroups(context)
 	if err != nil {
+		log.Printf("failed to list groups, err: %v", err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
