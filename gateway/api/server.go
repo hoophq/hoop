@@ -170,7 +170,7 @@ func (api *Api) CreateTrialEntities() error {
 		Name:   "hooper",
 		Email:  "tester@hoop.dev",
 		Status: "active",
-		Groups: []string{"admin"},
+		Groups: []string{"admin", "sre", "dba", "security", "devops", "support", "engineering"},
 	}
 
 	a := agent.Agent{

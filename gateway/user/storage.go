@@ -1,6 +1,7 @@
 package user
 
 import (
+	"encoding/json"
 	"fmt"
 	st "github.com/runopsio/hoop/gateway/storage"
 	"olympos.io/encoding/edn"
@@ -171,7 +172,7 @@ func (s *Storage) ListAllGroups(context *Context) ([]string, error) {
 	}
 
 	var result [][][]string
-	if err := edn.Unmarshal(b, &result); err != nil {
+	if err := json.Unmarshal(b, &result); err != nil {
 		return nil, err
 	}
 
