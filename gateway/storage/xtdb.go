@@ -163,6 +163,10 @@ func (s *Storage) QueryRaw(ednQuery []byte) ([]byte, error) {
 	return s.queryRequest(ednQuery, "application/edn")
 }
 
+func (s *Storage) QueryRawAsJson(ednQuery []byte) ([]byte, error) {
+	return s.queryRequest(ednQuery, "application/json")
+}
+
 func (s *Storage) Query(ednQuery []byte) ([]byte, error) {
 	b, err := s.queryRequest(ednQuery, "application/edn")
 	if err != nil {

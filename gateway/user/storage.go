@@ -1,6 +1,7 @@
 package user
 
 import (
+	"encoding/json"
 	"fmt"
 	st "github.com/runopsio/hoop/gateway/storage"
 	"olympos.io/encoding/edn"
@@ -155,6 +156,32 @@ func (s *Storage) FindByGroups(context *Context, groups []string) ([]User, error
 	}
 
 	return users, nil
+}
+
+func (s *Storage) ListAllGroups(context *Context) ([]string, error) {
+	var payload = fmt.Sprintf(`{:query {
+		:find [(distinct g)]
+	  	:in [org]
+    	:where [[?user :user/org org]
+				[?user :user/groups g]]}
+		:in-args ["%s"]}}`, context.Org.Id)
+
+	b, err := s.QueryRawAsJson([]byte(payload))
+	if err != nil {
+		return nil, err
+	}
+
+	var result [][][]string
+	if err := json.Unmarshal(b, &result); err != nil {
+		return nil, err
+	}
+
+	groups := make([]string, 0)
+	if len(result) > 0 {
+		groups = result[0][0]
+	}
+
+	return groups, nil
 }
 
 func (s *Storage) getOrg(orgId string) (*Org, error) {

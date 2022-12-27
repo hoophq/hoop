@@ -2,6 +2,7 @@ package user
 
 import (
 	pb "github.com/runopsio/hoop/common/proto"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -19,6 +20,7 @@ type (
 		FindAll(context *Context) ([]User, error)
 		FindOne(context *Context, id string) (*User, error)
 		Persist(user any) error
+		ListAllGroups(context *Context) ([]string, error)
 	}
 )
 
@@ -132,4 +134,18 @@ func (a *Handler) Userinfo(c *gin.Context) {
 	context := ctx.(*Context)
 
 	c.JSON(http.StatusOK, context.User)
+}
+
+func (a *Handler) UsersGroups(c *gin.Context) {
+	ctx, _ := c.Get("context")
+	context := ctx.(*Context)
+
+	groups, err := a.Service.ListAllGroups(context)
+	if err != nil {
+		log.Printf("failed to list groups, err: %v", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	c.PureJSON(http.StatusOK, groups)
 }

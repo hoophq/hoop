@@ -18,6 +18,7 @@ type (
 		FindInvitedUser(email string) (*InvitedUser, error)
 		GetOrgByName(name string) (*Org, error)
 		FindByGroups(context *Context, groups []string) ([]User, error)
+		ListAllGroups(context *Context) ([]string, error)
 	}
 
 	Context struct {
@@ -114,6 +115,10 @@ func (s *Service) FindInvitedUser(email string) (*InvitedUser, error) {
 
 func (s *Service) FindByGroups(context *Context, groups []string) ([]User, error) {
 	return s.Storage.FindByGroups(context, groups)
+}
+
+func (s *Service) ListAllGroups(context *Context) ([]string, error) {
+	return s.Storage.ListAllGroups(context)
 }
 
 func ExtractDomain(email string) string {

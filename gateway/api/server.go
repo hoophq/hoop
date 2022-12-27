@@ -83,6 +83,9 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.GET("/userinfo",
 		api.Authenticate,
 		api.UserHandler.Userinfo)
+	route.GET("/users/groups",
+		api.Authenticate,
+		api.UserHandler.UsersGroups)
 	route.PUT("/users/:id",
 		api.Authenticate,
 		api.AdminOnly,
@@ -167,7 +170,7 @@ func (api *Api) CreateTrialEntities() error {
 		Name:   "hooper",
 		Email:  "tester@hoop.dev",
 		Status: "active",
-		Groups: []string{"admin"},
+		Groups: []string{"admin", "sre", "dba", "security", "devops", "support", "engineering"},
 	}
 
 	a := agent.Agent{
