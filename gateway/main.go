@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/review"
+	"github.com/runopsio/hoop/gateway/review/jit"
 	"os"
 
 	"github.com/runopsio/hoop/gateway/plugin"
@@ -41,6 +42,7 @@ func Run() {
 	clientService := client.Service{Storage: &client.Storage{Storage: s}}
 	sessionService := session.Service{Storage: &session.Storage{Storage: s}}
 	reviewService := review.Service{Storage: &review.Storage{Storage: s}}
+	jitService := jit.Service{Storage: &jit.Storage{Storage: s}}
 	notificationService := notification.NewMagicBell()
 	securityService := security.Service{
 		Storage:     &security.Storage{Storage: s},
@@ -54,6 +56,7 @@ func Run() {
 		PluginHandler:     plugin.Handler{Service: &pluginService},
 		SessionHandler:    session.Handler{Service: &sessionService},
 		ReviewHandler:     review.Handler{Service: &reviewService},
+		JitHandler:        jit.Handler{Service: &jitService},
 		SecurityHandler:   security.Handler{Service: &securityService},
 		IDProvider:        idProvider,
 		Profile:           profile,
@@ -67,6 +70,7 @@ func Run() {
 		PluginService:        pluginService,
 		SessionService:       sessionService,
 		ReviewService:        reviewService,
+		JitService:           jitService,
 		NotificationService:  notificationService,
 		IDProvider:           idProvider,
 		Profile:              profile,

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/review"
+	"github.com/runopsio/hoop/gateway/review/jit"
 	"log"
 	"net"
 	"strings"
@@ -34,6 +35,7 @@ type (
 		PluginService        plugin.Service
 		SessionService       session.Service
 		ReviewService        review.Service
+		JitService           jit.Service
 		NotificationService  notification.Service
 		IDProvider           *idp.Provider
 		Profile              string
