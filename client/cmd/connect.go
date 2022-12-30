@@ -228,6 +228,8 @@ func (c *connect) processPacket(pkt *pb.Packet, config *Config, loader *spinner.
 			return
 		}
 		c.processGracefulExit(errors.New("user cancelled the action"))
+	case pb.PacketClientConnectTimeoutType:
+		fmt.Println("Time is up. Please reconnect to continue using")
 
 	// exec
 	case pb.PacketClientExecAgentOfflineType:

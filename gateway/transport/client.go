@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"context"
 	"fmt"
 	justintime "github.com/runopsio/hoop/gateway/review/jit"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	rv "github.com/runopsio/hoop/gateway/review"
 
@@ -218,10 +220,16 @@ func (s *Server) listenClientMessages(
 	config plugin.Config) error {
 
 	ctx := stream.Context()
+	c.Context = ctx
 
 	for {
 		select {
 		case <-ctx.Done():
+			return nil
+		case <-c.Context.Done():
+			_ = stream.Send(&pb.Packet{
+				Type: string(pb.PacketClientConnectTimeoutType),
+			})
 			return nil
 		default:
 		}
@@ -300,6 +308,8 @@ func (s *Server) processClientConnect(pkt *pb.Packet, client *client.Client, con
 			})
 			return nil
 		}
+		ctx, _ := context.WithTimeout(client.Context, time.Minute*jit.Time)
+		client.Context = ctx
 	}
 
 	if s.GcpDLPRawCredentials != "" {

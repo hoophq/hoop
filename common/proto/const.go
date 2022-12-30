@@ -16,6 +16,7 @@ const (
 	PacketClientAgentConnectOKType  	  PacketType = "Client::Agent::ConnectOK"
 	PacketClientAgentConnectErrType 	  PacketType = "Client::Agent::ConnectErr"
 	PacketClientConnectAgentOfflineType   PacketType = "Client::Gateway::ConnectAgentOffline"
+	PacketClientConnectTimeoutType 		  PacketType = "Client::Gateway::ConnectAgentOfflinTimeoute"
 
 	// client->agent exec
 	PacketClientGatewayExecType        PacketType = "Client::Gateway::Exec"
