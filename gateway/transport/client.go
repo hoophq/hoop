@@ -164,10 +164,36 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	}
 
 	if clientVerb == pb.ClientVerbConnect {
+		hasReview := false
+		hasJit := false
 		for _, p := range plugins {
 			if p.Plugin.Name() == pluginsreview.Name {
-				return status.Errorf(codes.PermissionDenied, fmt.Sprintf("This connection is subject to review. Please, use 'hoop exec %s` to interact", conn.Name))
+				hasReview = true
+				//return status.Errorf(codes.PermissionDenied, fmt.Sprintf("This connection is subject to review. Please, use 'hoop exec %s` to interact", conn.Name))
 			}
+			if p.Plugin.Name() == pluginsjit.Name {
+				hasJit = true
+			}
+		}
+		if hasReview && !hasJit {
+			return status.Errorf(codes.PermissionDenied, fmt.Sprintf("This connection is subject to review. Please, use 'hoop exec %s` to interact", conn.Name))
+		}
+	}
+
+	if clientVerb == pb.ClientVerbExec {
+		hasReview := false
+		hasJit := false
+		for _, p := range plugins {
+			if p.Plugin.Name() == pluginsreview.Name {
+				hasReview = true
+				//return status.Errorf(codes.PermissionDenied, fmt.Sprintf("This connection is subject to review. Please, use 'hoop exec %s` to interact", conn.Name))
+			}
+			if p.Plugin.Name() == pluginsjit.Name {
+				hasJit = true
+			}
+		}
+		if hasJit && !hasReview {
+			return status.Errorf(codes.PermissionDenied, fmt.Sprintf("This connection is subject to just-in-time review. Please, use 'hoop connect %s` to interact", conn.Name))
 		}
 	}
 
