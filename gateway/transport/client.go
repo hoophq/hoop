@@ -169,7 +169,6 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		for _, p := range plugins {
 			if p.Plugin.Name() == pluginsreview.Name {
 				hasReview = true
-				//return status.Errorf(codes.PermissionDenied, fmt.Sprintf("This connection is subject to review. Please, use 'hoop exec %s` to interact", conn.Name))
 			}
 			if p.Plugin.Name() == pluginsjit.Name {
 				hasJit = true
@@ -186,7 +185,6 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		for _, p := range plugins {
 			if p.Plugin.Name() == pluginsreview.Name {
 				hasReview = true
-				//return status.Errorf(codes.PermissionDenied, fmt.Sprintf("This connection is subject to review. Please, use 'hoop exec %s` to interact", conn.Name))
 			}
 			if p.Plugin.Name() == pluginsjit.Name {
 				hasJit = true

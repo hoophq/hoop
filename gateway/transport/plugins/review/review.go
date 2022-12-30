@@ -50,7 +50,7 @@ func (r *reviewPlugin) Name() string {
 }
 
 func (r *reviewPlugin) OnStartup(config plugin.Config) error {
-	log.Printf("session=%v | review noop | processing on-startup", config.SessionId)
+	log.Printf("session=%v | review | processing on-startup", config.SessionId)
 	if config.Org == "" || config.SessionId == "" {
 		return fmt.Errorf("failed processing review plugin, missing org_id and session_id params")
 	}
@@ -89,7 +89,6 @@ func (r *reviewPlugin) OnConnect(config plugin.Config) error {
 }
 
 func (r *reviewPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *pb.Packet) error {
-	log.Printf("[%s] Review OnReceive plugin with config %v and pkt %v", pluginConfig.SessionId, config, pkt)
 	switch pb.PacketType(pkt.GetType()) {
 	case pb.PacketClientGatewayExecType:
 		context := &user.Context{

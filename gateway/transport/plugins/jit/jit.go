@@ -51,7 +51,7 @@ func (r *jitPlugin) Name() string {
 }
 
 func (r *jitPlugin) OnStartup(config plugin.Config) error {
-	log.Printf("session=%v | jit noop | processing on-startup", config.SessionId)
+	log.Printf("session=%v | jit | processing on-startup", config.SessionId)
 	if config.Org == "" || config.SessionId == "" {
 		return fmt.Errorf("failed processing review plugin, missing org_id and session_id params")
 	}
@@ -82,7 +82,6 @@ func (r *jitPlugin) OnStartup(config plugin.Config) error {
 }
 
 func (r *jitPlugin) OnConnect(config plugin.Config) error {
-	log.Printf("session=%v | jit noop | processing on-connect", config.SessionId)
 	if config.Org == "" || config.SessionId == "" {
 		return fmt.Errorf("failed processing review plugin, missing org_id and session_id params")
 	}
@@ -91,7 +90,6 @@ func (r *jitPlugin) OnConnect(config plugin.Config) error {
 }
 
 func (r *jitPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *pb.Packet) error {
-	log.Printf("[%s] Jit OnReceive plugin with config %v and pkt %v", pluginConfig.SessionId, config, pkt)
 	switch pb.PacketType(pkt.GetType()) {
 	case pb.PacketClientGatewayConnectType:
 		if len(config) != 1 {
