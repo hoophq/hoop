@@ -36,7 +36,7 @@ func (s *Storage) FindAll(context *user.Context) ([]Jit, error) {
 	var payload = `{:query {
 		:find [(pull ?jit [:xt/id
                            :jit/status
-                           :jit/input
+                           :jit/time
                            :jit/session
                            :jit/connection
                            :jit/created-by 
@@ -63,7 +63,7 @@ func (s *Storage) FindById(context *user.Context, id string) (*Jit, error) {
 	var payload = `{:query {
 		:find [(pull ?jit [:xt/id
                            :jit/status
-                           :jit/input
+                           :jit/time
                            :jit/session
                            :jit/connection
                            :jit/created-by

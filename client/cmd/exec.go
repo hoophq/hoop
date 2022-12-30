@@ -110,10 +110,10 @@ func runExec(args []string) {
 	}
 }
 
-func buildReviewUrl(conf *Config, reviewID string) string {
+func buildReviewUrl(conf *Config, id string, url string) string {
 	protocol := "https"
 	if strings.HasPrefix(conf.Host, "127.0.0.1") {
 		protocol = "http"
 	}
-	return fmt.Sprintf("%s://%s/plugins/reviews/%s", protocol, conf.Host, reviewID)
+	return fmt.Sprintf("%s://%s/plugins/%s/%s", protocol, conf.Host, url, id)
 }

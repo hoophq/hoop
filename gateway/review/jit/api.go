@@ -42,15 +42,7 @@ func (h *Handler) Put(c *gin.Context) {
 		return
 	}
 
-	isEligibleReviewer := false
-	for _, r := range existingJit.JitGroups {
-		if pb.IsInList(r.Group, context.User.Groups) {
-			isEligibleReviewer = true
-			break
-		}
-	}
-
-	if !isEligibleReviewer {
+	if !pb.IsInList(user.GroupAdmin, context.User.Groups) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "not eligible for jit"})
 		return
 	}

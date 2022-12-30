@@ -77,6 +77,7 @@ func Run() {
 		GcpDLPRawCredentials: os.Getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"),
 	}
 	reviewService.TransportService = g
+	jitService.TransportService = g
 
 	if profile == pb.DevProfile {
 		if err := a.CreateTrialEntities(); err != nil {

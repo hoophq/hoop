@@ -1,14 +1,17 @@
 package jit
 
 import (
+	"errors"
 	"fmt"
+	"github.com/google/uuid"
+	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/notification"
-	rv "github.com/runopsio/hoop/gateway/review"
+	"github.com/runopsio/hoop/gateway/plugin"
+	"github.com/runopsio/hoop/gateway/review/jit"
 	"github.com/runopsio/hoop/gateway/user"
 	"log"
-
-	pb "github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/plugin"
+	"strconv"
+	"time"
 )
 
 const (
@@ -22,14 +25,14 @@ type (
 	jitPlugin struct {
 		name                string
 		apiURL              string
-		reviewService       JitService
+		jitService          JitService
 		userService         UserService
 		notificationService notification.Service
 	}
 
 	JitService interface {
-		Persist(context *user.Context, review *rv.Review) error
-		FindBySessionID(sessionID string) (*rv.Review, error)
+		Persist(context *user.Context, review *jit.Jit) error
+		FindBySessionID(sessionID string) (*jit.Jit, error)
 	}
 
 	UserService interface {
@@ -71,7 +74,7 @@ func (r *jitPlugin) OnStartup(config plugin.Config) error {
 		return fmt.Errorf("jit plugin failed to start")
 	}
 
-	r.reviewService = jitService
+	r.jitService = jitService
 	r.userService = userService
 	r.notificationService = notificationService
 
@@ -91,7 +94,72 @@ func (r *jitPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *
 	log.Printf("[%s] Jit OnReceive plugin with config %v and pkt %v", pluginConfig.SessionId, config, pkt)
 	switch pb.PacketType(pkt.GetType()) {
 	case pb.PacketClientGatewayConnectType:
+		if len(config) != 1 {
+			return errors.New("invalid just-in-time plugin configuration")
+		}
 
+		timeInt, err := strconv.Atoi(config[0])
+		if err != nil {
+			return errors.New("invalid just-in-time plugin configuration")
+		}
+
+		context := &user.Context{
+			Org:  &user.Org{Id: pluginConfig.Org},
+			User: &user.User{Id: pluginConfig.UserID},
+		}
+
+		sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
+		existingJit, err := r.jitService.FindBySessionID(sessionID)
+		if err != nil {
+			return err
+		}
+
+		if existingJit != nil {
+			b, _ := pb.GobEncode(existingJit)
+			pkt.Spec[pb.SpecJitDataKey] = b
+			return nil
+		}
+
+		jitGroups := make([]jit.Group, 0)
+		groups := make([]string, 0)
+		for _, s := range config {
+			groups = append(groups, s)
+			jitGroups = append(jitGroups, jit.Group{
+				Group:  s,
+				Status: jit.StatusPending,
+			})
+		}
+
+		jit := &jit.Jit{
+			Id:      uuid.NewString(),
+			Session: pluginConfig.SessionId,
+			Connection: jit.Connection{
+				Id:   pluginConfig.ConnectionId,
+				Name: pluginConfig.ConnectionName,
+			},
+			Time:      time.Duration(timeInt),
+			Status:    jit.StatusPending,
+			JitGroups: jitGroups,
+		}
+
+		if err := r.jitService.Persist(context, jit); err != nil {
+			return err
+		}
+
+		b, _ := pb.GobEncode(jit)
+		pkt.Spec[pb.SpecJitDataKey] = b
+
+		reviewers, err := r.userService.FindByGroups(context, groups)
+		if err != nil {
+			return err
+		}
+
+		reviewersEmail := listEmails(reviewers)
+		r.notificationService.Send(notification.Notification{
+			Title:      "[hoop.dev] Pending just-in-time review",
+			Message:    r.buildReviewUrl(jit.Id),
+			Recipients: reviewersEmail,
+		})
 	}
 
 	return nil
@@ -102,3 +170,16 @@ func (r *jitPlugin) OnDisconnect(config plugin.Config) error {
 }
 
 func (r *jitPlugin) OnShutdown() {}
+
+func (r *jitPlugin) buildReviewUrl(reviewID string) string {
+	url := fmt.Sprintf("%s/plugins/jits/%s", r.apiURL, reviewID)
+	return fmt.Sprintf("A user is waiting for your just-in-time review at hoop.dev.\n\n Visit %s for more information.\n\n Hoop Team.", url)
+}
+
+func listEmails(reviewers []user.User) []string {
+	emails := make([]string, 0)
+	for _, r := range reviewers {
+		emails = append(emails, r.Email)
+	}
+	return emails
+}

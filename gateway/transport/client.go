@@ -2,6 +2,7 @@ package transport
 
 import (
 	"fmt"
+	justintime "github.com/runopsio/hoop/gateway/review/jit"
 	"io"
 	"log"
 	"os"
@@ -258,6 +259,25 @@ func (s *Server) processClientConnect(pkt *pb.Packet, client *client.Client, con
 		pb.SpecGatewaySessionID: []byte(client.SessionID),
 		pb.SpecConnectionType:   []byte(conn.Type),
 	}
+
+	existingJitData := pkt.Spec[pb.SpecJitDataKey]
+	if existingJitData != nil {
+		var jit justintime.Jit
+		if err := pb.GobDecodeInto(existingJitData, &jit); err != nil {
+			return err
+		}
+		if jit.Status != justintime.StatusApproved {
+			spec[pb.SpecGatewayJitID] = []byte(jit.Id)
+			clientStream := getClientStream(client.SessionID)
+			_ = clientStream.Send(&pb.Packet{
+				Type:    string(pb.PacketClientGatewayConnectWaitType),
+				Spec:    spec,
+				Payload: pkt.Payload,
+			})
+			return nil
+		}
+	}
+
 	if s.GcpDLPRawCredentials != "" {
 		spec[pb.SpecAgentGCPRawCredentialsKey] = []byte(s.GcpDLPRawCredentials)
 	}
@@ -270,8 +290,12 @@ func (s *Server) processClientConnect(pkt *pb.Packet, client *client.Client, con
 
 	agentStream := getAgentStream(conn.AgentId)
 	if agentStream == nil {
-		log.Printf("agent not found for connection %s", conn.Name)
-		return status.Errorf(codes.FailedPrecondition, "agent is offline")
+		clientStream := getClientStream(client.SessionID)
+		_ = clientStream.Send(&pb.Packet{
+			Type: string(pb.PacketClientConnectAgentOfflineType),
+			Spec: spec,
+		})
+		return nil
 	}
 
 	_ = agentStream.Send(&pb.Packet{
@@ -389,6 +413,22 @@ func (s *Server) ReviewStatusChange(sessionID string, status rv.Status, command 
 			Type:    string(t),
 			Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)},
 			Payload: command,
+		})
+	}
+	return nil
+}
+
+func (s *Server) JitStatusChange(sessionID string, status justintime.Status) error {
+	clientStream := getClientStream(sessionID)
+	if clientStream != nil {
+		t := string(pb.PacketClientGatewayConnectApproveType)
+		if status == justintime.StatusRejected {
+			t = string(pb.PacketClientGatewayConnectRejectType)
+		}
+		_ = clientStream.Send(&pb.Packet{
+			Type:    string(t),
+			Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)},
+			Payload: nil,
 		})
 	}
 	return nil
