@@ -76,12 +76,12 @@ func runConnect(args []string) {
 		pkt, err := c.client.Recv()
 		c.processGracefulExit(err)
 		if pkt != nil {
-			c.processPacket(pkt, config)
+			c.processPacket(pkt, config, loader)
 		}
 	}
 }
 
-func (c *connect) processPacket(pkt *pb.Packet, config *Config) {
+func (c *connect) processPacket(pkt *pb.Packet, config *Config, loader *spinner.Spinner) {
 	switch pb.PacketType(pkt.Type) {
 
 	// connect
@@ -143,11 +143,15 @@ func (c *connect) processPacket(pkt *pb.Packet, config *Config) {
 			c.processGracefulExit(fmt.Errorf(`connection type %q not implemented`, string(connnectionType)))
 		}
 	case pb.PacketClientGatewayConnectWaitType:
+		loader.Stop()
+		loader.Start()
+		loader.Suffix = " Waiting approval"
 		c.waitingJit = pkt
 		reviewID := string(pkt.Spec[pb.SpecGatewayJitID])
 		fmt.Println("\nThis connection requires review. We will notify you here when it is approved.")
 		fmt.Printf("Check the status at: %s\n\n", buildReviewUrl(config, reviewID, "jits"))
 	case pb.PacketClientGatewayConnectApproveType:
+		loader.Stop()
 		tty, err := os.Open("/dev/tty")
 		if err != nil {
 			log.Fatal(err)
@@ -190,6 +194,7 @@ func (c *connect) processPacket(pkt *pb.Packet, config *Config) {
 			string(sessionID), string(pkt.GetPayload()))
 		c.processGracefulExit(errMsg)
 	case pb.PacketClientConnectAgentOfflineType:
+		loader.Stop()
 		tty, err := os.Open("/dev/tty")
 		if err != nil {
 			log.Fatal(err)

@@ -105,7 +105,7 @@ func runExec(args []string) {
 		pkt, err := c.client.Recv()
 		c.processGracefulExit(err)
 		if pkt != nil {
-			c.processPacket(pkt, config)
+			c.processPacket(pkt, config, loader)
 		}
 	}
 }
