@@ -92,15 +92,6 @@ func (r *jitPlugin) OnConnect(config plugin.Config) error {
 func (r *jitPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *pb.Packet) error {
 	switch pb.PacketType(pkt.GetType()) {
 	case pb.PacketClientGatewayConnectType:
-		if len(config) != 1 {
-			return errors.New("invalid just-in-time plugin configuration")
-		}
-
-		timeInt, err := strconv.Atoi(config[0])
-		if err != nil {
-			return errors.New("invalid just-in-time plugin configuration")
-		}
-
 		context := &user.Context{
 			Org:  &user.Org{Id: pluginConfig.Org},
 			User: &user.User{Id: pluginConfig.UserID},
@@ -112,7 +103,22 @@ func (r *jitPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *
 			return err
 		}
 
+		var timeInt int
+		requestTime := pkt.Spec[pb.SpecJitTimeout]
+		if requestTime != nil {
+			timeInt, err = strconv.Atoi(string(requestTime))
+			if err != nil {
+				return errors.New("invalid just-in-time plugin configuration")
+			}
+		}
+
 		if existingJit != nil {
+			if existingJit.Time == 0 && timeInt != 0 {
+				existingJit.Time = time.Duration(timeInt)
+				if err := r.jitService.Persist(context, existingJit); err != nil {
+					return err
+				}
+			}
 			b, _ := pb.GobEncode(existingJit)
 			pkt.Spec[pb.SpecJitDataKey] = b
 			return nil

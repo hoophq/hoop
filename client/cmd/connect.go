@@ -142,6 +142,39 @@ func (c *connect) processPacket(pkt *pb.Packet, config *Config, loader *spinner.
 		default:
 			c.processGracefulExit(fmt.Errorf(`connection type %q not implemented`, string(connnectionType)))
 		}
+	case pb.PacketClientGatewayConnectRequestTimeoutType:
+		loader.Stop()
+		c.waitingJit = pkt
+		tty, err := os.Open("/dev/tty")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer tty.Close()
+
+		oldStdin := os.Stdin
+		defer func() { os.Stdin = oldStdin }()
+
+		os.Stdin = tty
+
+		var input string
+		fmt.Print("For how many minutes do you want to connect? ")
+
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			s := scanner.Text()
+			input += s
+			break
+		}
+
+		if _, err := strconv.Atoi(input); err != nil {
+			c.processGracefulExit(fmt.Errorf(`invalid number %q`, input))
+			return
+		}
+
+		c.waitingJit.Type = string(pb.PacketClientGatewayConnectType)
+		c.waitingJit.Spec[pb.SpecJitTimeout] = []byte(input)
+		_ = c.client.Send(c.waitingJit)
+
 	case pb.PacketClientGatewayConnectWaitType:
 		loader.Stop()
 		loader.Start()

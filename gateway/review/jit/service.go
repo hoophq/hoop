@@ -2,6 +2,7 @@ package jit
 
 import (
 	"github.com/google/uuid"
+	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/user"
 	"time"
 )
@@ -91,21 +92,37 @@ func (s *Service) Persist(context *user.Context, jit *Jit) error {
 }
 
 func (s *Service) Review(context *user.Context, existingJit *Jit, status Status) error {
-	existingJit.Status = status
+	jitsCount := len(existingJit.JitGroups)
+	approvedCount := 0
 
-	for i := range existingJit.JitGroups {
-		t := time.Now().String()
-		existingJit.JitGroups[i].Status = status
-		existingJit.JitGroups[i].ReviewedBy = &Owner{Id: context.User.Id}
-		existingJit.JitGroups[i].ReviewDate = &t
+	if status == StatusRejected {
+		existingJit.Status = status
+	}
+
+	for i, r := range existingJit.JitGroups {
+		if pb.IsInList(r.Group, context.User.Groups) {
+			t := time.Now().String()
+			existingJit.JitGroups[i].Status = status
+			existingJit.JitGroups[i].ReviewedBy = &Owner{Id: context.User.Id}
+			existingJit.JitGroups[i].ReviewDate = &t
+		}
+		if existingJit.JitGroups[i].Status == StatusApproved {
+			approvedCount++
+		}
+	}
+
+	if jitsCount == approvedCount {
+		existingJit.Status = StatusApproved
 	}
 
 	if err := s.Persist(context, existingJit); err != nil {
 		return err
 	}
 
-	if err := s.TransportService.JitStatusChange(existingJit.Session, existingJit.Status); err != nil {
-		return err
+	if existingJit.Status == StatusApproved || existingJit.Status == StatusRejected {
+		if err := s.TransportService.JitStatusChange(existingJit.Session, existingJit.Status); err != nil {
+			return err
+		}
 	}
 
 	return nil

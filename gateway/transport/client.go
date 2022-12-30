@@ -300,12 +300,24 @@ func (s *Server) processClientConnect(pkt *pb.Packet, client *client.Client, con
 		}
 		if jit.Status != justintime.StatusApproved {
 			spec[pb.SpecGatewayJitID] = []byte(jit.Id)
+
+			requestedTime := pkt.Spec[pb.SpecJitTimeout]
 			clientStream := getClientStream(client.SessionID)
+			if requestedTime != nil {
+				_ = clientStream.Send(&pb.Packet{
+					Type:    string(pb.PacketClientGatewayConnectWaitType),
+					Spec:    spec,
+					Payload: pkt.Payload,
+				})
+				return nil
+			}
+
 			_ = clientStream.Send(&pb.Packet{
-				Type:    string(pb.PacketClientGatewayConnectWaitType),
+				Type:    string(pb.PacketClientGatewayConnectRequestTimeoutType),
 				Spec:    spec,
 				Payload: pkt.Payload,
 			})
+
 			return nil
 		}
 		ctx, _ := context.WithTimeout(client.Context, time.Minute*jit.Time)
