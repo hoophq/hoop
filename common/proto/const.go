@@ -8,10 +8,16 @@ const (
 	PacketAgentGatewayConnectOK  PacketType = "Agent::Gateway::ConnectOK"
 
 	// client->agent connection
-	PacketClientGatewayConnectType  PacketType = "Client::Gateway::Connect"
-	PacketClientAgentConnectType    PacketType = "Client::Agent::Connect"
-	PacketClientAgentConnectOKType  PacketType = "Client::Agent::ConnectOK"
-	PacketClientAgentConnectErrType PacketType = "Client::Agent::ConnectErr"
+	PacketClientGatewayConnectType               PacketType = "Client::Gateway::Connect"
+	PacketClientAgentConnectType                 PacketType = "Client::Agent::Connect"
+	PacketClientGatewayConnectWaitType           PacketType = "Client::Gateway::ConnectWait"
+	PacketClientGatewayConnectApproveType        PacketType = "Client::Gateway::ConnectApprove"
+	PacketClientGatewayConnectRejectType         PacketType = "Client::Gateway::ConnectReject"
+	PacketClientAgentConnectOKType               PacketType = "Client::Agent::ConnectOK"
+	PacketClientAgentConnectErrType              PacketType = "Client::Agent::ConnectErr"
+	PacketClientConnectAgentOfflineType          PacketType = "Client::Gateway::ConnectAgentOffline"
+	PacketClientGatewayConnectRequestTimeoutType PacketType = "Client::Gateway::ConnectRequestTimeout"
+	PacketClientConnectTimeoutType               PacketType = "Client::Gateway::ConnectTimeout"
 
 	// client->agent exec
 	PacketClientGatewayExecType        PacketType = "Client::Gateway::Exec"
@@ -48,6 +54,9 @@ const (
 	SpecTCPServerConnectKey       string = "tcp.server_connect"
 	SpecReviewDataKey             string = "review.data"
 	SpecGatewayReviewID           string = "review.id"
+	SpecJitDataKey                string = "jit.data"
+	SpecGatewayJitID              string = "jit.id"
+	SpecJitTimeout                string = "jit.timeout"
 
 	DefaultKeepAlive time.Duration = 10 * time.Second
 

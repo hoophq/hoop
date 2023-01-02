@@ -50,6 +50,7 @@ type connect struct {
 	clientArgs     []string
 	connectionName string
 	waitingReview  *pb.Packet
+	waitingJit     *pb.Packet
 	loader         *spinner.Spinner
 }
 
@@ -75,12 +76,12 @@ func runConnect(args []string) {
 		pkt, err := c.client.Recv()
 		c.processGracefulExit(err)
 		if pkt != nil {
-			c.processPacket(pkt, config)
+			c.processPacket(pkt, config, loader)
 		}
 	}
 }
 
-func (c *connect) processPacket(pkt *pb.Packet, config *Config) {
+func (c *connect) processPacket(pkt *pb.Packet, config *Config, loader *spinner.Spinner) {
 	switch pb.PacketType(pkt.Type) {
 
 	// connect
@@ -141,11 +142,126 @@ func (c *connect) processPacket(pkt *pb.Packet, config *Config) {
 		default:
 			c.processGracefulExit(fmt.Errorf(`connection type %q not implemented`, string(connnectionType)))
 		}
+	case pb.PacketClientGatewayConnectRequestTimeoutType:
+		loader.Stop()
+		c.waitingJit = pkt
+		tty, err := os.Open("/dev/tty")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer tty.Close()
+
+		oldStdin := os.Stdin
+		defer func() { os.Stdin = oldStdin }()
+
+		os.Stdin = tty
+
+		var input string
+		fmt.Print("For how many minutes do you want to connect? ")
+
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			s := scanner.Text()
+			input += s
+			break
+		}
+
+		if _, err := strconv.Atoi(input); err != nil {
+			c.processGracefulExit(fmt.Errorf(`invalid number %q`, input))
+		}
+
+		c.waitingJit.Type = string(pb.PacketClientGatewayConnectType)
+		c.waitingJit.Spec[pb.SpecJitTimeout] = []byte(input)
+		_ = c.client.Send(c.waitingJit)
+
+	case pb.PacketClientGatewayConnectWaitType:
+		loader.Stop()
+		loader.Start()
+		loader.Suffix = " Waiting approval"
+		c.waitingJit = pkt
+		reviewID := string(pkt.Spec[pb.SpecGatewayJitID])
+		fmt.Println("\nThis connection requires review. We will notify you here when it is approved.")
+		fmt.Printf("Check the status at: %s\n\n", buildReviewUrl(config, reviewID, "jits"))
+	case pb.PacketClientGatewayConnectApproveType:
+		loader.Stop()
+		tty, err := os.Open("/dev/tty")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer tty.Close()
+
+		oldStdin := os.Stdin
+		defer func() { os.Stdin = oldStdin }()
+
+		os.Stdin = tty
+
+		var input string
+		fmt.Print("The connection was approved! Do you want to continue?\n (y/n) [y] ")
+
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			s := scanner.Text()
+			input += s
+			break
+		}
+
+		if input == "" {
+			input = "y"
+		}
+
+		input = input[0:1]
+
+		if input == "y" {
+			c.waitingJit.Type = string(pb.PacketClientGatewayConnectType)
+			_ = c.client.Send(c.waitingJit)
+			c.waitingJit = nil
+			return
+		}
+		c.processGracefulExit(errors.New("user cancelled the action"))
+	case pb.PacketClientGatewayConnectRejectType:
+		c.processGracefulExit(errors.New("connection rejected. Sorry"))
 	case pb.PacketClientAgentConnectErrType:
 		sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 		errMsg := fmt.Errorf("session=%s - failed connecting with gateway, err=%v",
 			string(sessionID), string(pkt.GetPayload()))
 		c.processGracefulExit(errMsg)
+	case pb.PacketClientConnectAgentOfflineType:
+		loader.Stop()
+		tty, err := os.Open("/dev/tty")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer tty.Close()
+
+		oldStdin := os.Stdin
+		defer func() { os.Stdin = oldStdin }()
+
+		os.Stdin = tty
+
+		var input string
+		fmt.Print("Agent is offline. Do you want to try again?\n (y/n) [y] ")
+
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			s := scanner.Text()
+			input += s
+			break
+		}
+
+		if input == "" {
+			input = "y"
+		}
+
+		input = input[0:1]
+
+		if input == "y" {
+			pkt.Type = string(pb.PacketClientGatewayConnectType)
+			_ = c.client.Send(pkt)
+			return
+		}
+		c.processGracefulExit(errors.New("user cancelled the action"))
+	case pb.PacketClientConnectTimeoutType:
+		fmt.Println("Time is up. Please reconnect to continue using")
 
 	// exec
 	case pb.PacketClientExecAgentOfflineType:
@@ -186,7 +302,7 @@ func (c *connect) processPacket(pkt *pb.Packet, config *Config) {
 		c.waitingReview = pkt
 		reviewID := string(pkt.Spec[pb.SpecGatewayReviewID])
 		fmt.Println("\nThis command requires review. We will notify you here when it is approved.")
-		fmt.Printf("Check the status at: %s\n\n", buildReviewUrl(config, reviewID))
+		fmt.Printf("Check the status at: %s\n\n", buildReviewUrl(config, reviewID, "reviews"))
 	case pb.PacketClientGatewayExecApproveType:
 		tty, err := os.Open("/dev/tty")
 		if err != nil {

@@ -45,7 +45,7 @@ func (m *MagicBell) Send(notification Notification) {
 			log.Printf("failed to send magic bell notification: %v", err)
 			return
 		}
-		fmt.Printf("Sent notification to %d recipients", len(notification.Recipients))
+		fmt.Printf("Sent notification to %d recipients\n", len(notification.Recipients))
 		defer resp.Body.Close()
 	}
 }

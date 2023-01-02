@@ -1,13 +1,16 @@
 package transport
 
 import (
+	"context"
 	"fmt"
+	justintime "github.com/runopsio/hoop/gateway/review/jit"
 	"io"
 	"log"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	rv "github.com/runopsio/hoop/gateway/review"
 
@@ -15,6 +18,7 @@ import (
 	pluginsrbac "github.com/runopsio/hoop/gateway/transport/plugins/accesscontrol"
 	pluginsaudit "github.com/runopsio/hoop/gateway/transport/plugins/audit"
 	pluginsdlp "github.com/runopsio/hoop/gateway/transport/plugins/dlp"
+	pluginsjit "github.com/runopsio/hoop/gateway/transport/plugins/jit"
 	pluginsreview "github.com/runopsio/hoop/gateway/transport/plugins/review"
 	"github.com/runopsio/hoop/gateway/user"
 
@@ -62,6 +66,7 @@ func LoadPlugins(apiURL string) {
 	allPlugins = []Plugin{
 		pluginsaudit.New(),
 		pluginsreview.New(apiURL),
+		pluginsjit.New(apiURL),
 		pluginsdlp.New(),
 		pluginsrbac.New(),
 	}
@@ -161,10 +166,34 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	}
 
 	if clientVerb == pb.ClientVerbConnect {
+		hasReview := false
+		hasJit := false
 		for _, p := range plugins {
 			if p.Plugin.Name() == pluginsreview.Name {
-				return status.Errorf(codes.PermissionDenied, fmt.Sprintf("This connection is subject to review. Please, use 'hoop exec %s` to interact", conn.Name))
+				hasReview = true
 			}
+			if p.Plugin.Name() == pluginsjit.Name {
+				hasJit = true
+			}
+		}
+		if hasReview && !hasJit {
+			return status.Errorf(codes.PermissionDenied, fmt.Sprintf("This connection is subject to review. Please, use 'hoop exec %s` to interact", conn.Name))
+		}
+	}
+
+	if clientVerb == pb.ClientVerbExec {
+		hasReview := false
+		hasJit := false
+		for _, p := range plugins {
+			if p.Plugin.Name() == pluginsreview.Name {
+				hasReview = true
+			}
+			if p.Plugin.Name() == pluginsjit.Name {
+				hasJit = true
+			}
+		}
+		if hasJit && !hasReview {
+			return status.Errorf(codes.PermissionDenied, fmt.Sprintf("This connection is subject to just-in-time review. Please, use 'hoop connect %s` to interact", conn.Name))
 		}
 	}
 
@@ -191,10 +220,16 @@ func (s *Server) listenClientMessages(
 	config plugin.Config) error {
 
 	ctx := stream.Context()
+	c.Context = ctx
 
 	for {
 		select {
 		case <-ctx.Done():
+			return nil
+		case <-c.Context.Done():
+			_ = stream.Send(&pb.Packet{
+				Type: string(pb.PacketClientConnectTimeoutType),
+			})
 			return nil
 		default:
 		}
@@ -256,6 +291,39 @@ func (s *Server) processClientConnect(pkt *pb.Packet, client *client.Client, con
 		pb.SpecGatewaySessionID: []byte(client.SessionID),
 		pb.SpecConnectionType:   []byte(conn.Type),
 	}
+
+	existingJitData := pkt.Spec[pb.SpecJitDataKey]
+	if existingJitData != nil {
+		var jit justintime.Jit
+		if err := pb.GobDecodeInto(existingJitData, &jit); err != nil {
+			return err
+		}
+		if jit.Status != justintime.StatusApproved {
+			spec[pb.SpecGatewayJitID] = []byte(jit.Id)
+
+			requestedTime := pkt.Spec[pb.SpecJitTimeout]
+			clientStream := getClientStream(client.SessionID)
+			if requestedTime != nil {
+				_ = clientStream.Send(&pb.Packet{
+					Type:    string(pb.PacketClientGatewayConnectWaitType),
+					Spec:    spec,
+					Payload: pkt.Payload,
+				})
+				return nil
+			}
+
+			_ = clientStream.Send(&pb.Packet{
+				Type:    string(pb.PacketClientGatewayConnectRequestTimeoutType),
+				Spec:    spec,
+				Payload: pkt.Payload,
+			})
+
+			return nil
+		}
+		ctx, _ := context.WithTimeout(client.Context, time.Minute*jit.Time)
+		client.Context = ctx
+	}
+
 	if s.GcpDLPRawCredentials != "" {
 		spec[pb.SpecAgentGCPRawCredentialsKey] = []byte(s.GcpDLPRawCredentials)
 	}
@@ -268,8 +336,12 @@ func (s *Server) processClientConnect(pkt *pb.Packet, client *client.Client, con
 
 	agentStream := getAgentStream(conn.AgentId)
 	if agentStream == nil {
-		log.Printf("agent not found for connection %s", conn.Name)
-		return status.Errorf(codes.FailedPrecondition, "agent is offline")
+		clientStream := getClientStream(client.SessionID)
+		_ = clientStream.Send(&pb.Packet{
+			Type: string(pb.PacketClientConnectAgentOfflineType),
+			Spec: spec,
+		})
+		return nil
 	}
 
 	_ = agentStream.Send(&pb.Packet{
@@ -392,6 +464,22 @@ func (s *Server) ReviewStatusChange(sessionID string, status rv.Status, command 
 	return nil
 }
 
+func (s *Server) JitStatusChange(sessionID string, status justintime.Status) error {
+	clientStream := getClientStream(sessionID)
+	if clientStream != nil {
+		t := string(pb.PacketClientGatewayConnectApproveType)
+		if status == justintime.StatusRejected {
+			t = string(pb.PacketClientGatewayConnectRejectType)
+		}
+		_ = clientStream.Send(&pb.Packet{
+			Type:    string(t),
+			Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)},
+			Payload: nil,
+		})
+	}
+	return nil
+}
+
 func (s *Server) disconnectClient(c *client.Client) {
 	unbindClient(c.SessionID)
 	c.Status = client.StatusDisconnected
@@ -446,6 +534,12 @@ func (s *Server) loadConnectPlugins(ctx *user.Context, config plugin.Config) ([]
 			config.ParamsData[pluginsreview.ReviewServiceParam] = &s.ReviewService
 			config.ParamsData[pluginsreview.UserServiceParam] = &s.UserService
 			config.ParamsData[pluginsreview.NotificationServiceParam] = s.NotificationService
+		}
+
+		if p.Name() == pluginsjit.Name {
+			config.ParamsData[pluginsjit.JitServiceParam] = &s.JitService
+			config.ParamsData[pluginsjit.UserServiceParam] = &s.UserService
+			config.ParamsData[pluginsjit.NotificationServiceParam] = s.NotificationService
 		}
 
 		for _, c := range p1.Connections {
