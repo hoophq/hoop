@@ -11,9 +11,8 @@ import (
 	"syscall"
 	"time"
 
-	justintime "github.com/runopsio/hoop/gateway/review/jit"
-
 	rv "github.com/runopsio/hoop/gateway/review"
+	justintime "github.com/runopsio/hoop/gateway/review/jit"
 
 	"github.com/runopsio/hoop/gateway/plugin"
 	pluginsrbac "github.com/runopsio/hoop/gateway/transport/plugins/accesscontrol"

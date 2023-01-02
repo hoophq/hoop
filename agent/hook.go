@@ -64,7 +64,6 @@ func (a *Agent) newHookClient(sessionID string, params *pb.AgentConnectionParams
 func (a *Agent) executeRPCOnConnect(sessionID string, client *hook.Client) error {
 	if err := client.RPCOnConnect(); err != nil {
 		go client.Kill()
-		// TODO: use the response to add a friendly error!
 		err = fmt.Errorf("plugin %s has rejected the request, reason=%v", client.PluginName(), err)
 		log.Printf("session=%s - %s", sessionID, err)
 		_ = a.client.Send(&pb.Packet{
@@ -81,18 +80,15 @@ func (a *Agent) loadHooks(sessionID string, params *pb.AgentConnectionParams) er
 	currentHookList := params.PluginHookList
 	newState := hook.NewClientList(params)
 	oldState, _ := a.connStore.Get(pluginHooksKey).(*hook.List)
-	// oldState, setterFn := loadPluginHooks(a.connStore, params.ConnectionName)
 	if oldState != nil {
 		for _, newHook := range currentHookList {
 			pluginName, _ := newHook["plugin_name"].(string)
 			if old, ok := oldState.GetItem(pluginName); ok {
-				// if old, ok := oldState.items[pluginName]; ok {
 				newConnectionConfig, ok := newHook["connection_config"].(map[string]any)
 				if !ok {
 					return fmt.Errorf("plugin on inconsistent state, missing 'connection_config' key")
 				}
 				if newConnectionConfig["jsonb64"] == old.ConnectionConfig() {
-					// if newConnectionConfig["jsonb64"] == old.connectConfig.ConnectionConfig["jsonb64"] {
 					if !old.Exited() {
 						// keep the old plugin instance in memory
 						// prevents from initializing multiple instances of plugins
