@@ -83,7 +83,7 @@ func (r *jitPlugin) OnStartup(config plugin.Config) error {
 
 func (r *jitPlugin) OnConnect(config plugin.Config) error {
 	if config.Org == "" || config.SessionId == "" {
-		return fmt.Errorf("failed processing review plugin, missing org_id and session_id params")
+		return fmt.Errorf("failed processing jit plugin, missing org_id and session_id params")
 	}
 
 	return nil
@@ -108,7 +108,7 @@ func (r *jitPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *
 		if requestTime != nil {
 			timeInt, err = strconv.Atoi(string(requestTime))
 			if err != nil {
-				return errors.New("invalid just-in-time plugin configuration")
+				return errors.New("invalid timeout configuration")
 			}
 		}
 
