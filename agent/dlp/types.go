@@ -62,6 +62,7 @@ type (
 		packetType pb.PacketType
 		packetSpec map[string][]byte
 		dlpConfig  *deidentifyConfig
+		hookExec   pb.PluginHookExec
 	}
 	deidentifyConfig struct {
 		// Character to use to mask the sensitive values, for example, `*` for an

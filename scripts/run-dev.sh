@@ -3,7 +3,7 @@
 trap ctrl_c INT
 
 function ctrl_c() {
-    ps aux |grep -i /tmp/hoop |awk {'print $2'} |xargs kill -9
+    ps aux |grep -i /tmp/hoop |awk {'print $2'} |xargs kill
     exit 130
 }
 

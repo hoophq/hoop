@@ -6,11 +6,14 @@ import (
 	"io"
 	"log"
 	"net"
-	"strconv"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/runopsio/hoop/agent/dlp"
+	"github.com/runopsio/hoop/agent/hook"
 	term "github.com/runopsio/hoop/agent/terminal"
 	"github.com/runopsio/hoop/common/memory"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -89,11 +92,49 @@ func parseConnectionEnvVars(envVars map[string]any, connType string) (*connEnv, 
 func New(client pb.ClientTransport) *Agent {
 	return &Agent{
 		client:    client,
-		connStore: memory.New()}
+		connStore: memory.New(),
+	}
+}
+
+func (a *Agent) handleGracefulExit() {
+	sigc := make(chan os.Signal, 1)
+	signal.Notify(sigc,
+		syscall.SIGHUP,
+		syscall.SIGINT,
+		syscall.SIGTERM,
+		syscall.SIGQUIT)
+	go func() {
+		sigval := <-sigc
+		for _, obj := range a.connStore.List() {
+			if client, _ := obj.(io.Closer); client != nil {
+				_ = client.Close()
+			}
+		}
+
+		switch sigval {
+		case syscall.SIGHUP:
+			os.Exit(int(syscall.SIGHUP))
+		case syscall.SIGINT:
+			os.Exit(int(syscall.SIGINT))
+		case syscall.SIGTERM:
+			os.Exit(int(syscall.SIGTERM))
+		case syscall.SIGQUIT:
+			os.Exit(int(syscall.SIGQUIT))
+		}
+	}()
+}
+
+func (a *Agent) connectionParams(sessionID string) (*pb.AgentConnectionParams, *hook.List) {
+	storeKey := fmt.Sprintf(pluginHookSessionsKey, sessionID)
+	if hooks, ok := a.connStore.Get(storeKey).(*hook.List); ok {
+		return hooks.ConnectionParams(), hooks
+	}
+	return nil, nil
 }
 
 func (a *Agent) Run(svrAddr, token string, firstConnTry bool) {
 	a.client.StartKeepAlive()
+	a.handleGracefulExit()
 
 	for {
 		pkt, err := a.client.Recv()
@@ -118,13 +159,19 @@ func (a *Agent) Run(svrAddr, token string, firstConnTry bool) {
 		}
 
 		switch pb.PacketType(pkt.Type) {
-		// gateway->agent connection ok
-		case pb.PacketAgentGatewayConnectOK:
-			fmt.Println("connected...")
-
 		// client->agent connect
 		case pb.PacketClientAgentConnectType:
 			a.processClientConnect(pkt)
+		case pb.PacketAgentGatewayConnectOK:
+			fmt.Println("connected...")
+
+		// gateway->agent close session
+		case pb.PacketSessionCloseType:
+			a.processSessionClose(pkt)
+
+		// tcp close
+		case pb.PacketCloseTCPConnectionType:
+			a.processTCPCloseConnection(pkt)
 
 		// client->agent exec
 		case pb.PacketClientAgentExecType:
@@ -133,8 +180,10 @@ func (a *Agent) Run(svrAddr, token string, firstConnTry bool) {
 		// PG protocol
 		case pb.PacketPGWriteServerType:
 			a.processPGProtocol(pkt)
-		case pb.PacketCloseTCPConnectionType:
-			a.processTCPCloseConnection(pkt)
+
+		// raw tcp
+		case pb.PacketTCPWriteServerType:
+			a.processTCPWriteServer(pkt)
 
 		// terminal
 		case pb.PacketTerminalWriteAgentStdinType:
@@ -144,9 +193,6 @@ func (a *Agent) Run(svrAddr, token string, firstConnTry bool) {
 		case pb.PacketTerminalCloseType:
 			a.doTerminalCloseTerm(pkt)
 
-		// raw tcp
-		case pb.PacketTCPWriteServerType:
-			a.processTCPWriteServer(pkt)
 		}
 	}
 }
@@ -236,18 +282,22 @@ func (a *Agent) processClientConnect(pkt *pb.Packet) {
 		connParams.EnvVars[connEnvKey] = connEnvVars
 	}
 
-	if connType == pb.ConnectionTypeCommandLine {
-		sessionIDKey = fmt.Sprintf(connectionStoreParamsKey, string(sessionID))
-	}
-
 	if a.connStore.Get(dlpClientKey) == nil {
 		dlpClient := a.decodeDLPCredentials(sessionID, pkt, packetErrType)
 		if dlpClient != nil {
 			a.connStore.Set(dlpClientKey, dlpClient)
 		}
 	}
-	a.connStore.Set(sessionIDKey, connParams)
 
+	if err := a.loadHooks(sessionIDKey, connParams); err != nil {
+		log.Println(err)
+		_ = a.client.Send(&pb.Packet{
+			Type:    packetErrType.String(),
+			Payload: []byte(`failed loading hook plugins for this connection`),
+			Spec:    map[string][]byte{pb.SpecGatewaySessionID: sessionID},
+		})
+		return
+	}
 	a.client.Send(&pb.Packet{
 		Type: pb.PacketClientAgentConnectOKType.String(),
 		Spec: map[string][]byte{
@@ -260,7 +310,7 @@ func (a *Agent) processTCPCloseConnection(pkt *pb.Packet) {
 	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 	clientConnID := pkt.Spec[pb.SpecClientConnectionID]
 	filterKey := fmt.Sprintf("%s:%s", string(sessionID), string(clientConnID))
-	log.Printf("received %s, filter-by=%s", pb.PacketCloseTCPConnectionType, filterKey)
+	log.Printf("received %s, filter-by=%s", pkt.Type, filterKey)
 	filterFn := func(k string) bool { return strings.HasPrefix(k, filterKey) }
 	for key, obj := range a.connStore.Filter(filterFn) {
 		if client, _ := obj.(io.Closer); client != nil {
@@ -274,46 +324,40 @@ func (a *Agent) processTCPCloseConnection(pkt *pb.Packet) {
 	}
 }
 
-func (a *Agent) doExec(pkt *pb.Packet) {
-	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
-	packetErrType := pb.PacketClientAgentExecErrType
-	log.Printf("session=%v - received execution request", string(sessionID))
-
-	connParams, _, err := a.buildConnectionParams(pkt, packetErrType)
-	if err != nil {
-		_ = a.client.Send(&pb.Packet{
-			Type:    packetErrType.String(),
-			Payload: []byte(err.Error()),
-			Spec:    map[string][]byte{pb.SpecGatewaySessionID: sessionID},
-		})
+func (a *Agent) processSessionClose(pkt *pb.Packet) {
+	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
+	if sessionID == "" {
+		log.Printf("received packet %v without a session", pkt.Type)
 		return
 	}
-
-	cmd, err := term.NewCommand(connParams.EnvVars, append(connParams.CmdList, connParams.ClientArgs...)...)
-	if err != nil {
-		log.Printf("failed executing command, err=%v", err)
-		_ = a.client.Send(&pb.Packet{
-			Type:    packetErrType.String(),
-			Payload: []byte(err.Error()),
-			Spec:    map[string][]byte{pb.SpecGatewaySessionID: sessionID},
-		})
-		return
-	}
-	log.Printf("session=%v, tty=false - executing command=%q", string(sessionID), cmd.String())
-
-	spec := map[string][]byte{pb.SpecGatewaySessionID: sessionID}
-	stdoutWriter := pb.NewStreamWriter(a.client, pb.PacketClientAgentExecOKType, spec)
-
-	onExecErr := func(exitCode int, errMsg string, v ...any) {
-		errMsg = fmt.Sprintf(errMsg, v...)
-		spec[pb.SpecClientExecExitCodeKey] = []byte(strconv.Itoa(exitCode))
-		_, _ = pb.NewStreamWriter(a.client, packetErrType, spec).
-			Write([]byte(errMsg))
-	}
-
-	// TODO: add client args
-	if err = cmd.Run(stdoutWriter, pkt.Payload, onExecErr); err != nil {
-		log.Printf("session=%v - err=%v", string(sessionID), err)
+	log.Printf("session=%s - received %s, cleaning up session", sessionID, pkt.Type)
+	filterFn := func(k string) bool { return strings.Contains(k, sessionID) }
+	for key, obj := range a.connStore.Filter(filterFn) {
+		switch v := obj.(type) {
+		case *hook.List:
+			a.connStore.Del(key)
+			lastSession := true
+			filterFn := func(k string) bool { return strings.HasPrefix(k, "pluginhooks-sessions") }
+			for _, o := range a.connStore.Filter(filterFn) {
+				if h, ok := o.(*hook.List); ok {
+					if v.ID() == h.ID() {
+						lastSession = false
+						break
+					}
+				}
+			}
+			// end the plugin execution if it's the last session
+			if lastSession {
+				go v.Close()
+			}
+		case io.Closer:
+			go func() {
+				if err := v.Close(); err != nil {
+					log.Printf("failed closing connection, err=%v", err)
+				}
+			}()
+			a.connStore.Del(key)
+		}
 	}
 }
 

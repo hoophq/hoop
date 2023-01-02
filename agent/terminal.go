@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/creack/pty"
+	"github.com/hoophq/pluginhooks"
 	"github.com/runopsio/hoop/agent/dlp"
 	term "github.com/runopsio/hoop/agent/terminal"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -16,23 +17,35 @@ import (
 
 func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
+	connParams, pluginHooks := a.connectionParams(sessionID)
+	if connParams == nil {
+		log.Printf("session=%s - connection params not found", sessionID)
+		a.sendCloseTerm(sessionID, "internal error, connection params not found", "")
+		return
+	}
 	sessionIDKey := fmt.Sprintf(cmdStoreKey, sessionID)
 	cmdObj := a.connStore.Get(sessionIDKey)
 	cmd, ok := cmdObj.(*term.Command)
 	if ok {
+		mutatePayload, err := pluginHooks.ExecRPCOnRecv(&pluginhooks.Request{
+			SessionID:  sessionID,
+			PacketType: pkt.Type,
+			Payload:    pkt.Payload,
+		})
+		if err != nil {
+			msg := fmt.Sprintf("failed processing hook, reason=%v", err)
+			log.Println(msg)
+			a.sendCloseTerm(sessionID, msg, "")
+			return
+		}
+		if len(mutatePayload) > 0 {
+			pkt.Payload = mutatePayload
+		}
 		// Write to tty stdin content
 		if err := cmd.WriteTTY(pkt.Payload); err != nil {
 			log.Printf("session=%v | tty=true - failed copying stdin to tty, err=%v", string(sessionID), err)
 			a.sendCloseTerm(sessionID, "", "")
 		}
-		return
-	}
-
-	connParamsObj := a.connStore.Get(fmt.Sprintf(connectionStoreParamsKey, string(sessionID)))
-	connParams, ok := connParamsObj.(*pb.AgentConnectionParams)
-	if !ok {
-		log.Printf("session=%s - connection params not found", sessionID)
-		a.sendCloseTerm(sessionID, "internal error, connection params not found", "")
 		return
 	}
 
@@ -47,10 +60,11 @@ func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {
 	onExecErr := func(exitCode int, errMsg string, v ...any) {
 		a.sendCloseTerm(sessionID, fmt.Sprintf(errMsg, v...), strconv.Itoa(exitCode))
 	}
-	stdoutWriter := pb.NewStreamWriter(a.client, pb.PacketTerminalClientWriteStdoutType, spec)
+	stdoutWriter := pb.NewHookStreamWriter(a.client, pb.PacketTerminalClientWriteStdoutType, spec, pluginHooks)
 	if dlpClient, ok := a.connStore.Get(dlpClientKey).(dlp.Client); ok {
 		stdoutWriter = dlp.NewDLPStreamWriter(
 			a.client,
+			pluginHooks,
 			dlpClient,
 			pb.PacketTerminalClientWriteStdoutType,
 			spec,
@@ -87,6 +101,7 @@ func (a *Agent) doTerminalCloseTerm(pkt *pb.Packet) {
 		log.Printf("sending SIGINT signal to process %v ...", procPid)
 		go runtime.Kill(procPid, syscall.SIGINT)
 	}
+	a.killHookPlugins(string(sessionID))
 }
 
 func (a *Agent) sendCloseTerm(sessionID, msg string, exitCode string) {

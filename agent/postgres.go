@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 
+	"github.com/hoophq/pluginhooks"
 	pgtypes "github.com/runopsio/hoop/common/pg"
 
 	"github.com/runopsio/hoop/agent/dlp"
@@ -17,6 +18,13 @@ import (
 func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 	swPgClient := pb.NewStreamWriter(a.client, pb.PacketPGWriteClientType, pkt.Spec)
+	connParams, pluginHooks := a.connectionParams(sessionID)
+	if connParams == nil {
+		log.Printf("session=%s - connection params not found", sessionID)
+		writePGClientErr(swPgClient,
+			pg.NewFatalError("credentials is empty, contact the administrator").Encode())
+		return
+	}
 
 	clientConnectionID := string(pkt.Spec[pb.SpecClientConnectionID])
 	if clientConnectionID == "" {
@@ -28,6 +36,20 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	clientConnectionIDKey := fmt.Sprintf("%s:%s", sessionID, string(clientConnectionID))
 	clientObj := a.connStore.Get(clientConnectionIDKey)
 	if proxyServerWriter, ok := clientObj.(pg.Proxy); ok {
+		mutatePayload, err := pluginHooks.ExecRPCOnRecv(&pluginhooks.Request{
+			SessionID:  sessionID,
+			PacketType: pkt.Type,
+			Payload:    pkt.Payload,
+		})
+		if err != nil {
+			msg := fmt.Sprintf("plugin error, failed processing it, reason=%v", err)
+			log.Println(msg)
+			writePGClientErr(swPgClient, pg.NewFatalError(msg).Encode())
+			return
+		}
+		if len(mutatePayload) > 0 {
+			pkt.Payload = mutatePayload
+		}
 		if err := proxyServerWriter.Send(pkt.Payload); err != nil {
 			log.Println(err)
 			proxyServerWriter.Cancel()
@@ -35,13 +57,6 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 		return
 	}
 
-	connParams, _ := a.connStore.Get(sessionID).(*pb.AgentConnectionParams)
-	if connParams == nil {
-		log.Printf("session=%s - connection params not found", sessionID)
-		writePGClientErr(swPgClient,
-			pg.NewFatalError("credentials is empty, contact the administrator").Encode())
-		return
-	}
 	connenv, _ := connParams.EnvVars[connEnvKey].(*connEnv)
 	if connenv == nil {
 		log.Println("postgres credentials not found in memory")
@@ -123,10 +138,10 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 		writePGClientErr(swPgClient,
 			pg.NewFatalError("failed initalizing postgres proxy, contact the administrator").Encode())
 	}
-
+	swHookPgClient := pb.NewHookStreamWriter(a.client, pb.PacketPGWriteClientType, pkt.Spec, pluginHooks)
 	pg.NewProxy(
 		pg.NewContext(context.Background(), sessionID),
-		swPgClient,
+		swHookPgClient,
 		mid.ProxyCustomAuth,
 		redactmiddleware.Handler,
 	).RunWithReader(pg.NewReader(pgServer))

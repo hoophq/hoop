@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	reflect "reflect"
+
+	"github.com/hoophq/pluginhooks"
 )
 
 type (
@@ -25,15 +27,24 @@ type (
 		doneC chan struct{}
 	}
 	streamWriter struct {
-		client     ClientTransport
-		packetType PacketType
-		packetSpec map[string][]byte
+		client         ClientTransport
+		packetType     PacketType
+		packetSpec     map[string][]byte
+		pluginHookExec PluginHookExec
 	}
 	AgentConnectionParams struct {
-		EnvVars      map[string]any
-		CmdList      []string
-		ClientArgs   []string
-		DLPInfoTypes []string
+		ConnectionName string
+		ConnectionType string
+		UserID         string
+		EnvVars        map[string]any
+		CmdList        []string
+		ClientArgs     []string
+		DLPInfoTypes   []string
+		PluginHookList []map[string]any
+	}
+	PluginHookExec interface {
+		ExecRPCOnSend(*pluginhooks.Request) ([]byte, error)
+		ExecRPCOnRecv(*pluginhooks.Request) ([]byte, error)
 	}
 )
 
@@ -69,16 +80,44 @@ func NewStreamWriter(client ClientTransport, pktType PacketType, spec map[string
 	return &streamWriter{client: client, packetType: pktType, packetSpec: spec}
 }
 
+func NewHookStreamWriter(
+	client ClientTransport,
+	pktType PacketType,
+	spec map[string][]byte,
+	hookExec PluginHookExec) io.WriteCloser {
+	return &streamWriter{client: client, packetType: pktType, packetSpec: spec, pluginHookExec: hookExec}
+}
+
 func (s *streamWriter) Write(data []byte) (int, error) {
+	if s.client == nil {
+		return 0, fmt.Errorf("stream writer client is empty")
+	}
+	packetType := s.packetType.String()
 	p := &Packet{Spec: map[string][]byte{}}
-	p.Type = s.packetType.String()
+	p.Type = packetType
 	p.Spec = s.packetSpec
 	p.Payload = data
-	return len(data), s.client.Send(p)
+
+	if s.pluginHookExec != nil {
+		mutateData, err := s.pluginHookExec.ExecRPCOnSend(&pluginhooks.Request{
+			PacketType: p.Type,
+			Payload:    data,
+		})
+		if err != nil {
+			return 0, err
+		}
+		// mutate if the hooks returns any payload
+		if len(mutateData) > 0 {
+			p.Payload = mutateData
+		}
+	}
+	return len(p.Payload), s.client.Send(p)
 }
 
 func (s *streamWriter) Close() error {
-	_, _ = s.client.Close()
+	if s.client != nil {
+		_, _ = s.client.Close()
+	}
 	return nil
 }
 

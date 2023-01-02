@@ -3,7 +3,6 @@ package transport
 import (
 	"context"
 	"fmt"
-	justintime "github.com/runopsio/hoop/gateway/review/jit"
 	"io"
 	"log"
 	"os"
@@ -11,6 +10,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	justintime "github.com/runopsio/hoop/gateway/review/jit"
 
 	rv "github.com/runopsio/hoop/gateway/review"
 
@@ -328,7 +329,7 @@ func (s *Server) processClientConnect(pkt *pb.Packet, client *client.Client, con
 		spec[pb.SpecAgentGCPRawCredentialsKey] = []byte(s.GcpDLPRawCredentials)
 	}
 
-	connParams, err := addConnectionParams(pkt, conn, client.SessionID)
+	connParams, err := s.addConnectionParams(pkt, conn, client)
 	if err != nil {
 		return err
 	}
@@ -394,7 +395,7 @@ func (s *Server) processClientExec(pkt *pb.Packet, client *client.Client, conn *
 		return nil
 	}
 
-	connParams, err := addConnectionParams(pkt, conn, client.SessionID)
+	connParams, err := s.addConnectionParams(pkt, conn, client)
 	if err != nil {
 		return err
 	}
@@ -431,15 +432,63 @@ func getInfoTypes(sessionID string) []string {
 	return infoTypes
 }
 
-func addConnectionParams(pkt *pb.Packet, conn *connection.Connection, sessionID string) ([]byte, error) {
+func (s *Server) addConnectionParams(pkt *pb.Packet, conn *connection.Connection, client *client.Client) ([]byte, error) {
 	clientArgs := clientArgsDecode(pkt.Spec)
-	infoTypes := getInfoTypes(sessionID)
+	infoTypes := getInfoTypes(client.SessionID)
 
+	ctx := &user.Context{Org: &user.Org{Id: client.OrgId}}
+	plugins, err := s.PluginService.FindAll(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed loading plugin hooks, err=%v", err)
+	}
+	var pluginHookList []map[string]any
+	for _, pluginItem := range plugins {
+		if pluginItem.Type != "hook" {
+			continue
+		}
+		var pluginName string
+		for _, connectionName := range pluginItem.Connections {
+			if conn.Name == connectionName {
+				pluginName = pluginItem.Name
+				break
+			}
+		}
+		if pluginName == "" {
+			continue
+		}
+		pl, err := s.PluginService.FindOne(ctx, pluginName)
+		if err != nil {
+			return nil, fmt.Errorf("failed loading plugin for connection (%v), err=%v", conn.Name, err)
+		}
+
+		for _, plConn := range pl.Connections {
+			if plConn.Name != conn.Name {
+				continue
+			}
+			// TODO: connection config should change in the future to accept
+			// a map instead of a list. For now, the first record is used
+			// as the configuration encoded as base64 + json
+			var connectionConfigB64JSONEnc string
+			if len(plConn.Config) > 0 {
+				connectionConfigB64JSONEnc = plConn.Config[0]
+			}
+			pluginHookList = append(pluginHookList, map[string]any{
+				"plugin_name":       pl.Name,
+				"connection_config": map[string]any{"jsonb64": connectionConfigB64JSONEnc},
+			})
+			// load the plugin once per connection
+			break
+		}
+	}
 	encConnectionParams, err := pb.GobEncode(&pb.AgentConnectionParams{
-		EnvVars:      conn.Secret,
-		CmdList:      conn.Command,
-		ClientArgs:   clientArgs,
-		DLPInfoTypes: infoTypes,
+		ConnectionName: conn.Name,
+		ConnectionType: string(conn.Type),
+		UserID:         client.UserId,
+		EnvVars:        conn.Secret,
+		CmdList:        conn.Command,
+		ClientArgs:     clientArgs,
+		DLPInfoTypes:   infoTypes,
+		PluginHookList: pluginHookList,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed encoding connection params err=%v", err)
@@ -483,7 +532,15 @@ func (s *Server) JitStatusChange(sessionID string, status justintime.Status) err
 func (s *Server) disconnectClient(c *client.Client) {
 	unbindClient(c.SessionID)
 	c.Status = client.StatusDisconnected
-	s.ClientService.Persist(c)
+	_, _ = s.ClientService.Persist(c)
+	if stream := getAgentStream(c.AgentId); stream != nil {
+		_ = stream.Send(&pb.Packet{
+			Type: pb.PacketSessionCloseType.String(),
+			Spec: map[string][]byte{
+				pb.SpecGatewaySessionID: []byte(c.SessionID),
+			},
+		})
+	}
 }
 
 func (s *Server) exchangeUserToken(token string) (string, error) {
