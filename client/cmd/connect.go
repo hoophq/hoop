@@ -168,7 +168,6 @@ func (c *connect) processPacket(pkt *pb.Packet, config *Config, loader *spinner.
 
 		if _, err := strconv.Atoi(input); err != nil {
 			c.processGracefulExit(fmt.Errorf(`invalid number %q`, input))
-			return
 		}
 
 		c.waitingJit.Type = string(pb.PacketClientGatewayConnectType)
