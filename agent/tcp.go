@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 
+	"github.com/hoophq/pluginhooks"
 	pb "github.com/runopsio/hoop/common/proto"
 )
 
@@ -15,23 +16,40 @@ func (a *Agent) processTCPWriteServer(pkt *pb.Packet) {
 		log.Println("connection id not found in memory")
 		return
 	}
+	connParams, pluginHooks := a.connectionParams(sessionID)
+	if connParams == nil {
+		log.Printf("session=%s - connection params not found", sessionID)
+		return
+	}
 	clientConnectionIDKey := fmt.Sprintf("%s:%s", sessionID, string(clientConnectionID))
 	if tcpServer, ok := a.connStore.Get(clientConnectionIDKey).(io.WriteCloser); ok {
+		mutatePayload, err := pluginHooks.ExecRPCOnRecv(&pluginhooks.Request{
+			SessionID:  sessionID,
+			PacketType: pkt.Type,
+			Payload:    pkt.Payload,
+		})
+		if err != nil {
+			_ = a.client.Send(&pb.Packet{
+				Type:    pb.PacketClientAgentConnectErrType.String(),
+				Payload: []byte(err.Error()),
+				Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)},
+			})
+			return
+		}
+		if len(mutatePayload) > 0 {
+			pkt.Payload = mutatePayload
+		}
 		if _, err := tcpServer.Write(pkt.Payload); err != nil {
 			log.Printf("session=%v - failed writing first packet, err=%v", sessionID, err)
 			_ = tcpServer.Close()
 		}
 		return
 	}
-	tcpClient := pb.NewStreamWriter(a.client, pb.PacketTCPWriteClientType, map[string][]byte{
+
+	tcpClient := pb.NewHookStreamWriter(a.client, pb.PacketTCPWriteClientType, map[string][]byte{
 		pb.SpecGatewaySessionID:   []byte(sessionID),
 		pb.SpecClientConnectionID: []byte(clientConnectionID),
-	})
-	connParams, _ := a.connStore.Get(sessionID).(*pb.AgentConnectionParams)
-	if connParams == nil {
-		log.Printf("session=%s - connection params not found", sessionID)
-		return
-	}
+	}, pluginHooks)
 	connenv, _ := connParams.EnvVars[connEnvKey].(*connEnv)
 	if connenv == nil {
 		log.Printf("session=%s - missing connection credentials in memory", sessionID)

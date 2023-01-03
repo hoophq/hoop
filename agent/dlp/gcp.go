@@ -9,6 +9,7 @@ import (
 
 	dlp "cloud.google.com/go/dlp/apiv2"
 	"cloud.google.com/go/dlp/apiv2/dlppb"
+	"github.com/hoophq/pluginhooks"
 	pb "github.com/runopsio/hoop/common/proto"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
@@ -29,7 +30,9 @@ func NewDLPClient(ctx context.Context, credentialsJSON []byte) (*client, error) 
 	return &client{dlpClient, creds.ProjectID}, nil
 }
 
-func NewDLPStreamWriter(client pb.ClientTransport,
+func NewDLPStreamWriter(
+	client pb.ClientTransport,
+	hookExec pb.PluginHookExec,
 	dlpClient Client,
 	packetType pb.PacketType,
 	spec map[string][]byte,
@@ -46,6 +49,7 @@ func NewDLPStreamWriter(client pb.ClientTransport,
 		packetType: packetType,
 		packetSpec: spec,
 		dlpConfig:  dlpConfig,
+		hookExec:   hookExec,
 	}
 }
 
@@ -56,6 +60,16 @@ func (s *streamWriter) Write(data []byte) (int, error) {
 	}
 	p.Type = s.packetType.String()
 	p.Spec = s.packetSpec
+	rpcOnSendFn := func() error {
+		mutateData, err := s.hookExec.ExecRPCOnSend(&pluginhooks.Request{
+			PacketType: p.Type,
+			Payload:    p.Payload,
+		})
+		if len(mutateData) > 0 {
+			p.Payload = mutateData
+		}
+		return err
+	}
 	if s.dlpClient != nil && len(data) > 30 && len(s.dlpConfig.infoTypes) > 0 {
 		chunksBuffer := breakPayloadIntoChunks(bytes.NewBuffer(data), defaultMaxChunkSize)
 		redactedChunks := redactChunks(s.dlpClient, s.dlpConfig, chunksBuffer)
@@ -67,10 +81,16 @@ func (s *streamWriter) Write(data []byte) (int, error) {
 			p.Spec[pb.SpecDLPTransformationSummary] = tsEnc
 		}
 		p.Payload = dataBuffer.Bytes()
-		return len(data), s.client.Send(p)
+		if err := rpcOnSendFn(); err != nil {
+			return 0, err
+		}
+		return len(p.Payload), s.client.Send(p)
 	}
 	p.Payload = data
-	return len(data), s.client.Send(p)
+	if err := rpcOnSendFn(); err != nil {
+		return 0, err
+	}
+	return len(p.Payload), s.client.Send(p)
 }
 
 func (s *streamWriter) Close() error {

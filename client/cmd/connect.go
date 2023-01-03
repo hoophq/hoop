@@ -39,7 +39,7 @@ var (
 )
 
 func init() {
-	connectCmd.Flags().StringVarP(&connectFlags.proxyPort, "port", "p", "", "The port to bind the proxy if it's a native database connection")
+	connectCmd.Flags().StringVarP(&connectFlags.proxyPort, "port", "p", "", "The port to listen the proxy")
 	rootCmd.AddCommand(connectCmd)
 }
 

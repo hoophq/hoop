@@ -88,6 +88,7 @@ func (s *Storage) FindAll(context *user.Context) ([]ListPlugin, error) {
 			Plugin: Plugin{
 				Id:   p.Id,
 				Name: p.Name,
+				Type: p.Type,
 			},
 			Connections: connections,
 		})
@@ -135,6 +136,7 @@ func (s *Storage) FindOne(context *user.Context, name string) (*Plugin, error) {
 		Id:             xtdbPlugin.Id,
 		OrgId:          xtdbPlugin.OrgId,
 		Name:           xtdbPlugin.Name,
+		Type:           xtdbPlugin.Type,
 		Connections:    connections,
 		ConnectionsIDs: xtdbPlugin.ConnectionsIDs,
 		InstalledById:  xtdbPlugin.InstalledById,

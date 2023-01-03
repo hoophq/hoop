@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"errors"
+
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/gateway/user"
 )
@@ -21,6 +22,7 @@ type (
 		Id             string       `json:"id"          edn:"xt/id"`
 		OrgId          string       `json:"-"           edn:"plugin/org"`
 		Name           string       `json:"name"        edn:"plugin/name"          binding:"required"`
+		Type           string       `json:"type"        edn:"plugin/type"`
 		Connections    []Connection `json:"connections" edn:"plugin/connections"   binding:"required"`
 		ConnectionsIDs []string     `json:"-"           edn:"plugin/connection-ids"`
 		InstalledById  string       `json:"-"           edn:"plugin/installed-by"`
