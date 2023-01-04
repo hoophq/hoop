@@ -79,9 +79,9 @@ func (s *Service) FindAll(context *user.Context) ([]BaseConnection, error) {
 					pluginAllowed = true
 				}
 			}
-			if !pluginEnabled || pluginAllowed {
-				allowedConnections = append(allowedConnections, bc)
-			}
+		}
+		if !pluginEnabled || pluginAllowed {
+			allowedConnections = append(allowedConnections, bc)
 		}
 	}
 
