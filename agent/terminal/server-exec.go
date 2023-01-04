@@ -76,7 +76,7 @@ func (c *Command) OnPostExec() error {
 	return nil
 }
 
-func (c *Command) Run(streamWriter io.WriteCloser, stdinInput []byte, onExecErr OnExecErrFn, clientArgs ...string) error {
+func (c *Command) Run(stdoutw, stderrw io.WriteCloser, stdinInput []byte, onExecErr OnExecErrFn, clientArgs ...string) error {
 	pipeStdout, err := c.cmd.StdoutPipe()
 	if err != nil {
 		onExecErr(term.InternalErrorExitCode, "internal error, failed returning stdout pipe")
@@ -106,8 +106,8 @@ func (c *Command) Run(streamWriter io.WriteCloser, stdinInput []byte, onExecErr 
 		onExecErr(term.InternalErrorExitCode, "internal error, failed writing input")
 		return err
 	}
-	stdoutCh := copyBuffer(streamWriter, pipeStdout, 1024, "stdout")
-	stderrCh := copyBuffer(streamWriter, pipeStderr, 1024, "stderr")
+	stdoutCh := copyBuffer(stdoutw, pipeStdout, 1024, "stdout")
+	stderrCh := copyBuffer(stderrw, pipeStderr, 1024, "stderr")
 
 	go func() {
 		exitCode = 0
