@@ -79,11 +79,10 @@ func parseExecInput(c *connect) []byte {
 
 func runExec(args []string) {
 	config := getClientConfig()
-
-	loader := spinner.New(spinner.CharSets[78], 70*time.Millisecond)
+	loader := spinner.New(spinner.CharSets[78], 70*time.Millisecond, spinner.WithWriter(os.Stderr))
 	loader.Color("green")
+	loader.Suffix = " running ..."
 	loader.Start()
-	loader.Suffix = " executing input ..."
 
 	c := newClientConnect(config, loader, args, pb.ClientVerbExec)
 	pkt := &pb.Packet{
@@ -98,8 +97,6 @@ func runExec(args []string) {
 		_, _ = c.client.Close()
 		c.printErrorAndExit("failed executing command, err=%v", err)
 	}
-
-	loader.Stop()
 
 	for {
 		pkt, err := c.client.Recv()

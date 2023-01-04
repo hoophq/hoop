@@ -339,9 +339,20 @@ func (c *connect) processPacket(pkt *pb.Packet, config *Config, loader *spinner.
 		}
 		c.processGracefulExit(errors.New("user cancelled the action"))
 	case pb.PacketClientGatewayExecRejectType:
-		c.processGracefulExit(errors.New("task rejected. Sorry"))
+		c.processGracefulExit(errors.New("task rejected"))
 	case pb.PacketClientAgentExecOKType:
-		c.printOutputAndExit(pkt.Payload)
+		loader.Stop() // disables after the first packet arrives
+		stdStreamVal := pkt.Spec[pb.SpecServerExecStdStreamKey]
+		switch string(stdStreamVal) {
+		case pb.StdOut: // stdout
+			os.Stdout.Write(pkt.Payload)
+		case pb.StdErr: // stderr
+			os.Stderr.Write(pkt.Payload)
+		default: // it shouldn't happen
+			if len(pkt.Payload) > 0 {
+				os.Stderr.Write(pkt.Payload)
+			}
+		}
 	case pb.PacketClientAgentExecErrType:
 		if len(pkt.Payload) > 0 {
 			_, _ = os.Stderr.Write([]byte(styles.ClientError(string(pkt.Payload)) + "\n"))
@@ -436,13 +447,8 @@ func (c *connect) printHeader(sessionID string) {
 }
 
 func (c *connect) printErrorAndExit(format string, v ...any) {
-	c.loader.Disable()
+	c.loader.Stop()
 	errOutput := styles.ClientError(fmt.Sprintf(format, v...))
 	fmt.Println(errOutput)
 	os.Exit(1)
-}
-
-func (c *connect) printOutputAndExit(output []byte) {
-	c.loader.Disable()
-	fmt.Print(string(output))
 }

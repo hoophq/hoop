@@ -50,6 +50,7 @@ const (
 	SpecClientConnectionID        string = "client.connection_id"
 	SpecClientExecExitCodeKey     string = "terminal.exit_code"
 	SpecClientExecArgsKey         string = "terminal.args"
+	SpecServerExecStdStreamKey    string = "terminal.std_stream"
 	SpecAgentConnectionParamsKey  string = "agent.connection_params"
 	SpecAgentGCPRawCredentialsKey string = "agent.gcp_credentials"
 	SpecTCPServerConnectKey       string = "tcp.server_connect"
@@ -71,6 +72,9 @@ const (
 
 	ConnectionOriginAgent  = "agent"
 	ConnectionOriginClient = "client"
+
+	StdOut = "stdout"
+	StdErr = "stderr"
 
 	ClientLoginCallbackAddress string = "127.0.0.1:3587"
 

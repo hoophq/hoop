@@ -36,17 +36,20 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 	}
 	log.Printf("session=%v, tty=false - executing command=%q", string(sessionID), cmd.String())
 
-	spec := map[string][]byte{pb.SpecGatewaySessionID: sessionID}
-	stdoutWriter := pb.NewStreamWriter(a.client, pb.PacketClientAgentExecOKType, spec)
+	stdoutw := pb.NewStdoutStreamWriter(a.client, pb.PacketClientAgentExecOKType,
+		map[string][]byte{pb.SpecGatewaySessionID: sessionID})
+	stderrw := pb.NewStderrStreamWriter(a.client, pb.PacketClientAgentExecOKType,
+		map[string][]byte{pb.SpecGatewaySessionID: sessionID})
 
 	onExecErr := func(exitCode int, errMsg string, v ...any) {
 		errMsg = fmt.Sprintf(errMsg, v...)
-		spec[pb.SpecClientExecExitCodeKey] = []byte(strconv.Itoa(exitCode))
-		_, _ = pb.NewStreamWriter(a.client, packetErrType, spec).
+		_, _ = pb.NewStreamWriter(a.client, packetErrType, map[string][]byte{
+			pb.SpecGatewaySessionID:      sessionID,
+			pb.SpecClientExecExitCodeKey: []byte(strconv.Itoa(exitCode))}).
 			Write([]byte(errMsg))
 	}
 
-	if err = cmd.Run(stdoutWriter, pkt.Payload, onExecErr); err != nil {
+	if err = cmd.Run(stdoutw, stderrw, pkt.Payload, onExecErr); err != nil {
 		log.Printf("session=%v - err=%v", string(sessionID), err)
 	}
 }
