@@ -55,8 +55,7 @@ func (t *Terminal) ConnectWithTTY() error {
 	signal.Notify(sig, pbterm.SIGWINCH)
 	go func() {
 		for range sig {
-			_ = pty.InheritSize(os.Stdin, ptty)
-			size, err := pty.GetsizeFull(ptty)
+			size, err := pty.GetsizeFull(os.Stdin)
 			if err == nil {
 				resizeMsg := fmt.Sprintf("%v,%v,%v,%v", size.Rows, size.Cols, size.X, size.Y)
 				_, _ = pb.NewStreamWriter(t.client, pb.PacketTerminalResizeTTYType, nil).

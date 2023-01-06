@@ -140,6 +140,7 @@ func (c *Command) RunOnTTY(stdoutWriter io.WriteCloser, onExecErr OnExecErrFn) e
 	if err := c.OnPreExec(); err != nil {
 		return fmt.Errorf("failed executing pre execution command, err=%v", err)
 	}
+	c.cmd.Env = append(c.cmd.Env, "TERM=xterm-256color")
 
 	ptmx, err := pty.Start(c.cmd)
 	if err != nil {
@@ -202,7 +203,7 @@ func (c *Command) WriteTTY(data []byte) error {
 }
 
 func (c *Command) ResizeTTY(size *pty.Winsize) error {
-	return pty.InheritSize(os.Stdin, c.ptty)
+	return pty.Setsize(c.ptty, size)
 }
 
 func NewCommand(rawEnvVarList map[string]interface{}, args ...string) (*Command, error) {
