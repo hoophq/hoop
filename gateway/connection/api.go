@@ -13,7 +13,7 @@ type (
 	}
 
 	service interface {
-		Persist(context *user.Context, c *Connection) (int64, error)
+		Persist(httpMethod string, context *user.Context, c *Connection) (int64, error)
 		FindAll(context *user.Context) ([]BaseConnection, error)
 		FindOne(context *user.Context, name string) (*Connection, error)
 	}
@@ -72,7 +72,7 @@ func (a *Handler) Post(c *gin.Context) {
 		return
 	}
 
-	_, err = a.Service.Persist(context, &connection)
+	_, err = a.Service.Persist("POST", context, &connection)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
@@ -105,7 +105,7 @@ func (a *Handler) Put(c *gin.Context) {
 
 	connection.Id = existingConnection.Id
 
-	_, err = a.Service.Persist(context, &connection)
+	_, err = a.Service.Persist("PUT", context, &connection)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
