@@ -1,6 +1,8 @@
 package connection
 
 import (
+	"strings"
+
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/plugin"
@@ -88,7 +90,7 @@ func (s *Service) FindAll(context *user.Context) ([]BaseConnection, error) {
 	return allowedConnections, nil
 }
 
-func (s *Service) Persist(context *user.Context, c *Connection) (int64, error) {
+func (s *Service) Persist(httpMethod string, context *user.Context, c *Connection) (int64, error) {
 	if c.Id == "" {
 		c.Id = uuid.NewString()
 	}
@@ -99,9 +101,10 @@ func (s *Service) Persist(context *user.Context, c *Connection) (int64, error) {
 		return 0, err
 	}
 
-	s.bindAuditPlugin(context, c)
-	s.bindDLPPlugin(context, c)
-
+	if strings.ToUpper(httpMethod) == "POST" {
+		s.bindAuditPlugin(context, c)
+		s.bindDLPPlugin(context, c)
+	}
 	return result, nil
 }
 
