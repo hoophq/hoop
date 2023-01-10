@@ -6,7 +6,6 @@ const (
 	SessionOpenTimeout         = "ClientSessionOpenTimeout"
 	SessionOpenWaitingApproval = "ClientSessionOpenWaitingApproval"
 	SessionOpenApproveOK       = "ClientSessionOpenApproveOK"
-	SessionOpenApproveErr      = "ClientSessionOpenApproveErr"
 	SessionOpenAgentOffline    = "ClientSessionOpenAgentOffline"
 	SessionClose               = "ClientSessionClose"
 

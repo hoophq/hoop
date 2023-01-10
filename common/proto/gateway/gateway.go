@@ -1,3 +1,3 @@
 package gateway
 
-const KeepAlive = "KeepAlive"
+const KeepAlive = "GatewayKeepAlive"
