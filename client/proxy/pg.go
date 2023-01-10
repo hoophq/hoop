@@ -9,6 +9,7 @@ import (
 
 	"github.com/runopsio/hoop/common/memory"
 	pb "github.com/runopsio/hoop/common/proto"
+	pbagent "github.com/runopsio/hoop/common/proto/agent"
 )
 
 const defaultPostgresPort = "5433"
@@ -63,7 +64,7 @@ func (p *PGServer) serveConn(sessionID, connectionID string, pgClient net.Conn) 
 			log.Printf("failed closing client connection, err=%v", err)
 		}
 		_ = p.client.Send(&pb.Packet{
-			Type: pb.PacketCloseTCPConnectionType.String(),
+			Type: pbagent.TCPConnectionClose,
 			Spec: map[string][]byte{
 				pb.SpecClientConnectionID: []byte(connectionID),
 				pb.SpecGatewaySessionID:   []byte(sessionID),
@@ -73,7 +74,7 @@ func (p *PGServer) serveConn(sessionID, connectionID string, pgClient net.Conn) 
 	p.connectionStore.Set(connectionID, connWrapper)
 
 	log.Printf("session=%v | conn=%s | client=%s - connected", sessionID, connectionID, pgClient.RemoteAddr())
-	pgServerWriter := pb.NewStreamWriter(p.client, pb.PacketPGWriteServerType, map[string][]byte{
+	pgServerWriter := pb.NewStreamWriter(p.client, pbagent.PGConnectionWrite, map[string][]byte{
 		string(pb.SpecClientConnectionID): []byte(connectionID),
 		string(pb.SpecGatewaySessionID):   []byte(sessionID),
 	})

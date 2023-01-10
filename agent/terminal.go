@@ -5,14 +5,13 @@ import (
 	"log"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/creack/pty"
 	"github.com/hoophq/pluginhooks"
 	"github.com/runopsio/hoop/agent/dlp"
 	term "github.com/runopsio/hoop/agent/terminal"
 	pb "github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/common/runtime"
+	pbclient "github.com/runopsio/hoop/common/proto/client"
 )
 
 func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {
@@ -20,7 +19,7 @@ func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {
 	connParams, pluginHooks := a.connectionParams(sessionID)
 	if connParams == nil {
 		log.Printf("session=%s - connection params not found", sessionID)
-		a.sendCloseTerm(sessionID, "internal error, connection params not found", "")
+		a.sendCloseTerm(sessionID, "internal error, connection params not found", "1")
 		return
 	}
 	sessionIDKey := fmt.Sprintf(cmdStoreKey, sessionID)
@@ -35,7 +34,7 @@ func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {
 		if err != nil {
 			msg := fmt.Sprintf("failed processing hook, reason=%v", err)
 			log.Println(msg)
-			a.sendCloseTerm(sessionID, msg, "")
+			a.sendCloseTerm(sessionID, msg, "1")
 			return
 		}
 		if len(mutatePayload) > 0 {
@@ -44,7 +43,7 @@ func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {
 		// Write to tty stdin content
 		if err := cmd.WriteTTY(pkt.Payload); err != nil {
 			log.Printf("session=%v | tty=true - failed copying stdin to tty, err=%v", string(sessionID), err)
-			a.sendCloseTerm(sessionID, "", "")
+			a.sendCloseTerm(sessionID, "", "0")
 		}
 		return
 	}
@@ -52,21 +51,25 @@ func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {
 	cmd, err := term.NewCommand(connParams.EnvVars, append(connParams.CmdList, connParams.ClientArgs...)...)
 	if err != nil {
 		log.Printf("session=%s, tty=true - failed executing command, err=%v", sessionID, err)
-		a.sendCloseTerm(sessionID, "failed executing command", "")
+		a.sendCloseTerm(sessionID, "failed executing command", "1")
 		return
 	}
 	log.Printf("session=%s, tty=true - executing command %q", sessionID, cmd.String())
 	spec := map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)}
-	onExecErr := func(exitCode int, errMsg string, v ...any) {
-		a.sendCloseTerm(sessionID, fmt.Sprintf(errMsg, v...), strconv.Itoa(exitCode))
+	onExecErr := func(exitCode int, msg string, v ...any) {
+		var errMsg string
+		if msg != "" {
+			errMsg = fmt.Sprintf(msg, v...)
+		}
+		a.sendCloseTerm(sessionID, errMsg, strconv.Itoa(exitCode))
 	}
-	stdoutWriter := pb.NewHookStreamWriter(a.client, pb.PacketTerminalClientWriteStdoutType, spec, pluginHooks)
+	stdoutWriter := pb.NewHookStreamWriter(a.client, pbclient.WriteStdout, spec, pluginHooks)
 	if dlpClient, ok := a.connStore.Get(dlpClientKey).(dlp.Client); ok {
 		stdoutWriter = dlp.NewDLPStreamWriter(
 			a.client,
 			pluginHooks,
 			dlpClient,
-			pb.PacketTerminalClientWriteStdoutType,
+			pbclient.WriteStdout,
 			spec,
 			connParams.DLPInfoTypes)
 	}
@@ -93,23 +96,20 @@ func (a *Agent) doTerminalResizeTTY(pkt *pb.Packet) {
 	}
 }
 
-func (a *Agent) doTerminalCloseTerm(pkt *pb.Packet) {
-	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
-	log.Printf("session=%v - received %v", string(sessionID), pb.PacketTerminalCloseType)
-	procPidObj := a.connStore.Get(fmt.Sprintf("proc:%s", sessionID))
-	if procPid, _ := procPidObj.(int); procPid > 0 {
-		log.Printf("sending SIGINT signal to process %v ...", procPid)
-		go runtime.Kill(procPid, syscall.SIGINT)
-	}
-	a.killHookPlugins(string(sessionID))
-}
-
 func (a *Agent) sendCloseTerm(sessionID, msg string, exitCode string) {
+	var payload []byte
+	if msg != "" {
+		payload = []byte(msg)
+		// must have an exit code if it has a msg
+		if exitCode == "" {
+			exitCode = "1"
+		}
+	}
 	spec := map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)}
 	if exitCode != "" {
-		spec[pb.SpecClientExecExitCodeKey] = []byte(exitCode)
+		spec[pb.SpecClientExitCodeKey] = []byte(exitCode)
 	}
-	_, _ = pb.NewStreamWriter(a.client, pb.PacketTerminalCloseType, spec).Write([]byte(msg))
+	_, _ = pb.NewStreamWriter(a.client, pbclient.SessionClose, spec).Write(payload)
 }
 
 func parsePttyWinSize(winSizeBytes []byte) (*pty.Winsize, error) {

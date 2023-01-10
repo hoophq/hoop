@@ -17,6 +17,8 @@ import (
 	term "github.com/runopsio/hoop/agent/terminal"
 	"github.com/runopsio/hoop/common/memory"
 	pb "github.com/runopsio/hoop/common/proto"
+	pbagent "github.com/runopsio/hoop/common/proto/agent"
+	pbclient "github.com/runopsio/hoop/common/proto/client"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -133,7 +135,7 @@ func (a *Agent) connectionParams(sessionID string) (*pb.AgentConnectionParams, *
 }
 
 func (a *Agent) Run(svrAddr, token string, firstConnTry bool) {
-	a.client.StartKeepAlive()
+	a.client.StartKeepAlive(pbagent.KeepAlive)
 	a.handleGracefulExit()
 
 	for {
@@ -152,56 +154,48 @@ func (a *Agent) Run(svrAddr, token string, firstConnTry bool) {
 				default:
 					log.Printf("disconnecting, code=%v, msg=%v", e.Code(), err.Error())
 				}
-
 			}
-
 			return
 		}
 
-		switch pb.PacketType(pkt.Type) {
-		// client->agent connect
-		case pb.PacketClientAgentConnectType:
-			a.processClientConnect(pkt)
-		case pb.PacketAgentGatewayConnectOK:
-			fmt.Println("connected...")
+		switch pkt.Type {
+		case pbagent.GatewayConnectOK:
+			fmt.Println("connected!")
 
-		// gateway->agent close session
-		case pb.PacketSessionCloseType:
-			a.processSessionClose(pkt)
+		case pbagent.SessionOpen:
+			a.processSessionOpen(pkt)
 
-		// tcp close
-		case pb.PacketCloseTCPConnectionType:
-			a.processTCPCloseConnection(pkt)
-
-		// client->agent exec
-		case pb.PacketClientAgentExecType:
+		case pbagent.ExecWriteStdin:
 			a.doExec(pkt)
 
 		// PG protocol
-		case pb.PacketPGWriteServerType:
+		case pbagent.PGConnectionWrite:
 			a.processPGProtocol(pkt)
 
 		// raw tcp
-		case pb.PacketTCPWriteServerType:
+		case pbagent.TCPConnectionWrite:
 			a.processTCPWriteServer(pkt)
 
 		// terminal
-		case pb.PacketTerminalWriteAgentStdinType:
+		case pbagent.TerminalWriteStdin:
 			a.doTerminalWriteAgentStdin(pkt)
-		case pb.PacketTerminalResizeTTYType:
+		case pbagent.TerminalResizeTTY:
 			a.doTerminalResizeTTY(pkt)
-		case pb.PacketTerminalCloseType:
-			a.doTerminalCloseTerm(pkt)
 
+		case pbagent.SessionClose:
+			a.processSessionClose(pkt)
+
+		case pbagent.TCPConnectionClose:
+			a.processTCPCloseConnection(pkt)
 		}
 	}
 }
 
-func (a *Agent) buildConnectionParams(pkt *pb.Packet, packetErrType pb.PacketType) (*pb.AgentConnectionParams, *connEnv, error) {
+func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams, *connEnv, error) {
 	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 	sessionIDKey := string(sessionID)
 
-	connParams := a.decodeConnectionParams(sessionID, pkt, packetErrType)
+	connParams := a.decodeConnectionParams(sessionID, pkt)
 	if connParams == nil {
 		return nil, nil, fmt.Errorf("session %s failed to decode connection params", sessionIDKey)
 	}
@@ -224,31 +218,37 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet, packetErrType pb.PacketTyp
 	return connParams, connEnvVars, nil
 }
 
-func (a *Agent) decodeConnectionParams(sessionID []byte, pkt *pb.Packet, packetType pb.PacketType) *pb.AgentConnectionParams {
+func (a *Agent) decodeConnectionParams(sessionID []byte, pkt *pb.Packet) *pb.AgentConnectionParams {
 	var connParams pb.AgentConnectionParams
 	encConnectionParams := pkt.Spec[pb.SpecAgentConnectionParamsKey]
 	if err := pb.GobDecodeInto(encConnectionParams, &connParams); err != nil {
 		log.Printf("session=%v - failed decoding connection params=%#v, err=%v",
 			string(sessionID), string(encConnectionParams), err)
 		_ = a.client.Send(&pb.Packet{
-			Type:    packetType.String(),
+			Type:    pbclient.SessionClose,
 			Payload: []byte(`internal error, failed decoding connection params`),
-			Spec:    map[string][]byte{pb.SpecGatewaySessionID: sessionID},
+			Spec: map[string][]byte{
+				pb.SpecClientExitCodeKey: []byte(`1`),
+				pb.SpecGatewaySessionID:  sessionID,
+			},
 		})
 		return nil
 	}
 	return &connParams
 }
 
-func (a *Agent) decodeDLPCredentials(sessionID []byte, pkt *pb.Packet, packetType pb.PacketType) dlp.Client {
+func (a *Agent) decodeDLPCredentials(sessionID []byte, pkt *pb.Packet) dlp.Client {
 	if gcpRawCred, ok := pkt.Spec[pb.SpecAgentGCPRawCredentialsKey]; ok {
 		if _, ok := a.connStore.Get(dlpClientKey).(dlp.Client); !ok {
 			dlpClient, err := dlp.NewDLPClient(context.Background(), gcpRawCred)
 			if err != nil {
 				_ = a.client.Send(&pb.Packet{
-					Type:    packetType.String(),
+					Type:    pbclient.SessionClose,
 					Payload: []byte(`failed creating dlp client`),
-					Spec:    map[string][]byte{pb.SpecGatewaySessionID: sessionID},
+					Spec: map[string][]byte{
+						pb.SpecClientExitCodeKey: []byte(`1`),
+						pb.SpecGatewaySessionID:  sessionID,
+					},
 				})
 				log.Printf("failed creating dlp client, err=%v", err)
 				return nil
@@ -261,18 +261,20 @@ func (a *Agent) decodeDLPCredentials(sessionID []byte, pkt *pb.Packet, packetTyp
 	return nil
 }
 
-func (a *Agent) processClientConnect(pkt *pb.Packet) {
+func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 	sessionIDKey := string(sessionID)
-	packetErrType := pb.PacketClientAgentConnectErrType
 	log.Printf("session=%s - received connect request", sessionIDKey)
 
-	connParams, connEnvVars, err := a.buildConnectionParams(pkt, packetErrType)
+	connParams, connEnvVars, err := a.buildConnectionParams(pkt)
 	if err != nil {
 		_ = a.client.Send(&pb.Packet{
-			Type:    packetErrType.String(),
+			Type:    pbclient.SessionClose,
 			Payload: []byte(err.Error()),
-			Spec:    map[string][]byte{pb.SpecGatewaySessionID: sessionID},
+			Spec: map[string][]byte{
+				pb.SpecClientExitCodeKey: []byte(`1`),
+				pb.SpecGatewaySessionID:  sessionID,
+			},
 		})
 		return
 	}
@@ -283,7 +285,7 @@ func (a *Agent) processClientConnect(pkt *pb.Packet) {
 	}
 
 	if a.connStore.Get(dlpClientKey) == nil {
-		dlpClient := a.decodeDLPCredentials(sessionID, pkt, packetErrType)
+		dlpClient := a.decodeDLPCredentials(sessionID, pkt)
 		if dlpClient != nil {
 			a.connStore.Set(dlpClientKey, dlpClient)
 		}
@@ -292,14 +294,17 @@ func (a *Agent) processClientConnect(pkt *pb.Packet) {
 	if err := a.loadHooks(sessionIDKey, connParams); err != nil {
 		log.Println(err)
 		_ = a.client.Send(&pb.Packet{
-			Type:    packetErrType.String(),
+			Type:    pbclient.SessionClose,
 			Payload: []byte(`failed loading hook plugins for this connection`),
-			Spec:    map[string][]byte{pb.SpecGatewaySessionID: sessionID},
+			Spec: map[string][]byte{
+				pb.SpecClientExitCodeKey: []byte(`1`),
+				pb.SpecGatewaySessionID:  sessionID,
+			},
 		})
 		return
 	}
 	a.client.Send(&pb.Packet{
-		Type: pb.PacketClientAgentConnectOKType.String(),
+		Type: pbclient.SessionOpenOK,
 		Spec: map[string][]byte{
 			pb.SpecGatewaySessionID: sessionID,
 			pb.SpecConnectionType:   pkt.Spec[pb.SpecConnectionType]}})

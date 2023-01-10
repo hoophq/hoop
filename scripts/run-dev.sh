@@ -25,7 +25,7 @@ export PLUGIN_AUDIT_PATH=/tmp/hoopsessions
 export GIN_MODE=debug
 # require to run npm install && npm run release:hoop-ui
 export STATIC_UI_PATH=../webapp/resources/public/
-go build -o /tmp/hoop github.com/runopsio/hoop/client
+go build -o /tmp/hoop client/main.go
 /tmp/hoop start gateway &
 
 unset PORT XTDB_ADDRESS PLUGIN_AUDIT_PATH

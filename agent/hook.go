@@ -10,13 +10,8 @@ import (
 	"github.com/runopsio/hoop/agent/hook"
 	"github.com/runopsio/hoop/common/clientconfig"
 	pb "github.com/runopsio/hoop/common/proto"
+	pbclient "github.com/runopsio/hoop/common/proto/client"
 )
-
-func (a *Agent) killHookPlugins(sessionID string) {
-	if _, ph := a.connectionParams(sessionID); ph != nil {
-		_ = ph.Close()
-	}
-}
 
 func (a *Agent) newHookClient(sessionID string, params *pb.AgentConnectionParams, newHook map[string]any) (*hook.Client, error) {
 	pluginHomeDir, err := clientconfig.NewHomeDir("plugins")
@@ -67,7 +62,7 @@ func (a *Agent) executeRPCOnConnect(sessionID string, client *hook.Client) error
 		err = fmt.Errorf("plugin %s has rejected the request, reason=%v", client.PluginName(), err)
 		log.Printf("session=%s - %s", sessionID, err)
 		_ = a.client.Send(&pb.Packet{
-			Type:    pb.PacketClientAgentConnectErrType.String(),
+			Type:    pbclient.SessionClose,
 			Payload: []byte(err.Error()),
 			Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)},
 		})

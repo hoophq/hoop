@@ -16,6 +16,8 @@ import (
 
 	"github.com/runopsio/hoop/common/memory"
 	pb "github.com/runopsio/hoop/common/proto"
+	pbagent "github.com/runopsio/hoop/common/proto/agent"
+	pbclient "github.com/runopsio/hoop/common/proto/client"
 )
 
 const (
@@ -99,28 +101,26 @@ func (p *auditPlugin) OnConnect(config plugin.Config) error {
 
 func (p *auditPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *pb.Packet) error {
 	switch pb.PacketType(pkt.GetType()) {
-	case pb.PacketPGWriteServerType:
-		isSimpleQuery, queryBytes, err := simpleQueryContent(pkt.GetPayload())
+	case pbagent.PGConnectionWrite:
+		isSimpleQuery, queryBytes, err := simpleQueryContent(pkt.Payload)
 		if !isSimpleQuery {
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("session-id=%v - failed obtaining simple query data, err=%v", pluginConfig.SessionId, err)
+			return fmt.Errorf("session=%v - failed obtaining simple query data, err=%v", pluginConfig.SessionId, err)
 		}
 		return p.writeOnReceive(pluginConfig.SessionId, 'i', queryBytes)
-	case pb.PacketTerminalClientWriteStdoutType,
-		pb.PacketClientAgentExecOKType:
-		return p.writeOnReceive(pluginConfig.SessionId, 'o', pkt.GetPayload())
-	case pb.PacketClientAgentExecErrType:
-		if string(pkt.Spec[pb.SpecClientExecExitCodeKey]) == "0" {
-			// noop - exit code 0 payload is empty
-			return nil
+	case pbclient.WriteStdout,
+		pbclient.WriteStderr:
+		return p.writeOnReceive(pluginConfig.SessionId, 'o', pkt.Payload)
+	case pbclient.SessionClose:
+		if len(pkt.Payload) > 0 {
+			return p.writeOnReceive(pluginConfig.SessionId, 'e', pkt.Payload)
 		}
-		return p.writeOnReceive(pluginConfig.SessionId, 'e', pkt.GetPayload())
-	case pb.PacketTerminalWriteAgentStdinType,
-		pb.PacketTCPWriteServerType,
-		pb.PacketClientGatewayExecType:
-		return p.writeOnReceive(pluginConfig.SessionId, 'i', pkt.GetPayload())
+	case pbagent.ExecWriteStdin,
+		pbagent.TerminalWriteStdin,
+		pbagent.TCPConnectionWrite:
+		return p.writeOnReceive(pluginConfig.SessionId, 'i', pkt.Payload)
 	}
 	return nil
 }

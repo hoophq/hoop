@@ -11,6 +11,7 @@ import (
 	"github.com/runopsio/hoop/gateway/plugin"
 
 	pb "github.com/runopsio/hoop/common/proto"
+	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	"github.com/runopsio/hoop/gateway/agent"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -83,7 +84,7 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 
 	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
 	stream.Send(&pb.Packet{
-		Type:    string(pb.PacketAgentGatewayConnectOK),
+		Type:    pbagent.GatewayConnectOK,
 		Spec:    nil,
 		Payload: nil,
 	})
@@ -119,11 +120,13 @@ func (s *Server) listenAgentMessages(config plugin.Config, ag *agent.Agent, stre
 			log.Printf("received error from agent, err=%v", err)
 			return err
 		}
-		if pb.PacketType(pkt.Type) == pb.PacketKeepAliveType {
+		if pkt.Type == pbagent.KeepAlive {
 			continue
 		}
 		sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 		config.SessionId = sessionID
+		// TODO: add debug logger
+		// log.Printf("session=%s - receive agent packet type [%s]", sessionID, pkt.Type)
 		if err := s.pluginOnReceive(config, pkt); err != nil {
 			log.Printf("plugin reject packet, err=%v", err)
 			return status.Errorf(codes.Internal, "internal error, plugin reject packet")

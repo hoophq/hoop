@@ -2,15 +2,21 @@ package cmd
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
-	"strings"
+	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/briandowns/spinner"
+	"github.com/runopsio/hoop/client/cmd/styles"
 	pb "github.com/runopsio/hoop/common/proto"
+	pbagent "github.com/runopsio/hoop/common/proto/agent"
+	pbclient "github.com/runopsio/hoop/common/proto/client"
+	"github.com/runopsio/hoop/common/terminal"
 	"github.com/spf13/cobra"
 )
 
@@ -79,38 +85,90 @@ func parseExecInput(c *connect) []byte {
 
 func runExec(args []string) {
 	config := getClientConfig()
-	loader := spinner.New(spinner.CharSets[78], 70*time.Millisecond, spinner.WithWriter(os.Stderr))
+	loader := spinner.New(spinner.CharSets[11], 70*time.Millisecond,
+		spinner.WithWriter(os.Stderr), spinner.WithHiddenCursor(true))
 	loader.Color("green")
 	loader.Suffix = " running ..."
 	loader.Start()
 
-	c := newClientConnect(config, loader, args, pb.ClientVerbExec)
-	pkt := &pb.Packet{
-		Type: pb.PacketClientGatewayExecType.String(),
-		Spec: newClientArgsSpec(c.clientArgs),
-	}
-	pkt.Payload = parseExecInput(c)
-	if len(pkt.Payload) > 0 {
-		pkt.Payload = []byte(strings.Trim(string(pkt.Payload), " \n"))
-	}
-	if err := c.client.Send(pkt); err != nil {
-		_, _ = c.client.Close()
-		c.printErrorAndExit("failed executing command, err=%v", err)
-	}
+	done := make(chan os.Signal, 1)
+	signal.Notify(done, syscall.SIGTERM, syscall.SIGINT)
+	go func() {
+		for {
+			switch <-done {
+			case syscall.SIGTERM, syscall.SIGINT:
+				loader.Stop() // this fixes terminal restore
+				os.Exit(143)
+			}
+		}
+	}()
 
+	c := newClientConnect(config, loader, args, pb.ClientVerbExec)
+	execSpec := newClientArgsSpec(c.clientArgs)
+	execInputPayload := parseExecInput(c)
+	sendOpenSessionPktFn := func() {
+		if err := c.client.Send(&pb.Packet{
+			Type:    pbagent.SessionOpen,
+			Spec:    execSpec,
+			Payload: execInputPayload,
+		}); err != nil {
+			_, _ = c.client.Close()
+			c.printErrorAndExit("failed opening session with gateway, err=%v", err)
+		}
+	}
+	sendOpenSessionPktFn()
+	agentOfflineRetryCounter := 1
 	for {
 		pkt, err := c.client.Recv()
 		c.processGracefulExit(err)
-		if pkt != nil {
-			c.processPacket(pkt, config, loader)
+		if pkt == nil {
+			continue
+		}
+		switch pkt.Type {
+		case pbclient.SessionOpenWaitingApproval:
+			loader.Color("yellow")
+			loader.Start()
+			loader.Suffix = " waiting task to be approved at " +
+				styles.Keyword(fmt.Sprintf(" %v ", string(pkt.Payload)))
+		case pbclient.SessionOpenApproveOK:
+			loader.Color("green")
+			loader.Suffix = " command approved, running ... "
+			sendOpenSessionPktFn()
+		case pbclient.SessionOpenAgentOffline:
+			if agentOfflineRetryCounter > 60 {
+				c.processGracefulExit(errors.New("agent is offline, max retry reached"))
+			}
+			loader.Color("red")
+			loader.Suffix = fmt.Sprintf(" agent is offline, retrying in 30s (%v/60) ... ", agentOfflineRetryCounter)
+			time.Sleep(time.Second * 30)
+			agentOfflineRetryCounter++
+			sendOpenSessionPktFn()
+		case pbclient.SessionOpenOK:
+			execSpec[pb.SpecGatewaySessionID] = pkt.Spec[pb.SpecGatewaySessionID]
+			stdinPkt := &pb.Packet{
+				Type:    pbagent.ExecWriteStdin,
+				Payload: execInputPayload,
+				Spec:    execSpec,
+			}
+			if err := c.client.Send(stdinPkt); err != nil {
+				c.printErrorAndExit("failed executing command, err=%v", err)
+			}
+		case pbclient.WriteStdout:
+			loader.Stop()
+			os.Stdout.Write(pkt.Payload)
+		case pbclient.WriteStderr:
+			loader.Stop()
+			os.Stderr.Write(pkt.Payload)
+		case pbclient.SessionClose:
+			loader.Stop()
+			if len(pkt.Payload) > 0 {
+				_, _ = os.Stderr.Write([]byte(styles.ClientError(string(pkt.Payload)) + "\n"))
+			}
+			exitCode, err := strconv.Atoi(string(pkt.Spec[pb.SpecClientExitCodeKey]))
+			if err != nil {
+				os.Exit(terminal.InternalErrorExitCode)
+			}
+			os.Exit(exitCode)
 		}
 	}
-}
-
-func buildReviewUrl(conf *Config, id string, url string) string {
-	protocol := "https"
-	if strings.HasPrefix(conf.Host, "127.0.0.1") {
-		protocol = "http"
-	}
-	return fmt.Sprintf("%s://%s/plugins/%s/%s", protocol, conf.Host, url, id)
 }

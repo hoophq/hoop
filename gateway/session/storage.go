@@ -192,7 +192,7 @@ func (s *Storage) NewGenericStorageWriter() *GenericStorageWriter {
 }
 
 func (s *GenericStorageWriter) Write(p plugin.Config) error {
-	log.Printf("saving session=%v, org-id=%v", p.SessionId, p.Org)
+	log.Printf("session=%s - saving session, org-id=%v", p.SessionId, p.Org)
 	eventStartDate := p.GetTime("start_date")
 	if eventStartDate == nil {
 		return fmt.Errorf(`missing "start_date" param`)

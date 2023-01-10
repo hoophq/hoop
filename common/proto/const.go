@@ -3,61 +3,19 @@ package proto
 import "time"
 
 const (
-	PacketKeepAliveType          PacketType = "KeepAlive"
-	PacketCloseTCPConnectionType PacketType = "CloseTCPConnection"
-	PacketSessionCloseType       PacketType = "SessionClose"
-	PacketAgentGatewayConnectOK  PacketType = "Agent::Gateway::ConnectOK"
-
-	// client->agent connection
-	PacketClientGatewayConnectType               PacketType = "Client::Gateway::Connect"
-	PacketClientAgentConnectType                 PacketType = "Client::Agent::Connect"
-	PacketClientGatewayConnectWaitType           PacketType = "Client::Gateway::ConnectWait"
-	PacketClientGatewayConnectApproveType        PacketType = "Client::Gateway::ConnectApprove"
-	PacketClientGatewayConnectRejectType         PacketType = "Client::Gateway::ConnectReject"
-	PacketClientAgentConnectOKType               PacketType = "Client::Agent::ConnectOK"
-	PacketClientAgentConnectErrType              PacketType = "Client::Agent::ConnectErr"
-	PacketClientConnectAgentOfflineType          PacketType = "Client::Gateway::ConnectAgentOffline"
-	PacketClientGatewayConnectRequestTimeoutType PacketType = "Client::Gateway::ConnectRequestTimeout"
-	PacketClientConnectTimeoutType               PacketType = "Client::Gateway::ConnectTimeout"
-
-	// client->agent exec
-	PacketClientGatewayExecType        PacketType = "Client::Gateway::Exec"
-	PacketClientGatewayExecWaitType    PacketType = "Client::Gateway::ExecWait"
-	PacketClientGatewayExecApproveType PacketType = "Client::Gateway::ExecApprove"
-	PacketClientGatewayExecRejectType  PacketType = "Client::Gateway::ExecReject"
-	PacketClientExecAgentOfflineType   PacketType = "Client::Gateway::ExecAgentOffline"
-	PacketClientAgentExecType          PacketType = "Client::Agent::Exec"
-	PacketClientAgentExecOKType        PacketType = "Client::Agent::ExecOK"
-	PacketClientAgentExecErrType       PacketType = "Client::Agent::ExecErr"
-
-	// terminal messages
-	PacketTerminalClientWriteStdoutType PacketType = "Terminal::Client::WriteStdout"
-	PacketTerminalWriteAgentStdinType   PacketType = "Terminal::Agent::WriteStdin"
-	PacketTerminalResizeTTYType         PacketType = "Terminal::Agent::ResizeTTY"
-	PacketTerminalCloseType             PacketType = "Terminal::Close"
-
-	// Raw TCP
-	PacketTCPWriteServerType PacketType = "TCP::WriteServer"
-	PacketTCPWriteClientType PacketType = "TCP::WriteClient"
-
-	// PG protocol messages
-	PacketPGWriteServerType PacketType = "PG::WriteServer"
-	PacketPGWriteClientType PacketType = "PG::WriteClient"
-
 	SpecGatewaySessionID          string = "gateway.session_id"
 	SpecConnectionType            string = "gateway.connection_type"
 	SpecDLPTransformationSummary  string = "dlp.transformation_summary"
 	SpecClientConnectionID        string = "client.connection_id"
-	SpecClientExecExitCodeKey     string = "terminal.exit_code"
+	SpecClientExitCodeKey         string = "client.exit_code"
 	SpecClientExecArgsKey         string = "terminal.args"
-	SpecServerExecStdStreamKey    string = "terminal.std_stream"
 	SpecAgentConnectionParamsKey  string = "agent.connection_params"
 	SpecAgentGCPRawCredentialsKey string = "agent.gcp_credentials"
 	SpecTCPServerConnectKey       string = "tcp.server_connect"
 	SpecReviewDataKey             string = "review.data"
 	SpecGatewayReviewID           string = "review.id"
-	SpecJitDataKey                string = "jit.data"
 	SpecGatewayJitID              string = "jit.id"
+	SpecJitStatus                 string = "jit.status"
 	SpecJitTimeout                string = "jit.timeout"
 
 	DefaultKeepAlive time.Duration = 10 * time.Second
@@ -72,9 +30,6 @@ const (
 
 	ConnectionOriginAgent  = "agent"
 	ConnectionOriginClient = "client"
-
-	StdOut = "stdout"
-	StdErr = "stderr"
 
 	ClientLoginCallbackAddress string = "127.0.0.1:3587"
 

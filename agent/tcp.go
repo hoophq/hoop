@@ -7,6 +7,7 @@ import (
 
 	"github.com/hoophq/pluginhooks"
 	pb "github.com/runopsio/hoop/common/proto"
+	pbclient "github.com/runopsio/hoop/common/proto/client"
 )
 
 func (a *Agent) processTCPWriteServer(pkt *pb.Packet) {
@@ -30,7 +31,7 @@ func (a *Agent) processTCPWriteServer(pkt *pb.Packet) {
 		})
 		if err != nil {
 			_ = a.client.Send(&pb.Packet{
-				Type:    pb.PacketClientAgentConnectErrType.String(),
+				Type:    pbclient.SessionClose,
 				Payload: []byte(err.Error()),
 				Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)},
 			})
@@ -45,8 +46,7 @@ func (a *Agent) processTCPWriteServer(pkt *pb.Packet) {
 		}
 		return
 	}
-
-	tcpClient := pb.NewHookStreamWriter(a.client, pb.PacketTCPWriteClientType, map[string][]byte{
+	tcpClient := pb.NewHookStreamWriter(a.client, pbclient.TCPConnectionWrite, map[string][]byte{
 		pb.SpecGatewaySessionID:   []byte(sessionID),
 		pb.SpecClientConnectionID: []byte(clientConnectionID),
 	}, pluginHooks)

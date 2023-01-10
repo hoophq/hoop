@@ -113,10 +113,10 @@ func (c *mutexClient) Close() (error, error) {
 	return streamCloseErr, connCloseErr
 }
 
-func (c *mutexClient) StartKeepAlive() {
+func (c *mutexClient) StartKeepAlive(packetType string) {
 	go func() {
 		for {
-			proto := &pb.Packet{Type: pb.PacketKeepAliveType.String()}
+			proto := &pb.Packet{Type: packetType}
 			if err := c.Send(proto); err != nil {
 				if err != nil {
 					break
