@@ -1,10 +1,11 @@
 package jit
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/user"
-	"time"
 )
 
 type (
@@ -111,7 +112,7 @@ func (s *Service) Review(context *user.Context, existingJit *Jit, status Status)
 		}
 	}
 
-	if jitsCount == approvedCount {
+	if jitsCount == approvedCount && status != StatusRejected {
 		existingJit.Status = StatusApproved
 	}
 

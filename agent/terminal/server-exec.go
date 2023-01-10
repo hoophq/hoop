@@ -8,7 +8,9 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"syscall"
 
+	"github.com/runopsio/hoop/common/runtime"
 	term "github.com/runopsio/hoop/common/terminal"
 
 	"github.com/creack/pty"
@@ -36,18 +38,23 @@ func (c *Command) String() string {
 	return ""
 }
 
-func (c *Command) MainCmd() string {
-	if len(c.cmd.Args) > 0 {
-		return c.cmd.Args[0]
-	}
-	return ""
-}
-
 func (c *Command) Pid() int {
 	if c.cmd != nil && c.cmd.Process != nil {
 		return c.cmd.Process.Pid
 	}
 	return -1
+}
+
+func (c *Command) Close() error {
+	procPid := c.Pid()
+	if procPid != -1 {
+		log.Printf("sending SIGINT signal to process %v ...", procPid)
+		return runtime.Kill(procPid, syscall.SIGINT)
+	}
+	if c.ptty != nil {
+		return c.ptty.Close()
+	}
+	return nil
 }
 
 // OnPreExec execute all pre terminal env functions
@@ -154,9 +161,7 @@ func (c *Command) RunOnTTY(stdoutWriter io.WriteCloser, onExecErr OnExecErrFn) e
 			if err := ptmx.Close(); err != nil {
 				log.Printf("failed closing tty, err=%v", err)
 			}
-			// onExecEnd(exitCode, "failed closing tty, err=%v", err)
 			if err := c.OnPostExec(); err != nil {
-				// TODO: warn
 				log.Printf("failed executing post execution command, err=%v", err)
 			}
 		}()

@@ -13,11 +13,12 @@ import (
 	"github.com/runopsio/hoop/agent/pg"
 	"github.com/runopsio/hoop/agent/pg/middlewares"
 	pb "github.com/runopsio/hoop/common/proto"
+	pbclient "github.com/runopsio/hoop/common/proto/client"
 )
 
 func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
-	swPgClient := pb.NewStreamWriter(a.client, pb.PacketPGWriteClientType, pkt.Spec)
+	swPgClient := pb.NewStreamWriter(a.client, pbclient.PGConnectionWrite, pkt.Spec)
 	connParams, pluginHooks := a.connectionParams(sessionID)
 	if connParams == nil {
 		log.Printf("session=%s - connection params not found", sessionID)
@@ -76,7 +77,7 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 
 	if pgPkt.IsFrontendSSLRequest() {
 		err := a.client.Send(&pb.Packet{
-			Type:    pb.PacketPGWriteClientType.String(),
+			Type:    pbclient.PGConnectionWrite,
 			Spec:    pkt.Spec,
 			Payload: []byte{pgtypes.ServerSSLNotSupported.Byte()},
 		})
@@ -138,7 +139,7 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 		writePGClientErr(swPgClient,
 			pg.NewFatalError("failed initalizing postgres proxy, contact the administrator").Encode())
 	}
-	swHookPgClient := pb.NewHookStreamWriter(a.client, pb.PacketPGWriteClientType, pkt.Spec, pluginHooks)
+	swHookPgClient := pb.NewHookStreamWriter(a.client, pbclient.PGConnectionWrite, pkt.Spec, pluginHooks)
 	pg.NewProxy(
 		pg.NewContext(context.Background(), sessionID),
 		swHookPgClient,

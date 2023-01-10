@@ -9,6 +9,7 @@ import (
 
 	"github.com/runopsio/hoop/common/memory"
 	pb "github.com/runopsio/hoop/common/proto"
+	pbagent "github.com/runopsio/hoop/common/proto/agent"
 )
 
 type TCPServer struct {
@@ -60,7 +61,7 @@ func (p *TCPServer) serveConn(sessionID, connectionID string, tcpClient net.Conn
 			log.Printf("failed closing client connection, err=%v", err)
 		}
 		_ = p.client.Send(&pb.Packet{
-			Type: pb.PacketCloseTCPConnectionType.String(),
+			Type: pbagent.TCPConnectionClose,
 			Spec: map[string][]byte{
 				pb.SpecClientConnectionID: []byte(connectionID),
 				pb.SpecGatewaySessionID:   []byte(sessionID),

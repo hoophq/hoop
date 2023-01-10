@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
+	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/plugin"
 	rv "github.com/runopsio/hoop/gateway/review"
@@ -89,8 +90,8 @@ func (r *reviewPlugin) OnConnect(config plugin.Config) error {
 }
 
 func (r *reviewPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *pb.Packet) error {
-	switch pb.PacketType(pkt.GetType()) {
-	case pb.PacketClientGatewayExecType:
+	switch pkt.Type {
+	case pbagent.SessionOpen:
 		context := &user.Context{
 			Org:  &user.Org{Id: pluginConfig.Org},
 			User: &user.User{Id: pluginConfig.UserID},

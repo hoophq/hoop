@@ -1,17 +1,17 @@
 package jit
 
 import (
-	"errors"
 	"fmt"
+	"log"
+	"time"
+
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
+	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/review/jit"
 	"github.com/runopsio/hoop/gateway/user"
-	"log"
-	"strconv"
-	"time"
 )
 
 const (
@@ -91,7 +91,7 @@ func (r *jitPlugin) OnConnect(config plugin.Config) error {
 
 func (r *jitPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *pb.Packet) error {
 	switch pb.PacketType(pkt.GetType()) {
-	case pb.PacketClientGatewayConnectType:
+	case pbagent.SessionOpen:
 		context := &user.Context{
 			Org:  &user.Org{Id: pluginConfig.Org},
 			User: &user.User{Id: pluginConfig.UserID},
@@ -103,24 +103,20 @@ func (r *jitPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *
 			return err
 		}
 
-		var timeInt int
-		requestTime := pkt.Spec[pb.SpecJitTimeout]
-		if requestTime != nil {
-			timeInt, err = strconv.Atoi(string(requestTime))
-			if err != nil {
-				return errors.New("invalid timeout configuration")
-			}
+		connectDuration, err := time.ParseDuration(string(pkt.Spec[pb.SpecJitTimeout]))
+		if err != nil {
+			return fmt.Errorf("invalid duration input, found=%#v", string(pkt.Spec[pb.SpecJitTimeout]))
 		}
 
 		if existingJit != nil {
-			if existingJit.Time == 0 && timeInt != 0 {
-				existingJit.Time = time.Duration(timeInt)
+			if existingJit.Time == 0 && connectDuration != 0 {
+				existingJit.Time = connectDuration
 				if err := r.jitService.Persist(context, existingJit); err != nil {
 					return err
 				}
 			}
-			b, _ := pb.GobEncode(existingJit)
-			pkt.Spec[pb.SpecJitDataKey] = b
+			pkt.Spec[pb.SpecJitStatus] = []byte(existingJit.Status)
+			pkt.Spec[pb.SpecGatewayJitID] = []byte(existingJit.Id)
 			return nil
 		}
 
@@ -141,7 +137,7 @@ func (r *jitPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *
 				Id:   pluginConfig.ConnectionId,
 				Name: pluginConfig.ConnectionName,
 			},
-			Time:      time.Duration(timeInt),
+			Time:      connectDuration,
 			Status:    jit.StatusPending,
 			JitGroups: jitGroups,
 		}
@@ -150,9 +146,8 @@ func (r *jitPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *
 			return err
 		}
 
-		b, _ := pb.GobEncode(jit)
-		pkt.Spec[pb.SpecJitDataKey] = b
-
+		pkt.Spec[pb.SpecJitStatus] = []byte(jit.Status)
+		pkt.Spec[pb.SpecGatewayJitID] = []byte(jit.Id)
 		reviewers, err := r.userService.FindByGroups(context, groups)
 		if err != nil {
 			return err

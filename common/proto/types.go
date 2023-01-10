@@ -81,16 +81,10 @@ func NewStreamWriter(client ClientTransport, pktType PacketType, spec map[string
 }
 
 func NewStdoutStreamWriter(client ClientTransport, pktType PacketType, spec map[string][]byte) io.WriteCloser {
-	if spec != nil {
-		spec[SpecServerExecStdStreamKey] = []byte(StdOut)
-	}
 	return &streamWriter{client: client, packetType: pktType, packetSpec: spec}
 }
 
 func NewStderrStreamWriter(client ClientTransport, pktType PacketType, spec map[string][]byte) io.WriteCloser {
-	if spec != nil {
-		spec[SpecServerExecStdStreamKey] = []byte(StdErr)
-	}
 	return &streamWriter{client: client, packetType: pktType, packetSpec: spec}
 }
 

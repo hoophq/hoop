@@ -24,6 +24,9 @@ import (
 
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
+	pbagent "github.com/runopsio/hoop/common/proto/agent"
+	pbclient "github.com/runopsio/hoop/common/proto/client"
+	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
 	"github.com/runopsio/hoop/gateway/client"
 	"github.com/runopsio/hoop/gateway/connection"
 	"google.golang.org/grpc/codes"
@@ -228,7 +231,7 @@ func (s *Server) listenClientMessages(
 			return nil
 		case <-c.Context.Done():
 			_ = stream.Send(&pb.Packet{
-				Type: string(pb.PacketClientConnectTimeoutType),
+				Type: string(pbclient.SessionOpenTimeout),
 			})
 			return nil
 		default:
@@ -248,7 +251,7 @@ func (s *Server) listenClientMessages(
 			log.Printf("received error from client, err=%v", err)
 			return status.Errorf(codes.Internal, "internal error, failed receiving client packet")
 		}
-		if pb.PacketType(pkt.Type) == pb.PacketKeepAliveType {
+		if pkt.Type == pbgateway.KeepAlive {
 			continue
 		}
 		if pkt.Spec == nil {
@@ -256,12 +259,12 @@ func (s *Server) listenClientMessages(
 		}
 		pkt.Spec[pb.SpecGatewaySessionID] = []byte(c.SessionID)
 
-		log.Printf("receive client packet type [%s] and session id [%s]", pkt.Type, c.SessionID)
+		log.Printf("session=%s - receive client packet type [%s]", c.SessionID, pkt.Type)
 		if err := s.pluginOnReceive(config, pkt); err != nil {
 			log.Printf("plugin reject packet, err=%v", err)
 			return status.Errorf(codes.Internal, "internal error, packet rejected, contact the administrator")
 		}
-		err = s.processClientPacket(pkt, c, conn)
+		err = s.processClientPacket(pkt, config.Verb, c, conn)
 		if err != nil {
 			log.Printf("session=%v - failed processing client packet, err=%v", c.SessionID, err)
 			return status.Errorf(codes.FailedPrecondition, err.Error())
@@ -269,12 +272,17 @@ func (s *Server) listenClientMessages(
 	}
 }
 
-func (s *Server) processClientPacket(pkt *pb.Packet, client *client.Client, conn *connection.Connection) error {
+func (s *Server) processClientPacket(pkt *pb.Packet, clientVerb string, client *client.Client, conn *connection.Connection) error {
 	switch pb.PacketType(pkt.Type) {
-	case pb.PacketClientGatewayConnectType:
-		return s.processClientConnect(pkt, client, conn)
-	case pb.PacketClientGatewayExecType:
-		return s.processClientExec(pkt, client, conn)
+	case pbagent.SessionOpen:
+		switch clientVerb {
+		case pb.ClientVerbConnect:
+			return s.processSessionOpenConnect(pkt, client, conn)
+		case pb.ClientVerbExec:
+			return s.processSessionOpenExec(pkt, client, conn)
+		default:
+			return fmt.Errorf("unknown connection type '%v'", conn.Type)
+		}
 	default:
 		agentStream := getAgentStream(conn.AgentId)
 		if agentStream == nil {
@@ -286,73 +294,60 @@ func (s *Server) processClientPacket(pkt *pb.Packet, client *client.Client, conn
 	return nil
 }
 
-func (s *Server) processClientConnect(pkt *pb.Packet, client *client.Client, conn *connection.Connection) error {
+func (s *Server) processSessionOpenConnect(pkt *pb.Packet, client *client.Client, conn *connection.Connection) error {
 	spec := map[string][]byte{
 		pb.SpecGatewaySessionID: []byte(client.SessionID),
 		pb.SpecConnectionType:   []byte(conn.Type),
 	}
 
-	existingJitData := pkt.Spec[pb.SpecJitDataKey]
-	if existingJitData != nil {
-		var jit justintime.Jit
-		if err := pb.GobDecodeInto(existingJitData, &jit); err != nil {
-			return err
-		}
-		if jit.Status != justintime.StatusApproved {
-			spec[pb.SpecGatewayJitID] = []byte(jit.Id)
-
-			requestedTime := pkt.Spec[pb.SpecJitTimeout]
-			clientStream := getClientStream(client.SessionID)
-			if requestedTime != nil {
-				_ = clientStream.Send(&pb.Packet{
-					Type:    string(pb.PacketClientGatewayConnectWaitType),
-					Spec:    spec,
-					Payload: pkt.Payload,
-				})
-				return nil
+	jitStatus, ok := pkt.Spec[pb.SpecJitStatus]
+	if ok {
+		switch justintime.Status(jitStatus) {
+		case justintime.StatusApproved:
+			connectDuration, err := time.ParseDuration(string(pkt.Spec[pb.SpecJitTimeout]))
+			if err != nil {
+				return fmt.Errorf("wrong connect duration input, found=%#v", string(pkt.Spec[pb.SpecJitTimeout]))
 			}
-
+			ctx, _ := context.WithTimeout(client.Context, connectDuration)
+			client.Context = ctx
+		default:
+			jitID := pkt.Spec[pb.SpecGatewayJitID]
+			clientStream := getClientStream(client.SessionID)
 			_ = clientStream.Send(&pb.Packet{
-				Type:    string(pb.PacketClientGatewayConnectRequestTimeoutType),
-				Spec:    spec,
-				Payload: pkt.Payload,
+				// Type:    string(pb.PacketClientGatewayConnectWaitType),
+				Type:    pbclient.SessionOpenWaitingApproval,
+				Payload: []byte(fmt.Sprintf("%s/plugins/jits/%s", s.IDProvider.ApiURL, jitID)),
 			})
-
 			return nil
 		}
-		ctx, _ := context.WithTimeout(client.Context, time.Minute*jit.Time)
-		client.Context = ctx
 	}
-
-	if s.GcpDLPRawCredentials != "" {
-		spec[pb.SpecAgentGCPRawCredentialsKey] = []byte(s.GcpDLPRawCredentials)
-	}
-
-	connParams, err := s.addConnectionParams(pkt, conn, client)
-	if err != nil {
-		return err
-	}
-	spec[pb.SpecAgentConnectionParamsKey] = connParams
 
 	agentStream := getAgentStream(conn.AgentId)
 	if agentStream == nil {
 		clientStream := getClientStream(client.SessionID)
 		_ = clientStream.Send(&pb.Packet{
-			Type: string(pb.PacketClientConnectAgentOfflineType),
+			Type: pbclient.SessionOpenAgentOffline,
 			Spec: spec,
 		})
 		return nil
 	}
 
+	if s.GcpDLPRawCredentials != "" {
+		spec[pb.SpecAgentGCPRawCredentialsKey] = []byte(s.GcpDLPRawCredentials)
+	}
+	connParams, err := s.addConnectionParams(pkt, conn, client)
+	if err != nil {
+		return err
+	}
+	spec[pb.SpecAgentConnectionParamsKey] = connParams
 	_ = agentStream.Send(&pb.Packet{
-		Type: pb.PacketClientAgentConnectType.String(),
+		Type: pbagent.SessionOpen,
 		Spec: spec,
 	})
 	return nil
 }
 
-func (s *Server) processClientExec(pkt *pb.Packet, client *client.Client, conn *connection.Connection) error {
-	payload := pkt.Payload
+func (s *Server) processSessionOpenExec(pkt *pb.Packet, client *client.Client, conn *connection.Connection) error {
 	spec := map[string][]byte{
 		pb.SpecGatewaySessionID: []byte(client.SessionID),
 		pb.SpecConnectionType:   []byte(conn.Type),
@@ -365,17 +360,13 @@ func (s *Server) processClientExec(pkt *pb.Packet, client *client.Client, conn *
 			return err
 		}
 		if review.Status != rv.StatusApproved {
-			spec[pb.SpecClientExecArgsKey] = pkt.Spec[pb.SpecClientExecArgsKey]
-			spec[pb.SpecGatewayReviewID] = []byte(review.Id)
 			clientStream := getClientStream(client.SessionID)
 			_ = clientStream.Send(&pb.Packet{
-				Type:    string(pb.PacketClientGatewayExecWaitType),
-				Spec:    spec,
-				Payload: payload,
+				Type:    pbclient.SessionOpenWaitingApproval,
+				Payload: []byte(fmt.Sprintf("%s/plugins/reviews/%s", s.IDProvider.ApiURL, review.Id)),
 			})
 			return nil
 		}
-		payload = []byte(review.Input)
 	}
 
 	if s.GcpDLPRawCredentials != "" {
@@ -387,9 +378,8 @@ func (s *Server) processClientExec(pkt *pb.Packet, client *client.Client, conn *
 		spec[pb.SpecClientExecArgsKey] = pkt.Spec[pb.SpecClientExecArgsKey]
 		clientStream := getClientStream(client.SessionID)
 		_ = clientStream.Send(&pb.Packet{
-			Type:    string(pb.PacketClientExecAgentOfflineType),
-			Spec:    spec,
-			Payload: payload,
+			Type: pbclient.SessionOpenAgentOffline,
+			Spec: spec,
 		})
 		return nil
 	}
@@ -399,11 +389,9 @@ func (s *Server) processClientExec(pkt *pb.Packet, client *client.Client, conn *
 		return err
 	}
 	spec[pb.SpecAgentConnectionParamsKey] = connParams
-
 	_ = agentStream.Send(&pb.Packet{
-		Type:    string(pb.PacketClientAgentExecType),
-		Spec:    spec,
-		Payload: payload,
+		Type: pbagent.SessionOpen,
+		Spec: spec,
 	})
 	return nil
 }
@@ -499,14 +487,16 @@ func (s *Server) addConnectionParams(pkt *pb.Packet, conn *connection.Connection
 func (s *Server) ReviewStatusChange(sessionID string, status rv.Status, command []byte) error {
 	clientStream := getClientStream(sessionID)
 	if clientStream != nil {
-		t := string(pb.PacketClientGatewayExecApproveType)
+		payload := command
+		packetType := pbclient.SessionOpenApproveOK
 		if status == rv.StatusRejected {
-			t = string(pb.PacketClientGatewayExecRejectType)
+			packetType = pbclient.SessionClose
+			payload = []byte(`access to connection has been denied`)
 		}
 		_ = clientStream.Send(&pb.Packet{
-			Type:    string(t),
+			Type:    packetType,
 			Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)},
-			Payload: command,
+			Payload: payload,
 		})
 	}
 	return nil
@@ -515,14 +505,16 @@ func (s *Server) ReviewStatusChange(sessionID string, status rv.Status, command 
 func (s *Server) JitStatusChange(sessionID string, status justintime.Status) error {
 	clientStream := getClientStream(sessionID)
 	if clientStream != nil {
-		t := string(pb.PacketClientGatewayConnectApproveType)
+		var payload []byte
+		packetType := pbclient.SessionOpenApproveOK
 		if status == justintime.StatusRejected {
-			t = string(pb.PacketClientGatewayConnectRejectType)
+			packetType = pbclient.SessionClose
+			payload = []byte(`access to connection has been denied`)
 		}
 		_ = clientStream.Send(&pb.Packet{
-			Type:    string(t),
+			Type:    packetType,
 			Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)},
-			Payload: nil,
+			Payload: payload,
 		})
 	}
 	return nil
@@ -534,7 +526,7 @@ func (s *Server) disconnectClient(c *client.Client) {
 	_, _ = s.ClientService.Persist(c)
 	if stream := getAgentStream(c.AgentId); stream != nil {
 		_ = stream.Send(&pb.Packet{
-			Type: pb.PacketSessionCloseType.String(),
+			Type: pbagent.SessionClose,
 			Spec: map[string][]byte{
 				pb.SpecGatewaySessionID: []byte(c.SessionID),
 			},

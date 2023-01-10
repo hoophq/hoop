@@ -25,7 +25,7 @@ var startCmd = &cobra.Command{
 	Short:        "Runs hoop local demo",
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
-		loader := spinner.New(spinner.CharSets[78], 70*time.Millisecond)
+		loader := spinner.New(spinner.CharSets[11], 70*time.Millisecond)
 		loader.Color("green")
 		loader.Start()
 		defer loader.Stop()
@@ -35,7 +35,6 @@ var startCmd = &cobra.Command{
 
 		done := make(chan os.Signal, 1)
 		signal.Notify(done, syscall.SIGTERM, syscall.SIGINT)
-		// TODO: make resize to propagate remotely!
 		go func() {
 			for {
 				switch <-done {

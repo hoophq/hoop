@@ -7,10 +7,10 @@ import (
 	"os/signal"
 	"strconv"
 
-	pbterm "github.com/runopsio/hoop/common/terminal"
-
 	"github.com/creack/pty"
 	pb "github.com/runopsio/hoop/common/proto"
+	pbagent "github.com/runopsio/hoop/common/proto/agent"
+	pbterm "github.com/runopsio/hoop/common/terminal"
 	"golang.org/x/term"
 )
 
@@ -45,7 +45,7 @@ func (t *Terminal) ConnectWithTTY() error {
 	}
 
 	go func() {
-		sw := pb.NewStreamWriter(t.client, pb.PacketTerminalWriteAgentStdinType, nil)
+		sw := pb.NewStreamWriter(t.client, pbagent.TerminalWriteStdin, nil)
 		_, _ = sw.Write(pbterm.TermEnterKeyStrokeType)
 		_, _ = io.Copy(sw, os.Stdin)
 	}()
@@ -58,7 +58,7 @@ func (t *Terminal) ConnectWithTTY() error {
 			size, err := pty.GetsizeFull(os.Stdin)
 			if err == nil {
 				resizeMsg := fmt.Sprintf("%v,%v,%v,%v", size.Rows, size.Cols, size.X, size.Y)
-				_, _ = pb.NewStreamWriter(t.client, pb.PacketTerminalResizeTTYType, nil).
+				_, _ = pb.NewStreamWriter(t.client, pbagent.TerminalResizeTTY, nil).
 					Write([]byte(resizeMsg))
 			}
 		}
@@ -78,7 +78,7 @@ func (t *Terminal) ConnectWithTTY() error {
 
 func (t *Terminal) ProcessPacketCloseTerm(pkt *pb.Packet) int {
 	t.Close()
-	exitCodeStr := string(pkt.Spec[pb.SpecClientExecExitCodeKey])
+	exitCodeStr := string(pkt.Spec[pb.SpecClientExitCodeKey])
 	exitCode, err := strconv.Atoi(exitCodeStr)
 	if exitCodeStr == "" || err != nil {
 		// End with a custom exit code, because we don't
