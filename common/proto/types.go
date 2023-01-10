@@ -17,7 +17,7 @@ type (
 		Send(*Packet) error
 		Recv() (*Packet, error)
 		StreamContext() context.Context
-		StartKeepAlive(packetType string)
+		StartKeepAlive()
 		Close() (error, error)
 	}
 	PacketType        string

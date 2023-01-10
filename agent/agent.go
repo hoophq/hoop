@@ -135,7 +135,7 @@ func (a *Agent) connectionParams(sessionID string) (*pb.AgentConnectionParams, *
 }
 
 func (a *Agent) Run(svrAddr, token string, firstConnTry bool) {
-	a.client.StartKeepAlive(pbagent.KeepAlive)
+	a.client.StartKeepAlive()
 	a.handleGracefulExit()
 
 	for {

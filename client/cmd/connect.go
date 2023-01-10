@@ -111,7 +111,7 @@ func runConnect(args []string) {
 					c.processGracefulExit(err)
 				}
 				c.loader.Stop()
-				c.client.StartKeepAlive(pbclient.KeepAlive)
+				c.client.StartKeepAlive()
 				c.connStore.Set(string(sessionID), pgp)
 				c.printHeader(string(sessionID))
 				fmt.Println()
@@ -129,7 +129,7 @@ func runConnect(args []string) {
 					c.processGracefulExit(err)
 				}
 				c.loader.Stop()
-				c.client.StartKeepAlive(pbclient.KeepAlive)
+				c.client.StartKeepAlive()
 				c.connStore.Set(string(sessionID), tcp)
 				c.printHeader(string(sessionID))
 				fmt.Println()
@@ -144,7 +144,7 @@ func runConnect(args []string) {
 				}
 				// c.handleCmdInterrupt()
 				c.loader.Stop()
-				c.client.StartKeepAlive(pbclient.KeepAlive)
+				c.client.StartKeepAlive()
 				term := proxy.NewTerminal(c.client)
 				c.printHeader(string(sessionID))
 				c.connStore.Set(string(sessionID), term)

@@ -2,8 +2,6 @@
 package agent
 
 const (
-	KeepAlive = "AgentKeepAlive"
-
 	GatewayConnectOK = "AgentGatewayConnectOK"
 	SessionOpen      = "AgentSessionOpen"
 	SessionClose     = "AgentSessionClose"

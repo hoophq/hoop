@@ -26,6 +26,7 @@ import (
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
+	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
 	"github.com/runopsio/hoop/gateway/client"
 	"github.com/runopsio/hoop/gateway/connection"
 	"google.golang.org/grpc/codes"
@@ -250,7 +251,7 @@ func (s *Server) listenClientMessages(
 			log.Printf("received error from client, err=%v", err)
 			return status.Errorf(codes.Internal, "internal error, failed receiving client packet")
 		}
-		if pkt.Type == pbclient.KeepAlive {
+		if pkt.Type == pbgateway.KeepAlive {
 			continue
 		}
 		if pkt.Spec == nil {

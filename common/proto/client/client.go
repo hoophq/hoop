@@ -2,8 +2,6 @@
 package client
 
 const (
-	KeepAlive = "ClientKeepAlive"
-
 	SessionOpenOK              = "ClientSessionOpenOK"
 	SessionOpenTimeout         = "ClientSessionOpenTimeout"
 	SessionOpenWaitingApproval = "ClientSessionOpenWaitingApproval"

@@ -12,6 +12,7 @@ import (
 
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
+	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
 	"github.com/runopsio/hoop/gateway/agent"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -120,7 +121,7 @@ func (s *Server) listenAgentMessages(config plugin.Config, ag *agent.Agent, stre
 			log.Printf("received error from agent, err=%v", err)
 			return err
 		}
-		if pkt.Type == pbagent.KeepAlive {
+		if pkt.Type == pbgateway.KeepAlive {
 			continue
 		}
 		sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])

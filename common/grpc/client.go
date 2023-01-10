@@ -8,6 +8,7 @@ import (
 	"time"
 
 	pb "github.com/runopsio/hoop/common/proto"
+	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
 	"github.com/runopsio/hoop/common/runtime"
 	"github.com/runopsio/hoop/common/version"
 	"golang.org/x/oauth2"
@@ -113,10 +114,10 @@ func (c *mutexClient) Close() (error, error) {
 	return streamCloseErr, connCloseErr
 }
 
-func (c *mutexClient) StartKeepAlive(packetType string) {
+func (c *mutexClient) StartKeepAlive() {
 	go func() {
 		for {
-			proto := &pb.Packet{Type: packetType}
+			proto := &pb.Packet{Type: pbgateway.KeepAlive}
 			if err := c.Send(proto); err != nil {
 				if err != nil {
 					break
