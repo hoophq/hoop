@@ -25,8 +25,14 @@ var inputStdin string
 
 // execCmd represents the exec command
 var execCmd = &cobra.Command{
-	Use:   "exec",
+	Use:   "exec CONNECTION",
 	Short: "Execute a given input in a remote resource",
+	PreRun: func(cmd *cobra.Command, args []string) {
+		if len(args) < 1 {
+			cmd.Usage()
+			os.Exit(1)
+		}
+	},
 	Run: func(cmd *cobra.Command, args []string) {
 		runExec(args)
 	},

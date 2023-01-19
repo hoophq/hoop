@@ -2,9 +2,10 @@ package api
 
 import (
 	"fmt"
-	"github.com/runopsio/hoop/gateway/review/jit"
 	"os"
 	"strings"
+
+	"github.com/runopsio/hoop/gateway/review/jit"
 
 	"github.com/gin-contrib/static"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -155,6 +156,11 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.GET("/plugins/:name",
 		api.Authenticate,
 		api.PluginHandler.FindOne)
+
+	route.PUT("/plugins/:name/config",
+		api.Authenticate,
+		api.AdminOnly,
+		api.PluginHandler.PutConfig)
 
 	route.GET("/plugins/audit/sessions/:session_id",
 		api.Authenticate,

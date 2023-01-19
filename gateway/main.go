@@ -75,6 +75,7 @@ func Run() {
 		IDProvider:           idProvider,
 		Profile:              profile,
 		GcpDLPRawCredentials: os.Getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"),
+		PluginRegistryURL:    os.Getenv("PLUGIN_REGISTRY_URL"),
 	}
 	reviewService.TransportService = g
 	jitService.TransportService = g

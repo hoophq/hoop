@@ -39,6 +39,7 @@ type (
 		EnvVars        map[string]any
 		CmdList        []string
 		ClientArgs     []string
+		ClientVerb     string
 		DLPInfoTypes   []string
 		PluginHookList []map[string]any
 	}
@@ -107,7 +108,11 @@ func (s *streamWriter) Write(data []byte) (int, error) {
 	p.Payload = data
 
 	if s.pluginHookExec != nil {
+		if p.Spec == nil {
+			return 0, fmt.Errorf("packet spec is empty")
+		}
 		mutateData, err := s.pluginHookExec.ExecRPCOnSend(&pluginhooks.Request{
+			SessionID:  string(p.Spec[SpecGatewaySessionID]),
 			PacketType: p.Type,
 			Payload:    data,
 		})

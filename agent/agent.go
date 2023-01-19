@@ -126,9 +126,9 @@ func (a *Agent) handleGracefulExit() {
 	}()
 }
 
-func (a *Agent) connectionParams(sessionID string) (*pb.AgentConnectionParams, *hook.List) {
+func (a *Agent) connectionParams(sessionID string) (*pb.AgentConnectionParams, *hook.ClientList) {
 	storeKey := fmt.Sprintf(pluginHookSessionsKey, sessionID)
-	if hooks, ok := a.connStore.Get(storeKey).(*hook.List); ok {
+	if hooks, ok := a.connStore.Get(storeKey).(*hook.ClientList); ok {
 		return hooks.ConnectionParams(), hooks
 	}
 	return nil, nil
@@ -205,7 +205,8 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 	connType := string(pkt.Spec[pb.SpecConnectionType])
 	connEnvVars, err := parseConnectionEnvVars(connParams.EnvVars, connType)
 	if err != nil {
-		return nil, nil, fmt.Errorf("session %s failed to parse env vars", sessionIDKey)
+		log.Printf("session=%s - failed parse envvars from connection, err=%v", sessionIDKey, err)
+		return nil, nil, fmt.Errorf("failed to parse connection envvars")
 	}
 	if connType == pb.ConnectionTypePostgres || connType == pb.ConnectionTypeTCP {
 		if err := isPortActive(connEnvVars.host, connEnvVars.port); err != nil {
@@ -291,24 +292,26 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 		}
 	}
 
-	if err := a.loadHooks(sessionIDKey, connParams); err != nil {
-		log.Println(err)
-		_ = a.client.Send(&pb.Packet{
-			Type:    pbclient.SessionClose,
-			Payload: []byte(`failed loading hook plugins for this connection`),
+	go func() {
+		if err := a.loadHooks(sessionIDKey, connParams); err != nil {
+			log.Println(err)
+			_ = a.client.Send(&pb.Packet{
+				Type:    pbclient.SessionClose,
+				Payload: []byte(`failed loading plugin hooks for this connection`),
+				Spec: map[string][]byte{
+					pb.SpecClientExitCodeKey: []byte(`1`),
+					pb.SpecGatewaySessionID:  sessionID,
+				},
+			})
+			return
+		}
+		a.client.Send(&pb.Packet{
+			Type: pbclient.SessionOpenOK,
 			Spec: map[string][]byte{
-				pb.SpecClientExitCodeKey: []byte(`1`),
-				pb.SpecGatewaySessionID:  sessionID,
-			},
-		})
-		return
-	}
-	a.client.Send(&pb.Packet{
-		Type: pbclient.SessionOpenOK,
-		Spec: map[string][]byte{
-			pb.SpecGatewaySessionID: sessionID,
-			pb.SpecConnectionType:   pkt.Spec[pb.SpecConnectionType]}})
-	log.Printf("session=%v - sent gateway connect ok", string(sessionID))
+				pb.SpecGatewaySessionID: sessionID,
+				pb.SpecConnectionType:   pkt.Spec[pb.SpecConnectionType]}})
+		log.Printf("session=%v - sent gateway connect ok", string(sessionID))
+	}()
 }
 
 func (a *Agent) processTCPCloseConnection(pkt *pb.Packet) {
@@ -335,25 +338,21 @@ func (a *Agent) processSessionClose(pkt *pb.Packet) {
 		log.Printf("received packet %v without a session", pkt.Type)
 		return
 	}
-	log.Printf("session=%s - received %s, cleaning up session", sessionID, pkt.Type)
+	a.sessionCleanup(sessionID)
+}
+
+func (a *Agent) sessionCleanup(sessionID string) {
+	log.Printf("session=%s - cleaning up session", sessionID)
 	filterFn := func(k string) bool { return strings.Contains(k, sessionID) }
 	for key, obj := range a.connStore.Filter(filterFn) {
 		switch v := obj.(type) {
-		case *hook.List:
+		case *hook.ClientList:
 			a.connStore.Del(key)
-			lastSession := true
-			filterFn := func(k string) bool { return strings.HasPrefix(k, "pluginhooks-sessions") }
-			for _, o := range a.connStore.Filter(filterFn) {
-				if h, ok := o.(*hook.List); ok {
-					if v.ID() == h.ID() {
-						lastSession = false
-						break
-					}
+			for _, hookClient := range v.Items() {
+				hookClient.SessionCounter--
+				if hookClient.SessionCounter <= 0 {
+					go hookClient.Kill()
 				}
-			}
-			// end the plugin execution if it's the last session
-			if lastSession {
-				go v.Close()
 			}
 		case io.Closer:
 			go func() {

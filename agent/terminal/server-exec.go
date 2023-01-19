@@ -48,8 +48,8 @@ func (c *Command) Pid() int {
 func (c *Command) Close() error {
 	procPid := c.Pid()
 	if procPid != -1 {
-		log.Printf("sending SIGINT signal to process %v ...", procPid)
-		return runtime.Kill(procPid, syscall.SIGINT)
+		log.Printf("sending SIGTERM signal to process %v ...", procPid)
+		return runtime.Kill(procPid, syscall.SIGTERM)
 	}
 	if c.ptty != nil {
 		return c.ptty.Close()
@@ -155,21 +155,20 @@ func (c *Command) RunOnTTY(stdoutWriter io.WriteCloser, onExecErr OnExecErrFn) e
 	}
 	c.ptty = ptmx
 	go func() {
-		exitCode := 0
-		defer func() {
-			log.Printf("exit-code=%v - closing tty ...", exitCode)
-			if err := ptmx.Close(); err != nil {
-				log.Printf("failed closing tty, err=%v", err)
-			}
-			if err := c.OnPostExec(); err != nil {
-				log.Printf("failed executing post execution command, err=%v", err)
-			}
-		}()
 		// TODO: need to make distinction between stderr / stdout when writing back to client
 		if _, err := io.Copy(stdoutWriter, ptmx); err != nil {
 			log.Printf("failed copying stdout from tty, err=%v", err)
 		}
 
+		log.Println("closing tty ...")
+		if err := ptmx.Close(); err != nil {
+			log.Printf("failed closing tty, err=%v", err)
+		}
+		if err := c.OnPostExec(); err != nil {
+			log.Printf("failed executing post execution command, err=%v", err)
+		}
+
+		exitCode := 0
 		err := c.cmd.Wait()
 		if err != nil {
 			if exErr, ok := err.(*exec.ExitError); ok {

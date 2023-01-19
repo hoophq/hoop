@@ -105,6 +105,17 @@ func getPlugins(id string) []pluginConfig {
 	return cc.plugins[id]
 }
 
+func setClientMetdata(into *client.Client, md metadata.MD) {
+	into.Hostname = extractData(md, "hostname")
+	into.MachineId = extractData(md, "machine_id")
+	into.KernelVersion = extractData(md, "kernel_version")
+	into.Version = extractData(md, "version")
+	into.GoVersion = extractData(md, "go_version")
+	into.Compiler = extractData(md, "compiler")
+	into.Platform = extractData(md, "platform")
+	into.Verb = extractData(md, "verb")
+}
+
 func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string) error {
 	ctx := stream.Context()
 	md, _ := metadata.FromIncomingContext(ctx)
@@ -136,17 +147,15 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 
 	sessionID := uuid.NewString()
 	c := &client.Client{
-		Id:            uuid.NewString(),
-		SessionID:     sessionID,
-		OrgId:         context.Org.Id,
-		UserId:        context.User.Id,
-		Hostname:      hostname,
-		MachineId:     machineId,
-		KernelVersion: kernelVersion,
-		Status:        client.StatusConnected,
-		ConnectionId:  conn.Id,
-		AgentId:       conn.AgentId,
+		Id:           uuid.NewString(),
+		SessionID:    sessionID,
+		OrgId:        context.Org.Id,
+		UserId:       context.User.Id,
+		Status:       client.StatusConnected,
+		ConnectionId: conn.Id,
+		AgentId:      conn.AgentId,
 	}
+	setClientMetdata(c, md)
 
 	pConfig := plugin.Config{
 		SessionId:      sessionID,
@@ -200,12 +209,15 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		}
 	}
 
-	s.ClientService.Persist(c)
+	if _, err := s.ClientService.Persist(c); err != nil {
+		log.Printf("failed saving client connection, err=%v", err)
+		return err
+	}
 	bindClient(c.SessionID, stream, conn, plugins)
+	s.handleGracefulShutdown(c)
 
-	s.clientGracefulShutdown(c)
-
-	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
+	log.Printf("proxy connected: hostname=%v,verb=%v,platform=%v,version=%v,goversion=%v,compiler=%v,machineid=%v",
+		c.Hostname, c.Verb, c.Platform, c.Version, c.GoVersion, c.Compiler, c.MachineId)
 	clientErr := s.listenClientMessages(stream, c, conn, pConfig)
 
 	if err := s.pluginOnDisconnect(pConfig); err != nil {
@@ -314,7 +326,6 @@ func (s *Server) processSessionOpenConnect(pkt *pb.Packet, client *client.Client
 			jitID := pkt.Spec[pb.SpecGatewayJitID]
 			clientStream := getClientStream(client.SessionID)
 			_ = clientStream.Send(&pb.Packet{
-				// Type:    string(pb.PacketClientGatewayConnectWaitType),
 				Type:    pbclient.SessionOpenWaitingApproval,
 				Payload: []byte(fmt.Sprintf("%s/plugins/jits/%s", s.IDProvider.ApiURL, jitID)),
 			})
@@ -430,7 +441,7 @@ func (s *Server) addConnectionParams(pkt *pb.Packet, conn *connection.Connection
 	}
 	var pluginHookList []map[string]any
 	for _, pluginItem := range plugins {
-		if pluginItem.Type != "hook" {
+		if pluginItem.Source == nil {
 			continue
 		}
 		var pluginName string
@@ -459,8 +470,15 @@ func (s *Server) addConnectionParams(pkt *pb.Packet, conn *connection.Connection
 			if len(plConn.Config) > 0 {
 				connectionConfigB64JSONEnc = plConn.Config[0]
 			}
+			var pluginEnvVars map[string]string
+			if pl.Config != nil {
+				pluginEnvVars = pl.Config.EnvVars
+			}
 			pluginHookList = append(pluginHookList, map[string]any{
+				"plugin_registry":   s.PluginRegistryURL,
 				"plugin_name":       pl.Name,
+				"plugin_source":     *pl.Source,
+				"plugin_envvars":    pluginEnvVars,
 				"connection_config": map[string]any{"jsonb64": connectionConfigB64JSONEnc},
 			})
 			// load the plugin once per connection
@@ -474,6 +492,7 @@ func (s *Server) addConnectionParams(pkt *pb.Packet, conn *connection.Connection
 		EnvVars:        conn.Secret,
 		CmdList:        conn.Command,
 		ClientArgs:     clientArgs,
+		ClientVerb:     client.Verb,
 		DLPInfoTypes:   infoTypes,
 		PluginHookList: pluginHookList,
 	})
@@ -547,7 +566,7 @@ func (s *Server) exchangeUserToken(token string) (string, error) {
 	return sub, nil
 }
 
-func (s *Server) clientGracefulShutdown(c *client.Client) {
+func (s *Server) handleGracefulShutdown(c *client.Client) {
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc,
 		syscall.SIGHUP,
