@@ -349,8 +349,8 @@ func (a *Agent) sessionCleanup(sessionID string) {
 		case *hook.ClientList:
 			a.connStore.Del(key)
 			for _, hookClient := range v.Items() {
-				hookClient.SessionCounter--
-				if hookClient.SessionCounter <= 0 {
+				*hookClient.SessionCounter()--
+				if *hookClient.SessionCounter() <= 0 {
 					go hookClient.Kill()
 				}
 			}

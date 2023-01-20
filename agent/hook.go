@@ -26,37 +26,45 @@ func loadHookFromSource(pluginRegistryURL, pluginName, pluginSource string) (*ho
 	}
 }
 
-func (a *Agent) newHookClient(newHook map[string]any) (*hook.Client, error) {
+func (a *Agent) newHookClient(newHook map[string]any) (hook.Client, error) {
 	pluginName, _ := newHook["plugin_name"].(string)
 	if pluginName == "" {
 		return nil, fmt.Errorf("plugin on inconsistent state, missing plugin name")
 	}
 	pluginRegistryURL, _ := newHook["plugin_registry"].(string)
 	pluginSource, _ := newHook["plugin_source"].(string)
+	log.Printf("loading plugin. name=%s,source=%s,registry=%s",
+		pluginName, pluginSource, pluginRegistryURL)
 	pm, err := loadHookFromSource(pluginRegistryURL, pluginName, pluginSource)
 	if err != nil {
 		return nil, fmt.Errorf("failed loading plugin source (%v), err=%v",
 			pluginSource, err)
 	}
+	log.Printf("plugin loaded into filesystem. %v", pm)
 	pluginEnvVars, _ := newHook["plugin_envvars"].(map[string]string)
 	connectionConfig, _ := newHook["connection_config"].(map[string]any)
-	client, err := hook.NewClient(
-		pluginName,
-		pm.ExecFilePath(),
-		pluginEnvVars,
-		connectionConfig,
-		a.sessionCleanup)
+	hookClient, _ := newHook["hook_client"].(hook.Client)
+	client, err := hook.NewClient(hook.ClientConfig{
+		PluginParams: hook.PluginParams{
+			Name:             pluginName,
+			ExecPath:         pm.ExecFilePath(),
+			EnvVars:          pluginEnvVars,
+			ConnectionConfig: connectionConfig,
+		},
+		CleanupFn:  a.sessionCleanup,
+		HookClient: hookClient,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed initializing plugin client, err=%v", err)
+		return nil, err
 	}
 	return client, nil
 }
 
 func (a *Agent) executeRPCOnSessionOpen(
-	sp *pluginhooks.SesssionParams, client *hook.Client) (*pluginhooks.SessionParamsResponse, error) {
+	sp *pluginhooks.SesssionParams, client hook.Client) (*pluginhooks.SessionParamsResponse, error) {
 	resp, err := client.RPCOnSessionOpen(sp)
 	if err != nil {
-		err = fmt.Errorf("plugin %s has rejected the request, reason=%v", client.PluginName(), err)
+		err = fmt.Errorf("plugin %s has rejected the request, reason=%v", client.PluginParams().Name, err)
 		log.Printf("session=%s - %s", sp.SessionID, err)
 		_ = a.client.Send(&pb.Packet{
 			Type:    pbclient.SessionClose,
@@ -74,6 +82,13 @@ func (a *Agent) conciliateHooks(params *pb.AgentConnectionParams) (*hook.ClientL
 	newState := hook.NewClientList(params)
 	// nothing to conciliate
 	if oldState == nil {
+		for _, newHook := range params.PluginHookList {
+			hookClient, err := a.newHookClient(newHook)
+			if err != nil {
+				return nil, err
+			}
+			newState.Add(hookClient)
+		}
 		return newState, nil
 	}
 	for _, newHook := range params.PluginHookList {
@@ -85,18 +100,9 @@ func (a *Agent) conciliateHooks(params *pb.AgentConnectionParams) (*hook.ClientL
 				newState.Add(old)
 				continue
 			}
-			// these old plugins are already exited
-			// initialize new ones
-			hookClient, err := a.newHookClient(newHook)
-			if err != nil {
-				return nil, err
-			}
-			// replace the plugin when connection config changes
-			newState.Add(hookClient)
 			// This action will make old clients
 			// using this plugin to disconnect.
 			go old.Kill()
-			continue
 		}
 		hookClient, err := a.newHookClient(newHook)
 		if err != nil {
@@ -113,16 +119,6 @@ func (a *Agent) loadHooks(sessionID string, params *pb.AgentConnectionParams) er
 		log.Printf("session=%v - failed conciliating plugin hooks, err=%v", sessionID, err)
 		return err
 	}
-	if hookList.Empty() {
-		// nothing to conciliate, just add them in the list
-		for _, newHook := range params.PluginHookList {
-			hookClient, err := a.newHookClient(newHook)
-			if err != nil {
-				return err
-			}
-			hookList.Add(hookClient)
-		}
-	}
 
 	sessionHookItems := hook.NewClientList(params)
 	// call on session open for each plugin available in this session
@@ -134,25 +130,25 @@ func (a *Agent) loadHooks(sessionID string, params *pb.AgentConnectionParams) er
 		if hookClient, exists := hookList.Get(pluginName); exists {
 			resp, err := a.executeRPCOnSessionOpen(&pluginhooks.SesssionParams{
 				SessionID:         sessionID,
-				PluginEnvVars:     hookClient.PluginEnvVars(),
+				PluginEnvVars:     hookClient.PluginParams().EnvVars,
 				UserID:            params.UserID,
 				ConnectionName:    params.ConnectionName,
 				ConnectionType:    params.ConnectionType,
 				ConnectionEnvVars: params.EnvVars,
-				ConnectionConfig:  hookClient.PluginConnectionConfig(),
+				ConnectionConfig:  hookClient.PluginParams().ConnectionConfig,
 				ConnectionCommand: params.CmdList,
 				ClientArgs:        params.ClientArgs,
 				ClientVerb:        params.ClientVerb,
 			}, hookClient)
 			if err != nil {
-				if hookClient.SessionCounter <= 0 {
+				if *hookClient.SessionCounter() <= 0 {
 					go hookClient.Kill()
 				}
 				// clean previous plugins initialized by this session
 				defer func() { a.sessionCleanup(sessionID) }()
 				break
 			}
-			hookClient.SessionCounter++
+			*hookClient.SessionCounter()++
 			sessionHookItems.Add(hookClient)
 			mutateParams(params, resp)
 		}

@@ -71,11 +71,13 @@ func (s *Storage) PersistConfig(pconfig *PluginConfig) error {
 }
 
 func (s *Storage) FindAll(context *user.Context) ([]ListPlugin, error) {
-	var payload = `{:query {
-		:find [(pull ?plugin [* {:plugin/connection-ids [{:plugin-connection/id [:connection/name]}]}])] 
+	var payload = fmt.Sprintf(`{:query {
+		:find [(pull ?p [* {:plugin/connection-ids [{:plugin-connection/id [:connection/name]}]}
+			  (:plugin/config-id {:as :plugin/config}) {(:plugin/config-id {:as :plugin/config})
+			  [:xt/id :pluginconfig/envvars]}])]
 		:in [org]
-		:where [[?plugin :plugin/org org]]}
-		:in-args ["` + context.Org.Id + `"]}`
+		:where [[?p :plugin/org org]]}
+		:in-args [%q]}`, context.Org.Id)
 
 	b, err := s.Query([]byte(payload))
 	if err != nil {
@@ -105,6 +107,7 @@ func (s *Storage) FindAll(context *user.Context) ([]ListPlugin, error) {
 				Name:     p.Name,
 				Source:   p.Source,
 				Priority: p.Priority,
+				Config:   p.Config,
 			},
 			Connections: connections,
 		})

@@ -25,6 +25,14 @@ type (
 	}
 )
 
+func redactPluginConfig(c *PluginConfig) {
+	if c != nil {
+		for envKey, _ := range c.EnvVars {
+			c.EnvVars[envKey] = "REDACTED"
+		}
+	}
+}
+
 func (a *Handler) FindOne(c *gin.Context) {
 	ctx, _ := c.Get("context")
 	context := ctx.(*user.Context)
@@ -41,7 +49,7 @@ func (a *Handler) FindOne(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 		return
 	}
-
+	redactPluginConfig(plugin.Config)
 	c.PureJSON(http.StatusOK, plugin)
 }
 
@@ -55,7 +63,9 @@ func (a *Handler) FindAll(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed listing plugins"})
 		return
 	}
-
+	for _, pl := range plugins {
+		redactPluginConfig(pl.Config)
+	}
 	c.PureJSON(http.StatusOK, plugins)
 }
 
@@ -198,6 +208,6 @@ func (a *Handler) Put(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	plugin.Config = nil
+	redactPluginConfig(plugin.Config)
 	c.PureJSON(http.StatusOK, plugin)
 }

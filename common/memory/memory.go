@@ -5,19 +5,19 @@ import (
 )
 
 type Store interface {
-	Get(key string) interface{}
-	Set(key string, val interface{})
+	Get(key string) any
+	Set(key string, val any)
 	Del(key string)
-	List() map[string]interface{}
-	Filter(func(key string) bool) map[string]interface{}
+	List() map[string]any
+	Filter(func(key string) bool) map[string]any
 }
 
 type store struct {
 	mutex sync.RWMutex
-	m     map[string]interface{}
+	m     map[string]any
 }
 
-func (s *store) Set(key string, val interface{}) {
+func (s *store) Set(key string, val any) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	s.m[key] = val
@@ -29,16 +29,16 @@ func (s *store) Del(key string) {
 	delete(s.m, key)
 }
 
-func (s *store) List() map[string]interface{} {
+func (s *store) List() map[string]any {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
 	return s.m
 }
 
-func (s *store) Filter(fn func(key string) bool) map[string]interface{} {
+func (s *store) Filter(fn func(key string) bool) map[string]any {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
-	filteredStore := map[string]interface{}{}
+	filteredStore := map[string]any{}
 	for key, obj := range s.m {
 		if fn(key) {
 			filteredStore[key] = obj
@@ -47,7 +47,7 @@ func (s *store) Filter(fn func(key string) bool) map[string]interface{} {
 	return filteredStore
 }
 
-func (s *store) Get(key string) interface{} {
+func (s *store) Get(key string) any {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
 	val, ok := s.m[key]
@@ -59,7 +59,7 @@ func (s *store) Get(key string) interface{} {
 
 func New() Store {
 	return &store{
-		m:     map[string]interface{}{},
+		m:     map[string]any{},
 		mutex: sync.RWMutex{},
 	}
 }
