@@ -22,6 +22,7 @@ export PORT=8009
 export PROFILE=dev
 export XTDB_ADDRESS=http://127.0.0.1:3001
 export PLUGIN_AUDIT_PATH=/tmp/hoopsessions
+export PLUGIN_REGISTRY_URL=https://pluginregistry.s3.amazonaws.com/packages.json
 export GIN_MODE=debug
 # require to run npm install && npm run release:hoop-ui
 export STATIC_UI_PATH=../webapp/resources/public/

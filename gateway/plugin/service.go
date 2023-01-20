@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/gateway/user"
@@ -13,19 +14,23 @@ type (
 	}
 
 	storage interface {
+		PersistConfig(*PluginConfig) error
 		Persist(context *user.Context, plugin *Plugin) (int64, error)
 		FindAll(context *user.Context) ([]ListPlugin, error)
 		FindOne(context *user.Context, name string) (*Plugin, error)
 	}
 
 	Plugin struct {
-		Id             string       `json:"id"          edn:"xt/id"`
-		OrgId          string       `json:"-"           edn:"plugin/org"`
-		Name           string       `json:"name"        edn:"plugin/name"          binding:"required"`
-		Type           string       `json:"type"        edn:"plugin/type"`
-		Connections    []Connection `json:"connections" edn:"plugin/connections"   binding:"required"`
-		ConnectionsIDs []string     `json:"-"           edn:"plugin/connection-ids"`
-		InstalledById  string       `json:"-"           edn:"plugin/installed-by"`
+		Id             string        `json:"id"           edn:"xt/id"`
+		OrgId          string        `json:"-"            edn:"plugin/org"`
+		ConfigID       *string       `json:"-"            edn:"plugin/config-id"`
+		Config         *PluginConfig `json:"config"       edn:"plugin/config"`
+		Source         *string       `json:"source"       edn:"plugin/source"`
+		Priority       int           `json:"priority"     edn:"plugin/priority"`
+		Name           string        `json:"name"         edn:"plugin/name"          binding:"required"`
+		Connections    []Connection  `json:"connections"  edn:"plugin/connections"   binding:"required"`
+		ConnectionsIDs []string      `json:"-"            edn:"plugin/connection-ids"`
+		InstalledById  string        `json:"-"            edn:"plugin/installed-by"`
 	}
 
 	Connection struct {
@@ -34,6 +39,12 @@ type (
 		Name         string              `json:"name"    edn:"plugin-connection/name"`
 		Config       []string            `json:"config"  edn:"plugin-connection/config"  binding:"required"`
 		Groups       map[string][]string `json:"groups"  edn:"plugin-connection/groups"`
+	}
+
+	PluginConfig struct {
+		ID      string            `json:"id"      edn:"xt/id"`
+		Org     string            `json:"-"       edn:"pluginconfig/org"`
+		EnvVars map[string]string `json:"envvars" edn:"pluginconfig/envvars"`
 	}
 
 	ListPlugin struct {
@@ -78,4 +89,12 @@ func (s *Service) Persist(context *user.Context, plugin *Plugin) error {
 	}
 
 	return nil
+}
+
+func (s *Service) PersistConfig(context *user.Context, pluginConfig *PluginConfig) error {
+	if context.Org.Id == "" {
+		return fmt.Errorf("missing org id")
+	}
+	pluginConfig.Org = context.Org.Id
+	return s.Storage.PersistConfig(pluginConfig)
 }

@@ -62,6 +62,7 @@ func (s *streamWriter) Write(data []byte) (int, error) {
 	p.Spec = s.packetSpec
 	rpcOnSendFn := func() error {
 		mutateData, err := s.hookExec.ExecRPCOnSend(&pluginhooks.Request{
+			SessionID:  string(p.Spec[pb.SpecGatewaySessionID]),
 			PacketType: p.Type,
 			Payload:    p.Payload,
 		})

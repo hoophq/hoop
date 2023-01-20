@@ -65,8 +65,12 @@ func Connect(serverAddress, token string, opts ...*ClientOptions) (pb.ClientTran
 	}
 
 	osmap := runtime.OS()
+	ver := version.Get()
 	contextOptions = append(contextOptions,
-		"client_version", string(version.JSON()),
+		"version", ver.Version,
+		"go_version", ver.GoVersion,
+		"compiler", ver.Compiler,
+		"platform", ver.Platform,
 		"hostname", osmap["hostname"],
 		"machine_id", osmap["machine_id"],
 		"kernel_version", osmap["kernel_version"],

@@ -6,7 +6,7 @@ replace github.com/runopsio/hoop/common => ../common
 
 require (
 	github.com/runopsio/hoop/common v0.0.0-00010101000000-000000000000
-	github.com/hoophq/pluginhooks v0.0.5
+	github.com/hoophq/pluginhooks v0.0.6
 	google.golang.org/grpc v1.50.1
 )
 

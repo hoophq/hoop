@@ -49,26 +49,31 @@ func getAgentStream(id string) pb.Transport_ConnectServer {
 	return ca.agents[id]
 }
 
+func setAgentClientMetdata(into *agent.Agent, md metadata.MD) {
+	into.Hostname = extractData(md, "hostname")
+	into.MachineId = extractData(md, "machine_id")
+	into.KernelVersion = extractData(md, "kernel_version")
+	into.Version = extractData(md, "version")
+	into.GoVersion = extractData(md, "go_version")
+	into.Compiler = extractData(md, "compiler")
+	into.Platform = extractData(md, "platform")
+}
+
 func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string) error {
 	ctx := stream.Context()
 	md, _ := metadata.FromIncomingContext(ctx)
 
-	hostname := extractData(md, "hostname")
-	machineId := extractData(md, "machine_id")
-	kernelVersion := extractData(md, "kernel_version")
-
 	ag, err := s.AgentService.FindByToken(token)
 	if err != nil || ag == nil {
+		log.Printf("agent not found, err=%v", err)
 		return status.Errorf(codes.Unauthenticated, "invalid authentication")
 	}
 
-	ag.Hostname = hostname
-	ag.MachineId = machineId
-	ag.KernelVersion = kernelVersion
+	setAgentClientMetdata(ag, md)
 	ag.Status = agent.StatusConnected
-
 	_, err = s.AgentService.Persist(ag)
 	if err != nil {
+		log.Printf("failed saving agent connection, err=%v", err)
 		return status.Errorf(codes.Internal, "internal error")
 	}
 
@@ -83,12 +88,9 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 	bindAgent(ag.Id, stream)
 	s.agentGracefulShutdown(ag)
 
-	log.Printf("successful connection hostname: [%s], machineId [%s], kernelVersion [%s]", hostname, machineId, kernelVersion)
-	stream.Send(&pb.Packet{
-		Type:    pbagent.GatewayConnectOK,
-		Spec:    nil,
-		Payload: nil,
-	})
+	log.Printf("agent connected: hostname=%v,platform=%v,version=%v,goversion=%v,compiler=%v,machineid=%v",
+		ag.Hostname, ag.Platform, ag.Version, ag.GoVersion, ag.Compiler, ag.MachineId)
+	_ = stream.Send(&pb.Packet{Type: pbagent.GatewayConnectOK})
 	agentErr := s.listenAgentMessages(config, ag, stream)
 	if err := s.pluginOnDisconnect(config); err != nil {
 		log.Printf("ua=agent - failed processing plugin on-disconnect phase, err=%v", err)
@@ -134,8 +136,7 @@ func (s *Server) listenAgentMessages(config plugin.Config, ag *agent.Agent, stre
 		}
 		clientStream := getClientStream(sessionID)
 		if clientStream == nil {
-			// TODO: warn!
-			log.Printf("client connection not found for session id [%s]", sessionID)
+			log.Printf("session=%v - client connection not found, pkt=%v", sessionID, pkt.Type)
 			continue
 		}
 		// log.Printf("received agent msg type [%s] and session id [%s]", pkt.Type, sessionID)

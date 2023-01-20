@@ -22,6 +22,10 @@ type (
 		Hostname      string `json:"hostname"       edn:"agent/hostname"`
 		MachineId     string `json:"machine-id"     edn:"agent/machine-id"`
 		KernelVersion string `json:"kernel_version" edn:"agent/kernel-version"`
+		Version       string `json:"version"        edn:"agent/version"`
+		GoVersion     string `json:"go_version"     edn:"agent/go-version"`
+		Compiler      string `json:"compiler"       edn:"agent/compiler"`
+		Platform      string `json:"platform"       edn:"agent/platform"`
 		CreatedById   string `json:"-"              edn:"agent/created-by"`
 		Status        Status `json:"status"         edn:"agent/status"`
 	}

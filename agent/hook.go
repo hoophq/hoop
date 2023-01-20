@@ -3,8 +3,7 @@ package agent
 import (
 	"fmt"
 	"log"
-	"os"
-	"path/filepath"
+	"strings"
 
 	"github.com/hoophq/pluginhooks"
 	"github.com/runopsio/hoop/agent/hook"
@@ -13,126 +12,164 @@ import (
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 )
 
-func (a *Agent) newHookClient(sessionID string, params *pb.AgentConnectionParams, newHook map[string]any) (*hook.Client, error) {
-	pluginHomeDir, err := clientconfig.NewHomeDir("plugins")
-	if err != nil {
-		return nil, err
+func loadHookFromSource(pluginRegistryURL, pluginName, pluginSource string) (*hook.PluginManifest, error) {
+	switch {
+	case strings.HasPrefix(pluginSource, "path:"):
+		pluginExecPath := strings.TrimPrefix(pluginSource, "path:")
+		return hook.LoadFromLocalPath(pluginName, pluginExecPath)
+	default:
+		pluginBasePath, err := clientconfig.NewHomeDir("plugins")
+		if err != nil {
+			return nil, err
+		}
+		return hook.LoadFromRegistry(pluginRegistryURL, pluginBasePath, pluginSource)
 	}
+}
+
+func (a *Agent) newHookClient(newHook map[string]any) (hook.Client, error) {
 	pluginName, _ := newHook["plugin_name"].(string)
 	if pluginName == "" {
-		return nil, fmt.Errorf("plugin on inconsistent state, missing 'plugin_name' key")
+		return nil, fmt.Errorf("plugin on inconsistent state, missing plugin name")
 	}
+	pluginRegistryURL, _ := newHook["plugin_registry"].(string)
+	pluginSource, _ := newHook["plugin_source"].(string)
+	log.Printf("loading plugin. name=%s,source=%s,registry=%s",
+		pluginName, pluginSource, pluginRegistryURL)
+	pm, err := loadHookFromSource(pluginRegistryURL, pluginName, pluginSource)
+	if err != nil {
+		return nil, fmt.Errorf("failed loading plugin source (%v), err=%v",
+			pluginSource, err)
+	}
+	log.Printf("plugin loaded into filesystem. %v", pm)
+	pluginEnvVars, _ := newHook["plugin_envvars"].(map[string]string)
 	connectionConfig, _ := newHook["connection_config"].(map[string]any)
-	pluginExec := filepath.Join(pluginHomeDir, pluginName)
-	execInfo, err := os.Stat(pluginExec)
+	hookClient, _ := newHook["hook_client"].(hook.Client)
+	client, err := hook.NewClient(hook.ClientConfig{
+		PluginParams: hook.PluginParams{
+			Name:             pluginName,
+			ExecPath:         pm.ExecFilePath(),
+			EnvVars:          pluginEnvVars,
+			ConnectionConfig: connectionConfig,
+		},
+		CleanupFn:  a.sessionCleanup,
+		HookClient: hookClient,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("session=%s - failed loading plugin exec (%v), err=%v",
-			sessionID, pluginExec, err)
-	}
-	log.Printf("session=%s - plugin exec %v loaded, mode=%v",
-		sessionID, pluginExec, execInfo.Mode().String())
-	connectionEnvVars := params.EnvVars
-	// avoid registering agent.connEnv with gob.Register(...)
-	if params.ConnectionType == pb.ConnectionTypePostgres || params.ConnectionType == pb.ConnectionTypeTCP {
-		connectionEnvVars = map[string]any{}
-	}
-
-	client, err := hook.NewClient(pluginName, pluginExec,
-		&pluginhooks.Config{
-			SessionID:         sessionID,
-			UserID:            params.UserID,
-			ConnectionName:    params.ConnectionName,
-			ConnectionType:    params.ConnectionType,
-			ConnectionEnvVars: connectionEnvVars,
-			ConnectionConfig:  connectionConfig,
-			ConnectionCommand: params.CmdList,
-			ClientArgs:        params.ClientArgs,
-			// TODO: implement
-			ClientVerb: "",
-		})
-	if err != nil {
-		return nil, fmt.Errorf("failed initializing plugin client, err=%v", err)
+		return nil, err
 	}
 	return client, nil
 }
 
-func (a *Agent) executeRPCOnConnect(sessionID string, client *hook.Client) error {
-	if err := client.RPCOnConnect(); err != nil {
-		go client.Kill()
-		err = fmt.Errorf("plugin %s has rejected the request, reason=%v", client.PluginName(), err)
-		log.Printf("session=%s - %s", sessionID, err)
+func (a *Agent) executeRPCOnSessionOpen(
+	sp *pluginhooks.SesssionParams, client hook.Client) (*pluginhooks.SessionParamsResponse, error) {
+	resp, err := client.RPCOnSessionOpen(sp)
+	if err != nil {
+		err = fmt.Errorf("plugin %s has rejected the request, reason=%v", client.PluginParams().Name, err)
+		log.Printf("session=%s - %s", sp.SessionID, err)
 		_ = a.client.Send(&pb.Packet{
 			Type:    pbclient.SessionClose,
 			Payload: []byte(err.Error()),
-			Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)},
+			Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(sp.SessionID)},
 		})
-		return err
+		return nil, err
 	}
-	return nil
+	return resp, nil
+}
+
+// conciliateHooks will initialize plugins if they aren't started previous
+func (a *Agent) conciliateHooks(params *pb.AgentConnectionParams) (*hook.ClientList, error) {
+	oldState, _ := a.connStore.Get(pluginHooksKey).(*hook.ClientList)
+	newState := hook.NewClientList(params)
+	// nothing to conciliate
+	if oldState == nil {
+		for _, newHook := range params.PluginHookList {
+			hookClient, err := a.newHookClient(newHook)
+			if err != nil {
+				return nil, err
+			}
+			newState.Add(hookClient)
+		}
+		return newState, nil
+	}
+	for _, newHook := range params.PluginHookList {
+		pluginName, _ := newHook["plugin_name"].(string)
+		if old, ok := oldState.Get(pluginName); ok {
+			if !old.Exited() {
+				// keep the old plugin instance in memory
+				// prevents from initializing multiple instances of plugins
+				newState.Add(old)
+				continue
+			}
+			// This action will make old clients
+			// using this plugin to disconnect.
+			go old.Kill()
+		}
+		hookClient, err := a.newHookClient(newHook)
+		if err != nil {
+			return nil, err
+		}
+		newState.Add(hookClient)
+	}
+	return newState, nil
 }
 
 func (a *Agent) loadHooks(sessionID string, params *pb.AgentConnectionParams) error {
-	currentHookList := params.PluginHookList
-	newState := hook.NewClientList(params)
-	oldState, _ := a.connStore.Get(pluginHooksKey).(*hook.List)
-	if oldState != nil {
-		for _, newHook := range currentHookList {
-			pluginName, _ := newHook["plugin_name"].(string)
-			if old, ok := oldState.GetItem(pluginName); ok {
-				newConnectionConfig, ok := newHook["connection_config"].(map[string]any)
-				if !ok {
-					return fmt.Errorf("plugin on inconsistent state, missing 'connection_config' key")
-				}
-				if newConnectionConfig["jsonb64"] == old.ConnectionConfig() {
-					if !old.Exited() {
-						// keep the old plugin instance in memory
-						// prevents from initializing multiple instances of plugins
-						newState.AddItem(pluginName, old)
-						newState.SetID(oldState.ID())
-						continue
-					}
-				}
-				hookClient, err := a.newHookClient(sessionID, params, newHook)
-				if err != nil {
-					return err
-				}
-				// replace the plugin when connection config changes
-				newState.AddItem(pluginName, hookClient)
-				// This action will make old clients
-				// using this plugin to disconnect.
-				go old.Kill()
-				continue
-			}
-			hookClient, err := a.newHookClient(sessionID, params, newHook)
-			if err != nil {
-				return err
-			}
-			newState.AddItem(pluginName, hookClient)
-		}
-		for _, hookClient := range newState.Items() {
-			if err := a.executeRPCOnConnect(sessionID, hookClient); err != nil {
-				return err
-			}
-		}
-		storeKey := fmt.Sprintf(pluginHookSessionsKey, sessionID)
-		a.connStore.Set(storeKey, newState)
-		a.connStore.Set(pluginHooksKey, newState)
-		return nil
-	}
-	for _, newHook := range currentHookList {
-		hookClient, err := a.newHookClient(sessionID, params, newHook)
-		if err != nil {
-			return err
-		}
-		if err := a.executeRPCOnConnect(sessionID, hookClient); err != nil {
-			return err
-		}
-		pluginName, _ := newHook["plugin_name"].(string)
-		newState.AddItem(pluginName, hookClient)
+	hookList, err := a.conciliateHooks(params)
+	if err != nil {
+		log.Printf("session=%v - failed conciliating plugin hooks, err=%v", sessionID, err)
+		return err
 	}
 
+	sessionHookItems := hook.NewClientList(params)
+	// call on session open for each plugin available in this session
+	for _, currentHook := range params.PluginHookList {
+		pluginName, _ := currentHook["plugin_name"].(string)
+		if pluginName == "" {
+			return fmt.Errorf("inconsistent plugin entry, missing plugin_name attribute")
+		}
+		if hookClient, exists := hookList.Get(pluginName); exists {
+			resp, err := a.executeRPCOnSessionOpen(&pluginhooks.SesssionParams{
+				SessionID:         sessionID,
+				PluginEnvVars:     hookClient.PluginParams().EnvVars,
+				UserID:            params.UserID,
+				ConnectionName:    params.ConnectionName,
+				ConnectionType:    params.ConnectionType,
+				ConnectionEnvVars: params.EnvVars,
+				ConnectionConfig:  hookClient.PluginParams().ConnectionConfig,
+				ConnectionCommand: params.CmdList,
+				ClientArgs:        params.ClientArgs,
+				ClientVerb:        params.ClientVerb,
+			}, hookClient)
+			if err != nil {
+				if *hookClient.SessionCounter() <= 0 {
+					go hookClient.Kill()
+				}
+				// clean previous plugins initialized by this session
+				defer func() { a.sessionCleanup(sessionID) }()
+				break
+			}
+			*hookClient.SessionCounter()++
+			sessionHookItems.Add(hookClient)
+			mutateParams(params, resp)
+		}
+	}
 	storeKey := fmt.Sprintf(pluginHookSessionsKey, sessionID)
-	a.connStore.Set(storeKey, newState)
-	a.connStore.Set(pluginHooksKey, newState)
+	a.connStore.Set(storeKey, sessionHookItems)
+	a.connStore.Set(pluginHooksKey, hookList)
 	return nil
+}
+
+func mutateParams(params *pb.AgentConnectionParams, resp *pluginhooks.SessionParamsResponse) {
+	if resp == nil {
+		return
+	}
+	if resp.ClientArgs != nil {
+		params.ClientArgs = resp.ClientArgs
+	}
+	if resp.ConnectionCommand != nil {
+		params.CmdList = resp.ConnectionCommand
+	}
+	if resp.ConnectionEnvVars != nil {
+		params.EnvVars = resp.ConnectionEnvVars
+	}
 }

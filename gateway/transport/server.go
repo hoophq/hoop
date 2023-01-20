@@ -3,12 +3,13 @@ package transport
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/runopsio/hoop/gateway/notification"
-	"github.com/runopsio/hoop/gateway/review"
-	"github.com/runopsio/hoop/gateway/review/jit"
 	"log"
 	"net"
 	"strings"
+
+	"github.com/runopsio/hoop/gateway/notification"
+	"github.com/runopsio/hoop/gateway/review"
+	"github.com/runopsio/hoop/gateway/review/jit"
 
 	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/security/idp"
@@ -40,6 +41,7 @@ type (
 		IDProvider           *idp.Provider
 		Profile              string
 		GcpDLPRawCredentials string
+		PluginRegistryURL    string
 	}
 )
 
@@ -68,14 +70,12 @@ func (s *Server) StartRPCServer() {
 }
 
 func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
-	log.Println("starting new grpc connection...")
 	ctx := stream.Context()
-
 	var token string
-
 	md, _ := metadata.FromIncomingContext(ctx)
 	o := md.Get("origin")
 	if len(o) == 0 {
+		log.Printf("client missing origin")
 		return status.Error(codes.InvalidArgument, "missing origin")
 	}
 

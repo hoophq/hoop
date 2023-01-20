@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"reflect"
@@ -85,12 +86,12 @@ func (s *Storage) SubmitPutTx(trxs ...TxEdnStruct) (*TxResponse, error) {
 	var txResponse TxResponse
 	if resp.StatusCode == http.StatusAccepted {
 		if err := edn.NewDecoder(resp.Body).Decode(&txResponse); err != nil {
-			fmt.Printf("error decoding transaction response, err=%v\n", err)
+			log.Printf("error decoding transaction response, err=%v", err)
 		}
 		return &txResponse, nil
 	} else {
 		data, _ := io.ReadAll(resp.Body)
-		fmt.Printf("unknown status code=%v, body=%v\n", resp.StatusCode, string(data))
+		log.Printf("unknown status code=%v, body=%v", resp.StatusCode, string(data))
 	}
 	return nil, fmt.Errorf("received unknown status code=%v", resp.StatusCode)
 }
