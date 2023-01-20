@@ -47,6 +47,14 @@ func (l *ClientList) ExecRPCOnRecv(req *pluginhooks.Request) ([]byte, error) {
 	return l.execRPCOnSendRecv("onreceive", req)
 }
 
+// Close cleanup the process and connection with loaded plugins
+func (l *ClientList) Close() error {
+	for _, hook := range l.items {
+		hook.Kill()
+	}
+	return nil
+}
+
 func (p *ClientList) execRPCOnSendRecv(method string, req *pluginhooks.Request) ([]byte, error) {
 	respPayload := req.Payload
 	for _, hook := range p.items {
