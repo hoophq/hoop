@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"github.com/runopsio/hoop/gateway/analytics"
 	"os"
 	"strings"
 
@@ -34,11 +35,7 @@ type (
 		SecurityHandler   security.Handler
 		IDProvider        *idp.Provider
 		Profile           string
-		Analytics         AnalyticsService
-	}
-
-	AnalyticsService interface {
-		Track(userID, eventName string, properties map[string]any)
+		Analytics         analytics.Analytics
 	}
 )
 

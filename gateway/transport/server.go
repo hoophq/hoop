@@ -3,6 +3,7 @@ package transport
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/runopsio/hoop/gateway/analytics"
 	"log"
 	"net"
 	"strings"
@@ -42,6 +43,11 @@ type (
 		Profile              string
 		GcpDLPRawCredentials string
 		PluginRegistryURL    string
+		Analytics            analytics.Analytics
+	}
+
+	AnalyticsService interface {
+		Track(userID, eventName string, properties map[string]any)
 	}
 )
 

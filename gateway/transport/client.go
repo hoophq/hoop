@@ -216,6 +216,15 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	bindClient(c.SessionID, stream, conn, plugins)
 	s.handleGracefulShutdown(c)
 
+	s.Analytics.Track(context.User.Id, clientVerb, map[string]any{
+		"sessionID":       sessionID,
+		"connection-name": connectionName,
+		"connection-type": conn.Type,
+		"hostname":        hostname,
+		"machine-id":      machineId,
+		"kernel-version":  kernelVersion,
+	})
+
 	log.Printf("proxy connected: hostname=%v,verb=%v,platform=%v,version=%v,goversion=%v,compiler=%v,machineid=%v",
 		c.Hostname, c.Verb, c.Platform, c.Version, c.GoVersion, c.Compiler, c.MachineId)
 	clientErr := s.listenClientMessages(stream, c, conn, pConfig)
