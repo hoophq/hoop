@@ -34,7 +34,7 @@ type (
 		Name           string         `json:"name"     edn:"connection/name"    binding:"required"`
 		Command        []string       `json:"command"  edn:"connection/command" binding:"required"`
 		Type           Type           `json:"type"     edn:"connection/type"    binding:"required"`
-		AgentId        string         `json:"agent_id" edn:"connection/agent"`
+		AgentId        string         `json:"agent_id" edn:"connection/agent"   binding:"required"`
 		SecretProvider SecretProvider `json:"-"        edn:"connection/secret-provider"`
 	}
 
