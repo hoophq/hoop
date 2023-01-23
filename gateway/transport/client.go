@@ -223,6 +223,9 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		"hostname":        hostname,
 		"machine-id":      machineId,
 		"kernel-version":  kernelVersion,
+		"client-version":  c.Version,
+		"go-version":      c.GoVersion,
+		"platform":        c.Platform,
 	})
 
 	log.Printf("proxy connected: hostname=%v,verb=%v,platform=%v,version=%v,goversion=%v,compiler=%v,machineid=%v",

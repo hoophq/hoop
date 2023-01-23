@@ -37,7 +37,7 @@ func (s *Segment) Identify(ctx *user.Context) {
 			SetName(ctx.User.Name).
 			SetEmail(ctx.User.Email).
 			Set("groups", ctx.User.Groups).
-			Set("isAdmin", ctx.User.IsAdmin()).
+			Set("is-admin", ctx.User.IsAdmin()).
 			Set("status", ctx.User.Status),
 	})
 
