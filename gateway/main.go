@@ -63,6 +63,7 @@ func Run() {
 		SecurityHandler:   security.Handler{Service: &securityService},
 		IDProvider:        idProvider,
 		Profile:           profile,
+		Analytics:         analyticsService,
 	}
 
 	g := &transport.Server{
