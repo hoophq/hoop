@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"github.com/runopsio/hoop/gateway/analytics"
 	"os"
 	"strings"
 
@@ -34,6 +35,7 @@ type (
 		SecurityHandler   security.Handler
 		IDProvider        *idp.Provider
 		Profile           string
+		Analytics         analytics.Analytics
 	}
 )
 
@@ -77,57 +79,72 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 
 	route.GET("/users",
 		api.Authenticate,
+		api.TrackRequest,
 		api.AdminOnly,
 		api.UserHandler.FindAll)
 	route.GET("/users/:id",
 		api.Authenticate,
+		api.TrackRequest,
 		api.AdminOnly,
 		api.UserHandler.FindOne)
 	route.GET("/userinfo",
 		api.Authenticate,
+		api.TrackRequest,
 		api.UserHandler.Userinfo)
 	route.GET("/users/groups",
 		api.Authenticate,
+		api.TrackRequest,
 		api.UserHandler.UsersGroups)
 	route.PUT("/users/:id",
 		api.Authenticate,
+		api.TrackRequest,
 		api.AdminOnly,
 		api.UserHandler.Put)
 	route.POST("/users",
 		api.Authenticate,
+		api.TrackRequest,
 		api.AdminOnly,
 		api.UserHandler.Post)
 
 	route.POST("/connections",
 		api.Authenticate,
+		api.TrackRequest,
 		api.AdminOnly,
 		api.ConnectionHandler.Post)
 	route.PUT("/connections/:name",
 		api.Authenticate,
+		api.TrackRequest,
 		api.AdminOnly,
 		api.ConnectionHandler.Put)
 	route.GET("/connections",
 		api.Authenticate,
+		api.TrackRequest,
 		api.ConnectionHandler.FindAll)
 	route.GET("/connections/:name",
 		api.Authenticate,
+		api.TrackRequest,
 		api.ConnectionHandler.FindOne)
 
 	route.GET("/reviews",
 		api.Authenticate,
+		api.TrackRequest,
 		api.ReviewHandler.FindAll)
 	route.GET("/reviews/:id",
 		api.Authenticate,
+		api.TrackRequest,
 		api.ReviewHandler.FindOne)
 	route.PUT("/reviews/:id",
 		api.Authenticate,
+		api.TrackRequest,
 		api.ReviewHandler.Put)
 
 	route.GET("/jits",
 		api.Authenticate,
+		api.TrackRequest,
 		api.JitHandler.FindAll)
 	route.GET("/jits/:id",
 		api.Authenticate,
+		api.TrackRequest,
 		api.JitHandler.FindOne)
 	route.PUT("/jits/:id",
 		api.Authenticate,
@@ -135,39 +152,48 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 
 	route.POST("/agents",
 		api.Authenticate,
+		api.TrackRequest,
 		api.AdminOnly,
 		api.AgentHandler.Post)
 	route.GET("/agents",
 		api.Authenticate,
+		api.TrackRequest,
 		api.AdminOnly,
 		api.AgentHandler.FindAll)
 
 	route.POST("/plugins",
 		api.Authenticate,
+		api.TrackRequest,
 		api.AdminOnly,
 		api.PluginHandler.Post)
 	route.PUT("/plugins/:name",
 		api.Authenticate,
+		api.TrackRequest,
 		api.AdminOnly,
 		api.PluginHandler.Put)
 	route.GET("/plugins",
 		api.Authenticate,
+		api.TrackRequest,
 		api.PluginHandler.FindAll)
 	route.GET("/plugins/:name",
 		api.Authenticate,
+		api.TrackRequest,
 		api.PluginHandler.FindOne)
 
 	route.PUT("/plugins/:name/config",
 		api.Authenticate,
+		api.TrackRequest,
 		api.AdminOnly,
 		api.PluginHandler.PutConfig)
 
 	route.GET("/plugins/audit/sessions/:session_id",
 		api.Authenticate,
+		api.TrackRequest,
 		api.AdminOnly,
 		api.SessionHandler.FindOne)
 	route.GET("/plugins/audit/sessions",
 		api.Authenticate,
+		api.TrackRequest,
 		api.AdminOnly,
 		api.SessionHandler.FindAll)
 }

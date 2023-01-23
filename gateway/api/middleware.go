@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"github.com/runopsio/hoop/gateway/user"
 	"log"
 	"net/http"
@@ -52,6 +53,19 @@ func (api *Api) AdminOnly(c *gin.Context) {
 		c.AbortWithStatus(401)
 		return
 	}
+
+	c.Next()
+}
+
+func (api *Api) TrackRequest(c *gin.Context) {
+	ctx, _ := c.Get("context")
+	context := ctx.(*user.Context)
+
+	api.Analytics.Track(context.User.Id, fmt.Sprintf("%s %s", c.Request.Method, c.Request.RequestURI), map[string]any{
+		"host":           c.Request.Host,
+		"content-length": c.Request.ContentLength,
+		"user-agent":     c.Request.Header.Get("User-Agent"),
+	})
 
 	c.Next()
 }
