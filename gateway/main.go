@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"fmt"
+	"github.com/runopsio/hoop/gateway/analytics"
 	"os"
 
 	"github.com/runopsio/hoop/gateway/notification"
@@ -32,6 +33,7 @@ func Run() {
 
 	profile := os.Getenv("PROFILE")
 	idProvider := idp.NewProvider(profile)
+	analyticsService := analytics.New()
 
 	transport.LoadPlugins(idProvider.ApiURL)
 
@@ -47,7 +49,8 @@ func Run() {
 	securityService := security.Service{
 		Storage:     &security.Storage{Storage: s},
 		Provider:    idProvider,
-		UserService: &userService}
+		UserService: &userService,
+		Analytics:   analyticsService}
 
 	a := &api.Api{
 		AgentHandler:      agent.Handler{Service: &agentService},
