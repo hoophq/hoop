@@ -22,6 +22,11 @@ type (
 		Persist(user any) error
 		ListAllGroups(context *Context) ([]string, error)
 	}
+
+	Analytics interface {
+		Identify(ctx *Context)
+		Track(userID, eventName string, properties map[string]any)
+	}
 )
 
 func (a *Handler) FindAll(c *gin.Context) {

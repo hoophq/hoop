@@ -15,7 +15,7 @@ type (
 		Storage     storage
 		UserService UserService
 		Provider    *idp.Provider
-		Analytics   Analytics
+		Analytics   user.Analytics
 	}
 
 	storage interface {
@@ -28,10 +28,6 @@ type (
 		GetOrgByName(name string) (*user.Org, error)
 		FindInvitedUser(email string) (*user.InvitedUser, error)
 		Persist(u any) error
-	}
-
-	Analytics interface {
-		Identify(ctx *user.Context)
 	}
 
 	login struct {
@@ -129,6 +125,7 @@ func (s *Service) Callback(state, code string) string {
 	}
 
 	s.loginOutcome(login, outcomeSuccess)
+	s.Analytics.Track(context.User.Id, "login", map[string]any{})
 
 	return login.Redirect + "?token=" + token.AccessToken
 }
@@ -225,6 +222,7 @@ func (s *Service) signup(context *user.Context, sub string, profile map[string]a
 		}
 
 		s.Analytics.Identify(context)
+		s.Analytics.Track(context.User.Id, "signup", map[string]any{})
 	}
 
 	return nil

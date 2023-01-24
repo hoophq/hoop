@@ -2,7 +2,6 @@ package api
 
 import (
 	"fmt"
-	"github.com/runopsio/hoop/gateway/analytics"
 	"os"
 	"strings"
 
@@ -35,7 +34,7 @@ type (
 		SecurityHandler   security.Handler
 		IDProvider        *idp.Provider
 		Profile           string
-		Analytics         analytics.Analytics
+		Analytics         user.Analytics
 	}
 )
 

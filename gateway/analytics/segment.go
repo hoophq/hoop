@@ -10,10 +10,6 @@ type (
 	Segment struct {
 		analytics.Client
 	}
-
-	Analytics interface {
-		Track(userID, eventName string, properties map[string]any)
-	}
 )
 
 func New() *Segment {
