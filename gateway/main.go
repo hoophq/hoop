@@ -34,6 +34,7 @@ func Run() {
 	profile := os.Getenv("PROFILE")
 	idProvider := idp.NewProvider(profile)
 	analyticsService := analytics.New()
+	analytics.InitSentry()
 
 	transport.LoadPlugins(idProvider.ApiURL)
 

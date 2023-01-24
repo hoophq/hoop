@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	sentrygin "github.com/getsentry/sentry-go/gin"
 	"os"
 	"strings"
 
@@ -65,6 +66,10 @@ func (api *Api) StartAPI() {
 
 	rg := route.Group("/api")
 	rg.Use(CORSMiddleware())
+	rg.Use(sentrygin.New(sentrygin.Options{
+		Repanic: true,
+	}))
+
 	api.buildRoutes(rg)
 
 	if err := route.Run(); err != nil {
