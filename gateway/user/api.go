@@ -31,6 +31,7 @@ type (
 )
 
 func (a *Handler) FindAll(c *gin.Context) {
+	panic("test")
 	ctx, _ := c.Get("context")
 	context := ctx.(*Context)
 

@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"github.com/getsentry/sentry-go"
 	sentrygin "github.com/getsentry/sentry-go/gin"
 	"os"
 	"strings"
@@ -43,6 +44,24 @@ func (api *Api) StartAPI() {
 	if os.Getenv("PORT") == "" {
 		os.Setenv("PORT", "8009")
 	}
+
+	sentryInit := false
+	dsn := os.Getenv("SENTRY_DSN")
+	if dsn != "" {
+		sentryInit = true
+		if err := sentry.Init(sentry.ClientOptions{
+			Dsn:           os.Getenv("SENTRY_DSN"),
+			EnableTracing: true,
+			// Set TracesSampleRate to 1.0 to capture 100%
+			// of transactions for performance monitoring.
+			// We recommend adjusting this value in production,
+			TracesSampleRate: 1.0,
+		}); err != nil {
+			sentryInit = false
+			fmt.Printf("Sentry initialization failed: %v\n", err)
+		}
+	}
+
 	route := gin.Default()
 	if api.Profile != pb.DevProfile {
 		route = gin.New()
@@ -66,9 +85,12 @@ func (api *Api) StartAPI() {
 
 	rg := route.Group("/api")
 	rg.Use(CORSMiddleware())
-	rg.Use(sentrygin.New(sentrygin.Options{
-		Repanic: true,
-	}))
+
+	if sentryInit {
+		rg.Use(sentrygin.New(sentrygin.Options{
+			Repanic: true,
+		}))
+	}
 
 	api.buildRoutes(rg)
 
