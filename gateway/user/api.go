@@ -11,7 +11,8 @@ import (
 
 type (
 	Handler struct {
-		Service service
+		Service   service
+		Analytics Analytics
 	}
 
 	service interface {
@@ -103,6 +104,9 @@ func (a *Handler) Put(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
+
+	context.User = existingUser
+	a.Analytics.Identify(context)
 
 	c.JSON(http.StatusOK, existingUser)
 }

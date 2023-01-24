@@ -55,7 +55,7 @@ func Run() {
 	a := &api.Api{
 		AgentHandler:      agent.Handler{Service: &agentService},
 		ConnectionHandler: connection.Handler{Service: &connectionService},
-		UserHandler:       user.Handler{Service: &userService},
+		UserHandler:       user.Handler{Service: &userService, Analytics: analyticsService},
 		PluginHandler:     plugin.Handler{Service: &pluginService},
 		SessionHandler:    session.Handler{Service: &sessionService},
 		ReviewHandler:     review.Handler{Service: &reviewService},
