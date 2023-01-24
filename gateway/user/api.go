@@ -11,7 +11,8 @@ import (
 
 type (
 	Handler struct {
-		Service service
+		Service   service
+		Analytics Analytics
 	}
 
 	service interface {
@@ -21,6 +22,11 @@ type (
 		FindOne(context *Context, id string) (*User, error)
 		Persist(user any) error
 		ListAllGroups(context *Context) ([]string, error)
+	}
+
+	Analytics interface {
+		Identify(ctx *Context)
+		Track(userID, eventName string, properties map[string]any)
 	}
 )
 
@@ -98,6 +104,9 @@ func (a *Handler) Put(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
+
+	context.User = existingUser
+	a.Analytics.Identify(context)
 
 	c.JSON(http.StatusOK, existingUser)
 }
