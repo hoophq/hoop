@@ -1,6 +1,7 @@
 package connection
 
 import (
+	"github.com/getsentry/sentry-go"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -26,6 +27,7 @@ func (a *Handler) FindOne(c *gin.Context) {
 	name := c.Param("name")
 	connection, err := a.Service.FindOne(context, name)
 	if err != nil {
+		sentry.CaptureException(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
@@ -44,6 +46,7 @@ func (a *Handler) FindAll(c *gin.Context) {
 
 	connections, err := a.Service.FindAll(context)
 	if err != nil {
+		sentry.CaptureException(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
@@ -63,6 +66,7 @@ func (a *Handler) Post(c *gin.Context) {
 
 	existingCon, err := a.Service.FindOne(context, connection.Name)
 	if err != nil {
+		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
@@ -74,6 +78,7 @@ func (a *Handler) Post(c *gin.Context) {
 
 	_, err = a.Service.Persist("POST", context, &connection)
 	if err != nil {
+		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
@@ -88,6 +93,7 @@ func (a *Handler) Put(c *gin.Context) {
 	name := c.Param("name")
 	existingConnection, err := a.Service.FindOne(context, name)
 	if err != nil {
+		sentry.CaptureException(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
@@ -107,6 +113,7 @@ func (a *Handler) Put(c *gin.Context) {
 
 	_, err = a.Service.Persist("PUT", context, &connection)
 	if err != nil {
+		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}

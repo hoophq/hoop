@@ -1,6 +1,7 @@
 package review
 
 import (
+	"github.com/getsentry/sentry-go"
 	pb "github.com/runopsio/hoop/common/proto"
 	"net/http"
 	"strings"
@@ -28,6 +29,7 @@ func (h *Handler) Put(c *gin.Context) {
 	reviewId := c.Param("id")
 	existingReview, err := h.Service.FindOne(context, reviewId)
 	if err != nil {
+		sentry.CaptureException(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
@@ -70,6 +72,7 @@ func (h *Handler) Put(c *gin.Context) {
 	}
 
 	if err := h.Service.Review(context, existingReview, r.Status); err != nil {
+		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
@@ -83,6 +86,7 @@ func (h *Handler) FindAll(c *gin.Context) {
 
 	reviews, err := h.Service.FindAll(context)
 	if err != nil {
+		sentry.CaptureException(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
@@ -97,6 +101,7 @@ func (a *Handler) FindOne(c *gin.Context) {
 	id := c.Param("id")
 	review, err := a.Service.FindOne(context, id)
 	if err != nil {
+		sentry.CaptureException(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}

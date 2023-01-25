@@ -3,6 +3,7 @@ package plugin
 import (
 	"encoding/base64"
 	"fmt"
+	"github.com/getsentry/sentry-go"
 	"log"
 	"net/http"
 
@@ -41,6 +42,7 @@ func (a *Handler) FindOne(c *gin.Context) {
 	plugin, err := a.Service.FindOne(context, name)
 	if err != nil {
 		log.Printf("failed obtaining plugin, err=%v", err)
+		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining plugin"})
 		return
 	}
@@ -60,6 +62,7 @@ func (a *Handler) FindAll(c *gin.Context) {
 	plugins, err := a.Service.FindAll(context)
 	if err != nil {
 		log.Printf("failed listing plugins, err=%v", err)
+		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed listing plugins"})
 		return
 	}
@@ -83,6 +86,7 @@ func (a *Handler) Post(c *gin.Context) {
 
 	existingPlugin, err := a.Service.FindOne(context, plugin.Name)
 	if err != nil {
+		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
@@ -131,6 +135,7 @@ func (a *Handler) PutConfig(c *gin.Context) {
 	existingPlugin, err := a.Service.FindOne(context, pluginName)
 	if err != nil {
 		log.Printf("failed fetching plugin, err=%v", err)
+		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching plugin"})
 		return
 	}
@@ -149,6 +154,7 @@ func (a *Handler) PutConfig(c *gin.Context) {
 	existingPlugin.ConfigID = &pluginConfigID
 	if err := a.Service.Persist(context, existingPlugin); err != nil {
 		log.Printf("failed updating existing plugin, err=%v", err)
+		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating existing plugin"})
 		return
 	}
@@ -160,6 +166,7 @@ func (a *Handler) PutConfig(c *gin.Context) {
 	err = a.Service.PersistConfig(context, pluginConfigObj)
 	if err != nil {
 		log.Printf("failed saving plugin config, err=%v", err)
+		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed saving plugin config"})
 		return
 	}
@@ -173,6 +180,7 @@ func (a *Handler) Put(c *gin.Context) {
 	name := c.Param("name")
 	existingPlugin, err := a.Service.FindOne(context, name)
 	if err != nil {
+		sentry.CaptureException(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}

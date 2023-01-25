@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"fmt"
+	"github.com/getsentry/sentry-go"
 	"io"
 	"log"
 	"os"
@@ -138,6 +139,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 
 	conn, err := s.ConnectionService.FindOne(context, connectionName)
 	if err != nil {
+		sentry.CaptureException(err)
 		return status.Errorf(codes.Internal, err.Error())
 	}
 
@@ -174,6 +176,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 
 	plugins, err := s.loadConnectPlugins(context, pConfig)
 	if err != nil {
+		sentry.CaptureException(err)
 		return status.Errorf(codes.FailedPrecondition, err.Error())
 	}
 
@@ -211,6 +214,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 
 	if _, err := s.ClientService.Persist(c); err != nil {
 		log.Printf("failed saving client connection, err=%v", err)
+		sentry.CaptureException(err)
 		return err
 	}
 	bindClient(c.SessionID, stream, conn, plugins)
@@ -273,6 +277,7 @@ func (s *Server) listenClientMessages(
 				return nil
 			}
 			log.Printf("received error from client, err=%v", err)
+			sentry.CaptureException(err)
 			return status.Errorf(codes.Internal, "internal error, failed receiving client packet")
 		}
 		if pkt.Type == pbgateway.KeepAlive {
@@ -286,6 +291,7 @@ func (s *Server) listenClientMessages(
 		log.Printf("session=%s - receive client packet type [%s]", c.SessionID, pkt.Type)
 		if err := s.pluginOnReceive(config, pkt); err != nil {
 			log.Printf("plugin reject packet, err=%v", err)
+			sentry.CaptureException(err)
 			return status.Errorf(codes.Internal, "internal error, packet rejected, contact the administrator")
 		}
 		err = s.processClientPacket(pkt, config.Verb, c, conn)
@@ -360,6 +366,7 @@ func (s *Server) processSessionOpenConnect(pkt *pb.Packet, client *client.Client
 	}
 	connParams, err := s.addConnectionParams(pkt, conn, client)
 	if err != nil {
+		sentry.CaptureException(err)
 		return err
 	}
 	spec[pb.SpecAgentConnectionParamsKey] = connParams
@@ -380,6 +387,7 @@ func (s *Server) processSessionOpenExec(pkt *pb.Packet, client *client.Client, c
 	if existingReviewData != nil {
 		var review rv.Review
 		if err := pb.GobDecodeInto(existingReviewData, &review); err != nil {
+			sentry.CaptureException(err)
 			return err
 		}
 		if review.Status != rv.StatusApproved {
@@ -409,6 +417,7 @@ func (s *Server) processSessionOpenExec(pkt *pb.Packet, client *client.Client, c
 
 	connParams, err := s.addConnectionParams(pkt, conn, client)
 	if err != nil {
+		sentry.CaptureException(err)
 		return err
 	}
 	spec[pb.SpecAgentConnectionParamsKey] = connParams
