@@ -1,6 +1,7 @@
 package session
 
 import (
+	"github.com/getsentry/sentry-go"
 	"log"
 	"net/http"
 	"strconv"
@@ -49,6 +50,7 @@ func (a *Handler) FindOne(c *gin.Context) {
 	session, err := a.Service.FindOne(context, sessionID)
 	if err != nil {
 		log.Printf("failed obtaining session, err=%v", err)
+		sentry.CaptureException(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
@@ -87,6 +89,7 @@ func (a *Handler) FindAll(c *gin.Context) {
 	sessionList, err := a.Service.FindAll(context, options...)
 	if err != nil {
 		log.Printf("failed listing sessions, err=%v", err)
+		sentry.CaptureException(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}

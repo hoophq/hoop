@@ -1,6 +1,7 @@
 package user
 
 import (
+	"github.com/getsentry/sentry-go"
 	pb "github.com/runopsio/hoop/common/proto"
 	"log"
 	"net/http"
@@ -36,6 +37,7 @@ func (a *Handler) FindAll(c *gin.Context) {
 
 	users, err := a.Service.FindAll(context)
 	if err != nil {
+		sentry.CaptureException(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
@@ -50,6 +52,7 @@ func (a *Handler) FindOne(c *gin.Context) {
 	id := c.Param("id")
 	user, err := a.Service.FindOne(context, id)
 	if err != nil {
+		sentry.CaptureException(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
@@ -69,6 +72,7 @@ func (a *Handler) Put(c *gin.Context) {
 	id := c.Param("id")
 	existingUser, err := a.Service.FindOne(context, id)
 	if err != nil {
+		sentry.CaptureException(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
@@ -101,6 +105,7 @@ func (a *Handler) Put(c *gin.Context) {
 
 	err = a.Service.Persist(existingUser)
 	if err != nil {
+		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
@@ -131,6 +136,7 @@ func (a *Handler) Post(c *gin.Context) {
 
 	err := a.Service.Persist(&newUser)
 	if err != nil {
+		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
@@ -152,6 +158,7 @@ func (a *Handler) UsersGroups(c *gin.Context) {
 	groups, err := a.Service.ListAllGroups(context)
 	if err != nil {
 		log.Printf("failed to list groups, err: %v", err)
+		sentry.CaptureException(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}

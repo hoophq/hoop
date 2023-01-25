@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"github.com/getsentry/sentry-go"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -38,6 +39,7 @@ func (s *Handler) Post(c *gin.Context) {
 
 	_, err := s.Service.Persist(&a)
 	if err != nil {
+		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
@@ -51,6 +53,7 @@ func (s *Handler) FindAll(c *gin.Context) {
 
 	connections, err := s.Service.FindAll(context)
 	if err != nil {
+		sentry.CaptureException(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}

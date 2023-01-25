@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"github.com/getsentry/sentry-go"
 	"io"
 	"log"
 	"os"
@@ -74,6 +75,7 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 	_, err = s.AgentService.Persist(ag)
 	if err != nil {
 		log.Printf("failed saving agent connection, err=%v", err)
+		sentry.CaptureException(err)
 		return status.Errorf(codes.Internal, "internal error")
 	}
 
@@ -120,6 +122,7 @@ func (s *Server) listenAgentMessages(config plugin.Config, ag *agent.Agent, stre
 				log.Printf("id=%v - agent disconnected", ag.Id)
 				return nil
 			}
+			sentry.CaptureException(err)
 			log.Printf("received error from agent, err=%v", err)
 			return err
 		}
@@ -132,6 +135,7 @@ func (s *Server) listenAgentMessages(config plugin.Config, ag *agent.Agent, stre
 		// log.Printf("session=%s - receive agent packet type [%s]", sessionID, pkt.Type)
 		if err := s.pluginOnReceive(config, pkt); err != nil {
 			log.Printf("plugin reject packet, err=%v", err)
+			sentry.CaptureException(err)
 			return status.Errorf(codes.Internal, "internal error, plugin reject packet")
 		}
 		clientStream := getClientStream(sessionID)

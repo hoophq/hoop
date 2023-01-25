@@ -2,6 +2,7 @@ package security
 
 import (
 	"fmt"
+	"github.com/getsentry/sentry-go"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -28,6 +29,7 @@ func (h *Handler) Login(c *gin.Context) {
 
 	url, err := h.Service.Login(email, defaultRedirect(c))
 	if err != nil {
+		sentry.CaptureException(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}

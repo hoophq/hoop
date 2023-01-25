@@ -3,6 +3,7 @@ package transport
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/getsentry/sentry-go"
 	"log"
 	"net"
 	"strings"
@@ -60,16 +61,19 @@ func (s *Server) StartRPCServer() {
 	log.Printf("starting gateway at %v", listenAddr)
 	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
+		sentry.CaptureException(err)
 		log.Fatal(err)
 	}
 
 	if err := s.ValidateConfiguration(); err != nil {
+		sentry.CaptureException(err)
 		log.Fatal(err)
 	}
 
 	svr := grpc.NewServer()
 	pb.RegisterTransportServer(svr, s)
 	if err := svr.Serve(listener); err != nil {
+		sentry.CaptureException(err)
 		log.Fatalf("failed to serve: %v", err)
 	}
 }

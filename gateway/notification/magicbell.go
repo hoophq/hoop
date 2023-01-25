@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/getsentry/sentry-go"
 	"io"
 	"log"
 	"net/http"
@@ -32,6 +33,7 @@ func (m *MagicBell) Send(notification Notification) {
 		url := "https://api.magicbell.com/notifications"
 		req, err := http.NewRequest(http.MethodPost, url, buildPayload(notification))
 		if err != nil {
+			sentry.CaptureException(err)
 			log.Printf("Failed building http request, err=%v", err)
 			return
 		}
@@ -42,6 +44,7 @@ func (m *MagicBell) Send(notification Notification) {
 
 		resp, err := m.client.Do(req)
 		if err != nil {
+			sentry.CaptureException(err)
 			log.Printf("failed to send magic bell notification: %v", err)
 			return
 		}
