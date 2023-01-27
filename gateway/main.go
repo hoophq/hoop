@@ -99,6 +99,13 @@ func Run() {
 			log.Fatalf("failed starting profiler, err=%v", err)
 		}
 	}
+	sentryStarted, err := monitoring.StartSentry(nil, monitoring.SentryConfig{
+		DSN:         os.Getenv("SENTRY_DSN"),
+		Environment: g.IDProvider.ApiURL,
+	})
+	if err != nil {
+		log.Fatalf("failed starting sentry, err=%v", err)
+	}
 	reviewService.TransportService = g
 	jitService.TransportService = g
 
@@ -111,5 +118,5 @@ func Run() {
 	fmt.Printf("Running with PROFILE [%s]\n", profile)
 
 	go g.StartRPCServer()
-	a.StartAPI()
+	a.StartAPI(sentryStarted)
 }

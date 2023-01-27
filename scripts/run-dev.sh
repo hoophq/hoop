@@ -24,9 +24,9 @@ export XTDB_ADDRESS=http://127.0.0.1:3001
 export PLUGIN_AUDIT_PATH=/tmp/hoopsessions
 export PLUGIN_REGISTRY_URL=https://pluginregistry.s3.amazonaws.com/packages.json
 export GIN_MODE=debug
-export PYROSCOPE_AUTH_TOKEN=psx-_6Wg5KPazes7oRWlTQI90uldLpQZWGGdxZ1VXPUy9Jh_gQifPpb6Ing
-export PYROSCOPE_INGEST_URL=https://ingest.pyroscope.cloud
-export AGENT_SENTRY_DSN=https://a6ecaeba31684f02ab8606a59301cd15@o4504559799566336.ingest.sentry.io/4504571759230976
+export PYROSCOPE_AUTH_TOKEN=
+export PYROSCOPE_INGEST_URL=
+export AGENT_SENTRY_DSN=
 # require to run npm install && npm run release:hoop-ui
 export STATIC_UI_PATH=../webapp/resources/public/
 go build -o /tmp/hoop client/main.go

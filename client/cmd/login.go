@@ -82,24 +82,6 @@ func doLogin(args []string) error {
 		config.Port = port
 	}
 
-<<<<<<< Updated upstream
-=======
-	if len(args) > 0 {
-		config.Email = args[0]
-	}
-
-	if config.Email == "" {
-		reader := bufio.NewReader(os.Stdin)
-		fmt.Print("Email: ")
-		email, err := reader.ReadString('\n')
-		if err != nil {
-			return fmt.Errorf("failed reading email input, err=%v", err)
-		}
-		email = strings.Trim(email, " \n")
-		config.Email = email
-	}
-
->>>>>>> Stashed changes
 	saveConfig(config)
 
 	loginUrl, err := requestForUrl(httpsProtocol + config.Host)
