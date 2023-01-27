@@ -32,7 +32,6 @@ type (
 
 	login struct {
 		Id       string      `edn:"xt/id"`
-		Email    string      `edn:"login/email"`
 		Redirect string      `edn:"login/redirect"`
 		Outcome  outcomeType `edn:"login/outcome"`
 	}
@@ -47,10 +46,9 @@ const (
 	outcomeEmailMismatch outcomeType = "email_mismatch"
 )
 
-func (s *Service) Login(email, redirect string) (string, error) {
+func (s *Service) Login(redirect string) (string, error) {
 	login := &login{
 		Id:       uuid.NewString(),
-		Email:    email,
 		Redirect: redirect,
 	}
 
@@ -91,7 +89,7 @@ func (s *Service) Callback(state, code string) string {
 	}
 
 	email, ok := profile["email"].(string)
-	if !ok || email != login.Email {
+	if !ok {
 		s.loginOutcome(login, outcomeEmailMismatch)
 		return login.Redirect + "?error=email_mismatch"
 	}
