@@ -3,6 +3,7 @@ package user
 import (
 	"encoding/json"
 	"fmt"
+
 	st "github.com/runopsio/hoop/gateway/storage"
 	"olympos.io/encoding/edn"
 )
@@ -107,6 +108,27 @@ func (s *Storage) Signup(org *Org, user *User) (txId int64, err error) {
 	}
 
 	return txId, nil
+}
+
+func (s *Storage) GetOrgNameByID(orgID string) (string, error) {
+	ednQuery := fmt.Sprintf(`{:query {
+		:find [orgname] 
+		:in [orgid]
+		:where [[?o :xt/id orgid]
+				[?o :org/name orgname]]}
+        :in-args [%q]}`, orgID)
+	ednResp, err := s.QueryRaw([]byte(ednQuery))
+	if err != nil {
+		return "", err
+	}
+	var resp [][]string
+	if err := edn.Unmarshal(ednResp, &resp); err != nil {
+		return "", nil
+	}
+	if len(resp[0]) > 0 {
+		return resp[0][0], nil
+	}
+	return "", nil
 }
 
 func (s *Storage) GetOrgByName(name string) (*Org, error) {

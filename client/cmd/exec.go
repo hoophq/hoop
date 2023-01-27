@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/briandowns/spinner"
+	"github.com/getsentry/sentry-go"
 	"github.com/runopsio/hoop/client/cmd/styles"
+	"github.com/runopsio/hoop/common/monitoring"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
@@ -32,6 +34,7 @@ var execCmd = &cobra.Command{
 			cmd.Usage()
 			os.Exit(1)
 		}
+		monitoring.SentryPreRun(cmd, args)
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		runExec(args)
@@ -46,12 +49,14 @@ func init() {
 
 func parseFlagInputs(c *connect) []byte {
 	if inputFilepath != "" && inputStdin != "" {
+		sentry.CaptureMessage("exec - client used --file and --input together")
 		c.printErrorAndExit("accept only one option: --file (-f) or --input (-i)")
 	}
 	switch {
 	case inputFilepath != "":
 		input, err := os.ReadFile(inputFilepath)
 		if err != nil {
+			sentry.CaptureException(fmt.Errorf("exec - failed parsing input file, err=%v", err))
 			c.printErrorAndExit("failed parsing input file [%s], err=%v", inputFilepath, err)
 		}
 		return input
@@ -64,12 +69,14 @@ func parseFlagInputs(c *connect) []byte {
 func parseExecInput(c *connect) []byte {
 	info, err := os.Stdin.Stat()
 	if err != nil {
+		sentry.CaptureException(fmt.Errorf("exec - failed obtaining stdin path info, err=%v", err))
 		c.printErrorAndExit(err.Error())
 	}
 	var input []byte
 	// stdin input
 	if info.Mode()&os.ModeCharDevice == 0 || info.Size() > 0 {
 		if inputFilepath != "" || inputStdin != "" {
+			sentry.CaptureMessage("exec - flags not allowed when reading from stdin")
 			c.printErrorAndExit("flags not allowed when reading from stdin")
 		}
 		stdinPipe := os.NewFile(uintptr(syscall.Stdin), "/dev/stdin")
@@ -133,7 +140,9 @@ func runExec(args []string) {
 		switch pkt.Type {
 		case pbclient.SessionOpenWaitingApproval:
 			loader.Color("yellow")
-			loader.Start()
+			if !loader.Active() {
+				loader.Start()
+			}
 			loader.Suffix = " waiting task to be approved at " +
 				styles.Keyword(fmt.Sprintf(" %v ", string(pkt.Payload)))
 		case pbclient.SessionOpenApproveOK:

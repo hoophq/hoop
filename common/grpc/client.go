@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/getsentry/sentry-go"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
 	"github.com/runopsio/hoop/common/runtime"
@@ -102,7 +103,11 @@ func Connect(serverAddress, token string, opts ...*ClientOptions) (pb.ClientTran
 func (c *mutexClient) Send(pkt *pb.Packet) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	return c.stream.Send(pkt)
+	err := c.stream.Send(pkt)
+	if err != nil {
+		sentry.CaptureException(fmt.Errorf("failed sending msg, type=%v, err=%v", pkt.Type, err))
+	}
+	return err
 }
 
 func (c *mutexClient) Recv() (*pb.Packet, error) {

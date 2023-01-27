@@ -2,10 +2,10 @@ package api
 
 import (
 	"fmt"
-	"github.com/getsentry/sentry-go"
-	sentrygin "github.com/getsentry/sentry-go/gin"
 	"os"
 	"strings"
+
+	sentrygin "github.com/getsentry/sentry-go/gin"
 
 	"github.com/runopsio/hoop/gateway/review/jit"
 
@@ -40,26 +40,9 @@ type (
 	}
 )
 
-func (api *Api) StartAPI() {
+func (api *Api) StartAPI(sentryInit bool) {
 	if os.Getenv("PORT") == "" {
 		os.Setenv("PORT", "8009")
-	}
-
-	sentryInit := false
-	dsn := os.Getenv("SENTRY_DSN")
-	if dsn != "" {
-		sentryInit = true
-		if err := sentry.Init(sentry.ClientOptions{
-			Dsn:           os.Getenv("SENTRY_DSN"),
-			EnableTracing: true,
-			// Set TracesSampleRate to 1.0 to capture 100%
-			// of transactions for performance monitoring.
-			// We recommend adjusting this value in production,
-			TracesSampleRate: 1.0,
-		}); err != nil {
-			sentryInit = false
-			fmt.Printf("Sentry initialization failed: %v\n", err)
-		}
 	}
 
 	route := gin.Default()

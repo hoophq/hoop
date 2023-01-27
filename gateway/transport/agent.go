@@ -11,6 +11,7 @@ import (
 
 	"github.com/runopsio/hoop/gateway/plugin"
 
+	"github.com/runopsio/hoop/common/monitoring"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
@@ -69,6 +70,7 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 		log.Printf("agent not found, err=%v", err)
 		return status.Errorf(codes.Unauthenticated, "invalid authentication")
 	}
+	orgName, _ := s.UserService.GetOrgNameByID(ag.OrgId)
 
 	setAgentClientMetdata(ag, md)
 	ag.Status = agent.StatusConnected
@@ -90,9 +92,29 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 	bindAgent(ag.Id, stream)
 	s.agentGracefulShutdown(ag)
 
-	log.Printf("agent connected: hostname=%v,platform=%v,version=%v,goversion=%v,compiler=%v,machineid=%v",
-		ag.Hostname, ag.Platform, ag.Version, ag.GoVersion, ag.Compiler, ag.MachineId)
-	_ = stream.Send(&pb.Packet{Type: pbagent.GatewayConnectOK})
+	log.Printf("agent connected: org=%v,hostname=%v,platform=%v,version=%v,goversion=%v,compiler=%v,machineid=%v",
+		orgName, ag.Hostname, ag.Platform, ag.Version, ag.GoVersion, ag.Compiler, ag.MachineId)
+
+	var transportConfigBytes []byte
+	if s.PyroscopeIngestURL != "" {
+		transportConfigBytes, _ = pb.GobEncode(monitoring.TransportConfig{
+			Sentry: monitoring.SentryConfig{
+				DSN:         s.AgentSentryDSN,
+				OrgName:     orgName,
+				Environment: s.IDProvider.ApiURL,
+			},
+			Profiler: monitoring.ProfilerConfig{
+				PyroscopeServerAddress: s.PyroscopeIngestURL,
+				PyroscopeAuthToken:     s.PyroscopeAuthToken,
+				OrgName:                orgName,
+				Environment:            s.IDProvider.ApiURL,
+			},
+		})
+	}
+	_ = stream.Send(&pb.Packet{
+		Type:    pbagent.GatewayConnectOK,
+		Payload: transportConfigBytes,
+	})
 	agentErr := s.listenAgentMessages(config, ag, stream)
 	if err := s.pluginOnDisconnect(config); err != nil {
 		log.Printf("ua=agent - failed processing plugin on-disconnect phase, err=%v", err)
@@ -126,7 +148,7 @@ func (s *Server) listenAgentMessages(config plugin.Config, ag *agent.Agent, stre
 			log.Printf("received error from agent, err=%v", err)
 			return err
 		}
-		if pkt.Type == pbgateway.KeepAlive {
+		if pkt.Type == pbgateway.KeepAlive || pkt.Type == "KeepAlive" {
 			continue
 		}
 		sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])

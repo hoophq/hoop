@@ -12,6 +12,8 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/getsentry/sentry-go"
+	"github.com/runopsio/hoop/common/monitoring"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/spf13/cobra"
 )
@@ -27,11 +29,13 @@ const (
 )
 
 var loginCmd = &cobra.Command{
-	Use:   "login",
-	Short: "Authenticate at Hoop",
-	Long:  `Login to gain access to hoop usage.`,
+	Use:    "login",
+	Short:  "Authenticate at Hoop",
+	Long:   `Login to gain access to hoop usage.`,
+	PreRun: monitoring.SentryPreRun,
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := doLogin(args); err != nil {
+			sentry.CaptureException(fmt.Errorf("login - failed to authenticate, err=%v", err))
 			fmt.Printf("Failed to login, err=%v\n", err)
 			os.Exit(1)
 		}
@@ -78,6 +82,24 @@ func doLogin(args []string) error {
 		config.Port = port
 	}
 
+<<<<<<< Updated upstream
+=======
+	if len(args) > 0 {
+		config.Email = args[0]
+	}
+
+	if config.Email == "" {
+		reader := bufio.NewReader(os.Stdin)
+		fmt.Print("Email: ")
+		email, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("failed reading email input, err=%v", err)
+		}
+		email = strings.Trim(email, " \n")
+		config.Email = email
+	}
+
+>>>>>>> Stashed changes
 	saveConfig(config)
 
 	loginUrl, err := requestForUrl(httpsProtocol + config.Host)

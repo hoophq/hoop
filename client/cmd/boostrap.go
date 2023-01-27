@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/runopsio/hoop/client/k8s"
+	"github.com/runopsio/hoop/common/monitoring"
 	"github.com/spf13/cobra"
 )
 
@@ -26,9 +28,11 @@ var tokenGranterCmd = &cobra.Command{
 	Use:          "token-granter",
 	Short:        "Setup an access token for managing tokens on Kubernetes",
 	SilenceUsage: false,
+	PreRun:       monitoring.SentryPreRun,
 	Run: func(cmd *cobra.Command, args []string) {
 		kubeconfig, err := k8s.BootstrapTokenGranter(tokenGranterOptions)
 		if err != nil {
+			sentry.CaptureException(fmt.Errorf("token-granter - %v", err))
 			fmt.Println(err)
 			os.Exit(1)
 		}
