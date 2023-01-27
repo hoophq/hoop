@@ -88,12 +88,12 @@ func (a *Agent) doTerminalResizeTTY(pkt *pb.Packet) {
 	if ok {
 		winSize, err := parsePttyWinSize(pkt.Payload)
 		if err != nil {
-			_ = sentry.CaptureException(err)
+			sentry.CaptureException(err)
 			log.Printf("session=%s, tty=true, winsize=%v - %v", sessionID, string(pkt.Payload), err)
 			return
 		}
 		if err := cmd.ResizeTTY(winSize); err != nil {
-			_ = sentry.CaptureException(err)
+			sentry.CaptureException(err)
 			log.Printf("session=%s, tty=true - failed resizing tty, err=%v", sessionID, err)
 		}
 	}

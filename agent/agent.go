@@ -228,7 +228,7 @@ func (a *Agent) decodeConnectionParams(sessionID []byte, pkt *pb.Packet) *pb.Age
 	if err := pb.GobDecodeInto(encConnectionParams, &connParams); err != nil {
 		log.Printf("session=%v - failed decoding connection params=%#v, err=%v",
 			string(sessionID), string(encConnectionParams), err)
-		_ = sentry.CaptureException(err)
+		sentry.CaptureException(err)
 		_ = a.client.Send(&pb.Packet{
 			Type:    pbclient.SessionClose,
 			Payload: []byte(`internal error, failed decoding connection params`),
@@ -248,7 +248,7 @@ func (a *Agent) decodeDLPCredentials(sessionID []byte, pkt *pb.Packet) dlp.Clien
 			dlpClient, err := dlp.NewDLPClient(context.Background(), gcpRawCred)
 			if err != nil {
 				log.Printf("failed creating dlp client, err=%v", err)
-				_ = sentry.CaptureException(err)
+				sentry.CaptureException(err)
 				_ = a.client.Send(&pb.Packet{
 					Type:    pbclient.SessionClose,
 					Payload: []byte(`failed creating dlp client`),
@@ -300,7 +300,7 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 	go func() {
 		if err := a.loadHooks(sessionIDKey, connParams); err != nil {
 			log.Println(err)
-			_ = sentry.CaptureException(err)
+			sentry.CaptureException(err)
 			_ = a.client.Send(&pb.Packet{
 				Type:    pbclient.SessionClose,
 				Payload: []byte(`failed loading plugin hooks for this connection`),
