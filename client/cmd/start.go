@@ -10,9 +10,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/runopsio/hoop/client/cmd/demos"
 	"github.com/runopsio/hoop/client/cmd/styles"
 	"github.com/runopsio/hoop/common/clientconfig"
+	"github.com/runopsio/hoop/common/monitoring"
 	"github.com/runopsio/hoop/gateway"
 
 	"github.com/briandowns/spinner"
@@ -24,6 +26,7 @@ var startCmd = &cobra.Command{
 	Use:          "start",
 	Short:        "Runs hoop local demo",
 	SilenceUsage: false,
+	PreRun:       monitoring.SentryPreRun,
 	Run: func(cmd *cobra.Command, args []string) {
 		loader := spinner.New(spinner.CharSets[11], 70*time.Millisecond)
 		loader.Color("green")
@@ -50,6 +53,7 @@ var startCmd = &cobra.Command{
 		_ = exec.Command("docker", "stop", containerName).Run()
 		_ = exec.Command("docker", "rm", containerName).Run()
 		if stdout, err := exec.Command("docker", "pull", imageName).CombinedOutput(); err != nil {
+			sentry.CaptureException(fmt.Errorf("start-app - failed pulling image, stdout=%v, err=%v", string(stdout), err))
 			fmt.Printf("failed pulling image %v, err=%v, stdout=%v\n", imageName, err, string(stdout))
 			os.Exit(1)
 		}
@@ -68,6 +72,7 @@ var startCmd = &cobra.Command{
 		execmd := exec.Command("docker", dockerArgs...)
 		cmdres, err := execmd.CombinedOutput()
 		if err != nil {
+			sentry.CaptureException(fmt.Errorf("start-app - failed starting hoop locally, output=%v, err=%v", string(cmdres), err))
 			fmt.Printf("output=%v, err=%v\n", string(cmdres), err)
 			os.Exit(1)
 		}
@@ -81,6 +86,7 @@ var startCmd = &cobra.Command{
 				case <-ctx.Done():
 					data, _ := exec.Command("docker", "logs", containerName).
 						CombinedOutput()
+					sentry.CaptureException(fmt.Errorf("start-app - failed starting hoop (timeout), logs=%v", string(data)))
 					if len(data) > 0 {
 						loader.Stop()
 						fmt.Println("failed starting hoop (timeout)! docker logs")

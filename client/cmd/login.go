@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/runopsio/hoop/common/monitoring"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/spf13/cobra"
 )
@@ -27,9 +28,10 @@ const (
 )
 
 var loginCmd = &cobra.Command{
-	Use:   "login",
-	Short: "Authenticate at Hoop",
-	Long:  `Login to gain access to hoop usage.`,
+	Use:    "login",
+	Short:  "Authenticate at Hoop",
+	Long:   `Login to gain access to hoop usage.`,
+	PreRun: monitoring.SentryPreRun,
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := doLogin(args); err != nil {
 			fmt.Printf("Failed to login, err=%v\n", err)

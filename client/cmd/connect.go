@@ -10,10 +10,12 @@ import (
 	"time"
 
 	"github.com/briandowns/spinner"
+	"github.com/getsentry/sentry-go"
 	"github.com/muesli/termenv"
 	"github.com/runopsio/hoop/client/cmd/styles"
 	"github.com/runopsio/hoop/client/proxy"
 	"github.com/runopsio/hoop/common/memory"
+	"github.com/runopsio/hoop/common/monitoring"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
@@ -25,6 +27,9 @@ var (
 		Use:   "connect CONNECTION",
 		Short: "Connect to a remote resource",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) < 1 {
+				return cmd.Usage()
+			}
 			dur, err := time.ParseDuration(connectFlags.duration)
 			if err != nil {
 				return fmt.Errorf("invalid duration, valid units are 's', 'm', 'h'. E.g.: 60s|3m|1h")
@@ -32,15 +37,10 @@ var (
 			if dur.Seconds() < 60 {
 				return fmt.Errorf("the minimum duration is 60 seconds (60s)")
 			}
+			monitoring.SentryPreRun(cmd, args)
 			return nil
 		},
 		SilenceUsage: false,
-		PreRun: func(cmd *cobra.Command, args []string) {
-			if len(args) < 1 {
-				cmd.Usage()
-				os.Exit(1)
-			}
-		},
 		Run: func(cmd *cobra.Command, args []string) {
 			runConnect(args)
 		},
@@ -94,7 +94,9 @@ func runConnect(args []string) {
 		switch pb.PacketType(pkt.Type) {
 		case pbclient.SessionOpenWaitingApproval:
 			loader.Color("yellow")
-			loader.Start()
+			if !loader.Active() {
+				loader.Start()
+			}
 			loader.Suffix = " waiting task to be approved at " +
 				styles.Keyword(fmt.Sprintf(" %v ", string(pkt.Payload)))
 		case pbclient.SessionOpenOK:
@@ -108,6 +110,7 @@ func runConnect(args []string) {
 				// start postgres server
 				pgp := proxy.NewPGServer(c.proxyPort, c.client)
 				if err := pgp.Serve(string(sessionID)); err != nil {
+					sentry.CaptureException(fmt.Errorf("connect - failed initializing postgres proxy, err=%v", err))
 					c.processGracefulExit(err)
 				}
 				c.loader.Stop()
@@ -126,6 +129,7 @@ func runConnect(args []string) {
 				}
 				tcp := proxy.NewTCPServer(proxyPort, c.client, pbagent.TCPConnectionWrite)
 				if err := tcp.Serve(string(sessionID)); err != nil {
+					sentry.CaptureException(fmt.Errorf("connect - failed initializing tcp proxy, err=%v", err))
 					c.processGracefulExit(err)
 				}
 				c.loader.Stop()
@@ -149,10 +153,13 @@ func runConnect(args []string) {
 				c.printHeader(string(sessionID))
 				c.connStore.Set(string(sessionID), term)
 				if err := term.ConnectWithTTY(); err != nil {
+					sentry.CaptureException(fmt.Errorf("connect - failed initializing terminal, err=%v", err))
 					c.processGracefulExit(err)
 				}
 			default:
-				c.processGracefulExit(fmt.Errorf(`connection type %q not implemented`, string(connnectionType)))
+				errMsg := fmt.Errorf(`connection type %q not implemented`, string(connnectionType))
+				sentry.CaptureException(fmt.Errorf("connect - %v", errMsg))
+				c.processGracefulExit(errMsg)
 			}
 		case pbclient.SessionOpenApproveOK:
 			loader.Color("green")
@@ -186,7 +193,9 @@ func runConnect(args []string) {
 			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
 			_, err := pgp.PacketWriteClient(connectionID, pkt)
 			if err != nil {
-				c.processGracefulExit(fmt.Errorf("failed writing to client, err=%v", err))
+				errMsg := fmt.Errorf("failed writing to client, err=%v", err)
+				sentry.CaptureException(fmt.Errorf("connect - %v - %v", pbclient.PGConnectionWrite, errMsg))
+				c.processGracefulExit(errMsg)
 			}
 		case pbclient.TCPConnectionWrite:
 			sessionID := pkt.Spec[pb.SpecGatewaySessionID]
@@ -194,7 +203,9 @@ func runConnect(args []string) {
 			if tcp, ok := c.connStore.Get(string(sessionID)).(*proxy.TCPServer); ok {
 				_, err := tcp.PacketWriteClient(connectionID, pkt)
 				if err != nil {
-					c.processGracefulExit(fmt.Errorf("failed writing to client, err=%v", err))
+					errMsg := fmt.Errorf("failed writing to client, err=%v", err)
+					sentry.CaptureException(fmt.Errorf("connect - %v - %v", pbclient.TCPConnectionWrite, errMsg))
+					c.processGracefulExit(errMsg)
 				}
 			}
 		case pbclient.TCPConnectionClose:

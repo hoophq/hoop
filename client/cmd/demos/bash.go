@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/runopsio/hoop/client/cmd/styles"
 	"github.com/spf13/cobra"
 )
@@ -17,7 +18,10 @@ var bashCmd = &cobra.Command{
 	Short:        "Connect to an interactive bash session",
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
-		runBashDemo()
+		if err := runBashDemo(); err != nil {
+			sentry.CaptureException(fmt.Errorf("demo-bash - %v", err))
+			printErrorAndExit(err.Error())
+		}
 	},
 }
 
@@ -32,22 +36,22 @@ var connectionPayload = fmt.Sprintf(`
 	"secret": {}
 }`, defaultBashConnectionName)
 
-func runBashDemo() {
+func runBashDemo() error {
 	req, err := http.NewRequest(
 		"POST",
 		"http://127.0.0.1:8009/api/connections",
 		bytes.NewBufferString(connectionPayload))
 	if err != nil {
-		printErrorAndExit(err.Error())
+		return err
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		printErrorAndExit(err.Error())
+		return err
 	}
 	defer resp.Body.Close()
 	respErr, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
-		printErrorAndExit("status-code=%v, resp-err=%v", resp.Status, string(respErr))
+		return fmt.Errorf("status-code=%v, resp-err=%v", resp.Status, string(respErr))
 	}
 	c := exec.Command("hoop", "connect", defaultBashConnectionName)
 	c.Stdin = os.Stdin
@@ -62,4 +66,5 @@ func runBashDemo() {
 	fmt.Println(styles.Fainted.Render("  • You can now run the command in another terminal"))
 	fmt.Printf("  $ hoop connect %s\n", defaultBashConnectionName)
 	fmt.Println()
+	return nil
 }

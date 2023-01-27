@@ -3,7 +3,6 @@ package transport
 import (
 	"context"
 	"fmt"
-	"github.com/getsentry/sentry-go"
 	"io"
 	"log"
 	"os"
@@ -11,6 +10,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/getsentry/sentry-go"
 
 	rv "github.com/runopsio/hoop/gateway/review"
 	justintime "github.com/runopsio/hoop/gateway/review/jit"
@@ -280,7 +281,8 @@ func (s *Server) listenClientMessages(
 			sentry.CaptureException(err)
 			return status.Errorf(codes.Internal, "internal error, failed receiving client packet")
 		}
-		if pkt.Type == pbgateway.KeepAlive {
+		// skip old/new clients
+		if pkt.Type == pbgateway.KeepAlive || pkt.Type == "KeepAlive" {
 			continue
 		}
 		if pkt.Spec == nil {

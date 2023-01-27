@@ -43,6 +43,9 @@ type (
 		Profile              string
 		GcpDLPRawCredentials string
 		PluginRegistryURL    string
+		PyroscopeIngestURL   string
+		PyroscopeAuthToken   string
+		AgentSentryDSN       string
 		Analytics            user.Analytics
 	}
 

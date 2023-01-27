@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/dlp/apiv2/dlppb"
+	"github.com/getsentry/sentry-go"
 	"github.com/runopsio/hoop/agent/pg"
 	pgtypes "github.com/runopsio/hoop/common/pg"
 )
@@ -79,14 +80,19 @@ func (m *redactPostgresMiddleware) redactAndWrite(w pg.ResponseWriter) {
 		projectID:        m.dlpClient.ProjectID(),
 	}, m.dataRowPackets)
 	if err != nil {
-		log.Printf("failed redacting data row packets, err=%v", err)
+		errMsg := fmt.Errorf("failed redacting data row packets, err=%v", err)
+		log.Println(errMsg)
+		sentry.CaptureException(errMsg)
 	}
 	if _, err := redactedDataRows.Write(m.typedPackets.Bytes()); err != nil {
-		log.Printf("failed generating packet buffer, err=%v", err)
+		errMsg := fmt.Errorf("failed generating packet buffer, err=%v", err)
+		log.Println(errMsg)
+		sentry.CaptureException(errMsg)
 	}
-
 	if _, err = w.Write(redactedDataRows.Bytes()); err != nil {
-		log.Printf("failed writing packet to response writer, err=%v", err)
+		errMsg := fmt.Errorf("failed writing packet to response writer, err=%v", err)
+		log.Println(errMsg)
+		sentry.CaptureException(errMsg)
 	}
 }
 

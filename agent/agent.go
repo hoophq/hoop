@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/runopsio/hoop/agent/dlp"
 	"github.com/runopsio/hoop/agent/hook"
 	term "github.com/runopsio/hoop/agent/terminal"
@@ -112,6 +113,7 @@ func (a *Agent) handleGracefulExit() {
 				_ = client.Close()
 			}
 		}
+		_ = sentry.Flush(time.Second * 2)
 
 		switch sigval {
 		case syscall.SIGHUP:
@@ -161,6 +163,7 @@ func (a *Agent) Run(svrAddr, token string, firstConnTry bool) {
 		switch pkt.Type {
 		case pbagent.GatewayConnectOK:
 			fmt.Println("connected!")
+			go a.startMonitoring(pkt)
 
 		case pbagent.SessionOpen:
 			a.processSessionOpen(pkt)
@@ -225,6 +228,7 @@ func (a *Agent) decodeConnectionParams(sessionID []byte, pkt *pb.Packet) *pb.Age
 	if err := pb.GobDecodeInto(encConnectionParams, &connParams); err != nil {
 		log.Printf("session=%v - failed decoding connection params=%#v, err=%v",
 			string(sessionID), string(encConnectionParams), err)
+		sentry.CaptureException(err)
 		_ = a.client.Send(&pb.Packet{
 			Type:    pbclient.SessionClose,
 			Payload: []byte(`internal error, failed decoding connection params`),
@@ -243,6 +247,8 @@ func (a *Agent) decodeDLPCredentials(sessionID []byte, pkt *pb.Packet) dlp.Clien
 		if _, ok := a.connStore.Get(dlpClientKey).(dlp.Client); !ok {
 			dlpClient, err := dlp.NewDLPClient(context.Background(), gcpRawCred)
 			if err != nil {
+				log.Printf("failed creating dlp client, err=%v", err)
+				sentry.CaptureException(err)
 				_ = a.client.Send(&pb.Packet{
 					Type:    pbclient.SessionClose,
 					Payload: []byte(`failed creating dlp client`),
@@ -251,7 +257,6 @@ func (a *Agent) decodeDLPCredentials(sessionID []byte, pkt *pb.Packet) dlp.Clien
 						pb.SpecGatewaySessionID:  sessionID,
 					},
 				})
-				log.Printf("failed creating dlp client, err=%v", err)
 				return nil
 			}
 			log.Printf("session=%v - created dlp client with success", string(sessionID))
@@ -295,6 +300,7 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 	go func() {
 		if err := a.loadHooks(sessionIDKey, connParams); err != nil {
 			log.Println(err)
+			sentry.CaptureException(err)
 			_ = a.client.Send(&pb.Packet{
 				Type:    pbclient.SessionClose,
 				Payload: []byte(`failed loading plugin hooks for this connection`),

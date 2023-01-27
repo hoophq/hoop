@@ -2,8 +2,10 @@ package gateway
 
 import (
 	"fmt"
-	"github.com/runopsio/hoop/gateway/analytics"
+	"log"
 	"os"
+
+	"github.com/runopsio/hoop/gateway/analytics"
 
 	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/plugin"
@@ -13,6 +15,7 @@ import (
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/session"
 
+	"github.com/runopsio/hoop/common/monitoring"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/common/version"
 	"github.com/runopsio/hoop/gateway/agent"
@@ -80,7 +83,28 @@ func Run() {
 		Profile:              profile,
 		GcpDLPRawCredentials: os.Getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"),
 		PluginRegistryURL:    os.Getenv("PLUGIN_REGISTRY_URL"),
+		PyroscopeIngestURL:   os.Getenv("PYROSCOPE_INGEST_URL"),
+		PyroscopeAuthToken:   os.Getenv("PYROSCOPE_AUTH_TOKEN"),
+		AgentSentryDSN:       os.Getenv("AGENT_SENTRY_DSN"),
 		Analytics:            analyticsService,
+	}
+	if g.PyroscopeIngestURL != "" && g.PyroscopeAuthToken != "" {
+		log.Printf("starting profiler, ingest-url=%v", g.PyroscopeIngestURL)
+		_, err := monitoring.StartProfiler("gateway", monitoring.ProfilerConfig{
+			PyroscopeServerAddress: g.PyroscopeIngestURL,
+			PyroscopeAuthToken:     g.PyroscopeAuthToken,
+			Environment:            g.IDProvider.ApiURL,
+		})
+		if err != nil {
+			log.Fatalf("failed starting profiler, err=%v", err)
+		}
+	}
+	sentryStarted, err := monitoring.StartSentry(nil, monitoring.SentryConfig{
+		DSN:         os.Getenv("SENTRY_DSN"),
+		Environment: g.IDProvider.ApiURL,
+	})
+	if err != nil {
+		log.Fatalf("failed starting sentry, err=%v", err)
 	}
 	reviewService.TransportService = g
 	jitService.TransportService = g
@@ -94,5 +118,5 @@ func Run() {
 	fmt.Printf("Running with PROFILE [%s]\n", profile)
 
 	go g.StartRPCServer()
-	a.StartAPI()
+	a.StartAPI(sentryStarted)
 }

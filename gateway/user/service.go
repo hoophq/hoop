@@ -1,8 +1,9 @@
 package user
 
 import (
-	pb "github.com/runopsio/hoop/common/proto"
 	"strings"
+
+	pb "github.com/runopsio/hoop/common/proto"
 )
 
 type (
@@ -17,6 +18,7 @@ type (
 		FindAll(context *Context) ([]User, error)
 		FindInvitedUser(email string) (*InvitedUser, error)
 		GetOrgByName(name string) (*Org, error)
+		GetOrgNameByID(orgID string) (string, error)
 		FindByGroups(context *Context, groups []string) ([]User, error)
 		ListAllGroups(context *Context) ([]string, error)
 	}
@@ -107,6 +109,10 @@ func (s *Service) Signup(org *Org, user *User) (txId int64, err error) {
 
 func (s *Service) GetOrgByName(name string) (*Org, error) {
 	return s.Storage.GetOrgByName(name)
+}
+
+func (s *Service) GetOrgNameByID(id string) (string, error) {
+	return s.Storage.GetOrgNameByID(id)
 }
 
 func (s *Service) FindInvitedUser(email string) (*InvitedUser, error) {

@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/muesli/termenv"
+	"github.com/runopsio/hoop/common/monitoring"
 	"github.com/spf13/cobra"
 )
 
@@ -16,6 +17,7 @@ const (
 var DemoCmd = &cobra.Command{
 	Use:          "demo",
 	Short:        "Demo applications",
+	PreRun:       monitoring.SentryPreRun,
 	SilenceUsage: false,
 }
 

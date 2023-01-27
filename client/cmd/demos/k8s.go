@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os/exec"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/runopsio/hoop/client/cmd/styles"
 	"github.com/runopsio/hoop/client/k8s"
 	"github.com/spf13/cobra"
@@ -18,7 +19,10 @@ var k8sCmd = &cobra.Command{
 	Short:        "Execute a command in a Kubernetes cluster",
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
-		runK8sDemo()
+		if err := runK8sDemo(); err != nil {
+			sentry.CaptureException(fmt.Errorf("demo-k8s - %v", err))
+			printErrorAndExit(err.Error())
+		}
 	},
 }
 
@@ -52,19 +56,19 @@ func connectionExists(connectionName string) (bool, error) {
 	}
 }
 
-func runK8sDemo() {
+func runK8sDemo() error {
 	exists, err := connectionExists(connectionNameFlag)
 	if exists {
-		printErrorAndExit("connection %s already exists, to use a distinct one: hoop start demo k8s -c <mynewconn>",
+		return fmt.Errorf("connection %s already exists, to use a distinct one: hoop start demo k8s -c <mynewconn>",
 			connectionNameFlag)
 	}
 	if err != nil {
-		printErrorAndExit(err.Error())
+		return err
 	}
 	c := exec.Command("hoop", "bootstrap", "k8s", "token-granter")
 	output, err := c.CombinedOutput()
 	if err != nil {
-		printErrorAndExit("failed bootstraping k8s. err=%v, stdout=%v", err, string(output))
+		return fmt.Errorf("failed bootstraping k8s. err=%v, stdout=%v", err, string(output))
 	}
 	kubeconfigBase64Enc := base64.StdEncoding.EncodeToString(output)
 	req, err := http.NewRequest(
@@ -75,22 +79,24 @@ func runK8sDemo() {
 			connectionNameFlag,
 			kubeconfigBase64Enc)))
 	if err != nil {
-		printErrorAndExit(err.Error())
+		return err
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		printErrorAndExit(err.Error())
+		return err
 	}
 	defer resp.Body.Close()
 	respErr, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
-		printErrorAndExit("status-code=%v, resp-err=%v", resp.Status, string(respErr))
+		sentry.CaptureException(fmt.Errorf("demo-k8s - failed creating connection, statuscode=%v, resperr=%v",
+			resp.StatusCode, string(respErr)))
+		return fmt.Errorf("status-code=%v, resp-err=%v", resp.StatusCode, string(respErr))
 	}
 
 	c = exec.Command("hoop", "exec", connectionNameFlag, "--", "get", "namespaces")
 	output, err = c.CombinedOutput()
 	if err != nil {
-		printErrorAndExit("failed executing demo. err=%v, stdout=%v", err, string(output))
+		return fmt.Errorf("failed executing demo. err=%v, stdout=%v", err, string(output))
 	}
 	fmt.Println(string(output))
 	fmt.Println("---")
@@ -101,4 +107,5 @@ func runK8sDemo() {
 	fmt.Println(styles.Fainted.Render("  • To clean up, delete the namespace"))
 	fmt.Printf("  $ kubectl delete ns %s\n", k8s.DefaultNamespaceName)
 	fmt.Println()
+	return nil
 }
