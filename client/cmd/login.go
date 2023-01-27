@@ -12,7 +12,6 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/getsentry/sentry-go"
 	"github.com/runopsio/hoop/common/monitoring"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/spf13/cobra"
@@ -35,7 +34,6 @@ var loginCmd = &cobra.Command{
 	PreRun: monitoring.SentryPreRun,
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := doLogin(args); err != nil {
-			sentry.CaptureException(fmt.Errorf("login - failed to authenticate, err=%v", err))
 			fmt.Printf("Failed to login, err=%v\n", err)
 			os.Exit(1)
 		}
