@@ -15,19 +15,13 @@ type (
 	}
 
 	service interface {
-		Login(email, callback string) (string, error)
+		Login(callback string) (string, error)
 		Callback(state, code string) string
 	}
 )
 
 func (h *Handler) Login(c *gin.Context) {
-	email := c.Query("email")
-	if email == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "missing email query param"})
-		return
-	}
-
-	url, err := h.Service.Login(email, defaultRedirect(c))
+	url, err := h.Service.Login(defaultRedirect(c))
 	if err != nil {
 		sentry.CaptureException(err)
 		c.AbortWithStatus(http.StatusInternalServerError)

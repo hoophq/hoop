@@ -18,7 +18,6 @@ type (
 		Token string
 		Host  string
 		Port  string
-		Email string
 	}
 )
 

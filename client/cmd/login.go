@@ -41,7 +41,6 @@ var loginCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(loginCmd)
-	loginCmd.Flags().BoolP("email", "u", false, "The email used to authenticate at hoop")
 	done = make(chan bool)
 }
 
@@ -79,23 +78,9 @@ func doLogin(args []string) error {
 		config.Port = port
 	}
 
-	if len(args) > 0 {
-		config.Email = args[0]
-	}
-
-	if config.Email == "" {
-		reader := bufio.NewReader(os.Stdin)
-		fmt.Print("Email: ")
-		email, _ := reader.ReadString('\n')
-		email = strings.Trim(email, " \n")
-		config.Email = email
-	}
-
 	saveConfig(config)
 
-	fmt.Printf("To use a different email, please run 'hoop login {email}'.\n\nLogging with [%s] at [%s]\n\n", config.Email, config.Host)
-
-	loginUrl, err := requestForUrl(config.Email, httpsProtocol+config.Host)
+	loginUrl, err := requestForUrl(httpsProtocol + config.Host)
 	if err != nil {
 		return err
 	}
@@ -115,7 +100,7 @@ func doLogin(args []string) error {
 	return nil
 }
 
-func requestForUrl(email, apiUrl string) (string, error) {
+func requestForUrl(apiUrl string) (string, error) {
 	c := http.DefaultClient
 	url := fmt.Sprintf("%s/api/login", apiUrl)
 
@@ -125,10 +110,6 @@ func requestForUrl(email, apiUrl string) (string, error) {
 	}
 
 	req.Header.Set("accept", "application/json")
-
-	q := req.URL.Query()
-	q.Add("email", email)
-	req.URL.RawQuery = q.Encode()
 
 	resp, err := c.Do(req)
 	if err != nil {
