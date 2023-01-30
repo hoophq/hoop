@@ -72,8 +72,9 @@ func (s *Service) Callback(state, code string) string {
 	if err != nil {
 		if login != nil {
 			s.loginOutcome(login, outcomeError)
+			return login.Redirect + "?error=unexpected_error"
 		}
-		return login.Redirect + "?error=unexpected_error"
+		return "https://app.hoop.dev/callback?error=unexpected_error"
 	}
 
 	token, idToken, err := s.exchangeCodeByToken(code)
