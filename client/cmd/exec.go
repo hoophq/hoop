@@ -97,7 +97,7 @@ func parseExecInput(c *connect) []byte {
 }
 
 func runExec(args []string) {
-	config := getClientConfig()
+	config := getClientConfigOrDie()
 	loader := spinner.New(spinner.CharSets[11], 70*time.Millisecond,
 		spinner.WithWriter(os.Stderr), spinner.WithHiddenCursor(true))
 	loader.Color("green")

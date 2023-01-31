@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/runopsio/hoop/common/monitoring"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -33,73 +35,96 @@ var loginCmd = &cobra.Command{
 	Long:   `Login to gain access to hoop usage.`,
 	PreRun: monitoring.SentryPreRun,
 	Run: func(cmd *cobra.Command, args []string) {
-		if err := doLogin(args); err != nil {
-			fmt.Printf("Failed to login, err=%v\n", err)
+		config, err := loadConfig()
+		if err != nil {
+			fmt.Println(err.Error())
 			os.Exit(1)
 		}
-		os.Exit(0)
+		if config.ApiURL == "" {
+			reader := bufio.NewReader(os.Stdin)
+			fmt.Print("Press enter to leave the defaults\n")
+			fmt.Printf("API_URL [%s]: ", defaultApiURL)
+			apiURL, _ := reader.ReadString('\n')
+			apiURL = strings.Trim(apiURL, " \n")
+			if apiURL == "" {
+				apiURL = defaultApiURL
+			}
+			config.ApiURL = apiURL
+
+			fmt.Printf("GRPC_PORT [%s]: ", defaultGrpcPort)
+			grpcPort, _ := reader.ReadString('\n')
+			grpcPort = strings.Trim(grpcPort, " \n")
+			if grpcPort == "" {
+				grpcPort = defaultGrpcPort
+			}
+			config.GrpcPort = grpcPort
+			if err := saveConfig(config); err != nil {
+				fmt.Println(err.Error())
+				os.Exit(1)
+			}
+		}
+		accessToken, err := doLogin(config.ApiURL)
+		if err != nil {
+			fmt.Println(err.Error())
+			os.Exit(1)
+		}
+		config.Token = accessToken
+		if err := saveConfig(config); err != nil {
+			fmt.Println(err.Error())
+			os.Exit(1)
+		}
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(loginCmd)
-	done = make(chan bool)
 }
 
-var done chan bool
-
-func doLogin(args []string) error {
-	defaultHost := "app.hoop.dev"
-	defaultPort := "8443"
-
-	config := loadConfig()
-
-	if config.Host == "" {
-		reader := bufio.NewReader(os.Stdin)
-		fmt.Print("Press enter to leave the defaults\n")
-		fmt.Printf("Host [%s]: ", defaultHost)
-		host, _ := reader.ReadString('\n')
-		host = strings.Trim(host, " \n")
-
-		if host == "" {
-			host = defaultHost
-		}
-
-		host = strings.Replace(host, httpsProtocol, "", -1)
-		config.Host = host
-	}
-
-	if config.Port == "" {
-		reader := bufio.NewReader(os.Stdin)
-		fmt.Printf("Port [%s]: ", defaultPort)
-		port, _ := reader.ReadString('\n')
-		port = strings.Trim(port, " \n")
-		if port == "" {
-			port = defaultPort
-		}
-		config.Port = port
-	}
-
-	saveConfig(config)
-
-	loginUrl, err := requestForUrl(httpsProtocol + config.Host)
+func doLogin(apiURL string) (string, error) {
+	loginUrl, err := requestForUrl(apiURL)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	if loginUrl == "" {
-		return errors.New("missing login url")
+		return "", errors.New("missing login url")
 	}
 
-	http.HandleFunc("/callback", loginCallback)
-	go http.ListenAndServe(pb.ClientLoginCallbackAddress, nil)
+	tokenCh := make(chan string)
+	http.HandleFunc("/callback", func(rw http.ResponseWriter, req *http.Request) {
+		defer close(tokenCh)
+		errQuery := req.URL.Query().Get("error")
+		accessToken := req.URL.Query().Get("token")
+
+		if errQuery != "" {
+			msg := fmt.Sprintf("Login failed: %s", errQuery)
+			_, _ = io.WriteString(rw, msg)
+			fmt.Println(msg)
+			tokenCh <- ""
+			return
+		}
+		_, _ = io.WriteString(rw, "Login succeeded. You can close this tab now.")
+		fmt.Println("Login succeeded")
+		tokenCh <- accessToken
+	})
+
+	callbackHttpServer := http.Server{
+		Addr: pb.ClientLoginCallbackAddress,
+	}
+	go callbackHttpServer.ListenAndServe()
 	if err := openBrowser(loginUrl); err != nil {
 		fmt.Printf("Browser failed to open. \nPlease click on the link below:\n\n%s\n\n", loginUrl)
 	}
-
-	<-done
-
-	return nil
+	defer callbackHttpServer.Shutdown(context.Background())
+	select {
+	case accessToken := <-tokenCh:
+		if accessToken == "" {
+			return "", fmt.Errorf("empty token")
+		}
+		return accessToken, nil
+	case <-time.After(30 * time.Second):
+		return "", fmt.Errorf("timeout on login")
+	}
 }
 
 func requestForUrl(apiUrl string) (string, error) {
@@ -151,32 +176,4 @@ func openBrowser(url string) error {
 	}
 
 	return err
-}
-
-func loginCallback(resp http.ResponseWriter, req *http.Request) {
-	err := req.URL.Query().Get("error")
-	token := req.URL.Query().Get("token")
-
-	browserMsg := "Login succeeded. You can close this tab now."
-	userMsg := "Login succeeded\n"
-
-	if err != "" {
-		browserMsg = fmt.Sprintf("Login failed: %s", err)
-		userMsg = fmt.Sprintf("Login failed: %s\n", err)
-
-	}
-
-	persistToken(token)
-
-	io.WriteString(resp, browserMsg)
-	fmt.Println(userMsg)
-
-	done <- true
-}
-
-func persistToken(token string) {
-	config := loadConfig()
-	config.Token = token
-
-	saveConfig(config)
 }

@@ -15,14 +15,4 @@ echo "--> STARTING GATEWAY ..."
 export PORT=8009
 export GIN_MODE=release
 export XTDB_ADDRESS=http://127.0.0.1:3001
-/app/hoop start gateway &
-
-unset PORT PROFILE GIN_MODE XTDB_ADDRESS
-
-until curl -s -f -o /dev/null "http://127.0.0.1:8009/api/agents"
-do
-    sleep 0.2
-done
-echo "--> GATEWAY IS READY!"
-echo "--> STARTING AGENT ..."
-/app/hoop start agent
+/app/hoop start gateway

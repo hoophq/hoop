@@ -2,8 +2,9 @@ package security
 
 import (
 	"fmt"
-	"github.com/getsentry/sentry-go"
 	"net/http"
+
+	"github.com/getsentry/sentry-go"
 
 	"github.com/gin-gonic/gin"
 	pb "github.com/runopsio/hoop/common/proto"
