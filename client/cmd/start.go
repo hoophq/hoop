@@ -60,13 +60,30 @@ var startCmd = &cobra.Command{
 		dockerArgs := []string{
 			"run",
 			"-t", // required for resizing the tty in the agent properly
-			"-e", "PROFILE=dev",
+			"-e", fmt.Sprintf("PYROSCOPE_INGEST_URL=%v", os.Getenv("PYROSCOPE_INGEST_URL")),
+			"-e", fmt.Sprintf("PYROSCOPE_AUTH_TOKEN=%v", os.Getenv("PYROSCOPE_AUTH_TOKEN")),
+			"-e", fmt.Sprintf("AGENT_SENTRY_DSN=%v", os.Getenv("AGENT_SENTRY_DSN")),
+			"-e", fmt.Sprintf("API_URL=%v", os.Getenv("API_URL")),
+			"-e", fmt.Sprintf("IDP_ISSUER=%v", os.Getenv("IDP_ISSUER")),
+			"-e", fmt.Sprintf("IDP_CLIENT_ID=%v", os.Getenv("IDP_CLIENT_ID")),
+			"-e", fmt.Sprintf("IDP_CLIENT_SECRET=%v", os.Getenv("IDP_CLIENT_SECRET")),
+			"-e", fmt.Sprintf("IDP_AUDIENCE=%v", os.Getenv("IDP_AUDIENCE")),
 			"-e", fmt.Sprintf("GOOGLE_APPLICATION_CREDENTIALS_JSON=%v",
 				os.Getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")),
+		}
+		dockerArgs = append(dockerArgs,
 			"-p", "8009:8009",
 			"-p", "8010:8010",
 			"--name", containerName,
 			"-d", imageName,
+		)
+
+		var hasAuth bool
+		if os.Getenv("IDP_ISSUER") == "" {
+			dockerArgs = append(dockerArgs, "/app/start-dev.sh")
+		} else {
+			dockerArgs = append(dockerArgs, "/app/start-idp-dev.sh")
+			hasAuth = true
 		}
 
 		execmd := exec.Command("docker", dockerArgs...)
@@ -96,21 +113,17 @@ var startCmd = &cobra.Command{
 					}
 					os.Exit(1)
 				default:
-					resp, err := http.Get("http://127.0.0.1:8009/api/agents")
+					resp, err := http.Get("http://127.0.0.1:8009/api/login")
 					if err == nil && resp.StatusCode == 200 {
 						loader.Stop()
 						fmt.Println()
 						fmt.Println(styles.Default.Render("  hoop started at " + styles.Keyword(" http://127.0.0.1:8009 ")))
 						fmt.Println()
-						fmt.Println(styles.Fainted.Render("  • Connect to an interactive audited bash session"))
-						fmt.Println(styles.Default.Render("  $ hoop start demo bash"))
-						fmt.Println()
-						fmt.Println(styles.Fainted.Render("  • Access Kubernetes resources"))
-						fmt.Println(styles.Default.Render("  $ hoop start demo k8s"))
-						fmt.Println()
-						fmt.Println(styles.Fainted.Render("  • Stop the demo"))
-						fmt.Println(styles.Default.Render("  $ docker stop hoopdemo"))
-						fmt.Println()
+						if hasAuth {
+							renderAuthDemo()
+						} else {
+							renderNonAuthDemo()
+						}
 						// best-effort to rename the config file when starting the demo.
 						// this fixes errors when trying the demo if the user has logged in before.
 						renameClientConfigs()
@@ -126,6 +139,27 @@ var startCmd = &cobra.Command{
 		}()
 		<-done
 	},
+}
+
+func renderAuthDemo() {
+	fmt.Println(styles.Fainted.Render("  • Start an agent"))
+	fmt.Println(styles.Default.Render("  $ hoop start agent"))
+	fmt.Println()
+	fmt.Println(styles.Fainted.Render("  • Stop the demo"))
+	fmt.Println(styles.Default.Render("  $ docker stop hoopdemo"))
+	fmt.Println()
+}
+
+func renderNonAuthDemo() {
+	fmt.Println(styles.Fainted.Render("  • Connect to an interactive audited bash session"))
+	fmt.Println(styles.Default.Render("  $ hoop start demo bash"))
+	fmt.Println()
+	fmt.Println(styles.Fainted.Render("  • Access Kubernetes resources"))
+	fmt.Println(styles.Default.Render("  $ hoop start demo k8s"))
+	fmt.Println()
+	fmt.Println(styles.Fainted.Render("  • Stop the demo"))
+	fmt.Println(styles.Default.Render("  $ docker stop hoopdemo"))
+	fmt.Println()
 }
 
 func renameClientConfigs() {

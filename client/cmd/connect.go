@@ -63,8 +63,7 @@ type connect struct {
 }
 
 func runConnect(args []string) {
-	config := getClientConfig()
-
+	config := getClientConfigOrDie()
 	loader := spinner.New(spinner.CharSets[11], 70*time.Millisecond)
 	loader.Color("green")
 	loader.Start()

@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"fmt"
 	"log"
+	"net"
+	"net/url"
 	"os"
-	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/briandowns/spinner"
@@ -13,73 +16,90 @@ import (
 	pb "github.com/runopsio/hoop/common/proto"
 )
 
-type (
-	Config struct {
-		Token string
-		Host  string
-		Port  string
-	}
+const (
+	defaultApiURL   = "https://app.hoop.dev"
+	defaultGrpcPort = "8443"
+
+	localApiURL   = "http://127.0.0.1"
+	localGrpcPort = "8010"
 )
 
-func loadConfig() *Config {
-	path := getFilepath()
-	var conf Config
-	if _, err := toml.DecodeFile(path, &conf); err != nil {
-		panic(err)
-	}
-
-	return &conf
+type Config struct {
+	Token          string `toml:"access_token"`
+	ApiURL         string `toml:"api_url"`
+	GrpcPort       string `toml:"grpc_port"`
+	ConfigFilePath string `toml:"-"`
 }
 
-func saveConfig(conf *Config) {
-	f, err := os.OpenFile(getFilepath(), os.O_WRONLY, os.ModeAppend)
-	if err != nil {
-		panic(err)
+func (c *Config) ApiURLHost() string {
+	u, _ := url.Parse(c.ApiURL)
+	if u != nil {
+		return u.Hostname()
 	}
-	defer f.Close()
-
-	if err := f.Truncate(0); err != nil {
-		panic(err)
-	}
-
-	f.Seek(0, 0)
-
-	if err := toml.NewEncoder(f).Encode(conf); err != nil {
-		panic(err)
-	}
+	return ""
 }
 
-func getFilepath() string {
+func loadConfig() (*Config, error) {
 	filepath, err := clientconfig.NewPath(clientconfig.ClientFile)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("failed getting config file path, err=%v", err)
 	}
-	return filepath
+	var conf Config
+	if _, err := toml.DecodeFile(filepath, &conf); err != nil {
+		return nil, fmt.Errorf("failed decoding toml config, err=%v", err)
+	}
+	conf.ConfigFilePath = filepath
+	return &conf, nil
 }
 
-func getClientConfig() *Config {
-	defaultHost := "127.0.0.1"
-	defaultPort := "8010"
-
-	config := loadConfig()
-
-	if config.Host == "" {
-		config.Host = defaultHost
+func saveConfig(conf *Config) error {
+	f, err := os.OpenFile(conf.ConfigFilePath, os.O_WRONLY, os.ModeAppend)
+	if err != nil {
+		return err
 	}
-
-	if config.Port == "" {
-		config.Port = defaultPort
+	defer f.Close()
+	if err := f.Truncate(0); err != nil {
+		return err
 	}
+	f.Seek(0, 0)
+	return toml.NewEncoder(f).Encode(conf)
+}
 
-	if config.Host != "" &&
-		!strings.HasPrefix(config.Host, defaultHost) &&
-		config.Token == "" {
-		if err := doLogin(nil); err != nil {
-			panic(err)
+// getClientConfigOrDie will load the configuration file from the filesystem.
+// If the configuration file doesn't exists, fallback to the localhost grpc server.
+// If the localhost grpc doesn't respond, fallback performing the signin to the defaultApiURL
+// saving as the default configuration.
+func getClientConfigOrDie() *Config {
+	config, err := loadConfig()
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+	if config.ApiURL == "" || config.GrpcPort == "" {
+		// try connecting locally
+		timeout := time.Second * 5
+		u, _ := url.Parse(localApiURL)
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort(u.Host, localGrpcPort), timeout)
+		if err == nil {
+			conn.Close()
+			config.ApiURL = localApiURL
+			config.GrpcPort = localGrpcPort
+			return config
 		}
-		config = loadConfig()
+		// fallback to signin to defaultApiURL
+		token, err := doLogin(defaultApiURL)
+		if err != nil {
+			fmt.Println(err.Error())
+			os.Exit(1)
+		}
+		config.Token = token
+		config.ApiURL = defaultApiURL
+		config.GrpcPort = defaultGrpcPort
+		if err := saveConfig(config); err != nil {
+			fmt.Println(err.Error())
+			os.Exit(1)
+		}
 	}
-
 	return config
 }
 
@@ -92,8 +112,12 @@ func newClientConnect(config *Config, loader *spinner.Spinner, args []string, ve
 		loader:         loader,
 	}
 
+	grpcHost := config.ApiURLHost()
+	if grpcHost == "" {
+		c.printErrorAndExit("api_url config is empty or malformed")
+	}
 	client, err := grpc.Connect(
-		config.Host+":"+config.Port,
+		fmt.Sprintf("%s:%s", grpcHost, config.GrpcPort),
 		config.Token,
 		grpc.WithOption(grpc.OptionConnectionName, c.connectionName),
 		grpc.WithOption("origin", pb.ConnectionOriginClient),
