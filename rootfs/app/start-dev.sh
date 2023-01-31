@@ -14,6 +14,7 @@ echo "--> STARTING GATEWAY ..."
 
 export PORT=8009
 export GIN_MODE=release
+export PROFILE=dev
 export XTDB_ADDRESS=http://127.0.0.1:3001
 /app/hoop start gateway &
 
