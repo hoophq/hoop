@@ -210,7 +210,7 @@ func (c *Command) ResizeTTY(size *pty.Winsize) error {
 	return pty.Setsize(c.ptty, size)
 }
 
-func NewCommand(rawEnvVarList map[string]interface{}, args ...string) (*Command, error) {
+func NewCommand(rawEnvVarList map[string]any, args ...string) (*Command, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("connection must be at least one argument")
 	}
