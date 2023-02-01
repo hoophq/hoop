@@ -1,0 +1,8 @@
+#!/bin/bash -e
+
+: "${KEY_FILE:? Required environment variable not set}"
+
+gcloud auth activate-service-account --key-file=$KEY_FILE 2> /dev/null
+touch $HOME/.bigqueryrc
+
+/usr/lib/google-cloud-sdk/bin/bq $@

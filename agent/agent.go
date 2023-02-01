@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log"
@@ -202,6 +203,7 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 	if connParams == nil {
 		return nil, nil, fmt.Errorf("session %s failed to decode connection params", sessionIDKey)
 	}
+
 	log.Printf("session=%s - connection params decoded with success, dlp-info-types=%d",
 		sessionIDKey, len(connParams.DLPInfoTypes))
 
@@ -289,6 +291,12 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 	if connType == pb.ConnectionTypePostgres || connType == pb.ConnectionTypeTCP {
 		connParams.EnvVars[connEnvKey] = connEnvVars
 	}
+
+	encFn := base64.StdEncoding.EncodeToString
+	connParams.EnvVars["envvar:HOOP_CONNECTION_NAME"] = encFn([]byte(connParams.ConnectionName))
+	connParams.EnvVars["envvar:HOOP_CONNECTION_TYPE"] = encFn([]byte(connParams.ConnectionType))
+	connParams.EnvVars["envvar:HOOP_USER_ID"] = encFn([]byte(connParams.UserID))
+	connParams.EnvVars["envvar:HOOP_SESSION_ID"] = encFn(sessionID)
 
 	if a.connStore.Get(dlpClientKey) == nil {
 		dlpClient := a.decodeDLPCredentials(sessionID, pkt)
