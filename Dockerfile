@@ -44,7 +44,7 @@ RUN apt-get update -y && \
         openjdk-11-jre \
         # heroku \
         default-mysql-client \
-        postgresql-client-15 && \
+        postgresql-client-15 \
         google-cloud-cli=416.0.0-0 && \
         # mssql-tools unixodbc-dev && \
         rm -rf /var/lib/apt/lists/*

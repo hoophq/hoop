@@ -61,7 +61,7 @@ RUN apt-get update -y && \
         default-mysql-client \
         postgresql-client-15 \
         mssql-tools \
-        unixodbc-dev && \
+        unixodbc-dev \
         google-cloud-cli=416.0.0-0 && \
         rm -rf /var/lib/apt/lists/*
 
