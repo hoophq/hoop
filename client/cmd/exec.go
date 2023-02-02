@@ -13,6 +13,7 @@ import (
 
 	"github.com/briandowns/spinner"
 	"github.com/getsentry/sentry-go"
+	"github.com/muesli/termenv"
 	"github.com/runopsio/hoop/client/cmd/styles"
 	"github.com/runopsio/hoop/common/monitoring"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -24,6 +25,7 @@ import (
 
 var inputFilepath string
 var inputStdin string
+var verboseMode bool
 
 // execCmd represents the exec command
 var execCmd = &cobra.Command{
@@ -44,6 +46,7 @@ var execCmd = &cobra.Command{
 func init() {
 	execCmd.Flags().StringVarP(&inputFilepath, "file", "f", "", "The path of the file containing the command")
 	execCmd.Flags().StringVarP(&inputStdin, "input", "i", "", "The input to be executed remotely")
+	execCmd.Flags().BoolVarP(&verboseMode, "verbose", "v", false, "Verbose mode")
 	rootCmd.AddCommand(execCmd)
 }
 
@@ -164,6 +167,14 @@ func runExec(args []string) {
 				Type:    pbagent.ExecWriteStdin,
 				Payload: execInputPayload,
 				Spec:    execSpec,
+			}
+			if verboseMode {
+				c.loader.Stop()
+				out := fmt.Sprintf("session: %s", string(pkt.Spec[pb.SpecGatewaySessionID]))
+				out = termenv.String(out).Faint().String()
+				os.Stderr.Write([]byte(out))
+				fmt.Println()
+				c.loader.Start()
 			}
 			if err := c.client.Send(stdinPkt); err != nil {
 				c.printErrorAndExit("failed executing command, err=%v", err)
