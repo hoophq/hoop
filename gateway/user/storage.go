@@ -125,7 +125,7 @@ func (s *Storage) GetOrgNameByID(orgID string) (string, error) {
 	if err := edn.Unmarshal(ednResp, &resp); err != nil {
 		return "", nil
 	}
-	if len(resp[0]) > 0 {
+	if len(resp) > 0 {
 		return resp[0][0], nil
 	}
 	return "", nil
