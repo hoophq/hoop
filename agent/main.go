@@ -10,6 +10,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/google/uuid"
+	"github.com/runopsio/hoop/agent/autoregister"
 	"github.com/runopsio/hoop/common/clientconfig"
 	"github.com/runopsio/hoop/common/grpc"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -18,9 +19,15 @@ import (
 
 func Run() {
 	fmt.Println(string(version.JSON()))
-
 	defaultServerAddress := "127.0.0.1:8010"
 	secondaryServerAddres := "app.hoop.dev:8443"
+	agentToken, err := autoregister.Run()
+	if err != nil {
+		log.Fatal(err)
+	}
+	if agentToken != "" {
+		saveConfig(&Config{ServerAddress: defaultServerAddress, Token: agentToken})
+	}
 
 	conf := loadConfig()
 	if conf.Token == "" {
