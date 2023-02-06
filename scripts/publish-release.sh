@@ -43,6 +43,13 @@ $NOTE_CONTENT
 - [hoophq/hoopdev:latest](https://hub.docker.com/repository/docker/hoophq/hoopdev)
 - [hoophq/hoopdev:${GIT_TAG}](https://hub.docker.com/repository/docker/hoophq/hoopdev)
 
+## Helm Chart
+
+https://github.com/hoophq/helm-chart
+
+- [hoop-chart](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/hoop-chart-${GIT_TAG}.tgz)
+- [hoopagent-chart](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/hoopagent-chart-${GIT_TAG}.tgz)
+
 EOF
 
 cat - <<EOF
