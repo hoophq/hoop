@@ -36,6 +36,11 @@ jobs:
           repository: runopsio/webapp
           token: ${{ secrets.GH_TOKEN }}
           path: './build/webapp'
+
+      - name: Checkout Helm Chart
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/helm-chart
       
       - name: Setup Java
         uses: actions/setup-java@v2
@@ -47,6 +52,11 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 16
+
+      - name: Setup Helm3
+        uses: azure/setup-helm@v3
+        with:
+          version: v1.5.0
 
       - name: Setup QEMU
         uses: docker/setup-qemu-action@v2
