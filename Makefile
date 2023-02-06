@@ -20,9 +20,9 @@ release: clean build-chart
 	mv ./build/webapp/resources ./rootfs/app/ui
 	# goreleaser release
 	echo -n "${GIT_TAG}" > ./latest.txt
-	aws s3 cp ./dist/ s3://hoopartifacts/release/${GIT_TAG}/ --exclude "*" --include "*.tar.gz" --recursive
-	aws s3 cp ./latest.txt s3://hoopartifacts/release/latest.txt
-	aws s3 cp ./dist/checksums.txt s3://hoopartifacts/release/${GIT_TAG}/checksums.txt
+	aws s3 cp ./dist/ s3://hoopartifacts/release/${GIT_TAG}/ --exclude "*" --include "*.tgz" --include "*.tar.gz" --recursive
+	# aws s3 cp ./latest.txt s3://hoopartifacts/release/latest.txt
+	# aws s3 cp ./dist/checksums.txt s3://hoopartifacts/release/${GIT_TAG}/checksums.txt
 
 build-chart:
 	find ./build/helm-chart -type f
