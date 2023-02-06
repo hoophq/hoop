@@ -25,7 +25,7 @@ release: clean build-chart
 	aws s3 cp ./dist/checksums.txt s3://hoopartifacts/release/${GIT_TAG}/checksums.txt
 
 build-chart:
-	find ./build/helm-chart --type f
+	find ./build/helm-chart -type f
 	helm package ./build/helm-chart/chart/agent/ --app-version ${GIT_TAG} --destination ./dist/
 	helm package ./build/helm-chart/chart/gateway/ --app-version ${GIT_TAG} --destination ./dist/
 
