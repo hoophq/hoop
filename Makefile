@@ -37,4 +37,4 @@ clean:
 test:
 	go test -v github.com/runopsio/hoop/...
 
-.PHONY: publish-snapshot build-chart publish clean test
+.PHONY: publish-snapshot build-chart release publish clean test
