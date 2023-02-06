@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"runtime"
 	"time"
@@ -120,7 +119,7 @@ func runConnect(args []string) {
 				fmt.Println("--------------------postgres-credentials--------------------")
 				fmt.Printf("      host=127.0.0.1 port=%s user=noop password=noop\n", pgp.ListenPort())
 				fmt.Println("------------------------------------------------------------")
-				log.Println("ready to accept connections!")
+				fmt.Println("ready to accept connections!")
 			case pb.ConnectionTypeTCP:
 				proxyPort := "8999"
 				if c.proxyPort != "" {
@@ -139,7 +138,7 @@ func runConnect(args []string) {
 				fmt.Println("--------------------tcp-connection--------------------")
 				fmt.Printf("               host=127.0.0.1 port=%s\n", tcp.ListenPort())
 				fmt.Println("------------------------------------------------------")
-				log.Println("ready to accept connections!")
+				fmt.Println("ready to accept connections!")
 			case pb.ConnectionTypeCommandLine:
 				if runtime.GOOS == "windows" {
 					fmt.Println("command line is not supported on Windows")
