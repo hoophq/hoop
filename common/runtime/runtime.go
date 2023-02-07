@@ -21,6 +21,7 @@ func runCommand(command string, arg ...string) *string {
 		return nil
 	}
 	v := strings.TrimSuffix(string(resp), "\n")
+	v = strings.TrimSpace(v)
 	return &v
 }
 

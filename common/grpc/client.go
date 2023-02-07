@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"sync"
 	"time"
 
@@ -104,7 +105,7 @@ func (c *mutexClient) Send(pkt *pb.Packet) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	err := c.stream.Send(pkt)
-	if err != nil {
+	if err != nil && err != io.EOF {
 		sentry.CaptureException(fmt.Errorf("failed sending msg, type=%v, err=%v", pkt.Type, err))
 	}
 	return err

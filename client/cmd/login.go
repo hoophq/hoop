@@ -46,6 +46,7 @@ var loginCmd = &cobra.Command{
 			fmt.Printf("API_URL [%s]: ", defaultApiURL)
 			apiURL, _ := reader.ReadString('\n')
 			apiURL = strings.Trim(apiURL, " \n")
+			apiURL = strings.TrimSpace(apiURL)
 			if apiURL == "" {
 				apiURL = defaultApiURL
 			}
@@ -54,6 +55,7 @@ var loginCmd = &cobra.Command{
 			fmt.Printf("GRPC_PORT [%s]: ", defaultGrpcPort)
 			grpcPort, _ := reader.ReadString('\n')
 			grpcPort = strings.Trim(grpcPort, " \n")
+			grpcPort = strings.TrimSpace(grpcPort)
 			if grpcPort == "" {
 				grpcPort = defaultGrpcPort
 			}

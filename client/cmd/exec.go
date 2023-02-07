@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"syscall"
 	"time"
@@ -32,6 +33,10 @@ var execCmd = &cobra.Command{
 	Use:   "exec CONNECTION",
 	Short: "Execute a given input in a remote resource",
 	PreRun: func(cmd *cobra.Command, args []string) {
+		if runtime.GOOS == "windows" {
+			fmt.Println("exec is not supported on Windows")
+			os.Exit(1)
+		}
 		if len(args) < 1 {
 			cmd.Usage()
 			os.Exit(1)
