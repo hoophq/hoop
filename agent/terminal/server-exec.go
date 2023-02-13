@@ -131,7 +131,7 @@ func (c *Command) Run(stdoutw, stderrw io.WriteCloser, stdinInput []byte, onExec
 			}
 		}
 		if err := c.OnPostExec(); err != nil {
-			fmt.Printf("failed executing post command, err=%v", err)
+			log.Printf("failed executing post command, err=%v", err)
 		}
 		if exitCode == 0 {
 			onExecErr(exitCode, "")
@@ -217,6 +217,9 @@ func NewCommand(rawEnvVarList map[string]any, args ...string) (*Command, error) 
 	envStore, err := NewEnvVarStore(rawEnvVarList)
 	if err != nil {
 		return nil, err
+	}
+	if envStore.Getenv("HOME") == "" {
+		envStore.Add(&EnvVar{Type: "envvar", Key: "HOME", Val: []byte(os.Getenv("HOME"))})
 	}
 	mainCmd := args[0]
 	execArgs := args[1:]
