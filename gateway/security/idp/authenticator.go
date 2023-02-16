@@ -106,9 +106,6 @@ func NewProvider(profile string) *Provider {
 		provider.ClientID = defaultProviderClientID
 	}
 
-	if provider.Audience == "" {
-		provider.Audience = defaultProviderAudience
-	}
 	oidcProviderConfig, err := newProviderConfig(provider.Context, provider.Issuer)
 	if err != nil {
 		panic(err)
