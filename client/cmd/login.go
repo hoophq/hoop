@@ -105,7 +105,11 @@ func doLogin(apiURL string) (string, error) {
 			tokenCh <- ""
 			return
 		}
-		_, _ = io.WriteString(rw, "Login succeeded. You can close this tab now.")
+		loginPage, err := os.ReadFile("rootfs/app/static/login.html")
+		if err != nil {
+			return
+		}
+		_, _ = io.WriteString(rw, string(loginPage[:]))
 		fmt.Println("Login succeeded")
 		tokenCh <- accessToken
 	})
