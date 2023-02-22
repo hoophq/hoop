@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/runopsio/hoop/client/cmd/static"
 	"github.com/runopsio/hoop/common/monitoring"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/spf13/cobra"
@@ -105,7 +106,7 @@ func doLogin(apiURL string) (string, error) {
 			tokenCh <- ""
 			return
 		}
-		_, _ = io.WriteString(rw, "Login succeeded. You can close this tab now.")
+		_, _ = io.WriteString(rw, static.LoginHTML)
 		fmt.Println("Login succeeded")
 		tokenCh <- accessToken
 	})
