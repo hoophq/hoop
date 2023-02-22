@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/runopsio/hoop/client/cmd/static"
 	"github.com/runopsio/hoop/common/monitoring"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/spf13/cobra"
@@ -105,11 +106,7 @@ func doLogin(apiURL string) (string, error) {
 			tokenCh <- ""
 			return
 		}
-		loginPage, err := os.ReadFile("rootfs/app/static/login.html")
-		if err != nil {
-			return
-		}
-		_, _ = io.WriteString(rw, string(loginPage[:]))
+		_, _ = io.WriteString(rw, static.LoginHTML)
 		fmt.Println("Login succeeded")
 		tokenCh <- accessToken
 	})

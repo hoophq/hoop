@@ -1,3 +1,6 @@
+package static
+
+const LoginHTML = `
 <!doctype html>
 <html lang="en">
   <head>
@@ -34,11 +37,7 @@
             You're logged-in! 🎉
           </h1>
           <p class="text-sm">
-            You can close this tab by
-            <a class="text-blue-500 underline" href="#" onclick="window.close();return false;">
-              clicking here
-            </a>
-            and can go back to your terminal app
+            You can close this page and return to the terminal. It should now be logged in.
           </p>
         </section>
 
@@ -49,5 +48,4 @@
       </div>
     </div>
   </body>
-</html>
-
+</html>`
