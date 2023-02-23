@@ -136,7 +136,7 @@ func (p *auditPlugin) writeOnClose(sessionID string) error {
 	walLogObj := p.walSessionStore.Get(sessionID)
 	walogm, ok := walLogObj.(*walLogRWMutex)
 	if !ok {
-		return fmt.Errorf("failed obtaining wallog, obj=%v", walLogObj)
+		return nil
 	}
 	walogm.mu.Lock()
 	defer func() {

@@ -1,11 +1,12 @@
 package session
 
 import (
-	"github.com/getsentry/sentry-go"
 	"log"
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/getsentry/sentry-go"
 
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/gateway/user"
@@ -23,6 +24,8 @@ type (
 	service interface {
 		FindAll(*user.Context, ...*SessionOption) (*SessionList, error)
 		FindOne(context *user.Context, name string) (*Session, error)
+		EntityHistory(ctx *user.Context, sessionID string) ([]SessionStatusHistory, error)
+		ValidateSessionID(sessionID string) error
 	}
 )
 
@@ -40,6 +43,26 @@ var availableSessionOptions = []SessionOptionKey{
 	OptionUser, OptionType, OptionConnection,
 	OptionStartDate, OptionEndDate,
 	OptionLimit, OptionOffset,
+}
+
+func (a *Handler) StatusHistory(c *gin.Context) {
+	ctx, _ := c.Get("context")
+	context := ctx.(*user.Context)
+
+	sessionID := c.Param("session_id")
+	historyList, err := a.Service.EntityHistory(context, sessionID)
+	if err != nil {
+		log.Printf("failed fetching session history, err=%v", err)
+		sentry.CaptureException(err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	if historyList == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+		return
+	}
+	c.PureJSON(http.StatusOK, historyList)
 }
 
 func (a *Handler) FindOne(c *gin.Context) {

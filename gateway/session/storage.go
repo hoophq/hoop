@@ -73,6 +73,67 @@ func (s *Storage) Persist(context *user.Context, session *Session) (*st.TxRespon
 	return s.SubmitPutTx(session)
 }
 
+func (s *Storage) PersistStatus(status *SessionStatus) (*st.TxResponse, error) {
+	var obj [][]SessionStatus
+	err := s.queryDecoder(`{:query {
+		:find [(pull ?s [*])]
+		:in [session-id]
+		:where [[?s :session-status/session-id session-id]]}
+	:in-args [%q]}`, &obj, status.SessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed fetching previous session status, err=%v", err)
+	}
+	if len(obj) > 0 {
+		status.ID = obj[0][0].ID
+		status.SessionID = obj[0][0].SessionID
+		return s.SubmitPutTx(status)
+	}
+	if status.ID == "" || status.SessionID == "" {
+		return nil, fmt.Errorf("session id and xt/id must not be empty")
+	}
+	return s.SubmitPutTx(status)
+}
+
+func (s *Storage) EntityHistory(orgID, sessionID string) ([]SessionStatusHistory, error) {
+	var obj [][]SessionStatus
+	err := s.queryDecoder(`{:query {
+		:find [(pull ?o [*])]
+        :in [org-id session-id]
+		:where [[?s :xt/id session-id]
+                [?s :session/org-id org-id]
+                [?o :session-status/session-id ?s]]}
+        :in-args [%q %q]}`, &obj, orgID, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed fetching previous session status, err=%v", err)
+	}
+	if len(obj) > 0 {
+		statusID := obj[0][0].ID
+		entityHistory, err := s.Storage.GetEntityHistory(statusID, "asc", true)
+		if err != nil {
+			return nil, err
+		}
+		var historyList []SessionStatusHistory
+		return historyList, edn.Unmarshal(entityHistory, &historyList)
+	}
+	return nil, nil
+}
+
+func (s *Storage) ValidateSessionID(sessionID string) error {
+	var res [][]string
+	err := s.queryDecoder(`{:query {
+		:find [session-id]
+        :in [session-id]
+		:where [[?s :xt/id session-id]]}
+        :in-args [%q]}`, &res, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed validating session id, err=%v", err)
+	}
+	if len(res) > 0 {
+		return fmt.Errorf("session id %v already exists", sessionID)
+	}
+	return nil
+}
+
 func (s *Storage) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionList, error) {
 	inArgsEdn, limit, offset := xtdbQueryParams(ctx.Org.Id, opts...)
 	var queryCountResult []any

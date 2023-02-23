@@ -10,16 +10,15 @@ import (
 	"github.com/runopsio/hoop/gateway/review/jit"
 
 	"github.com/gin-contrib/static"
-	pb "github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/review"
-
-	"github.com/runopsio/hoop/gateway/security"
-	"github.com/runopsio/hoop/gateway/security/idp"
-
 	"github.com/gin-gonic/gin"
+	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/plugin"
+	"github.com/runopsio/hoop/gateway/review"
+	"github.com/runopsio/hoop/gateway/runbooks"
+	"github.com/runopsio/hoop/gateway/security"
+	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/session"
 	"github.com/runopsio/hoop/gateway/user"
 )
@@ -32,6 +31,7 @@ type (
 		PluginHandler     plugin.Handler
 		SessionHandler    session.Handler
 		ReviewHandler     review.Handler
+		RunbooksHandler   runbooks.Handler
 		JitHandler        jit.Handler
 		SecurityHandler   security.Handler
 		IDProvider        *idp.Provider
@@ -76,7 +76,6 @@ func (api *Api) StartAPI(sentryInit bool) {
 	}
 
 	api.buildRoutes(rg)
-
 	if err := route.Run(); err != nil {
 		panic("Failed to start HTTP server")
 	}
@@ -200,11 +199,25 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest,
 		api.AdminOnly,
 		api.SessionHandler.FindOne)
+	route.GET("/plugins/audit/sessions/:session_id/status",
+		api.Authenticate,
+		api.TrackRequest,
+		api.SessionHandler.StatusHistory)
 	route.GET("/plugins/audit/sessions",
 		api.Authenticate,
 		api.TrackRequest,
 		api.AdminOnly,
 		api.SessionHandler.FindAll)
+
+	route.GET("/plugins/runbooks/connections/:name/templates",
+		api.Authenticate,
+		api.TrackRequest,
+		api.RunbooksHandler.FindAll,
+	)
+	route.POST("/plugins/runbooks/connections/:name/exec",
+		api.Authenticate,
+		api.TrackRequest,
+		api.RunbooksHandler.RunExec)
 }
 
 func (api *Api) CreateTrialEntities() error {

@@ -16,9 +16,12 @@ type (
 	}
 
 	storage interface {
-		Persist(context *user.Context, sess *Session) (*st.TxResponse, error)
+		Persist(ctx *user.Context, sess *Session) (*st.TxResponse, error)
+		PersistStatus(sess *SessionStatus) (*st.TxResponse, error)
+		EntityHistory(orgID string, sessionID string) ([]SessionStatusHistory, error)
+		ValidateSessionID(sessionID string) error
 		FindAll(*user.Context, ...*SessionOption) (*SessionList, error)
-		FindOne(context *user.Context, name string) (*Session, error)
+		FindOne(ctx *user.Context, name string) (*Session, error)
 		NewGenericStorageWriter() *GenericStorageWriter
 	}
 
@@ -46,6 +49,19 @@ type (
 		Total       int       `json:"total"`
 		HasNextPage bool      `json:"has_next_page"`
 		Items       []Session `json:"data"`
+	}
+
+	SessionStatus struct {
+		ID        string  `json:"id"         edn:"xt/id"`
+		SessionID string  `json:"session_id" edn:"session-status/session-id"`
+		Phase     string  `json:"phase"      edn:"session-status/phase"`
+		Error     *string `json:"error"      edn:"session-status/error"`
+	}
+
+	SessionStatusHistory struct {
+		TxId   int64         `json:"tx_id"   edn:"xtdb.api/tx-id"`
+		TxTime time.Time     `json:"tx_time" edn:"xtdb.api/tx-time"`
+		Status SessionStatus `json:"status"  edn:"xtdb.api/doc"`
 	}
 )
 
@@ -84,4 +100,19 @@ func (s *Service) FindOne(context *user.Context, name string) (*Session, error) 
 
 func (s *Service) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionList, error) {
 	return s.Storage.FindAll(ctx, opts...)
+}
+
+func (s *Service) EntityHistory(ctx *user.Context, sessionID string) ([]SessionStatusHistory, error) {
+	if ctx.Org.Id == "" {
+		return nil, fmt.Errorf("organization id is empty")
+	}
+	return s.Storage.EntityHistory(ctx.Org.Id, sessionID)
+}
+
+func (s *Service) PersistStatus(status *SessionStatus) (*st.TxResponse, error) {
+	return s.Storage.PersistStatus(status)
+}
+
+func (s *Service) ValidateSessionID(sessionID string) error {
+	return s.Storage.ValidateSessionID(sessionID)
 }
