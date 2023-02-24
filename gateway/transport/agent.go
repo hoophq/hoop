@@ -1,7 +1,7 @@
 package transport
 
 import (
-	"github.com/getsentry/sentry-go"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -9,11 +9,14 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/getsentry/sentry-go"
+
 	"github.com/runopsio/hoop/gateway/plugin"
 
 	"github.com/runopsio/hoop/common/monitoring"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
+	pbclient "github.com/runopsio/hoop/common/proto/client"
 	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
 	"github.com/runopsio/hoop/gateway/agent"
 	"google.golang.org/grpc/codes"
@@ -160,9 +163,18 @@ func (s *Server) listenAgentMessages(config plugin.Config, ag *agent.Agent, stre
 			sentry.CaptureException(err)
 			return status.Errorf(codes.Internal, "internal error, plugin reject packet")
 		}
+		if pb.PacketType(pkt.Type) == pbclient.SessionClose {
+			if sessionID := pkt.Spec[pb.SpecGatewaySessionID]; len(sessionID) > 0 {
+				var trackErr error
+				if len(pkt.Payload) > 0 {
+					trackErr = fmt.Errorf(string(pkt.Payload))
+				}
+				s.trackSessionStatus(string(sessionID), pb.SessionPhaseClientSessionClose, trackErr)
+				s.disconnectClient(string(sessionID))
+			}
+		}
 		clientStream := getClientStream(sessionID)
 		if clientStream == nil {
-			log.Printf("session=%v - client connection not found, pkt=%v", sessionID, pkt.Type)
 			continue
 		}
 		// log.Printf("received agent msg type [%s] and session id [%s]", pkt.Type, sessionID)

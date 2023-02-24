@@ -37,13 +37,6 @@ import (
 )
 
 type (
-	connectedClients struct {
-		clients     map[string]pb.Transport_ConnectServer
-		connections map[string]*connection.Connection
-		plugins     map[string][]pluginConfig
-		mu          sync.Mutex
-	}
-
 	pluginConfig struct {
 		Plugin
 		config []string
@@ -60,11 +53,22 @@ type (
 
 var allPlugins []Plugin
 
-var cc = connectedClients{
-	clients:     make(map[string]pb.Transport_ConnectServer),
-	connections: make(map[string]*connection.Connection),
-	plugins:     make(map[string][]pluginConfig),
-	mu:          sync.Mutex{},
+var cc = struct {
+	clients map[string]pb.Transport_ConnectServer
+	plugins map[string][]pluginConfig
+	mu      sync.Mutex
+}{
+	clients: make(map[string]pb.Transport_ConnectServer),
+	plugins: make(map[string][]pluginConfig),
+	mu:      sync.Mutex{},
+}
+
+var disconnectSink = struct {
+	items map[string]chan struct{}
+	mu    sync.Mutex
+}{
+	items: make(map[string]chan struct{}),
+	mu:    sync.Mutex{},
 }
 
 func LoadPlugins(apiURL string) {
@@ -84,18 +88,14 @@ func bindClient(sessionID string,
 
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
-
 	cc.clients[sessionID] = stream
-	cc.connections[sessionID] = connection
 	cc.plugins[sessionID] = pluginsConfig
 }
 
 func unbindClient(id string) {
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
-
 	delete(cc.clients, id)
-	delete(cc.connections, id)
 	delete(cc.plugins, id)
 }
 
@@ -127,6 +127,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	kernelVersion := extractData(md, "kernel_version")
 	connectionName := extractData(md, "connection_name")
 	clientVerb := extractData(md, "verb")
+	clientOrigin := extractData(md, "origin")
 
 	sub, err := s.exchangeUserToken(token)
 	if err != nil {
@@ -148,7 +149,18 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		return status.Errorf(codes.NotFound, fmt.Sprintf("connection '%v' not found", connectionName))
 	}
 
-	sessionID := uuid.NewString()
+	// When a session id is coming from the client,
+	// it's not safe to rely on it. A validation is required
+	// to maintain the integrity of the database.
+	sessionID := extractData(md, "session_id")
+	if sessionID != "" {
+		if err := s.validateSessionID(sessionID); err != nil {
+			return status.Errorf(codes.AlreadyExists, err.Error())
+		}
+	}
+	if sessionID == "" {
+		sessionID = uuid.NewString()
+	}
 	c := &client.Client{
 		Id:           uuid.NewString(),
 		SessionID:    sessionID,
@@ -158,6 +170,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		ConnectionId: conn.Id,
 		AgentId:      conn.AgentId,
 	}
+	s.trackSessionStatus(sessionID, pb.SessionPhaseClientConnect, nil)
 	setClientMetdata(c, md)
 
 	pConfig := plugin.Config{
@@ -193,6 +206,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 			}
 		}
 		if hasReview && !hasJit {
+			s.trackSessionStatus(sessionID, pb.SessionPhaseClientErr, fmt.Errorf("connection subject to review"))
 			return status.Errorf(codes.PermissionDenied, fmt.Sprintf("This connection is subject to review. Please, use 'hoop exec %s` to interact", conn.Name))
 		}
 	}
@@ -209,11 +223,13 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 			}
 		}
 		if hasJit && !hasReview {
+			s.trackSessionStatus(sessionID, pb.SessionPhaseClientErr, fmt.Errorf("connection subject to just-in-time review"))
 			return status.Errorf(codes.PermissionDenied, fmt.Sprintf("This connection is subject to just-in-time review. Please, use 'hoop connect %s` to interact", conn.Name))
 		}
 	}
 
 	if _, err := s.ClientService.Persist(c); err != nil {
+		s.trackSessionStatus(sessionID, pb.SessionPhaseClientErr, fmt.Errorf("failed saving client connection, err=%v", err))
 		log.Printf("failed saving client connection, err=%v", err)
 		sentry.CaptureException(err)
 		return err
@@ -233,15 +249,24 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		"platform":        c.Platform,
 	})
 
+	s.startDisconnectClientSink(c)
 	log.Printf("proxy connected: hostname=%v,verb=%v,platform=%v,version=%v,goversion=%v,compiler=%v,machineid=%v",
 		c.Hostname, c.Verb, c.Platform, c.Version, c.GoVersion, c.Compiler, c.MachineId)
+	s.trackSessionStatus(sessionID, pb.SessionPhaseClientConnected, nil)
 	clientErr := s.listenClientMessages(stream, c, conn, pConfig)
 
 	if err := s.pluginOnDisconnect(pConfig); err != nil {
 		log.Printf("session=%v ua=client - failed processing plugin on-disconnect phase, err=%v", sessionID, err)
 	}
 
-	s.disconnectClient(c)
+	if clientOrigin == pb.ConnectionOriginClient {
+		s.disconnectClient(c.SessionID)
+	}
+	sessionPhase := pb.SessionPhaseGatewaySessionClose
+	if clientErr != nil {
+		sessionPhase = pb.SessionPhaseClientErr
+	}
+	s.trackSessionStatus(sessionID, sessionPhase, clientErr)
 	return clientErr
 }
 
@@ -290,7 +315,7 @@ func (s *Server) listenClientMessages(
 		}
 		pkt.Spec[pb.SpecGatewaySessionID] = []byte(c.SessionID)
 
-		log.Printf("session=%s - receive client packet type [%s]", c.SessionID, pkt.Type)
+		// log.Printf("session=%s - receive client packet type [%s]", c.SessionID, pkt.Type)
 		if err := s.pluginOnReceive(config, pkt); err != nil {
 			log.Printf("plugin reject packet, err=%v", err)
 			sentry.CaptureException(err)
@@ -309,8 +334,10 @@ func (s *Server) processClientPacket(pkt *pb.Packet, clientVerb string, client *
 	case pbagent.SessionOpen:
 		switch clientVerb {
 		case pb.ClientVerbConnect:
+			s.trackSessionStatus(client.SessionID, pb.SessionPhaseClientSessionOpen, nil)
 			return s.processSessionOpenConnect(pkt, client, conn)
 		case pb.ClientVerbExec:
+			s.trackSessionStatus(client.SessionID, pb.SessionPhaseClientSessionOpen, nil)
 			return s.processSessionOpenExec(pkt, client, conn)
 		default:
 			return fmt.Errorf("unknown connection type '%v'", conn.Type)
@@ -318,8 +345,7 @@ func (s *Server) processClientPacket(pkt *pb.Packet, clientVerb string, client *
 	default:
 		agentStream := getAgentStream(conn.AgentId)
 		if agentStream == nil {
-			log.Printf("agent not found for connection %s", conn.Name)
-			return status.Errorf(codes.FailedPrecondition, "agent not found for connection %s", conn.Name)
+			return fmt.Errorf("agent not found for connection %s", conn.Name)
 		}
 		_ = agentStream.Send(pkt)
 	}
@@ -423,6 +449,14 @@ func (s *Server) processSessionOpenExec(pkt *pb.Packet, client *client.Client, c
 		return err
 	}
 	spec[pb.SpecAgentConnectionParamsKey] = connParams
+	// Propagate client spec.
+	// Do not allow replacing system ones
+	for key, val := range pkt.Spec {
+		if _, ok := spec[key]; ok {
+			continue
+		}
+		spec[key] = val
+	}
 	_ = agentStream.Send(&pb.Packet{
 		Type: pbagent.SessionOpen,
 		Spec: spec,
@@ -562,20 +596,6 @@ func (s *Server) JitStatusChange(sessionID string, status justintime.Status) err
 	return nil
 }
 
-func (s *Server) disconnectClient(c *client.Client) {
-	unbindClient(c.SessionID)
-	c.Status = client.StatusDisconnected
-	_, _ = s.ClientService.Persist(c)
-	if stream := getAgentStream(c.AgentId); stream != nil {
-		_ = stream.Send(&pb.Packet{
-			Type: pbagent.SessionClose,
-			Spec: map[string][]byte{
-				pb.SpecGatewaySessionID: []byte(c.SessionID),
-			},
-		})
-	}
-}
-
 func (s *Server) exchangeUserToken(token string) (string, error) {
 	if s.Profile == pb.DevProfile {
 		return "test-user", nil
@@ -598,7 +618,8 @@ func (s *Server) handleGracefulShutdown(c *client.Client) {
 		syscall.SIGQUIT)
 	go func() {
 		<-sigc
-		s.disconnectClient(c)
+		s.disconnectClient(c.SessionID)
+		time.Sleep(time.Second * 3) // wait to disconnect properly
 		os.Exit(143)
 	}()
 }

@@ -241,6 +241,28 @@ func (a *Agent) decodeConnectionParams(sessionID []byte, pkt *pb.Packet) *pb.Age
 		})
 		return nil
 	}
+	if clientEnvVarsEnc := pkt.Spec[pb.SpecClientExecEnvVar]; len(clientEnvVarsEnc) > 0 {
+		var clientEnvVars map[string]string
+		if err := pb.GobDecodeInto(clientEnvVarsEnc, &clientEnvVars); err != nil {
+			log.Printf("session=%v - failed decoding client env vars, err=%v", string(sessionID), err)
+			sentry.CaptureException(err)
+			_ = a.client.Send(&pb.Packet{
+				Type:    pbclient.SessionClose,
+				Payload: []byte(`internal error, failed decoding client env vars`),
+				Spec: map[string][]byte{
+					pb.SpecClientExitCodeKey: []byte(`1`),
+					pb.SpecGatewaySessionID:  sessionID,
+				},
+			})
+			return nil
+		}
+		for key, val := range clientEnvVars {
+			if _, ok := connParams.EnvVars[key]; ok {
+				continue
+			}
+			connParams.EnvVars[key] = val
+		}
+	}
 	return &connParams
 }
 

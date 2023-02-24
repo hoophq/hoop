@@ -160,6 +160,41 @@ func (s *Storage) GetEntity(xtId string) ([]byte, error) {
 	return nil, nil
 }
 
+func (s *Storage) GetEntityHistory(eid, sortOrder string, withDocs bool) ([]byte, error) {
+	url := fmt.Sprintf("%s/_xtdb/entity", s.address)
+	if sortOrder != "asc" && sortOrder != "desc" {
+		return nil, fmt.Errorf("wrong sort order input, accept 'asc' or 'desc'")
+	}
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("accept", "application/edn")
+	q := req.URL.Query()
+	q.Add("eid", eid)
+	q.Add("sort-order", sortOrder)
+	q.Add("history", "true")
+	q.Add("with-docs", fmt.Sprintf("%v", withDocs))
+	req.URL.RawQuery = q.Encode()
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		b, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return nil, err
+		}
+		return b, nil
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+	respErr, _ := ioutil.ReadAll(resp.Body)
+	return nil, fmt.Errorf("unknown status code (%v), response=%v", resp.StatusCode, string(respErr))
+}
+
 func (s *Storage) QueryRaw(ednQuery []byte) ([]byte, error) {
 	return s.queryRequest(ednQuery, "application/edn")
 }

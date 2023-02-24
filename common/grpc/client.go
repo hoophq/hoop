@@ -28,11 +28,9 @@ type (
 		optionVal string
 	}
 	mutexClient struct {
-		grpcClient  *grpc.ClientConn
-		stream      pb.Transport_ConnectClient
-		ctx         context.Context
-		mutex       sync.RWMutex
-		closeSignal chan struct{}
+		grpcClient *grpc.ClientConn
+		stream     pb.Transport_ConnectClient
+		mutex      sync.RWMutex
 	}
 )
 
@@ -89,15 +87,10 @@ func Connect(serverAddress, token string, opts ...*ClientOptions) (pb.ClientTran
 		return nil, fmt.Errorf("failed connecting to streaming RPC server, err=%v", err)
 	}
 
-	done := make(chan struct{})
-	ctx := stream.Context()
-
 	return &mutexClient{
-		grpcClient:  conn,
-		stream:      stream,
-		ctx:         ctx,
-		closeSignal: done,
-		mutex:       sync.RWMutex{},
+		grpcClient: conn,
+		stream:     stream,
+		mutex:      sync.RWMutex{},
 	}, nil
 }
 

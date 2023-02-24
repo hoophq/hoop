@@ -3,10 +3,13 @@ package transport
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/getsentry/sentry-go"
 	"log"
 	"net"
 	"strings"
+	"time"
+
+	"github.com/getsentry/sentry-go"
+	"github.com/google/uuid"
 
 	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/review"
@@ -17,6 +20,7 @@ import (
 	"github.com/runopsio/hoop/gateway/session"
 
 	pb "github.com/runopsio/hoop/common/proto"
+	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/client"
 	"github.com/runopsio/hoop/gateway/connection"
@@ -54,11 +58,7 @@ type (
 	}
 )
 
-const (
-	agentOrigin  = "agent"
-	clientOrigin = "client"
-	listenAddr   = "0.0.0.0:8010"
-)
+const listenAddr = "0.0.0.0:8010"
 
 func (s *Server) StartRPCServer() {
 	log.Printf("starting gateway at %v", listenAddr)
@@ -128,6 +128,75 @@ func (s *Server) ValidateConfiguration() error {
 		return fmt.Errorf("failed to parse env GOOGLE_APPLICATION_CREDENTIALS_JSON, it should be a valid JSON")
 	}
 	return nil
+}
+
+func (s *Server) trackSessionStatus(sessionID, phase string, err error) {
+	var errMsg *string
+	if err != nil {
+		v := err.Error()
+		if len(v) > 150 {
+			v = fmt.Sprintf("%v, [TRUNCATE %v bytes] ...", v[:150], len(v)-150)
+		}
+		errMsg = &v
+	}
+	_, trackErr := s.SessionService.PersistStatus(&session.SessionStatus{
+		ID:        uuid.NewString(),
+		SessionID: sessionID,
+		Phase:     phase,
+		Error:     errMsg,
+	})
+	if trackErr != nil {
+		log.Printf("failed tracking session status, err=%v", trackErr)
+	}
+}
+
+func (s *Server) validateSessionID(sessionID string) error {
+	return s.SessionService.ValidateSessionID(sessionID)
+}
+
+// startDisconnectClientSink listen for disconnects when the disconnect channel is closed
+// it timeout after 48 hours closing the client.
+func (s *Server) startDisconnectClientSink(c *client.Client) {
+	disconnectSink.mu.Lock()
+	defer disconnectSink.mu.Unlock()
+	disconnectCh := make(chan struct{})
+	disconnectSink.items[c.SessionID] = disconnectCh
+	disconnectFn := func() {
+		unbindClient(c.SessionID)
+		c.Status = client.StatusDisconnected
+		_, _ = s.ClientService.Persist(c)
+		if stream := getAgentStream(c.AgentId); stream != nil {
+			_ = stream.Send(&pb.Packet{
+				Type: pbagent.SessionClose,
+				Spec: map[string][]byte{
+					pb.SpecGatewaySessionID: []byte(c.SessionID),
+				},
+			})
+		}
+	}
+	go func() {
+		select {
+		case <-disconnectCh:
+			log.Printf("session=%s - disconnecting client", c.SessionID)
+			disconnectFn()
+		case <-time.After(time.Hour * 48):
+			log.Printf("session=%s - timeout (48h), disconnecting client", c.SessionID)
+			disconnectFn()
+		}
+	}()
+}
+
+// disconnectClient closes the disconnect sink channel
+// triggering the disconnect logic at startDisconnectClientSink
+func (s *Server) disconnectClient(sessionID string) {
+	disconnectSink.mu.Lock()
+	defer disconnectSink.mu.Unlock()
+	disconnectCh, ok := disconnectSink.items[sessionID]
+	if !ok {
+		return
+	}
+	delete(disconnectSink.items, sessionID)
+	close(disconnectCh)
 }
 
 func extractData(md metadata.MD, metaName string) string {

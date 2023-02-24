@@ -114,6 +114,7 @@ func (p *auditPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt
 		pbclient.WriteStderr:
 		return p.writeOnReceive(pluginConfig.SessionId, 'o', pkt.Payload)
 	case pbclient.SessionClose:
+		defer p.closeSession(pluginConfig.SessionId)
 		if len(pkt.Payload) > 0 {
 			return p.writeOnReceive(pluginConfig.SessionId, 'e', pkt.Payload)
 		}
@@ -126,21 +127,25 @@ func (p *auditPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt
 }
 
 func (p *auditPlugin) OnDisconnect(config plugin.Config) error {
-	if config.GetString("client") == "agent" {
-		return nil
-	}
 	if config.Org == "" || config.SessionId == "" {
 		return fmt.Errorf("missing org_id and session_id")
 	}
+	switch config.GetString("client") {
+	case pb.ConnectionOriginClient:
+		p.closeSession(config.SessionId)
+	}
+	return nil
+}
+
+func (p *auditPlugin) closeSession(sessionID string) {
 	go func() {
 		// give some time to disconnect it, otherwise the on-receive process will
 		// catch up a wal close file
 		time.Sleep(time.Second * 3)
-		if err := p.writeOnClose(config.SessionId); err != nil {
-			log.Printf("session=%v audit - %v", config.SessionId, err)
+		if err := p.writeOnClose(sessionID); err != nil {
+			log.Printf("session=%v audit - failed closing session: %v", sessionID, err)
 		}
 	}()
-	return nil
 }
 
 func (p *auditPlugin) OnShutdown() {}

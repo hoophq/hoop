@@ -9,6 +9,7 @@ const (
 	SpecClientConnectionID        string = "client.connection_id"
 	SpecClientExitCodeKey         string = "client.exit_code"
 	SpecClientExecArgsKey         string = "terminal.args"
+	SpecClientExecEnvVar          string = "terminal.envvars"
 	SpecAgentConnectionParamsKey  string = "agent.connection_params"
 	SpecAgentGCPRawCredentialsKey string = "agent.gcp_credentials"
 	SpecTCPServerConnectKey       string = "tcp.server_connect"
@@ -28,13 +29,21 @@ const (
 
 	ProviderOkta = "okta"
 
-	ConnectionOriginAgent  = "agent"
-	ConnectionOriginClient = "client"
+	ConnectionOriginAgent     = "agent"
+	ConnectionOriginClient    = "client"
+	ConnectionOriginClientAPI = "client-api"
 
 	ClientLoginCallbackAddress string = "127.0.0.1:3587"
 
 	ClientVerbConnect = "connect"
 	ClientVerbExec    = "exec"
+
+	SessionPhaseClientConnect       = "client-connect"
+	SessionPhaseClientConnected     = "client-connected"
+	SessionPhaseClientSessionOpen   = "client-session-open"
+	SessionPhaseClientSessionClose  = "client-session-close"
+	SessionPhaseGatewaySessionClose = "gateway-session-close"
+	SessionPhaseClientErr           = "client-err"
 )
 
 var DefaultInfoTypes = []string{

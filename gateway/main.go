@@ -11,6 +11,7 @@ import (
 	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/review/jit"
+	"github.com/runopsio/hoop/gateway/runbooks"
 	"github.com/runopsio/hoop/gateway/security"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/session"
@@ -64,6 +65,7 @@ func Run() {
 		ReviewHandler:     review.Handler{Service: &reviewService},
 		JitHandler:        jit.Handler{Service: &jitService},
 		SecurityHandler:   security.Handler{Service: &securityService},
+		RunbooksHandler:   runbooks.Handler{PluginService: &pluginService, ConnectionService: &connectionService},
 		IDProvider:        idProvider,
 		Profile:           profile,
 		Analytics:         analyticsService,

@@ -3,9 +3,10 @@ package plugin
 import (
 	"encoding/base64"
 	"fmt"
-	"github.com/getsentry/sentry-go"
 	"log"
 	"net/http"
+
+	"github.com/getsentry/sentry-go"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
