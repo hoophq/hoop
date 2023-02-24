@@ -62,7 +62,7 @@ func listRunbookFiles(config *templates.RunbookConfig) (*RunbookList, error) {
 	}
 	if ctree, _ := commit.Tree(); ctree != nil {
 		err := ctree.Files().ForEach(func(f *object.File) error {
-			if !templates.IsTemplateFile(config.PathPrefix, f.Name) {
+			if !templates.IsRunbookFile(config.PathPrefix, f.Name) {
 				return nil
 			}
 			blobData, err := templates.ReadBlob(f)
