@@ -61,8 +61,7 @@ func (h *Handler) FindAll(c *gin.Context) {
 	if err != nil {
 		log.Printf("failed listing runbooks, err=%v", err)
 		c.JSON(http.StatusUnprocessableEntity, gin.H{
-			"message": "failed listing runbooks",
-			"reason":  err.Error(),
+			"message": fmt.Sprintf("failed listing runbooks, reason=%v", err),
 		})
 		return
 	}
@@ -136,7 +135,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 	log.Printf("session=%s - runbook exec, commit=%s, name=%s, connection=%s, parameters=%v",
 		sessionID, runbook.CommitHash[:8], req.FileName, connectionName, strings.TrimSpace(params))
 	c.Header("Location", fmt.Sprintf("/api/plugins/audit/sessions/%s/status", sessionID))
-	responseJSON := gin.H{"session_id": sessionID}
+	responseJSON := gin.H{"session_id": sessionID, "exit_code": nil}
 	select {
 	case resp := <-clientResp:
 		if resp.exitCode != nilExitCode {

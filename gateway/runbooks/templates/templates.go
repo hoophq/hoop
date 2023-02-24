@@ -113,18 +113,23 @@ func parseNode(node string) map[string]any {
 			specs[fnName] = true
 		case "description", "default":
 			specs[fnName] = fnVal
+		case "asenv":
+			specs[fnName] = fnVal
 		}
 	}
 	return specs
 }
 
-func IsTemplateFile(pathPrefix, filePath string) bool {
+// IsRunbookFile checks if the filePath is a runbook
+// * If the prefix path match the prefix of the filePath
+// * If fileName contains '.runbook.' in its name
+func IsRunbookFile(pathPrefix, filePath string) bool {
 	if pathPrefix != "" && !strings.HasPrefix(filePath, pathPrefix) {
 		return false
 	}
 	parts := strings.Split(filePath, "/")
 	fileName := parts[len(parts)-1]
-	return strings.Contains(fileName, ".template")
+	return strings.Contains(fileName, ".runbook.")
 }
 
 func LookupFile(fileName string, t *object.Tree) *object.File {
