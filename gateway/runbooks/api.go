@@ -32,6 +32,12 @@ type RunbookRequest struct {
 	Redirect   bool              `json:"redirect"`
 }
 
+type RunbookErrResponse struct {
+	Message   string  `json:"message"`
+	ExitCode  *int    `json:"exit_code"`
+	SessionID *string `json:"session_id"`
+}
+
 type RunbookList struct {
 	Items         []*Runbook `json:"items"`
 	Commit        string     `json:"commit"`
@@ -135,22 +141,26 @@ func (h *Handler) RunExec(c *gin.Context) {
 	log.Printf("session=%s - runbook exec, commit=%s, name=%s, connection=%s, parameters=%v",
 		sessionID, runbook.CommitHash[:8], req.FileName, connectionName, strings.TrimSpace(params))
 	c.Header("Location", fmt.Sprintf("/api/plugins/audit/sessions/%s/status", sessionID))
-	responseJSON := gin.H{"session_id": sessionID, "exit_code": nil}
+	statusCode := http.StatusOK
+	if req.Redirect {
+		statusCode = http.StatusFound
+	}
 	select {
 	case resp := <-clientResp:
-		if resp.exitCode != nilExitCode {
-			responseJSON["exit_code"] = resp.exitCode
+		switch resp.exitCode {
+		case nilExitCode:
+			// means the gRPC client returned an error in the client flow
+			c.JSON(statusCode, &RunbookErrResponse{
+				SessionID: &sessionID,
+				Message:   fmt.Sprintf("%v", resp.err)})
+		case 0:
+			c.JSON(statusCode, gin.H{"session_id": sessionID, "exit_code": 0})
+		default:
+			c.JSON(http.StatusBadRequest, &RunbookErrResponse{
+				SessionID: &sessionID,
+				Message:   fmt.Sprintf("%v", resp.err),
+				ExitCode:  &resp.exitCode})
 		}
-		if resp.err != nil {
-			responseJSON["message"] = resp.err.Error()
-			c.JSON(http.StatusBadRequest, responseJSON)
-			return
-		}
-		statusCode := http.StatusOK
-		if req.Redirect {
-			statusCode = http.StatusFound
-		}
-		c.JSON(statusCode, responseJSON)
 	case <-time.After(time.Second * 50):
 		statusCode := http.StatusAccepted
 		if req.Redirect {
@@ -159,7 +169,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 		// closing the client will force the goroutine to end
 		// and the result will return async
 		client.Close()
-		c.JSON(statusCode, responseJSON)
+		c.JSON(statusCode, gin.H{"session_id": sessionID, "exit_code": nil})
 	}
 }
 
@@ -167,15 +177,11 @@ func (h *Handler) getConnection(ctx *user.Context, c *gin.Context, connectionNam
 	conn, err := h.ConnectionService.FindOne(ctx, connectionName)
 	if err != nil {
 		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"session_id": nil,
-			"message":    "failed retrieving connection"})
+		c.JSON(http.StatusInternalServerError, &RunbookErrResponse{Message: "failed retrieving connection"})
 		return "", err
 	}
 	if conn == nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"session_id": nil,
-			"message":    "connection not found"})
+		c.JSON(http.StatusNotFound, &RunbookErrResponse{Message: "connection not found"})
 		return "", fmt.Errorf("connection not found")
 	}
 	return conn.Id, nil
@@ -189,16 +195,12 @@ func (h *Handler) getRunbookConfig(ctx *user.Context, c *gin.Context, connection
 	p, err := h.PluginService.FindOne(ctx, "runbooks")
 	if err != nil {
 		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"session_id": nil,
-			"message":    "failed retrieving runbook plugin"})
+		c.JSON(http.StatusInternalServerError,
+			&RunbookErrResponse{Message: "failed retrieving runbook plugin"})
 		return nil, fmt.Errorf("failed retrieving runbooks plugin, err=%v", err)
 	}
 	if p == nil {
-		sentry.CaptureException(err)
-		c.JSON(http.StatusNotFound, gin.H{
-			"session_id": nil,
-			"message":    "plugin not found"})
+		c.JSON(http.StatusNotFound, &RunbookErrResponse{Message: "plugin not found"})
 		return nil, fmt.Errorf("plugin not found")
 	}
 	var repoPrefix string
@@ -213,9 +215,8 @@ func (h *Handler) getRunbookConfig(ctx *user.Context, c *gin.Context, connection
 		}
 	}
 	if !hasConnection {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{
-			"session_id": nil,
-			"message":    "plugin is not enabled for this connection"})
+		c.JSON(http.StatusUnprocessableEntity,
+			&RunbookErrResponse{Message: "plugin is not enabled for this connection"})
 		return nil, fmt.Errorf("plugin is not enabled for this connection")
 	}
 	var configEnvVars map[string]string
@@ -224,9 +225,7 @@ func (h *Handler) getRunbookConfig(ctx *user.Context, c *gin.Context, connection
 	}
 	runbookConfig, err := templates.NewRunbookConfig(repoPrefix, configEnvVars)
 	if err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{
-			"session_id": nil,
-			"message":    err.Error()})
+		c.JSON(http.StatusUnprocessableEntity, &RunbookErrResponse{Message: err.Error()})
 		return nil, err
 	}
 	return runbookConfig, nil
