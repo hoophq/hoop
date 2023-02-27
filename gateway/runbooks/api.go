@@ -162,10 +162,6 @@ func (h *Handler) RunExec(c *gin.Context) {
 				ExitCode:  &resp.exitCode})
 		}
 	case <-time.After(time.Second * 50):
-		statusCode := http.StatusAccepted
-		if req.Redirect {
-			statusCode = http.StatusFound
-		}
 		// closing the client will force the goroutine to end
 		// and the result will return async
 		client.Close()
