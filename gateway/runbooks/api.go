@@ -110,7 +110,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 		grpc.WithOption(grpc.OptionConnectionName, connectionName),
 		grpc.WithOption("origin", pb.ConnectionOriginClientAPI),
 		grpc.WithOption("verb", pb.ClientVerbExec),
-		grpc.WithOption("session_id", sessionID))
+		grpc.WithOption("session-id", sessionID))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"session_id": nil, "message": err.Error()})
 		return

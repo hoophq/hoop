@@ -109,10 +109,10 @@ func getPlugins(id string) []pluginConfig {
 
 func setClientMetdata(into *client.Client, md metadata.MD) {
 	into.Hostname = extractData(md, "hostname")
-	into.MachineId = extractData(md, "machine_id")
-	into.KernelVersion = extractData(md, "kernel_version")
+	into.MachineId = extractData(md, "machine-id")
+	into.KernelVersion = extractData(md, "kernel-version")
 	into.Version = extractData(md, "version")
-	into.GoVersion = extractData(md, "go_version")
+	into.GoVersion = extractData(md, "go-version")
 	into.Compiler = extractData(md, "compiler")
 	into.Platform = extractData(md, "platform")
 	into.Verb = extractData(md, "verb")
@@ -123,9 +123,9 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	md, _ := metadata.FromIncomingContext(ctx)
 
 	hostname := extractData(md, "hostname")
-	machineId := extractData(md, "machine_id")
-	kernelVersion := extractData(md, "kernel_version")
-	connectionName := extractData(md, "connection_name")
+	machineId := extractData(md, "machine-id")
+	kernelVersion := extractData(md, "kernel-version")
+	connectionName := extractData(md, "connection-name")
 	clientVerb := extractData(md, "verb")
 	clientOrigin := extractData(md, "origin")
 
@@ -152,7 +152,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	// When a session id is coming from the client,
 	// it's not safe to rely on it. A validation is required
 	// to maintain the integrity of the database.
-	sessionID := extractData(md, "session_id")
+	sessionID := extractData(md, "session-id")
 	if sessionID != "" {
 		if err := s.validateSessionID(sessionID); err != nil {
 			return status.Errorf(codes.AlreadyExists, err.Error())

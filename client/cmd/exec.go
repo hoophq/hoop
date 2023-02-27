@@ -125,6 +125,7 @@ func runExec(args []string) {
 	}()
 
 	c := newClientConnect(config, loader, args, pb.ClientVerbExec)
+	c.client.StartKeepAlive()
 	execSpec := newClientArgsSpec(c.clientArgs)
 	execInputPayload := parseExecInput(c)
 	sendOpenSessionPktFn := func() {
