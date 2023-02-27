@@ -35,7 +35,7 @@ type (
 )
 
 const (
-	OptionConnectionName OptionKey = "connection_name"
+	OptionConnectionName OptionKey = "connection-name"
 	defaultAddress                 = "127.0.0.1:8010"
 )
 
@@ -68,12 +68,12 @@ func Connect(serverAddress, token string, opts ...*ClientOptions) (pb.ClientTran
 	ver := version.Get()
 	contextOptions = append(contextOptions,
 		"version", ver.Version,
-		"go_version", ver.GoVersion,
+		"go-version", ver.GoVersion,
 		"compiler", ver.Compiler,
 		"platform", ver.Platform,
 		"hostname", osmap["hostname"],
-		"machine_id", osmap["machine_id"],
-		"kernel_version", osmap["kernel_version"],
+		"machine-id", osmap["machine_id"],
+		"kernel-version", osmap["kernel_version"],
 	)
 	for _, opt := range opts {
 		contextOptions = append(contextOptions, []string{

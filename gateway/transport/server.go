@@ -202,8 +202,13 @@ func (s *Server) disconnectClient(sessionID string) {
 func extractData(md metadata.MD, metaName string) string {
 	data := md.Get(metaName)
 	if len(data) == 0 {
-		return ""
+		// keeps compatibility with old clients that
+		// pass headers with underline. HTTP headers are not
+		// accepted with underline for some servers, e.g.: nginx
+		data = md.Get(strings.ReplaceAll(metaName, "-", "_"))
+		if len(data) == 0 {
+			return ""
+		}
 	}
-
 	return data[0]
 }
