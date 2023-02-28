@@ -15,12 +15,12 @@ publish-snapshot: clean
 	docker manifest create ${PUBLIC_IMAGE}:${VERSION} --amend ${PUBLIC_IMAGE}:${VERSION}-arm64v8 --amend ${PUBLIC_IMAGE}:${VERSION}-amd64
 	docker manifest push ${PUBLIC_IMAGE}:${VERSION}
 
-release: clean build-chart
+release: clean
 	cd ./build/webapp && npm install && npm run release:hoop-ui
 	mv ./build/webapp/resources ./rootfs/app/ui
 	goreleaser release
-	helm package ./build/helm-chart/chart/agent/ --app-version ${GIT_TAG} --destination ./dist/
-	helm package ./build/helm-chart/chart/gateway/ --app-version ${GIT_TAG} --destination ./dist/
+	helm package ./build/helm-chart/chart/agent/ --app-version ${GIT_TAG} --destination ./dist/ --version ${GIT_TAG}
+	helm package ./build/helm-chart/chart/gateway/ --app-version ${GIT_TAG} --destination ./dist/ --version ${GIT_TAG}
 	echo -n "${GIT_TAG}" > ./latest.txt
 	aws s3 cp ./dist/ s3://hoopartifacts/release/${GIT_TAG}/ --exclude "*" --include "*.tgz" --include "*.tar.gz" --recursive
 	aws s3 cp ./latest.txt s3://hoopartifacts/release/latest.txt
@@ -35,4 +35,4 @@ clean:
 test:
 	go test -v github.com/runopsio/hoop/...
 
-.PHONY: publish-snapshot build-chart release publish clean test
+.PHONY: publish-snapshot release publish clean test
