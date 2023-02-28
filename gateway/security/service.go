@@ -83,19 +83,19 @@ func (s *Service) Callback(state, code string) string {
 		return login.Redirect + "?error=unexpected_error"
 	}
 
-	var profile map[string]any
-	if err := idToken.Claims(&profile); err != nil {
+	var idTokenClaims map[string]any
+	if err := idToken.Claims(&idTokenClaims); err != nil {
 		s.loginOutcome(login, outcomeError)
 		return login.Redirect + "?error=unexpected_error"
 	}
 
-	email, ok := profile["email"].(string)
+	email, ok := idTokenClaims["email"].(string)
 	if !ok {
 		s.loginOutcome(login, outcomeEmailMismatch)
 		return login.Redirect + "?error=email_mismatch"
 	}
 
-	sub, ok := profile["sub"].(string)
+	sub, ok := idTokenClaims["sub"].(string)
 	if !ok || sub == "" {
 		s.loginOutcome(login, outcomeError)
 		return login.Redirect + "?error=unexpected_error"
@@ -105,6 +105,13 @@ func (s *Service) Callback(state, code string) string {
 		sub = email
 	}
 
+	if strings.Contains(s.Provider.Issuer, "login.microsoftonline.com") {
+		subValue := token.Extra("sub")
+		if subValue != nil {
+			sub = subValue.(string)
+		}
+	}
+
 	context, err := s.UserService.FindBySub(sub)
 	if err != nil {
 		s.loginOutcome(login, outcomeError)
@@ -112,7 +119,7 @@ func (s *Service) Callback(state, code string) string {
 	}
 
 	if context.Org == nil || context.User == nil {
-		if err := s.signup(context, sub, profile); err != nil {
+		if err := s.signup(context, sub, idTokenClaims); err != nil {
 			s.loginOutcome(login, outcomeError)
 			return login.Redirect + "?error=unexpected_error"
 		}
@@ -121,6 +128,12 @@ func (s *Service) Callback(state, code string) string {
 	if context.User.Status != user.StatusActive {
 		s.loginOutcome(login, pendingReviewError)
 		return login.Redirect + "?error=pending_review"
+	}
+
+	groups, ok := idTokenClaims["groups"].([]string)
+	if ok {
+		context.User.Groups = groups
+		s.UserService.Persist(context.User)
 	}
 
 	s.loginOutcome(login, outcomeSuccess)
@@ -154,7 +167,7 @@ func (s *Service) signup(context *user.Context, sub string, profile map[string]a
 	}
 
 	if context.Org == nil && invitedUser == nil {
-		org, ok := profile["https://hoophq.dev/org"].(string)
+		org, ok := profile["https://app.hoop.dev/org"].(string)
 		if !ok || org == "" {
 			org = user.ExtractDomain(email)
 		}
@@ -181,7 +194,7 @@ func (s *Service) signup(context *user.Context, sub string, profile map[string]a
 	}
 
 	if context.User == nil {
-		groups := make([]string, 0)
+		groups, existClaimGroup := profile["groups"].([]string)
 		status := user.StatusReviewing
 
 		var org string
@@ -191,20 +204,24 @@ func (s *Service) signup(context *user.Context, sub string, profile map[string]a
 
 		if newOrg {
 			status = user.StatusActive
-			groups = append(groups,
-				user.GroupAdmin,
-				user.GroupSecurity,
-				user.GroupSRE,
-				user.GroupDBA,
-				user.GroupDevops,
-				user.GroupSupport,
-				user.GroupEngineering)
+			if !existClaimGroup {
+				groups = append(groups,
+					user.GroupAdmin,
+					user.GroupSecurity,
+					user.GroupSRE,
+					user.GroupDBA,
+					user.GroupDevops,
+					user.GroupSupport,
+					user.GroupEngineering)
+			}
 		}
 
 		if invitedUser != nil {
 			status = user.StatusActive
-			groups = invitedUser.Groups
 			org = invitedUser.Org
+			if !existClaimGroup {
+				groups = invitedUser.Groups
+			}
 		}
 
 		context.User = &user.User{
