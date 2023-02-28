@@ -145,7 +145,8 @@ func (a *Agent) Run(svrAddr, token string, firstConnTry bool) {
 		pkt, err := a.client.Recv()
 		if err != nil {
 			if err == io.EOF {
-				break
+				log.Printf("disconnecting, EOF")
+				return
 			}
 			if e, ok := status.FromError(err); ok {
 				switch e.Code() {

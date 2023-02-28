@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/hoophq/pluginhooks"
+	"github.com/runopsio/hoop/agent/dlp"
 	term "github.com/runopsio/hoop/agent/terminal"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
@@ -51,12 +52,34 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 	spec := map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)}
 	stdoutw := pb.NewHookStreamWriter(a.client, pbclient.WriteStdout, spec, pluginHooks)
 	stderrw := pb.NewHookStreamWriter(a.client, pbclient.WriteStderr, spec, pluginHooks)
+	if dlpClient, ok := a.connStore.Get(dlpClientKey).(dlp.Client); ok {
+		stdoutw = dlp.NewDLPStreamWriter(
+			a.client,
+			pluginHooks,
+			dlpClient,
+			pbclient.WriteStdout,
+			map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)},
+			connParams.DLPInfoTypes)
+		stderrw = dlp.NewDLPStreamWriter(
+			a.client,
+			pluginHooks,
+			dlpClient,
+			pbclient.WriteStderr,
+			map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)},
+			connParams.DLPInfoTypes)
+	}
 
 	onExecErr := func(exitCode int, errMsg string, v ...any) {
 		errMsg = fmt.Sprintf(errMsg, v...)
-		spec[pb.SpecClientExitCodeKey] = []byte(strconv.Itoa(exitCode))
-		_, _ = pb.NewHookStreamWriter(a.client, pbclient.SessionClose, spec, pluginHooks).
-			Write([]byte(errMsg))
+		_, _ = pb.NewHookStreamWriter(
+			a.client,
+			pbclient.SessionClose,
+			map[string][]byte{
+				pb.SpecGatewaySessionID:  []byte(sessionID),
+				pb.SpecClientExitCodeKey: []byte(strconv.Itoa(exitCode)),
+			},
+			pluginHooks,
+		).Write([]byte(errMsg))
 	}
 
 	if err = cmd.Run(stdoutw, stderrw, pkt.Payload, onExecErr); err != nil {

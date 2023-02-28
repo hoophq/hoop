@@ -30,7 +30,7 @@ export AGENT_SENTRY_DSN=
 # require to run npm install && npm run release:hoop-ui
 export STATIC_UI_PATH=../webapp/resources/public/
 go build -o /tmp/hoop client/main.go
-/tmp/hoop start gateway &
+/tmp/hoop start gateway
 
 unset PORT XTDB_ADDRESS PLUGIN_AUDIT_PATH
 
@@ -40,4 +40,4 @@ do
 done
 echo "--> GATEWAY IS READY!"
 echo "--> STARTING AGENT ..."
-/tmp/hoop start agent
+#/tmp/hoop start agent
