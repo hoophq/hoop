@@ -47,8 +47,8 @@ $NOTE_CONTENT
 
 https://github.com/hoophq/helm-chart
 
-- [hoop-chart](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/hoop-chart-${GIT_TAG}.tgz)
-- [hoopagent-chart](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/hoopagent-chart-${GIT_TAG}.tgz)
+- [hoop-chart-${GIT_TAG}](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/hoop-chart-${GIT_TAG}.tgz)
+- [hoopagent-chart-${GIT_TAG}](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/hoopagent-chart-${GIT_TAG}.tgz)
 
 EOF
 
