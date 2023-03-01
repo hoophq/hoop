@@ -115,7 +115,10 @@ func (s *Service) Callback(state, code string) string {
 	groups, ok := idTokenClaims["groups"].([]string)
 	if ok {
 		context.User.Groups = groups
-		s.UserService.Persist(context.User)
+		if err := s.UserService.Persist(context.User); err != nil {
+			s.loginOutcome(login, outcomeError)
+			return login.Redirect + "?error=unexpected_error"
+		}
 	}
 
 	s.loginOutcome(login, outcomeSuccess)
