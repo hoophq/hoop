@@ -112,8 +112,13 @@ func (s *Service) Callback(state, code string) string {
 		return login.Redirect + "?error=pending_review"
 	}
 
-	groups, ok := idTokenClaims["groups"].([]string)
-	if ok {
+	groupsClaim, _ := idTokenClaims[pb.CustomClaimGroups].([]any)
+	if len(groupsClaim) > 0 {
+		groups := make([]string, 0)
+		for _, g := range groupsClaim {
+			groups = append(groups, g.(string))
+		}
+
 		context.User.Groups = groups
 		if err := s.UserService.Persist(context.User); err != nil {
 			s.loginOutcome(login, outcomeError)
