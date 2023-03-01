@@ -44,6 +44,9 @@ const (
 	SessionPhaseClientSessionClose  = "client-session-close"
 	SessionPhaseGatewaySessionClose = "gateway-session-close"
 	SessionPhaseClientErr           = "client-err"
+
+	CustomClaimOrg = "https://app.hoop.dev/org"
+	CustomClaimGroups = "https://app.hoop.dev/groups"
 )
 
 var DefaultInfoTypes = []string{

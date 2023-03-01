@@ -1,10 +1,9 @@
 package security
 
 import (
-	"strings"
-
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/google/uuid"
+	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/user"
 	"golang.org/x/oauth2"
@@ -83,26 +82,16 @@ func (s *Service) Callback(state, code string) string {
 		return login.Redirect + "?error=unexpected_error"
 	}
 
-	var profile map[string]any
-	if err := idToken.Claims(&profile); err != nil {
+	var idTokenClaims map[string]any
+	if err := idToken.Claims(&idTokenClaims); err != nil {
 		s.loginOutcome(login, outcomeError)
 		return login.Redirect + "?error=unexpected_error"
 	}
 
-	email, ok := profile["email"].(string)
-	if !ok {
-		s.loginOutcome(login, outcomeEmailMismatch)
-		return login.Redirect + "?error=email_mismatch"
-	}
-
-	sub, ok := profile["sub"].(string)
-	if !ok || sub == "" {
+	sub, err := s.Provider.VerifyAccessToken(token.AccessToken)
+	if err != nil {
 		s.loginOutcome(login, outcomeError)
 		return login.Redirect + "?error=unexpected_error"
-	}
-
-	if strings.Contains(s.Provider.Issuer, "okta.com") {
-		sub = email
 	}
 
 	context, err := s.UserService.FindBySub(sub)
@@ -112,7 +101,7 @@ func (s *Service) Callback(state, code string) string {
 	}
 
 	if context.Org == nil || context.User == nil {
-		if err := s.signup(context, sub, profile); err != nil {
+		if err := s.signup(context, sub, idTokenClaims); err != nil {
 			s.loginOutcome(login, outcomeError)
 			return login.Redirect + "?error=unexpected_error"
 		}
@@ -121,6 +110,17 @@ func (s *Service) Callback(state, code string) string {
 	if context.User.Status != user.StatusActive {
 		s.loginOutcome(login, pendingReviewError)
 		return login.Redirect + "?error=pending_review"
+	}
+
+	groupsClaim, _ := idTokenClaims[pb.CustomClaimGroups].([]any)
+	if len(groupsClaim) > 0 {
+		groups := mapGroupsToString(groupsClaim)
+
+		context.User.Groups = groups
+		if err := s.UserService.Persist(context.User); err != nil {
+			s.loginOutcome(login, outcomeError)
+			return login.Redirect + "?error=unexpected_error"
+		}
 	}
 
 	s.loginOutcome(login, outcomeSuccess)
@@ -143,9 +143,9 @@ func (s *Service) exchangeCodeByToken(code string) (*oauth2.Token, *oidc.IDToken
 	return token, idToken, nil
 }
 
-func (s *Service) signup(context *user.Context, sub string, profile map[string]any) error {
-	email, _ := profile["email"].(string)
-	profileName, _ := profile["name"].(string)
+func (s *Service) signup(context *user.Context, sub string, idTokenClaims map[string]any) error {
+	email, _ := idTokenClaims["email"].(string)
+	profileName, _ := idTokenClaims["name"].(string)
 	newOrg := false
 
 	invitedUser, err := s.UserService.FindInvitedUser(email)
@@ -154,7 +154,7 @@ func (s *Service) signup(context *user.Context, sub string, profile map[string]a
 	}
 
 	if context.Org == nil && invitedUser == nil {
-		org, ok := profile["https://hoophq.dev/org"].(string)
+		org, ok := idTokenClaims[pb.CustomClaimOrg].(string)
 		if !ok || org == "" {
 			org = user.ExtractDomain(email)
 		}
@@ -182,6 +182,10 @@ func (s *Service) signup(context *user.Context, sub string, profile map[string]a
 
 	if context.User == nil {
 		groups := make([]string, 0)
+		groupsClaim, _ := idTokenClaims[pb.CustomClaimGroups].([]any)
+		if len(groupsClaim) > 0 {
+			groups = mapGroupsToString(groupsClaim)
+		}
 		status := user.StatusReviewing
 
 		var org string
@@ -191,20 +195,24 @@ func (s *Service) signup(context *user.Context, sub string, profile map[string]a
 
 		if newOrg {
 			status = user.StatusActive
-			groups = append(groups,
-				user.GroupAdmin,
-				user.GroupSecurity,
-				user.GroupSRE,
-				user.GroupDBA,
-				user.GroupDevops,
-				user.GroupSupport,
-				user.GroupEngineering)
+			if len(groupsClaim) == 0 {
+				groups = append(groups,
+					user.GroupAdmin,
+					user.GroupSecurity,
+					user.GroupSRE,
+					user.GroupDBA,
+					user.GroupDevops,
+					user.GroupSupport,
+					user.GroupEngineering)
+			}
 		}
 
 		if invitedUser != nil {
 			status = user.StatusActive
-			groups = invitedUser.Groups
 			org = invitedUser.Org
+			if len(groupsClaim) == 0 {
+				groups = invitedUser.Groups
+			}
 		}
 
 		context.User = &user.User{
@@ -230,4 +238,16 @@ func (s *Service) signup(context *user.Context, sub string, profile map[string]a
 func (s *Service) loginOutcome(login *login, outcome outcomeType) {
 	login.Outcome = outcome
 	s.Storage.PersistLogin(login)
+}
+
+func mapGroupsToString(groupsClaim []any) []string {
+	groups := make([]string, 0)
+	for _, g := range groupsClaim {
+		groupName, _ := g.(string)
+		if groupName == "" {
+			continue
+		}
+		groups = append(groups, groupName)
+	}
+	return groups
 }
