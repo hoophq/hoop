@@ -114,10 +114,7 @@ func (s *Service) Callback(state, code string) string {
 
 	groupsClaim, _ := idTokenClaims[pb.CustomClaimGroups].([]any)
 	if len(groupsClaim) > 0 {
-		groups := make([]string, 0)
-		for _, g := range groupsClaim {
-			groups = append(groups, g.(string))
-		}
+		groups := mapGroupsToString(groupsClaim)
 
 		context.User.Groups = groups
 		if err := s.UserService.Persist(context.User); err != nil {
@@ -187,9 +184,7 @@ func (s *Service) signup(context *user.Context, sub string, idTokenClaims map[st
 		groups := make([]string, 0)
 		groupsClaim, _ := idTokenClaims[pb.CustomClaimGroups].([]any)
 		if len(groupsClaim) > 0 {
-			for _, g := range groupsClaim {
-				groups = append(groups, g.(string))
-			}
+			groups = mapGroupsToString(groupsClaim)
 		}
 		status := user.StatusReviewing
 
@@ -243,4 +238,16 @@ func (s *Service) signup(context *user.Context, sub string, idTokenClaims map[st
 func (s *Service) loginOutcome(login *login, outcome outcomeType) {
 	login.Outcome = outcome
 	s.Storage.PersistLogin(login)
+}
+
+func mapGroupsToString(groupsClaim []any) []string {
+	groups := make([]string, 0)
+	for _, g := range groupsClaim {
+		groupName, _ := g.(string)
+		if groupName == "" {
+			continue
+		}
+		groups = append(groups, groupName)
+	}
+	return groups
 }

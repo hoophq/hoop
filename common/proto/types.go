@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	reflect "reflect"
-	"strings"
 
 	"github.com/hoophq/pluginhooks"
 )
@@ -175,15 +174,6 @@ func BufferedPayload(payload []byte) *bufio.Reader {
 func IsInList(item string, items []string) bool {
 	for _, i := range items {
 		if i == item {
-			return true
-		}
-	}
-	return false
-}
-
-func StartsWithInList(item string, items []string) bool {
-	for _, i := range items {
-		if strings.Contains(i, item) {
 			return true
 		}
 	}
