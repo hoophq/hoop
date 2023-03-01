@@ -17,6 +17,8 @@ done
 echo " done!"
 echo "--> STARTING GATEWAY ..."
 
+export GRPC_GO_LOG_SEVERITY_LEVEL=info
+export GODEBUG=http2debug
 # export GOOGLE_APPLICATION_CREDENTIALS_JSON=$(cat ../misc/profiles/hoop/dlp-serviceaccount.json)
 export PORT=8009
 export PROFILE=dev

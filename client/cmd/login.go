@@ -125,8 +125,8 @@ func doLogin(apiURL string) (string, error) {
 			return "", fmt.Errorf("empty token")
 		}
 		return accessToken, nil
-	case <-time.After(30 * time.Second):
-		return "", fmt.Errorf("timeout on login")
+	case <-time.After(3 * time.Minute):
+		return "", fmt.Errorf("timeout (3m) on login")
 	}
 }
 
