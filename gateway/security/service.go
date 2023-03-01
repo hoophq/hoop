@@ -1,8 +1,6 @@
 package security
 
 import (
-	"strings"
-
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/gateway/security/idp"
@@ -89,27 +87,10 @@ func (s *Service) Callback(state, code string) string {
 		return login.Redirect + "?error=unexpected_error"
 	}
 
-	email, ok := idTokenClaims["email"].(string)
-	if !ok {
-		s.loginOutcome(login, outcomeEmailMismatch)
-		return login.Redirect + "?error=email_mismatch"
-	}
-
-	sub, ok := idTokenClaims["sub"].(string)
-	if !ok || sub == "" {
+	sub, err := s.Provider.VerifyAccessToken(token.AccessToken)
+	if err != nil {
 		s.loginOutcome(login, outcomeError)
 		return login.Redirect + "?error=unexpected_error"
-	}
-
-	if strings.Contains(s.Provider.Issuer, "okta.com") {
-		sub = email
-	}
-
-	if strings.Contains(s.Provider.Issuer, "login.microsoftonline.com") {
-		subValue := token.Extra("sub")
-		if subValue != nil {
-			sub = subValue.(string)
-		}
 	}
 
 	context, err := s.UserService.FindBySub(sub)
@@ -156,9 +137,9 @@ func (s *Service) exchangeCodeByToken(code string) (*oauth2.Token, *oidc.IDToken
 	return token, idToken, nil
 }
 
-func (s *Service) signup(context *user.Context, sub string, profile map[string]any) error {
-	email, _ := profile["email"].(string)
-	profileName, _ := profile["name"].(string)
+func (s *Service) signup(context *user.Context, sub string, idTokenClaims map[string]any) error {
+	email, _ := idTokenClaims["email"].(string)
+	profileName, _ := idTokenClaims["name"].(string)
 	newOrg := false
 
 	invitedUser, err := s.UserService.FindInvitedUser(email)
@@ -167,7 +148,7 @@ func (s *Service) signup(context *user.Context, sub string, profile map[string]a
 	}
 
 	if context.Org == nil && invitedUser == nil {
-		org, ok := profile["https://app.hoop.dev/org"].(string)
+		org, ok := idTokenClaims["https://app.hoop.dev/org"].(string)
 		if !ok || org == "" {
 			org = user.ExtractDomain(email)
 		}
@@ -194,7 +175,7 @@ func (s *Service) signup(context *user.Context, sub string, profile map[string]a
 	}
 
 	if context.User == nil {
-		groups, existClaimGroup := profile["groups"].([]string)
+		groups, existClaimGroup := idTokenClaims["groups"].([]string)
 		status := user.StatusReviewing
 
 		var org string
