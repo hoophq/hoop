@@ -120,6 +120,22 @@ func TestTemplateParseAttributes(t *testing.T) {
 				},
 			},
 		},
+		{
+			msg: "it should match [placeholder, type, options] attributes",
+			tmpl: `SELECT * FROM gender = {{ .gender
+											| placeholder "the gender type"
+											| options "male" "female" "unknown"
+											| type "select" }}`,
+			wantAttrs: map[string]any{
+				"gender": map[string]any{
+					"description": "",
+					"required":    false,
+					"placeholder": "the gender type",
+					"options":     []string{"male", "female", "unknown"},
+					"type":        "select",
+				},
+			},
+		},
 	} {
 		t.Run(tt.msg, func(t *testing.T) {
 			tmpl, err := Parse(tt.tmpl)

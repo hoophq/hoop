@@ -7,7 +7,7 @@ import (
 	ttemplate "text/template"
 )
 
-var defaultInputTypes = []string{"text", "number", "tel", "time", "date", "url", "email"}
+var defaultInputTypes = []string{"text", "number", "tel", "time", "date", "url", "email", "select"}
 
 type templateFnHandler struct {
 	items map[string]string
@@ -41,6 +41,13 @@ func defaultStaticTemplateFuncs() ttemplate.FuncMap {
 				return s, nil
 			}
 			return "", fmt.Errorf("pattern didn't match:%s", p)
+		},
+		"placeholder": func(_, s string) string { return s },
+		"options": func(s ...string) string {
+			if len(s) > 0 {
+				return s[0]
+			}
+			return ""
 		},
 		"description": func(_, s string) string { return s },
 		"type":        func(_, s string) string { return s },

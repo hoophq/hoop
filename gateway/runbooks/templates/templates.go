@@ -99,7 +99,7 @@ func parseNode(node string) map[string]any {
 		if len(sectionsParts) > 1 {
 			fnVal = strings.TrimSpace(
 				strings.Join(sectionsParts[1:], " "))
-			fnVal = strings.Trim(fnVal, `"`)
+			fnVal = strings.ReplaceAll(fnVal, `"`, "")
 		}
 		switch fnName {
 		case "type":
@@ -111,8 +111,10 @@ func parseNode(node string) map[string]any {
 			}
 		case "required":
 			specs[fnName] = true
-		case "description", "default":
+		case "description", "default", "placeholder":
 			specs[fnName] = fnVal
+		case "options":
+			specs[fnName] = strings.Split(fnVal, " ")
 		case "asenv":
 			specs[fnName] = fnVal
 		}
