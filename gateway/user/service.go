@@ -162,7 +162,7 @@ func isPublicDomain(domain string) bool {
 }
 
 func (user *User) IsAdmin() bool {
-	return pb.IsInList(GroupAdmin, user.Groups)
+	return pb.IsInList(GroupAdmin, user.Groups) || pb.StartsWithInList(GroupAdmin, user.Groups)
 }
 
 func isInStatus(status StatusType) bool {

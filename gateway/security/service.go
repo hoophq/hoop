@@ -3,6 +3,7 @@ package security
 import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/google/uuid"
+	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/user"
 	"golang.org/x/oauth2"
@@ -148,7 +149,7 @@ func (s *Service) signup(context *user.Context, sub string, idTokenClaims map[st
 	}
 
 	if context.Org == nil && invitedUser == nil {
-		org, ok := idTokenClaims["https://app.hoop.dev/org"].(string)
+		org, ok := idTokenClaims[pb.CustomClaimOrg].(string)
 		if !ok || org == "" {
 			org = user.ExtractDomain(email)
 		}
@@ -175,7 +176,13 @@ func (s *Service) signup(context *user.Context, sub string, idTokenClaims map[st
 	}
 
 	if context.User == nil {
-		groups, existClaimGroup := idTokenClaims["groups"].([]string)
+		groups := make([]string, 0)
+		groupsClaim, _ := idTokenClaims[pb.CustomClaimGroups].([]any)
+		if len(groupsClaim) > 0 {
+			for _, g := range groupsClaim {
+				groups = append(groups, g.(string))
+			}
+		}
 		status := user.StatusReviewing
 
 		var org string
@@ -185,7 +192,7 @@ func (s *Service) signup(context *user.Context, sub string, idTokenClaims map[st
 
 		if newOrg {
 			status = user.StatusActive
-			if !existClaimGroup {
+			if len(groupsClaim) == 0 {
 				groups = append(groups,
 					user.GroupAdmin,
 					user.GroupSecurity,
@@ -200,7 +207,7 @@ func (s *Service) signup(context *user.Context, sub string, idTokenClaims map[st
 		if invitedUser != nil {
 			status = user.StatusActive
 			org = invitedUser.Org
-			if !existClaimGroup {
+			if len(groupsClaim) == 0 {
 				groups = invitedUser.Groups
 			}
 		}
