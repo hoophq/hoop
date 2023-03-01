@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -26,6 +27,7 @@ import (
 
 var inputFilepath string
 var inputStdin string
+var autoExec bool
 var verboseMode bool
 
 // execCmd represents the exec command
@@ -51,6 +53,7 @@ var execCmd = &cobra.Command{
 func init() {
 	execCmd.Flags().StringVarP(&inputFilepath, "file", "f", "", "The path of the file containing the command")
 	execCmd.Flags().StringVarP(&inputStdin, "input", "i", "", "The input to be executed remotely")
+	execCmd.Flags().BoolVar(&autoExec, "auto-approve", false, "Automatically run after a command is approved")
 	execCmd.Flags().BoolVarP(&verboseMode, "verbose", "v", false, "Verbose mode")
 	rootCmd.AddCommand(execCmd)
 }
@@ -74,12 +77,13 @@ func parseFlagInputs(c *connect) []byte {
 	return nil
 }
 
-func parseExecInput(c *connect) []byte {
+func parseExecInput(c *connect) (bool, []byte) {
 	info, err := os.Stdin.Stat()
 	if err != nil {
 		sentry.CaptureException(fmt.Errorf("exec - failed obtaining stdin path info, err=%v", err))
 		c.printErrorAndExit(err.Error())
 	}
+	isStdinInput := false
 	var input []byte
 	// stdin input
 	if info.Mode()&os.ModeCharDevice == 0 || info.Size() > 0 {
@@ -87,6 +91,7 @@ func parseExecInput(c *connect) []byte {
 			sentry.CaptureMessage("exec - flags not allowed when reading from stdin")
 			c.printErrorAndExit("flags not allowed when reading from stdin")
 		}
+		isStdinInput = true
 		stdinPipe := os.NewFile(uintptr(syscall.Stdin), "/dev/stdin")
 		reader := bufio.NewReader(stdinPipe)
 		for {
@@ -99,9 +104,9 @@ func parseExecInput(c *connect) []byte {
 		stdinPipe.Close()
 	}
 	if len(input) > 0 {
-		return input
+		return isStdinInput, input
 	}
-	return parseFlagInputs(c)
+	return isStdinInput, parseFlagInputs(c)
 }
 
 func runExec(args []string) {
@@ -111,7 +116,6 @@ func runExec(args []string) {
 	loader.Color("green")
 	loader.Suffix = " running ..."
 	loader.Start()
-
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
@@ -127,7 +131,7 @@ func runExec(args []string) {
 	c := newClientConnect(config, loader, args, pb.ClientVerbExec)
 	c.client.StartKeepAlive()
 	execSpec := newClientArgsSpec(c.clientArgs)
-	execInputPayload := parseExecInput(c)
+	isStdinInput, execInputPayload := parseExecInput(c)
 	sendOpenSessionPktFn := func() {
 		if err := c.client.Send(&pb.Packet{
 			Type:    pbagent.SessionOpen,
@@ -148,13 +152,27 @@ func runExec(args []string) {
 		}
 		switch pkt.Type {
 		case pbclient.SessionOpenWaitingApproval:
+			if !autoExec && isStdinInput {
+				loader.Stop()
+				msg := "require use of --auto-approve option. It's a review command with an invalid device to prompt for execution"
+				c.processGracefulExit(errors.New(msg))
+			}
 			loader.Color("yellow")
 			if !loader.Active() {
 				loader.Start()
 			}
-			loader.Suffix = " waiting task to be approved at " +
+			loader.Suffix = " waiting command to be approved at " +
 				styles.Keyword(fmt.Sprintf(" %v ", string(pkt.Payload)))
 		case pbclient.SessionOpenApproveOK:
+			if !autoExec {
+				loader.Stop()
+				fmt.Fprintf(os.Stderr, "command approved, press %v to run it ...", styles.Keyword(" <enter> "))
+				_, err = io.CopyN(bytes.NewBufferString(""), os.Stdin, 1)
+				if err != nil {
+					c.processGracefulExit(errors.New("canceled by the user"))
+				}
+				loader.Start()
+			}
 			loader.Color("green")
 			loader.Suffix = " command approved, running ... "
 			sendOpenSessionPktFn()
