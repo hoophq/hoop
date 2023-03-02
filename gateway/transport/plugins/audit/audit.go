@@ -23,7 +23,7 @@ import (
 const (
 	Name               string = "audit"
 	StorageWriterParam string = "audit_storage_writer"
-	defaultAuditPath   string = "/opt/hoop/auditdb"
+	defaultAuditPath   string = "/opt/hoop/sessions"
 )
 
 var pluginAuditPath string

@@ -126,6 +126,7 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 		log.Printf("failed writing startup packet, err=%v", err)
 		writePGClientErr(swPgClient,
 			pg.NewFatalError("failed writing startup packet, contact the administrator").Encode())
+		return
 	}
 	log.Println("finish startup phase")
 	mid := middlewares.New(swPgClient, pgServer, connenv.user, connenv.pass)
@@ -138,6 +139,7 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 		log.Printf("failed creating redact middleware, err=%v", err)
 		writePGClientErr(swPgClient,
 			pg.NewFatalError("failed initalizing postgres proxy, contact the administrator").Encode())
+		return
 	}
 	swHookPgClient := pb.NewHookStreamWriter(a.client, pbclient.PGConnectionWrite, pkt.Spec, pluginHooks)
 	pg.NewProxy(

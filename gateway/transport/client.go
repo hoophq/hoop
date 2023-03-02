@@ -185,7 +185,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		Hostname:       hostname,
 		MachineId:      machineId,
 		KernelVersion:  kernelVersion,
-		ParamsData:     make(map[string]any),
+		ParamsData:     map[string]any{"client": clientOrigin},
 	}
 
 	plugins, err := s.loadConnectPlugins(context, pConfig)
