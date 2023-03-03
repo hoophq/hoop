@@ -16,7 +16,7 @@ import (
 	"github.com/creack/pty"
 )
 
-const chunkMaxBufSize = 500000 // 0.5MB
+const chunkMaxBufSize = 4096
 
 type Command struct {
 	cmd      *exec.Cmd
