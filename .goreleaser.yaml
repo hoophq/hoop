@@ -13,7 +13,6 @@ builds:
     main: ./client/main.go
     binary: hoop
     ldflags:
-    - -s -w
     - -X github.com/runopsio/hoop/common/version.version={{ .Tag }}
     - -X github.com/runopsio/hoop/common/version.gitCommit={{ .Commit }}
     - -X github.com/runopsio/hoop/common/version.buildDate={{ .Date }}
