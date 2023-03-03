@@ -51,19 +51,16 @@ func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {
 
 	cmd, err := term.NewCommand(connParams.EnvVars, append(connParams.CmdList, connParams.ClientArgs...)...)
 	if err != nil {
-		log.Printf("session=%s, tty=true - failed executing command, err=%v", sessionID, err)
-		a.sendCloseTerm(sessionID, "failed executing command", "1")
+		// should we propagate the error back to the client?
+		// In case of sensitive contents in the error this could be propagate back
+		// to the client.
+		errMsg := fmt.Sprintf("failed executing command, reason=%v", err)
+		log.Printf("session=%s, tty=true - %s", sessionID, errMsg)
+		a.sendCloseTerm(sessionID, errMsg, "1")
 		return
 	}
 	log.Printf("session=%s, tty=true - executing command %q", sessionID, cmd.String())
 	spec := map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)}
-	onExecErr := func(exitCode int, msg string, v ...any) {
-		var errMsg string
-		if msg != "" {
-			errMsg = fmt.Sprintf(msg, v...)
-		}
-		a.sendCloseTerm(sessionID, errMsg, strconv.Itoa(exitCode))
-	}
 	stdoutWriter := pb.NewHookStreamWriter(a.client, pbclient.WriteStdout, spec, pluginHooks)
 	if dlpClient, ok := a.connStore.Get(dlpClientKey).(dlp.Client); ok {
 		stdoutWriter = dlp.NewDLPStreamWriter(
@@ -74,9 +71,14 @@ func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {
 			spec,
 			connParams.DLPInfoTypes)
 	}
-	if err := cmd.RunOnTTY(stdoutWriter, onExecErr); err != nil {
-		log.Printf("session=%s, tty=true - err=%v", string(sessionID), err)
-	}
+	cmd.RunOnTTY(stdoutWriter, func(exitCode int, msg string, v ...any) {
+		var errMsg string
+		if msg != "" {
+			errMsg = fmt.Sprintf(msg, v...)
+			log.Printf("session=%s, tty=true, exitcode=%v - err=%v", string(sessionID), exitCode, errMsg)
+		}
+		a.sendCloseTerm(sessionID, errMsg, strconv.Itoa(exitCode))
+	})
 	a.connStore.Set(sessionIDKey, cmd)
 }
 
@@ -99,20 +101,16 @@ func (a *Agent) doTerminalResizeTTY(pkt *pb.Packet) {
 	}
 }
 
-func (a *Agent) sendCloseTerm(sessionID, msg string, exitCode string) {
-	var payload []byte
-	if msg != "" {
-		payload = []byte(msg)
+func (a *Agent) sendCloseTerm(sessionID, msg, exitCode string) {
+	if msg != "" && exitCode == "" {
 		// must have an exit code if it has a msg
-		if exitCode == "" {
-			exitCode = "1"
-		}
+		exitCode = "1"
 	}
-	spec := map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)}
+	var exitCodeKeyVal string
 	if exitCode != "" {
-		spec[pb.SpecClientExitCodeKey] = []byte(exitCode)
+		exitCodeKeyVal = fmt.Sprintf("%s=%s", pb.SpecClientExitCodeKey, exitCode)
 	}
-	_, _ = pb.NewStreamWriter(a.client, pbclient.SessionClose, spec).Write(payload)
+	a.sendClientSessionClose(sessionID, msg, exitCodeKeyVal)
 }
 
 func parsePttyWinSize(winSizeBytes []byte) (*pty.Winsize, error) {

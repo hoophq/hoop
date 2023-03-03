@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"strconv"
 	"time"
 
 	"github.com/briandowns/spinner"
@@ -18,6 +19,7 @@ import (
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
+	pbterm "github.com/runopsio/hoop/common/terminal"
 	"github.com/spf13/cobra"
 )
 
@@ -218,14 +220,17 @@ func runConnect(args []string) {
 			loader.Stop()
 			sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 			if term, ok := c.connStore.Get(string(sessionID)).(*proxy.Terminal); ok {
-				exitCode := term.ProcessPacketCloseTerm(pkt)
-				os.Exit(exitCode)
+				term.Close()
 			}
-			// in case of connection store is empty,
-			// best effort condition to exit properly
 			if len(pkt.Payload) > 0 {
-				c.processGracefulExit(errors.New(string(pkt.Payload)))
+				os.Stderr.Write([]byte(styles.ClientError(string(pkt.Payload)) + "\n"))
 			}
+			exitCodeStr := string(pkt.Spec[pb.SpecClientExitCodeKey])
+			exitCode, err := strconv.Atoi(exitCodeStr)
+			if exitCodeStr == "" || err != nil {
+				exitCode = pbterm.InternalErrorExitCode
+			}
+			os.Exit(exitCode)
 		}
 	}
 }

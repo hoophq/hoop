@@ -26,10 +26,6 @@ type (
 	}
 )
 
-const (
-	httpsProtocol = "https://"
-)
-
 var loginCmd = &cobra.Command{
 	Use:    "login",
 	Short:  "Authenticate at Hoop",
