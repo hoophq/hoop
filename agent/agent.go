@@ -402,6 +402,28 @@ func (a *Agent) sessionCleanup(sessionID string) {
 	}
 }
 
+func (a *Agent) sendClientSessionClose(sessionID string, errMsg string, specKeyVal ...string) {
+	if sessionID == "" {
+		return
+	}
+	var errPayload []byte
+	spec := map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)}
+	for _, keyval := range specKeyVal {
+		parts := strings.Split(keyval, "=")
+		if len(parts) == 2 {
+			spec[parts[0]] = []byte(parts[1])
+		}
+	}
+	if errMsg != "" {
+		errPayload = []byte(errMsg)
+	}
+	_ = a.client.Send(&pb.Packet{
+		Type:    pbclient.SessionClose,
+		Payload: errPayload,
+		Spec:    spec,
+	})
+}
+
 func buildAgentRegisterURL(svrAddr, token string) string {
 	addr := strings.Split(svrAddr, ":")
 	if svrAddr == "127.0.0.1:8010" {

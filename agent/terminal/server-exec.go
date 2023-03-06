@@ -16,6 +16,8 @@ import (
 	"github.com/creack/pty"
 )
 
+const chunkMaxBufSize = 4096
+
 type Command struct {
 	cmd      *exec.Cmd
 	envStore *EnvVarStore
@@ -83,41 +85,40 @@ func (c *Command) OnPostExec() error {
 	return nil
 }
 
-func (c *Command) Run(stdoutw, stderrw io.WriteCloser, stdinInput []byte, onExecErr OnExecErrFn, clientArgs ...string) error {
+func (c *Command) Run(stdoutw, stderrw io.WriteCloser, stdinInput []byte, onExecErr OnExecErrFn, clientArgs ...string) {
 	pipeStdout, err := c.cmd.StdoutPipe()
 	if err != nil {
-		onExecErr(term.InternalErrorExitCode, "internal error, failed returning stdout pipe")
-		return err
+		onExecErr(term.InternalErrorExitCode, "internal error, failed returning stdout pipe, reason=%v", err)
+		return
 	}
 	pipeStderr, err := c.cmd.StderrPipe()
 	if err != nil {
-		onExecErr(term.InternalErrorExitCode, "internal error, failed returning stderr pipe")
-		return err
+		onExecErr(term.InternalErrorExitCode, "internal error, failed returning stderr pipe, reason=%v", err)
+		return
 	}
 	if err := c.OnPreExec(); err != nil {
-		onExecErr(term.InternalErrorExitCode, "internal error, failed executing pre command")
-		return fmt.Errorf("failed executing pre command, err=%v", err)
+		onExecErr(term.InternalErrorExitCode, "internal error, failed executing pre command, reason=%v", err)
+		return
 	}
 	var stdin bytes.Buffer
 	c.cmd.Stdin = &stdin
-	exitCode := term.InternalErrorExitCode
 	if err := c.cmd.Start(); err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
 			// path not found error exit code
-			exitCode = 127
+			onExecErr(127, err.Error())
+			return
 		}
-		onExecErr(exitCode, "failed starting command")
-		return err
+		onExecErr(1, "failed starting command, reason=%v", err)
+		return
 	}
 	if _, err := stdin.Write(stdinInput); err != nil {
-		onExecErr(term.InternalErrorExitCode, "internal error, failed writing input")
-		return err
+		onExecErr(term.InternalErrorExitCode, "internal error, failed writing input, reason=%v", err)
+		return
 	}
-	stdoutCh := copyBuffer(stdoutw, pipeStdout, 1024, "stdout")
-	stderrCh := copyBuffer(stderrw, pipeStderr, 1024, "stderr")
-
+	stdoutCh := copyBuffer(stdoutw, pipeStdout, chunkMaxBufSize, "stdout")
+	stderrCh := copyBuffer(stderrw, pipeStderr, chunkMaxBufSize, "stderr")
 	go func() {
-		exitCode = 0
+		exitCode := 0
 		// wait must be called after reading all contents from pipes (stdout,stderr)
 		<-stdoutCh
 		<-stderrCh
@@ -125,9 +126,6 @@ func (c *Command) Run(stdoutw, stderrw io.WriteCloser, stdinInput []byte, onExec
 		if err != nil {
 			if exErr, ok := err.(*exec.ExitError); ok {
 				exitCode = exErr.ExitCode()
-				if exitCode == -1 {
-					exitCode = term.InternalErrorExitCode
-				}
 			}
 		}
 		if err := c.OnPostExec(); err != nil {
@@ -137,21 +135,22 @@ func (c *Command) Run(stdoutw, stderrw io.WriteCloser, stdinInput []byte, onExec
 			onExecErr(exitCode, "")
 			return
 		}
-		onExecErr(exitCode, "failed executing command, err=%v", err)
+		onExecErr(exitCode, "failed executing command, reason=%v", err)
 	}()
-	return nil
 }
 
-func (c *Command) RunOnTTY(stdoutWriter io.WriteCloser, onExecErr OnExecErrFn) error {
+func (c *Command) RunOnTTY(stdoutWriter io.WriteCloser, onExecErr OnExecErrFn) {
 	// Start the command with a pty.
 	if err := c.OnPreExec(); err != nil {
-		return fmt.Errorf("failed executing pre execution command, err=%v", err)
+		onExecErr(term.InternalErrorExitCode, "failed running pre execution command, reason=%v", err)
+		return
 	}
 	c.cmd.Env = append(c.cmd.Env, "TERM=xterm-256color")
 
 	ptmx, err := pty.Start(c.cmd)
 	if err != nil {
-		return fmt.Errorf("failed starting pty, err=%v", err)
+		onExecErr(term.InternalErrorExitCode, "failed starting pty, reason=%v", err)
+		return
 	}
 	c.ptty = ptmx
 	go func() {
@@ -173,10 +172,8 @@ func (c *Command) RunOnTTY(stdoutWriter io.WriteCloser, onExecErr OnExecErrFn) e
 		if err != nil {
 			if exErr, ok := err.(*exec.ExitError); ok {
 				exitCode = exErr.ExitCode()
-				// assume that it was killed or interrupted
-				// because the process is probably started already
 				if exitCode == -1 {
-					exitCode = 1
+					exitCode = term.InternalErrorExitCode
 				}
 			}
 		}
@@ -184,9 +181,8 @@ func (c *Command) RunOnTTY(stdoutWriter io.WriteCloser, onExecErr OnExecErrFn) e
 			onExecErr(exitCode, "")
 			return
 		}
-		onExecErr(exitCode, "failed executing command, err=%v", err)
+		onExecErr(exitCode, "failed executing command, reason=%v", err)
 	}()
-	return nil
 }
 
 func (c *Command) WriteTTY(data []byte) error {

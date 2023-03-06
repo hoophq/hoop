@@ -19,7 +19,7 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 	connParams, pluginHooks := a.connectionParams(sessionID)
 	if connParams == nil {
 		log.Printf("session=%s - connection params not found", sessionID)
-		a.sendCloseTerm(sessionID, "internal error, connection params not found", "")
+		a.sendClientSessionClose(sessionID, "internal error, connection params not found")
 		return
 	}
 	mutatePayload, err := pluginHooks.ExecRPCOnRecv(&pluginhooks.Request{
@@ -27,11 +27,8 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 		PacketType: pkt.Type,
 		Payload:    pkt.Payload})
 	if err != nil {
-		_ = a.client.Send(&pb.Packet{
-			Type:    pbclient.SessionClose,
-			Payload: []byte(err.Error()),
-			Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)},
-		})
+		a.sendClientSessionClose(sessionID, fmt.Sprintf("failed executing plugin/onrecv phase, reason=%v", err))
+		return
 	}
 	if len(mutatePayload) > 0 {
 		pkt.Payload = mutatePayload
@@ -39,12 +36,9 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 
 	cmd, err := term.NewCommand(connParams.EnvVars, append(connParams.CmdList, connParams.ClientArgs...)...)
 	if err != nil {
-		log.Printf("failed configuring command, err=%v", err)
-		_ = a.client.Send(&pb.Packet{
-			Type:    pbclient.SessionClose,
-			Payload: []byte(err.Error()),
-			Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)},
-		})
+		errMsg := fmt.Sprintf("failed configuring command, reason=%v", err)
+		log.Printf("session=%s - %s", sessionID, errMsg)
+		a.sendClientSessionClose(sessionID, errMsg)
 		return
 	}
 	log.Printf("session=%v, tty=false - executing command=%q", string(sessionID), cmd.String())
@@ -69,8 +63,11 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 			connParams.DLPInfoTypes)
 	}
 
-	onExecErr := func(exitCode int, errMsg string, v ...any) {
+	cmd.Run(stdoutw, stderrw, pkt.Payload, func(exitCode int, errMsg string, v ...any) {
 		errMsg = fmt.Sprintf(errMsg, v...)
+		if errMsg != "" {
+			log.Printf("session=%v, exitcode=%v - err=%v", string(sessionID), exitCode, errMsg)
+		}
 		_, _ = pb.NewHookStreamWriter(
 			a.client,
 			pbclient.SessionClose,
@@ -80,9 +77,5 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 			},
 			pluginHooks,
 		).Write([]byte(errMsg))
-	}
-
-	if err = cmd.Run(stdoutw, stderrw, pkt.Payload, onExecErr); err != nil {
-		log.Printf("session=%v - err=%v", string(sessionID), err)
-	}
+	})
 }

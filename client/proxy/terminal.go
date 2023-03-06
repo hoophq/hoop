@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"strconv"
 
 	"github.com/creack/pty"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -74,22 +73,6 @@ func (t *Terminal) ConnectWithTTY() error {
 		_ = tty.Close()
 	}()
 	return nil
-}
-
-func (t *Terminal) ProcessPacketCloseTerm(pkt *pb.Packet) int {
-	t.Close()
-	exitCodeStr := string(pkt.Spec[pb.SpecClientExitCodeKey])
-	exitCode, err := strconv.Atoi(exitCodeStr)
-	if exitCodeStr == "" || err != nil {
-		// End with a custom exit code, because we don't
-		// know what returned from the remote terminal
-		exitCode = pbterm.InternalErrorExitCode
-	}
-	if exitCode != 0 && pkt.Payload != nil {
-		os.Stderr.Write(pkt.Payload)
-		os.Stderr.Write([]byte{'\n'})
-	}
-	return exitCode
 }
 
 func (t *Terminal) ProcessPacketWriteStdout(pkt *pb.Packet) (int, error) {

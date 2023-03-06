@@ -22,16 +22,16 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	connParams, pluginHooks := a.connectionParams(sessionID)
 	if connParams == nil {
 		log.Printf("session=%s - connection params not found", sessionID)
-		writePGClientErr(swPgClient,
-			pg.NewFatalError("credentials is empty, contact the administrator").Encode())
+		a.writePGClientErr(sessionID, swPgClient,
+			"connection params not found, contact the administrator")
 		return
 	}
 
 	clientConnectionID := string(pkt.Spec[pb.SpecClientConnectionID])
 	if clientConnectionID == "" {
 		log.Println("connection id not found in memory")
-		writePGClientErr(swPgClient,
-			pg.NewFatalError("connection id not found, contact the administrator").Encode())
+		a.writePGClientErr(sessionID, swPgClient,
+			"connection id not found, contact the administrator")
 		return
 	}
 	clientConnectionIDKey := fmt.Sprintf("%s:%s", sessionID, string(clientConnectionID))
@@ -45,7 +45,7 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 		if err != nil {
 			msg := fmt.Sprintf("plugin error, failed processing it, reason=%v", err)
 			log.Println(msg)
-			writePGClientErr(swPgClient, pg.NewFatalError(msg).Encode())
+			a.writePGClientErr(sessionID, swPgClient, msg)
 			return
 		}
 		if len(mutatePayload) > 0 {
@@ -61,8 +61,8 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	connenv, _ := connParams.EnvVars[connEnvKey].(*connEnv)
 	if connenv == nil {
 		log.Println("postgres credentials not found in memory")
-		writePGClientErr(swPgClient,
-			pg.NewFatalError("credentials is empty, contact the administrator").Encode())
+		a.writePGClientErr(sessionID, swPgClient,
+			"credentials is empty, contact the administrator")
 		return
 	}
 
@@ -70,8 +70,8 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	_, pgPkt, err := pg.DecodeStartupPacket(pb.BufferedPayload(pkt.Payload))
 	if err != nil {
 		log.Printf("failed decoding startup packet: %v", err)
-		writePGClientErr(swPgClient,
-			pg.NewFatalError("failed decoding startup packet (1), contact the administrator").Encode())
+		a.writePGClientErr(sessionID, swPgClient,
+			"failed decoding startup packet (1), contact the administrator")
 		return
 	}
 
@@ -100,8 +100,8 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 		defer pgServer.Close()
 		if _, err := pgServer.Write(pgPkt.Encode()); err != nil {
 			log.Printf("failed sending cancel request, err=%v", err)
-			writePGClientErr(swPgClient,
-				pg.NewFatalError("failed canceling request in the postgres server").Encode())
+			a.writePGClientErr(sessionID, swPgClient,
+				"failed canceling request in the postgres server")
 		}
 		return
 	}
@@ -109,8 +109,8 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	startupPkt, err := pg.DecodeStartupPacketWithUsername(pb.BufferedPayload(pkt.Payload), connenv.user)
 	if err != nil {
 		log.Printf("failed decoding startup packet with username, err=%v", err)
-		writePGClientErr(swPgClient,
-			pg.NewFatalError("failed decoding startup packet (2), contact the administrator").Encode())
+		a.writePGClientErr(sessionID, swPgClient,
+			"failed decoding startup packet (2), contact the administrator")
 		return
 	}
 
@@ -118,14 +118,14 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	pgServer, err := newTCPConn(connenv.host, connenv.port)
 	if err != nil {
 		log.Printf("failed obtaining connection with postgres server, err=%v", err)
-		writePGClientErr(swPgClient,
-			pg.NewFatalError("failed connecting with postgres server, contact the administrator").Encode())
+		a.writePGClientErr(sessionID, swPgClient,
+			"failed connecting with postgres server, contact the administrator")
 		return
 	}
 	if _, err := pgServer.Write(startupPkt.Encode()); err != nil {
 		log.Printf("failed writing startup packet, err=%v", err)
-		writePGClientErr(swPgClient,
-			pg.NewFatalError("failed writing startup packet, contact the administrator").Encode())
+		a.writePGClientErr(sessionID, swPgClient,
+			"failed writing startup packet, contact the administrator")
 		return
 	}
 	log.Println("finish startup phase")
@@ -137,10 +137,11 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	redactmiddleware, err := dlp.NewRedactMiddleware(dlpClient, connParams.DLPInfoTypes...)
 	if err != nil {
 		log.Printf("failed creating redact middleware, err=%v", err)
-		writePGClientErr(swPgClient,
-			pg.NewFatalError("failed initalizing postgres proxy, contact the administrator").Encode())
+		a.writePGClientErr(sessionID, swPgClient,
+			"failed initalizing postgres proxy, contact the administrator")
 		return
 	}
+
 	swHookPgClient := pb.NewHookStreamWriter(a.client, pbclient.PGConnectionWrite, pkt.Spec, pluginHooks)
 	pg.NewProxy(
 		pg.NewContext(context.Background(), sessionID),
@@ -156,8 +157,9 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	a.connStore.Set(clientConnectionIDKey, proxyServerWriter)
 }
 
-func writePGClientErr(w io.Writer, msg []byte) {
-	if _, err := w.Write(msg); err != nil {
+func (a *Agent) writePGClientErr(sessionID string, w io.Writer, errMsg string) {
+	if _, err := w.Write(pg.NewFatalError(errMsg).Encode()); err != nil {
 		log.Printf("failed writing error back to client, err=%v", err)
 	}
+	a.sendClientSessionClose(sessionID, errMsg)
 }
