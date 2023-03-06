@@ -139,7 +139,9 @@ func NewProvider(profile string) *Provider {
 
 func addCustomScopes(scopes []string, customScope string) []string {
 	custom := strings.Split(customScope, ",")
-	scopes = append(scopes, custom...)
+	for _, c := range custom {
+		scopes = append(scopes, strings.Trim(c, " "))
+	}
 	return scopes
 }
 
