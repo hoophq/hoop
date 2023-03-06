@@ -31,6 +31,7 @@ type Provider struct {
 	ClientID     string
 	ClientSecret string
 	Profile      string
+	CustomScopes string
 	ApiURL       string
 
 	*oidc.Provider
@@ -93,6 +94,7 @@ func NewProvider(profile string) *Provider {
 	provider.ClientID = os.Getenv("IDP_CLIENT_ID")
 	provider.ClientSecret = os.Getenv("IDP_CLIENT_SECRET")
 	provider.Audience = os.Getenv("IDP_AUDIENCE")
+	provider.CustomScopes = os.Getenv("IDP_CUSTOM_SCOPES")
 
 	if provider.ClientSecret == "" {
 		panic(errors.New("missing required ID provider variables"))
@@ -111,12 +113,17 @@ func NewProvider(profile string) *Provider {
 		panic(err)
 	}
 	oidcProvider := oidcProviderConfig.NewProvider(ctx)
+	scopes := []string{oidc.ScopeOpenID, "profile", "email"}
+	if provider.CustomScopes != "" {
+		scopes = addCustomScopes(scopes, provider.CustomScopes)
+	}
+
 	conf := oauth2.Config{
 		ClientID:     provider.ClientID,
 		ClientSecret: provider.ClientSecret,
 		RedirectURL:  apiURL + "/api/callback",
 		Endpoint:     oidcProvider.Endpoint(),
-		Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
+		Scopes:       scopes,
 	}
 
 	oidcConfig := &oidc.Config{
@@ -128,6 +135,12 @@ func NewProvider(profile string) *Provider {
 	provider.IDTokenVerifier = provider.Verifier(oidcConfig)
 	provider.JWKS = downloadJWKS(oidcProviderConfig.JWKSURL)
 	return provider
+}
+
+func addCustomScopes(scopes []string, customScope string) []string {
+	custom := strings.Split(customScope, ",")
+	scopes = append(scopes, custom...)
+	return scopes
 }
 
 func downloadJWKS(jwksURL string) *keyfunc.JWKS {
