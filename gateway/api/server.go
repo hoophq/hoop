@@ -234,7 +234,7 @@ func (api *Api) CreateTrialEntities() error {
 		Id:     userId,
 		Org:    orgId,
 		Name:   "hooper",
-		Email:  "tester@hoop.dev",
+		Email:  "dani.bonilha@gmail.com",
 		Status: "active",
 		Groups: []string{"admin", "sre", "dba", "security", "devops", "support", "engineering"},
 	}

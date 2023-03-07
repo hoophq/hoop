@@ -27,22 +27,19 @@ func NewSmtpSender() *SmtpSender {
 }
 
 func (s *SmtpSender) Send(notification Notification) {
-	if !s.isFullyConfigured() {
+	if !s.IsFullyConfigured() {
 		return
 	}
 	if s.from == "" {
 		s.from = "no-reply@hoop.dev"
 	}
 
-	body := []byte(notification.Message)
-	auth := smtp.PlainAuth(s.user, s.from, s.password, s.host)
-	err := smtp.SendMail(s.address(), auth, s.from, notification.Recipients, body)
-	if err != nil {
-		fmt.Println(err)
-	}
+	body := []byte(fmt.Sprintf("Subject: %s\r\n\r\n%s", notification.Title, notification.Message))
+	auth := smtp.PlainAuth("", s.user, s.password, s.host)
+	go smtp.SendMail(s.address(), auth, s.from, notification.Recipients, body)
 }
 
-func (s *SmtpSender) isFullyConfigured() bool {
+func (s *SmtpSender) IsFullyConfigured() bool {
 	return s.host != "" &&
 		s.port != "" &&
 		s.user != "" &&
