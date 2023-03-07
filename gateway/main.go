@@ -49,7 +49,7 @@ func Run() {
 	sessionService := session.Service{Storage: &session.Storage{Storage: s}}
 	reviewService := review.Service{Storage: &review.Storage{Storage: s}}
 	jitService := jit.Service{Storage: &jit.Storage{Storage: s}}
-	notificationService := notification.NewMagicBell()
+	notificationService := getNotification()
 	securityService := security.Service{
 		Storage:     &security.Storage{Storage: s},
 		Provider:    idProvider,
@@ -121,4 +121,11 @@ func Run() {
 
 	go g.StartRPCServer()
 	a.StartAPI(sentryStarted)
+}
+
+func getNotification() notification.Service {
+	if os.Getenv("SMTP_HOST") != "" {
+		return notification.NewSmtpSender()
+	}
+	return notification.NewMagicBell()
 }
