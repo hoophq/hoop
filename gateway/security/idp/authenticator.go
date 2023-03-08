@@ -18,9 +18,9 @@ import (
 )
 
 const (
-	defaultProviderIssuer   = "https://hoophq.us.auth0.com/"
+	DefaultProviderIssuer   = "https://hoophq.us.auth0.com/"
 	defaultProviderClientID = "DatIOCxntNv8AZrQLVnLb3tr1Y3oVwGW"
-	defaultProviderAudience = defaultProviderIssuer + "api/v2/"
+	defaultProviderAudience = DefaultProviderIssuer + "api/v2/"
 )
 
 var invalidAuthErr = errors.New("invalid auth")
@@ -101,7 +101,7 @@ func NewProvider(profile string) *Provider {
 	}
 
 	if provider.Issuer == "" {
-		provider.Issuer = defaultProviderIssuer
+		provider.Issuer = DefaultProviderIssuer
 	}
 
 	if provider.ClientID == "" {
