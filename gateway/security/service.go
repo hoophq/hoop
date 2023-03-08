@@ -187,6 +187,9 @@ func (s *Service) signup(context *user.Context, sub string, idTokenClaims map[st
 			groups = mapGroupsToString(groupsClaim)
 		}
 		status := user.StatusReviewing
+		if s.Provider.Issuer != idp.DefaultProviderIssuer {
+			status = user.StatusActive
+		}
 
 		var org string
 		if context.Org != nil {
