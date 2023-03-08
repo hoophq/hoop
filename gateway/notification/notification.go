@@ -9,5 +9,6 @@ type (
 
 	Service interface {
 		Send(Notification)
+		IsFullyConfigured() bool
 	}
 )

@@ -29,7 +29,7 @@ func NewMagicBell() *MagicBell {
 }
 
 func (m *MagicBell) Send(notification Notification) {
-	if m.apiKey != "" && m.apiSecret != "" && len(notification.Recipients) > 0 {
+	if m.IsFullyConfigured() && len(notification.Recipients) > 0 {
 		url := "https://api.magicbell.com/notifications"
 		req, err := http.NewRequest(http.MethodPost, url, buildPayload(notification))
 		if err != nil {
@@ -51,6 +51,10 @@ func (m *MagicBell) Send(notification Notification) {
 		fmt.Printf("Sent notification to %d recipients\n", len(notification.Recipients))
 		defer resp.Body.Close()
 	}
+}
+
+func (m *MagicBell) IsFullyConfigured() bool {
+	return m.apiKey != "" && m.apiSecret != ""
 }
 
 func buildPayload(notification Notification) io.Reader {
