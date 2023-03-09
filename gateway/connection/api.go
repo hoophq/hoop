@@ -24,7 +24,7 @@ type (
 		Persist(httpMethod string, context *user.Context, c *Connection) (int64, error)
 		FindAll(context *user.Context) ([]BaseConnection, error)
 		FindOne(context *user.Context, name string) (*Connection, error)
-		ProcessClientExec(inputPayload []byte, encodedEnvVars []byte, client pb.ClientTransport) (int, error)
+		ProcessClientExec(inputPayload []byte, client pb.ClientTransport) (int, error)
 	}
 )
 
@@ -163,15 +163,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 	go func() {
 		defer close(clientResp)
 		defer client.Close()
-		var encEnvVars []byte
-		if len(conn.Secret) > 0 {
-			encEnvVars, err = pb.GobEncode(conn.Secret)
-			if err != nil {
-				clientResp <- ExecResponse{err, nilExitCode}
-				return
-			}
-		}
-		exitCode, err := h.Service.ProcessClientExec([]byte(req.Script), encEnvVars, client)
+		exitCode, err := h.Service.ProcessClientExec([]byte(req.Script), client)
 		select {
 		case clientResp <- ExecResponse{err, exitCode}:
 		default:
@@ -189,7 +181,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 		switch resp.ExitCode {
 		case nilExitCode:
 			// means the gRPC client returned an error in the client flow
-			c.JSON(statusCode, &ExecErrResponse{
+			c.JSON(http.StatusBadRequest, &ExecErrResponse{
 				SessionID: &sessionID,
 				Message:   fmt.Sprintf("%v", resp.Err)})
 		case 0:
@@ -204,7 +196,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 		// closing the client will force the goroutine to end
 		// and the result will return async
 		client.Close()
-		c.JSON(statusCode, gin.H{"session_id": sessionID, "exit_code": nil})
+		c.JSON(http.StatusAccepted, gin.H{"session_id": sessionID, "exit_code": nil})
 	}
 }
 

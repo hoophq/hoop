@@ -231,14 +231,11 @@ func (s *Service) bindDLPPlugin(context *user.Context, conn *Connection) {
 	}
 }
 
-func (s *Service) ProcessClientExec(inputPayload []byte, encodedEnvVars []byte, client pb.ClientTransport) (int, error) {
+func (s *Service) ProcessClientExec(inputPayload []byte, client pb.ClientTransport) (int, error) {
 	sendOpenSessionPktFn := func() error {
 		return client.Send(&pb.Packet{
 			Type:    pbagent.SessionOpen,
 			Payload: inputPayload,
-			Spec: map[string][]byte{
-				pb.SpecClientExecEnvVar: encodedEnvVars,
-			},
 		})
 	}
 	if err := sendOpenSessionPktFn(); err != nil {
