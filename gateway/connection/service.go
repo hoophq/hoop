@@ -1,7 +1,15 @@
 package connection
 
 import (
+	"context"
+	"fmt"
+	pbagent "github.com/runopsio/hoop/common/proto/agent"
+	pbclient "github.com/runopsio/hoop/common/proto/client"
+	"io"
+	"log"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -49,8 +57,31 @@ type (
 	SecretProvider string
 )
 
+type (
+	Exec struct {
+		Metadata map[string]any
+		EnvVars  map[string]string
+		Script   []byte
+	}
+	ExecRequest struct {
+		Script   string `json:"script"`
+		Redirect bool   `json:"redirect"`
+	}
+	ExecResponse struct {
+		Err      error
+		ExitCode int
+	}
+	ExecErrResponse struct {
+		Message   string  `json:"message"`
+		ExitCode  *int    `json:"exit_code"`
+		SessionID *string `json:"session_id"`
+	}
+)
+
 const (
 	DBSecretProvider SecretProvider = "database"
+
+	nilExitCode = -100
 )
 
 func (s *Service) FindAll(context *user.Context) ([]BaseConnection, error) {
@@ -197,5 +228,75 @@ func (s *Service) bindDLPPlugin(context *user.Context, conn *Connection) {
 
 	if err := s.PluginService.Persist(context, p); err != nil {
 		return
+	}
+}
+
+func (s *Service) ProcessClientExec(inputPayload []byte, client pb.ClientTransport) (int, error) {
+	sendOpenSessionPktFn := func() error {
+		return client.Send(&pb.Packet{
+			Type:    pbagent.SessionOpen,
+			Payload: inputPayload,
+		})
+	}
+	if err := sendOpenSessionPktFn(); err != nil {
+		return nilExitCode, err
+	}
+	ctxTimeout, cancel := context.WithTimeout(context.Background(), time.Hour*4)
+	defer cancel()
+	for {
+		pkt, err := client.Recv()
+		if err != nil {
+			if err == io.EOF {
+				return nilExitCode, nil
+			}
+			return nilExitCode, err
+		}
+		if pkt == nil {
+			continue
+		}
+		log.Printf("processing packet %v", pkt.Type)
+		switch pkt.Type {
+		case pbclient.SessionOpenWaitingApproval:
+			log.Printf("waiting task to be approved at %v", string(pkt.Payload))
+			go func() {
+				// It prevents reviewed sessions to stay open forever.
+				// Closing the client will make the Recv method to fail
+				<-ctxTimeout.Done()
+				log.Printf("task timeout, closing gRPC client ...")
+				client.Close()
+			}()
+		case pbclient.SessionOpenApproveOK:
+			if err := sendOpenSessionPktFn(); err != nil {
+				return nilExitCode, err
+			}
+		case pbclient.SessionOpenAgentOffline:
+			return nilExitCode, fmt.Errorf("agent is offline")
+		case pbclient.SessionOpenOK:
+			stdinPkt := &pb.Packet{
+				Type:    pbagent.ExecWriteStdin,
+				Payload: inputPayload,
+				Spec: map[string][]byte{
+					pb.SpecGatewaySessionID: pkt.Spec[pb.SpecGatewaySessionID],
+				},
+			}
+			if err := client.Send(stdinPkt); err != nil {
+				return nilExitCode, fmt.Errorf("failed executing command, err=%v", err)
+			}
+		case pbclient.WriteStdout,
+			pbclient.WriteStderr:
+			// noop
+		case pbclient.SessionClose:
+			var execErr error
+			if len(pkt.Payload) > 0 {
+				execErr = fmt.Errorf(string(pkt.Payload))
+			}
+			exitCode, err := strconv.Atoi(string(pkt.Spec[pb.SpecClientExitCodeKey]))
+			if err != nil {
+				exitCode = nilExitCode
+			}
+			return exitCode, execErr
+		default:
+			return nilExitCode, fmt.Errorf("packet type %v not implemented", pkt.Type)
+		}
 	}
 }

@@ -132,6 +132,10 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest,
 		api.ConnectionHandler.FindOne)
+	route.POST("/connections/:name/exec",
+		api.Authenticate,
+		api.TrackRequest,
+		api.ConnectionHandler.RunExec)
 
 	route.GET("/reviews",
 		api.Authenticate,
