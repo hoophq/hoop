@@ -25,33 +25,43 @@ const (
 
 var invalidAuthErr = errors.New("invalid auth")
 
-type Provider struct {
-	Issuer       string
-	Audience     string
-	ClientID     string
-	ClientSecret string
-	Profile      string
-	CustomScopes string
-	ApiURL       string
+type (
+	Provider struct {
+		Issuer                  string
+		Audience                string
+		ClientID                string
+		ClientSecret            string
+		Profile                 string
+		CustomScopes            string
+		ApiURL                  string
+		tokenExternalValidation string
 
-	*oidc.Provider
-	oauth2.Config
-	*oidc.IDTokenVerifier
-	context.Context
-	*keyfunc.JWKS
-}
+		*oidc.Provider
+		oauth2.Config
+		*oidc.IDTokenVerifier
+		context.Context
+		*keyfunc.JWKS
+	}
+	UserInfoToken struct {
+		token *oauth2.Token
+	}
+)
 
-func (a *Provider) VerifyIDToken(token *oauth2.Token) (*oidc.IDToken, error) {
+func (p *Provider) VerifyIDToken(token *oauth2.Token) (*oidc.IDToken, error) {
 	rawIDToken, ok := token.Extra("id_token").(string)
 	if !ok {
 		return nil, errors.New("no id_token field in oauth2 token")
 	}
 
-	return a.Verify(a.Context, rawIDToken)
+	return p.Verify(p.Context, rawIDToken)
 }
 
-func (a *Provider) VerifyAccessToken(accessToken string) (string, error) {
-	token, err := jwt.Parse(accessToken, a.JWKS.Keyfunc)
+func (p *Provider) VerifyAccessToken(accessToken string) (string, error) {
+	if p.tokenExternalValidation != "" {
+		return p.UserInfoEndpoint(accessToken)
+	}
+
+	token, err := jwt.Parse(accessToken, p.JWKS.Keyfunc)
 	if err != nil {
 		return "", invalidAuthErr
 	}
@@ -65,6 +75,20 @@ func (a *Provider) VerifyAccessToken(accessToken string) (string, error) {
 	}
 
 	return "", invalidAuthErr
+}
+
+func (p *Provider) UserInfoEndpoint(accessToken string) (string, error) {
+	user, err := p.Provider.UserInfo(context.Background(), &UserInfoToken{token: &oauth2.Token{
+		AccessToken: accessToken,
+		TokenType:   "Bearer",
+	}})
+	if err != nil {
+		return "", invalidAuthErr
+	}
+	if user == nil {
+		return "", invalidAuthErr
+	}
+	return user.Subject, nil
 }
 
 func NewProvider(profile string) *Provider {
@@ -95,6 +119,7 @@ func NewProvider(profile string) *Provider {
 	provider.ClientSecret = os.Getenv("IDP_CLIENT_SECRET")
 	provider.Audience = os.Getenv("IDP_AUDIENCE")
 	provider.CustomScopes = os.Getenv("IDP_CUSTOM_SCOPES")
+	provider.tokenExternalValidation = os.Getenv("IDP_EXTERNAL_TOKEN_VALIDATION")
 
 	if provider.ClientSecret == "" {
 		panic(errors.New("missing required ID provider variables"))
@@ -164,4 +189,8 @@ func downloadJWKS(jwksURL string) *keyfunc.JWKS {
 		panic(err)
 	}
 	return jwks
+}
+
+func (u *UserInfoToken) Token() (*oauth2.Token, error) {
+	return u.token, nil
 }
