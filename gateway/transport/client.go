@@ -20,6 +20,7 @@ import (
 	pluginsrbac "github.com/runopsio/hoop/gateway/transport/plugins/accesscontrol"
 	pluginsaudit "github.com/runopsio/hoop/gateway/transport/plugins/audit"
 	pluginsdlp "github.com/runopsio/hoop/gateway/transport/plugins/dlp"
+	pluginsindex "github.com/runopsio/hoop/gateway/transport/plugins/index"
 	pluginsjit "github.com/runopsio/hoop/gateway/transport/plugins/jit"
 	pluginsreview "github.com/runopsio/hoop/gateway/transport/plugins/review"
 	"github.com/runopsio/hoop/gateway/user"
@@ -74,6 +75,7 @@ var disconnectSink = struct {
 func LoadPlugins(apiURL string) {
 	allPlugins = []Plugin{
 		pluginsaudit.New(),
+		pluginsindex.New(),
 		pluginsreview.New(apiURL),
 		pluginsjit.New(apiURL),
 		pluginsdlp.New(),
@@ -100,10 +102,14 @@ func unbindClient(id string) {
 }
 
 func getClientStream(id string) pb.Transport_ConnectServer {
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
 	return cc.clients[id]
 }
 
 func getPlugins(id string) []pluginConfig {
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
 	return cc.plugins[id]
 }
 
@@ -626,6 +632,7 @@ func (s *Server) handleGracefulShutdown(c *client.Client) {
 
 func (s *Server) loadConnectPlugins(ctx *user.Context, config plugin.Config) ([]pluginConfig, error) {
 	pluginsConfig := make([]pluginConfig, 0)
+	var nonRegisteredPlugins []string
 	for _, p := range allPlugins {
 		p1, err := s.PluginService.FindOne(ctx, p.Name())
 		if err != nil {
@@ -633,7 +640,7 @@ func (s *Server) loadConnectPlugins(ctx *user.Context, config plugin.Config) ([]
 			return nil, status.Errorf(codes.Internal, "failed registering plugins")
 		}
 		if p1 == nil {
-			log.Printf("plugin not registered %q, skipping...", p.Name())
+			nonRegisteredPlugins = append(nonRegisteredPlugins, p.Name())
 			continue
 		}
 
@@ -685,6 +692,9 @@ func (s *Server) loadConnectPlugins(ctx *user.Context, config plugin.Config) ([]
 				break
 			}
 		}
+	}
+	if len(nonRegisteredPlugins) > 0 {
+		log.Printf("session=%v - non registered plugins %v", config.SessionId, nonRegisteredPlugins)
 	}
 	return pluginsConfig, nil
 }

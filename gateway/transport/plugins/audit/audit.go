@@ -1,11 +1,7 @@
 package audit
 
 import (
-	"bufio"
-	"bytes"
-	"encoding/binary"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"sync"
@@ -102,7 +98,7 @@ func (p *auditPlugin) OnConnect(config plugin.Config) error {
 func (p *auditPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *pb.Packet) error {
 	switch pb.PacketType(pkt.GetType()) {
 	case pbagent.PGConnectionWrite:
-		isSimpleQuery, queryBytes, err := simpleQueryContent(pkt.Payload)
+		isSimpleQuery, queryBytes, err := pg.SimpleQueryContent(pkt.Payload)
 		if !isSimpleQuery {
 			break
 		}
@@ -139,9 +135,6 @@ func (p *auditPlugin) OnDisconnect(config plugin.Config) error {
 
 func (p *auditPlugin) closeSession(sessionID string) {
 	go func() {
-		// give some time to disconnect it, otherwise the on-receive process will
-		// catch up a wal close file
-		time.Sleep(time.Second * 3)
 		if err := p.writeOnClose(sessionID); err != nil {
 			log.Printf("session=%v audit - failed closing session: %v", sessionID, err)
 		}
@@ -149,25 +142,3 @@ func (p *auditPlugin) closeSession(sessionID string) {
 }
 
 func (p *auditPlugin) OnShutdown() {}
-
-func simpleQueryContent(payload []byte) (bool, []byte, error) {
-	r := bufio.NewReaderSize(bytes.NewBuffer(payload), pg.DefaultBufferSize)
-	typ, err := r.ReadByte()
-	if err != nil {
-		return false, nil, fmt.Errorf("failed reading first byte: %v", err)
-	}
-	if pg.PacketType(typ) != pg.ClientSimpleQuery {
-		return false, nil, nil
-	}
-
-	header := [4]byte{}
-	if _, err := io.ReadFull(r, header[:]); err != nil {
-		return true, nil, fmt.Errorf("failed reading header, err=%v", err)
-	}
-	pktLen := binary.BigEndian.Uint32(header[:]) - 4 // don't include header size (4)
-	queryFrame := make([]byte, pktLen)
-	if _, err := io.ReadFull(r, queryFrame); err != nil {
-		return true, nil, fmt.Errorf("failed reading query, err=%v", err)
-	}
-	return true, queryFrame, nil
-}
