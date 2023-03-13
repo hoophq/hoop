@@ -9,7 +9,7 @@ import (
 )
 
 // Parse parses a query expression to a bleve query.Query
-// it follows the syntax of
+// the syntax is heavily inspired in GitHub search query API
 //
 // SEARCH_KEYWORD_1 SEARCH_KEYWORD_N QUALIFIER_1 QUALIFIER_N
 // Example:
@@ -126,8 +126,8 @@ func (s *searchQuery) Parse() (query.Query, error) {
 // setQueryString adds query base in the condition of the query operator.
 // The query is only added if the in qualifier is present, e.g.: in:input|output
 //
-// if the query string has spaces a Match Phrase query is added, otherwise
-// it will use a Match Query
+// by default uses a query.MatchQuery, if the query string contains a wildcard (?, *)
+// it will fallback to a query.WildcardQuery
 func (s *searchQuery) setQueryString(queryStr string, operator Operator, bq *query.BooleanQuery) (err error) {
 	var outcome query.Query
 	inQualifier := s.inQualifier()
