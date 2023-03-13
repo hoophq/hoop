@@ -3,13 +3,14 @@ package api
 import (
 	"errors"
 	"fmt"
-	"github.com/runopsio/hoop/gateway/user"
 	"log"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/common/version"
+	"github.com/runopsio/hoop/gateway/user"
 )
 
 var invalidAuthErr = errors.New("invalid auth")
@@ -71,7 +72,9 @@ func (api *Api) TrackRequest(c *gin.Context) {
 }
 
 func CORSMiddleware() gin.HandlerFunc {
+	vs := version.Get()
 	return func(c *gin.Context) {
+		c.Writer.Header().Set("Server", fmt.Sprintf("hoopgateway/%s", vs.Version))
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, accept, origin")

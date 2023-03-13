@@ -4,7 +4,7 @@ if [[ "$DEBUG_ENTRYPOINT" == "true" ]]; then
     set -x
 fi
 
-export GIN_MODE=release
+export GIN_MODE="${GIN_MODE:=release}"
 if [[ "$PROFILE" == "dev" ]]; then
     /app/start-dev.sh
     exit $?
