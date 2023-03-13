@@ -27,14 +27,13 @@ var invalidAuthErr = errors.New("invalid auth")
 
 type (
 	Provider struct {
-		Issuer                  string
-		Audience                string
-		ClientID                string
-		ClientSecret            string
-		Profile                 string
-		CustomScopes            string
-		ApiURL                  string
-		tokenExternalValidation string
+		Issuer       string
+		Audience     string
+		ClientID     string
+		ClientSecret string
+		Profile      string
+		CustomScopes string
+		ApiURL       string
 
 		*oidc.Provider
 		oauth2.Config
@@ -57,7 +56,7 @@ func (p *Provider) VerifyIDToken(token *oauth2.Token) (*oidc.IDToken, error) {
 }
 
 func (p *Provider) VerifyAccessToken(accessToken string) (string, error) {
-	if p.tokenExternalValidation != "" {
+	if len(strings.Split(accessToken, ".")) != 3 {
 		return p.UserInfoEndpoint(accessToken)
 	}
 
@@ -119,7 +118,6 @@ func NewProvider(profile string) *Provider {
 	provider.ClientSecret = os.Getenv("IDP_CLIENT_SECRET")
 	provider.Audience = os.Getenv("IDP_AUDIENCE")
 	provider.CustomScopes = os.Getenv("IDP_CUSTOM_SCOPES")
-	provider.tokenExternalValidation = os.Getenv("IDP_EXTERNAL_TOKEN_VALIDATION")
 
 	if provider.ClientSecret == "" {
 		panic(errors.New("missing required ID provider variables"))
