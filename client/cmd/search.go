@@ -18,7 +18,6 @@ import (
 
 const searchApiURI = "/api/plugins/indexer/sessions/search"
 
-var indexFileFlag string
 var markResultsFlag bool
 var limitFlag int
 var offsetFlag int
@@ -41,7 +40,6 @@ var searchCmd = &cobra.Command{
 }
 
 func init() {
-	searchCmd.Flags().StringVarP(&indexFileFlag, "file", "f", "", "The path of the file containing the bleve index")
 	searchCmd.Flags().BoolVarP(&markResultsFlag, "mark", "m", false, "Highlight results")
 	searchCmd.Flags().StringSliceVar(&fieldsFlag, "fields", nil, "The fields to display")
 	searchCmd.Flags().StringSliceVar(&facetsFlag, "facets", nil, "The facets to display, [connection,connection_type,user,error,verb,duration]")
@@ -76,13 +74,12 @@ func searchHTTPRequest(c *Config, searchRequest any) (*bleve.SearchResult, error
 	if err != nil {
 		return nil, fmt.Errorf("failed marshaling body request, err=%v", err)
 	}
-	fmt.Println(string(body))
-
 	apiURL := fmt.Sprintf("%s%s", c.ApiURL, searchApiURI)
 	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(body))
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", c.Token))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed performing search request, err=%v", err)
