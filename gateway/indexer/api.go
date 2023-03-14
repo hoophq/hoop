@@ -17,7 +17,7 @@ const maxSearchLimit = 50
 type Handler struct{}
 
 type SearchRequest struct {
-	QueryString string              `json:"query"`
+	QueryString string              `json:"query" binding:"required"`
 	Limit       int                 `json:"limit"`
 	Offset      int                 `json:"offset"`
 	Highlight   bool                `json:"highlight"`
