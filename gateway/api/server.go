@@ -7,15 +7,15 @@ import (
 
 	sentrygin "github.com/getsentry/sentry-go/gin"
 
-	"github.com/runopsio/hoop/gateway/review/jit"
-
 	"github.com/gin-contrib/static"
 	"github.com/gin-gonic/gin"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/connection"
+	"github.com/runopsio/hoop/gateway/indexer"
 	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/review"
+	"github.com/runopsio/hoop/gateway/review/jit"
 	"github.com/runopsio/hoop/gateway/runbooks"
 	"github.com/runopsio/hoop/gateway/security"
 	"github.com/runopsio/hoop/gateway/security/idp"
@@ -30,6 +30,7 @@ type (
 		UserHandler       user.Handler
 		PluginHandler     plugin.Handler
 		SessionHandler    session.Handler
+		IndexerHandler    indexer.Handler
 		ReviewHandler     review.Handler
 		RunbooksHandler   runbooks.Handler
 		JitHandler        jit.Handler
@@ -212,6 +213,12 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest,
 		api.AdminOnly,
 		api.SessionHandler.FindAll)
+
+	route.POST("/plugins/indexer/sessions/search",
+		api.Authenticate,
+		api.TrackRequest,
+		api.IndexerHandler.Search,
+	)
 
 	route.GET("/plugins/runbooks/connections/:name/templates",
 		api.Authenticate,

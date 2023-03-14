@@ -70,7 +70,6 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 
 	ag, err := s.AgentService.FindByToken(token)
 	if err != nil || ag == nil {
-		log.Printf("agent not found, err=%v", err)
 		return status.Errorf(codes.Unauthenticated, "invalid authentication")
 	}
 	orgName, _ := s.UserService.GetOrgNameByID(ag.OrgId)

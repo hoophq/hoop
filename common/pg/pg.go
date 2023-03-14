@@ -1,5 +1,13 @@
 package pg
 
+import (
+	"bufio"
+	"bytes"
+	"encoding/binary"
+	"fmt"
+	"io"
+)
+
 type (
 	contextKey int
 )
@@ -106,3 +114,27 @@ const (
 	InvalidPassword                   Code = "28P01"
 	InvalidAuthorizationSpecification Code = "28000"
 )
+
+// SimpleQueryContent returns the content of the query and a boolean indicating
+// if it's a Simple Query packet
+func SimpleQueryContent(payload []byte) (bool, []byte, error) {
+	r := bufio.NewReaderSize(bytes.NewBuffer(payload), DefaultBufferSize)
+	typ, err := r.ReadByte()
+	if err != nil {
+		return false, nil, fmt.Errorf("failed reading first byte: %v", err)
+	}
+	if PacketType(typ) != ClientSimpleQuery {
+		return false, nil, nil
+	}
+
+	header := [4]byte{}
+	if _, err := io.ReadFull(r, header[:]); err != nil {
+		return true, nil, fmt.Errorf("failed reading header, err=%v", err)
+	}
+	pktLen := binary.BigEndian.Uint32(header[:]) - 4 // don't include header size (4)
+	queryFrame := make([]byte, pktLen)
+	if _, err := io.ReadFull(r, queryFrame); err != nil {
+		return true, nil, fmt.Errorf("failed reading query, err=%v", err)
+	}
+	return true, queryFrame, nil
+}

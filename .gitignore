@@ -18,6 +18,7 @@ gateway/.idea/*
 plugins/.idea/*
 common/.idea/*
 .idea/*
+.fleet/*
 # Dependency directories (remove the comment below to include it)
 # vendor/
 

@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/runopsio/hoop/gateway/analytics"
+	"github.com/runopsio/hoop/gateway/indexer"
 
 	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/plugin"
@@ -62,6 +63,7 @@ func Run() {
 		UserHandler:       user.Handler{Service: &userService, Analytics: analyticsService},
 		PluginHandler:     plugin.Handler{Service: &pluginService},
 		SessionHandler:    session.Handler{Service: &sessionService},
+		IndexerHandler:    indexer.Handler{},
 		ReviewHandler:     review.Handler{Service: &reviewService},
 		JitHandler:        jit.Handler{Service: &jitService},
 		SecurityHandler:   security.Handler{Service: &securityService},
@@ -116,9 +118,7 @@ func Run() {
 			panic(err)
 		}
 	}
-
-	fmt.Printf("Running with PROFILE [%s]\n", profile)
-
+	log.Printf("profile=%v - starting servers", profile)
 	go g.StartRPCServer()
 	a.StartAPI(sentryStarted)
 }
