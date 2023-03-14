@@ -5,8 +5,11 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/blevesearch/bleve/v2"
+	// highlighters
 	"github.com/blevesearch/bleve/v2/search/highlight/highlighter/ansi"
+	"github.com/blevesearch/bleve/v2/search/highlight/highlighter/html"
+
+	"github.com/blevesearch/bleve/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/gateway/indexer/searchquery"
 	"github.com/runopsio/hoop/gateway/user"
@@ -20,7 +23,7 @@ type SearchRequest struct {
 	QueryString string              `json:"query" binding:"required"`
 	Limit       int                 `json:"limit"`
 	Offset      int                 `json:"offset"`
-	Highlight   bool                `json:"highlight"`
+	Highlighter string              `json:"highlighter"`
 	Fields      []string            `json:"fields"`
 	Facets      bleve.FacetsRequest `json:"facets"`
 }
@@ -80,8 +83,11 @@ func (s *SearchRequest) parse(userID string, isAdmin bool) (*bleve.SearchRequest
 	if len(s.Fields) > 0 {
 		req.Fields = s.Fields
 	}
-	if s.Highlight {
+	switch s.Highlighter {
+	case ansi.Name:
 		req.Highlight = bleve.NewHighlightWithStyle(ansi.Name)
+	case html.Name:
+		req.Highlight = bleve.NewHighlightWithStyle(html.Name)
 	}
 	if len(s.Facets) > 0 {
 		req.Facets = s.Facets
@@ -112,7 +118,10 @@ func (s *SearchRequest) validate(req *bleve.SearchRequest) error {
 	return req.Validate()
 }
 
-func NewSearchRequest(query string, limit, offset int, highlight bool) *SearchRequest {
+// NewSearchRequest creates a new request in the index, possible values for highlighter are
+//
+// ansi or html
+func NewSearchRequest(query string, limit, offset int, highlighter string) *SearchRequest {
 	if limit > maxSearchLimit {
 		limit = maxSearchLimit
 	}
@@ -120,6 +129,6 @@ func NewSearchRequest(query string, limit, offset int, highlight bool) *SearchRe
 		QueryString: query,
 		Limit:       limit,
 		Offset:      offset,
-		Highlight:   highlight,
+		Highlighter: highlighter,
 	}
 }

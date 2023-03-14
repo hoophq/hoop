@@ -59,12 +59,11 @@ func runSearch(inputQuery string) {
 		config.ApiURL = fmt.Sprintf("%s:8009", localApiURL)
 	}
 
-	req := indexer.NewSearchRequest(inputQuery, limitFlag, offsetFlag, markResultsFlag)
+	req := indexer.NewSearchRequest(inputQuery, limitFlag, offsetFlag, "ansi")
 	if len(fieldsFlag) > 0 {
 		req.Fields = fieldsFlag
 	}
 	setDefaultFacets(req)
-
 	result, err := searchHTTPRequest(config, req)
 	if err != nil {
 		printErrorAndExit(err.Error())
@@ -77,6 +76,7 @@ func searchHTTPRequest(c *Config, searchRequest any) (*bleve.SearchResult, error
 	if err != nil {
 		return nil, fmt.Errorf("failed marshaling body request, err=%v", err)
 	}
+	fmt.Println(string(body))
 
 	apiURL := fmt.Sprintf("%s%s", c.ApiURL, searchApiURI)
 	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(body))
