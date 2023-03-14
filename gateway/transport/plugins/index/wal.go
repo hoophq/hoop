@@ -29,8 +29,7 @@ type walLogRWMutex struct {
 type walMetadata struct {
 	OrgID          string    `json:"org_id"`
 	SessionID      string    `json:"session_id"`
-	UserID         string    `json:"user_id"`
-	UserName       string    `json:"user_name"`
+	UserEmail      string    `json:"user_email"`
 	ConnectionName string    `json:"connection_name"`
 	ConnectionType string    `json:"connection_type"`
 	Verb           string    `json:"verb"`
@@ -50,8 +49,7 @@ func (p *indexPlugin) writeOnConnect(c plugin.Config) error {
 		metadata: &walMetadata{
 			OrgID:          c.Org,
 			SessionID:      c.SessionId,
-			UserID:         c.UserID,
-			UserName:       c.UserID,
+			UserEmail:      c.UserEmail,
 			ConnectionName: c.ConnectionName,
 			ConnectionType: c.ConnectionType,
 			Verb:           c.Verb,
@@ -138,7 +136,7 @@ func (p *indexPlugin) indexOnClose(c plugin.Config, isError bool) {
 	payload := &indexer.Session{
 		OrgID:             c.Org,
 		ID:                c.SessionId,
-		User:              walogm.metadata.UserID,
+		User:              walogm.metadata.UserEmail,
 		Connection:        walogm.metadata.ConnectionName,
 		ConnectionType:    walogm.metadata.ConnectionType,
 		Verb:              walogm.metadata.Verb,

@@ -11,6 +11,7 @@ type (
 		Org            string
 		UserID         string
 		UserName       string
+		UserEmail      string
 		Verb           string
 		Hostname       string
 		MachineId      string

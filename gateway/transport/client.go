@@ -187,6 +187,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		Org:            context.Org.Id,
 		UserID:         context.User.Id,
 		UserName:       context.User.Name,
+		UserEmail:      context.User.Email,
 		Verb:           clientVerb,
 		Hostname:       hostname,
 		MachineId:      machineId,
