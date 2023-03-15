@@ -21,6 +21,7 @@ type (
 		GetOrgNameByID(orgID string) (string, error)
 		FindByGroups(context *Context, groups []string) ([]User, error)
 		ListAllGroups(context *Context) ([]string, error)
+		FindOrgs() ([]Org, error)
 	}
 
 	Context struct {
@@ -125,6 +126,10 @@ func (s *Service) FindByGroups(context *Context, groups []string) ([]User, error
 
 func (s *Service) ListAllGroups(context *Context) ([]string, error) {
 	return s.Storage.ListAllGroups(context)
+}
+
+func (s *Service) FindOrgs() ([]Org, error) {
+	return s.Storage.FindOrgs()
 }
 
 func ExtractDomain(email string) string {

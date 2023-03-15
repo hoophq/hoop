@@ -228,3 +228,22 @@ func (s *Storage) getOrg(orgId string) (*Org, error) {
 
 	return &org[0], nil
 }
+
+func (s *Storage) FindOrgs() ([]Org, error) {
+	var payload = `{:query 
+                    {:find [(pull p [*])]
+					 :where [[p :org/name s]
+							 [p :xt/id i]]}}`
+
+	b, err := s.Query([]byte(payload))
+	if err != nil {
+		return nil, err
+	}
+
+	var orgs []Org
+	if err := edn.Unmarshal(b, &orgs); err != nil {
+		return nil, err
+	}
+
+	return orgs, nil
+}
