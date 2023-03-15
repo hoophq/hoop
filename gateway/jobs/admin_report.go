@@ -44,7 +44,9 @@ func (s *Scheduler) sendReports() {
 	}
 
 	for _, o := range orgs {
-		go s.sendReport(&o)
+		if o.Name == "runops" { // TODO remove this "feature flag"
+			go s.sendReport(&o)
+		}
 	}
 }
 
