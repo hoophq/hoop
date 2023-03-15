@@ -115,13 +115,13 @@ func Run() {
 	jitService.TransportService = g
 
 	//start scheduler for "weekly" report service (production mode)
-	//if profile != pb.DevProfile &&  {
-	jobs.InitReportScheduler(&jobs.Scheduler{
-		UserStorage:    &userService,
-		SessionStorage: &sessionService,
-		Notification:   notificationService,
-	})
-	//}
+	if profile != pb.DevProfile {
+		jobs.InitReportScheduler(&jobs.Scheduler{
+			UserStorage:    &userService,
+			SessionStorage: &sessionService,
+			Notification:   notificationService,
+		})
+	}
 
 	if profile == pb.DevProfile {
 		if err := a.CreateTrialEntities(); err != nil {

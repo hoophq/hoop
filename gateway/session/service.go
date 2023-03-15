@@ -116,7 +116,3 @@ func (s *Service) PersistStatus(status *SessionStatus) (*st.TxResponse, error) {
 func (s *Service) ValidateSessionID(sessionID string) error {
 	return s.Storage.ValidateSessionID(sessionID)
 }
-
-func (s *Service) CountSessions(org *user.Org) (int, error) {
-	return 10, nil
-}
