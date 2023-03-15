@@ -49,6 +49,9 @@ func (api *Api) StartAPI(sentryInit bool) {
 	route := gin.Default()
 	if api.Profile != pb.DevProfile {
 		route = gin.New()
+		if os.Getenv("GIN_MODE") == "debug" {
+			route.Use(gin.Logger())
+		}
 		route.Use(gin.Recovery())
 	}
 	// https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies
