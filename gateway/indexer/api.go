@@ -15,8 +15,6 @@ import (
 	"github.com/runopsio/hoop/gateway/user"
 )
 
-const maxSearchLimit = 50
-
 type Handler struct{}
 
 type SearchRequest struct {
@@ -45,13 +43,14 @@ func (a *Handler) Search(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
-	index, err := Open(ctx.User.Org)
+	index, err := NewIndexer(ctx.User.Org)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 
-	log.Printf("org=%v, user=%v, query=[%v] - searching", ctx.Org.Id, ctx.User.Id, req.QueryString)
+	log.Printf("org=%v, user=%v, name=%v, query=[%v] - searching",
+		ctx.Org.Id, ctx.User.Id, index.Name(), req.QueryString)
 	searchResult, err := index.Search(bleveSearchRequest)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})

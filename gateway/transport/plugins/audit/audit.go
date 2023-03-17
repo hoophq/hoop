@@ -82,8 +82,7 @@ func (p *auditPlugin) OnConnect(config plugin.Config) error {
 		return fmt.Errorf("failed processing audit plugin, missing org_id and session_id params")
 	}
 
-	if err := p.writeOnConnect(config.Org, config.SessionId, config.UserID, config.UserName,
-		config.ConnectionName, config.ConnectionType, config.Verb); err != nil {
+	if err := p.writeOnConnect(config); err != nil {
 		return err
 	}
 	config.ParamsData["start_date"] = func() *time.Time { d := time.Now().UTC(); return &d }()

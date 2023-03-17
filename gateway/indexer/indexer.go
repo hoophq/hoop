@@ -2,6 +2,8 @@ package indexer
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path"
 	"sync"
@@ -18,14 +20,20 @@ import (
 
 const defaultPluginPath = "/opt/hoop/indexes"
 
-var PluginIndexPath string
+var (
+	PluginIndexPath       = os.Getenv("PLUGIN_INDEX_PATH")
+	indexFolderTimeFormat = "2006-01-02T15.04.05.999999999Z07.00"
+	runtimeConfig         = map[string]any{"bolt_timeout": "10s"}
+	stateFileName         = "current-index"
+)
 
 func init() {
-	PluginIndexPath = os.Getenv("PLUGIN_INDEX_PATH")
 	if PluginIndexPath == "" {
 		PluginIndexPath = defaultPluginPath
 	}
 }
+
+type updateStateFileFunc func() error
 
 type Session struct {
 	OrgID string `json:"-"`
@@ -83,47 +91,111 @@ func newSessionMapping() mapping.IndexMapping {
 	return m
 }
 
-func openIndex(indexBasePath, orgID string) (bleve.Index, error) {
-	runtimeConfig := map[string]any{"bolt_timeout": "10s"}
-	indexPath := path.Join(indexBasePath, orgID)
-	if fi, _ := os.Stat(indexPath); fi != nil && fi.IsDir() {
-		return bleve.OpenUsing(indexPath, runtimeConfig)
+func openStateFileIndex(indexBasePath, orgID string) (bleve.Index, error) {
+	stateFilePath := path.Join(indexBasePath, orgID, stateFileName)
+	currentFileName, err := os.ReadFile(stateFilePath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("failed opening state file, err=%v", err)
 	}
-	return bleve.NewUsing(indexPath, newSessionMapping(), scorch.Name, scorch.Name, runtimeConfig)
+	if len(currentFileName) > 0 {
+		return bleve.OpenUsing(string(currentFileName), runtimeConfig)
+	}
+	return nil, nil
+}
+
+func newBleveIndex(orgID string) (bleve.Index, updateStateFileFunc, error) {
+	indexRootPath := path.Join(PluginIndexPath, orgID)
+	indexPath := path.Join(indexRootPath, time.Now().UTC().Format(indexFolderTimeFormat))
+	if err := os.MkdirAll(indexPath, 0700); err != nil {
+		return nil, nil, fmt.Errorf("failed creating index path, err=%v", err)
+	}
+	indexStateFile := path.Join(indexRootPath, stateFileName)
+	updateStateFileFn := func() error {
+		f, err := os.OpenFile(indexStateFile, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0744)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		_, err = f.WriteString(indexPath)
+		return err
+	}
+	index, err := bleve.NewUsing(indexPath, newSessionMapping(), scorch.Name, scorch.Name, runtimeConfig)
+	return index, updateStateFileFn, err
 }
 
 type Indexer struct {
-	idx   bleve.Index
-	orgID string
+	idx    bleve.IndexAlias
+	origin bleve.Index
+	orgID  string
+	name   string
 }
 
 var mutexIndexer = map[string]*Indexer{}
 var openMutex = sync.RWMutex{}
 
-// Open returns an session indexer scoped to an organization.
-// If the index is already opened by an organization, it will
-// return the same indexer
-func Open(orgID string) (*Indexer, error) {
+// NewIndexer tries to open the last index from the filesystem or
+// open a fresh one.
+func NewIndexer(orgID string) (*Indexer, error) {
 	openMutex.Lock()
 	defer openMutex.Unlock()
 	if indexer, ok := mutexIndexer[orgID]; ok {
 		return indexer, nil
 	}
-	index, err := openIndex(PluginIndexPath, orgID)
+	index, err := openStateFileIndex(PluginIndexPath, orgID)
 	if err != nil {
 		return nil, err
 	}
-	indexer := &Indexer{orgID: orgID, idx: index}
+	indexer := &Indexer{orgID: orgID}
+	if index == nil {
+		index, updateStateFileFn, err := newBleveIndex(orgID)
+		if err != nil {
+			return nil, err
+		}
+		if err := updateStateFileFn(); err != nil {
+			return nil, fmt.Errorf("failed updating state file, err=%v", err)
+		}
+		indexer.name = index.Name()
+		indexer.idx = bleve.NewIndexAlias(index)
+		indexer.origin = index
+		mutexIndexer[orgID] = indexer
+		return indexer, nil
+	}
+	indexer.name = index.Name()
+	indexer.origin = index
+	indexer.idx = bleve.NewIndexAlias(index)
 	mutexIndexer[orgID] = indexer
 	return indexer, nil
+}
+
+func (i *Indexer) swapIndex(newIndex bleve.Index) error {
+	openMutex.Lock()
+	defer openMutex.Unlock()
+	// swap indexes
+	i.name = newIndex.Name()
+	i.idx.Remove(i.origin)
+	i.idx.Add(newIndex)
+	// add the new state to the indexer instance
+	oldIndex := i.origin
+	i.idx = bleve.NewIndexAlias(newIndex)
+	i.origin = newIndex
+	// cleanup
+	err := oldIndex.Close()
+	_ = os.RemoveAll(oldIndex.Name())
+	return err
+}
+
+func (i *Indexer) Name() string {
+	return i.name
 }
 
 func (i *Indexer) Index(sessionID string, data any) error {
 	return i.idx.Index(sessionID, data)
 }
 
-func (i *Indexer) Delete(sessionID string) error {
-	return i.idx.Delete(sessionID)
+func (i *Indexer) Search(req *bleve.SearchRequest) (*bleve.SearchResult, error) {
+	ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancelFn()
+	return i.idx.SearchInContext(ctx, req)
 }
 
 func (i *Indexer) Close() error {
@@ -131,21 +203,4 @@ func (i *Indexer) Close() error {
 	defer openMutex.Unlock()
 	delete(mutexIndexer, i.orgID)
 	return i.idx.Close()
-}
-
-func (i *Indexer) Has(sessionID string) (bool, error) {
-	doc, err := i.idx.Document(sessionID)
-	if err != nil || doc != nil {
-		return true, err
-	}
-	return false, nil
-}
-
-func (i *Indexer) Search(req *bleve.SearchRequest) (*bleve.SearchResult, error) {
-	ctx, cancelFn := context.WithCancel(context.Background())
-	go func() {
-		time.Sleep(time.Second * 5)
-		cancelFn()
-	}()
-	return i.idx.SearchInContext(ctx, req)
 }

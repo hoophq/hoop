@@ -12,7 +12,6 @@ import (
 	"github.com/tidwall/wal"
 )
 
-const maxIndexSize = 600000 // 600KB
 var walFolderTmpl string = `%s/%s-%s-wal`
 
 type walLogRWMutex struct {
@@ -77,13 +76,13 @@ func (p *indexPlugin) writeOnReceive(sessionID string, eventType string, event [
 
 	switch eventType {
 	case "i":
-		if walogm.stdinSize >= maxIndexSize {
+		if walogm.stdinSize >= indexer.MaxIndexSize {
 			walogm.stdinTruncated = true
 			return nil
 		}
 		walogm.stdinSize += eventSize
 	case "e", "o":
-		if walogm.stdoutSize >= maxIndexSize {
+		if walogm.stdoutSize >= indexer.MaxIndexSize {
 			walogm.stdoutTruncated = true
 			return nil
 		}

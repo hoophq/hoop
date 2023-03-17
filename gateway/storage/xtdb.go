@@ -35,13 +35,16 @@ type (
 	}
 )
 
-func (s *Storage) Connect() error {
-	s.client = http.Client{}
-	s.address = os.Getenv("XTDB_ADDRESS")
+func New() *Storage {
+	s := &Storage{client: http.Client{}, address: os.Getenv("XTDB_ADDRESS")}
 	if s.address == "" {
 		s.address = defaultAddress
 	}
-	return nil
+	return s
+}
+
+func (s *Storage) Address() string {
+	return s.address
 }
 
 // buildTrxPutEdn build transaction put operation as string
@@ -249,6 +252,24 @@ func (s *Storage) QueryAsJson(ednQuery []byte) ([]byte, error) {
 	}
 
 	return response, nil
+}
+
+// Sync will wait for xtdb to sync all documents
+// if it reaches the timeout, it will return a 5xx error
+func (s *Storage) Sync(timeout time.Duration) error {
+	url := fmt.Sprintf("%s/_xtdb/sync?timeout=%v", s.address, timeout.Milliseconds())
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	switch resp.StatusCode {
+	case 200:
+		return nil
+	default:
+		defer resp.Body.Close()
+		bodyResponse, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed sync with xtdb, status=%v, response=%v", resp.Status, string(bodyResponse))
+	}
 }
 
 func EntityToMap(obj any) map[string]any {

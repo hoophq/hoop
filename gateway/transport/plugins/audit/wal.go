@@ -23,6 +23,7 @@ type (
 		SessionID      string     `json:"session_id"`
 		UserID         string     `json:"user_id"`
 		UserName       string     `json:"user_name"`
+		UserEmail      string     `json:"user_email"`
 		ConnectionName string     `json:"connection_name"`
 		ConnectionType string     `json:"connection_type"`
 		Verb           string     `json:"verb"`
@@ -87,20 +88,21 @@ func parseEventStream(eventStream []byte) (session.EventStream, int, error) {
 		eventStreamLength, nil
 }
 
-func (p *auditPlugin) writeOnConnect(orgID, sessionID, userID, userName, connName, connType, verb string) error {
-	walFolder := fmt.Sprintf(walFolderTmpl, pluginAuditPath, orgID, sessionID)
+func (p *auditPlugin) writeOnConnect(config plugin.Config) error {
+	walFolder := fmt.Sprintf(walFolderTmpl, pluginAuditPath, config.Org, config.SessionId)
 	walog, err := wal.Open(walFolder, wal.DefaultOptions)
 	if err != nil {
 		return fmt.Errorf("failed opening wal file, err=%v", err)
 	}
 	walHeader, err := encodeWalHeader(&walHeader{
-		OrgID:          orgID,
-		SessionID:      sessionID,
-		UserID:         userID,
-		UserName:       userName,
-		ConnectionName: connName,
-		ConnectionType: connType,
-		Verb:           verb,
+		OrgID:          config.Org,
+		SessionID:      config.SessionId,
+		UserID:         config.UserID,
+		UserName:       config.UserName,
+		UserEmail:      config.UserEmail,
+		ConnectionName: config.ConnectionName,
+		ConnectionType: config.ConnectionType,
+		Verb:           config.Verb,
 		StartDate:      func() *time.Time { d := time.Now().UTC(); return &d }(),
 	})
 	if err != nil {
@@ -109,7 +111,7 @@ func (p *auditPlugin) writeOnConnect(orgID, sessionID, userID, userName, connNam
 	if err := walog.Write(1, walHeader); err != nil {
 		return fmt.Errorf("failed writing header to wal, err=%v", err)
 	}
-	p.walSessionStore.Set(sessionID, &walLogRWMutex{walog, sync.RWMutex{}, walFolder})
+	p.walSessionStore.Set(config.SessionId, &walLogRWMutex{walog, sync.RWMutex{}, walFolder})
 	return nil
 }
 
@@ -184,6 +186,7 @@ func (p *auditPlugin) writeOnClose(sessionID string) error {
 		SessionId:      wh.SessionID,
 		UserID:         wh.UserID,
 		UserName:       wh.UserName,
+		UserEmail:      wh.UserEmail,
 		ConnectionName: wh.ConnectionName,
 		ConnectionType: wh.ConnectionType,
 		Verb:           wh.Verb,

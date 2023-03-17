@@ -22,6 +22,7 @@ type (
 		ValidateSessionID(sessionID string) error
 		FindAll(*user.Context, ...*SessionOption) (*SessionList, error)
 		FindOne(ctx *user.Context, name string) (*Session, error)
+		ListAllSessionsID(startDate time.Time) ([]*Session, error)
 		NewGenericStorageWriter() *GenericStorageWriter
 	}
 
@@ -29,10 +30,9 @@ type (
 	EventStream               []any
 	NonIndexedEventStreamList map[edn.Keyword][]EventStream
 	Session                   struct {
-		ID    string `json:"id"           edn:"xt/id"`
-		OrgID string `json:"-"            edn:"session/org-id"`
-		// DEPRECATED: in flavor of user_id
-		User        string      `json:"user"         edn:"session/user"`
+		ID          string      `json:"id"           edn:"xt/id"`
+		OrgID       string      `json:"-"            edn:"session/org-id"`
+		UserEmail   string      `json:"user"         edn:"session/user"`
 		UserID      string      `json:"user_id"      edn:"session/user-id"`
 		UserName    string      `json:"user_name"    edn:"session/user-name"`
 		Type        string      `json:"type"         edn:"session/type"`

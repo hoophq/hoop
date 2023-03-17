@@ -15,6 +15,7 @@ import (
 
 	rv "github.com/runopsio/hoop/gateway/review"
 	justintime "github.com/runopsio/hoop/gateway/review/jit"
+	"github.com/runopsio/hoop/gateway/session"
 
 	"github.com/runopsio/hoop/gateway/plugin"
 	pluginsrbac "github.com/runopsio/hoop/gateway/transport/plugins/accesscontrol"
@@ -72,10 +73,10 @@ var disconnectSink = struct {
 	mu:    sync.Mutex{},
 }
 
-func LoadPlugins(apiURL string) {
+func LoadPlugins(sessionStore *session.Storage, pluginStore *plugin.Storage, apiURL string) {
 	allPlugins = []Plugin{
 		pluginsaudit.New(),
-		pluginsindex.New(),
+		pluginsindex.New(sessionStore, pluginStore),
 		pluginsreview.New(apiURL),
 		pluginsjit.New(apiURL),
 		pluginsdlp.New(),

@@ -10,8 +10,8 @@ require (
 	github.com/coreos/go-oidc/v3 v3.4.0
 	github.com/getsentry/sentry-go v0.18.0
 	github.com/gin-contrib/static v0.0.1
-	github.com/gin-contrib/timeout v0.0.3
 	github.com/gin-gonic/gin v1.8.1
+	github.com/go-co-op/gocron v1.18.1
 	github.com/go-git/go-billy/v5 v5.4.1
 	github.com/go-git/go-git/v5 v5.5.2
 	github.com/golang-jwt/jwt/v4 v4.4.2
@@ -60,7 +60,6 @@ require (
 	github.com/cloudflare/circl v1.1.0 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
-	github.com/go-co-op/gocron v1.18.1 // indirect
 	github.com/go-git/gcfg v1.5.0 // indirect
 	github.com/go-playground/locales v0.14.0 // indirect
 	github.com/go-playground/universal-translator v0.18.0 // indirect
