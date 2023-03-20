@@ -25,6 +25,7 @@ type (
 	UserService interface {
 		FindBySub(sub string) (*user.Context, error)
 		GetOrgByName(name string) (*user.Org, error)
+		GetOrgNameByID(id string) (string, error)
 		FindInvitedUser(email string) (*user.InvitedUser, error)
 		Persist(u any) error
 	}
@@ -191,11 +192,6 @@ func (s *Service) signup(context *user.Context, sub string, idTokenClaims map[st
 			status = user.StatusActive
 		}
 
-		var org string
-		if context.Org != nil {
-			org = context.Org.Id
-		}
-
 		if newOrg {
 			status = user.StatusActive
 			if len(groupsClaim) == 0 {
@@ -211,8 +207,18 @@ func (s *Service) signup(context *user.Context, sub string, idTokenClaims map[st
 		}
 
 		if invitedUser != nil {
+			if context.Org == nil {
+				orgName, err := s.UserService.GetOrgNameByID(invitedUser.Org)
+				if err != nil {
+					return err
+				}
+				context.Org = &user.Org{
+					Id:   invitedUser.Org,
+					Name: orgName,
+				}
+			}
+
 			status = user.StatusActive
-			org = invitedUser.Org
 			if len(groupsClaim) == 0 {
 				groups = invitedUser.Groups
 			}
@@ -220,7 +226,7 @@ func (s *Service) signup(context *user.Context, sub string, idTokenClaims map[st
 
 		context.User = &user.User{
 			Id:     sub,
-			Org:    org,
+			Org:    context.Org.Id,
 			Name:   profileName,
 			Email:  email,
 			Status: status,
