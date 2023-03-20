@@ -29,7 +29,7 @@ type SearchRequest struct {
 func (a *Handler) Search(c *gin.Context) {
 	obj, _ := c.Get("context")
 	ctx := obj.(*user.Context)
-	if ctx.User.Id == "" || ctx.Org.Id == "" {
+	if ctx.User.Email == "" || ctx.Org.Id == "" {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "missing org or user identifier"})
 		return
 	}
@@ -38,7 +38,7 @@ func (a *Handler) Search(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	bleveSearchRequest, err := req.parse(ctx.User.Id, ctx.User.IsAdmin())
+	bleveSearchRequest, err := req.parse(ctx.User.Email, ctx.User.IsAdmin())
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
