@@ -5,7 +5,7 @@ go 1.19
 require (
 	// latest version breaks when using the loader to stderr
 	// update to latest version after this https://github.com/briandowns/spinner/pull/136
-	github.com/briandowns/spinner v1.18.0
+	github.com/briandowns/spinner v1.23.0
 	github.com/creack/pty v1.1.18
 	github.com/runopsio/hoop/common v0.0.0-00010101000000-000000000000
 	github.com/spf13/cobra v1.5.0
