@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
+	"github.com/go-co-op/gocron"
 	"github.com/runopsio/hoop/common/memory"
 	"github.com/runopsio/hoop/common/pg"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -12,25 +14,42 @@ import (
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	"github.com/runopsio/hoop/gateway/indexer"
 	"github.com/runopsio/hoop/gateway/plugin"
+	"github.com/runopsio/hoop/gateway/session"
 )
 
-const Name string = "indexer"
+const (
+	Name                 = "indexer"
+	defaultIndexJobStart = "23:30"
+)
 
 type (
 	indexPlugin struct {
 		name            string
 		started         bool
+		sessionStore    *session.Storage
+		pluginStore     *plugin.Storage
 		indexers        memory.Store
 		walSessionStore memory.Store
 	}
 )
 
-func New() *indexPlugin {
-	return &indexPlugin{
+func New(sessionStore *session.Storage, pluginStore *plugin.Storage) *indexPlugin {
+	p := &indexPlugin{
 		name:            Name,
+		sessionStore:    sessionStore,
+		pluginStore:     pluginStore,
 		indexers:        memory.New(),
 		walSessionStore: memory.New(),
 	}
+	scheduler := gocron.NewScheduler(time.UTC).SingletonMode()
+	scheduler.Every(1).Day().At(defaultIndexJobStart).Do(func() {
+		log.Printf("job=index - starting")
+		if err := indexer.StartJobIndex(p.sessionStore, p.pluginStore); err != nil {
+			log.Printf("job=index - failed processing, err=%v", err)
+		}
+	})
+	scheduler.StartAsync()
+	return p
 }
 
 func (p *indexPlugin) Name() string { return p.name }
@@ -61,7 +80,7 @@ func (p *indexPlugin) OnConnect(config plugin.Config) error {
 			}()
 			for s := range indexCh {
 				log.Printf("session=%v - starting indexing", s.ID)
-				index, err := indexer.Open(s.OrgID)
+				index, err := indexer.NewIndexer(s.OrgID)
 				if err != nil {
 					log.Printf("session=%v - failed opening index, err=%v", s.ID, err)
 					continue
@@ -75,6 +94,7 @@ func (p *indexPlugin) OnConnect(config plugin.Config) error {
 	}
 	return p.writeOnConnect(config)
 }
+
 func (p *indexPlugin) OnReceive(c plugin.Config, config []string, pkt *pb.Packet) error {
 	switch pb.PacketType(pkt.GetType()) {
 	case pbagent.PGConnectionWrite:

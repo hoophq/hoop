@@ -15,8 +15,6 @@ import (
 	"github.com/runopsio/hoop/gateway/user"
 )
 
-const maxSearchLimit = 50
-
 type Handler struct{}
 
 type SearchRequest struct {
@@ -31,7 +29,7 @@ type SearchRequest struct {
 func (a *Handler) Search(c *gin.Context) {
 	obj, _ := c.Get("context")
 	ctx := obj.(*user.Context)
-	if ctx.User.Id == "" || ctx.Org.Id == "" {
+	if ctx.User.Email == "" || ctx.Org.Id == "" {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "missing org or user identifier"})
 		return
 	}
@@ -40,18 +38,19 @@ func (a *Handler) Search(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	bleveSearchRequest, err := req.parse(ctx.User.Id, ctx.User.IsAdmin())
+	bleveSearchRequest, err := req.parse(ctx.User.Email, ctx.User.IsAdmin())
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
-	index, err := Open(ctx.User.Org)
+	index, err := NewIndexer(ctx.User.Org)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 
-	log.Printf("org=%v, user=%v, query=[%v] - searching", ctx.Org.Id, ctx.User.Id, req.QueryString)
+	log.Printf("org=%v, user=%v, name=%v, query=[%v] - searching",
+		ctx.Org.Id, ctx.User.Id, index.Name(), req.QueryString)
 	searchResult, err := index.Search(bleveSearchRequest)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})

@@ -59,14 +59,14 @@ func (m *redactPostgresMiddleware) Handler(next pg.NextFn, pkt *pg.Packet, w pg.
 		_, _ = m.typedPackets.Write(pkt.Encode())
 	}
 	if pktLength > m.maxPacketLength || m.rowCount >= m.maxRows {
-		log.Printf("redact and write, buffersize=%v, rows=%v/%v", pktLength, m.maxRows, m.rowCount)
+		log.Printf("redact and write, buffersize=%v, rows=%v/%v", pktLength, m.rowCount, m.maxRows)
 		m.redactAndWrite(w)
 		return
 	}
 	// assuming that a DataRow starts the buffering
 	// and a server ready for query packet ends it.
 	if pkt.Type() == pgtypes.ServerReadyForQuery {
-		log.Printf("redact and write, rows=%v/%v", m.maxRows, m.rowCount)
+		log.Printf("redact and write, rows=%v/%v", m.rowCount, m.maxRows)
 		m.redactAndWrite(w)
 	}
 }

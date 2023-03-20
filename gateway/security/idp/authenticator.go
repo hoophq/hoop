@@ -3,7 +3,6 @@ package idp
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -169,7 +168,7 @@ func addCustomScopes(scopes []string, customScope string) []string {
 }
 
 func downloadJWKS(jwksURL string) *keyfunc.JWKS {
-	fmt.Println("Downloading provider public key")
+	log.Println("downloading provider public key")
 	options := keyfunc.Options{
 		Ctx: context.Background(),
 		RefreshErrorHandler: func(err error) {

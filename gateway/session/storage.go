@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/runopsio/hoop/gateway/plugin"
 
@@ -246,6 +247,29 @@ func (s *Storage) queryDecoder(query string, into any, args ...any) error {
 	return edn.Unmarshal(httpBody, into)
 }
 
+// ListAllSessionsID fetches sessions (id,org-id) where start_date > fromDate
+func (s *Storage) ListAllSessionsID(fromDate time.Time) ([]*Session, error) {
+	query := fmt.Sprintf(`
+    {:query {
+        :find [id org-id]
+        :in [arg-start-date]
+        :keys [xt/id session/org-id]
+        :where [[?s :xt/id id]
+                [?s :session/org-id org-id]
+                [?s :session/start-date start-date]
+                [(> start-date arg-start-date)]]}
+    :in-args [#inst%q]}`, fromDate.Format(time.RFC3339))
+	httpBody, err := s.QueryRaw([]byte(query))
+	if err != nil {
+		return nil, err
+	}
+	var sessionList []*Session
+	if strings.Contains(string(httpBody), ":xtdb.error") {
+		return nil, fmt.Errorf(string(httpBody))
+	}
+	return sessionList, edn.Unmarshal(httpBody, &sessionList)
+}
+
 func (s *Storage) NewGenericStorageWriter() *GenericStorageWriter {
 	return &GenericStorageWriter{
 		persistFn: s.Persist,
@@ -260,7 +284,7 @@ func (s *GenericStorageWriter) Write(p plugin.Config) error {
 	}
 	sess := &Session{
 		ID:               p.SessionId,
-		User:             p.UserID,
+		UserEmail:        p.UserEmail,
 		UserID:           p.UserID,
 		UserName:         p.UserName,
 		Type:             p.ConnectionType,

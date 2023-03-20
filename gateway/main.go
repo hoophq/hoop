@@ -5,6 +5,7 @@ import (
 	"github.com/runopsio/hoop/gateway/jobs"
 	"log"
 	"os"
+	"time"
 
 	"github.com/runopsio/hoop/gateway/analytics"
 	"github.com/runopsio/hoop/gateway/indexer"
@@ -32,16 +33,22 @@ import (
 
 func Run() {
 	fmt.Println(string(version.JSON()))
-	s := &xtdb.Storage{}
-	if err := s.Connect(); err != nil {
+	s := xtdb.New()
+	log.Println("syncing xtdb at", s.Address())
+	if err := s.Sync(time.Second * 40); err != nil {
 		panic(err)
 	}
+	log.Println("sync with success")
 
 	profile := os.Getenv("PROFILE")
 	idProvider := idp.NewProvider(profile)
 	analyticsService := analytics.New()
 
-	transport.LoadPlugins(idProvider.ApiURL)
+	transport.LoadPlugins(
+		&session.Storage{Storage: s},
+		&plugin.Storage{Storage: s},
+		idProvider.ApiURL,
+	)
 
 	agentService := agent.Service{Storage: &agent.Storage{Storage: s}}
 	pluginService := plugin.Service{Storage: &plugin.Storage{Storage: s}}
