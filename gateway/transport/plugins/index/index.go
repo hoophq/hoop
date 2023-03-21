@@ -3,6 +3,7 @@ package index
 import (
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/go-co-op/gocron"
@@ -50,8 +51,13 @@ func New(sessionStore *session.Storage, pluginStore *plugin.Storage) *indexPlugi
 	return p
 }
 
-func (p *indexPlugin) Name() string                         { return p.name }
-func (p *indexPlugin) OnStartup(config plugin.Config) error { return nil }
+func (p *indexPlugin) Name() string { return p.name }
+func (p *indexPlugin) OnStartup(config plugin.Config) error {
+	if fi, _ := os.Stat(plugin.IndexPath); fi == nil || !fi.IsDir() {
+		return fmt.Errorf("failed to retrieve index path info, path=%v", plugin.IndexPath)
+	}
+	return nil
+}
 
 func (p *indexPlugin) OnConnect(config plugin.Config) error {
 	if config.Org == "" || config.SessionId == "" {

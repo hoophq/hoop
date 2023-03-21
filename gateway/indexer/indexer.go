@@ -19,20 +19,11 @@ import (
 	_ "github.com/blevesearch/bleve/v2/analysis/lang/en"
 )
 
-// const defaultPluginPath = "/opt/hoop/indexes"
-
 var (
-	// PluginIndexPath       = os.Getenv("PLUGIN_INDEX_PATH")
 	indexFolderTimeFormat = "2006-01-02T15.04.05.999999999Z07.00"
 	runtimeConfig         = map[string]any{"bolt_timeout": "10s"}
 	stateFileName         = "current-index"
 )
-
-// func init() {
-// 	if PluginIndexPath == "" {
-// 		PluginIndexPath = defaultPluginPath
-// 	}
-// }
 
 type updateStateFileFunc func() error
 
