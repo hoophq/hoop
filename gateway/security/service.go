@@ -7,6 +7,7 @@ import (
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/user"
 	"golang.org/x/oauth2"
+	"log"
 )
 
 type (
@@ -86,6 +87,7 @@ func (s *Service) Callback(state, code string) string {
 	var idTokenClaims map[string]any
 	if err := idToken.Claims(&idTokenClaims); err != nil {
 		s.loginOutcome(login, outcomeError)
+		log.Printf("failed extracting ID Token claims, err: %v\n", err)
 		return login.Redirect + "?error=unexpected_error"
 	}
 
@@ -133,11 +135,13 @@ func (s *Service) Callback(state, code string) string {
 func (s *Service) exchangeCodeByToken(code string) (*oauth2.Token, *oidc.IDToken, error) {
 	token, err := s.Provider.Exchange(s.Provider.Context, code)
 	if err != nil {
+		log.Printf("failed to exchange authorization code, err: %v\n", err)
 		return nil, nil, err
 	}
 
 	idToken, err := s.Provider.VerifyIDToken(token)
 	if err != nil {
+		log.Printf("failed to verify ID Token, err: %v\n", err)
 		return nil, nil, err
 	}
 
