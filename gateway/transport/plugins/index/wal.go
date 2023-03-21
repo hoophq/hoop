@@ -2,11 +2,11 @@ package index
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"sync"
 	"time"
 
+	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/gateway/indexer"
 	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/tidwall/wal"

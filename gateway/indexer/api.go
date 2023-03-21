@@ -2,7 +2,6 @@ package indexer
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 
 	// highlighters
@@ -27,8 +26,8 @@ type SearchRequest struct {
 }
 
 func (a *Handler) Search(c *gin.Context) {
-	obj, _ := c.Get("context")
-	ctx := obj.(*user.Context)
+	ctx := user.ContextUser(c)
+	log := user.ContextLogger(c)
 	if ctx.User.Email == "" || ctx.Org.Id == "" {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "missing org or user identifier"})
 		return
@@ -49,8 +48,7 @@ func (a *Handler) Search(c *gin.Context) {
 		return
 	}
 
-	log.Printf("org=%v, isadmin=%v, user=%v, index=%v, query=[%v] - searching",
-		ctx.Org.Id, ctx.User.IsAdmin(), ctx.User.Email, index.Name(), req.QueryString)
+	log.With("index", index.Name()).Infof(req.QueryString)
 	searchResult, err := index.Search(bleveSearchRequest)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})

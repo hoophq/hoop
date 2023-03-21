@@ -1,10 +1,11 @@
 package user
 
 import (
-	"github.com/getsentry/sentry-go"
-	pb "github.com/runopsio/hoop/common/proto"
-	"log"
 	"net/http"
+
+	"github.com/getsentry/sentry-go"
+	"github.com/runopsio/hoop/common/log"
+	pb "github.com/runopsio/hoop/common/proto"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"

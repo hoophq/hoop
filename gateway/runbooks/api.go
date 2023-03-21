@@ -2,14 +2,13 @@ package runbooks
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 	"time"
 
+	// "github.com/runopsio/hoop/common/log"
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
-
 	"github.com/runopsio/hoop/gateway/clientexec"
 	"github.com/runopsio/hoop/gateway/runbooks/templates"
 	"github.com/runopsio/hoop/gateway/user"
@@ -54,16 +53,16 @@ type Handler struct {
 }
 
 func (h *Handler) FindAll(c *gin.Context) {
-	obj, _ := c.Get("context")
-	ctx, _ := obj.(*user.Context)
+	ctx := user.ContextUser(c)
+	log := user.ContextLogger(c)
 	config, err := h.getRunbookConfig(ctx, c, c.Param("name"))
 	if err != nil {
-		log.Println(err)
+		log.Infoln(err)
 		return
 	}
 	list, err := listRunbookFiles(config)
 	if err != nil {
-		log.Printf("failed listing runbooks, err=%v", err)
+		log.Infof("failed listing runbooks, err=%v", err)
 		c.JSON(http.StatusUnprocessableEntity, gin.H{
 			"message": fmt.Sprintf("failed listing runbooks, reason=%v", err),
 		})
@@ -73,8 +72,8 @@ func (h *Handler) FindAll(c *gin.Context) {
 }
 
 func (h *Handler) RunExec(c *gin.Context) {
-	obj, _ := c.Get("context")
-	ctx, _ := obj.(*user.Context)
+	ctx := user.ContextUser(c)
+	log := user.ContextLogger(c)
 	var req RunbookRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -85,7 +84,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 	connectionName := c.Param("name")
 	config, err := h.getRunbookConfig(ctx, c, connectionName)
 	if err != nil {
-		log.Println(err)
+		log.Infoln(err)
 		return
 	}
 
@@ -122,8 +121,8 @@ func (h *Handler) RunExec(c *gin.Context) {
 	for key, val := range req.Parameters {
 		params += fmt.Sprintf("%s:len[%v],", key, len(val))
 	}
-	log.Printf("session=%s - runbook exec, commit=%s, name=%s, connection=%s, parameters=%v",
-		client.SessionID(), runbook.CommitHash[:8], req.FileName, connectionName, strings.TrimSpace(params))
+	log.With("session", client.SessionID()).Infof("runbook exec, commit=%s, name=%s, connection=%s, parameters=%v",
+		runbook.CommitHash[:8], req.FileName, connectionName, strings.TrimSpace(params))
 	c.Header("Location", fmt.Sprintf("/api/plugins/audit/sessions/%s/status", client.SessionID()))
 	statusCode := http.StatusOK
 	if req.Redirect {

@@ -2,10 +2,10 @@ package jit
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	"github.com/runopsio/hoop/gateway/notification"

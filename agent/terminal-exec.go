@@ -2,8 +2,9 @@ package agent
 
 import (
 	"fmt"
-	"log"
 	"strconv"
+
+	"github.com/runopsio/hoop/common/log"
 
 	"github.com/hoophq/pluginhooks"
 	"github.com/runopsio/hoop/agent/dlp"
@@ -41,7 +42,7 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 		a.sendClientSessionClose(sessionID, errMsg)
 		return
 	}
-	log.Printf("session=%v, tty=false - executing command=%q", string(sessionID), cmd.String())
+	log.Printf("session=%v, tty=false - executing command:%v", string(sessionID), cmd.String())
 
 	spec := map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)}
 	stdoutw := pb.NewHookStreamWriter(a.client, pbclient.WriteStdout, spec, pluginHooks)

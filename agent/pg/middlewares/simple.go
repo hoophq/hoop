@@ -1,7 +1,7 @@
 package middlewares
 
 import (
-	"log"
+	"github.com/runopsio/hoop/common/log"
 
 	"github.com/runopsio/hoop/agent/pg"
 )

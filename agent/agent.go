@@ -5,13 +5,14 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/runopsio/hoop/common/log"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/runopsio/hoop/agent/dlp"
@@ -161,7 +162,8 @@ func (a *Agent) Run(svrAddr, token string, firstConnTry bool) {
 			}
 			return
 		}
-
+		log.With("session", string(pkt.Spec[pb.SpecGatewaySessionID])).
+			Debugf("received client packet [%v]", pkt.Type)
 		switch pkt.Type {
 		case pbagent.GatewayConnectOK:
 			fmt.Println("connected!")

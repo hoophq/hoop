@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
+
+	"github.com/runopsio/hoop/common/log"
 
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/runtime"

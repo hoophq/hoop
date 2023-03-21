@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/getsentry/sentry-go"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/getsentry/sentry-go"
+	"github.com/runopsio/hoop/common/log"
 )
 
 type (

@@ -1,10 +1,11 @@
 package session
 
 import (
-	"log"
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/runopsio/hoop/common/log"
 
 	"github.com/getsentry/sentry-go"
 
@@ -46,8 +47,7 @@ var availableSessionOptions = []SessionOptionKey{
 }
 
 func (a *Handler) StatusHistory(c *gin.Context) {
-	ctx, _ := c.Get("context")
-	context := ctx.(*user.Context)
+	context := user.ContextUser(c)
 
 	sessionID := c.Param("session_id")
 	historyList, err := a.Service.EntityHistory(context, sessionID)
@@ -66,8 +66,7 @@ func (a *Handler) StatusHistory(c *gin.Context) {
 }
 
 func (a *Handler) FindOne(c *gin.Context) {
-	ctx, _ := c.Get("context")
-	context := ctx.(*user.Context)
+	context := user.ContextUser(c)
 
 	sessionID := c.Param("session_id")
 	session, err := a.Service.FindOne(context, sessionID)
@@ -87,8 +86,7 @@ func (a *Handler) FindOne(c *gin.Context) {
 }
 
 func (a *Handler) FindAll(c *gin.Context) {
-	ctx, _ := c.Get("context")
-	context := ctx.(*user.Context)
+	context := user.ContextUser(c)
 
 	var options []*SessionOption
 	for _, optKey := range availableSessionOptions {

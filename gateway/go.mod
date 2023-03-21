@@ -10,6 +10,7 @@ require (
 	github.com/coreos/go-oidc/v3 v3.4.0
 	github.com/getsentry/sentry-go v0.18.0
 	github.com/gin-contrib/static v0.0.1
+	github.com/gin-contrib/zap v0.1.0
 	github.com/gin-gonic/gin v1.8.1
 	github.com/go-co-op/gocron v1.18.1
 	github.com/go-git/go-billy/v5 v5.4.1
@@ -19,6 +20,7 @@ require (
 	github.com/runopsio/hoop/common v0.0.0-00010101000000-000000000000
 	github.com/segmentio/analytics-go/v3 v3.2.1
 	github.com/tidwall/wal v1.1.7
+	go.uber.org/zap v1.24.0
 	golang.org/x/oauth2 v0.0.0-20221006150949-b44042a4b9c1
 	google.golang.org/grpc v1.49.0
 	olympos.io/encoding/edn v0.0.0-20201019073823-d3554ca0b0a3
@@ -96,6 +98,10 @@ require (
 	github.com/ugorji/go/codec v1.2.7 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	go.etcd.io/bbolt v1.3.5 // indirect
+	go.opentelemetry.io/otel v1.10.0 // indirect
+	go.opentelemetry.io/otel/trace v1.10.0 // indirect
+	go.uber.org/atomic v1.7.0 // indirect
+	go.uber.org/multierr v1.6.0 // indirect
 	golang.org/x/crypto v0.3.0 // indirect
 	golang.org/x/net v0.2.0 // indirect
 	golang.org/x/sync v0.1.0 // indirect

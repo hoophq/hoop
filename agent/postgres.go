@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+
+	"github.com/runopsio/hoop/common/log"
 
 	"github.com/hoophq/pluginhooks"
 	pgtypes "github.com/runopsio/hoop/common/pg"
