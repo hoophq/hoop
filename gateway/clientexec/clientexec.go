@@ -160,8 +160,7 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 			if err := c.client.Send(stdinPkt); err != nil {
 				return newError(fmt.Errorf("failed executing command, err=%v", err))
 			}
-		case pbclient.WriteStdout,
-			pbclient.WriteStderr:
+		case pbclient.WriteStdout, pbclient.WriteStderr:
 			if err := c.write(pkt.Payload); err != nil {
 				return newError(err)
 			}
