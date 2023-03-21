@@ -294,6 +294,7 @@ func (s *GenericStorageWriter) Write(p plugin.Config) error {
 		EventSize:        p.Int64("event_size"),
 		StartSession:     *eventStartDate,
 		EndSession:       p.GetTime("end_time"),
+		DlpCount:         p.Int64("dlp_count"),
 	}
 	eventStreamObj := p.Get("event_stream")
 	eventStreamList, _ := eventStreamObj.([]EventStream)

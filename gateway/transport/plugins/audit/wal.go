@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"reflect"
 	"sync"
 	"time"
+	"unsafe"
 
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/plugin"
@@ -64,28 +66,39 @@ func decodeWalHeader(data []byte) (*walHeader, error) {
 	return &ws, ws.validate()
 }
 
-func addEventStreamHeader(d time.Time, eventType byte) []byte {
-	return append([]byte(d.Format(time.RFC3339Nano)), '\000', eventType, '\000')
+func addEventStreamHeader(d time.Time, eventType byte, dlpCount int64) []byte {
+	result := append([]byte(d.Format(time.RFC3339Nano)), '\000', eventType, '\000')
+	result = append(result, intToByteArray(dlpCount)...) // int64 uses a fixed 8 bytes
+	return append(result, '\000')
 }
 
-func parseEventStream(eventStream []byte) (session.EventStream, int, error) {
+func parseEventStream(eventStream []byte) (session.EventStream, int, int64, error) {
 	position := bytes.IndexByte(eventStream, '\000')
 	if position == -1 {
-		return nil, -1, fmt.Errorf("event stream in wrong format [event-time]")
+		return nil, -1, 0, fmt.Errorf("event stream in wrong format [event-time]")
 	}
 	eventTimeBytes := eventStream[:position]
 	eventTime, err := time.Parse(time.RFC3339Nano, string(eventTimeBytes))
 	if err != nil {
-		return nil, -1, fmt.Errorf("failed parsing event time, err=%v", err)
+		return nil, -1, 0, fmt.Errorf("failed parsing event time, err=%v", err)
 	}
 	position += 2
 	if len(eventStream) <= position {
-		return nil, -1, fmt.Errorf("event stream in wrong format [event-type]")
+		return nil, -1, 0, fmt.Errorf("event stream in wrong format [event-type]")
 	}
 	eventType := eventStream[position-1]
+
+	// dlp counter uses 8-byte (int64)
+	position = bytes.LastIndexByte(eventStream, '\000')
+	if position == -1 {
+		return nil, -1, 0, fmt.Errorf("event stream in wrong format [dlp-count]")
+	}
+	eventDlpCounter := eventStream[position-8 : position]
+	dlpCounter := byteArrayToInt(eventDlpCounter)
+
 	eventStreamLength := len(eventStream[position:])
 	return session.EventStream{eventTime, eventType, eventStream[position:]},
-		eventStreamLength, nil
+		eventStreamLength, dlpCounter, nil
 }
 
 func (p *auditPlugin) writeOnConnect(config plugin.Config) error {
@@ -127,7 +140,8 @@ func (p *auditPlugin) writeOnReceive(sessionID string, eventType byte, event []b
 	if err != nil || lastIndex == 0 {
 		return fmt.Errorf("failed retrieving wal file content, lastindex=%v, err=%v", lastIndex, err)
 	}
-	eventHeader := addEventStreamHeader(time.Now().UTC(), eventType)
+	dlpCount := int64(20) // get dlp count
+	eventHeader := addEventStreamHeader(time.Now().UTC(), eventType, dlpCount)
 	if err := walogm.log.Write(lastIndex+1, append(eventHeader, event...)); err != nil {
 		return fmt.Errorf("failed writing into wal file, position=%v, err=%v", lastIndex+1, err)
 	}
@@ -161,6 +175,7 @@ func (p *auditPlugin) writeOnClose(sessionID string) error {
 	idx := uint64(2)
 	var eventStreamList []session.EventStream
 	eventSize := int64(0)
+	dlpCounter := int64(0)
 	for {
 		eventStreamBytes, err := walogm.log.Read(idx)
 		if err != nil && err != wal.ErrNotFound {
@@ -172,12 +187,13 @@ func (p *auditPlugin) writeOnClose(sessionID string) error {
 		if err == wal.ErrNotFound {
 			break
 		}
-		eventStream, size, err := parseEventStream(eventStreamBytes)
+		eventStream, size, dlpCount, err := parseEventStream(eventStreamBytes)
 		if err != nil {
 			return err
 		}
 		eventStreamList = append(eventStreamList, eventStream)
 		eventSize += int64(size)
+		dlpCounter += dlpCount
 		idx++
 	}
 	endDate := time.Now().UTC()
@@ -195,6 +211,7 @@ func (p *auditPlugin) writeOnClose(sessionID string) error {
 			"event_size":   eventSize,
 			"start_date":   wh.StartDate,
 			"end_time":     &endDate,
+			"dlp_count":    dlpCounter,
 		},
 	})
 	if err != nil {
@@ -218,4 +235,18 @@ func (p *auditPlugin) truncateTCPEventStream(eventStream []byte, connType string
 		return eventStream[0:5000]
 	}
 	return eventStream
+}
+
+func intToByteArray(i int64) []byte {
+	var b []byte
+	sh := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+	sh.Len = 8
+	sh.Cap = 8
+	sh.Data = uintptr(unsafe.Pointer(&i))
+
+	return b[:]
+}
+
+func byteArrayToInt(b []byte) int64 {
+	return *(*int64)(unsafe.Pointer(&b[0]))
 }
