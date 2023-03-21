@@ -70,11 +70,7 @@ type (
 	}
 )
 
-const (
-	DBSecretProvider SecretProvider = "database"
-
-	nilExitCode = -100
-)
+const DBSecretProvider SecretProvider = "database"
 
 func (s *Service) FindAll(context *user.Context) ([]BaseConnection, error) {
 	result, err := s.Storage.FindAll(context)

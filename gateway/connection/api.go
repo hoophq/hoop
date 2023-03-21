@@ -155,10 +155,8 @@ func (h *Handler) RunExec(c *gin.Context) {
 	go func() {
 		defer close(clientResp)
 		defer client.Close()
-		resp := client.Run([]byte(req.Script), nil)
-		// exitCode, err := h.Service.ProcessClientExec([]byte(req.Script), client)
 		select {
-		case clientResp <- resp:
+		case clientResp <- client.Run([]byte(req.Script), nil):
 		default:
 		}
 	}()

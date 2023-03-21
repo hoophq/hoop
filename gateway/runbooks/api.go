@@ -112,10 +112,8 @@ func (h *Handler) RunExec(c *gin.Context) {
 	go func() {
 		defer close(clientResp)
 		defer client.Close()
-		resp := client.Run(runbook.InputFile, runbook.EnvVars)
-		// exitCode, err := processClientExec(runbook.InputFile, encEnvVars, client)
 		select {
-		case clientResp <- resp:
+		case clientResp <- client.Run(runbook.InputFile, runbook.EnvVars):
 		default:
 		}
 	}()
