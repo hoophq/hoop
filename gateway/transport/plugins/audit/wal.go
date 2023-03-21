@@ -89,7 +89,7 @@ func parseEventStream(eventStream []byte) (session.EventStream, int, error) {
 }
 
 func (p *auditPlugin) writeOnConnect(config plugin.Config) error {
-	walFolder := fmt.Sprintf(walFolderTmpl, pluginAuditPath, config.Org, config.SessionId)
+	walFolder := fmt.Sprintf(walFolderTmpl, plugin.AuditPath, config.Org, config.SessionId)
 	walog, err := wal.Open(walFolder, wal.DefaultOptions)
 	if err != nil {
 		return fmt.Errorf("failed opening wal file, err=%v", err)

@@ -13,25 +13,17 @@ import (
 	"github.com/blevesearch/bleve/v2/index/scorch"
 	"github.com/blevesearch/bleve/v2/mapping"
 	"github.com/runopsio/hoop/gateway/indexer/searchquery"
+	"github.com/runopsio/hoop/gateway/plugin"
 
 	// languages
 	_ "github.com/blevesearch/bleve/v2/analysis/lang/en"
 )
 
-const defaultPluginPath = "/opt/hoop/indexes"
-
 var (
-	PluginIndexPath       = os.Getenv("PLUGIN_INDEX_PATH")
 	indexFolderTimeFormat = "2006-01-02T15.04.05.999999999Z07.00"
 	runtimeConfig         = map[string]any{"bolt_timeout": "10s"}
 	stateFileName         = "current-index"
 )
-
-func init() {
-	if PluginIndexPath == "" {
-		PluginIndexPath = defaultPluginPath
-	}
-}
 
 type updateStateFileFunc func() error
 
@@ -104,7 +96,7 @@ func openStateFileIndex(indexBasePath, orgID string) (bleve.Index, error) {
 }
 
 func newBleveIndex(orgID string) (bleve.Index, updateStateFileFunc, error) {
-	indexRootPath := path.Join(PluginIndexPath, orgID)
+	indexRootPath := path.Join(plugin.IndexPath, orgID)
 	indexPath := path.Join(indexRootPath, time.Now().UTC().Format(indexFolderTimeFormat))
 	if err := os.MkdirAll(indexPath, 0700); err != nil {
 		return nil, nil, fmt.Errorf("failed creating index path, err=%v", err)
@@ -141,7 +133,7 @@ func NewIndexer(orgID string) (*Indexer, error) {
 	if indexer, ok := mutexIndexer[orgID]; ok {
 		return indexer, nil
 	}
-	index, err := openStateFileIndex(PluginIndexPath, orgID)
+	index, err := openStateFileIndex(plugin.IndexPath, orgID)
 	if err != nil {
 		return nil, err
 	}
