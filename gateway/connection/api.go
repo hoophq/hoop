@@ -2,16 +2,14 @@ package connection
 
 import (
 	"fmt"
-	"github.com/getsentry/sentry-go"
-	"github.com/google/uuid"
-	"github.com/runopsio/hoop/common/grpc"
-	pb "github.com/runopsio/hoop/common/proto"
 	"log"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
+	"github.com/runopsio/hoop/gateway/clientexec"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
@@ -24,7 +22,6 @@ type (
 		Persist(httpMethod string, context *user.Context, c *Connection) (int64, error)
 		FindAll(context *user.Context) ([]BaseConnection, error)
 		FindOne(context *user.Context, name string) (*Connection, error)
-		ProcessClientExec(inputPayload []byte, client pb.ClientTransport) (int, error)
 	}
 )
 
@@ -149,54 +146,45 @@ func (h *Handler) RunExec(c *gin.Context) {
 		c.JSON(http.StatusNotFound, &ExecErrResponse{Message: "connection not found"})
 		return
 	}
-	sessionID := uuid.NewString()
-	client, err := grpc.Connect("127.0.0.1:8010", getAccessToken(c),
-		grpc.WithOption(grpc.OptionConnectionName, connectionName),
-		grpc.WithOption("origin", pb.ConnectionOriginClientAPI),
-		grpc.WithOption("verb", pb.ClientVerbExec),
-		grpc.WithOption("session-id", sessionID))
+	client, err := clientexec.New(ctx.Org.Id, getAccessToken(c), connectionName)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"session_id": nil, "message": err.Error()})
 		return
 	}
-	clientResp := make(chan ExecResponse)
+	clientResp := make(chan *clientexec.Response)
 	go func() {
 		defer close(clientResp)
 		defer client.Close()
-		exitCode, err := h.Service.ProcessClientExec([]byte(req.Script), client)
+		resp := client.Run([]byte(req.Script), nil)
+		// exitCode, err := h.Service.ProcessClientExec([]byte(req.Script), client)
 		select {
-		case clientResp <- ExecResponse{err, exitCode}:
+		case clientResp <- resp:
 		default:
 		}
 	}()
 
-	log.Printf("session=%s - api exec, connection=%s", sessionID, connectionName)
-	c.Header("Location", fmt.Sprintf("/api/plugins/audit/sessions/%s/status", sessionID))
+	log.Printf("session=%s - api exec, connection=%s", client.SessionID(), connectionName)
+	c.Header("Location", fmt.Sprintf("/api/plugins/audit/sessions/%s/status", client.SessionID()))
 	statusCode := http.StatusOK
 	if req.Redirect {
 		statusCode = http.StatusFound
 	}
 	select {
 	case resp := <-clientResp:
-		switch resp.ExitCode {
-		case nilExitCode:
-			// means the gRPC client returned an error in the client flow
+		if resp.IsError() {
 			c.JSON(http.StatusBadRequest, &ExecErrResponse{
-				SessionID: &sessionID,
-				Message:   fmt.Sprintf("%v", resp.Err)})
-		case 0:
-			c.JSON(statusCode, gin.H{"session_id": sessionID, "exit_code": 0})
-		default:
-			c.JSON(http.StatusBadRequest, &ExecErrResponse{
-				SessionID: &sessionID,
-				Message:   fmt.Sprintf("%v", resp.Err),
-				ExitCode:  &resp.ExitCode})
+				SessionID: &resp.SessionID,
+				Message:   resp.ErrorMessage(),
+				ExitCode:  resp.ExitCode,
+			})
+			return
 		}
+		c.JSON(statusCode, resp)
 	case <-time.After(time.Second * 50):
 		// closing the client will force the goroutine to end
 		// and the result will return async
 		client.Close()
-		c.JSON(http.StatusAccepted, gin.H{"session_id": sessionID, "exit_code": nil})
+		c.JSON(http.StatusAccepted, gin.H{"session_id": client.SessionID(), "exit_code": nil})
 	}
 }
 

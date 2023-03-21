@@ -9,10 +9,8 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
-	"github.com/runopsio/hoop/common/grpc"
-	pb "github.com/runopsio/hoop/common/proto"
 
+	"github.com/runopsio/hoop/gateway/clientexec"
 	"github.com/runopsio/hoop/gateway/runbooks/templates"
 	"github.com/runopsio/hoop/gateway/user"
 )
@@ -105,31 +103,19 @@ func (h *Handler) RunExec(c *gin.Context) {
 		return
 	}
 
-	sessionID := uuid.NewString()
-	client, err := grpc.Connect("127.0.0.1:8010", getAccessToken(c),
-		grpc.WithOption(grpc.OptionConnectionName, connectionName),
-		grpc.WithOption("origin", pb.ConnectionOriginClientAPI),
-		grpc.WithOption("verb", pb.ClientVerbExec),
-		grpc.WithOption("session-id", sessionID))
+	client, err := clientexec.New(ctx.Org.Id, getAccessToken(c), connectionName)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"session_id": nil, "message": err.Error()})
 		return
 	}
-	clientResp := make(chan clientExecResponse)
+	clientResp := make(chan *clientexec.Response)
 	go func() {
 		defer close(clientResp)
 		defer client.Close()
-		var encEnvVars []byte
-		if len(runbook.EnvVars) > 0 {
-			encEnvVars, err = pb.GobEncode(runbook.EnvVars)
-			if err != nil {
-				clientResp <- clientExecResponse{err, nilExitCode}
-				return
-			}
-		}
-		exitCode, err := processClientExec(runbook.InputFile, encEnvVars, client)
+		resp := client.Run(runbook.InputFile, runbook.EnvVars)
+		// exitCode, err := processClientExec(runbook.InputFile, encEnvVars, client)
 		select {
-		case clientResp <- clientExecResponse{err, exitCode}:
+		case clientResp <- resp:
 		default:
 		}
 	}()
@@ -139,33 +125,28 @@ func (h *Handler) RunExec(c *gin.Context) {
 		params += fmt.Sprintf("%s:len[%v],", key, len(val))
 	}
 	log.Printf("session=%s - runbook exec, commit=%s, name=%s, connection=%s, parameters=%v",
-		sessionID, runbook.CommitHash[:8], req.FileName, connectionName, strings.TrimSpace(params))
-	c.Header("Location", fmt.Sprintf("/api/plugins/audit/sessions/%s/status", sessionID))
+		client.SessionID(), runbook.CommitHash[:8], req.FileName, connectionName, strings.TrimSpace(params))
+	c.Header("Location", fmt.Sprintf("/api/plugins/audit/sessions/%s/status", client.SessionID()))
 	statusCode := http.StatusOK
 	if req.Redirect {
 		statusCode = http.StatusFound
 	}
 	select {
 	case resp := <-clientResp:
-		switch resp.exitCode {
-		case nilExitCode:
-			// means the gRPC client returned an error in the client flow
-			c.JSON(statusCode, &RunbookErrResponse{
-				SessionID: &sessionID,
-				Message:   fmt.Sprintf("%v", resp.err)})
-		case 0:
-			c.JSON(statusCode, gin.H{"session_id": sessionID, "exit_code": 0})
-		default:
+		if resp.IsError() {
 			c.JSON(http.StatusBadRequest, &RunbookErrResponse{
-				SessionID: &sessionID,
-				Message:   fmt.Sprintf("%v", resp.err),
-				ExitCode:  &resp.exitCode})
+				SessionID: &resp.SessionID,
+				Message:   resp.ErrorMessage(),
+				ExitCode:  resp.ExitCode,
+			})
+			return
 		}
+		c.JSON(statusCode, resp)
 	case <-time.After(time.Second * 50):
 		// closing the client will force the goroutine to end
 		// and the result will return async
 		client.Close()
-		c.JSON(statusCode, gin.H{"session_id": sessionID, "exit_code": nil})
+		c.JSON(http.StatusAccepted, gin.H{"session_id": client.SessionID(), "exit_code": nil})
 	}
 }
 

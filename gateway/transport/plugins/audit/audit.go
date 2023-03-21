@@ -19,20 +19,20 @@ import (
 const (
 	Name               string = "audit"
 	StorageWriterParam string = "audit_storage_writer"
-	defaultAuditPath   string = "/opt/hoop/sessions"
+	// defaultAuditPath   string = "/opt/hoop/sessions"
 )
 
-var pluginAuditPath string
+// var pluginAuditPath string
 
-func init() {
-	pluginAuditPath = os.Getenv("PLUGIN_AUDIT_PATH")
-	if pluginAuditPath == "" {
-		pluginAuditPath = defaultAuditPath
-	}
-	if pluginAuditPath == "" {
-		pluginAuditPath = defaultAuditPath
-	}
-}
+// func init() {
+// 	pluginAuditPath = os.Getenv("PLUGIN_AUDIT_PATH")
+// 	if pluginAuditPath == "" {
+// 		pluginAuditPath = defaultAuditPath
+// 	}
+// 	if pluginAuditPath == "" {
+// 		pluginAuditPath = defaultAuditPath
+// 	}
+// }
 
 type (
 	auditPlugin struct {
@@ -61,8 +61,8 @@ func (p *auditPlugin) OnStartup(config plugin.Config) error {
 		return nil
 	}
 
-	if err := os.MkdirAll(pluginAuditPath, 0755); err != nil {
-		return fmt.Errorf("failed creating audit path %v, err=%v", pluginAuditPath, err)
+	if err := os.MkdirAll(plugin.AuditPath, 0755); err != nil {
+		return fmt.Errorf("failed creating audit path %v, err=%v", plugin.AuditPath, err)
 	}
 
 	storageWriterObj := config.ParamsData[StorageWriterParam]
