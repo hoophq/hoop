@@ -134,7 +134,6 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 		if pkt == nil {
 			continue
 		}
-		log.Printf("processing packet %v", pkt.Type)
 		switch pkt.Type {
 		case pbclient.SessionOpenWaitingApproval:
 			log.Printf("waiting task to be approved at %v", string(pkt.Payload))
