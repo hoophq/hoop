@@ -136,7 +136,6 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 		}
 		switch pkt.Type {
 		case pbclient.SessionOpenWaitingApproval:
-			log.Printf("waiting task to be approved at %v", string(pkt.Payload))
 			go func() {
 				// It prevents reviewed sessions to stay open forever.
 				// Closing the client will make the Recv method to fail
