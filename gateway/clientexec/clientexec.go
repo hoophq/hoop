@@ -50,6 +50,7 @@ type Response struct {
 	ExitCode  *int   `json:"exit_code"`
 	SessionID string `json:"session_id"`
 	Output    string `json:"output"`
+	Truncated bool   `json:"truncated"`
 	err       error
 }
 
@@ -172,8 +173,13 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 			if err := c.write(pkt.Payload); err != nil {
 				return newError(err).exitCode(exitCode)
 			}
-			output, err := c.readAll()
-			return &Response{Output: string(output), err: err, ExitCode: &exitCode}
+			output, isTrunc, err := c.readAll()
+			return &Response{
+				Output:    string(output),
+				err:       err,
+				ExitCode:  &exitCode,
+				Truncated: isTrunc,
+			}
 		default:
 			return newError(fmt.Errorf("packet type %v not implemented", pkt.Type))
 		}
@@ -191,12 +197,13 @@ func (c *clientExec) write(input []byte) error {
 	return c.wlog.Write(lastIndex+1, input)
 }
 
-func (c *clientExec) readAll() ([]byte, error) {
+func (c *clientExec) readAll() ([]byte, bool, error) {
 	var stdoutData []byte
+	isTruncated := false
 	for i := uint64(1); ; i++ {
 		data, err := c.wlog.Read(i)
 		if err != nil && err != wal.ErrNotFound {
-			return nil, err
+			return nil, false, err
 		}
 		if err == wal.ErrNotFound {
 			break
@@ -204,8 +211,10 @@ func (c *clientExec) readAll() ([]byte, error) {
 		stdoutData = append(stdoutData, data...)
 		if len(stdoutData) > maxResponseBytes {
 			stdoutData = stdoutData[0:maxResponseBytes]
+			isTruncated = true
 			break
 		}
 	}
-	return stdoutData, nil
+
+	return stdoutData, isTruncated, nil
 }
