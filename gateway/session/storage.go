@@ -166,22 +166,18 @@ func (s *Storage) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionLi
 		Total:       len(queryCountResult),
 		HasNextPage: false,
 	}
+	var resultItems [][]Session
 	err := s.queryDecoder(`
 		{:query {
-			:find [id usr usr-id usr-name typ conn verb event-size start-date end-date]
-			:keys [xt/id session/user session/user-id session/user-name
-				   session/type session/connection session/verb session/event-size
-				   session/start-date session/end-date]
+			:find [(pull a [:xt/id :session/user :session/user-id :session/user-name
+				   			:session/type :session/connection :session/verb :session/event-size
+						    :session/start-date :session/end-date :session/dlp-count])]
 			:in [org-id arg-user arg-type arg-conn arg-start-date arg-end-date]
 			:where [[a :session/org-id org-id]
-					[a :xt/id id]
-					[a :session/user usr]
 					[a :session/user-id usr-id]
-					[a :session/user-name usr-name]
 					[a :session/type typ]
 					[a :session/connection conn]
 					[a :session/verb verb]
-					[a :session/event-size event-size]
 					[a :session/start-date start-date]
 					[a :session/end-date end-date]
 					(or [(= arg-user nil)]
@@ -194,13 +190,17 @@ func (s *Storage) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionLi
 						[(> start-date arg-start-date)])
 					(or [(= arg-end-date nil)]
 						[(< start-date arg-end-date)])]
-			:order-by [[start-date :desc]]
 			:limit %v
 			:offset %v}
 		:in-args [%s]}`,
-		&sessionList.Items,
+		&resultItems,
 		limit, offset, inArgsEdn)
 	sessionList.HasNextPage = len(sessionList.Items) == limit
+	items := make([]Session, 0)
+	for _, i := range resultItems {
+		items = append(items, i[0])
+	}
+	sessionList.Items = items
 	return sessionList, err
 }
 
