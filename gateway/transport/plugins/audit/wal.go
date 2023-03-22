@@ -128,7 +128,7 @@ func (p *auditPlugin) writeOnConnect(config plugin.Config) error {
 	return nil
 }
 
-func (p *auditPlugin) writeOnReceive(sessionID string, eventType byte, event []byte) error {
+func (p *auditPlugin) writeOnReceive(sessionID string, eventType byte, dlpCount int64, event []byte) error {
 	walLogObj := p.walSessionStore.Get(sessionID)
 	walogm, ok := walLogObj.(*walLogRWMutex)
 	if !ok {
@@ -140,7 +140,6 @@ func (p *auditPlugin) writeOnReceive(sessionID string, eventType byte, event []b
 	if err != nil || lastIndex == 0 {
 		return fmt.Errorf("failed retrieving wal file content, lastindex=%v, err=%v", lastIndex, err)
 	}
-	dlpCount := int64(20) // get dlp count
 	eventHeader := addEventStreamHeader(time.Now().UTC(), eventType, dlpCount)
 	if err := walogm.log.Write(lastIndex+1, append(eventHeader, event...)); err != nil {
 		return fmt.Errorf("failed writing into wal file, position=%v, err=%v", lastIndex+1, err)

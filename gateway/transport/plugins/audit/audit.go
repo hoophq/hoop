@@ -95,6 +95,7 @@ func (p *auditPlugin) OnConnect(config plugin.Config) error {
 }
 
 func (p *auditPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *pb.Packet) error {
+	dlpCount := int64(20) // get dlp count
 	switch pb.PacketType(pkt.GetType()) {
 	case pbagent.PGConnectionWrite:
 		isSimpleQuery, queryBytes, err := pg.SimpleQueryContent(pkt.Payload)
@@ -104,19 +105,19 @@ func (p *auditPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt
 		if err != nil {
 			return fmt.Errorf("session=%v - failed obtaining simple query data, err=%v", pluginConfig.SessionId, err)
 		}
-		return p.writeOnReceive(pluginConfig.SessionId, 'i', queryBytes)
+		return p.writeOnReceive(pluginConfig.SessionId, 'i', dlpCount, queryBytes)
 	case pbclient.WriteStdout,
 		pbclient.WriteStderr:
-		return p.writeOnReceive(pluginConfig.SessionId, 'o', pkt.Payload)
+		return p.writeOnReceive(pluginConfig.SessionId, 'o', dlpCount, pkt.Payload)
 	case pbclient.SessionClose:
 		defer p.closeSession(pluginConfig.SessionId)
 		if len(pkt.Payload) > 0 {
-			return p.writeOnReceive(pluginConfig.SessionId, 'e', pkt.Payload)
+			return p.writeOnReceive(pluginConfig.SessionId, 'e', dlpCount, pkt.Payload)
 		}
 	case pbagent.ExecWriteStdin,
 		pbagent.TerminalWriteStdin,
 		pbagent.TCPConnectionWrite:
-		return p.writeOnReceive(pluginConfig.SessionId, 'i', pkt.Payload)
+		return p.writeOnReceive(pluginConfig.SessionId, 'i', dlpCount, pkt.Payload)
 	}
 	return nil
 }

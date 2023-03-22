@@ -10,6 +10,7 @@ import (
 	dlp "cloud.google.com/go/dlp/apiv2"
 	"cloud.google.com/go/dlp/apiv2/dlppb"
 	"github.com/hoophq/pluginhooks"
+	pbdlp "github.com/runopsio/hoop/common/dlp"
 	pb "github.com/runopsio/hoop/common/proto"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
@@ -106,18 +107,18 @@ func (c *client) DeidentifyContent(ctx context.Context, conf *deidentifyConfig, 
 	if err != nil {
 		return &Chunk{
 			index:                 chunkIndex,
-			transformationSummary: &transformationSummary{index: chunkIndex, err: err}}
+			transformationSummary: &pbdlp.TransformationSummary{Index: chunkIndex, Err: err}}
 	}
 
-	chunk := &Chunk{index: chunkIndex, transformationSummary: &transformationSummary{index: chunkIndex}}
+	chunk := &Chunk{index: chunkIndex, transformationSummary: &pbdlp.TransformationSummary{Index: chunkIndex}}
 	for _, s := range r.GetOverview().GetTransformationSummaries() {
 		for _, r := range s.Results {
 			result := []string{fmt.Sprintf("%v", r.Count), r.Code.String(), r.Details}
-			chunk.transformationSummary.summaryResult = append(
-				chunk.transformationSummary.summaryResult,
+			chunk.transformationSummary.SummaryResult = append(
+				chunk.transformationSummary.SummaryResult,
 				result)
 		}
-		chunk.transformationSummary.summary = []string{
+		chunk.transformationSummary.Summary = []string{
 			s.InfoType.GetName(),
 			fmt.Sprintf("%v", s.TransformedBytes)}
 	}
@@ -127,7 +128,7 @@ func (c *client) DeidentifyContent(ctx context.Context, conf *deidentifyConfig, 
 		dataRowsBuffer := encodeToDataRow(responseTable)
 		return &Chunk{
 			index:                 chunkIndex,
-			transformationSummary: &transformationSummary{},
+			transformationSummary: &pbdlp.TransformationSummary{},
 			data:                  dataRowsBuffer}
 	}
 	chunk.data = bytes.NewBufferString(r.Item.GetValue())
@@ -146,7 +147,7 @@ func redactChunks(client Client, conf *deidentifyConfig, chunksBuffer []*bytes.B
 			redactedChunk := client.DeidentifyContent(
 				ctx, conf, idx,
 				newBufferInputData(bytes.NewBuffer(chunkB.Bytes())))
-			if redactedChunk.transformationSummary.err != nil {
+			if redactedChunk.transformationSummary.Err != nil {
 				redactedChunk.data = chunkB
 			}
 			chunkCh <- redactedChunk
@@ -168,8 +169,8 @@ func redactChunks(client Client, conf *deidentifyConfig, chunksBuffer []*bytes.B
 
 // joinChunks will recompose the chunks into a unique buffer along with a list of
 // Transformations Summaries
-func joinChunks(chunks []*Chunk) (*bytes.Buffer, []*transformationSummary, error) {
-	var tsList []*transformationSummary
+func joinChunks(chunks []*Chunk) (*bytes.Buffer, []*pbdlp.TransformationSummary, error) {
+	var tsList []*pbdlp.TransformationSummary
 	res := bytes.NewBuffer([]byte{})
 	for _, c := range chunks {
 		if _, err := res.Write(c.data.Bytes()); err != nil {

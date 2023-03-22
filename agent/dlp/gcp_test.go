@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	pbdlp "github.com/runopsio/hoop/common/dlp"
 	"testing"
 )
 
@@ -12,7 +13,7 @@ type fakeClient struct {
 }
 
 func (c *fakeClient) DeidentifyContent(ctx context.Context, conf *deidentifyConfig, chunkIdx int, input *inputData) *Chunk {
-	chunk := &Chunk{index: chunkIdx, transformationSummary: &transformationSummary{}}
+	chunk := &Chunk{index: chunkIdx, transformationSummary: &pbdlp.TransformationSummary{}}
 	if input.inputTable != nil {
 		chunk.data = encodeToDataRow(input.inputTable)
 	}
@@ -20,7 +21,7 @@ func (c *fakeClient) DeidentifyContent(ctx context.Context, conf *deidentifyConf
 		chunk.data = input.inputBuffer
 	}
 	if c.err != nil {
-		chunk.transformationSummary.err = c.err
+		chunk.transformationSummary.Err = c.err
 	}
 	return chunk
 }
@@ -60,8 +61,8 @@ func TestRedactChunks(t *testing.T) {
 			}
 			if tt.client.err != nil {
 				for _, c := range chunks {
-					if c.transformationSummary.err != tt.client.err {
-						t.Errorf("should return error, got=%v, expected=%v", c.transformationSummary.err, tt.client.err)
+					if c.transformationSummary.Err != tt.client.err {
+						t.Errorf("should return error, got=%v, expected=%v", c.transformationSummary.Err, tt.client.err)
 					}
 				}
 			}
