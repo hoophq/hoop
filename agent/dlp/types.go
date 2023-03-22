@@ -17,7 +17,7 @@ const (
 	// this values needs to be low to avoid the max limit of findings per chunk
 	// https://cloud.google.com/dlp/docs/deidentify-sensitive-data#findings-limit
 	defaultMaxChunkSize = 62500
-	maxFindings         = 3000
+	maxFindings         = 2900
 	maxInfoTypes        = 30
 )
 

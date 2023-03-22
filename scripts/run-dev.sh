@@ -19,7 +19,7 @@ echo "--> STARTING GATEWAY ..."
 
 #export GRPC_GO_LOG_SEVERITY_LEVEL=info
 #export GODEBUG=http2debug
-# export GOOGLE_APPLICATION_CREDENTIALS_JSON=$(cat ../misc/profiles/hoop/dlp-serviceaccount.json)
+#export GOOGLE_APPLICATION_CREDENTIALS_JSON=$(cat ../misc/profiles/dlp-serviceaccount.json)
 export PORT=8009
 export PROFILE=dev
 export XTDB_ADDRESS=http://127.0.0.1:3001
