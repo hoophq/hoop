@@ -25,7 +25,6 @@ const (
 type (
 	indexPlugin struct {
 		name            string
-		started         bool
 		sessionStore    *session.Storage
 		pluginStore     *plugin.Storage
 		indexers        memory.Store
@@ -54,14 +53,9 @@ func New(sessionStore *session.Storage, pluginStore *plugin.Storage) *indexPlugi
 
 func (p *indexPlugin) Name() string { return p.name }
 func (p *indexPlugin) OnStartup(config plugin.Config) error {
-	if p.started {
-		return nil
+	if fi, _ := os.Stat(plugin.IndexPath); fi == nil || !fi.IsDir() {
+		return fmt.Errorf("failed to retrieve index path info, path=%v", plugin.IndexPath)
 	}
-	log.Printf("session=%v | indexer | processing on-startup", config.SessionId)
-	if err := os.MkdirAll(indexer.PluginIndexPath, 0755); err != nil {
-		return fmt.Errorf("failed creating index path %v, err=%v", indexer.PluginIndexPath, err)
-	}
-	p.started = true
 	return nil
 }
 
@@ -85,9 +79,7 @@ func (p *indexPlugin) OnConnect(config plugin.Config) error {
 					log.Printf("session=%v - failed opening index, err=%v", s.ID, err)
 					continue
 				}
-				if err := index.Index(s.ID, s); err != nil {
-					log.Printf("session=%v - failed indexing session, err=%v", s.ID, err)
-				}
+				err = index.Index(s.ID, s)
 				log.Printf("session=%v - indexed=%v, err=%v", s.ID, err == nil, err)
 			}
 		}()

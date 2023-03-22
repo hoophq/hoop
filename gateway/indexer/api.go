@@ -49,8 +49,8 @@ func (a *Handler) Search(c *gin.Context) {
 		return
 	}
 
-	log.Printf("org=%v, user=%v, name=%v, query=[%v] - searching",
-		ctx.Org.Id, ctx.User.Id, index.Name(), req.QueryString)
+	log.Printf("org=%v, isadmin=%v, user=%v, index=%v, query=[%v] - searching",
+		ctx.Org.Id, ctx.User.IsAdmin(), ctx.User.Email, index.Name(), req.QueryString)
 	searchResult, err := index.Search(bleveSearchRequest)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})

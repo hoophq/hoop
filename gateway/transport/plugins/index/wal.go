@@ -36,7 +36,7 @@ type walMetadata struct {
 }
 
 func (p *indexPlugin) writeOnConnect(c plugin.Config) error {
-	walFolder := fmt.Sprintf(walFolderTmpl, indexer.PluginIndexPath, c.Org, c.SessionId)
+	walFolder := fmt.Sprintf(walFolderTmpl, plugin.IndexPath, c.Org, c.SessionId)
 	walog, err := wal.Open(walFolder, wal.DefaultOptions)
 	if err != nil {
 		return fmt.Errorf("failed opening wal file, err=%v", err)

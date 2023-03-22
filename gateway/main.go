@@ -2,10 +2,11 @@ package gateway
 
 import (
 	"fmt"
-	"github.com/runopsio/hoop/gateway/jobs"
 	"log"
 	"os"
 	"time"
+
+	"github.com/runopsio/hoop/gateway/jobs"
 
 	"github.com/runopsio/hoop/gateway/analytics"
 	"github.com/runopsio/hoop/gateway/indexer"
@@ -35,7 +36,7 @@ func Run() {
 	fmt.Println(string(version.JSON()))
 	s := xtdb.New()
 	log.Println("syncing xtdb at", s.Address())
-	if err := s.Sync(time.Second * 40); err != nil {
+	if err := s.Sync(time.Second * 60); err != nil {
 		panic(err)
 	}
 	log.Println("sync with success")

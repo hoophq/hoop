@@ -61,6 +61,7 @@ func (p *Provider) VerifyAccessToken(accessToken string) (string, error) {
 
 	token, err := jwt.Parse(accessToken, p.JWKS.Keyfunc)
 	if err != nil {
+		log.Printf("failed validating access token, err: %v\n", err)
 		return "", invalidAuthErr
 	}
 
@@ -81,6 +82,7 @@ func (p *Provider) UserInfoEndpoint(accessToken string) (string, error) {
 		TokenType:   "Bearer",
 	}})
 	if err != nil {
+		log.Printf("failed validating token at userinfo endpoint, err: %v\n", err)
 		return "", invalidAuthErr
 	}
 	if user == nil {
