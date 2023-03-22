@@ -2,19 +2,17 @@ package audit
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"log"
-	"os"
-	"reflect"
-	"sync"
-	"time"
-	"unsafe"
-
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/session"
 	"github.com/tidwall/wal"
+	"log"
+	"os"
+	"sync"
+	"time"
 )
 
 const walFolderTmpl string = `%s/%s-%s-wal`
@@ -89,11 +87,11 @@ func parseEventStream(eventStream []byte) (session.EventStream, int, int64, erro
 	eventType := eventStream[position-1]
 
 	// dlp counter uses 8-byte (int64)
-	position = bytes.LastIndexByte(eventStream, '\000')
-	if position == -1 {
-		return nil, -1, 0, fmt.Errorf("event stream in wrong format [dlp-count]")
+	position += 9
+	if len(eventStream) <= position {
+		return nil, -1, 0, fmt.Errorf("event stream in wrong format [event-type]")
 	}
-	eventDlpCounter := eventStream[position-8 : position]
+	eventDlpCounter := eventStream[position-8 : position-1]
 	dlpCounter := byteArrayToInt(eventDlpCounter)
 
 	eventStreamLength := len(eventStream[position:])
@@ -237,15 +235,12 @@ func (p *auditPlugin) truncateTCPEventStream(eventStream []byte, connType string
 }
 
 func intToByteArray(i int64) []byte {
-	var b []byte
-	sh := (*reflect.SliceHeader)(unsafe.Pointer(&b))
-	sh.Len = 8
-	sh.Cap = 8
-	sh.Data = uintptr(unsafe.Pointer(&i))
-
-	return b[:]
+	var b [8]byte
+	s := b[:]
+	binary.BigEndian.PutUint64(s, uint64(i))
+	return s
 }
 
 func byteArrayToInt(b []byte) int64 {
-	return *(*int64)(unsafe.Pointer(&b[0]))
+	return int64(binary.BigEndian.Uint16(b))
 }
