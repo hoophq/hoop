@@ -3,9 +3,7 @@ package user
 import (
 	"strings"
 
-	"github.com/gin-gonic/gin"
 	pb "github.com/runopsio/hoop/common/proto"
-	"go.uber.org/zap"
 )
 
 type (
@@ -182,25 +180,4 @@ func isInStatus(status StatusType) bool {
 		}
 	}
 	return false
-}
-
-// ContextLogger do a best effort to get the context logger,
-// if it fail to retrieve, returns a noop logger
-func ContextLogger(c *gin.Context) *zap.SugaredLogger {
-	obj, _ := c.Get(ContextLoggerKey)
-	if logger := obj.(*zap.SugaredLogger); logger != nil {
-		return logger
-	}
-	return zap.NewNop().Sugar()
-}
-
-// ContextUser do a best effort to get the user context from the request
-// if it fail, it will return an empty one
-func ContextUser(c *gin.Context) *Context {
-	obj, _ := c.Get("context")
-	ctx := obj.(*Context)
-	if ctx == nil {
-		return &Context{}
-	}
-	return ctx
 }
