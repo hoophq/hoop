@@ -157,7 +157,6 @@ func decodeDlpSummary(pkt *pb.Packet) int64 {
 		sentry.CaptureException(err)
 		return 0
 	}
-	//fmt.Println(ts)
 	counter := int64(0)
 	for _, t := range ts {
 		sr := t.SummaryResult
