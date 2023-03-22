@@ -212,35 +212,33 @@ func (s *Storage) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionLi
 }
 
 func (s *Storage) FindOne(ctx *user.Context, sessionID string) (*Session, error) {
-	var session []Session
+	var resultItems [][]Session
 	err := s.queryDecoder(`
 	{:query {
-		:find [s user user-id user-name type connection verb event-stream event-size start-date end-date]
-		:keys [xt/id session/user session/user-id session/user-name session/type session/connection
-			   session/verb session/event-stream session/event-size
-			   session/start-date session/end-date]
+		:find [(pull s [:xt/id :session/user :session/user-id :session/user-name
+						:session/type :session/connection :session/verb :session/event-size
+						:session/start-date :session/end-date :session/dlp-count
+						:session/xtdb-stream])]
 		:in [org-id arg-session-id]
 		:where [[s :session/org-id org-id]
-				[s :xt/id arg-session-id]
-				[s :session/user user]
-				[s :session/user-id user-id]
-				[s :session/user-name user-name]
-				[s :session/type type]
-				[s :session/connection connection]
-				[s :session/verb verb]
-				[s :session/xtdb-stream xtdb-stream]
-				[(get xtdb-stream :stream) event-stream]
-				[s :session/event-size event-size]
-				[s :session/start-date start-date]
-				[s :session/end-date end-date]]}
-	:in-args [%q %q]}`, &session, ctx.Org.Id, sessionID)
+				[s :xt/id arg-session-id]]}
+	:in-args [%q %q]}`, &resultItems, ctx.Org.Id, sessionID)
 	if err != nil {
 		return nil, err
 	}
-	if len(session) > 0 {
-		return &session[0], nil
+	items := make([]Session, 0)
+	for _, i := range resultItems {
+		items = append(items, i[0])
 	}
-	return nil, fmt.Errorf("session not found")
+	if len(items) > 0 {
+		session := items[0]
+		nonIndexedStreams := session.NonIndexedStream["stream"]
+		for _, i := range nonIndexedStreams {
+			session.EventStream = append(session.EventStream, i)
+		}
+		return &session, nil
+	}
+	return nil, nil
 }
 
 func (s *Storage) queryDecoder(query string, into any, args ...any) error {
