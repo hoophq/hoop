@@ -91,8 +91,7 @@ func parseEventStream(eventStream []byte) (session.EventStream, int, int64, erro
 	if len(eventStream) <= position {
 		return nil, -1, 0, fmt.Errorf("event stream in wrong format [event-type]")
 	}
-	eventDlpCounter := eventStream[position-8 : position-1]
-	dlpCounter := byteArrayToInt(eventDlpCounter)
+	dlpCounter := byteArrayToInt(eventStream[position-8 : position])
 
 	eventStreamLength := len(eventStream[position:])
 	return session.EventStream{eventTime, eventType, eventStream[position:]},
@@ -242,5 +241,5 @@ func intToByteArray(i int64) []byte {
 }
 
 func byteArrayToInt(b []byte) int64 {
-	return int64(binary.BigEndian.Uint16(b))
+	return int64(binary.BigEndian.Uint64(b))
 }
