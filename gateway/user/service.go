@@ -175,14 +175,6 @@ func (user *User) IsAdmin() bool {
 	return pb.IsInList(GroupAdmin, user.Groups)
 }
 
-// func (ctx *Context) Validate(c *gin.Context) (stop bool) {
-// 	if ctx.Org.Id == "" || ctx.Org.Name == "" || ctx.User.Id == "" || ctx.User.Email == "" {
-// 		c.JSON(http.StatusInternalServerError, gin.H{"message": "missing required context"})
-// 		return true
-// 	}
-// 	return false
-// }
-
 func isInStatus(status StatusType) bool {
 	for _, s := range statuses {
 		if s == status {
