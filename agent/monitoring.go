@@ -1,9 +1,8 @@
 package agent
 
 import (
-	"log"
-
 	"github.com/pyroscope-io/client/pyroscope"
+	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/monitoring"
 	pb "github.com/runopsio/hoop/common/proto"
 )

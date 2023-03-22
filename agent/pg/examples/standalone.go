@@ -7,11 +7,12 @@ package main
 import (
 	"context"
 	"fmt"
-	proxypg "github.com/runopsio/hoop/common/pg"
-	"log"
 	"net"
 	"os"
 	"time"
+
+	"github.com/runopsio/hoop/common/log"
+	proxypg "github.com/runopsio/hoop/common/pg"
 
 	"github.com/runopsio/hoop/agent/pg"
 	"github.com/runopsio/hoop/agent/pg/middlewares"

@@ -2,13 +2,14 @@ package jobs
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/getsentry/sentry-go"
 	"github.com/go-co-op/gocron"
+	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/session"
 	"github.com/runopsio/hoop/gateway/user"
-	"log"
-	"time"
 )
 
 type (

@@ -2,9 +2,10 @@ package session
 
 import (
 	"fmt"
-	"log"
 	"strings"
 	"time"
+
+	"github.com/runopsio/hoop/common/log"
 
 	"github.com/runopsio/hoop/gateway/plugin"
 

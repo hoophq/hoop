@@ -2,18 +2,17 @@ package audit
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"sync"
 	"time"
 
-	"github.com/runopsio/hoop/common/pg"
-	"github.com/runopsio/hoop/gateway/plugin"
-
+	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/memory"
+	"github.com/runopsio/hoop/common/pg"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
+	"github.com/runopsio/hoop/gateway/plugin"
 )
 
 const (

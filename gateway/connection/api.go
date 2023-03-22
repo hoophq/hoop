@@ -2,7 +2,6 @@ package connection
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -26,8 +25,7 @@ type (
 )
 
 func (a *Handler) FindOne(c *gin.Context) {
-	ctx, _ := c.Get("context")
-	context := ctx.(*user.Context)
+	context := user.ContextUser(c)
 
 	name := c.Param("name")
 	connection, err := a.Service.FindOne(context, name)
@@ -46,8 +44,7 @@ func (a *Handler) FindOne(c *gin.Context) {
 }
 
 func (a *Handler) FindAll(c *gin.Context) {
-	ctx, _ := c.Get("context")
-	context := ctx.(*user.Context)
+	context := user.ContextUser(c)
 
 	connections, err := a.Service.FindAll(context)
 	if err != nil {
@@ -60,8 +57,8 @@ func (a *Handler) FindAll(c *gin.Context) {
 }
 
 func (a *Handler) Post(c *gin.Context) {
-	ctx, _ := c.Get("context")
-	context := ctx.(*user.Context)
+	context := user.ContextUser(c)
+	log := user.ContextLogger(c)
 
 	var connection Connection
 	if err := c.ShouldBindJSON(&connection); err != nil {
@@ -71,6 +68,7 @@ func (a *Handler) Post(c *gin.Context) {
 
 	existingCon, err := a.Service.FindOne(context, connection.Name)
 	if err != nil {
+		log.Errorf("failed fetching existing connection, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
@@ -83,6 +81,7 @@ func (a *Handler) Post(c *gin.Context) {
 
 	_, err = a.Service.Persist("POST", context, &connection)
 	if err != nil {
+		log.Errorf("failed creating connection, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
@@ -92,12 +91,13 @@ func (a *Handler) Post(c *gin.Context) {
 }
 
 func (a *Handler) Put(c *gin.Context) {
-	ctx, _ := c.Get("context")
-	context := ctx.(*user.Context)
+	context := user.ContextUser(c)
+	log := user.ContextLogger(c)
 
 	name := c.Param("name")
 	existingConnection, err := a.Service.FindOne(context, name)
 	if err != nil {
+		log.Errorf("failed fetching connection, err=%v", err)
 		sentry.CaptureException(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
@@ -118,6 +118,7 @@ func (a *Handler) Put(c *gin.Context) {
 
 	_, err = a.Service.Persist("PUT", context, &connection)
 	if err != nil {
+		log.Errorf("failed persisting connection, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
@@ -127,8 +128,9 @@ func (a *Handler) Put(c *gin.Context) {
 }
 
 func (h *Handler) RunExec(c *gin.Context) {
-	obj, _ := c.Get("context")
-	ctx, _ := obj.(*user.Context)
+	ctx := user.ContextUser(c)
+	log := user.ContextLogger(c)
+
 	var req ExecRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -139,6 +141,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 	connectionName := c.Param("name")
 	conn, err := h.Service.FindOne(ctx, connectionName)
 	if err != nil {
+		log.Errorf("failed retrieving connection, err=%v", err)
 		c.JSON(http.StatusInternalServerError, &ExecErrResponse{Message: "failed retrieving connection"})
 		return
 	}
@@ -160,8 +163,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 		default:
 		}
 	}()
-
-	log.Printf("session=%s - api exec, connection=%s", client.SessionID(), connectionName)
+	log.With("session", client.SessionID()).Infof("api exec, connection=%v", connectionName)
 	c.Header("Location", fmt.Sprintf("/api/plugins/audit/sessions/%s/status", client.SessionID()))
 	statusCode := http.StatusOK
 	if req.Redirect {

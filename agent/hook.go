@@ -2,12 +2,12 @@ package agent
 
 import (
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/hoophq/pluginhooks"
 	"github.com/runopsio/hoop/agent/hook"
 	"github.com/runopsio/hoop/common/clientconfig"
+	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 )
@@ -65,7 +65,7 @@ func (a *Agent) executeRPCOnSessionOpen(
 	resp, err := client.RPCOnSessionOpen(sp)
 	if err != nil {
 		err = fmt.Errorf("plugin %s has rejected the request, reason=%v", client.PluginParams().Name, err)
-		log.Printf("session=%s - %s", sp.SessionID, err)
+		log.With("session", sp.SessionID).Infof("plugin %s rejected request %s", client.PluginParams().Name, err)
 		_ = a.client.Send(&pb.Packet{
 			Type:    pbclient.SessionClose,
 			Payload: []byte(err.Error()),
@@ -116,7 +116,7 @@ func (a *Agent) conciliateHooks(params *pb.AgentConnectionParams) (*hook.ClientL
 func (a *Agent) loadHooks(sessionID string, params *pb.AgentConnectionParams) error {
 	hookList, err := a.conciliateHooks(params)
 	if err != nil {
-		log.Printf("session=%v - failed conciliating plugin hooks, err=%v", sessionID, err)
+		log.With("session", sessionID).Infof("failed conciliating plugin hooks, err=%v", err)
 		return err
 	}
 

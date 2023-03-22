@@ -3,9 +3,10 @@ package proxy
 import (
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"strconv"
+
+	"github.com/runopsio/hoop/common/log"
 
 	"github.com/runopsio/hoop/common/memory"
 	pb "github.com/runopsio/hoop/common/proto"

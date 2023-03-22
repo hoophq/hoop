@@ -3,16 +3,15 @@ package idp
 import (
 	"context"
 	"errors"
-	"log"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/MicahParks/keyfunc"
-	pb "github.com/runopsio/hoop/common/proto"
-
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/runopsio/hoop/common/log"
+	pb "github.com/runopsio/hoop/common/proto"
 	"golang.org/x/oauth2"
 )
 

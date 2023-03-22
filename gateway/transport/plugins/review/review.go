@@ -2,9 +2,9 @@ package review
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/google/uuid"
+	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	"github.com/runopsio/hoop/gateway/notification"

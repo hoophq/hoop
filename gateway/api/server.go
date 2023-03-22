@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	sentrygin "github.com/getsentry/sentry-go/gin"
-
 	"github.com/gin-contrib/static"
+	ginzap "github.com/gin-contrib/zap"
 	"github.com/gin-gonic/gin"
-	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/indexer"
@@ -21,6 +22,7 @@ import (
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/session"
 	"github.com/runopsio/hoop/gateway/user"
+	"go.uber.org/zap"
 )
 
 type (
@@ -38,6 +40,7 @@ type (
 		IDProvider        *idp.Provider
 		Profile           string
 		Analytics         user.Analytics
+		logger            *zap.Logger
 	}
 )
 
@@ -45,15 +48,14 @@ func (api *Api) StartAPI(sentryInit bool) {
 	if os.Getenv("PORT") == "" {
 		os.Setenv("PORT", "8009")
 	}
-
-	route := gin.Default()
-	if api.Profile != pb.DevProfile {
-		route = gin.New()
-		if os.Getenv("GIN_MODE") == "debug" {
-			route.Use(gin.Logger())
-		}
-		route.Use(gin.Recovery())
+	zaplogger := log.NewDefaultLogger()
+	defer zaplogger.Sync()
+	route := gin.New()
+	route.Use(ginzap.RecoveryWithZap(zaplogger, false))
+	if os.Getenv("GIN_MODE") == "debug" {
+		route.Use(ginzap.Ginzap(zaplogger, time.RFC3339, true))
 	}
+	api.logger = zaplogger
 	// https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies
 	route.SetTrustedProxies(nil)
 	// UI

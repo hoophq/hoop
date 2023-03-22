@@ -1,9 +1,9 @@
 package agent
 
 import (
-	"github.com/getsentry/sentry-go"
 	"net/http"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/gateway/user"
@@ -21,8 +21,7 @@ type (
 )
 
 func (s *Handler) Post(c *gin.Context) {
-	ctx, _ := c.Get("context")
-	context := ctx.(*user.Context)
+	context := user.ContextUser(c)
 
 	var a Agent
 	if err := c.ShouldBindJSON(&a); err != nil {
@@ -48,8 +47,7 @@ func (s *Handler) Post(c *gin.Context) {
 }
 
 func (s *Handler) FindAll(c *gin.Context) {
-	ctx, _ := c.Get("context")
-	context := ctx.(*user.Context)
+	context := user.ContextUser(c)
 
 	connections, err := s.Service.FindAll(context)
 	if err != nil {

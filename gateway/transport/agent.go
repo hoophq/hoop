@@ -3,22 +3,20 @@ package transport
 import (
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 
 	"github.com/getsentry/sentry-go"
-
-	"github.com/runopsio/hoop/gateway/plugin"
-
+	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/monitoring"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
 	"github.com/runopsio/hoop/gateway/agent"
+	"github.com/runopsio/hoop/gateway/plugin"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -70,6 +68,8 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 
 	ag, err := s.AgentService.FindByToken(token)
 	if err != nil || ag == nil {
+		md.Delete("authorization")
+		log.Debugf("invalid agent authentication, client-metadata=%v", md)
 		return status.Errorf(codes.Unauthenticated, "invalid authentication")
 	}
 	orgName, _ := s.UserService.GetOrgNameByID(ag.OrgId)
@@ -78,7 +78,7 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 	ag.Status = agent.StatusConnected
 	_, err = s.AgentService.Persist(ag)
 	if err != nil {
-		log.Printf("failed saving agent connection, err=%v", err)
+		log.Errorf("failed saving agent connection, err=%v", err)
 		sentry.CaptureException(err)
 		return status.Errorf(codes.Internal, "internal error")
 	}
@@ -155,10 +155,9 @@ func (s *Server) listenAgentMessages(config plugin.Config, ag *agent.Agent, stre
 		}
 		sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 		config.SessionId = sessionID
-		// TODO: add debug logger
-		// log.Printf("session=%s - receive agent packet type [%s]", sessionID, pkt.Type)
+		log.With("session", sessionID).Debugf("receive agent packet type [%s]", pkt.Type)
 		if err := s.pluginOnReceive(config, pkt); err != nil {
-			log.Printf("plugin reject packet, err=%v", err)
+			log.Warnf("plugin reject packet, err=%v", err)
 			sentry.CaptureException(err)
 			return status.Errorf(codes.Internal, "internal error, plugin reject packet")
 		}
@@ -176,7 +175,6 @@ func (s *Server) listenAgentMessages(config plugin.Config, ag *agent.Agent, stre
 		if clientStream == nil {
 			continue
 		}
-		// log.Printf("received agent msg type [%s] and session id [%s]", pkt.Type, sessionID)
 		s.processAgentPacket(pkt, clientStream)
 	}
 }
@@ -189,7 +187,6 @@ func (s *Server) disconnectAgent(ag *agent.Agent) {
 	unbindAgent(ag.Id)
 	ag.Status = agent.StatusDisconnected
 	s.AgentService.Persist(ag)
-	log.Println("agent disconnected...")
 }
 
 func (s *Server) agentGracefulShutdown(ag *agent.Agent) {
