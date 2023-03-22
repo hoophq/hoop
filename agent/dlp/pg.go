@@ -168,8 +168,8 @@ func redactDataRow(dlpclient Client, conf *deidentifyConfig, dataRows *bytes.Buf
 		close(chunkCh)
 		break
 	}
-	if redactedChunk.transformationSummary.err != nil {
-		return dataRows, redactedChunk.transformationSummary.err
+	if redactedChunk.transformationSummary.Err != nil {
+		return dataRows, redactedChunk.transformationSummary.Err
 	}
 	return redactedChunk.data, nil
 }
