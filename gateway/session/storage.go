@@ -3,6 +3,7 @@ package session
 import (
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"time"
 
@@ -196,10 +197,16 @@ func (s *Storage) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionLi
 		&resultItems,
 		limit, offset, inArgsEdn)
 	sessionList.HasNextPage = len(sessionList.Items) == limit
+
 	items := make([]Session, 0)
 	for _, i := range resultItems {
 		items = append(items, i[0])
 	}
+
+	// sort items by startDate desc
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].StartSession.After(items[j].StartSession)
+	})
 	sessionList.Items = items
 	return sessionList, err
 }
