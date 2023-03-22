@@ -3,20 +3,18 @@ package audit
 import (
 	"fmt"
 	"github.com/getsentry/sentry-go"
-	"log"
+	pbdlp "github.com/runopsio/hoop/common/dlp"
+	"github.com/runopsio/hoop/common/log"
+	"github.com/runopsio/hoop/common/memory"
+	"github.com/runopsio/hoop/common/pg"
+	pb "github.com/runopsio/hoop/common/proto"
+	pbagent "github.com/runopsio/hoop/common/proto/agent"
+	pbclient "github.com/runopsio/hoop/common/proto/client"
+	"github.com/runopsio/hoop/gateway/plugin"
 	"os"
 	"strconv"
 	"sync"
 	"time"
-
-	"github.com/runopsio/hoop/common/pg"
-	"github.com/runopsio/hoop/gateway/plugin"
-
-	pbdlp "github.com/runopsio/hoop/common/dlp"
-	"github.com/runopsio/hoop/common/memory"
-	pb "github.com/runopsio/hoop/common/proto"
-	pbagent "github.com/runopsio/hoop/common/proto/agent"
-	pbclient "github.com/runopsio/hoop/common/proto/client"
 )
 
 const (

@@ -2,11 +2,11 @@ package index
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"time"
 
 	"github.com/go-co-op/gocron"
+	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/memory"
 	"github.com/runopsio/hoop/common/pg"
 	pb "github.com/runopsio/hoop/common/proto"

@@ -2,9 +2,10 @@ package indexer
 
 import (
 	"encoding/base64"
-	"log"
 	"sync"
 	"time"
+
+	"github.com/runopsio/hoop/common/log"
 
 	"github.com/blevesearch/bleve/v2"
 	"github.com/runopsio/hoop/gateway/plugin"

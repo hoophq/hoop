@@ -3,7 +3,8 @@ package agent
 import (
 	"fmt"
 	"io"
-	"log"
+
+	"github.com/runopsio/hoop/common/log"
 
 	"github.com/hoophq/pluginhooks"
 	pb "github.com/runopsio/hoop/common/proto"

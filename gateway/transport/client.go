@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"os/signal"
 	"sync"
@@ -12,12 +11,18 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
-
+	"github.com/google/uuid"
+	"github.com/runopsio/hoop/common/log"
+	pb "github.com/runopsio/hoop/common/proto"
+	pbagent "github.com/runopsio/hoop/common/proto/agent"
+	pbclient "github.com/runopsio/hoop/common/proto/client"
+	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
+	"github.com/runopsio/hoop/gateway/client"
+	"github.com/runopsio/hoop/gateway/connection"
+	"github.com/runopsio/hoop/gateway/plugin"
 	rv "github.com/runopsio/hoop/gateway/review"
 	justintime "github.com/runopsio/hoop/gateway/review/jit"
 	"github.com/runopsio/hoop/gateway/session"
-
-	"github.com/runopsio/hoop/gateway/plugin"
 	pluginsrbac "github.com/runopsio/hoop/gateway/transport/plugins/accesscontrol"
 	pluginsaudit "github.com/runopsio/hoop/gateway/transport/plugins/audit"
 	pluginsdlp "github.com/runopsio/hoop/gateway/transport/plugins/dlp"
@@ -25,14 +30,6 @@ import (
 	pluginsjit "github.com/runopsio/hoop/gateway/transport/plugins/jit"
 	pluginsreview "github.com/runopsio/hoop/gateway/transport/plugins/review"
 	"github.com/runopsio/hoop/gateway/user"
-
-	"github.com/google/uuid"
-	pb "github.com/runopsio/hoop/common/proto"
-	pbagent "github.com/runopsio/hoop/common/proto/agent"
-	pbclient "github.com/runopsio/hoop/common/proto/client"
-	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
-	"github.com/runopsio/hoop/gateway/client"
-	"github.com/runopsio/hoop/gateway/connection"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -237,8 +234,8 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	}
 
 	if _, err := s.ClientService.Persist(c); err != nil {
+		log.With("session", sessionID).Errorf("failed saving client connection, err=%v", err)
 		s.trackSessionStatus(sessionID, pb.SessionPhaseClientErr, fmt.Errorf("failed saving client connection, err=%v", err))
-		log.Printf("failed saving client connection, err=%v", err)
 		sentry.CaptureException(err)
 		return err
 	}
@@ -258,13 +255,14 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	})
 
 	s.startDisconnectClientSink(c)
-	log.Printf("proxy connected: hostname=%v,verb=%v,platform=%v,version=%v,goversion=%v,compiler=%v,machineid=%v",
-		c.Hostname, c.Verb, c.Platform, c.Version, c.GoVersion, c.Compiler, c.MachineId)
+	log.With("session", sessionID).
+		Infof("proxy connected: hostname=%v,verb=%v,platform=%v,version=%v,goversion=%v,compiler=%v,machineid=%v",
+			c.Hostname, c.Verb, c.Platform, c.Version, c.GoVersion, c.Compiler, c.MachineId)
 	s.trackSessionStatus(sessionID, pb.SessionPhaseClientConnected, nil)
 	clientErr := s.listenClientMessages(stream, c, conn, pConfig)
 
 	if err := s.pluginOnDisconnect(pConfig); err != nil {
-		log.Printf("session=%v ua=client - failed processing plugin on-disconnect phase, err=%v", sessionID, err)
+		log.With("session", sessionID).Warnf("failed processing plugin on-disconnect phase, err=%v", err)
 	}
 
 	if clientOrigin == pb.ConnectionOriginClient {
@@ -303,14 +301,15 @@ func (s *Server) listenClientMessages(
 		pkt, err := stream.Recv()
 		if err != nil {
 			if err == io.EOF {
+				log.With("session", c.SessionID).Debugf("EOF")
 				return nil
 			}
 			if status, ok := status.FromError(err); ok && status.Code() == codes.Canceled {
 				// TODO: send packet to agent to clean up resources
-				log.Printf("session=%v - client disconnected", c.SessionID)
+				log.With("session", c.SessionID).Infof("client disconnected")
 				return nil
 			}
-			log.Printf("received error from client, err=%v", err)
+			log.Warnf("received error from client, err=%v", err)
 			sentry.CaptureException(err)
 			return status.Errorf(codes.Internal, "internal error, failed receiving client packet")
 		}
@@ -323,15 +322,15 @@ func (s *Server) listenClientMessages(
 		}
 		pkt.Spec[pb.SpecGatewaySessionID] = []byte(c.SessionID)
 
-		// log.Printf("session=%s - receive client packet type [%s]", c.SessionID, pkt.Type)
+		log.With("session", c.SessionID).Debugf("receive client packet type [%s]", pkt.Type)
 		if err := s.pluginOnReceive(config, pkt); err != nil {
-			log.Printf("plugin reject packet, err=%v", err)
+			log.With("session", c.SessionID).Errorf("plugin rejected packet, err=%v", err)
 			sentry.CaptureException(err)
 			return status.Errorf(codes.Internal, "internal error, packet rejected, contact the administrator")
 		}
 		err = s.processClientPacket(pkt, config.Verb, c, conn)
 		if err != nil {
-			log.Printf("session=%v - failed processing client packet, err=%v", c.SessionID, err)
+			log.With("session", c.SessionID).Warnf("failed processing client packet, err=%v", err)
 			return status.Errorf(codes.FailedPrecondition, err.Error())
 		}
 	}
@@ -696,7 +695,7 @@ func (s *Server) loadConnectPlugins(ctx *user.Context, config plugin.Config) ([]
 		}
 	}
 	if len(nonRegisteredPlugins) > 0 {
-		log.Printf("session=%v - non registered plugins %v", config.SessionId, nonRegisteredPlugins)
+		log.With("session", config.SessionId).Infof("non registered plugins %v", nonRegisteredPlugins)
 	}
 	return pluginsConfig, nil
 }
@@ -713,8 +712,6 @@ func (s *Server) pluginOnReceive(config plugin.Config, pkt *pb.Packet) error {
 	plugins := getPlugins(config.SessionId)
 	for _, p := range plugins {
 		if err := p.OnReceive(config, p.config, pkt); err != nil {
-			log.Printf("session=%v - plugin %q rejected packet, err=%v",
-				config.SessionId, p.Name(), err)
 			return err
 		}
 	}

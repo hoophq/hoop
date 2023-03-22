@@ -3,11 +3,12 @@ package clientexec
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"github.com/runopsio/hoop/common/log"
 
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/grpc"

@@ -1,10 +1,11 @@
 package jit
 
 import (
-	"github.com/getsentry/sentry-go"
-	pb "github.com/runopsio/hoop/common/proto"
 	"net/http"
 	"strings"
+
+	"github.com/getsentry/sentry-go"
+	pb "github.com/runopsio/hoop/common/proto"
 
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/gateway/user"
@@ -23,8 +24,7 @@ type (
 )
 
 func (h *Handler) Put(c *gin.Context) {
-	ctx, _ := c.Get("context")
-	context := ctx.(*user.Context)
+	context := user.ContextUser(c)
 
 	jitId := c.Param("id")
 	existingJit, err := h.Service.FindOne(context, jitId)
@@ -73,8 +73,7 @@ func (h *Handler) Put(c *gin.Context) {
 }
 
 func (h *Handler) FindAll(c *gin.Context) {
-	ctx, _ := c.Get("context")
-	context := ctx.(*user.Context)
+	context := user.ContextUser(c)
 
 	jits, err := h.Service.FindAll(context)
 	if err != nil {
@@ -87,8 +86,7 @@ func (h *Handler) FindAll(c *gin.Context) {
 }
 
 func (a *Handler) FindOne(c *gin.Context) {
-	ctx, _ := c.Get("context")
-	context := ctx.(*user.Context)
+	context := user.ContextUser(c)
 
 	id := c.Param("id")
 	jit, err := a.Service.FindOne(context, id)

@@ -1,16 +1,20 @@
 package gateway
 
 import (
-	"fmt"
-	"log"
 	"os"
 	"time"
 
-	"github.com/runopsio/hoop/gateway/jobs"
-
+	"github.com/runopsio/hoop/common/log"
+	"github.com/runopsio/hoop/common/monitoring"
+	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/common/version"
+	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/analytics"
+	"github.com/runopsio/hoop/gateway/api"
+	"github.com/runopsio/hoop/gateway/client"
+	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/indexer"
-
+	"github.com/runopsio/hoop/gateway/jobs"
 	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/review"
@@ -19,27 +23,22 @@ import (
 	"github.com/runopsio/hoop/gateway/security"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/session"
-
-	"github.com/runopsio/hoop/common/monitoring"
-	pb "github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/common/version"
-	"github.com/runopsio/hoop/gateway/agent"
-	"github.com/runopsio/hoop/gateway/api"
-	"github.com/runopsio/hoop/gateway/client"
-	"github.com/runopsio/hoop/gateway/connection"
 	xtdb "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/transport"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
 func Run() {
-	fmt.Println(string(version.JSON()))
+	ver := version.Get()
+	log.Infof("version=%s, compiler=%s, go=%s, platform=%s, commit=%s, build-date=%s",
+		ver.Version, ver.Compiler, ver.GoVersion, ver.Platform, ver.GitCommit, ver.BuildDate)
+	defer log.Sync()
 	s := xtdb.New()
-	log.Println("syncing xtdb at", s.Address())
+	log.Infof("syncing xtdb at %s", s.Address())
 	if err := s.Sync(time.Second * 60); err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
-	log.Println("sync with success")
+	log.Infof("sync with success")
 
 	profile := os.Getenv("PROFILE")
 	idProvider := idp.NewProvider(profile)
@@ -102,7 +101,7 @@ func Run() {
 		Analytics:            analyticsService,
 	}
 	if g.PyroscopeIngestURL != "" && g.PyroscopeAuthToken != "" {
-		log.Printf("starting profiler, ingest-url=%v", g.PyroscopeIngestURL)
+		log.Infof("starting profiler, ingest-url=%v", g.PyroscopeIngestURL)
 		_, err := monitoring.StartProfiler("gateway", monitoring.ProfilerConfig{
 			PyroscopeServerAddress: g.PyroscopeIngestURL,
 			PyroscopeAuthToken:     g.PyroscopeAuthToken,
@@ -136,7 +135,7 @@ func Run() {
 			panic(err)
 		}
 	}
-	log.Printf("profile=%v - starting servers", profile)
+	log.Infof("profile=%v - starting servers", profile)
 	go g.StartRPCServer()
 	a.StartAPI(sentryStarted)
 }

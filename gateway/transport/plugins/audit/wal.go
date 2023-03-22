@@ -9,10 +9,11 @@ import (
 	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/session"
 	"github.com/tidwall/wal"
-	"log"
 	"os"
 	"sync"
 	"time"
+
+	"github.com/runopsio/hoop/common/log"
 )
 
 const walFolderTmpl string = `%s/%s-%s-wal`

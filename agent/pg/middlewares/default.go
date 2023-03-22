@@ -6,9 +6,10 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
-	pgtypes "github.com/runopsio/hoop/common/pg"
-	"log"
 	"strings"
+
+	"github.com/runopsio/hoop/common/log"
+	pgtypes "github.com/runopsio/hoop/common/pg"
 
 	"github.com/lib/pq/scram"
 	"github.com/runopsio/hoop/agent/pg"

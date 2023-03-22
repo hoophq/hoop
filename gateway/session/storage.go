@@ -2,7 +2,7 @@ package session
 
 import (
 	"fmt"
-	"log"
+	"github.com/runopsio/hoop/common/log"
 	"sort"
 	"strings"
 	"time"

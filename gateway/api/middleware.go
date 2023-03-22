@@ -3,14 +3,16 @@ package api
 import (
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
+
+	"github.com/runopsio/hoop/common/log"
 
 	"github.com/gin-gonic/gin"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/common/version"
 	"github.com/runopsio/hoop/gateway/user"
+	"go.uber.org/zap"
 )
 
 var invalidAuthErr = errors.New("invalid auth")
@@ -28,8 +30,15 @@ func (api *Api) Authenticate(c *gin.Context) {
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
-
-	c.Set("context", ctx)
+	if api.logger != nil {
+		zaplogger := api.logger.With(
+			zap.String("org", ctx.User.Org),
+			zap.String("user", ctx.User.Email),
+			zap.Bool("isadm", ctx.User.IsAdmin()),
+		)
+		c.Set(user.ContextLoggerKey, zaplogger.Sugar())
+	}
+	c.Set(user.ContextUserKey, ctx)
 	c.Next()
 }
 
@@ -47,8 +56,7 @@ func (api *Api) validateClaims(c *gin.Context) (string, error) {
 }
 
 func (api *Api) AdminOnly(c *gin.Context) {
-	ctx, _ := c.Get("context")
-	context := ctx.(*user.Context)
+	context := user.ContextUser(c)
 
 	if !context.User.IsAdmin() {
 		c.AbortWithStatus(401)
@@ -59,8 +67,7 @@ func (api *Api) AdminOnly(c *gin.Context) {
 }
 
 func (api *Api) TrackRequest(c *gin.Context) {
-	ctx, _ := c.Get("context")
-	context := ctx.(*user.Context)
+	context := user.ContextUser(c)
 
 	api.Analytics.Track(context.User.Id, fmt.Sprintf("%s %s", c.Request.Method, c.Request.RequestURI), map[string]any{
 		"host":           c.Request.Host,

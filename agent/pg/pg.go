@@ -6,9 +6,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/runopsio/hoop/common/pg"
 	"io"
-	"log"
+
+	"github.com/runopsio/hoop/common/log"
+	"github.com/runopsio/hoop/common/pg"
 )
 
 type (

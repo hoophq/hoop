@@ -6,9 +6,10 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"log"
 	"math"
 	"time"
+
+	"github.com/runopsio/hoop/common/log"
 
 	"cloud.google.com/go/dlp/apiv2/dlppb"
 	"github.com/getsentry/sentry-go"

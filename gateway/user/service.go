@@ -66,6 +66,9 @@ const (
 	GroupDevops      string = "devops"
 	GroupSupport     string = "support"
 	GroupEngineering string = "engineering"
+
+	ContextLoggerKey = "context-logger"
+	ContextUserKey   = "context"
 )
 
 var statuses = []StatusType{

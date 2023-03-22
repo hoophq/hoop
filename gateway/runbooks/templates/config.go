@@ -3,7 +3,8 @@ package templates
 import (
 	"encoding/base64"
 	"fmt"
-	"log"
+
+	"github.com/runopsio/hoop/common/log"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"

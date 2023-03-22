@@ -5,10 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"syscall"
+
+	"github.com/runopsio/hoop/common/log"
 
 	"github.com/runopsio/hoop/common/runtime"
 	term "github.com/runopsio/hoop/common/terminal"

@@ -2,9 +2,10 @@ package agent
 
 import (
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
+
+	"github.com/runopsio/hoop/common/log"
 
 	"github.com/creack/pty"
 	"github.com/getsentry/sentry-go"
@@ -59,7 +60,7 @@ func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {
 		a.sendCloseTerm(sessionID, errMsg, "1")
 		return
 	}
-	log.Printf("session=%s, tty=true - executing command %q", sessionID, cmd.String())
+	log.Printf("session=%s, tty=true - executing command:%v", sessionID, cmd.String())
 	spec := map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)}
 	stdoutWriter := pb.NewHookStreamWriter(a.client, pbclient.WriteStdout, spec, pluginHooks)
 	if dlpClient, ok := a.connStore.Get(dlpClientKey).(dlp.Client); ok {

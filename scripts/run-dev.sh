@@ -19,7 +19,7 @@ echo "--> STARTING GATEWAY ..."
 
 #export GRPC_GO_LOG_SEVERITY_LEVEL=info
 #export GODEBUG=http2debug
-# export GOOGLE_APPLICATION_CREDENTIALS_JSON=$(cat ../misc/profiles/hoop/dlp-serviceaccount.json)
+#export GOOGLE_APPLICATION_CREDENTIALS_JSON=$(cat ../misc/profiles/dlp-serviceaccount.json)
 export PORT=8009
 export PROFILE=dev
 export XTDB_ADDRESS=http://127.0.0.1:3001
@@ -27,6 +27,8 @@ export PLUGIN_AUDIT_PATH=/tmp/hoopsessions
 export PLUGIN_INDEX_PATH=/tmp/hoopsessions/indexes
 export PLUGIN_REGISTRY_URL=https://pluginregistry.s3.amazonaws.com/packages.json
 export GIN_MODE=debug
+export LOG_ENCODING=json
+#export LOG_LEVEL=debug
 #export PYROSCOPE_AUTH_TOKEN=noop
 #export PYROSCOPE_INGEST_URL=http://127.0.0.1:4040
 export AGENT_SENTRY_DSN=

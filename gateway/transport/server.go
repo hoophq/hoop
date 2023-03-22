@@ -3,7 +3,6 @@ package transport
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net"
 	"strings"
 	"time"
@@ -11,19 +10,18 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/google/uuid"
 
-	"github.com/runopsio/hoop/gateway/notification"
-	"github.com/runopsio/hoop/gateway/review"
-	"github.com/runopsio/hoop/gateway/review/jit"
-
-	"github.com/runopsio/hoop/gateway/plugin"
-	"github.com/runopsio/hoop/gateway/security/idp"
-	"github.com/runopsio/hoop/gateway/session"
-
+	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/client"
 	"github.com/runopsio/hoop/gateway/connection"
+	"github.com/runopsio/hoop/gateway/notification"
+	"github.com/runopsio/hoop/gateway/plugin"
+	"github.com/runopsio/hoop/gateway/review"
+	"github.com/runopsio/hoop/gateway/review/jit"
+	"github.com/runopsio/hoop/gateway/security/idp"
+	"github.com/runopsio/hoop/gateway/session"
 	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -87,7 +85,8 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 	md, _ := metadata.FromIncomingContext(ctx)
 	o := md.Get("origin")
 	if len(o) == 0 {
-		log.Printf("client missing origin")
+		md.Delete("authorization")
+		log.Debugf("client missing origin, client-metadata=%v", md)
 		return status.Error(codes.InvalidArgument, "missing origin")
 	}
 
@@ -101,12 +100,14 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 	} else {
 		t := md.Get("authorization")
 		if len(t) == 0 {
+			log.Debugf("missing authorization header, client-metadata=%v", md)
 			return status.Error(codes.Unauthenticated, "invalid authentication")
 		}
 
 		tokenValue := t[0]
 		tokenParts := strings.Split(tokenValue, " ")
 		if len(tokenParts) != 2 || tokenParts[0] != "Bearer" || tokenParts[1] == "" {
+			log.Debugf("authorization header in wrong format, client-metadata=%v", md)
 			return status.Error(codes.Unauthenticated, "invalid authentication")
 		}
 
@@ -174,13 +175,14 @@ func (s *Server) startDisconnectClientSink(c *client.Client) {
 			})
 		}
 	}
+	log.With("session", c.SessionID).Debugf("start disconnect sink")
 	go func() {
 		select {
 		case <-disconnectCh:
-			log.Printf("session=%s - disconnecting client", c.SessionID)
+			log.With("session", c.SessionID).Infof("disconnecting client")
 			disconnectFn()
 		case <-time.After(time.Hour * 48):
-			log.Printf("session=%s - timeout (48h), disconnecting client", c.SessionID)
+			log.With("session", c.SessionID).Warnf("timeout (48h), disconnecting client")
 			disconnectFn()
 		}
 	}()

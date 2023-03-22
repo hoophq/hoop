@@ -2,11 +2,12 @@ package cmd
 
 import (
 	"fmt"
-	"log"
 	"net"
 	"net/url"
 	"os"
 	"time"
+
+	"github.com/runopsio/hoop/common/log"
 
 	"github.com/BurntSushi/toml"
 	"github.com/briandowns/spinner"
