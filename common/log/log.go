@@ -10,6 +10,13 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+const (
+	LevelDebug = "DEBUG"
+	LevelInfo  = "INFO"
+	LevelWarn  = "WARN"
+	LevelError = "ERROR"
+)
+
 var zlog = NewDefaultLogger()
 
 func Sync() error { return zlog.Sync() }
@@ -21,11 +28,11 @@ func NewDefaultLogger() *zap.Logger {
 	}
 	logLevel := zap.NewAtomicLevelAt(zapcore.InfoLevel)
 	switch strings.ToUpper(os.Getenv("LOG_LEVEL")) {
-	case "DEBUG":
+	case LevelDebug:
 		logLevel = zap.NewAtomicLevelAt(zapcore.DebugLevel)
-	case "WARN":
+	case LevelWarn:
 		logLevel = zap.NewAtomicLevelAt(zapcore.WarnLevel)
-	case "ERROR":
+	case LevelError:
 		logLevel = zap.NewAtomicLevelAt(zapcore.ErrorLevel)
 	}
 

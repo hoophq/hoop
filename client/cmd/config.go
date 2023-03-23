@@ -18,24 +18,35 @@ import (
 )
 
 const (
-	defaultApiURL   = "https://app.hoop.dev"
-	defaultGrpcPort = "8443"
+	defaultApiURL  = "https://app.hoop.dev"
+	defaultGrpcURL = "https://app.hoop.dev:8443"
 
-	localApiURL   = "http://127.0.0.1"
-	localGrpcPort = "8010"
+	localApiURL  = "http://127.0.0.1:8009"
+	localGrpcURL = "http://127.0.0.1:8010"
 )
 
 type Config struct {
 	Token          string `toml:"access_token"`
 	ApiURL         string `toml:"api_url"`
-	GrpcPort       string `toml:"grpc_port"`
+	GrpcURL        string `toml:"grpc_url"`
 	ConfigFilePath string `toml:"-"`
 }
 
-func (c *Config) ApiURLHost() string {
-	u, _ := url.Parse(c.ApiURL)
+func (c *Config) Validate() error {
+	if _, err := url.Parse(c.ApiURL); err != nil {
+		return fmt.Errorf("API_URL in wrong format, err=%v", err)
+	}
+	if _, err := url.Parse(c.GrpcURL); err != nil {
+		return fmt.Errorf("GRPC_URL in wrong format, err=%v", err)
+	}
+	return nil
+}
+
+// parse into host:port
+func (c *Config) grpcAddress() string {
+	u, _ := url.Parse(c.GrpcURL)
 	if u != nil {
-		return u.Hostname()
+		return fmt.Sprintf("%s:%s", u.Hostname(), u.Port())
 	}
 	return ""
 }
@@ -76,15 +87,15 @@ func getClientConfigOrDie() *Config {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
-	if config.ApiURL == "" || config.GrpcPort == "" {
+	if config.ApiURL == "" || config.GrpcURL == "" {
 		// try connecting locally
 		timeout := time.Second * 5
-		u, _ := url.Parse(localApiURL)
-		conn, err := net.DialTimeout("tcp", net.JoinHostPort(u.Host, localGrpcPort), timeout)
+		u, _ := url.Parse(localGrpcURL)
+		conn, err := net.DialTimeout("tcp", u.Host, timeout)
 		if err == nil {
 			conn.Close()
 			config.ApiURL = localApiURL
-			config.GrpcPort = localGrpcPort
+			config.GrpcURL = localGrpcURL
 			return config
 		}
 		// fallback to signin to defaultApiURL
@@ -95,7 +106,7 @@ func getClientConfigOrDie() *Config {
 		}
 		config.Token = token
 		config.ApiURL = defaultApiURL
-		config.GrpcPort = defaultGrpcPort
+		config.GrpcURL = defaultGrpcURL
 		if err := saveConfig(config); err != nil {
 			fmt.Println(err.Error())
 			os.Exit(1)
@@ -112,13 +123,11 @@ func newClientConnect(config *Config, loader *spinner.Spinner, args []string, ve
 		connectionName: args[0],
 		loader:         loader,
 	}
-
-	grpcHost := config.ApiURLHost()
-	if grpcHost == "" {
-		c.printErrorAndExit("api_url config is empty or malformed")
+	if err := config.Validate(); err != nil {
+		c.printErrorAndExit(err.Error())
 	}
 	client, err := grpc.Connect(
-		fmt.Sprintf("%s:%s", grpcHost, config.GrpcPort),
+		config.grpcAddress(),
 		config.Token,
 		grpc.WithOption(grpc.OptionConnectionName, c.connectionName),
 		grpc.WithOption("origin", pb.ConnectionOriginClient),

@@ -49,14 +49,14 @@ var loginCmd = &cobra.Command{
 			}
 			config.ApiURL = apiURL
 
-			fmt.Printf("GRPC_PORT [%s]: ", defaultGrpcPort)
-			grpcPort, _ := reader.ReadString('\n')
-			grpcPort = strings.Trim(grpcPort, " \n")
-			grpcPort = strings.TrimSpace(grpcPort)
-			if grpcPort == "" {
-				grpcPort = defaultGrpcPort
+			fmt.Printf("GRPC_URL [%s]: ", defaultGrpcURL)
+			grpcURL, _ := reader.ReadString('\n')
+			grpcURL = strings.Trim(grpcURL, " \n")
+			grpcURL = strings.TrimSpace(grpcURL)
+			if grpcURL == "" {
+				grpcURL = defaultGrpcURL
 			}
-			config.GrpcPort = grpcPort
+			config.GrpcURL = grpcURL
 			if err := saveConfig(config); err != nil {
 				fmt.Println(err.Error())
 				os.Exit(1)
