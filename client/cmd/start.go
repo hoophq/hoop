@@ -10,15 +10,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/briandowns/spinner"
 	"github.com/getsentry/sentry-go"
+	"github.com/runopsio/hoop/agent"
 	"github.com/runopsio/hoop/client/cmd/demos"
 	"github.com/runopsio/hoop/client/cmd/styles"
 	"github.com/runopsio/hoop/common/clientconfig"
+	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/monitoring"
 	"github.com/runopsio/hoop/gateway"
-
-	"github.com/briandowns/spinner"
-	"github.com/runopsio/hoop/agent"
 	"github.com/spf13/cobra"
 )
 
@@ -60,6 +60,7 @@ var startCmd = &cobra.Command{
 		dockerArgs := []string{
 			"run",
 			"-t", // required for resizing the tty in the agent properly
+			"-e", "LOG_LEVEL=" + log.LevelDebug,
 			"-e", fmt.Sprintf("PYROSCOPE_INGEST_URL=%v", os.Getenv("PYROSCOPE_INGEST_URL")),
 			"-e", fmt.Sprintf("PYROSCOPE_AUTH_TOKEN=%v", os.Getenv("PYROSCOPE_AUTH_TOKEN")),
 			"-e", fmt.Sprintf("AGENT_SENTRY_DSN=%v", os.Getenv("AGENT_SENTRY_DSN")),
