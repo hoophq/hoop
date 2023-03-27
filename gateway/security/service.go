@@ -3,11 +3,11 @@ package security
 import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/google/uuid"
+	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/user"
 	"golang.org/x/oauth2"
-	"log"
 )
 
 type (
@@ -69,15 +69,18 @@ func (s *Service) Login(redirect string) (string, error) {
 }
 
 func (s *Service) Callback(state, code string) string {
+	log.With("code", code, "state", state).Debugf("starting callback")
 	login, err := s.Storage.FindLogin(state)
 	if err != nil {
 		if login != nil {
+			log.With("code", code, "state", state).Debugf("Login not found. Skipping...")
 			s.loginOutcome(login, outcomeError)
 			return login.Redirect + "?error=unexpected_error"
 		}
 		return "https://app.hoop.dev/callback?error=unexpected_error"
 	}
 
+	log.With("code", code, "state", state).Debugf("Found login: %v", login)
 	token, idToken, err := s.exchangeCodeByToken(code)
 	if err != nil {
 		s.loginOutcome(login, outcomeError)
@@ -87,7 +90,7 @@ func (s *Service) Callback(state, code string) string {
 	var idTokenClaims map[string]any
 	if err := idToken.Claims(&idTokenClaims); err != nil {
 		s.loginOutcome(login, outcomeError)
-		log.Printf("failed extracting ID Token claims, err: %v\n", err)
+		log.Errorf("failed extracting ID Token claims, err: %v\n", err)
 		return login.Redirect + "?error=unexpected_error"
 	}
 
@@ -133,15 +136,16 @@ func (s *Service) Callback(state, code string) string {
 }
 
 func (s *Service) exchangeCodeByToken(code string) (*oauth2.Token, *oidc.IDToken, error) {
+	log.With("code", code).Debugf("verifying access token")
 	token, err := s.Provider.Exchange(s.Provider.Context, code)
 	if err != nil {
-		log.Printf("failed to exchange authorization code, err: %v\n", err)
+		log.Errorf("failed to exchange authorization code, err: %v\n", err)
 		return nil, nil, err
 	}
 
 	idToken, err := s.Provider.VerifyIDToken(token)
 	if err != nil {
-		log.Printf("failed to verify ID Token, err: %v\n", err)
+		log.Errorf("failed to verify ID Token, err: %v\n", err)
 		return nil, nil, err
 	}
 
