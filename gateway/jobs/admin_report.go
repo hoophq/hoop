@@ -78,7 +78,7 @@ func (s *Scheduler) sendReport(o *user.Org) {
 	}
 	template := s.buildTemplate(o, sessionList.Total)
 
-	fmt.Println("Sending admins weekly report")
+	log.Info("Sending admins weekly report")
 	s.Notification.Send(notification.Notification{
 		Title:      "Your weekly report at Hoop",
 		Message:    template,

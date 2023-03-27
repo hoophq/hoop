@@ -3,7 +3,6 @@ package notification
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -34,8 +33,8 @@ func (m *MagicBell) Send(notification Notification) {
 		url := "https://api.magicbell.com/notifications"
 		req, err := http.NewRequest(http.MethodPost, url, buildPayload(notification))
 		if err != nil {
+			log.Errorf("Failed building http request, err=%v", err)
 			sentry.CaptureException(err)
-			log.Printf("Failed building http request, err=%v", err)
 			return
 		}
 
@@ -45,11 +44,11 @@ func (m *MagicBell) Send(notification Notification) {
 
 		resp, err := m.client.Do(req)
 		if err != nil {
+			log.Errorf("failed to send magic bell notification, err=%v", err)
 			sentry.CaptureException(err)
-			log.Printf("failed to send magic bell notification: %v", err)
 			return
 		}
-		fmt.Printf("Sent notification to %d recipients\n", len(notification.Recipients))
+		log.Infof("Sent notification to %d recipients", len(notification.Recipients))
 		defer resp.Body.Close()
 	}
 }

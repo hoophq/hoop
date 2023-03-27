@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/getsentry/sentry-go"
@@ -22,9 +23,11 @@ type (
 
 func (s *Handler) Post(c *gin.Context) {
 	context := user.ContextUser(c)
+	log := user.ContextLogger(c)
 
 	var a Agent
 	if err := c.ShouldBindJSON(&a); err != nil {
+		log.Infof("failed parsing request payload, err=%v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
@@ -33,11 +36,17 @@ func (s *Handler) Post(c *gin.Context) {
 	if a.Token == "" {
 		a.Token = "x-agt-" + uuid.NewString()
 	}
+	if err := validateToken(a.Token); err != nil {
+		log.Errorf("failed validating agent token, err=%v", err)
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
 	a.OrgId = context.Org.Id
 	a.CreatedById = context.User.Id
 
 	_, err := s.Service.Persist(&a)
 	if err != nil {
+		log.Errorf("failed persisting agent token, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
@@ -57,4 +66,16 @@ func (s *Handler) FindAll(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, connections)
+}
+
+func validateToken(token string) error {
+	// x-agt-[UUID]
+	if len(token) < 7 {
+		return fmt.Errorf("invalid token length")
+	}
+	_, err := uuid.Parse(token[6:])
+	if err != nil {
+		return fmt.Errorf("invalid token, err=%v", err)
+	}
+	return nil
 }

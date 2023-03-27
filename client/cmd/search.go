@@ -11,6 +11,7 @@ import (
 
 	"github.com/blevesearch/bleve/v2"
 	"github.com/runopsio/hoop/client/cmd/styles"
+	clientconfig "github.com/runopsio/hoop/client/config"
 	"github.com/runopsio/hoop/gateway/indexer"
 	"github.com/runopsio/hoop/gateway/indexer/searchquery"
 	"github.com/spf13/cobra"
@@ -49,14 +50,7 @@ func init() {
 }
 
 func runSearch(inputQuery string) {
-	config, err := loadConfig()
-	if err != nil {
-		printErrorAndExit(err.Error())
-	}
-	if config.ApiURL == "" {
-		config.ApiURL = fmt.Sprintf("%s:8009", localApiURL)
-	}
-
+	config := getClientConfigOrDie()
 	req := indexer.NewSearchRequest(inputQuery, limitFlag, offsetFlag, "ansi")
 	if len(fieldsFlag) > 0 {
 		req.Fields = fieldsFlag
@@ -69,7 +63,7 @@ func runSearch(inputQuery string) {
 	fmt.Println(&searchResult{result})
 }
 
-func searchHTTPRequest(c *Config, searchRequest any) (*bleve.SearchResult, error) {
+func searchHTTPRequest(c *clientconfig.Config, searchRequest any) (*bleve.SearchResult, error) {
 	body, err := json.Marshal(searchRequest)
 	if err != nil {
 		return nil, fmt.Errorf("failed marshaling body request, err=%v", err)

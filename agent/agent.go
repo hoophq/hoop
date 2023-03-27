@@ -15,6 +15,7 @@ import (
 	"github.com/runopsio/hoop/common/log"
 
 	"github.com/getsentry/sentry-go"
+	"github.com/runopsio/hoop/agent/config"
 	"github.com/runopsio/hoop/agent/dlp"
 	"github.com/runopsio/hoop/agent/hook"
 	term "github.com/runopsio/hoop/agent/terminal"
@@ -22,15 +23,13 @@ import (
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
-
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type (
 	Agent struct {
 		client    pb.ClientTransport
 		connStore memory.Store
+		config    *config.Config
 	}
 	connEnv struct {
 		host string
@@ -94,10 +93,11 @@ func parseConnectionEnvVars(envVars map[string]any, connType string) (*connEnv, 
 	return env, nil
 }
 
-func New(client pb.ClientTransport) *Agent {
+func New(client pb.ClientTransport, cfg *config.Config) *Agent {
 	return &Agent{
 		client:    client,
 		connStore: memory.New(),
+		config:    cfg,
 	}
 }
 
@@ -138,37 +138,25 @@ func (a *Agent) connectionParams(sessionID string) (*pb.AgentConnectionParams, *
 	return nil, nil
 }
 
-func (a *Agent) Run(svrAddr, token string, firstConnTry bool) {
-	a.client.StartKeepAlive()
-	a.handleGracefulExit()
-
+// Run returns true if it connected success with the gateway
+func (a *Agent) Run() error {
 	for {
 		pkt, err := a.client.Recv()
 		if err != nil {
-			if err == io.EOF {
-				log.Printf("disconnecting, EOF")
-				return
-			}
-			if e, ok := status.FromError(err); ok {
-				switch e.Code() {
-				case codes.Unauthenticated:
-					if firstConnTry {
-						fmt.Println("\n** UNREGISTERED AGENT **")
-						fmt.Printf("Please validate the Agent in the URL: %s\n", buildAgentRegisterURL(svrAddr, token))
-					}
-				default:
-					log.Printf("disconnecting, code=%v, msg=%v", e.Code(), err.Error())
-				}
-			}
-			return
+			return err
 		}
 		log.With("session", string(pkt.Spec[pb.SpecGatewaySessionID])).
 			Debugf("received client packet [%v]", pkt.Type)
 		switch pkt.Type {
 		case pbagent.GatewayConnectOK:
-			fmt.Println("connected!")
+			log.Infof("connected with success to %v, tls=%v", a.config.GrpcURL, a.config.IsSecure())
+			if err := a.config.Save(); err != nil {
+				a.client.Close()
+				return err
+			}
+			a.handleGracefulExit()
+			a.client.StartKeepAlive()
 			go a.startMonitoring(pkt)
-
 		case pbagent.SessionOpen:
 			a.processSessionOpen(pkt)
 

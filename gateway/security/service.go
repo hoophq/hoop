@@ -1,13 +1,15 @@
 package security
 
 import (
+	"fmt"
+	"log"
+
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/user"
 	"golang.org/x/oauth2"
-	"log"
 )
 
 type (
@@ -47,7 +49,12 @@ const (
 	outcomeEmailMismatch outcomeType = "email_mismatch"
 )
 
+var errAuthDisabled = fmt.Errorf("authentication is disabled when running on dev mode")
+
 func (s *Service) Login(redirect string) (string, error) {
+	if s.Provider.Profile == pb.DevProfile {
+		return "", errAuthDisabled
+	}
 	login := &login{
 		Id:       uuid.NewString(),
 		Redirect: redirect,
