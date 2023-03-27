@@ -2,7 +2,6 @@ package security
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/google/uuid"
