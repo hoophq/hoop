@@ -20,7 +20,7 @@ type (
 		Id             string         `edn:"xt/id"`
 		OrgId          string         `edn:"connection/org"`
 		Name           string         `edn:"connection/name"`
-		IconName       string         `edn:"connection/icon_name"`
+		IconName       string         `edn:"connection/icon-name"`
 		Command        []string       `edn:"connection/command"`
 		Type           Type           `edn:"connection/type"`
 		SecretProvider SecretProvider `edn:"connection/secret-provider"`
