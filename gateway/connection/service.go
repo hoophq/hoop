@@ -30,12 +30,13 @@ type (
 	}
 
 	BaseConnection struct {
-		Id             string         `json:"id"       edn:"xt/id"`
-		Name           string         `json:"name"     edn:"connection/name"    binding:"required"`
-		Command        []string       `json:"command"  edn:"connection/command" binding:"required"`
-		Type           Type           `json:"type"     edn:"connection/type"    binding:"required"`
-		AgentId        string         `json:"agent_id" edn:"connection/agent"   binding:"required"`
-		SecretProvider SecretProvider `json:"-"        edn:"connection/secret-provider"`
+		Id             string         `json:"id"       	edn:"xt/id"`
+		Name           string         `json:"name"     	edn:"connection/name"      	binding:"required"`
+		IconName       string         `json:"icon_name"	edn:"connection/icon-name"`
+		Command        []string       `json:"command"  	edn:"connection/command"   	binding:"required"`
+		Type           Type           `json:"type"     	edn:"connection/type"      	binding:"required"`
+		AgentId        string         `json:"agent_id" 	edn:"connection/agent"     	binding:"required"`
+		SecretProvider SecretProvider `json:"-"        	edn:"connection/secret-provider"`
 	}
 
 	Connection struct {

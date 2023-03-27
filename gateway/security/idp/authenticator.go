@@ -54,34 +54,38 @@ func (p *Provider) VerifyIDToken(token *oauth2.Token) (*oidc.IDToken, error) {
 }
 
 func (p *Provider) VerifyAccessToken(accessToken string) (string, error) {
+	log.With("access-token", accessToken).Debugf("verifying access token")
 	if len(strings.Split(accessToken, ".")) != 3 {
 		return p.UserInfoEndpoint(accessToken)
 	}
 
 	token, err := jwt.Parse(accessToken, p.JWKS.Keyfunc)
 	if err != nil {
-		log.Printf("failed validating access token, err: %v\n", err)
+		log.Debugf("failed validating access token, err: %v\n", err)
 		return "", invalidAuthErr
 	}
 
 	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
 		identifier, ok := claims["sub"].(string)
 		if !ok || identifier == "" {
+			log.Debugf("failed validating access token. 'sub' claim not ok")
 			return "", invalidAuthErr
 		}
 		return identifier, nil
 	}
 
+	log.Debugf("failed validating access token. No 'sub' claims found")
 	return "", invalidAuthErr
 }
 
 func (p *Provider) UserInfoEndpoint(accessToken string) (string, error) {
+	log.Debugf("starting user info endpoint token check")
 	user, err := p.Provider.UserInfo(context.Background(), &UserInfoToken{token: &oauth2.Token{
 		AccessToken: accessToken,
 		TokenType:   "Bearer",
 	}})
 	if err != nil {
-		log.Printf("failed validating token at userinfo endpoint, err: %v\n", err)
+		log.Errorf("failed validating token at userinfo endpoint, err: %v\n", err)
 		return "", invalidAuthErr
 	}
 	if user == nil {
