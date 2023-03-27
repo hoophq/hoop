@@ -103,6 +103,7 @@ func (s *Service) Callback(state, code string) string {
 
 	sub, err := s.Provider.VerifyAccessToken(token.AccessToken)
 	if err != nil {
+		log.Debugf("failed verifiying access token, reason=%v", err)
 		s.loginOutcome(login, outcomeError)
 		return login.Redirect + "?error=unexpected_error"
 	}

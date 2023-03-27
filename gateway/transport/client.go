@@ -135,6 +135,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 
 	sub, err := s.exchangeUserToken(token)
 	if err != nil {
+		log.Debugf("failed verifying access token, reason=%v", err)
 		return status.Errorf(codes.Unauthenticated, "invalid authentication")
 	}
 
