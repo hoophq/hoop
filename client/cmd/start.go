@@ -114,7 +114,7 @@ var startCmd = &cobra.Command{
 					}
 					os.Exit(1)
 				default:
-					resp, err := http.Get("http://127.0.0.1:8009/api/login")
+					resp, err := http.Get("http://127.0.0.1:8009/api/agents")
 					if err == nil && resp.StatusCode == 200 {
 						loader.Stop()
 						fmt.Println()
