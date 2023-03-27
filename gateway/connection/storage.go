@@ -19,7 +19,8 @@ type (
 	xtdb struct {
 		Id             string         `edn:"xt/id"`
 		OrgId          string         `edn:"connection/org"`
-		Name           string         `edn:"connection/name" `
+		Name           string         `edn:"connection/name"`
+		IconName       string         `edn:"connection/icon-name"`
 		Command        []string       `edn:"connection/command"`
 		Type           Type           `edn:"connection/type"`
 		SecretProvider SecretProvider `edn:"connection/secret-provider"`
@@ -36,6 +37,7 @@ func (s *Storage) Persist(context *user.Context, c *Connection) (int64, error) {
 		Id:             c.Id,
 		OrgId:          context.Org.Id,
 		Name:           c.Name,
+		IconName:       c.IconName,
 		Command:        c.Command,
 		Type:           c.Type,
 		SecretProvider: c.SecretProvider,
@@ -107,6 +109,7 @@ func (s *Storage) FindOne(context *user.Context, name string) (*Connection, erro
 		BaseConnection: BaseConnection{
 			Id:             conn.Id,
 			Name:           conn.Name,
+			IconName:       conn.IconName,
 			Command:        conn.Command,
 			Type:           conn.Type,
 			SecretProvider: conn.SecretProvider,
