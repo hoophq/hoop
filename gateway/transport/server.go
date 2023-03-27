@@ -1,15 +1,18 @@
 package transport
 
 import (
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/google/uuid"
-
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
@@ -24,7 +27,10 @@ import (
 	"github.com/runopsio/hoop/gateway/session"
 	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc"
+
+	// "google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
@@ -58,6 +64,42 @@ type (
 
 const listenAddr = "0.0.0.0:8010"
 
+func loadServerCertificates() (*tls.Config, error) {
+	tlsKeyEnc := os.Getenv("TLS_KEY")
+	tlsCertEnc := os.Getenv("TLS_CERT")
+	tlsCAEnc := os.Getenv("TLS_CA")
+	if tlsKeyEnc == "" && tlsCertEnc == "" {
+		return nil, nil
+	}
+	pemPrivateKeyData, err := base64.StdEncoding.DecodeString(tlsKeyEnc)
+	if err != nil {
+		return nil, fmt.Errorf("failed decoding TLS_KEY, err=%v", err)
+	}
+	pemCertData, err := base64.StdEncoding.DecodeString(tlsCertEnc)
+	if err != nil {
+		return nil, fmt.Errorf("failed decoding TLS_CERT, err=%v", err)
+	}
+	cert, err := tls.X509KeyPair(pemCertData, pemPrivateKeyData)
+	if err != nil {
+		return nil, fmt.Errorf("failed parsing key pair, err=%v", err)
+	}
+	var certPool *x509.CertPool
+	if tlsCAEnc != "" {
+		tlsCAData, err := base64.StdEncoding.DecodeString(tlsCAEnc)
+		if err != nil {
+			return nil, fmt.Errorf("failed decoding TLS_CA, err=%v", err)
+		}
+		certPool = x509.NewCertPool()
+		if !certPool.AppendCertsFromPEM(tlsCAData) {
+			return nil, fmt.Errorf("failed creating cert pool for TLS_CA")
+		}
+	}
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		RootCAs:      certPool,
+	}, nil
+}
+
 func (s *Server) StartRPCServer() {
 	log.Printf("starting gateway at %v", listenAddr)
 	listener, err := net.Listen("tcp", listenAddr)
@@ -71,9 +113,22 @@ func (s *Server) StartRPCServer() {
 		log.Fatal(err)
 	}
 
-	svr := grpc.NewServer()
-	pb.RegisterTransportServer(svr, s)
-	if err := svr.Serve(listener); err != nil {
+	tlsConfig, err := loadServerCertificates()
+	if err != nil {
+		sentry.CaptureException(err)
+		log.Fatal(err)
+	}
+	var grpcServer *grpc.Server
+	if tlsConfig != nil {
+		tlsCredentials := credentials.NewTLS(tlsConfig)
+		grpcServer = grpc.NewServer(grpc.Creds(tlsCredentials))
+	}
+	if grpcServer == nil {
+		grpcServer = grpc.NewServer()
+	}
+	pb.RegisterTransportServer(grpcServer, s)
+	log.Infof("server transport created, tls=%v", tlsConfig != nil)
+	if err := grpcServer.Serve(listener); err != nil {
 		sentry.CaptureException(err)
 		log.Fatalf("failed to serve: %v", err)
 	}

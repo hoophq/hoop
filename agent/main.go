@@ -1,137 +1,71 @@
 package agent
 
 import (
-	"context"
 	"fmt"
-	"os"
-	"strings"
+	"io"
 	"time"
 
-	"github.com/BurntSushi/toml"
-	"github.com/google/uuid"
-	"github.com/runopsio/hoop/agent/autoregister"
+	agentconfig "github.com/runopsio/hoop/agent/config"
 	"github.com/runopsio/hoop/common/clientconfig"
 	"github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/common/version"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func Run() {
-	fmt.Println(string(version.JSON()))
-	defaultServerAddress := "127.0.0.1:8010"
-	secondaryServerAddres := "app.hoop.dev:8443"
-	agentToken, err := autoregister.Run()
+	config, err := agentconfig.Load()
 	if err != nil {
 		log.Fatal(err)
 	}
-	if agentToken != "" {
-		saveConfig(&Config{ServerAddress: defaultServerAddress, Token: agentToken})
-	}
 
-	conf := loadConfig()
-	if conf.Token == "" {
-		conf.Token = os.Getenv("TOKEN")
-		if conf.Token == "" {
-			conf.Token = "x-agt-" + uuid.NewString()
-		}
-	}
-
-	if conf.ServerAddress == "" {
-		conf.ServerAddress = os.Getenv("SERVER_ADDRESS")
-		if conf.ServerAddress == "" {
-			conf.ServerAddress = defaultServerAddress
-		}
-	}
-	log.Debugf("server=%v, token-length=%v", conf.ServerAddress, len(conf.Token))
-	client, err := grpc.Connect(conf.ServerAddress, conf.Token, grpc.WithOption("origin", pb.ConnectionOriginAgent))
+	clientOptions := grpc.WithOption("origin", pb.ConnectionOriginAgent)
+	clientConfig, err := config.GrpcClientConfig()
 	if err != nil {
-		if strings.HasPrefix(conf.ServerAddress, defaultServerAddress) {
-			conf.ServerAddress = secondaryServerAddres
-			fmt.Printf("Trying remote server...")
-			client, err = grpc.Connect(conf.ServerAddress, conf.Token, grpc.WithOption("origin", pb.ConnectionOriginAgent))
+		log.Fatal(err)
+	}
+	vs := version.Get()
+	log.Infof("version=%v, platform=%v, mode=%v, grpc_server=%v, tls=%v - starting agent",
+		vs.Version, vs.Platform, config.Mode, config.GrpcURL, config.IsSecure())
+	switch config.Mode {
+	case clientconfig.ModeAgentWebRegister:
+		for i := 0; ; i++ {
+			log.Infof("webregister - connecting, attempt=%v", i+1)
+			client, err := grpc.Connect(clientConfig, clientOptions)
 			if err != nil {
-				log.Printf("disconnecting, err=%v", err.Error())
-				os.Exit(1)
+				log.Fatalf("failed to connect to %s, err=%v", config.GrpcURL, err.Error())
 			}
-		} else {
-			log.Printf("failed to connect to [%s], err=%v", conf.ServerAddress, err.Error())
-			os.Exit(1)
-		}
-	}
-
-	saveConfig(conf)
-
-	firstTry := true
-	for i := 1; i < 100; i++ {
-		ctx := client.StreamContext()
-		agt := New(client)
-
-		if err := runWithError(ctx, conf, agt, firstTry); err != nil {
-			time.Sleep(time.Second * 5)
-			fmt.Print(".")
-			firstTry = false
-			client, err = grpc.Connect(conf.ServerAddress, conf.Token, grpc.WithOption("origin", pb.ConnectionOriginAgent))
-			if err != nil {
-				log.Printf("failed to connect to [%s], err=%v", conf.ServerAddress, err.Error())
-				os.Exit(1)
+			err = New(client, config).Run()
+			if config.IsSaved() && err != nil {
+				log.Warnf("disconnected from %v, err=%v", config.GrpcURL, err)
+				break
 			}
-			continue
+			if e, ok := status.FromError(err); ok && e.Code() == codes.Unauthenticated {
+				if i == 0 {
+					fmt.Print("\n--------------------------------------------------------------------------\n")
+					fmt.Println("VISIT THE URL BELOW TO REGISTER THE AGENT")
+					fmt.Print(config.WebRegisterURL)
+					fmt.Print("\n--------------------------------------------------------------------------\n")
+					fmt.Println()
+				}
+				if i >= 30 { // ~3 minutes
+					log.Warnf("timeout on registering the agent")
+					break
+				}
+				time.Sleep(time.Second * 7)
+			}
 		}
-		break
+	default:
+		client, err := grpc.Connect(clientConfig, clientOptions)
+		if err != nil {
+			log.Fatalf("failed to connect to %s, err=%v", config.GrpcURL, err.Error())
+		}
+		err = New(client, config).Run()
+		if err != io.EOF {
+			log.Fatalf("disconnected from %v, err=%v", config.GrpcURL, err.Error())
+		}
+		log.Warnf("disconnected from %v", config.GrpcURL)
 	}
-
-	log.Println("server terminated connection... exiting...")
-}
-
-func runWithError(ctx context.Context, conf *Config, agt *Agent, firstTry bool) error {
-	go agt.Run(conf.ServerAddress, conf.Token, firstTry)
-	<-ctx.Done()
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	return nil
-}
-
-type (
-	Config struct {
-		Token         string
-		ServerAddress string
-	}
-)
-
-func loadConfig() *Config {
-	path := getFilepath()
-	var conf Config
-	if _, err := toml.DecodeFile(path, &conf); err != nil {
-		panic(err)
-	}
-
-	return &conf
-}
-
-func saveConfig(conf *Config) {
-	f, err := os.OpenFile(getFilepath(), os.O_WRONLY, os.ModeAppend)
-	if err != nil {
-		panic(err)
-	}
-	defer f.Close()
-
-	if err := f.Truncate(0); err != nil {
-		panic(err)
-	}
-
-	f.Seek(0, 0)
-
-	if err := toml.NewEncoder(f).Encode(conf); err != nil {
-		panic(err)
-	}
-}
-
-func getFilepath() string {
-	filepath, err := clientconfig.NewPath(clientconfig.AgentFile)
-	if err != nil {
-		panic(err)
-	}
-	return filepath
 }

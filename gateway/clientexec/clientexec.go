@@ -85,7 +85,7 @@ func New(orgID, accessToken, connectionName string) (*clientExec, error) {
 	if err != nil {
 		return nil, err
 	}
-	client, err := grpc.Connect("127.0.0.1:8010", accessToken,
+	client, err := grpc.ConnectLocalhost(accessToken,
 		grpc.WithOption(grpc.OptionConnectionName, connectionName),
 		grpc.WithOption("origin", pb.ConnectionOriginClientAPI),
 		grpc.WithOption("verb", pb.ClientVerbExec),

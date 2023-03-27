@@ -3,7 +3,13 @@ package cmd
 import (
 	"os"
 
+	"github.com/runopsio/hoop/common/log"
 	"github.com/spf13/cobra"
+)
+
+var (
+	debugGrpcFlag bool
+	debugFlag     bool
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -12,6 +18,15 @@ var rootCmd = &cobra.Command{
 	CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
 	Long: `Connect to private infra-structure without the need of a VPN.
 https://docs.runops.io/docs`,
+	PersistentPreRun: func(_ *cobra.Command, _ []string) {
+		// run with the env GODEBUG=http2debug=2 to log http2 frames.
+		if debugGrpcFlag {
+			log.SetGrpcLogger()
+		}
+		if debugFlag {
+			log.SetDefaultLoggerLevel(log.LevelDebug)
+		}
+	},
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -21,4 +36,9 @@ func Execute() {
 	if err != nil {
 		os.Exit(1)
 	}
+}
+
+func init() {
+	rootCmd.PersistentFlags().BoolVar(&debugGrpcFlag, "debug-grpc", false, "Turn on debugging of gRPC (http2) if applicable")
+	rootCmd.PersistentFlags().BoolVar(&debugFlag, "debug", false, "Turn on debugging")
 }
