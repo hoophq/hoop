@@ -138,7 +138,6 @@ func (a *Agent) connectionParams(sessionID string) (*pb.AgentConnectionParams, *
 	return nil, nil
 }
 
-// Run returns true if it connected success with the gateway
 func (a *Agent) Run() error {
 	for {
 		pkt, err := a.client.Recv()

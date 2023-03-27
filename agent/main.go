@@ -55,7 +55,6 @@ func Run() {
 					break
 				}
 				time.Sleep(time.Second * 7)
-				continue
 			}
 		}
 	default:

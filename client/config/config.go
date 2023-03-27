@@ -21,7 +21,7 @@ var ErrEmpty error = errors.New("unable to locate configuration file")
 const apiLocalhostURL = "http://127.0.0.1:8009"
 
 type Config struct {
-	Token    string `toml:"access_token"`
+	Token    string `toml:"token"`
 	ApiURL   string `toml:"api_url"`
 	GrpcURL  string `toml:"grpc_url"`
 	Mode     string `toml:"-"`
