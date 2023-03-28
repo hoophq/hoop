@@ -100,15 +100,17 @@ func (c *Config) GrpcClientConfig() (grpc.ClientConfig, error) {
 		ServerAddress: srvAddr,
 		TLSServerName: os.Getenv("TLS_SERVER_NAME"),
 		Token:         c.Token,
-		Insecure:      c.Mode == clientconfig.ModeLocal,
+		Insecure:      c.Mode == clientconfig.ModeLocal || c.Mode == clientconfig.ModeAgentAutoRegister,
 	}, err
 }
 
-func (c *Config) isEmpty() bool  { return c.GrpcURL == "" && c.Token == "" }
-func (c *Config) IsSecure() bool { return c.Mode != clientconfig.ModeLocal }
-func (c *Config) IsValid() bool  { return c.Token != "" && c.GrpcURL != "" }
-func (c *Config) IsSaved() bool  { return c.saved }
-func (c *Config) Delete()        { _ = os.Remove(c.filepath) }
+func (c *Config) isEmpty() bool { return c.GrpcURL == "" && c.Token == "" }
+func (c *Config) IsSecure() bool {
+	return c.Mode != clientconfig.ModeLocal && c.Mode != clientconfig.ModeAgentAutoRegister
+}
+func (c *Config) IsValid() bool { return c.Token != "" && c.GrpcURL != "" }
+func (c *Config) IsSaved() bool { return c.saved }
+func (c *Config) Delete()       { _ = os.Remove(c.filepath) }
 func (c *Config) Save() error {
 	if c.Mode != clientconfig.ModeAgentWebRegister {
 		return nil
