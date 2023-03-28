@@ -128,7 +128,7 @@ func (c *client) DeidentifyContent(ctx context.Context, conf *deidentifyConfig, 
 		dataRowsBuffer := encodeToDataRow(responseTable)
 		return &Chunk{
 			index:                 chunkIndex,
-			transformationSummary: &pbdlp.TransformationSummary{},
+			transformationSummary: chunk.transformationSummary,
 			data:                  dataRowsBuffer}
 	}
 	chunk.data = bytes.NewBufferString(r.Item.GetValue())
