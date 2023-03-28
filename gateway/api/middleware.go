@@ -1,6 +1,8 @@
 package api
 
 import (
+	"bytes"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
@@ -15,18 +17,24 @@ import (
 	"go.uber.org/zap"
 )
 
-var invalidAuthErr = errors.New("invalid auth")
+var (
+	errInvalidAuthHeaderErr = errors.New("invalid authorization header")
+	invalidAuthErr          = errors.New("invalid auth")
+)
 
 func (api *Api) Authenticate(c *gin.Context) {
 	sub, err := api.validateClaims(c)
 	if err != nil {
-		log.Printf("failed authenticating, err=%v", err)
+		tokenHeader := c.GetHeader("authorization")
+		log.Infof("failed authenticating, %v, length=%v, reason=%v",
+			parseHeaderForDebug(tokenHeader), len(tokenHeader), err)
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
 
 	ctx, err := api.UserHandler.Service.FindBySub(sub)
 	if err != nil || ctx.User == nil {
+		log.Debugf("failed searching for user, sub=%v, err=%v", sub, err)
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
@@ -50,7 +58,7 @@ func (api *Api) validateClaims(c *gin.Context) (string, error) {
 	tokenHeader := c.GetHeader("authorization")
 	tokenParts := strings.Split(tokenHeader, " ")
 	if len(tokenParts) != 2 || tokenParts[0] != "Bearer" || tokenParts[1] == "" {
-		return "", invalidAuthErr
+		return "", errInvalidAuthHeaderErr
 	}
 	return api.IDProvider.VerifyAccessToken(tokenParts[1])
 }
@@ -94,4 +102,24 @@ func CORSMiddleware() gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+func parseHeaderForDebug(authTokenHeader string) string {
+	prefixAuthHeader := "N/A"
+	if len(authTokenHeader) > 18 {
+		prefixAuthHeader = authTokenHeader[0:18]
+	}
+	bearerString, token, found := strings.Cut(authTokenHeader, " ")
+	if !found || bearerString != "Bearer" {
+		return fmt.Sprintf("isjwt=unknown, prefix-auth-header[19]=%v", prefixAuthHeader)
+	}
+	header, payload, found := strings.Cut(token, ".")
+	if !found {
+		return fmt.Sprintf("isjwt=false, prefix-auth-header[19]=%v", prefixAuthHeader)
+	}
+	headerBytes, _ := base64.StdEncoding.DecodeString(header)
+	payloadBytes, _ := base64.StdEncoding.DecodeString(payload)
+	headerBytes = bytes.ReplaceAll(headerBytes, []byte(`"`), []byte(`'`))
+	payloadBytes = bytes.ReplaceAll(payloadBytes, []byte(`"`), []byte(`'`))
+	return fmt.Sprintf("isjwt=true, header=%v, payload=%v", string(headerBytes), string(payloadBytes))
 }

@@ -135,6 +135,10 @@ func Run() {
 			panic(err)
 		}
 	}
+	if os.Getenv("LOG_GRPC") == "1" {
+		log.SetGrpcLogger()
+	}
+
 	log.Infof("profile=%v - starting servers", profile)
 	go g.StartRPCServer()
 	a.StartAPI(sentryStarted)

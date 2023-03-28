@@ -8,29 +8,42 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zapgrpc"
+	"google.golang.org/grpc/grpclog"
 )
 
-var zlog = NewDefaultLogger()
+const (
+	LevelDebug = "DEBUG"
+	LevelInfo  = "INFO"
+	LevelWarn  = "WARN"
+	LevelError = "ERROR"
+)
 
-func Sync() error { return zlog.Sync() }
+var (
+	zlog = NewDefaultLogger()
+
+	// aliases
+	Printf                = zlog.Sugar().Infof
+	Println               = zlog.Sugar().Info
+	defaultLoggerSetLevel = func(l zapcore.Level) {}
+
+	Debugf = zlog.Sugar().Debugf
+	Infof  = zlog.Sugar().Infof
+	Info   = zlog.Sugar().Info
+	Warnf  = zlog.Sugar().Warnf
+	Errorf = zlog.Sugar().Errorf
+	Fatalf = zlog.Sugar().Fatalf
+	Fatal  = zlog.Sugar().Fatal
+
+	With = zlog.Sugar().With
+)
 
 func NewDefaultLogger() *zap.Logger {
 	logEncoding := os.Getenv("LOG_ENCODING")
 	if logEncoding == "" {
 		logEncoding = "json"
 	}
-	logLevel := zap.NewAtomicLevelAt(zapcore.InfoLevel)
-	switch strings.ToUpper(os.Getenv("LOG_LEVEL")) {
-	case "DEBUG":
-		logLevel = zap.NewAtomicLevelAt(zapcore.DebugLevel)
-	case "WARN":
-		logLevel = zap.NewAtomicLevelAt(zapcore.WarnLevel)
-	case "ERROR":
-		logLevel = zap.NewAtomicLevelAt(zapcore.ErrorLevel)
-	}
-
-	// zap.NewProduction()
-	// zapcore.NewSamplerWithOptions(core, time.Second, 10, 5)
+	logLevel := parseToAtomicLevel(os.Getenv("LOG_LEVEL"))
 	loggerConfig := &zap.Config{
 		Level:    logLevel,
 		Encoding: logEncoding,
@@ -55,25 +68,39 @@ func NewDefaultLogger() *zap.Logger {
 		OutputPaths:      []string{"stdout"},
 		ErrorOutputPaths: []string{"stderr"},
 	}
-
+	defaultLoggerSetLevel = loggerConfig.Level.SetLevel
 	logger, err := loggerConfig.Build()
+
 	if err != nil {
 		log.Fatal(err)
 	}
 	return logger
 }
 
-var (
-	// aliases
-	Printf  = zlog.Sugar().Infof
-	Println = zlog.Sugar().Info
+func parseToAtomicLevel(level string) zap.AtomicLevel {
+	logLevel := zap.NewAtomicLevelAt(zapcore.InfoLevel)
+	switch strings.ToUpper(level) {
+	case LevelDebug:
+		logLevel = zap.NewAtomicLevelAt(zapcore.DebugLevel)
+	case LevelWarn:
+		logLevel = zap.NewAtomicLevelAt(zapcore.WarnLevel)
+	case LevelError:
+		logLevel = zap.NewAtomicLevelAt(zapcore.ErrorLevel)
+	}
+	return logLevel
+}
 
-	Debugf = zlog.Sugar().Debugf
-	Infof  = zlog.Sugar().Infof
-	Warnf  = zlog.Sugar().Warnf
-	Errorf = zlog.Sugar().Errorf
-	Fatalf = zlog.Sugar().Fatalf
-	Fatal  = zlog.Sugar().Fatal
+// SetGrpcLogger sets logger that is used in grpc.
+// Not mutex-protected, should be called before any gRPC functions.
+func SetGrpcLogger() {
+	grpclog.SetLoggerV2(zapgrpc.NewLogger(zlog))
+}
 
-	With = zlog.Sugar().With
-)
+// SetDefaultLoggerLevel changes the default log level of the current logger
+func SetDefaultLoggerLevel(level string) {
+	if defaultLoggerSetLevel != nil {
+		defaultLoggerSetLevel(parseToAtomicLevel(level).Level())
+	}
+}
+
+func Sync() error { return zlog.Sync() }

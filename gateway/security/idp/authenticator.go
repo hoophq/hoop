@@ -3,6 +3,7 @@ package idp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -55,37 +56,36 @@ func (p *Provider) VerifyIDToken(token *oauth2.Token) (*oidc.IDToken, error) {
 
 func (p *Provider) VerifyAccessToken(accessToken string) (string, error) {
 	if len(strings.Split(accessToken, ".")) != 3 {
-		return p.UserInfoEndpoint(accessToken)
+		return p.userInfoEndpoint(accessToken)
 	}
 
 	token, err := jwt.Parse(accessToken, p.JWKS.Keyfunc)
 	if err != nil {
-		log.Printf("failed validating access token, err: %v\n", err)
-		return "", invalidAuthErr
+		return "", fmt.Errorf("failed parsing access token: %v", err)
 	}
 
-	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+	if !token.Valid {
+		return "", fmt.Errorf("parse error, token invalid")
+	}
+
+	if claims, ok := token.Claims.(jwt.MapClaims); ok {
 		identifier, ok := claims["sub"].(string)
 		if !ok || identifier == "" {
-			return "", invalidAuthErr
+			return "", fmt.Errorf("'sub' not found or has an empty value")
 		}
 		return identifier, nil
 	}
-
-	return "", invalidAuthErr
+	return "", fmt.Errorf("failed type casting token.Claims (%T) to jwt.MapClaims", token.Claims)
 }
 
-func (p *Provider) UserInfoEndpoint(accessToken string) (string, error) {
+func (p *Provider) userInfoEndpoint(accessToken string) (string, error) {
+	log.Debugf("starting user info endpoint token check")
 	user, err := p.Provider.UserInfo(context.Background(), &UserInfoToken{token: &oauth2.Token{
 		AccessToken: accessToken,
 		TokenType:   "Bearer",
 	}})
 	if err != nil {
-		log.Printf("failed validating token at userinfo endpoint, err: %v\n", err)
-		return "", invalidAuthErr
-	}
-	if user == nil {
-		return "", invalidAuthErr
+		return "", fmt.Errorf("failed validating token at userinfo endpoint, err=%v", err)
 	}
 	return user.Subject, nil
 }

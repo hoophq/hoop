@@ -13,6 +13,7 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/connection"
+	"github.com/runopsio/hoop/gateway/healthz"
 	"github.com/runopsio/hoop/gateway/indexer"
 	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/review"
@@ -89,6 +90,7 @@ func (api *Api) StartAPI(sentryInit bool) {
 
 func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.GET("/login", api.SecurityHandler.Login)
+	route.GET("/healthz", healthz.LivenessHandler)
 	route.GET("/callback", api.SecurityHandler.Callback)
 
 	route.GET("/users",
