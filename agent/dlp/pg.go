@@ -74,23 +74,24 @@ func (m *redactPostgresMiddleware) Handler(next pg.NextFn, pkt *pg.Packet, w pg.
 
 func (m *redactPostgresMiddleware) redactAndWrite(w pg.ResponseWriter) {
 	defer func() { m.dataRowPackets.Reset(); m.typedPackets.Reset(); m.rowCount = 0 }()
-	redactedDataRows, err := redactDataRow(m.dlpClient, &deidentifyConfig{
+	redactedChunk, err := redactDataRow(m.dlpClient, &deidentifyConfig{
 		maskingCharacter: "#",
 		numberToMask:     defaultNumberToMask,
 		infoTypes:        m.infoTypes,
 		projectID:        m.dlpClient.ProjectID(),
 	}, m.dataRowPackets)
+
 	if err != nil {
 		errMsg := fmt.Errorf("failed redacting data row packets, err=%v", err)
 		log.Println(errMsg)
 		sentry.CaptureException(errMsg)
 	}
-	if _, err := redactedDataRows.Write(m.typedPackets.Bytes()); err != nil {
+	if _, err := redactedChunk.data.Write(m.typedPackets.Bytes()); err != nil {
 		errMsg := fmt.Errorf("failed generating packet buffer, err=%v", err)
 		log.Println(errMsg)
 		sentry.CaptureException(errMsg)
 	}
-	if _, err = w.Write(redactedDataRows.Bytes()); err != nil {
+	if _, err = w.Write(redactedChunk.data.Bytes()); err != nil {
 		errMsg := fmt.Errorf("failed writing packet to response writer, err=%v", err)
 		log.Println(errMsg)
 		sentry.CaptureException(errMsg)
@@ -110,10 +111,10 @@ func encodeToDataRow(table *dlppb.Table) *bytes.Buffer {
 	return bytes.NewBuffer(dataRowPackets)
 }
 
-func redactDataRow(dlpclient Client, conf *deidentifyConfig, dataRows *bytes.Buffer) (*bytes.Buffer, error) {
+func redactDataRow(dlpclient Client, conf *deidentifyConfig, dataRows *bytes.Buffer) (*Chunk, error) {
 	// don't redact too small packets
 	if dataRows.Len() < 15 {
-		return dataRows, nil
+		return &Chunk{data: dataRows}, nil
 	}
 	tableInput := &dlppb.Table{
 		Headers: []*dlppb.FieldId{},
@@ -127,10 +128,10 @@ func redactDataRow(dlpclient Client, conf *deidentifyConfig, dataRows *bytes.Buf
 			if err == io.EOF {
 				break
 			}
-			return dataRows, err
+			return &Chunk{data: dataRows}, err
 		}
 		if dataRowPkt.Type() != pgtypes.ServerDataRow {
-			return dataRows, fmt.Errorf("expected data row packet, got=%v", string(dataRowPkt.Type()))
+			return &Chunk{data: dataRows}, fmt.Errorf("expected data row packet, got=%v", string(dataRowPkt.Type()))
 		}
 		dataRowBuf := bytes.NewBuffer(dataRowPkt.Frame())
 		columnNumbers := binary.BigEndian.Uint16(dataRowBuf.Next(2))
@@ -145,7 +146,7 @@ func redactDataRow(dlpclient Client, conf *deidentifyConfig, dataRows *bytes.Buf
 			columnData := make([]byte, columnLength)
 			_, err := io.ReadFull(dataRowBuf, columnData[:])
 			if err != nil {
-				return dataRows, fmt.Errorf("failed reading column (idx=%v,len=%v), err=%v", i, columnLength, err)
+				return &Chunk{data: dataRows}, fmt.Errorf("failed reading column (idx=%v,len=%v), err=%v", i, columnLength, err)
 			}
 			// must append it only once
 			if len(tableInput.Headers) < int(columnNumbers) {
@@ -169,8 +170,8 @@ func redactDataRow(dlpclient Client, conf *deidentifyConfig, dataRows *bytes.Buf
 		close(chunkCh)
 		break
 	}
-	if redactedChunk.transformationSummary.err != nil {
-		return dataRows, redactedChunk.transformationSummary.err
+	if redactedChunk.transformationSummary.Err != nil {
+		return &Chunk{data: dataRows}, redactedChunk.transformationSummary.Err
 	}
-	return redactedChunk.data, nil
+	return redactedChunk, nil
 }

@@ -2,10 +2,8 @@ package audit
 
 import (
 	"fmt"
-	"os"
-	"sync"
-	"time"
-
+	"github.com/getsentry/sentry-go"
+	pbdlp "github.com/runopsio/hoop/common/dlp"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/memory"
 	"github.com/runopsio/hoop/common/pg"
@@ -13,6 +11,10 @@ import (
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	"github.com/runopsio/hoop/gateway/plugin"
+	"os"
+	"strconv"
+	"sync"
+	"time"
 )
 
 const (
@@ -81,6 +83,7 @@ func (p *auditPlugin) OnConnect(config plugin.Config) error {
 }
 
 func (p *auditPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *pb.Packet) error {
+	dlpCount := decodeDlpSummary(pkt)
 	switch pb.PacketType(pkt.GetType()) {
 	case pbagent.PGConnectionWrite:
 		isSimpleQuery, queryBytes, err := pg.SimpleQueryContent(pkt.Payload)
@@ -90,19 +93,19 @@ func (p *auditPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt
 		if err != nil {
 			return fmt.Errorf("session=%v - failed obtaining simple query data, err=%v", pluginConfig.SessionId, err)
 		}
-		return p.writeOnReceive(pluginConfig.SessionId, 'i', queryBytes)
+		return p.writeOnReceive(pluginConfig.SessionId, 'i', dlpCount, queryBytes)
 	case pbclient.WriteStdout,
 		pbclient.WriteStderr:
-		return p.writeOnReceive(pluginConfig.SessionId, 'o', pkt.Payload)
+		return p.writeOnReceive(pluginConfig.SessionId, 'o', dlpCount, pkt.Payload)
 	case pbclient.SessionClose:
 		defer p.closeSession(pluginConfig.SessionId)
 		if len(pkt.Payload) > 0 {
-			return p.writeOnReceive(pluginConfig.SessionId, 'e', pkt.Payload)
+			return p.writeOnReceive(pluginConfig.SessionId, 'e', dlpCount, pkt.Payload)
 		}
 	case pbagent.ExecWriteStdin,
 		pbagent.TerminalWriteStdin,
 		pbagent.TCPConnectionWrite:
-		return p.writeOnReceive(pluginConfig.SessionId, 'i', pkt.Payload)
+		return p.writeOnReceive(pluginConfig.SessionId, 'i', dlpCount, pkt.Payload)
 	}
 	return nil
 }
@@ -127,3 +130,29 @@ func (p *auditPlugin) closeSession(sessionID string) {
 }
 
 func (p *auditPlugin) OnShutdown() {}
+
+func decodeDlpSummary(pkt *pb.Packet) int64 {
+	tsEnc := pkt.Spec[pb.SpecDLPTransformationSummary]
+	if tsEnc == nil {
+		return 0
+	}
+	var ts []*pbdlp.TransformationSummary
+	if err := pb.GobDecodeInto(tsEnc, &ts); err != nil {
+		log.Printf("failed decoding dlp transformation summary, err=%v", err)
+		sentry.CaptureException(err)
+		return 0
+	}
+	counter := int64(0)
+	for _, t := range ts {
+		sr := t.SummaryResult
+		for _, s := range sr {
+			if len(s) > 0 {
+				countStr := s[0]
+				if n, err := strconv.Atoi(countStr); err == nil {
+					counter += int64(n)
+				}
+			}
+		}
+	}
+	return counter
+}

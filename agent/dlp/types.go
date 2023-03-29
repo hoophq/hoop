@@ -2,11 +2,10 @@ package dlp
 
 import (
 	"bytes"
-	"context"
-	"fmt"
-
 	dlp "cloud.google.com/go/dlp/apiv2"
 	"cloud.google.com/go/dlp/apiv2/dlppb"
+	"context"
+	pbdlp "github.com/runopsio/hoop/common/dlp"
 	pb "github.com/runopsio/hoop/common/proto"
 )
 
@@ -39,17 +38,10 @@ type (
 		maxPacketLength int
 		rowCount        int
 	}
-	transformationSummary struct {
-		index int
-		err   error
-		// [info-type, transformed-bytes]
-		summary []string
-		// [[count, code, details] ...]
-		summaryResult [][]string
-	}
+
 	Chunk struct {
 		index                 int
-		transformationSummary *transformationSummary
+		transformationSummary *pbdlp.TransformationSummary
 		data                  *bytes.Buffer
 	}
 	client struct {
@@ -127,15 +119,4 @@ func (c *Chunk) Data() *bytes.Buffer {
 
 func (c *client) ProjectID() string {
 	return c.projectID
-}
-
-func (t *transformationSummary) String() string {
-	if len(t.summary) == 2 {
-		return fmt.Sprintf("chunk:%v, infotype:%v, transformedbytes:%v, result:%v",
-			t.index, t.summary[0], t.summary[1], t.summaryResult)
-	}
-	if t.err != nil {
-		return fmt.Sprintf("chunk:%v, err:%v", t.index, t.err)
-	}
-	return ""
 }

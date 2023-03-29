@@ -76,6 +76,10 @@ func (a *Handler) FindOne(c *gin.Context) {
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
+	if session == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+		return
+	}
 
 	if session == nil {
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})

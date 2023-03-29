@@ -31,13 +31,14 @@ type (
 
 func InitReportScheduler(s *Scheduler) {
 	scheduler := gocron.NewScheduler(time.UTC)
-	scheduler.Every(1).Day().Do(func() {
+	scheduler.Every(1).Day().At("20:00").Do(func() {
 		s.sendReports()
 	})
 	scheduler.StartAsync()
 }
 
 func (s *Scheduler) sendReports() {
+	fmt.Println("Starting sendReports job")
 	orgs, err := s.UserStorage.FindOrgs()
 	if err != nil {
 		log.Printf("scheduler job failed, err=%v", err)
@@ -53,6 +54,7 @@ func (s *Scheduler) sendReports() {
 }
 
 func (s *Scheduler) sendReport(o *user.Org) {
+	fmt.Printf("Sending report to %s\n", o.Name)
 	ctx := &user.Context{
 		Org: o,
 	}
@@ -76,7 +78,11 @@ func (s *Scheduler) sendReport(o *user.Org) {
 		sentry.CaptureException(err)
 		return
 	}
-	template := s.buildTemplate(o, sessionList.Total)
+	dlpCount := int64(0)
+	for _, s := range sessionList.Items {
+		dlpCount += s.DlpCount
+	}
+	template := s.buildTemplate(o, sessionList.Total, dlpCount)
 
 	log.Info("Sending admins weekly report")
 	s.Notification.Send(notification.Notification{
@@ -86,8 +92,9 @@ func (s *Scheduler) sendReport(o *user.Org) {
 	})
 }
 
-func (s *Scheduler) buildTemplate(o *user.Org, sessionCount int) string {
-	return fmt.Sprintf("Hi %s administrator, You had %d session(s) executed in the past 7 days.", o.Name, sessionCount)
+func (s *Scheduler) buildTemplate(o *user.Org, sessionCount int, dlpCount int64) string {
+	return fmt.Sprintf("Hi %s administrator, You had %d session(s) executed and %d DLP fields redacted in the past 7 days.",
+		o.Name, sessionCount, dlpCount)
 }
 
 func listEmails(reviewers []user.User) []string {

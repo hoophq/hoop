@@ -2,17 +2,18 @@ package audit
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/gateway/plugin"
+	"github.com/runopsio/hoop/gateway/session"
+	"github.com/tidwall/wal"
 	"os"
 	"sync"
 	"time"
 
 	"github.com/runopsio/hoop/common/log"
-	pb "github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/plugin"
-	"github.com/runopsio/hoop/gateway/session"
-	"github.com/tidwall/wal"
 )
 
 const walFolderTmpl string = `%s/%s-%s-wal`
@@ -64,28 +65,38 @@ func decodeWalHeader(data []byte) (*walHeader, error) {
 	return &ws, ws.validate()
 }
 
-func addEventStreamHeader(d time.Time, eventType byte) []byte {
-	return append([]byte(d.Format(time.RFC3339Nano)), '\000', eventType, '\000')
+func addEventStreamHeader(d time.Time, eventType byte, dlpCount int64) []byte {
+	result := append([]byte(d.Format(time.RFC3339Nano)), '\000', eventType, '\000')
+	result = append(result, intToByteArray(dlpCount)...) // int64 uses a fixed 8 bytes
+	return append(result, '\000')
 }
 
-func parseEventStream(eventStream []byte) (session.EventStream, int, error) {
+func parseEventStream(eventStream []byte) (session.EventStream, int, int64, error) {
 	position := bytes.IndexByte(eventStream, '\000')
 	if position == -1 {
-		return nil, -1, fmt.Errorf("event stream in wrong format [event-time]")
+		return nil, -1, 0, fmt.Errorf("event stream in wrong format [event-time]")
 	}
 	eventTimeBytes := eventStream[:position]
 	eventTime, err := time.Parse(time.RFC3339Nano, string(eventTimeBytes))
 	if err != nil {
-		return nil, -1, fmt.Errorf("failed parsing event time, err=%v", err)
+		return nil, -1, 0, fmt.Errorf("failed parsing event time, err=%v", err)
 	}
 	position += 2
 	if len(eventStream) <= position {
-		return nil, -1, fmt.Errorf("event stream in wrong format [event-type]")
+		return nil, -1, 0, fmt.Errorf("event stream in wrong format [event-type]")
 	}
 	eventType := eventStream[position-1]
+
+	// dlp counter uses 8-byte (int64)
+	position += 9
+	if len(eventStream) <= position {
+		return nil, -1, 0, fmt.Errorf("event stream in wrong format [event-type]")
+	}
+	dlpCounter := byteArrayToInt(eventStream[position-8 : position])
+
 	eventStreamLength := len(eventStream[position:])
 	return session.EventStream{eventTime, eventType, eventStream[position:]},
-		eventStreamLength, nil
+		eventStreamLength, dlpCounter, nil
 }
 
 func (p *auditPlugin) writeOnConnect(config plugin.Config) error {
@@ -115,7 +126,7 @@ func (p *auditPlugin) writeOnConnect(config plugin.Config) error {
 	return nil
 }
 
-func (p *auditPlugin) writeOnReceive(sessionID string, eventType byte, event []byte) error {
+func (p *auditPlugin) writeOnReceive(sessionID string, eventType byte, dlpCount int64, event []byte) error {
 	walLogObj := p.walSessionStore.Get(sessionID)
 	walogm, ok := walLogObj.(*walLogRWMutex)
 	if !ok {
@@ -127,7 +138,7 @@ func (p *auditPlugin) writeOnReceive(sessionID string, eventType byte, event []b
 	if err != nil || lastIndex == 0 {
 		return fmt.Errorf("failed retrieving wal file content, lastindex=%v, err=%v", lastIndex, err)
 	}
-	eventHeader := addEventStreamHeader(time.Now().UTC(), eventType)
+	eventHeader := addEventStreamHeader(time.Now().UTC(), eventType, dlpCount)
 	if err := walogm.log.Write(lastIndex+1, append(eventHeader, event...)); err != nil {
 		return fmt.Errorf("failed writing into wal file, position=%v, err=%v", lastIndex+1, err)
 	}
@@ -161,6 +172,7 @@ func (p *auditPlugin) writeOnClose(sessionID string) error {
 	idx := uint64(2)
 	var eventStreamList []session.EventStream
 	eventSize := int64(0)
+	dlpCounter := int64(0)
 	for {
 		eventStreamBytes, err := walogm.log.Read(idx)
 		if err != nil && err != wal.ErrNotFound {
@@ -172,12 +184,13 @@ func (p *auditPlugin) writeOnClose(sessionID string) error {
 		if err == wal.ErrNotFound {
 			break
 		}
-		eventStream, size, err := parseEventStream(eventStreamBytes)
+		eventStream, size, dlpCount, err := parseEventStream(eventStreamBytes)
 		if err != nil {
 			return err
 		}
 		eventStreamList = append(eventStreamList, eventStream)
 		eventSize += int64(size)
+		dlpCounter += dlpCount
 		idx++
 	}
 	endDate := time.Now().UTC()
@@ -195,6 +208,7 @@ func (p *auditPlugin) writeOnClose(sessionID string) error {
 			"event_size":   eventSize,
 			"start_date":   wh.StartDate,
 			"end_time":     &endDate,
+			"dlp_count":    dlpCounter,
 		},
 	})
 	if err != nil {
@@ -218,4 +232,15 @@ func (p *auditPlugin) truncateTCPEventStream(eventStream []byte, connType string
 		return eventStream[0:5000]
 	}
 	return eventStream
+}
+
+func intToByteArray(i int64) []byte {
+	var b [8]byte
+	s := b[:]
+	binary.BigEndian.PutUint64(s, uint64(i))
+	return s
+}
+
+func byteArrayToInt(b []byte) int64 {
+	return int64(binary.BigEndian.Uint64(b))
 }

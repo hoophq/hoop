@@ -60,6 +60,10 @@ func StartJobIndex(sessionStore *session.Storage, pluginStore *plugin.Storage) e
 			}
 			sess, err := sessionStore.FindOne(&user.Context{Org: &user.Org{Id: orgID}}, sessionID)
 			if err != nil {
+				log.Printf("job=index, org=%v, session=%v - error getting session, reason=%v", orgIDShort, sessionID, err)
+				continue
+			}
+			if sess == nil {
 				log.Printf("job=index, org=%v, session=%v - session not found, reason=%v", orgIDShort, sessionID, err)
 				continue
 			}
