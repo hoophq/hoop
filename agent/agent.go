@@ -412,11 +412,3 @@ func (a *Agent) sendClientSessionClose(sessionID string, errMsg string, specKeyV
 		Spec:    spec,
 	})
 }
-
-func buildAgentRegisterURL(svrAddr, token string) string {
-	addr := strings.Split(svrAddr, ":")
-	if svrAddr == "127.0.0.1:8010" {
-		return fmt.Sprintf("http://%s:8009/agents/new/%s", addr[0], token)
-	}
-	return fmt.Sprintf("https://%s/agents/new/%s", addr[0], token)
-}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -182,4 +183,9 @@ func ParseServerAddress(addr string) (string, error) {
 		srvAddr = fmt.Sprintf("%s:%s", host, port)
 	}
 	return srvAddr, nil
+}
+
+// ShouldDebugGrpc return true if env LOG_GRPC=1 or LGO_GRPC=2
+func ShouldDebugGrpc() bool {
+	return os.Getenv("LOG_GRPC") == "1" || os.Getenv("LOG_GRPC") == "2"
 }

@@ -4,6 +4,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/monitoring"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -135,7 +136,7 @@ func Run() {
 			panic(err)
 		}
 	}
-	if os.Getenv("LOG_GRPC") == "1" {
+	if grpc.ShouldDebugGrpc() {
 		log.SetGrpcLogger()
 	}
 
