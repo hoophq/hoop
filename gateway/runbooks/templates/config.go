@@ -61,7 +61,7 @@ func NewRunbookConfig(pathPrefix string, envVars map[string]string) (*RunbookCon
 			log.Infof("failed parsing SSH key file, err=%v", err)
 			return nil, fmt.Errorf("failed parsing SSH key file")
 		}
-		return &RunbookConfig{string(gitURL), auth, ""}, nil
+		return &RunbookConfig{string(gitURL), auth, pathPrefix}, nil
 	case gitPasswordEnc != "":
 		gitPassword, err := base64.StdEncoding.DecodeString(gitPasswordEnc)
 		if err != nil {
@@ -80,7 +80,7 @@ func NewRunbookConfig(pathPrefix string, envVars map[string]string) (*RunbookCon
 			PathPrefix: pathPrefix,
 		}, nil
 	}
-	return &RunbookConfig{URL: string(gitURL)}, nil
+	return &RunbookConfig{URL: string(gitURL), PathPrefix: pathPrefix}, nil
 }
 
 // SSHKeyScan runs ssh-keyscan command to known git providers like gitlab and github.
