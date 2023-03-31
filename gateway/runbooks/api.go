@@ -3,6 +3,7 @@ package runbooks
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -50,6 +51,8 @@ type Service struct {
 type Handler struct {
 	PluginService     pluginService
 	ConnectionService connectionService
+
+	scanedKnownHosts bool
 }
 
 func (h *Handler) FindAll(c *gin.Context) {
@@ -59,6 +62,19 @@ func (h *Handler) FindAll(c *gin.Context) {
 	if err != nil {
 		log.Infoln(err)
 		return
+	}
+	if !h.scanedKnownHosts {
+		knownHostsFilePath, err := templates.SSHKeyScan()
+		if err != nil {
+			log.Error(err)
+			sentry.CaptureException(err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"session_id": nil,
+				"message":    "failed scanning known_hosts file, contact"})
+			return
+		}
+		os.Setenv("SSH_KNOWN_HOSTS", knownHostsFilePath)
+		h.scanedKnownHosts = true
 	}
 	list, err := listRunbookFiles(config)
 	if err != nil {
