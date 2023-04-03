@@ -48,15 +48,15 @@ func (s *Scheduler) sendReports() {
 
 	for _, o := range orgs {
 		if o.Name == "runops" { // TODO remove later, "feature flag"
-			go s.sendReport(&o)
+			go s.sendReport(o)
 		}
 	}
 }
 
-func (s *Scheduler) sendReport(o *user.Org) {
-	fmt.Printf("Sending report to %s\n", o.Name)
+func (s *Scheduler) sendReport(o user.Org) {
+	log.Printf("Sending report to %s\n", o.Name)
 	ctx := &user.Context{
-		Org: o,
+		Org: &o,
 	}
 	admins, err := s.UserStorage.FindByGroups(ctx, []string{user.GroupAdmin})
 	if err != nil {
@@ -82,7 +82,7 @@ func (s *Scheduler) sendReport(o *user.Org) {
 	for _, s := range sessionList.Items {
 		dlpCount += s.DlpCount
 	}
-	template := s.buildTemplate(o, sessionList.Total, dlpCount)
+	template := s.buildTemplate(&o, sessionList.Total, dlpCount)
 
 	log.Info("Sending admins weekly report")
 	s.Notification.Send(notification.Notification{
