@@ -148,7 +148,7 @@ func (a *Agent) Run() error {
 			Debugf("received client packet [%v]", pkt.Type)
 		switch pkt.Type {
 		case pbagent.GatewayConnectOK:
-			log.Infof("connected with success to %v, tls=%v", a.config.GrpcURL, a.config.IsSecure())
+			log.Infof("connected with success to %v, tls=%v", a.config.GrpcURL, !a.config.IsInsecure())
 			if err := a.config.Save(); err != nil {
 				a.client.Close()
 				return err

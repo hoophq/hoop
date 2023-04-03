@@ -1,8 +1,11 @@
 package user
 
 import (
+	"fmt"
+	"os"
 	"strings"
 
+	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
 )
 
@@ -135,6 +138,35 @@ func (s *Service) FindOrgs() ([]Org, error) {
 	return s.Storage.FindOrgs()
 }
 
+// CreateDefaultOrganization creates a default organization if there's any.
+// In case of a single existing organization, try to promote it.
+// Having multiple organizations returns an error and a manual intervention is
+// necessary to remove additional organizations.
+func (s *Service) CreateDefaultOrganization() error {
+	orgList, err := s.FindOrgs()
+	if err != nil {
+		return err
+	}
+	switch len(orgList) {
+	case 1:
+		org := &orgList[0]
+		if org.Name == pb.DefaultOrgName {
+			return nil
+		}
+		org.Name = pb.DefaultOrgName
+		if err := s.Persist(org); err != nil {
+			return fmt.Errorf("failed promoting %v to single tenant, err=%v", orgList[0], err)
+		}
+	case 0:
+		if err := s.Persist(&Org{Id: uuid.NewString(), Name: pb.DefaultOrgName}); err != nil {
+			return fmt.Errorf("failed creating the default organization, err=%v", err)
+		}
+	default:
+		return fmt.Errorf("found multiple organizations, cannot promote. orgs=%v", orgList)
+	}
+	return nil
+}
+
 func ExtractDomain(email string) string {
 	emailsParts := strings.Split(email, "@")
 	domainParts := strings.Split(emailsParts[1], ".")
@@ -180,4 +212,8 @@ func isInStatus(status StatusType) bool {
 		}
 	}
 	return false
+}
+
+func IsOrgMultiTenant() bool {
+	return os.Getenv("ORG_MULTI_TENANT") == "true"
 }

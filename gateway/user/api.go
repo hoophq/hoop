@@ -25,6 +25,7 @@ type (
 		FindOne(context *Context, id string) (*User, error)
 		Persist(user any) error
 		ListAllGroups(context *Context) ([]string, error)
+		CreateDefaultOrganization() error
 	}
 
 	Analytics interface {

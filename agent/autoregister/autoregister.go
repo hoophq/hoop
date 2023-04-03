@@ -10,6 +10,7 @@ import (
 	"github.com/runopsio/hoop/common/log"
 
 	"github.com/google/uuid"
+	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/common/runtime"
 	"github.com/runopsio/hoop/common/version"
 	"olympos.io/encoding/edn"
@@ -18,22 +19,21 @@ import (
 // Run auto register an agent if it's deployed in the same network of xtdb
 // intended to be used to perform administrative tasks in the system
 func Run() (string, error) {
-	orgName := os.Getenv("AUTO_REGISTER")
-	if orgName == "" {
+	if os.Getenv("AUTO_REGISTER") == "" {
 		return "", nil
 	}
 	agentID := "agent/default"
-	agentToken, err := fetchAgentDefaultToken(orgName, agentID)
+	agentToken, err := fetchAgentDefaultToken(agentID)
 	if err != nil {
 		return "", err
 	}
 
 	if agentToken != "" {
-		log.Printf("auto registering - found a default agent for %q", orgName)
+		log.Printf("auto registering - found the default agent")
 		return agentToken, nil
 	}
 
-	orgID, err := fetchOrgId(orgName)
+	orgID, err := fetchDefaultOrgID()
 	if err != nil {
 		return "", err
 	}
@@ -61,17 +61,17 @@ func Run() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed auto registering. %v", err)
 	}
-	log.Printf("auto registering - created a default agent for %s/%s", orgName, orgID)
+	log.Info("autoregister - created default agent")
 	return agentToken, nil
 }
 
-func fetchOrgId(orgName string) (string, error) {
+func fetchDefaultOrgID() (string, error) {
 	ednquery := fmt.Sprintf(`{:query
 		{:find [id]
 		:in [orgname]
 		:where [[?o :org/name orgname]
 				[?o :xt/id id]]}
-		:in-args [%q]}`, orgName)
+		:in-args [%q]}`, pb.DefaultOrgName)
 	httpResponse, err := xtdbHttpRequest("http://127.0.0.1:3001/_xtdb/query", ednquery)
 	if err != nil {
 		return "", fmt.Errorf("failed auto registering. %v", err)
@@ -83,18 +83,17 @@ func fetchOrgId(orgName string) (string, error) {
 	if len(ednResp) > 0 {
 		return ednResp[0][0], nil
 	}
-	return "", fmt.Errorf("failed auto registering - organization %q not found", orgName)
+	return "", fmt.Errorf("failed auto registering - organization %q not found", pb.DefaultOrgName)
 }
 
-func fetchAgentDefaultToken(orgName, agentID string) (string, error) {
+func fetchAgentDefaultToken(agentID string) (string, error) {
 	ednquery := fmt.Sprintf(`{:query
 		{:find [agent-token]
 		:in [orgname, agentid]
 		:where [[?o :org/name orgname]
 				[?a :agent/token agent-token]
 				[?a :xt/id agentid]]}
-		:in-args [%q %q]}`, orgName, agentID)
-
+		:in-args [%q %q]}`, pb.DefaultOrgName, agentID)
 	httpResponse, err := xtdbHttpRequest("http://127.0.0.1:3001/_xtdb/query", ednquery)
 	if err != nil {
 		return "", fmt.Errorf("failed auto registering. %v", err)

@@ -28,7 +28,7 @@ func Run() {
 	}
 	vs := version.Get()
 	log.Infof("version=%v, platform=%v, mode=%v, grpc_server=%v, tls=%v - starting agent",
-		vs.Version, vs.Platform, config.Mode, config.GrpcURL, config.IsSecure())
+		vs.Version, vs.Platform, config.Mode, config.GrpcURL, !config.IsInsecure())
 	switch config.Mode {
 	case clientconfig.ModeAgentWebRegister:
 		for i := 0; ; i++ {
