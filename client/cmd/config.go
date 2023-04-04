@@ -20,7 +20,7 @@ func getClientConfigOrDie() *clientconfig.Config {
 		printErrorAndExit(err.Error())
 	}
 	log.Debugf("loaded clientconfig, mode=%v, tls=%v, api_url=%v, grpc_url=%v, tokenlength=%v",
-		config.Mode, config.IsSecure(), config.ApiURL, config.GrpcURL, len(config.Token))
+		config.Mode, !config.IsInsecure(), config.ApiURL, config.GrpcURL, len(config.Token))
 	return config
 }
 

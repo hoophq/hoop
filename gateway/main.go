@@ -31,8 +31,8 @@ import (
 
 func Run() {
 	ver := version.Get()
-	log.Infof("version=%s, compiler=%s, go=%s, platform=%s, commit=%s, build-date=%s",
-		ver.Version, ver.Compiler, ver.GoVersion, ver.Platform, ver.GitCommit, ver.BuildDate)
+	log.Infof("version=%s, compiler=%s, go=%s, platform=%s, commit=%s, multitenant=%v, build-date=%s",
+		ver.Version, ver.Compiler, ver.GoVersion, ver.Platform, ver.GitCommit, user.IsOrgMultiTenant(), ver.BuildDate)
 	defer log.Sync()
 	s := xtdb.New()
 	log.Infof("syncing xtdb at %s", s.Address())
@@ -65,6 +65,13 @@ func Run() {
 		Provider:    idProvider,
 		UserService: &userService,
 		Analytics:   analyticsService}
+
+	if !user.IsOrgMultiTenant() {
+		log.Infof("provisioning / promoting default organization")
+		if err := userService.CreateDefaultOrganization(); err != nil {
+			log.Fatal(err)
+		}
+	}
 
 	a := &api.Api{
 		AgentHandler:      agent.Handler{Service: &agentService},

@@ -13,7 +13,7 @@ import (
 // Liveness validates if the gateway ports (8009-8010) has connectivity
 func LivenessHandler(c *gin.Context) {
 	grpcLivenessErr := checkAddrLiveness(grpc.LocalhostAddr)
-	apiLivenessErr := checkAddrLiveness("127.0.0.1:8010")
+	apiLivenessErr := checkAddrLiveness("127.0.0.1:8009")
 	if grpcLivenessErr != nil || apiLivenessErr != nil {
 		msg := fmt.Sprintf("gateway-grpc=%v, gateway-api=%v", grpcLivenessErr, apiLivenessErr)
 		c.JSON(http.StatusBadRequest, gin.H{"liveness": msg})

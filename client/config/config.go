@@ -80,12 +80,19 @@ func (c *Config) GrpcClientConfig() (grpc.ClientConfig, error) {
 		TLSServerName: os.Getenv("TLS_SERVER_NAME"),
 		Token:         c.Token,
 		// connect without tls only on localhost
-		Insecure: c.Mode == clientconfig.ModeLocal,
+		Insecure: c.IsInsecure(),
 	}, err
 }
 
-func (c *Config) isEmpty() bool  { return c.GrpcURL == "" && c.ApiURL == "" }
-func (c *Config) IsSecure() bool { return c.Mode != clientconfig.ModeLocal }
+func (c *Config) isEmpty() bool { return c.GrpcURL == "" && c.ApiURL == "" }
+func (c *Config) IsInsecure() (insecure bool) {
+	switch {
+	case os.Getenv("TLS_SERVER_NAME") != "":
+	case c.Mode == clientconfig.ModeLocal:
+		insecure = true
+	}
+	return
+}
 func (c *Config) IsValid() bool  { return c.GrpcURL != "" && c.ApiURL != "" }
 func (c *Config) HasToken() bool { return c.Mode == clientconfig.ModeLocal || c.Token != "" }
 func (c *Config) Save() error {

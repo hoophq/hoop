@@ -26,6 +26,7 @@ type (
 	}
 
 	UserService interface {
+		FindAll(context *user.Context) ([]user.User, error)
 		FindBySub(sub string) (*user.Context, error)
 		GetOrgByName(name string) (*user.Org, error)
 		GetOrgNameByID(id string) (string, error)
@@ -115,7 +116,17 @@ func (s *Service) Callback(state, code string) string {
 	}
 
 	if context.Org == nil || context.User == nil {
-		if err := s.signup(context, sub, idTokenClaims); err != nil {
+		log.Infof("starting signup for sub=%v, multitenant=%v, ctxorg=%v, ctxuser=%v",
+			sub, user.IsOrgMultiTenant(), context.Org, context.User)
+		switch user.IsOrgMultiTenant() {
+		case true:
+			err = s.signupMultiTenant(context, sub, idTokenClaims)
+		default:
+			err = s.signup(context, sub, idTokenClaims)
+		}
+		log.Infof("signup finished for sub=%v, success=%v", sub, err == nil)
+		if err != nil {
+			log.Errorf("failed signup %v, err=%v", sub, err)
 			s.loginOutcome(login, outcomeError)
 			return login.Redirect + "?error=unexpected_error"
 		}
@@ -160,7 +171,50 @@ func (s *Service) exchangeCodeByToken(code string) (*oauth2.Token, *oidc.IDToken
 	return token, idToken, nil
 }
 
-func (s *Service) signup(context *user.Context, sub string, idTokenClaims map[string]any) error {
+func (s *Service) signup(ctx *user.Context, sub string, idTokenClaims map[string]any) error {
+	org, err := s.UserService.GetOrgByName(pb.DefaultOrgName)
+	if err != nil {
+		return fmt.Errorf("failed obtaining default org, err=%v", err)
+	}
+	userList, err := s.UserService.FindAll(&user.Context{Org: org})
+	if err != nil {
+		return fmt.Errorf("failed listing users, err=%v", err)
+	}
+	var groupList []string
+	// first user is admin
+	if len(userList) == 0 {
+		groupList = []string{
+			user.GroupAdmin,
+			user.GroupSecurity,
+			user.GroupSRE,
+			user.GroupDBA,
+			user.GroupDevops,
+			user.GroupSupport,
+			user.GroupEngineering,
+		}
+	}
+
+	email, _ := idTokenClaims["email"].(string)
+	profileName, _ := idTokenClaims["name"].(string)
+	ctx.User = &user.User{
+		Id:     sub,
+		Org:    org.Id,
+		Name:   profileName,
+		Email:  email,
+		Status: user.StatusActive,
+		Groups: groupList,
+	}
+
+	if err := s.UserService.Persist(ctx.User); err != nil {
+		return fmt.Errorf("failed persisting user %v to default org, err=%v", sub, err)
+	}
+
+	s.Analytics.Identify(ctx)
+	s.Analytics.Track(ctx.User.Id, "signup", map[string]any{})
+	return nil
+}
+
+func (s *Service) signupMultiTenant(context *user.Context, sub string, idTokenClaims map[string]any) error {
 	email, _ := idTokenClaims["email"].(string)
 	profileName, _ := idTokenClaims["name"].(string)
 	newOrg := false

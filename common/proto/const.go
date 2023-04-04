@@ -47,6 +47,7 @@ const (
 
 	CustomClaimOrg    = "https://app.hoop.dev/org"
 	CustomClaimGroups = "https://app.hoop.dev/groups"
+	DefaultOrgName    = "default"
 )
 
 var DefaultInfoTypes = []string{
