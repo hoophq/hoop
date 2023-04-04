@@ -67,7 +67,7 @@ func Load() (*Config, error) {
 	conn, err := net.DialTimeout("tcp", grpc.LocalhostAddr, timeout)
 	if err == nil {
 		conn.Close()
-		return &Config{ApiURL: apiLocalhostURL, GrpcURL: grpc.LocalhostAddr, Mode: clientconfig.ModeLocal}, nil
+		return &Config{ApiURL: apiLocalhostURL, GrpcURL: grpc.LocalhostAddr, Mode: clientconfig.ModeLocal, Token: accessToken}, nil
 	}
 	return &Config{filepath: filepath}, ErrEmpty
 }
