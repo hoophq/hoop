@@ -70,7 +70,7 @@ func Load() (*Config, error) {
 	conn, err := net.DialTimeout("tcp", grpc.LocalhostAddr, timeout)
 	if err == nil {
 		conn.Close()
-		return &Config{Mode: clientconfig.ModeLocal, GrpcURL: grpc.LocalhostAddr, Token: ""}, nil
+		return &Config{Mode: clientconfig.ModeLocal, GrpcURL: grpc.LocalhostAddr, Token: token}, nil
 	}
 
 	// fallback to web registration
