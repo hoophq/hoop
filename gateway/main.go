@@ -67,7 +67,7 @@ func Run() {
 		Analytics:   analyticsService}
 
 	if !user.IsOrgMultiTenant() {
-		log.Infof("provisioning default organization")
+		log.Infof("provisioning / promoting default organization")
 		if err := userService.CreateDefaultOrganization(); err != nil {
 			log.Fatal(err)
 		}

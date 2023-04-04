@@ -138,8 +138,8 @@ func (s *Service) FindOrgs() ([]Org, error) {
 	return s.Storage.FindOrgs()
 }
 
-// CreateDefaultOrganization creates a default organization if there's any.
-// In case of a single existing organization, try to promote it.
+// CreateDefaultOrganization creates a default organization if there isn't any.
+// In case of a single existing organization, try to promote it (change the name of org).
 // Having multiple organizations returns an error and a manual intervention is
 // necessary to remove additional organizations.
 func (s *Service) CreateDefaultOrganization() error {
