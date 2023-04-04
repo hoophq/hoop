@@ -1,4 +1,4 @@
-FROM ubuntu:focal-20220801
+FROM ubuntu:focal-20230308
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV ACCEPT_EULA=y
@@ -11,6 +11,7 @@ RUN mkdir -p /app && \
     mkdir -p /opt/hoop/sessions && \
     apt-get update -y && \
     apt-get install -y \
+        python3-pip \
         locales \
         tini \
         apt-utils \
@@ -22,7 +23,8 @@ RUN mkdir -p /app && \
         openssh-client \
         unzip \
         expect \
-        lsb-release
+        lsb-release && \
+        ln -s /usr/bin/python3 /usr/bin/python
 
 # kubectl / aws-cli / aws-session-manager
 RUN curl -sL "https://dl.k8s.io/release/v1.22.1/bin/linux/amd64/kubectl" -o kubectl && \
@@ -72,6 +74,18 @@ RUN curl -sL https://download.clojure.org/install/linux-install-$CLOJURE_VERSION
     bash clojure-install.sh && \
     rm clojure-install.sh && \
     clojure -e "(clojure-version)"
+
+# sqsmover https://github.com/mercury2269/sqsmover/releases
+RUN curl -sL https://github.com/mercury2269/sqsmover/releases/download/v0.4.0/sqsmover_Linux_x86_64.tar.gz -o sqsmover.tar.gz && \
+        sha256sum sqsmover.tar.gz && \
+        echo "870bd37ed21618d4b429cb60ba10fa17ba6e48bf779df59eea0119b75155745c  sqsmover.tar.gz" | sha256sum -c - && \
+        tar -xf sqsmover.tar.gz -C /usr/local/bin --no-same-owner && \
+        rm -f sqsmover.tar.gz && \
+        sqsmover --version
+
+RUN pip3 install -U \
+    boto3==1.20.39 \
+    requests==2.27.1
 
 RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
     locale-gen
