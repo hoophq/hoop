@@ -140,6 +140,10 @@ func (h *Handler) RunExec(c *gin.Context) {
 	// if the user ctrl+c the client and run via API later
 	// a new session is created to execute fresh
 	review.Session = uuid.NewString()
+
+	// avoids running twice the same review
+	review.Status = StatusProcessing
+
 	if err := h.Service.Persist(ctx, review); err != nil {
 		log.Errorf("failed updating review, err=%v", err)
 		c.JSON(http.StatusInternalServerError, &clientexec.ExecErrResponse{Message: "exec failed"})
@@ -177,11 +181,18 @@ func (h *Handler) RunExec(c *gin.Context) {
 
 		review.Status = StatusExecuted
 		h.Service.Persist(ctx, review)
+
 		c.JSON(statusCode, resp)
 	case <-time.After(time.Second * 50):
 		// closing the client will force the goroutine to end
 		// and the result will return async
 		client.Close()
+
+		// we do not know the status of this in the future.
+		// replaces the current "PROCESSING" status
+		review.Status = StatusUnknown
+		h.Service.Persist(ctx, review)
+
 		c.JSON(http.StatusAccepted, gin.H{"session_id": client.SessionID(), "exit_code": nil})
 	}
 }
