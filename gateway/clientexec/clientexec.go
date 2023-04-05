@@ -38,6 +38,27 @@ type clientExec struct {
 	sessionID  string
 }
 
+type (
+	Exec struct {
+		Metadata map[string]any
+		EnvVars  map[string]string
+		Script   []byte
+	}
+	ExecRequest struct {
+		Script   string `json:"script"`
+		Redirect bool   `json:"redirect"`
+	}
+	ExecResponse struct {
+		Err      error
+		ExitCode int
+	}
+	ExecErrResponse struct {
+		Message   string  `json:"message"`
+		ExitCode  *int    `json:"exit_code"`
+		SessionID *string `json:"session_id"`
+	}
+)
+
 func (r *clientExec) SessionID() string {
 	return r.sessionID
 }
@@ -78,8 +99,11 @@ func newError(err error) *Response {
 	return &Response{err: err}
 }
 
-func New(orgID, accessToken, connectionName string) (*clientExec, error) {
-	sessionID := uuid.NewString()
+func New(orgID, accessToken, connectionName string, sessionID string) (*clientExec, error) {
+	if sessionID == "" {
+		sessionID = uuid.NewString()
+	}
+
 	folderName := fmt.Sprintf(walFolderTmpl, walLogPath, orgID, sessionID)
 	wlog, err := wal.Open(folderName, wal.DefaultOptions)
 	if err != nil {

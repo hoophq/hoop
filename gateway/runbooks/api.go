@@ -118,7 +118,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 		return
 	}
 
-	client, err := clientexec.New(ctx.Org.Id, getAccessToken(c), connectionName)
+	client, err := clientexec.New(ctx.Org.Id, getAccessToken(c), connectionName, "")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"session_id": nil, "message": err.Error()})
 		return

@@ -131,7 +131,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 	ctx := user.ContextUser(c)
 	log := user.ContextLogger(c)
 
-	var req ExecRequest
+	var req clientexec.ExecRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"session_id": nil,
@@ -142,14 +142,14 @@ func (h *Handler) RunExec(c *gin.Context) {
 	conn, err := h.Service.FindOne(ctx, connectionName)
 	if err != nil {
 		log.Errorf("failed retrieving connection, err=%v", err)
-		c.JSON(http.StatusInternalServerError, &ExecErrResponse{Message: "failed retrieving connection"})
+		c.JSON(http.StatusInternalServerError, &clientexec.ExecErrResponse{Message: "failed retrieving connection"})
 		return
 	}
 	if conn == nil {
-		c.JSON(http.StatusNotFound, &ExecErrResponse{Message: "connection not found"})
+		c.JSON(http.StatusNotFound, &clientexec.ExecErrResponse{Message: "connection not found"})
 		return
 	}
-	client, err := clientexec.New(ctx.Org.Id, getAccessToken(c), connectionName)
+	client, err := clientexec.New(ctx.Org.Id, getAccessToken(c), connectionName, "")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"session_id": nil, "message": err.Error()})
 		return
@@ -172,7 +172,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 	select {
 	case resp := <-clientResp:
 		if resp.IsError() {
-			c.JSON(http.StatusBadRequest, &ExecErrResponse{
+			c.JSON(http.StatusBadRequest, &clientexec.ExecErrResponse{
 				SessionID: &resp.SessionID,
 				Message:   resp.ErrorMessage(),
 				ExitCode:  resp.ExitCode,

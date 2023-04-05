@@ -60,6 +60,7 @@ const (
 	StatusPending  Status = "PENDING"
 	StatusApproved Status = "APPROVED"
 	StatusRejected Status = "REJECTED"
+	StatusExecuted Status = "EXECUTED"
 )
 
 func (s *Service) FindOne(context *user.Context, id string) (*Review, error) {
