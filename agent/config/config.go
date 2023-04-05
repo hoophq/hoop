@@ -40,7 +40,7 @@ func Load() (*Config, error) {
 	if agentToken != "" {
 		return &Config{Mode: clientconfig.ModeAgentAutoRegister, Token: agentToken, GrpcURL: grpc.LocalhostAddr}, nil
 	}
-	token := os.Getenv("HOOP_TOKEN")
+	token := getEnvToken()
 	grpcURL := os.Getenv("HOOP_GRPCURL")
 	if token != "" && grpcURL != "" {
 		return &Config{Mode: clientconfig.ModeEnv, Token: token, GrpcURL: grpcURL}, nil
@@ -129,4 +129,13 @@ func (c *Config) Save() error {
 	}
 	c.saved = true
 	return nil
+}
+
+// getEnvToken backwards compatible with TOKEN env
+func getEnvToken() string {
+	token := os.Getenv("TOKEN")
+	if token != "" {
+		return token
+	}
+	return os.Getenv("HOOP_TOKEN")
 }
