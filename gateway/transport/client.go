@@ -426,7 +426,7 @@ func (s *Server) processSessionOpenExec(pkt *pb.Packet, client *client.Client, c
 			sentry.CaptureException(err)
 			return err
 		}
-		if review.Status != rv.StatusApproved {
+		if !(review.Status == rv.StatusApproved || review.Status == rv.StatusProcessing) {
 			clientStream := getClientStream(client.SessionID)
 			_ = clientStream.Send(&pb.Packet{
 				Type:    pbclient.SessionOpenWaitingApproval,

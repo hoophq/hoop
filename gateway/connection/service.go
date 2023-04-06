@@ -50,27 +50,6 @@ type (
 	SecretProvider string
 )
 
-type (
-	Exec struct {
-		Metadata map[string]any
-		EnvVars  map[string]string
-		Script   []byte
-	}
-	ExecRequest struct {
-		Script   string `json:"script"`
-		Redirect bool   `json:"redirect"`
-	}
-	ExecResponse struct {
-		Err      error
-		ExitCode int
-	}
-	ExecErrResponse struct {
-		Message   string  `json:"message"`
-		ExitCode  *int    `json:"exit_code"`
-		SessionID *string `json:"session_id"`
-	}
-)
-
 const DBSecretProvider SecretProvider = "database"
 
 func (s *Service) FindAll(context *user.Context) ([]BaseConnection, error) {

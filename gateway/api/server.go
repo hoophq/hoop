@@ -157,6 +157,10 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest,
 		api.ReviewHandler.Put)
+	route.POST("/reviews/:id/exec",
+		api.Authenticate,
+		api.TrackRequest,
+		api.ReviewHandler.RunExec)
 
 	route.GET("/jits",
 		api.Authenticate,

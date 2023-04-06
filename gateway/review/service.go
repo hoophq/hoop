@@ -57,9 +57,12 @@ type (
 )
 
 const (
-	StatusPending  Status = "PENDING"
-	StatusApproved Status = "APPROVED"
-	StatusRejected Status = "REJECTED"
+	StatusPending    Status = "PENDING"
+	StatusApproved   Status = "APPROVED"
+	StatusRejected   Status = "REJECTED"
+	StatusProcessing Status = "PROCESSING"
+	StatusExecuted   Status = "EXECUTED"
+	StatusUnknown    Status = "UNKNOWN"
 )
 
 func (s *Service) FindOne(context *user.Context, id string) (*Review, error) {
