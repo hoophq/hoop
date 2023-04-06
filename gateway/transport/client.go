@@ -434,6 +434,14 @@ func (s *Server) processSessionOpenExec(pkt *pb.Packet, client *client.Client, c
 			})
 			return nil
 		}
+		ctx := &user.Context{
+			Org:  &user.Org{Id: client.OrgId},
+			User: &user.User{Id: client.UserId},
+		}
+		if review.Status == rv.StatusApproved {
+			review.Status = rv.StatusProcessing
+			s.ReviewService.Persist(ctx, &review)
+		}
 	}
 
 	if s.GcpDLPRawCredentials != "" {

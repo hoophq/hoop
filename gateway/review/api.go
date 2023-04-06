@@ -132,6 +132,10 @@ func (h *Handler) RunExec(c *gin.Context) {
 		c.JSON(http.StatusNotFound, &clientexec.ExecErrResponse{Message: "review not found"})
 		return
 	}
+	if review.CreatedBy.Email != ctx.User.Email {
+		c.JSON(http.StatusBadRequest, &clientexec.ExecErrResponse{Message: "only the creator can trigger this action"})
+		return
+	}
 	if review.Status != StatusApproved {
 		c.JSON(http.StatusBadRequest, &clientexec.ExecErrResponse{Message: "review not approved or already executed"})
 		return
