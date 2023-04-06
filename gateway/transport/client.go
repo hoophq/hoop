@@ -440,7 +440,9 @@ func (s *Server) processSessionOpenExec(pkt *pb.Packet, client *client.Client, c
 		}
 		if review.Status == rv.StatusApproved {
 			review.Status = rv.StatusProcessing
-			s.ReviewService.Persist(ctx, &review)
+			if err := s.ReviewService.Persist(ctx, &review); err != nil {
+				return err
+			}
 		}
 	}
 
