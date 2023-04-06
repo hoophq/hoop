@@ -441,7 +441,8 @@ func (s *Server) processSessionOpenExec(pkt *pb.Packet, client *client.Client, c
 		if review.Status == rv.StatusApproved {
 			review.Status = rv.StatusProcessing
 			if err := s.ReviewService.Persist(ctx, &review); err != nil {
-				return err
+				log.Errorf("failed to update review status, err=%v", err)
+				return fmt.Errorf("failed to execute approved review")
 			}
 		}
 	}
