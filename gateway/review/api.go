@@ -170,6 +170,9 @@ func (h *Handler) RunExec(c *gin.Context) {
 
 	select {
 	case resp := <-clientResp:
+		review.Status = StatusExecuted
+		h.Service.Persist(ctx, review)
+
 		if resp.IsError() {
 			c.JSON(http.StatusBadRequest, &clientexec.ExecErrResponse{
 				SessionID: &resp.SessionID,
@@ -178,9 +181,6 @@ func (h *Handler) RunExec(c *gin.Context) {
 			})
 			return
 		}
-
-		review.Status = StatusExecuted
-		h.Service.Persist(ctx, review)
 
 		c.JSON(statusCode, resp)
 	case <-time.After(time.Second * 50):
