@@ -181,6 +181,7 @@ var startAgentCmd = &cobra.Command{
 	Short:        "Runs the agent component",
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
+
 		agent.Run()
 	},
 }
@@ -190,6 +191,7 @@ var startGatewayCmd = &cobra.Command{
 	Short:        "Runs the gateway component",
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
+		log.Printf("running gateway")
 		gateway.Run()
 	},
 }
