@@ -12,13 +12,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/runopsio/hoop/common/log"
-
 	"github.com/getsentry/sentry-go"
 	"github.com/runopsio/hoop/agent/config"
 	"github.com/runopsio/hoop/agent/dlp"
 	"github.com/runopsio/hoop/agent/hook"
 	term "github.com/runopsio/hoop/agent/terminal"
+	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/memory"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
@@ -57,7 +56,7 @@ func newTCPConn(host, port string) (net.Conn, error) {
 		return nil, fmt.Errorf("failed dialing server: %s", err)
 	}
 
-	log.Printf("tcp connection stablished with server. address=%v, local-addr=%v\n",
+	log.Infof("tcp connection stablished with server. address=%v, local-addr=%v",
 		serverConn.LocalAddr(),
 		serverConn.RemoteAddr())
 	return serverConn, nil
@@ -84,6 +83,13 @@ func parseConnectionEnvVars(envVars map[string]any, connType string) (*connEnv, 
 		}
 		if env.host == "" || env.pass == "" || env.user == "" {
 			return nil, fmt.Errorf("missing required secrets for postgres connection [HOST, USER, PASS]")
+		}
+	case pb.ConnectionTypeMySQL:
+		if env.port == "" {
+			env.port = "3307"
+		}
+		if env.host == "" || env.pass == "" || env.user == "" {
+			return nil, fmt.Errorf("missing required secrets for mysql connection [HOST, USER, PASS]")
 		}
 	case pb.ConnectionTypeTCP:
 		if env.host == "" || env.port == "" {
@@ -166,6 +172,10 @@ func (a *Agent) Run() error {
 		case pbagent.PGConnectionWrite:
 			a.processPGProtocol(pkt)
 
+		// MySQL protocol
+		case pbagent.MySQLConnectionWrite:
+			a.processMySQLProtocol(pkt)
+
 		// raw tcp
 		case pbagent.TCPConnectionWrite:
 			a.processTCPWriteServer(pkt)
@@ -194,16 +204,16 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 		return nil, nil, fmt.Errorf("session %s failed to decode connection params", sessionIDKey)
 	}
 
-	log.Printf("session=%s - connection params decoded with success, dlp-info-types=%d",
+	log.Infof("session=%s - connection params decoded with success, dlp-info-types=%d",
 		sessionIDKey, len(connParams.DLPInfoTypes))
 
 	connType := string(pkt.Spec[pb.SpecConnectionType])
 	connEnvVars, err := parseConnectionEnvVars(connParams.EnvVars, connType)
 	if err != nil {
-		log.Printf("session=%s - failed parse envvars from connection, err=%v", sessionIDKey, err)
+		log.Infof("session=%s - failed parse envvars from connection, err=%v", sessionIDKey, err)
 		return nil, nil, fmt.Errorf("failed to parse connection envvars")
 	}
-	if connType == pb.ConnectionTypePostgres || connType == pb.ConnectionTypeTCP {
+	if connType == pb.ConnectionTypePostgres || connType == pb.ConnectionTypeTCP || connType == pb.ConnectionTypeMySQL {
 		if err := isPortActive(connEnvVars.host, connEnvVars.port); err != nil {
 			msg := fmt.Sprintf("session=%s - failed connecting to host=%q, port=%q, err=%v",
 				sessionIDKey, connEnvVars.host, connEnvVars.port, err)
@@ -218,7 +228,7 @@ func (a *Agent) decodeConnectionParams(sessionID []byte, pkt *pb.Packet) *pb.Age
 	var connParams pb.AgentConnectionParams
 	encConnectionParams := pkt.Spec[pb.SpecAgentConnectionParamsKey]
 	if err := pb.GobDecodeInto(encConnectionParams, &connParams); err != nil {
-		log.Printf("session=%v - failed decoding connection params=%#v, err=%v",
+		log.Infof("session=%v - failed decoding connection params=%#v, err=%v",
 			string(sessionID), string(encConnectionParams), err)
 		sentry.CaptureException(err)
 		_ = a.client.Send(&pb.Packet{
@@ -234,7 +244,7 @@ func (a *Agent) decodeConnectionParams(sessionID []byte, pkt *pb.Packet) *pb.Age
 	if clientEnvVarsEnc := pkt.Spec[pb.SpecClientExecEnvVar]; len(clientEnvVarsEnc) > 0 {
 		var clientEnvVars map[string]string
 		if err := pb.GobDecodeInto(clientEnvVarsEnc, &clientEnvVars); err != nil {
-			log.Printf("session=%v - failed decoding client env vars, err=%v", string(sessionID), err)
+			log.Infof("session=%v - failed decoding client env vars, err=%v", string(sessionID), err)
 			sentry.CaptureException(err)
 			_ = a.client.Send(&pb.Packet{
 				Type:    pbclient.SessionClose,
@@ -261,7 +271,7 @@ func (a *Agent) decodeDLPCredentials(sessionID []byte, pkt *pb.Packet) dlp.Clien
 		if _, ok := a.connStore.Get(dlpClientKey).(dlp.Client); !ok {
 			dlpClient, err := dlp.NewDLPClient(context.Background(), gcpRawCred)
 			if err != nil {
-				log.Printf("failed creating dlp client, err=%v", err)
+				log.Infof("failed creating dlp client, err=%v", err)
 				sentry.CaptureException(err)
 				_ = a.client.Send(&pb.Packet{
 					Type:    pbclient.SessionClose,
@@ -273,18 +283,18 @@ func (a *Agent) decodeDLPCredentials(sessionID []byte, pkt *pb.Packet) dlp.Clien
 				})
 				return nil
 			}
-			log.Printf("session=%v - created dlp client with success", string(sessionID))
+			log.Infof("session=%v - created dlp client with success", string(sessionID))
 			return dlpClient
 		}
 	}
-	log.Printf("session=%v - dlp is unavailable for this connection, missing gcp credentials", string(sessionID))
+	log.Infof("session=%v - dlp is unavailable for this connection, missing gcp credentials", string(sessionID))
 	return nil
 }
 
 func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 	sessionIDKey := string(sessionID)
-	log.Printf("session=%s - received connect request", sessionIDKey)
+	log.Infof("session=%s - received connect request", sessionIDKey)
 
 	connParams, connEnvVars, err := a.buildConnectionParams(pkt)
 	if err != nil {
@@ -300,7 +310,7 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 	}
 
 	connType := string(pkt.Spec[pb.SpecConnectionType])
-	if connType == pb.ConnectionTypePostgres || connType == pb.ConnectionTypeTCP {
+	if connType == pb.ConnectionTypePostgres || connType == pb.ConnectionTypeTCP || connType == pb.ConnectionTypeMySQL {
 		connParams.EnvVars[connEnvKey] = connEnvVars
 	}
 
@@ -336,7 +346,7 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 			Spec: map[string][]byte{
 				pb.SpecGatewaySessionID: sessionID,
 				pb.SpecConnectionType:   pkt.Spec[pb.SpecConnectionType]}})
-		log.Printf("session=%v - sent gateway connect ok", string(sessionID))
+		log.Infof("session=%v - sent gateway connect ok", string(sessionID))
 	}()
 }
 
@@ -344,13 +354,13 @@ func (a *Agent) processTCPCloseConnection(pkt *pb.Packet) {
 	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 	clientConnID := pkt.Spec[pb.SpecClientConnectionID]
 	filterKey := fmt.Sprintf("%s:%s", string(sessionID), string(clientConnID))
-	log.Printf("received %s, filter-by=%s", pkt.Type, filterKey)
+	log.Infof("received %s, filter-by=%s", pkt.Type, filterKey)
 	filterFn := func(k string) bool { return strings.HasPrefix(k, filterKey) }
 	for key, obj := range a.connStore.Filter(filterFn) {
 		if client, _ := obj.(io.Closer); client != nil {
 			defer func() {
 				if err := client.Close(); err != nil {
-					log.Printf("failed closing connection, err=%v", err)
+					log.Infof("failed closing connection, err=%v", err)
 				}
 			}()
 			a.connStore.Del(key)
@@ -361,14 +371,14 @@ func (a *Agent) processTCPCloseConnection(pkt *pb.Packet) {
 func (a *Agent) processSessionClose(pkt *pb.Packet) {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 	if sessionID == "" {
-		log.Printf("received packet %v without a session", pkt.Type)
+		log.Infof("received packet %v without a session", pkt.Type)
 		return
 	}
 	a.sessionCleanup(sessionID)
 }
 
 func (a *Agent) sessionCleanup(sessionID string) {
-	log.Printf("session=%s - cleaning up session", sessionID)
+	log.Infof("session=%s - cleaning up session", sessionID)
 	filterFn := func(k string) bool { return strings.Contains(k, sessionID) }
 	for key, obj := range a.connStore.Filter(filterFn) {
 		switch v := obj.(type) {

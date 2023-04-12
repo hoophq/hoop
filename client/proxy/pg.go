@@ -7,7 +7,6 @@ import (
 	"strconv"
 
 	"github.com/runopsio/hoop/common/log"
-
 	"github.com/runopsio/hoop/common/memory"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
@@ -46,7 +45,7 @@ func (p *PGServer) Serve(sessionID string) error {
 			connectionID++
 			pgClient, err := lis.Accept()
 			if err != nil {
-				log.Printf("failed obtain listening connection, err=%v", err)
+				log.Infof("failed obtain listening connection, err=%v", err)
 				break
 			}
 			go p.serveConn(sessionID, strconv.Itoa(connectionID), pgClient)
@@ -57,12 +56,11 @@ func (p *PGServer) Serve(sessionID string) error {
 
 func (p *PGServer) serveConn(sessionID, connectionID string, pgClient net.Conn) {
 	defer func() {
-		log.Printf("session=%v | conn=%s | remote=%s - closing tcp connection",
+		log.Infof("session=%v | conn=%s | remote=%s - closing tcp connection",
 			sessionID, connectionID, pgClient.RemoteAddr())
 		p.connectionStore.Del(connectionID)
 		if err := pgClient.Close(); err != nil {
-			// TODO: log warn
-			log.Printf("failed closing client connection, err=%v", err)
+			log.Warnf("failed closing client connection, err=%v", err)
 		}
 		_ = p.client.Send(&pb.Packet{
 			Type: pbagent.TCPConnectionClose,
@@ -74,13 +72,13 @@ func (p *PGServer) serveConn(sessionID, connectionID string, pgClient net.Conn) 
 	connWrapper := pb.NewConnectionWrapper(pgClient, make(chan struct{}))
 	p.connectionStore.Set(connectionID, connWrapper)
 
-	log.Printf("session=%v | conn=%s | client=%s - connected", sessionID, connectionID, pgClient.RemoteAddr())
+	log.Infof("session=%v | conn=%s | client=%s - connected", sessionID, connectionID, pgClient.RemoteAddr())
 	pgServerWriter := pb.NewStreamWriter(p.client, pbagent.PGConnectionWrite, map[string][]byte{
 		string(pb.SpecClientConnectionID): []byte(connectionID),
 		string(pb.SpecGatewaySessionID):   []byte(sessionID),
 	})
 	if _, err := io.CopyBuffer(pgServerWriter, pgClient, nil); err != nil {
-		log.Printf("failed copying buffer, err=%v", err)
+		log.Infof("failed copying buffer, err=%v", err)
 		connWrapper.Close()
 	}
 }

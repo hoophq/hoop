@@ -31,11 +31,13 @@ var (
 	Infof  = zlog.Sugar().Infof
 	Info   = zlog.Sugar().Info
 	Warnf  = zlog.Sugar().Warnf
+	Error  = zlog.Sugar().Error
 	Errorf = zlog.Sugar().Errorf
 	Fatalf = zlog.Sugar().Fatalf
 	Fatal  = zlog.Sugar().Fatal
 
-	With = zlog.Sugar().With
+	With         = zlog.Sugar().With
+	IsDebugLevel = zlog.Level() == zapcore.DebugLevel
 )
 
 func NewDefaultLogger() *zap.Logger {

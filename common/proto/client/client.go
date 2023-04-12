@@ -9,9 +9,10 @@ const (
 	SessionOpenAgentOffline    = "ClientSessionOpenAgentOffline"
 	SessionClose               = "ClientSessionClose"
 
-	TCPConnectionClose = "ClientTCPConnectionClose"
-	TCPConnectionWrite = "ClientTCPConnectionWrite"
-	PGConnectionWrite  = "ClientPGConnectionWrite"
-	WriteStdout        = "ClientWriteStdout"
-	WriteStderr        = "ClientWriteStderr"
+	TCPConnectionClose   = "ClientTCPConnectionClose"
+	TCPConnectionWrite   = "ClientTCPConnectionWrite"
+	PGConnectionWrite    = "ClientPGConnectionWrite"
+	MySQLConnectionWrite = "ClientMySQLConnectionWrite"
+	WriteStdout          = "ClientWriteStdout"
+	WriteStderr          = "ClientWriteStderr"
 )
