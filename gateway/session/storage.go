@@ -3,7 +3,6 @@ package session
 import (
 	"fmt"
 	"github.com/runopsio/hoop/common/log"
-	"sort"
 	"strings"
 	"time"
 
@@ -191,6 +190,7 @@ func (s *Storage) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionLi
 						[(> start-date arg-start-date)])
 					(or [(= arg-end-date nil)]
 						[(< start-date arg-end-date)])]
+			:order-by [desc :session/start-date]
 			:limit %v
 			:offset %v}
 		:in-args [%s]}`,
@@ -203,10 +203,6 @@ func (s *Storage) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionLi
 		items = append(items, i[0])
 	}
 
-	// sort items by startDate desc
-	sort.Slice(items, func(i, j int) bool {
-		return items[i].StartSession.After(items[j].StartSession)
-	})
 	sessionList.Items = items
 	return sessionList, err
 }
