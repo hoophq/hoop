@@ -70,12 +70,8 @@ func parseHandshakePacket(pkt *types.Packet) (*handshakePacket, error) {
 	pos += 2
 	var plugin string
 	if len(data) > pos {
-		// character set [1 byte]
-		// status flags [2 bytes]
-		// capability flags (upper 2 bytes) [2 bytes]
 		// length of auth-plugin-data [1 byte]
 		// reserved (all [00]) [10 bytes]
-		// pos += 1 + 2 + 2 + 1 + 10
 		pos += 1 + 10
 
 		// second part of the password cipher [mininum 13 bytes],
