@@ -132,7 +132,7 @@ func runConnect(args []string) {
 				c.connStore.Set(string(sessionID), srv)
 				c.printHeader(string(sessionID))
 				fmt.Println()
-				fmt.Println("--------------------mysql-credentials--------------------")
+				fmt.Println("---------------------mysql-credentials----------------------")
 				fmt.Printf("      host=127.0.0.1 port=%s user=noop password=noop\n", srv.ListenPort())
 				fmt.Println("------------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
