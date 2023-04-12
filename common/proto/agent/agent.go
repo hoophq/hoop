@@ -12,7 +12,8 @@ const (
 	TerminalResizeTTY  = "AgentTerminalResizeTTY"
 	TerminalClose      = "AgentTerminalClose"
 
-	TCPConnectionClose = "AgentCloseTCPConnection"
-	TCPConnectionWrite = "AgentTCPConnectionWrite"
-	PGConnectionWrite  = "AgentPGConnectionWrite"
+	TCPConnectionClose   = "AgentCloseTCPConnection"
+	TCPConnectionWrite   = "AgentTCPConnectionWrite"
+	PGConnectionWrite    = "AgentPGConnectionWrite"
+	MySQLConnectionWrite = "AgentMySQLConnectionWrite"
 )

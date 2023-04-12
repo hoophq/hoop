@@ -107,19 +107,33 @@ func runConnect(args []string) {
 			connnectionType := pkt.Spec[pb.SpecConnectionType]
 			switch string(connnectionType) {
 			case pb.ConnectionTypePostgres:
-				// start postgres server
-				pgp := proxy.NewPGServer(c.proxyPort, c.client)
-				if err := pgp.Serve(string(sessionID)); err != nil {
+				srv := proxy.NewPGServer(c.proxyPort, c.client)
+				if err := srv.Serve(string(sessionID)); err != nil {
 					sentry.CaptureException(fmt.Errorf("connect - failed initializing postgres proxy, err=%v", err))
 					c.processGracefulExit(err)
 				}
 				c.loader.Stop()
 				c.client.StartKeepAlive()
-				c.connStore.Set(string(sessionID), pgp)
+				c.connStore.Set(string(sessionID), srv)
 				c.printHeader(string(sessionID))
 				fmt.Println()
 				fmt.Println("--------------------postgres-credentials--------------------")
-				fmt.Printf("      host=127.0.0.1 port=%s user=noop password=noop\n", pgp.ListenPort())
+				fmt.Printf("      host=127.0.0.1 port=%s user=noop password=noop\n", srv.ListenPort())
+				fmt.Println("------------------------------------------------------------")
+				fmt.Println("ready to accept connections!")
+			case pb.ConnectionTypeMySQL:
+				srv := proxy.NewMySQLServer(c.proxyPort, c.client)
+				if err := srv.Serve(string(sessionID)); err != nil {
+					sentry.CaptureException(fmt.Errorf("connect - failed initializing mysql proxy, err=%v", err))
+					c.processGracefulExit(err)
+				}
+				c.loader.Stop()
+				c.client.StartKeepAlive()
+				c.connStore.Set(string(sessionID), srv)
+				c.printHeader(string(sessionID))
+				fmt.Println()
+				fmt.Println("---------------------mysql-credentials----------------------")
+				fmt.Printf("      host=127.0.0.1 port=%s user=noop password=noop\n", srv.ListenPort())
 				fmt.Println("------------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
 			case pb.ConnectionTypeTCP:
@@ -185,16 +199,30 @@ func runConnect(args []string) {
 			}
 		case pbclient.PGConnectionWrite:
 			sessionID := pkt.Spec[pb.SpecGatewaySessionID]
-			pgpObj := c.connStore.Get(string(sessionID))
-			pgp, ok := pgpObj.(*proxy.PGServer)
+			srvObj := c.connStore.Get(string(sessionID))
+			srv, ok := srvObj.(*proxy.PGServer)
 			if !ok {
 				return
 			}
 			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
-			_, err := pgp.PacketWriteClient(connectionID, pkt)
+			_, err := srv.PacketWriteClient(connectionID, pkt)
 			if err != nil {
 				errMsg := fmt.Errorf("failed writing to client, err=%v", err)
 				sentry.CaptureException(fmt.Errorf("connect - %v - %v", pbclient.PGConnectionWrite, errMsg))
+				c.processGracefulExit(errMsg)
+			}
+		case pbclient.MySQLConnectionWrite:
+			sessionID := pkt.Spec[pb.SpecGatewaySessionID]
+			srvObj := c.connStore.Get(string(sessionID))
+			srv, ok := srvObj.(*proxy.MySQLServer)
+			if !ok {
+				return
+			}
+			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
+			_, err := srv.PacketWriteClient(connectionID, pkt)
+			if err != nil {
+				errMsg := fmt.Errorf("failed writing to client, err=%v", err)
+				sentry.CaptureException(fmt.Errorf("connect - %v - %v", pbclient.MySQLConnectionWrite, errMsg))
 				c.processGracefulExit(errMsg)
 			}
 		case pbclient.TCPConnectionWrite:

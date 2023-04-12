@@ -27,6 +27,7 @@ export XTDB_ADDRESS=http://127.0.0.1:3001
 export PLUGIN_AUDIT_PATH=/tmp/hoopsessions
 export PLUGIN_INDEX_PATH=/tmp/hoopsessions/indexes
 export PLUGIN_REGISTRY_URL=https://pluginregistry.s3.amazonaws.com/packages.json
+export ORG_MULTI_TENANT=true
 export GIN_MODE=debug
 #export GODEBUG='http2debug=2'
 #export LOG_GRPC=1
