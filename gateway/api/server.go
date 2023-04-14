@@ -140,6 +140,11 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest,
 		api.ConnectionHandler.FindOne)
+	route.DELETE("/connections/:name",
+		api.Authenticate,
+		api.TrackRequest,
+		api.AdminOnly,
+		api.ConnectionHandler.Evict)
 	route.POST("/connections/:name/exec",
 		api.Authenticate,
 		api.TrackRequest,
@@ -184,6 +189,11 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest,
 		api.AdminOnly,
 		api.AgentHandler.FindAll)
+	route.DELETE("/agents/:nameOrID",
+		api.Authenticate,
+		api.TrackRequest,
+		api.AdminOnly,
+		api.AgentHandler.Evict)
 
 	route.POST("/plugins",
 		api.Authenticate,

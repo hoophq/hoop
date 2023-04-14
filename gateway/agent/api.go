@@ -18,6 +18,8 @@ type (
 	service interface {
 		Persist(agent *Agent) (int64, error)
 		FindAll(context *user.Context) ([]Agent, error)
+		FindByNameOrID(ctx *user.Context, name string) (*Agent, error)
+		Evict(xtID string) error
 	}
 )
 
@@ -36,6 +38,19 @@ func (s *Handler) Post(c *gin.Context) {
 	if a.Token == "" {
 		a.Token = "x-agt-" + uuid.NewString()
 	}
+
+	existentAgent, err := s.Service.FindByNameOrID(context, a.Name)
+	if err != nil {
+		log.Errorf("failed validating agent, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+	if existentAgent != nil {
+		log.Errorf("agent %v already exists", a.Name)
+		c.JSON(http.StatusConflict, gin.H{"message": "agent already exists"})
+		return
+	}
+
 	if err := validateToken(a.Token); err != nil {
 		log.Errorf("failed validating agent token, err=%v", err)
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
@@ -44,8 +59,7 @@ func (s *Handler) Post(c *gin.Context) {
 	a.OrgId = context.Org.Id
 	a.CreatedById = context.User.Id
 
-	_, err := s.Service.Persist(&a)
-	if err != nil {
+	if _, err := s.Service.Persist(&a); err != nil {
 		log.Errorf("failed persisting agent token, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -53,6 +67,34 @@ func (s *Handler) Post(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, a)
+}
+
+func (s *Handler) Evict(c *gin.Context) {
+	ctx := user.ContextUser(c)
+	log := user.ContextLogger(c)
+
+	nameOrID := c.Param("nameOrID")
+	agent, err := s.Service.FindByNameOrID(ctx, nameOrID)
+	if err != nil {
+		log.Errorf("failed fetching agent, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+	if agent == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+		return
+	}
+	if agent.Id == "" {
+		log.Errorf("agent with empty xtid, agent=%v", agent)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+	if err := s.Service.Evict(agent.Id); err != nil {
+		log.Errorf("failed evicting agent %v, err=%v", agent.Id, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+	c.Writer.WriteHeader(204)
 }
 
 func (s *Handler) FindAll(c *gin.Context) {

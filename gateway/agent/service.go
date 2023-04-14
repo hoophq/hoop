@@ -10,15 +10,16 @@ type (
 	storage interface {
 		Persist(agent *Agent) (int64, error)
 		FindAll(context *user.Context) ([]Agent, error)
-		FindById(id string) (*Agent, error)
+		FindByNameOrID(ctx *user.Context, name string) (*Agent, error)
 		FindByToken(token string) (*Agent, error)
+		Evict(xtID string) error
 	}
 
 	Agent struct {
 		Id            string `json:"id"             edn:"xt/id"`
 		Token         string `json:"token"          edn:"agent/token"`
 		OrgId         string `json:"-"              edn:"agent/org"`
-		Name          string `json:"name"           edn:"agent/name"`
+		Name          string `json:"name"           edn:"agent/name" binding:"required"`
 		Hostname      string `json:"hostname"       edn:"agent/hostname"`
 		MachineId     string `json:"machine-id"     edn:"agent/machine-id"`
 		KernelVersion string `json:"kernel_version" edn:"agent/kernel-version"`
@@ -38,8 +39,8 @@ const (
 	StatusDisconnected Status = "DISCONNECTED"
 )
 
-func (s *Service) FindById(id string) (*Agent, error) {
-	return s.Storage.FindById(id)
+func (s *Service) FindByNameOrID(ctx *user.Context, name string) (*Agent, error) {
+	return s.Storage.FindByNameOrID(ctx, name)
 }
 
 func (s *Service) FindByToken(token string) (*Agent, error) {
@@ -62,4 +63,8 @@ func (s *Service) FindAll(context *user.Context) ([]Agent, error) {
 		result[i].Token = ""
 	}
 	return result, nil
+}
+
+func (s *Service) Evict(xtID string) error {
+	return s.Storage.Evict(xtID)
 }

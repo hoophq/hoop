@@ -1,6 +1,9 @@
 package agent
 
 import (
+	"fmt"
+
+	"github.com/google/uuid"
 	st "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/user"
 	"olympos.io/encoding/edn"
@@ -32,22 +35,35 @@ func (s *Storage) FindAll(context *user.Context) ([]Agent, error) {
 	return agents, nil
 }
 
-func (s *Storage) FindById(id string) (*Agent, error) {
-	maybeAgent, err := s.GetEntity(id)
+func (s *Storage) FindByNameOrID(ctx *user.Context, nameOrID string) (*Agent, error) {
+	agentID, agentName := "", nameOrID
+	if _, err := uuid.Parse(nameOrID); err == nil {
+		agentID = nameOrID
+		agentName = ""
+	}
+	payload := fmt.Sprintf(`{:query
+		{:find [(pull ?a [*])]
+		:in [org-id agentname agentid]
+		:where [[?a :agent/org org-id]
+				(or [?a :agent/name agentname]
+					[?a :xt/id agentid])]}
+		:in-args [%q, %q, %q]}`, ctx.Org.Id, agentName, agentID)
+	b, err := s.Query([]byte(payload))
 	if err != nil {
 		return nil, err
 	}
 
-	if maybeAgent == nil {
-		return nil, nil
-	}
-
-	var agent Agent
-	if err := edn.Unmarshal(maybeAgent, &agent); err != nil {
+	var agents []*Agent
+	if err := edn.Unmarshal(b, &agents); err != nil {
 		return nil, err
 	}
 
-	return &agent, nil
+	if len(agents) == 0 {
+		return nil, nil
+	}
+
+	return agents[0], nil
+
 }
 
 func (s *Storage) FindByToken(token string) (*Agent, error) {
@@ -83,4 +99,8 @@ func (s *Storage) Persist(agent *Agent) (int64, error) {
 	}
 
 	return txId, nil
+}
+
+func (s *Storage) Evict(xtID string) error {
+	return s.Storage.Evict(xtID)
 }

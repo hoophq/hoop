@@ -22,6 +22,7 @@ type (
 		Persist(context *user.Context, c *Connection) (int64, error)
 		FindAll(context *user.Context) ([]BaseConnection, error)
 		FindOne(context *user.Context, name string) (*Connection, error)
+		Evict(ctx *user.Context, connectionName string) (bool, error)
 	}
 
 	pluginService interface {
@@ -105,6 +106,10 @@ func (s *Service) Persist(httpMethod string, context *user.Context, c *Connectio
 		s.bindDLPPlugin(context, c)
 	}
 	return result, nil
+}
+
+func (s *Service) Evict(ctx *user.Context, connectionName string) (bool, error) {
+	return s.Storage.Evict(ctx, connectionName)
 }
 
 func (s *Service) FindOne(context *user.Context, name string) (*Connection, error) {

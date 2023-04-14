@@ -21,6 +21,7 @@ type (
 		Persist(httpMethod string, context *user.Context, c *Connection) (int64, error)
 		FindAll(context *user.Context) ([]BaseConnection, error)
 		FindOne(context *user.Context, name string) (*Connection, error)
+		Evict(ctx *user.Context, connectionName string) (bool, error)
 	}
 )
 
@@ -125,6 +126,29 @@ func (a *Handler) Put(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, connection)
+}
+
+func (a *Handler) Evict(c *gin.Context) {
+	ctx := user.ContextUser(c)
+	log := user.ContextLogger(c)
+
+	connectionName := c.Param("name")
+	if connectionName == "" {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "missing connection name"})
+		return
+	}
+	evicted, err := a.Service.Evict(ctx, connectionName)
+	if err != nil {
+		log.Errorf("failed evicting connection %v, err=%v", connectionName, err)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed removing connection"})
+		return
+	}
+	if !evicted {
+		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+		return
+	}
+	c.Writer.WriteHeader(204)
 }
 
 func (h *Handler) RunExec(c *gin.Context) {
