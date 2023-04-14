@@ -42,7 +42,7 @@ func (a *Handler) FindOne(c *gin.Context) {
 	name := c.Param("name")
 	plugin, err := a.Service.FindOne(context, name)
 	if err != nil {
-		log.Printf("failed obtaining plugin, err=%v", err)
+		log.Errorf("failed obtaining plugin, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining plugin"})
 		return

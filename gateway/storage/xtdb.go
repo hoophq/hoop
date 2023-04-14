@@ -61,11 +61,62 @@ func (s *Storage) buildTrxPutEdn(trxs ...TxEdnStruct) (string, error) {
 	return fmt.Sprintf(`{:tx-ops [%v]}`, strings.Join(trxVector, "")), nil
 }
 
+// buildTrxEvictEdn build transaction evict operation as string
+func (s *Storage) buildTrxEvictEdn(xtIDs ...string) (string, error) {
+	var trxVector []string
+	for _, xtID := range xtIDs {
+		trxVector = append(trxVector, fmt.Sprintf(`[:xtdb.api/evict %q]`, xtID))
+	}
+	return fmt.Sprintf(`{:tx-ops [%v]}`, strings.Join(trxVector, "")), nil
+}
+
 // SubmitPutTx sends put transactions to the xtdb API
 // https://docs.xtdb.com/clients/1.22.0/http/#submit-tx
 func (s *Storage) SubmitPutTx(trxs ...TxEdnStruct) (*TxResponse, error) {
 	url := fmt.Sprintf("%s/_xtdb/submit-tx", s.address)
 	txOpsEdn, err := s.buildTrxPutEdn(trxs...)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBufferString(txOpsEdn))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("content-type", "application/edn")
+	req.Header.Set("accept", "application/edn")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp == nil {
+		return nil, fmt.Errorf("http response is empty")
+	}
+	defer resp.Body.Close()
+
+	var txResponse TxResponse
+	if resp.StatusCode == http.StatusAccepted {
+		if err := edn.NewDecoder(resp.Body).Decode(&txResponse); err != nil {
+			log.Printf("error decoding transaction response, err=%v", err)
+		}
+		return &txResponse, nil
+	} else {
+		data, _ := io.ReadAll(resp.Body)
+		log.Printf("unknown status code=%v, body=%v", resp.StatusCode, string(data))
+	}
+	return nil, fmt.Errorf("received unknown status code=%v", resp.StatusCode)
+}
+
+// SubmitEvictTx sends evict transactions to the xtdb API
+// https://docs.xtdb.com/clients/1.22.0/http/#submit-tx
+func (s *Storage) SubmitEvictTx(xtIDs ...string) (*TxResponse, error) {
+	if len(xtIDs) == 0 {
+		return nil, fmt.Errorf("need at least one xt/id to evict")
+	}
+	url := fmt.Sprintf("%s/_xtdb/submit-tx", s.address)
+	txOpsEdn, err := s.buildTrxEvictEdn(xtIDs...)
 	if err != nil {
 		return nil, err
 	}
@@ -272,6 +323,38 @@ func (s *Storage) Sync(timeout time.Duration) error {
 		return fmt.Errorf("failed sync with xtdb, status=%v, response=%v", resp.Status, string(bodyResponse))
 	}
 }
+
+// func (s *Storage) Evict(xtID string) error {
+// 	url := fmt.Sprintf("%s/_xtdb/submit-tx", s.address)
+// 	txOpsEdn := fmt.Sprintf(`{:tx-ops [[:xtdb.api/evict %q]]}`, xtID)
+// 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBufferString(txOpsEdn))
+// 	if err != nil {
+// 		return err
+// 	}
+
+// 	req.Header.Set("content-type", "application/edn")
+// 	req.Header.Set("accept", "application/edn")
+
+// 	resp, err := s.client.Do(req)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	if resp == nil {
+// 		return fmt.Errorf("http response is empty")
+// 	}
+// 	defer resp.Body.Close()
+// 	var txResponse TxResponse
+// 	if resp.StatusCode == http.StatusAccepted {
+// 		if err := edn.NewDecoder(resp.Body).Decode(&txResponse); err != nil {
+// 			return err
+// 		}
+// 		return nil
+// 	} else {
+// 		data, _ := io.ReadAll(resp.Body)
+// 		log.Warnf("unknown status code=%v, body=%v", resp.StatusCode, string(data))
+// 	}
+// 	return fmt.Errorf("received unknown status code=%v", resp.StatusCode)
+// }
 
 func EntityToMap(obj any) map[string]any {
 	payload := make(map[string]any)

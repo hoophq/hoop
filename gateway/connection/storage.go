@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/runopsio/hoop/common/log"
 	st "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/user"
 	"olympos.io/encoding/edn"
@@ -56,6 +57,54 @@ func (s *Storage) Persist(context *user.Context, c *Connection) (int64, error) {
 	}
 
 	return txId, nil
+}
+
+func (s *Storage) Evict(ctx *user.Context, connectionName string) (bool, error) {
+	pluginQuery := fmt.Sprintf(`{:query {
+		:find [xtid connid]
+		:in [orgid name]
+		:where [
+            [?p :connection/name name]
+            [?p :connection/org orgid]
+            [?p :xt/id connid]
+            [?c :plugin-connection/id connid]
+            [?c :xt/id xtid]]}
+	:in-args [%q %q]}`, ctx.Org.Id, connectionName)
+	data, err := s.QueryRaw([]byte(pluginQuery))
+	if err != nil {
+		return false, fmt.Errorf("failed fetching connection plugin, err=%v", err)
+	}
+	var ednResp [][]string
+	if err := edn.Unmarshal(data, &ednResp); err != nil {
+		return false, fmt.Errorf("failed decoding result, err=%v", err)
+	}
+
+	var evictList []string
+	var connID string
+	for _, objList := range ednResp {
+		if len(objList) != 2 {
+			return false, fmt.Errorf("wrong response structure, want=2, got=%v", len(objList))
+		}
+		// plugin-connection xt/id's
+		evictList = append(evictList, objList[0])
+		if connID == "" {
+			connID = objList[1]
+		}
+	}
+	// delete the connection last
+	evictList = append(evictList, connID)
+	if len(evictList) == 0 {
+		return false, nil
+	}
+	var txid string
+	tx, err := s.SubmitEvictTx(evictList...)
+	if err != nil {
+		txid = fmt.Sprintf("%v", tx.TxID)
+	}
+	log.Debugf("name=%v, org=%v, tx=%v, evicted=%v - evict connection result",
+		ctx.Org.Id, connectionName, txid, err == nil)
+	return err == nil, err
+
 }
 
 func (s *Storage) FindAll(context *user.Context) ([]BaseConnection, error) {

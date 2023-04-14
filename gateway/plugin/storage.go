@@ -16,7 +16,7 @@ type (
 
 	xtdbList struct {
 		Plugin
-		Connections []xtdbListConnection `edn:"plugin/connection-ids"`
+		Connections []*xtdbListConnection `edn:"plugin/connection-ids"`
 	}
 
 	xtdbListConnection struct {
@@ -29,7 +29,7 @@ type (
 
 	xtdbPlugin struct {
 		Plugin
-		XtdbConnection []xtdbConnection `edn:"plugin/connection-ids"`
+		XtdbConnection []*xtdbConnection `edn:"plugin/connection-ids"`
 	}
 
 	xtdbConnection struct {
@@ -98,7 +98,9 @@ func (s *Storage) FindAll(context *user.Context) ([]ListPlugin, error) {
 	for _, p := range xtdbPlugins {
 		connections := make([]string, 0)
 		for _, c := range p.Connections {
-			connections = append(connections, c.Conn.Name)
+			if c != nil {
+				connections = append(connections, c.Conn.Name)
+			}
 		}
 
 		plugins = append(plugins, ListPlugin{
@@ -143,14 +145,18 @@ func (s *Storage) FindOne(context *user.Context, name string) (*Plugin, error) {
 	xtdbPlugin := plugins[0]
 
 	connections := make([]Connection, 0)
-	for _, c := range xtdbPlugin.XtdbConnection {
-		connections = append(connections, Connection{
-			Id:           c.Id,
-			ConnectionId: c.ConnData.Id,
-			Name:         c.ConnData.Name,
-			Config:       c.Config,
-			Groups:       sanitizeEdnGroups(c.Groups),
-		})
+	if xtdbPlugin.XtdbConnection != nil {
+		for _, c := range xtdbPlugin.XtdbConnection {
+			if c != nil {
+				connections = append(connections, Connection{
+					Id:           c.Id,
+					ConnectionId: c.ConnData.Id,
+					Name:         c.ConnData.Name,
+					Config:       c.Config,
+					Groups:       sanitizeEdnGroups(c.Groups),
+				})
+			}
+		}
 	}
 
 	plugin := &Plugin{
