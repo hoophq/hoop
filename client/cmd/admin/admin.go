@@ -23,7 +23,7 @@ var MainCmd = &cobra.Command{
 
 var gatewayInfoCmd = &cobra.Command{
 	Use:   "gateway-info",
-	Short: "Get information about the gateway.",
+	Short: "Get information about the gateway",
 	Run: func(cmd *cobra.Command, args []string) {
 		conf := clientconfig.GetClientConfigOrDie()
 		_, err := httpRequest(&apiResource{suffixEndpoint: "/api/healthz", conf: conf})

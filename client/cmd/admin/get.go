@@ -36,6 +36,7 @@ hoop admin get plugins`
 
 var getCmd = &cobra.Command{
 	Use:     "get RESOURCE",
+	Short:   "Display one or many resources",
 	Long:    getLongDesc,
 	Example: getExamplesDesc,
 	PreRun: func(cmd *cobra.Command, args []string) {

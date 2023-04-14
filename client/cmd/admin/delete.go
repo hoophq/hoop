@@ -14,8 +14,9 @@ var deleteLongDesc = `Delete resource by its name. Available ones:
 `
 
 var deleteCmd = &cobra.Command{
-	Use:  "delete TYPE/NAME",
-	Long: deleteLongDesc,
+	Use:   "delete TYPE/NAME",
+	Short: "Delete resources by name",
+	Long:  deleteLongDesc,
 	PreRun: func(cmd *cobra.Command, args []string) {
 		if len(args) == 0 {
 			styles.PrintErrorAndExit("missing resource: type/name")

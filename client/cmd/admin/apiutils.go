@@ -132,7 +132,7 @@ func parseResourceOrDie(args []string, method, outputFlag string) *apiResource {
 		}
 		apir.decodeTo = "object"
 	case "POST", "PUT":
-		if !apir.resourceCreate || !apir.resourceUpdate {
+		if !apir.resourceCreate && !apir.resourceUpdate {
 			styles.PrintErrorAndExit("method %v not implemented for resource %q", method, apir.resourceType)
 		}
 		if apir.name == "" {

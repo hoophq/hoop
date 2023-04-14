@@ -12,5 +12,5 @@ func init() {
 
 var createCmd = &cobra.Command{
 	Use:   "create RESOURCE",
-	Short: "Create resources.",
+	Short: "Create resources",
 }
