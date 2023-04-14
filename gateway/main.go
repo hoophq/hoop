@@ -15,7 +15,6 @@ import (
 	"github.com/runopsio/hoop/gateway/client"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/indexer"
-	"github.com/runopsio/hoop/gateway/jobs"
 	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/review"
@@ -131,11 +130,11 @@ func Run() {
 
 	//start scheduler for "weekly" report service (production mode)
 	if profile != pb.DevProfile {
-		jobs.InitReportScheduler(&jobs.Scheduler{
-			UserStorage:    &userService,
-			SessionStorage: &sessionService,
-			Notification:   notificationService,
-		})
+		//jobs.InitReportScheduler(&jobs.Scheduler{
+		//	UserStorage:    &userService,
+		//	SessionStorage: &sessionService,
+		//	Notification:   notificationService,
+		//})
 	}
 
 	if profile == pb.DevProfile {
