@@ -109,7 +109,7 @@ func (s *Storage) SubmitPutTx(trxs ...TxEdnStruct) (*TxResponse, error) {
 	return nil, fmt.Errorf("received unknown status code=%v", resp.StatusCode)
 }
 
-// SubmitPutTx sends evict transactions to the xtdb API
+// SubmitEvictTx sends evict transactions to the xtdb API
 // https://docs.xtdb.com/clients/1.22.0/http/#submit-tx
 func (s *Storage) SubmitEvictTx(xtIDs ...string) (*TxResponse, error) {
 	if len(xtIDs) == 0 {
@@ -324,40 +324,37 @@ func (s *Storage) Sync(timeout time.Duration) error {
 	}
 }
 
-func (s *Storage) Evict(xtID string) error {
-	url := fmt.Sprintf("%s/_xtdb/submit-tx", s.address)
+// func (s *Storage) Evict(xtID string) error {
+// 	url := fmt.Sprintf("%s/_xtdb/submit-tx", s.address)
+// 	txOpsEdn := fmt.Sprintf(`{:tx-ops [[:xtdb.api/evict %q]]}`, xtID)
+// 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBufferString(txOpsEdn))
+// 	if err != nil {
+// 		return err
+// 	}
 
-	// query := fmt.Sprintf(`{:tx-ops [[:xtdb.api/evict %q]
-	// 					[:xtdb.api/evict %q]]}`, xtID)
-	txOpsEdn := fmt.Sprintf(`{:tx-ops [[:xtdb.api/evict %q]]}`, xtID)
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBufferString(txOpsEdn))
-	if err != nil {
-		return err
-	}
+// 	req.Header.Set("content-type", "application/edn")
+// 	req.Header.Set("accept", "application/edn")
 
-	req.Header.Set("content-type", "application/edn")
-	req.Header.Set("accept", "application/edn")
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return err
-	}
-	if resp == nil {
-		return fmt.Errorf("http response is empty")
-	}
-	defer resp.Body.Close()
-	var txResponse TxResponse
-	if resp.StatusCode == http.StatusAccepted {
-		if err := edn.NewDecoder(resp.Body).Decode(&txResponse); err != nil {
-			return err
-		}
-		return nil
-	} else {
-		data, _ := io.ReadAll(resp.Body)
-		log.Warnf("unknown status code=%v, body=%v", resp.StatusCode, string(data))
-	}
-	return fmt.Errorf("received unknown status code=%v", resp.StatusCode)
-}
+// 	resp, err := s.client.Do(req)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	if resp == nil {
+// 		return fmt.Errorf("http response is empty")
+// 	}
+// 	defer resp.Body.Close()
+// 	var txResponse TxResponse
+// 	if resp.StatusCode == http.StatusAccepted {
+// 		if err := edn.NewDecoder(resp.Body).Decode(&txResponse); err != nil {
+// 			return err
+// 		}
+// 		return nil
+// 	} else {
+// 		data, _ := io.ReadAll(resp.Body)
+// 		log.Warnf("unknown status code=%v, body=%v", resp.StatusCode, string(data))
+// 	}
+// 	return fmt.Errorf("received unknown status code=%v", resp.StatusCode)
+// }
 
 func EntityToMap(obj any) map[string]any {
 	payload := make(map[string]any)

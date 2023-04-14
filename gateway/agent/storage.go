@@ -102,5 +102,6 @@ func (s *Storage) Persist(agent *Agent) (int64, error) {
 }
 
 func (s *Storage) Evict(xtID string) error {
-	return s.Storage.Evict(xtID)
+	_, err := s.Storage.SubmitEvictTx(xtID)
+	return err
 }
