@@ -1,6 +1,8 @@
 package review
 
 import (
+	"fmt"
+
 	st "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/user"
 	"olympos.io/encoding/edn"
@@ -32,18 +34,20 @@ type (
 )
 
 func (s *Storage) FindAll(context *user.Context) ([]Review, error) {
-	var payload = `{:query {
+	var payload = fmt.Sprintf(`{:query {
 		:find [(pull ?review [:xt/id
-                              :review/status
-		                      :review/input
-                              :review/session
-		                      :review/connection
-		                      :review/created-by 
-		                      {:review/created-by [:user/email]}
-                              {:review/connection [:connection/name]}])]
+							  :review/status
+							  :review/input
+							  :review/session
+							  :review/connection
+							  :review/created-by
+							  {:review/created-by [:user/email]}
+							  {:review/connection [:connection/name]}])]
 		:in [org]
-		:where [[?review :review/org org]]}
-		:in-args ["` + context.Org.Id + `"]}`
+		:where [[?review :review/org org]
+				[?review :review/connection connid]
+				[?c :xt/id connid]]}
+		:in-args [%q]}`, context.Org.Id)
 
 	b, err := s.Query([]byte(payload))
 	if err != nil {
@@ -59,7 +63,7 @@ func (s *Storage) FindAll(context *user.Context) ([]Review, error) {
 }
 
 func (s *Storage) FindById(context *user.Context, id string) (*Review, error) {
-	var payload = `{:query {
+	var payload = fmt.Sprintf(`{:query {
 		:find [(pull ?review [:xt/id
                               :review/status
 							  :review/input
@@ -70,10 +74,12 @@ func (s *Storage) FindById(context *user.Context, id string) (*Review, error) {
                                  {:review/review-groups [*
                                      {:review-group/reviewed-by [:xt/id :user/name :user/email]}]}
                                  {:review/created-by [:xt/id :user/name :user/email]}])]
-		:in [id org]
-		:where [[?review :xt/id id]
-                [?review :review/org org]]}
-        :in-args ["` + id + `" "` + context.Org.Id + `"]}`
+		:in [org id]
+		:where [[?review :review/org org]
+				[?review :xt/id id]
+				[?review :review/connection connid]
+				[?c :xt/id connid]]}
+        :in-args [%q %q]}`, context.Org.Id, id)
 
 	b, err := s.Query([]byte(payload))
 	if err != nil {
@@ -93,7 +99,7 @@ func (s *Storage) FindById(context *user.Context, id string) (*Review, error) {
 }
 
 func (s *Storage) FindBySessionID(sessionID string) (*Review, error) {
-	var payload = `{:query {
+	var payload = fmt.Sprintf(`{:query {
 		:find [(pull ?review [:xt/id
                               :review/status
 							  :review/input
@@ -105,8 +111,10 @@ func (s *Storage) FindBySessionID(sessionID string) (*Review, error) {
                                      {:review-group/reviewed-by [:xt/id :user/name :user/email]}]}
                                  {:review/created-by [:xt/id :user/name :user/email]}])]
 		:in [sessionID]
-		:where [[?review :review/session sessionID]]}
-        :in-args ["` + sessionID + `"]}`
+		:where [[?review :review/session sessionID]
+				[?review :review/connection connid]
+				[?c :xt/id connid]]}
+        :in-args [%q]}`, sessionID)
 
 	b, err := s.Query([]byte(payload))
 	if err != nil {
