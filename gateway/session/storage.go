@@ -184,6 +184,7 @@ func (s *Storage) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionLi
 					[a :session/event-size event-size]
 					[a :session/start-date start-date]
 					[a :session/end-date end-date]
+					[(get-attr a :session/dlp-count) [dlp-count]]
 					(or [(= arg-user nil)]
 						[(= usr-id arg-user)])
 					(or [(= arg-type nil)]

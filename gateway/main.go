@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"github.com/runopsio/hoop/gateway/jobs"
 	"os"
 	"time"
 
@@ -130,11 +131,11 @@ func Run() {
 
 	//start scheduler for "weekly" report service (production mode)
 	if profile != pb.DevProfile {
-		//jobs.InitReportScheduler(&jobs.Scheduler{
-		//	UserStorage:    &userService,
-		//	SessionStorage: &sessionService,
-		//	Notification:   notificationService,
-		//})
+		jobs.InitReportScheduler(&jobs.Scheduler{
+			UserStorage:    &userService,
+			SessionStorage: &sessionService,
+			Notification:   notificationService,
+		})
 	}
 
 	if profile == pb.DevProfile {
