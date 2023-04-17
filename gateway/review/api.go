@@ -2,11 +2,12 @@ package review
 
 import (
 	"fmt"
-	"github.com/google/uuid"
-	"github.com/runopsio/hoop/gateway/clientexec"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/runopsio/hoop/gateway/clientexec"
 
 	"github.com/getsentry/sentry-go"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -30,10 +31,12 @@ type (
 
 func (h *Handler) Put(c *gin.Context) {
 	context := user.ContextUser(c)
+	log := user.ContextLogger(c)
 
 	reviewId := c.Param("id")
 	existingReview, err := h.Service.FindOne(context, reviewId)
 	if err != nil {
+		log.Errorf("failed fetching review %v err=%v", reviewId, err)
 		sentry.CaptureException(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
@@ -77,6 +80,7 @@ func (h *Handler) Put(c *gin.Context) {
 	}
 
 	if err := h.Service.Review(context, existingReview, r.Status); err != nil {
+		log.Errorf("failed processing review, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
@@ -87,9 +91,11 @@ func (h *Handler) Put(c *gin.Context) {
 
 func (h *Handler) FindAll(c *gin.Context) {
 	context := user.ContextUser(c)
+	log := user.ContextLogger(c)
 
 	reviews, err := h.Service.FindAll(context)
 	if err != nil {
+		log.Errorf("failed listing reviews, err=%v", err)
 		sentry.CaptureException(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
@@ -100,10 +106,12 @@ func (h *Handler) FindAll(c *gin.Context) {
 
 func (h *Handler) FindOne(c *gin.Context) {
 	context := user.ContextUser(c)
+	log := user.ContextLogger(c)
 
 	id := c.Param("id")
 	review, err := h.Service.FindOne(context, id)
 	if err != nil {
+		log.Errorf("failed fetching review %v, err=%v", id, err)
 		sentry.CaptureException(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return

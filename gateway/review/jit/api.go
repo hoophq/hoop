@@ -25,10 +25,12 @@ type (
 
 func (h *Handler) Put(c *gin.Context) {
 	context := user.ContextUser(c)
+	log := user.ContextLogger(c)
 
 	jitId := c.Param("id")
 	existingJit, err := h.Service.FindOne(context, jitId)
 	if err != nil {
+		log.Errorf("failed fetching jit %v, err=%v", jitId, err)
 		sentry.CaptureException(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
@@ -64,6 +66,7 @@ func (h *Handler) Put(c *gin.Context) {
 	}
 
 	if err := h.Service.Review(context, existingJit, r.Status); err != nil {
+		log.Errorf("failed processing jit, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
@@ -74,9 +77,11 @@ func (h *Handler) Put(c *gin.Context) {
 
 func (h *Handler) FindAll(c *gin.Context) {
 	context := user.ContextUser(c)
+	log := user.ContextLogger(c)
 
 	jits, err := h.Service.FindAll(context)
 	if err != nil {
+		log.Errorf("failed listing jits, err=%v", err)
 		sentry.CaptureException(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
@@ -87,10 +92,12 @@ func (h *Handler) FindAll(c *gin.Context) {
 
 func (a *Handler) FindOne(c *gin.Context) {
 	context := user.ContextUser(c)
+	log := user.ContextLogger(c)
 
 	id := c.Param("id")
 	jit, err := a.Service.FindOne(context, id)
 	if err != nil {
+		log.Errorf("failed fetching jit %v, err=%v", id, err)
 		sentry.CaptureException(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
