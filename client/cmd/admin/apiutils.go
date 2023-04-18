@@ -97,7 +97,11 @@ func parseResourceOrDie(args []string, method, outputFlag string) *apiResource {
 	case "reviews":
 		apir.suffixEndpoint = path.Join("/api/reviews", apir.name)
 	case "plugins":
+		apir.resourceCreate = true
 		apir.suffixEndpoint = path.Join("/api/plugins", apir.name)
+		if method == "POST" {
+			apir.suffixEndpoint = "/api/plugins"
+		}
 	case "runbooks":
 		apir.resourceList = false
 		apir.suffixEndpoint = "/api/plugins/runbooks/connections/" + apir.name + "/templates"
@@ -175,6 +179,7 @@ func httpRequest(apir *apiResource) (any, error) {
 		return nil, fmt.Errorf("failed creating http request, err=%v", err)
 	}
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", apir.conf.Token))
+	req.Header.Set("User-Agent", fmt.Sprintf("hoopcli/%s", hoopVersionStr))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -222,6 +227,7 @@ func httpDeleteRequest(apir *apiResource) error {
 		return fmt.Errorf("failed creating http request, err=%v", err)
 	}
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", apir.conf.Token))
+	req.Header.Set("User-Agent", fmt.Sprintf("hoopcli/%s", hoopVersionStr))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
@@ -246,12 +252,14 @@ func httpBodyRequest(apir *apiResource, method string, bodyMap map[string]any) (
 		return nil, fmt.Errorf("failed encoding body, err=%v", err)
 	}
 	log.Debugf("performing http request at %v %v", method, url)
+	log.Debugf("payload=%v", string(body))
 	req, err := http.NewRequest(method, url, bytes.NewBuffer(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed creating http request, err=%v", err)
 	}
 
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", apir.conf.Token))
+	req.Header.Set("User-Agent", fmt.Sprintf("hoopcli/%s", hoopVersionStr))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err

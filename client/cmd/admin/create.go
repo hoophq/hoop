@@ -7,6 +7,7 @@ import (
 func init() {
 	createCmd.AddCommand(createAgentCmd)
 	createCmd.AddCommand(createConnectionCmd)
+	createCmd.AddCommand(createPluginCmd)
 	createCmd.PersistentFlags().StringVarP(&outputFlag, "output", "o", "", "Output format. One off: (json)")
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 	"github.com/hoophq/pluginhooks"
+	"github.com/runopsio/hoop/common/log"
 )
 
 func init() {
@@ -146,10 +147,15 @@ func NewClient(config ClientConfig) (Client, error) {
 		fmt.Sprintf("MAGIC_COOKIE_VAL=%s", magicCookieVal),
 	}
 
+	logLevel := "info"
+	if log.IsDebugLevel {
+		logLevel = "debug"
+	}
 	logger := hclog.New(&hclog.LoggerOptions{
-		Name:   "host",
-		Output: os.Stdout,
-		Level:  hclog.Debug,
+		JSONFormat: log.LogEncoding == "json",
+		Name:       "host",
+		Output:     os.Stdout,
+		Level:      hclog.LevelFromString(logLevel),
 	})
 
 	// We're a host! Start by launching the plugin process.

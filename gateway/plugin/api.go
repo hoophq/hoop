@@ -86,6 +86,7 @@ func (a *Handler) Post(c *gin.Context) {
 
 	existingPlugin, err := a.Service.FindOne(context, plugin.Name)
 	if err != nil {
+		log.Errorf("failed retrieving existing plugin, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
@@ -115,20 +116,8 @@ func (a *Handler) PutConfig(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	for env, val := range envVars {
-		if len(val) > 100000 { // 0.1MB
-			msg := fmt.Sprintf("max size (0.1MB) reached for key %s", env)
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": msg})
-			return
-		}
-		if _, err := base64.StdEncoding.DecodeString(val); err != nil {
-			msg := fmt.Sprintf("failed decoding env '%v', err=%v", env, err)
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": msg})
-			return
-		}
-	}
-	if len(envVars) == 0 {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "envvars is missing"})
+	if err := validatePluginConfig(&PluginConfig{EnvVars: envVars}); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
 	existingPlugin, err := a.Service.FindOne(context, pluginName)
@@ -219,4 +208,25 @@ func (a *Handler) Put(c *gin.Context) {
 	}
 	redactPluginConfig(plugin.Config)
 	c.PureJSON(http.StatusOK, plugin)
+}
+
+func validatePluginConfig(config *PluginConfig) error {
+	if len(config.EnvVars) == 0 {
+		return nil
+	}
+	for key, val := range config.EnvVars {
+		if key == "" {
+			return fmt.Errorf("missing config key")
+		}
+		if val == "" {
+			return fmt.Errorf("missing config val for key=%s", key)
+		}
+		if len(val) > 100000 { // 0.1MB
+			return fmt.Errorf("max size (0.1MB) reached for key %s", key)
+		}
+		if _, err := base64.StdEncoding.DecodeString(val); err != nil {
+			return fmt.Errorf("failed decoding key '%v', err=%v", key, err)
+		}
+	}
+	return nil
 }

@@ -51,4 +51,5 @@ do
 done
 echo "--> GATEWAY IS READY!"
 echo "--> STARTING AGENT ..."
+export ENV_CONFIG='{"PG_HOST": "127.0.0.1", "PG_USER": "bob", "PG_PASS": "1a2b3c4d", "PG_PORT": "5444"}'
 /tmp/hoop start agent
