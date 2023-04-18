@@ -3,6 +3,7 @@ package gateway
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/runopsio/hoop/gateway/jobs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -135,11 +136,11 @@ func Run() {
 
 	//start scheduler for "weekly" report service (production mode)
 	if profile != pb.DevProfile {
-		//jobs.InitReportScheduler(&jobs.Scheduler{
-		//	UserStorage:    &userService,
-		//	SessionStorage: &sessionService,
-		//	Notification:   notificationService,
-		//})
+		jobs.InitReportScheduler(&jobs.Scheduler{
+			UserStorage:    &userService,
+			SessionStorage: &sessionService,
+			Notification:   notificationService,
+		})
 	}
 
 	if profile == pb.DevProfile {

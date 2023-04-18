@@ -168,10 +168,10 @@ func (s *Storage) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionLi
 	}
 	err := s.queryDecoder(`
 		{:query {
-			:find [id usr usr-id usr-name typ conn verb event-size start-date end-date]
+			:find [id usr usr-id usr-name typ conn verb event-size start-date end-date dlp-count]
 			:keys [xt/id session/user session/user-id session/user-name
 				   session/type session/connection session/verb session/event-size
-				   session/start-date session/end-date]
+				   session/start-date session/end-date session/dlp-count]
 			:in [org-id arg-user arg-type arg-conn arg-start-date arg-end-date]
 			:where [[a :session/org-id org-id]
 					[a :xt/id id]
@@ -184,6 +184,7 @@ func (s *Storage) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionLi
 					[a :session/event-size event-size]
 					[a :session/start-date start-date]
 					[a :session/end-date end-date]
+					[(get-attr a :session/dlp-count 0) [dlp-count]]
 					(or [(= arg-user nil)]
 						[(= usr-id arg-user)])
 					(or [(= arg-type nil)]
