@@ -16,11 +16,12 @@ import (
 	"github.com/runopsio/hoop/client/cmd/demos"
 	"github.com/runopsio/hoop/client/cmd/styles"
 	"github.com/runopsio/hoop/common/clientconfig"
-	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/monitoring"
 	"github.com/runopsio/hoop/gateway"
 	"github.com/spf13/cobra"
 )
+
+var startEnvFlag []string
 
 var startCmd = &cobra.Command{
 	Use:          "start",
@@ -60,17 +61,9 @@ var startCmd = &cobra.Command{
 		dockerArgs := []string{
 			"run",
 			"-t", // required for resizing the tty in the agent properly
-			"-e", "LOG_LEVEL=" + log.LevelDebug,
-			"-e", fmt.Sprintf("PYROSCOPE_INGEST_URL=%v", os.Getenv("PYROSCOPE_INGEST_URL")),
-			"-e", fmt.Sprintf("PYROSCOPE_AUTH_TOKEN=%v", os.Getenv("PYROSCOPE_AUTH_TOKEN")),
-			"-e", fmt.Sprintf("AGENT_SENTRY_DSN=%v", os.Getenv("AGENT_SENTRY_DSN")),
-			"-e", fmt.Sprintf("API_URL=%v", os.Getenv("API_URL")),
-			"-e", fmt.Sprintf("IDP_ISSUER=%v", os.Getenv("IDP_ISSUER")),
-			"-e", fmt.Sprintf("IDP_CLIENT_ID=%v", os.Getenv("IDP_CLIENT_ID")),
-			"-e", fmt.Sprintf("IDP_CLIENT_SECRET=%v", os.Getenv("IDP_CLIENT_SECRET")),
-			"-e", fmt.Sprintf("IDP_AUDIENCE=%v", os.Getenv("IDP_AUDIENCE")),
-			"-e", fmt.Sprintf("GOOGLE_APPLICATION_CREDENTIALS_JSON=%v",
-				os.Getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")),
+		}
+		for _, env := range startEnvFlag {
+			dockerArgs = append(dockerArgs, "-e", env)
 		}
 		dockerArgs = append(dockerArgs,
 			"-p", "8009:8009",
@@ -181,7 +174,6 @@ var startAgentCmd = &cobra.Command{
 	Short:        "Runs the agent component",
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
-
 		agent.Run()
 	},
 }
@@ -191,7 +183,6 @@ var startGatewayCmd = &cobra.Command{
 	Short:        "Runs the gateway component",
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
-		log.Printf("running gateway")
 		gateway.Run()
 	},
 }
@@ -200,5 +191,6 @@ func init() {
 	startCmd.AddCommand(startAgentCmd)
 	startCmd.AddCommand(startGatewayCmd)
 	startCmd.AddCommand(demos.DemoCmd)
+	startCmd.Flags().StringSliceVarP(&startEnvFlag, "env", "e", nil, "The environment variables to set when starting hoop")
 	rootCmd.AddCommand(startCmd)
 }

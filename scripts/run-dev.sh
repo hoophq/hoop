@@ -40,8 +40,9 @@ export GIN_MODE=debug
 export AGENT_SENTRY_DSN=
 # require to run npm install && npm run release:hoop-ui
 export STATIC_UI_PATH=../webapp/resources/public/
-go build -o /tmp/hoop client/main.go
-/tmp/hoop start gateway &
+mkdir -p $HOME/.hoop/bin/
+go build -o $HOME/.hoop/bin/hoop client/main.go
+$HOME/.hoop/bin/hoop start gateway &
 
 unset PORT XTDB_ADDRESS PLUGIN_AUDIT_PATH
 
@@ -52,4 +53,4 @@ done
 echo "--> GATEWAY IS READY!"
 echo "--> STARTING AGENT ..."
 export ENV_CONFIG='{"PG_HOST": "127.0.0.1", "PG_USER": "bob", "PG_PASS": "1a2b3c4d", "PG_PORT": "5444"}'
-/tmp/hoop start agent
+$HOME/.hoop/bin/hoop start agent
