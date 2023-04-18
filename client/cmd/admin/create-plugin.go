@@ -20,10 +20,10 @@ var (
 )
 
 func init() {
-	createPluginCmd.Flags().StringVar(&pluginSourceFlag, "source", "", "The source to get plugins from. One off: ('registry-url', '/path/to/plugin')")
+	createPluginCmd.Flags().StringVar(&pluginSourceFlag, "source", "", "The source to get plugins from. One off: ('<org>/<pluginname>', 'path:/path/to/plugin/folder')")
 	createPluginCmd.Flags().IntVar(&pluginPriorityFlag, "priority", 0, "The priority of the plugin, a greater value means it will execute it first.")
 	createPluginCmd.Flags().StringSliceVarP(&pluginConfigFlag, "config", "c", nil, "The configuration of the plugin")
-	createPluginCmd.Flags().StringSliceVar(&pluginConnectionFlag, "connection", nil, "The connection to associate with the plugin in the form of 'conn;config,;groups,'")
+	createPluginCmd.Flags().StringSliceVar(&pluginConnectionFlag, "connection", nil, "The connection to associate with the plugin in the form of 'conn:config01;config02;...'")
 	createPluginCmd.Flags().BoolVar(&pluginOverwriteFlag, "overwrite", false, "It will create or update it if a plugin already exists")
 
 }
