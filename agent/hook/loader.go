@@ -47,12 +47,12 @@ func (p *PluginManifest) matchPlatform() bool {
 }
 
 func (m *PluginManifest) String() string {
-	out := fmt.Sprintf("cached=%v,path=%v", m.isAlreadyLoaded, m.execPath)
+	out := fmt.Sprintf("cached=%v, path=%v", m.isAlreadyLoaded, m.execPath)
 	if m.info != nil {
-		out = out + ",mode=" + m.info.Mode().String()
+		out = out + ", mode=" + m.info.Mode().String()
 	}
 	if m.URL != "" {
-		return fmt.Sprintf("name=%s,version=%s,size=%v,digest=%s...,platform=%v/%v,%v",
+		return fmt.Sprintf("name=%s, version=%s, size=%v, digest=%s..., platform=%v/%v,%v",
 			m.Name, m.Version, m.Size, m.Digest[:15],
 			m.Platform.OS, m.Platform.Architecture,
 			out)

@@ -110,6 +110,7 @@ func parseEnvPerType() (map[string]string, error) {
 		key, val, found := strings.Cut(envvarStr, "=")
 		if !found {
 			invalidEnvs = append(invalidEnvs, envvarStr)
+			continue
 		}
 		envType, keyenv, found := strings.Cut(key, ":")
 		if found {
@@ -142,6 +143,9 @@ func getConnection(conf *clientconfig.Config, connectionName string) (bool, erro
 		conf:           conf,
 		decodeTo:       "object"})
 	if err != nil {
+		if strings.Contains(err.Error(), "status=404") {
+			return false, nil
+		}
 		return false, err
 	}
 	if _, ok := resp.(map[string]any); !ok {

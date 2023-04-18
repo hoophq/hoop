@@ -44,6 +44,36 @@ type (
 	}
 )
 
+func (s *Storage) FindConnections(ctx *user.Context, connectionNames []string) (map[string]string, error) {
+	var ednColBinding string
+	for _, name := range connectionNames {
+		ednColBinding += fmt.Sprintf("%q ", name)
+	}
+	var payload = fmt.Sprintf(`{:query {
+		:find [(pull ?c [:xt/id :connection/name])]
+		:in [orgid [connections ...]]
+		:where [[?c :connection/org orgid]
+				[?c :connection/name connections]]}
+		:in-args [%q [%v]]}`, ctx.Org.Id, ednColBinding)
+	b, err := s.QueryRaw([]byte(payload))
+	if err != nil {
+		return nil, err
+	}
+	var connections [][]xtdbConnectionData
+	if err := edn.Unmarshal(b, &connections); err != nil {
+		return nil, err
+	}
+	connectionMap := map[string]string{}
+	if len(connections) > 0 {
+		for _, connTuple := range connections {
+			for _, conn := range connTuple {
+				connectionMap[conn.Name] = conn.Id
+			}
+		}
+	}
+	return connectionMap, nil
+}
+
 func (s *Storage) Persist(context *user.Context, plugin *Plugin) (int64, error) {
 	plugin.OrgId = context.Org.Id
 	plugin.InstalledById = context.User.Id

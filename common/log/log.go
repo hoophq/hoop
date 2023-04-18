@@ -36,19 +36,19 @@ var (
 	Fatalf = zlog.Sugar().Fatalf
 	Fatal  = zlog.Sugar().Fatal
 
-	With         = zlog.Sugar().With
-	IsDebugLevel = zlog.Level() == zapcore.DebugLevel
+	With                = zlog.Sugar().With
+	IsDebugLevel        = zlog.Level() == zapcore.DebugLevel
+	LogEncoding  string = os.Getenv("LOG_ENCODING")
 )
 
 func NewDefaultLogger() *zap.Logger {
-	logEncoding := os.Getenv("LOG_ENCODING")
-	if logEncoding == "" {
-		logEncoding = "json"
+	if LogEncoding == "" {
+		LogEncoding = "json"
 	}
 	logLevel := parseToAtomicLevel(os.Getenv("LOG_LEVEL"))
 	loggerConfig := &zap.Config{
 		Level:    logLevel,
-		Encoding: logEncoding,
+		Encoding: LogEncoding,
 		EncoderConfig: zapcore.EncoderConfig{
 			LevelKey:       "level",
 			TimeKey:        "timestamp",

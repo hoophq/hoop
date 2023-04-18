@@ -56,7 +56,7 @@ var getCmd = &cobra.Command{
 			fmt.Print(string(jsonData))
 			return
 		}
-		w := tabwriter.NewWriter(os.Stdout, 0, 8, 2, '\t', tabwriter.AlignRight)
+		w := tabwriter.NewWriter(os.Stdout, 6, 4, 3, ' ', tabwriter.TabIndent)
 		defer w.Flush()
 		switch apir.resourceType {
 		case "agent", "agents":

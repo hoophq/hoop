@@ -6,6 +6,7 @@ import (
 
 	"github.com/runopsio/hoop/client/cmd/styles"
 	clientconfig "github.com/runopsio/hoop/client/config"
+	"github.com/runopsio/hoop/common/version"
 	"github.com/spf13/cobra"
 )
 
@@ -15,6 +16,8 @@ func init() {
 	MainCmd.AddCommand(createCmd)
 	MainCmd.AddCommand(gatewayInfoCmd)
 }
+
+var hoopVersionStr = version.Get().Version
 
 var MainCmd = &cobra.Command{
 	Use:   "admin",

@@ -18,6 +18,7 @@ type (
 		Persist(context *user.Context, plugin *Plugin) (int64, error)
 		FindAll(context *user.Context) ([]ListPlugin, error)
 		FindOne(context *user.Context, name string) (*Plugin, error)
+		FindConnections(ctx *user.Context, connectionNames []string) (map[string]string, error)
 	}
 
 	Plugin struct {
@@ -70,7 +71,41 @@ func (s *Service) Persist(context *user.Context, plugin *Plugin) error {
 	connectionIDs := make([]string, 0)
 	connConfigs := make([]Connection, 0)
 
+	var connectionNames []string
+	for _, c := range plugin.Connections {
+		if c.Name == "" {
+			connectionNames = nil
+			break
+		}
+		connectionNames = append(connectionNames, c.Name)
+	}
+	var connectionMap map[string]string
+	if len(connectionNames) > 0 {
+		var err error
+		connectionMap, err = s.Storage.FindConnections(context, connectionNames)
+		if err != nil {
+			return fmt.Errorf("failed looking up for existent connections %v", err)
+		}
+		if len(connectionMap) != len(plugin.Connections) {
+			return fmt.Errorf("check if the input connections exists, found=%v/%v",
+				len(connectionMap), len(plugin.Connections))
+		}
+	}
+	if connectionMap == nil {
+		connectionMap = map[string]string{}
+	}
+
 	for i, c := range plugin.Connections {
+		// avoids inconsistency by using the connection
+		// retrieved from the storage
+		if len(connectionNames) > 0 {
+			connectionID, ok := connectionMap[c.Name]
+			if !ok {
+				return fmt.Errorf("could not find connection in map for name %q", c.Name)
+			}
+			c.ConnectionId = connectionID
+			plugin.Connections[i] = c
+		}
 		if c.ConnectionId == "" {
 			return errors.New("missing connection ID")
 		}
