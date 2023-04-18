@@ -1,10 +1,15 @@
 package gateway
 
 import (
+	"encoding/json"
+	"fmt"
 	"github.com/runopsio/hoop/gateway/jobs"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"time"
 
+	"github.com/runopsio/hoop/common/clientconfig"
 	"github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/monitoring"
@@ -153,8 +158,54 @@ func Run() {
 }
 
 func getNotification() notification.Service {
-	if os.Getenv("SMTP_HOST") != "" {
+	if os.Getenv("NOTIFICATIONS_BRIDGE_CONFIG") != "" && os.Getenv("ORG_MULTI_TENANT") != "true" {
+		mBridgeConfigRaw := []byte(os.Getenv("NOTIFICATIONS_BRIDGE_CONFIG"))
+		var mBridgeConfigMap map[string]string
+		if err := json.Unmarshal(mBridgeConfigRaw, &mBridgeConfigMap); err != nil {
+			log.Fatalf("failed decoding notifications bridge config")
+		}
+		log.Printf("Bridge notifications selected")
+		matterbridgeConfig := `[slack]
+[slack.myslack]
+Token="%s"
+PreserveThreading=true
+
+[api.myapi]
+BindAddress="127.0.0.1:4242"
+Buffer=10000
+
+[[gateway]]
+name="hoop-notifications-bridge"
+enable=true
+
+[[gateway.in]]
+account="api.myapi"
+channel="api"
+
+[[gateway.out]]
+account="slack.myslack"
+channel="general"`
+		matterbridgeFolder, err := clientconfig.NewHomeDir("matterbridge")
+		if err != nil {
+			log.Fatal(err)
+		}
+		configFile := filepath.Join(matterbridgeFolder, "matterbridge.toml")
+		configFileBytes := []byte(fmt.Sprintf(matterbridgeConfig, mBridgeConfigMap["slackBotToken"]))
+		err = os.WriteFile(configFile, configFileBytes, 0600)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		err = exec.Command("matterbridge", "-conf", configFile).Start()
+
+		if err != nil {
+			log.Fatal(err)
+		}
+		return notification.NewMatterbridge()
+	} else if os.Getenv("SMTP_HOST") != "" {
+		log.Printf("SMTP notifications selected")
 		return notification.NewSmtpSender()
 	}
+	log.Printf("MagicBell notifications selected")
 	return notification.NewMagicBell()
 }

@@ -57,6 +57,10 @@ RUN curl -sL https://hoopartifacts.s3.amazonaws.com/xtdb-in-memory-1.22.0-aarch6
     mv xtdb-in-memory-1.22.0-x86_64 /app/ && \
     rm -f /app/*.tar.gz
 
+RUN curl -sL https://github.com/42wim/matterbridge/releases/download/v1.26.0/matterbridge-1.26.0-linux-64bit -o /usr/local/bin/matterbridge && \
+    chmod +x /usr/local/bin/matterbridge && \
+    matterbridge -version
+
 RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
     locale-gen
 ENV LANG en_US.UTF-8
