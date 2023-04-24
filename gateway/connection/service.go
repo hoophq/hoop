@@ -54,7 +54,7 @@ type (
 const DBSecretProvider SecretProvider = "database"
 
 func (s *Service) FindAll(context *user.Context) ([]BaseConnection, error) {
-	result, err := s.Storage.FindAll(context)
+	all, err := s.Storage.FindAll(context)
 	if err != nil {
 		return nil, err
 	}
@@ -65,25 +65,32 @@ func (s *Service) FindAll(context *user.Context) ([]BaseConnection, error) {
 	}
 
 	if p == nil || context.User.IsAdmin() {
-		return result, nil
+		return all, nil
+	}
+
+	// put all the connection configured in a
+	// map with its corresponding configuration
+	mappedConfig := make(map[string][]string)
+	for _, c := range p.Connections {
+		mappedConfig[c.Name] = c.Config
 	}
 
 	allowedConnections := make([]BaseConnection, 0)
-	for _, bc := range result {
-		pluginEnabled := false
-		pluginAllowed := false
-		for _, c := range p.Connections {
-			if c.Name == bc.Name {
-				pluginEnabled = true
-			}
-			for _, ug := range context.User.Groups {
-				if pb.IsInList(ug, c.Config) {
-					pluginAllowed = true
-				}
-			}
+	for _, conn := range all {
+		// if the plugin does not contain the connection,
+		// then it is allowed to be seen by everyone
+		result, ok := mappedConfig[conn.Name]
+		if !ok {
+			allowedConnections = append(allowedConnections, conn)
+			continue
 		}
-		if !pluginEnabled || pluginAllowed {
-			allowedConnections = append(allowedConnections, bc)
+
+		// match the registered connections against users config
+		for _, g := range context.User.Groups {
+			if pb.IsInList(g, result) {
+				allowedConnections = append(allowedConnections, conn)
+				break
+			}
 		}
 	}
 
