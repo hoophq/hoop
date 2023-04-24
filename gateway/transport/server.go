@@ -1,6 +1,8 @@
 package transport
 
 import (
+	"bytes"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
@@ -8,14 +10,15 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
-	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/client"
 	"github.com/runopsio/hoop/gateway/connection"
@@ -127,6 +130,7 @@ func (s *Server) StartRPCServer() {
 		grpcServer = grpc.NewServer()
 	}
 	pb.RegisterTransportServer(grpcServer, s)
+	s.handleGracefulShutdown()
 	log.Infof("server transport created, tls=%v", tlsConfig != nil)
 	if err := grpcServer.Serve(listener); err != nil {
 		sentry.CaptureException(err)
@@ -195,14 +199,20 @@ func (s *Server) trackSessionStatus(sessionID, phase string, err error) {
 		}
 		errMsg = &v
 	}
+	// trackID will be unique for the same session id
+	trackID, err := uuid.NewRandomFromReader(bytes.NewBufferString(sessionID))
+	if err != nil {
+		log.Errorf("failed generating track id from session %v, err=%v", sessionID, err)
+		return
+	}
 	_, trackErr := s.SessionService.PersistStatus(&session.SessionStatus{
-		ID:        uuid.NewString(),
+		ID:        trackID.String(),
 		SessionID: sessionID,
 		Phase:     phase,
 		Error:     errMsg,
 	})
 	if trackErr != nil {
-		log.Printf("failed tracking session status, err=%v", trackErr)
+		log.Warnf("failed tracking session status, err=%v", trackErr)
 	}
 }
 
@@ -210,50 +220,120 @@ func (s *Server) validateSessionID(sessionID string) error {
 	return s.SessionService.ValidateSessionID(sessionID)
 }
 
-// startDisconnectClientSink listen for disconnects when the disconnect channel is closed
-// it timeout after 48 hours closing the client.
-func (s *Server) startDisconnectClientSink(c *client.Client) {
+func (s *Server) handleGracefulShutdown() {
+	sigc := make(chan os.Signal, 1)
+	signal.Notify(sigc,
+		syscall.SIGHUP,
+		syscall.SIGINT,
+		syscall.SIGTERM,
+		syscall.SIGQUIT)
+	go func() {
+		<-sigc
+		ctx := s.disconnectAllClients()
+		<-ctx.Done()
+		if err := ctx.Err(); err != nil {
+			if context.Canceled == err {
+				log.Infof("gateway shutdown gracefully")
+			} else {
+				log.Errorf("gateway shutdown timeout (15s), force closing it, err=%v", err)
+			}
+		}
+		os.Exit(143)
+	}()
+}
+
+// disconnectAllClients closes the disconnect sink channel for all clients
+func (s *Server) disconnectAllClients() context.Context {
 	disconnectSink.mu.Lock()
 	defer disconnectSink.mu.Unlock()
-	disconnectCh := make(chan struct{})
-	disconnectSink.items[c.SessionID] = disconnectCh
-	disconnectFn := func() {
-		unbindClient(c.SessionID)
-		c.Status = client.StatusDisconnected
-		_, _ = s.ClientService.Persist(c)
-		if stream := getAgentStream(c.AgentId); stream != nil {
-			_ = stream.Send(&pb.Packet{
-				Type: pbagent.SessionClose,
-				Spec: map[string][]byte{
-					pb.SpecGatewaySessionID: []byte(c.SessionID),
-				},
-			})
-		}
+
+	var clientItems []string
+	for key := range disconnectSink.items {
+		clientItems = append(clientItems, key)
 	}
-	log.With("session", c.SessionID).Debugf("start disconnect sink")
+	log.Infof("disconnecting all clients, length=%v, items=%v", len(disconnectSink.items), clientItems)
+	ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*25)
 	go func() {
-		select {
-		case <-disconnectCh:
-			log.With("session", c.SessionID).Infof("disconnecting client")
-			disconnectFn()
-		case <-time.After(time.Hour * 48):
-			log.With("session", c.SessionID).Warnf("timeout (48h), disconnecting client")
-			disconnectFn()
+
+		defer cancelFn()
+		for itemKey, disconnectCh := range disconnectSink.items {
+			select {
+			case disconnectCh <- fmt.Errorf("gateway shut down"):
+			case <-time.After(time.Millisecond * 100):
+				log.Errorf("timeout (100ms) send disconnect gateway error to sink")
+			}
+			// wait up to 0.5 seconds to close channel
+			// continue to the next one if it takes more time
+			select {
+			case <-disconnectCh:
+			case <-time.After(time.Millisecond * 500):
+				log.Warnf("timeout (0.5s) on disconnecting channel %v, moving to next one", itemKey)
+			}
+		}
+		// a state to signalize to shutdown xtdb when it's running
+		// in a sidecar container.
+		// https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/#container-hooks
+		preStopFilePath := "/tmp/xtdb-shutdown.placeholder"
+		_ = os.Remove(preStopFilePath)
+		_ = os.WriteFile(preStopFilePath, []byte(``), 0777)
+	}()
+	return ctx
+}
+
+// startDisconnectClientSink listen for disconnects when the disconnect channel is closed
+// it timeout after 48 hours closing the client.
+func (s *Server) startDisconnectClientSink(clientID, clientOrigin string, disconnectFn func(err error)) {
+	disconnectSink.mu.Lock()
+	defer disconnectSink.mu.Unlock()
+	disconnectCh := make(chan error)
+	disconnectSink.items[clientID] = disconnectCh
+	log.With("id", clientID).Debugf("start disconnect sink for %v", clientOrigin)
+	go func() {
+		switch clientOrigin {
+		case pb.ConnectionOriginAgent:
+			err := <-disconnectCh
+			// wait to get time to persist any resources performed async
+			defer closeChWithSleep(disconnectCh, time.Millisecond*150)
+			log.With("id", clientID).Infof("disconnecting agent client, reason=%v", err)
+			disconnectFn(err)
+		default:
+			// wait to get time to persist any resources performed async
+			defer closeChWithSleep(disconnectCh, time.Millisecond*150)
+			select {
+			case err := <-disconnectCh:
+				log.With("id", clientID).Infof("disconnecting proxy client, reason=%v", err)
+				disconnectFn(err)
+			case <-time.After(time.Hour * 48):
+				log.With("id", clientID).Warnf("timeout (48h), disconnecting proxy client")
+				disconnectFn(fmt.Errorf("timeout (48h)"))
+			}
 		}
 	}()
 }
 
 // disconnectClient closes the disconnect sink channel
 // triggering the disconnect logic at startDisconnectClientSink
-func (s *Server) disconnectClient(sessionID string) {
+func (s *Server) disconnectClient(uid string, err error) {
 	disconnectSink.mu.Lock()
 	defer disconnectSink.mu.Unlock()
-	disconnectCh, ok := disconnectSink.items[sessionID]
+	disconnectCh, ok := disconnectSink.items[uid]
 	if !ok {
 		return
 	}
-	delete(disconnectSink.items, sessionID)
-	close(disconnectCh)
+	if err != nil {
+		select {
+		case disconnectCh <- err:
+		case <-time.After(time.Millisecond * 100):
+			log.With("uid", uid).Errorf("timeout (100ms) send disconnect error to sink")
+		}
+	}
+	delete(disconnectSink.items, uid)
+}
+
+// closeChWithSleep sleep for d before closing the channel
+func closeChWithSleep(ch chan error, d time.Duration) {
+	time.Sleep(d)
+	close(ch)
 }
 
 func extractData(md metadata.MD, metaName string) string {

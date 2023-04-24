@@ -46,9 +46,7 @@ func New(apiURL string) *jitPlugin {
 		apiURL: apiURL}
 }
 
-func (r *jitPlugin) Name() string {
-	return r.name
-}
+func (r *jitPlugin) Name() string { return r.name }
 
 func (r *jitPlugin) OnStartup(config plugin.Config) error {
 	log.Printf("session=%v | jit | processing on-startup", config.SessionId)
@@ -85,7 +83,9 @@ func (r *jitPlugin) OnConnect(config plugin.Config) error {
 	if config.Org == "" || config.SessionId == "" {
 		return fmt.Errorf("failed processing jit plugin, missing org_id and session_id params")
 	}
-
+	if config.Verb != pb.ClientVerbConnect {
+		return fmt.Errorf("connection subject to jit, use 'hoop connect %s' to interact", config.ConnectionName)
+	}
 	return nil
 }
 
@@ -164,11 +164,8 @@ func (r *jitPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *
 	return nil
 }
 
-func (r *jitPlugin) OnDisconnect(config plugin.Config) error {
-	return nil
-}
-
-func (r *jitPlugin) OnShutdown() {}
+func (r *jitPlugin) OnDisconnect(config plugin.Config, errMsg error) error { return nil }
+func (r *jitPlugin) OnShutdown()                                           {}
 
 func (r *jitPlugin) buildReviewUrl(reviewID string) string {
 	url := fmt.Sprintf("%s/plugins/jits/%s", r.apiURL, reviewID)

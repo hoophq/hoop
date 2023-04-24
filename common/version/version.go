@@ -25,7 +25,7 @@ var (
 // Get returns the overall codebase version. It's for detecting
 // what code a binary was built from.
 func Get() Info {
-	return Info{
+	i := Info{
 		Version:   version,
 		GitCommit: gitCommit,
 		BuildDate: buildDate,
@@ -33,6 +33,12 @@ func Get() Info {
 		Compiler:  runtime.Compiler,
 		Platform:  fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH),
 	}
+	if i.Version == "" {
+		i.Version = "unknown"
+		i.BuildDate = ""
+		i.GitCommit = ""
+	}
+	return i
 }
 
 func Decode(obj interface{}) *Info {

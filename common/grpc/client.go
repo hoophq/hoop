@@ -143,8 +143,8 @@ func (c *mutexClient) Recv() (*pb.Packet, error) {
 func (c *mutexClient) Close() (error, error) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	streamCloseErr := c.stream.CloseSend()
 	connCloseErr := c.grpcClient.Close()
+	streamCloseErr := c.stream.CloseSend()
 	return streamCloseErr, connCloseErr
 }
 

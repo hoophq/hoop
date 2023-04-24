@@ -86,7 +86,7 @@ func (c *Command) OnPostExec() error {
 	return nil
 }
 
-func (c *Command) Run(stdoutw, stderrw io.WriteCloser, stdinInput []byte, onExecErr OnExecErrFn, clientArgs ...string) {
+func (c *Command) Run(stdoutw, stderrw io.WriteCloser, stdinInput []byte, onExecErr OnExecErrFn) {
 	pipeStdout, err := c.cmd.StdoutPipe()
 	if err != nil {
 		onExecErr(term.InternalErrorExitCode, "internal error, failed returning stdout pipe, reason=%v", err)
@@ -101,8 +101,7 @@ func (c *Command) Run(stdoutw, stderrw io.WriteCloser, stdinInput []byte, onExec
 		onExecErr(term.InternalErrorExitCode, "internal error, failed executing pre command, reason=%v", err)
 		return
 	}
-	var stdin bytes.Buffer
-	c.cmd.Stdin = &stdin
+	c.cmd.Stdin = bytes.NewBuffer(stdinInput)
 	if err := c.cmd.Start(); err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
 			// path not found error exit code
@@ -110,10 +109,6 @@ func (c *Command) Run(stdoutw, stderrw io.WriteCloser, stdinInput []byte, onExec
 			return
 		}
 		onExecErr(1, "failed starting command, reason=%v", err)
-		return
-	}
-	if _, err := stdin.Write(stdinInput); err != nil {
-		onExecErr(term.InternalErrorExitCode, "internal error, failed writing input, reason=%v", err)
 		return
 	}
 	stdoutCh := copyBuffer(stdoutw, pipeStdout, chunkMaxBufSize, "stdout")
