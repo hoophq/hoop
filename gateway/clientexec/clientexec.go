@@ -1,12 +1,10 @@
 package clientexec
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
-	"time"
 
 	"github.com/runopsio/hoop/common/log"
 
@@ -150,8 +148,7 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 	if err := sendOpenSessionPktFn(); err != nil {
 		return newError(err)
 	}
-	ctxTimeout, cancel := context.WithTimeout(context.Background(), time.Hour*4)
-	defer func() { cancel(); c.wlog.Close(); os.RemoveAll(c.folderName) }()
+	defer func() { c.wlog.Close(); os.RemoveAll(c.folderName) }()
 	for {
 		pkt, err := c.client.Recv()
 		if err != nil {
@@ -162,13 +159,7 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 		}
 		switch pkt.Type {
 		case pbclient.SessionOpenWaitingApproval:
-			go func() {
-				// It prevents reviewed sessions to stay open forever.
-				// Closing the client will make the Recv method to fail
-				<-ctxTimeout.Done()
-				log.Printf("task timeout, closing gRPC client ...")
-				c.client.Close()
-			}()
+			log.Infof("waiting for approval at %v", string(pkt.Payload))
 		case pbclient.SessionOpenApproveOK:
 			if err := sendOpenSessionPktFn(); err != nil {
 				return newError(err)

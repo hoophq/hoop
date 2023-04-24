@@ -2,9 +2,10 @@ package session
 
 import (
 	"fmt"
-	"github.com/runopsio/hoop/common/log"
 	"strings"
 	"time"
+
+	"github.com/runopsio/hoop/common/log"
 
 	"github.com/runopsio/hoop/gateway/plugin"
 
@@ -75,20 +76,6 @@ func (s *Storage) Persist(context *user.Context, session *Session) (*st.TxRespon
 }
 
 func (s *Storage) PersistStatus(status *SessionStatus) (*st.TxResponse, error) {
-	var obj [][]SessionStatus
-	err := s.queryDecoder(`{:query {
-		:find [(pull ?s [*])]
-		:in [session-id]
-		:where [[?s :session-status/session-id session-id]]}
-	:in-args [%q]}`, &obj, status.SessionID)
-	if err != nil {
-		return nil, fmt.Errorf("failed fetching previous session status, err=%v", err)
-	}
-	if len(obj) > 0 {
-		status.ID = obj[0][0].ID
-		status.SessionID = obj[0][0].SessionID
-		return s.SubmitPutTx(status)
-	}
 	if status.ID == "" || status.SessionID == "" {
 		return nil, fmt.Errorf("session id and xt/id must not be empty")
 	}

@@ -106,9 +106,12 @@ func (c *Config) GrpcClientConfig() (grpc.ClientConfig, error) {
 
 func (c *Config) isEmpty() bool { return c.GrpcURL == "" && c.Token == "" }
 func (c *Config) IsInsecure() (insecure bool) {
+
 	switch {
 	case os.Getenv("TLS_SERVER_NAME") != "":
-	case c.Mode == clientconfig.ModeLocal, c.Mode == clientconfig.ModeAgentAutoRegister:
+	case c.Mode == clientconfig.ModeLocal,
+		c.Mode == clientconfig.ModeAgentAutoRegister,
+		c.GrpcURL == grpc.LocalhostAddr:
 		insecure = true
 	}
 	return

@@ -3,10 +3,7 @@ package transport
 import (
 	"fmt"
 	"io"
-	"os"
-	"os/signal"
 	"sync"
-	"syscall"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/runopsio/hoop/common/log"
@@ -44,11 +41,12 @@ func bindAgent(agentId string, stream pb.Transport_ConnectServer) {
 func unbindAgent(agentId string) {
 	ca.mu.Lock()
 	defer ca.mu.Unlock()
-
 	delete(ca.agents, agentId)
 }
 
 func getAgentStream(id string) pb.Transport_ConnectServer {
+	ca.mu.Lock()
+	defer ca.mu.Unlock()
 	return ca.agents[id]
 }
 
@@ -83,16 +81,16 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 		return status.Errorf(codes.Internal, "internal error")
 	}
 
+	clientOrigin := pb.ConnectionOriginAgent
 	config := plugin.Config{
 		Org:           ag.OrgId,
 		Hostname:      ag.Hostname,
 		MachineId:     ag.MachineId,
 		KernelVersion: ag.KernelVersion,
-		ParamsData:    map[string]any{"client": pb.ConnectionOriginAgent},
+		ParamsData:    map[string]any{"client": clientOrigin},
 	}
 
 	bindAgent(ag.Id, stream)
-	s.agentGracefulShutdown(ag)
 
 	log.Printf("agent connected: org=%v,hostname=%v,platform=%v,version=%v,goversion=%v,compiler=%v,machineid=%v",
 		orgName, ag.Hostname, ag.Platform, ag.Version, ag.GoVersion, ag.Compiler, ag.MachineId)
@@ -117,15 +115,20 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 		Type:    pbagent.GatewayConnectOK,
 		Payload: transportConfigBytes,
 	})
-	agentErr := s.listenAgentMessages(config, ag, stream)
-	if err := s.pluginOnDisconnect(config); err != nil {
-		log.Printf("ua=agent - failed processing plugin on-disconnect phase, err=%v", err)
-	}
-	s.disconnectAgent(ag)
+	var agentErr error
+	config.ParamsData["disconnect-agent-id"] = ag.Id
+	s.startDisconnectClientSink(ag.Id, clientOrigin, func(err error) {
+		defer unbindAgent(ag.Id)
+		ag.Status = agent.StatusDisconnected
+		_, _ = s.AgentService.Persist(ag)
+		_ = s.pluginOnDisconnect(config, err)
+	})
+	agentErr = s.listenAgentMessages(&config, ag, stream)
+	s.disconnectClient(ag.Id, agentErr)
 	return agentErr
 }
 
-func (s *Server) listenAgentMessages(config plugin.Config, ag *agent.Agent, stream pb.Transport_ConnectServer) error {
+func (s *Server) listenAgentMessages(config *plugin.Config, ag *agent.Agent, stream pb.Transport_ConnectServer) error {
 	ctx := stream.Context()
 
 	for {
@@ -143,11 +146,11 @@ func (s *Server) listenAgentMessages(config plugin.Config, ag *agent.Agent, stre
 			}
 			if status, ok := status.FromError(err); ok && status.Code() == codes.Canceled {
 				// TODO: send packet to agent to clean up resources
-				log.Printf("id=%v - agent disconnected", ag.Id)
-				return nil
+				log.Warnf("id=%v, name=%v - agent disconnected", ag.Id, ag.Name)
+				return fmt.Errorf("agent %v disconnected, reason=%v", ag.Name, err)
 			}
 			sentry.CaptureException(err)
-			log.Printf("received error from agent, err=%v", err)
+			log.Errorf("received error from agent %v, err=%v", ag.Name, err)
 			return err
 		}
 		if pkt.Type == pbgateway.KeepAlive || pkt.Type == "KeepAlive" {
@@ -155,12 +158,17 @@ func (s *Server) listenAgentMessages(config plugin.Config, ag *agent.Agent, stre
 		}
 		sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 		config.SessionId = sessionID
+		// keep track of sessions being processed per agent
+		agentSessionKeyID := fmt.Sprintf("%s:%s", ag.Id, sessionID)
+		config.ParamsData[agentSessionKeyID] = nil
 		log.With("session", sessionID).Debugf("receive agent packet type [%s]", pkt.Type)
-		if err := s.pluginOnReceive(config, pkt); err != nil {
+		if err := s.pluginOnReceive(*config, pkt); err != nil {
 			log.Warnf("plugin reject packet, err=%v", err)
 			sentry.CaptureException(err)
+			delete(config.ParamsData, agentSessionKeyID)
 			return status.Errorf(codes.Internal, "internal error, plugin reject packet")
 		}
+
 		if pb.PacketType(pkt.Type) == pbclient.SessionClose {
 			if sessionID := pkt.Spec[pb.SpecGatewaySessionID]; len(sessionID) > 0 {
 				var trackErr error
@@ -168,37 +176,17 @@ func (s *Server) listenAgentMessages(config plugin.Config, ag *agent.Agent, stre
 					trackErr = fmt.Errorf(string(pkt.Payload))
 				}
 				s.trackSessionStatus(string(sessionID), pb.SessionPhaseClientSessionClose, trackErr)
-				s.disconnectClient(string(sessionID))
+				s.disconnectClient(string(sessionID), trackErr)
+				// now it's safe to remove the session from memory
+				delete(config.ParamsData, agentSessionKeyID)
 			}
 		}
-		clientStream := getClientStream(sessionID)
-		if clientStream == nil {
-			continue
+		if clientStream := getClientStream(sessionID); clientStream != nil {
+			s.processAgentPacket(pkt, clientStream)
 		}
-		s.processAgentPacket(pkt, clientStream)
 	}
 }
 
 func (s *Server) processAgentPacket(pkt *pb.Packet, clientStream pb.Transport_ConnectServer) {
 	_ = clientStream.Send(pkt)
-}
-
-func (s *Server) disconnectAgent(ag *agent.Agent) {
-	unbindAgent(ag.Id)
-	ag.Status = agent.StatusDisconnected
-	s.AgentService.Persist(ag)
-}
-
-func (s *Server) agentGracefulShutdown(ag *agent.Agent) {
-	sigc := make(chan os.Signal, 1)
-	signal.Notify(sigc,
-		syscall.SIGHUP,
-		syscall.SIGINT,
-		syscall.SIGTERM,
-		syscall.SIGQUIT)
-	go func() {
-		<-sigc
-		s.disconnectAgent(ag)
-		os.Exit(143)
-	}()
 }

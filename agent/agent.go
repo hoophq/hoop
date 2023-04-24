@@ -215,9 +215,9 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 	}
 	if connType == pb.ConnectionTypePostgres || connType == pb.ConnectionTypeTCP || connType == pb.ConnectionTypeMySQL {
 		if err := isPortActive(connEnvVars.host, connEnvVars.port); err != nil {
-			msg := fmt.Sprintf("session=%s - failed connecting to host=%q, port=%q, err=%v",
-				sessionIDKey, connEnvVars.host, connEnvVars.port, err)
-			log.Println(msg)
+			msg := fmt.Sprintf("failed connecting to %s:%s, err=%v",
+				connEnvVars.host, connEnvVars.port, err)
+			log.Infof("session=%v - %v", sessionIDKey, msg)
 			return nil, nil, fmt.Errorf("%s", msg)
 		}
 	}

@@ -42,7 +42,8 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 		a.sendClientSessionClose(sessionID, errMsg)
 		return
 	}
-	log.Printf("session=%v, tty=false - executing command:%v", string(sessionID), cmd.String())
+	log.Printf("session=%v, tty=false, stdinsize=%v - executing command:%v",
+		string(sessionID), len(pkt.Payload), cmd.String())
 
 	spec := map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)}
 	stdoutw := pb.NewHookStreamWriter(a.client, pbclient.WriteStdout, spec, pluginHooks)

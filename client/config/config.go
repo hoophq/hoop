@@ -89,7 +89,8 @@ func (c *Config) isEmpty() bool { return c.GrpcURL == "" && c.ApiURL == "" }
 func (c *Config) IsInsecure() (insecure bool) {
 	switch {
 	case os.Getenv("TLS_SERVER_NAME") != "":
-	case c.Mode == clientconfig.ModeLocal:
+	case c.Mode == clientconfig.ModeLocal,
+		c.GrpcURL == grpc.LocalhostAddr:
 		insecure = true
 	}
 	return

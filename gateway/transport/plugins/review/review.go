@@ -85,7 +85,12 @@ func (r *reviewPlugin) OnConnect(config plugin.Config) error {
 	if config.Org == "" || config.SessionId == "" {
 		return fmt.Errorf("failed processing review plugin, missing org_id and session_id params")
 	}
-
+	if config.Verb != pb.ClientVerbExec {
+		if config.ConnectionType != pb.ConnectionTypeCommandLine {
+			return fmt.Errorf("the review plugin can't be used for this connection type, contact the administrator")
+		}
+		return fmt.Errorf("connection subject to review, use 'hoop exec %s' to interact", config.ConnectionName)
+	}
 	return nil
 }
 
@@ -155,9 +160,7 @@ func (r *reviewPlugin) OnReceive(pluginConfig plugin.Config, config []string, pk
 	return nil
 }
 
-func (r *reviewPlugin) OnDisconnect(config plugin.Config) error {
-	return nil
-}
+func (r *reviewPlugin) OnDisconnect(config plugin.Config, errMsg error) error { return nil }
 
 func (r *reviewPlugin) OnShutdown() {}
 

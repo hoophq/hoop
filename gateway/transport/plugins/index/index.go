@@ -114,7 +114,7 @@ func (p *indexPlugin) OnReceive(c plugin.Config, config []string, pkt *pb.Packet
 	return nil
 }
 
-func (p *indexPlugin) OnDisconnect(config plugin.Config) error {
+func (p *indexPlugin) OnDisconnect(config plugin.Config, errMsg error) error {
 	if config.Org == "" || config.SessionId == "" {
 		return fmt.Errorf("missing org_id and session_id")
 	}
