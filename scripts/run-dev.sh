@@ -9,12 +9,6 @@ function ctrl_c() {
 
 echo "--> STARTING XTDB..."
 docker run --name xtdb --rm -d -p 3001:3000 runops/xtdb-in-memory:$(uname -m) 2&> /dev/null
-until curl -s -f -o /dev/null "http://127.0.0.1:3001/_xtdb/status"
-do
-  echo -n "."
-  sleep 1
-done
-echo " done!"
 echo "--> STARTING GATEWAY ..."
 
 #export GOOGLE_APPLICATION_CREDENTIALS_JSON=$(cat ../misc/profiles/dlp-serviceaccount.json)

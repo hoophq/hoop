@@ -2,6 +2,7 @@ package storage
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -309,52 +310,45 @@ func (s *Storage) QueryAsJson(ednQuery []byte) ([]byte, error) {
 // Sync will wait for xtdb to sync all documents
 // if it reaches the timeout, it will return a 5xx error
 func (s *Storage) Sync(timeout time.Duration) error {
+	ctx, cancelFn := context.WithTimeout(context.Background(), timeout)
+	var response []string
 	url := fmt.Sprintf("%s/_xtdb/sync?timeout=%v", s.address, timeout.Milliseconds())
-	resp, err := http.Get(url)
-	if err != nil {
-		return err
+	go func() {
+	exit:
+		for i := 1; ; i++ {
+			select {
+			case <-ctx.Done():
+				response = append(response, "timeout reached")
+			default:
+				log.Debugf("attempt=%v - trying sync to xtdb at %v", i, url)
+				resp, err := http.Get(url)
+				if err != nil {
+					response = append(response, fmt.Sprintf("attempt=%v, failed sync xtdb, error=%v", i, err))
+					time.Sleep(time.Second * 2)
+					continue
+				}
+				if resp.StatusCode != 200 {
+					data, _ := io.ReadAll(resp.Body)
+					if resp.Body != nil {
+						_ = resp.Body.Close()
+					}
+					response = append(response, fmt.Sprintf("attempt=%v, failed sync xtdb, status=%v, response=%v",
+						i, resp.StatusCode, string(data)))
+					time.Sleep(time.Second * 2)
+					continue
+				}
+				response = nil
+				cancelFn()
+				break exit
+			}
+		}
+	}()
+	<-ctx.Done()
+	if len(response) > 0 {
+		return fmt.Errorf(strings.Join(response, "; "))
 	}
-	switch resp.StatusCode {
-	case 200:
-		return nil
-	default:
-		defer resp.Body.Close()
-		bodyResponse, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("failed sync with xtdb, status=%v, response=%v", resp.Status, string(bodyResponse))
-	}
+	return nil
 }
-
-// func (s *Storage) Evict(xtID string) error {
-// 	url := fmt.Sprintf("%s/_xtdb/submit-tx", s.address)
-// 	txOpsEdn := fmt.Sprintf(`{:tx-ops [[:xtdb.api/evict %q]]}`, xtID)
-// 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBufferString(txOpsEdn))
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	req.Header.Set("content-type", "application/edn")
-// 	req.Header.Set("accept", "application/edn")
-
-// 	resp, err := s.client.Do(req)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	if resp == nil {
-// 		return fmt.Errorf("http response is empty")
-// 	}
-// 	defer resp.Body.Close()
-// 	var txResponse TxResponse
-// 	if resp.StatusCode == http.StatusAccepted {
-// 		if err := edn.NewDecoder(resp.Body).Decode(&txResponse); err != nil {
-// 			return err
-// 		}
-// 		return nil
-// 	} else {
-// 		data, _ := io.ReadAll(resp.Body)
-// 		log.Warnf("unknown status code=%v, body=%v", resp.StatusCode, string(data))
-// 	}
-// 	return fmt.Errorf("received unknown status code=%v", resp.StatusCode)
-// }
 
 func EntityToMap(obj any) map[string]any {
 	payload := make(map[string]any)

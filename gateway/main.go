@@ -1,9 +1,9 @@
 package gateway
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/runopsio/hoop/gateway/jobs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,6 +21,7 @@ import (
 	"github.com/runopsio/hoop/gateway/client"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/indexer"
+	"github.com/runopsio/hoop/gateway/jobs"
 	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/review"
@@ -38,10 +39,14 @@ func Run() {
 	ver := version.Get()
 	log.Infof("version=%s, compiler=%s, go=%s, platform=%s, commit=%s, multitenant=%v, build-date=%s",
 		ver.Version, ver.Compiler, ver.GoVersion, ver.Platform, ver.GitCommit, user.IsOrgMultiTenant(), ver.BuildDate)
+
+	if err := changeWebappApiURL(os.Getenv("API_URL")); err != nil {
+		log.Fatal(err)
+	}
 	defer log.Sync()
 	s := xtdb.New()
 	log.Infof("syncing xtdb at %s", s.Address())
-	if err := s.Sync(time.Second * 60); err != nil {
+	if err := s.Sync(time.Second * 80); err != nil {
 		log.Fatal(err)
 	}
 	log.Infof("sync with success")
@@ -155,6 +160,22 @@ func Run() {
 	log.Infof("profile=%v - starting servers", profile)
 	go g.StartRPCServer()
 	a.StartAPI(sentryStarted)
+}
+
+func changeWebappApiURL(apiURL string) error {
+	appJsFile := "/Users/san/work/hoopdev/webapp/resources/public/js/app.js"
+	// appJsFile := "/app/ui/public/js/app.js"
+	appBytes, err := os.ReadFile(appJsFile)
+	if err != nil {
+		return fmt.Errorf("failed opening webapp js file, reason=%v", err)
+	}
+	if apiURL != "" {
+		appBytes = bytes.ReplaceAll(appBytes, []byte(`http://localhost:8009`), []byte(apiURL))
+		if err := os.WriteFile(appJsFile, appBytes, 0644); err != nil {
+			return fmt.Errorf("failed saving app.js file, reason=%v", err)
+		}
+	}
+	return nil
 }
 
 func getNotification() notification.Service {
