@@ -75,4 +75,4 @@ COPY hoop* /app/
 EXPOSE 8009
 EXPOSE 8010
 
-ENTRYPOINT ["tini", "--", "/app/entrypoint.sh"]
+ENTRYPOINT ["tini", "--"]
