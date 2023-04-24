@@ -163,8 +163,7 @@ func Run() {
 }
 
 func changeWebappApiURL(apiURL string) error {
-	appJsFile := "/Users/san/work/hoopdev/webapp/resources/public/js/app.js"
-	// appJsFile := "/app/ui/public/js/app.js"
+	appJsFile := "/app/ui/public/js/app.js"
 	appBytes, err := os.ReadFile(appJsFile)
 	if err != nil {
 		return fmt.Errorf("failed opening webapp js file, reason=%v", err)
