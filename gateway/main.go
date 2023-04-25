@@ -163,12 +163,17 @@ func Run() {
 }
 
 func changeWebappApiURL(apiURL string) error {
-	appJsFile := "/app/ui/public/js/app.js"
-	appBytes, err := os.ReadFile(appJsFile)
-	if err != nil {
-		return fmt.Errorf("failed opening webapp js file, reason=%v", err)
-	}
 	if apiURL != "" {
+		staticUiPath := os.Getenv("STATIC_UI_PATH")
+		if staticUiPath == "" {
+			staticUiPath = "/app/ui/public"
+		}
+		appJsFile := filepath.Join(staticUiPath, "js/app.js")
+		appBytes, err := os.ReadFile(appJsFile)
+		if err != nil {
+			return fmt.Errorf("failed opening webapp js file, reason=%v", err)
+		}
+		log.Infof("replacing api url from %v with %v", appJsFile, apiURL)
 		appBytes = bytes.ReplaceAll(appBytes, []byte(`http://localhost:8009`), []byte(apiURL))
 		if err := os.WriteFile(appJsFile, appBytes, 0644); err != nil {
 			return fmt.Errorf("failed saving app.js file, reason=%v", err)

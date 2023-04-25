@@ -54,8 +54,8 @@ func Run() {
 					log.Warnf("timeout on registering the agent")
 					break
 				}
-				time.Sleep(time.Second * 7)
 			}
+			time.Sleep(time.Second * 7)
 		}
 	default:
 		client, err := grpc.Connect(clientConfig, clientOptions)
