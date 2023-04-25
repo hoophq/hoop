@@ -412,11 +412,13 @@ func (s *Server) processSessionOpenExec(pkt *pb.Packet, client *client.Client, c
 			return err
 		}
 		if !(review.Status == rv.StatusApproved || review.Status == rv.StatusProcessing) {
+			reviewURL := fmt.Sprintf("%s/plugins/reviews/%s", s.IDProvider.ApiURL, review.Id)
 			clientStream := getClientStream(client.SessionID)
 			_ = clientStream.Send(&pb.Packet{
 				Type:    pbclient.SessionOpenWaitingApproval,
-				Payload: []byte(fmt.Sprintf("%s/plugins/reviews/%s", s.IDProvider.ApiURL, review.Id)),
+				Payload: []byte(reviewURL),
 			})
+			go s.sendReviewToSlack(client, review, reviewURL, string(conn.Type))
 			return nil
 		}
 		ctx := &user.Context{

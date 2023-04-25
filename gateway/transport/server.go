@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/runopsio/hoop/gateway/transport/plugins/slack"
 	"net"
 	"os"
 	"os/signal"
@@ -348,4 +349,19 @@ func extractData(md metadata.MD, metaName string) string {
 		}
 	}
 	return data[0]
+}
+
+func (s *Server) sendReviewToSlack(c *client.Client, review review.Review, url, connType string) {
+	ctx := &user.Context{
+		Org:  &user.Org{Id: c.OrgId},
+		User: &user.User{Id: c.UserId, Org: c.OrgId},
+	}
+
+	user, err := s.UserService.FindOne(ctx, c.UserId)
+	if err != nil {
+		log.Errorf("Failed to send review to slack, err=%v", err)
+		sentry.CaptureException(err)
+		return
+	}
+	slack.SendReviewMsg(user, review, url, connType)
 }
