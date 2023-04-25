@@ -129,7 +129,10 @@ func parseHeaderForDebug(authTokenHeader string) string {
 // assumes the org is named 'default'
 func (api *Api) SetSlackContext(c *gin.Context) {
 	userSlackID := c.GetHeader("slack-id")
-	var userID string
+	if userSlackID == "" {
+		c.AbortWithStatus(412)
+		return
+	}
 
 	org, err := api.UserHandler.Service.GetOrgByName("default")
 	if err != nil || org == nil {
@@ -144,6 +147,7 @@ func (api *Api) SetSlackContext(c *gin.Context) {
 		return
 	}
 
+	var userID string
 	for _, conn := range p.Connections {
 		for i, g := range conn.Config {
 			if i > 0 && g == userSlackID {
@@ -152,8 +156,13 @@ func (api *Api) SetSlackContext(c *gin.Context) {
 		}
 	}
 
+	if userID == "" {
+		c.AbortWithStatus(401)
+		return
+	}
+
 	loggedUser, err := api.UserHandler.Service.FindOne(ctx, userID)
-	if err != nil || p == nil {
+	if err != nil || loggedUser == nil {
 		c.AbortWithStatus(412)
 		return
 	}
