@@ -123,3 +123,51 @@ func parseHeaderForDebug(authTokenHeader string) string {
 	payloadBytes = bytes.ReplaceAll(payloadBytes, []byte(`"`), []byte(`'`))
 	return fmt.Sprintf("isjwt=true, header=%v, payload=%v", string(headerBytes), string(payloadBytes))
 }
+
+// SetSlackContext only for single tenant
+// when slack plugin is activated only.
+// assumes the org is named 'default'
+func (api *Api) SetSlackContext(c *gin.Context) {
+	userSlackID := c.GetHeader("slack-id")
+	var userID string
+
+	org, err := api.UserHandler.Service.GetOrgByName("default")
+	if err != nil || org == nil {
+		c.AbortWithStatus(412)
+		return
+	}
+
+	ctx := &user.Context{Org: org}
+	p, err := api.PluginHandler.Service.FindOne(ctx, "slack")
+	if err != nil || p == nil {
+		c.AbortWithStatus(412)
+		return
+	}
+
+	for _, conn := range p.Connections {
+		for i, g := range conn.Config {
+			if i > 0 && g == userSlackID {
+				userID = conn.Config[i-1]
+			}
+		}
+	}
+
+	loggedUser, err := api.UserHandler.Service.FindOne(ctx, userID)
+	if err != nil || p == nil {
+		c.AbortWithStatus(412)
+		return
+	}
+
+	ctx.User = loggedUser
+	if api.logger != nil {
+		zaplogger := api.logger.With(
+			zap.String("org", ctx.User.Org),
+			zap.String("user", ctx.User.Email),
+			zap.Bool("isadm", ctx.User.IsAdmin()),
+		)
+		c.Set(user.ContextLoggerKey, zaplogger.Sugar())
+	}
+
+	c.Set(user.ContextUserKey, ctx)
+	c.Next()
+}

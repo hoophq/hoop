@@ -40,9 +40,9 @@ func Run() {
 	log.Infof("version=%s, compiler=%s, go=%s, platform=%s, commit=%s, multitenant=%v, build-date=%s",
 		ver.Version, ver.Compiler, ver.GoVersion, ver.Platform, ver.GitCommit, user.IsOrgMultiTenant(), ver.BuildDate)
 
-	if err := changeWebappApiURL(os.Getenv("API_URL")); err != nil {
-		log.Fatal(err)
-	}
+	//if err := changeWebappApiURL(os.Getenv("API_URL")); err != nil {
+	//	log.Fatal(err)
+	//}
 	defer log.Sync()
 	s := xtdb.New()
 	log.Infof("syncing xtdb at %s", s.Address())
@@ -159,6 +159,9 @@ func Run() {
 
 	log.Infof("profile=%v - starting servers", profile)
 	go g.StartRPCServer()
+	if !user.IsOrgMultiTenant() {
+		go a.StartPrivateAPI(sentryStarted)
+	}
 	a.StartAPI(sentryStarted)
 }
 

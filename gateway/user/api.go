@@ -26,6 +26,7 @@ type (
 		Persist(user any) error
 		ListAllGroups(context *Context) ([]string, error)
 		CreateDefaultOrganization() error
+		GetOrgByName(name string) (*Org, error)
 	}
 
 	Analytics interface {
