@@ -357,11 +357,23 @@ func (s *Server) sendReviewToSlack(c *client.Client, review review.Review, url, 
 		User: &user.User{Id: c.UserId, Org: c.OrgId},
 	}
 
-	user, err := s.UserService.FindOne(ctx, c.UserId)
+	p, err := s.PluginService.FindOne(ctx, slack.Name)
 	if err != nil {
-		log.Errorf("Failed to send review to slack, err=%v", err)
+		log.Errorf("Failed to load slack plugin, err=%v", err)
 		sentry.CaptureException(err)
 		return
 	}
-	slack.SendReviewMsg(user, review, url, connType)
+
+	if p == nil {
+		return
+	}
+
+	u, err := s.UserService.FindOne(ctx, c.UserId)
+	if err != nil {
+		log.Errorf("Failed to load user at slack review, err=%v", err)
+		sentry.CaptureException(err)
+		return
+	}
+
+	slack.SendReviewMsg(u, review, url, connType)
 }
