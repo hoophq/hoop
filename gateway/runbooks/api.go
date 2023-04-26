@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	// "github.com/runopsio/hoop/common/log"
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/gateway/clientexec"
@@ -137,7 +136,8 @@ func (h *Handler) RunExec(c *gin.Context) {
 	for key, val := range req.Parameters {
 		params += fmt.Sprintf("%s:len[%v],", key, len(val))
 	}
-	log.With("session", client.SessionID()).Infof("runbook exec, commit=%s, name=%s, connection=%s, parameters=%v",
+	log = log.With("session", client.SessionID())
+	log.Infof("runbook exec, commit=%s, name=%s, connection=%s, parameters=%v",
 		runbook.CommitHash[:8], req.FileName, connectionName, strings.TrimSpace(params))
 	c.Header("Location", fmt.Sprintf("/api/plugins/audit/sessions/%s/status", client.SessionID()))
 	statusCode := http.StatusOK
@@ -146,6 +146,8 @@ func (h *Handler) RunExec(c *gin.Context) {
 	}
 	select {
 	case resp := <-clientResp:
+		log.Infof("runbook exec response. exit_code=%v, truncated=%v, response-length=%v",
+			resp.ExitCode, resp.Truncated, len(resp.ErrorMessage()))
 		if resp.IsError() {
 			c.JSON(http.StatusBadRequest, &RunbookErrResponse{
 				SessionID: &resp.SessionID,
@@ -158,6 +160,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 	case <-time.After(time.Second * 50):
 		// closing the client will force the goroutine to end
 		// and the result will return async
+		log.Infof("runbook exec timeout (50s), it will return async")
 		client.Close()
 		c.JSON(http.StatusAccepted, gin.H{"session_id": client.SessionID(), "exit_code": nil})
 	}

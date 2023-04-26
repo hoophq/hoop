@@ -22,7 +22,7 @@ export PLUGIN_AUDIT_PATH=/tmp/hoopsessions
 export PLUGIN_INDEX_PATH=/tmp/hoopsessions/indexes
 export PLUGIN_REGISTRY_URL=https://pluginregistry.s3.amazonaws.com/packages.json
 export ORG_MULTI_TENANT=true
-export GIN_MODE=debug
+#export GIN_MODE=debug
 # https://hoop.dev/docs/integrations/notifications-bridge
 #export NOTIFICATIONS_BRIDGE_CONFIG='{"slackBotToken": "xoxb-<your-token>", "bridgeUrl": ""}'
 #export GODEBUG='http2debug=2'
