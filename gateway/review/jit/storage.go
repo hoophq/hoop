@@ -1,10 +1,12 @@
 package jit
 
 import (
+	"fmt"
+	"time"
+
 	st "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/user"
 	"olympos.io/encoding/edn"
-	"time"
 )
 
 type (
@@ -33,7 +35,7 @@ type (
 )
 
 func (s *Storage) FindAll(context *user.Context) ([]Jit, error) {
-	var payload = `{:query {
+	var payload = fmt.Sprintf(`{:query {
 		:find [(pull ?jit [:xt/id
                            :jit/status
                            :jit/time
@@ -43,8 +45,10 @@ func (s *Storage) FindAll(context *user.Context) ([]Jit, error) {
                            {:jit/created-by [:user/email]}
                            {:jit/connection [:connection/name]}])]
 		:in [org]
-		:where [[?jit :jit/org org]]}
-		:in-args ["` + context.Org.Id + `"]}`
+		:where [[?jit :jit/org org]
+				[?jit :jit/connection connid]
+				[?c :xt/id connid]]}
+		:in-args [%q]}`, context.Org.Id)
 
 	b, err := s.Query([]byte(payload))
 	if err != nil {
@@ -60,7 +64,7 @@ func (s *Storage) FindAll(context *user.Context) ([]Jit, error) {
 }
 
 func (s *Storage) FindById(context *user.Context, id string) (*Jit, error) {
-	var payload = `{:query {
+	var payload = fmt.Sprintf(`{:query {
 		:find [(pull ?jit [:xt/id
                            :jit/status
                            :jit/time
@@ -71,10 +75,12 @@ func (s *Storage) FindById(context *user.Context, id string) (*Jit, error) {
                            {:jit/jit-groups [*
                            {:jit-group/reviewed-by [:xt/id :user/name :user/email]}]}
                            {:jit/created-by [:xt/id :user/name :user/email]}])]
-		:in [id org]
+		:in [id, orgid]
 		:where [[?jit :xt/id id]
-                [?jit :jit/org org]]}
-        :in-args ["` + id + `" "` + context.Org.Id + `"]}`
+				[?jit :jit/org orgid]
+				[?jit :jit/connection connid]
+				[?c :xt/id connid]]}
+        :in-args [%q %q]}`, id, context.Org.Id)
 
 	b, err := s.Query([]byte(payload))
 	if err != nil {
@@ -94,7 +100,7 @@ func (s *Storage) FindById(context *user.Context, id string) (*Jit, error) {
 }
 
 func (s *Storage) FindBySessionID(sessionID string) (*Jit, error) {
-	var payload = `{:query {
+	var payload = fmt.Sprintf(`{:query {
 		:find [(pull ?jit [:xt/id
                            :jit/status
                            :jit/time
@@ -106,8 +112,10 @@ func (s *Storage) FindBySessionID(sessionID string) (*Jit, error) {
                            		{:jit-group/reviewed-by [:xt/id :user/name :user/email]}]}
                            {:jit/created-by [:xt/id :user/name :user/email]}])]
 		:in [sessionID]
-		:where [[?jit :jit/session sessionID]]}
-        :in-args ["` + sessionID + `"]}`
+		:where [[?jit :jit/session sessionID]
+				[?jit :jit/connection connid]
+				[?c :xt/id connid]]}
+        :in-args [%q]}`, sessionID)
 
 	b, err := s.Query([]byte(payload))
 	if err != nil {
