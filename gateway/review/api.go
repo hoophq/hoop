@@ -194,6 +194,10 @@ func (h *Handler) RunExec(c *gin.Context) {
 			return
 		}
 
+		if resp.ReviewURI != "" {
+			statusCode = http.StatusAccepted
+		}
+
 		c.JSON(statusCode, resp)
 	case <-time.After(time.Second * 50):
 		// closing the client will force the goroutine to end

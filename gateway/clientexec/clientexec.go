@@ -69,6 +69,7 @@ func (r *clientExec) Close() {
 type Response struct {
 	ExitCode  *int   `json:"exit_code"`
 	SessionID string `json:"session_id"`
+	ReviewURI string `json:"review_uri,omitempty"`
 	Output    string `json:"output"`
 	Truncated bool   `json:"truncated"`
 	err       error
@@ -95,6 +96,14 @@ func (r *Response) ErrorMessage() string {
 
 func newError(err error) *Response {
 	return &Response{err: err}
+}
+
+func newReviewedResponse(reviewURI string) *Response {
+	exit := 0
+	return &Response{
+		ExitCode:  &exit,
+		ReviewURI: reviewURI,
+	}
 }
 
 func New(orgID, accessToken, connectionName string, sessionID string) (*clientExec, error) {
@@ -160,6 +169,7 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 		switch pkt.Type {
 		case pbclient.SessionOpenWaitingApproval:
 			log.Infof("waiting for approval at %v", string(pkt.Payload))
+			return newReviewedResponse(string(pkt.Payload))
 		case pbclient.SessionOpenApproveOK:
 			if err := sendOpenSessionPktFn(); err != nil {
 				return newError(err)

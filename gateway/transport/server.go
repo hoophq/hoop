@@ -368,6 +368,18 @@ func (s *Server) sendReviewToSlack(c *client.Client, review review.Review, url, 
 		return
 	}
 
+	found := false
+	for _, conn := range p.Connections {
+		if conn.Name == review.Connection.Name {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return
+	}
+
 	u, err := s.UserService.FindOne(ctx, c.UserId)
 	if err != nil {
 		log.Errorf("Failed to load user at slack review, err=%v", err)

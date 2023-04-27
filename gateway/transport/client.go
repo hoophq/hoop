@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -418,7 +419,9 @@ func (s *Server) processSessionOpenExec(pkt *pb.Packet, client *client.Client, c
 				Type:    pbclient.SessionOpenWaitingApproval,
 				Payload: []byte(reviewURL),
 			})
-			go s.sendReviewToSlack(client, review, reviewURL, string(conn.Type))
+			apiReviewURL := strings.Replace(reviewURL, "plugins", "api", -1)
+
+			go s.sendReviewToSlack(client, review, apiReviewURL, string(conn.Type))
 			return nil
 		}
 		ctx := &user.Context{
