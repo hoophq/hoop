@@ -319,8 +319,4 @@ func (api *Api) buildPrivateRoutes(route *gin.RouterGroup) {
 		api.SetSlackContext,
 		api.TrackRequest,
 		api.ReviewHandler.Put)
-	route.POST("/reviews/:id/exec",
-		api.SetSlackContext,
-		api.TrackRequest,
-		api.ReviewHandler.RunExec)
 }
