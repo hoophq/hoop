@@ -57,7 +57,7 @@ func Run() (string, error) {
 		agentID, agentToken, orgID, osmap["hostname"], osmap["machine_id"],
 		osmap["kernel_version"], vinfo.Version, vinfo.GoVersion, vinfo.Compiler, vinfo.Platform)
 
-	_, err = xtdbHttpRequest("http://127.0.0.1:3000/_xtdb/submit-tx", ednquery)
+	_, err = xtdbHttpRequest("http://127.0.0.1:3001/_xtdb/submit-tx", ednquery)
 	if err != nil {
 		return "", fmt.Errorf("failed auto registering. %v", err)
 	}
@@ -72,7 +72,7 @@ func fetchDefaultOrgID() (string, error) {
 		:where [[?o :org/name orgname]
 				[?o :xt/id id]]}
 		:in-args [%q]}`, pb.DefaultOrgName)
-	httpResponse, err := xtdbHttpRequest("http://127.0.0.1:3000/_xtdb/query", ednquery)
+	httpResponse, err := xtdbHttpRequest("http://127.0.0.1:3001/_xtdb/query", ednquery)
 	if err != nil {
 		return "", fmt.Errorf("failed auto registering. %v", err)
 	}
@@ -94,7 +94,7 @@ func fetchAgentDefaultToken(agentID string) (string, error) {
 				[?a :agent/token agent-token]
 				[?a :xt/id agentid]]}
 		:in-args [%q %q]}`, pb.DefaultOrgName, agentID)
-	httpResponse, err := xtdbHttpRequest("http://127.0.0.1:3000/_xtdb/query", ednquery)
+	httpResponse, err := xtdbHttpRequest("http://127.0.0.1:3001/_xtdb/query", ednquery)
 	if err != nil {
 		return "", fmt.Errorf("failed auto registering. %v", err)
 	}
