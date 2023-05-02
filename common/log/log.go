@@ -13,6 +13,7 @@ import (
 )
 
 const (
+	LevelTrace = "TRACE"
 	LevelDebug = "DEBUG"
 	LevelInfo  = "INFO"
 	LevelWarn  = "WARN"
@@ -82,7 +83,7 @@ func NewDefaultLogger() *zap.Logger {
 func parseToAtomicLevel(level string) zap.AtomicLevel {
 	logLevel := zap.NewAtomicLevelAt(zapcore.InfoLevel)
 	switch strings.ToUpper(level) {
-	case LevelDebug:
+	case LevelDebug, LevelTrace:
 		logLevel = zap.NewAtomicLevelAt(zapcore.DebugLevel)
 	case LevelWarn:
 		logLevel = zap.NewAtomicLevelAt(zapcore.WarnLevel)

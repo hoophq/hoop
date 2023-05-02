@@ -6,9 +6,7 @@ import (
 	"time"
 
 	"github.com/runopsio/hoop/common/log"
-
 	"github.com/runopsio/hoop/gateway/plugin"
-
 	st "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/user"
 	"olympos.io/encoding/edn"
@@ -82,15 +80,23 @@ func (s *Storage) PersistStatus(status *SessionStatus) (*st.TxResponse, error) {
 	return s.SubmitPutTx(status)
 }
 
-func (s *Storage) EntityHistory(orgID, sessionID string) ([]SessionStatusHistory, error) {
+func (s *Storage) EntityHistory(ctx *user.Context, sessionID string) ([]SessionStatusHistory, error) {
 	var obj [][]SessionStatus
+	argUserID := fmt.Sprintf(`"%s"`, ctx.User.Id)
+	if ctx.User.IsAdmin() {
+		argUserIDBytes, _ := edn.Marshal(nil)
+		argUserID = string(argUserIDBytes)
+	}
 	err := s.queryDecoder(`{:query {
 		:find [(pull ?o [*])]
-        :in [org-id session-id]
+        :in [org-id session-id arg-user-id]
 		:where [[?s :xt/id session-id]
                 [?s :session/org-id org-id]
+				[?s :session/user-id user-id]
+				(or [(= arg-user-id nil)]
+				[(= arg-user-id user-id)])
                 [?o :session-status/session-id ?s]]}
-        :in-args [%q %q]}`, &obj, orgID, sessionID)
+        :in-args [%q %q %v]}`, &obj, ctx.Org.Id, sessionID, argUserID)
 	if err != nil {
 		return nil, fmt.Errorf("failed fetching previous session status, err=%v", err)
 	}
@@ -194,16 +200,24 @@ func (s *Storage) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionLi
 
 func (s *Storage) FindOne(ctx *user.Context, sessionID string) (*Session, error) {
 	var resultItems [][]Session
+	argUserID := fmt.Sprintf(`"%s"`, ctx.User.Id)
+	if ctx.User.IsAdmin() {
+		argUserIDBytes, _ := edn.Marshal(nil)
+		argUserID = string(argUserIDBytes)
+	}
 	err := s.queryDecoder(`
 	{:query {
 		:find [(pull s [:xt/id :session/user :session/user-id :session/user-name
 						:session/type :session/connection :session/verb :session/event-size
 						:session/start-date :session/end-date :session/dlp-count
 						:session/xtdb-stream])]
-		:in [org-id arg-session-id]
+		:in [org-id arg-session-id arg-user-id]
 		:where [[s :session/org-id org-id]
-				[s :xt/id arg-session-id]]}
-	:in-args [%q %q]}`, &resultItems, ctx.Org.Id, sessionID)
+				[s :xt/id arg-session-id]
+				[s :session/user-id user-id]
+				(or [(= arg-user-id nil)]
+                    [(= arg-user-id user-id)])]}
+	:in-args [%q %q %v]}`, &resultItems, ctx.Org.Id, sessionID, argUserID)
 	if err != nil {
 		return nil, err
 	}
@@ -223,7 +237,9 @@ func (s *Storage) FindOne(ctx *user.Context, sessionID string) (*Session, error)
 }
 
 func (s *Storage) queryDecoder(query string, into any, args ...any) error {
-	httpBody, err := s.QueryRaw([]byte(fmt.Sprintf(query, args...)))
+	qs := fmt.Sprintf(query, args...)
+	fmt.Println("QS->>", qs)
+	httpBody, err := s.QueryRaw([]byte(qs))
 	if err != nil {
 		return err
 	}
@@ -263,7 +279,7 @@ func (s *Storage) NewGenericStorageWriter() *GenericStorageWriter {
 }
 
 func (s *GenericStorageWriter) Write(p plugin.Config) error {
-	log.Printf("session=%s - saving session, org-id=%v", p.SessionId, p.Org)
+	log.Infof("session=%s - saving session, org-id=%v", p.SessionId, p.Org)
 	eventStartDate := p.GetTime("start_date")
 	if eventStartDate == nil {
 		return fmt.Errorf(`missing "start_date" param`)
