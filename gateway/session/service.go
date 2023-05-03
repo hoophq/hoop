@@ -18,7 +18,7 @@ type (
 	storage interface {
 		Persist(ctx *user.Context, sess *Session) (*st.TxResponse, error)
 		PersistStatus(sess *SessionStatus) (*st.TxResponse, error)
-		EntityHistory(orgID string, sessionID string) ([]SessionStatusHistory, error)
+		EntityHistory(ctx *user.Context, sessionID string) ([]SessionStatusHistory, error)
 		ValidateSessionID(sessionID string) error
 		FindAll(*user.Context, ...*SessionOption) (*SessionList, error)
 		FindOne(ctx *user.Context, name string) (*Session, error)
@@ -107,7 +107,7 @@ func (s *Service) EntityHistory(ctx *user.Context, sessionID string) ([]SessionS
 	if ctx.Org.Id == "" {
 		return nil, fmt.Errorf("organization id is empty")
 	}
-	return s.Storage.EntityHistory(ctx.Org.Id, sessionID)
+	return s.Storage.EntityHistory(ctx, sessionID)
 }
 
 func (s *Service) PersistStatus(status *SessionStatus) (*st.TxResponse, error) {
