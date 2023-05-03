@@ -17,7 +17,7 @@ type (
 		*st.Storage
 	}
 	GenericStorageWriter struct {
-		persistFn func(*user.Context, *Session) (*st.TxResponse, error)
+		persistFn func(*user.Context, *Session) (*st.TxResponse, error)fmt.
 	}
 )
 
@@ -238,7 +238,6 @@ func (s *Storage) FindOne(ctx *user.Context, sessionID string) (*Session, error)
 
 func (s *Storage) queryDecoder(query string, into any, args ...any) error {
 	qs := fmt.Sprintf(query, args...)
-	fmt.Println("QS->>", qs)
 	httpBody, err := s.QueryRaw([]byte(qs))
 	if err != nil {
 		return err
