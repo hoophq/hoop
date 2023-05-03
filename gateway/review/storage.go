@@ -2,6 +2,7 @@ package review
 
 import (
 	"fmt"
+	"time"
 
 	st "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/user"
@@ -14,14 +15,15 @@ type (
 	}
 
 	XtdbReview struct {
-		Id           string   `edn:"xt/id"`
-		OrgId        string   `edn:"review/org"`
-		SessionId    string   `edn:"review/session"`
-		ConnectionId string   `edn:"review/connection"`
-		CreatedBy    string   `edn:"review/created-by"`
-		Input        string   `edn:"review/input"`
-		Status       Status   `edn:"review/status"`
-		ReviewGroups []string `edn:"review/review-groups"`
+		Id           string    `edn:"xt/id"`
+		OrgId        string    `edn:"review/org"`
+		SessionId    string    `edn:"review/session"`
+		ConnectionId string    `edn:"review/connection"`
+		CreatedBy    string    `edn:"review/created-by"`
+		Input        string    `edn:"review/input"`
+		Status       Status    `edn:"review/status"`
+		ReviewGroups []string  `edn:"review/review-groups"`
+		CreatedAt    time.Time `edn:"review/created-at"`
 	}
 
 	XtdbGroup struct {
@@ -39,11 +41,13 @@ func (s *Storage) FindAll(context *user.Context) ([]Review, error) {
 							  :review/status
 							  :review/input
 							  :review/session
+								:review/created-at
 							  :review/connection
 							  :review/created-by
 							  {:review/created-by [:user/email]}
 							  {:review/connection [:connection/name]}])]
 		:in [org]
+		:order-by [[:review/created-at :desc]]
 		:where [[?review :review/org org]
 				[?review :review/connection connid]
 				[?c :xt/id connid]]}
@@ -161,6 +165,7 @@ func (s *Storage) Persist(context *user.Context, review *Review) (int64, error) 
 		Input:        review.Input,
 		Status:       review.Status,
 		ReviewGroups: reviewGroupIds,
+		CreatedAt:    review.CreatedAt,
 	}
 
 	reviewPayload := st.EntityToMap(xtdbReview)

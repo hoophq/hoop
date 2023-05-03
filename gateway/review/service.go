@@ -34,6 +34,7 @@ type (
 		CreatedBy    Owner      `json:"created_by"              edn:"review/created-by"`
 		Connection   Connection `json:"connection"              edn:"review/connection"`
 		ReviewGroups []Group    `json:"review_groups,omitempty" edn:"review/review-groups"`
+		CreatedAt    time.Time  `json:"created_at"              edn:"review/created-at"`
 	}
 
 	Owner struct {

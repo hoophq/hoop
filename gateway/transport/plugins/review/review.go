@@ -2,6 +2,7 @@ package review
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/log"
@@ -136,6 +137,7 @@ func (r *reviewPlugin) OnReceive(pluginConfig plugin.Config, config []string, pk
 			Input:        string(pkt.Payload),
 			Status:       rv.StatusPending,
 			ReviewGroups: reviewGroups,
+			CreatedAt:    time.Now().UTC(),
 		}
 
 		if err := r.reviewService.Persist(context, review); err != nil {
