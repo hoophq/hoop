@@ -26,12 +26,12 @@ RUN mkdir -p /app && \
         lsb-release && \
         ln -s /usr/bin/python3 /usr/bin/python
 
-# nix
 RUN curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix > nix-installer.sh && \
     chmod +x nix-installer.sh && \
     ./nix-installer.sh install linux --init none --no-confirm && \
     rm -f ./nix-installer.sh && \
-    echo > /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+    echo > /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh && \
+    /root/.nix-profile/bin/nix --version
 
 # kubectl / aws-cli / aws-session-manager
 RUN curl -sL "https://dl.k8s.io/release/v1.22.1/bin/linux/amd64/kubectl" -o kubectl && \
