@@ -82,12 +82,19 @@ var createConnectionCmd = &cobra.Command{
 		default:
 			styles.PrintErrorAndExit(err.Error())
 		}
+		agentID, err := getAgentIDByName(apir.conf, connAgentFlag)
+		if err != nil {
+			styles.PrintErrorAndExit(err.Error())
+		}
+		if agentID == "" {
+			styles.PrintErrorAndExit("could not find agent by name %q", connAgentFlag)
+		}
 		connectionBody := map[string]any{
 			"name":     apir.name,
 			"type":     connTypeFlag,
 			"command":  cmdList,
 			"secret":   envVar,
-			"agent_id": connAgentFlag,
+			"agent_id": agentID,
 		}
 
 		resp, err := httpBodyRequest(apir, method, connectionBody)
@@ -152,6 +159,23 @@ func getConnection(conf *clientconfig.Config, connectionName string) (bool, erro
 		return false, fmt.Errorf("failed decoding response to object")
 	}
 	return true, nil
+}
+
+func getAgentIDByName(conf *clientconfig.Config, name string) (string, error) {
+	data, err := httpRequest(&apiResource{suffixEndpoint: "/api/agents", conf: conf, decodeTo: "list"})
+	if err != nil {
+		return "", err
+	}
+	contents, ok := data.([]map[string]any)
+	if !ok {
+		return "", fmt.Errorf("failed type casting to []map[string]any, found=%T", data)
+	}
+	for _, m := range contents {
+		if name == fmt.Sprintf("%v", m["name"]) {
+			return fmt.Sprintf("%v", m["id"]), nil
+		}
+	}
+	return "", nil
 }
 
 func validateNativeDbEnvs(e map[string]string) error {

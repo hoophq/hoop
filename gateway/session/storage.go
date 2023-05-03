@@ -17,7 +17,7 @@ type (
 		*st.Storage
 	}
 	GenericStorageWriter struct {
-		persistFn func(*user.Context, *Session) (*st.TxResponse, error)fmt.
+		persistFn func(*user.Context, *Session) (*st.TxResponse, error)
 	}
 )
 
