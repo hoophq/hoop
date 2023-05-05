@@ -5,5 +5,4 @@ use (
 	./client
 	./gateway
 	./common
-        ./slack-integration
 )
