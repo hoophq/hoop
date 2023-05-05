@@ -5,8 +5,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/runopsio/hoop/common/log"
-
 	"github.com/getsentry/sentry-go"
 
 	"github.com/gin-gonic/gin"
@@ -48,11 +46,12 @@ var availableSessionOptions = []SessionOptionKey{
 
 func (a *Handler) StatusHistory(c *gin.Context) {
 	context := user.ContextUser(c)
+	log := user.ContextLogger(c)
 
 	sessionID := c.Param("session_id")
 	historyList, err := a.Service.EntityHistory(context, sessionID)
 	if err != nil {
-		log.Printf("failed fetching session history, err=%v", err)
+		log.Errorf("failed fetching session history, err=%v", err)
 		sentry.CaptureException(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
@@ -67,20 +66,16 @@ func (a *Handler) StatusHistory(c *gin.Context) {
 
 func (a *Handler) FindOne(c *gin.Context) {
 	context := user.ContextUser(c)
+	log := user.ContextLogger(c)
 
 	sessionID := c.Param("session_id")
 	session, err := a.Service.FindOne(context, sessionID)
 	if err != nil {
-		log.Printf("failed obtaining session, err=%v", err)
+		log.Errorf("failed fetching session, err=%v", err)
 		sentry.CaptureException(err)
-		c.AbortWithStatus(http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching session"})
 		return
 	}
-	if session == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
-		return
-	}
-
 	if session == nil {
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 		return
@@ -90,7 +85,8 @@ func (a *Handler) FindOne(c *gin.Context) {
 }
 
 func (a *Handler) FindAll(c *gin.Context) {
-	context := user.ContextUser(c)
+	ctx := user.ContextUser(c)
+	log := user.ContextLogger(c)
 
 	var options []*SessionOption
 	for _, optKey := range availableSessionOptions {
@@ -105,17 +101,26 @@ func (a *Handler) FindAll(c *gin.Context) {
 				if paginationOptVal, err := strconv.Atoi(queryOptVal); err == nil {
 					optVal = paginationOptVal
 				}
+			case OptionUser:
+				// don't let it use this filter if it's not an admin
+				if !ctx.User.IsAdmin() {
+					continue
+				}
+				optVal = queryOptVal
 			default:
 				optVal = queryOptVal
 			}
 			options = append(options, WithOption(optKey, optVal))
 		}
 	}
-	sessionList, err := a.Service.FindAll(context, options...)
+	if !ctx.User.IsAdmin() {
+		options = append(options, WithOption(OptionUser, ctx.User.Id))
+	}
+	sessionList, err := a.Service.FindAll(ctx, options...)
 	if err != nil {
-		log.Printf("failed listing sessions, err=%v", err)
+		log.Errorf("failed listing sessions, err=%v", err)
 		sentry.CaptureException(err)
-		c.AbortWithStatus(http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed listing sessions"})
 		return
 	}
 

@@ -143,14 +143,20 @@ func (h *Handler) RunExec(c *gin.Context) {
 		default:
 		}
 	}()
-	log.With("session", client.SessionID()).Infof("api exec, connection=%v", review.Connection.Name)
+	log = log.With("session", client.SessionID())
+	log.Infof("review apiexec, reviewid=%v, connection=%v, owner=%v, input-lenght=%v",
+		reviewID, review.Connection.Name, review.CreatedBy, len(review.Input))
 	c.Header("Location", fmt.Sprintf("/api/plugins/audit/sessions/%s/status", client.SessionID()))
 	statusCode := http.StatusOK
 
 	select {
 	case resp := <-clientResp:
 		review.Status = StatusExecuted
-		h.Service.Persist(ctx, review)
+		if err := h.Service.Persist(ctx, review); err != nil {
+			log.Warnf("failed updating review to executed status, err=%v", err)
+		}
+		log.Infof("review exec response. exit_code=%v, truncated=%v, response-length=%v",
+			resp.ExitCode, resp.Truncated, len(resp.ErrorMessage()))
 
 		if resp.IsError() {
 			c.JSON(http.StatusBadRequest, &clientexec.ExecErrResponse{
@@ -162,6 +168,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 		}
 		c.JSON(statusCode, resp)
 	case <-time.After(time.Second * 50):
+		log.Infof("review exec timeout (50s), it will return async")
 		// closing the client will force the goroutine to end
 		// and the result will return async
 		client.Close()
@@ -169,7 +176,9 @@ func (h *Handler) RunExec(c *gin.Context) {
 		// we do not know the status of this in the future.
 		// replaces the current "PROCESSING" status
 		review.Status = StatusUnknown
-		h.Service.Persist(ctx, review)
+		if err := h.Service.Persist(ctx, review); err != nil {
+			log.Warnf("failed updating review to unknown status, err=%v", err)
+		}
 
 		c.JSON(http.StatusAccepted, gin.H{"session_id": client.SessionID(), "exit_code": nil})
 	}

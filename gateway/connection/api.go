@@ -187,7 +187,8 @@ func (h *Handler) RunExec(c *gin.Context) {
 		default:
 		}
 	}()
-	log.With("session", client.SessionID()).Infof("api exec, connection=%v", connectionName)
+	log = log.With("session", client.SessionID())
+	log.Infof("started runexec method for connection %v", connectionName)
 	c.Header("Location", fmt.Sprintf("/api/plugins/audit/sessions/%s/status", client.SessionID()))
 	statusCode := http.StatusOK
 	if req.Redirect {
@@ -195,6 +196,8 @@ func (h *Handler) RunExec(c *gin.Context) {
 	}
 	select {
 	case resp := <-clientResp:
+		log.Infof("runexec response. exit_code=%v, truncated=%v, response-length=%v",
+			resp.ExitCode, resp.Truncated, len(resp.ErrorMessage()))
 		if resp.IsError() {
 			c.JSON(http.StatusBadRequest, &clientexec.ExecErrResponse{
 				SessionID: &resp.SessionID,
@@ -207,6 +210,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 	case <-time.After(time.Second * 50):
 		// closing the client will force the goroutine to end
 		// and the result will return async
+		log.Infof("runexec timeout (50s), it will return async")
 		client.Close()
 		c.JSON(http.StatusAccepted, gin.H{"session_id": client.SessionID(), "exit_code": nil})
 	}

@@ -191,7 +191,8 @@ func changeWebappApiURL(apiURL string) error {
 		appJsFile := filepath.Join(staticUiPath, "js/app.js")
 		appBytes, err := os.ReadFile(appJsFile)
 		if err != nil {
-			return fmt.Errorf("failed opening webapp js file, reason=%v", err)
+			log.Warnf("failed opening webapp js file %v, reason=%v", appJsFile, err)
+			return nil
 		}
 		log.Infof("replacing api url from %v with %v", appJsFile, apiURL)
 		appBytes = bytes.ReplaceAll(appBytes, []byte(`http://localhost:8009`), []byte(apiURL))

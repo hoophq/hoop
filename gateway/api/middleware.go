@@ -66,7 +66,7 @@ func (api *Api) AdminOnly(c *gin.Context) {
 	context := user.ContextUser(c)
 
 	if !context.User.IsAdmin() {
-		c.AbortWithStatus(401)
+		c.AbortWithStatus(403)
 		return
 	}
 

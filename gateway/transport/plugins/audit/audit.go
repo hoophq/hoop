@@ -102,6 +102,10 @@ func (p *auditPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt
 			return fmt.Errorf("session=%v - failed obtaining simple query data, err=%v", pluginConfig.SessionId, err)
 		}
 		return p.writeOnReceive(pluginConfig.SessionId, 'i', dlpCount, queryBytes)
+	case pbagent.MySQLConnectionWrite:
+		if queryBytes := decodeMySQLCommandQuery(pkt.Payload); queryBytes != nil {
+			return p.writeOnReceive(pluginConfig.SessionId, 'i', dlpCount, queryBytes)
+		}
 	case pbclient.WriteStdout,
 		pbclient.WriteStderr:
 		return p.writeOnReceive(pluginConfig.SessionId, 'o', dlpCount, pkt.Payload)

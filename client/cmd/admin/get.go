@@ -8,6 +8,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/runopsio/hoop/client/cmd/styles"
+	clientconfig "github.com/runopsio/hoop/client/config"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/spf13/cobra"
 )
@@ -75,7 +76,7 @@ var getCmd = &cobra.Command{
 				}
 			}
 		case "conn", "connection", "connections":
-			agentHandlerFn := agentConnectedHandler(apir)
+			agentHandlerFn := agentConnectedHandler(apir.conf)
 			plugingHandlerFn := pluginHandler(apir)
 			fmt.Fprintln(w, "NAME\tCOMMAND\tTYPE\tAGENT\tSTATUS\tSECRETS\tPLUGINS\t")
 			switch contents := obj.(type) {
@@ -227,11 +228,10 @@ func pluginHandler(apir *apiResource) func(connectionName string) string {
 		sort.Strings(enabledPlugins)
 		return strings.Join(enabledPlugins, ", ")
 	}
-
 }
 
-func agentConnectedHandler(apir *apiResource) func(key, agentID string) string {
-	data, err := httpRequest(&apiResource{suffixEndpoint: "/api/agents", conf: apir.conf, decodeTo: "list"})
+func agentConnectedHandler(conf *clientconfig.Config) func(key, agentID string) string {
+	data, err := httpRequest(&apiResource{suffixEndpoint: "/api/agents", conf: conf, decodeTo: "list"})
 	if err != nil {
 		log.Debugf("failed retrieving list of connected agents, err=%v", err)
 	}

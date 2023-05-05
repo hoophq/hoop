@@ -223,7 +223,6 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.GET("/plugins/audit/sessions/:session_id",
 		api.Authenticate,
 		api.TrackRequest,
-		api.AdminOnly,
 		api.SessionHandler.FindOne)
 	route.GET("/plugins/audit/sessions/:session_id/status",
 		api.Authenticate,
@@ -232,7 +231,6 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.GET("/plugins/audit/sessions",
 		api.Authenticate,
 		api.TrackRequest,
-		api.AdminOnly,
 		api.SessionHandler.FindAll)
 
 	route.POST("/plugins/indexer/sessions/search",
