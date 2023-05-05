@@ -20,14 +20,15 @@ func (s *SlackService) ProcessEvents(respCh chan *MessageReviewResponse) error {
 }
 
 func (s *SlackService) processEvents(respCh chan *MessageReviewResponse) {
+	log := log.With("org", s.instanceID)
 	for evt := range s.socketClient.Events {
 		switch evt.Type {
 		case socketmode.EventTypeConnecting:
-			log.Debugf("connecting to Slack with Socket Mode...")
+			log.Info("connecting to Slack with Socket Mode...")
 		case socketmode.EventTypeConnectionError:
-			log.Debugf("connection failed. Retrying later...")
+			log.Info("connection failed. Retrying later...")
 		case socketmode.EventTypeConnected:
-			log.Debugf("connected to Slack with Socket Mode")
+			log.Info("connected to Slack with Socket Mode")
 		case socketmode.EventTypeInteractive:
 			cb, ok := evt.Data.(slack.InteractionCallback)
 			if !ok {
@@ -64,13 +65,16 @@ func (s *SlackService) processEvents(respCh chan *MessageReviewResponse) {
 				}
 			default:
 			}
-			log.Debugf("sending ack back to slack!")
+			log.Info("sending ack back to slack!")
 			var ack any
 			s.socketClient.Ack(*evt.Request, ack)
 		case socketmode.EventTypeHello:
-			log.Debugf("socket live, received ping from slack")
+			log.Info("socket live, received ping from slack")
+		case socketmode.EventTypeIncomingError:
+			eventErr, _ := evt.Data.(slack.IncomingEventError)
+			log.Warnf("received incoming_error from slack, err=%v", eventErr)
 		default:
-			log.Warnf("event not implemented %s", evt.Type)
+			log.Errorf("event not implemented %s", evt.Type)
 		}
 	}
 }

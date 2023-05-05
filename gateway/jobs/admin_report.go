@@ -38,7 +38,7 @@ func InitReportScheduler(s *Scheduler) {
 }
 
 func (s *Scheduler) sendReports() {
-	fmt.Println("Starting sendReports job")
+	log.Info("Starting reports job")
 	orgs, err := s.UserStorage.FindOrgs()
 	if err != nil {
 		log.Printf("scheduler job failed, err=%v", err)

@@ -12,11 +12,13 @@ import (
 )
 
 type SlackService struct {
-	apiClient    *slack.Client
-	socketClient *socketmode.Client
-	slackChannel string
-	ctx          context.Context
-	cancelFn     context.CancelFunc
+	apiClient     *slack.Client
+	socketClient  *socketmode.Client
+	slackChannel  string
+	slackBotToken string
+	instanceID    string
+	ctx           context.Context
+	cancelFn      context.CancelFunc
 }
 
 const (
@@ -26,7 +28,7 @@ const (
 	EventKindJit         = "jit"
 )
 
-func New(slackBotToken, slackAppToken, slackChannel string) (*SlackService, error) {
+func New(slackBotToken, slackAppToken, slackChannel, instanceID string) (*SlackService, error) {
 	apiClient := slack.New(
 		slackBotToken,
 		// slack.OptionDebug(true),
@@ -47,11 +49,13 @@ func New(slackBotToken, slackAppToken, slackChannel string) (*SlackService, erro
 		apiClient:    apiClient,
 		socketClient: socketClient,
 		slackChannel: slackChannel,
+		instanceID:   instanceID,
 		ctx:          ctx,
 		cancelFn:     cancelFn}, nil
 }
 
-func (s *SlackService) Close() { s.cancelFn() }
+func (s *SlackService) Close()           { s.cancelFn() }
+func (s *SlackService) BotToken() string { return s.slackBotToken }
 
 type MessageReviewRequest struct {
 	ID             string
