@@ -28,8 +28,9 @@ func init() {
 }
 
 var createPluginCmd = &cobra.Command{
-	Use:   "plugin NAME",
-	Short: "Create a plugin resource.",
+	Use:     "plugin NAME",
+	Short:   "Create a plugin resource.",
+	Aliases: []string{"plugins"},
 	PreRun: func(cmd *cobra.Command, args []string) {
 		if len(args) == 0 {
 			cmd.Usage()

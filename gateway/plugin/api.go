@@ -82,7 +82,7 @@ func (a *Handler) Post(c *gin.Context) {
 		return
 	}
 	// it's a ready only field
-	plugin.Config = nil
+	// plugin.Config = nil
 
 	existingPlugin, err := a.Service.FindOne(context, plugin.Name)
 	if err != nil {

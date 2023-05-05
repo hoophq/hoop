@@ -105,7 +105,7 @@ var getCmd = &cobra.Command{
 					fmt.Fprintln(w)
 				}
 			}
-		case "plugins":
+		case "plugin", "plugins":
 			fmt.Fprintln(w, "NAME\tSOURCE\tPRIORITY\tCONNECTIONS\tCONFIG")
 			switch contents := obj.(type) {
 			case map[string]any:
@@ -148,7 +148,7 @@ var getCmd = &cobra.Command{
 				fmt.Fprintf(w, "%s\t%s\t%s\t%v\t", id, phase, errorMsg, m["tx_time"])
 				fmt.Fprintln(w)
 			}
-		case "users", "userinfo":
+		case "user", "users", "userinfo":
 			fmt.Fprintln(w, "ID\tEMAIL\tNAME\tSLACKID\tSTATUS\tGROUPS")
 			switch contents := obj.(type) {
 			case map[string]any:

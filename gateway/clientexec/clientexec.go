@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/runopsio/hoop/common/log"
-
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/grpc"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -27,7 +25,7 @@ func init() {
 	_ = os.MkdirAll(walLogPath, 0755)
 }
 
-const nilExitCode = -100
+const nilExitCode int = -100
 
 type clientExec struct {
 	folderName string
@@ -84,7 +82,8 @@ func (r *Response) IsError() bool {
 	if r.ExitCode == nil {
 		return true
 	}
-	return *r.ExitCode != 0
+	// go os.Exec may return -1
+	return *r.ExitCode > 0 || *r.ExitCode == -1
 }
 
 func (r *Response) ErrorMessage() string {
@@ -101,7 +100,7 @@ func newError(err error) *Response {
 func newReviewedResponse(reviewURI string) *Response {
 	return &Response{
 		HasReview: true,
-		ExitCode:  nil,
+		ExitCode:  func() *int { v := nilExitCode; return &v }(),
 		Output:    reviewURI,
 	}
 }
@@ -168,7 +167,6 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 		}
 		switch pkt.Type {
 		case pbclient.SessionOpenWaitingApproval:
-			log.Infof("waiting for approval at %v", string(pkt.Payload))
 			return newReviewedResponse(string(pkt.Payload))
 		case pbclient.SessionOpenApproveOK:
 			if err := sendOpenSessionPktFn(); err != nil {
