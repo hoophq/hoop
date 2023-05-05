@@ -8,9 +8,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/runopsio/hoop/common/log"
-
 	"github.com/gin-gonic/gin"
+	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/common/version"
 	"github.com/runopsio/hoop/gateway/user"

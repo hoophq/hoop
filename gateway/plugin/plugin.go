@@ -12,6 +12,7 @@ type (
 		UserID         string
 		UserName       string
 		UserEmail      string
+		UserGroups     []string
 		Verb           string
 		Hostname       string
 		MachineId      string

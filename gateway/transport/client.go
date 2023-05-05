@@ -19,13 +19,11 @@ import (
 	"github.com/runopsio/hoop/gateway/plugin"
 	rv "github.com/runopsio/hoop/gateway/review"
 	justintime "github.com/runopsio/hoop/gateway/review/jit"
-	"github.com/runopsio/hoop/gateway/session"
-	pluginsrbac "github.com/runopsio/hoop/gateway/transport/plugins/accesscontrol"
 	pluginsaudit "github.com/runopsio/hoop/gateway/transport/plugins/audit"
 	pluginsdlp "github.com/runopsio/hoop/gateway/transport/plugins/dlp"
-	pluginsindex "github.com/runopsio/hoop/gateway/transport/plugins/index"
 	pluginsjit "github.com/runopsio/hoop/gateway/transport/plugins/jit"
 	pluginsreview "github.com/runopsio/hoop/gateway/transport/plugins/review"
+	pluginsslack "github.com/runopsio/hoop/gateway/transport/plugins/slack"
 	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -47,8 +45,6 @@ type (
 	}
 )
 
-var allPlugins []Plugin
-
 var cc = struct {
 	clients map[string]pb.Transport_ConnectServer
 	plugins map[string][]pluginConfig
@@ -65,17 +61,6 @@ var disconnectSink = struct {
 }{
 	items: make(map[string]chan error),
 	mu:    sync.Mutex{},
-}
-
-func LoadPlugins(sessionStore *session.Storage, pluginStore *plugin.Storage, apiURL string) {
-	allPlugins = []Plugin{
-		pluginsaudit.New(),
-		pluginsindex.New(sessionStore, pluginStore),
-		pluginsreview.New(apiURL),
-		pluginsjit.New(apiURL),
-		pluginsdlp.New(),
-		pluginsrbac.New(),
-	}
 }
 
 func bindClient(sessionID string,
@@ -184,6 +169,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		UserID:         context.User.Id,
 		UserName:       context.User.Name,
 		UserEmail:      context.User.Email,
+		UserGroups:     context.User.Groups,
 		Verb:           clientVerb,
 		Hostname:       hostname,
 		MachineId:      machineId,
@@ -217,7 +203,6 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	plugins, err := s.loadConnectPlugins(context, pConfig)
 	bindClient(sessionID, stream, conn, plugins)
 	if err != nil {
-		// _ = s.pluginOnDisconnect(pConfig, err)
 		s.disconnectClient(sessionID, err)
 		s.trackSessionStatus(sessionID, pb.SessionPhaseClientErr, err)
 		return status.Errorf(codes.FailedPrecondition, err.Error())
@@ -312,7 +297,7 @@ func (s *Server) listenClientMessages(
 		if err := s.pluginOnReceive(config, pkt); err != nil {
 			log.With("session", c.SessionID).Errorf("plugin rejected packet, err=%v", err)
 			sentry.CaptureException(err)
-			return status.Errorf(codes.Internal, "internal error, packet rejected, contact the administrator")
+			return status.Errorf(codes.Internal, "internal error, plugin rejected packet, contact the administrator")
 		}
 		err = s.processClientPacket(pkt, config.Verb, c, conn)
 		if err != nil {
@@ -412,10 +397,11 @@ func (s *Server) processSessionOpenExec(pkt *pb.Packet, client *client.Client, c
 			return err
 		}
 		if !(review.Status == rv.StatusApproved || review.Status == rv.StatusProcessing) {
+			reviewURL := fmt.Sprintf("%s/plugins/reviews/%s", s.IDProvider.ApiURL, review.Id)
 			clientStream := getClientStream(client.SessionID)
 			_ = clientStream.Send(&pb.Packet{
 				Type:    pbclient.SessionOpenWaitingApproval,
-				Payload: []byte(fmt.Sprintf("%s/plugins/reviews/%s", s.IDProvider.ApiURL, review.Id)),
+				Payload: []byte(reviewURL),
 			})
 			return nil
 		}
@@ -618,7 +604,7 @@ func (s *Server) exchangeUserToken(token string) (string, error) {
 func (s *Server) loadConnectPlugins(ctx *user.Context, config plugin.Config) ([]pluginConfig, error) {
 	pluginsConfig := make([]pluginConfig, 0)
 	var nonRegisteredPlugins []string
-	for _, p := range allPlugins {
+	for _, p := range s.RegisteredPlugins {
 		p1, err := s.PluginService.FindOne(ctx, p.Name())
 		if err != nil {
 			log.Errorf("failed retrieving plugin %q, err=%v", p.Name(), err)
@@ -629,20 +615,19 @@ func (s *Server) loadConnectPlugins(ctx *user.Context, config plugin.Config) ([]
 			continue
 		}
 
-		if p.Name() == pluginsaudit.Name {
+		switch p.Name() {
+		case pluginsaudit.Name:
 			config.ParamsData[pluginsaudit.StorageWriterParam] = s.SessionService.Storage.NewGenericStorageWriter()
-		}
-
-		if p.Name() == pluginsreview.Name {
+		case pluginsreview.Name:
 			config.ParamsData[pluginsreview.ReviewServiceParam] = &s.ReviewService
 			config.ParamsData[pluginsreview.UserServiceParam] = &s.UserService
 			config.ParamsData[pluginsreview.NotificationServiceParam] = s.NotificationService
-		}
-
-		if p.Name() == pluginsjit.Name {
+		case pluginsjit.Name:
 			config.ParamsData[pluginsjit.JitServiceParam] = &s.JitService
 			config.ParamsData[pluginsjit.UserServiceParam] = &s.UserService
 			config.ParamsData[pluginsjit.NotificationServiceParam] = s.NotificationService
+		case pluginsslack.Name:
+			config.ParamsData[pluginsslack.PluginConfigEnvVarsParam] = p1.Config.EnvVars
 		}
 
 		for _, c := range p1.Connections {

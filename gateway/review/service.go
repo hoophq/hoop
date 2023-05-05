@@ -1,10 +1,12 @@
 package review
 
 import (
+	"errors"
+	"time"
+
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/user"
-	"time"
 )
 
 type (
@@ -56,6 +58,12 @@ type (
 	Status string
 )
 
+var (
+	ErrNotFound    = errors.New("review not found")
+	ErrWrongState  = errors.New("review in wrong state")
+	ErrNotEligible = errors.New("not eligible for review")
+)
+
 const (
 	StatusPending    Status = "PENDING"
 	StatusApproved   Status = "APPROVED"
@@ -94,38 +102,57 @@ func (s *Service) Persist(context *user.Context, review *Review) error {
 	return nil
 }
 
-func (s *Service) Review(context *user.Context, existingReview *Review, status Status) error {
-	reviewsCount := len(existingReview.ReviewGroups)
+func (s *Service) Review(context *user.Context, reviewID string, status Status) (*Review, error) {
+	rev, err := s.FindOne(context, reviewID)
+	if err != nil {
+		return nil, err
+	}
+	if rev == nil {
+		return nil, ErrNotFound
+	}
+	if rev.Status != StatusPending {
+		return rev, ErrWrongState
+	}
+	isEligibleReviewer := false
+	for _, r := range rev.ReviewGroups {
+		if pb.IsInList(r.Group, context.User.Groups) {
+			isEligibleReviewer = true
+			break
+		}
+	}
+	if !isEligibleReviewer {
+		return nil, ErrNotEligible
+	}
+
+	reviewsCount := len(rev.ReviewGroups)
 	approvedCount := 0
 
 	if status == StatusRejected {
-		existingReview.Status = status
+		rev.Status = status
 	}
 
-	for i, r := range existingReview.ReviewGroups {
+	for i, r := range rev.ReviewGroups {
 		if pb.IsInList(r.Group, context.User.Groups) {
 			t := time.Now().String()
-			existingReview.ReviewGroups[i].Status = status
-			existingReview.ReviewGroups[i].ReviewedBy = &Owner{Id: context.User.Id}
-			existingReview.ReviewGroups[i].ReviewDate = &t
+			rev.ReviewGroups[i].Status = status
+			rev.ReviewGroups[i].ReviewedBy = &Owner{Id: context.User.Id}
+			rev.ReviewGroups[i].ReviewDate = &t
 		}
-		if existingReview.ReviewGroups[i].Status == StatusApproved {
+		if rev.ReviewGroups[i].Status == StatusApproved {
 			approvedCount++
 		}
 	}
 
 	if reviewsCount == approvedCount {
-		existingReview.Status = StatusApproved
+		rev.Status = StatusApproved
 	}
 
-	if err := s.Persist(context, existingReview); err != nil {
-		return err
+	if err := s.Persist(context, rev); err != nil {
+		return nil, err
 	}
 
-	if existingReview.Status == StatusApproved || existingReview.Status == StatusRejected {
-		if err := s.TransportService.ReviewStatusChange(existingReview.Session, existingReview.Status, []byte(existingReview.Input)); err != nil {
-			return err
-		}
+	if rev.Status == StatusApproved || rev.Status == StatusRejected {
+		return rev, s.TransportService.ReviewStatusChange(rev.Session, rev.Status, []byte(rev.Input))
 	}
-	return nil
+	return rev, nil
 }

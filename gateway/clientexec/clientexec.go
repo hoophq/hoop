@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/runopsio/hoop/common/log"
-
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/grpc"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -27,7 +25,7 @@ func init() {
 	_ = os.MkdirAll(walLogPath, 0755)
 }
 
-const nilExitCode = -100
+const nilExitCode int = -100
 
 type clientExec struct {
 	folderName string
@@ -69,6 +67,7 @@ func (r *clientExec) Close() {
 type Response struct {
 	ExitCode  *int   `json:"exit_code"`
 	SessionID string `json:"session_id"`
+	HasReview bool   `json:"has_review"`
 	Output    string `json:"output"`
 	Truncated bool   `json:"truncated"`
 	err       error
@@ -83,7 +82,8 @@ func (r *Response) IsError() bool {
 	if r.ExitCode == nil {
 		return true
 	}
-	return *r.ExitCode != 0
+	// go os.Exec may return -1
+	return *r.ExitCode > 0 || *r.ExitCode == -1
 }
 
 func (r *Response) ErrorMessage() string {
@@ -95,6 +95,14 @@ func (r *Response) ErrorMessage() string {
 
 func newError(err error) *Response {
 	return &Response{err: err}
+}
+
+func newReviewedResponse(reviewURI string) *Response {
+	return &Response{
+		HasReview: true,
+		ExitCode:  func() *int { v := nilExitCode; return &v }(),
+		Output:    reviewURI,
+	}
 }
 
 func New(orgID, accessToken, connectionName string, sessionID string) (*clientExec, error) {
@@ -159,7 +167,7 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 		}
 		switch pkt.Type {
 		case pbclient.SessionOpenWaitingApproval:
-			log.Infof("waiting for approval at %v", string(pkt.Payload))
+			return newReviewedResponse(string(pkt.Payload))
 		case pbclient.SessionOpenApproveOK:
 			if err := sendOpenSessionPktFn(); err != nil {
 				return newError(err)

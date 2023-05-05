@@ -42,6 +42,61 @@ func (s *Storage) FindById(identifier string) (*Context, error) {
 	return c, nil
 }
 
+func (s *Storage) FindByEmail(ctx *Context, email string) (*User, error) {
+	qs := fmt.Sprintf(`{:query {
+		:find [(pull ?u [*])] 
+		:in [orgid email]
+		:where [[?u :user/org orgid]
+				[?u :user/email email]]}
+		:in-args [%q %q]}`, ctx.Org.Id, email)
+	data, err := s.Query([]byte(qs))
+	if err != nil {
+		return nil, err
+	}
+	var user []User
+	if err := edn.Unmarshal(data, &user); err != nil {
+		return nil, err
+	}
+
+	if len(user) > 1 {
+		return nil, fmt.Errorf("user storage is inconsistent")
+	}
+
+	if len(user) == 0 {
+		return nil, nil
+	}
+
+	return &user[0], nil
+}
+
+func (s *Storage) FindBySlackID(ctx *Org, slackID string) (*User, error) {
+	qs := fmt.Sprintf(`{:query {
+		:find [(pull ?u [*])] 
+		:in [orgid slack-id]
+		:where [[?u :user/org orgid]
+				[?u :user/slack-id slack-id]
+				[?u :user/status "active"]]}
+		:in-args [%q %q]}`, ctx.Id, slackID)
+	data, err := s.Query([]byte(qs))
+	if err != nil {
+		return nil, err
+	}
+	var user []User
+	if err := edn.Unmarshal(data, &user); err != nil {
+		return nil, err
+	}
+
+	if len(user) > 1 {
+		return nil, fmt.Errorf("user storage is inconsistent")
+	}
+
+	if len(user) == 0 {
+		return nil, nil
+	}
+
+	return &user[0], nil
+}
+
 func (s *Storage) FindInvitedUser(email string) (*InvitedUser, error) {
 	var payload = `{:query {
 		:find [(pull ?invited-user [*])] 

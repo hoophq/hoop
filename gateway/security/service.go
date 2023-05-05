@@ -196,13 +196,18 @@ func (s *Service) signup(ctx *user.Context, sub string, idTokenClaims map[string
 
 	email, _ := idTokenClaims["email"].(string)
 	profileName, _ := idTokenClaims["name"].(string)
+	var slackID string
+	if iuser, _ := s.UserService.FindInvitedUser(email); iuser != nil {
+		slackID = iuser.SlackID
+	}
 	ctx.User = &user.User{
-		Id:     sub,
-		Org:    org.Id,
-		Name:   profileName,
-		Email:  email,
-		Status: user.StatusActive,
-		Groups: groupList,
+		Id:      sub,
+		Org:     org.Id,
+		Name:    profileName,
+		Email:   email,
+		Status:  user.StatusActive,
+		SlackID: slackID,
+		Groups:  groupList,
 	}
 
 	if err := s.UserService.Persist(ctx.User); err != nil {
@@ -276,7 +281,9 @@ func (s *Service) signupMultiTenant(context *user.Context, sub string, idTokenCl
 			}
 		}
 
+		var slackID string
 		if invitedUser != nil {
+			slackID = invitedUser.SlackID
 			if context.Org == nil {
 				orgName, err := s.UserService.GetOrgNameByID(invitedUser.Org)
 				if err != nil {
@@ -295,12 +302,13 @@ func (s *Service) signupMultiTenant(context *user.Context, sub string, idTokenCl
 		}
 
 		context.User = &user.User{
-			Id:     sub,
-			Org:    context.Org.Id,
-			Name:   profileName,
-			Email:  email,
-			Status: status,
-			Groups: groups,
+			Id:      sub,
+			Org:     context.Org.Id,
+			Name:    profileName,
+			Email:   email,
+			Status:  status,
+			SlackID: slackID,
+			Groups:  groups,
 		}
 
 		if err := s.UserService.Persist(context.User); err != nil {

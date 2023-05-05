@@ -6,13 +6,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getsentry/sentry-go"
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/gateway/clientexec"
-
-	"github.com/getsentry/sentry-go"
-	pb "github.com/runopsio/hoop/common/proto"
-
-	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
@@ -24,7 +21,7 @@ type (
 	service interface {
 		FindAll(context *user.Context) ([]Review, error)
 		FindOne(context *user.Context, id string) (*Review, error)
-		Review(context *user.Context, existingReview *Review, status Status) error
+		Review(context *user.Context, reviewID string, status Status) (*Review, error)
 		Persist(context *user.Context, review *Review) error
 	}
 )
@@ -33,60 +30,30 @@ func (h *Handler) Put(c *gin.Context) {
 	context := user.ContextUser(c)
 	log := user.ContextLogger(c)
 
-	reviewId := c.Param("id")
-	existingReview, err := h.Service.FindOne(context, reviewId)
-	if err != nil {
-		log.Errorf("failed fetching review %v err=%v", reviewId, err)
-		sentry.CaptureException(err)
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-
-	if existingReview == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
-		return
-	}
-
-	if existingReview.Status != StatusPending {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "review must be at PENDING status"})
-		return
-	}
-
-	isEligibleReviewer := false
-	for _, r := range existingReview.ReviewGroups {
-		if pb.IsInList(r.Group, context.User.Groups) {
-			isEligibleReviewer = true
-			break
-		}
-	}
-
-	if !isEligibleReviewer {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "not eligible for review"})
-		return
-	}
-
-	var r Review
-	if err := c.ShouldBindJSON(&r); err != nil {
+	reviewID := c.Param("id")
+	var req map[string]string
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-
-	status := strings.ToUpper(string(r.Status))
-	r.Status = Status(status)
-
-	if !(r.Status == StatusApproved || r.Status == StatusRejected) {
+	status := Status(strings.ToUpper(string(req["status"])))
+	if !(status == StatusApproved || status == StatusRejected) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid status"})
 		return
 	}
 
-	if err := h.Service.Review(context, existingReview, r.Status); err != nil {
+	review, err := h.Service.Review(context, reviewID, status)
+	switch err {
+	case ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+	case ErrNotEligible, ErrWrongState:
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+	case nil:
+		c.JSON(http.StatusOK, review)
+	default:
 		log.Errorf("failed processing review, err=%v", err)
-		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
 	}
-
-	c.JSON(http.StatusOK, existingReview)
 }
 
 func (h *Handler) FindAll(c *gin.Context) {
@@ -199,7 +166,6 @@ func (h *Handler) RunExec(c *gin.Context) {
 			})
 			return
 		}
-
 		c.JSON(statusCode, resp)
 	case <-time.After(time.Second * 50):
 		log.Infof("review exec timeout (50s), it will return async")

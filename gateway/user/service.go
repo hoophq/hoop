@@ -17,6 +17,8 @@ type (
 	storage interface {
 		Signup(org *Org, user *User) (txId int64, err error)
 		FindById(identifier string) (*Context, error)
+		FindByEmail(ctx *Context, email string) (*User, error)
+		FindBySlackID(ctx *Org, slackID string) (*User, error)
 		Persist(user any) (int64, error)
 		FindAll(context *Context) ([]User, error)
 		FindInvitedUser(email string) (*InvitedUser, error)
@@ -38,20 +40,22 @@ type (
 	}
 
 	User struct {
-		Id     string     `json:"id"     edn:"xt/id"`
-		Org    string     `json:"-"      edn:"user/org"`
-		Name   string     `json:"name"   edn:"user/name"`
-		Email  string     `json:"email"  edn:"user/email"`
-		Status StatusType `json:"status" edn:"user/status"`
-		Groups []string   `json:"groups" edn:"user/groups"`
+		Id      string     `json:"id"       edn:"xt/id"`
+		Org     string     `json:"-"        edn:"user/org"`
+		Name    string     `json:"name"     edn:"user/name"`
+		Email   string     `json:"email"    edn:"user/email"`
+		Status  StatusType `json:"status"   edn:"user/status"`
+		SlackID string     `json:"slack_id" edn:"user/slack-id"`
+		Groups  []string   `json:"groups"   edn:"user/groups"`
 	}
 
 	InvitedUser struct {
-		Id     string   `json:"id"     edn:"xt/id"`
-		Org    string   `json:"-"      edn:"invited-user/org"`
-		Email  string   `json:"email"  edn:"invited-user/email"`
-		Name   string   `json:"name"   end:"invited-user/name"`
-		Groups []string `json:"groups" edn:"invited-user/groups"`
+		Id      string   `json:"id"       edn:"xt/id"`
+		Org     string   `json:"-"        edn:"invited-user/org"`
+		Email   string   `json:"email"    edn:"invited-user/email"`
+		Name    string   `json:"name"     end:"invited-user/name"`
+		SlackID string   `json:"slack_id" edn:"invited-user/slack-id"`
+		Groups  []string `json:"groups"   edn:"invited-user/groups"`
 	}
 
 	StatusType string
@@ -96,6 +100,14 @@ func (s *Service) FindOne(context *Context, id string) (*User, error) {
 
 	return ctx.User, nil
 
+}
+
+func (s *Service) FindByEmail(ctx *Context, email string) (*User, error) {
+	return s.Storage.FindByEmail(ctx, email)
+}
+
+func (s *Service) FindBySlackID(ctx *Org, slackID string) (*User, error) {
+	return s.Storage.FindBySlackID(ctx, slackID)
 }
 
 func (s *Service) FindBySub(sub string) (*Context, error) {

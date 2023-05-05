@@ -102,8 +102,7 @@ func (r *reviewPlugin) OnReceive(pluginConfig plugin.Config, config []string, pk
 			User: &user.User{Id: pluginConfig.UserID},
 		}
 
-		sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
-		existingReview, err := r.reviewService.FindBySessionID(sessionID)
+		existingReview, err := r.reviewService.FindBySessionID(pluginConfig.SessionId)
 		if err != nil {
 			return err
 		}
@@ -114,6 +113,9 @@ func (r *reviewPlugin) OnReceive(pluginConfig plugin.Config, config []string, pk
 			return nil
 		}
 
+		if len(config) == 0 {
+			return fmt.Errorf("connection does not have groups for the review exec plugin")
+		}
 		reviewGroups := make([]rv.Group, 0)
 		groups := make([]string, 0)
 		for _, s := range config {
