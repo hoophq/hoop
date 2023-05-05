@@ -47,7 +47,7 @@ var createPluginCmd = &cobra.Command{
 				styles.PrintErrorAndExit("failed retrieving plugin %q, %v", args[1], err)
 			}
 			if exists {
-				log.Debugf("plugin %v exists, update it", args[0])
+				log.Debugf("plugin %v exists, update it", args[1])
 				actionName = "updated"
 				method = "PUT"
 			}
@@ -78,6 +78,7 @@ var createPluginCmd = &cobra.Command{
 			styles.PrintErrorAndExit(err.Error())
 		}
 		// if len(pluginEnvVars)
+		// TODO: fix /putconfig, it's removing
 		if _, err = putConfig(apir.conf, apir.name, pluginEnvVars); err != nil {
 			styles.PrintErrorAndExit(err.Error())
 		}
@@ -92,6 +93,7 @@ var createPluginCmd = &cobra.Command{
 }
 
 func putConfig(conf *clientconfig.Config, pluginName string, envVars map[string]any) (any, error) {
+	// return nil, nil
 	return httpBodyRequest(&apiResource{
 		suffixEndpoint: fmt.Sprintf("/api/plugins/%v/config", pluginName),
 		method:         "PUT",

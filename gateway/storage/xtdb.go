@@ -32,7 +32,7 @@ type (
 	// See https://github.com/go-edn/edn.
 	TxEdnStruct any
 	TxResponse  struct {
-		TxID   int       `edn:"xtdb.api/tx-id"`
+		TxID   int64     `edn:"xtdb.api/tx-id"`
 		TxTime time.Time `edn:"xtdb.api/tx-time"`
 	}
 )
@@ -100,7 +100,13 @@ func (s *Storage) SubmitPutTx(trxs ...TxEdnStruct) (*TxResponse, error) {
 	var txResponse TxResponse
 	if resp.StatusCode == http.StatusAccepted {
 		if err := edn.NewDecoder(resp.Body).Decode(&txResponse); err != nil {
-			log.Printf("error decoding transaction response, err=%v", err)
+			log.Warnf("error decoding transaction response, err=%v", err)
+		}
+		// make a best-effort to wait the transaction to sync
+		if txResponse.TxID > 0 {
+			if err := s.AwaitTx(txResponse.TxID); err != nil {
+				log.Warnf(err.Error())
+			}
 		}
 		return &txResponse, nil
 	} else {
@@ -175,11 +181,17 @@ func (s *Storage) PersistEntities(payloads []map[string]any) (int64, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusAccepted {
-		var j map[string]any
-		if err = json.NewDecoder(resp.Body).Decode(&j); err != nil {
-			return 0, err
+		var txResponse TxResponse
+		if err := json.NewDecoder(resp.Body).Decode(&txResponse); err != nil {
+			log.Warnf("error decoding transaction response, err=%v", err)
 		}
-		return int64(j["txId"].(float64)), nil
+		// make a best-effort to wait the transaction to sync
+		if txResponse.TxID > 0 {
+			if err := s.AwaitTx(txResponse.TxID); err != nil {
+				log.Warnf(err.Error())
+			}
+		}
+		return txResponse.TxID, nil
 	}
 
 	return 0, errors.New("not 202")
@@ -214,6 +226,24 @@ func (s *Storage) GetEntity(xtId string) ([]byte, error) {
 	}
 
 	return nil, nil
+}
+
+// AwaitTx Waits until the node has indexed a transaction that is at or past the supplied tx-id.
+// Returns the most recent tx indexed by the node.
+func (s *Storage) AwaitTx(txID int64) error {
+	url := fmt.Sprintf("%s/_xtdb/await-tx?tx-id=%v&timeout=5000", s.address, txID)
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("failed awaiting transaction %v, err=%v", txID, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		data, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed awaiting transaction %v, code=%v, response=%v",
+			txID, resp.StatusCode, string(data))
+	}
+	return nil
 }
 
 func (s *Storage) GetEntityHistory(eid, sortOrder string, withDocs bool) ([]byte, error) {

@@ -8,7 +8,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/runopsio/hoop/gateway/transport/plugins/slack"
 	"net"
 	"os"
 	"os/signal"
@@ -32,7 +31,6 @@ import (
 	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc"
 
-	// "google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
@@ -59,6 +57,8 @@ type (
 		PyroscopeAuthToken   string
 		AgentSentryDSN       string
 		Analytics            user.Analytics
+
+		RegisteredPlugins []Plugin
 	}
 
 	AnalyticsService interface {
@@ -349,43 +349,4 @@ func extractData(md metadata.MD, metaName string) string {
 		}
 	}
 	return data[0]
-}
-
-func (s *Server) sendReviewToSlack(c *client.Client, review review.Review, url, connType string) {
-	ctx := &user.Context{
-		Org:  &user.Org{Id: c.OrgId},
-		User: &user.User{Id: c.UserId, Org: c.OrgId},
-	}
-
-	p, err := s.PluginService.FindOne(ctx, slack.Name)
-	if err != nil {
-		log.Errorf("Failed to load slack plugin, err=%v", err)
-		sentry.CaptureException(err)
-		return
-	}
-
-	if p == nil {
-		return
-	}
-
-	found := false
-	for _, conn := range p.Connections {
-		if conn.Name == review.Connection.Name {
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		return
-	}
-
-	u, err := s.UserService.FindOne(ctx, c.UserId)
-	if err != nil {
-		log.Errorf("Failed to load user at slack review, err=%v", err)
-		sentry.CaptureException(err)
-		return
-	}
-
-	slack.SendReviewMsg(u, review, url, connType)
 }

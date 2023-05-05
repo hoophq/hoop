@@ -84,7 +84,7 @@ func (api *Api) StartAPI(sentryInit bool) {
 
 	api.buildRoutes(rg)
 	if err := route.Run(); err != nil {
-		panic("Failed to start HTTP server")
+		log.Fatalf("Failed to start HTTP server, err=%v", err)
 	}
 }
 
@@ -282,41 +282,4 @@ func (api *Api) CreateTrialEntities() error {
 	_, _ = api.UserHandler.Service.Signup(&org, &u)
 	_, err := api.AgentHandler.Service.Persist(&a)
 	return err
-}
-
-func (api *Api) StartPrivateAPI(sentryInit bool) {
-	port := "8020"
-
-	zaplogger := log.NewDefaultLogger()
-	defer zaplogger.Sync()
-	route := gin.New()
-	route.Use(ginzap.RecoveryWithZap(zaplogger, false))
-	if os.Getenv("GIN_MODE") == "debug" {
-		route.Use(ginzap.Ginzap(zaplogger, time.RFC3339, true))
-	}
-	api.logger = zaplogger
-
-	// https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies
-	route.SetTrustedProxies(nil)
-
-	rg := route.Group("/slack")
-	rg.Use(CORSMiddleware())
-
-	if sentryInit {
-		rg.Use(sentrygin.New(sentrygin.Options{
-			Repanic: true,
-		}))
-	}
-
-	api.buildPrivateRoutes(rg)
-	if err := route.Run(":" + port); err != nil {
-		panic("Failed to start HTTP server")
-	}
-}
-
-func (api *Api) buildPrivateRoutes(route *gin.RouterGroup) {
-	route.PUT("/reviews/:id",
-		api.SetSlackContext,
-		api.TrackRequest,
-		api.ReviewHandler.Put)
 }

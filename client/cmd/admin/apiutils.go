@@ -82,7 +82,12 @@ func parseResourceOrDie(args []string, method, outputFlag string) *apiResource {
 		apir.resourceList = false
 		apir.suffixEndpoint = path.Join("/api/plugins/audit/sessions", apir.name)
 	case "users":
+		apir.resourceUpdate = true
+		apir.resourceCreate = true
 		apir.suffixEndpoint = path.Join("/api/users", apir.name)
+		if method == "POST" {
+			apir.suffixEndpoint = "/api/users"
+		}
 	case "userinfo":
 		defer func() {
 			if outputFlag == "" {
@@ -98,6 +103,7 @@ func parseResourceOrDie(args []string, method, outputFlag string) *apiResource {
 		apir.suffixEndpoint = path.Join("/api/reviews", apir.name)
 	case "plugins":
 		apir.resourceCreate = true
+		apir.resourceUpdate = true
 		apir.suffixEndpoint = path.Join("/api/plugins", apir.name)
 		if method == "POST" {
 			apir.suffixEndpoint = "/api/plugins"
@@ -135,12 +141,16 @@ func parseResourceOrDie(args []string, method, outputFlag string) *apiResource {
 			styles.PrintErrorAndExit("missing resource name")
 		}
 		apir.decodeTo = "object"
-	case "POST", "PUT":
-		if !apir.resourceCreate && !apir.resourceUpdate {
+	case "PUT":
+		if !apir.resourceUpdate {
 			styles.PrintErrorAndExit("method %v not implemented for resource %q", method, apir.resourceType)
 		}
 		if apir.name == "" {
 			styles.PrintErrorAndExit("missing resource name")
+		}
+	case "POST":
+		if !apir.resourceCreate {
+			styles.PrintErrorAndExit("method %v not implemented for resource %q", method, apir.resourceType)
 		}
 	default:
 		styles.PrintErrorAndExit("http method not implemented %v", method)

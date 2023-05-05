@@ -33,6 +33,15 @@ import (
 	xtdb "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/transport"
 	"github.com/runopsio/hoop/gateway/user"
+
+	// plugins
+	pluginsrbac "github.com/runopsio/hoop/gateway/transport/plugins/accesscontrol"
+	pluginsaudit "github.com/runopsio/hoop/gateway/transport/plugins/audit"
+	pluginsdlp "github.com/runopsio/hoop/gateway/transport/plugins/dlp"
+	pluginsindex "github.com/runopsio/hoop/gateway/transport/plugins/index"
+	pluginsjit "github.com/runopsio/hoop/gateway/transport/plugins/jit"
+	pluginsreview "github.com/runopsio/hoop/gateway/transport/plugins/review"
+	pluginsslack "github.com/runopsio/hoop/gateway/transport/plugins/slack"
 )
 
 func Run() {
@@ -54,12 +63,6 @@ func Run() {
 	profile := os.Getenv("PROFILE")
 	idProvider := idp.NewProvider(profile)
 	analyticsService := analytics.New()
-
-	transport.LoadPlugins(
-		&session.Storage{Storage: s},
-		&plugin.Storage{Storage: s},
-		idProvider.ApiURL,
-	)
 
 	agentService := agent.Service{Storage: &agent.Storage{Storage: s}}
 	pluginService := plugin.Service{Storage: &plugin.Storage{Storage: s}}
@@ -117,7 +120,24 @@ func Run() {
 		PyroscopeAuthToken:   os.Getenv("PYROSCOPE_AUTH_TOKEN"),
 		AgentSentryDSN:       os.Getenv("AGENT_SENTRY_DSN"),
 		Analytics:            analyticsService,
+		RegisteredPlugins: []transport.Plugin{
+			pluginsaudit.New(),
+			pluginsindex.New(
+				&session.Storage{Storage: s},
+				&plugin.Storage{Storage: s}),
+			pluginsreview.New(idProvider.ApiURL),
+			pluginsjit.New(idProvider.ApiURL),
+			pluginsdlp.New(),
+			pluginsrbac.New(),
+		},
 	}
+	pluginSlackInstance := pluginsslack.New(
+		&review.Service{Storage: &review.Storage{Storage: s}, TransportService: g},
+		&jit.Service{Storage: &jit.Storage{Storage: s}, TransportService: g},
+		&user.Service{Storage: &user.Storage{Storage: s}},
+		idProvider.ApiURL)
+	g.RegisteredPlugins = append(g.RegisteredPlugins, pluginSlackInstance)
+
 	if g.PyroscopeIngestURL != "" && g.PyroscopeAuthToken != "" {
 		log.Infof("starting profiler, ingest-url=%v", g.PyroscopeIngestURL)
 		_, err := monitoring.StartProfiler("gateway", monitoring.ProfilerConfig{
@@ -159,9 +179,6 @@ func Run() {
 
 	log.Infof("profile=%v - starting servers", profile)
 	go g.StartRPCServer()
-	if !user.IsOrgMultiTenant() {
-		go a.StartPrivateAPI(sentryStarted)
-	}
 	a.StartAPI(sentryStarted)
 }
 

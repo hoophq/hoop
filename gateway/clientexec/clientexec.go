@@ -69,7 +69,7 @@ func (r *clientExec) Close() {
 type Response struct {
 	ExitCode  *int   `json:"exit_code"`
 	SessionID string `json:"session_id"`
-	ReviewURI string `json:"review_uri,omitempty"`
+	HasReview bool   `json:"has_review"`
 	Output    string `json:"output"`
 	Truncated bool   `json:"truncated"`
 	err       error
@@ -99,10 +99,10 @@ func newError(err error) *Response {
 }
 
 func newReviewedResponse(reviewURI string) *Response {
-	exit := 0
 	return &Response{
-		ExitCode:  &exit,
-		ReviewURI: reviewURI,
+		HasReview: true,
+		ExitCode:  nil,
+		Output:    reviewURI,
 	}
 }
 
