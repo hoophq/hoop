@@ -58,46 +58,53 @@ func (p *slackPlugin) OnConnect(config plugin.Config) error {
 	log.Infof("session=%v | slack | processing on-connect", config.SessionId)
 	mu.Lock()
 	defer mu.Unlock()
-	_, ok := instances[config.Org]
-	if !ok {
-		sconf, err := parsePluginConfigEnvVars(config.ParamsData[PluginConfigEnvVarsParam])
-		if err != nil {
-			return err
-		}
-
-		log.Infof("starting slack service instance for org %v", config.Org)
-		ss, err := slackservice.New(sconf.slackBotToken, sconf.slackAppToken, sconf.slackChannel)
-		if err != nil {
-			return err
-		}
-		instances[config.Org] = ss
-		reviewRespCh := make(chan *slackservice.MessageReviewResponse)
-		go func() {
-			defer close(reviewRespCh)
-			if err := ss.ProcessEvents(reviewRespCh); err != nil {
-				log.Errorf("failed processing slack events for org %v, reason=%v", config.Org, err)
-				return
-			}
-			log.Infof("done processing events for org %v, reason=%v", config.Org)
-			mu.Lock()
-			defer mu.Unlock()
-			ss.Close()
-			delete(instances, config.Org)
-		}()
-
-		// response channel
-		go func() {
-			for resp := range reviewRespCh {
-				p.processEventResponse(&event{ss, resp, config.Org})
-			}
-			log.Infof("close response channel for org %v", config.Org)
-		}()
-		return nil
+	sconf, err := parseSlackConfig(config.ParamsData[PluginConfigEnvVarsParam])
+	if err != nil {
+		return err
 	}
-	// TODO check if the plugin configuration has been changed
-	// close the websocket and start a new connection with the new config.
-	// ss.Close()
 
+	if ss, ok := instances[config.Org]; ok {
+		if ss.BotToken() == sconf.slackBotToken {
+			return nil
+		}
+		log.Warnf("slack configuration has changed, closing instance/org %v", config.Org)
+		// configuration has changed, clean up
+		ss.Close()
+		delete(instances, config.Org)
+	}
+
+	log.Infof("starting slack service instance for instance/org %v", config.Org)
+	ss, err := slackservice.New(
+		sconf.slackBotToken,
+		sconf.slackAppToken,
+		sconf.slackChannel,
+		config.Org,
+	)
+	if err != nil {
+		return err
+	}
+	instances[config.Org] = ss
+	reviewRespCh := make(chan *slackservice.MessageReviewResponse)
+	go func() {
+		defer close(reviewRespCh)
+		if err := ss.ProcessEvents(reviewRespCh); err != nil {
+			log.Errorf("failed processing slack events for org %v, reason=%v", config.Org, err)
+			return
+		}
+		log.Infof("done processing events for org %v", config.Org)
+		mu.Lock()
+		defer mu.Unlock()
+		ss.Close()
+		delete(instances, config.Org)
+	}()
+
+	// response channel
+	go func() {
+		for resp := range reviewRespCh {
+			p.processEventResponse(&event{ss, resp, config.Org})
+		}
+		log.Infof("close response channel for org %v", config.Org)
+	}()
 	return nil
 }
 
@@ -171,7 +178,7 @@ type slackConfig struct {
 	slackChannel  string
 }
 
-func parsePluginConfigEnvVars(envVarsObj any) (*slackConfig, error) {
+func parseSlackConfig(envVarsObj any) (*slackConfig, error) {
 	pluginEnvVar, _ := envVarsObj.(map[string]string)
 	if len(pluginEnvVar) == 0 {
 		return nil, fmt.Errorf("missing required credentials for slack plugin")
