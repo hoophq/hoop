@@ -8,11 +8,39 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"text/template"
 
 	"github.com/runopsio/hoop/client/cmd/styles"
 	clientconfig "github.com/runopsio/hoop/client/config"
 	"github.com/spf13/cobra"
 )
+
+var (
+	targetToConnMigrateFlag bool
+	targetToConnGrpcURL     string
+	createConnTmpl          = `hoop admin create connection {{ .name }} --agent {{ .agent_id }} \
+	--overwrite \
+	--type {{ .type }} \
+	{{- range $key, $val := .plugins }}
+	--plugin '{{ $key }}{{ $val }}' \
+	{{- end }}
+	{{- range $key, $val := .secret }}
+	--env {{ $key }}={{ $val }} \
+	{{- end }}
+	-- {{ .command }}
+`
+	helmInstallAgentTmpl = `VERSION=$(curl -s https://hoopartifacts.s3.amazonaws.com/release/latest.txt)
+helm upgrade --install hoopagent https://hoopartifacts.s3.amazonaws.com/release/$VERSION/hoopagent-chart-$VERSION.tgz \
+	--set "config.gateway.grpc_url={{ .grpc_url }}" \
+	--set "config.gateway.token={{ .token }}"
+`
+)
+
+func init() {
+	targetToConnection.Flags().BoolVar(&targetToConnMigrateFlag, "migrate", false, "Migrate the target")
+	targetToConnection.Flags().StringVar(&targetToConnGrpcURL, "grpc-url", "", "The url of the grpc address")
+}
 
 var targetToConnection = &cobra.Command{
 	Use:    "target-to-connection NAME",
@@ -26,60 +54,24 @@ var targetToConnection = &cobra.Command{
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		config := clientconfig.GetClientConfigOrDie()
-		_ = config
 		connectionName := args[0]
 		tgt := getRunopsTargetOrDie(connectionName)
-		// agentName := fmt.Sprintf("%v", target["tags"])
-		// if agentName == "" {
-		// 	agentName = "main"
-		// }
-		// enableDLP := target["redact"] == "all"
-		// targetType := fmt.Sprintf("%v", target["type"])
-		// secretProvider := fmt.Sprintf("%v", target["secret_provider"])
-		// secretPath := fmt.Sprintf("%v", target["secret_path"])
-
-		// secretRunopsConfig := fmt.Sprintf("%v", target["config"])
 
 		agentID, err := getAgentIDByName(config, tgt.agentName())
 		if err != nil {
 			styles.PrintErrorAndExit("failed to fetch agent %q for target, reason=%v", tgt.agentName(), err)
 		}
-		if agentID == "" {
-			fmt.Printf("agent %q not found for target, create a new one:\n", tgt.agentName())
-			fmt.Println("hoop admin create agent main")
+		if targetToConnMigrateFlag && agentID == "" {
+			fmt.Printf("agent %q not found for runops target, create a new one:\n", tgt.agentName())
+			fmt.Printf("hoop admin create agent %s\n", tgt.agentName())
 			os.Exit(0)
 		}
-		cmdList := []string{}
-		envVarMap := map[string]string{}
-		switch tgt.SecretProvider {
-		case "env-var":
-			if tgt.SecretPath == "" {
-				styles.PrintErrorAndExit(`secret provider %q has empty "secret_path" attribute`, tgt.SecretProvider)
-			}
-			cmdList, envVarMap, err = parseEnvVarByType(tgt)
-			if err != nil {
-				styles.PrintErrorAndExit(err.Error())
-			}
-
-		case "aws":
-			// TODO
-		case "runops":
-			if tgt.Config == "" {
-				styles.PrintErrorAndExit(`secret provider "runops" has empty "config" attribute`)
-			}
-
-		default:
-			styles.PrintErrorAndExit("secret provider %q not supported", tgt.SecretProvider)
+		// cmdList := []string{}
+		// envVarMap := map[string]string{}
+		cmdList, envVarMap, err := parseEnvVarByType(tgt)
+		if err != nil {
+			styles.PrintErrorAndExit(err.Error())
 		}
-
-		// _, _ = enableDLP, agentName
-		// secretMappingJson := map[string]any{}
-		// if target["secret_mapping"] != "" {
-		// 	sm := fmt.Sprintf("%v", target["secret_mapping"])
-		// 	if err := json.Unmarshal([]byte(sm), &secretMappingJson); err != nil {
-		// 		styles.PrintErrorAndExit("failed decoding secret mapping from target, reason=%v", err)
-		// 	}
-		// }
 
 		connectionBody := map[string]any{
 			"name":     connectionName,
@@ -87,6 +79,75 @@ var targetToConnection = &cobra.Command{
 			"command":  cmdList,
 			"secret":   envVarMap,
 			"agent_id": agentID,
+		}
+
+		if !targetToConnMigrateFlag {
+			plugins := map[string]string{"audit": ""}
+			if tgt.getSlackChannel() != "" {
+				exists, err := getPlugin(config, "slack")
+				if err != nil {
+					styles.PrintErrorAndExit("failed obtaining slack plugn, err=%v", err)
+				}
+				if !exists {
+					fmt.Println("this targets requires the plugin slack, configure it before proceeding")
+					fmt.Println("https://hoop.dev/docs/plugins/slack")
+					os.Exit(1)
+				}
+				plugins["slack"] = ""
+			}
+			if agentID == "" {
+				fmt.Println("# agent creation/installation")
+				fmt.Printf("AGENT_TOKEN=$(hoop admin create agent %s)\n", tgt.agentName())
+				connectionBody["agent_id"] = tgt.agentName()
+				fmt.Println(execGoTemplate(helmInstallAgentTmpl, map[string]string{
+					"token":    "$AGENT_TOKEN",
+					"grpc_url": targetToConnGrpcURL,
+				}))
+			}
+			if len(tgt.Groups) > 0 {
+				exists, err := getPlugin(config, "access_control")
+				if err != nil {
+					styles.PrintErrorAndExit("failed obtaining access_control plugin, err=%v", err)
+				}
+				if !exists {
+					fmt.Println("# enable access control plugin because the target has groups")
+					fmt.Println("hoop admin create plugin access_control\n")
+				}
+				plugins["access_control:"] = strings.Join(tgt.Groups, ";")
+			}
+			if tgt.enableReview() && tgt.ReviewGroups != "" {
+				exists, err := getPlugin(config, "review")
+				if err != nil {
+					styles.PrintErrorAndExit("failed obtaining review plugin, err=%v", err)
+				}
+				if !exists {
+					fmt.Println("# enable review plugin because the target has review groups")
+					fmt.Println("hoop admin create plugin review\n")
+				}
+				plugins["review:"] = strings.ReplaceAll(tgt.ReviewGroups, ",", ";")
+			}
+
+			if tgt.SecretProvider == "env-var" || tgt.SecretProvider == "aws" {
+				exists, err := getPlugin(config, "secretsmanager")
+				if err != nil {
+					styles.PrintErrorAndExit("failed obtaining secretsmanager plugin, err=%v", err)
+				}
+				if !exists {
+					fmt.Println("# enabling because the target secret provider is aws or env-var")
+					fmt.Println("hoop admin create plugin secretsmanager --source hoop/secretsmanager\n")
+				}
+				plugins["secretsmanager"] = ""
+			}
+
+			if tgt.enableDLP() {
+				plugins["dlp"] = ""
+			}
+
+			connectionBody["plugins"] = plugins
+			connectionBody["command"] = strings.Join(cmdList, " ")
+			fmt.Println("# the connection")
+			fmt.Println(execGoTemplate(createConnTmpl, connectionBody))
+			return
 		}
 
 		apir := &apiResource{suffixEndpoint: "/api/connections", conf: config, decodeTo: "raw"}
@@ -109,9 +170,13 @@ var targetToConnection = &cobra.Command{
 //   - change to expand all secret mapped
 //
 // custom commands
-// groups
-// redact
+// secret-path
+// groups / reviewers - OK
+// redact - OK
 func parseEnvVarByType(t *RunopsTarget) ([]string, map[string]string, error) {
+	if t.CustomCommand != "" {
+		return nil, nil, fmt.Errorf("target has custom command, not implemented yet")
+	}
 	envVar := map[string]string{}
 	cmdList := []string{}
 	// dock: postgres, mysql, sql-server, python, bash, k8s
@@ -124,7 +189,7 @@ func parseEnvVarByType(t *RunopsTarget) ([]string, map[string]string, error) {
 		switch t.SecretProvider {
 		case "aws":
 			return fmt.Sprintf("aws:%s:%s", t.SecretPath, t.secretKey(key))
-		case "envvar":
+		case "env-var":
 			return fmt.Sprintf("envjson:%s:%s", t.SecretPath, t.secretKey(key))
 		case "runops":
 			secretVal := t.secretKey(key)
@@ -147,10 +212,10 @@ func parseEnvVarByType(t *RunopsTarget) ([]string, map[string]string, error) {
 		envVar["PORT"] = "3306"
 		cmdList = []string{
 			"mysql",
-			"--port=$PORT",
-			"-h$HOST",
-			"-u$USER",
-			"-D$DB",
+			"--port", "'$PORT'",
+			"-h", "'$HOST'",
+			"-u", "'$USER'",
+			"-D", "'$DB'",
 			"--comments"}
 	case "postgres", "postgres-csv":
 		// TODO: user psql delimiter option
@@ -162,10 +227,10 @@ func parseEnvVarByType(t *RunopsTarget) ([]string, map[string]string, error) {
 		envVar["PORT"] = "5432"
 		cmdList = []string{
 			"psql", "-A", "-F\t",
-			"--port=$PORT",
-			"-h$HOST",
-			"-U$USER",
-			"-d$DB",
+			"--port", "'$PORT'",
+			"-h", "'$HOST'",
+			"-U", "'$USER'",
+			"-d", "'$DB'",
 			"-vON_ERROR_STOP=1"}
 	case "sql-server":
 		envVar["MSSQL_CONNECTION_URI"] = secretKeyFn("PG_HOST")
@@ -175,10 +240,10 @@ func parseEnvVarByType(t *RunopsTarget) ([]string, map[string]string, error) {
 		// TODO: test it passing to stdin
 		cmdList = []string{
 			"sqlcmd", "-b", "-r",
-			"-S", "$MSSQL_CONNECTION_URI",
-			"-U", "$MSSQL_USER",
-			"-P", "$MSSQL_PASS",
-			"-d", "$MSSQL_DB"}
+			"-S", "'$MSSQL_CONNECTION_URI'",
+			"-U", "'$MSSQL_USER'",
+			"-P", "'$MSSQL_PASS'",
+			"-d", "'$MSSQL_DB'"}
 	case "python":
 	case "mongodb":
 	// all env-var types
@@ -197,25 +262,35 @@ func parseEnvVarByType(t *RunopsTarget) ([]string, map[string]string, error) {
 }
 
 type RunopsTarget struct {
-	Name           string `json:"name"`
-	Status         string `json:"status"`
-	Type           string `json:"type"`
-	Tags           string `json:"tags"`
-	SecretProvider string `json:"secret_provider"`
-	SecretPath     string `json:"secret_path"`
-	Config         string `json:"config"`
-	SecretMapping  string `json:"secret_mapping"`
+	Name           string   `json:"name"`
+	Status         string   `json:"status"`
+	Type           string   `json:"type"`
+	Tags           string   `json:"tags"`
+	SecretProvider string   `json:"secret_provider"`
+	SecretPath     string   `json:"secret_path"`
+	Config         string   `json:"config"`
+	SecretMapping  string   `json:"secret_mapping"`
+	Redact         string   `json:"redact"`
+	ReviewType     string   `json:"review_type"`
+	ReviewGroups   string   `json:"reviewers"`
+	SlackChannel   *string  `json:"channel_name"`
+	Groups         []string `json:"groups"`
 
 	// TODO
-	Redact        string   `json:"redact"`
-	Groups        []string `json:"groups"`
-	CustomCommand string   `json:"custom_command"`
+	CustomCommand string `json:"custom_command"`
 
 	secretMapping map[string]string
 	config        map[string]string
 }
 
-func (t *RunopsTarget) enableDLP() bool { return t.Redact == "all" }
+func (t *RunopsTarget) getSlackChannel() string {
+	if t.SlackChannel != nil {
+		return *t.SlackChannel
+	}
+	return ""
+}
+func (t *RunopsTarget) enableReview() bool { return t.ReviewType != "none" }
+func (t *RunopsTarget) enableDLP() bool    { return t.Redact == "all" }
 func (t *RunopsTarget) agentName() string {
 	if t.Tags == "" {
 		return "main"
@@ -248,8 +323,8 @@ func getRunopsTargetOrDie(connectionName string) *RunopsTarget {
 	}
 	tokenBytes = bytes.ReplaceAll(tokenBytes, []byte(`Bearer `), []byte(``))
 	req, _ := http.NewRequest("GET", "https://api.runops.io/v1/targets/"+connectionName, nil)
-	req.Header.Add("Authorization", fmt.Sprintf("Bearer %v", tokenBytes))
-	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Authorization", fmt.Sprintf("Bearer %v", string(tokenBytes)))
+	req.Header.Add("Accept", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		styles.PrintErrorAndExit("failed fetching target, reason=%v", err)
@@ -284,4 +359,16 @@ func getRunopsTargetOrDie(connectionName string) *RunopsTarget {
 		}
 	}
 	return &target
+}
+
+func execGoTemplate(tmpl string, data any) string {
+	t, err := template.New("").Parse(tmpl)
+	if err != nil {
+		styles.PrintErrorAndExit("failed parsing template, err=%v", err)
+	}
+	buf := bytes.NewBufferString("")
+	if err := t.Execute(buf, data); err != nil {
+		styles.PrintErrorAndExit("failed executing template: %v", err)
+	}
+	return buf.String()
 }
