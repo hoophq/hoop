@@ -67,7 +67,6 @@ func (s *Service) Persist(context *user.Context, plugin *Plugin) error {
 		plugin.Id = uuid.NewString()
 	}
 
-	connections := plugin.Connections
 	connectionIDs := make([]string, 0)
 	connConfigs := make([]Connection, 0)
 
@@ -95,24 +94,25 @@ func (s *Service) Persist(context *user.Context, plugin *Plugin) error {
 		connectionMap = map[string]string{}
 	}
 
-	for i, c := range plugin.Connections {
+	for _, connConfig := range plugin.Connections {
 		// avoids inconsistency by using the connection
 		// retrieved from the storage
-		if len(connectionNames) > 0 {
-			connectionID, ok := connectionMap[c.Name]
+		if connConfig.ConnectionId == "" {
+			connectionID, ok := connectionMap[connConfig.Name]
 			if !ok {
-				return fmt.Errorf("could not find connection in map for name %q", c.Name)
+				return errors.New("missing connection ID")
 			}
-			c.ConnectionId = connectionID
-			plugin.Connections[i] = c
-		}
-		if c.ConnectionId == "" {
-			return errors.New("missing connection ID")
+			connConfig.ConnectionId = connectionID
 		}
 		connConfigID := uuid.NewString()
-		connections[i].Id = connConfigID
 		connectionIDs = append(connectionIDs, connConfigID)
-		connConfigs = append(connConfigs, plugin.Connections[i])
+		connConfigs = append(connConfigs, Connection{
+			Id:           connConfigID,
+			ConnectionId: connConfig.ConnectionId,
+			Name:         connConfig.Name,
+			Config:       connConfig.Config,
+			Groups:       connConfig.Groups,
+		})
 	}
 
 	plugin.ConnectionsIDs = connectionIDs

@@ -21,13 +21,6 @@ RUN mkdir -p /app && \
         expect \
         lsb-release
 
-RUN curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix > nix-installer.sh && \
-    chmod +x nix-installer.sh && \
-    ./nix-installer.sh install linux --init none --no-confirm && \
-    rm -f ./nix-installer.sh && \
-    echo > /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh && \
-    /root/.nix-profile/bin/nix --version
-
 # kubectl / aws-cli / aws-session-manager
 RUN curl -sL "https://dl.k8s.io/release/v1.22.1/bin/linux/amd64/kubectl" -o kubectl && \
         echo '78178a8337fc6c76780f60541fca7199f0f1a2e9c41806bded280a4a5ef665c9  kubectl' | sha256sum -c --ignore-missing --strict - && \
@@ -74,8 +67,7 @@ ENV LANG en_US.UTF-8
 ENV LANGUAGE en_US:en  
 ENV LC_ALL en_US.UTF-8
 
-ENV NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
-ENV PATH="/app:/root/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$PATH:/opt/mssql-tools/bin"
+ENV PATH="/opt/mssql-tools/bin:/app:${PATH}"
 
 COPY rootfs /
 COPY hoop* /app/

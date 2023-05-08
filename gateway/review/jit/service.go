@@ -1,6 +1,7 @@
 package jit
 
 import (
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -63,6 +64,12 @@ const (
 	StatusRejected Status = "REJECTED"
 )
 
+var (
+	ErrNotFound    = errors.New("jit review not found")
+	ErrWrongState  = errors.New("jit review in wrong state")
+	ErrNotEligible = errors.New("not eligible for jit review")
+)
+
 func (s *Service) FindOne(context *user.Context, id string) (*Jit, error) {
 	return s.Storage.FindById(context, id)
 }
@@ -92,39 +99,56 @@ func (s *Service) Persist(context *user.Context, jit *Jit) error {
 	return nil
 }
 
-func (s *Service) Review(context *user.Context, existingJit *Jit, status Status) error {
-	jitsCount := len(existingJit.JitGroups)
+func (s *Service) Review(context *user.Context, jitID string, status Status) (*Jit, error) {
+	j, err := s.FindOne(context, jitID)
+	if err != nil {
+		return nil, err
+	}
+
+	if j == nil {
+		return nil, ErrNotFound
+	}
+
+	if j.Status != StatusPending {
+		return j, ErrWrongState
+	}
+
+	if !pb.IsInList(user.GroupAdmin, context.User.Groups) {
+		return nil, ErrNotEligible
+	}
+
+	jitsCount := len(j.JitGroups)
 	approvedCount := 0
 
 	if status == StatusRejected {
-		existingJit.Status = status
+		j.Status = status
 	}
 
-	for i, r := range existingJit.JitGroups {
+	for i, r := range j.JitGroups {
 		if pb.IsInList(r.Group, context.User.Groups) {
 			t := time.Now().String()
-			existingJit.JitGroups[i].Status = status
-			existingJit.JitGroups[i].ReviewedBy = &Owner{Id: context.User.Id}
-			existingJit.JitGroups[i].ReviewDate = &t
+			j.JitGroups[i].Status = status
+			j.JitGroups[i].ReviewedBy = &Owner{Id: context.User.Id}
+			j.JitGroups[i].ReviewDate = &t
 		}
-		if existingJit.JitGroups[i].Status == StatusApproved {
+		if j.JitGroups[i].Status == StatusApproved {
 			approvedCount++
 		}
 	}
 
 	if jitsCount == approvedCount && status != StatusRejected {
-		existingJit.Status = StatusApproved
+		j.Status = StatusApproved
 	}
 
-	if err := s.Persist(context, existingJit); err != nil {
-		return err
+	if err := s.Persist(context, j); err != nil {
+		return nil, err
 	}
 
-	if existingJit.Status == StatusApproved || existingJit.Status == StatusRejected {
-		if err := s.TransportService.JitStatusChange(existingJit.Session, existingJit.Status); err != nil {
-			return err
+	if j.Status == StatusApproved || j.Status == StatusRejected {
+		if err := s.TransportService.JitStatusChange(j.Session, j.Status); err != nil {
+			return j, err
 		}
 	}
 
-	return nil
+	return j, nil
 }

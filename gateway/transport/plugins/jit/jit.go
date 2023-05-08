@@ -97,8 +97,7 @@ func (r *jitPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *
 			User: &user.User{Id: pluginConfig.UserID},
 		}
 
-		sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
-		existingJit, err := r.jitService.FindBySessionID(sessionID)
+		existingJit, err := r.jitService.FindBySessionID(pluginConfig.SessionId)
 		if err != nil {
 			return err
 		}
@@ -120,6 +119,9 @@ func (r *jitPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *
 			return nil
 		}
 
+		if len(config) == 0 {
+			return fmt.Errorf("connection does not have groups for the jit plugin")
+		}
 		jitGroups := make([]jit.Group, 0)
 		groups := make([]string, 0)
 		for _, s := range config {

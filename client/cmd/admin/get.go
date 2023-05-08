@@ -105,7 +105,7 @@ var getCmd = &cobra.Command{
 					fmt.Fprintln(w)
 				}
 			}
-		case "plugins":
+		case "plugin", "plugins":
 			fmt.Fprintln(w, "NAME\tSOURCE\tPRIORITY\tCONNECTIONS\tCONFIG")
 			switch contents := obj.(type) {
 			case map[string]any:
@@ -148,18 +148,18 @@ var getCmd = &cobra.Command{
 				fmt.Fprintf(w, "%s\t%s\t%s\t%v\t", id, phase, errorMsg, m["tx_time"])
 				fmt.Fprintln(w)
 			}
-		case "users", "userinfo":
-			fmt.Fprintln(w, "ID\tEMAIL\tNAME\tSTATUS\tGROUPS")
+		case "user", "users", "userinfo":
+			fmt.Fprintln(w, "ID\tEMAIL\tNAME\tSLACKID\tSTATUS\tGROUPS")
 			switch contents := obj.(type) {
 			case map[string]any:
 				m := contents
 				groupList := joinGroups(m["groups"].([]any))
-				fmt.Fprintf(w, "%s\t%s\t%s\t%v\t%v\t", m["id"], m["email"], m["name"], m["status"], groupList)
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%v\t%v\t", m["id"], m["email"], m["name"], m["slack_id"], m["status"], groupList)
 				fmt.Fprintln(w)
 			case []map[string]any:
 				for _, m := range contents {
 					groupList := joinGroups(m["groups"].([]any))
-					fmt.Fprintf(w, "%s\t%s\t%s\t%v\t%v\t", m["id"], m["email"], m["name"], m["status"], groupList)
+					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%v\t%v\t", m["id"], m["email"], m["name"], m["slack_id"], m["status"], groupList)
 					fmt.Fprintln(w)
 				}
 			}

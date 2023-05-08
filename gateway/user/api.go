@@ -2,6 +2,7 @@ package user
 
 import (
 	"net/http"
+	"net/mail"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/runopsio/hoop/common/log"
@@ -23,9 +24,13 @@ type (
 		FindBySub(sub string) (*Context, error)
 		FindAll(context *Context) ([]User, error)
 		FindOne(context *Context, id string) (*User, error)
+		FindByEmail(ctx *Context, email string) (*User, error)
+		FindBySlackID(ctx *Org, slackID string) (*User, error)
+		FindInvitedUser(email string) (*InvitedUser, error)
 		Persist(user any) error
 		ListAllGroups(context *Context) ([]string, error)
 		CreateDefaultOrganization() error
+		GetOrgByName(name string) (*Org, error)
 	}
 
 	Analytics interface {
@@ -52,8 +57,14 @@ func (a *Handler) FindOne(c *gin.Context) {
 	ctx, _ := c.Get("context")
 	context := ctx.(*Context)
 
-	id := c.Param("id")
-	user, err := a.Service.FindOne(context, id)
+	emailOrID := c.Param("id")
+	var user *User
+	var err error
+	if isValidMailAddress(emailOrID) {
+		user, err = a.Service.FindByEmail(context, emailOrID)
+	} else {
+		user, err = a.Service.FindOne(context, emailOrID)
+	}
 	if err != nil {
 		sentry.CaptureException(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
@@ -104,6 +115,7 @@ func (a *Handler) Put(c *gin.Context) {
 	}
 
 	existingUser.Status = user.Status
+	existingUser.SlackID = user.SlackID
 	existingUser.Groups = user.Groups
 
 	err = a.Service.Persist(existingUser)
@@ -129,16 +141,28 @@ func (a *Handler) Post(c *gin.Context) {
 		return
 	}
 
-	if newUser.Email == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "email can't be empty"})
+	if !isValidMailAddress(newUser.Email) {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "invalid email"})
+		return
+	}
+
+	existingUser, err := a.Service.FindInvitedUser(newUser.Email)
+	if err != nil {
+		log.Errorf("failed fetching existing invited user, err=%v", err)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching existing invited user"})
+		return
+	}
+	if existingUser != nil {
+		c.JSON(http.StatusConflict, gin.H{"message": "user was already invited"})
 		return
 	}
 
 	newUser.Id = uuid.NewString()
 	newUser.Org = context.Org.Id
 
-	err := a.Service.Persist(&newUser)
-	if err != nil {
+	if err := a.Service.Persist(&newUser); err != nil {
+		log.Errorf("failed persisting invited user, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
@@ -167,6 +191,11 @@ func (a *Handler) UsersGroups(c *gin.Context) {
 	}
 
 	c.PureJSON(http.StatusOK, groups)
+}
+
+func isValidMailAddress(email string) bool {
+	_, err := mail.ParseAddress(email)
+	return err == nil
 }
 
 // ContextLogger do a best effort to get the context logger,

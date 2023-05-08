@@ -19,6 +19,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/runopsio/hoop/common v0.0.0-00010101000000-000000000000
 	github.com/segmentio/analytics-go/v3 v3.2.1
+	github.com/slack-go/slack v0.12.2
 	github.com/tidwall/wal v1.1.7
 	go.uber.org/zap v1.24.0
 	golang.org/x/oauth2 v0.0.0-20221006150949-b44042a4b9c1
@@ -70,6 +71,7 @@ require (
 	github.com/golang/geo v0.0.0-20210211234256-740aa86cb551 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
+	github.com/gorilla/websocket v1.4.2 // indirect
 	github.com/hoophq/pluginhooks v0.0.6 // indirect
 	github.com/imdario/mergo v0.3.13 // indirect
 	github.com/inconshreveable/mousetrap v1.0.1 // indirect

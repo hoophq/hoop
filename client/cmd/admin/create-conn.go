@@ -33,7 +33,7 @@ hoop admin create connection tcpsvc -a test-agent -t tcp -e HOST=127.0.0.1 -e PO
 `
 var createConnectionCmd = &cobra.Command{
 	Use:     "connection NAME [-- COMMAND]",
-	Aliases: []string{"conn"},
+	Aliases: []string{"conn", "connections"},
 	Example: createConnExamplesDesc,
 	Short:   "Create a connection resource.",
 	PreRun: func(cmd *cobra.Command, args []string) {

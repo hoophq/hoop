@@ -84,7 +84,7 @@ func (api *Api) StartAPI(sentryInit bool) {
 
 	api.buildRoutes(rg)
 	if err := route.Run(); err != nil {
-		panic("Failed to start HTTP server")
+		log.Fatalf("Failed to start HTTP server, err=%v", err)
 	}
 }
 

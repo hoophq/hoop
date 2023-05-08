@@ -31,7 +31,6 @@ import (
 	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc"
 
-	// "google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
@@ -58,6 +57,8 @@ type (
 		PyroscopeAuthToken   string
 		AgentSentryDSN       string
 		Analytics            user.Analytics
+
+		RegisteredPlugins []Plugin
 	}
 
 	AnalyticsService interface {
