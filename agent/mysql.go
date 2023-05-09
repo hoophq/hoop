@@ -52,9 +52,9 @@ func (a *Agent) processMySQLProtocol(pkt *pb.Packet) {
 		return
 	}
 
-	connenv, _ := connParams.EnvVars[connEnvKey].(*connEnv)
-	if connenv == nil {
-		log.Error("mysql credentials not found in memory")
+	connenv, err := parseConnectionEnvVars(connParams.EnvVars, pb.ConnectionTypeMySQL)
+	if err != nil {
+		log.Error("mysql credentials not found in memory, err=%v", err)
 		a.sendClientSessionClose(sessionID, "credentials are empty, contact the administrator")
 		return
 	}

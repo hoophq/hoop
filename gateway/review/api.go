@@ -156,7 +156,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 			log.Warnf("failed updating review to executed status, err=%v", err)
 		}
 		log.Infof("review exec response. exit_code=%v, truncated=%v, response-length=%v",
-			resp.ExitCode, resp.Truncated, len(resp.ErrorMessage()))
+			resp.GetExitCode(), resp.Truncated, len(resp.ErrorMessage()))
 
 		if resp.IsError() {
 			c.JSON(http.StatusBadRequest, &clientexec.ExecErrResponse{

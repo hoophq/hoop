@@ -183,7 +183,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 		defer close(clientResp)
 		defer client.Close()
 		select {
-		case clientResp <- client.Run([]byte(req.Script), nil):
+		case clientResp <- client.Run([]byte(req.Script), nil, req.ClientArgs...):
 		default:
 		}
 	}()
@@ -197,7 +197,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 	select {
 	case resp := <-clientResp:
 		log.Infof("runexec response. exit_code=%v, truncated=%v, response-length=%v",
-			resp.ExitCode, resp.Truncated, len(resp.ErrorMessage()))
+			resp.GetExitCode(), resp.Truncated, len(resp.ErrorMessage()))
 		if resp.IsError() {
 			c.JSON(http.StatusBadRequest, &clientexec.ExecErrResponse{
 				SessionID: &resp.SessionID,

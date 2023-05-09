@@ -50,10 +50,10 @@ func (a *Agent) processTCPWriteServer(pkt *pb.Packet) {
 		pb.SpecGatewaySessionID:   []byte(sessionID),
 		pb.SpecClientConnectionID: []byte(clientConnectionID),
 	}, pluginHooks)
-	connenv, _ := connParams.EnvVars[connEnvKey].(*connEnv)
-	if connenv == nil {
-		log.Printf("session=%s - missing connection credentials in memory", sessionID)
-		a.sendClientSessionClose(sessionID, "missing connection credentials")
+	connenv, err := parseConnectionEnvVars(connParams.EnvVars, pb.ConnectionTypeMySQL)
+	if err != nil {
+		log.Printf("session=%s - missing connection credentials in memory, err=%v", sessionID, err)
+		a.sendClientSessionClose(sessionID, "credentials are empty, contact the administrator")
 		return
 	}
 	tcpServer, err := newTCPConn(connenv.host, connenv.port)

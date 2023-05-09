@@ -17,9 +17,8 @@ import (
 )
 
 var (
-	targetToConnMigrateFlag bool
-	targetToConnGrpcURL     string
-	createConnTmpl          = `hoop admin create connection {{ .name }} --agent {{ .agent_id }} \
+	targetToConnGrpcURL string
+	createConnTmpl      = `hoop admin create connection {{ .name }} --agent {{ .agent_id }} \
 	--overwrite \
 	--type {{ .type }} \
 	{{- range $key, $val := .plugins }}
@@ -38,8 +37,8 @@ helm upgrade --install hoopagent https://hoopartifacts.s3.amazonaws.com/release/
 )
 
 func init() {
-	targetToConnection.Flags().BoolVar(&targetToConnMigrateFlag, "migrate", false, "Migrate the target")
-	targetToConnection.Flags().StringVar(&targetToConnGrpcURL, "grpc-url", "", "The url of the grpc address")
+	targetToConnection.Flags().StringVar(&targetToConnGrpcURL, "grpc-url", "", "The grpc address of hoop gateway instance")
+	targetToConnection.MarkFlagRequired("grpc-url")
 }
 
 var targetToConnection = &cobra.Command{
@@ -61,13 +60,7 @@ var targetToConnection = &cobra.Command{
 		if err != nil {
 			styles.PrintErrorAndExit("failed to fetch agent %q for target, reason=%v", tgt.agentName(), err)
 		}
-		if targetToConnMigrateFlag && agentID == "" {
-			fmt.Printf("agent %q not found for runops target, create a new one:\n", tgt.agentName())
-			fmt.Printf("hoop admin create agent %s\n", tgt.agentName())
-			os.Exit(0)
-		}
-		// cmdList := []string{}
-		// envVarMap := map[string]string{}
+
 		cmdList, envVarMap, err := parseEnvVarByType(tgt)
 		if err != nil {
 			styles.PrintErrorAndExit(err.Error())
@@ -81,98 +74,74 @@ var targetToConnection = &cobra.Command{
 			"agent_id": agentID,
 		}
 
-		if !targetToConnMigrateFlag {
-			plugins := map[string]string{"audit": ""}
-			if tgt.getSlackChannel() != "" {
-				exists, err := getPlugin(config, "slack")
-				if err != nil {
-					styles.PrintErrorAndExit("failed obtaining slack plugn, err=%v", err)
-				}
-				if !exists {
-					fmt.Println("this targets requires the plugin slack, configure it before proceeding")
-					fmt.Println("https://hoop.dev/docs/plugins/slack")
-					os.Exit(1)
-				}
-				plugins["slack"] = ""
+		plugins := map[string]string{"audit": ""}
+		if tgt.getSlackChannel() != "" {
+			pl, err := getPlugin(config, "slack")
+			if err != nil {
+				styles.PrintErrorAndExit("failed obtaining slack plugn, err=%v", err)
 			}
-			if agentID == "" {
-				fmt.Println("# agent creation/installation")
-				fmt.Printf("AGENT_TOKEN=$(hoop admin create agent %s)\n", tgt.agentName())
-				connectionBody["agent_id"] = tgt.agentName()
-				fmt.Println(execGoTemplate(helmInstallAgentTmpl, map[string]string{
-					"token":    "$AGENT_TOKEN",
-					"grpc_url": targetToConnGrpcURL,
-				}))
+			if pl == nil {
+				fmt.Println("this targets requires the plugin slack, configure it before proceeding")
+				fmt.Println("https://hoop.dev/docs/plugins/slack")
+				os.Exit(1)
 			}
-			if len(tgt.Groups) > 0 {
-				exists, err := getPlugin(config, "access_control")
-				if err != nil {
-					styles.PrintErrorAndExit("failed obtaining access_control plugin, err=%v", err)
-				}
-				if !exists {
-					fmt.Println("# enable access control plugin because the target has groups")
-					fmt.Println("hoop admin create plugin access_control\n")
-				}
-				plugins["access_control:"] = strings.Join(tgt.Groups, ";")
+			plugins["slack"] = ""
+		}
+		if agentID == "" {
+			fmt.Println("# agent creation/installation")
+			fmt.Printf("AGENT_TOKEN=$(hoop admin create agent %s)\n", tgt.agentName())
+			connectionBody["agent_id"] = tgt.agentName()
+			fmt.Println(execGoTemplate(helmInstallAgentTmpl, map[string]string{
+				"token":    "$AGENT_TOKEN",
+				"grpc_url": targetToConnGrpcURL,
+			}))
+		}
+		if len(tgt.Groups) > 0 {
+			pl, err := getPlugin(config, "access_control")
+			if err != nil {
+				styles.PrintErrorAndExit("failed obtaining access_control plugin, err=%v", err)
 			}
-			if tgt.enableReview() && tgt.ReviewGroups != "" {
-				exists, err := getPlugin(config, "review")
-				if err != nil {
-					styles.PrintErrorAndExit("failed obtaining review plugin, err=%v", err)
-				}
-				if !exists {
-					fmt.Println("# enable review plugin because the target has review groups")
-					fmt.Println("hoop admin create plugin review\n")
-				}
-				plugins["review:"] = strings.ReplaceAll(tgt.ReviewGroups, ",", ";")
+			if pl == nil {
+				fmt.Println("# enable access control plugin because the target has groups")
+				fmt.Println("hoop admin create plugin access_control\n")
 			}
-
-			if tgt.SecretProvider == "env-var" || tgt.SecretProvider == "aws" {
-				exists, err := getPlugin(config, "secretsmanager")
-				if err != nil {
-					styles.PrintErrorAndExit("failed obtaining secretsmanager plugin, err=%v", err)
-				}
-				if !exists {
-					fmt.Println("# enabling because the target secret provider is aws or env-var")
-					fmt.Println("hoop admin create plugin secretsmanager --source hoop/secretsmanager\n")
-				}
-				plugins["secretsmanager"] = ""
+			plugins["access_control:"] = strings.Join(tgt.Groups, ";")
+		}
+		if tgt.enableReview() && tgt.ReviewGroups != "" {
+			pl, err := getPlugin(config, "review")
+			if err != nil {
+				styles.PrintErrorAndExit("failed obtaining review plugin, err=%v", err)
 			}
-
-			if tgt.enableDLP() {
-				plugins["dlp"] = ""
+			if pl == nil {
+				fmt.Println("# enable review plugin because the target has review groups")
+				fmt.Println("hoop admin create plugin review\n")
 			}
-
-			connectionBody["plugins"] = plugins
-			connectionBody["command"] = strings.Join(cmdList, " ")
-			fmt.Println("# the connection")
-			fmt.Println(execGoTemplate(createConnTmpl, connectionBody))
-			return
+			plugins["review:"] = strings.ReplaceAll(tgt.ReviewGroups, ",", ";")
 		}
 
-		apir := &apiResource{suffixEndpoint: "/api/connections", conf: config, decodeTo: "raw"}
-		rawResponse, err := httpBodyRequest(apir, "POST", connectionBody)
-		if err != nil {
-			styles.PrintErrorAndExit(err.Error())
+		if tgt.SecretProvider == "env-var" || tgt.SecretProvider == "aws" {
+			pl, err := getPlugin(config, "secretsmanager")
+			if err != nil {
+				styles.PrintErrorAndExit("failed obtaining secretsmanager plugin, err=%v", err)
+			}
+			if pl == nil {
+				fmt.Println("# enabling because the target secret provider is aws or env-var")
+				fmt.Println("hoop admin create plugin secretsmanager --source hoop/secretsmanager\n")
+			}
+			plugins["secretsmanager"] = ""
 		}
-		if apir.decodeTo == "raw" {
-			jsonData, _ := rawResponse.([]byte)
-			fmt.Println(string(jsonData))
-			return
-		}
-		fmt.Printf("connection %q created\n", connectionName)
 
+		if tgt.enableDLP() {
+			plugins["dlp"] = ""
+		}
+
+		connectionBody["plugins"] = plugins
+		connectionBody["command"] = strings.Join(cmdList, " ")
+		fmt.Println("# the connection")
+		fmt.Println(execGoTemplate(createConnTmpl, connectionBody))
 	},
 }
 
-// Problems:
-// secrets are expanded by mapping only
-//   - change to expand all secret mapped
-//
-// custom commands
-// secret-path
-// groups / reviewers - OK
-// redact - OK
 func parseEnvVarByType(t *RunopsTarget) ([]string, map[string]string, error) {
 	if t.CustomCommand != "" {
 		return nil, nil, fmt.Errorf("target has custom command, not implemented yet")
@@ -204,7 +173,6 @@ func parseEnvVarByType(t *RunopsTarget) ([]string, map[string]string, error) {
 
 	switch t.Type {
 	case "mysql", "mysql-csv":
-		// TODO: user mysql delimiter
 		envVar["HOST"] = secretKeyFn("MYSQL_HOST")
 		envVar["USER"] = secretKeyFn("MYSQL_USER")
 		envVar["MYSQL_PWD"] = secretKeyFn("MYSQL_PASS")
@@ -218,7 +186,6 @@ func parseEnvVarByType(t *RunopsTarget) ([]string, map[string]string, error) {
 			"-D", "'$DB'",
 			"--comments"}
 	case "postgres", "postgres-csv":
-		// TODO: user psql delimiter option
 		// TODO: add ssl options
 		envVar["HOST"] = secretKeyFn("PG_HOST")
 		envVar["USER"] = secretKeyFn("PG_USER")
@@ -226,7 +193,7 @@ func parseEnvVarByType(t *RunopsTarget) ([]string, map[string]string, error) {
 		envVar["DB"] = secretKeyFn("PG_DB")
 		envVar["PORT"] = "5432"
 		cmdList = []string{
-			"psql", "-A", "-F\t",
+			"psql",
 			"--port", "'$PORT'",
 			"-h", "'$HOST'",
 			"-U", "'$USER'",
@@ -244,15 +211,15 @@ func parseEnvVarByType(t *RunopsTarget) ([]string, map[string]string, error) {
 			"-U", "'$MSSQL_USER'",
 			"-P", "'$MSSQL_PASS'",
 			"-d", "'$MSSQL_DB'"}
-	case "python":
-	case "mongodb":
-	// all env-var types
-	case "k8s", "k8s-exec":
-	// used mostly by enjoei
-	case "rails-console-ecs":
-	// used by transfeera and dock
-	case "node":
-	case "bash": // TODO
+	// case "python":
+	// case "mongodb":
+	// // all env-var types
+	// case "k8s", "k8s-exec":
+	// // used mostly by enjoei
+	// case "rails-console-ecs":
+	// // used by transfeera and dock
+	// case "node":
+	// case "bash":
 
 	default:
 		// elixir, ecs-exec, heroku, k8s-apply, rails-console-k8s, rails-console
