@@ -103,7 +103,8 @@ var targetToConnection = &cobra.Command{
 			}
 			if pl == nil {
 				fmt.Println("# enable access control plugin because the target has groups")
-				fmt.Println("hoop admin create plugin access_control\n")
+				fmt.Println("hoop admin create plugin access_control")
+				fmt.Println()
 			}
 			plugins["access_control:"] = strings.Join(tgt.Groups, ";")
 		}
@@ -114,7 +115,8 @@ var targetToConnection = &cobra.Command{
 			}
 			if pl == nil {
 				fmt.Println("# enable review plugin because the target has review groups")
-				fmt.Println("hoop admin create plugin review\n")
+				fmt.Println("hoop admin create plugin review")
+				fmt.Println()
 			}
 			plugins["review:"] = strings.ReplaceAll(tgt.ReviewGroups, ",", ";")
 		}
@@ -126,7 +128,8 @@ var targetToConnection = &cobra.Command{
 			}
 			if pl == nil {
 				fmt.Println("# enabling because the target secret provider is aws or env-var")
-				fmt.Println("hoop admin create plugin secretsmanager --source hoop/secretsmanager\n")
+				fmt.Println("hoop admin create plugin secretsmanager --source hoop/secretsmanager")
+				fmt.Println()
 			}
 			plugins["secretsmanager"] = ""
 		}
