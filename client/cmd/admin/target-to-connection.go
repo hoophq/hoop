@@ -179,7 +179,7 @@ func parseEnvVarByType(t *RunopsTarget) ([]string, map[string]string, error) {
 		envVar["DB"] = secretKeyFn("MYSQL_DB")
 		envVar["PORT"] = "3306"
 		cmdList = []string{
-			"mysql",
+			"mysql", "-A",
 			"--port", "'$PORT'",
 			"-h", "'$HOST'",
 			"-u", "'$USER'",

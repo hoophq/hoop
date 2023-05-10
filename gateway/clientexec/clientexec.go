@@ -147,13 +147,13 @@ func (c *clientExec) Run(inputPayload []byte, clientEnvVars map[string]string, c
 			return newError(err)
 		}
 		openSessionSpec[pb.SpecClientExecEnvVar] = encEnvVars
-		if len(clientArgs) > 0 {
-			encClientArgs, err := pb.GobEncode(clientArgs)
-			if err != nil {
-				return newError(err)
-			}
-			openSessionSpec[pb.SpecClientExecArgsKey] = encClientArgs
+	}
+	if len(clientArgs) > 0 {
+		encClientArgs, err := pb.GobEncode(clientArgs)
+		if err != nil {
+			return newError(err)
 		}
+		openSessionSpec[pb.SpecClientExecArgsKey] = encClientArgs
 	}
 	resp := c.run(inputPayload, openSessionSpec)
 	resp.SessionID = c.sessionID
