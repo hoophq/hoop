@@ -147,13 +147,7 @@ func parseEnvVarByType(t *RunopsTarget) ([]string, map[string]string, error) {
 		return nil, nil, fmt.Errorf("target has custom command, not implemented yet")
 	}
 	envVar := map[string]string{}
-	cmdList := []string{}
-	// dock: postgres, mysql, sql-server, python, bash, k8s
-	// ebanx: postgres, mysql, bash, python, k8s
-	// rdstation: postgres-csv, postgres, mongodb, mysql
-	// Magnetis: postgres, k8s-exec, mysql, python, rails-console
-	// enjoei: rails-console-ecs, mysql
-
+	var cmdList []string
 	secretKeyFn := func(key string) string {
 		switch t.SecretProvider {
 		case "aws":
