@@ -15,6 +15,7 @@ func init() {
 	MainCmd.AddCommand(getCmd)
 	MainCmd.AddCommand(createCmd)
 	MainCmd.AddCommand(gatewayInfoCmd)
+	MainCmd.AddCommand(targetToConnection)
 }
 
 var hoopVersionStr = version.Get().Version

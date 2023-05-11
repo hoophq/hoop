@@ -5,14 +5,12 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/runopsio/hoop/common/log"
-
 	"github.com/hoophq/pluginhooks"
-	pgtypes "github.com/runopsio/hoop/common/pg"
-
 	"github.com/runopsio/hoop/agent/dlp"
 	"github.com/runopsio/hoop/agent/pg"
 	"github.com/runopsio/hoop/agent/pg/middlewares"
+	"github.com/runopsio/hoop/common/log"
+	pgtypes "github.com/runopsio/hoop/common/pg"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 )
@@ -59,11 +57,11 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 		return
 	}
 
-	connenv, _ := connParams.EnvVars[connEnvKey].(*connEnv)
-	if connenv == nil {
-		log.Println("postgres credentials not found in memory")
+	connenv, err := parseConnectionEnvVars(connParams.EnvVars, pb.ConnectionTypePostgres)
+	if err != nil {
+		log.Warnf("postgres credentials not found in memory, err=%v", err)
 		a.writePGClientErr(sessionID, swPgClient,
-			"credentials is empty, contact the administrator")
+			"credentials are empty, contact the administrator")
 		return
 	}
 

@@ -42,11 +42,11 @@ var createPluginCmd = &cobra.Command{
 		method := "POST"
 		actionName := "created"
 		if pluginOverwriteFlag {
-			exists, err := getPlugin(clientconfig.GetClientConfigOrDie(), args[1])
+			pl, err := getPlugin(clientconfig.GetClientConfigOrDie(), args[1])
 			if err != nil {
 				styles.PrintErrorAndExit("failed retrieving plugin %q, %v", args[1], err)
 			}
-			if exists {
+			if pl != nil {
 				log.Debugf("plugin %v exists, update it", args[1])
 				actionName = "updated"
 				method = "PUT"
@@ -101,7 +101,7 @@ func putConfig(conf *clientconfig.Config, pluginName string, envVars map[string]
 		decodeTo:       "object"}, "PUT", envVars)
 }
 
-func getPlugin(conf *clientconfig.Config, pluginName string) (bool, error) {
+func getPlugin(conf *clientconfig.Config, pluginName string) (map[string]any, error) {
 	resp, err := httpRequest(&apiResource{
 		suffixEndpoint: fmt.Sprintf("/api/plugins/%v", pluginName),
 		method:         "GET",
@@ -109,14 +109,15 @@ func getPlugin(conf *clientconfig.Config, pluginName string) (bool, error) {
 		decodeTo:       "object"})
 	if err != nil {
 		if strings.Contains(err.Error(), "status=404") {
-			return false, nil
+			return nil, nil
 		}
-		return false, err
+		return nil, err
 	}
-	if _, ok := resp.(map[string]any); !ok {
-		return false, fmt.Errorf("failed decoding response to object")
+	data, ok := resp.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("failed decoding response to object")
 	}
-	return true, nil
+	return data, nil
 }
 
 func parsePluginConfig() (map[string]any, error) {
@@ -169,7 +170,7 @@ func parsePluginConnections() ([]map[string]any, error) {
 		connectionConfig = append(connectionConfig, map[string]any{
 			"name":   connectionName,
 			"config": connConfig,
-			"groups": nil,
+			"groups": nil, // this is unused in the backend for now
 		})
 	}
 	return connectionConfig, nil

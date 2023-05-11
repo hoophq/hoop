@@ -78,10 +78,9 @@ func (s *Service) FindAll(context *user.Context) ([]BaseConnection, error) {
 	allowedConnections := make([]BaseConnection, 0)
 	for _, conn := range all {
 		// if the plugin does not contain the connection,
-		// then it is allowed to be seen by everyone
+		// it should deny by default.
 		result, ok := mappedConfig[conn.Name]
 		if !ok {
-			allowedConnections = append(allowedConnections, conn)
 			continue
 		}
 
@@ -145,11 +144,10 @@ func (s *Service) FindOne(context *user.Context, name string) (*Connection, erro
 					return result, nil
 				}
 			}
-			return nil, nil
 		}
 	}
 
-	return result, nil
+	return nil, nil
 }
 
 func (s *Service) bindAuditPlugin(context *user.Context, conn *Connection) {

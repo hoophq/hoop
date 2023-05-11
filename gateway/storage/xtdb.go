@@ -148,12 +148,18 @@ func (s *Storage) SubmitEvictTx(xtIDs ...string) (*TxResponse, error) {
 	var txResponse TxResponse
 	if resp.StatusCode == http.StatusAccepted {
 		if err := edn.NewDecoder(resp.Body).Decode(&txResponse); err != nil {
-			log.Printf("error decoding transaction response, err=%v", err)
+			log.Infof("error decoding transaction response, err=%v", err)
+		}
+		// make a best-effort to wait the transaction to sync
+		if txResponse.TxID > 0 {
+			if err := s.AwaitTx(txResponse.TxID); err != nil {
+				log.Warnf(err.Error())
+			}
 		}
 		return &txResponse, nil
 	} else {
 		data, _ := io.ReadAll(resp.Body)
-		log.Printf("unknown status code=%v, body=%v", resp.StatusCode, string(data))
+		log.Infof("unknown status code=%v, body=%v", resp.StatusCode, string(data))
 	}
 	return nil, fmt.Errorf("received unknown status code=%v", resp.StatusCode)
 }

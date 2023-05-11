@@ -13,6 +13,7 @@ import (
 
 var (
 	connAgentFlag     string
+	connPuginFlag     []string
 	connTypeFlag      string
 	connSecretFlag    []string
 	connOverwriteFlag bool
@@ -21,6 +22,7 @@ var (
 func init() {
 	createConnectionCmd.Flags().StringVarP(&connAgentFlag, "agent", "a", "", "Name of the agent")
 	createConnectionCmd.Flags().StringVarP(&connTypeFlag, "type", "t", "command-line", "Type of the connection. One off: (command-line,postgres,mysql,tcp)")
+	createConnectionCmd.Flags().StringSliceVarP(&connPuginFlag, "plugin", "p", nil, "Plugins that will be enabled for this connection in the form of: <plugin>:<config01>;<config02>,...")
 	createConnectionCmd.Flags().BoolVar(&connOverwriteFlag, "overwrite", false, "It will create or update it if a connection already exists")
 	createConnectionCmd.Flags().StringSliceVarP(&connSecretFlag, "env", "e", nil, "The environment variables of the connection")
 	createConnectionCmd.MarkFlagRequired("agent")
@@ -46,8 +48,9 @@ var createConnectionCmd = &cobra.Command{
 		resourceArgs := []string{"connection", args[0]}
 		actionName := "created"
 		method := "POST"
+		config := clientconfig.GetClientConfigOrDie()
 		if connOverwriteFlag {
-			exists, err := getConnection(clientconfig.GetClientConfigOrDie(), args[0])
+			exists, err := getConnection(config, args[0])
 			if err != nil {
 				styles.PrintErrorAndExit("failed retrieving connection %v, %v", args[0], err)
 			}
@@ -96,17 +99,42 @@ var createConnectionCmd = &cobra.Command{
 			"secret":   envVar,
 			"agent_id": agentID,
 		}
+		pluginList, err := parseConnectionPlugins(config, args[0])
+		if err != nil {
+			styles.PrintErrorAndExit(err.Error())
+		}
 
 		resp, err := httpBodyRequest(apir, method, connectionBody)
 		if err != nil {
 			styles.PrintErrorAndExit(err.Error())
 		}
-		if apir.decodeTo == "raw" {
+
+		if apir.decodeTo == "raw" && len(connPuginFlag) == 0 {
 			jsonData, _ := resp.([]byte)
 			fmt.Println(string(jsonData))
 			return
 		}
+
 		fmt.Printf("connection %v %v\n", apir.name, actionName)
+
+		var plugins []string
+		for _, pluginData := range pluginList {
+			_, err := httpBodyRequest(&apiResource{
+				suffixEndpoint: fmt.Sprintf("/api/plugins/%v", pluginData["name"]),
+				method:         "PUT",
+				conf:           config,
+				decodeTo:       "object"}, "PUT", pluginData)
+			if err != nil {
+				if len(plugins) > 0 {
+					fmt.Printf("plugin(s) %v updated\n", plugins)
+				}
+				styles.PrintErrorAndExit(err.Error())
+			}
+			plugins = append(plugins, fmt.Sprintf("%v", pluginData["name"]))
+		}
+		if len(plugins) > 0 {
+			fmt.Printf("plugin(s) %v updated\n", plugins)
+		}
 	},
 }
 
@@ -190,4 +218,56 @@ func validateTcpEnvs(e map[string]string) error {
 		return fmt.Errorf("missing required envs [HOST,PORT] for %v type", connTypeFlag)
 	}
 	return nil
+}
+
+func parseConnectionPlugins(conf *clientconfig.Config, connectionName string) ([]map[string]any, error) {
+	pluginList := []map[string]any{}
+	for _, pluginOption := range connPuginFlag {
+		pluginName, configStr, found := strings.Cut(pluginOption, ":")
+		if !found && pluginName == "" {
+			return nil, fmt.Errorf(`wrong format for plugin %q, expected "<plugin>:<config01>;config02>;..."`,
+				pluginOption)
+		}
+		pluginName = strings.TrimSpace(pluginName)
+		var connConfig []string
+		for _, c := range strings.Split(configStr, ";") {
+			c = strings.TrimSpace(c)
+			if c == "" {
+				continue
+			}
+			connConfig = append(connConfig, c)
+		}
+		pl, err := getPlugin(conf, pluginName)
+		if err != nil {
+			return nil, err
+		}
+		if pl == nil {
+			return nil, fmt.Errorf("plugin %s not found", pluginName)
+		}
+		pluginConnections, ok := pl["connections"].([]any)
+		if !ok {
+			return nil, fmt.Errorf("connections attribute with wrong structure [%s/%T]", pluginName, pl["connections"])
+		}
+		hasConnection := false
+		for _, connObj := range pluginConnections {
+			conn, ok := connObj.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("plugin connections with wrong structure [%s/%T]", pluginName, connObj)
+			}
+			if conn["name"] == connectionName {
+				conn["config"] = connConfig
+				hasConnection = true
+				break
+			}
+		}
+		if !hasConnection {
+			pluginConnections = append(pluginConnections, map[string]any{
+				"name":   connectionName,
+				"config": connConfig,
+			})
+		}
+		pl["connections"] = pluginConnections
+		pluginList = append(pluginList, pl)
+	}
+	return pluginList, nil
 }
