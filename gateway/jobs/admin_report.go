@@ -31,7 +31,7 @@ type (
 
 func InitReportScheduler(s *Scheduler) {
 	scheduler := gocron.NewScheduler(time.UTC)
-	scheduler.Every(1).Day().At("20:00").Do(func() {
+	scheduler.Every(1).Monday().At("05:00").Do(func() {
 		s.sendReports()
 	})
 	scheduler.StartAsync()
