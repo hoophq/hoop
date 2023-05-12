@@ -2,8 +2,11 @@ package review
 
 import (
 	"fmt"
+	"log"
+	"strings"
 	"time"
 
+	"github.com/runopsio/hoop/gateway/session"
 	st "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/user"
 	"olympos.io/encoding/edn"
@@ -148,6 +151,50 @@ func (s *Storage) FindById(ctx *user.Context, id string) (*Review, error) {
 	}
 
 	return reviews[0], nil
+}
+
+func (s *Storage) queryDecoder(query string, into any, args ...any) error {
+	qs := fmt.Sprintf(query, args...)
+	httpBody, err := s.QueryRaw([]byte(qs))
+	if err != nil {
+		return err
+	}
+	if strings.Contains(string(httpBody), ":xtdb.error") {
+		return fmt.Errorf(string(httpBody))
+	}
+	return edn.Unmarshal(httpBody, into)
+}
+
+func (s *Storage) PersistSessionAsReady(sess *session.Session) (*st.TxResponse, error) {
+	sess.Status = "ready"
+	return s.SubmitPutTx(sess)
+}
+
+func (s *Storage) FindSessionBySessionId(sessionID string) (*session.Session, error) {
+	log.Printf("sessionID %+v", sessionID)
+	var resultItems [][]session.Session
+	err := s.queryDecoder(`
+	{:query {
+		:find [(pull ?s [*])]
+		:in [session-id]
+		:where [[?s :xt/id session-id]]}
+	:in-args [%q]}`, &resultItems, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]session.Session, 0)
+	for _, i := range resultItems {
+		items = append(items, i[0])
+	}
+	if len(items) > 0 {
+		session := items[0]
+		nonIndexedStreams := session.NonIndexedStream["stream"]
+		for _, i := range nonIndexedStreams {
+			session.EventStream = append(session.EventStream, i)
+		}
+		return &session, nil
+	}
+	return nil, nil
 }
 
 func (s *Storage) FindBySessionID(sessionID string) (*Review, error) {

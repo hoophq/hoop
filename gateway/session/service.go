@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	st "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/user"
 	"olympos.io/encoding/edn"
@@ -15,6 +16,40 @@ type (
 		Storage storage
 	}
 
+	Review struct {
+		Id             string        `json:"id"                      edn:"xt/id"`
+		Type           string        `json:"type"                    edn:"review/type"`
+		Session        string        `json:"session"                 edn:"review/session"`
+		Input          string        `json:"input"                   edn:"review/input"`
+		AccessDuration time.Duration `json:"access_duration"         edn:"review/access-duration"`
+		Status         Status        `json:"status"                  edn:"review/status"`
+		RevokeAt       *time.Time    `json:"revoke_at"               edn:"review/revoke-at"`
+		CreatedBy      Owner         `json:"created_by"              edn:"review/created-by"`
+		Connection     Connection    `json:"connection"              edn:"review/connection"`
+		ReviewGroups   []Group       `json:"review_groups,omitempty" edn:"review/review-groups"`
+	}
+
+	Owner struct {
+		Id    string `json:"id,omitempty"   edn:"xt/id"`
+		Name  string `json:"name,omitempty" edn:"user/name"`
+		Email string `json:"email"          edn:"user/email"`
+	}
+
+	Connection struct {
+		Id   string `json:"id,omitempty" edn:"xt/id"`
+		Name string `json:"name"         edn:"connection/name"`
+	}
+
+	Group struct {
+		Id         string  `json:"id"          edn:"xt/id"`
+		Group      string  `json:"group"       edn:"review-group/group"`
+		Status     Status  `json:"status"      edn:"review-group/status"`
+		ReviewedBy *Owner  `json:"reviewed_by" edn:"review-group/reviewed-by"`
+		ReviewDate *string `json:"review_date" edn:"review-group/review_date"`
+	}
+
+	Status string
+
 	storage interface {
 		Persist(ctx *user.Context, sess *Session) (*st.TxResponse, error)
 		PersistStatus(sess *SessionStatus) (*st.TxResponse, error)
@@ -24,6 +59,8 @@ type (
 		FindOne(ctx *user.Context, name string) (*Session, error)
 		ListAllSessionsID(startDate time.Time) ([]*Session, error)
 		NewGenericStorageWriter() *GenericStorageWriter
+		FindReviewBySessionID(sessionID string) (*Review, error)
+		PersistReview(ctx *user.Context, review *Review) (int64, error)
 	}
 
 	// [time.Time, string, []byte]
@@ -38,6 +75,7 @@ type (
 		Type        string      `json:"type"         edn:"session/type"`
 		Connection  string      `json:"connection"   edn:"session/connection"`
 		Verb        string      `json:"verb"         edn:"session/verb"`
+		Status      any         `json:"status"       edn:"session/status"`
 		DlpCount    int64       `json:"dlp_count"    edn:"session/dlp-count"`
 		EventStream EventStream `json:"event_stream" edn:"session/event-stream"`
 		// Must NOT index streams (all top keys are indexed in xtdb)
@@ -95,6 +133,10 @@ func NewNonIndexedEventStreamList(eventStartDate time.Time, eventStreams ...Even
 	}, nil
 }
 
+func (s *Service) FindReviewBySessionID(sessionID string) (*Review, error) {
+	return s.Storage.FindReviewBySessionID(sessionID)
+}
+
 func (s *Service) FindOne(context *user.Context, name string) (*Session, error) {
 	return s.Storage.FindOne(context, name)
 }
@@ -116,4 +158,21 @@ func (s *Service) PersistStatus(status *SessionStatus) (*st.TxResponse, error) {
 
 func (s *Service) ValidateSessionID(sessionID string) error {
 	return s.Storage.ValidateSessionID(sessionID)
+}
+
+func (s *Service) PersistReview(context *user.Context, review *Review) error {
+	if review.Id == "" {
+		review.Id = uuid.NewString()
+	}
+
+	for i, r := range review.ReviewGroups {
+		if r.Id == "" {
+			review.ReviewGroups[i].Id = uuid.NewString()
+		}
+	}
+
+	if _, err := s.Storage.PersistReview(context, review); err != nil {
+		return err
+	}
+	return nil
 }

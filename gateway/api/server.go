@@ -233,6 +233,23 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest,
 		api.SessionHandler.FindAll)
 
+	route.GET("/sessions/:session_id",
+		api.Authenticate,
+		api.TrackRequest,
+		api.SessionHandler.FindOne)
+	route.GET("/sessions/:session_id/status",
+		api.Authenticate,
+		api.TrackRequest,
+		api.SessionHandler.StatusHistory)
+	route.GET("/sessions",
+		api.Authenticate,
+		api.TrackRequest,
+		api.SessionHandler.FindAll)
+	route.POST("/sessions/:session_id/exec",
+		api.Authenticate,
+		api.TrackRequest,
+		api.SessionHandler.RunExec)
+
 	route.POST("/plugins/indexer/sessions/search",
 		api.Authenticate,
 		api.TrackRequest,

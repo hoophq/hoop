@@ -28,6 +28,7 @@ type (
 		UserEmail      string     `json:"user_email"`
 		ConnectionName string     `json:"connection_name"`
 		ConnectionType string     `json:"connection_type"`
+		Status         string     `json:"status"`
 		Verb           string     `json:"verb"`
 		StartDate      *time.Time `json:"start_date"`
 	}
@@ -115,6 +116,7 @@ func (p *auditPlugin) writeOnConnect(pctx plugintypes.Context) error {
 		ConnectionName: pctx.ConnectionName,
 		ConnectionType: pctx.ConnectionType,
 		Verb:           pctx.ClientVerb,
+		Status:         pctx.ParamsData.GetString("status"),
 		StartDate:      func() *time.Time { d := time.Now().UTC(); return &d }(),
 	})
 	if err != nil {
@@ -208,6 +210,7 @@ func (p *auditPlugin) writeOnClose(sessionID string) error {
 			"event_stream": eventStreamList,
 			"event_size":   eventSize,
 			"start_date":   wh.StartDate,
+			"status":       "done",
 			"end_time":     &endDate,
 			"dlp_count":    dlpCounter,
 		},
