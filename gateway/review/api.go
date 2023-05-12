@@ -22,27 +22,39 @@ type (
 		FindAll(context *user.Context) ([]Review, error)
 		FindOne(context *user.Context, id string) (*Review, error)
 		Review(context *user.Context, reviewID string, status Status) (*Review, error)
+		Revoke(ctx *user.Context, reviewID string) (*Review, error)
 		Persist(context *user.Context, review *Review) error
 	}
 )
 
 func (h *Handler) Put(c *gin.Context) {
-	context := user.ContextUser(c)
+	ctx := user.ContextUser(c)
 	log := user.ContextLogger(c)
 
 	reviewID := c.Param("id")
 	var req map[string]string
-	if err := c.ShouldBindJSON(&req); err != nil {
+	err := c.ShouldBindJSON(&req)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
+
+	var review *Review
 	status := Status(strings.ToUpper(string(req["status"])))
-	if !(status == StatusApproved || status == StatusRejected) {
+	switch status {
+	case StatusApproved, StatusRejected:
+		review, err = h.Service.Review(ctx, reviewID, status)
+	case StatusRevoked:
+		if !ctx.User.IsAdmin() {
+			c.AbortWithStatus(http.StatusForbidden)
+			return
+		}
+		review, err = h.Service.Revoke(ctx, reviewID)
+	default:
 		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid status"})
 		return
 	}
 
-	review, err := h.Service.Review(context, reviewID, status)
 	switch err {
 	case ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})

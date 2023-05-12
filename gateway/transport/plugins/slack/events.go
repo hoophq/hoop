@@ -7,7 +7,6 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/review"
-	"github.com/runopsio/hoop/gateway/review/jit"
 	slackservice "github.com/runopsio/hoop/gateway/slack"
 	"github.com/runopsio/hoop/gateway/user"
 )
@@ -55,16 +54,16 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 	log.With("session", sid).Infof("performing review, kind=%v, id=%v, status=%s, group=%v",
 		ev.msg.EventKind, ev.msg.ID, ev.msg.Status, ev.msg.GroupName)
 	switch ev.msg.EventKind {
-	case slackservice.EventKindReview:
+	case slackservice.EventKindOneTime:
 		status := review.StatusRejected
 		if ev.msg.Status == "approved" {
 			status = review.StatusApproved
 		}
 		p.performExecReview(ev, userContext, status)
 	case slackservice.EventKindJit:
-		status := jit.StatusRejected
+		status := review.StatusRejected
 		if ev.msg.Status == "approved" {
-			status = jit.StatusApproved
+			status = review.StatusApproved
 		}
 		p.performJitReview(ev, userContext, status)
 	default:
@@ -97,19 +96,18 @@ func (p *slackPlugin) performExecReview(ev *event, ctx *user.Context, status rev
 	}
 }
 
-func (p *slackPlugin) performJitReview(ev *event, ctx *user.Context, status jit.Status) {
-	j, err := p.jitSvc.Review(ctx, ev.msg.ID, status)
+func (p *slackPlugin) performJitReview(ev *event, ctx *user.Context, status review.Status) {
+	j, err := p.reviewSvc.Review(ctx, ev.msg.ID, status)
 	sid := ev.msg.SessionID
 	switch err {
-	case jit.ErrWrongState, jit.ErrNotFound:
+	case review.ErrWrongState, review.ErrNotFound:
 		status := "not-found"
 		if j != nil {
 			status = strings.ToLower(string(j.Status))
 		}
 		err = ev.ss.UpdateMessageStatus(ev.msg, fmt.Sprintf("• _jit has already been `%s`_", status))
 	case nil:
-		// TODO: check if the error came from gRPC transport!
-		isApproved := j.Status == jit.StatusApproved
+		isApproved := j.Status == review.StatusApproved
 		err = ev.ss.UpdateMessage(ev.msg, isApproved)
 		log.With("session", sid).Infof("jit review id=%s, status=%v", ev.msg.ID, j.Status)
 	default:

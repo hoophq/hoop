@@ -1,23 +1,27 @@
 package plugin
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 type (
 	Config struct {
-		SessionId      string
-		ConnectionId   string
-		ConnectionName string
-		ConnectionType string
-		Org            string
-		UserID         string
-		UserName       string
-		UserEmail      string
-		UserGroups     []string
-		Verb           string
-		Hostname       string
-		MachineId      string
-		KernelVersion  string
-		ParamsData     map[string]any
+		SessionId         string
+		ConnectionId      string
+		ConnectionName    string
+		ConnectionType    string
+		ConnectionContext context.Context
+		Org               string
+		UserID            string
+		UserName          string
+		UserEmail         string
+		UserGroups        []string
+		Verb              string
+		Hostname          string
+		MachineId         string
+		KernelVersion     string
+		ParamsData        map[string]any
 	}
 )
 

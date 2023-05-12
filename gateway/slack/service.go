@@ -24,7 +24,7 @@ type SlackService struct {
 const (
 	reviewIDMetadataKey  = "review_id"
 	sessionIDMetadataKey = "session_id"
-	EventKindReview      = "review"
+	EventKindOneTime     = "onetime"
 	EventKindJit         = "jit"
 )
 
@@ -64,7 +64,7 @@ type MessageReviewRequest struct {
 	UserGroups     []string
 	ApprovalGroups []string
 	Connection     string
-	Type           string
+	ConnectionType string
 	Script         string
 	SessionTime    *time.Duration
 	WebappURL      string
@@ -117,7 +117,7 @@ func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) error {
 	// connection metadata
 	metaSection3 := slack.NewSectionBlock(nil, []*slack.TextBlockObject{
 		{Type: slack.MarkdownType, Text: fmt.Sprintf("connection\n*%s*", msg.Connection)},
-		{Type: slack.MarkdownType, Text: fmt.Sprintf("type\n*%s*", msg.Type)},
+		{Type: slack.MarkdownType, Text: fmt.Sprintf("type\n*%s*", msg.ConnectionType)},
 	}, nil)
 
 	// script at the maximum slack allowed size
@@ -173,7 +173,7 @@ func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) error {
 	}
 	ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancelFn()
-	eventKind := EventKindReview
+	eventKind := EventKindOneTime
 	if msg.SessionTime != nil {
 		eventKind = EventKindJit
 	}

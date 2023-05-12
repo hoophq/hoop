@@ -162,7 +162,8 @@ func (s *Server) listenAgentMessages(config *plugin.Config, ag *agent.Agent, str
 		agentSessionKeyID := fmt.Sprintf("%s:%s", ag.Id, sessionID)
 		config.ParamsData[agentSessionKeyID] = nil
 		log.With("session", sessionID).Debugf("receive agent packet type [%s]", pkt.Type)
-		if err := s.pluginOnReceive(*config, pkt); err != nil {
+		if err := s.pluginOnReceive(*config, pkt, func(err error) error { return err }); err != nil {
+			// TODO: add plugin name
 			log.Warnf("plugin reject packet, err=%v", err)
 			sentry.CaptureException(err)
 			delete(config.ParamsData, agentSessionKeyID)

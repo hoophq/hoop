@@ -71,7 +71,7 @@ func (s *SlackService) processEvents(respCh chan *MessageReviewResponse) {
 		case socketmode.EventTypeHello:
 			log.Info("socket live, received ping from slack")
 		case socketmode.EventTypeIncomingError:
-			eventErr, _ := evt.Data.(slack.IncomingEventError)
+			eventErr, _ := evt.Data.(*slack.IncomingEventError)
 			log.Warnf("received incoming_error from slack, err=%v", eventErr)
 		default:
 			log.Errorf("event not implemented %s", evt.Type)

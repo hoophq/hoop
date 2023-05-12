@@ -1,9 +1,10 @@
 package analytics
 
 import (
+	"os"
+
 	"github.com/runopsio/hoop/gateway/user"
 	"github.com/segmentio/analytics-go/v3"
-	"os"
 )
 
 type (
@@ -23,7 +24,7 @@ func New() *Segment {
 }
 
 func (s *Segment) Identify(ctx *user.Context) {
-	if s.Client == nil {
+	if s.Client == nil || ctx == nil || ctx.User == nil || ctx.Org == nil {
 		return
 	}
 

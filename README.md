@@ -2,7 +2,7 @@
 
 Connect private infra-stractures without the need of a VPN.
 
-- [Public Documentation](https://docs.runops.io/docs)
+- [Public Documentation](https://hoop.dev/docs)
 
 ## Development
 

@@ -12,6 +12,7 @@ import (
 	"github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/review/jit"
 	slackservice "github.com/runopsio/hoop/gateway/slack"
+	transporterr "github.com/runopsio/hoop/gateway/transport/errors"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
@@ -108,62 +109,48 @@ func (p *slackPlugin) OnConnect(config plugin.Config) error {
 	return nil
 }
 
-func (p *slackPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *pb.Packet) error {
+func (p *slackPlugin) OnReceive(pconf plugin.Config, config []string, pkt *pb.Packet) error {
 	if pkt.Type != pbagent.SessionOpen {
 		return nil
 	}
+	log.Infof("executing slack on-receive ...")
 
 	sreq := &slackservice.MessageReviewRequest{
-		Name:       pluginConfig.UserName,
-		Email:      pluginConfig.UserEmail,
-		Connection: pluginConfig.ConnectionName,
-		Type:       pluginConfig.ConnectionType,
-		SessionID:  pluginConfig.SessionId,
-		UserGroups: pluginConfig.UserGroups,
+		Name:           pconf.UserName,
+		Email:          pconf.UserEmail,
+		Connection:     pconf.ConnectionName,
+		ConnectionType: pconf.ConnectionType,
+		SessionID:      pconf.SessionId,
+		UserGroups:     pconf.UserGroups,
 	}
 
-	if reviewEnc, hasReview := pkt.Spec[pb.SpecReviewDataKey]; hasReview {
-		var rev review.Review
-		if err := pb.GobDecodeInto(reviewEnc, &rev); err != nil {
-			log.With("session", pluginConfig.SessionId).Errorf("failed to decode review, err=%v", err)
-			return nil
-		}
+	rev, err := p.reviewSvc.FindBySessionID(pconf.SessionId)
+	if err != nil {
+		return transporterr.Internal("internal error, failed fetching review", err)
+	}
+	if rev != nil {
 		if rev.Status != review.StatusPending {
 			return nil
 		}
 		sreq.ID = rev.Id
 		sreq.WebappURL = fmt.Sprintf("%s/plugins/reviews/%s", p.apiURL, rev.Id)
 		sreq.ApprovalGroups = parseGroups(rev.ReviewGroups)
+		if rev.AccessDuration > 0 {
+			sreq.SessionTime = &rev.AccessDuration
+		}
 		sreq.Script = truncateString(rev.Input)
 	}
 
-	if status, hasJit := pkt.Spec[pb.SpecJitStatus]; hasJit && sreq.ID == "" {
-		if jit.Status(status) != jit.StatusPending {
-			return nil
-		}
-		j, err := p.jitSvc.FindBySessionID(pluginConfig.SessionId)
-		if err != nil {
-			log.With("session", pluginConfig.SessionId).Errorf("failed obtaining jit, err=%v", err)
-			return nil
-		}
-		if j == nil {
-			return nil
-		}
-		sreq.ID = j.Id
-		sreq.WebappURL = fmt.Sprintf("%s/plugins/jits/%s", p.apiURL, j.Id)
-		sreq.ApprovalGroups = parseJitGroups(j.JitGroups)
-		sreq.SessionTime = &j.Time
-	}
-
 	if sreq.WebappURL == "" || len(sreq.ApprovalGroups) == 0 || len(sreq.ApprovalGroups) >= slackMaxButtons {
+		log.With("session", pconf.SessionId).Infof("no review message to process")
 		return nil
 	}
 
-	if ss := getSlackServiceInstance(pluginConfig.Org); ss != nil {
-		log.With("session", pluginConfig.SessionId).Infof("sending slack review message, conn=%v, jit=%v",
+	if ss := getSlackServiceInstance(pconf.Org); ss != nil {
+		log.With("session", pconf.SessionId).Infof("sending slack review message, conn=%v, jit=%v",
 			sreq.Connection, sreq.SessionTime != nil)
 		if err := ss.SendMessageReview(sreq); err != nil {
-			log.With("session", pluginConfig.SessionId).Errorf("failed sending slack review message, reason=%v", err)
+			log.With("session", pconf.SessionId).Errorf("failed sending slack review message, reason=%v", err)
 		}
 	}
 	return nil
@@ -198,14 +185,6 @@ func parseSlackConfig(envVarsObj any) (*slackConfig, error) {
 }
 
 func parseGroups(reviewGroups []review.Group) []string {
-	groups := make([]string, 0)
-	for _, g := range reviewGroups {
-		groups = append(groups, g.Group)
-	}
-	return groups
-}
-
-func parseJitGroups(reviewGroups []jit.Group) []string {
 	groups := make([]string, 0)
 	for _, g := range reviewGroups {
 		groups = append(groups, g.Group)
