@@ -65,7 +65,7 @@ func (a *Agent) executeRPCOnSessionOpen(
 	resp, err := client.RPCOnSessionOpen(sp)
 	if err != nil {
 		err = fmt.Errorf("plugin %s has rejected the request, reason=%v", client.PluginParams().Name, err)
-		log.With("session", sp.SessionID).Infof("plugin %s rejected request %s", client.PluginParams().Name, err)
+		log.With("session", sp.SessionID).Warn(err)
 		_ = a.client.Send(&pb.Packet{
 			Type:    pbclient.SessionClose,
 			Payload: []byte(err.Error()),

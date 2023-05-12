@@ -41,8 +41,9 @@ type (
 		Script   []byte
 	}
 	ExecRequest struct {
-		Script   string `json:"script"`
-		Redirect bool   `json:"redirect"`
+		Script     string   `json:"script"`
+		ClientArgs []string `json:"client_args"`
+		Redirect   bool     `json:"redirect"`
 	}
 	ExecResponse struct {
 		Err      error
@@ -73,9 +74,16 @@ type Response struct {
 	err       error
 }
 
-func (r *Response) exitCode(code int) *Response {
+func (r *Response) setExitCode(code int) *Response {
 	r.ExitCode = &code
 	return r
+}
+
+func (r *Response) GetExitCode() int {
+	if r.ExitCode != nil {
+		return *r.ExitCode
+	}
+	return nilExitCode
 }
 
 func (r *Response) IsError() bool {
@@ -131,7 +139,7 @@ func New(orgID, accessToken, connectionName string, sessionID string) (*clientEx
 		sessionID:  sessionID}, nil
 }
 
-func (c *clientExec) Run(inputPayload []byte, clientEnvVars map[string]string) *Response {
+func (c *clientExec) Run(inputPayload []byte, clientEnvVars map[string]string, clientArgs ...string) *Response {
 	openSessionSpec := map[string][]byte{}
 	if len(clientEnvVars) > 0 {
 		encEnvVars, err := pb.GobEncode(clientEnvVars)
@@ -139,6 +147,13 @@ func (c *clientExec) Run(inputPayload []byte, clientEnvVars map[string]string) *
 			return newError(err)
 		}
 		openSessionSpec[pb.SpecClientExecEnvVar] = encEnvVars
+	}
+	if len(clientArgs) > 0 {
+		encClientArgs, err := pb.GobEncode(clientArgs)
+		if err != nil {
+			return newError(err)
+		}
+		openSessionSpec[pb.SpecClientExecArgsKey] = encClientArgs
 	}
 	resp := c.run(inputPayload, openSessionSpec)
 	resp.SessionID = c.sessionID
@@ -195,7 +210,7 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 				exitCode = nilExitCode
 			}
 			if err := c.write(pkt.Payload); err != nil {
-				return newError(err).exitCode(exitCode)
+				return newError(err).setExitCode(exitCode)
 			}
 			output, isTrunc, err := c.readAll()
 			return &Response{

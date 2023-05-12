@@ -96,15 +96,13 @@ func (s *Storage) Evict(ctx *user.Context, connectionName string) (bool, error) 
 	if len(evictList) == 0 {
 		return false, nil
 	}
-	var txid string
 	tx, err := s.SubmitEvictTx(evictList...)
 	if err != nil {
-		txid = fmt.Sprintf("%v", tx.TxID)
+		log.Warnf("evict error=%v", err.Error())
 	}
 	log.Debugf("name=%v, org=%v, tx=%v, evicted=%v - evict connection result",
-		ctx.Org.Id, connectionName, txid, err == nil)
+		connectionName, ctx.Org.Id, fmt.Sprintf("%v", tx.TxID), err == nil)
 	return err == nil, err
-
 }
 
 func (s *Storage) FindAll(context *user.Context) ([]BaseConnection, error) {

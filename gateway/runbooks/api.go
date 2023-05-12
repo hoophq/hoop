@@ -26,6 +26,7 @@ type RunbookRequest struct {
 	FileName   string            `json:"file_name" binding:"required"`
 	RefHash    string            `json:"ref_hash"`
 	Parameters map[string]string `json:"parameters"`
+	ClientArgs []string          `json:"client_args"`
 	Redirect   bool              `json:"redirect"`
 }
 
@@ -127,7 +128,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 		defer close(clientResp)
 		defer client.Close()
 		select {
-		case clientResp <- client.Run(runbook.InputFile, runbook.EnvVars):
+		case clientResp <- client.Run(runbook.InputFile, runbook.EnvVars, req.ClientArgs...):
 		default:
 		}
 	}()
@@ -147,7 +148,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 	select {
 	case resp := <-clientResp:
 		log.Infof("runbook exec response. exit_code=%v, truncated=%v, response-length=%v",
-			resp.ExitCode, resp.Truncated, len(resp.ErrorMessage()))
+			resp.GetExitCode(), resp.Truncated, len(resp.ErrorMessage()))
 		if resp.IsError() {
 			c.JSON(http.StatusBadRequest, &RunbookErrResponse{
 				SessionID: &resp.SessionID,

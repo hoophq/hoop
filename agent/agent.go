@@ -213,15 +213,21 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 		log.Infof("session=%s - failed parse envvars from connection, err=%v", sessionIDKey, err)
 		return nil, nil, fmt.Errorf("failed to parse connection envvars")
 	}
+	return connParams, connEnvVars, nil
+}
+
+func (a *Agent) checkTCPLiveness(pkt *pb.Packet, connEnvVars *connEnv) error {
+	sessionID := fmt.Sprintf("%v", pkt.Spec[pb.SpecGatewaySessionID])
+	connType := fmt.Sprintf("%v", pkt.Spec[pb.SpecConnectionType])
 	if connType == pb.ConnectionTypePostgres || connType == pb.ConnectionTypeTCP || connType == pb.ConnectionTypeMySQL {
 		if err := isPortActive(connEnvVars.host, connEnvVars.port); err != nil {
 			msg := fmt.Sprintf("failed connecting to %s:%s, err=%v",
 				connEnvVars.host, connEnvVars.port, err)
-			log.Infof("session=%v - %v", sessionIDKey, msg)
-			return nil, nil, fmt.Errorf("%s", msg)
+			log.Warnf("session=%v - %v", sessionID, msg)
+			return fmt.Errorf("%s", msg)
 		}
 	}
-	return connParams, connEnvVars, nil
+	return nil
 }
 
 func (a *Agent) decodeConnectionParams(sessionID []byte, pkt *pb.Packet) *pb.AgentConnectionParams {
@@ -298,6 +304,7 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 
 	connParams, connEnvVars, err := a.buildConnectionParams(pkt)
 	if err != nil {
+		log.Warnf("failed building connection params, err=%v", err)
 		_ = a.client.Send(&pb.Packet{
 			Type:    pbclient.SessionClose,
 			Payload: []byte(err.Error()),
@@ -307,11 +314,6 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 			},
 		})
 		return
-	}
-
-	connType := string(pkt.Spec[pb.SpecConnectionType])
-	if connType == pb.ConnectionTypePostgres || connType == pb.ConnectionTypeTCP || connType == pb.ConnectionTypeMySQL {
-		connParams.EnvVars[connEnvKey] = connEnvVars
 	}
 
 	encFn := base64.StdEncoding.EncodeToString
@@ -329,7 +331,7 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 
 	go func() {
 		if err := a.loadHooks(sessionIDKey, connParams); err != nil {
-			log.Println(err)
+			log.Error(err)
 			sentry.CaptureException(err)
 			_ = a.client.Send(&pb.Packet{
 				Type:    pbclient.SessionClose,
@@ -340,6 +342,16 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 				},
 			})
 			return
+		}
+		if err := a.checkTCPLiveness(pkt, connEnvVars); err != nil {
+			_ = a.client.Send(&pb.Packet{
+				Type:    pbclient.SessionClose,
+				Payload: []byte(err.Error()),
+				Spec: map[string][]byte{
+					pb.SpecClientExitCodeKey: []byte(`1`),
+					pb.SpecGatewaySessionID:  sessionID,
+				},
+			})
 		}
 		a.client.Send(&pb.Packet{
 			Type: pbclient.SessionOpenOK,

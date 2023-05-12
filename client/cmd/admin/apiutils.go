@@ -99,9 +99,9 @@ func parseResourceOrDie(args []string, method, outputFlag string) *apiResource {
 		apir.suffixEndpoint = "/api/userinfo"
 	case "jits":
 		apir.suffixEndpoint = path.Join("/api/jits", apir.name)
-	case "reviews":
+	case "review", "reviews":
 		apir.suffixEndpoint = path.Join("/api/reviews", apir.name)
-	case "plugins":
+	case "plugin", "plugins":
 		apir.resourceCreate = true
 		apir.resourceUpdate = true
 		apir.suffixEndpoint = path.Join("/api/plugins", apir.name)
