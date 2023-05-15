@@ -42,6 +42,7 @@ import (
 	pluginsjit "github.com/runopsio/hoop/gateway/transport/plugins/jit"
 	pluginsreview "github.com/runopsio/hoop/gateway/transport/plugins/review"
 	pluginsslack "github.com/runopsio/hoop/gateway/transport/plugins/slack"
+	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 )
 
 func Run() {
@@ -93,7 +94,7 @@ func Run() {
 		PluginHandler:     plugin.Handler{Service: &pluginService},
 		SessionHandler:    session.Handler{Service: &sessionService},
 		IndexerHandler:    indexer.Handler{},
-		ReviewHandler:     review.Handler{Service: &reviewService},
+		ReviewHandler:     review.Handler{Service: &reviewService, PluginService: &pluginService},
 		JitHandler:        jit.Handler{Service: &jitService},
 		SecurityHandler:   security.Handler{Service: &securityService},
 		RunbooksHandler:   runbooks.Handler{PluginService: &pluginService, ConnectionService: &connectionService},
@@ -120,23 +121,28 @@ func Run() {
 		PyroscopeAuthToken:   os.Getenv("PYROSCOPE_AUTH_TOKEN"),
 		AgentSentryDSN:       os.Getenv("AGENT_SENTRY_DSN"),
 		Analytics:            analyticsService,
-		RegisteredPlugins: []transport.Plugin{
-			pluginsaudit.New(),
-			pluginsindex.New(
-				&session.Storage{Storage: s},
-				&plugin.Storage{Storage: s}),
-			pluginsreview.New(idProvider.ApiURL),
-			pluginsjit.New(idProvider.ApiURL),
-			pluginsdlp.New(),
-			pluginsrbac.New(),
-		},
 	}
-	pluginSlackInstance := pluginsslack.New(
-		&review.Service{Storage: &review.Storage{Storage: s}, TransportService: g},
-		&jit.Service{Storage: &jit.Storage{Storage: s}, TransportService: g},
-		&user.Service{Storage: &user.Storage{Storage: s}},
-		idProvider.ApiURL)
-	g.RegisteredPlugins = append(g.RegisteredPlugins, pluginSlackInstance)
+	// order matters
+	g.RegisteredPlugins = []plugintypes.Plugin{
+		pluginsreview.New(
+			&review.Service{Storage: &review.Storage{Storage: s}, TransportService: g},
+			&user.Service{Storage: &user.Storage{Storage: s}},
+			notificationService,
+			idProvider.ApiURL,
+		),
+		pluginsaudit.New(),
+		pluginsindex.New(
+			&session.Storage{Storage: s},
+			&plugin.Storage{Storage: s}),
+		pluginsjit.New(idProvider.ApiURL),
+		pluginsdlp.New(),
+		pluginsrbac.New(),
+		pluginsslack.New(
+			&review.Service{Storage: &review.Storage{Storage: s}, TransportService: g},
+			&jit.Service{Storage: &jit.Storage{Storage: s}, TransportService: g},
+			&user.Service{Storage: &user.Storage{Storage: s}},
+			idProvider.ApiURL),
+	}
 
 	if g.PyroscopeIngestURL != "" && g.PyroscopeAuthToken != "" {
 		log.Infof("starting profiler, ingest-url=%v", g.PyroscopeIngestURL)

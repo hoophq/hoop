@@ -8,7 +8,7 @@ import (
 
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/gateway/indexer"
-	"github.com/runopsio/hoop/gateway/plugin"
+	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/tidwall/wal"
 )
 
@@ -35,23 +35,23 @@ type walMetadata struct {
 	StartDate      time.Time `json:"start_date"`
 }
 
-func (p *indexPlugin) writeOnConnect(c plugin.Config) error {
-	walFolder := fmt.Sprintf(walFolderTmpl, plugin.IndexPath, c.Org, c.SessionId)
+func (p *indexPlugin) writeOnConnect(c plugintypes.Context) error {
+	walFolder := fmt.Sprintf(walFolderTmpl, plugintypes.IndexPath, c.OrgID, c.SID)
 	walog, err := wal.Open(walFolder, wal.DefaultOptions)
 	if err != nil {
 		return fmt.Errorf("failed opening wal file, err=%v", err)
 	}
-	p.walSessionStore.Set(c.SessionId, &walLogRWMutex{
+	p.walSessionStore.Set(c.SID, &walLogRWMutex{
 		log:        walog,
 		mu:         sync.RWMutex{},
 		folderName: walFolder,
 		metadata: &walMetadata{
-			OrgID:          c.Org,
-			SessionID:      c.SessionId,
+			OrgID:          c.OrgID,
+			SessionID:      c.SID,
 			UserEmail:      c.UserEmail,
 			ConnectionName: c.ConnectionName,
 			ConnectionType: c.ConnectionType,
-			Verb:           c.Verb,
+			Verb:           c.ClientVerb,
 			StartDate:      time.Now().UTC(),
 		},
 	})
@@ -94,16 +94,16 @@ func (p *indexPlugin) writeOnReceive(sessionID string, eventType string, event [
 	return nil
 }
 
-func (p *indexPlugin) indexOnClose(c plugin.Config, isError bool) {
-	walLogObj := p.walSessionStore.Get(c.SessionId)
+func (p *indexPlugin) indexOnClose(c plugintypes.Context, isError bool) {
+	walLogObj := p.walSessionStore.Get(c.SID)
 	walogm, ok := walLogObj.(*walLogRWMutex)
 	if !ok {
-		log.Printf("session=%v - wal log not found", c.SessionId)
+		log.Printf("session=%v - wal log not found", c.SID)
 		return
 	}
 	walogm.mu.Lock()
 	defer func() {
-		p.walSessionStore.Del(c.SessionId)
+		p.walSessionStore.Del(c.SID)
 		_ = walogm.log.Close()
 		walogm.mu.Unlock()
 		_ = os.RemoveAll(walogm.folderName)
@@ -114,7 +114,7 @@ func (p *indexPlugin) indexOnClose(c plugin.Config, isError bool) {
 	for {
 		eventBytes, err := walogm.log.Read(idx)
 		if err != nil && err != wal.ErrNotFound {
-			log.Printf("session=%v - failed reading full session data err=%v", c.SessionId, err)
+			log.Printf("session=%v - failed reading full session data err=%v", c.SID, err)
 			return
 		}
 		if err == wal.ErrNotFound {
@@ -133,8 +133,8 @@ func (p *indexPlugin) indexOnClose(c plugin.Config, isError bool) {
 	endDate := time.Now().UTC()
 	durationInSecs := int64(endDate.Sub(walogm.metadata.StartDate).Seconds())
 	payload := &indexer.Session{
-		OrgID:             c.Org,
-		ID:                c.SessionId,
+		OrgID:             c.OrgID,
+		ID:                c.SID,
 		User:              walogm.metadata.UserEmail,
 		Connection:        walogm.metadata.ConnectionName,
 		ConnectionType:    walogm.metadata.ConnectionType,
@@ -149,14 +149,14 @@ func (p *indexPlugin) indexOnClose(c plugin.Config, isError bool) {
 		EndDate:           endDate.Format(time.RFC3339),
 		Duration:          durationInSecs,
 	}
-	indexCh := p.indexers.Get(c.Org).(chan *indexer.Session)
+	indexCh := p.indexers.Get(c.OrgID).(chan *indexer.Session)
 	if indexCh == nil {
-		log.Printf("session=%v - indexed=false, channel not found in memory", c.SessionId)
+		log.Printf("session=%v - indexed=false, channel not found in memory", c.SID)
 	}
 	select {
 	case indexCh <- payload:
 	default:
 	case <-time.After(2 * time.Second):
-		log.Printf("session=%v - indexed=false, timeout on sending to channel", c.SessionId)
+		log.Printf("session=%v - indexed=false, timeout on sending to channel", c.SID)
 	}
 }

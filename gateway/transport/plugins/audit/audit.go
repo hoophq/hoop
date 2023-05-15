@@ -16,18 +16,14 @@ import (
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
-	"github.com/runopsio/hoop/gateway/plugin"
+	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"go.uber.org/zap"
 )
 
-const (
-	Name               string = "audit"
-	StorageWriterParam string = "audit_storage_writer"
-)
+const StorageWriterParam string = "audit_storage_writer"
 
 type (
 	auditPlugin struct {
-		name            string
 		storageWriter   StorageWriter
 		walSessionStore memory.Store
 		started         bool
@@ -36,32 +32,28 @@ type (
 	}
 
 	StorageWriter interface {
-		Write(config plugin.Config) error
+		Write(pctx plugintypes.Context) error
 	}
 )
 
 func New() *auditPlugin {
 	return &auditPlugin{
-		name:            Name,
 		walSessionStore: memory.New(),
 		log:             log.With("plugin", "audit"),
 	}
 }
 
-func (p *auditPlugin) Name() string {
-	return p.name
-}
-
-func (p *auditPlugin) OnStartup(config plugin.Config) error {
+func (p *auditPlugin) Name() string { return plugintypes.PluginAuditName }
+func (p *auditPlugin) OnStartup(pctx plugintypes.Context) error {
 	if p.started {
 		return nil
 	}
 
-	if fi, _ := os.Stat(plugin.AuditPath); fi == nil || !fi.IsDir() {
-		return fmt.Errorf("failed to retrieve audit path info, path=%v", plugin.AuditPath)
+	if fi, _ := os.Stat(plugintypes.AuditPath); fi == nil || !fi.IsDir() {
+		return fmt.Errorf("failed to retrieve audit path info, path=%v", plugintypes.AuditPath)
 	}
 
-	storageWriterObj := config.ParamsData[StorageWriterParam]
+	storageWriterObj := pctx.ParamsData[StorageWriterParam]
 	storageWriter, ok := storageWriterObj.(StorageWriter)
 
 	if !ok {
@@ -72,25 +64,25 @@ func (p *auditPlugin) OnStartup(config plugin.Config) error {
 	return nil
 }
 
-func (p *auditPlugin) OnConnect(config plugin.Config) error {
-	p.log.With("session", config.SessionId).Infof("processing on-connect")
-	if config.Org == "" || config.SessionId == "" {
+func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
+	p.log.With("session", pctx.SID).Infof("processing on-connect")
+	if pctx.OrgID == "" || pctx.SID == "" {
 		return fmt.Errorf("failed processing audit plugin, missing org_id and session_id params")
 	}
 
-	if err := p.writeOnConnect(config); err != nil {
+	if err := p.writeOnConnect(pctx); err != nil {
 		return err
 	}
-	config.ParamsData["start_date"] = func() *time.Time { d := time.Now().UTC(); return &d }()
+	pctx.ParamsData["start_date"] = func() *time.Time { d := time.Now().UTC(); return &d }()
 	// Persist the session in the storage
-	if err := p.storageWriter.Write(config); err != nil {
+	if err := p.storageWriter.Write(pctx); err != nil {
 		return err
 	}
 	p.mu = sync.RWMutex{}
 	return nil
 }
 
-func (p *auditPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *pb.Packet) error {
+func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {
 	dlpCount := decodeDlpSummary(pkt)
 	switch pb.PacketType(pkt.GetType()) {
 	case pbagent.PGConnectionWrite:
@@ -99,55 +91,59 @@ func (p *auditPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("session=%v - failed obtaining simple query data, err=%v", pluginConfig.SessionId, err)
+			return nil, fmt.Errorf("session=%v - failed obtaining simple query data, err=%v", pctx.SID, err)
 		}
-		return p.writeOnReceive(pluginConfig.SessionId, 'i', dlpCount, queryBytes)
+		return nil, p.writeOnReceive(pctx.SID, 'i', dlpCount, queryBytes)
 	case pbagent.MySQLConnectionWrite:
 		if queryBytes := decodeMySQLCommandQuery(pkt.Payload); queryBytes != nil {
-			return p.writeOnReceive(pluginConfig.SessionId, 'i', dlpCount, queryBytes)
+			return nil, p.writeOnReceive(pctx.SID, 'i', dlpCount, queryBytes)
 		}
 	case pbclient.WriteStdout,
 		pbclient.WriteStderr:
-		return p.writeOnReceive(pluginConfig.SessionId, 'o', dlpCount, pkt.Payload)
+		err := p.writeOnReceive(pctx.SID, 'o', dlpCount, pkt.Payload)
+		if err != nil {
+			log.Warnf("failed writing agent packet response, err=%v", err)
+		}
+		return nil, nil
 	case pbclient.SessionClose:
-		defer p.closeSession(pluginConfig.SessionId)
+		defer p.closeSession(pctx.SID)
 		if len(pkt.Payload) > 0 {
-			return p.writeOnReceive(pluginConfig.SessionId, 'e', dlpCount, pkt.Payload)
+			return nil, p.writeOnReceive(pctx.SID, 'e', dlpCount, pkt.Payload)
 		}
 	case pbagent.ExecWriteStdin,
 		pbagent.TerminalWriteStdin,
 		pbagent.TCPConnectionWrite:
-		return p.writeOnReceive(pluginConfig.SessionId, 'i', dlpCount, pkt.Payload)
+		return nil, p.writeOnReceive(pctx.SID, 'i', dlpCount, pkt.Payload)
 	}
-	return nil
+	return nil, nil
 }
 
-func (p *auditPlugin) OnDisconnect(config plugin.Config, errMsg error) error {
-	p.log.With("session", config.SessionId, "origin", config.GetString("client")).
+func (p *auditPlugin) OnDisconnect(pctx plugintypes.Context, errMsg error) error {
+	p.log.With("session", pctx.SID, "origin", pctx.ClientOrigin).
 		Debugf("processing disconnect")
-	switch config.GetString("client") {
+	switch pctx.ClientOrigin {
 	case pb.ConnectionOriginClient:
-		defer p.closeSession(config.SessionId)
+		defer p.closeSession(pctx.SID)
 		if errMsg != nil {
-			_ = p.writeOnReceive(config.SessionId, 'e', 0, []byte(errMsg.Error()))
+			_ = p.writeOnReceive(pctx.SID, 'e', 0, []byte(errMsg.Error()))
 			return nil
 		}
 	case pb.ConnectionOriginClientAPI:
 		if errMsg != nil {
 			// on errors, close the session right away
-			_ = p.writeOnReceive(config.SessionId, 'e', 0, []byte(errMsg.Error()))
-			p.closeSession(config.SessionId)
+			_ = p.writeOnReceive(pctx.SID, 'e', 0, []byte(errMsg.Error()))
+			p.closeSession(pctx.SID)
 			return nil
 		}
 		// keep the connection open to let packets flow async
 	case pb.ConnectionOriginAgent:
-		agentID := config.GetString("disconnect-agent-id")
+		agentID := fmt.Sprintf("%v", pctx.ParamsData.GetString("disconnect-agent-id"))
 		if agentID != "" {
 			p.log.Warnf("agent %v was shutdown, graceful closing sessions", agentID)
 			// always close all sessions of this agent when it disconnects
 			// there's no capability of recovering the state of execution
 			// when this condition is present.
-			for key := range config.ParamsData {
+			for key := range pctx.ParamsData {
 				if !strings.HasPrefix(key, agentID) {
 					continue
 				}
@@ -167,9 +163,9 @@ func (p *auditPlugin) OnDisconnect(config plugin.Config, errMsg error) error {
 		}
 		// it close sessions that are being processed async
 		// e.g.: when it receives a session close packet
-		defer p.closeSession(config.SessionId)
+		defer p.closeSession(pctx.SID)
 		if errMsg != nil {
-			_ = p.writeOnReceive(config.SessionId, 'e', 0, []byte(errMsg.Error()))
+			_ = p.writeOnReceive(pctx.SID, 'e', 0, []byte(errMsg.Error()))
 			return nil
 		}
 	}
@@ -177,6 +173,7 @@ func (p *auditPlugin) OnDisconnect(config plugin.Config, errMsg error) error {
 }
 
 func (p *auditPlugin) closeSession(sessionID string) {
+	log.With("session", sessionID).Infof("closing session ...")
 	go func() {
 		if err := p.writeOnClose(sessionID); err != nil {
 			p.log.Warnf("session=%v - failed closing session: %v", sessionID, err)

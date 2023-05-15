@@ -1,170 +1,162 @@
 package review
 
 import (
+	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
+	pbclient "github.com/runopsio/hoop/common/proto/client"
 	"github.com/runopsio/hoop/gateway/notification"
-	"github.com/runopsio/hoop/gateway/plugin"
-	rv "github.com/runopsio/hoop/gateway/review"
+	"github.com/runopsio/hoop/gateway/review"
+	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
-const (
-	Name                     string = "review"
-	ReviewServiceParam       string = "review_service"
-	UserServiceParam         string = "user_service"
-	NotificationServiceParam string = "notification_service"
-)
+type reviewPlugin struct {
+	apiURL              string
+	reviewSvc           *review.Service
+	userSvc             *user.Service
+	notificationService notification.Service
+}
 
-type (
-	reviewPlugin struct {
-		name                string
-		apiURL              string
-		reviewService       ReviewService
-		userService         UserService
-		notificationService notification.Service
-	}
-
-	ReviewService interface {
-		Persist(context *user.Context, review *rv.Review) error
-		FindBySessionID(sessionID string) (*rv.Review, error)
-	}
-
-	UserService interface {
-		FindByGroups(context *user.Context, groups []string) ([]user.User, error)
-	}
-)
-
-func New(apiURL string) *reviewPlugin {
+func New(reviewSvc *review.Service, userSvc *user.Service, notificationSvc notification.Service, apiURL string) *reviewPlugin {
 	return &reviewPlugin{
-		name:   Name,
-		apiURL: apiURL,
+		apiURL:              apiURL,
+		reviewSvc:           reviewSvc,
+		userSvc:             userSvc,
+		notificationService: notificationSvc,
 	}
 }
 
-func (r *reviewPlugin) Name() string {
-	return r.name
-}
+func (r *reviewPlugin) Name() string                          { return plugintypes.PluginReviewName }
+func (r *reviewPlugin) OnStartup(_ plugintypes.Context) error { return nil }
+func (r *reviewPlugin) OnConnect(_ plugintypes.Context) error { return nil }
 
-func (r *reviewPlugin) OnStartup(config plugin.Config) error {
-	log.Printf("session=%v | review | processing on-startup", config.SessionId)
-	if config.Org == "" || config.SessionId == "" {
-		return fmt.Errorf("failed processing review plugin, missing org_id and session_id params")
+func (r *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {
+	if pkt.Type != pbagent.SessionOpen {
+		return nil, nil
 	}
 
-	reviewServiceParam := config.ParamsData[ReviewServiceParam]
-	reviewService, ok := reviewServiceParam.(ReviewService)
-	if !ok {
-		return fmt.Errorf("review plugin failed to start")
+	userContext := &user.Context{
+		Org:  &user.Org{Id: pctx.OrgID},
+		User: &user.User{Id: pctx.UserID},
 	}
 
-	userServiceParam := config.ParamsData[UserServiceParam]
-	userService, ok := userServiceParam.(UserService)
-	if !ok {
-		return fmt.Errorf("review plugin failed to start")
+	otrev, err := r.reviewSvc.FindBySessionID(pctx.SID)
+	if err != nil {
+		err = fmt.Errorf("hala big bonga")
+		log.With("session", pctx.SID).Error("failed fetching session, err=%v", err)
+		return nil, plugintypes.InternalErr("failed fetching review", err)
 	}
 
-	notificationServiceParam := config.ParamsData[NotificationServiceParam]
-	notificationService, ok := notificationServiceParam.(notification.Service)
-	if !ok {
-		return fmt.Errorf("review plugin failed to start")
-	}
-
-	r.reviewService = reviewService
-	r.userService = userService
-	r.notificationService = notificationService
-	return nil
-}
-
-func (r *reviewPlugin) OnConnect(config plugin.Config) error {
-	log.Printf("session=%v | review noop | processing on-connect", config.SessionId)
-	if config.Org == "" || config.SessionId == "" {
-		return fmt.Errorf("failed processing review plugin, missing org_id and session_id params")
-	}
-	if config.Verb != pb.ClientVerbExec {
-		if config.ConnectionType != pb.ConnectionTypeCommandLine {
-			return fmt.Errorf("the review plugin can't be used for this connection type, contact the administrator")
-		}
-		return fmt.Errorf("connection subject to review, use 'hoop exec %s' to interact", config.ConnectionName)
-	}
-	return nil
-}
-
-func (r *reviewPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *pb.Packet) error {
-	switch pkt.Type {
-	case pbagent.SessionOpen:
-		context := &user.Context{
-			Org:  &user.Org{Id: pluginConfig.Org},
-			User: &user.User{Id: pluginConfig.UserID},
+	if otrev != nil && otrev.Type == review.ReviewTypeOneTime {
+		log.With("id", otrev.Id, "session", pctx.SID, "user", otrev.CreatedBy, "org", pctx.OrgID,
+			"status", otrev.Status).Infof("one time review")
+		if !(otrev.Status == review.StatusApproved || otrev.Status == review.StatusProcessing) {
+			reviewURL := fmt.Sprintf("%s/plugins/reviews/%s", r.apiURL, otrev.Id)
+			return &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{
+				Type:    pbclient.SessionOpenWaitingApproval,
+				Payload: []byte(reviewURL),
+			}}, nil
 		}
 
-		existingReview, err := r.reviewService.FindBySessionID(pluginConfig.SessionId)
+		if otrev.Status == review.StatusApproved {
+			otrev.Status = review.StatusProcessing
+			if err := r.reviewSvc.Persist(userContext, otrev); err != nil {
+				return nil, plugintypes.InternalErr("failed saving approved review", err)
+			}
+		}
+		return nil, nil
+	}
+
+	jitr, err := r.reviewSvc.FindApprovedJitReviews(userContext, pctx.ConnectionID)
+	if err != nil {
+		return nil, plugintypes.InternalErr("failed listing time based reviews", err)
+	}
+	if jitr != nil {
+		log.With("session", pctx.SID, "id", jitr.Id, "user", jitr.CreatedBy, "org", pctx.OrgID,
+			"revoke-at", jitr.RevokeAt.Format(time.RFC3339),
+			"duration", fmt.Sprintf("%vm", jitr.AccessDuration.Minutes())).Infof("jit access granted")
+		newCtx, _ := context.WithTimeout(pctx.Context, jitr.AccessDuration)
+		return &plugintypes.ConnectResponse{Context: newCtx, ClientPacket: nil}, nil
+	}
+
+	var accessDuration time.Duration
+	reviewType := review.ReviewTypeOneTime
+	durationStr, isJitReview := pkt.Spec[pb.SpecJitTimeout]
+	if isJitReview {
+		reviewType = review.ReviewTypeJit
+		accessDuration, err = time.ParseDuration(string(durationStr))
 		if err != nil {
-			return err
+			return nil, plugintypes.InvalidArgument("invalid access time duration, got=%#v", string(durationStr))
 		}
-
-		if existingReview != nil {
-			b, _ := pb.GobEncode(existingReview)
-			pkt.Spec[pb.SpecReviewDataKey] = b
-			return nil
+		if accessDuration.Hours() > 48 {
+			return nil, plugintypes.InvalidArgument("jit access input must not be greater than 48 hours")
 		}
+	}
 
-		if len(config) == 0 {
-			return fmt.Errorf("connection does not have groups for the review exec plugin")
-		}
-		reviewGroups := make([]rv.Group, 0)
-		groups := make([]string, 0)
-		for _, s := range config {
-			groups = append(groups, s)
-			reviewGroups = append(reviewGroups, rv.Group{
-				Group:  s,
-				Status: rv.StatusPending,
-			})
-		}
+	if len(pctx.PluginConnectionConfig) == 0 {
+		err = fmt.Errorf("missing approval groups for connection")
+		return nil, plugintypes.InternalErr(err.Error(), err)
+	}
 
-		review := &rv.Review{
-			Id:      uuid.NewString(),
-			Session: pluginConfig.SessionId,
-			Connection: rv.Connection{
-				Id:   pluginConfig.ConnectionId,
-				Name: pluginConfig.ConnectionName,
-			},
-			Input:        string(pkt.Payload),
-			Status:       rv.StatusPending,
-			ReviewGroups: reviewGroups,
-		}
-
-		if err := r.reviewService.Persist(context, review); err != nil {
-			return err
-		}
-
-		b, _ := pb.GobEncode(review)
-		pkt.Spec[pb.SpecReviewDataKey] = b
-
-		reviewers, err := r.userService.FindByGroups(context, groups)
-		if err != nil {
-			return err
-		}
-
-		reviewersEmail := listEmails(reviewers)
-		r.notificationService.Send(notification.Notification{
-			Title:      "[hoop.dev] Pending review",
-			Message:    r.buildReviewUrl(review.Id),
-			Recipients: reviewersEmail,
+	reviewGroups := make([]review.Group, 0)
+	groups := make([]string, 0)
+	for _, s := range pctx.PluginConnectionConfig {
+		groups = append(groups, s)
+		reviewGroups = append(reviewGroups, review.Group{
+			Group:  s,
+			Status: review.StatusPending,
 		})
-
 	}
 
-	return nil
+	newRev := &review.Review{
+		Id:      uuid.NewString(),
+		Type:    reviewType,
+		Session: pctx.SID,
+		Connection: review.Connection{
+			Id:   pctx.ConnectionID,
+			Name: pctx.ConnectionName,
+		},
+		AccessDuration: accessDuration,
+		Status:         review.StatusPending,
+		ReviewGroups:   reviewGroups,
+	}
+	if !isJitReview {
+		// only onetime reviews has input
+		newRev.Input = string(pkt.Payload)
+	}
+
+	log.With("session", pctx.SID, "id", newRev.Id, "user", pctx.UserID, "org", pctx.OrgID,
+		"type", reviewType, "duration", fmt.Sprintf("%vm", accessDuration.Minutes())).
+		Infof("creating review")
+	if err := r.reviewSvc.Persist(userContext, newRev); err != nil {
+		return nil, plugintypes.InternalErr("failed saving review", err)
+	}
+
+	reviewers, err := r.userSvc.FindByGroups(userContext, groups)
+	if err != nil {
+		return nil, plugintypes.InternalErr("failed obtaining approvers", err)
+	}
+
+	reviewersEmail := listEmails(reviewers)
+	r.notificationService.Send(notification.Notification{
+		Title:      "[hoop.dev] Pending review",
+		Message:    r.buildReviewUrl(newRev.Id),
+		Recipients: reviewersEmail,
+	})
+	return &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{
+		Type:    pbclient.SessionOpenWaitingApproval,
+		Payload: []byte(fmt.Sprintf("%s/plugins/reviews/%s", r.apiURL, newRev.Id)),
+	}}, nil
 }
 
-func (r *reviewPlugin) OnDisconnect(config plugin.Config, errMsg error) error { return nil }
-
-func (r *reviewPlugin) OnShutdown() {}
+func (r *reviewPlugin) OnDisconnect(_ plugintypes.Context, errMsg error) error { return nil }
+func (r *reviewPlugin) OnShutdown()                                            {}
 
 func (r *reviewPlugin) buildReviewUrl(reviewID string) string {
 	url := fmt.Sprintf("%s/plugins/reviews/%s", r.apiURL, reviewID)

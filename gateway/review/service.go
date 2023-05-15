@@ -20,20 +20,24 @@ type (
 		FindById(context *user.Context, id string) (*Review, error)
 		FindAll(context *user.Context) ([]Review, error)
 		FindBySessionID(sessionID string) (*Review, error)
+		FindApprovedJitReviews(ctx *user.Context, connID string) (*Review, error)
 	}
 
 	transportService interface {
-		ReviewStatusChange(sessionID string, status Status, command []byte) error
+		ReviewStatusChange(sessionID string, status Status, command []byte)
 	}
 
 	Review struct {
-		Id           string     `json:"id"                      edn:"xt/id"`
-		Session      string     `json:"session"                 edn:"review/session"`
-		Input        string     `json:"input"                   edn:"review/input"`
-		Status       Status     `json:"status"                  edn:"review/status"`
-		CreatedBy    Owner      `json:"created_by"              edn:"review/created-by"`
-		Connection   Connection `json:"connection"              edn:"review/connection"`
-		ReviewGroups []Group    `json:"review_groups,omitempty" edn:"review/review-groups"`
+		Id             string        `json:"id"                      edn:"xt/id"`
+		Type           string        `json:"type"                    edn:"review/type"`
+		Session        string        `json:"session"                 edn:"review/session"`
+		Input          string        `json:"input"                   edn:"review/input"`
+		AccessDuration time.Duration `json:"access_duration"         edn:"review/access-duration"`
+		Status         Status        `json:"status"                  edn:"review/status"`
+		RevokeAt       *time.Time    `json:"revoke_at"               edn:"review/revoke-at"`
+		CreatedBy      Owner         `json:"created_by"              edn:"review/created-by"`
+		Connection     Connection    `json:"connection"              edn:"review/connection"`
+		ReviewGroups   []Group       `json:"review_groups,omitempty" edn:"review/review-groups"`
 	}
 
 	Owner struct {
@@ -68,15 +72,20 @@ const (
 	StatusPending    Status = "PENDING"
 	StatusApproved   Status = "APPROVED"
 	StatusRejected   Status = "REJECTED"
+	StatusRevoked    Status = "REVOKED"
 	StatusProcessing Status = "PROCESSING"
 	StatusExecuted   Status = "EXECUTED"
 	StatusUnknown    Status = "UNKNOWN"
+
+	ReviewTypeJit     = "jit"
+	ReviewTypeOneTime = "onetime"
 )
 
 func (s *Service) FindOne(context *user.Context, id string) (*Review, error) {
 	return s.Storage.FindById(context, id)
 }
 
+// FindOneTimeReview returns an one time review by session id
 func (s *Service) FindBySessionID(sessionID string) (*Review, error) {
 	return s.Storage.FindBySessionID(sessionID)
 }
@@ -102,6 +111,29 @@ func (s *Service) Persist(context *user.Context, review *Review) error {
 	return nil
 }
 
+// FindApprovedJitReviews returns jit reviews that are active based on the access duration
+func (s *Service) FindApprovedJitReviews(ctx *user.Context, connID string) (*Review, error) {
+	return s.Storage.FindApprovedJitReviews(ctx, connID)
+}
+
+func (s *Service) Revoke(ctx *user.Context, reviewID string) (*Review, error) {
+	rev, err := s.FindOne(ctx, reviewID)
+	if err != nil {
+		return nil, err
+	}
+	// non-jit type reviews cannot be revoked
+	if rev == nil || rev.Type != ReviewTypeJit {
+		return nil, ErrNotFound
+	}
+	// only approved reviews could be revoked
+	if rev.Status != StatusApproved {
+		return nil, ErrWrongState
+	}
+	rev.Status = StatusRevoked
+	return rev, s.Persist(ctx, rev)
+}
+
+// called by slack plugin and webapp
 func (s *Service) Review(context *user.Context, reviewID string, status Status) (*Review, error) {
 	rev, err := s.FindOne(context, reviewID)
 	if err != nil {
@@ -144,6 +176,7 @@ func (s *Service) Review(context *user.Context, reviewID string, status Status) 
 	}
 
 	if reviewsCount == approvedCount {
+		rev.RevokeAt = func() *time.Time { t := time.Now().UTC().Add(rev.AccessDuration); return &t }()
 		rev.Status = StatusApproved
 	}
 
@@ -152,7 +185,8 @@ func (s *Service) Review(context *user.Context, reviewID string, status Status) 
 	}
 
 	if rev.Status == StatusApproved || rev.Status == StatusRejected {
-		return rev, s.TransportService.ReviewStatusChange(rev.Session, rev.Status, []byte(rev.Input))
+		// release the connection if there's a client waiting
+		s.TransportService.ReviewStatusChange(rev.Session, rev.Status, []byte(rev.Input))
 	}
 	return rev, nil
 }

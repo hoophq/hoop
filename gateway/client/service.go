@@ -1,8 +1,6 @@
 package client
 
 import (
-	"context"
-
 	"github.com/runopsio/hoop/gateway/user"
 )
 
@@ -30,10 +28,9 @@ type (
 		Platform      string `json:"platform"       edn:"client/platform"`
 		Verb          string `json:"verb"           edn:"client/verb"`
 
-		Status       Status          `json:"status"            edn:"client/status"`
-		ConnectionId string          `json:"-"                 edn:"client/connection"`
-		AgentId      string          `json:"-"                 edn:"client/agent"`
-		Context      context.Context `json:"-"                 edn:"-"`
+		Status       Status `json:"status"            edn:"client/status"`
+		ConnectionId string `json:"-"                 edn:"client/connection"`
+		AgentId      string `json:"-"                 edn:"client/agent"`
 	}
 
 	Status string

@@ -9,8 +9,8 @@ import (
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	"github.com/runopsio/hoop/gateway/notification"
-	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/review/jit"
+	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
@@ -48,25 +48,22 @@ func New(apiURL string) *jitPlugin {
 
 func (r *jitPlugin) Name() string { return r.name }
 
-func (r *jitPlugin) OnStartup(config plugin.Config) error {
-	log.Printf("session=%v | jit | processing on-startup", config.SessionId)
-	if config.Org == "" || config.SessionId == "" {
-		return fmt.Errorf("failed processing review plugin, missing org_id and session_id params")
-	}
+func (r *jitPlugin) OnStartup(pctx plugintypes.Context) error {
+	log.Printf("session=%v | jit | processing on-startup", pctx.SID)
 
-	jitServiceParam := config.ParamsData[JitServiceParam]
+	jitServiceParam := pctx.ParamsData[JitServiceParam]
 	jitService, ok := jitServiceParam.(JitService)
 	if !ok {
 		return fmt.Errorf("jit plugin failed to start")
 	}
 
-	userServiceParam := config.ParamsData[UserServiceParam]
+	userServiceParam := pctx.ParamsData[UserServiceParam]
 	userService, ok := userServiceParam.(UserService)
 	if !ok {
 		return fmt.Errorf("jit plugin failed to start")
 	}
 
-	notificationServiceParam := config.ParamsData[NotificationServiceParam]
+	notificationServiceParam := pctx.ParamsData[NotificationServiceParam]
 	notificationService, ok := notificationServiceParam.(notification.Service)
 	if !ok {
 		return fmt.Errorf("jit plugin failed to start")
@@ -79,52 +76,49 @@ func (r *jitPlugin) OnStartup(config plugin.Config) error {
 	return nil
 }
 
-func (r *jitPlugin) OnConnect(config plugin.Config) error {
-	if config.Org == "" || config.SessionId == "" {
-		return fmt.Errorf("failed processing jit plugin, missing org_id and session_id params")
-	}
-	if config.Verb != pb.ClientVerbConnect {
-		return fmt.Errorf("connection subject to jit, use 'hoop connect %s' to interact", config.ConnectionName)
+func (r *jitPlugin) OnConnect(pctx plugintypes.Context) error {
+	if pctx.ClientVerb != pb.ClientVerbConnect {
+		return fmt.Errorf("connection subject to jit, use 'hoop connect %s' to interact", pctx.ConnectionName)
 	}
 	return nil
 }
 
-func (r *jitPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *pb.Packet) error {
+func (r *jitPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {
 	switch pb.PacketType(pkt.GetType()) {
 	case pbagent.SessionOpen:
 		context := &user.Context{
-			Org:  &user.Org{Id: pluginConfig.Org},
-			User: &user.User{Id: pluginConfig.UserID},
+			Org:  &user.Org{Id: pctx.OrgID},
+			User: &user.User{Id: pctx.UserID},
 		}
 
-		existingJit, err := r.jitService.FindBySessionID(pluginConfig.SessionId)
+		existingJit, err := r.jitService.FindBySessionID(pctx.SID)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		connectDuration, err := time.ParseDuration(string(pkt.Spec[pb.SpecJitTimeout]))
 		if err != nil {
-			return fmt.Errorf("invalid duration input, found=%#v", string(pkt.Spec[pb.SpecJitTimeout]))
+			return nil, fmt.Errorf("invalid duration input, found=%#v", string(pkt.Spec[pb.SpecJitTimeout]))
 		}
 
 		if existingJit != nil {
 			if existingJit.Time == 0 && connectDuration != 0 {
 				existingJit.Time = connectDuration
 				if err := r.jitService.Persist(context, existingJit); err != nil {
-					return err
+					return nil, err
 				}
 			}
 			pkt.Spec[pb.SpecJitStatus] = []byte(existingJit.Status)
 			pkt.Spec[pb.SpecGatewayJitID] = []byte(existingJit.Id)
-			return nil
+			return nil, nil
 		}
 
-		if len(config) == 0 {
-			return fmt.Errorf("connection does not have groups for the jit plugin")
+		if len(pctx.PluginConnectionConfig) == 0 {
+			return nil, fmt.Errorf("connection does not have groups for the jit plugin")
 		}
 		jitGroups := make([]jit.Group, 0)
 		groups := make([]string, 0)
-		for _, s := range config {
+		for _, s := range pctx.PluginConnectionConfig {
 			groups = append(groups, s)
 			jitGroups = append(jitGroups, jit.Group{
 				Group:  s,
@@ -134,10 +128,10 @@ func (r *jitPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *
 
 		jit := &jit.Jit{
 			Id:      uuid.NewString(),
-			Session: pluginConfig.SessionId,
+			Session: pctx.SID,
 			Connection: jit.Connection{
-				Id:   pluginConfig.ConnectionId,
-				Name: pluginConfig.ConnectionName,
+				Id:   pctx.ConnectionID,
+				Name: pctx.ConnectionName,
 			},
 			Time:      connectDuration,
 			Status:    jit.StatusPending,
@@ -145,14 +139,14 @@ func (r *jitPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *
 		}
 
 		if err := r.jitService.Persist(context, jit); err != nil {
-			return err
+			return nil, err
 		}
 
 		pkt.Spec[pb.SpecJitStatus] = []byte(jit.Status)
 		pkt.Spec[pb.SpecGatewayJitID] = []byte(jit.Id)
 		reviewers, err := r.userService.FindByGroups(context, groups)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		reviewersEmail := listEmails(reviewers)
@@ -163,11 +157,11 @@ func (r *jitPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *
 		})
 	}
 
-	return nil
+	return nil, nil
 }
 
-func (r *jitPlugin) OnDisconnect(config plugin.Config, errMsg error) error { return nil }
-func (r *jitPlugin) OnShutdown()                                           {}
+func (r *jitPlugin) OnDisconnect(_ plugintypes.Context, errMsg error) error { return nil }
+func (r *jitPlugin) OnShutdown()                                            {}
 
 func (r *jitPlugin) buildReviewUrl(reviewID string) string {
 	url := fmt.Sprintf("%s/plugins/jits/%s", r.apiURL, reviewID)

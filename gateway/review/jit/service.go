@@ -23,7 +23,7 @@ type (
 	}
 
 	transportService interface {
-		JitStatusChange(sessionID string, status Status) error
+		JitStatusChange(sessionID string, status Status)
 	}
 
 	Jit struct {
@@ -145,9 +145,7 @@ func (s *Service) Review(context *user.Context, jitID string, status Status) (*J
 	}
 
 	if j.Status == StatusApproved || j.Status == StatusRejected {
-		if err := s.TransportService.JitStatusChange(j.Session, j.Status); err != nil {
-			return j, err
-		}
+		s.TransportService.JitStatusChange(j.Session, j.Status)
 	}
 
 	return j, nil

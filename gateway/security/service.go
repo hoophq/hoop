@@ -209,6 +209,7 @@ func (s *Service) signup(ctx *user.Context, sub string, idTokenClaims map[string
 		SlackID: slackID,
 		Groups:  groupList,
 	}
+	ctx.Org = org
 
 	if err := s.UserService.Persist(ctx.User); err != nil {
 		return fmt.Errorf("failed persisting user %v to default org, err=%v", sub, err)

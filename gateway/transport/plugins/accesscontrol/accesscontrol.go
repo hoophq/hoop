@@ -2,28 +2,22 @@ package accesscontrol
 
 import (
 	pb "github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/plugin"
+	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 )
 
-const (
-	Name string = "access_control"
-)
+const Name string = "access_control"
 
-type (
-	accessControlPlugin struct {
-		name string
-	}
-)
-
-func New() *accessControlPlugin {
-	return &accessControlPlugin{name: Name}
+type plugin struct {
+	name string
 }
 
-func (r *accessControlPlugin) Name() string                         { return r.name }
-func (r *accessControlPlugin) OnStartup(config plugin.Config) error { return nil }
-func (r *accessControlPlugin) OnConnect(config plugin.Config) error { return nil }
-func (r *accessControlPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *pb.Packet) error {
-	return nil
+func New() *plugin { return &plugin{name: Name} }
+
+func (r *plugin) Name() string                          { return r.name }
+func (r *plugin) OnStartup(_ plugintypes.Context) error { return nil }
+func (r *plugin) OnConnect(_ plugintypes.Context) error { return nil }
+func (r *plugin) OnReceive(_ plugintypes.Context, _ *pb.Packet) (*plugintypes.ConnectResponse, error) {
+	return nil, nil
 }
-func (r *accessControlPlugin) OnDisconnect(config plugin.Config, errMsg error) error { return nil }
-func (r *accessControlPlugin) OnShutdown()                                           {}
+func (r *plugin) OnDisconnect(_ plugintypes.Context, _ error) error { return nil }
+func (r *plugin) OnShutdown()                                       {}
