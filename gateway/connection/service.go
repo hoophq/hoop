@@ -7,8 +7,7 @@ import (
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/plugin"
 	pluginsrbac "github.com/runopsio/hoop/gateway/transport/plugins/accesscontrol"
-	pluginsaudit "github.com/runopsio/hoop/gateway/transport/plugins/audit"
-	pluginsdlp "github.com/runopsio/hoop/gateway/transport/plugins/dlp"
+	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
@@ -151,7 +150,7 @@ func (s *Service) FindOne(context *user.Context, name string) (*Connection, erro
 }
 
 func (s *Service) bindAuditPlugin(context *user.Context, conn *Connection) {
-	p, err := s.PluginService.FindOne(context, pluginsaudit.Name)
+	p, err := s.PluginService.FindOne(context, plugintypes.PluginAuditName)
 	if err != nil {
 		return
 	}
@@ -168,7 +167,7 @@ func (s *Service) bindAuditPlugin(context *user.Context, conn *Connection) {
 		}
 	} else {
 		p = &plugin.Plugin{
-			Name:        "audit",
+			Name:        plugintypes.PluginAuditName,
 			Connections: []plugin.Connection{{ConnectionId: conn.Id}},
 		}
 	}
@@ -179,7 +178,7 @@ func (s *Service) bindAuditPlugin(context *user.Context, conn *Connection) {
 }
 
 func (s *Service) bindDLPPlugin(context *user.Context, conn *Connection) {
-	p, err := s.PluginService.FindOne(context, pluginsdlp.Name)
+	p, err := s.PluginService.FindOne(context, plugintypes.PluginDLPName)
 	if err != nil {
 		return
 	}
@@ -199,7 +198,7 @@ func (s *Service) bindDLPPlugin(context *user.Context, conn *Connection) {
 		}
 	} else {
 		p = &plugin.Plugin{
-			Name:        pluginsdlp.Name,
+			Name:        plugintypes.PluginDLPName,
 			Connections: []plugin.Connection{{ConnectionId: conn.Id, Config: pb.DefaultInfoTypes}},
 		}
 	}

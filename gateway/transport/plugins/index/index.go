@@ -15,16 +15,13 @@ import (
 	"github.com/runopsio/hoop/gateway/indexer"
 	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/session"
+	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 )
 
-const (
-	Name                 = "indexer"
-	defaultIndexJobStart = "23:30"
-)
+const defaultIndexJobStart = "23:30"
 
 type (
 	indexPlugin struct {
-		name            string
 		sessionStore    *session.Storage
 		pluginStore     *plugin.Storage
 		indexers        memory.Store
@@ -34,7 +31,6 @@ type (
 
 func New(sessionStore *session.Storage, pluginStore *plugin.Storage) *indexPlugin {
 	p := &indexPlugin{
-		name:            Name,
 		sessionStore:    sessionStore,
 		pluginStore:     pluginStore,
 		indexers:        memory.New(),
@@ -51,26 +47,23 @@ func New(sessionStore *session.Storage, pluginStore *plugin.Storage) *indexPlugi
 	return p
 }
 
-func (p *indexPlugin) Name() string { return p.name }
-func (p *indexPlugin) OnStartup(config plugin.Config) error {
-	if fi, _ := os.Stat(plugin.IndexPath); fi == nil || !fi.IsDir() {
-		return fmt.Errorf("failed to retrieve index path info, path=%v", plugin.IndexPath)
+func (p *indexPlugin) Name() string { return plugintypes.PluginIndexName }
+func (p *indexPlugin) OnStartup(_ plugintypes.Context) error {
+	if fi, _ := os.Stat(plugintypes.IndexPath); fi == nil || !fi.IsDir() {
+		return fmt.Errorf("failed to retrieve index path info, path=%v", plugintypes.IndexPath)
 	}
 	return nil
 }
 
-func (p *indexPlugin) OnConnect(config plugin.Config) error {
-	if config.Org == "" || config.SessionId == "" {
-		return fmt.Errorf("failed processing indexer plugin, missing org_id and session_id params")
-	}
-	if ch := p.indexers.Get(config.Org); ch == nil {
+func (p *indexPlugin) OnConnect(pctx plugintypes.Context) error {
+	if ch := p.indexers.Get(pctx.OrgID); ch == nil {
 		go func() {
 			indexCh := make(chan *indexer.Session)
-			p.indexers.Set(config.Org, indexCh)
+			p.indexers.Set(pctx.OrgID, indexCh)
 			defer func() {
 				close(indexCh)
-				p.indexers.Del(config.Org)
-				log.Printf("org=%v - closed indexer channel", config.Org)
+				p.indexers.Del(pctx.OrgID)
+				log.Printf("org=%v - closed indexer channel", pctx.OrgID)
 			}()
 			for s := range indexCh {
 				log.Printf("session=%v - starting indexing", s.ID)
@@ -84,10 +77,10 @@ func (p *indexPlugin) OnConnect(config plugin.Config) error {
 			}
 		}()
 	}
-	return p.writeOnConnect(config)
+	return p.writeOnConnect(pctx)
 }
 
-func (p *indexPlugin) OnReceive(c plugin.Config, config []string, pkt *pb.Packet) error {
+func (p *indexPlugin) OnReceive(c plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {
 	switch pb.PacketType(pkt.GetType()) {
 	case pbagent.PGConnectionWrite:
 		isSimpleQuery, queryBytes, err := pg.SimpleQueryContent(pkt.Payload)
@@ -95,31 +88,28 @@ func (p *indexPlugin) OnReceive(c plugin.Config, config []string, pkt *pb.Packet
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("session=%v - failed obtaining simple query data, err=%v", c.SessionId, err)
+			return nil, fmt.Errorf("session=%v - failed obtaining simple query data, err=%v", c.SID, err)
 		}
-		return p.writeOnReceive(c.SessionId, "i", queryBytes)
+		return nil, p.writeOnReceive(c.SID, "i", queryBytes)
 	case pbclient.WriteStdout:
-		return p.writeOnReceive(c.SessionId, "o", pkt.Payload)
+		return nil, p.writeOnReceive(c.SID, "o", pkt.Payload)
 	case pbclient.WriteStderr:
-		return p.writeOnReceive(c.SessionId, "e", pkt.Payload)
+		return nil, p.writeOnReceive(c.SID, "e", pkt.Payload)
 	case pbagent.ExecWriteStdin, pbagent.TerminalWriteStdin:
-		return p.writeOnReceive(c.SessionId, "i", pkt.Payload)
+		return nil, p.writeOnReceive(c.SID, "i", pkt.Payload)
 	case pbclient.SessionClose:
 		isError := len(pkt.Payload) > 0
 		defer p.indexOnClose(c, isError)
 		if isError {
-			return p.writeOnReceive(c.SessionId, "e", pkt.Payload)
+			return nil, p.writeOnReceive(c.SID, "e", pkt.Payload)
 		}
 	}
-	return nil
+	return nil, nil
 }
 
-func (p *indexPlugin) OnDisconnect(config plugin.Config, errMsg error) error {
-	if config.Org == "" || config.SessionId == "" {
-		return fmt.Errorf("missing org_id and session_id")
-	}
-	if config.GetString("client") == pb.ConnectionOriginClient {
-		p.indexOnClose(config, false)
+func (p *indexPlugin) OnDisconnect(pctx plugintypes.Context, errMsg error) error {
+	if pctx.ClientOrigin == pb.ConnectionOriginClient {
+		p.indexOnClose(pctx, false)
 	}
 	return nil
 }

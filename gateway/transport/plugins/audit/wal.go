@@ -5,13 +5,14 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	pb "github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/plugin"
-	"github.com/runopsio/hoop/gateway/session"
-	"github.com/tidwall/wal"
 	"os"
 	"sync"
 	"time"
+
+	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/gateway/session"
+	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+	"github.com/tidwall/wal"
 
 	"github.com/runopsio/hoop/common/log"
 )
@@ -99,21 +100,21 @@ func parseEventStream(eventStream []byte) (session.EventStream, int, int64, erro
 		eventStreamLength, dlpCounter, nil
 }
 
-func (p *auditPlugin) writeOnConnect(config plugin.Config) error {
-	walFolder := fmt.Sprintf(walFolderTmpl, plugin.AuditPath, config.Org, config.SessionId)
+func (p *auditPlugin) writeOnConnect(pctx plugintypes.Context) error {
+	walFolder := fmt.Sprintf(walFolderTmpl, plugintypes.AuditPath, pctx.OrgID, pctx.SID)
 	walog, err := wal.Open(walFolder, wal.DefaultOptions)
 	if err != nil {
 		return fmt.Errorf("failed opening wal file, err=%v", err)
 	}
 	walHeader, err := encodeWalHeader(&walHeader{
-		OrgID:          config.Org,
-		SessionID:      config.SessionId,
-		UserID:         config.UserID,
-		UserName:       config.UserName,
-		UserEmail:      config.UserEmail,
-		ConnectionName: config.ConnectionName,
-		ConnectionType: config.ConnectionType,
-		Verb:           config.Verb,
+		OrgID:          pctx.OrgID,
+		SessionID:      pctx.SID,
+		UserID:         pctx.UserID,
+		UserName:       pctx.UserName,
+		UserEmail:      pctx.UserEmail,
+		ConnectionName: pctx.ConnectionName,
+		ConnectionType: pctx.ConnectionType,
+		Verb:           pctx.ClientVerb,
 		StartDate:      func() *time.Time { d := time.Now().UTC(); return &d }(),
 	})
 	if err != nil {
@@ -122,7 +123,7 @@ func (p *auditPlugin) writeOnConnect(config plugin.Config) error {
 	if err := walog.Write(1, walHeader); err != nil {
 		return fmt.Errorf("failed writing header to wal, err=%v", err)
 	}
-	p.walSessionStore.Set(config.SessionId, &walLogRWMutex{walog, sync.RWMutex{}, walFolder})
+	p.walSessionStore.Set(pctx.SID, &walLogRWMutex{walog, sync.RWMutex{}, walFolder})
 	return nil
 }
 
@@ -194,15 +195,15 @@ func (p *auditPlugin) writeOnClose(sessionID string) error {
 		idx++
 	}
 	endDate := time.Now().UTC()
-	err = p.storageWriter.Write(plugin.Config{
-		Org:            wh.OrgID,
-		SessionId:      wh.SessionID,
+	pluginctx := plugintypes.Context{
+		OrgID:          wh.OrgID,
+		SID:            wh.SessionID,
 		UserID:         wh.UserID,
 		UserName:       wh.UserName,
 		UserEmail:      wh.UserEmail,
 		ConnectionName: wh.ConnectionName,
 		ConnectionType: wh.ConnectionType,
-		Verb:           wh.Verb,
+		ClientVerb:     wh.Verb,
 		ParamsData: map[string]any{
 			"event_stream": eventStreamList,
 			"event_size":   eventSize,
@@ -210,7 +211,8 @@ func (p *auditPlugin) writeOnClose(sessionID string) error {
 			"end_time":     &endDate,
 			"dlp_count":    dlpCounter,
 		},
-	})
+	}
+	err = p.storageWriter.Write(pluginctx)
 	if err != nil {
 		walFooterBytes, _ := json.Marshal(&walFooter{
 			CommitError: err.Error(),

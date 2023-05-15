@@ -1,29 +1,18 @@
 package dlp
 
 import (
-	"github.com/runopsio/hoop/gateway/plugin"
-
 	pb "github.com/runopsio/hoop/common/proto"
+	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 )
 
-const Name string = "dlp"
+type plugin struct{}
 
-type (
-	dlpPlugin struct {
-		name string
-	}
-)
-
-func New() *dlpPlugin {
-	return &dlpPlugin{name: Name}
+func New() *plugin                                      { return &plugin{} }
+func (p *plugin) Name() string                          { return plugintypes.PluginDLPName }
+func (p *plugin) OnStartup(_ plugintypes.Context) error { return nil }
+func (p *plugin) OnConnect(_ plugintypes.Context) error { return nil }
+func (p *plugin) OnReceive(_ plugintypes.Context, _ *pb.Packet) (*plugintypes.ConnectResponse, error) {
+	return nil, nil
 }
-
-func (p *dlpPlugin) Name() string                         { return p.name }
-func (p *dlpPlugin) OnStartup(config plugin.Config) error { return nil }
-func (p *dlpPlugin) OnConnect(config plugin.Config) error { return nil }
-func (p *dlpPlugin) OnReceive(pluginConfig plugin.Config, config []string, pkt *pb.Packet) error {
-	return nil
-}
-
-func (p *dlpPlugin) OnDisconnect(config plugin.Config, errMsg error) error { return nil }
-func (p *dlpPlugin) OnShutdown()                                           {}
+func (p *plugin) OnDisconnect(_ plugintypes.Context, _ error) error { return nil }
+func (p *plugin) OnShutdown()                                       {}

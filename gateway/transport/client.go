@@ -14,14 +14,12 @@ import (
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
 	"github.com/runopsio/hoop/gateway/client"
-	"github.com/runopsio/hoop/gateway/connection"
-	"github.com/runopsio/hoop/gateway/plugin"
 	rv "github.com/runopsio/hoop/gateway/review"
 	justintime "github.com/runopsio/hoop/gateway/review/jit"
-	transporterr "github.com/runopsio/hoop/gateway/transport/errors"
 	pluginsaudit "github.com/runopsio/hoop/gateway/transport/plugins/audit"
-	pluginsdlp "github.com/runopsio/hoop/gateway/transport/plugins/dlp"
+	pluginsjit "github.com/runopsio/hoop/gateway/transport/plugins/jit"
 	pluginsslack "github.com/runopsio/hoop/gateway/transport/plugins/slack"
+	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -30,16 +28,8 @@ import (
 
 type (
 	pluginConfig struct {
-		Plugin
+		plugintypes.Plugin
 		config []string
-	}
-
-	Plugin interface {
-		Name() string
-		OnStartup(config plugin.Config) error
-		OnConnect(p plugin.Config) error
-		OnReceive(pluginConfig plugin.Config, config []string, packet *pb.Packet) error
-		OnDisconnect(p plugin.Config, errMsg error) error
 	}
 )
 
@@ -63,7 +53,6 @@ var disconnectSink = struct {
 
 func bindClient(sessionID string,
 	stream pb.Transport_ConnectServer,
-	connection *connection.Connection,
 	pluginsConfig []pluginConfig) {
 
 	cc.mu.Lock()
@@ -146,7 +135,6 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	if sessionID == "" {
 		sessionID = uuid.NewString()
 	}
-	connectionContext := context.Background()
 	c := &client.Client{
 		Id:           uuid.NewString(),
 		SessionID:    sessionID,
@@ -155,27 +143,38 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		Status:       client.StatusConnected,
 		ConnectionId: conn.Id,
 		AgentId:      conn.AgentId,
-		Context:      connectionContext,
+		Verb:         clientVerb,
 	}
 	s.trackSessionStatus(sessionID, pb.SessionPhaseClientConnect, nil)
 	setClientMetdata(c, md)
 
-	pConfig := plugin.Config{
-		SessionId:         sessionID,
-		ConnectionId:      conn.Id,
-		ConnectionName:    connectionName,
-		ConnectionType:    string(conn.Type),
-		ConnectionContext: connectionContext,
-		Org:               userCtx.Org.Id,
-		UserID:            userCtx.User.Id,
-		UserName:          userCtx.User.Name,
-		UserEmail:         userCtx.User.Email,
-		UserGroups:        userCtx.User.Groups,
-		Verb:              clientVerb,
-		Hostname:          hostname,
-		MachineId:         machineId,
-		KernelVersion:     kernelVersion,
-		ParamsData:        map[string]any{"client": clientOrigin},
+	pluginContext := plugintypes.Context{
+		Context: context.Background(),
+		SID:     sessionID,
+
+		OrgID:      userCtx.Org.Id,
+		UserID:     userCtx.User.Id,
+		UserName:   userCtx.User.Name,
+		UserEmail:  userCtx.User.Email,
+		UserGroups: userCtx.User.Groups,
+
+		ConnectionID:      conn.Id,
+		ConnectionName:    conn.Name,
+		ConnectionType:    fmt.Sprintf("%v", conn.Type),
+		ConnectionCommand: conn.Command,
+		ConnectionSecret:  conn.Secret,
+		ConnectionAgentID: conn.AgentId,
+
+		ClientVerb:   clientVerb,
+		ClientOrigin: clientOrigin,
+
+		ParamsData: map[string]any{},
+	}
+	if err := pluginContext.Validate(); err != nil {
+		log.Errorf("failed validating plugin context, err=%v", err)
+		sentry.CaptureException(err)
+		return status.Errorf(codes.Internal,
+			"failed validating connection context, contact the administrator")
 	}
 
 	switch string(conn.Type) {
@@ -199,10 +198,10 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 				},
 			})
 		}
-		_ = s.pluginOnDisconnect(pConfig, err)
+		_ = s.pluginOnDisconnect(pluginContext, err)
 	})
-	plugins, err := s.loadConnectPlugins(userCtx, pConfig)
-	bindClient(sessionID, stream, conn, plugins)
+	plugins, err := s.loadConnectPlugins(userCtx, pluginContext)
+	bindClient(sessionID, stream, plugins)
 	if err != nil {
 		s.disconnectClient(sessionID, err)
 		s.trackSessionStatus(sessionID, pb.SessionPhaseClientErr, err)
@@ -230,10 +229,10 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	})
 
 	log.With("session", sessionID).
-		Infof("proxy connected: user=%v,hostname=%v,origin=%v,verb=%v,platform=%v,version=%v,goversion=%v,compiler=%v",
-			pConfig.UserEmail, c.Hostname, clientOrigin, c.Verb, c.Platform, c.Version, c.GoVersion, c.Compiler)
+		Infof("proxy connected: user=%v,hostname=%v,origin=%v,verb=%v,platform=%v,version=%v,goversion=%v",
+			userCtx.User.Email, c.Hostname, clientOrigin, c.Verb, c.Platform, c.Version, c.GoVersion)
 	s.trackSessionStatus(sessionID, pb.SessionPhaseClientConnected, nil)
-	clientErr := s.listenClientMessages(stream, c, conn, pConfig)
+	clientErr := s.listenClientMessages(stream, pluginContext)
 	if status, ok := status.FromError(clientErr); ok && status.Code() == codes.Canceled {
 		log.With("session", c.SessionID, "origin", clientOrigin).Infof("grpc client connection canceled")
 		// it means the api client has disconnected,
@@ -253,16 +252,12 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	return clientErr
 }
 
-func (s *Server) listenClientMessages(
-	stream pb.Transport_ConnectServer,
-	c *client.Client,
-	conn *connection.Connection,
-	config plugin.Config) error {
+func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, pctx plugintypes.Context) error {
 	for {
 		select {
 		case <-stream.Context().Done():
 			return nil
-		case <-c.Context.Done():
+		case <-pctx.Context.Done():
 			return status.Error(codes.Aborted, "session ended, reached connection duration")
 		default:
 		}
@@ -271,7 +266,7 @@ func (s *Server) listenClientMessages(
 		pkt, err := stream.Recv()
 		if err != nil {
 			if err == io.EOF {
-				log.With("session", c.SessionID).Debugf("EOF")
+				log.With("session", pctx.SID).Debugf("EOF")
 				return err
 			}
 			if status, ok := status.FromError(err); ok && status.Code() == codes.Canceled {
@@ -288,63 +283,56 @@ func (s *Server) listenClientMessages(
 		if pkt.Spec == nil {
 			pkt.Spec = make(map[string][]byte)
 		}
-		pkt.Spec[pb.SpecGatewaySessionID] = []byte(c.SessionID)
-		log.With("session", c.SessionID).Debugf("receive client packet type [%s]", pkt.Type)
+		pkt.Spec[pb.SpecGatewaySessionID] = []byte(pctx.SID)
+		log.With("session", pctx.SID).Debugf("receive client packet type [%s]", pkt.Type)
 		shouldProcessClientPacket := true
-		err = s.pluginOnReceive(config, pkt, func(pluginErr error) error {
-			switch v := pluginErr.(type) {
-			case *transporterr.NoopContextErr:
-				c.Context = v.Context()
-			case *transporterr.NoopErr:
-				pktresp := v.Packet()
-				if cs := getClientStream(c.SessionID); cs != nil {
-					// TODO: get the name of plugin here!
-					log.With("session", c.SessionID).Infof("plugin responded with packet %v", pktresp.Type)
-					_ = cs.Send(pktresp)
-				}
-				// the plugin has sent a packet, stop processing further packets
-				shouldProcessClientPacket = false
-			case *transporterr.InternalErr:
-				if v.HasInternalErr() {
-					log.With("session", config.SessionId).Errorf("plugin rejected packet, %v", v.FullErr())
-					// TODO: add sentry here?
-					sentry.CaptureException(pluginErr)
-				}
-				return v
-			default:
-				return status.Errorf(codes.Internal, pluginErr.Error())
+		connectResponse, err := s.pluginOnReceive(pctx, pkt)
+		switch v := err.(type) {
+		case *plugintypes.InternalError:
+			if v.HasInternalErr() {
+				log.With("session", pctx.SID).Errorf("plugin rejected packet, %v", v.FullErr())
+				sentry.CaptureException(fmt.Errorf(v.FullErr()))
 			}
-			return nil
-		})
-		if err != nil {
-			return err
+			return status.Errorf(codes.Internal, err.Error())
+		case nil: // noop
+		default:
+			return status.Errorf(codes.Internal, err.Error())
+		}
+		if connectResponse != nil {
+			if connectResponse.Context != nil {
+				pctx.Context = connectResponse.Context
+			}
+			if cs := getClientStream(pctx.SID); cs != nil && connectResponse.ClientPacket != nil {
+				_ = cs.Send(connectResponse.ClientPacket)
+				shouldProcessClientPacket = false
+			}
 		}
 		if shouldProcessClientPacket {
-			err = s.processClientPacket(pkt, config.Verb, c, conn)
+			err = s.processClientPacket(pkt, pctx)
 			if err != nil {
-				log.With("session", c.SessionID).Warnf("failed processing client packet, err=%v", err)
+				log.With("session", pctx.SID).Warnf("failed processing client packet, err=%v", err)
 				return status.Errorf(codes.FailedPrecondition, err.Error())
 			}
 		}
 	}
 }
 
-func (s *Server) processClientPacket(pkt *pb.Packet, clientVerb string, client *client.Client, conn *connection.Connection) error {
+func (s *Server) processClientPacket(pkt *pb.Packet, pctx plugintypes.Context) error {
 	switch pb.PacketType(pkt.Type) {
 	case pbagent.SessionOpen:
 		spec := map[string][]byte{
-			pb.SpecGatewaySessionID: []byte(client.SessionID),
-			pb.SpecConnectionType:   []byte(conn.Type),
+			pb.SpecGatewaySessionID: []byte(pctx.SID),
+			pb.SpecConnectionType:   []byte(pctx.ConnectionType),
 		}
 
 		if s.GcpDLPRawCredentials != "" {
 			spec[pb.SpecAgentGCPRawCredentialsKey] = []byte(s.GcpDLPRawCredentials)
 		}
 
-		agentStream := getAgentStream(conn.AgentId)
+		agentStream := getAgentStream(pctx.ConnectionAgentID)
 		if agentStream == nil {
 			spec[pb.SpecClientExecArgsKey] = pkt.Spec[pb.SpecClientExecArgsKey]
-			clientStream := getClientStream(client.SessionID)
+			clientStream := getClientStream(pctx.SID)
 			_ = clientStream.Send(&pb.Packet{
 				Type: pbclient.SessionOpenAgentOffline,
 				Spec: spec,
@@ -352,7 +340,7 @@ func (s *Server) processClientPacket(pkt *pb.Packet, clientVerb string, client *
 			return fmt.Errorf("agent is offline")
 		}
 
-		connParams, err := s.addConnectionParams(pkt, conn, client)
+		connParams, err := s.addConnectionParams(pkt, pctx)
 		if err != nil {
 			sentry.CaptureException(err)
 			return err
@@ -368,9 +356,9 @@ func (s *Server) processClientPacket(pkt *pb.Packet, clientVerb string, client *
 		}
 		_ = agentStream.Send(&pb.Packet{Type: pbagent.SessionOpen, Spec: spec})
 	default:
-		agentStream := getAgentStream(conn.AgentId)
+		agentStream := getAgentStream(pctx.ConnectionAgentID)
 		if agentStream == nil {
-			return fmt.Errorf("agent not found for connection %s", conn.Name)
+			return fmt.Errorf("agent not found for connection %s", pctx.ConnectionName)
 		}
 		_ = agentStream.Send(pkt)
 	}
@@ -393,18 +381,18 @@ func clientArgsDecode(spec map[string][]byte) []string {
 func getInfoTypes(sessionID string) []string {
 	var infoTypes []string
 	for _, p := range getPlugins(sessionID) {
-		if p.Plugin.Name() == pluginsdlp.Name {
+		if p.Plugin.Name() == plugintypes.PluginDLPName {
 			infoTypes = p.config
 		}
 	}
 	return infoTypes
 }
 
-func (s *Server) addConnectionParams(pkt *pb.Packet, conn *connection.Connection, client *client.Client) ([]byte, error) {
+func (s *Server) addConnectionParams(pkt *pb.Packet, pctx plugintypes.Context) ([]byte, error) {
 	clientArgs := clientArgsDecode(pkt.Spec)
-	infoTypes := getInfoTypes(client.SessionID)
+	infoTypes := getInfoTypes(pctx.SID)
 
-	ctx := &user.Context{Org: &user.Org{Id: client.OrgId}}
+	ctx := &user.Context{Org: &user.Org{Id: pctx.OrgID}}
 	plugins, err := s.PluginService.FindAll(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed loading plugin hooks, err=%v", err)
@@ -416,7 +404,7 @@ func (s *Server) addConnectionParams(pkt *pb.Packet, conn *connection.Connection
 		}
 		var pluginName string
 		for _, connectionName := range pluginItem.Connections {
-			if conn.Name == connectionName {
+			if pctx.ConnectionName == connectionName {
 				pluginName = pluginItem.Name
 				break
 			}
@@ -426,11 +414,11 @@ func (s *Server) addConnectionParams(pkt *pb.Packet, conn *connection.Connection
 		}
 		pl, err := s.PluginService.FindOne(ctx, pluginName)
 		if err != nil {
-			return nil, fmt.Errorf("failed loading plugin for connection (%v), err=%v", conn.Name, err)
+			return nil, fmt.Errorf("failed loading plugin for connection (%v), err=%v", pctx.ConnectionName, err)
 		}
 
 		for _, plConn := range pl.Connections {
-			if plConn.Name != conn.Name {
+			if plConn.Name != pctx.ConnectionName {
 				continue
 			}
 			// TODO: connection config should change in the future to accept
@@ -456,13 +444,13 @@ func (s *Server) addConnectionParams(pkt *pb.Packet, conn *connection.Connection
 		}
 	}
 	encConnectionParams, err := pb.GobEncode(&pb.AgentConnectionParams{
-		ConnectionName: conn.Name,
-		ConnectionType: string(conn.Type),
-		UserID:         client.UserId,
-		EnvVars:        conn.Secret,
-		CmdList:        conn.Command,
+		ConnectionName: pctx.ConnectionName,
+		ConnectionType: pctx.ConnectionType,
+		UserID:         pctx.UserID,
+		EnvVars:        pctx.ConnectionSecret,
+		CmdList:        pctx.ConnectionCommand,
 		ClientArgs:     clientArgs,
-		ClientVerb:     client.Verb,
+		ClientVerb:     pctx.ClientVerb,
 		DLPInfoTypes:   infoTypes,
 		PluginHookList: pluginHookList,
 	})
@@ -521,7 +509,7 @@ func (s *Server) exchangeUserToken(token string) (string, error) {
 	return sub, nil
 }
 
-func (s *Server) loadConnectPlugins(ctx *user.Context, config plugin.Config) ([]pluginConfig, error) {
+func (s *Server) loadConnectPlugins(ctx *user.Context, pctx plugintypes.Context) ([]pluginConfig, error) {
 	pluginsConfig := make([]pluginConfig, 0)
 	var nonRegisteredPlugins []string
 	for _, p := range s.RegisteredPlugins {
@@ -536,15 +524,19 @@ func (s *Server) loadConnectPlugins(ctx *user.Context, config plugin.Config) ([]
 		}
 
 		switch p.Name() {
-		case pluginsaudit.Name:
+		case plugintypes.PluginAuditName:
 			// TODO: move to gateway/main.go
-			config.ParamsData[pluginsaudit.StorageWriterParam] = s.SessionService.Storage.NewGenericStorageWriter()
-		case pluginsslack.Name:
-			config.ParamsData[pluginsslack.PluginConfigEnvVarsParam] = p1.Config.EnvVars
+			pctx.ParamsData[pluginsaudit.StorageWriterParam] = s.SessionService.Storage.NewGenericStorageWriter()
+		case pluginsjit.Name:
+			pctx.ParamsData[pluginsjit.JitServiceParam] = &s.JitService
+			pctx.ParamsData[pluginsjit.UserServiceParam] = &s.UserService
+			pctx.ParamsData[pluginsjit.NotificationServiceParam] = s.NotificationService
+		case plugintypes.PluginSlackName:
+			pctx.ParamsData[pluginsslack.PluginConfigEnvVarsParam] = p1.Config.EnvVars
 		}
 
 		for _, c := range p1.Connections {
-			if c.Name == config.ConnectionName {
+			if c.Name == pctx.ConnectionName {
 				cfg := c.Config
 				if len(ctx.User.Groups) > 0 && len(c.Groups) > 0 {
 					cfg = make([]string, 0)
@@ -561,13 +553,13 @@ func (s *Server) loadConnectPlugins(ctx *user.Context, config plugin.Config) ([]
 					config: cfg,
 				}
 
-				if err := p.OnStartup(config); err != nil {
+				if err := p.OnStartup(pctx); err != nil {
 					log.Errorf("failed starting plugin %q, err=%v", p.Name(), err)
 					return pluginsConfig, status.Errorf(codes.Internal, "failed starting plugin")
 				}
 
-				if err = p.OnConnect(config); err != nil {
-					log.Warnf("plugin %q refused to accept connection %q, err=%v", p1.Name, config.SessionId, err)
+				if err = p.OnConnect(pctx); err != nil {
+					log.Warnf("plugin %q refused to accept connection %q, err=%v", p1.Name, pctx.SID, err)
 					return pluginsConfig, status.Errorf(codes.FailedPrecondition, err.Error())
 				}
 
@@ -577,32 +569,35 @@ func (s *Server) loadConnectPlugins(ctx *user.Context, config plugin.Config) ([]
 		}
 	}
 	if len(nonRegisteredPlugins) > 0 {
-		log.With("session", config.SessionId).Infof("non registered plugins %v", nonRegisteredPlugins)
+		log.With("session", pctx.SID).Infof("non registered plugins %v", nonRegisteredPlugins)
 	}
 	return pluginsConfig, nil
 }
 
-func (s *Server) pluginOnDisconnect(config plugin.Config, errMsg error) error {
-	for _, p := range getPlugins(config.SessionId) {
-		if err := p.OnDisconnect(config, errMsg); err != nil {
+func (s *Server) pluginOnDisconnect(pctx plugintypes.Context, errMsg error) error {
+	for _, p := range getPlugins(pctx.SID) {
+		if err := p.OnDisconnect(pctx, errMsg); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// pluginOnReceive process the plugins in the OnReceive phase.
-// if errHandlerFn returns false it will stop processing further plugins and return the error in the main function
-func (s *Server) pluginOnReceive(config plugin.Config, pkt *pb.Packet, errHandlerFn func(err error) error) error {
-	for _, p := range getPlugins(config.SessionId) {
-		if err := p.OnReceive(config, p.config, pkt); err != nil {
-			if handlerErr := errHandlerFn(err); handlerErr != nil {
-				return handlerErr
-			}
-			continue
+// pluginOnReceive will process the OnReceive phase for every registered plugin.
+// the response must follow the instructions contained in the *plugintypes.ConnectResponse object.
+func (s *Server) pluginOnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {
+	var response *plugintypes.ConnectResponse
+	for _, p := range getPlugins(pctx.SID) {
+		pctx.PluginConnectionConfig = p.config
+		resp, err := p.OnReceive(pctx, pkt)
+		if err != nil {
+			return nil, err
+		}
+		if resp != nil && response == nil {
+			response = resp
 		}
 	}
-	return nil
+	return response, nil
 }
 
 func removeDuplicates(strSlice []string) []string {

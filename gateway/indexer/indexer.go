@@ -13,7 +13,7 @@ import (
 	"github.com/blevesearch/bleve/v2/index/scorch"
 	"github.com/blevesearch/bleve/v2/mapping"
 	"github.com/runopsio/hoop/gateway/indexer/searchquery"
-	"github.com/runopsio/hoop/gateway/plugin"
+	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 
 	// languages
 	_ "github.com/blevesearch/bleve/v2/analysis/lang/en"
@@ -96,7 +96,7 @@ func openStateFileIndex(indexBasePath, orgID string) (bleve.Index, error) {
 }
 
 func newBleveIndex(orgID string) (bleve.Index, updateStateFileFunc, error) {
-	indexRootPath := path.Join(plugin.IndexPath, orgID)
+	indexRootPath := path.Join(plugintypes.IndexPath, orgID)
 	indexPath := path.Join(indexRootPath, time.Now().UTC().Format(indexFolderTimeFormat))
 	if err := os.MkdirAll(indexPath, 0700); err != nil {
 		return nil, nil, fmt.Errorf("failed creating index path, err=%v", err)
@@ -133,7 +133,7 @@ func NewIndexer(orgID string) (*Indexer, error) {
 	if indexer, ok := mutexIndexer[orgID]; ok {
 		return indexer, nil
 	}
-	index, err := openStateFileIndex(plugin.IndexPath, orgID)
+	index, err := openStateFileIndex(plugintypes.IndexPath, orgID)
 	if err != nil {
 		return nil, err
 	}

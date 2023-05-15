@@ -8,23 +8,20 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
-	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/review/jit"
 	slackservice "github.com/runopsio/hoop/gateway/slack"
-	transporterr "github.com/runopsio/hoop/gateway/transport/errors"
+	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
 const (
-	Name                     = "slack"
 	PluginConfigEnvVarsParam = "plugin_config"
 	slackMaxButtons          = 20
 )
 
 type (
 	slackPlugin struct {
-		name      string
 		reviewSvc *review.Service
 		jitSvc    *jit.Service
 		userSvc   *user.Service
@@ -45,7 +42,6 @@ func New(reviewSvc *review.Service, jitSvc *jit.Service, userSvc *user.Service, 
 	instances = map[string]*slackservice.SlackService{}
 	mu = sync.RWMutex{}
 	return &slackPlugin{
-		name:      Name,
 		reviewSvc: reviewSvc,
 		jitSvc:    jitSvc,
 		userSvc:   userSvc,
@@ -53,84 +49,84 @@ func New(reviewSvc *review.Service, jitSvc *jit.Service, userSvc *user.Service, 
 	}
 }
 
-func (p *slackPlugin) Name() string                         { return p.name }
-func (p *slackPlugin) OnStartup(config plugin.Config) error { return nil }
-func (p *slackPlugin) OnConnect(config plugin.Config) error {
-	log.Infof("session=%v | slack | processing on-connect", config.SessionId)
+func (p *slackPlugin) Name() string                          { return plugintypes.PluginSlackName }
+func (p *slackPlugin) OnStartup(_ plugintypes.Context) error { return nil }
+func (p *slackPlugin) OnConnect(pctx plugintypes.Context) error {
+	log.Infof("session=%v | slack | processing on-connect", pctx.SID)
 	mu.Lock()
 	defer mu.Unlock()
-	sconf, err := parseSlackConfig(config.ParamsData[PluginConfigEnvVarsParam])
+	sconf, err := parseSlackConfig(pctx.ParamsData[PluginConfigEnvVarsParam])
 	if err != nil {
 		return err
 	}
 
-	if ss, ok := instances[config.Org]; ok {
+	if ss, ok := instances[pctx.OrgID]; ok {
 		if ss.BotToken() == sconf.slackBotToken {
 			return nil
 		}
-		log.Warnf("slack configuration has changed, closing instance/org %v", config.Org)
+		log.Warnf("slack configuration has changed, closing instance/org %v", pctx.OrgID)
 		// configuration has changed, clean up
 		ss.Close()
-		delete(instances, config.Org)
+		delete(instances, pctx.OrgID)
 	}
 
-	log.Infof("starting slack service instance for instance/org %v", config.Org)
+	log.Infof("starting slack service instance for instance/org %v", pctx.OrgID)
 	ss, err := slackservice.New(
 		sconf.slackBotToken,
 		sconf.slackAppToken,
 		sconf.slackChannel,
-		config.Org,
+		pctx.OrgID,
 	)
 	if err != nil {
 		return err
 	}
-	instances[config.Org] = ss
+	instances[pctx.OrgID] = ss
 	reviewRespCh := make(chan *slackservice.MessageReviewResponse)
 	go func() {
 		defer close(reviewRespCh)
 		if err := ss.ProcessEvents(reviewRespCh); err != nil {
-			log.Errorf("failed processing slack events for org %v, reason=%v", config.Org, err)
+			log.Errorf("failed processing slack events for org %v, reason=%v", pctx.OrgID, err)
 			return
 		}
-		log.Infof("done processing events for org %v", config.Org)
+		log.Infof("done processing events for org %v", pctx.OrgID)
 		mu.Lock()
 		defer mu.Unlock()
 		ss.Close()
-		delete(instances, config.Org)
+		delete(instances, pctx.OrgID)
 	}()
 
 	// response channel
 	go func() {
 		for resp := range reviewRespCh {
-			p.processEventResponse(&event{ss, resp, config.Org})
+			p.processEventResponse(&event{ss, resp, pctx.OrgID})
 		}
-		log.Infof("close response channel for org %v", config.Org)
+		log.Infof("close response channel for org %v", pctx.OrgID)
 	}()
 	return nil
 }
 
-func (p *slackPlugin) OnReceive(pconf plugin.Config, config []string, pkt *pb.Packet) error {
+func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {
 	if pkt.Type != pbagent.SessionOpen {
-		return nil
+		return nil, nil
 	}
 	log.Infof("executing slack on-receive ...")
 
 	sreq := &slackservice.MessageReviewRequest{
-		Name:           pconf.UserName,
-		Email:          pconf.UserEmail,
-		Connection:     pconf.ConnectionName,
-		ConnectionType: pconf.ConnectionType,
-		SessionID:      pconf.SessionId,
-		UserGroups:     pconf.UserGroups,
+		Name:           pctx.UserName,
+		Email:          pctx.UserEmail,
+		Connection:     pctx.ConnectionName,
+		ConnectionType: pctx.ConnectionType,
+		SessionID:      pctx.SID,
+		UserGroups:     pctx.UserGroups,
 	}
 
-	rev, err := p.reviewSvc.FindBySessionID(pconf.SessionId)
+	rev, err := p.reviewSvc.FindBySessionID(pctx.SID)
 	if err != nil {
-		return transporterr.Internal("internal error, failed fetching review", err)
+		return nil, plugintypes.InternalErr("internal error, failed fetching review", err)
 	}
 	if rev != nil {
 		if rev.Status != review.StatusPending {
-			return nil
+			return nil, nil
 		}
 		sreq.ID = rev.Id
 		sreq.WebappURL = fmt.Sprintf("%s/plugins/reviews/%s", p.apiURL, rev.Id)
@@ -142,22 +138,22 @@ func (p *slackPlugin) OnReceive(pconf plugin.Config, config []string, pkt *pb.Pa
 	}
 
 	if sreq.WebappURL == "" || len(sreq.ApprovalGroups) == 0 || len(sreq.ApprovalGroups) >= slackMaxButtons {
-		log.With("session", pconf.SessionId).Infof("no review message to process")
-		return nil
+		log.With("session", pctx.SID).Infof("no review message to process")
+		return nil, nil
 	}
 
-	if ss := getSlackServiceInstance(pconf.Org); ss != nil {
-		log.With("session", pconf.SessionId).Infof("sending slack review message, conn=%v, jit=%v",
+	if ss := getSlackServiceInstance(pctx.OrgID); ss != nil {
+		log.With("session", pctx.SID).Infof("sending slack review message, conn=%v, jit=%v",
 			sreq.Connection, sreq.SessionTime != nil)
 		if err := ss.SendMessageReview(sreq); err != nil {
-			log.With("session", pconf.SessionId).Errorf("failed sending slack review message, reason=%v", err)
+			log.With("session", pctx.SID).Errorf("failed sending slack review message, reason=%v", err)
 		}
 	}
-	return nil
+	return nil, nil
 }
 
-func (p *slackPlugin) OnDisconnect(config plugin.Config, errMsg error) error { return nil }
-func (p *slackPlugin) OnShutdown()                                           {}
+func (p *slackPlugin) OnDisconnect(_ plugintypes.Context, _ error) error { return nil }
+func (p *slackPlugin) OnShutdown()                                       {}
 
 type slackConfig struct {
 	slackBotToken string

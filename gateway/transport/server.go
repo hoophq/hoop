@@ -28,6 +28,7 @@ import (
 	"github.com/runopsio/hoop/gateway/review/jit"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/session"
+	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc"
 
@@ -58,7 +59,7 @@ type (
 		AgentSentryDSN       string
 		Analytics            user.Analytics
 
-		RegisteredPlugins []Plugin
+		RegisteredPlugins []plugintypes.Plugin
 	}
 
 	AnalyticsService interface {

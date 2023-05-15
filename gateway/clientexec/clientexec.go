@@ -11,12 +11,12 @@ import (
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
-	"github.com/runopsio/hoop/gateway/plugin"
+	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/tidwall/wal"
 )
 
 var (
-	walLogPath       = filepath.Join(plugin.AuditPath, "clientexec")
+	walLogPath       = filepath.Join(plugintypes.AuditPath, "clientexec")
 	walFolderTmpl    = `%s/%s-%s-wal`
 	maxResponseBytes = 600000 // 600KB
 )
@@ -113,7 +113,7 @@ func newReviewedResponse(reviewURI string) *Response {
 	}
 }
 
-func New(orgID, accessToken, connectionName string, sessionID string) (*clientExec, error) {
+func New(orgID, accessToken, connectionName, sessionID string) (*clientExec, error) {
 	if sessionID == "" {
 		sessionID = uuid.NewString()
 	}

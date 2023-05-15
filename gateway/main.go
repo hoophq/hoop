@@ -42,6 +42,7 @@ import (
 	pluginsjit "github.com/runopsio/hoop/gateway/transport/plugins/jit"
 	pluginsreview "github.com/runopsio/hoop/gateway/transport/plugins/review"
 	pluginsslack "github.com/runopsio/hoop/gateway/transport/plugins/slack"
+	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 )
 
 func Run() {
@@ -93,7 +94,7 @@ func Run() {
 		PluginHandler:     plugin.Handler{Service: &pluginService},
 		SessionHandler:    session.Handler{Service: &sessionService},
 		IndexerHandler:    indexer.Handler{},
-		ReviewHandler:     review.Handler{Service: &reviewService},
+		ReviewHandler:     review.Handler{Service: &reviewService, PluginService: &pluginService},
 		JitHandler:        jit.Handler{Service: &jitService},
 		SecurityHandler:   security.Handler{Service: &securityService},
 		RunbooksHandler:   runbooks.Handler{PluginService: &pluginService, ConnectionService: &connectionService},
@@ -122,7 +123,7 @@ func Run() {
 		Analytics:            analyticsService,
 	}
 	// order matters
-	g.RegisteredPlugins = []transport.Plugin{
+	g.RegisteredPlugins = []plugintypes.Plugin{
 		pluginsreview.New(
 			&review.Service{Storage: &review.Storage{Storage: s}, TransportService: g},
 			&user.Service{Storage: &user.Storage{Storage: s}},

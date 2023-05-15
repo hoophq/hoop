@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/gateway/plugin"
 	st "github.com/runopsio/hoop/gateway/storage"
+	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
 	"olympos.io/encoding/edn"
 )
@@ -277,27 +277,27 @@ func (s *Storage) NewGenericStorageWriter() *GenericStorageWriter {
 	}
 }
 
-func (s *GenericStorageWriter) Write(p plugin.Config) error {
-	log.Infof("session=%s - saving session, org-id=%v", p.SessionId, p.Org)
-	eventStartDate := p.GetTime("start_date")
+func (s *GenericStorageWriter) Write(c plugintypes.Context) error {
+	log.Infof("session=%s - saving session, org-id=%v", c.SID, c.OrgID)
+	eventStartDate := c.ParamsData.GetTime("start_date")
 	if eventStartDate == nil {
 		return fmt.Errorf(`missing "start_date" param`)
 	}
 	sess := &Session{
-		ID:               p.SessionId,
-		UserEmail:        p.UserEmail,
-		UserID:           p.UserID,
-		UserName:         p.UserName,
-		Type:             p.ConnectionType,
-		Connection:       p.ConnectionName,
-		Verb:             p.Verb,
+		ID:               c.SID,
+		UserEmail:        c.UserEmail,
+		UserID:           c.UserID,
+		UserName:         c.UserName,
+		Type:             c.ConnectionType,
+		Connection:       c.ConnectionName,
+		Verb:             c.ClientVerb,
 		NonIndexedStream: nil,
-		EventSize:        p.Int64("event_size"),
+		EventSize:        c.ParamsData.Int64("event_size"),
 		StartSession:     *eventStartDate,
-		EndSession:       p.GetTime("end_time"),
-		DlpCount:         p.Int64("dlp_count"),
+		EndSession:       c.ParamsData.GetTime("end_time"),
+		DlpCount:         c.ParamsData.Int64("dlp_count"),
 	}
-	eventStreamObj := p.Get("event_stream")
+	eventStreamObj := c.ParamsData.Get("event_stream")
 	eventStreamList, _ := eventStreamObj.([]EventStream)
 	if eventStreamList != nil {
 		nonIndexedEventStream, err := NewNonIndexedEventStreamList(*eventStartDate, eventStreamList...)
@@ -306,6 +306,6 @@ func (s *GenericStorageWriter) Write(p plugin.Config) error {
 		}
 		sess.NonIndexedStream = nonIndexedEventStream
 	}
-	_, err := s.persistFn(&user.Context{Org: &user.Org{Id: p.Org}}, sess)
+	_, err := s.persistFn(&user.Context{Org: &user.Org{Id: c.OrgID}}, sess)
 	return err
 }

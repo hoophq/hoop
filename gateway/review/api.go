@@ -4,18 +4,25 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/gateway/clientexec"
+	"github.com/runopsio/hoop/gateway/plugin"
+	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
+var mutexExecMap = map[string]any{}
+var syncMutexExecMap = sync.RWMutex{}
+
 type (
 	Handler struct {
-		Service service
+		Service       service
+		PluginService *plugin.Service
 	}
 
 	service interface {
@@ -107,15 +114,23 @@ func (h *Handler) FindOne(c *gin.Context) {
 func (h *Handler) RunExec(c *gin.Context) {
 	ctx := user.ContextUser(c)
 	log := user.ContextLogger(c)
-
 	reviewID := c.Param("id")
+	if isLockedForExec(reviewID) {
+		errMsg := fmt.Sprintf("the review %v is already being processed", reviewID)
+		c.JSON(http.StatusConflict, &clientexec.ExecErrResponse{Message: errMsg})
+		return
+	}
+	// locking the execution per review id prevents race condition executions
+	// in case of misbehavior of clients
+	lockExec(reviewID)
+	defer unlockExec(reviewID)
 	review, err := h.Service.FindOne(ctx, reviewID)
 	if err != nil {
 		log.Errorf("failed retrieving review, err=%v", err)
 		c.JSON(http.StatusInternalServerError, &clientexec.ExecErrResponse{Message: "failed retrieving review"})
 		return
 	}
-	if review == nil {
+	if review == nil || review.Type != ReviewTypeOneTime {
 		c.JSON(http.StatusNotFound, &clientexec.ExecErrResponse{Message: "review not found"})
 		return
 	}
@@ -127,17 +142,35 @@ func (h *Handler) RunExec(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, &clientexec.ExecErrResponse{Message: "review not approved or already executed"})
 		return
 	}
-	// the session declared in the review might no longer exists,
-	// if the user ctrl+c the client and run via API later
-	// a new session is created to execute fresh
+	p, err := h.PluginService.FindOne(ctx, plugintypes.PluginReviewName)
+	if err != nil {
+		log.Errorf("failed obtaining review plugin, err=%v", err)
+		c.JSON(http.StatusInternalServerError, &clientexec.ExecErrResponse{Message: "failed retrieving review plugin"})
+		return
+	}
+	hasReviewPlugin := false
+	for _, conn := range p.Connections {
+		if conn.Name == review.Connection.Name {
+			hasReviewPlugin = true
+			break
+		}
+	}
+
+	// The plugin must be active to be able to change the state of the review
+	// after the execution, this will ensure that a review is executed only once.
+	if !hasReviewPlugin {
+		errMsg := fmt.Sprintf("review plugin is not enabled for the connection %s", review.Connection.Name)
+		log.Infof(errMsg)
+		c.JSON(http.StatusUnprocessableEntity, &clientexec.ExecErrResponse{Message: errMsg})
+		return
+	}
+
+	// update the new reference session
+	// when processing the review plugin, it will obtain the resource by its session id.
 	review.Session = uuid.NewString()
-
-	// avoids running twice the same review
-	review.Status = StatusProcessing
-
 	if err := h.Service.Persist(ctx, review); err != nil {
-		log.Errorf("failed updating review, err=%v", err)
-		c.JSON(http.StatusInternalServerError, &clientexec.ExecErrResponse{Message: "exec failed"})
+		log.Errorf("failed updating review session id, err=%v", err)
+		c.JSON(http.StatusInternalServerError, &clientexec.ExecErrResponse{Message: "failed updating review session"})
 		return
 	}
 
@@ -159,7 +192,6 @@ func (h *Handler) RunExec(c *gin.Context) {
 	log.Infof("review apiexec, reviewid=%v, connection=%v, owner=%v, input-lenght=%v",
 		reviewID, review.Connection.Name, review.CreatedBy, len(review.Input))
 	c.Header("Location", fmt.Sprintf("/api/plugins/audit/sessions/%s/status", client.SessionID()))
-	statusCode := http.StatusOK
 
 	select {
 	case resp := <-clientResp:
@@ -178,7 +210,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 			})
 			return
 		}
-		c.JSON(statusCode, resp)
+		c.JSON(http.StatusOK, resp)
 	case <-time.After(time.Second * 50):
 		log.Infof("review exec timeout (50s), it will return async")
 		// closing the client will force the goroutine to end
@@ -203,4 +235,23 @@ func getAccessToken(c *gin.Context) string {
 		return tokenParts[1]
 	}
 	return ""
+}
+
+func lockExec(reviewID string) {
+	syncMutexExecMap.Lock()
+	defer syncMutexExecMap.Unlock()
+	mutexExecMap[reviewID] = nil
+}
+
+func unlockExec(reviewID string) {
+	syncMutexExecMap.Lock()
+	defer syncMutexExecMap.Unlock()
+	delete(mutexExecMap, reviewID)
+}
+
+func isLockedForExec(reviewID string) bool {
+	syncMutexExecMap.Lock()
+	defer syncMutexExecMap.Unlock()
+	_, ok := mutexExecMap[reviewID]
+	return ok
 }
