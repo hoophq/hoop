@@ -92,7 +92,7 @@ func Run() {
 		ConnectionHandler: connection.Handler{Service: &connectionService},
 		UserHandler:       user.Handler{Service: &userService, Analytics: analyticsService},
 		PluginHandler:     plugin.Handler{Service: &pluginService},
-		SessionHandler:    session.Handler{Service: &sessionService},
+		SessionHandler:    session.Handler{Service: &sessionService, ConnectionService: &connectionService, PluginService: &pluginService},
 		IndexerHandler:    indexer.Handler{},
 		ReviewHandler:     review.Handler{Service: &reviewService, PluginService: &pluginService},
 		JitHandler:        jit.Handler{Service: &jitService},

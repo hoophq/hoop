@@ -6,6 +6,8 @@ import (
 
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/gateway/session"
+	st "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
@@ -21,6 +23,8 @@ type (
 		FindAll(context *user.Context) ([]Review, error)
 		FindBySessionID(sessionID string) (*Review, error)
 		FindApprovedJitReviews(ctx *user.Context, connID string) (*Review, error)
+		PersistSessionAsReady(s *session.Session) (*st.TxResponse, error)
+		FindSessionBySessionId(sessionID string) (*session.Session, error)
 	}
 
 	transportService interface {
@@ -185,6 +189,14 @@ func (s *Service) Review(context *user.Context, reviewID string, status Status) 
 	}
 
 	if rev.Status == StatusApproved || rev.Status == StatusRejected {
+		currentSession, err := s.Storage.FindSessionBySessionId(rev.Session)
+		if err != nil {
+			return nil, err
+		}
+		_, err = s.Storage.PersistSessionAsReady(currentSession)
+		if err != nil {
+			return nil, err
+		}
 		// release the connection if there's a client waiting
 		s.TransportService.ReviewStatusChange(rev.Session, rev.Status, []byte(rev.Input))
 	}

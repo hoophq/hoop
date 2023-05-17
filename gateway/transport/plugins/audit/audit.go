@@ -69,6 +69,7 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 	if pctx.OrgID == "" || pctx.SID == "" {
 		return fmt.Errorf("failed processing audit plugin, missing org_id and session_id params")
 	}
+	pctx.ParamsData["status"] = "open"
 
 	if err := p.writeOnConnect(pctx); err != nil {
 		return err

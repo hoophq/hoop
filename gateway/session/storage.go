@@ -16,8 +16,31 @@ type (
 	Storage struct {
 		*st.Storage
 	}
+
 	GenericStorageWriter struct {
 		persistFn func(*user.Context, *Session) (*st.TxResponse, error)
+	}
+
+	XtdbReview struct {
+		Id             string        `edn:"xt/id"`
+		OrgId          string        `edn:"review/org"`
+		Type           string        `edn:"review/type"`
+		SessionId      string        `edn:"review/session"`
+		ConnectionId   string        `edn:"review/connection"`
+		CreatedBy      string        `edn:"review/created-by"`
+		Input          string        `edn:"review/input"`
+		AccessDuration time.Duration `edn:"review/access-duration"`
+		RevokeAt       *time.Time    `edn:"review/revoke-at"`
+		Status         Status        `edn:"review/status"`
+		ReviewGroups   []string      `edn:"review/review-groups"`
+	}
+
+	XtdbGroup struct {
+		Id         string  `json:"id"          edn:"xt/id"`
+		Group      string  `json:"group"       edn:"review-group/group"`
+		Status     Status  `json:"status"      edn:"review-group/status"`
+		ReviewedBy *string `json:"reviewed_by" edn:"review-group/reviewed-by"`
+		ReviewDate *string `json:"review_date" edn:"review-group/review_date"`
 	}
 )
 
@@ -161,8 +184,8 @@ func (s *Storage) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionLi
 	}
 	err := s.queryDecoder(`
 		{:query {
-			:find [id usr usr-id usr-name typ conn verb event-size start-date end-date dlp-count]
-			:keys [xt/id session/user session/user-id session/user-name
+			:find [id usr usr-id usr-name status typ conn verb event-size start-date end-date dlp-count]
+			:keys [xt/id session/user session/user-id session/user-name session/status
 				   session/type session/connection session/verb session/event-size
 				   session/start-date session/end-date session/dlp-count]
 			:in [org-id arg-user arg-type arg-conn arg-start-date arg-end-date]
@@ -171,6 +194,7 @@ func (s *Storage) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionLi
 					[a :session/user usr]
 					[a :session/user-id usr-id]
 					[a :session/user-name usr-name]
+					[(get-attr a :session/status "") [status]]
 					[a :session/type typ]
 					[a :session/connection conn]
 					[a :session/verb verb]
@@ -198,6 +222,44 @@ func (s *Storage) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionLi
 	return sessionList, err
 }
 
+func (s *Storage) FindReviewBySessionID(sessionID string) (*Review, error) {
+	var payload = fmt.Sprintf(`{:query {
+		:find [(pull ?r [:xt/id
+						:review/type
+						:review/status
+						:review/access-duration
+						:review/revoke-at
+						:review/input
+						:review/session
+						:review/connection
+						:review/created-by
+							{:review/connection [:xt/id :connection/name]}
+							{:review/review-groups [*
+								{:review-group/reviewed-by [:xt/id :user/name :user/email]}]}
+							{:review/created-by [:xt/id :user/name :user/email]}])]
+		:in [session-id]
+		:where [[?r :review/session session-id]
+				[?r :review/connection connid]
+				[?c :xt/id connid]]}
+        :in-args [%q]}`, sessionID)
+
+	b, err := s.Query([]byte(payload))
+	if err != nil {
+		return nil, err
+	}
+
+	var reviews []*Review
+	if err := edn.Unmarshal(b, &reviews); err != nil {
+		return nil, err
+	}
+
+	if len(reviews) == 0 {
+		return nil, nil
+	}
+
+	return reviews[0], nil
+}
+
 func (s *Storage) FindOne(ctx *user.Context, sessionID string) (*Session, error) {
 	var resultItems [][]Session
 	argUserID := fmt.Sprintf(`"%s"`, ctx.User.Id)
@@ -209,7 +271,7 @@ func (s *Storage) FindOne(ctx *user.Context, sessionID string) (*Session, error)
 	{:query {
 		:find [(pull s [:xt/id :session/user :session/user-id :session/user-name
 						:session/type :session/connection :session/verb :session/event-size
-						:session/start-date :session/end-date :session/dlp-count
+						:session/start-date :session/end-date :session/dlp-count :session/status
 						:session/xtdb-stream])]
 		:in [org-id arg-session-id arg-user-id]
 		:where [[s :session/org-id org-id]
@@ -280,6 +342,7 @@ func (s *Storage) NewGenericStorageWriter() *GenericStorageWriter {
 func (s *GenericStorageWriter) Write(c plugintypes.Context) error {
 	log.Infof("session=%s - saving session, org-id=%v", c.SID, c.OrgID)
 	eventStartDate := c.ParamsData.GetTime("start_date")
+	sessionStatus := c.ParamsData["status"]
 	if eventStartDate == nil {
 		return fmt.Errorf(`missing "start_date" param`)
 	}
@@ -291,6 +354,7 @@ func (s *GenericStorageWriter) Write(c plugintypes.Context) error {
 		Type:             c.ConnectionType,
 		Connection:       c.ConnectionName,
 		Verb:             c.ClientVerb,
+		Status:           sessionStatus,
 		NonIndexedStream: nil,
 		EventSize:        c.ParamsData.Int64("event_size"),
 		StartSession:     *eventStartDate,
@@ -308,4 +372,44 @@ func (s *GenericStorageWriter) Write(c plugintypes.Context) error {
 	}
 	_, err := s.persistFn(&user.Context{Org: &user.Org{Id: c.OrgID}}, sess)
 	return err
+}
+
+func (s *Storage) PersistReview(ctx *user.Context, review *Review) (int64, error) {
+	reviewGroupIds := make([]string, 0)
+
+	var payloads []st.TxEdnStruct
+	for _, r := range review.ReviewGroups {
+		reviewGroupIds = append(reviewGroupIds, r.Id)
+		xg := &XtdbGroup{
+			Id:         r.Id,
+			Group:      r.Group,
+			Status:     r.Status,
+			ReviewDate: r.ReviewDate,
+		}
+		if r.ReviewedBy != nil {
+			xg.ReviewedBy = &r.ReviewedBy.Id
+		}
+		payloads = append(payloads, xg)
+	}
+
+	xtdbReview := &XtdbReview{
+		Id:             review.Id,
+		OrgId:          ctx.Org.Id,
+		Type:           review.Type,
+		SessionId:      review.Session,
+		ConnectionId:   review.Connection.Id,
+		CreatedBy:      ctx.User.Id,
+		Input:          review.Input,
+		AccessDuration: review.AccessDuration,
+		RevokeAt:       review.RevokeAt,
+		Status:         review.Status,
+		ReviewGroups:   reviewGroupIds,
+	}
+
+	tx, err := s.SubmitPutTx(append(payloads, xtdbReview)...)
+	if err != nil {
+		return 0, err
+	}
+
+	return tx.TxID, nil
 }
