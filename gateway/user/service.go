@@ -229,3 +229,8 @@ func isInStatus(status StatusType) bool {
 func IsOrgMultiTenant() bool {
 	return os.Getenv("ORG_MULTI_TENANT") == "true"
 }
+
+// NewContext returns a user.Context with Id and Org ID set
+func NewContext(orgID, userID string) *Context {
+	return &Context{Org: &Org{Id: orgID}, User: &User{Id: userID}}
+}

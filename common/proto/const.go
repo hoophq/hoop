@@ -5,6 +5,7 @@ import "time"
 const (
 	SpecGatewaySessionID          string = "gateway.session_id"
 	SpecConnectionType            string = "gateway.connection_type"
+	SpecPluginDcmDataKey          string = "plugin.dcm_data"
 	SpecDLPTransformationSummary  string = "dlp.transformation_summary"
 	SpecClientConnectionID        string = "client.connection_id"
 	SpecClientExitCodeKey         string = "client.exit_code"

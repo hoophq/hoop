@@ -12,6 +12,8 @@ const (
 	PluginAccessControlName = "access_control"
 	PluginIndexName         = "indexer"
 	PluginDLPName           = "dlp"
+	// Database Credentials Manager
+	PluginDCMName = "dcm"
 )
 
 var (

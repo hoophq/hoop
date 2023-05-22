@@ -85,12 +85,14 @@ func (s *Service) Callback(state, code string) string {
 			s.loginOutcome(login, outcomeError)
 			return login.Redirect + "?error=unexpected_error"
 		}
-		return "https://app.hoop.dev/callback?error=unexpected_error"
+		log.Warnf("login not found, err=%v", err)
+		return fmt.Sprintf("%s/callback?error=unexpected_error", s.Provider.ApiURL)
 	}
 
-	log.With("code", code, "state", state).Debugf("Found login: %v", login)
+	log.With("id", login.Id, "code", code, "state", state).Debugf("login found")
 	token, idToken, err := s.exchangeCodeByToken(code)
 	if err != nil {
+		log.Errorf("failed exchanging code by token, reason=%v", err)
 		s.loginOutcome(login, outcomeError)
 		return login.Redirect + "?error=unexpected_error"
 	}
@@ -98,7 +100,7 @@ func (s *Service) Callback(state, code string) string {
 	var idTokenClaims map[string]any
 	if err := idToken.Claims(&idTokenClaims); err != nil {
 		s.loginOutcome(login, outcomeError)
-		log.Errorf("failed extracting ID Token claims, err: %v\n", err)
+		log.Errorf("failed extracting ID Token claims, err: %v", err)
 		return login.Redirect + "?error=unexpected_error"
 	}
 
