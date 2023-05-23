@@ -31,6 +31,7 @@ import (
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/session"
 	xtdb "github.com/runopsio/hoop/gateway/storage"
+	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/transport"
 	"github.com/runopsio/hoop/gateway/user"
 
@@ -60,6 +61,8 @@ func Run() {
 		log.Fatal(err)
 	}
 	log.Infof("sync with success")
+
+	storev2 := storagev2.NewStorage()
 
 	profile := os.Getenv("PROFILE")
 	idProvider := idp.NewProvider(profile)
@@ -121,6 +124,8 @@ func Run() {
 		PyroscopeAuthToken:   os.Getenv("PYROSCOPE_AUTH_TOKEN"),
 		AgentSentryDSN:       os.Getenv("AGENT_SENTRY_DSN"),
 		Analytics:            analyticsService,
+
+		StoreV2: storev2,
 	}
 	// order matters
 	g.RegisteredPlugins = []plugintypes.Plugin{

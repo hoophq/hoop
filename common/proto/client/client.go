@@ -9,6 +9,10 @@ const (
 	SessionOpenAgentOffline    = "ClientSessionOpenAgentOffline"
 	SessionClose               = "ClientSessionClose"
 
+	ConnectOK   = "ClientConnectOK"
+	DoSubscribe = "ClientDoSubscribe"
+	SubscribeOK = "ClientSubscribeOK"
+
 	TCPConnectionClose   = "ClientTCPConnectionClose"
 	TCPConnectionWrite   = "ClientTCPConnectionWrite"
 	PGConnectionWrite    = "ClientPGConnectionWrite"

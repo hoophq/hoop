@@ -4,6 +4,7 @@ import "time"
 
 const (
 	SpecGatewaySessionID          string = "gateway.session_id"
+	SpecConnectionName            string = "gateway.connection_name"
 	SpecConnectionType            string = "gateway.connection_type"
 	SpecDLPTransformationSummary  string = "dlp.transformation_summary"
 	SpecClientConnectionID        string = "client.connection_id"
@@ -30,9 +31,10 @@ const (
 
 	ProviderOkta = "okta"
 
-	ConnectionOriginAgent     = "agent"
-	ConnectionOriginClient    = "client"
-	ConnectionOriginClientAPI = "client-api"
+	ConnectionOriginAgent             = "agent"
+	ConnectionOriginClient            = "client"
+	ConnectionOriginClientAutoConnect = "client-autoconnect"
+	ConnectionOriginClientAPI         = "client-api"
 
 	ClientLoginCallbackAddress string = "127.0.0.1:3587"
 

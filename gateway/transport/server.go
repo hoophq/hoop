@@ -28,6 +28,7 @@ import (
 	"github.com/runopsio/hoop/gateway/review/jit"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/session"
+	"github.com/runopsio/hoop/gateway/storagev2"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc"
@@ -41,15 +42,16 @@ import (
 type (
 	Server struct {
 		pb.UnimplementedTransportServer
-		AgentService         agent.Service
-		ClientService        client.Service
-		ConnectionService    connection.Service
-		UserService          user.Service
-		PluginService        plugin.Service
-		SessionService       session.Service
-		ReviewService        review.Service
-		JitService           jit.Service
-		NotificationService  notification.Service
+		AgentService        agent.Service
+		ClientService       client.Service
+		ConnectionService   connection.Service
+		UserService         user.Service
+		PluginService       plugin.Service
+		SessionService      session.Service
+		ReviewService       review.Service
+		JitService          jit.Service
+		NotificationService notification.Service
+
 		IDProvider           *idp.Provider
 		Profile              string
 		GcpDLPRawCredentials string
@@ -60,6 +62,8 @@ type (
 		Analytics            user.Analytics
 
 		RegisteredPlugins []plugintypes.Plugin
+
+		StoreV2 *storagev2.Store
 	}
 
 	AnalyticsService interface {
@@ -175,8 +179,11 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 		token = tokenParts[1]
 	}
 
-	if origin == pb.ConnectionOriginAgent {
+	switch origin {
+	case pb.ConnectionOriginAgent:
 		return s.subscribeAgent(stream, token)
+	case pb.ConnectionOriginClientAutoConnect:
+		return s.autoConnect(stream, token)
 	}
 	return s.subscribeClient(stream, token)
 }

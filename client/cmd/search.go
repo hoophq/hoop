@@ -12,6 +12,7 @@ import (
 	"github.com/blevesearch/bleve/v2"
 	"github.com/runopsio/hoop/client/cmd/styles"
 	clientconfig "github.com/runopsio/hoop/client/config"
+	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/gateway/indexer"
 	"github.com/runopsio/hoop/gateway/indexer/searchquery"
 	"github.com/spf13/cobra"
@@ -114,6 +115,9 @@ func setDefaultFacets(req *indexer.SearchRequest) {
 }
 
 func printErrorAndExit(format string, v ...any) {
+	if os.Getenv("CLIENT_LOG_ENCODING") == "json" {
+		log.Fatalf(format, v)
+	}
 	errOutput := styles.ClientError(fmt.Sprintf(format, v...))
 	fmt.Println(errOutput)
 	os.Exit(1)
