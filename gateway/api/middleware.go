@@ -12,6 +12,7 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/common/version"
+	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/user"
 	"go.uber.org/zap"
 )
@@ -45,6 +46,8 @@ func (api *Api) Authenticate(c *gin.Context) {
 		)
 		c.Set(user.ContextLoggerKey, zaplogger.Sugar())
 	}
+
+	c.Set(storagev2.ContextKey, storagev2.NewContext(ctx.User.Id, ctx.Org.Id, api.StoreV2))
 	c.Set(user.ContextUserKey, ctx)
 	c.Next()
 }

@@ -340,7 +340,8 @@ func (s *Server) processClientPacket(pkt *pb.Packet, pctx plugintypes.Context) e
 			return fmt.Errorf("agent is offline")
 		}
 
-		connParams, err := s.addConnectionParams(pkt, pctx)
+		clientArgs := clientArgsDecode(pkt.Spec)
+		connParams, err := s.addConnectionParams(clientArgs, pctx)
 		if err != nil {
 			sentry.CaptureException(err)
 			return err
@@ -362,6 +363,45 @@ func (s *Server) processClientPacket(pkt *pb.Packet, pctx plugintypes.Context) e
 		}
 		_ = agentStream.Send(pkt)
 	}
+	return nil
+}
+
+func (s *Server) processSessionOpenPacket(pkt *pb.Packet, pctx plugintypes.Context) error {
+	spec := map[string][]byte{
+		pb.SpecGatewaySessionID: []byte(pctx.SID),
+		pb.SpecConnectionType:   []byte(pctx.ConnectionType),
+	}
+
+	if s.GcpDLPRawCredentials != "" {
+		spec[pb.SpecAgentGCPRawCredentialsKey] = []byte(s.GcpDLPRawCredentials)
+	}
+
+	agentStream := getAgentStream(pctx.ConnectionAgentID)
+	if agentStream == nil {
+		spec[pb.SpecClientExecArgsKey] = pkt.Spec[pb.SpecClientExecArgsKey]
+		clientStream := getClientStream(pctx.SID)
+		_ = clientStream.Send(&pb.Packet{
+			Type: pbclient.SessionOpenAgentOffline,
+			Spec: spec,
+		})
+		return fmt.Errorf("agent is offline")
+	}
+
+	clientArgs := clientArgsDecode(pkt.Spec)
+	connParams, err := s.addConnectionParams(clientArgs, pctx)
+	if err != nil {
+		return err
+	}
+	spec[pb.SpecAgentConnectionParamsKey] = connParams
+	// Propagate client spec.
+	// Do not allow replacing system ones
+	for key, val := range pkt.Spec {
+		if _, ok := spec[key]; ok {
+			continue
+		}
+		spec[key] = val
+	}
+	_ = agentStream.Send(&pb.Packet{Type: pbagent.SessionOpen, Spec: spec})
 	return nil
 }
 
@@ -388,8 +428,8 @@ func getInfoTypes(sessionID string) []string {
 	return infoTypes
 }
 
-func (s *Server) addConnectionParams(pkt *pb.Packet, pctx plugintypes.Context) ([]byte, error) {
-	clientArgs := clientArgsDecode(pkt.Spec)
+func (s *Server) addConnectionParams(clientArgs []string, pctx plugintypes.Context) ([]byte, error) {
+	// clientArgs := clientArgsDecode(pkt.Spec)
 	infoTypes := getInfoTypes(pctx.SID)
 
 	ctx := &user.Context{Org: &user.Org{Id: pctx.OrgID}}

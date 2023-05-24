@@ -104,6 +104,8 @@ func Run() {
 		IDProvider:        idProvider,
 		Profile:           profile,
 		Analytics:         analyticsService,
+
+		StoreV2: storev2,
 	}
 
 	g := &transport.Server{

@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/gin-gonic/gin"
+	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 )
 
@@ -79,4 +81,29 @@ func (s *Store) GetEntity(xtID string) ([]byte, error) {
 	}
 
 	return nil, nil
+}
+
+const ContextKey = "storagev2"
+
+type Context struct {
+	*Store
+	*types.APIContext
+}
+
+func ParseContext(c *gin.Context) *Context {
+	obj, ok := c.Get(ContextKey)
+	if !ok {
+		log.Warnf("failed obtaing context from *gin.Context for key %q", ContextKey)
+		return &Context{NewStorage(), &types.APIContext{}}
+	}
+	ctx, _ := obj.(*Context)
+	if ctx == nil {
+		log.Warnf("failed type casting value to *Context")
+		return &Context{NewStorage(), &types.APIContext{}}
+	}
+	return ctx
+}
+
+func NewContext(userID, orgID string, store *Store) *Context {
+	return &Context{store, &types.APIContext{UserID: userID, OrgID: orgID}}
 }

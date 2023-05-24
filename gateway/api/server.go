@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/gateway/agent"
+	apiautoconnect "github.com/runopsio/hoop/gateway/api/autoconnect"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/healthz"
 	"github.com/runopsio/hoop/gateway/indexer"
@@ -22,6 +23,7 @@ import (
 	"github.com/runopsio/hoop/gateway/security"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/session"
+	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/user"
 	"go.uber.org/zap"
 )
@@ -42,6 +44,8 @@ type (
 		Profile           string
 		Analytics         user.Analytics
 		logger            *zap.Logger
+
+		StoreV2 *storagev2.Store
 	}
 )
 
@@ -149,6 +153,12 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest,
 		api.ConnectionHandler.RunExec)
+
+	route.POST("/autoconnect",
+		api.Authenticate,
+		api.TrackRequest,
+		apiautoconnect.Post,
+	)
 
 	route.GET("/reviews",
 		api.Authenticate,

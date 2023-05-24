@@ -5,23 +5,13 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	corev2 "github.com/runopsio/hoop/gateway/storagev2"
+	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"olympos.io/encoding/edn"
 )
 
-type Model struct {
-	store *corev2.Store
-}
-
-func New(store *corev2.Store) *Model {
-	return &Model{
-		store: store,
-	}
-}
-
-func (m *Model) GetEntity(xtID string) (*types.AutoConnect, error) {
-	data, err := m.store.GetEntity(xtID)
+func GetEntity(ctx *storagev2.Context, xtID string) (*types.AutoConnect, error) {
+	data, err := ctx.GetEntity(xtID)
 	if err != nil {
 		return nil, err
 	}
@@ -32,17 +22,17 @@ func (m *Model) GetEntity(xtID string) (*types.AutoConnect, error) {
 	return &obj, edn.Unmarshal(data, &obj)
 }
 
-func (m *Model) PutStatus(ctx *types.UserContext, status string) error {
+func PutStatus(ctx *storagev2.Context, status string) (*types.AutoConnect, error) {
 	if err := ctx.Validate(); err != nil {
-		return err
+		return nil, err
 	}
 	autoConnectID, err := uuid.NewRandomFromReader(bytes.NewBufferString(ctx.UserID))
 	if err != nil {
-		return fmt.Errorf("failed generating auto connect id, err=%v", err)
+		return nil, fmt.Errorf("failed generating auto connect id, err=%v", err)
 	}
-	obj, err := m.GetEntity(autoConnectID.String())
+	obj, err := GetEntity(ctx, autoConnectID.String())
 	if err != nil {
-		return fmt.Errorf("failed fetching auto connect entity, err=%v", err)
+		return nil, fmt.Errorf("failed fetching auto connect entity, err=%v", err)
 	}
 	if obj == nil {
 		obj = &types.AutoConnect{
@@ -54,6 +44,11 @@ func (m *Model) PutStatus(ctx *types.UserContext, status string) error {
 	} else {
 		obj.Status = status
 	}
-	_, err = m.store.Put(obj)
+	_, err = ctx.Put(obj)
+	return obj, err
+}
+
+func Put(ctx *storagev2.Context, obj *types.AutoConnect) error {
+	_, err := ctx.Put(obj)
 	return err
 }

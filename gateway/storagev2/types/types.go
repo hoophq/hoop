@@ -11,18 +11,18 @@ type TxResponse struct {
 	TxTime time.Time `edn:"xtdb.api/tx-time"`
 }
 
-type UserContext struct {
+type APIContext struct {
 	UserID string
 	OrgID  string
 }
 
 type AutoConnect struct {
-	ID         string            `edn:"xt/id"`
-	OrgId      string            `edn:"autoconnect/org"`
-	User       string            `edn:"autoconnect/user"`
-	Status     string            `edn:"autoconnect/status"`
-	Client     map[string]string `edn:"auto-connect/client"`
-	Connection map[string]string `edn:"auto-connect/connection"`
+	ID                    string `edn:"xt/id"`
+	OrgId                 string `edn:"autoconnect/org"`
+	User                  string `edn:"autoconnect/user"`
+	Status                string `edn:"autoconnect/status"`
+	RequestConnectionName string `edn:"autoconnect/connection"`
+	RequestPort           string `edn:"autoconnect/port"`
 }
 
 type Connection struct {

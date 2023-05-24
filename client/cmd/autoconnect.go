@@ -73,17 +73,21 @@ func runAutoConnect(args []string) {
 			continue
 		}
 		switch pb.PacketType(pkt.Type) {
+
+		// auto connect flow
 		case pbclient.ConnectOK:
 			log.Debugf("connect ok, sending ack ...")
 			_ = client.Send(&pb.Packet{Type: pbgateway.ConnectOKAck})
-		case pbclient.DoSubscribe:
-			log.Debugf("performing subscribe ...")
-			_ = client.Send(&pb.Packet{
-				Type: pbgateway.Subscribe,
-				Spec: map[string][]byte{pb.SpecConnectionName: pkt.Spec[pb.SpecConnectionName]}})
-		case pbclient.SubscribeOK:
-			log.Debugf("subscribe ok, opening session ...")
-			sendOpenSessionPktFn()
+
+		// case pbclient.DoSubscribe:
+		// 	log.Debugf("performing subscribe ...")
+		// 	_ = client.Send(&pb.Packet{
+		// 		Type: pbgateway.Subscribe,
+		// 		Spec: map[string][]byte{pb.SpecConnectionName: pkt.Spec[pb.SpecConnectionName]}})
+		// case pbclient.SubscribeOK:
+		// 	log.Debugf("subscribe ok, opening session ...")
+		// 	sendOpenSessionPktFn()
+
 		case pbclient.SessionOpenWaitingApproval:
 			// TODO
 		case pbclient.SessionOpenOK:
