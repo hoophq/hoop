@@ -532,7 +532,9 @@ func (s *Server) loadConnectPlugins(ctx *user.Context, pctx plugintypes.Context)
 			pctx.ParamsData[pluginsjit.UserServiceParam] = &s.UserService
 			pctx.ParamsData[pluginsjit.NotificationServiceParam] = s.NotificationService
 		case plugintypes.PluginSlackName:
-			pctx.ParamsData[pluginsslack.PluginConfigEnvVarsParam] = p1.Config.EnvVars
+			if p1.Config != nil {
+				pctx.ParamsData[pluginsslack.PluginConfigEnvVarsParam] = p1.Config.EnvVars
+			}
 		}
 
 		for _, c := range p1.Connections {
