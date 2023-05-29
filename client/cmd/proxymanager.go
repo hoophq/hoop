@@ -89,21 +89,21 @@ func runAutoConnect(client pb.ClientTransport) (err error) {
 		if specSid, ok := pkt.Spec[pb.SpecGatewaySessionID]; ok {
 			sid = string(specSid)
 		}
+		log := log.With("phase", pkt.Type, "sid", sid)
 
 		switch pb.PacketType(pkt.Type) {
 		case pbclient.ProxyManagerConnectOK:
 			log.Infof("received connect response from gateway, waiting for connection")
 			_ = client.Send(&pb.Packet{Type: pbgateway.ProxyManagerConnectOKAck})
 		case pbclient.SessionOpenWaitingApproval:
-			log.With("sid", sid).Infof("waiting for approval %v", string(pkt.Payload))
-			// TODO: review flow
+			log.Infof("waiting for approval %v", string(pkt.Payload))
 		case pbclient.SessionOpenOK:
 			proxyPort := string(pkt.Spec[pb.SpecClientRequestPort])
 			connnectionType := string(pkt.Spec[pb.SpecConnectionType])
 			if sid == "" {
 				return fmt.Errorf("session is empty")
 			}
-			log.With("sid", sid, "type", connnectionType).Infof("session opened")
+			log.With("type", connnectionType).Infof("session opened")
 			switch connnectionType {
 			case pb.ConnectionTypePostgres:
 				srv := proxy.NewPGServer(proxyPort, client)
@@ -113,8 +113,7 @@ func runAutoConnect(client pb.ClientTransport) (err error) {
 				defer srv.PacketCloseConnection("")
 				client.StartKeepAlive()
 				connStore.Set(sid, srv)
-				log.With("sid", sid, "type", connnectionType, "port", proxyPort).
-					Infof("ready to accept connections")
+				log.With("type", connnectionType, "port", proxyPort).Infof("ready to accept connections")
 			case pb.ConnectionTypeMySQL:
 				srv := proxy.NewMySQLServer(proxyPort, client)
 				if err := srv.Serve(sid); err != nil {
@@ -123,8 +122,7 @@ func runAutoConnect(client pb.ClientTransport) (err error) {
 				defer srv.PacketCloseConnection("")
 				client.StartKeepAlive()
 				connStore.Set(sid, srv)
-				log.With("sid", sid, "type", connnectionType, "port", proxyPort).
-					Infof("ready to accept connections")
+				log.With("type", connnectionType, "port", proxyPort).Infof("ready to accept connections")
 			case pb.ConnectionTypeTCP:
 				srv := proxy.NewTCPServer(proxyPort, client, pbagent.TCPConnectionWrite)
 				if err := srv.Serve(sid); err != nil {
@@ -133,13 +131,13 @@ func runAutoConnect(client pb.ClientTransport) (err error) {
 				defer srv.PacketCloseConnection("")
 				client.StartKeepAlive()
 				connStore.Set(sid, srv)
-				log.With("sid", sid, "type", connnectionType, "port", proxyPort).
+				log.With("type", connnectionType, "port", proxyPort).
 					Infof("ready to accept connections")
 			default:
 				return fmt.Errorf(`connection type %q not implemented`, string(connnectionType))
 			}
 		case pbclient.SessionOpenApproveOK:
-			log.With("sid", sid).Infof("session approved")
+			log.Infof("session approved")
 		case pbclient.SessionOpenAgentOffline:
 			return fmt.Errorf("agent is offline")
 		case pbclient.SessionOpenTimeout:
