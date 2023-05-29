@@ -123,6 +123,7 @@ func New(orgID, accessToken, connectionName, sessionID string) (*clientExec, err
 	if err != nil {
 		return nil, err
 	}
+
 	client, err := grpc.ConnectLocalhost(accessToken,
 		grpc.WithOption(grpc.OptionConnectionName, connectionName),
 		grpc.WithOption("origin", pb.ConnectionOriginClientAPI),

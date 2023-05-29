@@ -13,6 +13,7 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/gateway/agent"
 	apiproxymanager "github.com/runopsio/hoop/gateway/api/proxymanager"
+	sessionapi "github.com/runopsio/hoop/gateway/api/session"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/healthz"
 	"github.com/runopsio/hoop/gateway/indexer"
@@ -265,6 +266,10 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest,
 		api.SessionHandler.FindAll)
+	route.POST("/sessions",
+		api.Authenticate,
+		api.TrackRequest,
+		sessionapi.Post)
 	route.POST("/sessions/:session_id/exec",
 		api.Authenticate,
 		api.TrackRequest,

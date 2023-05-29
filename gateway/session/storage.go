@@ -7,6 +7,7 @@ import (
 
 	"github.com/runopsio/hoop/common/log"
 	st "github.com/runopsio/hoop/gateway/storage"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
 	"olympos.io/encoding/edn"
@@ -18,7 +19,7 @@ type (
 	}
 
 	GenericStorageWriter struct {
-		persistFn func(*user.Context, *Session) (*st.TxResponse, error)
+		persistFn func(*user.Context, *types.Session) (*st.TxResponse, error)
 	}
 
 	XtdbReview struct {
@@ -84,7 +85,7 @@ func xtdbQueryParams(orgID string, opts ...*SessionOption) (string, int, int) {
 	return inArgsEdn, limit, offset
 }
 
-func (s *Storage) Persist(context *user.Context, session *Session) (*st.TxResponse, error) {
+func (s *Storage) Persist(context *user.Context, session *types.Session) (*st.TxResponse, error) {
 	session.OrgID = context.Org.Id
 	if session.OrgID == "" || session.ID == "" {
 		return nil, fmt.Errorf("session id and organization must not be empty")
@@ -184,9 +185,9 @@ func (s *Storage) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionLi
 	}
 	err := s.queryDecoder(`
 		{:query {
-			:find [id usr usr-id usr-name status typ conn verb event-size start-date end-date dlp-count]
-			:keys [xt/id session/user session/user-id session/user-name session/status
-				   session/type session/connection session/verb session/event-size
+			:find [id usr usr-id usr-name status script labels typ conn verb event-size start-date end-date dlp-count]
+			:keys [xt/id session/user session/user-id session/user-name session/status session/script
+				   session/labels session/type session/connection session/verb session/event-size
 				   session/start-date session/end-date session/dlp-count]
 			:in [org-id arg-user arg-type arg-conn arg-start-date arg-end-date]
 			:where [[a :session/org-id org-id]
@@ -195,6 +196,8 @@ func (s *Storage) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionLi
 					[a :session/user-id usr-id]
 					[a :session/user-name usr-name]
 					[(get-attr a :session/status "") [status]]
+					[(get-attr a :session/script nil) [script]]
+					[(get-attr a :session/labels nil) [labels]]
 					[a :session/type typ]
 					[a :session/connection conn]
 					[a :session/verb verb]
@@ -260,8 +263,8 @@ func (s *Storage) FindReviewBySessionID(sessionID string) (*Review, error) {
 	return reviews[0], nil
 }
 
-func (s *Storage) FindOne(ctx *user.Context, sessionID string) (*Session, error) {
-	var resultItems [][]Session
+func (s *Storage) FindOne(ctx *user.Context, sessionID string) (*types.Session, error) {
+	var resultItems [][]types.Session
 	argUserID := fmt.Sprintf(`"%s"`, ctx.User.Id)
 	if ctx.User.IsAdmin() {
 		argUserIDBytes, _ := edn.Marshal(nil)
@@ -269,9 +272,10 @@ func (s *Storage) FindOne(ctx *user.Context, sessionID string) (*Session, error)
 	}
 	err := s.queryDecoder(`
 	{:query {
-		:find [(pull s [:xt/id :session/user :session/user-id :session/user-name
-						:session/type :session/connection :session/verb :session/event-size
-						:session/start-date :session/end-date :session/dlp-count :session/status
+		:find [(pull s [:xt/id :session/user :session/script :session/user-id :session/org-id 
+		        :session/user-name :session/type :session/connection :session/verb 
+						:session/event-size :session/labels :session/start-date :session/end-date 
+						:session/dlp-count :session/status 
 						:session/xtdb-stream])]
 		:in [org-id arg-session-id arg-user-id]
 		:where [[s :session/org-id org-id]
@@ -283,7 +287,7 @@ func (s *Storage) FindOne(ctx *user.Context, sessionID string) (*Session, error)
 	if err != nil {
 		return nil, err
 	}
-	items := make([]Session, 0)
+	items := make([]types.Session, 0)
 	for _, i := range resultItems {
 		items = append(items, i[0])
 	}
@@ -311,7 +315,7 @@ func (s *Storage) queryDecoder(query string, into any, args ...any) error {
 }
 
 // ListAllSessionsID fetches sessions (id,org-id) where start_date > fromDate
-func (s *Storage) ListAllSessionsID(fromDate time.Time) ([]*Session, error) {
+func (s *Storage) ListAllSessionsID(fromDate time.Time) ([]*types.Session, error) {
 	query := fmt.Sprintf(`
     {:query {
         :find [id org-id]
@@ -326,7 +330,7 @@ func (s *Storage) ListAllSessionsID(fromDate time.Time) ([]*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	var sessionList []*Session
+	var sessionList []*types.Session
 	if strings.Contains(string(httpBody), ":xtdb.error") {
 		return nil, fmt.Errorf(string(httpBody))
 	}
@@ -342,11 +346,12 @@ func (s *Storage) NewGenericStorageWriter() *GenericStorageWriter {
 func (s *GenericStorageWriter) Write(c plugintypes.Context) error {
 	log.Infof("session=%s - saving session, org-id=%v", c.SID, c.OrgID)
 	eventStartDate := c.ParamsData.GetTime("start_date")
-	sessionStatus := c.ParamsData["status"]
+	sessionStatus := c.ParamsData.GetString("status")
 	if eventStartDate == nil {
 		return fmt.Errorf(`missing "start_date" param`)
 	}
-	sess := &Session{
+
+	sess := &types.Session{
 		ID:               c.SID,
 		UserEmail:        c.UserEmail,
 		UserID:           c.UserID,
@@ -355,6 +360,8 @@ func (s *GenericStorageWriter) Write(c plugintypes.Context) error {
 		Connection:       c.ConnectionName,
 		Verb:             c.ClientVerb,
 		Status:           sessionStatus,
+		Script:           types.SessionScript{"data": c.Script},
+		Labels:           c.Labels,
 		NonIndexedStream: nil,
 		EventSize:        c.ParamsData.Int64("event_size"),
 		StartSession:     *eventStartDate,
@@ -362,7 +369,7 @@ func (s *GenericStorageWriter) Write(c plugintypes.Context) error {
 		DlpCount:         c.ParamsData.Int64("dlp_count"),
 	}
 	eventStreamObj := c.ParamsData.Get("event_stream")
-	eventStreamList, _ := eventStreamObj.([]EventStream)
+	eventStreamList, _ := eventStreamObj.([]types.SessionEventStream)
 	if eventStreamList != nil {
 		nonIndexedEventStream, err := NewNonIndexedEventStreamList(*eventStartDate, eventStreamList...)
 		if err != nil {

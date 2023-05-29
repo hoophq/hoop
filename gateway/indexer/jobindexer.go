@@ -10,6 +10,7 @@ import (
 	"github.com/blevesearch/bleve/v2"
 	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/session"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
@@ -105,7 +106,7 @@ func listAllSessionsID(s *session.Storage, startDate time.Time) (map[string][]st
 
 // fetchPlugin retrieve the indexer plugin for the given org
 // it returns a closure that validates if the session could be processed
-func fetchIndexerPlugin(s *plugin.Storage, orgID string) (func(s *session.Session) bool, error) {
+func fetchIndexerPlugin(s *plugin.Storage, orgID string) (func(s *types.Session) bool, error) {
 	plugin, err := s.FindOne(&user.Context{Org: &user.Org{Id: orgID}}, "indexer")
 	if err != nil {
 		return nil, err
@@ -117,7 +118,7 @@ func fetchIndexerPlugin(s *plugin.Storage, orgID string) (func(s *session.Sessio
 	for _, conn := range plugin.Connections {
 		pluginMap[conn.Name] = nil
 	}
-	return func(sess *session.Session) bool {
+	return func(sess *types.Session) bool {
 		_, found := pluginMap[sess.Connection]
 		return found && sess.EndSession != nil && sess.UserEmail != ""
 	}, nil
@@ -142,7 +143,7 @@ func newBatchJobIndex(orgID string) (bleve.Index, func() error, error) {
 	}, nil
 }
 
-func parseSessionToIndexObject(orgID string, s *session.Session) *Session {
+func parseSessionToIndexObject(orgID string, s *types.Session) *Session {
 	var stdinData []byte
 	var stdoutData []byte
 

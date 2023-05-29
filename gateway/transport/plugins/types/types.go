@@ -37,6 +37,9 @@ type Context struct {
 	ClientVerb   string
 	ClientOrigin string
 
+	Script string
+	Labels map[string]string
+
 	ParamsData GenericMap
 }
 

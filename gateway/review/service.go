@@ -6,8 +6,8 @@ import (
 
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/session"
 	st "github.com/runopsio/hoop/gateway/storage"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
@@ -23,8 +23,8 @@ type (
 		FindAll(context *user.Context) ([]Review, error)
 		FindBySessionID(sessionID string) (*Review, error)
 		FindApprovedJitReviews(ctx *user.Context, connID string) (*Review, error)
-		PersistSessionAsReady(s *session.Session) (*st.TxResponse, error)
-		FindSessionBySessionId(sessionID string) (*session.Session, error)
+		PersistSessionAsReady(s *types.Session) (*st.TxResponse, error)
+		FindSessionBySessionId(sessionID string) (*types.Session, error)
 	}
 
 	transportService interface {

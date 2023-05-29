@@ -111,6 +111,8 @@ func (h *Handler) FindOne(c *gin.Context) {
 	c.PureJSON(http.StatusOK, review)
 }
 
+// DEPRECATED
+// Use sessionapi.RunExec instead
 func (h *Handler) RunExec(c *gin.Context) {
 	ctx := user.ContextUser(c)
 	log := user.ContextLogger(c)
