@@ -46,6 +46,7 @@ func (p *PGServer) Serve(sessionID string) error {
 			pgClient, err := lis.Accept()
 			if err != nil {
 				log.Infof("failed obtain listening connection, err=%v", err)
+				lis.Close()
 				break
 			}
 			go p.serveConn(sessionID, strconv.Itoa(connectionID), pgClient)

@@ -9,6 +9,7 @@ const (
 	SpecDLPTransformationSummary  string = "dlp.transformation_summary"
 	SpecClientConnectionID        string = "client.connection_id"
 	SpecClientExitCodeKey         string = "client.exit_code"
+	SpecClientRequestPort         string = "client.request_port"
 	SpecClientExecArgsKey         string = "terminal.args"
 	SpecClientExecEnvVar          string = "terminal.envvars"
 	SpecAgentConnectionParamsKey  string = "agent.connection_params"
@@ -31,10 +32,10 @@ const (
 
 	ProviderOkta = "okta"
 
-	ConnectionOriginAgent             = "agent"
-	ConnectionOriginClient            = "client"
-	ConnectionOriginClientAutoConnect = "client-autoconnect"
-	ConnectionOriginClientAPI         = "client-api"
+	ConnectionOriginAgent              = "agent"
+	ConnectionOriginClient             = "client"
+	ConnectionOriginClientProxyManager = "client-proxymanager"
+	ConnectionOriginClientAPI          = "client-api"
 
 	ClientLoginCallbackAddress string = "127.0.0.1:3587"
 

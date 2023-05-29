@@ -46,6 +46,7 @@ func (s *MySQLServer) Serve(sessionID string) error {
 			mysqlClient, err := lis.Accept()
 			if err != nil {
 				log.Infof("failed obtain listening connection, err=%v", err)
+				lis.Close()
 				break
 			}
 			go s.serveConn(sessionID, strconv.Itoa(connectionID), mysqlClient)

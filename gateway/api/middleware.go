@@ -47,7 +47,10 @@ func (api *Api) Authenticate(c *gin.Context) {
 		c.Set(user.ContextLoggerKey, zaplogger.Sugar())
 	}
 
-	c.Set(storagev2.ContextKey, storagev2.NewContext(ctx.User.Id, ctx.Org.Id, api.StoreV2))
+	c.Set(storagev2.ContextKey,
+		storagev2.NewContext(ctx.User.Id, ctx.Org.Id, api.StoreV2).WithUserInfo(
+			ctx.User.Name, ctx.User.Email, ctx.User.Groups),
+	)
 	c.Set(user.ContextUserKey, ctx)
 	c.Next()
 }

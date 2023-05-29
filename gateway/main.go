@@ -18,7 +18,6 @@ import (
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/analytics"
 	"github.com/runopsio/hoop/gateway/api"
-	"github.com/runopsio/hoop/gateway/client"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/indexer"
 	"github.com/runopsio/hoop/gateway/jobs"
@@ -72,7 +71,7 @@ func Run() {
 	pluginService := plugin.Service{Storage: &plugin.Storage{Storage: s}}
 	connectionService := connection.Service{PluginService: &pluginService, Storage: &connection.Storage{Storage: s}}
 	userService := user.Service{Storage: &user.Storage{Storage: s}}
-	clientService := client.Service{Storage: &client.Storage{Storage: s}}
+	// clientService := client.Service{Storage: &client.Storage{Storage: s}}
 	sessionService := session.Service{Storage: &session.Storage{Storage: s}}
 	reviewService := review.Service{Storage: &review.Storage{Storage: s}}
 	jitService := jit.Service{Storage: &jit.Storage{Storage: s}}
@@ -109,10 +108,10 @@ func Run() {
 	}
 
 	g := &transport.Server{
-		AgentService:         agentService,
-		ConnectionService:    connectionService,
-		UserService:          userService,
-		ClientService:        clientService,
+		AgentService:      agentService,
+		ConnectionService: connectionService,
+		UserService:       userService,
+		// ClientService:        clientService,
 		PluginService:        pluginService,
 		SessionService:       sessionService,
 		ReviewService:        reviewService,

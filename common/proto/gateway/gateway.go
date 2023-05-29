@@ -1,8 +1,6 @@
 package gateway
 
 const (
-	KeepAlive = "GatewayKeepAlive"
-
-	ConnectOKAck = "GatewayConnectOKAck"
-	Subscribe    = "GatewaySubscribe"
+	KeepAlive                = "GatewayKeepAlive"
+	ProxyManagerConnectOKAck = "GatewayProxyManagerConnectOKAck"
 )

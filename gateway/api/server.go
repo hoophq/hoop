@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/gateway/agent"
-	apiautoconnect "github.com/runopsio/hoop/gateway/api/autoconnect"
+	apiproxymanager "github.com/runopsio/hoop/gateway/api/proxymanager"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/healthz"
 	"github.com/runopsio/hoop/gateway/indexer"
@@ -154,10 +154,20 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest,
 		api.ConnectionHandler.RunExec)
 
-	route.POST("/autoconnect",
+	route.POST("/proxymanager/connect",
 		api.Authenticate,
 		api.TrackRequest,
-		apiautoconnect.Post,
+		apiproxymanager.Post,
+	)
+	route.POST("/proxymanager/disconnect",
+		api.Authenticate,
+		api.TrackRequest,
+		apiproxymanager.Disconnect,
+	)
+	route.GET("/proxymanager/status",
+		api.Authenticate,
+		api.TrackRequest,
+		apiproxymanager.Get,
 	)
 
 	route.GET("/reviews",

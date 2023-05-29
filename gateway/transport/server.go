@@ -20,7 +20,6 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/agent"
-	"github.com/runopsio/hoop/gateway/client"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/plugin"
@@ -42,8 +41,8 @@ import (
 type (
 	Server struct {
 		pb.UnimplementedTransportServer
-		AgentService        agent.Service
-		ClientService       client.Service
+		AgentService agent.Service
+		// ClientService       client.Service
 		ConnectionService   connection.Service
 		UserService         user.Service
 		PluginService       plugin.Service
@@ -182,8 +181,8 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 	switch origin {
 	case pb.ConnectionOriginAgent:
 		return s.subscribeAgent(stream, token)
-	case pb.ConnectionOriginClientAutoConnect:
-		return s.autoConnect(stream, token)
+	case pb.ConnectionOriginClientProxyManager:
+		return s.proxyManager(stream, token)
 	}
 	return s.subscribeClient(stream, token)
 }
@@ -329,6 +328,7 @@ func (s *Server) disconnectClient(uid string, err error) {
 	if !ok {
 		return
 	}
+	log.Infof("trying to disconect client, uid=%v, err=%v", uid, err)
 	if err != nil {
 		select {
 		case disconnectCh <- err:
@@ -345,7 +345,7 @@ func closeChWithSleep(ch chan error, d time.Duration) {
 	close(ch)
 }
 
-func extractData(md metadata.MD, metaName string) string {
+func mdget(md metadata.MD, metaName string) string {
 	data := md.Get(metaName)
 	if len(data) == 0 {
 		// keeps compatibility with old clients that

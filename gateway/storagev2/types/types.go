@@ -12,17 +12,22 @@ type TxResponse struct {
 }
 
 type APIContext struct {
-	UserID string
 	OrgID  string
+	UserID string
+
+	UserName   string
+	UserEmail  string
+	UserGroups []string
 }
 
-type AutoConnect struct {
-	ID                    string `edn:"xt/id"`
-	OrgId                 string `edn:"autoconnect/org"`
-	User                  string `edn:"autoconnect/user"`
-	Status                string `edn:"autoconnect/status"`
-	RequestConnectionName string `edn:"autoconnect/connection"`
-	RequestPort           string `edn:"autoconnect/port"`
+type Client struct {
+	ID                    string            `edn:"xt/id"`
+	OrgID                 string            `edn:"client/org"`
+	Status                ClientStatusType  `edn:"client/status"`
+	RequestConnectionName string            `edn:"client/request-connection"`
+	RequestPort           string            `edn:"client/request-port"`
+	RequestAccessDuration time.Duration     `edn:"client/access-duration"`
+	ClientMetadata        map[string]string `edn:"client/metadata"`
 }
 
 type Connection struct {

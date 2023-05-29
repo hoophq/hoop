@@ -107,3 +107,10 @@ func ParseContext(c *gin.Context) *Context {
 func NewContext(userID, orgID string, store *Store) *Context {
 	return &Context{store, &types.APIContext{UserID: userID, OrgID: orgID}}
 }
+
+func (c *Context) WithUserInfo(userName, userEmail string, userGroups []string) *Context {
+	c.UserName = userName
+	c.UserEmail = userEmail
+	c.UserGroups = userGroups
+	return c
+}

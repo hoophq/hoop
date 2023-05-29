@@ -51,7 +51,7 @@ func init() {
 }
 
 func runSearch(inputQuery string) {
-	config := getClientConfigOrDie()
+	config := clientconfig.GetClientConfigOrDie()
 	req := indexer.NewSearchRequest(inputQuery, limitFlag, offsetFlag, "ansi")
 	if len(fieldsFlag) > 0 {
 		req.Fields = fieldsFlag
