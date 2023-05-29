@@ -93,7 +93,7 @@ func DispatchOpenSession(req *types.Client) (*pb.Packet, error) {
 	case resp := <-state.responseCh:
 		return resp.obj, resp.err
 	case <-time.After(time.Second * 10):
-		return nil, fmt.Errorf("timeout (10s) subscribing")
+		return nil, fmt.Errorf("timeout (10s) waiting to open a session")
 	}
 }
 

@@ -358,7 +358,6 @@ func getInfoTypes(sessionID string) []string {
 }
 
 func (s *Server) addConnectionParams(clientArgs []string, pctx plugintypes.Context) ([]byte, error) {
-	// clientArgs := clientArgsDecode(pkt.Spec)
 	infoTypes := getInfoTypes(pctx.SID)
 
 	ctx := &user.Context{Org: &user.Org{Id: pctx.OrgID}}
