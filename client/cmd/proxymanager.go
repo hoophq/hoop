@@ -43,7 +43,7 @@ var (
 				}
 				client, err = grpc.Connect(clientConfig, grpcClientOptions...)
 				if err != nil {
-					return backoff.Errorf("failed connecting to gateway, reasons=%v", err)
+					return backoff.Errorf("failed connecting to gateway, reason=%v", err)
 				}
 				defer client.Close()
 				err = runAutoConnect(client)
@@ -58,7 +58,7 @@ var (
 					}
 				}
 				if err != nil {
-					return backoff.Errorf("failed processing proxy manager, reasons=%v", err)
+					return backoff.Errorf("failed processing proxy manager, reason=%v", err)
 				}
 				return nil
 			})
