@@ -327,7 +327,6 @@ func (s *Server) disconnectClient(uid string, err error) {
 	if !ok {
 		return
 	}
-	log.Infof("trying to disconect client, uid=%v, err=%v", uid, err)
 	if err != nil {
 		select {
 		case disconnectCh <- err:
