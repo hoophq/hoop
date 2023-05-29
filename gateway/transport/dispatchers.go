@@ -83,6 +83,8 @@ func DispatchOpenSession(req *types.Client) (*pb.Packet, error) {
 	select {
 	case state.requestCh <- req:
 	case <-time.After(time.Millisecond * 500):
+		// the channel is closed or busy, cancel the underline context and
+		// indicate the caller that it's safe to reconnect it.
 		log.Info(ErrForceReconnect)
 		state.cancelFn()
 		return nil, ErrForceReconnect
