@@ -121,18 +121,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	if sessionID == "" {
 		sessionID = uuid.NewString()
 	}
-	// c := &client.Client{
-	// 	Id:           uuid.NewString(),
-	// 	SessionID:    sessionID,
-	// 	OrgId:        userCtx.Org.Id,
-	// 	UserId:       userCtx.User.Id,
-	// 	Status:       client.StatusConnected,
-	// 	ConnectionId: conn.Id,
-	// 	AgentId:      conn.AgentId,
-	// 	Verb:         clientVerb,
-	// }
 	s.trackSessionStatus(sessionID, pb.SessionPhaseClientConnect, nil)
-	// setClientMetdata(c, md)
 
 	pluginContext := plugintypes.Context{
 		Context: context.Background(),
@@ -174,8 +163,6 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 
 	s.startDisconnectClientSink(sessionID, clientOrigin, func(err error) {
 		defer unbindClient(sessionID)
-		// c.Status = client.StatusDisconnected
-		// _, _ = s.ClientService.Persist(c)
 		if stream := getAgentStream(conn.AgentId); stream != nil {
 			_ = stream.Send(&pb.Packet{
 				Type: pbagent.SessionClose,
@@ -193,14 +180,6 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		s.trackSessionStatus(sessionID, pb.SessionPhaseClientErr, err)
 		return status.Errorf(codes.FailedPrecondition, err.Error())
 	}
-
-	// if _, err := s.ClientService.Persist(c); err != nil {
-	// 	log.With("session", sessionID).Errorf("failed saving client connection, err=%v", err)
-	// 	s.disconnectClient(sessionID, err)
-	// 	s.trackSessionStatus(sessionID, pb.SessionPhaseClientErr, fmt.Errorf("failed saving client connection, err=%v", err))
-	// 	sentry.CaptureException(err)
-	// 	return err
-	// }
 
 	s.Analytics.Track(userCtx.User.Id, clientVerb, map[string]any{
 		"sessionID":       sessionID,
