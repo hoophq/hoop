@@ -108,10 +108,9 @@ func Run() {
 	}
 
 	g := &transport.Server{
-		AgentService:      agentService,
-		ConnectionService: connectionService,
-		UserService:       userService,
-		// ClientService:        clientService,
+		AgentService:         agentService,
+		ConnectionService:    connectionService,
+		UserService:          userService,
 		PluginService:        pluginService,
 		SessionService:       sessionService,
 		ReviewService:        reviewService,

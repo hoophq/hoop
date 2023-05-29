@@ -29,11 +29,3 @@ type Client struct {
 	RequestAccessDuration time.Duration     `edn:"client/access-duration"`
 	ClientMetadata        map[string]string `edn:"client/metadata"`
 }
-
-type Connection struct {
-	ID       string   `edn:"xt/id"`
-	Name     string   `edn:"connection/name"`
-	IconName string   `edn:"connection/icon-name"`
-	Command  []string `edn:"connection/command"`
-	AgentId  string   `edn:"connection/agent"`
-}

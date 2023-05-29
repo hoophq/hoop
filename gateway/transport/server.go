@@ -41,8 +41,7 @@ import (
 type (
 	Server struct {
 		pb.UnimplementedTransportServer
-		AgentService agent.Service
-		// ClientService       client.Service
+		AgentService        agent.Service
 		ConnectionService   connection.Service
 		UserService         user.Service
 		PluginService       plugin.Service
