@@ -77,6 +77,10 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
+	if req.ConnectionName == "" || req.Port == "" {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": `port and connection_name are required attributes`})
+		return
+	}
 
 	if req.AccessDuration == 0 {
 		req.AccessDuration = time.Minute * 30
@@ -147,7 +151,7 @@ func Post(c *gin.Context) {
 	obj, err := clientstate.Update(ctx, types.ClientStatusConnected,
 		clientstate.WithRequestAttributes(req.ConnectionName, req.Port)...)
 	if err != nil {
-		log.Error("fail to update status, err=%v", err)
+		log.Errorf("fail to update status, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "connected but it fail to update the status"})
 		return
 	}
