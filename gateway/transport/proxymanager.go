@@ -50,7 +50,7 @@ func (s *Server) proxyManager(stream pb.Transport_ConnectServer, token string) e
 	if err := stream.Send(&pb.Packet{Type: pbclient.ProxyManagerConnectOK}); err != nil {
 		return err
 	}
-	log.Infof("proxymanager - client connected!")
+	log.Infof("proxymanager - client connected")
 	storectx := storagev2.NewContext(userCtx.User.Id, userCtx.Org.Id, s.StoreV2).
 		WithUserInfo(userCtx.User.Name, userCtx.User.Email, userCtx.User.Groups)
 	sessionID := uuid.NewString()
@@ -123,7 +123,7 @@ func (s *Server) listenProxyManagerMessages(sessionID string, ctx *storagev2.Con
 				log.Errorf("failed client state to database, err=%v", err)
 				return err
 			}
-			log.With("session", sessionID).Infof("proxy manager client is ready: user=%v,hostname=%v,platform=%v,version=%v",
+			log.With("session", sessionID).Infof("proxymanager - client is ready: user=%v,hostname=%v,platform=%v,version=%v",
 				ctx.UserEmail, mdget(md, "hostname"), mdget(md, "platform"), mdget(md, "version"))
 			disp := newDispatcherState(cancelFn)
 			addDispatcherStateEntry(newClient.ID, disp)
@@ -204,7 +204,7 @@ func (s *Server) listenProxyManagerMessages(sessionID string, ctx *storagev2.Con
 					"hostname":        mdget(md, "hostname"),
 				})
 
-				log.With("session", sessionID).Infof("starting open session phase")
+				log.With("session", sessionID).Infof("proxymanager - starting open session phase")
 				onOpenSessionPkt := &pb.Packet{
 					Type: pbagent.SessionOpen,
 					Spec: map[string][]byte{
@@ -234,7 +234,7 @@ func (s *Server) listenProxyManagerMessages(sessionID string, ctx *storagev2.Con
 				if err != nil {
 					return err
 				}
-				log.With("session", sessionID).Info("session opened")
+				log.With("session", sessionID).Info("proxymanager - session opened")
 			case <-time.After(time.Hour * 12):
 				log.Warnf("timeout (12h) waiting for api response")
 			}

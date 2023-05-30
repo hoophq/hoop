@@ -313,7 +313,7 @@ func (s *Server) processSessionOpenPacket(pkt *pb.Packet, pctx plugintypes.Conte
 			Type: pbclient.SessionOpenAgentOffline,
 			Spec: spec,
 		})
-		return fmt.Errorf("agent is offline")
+		return pb.ErrAgentOffline
 	}
 
 	clientArgs := clientArgsDecode(pkt.Spec)

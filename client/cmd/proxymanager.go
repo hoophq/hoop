@@ -55,6 +55,9 @@ var (
 					case codes.NotFound:
 						log.Infof("connection not found")
 						return nil
+					case codes.FailedPrecondition:
+						log.Info(pb.ErrAgentOffline)
+						return nil
 					}
 				}
 				if err != nil {
@@ -139,7 +142,7 @@ func runAutoConnect(client pb.ClientTransport) (err error) {
 		case pbclient.SessionOpenApproveOK:
 			log.Infof("session approved")
 		case pbclient.SessionOpenAgentOffline:
-			return fmt.Errorf("agent is offline")
+			return pb.ErrAgentOffline
 		case pbclient.SessionOpenTimeout:
 			return fmt.Errorf("session ended, reached connection duration")
 		case pbclient.PGConnectionWrite:
