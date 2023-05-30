@@ -61,7 +61,7 @@ func Run() {
 	}
 	log.Infof("sync with success")
 
-	storev2 := storagev2.NewStorage()
+	storev2 := storagev2.NewStorage(nil)
 
 	profile := os.Getenv("PROFILE")
 	idProvider := idp.NewProvider(profile)
