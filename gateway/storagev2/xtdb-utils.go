@@ -12,7 +12,7 @@ import (
 	"olympos.io/encoding/edn"
 )
 
-func submitPutTx(client http.Client, xtdbAPI string, trxs ...types.TxEdnStruct) (*types.TxResponse, error) {
+func submitPutTx(client HTTPClient, xtdbAPI string, trxs ...types.TxEdnStruct) (*types.TxResponse, error) {
 	url := fmt.Sprintf("%s/_xtdb/submit-tx", xtdbAPI)
 
 	txOpsEdn, err := buildTrxPutEdn(trxs...)

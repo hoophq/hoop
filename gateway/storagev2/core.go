@@ -13,12 +13,20 @@ import (
 )
 
 type Store struct {
-	client  http.Client
+	client  HTTPClient
 	address string
 }
 
-func NewStorage() *Store {
-	s := &Store{client: http.Client{}, address: os.Getenv("XTDB_ADDRESS")}
+// HTTPClient is an interface for testing a request object.
+type HTTPClient interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
+func NewStorage(httpClient HTTPClient) *Store {
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	s := &Store{client: httpClient, address: os.Getenv("XTDB_ADDRESS")}
 	if s.address == "" {
 		s.address = "http://localhost:3000"
 	}
@@ -72,15 +80,19 @@ func (s *Store) GetEntity(xtID string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusOK {
-		b, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, err
-		}
-		return b, nil
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
 	}
-
-	return nil, nil
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return data, nil
+	case http.StatusNotFound:
+		return nil, nil
+	default:
+		return data, fmt.Errorf("failed fetching entity, status=%v, data=%v",
+			resp.StatusCode, string(data))
+	}
 }
 
 const ContextKey = "storagev2"
@@ -94,12 +106,12 @@ func ParseContext(c *gin.Context) *Context {
 	obj, ok := c.Get(ContextKey)
 	if !ok {
 		log.Warnf("failed obtaing context from *gin.Context for key %q", ContextKey)
-		return &Context{NewStorage(), &types.APIContext{}}
+		return &Context{NewStorage(nil), &types.APIContext{}}
 	}
 	ctx, _ := obj.(*Context)
 	if ctx == nil {
 		log.Warnf("failed type casting value to *Context")
-		return &Context{NewStorage(), &types.APIContext{}}
+		return &Context{NewStorage(nil), &types.APIContext{}}
 	}
 	return ctx
 }
