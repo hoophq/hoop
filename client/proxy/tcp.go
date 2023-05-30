@@ -7,7 +7,6 @@ import (
 	"strconv"
 
 	"github.com/runopsio/hoop/common/log"
-
 	"github.com/runopsio/hoop/common/memory"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
@@ -44,6 +43,7 @@ func (p *TCPServer) Serve(sessionID string) error {
 			tcpClient, err := lis.Accept()
 			if err != nil {
 				log.Printf("failed obtain listening connection, err=%v", err)
+				lis.Close()
 				break
 			}
 			go p.serveConn(sessionID, strconv.Itoa(connectionID), tcpClient)

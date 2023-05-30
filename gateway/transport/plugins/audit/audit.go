@@ -123,7 +123,8 @@ func (p *auditPlugin) OnDisconnect(pctx plugintypes.Context, errMsg error) error
 	p.log.With("session", pctx.SID, "origin", pctx.ClientOrigin).
 		Debugf("processing disconnect")
 	switch pctx.ClientOrigin {
-	case pb.ConnectionOriginClient:
+	case pb.ConnectionOriginClient,
+		pb.ConnectionOriginClientProxyManager:
 		defer p.closeSession(pctx.SID)
 		if errMsg != nil {
 			_ = p.writeOnReceive(pctx.SID, 'e', 0, []byte(errMsg.Error()))
@@ -174,7 +175,7 @@ func (p *auditPlugin) OnDisconnect(pctx plugintypes.Context, errMsg error) error
 }
 
 func (p *auditPlugin) closeSession(sessionID string) {
-	log.With("session", sessionID).Infof("closing session ...")
+	log.With("session", sessionID).Infof("closing session")
 	go func() {
 		if err := p.writeOnClose(sessionID); err != nil {
 			p.log.Warnf("session=%v - failed closing session: %v", sessionID, err)
