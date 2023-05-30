@@ -15,7 +15,7 @@ import (
 var (
 	dispatcherStateLock sync.RWMutex
 	dipatcherStateMap   = map[string]*dispatcherState{}
-	ErrForceReconnect   = errors.New("timeout (500ms) dispatching subscribe, forcing client to reconnect")
+	ErrForceReconnect   = errors.New("timeout (500ms) dispatching open session, forcing client to reconnect")
 )
 
 type openSessionResponse struct {

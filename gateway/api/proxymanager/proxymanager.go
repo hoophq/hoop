@@ -89,7 +89,7 @@ func Post(c *gin.Context) {
 
 	hasSubscribed := false
 	for i := 1; i <= 10; i++ {
-		log.Debugf("attempt=%v - dispatching subscribe", i)
+		log.Debugf("attempt=%v - dispatching open session", i)
 		pkt, err := transport.DispatchOpenSession(&types.Client{
 			ID:                    clientUID.String(),
 			RequestConnectionName: req.ConnectionName,
