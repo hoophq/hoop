@@ -134,23 +134,6 @@ func (s *streamWriter) Close() error {
 	return nil
 }
 
-// Deprecated: use GobDecodeInto
-func GobDecodeMap(data []byte) (map[string]any, error) {
-	res := map[string]any{}
-	if data == nil || string(data) == "" {
-		return res, nil
-	}
-	return res, gob.NewDecoder(bytes.NewBuffer(data)).
-		Decode(&res)
-}
-
-// Deprecated: use GobEncode
-func GobEncodeMap(data map[string]any) ([]byte, error) {
-	buf := &bytes.Buffer{}
-	err := gob.NewEncoder(buf).Encode(data)
-	return buf.Bytes(), err
-}
-
 func GobEncode(data any) ([]byte, error) {
 	buf := &bytes.Buffer{}
 	err := gob.NewEncoder(buf).Encode(data)

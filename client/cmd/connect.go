@@ -13,7 +13,10 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/muesli/termenv"
 	"github.com/runopsio/hoop/client/cmd/styles"
+	clientconfig "github.com/runopsio/hoop/client/config"
 	"github.com/runopsio/hoop/client/proxy"
+	"github.com/runopsio/hoop/common/grpc"
+	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/memory"
 	"github.com/runopsio/hoop/common/monitoring"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -22,6 +25,13 @@ import (
 	pbterm "github.com/runopsio/hoop/common/terminal"
 	"github.com/spf13/cobra"
 )
+
+type ConnectFlags struct {
+	proxyPort string
+	duration  string
+}
+
+var connectFlags = ConnectFlags{}
 
 var (
 	connectCmd = &cobra.Command{
@@ -64,7 +74,7 @@ type connect struct {
 }
 
 func runConnect(args []string) {
-	config := getClientConfigOrDie()
+	config := clientconfig.GetClientConfigOrDie()
 	loader := spinner.New(spinner.CharSets[11], 70*time.Millisecond)
 	loader.Color("green")
 	loader.Start()
@@ -308,4 +318,40 @@ func (c *connect) printErrorAndExit(format string, v ...any) {
 	errOutput := styles.ClientError(fmt.Sprintf(format, v...))
 	fmt.Println(errOutput)
 	os.Exit(1)
+}
+
+func newClientConnect(config *clientconfig.Config, loader *spinner.Spinner, args []string, verb string) *connect {
+	c := &connect{
+		proxyPort:      connectFlags.proxyPort,
+		connStore:      memory.New(),
+		clientArgs:     args[1:],
+		connectionName: args[0],
+		loader:         loader,
+	}
+	grpcClientOptions := []*grpc.ClientOptions{
+		grpc.WithOption(grpc.OptionConnectionName, c.connectionName),
+		grpc.WithOption("origin", pb.ConnectionOriginClient),
+		grpc.WithOption("verb", verb),
+	}
+	clientConfig, err := config.GrpcClientConfig()
+	if err != nil {
+		c.printErrorAndExit(err.Error())
+	}
+	c.client, err = grpc.Connect(clientConfig, grpcClientOptions...)
+	if err != nil {
+		c.printErrorAndExit(err.Error())
+	}
+	return c
+}
+
+func newClientArgsSpec(clientArgs []string) map[string][]byte {
+	spec := map[string][]byte{}
+	if len(clientArgs) > 0 {
+		encArgs, err := pb.GobEncode(clientArgs)
+		if err != nil {
+			log.Fatalf("failed encoding args, err=%v", err)
+		}
+		spec[pb.SpecClientExecArgsKey] = encArgs
+	}
+	return spec
 }

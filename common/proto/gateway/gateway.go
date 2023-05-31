@@ -1,3 +1,6 @@
 package gateway
 
-const KeepAlive = "GatewayKeepAlive"
+const (
+	KeepAlive                = "GatewayKeepAlive"
+	ProxyManagerConnectOKAck = "GatewayProxyManagerConnectOKAck"
+)

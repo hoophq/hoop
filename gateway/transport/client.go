@@ -13,7 +13,6 @@ import (
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
-	"github.com/runopsio/hoop/gateway/client"
 	rv "github.com/runopsio/hoop/gateway/review"
 	justintime "github.com/runopsio/hoop/gateway/review/jit"
 	pluginsaudit "github.com/runopsio/hoop/gateway/transport/plugins/audit"
@@ -80,27 +79,14 @@ func getPlugins(sessionID string) []pluginConfig {
 	return cc.plugins[sessionID]
 }
 
-func setClientMetdata(into *client.Client, md metadata.MD) {
-	into.Hostname = extractData(md, "hostname")
-	into.MachineId = extractData(md, "machine-id")
-	into.KernelVersion = extractData(md, "kernel-version")
-	into.Version = extractData(md, "version")
-	into.GoVersion = extractData(md, "go-version")
-	into.Compiler = extractData(md, "compiler")
-	into.Platform = extractData(md, "platform")
-	into.Verb = extractData(md, "verb")
-}
-
 func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string) error {
 	ctx := stream.Context()
 	md, _ := metadata.FromIncomingContext(ctx)
 
-	hostname := extractData(md, "hostname")
-	machineId := extractData(md, "machine-id")
-	kernelVersion := extractData(md, "kernel-version")
-	connectionName := extractData(md, "connection-name")
-	clientVerb := extractData(md, "verb")
-	clientOrigin := extractData(md, "origin")
+	hostname := mdget(md, "hostname")
+	connectionName := mdget(md, "connection-name")
+	clientVerb := mdget(md, "verb")
+	clientOrigin := mdget(md, "origin")
 
 	sub, err := s.exchangeUserToken(token)
 	if err != nil {
@@ -126,7 +112,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	// When a session id is coming from the client,
 	// it's not safe to rely on it. A validation is required
 	// to maintain the integrity of the database.
-	sessionID := extractData(md, "session-id")
+	sessionID := mdget(md, "session-id")
 	if sessionID != "" {
 		if err := s.validateSessionID(sessionID); err != nil {
 			return status.Errorf(codes.AlreadyExists, err.Error())
@@ -135,18 +121,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	if sessionID == "" {
 		sessionID = uuid.NewString()
 	}
-	c := &client.Client{
-		Id:           uuid.NewString(),
-		SessionID:    sessionID,
-		OrgId:        userCtx.Org.Id,
-		UserId:       userCtx.User.Id,
-		Status:       client.StatusConnected,
-		ConnectionId: conn.Id,
-		AgentId:      conn.AgentId,
-		Verb:         clientVerb,
-	}
 	s.trackSessionStatus(sessionID, pb.SessionPhaseClientConnect, nil)
-	setClientMetdata(c, md)
 
 	pluginContext := plugintypes.Context{
 		Context: context.Background(),
@@ -188,13 +163,11 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 
 	s.startDisconnectClientSink(sessionID, clientOrigin, func(err error) {
 		defer unbindClient(sessionID)
-		c.Status = client.StatusDisconnected
-		_, _ = s.ClientService.Persist(c)
-		if stream := getAgentStream(c.AgentId); stream != nil {
+		if stream := getAgentStream(conn.AgentId); stream != nil {
 			_ = stream.Send(&pb.Packet{
 				Type: pbagent.SessionClose,
 				Spec: map[string][]byte{
-					pb.SpecGatewaySessionID: []byte(c.SessionID),
+					pb.SpecGatewaySessionID: []byte(sessionID),
 				},
 			})
 		}
@@ -208,33 +181,24 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		return status.Errorf(codes.FailedPrecondition, err.Error())
 	}
 
-	if _, err := s.ClientService.Persist(c); err != nil {
-		log.With("session", sessionID).Errorf("failed saving client connection, err=%v", err)
-		s.disconnectClient(sessionID, err)
-		s.trackSessionStatus(sessionID, pb.SessionPhaseClientErr, fmt.Errorf("failed saving client connection, err=%v", err))
-		sentry.CaptureException(err)
-		return err
-	}
-
 	s.Analytics.Track(userCtx.User.Id, clientVerb, map[string]any{
 		"sessionID":       sessionID,
 		"connection-name": connectionName,
 		"connection-type": conn.Type,
+		"client-version":  mdget(md, "version"),
+		"go-version":      mdget(md, "go-version"),
+		"platform":        mdget(md, "platform"),
 		"hostname":        hostname,
-		"machine-id":      machineId,
-		"kernel-version":  kernelVersion,
-		"client-version":  c.Version,
-		"go-version":      c.GoVersion,
-		"platform":        c.Platform,
 	})
 
 	log.With("session", sessionID).
 		Infof("proxy connected: user=%v,hostname=%v,origin=%v,verb=%v,platform=%v,version=%v,goversion=%v",
-			userCtx.User.Email, c.Hostname, clientOrigin, c.Verb, c.Platform, c.Version, c.GoVersion)
+			userCtx.User.Email, mdget(md, "hostname"), clientOrigin, clientVerb,
+			mdget(md, "platform"), mdget(md, "version"), mdget(md, "goversion"))
 	s.trackSessionStatus(sessionID, pb.SessionPhaseClientConnected, nil)
 	clientErr := s.listenClientMessages(stream, pluginContext)
 	if status, ok := status.FromError(clientErr); ok && status.Code() == codes.Canceled {
-		log.With("session", c.SessionID, "origin", clientOrigin).Infof("grpc client connection canceled")
+		log.With("session", sessionID, "origin", clientOrigin).Infof("grpc client connection canceled")
 		// it means the api client has disconnected,
 		// it will let the session open to receive packets
 		// until a session close packet is received or the
@@ -320,41 +284,7 @@ func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, pctx pl
 func (s *Server) processClientPacket(pkt *pb.Packet, pctx plugintypes.Context) error {
 	switch pb.PacketType(pkt.Type) {
 	case pbagent.SessionOpen:
-		spec := map[string][]byte{
-			pb.SpecGatewaySessionID: []byte(pctx.SID),
-			pb.SpecConnectionType:   []byte(pctx.ConnectionType),
-		}
-
-		if s.GcpDLPRawCredentials != "" {
-			spec[pb.SpecAgentGCPRawCredentialsKey] = []byte(s.GcpDLPRawCredentials)
-		}
-
-		agentStream := getAgentStream(pctx.ConnectionAgentID)
-		if agentStream == nil {
-			spec[pb.SpecClientExecArgsKey] = pkt.Spec[pb.SpecClientExecArgsKey]
-			clientStream := getClientStream(pctx.SID)
-			_ = clientStream.Send(&pb.Packet{
-				Type: pbclient.SessionOpenAgentOffline,
-				Spec: spec,
-			})
-			return fmt.Errorf("agent is offline")
-		}
-
-		connParams, err := s.addConnectionParams(pkt, pctx)
-		if err != nil {
-			sentry.CaptureException(err)
-			return err
-		}
-		spec[pb.SpecAgentConnectionParamsKey] = connParams
-		// Propagate client spec.
-		// Do not allow replacing system ones
-		for key, val := range pkt.Spec {
-			if _, ok := spec[key]; ok {
-				continue
-			}
-			spec[key] = val
-		}
-		_ = agentStream.Send(&pb.Packet{Type: pbagent.SessionOpen, Spec: spec})
+		return s.processSessionOpenPacket(pkt, pctx)
 	default:
 		agentStream := getAgentStream(pctx.ConnectionAgentID)
 		if agentStream == nil {
@@ -362,6 +292,45 @@ func (s *Server) processClientPacket(pkt *pb.Packet, pctx plugintypes.Context) e
 		}
 		_ = agentStream.Send(pkt)
 	}
+	return nil
+}
+
+func (s *Server) processSessionOpenPacket(pkt *pb.Packet, pctx plugintypes.Context) error {
+	spec := map[string][]byte{
+		pb.SpecGatewaySessionID: []byte(pctx.SID),
+		pb.SpecConnectionType:   []byte(pctx.ConnectionType),
+	}
+
+	if s.GcpDLPRawCredentials != "" {
+		spec[pb.SpecAgentGCPRawCredentialsKey] = []byte(s.GcpDLPRawCredentials)
+	}
+
+	agentStream := getAgentStream(pctx.ConnectionAgentID)
+	if agentStream == nil {
+		spec[pb.SpecClientExecArgsKey] = pkt.Spec[pb.SpecClientExecArgsKey]
+		clientStream := getClientStream(pctx.SID)
+		_ = clientStream.Send(&pb.Packet{
+			Type: pbclient.SessionOpenAgentOffline,
+			Spec: spec,
+		})
+		return pb.ErrAgentOffline
+	}
+
+	clientArgs := clientArgsDecode(pkt.Spec)
+	connParams, err := s.addConnectionParams(clientArgs, pctx)
+	if err != nil {
+		return err
+	}
+	spec[pb.SpecAgentConnectionParamsKey] = connParams
+	// Propagate client spec.
+	// Do not allow replacing system ones
+	for key, val := range pkt.Spec {
+		if _, ok := spec[key]; ok {
+			continue
+		}
+		spec[key] = val
+	}
+	_ = agentStream.Send(&pb.Packet{Type: pbagent.SessionOpen, Spec: spec})
 	return nil
 }
 
@@ -388,8 +357,7 @@ func getInfoTypes(sessionID string) []string {
 	return infoTypes
 }
 
-func (s *Server) addConnectionParams(pkt *pb.Packet, pctx plugintypes.Context) ([]byte, error) {
-	clientArgs := clientArgsDecode(pkt.Spec)
+func (s *Server) addConnectionParams(clientArgs []string, pctx plugintypes.Context) ([]byte, error) {
 	infoTypes := getInfoTypes(pctx.SID)
 
 	ctx := &user.Context{Org: &user.Org{Id: pctx.OrgID}}
@@ -532,7 +500,9 @@ func (s *Server) loadConnectPlugins(ctx *user.Context, pctx plugintypes.Context)
 			pctx.ParamsData[pluginsjit.UserServiceParam] = &s.UserService
 			pctx.ParamsData[pluginsjit.NotificationServiceParam] = s.NotificationService
 		case plugintypes.PluginSlackName:
-			pctx.ParamsData[pluginsslack.PluginConfigEnvVarsParam] = p1.Config.EnvVars
+			if p1.Config != nil {
+				pctx.ParamsData[pluginsslack.PluginConfigEnvVarsParam] = p1.Config.EnvVars
+			}
 		}
 
 		for _, c := range p1.Connections {

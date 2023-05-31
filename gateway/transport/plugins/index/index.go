@@ -108,7 +108,8 @@ func (p *indexPlugin) OnReceive(c plugintypes.Context, pkt *pb.Packet) (*plugint
 }
 
 func (p *indexPlugin) OnDisconnect(pctx plugintypes.Context, errMsg error) error {
-	if pctx.ClientOrigin == pb.ConnectionOriginClient {
+	if pctx.ClientOrigin == pb.ConnectionOriginClient ||
+		pctx.ClientOrigin == pb.ConnectionOriginClientProxyManager {
 		p.indexOnClose(pctx, false)
 	}
 	return nil

@@ -2,7 +2,6 @@ package review
 
 import (
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -171,7 +170,6 @@ func (s *Storage) PersistSessionAsReady(sess *session.Session) (*st.TxResponse, 
 }
 
 func (s *Storage) FindSessionBySessionId(sessionID string) (*session.Session, error) {
-	log.Printf("sessionID %+v", sessionID)
 	var resultItems [][]session.Session
 	err := s.queryDecoder(`
 	{:query {

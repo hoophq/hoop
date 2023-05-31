@@ -20,7 +20,6 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/agent"
-	"github.com/runopsio/hoop/gateway/client"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/plugin"
@@ -28,6 +27,7 @@ import (
 	"github.com/runopsio/hoop/gateway/review/jit"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/session"
+	"github.com/runopsio/hoop/gateway/storagev2"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc"
@@ -41,15 +41,15 @@ import (
 type (
 	Server struct {
 		pb.UnimplementedTransportServer
-		AgentService         agent.Service
-		ClientService        client.Service
-		ConnectionService    connection.Service
-		UserService          user.Service
-		PluginService        plugin.Service
-		SessionService       session.Service
-		ReviewService        review.Service
-		JitService           jit.Service
-		NotificationService  notification.Service
+		AgentService        agent.Service
+		ConnectionService   connection.Service
+		UserService         user.Service
+		PluginService       plugin.Service
+		SessionService      session.Service
+		ReviewService       review.Service
+		JitService          jit.Service
+		NotificationService notification.Service
+
 		IDProvider           *idp.Provider
 		Profile              string
 		GcpDLPRawCredentials string
@@ -60,6 +60,8 @@ type (
 		Analytics            user.Analytics
 
 		RegisteredPlugins []plugintypes.Plugin
+
+		StoreV2 *storagev2.Store
 	}
 
 	AnalyticsService interface {
@@ -175,8 +177,11 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 		token = tokenParts[1]
 	}
 
-	if origin == pb.ConnectionOriginAgent {
+	switch origin {
+	case pb.ConnectionOriginAgent:
 		return s.subscribeAgent(stream, token)
+	case pb.ConnectionOriginClientProxyManager:
+		return s.proxyManager(stream, token)
 	}
 	return s.subscribeClient(stream, token)
 }
@@ -338,7 +343,7 @@ func closeChWithSleep(ch chan error, d time.Duration) {
 	close(ch)
 }
 
-func extractData(md metadata.MD, metaName string) string {
+func mdget(md metadata.MD, metaName string) string {
 	data := md.Get(metaName)
 	if len(data) == 0 {
 		// keeps compatibility with old clients that

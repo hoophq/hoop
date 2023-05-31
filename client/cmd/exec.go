@@ -17,6 +17,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/muesli/termenv"
 	"github.com/runopsio/hoop/client/cmd/styles"
+	clientconfig "github.com/runopsio/hoop/client/config"
 	"github.com/runopsio/hoop/common/monitoring"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
@@ -110,7 +111,7 @@ func parseExecInput(c *connect) (bool, []byte) {
 }
 
 func runExec(args []string) {
-	config := getClientConfigOrDie()
+	config := clientconfig.GetClientConfigOrDie()
 	loader := spinner.New(spinner.CharSets[11], 70*time.Millisecond,
 		spinner.WithWriter(os.Stderr), spinner.WithHiddenCursor(true))
 	loader.Color("green")

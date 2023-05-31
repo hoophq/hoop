@@ -1,4 +1,4 @@
-package config
+package clientconfig
 
 import (
 	"bytes"
@@ -27,6 +27,25 @@ type Config struct {
 	GrpcURL  string `toml:"grpc_url"`
 	Mode     string `toml:"-"`
 	filepath string `toml:"-"`
+}
+
+// NewConfigFile creates a new configuration in the filesystem
+func NewConfigFile(apiURL, grpcURL, token string) (string, error) {
+	filepath, err := clientconfig.NewPath(clientconfig.ClientFile)
+	if err != nil {
+		return "", err
+	}
+	c := &Config{filepath: filepath, Token: token, ApiURL: apiURL, GrpcURL: grpcURL}
+	return filepath, c.Save()
+}
+
+// Remove the configuration file if it exists
+func Remove() error {
+	filepath, _ := clientconfig.NewPath(clientconfig.ClientFile)
+	if filepath != "" {
+		return os.Remove(filepath)
+	}
+	return nil
 }
 
 // Load builds an client config file in the following order.
@@ -142,4 +161,19 @@ func GetClientConfigOrDie() *Config {
 	log.Debugf("loaded clientconfig, mode=%v, tls=%v, api_url=%v, grpc_url=%v, tokenlength=%v",
 		config.Mode, !config.IsInsecure(), config.ApiURL, config.GrpcURL, len(config.Token))
 	return config
+}
+
+func GetClientConfig() (*Config, error) {
+	config, err := Load()
+	switch err {
+	case ErrEmpty, nil:
+		if !config.IsValid() || !config.HasToken() {
+			return nil, fmt.Errorf("unable to load credentials, configuration invalid or missing token")
+		}
+	default:
+		return nil, err
+	}
+	log.Infof("loaded clientconfig, mode=%v, tls=%v, api_url=%v, grpc_url=%v",
+		config.Mode, !config.IsInsecure(), config.ApiURL, config.GrpcURL)
+	return config, nil
 }

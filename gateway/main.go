@@ -18,7 +18,6 @@ import (
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/analytics"
 	"github.com/runopsio/hoop/gateway/api"
-	"github.com/runopsio/hoop/gateway/client"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/indexer"
 	"github.com/runopsio/hoop/gateway/jobs"
@@ -31,6 +30,7 @@ import (
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/session"
 	xtdb "github.com/runopsio/hoop/gateway/storage"
+	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/transport"
 	"github.com/runopsio/hoop/gateway/user"
 
@@ -62,6 +62,8 @@ func Run() {
 	}
 	log.Infof("sync with success")
 
+	storev2 := storagev2.NewStorage(nil)
+
 	profile := os.Getenv("PROFILE")
 	idProvider := idp.NewProvider(profile)
 	analyticsService := analytics.New()
@@ -70,7 +72,6 @@ func Run() {
 	pluginService := plugin.Service{Storage: &plugin.Storage{Storage: s}}
 	connectionService := connection.Service{PluginService: &pluginService, Storage: &connection.Storage{Storage: s}}
 	userService := user.Service{Storage: &user.Storage{Storage: s}}
-	clientService := client.Service{Storage: &client.Storage{Storage: s}}
 	sessionService := session.Service{Storage: &session.Storage{Storage: s}}
 	reviewService := review.Service{Storage: &review.Storage{Storage: s}}
 	jitService := jit.Service{Storage: &jit.Storage{Storage: s}}
@@ -102,13 +103,14 @@ func Run() {
 		IDProvider:        idProvider,
 		Profile:           profile,
 		Analytics:         analyticsService,
+
+		StoreV2: storev2,
 	}
 
 	g := &transport.Server{
 		AgentService:         agentService,
 		ConnectionService:    connectionService,
 		UserService:          userService,
-		ClientService:        clientService,
 		PluginService:        pluginService,
 		SessionService:       sessionService,
 		ReviewService:        reviewService,
@@ -122,6 +124,8 @@ func Run() {
 		PyroscopeAuthToken:   os.Getenv("PYROSCOPE_AUTH_TOKEN"),
 		AgentSentryDSN:       os.Getenv("AGENT_SENTRY_DSN"),
 		Analytics:            analyticsService,
+
+		StoreV2: storev2,
 	}
 	// order matters
 	g.RegisteredPlugins = []plugintypes.Plugin{

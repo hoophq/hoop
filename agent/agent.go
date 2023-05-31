@@ -429,8 +429,10 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 		a.client.Send(&pb.Packet{
 			Type: pbclient.SessionOpenOK,
 			Spec: map[string][]byte{
-				pb.SpecGatewaySessionID: sessionID,
-				pb.SpecConnectionType:   pkt.Spec[pb.SpecConnectionType]}})
+				pb.SpecGatewaySessionID:  sessionID,
+				pb.SpecConnectionType:    pkt.Spec[pb.SpecConnectionType],
+				pb.SpecClientRequestPort: pkt.Spec[pb.SpecClientRequestPort],
+			}})
 		log.Infof("session=%v - sent gateway connect ok", string(sessionID))
 	}()
 }

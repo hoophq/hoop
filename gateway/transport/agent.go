@@ -51,13 +51,13 @@ func getAgentStream(id string) pb.Transport_ConnectServer {
 }
 
 func setAgentClientMetdata(into *agent.Agent, md metadata.MD) {
-	into.Hostname = extractData(md, "hostname")
-	into.MachineId = extractData(md, "machine_id")
-	into.KernelVersion = extractData(md, "kernel_version")
-	into.Version = extractData(md, "version")
-	into.GoVersion = extractData(md, "go-version")
-	into.Compiler = extractData(md, "compiler")
-	into.Platform = extractData(md, "platform")
+	into.Hostname = mdget(md, "hostname")
+	into.MachineId = mdget(md, "machine_id")
+	into.KernelVersion = mdget(md, "kernel_version")
+	into.Version = mdget(md, "version")
+	into.GoVersion = mdget(md, "go-version")
+	into.Compiler = mdget(md, "compiler")
+	into.Platform = mdget(md, "platform")
 }
 
 func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string) error {
@@ -87,8 +87,8 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 		ParamsData: map[string]any{"client": clientOrigin}}
 	bindAgent(ag.Id, stream)
 
-	log.Infof("agent connected: org=%v,name=%v,hostname=%v,platform=%v,version=%v,goversion=%v,compiler=%v",
-		orgName, ag.Name, ag.Hostname, ag.Platform, ag.Version, ag.GoVersion, ag.Compiler)
+	log.Infof("agent connected: org=%v,name=%v,hostname=%v,platform=%v,version=%v,goversion=%v",
+		orgName, ag.Name, ag.Hostname, ag.Platform, ag.Version, ag.GoVersion)
 
 	var transportConfigBytes []byte
 	if s.PyroscopeIngestURL != "" {
