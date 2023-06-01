@@ -325,8 +325,15 @@ func (a *Agent) setDatabaseCredentials(pkt *pb.Packet, params *pb.AgentConnectio
 				log.Infof("session=%v - found valid database credentials, user=%v",
 					sessionID, uc.Username)
 				// mutate connection env vars with credentials
+				params.EnvVars["envvar:HOST"] = b64Enc([]byte(uc.Host))
+				params.EnvVars["envvar:PORT"] = b64Enc([]byte(uc.Port))
 				params.EnvVars["envvar:USER"] = b64Enc([]byte(uc.Username))
 				params.EnvVars["envvar:PASS"] = b64Enc([]byte(uc.Password))
+				if uc.Engine == "postgres" {
+					params.EnvVars["envvar:PGPASSWORD"] = b64Enc([]byte(uc.Password))
+				} else if uc.Engine == "mysql" {
+					params.EnvVars["envvar:MYSQL_PWD"] = b64Enc([]byte(uc.Password))
+				}
 				return nil
 			}
 			// maintain the same password
@@ -352,8 +359,16 @@ func (a *Agent) setDatabaseCredentials(pkt *pb.Packet, params *pb.AgentConnectio
 		log.Infof("session=%v - created new database credentials, user=%v, revoket-at=%v",
 			string(sessionID), uc.Username, uc.RevokeAt.Format(time.RFC3339))
 		// mutate connection env vars with credentials
+		params.EnvVars["envvar:HOST"] = b64Enc([]byte(uc.Host))
+		params.EnvVars["envvar:PORT"] = b64Enc([]byte(uc.Port))
 		params.EnvVars["envvar:USER"] = b64Enc([]byte(uc.Username))
 		params.EnvVars["envvar:PASS"] = b64Enc([]byte(uc.Password))
+		if uc.Engine == "postgres" {
+			params.EnvVars["envvar:PGPASSWORD"] = b64Enc([]byte(uc.Password))
+		} else if uc.Engine == "mysql" {
+			params.EnvVars["envvar:MYSQL_PWD"] = b64Enc([]byte(uc.Password))
+		}
+
 	}
 	return nil
 }

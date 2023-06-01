@@ -18,22 +18,23 @@ type PolicyConfig struct {
 // https://github.com/hashicorp/hcl/blob/e54a1960efd6cdfe35ecb8cc098bed33cd6001a8/guide/go_patterns.rst#L17
 // https://github.com/hashicorp/hcl/blob/e54a1960efd6cdfe35ecb8cc098bed33cd6001a8/gohcl/doc.go#L23
 type Policy struct {
-	Name              string   `hc:"name,label"`
+	Name              string   `hcl:"name,label"`
 	Engine            string   `hcl:"engine"`
 	PluginConfigEntry string   `hcl:"plugin_config_entry"`
 	Instances         []string `hcl:"instances"`
 	RenewDuration     string   `hcl:"renew,optional"`
 	GrantPrivileges   []string `hcl:"grant_privileges"`
 
-	datasource string `hcl:"-"`
+	datasource string
 }
 
 // parsePolicyConfig
 func parsePolicyConfig(connectionName string, pl *plugin.Plugin) (*Policy, error) {
-	encPolicyConfigData := pl.Config.EnvVars["POLICY"]
+	encPolicyConfigData := pl.Config.EnvVars["policy-config"]
 	if encPolicyConfigData == "" {
 		return nil, fmt.Errorf("policy config is empty")
 	}
+
 	policyConfigDataBytes, err := base64.StdEncoding.DecodeString(encPolicyConfigData)
 	if err != nil {
 		return nil, fmt.Errorf("failed decoding policy config: %v", err)
@@ -69,22 +70,27 @@ func parsePolicyConfig(connectionName string, pl *plugin.Plugin) (*Policy, error
 			}
 		}
 	}
+	var policyConfigName string
 	for _, conn := range pl.Connections {
 		if conn.Name == connectionName && len(conn.Config) > 0 {
-			found, ok := policies[conn.Config[0]]
-			if !ok {
-				continue
+			policyConfigName = conn.Config[0]
+			found, ok := policies[policyConfigName]
+			if ok {
+				datasourceConfig, err := parseDatasourceConfig(found.PluginConfigEntry, pl.Config.EnvVars)
+				if err != nil {
+					return nil, err
+				}
+				found.datasource = datasourceConfig
+				return found, nil
 			}
-			datasourceConfig, err := parseDatasourceConfig(found.PluginConfigEntry, pl.Config.EnvVars)
-			if err != nil {
-				return nil, err
-			}
-			found.datasource = datasourceConfig
-			return found, nil
+			break
 		}
 	}
+	if policyConfigName == "" {
+		return nil, fmt.Errorf("missing configuration policy for this connection")
+	}
 
-	return nil, fmt.Errorf("policy not found for connection %v", connectionName)
+	return nil, fmt.Errorf("policy %q not found for this connection", policyConfigName)
 }
 
 func parseDatasourceConfig(pluginConfigEntry string, envvars map[string]string) (string, error) {

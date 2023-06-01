@@ -13,6 +13,7 @@ require (
 	github.com/hoophq/pluginhooks v0.0.6
 	github.com/pyroscope-io/client v0.6.0
 	github.com/runopsio/hoop/common v0.0.0-00010101000000-000000000000
+	github.com/xo/dburl v0.14.2
 	golang.org/x/oauth2 v0.0.0-20221014153046-6fdb5e3db783
 	google.golang.org/api v0.102.0
 	google.golang.org/grpc v1.50.1

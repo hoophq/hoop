@@ -9,28 +9,29 @@ import (
 	"github.com/zclconf/go-cty/cty"
 )
 
-type Config struct {
-	Items []Database `hcl:"database,block"`
+type PolicyConfig struct {
+	Items []Policy `hcl:"policy,block"`
 }
 
 // https://github.com/hashicorp/hcl/tree/e54a1960efd6cdfe35ecb8cc098bed33cd6001a8/guide
 // https://github.com/hashicorp/hcl/blob/e54a1960efd6cdfe35ecb8cc098bed33cd6001a8/guide/go_patterns.rst#L17
 // https://github.com/hashicorp/hcl/blob/e54a1960efd6cdfe35ecb8cc098bed33cd6001a8/gohcl/doc.go#L23
-type Database struct {
-	// Foo                  string   `hcl:"foo"`
-	Host                 string   `hcl:"host,label"`
-	Name                 string   `hcl:"name,label"`
-	Engine               string   `hcl:"engine"`
-	PostgresSchemas      []string `hcl:"postgres_schemas,optional"`
-	OnCreateStatements   []string `hcl:"on_create"`
-	OnExistentStatements []string `hcl:"on_existent"`
+type Policy struct {
+	Name              string   `hcl:"name,label"`
+	Engine            string   `hcl:"engine"`
+	PluginConfigEntry string   `hcl:"plugin_config_entry"`
+	Instances         []string `hcl:"instances"`
+	RenewDuration     string   `hcl:"renew,optional"`
+	GrantPrivileges   []string `hcl:"grant_privileges"`
+
+	datasource string
 }
 
 func main() {
 	// parser := hclparse.NewParser()
 	// parser.ParseHCL()
-	c := Config{}
-	data, _ := os.ReadFile("./policies.hcl")
+	c := PolicyConfig{}
+	data, _ := os.ReadFile("../../../../../agent/dcm/config.hcl")
 	variables := map[string]cty.Value{
 		"user":       cty.StringVal("master-user"),
 		"password":   cty.StringVal("master-pwd"),
@@ -41,5 +42,5 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(c)
+	fmt.Printf("%#v\n", c)
 }
