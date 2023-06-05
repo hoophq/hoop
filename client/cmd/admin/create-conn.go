@@ -12,11 +12,12 @@ import (
 )
 
 var (
-	connAgentFlag     string
-	connPuginFlag     []string
-	connTypeFlag      string
-	connSecretFlag    []string
-	connOverwriteFlag bool
+	connAgentFlag        string
+	connPuginFlag        []string
+	connTypeFlag         string
+	connSecretFlag       []string
+	skipStrictValidation bool
+	connOverwriteFlag    bool
 )
 
 func init() {
@@ -24,6 +25,7 @@ func init() {
 	createConnectionCmd.Flags().StringVarP(&connTypeFlag, "type", "t", "command-line", "Type of the connection. One off: (command-line,postgres,mysql,tcp)")
 	createConnectionCmd.Flags().StringSliceVarP(&connPuginFlag, "plugin", "p", nil, "Plugins that will be enabled for this connection in the form of: <plugin>:<config01>;<config02>,...")
 	createConnectionCmd.Flags().BoolVar(&connOverwriteFlag, "overwrite", false, "It will create or update it if a connection already exists")
+	createConnectionCmd.Flags().BoolVar(&skipStrictValidation, "skip-validation", false, "It will skip any strict validation")
 	createConnectionCmd.Flags().StringSliceVarP(&connSecretFlag, "env", "e", nil, "The environment variables of the connection")
 	createConnectionCmd.MarkFlagRequired("agent")
 
@@ -71,15 +73,15 @@ var createConnectionCmd = &cobra.Command{
 		}
 		switch connTypeFlag {
 		case "command-line":
-			if len(cmdList) == 0 {
+			if len(cmdList) == 0 && !skipStrictValidation {
 				styles.PrintErrorAndExit("command-line type must be at least one command")
 			}
 		case "tcp":
-			if err := validateTcpEnvs(envVar); err != nil {
+			if err := validateTcpEnvs(envVar); !skipStrictValidation && err != nil {
 				styles.PrintErrorAndExit(err.Error())
 			}
 		case "postgres", "mysql":
-			if err := validateNativeDbEnvs(envVar); err != nil {
+			if err := validateNativeDbEnvs(envVar); !skipStrictValidation && err != nil {
 				styles.PrintErrorAndExit(err.Error())
 			}
 		default:

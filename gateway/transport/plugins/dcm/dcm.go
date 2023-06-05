@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	"github.com/runopsio/hoop/gateway/plugin"
@@ -15,13 +14,6 @@ import (
 type dcm struct {
 	pluginSvc *plugin.Service
 }
-
-// CREATE ROLE "_hoop_dcm_user" WITH LOGIN ENCRYPTED PASSWORD '123' VALID UNTIL '2023-05-17 15:15:31.21059-03';
-// GRANT SELECT ON ALL TABLES IN SCHEMA public TO "_hoop_dcm_user";
-// ALTER USER _hoop_dcm_user VALID UNTIL '2023-05-17 15:24:24.3128-03';
-
-var dropRole = `DROP ROLE IF EXISTS "%s"`
-var createRole = `CREATE ROLE "%s" WITH LOGIN ENCRYPTED PASSWORD '%s' VALID UNTIL '%s'`
 
 func New(pluginSvc *plugin.Service) *dcm             { return &dcm{pluginSvc: pluginSvc} }
 func (p *dcm) Name() string                          { return plugintypes.PluginDCMName }
@@ -35,7 +27,6 @@ func (p *dcm) OnUpdateConfig(obj plugin.Plugin, old, new *plugin.PluginConfig) e
 		return nil
 	}
 	return nil
-	// return validatePolicies(new.EnvVars)
 }
 func (p *dcm) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {
 	if pkt.Type != pbagent.SessionOpen {
@@ -49,22 +40,25 @@ func (p *dcm) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.
 	if err != nil {
 		return nil, fmt.Errorf("failed parsing policy configuration, reason=%v", err)
 	}
-	if policy.RenewDuration == "" {
-		policy.RenewDuration = "2m"
+	if policy.Expiration == "" {
+		policy.Expiration = defaultExpirationDuration.String()
 	}
-
+	checksum, err := newPolicyChecksum(policy)
+	if err != nil {
+		return nil, err
+	}
 	encDcmData, err := pb.GobEncode(map[string]any{
 		"name":             policy.Name,
 		"engine":           policy.Engine,
 		"datasource":       policy.datasource,
 		"instances":        policy.Instances,
 		"grant-privileges": policy.GrantPrivileges,
-		"renew-duration":   policy.RenewDuration,
+		"expiration":       policy.Expiration,
+		"checksum":         checksum,
 	})
 	if err != nil {
 		return nil, plugintypes.InternalErr("failed encoding plugin data", err)
 	}
-	log.Infof("configuring plugin dcm data key!!")
 	pkt.Spec[pb.SpecPluginDcmDataKey] = encDcmData
 	return nil, nil
 }

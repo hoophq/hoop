@@ -19,6 +19,7 @@ require (
 	github.com/getsentry/sentry-go v0.18.0
 	github.com/runopsio/hoop/agent v0.0.0-00010101000000-000000000000
 	github.com/runopsio/hoop/gateway v0.0.0-00010101000000-000000000000
+	google.golang.org/grpc v1.53.0
 	k8s.io/api v0.26.3
 	k8s.io/apimachinery v0.26.3
 )
@@ -125,6 +126,7 @@ require (
 	github.com/tidwall/wal v1.1.7 // indirect
 	github.com/ugorji/go/codec v1.2.7 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
+	github.com/xo/dburl v0.14.2 // indirect
 	github.com/zclconf/go-cty v1.12.1 // indirect
 	go.etcd.io/bbolt v1.3.5 // indirect
 	go.opencensus.io v0.24.0 // indirect
@@ -139,7 +141,6 @@ require (
 	golang.org/x/time v0.0.0-20220922220347-f3bd1da661af // indirect
 	google.golang.org/api v0.108.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
-	google.golang.org/grpc v1.53.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect

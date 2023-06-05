@@ -1,28 +1,32 @@
 package dcm
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/hashicorp/hcl/v2/hclsimple"
+	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/plugin"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+)
+
+var (
+	ErrReachedMaxInstances = fmt.Errorf("reached max instances (%v) per policy", maxPolicyInstances)
+	errEmptyPolicyConfig   = errors.New("policy-config entry is empty")
 )
 
 type PolicyConfig struct {
 	Items []Policy `hcl:"policy,block"`
 }
 
-// https://github.com/hashicorp/hcl/tree/e54a1960efd6cdfe35ecb8cc098bed33cd6001a8/guide
-// https://github.com/hashicorp/hcl/blob/e54a1960efd6cdfe35ecb8cc098bed33cd6001a8/guide/go_patterns.rst#L17
-// https://github.com/hashicorp/hcl/blob/e54a1960efd6cdfe35ecb8cc098bed33cd6001a8/gohcl/doc.go#L23
 type Policy struct {
 	Name              string   `hcl:"name,label"`
 	Engine            string   `hcl:"engine"`
 	PluginConfigEntry string   `hcl:"plugin_config_entry"`
 	Instances         []string `hcl:"instances"`
-	RenewDuration     string   `hcl:"renew,optional"`
+	Expiration        string   `hcl:"expiration,optional"`
 	GrantPrivileges   []string `hcl:"grant_privileges"`
 
 	datasource string
@@ -30,9 +34,9 @@ type Policy struct {
 
 // parsePolicyConfig
 func parsePolicyConfig(connectionName string, pl *plugin.Plugin) (*Policy, error) {
-	encPolicyConfigData := pl.Config.EnvVars["policy-config"]
+	encPolicyConfigData := pl.Config.EnvVars[policyConfigKeyName]
 	if encPolicyConfigData == "" {
-		return nil, fmt.Errorf("policy config is empty")
+		return nil, errEmptyPolicyConfig
 	}
 
 	policyConfigDataBytes, err := base64.StdEncoding.DecodeString(encPolicyConfigData)
@@ -45,30 +49,12 @@ func parsePolicyConfig(connectionName string, pl *plugin.Plugin) (*Policy, error
 		return nil, err
 	}
 
-	polmap := map[string]map[string]Policy{}
-	policies := map[string]*Policy{}
+	policies := map[string]Policy{}
 	for _, pol := range config.Items {
 		if _, ok := policies[pol.Name]; ok {
 			return nil, fmt.Errorf("policy name %v already exists", pol.Name)
 		}
-
-		policies[pol.Name] = &pol
-		for _, dbname := range pol.Instances {
-			// <plugin-entry>:<privileges>
-			entryKey := fmt.Sprintf("%s:%s",
-				pol.PluginConfigEntry,
-				strings.Join(pol.GrantPrivileges, ","))
-			if m, ok := polmap[dbname]; ok {
-				if e, exists := m[entryKey]; exists {
-					return nil, fmt.Errorf("found duplicated privileges %v=%v", pol.Name, e.Name)
-				}
-				m[entryKey] = pol
-				continue
-			}
-			polmap[dbname] = map[string]Policy{
-				entryKey: pol,
-			}
-		}
+		policies[pol.Name] = pol
 	}
 	var policyConfigName string
 	for _, conn := range pl.Connections {
@@ -76,12 +62,19 @@ func parsePolicyConfig(connectionName string, pl *plugin.Plugin) (*Policy, error
 			policyConfigName = conn.Config[0]
 			found, ok := policies[policyConfigName]
 			if ok {
+				if err := validatePolicyConstraints(found); err != nil {
+					return nil, err
+				}
+
 				datasourceConfig, err := parseDatasourceConfig(found.PluginConfigEntry, pl.Config.EnvVars)
 				if err != nil {
 					return nil, err
 				}
 				found.datasource = datasourceConfig
-				return found, nil
+				if found.Expiration == "" {
+					found.Expiration = defaultExpirationDuration.String()
+				}
+				return &found, nil
 			}
 			break
 		}
@@ -103,4 +96,62 @@ func parseDatasourceConfig(pluginConfigEntry string, envvars map[string]string) 
 		return "", plugintypes.InternalErr("failed decoding database credentials configuration", err)
 	}
 	return string(masterDbCredBytes), nil
+}
+
+func validatePolicyConstraints(p Policy) error {
+	if len(p.Instances) >= maxPolicyInstances {
+		return ErrReachedMaxInstances
+	}
+	// validate grant privileges
+	privmap := map[string]any{}
+	var repeatedPrivileges []string
+	for _, priv := range p.GrantPrivileges {
+		if _, ok := privmap[priv]; ok {
+			repeatedPrivileges = append(repeatedPrivileges, priv)
+			continue
+		}
+		privmap[priv] = nil
+	}
+	if len(repeatedPrivileges) > 0 {
+		return fmt.Errorf("found repeated privilege(s) %v", repeatedPrivileges)
+	}
+
+	var nonAllowedPrivileges []string
+	for requestPriv := range privmap {
+		if _, ok := allowedGrantPrivileges[requestPriv]; !ok {
+			nonAllowedPrivileges = append(nonAllowedPrivileges, requestPriv)
+		}
+	}
+	if len(nonAllowedPrivileges) > 0 {
+		return fmt.Errorf("privileges %v are not allowed for this engine", nonAllowedPrivileges)
+	}
+
+	// validate instances
+	instancesmap := map[string]any{}
+	var repeatedInstances []string
+	for _, db := range p.Instances {
+		if _, ok := instancesmap[db]; ok {
+			repeatedInstances = append(repeatedInstances, db)
+			continue
+		}
+		instancesmap[db] = nil
+	}
+	if len(repeatedInstances) > 0 {
+		return fmt.Errorf("found repeated instance(s) %v", repeatedInstances)
+	}
+
+	return nil
+}
+
+func newPolicyChecksum(p *Policy) (string, error) {
+	d, err := pb.GobEncode(p)
+	if err != nil {
+		return "", fmt.Errorf("failed hashing policy, gob encode error=%v", err)
+	}
+	h := sha256.New()
+	if _, err := h.Write(d); err != nil {
+		return "", fmt.Errorf("failed hashing policy, err=%v", err)
+	}
+	bs := h.Sum(nil)
+	return fmt.Sprintf("%x", bs), nil
 }

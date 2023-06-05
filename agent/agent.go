@@ -311,7 +311,6 @@ func (a *Agent) setDatabaseCredentials(pkt *pb.Packet, params *pb.AgentConnectio
 	if dcmDataBytes := pkt.Spec[pb.SpecPluginDcmDataKey]; dcmDataBytes != nil {
 		// remove the master credentials for security sake
 		delete(pkt.Spec, pb.SpecPluginDcmDataKey)
-		log.Info("found database credentials manager data, generating a session database user")
 		if err := pb.GobDecodeInto(dcmDataBytes, &dcmData); err != nil {
 			log.Errorf("session=%v - failed decoding database credentials manager data, err=%v", sessionID, err)
 			sentry.CaptureException(err)
@@ -320,26 +319,26 @@ func (a *Agent) setDatabaseCredentials(pkt *pb.Packet, params *pb.AgentConnectio
 	}
 	randomPassword := dcm.NewRandomPassword()
 	if obj := a.connStore.Get(storeKey); obj != nil {
-		if uc := obj.(*dcm.UserCredentials); uc != nil {
-			if !uc.IsExpired() {
+		if cred := obj.(*dcm.Credentials); cred != nil {
+			if cred.Checksum() == fmt.Sprintf("%v", dcmData["checksum"]) && !cred.IsExpired() {
 				log.Infof("session=%v - found valid database credentials, user=%v",
-					sessionID, uc.Username)
+					sessionID, cred.Username)
 				// mutate connection env vars with credentials
-				params.EnvVars["envvar:HOST"] = b64Enc([]byte(uc.Host))
-				params.EnvVars["envvar:PORT"] = b64Enc([]byte(uc.Port))
-				params.EnvVars["envvar:USER"] = b64Enc([]byte(uc.Username))
-				params.EnvVars["envvar:PASS"] = b64Enc([]byte(uc.Password))
-				if uc.Engine == "postgres" {
-					params.EnvVars["envvar:PGPASSWORD"] = b64Enc([]byte(uc.Password))
-				} else if uc.Engine == "mysql" {
-					params.EnvVars["envvar:MYSQL_PWD"] = b64Enc([]byte(uc.Password))
+				params.EnvVars["envvar:HOST"] = b64Enc([]byte(cred.Host))
+				params.EnvVars["envvar:PORT"] = b64Enc([]byte(cred.Port))
+				params.EnvVars["envvar:USER"] = b64Enc([]byte(cred.Username))
+				params.EnvVars["envvar:PASS"] = b64Enc([]byte(cred.Password))
+				if cred.Engine() == "postgres" {
+					params.EnvVars["envvar:PGPASSWORD"] = b64Enc([]byte(cred.Password))
+				} else if cred.Engine() == "mysql" {
+					params.EnvVars["envvar:MYSQL_PWD"] = b64Enc([]byte(cred.Password))
 				}
 				return nil
 			}
 			// maintain the same password
-			randomPassword = uc.Password
+			randomPassword = cred.Password
 			a.connStore.Del(storeKey)
-			log.Infof("database credentials is expired at %v", uc.RevokeAt.Format(time.RFC3339))
+			log.Infof("database credentials is expired at %v", cred.RevokeAt.Format(time.RFC3339))
 		}
 	}
 	// get database credentials from map
@@ -347,7 +346,7 @@ func (a *Agent) setDatabaseCredentials(pkt *pb.Packet, params *pb.AgentConnectio
 	// remove dcm key from pkt.Spec (security)
 	if len(dcmData) > 0 {
 		log.Info("found database credentials manager data, generating a session database user")
-		uc, err := dcm.NewCredentials(dcmData, randomPassword)
+		cred, err := dcm.ProvisionSessionUser(sessionID, dcmData, randomPassword)
 		if err != nil {
 			log.Errorf("session=%v - failed creating database credentials, err=%v", string(sessionID), err)
 			sentry.CaptureException(err)
@@ -355,18 +354,18 @@ func (a *Agent) setDatabaseCredentials(pkt *pb.Packet, params *pb.AgentConnectio
 		}
 		// wipe the master credentials for security sake
 		dcmData = nil
-		a.connStore.Set(storeKey, uc)
+		a.connStore.Set(storeKey, cred)
 		log.Infof("session=%v - created new database credentials, user=%v, revoket-at=%v",
-			string(sessionID), uc.Username, uc.RevokeAt.Format(time.RFC3339))
+			string(sessionID), cred.Username, cred.RevokeAt.Format(time.RFC3339))
 		// mutate connection env vars with credentials
-		params.EnvVars["envvar:HOST"] = b64Enc([]byte(uc.Host))
-		params.EnvVars["envvar:PORT"] = b64Enc([]byte(uc.Port))
-		params.EnvVars["envvar:USER"] = b64Enc([]byte(uc.Username))
-		params.EnvVars["envvar:PASS"] = b64Enc([]byte(uc.Password))
-		if uc.Engine == "postgres" {
-			params.EnvVars["envvar:PGPASSWORD"] = b64Enc([]byte(uc.Password))
-		} else if uc.Engine == "mysql" {
-			params.EnvVars["envvar:MYSQL_PWD"] = b64Enc([]byte(uc.Password))
+		params.EnvVars["envvar:HOST"] = b64Enc([]byte(cred.Host))
+		params.EnvVars["envvar:PORT"] = b64Enc([]byte(cred.Port))
+		params.EnvVars["envvar:USER"] = b64Enc([]byte(cred.Username))
+		params.EnvVars["envvar:PASS"] = b64Enc([]byte(cred.Password))
+		if cred.Engine() == "postgres" {
+			params.EnvVars["envvar:PGPASSWORD"] = b64Enc([]byte(cred.Password))
+		} else if cred.Engine() == "mysql" {
+			params.EnvVars["envvar:MYSQL_PWD"] = b64Enc([]byte(cred.Password))
 		}
 
 	}
