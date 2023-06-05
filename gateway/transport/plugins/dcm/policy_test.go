@@ -146,7 +146,20 @@ func TestParsePolicyConfig(t *testing.T) {
 				grant_privileges     = ["SELECT", "UPDATE"]
 			}
 			`),
-			wantErr: ErrReachedMaxInstances,
+			wantErr: errReachedMaxInstances,
+		},
+		{
+			msg: "it should fail if it pass max expiration time",
+			pl: newPluginFn("pg", "pg-readonly", "pg-local", "postgres://foo:bar@127.0.0.1:5432/postgres", `
+			policy "pg-readonly" {
+				engine               = "postgres"
+				plugin_config_entry  = "pg-local"
+				expiration           = "1441m"
+				instances            = ["postgres.public"]
+				grant_privileges     = ["SELECT", "UPDATE"]
+			}
+			`),
+			wantErr: errMaxExpirationTime,
 		},
 	} {
 		t.Run(tt.msg, func(t *testing.T) {

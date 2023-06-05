@@ -5,6 +5,7 @@ import "time"
 const (
 	policyConfigKeyName = "policy-config"
 	maxPolicyInstances  = 10
+	maxExpirationTime   = time.Minute * 1440
 )
 
 // https://www.postgresql.org/docs/14/sql-grant.html

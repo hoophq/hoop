@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/hashicorp/hcl/v2/hclsimple"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -13,8 +14,9 @@ import (
 )
 
 var (
-	ErrReachedMaxInstances = fmt.Errorf("reached max instances (%v) per policy", maxPolicyInstances)
+	errReachedMaxInstances = fmt.Errorf("reached max instances (%v) per policy", maxPolicyInstances)
 	errEmptyPolicyConfig   = errors.New("policy-config entry is empty")
+	errMaxExpirationTime   = fmt.Errorf("the max configurable expiration time is %v", maxExpirationTime.String())
 )
 
 type PolicyConfig struct {
@@ -100,7 +102,10 @@ func parseDatasourceConfig(pluginConfigEntry string, envvars map[string]string) 
 
 func validatePolicyConstraints(p Policy) error {
 	if len(p.Instances) >= maxPolicyInstances {
-		return ErrReachedMaxInstances
+		return errReachedMaxInstances
+	}
+	if exp, _ := time.ParseDuration(p.Expiration); exp > maxExpirationTime {
+		return errMaxExpirationTime
 	}
 	// validate grant privileges
 	privmap := map[string]any{}
