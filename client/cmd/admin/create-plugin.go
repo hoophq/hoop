@@ -141,9 +141,6 @@ func parsePluginConfig() (map[string]any, error) {
 			val = string(configData)
 		}
 		envVar[key] = base64.StdEncoding.EncodeToString([]byte(val))
-		// if strings.HasPrefix(encodeType, "b64") {
-		// 	envVar[key] = val
-		// }
 	}
 	if len(invalidEnvs) > 0 {
 		return nil, fmt.Errorf("invalid plugin config, expected key=val. found=%v", invalidEnvs)
