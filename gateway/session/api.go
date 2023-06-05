@@ -196,7 +196,13 @@ func (h *Handler) RunExec(c *gin.Context) {
 		c.JSON(http.StatusNotFound, &clientexec.ExecErrResponse{Message: "review not found"})
 		return
 	}
-	if review.CreatedBy.Email != ctx.User.Email {
+
+	session, err := h.Service.FindOne(ctx, sessionId)
+	if session == nil || err != nil {
+		c.JSON(http.StatusNotFound, &clientexec.ExecErrResponse{Message: "session not found"})
+	}
+
+	if session.UserEmail != ctx.User.Email {
 		c.JSON(http.StatusBadRequest, &clientexec.ExecErrResponse{Message: "only the creator can trigger this action"})
 		return
 	}
