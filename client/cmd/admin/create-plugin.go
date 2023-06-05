@@ -130,14 +130,6 @@ func parsePluginConfig() (map[string]any, error) {
 			invalidEnvs = append(invalidEnvs, envvarStr)
 			continue
 		}
-		// encodeType, configKey, found := strings.Cut(key, ":")
-		// if found {
-		// 	key = configKey
-		// 	if encodeType != "b64" {
-		// 		return nil, fmt.Errorf(`wrong encode type %v, accept only "b64"`, encodeType)
-		// 	}
-		// }
-
 		key = strings.TrimSpace(key)
 		val = strings.TrimSpace(val)
 		if strings.HasPrefix(val, "path:") {
