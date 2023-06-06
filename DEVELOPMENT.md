@@ -39,5 +39,5 @@ cd ../
 Then, every time you need to test it, just run the script below
 
 ```sh
-PG_PORT=5444 PG_HOST=192.168.15.48 ./scripts/dev/run-with-auth.sh
+PG_PORT= PG_HOST= ./scripts/dev/run-with-auth.sh
 ```
