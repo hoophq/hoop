@@ -2,9 +2,9 @@
 
 In order to run hoop on Linux with authentication it's required a postgres instance running in your host machine.
 
-User: hoopapp
-Password: 1a2b3c4d
-Port: 5432
+- User: hoopapp
+- Password: 1a2b3c4d
+- Port: 5432
 
 Connect to your postgres instance and create the `hoopapp` role.
 
