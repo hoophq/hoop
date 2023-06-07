@@ -99,12 +99,13 @@ func (p *TCPServer) PacketWriteClient(connectionID string, pkt *pb.Packet) (int,
 	return conn.Write(pkt.Payload)
 }
 
-func (p *TCPServer) PacketCloseConnection(connectionID string) {
+func (p *TCPServer) CloseTCPConnection(connectionID string) {
 	if conn, err := p.getConnection(connectionID); err == nil {
 		_ = conn.Close()
 	}
-	_ = p.listener.Close()
 }
+
+func (p *TCPServer) Close() error { return p.listener.Close() }
 
 func (p *TCPServer) getConnection(connectionID string) (io.WriteCloser, error) {
 	connWrapperObj := p.connectionStore.Get(connectionID)

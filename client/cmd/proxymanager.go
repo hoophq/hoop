@@ -113,7 +113,7 @@ func runAutoConnect(client pb.ClientTransport) (err error) {
 				if err := srv.Serve(sid); err != nil {
 					return err
 				}
-				defer srv.PacketCloseConnection("")
+				defer srv.Close()
 				client.StartKeepAlive()
 				connStore.Set(sid, srv)
 				log.With("type", connnectionType, "port", proxyPort).Infof("ready to accept connections")
@@ -122,7 +122,7 @@ func runAutoConnect(client pb.ClientTransport) (err error) {
 				if err := srv.Serve(sid); err != nil {
 					return err
 				}
-				defer srv.PacketCloseConnection("")
+				defer srv.Close()
 				client.StartKeepAlive()
 				connStore.Set(sid, srv)
 				log.With("type", connnectionType, "port", proxyPort).Infof("ready to accept connections")
@@ -131,7 +131,7 @@ func runAutoConnect(client pb.ClientTransport) (err error) {
 				if err := srv.Serve(sid); err != nil {
 					return err
 				}
-				defer srv.PacketCloseConnection("")
+				defer srv.Close()
 				client.StartKeepAlive()
 				connStore.Set(sid, srv)
 				log.With("type", connnectionType, "port", proxyPort).
@@ -146,8 +146,7 @@ func runAutoConnect(client pb.ClientTransport) (err error) {
 		case pbclient.SessionOpenTimeout:
 			return fmt.Errorf("session ended, reached connection duration")
 		case pbclient.PGConnectionWrite:
-			sessionID := pkt.Spec[pb.SpecGatewaySessionID]
-			srvObj := connStore.Get(string(sessionID))
+			srvObj := connStore.Get(sid)
 			srv, ok := srvObj.(*proxy.PGServer)
 			if !ok {
 				return fmt.Errorf("postgres proxy server not found")
@@ -157,8 +156,7 @@ func runAutoConnect(client pb.ClientTransport) (err error) {
 				return fmt.Errorf("failed writing to client, err=%v", err)
 			}
 		case pbclient.MySQLConnectionWrite:
-			sessionID := pkt.Spec[pb.SpecGatewaySessionID]
-			srvObj := connStore.Get(string(sessionID))
+			srvObj := connStore.Get(sid)
 			srv, ok := srvObj.(*proxy.MySQLServer)
 			if !ok {
 				return fmt.Errorf("msqyl proxy server instance not found")
@@ -168,18 +166,23 @@ func runAutoConnect(client pb.ClientTransport) (err error) {
 				return fmt.Errorf("failed writing to client, err=%v", err)
 			}
 		case pbclient.TCPConnectionWrite:
-			sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
-			if tcp, ok := connStore.Get(string(sessionID)).(*proxy.TCPServer); ok {
+			if tcp, ok := connStore.Get(sid).(*proxy.TCPServer); ok {
 				if _, err := tcp.PacketWriteClient(connectionID, pkt); err != nil {
 					return fmt.Errorf("failed writing to client, err=%v", err)
 				}
 			}
-		case pbclient.TCPConnectionClose, pbclient.SessionClose:
-			sessionID := pkt.Spec[pb.SpecGatewaySessionID]
-			pgpObj := connStore.Get(string(sessionID))
-			if pgp, ok := pgpObj.(*proxy.PGServer); ok {
-				pgp.PacketCloseConnection(string(pkt.Spec[pb.SpecClientConnectionID]))
+		// TODO: most agent protocols implementations are not sending this packet, instead a session close
+		// packet is sent that ends the client connection. It's important to implement this cases in the agent
+		// to avoid resource leaks in the client.
+		case pbclient.TCPConnectionClose:
+			if srv, ok := connStore.Get(sid).(proxy.Closer); ok {
+				srv.CloseTCPConnection(string(pkt.Spec[pb.SpecClientConnectionID]))
+			}
+		case pbclient.SessionClose:
+			if srv, ok := connStore.Get(sid).(proxy.Closer); ok {
+				_ = srv.Close()
+				log.Infof("session closed")
 			}
 		}
 	}

@@ -32,6 +32,7 @@ type ProxyManagerResponse struct {
 	RequestPort           string                 `json:"port"`
 	RequestAccessDuration time.Duration          `json:"access_duration"`
 	ClientMetadata        map[string]string      `json:"metadata"`
+	ConnectedAt           string                 `json:"connected-at"`
 }
 
 func getEntity(ctx *storagev2.Context) (*types.Client, error) {
@@ -66,6 +67,7 @@ func Get(c *gin.Context) {
 		RequestPort:           obj.RequestPort,
 		RequestAccessDuration: obj.RequestAccessDuration,
 		ClientMetadata:        obj.ClientMetadata,
+		ConnectedAt:           obj.ConnectedAt.Format(time.RFC3339),
 	})
 }
 
@@ -121,22 +123,23 @@ func Post(c *gin.Context) {
 
 		switch pkt.Type {
 		case pbclient.SessionOpenWaitingApproval:
-			ac, err := clientstate.Update(ctx, types.ClientStatusDisconnected)
+			obj, err := clientstate.Update(ctx, types.ClientStatusDisconnected)
 			if err != nil {
 				errMsg := fmt.Sprintf("failed updating status, err=%v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
 				return
 			}
 			// disconnect grpc-client
-			_ = transport.DispatchDisconnect(ac)
+			_ = transport.DispatchDisconnect(obj)
 			c.Header("Location", string(pkt.Payload))
 			c.JSON(http.StatusOK, &ProxyManagerResponse{
-				ID:                    ac.ID,
-				Status:                ac.Status,
-				RequestConnectionName: ac.RequestConnectionName,
-				RequestPort:           ac.RequestPort,
+				ID:                    obj.ID,
+				Status:                obj.Status,
+				RequestConnectionName: obj.RequestConnectionName,
+				RequestPort:           obj.RequestPort,
 				RequestAccessDuration: req.AccessDuration,
-				ClientMetadata:        ac.ClientMetadata,
+				ClientMetadata:        obj.ClientMetadata,
+				ConnectedAt:           obj.ConnectedAt.Format(time.RFC3339),
 			})
 		default:
 			errMsg := fmt.Sprintf("internal error, packet %v condition not implemented", pkt.Type)
@@ -163,38 +166,40 @@ func Post(c *gin.Context) {
 		RequestPort:           obj.RequestPort,
 		RequestAccessDuration: req.AccessDuration,
 		ClientMetadata:        obj.ClientMetadata,
+		ConnectedAt:           obj.ConnectedAt.Format(time.RFC3339),
 	})
 }
 
 func Disconnect(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	ac, err := getEntity(ctx)
+	obj, err := getEntity(ctx)
 	if err != nil {
 		log.Error(err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining client entity"})
 		return
 	}
-	if ac == nil {
+	if obj == nil {
 		c.JSON(http.StatusNotFound, gin.H{"message": "entity not found"})
 		return
 	}
-	if err := transport.DispatchDisconnect(ac); err != nil {
+	if err := transport.DispatchDisconnect(obj); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	ac, err = clientstate.Update(ctx, types.ClientStatusDisconnected)
+	obj, err = clientstate.Update(ctx, types.ClientStatusDisconnected)
 	if err != nil {
 		log.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "disconnected grpc client, but it fail to update the status"})
 		return
 	}
 	c.JSON(http.StatusAccepted, &ProxyManagerResponse{
-		ID:                    ac.ID,
-		Status:                ac.Status,
-		RequestConnectionName: ac.RequestConnectionName,
-		RequestPort:           ac.RequestPort,
-		RequestAccessDuration: ac.RequestAccessDuration,
-		ClientMetadata:        ac.ClientMetadata,
+		ID:                    obj.ID,
+		Status:                obj.Status,
+		RequestConnectionName: obj.RequestConnectionName,
+		RequestPort:           obj.RequestPort,
+		RequestAccessDuration: obj.RequestAccessDuration,
+		ClientMetadata:        obj.ClientMetadata,
+		ConnectedAt:           obj.ConnectedAt.Format(time.RFC3339),
 	})
 }

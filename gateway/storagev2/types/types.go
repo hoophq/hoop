@@ -28,4 +28,5 @@ type Client struct {
 	RequestPort           string            `edn:"client/request-port"`
 	RequestAccessDuration time.Duration     `edn:"client/access-duration"`
 	ClientMetadata        map[string]string `edn:"client/metadata"`
+	ConnectedAt           time.Time         `edn:"client/connected-at"`
 }

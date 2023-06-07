@@ -451,7 +451,7 @@ func (a *Agent) processTCPCloseConnection(pkt *pb.Packet) {
 		if client, _ := obj.(io.Closer); client != nil {
 			defer func() {
 				if err := client.Close(); err != nil {
-					log.Infof("failed closing connection, err=%v", err)
+					log.Warnf("failed closing connection, err=%v", err)
 				}
 			}()
 			a.connStore.Del(key)
@@ -462,7 +462,7 @@ func (a *Agent) processTCPCloseConnection(pkt *pb.Packet) {
 func (a *Agent) processSessionClose(pkt *pb.Packet) {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 	if sessionID == "" {
-		log.Infof("received packet %v without a session", pkt.Type)
+		log.Warnf("received packet %v without a session", pkt.Type)
 		return
 	}
 	a.sessionCleanup(sessionID)
@@ -511,6 +511,17 @@ func (a *Agent) sendClientSessionClose(sessionID string, errMsg string, specKeyV
 		Type:    pbclient.SessionClose,
 		Payload: errPayload,
 		Spec:    spec,
+	})
+}
+
+func (a *Agent) sendClientTCPConnectionClose(sessionID, connectionID string) {
+	_ = a.client.Send(&pb.Packet{
+		Type:    pbclient.TCPConnectionClose,
+		Payload: nil,
+		Spec: map[string][]byte{
+			pb.SpecGatewaySessionID:   []byte(sessionID),
+			pb.SpecClientConnectionID: []byte(connectionID),
+		},
 	})
 }
 

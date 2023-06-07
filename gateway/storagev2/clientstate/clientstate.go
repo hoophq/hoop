@@ -3,6 +3,7 @@ package clientstate
 import (
 	"bytes"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/gateway/storagev2"
@@ -44,8 +45,9 @@ func Update(ctx *storagev2.Context, status types.ClientStatusType, opts ...*opti
 	// status ready must reset attributes
 	if obj == nil || status == types.ClientStatusReady {
 		obj = &types.Client{
-			ID:    xtuid.String(),
-			OrgID: ctx.OrgID,
+			ID:          xtuid.String(),
+			OrgID:       ctx.OrgID,
+			ConnectedAt: time.Now().UTC(),
 		}
 	}
 

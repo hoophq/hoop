@@ -97,6 +97,11 @@ func runConnect(args []string) {
 	agentOfflineRetryCounter := 1
 	for {
 		pkt, err := c.client.Recv()
+		pktType := "unknown"
+		if pkt != nil {
+			pktType = pkt.Type
+		}
+		log.Infof("processing packet %v, err=%v", pktType, err)
 		c.processGracefulExit(err)
 		if pkt == nil {
 			continue
@@ -246,19 +251,21 @@ func runConnect(args []string) {
 					c.processGracefulExit(errMsg)
 				}
 			}
+		// TODO: most agent protocols implementations are not sending this packet, instead a session close
+		// packet is sent that ends the client connection. It's important to implement this cases in the agent
+		// to avoid resource leaks in the client.
 		case pbclient.TCPConnectionClose:
 			sessionID := pkt.Spec[pb.SpecGatewaySessionID]
-			pgpObj := c.connStore.Get(string(sessionID))
-			if pgp, ok := pgpObj.(*proxy.PGServer); ok {
-				pgp.PacketCloseConnection(string(pkt.Spec[pb.SpecClientConnectionID]))
+			srvObj := c.connStore.Get(string(sessionID))
+			if srv, ok := srvObj.(proxy.Closer); ok {
+				srv.CloseTCPConnection(string(pkt.Spec[pb.SpecClientConnectionID]))
 			}
-			// TODO: close tcp connection!
 		case pbclient.SessionClose:
 			// close terminal
 			loader.Stop()
 			sessionID := pkt.Spec[pb.SpecGatewaySessionID]
-			if term, ok := c.connStore.Get(string(sessionID)).(*proxy.Terminal); ok {
-				term.Close()
+			if srv, ok := c.connStore.Get(string(sessionID)).(proxy.Closer); ok {
+				srv.Close()
 			}
 			if len(pkt.Payload) > 0 {
 				os.Stderr.Write([]byte(styles.ClientError(string(pkt.Payload)) + "\n"))
@@ -278,7 +285,7 @@ func (c *connect) processGracefulExit(err error) {
 		return
 	}
 	c.loader.Stop()
-	for sessionID, obj := range c.connStore.List() {
+	for _, obj := range c.connStore.List() {
 		switch v := obj.(type) {
 		case *proxy.Terminal:
 			v.Close()
@@ -287,15 +294,8 @@ func (c *connect) processGracefulExit(err error) {
 			}
 			fmt.Printf("\n\n")
 			c.printErrorAndExit(err.Error())
-		case *proxy.PGServer:
-			v.PacketCloseConnection(sessionID)
-			time.Sleep(time.Millisecond * 500)
-			if err == io.EOF {
-				os.Exit(0)
-			}
-			c.printErrorAndExit(err.Error())
-		case *proxy.TCPServer:
-			v.PacketCloseConnection(sessionID)
+		case proxy.Closer:
+			v.Close()
 			time.Sleep(time.Millisecond * 500)
 			if err == io.EOF {
 				os.Exit(0)
