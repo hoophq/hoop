@@ -6,14 +6,13 @@ const (
 	defaultAuditPath = "/opt/hoop/sessions"
 	defaultIndexPath = "/opt/hoop/indexes"
 
-	PluginReviewName        = "review"
-	PluginAuditName         = "audit"
-	PluginSlackName         = "slack"
-	PluginAccessControlName = "access_control"
-	PluginIndexName         = "indexer"
-	PluginDLPName           = "dlp"
-	// Database Credentials Manager
-	PluginDCMName = "dcm"
+	PluginReviewName                     = "review"
+	PluginAuditName                      = "audit"
+	PluginSlackName                      = "slack"
+	PluginAccessControlName              = "access_control"
+	PluginIndexName                      = "indexer"
+	PluginDLPName                        = "dlp"
+	PluginDatabaseCredentialsManagerName = "database-credentials-manager"
 )
 
 var (

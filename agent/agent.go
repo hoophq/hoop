@@ -407,19 +407,6 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 	}
 
 	go func() {
-		// connParams, err := a.buildDatabaseCredentials(pkt, connParams)
-		// if err != nil {
-		// 	log.Error(err)
-		// 	sentry.CaptureException(err)
-		// 	_ = a.client.Send(&pb.Packet{
-		// 		Type:    pbclient.SessionClose,
-		// 		Payload: []byte(`failed obtaining database credentials for this connection`),
-		// 		Spec: map[string][]byte{
-		// 			pb.SpecGatewaySessionID: sessionID,
-		// 		},
-		// 	})
-		// 	return
-		// }
 		if err := a.loadHooks(sessionIDKey, connParams); err != nil {
 			log.Error(err)
 			sentry.CaptureException(err)

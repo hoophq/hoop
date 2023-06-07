@@ -2,7 +2,6 @@ package dcm
 
 import (
 	"fmt"
-	"reflect"
 
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
@@ -16,18 +15,9 @@ type dcm struct {
 }
 
 func New(pluginSvc *plugin.Service) *dcm             { return &dcm{pluginSvc: pluginSvc} }
-func (p *dcm) Name() string                          { return plugintypes.PluginDCMName }
+func (p *dcm) Name() string                          { return plugintypes.PluginDatabaseCredentialsManagerName }
 func (p *dcm) OnStartup(_ plugintypes.Context) error { return nil }
 func (p *dcm) OnConnect(_ plugintypes.Context) error { return nil }
-func (p *dcm) OnUpdateConfig(obj plugin.Plugin, old, new *plugin.PluginConfig) error {
-	if obj.Name != plugintypes.PluginDCMName {
-		return nil
-	}
-	if old != nil && reflect.DeepEqual(old.EnvVars, new.EnvVars) {
-		return nil
-	}
-	return nil
-}
 func (p *dcm) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {
 	if pkt.Type != pbagent.SessionOpen {
 		return nil, nil
