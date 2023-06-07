@@ -161,6 +161,19 @@ func TestParsePolicyConfig(t *testing.T) {
 			`),
 			wantErr: errMaxExpirationTime,
 		},
+		{
+			msg: "it should fail if instances names does not comply with postgres database name constraint",
+			pl: newPluginFn("pg", "pg-readonly", "pg-local", "postgres://foo:bar@127.0.0.1:5432/postgres", `
+			policy "pg-readonly" {
+				engine               = "postgres"
+				plugin_config_entry  = "pg-local"
+				instances            = ["09abc", "instance with space", "instance-with-special-\nchar-%^"]
+				grant_privileges     = ["SELECT", "UPDATE"]
+			}
+			`),
+			wantErr: fmt.Errorf("found instances that doesn't comply with constraint database name: %q",
+				[]string{"09abc", "instance with space", "instance-with-special-\nchar-%^"}),
+		},
 	} {
 		t.Run(tt.msg, func(t *testing.T) {
 			got, gotErr := parsePolicyConfig("pg", tt.pl)

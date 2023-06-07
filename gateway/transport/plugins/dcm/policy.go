@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"regexp"
+	"sort"
 	"time"
 
 	"github.com/hashicorp/hcl/v2/hclsimple"
@@ -14,9 +16,10 @@ import (
 )
 
 var (
-	errReachedMaxInstances = fmt.Errorf("reached max instances (%v) per policy", maxPolicyInstances)
-	errEmptyPolicyConfig   = errors.New("policy-config entry is empty")
-	errMaxExpirationTime   = fmt.Errorf("the max configurable expiration time is %v", maxExpirationTime.String())
+	errReachedMaxInstances     = fmt.Errorf("reached max instances (%v) per policy", maxPolicyInstances)
+	errEmptyPolicyConfig       = errors.New("policy-config entry is empty")
+	errMaxExpirationTime       = fmt.Errorf("the max configurable expiration time is %v", maxExpirationTime.String())
+	hasValidDatabaseNameRegexp = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9\._$]*$`)
 )
 
 type PolicyConfig struct {
@@ -128,20 +131,32 @@ func validatePolicyConstraints(p Policy) error {
 		}
 	}
 	if len(nonAllowedPrivileges) > 0 {
+		sort.Strings(nonAllowedPrivileges)
 		return fmt.Errorf("privileges %v are not allowed for this engine", nonAllowedPrivileges)
 	}
 
 	// validate instances
 	instancesmap := map[string]any{}
 	var repeatedInstances []string
+	var instancesWithInvalidName []string
 	for _, db := range p.Instances {
+		if !hasValidDatabaseNameRegexp.MatchString(db) {
+			instancesWithInvalidName = append(instancesWithInvalidName, db)
+		}
+
 		if _, ok := instancesmap[db]; ok {
 			repeatedInstances = append(repeatedInstances, db)
 			continue
 		}
 		instancesmap[db] = nil
 	}
-	if len(repeatedInstances) > 0 {
+
+	switch {
+	case len(instancesWithInvalidName) > 0:
+		sort.Strings(instancesWithInvalidName)
+		return fmt.Errorf("found instances that doesn't comply with constraint database name: %q", instancesWithInvalidName)
+	case len(repeatedInstances) > 0:
+		sort.Strings(repeatedInstances)
 		return fmt.Errorf("found repeated instance(s) %v", repeatedInstances)
 	}
 

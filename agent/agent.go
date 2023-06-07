@@ -317,7 +317,10 @@ func (a *Agent) setDatabaseCredentials(pkt *pb.Packet, params *pb.AgentConnectio
 			return fmt.Errorf(`failed decoding database credentials manager data`)
 		}
 	}
-	randomPassword := dcm.NewRandomPassword()
+	randomPassword, err := dcm.NewRandomPassword()
+	if err != nil {
+		return fmt.Errorf("failed generating random session user password, reason=%v", err)
+	}
 	if obj := a.connStore.Get(storeKey); obj != nil {
 		if cred := obj.(*dcm.Credentials); cred != nil {
 			if cred.Checksum() == fmt.Sprintf("%v", dcmData["checksum"]) && !cred.IsExpired() {

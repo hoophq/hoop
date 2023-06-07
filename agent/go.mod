@@ -13,6 +13,7 @@ require (
 	github.com/hoophq/pluginhooks v0.0.6
 	github.com/pyroscope-io/client v0.6.0
 	github.com/runopsio/hoop/common v0.0.0-00010101000000-000000000000
+	github.com/sethvargo/go-password v0.2.0
 	github.com/stretchr/testify v1.8.0
 	github.com/xo/dburl v0.14.2
 	go.uber.org/zap v1.24.0
