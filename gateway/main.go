@@ -37,6 +37,7 @@ import (
 	// plugins
 	pluginsrbac "github.com/runopsio/hoop/gateway/transport/plugins/accesscontrol"
 	pluginsaudit "github.com/runopsio/hoop/gateway/transport/plugins/audit"
+	pluginsdcm "github.com/runopsio/hoop/gateway/transport/plugins/dcm"
 	pluginsdlp "github.com/runopsio/hoop/gateway/transport/plugins/dlp"
 	pluginsindex "github.com/runopsio/hoop/gateway/transport/plugins/index"
 	pluginsjit "github.com/runopsio/hoop/gateway/transport/plugins/jit"
@@ -146,6 +147,7 @@ func Run() {
 			&jit.Service{Storage: &jit.Storage{Storage: s}, TransportService: g},
 			&user.Service{Storage: &user.Storage{Storage: s}},
 			idProvider.ApiURL),
+		pluginsdcm.New(&plugin.Service{Storage: &plugin.Storage{Storage: s}}),
 	}
 
 	if g.PyroscopeIngestURL != "" && g.PyroscopeAuthToken != "" {
