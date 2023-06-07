@@ -18,6 +18,7 @@ type (
 
 	XtdbReview struct {
 		Id             string        `edn:"xt/id"`
+		CreatedAt      time.Time     `edn:"review/created-at"`
 		OrgId          string        `edn:"review/org"`
 		Type           string        `edn:"review/type"`
 		SessionId      string        `edn:"review/session"`
@@ -43,6 +44,7 @@ func (s *Storage) FindAll(context *user.Context) ([]Review, error) {
 	var payload = fmt.Sprintf(`{:query {
 		:find [(pull ?r [:xt/id
 						:review/type
+						:review/created-at
 						:review/status
 						:review/access-duration
 						:review/approved-at
@@ -119,6 +121,7 @@ func (s *Storage) FindById(ctx *user.Context, id string) (*Review, error) {
 						:review/type
 						:review/status
 						:review/access-duration
+						:review/created-at
 						:review/revoke-at
 						:review/input
 						:review/session
@@ -253,6 +256,7 @@ func (s *Storage) Persist(ctx *user.Context, review *Review) (int64, error) {
 
 	xtdbReview := &XtdbReview{
 		Id:             review.Id,
+		CreatedAt:      review.CreatedAt,
 		OrgId:          ctx.Org.Id,
 		Type:           review.Type,
 		SessionId:      review.Session,

@@ -33,6 +33,7 @@ type (
 
 	Review struct {
 		Id             string        `json:"id"                      edn:"xt/id"`
+		CreatedAt      time.Time     `json:"created_at"              edn:"review/created-at"`
 		Type           string        `json:"type"                    edn:"review/type"`
 		Session        string        `json:"session"                 edn:"review/session"`
 		Input          string        `json:"input"                   edn:"review/input"`
