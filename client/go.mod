@@ -117,6 +117,7 @@ require (
 	github.com/segmentio/analytics-go/v3 v3.2.1 // indirect
 	github.com/segmentio/backo-go v1.0.0 // indirect
 	github.com/sergi/go-diff v1.1.0 // indirect
+	github.com/sethvargo/go-password v0.2.0 // indirect
 	github.com/skeema/knownhosts v1.1.0 // indirect
 	github.com/slack-go/slack v0.12.2 // indirect
 	github.com/tidwall/gjson v1.10.2 // indirect
