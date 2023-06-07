@@ -50,7 +50,7 @@ func (a *Agent) processTCPWriteServer(pkt *pb.Packet) {
 		pb.SpecGatewaySessionID:   []byte(sessionID),
 		pb.SpecClientConnectionID: []byte(clientConnectionID),
 	}, pluginHooks)
-	connenv, err := parseConnectionEnvVars(connParams.EnvVars, pb.ConnectionTypeMySQL)
+	connenv, err := parseConnectionEnvVars(connParams.EnvVars, pb.ConnectionTypeTCP)
 	if err != nil {
 		log.Printf("session=%s - missing connection credentials in memory, err=%v", sessionID, err)
 		a.sendClientSessionClose(sessionID, "credentials are empty, contact the administrator")
@@ -70,17 +70,16 @@ func (a *Agent) processTCPWriteServer(pkt *pb.Packet) {
 		// the protocol negotiation. e.g.: mysql
 		if _, ok := pkt.Spec[pb.SpecTCPServerConnectKey]; !ok {
 			if _, err := tcpServer.Write(pkt.Payload); err != nil {
-				log.Printf("session=%v - failed writing first packet, err=%v", sessionID, err)
-				errMsg := fmt.Sprintf("failed writing to tcp connection, reason=%v", err)
-				a.sendClientSessionClose(sessionID, errMsg)
+				log.Error("session=%v - failed writing first packet, err=%v", sessionID, err)
+				a.sendClientTCPConnectionClose(sessionID, string(clientConnectionID))
 				return
 			}
 		}
 		if _, err := io.Copy(tcpClient, tcpServer); err != nil {
 			if err != io.EOF {
-				log.Printf("session=%v, done copying tcp connection", sessionID)
+				log.Infof("session=%v, done copying tcp connection, reason=%v", sessionID, err)
 			}
-			a.sendClientSessionClose(sessionID, "")
+			a.sendClientTCPConnectionClose(sessionID, string(clientConnectionID))
 		}
 	}()
 }

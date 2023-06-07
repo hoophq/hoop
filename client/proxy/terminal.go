@@ -88,7 +88,9 @@ func (t *Terminal) restoreTerm() {
 	}
 }
 
-func (t *Terminal) Close() {
+func (t *Terminal) CloseTCPConnection(_ string) {}
+func (t *Terminal) Close() error {
 	t.restoreTerm()
 	_, _ = t.client.Close()
+	return nil
 }

@@ -94,12 +94,13 @@ func (s *MySQLServer) PacketWriteClient(connectionID string, pkt *pb.Packet) (in
 	return conn.Write(pkt.Payload)
 }
 
-func (s *MySQLServer) PacketCloseConnection(connectionID string) {
+func (s *MySQLServer) CloseTCPConnection(connectionID string) {
 	if conn, err := s.getConnection(connectionID); err == nil {
 		_ = conn.Close()
 	}
-	_ = s.listener.Close()
 }
+
+func (s *MySQLServer) Close() error { return s.listener.Close() }
 
 func (s *MySQLServer) getConnection(connectionID string) (io.WriteCloser, error) {
 	connWrapperObj := s.connectionStore.Get(connectionID)
