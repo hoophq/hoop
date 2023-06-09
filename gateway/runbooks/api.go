@@ -127,7 +127,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 		return
 	}
 
-	runbookParamsJson, err := json.Marshal(req.Parameters)
+	runbookParamsJson, _ := json.Marshal(req.Parameters)
 	sessionLabels := types.SessionLabels{
 		"runbookFile":       req.FileName,
 		"runbookParameters": string(runbookParamsJson),
