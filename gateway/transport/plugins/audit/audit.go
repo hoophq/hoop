@@ -107,7 +107,7 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		}
 		return nil, nil
 	case pbclient.SessionClose:
-		defer p.closeSession(pctx.SID)
+		defer p.closeSession(pctx)
 		if len(pkt.Payload) > 0 {
 			return nil, p.writeOnReceive(pctx.SID, 'e', dlpCount, pkt.Payload)
 		}
@@ -125,7 +125,7 @@ func (p *auditPlugin) OnDisconnect(pctx plugintypes.Context, errMsg error) error
 	switch pctx.ClientOrigin {
 	case pb.ConnectionOriginClient,
 		pb.ConnectionOriginClientProxyManager:
-		defer p.closeSession(pctx.SID)
+		defer p.closeSession(pctx)
 		if errMsg != nil {
 			_ = p.writeOnReceive(pctx.SID, 'e', 0, []byte(errMsg.Error()))
 			return nil
@@ -134,7 +134,7 @@ func (p *auditPlugin) OnDisconnect(pctx plugintypes.Context, errMsg error) error
 		if errMsg != nil {
 			// on errors, close the session right away
 			_ = p.writeOnReceive(pctx.SID, 'e', 0, []byte(errMsg.Error()))
-			p.closeSession(pctx.SID)
+			p.closeSession(pctx)
 			return nil
 		}
 		// keep the connection open to let packets flow async
@@ -156,16 +156,16 @@ func (p *auditPlugin) OnDisconnect(pctx plugintypes.Context, errMsg error) error
 				p.log.With("session", sessionID).Infof("closing session, agent %v was shutdown", agentID)
 				if errMsg != nil {
 					_ = p.writeOnReceive(sessionID, 'e', 0, []byte(errMsg.Error()))
-					p.closeSession(sessionID)
+					p.closeSession(pctx)
 					continue
 				}
-				p.closeSession(sessionID)
+				p.closeSession(pctx)
 			}
 			return nil
 		}
 		// it close sessions that are being processed async
 		// e.g.: when it receives a session close packet
-		defer p.closeSession(pctx.SID)
+		defer p.closeSession(pctx)
 		if errMsg != nil {
 			_ = p.writeOnReceive(pctx.SID, 'e', 0, []byte(errMsg.Error()))
 			return nil
@@ -174,10 +174,11 @@ func (p *auditPlugin) OnDisconnect(pctx plugintypes.Context, errMsg error) error
 	return nil
 }
 
-func (p *auditPlugin) closeSession(sessionID string) {
+func (p *auditPlugin) closeSession(pctx plugintypes.Context) {
+	sessionID := pctx.SID
 	log.With("session", sessionID).Infof("closing session")
 	go func() {
-		if err := p.writeOnClose(sessionID); err != nil {
+		if err := p.writeOnClose(pctx); err != nil {
 			p.log.Warnf("session=%v - failed closing session: %v", sessionID, err)
 		}
 	}()

@@ -27,6 +27,7 @@ type Packet struct {
 
 	Component string            `protobuf:"bytes,1,opt,name=component,proto3" json:"component,omitempty"`
 	Type      string            `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
+	// Spec is used to propagate information needed during the connection
 	Spec      map[string][]byte `protobuf:"bytes,3,rep,name=spec,proto3" json:"spec,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
 	Payload   []byte            `protobuf:"bytes,4,opt,name=payload,proto3" json:"payload,omitempty"`
 }

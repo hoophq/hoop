@@ -6,8 +6,8 @@ import (
 
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/session"
 	st "github.com/runopsio/hoop/gateway/storage"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
@@ -23,8 +23,8 @@ type (
 		FindAll(context *user.Context) ([]Review, error)
 		FindBySessionID(sessionID string) (*Review, error)
 		FindApprovedJitReviews(ctx *user.Context, connID string) (*Review, error)
-		PersistSessionAsReady(s *session.Session) (*st.TxResponse, error)
-		FindSessionBySessionId(sessionID string) (*session.Session, error)
+		PersistSessionAsReady(s *types.Session) (*st.TxResponse, error)
+		FindSessionBySessionId(sessionID string) (*types.Session, error)
 	}
 
 	transportService interface {
@@ -170,7 +170,7 @@ func (s *Service) Review(context *user.Context, reviewID string, status Status) 
 
 	for i, r := range rev.ReviewGroups {
 		if pb.IsInList(r.Group, context.User.Groups) {
-			t := time.Now().String()
+			t := time.Now().UTC().String()
 			rev.ReviewGroups[i].Status = status
 			rev.ReviewGroups[i].ReviewedBy = &Owner{Id: context.User.Id}
 			rev.ReviewGroups[i].ReviewDate = &t

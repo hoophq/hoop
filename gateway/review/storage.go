@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runopsio/hoop/gateway/session"
 	st "github.com/runopsio/hoop/gateway/storage"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
 	"olympos.io/encoding/edn"
 )
@@ -167,13 +167,13 @@ func (s *Storage) queryDecoder(query string, into any, args ...any) error {
 	return edn.Unmarshal(httpBody, into)
 }
 
-func (s *Storage) PersistSessionAsReady(sess *session.Session) (*st.TxResponse, error) {
+func (s *Storage) PersistSessionAsReady(sess *types.Session) (*st.TxResponse, error) {
 	sess.Status = "ready"
 	return s.SubmitPutTx(sess)
 }
 
-func (s *Storage) FindSessionBySessionId(sessionID string) (*session.Session, error) {
-	var resultItems [][]session.Session
+func (s *Storage) FindSessionBySessionId(sessionID string) (*types.Session, error) {
+	var resultItems [][]types.Session
 	err := s.queryDecoder(`
 	{:query {
 		:find [(pull ?s [*])]
@@ -183,7 +183,7 @@ func (s *Storage) FindSessionBySessionId(sessionID string) (*session.Session, er
 	if err != nil {
 		return nil, err
 	}
-	items := make([]session.Session, 0)
+	items := make([]types.Session, 0)
 	for _, i := range resultItems {
 		items = append(items, i[0])
 	}

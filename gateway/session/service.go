@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/uuid"
 	st "github.com/runopsio/hoop/gateway/storage"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
-	"olympos.io/encoding/edn"
 )
 
 type (
@@ -51,43 +51,23 @@ type (
 	Status string
 
 	storage interface {
-		Persist(ctx *user.Context, sess *Session) (*st.TxResponse, error)
+		Persist(ctx *user.Context, sess *types.Session) (*st.TxResponse, error)
 		PersistStatus(sess *SessionStatus) (*st.TxResponse, error)
 		EntityHistory(ctx *user.Context, sessionID string) ([]SessionStatusHistory, error)
 		ValidateSessionID(sessionID string) error
 		FindAll(*user.Context, ...*SessionOption) (*SessionList, error)
-		FindOne(ctx *user.Context, name string) (*Session, error)
-		ListAllSessionsID(startDate time.Time) ([]*Session, error)
+		FindOne(ctx *user.Context, name string) (*types.Session, error)
+		ListAllSessionsID(startDate time.Time) ([]*types.Session, error)
 		NewGenericStorageWriter() *GenericStorageWriter
 		FindReviewBySessionID(sessionID string) (*Review, error)
 		PersistReview(ctx *user.Context, review *Review) (int64, error)
 	}
 
 	// [time.Time, string, []byte]
-	EventStream               []any
-	NonIndexedEventStreamList map[edn.Keyword][]EventStream
-	Session                   struct {
-		ID          string      `json:"id"           edn:"xt/id"`
-		OrgID       string      `json:"-"            edn:"session/org-id"`
-		UserEmail   string      `json:"user"         edn:"session/user"`
-		UserID      string      `json:"user_id"      edn:"session/user-id"`
-		UserName    string      `json:"user_name"    edn:"session/user-name"`
-		Type        string      `json:"type"         edn:"session/type"`
-		Connection  string      `json:"connection"   edn:"session/connection"`
-		Verb        string      `json:"verb"         edn:"session/verb"`
-		Status      any         `json:"status"       edn:"session/status"`
-		DlpCount    int64       `json:"dlp_count"    edn:"session/dlp-count"`
-		EventStream EventStream `json:"event_stream" edn:"session/event-stream"`
-		// Must NOT index streams (all top keys are indexed in xtdb)
-		NonIndexedStream NonIndexedEventStreamList `json:"-"          edn:"session/xtdb-stream"`
-		EventSize        int64                     `json:"event_size" edn:"session/event-size"`
-		StartSession     time.Time                 `json:"start_date" edn:"session/start-date"`
-		EndSession       *time.Time                `json:"end_date"   edn:"session/end-date"`
-	}
 	SessionList struct {
-		Total       int       `json:"total"`
-		HasNextPage bool      `json:"has_next_page"`
-		Items       []Session `json:"data"`
+		Total       int             `json:"total"`
+		HasNextPage bool            `json:"has_next_page"`
+		Items       []types.Session `json:"data"`
 	}
 
 	SessionStatus struct {
@@ -104,7 +84,7 @@ type (
 	}
 )
 
-func NewNonIndexedEventStreamList(eventStartDate time.Time, eventStreams ...EventStream) (NonIndexedEventStreamList, error) {
+func NewNonIndexedEventStreamList(eventStartDate time.Time, eventStreams ...types.SessionEventStream) (types.SessionNonIndexedEventStreamList, error) {
 	for idx, ev := range eventStreams {
 		if len(ev) != 3 {
 			return nil, fmt.Errorf("event stream [%v] in wrong format, accept [time.Time, byte, []byte]", idx)
@@ -128,7 +108,7 @@ func NewNonIndexedEventStreamList(eventStartDate time.Time, eventStreams ...Even
 		eventStreams[idx][1] = eventType
 		eventStreams[idx][2] = base64.StdEncoding.EncodeToString(eventData)
 	}
-	return NonIndexedEventStreamList{
+	return types.SessionNonIndexedEventStreamList{
 		"stream": eventStreams,
 	}, nil
 }
@@ -137,7 +117,7 @@ func (s *Service) FindReviewBySessionID(sessionID string) (*Review, error) {
 	return s.Storage.FindReviewBySessionID(sessionID)
 }
 
-func (s *Service) FindOne(context *user.Context, name string) (*Session, error) {
+func (s *Service) FindOne(context *user.Context, name string) (*types.Session, error) {
 	return s.Storage.FindOne(context, name)
 }
 

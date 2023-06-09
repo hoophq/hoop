@@ -1,6 +1,7 @@
 package runbooks
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -9,8 +10,13 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/clientexec"
 	"github.com/runopsio/hoop/gateway/runbooks/templates"
+	"github.com/runopsio/hoop/gateway/storagev2"
+	sessionStorage "github.com/runopsio/hoop/gateway/storagev2/session"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
@@ -87,9 +93,12 @@ func (h *Handler) FindAll(c *gin.Context) {
 	c.PureJSON(http.StatusOK, list)
 }
 
+// TODO: Refactor to use sessionapi.RunExec
 func (h *Handler) RunExec(c *gin.Context) {
 	ctx := user.ContextUser(c)
 	log := user.ContextLogger(c)
+	storageCtx := storagev2.ParseContext(c)
+
 	var req RunbookRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -103,7 +112,6 @@ func (h *Handler) RunExec(c *gin.Context) {
 		log.Infoln(err)
 		return
 	}
-
 	if config.PathPrefix != "" && !strings.HasPrefix(req.FileName, config.PathPrefix) {
 		c.JSON(http.StatusNotFound, gin.H{
 			"session_id": nil,
@@ -118,7 +126,34 @@ func (h *Handler) RunExec(c *gin.Context) {
 		return
 	}
 
-	client, err := clientexec.New(ctx.Org.Id, getAccessToken(c), connectionName, "")
+	runbookParamsJson, _ := json.Marshal(req.Parameters)
+	sessionLabels := types.SessionLabels{
+		"runbookFile":       req.FileName,
+		"runbookParameters": string(runbookParamsJson),
+	}
+
+	newSession := types.Session{
+		ID:           uuid.NewString(),
+		OrgID:        ctx.Org.Id,
+		Labels:       sessionLabels,
+		Script:       types.SessionScript{"data": string(runbook.InputFile)},
+		UserEmail:    ctx.User.Email,
+		UserID:       ctx.User.Id,
+		UserName:     ctx.User.Name,
+		Connection:   connectionName,
+		Verb:         proto.ClientVerbExec,
+		Status:       "open",
+		DlpCount:     0,
+		StartSession: time.Now().UTC(),
+	}
+	log.Infof("Persisting session")
+
+	err = sessionStorage.Write(storageCtx, newSession)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "The session couldn't be created"})
+	}
+
+	client, err := clientexec.New(ctx.Org.Id, getAccessToken(c), connectionName, newSession.ID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"session_id": nil, "message": err.Error()})
 		return

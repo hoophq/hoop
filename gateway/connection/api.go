@@ -1,14 +1,19 @@
 package connection
 
 import (
-	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
-	"github.com/runopsio/hoop/gateway/clientexec"
+	"github.com/google/uuid"
+	"github.com/runopsio/hoop/common/log"
+	pb "github.com/runopsio/hoop/common/proto"
+	sessionapi "github.com/runopsio/hoop/gateway/api/session"
+	"github.com/runopsio/hoop/gateway/storagev2"
+	connectionstorage "github.com/runopsio/hoop/gateway/storagev2/connection"
+	sessionStorage "github.com/runopsio/hoop/gateway/storagev2/session"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
@@ -151,76 +156,53 @@ func (a *Handler) Evict(c *gin.Context) {
 	c.Writer.WriteHeader(204)
 }
 
+// DEPRECATED in flavor of POST /api/sessions
 func (h *Handler) RunExec(c *gin.Context) {
+	log.Warnf("executing connection run-exec - deprecated endpoint")
 	ctx := user.ContextUser(c)
-	log := user.ContextLogger(c)
+	storageCtx := storagev2.ParseContext(c)
 
-	var req clientexec.ExecRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"session_id": nil,
-			"message":    err.Error()})
+	// connection attribute is unused here
+	var body sessionapi.SessionPostBody
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
+
 	connectionName := c.Param("name")
-	conn, err := h.Service.FindOne(ctx, connectionName)
+	connection, err := connectionstorage.GetOneByName(storageCtx, connectionName)
+	if connection == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Connection not found"})
+		return
+	}
 	if err != nil {
-		log.Errorf("failed retrieving connection, err=%v", err)
-		c.JSON(http.StatusInternalServerError, &clientexec.ExecErrResponse{Message: "failed retrieving connection"})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
-	if conn == nil {
-		c.JSON(http.StatusNotFound, &clientexec.ExecErrResponse{Message: "connection not found"})
-		return
-	}
-	client, err := clientexec.New(ctx.Org.Id, getAccessToken(c), connectionName, "")
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"session_id": nil, "message": err.Error()})
-		return
-	}
-	clientResp := make(chan *clientexec.Response)
-	go func() {
-		defer close(clientResp)
-		defer client.Close()
-		select {
-		case clientResp <- client.Run([]byte(req.Script), nil, req.ClientArgs...):
-		default:
-		}
-	}()
-	log = log.With("session", client.SessionID())
-	log.Infof("started runexec method for connection %v", connectionName)
-	c.Header("Location", fmt.Sprintf("/api/plugins/audit/sessions/%s/status", client.SessionID()))
-	statusCode := http.StatusOK
-	if req.Redirect {
-		statusCode = http.StatusFound
-	}
-	select {
-	case resp := <-clientResp:
-		log.Infof("runexec response. exit_code=%v, truncated=%v, response-length=%v",
-			resp.GetExitCode(), resp.Truncated, len(resp.ErrorMessage()))
-		if resp.IsError() {
-			c.JSON(http.StatusBadRequest, &clientexec.ExecErrResponse{
-				SessionID: &resp.SessionID,
-				Message:   resp.ErrorMessage(),
-				ExitCode:  resp.ExitCode,
-			})
-			return
-		}
-		c.JSON(statusCode, resp)
-	case <-time.After(time.Second * 50):
-		// closing the client will force the goroutine to end
-		// and the result will return async
-		log.Infof("runexec timeout (50s), it will return async")
-		client.Close()
-		c.JSON(http.StatusAccepted, gin.H{"session_id": client.SessionID(), "exit_code": nil})
-	}
-}
 
-func getAccessToken(c *gin.Context) string {
-	tokenHeader := c.GetHeader("authorization")
-	tokenParts := strings.Split(tokenHeader, " ")
-	if len(tokenParts) > 1 {
-		return tokenParts[1]
+	newSession := types.Session{
+		ID:         uuid.NewString(),
+		OrgID:      ctx.Org.Id,
+		Labels:     body.Labels,
+		Script:     types.SessionScript{"data": body.Script},
+		UserEmail:  ctx.User.Email,
+		UserID:     ctx.User.Id,
+		UserName:   ctx.User.Name,
+		Type:       connection.Type,
+		Connection: connection.Name,
+		// As this endpoint is exclusive for exec, we're forcing the Verb to be exec
+		Verb:         pb.ClientVerbExec,
+		Status:       "open", // TODO use a const
+		DlpCount:     0,
+		StartSession: time.Now().UTC(),
 	}
-	return ""
+
+	log.Infof("Persisting session")
+
+	err = sessionStorage.Write(storageCtx, newSession)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "The session couldn't be created"})
+	}
+
+	sessionapi.RunExec(c, newSession, body.ClientArgs)
 }

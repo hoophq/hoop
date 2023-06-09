@@ -10,7 +10,9 @@ import (
 	"time"
 
 	pb "github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/session"
+	"github.com/runopsio/hoop/gateway/storagev2"
+	sessionStorage "github.com/runopsio/hoop/gateway/storagev2/session"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/tidwall/wal"
 
@@ -29,6 +31,8 @@ type (
 		ConnectionName string     `json:"connection_name"`
 		ConnectionType string     `json:"connection_type"`
 		Status         string     `json:"status"`
+		Script         string     `json:"script"`
+		Labels         string     `json:"labels"` // we save it as string and convert at storage layer
 		Verb           string     `json:"verb"`
 		StartDate      *time.Time `json:"start_date"`
 	}
@@ -73,7 +77,7 @@ func addEventStreamHeader(d time.Time, eventType byte, dlpCount int64) []byte {
 	return append(result, '\000')
 }
 
-func parseEventStream(eventStream []byte) (session.EventStream, int, int64, error) {
+func parseEventStream(eventStream []byte) (types.SessionEventStream, int, int64, error) {
 	position := bytes.IndexByte(eventStream, '\000')
 	if position == -1 {
 		return nil, -1, 0, fmt.Errorf("event stream in wrong format [event-time]")
@@ -97,7 +101,7 @@ func parseEventStream(eventStream []byte) (session.EventStream, int, int64, erro
 	dlpCounter := byteArrayToInt(eventStream[position-8 : position])
 
 	eventStreamLength := len(eventStream[position:])
-	return session.EventStream{eventTime, eventType, eventStream[position:]},
+	return types.SessionEventStream{eventTime, eventType, eventStream[position:]},
 		eventStreamLength, dlpCounter, nil
 }
 
@@ -107,6 +111,7 @@ func (p *auditPlugin) writeOnConnect(pctx plugintypes.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed opening wal file, err=%v", err)
 	}
+
 	walHeader, err := encodeWalHeader(&walHeader{
 		OrgID:          pctx.OrgID,
 		SessionID:      pctx.SID,
@@ -116,6 +121,8 @@ func (p *auditPlugin) writeOnConnect(pctx plugintypes.Context) error {
 		ConnectionName: pctx.ConnectionName,
 		ConnectionType: pctx.ConnectionType,
 		Verb:           pctx.ClientVerb,
+		Script:         pctx.ParamsData.GetString("script"),
+		Labels:         pctx.ParamsData.GetString("labels"),
 		Status:         pctx.ParamsData.GetString("status"),
 		StartDate:      func() *time.Time { d := time.Now().UTC(); return &d }(),
 	})
@@ -148,7 +155,8 @@ func (p *auditPlugin) writeOnReceive(sessionID string, eventType byte, dlpCount 
 	return nil
 }
 
-func (p *auditPlugin) writeOnClose(sessionID string) error {
+func (p *auditPlugin) writeOnClose(pctx plugintypes.Context) error {
+	sessionID := pctx.SID
 	walLogObj := p.walSessionStore.Get(sessionID)
 	walogm, ok := walLogObj.(*walLogRWMutex)
 	if !ok {
@@ -173,7 +181,7 @@ func (p *auditPlugin) writeOnClose(sessionID string) error {
 			sessionID, wh.SessionID)
 	}
 	idx := uint64(2)
-	var eventStreamList []session.EventStream
+	var eventStreamList []types.SessionEventStream
 	eventSize := int64(0)
 	dlpCounter := int64(0)
 	for {
@@ -197,6 +205,14 @@ func (p *auditPlugin) writeOnClose(sessionID string) error {
 		idx++
 	}
 	endDate := time.Now().UTC()
+
+	newStorage := storagev2.NewStorage(nil)
+	storageContext := storagev2.NewContext(wh.UserID, wh.OrgID, newStorage)
+	session, err := sessionStorage.FindOne(storageContext, wh.SessionID)
+	if err != nil || session == nil {
+		return err
+	}
+
 	pluginctx := plugintypes.Context{
 		OrgID:          wh.OrgID,
 		SID:            wh.SessionID,
@@ -205,6 +221,8 @@ func (p *auditPlugin) writeOnClose(sessionID string) error {
 		UserEmail:      wh.UserEmail,
 		ConnectionName: wh.ConnectionName,
 		ConnectionType: wh.ConnectionType,
+		Script:         session.Script["data"],
+		Labels:         session.Labels,
 		ClientVerb:     wh.Verb,
 		ParamsData: map[string]any{
 			"event_stream": eventStreamList,

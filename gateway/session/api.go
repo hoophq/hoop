@@ -12,9 +12,13 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/gin-gonic/gin"
+	"github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/clientexec"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/plugin"
+	"github.com/runopsio/hoop/gateway/storagev2"
+	sessionStorage "github.com/runopsio/hoop/gateway/storagev2/session"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
@@ -32,7 +36,7 @@ type (
 	}
 	service interface {
 		FindAll(*user.Context, ...*SessionOption) (*SessionList, error)
-		FindOne(context *user.Context, name string) (*Session, error)
+		FindOne(context *user.Context, name string) (*types.Session, error)
 		EntityHistory(ctx *user.Context, sessionID string) ([]SessionStatusHistory, error)
 		ValidateSessionID(sessionID string) error
 		FindReviewBySessionID(sessionID string) (*Review, error)
@@ -161,9 +165,11 @@ func getAccessToken(c *gin.Context) string {
 	return ""
 }
 
+// TODO: Refactor to use sessionapi.RunExec
 func (h *Handler) RunExec(c *gin.Context) {
 	ctx := user.ContextUser(c)
 	log := user.ContextLogger(c)
+	storageCtx := storagev2.ParseContext(c)
 
 	sessionId := c.Param("session_id")
 
@@ -198,10 +204,15 @@ func (h *Handler) RunExec(c *gin.Context) {
 	}
 
 	session, err := h.Service.FindOne(ctx, sessionId)
-	if session == nil || err != nil {
-		c.JSON(http.StatusNotFound, &clientexec.ExecErrResponse{Message: "session not found"})
+	if err != nil {
+		log.Errorf("failed fetching session, reason=%v", err)
+		c.JSON(http.StatusInternalServerError, &clientexec.ExecErrResponse{Message: "failed fetching sessions"})
+		return
 	}
-
+	if session == nil {
+		c.JSON(http.StatusNotFound, &clientexec.ExecErrResponse{Message: "session not found"})
+		return
+	}
 	if session.UserEmail != ctx.User.Email {
 		c.JSON(http.StatusBadRequest, &clientexec.ExecErrResponse{Message: "only the creator can trigger this action"})
 		return
@@ -242,7 +253,31 @@ func (h *Handler) RunExec(c *gin.Context) {
 		return
 	}
 
-	client, err := clientexec.New(ctx.Org.Id, getAccessToken(c), review.Connection.Name, review.Session)
+	newSession := types.Session{
+		ID:           review.Session,
+		OrgID:        ctx.Org.Id,
+		Labels:       session.Labels,
+		Script:       session.Script,
+		UserEmail:    ctx.User.Email,
+		UserID:       ctx.User.Id,
+		UserName:     ctx.User.Name,
+		Type:         session.Type,
+		Connection:   session.Connection,
+		Verb:         proto.ClientVerbExec,
+		Status:       "open", // TODO use a const
+		DlpCount:     0,
+		StartSession: time.Now().UTC(),
+	}
+	log.Infof("Persisting new session")
+
+	err = sessionStorage.Write(storageCtx, newSession)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "The session couldn't be created"})
+		return
+	}
+
+	// TODO use the new RunExec here
+	client, err := clientexec.New(ctx.Org.Id, getAccessToken(c), review.Connection.Name, newSession.ID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"session_id": nil, "message": err.Error()})
 		return

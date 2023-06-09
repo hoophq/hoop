@@ -113,14 +113,27 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	// it's not safe to rely on it. A validation is required
 	// to maintain the integrity of the database.
 	sessionID := mdget(md, "session-id")
+
+	sessionScript := ""
+	sessionLabels := map[string]string{}
+
 	if sessionID != "" {
-		if err := s.validateSessionID(sessionID); err != nil {
-			return status.Errorf(codes.AlreadyExists, err.Error())
+		session, err := s.SessionService.FindOne(userCtx, sessionID)
+		if err != nil {
+			log.Errorf("Failed getting the session, err=%v", err)
+			sentry.CaptureException(err)
+			return status.Errorf(codes.Internal, "It was a problem finding the session")
+		}
+		if session != nil {
+			sessionScript = session.Script["data"]
+			sessionLabels = session.Labels
 		}
 	}
+
 	if sessionID == "" {
 		sessionID = uuid.NewString()
 	}
+
 	s.trackSessionStatus(sessionID, pb.SessionPhaseClientConnect, nil)
 
 	pluginContext := plugintypes.Context{
@@ -143,8 +156,12 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		ClientVerb:   clientVerb,
 		ClientOrigin: clientOrigin,
 
+		Script: sessionScript,
+		Labels: sessionLabels,
+
 		ParamsData: map[string]any{},
 	}
+
 	if err := pluginContext.Validate(); err != nil {
 		log.Errorf("failed validating plugin context, err=%v", err)
 		sentry.CaptureException(err)
