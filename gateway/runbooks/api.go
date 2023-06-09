@@ -145,7 +145,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 		Verb:         proto.ClientVerbExec,
 		Status:       "open",
 		DlpCount:     0,
-		StartSession: time.Now(),
+		StartSession: time.Now().UTC(),
 	}
 	log.Infof("Persisting session")
 

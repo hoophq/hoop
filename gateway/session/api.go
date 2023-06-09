@@ -205,10 +205,15 @@ func (h *Handler) RunExec(c *gin.Context) {
 	}
 
 	session, err := h.Service.FindOne(ctx, sessionId)
-	if session == nil || err != nil {
-		c.JSON(http.StatusNotFound, &clientexec.ExecErrResponse{Message: "session not found"})
+	if err != nil {
+		log.Errorf("failed fetching session, reason=%v", err)
+		c.JSON(http.StatusInternalServerError, &clientexec.ExecErrResponse{Message: "failed fetching sessions"})
+		return
 	}
-
+	if session == nil {
+		c.JSON(http.StatusNotFound, &clientexec.ExecErrResponse{Message: "session not found"})
+		return
+	}
 	if session.UserEmail != ctx.User.Email {
 		c.JSON(http.StatusBadRequest, &clientexec.ExecErrResponse{Message: "only the creator can trigger this action"})
 		return
@@ -249,13 +254,6 @@ func (h *Handler) RunExec(c *gin.Context) {
 		return
 	}
 
-	if err != nil {
-		log.Errorf("failed fetching session, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching session"})
-		return
-	}
-
 	newSession := types.Session{
 		ID:           review.Session,
 		OrgID:        ctx.Org.Id,
@@ -269,13 +267,14 @@ func (h *Handler) RunExec(c *gin.Context) {
 		Verb:         proto.ClientVerbExec,
 		Status:       "open", // TODO use a const
 		DlpCount:     0,
-		StartSession: time.Now(),
+		StartSession: time.Now().UTC(),
 	}
 	log.Infof("Persisting new session")
 
 	err = sessionStorage.Write(storageCtx, newSession)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "The session couldn't be created"})
+		return
 	}
 
 	// TODO use the new RunExec here

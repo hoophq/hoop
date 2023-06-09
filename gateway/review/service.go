@@ -170,7 +170,7 @@ func (s *Service) Review(context *user.Context, reviewID string, status Status) 
 
 	for i, r := range rev.ReviewGroups {
 		if pb.IsInList(r.Group, context.User.Groups) {
-			t := time.Now().String()
+			t := time.Now().UTC().String()
 			rev.ReviewGroups[i].Status = status
 			rev.ReviewGroups[i].ReviewedBy = &Owner{Id: context.User.Id}
 			rev.ReviewGroups[i].ReviewDate = &t

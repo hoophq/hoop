@@ -2,13 +2,13 @@ package connection
 
 import (
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/log"
+	pb "github.com/runopsio/hoop/common/proto"
 	sessionapi "github.com/runopsio/hoop/gateway/api/session"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	connectionstorage "github.com/runopsio/hoop/gateway/storagev2/connection"
@@ -162,6 +162,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 	ctx := user.ContextUser(c)
 	storageCtx := storagev2.ParseContext(c)
 
+	// connection attribute is unused here
 	var body sessionapi.SessionPostBody
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
@@ -175,29 +176,25 @@ func (h *Handler) RunExec(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
 
-	// appending info to body to be like SessionPostBody struct
-	body.Connection = connectionName
-	// As this endpoint is exclusive for exec, we're forcing the Verb to be exec
-	body.Verb = "exec"
-
 	newSession := types.Session{
-		ID:           uuid.NewString(),
-		OrgID:        ctx.Org.Id,
-		Labels:       body.Labels,
-		Script:       types.SessionScript{"data": body.Script},
-		UserEmail:    ctx.User.Email,
-		UserID:       ctx.User.Id,
-		UserName:     ctx.User.Name,
-		Type:         connection.Type,
-		Connection:   connection.Name,
-		Verb:         "exe",  // TODO use a const
+		ID:         uuid.NewString(),
+		OrgID:      ctx.Org.Id,
+		Labels:     body.Labels,
+		Script:     types.SessionScript{"data": body.Script},
+		UserEmail:  ctx.User.Email,
+		UserID:     ctx.User.Id,
+		UserName:   ctx.User.Name,
+		Type:       connection.Type,
+		Connection: connection.Name,
+		// As this endpoint is exclusive for exec, we're forcing the Verb to be exec
+		Verb:         pb.ClientVerbExec,
 		Status:       "open", // TODO use a const
 		DlpCount:     0,
-		StartSession: time.Now(),
+		StartSession: time.Now().UTC(),
 	}
 
 	log.Infof("Persisting session")
@@ -208,13 +205,4 @@ func (h *Handler) RunExec(c *gin.Context) {
 	}
 
 	sessionapi.RunExec(c, newSession, body.ClientArgs)
-}
-
-func getAccessToken(c *gin.Context) string {
-	tokenHeader := c.GetHeader("authorization")
-	tokenParts := strings.Split(tokenHeader, " ")
-	if len(tokenParts) > 1 {
-		return tokenParts[1]
-	}
-	return ""
 }

@@ -6,7 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/common/log"
+	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	connectionstorage "github.com/runopsio/hoop/gateway/storagev2/connection"
 	sessionStorage "github.com/runopsio/hoop/gateway/storagev2/session"
@@ -15,11 +15,10 @@ import (
 )
 
 type SessionPostBody struct {
-	Script     string `json:"script"`
-	Verb       string `json:"verb"` // TODO remove this in the future and try to understand which verb based on the connection
-	Connection string `json:"connection"`
-	Labels     types.SessionLabels
-	ClientArgs []string `json:"clientArgs"`
+	Script     string              `json:"script"`
+	Connection string              `json:"connection"`
+	Labels     types.SessionLabels `json:"labels"`
+	ClientArgs []string            `json:"client_args"`
 }
 
 func Post(c *gin.Context) {
@@ -56,12 +55,11 @@ func Post(c *gin.Context) {
 		UserName:     ctx.User.Name,
 		Type:         connection.Type,
 		Connection:   connection.Name,
-		Verb:         "exe",  // TODO use a const
+		Verb:         pb.ClientVerbExec,
 		Status:       "open", // TODO use a const
 		DlpCount:     0,
-		StartSession: time.Now(),
+		StartSession: time.Now().UTC(),
 	}
-	log.Infof("Persisting session")
 
 	err = sessionStorage.Write(storageCtx, newSession)
 	if err != nil {
