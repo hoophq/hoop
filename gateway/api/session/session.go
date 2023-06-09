@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	connectionstorage "github.com/runopsio/hoop/gateway/storagev2/connection"
@@ -60,6 +61,7 @@ func Post(c *gin.Context) {
 		DlpCount:     0,
 		StartSession: time.Now().UTC(),
 	}
+	log.Infof("Persisting session")
 
 	err = sessionStorage.Write(storageCtx, newSession)
 	if err != nil {
