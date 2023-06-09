@@ -112,10 +112,11 @@ func (h *Handler) FindOne(c *gin.Context) {
 }
 
 // DEPRECATED
-// Use sessionapi.RunExec instead
+// This function/endpoint is deprecated in flavor of POST /api/sessions/:session-id/exec
 func (h *Handler) RunExec(c *gin.Context) {
 	ctx := user.ContextUser(c)
 	log := user.ContextLogger(c)
+	log.Warnf("executing review run-exec - deprecated endpoint")
 	reviewID := c.Param("id")
 	if isLockedForExec(reviewID) {
 		errMsg := fmt.Sprintf("the review %v is already being processed", reviewID)

@@ -156,9 +156,9 @@ func (a *Handler) Evict(c *gin.Context) {
 	c.Writer.WriteHeader(204)
 }
 
-// This functions is legacy and should not be used anymore
-// Use sessionapi.RunExec at api/session/run-exec.go
+// DEPRECATED in flavor of POST /api/sessions
 func (h *Handler) RunExec(c *gin.Context) {
+	log.Warnf("executing connection run-exec - deprecated endpoint")
 	ctx := user.ContextUser(c)
 	storageCtx := storagev2.ParseContext(c)
 

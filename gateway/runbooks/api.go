@@ -93,8 +93,7 @@ func (h *Handler) FindAll(c *gin.Context) {
 	c.PureJSON(http.StatusOK, list)
 }
 
-// DEPRECATED
-// Use sessionapi.RunExec instead
+// TODO: Refactor to use sessionapi.RunExec
 func (h *Handler) RunExec(c *gin.Context) {
 	ctx := user.ContextUser(c)
 	log := user.ContextLogger(c)

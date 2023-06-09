@@ -165,8 +165,7 @@ func getAccessToken(c *gin.Context) string {
 	return ""
 }
 
-// DEPRECATED
-// Use sessionapi.RunExec instead
+// TODO: Refactor to use sessionapi.RunExec
 func (h *Handler) RunExec(c *gin.Context) {
 	ctx := user.ContextUser(c)
 	log := user.ContextLogger(c)

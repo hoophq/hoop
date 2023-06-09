@@ -184,7 +184,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest,
 		api.ReviewHandler.Put)
-	// DEPRECATED in flavor of POST /sessions
+	// DEPRECATED in flavor of POST /api/sessions/:session_id/exec
 	route.POST("/reviews/:id/exec",
 		api.Authenticate,
 		api.TrackRequest,
@@ -272,7 +272,6 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest,
 		sessionapi.Post)
-	// DEPRECATED in flavor of POST /sessions
 	route.POST("/sessions/:session_id/exec",
 		api.Authenticate,
 		api.TrackRequest,
