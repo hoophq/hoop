@@ -150,6 +150,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest,
 		api.AdminOnly,
 		api.ConnectionHandler.Evict)
+	// DEPRECATED in flavor of POST /sessions
 	route.POST("/connections/:name/exec",
 		api.Authenticate,
 		api.TrackRequest,
@@ -183,6 +184,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest,
 		api.ReviewHandler.Put)
+	// DEPRECATED in flavor of POST /sessions
 	route.POST("/reviews/:id/exec",
 		api.Authenticate,
 		api.TrackRequest,
@@ -270,6 +272,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest,
 		sessionapi.Post)
+	// DEPRECATED in flavor of POST /sessions
 	route.POST("/sessions/:session_id/exec",
 		api.Authenticate,
 		api.TrackRequest,
@@ -286,6 +289,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest,
 		api.RunbooksHandler.FindAll,
 	)
+	// DEPRECATED in flavor of POST /sessions
 	route.POST("/plugins/runbooks/connections/:name/exec",
 		api.Authenticate,
 		api.TrackRequest,
