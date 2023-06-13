@@ -20,6 +20,7 @@ type (
 
 func (s *Storage) FindAll(context *user.Context) ([]types.Review, error) {
 	var payload = fmt.Sprintf(`{:query {
+<<<<<<< HEAD
 		:find [(pull ?r [:xt/id
 						:review/type
 						:review/created-at
@@ -34,24 +35,23 @@ func (s *Storage) FindAll(context *user.Context) ([]types.Review, error) {
 						{:review/connection [:connection/name]}])]
 		:in [org]
 		:where [[?r :review/org org]]}
+=======
+		:find [(pull ?r [*])]
+		:in [org-id]
+		:where [[?r :review/org org-id]]}
+>>>>>>> 7246191 (refactor(types): re-adjust types)
 		:in-args [%q]}`, context.Org.Id)
-
-	log.With("CCCCCCCC final do FindOne ", context).Infof("Storage")
-	log.With("BBBBBBBB final do FindOne ", payload).Infof("Storage")
 
 	b, err := s.Query([]byte(payload))
 	if err != nil {
 		return nil, err
 	}
 
-	log.With("AAAAA final do FindOne ", b).Infof("Storage")
-
 	var reviews []types.Review
 	if err := edn.Unmarshal(b, &reviews); err != nil {
 		return nil, err
 	}
 
-	log.With("final do FindAll ", reviews).Infof("Storage")
 	return reviews, nil
 }
 
@@ -70,8 +70,8 @@ func (s *Storage) FindApprovedJitReviews(ctx *user.Context, connID string) (*typ
 						{:review/connection [:connection/name]}])]
 		:in [arg-orgid arg-userid arg-connid arg-status arg-now-date]
 		:where [[?r :review/org arg-orgid]
-				[?r {:review/created-by [:xt/id]} arg-userid]
-				[?r {:review/connection [:xt/id]} arg-connid]
+				[?r :review/created-by arg-userid]
+				[?r :review/connection arg-connid]
 				[?r :review/status arg-status]
 				[?c :xt/id arg-connid]
 				[?r :review/revoke-at revoke-at]
@@ -199,7 +199,7 @@ func (s *Storage) FindBySessionID(sessionID string) (*types.Review, error) {
 							{:review/created-by [:xt/id :user/name :user/email :user/slack-id]}])]
 		:in [session-id]
 		:where [[?r :review/session session-id]
-				[?r {:review/connection [:xt/id]} connid]
+				[?r :review/connection connid]
 				[?c :xt/id connid]]}
         :in-args [%q]}`, sessionID)
 
@@ -245,7 +245,9 @@ func (s *Storage) Persist(ctx *user.Context, review *types.Review) (int64, error
 		Type:           review.Type,
 		Session:        review.Session,
 		Connection:     review.Connection,
+		ConnectionId:   review.ConnectionId,
 		CreatedBy:      review.CreatedBy,
+		ReviewOwner:    review.ReviewOwner,
 		Input:          review.Input,
 		AccessDuration: review.AccessDuration,
 		RevokeAt:       review.RevokeAt,

@@ -21,28 +21,6 @@ type (
 	GenericStorageWriter struct {
 		persistFn func(*user.Context, *types.Session) (*st.TxResponse, error)
 	}
-
-	XtdbReview struct {
-		Id             string        `edn:"xt/id"`
-		OrgId          string        `edn:"review/org"`
-		Type           string        `edn:"review/type"`
-		SessionId      string        `edn:"review/session"`
-		ConnectionId   string        `edn:"review/connection"`
-		CreatedBy      string        `edn:"review/created-by"`
-		Input          string        `edn:"review/input"`
-		AccessDuration time.Duration `edn:"review/access-duration"`
-		RevokeAt       *time.Time    `edn:"review/revoke-at"`
-		Status         Status        `edn:"review/status"`
-		ReviewGroups   []string      `edn:"review/review-groups"`
-	}
-
-	XtdbGroup struct {
-		Id         string  `json:"id"          edn:"xt/id"`
-		Group      string  `json:"group"       edn:"review-group/group"`
-		Status     Status  `json:"status"      edn:"review-group/status"`
-		ReviewedBy *string `json:"reviewed_by" edn:"review-group/reviewed-by"`
-		ReviewDate *string `json:"review_date" edn:"review-group/review_date"`
-	}
 )
 
 const (
@@ -394,7 +372,9 @@ func (s *Storage) PersistReview(ctx *user.Context, review *types.Review) (int64,
 		Type:           review.Type,
 		Session:        review.Session,
 		Connection:     review.Connection,
+		ConnectionId:   review.ConnectionId,
 		CreatedBy:      review.CreatedBy,
+		ReviewOwner:    review.ReviewOwner,
 		Input:          review.Input,
 		AccessDuration: review.AccessDuration,
 		RevokeAt:       review.RevokeAt,

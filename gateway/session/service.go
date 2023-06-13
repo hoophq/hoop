@@ -16,40 +16,6 @@ type (
 		Storage storage
 	}
 
-	Review struct {
-		Id             string        `json:"id"                      edn:"xt/id"`
-		Type           string        `json:"type"                    edn:"review/type"`
-		Session        string        `json:"session"                 edn:"review/session"`
-		Input          string        `json:"input"                   edn:"review/input"`
-		AccessDuration time.Duration `json:"access_duration"         edn:"review/access-duration"`
-		Status         Status        `json:"status"                  edn:"review/status"`
-		RevokeAt       *time.Time    `json:"revoke_at"               edn:"review/revoke-at"`
-		CreatedBy      Owner         `json:"created_by"              edn:"review/created-by"`
-		Connection     Connection    `json:"connection"              edn:"review/connection"`
-		ReviewGroups   []Group       `json:"review_groups,omitempty" edn:"review/review-groups"`
-	}
-
-	Owner struct {
-		Id    string `json:"id,omitempty"   edn:"xt/id"`
-		Name  string `json:"name,omitempty" edn:"user/name"`
-		Email string `json:"email"          edn:"user/email"`
-	}
-
-	Connection struct {
-		Id   string `json:"id,omitempty" edn:"xt/id"`
-		Name string `json:"name"         edn:"connection/name"`
-	}
-
-	Group struct {
-		Id         string  `json:"id"          edn:"xt/id"`
-		Group      string  `json:"group"       edn:"review-group/group"`
-		Status     Status  `json:"status"      edn:"review-group/status"`
-		ReviewedBy *Owner  `json:"reviewed_by" edn:"review-group/reviewed-by"`
-		ReviewDate *string `json:"review_date" edn:"review-group/review_date"`
-	}
-
-	Status string
-
 	storage interface {
 		Persist(ctx *user.Context, sess *types.Session) (*st.TxResponse, error)
 		PersistStatus(sess *SessionStatus) (*st.TxResponse, error)

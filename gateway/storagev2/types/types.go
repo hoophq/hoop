@@ -106,8 +106,10 @@ type Review struct {
 	AccessDuration time.Duration    `json:"access_duration"         edn:"review/access-duration"`
 	Status         ReviewStatus     `json:"status"                  edn:"review/status"`
 	RevokeAt       *time.Time       `json:"revoke_at"               edn:"review/revoke-at"`
-	CreatedBy      ReviewOwner      `json:"created_by"              edn:"review/created-by"`
-	Connection     ReviewConnection `json:"connection"              edn:"review/connection"`
+	CreatedBy      string           `json:"created_by"              edn:"review/created-by"`
+	ReviewOwner    ReviewOwner      `json:"review_owner"			edn:"review/review-owner"`
+	ConnectionId   string           `json:"connection"              edn:"review/connection"`
+	Connection     ReviewConnection `json:"review_connection"       edn:"review/review-connection"`
 	ReviewGroups   []ReviewGroup    `json:"review_groups,omitempty" edn:"review/review-groups"`
 }
 

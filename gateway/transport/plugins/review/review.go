@@ -117,17 +117,19 @@ func (r *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 	}
 
 	newRev := &types.Review{
-		Id:        uuid.NewString(),
-		Type:      reviewType,
-		OrgId:     pctx.OrgID,
-		CreatedAt: time.Now().UTC(),
-		Session:   pctx.SID,
-		Input:     "",
+		Id:           uuid.NewString(),
+		Type:         reviewType,
+		OrgId:        pctx.OrgID,
+		CreatedAt:    time.Now().UTC(),
+		Session:      pctx.SID,
+		Input:        "",
+		ConnectionId: pctx.ConnectionID,
 		Connection: types.ReviewConnection{
 			Id:   pctx.ConnectionID,
 			Name: pctx.ConnectionName,
 		},
-		CreatedBy: types.ReviewOwner{
+		CreatedBy: pctx.UserID,
+		ReviewOwner: types.ReviewOwner{
 			Id:    pctx.UserID,
 			Name:  pctx.UserName,
 			Email: pctx.UserEmail,

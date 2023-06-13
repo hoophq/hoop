@@ -55,14 +55,6 @@ const (
 )
 
 const (
-	StatusPending    Status = "PENDING"
-	StatusApproved   Status = "APPROVED"
-	StatusRejected   Status = "REJECTED"
-	StatusRevoked    Status = "REVOKED"
-	StatusProcessing Status = "PROCESSING"
-	StatusExecuted   Status = "EXECUTED"
-	StatusUnknown    Status = "UNKNOWN"
-
 	ReviewTypeJit     = "jit"
 	ReviewTypeOneTime = "onetime"
 )
