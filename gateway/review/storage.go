@@ -201,7 +201,7 @@ func (s *Storage) FindBySessionID(sessionID string) (*types.Review, error) {
 		return nil, err
 	}
 
-	var reviews []*types.Review
+	var reviews []types.Review
 	if err := edn.Unmarshal(b, &reviews); err != nil {
 		return nil, err
 	}
@@ -210,7 +210,7 @@ func (s *Storage) FindBySessionID(sessionID string) (*types.Review, error) {
 		return nil, nil
 	}
 
-	return reviews[0], nil
+	return &reviews[0], nil
 }
 
 func (s *Storage) Persist(ctx *user.Context, review *types.Review) (int64, error) {
