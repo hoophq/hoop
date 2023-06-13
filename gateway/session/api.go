@@ -35,11 +35,6 @@ type (
 		optionVal any
 	}
 
-	SessionWithReview struct {
-		*types.Session
-		Review types.Review
-	}
-
 	service interface {
 		FindAll(*user.Context, ...*SessionOption) (*SessionList, error)
 		FindOne(context *user.Context, name string) (*types.Session, error)
