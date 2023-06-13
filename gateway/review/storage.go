@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runopsio/hoop/common/log"
 	st "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
@@ -20,7 +19,6 @@ type (
 
 func (s *Storage) FindAll(context *user.Context) ([]types.Review, error) {
 	var payload = fmt.Sprintf(`{:query {
-<<<<<<< HEAD
 		:find [(pull ?r [:xt/id
 						:review/type
 						:review/created-at
@@ -34,12 +32,9 @@ func (s *Storage) FindAll(context *user.Context) ([]types.Review, error) {
 						{:review/created-by [:user/email :user/slack-id]}
 						{:review/connection [:connection/name]}])]
 		:in [org]
-		:where [[?r :review/org org]]}
-=======
-		:find [(pull ?r [*])]
-		:in [org-id]
-		:where [[?r :review/org org-id]]}
->>>>>>> 7246191 (refactor(types): re-adjust types)
+		:where [[?r :review/org org]
+				[?r :review/connection connid]
+				[?c :xt/id connid]]}
 		:in-args [%q]}`, context.Org.Id)
 
 	b, err := s.Query([]byte(payload))
@@ -125,7 +120,7 @@ func (s *Storage) FindById(ctx *user.Context, id string) (*types.Review, error) 
 		return nil, err
 	}
 
-	var reviews []*types.Review
+	var reviews []types.Review
 	if err := edn.Unmarshal(b, &reviews); err != nil {
 		return nil, err
 	}
@@ -134,7 +129,7 @@ func (s *Storage) FindById(ctx *user.Context, id string) (*types.Review, error) 
 		return nil, nil
 	}
 
-	return reviews[0], nil
+	return &reviews[0], nil
 }
 
 func (s *Storage) queryDecoder(query string, into any, args ...any) error {
@@ -149,10 +144,8 @@ func (s *Storage) queryDecoder(query string, into any, args ...any) error {
 	return edn.Unmarshal(httpBody, into)
 }
 
-func (s *Storage) PersistSessionAsReady(sess *types.Session, rev *types.Review) (*st.TxResponse, error) {
+func (s *Storage) PersistSessionAsReady(sess *types.Session) (*st.TxResponse, error) {
 	sess.Status = "ready"
-	sess.Review = rev
-	log.With("PERSIST SESSION", sess).Infof("storage")
 	return s.SubmitPutTx(sess)
 }
 

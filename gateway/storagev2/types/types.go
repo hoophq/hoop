@@ -98,7 +98,7 @@ type ReviewGroup struct {
 }
 type Review struct {
 	Id             string           `json:"id"                      edn:"xt/id"`
-	OrgId          string           `json:"org" 				 	edn:"review/org"`
+	OrgId          string           `json:"org"                     edn:"review/org"`
 	CreatedAt      time.Time        `json:"created_at"              edn:"review/created-at"`
 	Type           string           `json:"type"                    edn:"review/type"`
 	Session        string           `json:"session"                 edn:"review/session"`
@@ -107,7 +107,7 @@ type Review struct {
 	Status         ReviewStatus     `json:"status"                  edn:"review/status"`
 	RevokeAt       *time.Time       `json:"revoke_at"               edn:"review/revoke-at"`
 	CreatedBy      string           `json:"created_by"              edn:"review/created-by"`
-	ReviewOwner    ReviewOwner      `json:"review_owner"			edn:"review/review-owner"`
+	ReviewOwner    ReviewOwner      `json:"review_owner"            edn:"review/review-owner"`
 	ConnectionId   string           `json:"connection"              edn:"review/connection"`
 	Connection     ReviewConnection `json:"review_connection"       edn:"review/review-connection"`
 	ReviewGroups   []ReviewGroup    `json:"review_groups,omitempty" edn:"review/review-groups"`
@@ -127,7 +127,7 @@ type Session struct {
 	UserName    string             `json:"user_name"    edn:"session/user-name"`
 	Type        string             `json:"type"         edn:"session/type"`
 	Connection  string             `json:"connection"   edn:"session/connection"`
-	Review      *Review            `json:"review" 		edn:"session/review"`
+	Review      *Review            `json:"review"       edn:"session/review"`
 	Verb        string             `json:"verb"         edn:"session/verb"`
 	Status      string             `json:"status"       edn:"session/status"`
 	DlpCount    int64              `json:"dlp_count"    edn:"session/dlp-count"`

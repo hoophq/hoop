@@ -23,7 +23,7 @@ type (
 		FindAll(context *user.Context) ([]types.Review, error)
 		FindBySessionID(sessionID string) (*types.Review, error)
 		FindApprovedJitReviews(ctx *user.Context, connID string) (*types.Review, error)
-		PersistSessionAsReady(s *types.Session, rev *types.Review) (*st.TxResponse, error)
+		PersistSessionAsReady(s *types.Session) (*st.TxResponse, error)
 		FindSessionBySessionId(sessionID string) (*types.Session, error)
 	}
 
@@ -195,7 +195,7 @@ func (s *Service) Review(context *user.Context, reviewID string, status types.Re
 		if err != nil {
 			return nil, err
 		}
-		_, err = s.Storage.PersistSessionAsReady(currentSession, rev)
+		_, err = s.Storage.PersistSessionAsReady(currentSession)
 		if err != nil {
 			return nil, err
 		}

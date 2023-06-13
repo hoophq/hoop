@@ -112,12 +112,8 @@ func (a *Handler) FindOne(c *gin.Context) {
 		return
 	}
 
-	log.With("Final do TESTEBBBBBBBB", sessionID).Infof("Session by ID")
-	log.With("Final do TESTE", review).Infof("Session by ID")
-
 	session.Review = review
 
-	log.With("Final do TESTE AAAAAAA", session).Infof("Session by ID")
 	c.PureJSON(http.StatusOK, session)
 }
 
