@@ -18,17 +18,17 @@ type (
 	}
 
 	storage interface {
-		Persist(context *user.Context, review *Review) (int64, error)
-		FindById(context *user.Context, id string) (*Review, error)
-		FindAll(context *user.Context) ([]Review, error)
-		FindBySessionID(sessionID string) (*Review, error)
-		FindApprovedJitReviews(ctx *user.Context, connID string) (*Review, error)
-		PersistSessionAsReady(s *types.Session) (*st.TxResponse, error)
+		Persist(context *user.Context, review *types.Review) (int64, error)
+		FindById(context *user.Context, id string) (*types.Review, error)
+		FindAll(context *user.Context) ([]types.Review, error)
+		FindBySessionID(sessionID string) (*types.Review, error)
+		FindApprovedJitReviews(ctx *user.Context, connID string) (*types.Review, error)
+		PersistSessionAsReady(s *types.Session, rev *types.Review) (*st.TxResponse, error)
 		FindSessionBySessionId(sessionID string) (*types.Session, error)
 	}
 
 	transportService interface {
-		ReviewStatusChange(ctx *user.Context, rev *Review)
+		ReviewStatusChange(ctx *user.Context, rev *types.Review)
 	}
 
 	Review struct {
@@ -75,32 +75,28 @@ var (
 )
 
 const (
-	StatusPending    Status = "PENDING"
-	StatusApproved   Status = "APPROVED"
-	StatusRejected   Status = "REJECTED"
-	StatusRevoked    Status = "REVOKED"
-	StatusProcessing Status = "PROCESSING"
-	StatusExecuted   Status = "EXECUTED"
-	StatusUnknown    Status = "UNKNOWN"
-
 	ReviewTypeJit     = "jit"
 	ReviewTypeOneTime = "onetime"
 )
 
-func (s *Service) FindOne(context *user.Context, id string) (*Review, error) {
+func (s *Service) FindOne(context *user.Context, id string) (*types.Review, error) {
 	return s.Storage.FindById(context, id)
 }
 
 // FindOneTimeReview returns an one time review by session id
-func (s *Service) FindBySessionID(sessionID string) (*Review, error) {
+func (s *Service) FindBySessionID(sessionID string) (*types.Review, error) {
 	return s.Storage.FindBySessionID(sessionID)
 }
 
-func (s *Service) FindAll(context *user.Context) ([]Review, error) {
+func (s *Service) FindSessionBySessionId(sessionID string) (*types.Session, error) {
+	return s.Storage.FindSessionBySessionId(sessionID)
+}
+
+func (s *Service) FindAll(context *user.Context) ([]types.Review, error) {
 	return s.Storage.FindAll(context)
 }
 
-func (s *Service) Persist(context *user.Context, review *Review) error {
+func (s *Service) Persist(context *user.Context, review *types.Review) error {
 	if review.Id == "" {
 		review.Id = uuid.NewString()
 	}
@@ -118,11 +114,11 @@ func (s *Service) Persist(context *user.Context, review *Review) error {
 }
 
 // FindApprovedJitReviews returns jit reviews that are active based on the access duration
-func (s *Service) FindApprovedJitReviews(ctx *user.Context, connID string) (*Review, error) {
+func (s *Service) FindApprovedJitReviews(ctx *user.Context, connID string) (*types.Review, error) {
 	return s.Storage.FindApprovedJitReviews(ctx, connID)
 }
 
-func (s *Service) Revoke(ctx *user.Context, reviewID string) (*Review, error) {
+func (s *Service) Revoke(ctx *user.Context, reviewID string) (*types.Review, error) {
 	rev, err := s.FindOne(ctx, reviewID)
 	if err != nil {
 		return nil, err
@@ -132,15 +128,15 @@ func (s *Service) Revoke(ctx *user.Context, reviewID string) (*Review, error) {
 		return nil, ErrNotFound
 	}
 	// only approved reviews could be revoked
-	if rev.Status != StatusApproved {
+	if rev.Status != types.ReviewStatusApproved {
 		return nil, ErrWrongState
 	}
-	rev.Status = StatusRevoked
+	rev.Status = types.ReviewStatusRevoked
 	return rev, s.Persist(ctx, rev)
 }
 
 // called by slack plugin and webapp
-func (s *Service) Review(context *user.Context, reviewID string, status Status) (*Review, error) {
+func (s *Service) Review(context *user.Context, reviewID string, status types.ReviewStatus) (*types.Review, error) {
 	rev, err := s.FindOne(context, reviewID)
 	if err != nil {
 		return nil, err
@@ -148,7 +144,7 @@ func (s *Service) Review(context *user.Context, reviewID string, status Status) 
 	if rev == nil {
 		return nil, ErrNotFound
 	}
-	if rev.Status != StatusPending {
+	if rev.Status != types.ReviewStatusPending {
 		return rev, ErrWrongState
 	}
 	isEligibleReviewer := false
@@ -165,7 +161,7 @@ func (s *Service) Review(context *user.Context, reviewID string, status Status) 
 	reviewsCount := len(rev.ReviewGroups)
 	approvedCount := 0
 
-	if status == StatusRejected {
+	if status == types.ReviewStatusRejected {
 		rev.Status = status
 	}
 
@@ -173,29 +169,33 @@ func (s *Service) Review(context *user.Context, reviewID string, status Status) 
 		if pb.IsInList(r.Group, context.User.Groups) {
 			t := time.Now().UTC().String()
 			rev.ReviewGroups[i].Status = status
-			rev.ReviewGroups[i].ReviewedBy = &Owner{Id: context.User.Id}
+			rev.ReviewGroups[i].ReviewedBy = &types.ReviewOwner{
+				Id:    context.User.Id,
+				Name:  context.User.Name,
+				Email: context.User.Email,
+			}
 			rev.ReviewGroups[i].ReviewDate = &t
 		}
-		if rev.ReviewGroups[i].Status == StatusApproved {
+		if rev.ReviewGroups[i].Status == types.ReviewStatusApproved {
 			approvedCount++
 		}
 	}
 
 	if reviewsCount == approvedCount {
 		rev.RevokeAt = func() *time.Time { t := time.Now().UTC().Add(rev.AccessDuration); return &t }()
-		rev.Status = StatusApproved
+		rev.Status = types.ReviewStatusApproved
 	}
 
 	if err := s.Persist(context, rev); err != nil {
 		return nil, err
 	}
 
-	if rev.Status == StatusApproved || rev.Status == StatusRejected {
+	if rev.Status == types.ReviewStatusApproved || rev.Status == types.ReviewStatusRejected {
 		currentSession, err := s.Storage.FindSessionBySessionId(rev.Session)
 		if err != nil {
 			return nil, err
 		}
-		_, err = s.Storage.PersistSessionAsReady(currentSession)
+		_, err = s.Storage.PersistSessionAsReady(currentSession, rev)
 		if err != nil {
 			return nil, err
 		}

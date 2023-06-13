@@ -7,6 +7,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/gateway/plugin"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
@@ -17,11 +18,11 @@ type (
 	}
 
 	service interface {
-		FindAll(context *user.Context) ([]Review, error)
-		FindOne(context *user.Context, id string) (*Review, error)
-		Review(context *user.Context, reviewID string, status Status) (*Review, error)
-		Revoke(ctx *user.Context, reviewID string) (*Review, error)
-		Persist(context *user.Context, review *Review) error
+		FindAll(context *user.Context) ([]types.Review, error)
+		FindOne(context *user.Context, id string) (*types.Review, error)
+		Review(context *user.Context, id string, status types.ReviewStatus) (*types.Review, error)
+		Revoke(ctx *user.Context, id string) (*types.Review, error)
+		Persist(context *user.Context, review *types.Review) error
 	}
 )
 
@@ -29,7 +30,7 @@ func (h *Handler) Put(c *gin.Context) {
 	ctx := user.ContextUser(c)
 	log := user.ContextLogger(c)
 
-	reviewID := c.Param("id")
+	id := c.Param("id")
 	var req map[string]string
 	err := c.ShouldBindJSON(&req)
 	if err != nil {
@@ -37,17 +38,17 @@ func (h *Handler) Put(c *gin.Context) {
 		return
 	}
 
-	var review *Review
-	status := Status(strings.ToUpper(string(req["status"])))
+	var review *types.Review
+	status := types.ReviewStatus(strings.ToUpper(string(req["status"])))
 	switch status {
-	case StatusApproved, StatusRejected:
-		review, err = h.Service.Review(ctx, reviewID, status)
-	case StatusRevoked:
+	case types.ReviewStatusApproved, types.ReviewStatusRejected:
+		review, err = h.Service.Review(ctx, id, status)
+	case types.ReviewStatusRevoked:
 		if !ctx.User.IsAdmin() {
 			c.AbortWithStatus(http.StatusForbidden)
 			return
 		}
-		review, err = h.Service.Revoke(ctx, reviewID)
+		review, err = h.Service.Revoke(ctx, id)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid status"})
 		return

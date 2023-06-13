@@ -177,8 +177,8 @@ func (p *slackPlugin) OnUpdate(oldState, newState *types.Plugin) error {
 
 // SendApprovedMessage sends a direct message to the owner of the review
 // if it's approved
-func SendApprovedMessage(ctx *user.Context, rev *review.Review) {
-	if rev.Status != review.StatusApproved {
+func SendApprovedMessage(ctx *user.Context, rev *types.Review) {
+	if rev.Status != types.ReviewStatusApproved {
 		return
 	}
 	if slacksvc := getSlackServiceInstance(ctx.Org.Id); slacksvc != nil {
@@ -217,7 +217,7 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		return nil, plugintypes.InternalErr("internal error, failed fetching review", err)
 	}
 	if rev != nil {
-		if rev.Status != review.StatusPending {
+		if rev.Status != types.ReviewStatusPending {
 			return nil, nil
 		}
 		sreq.ID = rev.Id
@@ -267,7 +267,7 @@ func parseSlackConfig(pconf *types.PluginConfig) (*slackConfig, error) {
 	return &sc, nil
 }
 
-func parseGroups(reviewGroups []review.Group) []string {
+func parseGroups(reviewGroups []types.ReviewGroup) []string {
 	groups := make([]string, 0)
 	for _, g := range reviewGroups {
 		groups = append(groups, g.Group)

@@ -13,7 +13,7 @@ import (
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
-	"github.com/runopsio/hoop/gateway/review"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	pluginsslack "github.com/runopsio/hoop/gateway/transport/plugins/slack"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
@@ -443,12 +443,12 @@ func (s *Server) addConnectionParams(clientArgs []string, pctx plugintypes.Conte
 	return encConnectionParams, nil
 }
 
-func (s *Server) ReviewStatusChange(ctx *user.Context, rev *review.Review) {
+func (s *Server) ReviewStatusChange(ctx *user.Context, rev *types.Review) {
 	pluginsslack.SendApprovedMessage(ctx, rev)
 	if clientStream := getClientStream(rev.Session); clientStream != nil {
 		payload := []byte(rev.Input)
 		packetType := pbclient.SessionOpenApproveOK
-		if rev.Status == review.StatusRejected {
+		if rev.Status == types.ReviewStatusRejected {
 			packetType = pbclient.SessionClose
 			payload = []byte(`access to connection has been denied`)
 			s.disconnectClient(rev.Session, fmt.Errorf("access to connection has been denied"))

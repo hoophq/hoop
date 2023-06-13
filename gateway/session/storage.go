@@ -225,21 +225,9 @@ func (s *Storage) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionLi
 	return sessionList, err
 }
 
-func (s *Storage) FindReviewBySessionID(sessionID string) (*Review, error) {
+func (s *Storage) FindReviewBySessionID(sessionID string) (*types.Review, error) {
 	var payload = fmt.Sprintf(`{:query {
-		:find [(pull ?r [:xt/id
-						:review/type
-						:review/status
-						:review/access-duration
-						:review/revoke-at
-						:review/input
-						:review/session
-						:review/connection
-						:review/created-by
-							{:review/connection [:xt/id :connection/name]}
-							{:review/review-groups [*
-								{:review-group/reviewed-by [:xt/id :user/name :user/email]}]}
-							{:review/created-by [:xt/id :user/name :user/email]}])]
+		:find [(pull ?r [*])]
 		:in [session-id]
 		:where [[?r :review/session session-id]
 				[?r :review/connection connid]
@@ -251,7 +239,7 @@ func (s *Storage) FindReviewBySessionID(sessionID string) (*Review, error) {
 		return nil, err
 	}
 
-	var reviews []*Review
+	var reviews []*types.Review
 	if err := edn.Unmarshal(b, &reviews); err != nil {
 		return nil, err
 	}
@@ -381,36 +369,37 @@ func (s *GenericStorageWriter) Write(c plugintypes.Context) error {
 	return err
 }
 
-func (s *Storage) PersistReview(ctx *user.Context, review *Review) (int64, error) {
-	reviewGroupIds := make([]string, 0)
+func (s *Storage) PersistReview(ctx *user.Context, review *types.Review) (int64, error) {
+	reviewGroupIds := make([]types.ReviewGroup, 0)
 
 	var payloads []st.TxEdnStruct
 	for _, r := range review.ReviewGroups {
-		reviewGroupIds = append(reviewGroupIds, r.Id)
-		xg := &XtdbGroup{
+		reviewGroupIds = append(reviewGroupIds, r)
+		xg := &types.ReviewGroup{
 			Id:         r.Id,
 			Group:      r.Group,
 			Status:     r.Status,
 			ReviewDate: r.ReviewDate,
 		}
 		if r.ReviewedBy != nil {
-			xg.ReviewedBy = &r.ReviewedBy.Id
+			xg.ReviewedBy = r.ReviewedBy
 		}
 		payloads = append(payloads, xg)
 	}
 
-	xtdbReview := &XtdbReview{
+	xtdbReview := &types.Review{
 		Id:             review.Id,
-		OrgId:          ctx.Org.Id,
+		CreatedAt:      review.CreatedAt,
+		OrgId:          review.OrgId,
 		Type:           review.Type,
-		SessionId:      review.Session,
-		ConnectionId:   review.Connection.Id,
-		CreatedBy:      ctx.User.Id,
+		Session:        review.Session,
+		Connection:     review.Connection,
+		CreatedBy:      review.CreatedBy,
 		Input:          review.Input,
 		AccessDuration: review.AccessDuration,
 		RevokeAt:       review.RevokeAt,
 		Status:         review.Status,
-		ReviewGroups:   reviewGroupIds,
+		ReviewGroups:   review.ReviewGroups,
 	}
 
 	tx, err := s.SubmitPutTx(append(payloads, xtdbReview)...)

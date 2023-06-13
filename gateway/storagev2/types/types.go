@@ -79,6 +79,38 @@ type Connection struct {
 	AgentId        string   `edn:"connection/agent"`
 }
 
+type ReviewOwner struct {
+	Id      string `json:"id,omitempty"   edn:"xt/id"`
+	Name    string `json:"name,omitempty" edn:"review-user/name"`
+	Email   string `json:"email"          edn:"review-user/email"`
+	SlackID string `json:"slack_id"       edn:"review-user/slack-id"`
+}
+type ReviewConnection struct {
+	Id   string `json:"id,omitempty" edn:"xt/id"`
+	Name string `json:"name"         edn:"review-connection/name"`
+}
+type ReviewGroup struct {
+	Id         string       `json:"id"          edn:"xt/id"`
+	Group      string       `json:"group"       edn:"review-group/group"`
+	Status     ReviewStatus `json:"status"      edn:"review-group/status"`
+	ReviewedBy *ReviewOwner `json:"reviewed_by" edn:"review-group/reviewed-by"`
+	ReviewDate *string      `json:"review_date" edn:"review-group/review_date"`
+}
+type Review struct {
+	Id             string           `json:"id"                      edn:"xt/id"`
+	OrgId          string           `json:"org" 				 	edn:"review/org"`
+	CreatedAt      time.Time        `json:"created_at"              edn:"review/created-at"`
+	Type           string           `json:"type"                    edn:"review/type"`
+	Session        string           `json:"session"                 edn:"review/session"`
+	Input          string           `json:"input"                   edn:"review/input"`
+	AccessDuration time.Duration    `json:"access_duration"         edn:"review/access-duration"`
+	Status         ReviewStatus     `json:"status"                  edn:"review/status"`
+	RevokeAt       *time.Time       `json:"revoke_at"               edn:"review/revoke-at"`
+	CreatedBy      ReviewOwner      `json:"created_by"              edn:"review/created-by"`
+	Connection     ReviewConnection `json:"connection"              edn:"review/connection"`
+	ReviewGroups   []ReviewGroup    `json:"review_groups,omitempty" edn:"review/review-groups"`
+}
+
 type SessionEventStream []any
 type SessionNonIndexedEventStreamList map[edn.Keyword][]SessionEventStream
 type SessionScript map[edn.Keyword]string
@@ -93,6 +125,7 @@ type Session struct {
 	UserName    string             `json:"user_name"    edn:"session/user-name"`
 	Type        string             `json:"type"         edn:"session/type"`
 	Connection  string             `json:"connection"   edn:"session/connection"`
+	Review      *Review            `json:"review" 		edn:"session/review"`
 	Verb        string             `json:"verb"         edn:"session/verb"`
 	Status      string             `json:"status"       edn:"session/status"`
 	DlpCount    int64              `json:"dlp_count"    edn:"session/dlp-count"`

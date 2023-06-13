@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/runopsio/hoop/common/log"
 	st "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
@@ -15,32 +16,9 @@ type (
 	Storage struct {
 		*st.Storage
 	}
-
-	XtdbReview struct {
-		Id             string        `edn:"xt/id"`
-		CreatedAt      time.Time     `edn:"review/created-at"`
-		OrgId          string        `edn:"review/org"`
-		Type           string        `edn:"review/type"`
-		SessionId      string        `edn:"review/session"`
-		ConnectionId   string        `edn:"review/connection"`
-		CreatedBy      string        `edn:"review/created-by"`
-		Input          string        `edn:"review/input"`
-		AccessDuration time.Duration `edn:"review/access-duration"`
-		RevokeAt       *time.Time    `edn:"review/revoke-at"`
-		Status         Status        `edn:"review/status"`
-		ReviewGroups   []string      `edn:"review/review-groups"`
-	}
-
-	XtdbGroup struct {
-		Id         string  `json:"id"          edn:"xt/id"`
-		Group      string  `json:"group"       edn:"review-group/group"`
-		Status     Status  `json:"status"      edn:"review-group/status"`
-		ReviewedBy *string `json:"reviewed_by" edn:"review-group/reviewed-by"`
-		ReviewDate *string `json:"review_date" edn:"review-group/review_date"`
-	}
 )
 
-func (s *Storage) FindAll(context *user.Context) ([]Review, error) {
+func (s *Storage) FindAll(context *user.Context) ([]types.Review, error) {
 	var payload = fmt.Sprintf(`{:query {
 		:find [(pull ?r [:xt/id
 						:review/type
@@ -55,25 +33,29 @@ func (s *Storage) FindAll(context *user.Context) ([]Review, error) {
 						{:review/created-by [:user/email :user/slack-id]}
 						{:review/connection [:connection/name]}])]
 		:in [org]
-		:where [[?r :review/org org]
-				[?r :review/connection connid]
-				[?c :xt/id connid]]}
+		:where [[?r :review/org org]]}
 		:in-args [%q]}`, context.Org.Id)
+
+	log.With("CCCCCCCC final do FindOne ", context).Infof("Storage")
+	log.With("BBBBBBBB final do FindOne ", payload).Infof("Storage")
 
 	b, err := s.Query([]byte(payload))
 	if err != nil {
 		return nil, err
 	}
 
-	var reviews []Review
+	log.With("AAAAA final do FindOne ", b).Infof("Storage")
+
+	var reviews []types.Review
 	if err := edn.Unmarshal(b, &reviews); err != nil {
 		return nil, err
 	}
 
+	log.With("final do FindAll ", reviews).Infof("Storage")
 	return reviews, nil
 }
 
-func (s *Storage) FindApprovedJitReviews(ctx *user.Context, connID string) (*Review, error) {
+func (s *Storage) FindApprovedJitReviews(ctx *user.Context, connID string) (*types.Review, error) {
 	var payload = fmt.Sprintf(`{:query {
 		:find [(pull ?r [:xt/id
 						:review/type
@@ -88,22 +70,22 @@ func (s *Storage) FindApprovedJitReviews(ctx *user.Context, connID string) (*Rev
 						{:review/connection [:connection/name]}])]
 		:in [arg-orgid arg-userid arg-connid arg-status arg-now-date]
 		:where [[?r :review/org arg-orgid]
-				[?r :review/created-by arg-userid]
-				[?r :review/connection arg-connid]
+				[?r {:review/created-by [:xt/id]} arg-userid]
+				[?r {:review/connection [:xt/id]} arg-connid]
 				[?r :review/status arg-status]
 				[?c :xt/id arg-connid]
 				[?r :review/revoke-at revoke-at]
 				[(< arg-now-date revoke-at)]]}
 		:in-args [%q %q %q %q #inst%q]}`,
 		ctx.Org.Id, ctx.User.Id,
-		connID, StatusApproved,
+		connID, types.ReviewStatusApproved,
 		time.Now().UTC().Format(time.RFC3339Nano))
 	b, err := s.Query([]byte(payload))
 	if err != nil {
 		return nil, err
 	}
 
-	var reviews []Review
+	var reviews []types.Review
 	if err := edn.Unmarshal(b, &reviews); err != nil {
 		return nil, err
 	}
@@ -115,7 +97,7 @@ func (s *Storage) FindApprovedJitReviews(ctx *user.Context, connID string) (*Rev
 	return &reviews[0], nil
 }
 
-func (s *Storage) FindById(ctx *user.Context, id string) (*Review, error) {
+func (s *Storage) FindById(ctx *user.Context, id string) (*types.Review, error) {
 	var payload = fmt.Sprintf(`{:query {
 		:find [(pull ?r [:xt/id
 						:review/type
@@ -134,7 +116,7 @@ func (s *Storage) FindById(ctx *user.Context, id string) (*Review, error) {
 		:in [org id]
 		:where [[?r :review/org org]
 				[?r :xt/id id]
-				[?r :review/connection connid]
+				[?r {:review/connection [:xt/id]} connid]
 				[?c :xt/id connid]]}
         :in-args [%q %q]}`, ctx.Org.Id, id)
 
@@ -143,7 +125,7 @@ func (s *Storage) FindById(ctx *user.Context, id string) (*Review, error) {
 		return nil, err
 	}
 
-	var reviews []*Review
+	var reviews []*types.Review
 	if err := edn.Unmarshal(b, &reviews); err != nil {
 		return nil, err
 	}
@@ -167,8 +149,10 @@ func (s *Storage) queryDecoder(query string, into any, args ...any) error {
 	return edn.Unmarshal(httpBody, into)
 }
 
-func (s *Storage) PersistSessionAsReady(sess *types.Session) (*st.TxResponse, error) {
+func (s *Storage) PersistSessionAsReady(sess *types.Session, rev *types.Review) (*st.TxResponse, error) {
 	sess.Status = "ready"
+	sess.Review = rev
+	log.With("PERSIST SESSION", sess).Infof("storage")
 	return s.SubmitPutTx(sess)
 }
 
@@ -198,7 +182,7 @@ func (s *Storage) FindSessionBySessionId(sessionID string) (*types.Session, erro
 	return nil, nil
 }
 
-func (s *Storage) FindBySessionID(sessionID string) (*Review, error) {
+func (s *Storage) FindBySessionID(sessionID string) (*types.Review, error) {
 	var payload = fmt.Sprintf(`{:query {
 		:find [(pull ?r [:xt/id
 						:review/type
@@ -215,7 +199,7 @@ func (s *Storage) FindBySessionID(sessionID string) (*Review, error) {
 							{:review/created-by [:xt/id :user/name :user/email :user/slack-id]}])]
 		:in [session-id]
 		:where [[?r :review/session session-id]
-				[?r :review/connection connid]
+				[?r {:review/connection [:xt/id]} connid]
 				[?c :xt/id connid]]}
         :in-args [%q]}`, sessionID)
 
@@ -224,7 +208,7 @@ func (s *Storage) FindBySessionID(sessionID string) (*Review, error) {
 		return nil, err
 	}
 
-	var reviews []*Review
+	var reviews []*types.Review
 	if err := edn.Unmarshal(b, &reviews); err != nil {
 		return nil, err
 	}
@@ -236,37 +220,37 @@ func (s *Storage) FindBySessionID(sessionID string) (*Review, error) {
 	return reviews[0], nil
 }
 
-func (s *Storage) Persist(ctx *user.Context, review *Review) (int64, error) {
-	reviewGroupIds := make([]string, 0)
+func (s *Storage) Persist(ctx *user.Context, review *types.Review) (int64, error) {
+	reviewGroups := make([]types.ReviewGroup, 0)
 
 	var payloads []st.TxEdnStruct
 	for _, r := range review.ReviewGroups {
-		reviewGroupIds = append(reviewGroupIds, r.Id)
-		xg := &XtdbGroup{
+		reviewGroups = append(reviewGroups, r)
+		xg := &types.ReviewGroup{
 			Id:         r.Id,
 			Group:      r.Group,
 			Status:     r.Status,
 			ReviewDate: r.ReviewDate,
 		}
 		if r.ReviewedBy != nil {
-			xg.ReviewedBy = &r.ReviewedBy.Id
+			xg.ReviewedBy = r.ReviewedBy
 		}
 		payloads = append(payloads, xg)
 	}
 
-	xtdbReview := &XtdbReview{
+	xtdbReview := &types.Review{
 		Id:             review.Id,
 		CreatedAt:      review.CreatedAt,
-		OrgId:          ctx.Org.Id,
+		OrgId:          review.OrgId,
 		Type:           review.Type,
-		SessionId:      review.Session,
-		ConnectionId:   review.Connection.Id,
-		CreatedBy:      ctx.User.Id,
+		Session:        review.Session,
+		Connection:     review.Connection,
+		CreatedBy:      review.CreatedBy,
 		Input:          review.Input,
 		AccessDuration: review.AccessDuration,
 		RevokeAt:       review.RevokeAt,
 		Status:         review.Status,
-		ReviewGroups:   reviewGroupIds,
+		ReviewGroups:   review.ReviewGroups,
 	}
 
 	tx, err := s.SubmitPutTx(append(payloads, xtdbReview)...)
