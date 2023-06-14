@@ -101,9 +101,9 @@ func (s *Service) Persist(context *user.Context, review *types.Review) error {
 		review.Id = uuid.NewString()
 	}
 
-	for i, r := range review.ReviewGroups {
+	for i, r := range review.ReviewGroupsData {
 		if r.Id == "" {
-			review.ReviewGroups[i].Id = uuid.NewString()
+			review.ReviewGroupsData[i].Id = uuid.NewString()
 		}
 	}
 
@@ -148,7 +148,7 @@ func (s *Service) Review(context *user.Context, reviewID string, status types.Re
 		return rev, ErrWrongState
 	}
 	isEligibleReviewer := false
-	for _, r := range rev.ReviewGroups {
+	for _, r := range rev.ReviewGroupsData {
 		if pb.IsInList(r.Group, context.User.Groups) {
 			isEligibleReviewer = true
 			break
@@ -158,25 +158,25 @@ func (s *Service) Review(context *user.Context, reviewID string, status types.Re
 		return nil, ErrNotEligible
 	}
 
-	reviewsCount := len(rev.ReviewGroups)
+	reviewsCount := len(rev.ReviewGroupsData)
 	approvedCount := 0
 
 	if status == types.ReviewStatusRejected {
 		rev.Status = status
 	}
 
-	for i, r := range rev.ReviewGroups {
+	for i, r := range rev.ReviewGroupsData {
 		if pb.IsInList(r.Group, context.User.Groups) {
 			t := time.Now().UTC().String()
-			rev.ReviewGroups[i].Status = status
-			rev.ReviewGroups[i].ReviewedBy = &types.ReviewOwner{
+			rev.ReviewGroupsData[i].Status = status
+			rev.ReviewGroupsData[i].ReviewedBy = &types.ReviewOwner{
 				Id:    context.User.Id,
 				Name:  context.User.Name,
 				Email: context.User.Email,
 			}
-			rev.ReviewGroups[i].ReviewDate = &t
+			rev.ReviewGroupsData[i].ReviewDate = &t
 		}
-		if rev.ReviewGroups[i].Status == types.ReviewStatusApproved {
+		if rev.ReviewGroupsData[i].Status == types.ReviewStatusApproved {
 			approvedCount++
 		}
 	}

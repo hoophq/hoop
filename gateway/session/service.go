@@ -111,9 +111,9 @@ func (s *Service) PersistReview(context *user.Context, review *types.Review) err
 		review.Id = uuid.NewString()
 	}
 
-	for i, r := range review.ReviewGroups {
+	for i, r := range review.ReviewGroupsData {
 		if r.Id == "" {
-			review.ReviewGroups[i].Id = uuid.NewString()
+			review.ReviewGroupsData[i].Id = uuid.NewString()
 		}
 	}
 

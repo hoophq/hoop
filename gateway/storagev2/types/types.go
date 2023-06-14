@@ -97,20 +97,21 @@ type ReviewGroup struct {
 	ReviewDate *string      `json:"review_date" edn:"review-group/review_date"`
 }
 type Review struct {
-	Id             string           `json:"id"                      edn:"xt/id"`
-	OrgId          string           `json:"org"                     edn:"review/org"`
-	CreatedAt      time.Time        `json:"created_at"              edn:"review/created-at"`
-	Type           string           `json:"type"                    edn:"review/type"`
-	Session        string           `json:"session"                 edn:"review/session"`
-	Input          string           `json:"input"                   edn:"review/input"`
-	AccessDuration time.Duration    `json:"access_duration"         edn:"review/access-duration"`
-	Status         ReviewStatus     `json:"status"                  edn:"review/status"`
-	RevokeAt       *time.Time       `json:"revoke_at"               edn:"review/revoke-at"`
-	CreatedBy      string           `json:"created_by"              edn:"review/created-by"`
-	ReviewOwner    ReviewOwner      `json:"review_owner"            edn:"review/review-owner"`
-	ConnectionId   string           `json:"connection"              edn:"review/connection"`
-	Connection     ReviewConnection `json:"review_connection"       edn:"review/review-connection"`
-	ReviewGroups   []ReviewGroup    `json:"review_groups,omitempty" edn:"review/review-groups"`
+	Id               string           `json:"id"                           edn:"xt/id"`
+	OrgId            string           `json:"org"                          edn:"review/org"`
+	CreatedAt        time.Time        `json:"created_at"                   edn:"review/created-at"`
+	Type             string           `json:"type"                         edn:"review/type"`
+	Session          string           `json:"session"                      edn:"review/session"`
+	Input            string           `json:"input"                        edn:"review/input"`
+	AccessDuration   time.Duration    `json:"access_duration"              edn:"review/access-duration"`
+	Status           ReviewStatus     `json:"status"                       edn:"review/status"`
+	RevokeAt         *time.Time       `json:"revoke_at"                    edn:"review/revoke-at"`
+	CreatedBy        string           `json:"created_by"                   edn:"review/created-by"`
+	ReviewOwner      ReviewOwner      `json:"review_owner"                 edn:"review/review-owner"`
+	ConnectionId     string           `json:"connection"                   edn:"review/connection"`
+	Connection       ReviewConnection `json:"review_connection"            edn:"review/review-connection"`
+	ReviewGroupsIds  []string         `json:"review_groups,omitempty"      edn:"review/review-groups"`
+	ReviewGroupsData []ReviewGroup    `json:"review_groups_data,omitempty" edn:"review/review-groups-data"`
 }
 
 type SessionEventStream []any

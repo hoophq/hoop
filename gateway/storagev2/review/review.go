@@ -10,7 +10,21 @@ import (
 
 func FindOne(storageCtx *storagev2.Context, reviewID string) (*types.Review, error) {
 	var payload = fmt.Sprintf(`{:query {
-		:find [(pull ?r [*])]
+		:find [(pull ?r [:xt/id
+			:review/type
+			:review/status
+			:review/access-duration
+			:review/created-at
+			:review/revoke-at
+			:review/input
+			:review/session
+			:review/connection
+			:review/review-groups-data
+			:review/created-by
+				{:review/connection [:xt/id :connection/name]}
+				{:review/review-groups [*
+					{:review-group/reviewed-by [:xt/id :user/name :user/email]}]}
+				{:review/created-by [:xt/id :user/name :user/email]}])]
 		:in [org-id review-id]
 		:where [[?r :review/org org-id]
 				[?r :xt/id review-id]

@@ -182,10 +182,10 @@ func SendApprovedMessage(ctx *user.Context, rev *types.Review) {
 		return
 	}
 	if slacksvc := getSlackServiceInstance(ctx.Org.Id); slacksvc != nil {
-		if rev.CreatedBy.SlackID != "" {
+		if rev.ReviewOwner.SlackID != "" {
 			log.Debugf("sending direct slack message to email=%v, slackid=%v",
-				rev.CreatedBy.Email, rev.CreatedBy.SlackID)
-			if err := slacksvc.SendDirectMessage(rev.Session, rev.CreatedBy.SlackID); err != nil {
+				rev.ReviewOwner.Email, rev.ReviewOwner.SlackID)
+			if err := slacksvc.SendDirectMessage(rev.Session, rev.ReviewOwner.SlackID); err != nil {
 				log.Warn(err)
 			}
 		}
@@ -222,7 +222,7 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		}
 		sreq.ID = rev.Id
 		sreq.WebappURL = fmt.Sprintf("%s/plugins/reviews/%s", p.idpProvider.ApiURL, rev.Id)
-		sreq.ApprovalGroups = parseGroups(rev.ReviewGroups)
+		sreq.ApprovalGroups = parseGroups(rev.ReviewGroupsData)
 		if rev.AccessDuration > 0 {
 			sreq.SessionTime = &rev.AccessDuration
 		}

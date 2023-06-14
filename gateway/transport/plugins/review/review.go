@@ -134,9 +134,10 @@ func (r *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 			Name:  pctx.UserName,
 			Email: pctx.UserEmail,
 		},
-		AccessDuration: accessDuration,
-		Status:         types.ReviewStatusPending,
-		ReviewGroups:   reviewGroups,
+		AccessDuration:   accessDuration,
+		Status:           types.ReviewStatusPending,
+		ReviewGroupsIds:  groups,
+		ReviewGroupsData: reviewGroups,
 	}
 
 	if !isJitReview {

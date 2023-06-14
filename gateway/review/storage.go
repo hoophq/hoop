@@ -217,7 +217,7 @@ func (s *Storage) Persist(ctx *user.Context, review *types.Review) (int64, error
 	reviewGroups := make([]types.ReviewGroup, 0)
 
 	var payloads []st.TxEdnStruct
-	for _, r := range review.ReviewGroups {
+	for _, r := range review.ReviewGroupsData {
 		reviewGroups = append(reviewGroups, r)
 		xg := &types.ReviewGroup{
 			Id:         r.Id,
@@ -232,20 +232,21 @@ func (s *Storage) Persist(ctx *user.Context, review *types.Review) (int64, error
 	}
 
 	xtdbReview := &types.Review{
-		Id:             review.Id,
-		CreatedAt:      review.CreatedAt,
-		OrgId:          review.OrgId,
-		Type:           review.Type,
-		Session:        review.Session,
-		Connection:     review.Connection,
-		ConnectionId:   review.ConnectionId,
-		CreatedBy:      review.CreatedBy,
-		ReviewOwner:    review.ReviewOwner,
-		Input:          review.Input,
-		AccessDuration: review.AccessDuration,
-		RevokeAt:       review.RevokeAt,
-		Status:         review.Status,
-		ReviewGroups:   review.ReviewGroups,
+		Id:               review.Id,
+		CreatedAt:        review.CreatedAt,
+		OrgId:            review.OrgId,
+		Type:             review.Type,
+		Session:          review.Session,
+		Connection:       review.Connection,
+		ConnectionId:     review.ConnectionId,
+		CreatedBy:        review.CreatedBy,
+		ReviewOwner:      review.ReviewOwner,
+		Input:            review.Input,
+		AccessDuration:   review.AccessDuration,
+		RevokeAt:         review.RevokeAt,
+		Status:           review.Status,
+		ReviewGroupsIds:  review.ReviewGroupsIds,
+		ReviewGroupsData: review.ReviewGroupsData,
 	}
 
 	tx, err := s.SubmitPutTx(append(payloads, xtdbReview)...)
