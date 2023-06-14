@@ -52,7 +52,7 @@ func (s *Storage) FindAll(context *user.Context) ([]Review, error) {
 						:review/session
 						:review/connection
 						:review/created-by
-						{:review/created-by [:user/email]}
+						{:review/created-by [:user/email :user/slack-id]}
 						{:review/connection [:connection/name]}])]
 		:in [org]
 		:where [[?r :review/org org]
@@ -84,7 +84,7 @@ func (s *Storage) FindApprovedJitReviews(ctx *user.Context, connID string) (*Rev
 						:review/session
 						:review/connection
 						:review/created-by
-						{:review/created-by [:user/email]}
+						{:review/created-by [:user/email :user/slack-id]}
 						{:review/connection [:connection/name]}])]
 		:in [arg-orgid arg-userid arg-connid arg-status arg-now-date]
 		:where [[?r :review/org arg-orgid]
@@ -129,8 +129,8 @@ func (s *Storage) FindById(ctx *user.Context, id string) (*Review, error) {
 						:review/created-by
 							{:review/connection [:xt/id :connection/name]}
 							{:review/review-groups [*
-								{:review-group/reviewed-by [:xt/id :user/name :user/email]}]}
-							{:review/created-by [:xt/id :user/name :user/email]}])]
+								{:review-group/reviewed-by [:xt/id :user/name :user/email :user/slack-id]}]}
+							{:review/created-by [:xt/id :user/name :user/email :user/slack-id]}])]
 		:in [org id]
 		:where [[?r :review/org org]
 				[?r :xt/id id]
@@ -212,7 +212,7 @@ func (s *Storage) FindBySessionID(sessionID string) (*Review, error) {
 							{:review/connection [:xt/id :connection/name]}
 							{:review/review-groups [*
 								{:review-group/reviewed-by [:xt/id :user/name :user/email]}]}
-							{:review/created-by [:xt/id :user/name :user/email]}])]
+							{:review/created-by [:xt/id :user/name :user/email :user/slack-id]}])]
 		:in [session-id]
 		:where [[?r :review/session session-id]
 				[?r :review/connection connid]

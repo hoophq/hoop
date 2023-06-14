@@ -19,7 +19,6 @@ import (
 	"github.com/runopsio/hoop/gateway/indexer"
 	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/review"
-	"github.com/runopsio/hoop/gateway/review/jit"
 	"github.com/runopsio/hoop/gateway/runbooks"
 	"github.com/runopsio/hoop/gateway/security"
 	"github.com/runopsio/hoop/gateway/security/idp"
@@ -39,7 +38,6 @@ type (
 		IndexerHandler    indexer.Handler
 		ReviewHandler     review.Handler
 		RunbooksHandler   runbooks.Handler
-		JitHandler        jit.Handler
 		SecurityHandler   security.Handler
 		IDProvider        *idp.Provider
 		Profile           string
@@ -137,6 +135,11 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest,
 		api.AdminOnly,
 		api.ConnectionHandler.Put)
+	// DEPRECATED in flavor of POST /sessions
+	route.POST("/connections/:name/exec",
+		api.Authenticate,
+		api.TrackRequest,
+		api.ConnectionHandler.RunExec)
 	route.GET("/connections",
 		api.Authenticate,
 		api.TrackRequest,
@@ -150,11 +153,6 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest,
 		api.AdminOnly,
 		api.ConnectionHandler.Evict)
-	// DEPRECATED in flavor of POST /sessions
-	route.POST("/connections/:name/exec",
-		api.Authenticate,
-		api.TrackRequest,
-		api.ConnectionHandler.RunExec)
 
 	route.POST("/proxymanager/connect",
 		api.Authenticate,
@@ -184,23 +182,6 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest,
 		api.ReviewHandler.Put)
-	// DEPRECATED in flavor of POST /api/sessions/:session_id/exec
-	route.POST("/reviews/:id/exec",
-		api.Authenticate,
-		api.TrackRequest,
-		api.ReviewHandler.RunExec)
-
-	route.GET("/jits",
-		api.Authenticate,
-		api.TrackRequest,
-		api.JitHandler.FindAll)
-	route.GET("/jits/:id",
-		api.Authenticate,
-		api.TrackRequest,
-		api.JitHandler.FindOne)
-	route.PUT("/jits/:id",
-		api.Authenticate,
-		api.JitHandler.Put)
 
 	route.POST("/agents",
 		api.Authenticate,
@@ -275,7 +256,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.POST("/sessions/:session_id/exec",
 		api.Authenticate,
 		api.TrackRequest,
-		api.SessionHandler.RunExec)
+		api.SessionHandler.RunReviewedExec)
 
 	route.POST("/plugins/indexer/sessions/search",
 		api.Authenticate,
@@ -288,7 +269,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest,
 		api.RunbooksHandler.FindAll,
 	)
-	// DEPRECATED in flavor of POST /sessions
+
 	route.POST("/plugins/runbooks/connections/:name/exec",
 		api.Authenticate,
 		api.TrackRequest,

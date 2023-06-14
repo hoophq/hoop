@@ -24,7 +24,6 @@ import (
 	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/review"
-	"github.com/runopsio/hoop/gateway/review/jit"
 	"github.com/runopsio/hoop/gateway/runbooks"
 	"github.com/runopsio/hoop/gateway/security"
 	"github.com/runopsio/hoop/gateway/security/idp"
@@ -40,7 +39,6 @@ import (
 	pluginsdcm "github.com/runopsio/hoop/gateway/transport/plugins/dcm"
 	pluginsdlp "github.com/runopsio/hoop/gateway/transport/plugins/dlp"
 	pluginsindex "github.com/runopsio/hoop/gateway/transport/plugins/index"
-	pluginsjit "github.com/runopsio/hoop/gateway/transport/plugins/jit"
 	pluginsreview "github.com/runopsio/hoop/gateway/transport/plugins/review"
 	pluginsslack "github.com/runopsio/hoop/gateway/transport/plugins/slack"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
@@ -74,7 +72,6 @@ func Run() {
 	userService := user.Service{Storage: &user.Storage{Storage: s}}
 	sessionService := session.Service{Storage: &session.Storage{Storage: s}}
 	reviewService := review.Service{Storage: &review.Storage{Storage: s}}
-	jitService := jit.Service{Storage: &jit.Storage{Storage: s}}
 	notificationService := getNotification()
 	securityService := security.Service{
 		Storage:     &security.Storage{Storage: s},
@@ -93,11 +90,9 @@ func Run() {
 		AgentHandler:      agent.Handler{Service: &agentService},
 		ConnectionHandler: connection.Handler{Service: &connectionService},
 		UserHandler:       user.Handler{Service: &userService, Analytics: analyticsService},
-		PluginHandler:     plugin.Handler{Service: &pluginService},
 		SessionHandler:    session.Handler{Service: &sessionService, ConnectionService: &connectionService, PluginService: &pluginService},
 		IndexerHandler:    indexer.Handler{},
 		ReviewHandler:     review.Handler{Service: &reviewService, PluginService: &pluginService},
-		JitHandler:        jit.Handler{Service: &jitService},
 		SecurityHandler:   security.Handler{Service: &securityService},
 		RunbooksHandler:   runbooks.Handler{PluginService: &pluginService, ConnectionService: &connectionService},
 		IDProvider:        idProvider,
@@ -114,7 +109,6 @@ func Run() {
 		PluginService:        pluginService,
 		SessionService:       sessionService,
 		ReviewService:        reviewService,
-		JitService:           jitService,
 		NotificationService:  notificationService,
 		IDProvider:           idProvider,
 		Profile:              profile,
@@ -139,16 +133,28 @@ func Run() {
 		pluginsindex.New(
 			&session.Storage{Storage: s},
 			&plugin.Storage{Storage: s}),
-		pluginsjit.New(idProvider.ApiURL),
 		pluginsdlp.New(),
 		pluginsrbac.New(),
 		pluginsslack.New(
 			&review.Service{Storage: &review.Storage{Storage: s}, TransportService: g},
-			&jit.Service{Storage: &jit.Storage{Storage: s}, TransportService: g},
+			&plugin.Service{Storage: &plugin.Storage{Storage: s}},
 			&user.Service{Storage: &user.Storage{Storage: s}},
-			idProvider.ApiURL),
+			idProvider),
 		pluginsdcm.New(&plugin.Service{Storage: &plugin.Storage{Storage: s}}),
 	}
+
+	for _, p := range g.RegisteredPlugins {
+		pluginContext := plugintypes.Context{}
+		switch p.Name() {
+		case plugintypes.PluginAuditName:
+			pluginContext.ParamsData = map[string]any{pluginsaudit.StorageWriterParam: sessionService.Storage.NewGenericStorageWriter()}
+		}
+		if err := p.OnStartup(pluginContext); err != nil {
+			log.Fatalf("failed initializing plugin %s, reason=%v", p.Name(), err)
+		}
+	}
+
+	a.PluginHandler = plugin.Handler{Service: &pluginService, RegisteredPlugins: g.RegisteredPlugins}
 
 	if g.PyroscopeIngestURL != "" && g.PyroscopeAuthToken != "" {
 		log.Infof("starting profiler, ingest-url=%v", g.PyroscopeIngestURL)
@@ -169,7 +175,6 @@ func Run() {
 		log.Fatalf("failed starting sentry, err=%v", err)
 	}
 	reviewService.TransportService = g
-	jitService.TransportService = g
 
 	//start scheduler for "weekly" report service (production mode)
 	if profile != pb.DevProfile {
@@ -182,7 +187,7 @@ func Run() {
 
 	if profile == pb.DevProfile {
 		if err := a.CreateTrialEntities(); err != nil {
-			panic(err)
+			log.Fatal(err)
 		}
 	}
 	if grpc.ShouldDebugGrpc() {

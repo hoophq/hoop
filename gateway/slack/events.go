@@ -30,44 +30,9 @@ func (s *SlackService) processEvents(respCh chan *MessageReviewResponse) {
 		case socketmode.EventTypeConnected:
 			log.Info("connected to Slack with Socket Mode")
 		case socketmode.EventTypeInteractive:
-			cb, ok := evt.Data.(slack.InteractionCallback)
-			if !ok {
-				log.Debugf("ignored %+v\n", evt)
-				continue
-			}
-			log.Infof("received interaction, user=%v, domain=%s, metaevent=%s",
-				cb.User.ID, cb.Team.Domain, cb.Message.Metadata.EventType)
-
-			switch cb.Type {
-			case slack.InteractionTypeBlockActions:
-				// See https://api.slack.com/apis/connections/socket-implement#button
-				reviewResponse := MessageReviewResponse{
-					EventKind: fmt.Sprintf("%v", cb.Message.Metadata.EventType),
-					ID:        fmt.Sprintf("%v", cb.Message.Metadata.EventPayload[reviewIDMetadataKey]),
-					SessionID: fmt.Sprintf("%v", cb.Message.Metadata.EventPayload[sessionIDMetadataKey]),
-					Status:    "rejected",
-					SlackID:   cb.User.ID,
-					item:      cb,
-				}
-				if cb.ActionCallback.BlockActions[0].ActionID == "review-approved" {
-					reviewResponse.Status = "approved"
-				}
-				// reviewUID:GroupName:IndexNo
-				blockID := cb.ActionCallback.BlockActions[0].BlockID
-				if parts := strings.Split(blockID, ":"); len(parts) == 3 {
-					reviewResponse.GroupName = parts[1]
-				}
-				select {
-				case respCh <- &reviewResponse:
-				case <-time.After(time.Second * 2):
-					log.Warnf("timeout (2s) on sending review response, id=%v, status=%v",
-						reviewResponse.ID, reviewResponse.Status)
-				}
-			default:
-			}
-			log.Info("sending ack back to slack!")
-			var ack any
-			s.socketClient.Ack(*evt.Request, ack)
+			s.processInteractive(respCh, evt)
+		case socketmode.EventTypeSlashCommand:
+			s.processSlashCommandRequest(evt)
 		case socketmode.EventTypeHello:
 			log.Info("socket live, received ping from slack")
 		case socketmode.EventTypeIncomingError:
@@ -77,4 +42,84 @@ func (s *SlackService) processEvents(respCh chan *MessageReviewResponse) {
 			log.Errorf("event not implemented %s", evt.Type)
 		}
 	}
+}
+
+func (s *SlackService) processInteractive(respCh chan *MessageReviewResponse, ev socketmode.Event) {
+	cb, ok := ev.Data.(slack.InteractionCallback)
+	if !ok {
+		log.Debugf("ignored %+v\n", ev)
+		return
+	}
+	log.Infof("received interaction, user=%v, domain=%s, metaevent=%s",
+		cb.User.ID, cb.Team.Domain, cb.Message.Metadata.EventType)
+	switch cb.Type {
+	case slack.InteractionTypeBlockActions:
+		// See https://api.slack.com/apis/connections/socket-implement#button
+		reviewResponse := MessageReviewResponse{
+			EventKind: fmt.Sprintf("%v", cb.Message.Metadata.EventType),
+			ID:        fmt.Sprintf("%v", cb.Message.Metadata.EventPayload[reviewIDMetadataKey]),
+			SessionID: fmt.Sprintf("%v", cb.Message.Metadata.EventPayload[sessionIDMetadataKey]),
+			Status:    "rejected",
+			SlackID:   cb.User.ID,
+			item:      cb,
+		}
+		if cb.ActionCallback.BlockActions[0].ActionID == "review-approved" {
+			reviewResponse.Status = "approved"
+		}
+		// reviewUID:GroupName:IndexNo
+		blockID := cb.ActionCallback.BlockActions[0].BlockID
+		if parts := strings.Split(blockID, ":"); len(parts) == 3 {
+			reviewResponse.GroupName = parts[1]
+		}
+		select {
+		case respCh <- &reviewResponse:
+		case <-time.After(time.Second * 2):
+			log.Warnf("timeout (2s) on sending review response, id=%v, status=%v",
+				reviewResponse.ID, reviewResponse.Status)
+		}
+	default:
+	}
+	log.Info("sending ack back to slack!")
+	var ack any
+	s.socketClient.Ack(*ev.Request, ack)
+}
+
+func (s *SlackService) processSlashCommandRequest(ev socketmode.Event) {
+	cmd, ok := ev.Data.(slack.SlashCommand)
+	if !ok {
+		fmt.Printf("Ignored %+v\n", ev)
+		return
+	}
+
+	log.Infof("received slash command, slackid=%v, domain=%s, command=%v",
+		cmd.UserID, cmd.TeamDomain, cmd.Command)
+
+	var modalContent string
+	authURL, err := s.callback.CommandSlackSubscribe(cmd.Command, cmd.UserID)
+	switch err {
+	case nil:
+		modalContent = fmt.Sprintf("Visit *<%s|this link>* to subscribe to notifications.", authURL)
+	default:
+		modalContent = fmt.Sprintf("⚠️ failed subscribing!\nreason=%v", err)
+	}
+	viewresp, err := s.apiClient.OpenView(cmd.TriggerID, slack.ModalViewRequest{
+		ClearOnClose: true,
+		Type:         slack.VTModal,
+		Title: &slack.TextBlockObject{
+			Type: slack.PlainTextType,
+			Text: "Subscribe to Hoop",
+		},
+		Blocks: slack.Blocks{
+			BlockSet: []slack.Block{
+				slack.NewSectionBlock(&slack.TextBlockObject{
+					Type: slack.MarkdownType,
+					Text: modalContent,
+				}, nil, nil),
+			},
+		},
+	})
+	if err != nil {
+		log.Warnf("failed sending slash command response, view=%#v, err=%v", viewresp, err)
+	}
+	s.socketClient.Ack(*ev.Request, nil)
 }

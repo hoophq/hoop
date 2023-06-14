@@ -166,7 +166,7 @@ func getAccessToken(c *gin.Context) string {
 }
 
 // TODO: Refactor to use sessionapi.RunExec
-func (h *Handler) RunExec(c *gin.Context) {
+func (h *Handler) RunReviewedExec(c *gin.Context) {
 	ctx := user.ContextUser(c)
 	log := user.ContextLogger(c)
 	storageCtx := storagev2.ParseContext(c)
@@ -185,6 +185,11 @@ func (h *Handler) RunExec(c *gin.Context) {
 	if err != nil {
 		log.Errorf("failed retrieving review, err=%v", err)
 		c.JSON(http.StatusInternalServerError, &clientexec.ExecErrResponse{Message: "failed retrieving review"})
+	}
+
+	if review == nil {
+		c.JSON(http.StatusNotFound, &clientexec.ExecErrResponse{Message: "reviewed session not found"})
+		return
 	}
 
 	reviewID := review.Id

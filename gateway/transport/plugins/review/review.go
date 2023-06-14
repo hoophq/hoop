@@ -12,6 +12,7 @@ import (
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/review"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
@@ -34,6 +35,7 @@ func New(reviewSvc *review.Service, userSvc *user.Service, notificationSvc notif
 
 func (r *reviewPlugin) Name() string                          { return plugintypes.PluginReviewName }
 func (r *reviewPlugin) OnStartup(_ plugintypes.Context) error { return nil }
+func (p *reviewPlugin) OnUpdate(_, _ *types.Plugin) error     { return nil }
 func (r *reviewPlugin) OnConnect(_ plugintypes.Context) error { return nil }
 
 func (r *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {

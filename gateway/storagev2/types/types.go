@@ -24,6 +24,37 @@ type APIContext struct {
 	UserGroups []string
 }
 
+// Plugin for now is an auxiliar type
+// this information should always be derived from gateway/plugin/service.go#Plugin
+type Plugin struct {
+	OrgID       string
+	Name        string
+	Connections []PluginConnection
+	Config      *PluginConfig
+}
+
+// PluginConfig for now is an auxiliar type
+// this information should always be derived from gateway/plugin/service.go#PluginConfig
+type PluginConfig struct {
+	EnvVars map[string]string
+}
+
+// PluginConfig for now is an auxiliar type
+// this information should always be derived from gateway/plugin/service.go#Connection
+type PluginConnection struct {
+	ID           string
+	ConnectionID string
+	Name         string
+	Config       []string
+}
+
+type Login struct {
+	ID       string `edn:"xt/id"`
+	Redirect string `edn:"login/redirect"`
+	Outcome  string `edn:"login/outcome"`
+	SlackID  string `edn:"login/slack-id"`
+}
+
 type Client struct {
 	ID                    string            `edn:"xt/id"`
 	OrgID                 string            `edn:"client/org"`

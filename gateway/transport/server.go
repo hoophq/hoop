@@ -24,7 +24,6 @@ import (
 	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/review"
-	"github.com/runopsio/hoop/gateway/review/jit"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/session"
 	"github.com/runopsio/hoop/gateway/storagev2"
@@ -47,7 +46,6 @@ type (
 		PluginService       plugin.Service
 		SessionService      session.Service
 		ReviewService       review.Service
-		JitService          jit.Service
 		NotificationService notification.Service
 
 		IDProvider           *idp.Provider

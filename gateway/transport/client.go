@@ -13,10 +13,7 @@ import (
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
-	rv "github.com/runopsio/hoop/gateway/review"
-	justintime "github.com/runopsio/hoop/gateway/review/jit"
-	pluginsaudit "github.com/runopsio/hoop/gateway/transport/plugins/audit"
-	pluginsjit "github.com/runopsio/hoop/gateway/transport/plugins/jit"
+	"github.com/runopsio/hoop/gateway/review"
 	pluginsslack "github.com/runopsio/hoop/gateway/transport/plugins/slack"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
@@ -446,36 +443,19 @@ func (s *Server) addConnectionParams(clientArgs []string, pctx plugintypes.Conte
 	return encConnectionParams, nil
 }
 
-func (s *Server) ReviewStatusChange(sessionID string, status rv.Status, command []byte) {
-	if clientStream := getClientStream(sessionID); clientStream != nil {
-		payload := command
+func (s *Server) ReviewStatusChange(ctx *user.Context, rev *review.Review) {
+	pluginsslack.SendApprovedMessage(ctx, rev)
+	if clientStream := getClientStream(rev.Session); clientStream != nil {
+		payload := []byte(rev.Input)
 		packetType := pbclient.SessionOpenApproveOK
-		if status == rv.StatusRejected {
+		if rev.Status == review.StatusRejected {
 			packetType = pbclient.SessionClose
 			payload = []byte(`access to connection has been denied`)
-			s.disconnectClient(sessionID, fmt.Errorf("access to connection has been denied"))
+			s.disconnectClient(rev.Session, fmt.Errorf("access to connection has been denied"))
 		}
 		_ = clientStream.Send(&pb.Packet{
 			Type:    packetType,
-			Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)},
-			Payload: payload,
-		})
-	}
-}
-
-// DEPRECATED
-func (s *Server) JitStatusChange(sessionID string, status justintime.Status) {
-	if clientStream := getClientStream(sessionID); clientStream != nil {
-		var payload []byte
-		packetType := pbclient.SessionOpenApproveOK
-		if status == justintime.StatusRejected {
-			packetType = pbclient.SessionClose
-			payload = []byte(`access to connection has been denied`)
-			s.disconnectClient(sessionID, fmt.Errorf("access to connection has been denied"))
-		}
-		_ = clientStream.Send(&pb.Packet{
-			Type:    packetType,
-			Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)},
+			Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(rev.Session)},
 			Payload: payload,
 		})
 	}
@@ -508,15 +488,7 @@ func (s *Server) loadConnectPlugins(ctx *user.Context, pctx plugintypes.Context)
 			continue
 		}
 
-		switch p.Name() {
-		case plugintypes.PluginAuditName:
-			// TODO: move to gateway/main.go
-			pctx.ParamsData[pluginsaudit.StorageWriterParam] = s.SessionService.Storage.NewGenericStorageWriter()
-		case pluginsjit.Name:
-			pctx.ParamsData[pluginsjit.JitServiceParam] = &s.JitService
-			pctx.ParamsData[pluginsjit.UserServiceParam] = &s.UserService
-			pctx.ParamsData[pluginsjit.NotificationServiceParam] = s.NotificationService
-		case plugintypes.PluginSlackName:
+		if p.Name() == plugintypes.PluginSlackName {
 			if p1.Config != nil {
 				pctx.ParamsData[pluginsslack.PluginConfigEnvVarsParam] = p1.Config.EnvVars
 			}
@@ -538,11 +510,6 @@ func (s *Server) loadConnectPlugins(ctx *user.Context, pctx plugintypes.Context)
 				ep := pluginConfig{
 					Plugin: p,
 					config: cfg,
-				}
-
-				if err := p.OnStartup(pctx); err != nil {
-					log.Errorf("failed starting plugin %q, err=%v", p.Name(), err)
-					return pluginsConfig, status.Errorf(codes.Internal, "failed starting plugin")
 				}
 
 				if err = p.OnConnect(pctx); err != nil {

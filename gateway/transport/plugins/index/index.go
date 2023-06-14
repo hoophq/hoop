@@ -15,6 +15,7 @@ import (
 	"github.com/runopsio/hoop/gateway/indexer"
 	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/session"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 )
 
@@ -54,6 +55,7 @@ func (p *indexPlugin) OnStartup(_ plugintypes.Context) error {
 	}
 	return nil
 }
+func (p *indexPlugin) OnUpdate(_, _ *types.Plugin) error { return nil }
 
 func (p *indexPlugin) OnConnect(pctx plugintypes.Context) error {
 	if ch := p.indexers.Get(pctx.OrgID); ch == nil {

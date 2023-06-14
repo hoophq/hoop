@@ -1,6 +1,7 @@
 package types
 
 type ClientStatusType string
+type UserStatusType string
 
 const (
 	// ClientStatusReady indicates the grpc client is ready to
@@ -10,4 +11,8 @@ const (
 	ClientStatusConnected ClientStatusType = "connected"
 	// ClientStatusDisconnected indicates the grpc client has disconnected
 	ClientStatusDisconnected ClientStatusType = "disconnected"
+
+	UserStatusActive    UserStatusType = "active"
+	UserStatusReviewing UserStatusType = "reviewing"
+	UserStatusInactive  UserStatusType = "inactive"
 )

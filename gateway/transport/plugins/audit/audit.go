@@ -16,6 +16,7 @@ import (
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"go.uber.org/zap"
 )
@@ -63,7 +64,7 @@ func (p *auditPlugin) OnStartup(pctx plugintypes.Context) error {
 	p.storageWriter = storageWriter
 	return nil
 }
-
+func (p *auditPlugin) OnUpdate(_, _ *types.Plugin) error { return nil }
 func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 	p.log.With("session", pctx.SID).Infof("processing on-connect")
 	if pctx.OrgID == "" || pctx.SID == "" {

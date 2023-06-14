@@ -222,16 +222,14 @@ func (s *Storage) GetEntity(xtId string) ([]byte, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusOK {
-		b, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return nil, err
-		}
-		return b, nil
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return io.ReadAll(resp.Body)
+	case http.StatusNotFound:
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("unknown http response returned fetching entity, status=%v", resp.StatusCode)
 	}
-
-	return nil, nil
 }
 
 // AwaitTx Waits until the node has indexed a transaction that is at or past the supplied tx-id.

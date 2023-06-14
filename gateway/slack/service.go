@@ -11,14 +11,22 @@ import (
 	"github.com/slack-go/slack/socketmode"
 )
 
+type EventCallback interface {
+	// CommandSlackSubscribe should send a link to authenticate the user
+	// which will associate the slack id with the user signing in/up
+	CommandSlackSubscribe(command, slackID string) (string, error)
+}
+
 type SlackService struct {
 	apiClient     *slack.Client
 	socketClient  *socketmode.Client
 	slackChannel  string
 	slackBotToken string
 	instanceID    string
+	apiURL        string
 	ctx           context.Context
 	cancelFn      context.CancelFunc
+	callback      EventCallback
 }
 
 const (
@@ -28,7 +36,7 @@ const (
 	EventKindJit         = "jit"
 )
 
-func New(slackBotToken, slackAppToken, slackChannel, instanceID string) (*SlackService, error) {
+func New(slackBotToken, slackAppToken, slackChannel, instanceID, apiURL string, callback EventCallback) (*SlackService, error) {
 	apiClient := slack.New(
 		slackBotToken,
 		// slack.OptionDebug(true),
@@ -46,12 +54,16 @@ func New(slackBotToken, slackAppToken, slackChannel, instanceID string) (*SlackS
 	)
 	ctx, cancelFn := context.WithCancel(context.Background())
 	return &SlackService{
-		apiClient:    apiClient,
-		socketClient: socketClient,
-		slackChannel: slackChannel,
-		instanceID:   instanceID,
-		ctx:          ctx,
-		cancelFn:     cancelFn}, nil
+		apiClient:     apiClient,
+		socketClient:  socketClient,
+		slackChannel:  slackChannel,
+		slackBotToken: slackBotToken,
+		instanceID:    instanceID,
+		apiURL:        apiURL,
+		ctx:           ctx,
+		cancelFn:      cancelFn,
+		callback:      callback}, nil
+
 }
 
 func (s *SlackService) Close()           { s.cancelFn() }
@@ -263,5 +275,15 @@ func (s *SlackService) UpdateMessageStatus(msg *MessageReviewResponse, message s
 	_, _, err := s.apiClient.PostMessage(msg.item.Channel.ID,
 		slack.MsgOptionReplaceOriginal(msg.item.ResponseURL),
 		slack.MsgOptionBlocks(blocks...))
+	return err
+}
+
+func (s *SlackService) SendDirectMessage(sessionID, slackID string) error {
+	channel, _, _, err := s.apiClient.OpenConversation(&slack.OpenConversationParameters{Users: []string{slackID}})
+	if err != nil {
+		return fmt.Errorf("failed opening conversation with user %v, err=%v", slackID, err)
+	}
+	msg := fmt.Sprintf("✅ Session <%s/sessions|%s> approved, visit the link to execute it.", s.apiURL, sessionID)
+	_, _, err = s.apiClient.PostMessage(channel.ID, slack.MsgOptionText(msg, false))
 	return err
 }
