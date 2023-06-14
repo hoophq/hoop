@@ -135,6 +135,11 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest,
 		api.AdminOnly,
 		api.ConnectionHandler.Put)
+	// DEPRECATED in flavor of POST /sessions
+	route.POST("/connections/:name/exec",
+		api.Authenticate,
+		api.TrackRequest,
+		api.ConnectionHandler.RunExec)
 	route.GET("/connections",
 		api.Authenticate,
 		api.TrackRequest,
