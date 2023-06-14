@@ -256,7 +256,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.POST("/sessions/:session_id/exec",
 		api.Authenticate,
 		api.TrackRequest,
-		api.SessionHandler.RunExec)
+		api.SessionHandler.RunReviewedExec)
 
 	route.POST("/plugins/indexer/sessions/search",
 		api.Authenticate,
