@@ -6,6 +6,7 @@ import (
 	"time"
 
 	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 )
 
 type GenericMap map[string]any
@@ -46,6 +47,7 @@ type Context struct {
 type Plugin interface {
 	Name() string
 	OnStartup(pctx Context) error
+	OnUpdate(oldState, newState *types.Plugin) error
 	OnConnect(pctx Context) error
 	OnReceive(pctx Context, pkt *pb.Packet) (*ConnectResponse, error)
 	OnDisconnect(pctx Context, errMsg error) error

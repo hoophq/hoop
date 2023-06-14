@@ -38,6 +38,7 @@ type (
 		Id       string      `edn:"xt/id"`
 		Redirect string      `edn:"login/redirect"`
 		Outcome  outcomeType `edn:"login/outcome"`
+		SlackID  string      `edn:"login/slack-id"`
 	}
 
 	outcomeType string
@@ -56,13 +57,8 @@ func (s *Service) Login(redirect string) (string, error) {
 	if s.Provider.Profile == pb.DevProfile {
 		return "", errAuthDisabled
 	}
-	login := &login{
-		Id:       uuid.NewString(),
-		Redirect: redirect,
-	}
-
-	_, err := s.Storage.PersistLogin(login)
-	if err != nil {
+	stateUID := uuid.NewString()
+	if _, err := s.Storage.PersistLogin(&login{Id: stateUID, Redirect: redirect}); err != nil {
 		return "", err
 	}
 
@@ -70,14 +66,13 @@ func (s *Service) Login(redirect string) (string, error) {
 		params := []oauth2.AuthCodeOption{
 			oauth2.SetAuthURLParam("audience", s.Provider.Audience),
 		}
-		return s.Provider.AuthCodeURL(login.Id, params...), nil
+		return s.Provider.AuthCodeURL(stateUID, params...), nil
 	}
-
-	return s.Provider.AuthCodeURL(login.Id), nil
+	return s.Provider.AuthCodeURL(stateUID), nil
 }
 
 func (s *Service) Callback(state, code string) string {
-	log.With("code", code, "state", state).Debugf("starting callback")
+	log.With("code", code, "state", state).Infof("starting callback")
 	login, err := s.Storage.FindLogin(state)
 	if err != nil {
 		if login != nil {
@@ -148,6 +143,10 @@ func (s *Service) Callback(state, code string) string {
 			s.loginOutcome(login, outcomeError)
 			return login.Redirect + "?error=unexpected_error"
 		}
+	}
+	if login.SlackID != "" {
+		context.User.SlackID = login.SlackID
+		_ = s.UserService.Persist(context.User)
 	}
 
 	s.loginOutcome(login, outcomeSuccess)

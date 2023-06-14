@@ -32,6 +32,7 @@ var (
 	Infof  = zlog.Sugar().Infof
 	Info   = zlog.Sugar().Info
 	Warnf  = zlog.Sugar().Warnf
+	Warn   = zlog.Sugar().Warn
 	Error  = zlog.Sugar().Error
 	Errorf = zlog.Sugar().Errorf
 	Fatalf = zlog.Sugar().Fatalf

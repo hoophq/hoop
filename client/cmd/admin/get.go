@@ -21,7 +21,6 @@ var getLongDesc = `Display one or many resources. Available ones:
 
 * agents (tabview)
 * connections (tabview)
-* jits
 * reviews
 * plugins (tabview)
 * runbooks

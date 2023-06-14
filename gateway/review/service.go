@@ -28,7 +28,7 @@ type (
 	}
 
 	transportService interface {
-		ReviewStatusChange(sessionID string, status Status, command []byte)
+		ReviewStatusChange(ctx *user.Context, rev *Review)
 	}
 
 	Review struct {
@@ -46,9 +46,10 @@ type (
 	}
 
 	Owner struct {
-		Id    string `json:"id,omitempty"   edn:"xt/id"`
-		Name  string `json:"name,omitempty" edn:"user/name"`
-		Email string `json:"email"          edn:"user/email"`
+		Id      string `json:"id,omitempty"   edn:"xt/id"`
+		Name    string `json:"name,omitempty" edn:"user/name"`
+		Email   string `json:"email"          edn:"user/email"`
+		SlackID string `json:"slack_id"       edn:"user/slack-id"`
 	}
 
 	Connection struct {
@@ -199,7 +200,7 @@ func (s *Service) Review(context *user.Context, reviewID string, status Status) 
 			return nil, err
 		}
 		// release the connection if there's a client waiting
-		s.TransportService.ReviewStatusChange(rev.Session, rev.Status, []byte(rev.Input))
+		s.TransportService.ReviewStatusChange(context, rev)
 	}
 	return rev, nil
 }

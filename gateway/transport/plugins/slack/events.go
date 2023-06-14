@@ -23,8 +23,6 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 		ev.msg.ID, ev.msg.Status)
 
 	// validate if the slack user is able to review it
-	// ctx := &user.Context{&user.Org{Id: ev.orgID}, &user.User{SlackID: ev.msg.SlackID}}
-	// slackApprover, err := p.userSvc.FindByGroups(ctx, []string{})
 	slackApprover, err := p.userSvc.FindBySlackID(&user.Org{Id: ev.orgID}, ev.msg.SlackID)
 	if err != nil {
 		log.With("session", sid).Errorf("failed obtaning approver information, err=%v", err)
@@ -82,8 +80,8 @@ func (p *slackPlugin) performExecReview(ev *event, ctx *user.Context, status rev
 		}
 		err = ev.ss.UpdateMessageStatus(ev.msg, fmt.Sprintf("• _review has already been `%s`_", status))
 	case nil:
-		// TODO: check if the error came from gRPC transport!
 		isApproved := rev.Status == review.StatusApproved
+		SendApprovedMessage(ctx, rev)
 		err = ev.ss.UpdateMessage(ev.msg, isApproved)
 		log.With("session", sid).Infof("review id=%s, status=%v", ev.msg.ID, rev.Status)
 	default:
@@ -108,6 +106,7 @@ func (p *slackPlugin) performJitReview(ev *event, ctx *user.Context, status revi
 		err = ev.ss.UpdateMessageStatus(ev.msg, fmt.Sprintf("• _jit has already been `%s`_", status))
 	case nil:
 		isApproved := j.Status == review.StatusApproved
+		SendApprovedMessage(ctx, j)
 		err = ev.ss.UpdateMessage(ev.msg, isApproved)
 		log.With("session", sid).Infof("jit review id=%s, status=%v", ev.msg.ID, j.Status)
 	default:

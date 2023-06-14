@@ -78,8 +78,6 @@ var createPluginCmd = &cobra.Command{
 		if err != nil {
 			styles.PrintErrorAndExit(err.Error())
 		}
-		// if len(pluginEnvVars)
-		// TODO: fix /putconfig, it's removing
 		if _, err = putConfig(apir.conf, apir.name, pluginEnvVars); err != nil {
 			styles.PrintErrorAndExit(err.Error())
 		}

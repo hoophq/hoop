@@ -8,9 +8,12 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
+	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/review"
-	"github.com/runopsio/hoop/gateway/review/jit"
-	slackservice "github.com/runopsio/hoop/gateway/slack"
+	"github.com/runopsio/hoop/gateway/security/idp"
+	"github.com/runopsio/hoop/gateway/slack"
+	"github.com/runopsio/hoop/gateway/storagev2"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
@@ -22,96 +25,185 @@ const (
 
 type (
 	slackPlugin struct {
-		reviewSvc *review.Service
-		jitSvc    *jit.Service
-		userSvc   *user.Service
-		apiURL    string
+		reviewSvc   *review.Service
+		userSvc     *user.Service
+		pluginSvc   *plugin.Service
+		idpProvider *idp.Provider
 	}
 )
 
-var instances map[string]*slackservice.SlackService
+var instances map[string]*slack.SlackService
 var mu sync.RWMutex
 
-func getSlackServiceInstance(orgID string) *slackservice.SlackService {
+func getSlackServiceInstance(orgID string) *slack.SlackService {
 	mu.Lock()
 	defer mu.Unlock()
 	return instances[orgID]
 }
 
-func New(reviewSvc *review.Service, jitSvc *jit.Service, userSvc *user.Service, apiURL string) *slackPlugin {
-	instances = map[string]*slackservice.SlackService{}
+func removeSlackServiceInstance(orgID string) {
+	mu.Lock()
+	defer mu.Unlock()
+	delete(instances, orgID)
+}
+
+func addSlackServiceInstance(orgID string, slackSvc *slack.SlackService) {
+	mu.Lock()
+	defer mu.Unlock()
+	instances[orgID] = slackSvc
+}
+
+func New(reviewSvc *review.Service, pluginSvc *plugin.Service, userSvc *user.Service, idpProvider *idp.Provider) *slackPlugin {
+	instances = map[string]*slack.SlackService{}
 	mu = sync.RWMutex{}
 	return &slackPlugin{
-		reviewSvc: reviewSvc,
-		jitSvc:    jitSvc,
-		userSvc:   userSvc,
-		apiURL:    apiURL,
+		reviewSvc:   reviewSvc,
+		userSvc:     userSvc,
+		pluginSvc:   pluginSvc,
+		idpProvider: idpProvider,
 	}
 }
 
-func (p *slackPlugin) Name() string                          { return plugintypes.PluginSlackName }
-func (p *slackPlugin) OnStartup(_ plugintypes.Context) error { return nil }
-func (p *slackPlugin) OnConnect(pctx plugintypes.Context) error {
-	log.Infof("session=%v | slack | processing on-connect", pctx.SID)
-	mu.Lock()
-	defer mu.Unlock()
-	sconf, err := parseSlackConfig(pctx.ParamsData[PluginConfigEnvVarsParam])
-	if err != nil {
-		return err
-	}
+func (p *slackPlugin) Name() string { return plugintypes.PluginSlackName }
 
-	if ss, ok := instances[pctx.OrgID]; ok {
-		if ss.BotToken() == sconf.slackBotToken {
-			return nil
-		}
-		log.Warnf("slack configuration has changed, closing instance/org %v", pctx.OrgID)
-		// configuration has changed, clean up
-		ss.Close()
-		delete(instances, pctx.OrgID)
-	}
-
-	log.Infof("starting slack service instance for instance/org %v", pctx.OrgID)
-	ss, err := slackservice.New(
-		sconf.slackBotToken,
-		sconf.slackAppToken,
-		sconf.slackChannel,
-		pctx.OrgID,
+func (p *slackPlugin) startSlackServiceInstance(orgID string, slackConfig *slackConfig) error {
+	storectx := storagev2.NewOrganizationContext(orgID, storagev2.NewStorage(nil))
+	log.Infof("starting slack service instance for org %v", orgID)
+	ss, err := slack.New(
+		slackConfig.slackBotToken,
+		slackConfig.slackAppToken,
+		slackConfig.slackChannel,
+		orgID,
+		p.idpProvider.ApiURL,
+		&eventCallback{orgID, storectx, p.idpProvider},
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed starting slack service, err=%v", err)
 	}
-	instances[pctx.OrgID] = ss
-	reviewRespCh := make(chan *slackservice.MessageReviewResponse)
+	addSlackServiceInstance(orgID, ss)
+	reviewRespCh := make(chan *slack.MessageReviewResponse)
 	go func() {
 		defer close(reviewRespCh)
 		if err := ss.ProcessEvents(reviewRespCh); err != nil {
-			log.Errorf("failed processing slack events for org %v, reason=%v", pctx.OrgID, err)
+			log.Errorf("failed processing slack events for org %v, reason=%v", orgID, err)
 			return
 		}
-		log.Infof("done processing events for org %v", pctx.OrgID)
-		mu.Lock()
-		defer mu.Unlock()
+		log.Infof("done processing events for org %v", orgID)
 		ss.Close()
-		delete(instances, pctx.OrgID)
+		removeSlackServiceInstance(orgID)
 	}()
 
 	// response channel
 	go func() {
 		for resp := range reviewRespCh {
-			p.processEventResponse(&event{ss, resp, pctx.OrgID})
+			p.processEventResponse(&event{ss, resp, orgID})
 		}
-		log.Infof("close response channel for org %v", pctx.OrgID)
+		log.Infof("close response channel for org %v", orgID)
 	}()
 	return nil
 }
 
+func (p *slackPlugin) OnStartup(_ plugintypes.Context) error {
+	orgList, err := p.userSvc.FindOrgs()
+	if err != nil {
+		return fmt.Errorf("failed listing organizations: %v", err)
+	}
+	for _, org := range orgList {
+		pl, err := p.pluginSvc.FindOne(&user.Context{Org: &user.Org{Id: org.Id}}, plugintypes.PluginSlackName)
+		if err != nil {
+			log.Errorf("failed retrieving plugin entity %v", err)
+			continue
+		}
+		if pl == nil || pl.Config == nil {
+			continue
+		}
+		if pl.OrgId == "" {
+			log.Errorf("inconsistent state (org) for plugin slack")
+			continue
+		}
+		slackConfig, err := parseSlackConfig(&types.PluginConfig{EnvVars: pl.Config.EnvVars})
+		if err != nil {
+			log.Errorf("failed parsing slack config for org %v, err=%v", pl.OrgId, err)
+			continue
+		}
+		if err := p.startSlackServiceInstance(pl.OrgId, slackConfig); err != nil {
+			log.Errorf("failed starting slack service for org %v, err=%v", pl.OrgId, err)
+			continue
+		}
+	}
+	return nil
+}
+
+func (p *slackPlugin) OnUpdate(oldState, newState *types.Plugin) error {
+	slackInstance := getSlackServiceInstance(newState.OrgID)
+	switch {
+	// when it creates the plugin for the first time
+	// it should only start it, if the client has sent a valid slack configuration
+	case oldState == nil:
+		if newSlackConfig, _ := parseSlackConfig(newState.Config); newSlackConfig != nil {
+			if slackInstance != nil {
+				slackInstance.Close()
+			}
+			return p.startSlackServiceInstance(newState.OrgID, newSlackConfig)
+		}
+	// when previous configuration doesn't exists
+	case oldState.Config == nil:
+		newSlackConfig, err := parseSlackConfig(newState.Config)
+		if err != nil {
+			return err
+		}
+		return p.startSlackServiceInstance(newState.OrgID, newSlackConfig)
+	// when slack configuration changes
+	default:
+		if oldSlackConfig, _ := parseSlackConfig(oldState.Config); oldSlackConfig != nil {
+			newSlackConfig, err := parseSlackConfig(newState.Config)
+			if err != nil {
+				return err
+			}
+			if oldSlackConfig.slackAppToken != newSlackConfig.slackAppToken ||
+				oldSlackConfig.slackBotToken != newSlackConfig.slackBotToken ||
+				oldSlackConfig.slackChannel != newSlackConfig.slackChannel {
+				log.Warnf("configuration has changed, (re)starting slack instance %v", newState.OrgID)
+				if slackInstance != nil {
+					slackInstance.Close()
+				}
+				removeSlackServiceInstance(newState.OrgID)
+				return p.startSlackServiceInstance(newState.OrgID, newSlackConfig)
+			}
+		}
+	}
+	return nil
+}
+
+// SendApprovedMessage sends a direct message to the owner of the review
+// if it's approved
+func SendApprovedMessage(ctx *user.Context, rev *review.Review) {
+	if rev.Status != review.StatusApproved {
+		return
+	}
+	if slacksvc := getSlackServiceInstance(ctx.Org.Id); slacksvc != nil {
+		if rev.CreatedBy.SlackID != "" {
+			log.Debugf("sending direct slack message to email=%v, slackid=%v",
+				rev.CreatedBy.Email, rev.CreatedBy.SlackID)
+			if err := slacksvc.SendDirectMessage(rev.Session, rev.CreatedBy.SlackID); err != nil {
+				log.Warn(err)
+			}
+		}
+	}
+}
+
+func (p *slackPlugin) OnConnect(pctx plugintypes.Context) error { return nil }
 func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {
 	if pkt.Type != pbagent.SessionOpen {
 		return nil, nil
 	}
-	log.Infof("executing slack on-receive ...")
+	slackSvc := getSlackServiceInstance(pctx.OrgID)
+	log.Infof("executing slack on-receive, hasinstance=%v", slackSvc != nil)
+	if slackSvc == nil {
+		return nil, nil
+	}
 
-	sreq := &slackservice.MessageReviewRequest{
+	sreq := &slack.MessageReviewRequest{
 		Name:           pctx.UserName,
 		Email:          pctx.UserEmail,
 		Connection:     pctx.ConnectionName,
@@ -129,7 +221,7 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 			return nil, nil
 		}
 		sreq.ID = rev.Id
-		sreq.WebappURL = fmt.Sprintf("%s/plugins/reviews/%s", p.apiURL, rev.Id)
+		sreq.WebappURL = fmt.Sprintf("%s/plugins/reviews/%s", p.idpProvider.ApiURL, rev.Id)
 		sreq.ApprovalGroups = parseGroups(rev.ReviewGroups)
 		if rev.AccessDuration > 0 {
 			sreq.SessionTime = &rev.AccessDuration
@@ -141,13 +233,9 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		log.With("session", pctx.SID).Infof("no review message to process")
 		return nil, nil
 	}
-
-	if ss := getSlackServiceInstance(pctx.OrgID); ss != nil {
-		log.With("session", pctx.SID).Infof("sending slack review message, conn=%v, jit=%v",
-			sreq.Connection, sreq.SessionTime != nil)
-		if err := ss.SendMessageReview(sreq); err != nil {
-			log.With("session", pctx.SID).Errorf("failed sending slack review message, reason=%v", err)
-		}
+	log.With("session", pctx.SID).Infof("sending slack review message, conn=%v, jit=%v", sreq.Connection, sreq.SessionTime != nil)
+	if err := slackSvc.SendMessageReview(sreq); err != nil {
+		log.With("session", pctx.SID).Errorf("failed sending slack review message, reason=%v", err)
 	}
 	return nil, nil
 }
@@ -161,14 +249,13 @@ type slackConfig struct {
 	slackChannel  string
 }
 
-func parseSlackConfig(envVarsObj any) (*slackConfig, error) {
-	pluginEnvVar, _ := envVarsObj.(map[string]string)
-	if len(pluginEnvVar) == 0 {
+func parseSlackConfig(pconf *types.PluginConfig) (*slackConfig, error) {
+	if pconf == nil {
 		return nil, fmt.Errorf("missing required credentials for slack plugin")
 	}
-	slackBotToken, _ := base64.StdEncoding.DecodeString(pluginEnvVar["SLACK_BOT_TOKEN"])
-	slackAppToken, _ := base64.StdEncoding.DecodeString(pluginEnvVar["SLACK_APP_TOKEN"])
-	slackChannel, _ := base64.StdEncoding.DecodeString(pluginEnvVar["SLACK_CHANNEL"])
+	slackBotToken, _ := base64.StdEncoding.DecodeString(pconf.EnvVars["SLACK_BOT_TOKEN"])
+	slackAppToken, _ := base64.StdEncoding.DecodeString(pconf.EnvVars["SLACK_APP_TOKEN"])
+	slackChannel, _ := base64.StdEncoding.DecodeString(pconf.EnvVars["SLACK_CHANNEL"])
 	sc := slackConfig{
 		slackBotToken: string(slackBotToken),
 		slackAppToken: string(slackAppToken),

@@ -12,12 +12,15 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
+	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
 type (
 	Handler struct {
-		Service service
+		Service           service
+		RegisteredPlugins []plugintypes.Plugin
 	}
 
 	service interface {
@@ -30,7 +33,7 @@ type (
 
 func redactPluginConfig(c *PluginConfig) {
 	if c != nil {
-		for envKey, _ := range c.EnvVars {
+		for envKey := range c.EnvVars {
 			c.EnvVars[envKey] = "REDACTED"
 		}
 	}
@@ -81,8 +84,6 @@ func (a *Handler) Post(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	// it's a ready only field
-	// plugin.Config = nil
 
 	existingPlugin, err := a.Service.FindOne(context, plugin.Name)
 	if err != nil {
@@ -94,6 +95,14 @@ func (a *Handler) Post(c *gin.Context) {
 
 	if existingPlugin != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "Plugin already installed."})
+		return
+	}
+
+	if err := processOnUpdatePluginPhase(a.RegisteredPlugins, nil, parseToV2(&plugin)); err != nil {
+		msg := fmt.Sprintf("failed initializing plugin, reason=%v", err)
+		log.Errorf(msg)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusBadRequest, gin.H{"message": msg})
 		return
 	}
 
@@ -140,6 +149,20 @@ func (a *Handler) PutConfig(c *gin.Context) {
 	}
 
 	existingPlugin.ConfigID = &pluginConfigID
+	// only envvars is changed in this method
+	newState := parseToV2(&Plugin{
+		OrgId:       existingPlugin.OrgId,
+		Name:        existingPlugin.Name,
+		Connections: existingPlugin.Connections,
+		Config:      &PluginConfig{EnvVars: envVars},
+	})
+	if err := processOnUpdatePluginPhase(a.RegisteredPlugins, parseToV2(existingPlugin), newState); err != nil {
+		msg := fmt.Sprintf("failed initializing plugin, reason=%v", err)
+		log.Errorf(msg)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusBadRequest, gin.H{"message": msg})
+		return
+	}
 	if err := a.Service.Persist(context, existingPlugin); err != nil {
 		log.Errorf("failed updating existing plugin, err=%v", err)
 		sentry.CaptureException(err)
@@ -186,6 +209,7 @@ func (a *Handler) Put(c *gin.Context) {
 	}
 
 	// immutable attributes
+	plugin.OrgId = existingPlugin.OrgId
 	plugin.Id = existingPlugin.Id
 	plugin.Name = existingPlugin.Name
 	plugin.Config = existingPlugin.Config
@@ -201,6 +225,13 @@ func (a *Handler) Put(c *gin.Context) {
 		}
 	}
 
+	if err := processOnUpdatePluginPhase(a.RegisteredPlugins, parseToV2(existingPlugin), parseToV2(&plugin)); err != nil {
+		msg := fmt.Sprintf("failed initializing plugin, reason=%v", err)
+		log.Errorf(msg)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusBadRequest, gin.H{"message": msg})
+		return
+	}
 	if err = a.Service.Persist(context, &plugin); err != nil {
 		log.Errorf("failed saving plugin, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -226,6 +257,36 @@ func validatePluginConfig(config *PluginConfig) error {
 		}
 		if _, err := base64.StdEncoding.DecodeString(val); err != nil {
 			return fmt.Errorf("failed decoding key '%v', err=%v", key, err)
+		}
+	}
+	return nil
+}
+
+func parseToV2(p *Plugin) *types.Plugin {
+	v2 := &types.Plugin{OrgID: p.OrgId, Name: p.Name}
+	if p.Config != nil {
+		if len(p.Config.EnvVars) > 0 {
+			v2.Config = &types.PluginConfig{EnvVars: p.Config.EnvVars}
+		}
+	}
+	for _, conn := range p.Connections {
+		v2.Connections = append(v2.Connections, types.PluginConnection{
+			ID:           conn.Id,
+			ConnectionID: conn.ConnectionId,
+			Name:         conn.Name,
+			Config:       conn.Config,
+		})
+	}
+	return v2
+}
+
+func processOnUpdatePluginPhase(registeredPlugins []plugintypes.Plugin, oldState, newState *types.Plugin) error {
+	for _, pl := range registeredPlugins {
+		if pl.Name() != newState.Name {
+			continue
+		}
+		if err := pl.OnUpdate(oldState, newState); err != nil {
+			return err
 		}
 	}
 	return nil

@@ -6,6 +6,7 @@ import (
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	"github.com/runopsio/hoop/gateway/plugin"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
@@ -17,6 +18,7 @@ type dcm struct {
 func New(pluginSvc *plugin.Service) *dcm             { return &dcm{pluginSvc: pluginSvc} }
 func (p *dcm) Name() string                          { return plugintypes.PluginDatabaseCredentialsManagerName }
 func (p *dcm) OnStartup(_ plugintypes.Context) error { return nil }
+func (p *dcm) OnUpdate(_, _ *types.Plugin) error     { return nil }
 func (p *dcm) OnConnect(_ plugintypes.Context) error { return nil }
 func (p *dcm) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {
 	if pkt.Type != pbagent.SessionOpen {

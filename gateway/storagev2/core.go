@@ -120,6 +120,11 @@ func NewContext(userID, orgID string, store *Store) *Context {
 	return &Context{store, &types.APIContext{UserID: userID, OrgID: orgID}}
 }
 
+// NewOrganizationContext returns a context without a user
+func NewOrganizationContext(orgID string, store *Store) *Context {
+	return &Context{store, &types.APIContext{UserID: "", OrgID: orgID}}
+}
+
 func (c *Context) WithUserInfo(userName, userEmail string, userGroups []string) *Context {
 	c.UserName = userName
 	c.UserEmail = userEmail
