@@ -82,7 +82,7 @@ func (api *Api) AdminOnly(c *gin.Context) {
 func (api *Api) TrackRequest(c *gin.Context) {
 	context := user.ContextUser(c)
 
-	api.Analytics.Track(context.User.Id, fmt.Sprintf("%s %s", c.Request.Method, c.Request.RequestURI), map[string]any{
+	api.Analytics.Track(context.ToAPIContext(), fmt.Sprintf("%s %s", c.Request.Method, c.Request.RequestURI), map[string]any{
 		"host":           c.Request.Host,
 		"content-length": c.Request.ContentLength,
 		"user-agent":     c.Request.Header.Get("User-Agent"),

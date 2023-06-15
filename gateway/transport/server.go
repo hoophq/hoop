@@ -27,6 +27,7 @@ import (
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/session"
 	"github.com/runopsio/hoop/gateway/storagev2"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc"
@@ -63,7 +64,7 @@ type (
 	}
 
 	AnalyticsService interface {
-		Track(userID, eventName string, properties map[string]any)
+		Track(ctx *types.APIContext, eventName string, properties map[string]any)
 	}
 )
 

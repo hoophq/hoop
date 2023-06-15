@@ -3,6 +3,8 @@ package analytics
 import (
 	"os"
 
+	"github.com/google/uuid"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
 	"github.com/segmentio/analytics-go/v3"
 )
@@ -46,13 +48,25 @@ func (s *Segment) Identify(ctx *user.Context) {
 	})
 }
 
-func (s *Segment) Track(userID, eventName string, properties map[string]any) {
+// Track generates an event to segment, if the context is not set, it will emit an anoynimous event
+func (s *Segment) Track(ctx *types.APIContext, eventName string, properties map[string]any) {
 	if s.Client == nil {
 		return
 	}
-
+	if ctx == nil || ctx.UserID == "" {
+		_ = s.Client.Enqueue(analytics.Track{
+			AnonymousId: uuid.NewString(),
+			Event:       eventName,
+			Properties:  properties,
+		})
+		return
+	}
+	if properties == nil {
+		properties = map[string]any{}
+	}
+	properties["email"] = ctx.UserEmail
 	_ = s.Client.Enqueue(analytics.Track{
-		UserId:     userID,
+		UserId:     ctx.UserID,
 		Event:      eventName,
 		Properties: properties,
 	})

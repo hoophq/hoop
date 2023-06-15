@@ -7,6 +7,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"go.uber.org/zap"
 
 	"github.com/gin-gonic/gin"
@@ -35,7 +36,7 @@ type (
 
 	Analytics interface {
 		Identify(ctx *Context)
-		Track(userID, eventName string, properties map[string]any)
+		Track(ctx *types.APIContext, eventName string, properties map[string]any)
 	}
 )
 

@@ -194,7 +194,7 @@ func (s *Server) listenProxyManagerMessages(sessionID string, ctx *storagev2.Con
 					return status.Errorf(codes.FailedPrecondition, err.Error())
 				}
 
-				s.Analytics.Track(ctx.UserID, clientOrigin, map[string]any{
+				s.Analytics.Track(ctx.APIContext, clientOrigin, map[string]any{
 					"sessionID":       sessionID,
 					"connection-name": req.RequestConnectionName,
 					"connection-type": conn.Type,

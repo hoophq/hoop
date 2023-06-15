@@ -97,11 +97,6 @@ func runConnect(args []string) {
 	agentOfflineRetryCounter := 1
 	for {
 		pkt, err := c.client.Recv()
-		pktType := "unknown"
-		if pkt != nil {
-			pktType = pkt.Type
-		}
-		log.Infof("processing packet %v, err=%v", pktType, err)
 		c.processGracefulExit(err)
 		if pkt == nil {
 			continue
