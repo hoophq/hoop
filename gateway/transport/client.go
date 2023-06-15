@@ -195,7 +195,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		return status.Errorf(codes.FailedPrecondition, err.Error())
 	}
 
-	s.Analytics.Track(userCtx.User.Id, clientVerb, map[string]any{
+	s.Analytics.Track(userCtx.ToAPIContext(), clientVerb, map[string]any{
 		"sessionID":       sessionID,
 		"connection-name": connectionName,
 		"connection-type": conn.Type,

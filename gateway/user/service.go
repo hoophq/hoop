@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 )
 
 type (
@@ -82,6 +83,24 @@ var statuses = []StatusType{
 	StatusActive,
 	StatusReviewing,
 	StatusInactive,
+}
+
+// ToAPIContext converts a *user.Context to the new structure *types.APIContext
+func (c *Context) ToAPIContext() *types.APIContext {
+	if c == nil || c.User == nil {
+		// avoid panic if the context is not set for some reason
+		return &types.APIContext{}
+	}
+	apiCtx := &types.APIContext{
+		UserID:     c.User.Id,
+		UserName:   c.User.Name,
+		UserEmail:  c.User.Email,
+		UserGroups: c.User.Groups,
+	}
+	if c.Org != nil {
+		apiCtx.OrgID = c.Org.Id
+	}
+	return apiCtx
 }
 
 func (s *Service) FindAll(context *Context) ([]User, error) {

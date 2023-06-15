@@ -61,7 +61,7 @@ func Post(c *gin.Context) {
 		DlpCount:     0,
 		StartSession: time.Now().UTC(),
 	}
-	log.Infof("Persisting session")
+	log.Debugf("persisting session")
 
 	err = sessionStorage.Write(storageCtx, newSession)
 	if err != nil {

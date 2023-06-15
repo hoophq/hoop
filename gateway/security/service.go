@@ -150,7 +150,7 @@ func (s *Service) Callback(state, code string) string {
 	}
 
 	s.loginOutcome(login, outcomeSuccess)
-	s.Analytics.Track(context.User.Id, "login", map[string]any{})
+	s.Analytics.Track(context.ToAPIContext(), "login", map[string]any{})
 
 	return login.Redirect + "?token=" + token.AccessToken
 }
@@ -217,7 +217,7 @@ func (s *Service) signup(ctx *user.Context, sub string, idTokenClaims map[string
 	}
 
 	s.Analytics.Identify(ctx)
-	s.Analytics.Track(ctx.User.Id, "signup", map[string]any{})
+	s.Analytics.Track(ctx.ToAPIContext(), "signup", map[string]any{})
 	return nil
 }
 
@@ -318,7 +318,7 @@ func (s *Service) signupMultiTenant(context *user.Context, sub string, idTokenCl
 		}
 
 		s.Analytics.Identify(context)
-		s.Analytics.Track(context.User.Id, "signup", map[string]any{})
+		s.Analytics.Track(context.ToAPIContext(), "signup", map[string]any{})
 	}
 
 	return nil
