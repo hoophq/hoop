@@ -19,46 +19,46 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Setup Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v4
         with:
           go-version: '>=1.19.0'
 
       - name: Test
         run: make test
 
-      - name: Install GoReleaser
-        uses: goreleaser/goreleaser-action@v3
-        with:
-          install-only: true
-          distribution: goreleaser
-          version: latest
+      # - name: Install GoReleaser
+      #   uses: goreleaser/goreleaser-action@v3
+      #   with:
+      #     install-only: true
+      #     distribution: goreleaser
+      #     version: latest
 
-      - name: Checkout Webapp
-        uses: actions/checkout@v3
-        with:
-          repository: runopsio/webapp
-          token: ${{ secrets.GH_TOKEN }}
-          path: './build/webapp'
+      # - name: Checkout Webapp
+      #   uses: actions/checkout@v3
+      #   with:
+      #     repository: runopsio/webapp
+      #     token: ${{ secrets.GH_TOKEN }}
+      #     path: './build/webapp'
 
-      - name: Checkout Helm Chart
-        uses: actions/checkout@v3
-        with:
-          repository: hoophq/helm-chart
-          path: './build/helm-chart'
+      # - name: Checkout Helm Chart
+      #   uses: actions/checkout@v3
+      #   with:
+      #     repository: hoophq/helm-chart
+      #     path: './build/helm-chart'
       
-      - name: Setup Java
-        uses: actions/setup-java@v2
-        with:
-          distribution: 'zulu'
-          java-version: '11'
+      # - name: Setup Java
+      #   uses: actions/setup-java@v2
+      #   with:
+      #     distribution: 'zulu'
+      #     java-version: '11'
 
-      - name: Setup Node
-        uses: actions/setup-node@v3
-        with:
-          node-version: 16
+      # - name: Setup Node
+      #   uses: actions/setup-node@v3
+      #   with:
+      #     node-version: 16
 
-      - name: Setup Helm3
-        uses: azure/setup-helm@v3
+      # - name: Setup Helm3
+      #   uses: azure/setup-helm@v3
 
       - name: Setup QEMU
         uses: docker/setup-qemu-action@v2
@@ -78,4 +78,4 @@ jobs:
           AWS_REGION: us-east-1
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        run: make release
+        run: goreleaser release --snapshot

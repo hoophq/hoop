@@ -21,10 +21,10 @@ release: clean
 	goreleaser release
 	helm package ./build/helm-chart/chart/agent/ --app-version ${GIT_TAG} --destination ./dist/ --version ${GIT_TAG}
 	helm package ./build/helm-chart/chart/gateway/ --app-version ${GIT_TAG} --destination ./dist/ --version ${GIT_TAG}
-	# echo -n "${GIT_TAG}" > ./latest.txt
-	# aws s3 cp ./dist/ s3://hoopartifacts/release/${GIT_TAG}/ --exclude "*" --include "*.tgz" --include "*.tar.gz" --recursive
-	# aws s3 cp ./latest.txt s3://hoopartifacts/release/latest.txt
-	# aws s3 cp ./dist/checksums.txt s3://hoopartifacts/release/${GIT_TAG}/checksums.txt
+	echo -n "${GIT_TAG}" > ./latest.txt
+	aws s3 cp ./dist/ s3://hoopartifacts/release/${GIT_TAG}/ --exclude "*" --include "*.tgz" --include "*.tar.gz" --recursive
+	aws s3 cp ./latest.txt s3://hoopartifacts/release/latest.txt
+	aws s3 cp ./dist/checksums.txt s3://hoopartifacts/release/${GIT_TAG}/checksums.txt
 
 publish:
 	./scripts/publish-release.sh
