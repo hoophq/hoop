@@ -1,4 +1,4 @@
-package sessionapi
+package reviewapi
 
 import (
 	"net/http"
