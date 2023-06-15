@@ -12,7 +12,7 @@ func FindOne(storageCtx *storagev2.Context, reviewID string) (*types.Review, err
 	var payload = fmt.Sprintf(`{:query {
 		:find [(pull ?r [*
 						{:review/connection [:xt/id :connection/name]}
-						{:review/created-by [:xt/id :user/name :user/email]}])]
+						{:review/created-by [:xt/id :user/name :user/email :user/slack-id]}])]
 		:in [org-id review-id]
 		:where [[?r :review/org org-id]
 				[?r :xt/id review-id]
