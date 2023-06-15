@@ -9,7 +9,8 @@ RUN mkdir -p /app && \
     apt-get update -y && \
     apt-get install -y \
         locales \
-        tini
+        tini \
+        curl
 
 RUN curl -sL https://github.com/42wim/matterbridge/releases/download/v1.26.0/matterbridge-1.26.0-linux-64bit -o /usr/local/bin/matterbridge && \
     chmod +x /usr/local/bin/matterbridge && \
