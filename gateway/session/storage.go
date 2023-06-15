@@ -348,11 +348,13 @@ func (s *GenericStorageWriter) Write(c plugintypes.Context) error {
 }
 
 func (s *Storage) PersistReview(ctx *user.Context, review *types.Review) (int64, error) {
-	reviewGroupIds := make([]types.ReviewGroup, 0)
+	reviewGroups := make([]types.ReviewGroup, 0)
+	reviewGroupIds := make([]string, 0)
 
 	var payloads []st.TxEdnStruct
 	for _, r := range review.ReviewGroupsData {
-		reviewGroupIds = append(reviewGroupIds, r)
+		reviewGroups = append(reviewGroups, r)
+		reviewGroupIds = append(reviewGroupIds, r.Id)
 		xg := &types.ReviewGroup{
 			Id:         r.Id,
 			Group:      r.Group,
@@ -379,7 +381,7 @@ func (s *Storage) PersistReview(ctx *user.Context, review *types.Review) (int64,
 		AccessDuration:   review.AccessDuration,
 		RevokeAt:         review.RevokeAt,
 		Status:           review.Status,
-		ReviewGroupsIds:  review.ReviewGroupsIds,
+		ReviewGroupsIds:  reviewGroupIds,
 		ReviewGroupsData: review.ReviewGroupsData,
 	}
 

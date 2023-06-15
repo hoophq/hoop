@@ -215,10 +215,12 @@ func (s *Storage) FindBySessionID(sessionID string) (*types.Review, error) {
 
 func (s *Storage) Persist(ctx *user.Context, review *types.Review) (int64, error) {
 	reviewGroups := make([]types.ReviewGroup, 0)
+	reviewGroupIds := make([]string, 0)
 
 	var payloads []st.TxEdnStruct
 	for _, r := range review.ReviewGroupsData {
 		reviewGroups = append(reviewGroups, r)
+		reviewGroupIds = append(reviewGroupIds, r.Id)
 		xg := &types.ReviewGroup{
 			Id:         r.Id,
 			Group:      r.Group,
@@ -245,7 +247,7 @@ func (s *Storage) Persist(ctx *user.Context, review *types.Review) (int64, error
 		AccessDuration:   review.AccessDuration,
 		RevokeAt:         review.RevokeAt,
 		Status:           review.Status,
-		ReviewGroupsIds:  review.ReviewGroupsIds,
+		ReviewGroupsIds:  reviewGroupIds,
 		ReviewGroupsData: review.ReviewGroupsData,
 	}
 

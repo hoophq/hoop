@@ -1,4 +1,4 @@
-package sessionstorage
+package reviewstorage
 
 import (
 	"fmt"
@@ -10,21 +10,9 @@ import (
 
 func FindOne(storageCtx *storagev2.Context, reviewID string) (*types.Review, error) {
 	var payload = fmt.Sprintf(`{:query {
-		:find [(pull ?r [:xt/id
-			:review/type
-			:review/status
-			:review/access-duration
-			:review/created-at
-			:review/revoke-at
-			:review/input
-			:review/session
-			:review/connection
-			:review/review-groups-data
-			:review/created-by
-				{:review/connection [:xt/id :connection/name]}
-				{:review/review-groups [*
-					{:review-group/reviewed-by [:xt/id :user/name :user/email]}]}
-				{:review/created-by [:xt/id :user/name :user/email]}])]
+		:find [(pull ?r [*
+						{:review/connection [:xt/id :connection/name]}
+						{:review/created-by [:xt/id :user/name :user/email]}])]
 		:in [org-id review-id]
 		:where [[?r :review/org org-id]
 				[?r :xt/id review-id]
@@ -46,5 +34,44 @@ func FindOne(storageCtx *storagev2.Context, reviewID string) (*types.Review, err
 		return nil, nil
 	}
 
-	return &reviews[0][0], nil
+	reviewData := reviews[0][0]
+
+	groups, err := findGroupsByReviewId(storageCtx, reviewData.Id)
+	if err != nil {
+		return nil, err
+	}
+
+	reviewData.ReviewGroupsData = groups
+
+	return &reviewData, nil
+}
+
+func findGroupsByReviewId(storageCtx *storagev2.Context, reviewID string) ([]types.ReviewGroup, error) {
+	var payload = fmt.Sprintf(`{:query {
+		:find [(pull ?r [{:review/review-groups 
+			[* {:review-group/reviewed-by [:xt/id :user/name :user/email]}]}])]
+		:in [org-id review-id]
+		:where [[?r :review/org org-id]
+				[?r :xt/id review-id]]}
+        :in-args [%q %q]}`, storageCtx.OrgID, reviewID)
+
+	b, err := storageCtx.Query(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	type ReviewGroups struct {
+		ReviewGroups []types.ReviewGroup `edn:"review/review-groups"`
+	}
+
+	var reviewsGroups [][]ReviewGroups
+	if err := edn.Unmarshal(b, &reviewsGroups); err != nil {
+		return nil, err
+	}
+
+	if len(reviewsGroups) == 0 {
+		return nil, nil
+	}
+
+	return reviewsGroups[0][0].ReviewGroups, nil
 }

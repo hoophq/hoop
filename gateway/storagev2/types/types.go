@@ -106,12 +106,27 @@ type Review struct {
 	AccessDuration   time.Duration    `json:"access_duration"              edn:"review/access-duration"`
 	Status           ReviewStatus     `json:"status"                       edn:"review/status"`
 	RevokeAt         *time.Time       `json:"revoke_at"                    edn:"review/revoke-at"`
-	CreatedBy        string           `json:"created_by"                   edn:"review/created-by"`
+	CreatedBy        any              `json:"created_by"                   edn:"review/created-by"`
 	ReviewOwner      ReviewOwner      `json:"review_owner"                 edn:"review/review-owner"`
-	ConnectionId     string           `json:"connection"                   edn:"review/connection"`
+	ConnectionId     any              `json:"connection"                   edn:"review/connection"`
 	Connection       ReviewConnection `json:"review_connection"            edn:"review/review-connection"`
 	ReviewGroupsIds  []string         `json:"review_groups,omitempty"      edn:"review/review-groups"`
 	ReviewGroupsData []ReviewGroup    `json:"review_groups_data,omitempty" edn:"review/review-groups-data"`
+}
+
+type ReviewJSON struct {
+	Id               string           `json:"id"`
+	OrgId            string           `json:"org"`
+	CreatedAt        time.Time        `json:"created_at"`
+	Type             string           `json:"type"`
+	Session          string           `json:"session"`
+	Input            string           `json:"input"`
+	AccessDuration   time.Duration    `json:"access_duration"`
+	Status           ReviewStatus     `json:"status"`
+	RevokeAt         *time.Time       `json:"revoke_at"`
+	ReviewOwner      ReviewOwner      `json:"review_owner"`
+	Connection       ReviewConnection `json:"review_connection"`
+	ReviewGroupsData []ReviewGroup    `json:"review_groups_data"`
 }
 
 type SessionEventStream []any
@@ -138,4 +153,14 @@ type Session struct {
 	EventSize        int64                            `json:"event_size" edn:"session/event-size"`
 	StartSession     time.Time                        `json:"start_date" edn:"session/start-date"`
 	EndSession       *time.Time                       `json:"end_date"   edn:"session/end-date"`
+}
+
+type User struct {
+	Id      string         `json:"id"       edn:"xt/id"`
+	Org     string         `json:"-"        edn:"user/org"`
+	Name    string         `json:"name"     edn:"user/name"`
+	Email   string         `json:"email"    edn:"user/email"`
+	Status  UserStatusType `json:"status"   edn:"user/status"`
+	SlackID string         `json:"slack_id" edn:"user/slack-id"`
+	Groups  []string       `json:"groups"   edn:"user/groups"`
 }

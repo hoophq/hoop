@@ -9,6 +9,7 @@ import (
 	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
+	"olympos.io/encoding/edn"
 )
 
 type (
@@ -79,7 +80,59 @@ func (h *Handler) FindAll(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, reviews)
+	var reviewsList []types.ReviewJSON
+	for _, obj := range reviews {
+		reviewOwnerMap, _ := obj.CreatedBy.(map[any]any)
+		if reviewOwnerMap == nil {
+			reviewOwnerMap = map[any]any{
+				edn.Keyword("xt/id"):      "",
+				edn.Keyword("user/name"):  "",
+				edn.Keyword("user/email"): "",
+			}
+		}
+
+		reviewConnectionMap, _ := obj.ConnectionId.(map[any]any)
+		if reviewConnectionMap == nil {
+			reviewConnectionMap = map[any]any{
+				edn.Keyword("xt/id"):           "",
+				edn.Keyword("connection/name"): "",
+			}
+		}
+
+		reviewOwnerToStringFn := func(key string) string {
+			v, _ := reviewOwnerMap[edn.Keyword(key)].(string)
+			return v
+		}
+
+		connectionToStringFn := func(key string) string {
+			v, _ := reviewConnectionMap[edn.Keyword(key)].(string)
+			return v
+		}
+
+		reviewsList = append(reviewsList, types.ReviewJSON{
+			Id:             obj.Id,
+			OrgId:          obj.OrgId,
+			CreatedAt:      obj.CreatedAt,
+			Type:           obj.Type,
+			Session:        obj.Session,
+			Input:          obj.Input,
+			AccessDuration: obj.AccessDuration,
+			Status:         obj.Status,
+			RevokeAt:       obj.RevokeAt,
+			ReviewOwner: types.ReviewOwner{
+				Id:    reviewOwnerToStringFn("xt/id"),
+				Name:  reviewOwnerToStringFn("user/name"),
+				Email: reviewOwnerToStringFn("user/email"),
+			},
+			Connection: types.ReviewConnection{
+				Id:   connectionToStringFn("xt/id"),
+				Name: connectionToStringFn("connection/name"),
+			},
+			ReviewGroupsData: obj.ReviewGroupsData,
+		})
+	}
+
+	c.JSON(http.StatusOK, reviewsList)
 }
 
 func (h *Handler) FindOne(c *gin.Context) {
