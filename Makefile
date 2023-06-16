@@ -21,6 +21,7 @@ build:
 	tar -czvf hoop_${VERSION}_${OS}_${GOARCH}.tar.gz -C ${DIST_FOLDER}/${GOOS}_${GOARCH} .
 
 package-helmchart:
+	mkdir -p ./dist
 	helm package ./build/helm-chart/chart/agent/ --app-version ${VERSION} --destination ./dist/ --version ${VERSION}
 	helm package ./build/helm-chart/chart/gateway/ --app-version ${VERSION} --destination ./dist/ --version ${VERSION}
 
@@ -31,6 +32,7 @@ publish-assets:
 	find ./build -type f
 
 build-webapp:
+	mkdir -p ./dist
 	cd ./build/webapp && npm install && npm run release:hoop-ui && mv ./resources ../../dist/webapp-resources
 
 move-webapp-assets:
