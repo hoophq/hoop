@@ -147,7 +147,7 @@ type Session struct {
 	UserName    string             `json:"user_name"    edn:"session/user-name"`
 	Type        string             `json:"type"         edn:"session/type"`
 	Connection  string             `json:"connection"   edn:"session/connection"`
-	Review      *Review            `json:"review"       edn:"session/review"`
+	Review      *ReviewJSON        `json:"review"       edn:"session/review"`
 	Verb        string             `json:"verb"         edn:"session/verb"`
 	Status      string             `json:"status"       edn:"session/status"`
 	DlpCount    int64              `json:"dlp_count"    edn:"session/dlp-count"`
