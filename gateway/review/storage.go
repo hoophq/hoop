@@ -178,17 +178,9 @@ func (s *Storage) FindSessionBySessionId(sessionID string) (*types.Session, erro
 
 func (s *Storage) FindBySessionID(ctx *user.Context, sessionID string) (*types.Review, error) {
 	var payload = fmt.Sprintf(`{:query {
-		:find [(pull ?r [:xt/id
-						:review/type
-						:review/status
-						:review/access-duration
-						:review/revoke-at
-						:review/input
-						:review/session
-						:review/connection
-						:review/created-by
-							{:review/connection [:xt/id :connection/name]}
-							{:review/created-by [:xt/id :user/name :user/email :user/slack-id]}])]
+		:find [(pull ?r [*
+						{:review/connection [:xt/id :connection/name]}
+						{:review/created-by [:xt/id :user/name :user/email :user/slack-id]}])]
 		:in [session-id]
 		:where [[?r :review/session session-id]
 				[?r :review/connection connid]
@@ -229,21 +221,16 @@ func (s *Storage) findGroupsByReviewId(orgID string, reviewID string) ([]types.R
 		:where [[?r :review/org org-id]
 				[?r :xt/id review-id]]}
         :in-args [%q %q]}`, orgID, reviewID)
-
-	fmt.Printf("\n\n Storage findGroupsByReviewId Query ->  %#v \n\n", string(payload))
-
 	b, err := s.QueryRaw([]byte(payload))
 	if err != nil {
 		return nil, err
 	}
 
-	fmt.Printf("\n\n Storage findGroupsByReviewId BBB ->  %#v \n\n", string(b))
-
-	type ReviewGroups struct {
+	type reviewGroups struct {
 		ReviewGroups []types.ReviewGroup `edn:"review/review-groups"`
 	}
 
-	var reviewsGroups [][]ReviewGroups
+	var reviewsGroups [][]reviewGroups
 	if err := edn.Unmarshal(b, &reviewsGroups); err != nil {
 		return nil, err
 	}
@@ -256,12 +243,10 @@ func (s *Storage) findGroupsByReviewId(orgID string, reviewID string) ([]types.R
 }
 
 func (s *Storage) Persist(ctx *user.Context, review *types.Review) (int64, error) {
-	reviewGroups := make([]types.ReviewGroup, 0)
 	reviewGroupIds := make([]string, 0)
 
 	var payloads []st.TxEdnStruct
 	for _, r := range review.ReviewGroupsData {
-		reviewGroups = append(reviewGroups, r)
 		reviewGroupIds = append(reviewGroupIds, r.Id)
 		xg := &types.ReviewGroup{
 			Id:         r.Id,

@@ -20,7 +20,6 @@ type (
 
 	service interface {
 		FindAll(context *user.Context) ([]types.Review, error)
-		FindOne(context *user.Context, id string) (*types.Review, error)
 		Review(context *user.Context, id string, status types.ReviewStatus) (*types.Review, error)
 		Revoke(ctx *user.Context, id string) (*types.Review, error)
 		Persist(context *user.Context, review *types.Review) error
@@ -135,23 +134,55 @@ func (h *Handler) FindAll(c *gin.Context) {
 	c.JSON(http.StatusOK, reviewsList)
 }
 
-func (h *Handler) FindOne(c *gin.Context) {
-	context := user.ContextUser(c)
-	log := user.ContextLogger(c)
-
-	id := c.Param("id")
-	review, err := h.Service.FindOne(context, id)
-	if err != nil {
-		log.Errorf("failed fetching review %v, err=%v", id, err)
-		sentry.CaptureException(err)
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
+func sanitizeReview(review *types.Review) *types.ReviewJSON {
+	reviewOwnerMap, _ := review.CreatedBy.(map[any]any)
+	if reviewOwnerMap == nil {
+		reviewOwnerMap = map[any]any{
+			edn.Keyword("xt/id"):      "",
+			edn.Keyword("user/name"):  "",
+			edn.Keyword("user/email"): "",
+		}
 	}
 
-	if review == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
-		return
+	reviewConnectionMap, _ := review.ConnectionId.(map[any]any)
+	if reviewConnectionMap == nil {
+		reviewConnectionMap = map[any]any{
+			edn.Keyword("xt/id"):           "",
+			edn.Keyword("connection/name"): "",
+		}
 	}
 
-	c.PureJSON(http.StatusOK, review)
+	reviewOwnerToStringFn := func(key string) string {
+		v, _ := reviewOwnerMap[edn.Keyword(key)].(string)
+		return v
+	}
+
+	connectionToStringFn := func(key string) string {
+		v, _ := reviewConnectionMap[edn.Keyword(key)].(string)
+		return v
+	}
+
+	reviewJSON := types.ReviewJSON{
+		Id:             review.Id,
+		OrgId:          review.OrgId,
+		CreatedAt:      review.CreatedAt,
+		Type:           review.Type,
+		Session:        review.Session,
+		Input:          review.Input,
+		AccessDuration: review.AccessDuration,
+		Status:         review.Status,
+		RevokeAt:       review.RevokeAt,
+		ReviewOwner: types.ReviewOwner{
+			Id:    reviewOwnerToStringFn("xt/id"),
+			Name:  reviewOwnerToStringFn("user/name"),
+			Email: reviewOwnerToStringFn("user/email"),
+		},
+		Connection: types.ReviewConnection{
+			Id:   connectionToStringFn("xt/id"),
+			Name: connectionToStringFn("connection/name"),
+		},
+		ReviewGroupsData: review.ReviewGroupsData,
+	}
+
+	return &reviewJSON
 }

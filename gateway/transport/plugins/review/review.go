@@ -56,8 +56,8 @@ func (r *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 	}
 
 	if otrev != nil && otrev.Type == review.ReviewTypeOneTime {
-		log.With("id", otrev.Id, "session", pctx.SID, "user", otrev.CreatedBy, "org", pctx.OrgID,
-			"status", otrev.Status).Infof("one time review")
+		log.With("id", otrev.Id, "session", pctx.SID, "user", otrev.ReviewOwner.Email, "org", pctx.OrgID,
+			"status", otrev.Status).Info("one time review")
 		if !(otrev.Status == types.ReviewStatusApproved || otrev.Status == types.ReviewStatusProcessing) {
 			reviewURL := fmt.Sprintf("%s/plugins/reviews/%s", r.apiURL, otrev.Id)
 			return &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{

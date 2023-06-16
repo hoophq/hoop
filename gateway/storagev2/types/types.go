@@ -85,10 +85,12 @@ type ReviewOwner struct {
 	Email   string `json:"email"          edn:"review-user/email"`
 	SlackID string `json:"slack_id"       edn:"review-user/slack-id"`
 }
+
 type ReviewConnection struct {
 	Id   string `json:"id,omitempty" edn:"xt/id"`
 	Name string `json:"name"         edn:"review-connection/name"`
 }
+
 type ReviewGroup struct {
 	Id         string       `json:"id"          edn:"xt/id"`
 	Group      string       `json:"group"       edn:"review-group/group"`
@@ -96,6 +98,7 @@ type ReviewGroup struct {
 	ReviewedBy *ReviewOwner `json:"reviewed_by" edn:"review-group/reviewed-by"`
 	ReviewDate *string      `json:"review_date" edn:"review-group/review_date"`
 }
+
 type Review struct {
 	Id               string           `json:"id"                           edn:"xt/id"`
 	OrgId            string           `json:"org"                          edn:"review/org"`
@@ -133,6 +136,7 @@ type SessionEventStream []any
 type SessionNonIndexedEventStreamList map[edn.Keyword][]SessionEventStream
 type SessionScript map[edn.Keyword]string
 type SessionLabels map[string]string
+
 type Session struct {
 	ID          string             `json:"id"           edn:"xt/id"`
 	OrgID       string             `json:"-"            edn:"session/org-id"`
