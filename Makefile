@@ -1,5 +1,17 @@
 PUBLIC_IMAGE := "hoophq/hoop"
-VERSION ?=
+VERSION ?= $(or ${GIT_TAG},${GIT_TAG},unknown)
+GITCOMMIT ?= $(shell git rev-parse HEAD)
+DIST_FOLDER ?= ./dist
+
+DATE ?= $(shell date -u "+%Y-%m-%dT%H:%M:%SZ")
+
+GOOS ?= linux
+GOARCH ?= amd64
+
+LDFLAGS := "-s -w \
+-X github.com/runopsio/hoop/common/version.version=${VERSION} \
+-X github.com/runopsio/hoop/common/version.gitCommit=${GITCOMMIT} \
+-X github.com/runopsio/hoop/common/version.buildDate=${DATE}"
 
 # manual build/deploy
 publish-snapshot: clean
@@ -14,6 +26,13 @@ publish-snapshot: clean
 	docker manifest rm ${PUBLIC_IMAGE}:${VERSION} || true
 	docker manifest create ${PUBLIC_IMAGE}:${VERSION} --amend ${PUBLIC_IMAGE}:${VERSION}-arm64v8 --amend ${PUBLIC_IMAGE}:${VERSION}-amd64
 	docker manifest push ${PUBLIC_IMAGE}:${VERSION}
+
+build:
+	rm -rf ${DIST_FOLDER}/${GOOS}_${GOARCH} && mkdir -p ${DIST_FOLDER}/${GOOS}_${GOARCH}
+	env GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags ${LDFLAGS} -o ${DIST_FOLDER}/${GOOS}_${GOARCH}/hoop client/main.go
+
+done:
+	echo "done!"
 
 release: clean
 	cd ./build/webapp && npm install && npm run release:hoop-ui
@@ -35,4 +54,4 @@ clean:
 test:
 	go test -v github.com/runopsio/hoop/...
 
-.PHONY: publish-snapshot release publish clean test
+.PHONY: publish-snapshot release publish clean test build done
