@@ -36,6 +36,11 @@ build-webapp:
 	cd ./build/webapp && npm install && npm run release:hoop-ui && mv ./resources ../../dist/webapp-resources
 
 move-webapp-assets:
+	echo ${PWD}
+	ls -l
+	echo "------\n\n"
+	find ./dist -type f
+	
 	mv ./dist/webapp-resources ./rootfs/app/ui
 
 release: clean
