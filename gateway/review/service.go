@@ -74,7 +74,25 @@ func (s *Service) Persist(context *user.Context, review *types.Review) error {
 		}
 	}
 
-	if _, err := s.Storage.Persist(context, review); err != nil {
+	parsedReview := &types.Review{
+		Id:               review.Id,
+		CreatedAt:        review.CreatedAt,
+		OrgId:            review.OrgId,
+		Type:             review.Type,
+		Session:          review.Session,
+		Connection:       review.Connection,
+		ConnectionId:     review.Connection.Id,
+		CreatedBy:        review.ReviewOwner.Id,
+		ReviewOwner:      review.ReviewOwner,
+		Input:            review.Input,
+		AccessDuration:   review.AccessDuration,
+		RevokeAt:         review.RevokeAt,
+		Status:           review.Status,
+		ReviewGroupsIds:  review.ReviewGroupsIds,
+		ReviewGroupsData: review.ReviewGroupsData,
+	}
+
+	if _, err := s.Storage.Persist(context, parsedReview); err != nil {
 		return err
 	}
 	return nil
@@ -156,25 +174,7 @@ func (s *Service) Review(context *user.Context, reviewID string, status types.Re
 		rev.Status = types.ReviewStatusApproved
 	}
 
-	parsedReview := &types.Review{
-		Id:               rev.Id,
-		CreatedAt:        rev.CreatedAt,
-		OrgId:            rev.OrgId,
-		Type:             rev.Type,
-		Session:          rev.Session,
-		Connection:       rev.Connection,
-		ConnectionId:     rev.Connection.Id,
-		CreatedBy:        rev.ReviewOwner.Id,
-		ReviewOwner:      rev.ReviewOwner,
-		Input:            rev.Input,
-		AccessDuration:   rev.AccessDuration,
-		RevokeAt:         rev.RevokeAt,
-		Status:           rev.Status,
-		ReviewGroupsIds:  rev.ReviewGroupsIds,
-		ReviewGroupsData: rev.ReviewGroupsData,
-	}
-
-	if err := s.Persist(context, parsedReview); err != nil {
+	if err := s.Persist(context, rev); err != nil {
 		return nil, fmt.Errorf("Persist %v", err)
 	}
 
