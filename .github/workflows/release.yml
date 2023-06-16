@@ -202,6 +202,8 @@ jobs:
     environment: production
     needs: [test]
     steps:
+    - name: Checkout Hoop
+      uses: actions/checkout@v3
     - name: Checkout Webapp
       uses: actions/checkout@v3
       with:
