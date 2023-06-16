@@ -31,8 +31,7 @@ publish-assets:
 	find ./build -type f
 
 build-webapp:
-	cd ./build/webapp && npm install && npm run release:hoop-ui
-	mv ./build/webapp/resources ./dist/webapp-resources
+	cd ./build/webapp && npm install && npm run release:hoop-ui && mv ./resources ../../dist/webapp-resources
 
 move-webapp-assets:
 	mv ./dist/webapp-resources ./rootfs/app/ui
