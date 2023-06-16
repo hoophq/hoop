@@ -275,8 +275,6 @@ jobs:
         with:
           name: 'dist-artifacts'
           path: dist/
-      - name: Move Webapp Assets
-        run: make move-webapp-assets
       - name: Build and push
         uses: docker/build-push-action@v4
         with:
@@ -318,4 +316,4 @@ jobs:
           AWS_REGION: us-east-1
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        run: publish-assets
+        run: make publish-assets

@@ -23,7 +23,12 @@ ENV LANGUAGE en_US:en
 ENV LC_ALL en_US.UTF-8
 
 COPY rootfs /
-COPY hoop* /app/
+
+COPY dist/webapp-resources /app/ui/
+# copy all to tmp
+# extract tarbal for proper architecture
+# remove all from tmp
+COPY dist/*.tar.gz /tmp/
 
 EXPOSE 8009
 EXPOSE 8010

@@ -19,6 +19,7 @@ build:
 	rm -rf ${DIST_FOLDER}/${GOOS}_${GOARCH} && mkdir -p ${DIST_FOLDER}/${GOOS}_${GOARCH}
 	env GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags ${LDFLAGS} -o ${DIST_FOLDER}/${GOOS}_${GOARCH}/hoop client/main.go
 	tar -czvf ${DIST_FOLDER}/hoop_${VERSION}_${OS}_${GOARCH}.tar.gz -C ${DIST_FOLDER}/${GOOS}_${GOARCH} .
+	rm -f ${DIST_FOLDER}/${GOOS}_${GOARCH}/hoop
 
 package-helmchart:
 	mkdir -p ./dist
@@ -29,18 +30,10 @@ publish-assets:
 	echo "PUBLISHING ASSETS !!!"
 	find ${DIST_FOLDER} -type f
 	echo "-------"
-	find ./build -type f
 
 build-webapp:
 	mkdir -p ./dist
 	cd ./build/webapp && npm install && npm run release:hoop-ui && mv ./resources ../../dist/webapp-resources
-
-move-webapp-assets:
-	echo ${PWD}
-	ls -l
-	echo "------\n\n"
-	find ./dist -type f
-	mv ./dist/webapp-resources ./rootfs/app/ui
 
 release: clean
 	cd ./build/webapp && npm install && npm run release:hoop-ui
@@ -62,4 +55,4 @@ clean:
 test:
 	go test -v github.com/runopsio/hoop/...
 
-.PHONY: release publish clean test build build-webapp package-binaries package-helmchart move-webapp-assets publish-assets
+.PHONY: release publish clean test build build-webapp package-binaries package-helmchart publish-assets
