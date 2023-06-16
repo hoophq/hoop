@@ -18,7 +18,7 @@ LDFLAGS := "-s -w \
 build:
 	rm -f ${DIST_FOLDER}/binaries/hoop_${GOOS}_${GOARCH} && mkdir -p ${DIST_FOLDER}/binaries
 	env GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags ${LDFLAGS} -o ${DIST_FOLDER}/binaries/hoop_${GOOS}_${GOARCH} client/main.go
-	tar -czvf ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}.tar.gz -C ${DIST_FOLDER}/binaries/hoop_${GOOS}_${GOARCH} .
+	tar -czvf ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}.tar.gz -C ${DIST_FOLDER}/binaries .
 	rm -f ${DIST_FOLDER}/binaries/hoop_${GOOS}_${GOARCH}
 
 package-helmchart:
