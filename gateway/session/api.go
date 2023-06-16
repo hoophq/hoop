@@ -113,7 +113,22 @@ func (a *Handler) FindOne(c *gin.Context) {
 		return
 	}
 
-	session.Review = review
+	reviewJSON := types.ReviewJSON{
+		Id:               review.Id,
+		OrgId:            review.OrgId,
+		CreatedAt:        review.CreatedAt,
+		Type:             review.Type,
+		Session:          review.Session,
+		Input:            review.Input,
+		AccessDuration:   review.AccessDuration,
+		Status:           review.Status,
+		RevokeAt:         review.RevokeAt,
+		ReviewOwner:      review.ReviewOwner,
+		Connection:       review.Connection,
+		ReviewGroupsData: review.ReviewGroupsData,
+	}
+
+	session.Review = &reviewJSON
 	c.PureJSON(http.StatusOK, session)
 }
 
