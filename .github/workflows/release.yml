@@ -52,7 +52,7 @@ jobs:
 
       - uses: actions/upload-artifact@v3
         with:
-          name: darwin-amd64
+          name: dist-artifacts
           path: dist/
 
   darwin-arm64:
@@ -80,7 +80,7 @@ jobs:
 
       - uses: actions/upload-artifact@v3
         with:
-          name: darwin-arm64
+          name: dist-artifacts
           path: dist/
 
   windows-amd64:
@@ -108,7 +108,7 @@ jobs:
 
       - uses: actions/upload-artifact@v3
         with:
-          name: windows-amd64
+          name: dist-artifacts
           path: dist/
 
   windows-arm64:
@@ -136,7 +136,7 @@ jobs:
 
       - uses: actions/upload-artifact@v3
         with:
-          name: windows-arm64
+          name: dist-artifacts
           path: dist/
 
   linux-amd64:
@@ -164,7 +164,7 @@ jobs:
 
       - uses: actions/upload-artifact@v3
         with:
-          name: linux-amd64
+          name: dist-artifacts
           path: dist/
 
 
@@ -193,14 +193,59 @@ jobs:
 
       - uses: actions/upload-artifact@v3
         with:
-          name: linux-arm64
+          name: dist-artifacts
           path: dist/
 
-  docker-publish:
+  build-components:
     runs-on: ubuntu-latest
-    name: Docker 
+    name: Build Components
     environment: production
+    needs: [test]
     steps:
+    - name: Checkout Webapp
+      uses: actions/checkout@v3
+      with:
+        repository: runopsio/webapp
+        token: ${{ secrets.GH_TOKEN }}
+        path: './dist/webapp'
+
+    - name: Setup Java
+      uses: actions/setup-java@v2
+      with:
+        distribution: 'zulu'
+        java-version: '11'
+
+    - name: Setup Node
+      uses: actions/setup-node@v3
+      with:
+        node-version: 16
+
+    # test helm chart syntax
+    # - name: Setup Helm3
+    #   uses: azure/setup-helm@v3
+    - uses: actions/upload-artifact@v3
+      with:
+        name: dist-artifacts
+        path: dist/
+
+  publish-docker:
+    runs-on: ubuntu-latest
+    name: Docker Publish
+    environment: production
+    needs:
+      - darwin-amd64
+      - darwin-arm64
+      - windows-amd64
+      - windows-arm64
+      - linux-amd64
+      - linux-arm64
+      - build-components
+    steps:
+      - uses: actions/download-artifact@v3
+        id: download
+        with:
+          name: 'dist-artifacts'
+          path: dist/
       - name: Checkout
         uses: actions/checkout@v3
       - name: Docker meta
@@ -226,29 +271,27 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-  publish:
+  publish-artifacts:
     runs-on: ubuntu-latest
-    name: Publish
+    name: Publish Artifacts
     environment: production
-    needs:
-      - darwin-amd64
-      - darwin-arm64
-      - windows-amd64
-      - windows-arm64
-      - linux-amd64
-      - linux-arm64
+    needs: [publish-docker]
 
     steps:
       - name: Checkout Hoop
         uses: actions/checkout@v3
 
-      - name: Setup QEMU
-        uses: docker/setup-qemu-action@v2
+      - name: Checkout Helm Chart
+        uses: actions/checkout@v3
         with:
-          platforms: 'linux/amd64,linux/arm64'
+          repository: hoophq/helm-chart
+          path: './build/helm-chart'
 
-      - name: Docker Login
-        run: docker login -u=${{ secrets.DOCKER_LOGIN }} -p=${{ secrets.DOCKER_PASSWORD }}
+      - uses: actions/download-artifact@v3
+        id: download
+        with:
+          name: 'dist-artifacts'
+          path: dist/
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV

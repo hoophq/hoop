@@ -13,26 +13,14 @@ LDFLAGS := "-s -w \
 -X github.com/runopsio/hoop/common/version.gitCommit=${GITCOMMIT} \
 -X github.com/runopsio/hoop/common/version.buildDate=${DATE}"
 
-# manual build/deploy
-publish-snapshot: clean
-	git clone https://github.com/runopsio/webapp.git build/webapp
-	cd build/webapp && npm install && npm run release:hoop-ui
-	mv resources rootfs/ui
-	goreleaser release --rm-dist --snapshot
-	docker tag ${PUBLIC_IMAGE}:v0.0.0-arm64v8 ${PUBLIC_IMAGE}:${VERSION}-arm64v8
-	docker tag ${PUBLIC_IMAGE}:v0.0.0-amd64 ${PUBLIC_IMAGE}:${VERSION}-amd64
-	docker push ${PUBLIC_IMAGE}:${VERSION}-arm64v8
-	docker push ${PUBLIC_IMAGE}:${VERSION}-amd64
-	docker manifest rm ${PUBLIC_IMAGE}:${VERSION} || true
-	docker manifest create ${PUBLIC_IMAGE}:${VERSION} --amend ${PUBLIC_IMAGE}:${VERSION}-arm64v8 --amend ${PUBLIC_IMAGE}:${VERSION}-amd64
-	docker manifest push ${PUBLIC_IMAGE}:${VERSION}
-
 build:
 	rm -rf ${DIST_FOLDER}/${GOOS}_${GOARCH} && mkdir -p ${DIST_FOLDER}/${GOOS}_${GOARCH}
 	env GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags ${LDFLAGS} -o ${DIST_FOLDER}/${GOOS}_${GOARCH}/hoop client/main.go
 
 done:
-	echo "done!"
+	find ${DIST_FOLDER} -type f
+	echo "-------"
+	find ./build -type f
 
 release: clean
 	cd ./build/webapp && npm install && npm run release:hoop-ui
