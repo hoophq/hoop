@@ -9,8 +9,8 @@ on:
   push
 
 jobs:
-  publish:
-    name: Publish Release
+  test:
+    name: Test
     runs-on: ubuntu-latest
     environment: production
 
@@ -27,6 +27,13 @@ jobs:
       - name: Test
         run: make test
 
+  build-amd64:
+    runs-on: ubuntu-latest
+    name: build-amd64
+    environment: production
+    needs: [test]
+
+    steps:
       - name: Install GoReleaser
         uses: goreleaser/goreleaser-action@v3
         with:
@@ -34,49 +41,43 @@ jobs:
           distribution: goreleaser
           version: latest
 
-      # - name: Checkout Webapp
-      #   uses: actions/checkout@v3
-      #   with:
-      #     repository: runopsio/webapp
-      #     token: ${{ secrets.GH_TOKEN }}
-      #     path: './build/webapp'
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
 
-      # - name: Checkout Helm Chart
-      #   uses: actions/checkout@v3
-      #   with:
-      #     repository: hoophq/helm-chart
-      #     path: './build/helm-chart'
-      
-      # - name: Setup Java
-      #   uses: actions/setup-java@v2
-      #   with:
-      #     distribution: 'zulu'
-      #     java-version: '11'
+      - name: amd64
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: GOOS=darwin GOARCH=amd64 goreleaser build --single-target --id hoop --snapshot
 
-      # - name: Setup Node
-      #   uses: actions/setup-node@v3
-      #   with:
-      #     node-version: 16
-
-      # - name: Setup Helm3
-      #   uses: azure/setup-helm@v3
-
-      - name: Setup QEMU
-        uses: docker/setup-qemu-action@v2
+      - uses: actions/upload-artifact@v3
         with:
-          platforms: 'linux/amd64,linux/arm64'
+          name: amd64
+          path: dist/
 
-      - name: Docker Login
-        run: docker login -u=${{ secrets.DOCKER_LOGIN }} -p=${{ secrets.DOCKER_PASSWORD }}
+  build-arm64:
+    runs-on: ubuntu-latest
+    name: build-arm64
+    environment: production
+    needs: [test]
+
+    steps:
+      - name: Install GoReleaser
+        uses: goreleaser/goreleaser-action@v3
+        with:
+          install-only: true
+          distribution: goreleaser
+          version: latest
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
 
-      - name: Publish Release
+      - name: amd64
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-          AWS_REGION: us-east-1
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        run: goreleaser release --snapshot
+        run: GOOS=darwin GOARCH=arm64 goreleaser build --single-target --id hoop --snapshot
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: arm64
+          path: dist/
+
