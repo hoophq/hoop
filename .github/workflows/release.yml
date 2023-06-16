@@ -255,11 +255,6 @@ jobs:
       - linux-arm64
       - build-components
     steps:
-      - uses: actions/download-artifact@v3
-        id: download
-        with:
-          name: 'dist-artifacts'
-          path: dist/
       - name: Checkout
         uses: actions/checkout@v3
       - name: Docker meta
@@ -276,6 +271,10 @@ jobs:
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
+      - uses: actions/download-artifact@v3
+        with:
+          name: 'dist-artifacts'
+          path: dist/
       - name: Move Webapp Assets
         run: make move-webapp-assets
       - name: Build and push
