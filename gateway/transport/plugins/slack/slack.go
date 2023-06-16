@@ -203,6 +203,11 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		return nil, nil
 	}
 
+	userContext := &user.Context{
+		Org:  &user.Org{Id: pctx.OrgID},
+		User: &user.User{Id: pctx.UserID},
+	}
+
 	sreq := &slack.MessageReviewRequest{
 		Name:           pctx.UserName,
 		Email:          pctx.UserEmail,
@@ -212,7 +217,7 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		UserGroups:     pctx.UserGroups,
 	}
 
-	rev, err := p.reviewSvc.FindBySessionID(pctx.SID)
+	rev, err := p.reviewSvc.FindBySessionID(userContext, pctx.SID)
 	if err != nil {
 		return nil, plugintypes.InternalErr("internal error, failed fetching review", err)
 	}

@@ -61,7 +61,7 @@ func (h *Handler) Put(c *gin.Context) {
 	case ErrNotEligible, ErrWrongState:
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 	case nil:
-		c.JSON(http.StatusOK, review)
+		c.JSON(http.StatusOK, sanitizeReview(review))
 	default:
 		log.Errorf("failed processing review, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})

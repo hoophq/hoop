@@ -71,7 +71,7 @@ func Run() {
 	connectionService := connection.Service{PluginService: &pluginService, Storage: &connection.Storage{Storage: s}}
 	userService := user.Service{Storage: &user.Storage{Storage: s}}
 	sessionService := session.Service{Storage: &session.Storage{Storage: s}}
-	reviewService := review.Service{Storage: &review.Storage{Storage: s}}
+	reviewService := review.Service{Storage: &review.Storage{Storage: s}, StoreV2: storev2}
 	notificationService := getNotification()
 	securityService := security.Service{
 		Storage:     &security.Storage{Storage: s},

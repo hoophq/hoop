@@ -94,33 +94,22 @@ func (s *Storage) FindApprovedJitReviews(ctx *user.Context, connID string) (*typ
 
 func (s *Storage) FindById(ctx *user.Context, id string) (*types.Review, error) {
 	var payload = fmt.Sprintf(`{:query {
-		:find [(pull ?r [:xt/id
-						:review/type
-						:review/status
-						:review/access-duration
-						:review/created-at
-						:review/revoke-at
-						:review/input
-						:review/session
-						:review/connection
-						:review/created-by
-							{:review/connection [:xt/id :connection/name]}
-							{:review/review-groups [*
-								{:review-group/reviewed-by [:xt/id :user/name :user/email :user/slack-id]}]}
-							{:review/created-by [:xt/id :user/name :user/email :user/slack-id]}])]
+		:find [(pull ?r [*
+						{:review/connection [:xt/id :connection/name]}
+						{:review/created-by [:xt/id :user/name :user/email :user/slack-id]}])]
 		:in [org id]
 		:where [[?r :review/org org]
 				[?r :xt/id id]
-				[?r {:review/connection [:xt/id]} connid]
+				[?r :review/connection connid]
 				[?c :xt/id connid]]}
         :in-args [%q %q]}`, ctx.Org.Id, id)
 
-	b, err := s.Query([]byte(payload))
+	b, err := s.QueryRaw([]byte(payload))
 	if err != nil {
 		return nil, err
 	}
 
-	var reviews []types.Review
+	var reviews [][]types.Review
 	if err := edn.Unmarshal(b, &reviews); err != nil {
 		return nil, err
 	}
@@ -129,7 +118,19 @@ func (s *Storage) FindById(ctx *user.Context, id string) (*types.Review, error) 
 		return nil, nil
 	}
 
-	return &reviews[0], nil
+	reviewData := reviews[0][0]
+
+	groups, err := s.findGroupsByReviewId(ctx.Org.Id, reviewData.Id)
+
+	fmt.Printf("\n\n Storage FindById %#v \n\n", groups)
+
+	if err != nil {
+		return nil, err
+	}
+
+	reviewData.ReviewGroupsData = groups
+
+	return &reviewData, nil
 }
 
 func (s *Storage) queryDecoder(query string, into any, args ...any) error {
@@ -175,7 +176,7 @@ func (s *Storage) FindSessionBySessionId(sessionID string) (*types.Session, erro
 	return nil, nil
 }
 
-func (s *Storage) FindBySessionID(sessionID string) (*types.Review, error) {
+func (s *Storage) FindBySessionID(ctx *user.Context, sessionID string) (*types.Review, error) {
 	var payload = fmt.Sprintf(`{:query {
 		:find [(pull ?r [:xt/id
 						:review/type
@@ -187,8 +188,6 @@ func (s *Storage) FindBySessionID(sessionID string) (*types.Review, error) {
 						:review/connection
 						:review/created-by
 							{:review/connection [:xt/id :connection/name]}
-							{:review/review-groups [*
-								{:review-group/reviewed-by [:xt/id :user/name :user/email]}]}
 							{:review/created-by [:xt/id :user/name :user/email :user/slack-id]}])]
 		:in [session-id]
 		:where [[?r :review/session session-id]
@@ -196,12 +195,12 @@ func (s *Storage) FindBySessionID(sessionID string) (*types.Review, error) {
 				[?c :xt/id connid]]}
         :in-args [%q]}`, sessionID)
 
-	b, err := s.Query([]byte(payload))
+	b, err := s.QueryRaw([]byte(payload))
 	if err != nil {
 		return nil, err
 	}
 
-	var reviews []types.Review
+	var reviews [][]types.Review
 	if err := edn.Unmarshal(b, &reviews); err != nil {
 		return nil, err
 	}
@@ -210,7 +209,50 @@ func (s *Storage) FindBySessionID(sessionID string) (*types.Review, error) {
 		return nil, nil
 	}
 
-	return &reviews[0], nil
+	reviewData := reviews[0][0]
+
+	groups, err := s.findGroupsByReviewId(ctx.Org.Id, reviewData.Id)
+	if err != nil {
+		return nil, err
+	}
+
+	reviewData.ReviewGroupsData = groups
+
+	return &reviewData, nil
+}
+
+func (s *Storage) findGroupsByReviewId(orgID string, reviewID string) ([]types.ReviewGroup, error) {
+	var payload = fmt.Sprintf(`{:query {
+		:find [(pull ?r [{:review/review-groups 
+			[* {:review-group/reviewed-by [:xt/id :user/name :user/email]}]}])]
+		:in [org-id review-id]
+		:where [[?r :review/org org-id]
+				[?r :xt/id review-id]]}
+        :in-args [%q %q]}`, orgID, reviewID)
+
+	fmt.Printf("\n\n Storage findGroupsByReviewId Query ->  %#v \n\n", string(payload))
+
+	b, err := s.QueryRaw([]byte(payload))
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Printf("\n\n Storage findGroupsByReviewId BBB ->  %#v \n\n", string(b))
+
+	type ReviewGroups struct {
+		ReviewGroups []types.ReviewGroup `edn:"review/review-groups"`
+	}
+
+	var reviewsGroups [][]ReviewGroups
+	if err := edn.Unmarshal(b, &reviewsGroups); err != nil {
+		return nil, err
+	}
+
+	if len(reviewsGroups) == 0 {
+		return nil, nil
+	}
+
+	return reviewsGroups[0][0].ReviewGroups, nil
 }
 
 func (s *Storage) Persist(ctx *user.Context, review *types.Review) (int64, error) {

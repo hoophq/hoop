@@ -2,11 +2,13 @@ package review
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
 	st "github.com/runopsio/hoop/gateway/storage"
+	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
@@ -15,13 +17,14 @@ type (
 	Service struct {
 		Storage          storage
 		TransportService transportService
+		StoreV2          *storagev2.Store
 	}
 
 	storage interface {
 		Persist(context *user.Context, review *types.Review) (int64, error)
 		FindById(context *user.Context, id string) (*types.Review, error)
 		FindAll(context *user.Context) ([]types.Review, error)
-		FindBySessionID(sessionID string) (*types.Review, error)
+		FindBySessionID(context *user.Context, sessionID string) (*types.Review, error)
 		FindApprovedJitReviews(ctx *user.Context, connID string) (*types.Review, error)
 		PersistSessionAsReady(s *types.Session) (*st.TxResponse, error)
 		FindSessionBySessionId(sessionID string) (*types.Session, error)
@@ -30,42 +33,6 @@ type (
 	transportService interface {
 		ReviewStatusChange(ctx *user.Context, rev *types.Review)
 	}
-
-	Review struct {
-		Id             string        `json:"id"                      edn:"xt/id"`
-		CreatedAt      time.Time     `json:"created_at"              edn:"review/created-at"`
-		Type           string        `json:"type"                    edn:"review/type"`
-		Session        string        `json:"session"                 edn:"review/session"`
-		Input          string        `json:"input"                   edn:"review/input"`
-		AccessDuration time.Duration `json:"access_duration"         edn:"review/access-duration"`
-		Status         Status        `json:"status"                  edn:"review/status"`
-		RevokeAt       *time.Time    `json:"revoke_at"               edn:"review/revoke-at"`
-		CreatedBy      Owner         `json:"created_by"              edn:"review/created-by"`
-		Connection     Connection    `json:"connection"              edn:"review/connection"`
-		ReviewGroups   []Group       `json:"review_groups,omitempty" edn:"review/review-groups"`
-	}
-
-	Owner struct {
-		Id      string `json:"id,omitempty"   edn:"xt/id"`
-		Name    string `json:"name,omitempty" edn:"user/name"`
-		Email   string `json:"email"          edn:"user/email"`
-		SlackID string `json:"slack_id"       edn:"user/slack-id"`
-	}
-
-	Connection struct {
-		Id   string `json:"id,omitempty" edn:"xt/id"`
-		Name string `json:"name"         edn:"connection/name"`
-	}
-
-	Group struct {
-		Id         string  `json:"id"          edn:"xt/id"`
-		Group      string  `json:"group"       edn:"review-group/group"`
-		Status     Status  `json:"status"      edn:"review-group/status"`
-		ReviewedBy *Owner  `json:"reviewed_by" edn:"review-group/reviewed-by"`
-		ReviewDate *string `json:"review_date" edn:"review-group/review_date"`
-	}
-
-	Status string
 )
 
 var (
@@ -84,8 +51,8 @@ func (s *Service) FindOne(context *user.Context, id string) (*types.Review, erro
 }
 
 // FindOneTimeReview returns an one time review by session id
-func (s *Service) FindBySessionID(sessionID string) (*types.Review, error) {
-	return s.Storage.FindBySessionID(sessionID)
+func (s *Service) FindBySessionID(context *user.Context, sessionID string) (*types.Review, error) {
+	return s.Storage.FindBySessionID(context, sessionID)
 }
 
 func (s *Service) FindSessionBySessionId(sessionID string) (*types.Session, error) {
@@ -139,7 +106,7 @@ func (s *Service) Revoke(ctx *user.Context, reviewID string) (*types.Review, err
 func (s *Service) Review(context *user.Context, reviewID string, status types.ReviewStatus) (*types.Review, error) {
 	rev, err := s.FindOne(context, reviewID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("FindOne %v", err)
 	}
 	if rev == nil {
 		return nil, ErrNotFound
@@ -147,6 +114,9 @@ func (s *Service) Review(context *user.Context, reviewID string, status types.Re
 	if rev.Status != types.ReviewStatusPending {
 		return rev, ErrWrongState
 	}
+
+	fmt.Printf("\n\n FindSessionBySessionId %v \n\n", rev)
+
 	isEligibleReviewer := false
 	for _, r := range rev.ReviewGroupsData {
 		if pb.IsInList(r.Group, context.User.Groups) {
@@ -186,18 +156,36 @@ func (s *Service) Review(context *user.Context, reviewID string, status types.Re
 		rev.Status = types.ReviewStatusApproved
 	}
 
-	if err := s.Persist(context, rev); err != nil {
-		return nil, err
+	parsedReview := &types.Review{
+		Id:               rev.Id,
+		CreatedAt:        rev.CreatedAt,
+		OrgId:            rev.OrgId,
+		Type:             rev.Type,
+		Session:          rev.Session,
+		Connection:       rev.Connection,
+		ConnectionId:     rev.Connection.Id,
+		CreatedBy:        rev.ReviewOwner.Id,
+		ReviewOwner:      rev.ReviewOwner,
+		Input:            rev.Input,
+		AccessDuration:   rev.AccessDuration,
+		RevokeAt:         rev.RevokeAt,
+		Status:           rev.Status,
+		ReviewGroupsIds:  rev.ReviewGroupsIds,
+		ReviewGroupsData: rev.ReviewGroupsData,
+	}
+
+	if err := s.Persist(context, parsedReview); err != nil {
+		return nil, fmt.Errorf("Persist %v", err)
 	}
 
 	if rev.Status == types.ReviewStatusApproved || rev.Status == types.ReviewStatusRejected {
 		currentSession, err := s.Storage.FindSessionBySessionId(rev.Session)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("FindSessionBySessionId %v", err)
 		}
 		_, err = s.Storage.PersistSessionAsReady(currentSession)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("PersistSessionAsReady %v", err)
 		}
 		// release the connection if there's a client waiting
 		s.TransportService.ReviewStatusChange(context, rev)
