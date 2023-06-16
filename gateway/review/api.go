@@ -81,60 +81,13 @@ func (h *Handler) FindAll(c *gin.Context) {
 
 	var reviewsList []types.ReviewJSON
 	for _, obj := range reviews {
-		reviewOwnerMap, _ := obj.CreatedBy.(map[any]any)
-		if reviewOwnerMap == nil {
-			reviewOwnerMap = map[any]any{
-				edn.Keyword("xt/id"):      "",
-				edn.Keyword("user/name"):  "",
-				edn.Keyword("user/email"): "",
-			}
-		}
-
-		reviewConnectionMap, _ := obj.ConnectionId.(map[any]any)
-		if reviewConnectionMap == nil {
-			reviewConnectionMap = map[any]any{
-				edn.Keyword("xt/id"):           "",
-				edn.Keyword("connection/name"): "",
-			}
-		}
-
-		reviewOwnerToStringFn := func(key string) string {
-			v, _ := reviewOwnerMap[edn.Keyword(key)].(string)
-			return v
-		}
-
-		connectionToStringFn := func(key string) string {
-			v, _ := reviewConnectionMap[edn.Keyword(key)].(string)
-			return v
-		}
-
-		reviewsList = append(reviewsList, types.ReviewJSON{
-			Id:             obj.Id,
-			OrgId:          obj.OrgId,
-			CreatedAt:      obj.CreatedAt,
-			Type:           obj.Type,
-			Session:        obj.Session,
-			Input:          obj.Input,
-			AccessDuration: obj.AccessDuration,
-			Status:         obj.Status,
-			RevokeAt:       obj.RevokeAt,
-			ReviewOwner: types.ReviewOwner{
-				Id:    reviewOwnerToStringFn("xt/id"),
-				Name:  reviewOwnerToStringFn("user/name"),
-				Email: reviewOwnerToStringFn("user/email"),
-			},
-			Connection: types.ReviewConnection{
-				Id:   connectionToStringFn("xt/id"),
-				Name: connectionToStringFn("connection/name"),
-			},
-			ReviewGroupsData: obj.ReviewGroupsData,
-		})
+		reviewsList = append(reviewsList, sanitizeReview(&obj))
 	}
 
 	c.JSON(http.StatusOK, reviewsList)
 }
 
-func sanitizeReview(review *types.Review) *types.ReviewJSON {
+func sanitizeReview(review *types.Review) types.ReviewJSON {
 	reviewOwnerMap, _ := review.CreatedBy.(map[any]any)
 	if reviewOwnerMap == nil {
 		reviewOwnerMap = map[any]any{
@@ -162,7 +115,7 @@ func sanitizeReview(review *types.Review) *types.ReviewJSON {
 		return v
 	}
 
-	reviewJSON := types.ReviewJSON{
+	return types.ReviewJSON{
 		Id:             review.Id,
 		OrgId:          review.OrgId,
 		CreatedAt:      review.CreatedAt,
@@ -183,6 +136,4 @@ func sanitizeReview(review *types.Review) *types.ReviewJSON {
 		},
 		ReviewGroupsData: review.ReviewGroupsData,
 	}
-
-	return &reviewJSON
 }

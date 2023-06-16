@@ -108,7 +108,6 @@ func (s *Storage) FindById(ctx *user.Context, id string) (*types.Review, error) 
 	if err != nil {
 		return nil, err
 	}
-
 	var reviews [][]types.Review
 	if err := edn.Unmarshal(b, &reviews); err != nil {
 		return nil, err
@@ -119,17 +118,11 @@ func (s *Storage) FindById(ctx *user.Context, id string) (*types.Review, error) 
 	}
 
 	reviewData := reviews[0][0]
-
 	groups, err := s.findGroupsByReviewId(ctx.Org.Id, reviewData.Id)
-
-	fmt.Printf("\n\n Storage FindById %#v \n\n", groups)
-
 	if err != nil {
 		return nil, err
 	}
-
 	reviewData.ReviewGroupsData = groups
-
 	return &reviewData, nil
 }
 
@@ -202,14 +195,11 @@ func (s *Storage) FindBySessionID(ctx *user.Context, sessionID string) (*types.R
 	}
 
 	reviewData := reviews[0][0]
-
 	groups, err := s.findGroupsByReviewId(ctx.Org.Id, reviewData.Id)
 	if err != nil {
 		return nil, err
 	}
-
 	reviewData.ReviewGroupsData = groups
-
 	return &reviewData, nil
 }
 

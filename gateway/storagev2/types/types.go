@@ -100,21 +100,21 @@ type ReviewGroup struct {
 }
 
 type Review struct {
-	Id               string           `json:"id"                           edn:"xt/id"`
-	OrgId            string           `json:"org"                          edn:"review/org"`
-	CreatedAt        time.Time        `json:"created_at"                   edn:"review/created-at"`
-	Type             string           `json:"type"                         edn:"review/type"`
-	Session          string           `json:"session"                      edn:"review/session"`
-	Input            string           `json:"input"                        edn:"review/input"`
-	AccessDuration   time.Duration    `json:"access_duration"              edn:"review/access-duration"`
-	Status           ReviewStatus     `json:"status"                       edn:"review/status"`
-	RevokeAt         *time.Time       `json:"revoke_at"                    edn:"review/revoke-at"`
-	CreatedBy        any              `json:"created_by"                   edn:"review/created-by"`
-	ReviewOwner      ReviewOwner      `json:"review_owner"                 edn:"review/review-owner"`
-	ConnectionId     any              `json:"connection"                   edn:"review/connection"`
-	Connection       ReviewConnection `json:"review_connection"            edn:"review/review-connection"`
-	ReviewGroupsIds  []string         `json:"review_groups,omitempty"      edn:"review/review-groups"`
-	ReviewGroupsData []ReviewGroup    `json:"review_groups_data,omitempty" edn:"review/review-groups-data"`
+	Id               string           `edn:"xt/id"`
+	OrgId            string           `edn:"review/org"`
+	CreatedAt        time.Time        `edn:"review/created-at"`
+	Type             string           `edn:"review/type"`
+	Session          string           `edn:"review/session"`
+	Input            string           `edn:"review/input"`
+	AccessDuration   time.Duration    `edn:"review/access-duration"`
+	Status           ReviewStatus     `edn:"review/status"`
+	RevokeAt         *time.Time       `edn:"review/revoke-at"`
+	CreatedBy        any              `edn:"review/created-by"`
+	ReviewOwner      ReviewOwner      `edn:"review/review-owner"`
+	ConnectionId     any              `edn:"review/connection"`
+	Connection       ReviewConnection `edn:"review/review-connection"`
+	ReviewGroupsIds  []string         `edn:"review/review-groups"`
+	ReviewGroupsData []ReviewGroup    `edn:"review/review-groups-data"`
 }
 
 type ReviewJSON struct {

@@ -6,7 +6,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/gateway/storagev2"
-	reviewStorage "github.com/runopsio/hoop/gateway/storagev2/review"
+	reviewstorage "github.com/runopsio/hoop/gateway/storagev2/review"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
 	"olympos.io/encoding/edn"
@@ -17,7 +17,7 @@ func GetById(c *gin.Context) {
 	log := user.ContextLogger(c)
 
 	id := c.Param("id")
-	review, err := reviewStorage.FindOne(storageCtx, id)
+	review, err := reviewstorage.FindOne(storageCtx, id)
 	if err != nil {
 		log.Errorf("failed fetching review %v, err=%v", id, err)
 		sentry.CaptureException(err)
@@ -57,7 +57,7 @@ func GetById(c *gin.Context) {
 		return v
 	}
 
-	reviewJSON := types.ReviewJSON{
+	c.PureJSON(http.StatusOK, types.ReviewJSON{
 		Id:             review.Id,
 		OrgId:          review.OrgId,
 		CreatedAt:      review.CreatedAt,
@@ -77,7 +77,5 @@ func GetById(c *gin.Context) {
 			Name: connectionToStringFn("connection/name"),
 		},
 		ReviewGroupsData: review.ReviewGroupsData,
-	}
-
-	c.PureJSON(http.StatusOK, reviewJSON)
+	})
 }

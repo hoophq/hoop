@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
 	st "github.com/runopsio/hoop/gateway/storage"
-	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
@@ -17,7 +16,6 @@ type (
 	Service struct {
 		Storage          storage
 		TransportService transportService
-		StoreV2          *storagev2.Store
 	}
 
 	storage interface {
@@ -124,7 +122,7 @@ func (s *Service) Revoke(ctx *user.Context, reviewID string) (*types.Review, err
 func (s *Service) Review(context *user.Context, reviewID string, status types.ReviewStatus) (*types.Review, error) {
 	rev, err := s.FindOne(context, reviewID)
 	if err != nil {
-		return nil, fmt.Errorf("FindOne %v", err)
+		return nil, fmt.Errorf("fetch review error: %v", err)
 	}
 	if rev == nil {
 		return nil, ErrNotFound
@@ -132,8 +130,6 @@ func (s *Service) Review(context *user.Context, reviewID string, status types.Re
 	if rev.Status != types.ReviewStatusPending {
 		return rev, ErrWrongState
 	}
-
-	fmt.Printf("\n\n FindSessionBySessionId %v \n\n", rev)
 
 	isEligibleReviewer := false
 	for _, r := range rev.ReviewGroupsData {
@@ -175,17 +171,17 @@ func (s *Service) Review(context *user.Context, reviewID string, status types.Re
 	}
 
 	if err := s.Persist(context, rev); err != nil {
-		return nil, fmt.Errorf("Persist %v", err)
+		return nil, fmt.Errorf("saving review error: %v", err)
 	}
 
 	if rev.Status == types.ReviewStatusApproved || rev.Status == types.ReviewStatusRejected {
 		currentSession, err := s.Storage.FindSessionBySessionId(rev.Session)
 		if err != nil {
-			return nil, fmt.Errorf("FindSessionBySessionId %v", err)
+			return nil, fmt.Errorf("fetch session by id error: %v", err)
 		}
 		_, err = s.Storage.PersistSessionAsReady(currentSession)
 		if err != nil {
-			return nil, fmt.Errorf("PersistSessionAsReady %v", err)
+			return nil, fmt.Errorf("save sesession as ready error: %v", err)
 		}
 		// release the connection if there's a client waiting
 		s.TransportService.ReviewStatusChange(context, rev)
