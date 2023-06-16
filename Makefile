@@ -62,4 +62,4 @@ clean:
 test:
 	go test -v github.com/runopsio/hoop/...
 
-.PHONY: release publish clean test build package-binaries package-helmchart move-webapp-assets publish-assets
+.PHONY: release publish clean test build build-webapp package-binaries package-helmchart move-webapp-assets publish-assets
