@@ -48,7 +48,7 @@ func (r *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 		User: &user.User{Id: pctx.UserID},
 	}
 
-	otrev, err := r.reviewSvc.FindBySessionID(pctx.SID)
+	otrev, err := r.reviewSvc.FindBySessionID(userContext, pctx.SID)
 	if err != nil {
 		err = fmt.Errorf("hala big bonga")
 		log.With("session", pctx.SID).Error("failed fetching session, err=%v", err)
@@ -56,9 +56,9 @@ func (r *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 	}
 
 	if otrev != nil && otrev.Type == review.ReviewTypeOneTime {
-		log.With("id", otrev.Id, "session", pctx.SID, "user", otrev.CreatedBy, "org", pctx.OrgID,
-			"status", otrev.Status).Infof("one time review")
-		if !(otrev.Status == review.StatusApproved || otrev.Status == review.StatusProcessing) {
+		log.With("id", otrev.Id, "session", pctx.SID, "user", otrev.ReviewOwner.Email, "org", pctx.OrgID,
+			"status", otrev.Status).Info("one time review")
+		if !(otrev.Status == types.ReviewStatusApproved || otrev.Status == types.ReviewStatusProcessing) {
 			reviewURL := fmt.Sprintf("%s/plugins/reviews/%s", r.apiURL, otrev.Id)
 			return &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{
 				Type:    pbclient.SessionOpenWaitingApproval,
@@ -66,8 +66,8 @@ func (r *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 			}}, nil
 		}
 
-		if otrev.Status == review.StatusApproved {
-			otrev.Status = review.StatusProcessing
+		if otrev.Status == types.ReviewStatusApproved {
+			otrev.Status = types.ReviewStatusProcessing
 			if err := r.reviewSvc.Persist(userContext, otrev); err != nil {
 				return nil, plugintypes.InternalErr("failed saving approved review", err)
 			}
@@ -106,29 +106,40 @@ func (r *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 		return nil, plugintypes.InternalErr(err.Error(), err)
 	}
 
-	reviewGroups := make([]review.Group, 0)
+	reviewGroups := make([]types.ReviewGroup, 0)
 	groups := make([]string, 0)
 	for _, s := range pctx.PluginConnectionConfig {
 		groups = append(groups, s)
-		reviewGroups = append(reviewGroups, review.Group{
+		reviewGroups = append(reviewGroups, types.ReviewGroup{
 			Group:  s,
-			Status: review.StatusPending,
+			Status: types.ReviewStatusPending,
 		})
 	}
 
-	newRev := &review.Review{
-		Id:        uuid.NewString(),
-		Type:      reviewType,
-		CreatedAt: time.Now().UTC(),
-		Session:   pctx.SID,
-		Connection: review.Connection{
+	newRev := &types.Review{
+		Id:           uuid.NewString(),
+		Type:         reviewType,
+		OrgId:        pctx.OrgID,
+		CreatedAt:    time.Now().UTC(),
+		Session:      pctx.SID,
+		Input:        "",
+		ConnectionId: pctx.ConnectionID,
+		Connection: types.ReviewConnection{
 			Id:   pctx.ConnectionID,
 			Name: pctx.ConnectionName,
 		},
-		AccessDuration: accessDuration,
-		Status:         review.StatusPending,
-		ReviewGroups:   reviewGroups,
+		CreatedBy: pctx.UserID,
+		ReviewOwner: types.ReviewOwner{
+			Id:    pctx.UserID,
+			Name:  pctx.UserName,
+			Email: pctx.UserEmail,
+		},
+		AccessDuration:   accessDuration,
+		Status:           types.ReviewStatusPending,
+		ReviewGroupsIds:  groups,
+		ReviewGroupsData: reviewGroups,
 	}
+
 	if !isJitReview {
 		// only onetime reviews has input
 		newRev.Input = string(pkt.Payload)

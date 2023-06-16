@@ -79,10 +79,64 @@ type Connection struct {
 	AgentId        string   `edn:"connection/agent"`
 }
 
+type ReviewOwner struct {
+	Id      string `json:"id,omitempty"   edn:"xt/id"`
+	Name    string `json:"name,omitempty" edn:"review-user/name"`
+	Email   string `json:"email"          edn:"review-user/email"`
+	SlackID string `json:"slack_id"       edn:"review-user/slack-id"`
+}
+
+type ReviewConnection struct {
+	Id   string `json:"id,omitempty" edn:"xt/id"`
+	Name string `json:"name"         edn:"review-connection/name"`
+}
+
+type ReviewGroup struct {
+	Id         string       `json:"id"          edn:"xt/id"`
+	Group      string       `json:"group"       edn:"review-group/group"`
+	Status     ReviewStatus `json:"status"      edn:"review-group/status"`
+	ReviewedBy *ReviewOwner `json:"reviewed_by" edn:"review-group/reviewed-by"`
+	ReviewDate *string      `json:"review_date" edn:"review-group/review_date"`
+}
+
+type Review struct {
+	Id               string           `edn:"xt/id"`
+	OrgId            string           `edn:"review/org"`
+	CreatedAt        time.Time        `edn:"review/created-at"`
+	Type             string           `edn:"review/type"`
+	Session          string           `edn:"review/session"`
+	Input            string           `edn:"review/input"`
+	AccessDuration   time.Duration    `edn:"review/access-duration"`
+	Status           ReviewStatus     `edn:"review/status"`
+	RevokeAt         *time.Time       `edn:"review/revoke-at"`
+	CreatedBy        any              `edn:"review/created-by"`
+	ReviewOwner      ReviewOwner      `edn:"review/review-owner"`
+	ConnectionId     any              `edn:"review/connection"`
+	Connection       ReviewConnection `edn:"review/review-connection"`
+	ReviewGroupsIds  []string         `edn:"review/review-groups"`
+	ReviewGroupsData []ReviewGroup    `edn:"review/review-groups-data"`
+}
+
+type ReviewJSON struct {
+	Id               string           `json:"id"`
+	OrgId            string           `json:"org"`
+	CreatedAt        time.Time        `json:"created_at"`
+	Type             string           `json:"type"`
+	Session          string           `json:"session"`
+	Input            string           `json:"input"`
+	AccessDuration   time.Duration    `json:"access_duration"`
+	Status           ReviewStatus     `json:"status"`
+	RevokeAt         *time.Time       `json:"revoke_at"`
+	ReviewOwner      ReviewOwner      `json:"review_owner"`
+	Connection       ReviewConnection `json:"review_connection"`
+	ReviewGroupsData []ReviewGroup    `json:"review_groups_data"`
+}
+
 type SessionEventStream []any
 type SessionNonIndexedEventStreamList map[edn.Keyword][]SessionEventStream
 type SessionScript map[edn.Keyword]string
 type SessionLabels map[string]string
+
 type Session struct {
 	ID          string             `json:"id"           edn:"xt/id"`
 	OrgID       string             `json:"-"            edn:"session/org-id"`
@@ -93,6 +147,7 @@ type Session struct {
 	UserName    string             `json:"user_name"    edn:"session/user-name"`
 	Type        string             `json:"type"         edn:"session/type"`
 	Connection  string             `json:"connection"   edn:"session/connection"`
+	Review      *Review            `json:"review"       edn:"session/review"`
 	Verb        string             `json:"verb"         edn:"session/verb"`
 	Status      string             `json:"status"       edn:"session/status"`
 	DlpCount    int64              `json:"dlp_count"    edn:"session/dlp-count"`
@@ -102,4 +157,14 @@ type Session struct {
 	EventSize        int64                            `json:"event_size" edn:"session/event-size"`
 	StartSession     time.Time                        `json:"start_date" edn:"session/start-date"`
 	EndSession       *time.Time                       `json:"end_date"   edn:"session/end-date"`
+}
+
+type User struct {
+	Id      string         `json:"id"       edn:"xt/id"`
+	Org     string         `json:"-"        edn:"user/org"`
+	Name    string         `json:"name"     edn:"user/name"`
+	Email   string         `json:"email"    edn:"user/email"`
+	Status  UserStatusType `json:"status"   edn:"user/status"`
+	SlackID string         `json:"slack_id" edn:"user/slack-id"`
+	Groups  []string       `json:"groups"   edn:"user/groups"`
 }

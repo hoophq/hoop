@@ -33,3 +33,15 @@ func GetOneByName(storageCtx *storage.Context, name string) (*types.Connection, 
 	conn := connections[0][0]
 	return &conn, nil
 }
+
+func GetEntity(storageCtx *storage.Context, xtID string) (*types.Connection, error) {
+	data, err := storageCtx.GetEntity(xtID)
+	if err != nil {
+		return nil, err
+	}
+	if data == nil {
+		return nil, nil
+	}
+	var obj types.Connection
+	return &obj, edn.Unmarshal(data, &obj)
+}
