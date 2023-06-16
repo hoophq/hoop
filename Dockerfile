@@ -23,12 +23,10 @@ ENV LANGUAGE en_US:en
 ENV LC_ALL en_US.UTF-8
 
 COPY rootfs /
-
 COPY dist/webapp-resources /app/ui/
-# copy all to tmp
-# extract tarbal for proper architecture
-# remove all from tmp
-COPY dist/*.tar.gz /tmp/
+COPY dist/binaries/ /tmp/
+RUN tar -xf /tmp/hoop_*_$(uname -s)_$(dpkg --print-architecture).tar.gz -C /app/ && \
+    rm -rf /tmp/*
 
 EXPOSE 8009
 EXPOSE 8010
