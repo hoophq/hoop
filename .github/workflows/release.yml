@@ -34,6 +34,9 @@ jobs:
     needs: [test]
 
     steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+
       - name: Install GoReleaser
         uses: goreleaser/goreleaser-action@v3
         with:
@@ -61,6 +64,9 @@ jobs:
     needs: [test]
 
     steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+
       - name: Install GoReleaser
         uses: goreleaser/goreleaser-action@v3
         with:
