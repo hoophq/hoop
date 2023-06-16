@@ -210,7 +210,6 @@ jobs:
         repository: runopsio/webapp
         token: ${{ secrets.GH_TOKEN }}
         path: './build/webapp'
-
     - name: Checkout Helm Chart
       uses: actions/checkout@v3
       with:
@@ -222,12 +221,10 @@ jobs:
       with:
         distribution: 'zulu'
         java-version: '11'
-
     - name: Setup Node
       uses: actions/setup-node@v3
       with:
         node-version: 16
-
     - name: Setup Helm3
       uses: azure/setup-helm@v3
     
