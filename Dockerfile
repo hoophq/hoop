@@ -25,7 +25,7 @@ ENV LC_ALL en_US.UTF-8
 COPY rootfs /
 COPY dist/webapp-resources /app/ui/
 COPY dist/binaries/ /tmp/
-RUN tar -xf /tmp/hoop_*_$(uname -s)_$(dpkg --print-architecture).tar.gz -C /app/ && \
+RUN tar -xf /tmp/binaries/$(uname -s)_$(dpkg --print-architecture)/hoop_*_$(uname -s)_$(dpkg --print-architecture).tar.gz -C /app/ && \
     rm -rf /tmp/*
 
 EXPOSE 8009
