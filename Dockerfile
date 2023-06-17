@@ -1,4 +1,4 @@
-FROM ubuntu:focal-20230308
+FROM ubuntu:focal-20230605
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV ACCEPT_EULA=y

@@ -1,102 +1,8 @@
-FROM ubuntu:focal-20230308
+FROM hoophq/agent-tools:0.0.1
 
 ENV DEBIAN_FRONTEND=noninteractive
-ENV ACCEPT_EULA=y
-ARG CLOJURE_VERSION=1.10.3.1040
-ARG AWS_CLI_VERSION=2.9.6
-ARG AWS_SM_VERSION=1.2.398.0
-
-# Common
-RUN mkdir -p /app && \
-    mkdir -p /opt/hoop/sessions && \
-    apt-get update -y && \
-    apt-get install -y \
-        python3-pip \
-        locales \
-        tini \
-        apt-utils \
-        curl \
-        gnupg \
-        gnupg2 \
-        groff \
-        jq \
-        openssh-client \
-        unzip \
-        expect \
-        lsb-release && \
-        ln -s /usr/bin/python3 /usr/bin/python
-
-# kubectl / aws-cli / aws-session-manager
-RUN curl -sL "https://dl.k8s.io/release/v1.22.1/bin/linux/amd64/kubectl" -o kubectl && \
-        echo '78178a8337fc6c76780f60541fca7199f0f1a2e9c41806bded280a4a5ef665c9  kubectl' | sha256sum -c --ignore-missing --strict - && \
-        chmod 755 kubectl && \
-        mv kubectl /usr/local/bin/kubectl && \
-    curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64-$AWS_CLI_VERSION.zip" -o awscli-exe-linux-x86_64-$AWS_CLI_VERSION.zip && \
-        echo '8f1de286d2c66cc0d0d26f205fdb17d5ed073f1e97f305c522e2d1fd89d5c854  awscli-exe-linux-x86_64-2.9.6.zip' | sha256sum \
-            -c --ignore-missing --strict - && \
-        unzip -q awscli-exe-linux-x86_64-$AWS_CLI_VERSION.zip && \
-        aws/install && \
-        aws --version && \
-        rm -rf aws && \
-    curl -sL "https://s3.amazonaws.com/session-manager-downloads/plugin/$AWS_SM_VERSION/ubuntu_64bit/session-manager-plugin.deb" -o session-manager-plugin.deb && \
-        echo 'aae58e58fcfbba465231086766d236ce8d032ae73b9335690e1faba704af2f9a  session-manager-plugin.deb' | sha256sum \
-            -c --ignore-missing --strict - && \
-        dpkg -i session-manager-plugin.deb && \
-        rm -rf /tmp/* session-manager-plugin.deb
-
-RUN echo "deb http://apt.postgresql.org/pub/repos/apt/ focal-pgdg main" | tee /etc/apt/sources.list.d/pgdg.list && \
-    echo "deb [arch=amd64,arm64] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/5.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-5.0.list && \
-    echo "deb https://cli-assets.heroku.com/apt ./" > /etc/apt/sources.list.d/heroku.list && \
-    echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list && \
-    curl -sL https://cli-assets.heroku.com/apt/release.key | apt-key add - && \
-    curl -sL https://packages.microsoft.com/config/ubuntu/20.04/prod.list | tee /etc/apt/sources.list.d/msprod.list && \
-    curl -sL https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add - && \
-    curl -sL https://www.mongodb.org/static/pgp/server-5.0.asc | apt-key add - && \
-    curl -sL https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
-    curl -sL https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key --keyring /usr/share/keyrings/cloud.google.gpg add -
-
-RUN apt-get update -y && \
-    apt-get install -y \
-        mongodb-mongosh mongodb-org-tools mongodb-org-shell \
-        openjdk-11-jre \
-        heroku \
-        default-mysql-client \
-        postgresql-client-15 \
-        mssql-tools \
-        unixodbc-dev \
-        google-cloud-cli=416.0.0-0 && \
-        rm -rf /var/lib/apt/lists/*
-
-# clojure
-RUN curl -sL https://download.clojure.org/install/linux-install-$CLOJURE_VERSION.sh -o clojure-install.sh && \
-    sha256sum clojure-install.sh && \
-    echo "665e35e8d7dd0996edaba36220fd5048fee95f5155ec0426f628f18770239821 clojure-install.sh" | sha256sum -c - && \
-    bash clojure-install.sh && \
-    rm clojure-install.sh && \
-    clojure -e "(clojure-version)"
-
-# sqsmover https://github.com/mercury2269/sqsmover/releases
-RUN curl -sL https://github.com/mercury2269/sqsmover/releases/download/v0.4.0/sqsmover_Linux_x86_64.tar.gz -o sqsmover.tar.gz && \
-        sha256sum sqsmover.tar.gz && \
-        echo "870bd37ed21618d4b429cb60ba10fa17ba6e48bf779df59eea0119b75155745c  sqsmover.tar.gz" | sha256sum -c - && \
-        tar -xf sqsmover.tar.gz -C /usr/local/bin --no-same-owner && \
-        rm -f sqsmover.tar.gz && \
-        sqsmover --version
-
-RUN pip3 install -U \
-    boto3==1.20.39 \
-    requests==2.27.1
-
-RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
-    locale-gen
-ENV LANG en_US.UTF-8
-ENV LANGUAGE en_US:en  
-ENV LC_ALL en_US.UTF-8
-
-ENV PATH="/opt/mssql-tools/bin:/app:${PATH}"
 
 COPY rootfs /
-COPY dist/webapp-resources /app/ui/
 COPY dist/binaries/ /tmp/
 RUN tar -xf /tmp/hoop_*_$(uname -s)_$(dpkg --print-architecture).tar.gz -C /app/ && \
     chown root:root /app/hoop && \
@@ -104,9 +10,5 @@ RUN tar -xf /tmp/hoop_*_$(uname -s)_$(dpkg --print-architecture).tar.gz -C /app/
     rm -rf /tmp/* && \
     rm -rf /var/cache/apt/archives /var/lib/apt/lists/*
 
-EXPOSE 8009
-EXPOSE 8010
-
-ENTRYPOINT ["tini", "--"]
 # start agent by default for this image
 CMD ["hoop", "start", "agent"]

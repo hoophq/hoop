@@ -49,10 +49,13 @@ release: clean
 publish:
 	./scripts/publish-release.sh
 
+publish-tools:
+	./scripts/publish-tools.sh
+
 clean:
 	rm -rf ./rootfs/app/ui
 
 test:
 	go test -v github.com/runopsio/hoop/...
 
-.PHONY: release publish clean test build build-webapp package-binaries package-helmchart publish-assets
+.PHONY: release publish publish-tools clean test build build-webapp package-binaries package-helmchart publish-assets
