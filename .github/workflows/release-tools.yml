@@ -3,12 +3,12 @@ name: Agent Tools
 on:
   workflow_dispatch:
     inputs:
-      tags:
-        description: 'Test scenario tags'
+      version:
+        description: 'The semantic version to use to generate a new release'
         required: true
-        type: boolean
+        type: string
       environment:
-        description: 'Environment to run tests against'
+        description: 'Environment to generate the release'
         type: environment
         required: true
 
@@ -39,5 +39,5 @@ jobs:
           context: .
           platforms: linux/amd64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ inputs.version }},latest
           labels: ${{ steps.meta.outputs.labels }}
