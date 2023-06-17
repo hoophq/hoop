@@ -26,7 +26,10 @@ COPY rootfs /
 COPY dist/webapp-resources /app/ui/
 COPY dist/binaries/ /tmp/
 RUN tar -xf /tmp/hoop_*_$(uname -s)_$(dpkg --print-architecture).tar.gz -C /app/ && \
-    rm -rf /tmp/*
+    chown root:root /app/hoop && \
+    chmod 755 /app/hoop && \
+    rm -rf /tmp/* && \
+    rm -rf /var/cache/apt/archives /var/lib/apt/lists/*
 
 EXPOSE 8009
 EXPOSE 8010
