@@ -216,7 +216,7 @@ jobs:
         path: './build/helm-chart'
 
     - name: Setup Java
-      uses: actions/setup-java@v2
+      uses: actions/setup-java@v3
       with:
         distribution: 'zulu'
         java-version: '11'
@@ -226,6 +226,8 @@ jobs:
         node-version: 16
     - name: Setup Helm3
       uses: azure/setup-helm@v3
+      with:
+        token: ${{ secrets.GH_TOKEN }}
     
     - name: Build Webapp
       env:

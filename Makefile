@@ -6,9 +6,9 @@ DIST_FOLDER ?= ./dist
 DATE ?= $(shell date -u "+%Y-%m-%dT%H:%M:%SZ")
 
 GOOS ?= linux
+GOARCH ?= amd64
 # compatible with uname -s
 OS := $(shell echo "$(GOOS)" | awk '{print toupper(substr($$0, 1, 1)) tolower(substr($$0, 2))}')
-GOARCH ?= amd64
 
 LDFLAGS := "-s -w \
 -X github.com/runopsio/hoop/common/version.version=${VERSION} \
