@@ -325,9 +325,9 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-  publish-artifacts:
+  publish-release:
     runs-on: ubuntu-latest
-    name: Publish Artifacts
+    name: Publish Release
     environment: production
     needs:
     - docker-publish
