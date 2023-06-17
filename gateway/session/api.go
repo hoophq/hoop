@@ -34,13 +34,14 @@ type (
 		optionKey SessionOptionKey
 		optionVal any
 	}
+
 	service interface {
 		FindAll(*user.Context, ...*SessionOption) (*SessionList, error)
 		FindOne(context *user.Context, name string) (*types.Session, error)
 		EntityHistory(ctx *user.Context, sessionID string) ([]SessionStatusHistory, error)
 		ValidateSessionID(sessionID string) error
-		FindReviewBySessionID(sessionID string) (*Review, error)
-		PersistReview(context *user.Context, review *Review) error
+		FindReviewBySessionID(sessionID string) (*types.Review, error)
+		PersistReview(context *user.Context, review *types.Review) error
 	}
 )
 
@@ -55,14 +56,6 @@ const (
 )
 
 const (
-	StatusPending    Status = "PENDING"
-	StatusApproved   Status = "APPROVED"
-	StatusRejected   Status = "REJECTED"
-	StatusRevoked    Status = "REVOKED"
-	StatusProcessing Status = "PROCESSING"
-	StatusExecuted   Status = "EXECUTED"
-	StatusUnknown    Status = "UNKNOWN"
-
 	ReviewTypeJit     = "jit"
 	ReviewTypeOneTime = "onetime"
 )
@@ -110,6 +103,32 @@ func (a *Handler) FindOne(c *gin.Context) {
 		return
 	}
 
+	review, err := a.Service.FindReviewBySessionID(sessionID)
+	if err != nil {
+		return
+	}
+
+	if session == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+		return
+	}
+
+	reviewJSON := types.ReviewJSON{
+		Id:               review.Id,
+		OrgId:            review.OrgId,
+		CreatedAt:        review.CreatedAt,
+		Type:             review.Type,
+		Session:          review.Session,
+		Input:            review.Input,
+		AccessDuration:   review.AccessDuration,
+		Status:           review.Status,
+		RevokeAt:         review.RevokeAt,
+		ReviewOwner:      review.ReviewOwner,
+		Connection:       review.Connection,
+		ReviewGroupsData: review.ReviewGroupsData,
+	}
+
+	session.Review = &reviewJSON
 	c.PureJSON(http.StatusOK, session)
 }
 
@@ -222,7 +241,7 @@ func (h *Handler) RunReviewedExec(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, &clientexec.ExecErrResponse{Message: "only the creator can trigger this action"})
 		return
 	}
-	if review.Status != StatusApproved {
+	if review.Status != types.ReviewStatusApproved {
 		c.JSON(http.StatusBadRequest, &clientexec.ExecErrResponse{Message: "review not approved or already executed"})
 		return
 	}
@@ -304,7 +323,7 @@ func (h *Handler) RunReviewedExec(c *gin.Context) {
 
 	select {
 	case resp := <-clientResp:
-		review.Status = StatusExecuted
+		review.Status = types.ReviewStatusExecuted
 		if err := h.Service.PersistReview(ctx, review); err != nil {
 			log.Warnf("failed updating review to executed status, err=%v", err)
 		}
@@ -328,7 +347,7 @@ func (h *Handler) RunReviewedExec(c *gin.Context) {
 
 		// we do not know the status of this in the future.
 		// replaces the current "PROCESSING" status
-		review.Status = StatusUnknown
+		review.Status = types.ReviewStatusUnknown
 		if err := h.Service.PersistReview(ctx, review); err != nil {
 			log.Warnf("failed updating review to unknown status, err=%v", err)
 		}

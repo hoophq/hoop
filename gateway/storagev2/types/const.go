@@ -16,3 +16,15 @@ const (
 	UserStatusReviewing UserStatusType = "reviewing"
 	UserStatusInactive  UserStatusType = "inactive"
 )
+
+type ReviewStatus string
+
+const (
+	ReviewStatusPending    ReviewStatus = "PENDING"
+	ReviewStatusApproved   ReviewStatus = "APPROVED"
+	ReviewStatusRejected   ReviewStatus = "REJECTED"
+	ReviewStatusRevoked    ReviewStatus = "REVOKED"
+	ReviewStatusProcessing ReviewStatus = "PROCESSING"
+	ReviewStatusExecuted   ReviewStatus = "EXECUTED"
+	ReviewStatusUnknown    ReviewStatus = "UNKNOWN"
+)

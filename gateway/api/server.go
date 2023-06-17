@@ -13,6 +13,7 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/gateway/agent"
 	apiproxymanager "github.com/runopsio/hoop/gateway/api/proxymanager"
+	reviewapi "github.com/runopsio/hoop/gateway/api/review"
 	sessionapi "github.com/runopsio/hoop/gateway/api/session"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/healthz"
@@ -177,7 +178,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.GET("/reviews/:id",
 		api.Authenticate,
 		api.TrackRequest,
-		api.ReviewHandler.FindOne)
+		reviewapi.GetById)
 	route.PUT("/reviews/:id",
 		api.Authenticate,
 		api.TrackRequest,

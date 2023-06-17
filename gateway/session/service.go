@@ -16,40 +16,6 @@ type (
 		Storage storage
 	}
 
-	Review struct {
-		Id             string        `json:"id"                      edn:"xt/id"`
-		Type           string        `json:"type"                    edn:"review/type"`
-		Session        string        `json:"session"                 edn:"review/session"`
-		Input          string        `json:"input"                   edn:"review/input"`
-		AccessDuration time.Duration `json:"access_duration"         edn:"review/access-duration"`
-		Status         Status        `json:"status"                  edn:"review/status"`
-		RevokeAt       *time.Time    `json:"revoke_at"               edn:"review/revoke-at"`
-		CreatedBy      Owner         `json:"created_by"              edn:"review/created-by"`
-		Connection     Connection    `json:"connection"              edn:"review/connection"`
-		ReviewGroups   []Group       `json:"review_groups,omitempty" edn:"review/review-groups"`
-	}
-
-	Owner struct {
-		Id    string `json:"id,omitempty"   edn:"xt/id"`
-		Name  string `json:"name,omitempty" edn:"user/name"`
-		Email string `json:"email"          edn:"user/email"`
-	}
-
-	Connection struct {
-		Id   string `json:"id,omitempty" edn:"xt/id"`
-		Name string `json:"name"         edn:"connection/name"`
-	}
-
-	Group struct {
-		Id         string  `json:"id"          edn:"xt/id"`
-		Group      string  `json:"group"       edn:"review-group/group"`
-		Status     Status  `json:"status"      edn:"review-group/status"`
-		ReviewedBy *Owner  `json:"reviewed_by" edn:"review-group/reviewed-by"`
-		ReviewDate *string `json:"review_date" edn:"review-group/review_date"`
-	}
-
-	Status string
-
 	storage interface {
 		Persist(ctx *user.Context, sess *types.Session) (*st.TxResponse, error)
 		PersistStatus(sess *SessionStatus) (*st.TxResponse, error)
@@ -59,8 +25,8 @@ type (
 		FindOne(ctx *user.Context, name string) (*types.Session, error)
 		ListAllSessionsID(startDate time.Time) ([]*types.Session, error)
 		NewGenericStorageWriter() *GenericStorageWriter
-		FindReviewBySessionID(sessionID string) (*Review, error)
-		PersistReview(ctx *user.Context, review *Review) (int64, error)
+		FindReviewBySessionID(sessionID string) (*types.Review, error)
+		PersistReview(ctx *user.Context, review *types.Review) (int64, error)
 	}
 
 	// [time.Time, string, []byte]
@@ -113,7 +79,7 @@ func NewNonIndexedEventStreamList(eventStartDate time.Time, eventStreams ...type
 	}, nil
 }
 
-func (s *Service) FindReviewBySessionID(sessionID string) (*Review, error) {
+func (s *Service) FindReviewBySessionID(sessionID string) (*types.Review, error) {
 	return s.Storage.FindReviewBySessionID(sessionID)
 }
 
@@ -140,14 +106,14 @@ func (s *Service) ValidateSessionID(sessionID string) error {
 	return s.Storage.ValidateSessionID(sessionID)
 }
 
-func (s *Service) PersistReview(context *user.Context, review *Review) error {
+func (s *Service) PersistReview(context *user.Context, review *types.Review) error {
 	if review.Id == "" {
 		review.Id = uuid.NewString()
 	}
 
-	for i, r := range review.ReviewGroups {
+	for i, r := range review.ReviewGroupsData {
 		if r.Id == "" {
-			review.ReviewGroups[i].Id = uuid.NewString()
+			review.ReviewGroupsData[i].Id = uuid.NewString()
 		}
 	}
 

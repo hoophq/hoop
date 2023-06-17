@@ -177,15 +177,15 @@ func (p *slackPlugin) OnUpdate(oldState, newState *types.Plugin) error {
 
 // SendApprovedMessage sends a direct message to the owner of the review
 // if it's approved
-func SendApprovedMessage(ctx *user.Context, rev *review.Review) {
-	if rev.Status != review.StatusApproved {
+func SendApprovedMessage(ctx *user.Context, rev *types.Review) {
+	if rev.Status != types.ReviewStatusApproved {
 		return
 	}
 	if slacksvc := getSlackServiceInstance(ctx.Org.Id); slacksvc != nil {
-		if rev.CreatedBy.SlackID != "" {
+		if rev.ReviewOwner.SlackID != "" {
 			log.Debugf("sending direct slack message to email=%v, slackid=%v",
-				rev.CreatedBy.Email, rev.CreatedBy.SlackID)
-			if err := slacksvc.SendDirectMessage(rev.Session, rev.CreatedBy.SlackID); err != nil {
+				rev.ReviewOwner.Email, rev.ReviewOwner.SlackID)
+			if err := slacksvc.SendDirectMessage(rev.Session, rev.ReviewOwner.SlackID); err != nil {
 				log.Warn(err)
 			}
 		}
@@ -203,6 +203,11 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		return nil, nil
 	}
 
+	userContext := &user.Context{
+		Org:  &user.Org{Id: pctx.OrgID},
+		User: &user.User{Id: pctx.UserID},
+	}
+
 	sreq := &slack.MessageReviewRequest{
 		Name:           pctx.UserName,
 		Email:          pctx.UserEmail,
@@ -212,17 +217,17 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		UserGroups:     pctx.UserGroups,
 	}
 
-	rev, err := p.reviewSvc.FindBySessionID(pctx.SID)
+	rev, err := p.reviewSvc.FindBySessionID(userContext, pctx.SID)
 	if err != nil {
 		return nil, plugintypes.InternalErr("internal error, failed fetching review", err)
 	}
 	if rev != nil {
-		if rev.Status != review.StatusPending {
+		if rev.Status != types.ReviewStatusPending {
 			return nil, nil
 		}
 		sreq.ID = rev.Id
 		sreq.WebappURL = fmt.Sprintf("%s/plugins/reviews/%s", p.idpProvider.ApiURL, rev.Id)
-		sreq.ApprovalGroups = parseGroups(rev.ReviewGroups)
+		sreq.ApprovalGroups = parseGroups(rev.ReviewGroupsData)
 		if rev.AccessDuration > 0 {
 			sreq.SessionTime = &rev.AccessDuration
 		}
@@ -267,7 +272,7 @@ func parseSlackConfig(pconf *types.PluginConfig) (*slackConfig, error) {
 	return &sc, nil
 }
 
-func parseGroups(reviewGroups []review.Group) []string {
+func parseGroups(reviewGroups []types.ReviewGroup) []string {
 	groups := make([]string, 0)
 	for _, g := range reviewGroups {
 		groups = append(groups, g.Group)

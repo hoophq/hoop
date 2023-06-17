@@ -12,9 +12,6 @@ on:
         type: environment
         required: true
 
-# on:
-#   push
-
 jobs:
   docker-publish-tools:
     runs-on: ubuntu-latest

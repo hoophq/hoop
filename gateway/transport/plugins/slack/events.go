@@ -8,6 +8,7 @@ import (
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/review"
 	slackservice "github.com/runopsio/hoop/gateway/slack"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
@@ -53,15 +54,15 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 		ev.msg.EventKind, ev.msg.ID, ev.msg.Status, ev.msg.GroupName)
 	switch ev.msg.EventKind {
 	case slackservice.EventKindOneTime:
-		status := review.StatusRejected
+		status := types.ReviewStatusRejected
 		if ev.msg.Status == "approved" {
-			status = review.StatusApproved
+			status = types.ReviewStatusApproved
 		}
 		p.performExecReview(ev, userContext, status)
 	case slackservice.EventKindJit:
-		status := review.StatusRejected
+		status := types.ReviewStatusRejected
 		if ev.msg.Status == "approved" {
-			status = review.StatusApproved
+			status = types.ReviewStatusApproved
 		}
 		p.performJitReview(ev, userContext, status)
 	default:
@@ -69,7 +70,7 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 	}
 }
 
-func (p *slackPlugin) performExecReview(ev *event, ctx *user.Context, status review.Status) {
+func (p *slackPlugin) performExecReview(ev *event, ctx *user.Context, status types.ReviewStatus) {
 	rev, err := p.reviewSvc.Review(ctx, ev.msg.ID, status)
 	sid := ev.msg.SessionID
 	switch err {
@@ -80,7 +81,7 @@ func (p *slackPlugin) performExecReview(ev *event, ctx *user.Context, status rev
 		}
 		err = ev.ss.UpdateMessageStatus(ev.msg, fmt.Sprintf("• _review has already been `%s`_", status))
 	case nil:
-		isApproved := rev.Status == review.StatusApproved
+		isApproved := rev.Status == types.ReviewStatusApproved
 		SendApprovedMessage(ctx, rev)
 		err = ev.ss.UpdateMessage(ev.msg, isApproved)
 		log.With("session", sid).Infof("review id=%s, status=%v", ev.msg.ID, rev.Status)
@@ -94,7 +95,7 @@ func (p *slackPlugin) performExecReview(ev *event, ctx *user.Context, status rev
 	}
 }
 
-func (p *slackPlugin) performJitReview(ev *event, ctx *user.Context, status review.Status) {
+func (p *slackPlugin) performJitReview(ev *event, ctx *user.Context, status types.ReviewStatus) {
 	j, err := p.reviewSvc.Review(ctx, ev.msg.ID, status)
 	sid := ev.msg.SessionID
 	switch err {
@@ -105,7 +106,7 @@ func (p *slackPlugin) performJitReview(ev *event, ctx *user.Context, status revi
 		}
 		err = ev.ss.UpdateMessageStatus(ev.msg, fmt.Sprintf("• _jit has already been `%s`_", status))
 	case nil:
-		isApproved := j.Status == review.StatusApproved
+		isApproved := j.Status == types.ReviewStatusApproved
 		SendApprovedMessage(ctx, j)
 		err = ev.ss.UpdateMessage(ev.msg, isApproved)
 		log.With("session", sid).Infof("jit review id=%s, status=%v", ev.msg.ID, j.Status)
