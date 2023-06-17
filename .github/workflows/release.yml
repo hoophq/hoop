@@ -303,7 +303,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v4
         with:
-          images: hoophq/hoop
+          images: hoophq/hoopdev
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
       - name: Login to Docker Hub
