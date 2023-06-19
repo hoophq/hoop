@@ -19,32 +19,26 @@ build:
 	rm -rf ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} && mkdir -p ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
 	env CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags ${LDFLAGS} -o ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}/hoop client/main.go
 	tar -czvf ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}.tar.gz -C ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} .
+	shasum256 ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}.tar.gz > ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}_checksum.txt
 	rm -rf ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
 
 package-helmchart:
 	mkdir -p ./dist
-	helm package ./build/helm-chart/chart/agent/ --app-version ${VERSION} --destination ./dist/ --version ${VERSION}
-	helm package ./build/helm-chart/chart/gateway/ --app-version ${VERSION} --destination ./dist/ --version ${VERSION}
+	helm package ./build/helm-chart/chart/agent/ --app-version ${VERSION} --destination ${DIST_FOLDER}/ --version ${VERSION}
+	helm package ./build/helm-chart/chart/gateway/ --app-version ${VERSION} --destination ${DIST_FOLDER}/ --version ${VERSION}
 
-publish-assets:
-	echo "PUBLISHING ASSETS !!!"
-	find ${DIST_FOLDER} -type f
-	echo "-------"
+release:
+	./scripts/brew-recipe.sh ${DIST_FOLDER}/binaries ${VERSION} > ${DIST_FOLDER}/hoop.rb
+	find ${DIST_FOLDER}/binaries/ -name *_checksum.txt -exec cat '{}'  \; > ${DIST_FOLDER}/checksums.txt
+	echo -n "${VERSION}" > ${DIST_FOLDER}/latest.txt
+	aws s3 cp ${DIST_FOLDER}/ s3://hoopartifacts/release/${VERSION}/ --exclude "*" --include "checksums.txt" --include "*.tar.gz" --recursive --dryrun
+	aws s3 cp ${DIST_FOLDER}/hoop.rb s3://hoopartifacts/release/${VERSION}/hooprb.txt --dryrun
+	aws s3 cp ${DIST_FOLDER}/latest.txt s3://hoopartifacts/release/latest.txt --dryrun
+	cat ${DIST_FOLDER}/hoop.rb
 
 build-webapp:
 	mkdir -p ./dist
 	cd ./build/webapp && npm install && npm run release:hoop-ui && mv ./resources ../../dist/webapp-resources
-
-release: clean
-	cd ./build/webapp && npm install && npm run release:hoop-ui
-	mv ./build/webapp/resources ./rootfs/app/ui
-	goreleaser release
-	helm package ./build/helm-chart/chart/agent/ --app-version ${GIT_TAG} --destination ./dist/ --version ${GIT_TAG}
-	helm package ./build/helm-chart/chart/gateway/ --app-version ${GIT_TAG} --destination ./dist/ --version ${GIT_TAG}
-	echo -n "${GIT_TAG}" > ./latest.txt
-	aws s3 cp ./dist/ s3://hoopartifacts/release/${GIT_TAG}/ --exclude "*" --include "*.tgz" --include "*.tar.gz" --recursive
-	aws s3 cp ./latest.txt s3://hoopartifacts/release/latest.txt
-	aws s3 cp ./dist/checksums.txt s3://hoopartifacts/release/${GIT_TAG}/checksums.txt
 
 publish:
 	./scripts/publish-release.sh

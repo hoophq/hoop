@@ -1,3 +1,4 @@
+# Dockerfile.tools
 FROM hoophq/agent-tools:0.0.1
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -10,5 +11,4 @@ RUN tar -xf /tmp/hoop_*_$(uname -s)_$(dpkg --print-architecture).tar.gz -C /app/
     rm -rf /tmp/* && \
     rm -rf /var/cache/apt/archives /var/lib/apt/lists/*
 
-# start agent by default for this image
 CMD ["hoop", "start", "agent"]
