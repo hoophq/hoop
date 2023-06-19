@@ -29,12 +29,13 @@ package-helmchart:
 
 release:
 	./scripts/brew-recipe.sh ${DIST_FOLDER} ${VERSION} > ${DIST_FOLDER}/hoop.rb
-	find ${DIST_FOLDER}/binaries/ -name *_checksum.txt -exec cat '{}'  \; > ${DIST_FOLDER}/checksums.txt
+	./scripts/generate-changelog.sh ${VERSION} > ${DIST_FOLDER}/CHANGELOG.txt
+	find ${DIST_FOLDER}/binaries/ -name *_checksum.txt -exec cat '{}' \; > ${DIST_FOLDER}/checksums.txt
 	echo -n "${VERSION}" > ${DIST_FOLDER}/latest.txt
 	aws s3 cp ${DIST_FOLDER}/ s3://hoopartifacts/release/${VERSION}/ --exclude "*" --include "checksums.txt" --include "*.tgz" --include "*.tar.gz" --recursive --dryrun
-	aws s3 cp ${DIST_FOLDER}/hoop.rb s3://hoopartifacts/release/${VERSION}/hooprb.txt --dryrun
+	aws s3 cp ${DIST_FOLDER}/hoop.rb s3://hoopartifacts/release/${VERSION}/hoop.rb --dryrun
 	aws s3 cp ${DIST_FOLDER}/latest.txt s3://hoopartifacts/release/latest.txt --dryrun
-	cat ${DIST_FOLDER}/hoop.rb
+	aws s3 cp ${DIST_FOLDER}/CHANGELOG.txt s3://hoopartifacts/release/CHANGELOG.txt --dryrun
 
 build-webapp:
 	mkdir -p ./dist

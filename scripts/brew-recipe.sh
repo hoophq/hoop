@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+
 : "${1:? Missing dist folder! $0 <dist-folder> <version>}}"
 : "${2:? Missing version! $0 <version> <checksum>}}"
 
