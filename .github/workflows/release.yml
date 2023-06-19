@@ -354,7 +354,7 @@ jobs:
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
 
-      - name: Publish Release S3
+      - name: Publish Release
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
@@ -363,7 +363,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: make release
 
-      - name: Publish Release
+      - name: Publish Public Release
         uses: softprops/action-gh-release@v1
         with:
           body_path: ${{ github.workspace }}/dist/CHANGELOG.txt
@@ -371,6 +371,6 @@ jobs:
           # with permissions to create releases in the other repo
           token: ${{ secrets.GH_TOKEN }}
           tag_name: ${{ env.GIT_TAG }}
+          repository: hoophq/hoopcli
         env:
-          GITHUB_REPOSITORY: hoophq/hoopcli
           GIT_TAG: ${{ env.GIT_TAG }}
