@@ -228,6 +228,9 @@ jobs:
       uses: azure/setup-helm@v3
       with:
         token: ${{ secrets.GH_TOKEN }}
+
+    - name: Set Git Tag
+      run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
     
     - name: Build Webapp
       env:
