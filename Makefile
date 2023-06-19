@@ -37,7 +37,7 @@ release:
 	echo -n "${VERSION}" > ${DIST_FOLDER}/latest.txt
 	aws s3 cp ${DIST_FOLDER}/ s3://hoopartifacts/release/${VERSION}/ --exclude "*" --include "checksums.txt" --include "*.tgz" --include "*.tar.gz" --recursive
 	aws s3 cp ${DIST_FOLDER}/latest.txt s3://hoopartifacts/release/latest.txt
-	aws s3 cp ${DIST_FOLDER}/CHANGELOG.txt s3://hoopartifacts/release/CHANGELOG.txt
+	aws s3 cp ${DIST_FOLDER}/CHANGELOG.txt s3://hoopartifacts/release/${VERSION}/CHANGELOG.txt
 
 build-webapp:
 	mkdir -p ./dist
