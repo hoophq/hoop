@@ -108,27 +108,22 @@ func (a *Handler) FindOne(c *gin.Context) {
 		return
 	}
 
-	if session == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
-		return
+	if review != nil {
+		session.Review = &types.ReviewJSON{
+			Id:               review.Id,
+			OrgId:            review.OrgId,
+			CreatedAt:        review.CreatedAt,
+			Type:             review.Type,
+			Session:          review.Session,
+			Input:            review.Input,
+			AccessDuration:   review.AccessDuration,
+			Status:           review.Status,
+			RevokeAt:         review.RevokeAt,
+			ReviewOwner:      review.ReviewOwner,
+			Connection:       review.Connection,
+			ReviewGroupsData: review.ReviewGroupsData,
+		}
 	}
-
-	reviewJSON := types.ReviewJSON{
-		Id:               review.Id,
-		OrgId:            review.OrgId,
-		CreatedAt:        review.CreatedAt,
-		Type:             review.Type,
-		Session:          review.Session,
-		Input:            review.Input,
-		AccessDuration:   review.AccessDuration,
-		Status:           review.Status,
-		RevokeAt:         review.RevokeAt,
-		ReviewOwner:      review.ReviewOwner,
-		Connection:       review.Connection,
-		ReviewGroupsData: review.ReviewGroupsData,
-	}
-
-	session.Review = &reviewJSON
 	c.PureJSON(http.StatusOK, session)
 }
 
