@@ -25,13 +25,13 @@ $NOTE_CONTENT
 
 ## Assets
 
-- [hoop-darwin-arm64](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/hoop_${GIT_TAG}_Darwin_arm64.tar.gz)
-- [hoop-darwin-amd64](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/hoop_${GIT_TAG}_Darwin_x86_64.tar.gz)
-- [hoop-linux-arm64](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/hoop_${GIT_TAG}_Linux_arm64.tar.gz)
-- [hoop-linux-amd64](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/hoop_${GIT_TAG}_Linux_x86_64.tar.gz)
-- [hoop-windows-arm64](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/hoop_${GIT_TAG}_Windows_arm64.tar.gz)
-- [hoop-windows-amd64](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/hoop_${GIT_TAG}_Windows_x86_64.tar.gz)
-- [checksums.txt](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/checksums.txt)
+- [hoop-darwin-arm64](https://releases.hoop.dev/release/${GIT_TAG}/hoop_${GIT_TAG}_Darwin_arm64.tar.gz)
+- [hoop-darwin-amd64](https://releases.hoop.dev/release/${GIT_TAG}/hoop_${GIT_TAG}_Darwin_x86_64.tar.gz)
+- [hoop-linux-arm64](https://releases.hoop.dev/release/${GIT_TAG}/hoop_${GIT_TAG}_Linux_arm64.tar.gz)
+- [hoop-linux-amd64](https://releases.hoop.dev/release/${GIT_TAG}/hoop_${GIT_TAG}_Linux_x86_64.tar.gz)
+- [hoop-windows-arm64](https://releases.hoop.dev/release/${GIT_TAG}/hoop_${GIT_TAG}_Windows_arm64.tar.gz)
+- [hoop-windows-amd64](https://releases.hoop.dev/release/${GIT_TAG}/hoop_${GIT_TAG}_Windows_x86_64.tar.gz)
+- [checksums.txt](https://releases.hoop.dev/release/${GIT_TAG}/checksums.txt)
 
 ## Docker Images
 
@@ -47,8 +47,8 @@ $NOTE_CONTENT
 
 https://github.com/hoophq/helm-chart
 
-- [hoop-chart-${GIT_TAG}](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/hoop-chart-${GIT_TAG}.tgz)
-- [hoopagent-chart-${GIT_TAG}](https://hoopartifacts.s3.amazonaws.com/release/${GIT_TAG}/hoopagent-chart-${GIT_TAG}.tgz)
+- [hoop-chart-${GIT_TAG}](https://releases.hoop.dev/release/${GIT_TAG}/hoop-chart-${GIT_TAG}.tgz)
+- [hoopagent-chart-${GIT_TAG}](https://releases.hoop.dev/release/${GIT_TAG}/hoopagent-chart-${GIT_TAG}.tgz)
 
 EOF
 

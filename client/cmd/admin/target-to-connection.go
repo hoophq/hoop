@@ -29,8 +29,8 @@ var (
 	{{- end }}
 	-- {{ .command }}
 `
-	helmInstallAgentTmpl = `VERSION=$(curl -s https://hoopartifacts.s3.amazonaws.com/release/latest.txt)
-helm upgrade --install hoopagent https://hoopartifacts.s3.amazonaws.com/release/$VERSION/hoopagent-chart-$VERSION.tgz \
+	helmInstallAgentTmpl = `VERSION=$(curl -s https://releases.hoop.dev/release/latest.txt)
+helm upgrade --install hoopagent https://releases.hoop.dev/release/$VERSION/hoopagent-chart-$VERSION.tgz \
 	--set "config.gateway.grpc_url={{ .grpc_url }}" \
 	--set "config.gateway.token={{ .token }}"
 `

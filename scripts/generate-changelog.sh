@@ -11,13 +11,13 @@ $(git log -1 --pretty=format:%B)
 
 ## Assets
 
-- [hoop-darwin-arm64](https://hoopartifacts.s3.amazonaws.com/release/${VERSION}/hoop_${VERSION}_Darwin_arm64.tar.gz)
-- [hoop-darwin-amd64](https://hoopartifacts.s3.amazonaws.com/release/${VERSION}/hoop_${VERSION}_Darwin_x86_64.tar.gz)
-- [hoop-linux-arm64](https://hoopartifacts.s3.amazonaws.com/release/${VERSION}/hoop_${VERSION}_Linux_arm64.tar.gz)
-- [hoop-linux-amd64](https://hoopartifacts.s3.amazonaws.com/release/${VERSION}/hoop_${VERSION}_Linux_x86_64.tar.gz)
-- [hoop-windows-arm64](https://hoopartifacts.s3.amazonaws.com/release/${VERSION}/hoop_${VERSION}_Windows_arm64.tar.gz)
-- [hoop-windows-amd64](https://hoopartifacts.s3.amazonaws.com/release/${VERSION}/hoop_${VERSION}_Windows_x86_64.tar.gz)
-- [checksums.txt](https://hoopartifacts.s3.amazonaws.com/release/${VERSION}/checksums.txt)
+- [hoop-darwin-arm64](https://releases.hoop.dev/release/${VERSION}/hoop_${VERSION}_Darwin_arm64.tar.gz)
+- [hoop-darwin-amd64](https://releases.hoop.dev/release/${VERSION}/hoop_${VERSION}_Darwin_x86_64.tar.gz)
+- [hoop-linux-arm64](https://releases.hoop.dev/release/${VERSION}/hoop_${VERSION}_Linux_arm64.tar.gz)
+- [hoop-linux-amd64](https://releases.hoop.dev/release/${VERSION}/hoop_${VERSION}_Linux_x86_64.tar.gz)
+- [hoop-windows-arm64](https://releases.hoop.dev/release/${VERSION}/hoop_${VERSION}_Windows_arm64.tar.gz)
+- [hoop-windows-amd64](https://releases.hoop.dev/release/${VERSION}/hoop_${VERSION}_Windows_x86_64.tar.gz)
+- [checksums.txt](https://releases.hoop.dev/release/${VERSION}/checksums.txt)
 
 ## Docker Images
 
@@ -33,7 +33,7 @@ $(git log -1 --pretty=format:%B)
 
 https://github.com/hoophq/helm-chart
 
-- [hoop-chart-${VERSION}](https://hoopartifacts.s3.amazonaws.com/release/${VERSION}/hoop-chart-${VERSION}.tgz)
-- [hoopagent-chart-${VERSION}](https://hoopartifacts.s3.amazonaws.com/release/${VERSION}/hoopagent-chart-${VERSION}.tgz)
+- [hoop-chart-${VERSION}](https://releases.hoop.dev/release/${VERSION}/hoop-chart-${VERSION}.tgz)
+- [hoopagent-chart-${VERSION}](https://releases.hoop.dev/release/${VERSION}/hoopagent-chart-${VERSION}.tgz)
 
 EOF
