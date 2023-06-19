@@ -5,7 +5,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 COPY rootfs /
 COPY dist/binaries/ /tmp/
-RUN tar -xf /tmp/hoop_*_$(uname -s)_$(dpkg --print-architecture).tar.gz -C /app/ && \
+RUN tar -xf /tmp/hoop_*_$(uname -s)_$(uname -m).tar.gz -C /app/ && \
     chown root:root /app/hoop && \
     chmod 755 /app/hoop && \
     rm -rf /tmp/* && \

@@ -5,7 +5,7 @@ set -euo pipefail
 VERSION=$1
 
 cat - <<EOF
-# Changelog ${VERSION}
+# Changelog
 
 $(git log -1 --pretty=format:%B)
 
