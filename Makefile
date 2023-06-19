@@ -28,7 +28,7 @@ package-helmchart:
 	helm package ./build/helm-chart/chart/gateway/ --app-version ${VERSION} --destination ${DIST_FOLDER}/ --version ${VERSION}
 
 release:
-	./scripts/brew-recipe.sh ${DIST_FOLDER}/binaries ${VERSION} > ${DIST_FOLDER}/hoop.rb
+	./scripts/brew-recipe.sh ${DIST_FOLDER} ${VERSION} > ${DIST_FOLDER}/hoop.rb
 	find ${DIST_FOLDER}/binaries/ -name *_checksum.txt -exec cat '{}'  \; > ${DIST_FOLDER}/checksums.txt
 	echo -n "${VERSION}" > ${DIST_FOLDER}/latest.txt
 	aws s3 cp ${DIST_FOLDER}/ s3://hoopartifacts/release/${VERSION}/ --exclude "*" --include "checksums.txt" --include "*.tar.gz" --recursive --dryrun
