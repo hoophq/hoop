@@ -1,33 +1,53 @@
 PUBLIC_IMAGE := "hoophq/hoop"
-VERSION ?=
+VERSION ?= $(or ${GIT_TAG},${GIT_TAG},v0)
+GITCOMMIT ?= $(shell git rev-parse HEAD)
+DIST_FOLDER ?= ./dist
 
-# manual build/deploy
-publish-snapshot: clean
-	git clone https://github.com/runopsio/webapp.git build/webapp
-	cd build/webapp && npm install && npm run release:hoop-ui
-	mv resources rootfs/ui
-	goreleaser release --rm-dist --snapshot
-	docker tag ${PUBLIC_IMAGE}:v0.0.0-arm64v8 ${PUBLIC_IMAGE}:${VERSION}-arm64v8
-	docker tag ${PUBLIC_IMAGE}:v0.0.0-amd64 ${PUBLIC_IMAGE}:${VERSION}-amd64
-	docker push ${PUBLIC_IMAGE}:${VERSION}-arm64v8
-	docker push ${PUBLIC_IMAGE}:${VERSION}-amd64
-	docker manifest rm ${PUBLIC_IMAGE}:${VERSION} || true
-	docker manifest create ${PUBLIC_IMAGE}:${VERSION} --amend ${PUBLIC_IMAGE}:${VERSION}-arm64v8 --amend ${PUBLIC_IMAGE}:${VERSION}-amd64
-	docker manifest push ${PUBLIC_IMAGE}:${VERSION}
+DATE ?= $(shell date -u "+%Y-%m-%dT%H:%M:%SZ")
 
-release: clean
-	cd ./build/webapp && npm install && npm run release:hoop-ui
-	mv ./build/webapp/resources ./rootfs/app/ui
-	goreleaser release
-	helm package ./build/helm-chart/chart/agent/ --app-version ${GIT_TAG} --destination ./dist/ --version ${GIT_TAG}
-	helm package ./build/helm-chart/chart/gateway/ --app-version ${GIT_TAG} --destination ./dist/ --version ${GIT_TAG}
-	echo -n "${GIT_TAG}" > ./latest.txt
-	aws s3 cp ./dist/ s3://hoopartifacts/release/${GIT_TAG}/ --exclude "*" --include "*.tgz" --include "*.tar.gz" --recursive
-	aws s3 cp ./latest.txt s3://hoopartifacts/release/latest.txt
-	aws s3 cp ./dist/checksums.txt s3://hoopartifacts/release/${GIT_TAG}/checksums.txt
+GOOS ?= linux
+GOARCH ?= amd64
+# compatible with uname -s
+OS := $(shell echo "$(GOOS)" | awk '{print toupper(substr($$0, 1, 1)) tolower(substr($$0, 2))}')
+SYMLINK_ARCH := $(if $(filter $(GOARCH),amd64),x86_64,$(if $(filter $(GOARCH),arm64),aarch64,$(ARCH)))
+
+LDFLAGS := "-s -w \
+-X github.com/runopsio/hoop/common/version.version=${VERSION} \
+-X github.com/runopsio/hoop/common/version.gitCommit=${GITCOMMIT} \
+-X github.com/runopsio/hoop/common/version.buildDate=${DATE}"
+
+build:
+	rm -rf ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} && mkdir -p ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
+	env CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags ${LDFLAGS} -o ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}/hoop client/main.go
+	tar -czvf ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}.tar.gz -C ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} .
+	tar -czvf ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${SYMLINK_ARCH}.tar.gz -C ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} .
+	sha256sum ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}.tar.gz > ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}_checksum.txt
+	rm -rf ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
+
+package-helmchart:
+	mkdir -p ./dist
+	helm package ./build/helm-chart/chart/agent/ --app-version ${VERSION} --destination ${DIST_FOLDER}/ --version ${VERSION}
+	helm package ./build/helm-chart/chart/gateway/ --app-version ${VERSION} --destination ${DIST_FOLDER}/ --version ${VERSION}
+
+release:
+	./scripts/brew-recipe.sh ${DIST_FOLDER} ${VERSION} > ${DIST_FOLDER}/hoop.rb
+	./scripts/generate-changelog.sh ${VERSION} > ${DIST_FOLDER}/CHANGELOG.txt
+	find ${DIST_FOLDER}/binaries/ -name *_checksum.txt -exec cat '{}' \; > ${DIST_FOLDER}/checksums.txt
+	echo -n "${VERSION}" > ${DIST_FOLDER}/latest.txt
+	aws s3 cp ${DIST_FOLDER}/ s3://hoopartifacts/release/${VERSION}/ --exclude "*" --include "checksums.txt" --include "*.tgz" --include "*.tar.gz" --recursive --dryrun
+	aws s3 cp ${DIST_FOLDER}/hoop.rb s3://hoopartifacts/release/${VERSION}/hoop.rb --dryrun
+	aws s3 cp ${DIST_FOLDER}/latest.txt s3://hoopartifacts/release/latest.txt --dryrun
+	aws s3 cp ${DIST_FOLDER}/CHANGELOG.txt s3://hoopartifacts/release/CHANGELOG.txt --dryrun
+
+build-webapp:
+	mkdir -p ./dist
+	cd ./build/webapp && npm install && npm run release:hoop-ui && mv ./resources ../../dist/webapp-resources
 
 publish:
 	./scripts/publish-release.sh
+
+publish-tools:
+	./scripts/publish-tools.sh
 
 clean:
 	rm -rf ./rootfs/app/ui
@@ -35,4 +55,4 @@ clean:
 test:
 	go test -v github.com/runopsio/hoop/...
 
-.PHONY: publish-snapshot release publish clean test
+.PHONY: release publish publish-tools clean test build build-webapp package-binaries package-helmchart publish-assets

@@ -1,6 +1,7 @@
 project_name: hoop
+dist: ./dist2
 builds:
-  - id: hoop
+  - id: hoop2
     env:
       - CGO_ENABLED=0
     goos:
