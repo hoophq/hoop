@@ -370,5 +370,7 @@ jobs:
           # note you'll typically need to create a personal access token
           # with permissions to create releases in the other repo
           token: ${{ secrets.GH_TOKEN }}
+          tag_name: ${{ env.GIT_TAG }}
         env:
           GITHUB_REPOSITORY: hoophq/hoopcli
+          GIT_TAG: ${{ env.GIT_TAG }}
