@@ -216,7 +216,7 @@ func (s *Service) signup(ctx *user.Context, sub string, idTokenClaims map[string
 		return fmt.Errorf("failed persisting user %v to default org, err=%v", sub, err)
 	}
 
-	s.Analytics.Identify(ctx)
+	s.Analytics.Identify(ctx.ToAPIContext())
 	s.Analytics.Track(ctx.ToAPIContext(), "signup", map[string]any{})
 	return nil
 }
@@ -317,7 +317,7 @@ func (s *Service) signupMultiTenant(context *user.Context, sub string, idTokenCl
 			return err
 		}
 
-		s.Analytics.Identify(context)
+		s.Analytics.Identify(context.ToAPIContext())
 		s.Analytics.Track(context.ToAPIContext(), "signup", map[string]any{})
 	}
 

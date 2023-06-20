@@ -48,8 +48,9 @@ func (api *Api) Authenticate(c *gin.Context) {
 	}
 
 	c.Set(storagev2.ContextKey,
-		storagev2.NewContext(ctx.User.Id, ctx.Org.Id, api.StoreV2).WithUserInfo(
-			ctx.User.Name, ctx.User.Email, ctx.User.Groups),
+		storagev2.NewContext(ctx.User.Id, ctx.Org.Id, api.StoreV2).
+			WithUserInfo(ctx.User.Name, ctx.User.Email, string(ctx.User.Status), ctx.User.Groups).
+			WithOrgName(ctx.Org.Name),
 	)
 	c.Set(user.ContextUserKey, ctx)
 	c.Next()

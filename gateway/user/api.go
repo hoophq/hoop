@@ -35,7 +35,7 @@ type (
 	}
 
 	Analytics interface {
-		Identify(ctx *Context)
+		Identify(ctx *types.APIContext)
 		Track(ctx *types.APIContext, eventName string, properties map[string]any)
 	}
 )
@@ -127,7 +127,7 @@ func (a *Handler) Put(c *gin.Context) {
 	}
 
 	context.User = existingUser
-	a.Analytics.Identify(context)
+	a.Analytics.Identify(context.ToAPIContext())
 
 	c.JSON(http.StatusOK, existingUser)
 }

@@ -15,6 +15,7 @@ import (
 	apiproxymanager "github.com/runopsio/hoop/gateway/api/proxymanager"
 	reviewapi "github.com/runopsio/hoop/gateway/api/review"
 	sessionapi "github.com/runopsio/hoop/gateway/api/session"
+	userapi "github.com/runopsio/hoop/gateway/api/user"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/healthz"
 	"github.com/runopsio/hoop/gateway/indexer"
@@ -106,7 +107,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest,
 		api.AdminOnly,
-		api.UserHandler.FindOne)
+		userapi.GetUserByID)
 	route.GET("/userinfo",
 		api.Authenticate,
 		api.TrackRequest,
@@ -124,7 +125,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest,
 		api.AdminOnly,
-		api.UserHandler.Post)
+		userapi.Create)
 
 	route.POST("/connections",
 		api.Authenticate,

@@ -52,7 +52,11 @@ func (s *Server) proxyManager(stream pb.Transport_ConnectServer, token string) e
 	}
 	log.Infof("proxymanager - client connected")
 	storectx := storagev2.NewContext(userCtx.User.Id, userCtx.Org.Id, s.StoreV2).
-		WithUserInfo(userCtx.User.Name, userCtx.User.Email, userCtx.User.Groups)
+		WithUserInfo(
+			userCtx.User.Name,
+			userCtx.User.Email,
+			string(userCtx.User.Status),
+			userCtx.User.Groups)
 	sessionID := uuid.NewString()
 	err = s.listenProxyManagerMessages(sessionID, storectx, stream)
 	if status, ok := status.FromError(err); ok && status.Code() == codes.Canceled {
