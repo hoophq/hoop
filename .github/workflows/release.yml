@@ -364,13 +364,7 @@ jobs:
         run: make release
 
       - name: Dispatch Public Release
-        uses: softprops/action-gh-release@v1
-        with:
-          body_path: ${{ github.workspace }}/dist/CHANGELOG.txt
-          # note you'll typically need to create a personal access token
-          # with permissions to create releases in the other repo
-          token: ${{ secrets.GH_TOKEN }}
-          tag_name: ${{ env.GIT_TAG }}
-          repository: hoophq/hoopcli
+        run: gh workflow run release.yml -f version=$GIT_TAG --repo hoophq/hoopcli
         env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           GIT_TAG: ${{ env.GIT_TAG }}
