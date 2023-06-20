@@ -34,4 +34,6 @@ RUN tar -xf /tmp/hoop_*_$(uname -s)_$(uname -m).tar.gz -C /app/ && \
 EXPOSE 8009
 EXPOSE 8010
 
+ENV PATH="/app:${PATH}"
+
 ENTRYPOINT ["tini", "--"]
