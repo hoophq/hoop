@@ -302,7 +302,7 @@ func (c *connect) processGracefulExit(err error) {
 }
 
 func (c *connect) printHeader(sessionID string) {
-	termenv.NewOutput(os.Stdout).ClearScreen()
+	// termenv.NewOutput(os.Stdout).ClearScreen()
 	s := termenv.String("connection: %s | session: %s").Faint()
 	fmt.Printf(s.String(), c.connectionName, string(sessionID))
 	fmt.Println()

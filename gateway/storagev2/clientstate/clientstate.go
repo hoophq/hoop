@@ -62,6 +62,9 @@ func Update(ctx *storagev2.Context, status types.ClientStatusType, opts ...*opti
 				obj.RequestConnectionName = opt.val
 			case "port":
 				obj.RequestPort = opt.val
+			case "access-duration":
+				d, _ := time.ParseDuration(opt.val)
+				obj.RequestAccessDuration = d
 			default:
 				obj.ClientMetadata[opt.key] = opt.val
 			}
@@ -79,9 +82,10 @@ func Update(ctx *storagev2.Context, status types.ClientStatusType, opts ...*opti
 }
 
 func WithOption(k, v string) *option { return &option{key: k, val: v} }
-func WithRequestAttributes(connectionName, port string) []*option {
+func WithRequestAttributes(connectionName, port, accessDuration string) []*option {
 	return []*option{
 		{key: "connection", val: connectionName},
 		{key: "port", val: port},
+		{key: "access-duration", val: accessDuration},
 	}
 }

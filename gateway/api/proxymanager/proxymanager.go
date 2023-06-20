@@ -137,7 +137,7 @@ func Post(c *gin.Context) {
 				Status:                obj.Status,
 				RequestConnectionName: obj.RequestConnectionName,
 				RequestPort:           obj.RequestPort,
-				RequestAccessDuration: req.AccessDuration,
+				RequestAccessDuration: obj.RequestAccessDuration,
 				ClientMetadata:        obj.ClientMetadata,
 				ConnectedAt:           obj.ConnectedAt.Format(time.RFC3339),
 			})
@@ -152,7 +152,7 @@ func Post(c *gin.Context) {
 		return
 	}
 	obj, err := clientstate.Update(ctx, types.ClientStatusConnected,
-		clientstate.WithRequestAttributes(req.ConnectionName, req.Port)...)
+		clientstate.WithRequestAttributes(req.ConnectionName, req.Port, req.AccessDuration.String())...)
 	if err != nil {
 		log.Errorf("fail to update status, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "connected but it fail to update the status"})
@@ -164,7 +164,7 @@ func Post(c *gin.Context) {
 		Status:                obj.Status,
 		RequestConnectionName: obj.RequestConnectionName,
 		RequestPort:           obj.RequestPort,
-		RequestAccessDuration: req.AccessDuration,
+		RequestAccessDuration: obj.RequestAccessDuration,
 		ClientMetadata:        obj.ClientMetadata,
 		ConnectedAt:           obj.ConnectedAt.Format(time.RFC3339),
 	})
