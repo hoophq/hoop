@@ -11,6 +11,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/clientexec"
 	"github.com/runopsio/hoop/gateway/runbooks/templates"
@@ -23,7 +24,7 @@ import (
 type Runbook struct {
 	Name           string            `json:"name"`
 	Metadata       map[string]any    `json:"metadata"`
-	ConnectionList []string          `json:"connections"`
+	ConnectionList []string          `json:"connections,omitempty"`
 	EnvVars        map[string]string `json:"-"`
 	InputFile      []byte            `json:"-"`
 	CommitHash     string            `json:"-"`
@@ -62,7 +63,56 @@ type Handler struct {
 	scanedKnownHosts bool
 }
 
-func (h *Handler) FindAll(c *gin.Context) {
+func (h *Handler) ListByConnection(c *gin.Context) {
+	ctx := user.ContextUser(c)
+	connectionName := c.Param("name")
+	p, err := h.PluginService.FindOne(ctx, "runbooks")
+	if err != nil {
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError,
+			&RunbookErrResponse{Message: "failed retrieving runbook plugin"})
+		return
+	}
+	if p == nil {
+		c.JSON(http.StatusBadRequest, &RunbookErrResponse{Message: "plugin runbook not found"})
+		return
+	}
+	var configEnvVars map[string]string
+	if p.Config != nil {
+		configEnvVars = p.Config.EnvVars
+	}
+	config, err := templates.NewRunbookConfig(configEnvVars)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, &RunbookErrResponse{Message: err.Error()})
+		return
+	}
+	hasConnection := false
+	var pathPrefix string
+	for _, conn := range p.Connections {
+		if conn.Name == connectionName {
+			if len(conn.Config) > 0 {
+				pathPrefix = conn.Config[0]
+			}
+			hasConnection = true
+			break
+		}
+	}
+	if !hasConnection {
+		c.JSON(http.StatusNotFound, &RunbookErrResponse{Message: "runbooks plugin does not have this connection"})
+		return
+	}
+	runbookList, err := listRunbookFilesByPathPrefix(pathPrefix, config)
+	if err != nil {
+		log.Infof("failed listing runbooks, err=%v", err)
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"message": fmt.Sprintf("failed listing runbooks, reason=%v", err),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, runbookList)
+}
+
+func (h *Handler) List(c *gin.Context) {
 	ctx := user.ContextUser(c)
 	log := user.ContextLogger(c)
 	if !h.scanedKnownHosts {

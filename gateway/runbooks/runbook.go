@@ -101,3 +101,45 @@ func listRunbookFiles(pluginConnectionList []plugin.Connection, config *template
 		return nil
 	})
 }
+
+func listRunbookFilesByPathPrefix(pathPrefix string, config *templates.RunbookConfig) (*RunbookList, error) {
+	commit, err := templates.FetchRepo(config)
+	if err != nil {
+		return nil, err
+	}
+	runbookList := &RunbookList{
+		Commit:        commit.Hash.String(),
+		CommitAuthor:  commit.Author.String(),
+		CommitMessage: commit.Message,
+		Items:         []*Runbook{},
+	}
+	ctree, _ := commit.Tree()
+	if ctree == nil {
+		return runbookList, nil
+	}
+	return runbookList, ctree.Files().ForEach(func(f *object.File) error {
+		if !templates.IsRunbookFile(f.Name) {
+			return nil
+		}
+		if pathPrefix != "" && !strings.HasPrefix(f.Name, pathPrefix) {
+			return nil
+		}
+		blobData, err := templates.ReadBlob(f)
+		if err != nil {
+			return fmt.Errorf("name=%v - read blob error %v", f.Name, err)
+		}
+		if len(blobData) > maxTemplateSize {
+			return fmt.Errorf("max template size [%v KB] reached for %v", maxTemplateSize/1000, f.Name)
+		}
+		t, err := templates.Parse(string(blobData))
+		if err != nil {
+			return fmt.Errorf("name=%v - failed parsing template %v", f.Name, err)
+		}
+		runbookList.Items = append(runbookList.Items, &Runbook{
+			Name:           f.Name,
+			Metadata:       t.Attributes(),
+			ConnectionList: nil,
+		})
+		return nil
+	})
+}
