@@ -107,8 +107,12 @@ func parseResourceOrDie(args []string, method, outputFlag string) *apiResource {
 			apir.suffixEndpoint = "/api/plugins"
 		}
 	case "runbooks":
+		// force to decode as object
+		apir.resourceGet = true
+		apir.name = "noop"
+
 		apir.resourceList = false
-		apir.suffixEndpoint = "/api/plugins/runbooks/connections/" + apir.name + "/templates"
+		apir.suffixEndpoint = "/api/plugins/runbooks/templates"
 	default:
 		styles.PrintErrorAndExit("resource type %q not supported", apir.resourceType)
 	}

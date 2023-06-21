@@ -122,13 +122,8 @@ func parseNode(node string) map[string]any {
 	return specs
 }
 
-// IsRunbookFile checks if the filePath is a runbook
-// * If the prefix path match the prefix of the filePath
-// * If fileName contains '.runbook.' in its name
-func IsRunbookFile(pathPrefix, filePath string) bool {
-	if pathPrefix != "" && !strings.HasPrefix(filePath, pathPrefix) {
-		return false
-	}
+// IsRunbookFile checks if the filePath contains '.runbook.' in its name
+func IsRunbookFile(filePath string) bool {
 	parts := strings.Split(filePath, "/")
 	fileName := parts[len(parts)-1]
 	return strings.Contains(fileName, ".runbook.")

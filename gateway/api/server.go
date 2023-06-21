@@ -265,7 +265,14 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.IndexerHandler.Search,
 	)
 
+	// DEPRECATED in flavor of /plugins/runbooks/templates
 	route.GET("/plugins/runbooks/connections/:name/templates",
+		api.Authenticate,
+		api.TrackRequest,
+		api.RunbooksHandler.FindAll,
+	)
+
+	route.GET("/plugins/runbooks/templates",
 		api.Authenticate,
 		api.TrackRequest,
 		api.RunbooksHandler.FindAll,

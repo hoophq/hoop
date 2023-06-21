@@ -152,15 +152,50 @@ var getCmd = &cobra.Command{
 			switch contents := obj.(type) {
 			case map[string]any:
 				m := contents
-				groupList := joinGroups(m["groups"].([]any))
+				groupList := joinItems(m["groups"].([]any))
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%v\t%v\t", m["id"], m["email"], m["name"], m["slack_id"], m["status"], groupList)
 				fmt.Fprintln(w)
 			case []map[string]any:
 				for _, m := range contents {
-					groupList := joinGroups(m["groups"].([]any))
+					groupList := joinItems(m["groups"].([]any))
 					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%v\t%v\t", m["id"], m["email"], m["name"], m["slack_id"], m["status"], groupList)
 					fmt.Fprintln(w)
 				}
+			}
+		case "runbooks":
+
+			switch contents := obj.(type) {
+			case map[string]any:
+				commit := fmt.Sprintf("%v", contents["commit"])
+				if len(commit) > 7 {
+					commit = commit[:7]
+				}
+				fmt.Fprintln(w, "NAME\tMETADATA\tCONNECTIONS\tCOMMIT")
+				runbookList, _ := contents["items"].([]interface{})
+				for _, obj := range runbookList {
+					m, ok := obj.(map[string]any)
+					if !ok {
+						continue
+					}
+					metadata, _ := m["metadata"].(map[string]any)
+					var metadataList []string
+					for metakey := range metadata {
+						metadataList = append(metadataList, metakey)
+					}
+					connections := "-"
+					connectionList, _ := m["connections"].([]any)
+					if connectionList != nil {
+						connections = joinItems(connectionList)
+					}
+					fmt.Fprintf(w, "%v\t%v\t%v\t%s",
+						m["name"],
+						strings.Join(metadataList, ", "),
+						connections,
+						commit,
+					)
+					fmt.Fprintln(w)
+				}
+
 			}
 		default:
 			styles.PrintErrorAndExit("tab view not implemented for resource type %q, try repeating the command with the -o json option.", apir.resourceType)
@@ -277,9 +312,9 @@ func joinCmd(cmdList []any) string {
 	return cmd
 }
 
-func joinGroups(groupList []any) string {
+func joinItems(items []any) string {
 	var list []string
-	for _, c := range groupList {
+	for _, c := range items {
 		list = append(list, c.(string))
 	}
 	return strings.Join(list, ", ")
