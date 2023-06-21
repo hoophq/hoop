@@ -11,7 +11,6 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/clientexec"
 	"github.com/runopsio/hoop/gateway/runbooks/templates"
@@ -65,16 +64,18 @@ type Handler struct {
 
 func (h *Handler) ListByConnection(c *gin.Context) {
 	ctx := user.ContextUser(c)
+	log := user.ContextLogger(c)
 	connectionName := c.Param("name")
 	p, err := h.PluginService.FindOne(ctx, "runbooks")
 	if err != nil {
+		log.Error(err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError,
 			&RunbookErrResponse{Message: "failed retrieving runbook plugin"})
 		return
 	}
 	if p == nil {
-		c.JSON(http.StatusBadRequest, &RunbookErrResponse{Message: "plugin runbook not found"})
+		c.JSON(http.StatusBadRequest, &RunbookErrResponse{Message: "plugin runbooks not found"})
 		return
 	}
 	var configEnvVars map[string]string
@@ -131,13 +132,14 @@ func (h *Handler) List(c *gin.Context) {
 
 	p, err := h.PluginService.FindOne(ctx, "runbooks")
 	if err != nil {
+		log.Error(err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError,
 			&RunbookErrResponse{Message: "failed retrieving runbook plugin"})
 		return
 	}
 	if p == nil {
-		c.JSON(http.StatusNotFound, &RunbookErrResponse{Message: "plugin runbook not found"})
+		c.JSON(http.StatusNotFound, &RunbookErrResponse{Message: "plugin runbooks not found"})
 		return
 	}
 	var configEnvVars map[string]string
