@@ -21,11 +21,12 @@ import (
 )
 
 type Runbook struct {
-	Name       string            `json:"name"`
-	Metadata   map[string]any    `json:"metadata"`
-	EnvVars    map[string]string `json:"-"`
-	InputFile  []byte            `json:"-"`
-	CommitHash string            `json:"-"`
+	Name           string            `json:"name"`
+	Metadata       map[string]any    `json:"metadata"`
+	ConnectionList []string          `json:"connections,omitempty"`
+	EnvVars        map[string]string `json:"-"`
+	InputFile      []byte            `json:"-"`
+	CommitHash     string            `json:"-"`
 }
 
 type RunbookRequest struct {
@@ -61,14 +62,60 @@ type Handler struct {
 	scanedKnownHosts bool
 }
 
-func (h *Handler) FindAll(c *gin.Context) {
+func (h *Handler) ListByConnection(c *gin.Context) {
 	ctx := user.ContextUser(c)
 	log := user.ContextLogger(c)
-	config, err := h.getRunbookConfig(ctx, c, c.Param("name"))
+	connectionName := c.Param("name")
+	p, err := h.PluginService.FindOne(ctx, "runbooks")
 	if err != nil {
-		log.Infoln(err)
+		log.Error(err)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError,
+			&RunbookErrResponse{Message: "failed retrieving runbook plugin"})
 		return
 	}
+	if p == nil {
+		c.JSON(http.StatusBadRequest, &RunbookErrResponse{Message: "plugin runbooks not found"})
+		return
+	}
+	var configEnvVars map[string]string
+	if p.Config != nil {
+		configEnvVars = p.Config.EnvVars
+	}
+	config, err := templates.NewRunbookConfig(configEnvVars)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, &RunbookErrResponse{Message: err.Error()})
+		return
+	}
+	hasConnection := false
+	var pathPrefix string
+	for _, conn := range p.Connections {
+		if conn.Name == connectionName {
+			if len(conn.Config) > 0 {
+				pathPrefix = conn.Config[0]
+			}
+			hasConnection = true
+			break
+		}
+	}
+	if !hasConnection {
+		c.JSON(http.StatusNotFound, &RunbookErrResponse{Message: "runbooks plugin does not have this connection"})
+		return
+	}
+	runbookList, err := listRunbookFilesByPathPrefix(pathPrefix, config)
+	if err != nil {
+		log.Infof("failed listing runbooks, err=%v", err)
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"message": fmt.Sprintf("failed listing runbooks, reason=%v", err),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, runbookList)
+}
+
+func (h *Handler) List(c *gin.Context) {
+	ctx := user.ContextUser(c)
+	log := user.ContextLogger(c)
 	if !h.scanedKnownHosts {
 		knownHostsFilePath, err := templates.SSHKeyScan()
 		if err != nil {
@@ -82,7 +129,29 @@ func (h *Handler) FindAll(c *gin.Context) {
 		os.Setenv("SSH_KNOWN_HOSTS", knownHostsFilePath)
 		h.scanedKnownHosts = true
 	}
-	list, err := listRunbookFiles(config)
+
+	p, err := h.PluginService.FindOne(ctx, "runbooks")
+	if err != nil {
+		log.Error(err)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError,
+			&RunbookErrResponse{Message: "failed retrieving runbook plugin"})
+		return
+	}
+	if p == nil {
+		c.JSON(http.StatusNotFound, &RunbookErrResponse{Message: "plugin runbooks not found"})
+		return
+	}
+	var configEnvVars map[string]string
+	if p.Config != nil {
+		configEnvVars = p.Config.EnvVars
+	}
+	config, err := templates.NewRunbookConfig(configEnvVars)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, &RunbookErrResponse{Message: err.Error()})
+		return
+	}
+	runbookList, err := listRunbookFiles(p.Connections, config)
 	if err != nil {
 		log.Infof("failed listing runbooks, err=%v", err)
 		c.JSON(http.StatusUnprocessableEntity, gin.H{
@@ -90,7 +159,7 @@ func (h *Handler) FindAll(c *gin.Context) {
 		})
 		return
 	}
-	c.PureJSON(http.StatusOK, list)
+	c.PureJSON(http.StatusOK, runbookList)
 }
 
 // TODO: Refactor to use sessionapi.RunExec
@@ -107,12 +176,12 @@ func (h *Handler) RunExec(c *gin.Context) {
 		return
 	}
 	connectionName := c.Param("name")
-	config, err := h.getRunbookConfig(ctx, c, connectionName)
+	config, pathPrefix, err := h.getRunbookConfig(ctx, c, connectionName)
 	if err != nil {
 		log.Infoln(err)
 		return
 	}
-	if config.PathPrefix != "" && !strings.HasPrefix(req.FileName, config.PathPrefix) {
+	if pathPrefix != "" && !strings.HasPrefix(req.FileName, pathPrefix) {
 		c.JSON(http.StatusNotFound, gin.H{
 			"session_id": nil,
 			"message":    fmt.Sprintf("runbook file %v not found", req.FileName)})
@@ -146,7 +215,6 @@ func (h *Handler) RunExec(c *gin.Context) {
 		DlpCount:     0,
 		StartSession: time.Now().UTC(),
 	}
-	log.Debugf("persisting session")
 
 	err = sessionStorage.Write(storageCtx, newSession)
 	if err != nil {
@@ -216,21 +284,21 @@ func (h *Handler) getConnection(ctx *user.Context, c *gin.Context, connectionNam
 	return conn.Id, nil
 }
 
-func (h *Handler) getRunbookConfig(ctx *user.Context, c *gin.Context, connectionName string) (*templates.RunbookConfig, error) {
+func (h *Handler) getRunbookConfig(ctx *user.Context, c *gin.Context, connectionName string) (*templates.RunbookConfig, string, error) {
 	connectionID, err := h.getConnection(ctx, c, connectionName)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	p, err := h.PluginService.FindOne(ctx, "runbooks")
 	if err != nil {
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError,
 			&RunbookErrResponse{Message: "failed retrieving runbook plugin"})
-		return nil, fmt.Errorf("failed retrieving runbooks plugin, err=%v", err)
+		return nil, "", fmt.Errorf("failed retrieving runbooks plugin, err=%v", err)
 	}
 	if p == nil {
 		c.JSON(http.StatusNotFound, &RunbookErrResponse{Message: "plugin not found"})
-		return nil, fmt.Errorf("plugin not found")
+		return nil, "", fmt.Errorf("plugin not found")
 	}
 	var repoPrefix string
 	hasConnection := false
@@ -246,16 +314,16 @@ func (h *Handler) getRunbookConfig(ctx *user.Context, c *gin.Context, connection
 	if !hasConnection {
 		c.JSON(http.StatusUnprocessableEntity,
 			&RunbookErrResponse{Message: "plugin is not enabled for this connection"})
-		return nil, fmt.Errorf("plugin is not enabled for this connection")
+		return nil, repoPrefix, fmt.Errorf("plugin is not enabled for this connection")
 	}
 	var configEnvVars map[string]string
 	if p.Config != nil {
 		configEnvVars = p.Config.EnvVars
 	}
-	runbookConfig, err := templates.NewRunbookConfig(repoPrefix, configEnvVars)
+	runbookConfig, err := templates.NewRunbookConfig(configEnvVars)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, &RunbookErrResponse{Message: err.Error()})
-		return nil, err
+		return nil, repoPrefix, err
 	}
-	return runbookConfig, nil
+	return runbookConfig, repoPrefix, nil
 }

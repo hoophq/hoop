@@ -3,8 +3,10 @@ package runbooks
 import (
 	"bytes"
 	"fmt"
+	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/runbooks/templates"
 )
 
@@ -49,7 +51,7 @@ func fetchRunbookFile(config *templates.RunbookConfig, req RunbookRequest) (*Run
 	return nil, fmt.Errorf("runbook %v not found for %v", req.FileName, c.Hash.String())
 }
 
-func listRunbookFiles(config *templates.RunbookConfig) (*RunbookList, error) {
+func listRunbookFiles(pluginConnectionList []plugin.Connection, config *templates.RunbookConfig) (*RunbookList, error) {
 	commit, err := templates.FetchRepo(config)
 	if err != nil {
 		return nil, err
@@ -60,30 +62,84 @@ func listRunbookFiles(config *templates.RunbookConfig) (*RunbookList, error) {
 		CommitMessage: commit.Message,
 		Items:         []*Runbook{},
 	}
-	if ctree, _ := commit.Tree(); ctree != nil {
-		err := ctree.Files().ForEach(func(f *object.File) error {
-			if !templates.IsRunbookFile(config.PathPrefix, f.Name) {
-				return nil
-			}
-			blobData, err := templates.ReadBlob(f)
-			if err != nil {
-				return fmt.Errorf("name=%v - read blob error %v", f.Name, err)
-			}
-			if len(blobData) > maxTemplateSize {
-				return fmt.Errorf("max template size [%v KB] reached for %v", maxTemplateSize/1000, f.Name)
-			}
-			t, err := templates.Parse(string(blobData))
-			if err != nil {
-				return fmt.Errorf("name=%v - failed parsing template %v", f.Name, err)
-			}
-			runbookList.Items = append(runbookList.Items, &Runbook{
-				Name:     f.Name,
-				Metadata: t.Attributes()})
-			return nil
-		})
-		if err != nil {
-			return nil, err
-		}
+	ctree, _ := commit.Tree()
+	if ctree == nil {
+		return runbookList, nil
 	}
-	return runbookList, err
+	return runbookList, ctree.Files().ForEach(func(f *object.File) error {
+		if !templates.IsRunbookFile(f.Name) {
+			return nil
+		}
+		blobData, err := templates.ReadBlob(f)
+		if err != nil {
+			return fmt.Errorf("name=%v - read blob error %v", f.Name, err)
+		}
+		if len(blobData) > maxTemplateSize {
+			return fmt.Errorf("max template size [%v KB] reached for %v", maxTemplateSize/1000, f.Name)
+		}
+		t, err := templates.Parse(string(blobData))
+		if err != nil {
+			return fmt.Errorf("name=%v - failed parsing template %v", f.Name, err)
+		}
+
+		var connectionList []string
+		for _, conn := range pluginConnectionList {
+			if len(conn.Config) == 0 {
+				connectionList = append(connectionList, conn.Name)
+				continue
+			}
+			pathPrefix := conn.Config[0]
+			if pathPrefix != "" && strings.HasPrefix(f.Name, pathPrefix) {
+				connectionList = append(connectionList, conn.Name)
+			}
+		}
+		runbookList.Items = append(runbookList.Items, &Runbook{
+			Name:           f.Name,
+			Metadata:       t.Attributes(),
+			ConnectionList: connectionList,
+		})
+		return nil
+	})
+}
+
+func listRunbookFilesByPathPrefix(pathPrefix string, config *templates.RunbookConfig) (*RunbookList, error) {
+	commit, err := templates.FetchRepo(config)
+	if err != nil {
+		return nil, err
+	}
+	runbookList := &RunbookList{
+		Commit:        commit.Hash.String(),
+		CommitAuthor:  commit.Author.String(),
+		CommitMessage: commit.Message,
+		Items:         []*Runbook{},
+	}
+	ctree, _ := commit.Tree()
+	if ctree == nil {
+		return runbookList, nil
+	}
+	return runbookList, ctree.Files().ForEach(func(f *object.File) error {
+		if !templates.IsRunbookFile(f.Name) {
+			return nil
+		}
+		if pathPrefix != "" && !strings.HasPrefix(f.Name, pathPrefix) {
+			return nil
+		}
+		blobData, err := templates.ReadBlob(f)
+		if err != nil {
+			return fmt.Errorf("name=%v - read blob error %v", f.Name, err)
+		}
+		if len(blobData) > maxTemplateSize {
+			return fmt.Errorf("max template size [%v KB] reached for %v", maxTemplateSize/1000, f.Name)
+		}
+		t, err := templates.Parse(string(blobData))
+		if err != nil {
+			return fmt.Errorf("name=%v - failed parsing template %v", f.Name, err)
+		}
+		runbookList.Items = append(runbookList.Items, &Runbook{
+			Name:           f.Name,
+			Metadata:       t.Attributes(),
+			ConnectionList: nil,
+		})
+		return nil
+	})
 }

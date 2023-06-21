@@ -268,7 +268,13 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.GET("/plugins/runbooks/connections/:name/templates",
 		api.Authenticate,
 		api.TrackRequest,
-		api.RunbooksHandler.FindAll,
+		api.RunbooksHandler.ListByConnection,
+	)
+
+	route.GET("/plugins/runbooks/templates",
+		api.Authenticate,
+		api.TrackRequest,
+		api.RunbooksHandler.List,
 	)
 
 	route.POST("/plugins/runbooks/connections/:name/exec",
