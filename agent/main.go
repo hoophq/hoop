@@ -21,7 +21,10 @@ func Run() {
 		log.Fatal(err)
 	}
 
-	clientOptions := grpc.WithOption("origin", pb.ConnectionOriginAgent)
+	clientOptions := []*grpc.ClientOptions{
+		grpc.WithOption("origin", pb.ConnectionOriginAgent),
+		grpc.WithOption("user-agent", fmt.Sprintf("hoopagent/%v", version.Get().Version)),
+	}
 	clientConfig, err := config.GrpcClientConfig()
 	if err != nil {
 		log.Fatal(err)
@@ -33,7 +36,7 @@ func Run() {
 	case clientconfig.ModeAgentWebRegister:
 		for i := 0; ; i++ {
 			log.Infof("webregister - connecting, attempt=%v", i+1)
-			client, err := grpc.Connect(clientConfig, clientOptions)
+			client, err := grpc.Connect(clientConfig, clientOptions...)
 			if err != nil {
 				log.Fatalf("failed to connect to %s, err=%v", config.GrpcURL, err.Error())
 			}
@@ -58,7 +61,7 @@ func Run() {
 			time.Sleep(time.Second * 7)
 		}
 	default:
-		client, err := grpc.Connect(clientConfig, clientOptions)
+		client, err := grpc.Connect(clientConfig, clientOptions...)
 		if err != nil {
 			log.Fatalf("failed to connect to %s, err=%v", config.GrpcURL, err.Error())
 		}
