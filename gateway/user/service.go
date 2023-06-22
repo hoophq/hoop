@@ -67,6 +67,7 @@ const (
 	StatusReviewing StatusType = "reviewing"
 	StatusInactive  StatusType = "inactive"
 
+	// DEPRECATED types in flavor of gateway/storagev2/types/const.go#Group...
 	GroupAdmin       string = "admin"
 	GroupSecurity    string = "security"
 	GroupSRE         string = "sre"
