@@ -4,9 +4,11 @@ import (
 	"fmt"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/gateway/analytics"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/user"
 	"golang.org/x/oauth2"
@@ -71,7 +73,7 @@ func (s *Service) Login(redirect string) (string, error) {
 	return s.Provider.AuthCodeURL(stateUID), nil
 }
 
-func (s *Service) Callback(state, code string) string {
+func (s *Service) Callback(c *gin.Context, state, code string) string {
 	log.With("code", code, "state", state).Infof("starting callback")
 	login, err := s.Storage.FindLogin(state)
 	if err != nil {
@@ -117,9 +119,9 @@ func (s *Service) Callback(state, code string) string {
 			sub, user.IsOrgMultiTenant(), context.Org, context.User)
 		switch user.IsOrgMultiTenant() {
 		case true:
-			err = s.signupMultiTenant(context, sub, idTokenClaims)
+			err = s.signupMultiTenant(c, context, sub, idTokenClaims)
 		default:
-			err = s.signup(context, sub, idTokenClaims)
+			err = s.signup(c, context, sub, idTokenClaims)
 		}
 		log.Infof("signup finished for sub=%v, success=%v", sub, err == nil)
 		if err != nil {
@@ -150,7 +152,8 @@ func (s *Service) Callback(state, code string) string {
 	}
 
 	s.loginOutcome(login, outcomeSuccess)
-	s.Analytics.Track(context.ToAPIContext(), "login", map[string]any{})
+	s.Analytics.Track(context.ToAPIContext(), analytics.EventLogin,
+		map[string]any{"user-agent": c.GetHeader("user-agent")})
 
 	return login.Redirect + "?token=" + token.AccessToken
 }
@@ -172,7 +175,7 @@ func (s *Service) exchangeCodeByToken(code string) (*oauth2.Token, *oidc.IDToken
 	return token, idToken, nil
 }
 
-func (s *Service) signup(ctx *user.Context, sub string, idTokenClaims map[string]any) error {
+func (s *Service) signup(c *gin.Context, ctx *user.Context, sub string, idTokenClaims map[string]any) error {
 	org, err := s.UserService.GetOrgByName(pb.DefaultOrgName)
 	if err != nil {
 		return fmt.Errorf("failed obtaining default org, err=%v", err)
@@ -217,11 +220,12 @@ func (s *Service) signup(ctx *user.Context, sub string, idTokenClaims map[string
 	}
 
 	s.Analytics.Identify(ctx.ToAPIContext())
-	s.Analytics.Track(ctx.ToAPIContext(), "signup", map[string]any{})
+	s.Analytics.Track(ctx.ToAPIContext(), analytics.EventSignup,
+		map[string]any{"user-agent": c.GetHeader("user-agent")})
 	return nil
 }
 
-func (s *Service) signupMultiTenant(context *user.Context, sub string, idTokenClaims map[string]any) error {
+func (s *Service) signupMultiTenant(c *gin.Context, context *user.Context, sub string, idTokenClaims map[string]any) error {
 	email, _ := idTokenClaims["email"].(string)
 	profileName, _ := idTokenClaims["name"].(string)
 	newOrg := false
@@ -318,7 +322,8 @@ func (s *Service) signupMultiTenant(context *user.Context, sub string, idTokenCl
 		}
 
 		s.Analytics.Identify(context.ToAPIContext())
-		s.Analytics.Track(context.ToAPIContext(), "signup", map[string]any{})
+		s.Analytics.Track(context.ToAPIContext(), analytics.EventSignup,
+			map[string]any{"user-agent": c.GetHeader("user-agent")})
 	}
 
 	return nil

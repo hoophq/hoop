@@ -17,10 +17,7 @@ import (
 	"go.uber.org/zap"
 )
 
-var (
-	errInvalidAuthHeaderErr = errors.New("invalid authorization header")
-	invalidAuthErr          = errors.New("invalid auth")
-)
+var errInvalidAuthHeaderErr = errors.New("invalid authorization header")
 
 func (api *Api) Authenticate(c *gin.Context) {
 	sub, err := api.validateClaims(c)
@@ -80,16 +77,16 @@ func (api *Api) AdminOnly(c *gin.Context) {
 	c.Next()
 }
 
-func (api *Api) TrackRequest(c *gin.Context) {
-	context := user.ContextUser(c)
-
-	api.Analytics.Track(context.ToAPIContext(), fmt.Sprintf("%s %s", c.Request.Method, c.Request.RequestURI), map[string]any{
-		"host":           c.Request.Host,
-		"content-length": c.Request.ContentLength,
-		"user-agent":     c.Request.Header.Get("User-Agent"),
-	})
-
-	c.Next()
+func (api *Api) TrackRequest(eventName string) func(c *gin.Context) {
+	return func(c *gin.Context) {
+		context := user.ContextUser(c)
+		api.Analytics.Track(context.ToAPIContext(), eventName, map[string]any{
+			"host":           c.Request.Host,
+			"content-length": c.Request.ContentLength,
+			"user-agent":     c.Request.Header.Get("User-Agent"),
+		})
+		c.Next()
+	}
 }
 
 func CORSMiddleware() gin.HandlerFunc {

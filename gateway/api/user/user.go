@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/log"
+	"github.com/runopsio/hoop/gateway/analytics"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	userstorage "github.com/runopsio/hoop/gateway/storagev2/user"
@@ -57,7 +58,8 @@ func Create(c *gin.Context) {
 		UserGroups: newUser.Groups,
 	}
 	ctx.Analytics().Identify(trackInvitedUserContext)
-	ctx.Analytics().Track(trackInvitedUserContext, "signup", map[string]any{})
+	ctx.Analytics().Track(trackInvitedUserContext, analytics.EventSignup,
+		map[string]any{"user-agent": c.GetHeader("user-agent")})
 
 	c.JSON(http.StatusCreated, newUser)
 

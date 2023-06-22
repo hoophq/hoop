@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/gateway/agent"
+	"github.com/runopsio/hoop/gateway/analytics"
 	apiproxymanager "github.com/runopsio/hoop/gateway/api/proxymanager"
 	reviewapi "github.com/runopsio/hoop/gateway/api/review"
 	sessionapi "github.com/runopsio/hoop/gateway/api/session"
@@ -100,187 +101,179 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 
 	route.GET("/users",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventFetchUsers),
 		api.AdminOnly,
 		api.UserHandler.FindAll)
 	route.GET("/users/:id",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventFetchUsers),
 		api.AdminOnly,
 		userapi.GetUserByID)
 	route.GET("/userinfo",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventFetchUsers),
 		api.UserHandler.Userinfo)
 	route.GET("/users/groups",
 		api.Authenticate,
-		api.TrackRequest,
 		api.UserHandler.UsersGroups)
 	route.PUT("/users/:id",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventUpdateUser),
 		api.AdminOnly,
 		api.UserHandler.Put)
 	route.POST("/users",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventCreateUser),
 		api.AdminOnly,
 		userapi.Create)
 
 	route.POST("/connections",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventCreateConnection),
 		api.AdminOnly,
 		api.ConnectionHandler.Post)
 	route.PUT("/connections/:name",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventUpdateConnection),
 		api.AdminOnly,
 		api.ConnectionHandler.Put)
 	// DEPRECATED in flavor of POST /sessions
 	route.POST("/connections/:name/exec",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventApiExecConnection),
 		api.ConnectionHandler.RunExec)
 	route.GET("/connections",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventFetchConnections),
 		api.ConnectionHandler.FindAll)
 	route.GET("/connections/:name",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventFetchConnections),
 		api.ConnectionHandler.FindOne)
 	route.DELETE("/connections/:name",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventDeleteConnection),
 		api.AdminOnly,
 		api.ConnectionHandler.Evict)
 
 	route.POST("/proxymanager/connect",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventApiProxymanagerConnect),
 		apiproxymanager.Post,
 	)
 	route.POST("/proxymanager/disconnect",
 		api.Authenticate,
-		api.TrackRequest,
 		apiproxymanager.Disconnect,
 	)
 	route.GET("/proxymanager/status",
 		api.Authenticate,
-		api.TrackRequest,
 		apiproxymanager.Get,
 	)
 
 	route.GET("/reviews",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventFetchReviews),
 		api.ReviewHandler.FindAll)
 	route.GET("/reviews/:id",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventFetchReviews),
 		reviewapi.GetById)
 	route.PUT("/reviews/:id",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventUpdateReview),
 		api.ReviewHandler.Put)
 
 	route.POST("/agents",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventCreateAgent),
 		api.AdminOnly,
 		api.AgentHandler.Post)
 	route.GET("/agents",
 		api.Authenticate,
-		api.TrackRequest,
 		api.AdminOnly,
 		api.AgentHandler.FindAll)
 	route.DELETE("/agents/:nameOrID",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventDeleteAgent),
 		api.AdminOnly,
 		api.AgentHandler.Evict)
 
 	route.POST("/plugins",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventCreatePlugin),
 		api.AdminOnly,
 		api.PluginHandler.Post)
 	route.PUT("/plugins/:name",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventUdpatePlugin),
 		api.AdminOnly,
 		api.PluginHandler.Put)
 	route.GET("/plugins",
 		api.Authenticate,
-		api.TrackRequest,
 		api.PluginHandler.FindAll)
 	route.GET("/plugins/:name",
 		api.Authenticate,
-		api.TrackRequest,
 		api.PluginHandler.FindOne)
 
 	route.PUT("/plugins/:name/config",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventUdpatePluginConfig),
 		api.AdminOnly,
 		api.PluginHandler.PutConfig)
 
 	route.GET("/plugins/audit/sessions/:session_id",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventFetchSessions),
 		api.SessionHandler.FindOne)
 	route.GET("/plugins/audit/sessions/:session_id/status",
 		api.Authenticate,
-		api.TrackRequest,
 		api.SessionHandler.StatusHistory)
 	route.GET("/plugins/audit/sessions",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventFetchSessions),
 		api.SessionHandler.FindAll)
 
 	route.GET("/sessions/:session_id",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventFetchSessions),
 		api.SessionHandler.FindOne)
 	route.GET("/sessions/:session_id/status",
 		api.Authenticate,
-		api.TrackRequest,
 		api.SessionHandler.StatusHistory)
 	route.GET("/sessions",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventFetchSessions),
 		api.SessionHandler.FindAll)
 	route.POST("/sessions",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventApiExecSession),
 		sessionapi.Post)
 	route.POST("/sessions/:session_id/exec",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventApiExecReview),
 		api.SessionHandler.RunReviewedExec)
 
 	route.POST("/plugins/indexer/sessions/search",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventSearch),
 		api.IndexerHandler.Search,
 	)
 
 	route.GET("/plugins/runbooks/connections/:name/templates",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventListRunbooks),
 		api.RunbooksHandler.ListByConnection,
 	)
 
 	route.GET("/plugins/runbooks/templates",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventListRunbooks),
 		api.RunbooksHandler.List,
 	)
 
 	route.POST("/plugins/runbooks/connections/:name/exec",
 		api.Authenticate,
-		api.TrackRequest,
+		api.TrackRequest(analytics.EventExecRunbook),
 		api.RunbooksHandler.RunExec)
 }
 
