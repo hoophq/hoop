@@ -17,12 +17,11 @@ import (
 )
 
 type RunbookConfig struct {
-	URL        string
-	Auth       transport.AuthMethod
-	PathPrefix string
+	URL  string
+	Auth transport.AuthMethod
 }
 
-func NewRunbookConfig(pathPrefix string, envVars map[string]string) (*RunbookConfig, error) {
+func NewRunbookConfig(envVars map[string]string) (*RunbookConfig, error) {
 	gitURLEnc := envVars["GIT_URL"]
 	if gitURLEnc == "" {
 		return nil, fmt.Errorf("missing required plugin configuration: GIT_URL")
@@ -61,7 +60,7 @@ func NewRunbookConfig(pathPrefix string, envVars map[string]string) (*RunbookCon
 			log.Infof("failed parsing SSH key file, err=%v", err)
 			return nil, fmt.Errorf("failed parsing SSH key file")
 		}
-		return &RunbookConfig{string(gitURL), auth, pathPrefix}, nil
+		return &RunbookConfig{string(gitURL), auth}, nil
 	case gitPasswordEnc != "":
 		gitPassword, err := base64.StdEncoding.DecodeString(gitPasswordEnc)
 		if err != nil {
@@ -75,12 +74,11 @@ func NewRunbookConfig(pathPrefix string, envVars map[string]string) (*RunbookCon
 			}
 		}
 		return &RunbookConfig{
-			URL:        string(gitURL),
-			Auth:       &githttp.BasicAuth{Username: string(gitUser), Password: string(gitPassword)},
-			PathPrefix: pathPrefix,
+			URL:  string(gitURL),
+			Auth: &githttp.BasicAuth{Username: string(gitUser), Password: string(gitPassword)},
 		}, nil
 	}
-	return &RunbookConfig{URL: string(gitURL), PathPrefix: pathPrefix}, nil
+	return &RunbookConfig{URL: string(gitURL)}, nil
 }
 
 // SSHKeyScan runs ssh-keyscan command to known git providers like gitlab and github.

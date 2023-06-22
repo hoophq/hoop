@@ -222,30 +222,18 @@ func TestIsRunbookFile(t *testing.T) {
 		want       bool
 	}{
 		{
-			msg:      "it should match file without path prefix",
+			msg:      "it must match file with runbook on its name",
 			filePath: "team/finops/dba/charge.runbook.sql",
 			want:     true,
 		},
 		{
-			msg:        "it should match file with path prefix",
-			filePath:   "team/finops/dba/charge.runbook.sql",
-			pathPrefix: "team/finops/dba",
-			want:       true,
-		},
-		{
-			msg:        "it should not match file with path prefix",
-			filePath:   "team/finops/dba/charge.runbook.sql",
-			pathPrefix: "team/sre/scripts",
-			want:       false,
-		},
-		{
-			msg:      "it should not match file without path prefix",
-			filePath: "team/finops/dba/charg_wallet.py",
+			msg:      "it must not match when there is not a runbook name",
+			filePath: "team/finops/dba/charge.runb.sql",
 			want:     false,
 		},
 	} {
 		t.Run(tt.msg, func(t *testing.T) {
-			got := IsRunbookFile(tt.pathPrefix, tt.filePath)
+			got := IsRunbookFile(tt.filePath)
 			if tt.want != got {
 				t.Errorf("runbook file validation fail, want=%v, got=%v", tt.want, got)
 			}
