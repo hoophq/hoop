@@ -43,7 +43,7 @@ func FindByEmail(ctx *storagev2.Context, email string) (*types.User, error) {
 	if len(user) == 0 {
 		return nil, nil
 	}
-	return &user[0][9], nil
+	return &user[0][0], nil
 }
 
 func FindInvitedUser(ctx *storagev2.Context, email string) (*types.InvitedUser, error) {

@@ -32,7 +32,6 @@ const (
 )
 
 const (
-	// TODO: deprecate gateway/user/service.go group constants
 	GroupAdmin       string = "admin"
 	GroupSecurity    string = "security"
 	GroupSRE         string = "sre"
