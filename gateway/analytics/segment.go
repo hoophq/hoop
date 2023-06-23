@@ -5,7 +5,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
-	"github.com/runopsio/hoop/gateway/user"
 	"github.com/segmentio/analytics-go/v3"
 )
 
@@ -25,26 +24,26 @@ func New() *Segment {
 	return &Segment{client}
 }
 
-func (s *Segment) Identify(ctx *user.Context) {
-	if s.Client == nil || ctx == nil || ctx.User == nil || ctx.Org == nil {
+func (s *Segment) Identify(ctx *types.APIContext) {
+	if s.Client == nil || ctx == nil || ctx.UserID == "" || ctx.OrgID == "" {
 		return
 	}
 
 	_ = s.Client.Enqueue(analytics.Identify{
-		UserId: ctx.User.Id,
+		UserId: ctx.UserID,
 		Traits: analytics.NewTraits().
-			SetName(ctx.User.Name).
-			SetEmail(ctx.User.Email).
-			Set("groups", ctx.User.Groups).
-			Set("is-admin", ctx.User.IsAdmin()).
-			Set("status", ctx.User.Status),
+			SetName(ctx.UserName).
+			SetEmail(ctx.UserEmail).
+			Set("groups", ctx.UserGroups).
+			Set("is-admin", ctx.IsAdminUser()).
+			Set("status", ctx.UserStatus),
 	})
 
 	_ = s.Client.Enqueue(analytics.Group{
-		GroupId: ctx.Org.Id,
-		UserId:  ctx.User.Id,
+		GroupId: ctx.OrgID,
+		UserId:  ctx.UserID,
 		Traits: analytics.NewTraits().
-			SetName(ctx.Org.Name),
+			SetName(ctx.OrgName),
 	})
 }
 

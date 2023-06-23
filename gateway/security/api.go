@@ -17,7 +17,7 @@ type (
 
 	service interface {
 		Login(callback string) (string, error)
-		Callback(state, code string) string
+		Callback(c *gin.Context, state, code string) string
 	}
 )
 
@@ -46,7 +46,7 @@ func (h *Handler) Callback(c *gin.Context) {
 	state := c.Query("state")
 	code := c.Query("code")
 
-	redirect := h.Service.Callback(state, code)
+	redirect := h.Service.Callback(c, state, code)
 	c.Redirect(http.StatusTemporaryRedirect, redirect)
 }
 

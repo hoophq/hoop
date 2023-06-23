@@ -3,6 +3,8 @@ package types
 type ClientStatusType string
 type UserStatusType string
 
+// type User
+
 const (
 	// ClientStatusReady indicates the grpc client is ready to
 	// subscribe to a new connection
@@ -27,4 +29,14 @@ const (
 	ReviewStatusProcessing ReviewStatus = "PROCESSING"
 	ReviewStatusExecuted   ReviewStatus = "EXECUTED"
 	ReviewStatusUnknown    ReviewStatus = "UNKNOWN"
+)
+
+const (
+	GroupAdmin       string = "admin"
+	GroupSecurity    string = "security"
+	GroupSRE         string = "sre"
+	GroupDBA         string = "dba"
+	GroupDevops      string = "devops"
+	GroupSupport     string = "support"
+	GroupEngineering string = "engineering"
 )

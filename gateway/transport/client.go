@@ -13,6 +13,7 @@ import (
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
+	"github.com/runopsio/hoop/gateway/analytics"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	pluginsslack "github.com/runopsio/hoop/gateway/transport/plugins/slack"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
@@ -194,15 +195,21 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		s.trackSessionStatus(sessionID, pb.SessionPhaseClientErr, err)
 		return status.Errorf(codes.FailedPrecondition, err.Error())
 	}
-
-	s.Analytics.Track(userCtx.ToAPIContext(), clientVerb, map[string]any{
-		"sessionID":       sessionID,
+	eventName := analytics.EventGrpcExec
+	if clientVerb == pb.ClientVerbConnect {
+		eventName = analytics.EventGrpcConnect
+	}
+	s.Analytics.Track(userCtx.ToAPIContext(), eventName, map[string]any{
+		"session-id":      sessionID,
 		"connection-name": connectionName,
 		"connection-type": conn.Type,
 		"client-version":  mdget(md, "version"),
 		"go-version":      mdget(md, "go-version"),
 		"platform":        mdget(md, "platform"),
 		"hostname":        hostname,
+		"user-agent":      mdget(md, "user-agent"),
+		"origin":          clientOrigin,
+		"verb":            clientVerb,
 	})
 
 	log.With("session", sessionID).

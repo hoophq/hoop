@@ -16,12 +16,14 @@ type TxResponse struct {
 }
 
 type APIContext struct {
-	OrgID  string
-	UserID string
+	OrgID   string
+	OrgName string
+	UserID  string
 
 	UserName   string
 	UserEmail  string
 	UserGroups []string
+	UserStatus string
 }
 
 // Plugin for now is an auxiliar type
@@ -167,4 +169,13 @@ type User struct {
 	Status  UserStatusType `json:"status"   edn:"user/status"`
 	SlackID string         `json:"slack_id" edn:"user/slack-id"`
 	Groups  []string       `json:"groups"   edn:"user/groups"`
+}
+
+type InvitedUser struct {
+	ID      string   `json:"id"       edn:"xt/id"`
+	OrgID   string   `json:"-"        edn:"invited-user/org"`
+	Email   string   `json:"email"    edn:"invited-user/email"`
+	Name    string   `json:"name"     end:"invited-user/name"`
+	SlackID string   `json:"slack_id" edn:"invited-user/slack-id"`
+	Groups  []string `json:"groups"   edn:"invited-user/groups"`
 }

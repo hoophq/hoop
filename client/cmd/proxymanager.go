@@ -14,6 +14,7 @@ import (
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
+	"github.com/runopsio/hoop/common/version"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -29,6 +30,7 @@ var (
 			grpcClientOptions := []*grpc.ClientOptions{
 				grpc.WithOption("origin", pb.ConnectionOriginClientProxyManager),
 				grpc.WithOption("verb", pb.ClientVerbConnect),
+				grpc.WithOption("user-agent", fmt.Sprintf("hoopcli/%v", version.Get().Version)),
 			}
 
 			var client pb.ClientTransport

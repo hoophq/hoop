@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/common/log"
+	"github.com/runopsio/hoop/gateway/analytics"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 )
 
@@ -100,34 +101,58 @@ const ContextKey = "storagev2"
 type Context struct {
 	*Store
 	*types.APIContext
+	segment *analytics.Segment
 }
 
 func ParseContext(c *gin.Context) *Context {
 	obj, ok := c.Get(ContextKey)
 	if !ok {
 		log.Warnf("failed obtaing context from *gin.Context for key %q", ContextKey)
-		return &Context{NewStorage(nil), &types.APIContext{}}
+		return &Context{
+			Store:      NewStorage(nil),
+			APIContext: &types.APIContext{},
+			segment:    nil}
 	}
 	ctx, _ := obj.(*Context)
 	if ctx == nil {
 		log.Warnf("failed type casting value to *Context")
-		return &Context{NewStorage(nil), &types.APIContext{}}
+		return &Context{
+			Store:      NewStorage(nil),
+			APIContext: &types.APIContext{},
+			segment:    nil}
 	}
 	return ctx
 }
 
 func NewContext(userID, orgID string, store *Store) *Context {
-	return &Context{store, &types.APIContext{UserID: userID, OrgID: orgID}}
+	return &Context{
+		Store:      store,
+		APIContext: &types.APIContext{UserID: userID, OrgID: orgID},
+		segment:    nil}
 }
 
 // NewOrganizationContext returns a context without a user
 func NewOrganizationContext(orgID string, store *Store) *Context {
-	return &Context{store, &types.APIContext{UserID: "", OrgID: orgID}}
+	return NewContext("", orgID, store)
 }
 
-func (c *Context) WithUserInfo(userName, userEmail string, userGroups []string) *Context {
-	c.UserName = userName
-	c.UserEmail = userEmail
-	c.UserGroups = userGroups
+func (c *Context) WithUserInfo(name, email, status string, groups []string) *Context {
+	c.UserName = name
+	c.UserEmail = email
+	c.UserGroups = groups
+	c.UserStatus = status
 	return c
+}
+
+func (c *Context) WithOrgName(orgName string) *Context {
+	c.OrgName = orgName
+	return c
+}
+
+func (c *Context) Analytics() *analytics.Segment {
+	if c.segment == nil {
+		c.segment = analytics.New()
+		return c.segment
+	}
+	return c.segment
 }

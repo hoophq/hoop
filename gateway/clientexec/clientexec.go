@@ -11,6 +11,7 @@ import (
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
+	"github.com/runopsio/hoop/common/version"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/tidwall/wal"
 )
@@ -128,7 +129,9 @@ func New(orgID, accessToken, connectionName, sessionID string) (*clientExec, err
 		grpc.WithOption(grpc.OptionConnectionName, connectionName),
 		grpc.WithOption("origin", pb.ConnectionOriginClientAPI),
 		grpc.WithOption("verb", pb.ClientVerbExec),
-		grpc.WithOption("session-id", sessionID))
+		grpc.WithOption("session-id", sessionID),
+		grpc.WithOption("user-agent", fmt.Sprintf("clientexec/%v", version.Get().Version)),
+	)
 	if err != nil {
 		_ = wlog.Close()
 		return nil, err

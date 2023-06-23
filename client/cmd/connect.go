@@ -23,6 +23,7 @@ import (
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	pbterm "github.com/runopsio/hoop/common/terminal"
+	"github.com/runopsio/hoop/common/version"
 	"github.com/spf13/cobra"
 )
 
@@ -327,6 +328,7 @@ func newClientConnect(config *clientconfig.Config, loader *spinner.Spinner, args
 		grpc.WithOption(grpc.OptionConnectionName, c.connectionName),
 		grpc.WithOption("origin", pb.ConnectionOriginClient),
 		grpc.WithOption("verb", verb),
+		grpc.WithOption("user-agent", fmt.Sprintf("hoopcli/%v", version.Get().Version)),
 	}
 	clientConfig, err := config.GrpcClientConfig()
 	if err != nil {

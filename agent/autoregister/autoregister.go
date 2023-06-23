@@ -61,6 +61,7 @@ func Run() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed auto registering. %v", err)
 	}
+	_, _ = http.Get("http://127.0.0.1:3001/_xtdb/sync?timeout=5000")
 	log.Info("autoregister - created default agent")
 	return agentToken, nil
 }

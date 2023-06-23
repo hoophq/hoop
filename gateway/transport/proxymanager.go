@@ -14,6 +14,7 @@ import (
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
+	"github.com/runopsio/hoop/gateway/analytics"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/clientstate"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
@@ -52,7 +53,11 @@ func (s *Server) proxyManager(stream pb.Transport_ConnectServer, token string) e
 	}
 	log.Infof("proxymanager - client connected")
 	storectx := storagev2.NewContext(userCtx.User.Id, userCtx.Org.Id, s.StoreV2).
-		WithUserInfo(userCtx.User.Name, userCtx.User.Email, userCtx.User.Groups)
+		WithUserInfo(
+			userCtx.User.Name,
+			userCtx.User.Email,
+			string(userCtx.User.Status),
+			userCtx.User.Groups)
 	sessionID := uuid.NewString()
 	err = s.listenProxyManagerMessages(sessionID, storectx, stream)
 	if status, ok := status.FromError(err); ok && status.Code() == codes.Canceled {
@@ -194,14 +199,17 @@ func (s *Server) listenProxyManagerMessages(sessionID string, ctx *storagev2.Con
 					return status.Errorf(codes.FailedPrecondition, err.Error())
 				}
 
-				s.Analytics.Track(ctx.APIContext, clientOrigin, map[string]any{
-					"sessionID":       sessionID,
+				s.Analytics.Track(ctx.APIContext, analytics.EventGrpcProxyManagerConnect, map[string]any{
+					"session-id":      sessionID,
 					"connection-name": req.RequestConnectionName,
 					"connection-type": conn.Type,
 					"client-version":  mdget(md, "version"),
 					"go-version":      mdget(md, "go-version"),
 					"platform":        mdget(md, "platform"),
 					"hostname":        mdget(md, "hostname"),
+					"user-agent":      mdget(md, "user-agent"),
+					"origin":          clientOrigin,
+					"verb":            pb.ClientVerbConnect,
 				})
 
 				log.With("session", sessionID).Infof("proxymanager - starting open session phase")
