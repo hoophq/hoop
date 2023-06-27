@@ -169,10 +169,10 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 
 	switch string(conn.Type) {
 	case pb.ConnectionTypeCommandLine: // noop - this type can connect/exec
-	default: // tcp, mysql, postgres
+	case pb.ConnectionTypeTCP:
 		if clientVerb == pb.ClientVerbExec {
 			return status.Errorf(codes.InvalidArgument,
-				fmt.Sprintf("exec is only allowed to command-line type connections. Use 'hoop connect %s' instead", conn.Name))
+				fmt.Sprintf("exec is not allowed for tcp type connections. Use 'hoop connect %s' instead", conn.Name))
 		}
 	}
 
