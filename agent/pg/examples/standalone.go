@@ -66,7 +66,7 @@ func serveConn(pgClient, pgServer net.Conn) {
 	defer pgServer.Close()
 
 	clientReader := pg.NewReader(pgClient)
-	serverReader := pg.NewReader(pgServer)
+	// serverReader := pg.NewReader(pgServer)
 	_, pkt, err := pg.DecodeStartupPacket(clientReader)
 	if err != nil {
 		fmt.Println(err)
@@ -102,13 +102,13 @@ func serveConn(pgClient, pgServer net.Conn) {
 		context.Background(),
 		pgServer,
 		middlewares.HexDumpPacket,
-	).RunWithReader(clientReader)
+	).RunWithReader(pgClient)
 
 	clientRouter := pg.NewProxy(
 		context.Background(),
 		pgClient,
 		middlewares.HexDumpPacket,
-	).RunWithReader(serverReader)
+	).RunWithReader(pgServer)
 
 	<-clientRouter.Done()
 	<-serverRouter.Done()

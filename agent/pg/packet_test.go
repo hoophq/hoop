@@ -2,8 +2,9 @@ package pg
 
 import (
 	"bytes"
-	pgtypes "github.com/runopsio/hoop/common/pg"
 	"testing"
+
+	pgtypes "github.com/runopsio/hoop/common/pg"
 )
 
 func TestDecodeStartupPacketSSLRequest(t *testing.T) {
@@ -35,8 +36,8 @@ func TestDecodeEncodeStartupPacket(t *testing.T) {
 	if pkt.typ != nil {
 		t.Fatal("startup packet type must be nil")
 	}
-	if pkt.Length() != len(startupPacket) {
-		t.Fatalf("wrong header sizer, want=%v, got=%v", len(startupPacket), pkt.Length())
+	if pkt.HeaderLength() != len(startupPacket) {
+		t.Fatalf("wrong header sizer, want=%v, got=%v", len(startupPacket), pkt.HeaderLength())
 	}
 	if !bytes.Equal(pkt.frame, startupPacket[4:]) {
 		t.Fatalf("malformed packet, want=% X, got=% X", startupPacket[4:], pkt.frame)
