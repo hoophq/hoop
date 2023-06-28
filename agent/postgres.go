@@ -147,7 +147,7 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 		swHookPgClient,
 		mid.ProxyCustomAuth,
 		redactmiddleware.Handler,
-	).RunWithReader(pg.NewReader(pgServer))
+	).RunWithReader(pgServer)
 	proxyServerWriter := pg.NewProxy(
 		pg.NewContext(context.Background(), sessionID),
 		pgServer,

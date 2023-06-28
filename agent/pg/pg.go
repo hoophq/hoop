@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/pg"
@@ -22,7 +23,7 @@ type (
 	MiddlewareFn func(nextFn NextFn, pkt *Packet, w ResponseWriter)
 	Proxy        interface {
 		Run() Proxy
-		RunWithReader(pgClientReader Reader) Proxy
+		RunWithReader(pgClientReader net.Conn) Proxy
 		Write(b []byte) (int, error)
 		Send(b []byte) error
 		Done() <-chan struct{}
@@ -32,6 +33,9 @@ type (
 )
 
 var ErrNoop = errors.New("NOOP")
+var errMultiplePackets = errors.New("multiple packets processing error")
+
+const noopPktLen int = -1
 
 type proxy struct {
 	ctx         context.Context
@@ -58,7 +62,7 @@ func NewContext(ctx context.Context, sessionID string) context.Context {
 	return context.WithValue(ctx, pg.SessionIDContextKey, sessionID)
 }
 
-func (r *proxy) processPacket(data Reader) error {
+func (r *proxy) processPacket(data Reader, pktLen int) error {
 	_, pkt, err := DecodeTypedPacket(data)
 	if err != nil {
 		return err
@@ -67,17 +71,33 @@ func (r *proxy) processPacket(data Reader) error {
 		processNextMiddleware := false
 		middlewareFn(func() { processNextMiddleware = true }, pkt, r.w)
 		if !processNextMiddleware {
+			// TODO(san) this condition is an error to identify when
+			// there's multiple packets but the middleware is indicating
+			// to stop further processing. It should be noisy to indicate
+			// this problem. This should be refactored to support this use
+			// case.
+			if pktLen != noopPktLen && pkt.Length() < pktLen {
+				return errMultiplePackets
+			}
 			// if next is not called, don't process the default action
 			// to write the packet and stop processing further middlewares
 			return nil
 		}
 	}
-	_, err = r.Write(pkt.Encode())
-	return err
+	if _, err := r.Write(pkt.Encode()); err != nil {
+		return err
+	}
+	// recurse when there're multiple packets
+	if pktLen != noopPktLen && pkt.Length() < pktLen {
+		pktLen = pkt.Length() - pktLen
+		return r.processPacket(data, pktLen)
+	}
+	return nil
 }
 
-func (r *proxy) RunWithReader(pgClientReader Reader) Proxy {
+func (r *proxy) RunWithReader(pgClientReader net.Conn) Proxy {
 	log.Printf("session=%v | pgrw - started", r.sessionID)
+	reader := bufio.NewReader(pgClientReader)
 	go func() {
 	exit:
 		for {
@@ -86,7 +106,7 @@ func (r *proxy) RunWithReader(pgClientReader Reader) Proxy {
 				log.Printf("session=%v | pgrw - context done, err=%v", r.sessionID, r.ctx.Err())
 				break exit
 			default:
-				if err := r.processPacket(pgClientReader); err != nil {
+				if err := r.processPacket(reader, noopPktLen); err != nil {
 					if err != io.EOF {
 						log.Printf("session=%v | pgrw - failed processing packet, err=%v", r.sessionID, err)
 					}
@@ -113,7 +133,7 @@ func (r *proxy) Run() Proxy {
 				break exit
 			case rawPkt := <-packetChan:
 				data := bufio.NewReaderSize(bytes.NewBuffer(rawPkt), len(rawPkt))
-				if err := r.processPacket(data); err != nil {
+				if err := r.processPacket(data, len(rawPkt)); err != nil {
 					if err != io.EOF {
 						log.Printf("session=%v | chanpgrw - failed processing packet, err=%v", r.sessionID, err)
 					}

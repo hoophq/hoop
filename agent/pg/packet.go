@@ -30,7 +30,7 @@ func (p *Packet) setHeaderLength(length int) *Packet {
 }
 
 func (p *Packet) Encode() []byte {
-	dst := make([]byte, p.Length())
+	dst := make([]byte, p.HeaderLength())
 	_ = copy(dst, append(p.header[:], p.frame...))
 	if p.typ != nil {
 		dst = append([]byte{*p.typ}, dst...)
@@ -42,11 +42,14 @@ func (p *Packet) EncodeAsReader() *bufio.Reader {
 	return bufio.NewReader(bytes.NewBuffer(p.Encode()))
 }
 
-// Length return the packet length (frame) including itself (header)
-func (p *Packet) Length() int {
+// HeaderLength return the packet length (frame) including itself (header)
+func (p *Packet) HeaderLength() int {
 	pktLen := binary.BigEndian.Uint32(p.header[:])
 	return int(pktLen)
 }
+
+// Length returns the packet header length + type
+func (p *Packet) Length() int { return p.HeaderLength() + 1 }
 
 func (p *Packet) Type() pg.PacketType {
 	return pg.PacketType(*p.typ)
@@ -100,7 +103,7 @@ func DecodeTypedPacket(r Reader) (int, *Packet, error) {
 	if err != nil {
 		return nread, nil, err
 	}
-	pktLen := p.Length() - 4 // length includes itself.
+	pktLen := p.HeaderLength() - 4 // length includes itself.
 	if pktLen > pg.DefaultBufferSize || pktLen < 0 {
 		return nread, nil, fmt.Errorf("max size reached")
 	}
@@ -118,7 +121,7 @@ func DecodeStartupPacket(startupPacket Reader) (int, *Packet, error) {
 	if err != nil {
 		return nread, nil, err
 	}
-	pktLen := p.Length() - 4 // length includes itself.
+	pktLen := p.HeaderLength() - 4 // length includes itself.
 	if pktLen > pg.DefaultBufferSize || pktLen < 0 {
 		return nread, nil, fmt.Errorf("max size reached")
 	}
