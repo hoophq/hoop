@@ -3,6 +3,7 @@ package apiconnectionapps
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
@@ -26,6 +27,7 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
+	reqBody.Hostname = strings.TrimSpace(strings.ToLower(reqBody.Hostname))
 	dsnCtx := ctx.DSN()
 	if dsnCtx.OrgID == "" || dsnCtx.ClientKeyName == "" || reqBody.Hostname == "" {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "missing required attributes"})
