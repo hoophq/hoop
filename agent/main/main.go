@@ -2,8 +2,7 @@ package main
 
 import (
 	"C"
-)
-import (
+
 	"github.com/runopsio/hoop/agent"
 )
 
