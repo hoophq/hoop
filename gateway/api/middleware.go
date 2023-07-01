@@ -13,6 +13,7 @@ import (
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/common/version"
 	"github.com/runopsio/hoop/gateway/storagev2"
+	clientkeysstorage "github.com/runopsio/hoop/gateway/storagev2/clientkeys"
 	"github.com/runopsio/hoop/gateway/user"
 	"go.uber.org/zap"
 )
@@ -47,9 +48,35 @@ func (api *Api) Authenticate(c *gin.Context) {
 	c.Set(storagev2.ContextKey,
 		storagev2.NewContext(ctx.User.Id, ctx.Org.Id, api.StoreV2).
 			WithUserInfo(ctx.User.Name, ctx.User.Email, string(ctx.User.Status), ctx.User.Groups).
-			WithOrgName(ctx.Org.Name),
+			WithOrgName(ctx.Org.Name).
+			WithApiURL(api.IDProvider.ApiURL).
+			WithGrpcURL(api.IDProvider.ApiURL),
 	)
 	c.Set(user.ContextUserKey, ctx)
+	c.Next()
+}
+
+func (api *Api) AuthenticateAgent(c *gin.Context) {
+	tokenHeader := c.GetHeader("authorization")
+	tokenParts := strings.Split(tokenHeader, " ")
+	if len(tokenParts) != 2 || tokenParts[0] != "Bearer" || tokenParts[1] == "" {
+		log.Debugf("failed authenticating agent, %v, length=%v",
+			parseHeaderForDebug(tokenHeader), len(tokenHeader))
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+
+	clientKey, err := clientkeysstorage.ValidateDSN(api.StoreV2, tokenParts[1])
+	if err != nil || clientKey == nil {
+		log.Debugf("failed authenticating agent, %v, length=%v",
+			parseHeaderForDebug(tokenHeader), len(tokenHeader))
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+	c.Set(storagev2.ContextKey,
+		storagev2.NewDSNContext(clientKey.OrgID, clientKey.Name, api.StoreV2).
+			WithApiURL(api.IDProvider.ApiURL).
+			WithGrpcURL(api.GrpcURL))
 	c.Next()
 }
 

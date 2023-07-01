@@ -1,7 +1,16 @@
 package main
 
-import "github.com/runopsio/hoop/agent"
+import (
+	"C"
+)
+import (
+	"github.com/runopsio/hoop/agent"
+)
 
-func main() {
-	agent.Run()
-}
+//export __start_in_background
+func __start_in_background() { go agent.StartSDK() }
+
+//export __start
+func __start() { agent.StartSDK() }
+
+func main() {}

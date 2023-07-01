@@ -101,6 +101,7 @@ const ContextKey = "storagev2"
 type Context struct {
 	*Store
 	*types.APIContext
+	dsnctx  *types.DSNContext
 	segment *analytics.Segment
 }
 
@@ -136,6 +137,15 @@ func NewOrganizationContext(orgID string, store *Store) *Context {
 	return NewContext("", orgID, store)
 }
 
+func NewDSNContext(orgID, clientKeyName string, store *Store) *Context {
+	return &Context{
+		Store:      store,
+		dsnctx:     &types.DSNContext{OrgID: orgID, ClientKeyName: clientKeyName},
+		APIContext: &types.APIContext{OrgID: orgID},
+		segment:    nil,
+	}
+}
+
 func (c *Context) WithUserInfo(name, email, status string, groups []string) *Context {
 	c.UserName = name
 	c.UserEmail = email
@@ -149,6 +159,16 @@ func (c *Context) WithOrgName(orgName string) *Context {
 	return c
 }
 
+func (c *Context) WithApiURL(apiURL string) *Context {
+	c.ApiURL = apiURL
+	return c
+}
+
+func (c *Context) WithGrpcURL(grpcURL string) *Context {
+	c.GrpcURL = grpcURL
+	return c
+}
+
 func (c *Context) Analytics() *analytics.Segment {
 	if c.segment == nil {
 		c.segment = analytics.New()
@@ -156,3 +176,5 @@ func (c *Context) Analytics() *analytics.Segment {
 	}
 	return c.segment
 }
+
+func (c *Context) DSN() *types.DSNContext { return c.dsnctx }

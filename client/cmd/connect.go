@@ -328,12 +328,12 @@ func newClientConnect(config *clientconfig.Config, loader *spinner.Spinner, args
 		grpc.WithOption(grpc.OptionConnectionName, c.connectionName),
 		grpc.WithOption("origin", pb.ConnectionOriginClient),
 		grpc.WithOption("verb", verb),
-		grpc.WithOption("user-agent", fmt.Sprintf("hoopcli/%v", version.Get().Version)),
 	}
 	clientConfig, err := config.GrpcClientConfig()
 	if err != nil {
 		c.printErrorAndExit(err.Error())
 	}
+	clientConfig.UserAgent = fmt.Sprintf("hoopcli/%v", version.Get().Version)
 	c.client, err = grpc.Connect(clientConfig, grpcClientOptions...)
 	if err != nil {
 		c.printErrorAndExit(err.Error())

@@ -26,6 +26,8 @@ const (
 	EventFetchReviews           = "hoop-fetch-reviews"
 	EventApiExecReview          = "hoop-api-exec-review"
 	EventSearch                 = "hoop-search"
+	EventCreateClientKey        = "hoop-create-clientkey"
+	EventFetchClientKey         = "hoop-fetch-clientkey"
 
 	EventGrpcExec                = "hoop-grpc-exec"
 	EventGrpcConnect             = "hoop-grpc-connect"

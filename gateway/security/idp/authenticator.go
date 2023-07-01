@@ -105,7 +105,7 @@ func NewProvider(profile string) *Provider {
 		if profile == pb.DevProfile {
 			apiURL = "http://localhost:8009"
 		} else {
-			panic("API_URL environment variable is required")
+			log.Fatal("API_URL environment variable is required")
 		}
 	}
 	apiURL = strings.TrimSuffix(apiURL, "/")
@@ -127,7 +127,7 @@ func NewProvider(profile string) *Provider {
 	provider.CustomScopes = os.Getenv("IDP_CUSTOM_SCOPES")
 
 	if provider.ClientSecret == "" {
-		panic(errors.New("missing required ID provider variables"))
+		log.Fatal(errors.New("missing required ID provider variables"))
 	}
 
 	if provider.Issuer == "" {
@@ -140,7 +140,7 @@ func NewProvider(profile string) *Provider {
 
 	oidcProviderConfig, err := newProviderConfig(provider.Context, provider.Issuer)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 	oidcProvider := oidcProviderConfig.NewProvider(ctx)
 	scopes := []string{oidc.ScopeOpenID, "profile", "email"}
@@ -191,7 +191,7 @@ func downloadJWKS(jwksURL string) *keyfunc.JWKS {
 	var err error
 	jwks, err := keyfunc.Get(jwksURL, options)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 	return jwks
 }

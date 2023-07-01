@@ -13,6 +13,7 @@ import (
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
 	"github.com/runopsio/hoop/gateway/agent"
+	clientkeysstorage "github.com/runopsio/hoop/gateway/storagev2/clientkeys"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -58,6 +59,69 @@ func setAgentClientMetdata(into *agent.Agent, md metadata.MD) {
 	into.GoVersion = mdget(md, "go-version")
 	into.Compiler = mdget(md, "compiler")
 	into.Platform = mdget(md, "platform")
+}
+
+func (s *Server) subscribeAgentSDK(stream pb.Transport_ConnectServer, dsn string) error {
+	ctx := stream.Context()
+	md, _ := metadata.FromIncomingContext(ctx)
+	agentHostname := mdget(md, "hostname")
+	clientKey, err := clientkeysstorage.ValidateDSN(s.StoreV2, dsn)
+	if agentHostname == "" {
+		return status.Errorf(codes.FailedPrecondition, "missing hostname header attribute")
+	}
+	switch {
+	case err != nil:
+		log.Errorf("failed validating dsn authentication, err=%v", err)
+		return status.Errorf(codes.Internal, "failed validating authentication")
+	case clientKey == nil:
+		md.Delete("authorization")
+		log.Debugf("invalid agent authentication, tokenlength=%v, client-metadata=%v", len(dsn), md)
+		return status.Errorf(codes.Unauthenticated, "invalid authentication")
+	}
+
+	orgName, _ := s.UserService.GetOrgNameByID(clientKey.OrgID)
+	clientOrigin := pb.ConnectionOriginAgent
+
+	pluginContext := plugintypes.Context{
+		OrgID:      clientKey.OrgID,
+		ParamsData: map[string]any{"client": clientOrigin}}
+	agentID := fmt.Sprintf("%s:%s", clientKey.Name, agentHostname)
+	// TODO: in case of overwriting, send a disconnect to the old
+	// stream
+	bindAgent(agentID, stream)
+	log.Infof("agent sdk connected: org=%v,name=%v,hostname=%v,platform=%v,version=%v",
+		orgName, clientKey.Name, agentHostname, mdget(md, "platform"), mdget(md, "version"))
+
+	var transportConfigBytes []byte
+	if s.PyroscopeIngestURL != "" {
+		transportConfigBytes, _ = pb.GobEncode(monitoring.TransportConfig{
+			Sentry: monitoring.SentryConfig{
+				DSN:         s.AgentSentryDSN,
+				OrgName:     orgName,
+				Environment: s.IDProvider.ApiURL,
+			},
+			Profiler: monitoring.ProfilerConfig{
+				PyroscopeServerAddress: s.PyroscopeIngestURL,
+				PyroscopeAuthToken:     s.PyroscopeAuthToken,
+				OrgName:                orgName,
+				Environment:            s.IDProvider.ApiURL,
+			},
+		})
+	}
+	_ = stream.Send(&pb.Packet{
+		Type:    pbagent.GatewayConnectOK,
+		Payload: transportConfigBytes,
+	})
+	var agentErr error
+	pluginContext.ParamsData["disconnect-agent-id"] = agentID
+	s.startDisconnectClientSink(agentID, clientOrigin, func(err error) {
+		defer unbindAgent(agentID)
+		_ = s.pluginOnDisconnect(pluginContext, err)
+	})
+	agentObj := &agent.Agent{Id: clientKey.ID, Name: clientKey.Name}
+	agentErr = s.listenAgentMessages(&pluginContext, agentObj, stream)
+	s.disconnectClient(clientKey.ID, agentErr)
+	return agentErr
 }
 
 func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string) error {

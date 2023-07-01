@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/runopsio/hoop/common/clientconfig"
@@ -49,7 +51,8 @@ func Run() {
 	log.Infof("version=%s, compiler=%s, go=%s, platform=%s, commit=%s, multitenant=%v, build-date=%s",
 		ver.Version, ver.Compiler, ver.GoVersion, ver.Platform, ver.GitCommit, user.IsOrgMultiTenant(), ver.BuildDate)
 
-	if err := changeWebappApiURL(os.Getenv("API_URL")); err != nil {
+	apiURL := os.Getenv("API_URL")
+	if err := changeWebappApiURL(apiURL); err != nil {
 		log.Fatal(err)
 	}
 	defer log.Sync()
@@ -59,12 +62,27 @@ func Run() {
 		log.Fatal(err)
 	}
 	log.Infof("sync with success")
+	if !strings.HasPrefix(apiURL, "https://") {
+		log.Warn("THE API_URL ENV IS CONFIGURED USING AN INSECURE SCHEME (HTTP)!")
+	}
 
 	storev2 := storagev2.NewStorage(nil)
 
 	profile := os.Getenv("PROFILE")
 	idProvider := idp.NewProvider(profile)
 	analyticsService := analytics.New()
+
+	grpcURL := os.Getenv("GRPC_URL")
+	if grpcURL == "" {
+		u, err := url.Parse(idProvider.ApiURL)
+		if err != nil {
+			log.Fatalf("failed parsing API_URL, reason=%v", err)
+		}
+		grpcURL = fmt.Sprintf("%s://%s:8443", u.Scheme, u.Hostname())
+	}
+	if !strings.HasPrefix(grpcURL, "https://") {
+		log.Warn("THE GRPC_URL ENV IS CONFIGURED USING AN INSECURE SCHEME (HTTP)!")
+	}
 
 	agentService := agent.Service{Storage: &agent.Storage{Storage: s}}
 	pluginService := plugin.Service{Storage: &plugin.Storage{Storage: s}}
@@ -98,6 +116,7 @@ func Run() {
 		IDProvider:        idProvider,
 		Profile:           profile,
 		Analytics:         analyticsService,
+		GrpcURL:           grpcURL,
 
 		StoreV2: storev2,
 	}

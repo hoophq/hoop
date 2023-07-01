@@ -27,6 +27,7 @@ var getLongDesc = `Display one or many resources. Available ones:
 * sessions
 * sessionstatus (tabview)
 * users (tabview)
+* clientkeys (tabview)
 `
 
 var getExamplesDesc = `
@@ -162,8 +163,20 @@ var getCmd = &cobra.Command{
 					fmt.Fprintln(w)
 				}
 			}
+		case "clientkeys":
+			fmt.Fprintln(w, "NAME\tENABLED")
+			switch contents := obj.(type) {
+			case map[string]any:
+				m := contents
+				fmt.Fprintf(w, "%s\t%v\t", m["name"], m["active"])
+				fmt.Fprintln(w)
+			case []map[string]any:
+				for _, m := range contents {
+					fmt.Fprintf(w, "%s\t%v\t", m["name"], m["active"])
+					fmt.Fprintln(w)
+				}
+			}
 		case "runbooks":
-
 			switch contents := obj.(type) {
 			case map[string]any:
 				commit := fmt.Sprintf("%v", contents["commit"])
