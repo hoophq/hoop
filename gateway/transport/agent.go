@@ -122,6 +122,9 @@ func (s *Server) subscribeAgentSDK(stream pb.Transport_ConnectServer, dsn string
 	})
 	agentObj := &agent.Agent{Id: agentID, Name: clientKey.Name}
 	agentErr = s.listenAgentMessages(&pluginContext, agentObj, stream)
+	if agentErr == nil {
+		log.Warnf("agent return a nil error, it will not disconnect it properly, id=%v", agentID)
+	}
 	s.disconnectClient(agentID, agentErr)
 	return agentErr
 }
@@ -195,7 +198,7 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, ag *agent.Agent,
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return ctx.Err()
 		default:
 		}
 
@@ -203,7 +206,7 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, ag *agent.Agent,
 		pkt, err := stream.Recv()
 		if err != nil {
 			if err == io.EOF {
-				return nil
+				return io.EOF
 			}
 			if status, ok := status.FromError(err); ok && status.Code() == codes.Canceled {
 				// TODO: send packet to agent to clean up resources
