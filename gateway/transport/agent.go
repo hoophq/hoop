@@ -3,6 +3,7 @@ package transport
 import (
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 
 	"github.com/getsentry/sentry-go"
@@ -69,6 +70,7 @@ func (s *Server) subscribeAgentSDK(stream pb.Transport_ConnectServer, dsn string
 	if agentHostname == "" {
 		return status.Errorf(codes.FailedPrecondition, "missing hostname header attribute")
 	}
+	agentHostname = strings.TrimSpace(strings.ToLower(agentHostname))
 	switch {
 	case err != nil:
 		log.Errorf("failed validating dsn authentication, err=%v", err)
@@ -118,9 +120,9 @@ func (s *Server) subscribeAgentSDK(stream pb.Transport_ConnectServer, dsn string
 		defer unbindAgent(agentID)
 		_ = s.pluginOnDisconnect(pluginContext, err)
 	})
-	agentObj := &agent.Agent{Id: clientKey.ID, Name: clientKey.Name}
+	agentObj := &agent.Agent{Id: agentID, Name: clientKey.Name}
 	agentErr = s.listenAgentMessages(&pluginContext, agentObj, stream)
-	s.disconnectClient(clientKey.ID, agentErr)
+	s.disconnectClient(agentID, agentErr)
 	return agentErr
 }
 

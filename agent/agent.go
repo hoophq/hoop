@@ -168,7 +168,9 @@ func (a *Agent) Run() error {
 				a.client.Close()
 				return err
 			}
-			a.handleGracefulExit()
+			if a.config.Mode != clientconfig.ModeSDK {
+				a.handleGracefulExit()
+			}
 			a.client.StartKeepAlive()
 			go a.startMonitoring(pkt)
 		case pbagent.SessionOpen:

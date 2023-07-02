@@ -112,7 +112,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	// it's a sdk connection
 	// request for connection
 	if conn.AgentId == conn.Name {
-		timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*20)
+		timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*25)
 		defer cancelFn()
 		for i := 0; ; i++ {
 			log.Infof("requesting sdk connection %s, attempt=%v", connectionName, i)
