@@ -28,7 +28,6 @@ func init() {
 	createConnectionCmd.Flags().BoolVar(&skipStrictValidation, "skip-validation", false, "It will skip any strict validation")
 	createConnectionCmd.Flags().StringSliceVarP(&connSecretFlag, "env", "e", nil, "The environment variables of the connection")
 	createConnectionCmd.MarkFlagRequired("agent")
-
 }
 
 var createConnExamplesDesc = `

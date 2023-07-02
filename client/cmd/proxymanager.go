@@ -30,7 +30,6 @@ var (
 			grpcClientOptions := []*grpc.ClientOptions{
 				grpc.WithOption("origin", pb.ConnectionOriginClientProxyManager),
 				grpc.WithOption("verb", pb.ClientVerbConnect),
-				grpc.WithOption("user-agent", fmt.Sprintf("hoopcli/%v", version.Get().Version)),
 			}
 
 			var client pb.ClientTransport
@@ -43,6 +42,7 @@ var (
 				if err != nil {
 					return err
 				}
+				clientConfig.UserAgent = fmt.Sprintf("hoopcli/%v", version.Get().Version)
 				client, err = grpc.Connect(clientConfig, grpcClientOptions...)
 				if err != nil {
 					return backoff.Errorf("failed connecting to gateway, reason=%v", err)

@@ -24,6 +24,14 @@ type APIContext struct {
 	UserEmail  string
 	UserGroups []string
 	UserStatus string
+
+	ApiURL  string
+	GrpcURL string
+}
+
+type DSNContext struct {
+	OrgID         string
+	ClientKeyName string
 }
 
 // Plugin for now is an auxiliar type
@@ -178,4 +186,12 @@ type InvitedUser struct {
 	Name    string   `json:"name"     end:"invited-user/name"`
 	SlackID string   `json:"slack_id" edn:"invited-user/slack-id"`
 	Groups  []string `json:"groups"   edn:"invited-user/groups"`
+}
+
+type ClientKey struct {
+	ID      string `json:"id"     edn:"xt/id"`
+	OrgID   string `json:"-"      edn:"clientkey/org"`
+	Name    string `json:"name"   edn:"clientkey/name"`
+	Active  bool   `json:"active" edn:"clientkey/enabled"`
+	DSNHash string `json:"-"      edn:"clientkey/dsnhash"`
 }

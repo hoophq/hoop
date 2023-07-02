@@ -33,6 +33,8 @@ const (
 	// network of the gateway. It allows creating connections to perform
 	// administrative tasks.
 	ModeAgentAutoRegister = "autoregister"
+	// ModeSDK is when a client is loaded with a DSN environment variable.
+	ModeSDK = "sdk"
 )
 
 // NewHomeDir creates a home dir and any inner level folders passed in

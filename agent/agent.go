@@ -18,6 +18,7 @@ import (
 	"github.com/runopsio/hoop/agent/dlp"
 	"github.com/runopsio/hoop/agent/hook"
 	term "github.com/runopsio/hoop/agent/terminal"
+	"github.com/runopsio/hoop/common/clientconfig"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/memory"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -117,12 +118,19 @@ func (a *Agent) handleGracefulExit() {
 		syscall.SIGQUIT)
 	go func() {
 		sigval := <-sigc
+		log.Infof("received %q, gracefully closing sessions, objects=%v",
+			sigval, len(a.connStore.List()))
 		for _, obj := range a.connStore.List() {
 			if client, _ := obj.(io.Closer); client != nil {
 				_ = client.Close()
 			}
 		}
 		_ = sentry.Flush(time.Second * 2)
+		// sdk mode must never exit by itself
+		// the process is usually being shared
+		if a.config.Mode == clientconfig.ModeSDK {
+			return
+		}
 
 		switch sigval {
 		case syscall.SIGHUP:
@@ -155,7 +163,7 @@ func (a *Agent) Run() error {
 			Debugf("received client packet [%v]", pkt.Type)
 		switch pkt.Type {
 		case pbagent.GatewayConnectOK:
-			log.Infof("connected with success to %v, tls=%v", a.config.GrpcURL, !a.config.IsInsecure())
+			log.Infof("connected with success to %v", a.config.GrpcURL)
 			if err := a.config.Save(); err != nil {
 				a.client.Close()
 				return err
@@ -398,6 +406,20 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 	connParams.EnvVars["envvar:HOOP_CONNECTION_TYPE"] = b64Enc([]byte(connParams.ConnectionType))
 	connParams.EnvVars["envvar:HOOP_USER_ID"] = b64Enc([]byte(connParams.UserID))
 	connParams.EnvVars["envvar:HOOP_SESSION_ID"] = b64Enc(sessionID)
+
+	// SDK mode usually has the context of the application.
+	// By having all environment variable in the context of execution
+	// permits a more seamless integration with internal language tooling.
+	if a.config.Mode == clientconfig.ModeSDK {
+		for _, envKeyVal := range os.Environ() {
+			envKey, envVal, found := strings.Cut(envKeyVal, "=")
+			if !found {
+				continue
+			}
+			key := fmt.Sprintf("envvar:%s", envKey)
+			connParams.EnvVars[key] = b64Enc([]byte(envVal))
+		}
+	}
 
 	if a.connStore.Get(dlpClientKey) == nil {
 		dlpClient := a.decodeDLPCredentials(sessionID, pkt)

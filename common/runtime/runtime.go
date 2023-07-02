@@ -16,6 +16,10 @@ func Kill(pid int, signum syscall.Signal) error {
 }
 
 func runCommand(command string, arg ...string) *string {
+	if os.Getenv("HOSTNAME") != "" {
+		v := os.Getenv("HOSTNAME")
+		return &v
+	}
 	resp, _ := exec.Command(command, arg...).Output()
 	if resp == nil {
 		return nil

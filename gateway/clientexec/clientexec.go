@@ -125,12 +125,14 @@ func New(orgID, accessToken, connectionName, sessionID string) (*clientExec, err
 		return nil, err
 	}
 
-	client, err := grpc.ConnectLocalhost(accessToken,
+	userAgent := fmt.Sprintf("clientexec/%v", version.Get().Version)
+	client, err := grpc.ConnectLocalhost(
+		accessToken,
+		userAgent,
 		grpc.WithOption(grpc.OptionConnectionName, connectionName),
 		grpc.WithOption("origin", pb.ConnectionOriginClientAPI),
 		grpc.WithOption("verb", pb.ClientVerbExec),
 		grpc.WithOption("session-id", sessionID),
-		grpc.WithOption("user-agent", fmt.Sprintf("clientexec/%v", version.Get().Version)),
 	)
 	if err != nil {
 		_ = wlog.Close()

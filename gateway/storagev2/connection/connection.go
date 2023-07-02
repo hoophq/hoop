@@ -8,6 +8,11 @@ import (
 	"olympos.io/encoding/edn"
 )
 
+func Put(ctx *storage.Context, conn *types.Connection) error {
+	_, err := ctx.Put(conn)
+	return err
+}
+
 func GetOneByName(storageCtx *storage.Context, name string) (*types.Connection, error) {
 	payload := fmt.Sprintf(`{:query {
 		:find [(pull ?connection [*])] 

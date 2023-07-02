@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/google/uuid"
@@ -14,6 +15,7 @@ import (
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
 	"github.com/runopsio/hoop/gateway/analytics"
+	apiconnectionapps "github.com/runopsio/hoop/gateway/api/connectionapps"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	pluginsslack "github.com/runopsio/hoop/gateway/transport/plugins/slack"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
@@ -105,6 +107,29 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 
 	if conn == nil {
 		return status.Errorf(codes.NotFound, fmt.Sprintf("connection '%v' not found", connectionName))
+	}
+
+	// it's a sdk connection
+	// request for connection
+	if conn.AgentId == conn.Name {
+		timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*20)
+		defer cancelFn()
+		for i := 0; ; i++ {
+			log.Infof("requesting sdk connection %s, attempt=%v", connectionName, i)
+			if stream := getAgentStream(connectionName); stream != nil {
+				break
+			}
+			if i == 0 {
+				apiconnectionapps.Store.Set(connectionName, struct{}{})
+			}
+			if timeoutCtx.Err() == context.DeadlineExceeded {
+				log.Infof("timeout (20s) on acquiring connection %s", connectionName)
+				apiconnectionapps.Store.Del(connectionName)
+				return status.Errorf(codes.Aborted, "timeout (20s) on acquiring connection")
+			}
+			time.Sleep(time.Second * 3)
+		}
+		log.Infof("found agent sdk for %v", connectionName)
 	}
 
 	// When a session id is coming from the client,

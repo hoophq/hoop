@@ -13,6 +13,8 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/analytics"
+	apiclientkeys "github.com/runopsio/hoop/gateway/api/clientkeys"
+	apiconnectionapps "github.com/runopsio/hoop/gateway/api/connectionapps"
 	apiproxymanager "github.com/runopsio/hoop/gateway/api/proxymanager"
 	reviewapi "github.com/runopsio/hoop/gateway/api/review"
 	sessionapi "github.com/runopsio/hoop/gateway/api/session"
@@ -43,6 +45,7 @@ type (
 		RunbooksHandler   runbooks.Handler
 		SecurityHandler   security.Handler
 		IDProvider        *idp.Provider
+		GrpcURL           string
 		Profile           string
 		Analytics         user.Analytics
 		logger            *zap.Logger
@@ -156,6 +159,11 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.AdminOnly,
 		api.ConnectionHandler.Evict)
 
+	route.POST("/connectionapps",
+		api.AuthenticateAgent,
+		apiconnectionapps.Post,
+	)
+
 	route.POST("/proxymanager/connect",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventApiProxymanagerConnect),
@@ -197,6 +205,26 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest(analytics.EventDeleteAgent),
 		api.AdminOnly,
 		api.AgentHandler.Evict)
+
+	route.POST("/clientkeys",
+		api.Authenticate,
+		api.TrackRequest(analytics.EventCreateClientKey),
+		api.AdminOnly,
+		apiclientkeys.Post)
+	route.GET("/clientkeys",
+		api.Authenticate,
+		api.TrackRequest(analytics.EventFetchClientKey),
+		api.AdminOnly,
+		apiclientkeys.List)
+	route.GET("/clientkeys/:name",
+		api.Authenticate,
+		api.TrackRequest(analytics.EventFetchClientKey),
+		api.AdminOnly,
+		apiclientkeys.Get)
+	route.PUT("/clientkeys/:name",
+		api.Authenticate,
+		api.AdminOnly,
+		apiclientkeys.Put)
 
 	route.POST("/plugins",
 		api.Authenticate,

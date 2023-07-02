@@ -43,6 +43,7 @@ type (
 		// This is used to specify a different DNS name
 		// when connecting via TLS
 		TLSServerName string
+		UserAgent     string
 		// Insecure indicates if it will connect without TLS
 		// It should only be used in secure networks!
 		Insecure bool
@@ -58,13 +59,15 @@ func WithOption(optKey OptionKey, val string) *ClientOptions {
 	return &ClientOptions{optionKey: optKey, optionVal: val}
 }
 
-func ConnectLocalhost(token string, opts ...*ClientOptions) (pb.ClientTransport, error) {
+func ConnectLocalhost(token, userAgent string, opts ...*ClientOptions) (pb.ClientTransport, error) {
 	opts = append(opts, &ClientOptions{
 		optionKey: "authorization",
 		optionVal: fmt.Sprintf("Bearer %s", token),
 	})
 	return connect(LocalhostAddr,
-		[]grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())},
+		[]grpc.DialOption{
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithUserAgent(userAgent)},
 		opts...)
 }
 
@@ -75,17 +78,21 @@ func Connect(clientConfig ClientConfig, opts ...*ClientOptions) (pb.ClientTransp
 			optionVal: fmt.Sprintf("Bearer %s", clientConfig.Token),
 		})
 		return connect(clientConfig.ServerAddress,
-			[]grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())},
+			[]grpc.DialOption{
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
+				grpc.WithUserAgent(clientConfig.UserAgent)},
 			opts...)
 	}
 	// TODO: it's deprecated, use oauth.TokenSource
 	rpcCred := oauth.NewOauthAccess(&oauth2.Token{AccessToken: clientConfig.Token})
 	tlsConfig := &tls.Config{ServerName: clientConfig.TLSServerName}
-	return connect(clientConfig.ServerAddress, []grpc.DialOption{
+	dialOptions := []grpc.DialOption{
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
 		grpc.WithPerRPCCredentials(rpcCred),
 		grpc.WithBlock(),
-	}, opts...)
+		grpc.WithUserAgent(clientConfig.UserAgent),
+	}
+	return connect(clientConfig.ServerAddress, dialOptions, opts...)
 }
 
 func connect(serverAddress string, dialOptions []grpc.DialOption, opts ...*ClientOptions) (pb.ClientTransport, error) {
