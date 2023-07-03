@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+[ "$HOOPWRAPPER_XTRACE" ] && set -o xtrace
+
+# Usage function
+usage() {
+    echo "Usage: $0 -- <command> ..."
+    exit 1
+}
+
+# Check if '--' is provided in the command line arguments
+if [ "$1" != "--" ]; then
+    usage
+fi
+
+# Shift the arguments to exclude the '--'
+shift
+
+hoop start agent &
+
+# Execute the provided command with the original arguments
+"$@"
