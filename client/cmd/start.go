@@ -174,6 +174,10 @@ var startAgentCmd = &cobra.Command{
 	Short:        "Runs the agent component",
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
+		if os.Getenv("HOOP_DSN") != "" || os.Getenv("HOOP_CONNECTION") != "" {
+			agent.RunAsSidecar()
+			return
+		}
 		agent.Run()
 	},
 }

@@ -16,7 +16,7 @@ import (
 )
 
 type ConnectionAppsRequest struct {
-	Hostname string `json:"hostname"`
+	ConnectionName string `json:"connection"`
 }
 
 func Post(c *gin.Context) {
@@ -27,14 +27,14 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	reqBody.Hostname = strings.TrimSpace(strings.ToLower(reqBody.Hostname))
+	reqBody.ConnectionName = strings.TrimSpace(strings.ToLower(reqBody.ConnectionName))
 	dsnCtx := ctx.DSN()
-	if dsnCtx.OrgID == "" || dsnCtx.ClientKeyName == "" || reqBody.Hostname == "" {
+	if dsnCtx.OrgID == "" || dsnCtx.ClientKeyName == "" || reqBody.ConnectionName == "" {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "missing required attributes"})
 		return
 	}
 
-	connectionName := fmt.Sprintf("%s:%s", dsnCtx.ClientKeyName, reqBody.Hostname)
+	connectionName := fmt.Sprintf("%s:%s", dsnCtx.ClientKeyName, reqBody.ConnectionName)
 	conn, err := connectionstorage.GetOneByName(ctx, connectionName)
 	if err != nil {
 		log.Errorf("failed validating connection, reason=%v", err)

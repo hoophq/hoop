@@ -126,11 +126,6 @@ func (a *Agent) handleGracefulExit() {
 			}
 		}
 		_ = sentry.Flush(time.Second * 2)
-		// sdk mode must never exit by itself
-		// the process is usually being shared
-		if a.config.Mode == clientconfig.ModeSDK {
-			return
-		}
 
 		switch sigval {
 		case syscall.SIGHUP:
@@ -168,9 +163,7 @@ func (a *Agent) Run() error {
 				a.client.Close()
 				return err
 			}
-			if a.config.Mode != clientconfig.ModeSDK {
-				a.handleGracefulExit()
-			}
+			a.handleGracefulExit()
 			a.client.StartKeepAlive()
 			go a.startMonitoring(pkt)
 		case pbagent.SessionOpen:
@@ -412,10 +405,10 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 	// SDK mode usually has the context of the application.
 	// By having all environment variable in the context of execution
 	// permits a more seamless integration with internal language tooling.
-	if a.config.Mode == clientconfig.ModeSDK {
+	if a.config.Mode == clientconfig.ModeSidecar {
 		for _, envKeyVal := range os.Environ() {
 			envKey, envVal, found := strings.Cut(envKeyVal, "=")
-			if !found {
+			if !found || envKey == "HOOP_DSN" {
 				continue
 			}
 			key := fmt.Sprintf("envvar:%s", envKey)

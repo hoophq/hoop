@@ -9,8 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
-	"runtime"
 	"strings"
 	"time"
 
@@ -94,31 +92,24 @@ func parseDSN(dsn string) (apiURL string, err error) {
 	return fmt.Sprintf("%s://%s/api/connectionapps", u.Scheme, u.Host), nil
 }
 
-func getMachineHostname() (host string, err error) {
-	if hostname := os.Getenv("HOSTNAME"); hostname != "" {
-		return strings.ToLower(strings.TrimSpace(hostname)), nil
+func getConnectionName() (host string, err error) {
+	connectionName := os.Getenv("HOOP_CONNECTION")
+	if connectionName == "" {
+		return "", fmt.Errorf("missing HOOP_CONNECTION env")
 	}
-	var data []byte
-	switch runtime.GOOS {
-	case "darwin":
-		data, err = exec.Command("hostname").Output()
-		if err != nil {
-			return "", fmt.Errorf("failed executing hostname command, err=%v", err)
+	if strings.HasPrefix(connectionName, "env.") {
+		envName := connectionName[4:]
+		connectionName = os.Getenv(envName)
+		if connectionName == "" {
+			return "", fmt.Errorf("environment variable %q doesn't exist", envName)
 		}
-	case "linux", "openbsd", "netbsd", "freebsd", "dragonfly":
-		data, err = os.ReadFile("/proc/sys/kernel/hostname")
-		if err != nil {
-			return "", fmt.Errorf("failed reading hostname, err=%v", err)
-		}
-	default:
-		return "", fmt.Errorf("unsupported operating system %v", runtime.GOOS)
 	}
-	return strings.ToLower(strings.TrimSpace(string(data))), nil
+	return connectionName, nil
 }
 
-func fetchGrpcURL(apiURL, hostname, dsnKey string) string {
+func fetchGrpcURL(apiURL, connectionName, dsnKey string) string {
 	log.Infof("waiting for connection request")
-	reqBody, _ := json.Marshal(map[string]string{"hostname": hostname})
+	reqBody, _ := json.Marshal(map[string]string{"connection": connectionName})
 	for {
 		ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*5)
 		defer cancelFn()
@@ -157,24 +148,25 @@ func fetchGrpcURL(apiURL, hostname, dsnKey string) string {
 	}
 }
 
-func StartSDK() {
+// RunAsSidecar is recommended when the agent needs the context of the running applications
+func RunAsSidecar() {
 	dsnKey := os.Getenv("HOOP_DSN")
 	apiURL, err := parseDSN(dsnKey)
 	if err != nil {
 		log.Error(err)
 		return
 	}
-	fqdn, err := getMachineHostname()
+	connectionName, err := getConnectionName()
 	if err != nil {
 		log.Error(err)
 		return
 	}
 
 	vs := version.Get()
-	log.Infof("version=%v, platform=%v, api-url=%v - starting agent",
-		vs.Version, vs.Platform, apiURL)
+	log.Infof("version=%v, platform=%v, connection=%v, api-url=%v - starting agent",
+		vs.Version, vs.Platform, connectionName, apiURL)
 	for {
-		grpcURL := fetchGrpcURL(apiURL, fqdn, dsnKey)
+		grpcURL := fetchGrpcURL(apiURL, connectionName, dsnKey)
 		isInsecure := strings.HasPrefix(grpcURL, "http://")
 		log.Infof("connecting to %v, tls=%v", grpcURL, !isInsecure)
 		srvAddr, err := grpc.ParseServerAddress(grpcURL)
@@ -187,7 +179,10 @@ func StartSDK() {
 			Token:         dsnKey,
 			UserAgent:     fmt.Sprintf("hoopagent/sdk-%v", version.Get().Version),
 			Insecure:      isInsecure,
-		}, grpc.WithOption("origin", pb.ConnectionOriginAgent))
+		},
+			grpc.WithOption("origin", pb.ConnectionOriginAgent),
+			grpc.WithOption("connection-name", connectionName),
+		)
 		if err != nil {
 			log.Error("failed connecting to grpc gateway, err=%v", err)
 			continue
@@ -195,7 +190,7 @@ func StartSDK() {
 		agentConfig := &agentconfig.Config{
 			Token:   dsnKey,
 			GrpcURL: grpcURL,
-			Mode:    clientconfig.ModeSDK,
+			Mode:    clientconfig.ModeSidecar,
 		}
 		err = New(client, agentConfig).Run()
 		if err != io.EOF {

@@ -65,12 +65,12 @@ func setAgentClientMetdata(into *agent.Agent, md metadata.MD) {
 func (s *Server) subscribeAgentSDK(stream pb.Transport_ConnectServer, dsn string) error {
 	ctx := stream.Context()
 	md, _ := metadata.FromIncomingContext(ctx)
-	agentHostname := mdget(md, "hostname")
+	connectionName := mdget(md, "connection-name")
 	clientKey, err := clientkeysstorage.ValidateDSN(s.StoreV2, dsn)
-	if agentHostname == "" {
+	if connectionName == "" {
 		return status.Errorf(codes.FailedPrecondition, "missing hostname header attribute")
 	}
-	agentHostname = strings.TrimSpace(strings.ToLower(agentHostname))
+	connectionName = strings.TrimSpace(strings.ToLower(connectionName))
 	switch {
 	case err != nil:
 		log.Errorf("failed validating dsn authentication, err=%v", err)
@@ -87,12 +87,12 @@ func (s *Server) subscribeAgentSDK(stream pb.Transport_ConnectServer, dsn string
 	pluginContext := plugintypes.Context{
 		OrgID:      clientKey.OrgID,
 		ParamsData: map[string]any{"client": clientOrigin}}
-	agentID := fmt.Sprintf("%s:%s", clientKey.Name, agentHostname)
+	agentID := fmt.Sprintf("%s:%s", clientKey.Name, connectionName)
 	// TODO: in case of overwriting, send a disconnect to the old
 	// stream
 	bindAgent(agentID, stream)
-	log.Infof("agent sdk connected: org=%v,name=%v,hostname=%v,platform=%v,version=%v",
-		orgName, clientKey.Name, agentHostname, mdget(md, "platform"), mdget(md, "version"))
+	log.Infof("agent sdk connected: org=%v,name=%v,connection=%v,platform=%v,version=%v",
+		orgName, clientKey.Name, connectionName, mdget(md, "platform"), mdget(md, "version"))
 
 	var transportConfigBytes []byte
 	if s.PyroscopeIngestURL != "" {
