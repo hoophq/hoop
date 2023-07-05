@@ -86,11 +86,11 @@ func (a *Handler) Post(c *gin.Context) {
 	}
 
 	// TODO: Move this alternative solution to other place
-	if connection.Type == "postgres" {
+	if connection.Type == Type(pb.ConnectionTypePostgres) {
 		connection.Command = []string{"psql", "-A", "-F\t", "-P", "pager=off", "-h", "$HOST", "-U", "$USER", "--port=$PORT", "$DB"}
 	}
 
-	if connection.Type == "mysql" {
+	if connection.Type == Type(pb.ConnectionTypeMySQL) {
 		connection.Command = []string{"mysql", "-h$HOST", "-u$USER", "--port=$PORT", "-D$DB"}
 	}
 
