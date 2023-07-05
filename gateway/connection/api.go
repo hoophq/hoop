@@ -85,6 +85,15 @@ func (a *Handler) Post(c *gin.Context) {
 		return
 	}
 
+	// TODO: Move this alternative solution to other place
+	if connection.Type == Type(pb.ConnectionTypePostgres) {
+		connection.Command = []string{"psql", "-A", "-F\t", "-P", "pager=off", "-h", "$HOST", "-U", "$USER", "--port=$PORT", "$DB"}
+	}
+
+	if connection.Type == Type(pb.ConnectionTypeMySQL) {
+		connection.Command = []string{"mysql", "-h$HOST", "-u$USER", "--port=$PORT", "-D$DB"}
+	}
+
 	_, err = a.Service.Persist("POST", context, &connection)
 	if err != nil {
 		log.Errorf("failed creating connection, err=%v", err)
