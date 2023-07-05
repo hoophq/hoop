@@ -92,24 +92,36 @@ func parseDSN(dsn string) (apiURL string, err error) {
 	return fmt.Sprintf("%s://%s/api/connectionapps", u.Scheme, u.Host), nil
 }
 
-func getConnectionName() (host string, err error) {
-	connectionName := os.Getenv("HOOP_CONNECTION")
-	if connectionName == "" {
-		return "", fmt.Errorf("missing HOOP_CONNECTION env")
+func getConnectionList() ([]string, string, error) {
+	envValue := os.Getenv("HOOP_CONNECTION")
+	if envValue == "" {
+		return nil, "", fmt.Errorf("missing HOOP_CONNECTION env")
 	}
-	if strings.HasPrefix(connectionName, "env.") {
-		envName := connectionName[4:]
-		connectionName = os.Getenv(envName)
-		if connectionName == "" {
-			return "", fmt.Errorf("environment variable %q doesn't exist", envName)
+	if len(envValue) > 255 {
+		return nil, "", fmt.Errorf("reached max value (255) for HOOP_CONNECTION env")
+	}
+	var connections []string
+	for _, connectionName := range strings.Split(envValue, ",") {
+		if strings.HasPrefix(connectionName, "env.") {
+			envName := connectionName[4:]
+			connectionName = os.Getenv(envName)
+			if connectionName == "" {
+				return nil, "", fmt.Errorf("environment variable %q doesn't exist", envName)
+			}
 		}
+		connectionName = strings.TrimSpace(strings.ToLower(connectionName))
+		connections = append(connections, connectionName)
 	}
-	return connectionName, nil
+
+	return connections, envValue, nil
 }
 
-func fetchGrpcURL(apiURL, connectionName, dsnKey string) string {
+func fetchGrpcURL(apiURL, dsnKey string, connectionItems []string) string {
 	log.Infof("waiting for connection request")
-	reqBody, _ := json.Marshal(map[string]string{"connection": connectionName})
+	reqBody, _ := json.Marshal(map[string]any{
+		"connection":       "", // deprecated
+		"connection_items": connectionItems,
+	})
 	for {
 		ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*5)
 		defer cancelFn()
@@ -156,17 +168,17 @@ func RunAsSidecar() {
 		log.Error(err)
 		return
 	}
-	connectionName, err := getConnectionName()
+
+	connectionList, connectionEnvVal, err := getConnectionList()
 	if err != nil {
 		log.Error(err)
 		return
 	}
-
 	vs := version.Get()
-	log.Infof("version=%v, platform=%v, connection=%v, api-url=%v - starting agent",
-		vs.Version, vs.Platform, connectionName, apiURL)
+	log.Infof("version=%v, platform=%v, api-url=%v, connections=%v - starting agent",
+		vs.Version, vs.Platform, apiURL, connectionList)
 	for {
-		grpcURL := fetchGrpcURL(apiURL, connectionName, dsnKey)
+		grpcURL := fetchGrpcURL(apiURL, dsnKey, connectionList)
 		isInsecure := strings.HasPrefix(grpcURL, "http://")
 		log.Infof("connecting to %v, tls=%v", grpcURL, !isInsecure)
 		srvAddr, err := grpc.ParseServerAddress(grpcURL)
@@ -174,15 +186,15 @@ func RunAsSidecar() {
 			log.Error("failed parsing grpc address, err=%v", err)
 			continue
 		}
-		client, err := grpc.Connect(grpc.ClientConfig{
-			ServerAddress: srvAddr,
-			Token:         dsnKey,
-			UserAgent:     fmt.Sprintf("hoopagent/sdk-%v", version.Get().Version),
-			Insecure:      isInsecure,
-		},
+		client, err := grpc.Connect(
+			grpc.ClientConfig{
+				ServerAddress: srvAddr,
+				Token:         dsnKey,
+				UserAgent:     fmt.Sprintf("hoopagent/sidecar-%v", version.Get().Version),
+				Insecure:      isInsecure,
+			},
 			grpc.WithOption("origin", pb.ConnectionOriginAgent),
-			grpc.WithOption("connection-name", connectionName),
-		)
+			grpc.WithOption("connection-items", connectionEnvVal))
 		if err != nil {
 			log.Error("failed connecting to grpc gateway, err=%v", err)
 			continue

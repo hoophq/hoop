@@ -3,6 +3,7 @@ package transport
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"sync"
 
@@ -37,15 +38,30 @@ func bindAgent(agentId string, stream pb.Transport_ConnectServer) {
 	ca.mu.Lock()
 	defer ca.mu.Unlock()
 
+	if strings.Contains(agentId, ",") {
+		for _, id := range strings.Split(agentId, ",") {
+			ca.agents[id] = stream
+		}
+		return
+	}
 	ca.agents[agentId] = stream
 }
 
 func unbindAgent(agentId string) {
 	ca.mu.Lock()
 	defer ca.mu.Unlock()
+
+	if strings.Contains(agentId, ",") {
+		for _, id := range strings.Split(agentId, ",") {
+			delete(ca.agents, id)
+		}
+		return
+	}
 	delete(ca.agents, agentId)
 }
 
+// hasAgentStream validates if there's an agent connected
+func hasAgentStream(agentID string) bool { return getAgentStream(agentID) != nil }
 func getAgentStream(id string) pb.Transport_ConnectServer {
 	ca.mu.Lock()
 	defer ca.mu.Unlock()
@@ -62,15 +78,26 @@ func setAgentClientMetdata(into *agent.Agent, md metadata.MD) {
 	into.Platform = mdget(md, "platform")
 }
 
-func (s *Server) subscribeAgentSDK(stream pb.Transport_ConnectServer, dsn string) error {
+func normalizeAgentID(prefix string, connectionItems []string) string {
+	var items []string
+	for _, connName := range connectionItems {
+		connName = strings.TrimSpace(strings.ToLower(connName))
+		connName = fmt.Sprintf("%s:%s", prefix, connName)
+		items = append(items, connName)
+	}
+	sort.Strings(items)
+	return strings.Join(items, ",")
+}
+
+func (s *Server) subscribeAgentSidecar(stream pb.Transport_ConnectServer, dsn string) error {
 	ctx := stream.Context()
 	md, _ := metadata.FromIncomingContext(ctx)
-	connectionName := mdget(md, "connection-name")
 	clientKey, err := clientkeysstorage.ValidateDSN(s.StoreV2, dsn)
-	if connectionName == "" {
-		return status.Errorf(codes.FailedPrecondition, "missing hostname header attribute")
+	if err != nil {
+		log.Error("failed validating dsn, err=%v", err)
+		sentry.CaptureException(err)
+		return status.Errorf(codes.Internal, "failed validating dsn")
 	}
-	connectionName = strings.TrimSpace(strings.ToLower(connectionName))
 	switch {
 	case err != nil:
 		log.Errorf("failed validating dsn authentication, err=%v", err)
@@ -81,18 +108,35 @@ func (s *Server) subscribeAgentSDK(stream pb.Transport_ConnectServer, dsn string
 		return status.Errorf(codes.Unauthenticated, "invalid authentication")
 	}
 
+	var agentID string
+	// connection-name header is keep for compatibility with old agents
+	connectionName := mdget(md, "connection-name")
+	connectionItems := mdget(md, "connection-items")
+	switch {
+	case connectionName != "":
+		agentID = normalizeAgentID(clientKey.Name, []string{connectionName})
+		log.Warnf("agent %v using deprecated header CONNECTION-NAME", mdget(md, "version"))
+	case connectionItems != "":
+		agentID = normalizeAgentID(clientKey.Name, strings.Split(connectionItems, ","))
+	}
+	if agentID == "" {
+		log.Error("missing required connection-items attribute, connection-name=%v, connection-items=%v, err=%v",
+			connectionName, connectionItems, err)
+		sentry.CaptureException(err)
+		return status.Errorf(codes.Internal, "missing connection-items header")
+	}
+
 	orgName, _ := s.UserService.GetOrgNameByID(clientKey.OrgID)
 	clientOrigin := pb.ConnectionOriginAgent
 
 	pluginContext := plugintypes.Context{
 		OrgID:      clientKey.OrgID,
 		ParamsData: map[string]any{"client": clientOrigin}}
-	agentID := fmt.Sprintf("%s:%s", clientKey.Name, connectionName)
 	// TODO: in case of overwriting, send a disconnect to the old
 	// stream
 	bindAgent(agentID, stream)
-	log.Infof("agent sdk connected: org=%v,name=%v,connection=%v,platform=%v,version=%v",
-		orgName, clientKey.Name, connectionName, mdget(md, "platform"), mdget(md, "version"))
+	log.Infof("agent sidecar connected: org=%v,key=%v,id=%v,platform=%v,version=%v",
+		orgName, clientKey.Name, agentID, mdget(md, "platform"), mdget(md, "version"))
 
 	var transportConfigBytes []byte
 	if s.PyroscopeIngestURL != "" {

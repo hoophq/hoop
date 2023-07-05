@@ -178,8 +178,10 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 
 	switch origin {
 	case pb.ConnectionOriginAgent:
-		if strings.HasPrefix(mdget(md, "user-agent"), "hoopagent/sdk") {
-			return s.subscribeAgentSDK(stream, token)
+		// keep compatibility with old clients
+		// hoopagent/sdk or hoopagent/sidecar
+		if strings.HasPrefix(mdget(md, "user-agent"), "hoopagent/s") {
+			return s.subscribeAgentSidecar(stream, token)
 		}
 		return s.subscribeAgent(stream, token)
 	case pb.ConnectionOriginClientProxyManager:

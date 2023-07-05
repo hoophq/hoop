@@ -6,6 +6,7 @@ import (
 
 type Store interface {
 	Get(key string) any
+	Pop(key string) any
 	Set(key string, val any)
 	Del(key string)
 	List() map[string]any
@@ -52,6 +53,17 @@ func (s *store) Get(key string) any {
 	defer s.mutex.RUnlock()
 	val, ok := s.m[key]
 	if ok {
+		return val
+	}
+	return nil
+}
+
+func (s *store) Pop(key string) any {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	val, ok := s.m[key]
+	if ok {
+		delete(s.m, key)
 		return val
 	}
 	return nil
