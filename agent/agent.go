@@ -222,6 +222,15 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 		log.Infof("session=%s - failed parse envvars from connection, err=%v", sessionIDKey, err)
 		return nil, nil, fmt.Errorf("failed to parse connection envvars")
 	}
+
+	if b64EncPaswd, ok := connParams.EnvVars["envvar:PASS"]; ok {
+		switch connType {
+		case pb.ConnectionTypePostgres:
+			connParams.EnvVars["envvar:PGPASSWORD"] = b64EncPaswd
+		case pb.ConnectionTypeMySQL:
+			connParams.EnvVars["envvar:MYSQL_PWD"] = b64EncPaswd
+		}
+	}
 	return connParams, connEnvVars, nil
 }
 
@@ -334,11 +343,6 @@ func (a *Agent) setDatabaseCredentials(pkt *pb.Packet, params *pb.AgentConnectio
 				params.EnvVars["envvar:PORT"] = b64Enc([]byte(cred.Port))
 				params.EnvVars["envvar:USER"] = b64Enc([]byte(cred.Username))
 				params.EnvVars["envvar:PASS"] = b64Enc([]byte(cred.Password))
-				if cred.Engine() == "postgres" {
-					params.EnvVars["envvar:PGPASSWORD"] = b64Enc([]byte(cred.Password))
-				} else if cred.Engine() == "mysql" {
-					params.EnvVars["envvar:MYSQL_PWD"] = b64Enc([]byte(cred.Password))
-				}
 				return nil
 			}
 			// maintain the same password
@@ -368,12 +372,6 @@ func (a *Agent) setDatabaseCredentials(pkt *pb.Packet, params *pb.AgentConnectio
 		params.EnvVars["envvar:PORT"] = b64Enc([]byte(cred.Port))
 		params.EnvVars["envvar:USER"] = b64Enc([]byte(cred.Username))
 		params.EnvVars["envvar:PASS"] = b64Enc([]byte(cred.Password))
-		if cred.Engine() == "postgres" {
-			params.EnvVars["envvar:PGPASSWORD"] = b64Enc([]byte(cred.Password))
-		} else if cred.Engine() == "mysql" {
-			params.EnvVars["envvar:MYSQL_PWD"] = b64Enc([]byte(cred.Password))
-		}
-
 	}
 	return nil
 }
