@@ -2,6 +2,7 @@ package connection
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -31,6 +32,8 @@ type (
 	}
 )
 
+var errNotFound = errors.New("not found")
+
 func (s *Storage) Persist(context *user.Context, c *Connection) (int64, error) {
 	secretId := uuid.New().String()
 
@@ -59,7 +62,7 @@ func (s *Storage) Persist(context *user.Context, c *Connection) (int64, error) {
 	return txId, nil
 }
 
-func (s *Storage) Evict(ctx *user.Context, connectionName string) (bool, error) {
+func (s *Storage) Evict(ctx *user.Context, connectionName string) error {
 	pluginQuery := fmt.Sprintf(`{:query {
 		:find [xtid connid]
 		:in [orgid name]
@@ -72,18 +75,18 @@ func (s *Storage) Evict(ctx *user.Context, connectionName string) (bool, error) 
 	:in-args [%q %q]}`, ctx.Org.Id, connectionName)
 	data, err := s.QueryRaw([]byte(pluginQuery))
 	if err != nil {
-		return false, fmt.Errorf("failed fetching connection plugin, err=%v", err)
+		return fmt.Errorf("failed fetching connection plugin, err=%v", err)
 	}
 	var ednResp [][]string
 	if err := edn.Unmarshal(data, &ednResp); err != nil {
-		return false, fmt.Errorf("failed decoding result, err=%v", err)
+		return fmt.Errorf("failed decoding result, err=%v", err)
 	}
 
 	var evictList []string
 	var connID string
 	for _, objList := range ednResp {
 		if len(objList) != 2 {
-			return false, fmt.Errorf("wrong response structure, want=2, got=%v", len(objList))
+			return fmt.Errorf("wrong response structure, want=2, got=%v", len(objList))
 		}
 		// plugin-connection xt/id's
 		evictList = append(evictList, objList[0])
@@ -91,18 +94,27 @@ func (s *Storage) Evict(ctx *user.Context, connectionName string) (bool, error) 
 			connID = objList[1]
 		}
 	}
+	if len(evictList) == 0 {
+		// the connection may still exists but there isn't any
+		// plugin active. It's safe to evict the connection
+		conn, err := s.FindOne(ctx, connectionName)
+		if err != nil {
+			return err
+		}
+		if conn == nil {
+			return errNotFound
+		}
+		connID = conn.Id
+	}
 	// delete the connection last
 	evictList = append(evictList, connID)
-	if len(evictList) == 0 {
-		return false, nil
-	}
 	tx, err := s.SubmitEvictTx(evictList...)
 	if err != nil {
-		log.Warnf("evict error=%v", err.Error())
+		return err
 	}
-	log.Debugf("name=%v, org=%v, tx=%v, evicted=%v - evict connection result",
-		connectionName, ctx.Org.Id, fmt.Sprintf("%v", tx.TxID), err == nil)
-	return err == nil, err
+	log.Infof("org=%v, user=%v, tx=%v, evicted connection %s",
+		ctx.Org.Id, ctx.User.Email, fmt.Sprintf("%v", tx.TxID), connectionName)
+	return nil
 }
 
 func (s *Storage) FindAll(context *user.Context) ([]BaseConnection, error) {
