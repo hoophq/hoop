@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"sync"
-	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/google/uuid"
@@ -109,27 +108,15 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		return status.Errorf(codes.NotFound, fmt.Sprintf("connection '%v' not found", connectionName))
 	}
 
-	// it's a sdk connection
-	// request for connection
-	if conn.AgentId == conn.Name {
-		timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*25)
-		defer cancelFn()
-		for i := 0; ; i++ {
-			log.Infof("requesting sdk connection %s, attempt=%v", connectionName, i)
-			if stream := getAgentStream(connectionName); stream != nil {
-				break
-			}
-			if i == 0 {
-				apiconnectionapps.Store.Set(connectionName, struct{}{})
-			}
-			if timeoutCtx.Err() == context.DeadlineExceeded {
-				log.Infof("timeout (20s) on acquiring connection %s", connectionName)
-				apiconnectionapps.Store.Del(connectionName)
-				return status.Errorf(codes.Aborted, "timeout (20s) on acquiring connection")
-			}
-			time.Sleep(time.Second * 3)
+	// it's an sidecar agent connection, request agent to connect
+	if conn.AgentId == conn.Name && !hasAgentStream(conn.AgentId) {
+		log.With("user", userCtx.User.Email).Infof("requesting connection with remote agent %s", connectionName)
+		err = apiconnectionapps.RequestGrpcConnection(connectionName, hasAgentStream)
+		if err != nil {
+			log.Warnf("%v %v", err, connectionName)
+			return status.Errorf(codes.Aborted, err.Error())
 		}
-		log.Infof("found agent sdk for %v", connectionName)
+		log.Infof("found the remote agent for %v", connectionName)
 	}
 
 	// When a session id is coming from the client,

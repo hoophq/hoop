@@ -27,7 +27,8 @@ func GetByName(ctx *storagev2.Context, name string) (*types.ClientKey, error) {
 		:find [(pull ?c [*])] 
 		:in [org name]
 		:where [[?c :clientkey/org org]
-				[?c :clientkey/name name]]}
+				[?c :clientkey/name name]
+				[?c :clientkey/enabled true]]}
 		:in-args [%q %q]}`, ctx.OrgID, name)
 	b, err := ctx.Query(payload)
 	if err != nil {
@@ -50,7 +51,8 @@ func List(ctx *storagev2.Context) ([]types.ClientKey, error) {
 	payload := fmt.Sprintf(`{:query {
 		:find [(pull ?c [*])] 
 		:in [org]
-		:where [[?c :clientkey/org org]]}
+		:where [[?c :clientkey/org org]
+				[?c :clientkey/enabled true]]}
 		:in-args [%q]}`, ctx.OrgID)
 	b, err := ctx.Query(payload)
 	if err != nil {
@@ -78,8 +80,8 @@ func ValidateDSN(store *storagev2.Store, dsn string) (*types.ClientKey, error) {
 	payload := fmt.Sprintf(`{:query {
 		:find [(pull ?c [*])] 
 		:in [dsnhash]
-		:where [[?c :clientkey/enabled true]
-				[?c :clientkey/dsnhash dsnhash]]}
+		:where [[?c :clientkey/dsnhash dsnhash]
+				[?c :clientkey/enabled true]]}
 		:in-args [%q]}`, dsnHash)
 	b, err := store.Query(payload)
 	if err != nil {

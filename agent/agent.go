@@ -402,7 +402,7 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 	connParams.EnvVars["envvar:HOOP_USER_ID"] = b64Enc([]byte(connParams.UserID))
 	connParams.EnvVars["envvar:HOOP_SESSION_ID"] = b64Enc(sessionID)
 
-	// SDK mode usually has the context of the application.
+	// Sidecar mode usually has the context of the application.
 	// By having all environment variable in the context of execution
 	// permits a more seamless integration with internal language tooling.
 	if a.config.Mode == clientconfig.ModeSidecar {
