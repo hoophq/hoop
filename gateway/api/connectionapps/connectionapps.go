@@ -75,7 +75,6 @@ func Post(c *gin.Context) {
 	}
 	// check if there's a client connection request
 	// based on the published connections by the agent
-	// var requestOK bool
 	for _, connectionName := range requestConnectionItems {
 		requestOK := requestGrpcConnectionOK(connectionName)
 		if requestOK {
