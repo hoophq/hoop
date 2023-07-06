@@ -85,12 +85,10 @@ func (a *Handler) Post(c *gin.Context) {
 		return
 	}
 
-	// TODO: Move this alternative solution to other place
-	if connection.Type == Type(pb.ConnectionTypePostgres) {
+	switch string(connection.Type) {
+	case pb.ConnectionTypePostgres:
 		connection.Command = []string{"psql", "-A", "-F\t", "-P", "pager=off", "-h", "$HOST", "-U", "$USER", "--port=$PORT", "$DB"}
-	}
-
-	if connection.Type == Type(pb.ConnectionTypeMySQL) {
+	case pb.ConnectionTypeMySQL:
 		connection.Command = []string{"mysql", "-h$HOST", "-u$USER", "--port=$PORT", "-D$DB"}
 	}
 
@@ -130,6 +128,15 @@ func (a *Handler) Put(c *gin.Context) {
 	}
 
 	connection.Id = existingConnection.Id
+
+	if len(connection.Command) == 0 {
+		switch string(connection.Type) {
+		case pb.ConnectionTypePostgres:
+			connection.Command = []string{"psql", "-A", "-F\t", "-P", "pager=off", "-h", "$HOST", "-U", "$USER", "--port=$PORT", "$DB"}
+		case pb.ConnectionTypeMySQL:
+			connection.Command = []string{"mysql", "-h$HOST", "-u$USER", "--port=$PORT", "-D$DB"}
+		}
+	}
 
 	_, err = a.Service.Persist("PUT", context, &connection)
 	if err != nil {
