@@ -21,7 +21,7 @@ type (
 		Persist(context *user.Context, c *Connection) (int64, error)
 		FindAll(context *user.Context) ([]BaseConnection, error)
 		FindOne(context *user.Context, name string) (*Connection, error)
-		Evict(ctx *user.Context, connectionName string) (bool, error)
+		Evict(ctx *user.Context, connectionName string) error
 	}
 
 	pluginService interface {
@@ -113,7 +113,7 @@ func (s *Service) Persist(httpMethod string, context *user.Context, c *Connectio
 	return result, nil
 }
 
-func (s *Service) Evict(ctx *user.Context, connectionName string) (bool, error) {
+func (s *Service) Evict(ctx *user.Context, connectionName string) error {
 	return s.Storage.Evict(ctx, connectionName)
 }
 
