@@ -116,6 +116,8 @@ func (a *Handler) FindOne(c *gin.Context) {
 			Type:             review.Type,
 			Session:          review.Session,
 			Input:            review.Input,
+			InputEnvVars:     review.InputEnvVars,
+			InputClientArgs:  review.InputClientArgs,
 			AccessDuration:   review.AccessDuration,
 			Status:           review.Status,
 			RevokeAt:         review.RevokeAt,
@@ -307,7 +309,7 @@ func (h *Handler) RunReviewedExec(c *gin.Context) {
 		defer close(clientResp)
 		defer client.Close()
 		select {
-		case clientResp <- client.Run([]byte(review.Input), nil):
+		case clientResp <- client.Run([]byte(review.Input), review.InputEnvVars, review.InputClientArgs...):
 		default:
 		}
 	}()

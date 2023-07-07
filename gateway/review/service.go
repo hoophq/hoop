@@ -83,6 +83,8 @@ func (s *Service) Persist(context *user.Context, review *types.Review) error {
 		CreatedBy:        review.ReviewOwner.Id,
 		ReviewOwner:      review.ReviewOwner,
 		Input:            review.Input,
+		InputEnvVars:     review.InputEnvVars,
+		InputClientArgs:  review.InputClientArgs,
 		AccessDuration:   review.AccessDuration,
 		RevokeAt:         review.RevokeAt,
 		Status:           review.Status,

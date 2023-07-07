@@ -116,14 +116,22 @@ func (r *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 		})
 	}
 
+	var inputClientArgs []string
+	if encInputClientArgs, ok := pkt.Spec[pb.SpecClientExecArgsKey]; ok {
+		if err := pb.GobDecodeInto(encInputClientArgs, &inputClientArgs); err != nil {
+			return nil, plugintypes.InternalErr("failed decoding input client args", err)
+		}
+	}
 	newRev := &types.Review{
-		Id:           uuid.NewString(),
-		Type:         reviewType,
-		OrgId:        pctx.OrgID,
-		CreatedAt:    time.Now().UTC(),
-		Session:      pctx.SID,
-		Input:        "",
-		ConnectionId: pctx.ConnectionID,
+		Id:              uuid.NewString(),
+		Type:            reviewType,
+		OrgId:           pctx.OrgID,
+		CreatedAt:       time.Now().UTC(),
+		Session:         pctx.SID,
+		Input:           "",
+		InputEnvVars:    nil,
+		InputClientArgs: inputClientArgs,
+		ConnectionId:    pctx.ConnectionID,
 		Connection: types.ReviewConnection{
 			Id:   pctx.ConnectionID,
 			Name: pctx.ConnectionName,
@@ -141,8 +149,15 @@ func (r *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 	}
 
 	if !isJitReview {
-		// only onetime reviews has input
+		// only onetime reviews has inputs
+		var inputEnvVars map[string]string
+		if encInputEnvVars, ok := pkt.Spec[pb.SpecClientExecEnvVar]; ok {
+			if err := pb.GobDecodeInto(encInputEnvVars, &inputEnvVars); err != nil {
+				return nil, plugintypes.InternalErr("failed decoding input env vars", err)
+			}
+		}
 		newRev.Input = string(pkt.Payload)
+		newRev.InputEnvVars = inputEnvVars
 	}
 
 	log.With("session", pctx.SID, "id", newRev.Id, "user", pctx.UserID, "org", pctx.OrgID,
