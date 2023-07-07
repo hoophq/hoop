@@ -26,6 +26,8 @@ func (s *Storage) FindAll(context *user.Context) ([]types.Review, error) {
 						:review/access-duration
 						:review/approved-at
 						:review/input
+						:review/input-envvars
+						:review/input-clientargs
 						:review/session
 						:review/connection
 						:review/created-by
@@ -58,6 +60,8 @@ func (s *Storage) FindApprovedJitReviews(ctx *user.Context, connID string) (*typ
 						:review/access-duration
 						:review/revoke-at
 						:review/input
+						:review/input-envvars
+						:review/input-clientargs
 						:review/session
 						:review/connection
 						:review/created-by
@@ -261,6 +265,8 @@ func (s *Storage) Persist(ctx *user.Context, review *types.Review) (int64, error
 		CreatedBy:        review.CreatedBy,
 		ReviewOwner:      review.ReviewOwner,
 		Input:            review.Input,
+		InputEnvVars:     review.InputEnvVars,
+		InputClientArgs:  review.InputClientArgs,
 		AccessDuration:   review.AccessDuration,
 		RevokeAt:         review.RevokeAt,
 		Status:           review.Status,

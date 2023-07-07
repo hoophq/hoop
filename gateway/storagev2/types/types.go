@@ -110,36 +110,40 @@ type ReviewGroup struct {
 }
 
 type Review struct {
-	Id               string           `edn:"xt/id"`
-	OrgId            string           `edn:"review/org"`
-	CreatedAt        time.Time        `edn:"review/created-at"`
-	Type             string           `edn:"review/type"`
-	Session          string           `edn:"review/session"`
-	Input            string           `edn:"review/input"`
-	AccessDuration   time.Duration    `edn:"review/access-duration"`
-	Status           ReviewStatus     `edn:"review/status"`
-	RevokeAt         *time.Time       `edn:"review/revoke-at"`
-	CreatedBy        any              `edn:"review/created-by"`
-	ReviewOwner      ReviewOwner      `edn:"review/review-owner"`
-	ConnectionId     any              `edn:"review/connection"`
-	Connection       ReviewConnection `edn:"review/review-connection"`
-	ReviewGroupsIds  []string         `edn:"review/review-groups"`
-	ReviewGroupsData []ReviewGroup    `edn:"review/review-groups-data"`
+	Id               string            `edn:"xt/id"`
+	OrgId            string            `edn:"review/org"`
+	CreatedAt        time.Time         `edn:"review/created-at"`
+	Type             string            `edn:"review/type"`
+	Session          string            `edn:"review/session"`
+	Input            string            `edn:"review/input"`
+	InputEnvVars     map[string]string `edn:"review/input-envvars"`
+	InputClientArgs  []string          `edn:"review/input-clientargs"`
+	AccessDuration   time.Duration     `edn:"review/access-duration"`
+	Status           ReviewStatus      `edn:"review/status"`
+	RevokeAt         *time.Time        `edn:"review/revoke-at"`
+	CreatedBy        any               `edn:"review/created-by"`
+	ReviewOwner      ReviewOwner       `edn:"review/review-owner"`
+	ConnectionId     any               `edn:"review/connection"`
+	Connection       ReviewConnection  `edn:"review/review-connection"`
+	ReviewGroupsIds  []string          `edn:"review/review-groups"`
+	ReviewGroupsData []ReviewGroup     `edn:"review/review-groups-data"`
 }
 
 type ReviewJSON struct {
-	Id               string           `json:"id"`
-	OrgId            string           `json:"org"`
-	CreatedAt        time.Time        `json:"created_at"`
-	Type             string           `json:"type"`
-	Session          string           `json:"session"`
-	Input            string           `json:"input"`
-	AccessDuration   time.Duration    `json:"access_duration"`
-	Status           ReviewStatus     `json:"status"`
-	RevokeAt         *time.Time       `json:"revoke_at"`
-	ReviewOwner      ReviewOwner      `json:"review_owner"`
-	Connection       ReviewConnection `json:"review_connection"`
-	ReviewGroupsData []ReviewGroup    `json:"review_groups_data"`
+	Id               string            `json:"id"`
+	OrgId            string            `json:"org"`
+	CreatedAt        time.Time         `json:"created_at"`
+	Type             string            `json:"type"`
+	Session          string            `json:"session"`
+	Input            string            `json:"input"`
+	InputEnvVars     map[string]string `json:"input_envvars"`
+	InputClientArgs  []string          `json:"input_clientargs"`
+	AccessDuration   time.Duration     `json:"access_duration"`
+	Status           ReviewStatus      `json:"status"`
+	RevokeAt         *time.Time        `json:"revoke_at"`
+	ReviewOwner      ReviewOwner       `json:"review_owner"`
+	Connection       ReviewConnection  `json:"review_connection"`
+	ReviewGroupsData []ReviewGroup     `json:"review_groups_data"`
 }
 
 type SessionEventStream []any

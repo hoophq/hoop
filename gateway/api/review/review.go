@@ -58,15 +58,17 @@ func GetById(c *gin.Context) {
 	}
 
 	c.PureJSON(http.StatusOK, types.ReviewJSON{
-		Id:             review.Id,
-		OrgId:          review.OrgId,
-		CreatedAt:      review.CreatedAt,
-		Type:           review.Type,
-		Session:        review.Session,
-		Input:          review.Input,
-		AccessDuration: review.AccessDuration,
-		Status:         review.Status,
-		RevokeAt:       review.RevokeAt,
+		Id:              review.Id,
+		OrgId:           review.OrgId,
+		CreatedAt:       review.CreatedAt,
+		Type:            review.Type,
+		Session:         review.Session,
+		Input:           review.Input,
+		InputEnvVars:    review.InputEnvVars,
+		InputClientArgs: review.InputClientArgs,
+		AccessDuration:  review.AccessDuration,
+		Status:          review.Status,
+		RevokeAt:        review.RevokeAt,
 		ReviewOwner: types.ReviewOwner{
 			Id:    reviewOwnerToStringFn("xt/id"),
 			Name:  reviewOwnerToStringFn("user/name"),
