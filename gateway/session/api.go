@@ -9,15 +9,11 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/google/uuid"
 
 	"github.com/gin-gonic/gin"
-	"github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/clientexec"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/plugin"
-	"github.com/runopsio/hoop/gateway/storagev2"
-	sessionStorage "github.com/runopsio/hoop/gateway/storagev2/session"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
@@ -185,7 +181,6 @@ func getAccessToken(c *gin.Context) string {
 func (h *Handler) RunReviewedExec(c *gin.Context) {
 	ctx := user.ContextUser(c)
 	log := user.ContextLogger(c)
-	storageCtx := storagev2.ParseContext(c)
 
 	sessionId := c.Param("session_id")
 
@@ -208,19 +203,21 @@ func (h *Handler) RunReviewedExec(c *gin.Context) {
 		return
 	}
 
-	reviewID := review.Id
-	if isLockedForExec(reviewID) {
-		errMsg := fmt.Sprintf("the review %v is already being processed", reviewID)
+	// TODO review this, maybe we don't need anymore
+	// reviewID := review.Id
+	if isLockedForExec(sessionId) {
+		errMsg := fmt.Sprintf("the session %v is already being processed", sessionId)
 		c.JSON(http.StatusConflict, &clientexec.ExecErrResponse{Message: errMsg})
 		return
 	}
 
 	// locking the execution per review id prevents race condition executions
 	// in case of misbehavior of clients
-	lockExec(reviewID)
-	defer unlockExec(reviewID)
+	lockExec(sessionId)
+	defer unlockExec(sessionId)
+
 	if review == nil || review.Type != ReviewTypeOneTime {
-		c.JSON(http.StatusNotFound, &clientexec.ExecErrResponse{Message: "review not found"})
+		c.JSON(http.StatusNotFound, &clientexec.ExecErrResponse{Message: "session not found"})
 		return
 	}
 
@@ -265,40 +262,13 @@ func (h *Handler) RunReviewedExec(c *gin.Context) {
 		return
 	}
 
-	// update the new reference session
-	// when processing the review plugin, it will obtain the resource by its session id.
-	review.Session = uuid.NewString()
-	if err := h.Service.PersistReview(ctx, review); err != nil {
-		log.Errorf("failed updating review session id, err=%v", err)
-		c.JSON(http.StatusInternalServerError, &clientexec.ExecErrResponse{Message: "failed updating review session"})
-		return
-	}
-
-	newSession := types.Session{
-		ID:           review.Session,
-		OrgID:        ctx.Org.Id,
-		Labels:       session.Labels,
-		Script:       session.Script,
-		UserEmail:    ctx.User.Email,
-		UserID:       ctx.User.Id,
-		UserName:     ctx.User.Name,
-		Type:         session.Type,
-		Connection:   session.Connection,
-		Verb:         proto.ClientVerbExec,
-		Status:       "open", // TODO use a const
-		DlpCount:     0,
-		StartSession: time.Now().UTC(),
-	}
-	log.Infof("Persisting new session")
-
-	err = sessionStorage.Write(storageCtx, newSession)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "The session couldn't be created"})
 		return
 	}
 
 	// TODO use the new RunExec here
-	client, err := clientexec.New(ctx.Org.Id, getAccessToken(c), review.Connection.Name, newSession.ID)
+	client, err := clientexec.New(ctx.Org.Id, getAccessToken(c), session.Connection, session.ID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"session_id": nil, "message": err.Error()})
 		return
@@ -309,13 +279,13 @@ func (h *Handler) RunReviewedExec(c *gin.Context) {
 		defer close(clientResp)
 		defer client.Close()
 		select {
-		case clientResp <- client.Run([]byte(review.Input), review.InputEnvVars, review.InputClientArgs...):
+		case clientResp <- client.Run([]byte(session.Script["data"]), review.InputEnvVars, review.InputClientArgs...):
 		default:
 		}
 	}()
 	log = log.With("session", client.SessionID())
 	log.Infof("review apiexec, reviewid=%v, connection=%v, owner=%v, input-lenght=%v",
-		reviewID, review.Connection.Name, review.CreatedBy, len(review.Input))
+		review.Id, review.Connection.Name, review.CreatedBy, len(review.Input))
 	c.Header("Location", fmt.Sprintf("/api/plugins/audit/sessions/%s/status", client.SessionID()))
 
 	select {

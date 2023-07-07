@@ -107,6 +107,7 @@ func parseEventStream(eventStream []byte) (types.SessionEventStream, int, int64,
 
 func (p *auditPlugin) writeOnConnect(pctx plugintypes.Context) error {
 	walFolder := fmt.Sprintf(walFolderTmpl, plugintypes.AuditPath, pctx.OrgID, pctx.SID)
+	_ = os.RemoveAll(walFolder)
 	walog, err := wal.Open(walFolder, wal.DefaultOptions)
 	if err != nil {
 		return fmt.Errorf("failed opening wal file, err=%v", err)
