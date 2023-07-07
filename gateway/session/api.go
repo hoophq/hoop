@@ -196,6 +196,7 @@ func (h *Handler) RunReviewedExec(c *gin.Context) {
 	if err != nil {
 		log.Errorf("failed retrieving review, err=%v", err)
 		c.JSON(http.StatusInternalServerError, &clientexec.ExecErrResponse{Message: "failed retrieving review"})
+		return
 	}
 
 	if review == nil {
