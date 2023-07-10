@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-[ "$HOOPWRAPPER_XTRACE" ] && set -o xtrace
+[ "$HOOPSTART_XTRACE" ] && set -o xtrace
 
 # Usage function
 usage() {
