@@ -61,7 +61,7 @@ func (p *Provider) VerifyAccessToken(accessToken string) (string, error) {
 
 	token, err := jwt.Parse(accessToken, p.JWKS.Keyfunc)
 	if err != nil {
-		return "", fmt.Errorf("failed parsing access token: %v", err)
+		return "", err
 	}
 
 	if !token.Valid {

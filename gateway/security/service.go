@@ -96,20 +96,21 @@ func (s *Service) Callback(c *gin.Context, state, code string) string {
 
 	var idTokenClaims map[string]any
 	if err := idToken.Claims(&idTokenClaims); err != nil {
+		log.Errorf("failed extracting id token claims, reason=%v", err)
 		s.loginOutcome(login, outcomeError)
-		log.Errorf("failed extracting ID Token claims, err: %v", err)
 		return login.Redirect + "?error=unexpected_error"
 	}
 
 	sub, err := s.Provider.VerifyAccessToken(token.AccessToken)
 	if err != nil {
-		log.Debugf("failed verifiying access token, reason=%v", err)
+		log.Warnf("failed verifiying access token, reason=%v", err)
 		s.loginOutcome(login, outcomeError)
 		return login.Redirect + "?error=unexpected_error"
 	}
 
 	context, err := s.UserService.FindBySub(sub)
 	if err != nil {
+		log.Errorf("failed fetching user by sub, reason=%v", err)
 		s.loginOutcome(login, outcomeError)
 		return login.Redirect + "?error=unexpected_error"
 	}
@@ -132,6 +133,7 @@ func (s *Service) Callback(c *gin.Context, state, code string) string {
 	}
 
 	if context.User.Status != user.StatusActive {
+		log.Infof("failed saving user to database, reason=%v", err)
 		s.loginOutcome(login, pendingReviewError)
 		return login.Redirect + "?error=pending_review"
 	}
@@ -142,6 +144,7 @@ func (s *Service) Callback(c *gin.Context, state, code string) string {
 
 		context.User.Groups = groups
 		if err := s.UserService.Persist(context.User); err != nil {
+			log.Errorf("failed saving user to database, reason=%v", err)
 			s.loginOutcome(login, outcomeError)
 			return login.Redirect + "?error=unexpected_error"
 		}
