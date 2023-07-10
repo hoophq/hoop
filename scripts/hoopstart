@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-# DEPRECATED in flavor of ./hoopstart
-
 [ "$HOOPSTART_XTRACE" ] && set -o xtrace
 
 # Usage function
