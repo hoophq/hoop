@@ -8,6 +8,8 @@ const (
 
 	PluginReviewName                     = "review"
 	PluginAuditName                      = "audit"
+	PluginEditorName                     = "editor"
+	PluginRunbooksName                   = "runbooks"
 	PluginSlackName                      = "slack"
 	PluginAccessControlName              = "access_control"
 	PluginIndexName                      = "indexer"

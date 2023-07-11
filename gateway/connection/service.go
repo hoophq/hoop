@@ -107,8 +107,30 @@ func (s *Service) Persist(httpMethod string, context *user.Context, c *Connectio
 	}
 
 	if strings.ToUpper(httpMethod) == "POST" {
-		s.bindAuditPlugin(context, c)
-		s.bindDLPPlugin(context, c)
+		// This automatically sets plugins we
+		// want to be active out of the box
+		// when the connection is created
+		basicPlugins := []string{
+			plugintypes.PluginEditorName,
+			plugintypes.PluginAuditName,
+			plugintypes.PluginIndexName,
+			plugintypes.PluginSlackName,
+		}
+		pluginsWithConfig := []string{
+			plugintypes.PluginDLPName,
+			plugintypes.PluginRunbooksName,
+		}
+
+		// plugins that are simply configured by
+		// the connection name can be passed here
+		for _, plugin := range basicPlugins {
+			s.bindBasicPlugin(context, c, plugin)
+		}
+		// plugins that need to have a
+		// config field are binded here
+		for _, plugin := range pluginsWithConfig {
+			s.bindPluginWithConfig(context, c, plugin)
+		}
 	}
 	return result, nil
 }
@@ -149,8 +171,8 @@ func (s *Service) FindOne(context *user.Context, name string) (*Connection, erro
 	return nil, nil
 }
 
-func (s *Service) bindAuditPlugin(context *user.Context, conn *Connection) {
-	p, err := s.PluginService.FindOne(context, plugintypes.PluginAuditName)
+func (s *Service) bindBasicPlugin(context *user.Context, conn *Connection, pluginName string) {
+	p, err := s.PluginService.FindOne(context, pluginName)
 	if err != nil {
 		return
 	}
@@ -167,7 +189,7 @@ func (s *Service) bindAuditPlugin(context *user.Context, conn *Connection) {
 		}
 	} else {
 		p = &plugin.Plugin{
-			Name:        plugintypes.PluginAuditName,
+			Name:        pluginName,
 			Connections: []plugin.Connection{{ConnectionId: conn.Id}},
 		}
 	}
@@ -177,8 +199,8 @@ func (s *Service) bindAuditPlugin(context *user.Context, conn *Connection) {
 	}
 }
 
-func (s *Service) bindDLPPlugin(context *user.Context, conn *Connection) {
-	p, err := s.PluginService.FindOne(context, plugintypes.PluginDLPName)
+func (s *Service) bindPluginWithConfig(context *user.Context, conn *Connection, pluginName string) {
+	p, err := s.PluginService.FindOne(context, pluginName)
 	if err != nil {
 		return
 	}
@@ -198,7 +220,7 @@ func (s *Service) bindDLPPlugin(context *user.Context, conn *Connection) {
 		}
 	} else {
 		p = &plugin.Plugin{
-			Name:        plugintypes.PluginDLPName,
+			Name:        pluginName,
 			Connections: []plugin.Connection{{ConnectionId: conn.Id, Config: pb.DefaultInfoTypes}},
 		}
 	}
