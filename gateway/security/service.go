@@ -115,9 +115,11 @@ func (s *Service) Callback(c *gin.Context, state, code string) string {
 		return login.Redirect + "?error=unexpected_error"
 	}
 
+	var isSignup bool
 	if context.Org == nil || context.User == nil {
 		log.Infof("starting signup for sub=%v, multitenant=%v, ctxorg=%v, ctxuser=%v",
 			sub, user.IsOrgMultiTenant(), context.Org, context.User)
+		isSignup = true
 		switch user.IsOrgMultiTenant() {
 		case true:
 			err = s.signupMultiTenant(c, context, sub, idTokenClaims)
@@ -138,17 +140,23 @@ func (s *Service) Callback(c *gin.Context, state, code string) string {
 		return login.Redirect + "?error=pending_review"
 	}
 
-	groupsClaim, _ := idTokenClaims[pb.CustomClaimGroups].([]any)
-	if len(groupsClaim) > 0 {
-		groups := mapGroupsToString(groupsClaim)
-
-		context.User.Groups = groups
+	if !isSignup {
+		// sync groups from provider on every login
+		switch groupsClaim := idTokenClaims[pb.CustomClaimGroups].(type) {
+		case string:
+			if groupsClaim != "" {
+				context.User.Groups = []string{groupsClaim}
+			}
+		case []any:
+			context.User.Groups = mapGroupsToString(groupsClaim)
+		}
 		if err := s.UserService.Persist(context.User); err != nil {
 			log.Errorf("failed saving user to database, reason=%v", err)
 			s.loginOutcome(login, outcomeError)
 			return login.Redirect + "?error=unexpected_error"
 		}
 	}
+
 	if login.SlackID != "" {
 		context.User.SlackID = login.SlackID
 		_ = s.UserService.Persist(context.User)
