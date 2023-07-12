@@ -187,6 +187,7 @@ func (s *Service) signup(c *gin.Context, ctx *user.Context, sub string, idTokenC
 	if err != nil {
 		return fmt.Errorf("failed listing users, err=%v", err)
 	}
+
 	var groupList []string
 	// first user is admin
 	if len(userList) == 0 {
@@ -199,6 +200,12 @@ func (s *Service) signup(c *gin.Context, ctx *user.Context, sub string, idTokenC
 			user.GroupSupport,
 			user.GroupEngineering,
 		}
+	}
+
+	// propagate groups claim
+	groupsClaim, _ := idTokenClaims[pb.CustomClaimGroups].([]any)
+	if len(groupsClaim) > 0 && len(groupList) == 0 {
+		groupList = mapGroupsToString(groupsClaim)
 	}
 
 	email, _ := idTokenClaims["email"].(string)
