@@ -1,9 +1,19 @@
 package types
 
+import "os"
+
 type ClientStatusType string
 type UserStatusType string
 
-// type User
+// GroupAdmin is the name of the admin user, defaults to "admin"
+// if the env ADMIN_USERNAME is not set
+var GroupAdmin = func() string {
+	username := os.Getenv("ADMIN_USERNAME")
+	if username == "" {
+		username = "admin"
+	}
+	return username
+}()
 
 const (
 	// ClientStatusReady indicates the grpc client is ready to
@@ -32,7 +42,6 @@ const (
 )
 
 const (
-	GroupAdmin       string = "admin"
 	GroupSecurity    string = "security"
 	GroupSRE         string = "sre"
 	GroupDBA         string = "dba"

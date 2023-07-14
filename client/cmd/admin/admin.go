@@ -3,6 +3,7 @@ package admin
 import (
 	"bytes"
 	"fmt"
+	"net/http"
 
 	"github.com/runopsio/hoop/client/cmd/styles"
 	clientconfig "github.com/runopsio/hoop/client/config"
@@ -30,15 +31,15 @@ var gatewayInfoCmd = &cobra.Command{
 	Short: "Get information about the gateway",
 	Run: func(cmd *cobra.Command, args []string) {
 		conf := clientconfig.GetClientConfigOrDie()
-		_, err := httpRequest(&apiResource{suffixEndpoint: "/api/healthz", conf: conf})
+		_, headers, err := httpRequest(&apiResource{suffixEndpoint: "/api/healthz", conf: conf})
 		if err != nil {
 			out := styles.ClientErrorSimple(fmt.Sprintf("API at %v, GET /api/healthz responded with error=%v", conf.ApiURL, err))
 			fmt.Println(out)
 		} else {
-			fmt.Printf("API is running at %v, GET /api/healthz responded with success!\n", conf.ApiURL)
+			fmt.Printf("API is running at %v, GET /api/healthz %v\n", conf.ApiURL, headers[http.CanonicalHeaderKey("server")])
 		}
 
-		data, err := httpRequest(&apiResource{suffixEndpoint: "/js/manifest.edn", conf: conf})
+		data, _, err := httpRequest(&apiResource{suffixEndpoint: "/js/manifest.edn", conf: conf})
 		if err != nil {
 			out := styles.ClientErrorSimple(fmt.Sprintf("Webapp is running at %v, responded with error=%v", conf.ApiURL, err))
 			fmt.Println(out)

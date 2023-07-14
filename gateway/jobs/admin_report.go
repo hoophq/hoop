@@ -9,6 +9,7 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/session"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
@@ -58,7 +59,7 @@ func (s *Scheduler) sendReport(o user.Org) {
 	ctx := &user.Context{
 		Org: &o,
 	}
-	admins, err := s.UserStorage.FindByGroups(ctx, []string{user.GroupAdmin})
+	admins, err := s.UserStorage.FindByGroups(ctx, []string{types.GroupAdmin})
 	if err != nil {
 		log.Printf("send report failed, org=%s, err=%v", o.Name, err)
 		sentry.CaptureException(err)

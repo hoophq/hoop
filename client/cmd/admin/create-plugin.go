@@ -101,7 +101,7 @@ func putConfig(conf *clientconfig.Config, pluginName string, envVars map[string]
 }
 
 func getPlugin(conf *clientconfig.Config, pluginName string) (map[string]any, error) {
-	resp, err := httpRequest(&apiResource{
+	resp, _, err := httpRequest(&apiResource{
 		suffixEndpoint: fmt.Sprintf("/api/plugins/%v", pluginName),
 		method:         "GET",
 		conf:           conf,

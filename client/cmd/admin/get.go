@@ -48,7 +48,7 @@ var getCmd = &cobra.Command{
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		apir := parseResourceOrDie(args, "GET", outputFlag)
-		obj, err := httpRequest(apir)
+		obj, _, err := httpRequest(apir)
 		if err != nil {
 			styles.PrintErrorAndExit(err.Error())
 		}
@@ -242,7 +242,7 @@ func normalizeStatus(status any) string {
 }
 
 func pluginHandler(apir *apiResource) func(connectionName string) string {
-	data, err := httpRequest(&apiResource{suffixEndpoint: "/api/plugins", conf: apir.conf, decodeTo: "list"})
+	data, _, err := httpRequest(&apiResource{suffixEndpoint: "/api/plugins", conf: apir.conf, decodeTo: "list"})
 	if err != nil {
 		log.Debugf("failed retrieving list of plugins, err=%v", err)
 	}
@@ -278,7 +278,7 @@ func pluginHandler(apir *apiResource) func(connectionName string) string {
 }
 
 func agentConnectedHandler(conf *clientconfig.Config) func(key, agentID string) string {
-	data, err := httpRequest(&apiResource{suffixEndpoint: "/api/agents", conf: conf, decodeTo: "list"})
+	data, _, err := httpRequest(&apiResource{suffixEndpoint: "/api/agents", conf: conf, decodeTo: "list"})
 	if err != nil {
 		log.Debugf("failed retrieving list of connected agents, err=%v", err)
 	}

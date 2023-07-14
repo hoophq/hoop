@@ -10,6 +10,7 @@ import (
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/analytics"
 	"github.com/runopsio/hoop/gateway/security/idp"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
 	"golang.org/x/oauth2"
 )
@@ -93,6 +94,8 @@ func (s *Service) Callback(c *gin.Context, state, code string) string {
 		s.loginOutcome(login, outcomeError)
 		return login.Redirect + "?error=unexpected_error"
 	}
+	log.With("id", login.Id, "code", code, "state", state, "issuer", idToken.Issuer, "subject", idToken.Subject).
+		Infof("token exchanged")
 
 	var idTokenClaims map[string]any
 	if err := idToken.Claims(&idTokenClaims); err != nil {
@@ -100,6 +103,8 @@ func (s *Service) Callback(c *gin.Context, state, code string) string {
 		s.loginOutcome(login, outcomeError)
 		return login.Redirect + "?error=unexpected_error"
 	}
+
+	debugClaims(idToken.Subject, idTokenClaims)
 
 	sub, err := s.Provider.VerifyAccessToken(token.AccessToken)
 	if err != nil {
@@ -199,13 +204,13 @@ func (s *Service) signup(c *gin.Context, ctx *user.Context, sub string, idTokenC
 	// first user is admin
 	if len(userList) == 0 {
 		groupList = []string{
-			user.GroupAdmin,
-			user.GroupSecurity,
-			user.GroupSRE,
-			user.GroupDBA,
-			user.GroupDevops,
-			user.GroupSupport,
-			user.GroupEngineering,
+			types.GroupAdmin,
+			types.GroupSecurity,
+			types.GroupSRE,
+			types.GroupDBA,
+			types.GroupDevops,
+			types.GroupSupport,
+			types.GroupEngineering,
 		}
 	}
 
@@ -288,13 +293,13 @@ func (s *Service) signupMultiTenant(c *gin.Context, context *user.Context, sub s
 			status = user.StatusActive
 			if len(groupsClaim) == 0 {
 				groups = append(groups,
-					user.GroupAdmin,
-					user.GroupSecurity,
-					user.GroupSRE,
-					user.GroupDBA,
-					user.GroupDevops,
-					user.GroupSupport,
-					user.GroupEngineering)
+					types.GroupAdmin,
+					types.GroupSecurity,
+					types.GroupSRE,
+					types.GroupDBA,
+					types.GroupDevops,
+					types.GroupSupport,
+					types.GroupEngineering)
 			}
 		}
 
@@ -338,6 +343,14 @@ func (s *Service) signupMultiTenant(c *gin.Context, context *user.Context, sub s
 	}
 
 	return nil
+}
+
+func debugClaims(subject string, claims map[string]any) {
+	log := log.With()
+	for claimKey, claimVal := range claims {
+		log = log.With(claimKey, fmt.Sprintf("%v", claimVal))
+	}
+	log.Infof("id_token claims=%v, subject=%s", len(claims), subject)
 }
 
 func (s *Service) loginOutcome(login *login, outcome outcomeType) {

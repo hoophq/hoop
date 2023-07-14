@@ -67,15 +67,6 @@ const (
 	StatusReviewing StatusType = "reviewing"
 	StatusInactive  StatusType = "inactive"
 
-	// DEPRECATED types in flavor of gateway/storagev2/types/const.go#Group...
-	GroupAdmin       string = "admin"
-	GroupSecurity    string = "security"
-	GroupSRE         string = "sre"
-	GroupDBA         string = "dba"
-	GroupDevops      string = "devops"
-	GroupSupport     string = "support"
-	GroupEngineering string = "engineering"
-
 	ContextLoggerKey = "context-logger"
 	ContextUserKey   = "context"
 )
@@ -234,7 +225,7 @@ func isPublicDomain(domain string) bool {
 }
 
 func (user *User) IsAdmin() bool {
-	return pb.IsInList(GroupAdmin, user.Groups)
+	return pb.IsInList(types.GroupAdmin, user.Groups)
 }
 
 func isInStatus(status StatusType) bool {
