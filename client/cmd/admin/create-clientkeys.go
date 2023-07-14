@@ -68,7 +68,7 @@ var createClientKeysCmd = &cobra.Command{
 }
 
 func getClientKey(conf *clientconfig.Config, name string) (bool, error) {
-	resp, err := httpRequest(&apiResource{
+	resp, _, err := httpRequest(&apiResource{
 		suffixEndpoint: fmt.Sprintf("/api/clientkeys/%v", name),
 		method:         "GET",
 		conf:           conf,

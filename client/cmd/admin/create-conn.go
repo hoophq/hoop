@@ -173,7 +173,7 @@ func parseEnvPerType() (map[string]string, error) {
 }
 
 func getConnection(conf *clientconfig.Config, connectionName string) (bool, error) {
-	resp, err := httpRequest(&apiResource{
+	resp, _, err := httpRequest(&apiResource{
 		suffixEndpoint: fmt.Sprintf("/api/connections/%v", connectionName),
 		method:         "GET",
 		conf:           conf,
@@ -191,7 +191,7 @@ func getConnection(conf *clientconfig.Config, connectionName string) (bool, erro
 }
 
 func getAgentIDByName(conf *clientconfig.Config, name string) (string, error) {
-	data, err := httpRequest(&apiResource{suffixEndpoint: "/api/agents", conf: conf, decodeTo: "list"})
+	data, _, err := httpRequest(&apiResource{suffixEndpoint: "/api/agents", conf: conf, decodeTo: "list"})
 	if err != nil {
 		return "", err
 	}

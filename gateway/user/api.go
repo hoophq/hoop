@@ -111,8 +111,8 @@ func (a *Handler) Put(c *gin.Context) {
 	// for admins to not auto-exclude themselves from admin by mistake
 	if existingUser.Id == context.User.Id &&
 		existingUser.IsAdmin() &&
-		!pb.IsInList(GroupAdmin, user.Groups) {
-		user.Groups = append(user.Groups, GroupAdmin)
+		!pb.IsInList(types.GroupAdmin, user.Groups) {
+		user.Groups = append(user.Groups, types.GroupAdmin)
 	}
 
 	existingUser.Status = user.Status

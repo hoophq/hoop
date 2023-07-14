@@ -13,7 +13,6 @@ import (
 	"github.com/briandowns/spinner"
 	"github.com/getsentry/sentry-go"
 	"github.com/runopsio/hoop/agent"
-	"github.com/runopsio/hoop/client/cmd/demos"
 	"github.com/runopsio/hoop/client/cmd/styles"
 	"github.com/runopsio/hoop/common/clientconfig"
 	"github.com/runopsio/hoop/common/monitoring"
@@ -194,7 +193,6 @@ var startGatewayCmd = &cobra.Command{
 func init() {
 	startCmd.AddCommand(startAgentCmd)
 	startCmd.AddCommand(startGatewayCmd)
-	startCmd.AddCommand(demos.DemoCmd)
 	startCmd.Flags().StringSliceVarP(&startEnvFlag, "env", "e", nil, "The environment variables to set when starting hoop")
 	rootCmd.AddCommand(startCmd)
 }

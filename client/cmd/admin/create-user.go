@@ -77,7 +77,7 @@ var createUserCmd = &cobra.Command{
 }
 
 func getUser(conf *clientconfig.Config, userName string) (string, error) {
-	resp, err := httpRequest(&apiResource{
+	resp, _, err := httpRequest(&apiResource{
 		suffixEndpoint: fmt.Sprintf("/api/users/%v", userName),
 		method:         "GET",
 		conf:           conf,

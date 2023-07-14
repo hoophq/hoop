@@ -187,50 +187,50 @@ func (r *apiResource) Resource() string {
 	return r.resourceType
 }
 
-func httpRequest(apir *apiResource) (any, error) {
+func httpRequest(apir *apiResource) (any, http.Header, error) {
 	url, err := apir.Endpoint()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	log.Debugf("performing http request at GET %v", url)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed creating http request, err=%v", err)
+		return nil, nil, fmt.Errorf("failed creating http request, err=%v", err)
 	}
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", apir.conf.Token))
 	req.Header.Set("User-Agent", fmt.Sprintf("hoopcli/%s", hoopVersionStr))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	log.Debugf("http response %v", resp.StatusCode)
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 && resp.StatusCode != 201 && resp.StatusCode != 204 {
 		respBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("failed performing request, status=%v, body=%v",
+		return nil, resp.Header, fmt.Errorf("failed performing request, status=%v, body=%v",
 			resp.StatusCode, string(respBody))
 	}
 	switch apir.decodeTo {
 	case "list":
 		var mapList []map[string]any
 		if err := json.NewDecoder(resp.Body).Decode(&mapList); err != nil {
-			return nil, fmt.Errorf("failed decoding response, codec=%v, status=%v, err=%v",
+			return nil, resp.Header, fmt.Errorf("failed decoding response, codec=%v, status=%v, err=%v",
 				apir.decodeTo, resp.StatusCode, err)
 		}
-		return mapList, nil
+		return mapList, resp.Header, nil
 	case "object":
 		var respMap map[string]any
 		if err := json.NewDecoder(resp.Body).Decode(&respMap); err != nil {
-			return nil, fmt.Errorf("failed decoding response, codec=%v, status=%v, err=%v",
+			return nil, resp.Header, fmt.Errorf("failed decoding response, codec=%v, status=%v, err=%v",
 				apir.decodeTo, resp.StatusCode, err)
 		}
-		return respMap, nil
+		return respMap, resp.Header, nil
 	default:
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return nil, fmt.Errorf("failed reading content body, status=%v, err=%v", resp.StatusCode, err)
+			return nil, resp.Header, fmt.Errorf("failed reading content body, status=%v, err=%v", resp.StatusCode, err)
 		}
-		return respBody, nil
+		return respBody, resp.Header, nil
 	}
 
 }
