@@ -189,11 +189,11 @@ func (a *Handler) Put(c *gin.Context) {
 	plugin.Id = existingPlugin.ID
 	plugin.Name = existingPlugin.Name
 	plugin.Config = &PluginConfig{
-		ID:      existingPlugin.ID,
-		Org:     existingPlugin.OrgID,
-		EnvVars: existingPlugin.Config.EnvVars,
+		ID:  existingPlugin.ID,
+		Org: existingPlugin.OrgID,
 	}
 	if existingPlugin.Config != nil {
+		plugin.Config.EnvVars = existingPlugin.Config.EnvVars
 		plugin.ConfigID = &existingPlugin.Config.ID
 	}
 
