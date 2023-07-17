@@ -14,7 +14,7 @@ func TestParsePolicyConfig(t *testing.T) {
 		encPolicyHcl := base64.StdEncoding.EncodeToString([]byte(policyHcl))
 		encConfigEntryVal := base64.StdEncoding.EncodeToString([]byte(configEntryVal))
 		return &types.Plugin{
-			Connections: []types.PluginConnection{{Name: connName, Config: []string{connConfig}}},
+			Connections: []*types.PluginConnection{{Name: connName, Config: []string{connConfig}}},
 			Config: &types.PluginConfig{
 				EnvVars: map[string]string{
 					configEntry:         encConfigEntryVal,

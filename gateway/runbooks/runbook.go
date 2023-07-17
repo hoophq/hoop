@@ -51,7 +51,7 @@ func fetchRunbookFile(config *templates.RunbookConfig, req RunbookRequest) (*Run
 	return nil, fmt.Errorf("runbook %v not found for %v", req.FileName, c.Hash.String())
 }
 
-func listRunbookFiles(pluginConnectionList []types.PluginConnection, config *templates.RunbookConfig) (*RunbookList, error) {
+func listRunbookFiles(pluginConnectionList []*types.PluginConnection, config *templates.RunbookConfig) (*RunbookList, error) {
 	commit, err := templates.FetchRepo(config)
 	if err != nil {
 		return nil, err

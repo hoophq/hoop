@@ -40,12 +40,21 @@ func GetByName(ctx *storagev2.Context, name string) (*types.Plugin, error) {
 	if len(p) == 0 {
 		return nil, nil
 	}
-	// fixes plugin-connection/name attribute that is not enforced properly
-	for i, c := range p[0][0].Connections {
+	// filter evicted connections that returns as nil
+	var pluginConnectionList []*types.PluginConnection
+	for _, c := range p[0][0].Connections {
+		if c == nil {
+			continue
+		}
+		// fixes plugin-connection/name attribute that is not enforced properly
 		c.SetName()
-		p[0][0].Connections[i] = c
+		pluginConnectionList = append(pluginConnectionList, c)
 	}
-
+	p[0][0].Connections = pluginConnectionList
+	// return empty list instead of null
+	if p[0][0].Connections == nil {
+		p[0][0].Connections = []*types.PluginConnection{}
+	}
 	return &p[0][0], nil
 }
 
@@ -80,13 +89,24 @@ func List(ctx *storagev2.Context) ([]types.Plugin, error) {
 
 	var itemList []types.Plugin
 	for _, p := range plugins {
-		// fixes plugin-connection/name attribute
-		// that is not enforced properly
-		for i, c := range p[0].Connections {
+		// filter evicted connections that returns as nil
+		var pluginConnectionList []*types.PluginConnection
+		for _, c := range p[0].Connections {
+			if c == nil {
+				continue
+			}
+			// fixes plugin-connection/name attribute
+			// that is not enforced properly
 			c.SetName()
-			p[0].Connections[i] = c
+			pluginConnectionList = append(pluginConnectionList, c)
+		}
+		p[0].Connections = pluginConnectionList
+		// return empty list instead of null
+		if p[0].Connections == nil {
+			p[0].Connections = []*types.PluginConnection{}
 		}
 		itemList = append(itemList, p[0])
 	}
+
 	return itemList, nil
 }

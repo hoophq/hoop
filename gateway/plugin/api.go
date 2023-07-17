@@ -284,7 +284,7 @@ func parseToV2(p *Plugin) *types.Plugin {
 		}
 	}
 	for _, conn := range p.Connections {
-		v2.Connections = append(v2.Connections, types.PluginConnection{
+		v2.Connections = append(v2.Connections, &types.PluginConnection{
 			ID:           conn.Id,
 			ConnectionID: conn.ConnectionId,
 			Name:         conn.Name,
