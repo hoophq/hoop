@@ -237,12 +237,6 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest(analytics.EventUdpatePlugin),
 		api.AdminOnly,
 		api.PluginHandler.Put)
-	// route.GET("/plugins",
-	// 	api.Authenticate,
-	// 	api.PluginHandler.FindAll)
-	// route.GET("/plugins/:name",
-	// 	api.Authenticate,
-	// 	api.PluginHandler.FindOne)
 	route.GET("/plugins",
 		api.Authenticate,
 		apiplugins.List)

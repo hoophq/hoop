@@ -19,7 +19,6 @@ type (
 	storage interface {
 		PersistConfig(*PluginConfig) error
 		Persist(context *user.Context, plugin *Plugin) (int64, error)
-		// FindAll(context *user.Context) ([]ListPlugin, error)
 		FindOne(context *user.Context, name string) (*types.Plugin, error)
 		FindConnections(ctx *user.Context, connectionNames []string) (map[string]string, error)
 	}
@@ -61,14 +60,12 @@ func (s *Service) FindOne(context *user.Context, name string) (*types.Plugin, er
 	storev2 := storagev2.NewStorage(nil)
 	ctxv2 := storagev2.NewOrganizationContext(context.Org.Id, storev2)
 	return pluginstorage.GetByName(ctxv2, name)
-	// return s.Storage.FindOne(context, name)
 }
 
 func (s *Service) FindAll(context *user.Context) ([]types.Plugin, error) {
 	storev2 := storagev2.NewStorage(nil)
 	ctxv2 := storagev2.NewOrganizationContext(context.Org.Id, storev2)
 	return pluginstorage.List(ctxv2)
-	// return s.Storage.FindAll(context)
 }
 
 func (s *Service) Persist(context *user.Context, plugin *Plugin) error {

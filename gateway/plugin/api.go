@@ -41,43 +41,6 @@ func redactPluginConfig(c *PluginConfig) {
 	}
 }
 
-// func (a *Handler) FindOne(c *gin.Context) {
-// 	context := user.ContextUser(c)
-
-// 	name := c.Param("name")
-// 	plugin, err := a.Service.FindOne(context, name)
-// 	if err != nil {
-// 		log.Errorf("failed obtaining plugin, err=%v", err)
-// 		sentry.CaptureException(err)
-// 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining plugin"})
-// 		return
-// 	}
-
-// 	if plugin == nil {
-// 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
-// 		return
-// 	}
-// 	redactPluginConfig(plugin.Config)
-// 	c.PureJSON(http.StatusOK, plugin)
-// }
-
-// func (a *Handler) FindAll(c *gin.Context) {
-// 	context := user.ContextUser(c)
-// 	log := user.ContextLogger(c)
-
-// 	plugins, err := a.Service.FindAll(context)
-// 	if err != nil {
-// 		log.Errorf("failed listing plugins, err=%v", err)
-// 		sentry.CaptureException(err)
-// 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed listing plugins"})
-// 		return
-// 	}
-// 	for _, pl := range plugins {
-// 		redactPluginConfig(pl.Config)
-// 	}
-// 	c.PureJSON(http.StatusOK, plugins)
-// }
-
 func (a *Handler) Post(c *gin.Context) {
 	context := user.ContextUser(c)
 	ctxv2 := storagev2.ParseContext(c)
