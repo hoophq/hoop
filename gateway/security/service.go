@@ -154,6 +154,8 @@ func (s *Service) Callback(c *gin.Context, state, code string) string {
 			}
 		case []any:
 			context.User.Groups = mapGroupsToString(groupsClaim)
+		default:
+			log.Warnf("failed syncing group claims, reason=unknown type:%T", groupsClaim)
 		}
 		if err := s.UserService.Persist(context.User); err != nil {
 			log.Errorf("failed saving user to database, reason=%v", err)
@@ -348,9 +350,13 @@ func (s *Service) signupMultiTenant(c *gin.Context, context *user.Context, sub s
 func debugClaims(subject string, claims map[string]any) {
 	log := log.With()
 	for claimKey, claimVal := range claims {
+		if claimKey == pb.CustomClaimGroups {
+			log = log.With(claimKey, fmt.Sprintf("%q", claimVal))
+			continue
+		}
 		log = log.With(claimKey, fmt.Sprintf("%v", claimVal))
 	}
-	log.Infof("id_token claims=%v, subject=%s", len(claims), subject)
+	log.Infof("id_token claims=%v, subject=%s, admingroup=%q", len(claims), subject, types.GroupAdmin)
 }
 
 func (s *Service) loginOutcome(login *login, outcome outcomeType) {
