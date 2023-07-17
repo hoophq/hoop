@@ -404,8 +404,8 @@ func (s *Server) addConnectionParams(clientArgs []string, pctx plugintypes.Conte
 			continue
 		}
 		var pluginName string
-		for _, connectionName := range pluginItem.Connections {
-			if pctx.ConnectionName == connectionName {
+		for _, conn := range pluginItem.Connections {
+			if pctx.ConnectionName == conn.Name {
 				pluginName = pluginItem.Name
 				break
 			}
@@ -515,17 +515,7 @@ func (s *Server) loadConnectPlugins(ctx *user.Context, pctx plugintypes.Context)
 
 		for _, c := range p1.Connections {
 			if c.Name == pctx.ConnectionName {
-				cfg := c.Config
-				if len(ctx.User.Groups) > 0 && len(c.Groups) > 0 {
-					cfg = make([]string, 0)
-					for _, u := range ctx.User.Groups {
-						cfg = append(cfg, c.Groups[u]...)
-					}
-					if len(cfg) == 0 {
-						cfg = c.Config
-					}
-				}
-				cfg = removeDuplicates(cfg)
+				cfg := removeDuplicates(c.Config)
 				ep := pluginConfig{
 					Plugin: p,
 					config: cfg,

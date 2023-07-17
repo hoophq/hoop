@@ -117,17 +117,17 @@ func (p *slackPlugin) OnStartup(_ plugintypes.Context) error {
 		if pl == nil || pl.Config == nil {
 			continue
 		}
-		if pl.OrgId == "" {
+		if pl.OrgID == "" {
 			log.Errorf("inconsistent state (org) for plugin slack")
 			continue
 		}
 		slackConfig, err := parseSlackConfig(&types.PluginConfig{EnvVars: pl.Config.EnvVars})
 		if err != nil {
-			log.Errorf("failed parsing slack config for org %v, err=%v", pl.OrgId, err)
+			log.Errorf("failed parsing slack config for org %v, err=%v", pl.OrgID, err)
 			continue
 		}
-		if err := p.startSlackServiceInstance(pl.OrgId, slackConfig); err != nil {
-			log.Errorf("failed starting slack service for org %v, err=%v", pl.OrgId, err)
+		if err := p.startSlackServiceInstance(pl.OrgID, slackConfig); err != nil {
+			log.Errorf("failed starting slack service for org %v, err=%v", pl.OrgID, err)
 			continue
 		}
 	}

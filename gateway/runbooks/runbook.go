@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/runbooks/templates"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 )
 
 const maxTemplateSize = 50000 // 50KB
@@ -51,7 +51,7 @@ func fetchRunbookFile(config *templates.RunbookConfig, req RunbookRequest) (*Run
 	return nil, fmt.Errorf("runbook %v not found for %v", req.FileName, c.Hash.String())
 }
 
-func listRunbookFiles(pluginConnectionList []plugin.Connection, config *templates.RunbookConfig) (*RunbookList, error) {
+func listRunbookFiles(pluginConnectionList []*types.PluginConnection, config *templates.RunbookConfig) (*RunbookList, error) {
 	commit, err := templates.FetchRepo(config)
 	if err != nil {
 		return nil, err

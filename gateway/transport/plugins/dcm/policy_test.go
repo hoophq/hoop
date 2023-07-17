@@ -5,17 +5,17 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/runopsio/hoop/gateway/plugin"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestParsePolicyConfig(t *testing.T) {
-	newPluginFn := func(connName, connConfig, configEntry, configEntryVal, policyHcl string) *plugin.Plugin {
+	newPluginFn := func(connName, connConfig, configEntry, configEntryVal, policyHcl string) *types.Plugin {
 		encPolicyHcl := base64.StdEncoding.EncodeToString([]byte(policyHcl))
 		encConfigEntryVal := base64.StdEncoding.EncodeToString([]byte(configEntryVal))
-		return &plugin.Plugin{
-			Connections: []plugin.Connection{{Name: connName, Config: []string{connConfig}}},
-			Config: &plugin.PluginConfig{
+		return &types.Plugin{
+			Connections: []*types.PluginConnection{{Name: connName, Config: []string{connConfig}}},
+			Config: &types.PluginConfig{
 				EnvVars: map[string]string{
 					configEntry:         encConfigEntryVal,
 					policyConfigKeyName: encPolicyHcl},
@@ -23,7 +23,7 @@ func TestParsePolicyConfig(t *testing.T) {
 	}
 	for _, tt := range []struct {
 		msg        string
-		pl         *plugin.Plugin
+		pl         *types.Plugin
 		wantPolicy *Policy
 		wantErr    error
 	}{

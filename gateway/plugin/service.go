@@ -5,6 +5,9 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/runopsio/hoop/gateway/storagev2"
+	pluginstorage "github.com/runopsio/hoop/gateway/storagev2/plugin"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
@@ -16,8 +19,7 @@ type (
 	storage interface {
 		PersistConfig(*PluginConfig) error
 		Persist(context *user.Context, plugin *Plugin) (int64, error)
-		FindAll(context *user.Context) ([]ListPlugin, error)
-		FindOne(context *user.Context, name string) (*Plugin, error)
+		FindOne(context *user.Context, name string) (*types.Plugin, error)
 		FindConnections(ctx *user.Context, connectionNames []string) (map[string]string, error)
 	}
 
@@ -54,12 +56,16 @@ type (
 	}
 )
 
-func (s *Service) FindOne(context *user.Context, name string) (*Plugin, error) {
-	return s.Storage.FindOne(context, name)
+func (s *Service) FindOne(context *user.Context, name string) (*types.Plugin, error) {
+	storev2 := storagev2.NewStorage(nil)
+	ctxv2 := storagev2.NewOrganizationContext(context.Org.Id, storev2)
+	return pluginstorage.GetByName(ctxv2, name)
 }
 
-func (s *Service) FindAll(context *user.Context) ([]ListPlugin, error) {
-	return s.Storage.FindAll(context)
+func (s *Service) FindAll(context *user.Context) ([]types.Plugin, error) {
+	storev2 := storagev2.NewStorage(nil)
+	ctxv2 := storagev2.NewOrganizationContext(context.Org.Id, storev2)
+	return pluginstorage.List(ctxv2)
 }
 
 func (s *Service) Persist(context *user.Context, plugin *Plugin) error {

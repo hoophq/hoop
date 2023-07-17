@@ -15,6 +15,7 @@ import (
 	"github.com/runopsio/hoop/gateway/analytics"
 	apiclientkeys "github.com/runopsio/hoop/gateway/api/clientkeys"
 	apiconnectionapps "github.com/runopsio/hoop/gateway/api/connectionapps"
+	apiplugins "github.com/runopsio/hoop/gateway/api/plugins"
 	apiproxymanager "github.com/runopsio/hoop/gateway/api/proxymanager"
 	reviewapi "github.com/runopsio/hoop/gateway/api/review"
 	sessionapi "github.com/runopsio/hoop/gateway/api/session"
@@ -238,10 +239,10 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.PluginHandler.Put)
 	route.GET("/plugins",
 		api.Authenticate,
-		api.PluginHandler.FindAll)
+		apiplugins.List)
 	route.GET("/plugins/:name",
 		api.Authenticate,
-		api.PluginHandler.FindOne)
+		apiplugins.Get)
 
 	route.PUT("/plugins/:name/config",
 		api.Authenticate,
