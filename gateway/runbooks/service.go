@@ -5,12 +5,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/gateway/connection"
-	"github.com/runopsio/hoop/gateway/plugin"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
 type pluginService interface {
-	FindOne(context *user.Context, name string) (*plugin.Plugin, error)
+	FindOne(context *user.Context, name string) (*types.Plugin, error)
 }
 
 type connectionService interface {

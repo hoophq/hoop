@@ -12,6 +12,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/gateway/storagev2"
+	pluginstorage "github.com/runopsio/hoop/gateway/storagev2/plugin"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
@@ -26,8 +28,8 @@ type (
 	service interface {
 		Persist(context *user.Context, plugin *Plugin) error
 		PersistConfig(*user.Context, *PluginConfig) error
-		FindAll(context *user.Context) ([]ListPlugin, error)
-		FindOne(context *user.Context, name string) (*Plugin, error)
+		FindAll(context *user.Context) ([]types.Plugin, error)
+		FindOne(context *user.Context, name string) (*types.Plugin, error)
 	}
 )
 
@@ -39,53 +41,53 @@ func redactPluginConfig(c *PluginConfig) {
 	}
 }
 
-func (a *Handler) FindOne(c *gin.Context) {
-	context := user.ContextUser(c)
+// func (a *Handler) FindOne(c *gin.Context) {
+// 	context := user.ContextUser(c)
 
-	name := c.Param("name")
-	plugin, err := a.Service.FindOne(context, name)
-	if err != nil {
-		log.Errorf("failed obtaining plugin, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining plugin"})
-		return
-	}
+// 	name := c.Param("name")
+// 	plugin, err := a.Service.FindOne(context, name)
+// 	if err != nil {
+// 		log.Errorf("failed obtaining plugin, err=%v", err)
+// 		sentry.CaptureException(err)
+// 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining plugin"})
+// 		return
+// 	}
 
-	if plugin == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
-		return
-	}
-	redactPluginConfig(plugin.Config)
-	c.PureJSON(http.StatusOK, plugin)
-}
+// 	if plugin == nil {
+// 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+// 		return
+// 	}
+// 	redactPluginConfig(plugin.Config)
+// 	c.PureJSON(http.StatusOK, plugin)
+// }
 
-func (a *Handler) FindAll(c *gin.Context) {
-	context := user.ContextUser(c)
-	log := user.ContextLogger(c)
+// func (a *Handler) FindAll(c *gin.Context) {
+// 	context := user.ContextUser(c)
+// 	log := user.ContextLogger(c)
 
-	plugins, err := a.Service.FindAll(context)
-	if err != nil {
-		log.Errorf("failed listing plugins, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed listing plugins"})
-		return
-	}
-	for _, pl := range plugins {
-		redactPluginConfig(pl.Config)
-	}
-	c.PureJSON(http.StatusOK, plugins)
-}
+// 	plugins, err := a.Service.FindAll(context)
+// 	if err != nil {
+// 		log.Errorf("failed listing plugins, err=%v", err)
+// 		sentry.CaptureException(err)
+// 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed listing plugins"})
+// 		return
+// 	}
+// 	for _, pl := range plugins {
+// 		redactPluginConfig(pl.Config)
+// 	}
+// 	c.PureJSON(http.StatusOK, plugins)
+// }
 
 func (a *Handler) Post(c *gin.Context) {
 	context := user.ContextUser(c)
-
+	ctxv2 := storagev2.ParseContext(c)
 	var plugin Plugin
 	if err := c.ShouldBindJSON(&plugin); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 
-	existingPlugin, err := a.Service.FindOne(context, plugin.Name)
+	existingPlugin, err := pluginstorage.GetByName(ctxv2, plugin.Name)
 	if err != nil {
 		log.Errorf("failed retrieving existing plugin, err=%v", err)
 		sentry.CaptureException(err)
@@ -117,6 +119,7 @@ func (a *Handler) Post(c *gin.Context) {
 // Creates or updates envvars config
 func (a *Handler) PutConfig(c *gin.Context) {
 	context := user.ContextUser(c)
+	ctxv2 := storagev2.ParseContext(c)
 	log := user.ContextLogger(c)
 
 	pluginName := c.Param("name")
@@ -129,7 +132,7 @@ func (a *Handler) PutConfig(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
-	existingPlugin, err := a.Service.FindOne(context, pluginName)
+	existingPlugin, err := pluginstorage.GetByName(ctxv2, pluginName)
 	if err != nil {
 		log.Errorf("failed fetching plugin, err=%v", err)
 		sentry.CaptureException(err)
@@ -149,21 +152,31 @@ func (a *Handler) PutConfig(c *gin.Context) {
 	}
 
 	existingPlugin.ConfigID = &pluginConfigID
+	var connectionList []Connection
+	for _, conn := range existingPlugin.Connections {
+		connectionList = append(connectionList, Connection{
+			Id:           conn.ID,
+			ConnectionId: conn.ConnectionID,
+			Name:         conn.Name,
+			Config:       conn.Config,
+			Groups:       nil, // Groups isn't used
+		})
+	}
 	// only envvars is changed in this method
 	newState := parseToV2(&Plugin{
-		OrgId:       existingPlugin.OrgId,
+		OrgId:       existingPlugin.OrgID,
 		Name:        existingPlugin.Name,
-		Connections: existingPlugin.Connections,
+		Connections: connectionList,
 		Config:      &PluginConfig{EnvVars: envVars},
 	})
-	if err := processOnUpdatePluginPhase(a.RegisteredPlugins, parseToV2(existingPlugin), newState); err != nil {
+	if err := processOnUpdatePluginPhase(a.RegisteredPlugins, existingPlugin, newState); err != nil {
 		msg := fmt.Sprintf("failed initializing plugin, reason=%v", err)
 		log.Errorf(msg)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusBadRequest, gin.H{"message": msg})
 		return
 	}
-	if err := a.Service.Persist(context, existingPlugin); err != nil {
+	if err := a.Service.Persist(context, ParseToV1(existingPlugin)); err != nil {
 		log.Errorf("failed updating existing plugin, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating existing plugin"})
@@ -186,10 +199,10 @@ func (a *Handler) PutConfig(c *gin.Context) {
 
 func (a *Handler) Put(c *gin.Context) {
 	context := user.ContextUser(c)
+	ctxv2 := storagev2.ParseContext(c)
 	log := user.ContextLogger(c)
-
 	name := c.Param("name")
-	existingPlugin, err := a.Service.FindOne(context, name)
+	existingPlugin, err := pluginstorage.GetByName(ctxv2, name)
 	if err != nil {
 		log.Errorf("failed fetching plugin, err=%v", err)
 		sentry.CaptureException(err)
@@ -209,10 +222,14 @@ func (a *Handler) Put(c *gin.Context) {
 	}
 
 	// immutable attributes
-	plugin.OrgId = existingPlugin.OrgId
-	plugin.Id = existingPlugin.Id
+	plugin.OrgId = existingPlugin.OrgID
+	plugin.Id = existingPlugin.ID
 	plugin.Name = existingPlugin.Name
-	plugin.Config = existingPlugin.Config
+	plugin.Config = &PluginConfig{
+		ID:      existingPlugin.ID,
+		Org:     existingPlugin.OrgID,
+		EnvVars: existingPlugin.Config.EnvVars,
+	}
 	if existingPlugin.Config != nil {
 		plugin.ConfigID = &existingPlugin.Config.ID
 	}
@@ -225,7 +242,7 @@ func (a *Handler) Put(c *gin.Context) {
 		}
 	}
 
-	if err := processOnUpdatePluginPhase(a.RegisteredPlugins, parseToV2(existingPlugin), parseToV2(&plugin)); err != nil {
+	if err := processOnUpdatePluginPhase(a.RegisteredPlugins, existingPlugin, parseToV2(&plugin)); err != nil {
 		msg := fmt.Sprintf("failed initializing plugin, reason=%v", err)
 		log.Errorf(msg)
 		sentry.CaptureException(err)
@@ -260,6 +277,40 @@ func validatePluginConfig(config *PluginConfig) error {
 		}
 	}
 	return nil
+}
+
+func ParseToV1(p *types.Plugin) *Plugin {
+	p2 := &Plugin{
+		Id:             p.ID,
+		OrgId:          p.OrgID,
+		ConfigID:       p.ConfigID,
+		Config:         nil,
+		Source:         p.Source,
+		Priority:       p.Priority,
+		Name:           p.Name,
+		Connections:    nil,
+		ConnectionsIDs: p.ConnectionsIDs,
+		InstalledById:  p.InstalledById,
+	}
+	if p.Config != nil {
+		p2.Config = &PluginConfig{
+			ID:      p.ID,
+			Org:     p.OrgID,
+			EnvVars: p.Config.EnvVars,
+		}
+	}
+	var connectionList []Connection
+	for _, conn := range p.Connections {
+		connectionList = append(connectionList, Connection{
+			Id:           conn.ID,
+			ConnectionId: conn.ConnectionID,
+			Name:         conn.Name,
+			Config:       conn.Config,
+			Groups:       nil, // isn't used
+		})
+	}
+	p2.Connections = connectionList
+	return p2
 }
 
 func parseToV2(p *Plugin) *types.Plugin {

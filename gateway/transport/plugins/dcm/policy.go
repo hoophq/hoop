@@ -11,7 +11,7 @@ import (
 
 	"github.com/hashicorp/hcl/v2/hclsimple"
 	pb "github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/plugin"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 )
 
@@ -38,7 +38,7 @@ type Policy struct {
 }
 
 // parsePolicyConfig
-func parsePolicyConfig(connectionName string, pl *plugin.Plugin) (*Policy, error) {
+func parsePolicyConfig(connectionName string, pl *types.Plugin) (*Policy, error) {
 	encPolicyConfigData := pl.Config.EnvVars[policyConfigKeyName]
 	if encPolicyConfigData == "" {
 		return nil, errEmptyPolicyConfig

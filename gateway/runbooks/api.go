@@ -303,7 +303,7 @@ func (h *Handler) getRunbookConfig(ctx *user.Context, c *gin.Context, connection
 	var repoPrefix string
 	hasConnection := false
 	for _, conn := range p.Connections {
-		if conn.ConnectionId == connectionID {
+		if conn.ConnectionID == connectionID {
 			if len(conn.Config) > 0 {
 				repoPrefix = conn.Config[0]
 			}

@@ -34,28 +34,59 @@ type DSNContext struct {
 	ClientKeyName string
 }
 
+// type Plugin struct {
+// 	ID             string        `json:"id"           edn:"xt/id"` - OK
+// 	OrgID          string        `json:"-"            edn:"plugin/org"` - OK
+// 	ConfigID       *string       `json:"-"            edn:"plugin/config-id"`
+// 	Config         *PluginConfig `json:"config"       edn:"plugin/config"`
+// 	Source         *string       `json:"source"       edn:"plugin/source"`
+// 	Priority       int           `json:"priority"     edn:"plugin/priority"`
+// 	Name           string        `json:"name"         edn:"plugin/name"          binding:"required"` - OK
+// 	Connections    []Connection  `json:"connections"  edn:"plugin/connections"   binding:"required"`
+// 	ConnectionsIDs []string      `json:"-"            edn:"plugin/connection-ids"`
+// 	InstalledById  string        `json:"-"            edn:"plugin/installed-by"`
+// }
+
+// type ListPlugin struct {
+// 	Plugin
+// 	Connections []string `json:"connections" edn:"plugin/connection-ids"`
+// }
+
 // Plugin for now is an auxiliar type
 // this information should always be derived from gateway/plugin/service.go#Plugin
 type Plugin struct {
-	OrgID       string
-	Name        string
-	Connections []PluginConnection
-	Config      *PluginConfig
+	ID string `json:"id" edn:"xt/id"`
+
+	OrgID       string             `json:"-"           edn:"plugin/org"`
+	Name        string             `json:"name"        edn:"plugin/name"`
+	Connections []PluginConnection `json:"connections" edn:"plugin/connections"`
+	Config      *PluginConfig      `json:"config"       edn:"plugin/config"`
+
+	ConfigID       *string  `json:"-"        edn:"plugin/config-id"`
+	Source         *string  `json:"source"   edn:"plugin/source"`
+	Priority       int      `json:"priority" edn:"plugin/priority"`
+	ConnectionsIDs []string `json:"-"        edn:"plugin/connection-ids"`
+	InstalledById  string   `json:"-"        edn:"plugin/installed-by"`
 }
 
 // PluginConfig for now is an auxiliar type
 // this information should always be derived from gateway/plugin/service.go#PluginConfig
 type PluginConfig struct {
-	EnvVars map[string]string
+	ID    string `json:"id" edn:"xt/id"`
+	OrgID string `json:"-" edn:"pluginconfig/org"`
+
+	EnvVars map[string]string `json:"envvars" edn:"pluginconfig/envvars"`
 }
 
 // PluginConfig for now is an auxiliar type
 // this information should always be derived from gateway/plugin/service.go#Connection
 type PluginConnection struct {
-	ID           string
-	ConnectionID string
-	Name         string
-	Config       []string
+	ID           string   `json:"-"      edn:"xt/id"`
+	ConnectionID string   `json:"id"     edn:"plugin-connection/id"`
+	Name         string   `json:"name"   edn:"plugin-connection/name"`
+	Config       []string `json:"config" edn:"plugin-connection/config"`
+
+	Connection Connection `json:"-" edn:"connection"`
 }
 
 type Login struct {

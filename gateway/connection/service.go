@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/plugin"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	pluginsrbac "github.com/runopsio/hoop/gateway/transport/plugins/accesscontrol"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
@@ -25,7 +26,7 @@ type (
 	}
 
 	pluginService interface {
-		FindOne(context *user.Context, name string) (*plugin.Plugin, error)
+		FindOne(context *user.Context, name string) (*types.Plugin, error)
 		Persist(context *user.Context, plugin *plugin.Plugin) error
 	}
 
@@ -172,10 +173,11 @@ func (s *Service) FindOne(context *user.Context, name string) (*Connection, erro
 }
 
 func (s *Service) bindBasicPlugin(context *user.Context, conn *Connection, pluginName string) {
-	p, err := s.PluginService.FindOne(context, pluginName)
+	pluginv2, err := s.PluginService.FindOne(context, pluginName)
 	if err != nil {
 		return
 	}
+	p := plugin.ParseToV1(pluginv2)
 
 	if p != nil {
 		registered := false
@@ -200,10 +202,11 @@ func (s *Service) bindBasicPlugin(context *user.Context, conn *Connection, plugi
 }
 
 func (s *Service) bindPluginWithConfig(context *user.Context, conn *Connection, pluginName string) {
-	p, err := s.PluginService.FindOne(context, pluginName)
+	pluginv2, err := s.PluginService.FindOne(context, pluginName)
 	if err != nil {
 		return
 	}
+	p := plugin.ParseToV1(pluginv2)
 
 	if p != nil {
 		registered := false
