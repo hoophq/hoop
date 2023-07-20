@@ -161,6 +161,7 @@ func Run() {
 			idProvider),
 		pluginsdcm.New(&plugin.Service{Storage: &plugin.Storage{Storage: s}}),
 	}
+	plugintypes.RegisteredPlugins = g.RegisteredPlugins
 
 	for _, p := range g.RegisteredPlugins {
 		pluginContext := plugintypes.Context{}

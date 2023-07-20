@@ -231,24 +231,23 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest(analytics.EventCreatePlugin),
 		api.AdminOnly,
-		api.PluginHandler.Post)
+		apiplugins.Post)
 	route.PUT("/plugins/:name",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventUdpatePlugin),
 		api.AdminOnly,
-		api.PluginHandler.Put)
+		apiplugins.Put)
 	route.GET("/plugins",
 		api.Authenticate,
 		apiplugins.List)
 	route.GET("/plugins/:name",
 		api.Authenticate,
 		apiplugins.Get)
-
 	route.PUT("/plugins/:name/config",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventUdpatePluginConfig),
 		api.AdminOnly,
-		api.PluginHandler.PutConfig)
+		apiplugins.PutConfig)
 
 	route.GET("/plugins/audit/sessions/:session_id",
 		api.Authenticate,

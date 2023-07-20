@@ -173,10 +173,25 @@ func (a *Handler) Post(c *gin.Context) {
 }
 
 func (a *Handler) Userinfo(c *gin.Context) {
-	ctx, _ := c.Get("context")
-	context := ctx.(*Context)
-
-	c.JSON(http.StatusOK, context.User)
+	context, _ := c.Get("context")
+	ctx := context.(*Context)
+	c.JSON(http.StatusOK, &struct {
+		ID      string     `json:"id"`
+		Name    string     `json:"name"`
+		Email   string     `json:"email"`
+		Status  StatusType `json:"status"`
+		SlackID string     `json:"slack_id"`
+		Groups  []string   `json:"groups"`
+		IsAdmin bool       `json:"is_admin"`
+	}{
+		ID:      ctx.User.Id,
+		Name:    ctx.User.Name,
+		Email:   ctx.User.Email,
+		Status:  ctx.User.Status,
+		SlackID: ctx.User.SlackID,
+		Groups:  ctx.User.Groups,
+		IsAdmin: ctx.User.IsAdmin(),
+	})
 }
 
 func (a *Handler) UsersGroups(c *gin.Context) {

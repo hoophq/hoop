@@ -38,12 +38,12 @@ type Plugin struct {
 	ID             string              `json:"id"          edn:"xt/id"`
 	OrgID          string              `json:"-"           edn:"plugin/org"`
 	Name           string              `json:"name"        edn:"plugin/name"`
-	Connections    []*PluginConnection `json:"connections" edn:"plugin/connections"`
-	Config         *PluginConfig       `json:"config"      edn:"plugin/config"`
+	Connections    []*PluginConnection `json:"connections" edn:"plugin/connections,omitempty"`
+	ConnectionsIDs []string            `json:"-"           edn:"plugin/connection-ids"`
+	Config         *PluginConfig       `json:"config"      edn:"plugin/config,omitempty"`
 	ConfigID       *string             `json:"-"           edn:"plugin/config-id"`
 	Source         *string             `json:"source"      edn:"plugin/source"`
 	Priority       int                 `json:"priority"    edn:"plugin/priority"`
-	ConnectionsIDs []string            `json:"-"           edn:"plugin/connection-ids"`
 	InstalledById  string              `json:"-"           edn:"plugin/installed-by"`
 }
 
@@ -59,7 +59,7 @@ type PluginConnection struct {
 	Name         string   `json:"name"   edn:"plugin-connection/name"`
 	Config       []string `json:"config" edn:"plugin-connection/config"`
 
-	Connection Connection `json:"-" edn:"connection"`
+	Connection Connection `json:"-" edn:"connection,omitempty"`
 }
 
 type Login struct {

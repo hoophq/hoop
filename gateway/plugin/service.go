@@ -123,7 +123,6 @@ func (s *Service) Persist(context *user.Context, plugin *Plugin) error {
 
 	plugin.ConnectionsIDs = connectionIDs
 	plugin.Connections = connConfigs
-
 	_, err := s.Storage.Persist(context, plugin)
 	if err != nil {
 		return err

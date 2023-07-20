@@ -11,6 +11,7 @@ import (
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	connectionstorage "github.com/runopsio/hoop/gateway/storagev2/connection"
+	pluginstorage "github.com/runopsio/hoop/gateway/storagev2/plugin"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 )
 
@@ -58,9 +59,9 @@ func Post(c *gin.Context) {
 			continue
 		}
 		log.Infof("publishing connection %v", connectionName)
-		// TODO: add audit, dlp & indexer
+		connID := uuid.NewString()
 		err := connectionstorage.Put(ctx, &types.Connection{
-			Id:      uuid.NewString(),
+			Id:      connID,
 			OrgId:   dsnCtx.OrgID,
 			Name:    connectionName,
 			Command: []string{"/bin/bash"},
@@ -71,6 +72,8 @@ func Post(c *gin.Context) {
 			// best effort, move on
 			log.Errorf("failed creating connection, err=%v", err)
 			sentry.CaptureException(err)
+		} else {
+			pluginstorage.EnableDefaultPlugins(ctx, connID, connectionName)
 		}
 	}
 	// check if there's a client connection request

@@ -6,9 +6,10 @@ import (
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/plugin"
+	"github.com/runopsio/hoop/gateway/storagev2"
+	pluginstorage "github.com/runopsio/hoop/gateway/storagev2/plugin"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	pluginsrbac "github.com/runopsio/hoop/gateway/transport/plugins/accesscontrol"
-	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
@@ -108,30 +109,8 @@ func (s *Service) Persist(httpMethod string, context *user.Context, c *Connectio
 	}
 
 	if strings.ToUpper(httpMethod) == "POST" {
-		// This automatically sets plugins we
-		// want to be active out of the box
-		// when the connection is created
-		basicPlugins := []string{
-			plugintypes.PluginEditorName,
-			plugintypes.PluginAuditName,
-			plugintypes.PluginIndexName,
-			plugintypes.PluginSlackName,
-		}
-		pluginsWithConfig := []string{
-			plugintypes.PluginDLPName,
-			plugintypes.PluginRunbooksName,
-		}
-
-		// plugins that are simply configured by
-		// the connection name can be passed here
-		for _, plugin := range basicPlugins {
-			s.bindBasicPlugin(context, c, plugin)
-		}
-		// plugins that need to have a
-		// config field are binded here
-		for _, plugin := range pluginsWithConfig {
-			s.bindPluginWithConfig(context, c, plugin)
-		}
+		ctxv2 := storagev2.NewContext(context.User.Id, context.Org.Id, storagev2.NewStorage(nil))
+		pluginstorage.EnableDefaultPlugins(ctxv2, c.Id, c.Name)
 	}
 	return result, nil
 }
@@ -170,65 +149,4 @@ func (s *Service) FindOne(context *user.Context, name string) (*Connection, erro
 	}
 
 	return nil, nil
-}
-
-func (s *Service) bindBasicPlugin(context *user.Context, conn *Connection, pluginName string) {
-	pluginv2, err := s.PluginService.FindOne(context, pluginName)
-	if err != nil {
-		return
-	}
-	p := plugin.ParseToV1(pluginv2)
-
-	if p != nil {
-		registered := false
-		for _, c := range p.Connections {
-			if c.ConnectionId == conn.Id {
-				registered = true
-			}
-		}
-		if !registered {
-			p.Connections = append(p.Connections, plugin.Connection{ConnectionId: conn.Id})
-		}
-	} else {
-		p = &plugin.Plugin{
-			Name:        pluginName,
-			Connections: []plugin.Connection{{ConnectionId: conn.Id}},
-		}
-	}
-
-	if err := s.PluginService.Persist(context, p); err != nil {
-		return
-	}
-}
-
-func (s *Service) bindPluginWithConfig(context *user.Context, conn *Connection, pluginName string) {
-	pluginv2, err := s.PluginService.FindOne(context, pluginName)
-	if err != nil {
-		return
-	}
-	p := plugin.ParseToV1(pluginv2)
-
-	if p != nil {
-		registered := false
-		for _, c := range p.Connections {
-			if c.ConnectionId == conn.Id {
-				registered = true
-			}
-		}
-		if !registered {
-			p.Connections = append(p.Connections, plugin.Connection{
-				ConnectionId: conn.Id,
-				Config:       pb.DefaultInfoTypes,
-			})
-		}
-	} else {
-		p = &plugin.Plugin{
-			Name:        pluginName,
-			Connections: []plugin.Connection{{ConnectionId: conn.Id, Config: pb.DefaultInfoTypes}},
-		}
-	}
-
-	if err := s.PluginService.Persist(context, p); err != nil {
-		return
-	}
 }
