@@ -1,7 +1,9 @@
 package connection
 
 import (
+	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -69,6 +71,9 @@ func (a *Handler) Post(c *gin.Context) {
 	var connection Connection
 	if err := c.ShouldBindJSON(&connection); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	if err := validateConnectionName(c, connection.Name); err != nil {
 		return
 	}
 
@@ -220,4 +225,12 @@ func (h *Handler) RunExec(c *gin.Context) {
 	}
 
 	sessionapi.RunExec(c, newSession, body.ClientArgs)
+}
+
+func validateConnectionName(c *gin.Context, name string) error {
+	if name == "" || strings.Contains(name, "/") {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "connection name must not be empty or contain slash characters"})
+		return io.EOF
+	}
+	return nil
 }

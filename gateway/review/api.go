@@ -6,7 +6,6 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
-	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
 	"olympos.io/encoding/edn"
@@ -14,8 +13,7 @@ import (
 
 type (
 	Handler struct {
-		Service       service
-		PluginService *plugin.Service
+		Service service
 	}
 
 	service interface {

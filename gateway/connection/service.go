@@ -5,18 +5,15 @@ import (
 
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	pluginstorage "github.com/runopsio/hoop/gateway/storagev2/plugin"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
 	pluginsrbac "github.com/runopsio/hoop/gateway/transport/plugins/accesscontrol"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
 type (
 	Service struct {
-		Storage       storage
-		PluginService pluginService
+		Storage storage
 	}
 
 	storage interface {
@@ -24,11 +21,6 @@ type (
 		FindAll(context *user.Context) ([]BaseConnection, error)
 		FindOne(context *user.Context, name string) (*Connection, error)
 		Evict(ctx *user.Context, connectionName string) error
-	}
-
-	pluginService interface {
-		FindOne(context *user.Context, name string) (*types.Plugin, error)
-		Persist(context *user.Context, plugin *plugin.Plugin) error
 	}
 
 	BaseConnection struct {
@@ -60,7 +52,8 @@ func (s *Service) FindAll(context *user.Context) ([]BaseConnection, error) {
 		return nil, err
 	}
 
-	p, err := s.PluginService.FindOne(context, pluginsrbac.Name)
+	ctx := storagev2.NewContext(context.User.Id, context.Org.Id, storagev2.NewStorage(nil))
+	p, err := pluginstorage.GetByName(ctx, pluginsrbac.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +122,8 @@ func (s *Service) FindOne(context *user.Context, name string) (*Connection, erro
 		return nil, nil
 	}
 
-	p, err := s.PluginService.FindOne(context, pluginsrbac.Name)
+	ctx := storagev2.NewContext(context.User.Id, context.Org.Id, storagev2.NewStorage(nil))
+	p, err := pluginstorage.GetByName(ctx, pluginsrbac.Name)
 	if err != nil {
 		return nil, err
 	}

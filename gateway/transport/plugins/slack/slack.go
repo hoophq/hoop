@@ -8,11 +8,11 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
-	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/slack"
 	"github.com/runopsio/hoop/gateway/storagev2"
+	pluginstorage "github.com/runopsio/hoop/gateway/storagev2/plugin"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
@@ -27,7 +27,6 @@ type (
 	slackPlugin struct {
 		reviewSvc   *review.Service
 		userSvc     *user.Service
-		pluginSvc   *plugin.Service
 		idpProvider *idp.Provider
 	}
 )
@@ -53,13 +52,12 @@ func addSlackServiceInstance(orgID string, slackSvc *slack.SlackService) {
 	instances[orgID] = slackSvc
 }
 
-func New(reviewSvc *review.Service, pluginSvc *plugin.Service, userSvc *user.Service, idpProvider *idp.Provider) *slackPlugin {
+func New(reviewSvc *review.Service, userSvc *user.Service, idpProvider *idp.Provider) *slackPlugin {
 	instances = map[string]*slack.SlackService{}
 	mu = sync.RWMutex{}
 	return &slackPlugin{
 		reviewSvc:   reviewSvc,
 		userSvc:     userSvc,
-		pluginSvc:   pluginSvc,
 		idpProvider: idpProvider,
 	}
 }
@@ -108,8 +106,10 @@ func (p *slackPlugin) OnStartup(_ plugintypes.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed listing organizations: %v", err)
 	}
+
 	for _, org := range orgList {
-		pl, err := p.pluginSvc.FindOne(&user.Context{Org: &user.Org{Id: org.Id}}, plugintypes.PluginSlackName)
+		ctx := storagev2.NewOrganizationContext(org.Id, storagev2.NewStorage(nil))
+		pl, err := pluginstorage.GetByName(ctx, plugintypes.PluginSlackName)
 		if err != nil {
 			log.Errorf("failed retrieving plugin entity %v", err)
 			continue

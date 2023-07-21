@@ -24,7 +24,6 @@ import (
 	"github.com/runopsio/hoop/gateway/indexer"
 	"github.com/runopsio/hoop/gateway/jobs"
 	"github.com/runopsio/hoop/gateway/notification"
-	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/runbooks"
 	"github.com/runopsio/hoop/gateway/security"
@@ -85,8 +84,7 @@ func Run() {
 	}
 
 	agentService := agent.Service{Storage: &agent.Storage{Storage: s}}
-	pluginService := plugin.Service{Storage: &plugin.Storage{Storage: s}}
-	connectionService := connection.Service{PluginService: &pluginService, Storage: &connection.Storage{Storage: s}}
+	connectionService := connection.Service{Storage: &connection.Storage{Storage: s}}
 	userService := user.Service{Storage: &user.Storage{Storage: s}}
 	sessionService := session.Service{Storage: &session.Storage{Storage: s}}
 	reviewService := review.Service{Storage: &review.Storage{Storage: s}}
@@ -108,11 +106,11 @@ func Run() {
 		AgentHandler:      agent.Handler{Service: &agentService},
 		ConnectionHandler: connection.Handler{Service: &connectionService},
 		UserHandler:       user.Handler{Service: &userService, Analytics: analyticsService},
-		SessionHandler:    session.Handler{Service: &sessionService, ConnectionService: &connectionService, PluginService: &pluginService},
+		SessionHandler:    session.Handler{Service: &sessionService, ConnectionService: &connectionService},
 		IndexerHandler:    indexer.Handler{},
-		ReviewHandler:     review.Handler{Service: &reviewService, PluginService: &pluginService},
+		ReviewHandler:     review.Handler{Service: &reviewService},
 		SecurityHandler:   security.Handler{Service: &securityService},
-		RunbooksHandler:   runbooks.Handler{PluginService: &pluginService, ConnectionService: &connectionService},
+		RunbooksHandler:   runbooks.Handler{ConnectionService: &connectionService},
 		IDProvider:        idProvider,
 		Profile:           profile,
 		Analytics:         analyticsService,
@@ -125,7 +123,6 @@ func Run() {
 		AgentService:         agentService,
 		ConnectionService:    connectionService,
 		UserService:          userService,
-		PluginService:        pluginService,
 		SessionService:       sessionService,
 		ReviewService:        reviewService,
 		NotificationService:  notificationService,
@@ -149,17 +146,14 @@ func Run() {
 			idProvider.ApiURL,
 		),
 		pluginsaudit.New(),
-		pluginsindex.New(
-			&session.Storage{Storage: s},
-			&plugin.Storage{Storage: s}),
+		pluginsindex.New(&session.Storage{Storage: s}),
 		pluginsdlp.New(),
 		pluginsrbac.New(),
 		pluginsslack.New(
 			&review.Service{Storage: &review.Storage{Storage: s}, TransportService: g},
-			&plugin.Service{Storage: &plugin.Storage{Storage: s}},
 			&user.Service{Storage: &user.Storage{Storage: s}},
 			idProvider),
-		pluginsdcm.New(&plugin.Service{Storage: &plugin.Storage{Storage: s}}),
+		pluginsdcm.New(),
 	}
 	plugintypes.RegisteredPlugins = g.RegisteredPlugins
 
@@ -173,8 +167,6 @@ func Run() {
 			log.Fatalf("failed initializing plugin %s, reason=%v", p.Name(), err)
 		}
 	}
-
-	a.PluginHandler = plugin.Handler{Service: &pluginService, RegisteredPlugins: g.RegisteredPlugins}
 
 	if g.PyroscopeIngestURL != "" && g.PyroscopeAuthToken != "" {
 		log.Infof("starting profiler, ingest-url=%v", g.PyroscopeIngestURL)

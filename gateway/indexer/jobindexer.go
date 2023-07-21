@@ -8,9 +8,11 @@ import (
 	"github.com/runopsio/hoop/common/log"
 
 	"github.com/blevesearch/bleve/v2"
-	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/session"
+	"github.com/runopsio/hoop/gateway/storagev2"
+	pluginstorage "github.com/runopsio/hoop/gateway/storagev2/plugin"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
+	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
@@ -24,7 +26,7 @@ var jobMutex = sync.RWMutex{}
 // downtime in search items in the current index.
 //
 // See also: http://blevesearch.com/docs/IndexAlias/
-func StartJobIndex(sessionStore *session.Storage, pluginStore *plugin.Storage) error {
+func StartJobIndex(sessionStore *session.Storage) error {
 	jobMutex.Lock()
 	defer jobMutex.Unlock()
 	startDate := time.Now().UTC().Add(-defaultIndexPeriod)
@@ -34,7 +36,7 @@ func StartJobIndex(sessionStore *session.Storage, pluginStore *plugin.Storage) e
 	}
 	for orgID, itemList := range sessionsByOrg {
 		orgIDShort := orgID[0:8]
-		validateSessionFn, err := fetchIndexerPlugin(pluginStore, orgID)
+		validateSessionFn, err := fetchIndexerPlugin(orgID)
 		if err != nil {
 			log.Printf("job=index, org=%s - failed fetching indexer plugin, err=%v", orgIDShort, err)
 			return err
@@ -106,8 +108,9 @@ func listAllSessionsID(s *session.Storage, startDate time.Time) (map[string][]st
 
 // fetchPlugin retrieve the indexer plugin for the given org
 // it returns a closure that validates if the session could be processed
-func fetchIndexerPlugin(s *plugin.Storage, orgID string) (func(s *types.Session) bool, error) {
-	plugin, err := s.FindOne(&user.Context{Org: &user.Org{Id: orgID}}, "indexer")
+func fetchIndexerPlugin(orgID string) (func(s *types.Session) bool, error) {
+	ctx := storagev2.NewOrganizationContext(orgID, storagev2.NewStorage(nil))
+	plugin, err := pluginstorage.GetByName(ctx, plugintypes.PluginIndexName)
 	if err != nil {
 		return nil, err
 	}

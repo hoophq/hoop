@@ -23,7 +23,6 @@ import (
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/healthz"
 	"github.com/runopsio/hoop/gateway/indexer"
-	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/runbooks"
 	"github.com/runopsio/hoop/gateway/security"
@@ -39,7 +38,6 @@ type (
 		AgentHandler      agent.Handler
 		ConnectionHandler connection.Handler
 		UserHandler       user.Handler
-		PluginHandler     plugin.Handler
 		SessionHandler    session.Handler
 		IndexerHandler    indexer.Handler
 		ReviewHandler     review.Handler

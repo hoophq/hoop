@@ -13,7 +13,6 @@ import (
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	"github.com/runopsio/hoop/gateway/indexer"
-	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/session"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
@@ -24,23 +23,21 @@ const defaultIndexJobStart = "23:30"
 type (
 	indexPlugin struct {
 		sessionStore    *session.Storage
-		pluginStore     *plugin.Storage
 		indexers        memory.Store
 		walSessionStore memory.Store
 	}
 )
 
-func New(sessionStore *session.Storage, pluginStore *plugin.Storage) *indexPlugin {
+func New(sessionStore *session.Storage) *indexPlugin {
 	p := &indexPlugin{
 		sessionStore:    sessionStore,
-		pluginStore:     pluginStore,
 		indexers:        memory.New(),
 		walSessionStore: memory.New(),
 	}
 	scheduler := gocron.NewScheduler(time.UTC).SingletonMode()
 	scheduler.Every(1).Day().At(defaultIndexJobStart).Do(func() {
 		log.Printf("job=index - starting")
-		if err := indexer.StartJobIndex(p.sessionStore, p.pluginStore); err != nil {
+		if err := indexer.StartJobIndex(p.sessionStore); err != nil {
 			log.Printf("job=index - failed processing, err=%v", err)
 		}
 	})

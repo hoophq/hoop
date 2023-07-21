@@ -22,7 +22,6 @@ import (
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/notification"
-	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/session"
@@ -44,7 +43,6 @@ type (
 		AgentService        agent.Service
 		ConnectionService   connection.Service
 		UserService         user.Service
-		PluginService       plugin.Service
 		SessionService      session.Service
 		ReviewService       review.Service
 		NotificationService notification.Service

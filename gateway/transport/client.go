@@ -15,6 +15,8 @@ import (
 	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
 	"github.com/runopsio/hoop/gateway/analytics"
 	apiconnectionapps "github.com/runopsio/hoop/gateway/api/connectionapps"
+	"github.com/runopsio/hoop/gateway/storagev2"
+	pluginstorage "github.com/runopsio/hoop/gateway/storagev2/plugin"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	pluginsslack "github.com/runopsio/hoop/gateway/transport/plugins/slack"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
@@ -393,29 +395,25 @@ func getInfoTypes(sessionID string) []string {
 func (s *Server) addConnectionParams(clientArgs []string, pctx plugintypes.Context) ([]byte, error) {
 	infoTypes := getInfoTypes(pctx.SID)
 
-	ctx := &user.Context{Org: &user.Org{Id: pctx.OrgID}}
-	plugins, err := s.PluginService.FindAll(ctx)
+	ctx := storagev2.NewOrganizationContext(pctx.OrgID, storagev2.NewStorage(nil))
+	plugins, err := pluginstorage.List(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed loading plugin hooks, err=%v", err)
 	}
 	var pluginHookList []map[string]any
-	for _, pluginItem := range plugins {
-		if pluginItem.Source == nil {
+	for _, pl := range plugins {
+		if pl.Source == nil {
 			continue
 		}
 		var pluginName string
-		for _, conn := range pluginItem.Connections {
+		for _, conn := range pl.Connections {
 			if pctx.ConnectionName == conn.Name {
-				pluginName = pluginItem.Name
+				pluginName = pl.Name
 				break
 			}
 		}
 		if pluginName == "" {
 			continue
-		}
-		pl, err := s.PluginService.FindOne(ctx, pluginName)
-		if err != nil {
-			return nil, fmt.Errorf("failed loading plugin for connection (%v), err=%v", pctx.ConnectionName, err)
 		}
 
 		for _, plConn := range pl.Connections {
@@ -496,8 +494,9 @@ func (s *Server) exchangeUserToken(token string) (string, error) {
 func (s *Server) loadConnectPlugins(ctx *user.Context, pctx plugintypes.Context) ([]pluginConfig, error) {
 	pluginsConfig := make([]pluginConfig, 0)
 	var nonRegisteredPlugins []string
+	ctxv2 := storagev2.NewContext(ctx.User.Id, ctx.Org.Id, storagev2.NewStorage(nil))
 	for _, p := range s.RegisteredPlugins {
-		p1, err := s.PluginService.FindOne(ctx, p.Name())
+		p1, err := pluginstorage.GetByName(ctxv2, p.Name())
 		if err != nil {
 			log.Errorf("failed retrieving plugin %q, err=%v", p.Name(), err)
 			return nil, status.Errorf(codes.Internal, "failed registering plugins")
