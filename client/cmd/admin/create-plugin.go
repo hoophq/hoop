@@ -58,7 +58,7 @@ var createPluginCmd = &cobra.Command{
 		if err != nil {
 			styles.PrintErrorAndExit(err.Error())
 		}
-		pluginConnections, err := parsePluginConnections()
+		pluginConnections, err := parsePluginConnections(apir.conf)
 		if err != nil {
 			styles.PrintErrorAndExit(err.Error())
 		}
@@ -92,7 +92,6 @@ var createPluginCmd = &cobra.Command{
 }
 
 func putConfig(conf *clientconfig.Config, pluginName string, envVars map[string]any) (any, error) {
-	// return nil, nil
 	return httpBodyRequest(&apiResource{
 		suffixEndpoint: fmt.Sprintf("/api/plugins/%v/config", pluginName),
 		method:         "PUT",
@@ -146,8 +145,12 @@ func parsePluginConfig() (map[string]any, error) {
 	return envVar, nil
 }
 
-func parsePluginConnections() ([]map[string]any, error) {
+func parsePluginConnections(conf *clientconfig.Config) ([]map[string]any, error) {
 	connectionConfig := []map[string]any{}
+	connectionMap, err := listConnectionNames(conf)
+	if err != nil {
+		return nil, err
+	}
 	for _, connectionOption := range pluginConnectionFlag {
 		connectionName, configStr, found := strings.Cut(connectionOption, ":")
 		if !found && connectionName == "" {
@@ -163,11 +166,35 @@ func parsePluginConnections() ([]map[string]any, error) {
 			}
 			connConfig = append(connConfig, c)
 		}
+		connID, ok := connectionMap[connectionName]
+		if !ok {
+			return nil, fmt.Errorf("connection %q not found", connectionName)
+		}
 		connectionConfig = append(connectionConfig, map[string]any{
-			"name":   connectionName,
+			"id":     connID,
 			"config": connConfig,
-			"groups": nil, // this is unused in the backend for now
 		})
 	}
 	return connectionConfig, nil
+}
+
+func listConnectionNames(conf *clientconfig.Config) (map[string]string, error) {
+	resp, _, err := httpRequest(&apiResource{
+		suffixEndpoint: "/api/connections",
+		method:         "GET",
+		conf:           conf,
+		decodeTo:       "list"})
+	if err != nil {
+		return nil, err
+	}
+
+	itemList, ok := resp.([]map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("failed decoding response to object, type=%T", resp)
+	}
+	connectionNames := map[string]string{}
+	for _, item := range itemList {
+		connectionNames[fmt.Sprintf("%v", item["name"])] = fmt.Sprintf("%v", item["id"])
+	}
+	return connectionNames, nil
 }

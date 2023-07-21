@@ -5,17 +5,15 @@ import (
 
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
-	"github.com/runopsio/hoop/gateway/plugin"
+	"github.com/runopsio/hoop/gateway/storagev2"
+	pluginstorage "github.com/runopsio/hoop/gateway/storagev2/plugin"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
-	"github.com/runopsio/hoop/gateway/user"
 )
 
-type dcm struct {
-	pluginSvc *plugin.Service
-}
+type dcm struct{}
 
-func New(pluginSvc *plugin.Service) *dcm             { return &dcm{pluginSvc: pluginSvc} }
+func New() *dcm                                      { return &dcm{} }
 func (p *dcm) Name() string                          { return plugintypes.PluginDatabaseCredentialsManagerName }
 func (p *dcm) OnStartup(_ plugintypes.Context) error { return nil }
 func (p *dcm) OnUpdate(_, _ *types.Plugin) error     { return nil }
@@ -24,7 +22,8 @@ func (p *dcm) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.
 	if pkt.Type != pbagent.SessionOpen {
 		return nil, nil
 	}
-	pl, err := p.pluginSvc.FindOne(user.NewContext(pctx.OrgID, pctx.UserID), p.Name())
+	ctx := storagev2.NewContext(pctx.UserID, pctx.OrgID, storagev2.NewStorage(nil))
+	pl, err := pluginstorage.GetByName(ctx, p.Name())
 	if err != nil {
 		return nil, plugintypes.InternalErr("failed fetching database credentials manager plugin", err)
 	}

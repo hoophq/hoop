@@ -15,8 +15,10 @@ import (
 	"github.com/runopsio/hoop/gateway/clientexec"
 	"github.com/runopsio/hoop/gateway/runbooks/templates"
 	"github.com/runopsio/hoop/gateway/storagev2"
+	pluginstorage "github.com/runopsio/hoop/gateway/storagev2/plugin"
 	sessionStorage "github.com/runopsio/hoop/gateway/storagev2/session"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
+	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
@@ -56,17 +58,16 @@ type Service struct {
 }
 
 type Handler struct {
-	PluginService     pluginService
 	ConnectionService connectionService
 
 	scanedKnownHosts bool
 }
 
 func (h *Handler) ListByConnection(c *gin.Context) {
-	ctx := user.ContextUser(c)
+	ctx := storagev2.ParseContext(c)
 	log := user.ContextLogger(c)
 	connectionName := c.Param("name")
-	p, err := h.PluginService.FindOne(ctx, "runbooks")
+	p, err := pluginstorage.GetByName(ctx, plugintypes.PluginRunbooksName)
 	if err != nil {
 		log.Error(err)
 		sentry.CaptureException(err)
@@ -114,7 +115,7 @@ func (h *Handler) ListByConnection(c *gin.Context) {
 }
 
 func (h *Handler) List(c *gin.Context) {
-	ctx := user.ContextUser(c)
+	ctx := storagev2.ParseContext(c)
 	log := user.ContextLogger(c)
 	if !h.scanedKnownHosts {
 		knownHostsFilePath, err := templates.SSHKeyScan()
@@ -130,7 +131,7 @@ func (h *Handler) List(c *gin.Context) {
 		h.scanedKnownHosts = true
 	}
 
-	p, err := h.PluginService.FindOne(ctx, "runbooks")
+	p, err := pluginstorage.GetByName(ctx, plugintypes.PluginRunbooksName)
 	if err != nil {
 		log.Error(err)
 		sentry.CaptureException(err)
@@ -289,7 +290,8 @@ func (h *Handler) getRunbookConfig(ctx *user.Context, c *gin.Context, connection
 	if err != nil {
 		return nil, "", err
 	}
-	p, err := h.PluginService.FindOne(ctx, "runbooks")
+	ctxv2 := storagev2.NewContext(ctx.User.Id, ctx.Org.Id, storagev2.NewStorage(nil))
+	p, err := pluginstorage.GetByName(ctxv2, plugintypes.PluginRunbooksName)
 	if err != nil {
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError,

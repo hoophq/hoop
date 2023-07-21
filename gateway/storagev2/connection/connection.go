@@ -67,6 +67,34 @@ func ListConnectionsByList(ctx *storage.Context, connectionNameList []string) (m
 	return itemMap, nil
 }
 
+func ConnectionsMapByID(ctx *storage.Context, connectionIDList []string) (map[string]types.Connection, error) {
+	var ednColBinding string
+	for _, connID := range connectionIDList {
+		ednColBinding += fmt.Sprintf("%q ", connID)
+	}
+	payload := fmt.Sprintf(`{:query {
+		:find [(pull ?c [*])]
+		:in [org [connections ...]]
+		:where [[?c :connection/org org]
+				[?c :xt/id connections]]}
+		:in-args [%q [%v]]}`, ctx.OrgID, ednColBinding)
+
+	ednData, err := ctx.Query(payload)
+	if err != nil {
+		return nil, err
+	}
+	var connectionItems [][]types.Connection
+	if err := edn.Unmarshal(ednData, &connectionItems); err != nil {
+		return nil, err
+	}
+
+	itemMap := map[string]types.Connection{}
+	for _, conn := range connectionItems {
+		itemMap[conn[0].Id] = conn[0]
+	}
+	return itemMap, nil
+}
+
 func GetEntity(ctx *storage.Context, xtID string) (*types.Connection, error) {
 	data, err := ctx.GetEntity(xtID)
 	if err != nil {

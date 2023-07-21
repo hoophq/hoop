@@ -23,7 +23,6 @@ import (
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/healthz"
 	"github.com/runopsio/hoop/gateway/indexer"
-	"github.com/runopsio/hoop/gateway/plugin"
 	"github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/runbooks"
 	"github.com/runopsio/hoop/gateway/security"
@@ -39,7 +38,6 @@ type (
 		AgentHandler      agent.Handler
 		ConnectionHandler connection.Handler
 		UserHandler       user.Handler
-		PluginHandler     plugin.Handler
 		SessionHandler    session.Handler
 		IndexerHandler    indexer.Handler
 		ReviewHandler     review.Handler
@@ -231,24 +229,23 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest(analytics.EventCreatePlugin),
 		api.AdminOnly,
-		api.PluginHandler.Post)
+		apiplugins.Post)
 	route.PUT("/plugins/:name",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventUdpatePlugin),
 		api.AdminOnly,
-		api.PluginHandler.Put)
+		apiplugins.Put)
 	route.GET("/plugins",
 		api.Authenticate,
 		apiplugins.List)
 	route.GET("/plugins/:name",
 		api.Authenticate,
 		apiplugins.Get)
-
 	route.PUT("/plugins/:name/config",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventUdpatePluginConfig),
 		api.AdminOnly,
-		api.PluginHandler.PutConfig)
+		apiplugins.PutConfig)
 
 	route.GET("/plugins/audit/sessions/:session_id",
 		api.Authenticate,

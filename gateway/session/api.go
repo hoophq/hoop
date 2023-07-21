@@ -13,7 +13,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/gateway/clientexec"
 	"github.com/runopsio/hoop/gateway/connection"
-	"github.com/runopsio/hoop/gateway/plugin"
+	"github.com/runopsio/hoop/gateway/storagev2"
+	pluginstorage "github.com/runopsio/hoop/gateway/storagev2/plugin"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
@@ -23,7 +24,6 @@ type (
 	Handler struct {
 		Service           service
 		ConnectionService *connection.Service
-		PluginService     *plugin.Service
 	}
 	SessionOptionKey string
 	SessionOption    struct {
@@ -179,6 +179,7 @@ func getAccessToken(c *gin.Context) string {
 
 // TODO: Refactor to use sessionapi.RunExec
 func (h *Handler) RunReviewedExec(c *gin.Context) {
+	ctxv2 := storagev2.ParseContext(c)
 	ctx := user.ContextUser(c)
 	log := user.ContextLogger(c)
 
@@ -240,17 +241,20 @@ func (h *Handler) RunReviewedExec(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, &clientexec.ExecErrResponse{Message: "review not approved or already executed"})
 		return
 	}
-	p, err := h.PluginService.FindOne(ctx, plugintypes.PluginReviewName)
+
+	p, err := pluginstorage.GetByName(ctxv2, plugintypes.PluginReviewName)
 	if err != nil {
 		log.Errorf("failed obtaining review plugin, err=%v", err)
 		c.JSON(http.StatusInternalServerError, &clientexec.ExecErrResponse{Message: "failed retrieving review plugin"})
 		return
 	}
 	hasReviewPlugin := false
-	for _, conn := range p.Connections {
-		if conn.Name == review.Connection.Name {
-			hasReviewPlugin = true
-			break
+	if p != nil {
+		for _, conn := range p.Connections {
+			if conn.Name == review.Connection.Name {
+				hasReviewPlugin = true
+				break
+			}
 		}
 	}
 

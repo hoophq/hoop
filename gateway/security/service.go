@@ -154,6 +154,7 @@ func (s *Service) Callback(c *gin.Context, state, code string) string {
 			}
 		case []any:
 			context.User.Groups = mapGroupsToString(groupsClaim)
+		case nil: // noop
 		default:
 			log.Warnf("failed syncing group claims, reason=unknown type:%T", groupsClaim)
 		}
