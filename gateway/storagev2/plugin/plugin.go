@@ -68,7 +68,7 @@ func GetByName(ctx *storagev2.Context, name string) (*types.Plugin, error) {
             :plugin/source
             :plugin/priority
             :plugin/installed-by
-			:plugin/config-id
+            :plugin/config-id
             :plugin/connection-ids
             {(:plugin/config-id {:as :plugin/config}) [:xt/id :pluginconfig/envvars]}
             {(:plugin/connection-ids {:as :plugin/connections}) 
@@ -119,7 +119,7 @@ func List(ctx *storagev2.Context) ([]types.Plugin, error) {
             :plugin/source
             :plugin/priority
             :plugin/installed-by
-			:plugin/config-id
+            :plugin/config-id
             :plugin/connection-ids
             {(:plugin/config-id {:as :plugin/config}) [:xt/id :pluginconfig/envvars]}
             {(:plugin/connection-ids {:as :plugin/connections}) 
