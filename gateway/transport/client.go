@@ -80,7 +80,7 @@ func getPlugins(sessionID string) []pluginConfig {
 	return cc.plugins[sessionID]
 }
 
-func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string) error {
+func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 	ctx := stream.Context()
 	md, _ := metadata.FromIncomingContext(ctx)
 
@@ -89,18 +89,14 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	clientVerb := mdget(md, "verb")
 	clientOrigin := mdget(md, "origin")
 
-	sub, err := s.exchangeUserToken(token)
+	var apiCtx types.APIContext
+	err := parseAuthContextInto(ctx, &apiCtx)
 	if err != nil {
-		log.Debugf("failed verifying access token, reason=%v", err)
-		return status.Errorf(codes.Unauthenticated, "invalid authentication")
+		log.Error(err)
+		return err
 	}
 
-	userCtx, err := s.UserService.FindBySub(sub)
-	if err != nil || userCtx.User == nil {
-		return status.Errorf(codes.Unauthenticated, "invalid authentication")
-	}
-
-	conn, err := s.ConnectionService.FindOne(userCtx, connectionName)
+	conn, err := s.ConnectionService.FindOne(parseToLegacyUserContext(&apiCtx), connectionName)
 	if err != nil {
 		sentry.CaptureException(err)
 		return status.Errorf(codes.Internal, err.Error())
@@ -112,7 +108,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 
 	// it's an sidecar agent connection, request agent to connect
 	if conn.AgentId == conn.Name && !hasAgentStream(conn.AgentId) {
-		log.With("user", userCtx.User.Email).Infof("requesting connection with remote agent %s", connectionName)
+		log.With("user", apiCtx.UserEmail).Infof("requesting connection with remote agent %s", connectionName)
 		err = apiconnectionapps.RequestGrpcConnection(connectionName, hasAgentStream)
 		if err != nil {
 			log.Warnf("%v %v", err, connectionName)
@@ -130,7 +126,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	sessionLabels := map[string]string{}
 
 	if sessionID != "" {
-		session, err := s.SessionService.FindOne(userCtx, sessionID)
+		session, err := s.SessionService.FindOne(parseToLegacyUserContext(&apiCtx), sessionID)
 		if err != nil {
 			log.Errorf("Failed getting the session, err=%v", err)
 			sentry.CaptureException(err)
@@ -152,11 +148,11 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		Context: context.Background(),
 		SID:     sessionID,
 
-		OrgID:      userCtx.Org.Id,
-		UserID:     userCtx.User.Id,
-		UserName:   userCtx.User.Name,
-		UserEmail:  userCtx.User.Email,
-		UserGroups: userCtx.User.Groups,
+		OrgID:      apiCtx.OrgID,
+		UserID:     apiCtx.UserID,
+		UserName:   apiCtx.UserName,
+		UserEmail:  apiCtx.UserEmail,
+		UserGroups: apiCtx.UserGroups,
 
 		ConnectionID:      conn.Id,
 		ConnectionName:    conn.Name,
@@ -202,7 +198,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		}
 		_ = s.pluginOnDisconnect(pluginContext, err)
 	})
-	plugins, err := s.loadConnectPlugins(userCtx, pluginContext)
+	plugins, err := s.loadConnectPlugins(&apiCtx, pluginContext)
 	bindClient(sessionID, stream, plugins)
 	if err != nil {
 		s.disconnectClient(sessionID, err)
@@ -213,7 +209,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 	if clientVerb == pb.ClientVerbConnect {
 		eventName = analytics.EventGrpcConnect
 	}
-	s.Analytics.Track(userCtx.ToAPIContext(), eventName, map[string]any{
+	s.Analytics.Track(&apiCtx, eventName, map[string]any{
 		"session-id":      sessionID,
 		"connection-name": connectionName,
 		"connection-type": conn.Type,
@@ -228,7 +224,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 
 	log.With("session", sessionID).
 		Infof("proxy connected: user=%v,hostname=%v,origin=%v,verb=%v,platform=%v,version=%v,goversion=%v",
-			userCtx.User.Email, mdget(md, "hostname"), clientOrigin, clientVerb,
+			apiCtx.UserEmail, mdget(md, "hostname"), clientOrigin, clientVerb,
 			mdget(md, "platform"), mdget(md, "version"), mdget(md, "goversion"))
 	s.trackSessionStatus(sessionID, pb.SessionPhaseClientConnected, nil)
 	clientErr := s.listenClientMessages(stream, pluginContext)
@@ -491,10 +487,10 @@ func (s *Server) exchangeUserToken(token string) (string, error) {
 	return sub, nil
 }
 
-func (s *Server) loadConnectPlugins(ctx *user.Context, pctx plugintypes.Context) ([]pluginConfig, error) {
+func (s *Server) loadConnectPlugins(ctx *types.APIContext, pctx plugintypes.Context) ([]pluginConfig, error) {
 	pluginsConfig := make([]pluginConfig, 0)
 	var nonRegisteredPlugins []string
-	ctxv2 := storagev2.NewContext(ctx.User.Id, ctx.Org.Id, storagev2.NewStorage(nil))
+	ctxv2 := storagev2.NewContext(ctx.UserID, ctx.OrgID, storagev2.NewStorage(nil))
 	for _, p := range s.RegisteredPlugins {
 		p1, err := pluginstorage.GetByName(ctxv2, p.Name())
 		if err != nil {

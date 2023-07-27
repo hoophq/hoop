@@ -36,7 +36,7 @@ export AGENT_SENTRY_DSN=
 export STATIC_UI_PATH=../webapp/resources/public/
 mkdir -p $HOME/.hoop/bin/
 go build -o $HOME/.hoop/bin/hoop client/hoop.go
-$HOME/.hoop/bin/hoop start gateway &
+$HOME/.hoop/bin/hoop start gateway --listen-admin-addr '0.0.0.0:8099' &
 
 unset PORT XTDB_ADDRESS PLUGIN_AUDIT_PATH
 

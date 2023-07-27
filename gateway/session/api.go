@@ -273,7 +273,13 @@ func (h *Handler) RunReviewedExec(c *gin.Context) {
 	}
 
 	// TODO use the new RunExec here
-	client, err := clientexec.New(ctx.Org.Id, getAccessToken(c), session.Connection, session.ID)
+	client, err := clientexec.New(&clientexec.Options{
+		OrgID:          ctx.Org.Id,
+		SessionID:      session.ID,
+		ConnectionName: session.Connection,
+		BearerToken:    getAccessToken(c),
+		UserInfo:       nil,
+	})
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"session_id": nil, "message": err.Error()})
 		return

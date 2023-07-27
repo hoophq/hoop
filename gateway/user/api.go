@@ -176,21 +176,23 @@ func (a *Handler) Userinfo(c *gin.Context) {
 	context, _ := c.Get("context")
 	ctx := context.(*Context)
 	c.JSON(http.StatusOK, &struct {
-		ID      string     `json:"id"`
-		Name    string     `json:"name"`
-		Email   string     `json:"email"`
-		Status  StatusType `json:"status"`
-		SlackID string     `json:"slack_id"`
-		Groups  []string   `json:"groups"`
-		IsAdmin bool       `json:"is_admin"`
+		ID            string     `json:"id"`
+		Name          string     `json:"name"`
+		Email         string     `json:"email"`
+		Status        StatusType `json:"status"`
+		SlackID       string     `json:"slack_id"`
+		Groups        []string   `json:"groups"`
+		IsAdmin       bool       `json:"is_admin"`
+		IsMultiTenant bool       `json:"is_multitenant"`
 	}{
-		ID:      ctx.User.Id,
-		Name:    ctx.User.Name,
-		Email:   ctx.User.Email,
-		Status:  ctx.User.Status,
-		SlackID: ctx.User.SlackID,
-		Groups:  ctx.User.Groups,
-		IsAdmin: ctx.User.IsAdmin(),
+		ID:            ctx.User.Id,
+		Name:          ctx.User.Name,
+		Email:         ctx.User.Email,
+		Status:        ctx.User.Status,
+		SlackID:       ctx.User.SlackID,
+		Groups:        ctx.User.Groups,
+		IsAdmin:       ctx.User.IsAdmin(),
+		IsMultiTenant: IsOrgMultiTenant(),
 	})
 }
 

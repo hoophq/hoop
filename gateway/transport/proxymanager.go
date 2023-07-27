@@ -32,32 +32,29 @@ import (
 //
 // In order for this to work properly, a grpc-client must be always connected, otherwise
 // the API will fail to manage connections.
-func (s *Server) proxyManager(stream pb.Transport_ConnectServer, token string) error {
+func (s *Server) proxyManager(stream pb.Transport_ConnectServer) error {
 	ctx := stream.Context()
 	md, _ := metadata.FromIncomingContext(ctx)
 	clientOrigin := mdget(md, "origin")
 	// TODO: validate origin
 
-	sub, err := s.exchangeUserToken(token)
+	var userCtx types.APIContext
+	err := parseAuthContextInto(ctx, &userCtx)
 	if err != nil {
-		log.Debugf("failed verifying access token, reason=%v", err)
-		return status.Errorf(codes.Unauthenticated, "invalid authentication")
-	}
-
-	userCtx, err := s.UserService.FindBySub(sub)
-	if err != nil || userCtx.User == nil {
-		return status.Errorf(codes.Unauthenticated, "invalid authentication")
+		log.Error(err)
+		return err
 	}
 	if err := stream.Send(&pb.Packet{Type: pbclient.ProxyManagerConnectOK}); err != nil {
 		return err
 	}
 	log.Infof("proxymanager - client connected")
-	storectx := storagev2.NewContext(userCtx.User.Id, userCtx.Org.Id, s.StoreV2).
+	storectx := storagev2.NewContext(userCtx.UserID, userCtx.OrgID, s.StoreV2).
+		WithOrgName(userCtx.OrgName).
 		WithUserInfo(
-			userCtx.User.Name,
-			userCtx.User.Email,
-			string(userCtx.User.Status),
-			userCtx.User.Groups)
+			userCtx.UserName,
+			userCtx.UserEmail,
+			string(userCtx.UserStatus),
+			userCtx.UserGroups)
 	sessionID := uuid.NewString()
 	err = s.listenProxyManagerMessages(sessionID, storectx, stream)
 	if status, ok := status.FromError(err); ok && status.Code() == codes.Canceled {
@@ -192,7 +189,7 @@ func (s *Server) listenProxyManagerMessages(sessionID string, ctx *storagev2.Con
 				})
 
 				// On Connect Phase Plugin
-				plugins, err := s.loadConnectPlugins(storageCtxToUser(ctx), pctx)
+				plugins, err := s.loadConnectPlugins(ctx.APIContext, pctx)
 				bindClient(sessionID, stream, plugins)
 				if err != nil {
 					disp.sendResponse(nil, err)
