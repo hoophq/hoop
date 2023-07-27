@@ -80,7 +80,7 @@ func getPlugins(sessionID string) []pluginConfig {
 	return cc.plugins[sessionID]
 }
 
-func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string) error {
+func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 	ctx := stream.Context()
 	md, _ := metadata.FromIncomingContext(ctx)
 
