@@ -22,22 +22,22 @@ type ExecRequest struct {
 }
 
 type ExecResponse struct {
-	SessionID string `json:"session_id"`
-	ExitCode  *int   `json:"exit_code"`
-	Message   string `json:"message"`
+	SessionID *string `json:"session_id"`
+	ExitCode  *int    `json:"exit_code"`
+	Message   string  `json:"message"`
 }
 
 func execPost(c *gin.Context) {
 	var req ExecRequest
 	err := c.ShouldBindJSON(&req)
 	if err != nil {
-		c.PureJSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		c.PureJSON(http.StatusBadRequest, gin.H{"message": &ExecResponse{Message: err.Error()}})
 		return
 	}
 	if req.InputEncoding == "base64" {
 		input, err := base64.StdEncoding.DecodeString(req.Input)
 		if err != nil {
-			c.PureJSON(http.StatusBadRequest, gin.H{"message": "failed decoding (base64) input"})
+			c.PureJSON(http.StatusBadRequest, &ExecResponse{Message: "failed decoding (base64) input"})
 			return
 		}
 		req.Input = string(input)
@@ -58,7 +58,7 @@ func execPost(c *gin.Context) {
 		UserInfo:       &req.UserInfo,
 	})
 	if err != nil {
-		c.PureJSON(http.StatusBadRequest, gin.H{"session_id": nil, "message": err.Error()})
+		c.PureJSON(http.StatusBadRequest, &ExecResponse{Message: err.Error()})
 		return
 	}
 	clientResp := make(chan *clientexec.Response)
@@ -81,7 +81,7 @@ func execPost(c *gin.Context) {
 			resp.GetExitCode(), resp.Truncated, len(resp.ErrorMessage()))
 		if resp.IsError() {
 			c.PureJSON(http.StatusBadRequest, &ExecResponse{
-				SessionID: resp.SessionID,
+				SessionID: &resp.SessionID,
 				Message:   resp.ErrorMessage(),
 				ExitCode:  resp.ExitCode,
 			})
@@ -100,9 +100,9 @@ func execPost(c *gin.Context) {
 func validateExecRequest(req ExecRequest, c *gin.Context) error {
 	u := req.UserInfo
 	if u.OrgID == "" || u.UserID == "" || u.UserEmail == "" {
-		c.PureJSON(http.StatusBadRequest, gin.H{
-			"session_id": nil,
-			"message":    "missing required user_info request attributes"})
+		c.PureJSON(http.StatusBadRequest,
+			&ExecResponse{Message: "missing required user_info request attributes"},
+		)
 		return io.EOF
 	}
 	return nil
