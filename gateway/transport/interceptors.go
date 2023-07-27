@@ -22,8 +22,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-var adminApiSharedKey string
-
 type wrappedStream struct {
 	grpc.ServerStream
 
@@ -151,7 +149,6 @@ func (s *Server) AuthGrpcInterceptor(srv any, ss grpc.ServerStream, info *grpc.S
 		ctxVal = userCtx.ToAPIContext()
 	}
 
-	// if adminApiSharedKey != "" && adminApiSharedKey
 	return handler(srv, &wrappedStream{ss, nil, ctxVal})
 }
 

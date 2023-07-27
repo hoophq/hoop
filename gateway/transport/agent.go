@@ -99,21 +99,6 @@ func (s *Server) subscribeAgentSidecar(stream pb.Transport_ConnectServer) error 
 		log.Error(err)
 		return err
 	}
-	// clientKey, err := clientkeysstorage.ValidateDSN(s.StoreV2, dsn)
-	// if err != nil {
-	// 	log.Error("failed validating dsn, err=%v", err)
-	// 	sentry.CaptureException(err)
-	// 	return status.Errorf(codes.Internal, "failed validating dsn")
-	// }
-	// switch {
-	// case err != nil:
-	// 	log.Errorf("failed validating dsn authentication, err=%v", err)
-	// 	return status.Errorf(codes.Internal, "failed validating authentication")
-	// case clientKey == nil:
-	// 	md.Delete("authorization")
-	// 	log.Debugf("invalid agent authentication, tokenlength=%v, client-metadata=%v", len(dsn), md)
-	// 	return status.Errorf(codes.Unauthenticated, "invalid authentication")
-	// }
 
 	var agentID string
 	// connection-name header is keep for compatibility with old agents
@@ -190,13 +175,6 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer) error {
 		log.Error(err)
 		return err
 	}
-
-	// ag, err := s.AgentService.FindByToken(token)
-	// if err != nil || ag == nil {
-	// 	md.Delete("authorization")
-	// 	log.Debugf("invalid agent authentication, tokenlength=%v, client-metadata=%v", len(token), md)
-	// 	return status.Errorf(codes.Unauthenticated, "invalid authentication")
-	// }
 	orgName, _ := s.UserService.GetOrgNameByID(ag.OrgId)
 
 	setAgentClientMetdata(&ag, md)

@@ -44,16 +44,6 @@ func (s *Server) proxyManager(stream pb.Transport_ConnectServer) error {
 		log.Error(err)
 		return err
 	}
-	// sub, err := s.exchangeUserToken(token)
-	// if err != nil {
-	// 	log.Debugf("failed verifying access token, reason=%v", err)
-	// 	return status.Errorf(codes.Unauthenticated, "invalid authentication")
-	// }
-
-	// userCtx, err := s.UserService.FindBySub(sub)
-	// if err != nil || userCtx.User == nil {
-	// 	return status.Errorf(codes.Unauthenticated, "invalid authentication")
-	// }
 	if err := stream.Send(&pb.Packet{Type: pbclient.ProxyManagerConnectOK}); err != nil {
 		return err
 	}

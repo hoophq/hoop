@@ -96,17 +96,6 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer, token string
 		return err
 	}
 
-	// sub, err := s.exchangeUserToken(token)
-	// if err != nil {
-	// 	log.Debugf("failed verifying access token, reason=%v", err)
-	// 	return status.Errorf(codes.Unauthenticated, "invalid authentication")
-	// }
-
-	// userCtx, err := s.UserService.FindBySub(sub)
-	// if err != nil || userCtx.User == nil {
-	// 	return status.Errorf(codes.Unauthenticated, "invalid authentication")
-	// }
-
 	conn, err := s.ConnectionService.FindOne(parseToLegacyUserContext(&apiCtx), connectionName)
 	if err != nil {
 		sentry.CaptureException(err)
