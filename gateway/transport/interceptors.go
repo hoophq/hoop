@@ -71,8 +71,7 @@ func parseAuthContextInto(ctx context.Context, into any) error {
 }
 
 func (s *Server) AuthGrpcInterceptor(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	log.Infof("auth grpc middleware: %v", info.FullMethod)
-
+	log.Debugf("auth grpc interceptor, method=%v", info.FullMethod)
 	md, ok := metadata.FromIncomingContext(ss.Context())
 	if !ok {
 		return status.Error(codes.InvalidArgument, "missing context metadata")
