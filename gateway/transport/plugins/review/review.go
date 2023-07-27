@@ -50,7 +50,6 @@ func (r *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 
 	otrev, err := r.reviewSvc.FindBySessionID(userContext, pctx.SID)
 	if err != nil {
-		err = fmt.Errorf("hala big bonga")
 		log.With("session", pctx.SID).Error("failed fetching session, err=%v", err)
 		return nil, plugintypes.InternalErr("failed fetching review", err)
 	}

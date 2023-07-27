@@ -16,17 +16,17 @@ type TxResponse struct {
 }
 
 type APIContext struct {
-	OrgID   string
-	OrgName string
-	UserID  string
+	OrgID      string   `json:"org_id"`
+	OrgName    string   `json:"org_name"`
+	UserID     string   `json:"user_id"`
+	UserName   string   `json:"user_name"`
+	UserEmail  string   `json:"user_email"`
+	UserGroups []string `json:"user_groups"`
+	UserStatus string   `json:"user_status"`
+	SlackID    string   `json:"slack_id"`
 
-	UserName   string
-	UserEmail  string
-	UserGroups []string
-	UserStatus string
-
-	ApiURL  string
-	GrpcURL string
+	ApiURL  string `json:"-"`
+	GrpcURL string `json:"-"`
 }
 
 type DSNContext struct {

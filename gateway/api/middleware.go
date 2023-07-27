@@ -50,7 +50,7 @@ func (api *Api) Authenticate(c *gin.Context) {
 			WithUserInfo(ctx.User.Name, ctx.User.Email, string(ctx.User.Status), ctx.User.Groups).
 			WithOrgName(ctx.Org.Name).
 			WithApiURL(api.IDProvider.ApiURL).
-			WithGrpcURL(api.IDProvider.ApiURL),
+			WithGrpcURL(api.GrpcURL),
 	)
 	c.Set(user.ContextUserKey, ctx)
 	c.Next()

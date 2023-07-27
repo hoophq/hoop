@@ -124,11 +124,13 @@ func (s *Server) StartRPCServer() {
 	}
 	var grpcServer *grpc.Server
 	if tlsConfig != nil {
-		tlsCredentials := credentials.NewTLS(tlsConfig)
-		grpcServer = grpc.NewServer(grpc.Creds(tlsCredentials))
+		grpcServer = grpc.NewServer(
+			grpc.Creds(credentials.NewTLS(tlsConfig)),
+			grpc.StreamInterceptor(s.AuthGrpcInterceptor),
+		)
 	}
 	if grpcServer == nil {
-		grpcServer = grpc.NewServer()
+		grpcServer = grpc.NewServer(grpc.StreamInterceptor(s.AuthGrpcInterceptor))
 	}
 	pb.RegisterTransportServer(grpcServer, s)
 	s.handleGracefulShutdown()
@@ -151,41 +153,19 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 	}
 
 	origin := o[0]
-
-	if s.Profile == pb.DevProfile {
-		token = "x-hooper-test-token"
-		if origin == pb.ConnectionOriginAgent {
-			token = "x-agt-test-token"
-		}
-	} else {
-		t := md.Get("authorization")
-		if len(t) == 0 {
-			log.Debugf("missing authorization header, client-metadata=%v", md)
-			return status.Error(codes.Unauthenticated, "invalid authentication")
-		}
-
-		tokenValue := t[0]
-		tokenParts := strings.Split(tokenValue, " ")
-		if len(tokenParts) != 2 || tokenParts[0] != "Bearer" || tokenParts[1] == "" {
-			log.Debugf("authorization header in wrong format, client-metadata=%v", md)
-			return status.Error(codes.Unauthenticated, "invalid authentication")
-		}
-
-		token = tokenParts[1]
-	}
-
 	switch origin {
 	case pb.ConnectionOriginAgent:
 		// keep compatibility with old clients
 		// hoopagent/sdk or hoopagent/sidecar
 		if strings.HasPrefix(mdget(md, "user-agent"), "hoopagent/s") {
-			return s.subscribeAgentSidecar(stream, token)
+			return s.subscribeAgentSidecar(stream)
 		}
-		return s.subscribeAgent(stream, token)
+		return s.subscribeAgent(stream)
 	case pb.ConnectionOriginClientProxyManager:
-		return s.proxyManager(stream, token)
+		return s.proxyManager(stream)
+	default:
+		return s.subscribeClient(stream, token)
 	}
-	return s.subscribeClient(stream, token)
 }
 
 func (s *Server) ValidateConfiguration() error {

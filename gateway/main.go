@@ -35,6 +35,8 @@ import (
 	"github.com/runopsio/hoop/gateway/user"
 
 	// plugins
+
+	"github.com/runopsio/hoop/gateway/transport/adminapi"
 	pluginsrbac "github.com/runopsio/hoop/gateway/transport/plugins/accesscontrol"
 	pluginsaudit "github.com/runopsio/hoop/gateway/transport/plugins/audit"
 	pluginsdcm "github.com/runopsio/hoop/gateway/transport/plugins/dcm"
@@ -45,7 +47,7 @@ import (
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 )
 
-func Run() {
+func Run(listenAdmAddr string) {
 	ver := version.Get()
 	log.Infof("version=%s, compiler=%s, go=%s, platform=%s, commit=%s, multitenant=%v, build-date=%s",
 		ver.Version, ver.Compiler, ver.GoVersion, ver.Platform, ver.GitCommit, user.IsOrgMultiTenant(), ver.BuildDate)
@@ -208,6 +210,7 @@ func Run() {
 
 	log.Infof("profile=%v - starting servers", profile)
 	go g.StartRPCServer()
+	go adminapi.RunServer(listenAdmAddr)
 	a.StartAPI(sentryStarted)
 }
 

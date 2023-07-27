@@ -15,7 +15,7 @@ import (
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
 	"github.com/runopsio/hoop/gateway/agent"
-	clientkeysstorage "github.com/runopsio/hoop/gateway/storagev2/clientkeys"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -89,24 +89,31 @@ func normalizeAgentID(prefix string, connectionItems []string) string {
 	return strings.Join(items, ",")
 }
 
-func (s *Server) subscribeAgentSidecar(stream pb.Transport_ConnectServer, dsn string) error {
+func (s *Server) subscribeAgentSidecar(stream pb.Transport_ConnectServer) error {
 	ctx := stream.Context()
 	md, _ := metadata.FromIncomingContext(ctx)
-	clientKey, err := clientkeysstorage.ValidateDSN(s.StoreV2, dsn)
+
+	var clientKey types.ClientKey
+	err := parseAuthContextInto(ctx, &clientKey)
 	if err != nil {
-		log.Error("failed validating dsn, err=%v", err)
-		sentry.CaptureException(err)
-		return status.Errorf(codes.Internal, "failed validating dsn")
+		log.Error(err)
+		return err
 	}
-	switch {
-	case err != nil:
-		log.Errorf("failed validating dsn authentication, err=%v", err)
-		return status.Errorf(codes.Internal, "failed validating authentication")
-	case clientKey == nil:
-		md.Delete("authorization")
-		log.Debugf("invalid agent authentication, tokenlength=%v, client-metadata=%v", len(dsn), md)
-		return status.Errorf(codes.Unauthenticated, "invalid authentication")
-	}
+	// clientKey, err := clientkeysstorage.ValidateDSN(s.StoreV2, dsn)
+	// if err != nil {
+	// 	log.Error("failed validating dsn, err=%v", err)
+	// 	sentry.CaptureException(err)
+	// 	return status.Errorf(codes.Internal, "failed validating dsn")
+	// }
+	// switch {
+	// case err != nil:
+	// 	log.Errorf("failed validating dsn authentication, err=%v", err)
+	// 	return status.Errorf(codes.Internal, "failed validating authentication")
+	// case clientKey == nil:
+	// 	md.Delete("authorization")
+	// 	log.Debugf("invalid agent authentication, tokenlength=%v, client-metadata=%v", len(dsn), md)
+	// 	return status.Errorf(codes.Unauthenticated, "invalid authentication")
+	// }
 
 	var agentID string
 	// connection-name header is keep for compatibility with old agents
@@ -173,21 +180,28 @@ func (s *Server) subscribeAgentSidecar(stream pb.Transport_ConnectServer, dsn st
 	return agentErr
 }
 
-func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string) error {
+func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer) error {
 	ctx := stream.Context()
 	md, _ := metadata.FromIncomingContext(ctx)
 
-	ag, err := s.AgentService.FindByToken(token)
-	if err != nil || ag == nil {
-		md.Delete("authorization")
-		log.Debugf("invalid agent authentication, tokenlength=%v, client-metadata=%v", len(token), md)
-		return status.Errorf(codes.Unauthenticated, "invalid authentication")
+	var ag agent.Agent
+	err := parseAuthContextInto(ctx, &ag)
+	if err != nil {
+		log.Error(err)
+		return err
 	}
+
+	// ag, err := s.AgentService.FindByToken(token)
+	// if err != nil || ag == nil {
+	// 	md.Delete("authorization")
+	// 	log.Debugf("invalid agent authentication, tokenlength=%v, client-metadata=%v", len(token), md)
+	// 	return status.Errorf(codes.Unauthenticated, "invalid authentication")
+	// }
 	orgName, _ := s.UserService.GetOrgNameByID(ag.OrgId)
 
-	setAgentClientMetdata(ag, md)
+	setAgentClientMetdata(&ag, md)
 	ag.Status = agent.StatusConnected
-	_, err = s.AgentService.Persist(ag)
+	_, err = s.AgentService.Persist(&ag)
 	if err != nil {
 		log.Errorf("failed saving agent connection, err=%v", err)
 		sentry.CaptureException(err)
@@ -228,10 +242,10 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer, token string)
 	s.startDisconnectClientSink(ag.Id, clientOrigin, func(err error) {
 		defer unbindAgent(ag.Id)
 		ag.Status = agent.StatusDisconnected
-		_, _ = s.AgentService.Persist(ag)
+		_, _ = s.AgentService.Persist(&ag)
 		_ = s.pluginOnDisconnect(pluginContext, err)
 	})
-	agentErr = s.listenAgentMessages(&pluginContext, ag, stream)
+	agentErr = s.listenAgentMessages(&pluginContext, &ag, stream)
 	s.disconnectClient(ag.Id, agentErr)
 	return agentErr
 }

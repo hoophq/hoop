@@ -222,7 +222,13 @@ func (h *Handler) RunExec(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "The session couldn't be created"})
 	}
 
-	client, err := clientexec.New(ctx.Org.Id, getAccessToken(c), connectionName, newSession.ID)
+	client, err := clientexec.New(&clientexec.Options{
+		OrgID:          ctx.Org.Id,
+		SessionID:      newSession.ID,
+		ConnectionName: connectionName,
+		BearerToken:    getAccessToken(c),
+		UserInfo:       nil,
+	})
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"session_id": nil, "message": err.Error()})
 		return

@@ -181,18 +181,21 @@ var startAgentCmd = &cobra.Command{
 	},
 }
 
+var listenAdminAddr string
+
 var startGatewayCmd = &cobra.Command{
 	Use:          "gateway",
 	Short:        "Runs the gateway component",
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
-		gateway.Run()
+		gateway.Run(listenAdminAddr)
 	},
 }
 
 func init() {
 	startCmd.AddCommand(startAgentCmd)
 	startCmd.AddCommand(startGatewayCmd)
+	startGatewayCmd.Flags().StringVar(&listenAdminAddr, "listen-admin-addr", "127.0.0.1:8099", "the address of the adminstrative api")
 	startCmd.Flags().StringSliceVarP(&startEnvFlag, "env", "e", nil, "The environment variables to set when starting hoop")
 	rootCmd.AddCommand(startCmd)
 }

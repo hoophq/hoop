@@ -88,9 +88,12 @@ func (c *Context) ToAPIContext() *types.APIContext {
 		UserName:   c.User.Name,
 		UserEmail:  c.User.Email,
 		UserGroups: c.User.Groups,
+		UserStatus: string(c.User.Status),
+		SlackID:    c.User.SlackID,
 	}
 	if c.Org != nil {
 		apiCtx.OrgID = c.Org.Id
+		apiCtx.OrgName = c.Org.Name
 	}
 	return apiCtx
 }

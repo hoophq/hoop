@@ -1,6 +1,8 @@
 package clientexec
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +14,7 @@ import (
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	"github.com/runopsio/hoop/common/version"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/tidwall/wal"
 )
@@ -54,6 +57,13 @@ type (
 		Message   string  `json:"message"`
 		ExitCode  *int    `json:"exit_code"`
 		SessionID *string `json:"session_id"`
+	}
+	Options struct {
+		OrgID          string
+		SessionID      string
+		ConnectionName string
+		BearerToken    string
+		UserInfo       *types.APIContext
 	}
 )
 
@@ -114,25 +124,34 @@ func newReviewedResponse(reviewURI string) *Response {
 	}
 }
 
-func New(orgID, accessToken, connectionName, sessionID string) (*clientExec, error) {
-	if sessionID == "" {
-		sessionID = uuid.NewString()
+func New(opts *Options) (*clientExec, error) {
+	if opts.SessionID == "" {
+		opts.SessionID = uuid.NewString()
 	}
 
-	folderName := fmt.Sprintf(walFolderTmpl, walLogPath, orgID, sessionID)
+	folderName := fmt.Sprintf(walFolderTmpl, walLogPath, opts.OrgID, opts.SessionID)
 	wlog, err := wal.Open(folderName, wal.DefaultOptions)
 	if err != nil {
 		return nil, err
 	}
 
+	var encUserInfo string
+	if opts.UserInfo != nil {
+		userInfoBytes, err := json.Marshal(opts.UserInfo)
+		if err != nil {
+			return nil, fmt.Errorf("failed encoding user info: %v", err)
+		}
+		encUserInfo = base64.StdEncoding.EncodeToString(userInfoBytes)
+	}
 	userAgent := fmt.Sprintf("clientexec/%v", version.Get().Version)
 	client, err := grpc.ConnectLocalhost(
-		accessToken,
+		opts.BearerToken,
 		userAgent,
-		grpc.WithOption(grpc.OptionConnectionName, connectionName),
+		grpc.WithOption(grpc.OptionConnectionName, opts.ConnectionName),
+		grpc.WithOption(grpc.OptionUserInfo, string(encUserInfo)),
 		grpc.WithOption("origin", pb.ConnectionOriginClientAPI),
 		grpc.WithOption("verb", pb.ClientVerbExec),
-		grpc.WithOption("session-id", sessionID),
+		grpc.WithOption("session-id", opts.SessionID),
 	)
 	if err != nil {
 		_ = wlog.Close()
@@ -142,7 +161,7 @@ func New(orgID, accessToken, connectionName, sessionID string) (*clientExec, err
 		folderName: folderName,
 		wlog:       wlog,
 		client:     client,
-		sessionID:  sessionID}, nil
+		sessionID:  opts.SessionID}, nil
 }
 
 func (c *clientExec) Run(inputPayload []byte, clientEnvVars map[string]string, clientArgs ...string) *Response {

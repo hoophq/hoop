@@ -53,6 +53,30 @@ type (
 	}
 )
 
+func (api *Api) StartAdminAPI(sentryInit bool) {
+	zaplogger := log.NewDefaultLogger()
+	defer zaplogger.Sync()
+	route := gin.New()
+	route.Use(ginzap.RecoveryWithZap(zaplogger, false))
+	if os.Getenv("GIN_MODE") == "debug" {
+		route.Use(ginzap.Ginzap(zaplogger, time.RFC3339, true))
+	}
+	api.logger = zaplogger
+	// https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies
+	route.SetTrustedProxies(nil)
+	// UI
+	rgroup := route.Group("/admin")
+	if sentryInit {
+		rgroup.Use(sentrygin.New(sentrygin.Options{
+			Repanic: true,
+		}))
+	}
+	rgroup.POST("/exec",
+		api.Authenticate,
+	)
+
+}
+
 func (api *Api) StartAPI(sentryInit bool) {
 	if os.Getenv("PORT") == "" {
 		os.Setenv("PORT", "8009")

@@ -52,6 +52,7 @@ type (
 
 const (
 	OptionConnectionName OptionKey = "connection-name"
+	OptionUserInfo       OptionKey = "user-info"
 	LocalhostAddr                  = "127.0.0.1:8010"
 )
 
