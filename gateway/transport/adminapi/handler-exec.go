@@ -15,6 +15,7 @@ import (
 type ExecRequest struct {
 	UserInfo      types.APIContext  `json:"user_info"  binding:"required"`
 	Connection    string            `json:"connection" binding:"required"`
+	SessionID     string            `json:"session_id"`
 	Input         string            `json:"input"`
 	InputEncoding string            `json:"input_encoding"`
 	ClientEnvVars map[string]string `json:"client_envvars"`
@@ -52,7 +53,7 @@ func execPost(c *gin.Context) {
 
 	client, err := clientexec.New(&clientexec.Options{
 		OrgID:          req.UserInfo.OrgID,
-		SessionID:      "",
+		SessionID:      req.SessionID,
 		ConnectionName: req.Connection,
 		BearerToken:    authKey,
 		UserInfo:       &req.UserInfo,
