@@ -198,6 +198,8 @@ jobs:
     environment: production
     needs: [test]
     steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
       - name: Checkout Helm Chart
         uses: actions/checkout@v3
         with:
@@ -224,6 +226,8 @@ jobs:
     environment: production
     needs: [test]
     steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
       - name: Checkout Webapp
         uses: actions/checkout@v3
         with:
@@ -256,6 +260,8 @@ jobs:
     environment: production
     needs: [test]
     steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
       - name: Checkout Node API
         uses: actions/checkout@v3
         with:
