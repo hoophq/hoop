@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httputil"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -130,6 +131,25 @@ func CORSMiddleware() gin.HandlerFunc {
 			return
 		}
 
+		c.Next()
+	}
+}
+
+func proxyNodeAPIMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		backendAPI := c.Request.Header.Get("x-backend-api")
+		if backendAPI == "express" && strings.HasPrefix(c.Request.URL.Path, "/api/") {
+			director := func(req *http.Request) {
+				req.Header = c.Request.Header
+				req.URL.Scheme = "http"
+				req.URL.Host = "127.0.0.1:4001"
+				req.URL.Path = c.Request.URL.Path
+			}
+			proxy := &httputil.ReverseProxy{Director: director}
+			proxy.ServeHTTP(c.Writer, c.Request)
+			c.Abort()
+			return
+		}
 		c.Next()
 	}
 }

@@ -19,6 +19,8 @@ plugins/.idea/*
 common/.idea/*
 .idea/*
 .fleet/*
+.clj-kondo/*
+.lsp/*
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
