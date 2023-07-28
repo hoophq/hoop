@@ -226,8 +226,7 @@ jobs:
     - name: Install clojure tools
       uses: DeLaGuardo/setup-clojure@3.5
       with:
-        cli: 1.11.1 # Clojure CLI based on tools.deps
-        lein: 2.9.6
+        cli: 1.11.1.1347 # releases: https://clojure.org/releases/tools
     - name: Setup Node
       uses: actions/setup-node@v3
       with:
