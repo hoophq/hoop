@@ -67,6 +67,7 @@ func (api *Api) StartAPI(sentryInit bool) {
 	api.logger = zaplogger
 	// https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies
 	route.SetTrustedProxies(nil)
+	route.Use(proxyNodeAPIMiddleware())
 	// UI
 	staticUiPath := os.Getenv("STATIC_UI_PATH")
 	if staticUiPath == "" {
