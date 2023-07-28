@@ -192,70 +192,95 @@ jobs:
           name: dist-artifacts
           path: dist/
 
-  build-components:
+  build-helmchart:
     runs-on: ubuntu-latest
-    name: Build Components
+    name: Build Helm Chart
     environment: production
     needs: [test]
     steps:
-    - name: Checkout Hoop
-      uses: actions/checkout@v3
-    - name: Checkout Webapp
-      uses: actions/checkout@v3
-      with:
-        repository: runopsio/webapp
-        token: ${{ secrets.GH_TOKEN }}
-        path: './build/webapp'
-    - name: Checkout Node API
-      uses: actions/checkout@v3
-      with:
-        repository: hoophq/api
-        token: ${{ secrets.GH_TOKEN }}
-        path: './build/api'
-    - name: Checkout Helm Chart
-      uses: actions/checkout@v3
-      with:
-        repository: hoophq/helm-chart
-        path: './build/helm-chart'
+      - name: Checkout Helm Chart
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/helm-chart
+          path: './build/helm-chart'
+      - name: Setup Helm3
+        uses: azure/setup-helm@v3
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+      - name: Package Helm Chart
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: make package-helmchart
+      - uses: actions/upload-artifact@v3
+        with:
+          name: dist-artifacts
+          path: dist/
 
-    - name: Setup Java
-      uses: actions/setup-java@v3
-      with:
-        distribution: 'zulu'
-        java-version: '11'
-    - name: Install clojure tools
-      uses: DeLaGuardo/setup-clojure@3.5
-      with:
-        cli: 1.11.1.1347 # releases: https://clojure.org/releases/tools
-    - name: Setup Node
-      uses: actions/setup-node@v3
-      with:
-        node-version: 16
-    - name: Setup Helm3
-      uses: azure/setup-helm@v3
-      with:
-        token: ${{ secrets.GH_TOKEN }}
+  build-webapp:
+    runs-on: ubuntu-latest
+    name: Build Webapp
+    environment: production
+    needs: [test]
+    steps:
+      - name: Checkout Webapp
+        uses: actions/checkout@v3
+        with:
+          repository: runopsio/webapp
+          token: ${{ secrets.GH_TOKEN }}
+          path: './build/webapp'
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '11'
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+      - name: Build Webapp
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: make build-webapp
+      - uses: actions/upload-artifact@v3
+        with:
+          name: dist-artifacts
+          path: dist/
 
-    - name: Set Git Tag
-      run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
-    
-    - name: Build Webapp
-      env:
-        GIT_TAG: ${{ env.GIT_TAG }}
-      run: make build-webapp
-
-    - name: Build Node API
-      run: make build-nodeapi
-
-    - name: Package Helm Chart
-      env:
-        GIT_TAG: ${{ env.GIT_TAG }}
-      run: make package-helmchart
-
-    - uses: actions/upload-artifact@v3
-      with:
-        name: dist-artifacts
-        path: dist/
+  build-nodeapi:
+    runs-on: ubuntu-latest
+    name: Build Node API
+    environment: production
+    needs: [test]
+    steps:
+      - name: Checkout Node API
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/api
+          token: ${{ secrets.GH_TOKEN }}
+          path: './build/api'
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '11'
+      - name: Install clojure tools
+        uses: DeLaGuardo/setup-clojure@3.5
+        with:
+          cli: 1.11.1.1347 # releases: https://clojure.org/releases/tools
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+      - name: Build Node API
+        run: make build-nodeapi
+      - uses: actions/upload-artifact@v3
+        with:
+          name: dist-artifacts
+          path: dist/
 
   docker-publish:
     runs-on: ubuntu-latest
@@ -268,7 +293,9 @@ jobs:
       - windows-arm64
       - linux-amd64
       - linux-arm64
-      - build-components
+      - build-helmchart
+      - build-nodeapi
+      - build-webapp
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -310,7 +337,9 @@ jobs:
       - windows-arm64
       - linux-amd64
       - linux-arm64
-      - build-components
+      - build-helmchart
+      - build-nodeapi
+      - build-webapp
     steps:
       - name: Checkout
         uses: actions/checkout@v3
