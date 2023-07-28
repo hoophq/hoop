@@ -221,12 +221,13 @@ func Run(listenAdmAddr string) {
 		cmd.Env = os.Environ()
 		// https://expressjs.com/en/advanced/best-practice-performance.html#set-node_env-to-production
 		cmd.Env = append(cmd.Env, "NODE_ENV", "production")
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			log.Errorf("failed starting node api process, err=%v, output=%v", err, string(out))
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			log.Errorf("failed running node api process, err=%v", err)
 			return
 		}
-		log.Infof("node api process finished, output=%v", string(out))
+		log.Infof("node api process finished")
 	}()
 	a.StartAPI(sentryStarted)
 }
