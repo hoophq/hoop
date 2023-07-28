@@ -48,9 +48,7 @@ build-webapp:
 
 build-nodeapi:
 	mkdir -p ./dist/api
-	cd ./build/api && npm install && npm run build
-	mv ./out ../../dist/api
-	mv node_modules ../../dist/api/node_modules
+	cd ./build/api && npm install && npm run build && mv ./out ../../dist/api && mv node_modules ../../dist/api/node_modules
 
 publish:
 	./scripts/publish-release.sh
