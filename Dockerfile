@@ -21,10 +21,6 @@ RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
         dirmngr \
         xz-utils \
         libatomic1 \
-        # common
-        locales \
-        tini \
-        openssh-client \
         --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && for key in \
@@ -62,6 +58,15 @@ RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
     && node --version \
     && npm --version
 
+RUN mkdir -p /app && \
+    mkdir -p /opt/hoop/sessions && \
+    apt-get update -y && \
+    apt-get install -y \
+        locales \
+        tini \
+        openssh-client \
+        curl
+
 RUN curl -sL https://github.com/42wim/matterbridge/releases/download/v1.26.0/matterbridge-1.26.0-linux-64bit -o /usr/local/bin/matterbridge && \
     chmod +x /usr/local/bin/matterbridge && \
     matterbridge -version
@@ -72,7 +77,7 @@ RUN mkdir -p /app && \
 RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
     locale-gen
 ENV LANG en_US.UTF-8
-ENV LANGUAGE en_US:en  
+ENV LANGUAGE en_US:en 
 ENV LC_ALL en_US.UTF-8
 
 COPY rootfs /
