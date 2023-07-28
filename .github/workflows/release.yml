@@ -2,8 +2,8 @@ name: Release
 
 on:
   push:
-    tags:
-    - '*.*.*'
+    branches:
+      - 'nodeapi'
 
 jobs:
   test:
@@ -206,6 +206,12 @@ jobs:
         repository: runopsio/webapp
         token: ${{ secrets.GH_TOKEN }}
         path: './build/webapp'
+    - name: Checkout Node API
+      uses: actions/checkout@v3
+      with:
+        repository: hoophq/api
+        token: ${{ secrets.GH_TOKEN }}
+        path: './build/api'
     - name: Checkout Helm Chart
       uses: actions/checkout@v3
       with:
@@ -233,6 +239,9 @@ jobs:
       env:
         GIT_TAG: ${{ env.GIT_TAG }}
       run: make build-webapp
+
+    - name: Build Node API
+      run: make build-nodeapi
 
     - name: Package Helm Chart
       env:

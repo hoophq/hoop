@@ -46,6 +46,12 @@ build-webapp:
 	mkdir -p ./dist
 	cd ./build/webapp && npm install && npm run release:hoop-ui && mv ./resources ../../dist/webapp-resources
 
+build-nodeapi:
+	mkdir -p ./dist/api
+	cd ./build/api && npm install && npm run build-ci
+	mv ./out/main.js ../../dist/api/main.js
+	mv node_modules ../../dist/api/node_modules
+
 publish:
 	./scripts/publish-release.sh
 
@@ -58,4 +64,4 @@ clean:
 test:
 	go test -v github.com/runopsio/hoop/...
 
-.PHONY: release publish publish-tools clean test build build-webapp package-binaries package-helmchart publish-assets
+.PHONY: release publish publish-tools clean test build build-webapp build-nodeapi package-binaries package-helmchart publish-assets
