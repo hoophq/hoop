@@ -251,7 +251,7 @@ func parsePluginConnections(c *gin.Context, req PluginRequest) ([]*types.PluginC
 		// it makes the entity to be overrided
 		// instead of creating unassociated ones with random uuids everytime
 		// an update takes place.
-		docUUID, err := uuid.NewRandomFromReader(bytes.NewBufferString(conn.Id))
+		docUUID, err := uuid.NewRandomFromReader(bytes.NewBufferString(fmt.Sprintf("%s:%s", req.Name, conn.Id)))
 		if err != nil {
 			log.Errorf("failed generating plugin connection docid, err=%v", err)
 			sentry.CaptureException(err)
