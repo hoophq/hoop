@@ -38,12 +38,13 @@ func (s *Server) proxyManager(stream pb.Transport_ConnectServer) error {
 	clientOrigin := mdget(md, "origin")
 	// TODO: validate origin
 
-	var userCtx types.APIContext
-	err := parseAuthContextInto(ctx, &userCtx)
+	var gwctx gatewayContext
+	err := parseGatewayContextInto(ctx, &gwctx)
 	if err != nil {
 		log.Error(err)
 		return err
 	}
+	userCtx := gwctx.UserContext
 	if err := stream.Send(&pb.Packet{Type: pbclient.ProxyManagerConnectOK}); err != nil {
 		return err
 	}

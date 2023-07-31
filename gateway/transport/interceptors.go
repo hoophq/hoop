@@ -22,6 +22,19 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+type gatewayContext struct {
+	UserContext types.APIContext
+	Connection  types.ConnectionInfo
+}
+
+func (c *gatewayContext) ValidateConnectionAttrs() error {
+	if c.Connection.Name == "" || c.Connection.AgentID == "" ||
+		c.Connection.ID == "" || c.Connection.Type == "" {
+		return status.Error(codes.InvalidArgument, "missing required connection attributes")
+	}
+	return nil
+}
+
 type wrappedStream struct {
 	grpc.ServerStream
 
@@ -48,7 +61,7 @@ func (w *wrappedStream) Context() context.Context {
 	return ctx
 }
 
-func parseAuthContextInto(ctx context.Context, into any) error {
+func parseGatewayContextInto(ctx context.Context, into any) error {
 	if ctx == nil {
 		return status.Error(codes.Internal, "authentication context not found (nil)")
 	}
@@ -56,16 +69,30 @@ func parseAuthContextInto(ctx context.Context, into any) error {
 	if val == nil {
 		return status.Error(codes.Internal, "authentication context not found")
 	}
+	var assigned bool
 	switch v := val.(type) {
-	case *types.APIContext:
-		*into.(*types.APIContext) = *v
+	case *gatewayContext:
+		if _, ok := into.(*gatewayContext); ok {
+			*into.(*gatewayContext) = *v
+			assigned = true
+		}
 	case *types.ClientKey:
-		*into.(*types.ClientKey) = *v
+		if _, ok := into.(*types.ClientKey); ok {
+			*into.(*types.ClientKey) = *v
+			assigned = true
+		}
 	case *agent.Agent:
-		*into.(*agent.Agent) = *v
+		if _, ok := into.(*agent.Agent); ok {
+			*into.(*agent.Agent) = *v
+			assigned = true
+		}
 	default:
 		return status.Error(codes.Unauthenticated,
 			fmt.Sprintf("invalid authentication, missing auth context, type: %T", val))
+	}
+	if !assigned {
+		return status.Error(codes.Internal,
+			fmt.Sprintf("invalid authentication, failed assigning context %T to %T", val, into))
 	}
 	return nil
 }
@@ -108,7 +135,20 @@ func (s *Server) AuthGrpcInterceptor(srv any, ss grpc.ServerStream, info *grpc.S
 			"usergrps", uctx.UserGroups, "name", uctx.UserName,
 			"slackid", uctx.SlackID, "status", uctx.UserStatus,
 		).Infof("admin api - decoded userinfo")
-		ctxVal = uctx
+
+		gwctx := &gatewayContext{UserContext: *uctx}
+		conn, err := getConnectionInfo(md)
+		if err != nil {
+			return err
+		}
+		if conn != nil {
+			gwctx.Connection = *conn
+			log.With(
+				"name", conn.Name, "type", conn.Type, "cmd", conn.CmdEntrypoint,
+				"secrets", len(conn.Secrets), "agent", conn.AgentID,
+			).Infof("admin api - decoded connection info")
+		}
+		ctxVal = gwctx
 	// agent key authentication
 	case strings.HasPrefix(bearerToken, "x-agt-"):
 		ag, err := s.AgentService.FindByToken(bearerToken)
@@ -145,7 +185,25 @@ func (s *Server) AuthGrpcInterceptor(srv any, ss grpc.ServerStream, info *grpc.S
 		if err != nil || userCtx.User == nil {
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
-		ctxVal = userCtx.ToAPIContext()
+		gwctx := &gatewayContext{UserContext: *userCtx.ToAPIContext()}
+		if connectionName := mdget(md, "connection-name"); connectionName != "" {
+			conn, err := s.ConnectionService.FindOne(userCtx, connectionName)
+			if err != nil {
+				sentry.CaptureException(err)
+				return status.Errorf(codes.Internal, err.Error())
+			}
+			if conn != nil {
+				gwctx.Connection = types.ConnectionInfo{
+					ID:            conn.Id,
+					Name:          conn.Name,
+					Type:          string(conn.Type),
+					CmdEntrypoint: conn.Command,
+					Secrets:       conn.Secret,
+					AgentID:       conn.AgentId,
+				}
+			}
+		}
+		ctxVal = gwctx
 	}
 
 	return handler(srv, &wrappedStream{ss, nil, ctxVal})
@@ -167,6 +225,24 @@ func getUserInfo(md metadata.MD) (*types.APIContext, error) {
 		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication, failed decoding (json) user info")
 	}
 	return &usrctx, nil
+}
+
+func getConnectionInfo(md metadata.MD) (*types.ConnectionInfo, error) {
+	encConnInfo := md.Get(string(commongrpc.OptionConnectionInfo))
+	if len(encConnInfo) == 0 {
+		return nil, nil
+	}
+	connInfoJSON, err := base64.StdEncoding.DecodeString(encConnInfo[0])
+	if err != nil {
+		log.Errorf("failed decoding (base64) connection info: %v", err)
+		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication, failed decoding (base64) connection info")
+	}
+	var connInfo types.ConnectionInfo
+	if err := json.Unmarshal(connInfoJSON, &connInfo); err != nil {
+		log.Errorf("failed decoding (json) connection info: %v", err)
+		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication, failed decoding (json) connection info")
+	}
+	return &connInfo, nil
 }
 
 func parseBearerToken(environment string, isAgentOrigin bool, md metadata.MD) (string, error) {
