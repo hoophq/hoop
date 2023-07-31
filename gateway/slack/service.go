@@ -283,7 +283,7 @@ func (s *SlackService) SendDirectMessage(sessionID, slackID string) error {
 	if err != nil {
 		return fmt.Errorf("failed opening conversation with user %v, err=%v", slackID, err)
 	}
-	msg := fmt.Sprintf("✅ Session <%s/sessions|%s> approved, visit the link to execute it.", s.apiURL, sessionID)
+	msg := fmt.Sprintf("✅ Session <%s/sessions/%s|%s> approved, visit the link to execute it.", s.apiURL, sessionID, sessionID)
 	_, _, err = s.apiClient.PostMessage(channel.ID, slack.MsgOptionText(msg, false))
 	return err
 }
