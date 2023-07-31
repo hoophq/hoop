@@ -94,7 +94,7 @@ func (s *Server) subscribeAgentSidecar(stream pb.Transport_ConnectServer) error 
 	md, _ := metadata.FromIncomingContext(ctx)
 
 	var clientKey types.ClientKey
-	err := parseAuthContextInto(ctx, &clientKey)
+	err := parseGatewayContextInto(ctx, &clientKey)
 	if err != nil {
 		log.Error(err)
 		return err
@@ -170,7 +170,7 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer) error {
 	md, _ := metadata.FromIncomingContext(ctx)
 
 	var ag agent.Agent
-	err := parseAuthContextInto(ctx, &ag)
+	err := parseGatewayContextInto(ctx, &ag)
 	if err != nil {
 		log.Error(err)
 		return err

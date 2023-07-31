@@ -63,6 +63,7 @@ type (
 		SessionID      string
 		ConnectionName string
 		BearerToken    string
+		ConnectionInfo *types.ConnectionInfo
 		UserInfo       *types.APIContext
 	}
 )
@@ -143,12 +144,21 @@ func New(opts *Options) (*clientExec, error) {
 		}
 		encUserInfo = base64.StdEncoding.EncodeToString(userInfoBytes)
 	}
+	var encConnInfo string
+	if opts.ConnectionInfo != nil {
+		connInfoBytes, err := json.Marshal(opts.ConnectionInfo)
+		if err != nil {
+			return nil, fmt.Errorf("failed encoding connection info: %v", err)
+		}
+		encConnInfo = base64.StdEncoding.EncodeToString(connInfoBytes)
+	}
 	userAgent := fmt.Sprintf("clientexec/%v", version.Get().Version)
 	client, err := grpc.ConnectLocalhost(
 		opts.BearerToken,
 		userAgent,
 		grpc.WithOption(grpc.OptionConnectionName, opts.ConnectionName),
-		grpc.WithOption(grpc.OptionUserInfo, string(encUserInfo)),
+		grpc.WithOption(grpc.OptionUserInfo, encUserInfo),
+		grpc.WithOption(grpc.OptionConnectionInfo, encConnInfo),
 		grpc.WithOption("origin", pb.ConnectionOriginClientAPI),
 		grpc.WithOption("verb", pb.ClientVerbExec),
 		grpc.WithOption("session-id", opts.SessionID),

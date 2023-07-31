@@ -85,36 +85,31 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 	md, _ := metadata.FromIncomingContext(ctx)
 
 	hostname := mdget(md, "hostname")
-	connectionName := mdget(md, "connection-name")
 	clientVerb := mdget(md, "verb")
 	clientOrigin := mdget(md, "origin")
 
-	var apiCtx types.APIContext
-	err := parseAuthContextInto(ctx, &apiCtx)
+	var gwctx gatewayContext
+	err := parseGatewayContextInto(ctx, &gwctx)
 	if err != nil {
 		log.Error(err)
 		return err
 	}
 
-	conn, err := s.ConnectionService.FindOne(parseToLegacyUserContext(&apiCtx), connectionName)
-	if err != nil {
-		sentry.CaptureException(err)
-		return status.Errorf(codes.Internal, err.Error())
+	if err := gwctx.ValidateConnectionAttrs(); err != nil {
+		return err
 	}
-
-	if conn == nil {
-		return status.Errorf(codes.NotFound, fmt.Sprintf("connection '%v' not found", connectionName))
-	}
+	conn := gwctx.Connection
 
 	// it's an sidecar agent connection, request agent to connect
-	if conn.AgentId == conn.Name && !hasAgentStream(conn.AgentId) {
-		log.With("user", apiCtx.UserEmail).Infof("requesting connection with remote agent %s", connectionName)
-		err = apiconnectionapps.RequestGrpcConnection(connectionName, hasAgentStream)
+	if conn.AgentID == conn.Name && !hasAgentStream(conn.AgentID) {
+		log.With("user", gwctx.UserContext.UserEmail).Infof("requesting connection with remote agent %s",
+			gwctx.Connection.Name)
+		err = apiconnectionapps.RequestGrpcConnection(conn.Name, hasAgentStream)
 		if err != nil {
-			log.Warnf("%v %v", err, connectionName)
+			log.Warnf("%v %v", err, gwctx.Connection.Name)
 			return status.Errorf(codes.Aborted, err.Error())
 		}
-		log.Infof("found the remote agent for %v", connectionName)
+		log.Infof("found the remote agent for %v", gwctx.Connection.Name)
 	}
 
 	// When a session id is coming from the client,
@@ -126,7 +121,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 	sessionLabels := map[string]string{}
 
 	if sessionID != "" {
-		session, err := s.SessionService.FindOne(parseToLegacyUserContext(&apiCtx), sessionID)
+		session, err := s.SessionService.FindOne(parseToLegacyUserContext(&gwctx.UserContext), sessionID)
 		if err != nil {
 			log.Errorf("Failed getting the session, err=%v", err)
 			sentry.CaptureException(err)
@@ -148,18 +143,18 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 		Context: context.Background(),
 		SID:     sessionID,
 
-		OrgID:      apiCtx.OrgID,
-		UserID:     apiCtx.UserID,
-		UserName:   apiCtx.UserName,
-		UserEmail:  apiCtx.UserEmail,
-		UserGroups: apiCtx.UserGroups,
+		OrgID:      gwctx.UserContext.OrgID,
+		UserID:     gwctx.UserContext.UserID,
+		UserName:   gwctx.UserContext.UserName,
+		UserEmail:  gwctx.UserContext.UserEmail,
+		UserGroups: gwctx.UserContext.UserGroups,
 
-		ConnectionID:      conn.Id,
+		ConnectionID:      conn.ID,
 		ConnectionName:    conn.Name,
-		ConnectionType:    fmt.Sprintf("%v", conn.Type),
-		ConnectionCommand: conn.Command,
-		ConnectionSecret:  conn.Secret,
-		ConnectionAgentID: conn.AgentId,
+		ConnectionType:    conn.Type,
+		ConnectionCommand: conn.CmdEntrypoint,
+		ConnectionSecret:  conn.Secrets,
+		ConnectionAgentID: conn.AgentID,
 
 		ClientVerb:   clientVerb,
 		ClientOrigin: clientOrigin,
@@ -188,7 +183,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 
 	s.startDisconnectClientSink(sessionID, clientOrigin, func(err error) {
 		defer unbindClient(sessionID)
-		if stream := getAgentStream(conn.AgentId); stream != nil {
+		if stream := getAgentStream(conn.AgentID); stream != nil {
 			_ = stream.Send(&pb.Packet{
 				Type: pbagent.SessionClose,
 				Spec: map[string][]byte{
@@ -198,7 +193,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 		}
 		_ = s.pluginOnDisconnect(pluginContext, err)
 	})
-	plugins, err := s.loadConnectPlugins(&apiCtx, pluginContext)
+	plugins, err := s.loadConnectPlugins(&gwctx.UserContext, pluginContext)
 	bindClient(sessionID, stream, plugins)
 	if err != nil {
 		s.disconnectClient(sessionID, err)
@@ -209,9 +204,9 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 	if clientVerb == pb.ClientVerbConnect {
 		eventName = analytics.EventGrpcConnect
 	}
-	s.Analytics.Track(&apiCtx, eventName, map[string]any{
+	s.Analytics.Track(&gwctx.UserContext, eventName, map[string]any{
 		"session-id":      sessionID,
-		"connection-name": connectionName,
+		"connection-name": gwctx.Connection.Name,
 		"connection-type": conn.Type,
 		"client-version":  mdget(md, "version"),
 		"go-version":      mdget(md, "go-version"),
@@ -224,7 +219,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 
 	log.With("session", sessionID).
 		Infof("proxy connected: user=%v,hostname=%v,origin=%v,verb=%v,platform=%v,version=%v,goversion=%v",
-			apiCtx.UserEmail, mdget(md, "hostname"), clientOrigin, clientVerb,
+			gwctx.UserContext.UserEmail, mdget(md, "hostname"), clientOrigin, clientVerb,
 			mdget(md, "platform"), mdget(md, "version"), mdget(md, "goversion"))
 	s.trackSessionStatus(sessionID, pb.SessionPhaseClientConnected, nil)
 	clientErr := s.listenClientMessages(stream, pluginContext)

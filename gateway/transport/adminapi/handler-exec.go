@@ -8,18 +8,23 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/common/log"
+	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/clientexec"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 )
 
 type ExecRequest struct {
-	UserInfo      types.APIContext  `json:"user_info"  binding:"required"`
-	Connection    string            `json:"connection" binding:"required"`
-	SessionID     string            `json:"session_id"`
-	Input         string            `json:"input"`
-	InputEncoding string            `json:"input_encoding"`
-	ClientEnvVars map[string]string `json:"client_envvars"`
-	ClientArgs    []string          `json:"client_args"`
+	UserInfo          types.APIContext  `json:"user_info"           binding:"required"`
+	Connection        string            `json:"connection"          binding:"required"`
+	ConnectionID      string            `json:"connection_id"       binding:"required"`
+	ConnectionCmd     []string          `json:"connection_cmd"      binding:"required"`
+	ConnectionAgentID string            `json:"connection_agent_id" binding:"required"`
+	ConnectionSecrets map[string]any    `json:"connection_secrets"`
+	SessionID         string            `json:"session_id"`
+	Input             string            `json:"input"`
+	InputEncoding     string            `json:"input_encoding"`
+	ClientEnvVars     map[string]string `json:"client_envvars"`
+	ClientArgs        []string          `json:"client_args"`
 }
 
 type ExecResponse struct {
@@ -55,8 +60,16 @@ func execPost(c *gin.Context) {
 		OrgID:          req.UserInfo.OrgID,
 		SessionID:      req.SessionID,
 		ConnectionName: req.Connection,
-		BearerToken:    authKey,
-		UserInfo:       &req.UserInfo,
+		ConnectionInfo: &types.ConnectionInfo{
+			ID:            req.ConnectionID,
+			Name:          req.Connection,
+			Type:          pb.ConnectionTypeCommandLine,
+			CmdEntrypoint: req.ConnectionCmd,
+			Secrets:       req.ConnectionSecrets,
+			AgentID:       req.ConnectionAgentID,
+		},
+		BearerToken: authKey,
+		UserInfo:    &req.UserInfo,
 	})
 	if err != nil {
 		c.PureJSON(http.StatusBadRequest, &ExecResponse{Message: err.Error()})
