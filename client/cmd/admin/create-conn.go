@@ -64,7 +64,11 @@ var createConnectionCmd = &cobra.Command{
 		apir := parseResourceOrDie(resourceArgs, method, outputFlag)
 		cmdList := []string{}
 		if len(args) > 1 {
-			cmdList = append(cmdList, args[1:]...)
+			for _, cmdparam := range args[1:] {
+				// allows passing \t literal when executing the command
+				cmdparam := strings.ReplaceAll(cmdparam, "\\t", "\t")
+				cmdList = append(cmdList, cmdparam)
+			}
 		}
 		envVar, err := parseEnvPerType()
 		if err != nil {
