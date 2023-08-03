@@ -227,9 +227,14 @@ func List(c *gin.Context) {
 
 func parsePluginConnections(c *gin.Context, req PluginRequest) ([]*types.PluginConnection, []string, error) {
 	ctx := storagev2.ParseContext(c)
-	var connectionIDList []string
+	// remove repeated connection id's
+	connectionIDMap := map[string]any{}
 	for _, conn := range req.Connections {
-		connectionIDList = append(connectionIDList, conn.ConnectionID)
+		connectionIDMap[conn.ConnectionID] = nil
+	}
+	var connectionIDList []string
+	for connID := range connectionIDMap {
+		connectionIDList = append(connectionIDList, connID)
 	}
 	connectionsMap, err := connectionstorage.ConnectionsMapByID(ctx, connectionIDList)
 	if err != nil {
