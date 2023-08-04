@@ -1,5 +1,5 @@
 # Dockerfile.tools
-FROM hoophq/agent-tools:0.0.1
+FROM hoophq/agent-tools:0.0.2
 
 ENV DEBIAN_FRONTEND=noninteractive
 
