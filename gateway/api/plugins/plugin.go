@@ -227,13 +227,13 @@ func List(c *gin.Context) {
 
 func parsePluginConnections(c *gin.Context, req PluginRequest) ([]*types.PluginConnection, []string, error) {
 	ctx := storagev2.ParseContext(c)
-	// remove repeated connection id's
-	connectionIDMap := map[string]any{}
+	// remove repeated connection request
+	dedupePluginConnectionRequest := map[string]*PluginConnectionRequest{}
 	for _, conn := range req.Connections {
-		connectionIDMap[conn.ConnectionID] = nil
+		dedupePluginConnectionRequest[conn.ConnectionID] = conn
 	}
 	var connectionIDList []string
-	for connID := range connectionIDMap {
+	for connID := range dedupePluginConnectionRequest {
 		connectionIDList = append(connectionIDList, connID)
 	}
 	connectionsMap, err := connectionstorage.ConnectionsMapByID(ctx, connectionIDList)
@@ -246,23 +246,16 @@ func parsePluginConnections(c *gin.Context, req PluginRequest) ([]*types.PluginC
 	pluginConnectionList := []*types.PluginConnection{}
 	var connectionIDs []string
 	// validate if connection exists in the store
-	for _, reqconn := range req.Connections {
+	for _, reqconn := range dedupePluginConnectionRequest {
 		conn, ok := connectionsMap[reqconn.ConnectionID]
 		if !ok {
 			msg := fmt.Sprintf("connection %q doesn't exists", reqconn.ConnectionID)
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": msg})
 			return nil, nil, io.EOF
 		}
-		// it makes the entity to be overrided
-		// instead of creating unassociated ones with random uuids everytime
-		// an update takes place.
-		docUUID, err := uuid.NewRandomFromReader(bytes.NewBufferString(fmt.Sprintf("%s:%s", req.Name, conn.Id)))
-		if err != nil {
-			log.Errorf("failed generating plugin connection docid, err=%v", err)
-			sentry.CaptureException(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed generating plugin connection docid"})
-			return nil, nil, io.EOF
-		}
+		// create deterministic uuid to allow plugin connection entities
+		// to be updated instead of generating new ones
+		docUUID := uuid.NewSHA1(uuid.NameSpaceURL, bytes.NewBufferString(fmt.Sprintf("%s:%s", req.Name, conn.Id)).Bytes())
 		pluginConnectionList = append(pluginConnectionList, &types.PluginConnection{
 			ID:           docUUID.String(),
 			ConnectionID: conn.Id,
