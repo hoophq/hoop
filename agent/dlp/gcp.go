@@ -59,6 +59,9 @@ func (s *streamWriter) Write(data []byte) (int, error) {
 	if s.packetType == "" {
 		return 0, fmt.Errorf("packet type must not be empty")
 	}
+	// it should return the same amount of bytes of data
+	// this will avoid having errors when using io.Copy function
+	writeBytesLen := len(data)
 	p.Type = s.packetType.String()
 	p.Spec = s.packetSpec
 	rpcOnSendFn := func() error {
@@ -86,13 +89,13 @@ func (s *streamWriter) Write(data []byte) (int, error) {
 		if err := rpcOnSendFn(); err != nil {
 			return 0, err
 		}
-		return len(p.Payload), s.client.Send(p)
+		return writeBytesLen, s.client.Send(p)
 	}
 	p.Payload = data
 	if err := rpcOnSendFn(); err != nil {
 		return 0, err
 	}
-	return len(p.Payload), s.client.Send(p)
+	return writeBytesLen, s.client.Send(p)
 }
 
 func (s *streamWriter) Close() error {
