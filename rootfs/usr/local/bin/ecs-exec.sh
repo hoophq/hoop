@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e
+set -eo pipefail
 
 [[ "$CONNECTION_DEBUG" == "1" ]] && set -x
 
@@ -44,7 +44,7 @@ EOF
 # read arguments
 PARSED_ARGUMENTS=$(getopt \
   --options "" \
-  --long cluster:,service-name:,task:,pipe:,interactive,help \
+  --long cluster:,service-name:,container:,task:,pipe:,interactive,help \
   --name "$(basename "$0")" \
   -- "$@"
 )
@@ -57,6 +57,7 @@ eval set -- "$PARSED_ARGUMENTS"
 
 CLUSTER_NAME=
 SERVICE_NAME=
+CONTAINER=
 TASK_ID=
 PIPE_EXEC=
 SHELL_INTERACTIVE=0
@@ -66,6 +67,7 @@ do
   case "$1" in
     --cluster)      CLUSTER_NAME="$2"; shift 2;;
     --service-name) SERVICE_NAME="$2"; shift 2;;
+    --container)    CONTAINER="$2"; shift 2;;
     --task)         TASK_ID="$2"; shift 2;;
     --pipe)         PIPE_EXEC="$2"; shift 2;;
     --interactive)  SHELL_INTERACTIVE=1; shift;;
@@ -88,12 +90,18 @@ if [ -z $TASK_ID ]; then
 	    --max-items 1| jq .taskArns[0] -r)
 fi
 
+if [ -z $CONTAINER ]; then
+  CONTAINER=$(aws ecs describe-tasks \
+    --cluster $CLUSTER_NAME \
+    --tasks $TASK_ID | jq .tasks[].containers[0].name -r)
+fi
 
 if [ "$SHELL_INTERACTIVE" == "1" ]; then
   : "${PIPE_EXEC:? Required argument --pipe not set}"
   aws ecs execute-command \
     --cluster $CLUSTER_NAME \
     --task $TASK_ID \
+    --container $CONTAINER \
     --interactive \
     --command "$PIPE_EXEC"
   exit $?
@@ -107,13 +115,15 @@ if [ -n "$PIPE_EXEC" ]; then
   unbuffer aws ecs execute-command \
     --cluster $CLUSTER_NAME \
     --task $TASK_ID \
+    --container $CONTAINER \
     --interactive \
-    --command "/bin/sh -e -c 'echo -n '$STDIN_INPUT' | base64 -d | '$PIPE_EXEC''"
+    --command "/bin/sh -e -c 'echo -n $STDIN_INPUT | base64 -d | $PIPE_EXEC'"
   exit $?
 fi
 
 unbuffer aws ecs execute-command \
   --cluster $CLUSTER_NAME \
   --task $TASK_ID \
+  --container $CONTAINER \
   --interactive \
   --command "$STDIN_INPUT"
