@@ -223,6 +223,22 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 		return nil, nil, fmt.Errorf("failed to parse connection envvars")
 	}
 
+	for key, b64EncVal := range connParams.EnvVars {
+		if !strings.HasPrefix(key, "envvar:") {
+			continue
+		}
+		envVal, _ := base64.StdEncoding.DecodeString(fmt.Sprintf("%v", b64EncVal))
+		if len(envVal) > 0 && string(envVal) == pb.SystemAgentEnvs {
+			envKey := key[7:]
+			upstreamEnvVal, exists := os.LookupEnv(envKey)
+			if exists {
+				connParams.EnvVars[fmt.Sprintf("envvar:%s", envKey)] = b64Enc([]byte(upstreamEnvVal))
+			}
+			log.With("sid", sessionIDKey).Debugf("upstream system envs, key='%v', exists=%v, empty=%v",
+				envKey, exists, len(upstreamEnvVal) == 0)
+		}
+	}
+
 	if b64EncPaswd, ok := connParams.EnvVars["envvar:PASS"]; ok {
 		switch connType {
 		case pb.ConnectionTypePostgres:
