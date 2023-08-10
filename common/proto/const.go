@@ -38,6 +38,8 @@ const (
 	ConnectionOriginClientProxyManager = "client-proxymanager"
 	ConnectionOriginClientAPI          = "client-api"
 
+	SystemAgentEnvs = "system.agent.envs"
+
 	ClientLoginCallbackAddress string = "127.0.0.1:3587"
 
 	ClientVerbConnect = "connect"
