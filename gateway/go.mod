@@ -5,7 +5,7 @@ go 1.19
 replace github.com/runopsio/hoop/common => ../common
 
 require (
-	github.com/MicahParks/keyfunc v1.4.0
+	github.com/MicahParks/keyfunc/v2 v2.1.0
 	github.com/blevesearch/bleve/v2 v2.3.6
 	github.com/coreos/go-oidc/v3 v3.4.0
 	github.com/getsentry/sentry-go v0.18.0
@@ -15,7 +15,7 @@ require (
 	github.com/go-co-op/gocron v1.18.1
 	github.com/go-git/go-billy/v5 v5.4.1
 	github.com/go-git/go-git/v5 v5.5.2
-	github.com/golang-jwt/jwt/v4 v4.4.2
+	github.com/golang-jwt/jwt/v5 v5.0.0
 	github.com/google/uuid v1.3.0
 	github.com/hashicorp/hcl/v2 v2.16.2
 	github.com/runopsio/hoop/common v0.0.0-00010101000000-000000000000
@@ -23,7 +23,6 @@ require (
 	github.com/slack-go/slack v0.12.2
 	github.com/stretchr/testify v1.8.2
 	github.com/tidwall/wal v1.1.7
-	github.com/zclconf/go-cty v1.12.1
 	go.uber.org/zap v1.24.0
 	golang.org/x/oauth2 v0.0.0-20221006150949-b44042a4b9c1
 	google.golang.org/grpc v1.49.0
@@ -108,6 +107,7 @@ require (
 	github.com/tidwall/tinylru v1.1.0 // indirect
 	github.com/ugorji/go/codec v1.2.7 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
+	github.com/zclconf/go-cty v1.12.1 // indirect
 	go.etcd.io/bbolt v1.3.5 // indirect
 	go.opentelemetry.io/otel v1.10.0 // indirect
 	go.opentelemetry.io/otel/trace v1.10.0 // indirect
