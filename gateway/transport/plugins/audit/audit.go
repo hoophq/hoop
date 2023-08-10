@@ -1,7 +1,6 @@
 package audit
 
 import (
-	"encoding/hex"
 	"fmt"
 	"os"
 	"strconv"
@@ -95,7 +94,7 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		}
 		if err != nil {
 			log.With("sid", pctx.SID).Warnf("failed parsing simple query data, err=%v", err)
-			log.With("sid", pctx.SID).Warnf(hex.Dump(pkt.Payload))
+			log.With("sid", pctx.SID).Warnf("% X", pkt.Payload)
 			return nil, fmt.Errorf("failed obtaining simple query data, err=%v", err)
 		}
 		return nil, p.writeOnReceive(pctx.SID, 'i', dlpCount, queryBytes)

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MicahParks/keyfunc"
+	keyfunc "github.com/MicahParks/keyfunc/v2"
 	"github.com/coreos/go-oidc/v3/oidc"
-	"github.com/golang-jwt/jwt/v4"
+	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	"golang.org/x/oauth2"
