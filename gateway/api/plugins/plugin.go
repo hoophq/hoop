@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/log"
+	"github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	connectionstorage "github.com/runopsio/hoop/gateway/storagev2/connection"
 	pluginstorage "github.com/runopsio/hoop/gateway/storagev2/plugin"
@@ -253,6 +254,10 @@ func parsePluginConnections(c *gin.Context, req PluginRequest) ([]*types.PluginC
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": msg})
 			return nil, nil, io.EOF
 		}
+		connConfig := reqconn.Config
+		if req.Name == plugintypes.PluginDLPName && len(connConfig) == 0 {
+			connConfig = proto.DefaultInfoTypes
+		}
 		// create deterministic uuid to allow plugin connection entities
 		// to be updated instead of generating new ones
 		docUUID := uuid.NewSHA1(uuid.NameSpaceURL, bytes.NewBufferString(fmt.Sprintf("%s:%s", req.Name, conn.Id)).Bytes())
@@ -260,7 +265,7 @@ func parsePluginConnections(c *gin.Context, req PluginRequest) ([]*types.PluginC
 			ID:           docUUID.String(),
 			ConnectionID: conn.Id,
 			Name:         conn.Name,
-			Config:       reqconn.Config,
+			Config:       connConfig,
 		})
 		connectionIDs = append(connectionIDs, docUUID.String())
 	}

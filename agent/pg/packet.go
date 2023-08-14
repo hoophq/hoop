@@ -195,6 +195,11 @@ func NewDataRowPacket(fieldCount uint16, dataRowValues ...string) *Packet {
 	p.frame = append(p.frame, fieldCountBytes[:]...)
 	for _, val := range dataRowValues {
 		var columnLen [4]byte
+		if val == DLPColumnNullType {
+			binary.BigEndian.PutUint32(columnLen[:], pg.ServerDataRowNull)
+			p.frame = append(p.frame, columnLen[:]...)
+			continue
+		}
 		binary.BigEndian.PutUint32(columnLen[:], uint32(len(val)))
 		p.frame = append(p.frame, columnLen[:]...)
 		p.frame = append(p.frame, []byte(val)...)

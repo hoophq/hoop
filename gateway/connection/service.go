@@ -113,6 +113,9 @@ func (s *Service) Evict(ctx *user.Context, connectionName string) error {
 }
 
 func (s *Service) FindOne(context *user.Context, name string) (*Connection, error) {
+	if name == "" {
+		return nil, nil
+	}
 	result, err := s.Storage.FindOne(context, name)
 	if err != nil {
 		return nil, err

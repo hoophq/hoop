@@ -186,22 +186,22 @@ func (s *Server) AuthGrpcInterceptor(srv any, ss grpc.ServerStream, info *grpc.S
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
 		gwctx := &gatewayContext{UserContext: *userCtx.ToAPIContext()}
-		if connectionName := mdget(md, "connection-name"); connectionName != "" {
-			conn, err := s.ConnectionService.FindOne(userCtx, connectionName)
-			if err != nil {
-				sentry.CaptureException(err)
-				return status.Errorf(codes.Internal, err.Error())
-			}
-			if conn != nil {
-				gwctx.Connection = types.ConnectionInfo{
-					ID:            conn.Id,
-					Name:          conn.Name,
-					Type:          string(conn.Type),
-					CmdEntrypoint: conn.Command,
-					Secrets:       conn.Secret,
-					AgentID:       conn.AgentId,
-				}
-			}
+		connectionName := mdget(md, "connection-name")
+		conn, err := s.ConnectionService.FindOne(userCtx, connectionName)
+		if err != nil {
+			sentry.CaptureException(err)
+			return status.Errorf(codes.Internal, err.Error())
+		}
+		if conn == nil {
+			return status.Errorf(codes.NotFound, "connection not found")
+		}
+		gwctx.Connection = types.ConnectionInfo{
+			ID:            conn.Id,
+			Name:          conn.Name,
+			Type:          string(conn.Type),
+			CmdEntrypoint: conn.Command,
+			Secrets:       conn.Secret,
+			AgentID:       conn.AgentId,
 		}
 		ctxVal = gwctx
 	}
