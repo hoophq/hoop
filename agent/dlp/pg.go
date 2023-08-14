@@ -140,8 +140,10 @@ func redactDataRow(dlpclient Client, conf *deidentifyConfig, dataRows *bytes.Buf
 		for i := 1; i <= int(columnNumbers); i++ {
 			columnLength := binary.BigEndian.Uint32(dataRowBuf.Next(4))
 			// -1 means it's a NULL value
+			isNullValue := false
 			if columnLength == pgtypes.ServerDataRowNull {
 				columnLength = 0
+				isNullValue = true
 			}
 			columnData := make([]byte, columnLength)
 			_, err := io.ReadFull(dataRowBuf, columnData[:])
@@ -150,7 +152,7 @@ func redactDataRow(dlpclient Client, conf *deidentifyConfig, dataRows *bytes.Buf
 			}
 			// allows decoding this value to the proper type when the data
 			// is returning from the dlp service
-			if columnLength == pgtypes.ServerDataRowNull {
+			if isNullValue {
 				columnData = []byte(pg.DLPColumnNullType)
 			}
 			// must append it only once
