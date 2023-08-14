@@ -224,6 +224,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 	err = sessionStorage.Write(storageCtx, newSession)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "The session couldn't be created"})
+		return
 	}
 
 	sessionapi.RunExec(c, newSession, body.ClientArgs)

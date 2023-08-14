@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/runopsio/hoop/client/cmd/styles"
 	clientconfig "github.com/runopsio/hoop/client/config"
@@ -30,8 +29,8 @@ func init() {
 
 var MainCmd = &cobra.Command{
 	Use:          "config",
-	Short:        "It manages the hoop configuration file",
-	Hidden:       true,
+	Short:        "Manage the hoop configuration file",
+	Hidden:       false,
 	SilenceUsage: false,
 }
 
@@ -40,10 +39,6 @@ var createCmd = &cobra.Command{
 	Short:        "Creates or override a client hoop configuration file",
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
-		accessToken := os.Getenv("HOOP_TOKEN")
-		if accessToken == "" {
-			styles.PrintErrorAndExit("missing HOOP_TOKEN environment variable")
-		}
 		if _, err := grpc.ParseServerAddress(grpcURLFlag); err != nil {
 			styles.PrintErrorAndExit("--grpc-url value is not a gRPC address")
 		}
@@ -52,11 +47,7 @@ var createCmd = &cobra.Command{
 			styles.PrintErrorAndExit("--api-url value is not an http address")
 		}
 
-		if len(strings.Split(accessToken, ".")) != 3 {
-			styles.PrintErrorAndExit("access token is not a jwt token")
-		}
-
-		filepath, err := clientconfig.NewConfigFile(apiURLFlag, grpcURLFlag, accessToken)
+		filepath, err := clientconfig.NewConfigFile(apiURLFlag, grpcURLFlag, os.Getenv("HOOP_TOKEN"))
 		if err != nil {
 			styles.PrintErrorAndExit("failed creating configuration file, err=%v", err)
 		}
@@ -66,7 +57,7 @@ var createCmd = &cobra.Command{
 
 var viewCmd = &cobra.Command{
 	Use:          "view",
-	Short:        "Show the client hoop configuration file",
+	Short:        "Show the current configuration",
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
 		c := clientconfig.GetClientConfigOrDie()

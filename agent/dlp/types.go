@@ -2,9 +2,10 @@ package dlp
 
 import (
 	"bytes"
+	"context"
+
 	dlp "cloud.google.com/go/dlp/apiv2"
 	"cloud.google.com/go/dlp/apiv2/dlppb"
-	"context"
 	pbdlp "github.com/runopsio/hoop/common/dlp"
 	pb "github.com/runopsio/hoop/common/proto"
 )

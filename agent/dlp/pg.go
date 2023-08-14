@@ -148,6 +148,11 @@ func redactDataRow(dlpclient Client, conf *deidentifyConfig, dataRows *bytes.Buf
 			if err != nil {
 				return &Chunk{data: dataRows}, fmt.Errorf("failed reading column (idx=%v,len=%v), err=%v", i, columnLength, err)
 			}
+			// allows decoding this value to the proper type when the data
+			// is returning from the dlp service
+			if columnLength == pgtypes.ServerDataRowNull {
+				columnData = []byte(pg.DLPColumnNullType)
+			}
 			// must append it only once
 			if len(tableInput.Headers) < int(columnNumbers) {
 				tableInput.Headers = append(tableInput.Headers, &dlppb.FieldId{Name: fmt.Sprintf("%v", i)})
