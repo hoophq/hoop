@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -8,11 +10,15 @@ import (
 
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/memory"
+	"github.com/runopsio/hoop/common/pg"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 )
 
-const defaultPostgresPort = "5433"
+const (
+	defaultPostgresPort      = "5433"
+	maxSimpleQueryPacketSize = 1048576 // 1MB
+)
 
 type PGServer struct {
 	listenPort      string
@@ -78,9 +84,8 @@ func (p *PGServer) serveConn(sessionID, connectionID string, pgClient net.Conn) 
 		string(pb.SpecClientConnectionID): []byte(connectionID),
 		string(pb.SpecGatewaySessionID):   []byte(sessionID),
 	})
-	if _, err := io.CopyBuffer(pgServerWriter, pgClient, nil); err != nil {
-		log.Infof("failed copying buffer, err=%v", err)
-		connWrapper.Close()
+	if _, err := copyBuffer(pgServerWriter, pgClient); err != nil {
+		log.Warnf("failed copying buffer, err=%v", err)
 	}
 }
 
@@ -111,4 +116,75 @@ func (p *PGServer) getConnection(connectionID string) (io.WriteCloser, error) {
 
 func (p *PGServer) ListenPort() string {
 	return p.listenPort
+}
+
+// copyBuffer is an adaptation of the actual implementation of Copy and CopyBuffer.
+// it parses simple query packets fully.
+func copyBuffer(dst io.Writer, src io.Reader) (written int64, err error) {
+	buf := make([]byte, 32*1024)
+	var fullBuffer []byte
+	for {
+		nr, er := src.Read(buf)
+		if nr > 0 {
+			pktType := pg.PacketType(buf[0])
+			switch pktType {
+			case pg.ClientSimpleQuery:
+				pktLen := int(binary.BigEndian.Uint32(buf[1:5]) - 4)
+				frameSize := len(buf[5:nr])
+				log.With("type", "simple").Infof("action=begin, read %v with header size of %v", frameSize, pktLen)
+				if pktLen > frameSize {
+					fullBuffer = append(fullBuffer, buf[0:nr]...)
+					continue
+				}
+			case pg.ClientParse:
+				return 0, fmt.Errorf("extended query protocol is not supported")
+			}
+
+			if len(fullBuffer) > 0 {
+				fullBuffer = append(fullBuffer, buf[0:nr]...)
+				pktLen := int(binary.BigEndian.Uint32(fullBuffer[1:5]) - 4)
+				frameSize := len(fullBuffer[5:])
+				log.With("type", "simple").Infof("action=append, read %v with header size of %v, total = %v",
+					len(buf[0:nr]), pktLen, len(fullBuffer))
+				switch {
+				case frameSize < pktLen:
+					continue
+				case frameSize > pktLen:
+					return 0, fmt.Errorf("failed processing simple query packet, inconsistent sizes")
+				case len(fullBuffer) > maxSimpleQueryPacketSize:
+					return 0, fmt.Errorf("the query is too big (> 1MB)")
+				}
+				_, derr := dst.Write(fullBuffer)
+				if derr != nil {
+					return 0, derr
+				}
+				log.With("type", "simple").Infof("action=write, wrote %v with headersize of %v", len(fullBuffer), pktLen)
+				fullBuffer = []byte{} // reset
+				continue
+			}
+			nw, ew := dst.Write(buf[0:nr])
+			if nw < 0 || nr < nw {
+				nw = 0
+				if ew == nil {
+					ew = errors.New("invalid write result")
+				}
+			}
+			written += int64(nw)
+			if ew != nil {
+				err = ew
+				break
+			}
+			if nr != nw {
+				err = io.ErrShortWrite
+				break
+			}
+		}
+		if er != nil {
+			if er != io.EOF {
+				err = er
+			}
+			break
+		}
+	}
+	return written, err
 }

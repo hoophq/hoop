@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"os/signal"
 	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -29,6 +31,7 @@ import (
 var inputFilepath string
 var inputStdin string
 var autoExec bool
+var inputEnvVars []string
 var verboseMode bool
 
 // execCmd represents the exec command
@@ -47,13 +50,19 @@ var execCmd = &cobra.Command{
 		monitoring.SentryPreRun(cmd, args)
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		runExec(args)
+		clientEnvVars, err := parseClientEnvVars()
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+		runExec(args, clientEnvVars)
 	},
 }
 
 func init() {
 	execCmd.Flags().StringVarP(&inputFilepath, "file", "f", "", "The path of the file containing the command")
 	execCmd.Flags().StringVarP(&inputStdin, "input", "i", "", "The input to be executed remotely")
+	execCmd.Flags().StringSliceVarP(&inputEnvVars, "env", "e", nil, "Input environment variables to send")
 	execCmd.Flags().BoolVar(&autoExec, "auto-approve", false, "Automatically run after a command is approved")
 	execCmd.Flags().BoolVarP(&verboseMode, "verbose", "v", false, "Verbose mode")
 	rootCmd.AddCommand(execCmd)
@@ -110,7 +119,7 @@ func parseExecInput(c *connect) (bool, []byte) {
 	return isStdinInput, parseFlagInputs(c)
 }
 
-func runExec(args []string) {
+func runExec(args []string, clientEnvVars map[string]string) {
 	config := clientconfig.GetClientConfigOrDie()
 	loader := spinner.New(spinner.CharSets[11], 70*time.Millisecond,
 		spinner.WithWriter(os.Stderr), spinner.WithHiddenCursor(true))
@@ -131,7 +140,7 @@ func runExec(args []string) {
 
 	c := newClientConnect(config, loader, args, pb.ClientVerbExec)
 	c.client.StartKeepAlive()
-	execSpec := newClientArgsSpec(c.clientArgs)
+	execSpec := newClientArgsSpec(c.clientArgs, clientEnvVars)
 	isStdinInput, execInputPayload := parseExecInput(c)
 	sendOpenSessionPktFn := func() {
 		if err := c.client.Send(&pb.Packet{
@@ -222,4 +231,22 @@ func runExec(args []string) {
 			os.Exit(exitCode)
 		}
 	}
+}
+
+func parseClientEnvVars() (map[string]string, error) {
+	envVar := map[string]string{}
+	var invalidEnvs []string
+	for _, envvarStr := range inputEnvVars {
+		key, val, found := strings.Cut(envvarStr, "=")
+		if !found {
+			invalidEnvs = append(invalidEnvs, envvarStr)
+			continue
+		}
+		envKey := fmt.Sprintf("envvar:%s", strings.ToUpper(key))
+		envVar[envKey] = base64.StdEncoding.EncodeToString([]byte(val))
+	}
+	if len(invalidEnvs) > 0 {
+		return nil, fmt.Errorf("invalid client env vars, expected env=var. found=%v", invalidEnvs)
+	}
+	return envVar, nil
 }

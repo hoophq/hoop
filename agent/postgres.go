@@ -116,7 +116,7 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	log.Printf("starting postgres connection for %s", sessionID)
 	pgServer, err := newTCPConn(connenv.host, connenv.port)
 	if err != nil {
-		log.Printf("failed obtaining connection with postgres server, err=%v", err)
+		log.Errorf("failed obtaining connection with postgres server, err=%v", err)
 		a.writePGClientErr(sessionID, swPgClient,
 			"failed connecting with postgres server, contact the administrator")
 		return

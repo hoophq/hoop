@@ -53,11 +53,10 @@ func isPortActive(host, port string) error {
 }
 
 func newTCPConn(host, port string) (net.Conn, error) {
-	serverConn, err := net.Dial("tcp4", fmt.Sprintf("%s:%s", host, port))
+	serverConn, err := net.DialTimeout("tcp4", fmt.Sprintf("%s:%s", host, port), time.Second*10)
 	if err != nil {
 		return nil, fmt.Errorf("failed dialing server: %s", err)
 	}
-
 	log.Infof("tcp connection stablished with server. address=%v, local-addr=%v",
 		serverConn.LocalAddr(),
 		serverConn.RemoteAddr())
@@ -251,11 +250,11 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 }
 
 func (a *Agent) checkTCPLiveness(pkt *pb.Packet, connEnvVars *connEnv) error {
-	sessionID := fmt.Sprintf("%v", pkt.Spec[pb.SpecGatewaySessionID])
-	connType := fmt.Sprintf("%v", pkt.Spec[pb.SpecConnectionType])
+	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
+	connType := string(pkt.Spec[pb.SpecConnectionType])
 	if connType == pb.ConnectionTypePostgres || connType == pb.ConnectionTypeTCP || connType == pb.ConnectionTypeMySQL {
 		if err := isPortActive(connEnvVars.host, connEnvVars.port); err != nil {
-			msg := fmt.Sprintf("failed connecting to %s:%s, err=%v",
+			msg := fmt.Sprintf("failed connecting to remote host %s:%s, reason=%v",
 				connEnvVars.host, connEnvVars.port, err)
 			log.Warnf("session=%v - %v", sessionID, msg)
 			return fmt.Errorf("%s", msg)

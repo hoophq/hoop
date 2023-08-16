@@ -132,6 +132,9 @@ func SimpleQueryContent(payload []byte) (bool, []byte, error) {
 		return true, nil, fmt.Errorf("failed reading header, err=%v", err)
 	}
 	pktLen := binary.BigEndian.Uint32(header[:]) - 4 // don't include header size (4)
+	if uint32(len(payload[5:])) != pktLen {
+		return true, nil, fmt.Errorf("unexpected packet payload, received %v/%v", len(payload[5:]), pktLen)
+	}
 	queryFrame := make([]byte, pktLen)
 	if _, err := io.ReadFull(r, queryFrame); err != nil {
 		return true, nil, fmt.Errorf("failed reading query, err=%v", err)
