@@ -9,12 +9,10 @@ import (
 	"os/exec"
 	"syscall"
 
+	"github.com/creack/pty"
 	"github.com/runopsio/hoop/common/log"
-
 	"github.com/runopsio/hoop/common/runtime"
 	term "github.com/runopsio/hoop/common/terminal"
-
-	"github.com/creack/pty"
 )
 
 const chunkMaxBufSize = 4096

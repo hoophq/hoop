@@ -54,13 +54,19 @@ var (
 		},
 		SilenceUsage: false,
 		Run: func(cmd *cobra.Command, args []string) {
-			runConnect(args)
+			clientEnvVars, err := parseClientEnvVars()
+			if err != nil {
+				fmt.Println(err)
+				os.Exit(1)
+			}
+			runConnect(args, clientEnvVars)
 		},
 	}
 )
 
 func init() {
 	connectCmd.Flags().StringVarP(&connectFlags.proxyPort, "port", "p", "", "The port to listen the proxy")
+	connectCmd.Flags().StringSliceVarP(&inputEnvVars, "env", "e", nil, "Input environment variables to send")
 	connectCmd.Flags().StringVarP(&connectFlags.duration, "duration", "d", "30m", "The amount of time that the session will last. Valid time units are 's', 'm', 'h'")
 	rootCmd.AddCommand(connectCmd)
 }
@@ -74,7 +80,7 @@ type connect struct {
 	loader         *spinner.Spinner
 }
 
-func runConnect(args []string) {
+func runConnect(args []string, clientEnvVars map[string]string) {
 	config := clientconfig.GetClientConfigOrDie()
 	loader := spinner.New(spinner.CharSets[11], 70*time.Millisecond)
 	loader.Color("green")
@@ -83,7 +89,7 @@ func runConnect(args []string) {
 
 	c := newClientConnect(config, loader, args, pb.ClientVerbConnect)
 	sendOpenSessionPktFn := func() {
-		spec := newClientArgsSpec(c.clientArgs)
+		spec := newClientArgsSpec(c.clientArgs, clientEnvVars)
 		spec[pb.SpecJitTimeout] = []byte(connectFlags.duration)
 		if err := c.client.Send(&pb.Packet{
 			Type: pbagent.SessionOpen,
@@ -341,7 +347,7 @@ func newClientConnect(config *clientconfig.Config, loader *spinner.Spinner, args
 	return c
 }
 
-func newClientArgsSpec(clientArgs []string) map[string][]byte {
+func newClientArgsSpec(clientArgs []string, clientEnvVars map[string]string) map[string][]byte {
 	spec := map[string][]byte{}
 	if len(clientArgs) > 0 {
 		encArgs, err := pb.GobEncode(clientArgs)
@@ -349,6 +355,13 @@ func newClientArgsSpec(clientArgs []string) map[string][]byte {
 			log.Fatalf("failed encoding args, err=%v", err)
 		}
 		spec[pb.SpecClientExecArgsKey] = encArgs
+	}
+	if len(clientEnvVars) > 0 {
+		encEnvVars, err := pb.GobEncode(clientEnvVars)
+		if err != nil {
+			log.Fatalf("failed encoding client env vars, err=%v", err)
+		}
+		spec[pb.SpecClientExecEnvVar] = encEnvVars
 	}
 	return spec
 }
