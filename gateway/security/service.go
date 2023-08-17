@@ -113,7 +113,7 @@ func (s *Service) Callback(c *gin.Context, state, code string) string {
 		return login.Redirect + "?error=unexpected_error"
 	}
 
-	context, err := s.UserService.FindBySub(sub)
+	ctx, err := s.UserService.FindBySub(sub)
 	if err != nil {
 		log.Errorf("failed fetching user by sub, reason=%v", err)
 		s.loginOutcome(login, outcomeError)
@@ -121,15 +121,15 @@ func (s *Service) Callback(c *gin.Context, state, code string) string {
 	}
 
 	var isSignup bool
-	if context.Org == nil || context.User == nil {
+	if ctx.Org == nil || ctx.User == nil {
 		log.Infof("starting signup for sub=%v, multitenant=%v, ctxorg=%v, ctxuser=%v",
-			sub, user.IsOrgMultiTenant(), context.Org, context.User)
+			sub, user.IsOrgMultiTenant(), ctx.Org, ctx.User)
 		isSignup = true
 		switch user.IsOrgMultiTenant() {
 		case true:
-			err = s.signupMultiTenant(c, context, sub, idTokenClaims)
+			err = s.signupMultiTenant(ctx, sub, idTokenClaims)
 		default:
-			err = s.signup(c, context, sub, idTokenClaims)
+			err = s.signup(ctx, sub, idTokenClaims)
 		}
 		log.Infof("signup finished for sub=%v, success=%v", sub, err == nil)
 		if err != nil {
@@ -137,42 +137,42 @@ func (s *Service) Callback(c *gin.Context, state, code string) string {
 			s.loginOutcome(login, outcomeError)
 			return login.Redirect + "?error=unexpected_error"
 		}
+		s.Analytics.Identify(ctx.ToAPIContext())
+		s.Analytics.Track(
+			ctx.ToAPIContext(),
+			analytics.EventSignup,
+			map[string]any{"user-agent": c.GetHeader("user-agent")},
+		)
 	}
 
-	if context.User.Status != user.StatusActive {
+	if ctx.User.Status != user.StatusActive {
 		log.Infof("failed saving user to database, reason=%v", err)
 		s.loginOutcome(login, pendingReviewError)
 		return login.Redirect + "?error=pending_review"
 	}
 
 	if !isSignup {
-		// sync groups from provider on every login
-		switch groupsClaim := idTokenClaims[pb.CustomClaimGroups].(type) {
-		case string:
-			if groupsClaim != "" {
-				context.User.Groups = []string{groupsClaim}
-			}
-		case []any:
-			context.User.Groups = mapGroupsToString(groupsClaim)
-		case nil: // noop
-		default:
-			log.Warnf("failed syncing group claims, reason=unknown type:%T", groupsClaim)
+		// sync groups if the claim pb.CustomClaimGroups exists
+		if email, _, mustSync, groups := parseJWTClaims(idTokenClaims); mustSync {
+			log.Infof("syncing groups for %v", email)
+			ctx.User.Groups = groups
 		}
-		if err := s.UserService.Persist(context.User); err != nil {
+		if login.SlackID != "" {
+			ctx.User.SlackID = login.SlackID
+		}
+		if err := s.UserService.Persist(ctx.User); err != nil {
 			log.Errorf("failed saving user to database, reason=%v", err)
 			s.loginOutcome(login, outcomeError)
 			return login.Redirect + "?error=unexpected_error"
 		}
 	}
 
-	if login.SlackID != "" {
-		context.User.SlackID = login.SlackID
-		_ = s.UserService.Persist(context.User)
-	}
-
 	s.loginOutcome(login, outcomeSuccess)
-	s.Analytics.Track(context.ToAPIContext(), analytics.EventLogin,
-		map[string]any{"user-agent": c.GetHeader("user-agent")})
+	s.Analytics.Track(
+		ctx.ToAPIContext(),
+		analytics.EventLogin,
+		map[string]any{"user-agent": c.GetHeader("user-agent")},
+	)
 
 	return login.Redirect + "?token=" + token.AccessToken
 }
@@ -194,7 +194,7 @@ func (s *Service) exchangeCodeByToken(code string) (*oauth2.Token, *oidc.IDToken
 	return token, idToken, nil
 }
 
-func (s *Service) signup(c *gin.Context, ctx *user.Context, sub string, idTokenClaims map[string]any) error {
+func (s *Service) signup(ctx *user.Context, sub string, idTokenClaims map[string]any) error {
 	org, err := s.UserService.GetOrgByName(pb.DefaultOrgName)
 	if err != nil {
 		return fmt.Errorf("failed obtaining default org, err=%v", err)
@@ -203,10 +203,10 @@ func (s *Service) signup(c *gin.Context, ctx *user.Context, sub string, idTokenC
 	if err != nil {
 		return fmt.Errorf("failed listing users, err=%v", err)
 	}
-	var groupList []string
+	email, profileName, _, groupList := parseJWTClaims(idTokenClaims)
 	// first user is admin
 	if len(userList) == 0 {
-		groupList = []string{
+		groupList = append(groupList, []string{
 			types.GroupAdmin,
 			types.GroupSecurity,
 			types.GroupSRE,
@@ -214,11 +214,9 @@ func (s *Service) signup(c *gin.Context, ctx *user.Context, sub string, idTokenC
 			types.GroupDevops,
 			types.GroupSupport,
 			types.GroupEngineering,
-		}
+		}...)
 	}
 
-	email, _ := idTokenClaims["email"].(string)
-	profileName, _ := idTokenClaims["name"].(string)
 	var slackID string
 	if iuser, _ := s.UserService.FindInvitedUser(email); iuser != nil {
 		slackID = iuser.SlackID
@@ -237,16 +235,11 @@ func (s *Service) signup(c *gin.Context, ctx *user.Context, sub string, idTokenC
 	if err := s.UserService.Persist(ctx.User); err != nil {
 		return fmt.Errorf("failed persisting user %v to default org, err=%v", sub, err)
 	}
-
-	s.Analytics.Identify(ctx.ToAPIContext())
-	s.Analytics.Track(ctx.ToAPIContext(), analytics.EventSignup,
-		map[string]any{"user-agent": c.GetHeader("user-agent")})
 	return nil
 }
 
-func (s *Service) signupMultiTenant(c *gin.Context, context *user.Context, sub string, idTokenClaims map[string]any) error {
-	email, _ := idTokenClaims["email"].(string)
-	profileName, _ := idTokenClaims["name"].(string)
+func (s *Service) signupMultiTenant(context *user.Context, sub string, idTokenClaims map[string]any) error {
+	email, profileName, _, groups := parseJWTClaims(idTokenClaims)
 	newOrg := false
 
 	invitedUser, err := s.UserService.FindInvitedUser(email)
@@ -255,12 +248,11 @@ func (s *Service) signupMultiTenant(c *gin.Context, context *user.Context, sub s
 	}
 
 	if context.Org == nil && invitedUser == nil {
-		org, ok := idTokenClaims[pb.CustomClaimOrg].(string)
-		if !ok || org == "" {
-			org = user.ExtractDomain(email)
+		orgName, _ := idTokenClaims[pb.CustomClaimOrg].(string)
+		if orgName == "" {
+			orgName = user.ExtractDomain(email)
 		}
-
-		orgData, err := s.UserService.GetOrgByName(org)
+		orgData, err := s.UserService.GetOrgByName(orgName)
 		if err != nil {
 			return err
 		}
@@ -268,7 +260,7 @@ func (s *Service) signupMultiTenant(c *gin.Context, context *user.Context, sub s
 		if orgData == nil {
 			orgData = &user.Org{
 				Id:   uuid.NewString(),
-				Name: org,
+				Name: orgName,
 			}
 
 			if err := s.UserService.Persist(orgData); err != nil {
@@ -282,11 +274,6 @@ func (s *Service) signupMultiTenant(c *gin.Context, context *user.Context, sub s
 	}
 
 	if context.User == nil {
-		groups := make([]string, 0)
-		groupsClaim, _ := idTokenClaims[pb.CustomClaimGroups].([]any)
-		if len(groupsClaim) > 0 {
-			groups = mapGroupsToString(groupsClaim)
-		}
 		status := user.StatusReviewing
 		if s.Provider.Issuer != idp.DefaultProviderIssuer {
 			status = user.StatusActive
@@ -294,7 +281,7 @@ func (s *Service) signupMultiTenant(c *gin.Context, context *user.Context, sub s
 
 		if newOrg {
 			status = user.StatusActive
-			if len(groupsClaim) == 0 {
+			if len(groups) == 0 {
 				groups = append(groups,
 					types.GroupAdmin,
 					types.GroupSecurity,
@@ -321,7 +308,7 @@ func (s *Service) signupMultiTenant(c *gin.Context, context *user.Context, sub s
 			}
 
 			status = user.StatusActive
-			if len(groupsClaim) == 0 {
+			if len(groups) == 0 {
 				groups = invitedUser.Groups
 			}
 		}
@@ -339,13 +326,34 @@ func (s *Service) signupMultiTenant(c *gin.Context, context *user.Context, sub s
 		if err := s.UserService.Persist(context.User); err != nil {
 			return err
 		}
-
-		s.Analytics.Identify(context.ToAPIContext())
-		s.Analytics.Track(context.ToAPIContext(), analytics.EventSignup,
-			map[string]any{"user-agent": c.GetHeader("user-agent")})
 	}
 
 	return nil
+}
+
+func parseJWTClaims(idTokenClaims map[string]any) (email, profile string, syncGroups bool, groups []string) {
+	email, _ = idTokenClaims["email"].(string)
+	profile, _ = idTokenClaims["name"].(string)
+	switch groupsClaim := idTokenClaims[pb.CustomClaimGroups].(type) {
+	case string:
+		syncGroups = true
+		if groupsClaim != "" {
+			groups = []string{groupsClaim}
+		}
+	case []any:
+		syncGroups = true
+		for _, g := range groupsClaim {
+			groupName, _ := g.(string)
+			if groupName == "" {
+				continue
+			}
+			groups = append(groups, groupName)
+		}
+	case nil: // noop
+	default:
+		log.Errorf("failed syncing group claims, reason=unknown type:%T", groupsClaim)
+	}
+	return
 }
 
 func debugClaims(subject string, claims map[string]any) {
@@ -363,16 +371,4 @@ func debugClaims(subject string, claims map[string]any) {
 func (s *Service) loginOutcome(login *login, outcome outcomeType) {
 	login.Outcome = outcome
 	s.Storage.PersistLogin(login)
-}
-
-func mapGroupsToString(groupsClaim []any) []string {
-	groups := make([]string, 0)
-	for _, g := range groupsClaim {
-		groupName, _ := g.(string)
-		if groupName == "" {
-			continue
-		}
-		groups = append(groups, groupName)
-	}
-	return groups
 }
