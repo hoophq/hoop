@@ -175,6 +175,10 @@ func (a *Handler) Post(c *gin.Context) {
 func (a *Handler) Userinfo(c *gin.Context) {
 	context, _ := c.Get("context")
 	ctx := context.(*Context)
+	groupList := []string{}
+	if len(ctx.User.Groups) > 0 {
+		groupList = ctx.User.Groups
+	}
 	c.JSON(http.StatusOK, &struct {
 		ID            string     `json:"id"`
 		Name          string     `json:"name"`
@@ -190,7 +194,7 @@ func (a *Handler) Userinfo(c *gin.Context) {
 		Email:         ctx.User.Email,
 		Status:        ctx.User.Status,
 		SlackID:       ctx.User.SlackID,
-		Groups:        ctx.User.Groups,
+		Groups:        groupList,
 		IsAdmin:       ctx.User.IsAdmin(),
 		IsMultiTenant: IsOrgMultiTenant(),
 	})
