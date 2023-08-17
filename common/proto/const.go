@@ -52,9 +52,7 @@ const (
 	SessionPhaseGatewaySessionClose = "gateway-session-close"
 	SessionPhaseClientErr           = "client-err"
 
-	// DEPRECATED
-	CustomClaimOrg = "https://app.hoop.dev/org"
-
+	CustomClaimOrg    = "https://app.hoop.dev/org"
 	CustomClaimGroups = "https://app.hoop.dev/groups"
 	DefaultOrgName    = "default"
 )

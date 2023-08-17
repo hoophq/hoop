@@ -248,7 +248,10 @@ func (s *Service) signupMultiTenant(context *user.Context, sub string, idTokenCl
 	}
 
 	if context.Org == nil && invitedUser == nil {
-		orgName := user.ExtractDomain(email)
+		orgName, _ := idTokenClaims[pb.CustomClaimOrg].(string)
+		if orgName == "" {
+			orgName = user.ExtractDomain(email)
+		}
 		orgData, err := s.UserService.GetOrgByName(orgName)
 		if err != nil {
 			return err
