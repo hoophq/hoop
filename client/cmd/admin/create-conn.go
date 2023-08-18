@@ -94,7 +94,7 @@ var createConnectionCmd = &cobra.Command{
 		if err != nil {
 			styles.PrintErrorAndExit(err.Error())
 		}
-		if agentID == "" {
+		if agentID == "" && !skipStrictValidation {
 			styles.PrintErrorAndExit("could not find agent by name %q", connAgentFlag)
 		}
 		connectionBody := map[string]any{
@@ -103,10 +103,6 @@ var createConnectionCmd = &cobra.Command{
 			"command":  cmdList,
 			"secret":   envVar,
 			"agent_id": agentID,
-		}
-		pluginList, err := parseConnectionPlugins(config, args[0])
-		if err != nil {
-			styles.PrintErrorAndExit(err.Error())
 		}
 
 		resp, err := httpBodyRequest(apir, method, connectionBody)
@@ -121,6 +117,20 @@ var createConnectionCmd = &cobra.Command{
 		}
 
 		fmt.Printf("connection %v %v\n", apir.name, actionName)
+
+		var connectionID string
+		if data, ok := resp.(map[string]any); ok {
+			connectionID = fmt.Sprintf("%v", data["id"])
+		}
+		if connectionID == "" && len(connPuginFlag) > 0 {
+			fmt.Println("missing id when creating/updating connection, it will not configure the plugin")
+			return
+		}
+
+		pluginList, err := parseConnectionPlugins(config, args[0], connectionID)
+		if err != nil {
+			styles.PrintErrorAndExit(err.Error())
+		}
 
 		var plugins []string
 		for _, pluginData := range pluginList {
@@ -225,7 +235,7 @@ func validateTcpEnvs(e map[string]string) error {
 	return nil
 }
 
-func parseConnectionPlugins(conf *clientconfig.Config, connectionName string) ([]map[string]any, error) {
+func parseConnectionPlugins(conf *clientconfig.Config, connectionName, connectionID string) ([]map[string]any, error) {
 	pluginList := []map[string]any{}
 	for _, pluginOption := range connPuginFlag {
 		pluginName, configStr, found := strings.Cut(pluginOption, ":")
@@ -267,6 +277,7 @@ func parseConnectionPlugins(conf *clientconfig.Config, connectionName string) ([
 		}
 		if !hasConnection {
 			pluginConnections = append(pluginConnections, map[string]any{
+				"id":     connectionID,
 				"name":   connectionName,
 				"config": connConfig,
 			})

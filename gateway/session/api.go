@@ -1,6 +1,8 @@
 package session
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -9,8 +11,11 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
+	"github.com/google/uuid"
 
 	"github.com/gin-gonic/gin"
+	"github.com/runopsio/hoop/common/log"
+	"github.com/runopsio/hoop/common/memory"
 	"github.com/runopsio/hoop/gateway/clientexec"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/storagev2"
@@ -24,6 +29,7 @@ type (
 	Handler struct {
 		Service           service
 		ConnectionService *connection.Service
+		ApiURL            string
 	}
 	SessionOptionKey string
 	SessionOption    struct {
@@ -56,11 +62,15 @@ const (
 	ReviewTypeOneTime = "onetime"
 )
 
-var availableSessionOptions = []SessionOptionKey{
-	OptionUser, OptionType, OptionConnection,
-	OptionStartDate, OptionEndDate,
-	OptionLimit, OptionOffset,
-}
+var (
+	availableSessionOptions = []SessionOptionKey{
+		OptionUser, OptionType, OptionConnection,
+		OptionStartDate, OptionEndDate,
+		OptionLimit, OptionOffset,
+	}
+	downloadTokenStore        = memory.New()
+	defaultDownloadExpireTime = time.Minute * 5
+)
 
 func (a *Handler) StatusHistory(c *gin.Context) {
 	context := user.ContextUser(c)
@@ -99,6 +109,35 @@ func (a *Handler) FindOne(c *gin.Context) {
 		return
 	}
 
+	fileExt := c.Query("extension")
+	if fileExt != "" {
+		if a.ApiURL == "" {
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed generating download link, missing api url"})
+			return
+		}
+		hash := sha256.Sum256([]byte(uuid.NewString()))
+		downloadToken := hex.EncodeToString(hash[:])
+		expireAtTime := time.Now().UTC().Add(defaultDownloadExpireTime).Format(time.RFC3339Nano)
+		downloadURL := fmt.Sprintf("%s/api/sessions/%s/download?token=%s&extension=%v&newline=%v&event-time=%v&format=%v",
+			a.ApiURL,
+			sessionID,
+			downloadToken,
+			fileExt,
+			c.Query("newline"),
+			c.Query("event-time"),
+			c.Query("format"),
+		)
+		requestPayload := map[string]string{
+			"token":           downloadToken,
+			"expire-at":       expireAtTime,
+			"context-user-id": context.User.Id,
+			"context-org-id":  context.Org.Id,
+		}
+		downloadTokenStore.Set(sessionID, requestPayload)
+		c.JSON(200, gin.H{"download_url": downloadURL, "expire_at": expireAtTime})
+		return
+	}
+
 	review, err := a.Service.FindReviewBySessionID(sessionID)
 	if err != nil {
 		return
@@ -123,6 +162,75 @@ func (a *Handler) FindOne(c *gin.Context) {
 		}
 	}
 	c.PureJSON(http.StatusOK, session)
+}
+
+func (a *Handler) DownloadSession(c *gin.Context) {
+	sessionID := c.Param("session_id")
+	requestToken := c.Query("token")
+	fileExt := c.Query("extension")
+	withLineBreak := c.Query("newline") == "1"
+	withEventTime := c.Query("event-time") == "1"
+	jsonFmt := c.Query("format") == "json"
+
+	store, _ := downloadTokenStore.Pop(sessionID).(map[string]string)
+	if len(store) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"status":  http.StatusNotFound,
+			"message": "not found"})
+		return
+	}
+	expireAt, err := time.Parse(time.RFC3339Nano, store["expire-at"])
+	if err != nil {
+		log.Errorf("failed parsing request time, reason=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  http.StatusInternalServerError,
+			"message": "failed processing request"})
+		return
+	}
+	token := fmt.Sprintf("%v", store["token"])
+	if token == "" {
+		log.Error("download token is empty")
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  http.StatusInternalServerError,
+			"message": "failed processing request"})
+		return
+	}
+
+	if time.Now().UTC().After(expireAt) {
+		c.JSON(http.StatusGone, gin.H{
+			"status":  http.StatusGone,
+			"message": "session download link expired"})
+		return
+	}
+
+	usrCtx := &user.Context{
+		Org:  &user.Org{Id: store["context-org-id"]},
+		User: &user.User{Id: store["context-user-id"]},
+	}
+	log.With("sid", sessionID).Infof("session download request, valid=%v, org=%v, user=%v, user-agent=%v",
+		token == requestToken, usrCtx.Org.Id, usrCtx.User.Id, c.GetHeader("user-agent"))
+	if token != requestToken {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"status":  http.StatusUnauthorized,
+			"message": "unauthorized"})
+		return
+	}
+	session, err := a.Service.FindOne(usrCtx, sessionID)
+	if err != nil || session == nil {
+		log.Errorf("failed fetching session, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  http.StatusInternalServerError,
+			"message": "failed fetching session"})
+		return
+	}
+
+	output := parseSessionToFile(session, withLineBreak, withEventTime, jsonFmt)
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s.%s", sessionID, fileExt))
+	c.Header("Content-Type", "application/octet-stream")
+	c.Header("Accept-Length", fmt.Sprintf("%d", len(output)))
+	wrote, err := c.Writer.Write(output)
+	log.With("sid", sessionID).Infof("session downloaded, extension=.%v, wrote=%v, success=%v, err=%v",
+		fileExt, wrote, err == nil, err)
 }
 
 func (a *Handler) FindAll(c *gin.Context) {

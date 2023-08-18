@@ -2,6 +2,7 @@ package session
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -121,4 +122,40 @@ func (s *Service) PersistReview(context *user.Context, review *types.Review) err
 		return err
 	}
 	return nil
+}
+
+func parseSessionToFile(s *types.Session, withLineBreak, withEventTime, jsonFmt bool) (output []byte) {
+	var jsonEventStreamList []map[string]string
+	for _, eventList := range s.EventStream {
+		event := eventList.(types.SessionEventStream)
+		eventTime, _ := event[0].(float64)
+		eventType, _ := event[1].(string)
+		eventData, _ := base64.StdEncoding.DecodeString(event[2].(string))
+		if jsonFmt {
+			jsonEventStreamList = append(jsonEventStreamList, map[string]string{
+				"time":   s.StartSession.Add(time.Second * time.Duration(eventTime)).Format(time.RFC3339),
+				"type":   eventType,
+				"stream": string(eventData),
+			})
+			continue
+		}
+		if withEventTime {
+			eventTime := s.StartSession.Add(time.Second * time.Duration(eventTime)).Format(time.RFC3339)
+			eventTime = fmt.Sprintf("%v ", eventTime)
+			output = append(output, []byte(eventTime)...)
+		}
+		switch eventType {
+		case "i":
+			output = append(output, eventData...)
+		case "o", "e":
+			output = append(output, eventData...)
+		}
+		if withLineBreak {
+			output = append(output, '\n')
+		}
+	}
+	if jsonFmt {
+		output, _ = json.Marshal(jsonEventStreamList)
+	}
+	return
 }
