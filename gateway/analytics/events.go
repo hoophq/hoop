@@ -20,7 +20,6 @@ const (
 	EventUdpatePluginConfig     = "hoop-udpate-plugin-config"
 	EventApiExecSession         = "hoop-api-exec-session"
 	EventFetchSessions          = "hoop-fetch-sessions"
-	EventDownloadSession        = "hoop-download-session"
 	EventListRunbooks           = "hoop-list-runbooks"
 	EventExecRunbook            = "hoop-exec-runbook"
 	EventUpdateReview           = "hoop-update-review"
