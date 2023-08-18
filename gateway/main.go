@@ -108,7 +108,7 @@ func Run(listenAdmAddr string) {
 		AgentHandler:      agent.Handler{Service: &agentService},
 		ConnectionHandler: connection.Handler{Service: &connectionService},
 		UserHandler:       user.Handler{Service: &userService, Analytics: analyticsService},
-		SessionHandler:    session.Handler{Service: &sessionService, ConnectionService: &connectionService},
+		SessionHandler:    session.Handler{ApiURL: apiURL, Service: &sessionService, ConnectionService: &connectionService},
 		IndexerHandler:    indexer.Handler{},
 		ReviewHandler:     review.Handler{Service: &reviewService},
 		SecurityHandler:   security.Handler{Service: &securityService},

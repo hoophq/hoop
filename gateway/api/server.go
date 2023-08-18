@@ -267,6 +267,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.GET("/sessions/:session_id/status",
 		api.Authenticate,
 		api.SessionHandler.StatusHistory)
+	route.GET("/sessions/:session_id/download", api.SessionHandler.DownloadSession)
 	route.GET("/sessions",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventFetchSessions),
