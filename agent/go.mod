@@ -11,7 +11,7 @@ require (
 	github.com/hashicorp/go-hclog v0.14.1
 	github.com/hashicorp/go-plugin v1.4.8
 	github.com/hoophq/pluginhooks v0.0.6
-	github.com/pyroscope-io/client v0.6.0
+	github.com/pyroscope-io/client v0.7.2
 	github.com/runopsio/hoop/common v0.0.0-00010101000000-000000000000
 	github.com/sethvargo/go-password v0.2.0
 	github.com/stretchr/testify v1.8.0
@@ -39,7 +39,7 @@ require (
 	github.com/mitchellh/go-testing-interface v0.0.0-20171004221916-a61a99592b77 // indirect
 	github.com/oklog/run v1.0.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/pyroscope-io/godeltaprof v0.1.0 // indirect
+	github.com/pyroscope-io/godeltaprof v0.1.2 // indirect
 	github.com/spf13/cobra v1.6.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	go.opencensus.io v0.23.0 // indirect
