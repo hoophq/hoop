@@ -56,10 +56,17 @@ publish:
 publish-tools:
 	./scripts/publish-tools.sh
 
+run-dev:
+	./scripts/dev/run-setup.sh
+	./scripts/dev/run.sh
+
+run-dev-postgres:
+	./scripts/dev/run-postgres.sh
+
 clean:
 	rm -rf ./rootfs/app/ui
 
 test:
 	go test -v github.com/runopsio/hoop/...
 
-.PHONY: release publish publish-tools clean test build build-webapp build-nodeapi package-binaries package-helmchart publish-assets
+.PHONY: release publish publish-tools clean test build build-webapp build-nodeapi package-binaries package-helmchart publish-assets run-dev run-dev-postgres
