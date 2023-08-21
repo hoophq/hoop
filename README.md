@@ -36,7 +36,7 @@ The configuration file to run the development server is located at `.env`. It co
 cp .env.sample .env
 ```
 
-> By default it use auth0 with the client id `tViX9dJ4K1sZ5omBE8yTaTXZAnlJ2q7D`. Contact an administrator to obtain the credentials or edit the `.env` file and pass your preferred identity provider credentials.
+> The sample configuration file, by default uses auth0 with the client id `tViX9dJ4K1sZ5omBE8yTaTXZAnlJ2q7D`. Contact an administrator to obtain the credentials or edit the `.env` file and pass your preferred identity provider credentials.
 
 ```sh
 make run-dev
