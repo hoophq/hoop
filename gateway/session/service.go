@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -124,14 +125,24 @@ func (s *Service) PersistReview(context *user.Context, review *types.Review) err
 	return nil
 }
 
-func parseSessionToFile(s *types.Session, withLineBreak, withEventTime, jsonFmt bool) (output []byte) {
+type sessionParseOption struct {
+	withLineBreak bool
+	withEventTime bool
+	withJsonFmt   bool
+	events        []string
+}
+
+func parseSessionToFile(s *types.Session, opts sessionParseOption) (output []byte) {
 	var jsonEventStreamList []map[string]string
 	for _, eventList := range s.EventStream {
 		event := eventList.(types.SessionEventStream)
 		eventTime, _ := event[0].(float64)
 		eventType, _ := event[1].(string)
 		eventData, _ := base64.StdEncoding.DecodeString(event[2].(string))
-		if jsonFmt {
+		if !slices.Contains(opts.events, eventType) {
+			continue
+		}
+		if opts.withJsonFmt {
 			jsonEventStreamList = append(jsonEventStreamList, map[string]string{
 				"time":   s.StartSession.Add(time.Second * time.Duration(eventTime)).Format(time.RFC3339),
 				"type":   eventType,
@@ -139,7 +150,7 @@ func parseSessionToFile(s *types.Session, withLineBreak, withEventTime, jsonFmt 
 			})
 			continue
 		}
-		if withEventTime {
+		if opts.withEventTime {
 			eventTime := s.StartSession.Add(time.Second * time.Duration(eventTime)).Format(time.RFC3339)
 			eventTime = fmt.Sprintf("%v ", eventTime)
 			output = append(output, []byte(eventTime)...)
@@ -150,11 +161,11 @@ func parseSessionToFile(s *types.Session, withLineBreak, withEventTime, jsonFmt 
 		case "o", "e":
 			output = append(output, eventData...)
 		}
-		if withLineBreak {
+		if opts.withLineBreak {
 			output = append(output, '\n')
 		}
 	}
-	if jsonFmt {
+	if opts.withJsonFmt {
 		output, _ = json.Marshal(jsonEventStreamList)
 	}
 	return
