@@ -10,11 +10,11 @@ To start a development server it requires the following local tools:
 
 - [Golang](https://go.dev/doc/install)
 - [Docker](https://docs.docker.com/engine/install/)
-- [Clojure](https://clojure.org/guides/install_clojure)
+- [Clojure / Java](https://clojure.org/guides/install_clojure)
 - [git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git)
 - Permission to clone `hoophq/xtdb` repository
 - Postgres Server (remote or local) (optional)
-- [node/npm](https://nodejs.org/en/download) (optional)
+- [node / npm](https://nodejs.org/en/download) (optional)
  - Permission to clone `runopsio/webapp` repository
 
 ### Start a postgres server
