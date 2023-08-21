@@ -118,7 +118,7 @@ func (a *Handler) FindOne(c *gin.Context) {
 		hash := sha256.Sum256([]byte(uuid.NewString()))
 		downloadToken := hex.EncodeToString(hash[:])
 		expireAtTime := time.Now().UTC().Add(defaultDownloadExpireTime).Format(time.RFC3339Nano)
-		downloadURL := fmt.Sprintf("%s/api/sessions/%s/download?token=%s&extension=%v&newline=%v&event-time=%v&format=%v",
+		downloadURL := fmt.Sprintf("%s/api/sessions/%s/download?token=%s&extension=%v&newline=%v&event-time=%v&format=%v&events=%v",
 			a.ApiURL,
 			sessionID,
 			downloadToken,
@@ -126,6 +126,7 @@ func (a *Handler) FindOne(c *gin.Context) {
 			c.Query("newline"),
 			c.Query("event-time"),
 			c.Query("format"),
+			c.Query("events"),
 		)
 		requestPayload := map[string]string{
 			"token":           downloadToken,
@@ -171,6 +172,11 @@ func (a *Handler) DownloadSession(c *gin.Context) {
 	withLineBreak := c.Query("newline") == "1"
 	withEventTime := c.Query("event-time") == "1"
 	jsonFmt := c.Query("format") == "json"
+	eventTypes := strings.Split(c.Query("events"), ",")
+	if len(eventTypes) == 0 {
+		// default to output, err
+		eventTypes = []string{"o", "e"}
+	}
 
 	store, _ := downloadTokenStore.Pop(sessionID).(map[string]string)
 	if len(store) == 0 {
@@ -224,7 +230,8 @@ func (a *Handler) DownloadSession(c *gin.Context) {
 		return
 	}
 
-	output := parseSessionToFile(session, withLineBreak, withEventTime, jsonFmt)
+	opts := sessionParseOption{withLineBreak, withEventTime, jsonFmt, eventTypes}
+	output := parseSessionToFile(session, opts)
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s.%s", sessionID, fileExt))
 	c.Header("Content-Type", "application/octet-stream")
 	c.Header("Accept-Length", fmt.Sprintf("%d", len(output)))
