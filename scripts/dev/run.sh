@@ -160,5 +160,5 @@ docker run --name hoopdev \
   -p 8099:8099 \
   --env-file=.env \
   -v $HOME/.hoop/dev:/app/ \
-  -v $HOME/work/hoopdev/webapp/resources:/app/ui \
+  -v $HOME/.hoop/dev/webapp/resources:/app/ui/ \
   --rm -it hoopdev /app/entrypoint.sh

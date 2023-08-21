@@ -12,7 +12,10 @@ To start a development server it requires the following local tools:
 - [Docker](https://docs.docker.com/engine/install/)
 - [Clojure](https://clojure.org/guides/install_clojure)
 - [git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git)
-- Postgres Server (remote or local)
+- Permission to clone `hoophq/xtdb` repository
+- Postgres Server (remote or local) (optional)
+- [node/npm](https://nodejs.org/en/download) (optional)
+ - Permission to clone `runopsio/webapp` repository
 
 ### Start a postgres server
 
@@ -32,6 +35,14 @@ The configuration file to run the development server is located at `.env`. It co
 
 ```sh
 make run-dev
+```
+
+#### Webapp Setup
+
+If you want to run a development server with the webapp, run the command below before executing starting the dev server
+
+```sh
+./scripts/dev/build-webapp.sh
 ```
 
 ### Clean Up
