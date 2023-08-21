@@ -172,7 +172,12 @@ func (a *Handler) DownloadSession(c *gin.Context) {
 	withLineBreak := c.Query("newline") == "1"
 	withEventTime := c.Query("event-time") == "1"
 	jsonFmt := c.Query("format") == "json"
-	eventTypes := strings.Split(c.Query("events"), ",")
+	var eventTypes []string
+	for _, e := range strings.Split(c.Query("events"), ",") {
+		if e == "i" || e == "o" || e == "e" {
+			eventTypes = append(eventTypes, e)
+		}
+	}
 	if len(eventTypes) == 0 {
 		// default to output, err
 		eventTypes = []string{"o", "e"}
