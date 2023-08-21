@@ -31,6 +31,11 @@ make run-dev-postgres
 
 The configuration file to run the development server is located at `.env`. It contains all the defaults to start it, make sure to add the `PG_HOST` and `IDP_CLIENT_SECRET` configuration.
 
+```sh
+# edit .env file with your favorite editor
+cp .env.sample .env
+```
+
 > By default it use auth0 with the client id `tViX9dJ4K1sZ5omBE8yTaTXZAnlJ2q7D`. Contact an administrator to obtain the credentials or edit the `.env` file and pass your preferred identity provider credentials.
 
 ```sh
