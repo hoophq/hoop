@@ -128,11 +128,12 @@ func (a *Handler) FindOne(c *gin.Context) {
 			c.Query("format"),
 			c.Query("events"),
 		)
-		requestPayload := map[string]string{
-			"token":           downloadToken,
-			"expire-at":       expireAtTime,
-			"context-user-id": context.User.Id,
-			"context-org-id":  context.Org.Id,
+		requestPayload := map[string]any{
+			"token":               downloadToken,
+			"expire-at":           expireAtTime,
+			"context-user-id":     context.User.Id,
+			"context-user-groups": context.User.Groups,
+			"context-org-id":      context.Org.Id,
 		}
 		downloadTokenStore.Set(sessionID, requestPayload)
 		c.JSON(200, gin.H{"download_url": downloadURL, "expire_at": expireAtTime})
@@ -166,7 +167,7 @@ func (a *Handler) FindOne(c *gin.Context) {
 }
 
 func (a *Handler) DownloadSession(c *gin.Context) {
-	sessionID := c.Param("session_id")
+	sid := c.Param("session_id")
 	requestToken := c.Query("token")
 	fileExt := c.Query("extension")
 	withLineBreak := c.Query("newline") == "1"
@@ -183,14 +184,15 @@ func (a *Handler) DownloadSession(c *gin.Context) {
 		eventTypes = []string{"o", "e"}
 	}
 
-	store, _ := downloadTokenStore.Pop(sessionID).(map[string]string)
+	store, _ := downloadTokenStore.Pop(sid).(map[string]any)
 	if len(store) == 0 {
 		c.JSON(http.StatusNotFound, gin.H{
 			"status":  http.StatusNotFound,
 			"message": "not found"})
 		return
 	}
-	expireAt, err := time.Parse(time.RFC3339Nano, store["expire-at"])
+
+	expireAt, err := time.Parse(time.RFC3339Nano, fmt.Sprintf("%v", store["expire-at"]))
 	if err != nil {
 		log.Errorf("failed parsing request time, reason=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -214,19 +216,27 @@ func (a *Handler) DownloadSession(c *gin.Context) {
 		return
 	}
 
+	userGroups, _ := store["context-user-groups"].([]string)
 	usrCtx := &user.Context{
-		Org:  &user.Org{Id: store["context-org-id"]},
-		User: &user.User{Id: store["context-user-id"]},
+		Org: &user.Org{Id: fmt.Sprintf("%v", store["context-org-id"])},
+		User: &user.User{
+			Id:     fmt.Sprintf("%v", store["context-user-id"]),
+			Groups: userGroups,
+		},
 	}
-	log.With("sid", sessionID).Infof("session download request, valid=%v, org=%v, user=%v, user-agent=%v",
-		token == requestToken, usrCtx.Org.Id, usrCtx.User.Id, c.GetHeader("user-agent"))
+	log.With(
+		"sid", sid, "ext", fileExt,
+		"line-break", withLineBreak, "event-time", withEventTime,
+		"jsonfmt", jsonFmt, "event-types", eventTypes).
+		Infof("session download request, valid=%v, org=%v, user=%v, groups=%#v, user-agent=%v",
+			token == requestToken, usrCtx.Org.Id, usrCtx.User.Id, userGroups, c.GetHeader("user-agent"))
 	if token != requestToken {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"status":  http.StatusUnauthorized,
 			"message": "unauthorized"})
 		return
 	}
-	session, err := a.Service.FindOne(usrCtx, sessionID)
+	session, err := a.Service.FindOne(usrCtx, sid)
 	if err != nil || session == nil {
 		log.Errorf("failed fetching session, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -237,11 +247,11 @@ func (a *Handler) DownloadSession(c *gin.Context) {
 
 	opts := sessionParseOption{withLineBreak, withEventTime, jsonFmt, eventTypes}
 	output := parseSessionToFile(session, opts)
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s.%s", sessionID, fileExt))
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s.%s", sid, fileExt))
 	c.Header("Content-Type", "application/octet-stream")
 	c.Header("Accept-Length", fmt.Sprintf("%d", len(output)))
 	wrote, err := c.Writer.Write(output)
-	log.With("sid", sessionID).Infof("session downloaded, extension=.%v, wrote=%v, success=%v, err=%v",
+	log.With("sid", sid).Infof("session downloaded, extension=.%v, wrote=%v, success=%v, err=%v",
 		fileExt, wrote, err == nil, err)
 }
 
