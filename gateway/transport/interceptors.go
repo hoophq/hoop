@@ -174,6 +174,18 @@ func (s *Server) AuthGrpcInterceptor(srv any, ss grpc.ServerStream, info *grpc.S
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
 		ctxVal = clientKey
+	// client proxy manager authentication (access token)
+	case clientOrigin[0] == pb.ConnectionOriginClientProxyManager:
+		sub, err := s.exchangeUserToken(bearerToken)
+		if err != nil {
+			log.Debugf("failed verifying access token, reason=%v", err)
+			return status.Errorf(codes.Unauthenticated, "invalid authentication")
+		}
+		userCtx, err := s.UserService.FindBySub(sub)
+		if err != nil || userCtx.User == nil {
+			return status.Errorf(codes.Unauthenticated, "invalid authentication")
+		}
+		ctxVal = &gatewayContext{UserContext: *userCtx.ToAPIContext()}
 	// client proxy authentication (access token)
 	default:
 		sub, err := s.exchangeUserToken(bearerToken)
