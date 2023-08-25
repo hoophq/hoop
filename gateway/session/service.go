@@ -26,7 +26,6 @@ type (
 		FindAll(*user.Context, ...*SessionOption) (*SessionList, error)
 		FindOne(ctx *user.Context, name string) (*types.Session, error)
 		ListAllSessionsID(startDate time.Time) ([]*types.Session, error)
-		NewGenericStorageWriter() *GenericStorageWriter
 		FindReviewBySessionID(sessionID string) (*types.Review, error)
 		PersistReview(ctx *user.Context, review *types.Review) (int64, error)
 	}

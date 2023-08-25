@@ -18,7 +18,8 @@ const (
 )
 
 var (
-	// AuditPath is the filesystem path where wal logs are stored
+	// AuditPath is the filesystem path where wal logs are stored.
+	// The env PLUGIN_AUDIT_PATH should be used to set a new path
 	AuditPath = os.Getenv("PLUGIN_AUDIT_PATH")
 	// IndexPath is the filesytem path where index wal logs are stored
 	IndexPath = os.Getenv("PLUGIN_INDEX_PATH")

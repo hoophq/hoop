@@ -49,3 +49,8 @@ const (
 	GroupSupport     string = "support"
 	GroupEngineering string = "engineering"
 )
+
+const (
+	SessionStatusOpen = "open"
+	SessionStatusDone = "done"
+)

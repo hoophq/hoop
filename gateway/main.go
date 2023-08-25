@@ -22,7 +22,7 @@ import (
 	"github.com/runopsio/hoop/gateway/api"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/indexer"
-	"github.com/runopsio/hoop/gateway/jobs"
+	"github.com/runopsio/hoop/gateway/jobs/report"
 	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/runbooks"
@@ -161,10 +161,6 @@ func Run(listenAdmAddr string) {
 
 	for _, p := range g.RegisteredPlugins {
 		pluginContext := plugintypes.Context{}
-		switch p.Name() {
-		case plugintypes.PluginAuditName:
-			pluginContext.ParamsData = map[string]any{pluginsaudit.StorageWriterParam: sessionService.Storage.NewGenericStorageWriter()}
-		}
 		if err := p.OnStartup(pluginContext); err != nil {
 			log.Fatalf("failed initializing plugin %s, reason=%v", p.Name(), err)
 		}
@@ -192,7 +188,7 @@ func Run(listenAdmAddr string) {
 
 	//start scheduler for "weekly" report service (production mode)
 	if profile != pb.DevProfile {
-		jobs.InitReportScheduler(&jobs.Scheduler{
+		report.InitReportScheduler(&report.Scheduler{
 			UserStorage:    &userService,
 			SessionStorage: &sessionService,
 			Notification:   notificationService,

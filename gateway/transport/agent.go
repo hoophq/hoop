@@ -242,7 +242,7 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, ag *agent.Agent,
 		pkt, err := stream.Recv()
 		if err != nil {
 			if err == io.EOF {
-				return io.EOF
+				return fmt.Errorf("agent %v disconnected, end-of-file stream", ag.Name)
 			}
 			if status, ok := status.FromError(err); ok && status.Code() == codes.Canceled {
 				// TODO: send packet to agent to clean up resources

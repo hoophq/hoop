@@ -13,7 +13,7 @@ import (
 )
 
 func Put(ctx *storagev2.Context, pl *types.Plugin) error {
-	txList := []types.TxEdnStruct{
+	txList := []types.TxObject{
 		&struct {
 			DocID          string   `edn:"xt/id"`
 			OrgID          string   `edn:"plugin/org"`
@@ -53,11 +53,6 @@ func Put(ctx *storagev2.Context, pl *types.Plugin) error {
 	_, err := ctx.Put(txList...)
 	return err
 }
-
-// func PutConfig(ctx *storagev2.Context, pl *types.Plugin) error {
-// 	_, err := ctx.Put(config)
-// 	return err
-// }
 
 func GetByName(ctx *storagev2.Context, name string) (*types.Plugin, error) {
 	payload := fmt.Sprintf(`{:query {

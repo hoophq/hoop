@@ -8,7 +8,7 @@ Connect private infra-stractures without the need of a VPN.
 
 To start a development server it requires the following local tools:
 
-- [Golang](https://go.dev/doc/install)
+- [Golang 1.21+](https://go.dev/doc/install)
 - [Docker](https://docs.docker.com/engine/install/)
 - [Clojure / Java](https://clojure.org/guides/install_clojure)
 - [git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git)

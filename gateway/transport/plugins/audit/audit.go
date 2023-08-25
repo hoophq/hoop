@@ -2,13 +2,13 @@ package audit
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/getsentry/sentry-go"
 	pbdlp "github.com/runopsio/hoop/common/dlp"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/memory"
@@ -16,24 +16,19 @@ import (
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
+	"github.com/runopsio/hoop/gateway/storagev2"
+	sessionstorage "github.com/runopsio/hoop/gateway/storagev2/session"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"go.uber.org/zap"
 )
 
-const StorageWriterParam string = "audit_storage_writer"
-
 type (
 	auditPlugin struct {
-		storageWriter   StorageWriter
 		walSessionStore memory.Store
 		started         bool
 		mu              sync.RWMutex
 		log             *zap.SugaredLogger
-	}
-
-	StorageWriter interface {
-		Write(pctx plugintypes.Context) error
 	}
 )
 
@@ -53,15 +48,7 @@ func (p *auditPlugin) OnStartup(pctx plugintypes.Context) error {
 	if fi, _ := os.Stat(plugintypes.AuditPath); fi == nil || !fi.IsDir() {
 		return fmt.Errorf("failed to retrieve audit path info, path=%v", plugintypes.AuditPath)
 	}
-
-	storageWriterObj := pctx.ParamsData[StorageWriterParam]
-	storageWriter, ok := storageWriterObj.(StorageWriter)
-
-	if !ok {
-		return fmt.Errorf("audit_storage_writer config must be an pluginscore.StorageWriter instance")
-	}
 	p.started = true
-	p.storageWriter = storageWriter
 	return nil
 }
 func (p *auditPlugin) OnUpdate(_, _ *types.Plugin) error { return nil }
@@ -70,15 +57,34 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 	if pctx.OrgID == "" || pctx.SID == "" {
 		return fmt.Errorf("failed processing audit plugin, missing org_id and session_id params")
 	}
-	pctx.ParamsData["status"] = "open"
-
+	startDate := time.Now().UTC()
+	pctx.ParamsData["status"] = types.SessionStatusOpen
+	pctx.ParamsData["start_date"] = &startDate
 	if err := p.writeOnConnect(pctx); err != nil {
 		return err
 	}
-	pctx.ParamsData["start_date"] = func() *time.Time { d := time.Now().UTC(); return &d }()
 	// Persist the session in the storage
-	if err := p.storageWriter.Write(pctx); err != nil {
-		return err
+	ctx := storagev2.NewContext(pctx.UserID, pctx.OrgID, storagev2.NewStorage(nil))
+	err := sessionstorage.Put(ctx, types.Session{
+		ID:               pctx.SID,
+		OrgID:            pctx.OrgID,
+		UserEmail:        pctx.UserEmail,
+		UserID:           pctx.UserID,
+		UserName:         pctx.UserName,
+		Type:             pctx.ConnectionType,
+		Connection:       pctx.ConnectionName,
+		Verb:             pctx.ClientVerb,
+		Status:           types.SessionStatusOpen,
+		Script:           types.SessionScript{"data": pctx.Script},
+		Labels:           pctx.Labels,
+		NonIndexedStream: nil,
+		EventSize:        0,
+		StartSession:     startDate,
+		EndSession:       nil,
+		DlpCount:         0,
+	})
+	if err != nil {
+		return fmt.Errorf("failed persisting sessino to store, reason=%v", err)
 	}
 	p.mu = sync.RWMutex{}
 	return nil
@@ -129,13 +135,18 @@ func (p *auditPlugin) OnDisconnect(pctx plugintypes.Context, errMsg error) error
 		pb.ConnectionOriginClientProxyManager:
 		defer p.closeSession(pctx)
 		if errMsg != nil {
+			if errMsg == io.EOF {
+				errMsg = fmt.Errorf("client disconnected, end-of-file stream")
+			}
 			_ = p.writeOnReceive(pctx.SID, 'e', 0, []byte(errMsg.Error()))
 			return nil
 		}
 	case pb.ConnectionOriginClientAPI:
 		if errMsg != nil {
 			// on errors, close the session right away
-			_ = p.writeOnReceive(pctx.SID, 'e', 0, []byte(errMsg.Error()))
+			if errMsg != io.EOF {
+				_ = p.writeOnReceive(pctx.SID, 'e', 0, []byte(errMsg.Error()))
+			}
 			p.closeSession(pctx)
 			return nil
 		}
@@ -195,8 +206,7 @@ func decodeDlpSummary(pkt *pb.Packet) int64 {
 	}
 	var ts []*pbdlp.TransformationSummary
 	if err := pb.GobDecodeInto(tsEnc, &ts); err != nil {
-		log.With("plugin", "audit").Errorf("failed decoding dlp transformation summary, err=%v", err)
-		sentry.CaptureException(err)
+		log.With("plugin", "audit").Warnf("failed decoding dlp transformation summary, err=%v", err)
 		return 0
 	}
 	counter := int64(0)
