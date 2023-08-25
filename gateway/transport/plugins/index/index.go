@@ -14,6 +14,7 @@ import (
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	"github.com/runopsio/hoop/gateway/indexer"
 	"github.com/runopsio/hoop/gateway/session"
+	eventlogv0 "github.com/runopsio/hoop/gateway/session/eventlog/v0"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 )
@@ -36,9 +37,9 @@ func New(sessionStore *session.Storage) *indexPlugin {
 	}
 	scheduler := gocron.NewScheduler(time.UTC).SingletonMode()
 	scheduler.Every(1).Day().At(defaultIndexJobStart).Do(func() {
-		log.Printf("job=index - starting")
+		log.Infof("job=index - starting")
 		if err := indexer.StartJobIndex(p.sessionStore); err != nil {
-			log.Printf("job=index - failed processing, err=%v", err)
+			log.Infof("job=index - failed processing, err=%v", err)
 		}
 	})
 	scheduler.StartAsync()
@@ -62,17 +63,17 @@ func (p *indexPlugin) OnConnect(pctx plugintypes.Context) error {
 			defer func() {
 				close(indexCh)
 				p.indexers.Del(pctx.OrgID)
-				log.Printf("org=%v - closed indexer channel", pctx.OrgID)
+				log.Infof("org=%v - closed indexer channel", pctx.OrgID)
 			}()
 			for s := range indexCh {
-				log.Printf("session=%v - starting indexing", s.ID)
+				log.With("sid", s.ID).Infof("starting indexing")
 				index, err := indexer.NewIndexer(s.OrgID)
 				if err != nil {
-					log.Printf("session=%v - failed opening index, err=%v", s.ID, err)
+					log.With("sid", s.ID).Infof("failed opening index, err=%v", err)
 					continue
 				}
 				err = index.Index(s.ID, s)
-				log.Printf("session=%v - indexed=%v, err=%v", s.ID, err == nil, err)
+				log.With("sid", s.ID).Infof("indexed=%v, err=%v", err == nil, err)
 			}
 		}()
 	}
@@ -89,18 +90,18 @@ func (p *indexPlugin) OnReceive(c plugintypes.Context, pkt *pb.Packet) (*plugint
 		if err != nil {
 			return nil, fmt.Errorf("session=%v - failed obtaining simple query data, err=%v", c.SID, err)
 		}
-		return nil, p.writeOnReceive(c.SID, "i", queryBytes)
+		return nil, p.writeOnReceive(c.SID, eventlogv0.InputType, queryBytes)
 	case pbclient.WriteStdout:
-		return nil, p.writeOnReceive(c.SID, "o", pkt.Payload)
+		return nil, p.writeOnReceive(c.SID, eventlogv0.OutputType, pkt.Payload)
 	case pbclient.WriteStderr:
-		return nil, p.writeOnReceive(c.SID, "e", pkt.Payload)
+		return nil, p.writeOnReceive(c.SID, eventlogv0.ErrorType, pkt.Payload)
 	case pbagent.ExecWriteStdin, pbagent.TerminalWriteStdin:
-		return nil, p.writeOnReceive(c.SID, "i", pkt.Payload)
+		return nil, p.writeOnReceive(c.SID, eventlogv0.InputType, pkt.Payload)
 	case pbclient.SessionClose:
 		isError := len(pkt.Payload) > 0
 		defer p.indexOnClose(c, isError)
 		if isError {
-			return nil, p.writeOnReceive(c.SID, "e", pkt.Payload)
+			return nil, p.writeOnReceive(c.SID, eventlogv0.ErrorType, pkt.Payload)
 		}
 	}
 	return nil, nil

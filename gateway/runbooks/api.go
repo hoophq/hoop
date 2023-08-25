@@ -212,12 +212,12 @@ func (h *Handler) RunExec(c *gin.Context) {
 		UserName:     ctx.User.Name,
 		Connection:   connectionName,
 		Verb:         proto.ClientVerbExec,
-		Status:       "open",
+		Status:       types.SessionStatusOpen,
 		DlpCount:     0,
 		StartSession: time.Now().UTC(),
 	}
 
-	err = sessionStorage.Write(storageCtx, newSession)
+	err = sessionStorage.Put(storageCtx, newSession)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "The session couldn't be created"})
 	}

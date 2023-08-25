@@ -34,7 +34,7 @@ func NewStorage(httpClient HTTPClient) *Store {
 	return s
 }
 
-func (s *Store) Put(trxs ...types.TxEdnStruct) (*types.TxResponse, error) {
+func (s *Store) Put(trxs ...types.TxObject) (*types.TxResponse, error) {
 	return submitPutTx(s.client, s.address, trxs...)
 }
 

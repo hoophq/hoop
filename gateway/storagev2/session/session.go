@@ -8,7 +8,7 @@ import (
 	"olympos.io/encoding/edn"
 )
 
-func Write(storage *storagev2.Context, session types.Session) error {
+func Put(storage *storagev2.Context, session types.Session) error {
 	_, err := storage.Put(session)
 	return err
 }

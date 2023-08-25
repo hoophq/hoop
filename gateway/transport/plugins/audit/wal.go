@@ -1,119 +1,40 @@
 package audit
 
 import (
-	"bytes"
-	"encoding/binary"
-	"encoding/json"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"sync"
 	"time"
 
+	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/gateway/session/eventlog"
+	eventlogv0 "github.com/runopsio/hoop/gateway/session/eventlog/v0"
+	sessionwal "github.com/runopsio/hoop/gateway/session/wal"
 	"github.com/runopsio/hoop/gateway/storagev2"
-	sessionStorage "github.com/runopsio/hoop/gateway/storagev2/session"
+	sessionstorage "github.com/runopsio/hoop/gateway/storagev2/session"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
-	"github.com/tidwall/wal"
-
-	"github.com/runopsio/hoop/common/log"
 )
 
+// <audit-path>/<orgid>-<sessionid>-wal
 const walFolderTmpl string = `%s/%s-%s-wal`
 
-type (
-	walHeader struct {
-		OrgID          string     `json:"org_id"`
-		SessionID      string     `json:"session_id"`
-		UserID         string     `json:"user_id"`
-		UserName       string     `json:"user_name"`
-		UserEmail      string     `json:"user_email"`
-		ConnectionName string     `json:"connection_name"`
-		ConnectionType string     `json:"connection_type"`
-		Status         string     `json:"status"`
-		Script         string     `json:"script"`
-		Labels         string     `json:"labels"` // we save it as string and convert at storage layer
-		Verb           string     `json:"verb"`
-		StartDate      *time.Time `json:"start_date"`
-	}
-	walFooter struct {
-		CommitError string     `json:"commit_error"`
-		EndDate     *time.Time `json:"end_date"`
-	}
-	walLogRWMutex struct {
-		log        *wal.Log
-		mu         sync.RWMutex
-		folderName string
-	}
-)
-
-func (w *walHeader) validate() error {
-	if w.OrgID == "" || w.SessionID == "" ||
-		w.ConnectionType == "" || w.ConnectionName == "" ||
-		w.StartDate == nil {
-		return fmt.Errorf(`missing required values for wal session`)
-	}
-	return nil
-}
-
-func encodeWalHeader(w *walHeader) ([]byte, error) {
-	if err := w.validate(); err != nil {
-		return nil, err
-	}
-	return json.Marshal(w)
-}
-
-func decodeWalHeader(data []byte) (*walHeader, error) {
-	var ws walHeader
-	if err := json.Unmarshal(data, &ws); err != nil {
-		return nil, err
-	}
-	return &ws, ws.validate()
-}
-
-func addEventStreamHeader(d time.Time, eventType byte, dlpCount int64) []byte {
-	result := append([]byte(d.Format(time.RFC3339Nano)), '\000', eventType, '\000')
-	result = append(result, intToByteArray(dlpCount)...) // int64 uses a fixed 8 bytes
-	return append(result, '\000')
-}
-
-func parseEventStream(eventStream []byte) (types.SessionEventStream, int, int64, error) {
-	position := bytes.IndexByte(eventStream, '\000')
-	if position == -1 {
-		return nil, -1, 0, fmt.Errorf("event stream in wrong format [event-time]")
-	}
-	eventTimeBytes := eventStream[:position]
-	eventTime, err := time.Parse(time.RFC3339Nano, string(eventTimeBytes))
-	if err != nil {
-		return nil, -1, 0, fmt.Errorf("failed parsing event time, err=%v", err)
-	}
-	position += 2
-	if len(eventStream) <= position {
-		return nil, -1, 0, fmt.Errorf("event stream in wrong format [event-type]")
-	}
-	eventType := eventStream[position-1]
-
-	// dlp counter uses 8-byte (int64)
-	position += 9
-	if len(eventStream) <= position {
-		return nil, -1, 0, fmt.Errorf("event stream in wrong format [event-type]")
-	}
-	dlpCounter := byteArrayToInt(eventStream[position-8 : position])
-
-	eventStreamLength := len(eventStream[position:])
-	return types.SessionEventStream{eventTime, eventType, eventStream[position:]},
-		eventStreamLength, dlpCounter, nil
+type walLogRWMutex struct {
+	log        *sessionwal.WalLog
+	mu         sync.RWMutex
+	folderName string
 }
 
 func (p *auditPlugin) writeOnConnect(pctx plugintypes.Context) error {
 	walFolder := fmt.Sprintf(walFolderTmpl, plugintypes.AuditPath, pctx.OrgID, pctx.SID)
-	_ = os.RemoveAll(walFolder)
-	walog, err := wal.Open(walFolder, wal.DefaultOptions)
-	if err != nil {
-		return fmt.Errorf("failed opening wal file, err=%v", err)
+	// sometimes a client could execute the same session id (review flow bug)
+	if fi, _ := os.Stat(walFolder); fi != nil {
+		_ = os.RemoveAll(walFolder)
 	}
 
-	walHeader, err := encodeWalHeader(&walHeader{
+	walog, err := sessionwal.OpenWriteHeader(walFolder, &sessionwal.Header{
 		OrgID:          pctx.OrgID,
 		SessionID:      pctx.SID,
 		UserID:         pctx.UserID,
@@ -125,19 +46,16 @@ func (p *auditPlugin) writeOnConnect(pctx plugintypes.Context) error {
 		Script:         pctx.ParamsData.GetString("script"),
 		Labels:         pctx.ParamsData.GetString("labels"),
 		Status:         pctx.ParamsData.GetString("status"),
-		StartDate:      func() *time.Time { d := time.Now().UTC(); return &d }(),
+		StartDate:      pctx.ParamsData.GetTime("start_date"),
 	})
 	if err != nil {
-		return fmt.Errorf("failed creating wal header object, err=%v", err)
-	}
-	if err := walog.Write(1, walHeader); err != nil {
-		return fmt.Errorf("failed writing header to wal, err=%v", err)
+		return fmt.Errorf("failed opening wal file, err=%v", err)
 	}
 	p.walSessionStore.Set(pctx.SID, &walLogRWMutex{walog, sync.RWMutex{}, walFolder})
 	return nil
 }
 
-func (p *auditPlugin) writeOnReceive(sessionID string, eventType byte, dlpCount int64, event []byte) error {
+func (p *auditPlugin) writeOnReceive(sessionID string, eventType eventlogv0.EventType, dlpCount int64, event []byte) error {
 	walLogObj := p.walSessionStore.Get(sessionID)
 	walogm, ok := walLogObj.(*walLogRWMutex)
 	if !ok {
@@ -145,15 +63,11 @@ func (p *auditPlugin) writeOnReceive(sessionID string, eventType byte, dlpCount 
 	}
 	walogm.mu.Lock()
 	defer walogm.mu.Unlock()
-	lastIndex, err := walogm.log.LastIndex()
-	if err != nil || lastIndex == 0 {
-		return fmt.Errorf("failed retrieving wal file content, lastindex=%v, err=%v", lastIndex, err)
-	}
-	eventHeader := addEventStreamHeader(time.Now().UTC(), eventType, dlpCount)
-	if err := walogm.log.Write(lastIndex+1, append(eventHeader, event...)); err != nil {
-		return fmt.Errorf("failed writing into wal file, position=%v, err=%v", lastIndex+1, err)
-	}
-	return nil
+	return walogm.log.Write(eventlogv0.New(
+		time.Now().UTC(),
+		eventType,
+		uint64(dlpCount),
+		event))
 }
 
 func (p *auditPlugin) writeOnClose(pctx plugintypes.Context) error {
@@ -169,11 +83,7 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context) error {
 		_ = walogm.log.Close()
 		walogm.mu.Unlock()
 	}()
-	walHeaderData, err := walogm.log.Read(1)
-	if err != nil {
-		return fmt.Errorf("failed obtaining header from wal, err=%v", err)
-	}
-	wh, err := decodeWalHeader(walHeaderData)
+	wh, err := walogm.log.Header()
 	if err != nil {
 		return fmt.Errorf("failed decoding wal header object, err=%v", err)
 	}
@@ -181,67 +91,72 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context) error {
 		return fmt.Errorf("mismatch wal header session id, session=%v, session-header=%v",
 			sessionID, wh.SessionID)
 	}
-	idx := uint64(2)
 	var eventStreamList []types.SessionEventStream
 	eventSize := int64(0)
-	dlpCounter := int64(0)
-	for {
-		eventStreamBytes, err := walogm.log.Read(idx)
-		if err != nil && err != wal.ErrNotFound {
-			return fmt.Errorf("failed reading full session data err=%v", err)
-		}
-		// truncate when event is greater than 5000 bytes for tcp type
-		// it avoids auditing blob content for TCP (files, images, etc)
-		eventStreamBytes = p.truncateTCPEventStream(eventStreamBytes, wh.ConnectionType)
-		if err == wal.ErrNotFound {
-			break
-		}
-		eventStream, size, dlpCount, err := parseEventStream(eventStreamBytes)
+	redactCount := int64(0)
+	truncated, err := walogm.log.ReadFull(func(data []byte) error {
+		ev, err := eventlog.DecodeLatest(data)
 		if err != nil {
 			return err
 		}
-		eventStreamList = append(eventStreamList, eventStream)
-		eventSize += int64(size)
-		dlpCounter += dlpCount
-		idx++
-	}
-	endDate := time.Now().UTC()
-
-	newStorage := storagev2.NewStorage(nil)
-	storageContext := storagev2.NewContext(wh.UserID, wh.OrgID, newStorage)
-	session, err := sessionStorage.FindOne(storageContext, wh.SessionID)
-	if err != nil || session == nil {
+		// truncate when event is greater than 5000 bytes for tcp type
+		// it avoids auditing blob content for TCP (files, images, etc)
+		eventStream := p.truncateTCPEventStream(ev.Data, wh.ConnectionType)
+		eventStreamList = append(eventStreamList, types.SessionEventStream{
+			ev.EventTime.Sub(*wh.StartDate).Seconds(),
+			string(ev.EventType),
+			base64.StdEncoding.EncodeToString(eventStream),
+		})
+		eventSize += int64(len(ev.Data))
+		redactCount += int64(ev.RedactCount)
+		return nil
+	})
+	if err != nil {
 		return err
 	}
 
-	pluginctx := plugintypes.Context{
-		OrgID:          wh.OrgID,
-		SID:            wh.SessionID,
-		UserID:         wh.UserID,
-		UserName:       wh.UserName,
-		UserEmail:      wh.UserEmail,
-		ConnectionName: wh.ConnectionName,
-		ConnectionType: wh.ConnectionType,
-		Script:         session.Script["data"],
-		Labels:         session.Labels,
-		ClientVerb:     wh.Verb,
-		ParamsData: map[string]any{
-			"event_stream": eventStreamList,
-			"event_size":   eventSize,
-			"start_date":   wh.StartDate,
-			"status":       "done",
-			"end_time":     &endDate,
-			"dlp_count":    dlpCounter,
-		},
+	storageContext := storagev2.NewContext(wh.UserID, wh.OrgID, storagev2.NewStorage(nil))
+	session, err := sessionstorage.FindOne(storageContext, wh.SessionID)
+	if err != nil || session == nil {
+		return fmt.Errorf("fail to fetch session in the store, empty=%v, err=%v",
+			session == nil, err)
 	}
-	err = p.storageWriter.Write(pluginctx)
+	endDate := time.Now().UTC()
+	labels := map[string]string{}
+	var inputScript types.SessionScript
+	if session != nil {
+		inputScript = session.Script
+		for key, val := range session.Labels {
+			labels[key] = val
+		}
+	}
+	labels["processed-by"] = "plugin-audit"
+	labels["truncated"] = fmt.Sprintf("%v", truncated)
+	err = sessionstorage.Put(storageContext, types.Session{
+		ID:               wh.SessionID,
+		OrgID:            wh.OrgID,
+		UserEmail:        wh.UserEmail,
+		UserID:           wh.UserID,
+		UserName:         wh.UserName,
+		Type:             wh.ConnectionType,
+		Connection:       wh.ConnectionName,
+		Verb:             wh.Verb,
+		Status:           types.SessionStatusDone,
+		Script:           inputScript,
+		Labels:           labels,
+		NonIndexedStream: types.SessionNonIndexedEventStreamList{"stream": eventStreamList},
+		EventSize:        eventSize,
+		StartSession:     *wh.StartDate,
+		EndSession:       &endDate,
+		DlpCount:         redactCount,
+	})
+
 	if err != nil {
-		walFooterBytes, _ := json.Marshal(&walFooter{
-			CommitError: err.Error(),
-			EndDate:     &endDate,
-		})
-		if err := walogm.log.Write(idx, walFooterBytes); err != nil {
-			log.Printf("failed writing wal footer, err=%v", err)
+		if err := walogm.log.Write(&eventlogv0.EventLog{
+			CommitError:   err.Error(),
+			CommitEndDate: &endDate,
+		}); err != nil {
+			log.Warnf("failed writing wal footer, err=%v", err)
 		}
 	} else {
 		if err := os.RemoveAll(walogm.folderName); err != nil {
@@ -256,15 +171,4 @@ func (p *auditPlugin) truncateTCPEventStream(eventStream []byte, connType string
 		return eventStream[0:5000]
 	}
 	return eventStream
-}
-
-func intToByteArray(i int64) []byte {
-	var b [8]byte
-	s := b[:]
-	binary.BigEndian.PutUint64(s, uint64(i))
-	return s
-}
-
-func byteArrayToInt(b []byte) int64 {
-	return int64(binary.BigEndian.Uint64(b))
 }

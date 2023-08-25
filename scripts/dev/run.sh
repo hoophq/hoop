@@ -115,6 +115,13 @@ cat - > $HOME/.hoop/dev/xtdb.edn <<EOF
    :user "$PG_USER",
    :password "$PG_PASSWORD",
    :port $PG_PORT}},
+ :xtdb.rocksdb/block-cache {:xtdb/module xtdb.rocksdb/->lru-block-cache
+                            :cache-size 536870912}
+ :xtdb/index-store
+ {:kv-store {:xtdb/module xtdb.rocksdb/->kv-store
+             :block-cache :xtdb.rocksdb/block-cache
+             :db-dir "/opt/hoop/sessions/rocksdb"
+             :sync? false}}
  :xtdb/tx-log
  {:xtdb/module xtdb.jdbc/->tx-log,
   :connection-pool :xtdb.jdbc/connection-pool},
@@ -129,7 +136,8 @@ cat - > $HOME/.hoop/dev/entrypoint.sh <<EOF
 #!/bin/bash
 
 cd /app/
-java -Dlogback.configurationFile=/app/logback.xml -jar /app/xtdb-pg.jar &
+java $JVM_OPTS -Dlogback.configurationFile=/app/logback.xml \
+     -jar /app/xtdb-pg.jar &
 echo "--> STARTING GATEWAY ..."
 
 /app/hooplinux start gateway --listen-admin-addr "0.0.0.0:8099" &
@@ -161,4 +169,5 @@ docker run --name hoopdev \
   --env-file=.env \
   -v $HOME/.hoop/dev:/app/ \
   -v $HOME/.hoop/dev/webapp/resources:/app/ui/ \
+  -v $HOME/.hoop/dev/sessions:/opt/hoop/sessions/ \
   --rm -it hoopdev /app/entrypoint.sh

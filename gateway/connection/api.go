@@ -214,14 +214,14 @@ func (h *Handler) RunExec(c *gin.Context) {
 		Connection: connection.Name,
 		// As this endpoint is exclusive for exec, we're forcing the Verb to be exec
 		Verb:         pb.ClientVerbExec,
-		Status:       "open", // TODO use a const
+		Status:       types.SessionStatusOpen,
 		DlpCount:     0,
 		StartSession: time.Now().UTC(),
 	}
 
 	log.Debugf("persisting session")
 
-	err = sessionStorage.Write(storageCtx, newSession)
+	err = sessionStorage.Put(storageCtx, newSession)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "The session couldn't be created"})
 		return

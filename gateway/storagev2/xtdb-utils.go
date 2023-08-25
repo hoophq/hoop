@@ -12,15 +12,15 @@ import (
 	"olympos.io/encoding/edn"
 )
 
-func submitPutTx(client HTTPClient, xtdbAPI string, trxs ...types.TxEdnStruct) (*types.TxResponse, error) {
+func submitPutTx(client HTTPClient, xtdbAPI string, trxs ...types.TxObject) (*types.TxResponse, error) {
 	url := fmt.Sprintf("%s/_xtdb/submit-tx", xtdbAPI)
 
-	txOpsEdn, err := buildTrxPutEdn(trxs...)
+	txOps, err := buildTrxPutEdn(trxs...)
 	if err != nil {
 		return nil, err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBufferString(txOpsEdn))
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBufferString(txOps))
 	if err != nil {
 		return nil, err
 	}
@@ -51,12 +51,15 @@ func submitPutTx(client HTTPClient, xtdbAPI string, trxs ...types.TxEdnStruct) (
 		return &txResponse, nil
 	} else {
 		data, _ := io.ReadAll(resp.Body)
+		if len(data) > 2000 {
+			data = data[:2000]
+		}
 		log.Printf("unknown status code=%v, body=%v", resp.StatusCode, string(data))
 	}
 	return nil, fmt.Errorf("received unknown status code=%v", resp.StatusCode)
 }
 
-func buildTrxPutEdn(trxs ...types.TxEdnStruct) (string, error) {
+func buildTrxPutEdn(trxs ...types.TxObject) (string, error) {
 	var trxVector []string
 	for _, tx := range trxs {
 		txEdn, err := edn.Marshal(tx)

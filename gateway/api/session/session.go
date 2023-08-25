@@ -57,13 +57,13 @@ func Post(c *gin.Context) {
 		Type:         connection.Type,
 		Connection:   connection.Name,
 		Verb:         pb.ClientVerbExec,
-		Status:       "open", // TODO use a const
+		Status:       types.SessionStatusOpen,
 		DlpCount:     0,
 		StartSession: time.Now().UTC(),
 	}
 	log.Debugf("persisting session")
 
-	err = sessionStorage.Write(storageCtx, newSession)
+	err = sessionStorage.Put(storageCtx, newSession)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "The session couldn't be created"})
 	}

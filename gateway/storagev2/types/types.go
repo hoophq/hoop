@@ -6,9 +6,9 @@ import (
 	"olympos.io/encoding/edn"
 )
 
-// TxEdnStruct must be a struct containing edn fields.
+// TxObject must be a struct containing edn or a raw edn string.
 // See https://github.com/go-edn/edn.
-type TxEdnStruct any
+type TxObject any
 
 type TxResponse struct {
 	TxID   int64     `edn:"xtdb.api/tx-id"`

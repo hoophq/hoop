@@ -5,10 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runopsio/hoop/common/log"
 	st "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
-	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
 	"olympos.io/encoding/edn"
 )
@@ -16,10 +14,6 @@ import (
 type (
 	Storage struct {
 		*st.Storage
-	}
-
-	GenericStorageWriter struct {
-		persistFn func(*user.Context, *types.Session) (*st.TxResponse, error)
 	}
 )
 
@@ -301,50 +295,6 @@ func (s *Storage) ListAllSessionsID(fromDate time.Time) ([]*types.Session, error
 		return nil, fmt.Errorf(string(httpBody))
 	}
 	return sessionList, edn.Unmarshal(httpBody, &sessionList)
-}
-
-func (s *Storage) NewGenericStorageWriter() *GenericStorageWriter {
-	return &GenericStorageWriter{
-		persistFn: s.Persist,
-	}
-}
-
-func (s *GenericStorageWriter) Write(c plugintypes.Context) error {
-	log.Infof("session=%s - saving session, org-id=%v", c.SID, c.OrgID)
-	eventStartDate := c.ParamsData.GetTime("start_date")
-	sessionStatus := c.ParamsData.GetString("status")
-	if eventStartDate == nil {
-		return fmt.Errorf(`missing "start_date" param`)
-	}
-
-	sess := &types.Session{
-		ID:               c.SID,
-		UserEmail:        c.UserEmail,
-		UserID:           c.UserID,
-		UserName:         c.UserName,
-		Type:             c.ConnectionType,
-		Connection:       c.ConnectionName,
-		Verb:             c.ClientVerb,
-		Status:           sessionStatus,
-		Script:           types.SessionScript{"data": c.Script},
-		Labels:           c.Labels,
-		NonIndexedStream: nil,
-		EventSize:        c.ParamsData.Int64("event_size"),
-		StartSession:     *eventStartDate,
-		EndSession:       c.ParamsData.GetTime("end_time"),
-		DlpCount:         c.ParamsData.Int64("dlp_count"),
-	}
-	eventStreamObj := c.ParamsData.Get("event_stream")
-	eventStreamList, _ := eventStreamObj.([]types.SessionEventStream)
-	if eventStreamList != nil {
-		nonIndexedEventStream, err := NewNonIndexedEventStreamList(*eventStartDate, eventStreamList...)
-		if err != nil {
-			return err
-		}
-		sess.NonIndexedStream = nonIndexedEventStream
-	}
-	_, err := s.persistFn(&user.Context{Org: &user.Org{Id: c.OrgID}}, sess)
-	return err
 }
 
 func (s *Storage) PersistReview(ctx *user.Context, review *types.Review) (int64, error) {

@@ -8,88 +8,80 @@ import (
 
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/gateway/indexer"
+	"github.com/runopsio/hoop/gateway/session/eventlog"
+	eventlogv0 "github.com/runopsio/hoop/gateway/session/eventlog/v0"
+	sessionwal "github.com/runopsio/hoop/gateway/session/wal"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
-	"github.com/tidwall/wal"
 )
 
 var walFolderTmpl string = `%s/%s-%s-wal`
 
 type walLogRWMutex struct {
-	log             *wal.Log
+	wlog            *sessionwal.WalLog
 	mu              sync.RWMutex
 	folderName      string
 	stdinSize       int64
 	stdoutSize      int64
 	stdinTruncated  bool
 	stdoutTruncated bool
-	metadata        *walMetadata
-}
-
-type walMetadata struct {
-	OrgID          string    `json:"org_id"`
-	SessionID      string    `json:"session_id"`
-	UserEmail      string    `json:"user_email"`
-	ConnectionName string    `json:"connection_name"`
-	ConnectionType string    `json:"connection_type"`
-	Verb           string    `json:"verb"`
-	StartDate      time.Time `json:"start_date"`
 }
 
 func (p *indexPlugin) writeOnConnect(c plugintypes.Context) error {
 	walFolder := fmt.Sprintf(walFolderTmpl, plugintypes.IndexPath, c.OrgID, c.SID)
-	walog, err := wal.Open(walFolder, wal.DefaultOptions)
+	// sometimes a client could execute the same session id (review flow bug)
+	if fi, _ := os.Stat(walFolder); fi != nil {
+		_ = os.RemoveAll(walFolder)
+	}
+	walog, err := sessionwal.OpenWriteHeader(walFolder, &sessionwal.Header{
+		OrgID:          c.OrgID,
+		SessionID:      c.SID,
+		UserEmail:      c.UserEmail,
+		ConnectionName: c.ConnectionName,
+		ConnectionType: c.ConnectionType,
+		Verb:           c.ClientVerb,
+		StartDate:      func() *time.Time { t := time.Now().UTC(); return &t }(),
+	})
 	if err != nil {
 		return fmt.Errorf("failed opening wal file, err=%v", err)
 	}
 	p.walSessionStore.Set(c.SID, &walLogRWMutex{
-		log:        walog,
+		wlog:       walog,
 		mu:         sync.RWMutex{},
 		folderName: walFolder,
-		metadata: &walMetadata{
-			OrgID:          c.OrgID,
-			SessionID:      c.SID,
-			UserEmail:      c.UserEmail,
-			ConnectionName: c.ConnectionName,
-			ConnectionType: c.ConnectionType,
-			Verb:           c.ClientVerb,
-			StartDate:      time.Now().UTC(),
-		},
 	})
 	return nil
 }
 
-func (p *indexPlugin) writeOnReceive(sessionID string, eventType string, event []byte) error {
-	walLogObj := p.walSessionStore.Get(sessionID)
+func (p *indexPlugin) writeOnReceive(sid string, eventType eventlogv0.EventType, event []byte) error {
+	walLogObj := p.walSessionStore.Get(sid)
 	walogm, ok := walLogObj.(*walLogRWMutex)
 	if !ok {
-		return fmt.Errorf("failed obtaining wallog, obj=%v", walLogObj)
+		log.With("sid", sid).Warnf("failed obtaining wallog, obj=%v", walLogObj)
+		return nil
 	}
 	walogm.mu.Lock()
 	defer walogm.mu.Unlock()
 
-	lastIndex, err := walogm.log.LastIndex()
-	if err != nil {
-		return fmt.Errorf("failed retrieving wal file content, lastindex=%v, err=%v", lastIndex, err)
-	}
-	event = append([]byte(eventType), event...)
 	eventSize := int64(len(event))
 
 	switch eventType {
-	case "i":
+	case eventlogv0.InputType:
 		if walogm.stdinSize >= indexer.MaxIndexSize {
 			walogm.stdinTruncated = true
 			return nil
 		}
 		walogm.stdinSize += eventSize
-	case "e", "o":
+	case eventlogv0.OutputType, eventlogv0.ErrorType:
 		if walogm.stdoutSize >= indexer.MaxIndexSize {
 			walogm.stdoutTruncated = true
 			return nil
 		}
 		walogm.stdoutSize += eventSize
 	}
-	if err := walogm.log.Write(lastIndex+1, event); err != nil {
-		return fmt.Errorf("failed writing into wal file, position=%v, err=%v", lastIndex+1, err)
+	err := walogm.wlog.Write(eventlogv0.New(time.Now().UTC(), eventType, 0, event))
+	if err != nil {
+		log.With("sid", sid).Warnf("failed writing into wal file, err=%v", err)
+		return nil
 	}
 	return nil
 }
@@ -98,65 +90,70 @@ func (p *indexPlugin) indexOnClose(c plugintypes.Context, isError bool) {
 	walLogObj := p.walSessionStore.Get(c.SID)
 	walogm, ok := walLogObj.(*walLogRWMutex)
 	if !ok {
-		log.Printf("session=%v - wal log not found", c.SID)
+		log.With("sid", c.SID).Infof("wal log not found")
 		return
 	}
 	walogm.mu.Lock()
 	defer func() {
 		p.walSessionStore.Del(c.SID)
-		_ = walogm.log.Close()
+		_ = walogm.wlog.Close()
 		walogm.mu.Unlock()
 		_ = os.RemoveAll(walogm.folderName)
 	}()
-	idx := uint64(2)
+
+	wh, err := walogm.wlog.Header()
+	if err != nil {
+		log.With("sid", c.SID).Infof("failed decoding wal header object, err=%v", err)
+		return
+	}
+
 	var stdinData []byte
 	var stdoutData []byte
-	for {
-		eventBytes, err := walogm.log.Read(idx)
-		if err != nil && err != wal.ErrNotFound {
-			log.Printf("session=%v - failed reading full session data err=%v", c.SID, err)
-			return
+	_, err = walogm.wlog.ReadFull(func(data []byte) error {
+		ev, err := eventlog.DecodeLatest(data)
+		if err != nil {
+			return err
 		}
-		if err == wal.ErrNotFound {
-			break
+		switch ev.EventType {
+		case eventlogv0.InputType:
+			stdinData = append(stdinData, ev.Data...)
+		case eventlogv0.ErrorType, eventlogv0.OutputType:
+			stdoutData = append(stdoutData, ev.Data...)
 		}
-
-		eventType := eventBytes[0]
-		switch eventType {
-		case 'i':
-			stdinData = append(stdinData, eventBytes[1:]...)
-		case 'o', 'e':
-			stdoutData = append(stdoutData, eventBytes[1:]...)
-		}
-		idx++
+		return nil
+	})
+	if err != nil {
+		log.With("sid", c.SID).Errorf("indexed=false, failed reading event log", c.SID)
+		return
 	}
+
 	endDate := time.Now().UTC()
-	durationInSecs := int64(endDate.Sub(walogm.metadata.StartDate).Seconds())
+	durationInSecs := int64(endDate.Sub(*wh.StartDate).Seconds())
 	payload := &indexer.Session{
 		OrgID:             c.OrgID,
 		ID:                c.SID,
-		User:              walogm.metadata.UserEmail,
-		Connection:        walogm.metadata.ConnectionName,
-		ConnectionType:    walogm.metadata.ConnectionType,
-		Verb:              walogm.metadata.Verb,
+		User:              wh.UserEmail,
+		Connection:        wh.ConnectionName,
+		ConnectionType:    wh.ConnectionType,
+		Verb:              wh.Verb,
 		EventSize:         int64(len(stdinData) + len(stdoutData)),
 		Input:             string(stdinData),
 		Output:            string(stdoutData),
 		IsInputTruncated:  walogm.stdinTruncated,
 		IsOutputTruncated: walogm.stdoutTruncated,
 		IsError:           isError,
-		StartDate:         walogm.metadata.StartDate.Format(time.RFC3339),
+		StartDate:         wh.StartDate.Format(time.RFC3339),
 		EndDate:           endDate.Format(time.RFC3339),
 		Duration:          durationInSecs,
 	}
 	indexCh := p.indexers.Get(c.OrgID).(chan *indexer.Session)
 	if indexCh == nil {
-		log.Printf("session=%v - indexed=false, channel not found in memory", c.SID)
+		log.With("sid", c.SID).Infof("indexed=false, channel not found in memory")
 	}
 	select {
 	case indexCh <- payload:
 	default:
 	case <-time.After(2 * time.Second):
-		log.Printf("session=%v - indexed=false, timeout on sending to channel", c.SID)
+		log.With("sid", c.SID).Infof("indexed=false, timeout on sending to channel", c.SID)
 	}
 }
