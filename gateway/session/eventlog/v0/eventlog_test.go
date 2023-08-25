@@ -15,7 +15,6 @@ func TestEncodeDecode(t *testing.T) {
 		New(date(10, 20), OutputType, 2, []byte(`file01\nfile02\nfile02`)),
 		New(date(10, 21), ErrorType, 1, []byte(`exit 1`)),
 	}
-	// encEvent, _ := New(date(11, 43), InputType, 0, []byte(`ls -l`)).Encode()
 	for _, want := range expectedEventList {
 		encEvent, err := want.Encode()
 		if err != nil {

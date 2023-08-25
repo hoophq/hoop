@@ -28,7 +28,7 @@ type WalLog struct {
 	writeIndex uint64
 }
 
-// Open opens a wal file with default options
+// Open opens a wal file with default options, it's up to the caller to close the wal file
 func Open(filePath string) (*WalLog, error) {
 	wlog, err := wal.Open(filePath, wal.DefaultOptions)
 	if err != nil {
@@ -37,7 +37,7 @@ func Open(filePath string) (*WalLog, error) {
 	return &WalLog{filePath: filePath, writeIndex: defaultHeaderIndex, wlog: wlog}, nil
 }
 
-// OpenWithHeader opens the wallog and write the header
+// OpenWithHeader opens the wallog and write the header, it's up to the caller to close the wal file
 func OpenWriteHeader(filepPath string, h *Header) (*WalLog, error) {
 	wlog, err := Open(filepPath)
 	if err != nil {
@@ -46,7 +46,7 @@ func OpenWriteHeader(filepPath string, h *Header) (*WalLog, error) {
 	return wlog, wlog.WriteHeader(h)
 }
 
-// OpenWithHeader opens the wallog and returns the header of the log
+// OpenWithHeader opens the wallog and returns the header of the log, it's up to the caller to close the wal file
 func OpenWithHeader(filepPath string) (wlog *WalLog, h *Header, err error) {
 	wlog, err = Open(filepPath)
 	if err != nil {
@@ -102,8 +102,9 @@ func (w *WalLog) Write(event eventlog.Encoder) error {
 	return nil
 }
 
-// ReadAtMost reads and decodes the latest version of an event log object.
-// Older event log versions will be decoded properly into the latest version
+// ReadAtMost reads event logs from a write ahead log up to max bytes specified.
+// It returns a boolean indicading if it's truncated. It's up to the caller to
+// decode the event log properly using a decoder.
 func (w *WalLog) ReadAtMost(max uint32, readerFn ReaderFunc) (bool, error) {
 	readBytes := uint32(0)
 	truncated := false
@@ -128,7 +129,6 @@ func (w *WalLog) ReadAtMost(max uint32, readerFn ReaderFunc) (bool, error) {
 }
 
 // ReadFull reads events from the write ahead log until it reaches it max default size.
-// The events are decoded based
 func (w *WalLog) ReadFull(readerFn ReaderFunc) (bool, error) {
 	return w.ReadAtMost(defaultMaxRead, readerFn)
 }

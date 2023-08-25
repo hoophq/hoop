@@ -16,6 +16,7 @@ import (
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
+	eventlogv0 "github.com/runopsio/hoop/gateway/session/eventlog/v0"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	sessionstorage "github.com/runopsio/hoop/gateway/storagev2/session"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
@@ -117,7 +118,7 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 	case pbclient.SessionClose:
 		defer p.closeSession(pctx)
 		if len(pkt.Payload) > 0 {
-			return nil, p.writeOnReceive(pctx.SID, 'e', dlpCount, pkt.Payload)
+			return nil, p.writeOnReceive(pctx.SID, eventlogv0.ErrorType, dlpCount, pkt.Payload)
 		}
 	case pbagent.ExecWriteStdin,
 		pbagent.TerminalWriteStdin,
@@ -138,14 +139,14 @@ func (p *auditPlugin) OnDisconnect(pctx plugintypes.Context, errMsg error) error
 			if errMsg == io.EOF {
 				errMsg = fmt.Errorf("client disconnected, end-of-file stream")
 			}
-			_ = p.writeOnReceive(pctx.SID, 'e', 0, []byte(errMsg.Error()))
+			_ = p.writeOnReceive(pctx.SID, eventlogv0.ErrorType, 0, []byte(errMsg.Error()))
 			return nil
 		}
 	case pb.ConnectionOriginClientAPI:
 		if errMsg != nil {
 			// on errors, close the session right away
 			if errMsg != io.EOF {
-				_ = p.writeOnReceive(pctx.SID, 'e', 0, []byte(errMsg.Error()))
+				_ = p.writeOnReceive(pctx.SID, eventlogv0.ErrorType, 0, []byte(errMsg.Error()))
 			}
 			p.closeSession(pctx)
 			return nil
@@ -180,7 +181,7 @@ func (p *auditPlugin) OnDisconnect(pctx plugintypes.Context, errMsg error) error
 		// e.g.: when it receives a session close packet
 		defer p.closeSession(pctx)
 		if errMsg != nil {
-			_ = p.writeOnReceive(pctx.SID, 'e', 0, []byte(errMsg.Error()))
+			_ = p.writeOnReceive(pctx.SID, eventlogv0.ErrorType, 0, []byte(errMsg.Error()))
 			return nil
 		}
 	}
