@@ -68,9 +68,10 @@ func ProcessWalSessions(auditPath string, _ gocron.Job) {
 		}
 
 		// close this session if it's open for more than 48 hours
-		t := time.Now().UTC().Add(-time.Hour * 48)
+		t := time.Now().UTC().Add(time.Hour * 48)
 		if ev.commitEndDate == nil && t.After(*wh.StartDate) {
-			log.With("sid", wh.SessionID).Infof("skip, time condition doesn't match, start-date=%v", wh.StartDate)
+			log.With("sid", wh.SessionID).Infof("skip, time condition doesn't match, now=%v (+48h), start-date=%v",
+				t.Format(time.RFC3339), wh.StartDate.Format(time.RFC3339))
 			continue
 		}
 

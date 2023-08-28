@@ -17,6 +17,7 @@ require (
 	github.com/BurntSushi/toml v1.2.1
 	github.com/blevesearch/bleve/v2 v2.3.7
 	github.com/getsentry/sentry-go v0.18.0
+	github.com/go-co-op/gocron v1.18.1
 	github.com/runopsio/hoop/agent v0.0.0-00010101000000-000000000000
 	github.com/runopsio/hoop/gateway v0.0.0-00010101000000-000000000000
 	google.golang.org/grpc v1.53.0
@@ -61,7 +62,6 @@ require (
 	github.com/gin-contrib/static v0.0.1 // indirect
 	github.com/gin-contrib/zap v0.1.0 // indirect
 	github.com/gin-gonic/gin v1.8.1 // indirect
-	github.com/go-co-op/gocron v1.18.1 // indirect
 	github.com/go-git/gcfg v1.5.0 // indirect
 	github.com/go-git/go-billy/v5 v5.4.1 // indirect
 	github.com/go-git/go-git/v5 v5.5.2 // indirect
