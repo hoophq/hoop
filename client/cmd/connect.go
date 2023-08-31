@@ -28,8 +28,9 @@ import (
 )
 
 type ConnectFlags struct {
-	proxyPort string
-	duration  string
+	listenAddr string
+	proxyPort  string
+	duration   string
 }
 
 var connectFlags = ConnectFlags{}
@@ -66,8 +67,11 @@ var (
 
 func init() {
 	connectCmd.Flags().StringVarP(&connectFlags.proxyPort, "port", "p", "", "The port to listen the proxy")
+	// TODO: temporary until we ship a agent as proxy mode
+	connectCmd.Flags().StringVar(&connectFlags.listenAddr, "listen", "", "The listen address (host:port) to bind")
 	connectCmd.Flags().StringSliceVarP(&inputEnvVars, "env", "e", nil, "Input environment variables to send")
 	connectCmd.Flags().StringVarP(&connectFlags.duration, "duration", "d", "30m", "The amount of time that the session will last. Valid time units are 's', 'm', 'h'")
+	_ = connectCmd.Flags().MarkHidden("listen")
 	rootCmd.AddCommand(connectCmd)
 }
 
@@ -124,7 +128,12 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			connnectionType := pkt.Spec[pb.SpecConnectionType]
 			switch string(connnectionType) {
 			case pb.ConnectionTypePostgres:
-				srv := proxy.NewPGServer(c.proxyPort, c.client)
+				// TODO: temporary until we ship a agent as proxy mode
+				listenAddr := connectFlags.listenAddr
+				if connectFlags.proxyPort != "" {
+					listenAddr = fmt.Sprintf("127.0.0.1:%s", connectFlags.proxyPort)
+				}
+				srv := proxy.NewPGServer(listenAddr, c.client)
 				if err := srv.Serve(string(sessionID)); err != nil {
 					sentry.CaptureException(fmt.Errorf("connect - failed initializing postgres proxy, err=%v", err))
 					c.processGracefulExit(err)

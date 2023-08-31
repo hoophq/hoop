@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"strings"
 
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/memory"
@@ -21,25 +22,25 @@ const (
 )
 
 type PGServer struct {
-	listenPort      string
+	listenAddr      string
 	client          pb.ClientTransport
 	connectionStore memory.Store
 	listener        net.Listener
 }
 
-func NewPGServer(listenPort string, client pb.ClientTransport) *PGServer {
-	if listenPort == "" {
-		listenPort = defaultPostgresPort
+func NewPGServer(listenAddr string, client pb.ClientTransport) *PGServer {
+	if listenAddr == "" {
+		listenAddr = fmt.Sprintf("127.0.0.1:%s", defaultPostgresPort)
 	}
 	return &PGServer{
-		listenPort:      listenPort,
+		listenAddr:      listenAddr,
 		client:          client,
 		connectionStore: memory.New(),
 	}
 }
 
 func (p *PGServer) Serve(sessionID string) error {
-	listenAddr := fmt.Sprintf("127.0.0.1:%s", p.listenPort)
+	listenAddr := p.listenAddr
 	lis, err := net.Listen("tcp4", listenAddr)
 	if err != nil {
 		return fmt.Errorf("failed listening to address %v, err=%v", listenAddr, err)
@@ -115,7 +116,11 @@ func (p *PGServer) getConnection(connectionID string) (io.WriteCloser, error) {
 }
 
 func (p *PGServer) ListenPort() string {
-	return p.listenPort
+	parts := strings.Split(p.listenAddr, ":")
+	if len(parts) == 2 {
+		return parts[1]
+	}
+	return ""
 }
 
 // copyBuffer is an adaptation of the actual implementation of Copy and CopyBuffer.
