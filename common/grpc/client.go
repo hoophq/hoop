@@ -55,6 +55,8 @@ const (
 	OptionUserInfo       OptionKey = "user-info"
 	OptionConnectionInfo OptionKey = "connection-info"
 	LocalhostAddr                  = "127.0.0.1:8010"
+
+	MaxRecvMsgSize int = 1024 * 1024 * 16
 )
 
 func WithOption(optKey OptionKey, val string) *ClientOptions {
@@ -82,7 +84,11 @@ func Connect(clientConfig ClientConfig, opts ...*ClientOptions) (pb.ClientTransp
 		return connect(clientConfig.ServerAddress,
 			[]grpc.DialOption{
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
-				grpc.WithUserAgent(clientConfig.UserAgent)},
+				grpc.WithUserAgent(clientConfig.UserAgent),
+				grpc.WithDefaultCallOptions(
+					grpc.MaxCallRecvMsgSize(MaxRecvMsgSize),
+				),
+			},
 			opts...)
 	}
 	// TODO: it's deprecated, use oauth.TokenSource
@@ -93,6 +99,9 @@ func Connect(clientConfig ClientConfig, opts ...*ClientOptions) (pb.ClientTransp
 		grpc.WithPerRPCCredentials(rpcCred),
 		grpc.WithBlock(),
 		grpc.WithUserAgent(clientConfig.UserAgent),
+		grpc.WithDefaultCallOptions(
+			grpc.MaxCallRecvMsgSize(MaxRecvMsgSize),
+		),
 	}
 	return connect(clientConfig.ServerAddress, dialOptions, opts...)
 }

@@ -17,6 +17,7 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/google/uuid"
+	commongrpc "github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/agent"
@@ -125,12 +126,16 @@ func (s *Server) StartRPCServer() {
 	var grpcServer *grpc.Server
 	if tlsConfig != nil {
 		grpcServer = grpc.NewServer(
+			grpc.MaxRecvMsgSize(commongrpc.MaxRecvMsgSize),
 			grpc.Creds(credentials.NewTLS(tlsConfig)),
 			grpc.StreamInterceptor(s.AuthGrpcInterceptor),
 		)
 	}
 	if grpcServer == nil {
-		grpcServer = grpc.NewServer(grpc.StreamInterceptor(s.AuthGrpcInterceptor))
+		grpcServer = grpc.NewServer(
+			grpc.MaxRecvMsgSize(commongrpc.MaxRecvMsgSize),
+			grpc.StreamInterceptor(s.AuthGrpcInterceptor),
+		)
 	}
 	pb.RegisterTransportServer(grpcServer, s)
 	s.handleGracefulShutdown()
