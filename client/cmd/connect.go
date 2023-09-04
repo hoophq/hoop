@@ -182,6 +182,7 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				fmt.Println("------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
 			case pb.ConnectionTypeCommandLine:
+				// https://github.com/creack/pty/issues/95
 				if runtime.GOOS == "windows" {
 					fmt.Println("command line is not supported on Windows")
 					os.Exit(1)

@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -140,6 +141,11 @@ func copyBuffer(dst io.Writer, src io.Reader) (written int64, err error) {
 				if pktLen > frameSize {
 					fullBuffer = append(fullBuffer, buf[0:nr]...)
 					continue
+				}
+				if pktLen != frameSize {
+					log.With("type", "simple").Warnf("action=begin, unknown packet format (frame/header) %v/%v",
+						frameSize, pktLen)
+					fmt.Println(hex.Dump(buf[0:nr]))
 				}
 			case pg.ClientParse:
 				return 0, fmt.Errorf("extended query protocol is not supported")
