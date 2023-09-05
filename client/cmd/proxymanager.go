@@ -111,7 +111,8 @@ func runAutoConnect(client pb.ClientTransport) (err error) {
 			log.With("type", connnectionType).Infof("session opened")
 			switch connnectionType {
 			case pb.ConnectionTypePostgres:
-				srv := proxy.NewPGServer(proxyPort, client)
+				listenAddr := fmt.Sprintf("127.0.0.1:%s", proxyPort)
+				srv := proxy.NewPGServer(listenAddr, client)
 				if err := srv.Serve(sid); err != nil {
 					return err
 				}

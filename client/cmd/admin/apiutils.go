@@ -170,9 +170,9 @@ func parseResourceOrDie(args []string, method, outputFlag string) *apiResource {
 		apir.decodeTo = "raw"
 	}
 
-	log.Debugf("decode=%v, method=%v, create=%v, list=%v, get=%v, delete=%v, path=%v",
+	log.Debugf("decode=%v, method=%v, create=%v, list=%v, get=%v, delete=%v, apiv2=%v, path=%v",
 		apir.decodeTo, apir.method, apir.resourceCreate, apir.resourceList,
-		apir.resourceGet, apir.resourceDelete, apir.suffixEndpoint)
+		apir.resourceGet, apir.resourceDelete, expressApiFlag, apir.suffixEndpoint)
 	return apir
 }
 
@@ -197,6 +197,10 @@ func httpRequest(apir *apiResource) (any, http.Header, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed creating http request, err=%v", err)
 	}
+	if expressApiFlag {
+		req.Header.Set("x-backend-api", "express")
+	}
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", apir.conf.Token))
 	req.Header.Set("User-Agent", fmt.Sprintf("hoopcli/%s", hoopVersionStr))
 	resp, err := http.DefaultClient.Do(req)
@@ -245,6 +249,10 @@ func httpDeleteRequest(apir *apiResource) error {
 	if err != nil {
 		return fmt.Errorf("failed creating http request, err=%v", err)
 	}
+	if expressApiFlag {
+		req.Header.Set("x-backend-api", "express")
+	}
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", apir.conf.Token))
 	req.Header.Set("User-Agent", fmt.Sprintf("hoopcli/%s", hoopVersionStr))
 	resp, err := http.DefaultClient.Do(req)
@@ -277,6 +285,10 @@ func httpBodyRequest(apir *apiResource, method string, bodyMap map[string]any) (
 		return nil, fmt.Errorf("failed creating http request, err=%v", err)
 	}
 
+	if expressApiFlag {
+		req.Header.Set("x-backend-api", "express")
+	}
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", apir.conf.Token))
 	req.Header.Set("User-Agent", fmt.Sprintf("hoopcli/%s", hoopVersionStr))
 	resp, err := http.DefaultClient.Do(req)

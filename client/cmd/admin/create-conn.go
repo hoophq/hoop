@@ -103,6 +103,9 @@ var createConnectionCmd = &cobra.Command{
 			"command":  cmdList,
 			"secret":   envVar,
 			"agent_id": agentID,
+			// apiv2
+			"agentId": agentID,
+			"secrets": envVar,
 		}
 
 		resp, err := httpBodyRequest(apir, method, connectionBody)

@@ -12,6 +12,7 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/agent"
+	"github.com/runopsio/hoop/gateway/apiclient"
 	clientkeysstorage "github.com/runopsio/hoop/gateway/storagev2/clientkeys"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/transport/adminapi"
@@ -25,6 +26,8 @@ import (
 type gatewayContext struct {
 	UserContext types.APIContext
 	Connection  types.ConnectionInfo
+
+	bearerToken string
 }
 
 func (c *gatewayContext) ValidateConnectionAttrs() error {
@@ -185,7 +188,7 @@ func (s *Server) AuthGrpcInterceptor(srv any, ss grpc.ServerStream, info *grpc.S
 		if err != nil || userCtx.User == nil {
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
-		ctxVal = &gatewayContext{UserContext: *userCtx.ToAPIContext()}
+		ctxVal = &gatewayContext{UserContext: *userCtx.ToAPIContext(), bearerToken: bearerToken}
 	// client proxy authentication (access token)
 	default:
 		sub, err := s.exchangeUserToken(bearerToken)
@@ -199,26 +202,50 @@ func (s *Server) AuthGrpcInterceptor(srv any, ss grpc.ServerStream, info *grpc.S
 		}
 		gwctx := &gatewayContext{UserContext: *userCtx.ToAPIContext()}
 		connectionName := mdget(md, "connection-name")
-		conn, err := s.ConnectionService.FindOne(userCtx, connectionName)
+		conn, err := s.getConnection(bearerToken, connectionName, userCtx)
 		if err != nil {
-			sentry.CaptureException(err)
-			return status.Errorf(codes.Internal, err.Error())
+			return err
 		}
 		if conn == nil {
 			return status.Errorf(codes.NotFound, "connection not found")
 		}
-		gwctx.Connection = types.ConnectionInfo{
-			ID:            conn.Id,
-			Name:          conn.Name,
-			Type:          string(conn.Type),
-			CmdEntrypoint: conn.Command,
-			Secrets:       conn.Secret,
-			AgentID:       conn.AgentId,
-		}
+		gwctx.Connection = *conn
 		ctxVal = gwctx
 	}
 
 	return handler(srv, &wrappedStream{ss, nil, ctxVal})
+}
+
+func (s *Server) getConnection(bearerToken, name string, userCtx *user.Context) (*types.ConnectionInfo, error) {
+	if conn, _ := apiclient.New(s.IDProvider.ApiURL, bearerToken).
+		GetConnection(name); conn != nil {
+		log.Infof("obtained connection %v from apiv2", name)
+		return &types.ConnectionInfo{
+			ID:            conn.ID,
+			Name:          conn.Name,
+			Type:          conn.Type,
+			CmdEntrypoint: conn.Command,
+			Secrets:       conn.Secrets,
+			AgentID:       conn.AgentId,
+		}, nil
+	}
+	conn, err := s.ConnectionService.FindOne(userCtx, name)
+	if err != nil {
+		// sentry.CaptureException(err)
+		// disp.sendResponse(nil, err)
+		return nil, status.Errorf(codes.Internal, err.Error())
+	}
+	if conn == nil {
+		return nil, nil
+	}
+	return &types.ConnectionInfo{
+		ID:            conn.Id,
+		Name:          conn.Name,
+		Type:          string(conn.Type),
+		CmdEntrypoint: conn.Command,
+		Secrets:       conn.Secret,
+		AgentID:       conn.AgentId,
+	}, nil
 }
 
 func getUserInfo(md metadata.MD) (*types.APIContext, error) {
