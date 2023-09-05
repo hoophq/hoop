@@ -57,7 +57,7 @@ func (s *Server) proxyManager(stream pb.Transport_ConnectServer) error {
 			string(userCtx.UserStatus),
 			userCtx.UserGroups)
 	sessionID := uuid.NewString()
-	err = s.listenProxyManagerMessages(sessionID, storectx, stream)
+	err = s.listenProxyManagerMessages(gwctx.bearerToken, sessionID, storectx, stream)
 	if status, ok := status.FromError(err); ok && status.Code() == codes.Canceled {
 		log.With("origin", clientOrigin).Infof("grpc client connection canceled")
 	}
@@ -80,7 +80,7 @@ func (s *Server) proxyManager(stream pb.Transport_ConnectServer) error {
 	return err
 }
 
-func (s *Server) listenProxyManagerMessages(sessionID string, ctx *storagev2.Context, stream pb.Transport_ConnectServer) error {
+func (s *Server) listenProxyManagerMessages(bearerToken, sessionID string, ctx *storagev2.Context, stream pb.Transport_ConnectServer) error {
 	var pctx plugintypes.Context
 	streamCtx, cancelFn := context.WithCancel(stream.Context())
 	recvCh := newDataStreamCh(stream, cancelFn)
@@ -135,7 +135,13 @@ func (s *Server) listenProxyManagerMessages(sessionID string, ctx *storagev2.Con
 				return status.Errorf(codes.Canceled, "context canceled")
 			case req := <-disp.requestCh:
 				log.With("session", sessionID).Infof("starting connect phase for %s", req.RequestConnectionName)
-				conn, err := s.ConnectionService.FindOne(storageCtxToUser(ctx), req.RequestConnectionName)
+				conn, err := s.getConnection(bearerToken, req.RequestConnectionName, storageCtxToUser(ctx))
+				if err != nil {
+					sentry.CaptureException(err)
+					disp.sendResponse(nil, err)
+					return err
+				}
+
 				if err != nil {
 					sentry.CaptureException(err)
 					disp.sendResponse(nil, err)
@@ -156,12 +162,12 @@ func (s *Server) listenProxyManagerMessages(sessionID string, ctx *storagev2.Con
 					UserEmail:  ctx.UserEmail,
 					UserGroups: ctx.UserGroups,
 
-					ConnectionID:      conn.Id,
+					ConnectionID:      conn.ID,
 					ConnectionName:    conn.Name,
 					ConnectionType:    fmt.Sprintf("%v", conn.Type),
-					ConnectionCommand: conn.Command,
-					ConnectionSecret:  conn.Secret,
-					ConnectionAgentID: conn.AgentId,
+					ConnectionCommand: conn.CmdEntrypoint,
+					ConnectionSecret:  conn.Secrets,
+					ConnectionAgentID: conn.AgentID,
 
 					ClientVerb:   pb.ClientVerbConnect,
 					ClientOrigin: clientOrigin,
@@ -178,7 +184,7 @@ func (s *Server) listenProxyManagerMessages(sessionID string, ctx *storagev2.Con
 
 				s.startDisconnectClientSink(sessionID, clientOrigin, func(err error) {
 					defer unbindClient(sessionID)
-					if stream := getAgentStream(conn.AgentId); stream != nil {
+					if stream := getAgentStream(conn.AgentID); stream != nil {
 						_ = stream.Send(&pb.Packet{
 							Type: pbagent.SessionClose,
 							Spec: map[string][]byte{

@@ -65,12 +65,12 @@ var getCmd = &cobra.Command{
 			switch contents := obj.(type) {
 			case map[string]any:
 				m := contents
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t",
+				fmt.Fprintf(w, "%s\t%s\t%v\t%v\t%v\t%s\t",
 					m["id"], m["name"], m["version"], m["hostname"], m["platform"], normalizeStatus(m["status"]))
 				fmt.Fprintln(w)
 			case []map[string]any:
 				for _, m := range contents {
-					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t",
+					fmt.Fprintf(w, "%s\t%s\t%v\t%v\t%v\t%s\t",
 						m["id"], m["name"], m["version"], m["hostname"], m["platform"], normalizeStatus(m["status"]))
 					fmt.Fprintln(w)
 				}
@@ -84,9 +84,16 @@ var getCmd = &cobra.Command{
 				m := contents
 				enabledPlugins := plugingHandlerFn(fmt.Sprintf("%v", m["name"]))
 				agentID := fmt.Sprintf("%v", m["agent_id"])
+				if agentID == "" {
+					// express api
+					agentID = fmt.Sprintf("%v", m["agentId"])
+				}
 				status := agentHandlerFn("status", agentID)
 				agentName := agentHandlerFn("name", agentID)
 				secrets, _ := m["secret"].(map[string]any)
+				if secrets == nil {
+					secrets, _ = m["secrets"].(map[string]any)
+				}
 				cmdList, _ := m["command"].([]any)
 				cmd := joinCmd(cmdList)
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%v\t%s\t",
