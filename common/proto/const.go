@@ -55,6 +55,9 @@ const (
 	CustomClaimOrg    = "https://app.hoop.dev/org"
 	CustomClaimGroups = "https://app.hoop.dev/groups"
 	DefaultOrgName    = "default"
+
+	AgentModeEmbeddedType string = "embedded"
+	AgentModeDefaultType  string = "default"
 )
 
 var DefaultInfoTypes = []string{

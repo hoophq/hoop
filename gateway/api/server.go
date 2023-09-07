@@ -225,6 +225,11 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.AdminOnly,
 		apiclientkeys.Put)
+	route.DELETE("/clientkeys/:name",
+		api.Authenticate,
+		api.TrackRequest(analytics.EventDeleteAgent),
+		api.AdminOnly,
+		apiclientkeys.Delete)
 
 	route.POST("/plugins",
 		api.Authenticate,

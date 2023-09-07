@@ -9,7 +9,7 @@ import (
 
 var createAgentCmd = &cobra.Command{
 	Use:     "agent NAME",
-	Short:   "Create an agent token.",
+	Short:   "(DEPRECATED) Create an agent token.",
 	Aliases: []string{"agents"},
 	PreRun: func(cmd *cobra.Command, args []string) {
 		if len(args) == 0 {

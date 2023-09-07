@@ -116,6 +116,7 @@ func parseResourceOrDie(args []string, method, outputFlag string) *apiResource {
 	case "clientkeys":
 		apir.resourceCreate = true
 		apir.resourceUpdate = true
+		apir.resourceDelete = true
 		apir.suffixEndpoint = path.Join("/api/clientkeys", apir.name)
 		if method == "POST" {
 			apir.suffixEndpoint = "/api/clientkeys"

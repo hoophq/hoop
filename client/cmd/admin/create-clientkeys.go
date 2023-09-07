@@ -7,15 +7,22 @@ import (
 	"github.com/runopsio/hoop/client/cmd/styles"
 	clientconfig "github.com/runopsio/hoop/client/config"
 	"github.com/runopsio/hoop/common/log"
+	"github.com/runopsio/hoop/common/proto"
 	"github.com/spf13/cobra"
 )
 
-var clientKeysActiveFlag string
-var clientKeysOverwriteFlag bool
+var (
+	clientKeysActiveFlag    string
+	clientKeysOverwriteFlag bool
+	clientKeysAgentModeType string
+)
 
 func init() {
+	createClientKeysCmd.Flags().StringVar(&clientKeysAgentModeType, "mode", "", fmt.Sprintf("The agent mode operation (%s or %s)",
+		proto.AgentModeDefaultType, proto.AgentModeEmbeddedType))
 	createClientKeysCmd.Flags().StringVar(&clientKeysActiveFlag, "active", "true", "To activate (true) or disable (false) the key")
 	createClientKeysCmd.Flags().BoolVar(&clientKeysOverwriteFlag, "overwrite", false, "It will create or update it if the resource already exists")
+	_ = createClientKeysCmd.MarkFlagRequired("mode")
 }
 
 var createClientKeysCmd = &cobra.Command{
@@ -25,6 +32,13 @@ var createClientKeysCmd = &cobra.Command{
 		if len(args) == 0 {
 			cmd.Usage()
 			styles.PrintErrorAndExit("missing resource name")
+		}
+		if clientKeysAgentModeType != proto.AgentModeEmbeddedType &&
+			clientKeysAgentModeType != proto.AgentModeDefaultType {
+			cmd.Usage()
+			fmt.Println()
+			styles.PrintErrorAndExit("missing agent mode operation flag [--mode %s|%s]",
+				proto.AgentModeDefaultType, proto.AgentModeEmbeddedType)
 		}
 	},
 	Run: func(cmd *cobra.Command, args []string) {
@@ -43,8 +57,9 @@ var createClientKeysCmd = &cobra.Command{
 		}
 		apir := parseResourceOrDie(resourceArgs, method, outputFlag)
 		reqBody := map[string]any{
-			"name":   apir.name,
-			"active": clientKeysActiveFlag == "true",
+			"name":       apir.name,
+			"agent_mode": clientKeysAgentModeType,
+			"active":     clientKeysActiveFlag == "true",
 		}
 		resp, err := httpBodyRequest(apir, method, reqBody)
 		if err != nil {

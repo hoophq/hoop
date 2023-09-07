@@ -24,49 +24,12 @@ type (
 )
 
 func (s *Handler) Post(c *gin.Context) {
-	context := user.ContextUser(c)
-	log := user.ContextLogger(c)
+	ctx := user.ContextUser(c)
+	user.ContextLogger(c).Warnf("POST /api/agents is deprecated, user must use client keys instead")
 
-	var a Agent
-	if err := c.ShouldBindJSON(&a); err != nil {
-		log.Infof("failed parsing request payload, err=%v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
-		return
-	}
-
-	a.Id = uuid.NewString()
-	if a.Token == "" {
-		a.Token = "x-agt-" + uuid.NewString()
-	}
-
-	existentAgent, err := s.Service.FindByNameOrID(context, a.Name)
-	if err != nil {
-		log.Errorf("failed validating agent, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
-	}
-	if existentAgent != nil {
-		log.Errorf("agent %v already exists", a.Name)
-		c.JSON(http.StatusConflict, gin.H{"message": "agent already exists"})
-		return
-	}
-
-	if err := validateToken(a.Token); err != nil {
-		log.Errorf("failed validating agent token, err=%v", err)
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
-		return
-	}
-	a.OrgId = context.Org.Id
-	a.CreatedById = context.User.Id
-
-	if _, err := s.Service.Persist(&a); err != nil {
-		log.Errorf("failed persisting agent token, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusCreated, a)
+	sentry.CaptureException(fmt.Errorf("POST /api/agents is deprecated, user=%v, org=%v",
+		ctx.User.Email, ctx.Org.Name))
+	c.JSON(http.StatusGone, gin.H{"message": "endpoint deprecated, use clientkeys instead"})
 }
 
 func (s *Handler) Evict(c *gin.Context) {

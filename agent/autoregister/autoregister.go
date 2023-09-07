@@ -22,7 +22,7 @@ func Run() (string, error) {
 	if os.Getenv("AUTO_REGISTER") == "" {
 		return "", nil
 	}
-	agentID := uuid.NewSHA1(uuid.NameSpaceURL, bytes.NewBufferString("agent/default").Bytes()).String()
+	agentID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(`agent/default`)).String()
 	agentToken, err := fetchAgentDefaultToken(agentID)
 	if err != nil {
 		return "", err

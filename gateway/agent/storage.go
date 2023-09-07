@@ -67,6 +67,9 @@ func (s *Storage) FindByNameOrID(ctx *user.Context, nameOrID string) (*Agent, er
 }
 
 func (s *Storage) FindByToken(token string) (*Agent, error) {
+	if token == "" {
+		return nil, nil
+	}
 	var payload = `{:query {
 		:find [(pull ?agent [*])] 
 		:in [token]

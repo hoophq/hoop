@@ -38,6 +38,10 @@ func (s *Store) Put(trxs ...types.TxObject) (*types.TxResponse, error) {
 	return submitPutTx(s.client, s.address, trxs...)
 }
 
+func (s *Store) Evict(xtIDs ...string) (*types.TxResponse, error) {
+	return submitEvictTx(s.client, s.address, xtIDs...)
+}
+
 func (s *Store) Query(ednQuery string) ([]byte, error) {
 	url := fmt.Sprintf("%s/_xtdb/query", s.address)
 

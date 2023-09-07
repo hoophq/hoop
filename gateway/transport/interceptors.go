@@ -64,13 +64,21 @@ func (w *wrappedStream) Context() context.Context {
 	return ctx
 }
 
-func parseGatewayContextInto(ctx context.Context, into any) error {
+func getGatewayContext(ctx context.Context) (any, error) {
 	if ctx == nil {
-		return status.Error(codes.Internal, "authentication context not found (nil)")
+		return nil, status.Error(codes.Internal, "authentication context not found (nil)")
 	}
 	val := ctx.Value(gatewayContextKey{})
 	if val == nil {
-		return status.Error(codes.Internal, "authentication context not found")
+		return nil, status.Error(codes.Internal, "authentication context not found")
+	}
+	return val, nil
+}
+
+func parseGatewayContextInto(ctx context.Context, into any) error {
+	val, err := getGatewayContext(ctx)
+	if err != nil {
+		return err
 	}
 	var assigned bool
 	switch v := val.(type) {
@@ -152,6 +160,7 @@ func (s *Server) AuthGrpcInterceptor(srv any, ss grpc.ServerStream, info *grpc.S
 			).Infof("admin api - decoded connection info")
 		}
 		ctxVal = gwctx
+	// DEPRECATED in flavor of client keys (DSN)
 	// agent key authentication
 	case strings.HasPrefix(bearerToken, "x-agt-"):
 		ag, err := s.AgentService.FindByToken(bearerToken)
@@ -162,9 +171,8 @@ func (s *Server) AuthGrpcInterceptor(srv any, ss grpc.ServerStream, info *grpc.S
 		}
 		ctxVal = ag
 	// agent client keys (dsn) authentication
-	// keep compatibility with old clients
-	// hoopagent/sdk or hoopagent/sidecar
-	case strings.HasPrefix(mdget(md, "user-agent"), "hoopagent/s"):
+	// keep compatibility with old clients (hoopagent/<version>, hoopagent/sdk or hoopagent/sidecar)
+	case strings.HasPrefix(mdget(md, "user-agent"), "hoopagent"):
 		clientKey, err := clientkeysstorage.ValidateDSN(s.StoreV2, bearerToken)
 		if err != nil {
 			log.Error("failed validating dsn authentication, err=%v", err)
@@ -173,7 +181,7 @@ func (s *Server) AuthGrpcInterceptor(srv any, ss grpc.ServerStream, info *grpc.S
 		}
 		if clientKey == nil {
 			md.Delete("authorization")
-			log.Debugf("invalid agent authentication, tokenlength=%v, client-metadata=%v", len(bearerToken), md)
+			log.Debugf("invalid agent authentication (dsn), tokenlength=%v, client-metadata=%v", len(bearerToken), md)
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
 		ctxVal = clientKey

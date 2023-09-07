@@ -7,6 +7,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/google/uuid"
 	"github.com/runopsio/hoop/client/cmd/styles"
 	clientconfig "github.com/runopsio/hoop/client/config"
 	"github.com/runopsio/hoop/common/log"
@@ -82,7 +83,7 @@ var getCmd = &cobra.Command{
 			switch contents := obj.(type) {
 			case map[string]any:
 				m := contents
-				enabledPlugins := plugingHandlerFn(fmt.Sprintf("%v", m["name"]))
+				enabledPlugins := plugingHandlerFn(fmt.Sprintf("%v", m["name"]), false)
 				agentID := fmt.Sprintf("%v", m["agent_id"])
 				if agentID == "" {
 					// express api
@@ -95,18 +96,18 @@ var getCmd = &cobra.Command{
 					secrets, _ = m["secrets"].(map[string]any)
 				}
 				cmdList, _ := m["command"].([]any)
-				cmd := joinCmd(cmdList)
+				cmd := joinCmd(cmdList, false)
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%v\t%s\t",
 					m["name"], cmd, m["type"], agentName, status, len(secrets), enabledPlugins)
 				fmt.Fprintln(w)
 			case []map[string]any:
 				for _, m := range contents {
-					enabledPlugins := plugingHandlerFn(fmt.Sprintf("%v", m["name"]))
+					enabledPlugins := plugingHandlerFn(fmt.Sprintf("%v", m["name"]), true)
 					agentID := fmt.Sprintf("%v", m["agent_id"])
 					status := agentHandlerFn("status", agentID)
 					agentName := agentHandlerFn("name", agentID)
 					cmdList, _ := m["command"].([]any)
-					cmd := joinCmd(cmdList)
+					cmd := joinCmd(cmdList, true)
 					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%v\t%s\t",
 						m["name"], cmd, m["type"], agentName, status, "-", enabledPlugins)
 					fmt.Fprintln(w)
@@ -171,15 +172,28 @@ var getCmd = &cobra.Command{
 				}
 			}
 		case "clientkeys":
-			fmt.Fprintln(w, "NAME\tENABLED")
+			agentHandlerFn := agentConnectedHandler(apir.conf)
+			fmt.Fprintln(w, "NAME\tMODE\tENABLED\tAGENT-VERSION\tAGENT-HOST\tAGENT-PLATFORM\tAGENT-STATUS")
 			switch contents := obj.(type) {
 			case map[string]any:
 				m := contents
-				fmt.Fprintf(w, "%s\t%v\t", m["name"], m["active"])
+				agentID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf("clientkey:%v", m["name"]))).String()
+				version := agentHandlerFn("version", agentID)
+				hostname := agentHandlerFn("hostname", agentID)
+				platform := agentHandlerFn("platform", agentID)
+				status := agentHandlerFn("status", agentID)
+				fmt.Fprintf(w, "%s\t%v\t%v\t%v\t%v\t%v\t%v",
+					m["name"], m["agent_mode"], m["active"], version, hostname, platform, status)
 				fmt.Fprintln(w)
 			case []map[string]any:
 				for _, m := range contents {
-					fmt.Fprintf(w, "%s\t%v\t", m["name"], m["active"])
+					agentID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf("clientkey:%v", m["name"]))).String()
+					version := agentHandlerFn("version", agentID)
+					hostname := agentHandlerFn("hostname", agentID)
+					platform := agentHandlerFn("platform", agentID)
+					status := agentHandlerFn("status", agentID)
+					fmt.Fprintf(w, "%s\t%v\t%v\t%v\t%v\t%v\t%v",
+						m["name"], m["agent_mode"], m["active"], version, hostname, platform, status)
 					fmt.Fprintln(w)
 				}
 			}
@@ -241,14 +255,12 @@ func normalizeStatus(status any) string {
 		return "ONLINE"
 	case "DISCONNECTED":
 		return "OFFLINE"
-	case "":
-		return "-"
 	default:
-		return "UNKNOWN"
+		return "-"
 	}
 }
 
-func pluginHandler(apir *apiResource) func(connectionName string) string {
+func pluginHandler(apir *apiResource) func(connectionName string, trunc bool) string {
 	data, _, err := httpRequest(&apiResource{suffixEndpoint: "/api/plugins", conf: apir.conf, decodeTo: "list"})
 	if err != nil {
 		log.Debugf("failed retrieving list of plugins, err=%v", err)
@@ -257,15 +269,20 @@ func pluginHandler(apir *apiResource) func(connectionName string) string {
 	if !ok {
 		log.Debugf("failed type casting to []map[string]any")
 	}
-	return func(connectionName string) string {
+
+	return func(connectionName string, trunc bool) string {
 		if err != nil || len(contents) == 0 {
 			return "-"
 		}
 		enabledPluginsMap := map[string]any{}
 		for _, m := range contents {
 			connList, _ := m["connections"].([]any)
-			for _, connNameObj := range connList {
-				connName := fmt.Sprintf("%v", connNameObj)
+			for _, pluginConnObj := range connList {
+				pluginConnMap, _ := pluginConnObj.(map[string]any)
+				if pluginConnMap == nil {
+					pluginConnMap = map[string]any{}
+				}
+				connName := fmt.Sprintf("%v", pluginConnMap["name"])
 				if connName == connectionName {
 					pluginName := fmt.Sprintf("%v", m["name"])
 					enabledPluginsMap[pluginName] = nil
@@ -280,7 +297,11 @@ func pluginHandler(apir *apiResource) func(connectionName string) string {
 			enabledPlugins = append(enabledPlugins, pluginName)
 		}
 		sort.Strings(enabledPlugins)
-		return strings.Join(enabledPlugins, ", ")
+		plugins := strings.Join(enabledPlugins, ", ")
+		if len(plugins) > 30 && trunc {
+			plugins = plugins[0:30] + "..."
+		}
+		return fmt.Sprintf("(%v) %s", len(enabledPlugins), plugins)
 	}
 }
 
@@ -297,7 +318,7 @@ func agentConnectedHandler(conf *clientconfig.Config) func(key, agentID string) 
 		switch key {
 		case "status":
 			if err != nil || contents == nil {
-				return normalizeStatus("UNKNOWN")
+				return "-"
 			}
 			for _, m := range contents {
 				if m["id"] == agentID {
@@ -305,31 +326,31 @@ func agentConnectedHandler(conf *clientconfig.Config) func(key, agentID string) 
 				}
 			}
 			return normalizeStatus("UNKNOWN")
-		case "name":
+		case "name", "version", "hostname", "platform":
 			if err != nil || contents == nil {
-				return "UNKNOWN"
+				return "-"
 			}
 			for _, m := range contents {
 				if m["id"] == agentID {
-					return fmt.Sprintf("%v", m["name"])
+					return fmt.Sprintf("%v", m[key])
 				}
 			}
 			return "-"
 		}
-		return "UNKNOWN"
+		return "-"
 	}
 }
 
-func joinCmd(cmdList []any) string {
+func joinCmd(cmdList []any, trunc bool) string {
 	var list []string
 	for _, c := range cmdList {
-		list = append(list, c.(string))
+		list = append(list, fmt.Sprintf("%q", c))
 	}
 	cmd := strings.Join(list, " ")
-	if len(cmd) > 30 {
+	if len(cmd) > 30 && trunc {
 		cmd = cmd[0:30] + "..."
 	}
-	return cmd
+	return fmt.Sprintf("[ %s ]", cmd)
 }
 
 func joinItems(items []any) string {

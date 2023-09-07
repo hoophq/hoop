@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/getsentry/sentry-go"
+	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/monitoring"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -80,6 +81,9 @@ func setAgentClientMetdata(into *agent.Agent, md metadata.MD) {
 
 func normalizeAgentID(prefix string, connectionItems []string) string {
 	var items []string
+	if len(connectionItems) == 0 {
+		return ""
+	}
 	for _, connName := range connectionItems {
 		connName = strings.TrimSpace(strings.ToLower(connName))
 		connName = fmt.Sprintf("%s:%s", prefix, connName)
@@ -89,6 +93,7 @@ func normalizeAgentID(prefix string, connectionItems []string) string {
 	return strings.Join(items, ",")
 }
 
+// Deprecated: subscribeAgentSidecar is deprecated in flavor of subscribeAgent
 func (s *Server) subscribeAgentSidecar(stream pb.Transport_ConnectServer) error {
 	ctx := stream.Context()
 	md, _ := metadata.FromIncomingContext(ctx)
@@ -130,25 +135,9 @@ func (s *Server) subscribeAgentSidecar(stream pb.Transport_ConnectServer) error 
 	log.Infof("agent sidecar connected: org=%v,key=%v,id=%v,platform=%v,version=%v",
 		orgName, clientKey.Name, agentID, mdget(md, "platform"), mdget(md, "version"))
 
-	var transportConfigBytes []byte
-	if s.PyroscopeIngestURL != "" {
-		transportConfigBytes, _ = pb.GobEncode(monitoring.TransportConfig{
-			Sentry: monitoring.SentryConfig{
-				DSN:         s.AgentSentryDSN,
-				OrgName:     orgName,
-				Environment: s.IDProvider.ApiURL,
-			},
-			Profiler: monitoring.ProfilerConfig{
-				PyroscopeServerAddress: s.PyroscopeIngestURL,
-				PyroscopeAuthToken:     s.PyroscopeAuthToken,
-				OrgName:                orgName,
-				Environment:            s.IDProvider.ApiURL,
-			},
-		})
-	}
 	_ = stream.Send(&pb.Packet{
 		Type:    pbagent.GatewayConnectOK,
-		Payload: transportConfigBytes,
+		Payload: s.configurationData(orgName),
 	})
 	var agentErr error
 	pluginContext.ParamsData["disconnect-agent-id"] = agentID
@@ -170,17 +159,45 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer) error {
 	md, _ := metadata.FromIncomingContext(ctx)
 
 	var ag agent.Agent
-	err := parseGatewayContextInto(ctx, &ag)
+	ctxVal, err := getGatewayContext(ctx)
 	if err != nil {
 		log.Error(err)
 		return err
+	}
+	agentMode := pb.AgentModeDefaultType
+	switch v := ctxVal.(type) {
+	case *types.ClientKey:
+		agentMode = v.AgentMode
+		// use a prefix to avoid colission with old agent keys
+		agentName := fmt.Sprintf("clientkey:%s", v.Name)
+		// generate a deterministic uuid based on the client key name
+		ag.Id = uuid.NewSHA1(uuid.NameSpaceURL, []byte(agentName)).String()
+		ag.OrgId = v.OrgID
+		ag.Name = agentName
+		// it's safe to keep token empty until we remove agent keys authentication.
+		// the authentication mechanism will not validate empty tokens in the store.
+		ag.Token = ""
+		if agentMode == pb.AgentModeEmbeddedType {
+			connectionItems := mdget(md, "connection-items")
+			ag.Id = normalizeAgentID(v.Name, strings.Split(connectionItems, ","))
+			if ag.Id == "" {
+				log.Error("missing required connection-items attribute, connection-items=%v, err=%v",
+					connectionItems, err)
+				sentry.CaptureException(err)
+				return status.Errorf(codes.Internal, "missing connection-items header")
+			}
+		}
+	case *agent.Agent:
+		ag = *v
+	default:
+		log.Warnf("failed authenticating, could not assign authentication context, type=%T", ctxVal)
+		return status.Error(codes.Unauthenticated, "invalid authentication, could not assign authentication context")
 	}
 	orgName, _ := s.UserService.GetOrgNameByID(ag.OrgId)
 
 	setAgentClientMetdata(&ag, md)
 	ag.Status = agent.StatusConnected
-	_, err = s.AgentService.Persist(&ag)
-	if err != nil {
+	if err := s.updateAgentStatus(agentMode, &ag); err != nil {
 		log.Errorf("failed saving agent connection, err=%v", err)
 		sentry.CaptureException(err)
 		return status.Errorf(codes.Internal, "internal error")
@@ -192,35 +209,19 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer) error {
 		ParamsData: map[string]any{"client": clientOrigin}}
 	bindAgent(ag.Id, stream)
 
-	log.Infof("agent connected: org=%v,name=%v,hostname=%v,platform=%v,version=%v,goversion=%v",
-		orgName, ag.Name, ag.Hostname, ag.Platform, ag.Version, ag.GoVersion)
+	log.Infof("agent connected: org=%v,name=%v,mode=%v,hostname=%v,platform=%v,version=%v,goversion=%v",
+		orgName, ag.Name, agentMode, ag.Hostname, ag.Platform, ag.Version, ag.GoVersion)
 
-	var transportConfigBytes []byte
-	if s.PyroscopeIngestURL != "" {
-		transportConfigBytes, _ = pb.GobEncode(monitoring.TransportConfig{
-			Sentry: monitoring.SentryConfig{
-				DSN:         s.AgentSentryDSN,
-				OrgName:     orgName,
-				Environment: s.IDProvider.ApiURL,
-			},
-			Profiler: monitoring.ProfilerConfig{
-				PyroscopeServerAddress: s.PyroscopeIngestURL,
-				PyroscopeAuthToken:     s.PyroscopeAuthToken,
-				OrgName:                orgName,
-				Environment:            s.IDProvider.ApiURL,
-			},
-		})
-	}
 	_ = stream.Send(&pb.Packet{
 		Type:    pbagent.GatewayConnectOK,
-		Payload: transportConfigBytes,
+		Payload: s.configurationData(orgName),
 	})
 	var agentErr error
 	pluginContext.ParamsData["disconnect-agent-id"] = ag.Id
 	s.startDisconnectClientSink(ag.Id, clientOrigin, func(err error) {
 		defer unbindAgent(ag.Id)
 		ag.Status = agent.StatusDisconnected
-		_, _ = s.AgentService.Persist(&ag)
+		_ = s.updateAgentStatus(agentMode, &ag)
 		_ = s.pluginOnDisconnect(pluginContext, err)
 	})
 	agentErr = s.listenAgentMessages(&pluginContext, &ag, stream)
@@ -289,4 +290,36 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, ag *agent.Agent,
 
 func (s *Server) processAgentPacket(pkt *pb.Packet, clientStream pb.Transport_ConnectServer) {
 	_ = clientStream.Send(pkt)
+}
+
+func (s *Server) updateAgentStatus(agentMode string, a *agent.Agent) error {
+	if agentMode == pb.AgentModeEmbeddedType {
+		return nil
+	}
+	if _, err := s.AgentService.Persist(a); err != nil {
+		sentry.CaptureException(err)
+		log.Errorf("failed updating agent status, err=%v", err)
+		return status.Errorf(codes.Internal, "internal error, failed updating agent status")
+	}
+	return nil
+}
+
+func (s *Server) configurationData(orgName string) []byte {
+	var transportConfigBytes []byte
+	if s.PyroscopeIngestURL != "" {
+		transportConfigBytes, _ = pb.GobEncode(monitoring.TransportConfig{
+			Sentry: monitoring.SentryConfig{
+				DSN:         s.AgentSentryDSN,
+				OrgName:     orgName,
+				Environment: s.IDProvider.ApiURL,
+			},
+			Profiler: monitoring.ProfilerConfig{
+				PyroscopeServerAddress: s.PyroscopeIngestURL,
+				PyroscopeAuthToken:     s.PyroscopeAuthToken,
+				OrgName:                orgName,
+				Environment:            s.IDProvider.ApiURL,
+			},
+		})
+	}
+	return transportConfigBytes
 }
