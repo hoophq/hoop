@@ -50,6 +50,9 @@ build-nodeapi:
 	mkdir -p ./dist
 	cd ./build/api && npm install --omit=dev && npm run build && mv ./out ../../dist/api && mv node_modules ../../dist/api/node_modules
 
+build-dev-client:
+	go build -ldflags "-s -w -X github.com/runopsio/hoop/common/version.strictTLS=false" -o ${HOME}/.hoop/bin/hoop github.com/runopsio/hoop/client
+
 publish:
 	./scripts/publish-release.sh
 
@@ -69,4 +72,4 @@ clean:
 test:
 	go test -v github.com/runopsio/hoop/...
 
-.PHONY: release publish publish-tools clean test build build-webapp build-nodeapi package-binaries package-helmchart publish-assets run-dev run-dev-postgres
+.PHONY: release publish publish-tools clean test build build-webapp build-nodeapi build-dev-client package-binaries package-helmchart publish-assets run-dev run-dev-postgres

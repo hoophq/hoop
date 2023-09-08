@@ -160,6 +160,7 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 	case pb.ConnectionOriginAgent:
 		// keep compatibility with old clients
 		// hoopagent/sdk or hoopagent/sidecar
+		// TODO: remove in flavor of subscribeAgent.
 		if strings.HasPrefix(mdget(md, "user-agent"), "hoopagent/s") {
 			return s.subscribeAgentSidecar(stream)
 		}

@@ -1,14 +1,12 @@
 package apiclientkeys
 
 import (
-	"fmt"
 	"net/http"
 	"regexp"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/common/log"
-	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	clientkeysstorage "github.com/runopsio/hoop/gateway/storagev2/clientkeys"
 )
@@ -24,44 +22,19 @@ func isValidRFC1035LabelName(label string) bool {
 }
 
 type ClientKeysRequest struct {
-	Name      string `json:"name"`
-	Active    bool   `json:"active"`
-	AgentMode string `json:"agent_mode"`
+	Name   string `json:"name"`
+	Active bool   `json:"active"`
 }
 
 func Post(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	// embeeded mode keep compatibility with old clients
-	reqBody := ClientKeysRequest{AgentMode: pb.AgentModeEmbeddedType}
-	if err := c.ShouldBindJSON(&reqBody); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
-		return
-	}
-	if !isValidRFC1035LabelName(reqBody.Name) {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": rfc1035Err})
-		return
-	}
-	clientKey, err := clientkeysstorage.GetByName(ctx, reqBody.Name)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
-	}
-	if clientKey != nil {
-		c.JSON(http.StatusConflict, gin.H{"message": "client key already exists"})
-		return
-	}
-	_, dsn, err := clientkeysstorage.Put(ctx, reqBody.Name, reqBody.AgentMode, reqBody.Active)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
-	}
-	c.PureJSON(201, gin.H{"dsn": dsn})
+	log.Warnf("POST /api/clientkeys is deprecated, user %v must use client keys instead", ctx.UserEmail)
+	c.JSON(http.StatusGone, gin.H{"message": "endpoint deprecated, use agents instead"})
 }
 
 func Put(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	// embeeded mode keep compatibility with old clients
-	reqBody := ClientKeysRequest{AgentMode: pb.AgentModeEmbeddedType}
+	var reqBody ClientKeysRequest
 	if err := c.ShouldBindJSON(&reqBody); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
@@ -78,7 +51,7 @@ func Put(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "client key not found"})
 		return
 	}
-	obj, _, err := clientkeysstorage.Put(ctx, clientKeyName, reqBody.AgentMode, reqBody.Active)
+	obj, _, err := clientkeysstorage.Put(ctx, clientKeyName, reqBody.Active)
 	if err != nil {
 		log.Errorf("failed updating client key, err=%v", err)
 		sentry.CaptureException(err)
@@ -86,18 +59,6 @@ func Put(c *gin.Context) {
 		return
 	}
 	c.PureJSON(200, obj)
-}
-
-func Delete(c *gin.Context) {
-	ctx := storagev2.ParseContext(c)
-	clientKeyName := c.Param("name")
-	if err := clientkeysstorage.Evict(ctx, clientKeyName); err != nil {
-		log.Errorf("failed evicting client key, err=%v", err)
-		sentry.CaptureException(fmt.Errorf("failed evicting client key, reason=%v", err))
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed removing client key"})
-		return
-	}
-	c.Writer.WriteHeader(204)
 }
 
 func List(c *gin.Context) {

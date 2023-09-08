@@ -44,8 +44,8 @@ func runDefaultMode(config *agentconfig.Config) {
 	}
 	clientConfig.UserAgent = defaultUserAgent
 	vs := version.Get()
-	log.Infof("version=%v, platform=%v, type=%v, mode=%v, grpc_server=%v, tls=%v - starting agent",
-		vs.Version, vs.Platform, config.Type, config.AgentMode, config.URL, !config.IsInsecure())
+	log.Infof("version=%v, platform=%v, type=%v, mode=%v, grpc_server=%v, tls=%v, strict-tls=%v - starting agent",
+		vs.Version, vs.Platform, config.Type, config.AgentMode, config.URL, !config.IsInsecure(), vs.StrictTLS)
 
 	client, err := grpc.Connect(clientConfig, clientOptions...)
 	if err != nil {
@@ -71,11 +71,11 @@ func runEmbeddedMode(config *agentconfig.Config) {
 		return
 	}
 	vs := version.Get()
-	log.Infof("version=%v, platform=%v, api-url=%v, connections=%v - starting agent",
-		vs.Version, vs.Platform, apiURL, connectionList)
+	log.Infof("version=%v, platform=%v, api-url=%v, strict-tls=%v, connections=%v - starting agent",
+		vs.Version, vs.Platform, apiURL, vs.StrictTLS, connectionList)
 	for {
 		grpcURL := fetchGrpcURL(apiURL, dsnKey, connectionList)
-		isInsecure := strings.HasPrefix(grpcURL, "http://") || strings.HasPrefix(grpcURL, "grpc://")
+		isInsecure := !vs.StrictTLS && (strings.HasPrefix(grpcURL, "http://") || strings.HasPrefix(grpcURL, "grpc://"))
 		log.Infof("connecting to %v, tls=%v", grpcURL, !isInsecure)
 		srvAddr, err := grpc.ParseServerAddress(grpcURL)
 		if err != nil {
@@ -157,7 +157,7 @@ func fetchGrpcURL(apiURL, dsnKey string, connectionItems []string) string {
 func getConnectionList() ([]string, string, error) {
 	envValue := os.Getenv("HOOP_CONNECTION")
 	if envValue == "" {
-		return nil, "", fmt.Errorf("missing HOOP_CONNECTION env")
+		return nil, "", nil
 	}
 	if len(envValue) > 255 {
 		return nil, "", fmt.Errorf("reached max value (255) for HOOP_CONNECTION env")

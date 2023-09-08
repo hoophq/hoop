@@ -141,10 +141,10 @@ func NewOrganizationContext(orgID string, store *Store) *Context {
 	return NewContext("", orgID, store)
 }
 
-func NewDSNContext(orgID, clientKeyName string, store *Store) *Context {
+func NewDSNContext(entityID, orgID, clientKeyName string, store *Store) *Context {
 	return &Context{
 		Store:      store,
-		dsnctx:     &types.DSNContext{OrgID: orgID, ClientKeyName: clientKeyName},
+		dsnctx:     &types.DSNContext{EntityID: entityID, OrgID: orgID, ClientKeyName: clientKeyName},
 		APIContext: &types.APIContext{OrgID: orgID},
 		segment:    nil,
 	}

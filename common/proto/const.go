@@ -57,7 +57,7 @@ const (
 	DefaultOrgName    = "default"
 
 	AgentModeEmbeddedType string = "embedded"
-	AgentModeDefaultType  string = "default"
+	AgentModeStandardType string = "standard"
 )
 
 var DefaultInfoTypes = []string{

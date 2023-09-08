@@ -100,16 +100,36 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 	}
 	conn := gwctx.Connection
 
-	// it's an sidecar agent connection, request agent to connect
-	if conn.AgentID == conn.Name && !hasAgentStream(conn.AgentID) {
-		log.With("user", gwctx.UserContext.UserEmail).Infof("requesting connection with remote agent %s",
-			gwctx.Connection.Name)
-		err = apiconnectionapps.RequestGrpcConnection(conn.Name, hasAgentStream)
-		if err != nil {
-			log.Warnf("%v %v", err, gwctx.Connection.Name)
-			return status.Errorf(codes.Aborted, err.Error())
+	agentMode := conn.AgentMode
+	// the connection (auto published) has an embedded agent, request it to connect
+	agentStreamID := fmt.Sprintf("%s:%s", gwctx.UserContext.OrgID, conn.AgentID)
+	if conn.AgentID == conn.Name {
+		agentMode = pb.AgentModeEmbeddedType
+		if !hasAgentStream(agentStreamID) {
+			log.With("user", gwctx.UserContext.UserEmail).Infof("requesting connection (auto published) with remote agent [%s/%s]",
+				conn.AgentName, conn.AgentID)
+			err = apiconnectionapps.RequestGrpcConnection(agentStreamID, hasAgentStream)
+			if err != nil {
+				log.Warnf("%v %v", err, agentStreamID)
+				return status.Errorf(codes.Aborted, err.Error())
+			}
+			log.With("conn", conn.Name).Infof("agent connection established [%s:%s]", conn.AgentName, conn.AgentID)
 		}
-		log.Infof("found the remote agent for %v", gwctx.Connection.Name)
+		conn.AgentID = agentStreamID
+	}
+
+	// the connection has an embedded agent, request it to connect
+	if agentMode == pb.AgentModeEmbeddedType && conn.AgentID != agentStreamID {
+		if !hasAgentStream(conn.AgentID) {
+			log.With("user", gwctx.UserContext.UserEmail).Infof("requesting connection with remote agent [%s/%s]",
+				conn.AgentName, conn.AgentID)
+			err = apiconnectionapps.RequestGrpcConnection(conn.AgentID, hasAgentStream)
+			if err != nil {
+				log.Warnf("%v %v", err, conn.AgentID)
+				return status.Errorf(codes.Aborted, err.Error())
+			}
+			log.With("conn", conn.Name).Infof("agent connection established [%s:%s]", conn.AgentName, conn.AgentID)
+		}
 	}
 
 	// When a session id is coming from the client,
@@ -217,14 +237,14 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 		"verb":            clientVerb,
 	})
 
-	log.With("session", sessionID).
+	log.With("sid", sessionID, "mode", agentMode, "agent-name", conn.AgentName).
 		Infof("proxy connected: user=%v,hostname=%v,origin=%v,verb=%v,platform=%v,version=%v,goversion=%v",
 			gwctx.UserContext.UserEmail, mdget(md, "hostname"), clientOrigin, clientVerb,
 			mdget(md, "platform"), mdget(md, "version"), mdget(md, "goversion"))
 	s.trackSessionStatus(sessionID, pb.SessionPhaseClientConnected, nil)
 	clientErr := s.listenClientMessages(stream, pluginContext)
 	if status, ok := status.FromError(clientErr); ok && status.Code() == codes.Canceled {
-		log.With("session", sessionID, "origin", clientOrigin).Infof("grpc client connection canceled")
+		log.With("sid", sessionID, "origin", clientOrigin, "mode", agentMode).Infof("grpc client connection canceled")
 		// it means the api client has disconnected,
 		// it will let the session open to receive packets
 		// until a session close packet is received or the
@@ -256,7 +276,7 @@ func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, pctx pl
 		pkt, err := stream.Recv()
 		if err != nil {
 			if err == io.EOF {
-				log.With("session", pctx.SID).Debugf("EOF")
+				log.With("sid", pctx.SID).Debugf("EOF")
 				return err
 			}
 			if status, ok := status.FromError(err); ok && status.Code() == codes.Canceled {
@@ -274,13 +294,13 @@ func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, pctx pl
 			pkt.Spec = make(map[string][]byte)
 		}
 		pkt.Spec[pb.SpecGatewaySessionID] = []byte(pctx.SID)
-		log.With("session", pctx.SID).Debugf("receive client packet type [%s]", pkt.Type)
+		log.With("sid", pctx.SID).Debugf("receive client packet type [%s]", pkt.Type)
 		shouldProcessClientPacket := true
 		connectResponse, err := s.pluginOnReceive(pctx, pkt)
 		switch v := err.(type) {
 		case *plugintypes.InternalError:
 			if v.HasInternalErr() {
-				log.With("session", pctx.SID).Errorf("plugin rejected packet, %v", v.FullErr())
+				log.With("sid", pctx.SID).Errorf("plugin rejected packet, %v", v.FullErr())
 				sentry.CaptureException(fmt.Errorf(v.FullErr()))
 			}
 			return status.Errorf(codes.Internal, err.Error())
@@ -300,7 +320,7 @@ func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, pctx pl
 		if shouldProcessClientPacket {
 			err = s.processClientPacket(pkt, pctx)
 			if err != nil {
-				log.With("session", pctx.SID).Warnf("failed processing client packet, err=%v", err)
+				log.With("sid", pctx.SID).Warnf("failed processing client packet, err=%v", err)
 				return status.Errorf(codes.FailedPrecondition, err.Error())
 			}
 		}
@@ -522,7 +542,7 @@ func (s *Server) loadConnectPlugins(ctx *types.APIContext, pctx plugintypes.Cont
 		}
 	}
 	if len(nonRegisteredPlugins) > 0 {
-		log.With("session", pctx.SID).Infof("non registered plugins %v", nonRegisteredPlugins)
+		log.With("sid", pctx.SID).Infof("non registered plugins %v", nonRegisteredPlugins)
 	}
 	return pluginsConfig, nil
 }

@@ -30,6 +30,7 @@ type APIContext struct {
 }
 
 type DSNContext struct {
+	EntityID      string
 	OrgID         string
 	ClientKeyName string
 }
@@ -100,6 +101,8 @@ type ConnectionInfo struct {
 	CmdEntrypoint []string       `json:"cmd"`
 	Secrets       map[string]any `json:"secrets"`
 	AgentID       string         `json:"agent_id"`
+	AgentName     string         `json:"agent_name"`
+	AgentMode     string         `json:"agent_mode"`
 }
 
 type ReviewOwner struct {

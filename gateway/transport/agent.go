@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/monitoring"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -79,14 +78,14 @@ func setAgentClientMetdata(into *agent.Agent, md metadata.MD) {
 	into.Platform = mdget(md, "platform")
 }
 
-func normalizeAgentID(prefix string, connectionItems []string) string {
+func normalizeAgentID(orgID, resourceName string, connectionItems []string) string {
 	var items []string
 	if len(connectionItems) == 0 {
 		return ""
 	}
 	for _, connName := range connectionItems {
 		connName = strings.TrimSpace(strings.ToLower(connName))
-		connName = fmt.Sprintf("%s:%s", prefix, connName)
+		connName = fmt.Sprintf("%s:%s:%s", orgID, resourceName, connName)
 		items = append(items, connName)
 	}
 	sort.Strings(items)
@@ -111,10 +110,10 @@ func (s *Server) subscribeAgentSidecar(stream pb.Transport_ConnectServer) error 
 	connectionItems := mdget(md, "connection-items")
 	switch {
 	case connectionName != "":
-		agentID = normalizeAgentID(clientKey.Name, []string{connectionName})
+		agentID = normalizeAgentID(clientKey.OrgID, clientKey.Name, []string{connectionName})
 		log.Warnf("agent %v using deprecated header CONNECTION-NAME", mdget(md, "version"))
 	case connectionItems != "":
-		agentID = normalizeAgentID(clientKey.Name, strings.Split(connectionItems, ","))
+		agentID = normalizeAgentID(clientKey.OrgID, clientKey.Name, strings.Split(connectionItems, ","))
 	}
 	if agentID == "" {
 		log.Error("missing required connection-items attribute, connection-name=%v, connection-items=%v, err=%v",
@@ -127,8 +126,10 @@ func (s *Server) subscribeAgentSidecar(stream pb.Transport_ConnectServer) error 
 	clientOrigin := pb.ConnectionOriginAgent
 
 	pluginContext := plugintypes.Context{
-		OrgID:      clientKey.OrgID,
-		ParamsData: map[string]any{"client": clientOrigin}}
+		OrgID:        clientKey.OrgID,
+		ClientOrigin: clientOrigin,
+		ParamsData:   map[string]any{"client": clientOrigin},
+	}
 	// TODO: in case of overwriting, send a disconnect to the old
 	// stream
 	bindAgent(agentID, stream)
@@ -164,31 +165,32 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer) error {
 		log.Error(err)
 		return err
 	}
-	agentMode := pb.AgentModeDefaultType
+	connectionItems := mdget(md, "connection-items")
+	var connectionNameList []string
+	if connectionItems != "" {
+		connectionNameList = strings.Split(connectionItems, ",")
+	}
+	var agentBindID string
 	switch v := ctxVal.(type) {
+	// TODO: it should be removed after there're no more client keys being used
 	case *types.ClientKey:
-		agentMode = v.AgentMode
-		// use a prefix to avoid colission with old agent keys
-		agentName := fmt.Sprintf("clientkey:%s", v.Name)
-		// generate a deterministic uuid based on the client key name
-		ag.Id = uuid.NewSHA1(uuid.NameSpaceURL, []byte(agentName)).String()
-		ag.OrgId = v.OrgID
-		ag.Name = agentName
-		// it's safe to keep token empty until we remove agent keys authentication.
-		// the authentication mechanism will not validate empty tokens in the store.
-		ag.Token = ""
-		if agentMode == pb.AgentModeEmbeddedType {
-			connectionItems := mdget(md, "connection-items")
-			ag.Id = normalizeAgentID(v.Name, strings.Split(connectionItems, ","))
-			if ag.Id == "" {
-				log.Error("missing required connection-items attribute, connection-items=%v, err=%v",
-					connectionItems, err)
-				sentry.CaptureException(err)
-				return status.Errorf(codes.Internal, "missing connection-items header")
-			}
+		agentBindID = normalizeAgentID(v.OrgID, v.Name, connectionNameList)
+		if agentBindID == "" {
+			log.Error("missing required connection-items attribute, connection-items=%v, err=%v",
+				connectionItems, err)
+			sentry.CaptureException(err)
+			return status.Errorf(codes.Internal, "missing connection-items header")
 		}
+		ag.Id = agentBindID
+		ag.Mode = pb.AgentModeEmbeddedType
+		ag.Name = fmt.Sprintf("clientkey:%s", v.Name)
+		ag.OrgId = v.OrgID
 	case *agent.Agent:
 		ag = *v
+		agentBindID = ag.Id
+		if ag.Mode == pb.AgentModeEmbeddedType && len(connectionNameList) > 0 {
+			agentBindID = normalizeAgentID(ag.OrgId, ag.Id, connectionNameList)
+		}
 	default:
 		log.Warnf("failed authenticating, could not assign authentication context, type=%T", ctxVal)
 		return status.Error(codes.Unauthenticated, "invalid authentication, could not assign authentication context")
@@ -197,7 +199,7 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer) error {
 
 	setAgentClientMetdata(&ag, md)
 	ag.Status = agent.StatusConnected
-	if err := s.updateAgentStatus(agentMode, &ag); err != nil {
+	if err := s.updateAgentStatus(ag.Mode, &ag); err != nil {
 		log.Errorf("failed saving agent connection, err=%v", err)
 		sentry.CaptureException(err)
 		return status.Errorf(codes.Internal, "internal error")
@@ -205,12 +207,15 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer) error {
 
 	clientOrigin := pb.ConnectionOriginAgent
 	pluginContext := plugintypes.Context{
-		OrgID:      ag.OrgId,
-		ParamsData: map[string]any{"client": clientOrigin}}
-	bindAgent(ag.Id, stream)
+		OrgID:        ag.OrgId,
+		ClientOrigin: clientOrigin,
+		ParamsData:   map[string]any{"client": clientOrigin},
+	}
+	bindAgent(agentBindID, stream)
 
-	log.Infof("agent connected: org=%v,name=%v,mode=%v,hostname=%v,platform=%v,version=%v,goversion=%v",
-		orgName, ag.Name, agentMode, ag.Hostname, ag.Platform, ag.Version, ag.GoVersion)
+	log.With("bind-id", agentBindID).
+		Infof("agent connected: org=%v,name=%v,mode=%v,hostname=%v,platform=%v,version=%v,goversion=%v",
+			orgName, ag.Name, ag.Mode, ag.Hostname, ag.Platform, ag.Version, ag.GoVersion)
 
 	_ = stream.Send(&pb.Packet{
 		Type:    pbagent.GatewayConnectOK,
@@ -218,14 +223,14 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer) error {
 	})
 	var agentErr error
 	pluginContext.ParamsData["disconnect-agent-id"] = ag.Id
-	s.startDisconnectClientSink(ag.Id, clientOrigin, func(err error) {
-		defer unbindAgent(ag.Id)
+	s.startDisconnectClientSink(agentBindID, clientOrigin, func(err error) {
+		defer unbindAgent(agentBindID)
 		ag.Status = agent.StatusDisconnected
-		_ = s.updateAgentStatus(agentMode, &ag)
+		_ = s.updateAgentStatus(ag.Mode, &ag)
 		_ = s.pluginOnDisconnect(pluginContext, err)
 	})
 	agentErr = s.listenAgentMessages(&pluginContext, &ag, stream)
-	s.disconnectClient(ag.Id, agentErr)
+	s.disconnectClient(agentBindID, agentErr)
 	return agentErr
 }
 

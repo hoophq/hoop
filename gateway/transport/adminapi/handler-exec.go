@@ -67,6 +67,7 @@ func execPost(c *gin.Context) {
 			CmdEntrypoint: req.ConnectionCmd,
 			Secrets:       req.ConnectionSecrets,
 			AgentID:       req.ConnectionAgentID,
+			// TODO: add additional attributes (mode, name)
 		},
 		BearerToken: authKey,
 		UserInfo:    &req.UserInfo,

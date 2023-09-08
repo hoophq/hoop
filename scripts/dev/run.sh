@@ -163,7 +163,7 @@ chmod +x $HOME/.hoop/dev/entrypoint.sh
 
 docker build -t hoopdev -f $HOME/.hoop/dev/Dockerfile $HOME/.hoop/dev/
 
-GOOS=linux go build -ldflags "-s -w" -o $HOME/.hoop/dev/hooplinux github.com/runopsio/hoop/client
+GOOS=linux go build -ldflags "-s -w -X github.com/runopsio/hoop/common/version.strictTLS=false" -o $HOME/.hoop/dev/hooplinux github.com/runopsio/hoop/client
 docker stop hoopdev > /dev/null || true
 docker run --name hoopdev \
   -p 3001:3001 \

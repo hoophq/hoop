@@ -7,9 +7,10 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/runopsio/hoop/agent/autoregister"
 	"github.com/runopsio/hoop/common/clientconfig"
-	"github.com/runopsio/hoop/common/clientkeys"
+	"github.com/runopsio/hoop/common/dsnkeys"
 	"github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/common/version"
 )
 
 type Config struct {
@@ -34,13 +35,13 @@ func Load() (*Config, error) {
 	if agentToken != "" {
 		return &Config{
 			Type:      clientconfig.ModeAgentAutoRegister,
-			AgentMode: proto.AgentModeDefaultType,
+			AgentMode: proto.AgentModeStandardType,
 			Token:     agentToken,
 			URL:       grpc.LocalhostAddr,
 			insecure:  true}, nil
 	}
-	dsn, err := clientkeys.Parse(os.Getenv("HOOP_DSN"))
-	if err != nil && err != clientkeys.ErrEmpty {
+	dsn, err := dsnkeys.Parse(os.Getenv("HOOP_DSN"))
+	if err != nil && err != dsnkeys.ErrEmpty {
 		return nil, fmt.Errorf("HOOP_DSN in wrong format, reason=%v", err)
 	}
 	if dsn != nil {
@@ -49,7 +50,8 @@ func Load() (*Config, error) {
 			AgentMode: dsn.AgentMode,
 			Token:     dsn.Key(),
 			URL:       dsn.Address,
-			insecure:  dsn.Scheme == "http" || dsn.Scheme == "grpc"}, nil
+			// allow connecting insecure if a build disables this flag
+			insecure: !version.Get().StrictTLS && (dsn.Scheme == "http" || dsn.Scheme == "grpc")}, nil
 	}
 
 	// the above methods must be deprecated in the future in flavor of HOOP_DSN

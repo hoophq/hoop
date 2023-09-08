@@ -206,6 +206,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.AdminOnly,
 		api.AgentHandler.Evict)
 
+	// DEPRECATED in flavor of /api/agents
 	route.POST("/clientkeys",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventCreateClientKey),
@@ -225,11 +226,6 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.AdminOnly,
 		apiclientkeys.Put)
-	route.DELETE("/clientkeys/:name",
-		api.Authenticate,
-		api.TrackRequest(analytics.EventDeleteAgent),
-		api.AdminOnly,
-		apiclientkeys.Delete)
 
 	route.POST("/plugins",
 		api.Authenticate,
@@ -330,11 +326,10 @@ func (api *Api) CreateTrialEntities() error {
 	}
 
 	a := agent.Agent{
-		Id:          agentId,
-		Token:       "x-agt-test-token",
-		Name:        "test-agent",
-		OrgId:       orgId,
-		CreatedById: userId,
+		Id:    agentId,
+		Token: "x-agt-test-token",
+		Name:  "test-agent",
+		OrgId: orgId,
 	}
 
 	_, _ = api.UserHandler.Service.Signup(&org, &u)

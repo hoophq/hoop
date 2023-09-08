@@ -70,12 +70,11 @@ func (s *Storage) FindByToken(token string) (*Agent, error) {
 	if token == "" {
 		return nil, nil
 	}
-	var payload = `{:query {
+	payload := fmt.Sprintf(`{:query {
 		:find [(pull ?agent [*])] 
 		:in [token]
 		:where [[?agent :agent/token token]]}
-        :in-args ["` + token + `"]}`
-
+        :in-args [%q]}`, token)
 	b, err := s.Query([]byte(payload))
 	if err != nil {
 		return nil, err

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/google/uuid"
 	"github.com/runopsio/hoop/client/cmd/styles"
 	clientconfig "github.com/runopsio/hoop/client/config"
 	"github.com/runopsio/hoop/common/log"
@@ -62,17 +61,17 @@ var getCmd = &cobra.Command{
 		defer w.Flush()
 		switch apir.resourceType {
 		case "agent", "agents":
-			fmt.Fprintln(w, "UID\tNAME\tVERSION\tHOSTNAME\tPLATFORM\tSTATUS\t")
+			fmt.Fprintln(w, "UID\tNAME\tMODE\tVERSION\tHOSTNAME\tPLATFORM\tSTATUS\t")
 			switch contents := obj.(type) {
 			case map[string]any:
 				m := contents
-				fmt.Fprintf(w, "%s\t%s\t%v\t%v\t%v\t%s\t",
-					m["id"], m["name"], m["version"], m["hostname"], m["platform"], normalizeStatus(m["status"]))
+				fmt.Fprintf(w, "%s\t%s\t%s\t%v\t%v\t%v\t%s\t",
+					m["id"], m["name"], m["mode"], toStr(m["version"]), toStr(m["hostname"]), toStr(m["platform"]), normalizeStatus(m["status"]))
 				fmt.Fprintln(w)
 			case []map[string]any:
 				for _, m := range contents {
-					fmt.Fprintf(w, "%s\t%s\t%v\t%v\t%v\t%s\t",
-						m["id"], m["name"], m["version"], m["hostname"], m["platform"], normalizeStatus(m["status"]))
+					fmt.Fprintf(w, "%s\t%s\t%s\t%v\t%v\t%v\t%s\t",
+						m["id"], m["name"], m["mode"], toStr(m["version"]), toStr(m["hostname"]), toStr(m["platform"]), normalizeStatus(m["status"]))
 					fmt.Fprintln(w)
 				}
 			}
@@ -84,7 +83,7 @@ var getCmd = &cobra.Command{
 			case map[string]any:
 				m := contents
 				enabledPlugins := plugingHandlerFn(fmt.Sprintf("%v", m["name"]), false)
-				agentID := fmt.Sprintf("%v", m["agent_id"])
+				agentID := fmt.Sprintf("%v", m["name"])
 				if agentID == "" {
 					// express api
 					agentID = fmt.Sprintf("%v", m["agentId"])
@@ -172,28 +171,15 @@ var getCmd = &cobra.Command{
 				}
 			}
 		case "clientkeys":
-			agentHandlerFn := agentConnectedHandler(apir.conf)
-			fmt.Fprintln(w, "NAME\tMODE\tENABLED\tAGENT-VERSION\tAGENT-HOST\tAGENT-PLATFORM\tAGENT-STATUS")
+			fmt.Fprintln(w, "NAME\tMODE\tENABLED")
 			switch contents := obj.(type) {
 			case map[string]any:
 				m := contents
-				agentID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf("clientkey:%v", m["name"]))).String()
-				version := agentHandlerFn("version", agentID)
-				hostname := agentHandlerFn("hostname", agentID)
-				platform := agentHandlerFn("platform", agentID)
-				status := agentHandlerFn("status", agentID)
-				fmt.Fprintf(w, "%s\t%v\t%v\t%v\t%v\t%v\t%v",
-					m["name"], m["agent_mode"], m["active"], version, hostname, platform, status)
+				fmt.Fprintf(w, "%s\t%v\t%v\t", m["name"], m["agent_mode"], m["active"])
 				fmt.Fprintln(w)
 			case []map[string]any:
 				for _, m := range contents {
-					agentID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf("clientkey:%v", m["name"]))).String()
-					version := agentHandlerFn("version", agentID)
-					hostname := agentHandlerFn("hostname", agentID)
-					platform := agentHandlerFn("platform", agentID)
-					status := agentHandlerFn("status", agentID)
-					fmt.Fprintf(w, "%s\t%v\t%v\t%v\t%v\t%v\t%v",
-						m["name"], m["agent_mode"], m["active"], version, hostname, platform, status)
+					fmt.Fprintf(w, "%s\t%v\t%v\t", m["name"], m["agent_mode"], m["active"])
 					fmt.Fprintln(w)
 				}
 			}
@@ -258,6 +244,14 @@ func normalizeStatus(status any) string {
 	default:
 		return "-"
 	}
+}
+
+func toStr(v any) string {
+	s := fmt.Sprintf("%v", v)
+	if s == "" {
+		return "-"
+	}
+	return s
 }
 
 func pluginHandler(apir *apiResource) func(connectionName string, trunc bool) string {

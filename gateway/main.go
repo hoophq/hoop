@@ -79,10 +79,14 @@ func Run(listenAdmAddr string) {
 		if err != nil {
 			log.Fatalf("failed parsing API_URL, reason=%v", err)
 		}
-		grpcURL = fmt.Sprintf("%s://%s:8443", u.Scheme, u.Hostname())
+		scheme := "grpcs"
+		if u.Scheme == "http" {
+			scheme = "grpc"
+		}
+		grpcURL = fmt.Sprintf("%s://%s:8443", scheme, u.Hostname())
 	}
-	if !strings.HasPrefix(grpcURL, "https://") {
-		log.Warn("THE GRPC_URL ENV IS CONFIGURED USING AN INSECURE SCHEME (HTTP)!")
+	if !strings.HasPrefix(grpcURL, "grpcs://") || !strings.HasPrefix(grpcURL, "https://") {
+		log.Warn("THE GRPC_URL ENV IS CONFIGURED USING AN INSECURE SCHEME")
 	}
 
 	agentService := agent.Service{Storage: &agent.Storage{Storage: s}}

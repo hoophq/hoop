@@ -34,9 +34,9 @@ func Post(c *gin.Context) {
 	}
 	dsnCtx := ctx.DSN()
 	log := log.With("org", dsnCtx.OrgID, "key", dsnCtx.ClientKeyName)
-	if dsnCtx.OrgID == "" || dsnCtx.ClientKeyName == "" || len(reqBody.ConnectionItems) == 0 {
-		log.With("connections", len(reqBody.ConnectionItems)).Warnf("missing required attributes")
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "missing required attributes"})
+	if dsnCtx.OrgID == "" || dsnCtx.ClientKeyName == "" {
+		log.With("connections", len(reqBody.ConnectionItems)).Warnf("missing dsn context")
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "missing context"})
 		return
 	}
 	var requestConnectionItems []string
@@ -79,7 +79,15 @@ func Post(c *gin.Context) {
 	// check if there's a client connection request
 	// based on the published connections by the agent
 	for _, connectionName := range requestConnectionItems {
-		requestOK := requestGrpcConnectionOK(connectionName)
+		requestOK := requestGrpcConnectionOK(fmt.Sprintf("%s:%s", dsnCtx.OrgID, connectionName))
+		if requestOK {
+			c.PureJSON(200, gin.H{"grpc_url": ctx.GrpcURL})
+			return
+		}
+	}
+	// check if there's a client connection request based on the agent id
+	if len(requestConnectionItems) == 0 {
+		requestOK := requestGrpcConnectionOK(dsnCtx.EntityID)
 		if requestOK {
 			c.PureJSON(200, gin.H{"grpc_url": ctx.GrpcURL})
 			return
