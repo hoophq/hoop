@@ -18,12 +18,11 @@ var (
 func init() {
 	createClientKeysCmd.Flags().StringVar(&clientKeysActiveFlag, "active", "true", "To activate (true) or disable (false) the key")
 	createClientKeysCmd.Flags().BoolVar(&clientKeysOverwriteFlag, "overwrite", false, "It will create or update it if the resource already exists")
-	_ = createClientKeysCmd.MarkFlagRequired("mode")
 }
 
 var createClientKeysCmd = &cobra.Command{
 	Use:   "clientkeys NAME",
-	Short: "Create a client key resource.",
+	Short: "(DEPRECATED) Create a client key resource.",
 	PreRun: func(cmd *cobra.Command, args []string) {
 		if len(args) == 0 {
 			cmd.Usage()

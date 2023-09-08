@@ -17,7 +17,7 @@ func init() {
 
 var createAgentCmd = &cobra.Command{
 	Use:     "agent NAME",
-	Short:   "(DEPRECATED) Create an agent token.",
+	Short:   "Create an agent token.",
 	Aliases: []string{"agents"},
 	PreRun: func(cmd *cobra.Command, args []string) {
 		if len(args) == 0 {

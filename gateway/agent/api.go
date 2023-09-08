@@ -3,6 +3,7 @@ package agent
 import (
 	"fmt"
 	"net/http"
+	"regexp"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
@@ -27,8 +28,18 @@ type (
 )
 
 type AgentRequest struct {
-	Name string `json:"name"`
+	Name string `json:"name" binding:"required"`
 	Mode string `json:"mode"`
+}
+
+var rfc1035Err = "invalid name. It must contain 63 characters; start and end with alphanumeric lowercase character or contains '-'"
+
+func isValidRFC1035LabelName(label string) bool {
+	re := regexp.MustCompile(`^[a-z]([-a-z0-9]*[a-z0-9])?$`)
+	if len(label) > 63 || !re.MatchString(label) {
+		return false
+	}
+	return true
 }
 
 func (s *Handler) Post(c *gin.Context) {
@@ -40,6 +51,11 @@ func (s *Handler) Post(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		log.Infof("failed parsing request payload, err=%v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
+	if !isValidRFC1035LabelName(req.Name) {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": rfc1035Err})
 		return
 	}
 
