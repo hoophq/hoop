@@ -58,6 +58,21 @@ func Parse(keyDsn string) (*DSN, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// it is an old dsn, maintain compatibility
+	// <scheme>://<host>:<port>/<secretkey-hash>
+	if len(u.Path) == 65 {
+		// hash the whole dsn instead only the secret key
+		secretKeyHash, err := hash256Key(keyDsn)
+		return &DSN{
+			Scheme:        u.Scheme,
+			Address:       u.Host,
+			AgentMode:     pb.AgentModeEmbeddedType,
+			Name:          "",
+			SecretKeyHash: secretKeyHash,
+			key:           keyDsn,
+		}, err
+	}
 	agentMode := u.Query().Get("mode")
 	if err := validateAgentMode(agentMode); err != nil {
 		return nil, err

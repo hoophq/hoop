@@ -189,7 +189,7 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer) error {
 		ag = *v
 		agentBindID = ag.Id
 		if ag.Mode == pb.AgentModeEmbeddedType && len(connectionNameList) > 0 {
-			agentBindID = normalizeAgentID(ag.OrgId, ag.Id, connectionNameList)
+			agentBindID = normalizeAgentID(ag.OrgId, ag.Name, connectionNameList)
 		}
 	default:
 		log.Warnf("failed authenticating, could not assign authentication context, type=%T", ctxVal)

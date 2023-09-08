@@ -59,10 +59,11 @@ func Load() (*Config, error) {
 	grpcURL := os.Getenv("HOOP_GRPCURL")
 	if token != "" && grpcURL != "" {
 		return &Config{
-			Type:     clientconfig.ModeEnv,
-			Token:    token,
-			URL:      grpcURL,
-			insecure: grpcURL == grpc.LocalhostAddr}, nil
+			Type:      clientconfig.ModeEnv,
+			AgentMode: proto.AgentModeStandardType,
+			Token:     token,
+			URL:       grpcURL,
+			insecure:  grpcURL == grpc.LocalhostAddr}, nil
 	}
 
 	filepath, err := clientconfig.NewPath(clientconfig.AgentFile)
@@ -81,6 +82,7 @@ func Load() (*Config, error) {
 		}
 		conf.Type = clientconfig.ModeConfigFile
 		conf.filepath = filepath
+		conf.AgentMode = proto.AgentModeStandardType
 		return &conf, nil
 	}
 	return nil, fmt.Errorf("missing HOOP_DSN environment variable")

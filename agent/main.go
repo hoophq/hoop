@@ -79,7 +79,7 @@ func runEmbeddedMode(config *agentconfig.Config) {
 		log.Infof("connecting to %v, tls=%v", grpcURL, !isInsecure)
 		srvAddr, err := grpc.ParseServerAddress(grpcURL)
 		if err != nil {
-			log.Error("failed parsing grpc address, err=%v", err)
+			log.Errorf("failed parsing grpc address, err=%v", err)
 			continue
 		}
 		client, err := grpc.Connect(
@@ -92,7 +92,7 @@ func runEmbeddedMode(config *agentconfig.Config) {
 			grpc.WithOption("origin", pb.ConnectionOriginAgent),
 			grpc.WithOption("connection-items", connectionEnvVal))
 		if err != nil {
-			log.Error("failed connecting to grpc gateway, err=%v", err)
+			log.Errorf("failed connecting to grpc gateway, err=%v", err)
 			continue
 		}
 		agentConfig := &agentconfig.Config{

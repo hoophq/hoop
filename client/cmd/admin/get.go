@@ -171,15 +171,15 @@ var getCmd = &cobra.Command{
 				}
 			}
 		case "clientkeys":
-			fmt.Fprintln(w, "NAME\tMODE\tENABLED")
+			fmt.Fprintln(w, "NAME\tENABLED")
 			switch contents := obj.(type) {
 			case map[string]any:
 				m := contents
-				fmt.Fprintf(w, "%s\t%v\t%v\t", m["name"], m["agent_mode"], m["active"])
+				fmt.Fprintf(w, "%s\t%v\t", m["name"], m["active"])
 				fmt.Fprintln(w)
 			case []map[string]any:
 				for _, m := range contents {
-					fmt.Fprintf(w, "%s\t%v\t%v\t", m["name"], m["agent_mode"], m["active"])
+					fmt.Fprintf(w, "%s\t%v\t", m["name"], m["active"])
 					fmt.Fprintln(w)
 				}
 			}

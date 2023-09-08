@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/getsentry/sentry-go"
+	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/dsnkeys"
 	commongrpc "github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
@@ -272,7 +273,16 @@ func (s *Server) getConnection(bearerToken, name string, userCtx *user.Context) 
 		return nil, status.Errorf(codes.Internal, "internal error, failed to obtain agent from connection")
 	}
 	if ag == nil {
-		return nil, status.Errorf(codes.NotFound, "agent not found")
+		// the agent id is not a uuid when the connection
+		// is published (connectionapps) via embedded mode
+		if _, err := uuid.Parse(conn.AgentId); err == nil {
+			return nil, status.Errorf(codes.NotFound, "agent not found")
+		}
+		// keep compatibility with published agents
+		ag = &agent.Agent{
+			Name: fmt.Sprintf("[clientkey=%v]", strings.Split(conn.AgentId, ":")[0]), // <clientkey-name>:<connection>
+			Mode: pb.AgentModeEmbeddedType,
+		}
 	}
 	return &types.ConnectionInfo{
 		ID:            conn.Id,
