@@ -18,7 +18,6 @@ import (
 	"github.com/runopsio/hoop/agent/dlp"
 	"github.com/runopsio/hoop/agent/hook"
 	term "github.com/runopsio/hoop/agent/terminal"
-	"github.com/runopsio/hoop/common/clientconfig"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/memory"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -157,11 +156,7 @@ func (a *Agent) Run() error {
 			Debugf("received client packet [%v]", pkt.Type)
 		switch pkt.Type {
 		case pbagent.GatewayConnectOK:
-			log.Infof("connected with success to %v", a.config.GrpcURL)
-			if err := a.config.Save(); err != nil {
-				a.client.Close()
-				return err
-			}
+			log.Infof("connected with success to %v", a.config.URL)
 			a.handleGracefulExit()
 			a.client.StartKeepAlive()
 			go a.startMonitoring(pkt)
@@ -415,10 +410,10 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 	connParams.EnvVars["envvar:HOOP_USER_ID"] = b64Enc([]byte(connParams.UserID))
 	connParams.EnvVars["envvar:HOOP_SESSION_ID"] = b64Enc(sessionID)
 
-	// Sidecar mode usually has the context of the application.
+	// Embedded mode usually has the context of the application.
 	// By having all environment variable in the context of execution
 	// permits a more seamless integration with internal language tooling.
-	if a.config.Mode == clientconfig.ModeSidecar {
+	if a.config.AgentMode == pb.AgentModeEmbeddedType {
 		for _, envKeyVal := range os.Environ() {
 			envKey, envVal, found := strings.Cut(envKeyVal, "=")
 			if !found || envKey == "HOOP_DSN" {

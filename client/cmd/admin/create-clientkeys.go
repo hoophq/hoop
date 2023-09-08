@@ -10,8 +10,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var clientKeysActiveFlag string
-var clientKeysOverwriteFlag bool
+var (
+	clientKeysActiveFlag    string
+	clientKeysOverwriteFlag bool
+)
 
 func init() {
 	createClientKeysCmd.Flags().StringVar(&clientKeysActiveFlag, "active", "true", "To activate (true) or disable (false) the key")
@@ -20,7 +22,7 @@ func init() {
 
 var createClientKeysCmd = &cobra.Command{
 	Use:   "clientkeys NAME",
-	Short: "Create a client key resource.",
+	Short: "(DEPRECATED) Create a client key resource.",
 	PreRun: func(cmd *cobra.Command, args []string) {
 		if len(args) == 0 {
 			cmd.Usage()

@@ -67,12 +67,14 @@ func (s *Storage) FindByNameOrID(ctx *user.Context, nameOrID string) (*Agent, er
 }
 
 func (s *Storage) FindByToken(token string) (*Agent, error) {
-	var payload = `{:query {
+	if token == "" {
+		return nil, nil
+	}
+	payload := fmt.Sprintf(`{:query {
 		:find [(pull ?agent [*])] 
 		:in [token]
 		:where [[?agent :agent/token token]]}
-        :in-args ["` + token + `"]}`
-
+        :in-args [%q]}`, token)
 	b, err := s.Query([]byte(payload))
 	if err != nil {
 		return nil, err

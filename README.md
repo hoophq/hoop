@@ -50,6 +50,17 @@ If you want to run a development server with the webapp, run the command below b
 ./scripts/dev/build-webapp.sh
 ```
 
+### Build Dev Client
+
+By default versioned clients are builded to strict connect via TLS. In order to build a client that permits connecting to remote hosts without TLS, execute the instruction below:
+
+```sh
+# generate binary at $HOME/.hoop/bin/hoop
+make build-dev-client
+```
+
+> Append `$HOME/.hoop/bin` to your `$PATH` in your profile to find commands when typing in your shell
+
 ### Clean Up
 
 To clean up all data and build scripts

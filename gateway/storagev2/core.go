@@ -38,6 +38,10 @@ func (s *Store) Put(trxs ...types.TxObject) (*types.TxResponse, error) {
 	return submitPutTx(s.client, s.address, trxs...)
 }
 
+func (s *Store) Evict(xtIDs ...string) (*types.TxResponse, error) {
+	return submitEvictTx(s.client, s.address, xtIDs...)
+}
+
 func (s *Store) Query(ednQuery string) ([]byte, error) {
 	url := fmt.Sprintf("%s/_xtdb/query", s.address)
 
@@ -137,10 +141,10 @@ func NewOrganizationContext(orgID string, store *Store) *Context {
 	return NewContext("", orgID, store)
 }
 
-func NewDSNContext(orgID, clientKeyName string, store *Store) *Context {
+func NewDSNContext(entityID, orgID, clientKeyName string, store *Store) *Context {
 	return &Context{
 		Store:      store,
-		dsnctx:     &types.DSNContext{OrgID: orgID, ClientKeyName: clientKeyName},
+		dsnctx:     &types.DSNContext{EntityID: entityID, OrgID: orgID, ClientKeyName: clientKeyName},
 		APIContext: &types.APIContext{OrgID: orgID},
 		segment:    nil,
 	}

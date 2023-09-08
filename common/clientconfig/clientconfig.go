@@ -16,6 +16,8 @@ const (
 
 	// ModeEnv is when a client is loaded with environment variables
 	ModeEnv = "env"
+	// ModeEnv is when a client is loaded with the environment variable HOOP_DSN
+	ModeDsn = "dsn"
 	// ModeLocal detects if the client has found a local instance
 	// of the hoop gateway, this mode indicates the gRPC connection
 	// should be established without tls encryption. For security
@@ -24,19 +26,11 @@ const (
 	// ModeConfigFile indicates the configuration is obtained from a configuration file
 	// located in the filesystem.
 	ModeConfigFile = "configfile"
-	// ModeAgentWebRegister should register the agent by providing a link
-	// to the webapp with the agent token to register it. This mode
-	// should not persist configuration across restarts.
-	ModeAgentWebRegister = "webregister"
 	// ModeAgentAutoRegister should autoregister an agent connecting locally.
 	// It is useful to start a local agent that grants access to the internal
 	// network of the gateway. It allows creating connections to perform
 	// administrative tasks.
 	ModeAgentAutoRegister = "autoregister"
-	// ModeSidecar is when a client is loaded with a DSN environment variable.
-	// This mode is recommended when the agent needs the context of the running
-	// application
-	ModeSidecar = "sidecar"
 )
 
 // NewHomeDir creates a home dir and any inner level folders passed in

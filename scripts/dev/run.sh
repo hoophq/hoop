@@ -75,6 +75,10 @@ RUN apt-get update -y && \
         mongodb-mongosh mongodb-org-tools mongodb-org-shell mongocli \
         nodejs
 
+RUN curl -sL "https://dl.k8s.io/release/v1.22.1/bin/linux/amd64/kubectl" -o kubectl && \
+        echo '78178a8337fc6c76780f60541fca7199f0f1a2e9c41806bded280a4a5ef665c9  kubectl' | sha256sum -c --ignore-missing --strict - && \
+        chmod 755 kubectl && \
+        mv kubectl /usr/local/bin/kubectl
 
 RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
     locale-gen
@@ -159,7 +163,7 @@ chmod +x $HOME/.hoop/dev/entrypoint.sh
 
 docker build -t hoopdev -f $HOME/.hoop/dev/Dockerfile $HOME/.hoop/dev/
 
-GOOS=linux go build -ldflags "-s -w" -o $HOME/.hoop/dev/hooplinux github.com/runopsio/hoop/client
+GOOS=linux go build -ldflags "-s -w -X github.com/runopsio/hoop/common/version.strictTLS=false" -o $HOME/.hoop/dev/hooplinux github.com/runopsio/hoop/client
 docker stop hoopdev > /dev/null || true
 docker run --name hoopdev \
   -p 3001:3001 \

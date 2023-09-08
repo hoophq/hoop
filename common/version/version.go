@@ -14,12 +14,14 @@ type Info struct {
 	GoVersion string `json:"go_version"`
 	Compiler  string `json:"compiler"`
 	Platform  string `json:"platform"`
+	StrictTLS bool   `json:"strict_tls"`
 }
 
 var (
 	version   string
 	gitCommit = "$Format:%H$"          // sha1 from git, output of $(git rev-parse HEAD)
 	buildDate = "1970-01-01T00:00:00Z" // build date in ISO8601 format, output of $(date -u +'%Y-%m-%dT%H:%M:%SZ')
+	strictTLS = "true"
 )
 
 // Get returns the overall codebase version. It's for detecting
@@ -32,6 +34,7 @@ func Get() Info {
 		GoVersion: runtime.Version(),
 		Compiler:  runtime.Compiler,
 		Platform:  fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH),
+		StrictTLS: strictTLS == "true",
 	}
 	if i.Version == "" {
 		i.Version = "unknown"

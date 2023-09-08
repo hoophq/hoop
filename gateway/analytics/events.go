@@ -28,6 +28,8 @@ const (
 	EventSearch                 = "hoop-search"
 	EventCreateClientKey        = "hoop-create-clientkey"
 	EventFetchClientKey         = "hoop-fetch-clientkey"
+	EventUpdateClientKey        = "hoop-update-clientkey"
+	EventDeleteClientKey        = "hoop-delete-clientkey"
 
 	EventGrpcExec                = "hoop-grpc-exec"
 	EventGrpcConnect             = "hoop-grpc-connect"

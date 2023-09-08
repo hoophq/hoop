@@ -28,30 +28,8 @@ type ClientKeysRequest struct {
 
 func Post(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	var reqBody ClientKeysRequest
-	if err := c.ShouldBindJSON(&reqBody); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
-		return
-	}
-	if !isValidRFC1035LabelName(reqBody.Name) {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": rfc1035Err})
-		return
-	}
-	clientKey, err := clientkeysstorage.GetByName(ctx, reqBody.Name)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
-	}
-	if clientKey != nil {
-		c.JSON(http.StatusConflict, gin.H{"message": "client key already exists"})
-		return
-	}
-	_, dsn, err := clientkeysstorage.Put(ctx, reqBody.Name, reqBody.Active)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
-	}
-	c.PureJSON(201, gin.H{"dsn": dsn})
+	log.Warnf("POST /api/clientkeys is deprecated, user %v must use client keys instead", ctx.UserEmail)
+	c.JSON(http.StatusGone, gin.H{"message": "endpoint deprecated, use agents instead"})
 }
 
 func Put(c *gin.Context) {

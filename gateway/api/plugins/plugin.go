@@ -1,7 +1,6 @@
 package apiplugins
 
 import (
-	"bytes"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -260,7 +259,7 @@ func parsePluginConnections(c *gin.Context, req PluginRequest) ([]*types.PluginC
 		}
 		// create deterministic uuid to allow plugin connection entities
 		// to be updated instead of generating new ones
-		docUUID := uuid.NewSHA1(uuid.NameSpaceURL, bytes.NewBufferString(fmt.Sprintf("%s:%s", req.Name, conn.Id)).Bytes())
+		docUUID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf("%s:%s", req.Name, conn.Id)))
 		pluginConnectionList = append(pluginConnectionList, &types.PluginConnection{
 			ID:           docUUID.String(),
 			ConnectionID: conn.Id,

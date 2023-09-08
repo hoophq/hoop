@@ -59,7 +59,7 @@ func (p *auditPlugin) writeOnReceive(sessionID string, eventType eventlogv0.Even
 	walLogObj := p.walSessionStore.Get(sessionID)
 	walogm, ok := walLogObj.(*walLogRWMutex)
 	if !ok {
-		return fmt.Errorf("failed obtaining wallog, obj=%v", walLogObj)
+		return fmt.Errorf("failed obtaining wallog for sid=%v, obj=%v", sessionID, walLogObj)
 	}
 	walogm.mu.Lock()
 	defer walogm.mu.Unlock()

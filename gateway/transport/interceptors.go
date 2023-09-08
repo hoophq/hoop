@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/getsentry/sentry-go"
+	"github.com/google/uuid"
+	"github.com/runopsio/hoop/common/dsnkeys"
 	commongrpc "github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -64,13 +66,21 @@ func (w *wrappedStream) Context() context.Context {
 	return ctx
 }
 
-func parseGatewayContextInto(ctx context.Context, into any) error {
+func getGatewayContext(ctx context.Context) (any, error) {
 	if ctx == nil {
-		return status.Error(codes.Internal, "authentication context not found (nil)")
+		return nil, status.Error(codes.Internal, "authentication context not found (nil)")
 	}
 	val := ctx.Value(gatewayContextKey{})
 	if val == nil {
-		return status.Error(codes.Internal, "authentication context not found")
+		return nil, status.Error(codes.Internal, "authentication context not found")
+	}
+	return val, nil
+}
+
+func parseGatewayContextInto(ctx context.Context, into any) error {
+	val, err := getGatewayContext(ctx)
+	if err != nil {
+		return err
 	}
 	var assigned bool
 	switch v := val.(type) {
@@ -152,7 +162,8 @@ func (s *Server) AuthGrpcInterceptor(srv any, ss grpc.ServerStream, info *grpc.S
 			).Infof("admin api - decoded connection info")
 		}
 		ctxVal = gwctx
-	// agent key authentication
+	// DEPRECATED in flavor of dsn agent keys
+	// shared agent key authentication
 	case strings.HasPrefix(bearerToken, "x-agt-"):
 		ag, err := s.AgentService.FindByToken(bearerToken)
 		if err != nil || ag == nil {
@@ -162,21 +173,38 @@ func (s *Server) AuthGrpcInterceptor(srv any, ss grpc.ServerStream, info *grpc.S
 		}
 		ctxVal = ag
 	// agent client keys (dsn) authentication
-	// keep compatibility with old clients
-	// hoopagent/sdk or hoopagent/sidecar
-	case strings.HasPrefix(mdget(md, "user-agent"), "hoopagent/s"):
+	// keep compatibility with old clients (hoopagent/<version>, hoopagent/sdk or hoopagent/sidecar)
+	case strings.HasPrefix(mdget(md, "user-agent"), "hoopagent"):
+		// TODO: deprecated in flavor of agent keys dsn
 		clientKey, err := clientkeysstorage.ValidateDSN(s.StoreV2, bearerToken)
 		if err != nil {
 			log.Error("failed validating dsn authentication, err=%v", err)
 			sentry.CaptureException(err)
 			return status.Errorf(codes.Internal, "failed validating dsn")
 		}
-		if clientKey == nil {
+		if clientKey != nil {
+			ctxVal = clientKey
+			break
+		}
+		dsn, err := dsnkeys.Parse(bearerToken)
+		if err != nil {
 			md.Delete("authorization")
-			log.Debugf("invalid agent authentication, tokenlength=%v, client-metadata=%v", len(bearerToken), md)
+			log.Debugf("invalid agent authentication (dsn), tokenlength=%v, client-metadata=%v, err=%v", len(bearerToken), md, err)
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
-		ctxVal = clientKey
+
+		ag, err := s.AgentService.FindByToken(dsn.SecretKeyHash)
+		if err != nil || ag == nil {
+			md.Delete("authorization")
+			log.Debugf("invalid agent authentication (dsn), tokenlength=%v, client-metadata=%v, err=%v", len(bearerToken), md, err)
+			return status.Errorf(codes.Unauthenticated, "invalid authentication")
+		}
+		if ag.Name != dsn.Name || ag.Mode != dsn.AgentMode {
+			log.Errorf("failed authenticating agent (agent dsn), mismatch dsn attributes. id=%v, name=%v, mode=%v",
+				ag.Id, dsn.Name, dsn.AgentMode)
+			return status.Errorf(codes.Unauthenticated, "invalid authentication, mismatch dsn attributes")
+		}
+		ctxVal = ag
 	// client proxy manager authentication (access token)
 	case clientOrigin[0] == pb.ConnectionOriginClientProxyManager:
 		sub, err := s.exchangeUserToken(bearerToken)
@@ -227,16 +255,34 @@ func (s *Server) getConnection(bearerToken, name string, userCtx *user.Context) 
 			CmdEntrypoint: conn.Command,
 			Secrets:       conn.Secrets,
 			AgentID:       conn.AgentId,
+			// TODO: add additional agent attributes
 		}, nil
 	}
 	conn, err := s.ConnectionService.FindOne(userCtx, name)
 	if err != nil {
-		// sentry.CaptureException(err)
-		// disp.sendResponse(nil, err)
-		return nil, status.Errorf(codes.Internal, err.Error())
+		log.Errorf("failed retrieving connection %v, err=%v", name, err)
+		sentry.CaptureException(err)
+		return nil, status.Errorf(codes.Internal, "internal error, failed to obtain connection")
 	}
 	if conn == nil {
 		return nil, nil
+	}
+	ag, err := s.AgentService.FindByNameOrID(userCtx, conn.AgentId)
+	if err != nil {
+		log.Errorf("failed obtaining agent %v, err=%v", err)
+		return nil, status.Errorf(codes.Internal, "internal error, failed to obtain agent from connection")
+	}
+	if ag == nil {
+		// the agent id is not a uuid when the connection
+		// is published (connectionapps) via embedded mode
+		if _, err := uuid.Parse(conn.AgentId); err == nil {
+			return nil, status.Errorf(codes.NotFound, "agent not found")
+		}
+		// keep compatibility with published agents
+		ag = &agent.Agent{
+			Name: fmt.Sprintf("[clientkey=%v]", strings.Split(conn.AgentId, ":")[0]), // <clientkey-name>:<connection>
+			Mode: pb.AgentModeEmbeddedType,
+		}
 	}
 	return &types.ConnectionInfo{
 		ID:            conn.Id,
@@ -245,6 +291,8 @@ func (s *Server) getConnection(bearerToken, name string, userCtx *user.Context) 
 		CmdEntrypoint: conn.Command,
 		Secrets:       conn.Secret,
 		AgentID:       conn.AgentId,
+		AgentMode:     ag.Mode,
+		AgentName:     ag.Name,
 	}, nil
 }
 

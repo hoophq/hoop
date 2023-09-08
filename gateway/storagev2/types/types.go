@@ -30,6 +30,7 @@ type APIContext struct {
 }
 
 type DSNContext struct {
+	EntityID      string
 	OrgID         string
 	ClientKeyName string
 }
@@ -100,6 +101,8 @@ type ConnectionInfo struct {
 	CmdEntrypoint []string       `json:"cmd"`
 	Secrets       map[string]any `json:"secrets"`
 	AgentID       string         `json:"agent_id"`
+	AgentName     string         `json:"agent_name"`
+	AgentMode     string         `json:"agent_mode"`
 }
 
 type ReviewOwner struct {
@@ -206,9 +209,10 @@ type InvitedUser struct {
 }
 
 type ClientKey struct {
-	ID      string `json:"id"     edn:"xt/id"`
-	OrgID   string `json:"-"      edn:"clientkey/org"`
-	Name    string `json:"name"   edn:"clientkey/name"`
-	Active  bool   `json:"active" edn:"clientkey/enabled"`
-	DSNHash string `json:"-"      edn:"clientkey/dsnhash"`
+	ID        string `json:"id"         edn:"xt/id"`
+	OrgID     string `json:"-"          edn:"clientkey/org"`
+	Name      string `json:"name"       edn:"clientkey/name"`
+	AgentMode string `json:"agent_mode" edn:"clientkey/agent-mode"`
+	Active    bool   `json:"active"     edn:"clientkey/enabled"`
+	DSNHash   string `json:"-"          edn:"clientkey/dsnhash"`
 }
