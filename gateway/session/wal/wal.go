@@ -12,7 +12,7 @@ const (
 	defaultHeaderIndex = 1 << iota
 	defaultDataIndex
 
-	defaultMaxRead = 110 * 1024 * 1024 // 110MB
+	DefaultMaxRead = 110 * 1024 * 1024 // 110MB
 )
 
 var (
@@ -130,6 +130,6 @@ func (w *WalLog) ReadAtMost(max uint32, readerFn ReaderFunc) (bool, error) {
 
 // ReadFull reads events from the write ahead log until it reaches it max default size.
 func (w *WalLog) ReadFull(readerFn ReaderFunc) (bool, error) {
-	return w.ReadAtMost(defaultMaxRead, readerFn)
+	return w.ReadAtMost(DefaultMaxRead, readerFn)
 }
 func (w *WalLog) Close() error { return w.wlog.Close() }

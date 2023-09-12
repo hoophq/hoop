@@ -22,6 +22,7 @@ RUN mkdir -p /app && \
         openssh-client \
         unzip \
         expect \
+        less \
         lsb-release && \
         ln -s /usr/bin/python3 /usr/bin/python
 

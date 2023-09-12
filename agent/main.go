@@ -19,12 +19,15 @@ import (
 	"github.com/runopsio/hoop/common/version"
 )
 
-var defaultUserAgent = fmt.Sprintf("hoopagent/%v", version.Get().Version)
+var (
+	defaultUserAgent = fmt.Sprintf("hoopagent/%v", version.Get().Version)
+	vsinfo           = version.Get()
+)
 
 func Run() {
 	config, err := agentconfig.Load()
 	if err != nil {
-		log.Fatal(err)
+		log.With("version", vsinfo.Version).Fatal(err)
 	}
 	// default to embedded mode if it's dsn type config to keep
 	// compatibility with old client keys that doesn't have the mode attribute param
@@ -43,9 +46,8 @@ func runDefaultMode(config *agentconfig.Config) {
 		log.Fatal(err)
 	}
 	clientConfig.UserAgent = defaultUserAgent
-	vs := version.Get()
 	log.Infof("version=%v, platform=%v, type=%v, mode=%v, grpc_server=%v, tls=%v, strict-tls=%v - starting agent",
-		vs.Version, vs.Platform, config.Type, config.AgentMode, config.URL, !config.IsInsecure(), vs.StrictTLS)
+		vsinfo.Version, vsinfo.Platform, config.Type, config.AgentMode, config.URL, !config.IsInsecure(), vsinfo.StrictTLS)
 
 	client, err := grpc.Connect(clientConfig, clientOptions...)
 	if err != nil {
@@ -70,12 +72,11 @@ func runEmbeddedMode(config *agentconfig.Config) {
 		log.Error(err)
 		return
 	}
-	vs := version.Get()
 	log.Infof("version=%v, platform=%v, api-url=%v, strict-tls=%v, connections=%v - starting agent",
-		vs.Version, vs.Platform, apiURL, vs.StrictTLS, connectionList)
+		vsinfo.Version, vsinfo.Platform, apiURL, vsinfo.StrictTLS, connectionList)
 	for {
 		grpcURL := fetchGrpcURL(apiURL, dsnKey, connectionList)
-		isInsecure := !vs.StrictTLS && (strings.HasPrefix(grpcURL, "http://") || strings.HasPrefix(grpcURL, "grpc://"))
+		isInsecure := !vsinfo.StrictTLS && (strings.HasPrefix(grpcURL, "http://") || strings.HasPrefix(grpcURL, "grpc://"))
 		log.Infof("connecting to %v, tls=%v", grpcURL, !isInsecure)
 		srvAddr, err := grpc.ParseServerAddress(grpcURL)
 		if err != nil {
