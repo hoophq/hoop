@@ -241,13 +241,13 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 func (a *Agent) checkTCPLiveness(pkt *pb.Packet, envVars map[string]any) error {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 	connType := string(pkt.Spec[pb.SpecConnectionType])
-	connEnvVars, _ := parseConnectionEnvVars(envVars, connType)
-	if connEnvVars == nil {
-		return nil
-	}
 	if connType == pb.ConnectionTypePostgres || connType == pb.ConnectionTypeTCP || connType == pb.ConnectionTypeMySQL {
+		connEnvVars, _ := parseConnectionEnvVars(envVars, connType)
+		if connEnvVars == nil {
+			return nil
+		}
 		if err := isPortActive(connEnvVars.host, connEnvVars.port); err != nil {
-			msg := fmt.Sprintf("failed connecting to remote host %s:%s, reason=%v",
+			msg := fmt.Sprintf("failed connecting to remote host=%s, port=%s, reason=%v",
 				connEnvVars.host, connEnvVars.port, err)
 			log.Warnf("session=%v - %v", sessionID, msg)
 			return fmt.Errorf("%s", msg)
