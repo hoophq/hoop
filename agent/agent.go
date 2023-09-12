@@ -194,29 +194,23 @@ func (a *Agent) Run() error {
 	}
 }
 
-func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams, *connEnv, error) {
+func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams, error) {
 	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 	sessionIDKey := string(sessionID)
 
 	connParams := a.decodeConnectionParams(sessionID, pkt)
 	if connParams == nil {
-		return nil, nil, fmt.Errorf("session %s failed to decode connection params", sessionIDKey)
+		return nil, fmt.Errorf("session %s failed to decode connection params", sessionIDKey)
 	}
 
 	log.Infof("session=%s - connection params decoded with success, dlp-info-types=%d",
 		sessionIDKey, len(connParams.DLPInfoTypes))
 
 	if err := a.setDatabaseCredentials(pkt, connParams); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	connType := string(pkt.Spec[pb.SpecConnectionType])
-	connEnvVars, err := parseConnectionEnvVars(connParams.EnvVars, connType)
-	if err != nil {
-		log.Infof("session=%s - failed parse envvars from connection, err=%v", sessionIDKey, err)
-		return nil, nil, fmt.Errorf("failed to parse connection envvars")
-	}
-
 	for key, b64EncVal := range connParams.EnvVars {
 		if !strings.HasPrefix(key, "envvar:") {
 			continue
@@ -241,15 +235,19 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 			connParams.EnvVars["envvar:MYSQL_PWD"] = b64EncPaswd
 		}
 	}
-	return connParams, connEnvVars, nil
+	return connParams, nil
 }
 
-func (a *Agent) checkTCPLiveness(pkt *pb.Packet, connEnvVars *connEnv) error {
+func (a *Agent) checkTCPLiveness(pkt *pb.Packet, envVars map[string]any) error {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 	connType := string(pkt.Spec[pb.SpecConnectionType])
 	if connType == pb.ConnectionTypePostgres || connType == pb.ConnectionTypeTCP || connType == pb.ConnectionTypeMySQL {
+		connEnvVars, _ := parseConnectionEnvVars(envVars, connType)
+		if connEnvVars == nil {
+			return nil
+		}
 		if err := isPortActive(connEnvVars.host, connEnvVars.port); err != nil {
-			msg := fmt.Sprintf("failed connecting to remote host %s:%s, reason=%v",
+			msg := fmt.Sprintf("failed connecting to remote host=%s, port=%s, reason=%v",
 				connEnvVars.host, connEnvVars.port, err)
 			log.Warnf("session=%v - %v", sessionID, msg)
 			return fmt.Errorf("%s", msg)
@@ -391,7 +389,7 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 	sessionIDKey := string(sessionID)
 	log.Infof("session=%s - received connect request", sessionIDKey)
 
-	connParams, connEnvVars, err := a.buildConnectionParams(pkt)
+	connParams, err := a.buildConnectionParams(pkt)
 	if err != nil {
 		log.Warnf("failed building connection params, err=%v", err)
 		_ = a.client.Send(&pb.Packet{
@@ -445,7 +443,7 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 			})
 			return
 		}
-		if err := a.checkTCPLiveness(pkt, connEnvVars); err != nil {
+		if err := a.checkTCPLiveness(pkt, connParams.EnvVars); err != nil {
 			_ = a.client.Send(&pb.Packet{
 				Type:    pbclient.SessionClose,
 				Payload: []byte(err.Error()),

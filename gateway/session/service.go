@@ -1,6 +1,7 @@
 package session
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -128,6 +129,7 @@ type sessionParseOption struct {
 	withLineBreak bool
 	withEventTime bool
 	withJsonFmt   bool
+	withCsvFmt    bool
 	events        []string
 }
 
@@ -162,6 +164,9 @@ func parseSessionToFile(s *types.Session, opts sessionParseOption) (output []byt
 		}
 		if opts.withLineBreak {
 			output = append(output, '\n')
+		}
+		if opts.withCsvFmt {
+			output = bytes.ReplaceAll(output, []byte("\t"), []byte(`,`))
 		}
 	}
 	if opts.withJsonFmt {

@@ -46,7 +46,7 @@ func TestReadWrite(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	_, err = walog.ReadAtMost(defaultMaxRead, func(eventLog []byte) error {
+	_, err = walog.ReadAtMost(DefaultMaxRead, func(eventLog []byte) error {
 		got, err := eventlog.DecodeLatest(eventLog)
 		if err != nil {
 			t.Fatal(err)

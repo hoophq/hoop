@@ -118,14 +118,13 @@ func (a *Handler) FindOne(c *gin.Context) {
 		hash := sha256.Sum256([]byte(uuid.NewString()))
 		downloadToken := hex.EncodeToString(hash[:])
 		expireAtTime := time.Now().UTC().Add(defaultDownloadExpireTime).Format(time.RFC3339Nano)
-		downloadURL := fmt.Sprintf("%s/api/sessions/%s/download?token=%s&extension=%v&newline=%v&event-time=%v&format=%v&events=%v",
+		downloadURL := fmt.Sprintf("%s/api/sessions/%s/download?token=%s&extension=%v&newline=%v&event-time=%v&events=%v",
 			a.ApiURL,
 			sessionID,
 			downloadToken,
 			fileExt,
 			c.Query("newline"),
 			c.Query("event-time"),
-			c.Query("format"),
 			c.Query("events"),
 		)
 		requestPayload := map[string]any{
@@ -172,7 +171,8 @@ func (a *Handler) DownloadSession(c *gin.Context) {
 	fileExt := c.Query("extension")
 	withLineBreak := c.Query("newline") == "1"
 	withEventTime := c.Query("event-time") == "1"
-	jsonFmt := c.Query("format") == "json"
+	jsonFmt := strings.HasSuffix(fileExt, "json")
+	csvFmt := strings.HasSuffix(fileExt, "csv")
 	var eventTypes []string
 	for _, e := range strings.Split(c.Query("events"), ",") {
 		if e == "i" || e == "o" || e == "e" {
@@ -227,7 +227,7 @@ func (a *Handler) DownloadSession(c *gin.Context) {
 	log.With(
 		"sid", sid, "ext", fileExt,
 		"line-break", withLineBreak, "event-time", withEventTime,
-		"jsonfmt", jsonFmt, "event-types", eventTypes).
+		"jsonfmt", jsonFmt, "csvfmt", csvFmt, "event-types", eventTypes).
 		Infof("session download request, valid=%v, org=%v, user=%v, groups=%#v, user-agent=%v",
 			token == requestToken, usrCtx.Org.Id, usrCtx.User.Id, userGroups, c.GetHeader("user-agent"))
 	if token != requestToken {
@@ -245,7 +245,7 @@ func (a *Handler) DownloadSession(c *gin.Context) {
 		return
 	}
 
-	opts := sessionParseOption{withLineBreak, withEventTime, jsonFmt, eventTypes}
+	opts := sessionParseOption{withLineBreak, withEventTime, jsonFmt, csvFmt, eventTypes}
 	output := parseSessionToFile(session, opts)
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s.%s", sid, fileExt))
 	c.Header("Content-Type", "application/octet-stream")

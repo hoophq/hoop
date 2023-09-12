@@ -14,6 +14,7 @@ import (
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	"github.com/runopsio/hoop/common/version"
+	sessionwal "github.com/runopsio/hoop/gateway/session/wal"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/tidwall/wal"
@@ -22,7 +23,7 @@ import (
 var (
 	walLogPath       = filepath.Join(plugintypes.AuditPath, "clientexec")
 	walFolderTmpl    = `%s/%s-%s-wal`
-	maxResponseBytes = 600000 // 600KB
+	maxResponseBytes = sessionwal.DefaultMaxRead
 )
 
 func init() {
