@@ -8,7 +8,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/common/log"
-	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/clientexec"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 )
@@ -19,6 +18,7 @@ type ExecRequest struct {
 	ConnectionID      string            `json:"connection_id"       binding:"required"`
 	ConnectionCmd     []string          `json:"connection_cmd"      binding:"required"`
 	ConnectionAgentID string            `json:"connection_agent_id" binding:"required"`
+	ConnectionType    string            `json:"connection_type"     binding:"required"`
 	ConnectionSecrets map[string]any    `json:"connection_secrets"`
 	SessionID         string            `json:"session_id"`
 	Input             string            `json:"input"`
@@ -63,7 +63,7 @@ func execPost(c *gin.Context) {
 		ConnectionInfo: &types.ConnectionInfo{
 			ID:            req.ConnectionID,
 			Name:          req.Connection,
-			Type:          pb.ConnectionTypeCommandLine,
+			Type:          req.ConnectionType,
 			CmdEntrypoint: req.ConnectionCmd,
 			Secrets:       req.ConnectionSecrets,
 			AgentID:       req.ConnectionAgentID,
