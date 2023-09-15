@@ -146,9 +146,9 @@ func (s *Service) Callback(c *gin.Context, state, code string) string {
 	}
 
 	if ctx.User.Status != user.StatusActive {
-		log.Infof("failed saving user to database, reason=%v", err)
-		s.loginOutcome(login, pendingReviewError)
-		return login.Redirect + "?error=pending_review"
+		log.With("sub", sub, "org", ctx.User.Org).Infof("user is not active")
+		s.loginOutcome(login, "unauthorized")
+		return login.Redirect + "?error=unauthorized"
 	}
 
 	if !isSignup {
