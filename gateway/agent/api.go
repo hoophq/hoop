@@ -71,7 +71,7 @@ func (s *Handler) Post(c *gin.Context) {
 		return
 	}
 
-	secretKey, secretKeyHash, err := generateSecureRandomKey()
+	secretKey, secretKeyHash, err := dsnkeys.GenerateSecureRandomKey()
 	if err != nil {
 		log.Errorf("failed generating agent token, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed generating agent token"})

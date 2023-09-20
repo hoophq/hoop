@@ -1,7 +1,6 @@
 package transport
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -16,7 +15,6 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/google/uuid"
 	commongrpc "github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -183,31 +181,8 @@ func (s *Server) ValidateConfiguration() error {
 	return nil
 }
 
-func (s *Server) trackSessionStatus(sessionID, phase string, err error) {
-	var errMsg *string
-	if err != nil {
-		v := err.Error()
-		if len(v) > 150 {
-			v = fmt.Sprintf("%v, [TRUNCATE %v bytes] ...", v[:150], len(v)-150)
-		}
-		errMsg = &v
-	}
-	// trackID will be unique for the same session id
-	trackID, err := uuid.NewRandomFromReader(bytes.NewBufferString(sessionID))
-	if err != nil {
-		log.Errorf("failed generating track id from session %v, err=%v", sessionID, err)
-		return
-	}
-	_, trackErr := s.SessionService.PersistStatus(&session.SessionStatus{
-		ID:        trackID.String(),
-		SessionID: sessionID,
-		Phase:     phase,
-		Error:     errMsg,
-	})
-	if trackErr != nil {
-		log.Warnf("failed tracking session status, err=%v", trackErr)
-	}
-}
+// DEPRECATED implement honeycomb instead of tracking in xtdb
+func (s *Server) trackSessionStatus(sessionID, phase string, err error) {}
 
 func (s *Server) validateSessionID(sessionID string) error {
 	return s.SessionService.ValidateSessionID(sessionID)

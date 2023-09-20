@@ -1,7 +1,6 @@
 package transport
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -64,9 +63,9 @@ func (s *Server) proxyManager(stream pb.Transport_ConnectServer) error {
 	defer func() {
 		s.disconnectClient(sessionID, err)
 		_, _ = clientstate.Update(storectx, types.ClientStatusDisconnected)
-		stateID, _ := uuid.NewRandomFromReader(bytes.NewBufferString(storectx.UserID))
+		stateID := clientstate.DeterministicClientUUID(storectx.UserID)
 		if len(stateID) > 0 {
-			removeDispatcherState(stateID.String())
+			removeDispatcherState(stateID)
 		}
 	}()
 	switch v := err.(type) {
