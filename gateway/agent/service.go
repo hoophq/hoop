@@ -1,10 +1,6 @@
 package agent
 
 import (
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
-	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
@@ -84,21 +80,6 @@ func setAgentModeDefault(agt *Agent) {
 	if agt != nil && agt.Mode == "" {
 		agt.Mode = pb.AgentModeStandardType
 	}
-}
-
-func generateSecureRandomKey() (secretKey, secretKeyHash string, err error) {
-	secretRandomBytes := make([]byte, 32)
-	_, err = rand.Read(secretRandomBytes)
-	if err != nil {
-		return "", "", fmt.Errorf("failed generating entropy, err=%v", err)
-	}
-	h := sha256.New()
-	secretKey = base64.RawURLEncoding.EncodeToString(secretRandomBytes)
-	secretKey = "xagt-" + secretKey
-	if _, err := h.Write([]byte(secretKey)); err != nil {
-		return "", "", fmt.Errorf("failed generating secret hash, err=%v", err)
-	}
-	return secretKey, fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
 func deterministicAgentUUID(orgID, agentName string) string {

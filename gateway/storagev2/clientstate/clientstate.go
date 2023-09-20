@@ -1,7 +1,6 @@
 package clientstate
 
 import (
-	"bytes"
 	"fmt"
 	"time"
 
@@ -14,6 +13,10 @@ import (
 type option struct {
 	key string
 	val string
+}
+
+func DeterministicClientUUID(userID string) string {
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("clientstate/"+userID)).String()
 }
 
 func GetEntity(ctx *storagev2.Context, xtID string) (*types.Client, error) {
@@ -33,11 +36,9 @@ func Update(ctx *storagev2.Context, status types.ClientStatusType, opts ...*opti
 	if err := ctx.Validate(); err != nil {
 		return nil, err
 	}
-	xtuid, err := uuid.NewRandomFromReader(bytes.NewBufferString(ctx.UserID))
-	if err != nil {
-		return nil, fmt.Errorf("failed generating auto connect id, err=%v", err)
-	}
-	obj, err := GetEntity(ctx, xtuid.String())
+
+	docuuid := DeterministicClientUUID(ctx.UserID)
+	obj, err := GetEntity(ctx, docuuid)
 	if err != nil {
 		return nil, fmt.Errorf("failed fetching auto connect entity, err=%v", err)
 	}
@@ -45,7 +46,7 @@ func Update(ctx *storagev2.Context, status types.ClientStatusType, opts ...*opti
 	// status ready must reset attributes
 	if obj == nil || status == types.ClientStatusReady {
 		obj = &types.Client{
-			ID:          xtuid.String(),
+			ID:          docuuid,
 			OrgID:       ctx.OrgID,
 			ConnectedAt: time.Now().UTC(),
 		}

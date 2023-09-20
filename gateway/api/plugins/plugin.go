@@ -67,10 +67,10 @@ func Post(c *gin.Context) {
 		newPlugin.Config.OrgID = ctx.OrgID
 		newPlugin.ConfigID = func() *string { v := uuid.NewString(); return &v }()
 		newPlugin.Config = req.Config
-	}
-	if err := validatePluginConfig(newPlugin.Config); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
-		return
+		if err := validatePluginConfig(req.Config.EnvVars); err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+			return
+		}
 	}
 
 	pluginConnectionList, pluginConnectionIDs, err := parsePluginConnections(c, req)
@@ -162,15 +162,16 @@ func PutConfig(c *gin.Context) {
 		return
 	}
 
+	if err := validatePluginConfig(envVars); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+
 	pluginDocID := uuid.NewString()
 	pluginConfig := &types.PluginConfig{OrgID: ctx.OrgID, ID: pluginDocID, EnvVars: envVars}
 	if existingPlugin.Config != nil {
 		// keep the same configuration id to avoid creating a new document
 		pluginConfig.ID = *existingPlugin.ConfigID
-	}
-	if err := validatePluginConfig(existingPlugin.Config); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
-		return
 	}
 
 	newState := newPluginUpdateConfigState(existingPlugin, pluginConfig)
@@ -279,11 +280,11 @@ func redactPluginConfig(c *types.PluginConfig) {
 	}
 }
 
-func validatePluginConfig(config *types.PluginConfig) error {
-	if config == nil || len(config.EnvVars) == 0 {
+func validatePluginConfig(configEnvVars map[string]string) error {
+	if len(configEnvVars) == 0 {
 		return nil
 	}
-	for key, val := range config.EnvVars {
+	for key, val := range configEnvVars {
 		if key == "" {
 			return fmt.Errorf("missing config key")
 		}

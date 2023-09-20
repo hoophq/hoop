@@ -1,14 +1,12 @@
 package apiproxymanager
 
 import (
-	"bytes"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/log"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	"github.com/runopsio/hoop/gateway/storagev2"
@@ -36,11 +34,7 @@ type ProxyManagerResponse struct {
 }
 
 func getEntity(ctx *storagev2.Context) (*types.Client, error) {
-	clientUID, err := uuid.NewRandomFromReader(bytes.NewBufferString(ctx.UserID))
-	if err != nil {
-		return nil, fmt.Errorf("failed generating random uid, err=%v", err)
-	}
-	obj, err := clientstate.GetEntity(ctx, clientUID.String())
+	obj, err := clientstate.GetEntity(ctx, clientstate.DeterministicClientUUID(ctx.UserID))
 	if err != nil {
 		return nil, fmt.Errorf("failed obtaining client state resource, err=%v", err)
 	}
@@ -87,17 +81,12 @@ func Post(c *gin.Context) {
 	if req.AccessDuration == 0 {
 		req.AccessDuration = time.Minute * 30
 	}
-	clientUID, err := uuid.NewRandomFromReader(bytes.NewBufferString(ctx.UserID))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
-	}
 
 	hasSubscribed := false
 	for i := 1; i <= 10; i++ {
 		log.Debugf("attempt=%v - dispatching open session", i)
 		pkt, err := transport.DispatchOpenSession(&types.Client{
-			ID:                    clientUID.String(),
+			ID:                    clientstate.DeterministicClientUUID(ctx.UserID),
 			RequestConnectionName: req.ConnectionName,
 			RequestPort:           req.Port,
 			RequestAccessDuration: req.AccessDuration,
