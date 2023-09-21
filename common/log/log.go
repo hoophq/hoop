@@ -21,29 +21,31 @@ const (
 )
 
 var (
-	zlog = NewDefaultLogger()
+	zlog  = NewDefaultLogger()
+	sugar = zlog.Sugar().With("runtime", "go")
 
 	// aliases
-	Printf                = zlog.Sugar().Infof
-	Println               = zlog.Sugar().Info
+	Printf                = sugar.Infof
+	Println               = sugar.Info
 	defaultLoggerSetLevel = func(l zapcore.Level) {}
 
-	Debugf = zlog.Sugar().Debugf
-	Infof  = zlog.Sugar().Infof
-	Info   = zlog.Sugar().Info
-	Warnf  = zlog.Sugar().Warnf
-	Warn   = zlog.Sugar().Warn
-	Error  = zlog.Sugar().Error
-	Errorf = zlog.Sugar().Errorf
-	Fatalf = zlog.Sugar().Fatalf
-	Fatal  = zlog.Sugar().Fatal
+	Debugf = sugar.Debugf
+	Infof  = sugar.Infof
+	Info   = sugar.Info
+	Warnf  = sugar.Warnf
+	Warn   = sugar.Warn
+	Error  = sugar.Error
+	Errorf = sugar.Errorf
+	Fatalf = sugar.Fatalf
+	Fatal  = sugar.Fatal
 
-	With                = zlog.Sugar().With
+	With                = sugar.With
 	IsDebugLevel        = zlog.Level() == zapcore.DebugLevel
 	LogEncoding  string = os.Getenv("LOG_ENCODING")
 )
 
 func NewDefaultLogger() *zap.Logger {
+
 	if LogEncoding == "" {
 		LogEncoding = "json"
 	}

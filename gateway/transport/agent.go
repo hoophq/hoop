@@ -14,7 +14,7 @@ import (
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
-	"github.com/runopsio/hoop/gateway/agent"
+	apitypes "github.com/runopsio/hoop/gateway/apiclient/types"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"google.golang.org/grpc/codes"
@@ -66,16 +66,6 @@ func getAgentStream(id string) pb.Transport_ConnectServer {
 	ca.mu.Lock()
 	defer ca.mu.Unlock()
 	return ca.agents[id]
-}
-
-func setAgentClientMetdata(into *agent.Agent, md metadata.MD) {
-	into.Hostname = mdget(md, "hostname")
-	into.MachineId = mdget(md, "machine_id")
-	into.KernelVersion = mdget(md, "kernel_version")
-	into.Version = mdget(md, "version")
-	into.GoVersion = mdget(md, "go-version")
-	into.Compiler = mdget(md, "compiler")
-	into.Platform = mdget(md, "platform")
 }
 
 func normalizeAgentID(orgID, resourceName string, connectionItems []string) string {
@@ -146,7 +136,7 @@ func (s *Server) subscribeAgentSidecar(stream pb.Transport_ConnectServer) error 
 		defer unbindAgent(agentID)
 		_ = s.pluginOnDisconnect(pluginContext, err)
 	})
-	agentObj := &agent.Agent{Id: agentID, Name: clientKey.Name}
+	agentObj := &apitypes.Agent{ID: agentID, Name: clientKey.Name}
 	agentErr = s.listenAgentMessages(&pluginContext, agentObj, stream)
 	if agentErr == nil {
 		log.Warnf("agent return a nil error, it will not disconnect it properly, id=%v", agentID)
@@ -159,7 +149,7 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer) error {
 	ctx := stream.Context()
 	md, _ := metadata.FromIncomingContext(ctx)
 
-	var ag agent.Agent
+	var gwctx gatewayContext
 	ctxVal, err := getGatewayContext(ctx)
 	if err != nil {
 		log.Error(err)
@@ -181,60 +171,51 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer) error {
 			sentry.CaptureException(err)
 			return status.Errorf(codes.Internal, "missing connection-items header")
 		}
-		ag.Id = agentBindID
-		ag.Mode = pb.AgentModeEmbeddedType
-		ag.Name = fmt.Sprintf("clientkey:%s", v.Name)
-		ag.OrgId = v.OrgID
-	case *agent.Agent:
-		ag = *v
-		agentBindID = ag.Id
-		if ag.Mode == pb.AgentModeEmbeddedType && len(connectionNameList) > 0 {
-			agentBindID = normalizeAgentID(ag.OrgId, ag.Name, connectionNameList)
+
+		gwctx.Agent.ID = agentBindID
+		gwctx.Agent.Mode = pb.AgentModeEmbeddedType
+		gwctx.Agent.Name = fmt.Sprintf("clientkey:%s", v.Name)
+		gwctx.Agent.OrgID = v.OrgID
+	case *gatewayContext:
+		gwctx = *v
+		agentBindID = gwctx.Agent.ID
+		if gwctx.Agent.Mode == pb.AgentModeEmbeddedType && len(connectionNameList) > 0 {
+			agentBindID = normalizeAgentID(gwctx.Agent.OrgID, gwctx.Agent.Name, connectionNameList)
 		}
 	default:
 		log.Warnf("failed authenticating, could not assign authentication context, type=%T", ctxVal)
 		return status.Error(codes.Unauthenticated, "invalid authentication, could not assign authentication context")
 	}
-	orgName, _ := s.UserService.GetOrgNameByID(ag.OrgId)
-
-	setAgentClientMetdata(&ag, md)
-	ag.Status = agent.StatusConnected
-	if err := s.updateAgentStatus(ag.Mode, &ag); err != nil {
-		log.Errorf("failed saving agent connection, err=%v", err)
-		sentry.CaptureException(err)
-		return status.Errorf(codes.Internal, "internal error")
-	}
+	orgName, _ := s.UserService.GetOrgNameByID(gwctx.Agent.OrgID)
 
 	clientOrigin := pb.ConnectionOriginAgent
 	pluginContext := plugintypes.Context{
-		OrgID:        ag.OrgId,
+		OrgID:        gwctx.Agent.OrgID,
 		ClientOrigin: clientOrigin,
 		ParamsData:   map[string]any{"client": clientOrigin},
 	}
 	bindAgent(agentBindID, stream)
 
-	log.With("bind-id", agentBindID).
-		Infof("agent connected: org=%v,name=%v,mode=%v,hostname=%v,platform=%v,version=%v,goversion=%v",
-			orgName, ag.Name, ag.Mode, ag.Hostname, ag.Platform, ag.Version, ag.GoVersion)
-
+	log.With("bind-id", agentBindID).Infof("agent connected: %s", gwctx.Agent)
 	_ = stream.Send(&pb.Packet{
 		Type:    pbagent.GatewayConnectOK,
 		Payload: s.configurationData(orgName),
 	})
 	var agentErr error
-	pluginContext.ParamsData["disconnect-agent-id"] = ag.Id
+	pluginContext.ParamsData["disconnect-agent-id"] = gwctx.Agent.ID
 	s.startDisconnectClientSink(agentBindID, clientOrigin, func(err error) {
 		defer unbindAgent(agentBindID)
-		ag.Status = agent.StatusDisconnected
-		_ = s.updateAgentStatus(ag.Mode, &ag)
+		if err := publishAgentDisconnect(s.IDProvider.ApiURL, gwctx.bearerToken); err != nil {
+			log.Warnf("failed publishing disconnect agent state, err=%v", err)
+		}
 		_ = s.pluginOnDisconnect(pluginContext, err)
 	})
-	agentErr = s.listenAgentMessages(&pluginContext, &ag, stream)
+	agentErr = s.listenAgentMessages(&pluginContext, &gwctx.Agent, stream)
 	s.disconnectClient(agentBindID, agentErr)
 	return agentErr
 }
 
-func (s *Server) listenAgentMessages(pctx *plugintypes.Context, ag *agent.Agent, stream pb.Transport_ConnectServer) error {
+func (s *Server) listenAgentMessages(pctx *plugintypes.Context, ag *apitypes.Agent, stream pb.Transport_ConnectServer) error {
 	ctx := stream.Context()
 
 	for {
@@ -252,7 +233,7 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, ag *agent.Agent,
 			}
 			if status, ok := status.FromError(err); ok && status.Code() == codes.Canceled {
 				// TODO: send packet to agent to clean up resources
-				log.Warnf("id=%v, name=%v - agent disconnected", ag.Id, ag.Name)
+				log.Warnf("id=%v, name=%v - agent disconnected", ag.ID, ag.Name)
 				return fmt.Errorf("agent %v disconnected, reason=%v", ag.Name, err)
 			}
 			sentry.CaptureException(err)
@@ -265,7 +246,7 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, ag *agent.Agent,
 		sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 		pctx.SID = sessionID
 		// keep track of sessions being processed per agent
-		agentSessionKeyID := fmt.Sprintf("%s:%s", ag.Id, sessionID)
+		agentSessionKeyID := fmt.Sprintf("%s:%s", ag.ID, sessionID)
 		pctx.ParamsData[agentSessionKeyID] = nil
 		log.With("session", sessionID).Debugf("receive agent packet type [%s]", pkt.Type)
 		if _, err := s.pluginOnReceive(*pctx, pkt); err != nil {
@@ -297,32 +278,21 @@ func (s *Server) processAgentPacket(pkt *pb.Packet, clientStream pb.Transport_Co
 	_ = clientStream.Send(pkt)
 }
 
-func (s *Server) updateAgentStatus(agentMode string, a *agent.Agent) error {
-	if agentMode == pb.AgentModeEmbeddedType {
-		return nil
-	}
-	if _, err := s.AgentService.Persist(a); err != nil {
-		sentry.CaptureException(err)
-		log.Errorf("failed updating agent status, err=%v", err)
-		return status.Errorf(codes.Internal, "internal error, failed updating agent status")
-	}
-	return nil
-}
-
 func (s *Server) configurationData(orgName string) []byte {
 	var transportConfigBytes []byte
 	if s.PyroscopeIngestURL != "" {
+
 		transportConfigBytes, _ = pb.GobEncode(monitoring.TransportConfig{
 			Sentry: monitoring.SentryConfig{
 				DSN:         s.AgentSentryDSN,
 				OrgName:     orgName,
-				Environment: s.IDProvider.ApiURL,
+				Environment: monitoring.NormalizeEnvironment(s.IDProvider.ApiURL),
 			},
 			Profiler: monitoring.ProfilerConfig{
 				PyroscopeServerAddress: s.PyroscopeIngestURL,
 				PyroscopeAuthToken:     s.PyroscopeAuthToken,
 				OrgName:                orgName,
-				Environment:            s.IDProvider.ApiURL,
+				Environment:            monitoring.NormalizeEnvironment(s.IDProvider.ApiURL),
 			},
 		})
 	}

@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/runopsio/hoop/common/clientconfig"
@@ -63,10 +62,6 @@ func Run(listenAdmAddr string) {
 		log.Fatal(err)
 	}
 	log.Infof("sync with success")
-	if !strings.HasPrefix(apiURL, "https://") {
-		log.Warn("THE API_URL ENV IS CONFIGURED USING AN INSECURE SCHEME (HTTP)!")
-	}
-
 	storev2 := storagev2.NewStorage(nil)
 
 	profile := os.Getenv("PROFILE")
@@ -84,9 +79,6 @@ func Run(listenAdmAddr string) {
 			scheme = "grpc"
 		}
 		grpcURL = fmt.Sprintf("%s://%s:8443", scheme, u.Hostname())
-	}
-	if !strings.HasPrefix(grpcURL, "grpcs://") || !strings.HasPrefix(grpcURL, "https://") {
-		log.Warn("THE GRPC_URL ENV IS CONFIGURED USING AN INSECURE SCHEME")
 	}
 
 	agentService := agent.Service{Storage: &agent.Storage{Storage: s}}
@@ -211,24 +203,7 @@ func Run(listenAdmAddr string) {
 	log.Infof("profile=%v - starting servers", profile)
 	go g.StartRPCServer()
 	go adminapi.RunServer(listenAdmAddr)
-	go func() {
-		mainFilePath := "/app/api/main.js"
-		if _, err := os.Stat(mainFilePath); err != nil && os.IsNotExist(err) {
-			return
-		}
-		log.Infof("starting node api process ...")
-		cmd := exec.Command("node", mainFilePath)
-		cmd.Env = os.Environ()
-		// https://expressjs.com/en/advanced/best-practice-performance.html#set-node_env-to-production
-		cmd.Env = append(cmd.Env, "NODE_ENV", "production")
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			log.Errorf("failed running node api process, err=%v", err)
-			return
-		}
-		log.Infof("node api process finished")
-	}()
+	startNodeApiProcessManager()
 	a.StartAPI(sentryStarted)
 }
 
@@ -304,4 +279,38 @@ channel="general"`
 	}
 	log.Printf("MagicBell notifications selected")
 	return notification.NewMagicBell()
+}
+
+func startNodeApiProcessManager() {
+	mainFilePath := "/app/api/main.js"
+	if _, err := os.Stat(mainFilePath); err != nil && os.IsNotExist(err) {
+		return
+	}
+
+	startProcessFn := func(i int) {
+		log.Infof("starting node api process, attempt=%v ...", i)
+		cmd := exec.Command("node", mainFilePath)
+		cmd.Env = os.Environ()
+		// https://expressjs.com/en/advanced/best-practice-performance.html#set-node_env-to-production
+		cmd.Env = append(cmd.Env, "NODE_ENV", "production")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			log.Errorf("failed running node api process, err=%v", err)
+			return
+		}
+		pid := -1
+		if cmd.Process != nil {
+			pid = cmd.Process.Pid
+		}
+		log.Infof("node api process (pid:%v) finished", pid)
+	}
+
+	go func() {
+		for i := 1; ; i++ {
+			startProcessFn(i)
+			// give some time to retry
+			time.Sleep(time.Second * 5)
+		}
+	}()
 }
