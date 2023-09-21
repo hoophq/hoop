@@ -2,6 +2,7 @@ package monitoring
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"runtime"
 	"strings"
@@ -31,8 +32,11 @@ type ProfilerConfig struct {
 	Environment            string
 }
 
-func normalizeEnvironment(environment string) string {
-	environment = strings.TrimPrefix(environment, "http://")
+func NormalizeEnvironment(apiURL string) string {
+	if u, _ := url.Parse(apiURL); u != nil {
+		return u.Hostname()
+	}
+	environment := strings.TrimPrefix(apiURL, "http://")
 	return strings.TrimPrefix(environment, "https://")
 }
 
@@ -41,7 +45,7 @@ func StartProfiler(appName string, config ProfilerConfig) (*pyroscope.Profiler, 
 		return nil, nil
 	}
 	if config.Environment != "" {
-		config.Environment = normalizeEnvironment(config.Environment)
+		config.Environment = NormalizeEnvironment(config.Environment)
 	}
 	runtime.SetMutexProfileFraction(5)
 	runtime.SetBlockProfileRate(5)
@@ -95,7 +99,7 @@ func StartSentry(sentryTransport sentry.Transport, conf SentryConfig) (bool, err
 		return false, nil
 	}
 	if conf.Environment != "" {
-		conf.Environment = normalizeEnvironment(conf.Environment)
+		conf.Environment = NormalizeEnvironment(conf.Environment)
 	}
 	sentry.ConfigureScope(func(scope *sentry.Scope) {
 		if conf.OrgName != "" {
