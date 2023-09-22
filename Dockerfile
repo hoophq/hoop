@@ -65,6 +65,7 @@ RUN mkdir -p /app && \
         locales \
         tini \
         openssh-client \
+        procps \
         curl
 
 RUN curl -sL https://github.com/42wim/matterbridge/releases/download/v1.26.0/matterbridge-1.26.0-linux-64bit -o /usr/local/bin/matterbridge && \
