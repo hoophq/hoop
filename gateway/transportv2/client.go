@@ -115,13 +115,6 @@ func SubscribeClient(ctx *ClientContext, stream pb.Transport_ConnectServer) erro
 	clientErr := listenClientMessages(ctx, stream)
 	if status, ok := status.FromError(clientErr); ok && status.Code() == codes.Canceled {
 		log.With("sid", ctx.sessionID, "origin", clientOrigin, "mode", conn.AgentMode).Infof("grpc client connection canceled")
-		// it means the api client has disconnected,
-		// it will let the session open to receive packets
-		// until a session close packet is received or the
-		// agent is disconnected
-		if clientOrigin == pb.ConnectionOriginClientAPI {
-			clientErr = nil
-		}
 	}
 	defer disconnectClient(ctx.sessionID, clientErr)
 	if clientErr != nil {
