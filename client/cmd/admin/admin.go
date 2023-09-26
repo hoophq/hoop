@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"net/http"
-	"os"
 
 	"github.com/runopsio/hoop/client/cmd/styles"
 	clientconfig "github.com/runopsio/hoop/client/config"
@@ -12,10 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	hoopVersionStr = version.Get().Version
-	expressApiFlag bool
-)
+var hoopVersionStr = version.Get().Version
 
 func init() {
 	MainCmd.AddCommand(deleteCmd)
@@ -23,12 +19,7 @@ func init() {
 	MainCmd.AddCommand(createCmd)
 	MainCmd.AddCommand(gatewayInfoCmd)
 	MainCmd.AddCommand(targetToConnection)
-	MainCmd.PersistentFlags().BoolVar(&expressApiFlag, "apiv2", false, "perform request in the new api")
 	_ = MainCmd.PersistentFlags().MarkHidden("apiv2")
-
-	if os.Getenv("HOOP_APIV2") == "true" {
-		expressApiFlag = true
-	}
 }
 
 var MainCmd = &cobra.Command{

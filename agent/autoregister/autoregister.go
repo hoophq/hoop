@@ -7,12 +7,11 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/google/uuid"
+	"github.com/runopsio/hoop/common/appruntime"
 	"github.com/runopsio/hoop/common/dsnkeys"
 	"github.com/runopsio/hoop/common/log"
-
-	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/common/runtime"
 	"github.com/runopsio/hoop/common/version"
 	"olympos.io/encoding/edn"
 )
@@ -30,7 +29,7 @@ func Run() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	osmap := runtime.OS()
+	osmap := appruntime.OS()
 	vinfo := version.Get()
 	skey, skeyHash, err := dsnkeys.GenerateSecureRandomKey()
 	if err != nil {

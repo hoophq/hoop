@@ -27,6 +27,7 @@ import (
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+	transportv2 "github.com/runopsio/hoop/gateway/transportv2"
 	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc"
 
@@ -153,9 +154,39 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 		log.Debugf("client missing origin, client-metadata=%v", md)
 		return status.Error(codes.InvalidArgument, "missing origin")
 	}
+	var isApiV2Client bool
+	if v := md.Get("apiv2"); len(v) > 0 {
+		isApiV2Client = v[0] == "true"
+	}
+	if isApiV2Client {
+		val := ctx.Value(gatewayContextKey{})
+		// TODO: check if this blow up with nil
+		gwctx, ok := val.(*gatewayContext)
+		if !ok {
+			return status.Error(codes.Internal, "failed to assign context")
+		}
+		switch clientOrigin[0] {
+		case pb.ConnectionOriginAgent:
+			return transportv2.SubscribeAgent(&transportv2.AgentContext{
+				Agent:       &gwctx.Agent,
+				ApiURL:      s.IDProvider.ApiURL,
+				BearerToken: gwctx.bearerToken,
+			}, stream)
+		case pb.ConnectionOriginClientProxyManager:
+			// return s.proxyManagerV2(stream)
+		default:
+			return transportv2.SubscribeClient(&transportv2.ClientContext{
+				UserContext: gwctx.UserContext,
+				Connection:  gwctx.Connection,
+				BearerToken: gwctx.bearerToken,
+			}, stream)
+		}
+	}
 
+	// legacy clients
 	switch clientOrigin[0] {
 	case pb.ConnectionOriginAgent:
+
 		// keep compatibility with old clients
 		// hoopagent/sdk or hoopagent/sidecar
 		// TODO: remove in flavor of subscribeAgent.

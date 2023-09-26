@@ -13,18 +13,22 @@ import (
 )
 
 type ExecRequest struct {
-	UserInfo          types.APIContext  `json:"user_info"           binding:"required"`
-	Connection        string            `json:"connection"          binding:"required"`
-	ConnectionID      string            `json:"connection_id"       binding:"required"`
-	ConnectionCmd     []string          `json:"connection_cmd"      binding:"required"`
-	ConnectionAgentID string            `json:"connection_agent_id" binding:"required"`
-	ConnectionType    string            `json:"connection_type"     binding:"required"`
-	ConnectionSecrets map[string]any    `json:"connection_secrets"`
-	SessionID         string            `json:"session_id"`
-	Input             string            `json:"input"`
-	InputEncoding     string            `json:"input_encoding"`
-	ClientEnvVars     map[string]string `json:"client_envvars"`
-	ClientArgs        []string          `json:"client_args"`
+	UserInfo            types.APIContext `json:"user_info"             binding:"required"`
+	Connection          string           `json:"connection"            binding:"required"`
+	ConnectionID        string           `json:"connection_id"         binding:"required"`
+	ConnectionCmd       []string         `json:"connection_cmd"        binding:"required"`
+	ConnectionAgentID   string           `json:"connection_agent_id"   binding:"required"`
+	ConnectionAgentName string           `json:"connection_agent_name"`
+	ConnectionAgentMode string           `json:"connection_agent_mode"`
+	IsApiV2             bool             `json:"api_v2"`
+	ConnectionType      string           `json:"connection_type"       binding:"required"`
+	ConnectionSecrets   map[string]any   `json:"connection_secrets"`
+
+	SessionID     string            `json:"session_id"`
+	Input         string            `json:"input"`
+	InputEncoding string            `json:"input_encoding"`
+	ClientEnvVars map[string]string `json:"client_envvars"`
+	ClientArgs    []string          `json:"client_args"`
 }
 
 type ExecResponse struct {
@@ -67,10 +71,12 @@ func execPost(c *gin.Context) {
 			CmdEntrypoint: req.ConnectionCmd,
 			Secrets:       req.ConnectionSecrets,
 			AgentID:       req.ConnectionAgentID,
-			// TODO: add additional attributes (mode, name)
+			AgentName:     req.ConnectionAgentName,
+			AgentMode:     req.ConnectionAgentMode,
 		},
 		BearerToken: authKey,
 		UserInfo:    &req.UserInfo,
+		IsApiV2:     req.IsApiV2,
 	})
 	if err != nil {
 		c.PureJSON(http.StatusBadRequest, &ExecResponse{Message: err.Error()})

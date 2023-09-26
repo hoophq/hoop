@@ -32,6 +32,10 @@ type DSN struct {
 	// the secret key hashed
 	SecretKeyHash string
 
+	// temporary to support migration
+	// indicates if the gateway should connect the agent using v2 api
+	ApiV2 bool
+
 	key string
 }
 
@@ -90,6 +94,7 @@ func Parse(keyDsn string) (*DSN, error) {
 		AgentMode:     agentMode,
 		Name:          u.User.Username(),
 		SecretKeyHash: secretKeyHash,
+		ApiV2:         u.Query().Get("v2") == "true",
 		key:           keyDsn,
 	}, err
 }

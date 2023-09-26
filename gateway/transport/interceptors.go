@@ -124,10 +124,14 @@ func (s *Server) AuthGrpcInterceptor(srv any, ss grpc.ServerStream, info *grpc.S
 		return status.Error(codes.InvalidArgument, "missing client origin")
 	}
 
-	isAgentOrigin := clientOrigin[0] == pb.ConnectionOriginAgent
-	bearerToken, err := parseBearerToken(s.Profile, isAgentOrigin, md)
+	bearerToken, err := parseBearerToken(md)
 	if err != nil {
 		return err
+	}
+
+	var clientApiV2 bool
+	if v := md.Get("apiv2"); len(v) > 0 {
+		clientApiV2 = v[0] == "true"
 	}
 
 	var ctxVal any
@@ -203,6 +207,33 @@ func (s *Server) AuthGrpcInterceptor(srv any, ss grpc.ServerStream, info *grpc.S
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
 		ctxVal = &gatewayContext{UserContext: *userCtx.ToAPIContext(), bearerToken: bearerToken}
+	// client proxy authentication (apiv2)
+	case clientApiV2:
+		sub, err := s.exchangeUserToken(bearerToken)
+		if err != nil {
+			log.Debugf("failed verifying access token, reason=%v", err)
+			return status.Errorf(codes.Unauthenticated, "invalid authentication")
+		}
+		userCtx, err := s.UserService.FindBySub(sub)
+		if err != nil || userCtx.User == nil {
+			return status.Errorf(codes.Unauthenticated, "invalid authentication")
+		}
+		// gwctx := &gatewayContext{UserContext: *userCtx.ToAPIContext()}
+		connectionName := mdget(md, "connection-name")
+		conn, err := s.getConnectionV2(bearerToken, connectionName, userCtx)
+		if err != nil {
+			if err == apiclient.ErrNotFound {
+				return status.Errorf(codes.NotFound, "connection not found")
+			}
+			sentry.CaptureException(err)
+			log.Errorf("failed obtaining connection %v, err=%v", connectionName, err)
+			return status.Error(codes.Internal, "internal error, failed obtaining connection")
+		}
+		ctxVal = &gatewayContext{
+			UserContext: *userCtx.ToAPIContext(),
+			Connection:  *conn,
+			bearerToken: bearerToken,
+		}
 	// client proxy authentication (access token)
 	default:
 		sub, err := s.exchangeUserToken(bearerToken)
@@ -228,6 +259,29 @@ func (s *Server) AuthGrpcInterceptor(srv any, ss grpc.ServerStream, info *grpc.S
 	}
 
 	return handler(srv, &wrappedStream{ss, nil, ctxVal})
+}
+
+// getConnectionV2 obtains connection & agent information from the node api v2
+func (s *Server) getConnectionV2(bearerToken, name string, userCtx *user.Context) (*types.ConnectionInfo, error) {
+	client := apiclient.New(s.IDProvider.ApiURL, bearerToken)
+	conn, err := client.GetConnection(name)
+	if err != nil {
+		if err == apiclient.ErrNotFound {
+			return nil, status.Errorf(codes.NotFound, "connection not found")
+		}
+		return nil, status.Error(codes.Internal, "internal error, failed obtaining connection")
+	}
+	return &types.ConnectionInfo{
+		ID:            conn.ID,
+		Name:          conn.Name,
+		Type:          conn.Type,
+		CmdEntrypoint: conn.Command,
+		Secrets:       conn.Secrets,
+		AgentID:       conn.AgentId,
+		AgentName:     conn.Agent.Name,
+		AgentMode:     conn.Agent.Mode,
+	}, nil
+
 }
 
 func (s *Server) getConnection(bearerToken, name string, userCtx *user.Context) (*types.ConnectionInfo, error) {
@@ -368,14 +422,7 @@ func getConnectionInfo(md metadata.MD) (*types.ConnectionInfo, error) {
 	return &connInfo, nil
 }
 
-func parseBearerToken(environment string, isAgentOrigin bool, md metadata.MD) (string, error) {
-	if environment == pb.DevProfile {
-		bearerToken := "x-hooper-test-token"
-		if isAgentOrigin {
-			bearerToken = "x-agt-test-token"
-		}
-		return bearerToken, nil
-	}
+func parseBearerToken(md metadata.MD) (string, error) {
 	t := md.Get("authorization")
 	if len(t) == 0 {
 		log.Debugf("missing authorization header, client-metadata=%v", md)

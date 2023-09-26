@@ -18,6 +18,7 @@ type Config struct {
 	URL       string `toml:"grpc_url"`
 	Type      string `toml:"-"`
 	AgentMode string `toml:"-"`
+	IsV2      bool   `toml:"-"`
 	filepath  string `toml:"-"`
 	insecure  bool   `toml:"-"`
 }
@@ -50,6 +51,7 @@ func Load() (*Config, error) {
 			AgentMode: dsn.AgentMode,
 			Token:     dsn.Key(),
 			URL:       dsn.Address,
+			IsV2:      dsn.ApiV2,
 			// allow connecting insecure if a build disables this flag
 			insecure: !version.Get().StrictTLS && (dsn.Scheme == "http" || dsn.Scheme == "grpc")}, nil
 	}

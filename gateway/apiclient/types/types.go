@@ -9,6 +9,7 @@ type Connection struct {
 	AgentId   string         `json:"agentId"`
 	CreatedAt string         `json:"createdAt"`
 	UpdatedAt string         `json:"updatedAt"`
+	Agent     Agent          `json:"agent"`
 }
 
 type AgentAuthMetadata struct {
