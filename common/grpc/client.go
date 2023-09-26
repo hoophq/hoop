@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
+	"github.com/runopsio/hoop/common/appruntime"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
-	"github.com/runopsio/hoop/common/runtime"
 	"github.com/runopsio/hoop/common/version"
 	"golang.org/x/oauth2"
 	"google.golang.org/grpc"
@@ -113,7 +113,7 @@ func connect(serverAddress string, dialOptions []grpc.DialOption, opts ...*Clien
 	if err != nil {
 		return nil, fmt.Errorf("failed dialing to grpc server, err=%v", err)
 	}
-	osmap := runtime.OS()
+	osmap := appruntime.OS()
 	ver := version.Get()
 	contextOptions := []string{
 		"version", ver.Version,

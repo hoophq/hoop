@@ -15,6 +15,7 @@ import (
 	"github.com/runopsio/hoop/client/cmd/styles"
 	clientconfig "github.com/runopsio/hoop/client/config"
 	"github.com/runopsio/hoop/client/proxy"
+	"github.com/runopsio/hoop/common/appruntime"
 	"github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/memory"
@@ -344,6 +345,7 @@ func newClientConnect(config *clientconfig.Config, loader *spinner.Spinner, args
 		grpc.WithOption(grpc.OptionConnectionName, c.connectionName),
 		grpc.WithOption("origin", pb.ConnectionOriginClient),
 		grpc.WithOption("verb", verb),
+		grpc.WithOption("apiv2", fmt.Sprintf("%v", appruntime.IsApiV2())),
 	}
 	clientConfig, err := config.GrpcClientConfig()
 	if err != nil {

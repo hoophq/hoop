@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/version"
 	apitypes "github.com/runopsio/hoop/gateway/apiclient/types"
@@ -29,6 +30,7 @@ type Client struct {
 }
 
 func New(apiURL, accessToken string) *Client {
+	// TODO: add timeout to requests
 	return &Client{apiURL: apiURL, accessToken: accessToken}
 }
 
@@ -168,4 +170,16 @@ func (c *Client) AuthClientKeys() (*apitypes.Agent, error) {
 		return nil, fmt.Errorf("response body is missing required attributes")
 	}
 	return &resp, nil
+}
+
+// TODO: implement it
+func (c *Client) CloseSession(data map[string]any) error {
+	log.Infof("[implement me] close session with success on api!")
+	return nil
+}
+
+// TODO: implement it
+func (c *Client) OpenSession() (string, error) {
+	log.Infof("[implement me] opened session with success on api")
+	return uuid.NewString(), nil
 }

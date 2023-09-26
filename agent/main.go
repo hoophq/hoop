@@ -40,14 +40,17 @@ func Run() {
 }
 
 func runDefaultMode(config *agentconfig.Config) {
-	clientOptions := []*grpc.ClientOptions{grpc.WithOption("origin", pb.ConnectionOriginAgent)}
+	clientOptions := []*grpc.ClientOptions{
+		grpc.WithOption("origin", pb.ConnectionOriginAgent),
+		grpc.WithOption("apiv2", fmt.Sprintf("%v", config.IsV2)),
+	}
 	clientConfig, err := config.GrpcClientConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
 	clientConfig.UserAgent = defaultUserAgent
-	log.Infof("version=%v, platform=%v, type=%v, mode=%v, grpc_server=%v, tls=%v, strict-tls=%v - starting agent",
-		vsinfo.Version, vsinfo.Platform, config.Type, config.AgentMode, config.URL, !config.IsInsecure(), vsinfo.StrictTLS)
+	log.Infof("v2=%v, version=%v, platform=%v, type=%v, mode=%v, grpc_server=%v, tls=%v, strict-tls=%v - starting agent",
+		config.IsV2, vsinfo.Version, vsinfo.Platform, config.Type, config.AgentMode, config.URL, !config.IsInsecure(), vsinfo.StrictTLS)
 
 	client, err := grpc.Connect(clientConfig, clientOptions...)
 	if err != nil {
@@ -72,8 +75,8 @@ func runEmbeddedMode(config *agentconfig.Config) {
 		log.Error(err)
 		return
 	}
-	log.Infof("version=%v, platform=%v, api-url=%v, strict-tls=%v, connections=%v - starting agent",
-		vsinfo.Version, vsinfo.Platform, apiURL, vsinfo.StrictTLS, connectionList)
+	log.Infof("v2=%v, version=%v, platform=%v, api-url=%v, strict-tls=%v, connections=%v - starting agent",
+		config.IsV2, vsinfo.Version, vsinfo.Platform, apiURL, vsinfo.StrictTLS, connectionList)
 	for {
 		grpcURL := fetchGrpcURL(apiURL, dsnKey, connectionList)
 		isInsecure := !vsinfo.StrictTLS && (strings.HasPrefix(grpcURL, "http://") || strings.HasPrefix(grpcURL, "grpc://"))
@@ -91,7 +94,9 @@ func runEmbeddedMode(config *agentconfig.Config) {
 				Insecure:      isInsecure,
 			},
 			grpc.WithOption("origin", pb.ConnectionOriginAgent),
-			grpc.WithOption("connection-items", connectionEnvVal))
+			grpc.WithOption("connection-items", connectionEnvVal),
+			grpc.WithOption("apiv2", fmt.Sprintf("%v", config.IsV2)),
+		)
 		if err != nil {
 			log.Errorf("failed connecting to grpc gateway, err=%v", err)
 			continue

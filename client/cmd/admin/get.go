@@ -25,9 +25,7 @@ var getLongDesc = `Display one or many resources. Available ones:
 * plugins (tabview)
 * runbooks
 * sessions
-* sessionstatus (tabview)
 * users (tabview)
-* clientkeys (tabview)
 `
 
 var getExamplesDesc = `

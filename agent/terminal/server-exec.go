@@ -10,8 +10,8 @@ import (
 	"syscall"
 
 	"github.com/creack/pty"
+	"github.com/runopsio/hoop/common/appruntime"
 	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/runtime"
 	term "github.com/runopsio/hoop/common/terminal"
 )
 
@@ -50,7 +50,7 @@ func (c *Command) Close() error {
 	procPid := c.Pid()
 	if procPid != -1 {
 		log.Printf("sending SIGTERM signal to process %v ...", procPid)
-		return runtime.Kill(procPid, syscall.SIGTERM)
+		return appruntime.Kill(procPid, syscall.SIGTERM)
 	}
 	if c.ptty != nil {
 		return c.ptty.Close()

@@ -1,4 +1,4 @@
-package runtime
+package appruntime
 
 import (
 	"os"
@@ -7,6 +7,8 @@ import (
 	"syscall"
 )
 
+// IsApiV2 returns true if the env is set as HOOP_APIV2=true
+func IsApiV2() bool { return os.Getenv("HOOP_API") == "v2" }
 func Kill(pid int, signum syscall.Signal) error {
 	p, err := os.FindProcess(pid)
 	if err != nil {
