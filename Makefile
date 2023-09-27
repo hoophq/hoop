@@ -42,13 +42,13 @@ release:
 	aws s3 cp ./scripts/install-cli.sh s3://hoopartifacts/release/install-cli.sh
 	aws s3 cp ${DIST_FOLDER}/CHANGELOG.txt s3://hoopartifacts/release/${VERSION}/CHANGELOG.txt
 
-build-webapp:
-	mkdir -p ./dist
-	cd ./build/webapp && npm install && npm run release:hoop-ui && mv ./resources ../../dist/webapp-resources
+# build-webapp:
+# 	mkdir -p ./dist
+# 	cd ./build/webapp && npm install && npm run release:hoop-ui && mv ./resources ../../dist/webapp-resources
 
-build-nodeapi:
-	mkdir -p ./dist
-	cd ./build/api && npm install --omit=dev && npm run build && mv ./out ../../dist/api && mv node_modules ../../dist/api/node_modules
+# build-nodeapi:
+# 	mkdir -p ./dist
+# 	cd ./build/api && npm install --omit=dev && npm run build && mv ./out ../../dist/api && mv node_modules ../../dist/api/node_modules
 
 download-artifacts:
 	mkdir -p ./dist
