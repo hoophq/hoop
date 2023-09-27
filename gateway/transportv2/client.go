@@ -15,6 +15,7 @@ import (
 	"github.com/runopsio/hoop/gateway/analytics"
 	apiconnectionapps "github.com/runopsio/hoop/gateway/api/connectionapps"
 	"github.com/runopsio/hoop/gateway/apiclient"
+	apitypes "github.com/runopsio/hoop/gateway/apiclient/types"
 	"github.com/runopsio/hoop/gateway/transportv2/auditfs"
 	"github.com/runopsio/hoop/gateway/transportv2/memorystreams"
 	"google.golang.org/grpc/codes"
@@ -83,7 +84,6 @@ func SubscribeClient(ctx *ClientContext, stream pb.Transport_ConnectServer) erro
 		eventName = analytics.EventGrpcConnect
 	}
 	analytics.New().Track(&ctx.UserContext, eventName, map[string]any{
-		"session-id":      ctx.sessionID,
 		"connection-name": conn.Name,
 		"connection-type": conn.Type,
 		"client-version":  mdget(md, "version"),
@@ -208,6 +208,14 @@ func processSessionOpenPacket(ctx *ClientContext, pkt *pb.Packet) error {
 		}
 	}
 
+	var infoTypes []string
+	for _, p := range ctx.Connection.Policies {
+		if p.Type == apitypes.PolicyDataMaskingType {
+			infoTypes = p.Config
+			break
+		}
+	}
+
 	connParams, err := pb.GobEncode(&pb.AgentConnectionParams{
 		ConnectionName: ctx.Connection.Name,
 		ConnectionType: ctx.Connection.Type,
@@ -216,8 +224,7 @@ func processSessionOpenPacket(ctx *ClientContext, pkt *pb.Packet) error {
 		CmdList:        ctx.Connection.CmdEntrypoint,
 		ClientArgs:     clientArgs,
 		ClientVerb:     ctx.verb,
-		// TODO: add info-types
-		DLPInfoTypes: []string{},
+		DLPInfoTypes:   infoTypes,
 		// TODO: add hook list (secretsmanager)
 		PluginHookList: nil,
 	})

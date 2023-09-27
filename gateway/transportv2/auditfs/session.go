@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/runopsio/hoop/common/log"
@@ -26,6 +27,7 @@ type AuditWal struct {
 	sessionID string
 	walFolder string
 	log       *sessionwal.WalLog
+	mu        sync.RWMutex
 }
 
 // <audit-path>/<orgid>-<sessionid>-wal
@@ -55,6 +57,7 @@ func Open(opt Options) error {
 		sessionID: opt.SessionID,
 		walFolder: walFolder,
 		log:       walog,
+		mu:        sync.RWMutex{},
 	})
 	return nil
 }
@@ -65,6 +68,8 @@ func Write(sessionID string, pkt *pb.Packet) error {
 	if !ok {
 		return fmt.Errorf("failed obtaining wallog for sid=%v, obj=%v", sessionID, auditWal)
 	}
+	auditWal.mu.Lock()
+	defer auditWal.mu.Unlock()
 	switch pb.PacketType(pkt.GetType()) {
 	case pbagent.PGConnectionWrite:
 		isSimpleQuery, queryBytes, err := pg.SimpleQueryContent(pkt.Payload)
@@ -112,6 +117,8 @@ func Close(sessionID string, client *apiclient.Client) error {
 	if !ok {
 		return fmt.Errorf("failed obtaining wallog for sid=%v, obj=%v", sessionID, auditWal)
 	}
+	auditWal.mu.Lock()
+	defer auditWal.mu.Unlock()
 	defer func() {
 		auditStore.Del(sessionID)
 		_ = auditWal.log.Close()

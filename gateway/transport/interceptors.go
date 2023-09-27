@@ -225,8 +225,8 @@ func (s *Server) AuthGrpcInterceptor(srv any, ss grpc.ServerStream, info *grpc.S
 			if err == apiclient.ErrNotFound {
 				return status.Errorf(codes.NotFound, "connection not found")
 			}
-			sentry.CaptureException(err)
 			log.Errorf("failed obtaining connection %v, err=%v", connectionName, err)
+			sentry.CaptureException(err)
 			return status.Error(codes.Internal, "internal error, failed obtaining connection")
 		}
 		ctxVal = &gatewayContext{
@@ -266,10 +266,16 @@ func (s *Server) getConnectionV2(bearerToken, name string, userCtx *user.Context
 	client := apiclient.New(s.IDProvider.ApiURL, bearerToken)
 	conn, err := client.GetConnection(name)
 	if err != nil {
-		if err == apiclient.ErrNotFound {
-			return nil, status.Errorf(codes.NotFound, "connection not found")
-		}
-		return nil, status.Error(codes.Internal, "internal error, failed obtaining connection")
+		return nil, err
+	}
+	var policies []types.PolicyInfo
+	for _, p := range conn.Policies {
+		policies = append(policies, types.PolicyInfo{
+			ID:     p.ID,
+			Name:   p.Name,
+			Type:   p.Type,
+			Config: p.Config,
+		})
 	}
 	return &types.ConnectionInfo{
 		ID:            conn.ID,
@@ -280,6 +286,7 @@ func (s *Server) getConnectionV2(bearerToken, name string, userCtx *user.Context
 		AgentID:       conn.AgentId,
 		AgentName:     conn.Agent.Name,
 		AgentMode:     conn.Agent.Mode,
+		Policies:      policies,
 	}, nil
 
 }
