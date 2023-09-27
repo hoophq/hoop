@@ -56,7 +56,6 @@ func parseResourceOrDie(args []string, method, outputFlag string) *apiResource {
 
 	switch apir.resourceType {
 	case "agents", "agent":
-		apir.resourceType = "agent"
 		apir.resourceGet = false
 		apir.resourceDelete = true
 		apir.resourceCreate = true
@@ -65,7 +64,6 @@ func parseResourceOrDie(args []string, method, outputFlag string) *apiResource {
 			apir.suffixEndpoint = "/api/agents"
 		}
 	case "conn", "connection", "connections":
-		apir.resourceType = "connection"
 		apir.resourceDelete = true
 		apir.resourceCreate = true
 		apir.resourceUpdate = true
@@ -73,14 +71,6 @@ func parseResourceOrDie(args []string, method, outputFlag string) *apiResource {
 		if method == "POST" {
 			apir.suffixEndpoint = "/api/connections"
 		}
-	case "sessionstatus":
-		defer func() {
-			if outputFlag == "" {
-				apir.decodeTo = "list"
-			}
-		}()
-		apir.resourceList = false
-		apir.suffixEndpoint = "/api/plugins/audit/sessions/" + apir.name + "/status"
 	case "sessions":
 		apir.resourceList = false
 		apir.suffixEndpoint = path.Join("/api/plugins/audit/sessions", apir.name)
@@ -109,6 +99,23 @@ func parseResourceOrDie(args []string, method, outputFlag string) *apiResource {
 		if method == "POST" {
 			apir.suffixEndpoint = "/api/plugins"
 		}
+	case "policies", "policy":
+		apir.resourceList = true
+		apir.resourceDelete = true
+		apir.resourceGet = false
+		apir.suffixEndpoint = "/api/policies"
+		if method == "DELETE" {
+			apir.suffixEndpoint = path.Join("/api/policies", apir.name)
+		}
+	case "datamasking", "accesscontrol":
+		apir.resourceCreate = true
+		apir.resourceUpdate = true
+		apir.resourceGet = false
+		apir.resourceList = false
+		apir.suffixEndpoint = path.Join("/api/policies", apir.resourceType, apir.name)
+		if method == "POST" {
+			apir.suffixEndpoint = path.Join("/api/policies", apir.resourceType)
+		}
 	case "runbooks":
 		// force to decode as object
 		apir.resourceGet = true
@@ -116,6 +123,7 @@ func parseResourceOrDie(args []string, method, outputFlag string) *apiResource {
 
 		apir.resourceList = false
 		apir.suffixEndpoint = "/api/plugins/runbooks/templates"
+	// DEPRECATED
 	case "clientkeys":
 		apir.resourceCreate = true
 		apir.resourceUpdate = true
@@ -181,13 +189,6 @@ func parseResourceOrDie(args []string, method, outputFlag string) *apiResource {
 
 func (r *apiResource) Endpoint() (string, error) {
 	return url.JoinPath(r.conf.ApiURL, r.suffixEndpoint)
-}
-
-func (r *apiResource) Resource() string {
-	if r.name != "" {
-		return r.resourceType + "/" + r.name
-	}
-	return r.resourceType
 }
 
 func httpRequest(apir *apiResource) (any, http.Header, error) {
@@ -264,12 +265,11 @@ func httpDeleteRequest(apir *apiResource) error {
 	}
 	defer resp.Body.Close()
 	log.Debugf("http response %v", resp.StatusCode)
-	if resp.StatusCode == http.StatusNoContent {
+	if resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusOK {
 		return nil
 	}
 	respBody, _ := io.ReadAll(resp.Body)
-	return fmt.Errorf("failed removing resource %v. status=%v, body=%v",
-		apir.Resource(), resp.StatusCode, string(respBody))
+	return fmt.Errorf("failed removing resource. status=%v, body=%v", resp.StatusCode, string(respBody))
 }
 
 func httpBodyRequest(apir *apiResource, method string, bodyMap map[string]any) (any, error) {

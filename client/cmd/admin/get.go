@@ -2,10 +2,12 @@ package admin
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"sort"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/runopsio/hoop/client/cmd/styles"
 	clientconfig "github.com/runopsio/hoop/client/config"
@@ -23,6 +25,7 @@ var getLongDesc = `Display one or many resources. Available ones:
 * connections (tabview)
 * reviews
 * plugins (tabview)
+* policies (tabview)
 * runbooks
 * sessions
 * users (tabview)
@@ -74,6 +77,44 @@ var getCmd = &cobra.Command{
 				}
 			}
 		case "conn", "connection", "connections":
+			if isApiV2 {
+				agentHandlerFn := agentConnectedHandler(apir.conf)
+				// plugingHandlerFn := pluginHandler(apir)
+				policyHandlerFn := policiesHandler(apir)
+				fmt.Fprintln(w, "NAME\tCOMMAND\tTYPE\tREVIEW\tAGENT\tSTATUS\tPOLICIES\tUPDATED")
+				switch contents := obj.(type) {
+				case map[string]any:
+					m := contents
+					enabledPolicies := policyHandlerFn(fmt.Sprintf("%v", m["id"]), false)
+					agentID := fmt.Sprintf("%v", m["name"])
+					if isApiV2 {
+						agentID = fmt.Sprintf("%v", m["agentId"])
+					}
+					status := agentHandlerFn("status", agentID)
+					agentName := agentHandlerFn("name", agentID)
+					cmdList, _ := m["command"].([]any)
+					cmd := joinCmd(cmdList, false)
+					fmt.Fprintf(w, "%s\t%s\t%s\t%v\t%s\t%s\t%v\t%s\t",
+						m["name"], cmd, m["type"], m["hasReview"], agentName, status, enabledPolicies, absTime(m["updatedAt"]))
+					fmt.Fprintln(w)
+				case []map[string]any:
+					for _, m := range contents {
+						enabledPolicies := policyHandlerFn(fmt.Sprintf("%v", m["id"]), true)
+						agentID := fmt.Sprintf("%v", m["agent_id"])
+						if isApiV2 {
+							agentID = fmt.Sprintf("%v", m["agentId"])
+						}
+						status := agentHandlerFn("status", agentID)
+						agentName := agentHandlerFn("name", agentID)
+						cmdList, _ := m["command"].([]any)
+						cmd := joinCmd(cmdList, true)
+						fmt.Fprintf(w, "%s\t%s\t%s\t%v\t%s\t%s\t%v\t%s\t",
+							m["name"], cmd, m["type"], m["hasReview"], agentName, status, enabledPolicies, absTime(m["updatedAt"]))
+						fmt.Fprintln(w)
+					}
+				}
+				return
+			}
 			agentHandlerFn := agentConnectedHandler(apir.conf)
 			plugingHandlerFn := pluginHandler(apir)
 			fmt.Fprintln(w, "NAME\tCOMMAND\tTYPE\tAGENT\tSTATUS\tSECRETS\tPLUGINS\t")
@@ -82,8 +123,7 @@ var getCmd = &cobra.Command{
 				m := contents
 				enabledPlugins := plugingHandlerFn(fmt.Sprintf("%v", m["name"]), false)
 				agentID := fmt.Sprintf("%v", m["name"])
-				if agentID == "" {
-					// express api
+				if isApiV2 {
 					agentID = fmt.Sprintf("%v", m["agentId"])
 				}
 				status := agentHandlerFn("status", agentID)
@@ -101,6 +141,9 @@ var getCmd = &cobra.Command{
 				for _, m := range contents {
 					enabledPlugins := plugingHandlerFn(fmt.Sprintf("%v", m["name"]), true)
 					agentID := fmt.Sprintf("%v", m["agent_id"])
+					if isApiV2 {
+						agentID = fmt.Sprintf("%v", m["agentId"])
+					}
 					status := agentHandlerFn("status", agentID)
 					agentName := agentHandlerFn("name", agentID)
 					cmdList, _ := m["command"].([]any)
@@ -142,6 +185,15 @@ var getCmd = &cobra.Command{
 						m["name"], source, m["priority"], connections, configID)
 					fmt.Fprintln(w)
 				}
+			}
+		case "policies", "policy":
+			fmt.Fprintln(w, "ID\tNAME\tTYPE\tCONNECTIONS\tCONFIG\tUPDATED")
+			contents, _ := obj.([]map[string]any)
+			for _, m := range contents {
+				connections := len(m["connections"].([]any))
+				pconf := joinList(m["config"], true)
+				fmt.Fprintf(w, "%s\t%s\t%s\t%v\t%v\t%s", m["id"], m["name"], m["type"], connections, pconf, absTime(m["updatedAt"]))
+				fmt.Fprintln(w)
 			}
 		case "sessionstatus":
 			fmt.Fprintln(w, "SESSION\tPHASE\tERROR\tTIME\t")
@@ -333,6 +385,42 @@ func agentConnectedHandler(conf *clientconfig.Config) func(key, agentID string) 
 	}
 }
 
+func policiesHandler(apir *apiResource) func(connectionID string, trunc bool) string {
+	data, _, err := httpRequest(&apiResource{suffixEndpoint: "/api/policies", conf: apir.conf, decodeTo: "list"})
+	if err != nil {
+		log.Debugf("failed retrieving list of policies, err=%v", err)
+	}
+	contents, ok := data.([]map[string]any)
+	if !ok {
+		log.Debugf("failed type casting to []map[string]any")
+	}
+
+	return func(connectionID string, trunc bool) string {
+		if err != nil || len(contents) == 0 {
+			return "-"
+		}
+		var policies []string
+		for _, m := range contents {
+			connList, _ := m["connections"].([]any)
+			for _, connID := range connList {
+				if connID == connectionID {
+					policyName := fmt.Sprintf("%v", m["name"])
+					policies = append(policies, policyName)
+				}
+			}
+		}
+		if len(policies) == 0 {
+			return "-"
+		}
+		sort.Strings(policies)
+		plugins := strings.Join(policies, ", ")
+		if len(plugins) > 30 && trunc {
+			plugins = plugins[0:30] + "..."
+		}
+		return fmt.Sprintf("(%v) %s", len(policies), plugins)
+	}
+}
+
 func joinCmd(cmdList []any, trunc bool) string {
 	var list []string
 	for _, c := range cmdList {
@@ -351,4 +439,40 @@ func joinItems(items []any) string {
 		list = append(list, c.(string))
 	}
 	return strings.Join(list, ", ")
+}
+
+func joinList(v any, trunc bool) string {
+	itemList, ok := v.([]any)
+	if !ok {
+		return "-"
+	}
+	var list []string
+	for _, c := range itemList {
+		list = append(list, fmt.Sprintf("%q", c))
+	}
+	cmd := strings.Join(list, " ")
+	if len(cmd) > 30 && trunc {
+		cmd = cmd[0:30] + "..."
+	}
+	return fmt.Sprintf("[ %s ]", cmd)
+}
+
+// absTime given v as a time string, parse to absolute time
+func absTime(v any) string {
+	t1, err := time.Parse(time.RFC3339Nano, v.(string))
+	if err != nil {
+		return "-"
+	}
+	t2 := time.Now().UTC().Sub(t1)
+	switch {
+	case t2.Seconds() <= 60:
+		return fmt.Sprintf("%.0fs ago", t2.Seconds())
+	case t2.Minutes() < 60: // minutes
+		return fmt.Sprintf("%.0fm ago", t2.Minutes())
+	case t2.Hours() < 24: // hours
+		return fmt.Sprintf("%.0fh ago", t2.Hours())
+	case t2.Hours() > 24: // days
+		return fmt.Sprintf("%vd ago", math.Round(t2.Hours()/30))
+	}
+	return "-"
 }

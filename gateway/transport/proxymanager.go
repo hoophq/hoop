@@ -203,7 +203,6 @@ func (s *Server) listenProxyManagerMessages(bearerToken, sessionID string, ctx *
 				}
 
 				s.Analytics.Track(ctx.APIContext, analytics.EventGrpcProxyManagerConnect, map[string]any{
-					"session-id":      sessionID,
 					"connection-name": req.RequestConnectionName,
 					"connection-type": conn.Type,
 					"client-version":  mdget(md, "version"),

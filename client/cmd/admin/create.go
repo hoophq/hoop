@@ -10,6 +10,7 @@ func init() {
 	createCmd.AddCommand(createPluginCmd)
 	createCmd.AddCommand(createUserCmd)
 	createCmd.AddCommand(createClientKeysCmd)
+	createCmd.AddCommand(createPolicyCmd)
 	createCmd.PersistentFlags().StringVarP(&outputFlag, "output", "o", "", "Output format. One off: (json)")
 }
 

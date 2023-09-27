@@ -103,6 +103,14 @@ type ConnectionInfo struct {
 	AgentID       string         `json:"agent_id"`
 	AgentName     string         `json:"agent_name"`
 	AgentMode     string         `json:"agent_mode"`
+	Policies      []PolicyInfo   `json:"-"`
+}
+
+type PolicyInfo struct {
+	ID     string
+	Name   string
+	Type   string
+	Config []string
 }
 
 type ReviewOwner struct {

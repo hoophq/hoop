@@ -225,7 +225,6 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 		eventName = analytics.EventGrpcConnect
 	}
 	s.Analytics.Track(&gwctx.UserContext, eventName, map[string]any{
-		"session-id":      sessionID,
 		"connection-name": gwctx.Connection.Name,
 		"connection-type": conn.Type,
 		"client-version":  mdget(md, "version"),
@@ -237,7 +236,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 		"verb":            clientVerb,
 	})
 
-	log.With("sid", sessionID, "mode", agentMode, "agent-name", conn.AgentName).
+	log.With("sid", sessionID, "mode", agentMode, "agent-name", conn.AgentName, "agent-id", conn.AgentID).
 		Infof("proxy connected: user=%v,hostname=%v,origin=%v,verb=%v,platform=%v,version=%v,goversion=%v",
 			gwctx.UserContext.UserEmail, mdget(md, "hostname"), clientOrigin, clientVerb,
 			mdget(md, "platform"), mdget(md, "version"), mdget(md, "goversion"))
@@ -320,7 +319,7 @@ func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, pctx pl
 		if shouldProcessClientPacket {
 			err = s.processClientPacket(pkt, pctx)
 			if err != nil {
-				log.With("sid", pctx.SID).Warnf("failed processing client packet, err=%v", err)
+				log.With("sid", pctx.SID, "agent-id", pctx.ConnectionAgentID).Warnf("failed processing client packet, err=%v", err)
 				return status.Errorf(codes.FailedPrecondition, err.Error())
 			}
 		}

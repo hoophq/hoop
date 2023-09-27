@@ -10,6 +10,14 @@ type Connection struct {
 	CreatedAt string         `json:"createdAt"`
 	UpdatedAt string         `json:"updatedAt"`
 	Agent     Agent          `json:"agent"`
+	Policies  []Policy       `json:"policies"`
+}
+
+type Policy struct {
+	ID     string   `json:"id"`
+	Name   string   `json:"name"`
+	Type   string   `json:"type"`
+	Config []string `json:"config"`
 }
 
 type AgentAuthMetadata struct {
