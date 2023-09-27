@@ -220,74 +220,6 @@ jobs:
           name: dist-artifacts
           path: dist/
 
-  build-webapp:
-    runs-on: ubuntu-latest
-    name: Build Webapp
-    environment: production
-    needs: [test]
-    steps:
-      - name: Checkout Hoop
-        uses: actions/checkout@v3
-      - name: Checkout Webapp
-        uses: actions/checkout@v3
-        with:
-          repository: runopsio/webapp
-          token: ${{ secrets.GH_TOKEN }}
-          path: './build/webapp'
-      - name: Setup Java
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'zulu'
-          java-version: '11'
-      - name: Setup Node
-        uses: actions/setup-node@v3
-        with:
-          node-version: 18
-      - name: Set Git Tag
-        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
-      - name: Build Webapp
-        env:
-          GIT_TAG: ${{ env.GIT_TAG }}
-        run: make build-webapp
-      - uses: actions/upload-artifact@v3
-        with:
-          name: dist-artifacts
-          path: dist/
-
-  build-nodeapi:
-    runs-on: ubuntu-latest
-    name: Build Node API
-    environment: production
-    needs: [test]
-    steps:
-      - name: Checkout Hoop
-        uses: actions/checkout@v3
-      - name: Checkout Node API
-        uses: actions/checkout@v3
-        with:
-          repository: hoophq/api
-          token: ${{ secrets.GH_TOKEN }}
-          path: './build/api'
-      - name: Setup Java
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'zulu'
-          java-version: '11'
-      - name: Install clojure tools
-        uses: DeLaGuardo/setup-clojure@3.5
-        with:
-          cli: 1.11.1.1347 # releases: https://clojure.org/releases/tools
-      - name: Setup Node
-        uses: actions/setup-node@v3
-        with:
-          node-version: 18
-      - name: Build Node API
-        run: make build-nodeapi
-      - uses: actions/upload-artifact@v3
-        with:
-          name: dist-artifacts
-          path: dist/
-
   docker-publish:
     runs-on: ubuntu-latest
     name: Docker Publish
@@ -300,11 +232,15 @@ jobs:
       - linux-amd64
       - linux-arm64
       - build-helmchart
-      - build-nodeapi
-      - build-webapp
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+      - name: Publish
+        env:
+          AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: make download-artifacts
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v4
@@ -344,8 +280,6 @@ jobs:
       - linux-amd64
       - linux-arm64
       - build-helmchart
-      - build-nodeapi
-      - build-webapp
     steps:
       - name: Checkout
         uses: actions/checkout@v3

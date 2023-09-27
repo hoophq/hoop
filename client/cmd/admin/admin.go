@@ -19,7 +19,6 @@ func init() {
 	MainCmd.AddCommand(createCmd)
 	MainCmd.AddCommand(gatewayInfoCmd)
 	MainCmd.AddCommand(targetToConnection)
-	_ = MainCmd.PersistentFlags().MarkHidden("apiv2")
 }
 
 var MainCmd = &cobra.Command{
