@@ -358,7 +358,6 @@ func agentConnectedHandler(conf *clientconfig.Config) func(key, agentID string) 
 	if !ok {
 		log.Debugf("failed type casting to []map[string]any")
 	}
-	// fmt.Printf("CONTENTS:%#v\n", contents)
 	return func(key, agentID string) string {
 		switch key {
 		case "status":
@@ -376,7 +375,6 @@ func agentConnectedHandler(conf *clientconfig.Config) func(key, agentID string) 
 				return "-"
 			}
 			for _, m := range contents {
-				// fmt.Println(m["id"], agentID, m[key])
 				if m["id"] == agentID {
 					return fmt.Sprintf("%v", m[key])
 				}
@@ -401,7 +399,6 @@ func policiesHandler(apir *apiResource) func(connectionID string, trunc bool) st
 		if err != nil || len(contents) == 0 {
 			return "-"
 		}
-		// enabledPluginsMap := map[string]any{}
 		var policies []string
 		for _, m := range contents {
 			connList, _ := m["connections"].([]any)
@@ -410,24 +407,11 @@ func policiesHandler(apir *apiResource) func(connectionID string, trunc bool) st
 					policyName := fmt.Sprintf("%v", m["name"])
 					policies = append(policies, policyName)
 				}
-				// pluginConnMap, _ := pluginConnObj.(map[string]any)
-				// if pluginConnMap == nil {
-				// 	pluginConnMap = map[string]any{}
-				// }
-				// connName := fmt.Sprintf("%v", pluginConnMap["name"])
-				// if connName == connectionName {
-				// 	pluginName := fmt.Sprintf("%v", m["name"])
-				// 	enabledPluginsMap[pluginName] = nil
-				// }
 			}
 		}
 		if len(policies) == 0 {
 			return "-"
 		}
-		// var enabledPlugins []string
-		// for pluginName := range enabledPluginsMap {
-		// 	enabledPlugins = append(enabledPlugins, pluginName)
-		// }
 		sort.Strings(policies)
 		plugins := strings.Join(policies, ", ")
 		if len(plugins) > 30 && trunc {
