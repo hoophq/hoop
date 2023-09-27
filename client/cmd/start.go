@@ -6,7 +6,6 @@ import (
 
 	"github.com/go-co-op/gocron"
 	"github.com/runopsio/hoop/agent"
-	"github.com/runopsio/hoop/common/monitoring"
 	"github.com/runopsio/hoop/gateway"
 	"github.com/runopsio/hoop/gateway/jobs"
 	jobsessions "github.com/runopsio/hoop/gateway/jobs/sessions"
@@ -18,10 +17,6 @@ var startCmd = &cobra.Command{
 	Use:          "start",
 	Short:        "Runs hoop start agent or hoop start gateway",
 	SilenceUsage: false,
-	PreRun:       monitoring.SentryPreRun,
-	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("Runs hoop start agent or hoop start gateway")
-	},
 }
 
 var startAgentCmd = &cobra.Command{
