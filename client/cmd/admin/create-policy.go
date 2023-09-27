@@ -39,8 +39,6 @@ var createPolicyCmd = &cobra.Command{
 		}
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		// args = []string{"policies", args[0]}
-		// TODO: check if the policy exists before creating ...
 		method := "POST"
 		actionName := "created"
 		apir := parseResourceOrDie(args, method, outputFlag)
@@ -98,98 +96,3 @@ func listConnectionIDs(conf *clientconfig.Config, inputConnectionNames []string)
 	}
 	return connectionIDList, nil
 }
-
-// func getPolicyByName(apir *apiResource, policyType, policyName string) (any, error) {
-// 	data, _, err := httpRequest(&apiResource{suffixEndpoint: "/api/policies", conf: apir.conf, decodeTo: "list"})
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	contents, ok := data.([]map[string]any)
-// 	if !ok {
-// 		return nil, fmt.Errorf("content type mismatch")
-// 	}
-// 	fmt.Printf("CONTENTS: %v\n", contents)
-
-// 	return nil, nil
-// }
-
-// func parsePluginConfig() (map[string]any, error) {
-// 	envVar := map[string]any{}
-// 	var invalidEnvs []string
-// 	for _, envvarStr := range pluginConfigFlag {
-// 		key, val, found := strings.Cut(envvarStr, "=")
-// 		if !found {
-// 			invalidEnvs = append(invalidEnvs, envvarStr)
-// 			continue
-// 		}
-// 		key = strings.TrimSpace(key)
-// 		val = strings.TrimSpace(val)
-// 		if strings.HasPrefix(val, "path:") {
-// 			pathFile := val[5:]
-// 			configData, err := os.ReadFile(pathFile)
-// 			if err != nil {
-// 				return nil, fmt.Errorf("failed reading config data, path=%v, err=%v", pathFile, err)
-// 			}
-// 			val = string(configData)
-// 		}
-// 		envVar[key] = base64.StdEncoding.EncodeToString([]byte(val))
-// 	}
-// 	if len(invalidEnvs) > 0 {
-// 		return nil, fmt.Errorf("invalid plugin config, expected key=val. found=%v", invalidEnvs)
-// 	}
-// 	return envVar, nil
-// }
-
-// func parsePluginConnections(conf *clientconfig.Config) ([]map[string]any, error) {
-// 	connectionConfig := []map[string]any{}
-// 	connectionMap, err := listConnectionNames(conf)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	for _, connectionOption := range pluginConnectionFlag {
-// 		connectionName, configStr, found := strings.Cut(connectionOption, ":")
-// 		if !found && connectionName == "" {
-// 			return nil, fmt.Errorf(`wrong format for connection %q, expected "<conn>:<config01>;config02>;..."`,
-// 				connectionOption)
-// 		}
-// 		connectionName = strings.TrimSpace(connectionName)
-// 		var connConfig []string
-// 		for _, c := range strings.Split(configStr, ";") {
-// 			c = strings.TrimSpace(c)
-// 			if c == "" {
-// 				continue
-// 			}
-// 			connConfig = append(connConfig, c)
-// 		}
-// 		connID, ok := connectionMap[connectionName]
-// 		if !ok {
-// 			return nil, fmt.Errorf("connection %q not found", connectionName)
-// 		}
-// 		connectionConfig = append(connectionConfig, map[string]any{
-// 			"id":     connID,
-// 			"config": connConfig,
-// 		})
-// 	}
-// 	return connectionConfig, nil
-// }
-
-// func listConnectionNames(conf *clientconfig.Config) (map[string]string, error) {
-// 	resp, _, err := httpRequest(&apiResource{
-// 		suffixEndpoint: "/api/connections",
-// 		method:         "GET",
-// 		conf:           conf,
-// 		decodeTo:       "list"})
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	itemList, ok := resp.([]map[string]any)
-// 	if !ok {
-// 		return nil, fmt.Errorf("failed decoding response to object, type=%T", resp)
-// 	}
-// 	connectionNames := map[string]string{}
-// 	for _, item := range itemList {
-// 		connectionNames[fmt.Sprintf("%v", item["name"])] = fmt.Sprintf("%v", item["id"])
-// 	}
-// 	return connectionNames, nil
-// }
