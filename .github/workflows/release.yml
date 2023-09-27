@@ -197,34 +197,34 @@ jobs:
           name: dist-artifacts
           path: dist/
 
-  build-helmchart:
-    runs-on: ubuntu-latest
-    name: Build Helm Chart
-    environment: production
-    needs: [test]
-    steps:
-      - name: Checkout Hoop
-        uses: actions/checkout@v3
-      - name: Checkout Helm Chart
-        uses: actions/checkout@v3
-        with:
-          repository: hoophq/helm-chart
-          path: './build/helm-chart'
-      - name: Setup Helm3
-        uses: azure/setup-helm@v3
-        with:
-          token: ${{ secrets.GH_TOKEN }}
-      - name: Set Git Tag
-        run: echo "0.0.1" >> $GITHUB_ENV
-        # run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
-      - name: Package Helm Chart
-        env:
-          GIT_TAG: ${{ env.GIT_TAG }}
-        run: make package-helmchart
-      - uses: actions/upload-artifact@v3
-        with:
-          name: dist-artifacts
-          path: dist/
+  # build-helmchart:
+  #   runs-on: ubuntu-latest
+  #   name: Build Helm Chart
+  #   environment: production
+  #   needs: [test]
+  #   steps:
+  #     - name: Checkout Hoop
+  #       uses: actions/checkout@v3
+  #     - name: Checkout Helm Chart
+  #       uses: actions/checkout@v3
+  #       with:
+  #         repository: hoophq/helm-chart
+  #         path: './build/helm-chart'
+  #     - name: Setup Helm3
+  #       uses: azure/setup-helm@v3
+  #       with:
+  #         token: ${{ secrets.GH_TOKEN }}
+  #     - name: Set Git Tag
+  #       run: echo "0.0.1" >> $GITHUB_ENV
+  #       # run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+  #     - name: Package Helm Chart
+  #       env:
+  #         GIT_TAG: ${{ env.GIT_TAG }}
+  #       run: make package-helmchart
+  #     - uses: actions/upload-artifact@v3
+  #       with:
+  #         name: dist-artifacts
+  #         path: dist/
 
   docker-publish:
     runs-on: ubuntu-latest
@@ -237,7 +237,7 @@ jobs:
       - windows-arm64
       - linux-amd64
       - linux-arm64
-      - build-helmchart
+      # - build-helmchart
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -285,7 +285,7 @@ jobs:
       - windows-arm64
       - linux-amd64
       - linux-arm64
-      - build-helmchart
+      # - build-helmchart
     steps:
       - name: Checkout
         uses: actions/checkout@v3
