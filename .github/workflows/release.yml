@@ -246,7 +246,7 @@ jobs:
           AWS_REGION: us-east-1
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        run: make download-nodeapi-artifact
+        run: make download-artifacts
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v4

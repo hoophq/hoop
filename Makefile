@@ -50,11 +50,14 @@ build-nodeapi:
 	mkdir -p ./dist
 	cd ./build/api && npm install --omit=dev && npm run build && mv ./out ../../dist/api && mv node_modules ../../dist/api/node_modules
 
-download-nodeapi-artifact:
+download-artifacts:
 	mkdir -p ./dist
 	aws s3 cp s3://hoopartifacts/nodeapi/latest.tar.gz nodeapi-latest.tar.gz
+	aws s3 cp s3://hoopartifacts/webapp/latest.tar.gz webapp-latest.tar.gz
 	tar -xf nodeapi-latest.tar.gz
-	mv ./out ./dist/api/
+	tar -xf webapp-latest.tar.gz
+	mv ./resources ./dist/webapp-resources
+	mv ./out ./dist/api
 
 build-dev-client:
 	go build -ldflags "-s -w -X github.com/runopsio/hoop/common/version.strictTLS=false" -o ${HOME}/.hoop/bin/hoop github.com/runopsio/hoop/client
