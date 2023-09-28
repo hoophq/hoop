@@ -111,7 +111,7 @@ fi
 # https://github.com/aws/amazon-ssm-agent/issues/354#issuecomment-817274498
 STDIN_INPUT=$(cat -)
 if [ -n "$PIPE_EXEC" ]; then
-  STDIN_INPUT="$(base64 <<< $STDIN_INPUT)"
+  STDIN_INPUT="$(base64 -w0 <<< $STDIN_INPUT)"
   unbuffer aws ecs execute-command \
     --cluster $CLUSTER_NAME \
     --task $TASK_ID \
