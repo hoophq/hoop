@@ -1,6 +1,7 @@
 # Hoop
 
 [![Hoop Release](https://img.shields.io/github/v/release/hoophq/hoopcli.svg?style=flat)](https://github.com/hoophq/hoop/actions/workflows/release.yml)
+[![Hoop Release](https://github.com/hoophq/hoop/actions/workflows/release.yml/badge.svg)](https://github.com/hoophq/hoop/actions/workflows/release.yml)
 [![Hoop Api Release](https://github.com/hoophq/api/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/hoophq/api/actions/workflows/release.yml)
 [![Hoop Webapp Release](https://github.com/runopsio/webapp/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/runopsio/webapp/actions/workflows/release.yml)
 
