@@ -1,5 +1,10 @@
 # Hoop
 
+![Hoop Release](https://img.shields.io/github/v/release/hoophq/hoopcli.svg?style=flat)
+![Hoop Api Release](https://github.com/hoophq/api/actions/workflows/release.yml/badge.svg?branch=main)
+![Hoop Webapp Release](https://github.com/runopsio/webapp/actions/workflows/release.yml/badge.svg?branch=main)
+
+
 Connect private infra-stractures without the need of a VPN.
 
 - [Public Documentation](https://hoop.dev/docs)
