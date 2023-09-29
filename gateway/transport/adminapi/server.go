@@ -20,6 +20,8 @@ func RunServer(listenAddr string) error {
 	// https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies
 	route.SetTrustedProxies(nil)
 	route.POST("/exec", execPost)
+	route.POST("/runbooks/parse", parseRunbookTemplate)
+	route.POST("/runbooks/parameters", parseRunbookParameters)
 	if listenAddr == "" {
 		listenAddr = "127.0.0.1:8099"
 	}
