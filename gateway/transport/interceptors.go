@@ -247,7 +247,7 @@ func (s *Server) AuthGrpcInterceptor(srv any, ss grpc.ServerStream, info *grpc.S
 		}
 		gwctx := &gatewayContext{UserContext: *userCtx.ToAPIContext()}
 		connectionName := mdget(md, "connection-name")
-		conn, err := s.getConnection(bearerToken, connectionName, userCtx)
+		conn, err := s.getConnection(connectionName, userCtx)
 		if err != nil {
 			return err
 		}
@@ -291,20 +291,7 @@ func (s *Server) getConnectionV2(bearerToken, name string, userCtx *user.Context
 
 }
 
-func (s *Server) getConnection(bearerToken, name string, userCtx *user.Context) (*types.ConnectionInfo, error) {
-	if conn, _ := apiclient.New(s.IDProvider.ApiURL, bearerToken).
-		GetConnection(name); conn != nil {
-		log.Infof("obtained connection %v from apiv2", name)
-		return &types.ConnectionInfo{
-			ID:            conn.ID,
-			Name:          conn.Name,
-			Type:          conn.Type,
-			CmdEntrypoint: conn.Command,
-			Secrets:       conn.Secrets,
-			AgentID:       conn.AgentId,
-			// TODO: add additional agent attributes
-		}, nil
-	}
+func (s *Server) getConnection(name string, userCtx *user.Context) (*types.ConnectionInfo, error) {
 	conn, err := s.ConnectionService.FindOne(userCtx, name)
 	if err != nil {
 		log.Errorf("failed retrieving connection %v, err=%v", name, err)
@@ -384,6 +371,7 @@ func authenticateAgent(apiURL, bearerToken string, md metadata.MD) (*apitypes.Ag
 		log.Errorf("failed validating agent authentication, reason=%v", err)
 		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
 	}
+	ag.Metadata = *reqBody.Metadata
 	return ag, nil
 }
 

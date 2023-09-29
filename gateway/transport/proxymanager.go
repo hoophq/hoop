@@ -134,7 +134,7 @@ func (s *Server) listenProxyManagerMessages(bearerToken, sessionID string, ctx *
 				return status.Errorf(codes.Canceled, "context canceled")
 			case req := <-disp.requestCh:
 				log.With("session", sessionID).Infof("starting connect phase for %s", req.RequestConnectionName)
-				conn, err := s.getConnection(bearerToken, req.RequestConnectionName, storageCtxToUser(ctx))
+				conn, err := s.getConnection(req.RequestConnectionName, storageCtxToUser(ctx))
 				if err != nil {
 					sentry.CaptureException(err)
 					disp.sendResponse(nil, err)
