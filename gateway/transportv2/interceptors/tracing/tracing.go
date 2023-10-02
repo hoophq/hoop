@@ -39,7 +39,7 @@ type interceptor struct {
 }
 
 func New(apiURL string) grpc.StreamServerInterceptor {
-	shutdownFn, err := monitoring.NewOpenTracing("PSaLUFuIFNpfOxlifftLmP")
+	shutdownFn, err := monitoring.NewOpenTracing("f26akXhvu7OG1PKqTVoUZB")
 	if err != nil {
 		log.Errorf("failed initializing open tracing client, err=%v", err)
 	}
