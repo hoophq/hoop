@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
+	"github.com/honeycombio/honeycomb-opentelemetry-go"
+	"github.com/honeycombio/otel-config-go/otelconfig"
 	"github.com/pyroscope-io/client/pyroscope"
 	"github.com/runopsio/hoop/common/version"
 	"github.com/spf13/cobra"
@@ -126,4 +128,21 @@ func SentryPreRun(cmd *cobra.Command, args []string) {
 	StartSentry(sentrySyncTransport, SentryConfig{
 		// hoop-client
 		DSN: "https://7e38ad7875464bf2a475486c325a73b2@o4504559799566336.ingest.sentry.io/4504576866385920"})
+}
+
+type ShutdownFn func()
+
+func NewOpenTracing(apiKey string) (ShutdownFn, error) {
+	// Enable multi-span attributes
+	bsp := honeycomb.NewBaggageSpanProcessor()
+
+	// Use the Honeycomb distro to set up the OpenTelemetry SDK
+	return otelconfig.ConfigureOpenTelemetry(
+		otelconfig.WithSpanProcessor(bsp),
+		otelconfig.WithServiceName("hoopdev"),
+		otelconfig.WithExporterEndpoint("https://api.honeycomb.io:443"),
+		otelconfig.WithHeaders(map[string]string{
+			"x-honeycomb-team": apiKey,
+		}),
+	)
 }

@@ -17,6 +17,7 @@ import (
 	apitypes "github.com/runopsio/hoop/gateway/apiclient/types"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+	authinterceptor "github.com/runopsio/hoop/gateway/transportv2/interceptors/auth"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -88,7 +89,7 @@ func (s *Server) subscribeAgentSidecar(stream pb.Transport_ConnectServer) error 
 	md, _ := metadata.FromIncomingContext(ctx)
 
 	var clientKey types.ClientKey
-	err := parseGatewayContextInto(ctx, &clientKey)
+	err := authinterceptor.ParseGatewayContextInto(ctx, &clientKey)
 	if err != nil {
 		log.Error(err)
 		return err
@@ -149,8 +150,8 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer) error {
 	ctx := stream.Context()
 	md, _ := metadata.FromIncomingContext(ctx)
 
-	var gwctx gatewayContext
-	ctxVal, err := getGatewayContext(ctx)
+	var gwctx authinterceptor.GatewayContext
+	ctxVal, err := authinterceptor.GetGatewayContext(ctx)
 	if err != nil {
 		log.Error(err)
 		return err
@@ -176,7 +177,7 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer) error {
 		gwctx.Agent.Mode = pb.AgentModeEmbeddedType
 		gwctx.Agent.Name = fmt.Sprintf("clientkey:%s", v.Name)
 		gwctx.Agent.OrgID = v.OrgID
-	case *gatewayContext:
+	case *authinterceptor.GatewayContext:
 		gwctx = *v
 		agentBindID = gwctx.Agent.ID
 		if gwctx.Agent.Mode == pb.AgentModeEmbeddedType && len(connectionNameList) > 0 {
@@ -205,7 +206,7 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer) error {
 	pluginContext.ParamsData["disconnect-agent-id"] = gwctx.Agent.ID
 	s.startDisconnectClientSink(agentBindID, clientOrigin, func(err error) {
 		defer unbindAgent(agentBindID)
-		if err := publishAgentDisconnect(s.IDProvider.ApiURL, gwctx.bearerToken); err != nil {
+		if err := publishAgentDisconnect(s.IDProvider.ApiURL, gwctx.BearerToken); err != nil {
 			log.Warnf("failed publishing disconnect agent state, err=%v", err)
 		}
 		_ = s.pluginOnDisconnect(pluginContext, err)

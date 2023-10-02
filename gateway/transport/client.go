@@ -20,6 +20,7 @@ import (
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	pluginsslack "github.com/runopsio/hoop/gateway/transport/plugins/slack"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+	authinterceptor "github.com/runopsio/hoop/gateway/transportv2/interceptors/auth"
 	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -88,8 +89,8 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 	clientVerb := mdget(md, "verb")
 	clientOrigin := mdget(md, "origin")
 
-	var gwctx gatewayContext
-	err := parseGatewayContextInto(ctx, &gwctx)
+	var gwctx authinterceptor.GatewayContext
+	err := authinterceptor.ParseGatewayContextInto(ctx, &gwctx)
 	if err != nil {
 		log.Error(err)
 		return err

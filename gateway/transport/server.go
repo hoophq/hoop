@@ -15,10 +15,13 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
+	"github.com/google/uuid"
 	commongrpc "github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/agent"
+	"github.com/runopsio/hoop/gateway/apiclient"
+	apitypes "github.com/runopsio/hoop/gateway/apiclient/types"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/review"
@@ -28,6 +31,9 @@ import (
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	transportv2 "github.com/runopsio/hoop/gateway/transportv2"
+	authinterceptor "github.com/runopsio/hoop/gateway/transportv2/interceptors/auth"
+	sessionuuidinterceptor "github.com/runopsio/hoop/gateway/transportv2/interceptors/sessionuuid"
+	tracinginterceptor "github.com/runopsio/hoop/gateway/transportv2/interceptors/tracing"
 	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc"
 
@@ -122,18 +128,24 @@ func (s *Server) StartRPCServer() {
 		sentry.CaptureException(err)
 		log.Fatal(err)
 	}
+
+	grpcInterceptors := grpc.ChainStreamInterceptor(
+		sessionuuidinterceptor.New(),
+		authinterceptor.New(s.IDProvider, &s.UserService, &s.AgentService, &s.ConnectionService),
+		tracinginterceptor.New(s.IDProvider.ApiURL),
+	)
 	var grpcServer *grpc.Server
 	if tlsConfig != nil {
 		grpcServer = grpc.NewServer(
 			grpc.MaxRecvMsgSize(commongrpc.MaxRecvMsgSize),
 			grpc.Creds(credentials.NewTLS(tlsConfig)),
-			grpc.StreamInterceptor(s.AuthGrpcInterceptor),
+			grpcInterceptors,
 		)
 	}
 	if grpcServer == nil {
 		grpcServer = grpc.NewServer(
 			grpc.MaxRecvMsgSize(commongrpc.MaxRecvMsgSize),
-			grpc.StreamInterceptor(s.AuthGrpcInterceptor),
+			grpcInterceptors,
 		)
 	}
 	pb.RegisterTransportServer(grpcServer, s)
@@ -159,9 +171,8 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 		isApiV2Client = v[0] == "true"
 	}
 	if isApiV2Client {
-		val := ctx.Value(gatewayContextKey{})
-		// TODO: check if this blow up with nil
-		gwctx, ok := val.(*gatewayContext)
+		val := ctx.Value(authinterceptor.GatewayContextKey{})
+		gwctx, ok := val.(*authinterceptor.GatewayContext)
 		if !ok {
 			return status.Error(codes.Internal, "failed to assign context")
 		}
@@ -170,7 +181,7 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 			return transportv2.SubscribeAgent(&transportv2.AgentContext{
 				Agent:       &gwctx.Agent,
 				ApiURL:      s.IDProvider.ApiURL,
-				BearerToken: gwctx.bearerToken,
+				BearerToken: gwctx.BearerToken,
 			}, stream)
 		case pb.ConnectionOriginClientProxyManager:
 			// return s.proxyManagerV2(stream)
@@ -178,7 +189,7 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 			return transportv2.SubscribeClient(&transportv2.ClientContext{
 				UserContext: gwctx.UserContext,
 				Connection:  gwctx.Connection,
-				BearerToken: gwctx.bearerToken,
+				BearerToken: gwctx.BearerToken,
 			}, stream)
 		}
 	}
@@ -186,7 +197,6 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 	// legacy clients
 	switch clientOrigin[0] {
 	case pb.ConnectionOriginAgent:
-
 		// keep compatibility with old clients
 		// hoopagent/sdk or hoopagent/sidecar
 		// TODO: remove in flavor of subscribeAgent.
@@ -214,10 +224,6 @@ func (s *Server) ValidateConfiguration() error {
 
 // DEPRECATED implement honeycomb instead of tracking in xtdb
 func (s *Server) trackSessionStatus(sessionID, phase string, err error) {}
-
-func (s *Server) validateSessionID(sessionID string) error {
-	return s.SessionService.ValidateSessionID(sessionID)
-}
 
 func (s *Server) handleGracefulShutdown() {
 	sigc := make(chan os.Signal, 1)
@@ -327,6 +333,69 @@ func (s *Server) disconnectClient(uid string, err error) {
 		}
 	}
 	delete(disconnectSink.items, uid)
+}
+
+func (s *Server) getConnection(name string, userCtx *user.Context) (*types.ConnectionInfo, error) {
+	conn, err := s.ConnectionService.FindOne(userCtx, name)
+	if err != nil {
+		log.Errorf("failed retrieving connection %v, err=%v", name, err)
+		sentry.CaptureException(err)
+		return nil, status.Errorf(codes.Internal, "internal error, failed to obtain connection")
+	}
+	if conn == nil {
+		return nil, nil
+	}
+	ag, err := s.AgentService.FindByNameOrID(userCtx, conn.AgentId)
+	if err != nil {
+		log.Errorf("failed obtaining agent %v, err=%v", err)
+		return nil, status.Errorf(codes.Internal, "internal error, failed to obtain agent from connection")
+	}
+	if ag == nil {
+		// the agent id is not a uuid when the connection
+		// is published (connectionapps) via embedded mode
+		if _, err := uuid.Parse(conn.AgentId); err == nil {
+			return nil, status.Errorf(codes.NotFound, "agent not found")
+		}
+		// keep compatibility with published agents
+		ag = &agent.Agent{
+			Name: fmt.Sprintf("[clientkey=%v]", strings.Split(conn.AgentId, ":")[0]), // <clientkey-name>:<connection>
+			Mode: pb.AgentModeEmbeddedType,
+		}
+	}
+	return &types.ConnectionInfo{
+		ID:            conn.Id,
+		Name:          conn.Name,
+		Type:          string(conn.Type),
+		CmdEntrypoint: conn.Command,
+		Secrets:       conn.Secret,
+		AgentID:       conn.AgentId,
+		AgentMode:     ag.Mode,
+		AgentName:     ag.Name,
+	}, nil
+}
+
+func publishAgentDisconnect(apiURL, bearerToken string) error {
+	reqBody := apitypes.AgentAuthRequest{Status: "DISCONNECTED"}
+	_, err := apiclient.New(apiURL, bearerToken).AuthAgent(reqBody)
+	return err
+}
+
+func parseToLegacyUserContext(apictx *types.APIContext) *user.Context {
+	return &user.Context{
+		Org: &user.Org{
+			Id:   apictx.OrgID,
+			Name: apictx.OrgName,
+		},
+		User: &user.User{
+			Id:      apictx.UserID,
+			Org:     apictx.OrgID,
+			Name:    apictx.UserName,
+			Email:   apictx.UserEmail,
+			Status:  user.StatusType(apictx.UserStatus),
+			SlackID: apictx.SlackID, // TODO: check this
+			Groups:  apictx.UserGroups,
+		},
+	}
 }
 
 // closeChWithSleep sleep for d before closing the channel
