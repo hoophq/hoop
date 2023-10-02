@@ -18,6 +18,7 @@ import (
 	"github.com/runopsio/hoop/gateway/storagev2/clientstate"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+	authinterceptor "github.com/runopsio/hoop/gateway/transportv2/interceptors/auth"
 	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -37,8 +38,8 @@ func (s *Server) proxyManager(stream pb.Transport_ConnectServer) error {
 	clientOrigin := mdget(md, "origin")
 	// TODO: validate origin
 
-	var gwctx gatewayContext
-	err := parseGatewayContextInto(ctx, &gwctx)
+	var gwctx authinterceptor.GatewayContext
+	err := authinterceptor.ParseGatewayContextInto(ctx, &gwctx)
 	if err != nil {
 		log.Error(err)
 		return err
@@ -56,7 +57,7 @@ func (s *Server) proxyManager(stream pb.Transport_ConnectServer) error {
 			string(userCtx.UserStatus),
 			userCtx.UserGroups)
 	sessionID := uuid.NewString()
-	err = s.listenProxyManagerMessages(gwctx.bearerToken, sessionID, storectx, stream)
+	err = s.listenProxyManagerMessages(gwctx.BearerToken, sessionID, storectx, stream)
 	if status, ok := status.FromError(err); ok && status.Code() == codes.Canceled {
 		log.With("origin", clientOrigin).Infof("grpc client connection canceled")
 	}

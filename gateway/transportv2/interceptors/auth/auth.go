@@ -1,4 +1,4 @@
-package transport
+package authinterceptor
 
 import (
 	"context"
@@ -16,6 +16,8 @@ import (
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/apiclient"
 	apitypes "github.com/runopsio/hoop/gateway/apiclient/types"
+	"github.com/runopsio/hoop/gateway/connection"
+	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/transport/adminapi"
 	"github.com/runopsio/hoop/gateway/user"
@@ -25,93 +27,76 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type gatewayContext struct {
-	UserContext types.APIContext
-	Connection  types.ConnectionInfo
-	Agent       apitypes.Agent
-
-	bearerToken string
-}
-
-func (c *gatewayContext) ValidateConnectionAttrs() error {
-	if c.Connection.Name == "" || c.Connection.AgentID == "" ||
-		c.Connection.ID == "" || c.Connection.Type == "" {
-		return status.Error(codes.InvalidArgument, "missing required connection attributes")
-	}
-	return nil
-}
-
-type wrappedStream struct {
+// serverStreamWrapper could override methods from the grpc.StreamServer interface.
+// using this wrapper it's possible to intercept calls from a grpc server
+type serverStreamWrapper struct {
 	grpc.ServerStream
 
 	newCtx    context.Context
 	newCtxVal any
 }
 
-type gatewayContextKey struct{}
+type interceptor struct {
+	idp               *idp.Provider
+	userService       *user.Service
+	agentService      *agent.Service
+	connectionService *connection.Service
+}
 
-// https://github.com/grpc/grpc-go/issues/4363#issuecomment-840030503
-func (w *wrappedStream) Context() context.Context {
-	if w.newCtx != nil {
-		return w.newCtx
+func New(
+	idpProvider *idp.Provider,
+	usrsvc *user.Service,
+	agentsvc *agent.Service,
+	connSvc *connection.Service) grpc.StreamServerInterceptor {
+	return (&interceptor{
+		idp:               idpProvider,
+		userService:       usrsvc,
+		agentService:      agentsvc,
+		connectionService: connSvc,
+	}).StreamServerInterceptor
+}
+
+func (s *serverStreamWrapper) Context() context.Context {
+	if s.newCtx != nil {
+		return s.newCtx
 	}
-	ctx := w.ServerStream.Context()
-	if w.newCtxVal == nil {
+	ctx := s.ServerStream.Context()
+	if s.newCtxVal == nil {
 		return ctx
 	}
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		w.newCtx = metadata.NewIncomingContext(
-			context.WithValue(ctx, gatewayContextKey{}, w.newCtxVal), md.Copy())
-		return w.newCtx
+		// used to propagate information to interceptors running after this one.
+		// this information could be used to identify the context of a grpc client
+		mdCopy := md.Copy()
+		switch v := s.newCtxVal.(type) {
+		case *GatewayContext:
+			if v.Connection.Type != "" {
+				mdCopy.Set("connection-type", v.Connection.Type)
+				mdCopy.Set("connection-agent", v.Connection.AgentName)
+				mdCopy.Set("connection-agent-mode", v.Connection.AgentMode)
+			}
+			if v.UserContext.OrgID != "" {
+				mdCopy.Set("org-id", v.UserContext.OrgID)
+				mdCopy.Set("user-email", v.UserContext.UserEmail)
+			}
+			if v.Agent.ID != "" {
+				mdCopy.Set("agent-name", v.Agent.Name)
+				mdCopy.Set("agent-mode", v.Agent.Mode)
+				mdCopy.Set("org-id", v.Agent.OrgID)
+			}
+		case *types.ClientKey:
+			mdCopy.Set("agent-name", fmt.Sprintf("clientkey:%s", v.Name))
+			mdCopy.Set("agent-mode", pb.AgentModeEmbeddedType)
+			mdCopy.Set("org-id", v.OrgID)
+		}
+		s.newCtx = metadata.NewIncomingContext(
+			context.WithValue(ctx, GatewayContextKey{}, s.newCtxVal), mdCopy)
+		return s.newCtx
 	}
 	return ctx
 }
 
-func getGatewayContext(ctx context.Context) (any, error) {
-	if ctx == nil {
-		return nil, status.Error(codes.Internal, "authentication context not found (nil)")
-	}
-	val := ctx.Value(gatewayContextKey{})
-	if val == nil {
-		return nil, status.Error(codes.Internal, "authentication context not found")
-	}
-	return val, nil
-}
-
-func parseGatewayContextInto(ctx context.Context, into any) error {
-	val, err := getGatewayContext(ctx)
-	if err != nil {
-		return err
-	}
-	var assigned bool
-	switch v := val.(type) {
-	case *gatewayContext:
-		if _, ok := into.(*gatewayContext); ok {
-			*into.(*gatewayContext) = *v
-			assigned = true
-		}
-	case *types.ClientKey:
-		if _, ok := into.(*types.ClientKey); ok {
-			*into.(*types.ClientKey) = *v
-			assigned = true
-		}
-	case *apitypes.Agent:
-		if _, ok := into.(*agent.Agent); ok {
-			*into.(*apitypes.Agent) = *v
-			assigned = true
-		}
-	default:
-		return status.Error(codes.Unauthenticated,
-			fmt.Sprintf("invalid authentication, missing auth context, type: %T", val))
-	}
-	if !assigned {
-		return status.Error(codes.Internal,
-			fmt.Sprintf("invalid authentication, failed assigning context %T to %T", val, into))
-	}
-	return nil
-}
-
-func (s *Server) AuthGrpcInterceptor(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 	log.Debugf("auth grpc interceptor, method=%v", info.FullMethod)
 	md, ok := metadata.FromIncomingContext(ss.Context())
 	if !ok {
@@ -154,8 +139,8 @@ func (s *Server) AuthGrpcInterceptor(srv any, ss grpc.ServerStream, info *grpc.S
 			"slackid", uctx.SlackID, "status", uctx.UserStatus,
 		).Infof("admin api - decoded userinfo")
 
-		gwctx := &gatewayContext{UserContext: *uctx}
-		conn, err := getConnectionInfo(md)
+		gwctx := &GatewayContext{UserContext: *uctx}
+		conn, err := parseConnectionInfoFromHeader(md)
 		if err != nil {
 			return err
 		}
@@ -170,16 +155,16 @@ func (s *Server) AuthGrpcInterceptor(srv any, ss grpc.ServerStream, info *grpc.S
 	// DEPRECATED in flavor of dsn agent keys
 	// shared agent key authentication
 	case strings.HasPrefix(bearerToken, "x-agt-"):
-		ag, err := authenticateAgent(s.IDProvider.ApiURL, bearerToken, md)
+		ag, err := authenticateAgent(i.idp.ApiURL, bearerToken, md)
 		if err != nil {
 			return err
 		}
-		ctxVal = &gatewayContext{Agent: *ag, bearerToken: bearerToken}
+		ctxVal = &GatewayContext{Agent: *ag, BearerToken: bearerToken}
 	// agent client keys (dsn) authentication
 	// keep compatibility with old clients (hoopagent/<version>, hoopagent/sdk or hoopagent/sidecar)
-	case strings.HasPrefix(mdget(md, "user-agent"), "hoopagent"):
+	case strings.HasPrefix(commongrpc.MetaGet(md, "user-agent"), "hoopagent"):
 		// TODO: deprecated in flavor of agent keys dsn
-		clientKey, err := authenticateClientKeyAgent(s.IDProvider.ApiURL, bearerToken)
+		clientKey, err := authenticateClientKeyAgent(i.idp.ApiURL, bearerToken)
 		if err != nil {
 			log.Error("failed validating dsn authentication, err=%v", err)
 			sentry.CaptureException(err)
@@ -190,37 +175,38 @@ func (s *Server) AuthGrpcInterceptor(srv any, ss grpc.ServerStream, info *grpc.S
 			break
 		}
 		// fallback to dsn agent authentication
-		ag, err := authenticateAgent(s.IDProvider.ApiURL, bearerToken, md)
+		ag, err := authenticateAgent(i.idp.ApiURL, bearerToken, md)
 		if err != nil {
 			return err
 		}
-		ctxVal = &gatewayContext{Agent: *ag, bearerToken: bearerToken}
+
+		ctxVal = &GatewayContext{Agent: *ag, BearerToken: bearerToken}
 	// client proxy manager authentication (access token)
 	case clientOrigin[0] == pb.ConnectionOriginClientProxyManager:
-		sub, err := s.exchangeUserToken(bearerToken)
+		sub, err := i.idp.VerifyAccessToken(bearerToken)
 		if err != nil {
 			log.Debugf("failed verifying access token, reason=%v", err)
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
-		userCtx, err := s.UserService.FindBySub(sub)
+		userCtx, err := i.userService.FindBySub(sub)
 		if err != nil || userCtx.User == nil {
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
-		ctxVal = &gatewayContext{UserContext: *userCtx.ToAPIContext(), bearerToken: bearerToken}
+		ctxVal = &GatewayContext{UserContext: *userCtx.ToAPIContext(), BearerToken: bearerToken}
 	// client proxy authentication (apiv2)
 	case clientApiV2:
-		sub, err := s.exchangeUserToken(bearerToken)
+		sub, err := i.idp.VerifyAccessToken(bearerToken)
 		if err != nil {
 			log.Debugf("failed verifying access token, reason=%v", err)
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
-		userCtx, err := s.UserService.FindBySub(sub)
+		userCtx, err := i.userService.FindBySub(sub)
 		if err != nil || userCtx.User == nil {
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
 		// gwctx := &gatewayContext{UserContext: *userCtx.ToAPIContext()}
-		connectionName := mdget(md, "connection-name")
-		conn, err := s.getConnectionV2(bearerToken, connectionName, userCtx)
+		connectionName := commongrpc.MetaGet(md, "connection-name")
+		conn, err := i.getConnectionV2(bearerToken, connectionName, userCtx)
 		if err != nil {
 			if err == apiclient.ErrNotFound {
 				return status.Errorf(codes.NotFound, "connection not found")
@@ -229,41 +215,42 @@ func (s *Server) AuthGrpcInterceptor(srv any, ss grpc.ServerStream, info *grpc.S
 			sentry.CaptureException(err)
 			return status.Error(codes.Internal, "internal error, failed obtaining connection")
 		}
-		ctxVal = &gatewayContext{
+		ctxVal = &GatewayContext{
 			UserContext: *userCtx.ToAPIContext(),
 			Connection:  *conn,
-			bearerToken: bearerToken,
+			BearerToken: bearerToken,
 		}
 	// client proxy authentication (access token)
 	default:
-		sub, err := s.exchangeUserToken(bearerToken)
+		sub, err := i.idp.VerifyAccessToken(bearerToken)
 		if err != nil {
 			log.Debugf("failed verifying access token, reason=%v", err)
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
-		userCtx, err := s.UserService.FindBySub(sub)
+		userCtx, err := i.userService.FindBySub(sub)
 		if err != nil || userCtx.User == nil {
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
-		gwctx := &gatewayContext{UserContext: *userCtx.ToAPIContext()}
-		connectionName := mdget(md, "connection-name")
-		conn, err := s.getConnection(connectionName, userCtx)
+		gwctx := &GatewayContext{UserContext: *userCtx.ToAPIContext()}
+		connectionName := commongrpc.MetaGet(md, "connection-name")
+		conn, err := i.getConnection(connectionName, userCtx)
 		if err != nil {
 			return err
 		}
 		if conn == nil {
 			return status.Errorf(codes.NotFound, "connection not found")
 		}
+		md.Set("subject", sub)
 		gwctx.Connection = *conn
 		ctxVal = gwctx
 	}
 
-	return handler(srv, &wrappedStream{ss, nil, ctxVal})
+	return handler(srv, &serverStreamWrapper{ss, nil, ctxVal})
 }
 
 // getConnectionV2 obtains connection & agent information from the node api v2
-func (s *Server) getConnectionV2(bearerToken, name string, userCtx *user.Context) (*types.ConnectionInfo, error) {
-	client := apiclient.New(s.IDProvider.ApiURL, bearerToken)
+func (i *interceptor) getConnectionV2(bearerToken, name string, userCtx *user.Context) (*types.ConnectionInfo, error) {
+	client := apiclient.New(i.idp.ApiURL, bearerToken)
 	conn, err := client.GetConnection(name)
 	if err != nil {
 		return nil, err
@@ -291,8 +278,8 @@ func (s *Server) getConnectionV2(bearerToken, name string, userCtx *user.Context
 
 }
 
-func (s *Server) getConnection(name string, userCtx *user.Context) (*types.ConnectionInfo, error) {
-	conn, err := s.ConnectionService.FindOne(userCtx, name)
+func (i *interceptor) getConnection(name string, userCtx *user.Context) (*types.ConnectionInfo, error) {
+	conn, err := i.connectionService.FindOne(userCtx, name)
 	if err != nil {
 		log.Errorf("failed retrieving connection %v, err=%v", name, err)
 		sentry.CaptureException(err)
@@ -301,7 +288,7 @@ func (s *Server) getConnection(name string, userCtx *user.Context) (*types.Conne
 	if conn == nil {
 		return nil, nil
 	}
-	ag, err := s.AgentService.FindByNameOrID(userCtx, conn.AgentId)
+	ag, err := i.agentService.FindByNameOrID(userCtx, conn.AgentId)
 	if err != nil {
 		log.Errorf("failed obtaining agent %v, err=%v", err)
 		return nil, status.Errorf(codes.Internal, "internal error, failed to obtain agent from connection")
@@ -353,13 +340,13 @@ func authenticateAgent(apiURL, bearerToken string, md metadata.MD) (*apitypes.Ag
 	reqBody := apitypes.AgentAuthRequest{
 		Status: "CONNECTED",
 		Metadata: &apitypes.AgentAuthMetadata{
-			Hostname:      mdget(md, "hostname"),
-			MachineID:     mdget(md, "machine_id"),
-			KernelVersion: mdget(md, "kernel_version"),
-			Version:       mdget(md, "version"),
-			GoVersion:     mdget(md, "go-version"),
-			Compiler:      mdget(md, "compiler"),
-			Platform:      mdget(md, "platform"),
+			Hostname:      commongrpc.MetaGet(md, "hostname"),
+			MachineID:     commongrpc.MetaGet(md, "machine_id"),
+			KernelVersion: commongrpc.MetaGet(md, "kernel_version"),
+			Version:       commongrpc.MetaGet(md, "version"),
+			GoVersion:     commongrpc.MetaGet(md, "go-version"),
+			Compiler:      commongrpc.MetaGet(md, "compiler"),
+			Platform:      commongrpc.MetaGet(md, "platform"),
 		},
 	}
 	ag, err := apiclient.New(apiURL, bearerToken).AuthAgent(reqBody)
@@ -373,12 +360,6 @@ func authenticateAgent(apiURL, bearerToken string, md metadata.MD) (*apitypes.Ag
 	}
 	ag.Metadata = *reqBody.Metadata
 	return ag, nil
-}
-
-func publishAgentDisconnect(apiURL, bearerToken string) error {
-	reqBody := apitypes.AgentAuthRequest{Status: "DISCONNECTED"}
-	_, err := apiclient.New(apiURL, bearerToken).AuthAgent(reqBody)
-	return err
 }
 
 func getUserInfo(md metadata.MD) (*types.APIContext, error) {
@@ -399,7 +380,7 @@ func getUserInfo(md metadata.MD) (*types.APIContext, error) {
 	return &usrctx, nil
 }
 
-func getConnectionInfo(md metadata.MD) (*types.ConnectionInfo, error) {
+func parseConnectionInfoFromHeader(md metadata.MD) (*types.ConnectionInfo, error) {
 	encConnInfo := md.Get(string(commongrpc.OptionConnectionInfo))
 	if len(encConnInfo) == 0 {
 		return nil, nil
@@ -432,22 +413,4 @@ func parseBearerToken(md metadata.MD) (string, error) {
 	}
 
 	return tokenParts[1], nil
-}
-
-func parseToLegacyUserContext(apictx *types.APIContext) *user.Context {
-	return &user.Context{
-		Org: &user.Org{
-			Id:   apictx.OrgID,
-			Name: apictx.OrgName,
-		},
-		User: &user.User{
-			Id:      apictx.UserID,
-			Org:     apictx.OrgID,
-			Name:    apictx.UserName,
-			Email:   apictx.UserEmail,
-			Status:  user.StatusType(apictx.UserStatus),
-			SlackID: apictx.SlackID, // TODO: check this
-			Groups:  apictx.UserGroups,
-		},
-	}
 }
