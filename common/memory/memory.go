@@ -6,6 +6,7 @@ import (
 
 type Store interface {
 	Get(key string) any
+	Has(key string) bool
 	Pop(key string) any
 	Set(key string, val any)
 	Del(key string)
@@ -56,6 +57,14 @@ func (s *store) Get(key string) any {
 		return val
 	}
 	return nil
+}
+
+// Has report if the key is found in the map
+func (s *store) Has(key string) bool {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	_, exists := s.m[key]
+	return exists
 }
 
 func (s *store) Pop(key string) any {

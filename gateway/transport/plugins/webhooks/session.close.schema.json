@@ -1,0 +1,33 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "title": "",
+    "description": "This event indicates the end of a session flow",
+    "properties": {
+      "event_type": {
+        "type": "string",
+        "description": "The event type"
+      },
+      "id": {
+        "type": "string",
+        "description": "The unique identifier of the session"
+      },
+      "exit_code": {
+        "type": "number",
+        "description": "The exit code of the execution. A -100 value indicate it was not possible to identify the exit status"
+      },
+      "exit_err": {
+        "type": "string",
+        "description": "The error returned from an execution if it's available"
+      }
+    },
+    "required": [
+      "event_type",
+      "id",
+      "connection",
+      "connection_type",
+      "exit_code"
+    ],
+    "additionalProperties": false
+  }

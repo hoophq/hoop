@@ -15,6 +15,7 @@ const (
 	PluginIndexName                      = "indexer"
 	PluginDLPName                        = "dlp"
 	PluginDatabaseCredentialsManagerName = "database-credentials-manager"
+	PluginWebhookName                    = "webhooks"
 )
 
 var (

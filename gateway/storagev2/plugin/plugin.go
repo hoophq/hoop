@@ -166,6 +166,7 @@ var defaultPlugins = []string{
 	plugintypes.PluginEditorName,
 	plugintypes.PluginSlackName,
 	plugintypes.PluginRunbooksName,
+	plugintypes.PluginWebhookName,
 }
 
 // EnableDefaultPlugins will enable the default plugins for a connection in a best-effort manner

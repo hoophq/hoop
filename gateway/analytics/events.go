@@ -30,6 +30,7 @@ const (
 	EventFetchClientKey         = "hoop-fetch-clientkey"
 	EventUpdateClientKey        = "hoop-update-clientkey"
 	EventDeleteClientKey        = "hoop-delete-clientkey"
+	EventOpenWebhooksDashboard  = "hoop-open-webhooks-dashboard"
 
 	EventGrpcExec                = "hoop-grpc-exec"
 	EventGrpcConnect             = "hoop-grpc-connect"

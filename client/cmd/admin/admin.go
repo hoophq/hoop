@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"net/http"
+	"os/exec"
+	"runtime"
 
 	"github.com/runopsio/hoop/client/cmd/styles"
 	clientconfig "github.com/runopsio/hoop/client/config"
@@ -18,6 +20,7 @@ func init() {
 	MainCmd.AddCommand(getCmd)
 	MainCmd.AddCommand(createCmd)
 	MainCmd.AddCommand(gatewayInfoCmd)
+	MainCmd.AddCommand(openWebhooksDashboardCmd)
 	MainCmd.AddCommand(targetToConnection)
 }
 
@@ -53,4 +56,40 @@ var gatewayInfoCmd = &cobra.Command{
 		out := styles.ClientErrorSimple(fmt.Sprintf("Webapp is running at %v, GET /js/manifest.edn did not render correctly!", conf.ApiURL))
 		fmt.Println(out)
 	},
+}
+
+var openWebhooksDashboardCmd = &cobra.Command{
+	Use:     "webhooks-dashboard",
+	Short:   "Open the webhooks app dashboard",
+	Aliases: []string{"webhook-dashboard"},
+	Run: func(cmd *cobra.Command, args []string) {
+		conf := clientconfig.GetClientConfigOrDie()
+		obj, _, err := httpRequest(&apiResource{suffixEndpoint: "/api/webhooks-dashboard", conf: conf, decodeTo: "object"})
+		if err != nil {
+			out := styles.ClientErrorSimple(fmt.Sprintf("failed open webhooks dashboard, error=%v", err))
+			fmt.Println(out)
+			return
+		}
+		resp := obj.(map[string]any)
+		if v, ok := resp["url"]; ok {
+			dashboardURL := fmt.Sprintf("%v", v)
+			if err := openBrowser(fmt.Sprintf("%v", dashboardURL)); err != nil {
+				fmt.Printf("Failed to open browser.\nClick on the link below:\n\n%s\n\n", dashboardURL)
+			}
+		}
+	},
+}
+
+func openBrowser(url string) (err error) {
+	switch runtime.GOOS {
+	case "linux":
+		err = exec.Command("xdg-open", url).Start()
+	case "windows":
+		err = exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+	case "darwin":
+		err = exec.Command("open", url).Start()
+	default:
+		err = fmt.Errorf("unsupported platform")
+	}
+	return
 }
