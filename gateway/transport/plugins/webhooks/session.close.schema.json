@@ -24,10 +24,7 @@
     },
     "required": [
       "event_type",
-      "id",
-      "connection",
-      "connection_type",
-      "exit_code"
+      "id"
     ],
     "additionalProperties": false
   }
