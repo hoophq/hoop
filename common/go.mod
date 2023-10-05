@@ -10,7 +10,6 @@ require (
 	github.com/hoophq/pluginhooks v0.0.6
 	github.com/pyroscope-io/client v0.7.2
 	github.com/spf13/cobra v1.6.1
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.45.0
 	go.uber.org/zap v1.24.0
 	golang.org/x/oauth2 v0.10.0
 	google.golang.org/grpc v1.58.2
@@ -35,7 +34,6 @@ require (
 	cloud.google.com/go/compute v1.21.0 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
-	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/go-logr/logr v1.2.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect

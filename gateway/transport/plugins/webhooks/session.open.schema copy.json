@@ -1,0 +1,81 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "title": "",
+    "description": "This event is triggered when a user executes an one off or interactive session",
+    "properties": {
+      "event_type": {
+        "type": "string",
+        "description": "The event type"
+      },
+      "id": {
+        "type": "string",
+        "description": "The unique identifier of the session"
+      },
+      "user_id": {
+        "type": "string",
+        "description": "The unique identifier of the user"
+      },
+      "user_email": {
+        "type": "string",
+        "description": "The email address of the user",
+        "format": "email"
+      },
+      "connection": {
+        "type": "string",
+        "description": "The name of the connection"
+      },
+      "connection_type": {
+        "type": "string",
+        "description": "The type of the connection"
+      },
+      "connection_envs": {
+        "type": "array",
+        "description": "A list of environment variable keys used for this connection",
+        "items": {
+          "type": "string"
+        }
+      },
+      "input": {
+        "type": "string",
+        "description": "The input content truncated encoded as base64 provided by the user"
+      },
+      "is_input_truncated": {
+        "type": "boolean",
+        "description": "If the input is truncated or not"
+      },
+      "input_size": {
+        "type": "number",
+        "description": "The size in bytes of the provided input"
+      },
+      "input_envs": {
+        "type": "array",
+        "description": "A list of environment variable keys provided by the user",
+        "items": {
+          "type": "string"
+        }
+      },
+      "has_input_args": {
+        "type": "boolean",
+        "description": "If the user provided additional client arguments as the suffix of the connection command"
+      },
+      "command": {
+        "type": "string",
+        "description": "The full command being executed in the agent"
+      },
+      "verb": {
+        "type": "string",
+        "description": "The type of interaction with the connection (exec or connect)"
+      }
+    },
+    "required": [
+      "event_type",
+      "id",
+      "connection",
+      "connection_type",
+      "command",
+      "verb"
+    ],
+    "additionalProperties": false
+  }

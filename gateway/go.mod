@@ -22,6 +22,7 @@ require (
 	github.com/segmentio/analytics-go/v3 v3.2.1
 	github.com/slack-go/slack v0.12.2
 	github.com/stretchr/testify v1.8.4
+	github.com/svix/svix-webhooks v1.13.0
 	github.com/tidwall/wal v1.1.7
 	go.opentelemetry.io/otel v1.19.0
 	go.uber.org/zap v1.24.0

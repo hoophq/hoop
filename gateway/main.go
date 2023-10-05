@@ -44,6 +44,7 @@ import (
 	pluginsreview "github.com/runopsio/hoop/gateway/transport/plugins/review"
 	pluginsslack "github.com/runopsio/hoop/gateway/transport/plugins/slack"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+	pluginswebhooks "github.com/runopsio/hoop/gateway/transport/plugins/webhooks"
 )
 
 func Run(listenAdmAddr string) {
@@ -147,6 +148,7 @@ func Run(listenAdmAddr string) {
 		pluginsindex.New(&session.Storage{Storage: s}),
 		pluginsdlp.New(),
 		pluginsrbac.New(),
+		pluginswebhooks.New(),
 		pluginsslack.New(
 			&review.Service{Storage: &review.Storage{Storage: s}, TransportService: g},
 			&user.Service{Storage: &user.Storage{Storage: s}},

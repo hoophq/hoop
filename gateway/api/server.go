@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -20,6 +21,7 @@ import (
 	reviewapi "github.com/runopsio/hoop/gateway/api/review"
 	sessionapi "github.com/runopsio/hoop/gateway/api/session"
 	userapi "github.com/runopsio/hoop/gateway/api/user"
+	webhooksapi "github.com/runopsio/hoop/gateway/api/webhooks"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/healthz"
 	"github.com/runopsio/hoop/gateway/indexer"
@@ -304,6 +306,14 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest(analytics.EventExecRunbook),
 		api.RunbooksHandler.RunExec)
+
+	route.GET("/webhooks-dashboard",
+		api.Authenticate,
+		api.TrackRequest(analytics.EventOpenWebhooksDashboard),
+		api.AdminOnly,
+		webhooksapi.Get)
+
+	route.POST("/webhooks", webhookTestHandler)
 }
 
 func (api *Api) CreateTrialEntities() error {
@@ -335,4 +345,13 @@ func (api *Api) CreateTrialEntities() error {
 	_, _ = api.UserHandler.Service.Signup(&org, &u)
 	_, err := api.AgentHandler.Service.Persist(&a)
 	return err
+}
+
+func webhookTestHandler(c *gin.Context) {
+	fmt.Printf("request on method=%v, headers=%v\n",
+		c.Request.Method, c.Request.Header)
+	var data map[string]any
+	_ = c.ShouldBindJSON(&data)
+	fmt.Printf("DATA=%#v\n", data)
+	c.Status(http.StatusOK)
 }
