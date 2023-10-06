@@ -95,15 +95,16 @@ type Connection struct {
 }
 
 type ConnectionInfo struct {
-	ID            string         `json:"id"`
-	Name          string         `json:"name"`
-	Type          string         `json:"type"`
-	CmdEntrypoint []string       `json:"cmd"`
-	Secrets       map[string]any `json:"secrets"`
-	AgentID       string         `json:"agent_id"`
-	AgentName     string         `json:"agent_name"`
-	AgentMode     string         `json:"agent_mode"`
-	Policies      []PolicyInfo   `json:"-"`
+	ID                   string         `json:"id"`
+	Name                 string         `json:"name"`
+	Type                 string         `json:"type"`
+	CmdEntrypoint        []string       `json:"cmd"`
+	Secrets              map[string]any `json:"secrets"`
+	AgentID              string         `json:"agent_id"`
+	AgentName            string         `json:"agent_name"`
+	AgentMode            string         `json:"agent_mode"`
+	PostSaveSessionToken string         `json:"post_save_session_token"`
+	Policies             []PolicyInfo   `json:"-"`
 }
 
 type PolicyInfo struct {

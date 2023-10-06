@@ -57,17 +57,9 @@ func SubscribeClient(ctx *ClientContext, stream pb.Transport_ConnectServer) erro
 	}
 
 	ctx.sessionID = mdget(md, "session-id")
-	if ctx.sessionID == "" {
-		client := apiclient.New(ctx.UserContext.ApiURL, ctx.BearerToken)
-		ctx.sessionID, _ = client.OpenSession()
-	}
 	// subscribe the stream into the memory
 	memorystreams.SetClient(ctx.sessionID, stream)
-	startDisconnectClientSink(ctx.sessionID, clientOrigin, func(err error) {
-		// remove session from memory store
-
-		defer memorystreams.DelClient(ctx.sessionID)
-		// defer clientStore.Del(ctx.sessionID)
+	defer func() {
 		if s := memorystreams.GetClient(conn.AgentID); s != nil {
 			_ = stream.Send(&pb.Packet{
 				Type: pbagent.SessionClose,
@@ -76,8 +68,8 @@ func SubscribeClient(ctx *ClientContext, stream pb.Transport_ConnectServer) erro
 				},
 			})
 		}
-		_ = auditfs.Close(ctx.sessionID, apiclient.New(ctx.UserContext.ApiURL, ctx.BearerToken))
-	})
+		memorystreams.DelClient(ctx.sessionID)
+	}()
 
 	eventName := analytics.EventGrpcExec
 	if ctx.verb == pb.ClientVerbConnect {
@@ -99,28 +91,7 @@ func SubscribeClient(ctx *ClientContext, stream pb.Transport_ConnectServer) erro
 			ctx.UserContext.UserEmail, hostname, clientOrigin, ctx.verb,
 			mdget(md, "platform"), mdget(md, "version"), mdget(md, "goversion"))
 
-	auditOpts := auditfs.Options{
-		OrgID:          ctx.UserContext.OrgID,
-		SessionID:      ctx.sessionID,
-		ConnectionType: conn.Type,
-		ConnectionName: conn.Name,
-		// TODO: must came from the api!
-		StartDate: time.Now().UTC(),
-	}
-	if err := auditfs.Open(auditOpts); err != nil {
-		log.Errorf("failed auditing session, err=%v", err)
-		return status.Error(codes.Internal, "internal error, failed auditing session")
-	}
-
-	clientErr := listenClientMessages(ctx, stream)
-	if status, ok := status.FromError(clientErr); ok && status.Code() == codes.Canceled {
-		log.With("sid", ctx.sessionID, "origin", clientOrigin, "mode", conn.AgentMode).Infof("grpc client connection canceled")
-	}
-	defer disconnectClient(ctx.sessionID, clientErr)
-	if clientErr != nil {
-		return clientErr
-	}
-	return clientErr
+	return listenClientMessages(ctx, stream)
 }
 
 func listenClientMessages(ctx *ClientContext, stream pb.Transport_ConnectServer) error {
@@ -138,6 +109,7 @@ func listenClientMessages(ctx *ClientContext, stream pb.Transport_ConnectServer)
 				return err
 			}
 			if status, ok := status.FromError(err); ok && status.Code() == codes.Canceled {
+				log.With("sid", ctx.sessionID, "mode", ctx.Connection.AgentMode).Infof("grpc client connection canceled")
 				return err
 			}
 			log.Warnf("received error from client, err=%v", err)
@@ -147,11 +119,7 @@ func listenClientMessages(ctx *ClientContext, stream pb.Transport_ConnectServer)
 		if pkt.Type == pbgateway.KeepAlive {
 			continue
 		}
-		// audit session packets
-		if err := auditfs.Write(ctx.sessionID, pkt); err != nil {
-			log.Errorf("failed auditing packet, err=%v", err)
-			return status.Error(codes.Internal, "internal error, failed auditing packet")
-		}
+
 		if pkt.Spec == nil {
 			pkt.Spec = make(map[string][]byte)
 		}
@@ -164,6 +132,11 @@ func listenClientMessages(ctx *ClientContext, stream pb.Transport_ConnectServer)
 				return err
 			}
 		default:
+			// audit session packets
+			if err := auditfs.Write(ctx.sessionID, pkt); err != nil {
+				log.Errorf("failed auditing packet, err=%v", err)
+				return status.Error(codes.Internal, "internal error, failed auditing packet")
+			}
 			agentStream := memorystreams.GetAgent(ctx.Connection.AgentID)
 			if agentStream == nil {
 				return fmt.Errorf("agent not found for connection %s", ctx.Connection.Name)
@@ -214,6 +187,37 @@ func processSessionOpenPacket(ctx *ClientContext, pkt *pb.Packet) error {
 			infoTypes = p.Config
 			break
 		}
+	}
+
+	ctx.PostSaveSessionToken = ctx.Connection.PostSaveSessionToken
+	// Admin exec is an unprivileged grpc client, the gateway
+	// trust in this local client. When the connection is handled
+	// by a remote client, we perform the negotiation with the api instead.
+	if !ctx.IsAdminExec {
+		client := apiclient.New(ctx.UserContext.ApiURL, ctx.BearerToken)
+		resp, err := client.OpenSession(ctx.sessionID, ctx.Connection.Name, ctx.verb, string(pkt.Payload))
+		if err != nil {
+			log.Errorf("failed opening session with api, err=%v", err)
+			return status.Error(codes.Internal, "failed opening session")
+		}
+		if resp.HasReview {
+			return status.Errorf(codes.Canceled, "connection requires review at %s", resp.SessionURL)
+		}
+		ctx.PostSaveSessionToken = resp.PostSaveSessionToken
+	}
+
+	auditOpts := auditfs.Options{
+		OrgID:                ctx.UserContext.OrgID,
+		SessionID:            ctx.sessionID,
+		ConnectionType:       ctx.Connection.Type,
+		ConnectionName:       ctx.Connection.Name,
+		Verb:                 ctx.verb,
+		PostSaveSessionToken: ctx.PostSaveSessionToken,
+		StartDate:            time.Now().UTC(),
+	}
+	if err := auditfs.Open(auditOpts); err != nil {
+		log.Errorf("failed auditing session, err=%v", err)
+		return status.Error(codes.Internal, "internal error, failed auditing session")
 	}
 
 	connParams, err := pb.GobEncode(&pb.AgentConnectionParams{

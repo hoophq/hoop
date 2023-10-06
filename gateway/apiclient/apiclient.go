@@ -43,7 +43,7 @@ func httpGetRequest(apiURL, accessToken string, into any) error {
 	req.Header.Set("x-backend-api", "express")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", accessToken))
-	req.Header.Set("User-Agent", fmt.Sprintf("apiclient/%s", hoopVersionStr))
+	req.Header.Set("User-Agent", fmt.Sprintf("hoopgateway/%s", hoopVersionStr))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
@@ -83,7 +83,11 @@ func httpRequest(apiURL, method, bearerToken string, body, into any) (err error)
 	req.Header.Set("x-backend-api", "express")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", bearerToken))
-	req.Header.Set("User-Agent", fmt.Sprintf("apiclient/%s", hoopVersionStr))
+	// when bearer token is a session token, add this additional header
+	if _, err := uuid.Parse(bearerToken); err == nil {
+		req.Header.Set("post-save-session-token", bearerToken)
+	}
+	req.Header.Set("User-Agent", fmt.Sprintf("hoopgateway/%s", hoopVersionStr))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed performing request: %v", err)
@@ -91,7 +95,7 @@ func httpRequest(apiURL, method, bearerToken string, body, into any) (err error)
 	log.Debugf("http response %v, content-length=%v", resp.StatusCode, resp.ContentLength)
 	defer resp.Body.Close()
 	switch resp.StatusCode {
-	case http.StatusOK, http.StatusCreated:
+	case http.StatusOK, http.StatusAccepted, http.StatusCreated:
 		if resp.ContentLength > 0 || resp.ContentLength == -1 {
 			if err := json.NewDecoder(resp.Body).Decode(into); err != nil {
 				return fmt.Errorf("failed decoding response body, status=%v, content-length=%v, error=%v",
@@ -172,14 +176,27 @@ func (c *Client) AuthClientKeys() (*apitypes.Agent, error) {
 	return &resp, nil
 }
 
-// TODO: implement it
-func (c *Client) CloseSession(data map[string]any) error {
-	log.Infof("[implement me] close session with success on api!")
-	return nil
+func (c *Client) CloseSession(sid, sessionToken string, req apitypes.CloseSessionRequest) error {
+	resp := map[string]any{}
+	return httpRequest(
+		fmt.Sprintf("%s/api/sessions/%s", c.apiURL, sid),
+		"PUT",
+		sessionToken,
+		&req,
+		&resp,
+	)
 }
 
-// TODO: implement it
-func (c *Client) OpenSession() (string, error) {
-	log.Infof("[implement me] opened session with success on api")
-	return uuid.NewString(), nil
+func (c *Client) OpenSession(sid, connectionName, verb, input string) (*apitypes.OpenSessionResponse, error) {
+	urlPath := fmt.Sprintf("%s/api/sessions", c.apiURL)
+	var resp apitypes.OpenSessionResponse
+	reqBody := map[string]any{
+		"id":         sid,
+		"connection": connectionName,
+		"verb":       verb,
+	}
+	if input != "" {
+		reqBody["script"] = input
+	}
+	return &resp, httpRequest(urlPath, "POST", c.accessToken, reqBody, &resp)
 }

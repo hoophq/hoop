@@ -18,6 +18,9 @@ type Header struct {
 	Labels         string     `json:"labels"` // we save it as string and convert at storage layer
 	Verb           string     `json:"verb"`
 	StartDate      *time.Time `json:"start_date"`
+	// SessionToken is a token that is used
+	// to persist the contents to a remote source
+	SessionToken string `json:"session_token"`
 }
 
 func (h *Header) Validate() error {

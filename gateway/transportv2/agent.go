@@ -80,7 +80,9 @@ func listenAgentMessages(ctx *AgentContext, stream pb.Transport_ConnectServer) e
 				}
 				disconnectClient(string(sessionID), trackErr)
 				// now it's safe to remove the session from memory
-				auditfs.Close(string(sessionID), apiclient.New(ctx.ApiURL, ctx.BearerToken))
+				err = auditfs.Close(string(sessionID), apiclient.New(ctx.ApiURL, ctx.BearerToken))
+				log.With("sid", string(sessionID), "agent", ctx.Agent.Name).
+					Infof("closing session, success=%v, err=%v", err == nil, err)
 			}
 		}
 

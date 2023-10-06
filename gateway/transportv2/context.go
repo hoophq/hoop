@@ -11,9 +11,11 @@ import (
 )
 
 type ClientContext struct {
-	UserContext types.APIContext
-	Connection  types.ConnectionInfo
-	BearerToken string
+	UserContext          types.APIContext
+	Connection           types.ConnectionInfo
+	BearerToken          string
+	PostSaveSessionToken string
+	IsAdminExec          bool
 
 	sessionID string
 	verb      string
