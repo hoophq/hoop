@@ -21,6 +21,7 @@ To start a development server it requires the following local tools:
 - Postgres Server (remote or local) (optional)
 - [node / npm](https://nodejs.org/en/download) (optional)
  - Permission to clone `runopsio/webapp` repository
+- The [node api server](https://github.com/hoophq/api) running locally
 
 ### Start a postgres server
 
