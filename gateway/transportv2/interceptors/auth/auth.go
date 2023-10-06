@@ -139,7 +139,7 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			"slackid", uctx.SlackID, "status", uctx.UserStatus,
 		).Infof("admin api - decoded userinfo")
 
-		gwctx := &GatewayContext{UserContext: *uctx}
+		gwctx := &GatewayContext{UserContext: *uctx, IsAdminExec: true}
 		conn, err := parseConnectionInfoFromHeader(md)
 		if err != nil {
 			return err
@@ -215,11 +215,13 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			sentry.CaptureException(err)
 			return status.Error(codes.Internal, "internal error, failed obtaining connection")
 		}
-		ctxVal = &GatewayContext{
+		gwctx := &GatewayContext{
 			UserContext: *userCtx.ToAPIContext(),
 			Connection:  *conn,
 			BearerToken: bearerToken,
 		}
+		gwctx.UserContext.ApiURL = i.idp.ApiURL
+		ctxVal = gwctx
 	// client proxy authentication (access token)
 	default:
 		sub, err := i.idp.VerifyAccessToken(bearerToken)

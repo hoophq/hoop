@@ -14,10 +14,10 @@ import (
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	"github.com/runopsio/hoop/gateway/apiclient"
+	apitypes "github.com/runopsio/hoop/gateway/apiclient/types"
 	"github.com/runopsio/hoop/gateway/session/eventlog"
 	eventlogv0 "github.com/runopsio/hoop/gateway/session/eventlog/v0"
 	sessionwal "github.com/runopsio/hoop/gateway/session/wal"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 )
 
@@ -34,11 +34,13 @@ type AuditWal struct {
 const walFolderTmpl string = `%s/%s-%s-wal`
 
 type Options struct {
-	OrgID          string
-	SessionID      string
-	ConnectionType string
-	ConnectionName string
-	StartDate      time.Time
+	OrgID                string
+	SessionID            string
+	ConnectionType       string
+	ConnectionName       string
+	Verb                 string
+	PostSaveSessionToken string
+	StartDate            time.Time
 }
 
 func Open(opt Options) error {
@@ -48,7 +50,9 @@ func Open(opt Options) error {
 		SessionID:      opt.SessionID,
 		ConnectionType: opt.ConnectionType,
 		ConnectionName: opt.ConnectionName,
+		Verb:           opt.Verb,
 		StartDate:      &opt.StartDate,
+		SessionToken:   opt.PostSaveSessionToken,
 	})
 	if err != nil {
 		return fmt.Errorf("failed opening wal file, err=%v", err)
@@ -70,7 +74,7 @@ func Write(sessionID string, pkt *pb.Packet) error {
 	}
 	auditWal.mu.Lock()
 	defer auditWal.mu.Unlock()
-	switch pb.PacketType(pkt.GetType()) {
+	switch pb.PacketType(pkt.Type) {
 	case pbagent.PGConnectionWrite:
 		isSimpleQuery, queryBytes, err := pg.SimpleQueryContent(pkt.Payload)
 		if !isSimpleQuery {
@@ -127,7 +131,9 @@ func Close(sessionID string, client *apiclient.Client) error {
 	if err != nil {
 		return fmt.Errorf("failed decoding wal header object, err=%v", err)
 	}
-	var eventStreamList []types.SessionEventStream
+	var combinedOutput []byte
+	// [[event-stream] [event-stream] ...]
+	var eventStreamList []apitypes.SessionEventStream
 	eventSize := int64(0)
 	redactCount := int64(0)
 	truncated, err := auditWal.log.ReadFull(func(data []byte) error {
@@ -138,11 +144,18 @@ func Close(sessionID string, client *apiclient.Client) error {
 		// truncate when event is greater than 5000 bytes for tcp type
 		// it avoids auditing blob content for TCP (files, images, etc)
 		eventStream := truncateTCPEventStream(ev.Data, wh.ConnectionType)
-		eventStreamList = append(eventStreamList, types.SessionEventStream{
-			ev.EventTime.Sub(*wh.StartDate).Seconds(),
-			string(ev.EventType),
-			base64.StdEncoding.EncodeToString(eventStream),
-		})
+		switch wh.Verb {
+		case pb.ClientVerbExec:
+			if ev.EventType != eventlogv0.InputType {
+				combinedOutput = append(combinedOutput, eventStream...)
+			}
+		case pb.ClientVerbConnect:
+			eventStreamList = append(eventStreamList, apitypes.SessionEventStream{
+				ev.EventTime.Sub(*wh.StartDate).Seconds(),
+				string(ev.EventType),
+				base64.StdEncoding.EncodeToString(eventStream),
+			})
+		}
 		eventSize += int64(len(ev.Data))
 		redactCount += int64(ev.RedactCount)
 		return nil
@@ -150,13 +163,12 @@ func Close(sessionID string, client *apiclient.Client) error {
 	if err != nil {
 		return err
 	}
-	// TODO: close session in the new api endpoint
 	endDate := time.Now().UTC()
-	err = client.CloseSession(map[string]any{
-		"truncated":    truncated,
-		"end_date":     endDate,
-		"event_size":   eventSize,
-		"event_stream": eventStreamList,
+	err = client.CloseSession(sessionID, wh.SessionToken, apitypes.CloseSessionRequest{
+		EventStream: eventStreamList,
+		EventSize:   eventSize,
+		IsTruncated: truncated,
+		Output:      string(combinedOutput),
 	})
 	switch err {
 	case nil:

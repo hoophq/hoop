@@ -18,6 +18,7 @@ type GatewayContext struct {
 	Agent       apitypes.Agent
 
 	BearerToken string
+	IsAdminExec bool
 }
 
 func (c *GatewayContext) ValidateConnectionAttrs() error {
@@ -71,21 +72,3 @@ func ParseGatewayContextInto(ctx context.Context, into any) error {
 	}
 	return nil
 }
-
-// func parseToLegacyUserContext(apictx *types.APIContext) *user.Context {
-// 	return &user.Context{
-// 		Org: &user.Org{
-// 			Id:   apictx.OrgID,
-// 			Name: apictx.OrgName,
-// 		},
-// 		User: &user.User{
-// 			Id:      apictx.UserID,
-// 			Org:     apictx.OrgID,
-// 			Name:    apictx.UserName,
-// 			Email:   apictx.UserEmail,
-// 			Status:  user.StatusType(apictx.UserStatus),
-// 			SlackID: apictx.SlackID, // TODO: check this
-// 			Groups:  apictx.UserGroups,
-// 		},
-// 	}
-// }

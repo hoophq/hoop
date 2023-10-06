@@ -42,3 +42,21 @@ type Agent struct {
 	Mode     string            `json:"mode"`
 	Metadata AgentAuthMetadata `json:"metadata"`
 }
+
+type OpenSessionResponse struct {
+	SessionURL           string `json:"sessionUrl"`
+	HasReview            bool   `json:"hasReview"`
+	PostSaveSessionToken string `json:"postSaveSessionToken"`
+}
+
+// [10, 'i', "base64-stream"]
+type SessionEventStream []any
+
+type CloseSessionRequest struct {
+	// send event stream for postgres, mysql and console
+	EventStream []SessionEventStream `json:"eventStream"`
+	EventSize   int64                `json:"eventSize"`
+	IsTruncated bool                 `json:"truncated"`
+	// output is stdout + stderr
+	Output string `json:"output"`
+}

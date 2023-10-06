@@ -190,6 +190,7 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 				UserContext: gwctx.UserContext,
 				Connection:  gwctx.Connection,
 				BearerToken: gwctx.BearerToken,
+				IsAdminExec: gwctx.IsAdminExec,
 			}, stream)
 		}
 	}
