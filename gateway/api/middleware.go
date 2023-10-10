@@ -28,6 +28,32 @@ var (
 	debugRoutes             = os.Getenv("DEBUG_ROUTES") == "1" || os.Getenv("DEBUG_ROUTES") == "true"
 )
 
+func shouldByPassProxy(c *gin.Context) bool {
+	p := c.Request.URL.Path
+	backendAPI := c.Request.Header.Get("x-backend-api")
+	// always proxy if the client is explicitly setting up
+	if backendAPI == "express" {
+		return false
+	}
+
+	// these are legacy routes, it must bypass
+	// if is not explicity ask by the client (x-backend-api)
+	return !strings.HasPrefix(p, "/api") ||
+		p == "/api/connectionsapps" ||
+		// login / user routes
+		p == "/api/login" ||
+		p == "/api/callback" ||
+		p == "/api/userinfo" ||
+		strings.HasPrefix(p, "/api/users") ||
+		// misc
+		p == "/api/webhooks-dashboard" ||
+		p == "/api/healthz" ||
+		// proxymanager routes
+		strings.HasPrefix(p, "/api/proxymanager") ||
+		// plugins
+		strings.HasPrefix(p, "/api/plugins")
+}
+
 func (api *Api) proxyNodeAPIMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if debugRoutes {
@@ -38,9 +64,7 @@ func (api *Api) proxyNodeAPIMiddleware() gin.HandlerFunc {
 				c.Request.Header.Get("user-agent"),
 			)
 		}
-		if !strings.HasPrefix(c.Request.URL.Path, "/api/") ||
-			// connectionsapp authenticate agents, skip it
-			c.Request.URL.Path == "/api/connectionapps" {
+		if shouldByPassProxy(c) {
 			c.Next()
 			return
 		}
