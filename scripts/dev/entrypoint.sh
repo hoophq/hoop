@@ -15,7 +15,7 @@ echo "done"
 echo "--> STARTING AGENT (xtdb) ..."
 
 curl -s -f -o /dev/null "http://127.0.0.1:3001/_xtdb/status" || { echo "THE XTDB IS DOWN"; exit 1; }
-curl -s -f -o /dev/null "http://${NODE_API_ADDR}/" || { echo "THE NODE API IS DOWN AT ${NODE_API_ADDR}"; exit 1; }
+curl -s -f -o /dev/null "${NODE_API_URL}" || { echo "THE NODE API IS DOWN AT ${NODE_API_URL}"; exit 1; }
 
 AUTO_REGISTER=1 /app/hooplinux start agent &
 

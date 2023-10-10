@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"os"
 
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/log"
@@ -19,19 +21,18 @@ var (
 	hoopVersionStr  = version.Get().Version
 )
 
-type AuthError struct {
-	err    error
-	reason string
-}
-
 type Client struct {
 	apiURL      string
 	accessToken string
 }
 
-func New(apiURL, accessToken string) *Client {
+func New(accessToken string) *Client {
+	nodeApiUrl := os.Getenv("NODE_API_URL")
+	if _, err := url.Parse(nodeApiUrl); err != nil {
+		nodeApiUrl = "http://127.0.0.1:4001"
+	}
 	// TODO: add timeout to requests
-	return &Client{apiURL: apiURL, accessToken: accessToken}
+	return &Client{apiURL: nodeApiUrl, accessToken: accessToken}
 }
 
 func httpGetRequest(apiURL, accessToken string, into any) error {
@@ -80,7 +81,6 @@ func httpRequest(apiURL, method, bearerToken string, body, into any) (err error)
 	if err != nil {
 		return fmt.Errorf("failed creating http request: %v", err)
 	}
-	req.Header.Set("x-backend-api", "express")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", bearerToken))
 	// when bearer token is a session token, add this additional header

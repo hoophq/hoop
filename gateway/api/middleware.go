@@ -23,9 +23,100 @@ import (
 	"go.uber.org/zap"
 )
 
-var errInvalidAuthHeaderErr = errors.New("invalid authorization header")
+var (
+	errInvalidAuthHeaderErr = errors.New("invalid authorization header")
+	debugRoutes             = os.Getenv("DEBUG_ROUTES") == "1" || os.Getenv("DEBUG_ROUTES") == "true"
+)
+
+func (api *Api) proxyNodeAPIMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if debugRoutes {
+			log.Infof(`%s %s %v %s`,
+				c.Request.Method,
+				c.Request.URL.Path,
+				c.Request.ContentLength,
+				c.Request.Header.Get("user-agent"),
+			)
+		}
+		if !strings.HasPrefix(c.Request.URL.Path, "/api/") ||
+			// connectionsapp authenticate agents, skip it
+			c.Request.URL.Path == "/api/connectionapps" {
+			c.Next()
+			return
+		}
+
+		sub, err := api.validateClaims(c)
+		switch err {
+		case errInvalidAuthHeaderErr:
+			// It's not an authenticated route, or the client didn't pass a valid header.
+			// Let the next middleware to decide what to do.
+			c.Next()
+			return
+		case nil: // noop
+		default:
+			// It found a bearer token and for some reason failed to validate.
+			// End the request in this middleware
+			tokenHeader := c.GetHeader("authorization")
+			log.Infof("failed authenticating (proxy layer), %v, length=%v, reason=%v",
+				parseHeaderForDebug(tokenHeader), len(tokenHeader), err)
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+		// once we have the subject, we must enforce the authentication in this layer
+		ctx, err := api.UserHandler.Service.FindBySub(sub)
+		if err != nil || ctx.User == nil {
+			log.Debugf("failed searching for user, sub=%v, err=%v", sub, err)
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+
+		backendAPI := c.Request.Header.Get("x-backend-api")
+		if backendAPI == "express" || ctx.Org.IsApiV2 {
+			director := func(req *http.Request) {
+				req.Header = c.Request.Header
+				req.URL.Scheme = "http"
+				req.URL.Host = api.NodeApiURL.Host
+				req.URL.Path = c.Request.URL.Path
+			}
+			proxy := &httputil.ReverseProxy{Director: director}
+			proxy.ServeHTTP(c.Writer, c.Request)
+			c.Abort()
+			return
+		}
+
+		// The request was not proxied.
+		// Set the user context for the next layer
+		c.Set(storagev2.ContextKey,
+			storagev2.NewContext(ctx.User.Id, ctx.Org.Id, api.StoreV2).
+				WithUserInfo(ctx.User.Name, ctx.User.Email, string(ctx.User.Status), ctx.User.Groups).
+				WithOrgName(ctx.Org.Name).
+				WithApiURL(api.IDProvider.ApiURL).
+				WithGrpcURL(api.GrpcURL),
+		)
+		c.Set(user.ContextUserKey, ctx)
+		c.Next()
+	}
+}
 
 func (api *Api) Authenticate(c *gin.Context) {
+	// validate if the proxy layer performed the authentication
+	// in this case just set the logger and do nothing.
+	if obj, exists := c.Get(user.ContextUserKey); exists {
+		if ctx, _ := obj.(*user.Context); ctx != nil {
+			if api.logger != nil {
+				zaplogger := api.logger.With(
+					zap.String("org", ctx.User.Org),
+					zap.String("user", ctx.User.Email),
+					zap.Bool("isadm", ctx.User.IsAdmin()),
+				)
+				c.Set(user.ContextLoggerKey, zaplogger.Sugar())
+			}
+		}
+		c.Next()
+		return
+	}
+	// perform the normal authentication, the proxy was unable to
+	// to authenticate the request.
 	sub, err := api.validateClaims(c)
 	if err != nil {
 		tokenHeader := c.GetHeader("authorization")
@@ -72,7 +163,7 @@ func (api *Api) AuthenticateAgent(c *gin.Context) {
 		return
 	}
 
-	client := apiclient.New(api.IDProvider.ApiURL, tokenParts[1])
+	client := apiclient.New(tokenParts[1])
 	if u, _ := url.Parse(tokenParts[1]); u != nil && len(u.Path) == 65 {
 		// it is an old dsn, maintain compatibility
 		// <scheme>://<host>:<port>/<secretkey-hash>
@@ -163,29 +254,6 @@ func CORSMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		c.Next()
-	}
-}
-
-func proxyNodeAPIMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		backendAPI := c.Request.Header.Get("x-backend-api")
-		if backendAPI == "express" && strings.HasPrefix(c.Request.URL.Path, "/api/") {
-			nodeApiUrl := os.Getenv("NODE_API_ADDR")
-			if nodeApiUrl == "" {
-				nodeApiUrl = "127.0.0.1:4001"
-			}
-			director := func(req *http.Request) {
-				req.Header = c.Request.Header
-				req.URL.Scheme = "http"
-				req.URL.Host = nodeApiUrl
-				req.URL.Path = c.Request.URL.Path
-			}
-			proxy := &httputil.ReverseProxy{Director: director}
-			proxy.ServeHTTP(c.Writer, c.Request)
-			c.Abort()
-			return
-		}
 		c.Next()
 	}
 }

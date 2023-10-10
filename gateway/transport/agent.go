@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"sort"
@@ -113,7 +114,11 @@ func (s *Server) subscribeAgentSidecar(stream pb.Transport_ConnectServer) error 
 		return status.Errorf(codes.Internal, "missing connection-items header")
 	}
 
-	orgName, _ := s.UserService.GetOrgNameByID(clientKey.OrgID)
+	org, _ := s.UserService.GetOrgNameByID(clientKey.OrgID)
+	var orgName string
+	if org != nil {
+		orgName = org.Name
+	}
 	clientOrigin := pb.ConnectionOriginAgent
 
 	pluginContext := plugintypes.Context{
@@ -138,16 +143,16 @@ func (s *Server) subscribeAgentSidecar(stream pb.Transport_ConnectServer) error 
 		_ = s.pluginOnDisconnect(pluginContext, err)
 	})
 	agentObj := &apitypes.Agent{ID: agentID, Name: clientKey.Name}
-	agentErr = s.listenAgentMessages(&pluginContext, agentObj, stream)
+	agentErr = s.listenAgentMessages(&pluginContext, agentObj, newStreamWrapper(stream, clientKey.OrgID))
 	if agentErr == nil {
 		log.Warnf("agent return a nil error, it will not disconnect it properly, id=%v", agentID)
 	}
-	s.disconnectClient(agentID, agentErr)
+	DisconnectClient(agentID, agentErr)
 	return agentErr
 }
 
-func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer) error {
-	ctx := stream.Context()
+func (s *Server) subscribeAgent(grpcStream pb.Transport_ConnectServer) error {
+	ctx := grpcStream.Context()
 	md, _ := metadata.FromIncomingContext(ctx)
 
 	var gwctx authinterceptor.GatewayContext
@@ -187,14 +192,18 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer) error {
 		log.Warnf("failed authenticating, could not assign authentication context, type=%T", ctxVal)
 		return status.Error(codes.Unauthenticated, "invalid authentication, could not assign authentication context")
 	}
-	orgName, _ := s.UserService.GetOrgNameByID(gwctx.Agent.OrgID)
-
+	org, _ := s.UserService.GetOrgNameByID(gwctx.Agent.OrgID)
+	var orgName string
+	if org != nil {
+		orgName = org.Name
+	}
 	clientOrigin := pb.ConnectionOriginAgent
 	pluginContext := plugintypes.Context{
 		OrgID:        gwctx.Agent.OrgID,
 		ClientOrigin: clientOrigin,
 		ParamsData:   map[string]any{"client": clientOrigin},
 	}
+	stream := newStreamWrapper(grpcStream, gwctx.Agent.OrgID)
 	bindAgent(agentBindID, stream)
 
 	log.With("bind-id", agentBindID).Infof("agent connected: %s", gwctx.Agent)
@@ -209,14 +218,15 @@ func (s *Server) subscribeAgent(stream pb.Transport_ConnectServer) error {
 		if err := publishAgentDisconnect(s.IDProvider.ApiURL, gwctx.BearerToken); err != nil {
 			log.Warnf("failed publishing disconnect agent state, err=%v", err)
 		}
+		stream.Disconnect(context.Canceled)
 		_ = s.pluginOnDisconnect(pluginContext, err)
 	})
 	agentErr = s.listenAgentMessages(&pluginContext, &gwctx.Agent, stream)
-	s.disconnectClient(agentBindID, agentErr)
+	DisconnectClient(agentBindID, agentErr)
 	return agentErr
 }
 
-func (s *Server) listenAgentMessages(pctx *plugintypes.Context, ag *apitypes.Agent, stream pb.Transport_ConnectServer) error {
+func (s *Server) listenAgentMessages(pctx *plugintypes.Context, ag *apitypes.Agent, stream streamWrapper) error {
 	ctx := stream.Context()
 
 	for {
@@ -264,19 +274,15 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, ag *apitypes.Age
 					trackErr = fmt.Errorf(string(pkt.Payload))
 				}
 				s.trackSessionStatus(string(sessionID), pb.SessionPhaseClientSessionClose, trackErr)
-				s.disconnectClient(string(sessionID), trackErr)
+				DisconnectClient(string(sessionID), trackErr)
 				// now it's safe to remove the session from memory
 				delete(pctx.ParamsData, agentSessionKeyID)
 			}
 		}
 		if clientStream := getClientStream(sessionID); clientStream != nil {
-			s.processAgentPacket(pkt, clientStream)
+			_ = clientStream.Send(pkt)
 		}
 	}
-}
-
-func (s *Server) processAgentPacket(pkt *pb.Packet, clientStream pb.Transport_ConnectServer) {
-	_ = clientStream.Send(pkt)
 }
 
 func (s *Server) configurationData(orgName string) []byte {
@@ -298,4 +304,19 @@ func (s *Server) configurationData(orgName string) []byte {
 		})
 	}
 	return transportConfigBytes
+}
+
+func DisconnectAllAgentsByOrg(orgID string, err error) int {
+	ca.mu.Lock()
+	defer ca.mu.Unlock()
+	count := 0
+	for agentID, obj := range ca.agents {
+		if stream, ok := obj.(streamWrapper); ok {
+			if stream.orgID == orgID {
+				count++
+				DisconnectClient(agentID, err)
+			}
+		}
+	}
+	return count
 }

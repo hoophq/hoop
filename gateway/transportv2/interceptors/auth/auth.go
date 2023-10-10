@@ -19,7 +19,6 @@ import (
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
-	"github.com/runopsio/hoop/gateway/transport/adminapi"
 	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -114,16 +113,16 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 		return err
 	}
 
-	var clientApiV2 bool
+	var clientHeaderApiV2 bool
 	if v := md.Get("apiv2"); len(v) > 0 {
-		clientApiV2 = v[0] == "true"
+		clientHeaderApiV2 = v[0] == "true"
 	}
 
 	var ctxVal any
 	switch {
 	// administrative api authentication
-	case strings.HasPrefix(bearerToken, adminapi.PrefixAuthKey):
-		if !adminapi.Authenticate(bearerToken) {
+	case strings.HasPrefix(bearerToken, adminApiPrefixAuthKey):
+		if !authenticateAdminApi(bearerToken) {
 			log.Errorf("invalid admin api authentication, tokenlen=%v", len(bearerToken))
 			return status.Errorf(codes.Unauthenticated, "failed to authenticate internal request")
 		}
@@ -179,8 +178,15 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 		if err != nil {
 			return err
 		}
-
-		ctxVal = &GatewayContext{Agent: *ag, BearerToken: bearerToken}
+		org, _ := i.userService.GetOrgNameByID(ag.OrgID)
+		if org == nil {
+			return status.Errorf(codes.Internal, "failed obtaining organization context")
+		}
+		ctxVal = &GatewayContext{
+			Agent:       *ag,
+			BearerToken: bearerToken,
+			IsApiV2:     org.IsApiV2 || clientHeaderApiV2,
+		}
 	// client proxy manager authentication (access token)
 	case clientOrigin[0] == pb.ConnectionOriginClientProxyManager:
 		sub, err := i.idp.VerifyAccessToken(bearerToken)
@@ -192,36 +198,11 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 		if err != nil || userCtx.User == nil {
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
-		ctxVal = &GatewayContext{UserContext: *userCtx.ToAPIContext(), BearerToken: bearerToken}
-	// client proxy authentication (apiv2)
-	case clientApiV2:
-		sub, err := i.idp.VerifyAccessToken(bearerToken)
-		if err != nil {
-			log.Debugf("failed verifying access token, reason=%v", err)
-			return status.Errorf(codes.Unauthenticated, "invalid authentication")
-		}
-		userCtx, err := i.userService.FindBySub(sub)
-		if err != nil || userCtx.User == nil {
-			return status.Errorf(codes.Unauthenticated, "invalid authentication")
-		}
-		// gwctx := &gatewayContext{UserContext: *userCtx.ToAPIContext()}
-		connectionName := commongrpc.MetaGet(md, "connection-name")
-		conn, err := i.getConnectionV2(bearerToken, connectionName, userCtx)
-		if err != nil {
-			if err == apiclient.ErrNotFound {
-				return status.Errorf(codes.NotFound, "connection not found")
-			}
-			log.Errorf("failed obtaining connection %v, err=%v", connectionName, err)
-			sentry.CaptureException(err)
-			return status.Error(codes.Internal, "internal error, failed obtaining connection")
-		}
-		gwctx := &GatewayContext{
+		ctxVal = &GatewayContext{
 			UserContext: *userCtx.ToAPIContext(),
-			Connection:  *conn,
 			BearerToken: bearerToken,
+			IsApiV2:     userCtx.Org.IsApiV2 || clientHeaderApiV2,
 		}
-		gwctx.UserContext.ApiURL = i.idp.ApiURL
-		ctxVal = gwctx
 	// client proxy authentication (access token)
 	default:
 		sub, err := i.idp.VerifyAccessToken(bearerToken)
@@ -233,8 +214,27 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 		if err != nil || userCtx.User == nil {
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
-		gwctx := &GatewayContext{UserContext: *userCtx.ToAPIContext()}
+		gwctx := &GatewayContext{
+			UserContext: *userCtx.ToAPIContext(),
+			BearerToken: bearerToken,
+			IsApiV2:     userCtx.Org.IsApiV2 || clientHeaderApiV2,
+		}
+		gwctx.UserContext.ApiURL = i.idp.ApiURL
 		connectionName := commongrpc.MetaGet(md, "connection-name")
+		if gwctx.IsApiV2 {
+			conn, err := i.getConnectionV2(bearerToken, connectionName, userCtx)
+			if err != nil {
+				if err == apiclient.ErrNotFound {
+					return status.Errorf(codes.NotFound, "connection not found")
+				}
+				log.Errorf("failed obtaining connection %v, err=%v", connectionName, err)
+				sentry.CaptureException(err)
+				return status.Error(codes.Internal, "internal error, failed obtaining connection")
+			}
+			gwctx.Connection = *conn
+			ctxVal = gwctx
+			break
+		}
 		conn, err := i.getConnection(connectionName, userCtx)
 		if err != nil {
 			return err
@@ -242,7 +242,6 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 		if conn == nil {
 			return status.Errorf(codes.NotFound, "connection not found")
 		}
-		md.Set("subject", sub)
 		gwctx.Connection = *conn
 		ctxVal = gwctx
 	}
@@ -252,7 +251,7 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 
 // getConnectionV2 obtains connection & agent information from the node api v2
 func (i *interceptor) getConnectionV2(bearerToken, name string, userCtx *user.Context) (*types.ConnectionInfo, error) {
-	client := apiclient.New(i.idp.ApiURL, bearerToken)
+	client := apiclient.New(bearerToken)
 	conn, err := client.GetConnection(name)
 	if err != nil {
 		return nil, err
@@ -323,7 +322,7 @@ func authenticateClientKeyAgent(apiURL, dsnToken string) (*types.ClientKey, erro
 	// it is an old dsn, maintain compatibility
 	// <scheme>://<host>:<port>/<secretkey-hash>
 	if u, _ := url.Parse(dsnToken); u != nil && len(u.Path) == 65 {
-		ag, err := apiclient.New(apiURL, dsnToken).AuthClientKeys()
+		ag, err := apiclient.New(dsnToken).AuthClientKeys()
 		if err != nil {
 			return nil, err
 		}
@@ -351,7 +350,7 @@ func authenticateAgent(apiURL, bearerToken string, md metadata.MD) (*apitypes.Ag
 			Platform:      commongrpc.MetaGet(md, "platform"),
 		},
 	}
-	ag, err := apiclient.New(apiURL, bearerToken).AuthAgent(reqBody)
+	ag, err := apiclient.New(bearerToken).AuthAgent(reqBody)
 	switch err {
 	case apiclient.ErrUnauthorized:
 		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")

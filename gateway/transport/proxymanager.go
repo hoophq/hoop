@@ -62,7 +62,7 @@ func (s *Server) proxyManager(stream pb.Transport_ConnectServer) error {
 		log.With("origin", clientOrigin).Infof("grpc client connection canceled")
 	}
 	defer func() {
-		s.disconnectClient(sessionID, err)
+		DisconnectClient(sessionID, err)
 		_, _ = clientstate.Update(storectx, types.ClientStatusDisconnected)
 		stateID := clientstate.DeterministicClientUUID(storectx.UserID)
 		if len(stateID) > 0 {

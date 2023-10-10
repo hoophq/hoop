@@ -18,28 +18,26 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func SubscribeAgent(ctx *AgentContext, stream pb.Transport_ConnectServer) error {
-	clientOrigin := pb.ConnectionOriginAgent
+func SubscribeAgent(ctx *AgentContext, grpcStream pb.Transport_ConnectServer) error {
+	stream := memorystreams.NewWrapperStream(ctx.Agent.OrgID, grpcStream)
 	memorystreams.SetAgent(ctx.Agent.ID, stream)
+	defer func() {
+		memorystreams.DelAgent(ctx.Agent.ID)
+		// best effort
+		publishAgentDisconnect(ctx.ApiURL, ctx.BearerToken)
+	}()
 	log.With("id", ctx.Agent.ID).Infof("agent connected: %s", ctx.Agent)
 	_ = stream.Send(&pb.Packet{
 		Type: pbagent.GatewayConnectOK,
 		// TODO: add pyroscope & sentry monitoring
 		Payload: nil,
 	})
-	startDisconnectClientSink(ctx.Agent.ID, clientOrigin, func(err error) {
-		// TODO: send disconnect to all sessions in memory with this agent
-		memorystreams.DelAgent(ctx.Agent.ID)
-	})
-	err := listenAgentMessages(ctx, stream)
-	defer func() {
-		disconnectClient(ctx.Agent.ID, err)
-		_ = publishAgentDisconnect(ctx.ApiURL, ctx.BearerToken)
-	}()
-
-	return err
+	// TODO: disconnect all clients associated with this agent in memory only
+	// it should populate the disconnect reason when is a stateful connection (connect)
+	return listenAgentMessages(ctx, stream)
 }
-func listenAgentMessages(ctx *AgentContext, stream pb.Transport_ConnectServer) error {
+
+func listenAgentMessages(ctx *AgentContext, stream memorystreams.Wrapper) error {
 	sctx := stream.Context()
 	for {
 		select {
@@ -72,28 +70,28 @@ func listenAgentMessages(ctx *AgentContext, stream pb.Transport_ConnectServer) e
 			continue
 		}
 
-		if pb.PacketType(pkt.Type) == pbclient.SessionClose {
-			if sessionID := pkt.Spec[pb.SpecGatewaySessionID]; len(sessionID) > 0 {
-				var trackErr error
-				if len(pkt.Payload) > 0 {
-					trackErr = fmt.Errorf(string(pkt.Payload))
-				}
-				disconnectClient(string(sessionID), trackErr)
-				// now it's safe to remove the session from memory
-				err = auditfs.Close(string(sessionID), apiclient.New(ctx.ApiURL, ctx.BearerToken))
-				log.With("sid", string(sessionID), "agent", ctx.Agent.Name).
-					Infof("closing session, success=%v, err=%v", err == nil, err)
-			}
-		}
-
 		if clientStream := memorystreams.GetClient(sessionID); clientStream != nil {
 			_ = clientStream.Send(pkt)
+		}
+
+		if pb.PacketType(pkt.Type) == pbclient.SessionClose {
+			// TODO: save this error to audit
+			var trackErr error
+			if len(pkt.Payload) > 0 {
+				trackErr = fmt.Errorf(string(pkt.Payload))
+			}
+			_ = trackErr
+			memorystreams.DisconnectClient(sessionID, nil)
+			// now it's safe to remove the session from memory
+			err = auditfs.Close(sessionID, apiclient.New(ctx.BearerToken))
+			log.With("sid", sessionID, "agent", ctx.Agent.Name).
+				Infof("closing session, success=%v, err=%v", err == nil, err)
 		}
 	}
 }
 
 func publishAgentDisconnect(apiURL, bearerToken string) error {
 	reqBody := apitypes.AgentAuthRequest{Status: "DISCONNECTED"}
-	_, err := apiclient.New(apiURL, bearerToken).AuthAgent(reqBody)
+	_, err := apiclient.New(bearerToken).AuthAgent(reqBody)
 	return err
 }

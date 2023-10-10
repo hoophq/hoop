@@ -166,16 +166,10 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 		log.Debugf("client missing origin, client-metadata=%v", md)
 		return status.Error(codes.InvalidArgument, "missing origin")
 	}
-	var isApiV2Client bool
-	if v := md.Get("apiv2"); len(v) > 0 {
-		isApiV2Client = v[0] == "true"
-	}
-	if isApiV2Client {
-		val := ctx.Value(authinterceptor.GatewayContextKey{})
-		gwctx, ok := val.(*authinterceptor.GatewayContext)
-		if !ok {
-			return status.Error(codes.Internal, "failed to assign context")
-		}
+
+	val := ctx.Value(authinterceptor.GatewayContextKey{})
+	gwctx, _ := val.(*authinterceptor.GatewayContext)
+	if gwctx != nil && gwctx.IsApiV2 {
 		switch clientOrigin[0] {
 		case pb.ConnectionOriginAgent:
 			return transportv2.SubscribeAgent(&transportv2.AgentContext{
@@ -184,6 +178,7 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 				BearerToken: gwctx.BearerToken,
 			}, stream)
 		case pb.ConnectionOriginClientProxyManager:
+			return status.Error(codes.Unimplemented, "not implemented")
 			// return s.proxyManagerV2(stream)
 		default:
 			return transportv2.SubscribeClient(&transportv2.ClientContext{
@@ -317,9 +312,9 @@ func (s *Server) startDisconnectClientSink(clientID, clientOrigin string, discon
 	}()
 }
 
-// disconnectClient closes the disconnect sink channel
+// DisconnectClient closes the disconnect sink channel
 // triggering the disconnect logic at startDisconnectClientSink
-func (s *Server) disconnectClient(uid string, err error) {
+func DisconnectClient(uid string, err error) {
 	disconnectSink.mu.Lock()
 	defer disconnectSink.mu.Unlock()
 	disconnectCh, ok := disconnectSink.items[uid]
@@ -377,7 +372,7 @@ func (s *Server) getConnection(name string, userCtx *user.Context) (*types.Conne
 
 func publishAgentDisconnect(apiURL, bearerToken string) error {
 	reqBody := apitypes.AgentAuthRequest{Status: "DISCONNECTED"}
-	_, err := apiclient.New(apiURL, bearerToken).AuthAgent(reqBody)
+	_, err := apiclient.New(bearerToken).AuthAgent(reqBody)
 	return err
 }
 

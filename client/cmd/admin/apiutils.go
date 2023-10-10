@@ -73,10 +73,7 @@ func parseResourceOrDie(args []string, method, outputFlag string) *apiResource {
 		}
 	case "sessions":
 		apir.resourceList = false
-		apir.suffixEndpoint = path.Join("/api/plugins/audit/sessions", apir.name)
-		if isApiV2 {
-			apir.suffixEndpoint = path.Join("/api/sessions", apir.name)
-		}
+		apir.suffixEndpoint = path.Join("/api/sessions", apir.name)
 	case "users":
 		apir.resourceUpdate = true
 		apir.resourceCreate = true

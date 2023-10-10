@@ -23,8 +23,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func SubscribeClient(ctx *ClientContext, stream pb.Transport_ConnectServer) error {
-	md, _ := metadata.FromIncomingContext(stream.Context())
+func SubscribeClient(ctx *ClientContext, grpcStream pb.Transport_ConnectServer) error {
+	md, _ := metadata.FromIncomingContext(grpcStream.Context())
 	if err := ctx.ValidateConnectionAttrs(); err != nil {
 		return err
 	}
@@ -57,6 +57,7 @@ func SubscribeClient(ctx *ClientContext, stream pb.Transport_ConnectServer) erro
 	}
 
 	ctx.sessionID = mdget(md, "session-id")
+	stream := memorystreams.NewWrapperStream(ctx.UserContext.OrgID, grpcStream)
 	// subscribe the stream into the memory
 	memorystreams.SetClient(ctx.sessionID, stream)
 	defer func() {
@@ -98,7 +99,7 @@ func listenClientMessages(ctx *ClientContext, stream pb.Transport_ConnectServer)
 	for {
 		select {
 		case <-stream.Context().Done():
-			return nil
+			return stream.Context().Err()
 		default:
 		}
 		// receive data from stream
@@ -133,6 +134,7 @@ func listenClientMessages(ctx *ClientContext, stream pb.Transport_ConnectServer)
 			}
 		default:
 			// audit session packets
+			log.Infof("processing packet %s", pkt.Type)
 			if err := auditfs.Write(ctx.sessionID, pkt); err != nil {
 				log.Errorf("failed auditing packet, err=%v", err)
 				return status.Error(codes.Internal, "internal error, failed auditing packet")
@@ -194,7 +196,7 @@ func processSessionOpenPacket(ctx *ClientContext, pkt *pb.Packet) error {
 	// trust in this local client. When the connection is handled
 	// by a remote client, we perform the negotiation with the api instead.
 	if !ctx.IsAdminExec {
-		client := apiclient.New(ctx.UserContext.ApiURL, ctx.BearerToken)
+		client := apiclient.New(ctx.BearerToken)
 		resp, err := client.OpenSession(ctx.sessionID, ctx.Connection.Name, ctx.verb, string(pkt.Payload))
 		if err != nil {
 			log.Errorf("failed opening session with api, err=%v", err)
@@ -247,54 +249,4 @@ func processSessionOpenPacket(ctx *ClientContext, pkt *pb.Packet) error {
 	}
 	_ = agentStream.Send(&pb.Packet{Type: pbagent.SessionOpen, Spec: spec})
 	return nil
-}
-
-// startDisconnectClientSink listen for disconnects when the disconnect channel is closed
-// it timeout after 48 hours closing the client.
-func startDisconnectClientSink(clientID, clientOrigin string, disconnectFn func(err error)) {
-	// disconnectSink.mu.Lock()
-	// defer disconnectSink.mu.Unlock()
-	// disconnectCh := make(chan error)
-	// disconnectSink.items[clientID] = disconnectCh
-	// log.With("id", clientID).Debugf("start disconnect sink for %v", clientOrigin)
-	// go func() {
-	// 	switch clientOrigin {
-	// 	case pb.ConnectionOriginAgent:
-	// 		err := <-disconnectCh
-	// 		// wait to get time to persist any resources performed async
-	// 		defer closeChWithSleep(disconnectCh, time.Millisecond*150)
-	// 		log.With("id", clientID).Infof("disconnecting agent client, reason=%v", err)
-	// 		disconnectFn(err)
-	// 	default:
-	// 		// wait to get time to persist any resources performed async
-	// 		defer closeChWithSleep(disconnectCh, time.Millisecond*150)
-	// 		select {
-	// 		case err := <-disconnectCh:
-	// 			log.With("id", clientID).Infof("disconnecting proxy client, reason=%v", err)
-	// 			disconnectFn(err)
-	// 		case <-time.After(time.Hour * 48):
-	// 			log.With("id", clientID).Warnf("timeout (48h), disconnecting proxy client")
-	// 			disconnectFn(fmt.Errorf("timeout (48h)"))
-	// 		}
-	// 	}
-	// }()
-}
-
-// disconnectClient closes the disconnect sink channel
-// triggering the disconnect logic at startDisconnectClientSink
-func disconnectClient(uid string, err error) {
-	// disconnectSink.mu.Lock()
-	// defer disconnectSink.mu.Unlock()
-	// disconnectCh, ok := disconnectSink.items[uid]
-	// if !ok {
-	// 	return
-	// }
-	// if err != nil {
-	// 	select {
-	// 	case disconnectCh <- err:
-	// 	case <-time.After(time.Millisecond * 100):
-	// 		log.With("uid", uid).Errorf("timeout (100ms) send disconnect error to sink")
-	// 	}
-	// }
-	// delete(disconnectSink.items, uid)
 }
