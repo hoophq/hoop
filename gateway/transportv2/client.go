@@ -134,7 +134,6 @@ func listenClientMessages(ctx *ClientContext, stream pb.Transport_ConnectServer)
 			}
 		default:
 			// audit session packets
-			log.Infof("processing packet %s", pkt.Type)
 			if err := auditfs.Write(ctx.sessionID, pkt); err != nil {
 				log.Errorf("failed auditing packet, err=%v", err)
 				return status.Error(codes.Internal, "internal error, failed auditing packet")
