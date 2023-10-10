@@ -82,6 +82,15 @@ func Run(listenAdmAddr string) {
 		grpcURL = fmt.Sprintf("%s://%s:8443", scheme, u.Hostname())
 	}
 
+	nodeApiUrlStr := os.Getenv("NODE_API_URL")
+	if nodeApiUrlStr == "" {
+		nodeApiUrlStr = "http://127.0.0.1:4001"
+	}
+	nodeApiUrl, err := url.Parse(nodeApiUrlStr)
+	if err != nil {
+		log.Fatalf("NODE_API_URL in wrong format, err=%v", err)
+	}
+
 	agentService := agent.Service{Storage: &agent.Storage{Storage: s}}
 	connectionService := connection.Service{Storage: &connection.Storage{Storage: s}}
 	userService := user.Service{Storage: &user.Storage{Storage: s}}
@@ -114,6 +123,7 @@ func Run(listenAdmAddr string) {
 		Profile:           profile,
 		Analytics:         analyticsService,
 		GrpcURL:           grpcURL,
+		NodeApiURL:        nodeApiUrl,
 
 		StoreV2: storev2,
 	}

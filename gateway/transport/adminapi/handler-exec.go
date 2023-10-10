@@ -10,6 +10,7 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/gateway/clientexec"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
+	authinterceptor "github.com/runopsio/hoop/gateway/transportv2/interceptors/auth"
 )
 
 type ExecRequest struct {
@@ -56,7 +57,7 @@ func execPost(c *gin.Context) {
 	if err := validateExecRequest(req, c); err != nil {
 		return
 	}
-	authKey, cancelFn := authRequest()
+	authKey, cancelFn := authinterceptor.AuthAdminApiRequest()
 	// remove the authentication key from memory
 	defer cancelFn()
 

@@ -165,25 +165,26 @@ func (s *Storage) Signup(org *Org, user *User) (txId int64, err error) {
 	return txId, nil
 }
 
-func (s *Storage) GetOrgNameByID(orgID string) (string, error) {
+func (s *Storage) GetOrgNameByID(orgID string) (*Org, error) {
 	ednQuery := fmt.Sprintf(`{:query {
-		:find [orgname] 
+		:find [(pull ?o [*])]
 		:in [orgid]
-		:where [[?o :xt/id orgid]
-				[?o :org/name orgname]]}
+		:where [[?o :xt/id orgid]]}
         :in-args [%q]}`, orgID)
-	ednResp, err := s.QueryRaw([]byte(ednQuery))
+	b, err := s.Query([]byte(ednQuery))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	var resp [][]string
-	if err := edn.Unmarshal(ednResp, &resp); err != nil {
-		return "", nil
+
+	var u []Org
+	if err := edn.Unmarshal(b, &u); err != nil {
+		return nil, err
 	}
-	if len(resp) > 0 {
-		return resp[0][0], nil
+
+	if len(u) == 0 {
+		return nil, nil
 	}
-	return "", nil
+	return &u[0], nil
 }
 
 func (s *Storage) GetOrgByName(name string) (*Org, error) {

@@ -217,7 +217,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 	plugins, err := s.loadConnectPlugins(&gwctx.UserContext, pluginContext)
 	bindClient(sessionID, stream, plugins)
 	if err != nil {
-		s.disconnectClient(sessionID, err)
+		DisconnectClient(sessionID, err)
 		s.trackSessionStatus(sessionID, pb.SessionPhaseClientErr, err)
 		return status.Errorf(codes.FailedPrecondition, err.Error())
 	}
@@ -253,7 +253,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 			clientErr = nil
 		}
 	}
-	defer s.disconnectClient(sessionID, clientErr)
+	defer DisconnectClient(sessionID, clientErr)
 	if clientErr != nil {
 		s.trackSessionStatus(sessionID, pb.SessionPhaseClientErr, clientErr)
 		return clientErr
@@ -479,7 +479,7 @@ func (s *Server) ReviewStatusChange(ctx *user.Context, rev *types.Review) {
 		if rev.Status == types.ReviewStatusRejected {
 			packetType = pbclient.SessionClose
 			payload = []byte(`access to connection has been denied`)
-			s.disconnectClient(rev.Session, fmt.Errorf("access to connection has been denied"))
+			DisconnectClient(rev.Session, fmt.Errorf("access to connection has been denied"))
 		}
 		_ = clientStream.Send(&pb.Packet{
 			Type:    packetType,

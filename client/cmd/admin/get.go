@@ -77,19 +77,14 @@ var getCmd = &cobra.Command{
 				}
 			}
 		case "conn", "connection", "connections":
-			if isApiV2 {
-				agentHandlerFn := agentConnectedHandler(apir.conf)
-				// plugingHandlerFn := pluginHandler(apir)
-				policyHandlerFn := policiesHandler(apir)
+			agentHandlerFn := agentConnectedHandler(apir.conf)
+			if policyHandlerFn, requestOK := policiesHandler(apir); requestOK || isApiV2 {
 				fmt.Fprintln(w, "NAME\tCOMMAND\tTYPE\tREVIEW\tAGENT\tSTATUS\tPOLICIES\tUPDATED")
 				switch contents := obj.(type) {
 				case map[string]any:
 					m := contents
 					enabledPolicies := policyHandlerFn(fmt.Sprintf("%v", m["id"]), false)
-					agentID := fmt.Sprintf("%v", m["name"])
-					if isApiV2 {
-						agentID = fmt.Sprintf("%v", m["agentId"])
-					}
+					agentID := fmt.Sprintf("%v", m["agentId"])
 					status := agentHandlerFn("status", agentID)
 					agentName := agentHandlerFn("name", agentID)
 					cmdList, _ := m["command"].([]any)
@@ -100,10 +95,7 @@ var getCmd = &cobra.Command{
 				case []map[string]any:
 					for _, m := range contents {
 						enabledPolicies := policyHandlerFn(fmt.Sprintf("%v", m["id"]), true)
-						agentID := fmt.Sprintf("%v", m["agent_id"])
-						if isApiV2 {
-							agentID = fmt.Sprintf("%v", m["agentId"])
-						}
+						agentID := fmt.Sprintf("%v", m["agentId"])
 						status := agentHandlerFn("status", agentID)
 						agentName := agentHandlerFn("name", agentID)
 						cmdList, _ := m["command"].([]any)
@@ -115,7 +107,7 @@ var getCmd = &cobra.Command{
 				}
 				return
 			}
-			agentHandlerFn := agentConnectedHandler(apir.conf)
+			// fallback to plugins
 			plugingHandlerFn := pluginHandler(apir)
 			fmt.Fprintln(w, "NAME\tCOMMAND\tTYPE\tAGENT\tSTATUS\tSECRETS\tPLUGINS\t")
 			switch contents := obj.(type) {
@@ -123,9 +115,6 @@ var getCmd = &cobra.Command{
 				m := contents
 				enabledPlugins := plugingHandlerFn(fmt.Sprintf("%v", m["name"]), false)
 				agentID := fmt.Sprintf("%v", m["name"])
-				if isApiV2 {
-					agentID = fmt.Sprintf("%v", m["agentId"])
-				}
 				status := agentHandlerFn("status", agentID)
 				agentName := agentHandlerFn("name", agentID)
 				secrets, _ := m["secret"].(map[string]any)
@@ -141,9 +130,6 @@ var getCmd = &cobra.Command{
 				for _, m := range contents {
 					enabledPlugins := plugingHandlerFn(fmt.Sprintf("%v", m["name"]), true)
 					agentID := fmt.Sprintf("%v", m["agent_id"])
-					if isApiV2 {
-						agentID = fmt.Sprintf("%v", m["agentId"])
-					}
 					status := agentHandlerFn("status", agentID)
 					agentName := agentHandlerFn("name", agentID)
 					cmdList, _ := m["command"].([]any)
@@ -385,14 +371,17 @@ func agentConnectedHandler(conf *clientconfig.Config) func(key, agentID string) 
 	}
 }
 
-func policiesHandler(apir *apiResource) func(connectionID string, trunc bool) string {
+func policiesHandler(apir *apiResource) (func(connectionID string, trunc bool) string, bool) {
+	requestOK := true
 	data, _, err := httpRequest(&apiResource{suffixEndpoint: "/api/policies", conf: apir.conf, decodeTo: "list"})
 	if err != nil {
 		log.Debugf("failed retrieving list of policies, err=%v", err)
+		requestOK = false
 	}
 	contents, ok := data.([]map[string]any)
 	if !ok {
 		log.Debugf("failed type casting to []map[string]any")
+		requestOK = false
 	}
 
 	return func(connectionID string, trunc bool) string {
@@ -418,7 +407,7 @@ func policiesHandler(apir *apiResource) func(connectionID string, trunc bool) st
 			plugins = plugins[0:30] + "..."
 		}
 		return fmt.Sprintf("(%v) %s", len(policies), plugins)
-	}
+	}, requestOK
 }
 
 func joinCmd(cmdList []any, trunc bool) string {

@@ -8,6 +8,26 @@ import (
 	pb "github.com/runopsio/hoop/common/proto"
 )
 
+type streamWrapper struct {
+	pb.Transport_ConnectServer
+	cancelCtx context.Context
+	cancelFn  context.CancelCauseFunc
+	orgID     string
+}
+
+func newStreamWrapper(stream pb.Transport_ConnectServer, orgID string) streamWrapper {
+	ctx, cancelFn := context.WithCancelCause(stream.Context())
+	return streamWrapper{
+		Transport_ConnectServer: stream,
+		cancelCtx:               ctx,
+		cancelFn:                cancelFn,
+		orgID:                   orgID,
+	}
+}
+
+func (w streamWrapper) Context() context.Context { return w.cancelCtx }
+func (w streamWrapper) Disconnect(cause error)   { w.cancelFn(cause) }
+
 type dataStream struct {
 	pkt *pb.Packet
 	err error

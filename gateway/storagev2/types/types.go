@@ -24,6 +24,7 @@ type APIContext struct {
 	UserGroups []string `json:"user_groups"`
 	UserStatus string   `json:"user_status"`
 	SlackID    string   `json:"slack_id"`
+	IsApiV2    bool     `json:"api_v2"`
 
 	ApiURL  string `json:"-"`
 	GrpcURL string `json:"-"`
@@ -224,4 +225,10 @@ type ClientKey struct {
 	AgentMode string `json:"agent_mode" edn:"clientkey/agent-mode"`
 	Active    bool   `json:"active"     edn:"clientkey/enabled"`
 	DSNHash   string `json:"-"          edn:"clientkey/dsnhash"`
+}
+
+type Org struct {
+	ID      string `edn:"xt/id"`
+	Name    string `edn:"org/name"`
+	IsApiV2 bool   `edn:"org/api-v2"`
 }

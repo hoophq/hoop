@@ -33,7 +33,7 @@ set +o allexport
 : "${LOG_ENCODING:=console}"
 : "${ADMIN_USERNAME:=admin}"
 : "${PLUGIN_REGISTRY_URL:=https://pluginregistry.s3.amazonaws.com/packages.json}"
-: "${NODE_API_ADDR:=http://localhost:4001}"
+: "${NODE_API_URL:=http://localhost:4001}"
 
 
 trap ctrl_c INT
@@ -138,48 +138,6 @@ cat - > $HOME/.hoop/dev/xtdb.edn <<EOF
  :xtdb.http-server/server {:port 3001
                            :jetty-opts {:host "0.0.0.0"}}}
 EOF
-
-# cat - > $HOME/.hoop/dev/entrypoint.sh <<EOF
-# #!/bin/bash -x
-
-# cd /app/
-# java $JVM_OPTS -Dlogback.configurationFile=/app/logback.xml \
-#      -jar /app/xtdb-pg.jar &
-# echo "--> STARTING GATEWAY ..."
-
-# /app/hooplinux start gateway --listen-admin-addr "0.0.0.0:8099" &
-
-# until curl -s -f -o /dev/null "http://127.0.0.1:8009/api/healthz"
-# do
-#   sleep 1
-# done
-# echo "done"
-# echo "--> STARTING AGENT ..."
-
-# curl -s -f -o /dev/null "http://127.0.0.1:3001/_xtdb/status" || exit 137
-# AUTO_REGISTER=1 /app/hooplinux start agent &
-
-# ORG_ID=$(curl -s -XPOST '127.0.0.1:3001/_xtdb/query' \
-#   -H 'Content-Type: application/edn' \
-#   -H 'Accept: application/json' \
-#   --data-raw '{:query {
-#     :find [(pull ?org [*])]
-#     :where [[?org :org/name]]
-#   }}' | jq '.[][]["xt/id"]' -r)
-
-# PGPASSWORD=$PG_PASSWORD psql -h $PG_HOST -U $PG_USER --port $PG_PORT $PG_DB <<EOT
-# DELETE FROM agents WHERE id = '75122BCE-F957-49EB-A812-2AB60977CD9F';
-# INSERT INTO agents ("orgId", "createdBy", name, mode, token, status, id, "createdAt", "updatedAt")
-# VALUES ('${ORG_ID}', 'bot-dev', 'dev', 'standard', 'e42fb43b48a87bc474ef2e57bfcc3906a9d57549d5403ad828da89e2affe61c2', 'DISCONNECTED', '75122BCE-F957-49EB-A812-2AB60977CD9F', NOW(), NOW());
-# EOT
-
-# # get digest of the agent secret key
-# # echo -n xagt-zKQQA9PAjCVJ4O8VlE2QZScNEbfmFisg_OerkI21NE |sha256sum
-# export HOOP_DSN="http://dev:xagt-zKQQA9PAjCVJ4O8VlE2QZScNEbfmFisg_OerkI21NEg@127.0.0.1:8010?mode=standard&api=v2" 
-# /app/hooplinux start agent &
-
-# sleep infinity
-# EOF
 
 cp ./scripts/dev/entrypoint.sh $HOME/.hoop/dev/entrypoint.sh
 chmod +x $HOME/.hoop/dev/entrypoint.sh

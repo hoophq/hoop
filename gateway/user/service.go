@@ -24,7 +24,7 @@ type (
 		FindAll(context *Context) ([]User, error)
 		FindInvitedUser(email string) (*InvitedUser, error)
 		GetOrgByName(name string) (*Org, error)
-		GetOrgNameByID(orgID string) (string, error)
+		GetOrgNameByID(orgID string) (*Org, error)
 		FindByGroups(context *Context, groups []string) ([]User, error)
 		ListAllGroups(context *Context) ([]string, error)
 		FindOrgs() ([]Org, error)
@@ -36,8 +36,9 @@ type (
 	}
 
 	Org struct {
-		Id   string `json:"id"   edn:"xt/id"`
-		Name string `json:"name" edn:"org/name" binding:"required"`
+		Id      string `json:"id"     edn:"xt/id"`
+		Name    string `json:"name"   edn:"org/name" binding:"required"`
+		IsApiV2 bool   `json:"api_v2" edn:"org/api-v2"`
 	}
 
 	User struct {
@@ -94,6 +95,7 @@ func (c *Context) ToAPIContext() *types.APIContext {
 	if c.Org != nil {
 		apiCtx.OrgID = c.Org.Id
 		apiCtx.OrgName = c.Org.Name
+		apiCtx.IsApiV2 = c.Org.IsApiV2
 	}
 	return apiCtx
 }
@@ -144,7 +146,7 @@ func (s *Service) GetOrgByName(name string) (*Org, error) {
 	return s.Storage.GetOrgByName(name)
 }
 
-func (s *Service) GetOrgNameByID(id string) (string, error) {
+func (s *Service) GetOrgNameByID(id string) (*Org, error) {
 	return s.Storage.GetOrgNameByID(id)
 }
 

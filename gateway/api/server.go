@@ -2,7 +2,7 @@ package api
 
 import (
 	"fmt"
-	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -47,6 +47,7 @@ type (
 		SecurityHandler   security.Handler
 		IDProvider        *idp.Provider
 		GrpcURL           string
+		NodeApiURL        *url.URL
 		Profile           string
 		Analytics         user.Analytics
 		logger            *zap.Logger
@@ -69,7 +70,8 @@ func (api *Api) StartAPI(sentryInit bool) {
 	api.logger = zaplogger
 	// https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies
 	route.SetTrustedProxies(nil)
-	route.Use(proxyNodeAPIMiddleware())
+	route.Use(CORSMiddleware())
+	route.Use(api.proxyNodeAPIMiddleware())
 	// UI
 	staticUiPath := os.Getenv("STATIC_UI_PATH")
 	if staticUiPath == "" {
@@ -81,12 +83,9 @@ func (api *Api) StartAPI(sentryInit bool) {
 			c.File(fmt.Sprintf("%s/index.html", staticUiPath))
 			return
 		}
-		CORSMiddleware()(c)
 	})
 
 	rg := route.Group("/api")
-	rg.Use(CORSMiddleware())
-
 	if sentryInit {
 		rg.Use(sentrygin.New(sentrygin.Options{
 			Repanic: true,
@@ -255,6 +254,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest(analytics.EventFetchSessions),
 		api.SessionHandler.FindOne)
+	// DEPRECATED
 	route.GET("/plugins/audit/sessions/:session_id/status",
 		api.Authenticate,
 		api.SessionHandler.StatusHistory)
@@ -312,8 +312,6 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest(analytics.EventOpenWebhooksDashboard),
 		api.AdminOnly,
 		webhooksapi.Get)
-
-	route.POST("/webhooks", webhookTestHandler)
 }
 
 func (api *Api) CreateTrialEntities() error {
@@ -345,13 +343,4 @@ func (api *Api) CreateTrialEntities() error {
 	_, _ = api.UserHandler.Service.Signup(&org, &u)
 	_, err := api.AgentHandler.Service.Persist(&a)
 	return err
-}
-
-func webhookTestHandler(c *gin.Context) {
-	fmt.Printf("request on method=%v, headers=%v\n",
-		c.Request.Method, c.Request.Header)
-	var data map[string]any
-	_ = c.ShouldBindJSON(&data)
-	fmt.Printf("DATA=%#v\n", data)
-	c.Status(http.StatusOK)
 }

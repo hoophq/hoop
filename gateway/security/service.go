@@ -32,7 +32,7 @@ type (
 		FindAll(context *user.Context) ([]user.User, error)
 		FindBySub(sub string) (*user.Context, error)
 		GetOrgByName(name string) (*user.Org, error)
-		GetOrgNameByID(id string) (string, error)
+		GetOrgNameByID(orgID string) (*user.Org, error)
 		FindInvitedUser(email string) (*user.InvitedUser, error)
 		Persist(u any) error
 	}
@@ -297,13 +297,17 @@ func (s *Service) signupMultiTenant(context *user.Context, sub string, idTokenCl
 		if invitedUser != nil {
 			slackID = invitedUser.SlackID
 			if context.Org == nil {
-				orgName, err := s.UserService.GetOrgNameByID(invitedUser.Org)
+				org, err := s.UserService.GetOrgNameByID(invitedUser.Org)
 				if err != nil {
 					return err
 				}
+				if org == nil {
+					return fmt.Errorf("failed to obtain organization")
+				}
 				context.Org = &user.Org{
-					Id:   invitedUser.Org,
-					Name: orgName,
+					Id:      invitedUser.Org,
+					Name:    org.Name,
+					IsApiV2: org.IsApiV2,
 				}
 			}
 
