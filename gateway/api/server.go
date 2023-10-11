@@ -117,6 +117,10 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest(analytics.EventFetchUsers),
 		api.UserHandler.Userinfo)
+	route.PATCH("/users/self/slack",
+		api.Authenticate,
+		api.TrackRequest(analytics.EventUpdateUser),
+		api.UserHandler.UpdateSelfSlackID)
 	route.GET("/users/groups",
 		api.Authenticate,
 		api.UserHandler.UsersGroups)
