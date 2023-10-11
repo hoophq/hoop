@@ -28,7 +28,8 @@ type Client struct {
 
 func New(accessToken string) *Client {
 	nodeApiUrl := os.Getenv("NODE_API_URL")
-	if _, err := url.Parse(nodeApiUrl); err != nil {
+	if _, err := url.Parse(nodeApiUrl); err != nil || nodeApiUrl == "" {
+		log.Debugf("defaulting to localhost node api url")
 		nodeApiUrl = "http://127.0.0.1:4001"
 	}
 	// TODO: add timeout to requests
