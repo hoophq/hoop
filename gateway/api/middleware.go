@@ -39,7 +39,7 @@ func shouldByPassProxy(c *gin.Context) bool {
 	// these are legacy routes, it must bypass
 	// if is not explicity ask by the client (x-backend-api)
 	return !strings.HasPrefix(p, "/api") ||
-		p == "/api/connectionsapps" ||
+		p == "/api/connectionapps" ||
 		// login / user routes
 		p == "/api/login" ||
 		p == "/api/callback" ||
