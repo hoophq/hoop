@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/runopsio/hoop/client/backoff"
 	clientconfig "github.com/runopsio/hoop/client/config"
@@ -33,7 +34,7 @@ var (
 			}
 
 			var client pb.ClientTransport
-			err := backoff.Exponential2x(func() error {
+			err := backoff.Exponential2x(func(v time.Duration) error {
 				config, err := clientconfig.GetClientConfig()
 				if err != nil {
 					return err
@@ -45,7 +46,8 @@ var (
 				clientConfig.UserAgent = fmt.Sprintf("hoopcli/%v", version.Get().Version)
 				client, err = grpc.Connect(clientConfig, grpcClientOptions...)
 				if err != nil {
-					return backoff.Errorf("failed connecting to gateway, reason=%v", err)
+					log.Warnf("failed connecting to gateway, reason=%v", err)
+					return backoff.Error()
 				}
 				defer client.Close()
 				err = runAutoConnect(client)
@@ -63,7 +65,8 @@ var (
 					}
 				}
 				if err != nil {
-					return backoff.Errorf("failed processing proxy manager, reason=%v", err)
+					log.Warnf("failed processing proxy manager, reason=%v", err)
+					return backoff.Error()
 				}
 				return nil
 			})

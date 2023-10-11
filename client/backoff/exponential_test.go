@@ -15,7 +15,7 @@ func TestExponential2xMustMatchDuration(t *testing.T) {
 	want := time.Duration(0)
 	backoffDuration := time.Duration(1)
 	attempt := 1
-	err := Exponential2x(func() error {
+	err := Exponential2x(func(_ time.Duration) error {
 		if attempt > 15 {
 			return fmt.Errorf("stop")
 		}
