@@ -223,6 +223,7 @@ func (a *Handler) Userinfo(c *gin.Context) {
 		Groups        []string   `json:"groups"`
 		IsAdmin       bool       `json:"is_admin"`
 		IsMultiTenant bool       `json:"is_multitenant"`
+		IsApiV2       bool       `json:"is_apiv2"`
 	}{
 		ID:            ctx.User.Id,
 		Name:          ctx.User.Name,
@@ -232,6 +233,7 @@ func (a *Handler) Userinfo(c *gin.Context) {
 		Groups:        groupList,
 		IsAdmin:       ctx.User.IsAdmin(),
 		IsMultiTenant: IsOrgMultiTenant(),
+		IsApiV2:       ctx.Org.IsApiV2,
 	})
 }
 
