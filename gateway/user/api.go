@@ -1,6 +1,7 @@
 package user
 
 import (
+	"fmt"
 	"net/http"
 	"net/mail"
 
@@ -130,6 +131,40 @@ func (a *Handler) Put(c *gin.Context) {
 	a.Analytics.Identify(context.ToAPIContext())
 
 	c.JSON(http.StatusOK, existingUser)
+}
+
+func (a *Handler) UpdateSelfSlackID(c *gin.Context) {
+	ctx, _ := c.Get("context")
+	context := ctx.(*Context)
+	self, err := a.Service.FindOne(context, context.User.Id)
+	if err != nil {
+		log.Errorf("failed obtaining user from store, reason=%v", err)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining user"})
+		return
+	}
+	var req map[string]any
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	var slackID string
+	if id, ok := req["slack_id"]; ok {
+		slackID = fmt.Sprintf("%v", id)
+	}
+	if slackID == "" {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "missing slack_id attribute"})
+		return
+	}
+	self.SlackID = slackID
+	err = a.Service.Persist(self)
+	if err != nil {
+		log.Errorf("failed updating slack id of user, reason=%v", err)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating slack id"})
+		return
+	}
+	c.JSON(http.StatusOK, self)
 }
 
 func (a *Handler) Post(c *gin.Context) {
