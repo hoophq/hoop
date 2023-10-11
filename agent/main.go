@@ -12,22 +12,25 @@ import (
 	"time"
 
 	agentconfig "github.com/runopsio/hoop/agent/config"
+	"github.com/runopsio/hoop/client/backoff"
 	"github.com/runopsio/hoop/common/clientconfig"
 	"github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/common/version"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var (
 	defaultUserAgent = fmt.Sprintf("hoopagent/%v", version.Get().Version)
-	vsinfo           = version.Get()
+	vi               = version.Get()
 )
 
 func Run() {
 	config, err := agentconfig.Load()
 	if err != nil {
-		log.With("version", vsinfo.Version).Fatal(err)
+		log.With("version", vi.Version).Fatal(err)
 	}
 	// default to embedded mode if it's dsn type config to keep
 	// compatibility with old client keys that doesn't have the mode attribute param
@@ -49,18 +52,37 @@ func runDefaultMode(config *agentconfig.Config) {
 		log.Fatal(err)
 	}
 	clientConfig.UserAgent = defaultUserAgent
-	log.Infof("v2=%v, version=%v, platform=%v, type=%v, mode=%v, grpc_server=%v, tls=%v, strict-tls=%v - starting agent",
-		config.IsV2, vsinfo.Version, vsinfo.Platform, config.Type, config.AgentMode, config.URL, !config.IsInsecure(), vsinfo.StrictTLS)
+	log.Infof("version=%v, platform=%v, type=%v, mode=%v, grpc_server=%v, tls=%v, strict-tls=%v - starting agent",
+		vi.Version, vi.Platform, config.Type, config.AgentMode, config.URL, !config.IsInsecure(), vi.StrictTLS)
 
-	client, err := grpc.Connect(clientConfig, clientOptions...)
-	if err != nil {
-		log.Fatalf("failed to connect to %s, err=%v", config.URL, err.Error())
-	}
-	err = New(client, config).Run()
-	if err != io.EOF {
-		log.Fatalf("disconnected from %v, err=%v", config.URL, err.Error())
-	}
-	log.Warnf("disconnected from %v", config.URL)
+	_ = backoff.Exponential2x(func(v time.Duration) error {
+		log.With("version", vi.Version, "backoff", v.String()).
+			Infof("connecting to %v, tls=%v", clientConfig.ServerAddress, !config.IsInsecure())
+		client, err := grpc.Connect(clientConfig, clientOptions...)
+		if err != nil {
+			log.With("version", vi.Version, "backoff", v.String()).
+				Warnf("failed to connect to %s, reason=%v", config.URL, err.Error())
+			return backoff.Error()
+		}
+		defer client.Close()
+		err = New(client, config).Run()
+		var grpcStatusCode = codes.Code(99)
+		if status, ok := status.FromError(err); ok {
+			grpcStatusCode = status.Code()
+		}
+		switch grpcStatusCode {
+		case codes.Canceled:
+			// reset backoff
+			log.With("version", vi.Version, "backoff", v.String()).Infof("context canceled")
+			return nil
+		case codes.Unauthenticated:
+			log.With("version", vi.Version, "backoff", v.String()).Infof("unauthenticated")
+			return backoff.Error()
+		}
+		log.With("version", vi.Version, "backoff", v.String(), "status", grpcStatusCode).
+			Infof("disconnected from %v, reason=%v", config.URL, err)
+		return backoff.Error()
+	})
 }
 
 func runEmbeddedMode(config *agentconfig.Config) {
@@ -76,10 +98,10 @@ func runEmbeddedMode(config *agentconfig.Config) {
 		return
 	}
 	log.Infof("v2=%v, version=%v, platform=%v, api-url=%v, strict-tls=%v, connections=%v - starting agent",
-		config.IsV2, vsinfo.Version, vsinfo.Platform, apiURL, vsinfo.StrictTLS, connectionList)
+		config.IsV2, vi.Version, vi.Platform, apiURL, vi.StrictTLS, connectionList)
 	for {
 		grpcURL := fetchGrpcURL(apiURL, dsnKey, connectionList)
-		isInsecure := !vsinfo.StrictTLS && (strings.HasPrefix(grpcURL, "http://") || strings.HasPrefix(grpcURL, "grpc://"))
+		isInsecure := !vi.StrictTLS && (strings.HasPrefix(grpcURL, "http://") || strings.HasPrefix(grpcURL, "grpc://"))
 		log.Infof("connecting to %v, tls=%v", grpcURL, !isInsecure)
 		srvAddr, err := grpc.ParseServerAddress(grpcURL)
 		if err != nil {
