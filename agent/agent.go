@@ -17,6 +17,7 @@ import (
 	"github.com/runopsio/hoop/agent/dcm"
 	"github.com/runopsio/hoop/agent/dlp"
 	"github.com/runopsio/hoop/agent/hook"
+	"github.com/runopsio/hoop/agent/secretsmanager"
 	term "github.com/runopsio/hoop/agent/terminal"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/memory"
@@ -260,8 +261,8 @@ func (a *Agent) decodeConnectionParams(sessionID []byte, pkt *pb.Packet) *pb.Age
 	var connParams pb.AgentConnectionParams
 	encConnectionParams := pkt.Spec[pb.SpecAgentConnectionParamsKey]
 	if err := pb.GobDecodeInto(encConnectionParams, &connParams); err != nil {
-		log.Errorf("session=%v - failed decoding connection params=%#v, err=%v",
-			string(sessionID), string(encConnectionParams), err)
+		log.With("sid", string(sessionID)).Errorf("failed decoding connection params=%#v, err=%v",
+			string(encConnectionParams), err)
 		sentry.CaptureException(err)
 		_ = a.client.Send(&pb.Packet{
 			Type:    pbclient.SessionClose,
@@ -273,11 +274,25 @@ func (a *Agent) decodeConnectionParams(sessionID []byte, pkt *pb.Packet) *pb.Age
 		})
 		return nil
 	}
+	envVars, err := secretsmanager.Decode(connParams.EnvVars)
+	if err != nil {
+		errMsg := fmt.Sprintf("failed decoding environment variables %v", err)
+		log.With("sid", string(sessionID)).Warn(errMsg)
+		_ = a.client.Send(&pb.Packet{
+			Type:    pbclient.SessionClose,
+			Payload: []byte(errMsg),
+			Spec: map[string][]byte{
+				pb.SpecClientExitCodeKey: []byte(`1`),
+				pb.SpecGatewaySessionID:  sessionID,
+			},
+		})
+		return nil
+	}
+	connParams.EnvVars = envVars
 	if clientEnvVarsEnc := pkt.Spec[pb.SpecClientExecEnvVar]; len(clientEnvVarsEnc) > 0 {
 		var clientEnvVars map[string]string
 		if err := pb.GobDecodeInto(clientEnvVarsEnc, &clientEnvVars); err != nil {
-			log.Errorf("session=%v - failed decoding client env vars, err=%v", string(sessionID), err)
-			sentry.CaptureException(err)
+			log.With("sid", string(sessionID)).Errorf("failed decoding client env vars, err=%v", err)
 			_ = a.client.Send(&pb.Packet{
 				Type:    pbclient.SessionClose,
 				Payload: []byte(`internal error, failed decoding client env vars`),

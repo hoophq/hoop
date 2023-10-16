@@ -12,7 +12,7 @@ import (
 	"time"
 
 	agentconfig "github.com/runopsio/hoop/agent/config"
-	"github.com/runopsio/hoop/client/backoff"
+	"github.com/runopsio/hoop/common/backoff"
 	"github.com/runopsio/hoop/common/clientconfig"
 	"github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"

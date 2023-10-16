@@ -5,9 +5,9 @@ import (
 	"io"
 	"time"
 
-	"github.com/runopsio/hoop/client/backoff"
 	clientconfig "github.com/runopsio/hoop/client/config"
 	"github.com/runopsio/hoop/client/proxy"
+	"github.com/runopsio/hoop/common/backoff"
 	"github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/memory"
