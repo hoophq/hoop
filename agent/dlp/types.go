@@ -31,7 +31,6 @@ type (
 	}
 	redactPostgresMiddleware struct {
 		dlpClient       Client
-		redactWriter    pb.RedactWriterCloser
 		dataRowPackets  *bytes.Buffer
 		typedPackets    *bytes.Buffer
 		infoTypes       []*dlppb.InfoType

@@ -133,8 +133,7 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	if dlpc, ok := a.connStore.Get(dlpClientKey).(dlp.Client); ok {
 		dlpClient = dlpc
 	}
-	redactWriter := pb.NewRedactStreamWriter(a.client, pbclient.PGConnectionWrite, pkt.Spec)
-	redactmiddleware, err := dlp.NewRedactMiddleware(dlpClient, redactWriter, connParams.DLPInfoTypes...)
+	redactmiddleware, err := dlp.NewRedactMiddleware(dlpClient, connParams.DLPInfoTypes...)
 	if err != nil {
 		log.Printf("failed creating redact middleware, err=%v", err)
 		a.writePGClientErr(sessionID, swPgClient,
