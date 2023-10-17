@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	pbdlp "github.com/runopsio/hoop/common/dlp"
 	"testing"
+
+	pb "github.com/runopsio/hoop/common/proto"
 )
 
 type fakeClient struct {
@@ -13,7 +14,7 @@ type fakeClient struct {
 }
 
 func (c *fakeClient) DeidentifyContent(ctx context.Context, conf *deidentifyConfig, chunkIdx int, input *inputData) *Chunk {
-	chunk := &Chunk{index: chunkIdx, transformationSummary: &pbdlp.TransformationSummary{}}
+	chunk := &Chunk{index: chunkIdx, transformationSummary: &pb.TransformationSummary{}}
 	if input.inputTable != nil {
 		chunk.data = encodeToDataRow(input.inputTable)
 	}

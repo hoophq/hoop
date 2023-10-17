@@ -99,6 +99,13 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context) error {
 		if err != nil {
 			return err
 		}
+		eventSize += int64(len(ev.Data))
+		redactCount += int64(ev.RedactCount)
+		// don't process empty event streams
+		if len(ev.Data) == 0 {
+			return nil
+		}
+
 		// truncate when event is greater than 5000 bytes for tcp type
 		// it avoids auditing blob content for TCP (files, images, etc)
 		eventStream := p.truncateTCPEventStream(ev.Data, wh.ConnectionType)
@@ -107,8 +114,6 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context) error {
 			string(ev.EventType),
 			base64.StdEncoding.EncodeToString(eventStream),
 		})
-		eventSize += int64(len(ev.Data))
-		redactCount += int64(ev.RedactCount)
 		return nil
 	})
 	if err != nil {

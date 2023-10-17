@@ -47,6 +47,19 @@ type (
 		ExecRPCOnSend(*pluginhooks.Request) ([]byte, error)
 		ExecRPCOnRecv(*pluginhooks.Request) ([]byte, error)
 	}
+
+	WriterWithSummary interface {
+		WriteWithSummary(data []byte, ts *TransformationSummary) (int, error)
+	}
+
+	TransformationSummary struct {
+		Index int
+		Err   error
+		// [info-type, transformed-bytes]
+		Summary []string
+		// [[count, code, details] ...]
+		SummaryResult [][]string
+	}
 )
 
 func (t PacketType) String() string {
@@ -127,6 +140,17 @@ func (s *streamWriter) Write(data []byte) (int, error) {
 	return len(p.Payload), s.client.Send(p)
 }
 
+func (s *streamWriter) WriteWithSummary(data []byte, ts *TransformationSummary) (int, error) {
+	if s.client == nil {
+		return 0, fmt.Errorf("stream writer client is empty")
+	}
+	p := &Packet{Spec: s.packetSpec, Type: s.packetType.String(), Payload: data}
+	if tsEnc, _ := GobEncode([]*TransformationSummary{ts}); tsEnc != nil {
+		p.Spec[SpecDLPTransformationSummary] = tsEnc
+	}
+	return len(p.Payload), s.client.Send(p)
+}
+
 func (s *streamWriter) Close() error {
 	if s.client != nil {
 		_, _ = s.client.Close()
@@ -161,4 +185,15 @@ func IsInList(item string, items []string) bool {
 		}
 	}
 	return false
+}
+
+func (t *TransformationSummary) String() string {
+	if len(t.Summary) == 2 {
+		return fmt.Sprintf("chunk:%v, infotype:%v, transformedbytes:%v, result:%v",
+			t.Index, t.Summary[0], t.Summary[1], t.SummaryResult)
+	}
+	if t.Err != nil {
+		return fmt.Sprintf("chunk:%v, err:%v", t.Index, t.Err)
+	}
+	return ""
 }

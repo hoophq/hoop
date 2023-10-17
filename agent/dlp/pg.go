@@ -9,12 +9,12 @@ import (
 	"math"
 	"time"
 
-	"github.com/runopsio/hoop/common/log"
-
 	"cloud.google.com/go/dlp/apiv2/dlppb"
 	"github.com/getsentry/sentry-go"
 	"github.com/runopsio/hoop/agent/pg"
+	"github.com/runopsio/hoop/common/log"
 	pgtypes "github.com/runopsio/hoop/common/pg"
+	"github.com/runopsio/hoop/common/proto"
 )
 
 func NewRedactMiddleware(c Client, infoTypes ...string) (*redactPostgresMiddleware, error) {
@@ -30,7 +30,7 @@ func NewRedactMiddleware(c Client, infoTypes ...string) (*redactPostgresMiddlewa
 	}, nil
 }
 
-func (m *redactPostgresMiddleware) Handler(next pg.NextFn, pkt *pg.Packet, w pg.ResponseWriter) {
+func (m *redactPostgresMiddleware) Handler(next pg.NextFn, pkt *pg.Packet, rw pg.ResponseWriter) {
 	if m.dlpClient == nil || len(m.infoTypes) == 0 {
 		next()
 		return
@@ -61,18 +61,18 @@ func (m *redactPostgresMiddleware) Handler(next pg.NextFn, pkt *pg.Packet, w pg.
 	}
 	if pktLength > m.maxPacketLength || m.rowCount >= m.maxRows {
 		log.Printf("redact and write, buffersize=%v, rows=%v/%v", pktLength, m.rowCount, m.maxRows)
-		m.redactAndWrite(w)
+		m.redactAndWrite(rw)
 		return
 	}
 	// assuming that a DataRow starts the buffering
 	// and a server ready for query packet ends it.
 	if pkt.Type() == pgtypes.ServerReadyForQuery {
 		log.Printf("redact and write, rows=%v/%v", m.rowCount, m.maxRows)
-		m.redactAndWrite(w)
+		m.redactAndWrite(rw)
 	}
 }
 
-func (m *redactPostgresMiddleware) redactAndWrite(w pg.ResponseWriter) {
+func (m *redactPostgresMiddleware) redactAndWrite(rw pg.ResponseWriter) {
 	defer func() { m.dataRowPackets.Reset(); m.typedPackets.Reset(); m.rowCount = 0 }()
 	redactedChunk, err := redactDataRow(m.dlpClient, &deidentifyConfig{
 		maskingCharacter: "#",
@@ -91,7 +91,14 @@ func (m *redactPostgresMiddleware) redactAndWrite(w pg.ResponseWriter) {
 		log.Println(errMsg)
 		sentry.CaptureException(errMsg)
 	}
-	if _, err = w.Write(redactedChunk.data.Bytes()); err != nil {
+
+	switch v := rw.(type) {
+	case proto.WriterWithSummary:
+		_, err = v.WriteWithSummary(redactedChunk.data.Bytes(), redactedChunk.transformationSummary)
+	default:
+		_, err = v.Write(redactedChunk.data.Bytes())
+	}
+	if err != nil {
 		errMsg := fmt.Errorf("failed writing packet to response writer, err=%v", err)
 		log.Println(errMsg)
 		sentry.CaptureException(errMsg)

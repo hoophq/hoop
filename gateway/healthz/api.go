@@ -12,22 +12,24 @@ import (
 	"github.com/runopsio/hoop/common/version"
 )
 
-// Liveness validates if the gateway ports (8009-8010) has connectivity
-func LivenessHandler(c *gin.Context) {
-	grpcLivenessErr := checkAddrLiveness(grpc.LocalhostAddr)
-	apiLivenessErr := checkAddrLiveness("127.0.0.1:8009")
-	if grpcLivenessErr != nil || apiLivenessErr != nil {
-		msg := fmt.Sprintf("gateway-grpc=%v, gateway-api=%v", grpcLivenessErr, apiLivenessErr)
-		c.JSON(http.StatusBadRequest, gin.H{"liveness": msg})
-		return
-	}
+// Liveness validates if the gateway ports has connectivity
+func LivenessHandler(nodeApiAddr string) func(_ *gin.Context) {
+	return func(c *gin.Context) {
+		grpcLivenessErr := checkAddrLiveness(grpc.LocalhostAddr)
+		apiLivenessErr := checkAddrLiveness(nodeApiAddr)
+		if grpcLivenessErr != nil || apiLivenessErr != nil {
+			msg := fmt.Sprintf("gateway-grpc=%v, gateway-api=%v", grpcLivenessErr, apiLivenessErr)
+			c.JSON(http.StatusBadRequest, gin.H{"liveness": msg})
+			return
+		}
 
-	c.JSON(http.StatusOK, gin.H{
-		"liveness": "OK",
-		"webapp":   appruntime.WebAppCommit,
-		"api":      appruntime.NodeApiCommit,
-		"gw":       version.Get().GitCommit,
-	})
+		c.JSON(http.StatusOK, gin.H{
+			"liveness": "OK",
+			"webapp":   appruntime.WebAppCommit,
+			"api":      appruntime.NodeApiCommit,
+			"gw":       version.Get().GitCommit,
+		})
+	}
 }
 
 func checkAddrLiveness(addr string) error {
