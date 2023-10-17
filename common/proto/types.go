@@ -47,6 +47,26 @@ type (
 		ExecRPCOnSend(*pluginhooks.Request) ([]byte, error)
 		ExecRPCOnRecv(*pluginhooks.Request) ([]byte, error)
 	}
+
+	RedactWriterCloser interface {
+		io.Closer
+		Write(b []byte, ts *TransformationSummary) (int, error)
+	}
+
+	TransformationSummary struct {
+		Index int
+		Err   error
+		// [info-type, transformed-bytes]
+		Summary []string
+		// [[count, code, details] ...]
+		SummaryResult [][]string
+	}
+
+	redactStreamWriter struct {
+		client     ClientTransport
+		packetType PacketType
+		packetSpec map[string][]byte
+	}
 )
 
 func (t PacketType) String() string {
@@ -134,6 +154,28 @@ func (s *streamWriter) Close() error {
 	return nil
 }
 
+func NewRedactStreamWriter(client ClientTransport, pktType PacketType, spec map[string][]byte) RedactWriterCloser {
+	return &redactStreamWriter{client: client, packetType: pktType, packetSpec: spec}
+}
+
+func (r *redactStreamWriter) Write(data []byte, ts *TransformationSummary) (int, error) {
+	if r.client == nil {
+		return 0, fmt.Errorf("stream writer client is empty")
+	}
+	p := &Packet{Spec: r.packetSpec, Type: r.packetType.String(), Payload: data}
+	if tsEnc, _ := GobEncode([]*TransformationSummary{ts}); tsEnc != nil {
+		p.Spec[SpecDLPTransformationSummary] = tsEnc
+	}
+	return len(p.Payload), r.client.Send(p)
+}
+
+func (r *redactStreamWriter) Close() error {
+	if r.client != nil {
+		_, _ = r.client.Close()
+	}
+	return nil
+}
+
 func GobEncode(data any) ([]byte, error) {
 	buf := &bytes.Buffer{}
 	err := gob.NewEncoder(buf).Encode(data)
@@ -161,4 +203,15 @@ func IsInList(item string, items []string) bool {
 		}
 	}
 	return false
+}
+
+func (t *TransformationSummary) String() string {
+	if len(t.Summary) == 2 {
+		return fmt.Sprintf("chunk:%v, infotype:%v, transformedbytes:%v, result:%v",
+			t.Index, t.Summary[0], t.Summary[1], t.SummaryResult)
+	}
+	if t.Err != nil {
+		return fmt.Sprintf("chunk:%v, err:%v", t.Index, t.Err)
+	}
+	return ""
 }

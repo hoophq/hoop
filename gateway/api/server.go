@@ -100,8 +100,8 @@ func (api *Api) StartAPI(sentryInit bool) {
 
 func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.GET("/login", api.SecurityHandler.Login)
-	route.GET("/healthz", healthz.LivenessHandler)
 	route.GET("/callback", api.SecurityHandler.Callback)
+	route.GET("/healthz", healthz.LivenessHandler(api.NodeApiURL.Host))
 
 	route.GET("/users",
 		api.Authenticate,

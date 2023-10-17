@@ -6,7 +6,6 @@ import (
 
 	dlp "cloud.google.com/go/dlp/apiv2"
 	"cloud.google.com/go/dlp/apiv2/dlppb"
-	pbdlp "github.com/runopsio/hoop/common/dlp"
 	pb "github.com/runopsio/hoop/common/proto"
 )
 
@@ -32,6 +31,7 @@ type (
 	}
 	redactPostgresMiddleware struct {
 		dlpClient       Client
+		redactWriter    pb.RedactWriterCloser
 		dataRowPackets  *bytes.Buffer
 		typedPackets    *bytes.Buffer
 		infoTypes       []*dlppb.InfoType
@@ -42,7 +42,7 @@ type (
 
 	Chunk struct {
 		index                 int
-		transformationSummary *pbdlp.TransformationSummary
+		transformationSummary *pb.TransformationSummary
 		data                  *bytes.Buffer
 	}
 	client struct {

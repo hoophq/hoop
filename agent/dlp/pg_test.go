@@ -6,6 +6,7 @@ import (
 
 	"github.com/runopsio/hoop/agent/pg"
 	pgtypes "github.com/runopsio/hoop/common/pg"
+	pb "github.com/runopsio/hoop/common/proto"
 )
 
 type fakeResponseWriter struct {
@@ -15,7 +16,7 @@ type fakeResponseWriter struct {
 }
 
 func (w *fakeResponseWriter) Close() error { return nil }
-func (w *fakeResponseWriter) Write(got []byte) (int, error) {
+func (w *fakeResponseWriter) Write(got []byte, _ *pb.TransformationSummary) (int, error) {
 	expected := w.dataRowsBuf.Bytes()
 	if !bytes.Equal(expected, got) {
 		w.t.Errorf("data row packet differs , got=%X, expected=%X", got, expected)
@@ -93,14 +94,14 @@ func TestRedacttMiddleware(t *testing.T) {
 		},
 	} {
 		t.Run(tt.msg, func(t *testing.T) {
-			redactmid, _ := NewRedactMiddleware(tt.client, "URL")
+			redactmid, _ := NewRedactMiddleware(tt.client, tt.responseWriter, "URL")
 			if tt.maxPacketSize > 0 {
 				redactmid.maxPacketLength = tt.maxPacketSize
 			}
 			for _, r := range tt.dataRowPackets {
 				_, _ = tt.responseWriter.dataRowsBuf.Write(r.Encode())
 				callNextMiddleware := false
-				redactmid.Handler(func() { callNextMiddleware = true }, r, tt.responseWriter)
+				redactmid.Handler(func() { callNextMiddleware = true }, r, nil)
 				if callNextMiddleware != tt.shouldCallNextMiddleware {
 					t.Errorf("should call next middleware differs, got=%v, expected=%v", callNextMiddleware, tt.shouldCallNextMiddleware)
 				}

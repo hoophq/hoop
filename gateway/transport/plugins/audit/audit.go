@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	pbdlp "github.com/runopsio/hoop/common/dlp"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/memory"
 	"github.com/runopsio/hoop/common/pg"
@@ -92,8 +91,12 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 }
 
 func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {
-	dlpCount := decodeDlpSummary(pkt)
+	redactCount := decodeDlpSummary(pkt)
 	switch pb.PacketType(pkt.GetType()) {
+	case pbclient.PGConnectionWrite, pbclient.MySQLConnectionWrite:
+		if redactCount > 0 {
+			return nil, p.writeOnReceive(pctx.SID, 'o', redactCount, nil)
+		}
 	case pbagent.PGConnectionWrite:
 		isSimpleQuery, queryBytes, err := pg.SimpleQueryContent(pkt.Payload)
 		if !isSimpleQuery {
@@ -103,14 +106,14 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 			log.With("sid", pctx.SID).Errorf("failed parsing simple query data, err=%v", err)
 			return nil, fmt.Errorf("failed obtaining simple query data, reason=%v", err)
 		}
-		return nil, p.writeOnReceive(pctx.SID, 'i', dlpCount, queryBytes)
+		return nil, p.writeOnReceive(pctx.SID, 'i', 0, queryBytes)
 	case pbagent.MySQLConnectionWrite:
 		if queryBytes := decodeMySQLCommandQuery(pkt.Payload); queryBytes != nil {
-			return nil, p.writeOnReceive(pctx.SID, 'i', dlpCount, queryBytes)
+			return nil, p.writeOnReceive(pctx.SID, 'i', 0, queryBytes)
 		}
 	case pbclient.WriteStdout,
 		pbclient.WriteStderr:
-		err := p.writeOnReceive(pctx.SID, 'o', dlpCount, pkt.Payload)
+		err := p.writeOnReceive(pctx.SID, 'o', redactCount, pkt.Payload)
 		if err != nil {
 			log.Warnf("failed writing agent packet response, err=%v", err)
 		}
@@ -118,12 +121,12 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 	case pbclient.SessionClose:
 		defer p.closeSession(pctx)
 		if len(pkt.Payload) > 0 {
-			return nil, p.writeOnReceive(pctx.SID, eventlogv0.ErrorType, dlpCount, pkt.Payload)
+			return nil, p.writeOnReceive(pctx.SID, eventlogv0.ErrorType, redactCount, pkt.Payload)
 		}
 	case pbagent.ExecWriteStdin,
 		pbagent.TerminalWriteStdin,
 		pbagent.TCPConnectionWrite:
-		return nil, p.writeOnReceive(pctx.SID, 'i', dlpCount, pkt.Payload)
+		return nil, p.writeOnReceive(pctx.SID, 'i', redactCount, pkt.Payload)
 	}
 	return nil, nil
 }
@@ -200,20 +203,18 @@ func (p *auditPlugin) closeSession(pctx plugintypes.Context) {
 
 func (p *auditPlugin) OnShutdown() {}
 
-func decodeDlpSummary(pkt *pb.Packet) int64 {
+func decodeDlpSummary(pkt *pb.Packet) (counter int64) {
 	tsEnc := pkt.Spec[pb.SpecDLPTransformationSummary]
 	if tsEnc == nil {
 		return 0
 	}
-	var ts []*pbdlp.TransformationSummary
+	var ts []*pb.TransformationSummary
 	if err := pb.GobDecodeInto(tsEnc, &ts); err != nil {
 		log.With("plugin", "audit").Warnf("failed decoding dlp transformation summary, err=%v", err)
 		return 0
 	}
-	counter := int64(0)
 	for _, t := range ts {
-		sr := t.SummaryResult
-		for _, s := range sr {
+		for _, s := range t.SummaryResult {
 			if len(s) > 0 {
 				countStr := s[0]
 				if n, err := strconv.Atoi(countStr); err == nil {
@@ -222,5 +223,5 @@ func decodeDlpSummary(pkt *pb.Packet) int64 {
 			}
 		}
 	}
-	return counter
+	return
 }

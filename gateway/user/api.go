@@ -216,6 +216,7 @@ func (a *Handler) Userinfo(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, &struct {
 		ID            string     `json:"id"`
+		OrgID         string     `json:"org_id"`
 		Name          string     `json:"name"`
 		Email         string     `json:"email"`
 		Status        StatusType `json:"status"`
@@ -226,6 +227,7 @@ func (a *Handler) Userinfo(c *gin.Context) {
 		IsApiV2       bool       `json:"is_apiv2"`
 	}{
 		ID:            ctx.User.Id,
+		OrgID:         ctx.Org.Id,
 		Name:          ctx.User.Name,
 		Email:         ctx.User.Email,
 		Status:        ctx.User.Status,
