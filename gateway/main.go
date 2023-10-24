@@ -236,6 +236,10 @@ func changeWebappApiURL(apiURL string) error {
 		if err := os.WriteFile(appJsFile, appBytes, 0644); err != nil {
 			return fmt.Errorf("failed saving app.js file, reason=%v", err)
 		}
+		appBytes = bytes.ReplaceAll(appBytes, []byte(`http://localhost:4001`), []byte(apiURL))
+		if err := os.WriteFile(appJsFile, appBytes, 0644); err != nil {
+			return fmt.Errorf("failed saving app.js file, reason=%v", err)
+		}
 	}
 	return nil
 }

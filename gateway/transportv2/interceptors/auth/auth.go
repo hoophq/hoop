@@ -138,7 +138,7 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			"slackid", uctx.SlackID, "status", uctx.UserStatus,
 		).Infof("admin api - decoded userinfo")
 
-		gwctx := &GatewayContext{UserContext: *uctx, IsAdminExec: true}
+		gwctx := &GatewayContext{UserContext: *uctx, IsAdminExec: true, IsApiV2: true}
 		conn, err := parseConnectionInfoFromHeader(md)
 		if err != nil {
 			return err
