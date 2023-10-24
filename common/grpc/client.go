@@ -97,7 +97,6 @@ func Connect(clientConfig ClientConfig, opts ...*ClientOptions) (pb.ClientTransp
 	dialOptions := []grpc.DialOption{
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
 		grpc.WithPerRPCCredentials(rpcCred),
-		grpc.WithBlock(),
 		grpc.WithUserAgent(clientConfig.UserAgent),
 		grpc.WithDefaultCallOptions(
 			grpc.MaxCallRecvMsgSize(MaxRecvMsgSize),
