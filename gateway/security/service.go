@@ -2,6 +2,7 @@ package security
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gin-gonic/gin"
@@ -258,9 +259,13 @@ func (s *Service) signupMultiTenant(context *user.Context, sub string, idTokenCl
 		}
 
 		if orgData == nil {
+			// if this env is not set, it will by default
+			// create the organization to proxy requests to the new api.
+			isLegacyApi := os.Getenv("LEGACY_API") == "true"
 			orgData = &user.Org{
-				Id:   uuid.NewString(),
-				Name: orgName,
+				Id:      uuid.NewString(),
+				Name:    orgName,
+				IsApiV2: !isLegacyApi,
 			}
 
 			if err := s.UserService.Persist(orgData); err != nil {

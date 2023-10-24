@@ -12,9 +12,16 @@ do
   sleep 1
 done
 echo "done"
-echo "--> STARTING AGENT (xtdb) ..."
 
 curl -s -f -o /dev/null "http://127.0.0.1:3001/_xtdb/status" || { echo "THE XTDB IS DOWN"; exit 1; }
+
+# don't start a default agent if it's an org multi tenant setup
+if [ "$ORG_MULTI_TENANT" == "true" ]; then
+  sleep infinity
+  exit $?
+fi
+
+echo "--> STARTING AGENT (xtdb) ..."
 
 AUTO_REGISTER=1 /app/hooplinux start agent &
 

@@ -67,6 +67,7 @@ RUN mkdir -p /app && \
         jq \
         openssh-client \
         apt-utils \
+        procps \
         curl \
         gnupg \
         gnupg2
