@@ -33,10 +33,11 @@ type (
 		config    *config.Config
 	}
 	connEnv struct {
-		host string
-		user string
-		pass string
-		port string
+		host     string
+		user     string
+		pass     string
+		port     string
+		insecure bool
 	}
 )
 
@@ -72,10 +73,11 @@ func parseConnectionEnvVars(envVars map[string]any, connType string) (*connEnv, 
 		return nil, err
 	}
 	env := &connEnv{
-		host: envVarS.Getenv("HOST"),
-		user: envVarS.Getenv("USER"),
-		pass: envVarS.Getenv("PASS"),
-		port: envVarS.Getenv("PORT"),
+		host:     envVarS.Getenv("HOST"),
+		user:     envVarS.Getenv("USER"),
+		pass:     envVarS.Getenv("PASS"),
+		port:     envVarS.Getenv("PORT"),
+		insecure: envVarS.Getenv("INSECURE") == "true",
 	}
 	switch connType {
 	case pb.ConnectionTypePostgres:
@@ -91,6 +93,13 @@ func parseConnectionEnvVars(envVars map[string]any, connType string) (*connEnv, 
 		}
 		if env.host == "" || env.pass == "" || env.user == "" {
 			return nil, fmt.Errorf("missing required secrets for mysql connection [HOST, USER, PASS]")
+		}
+	case pb.ConnectionTypeMSSQL:
+		if env.port == "" {
+			env.port = "1433"
+		}
+		if env.host == "" || env.pass == "" || env.user == "" {
+			return nil, fmt.Errorf("missing required secrets for mssql connection [HOST, USER, PASS]")
 		}
 	case pb.ConnectionTypeTCP:
 		if env.host == "" || env.port == "" {
@@ -153,7 +162,7 @@ func (a *Agent) Run() error {
 		if err != nil {
 			return err
 		}
-		log.With("session", string(pkt.Spec[pb.SpecGatewaySessionID])).
+		log.With("sid", string(pkt.Spec[pb.SpecGatewaySessionID])).
 			Debugf("received client packet [%v]", pkt.Type)
 		switch pkt.Type {
 		case pbagent.GatewayConnectOK:
@@ -175,6 +184,10 @@ func (a *Agent) Run() error {
 		// MySQL protocol
 		case pbagent.MySQLConnectionWrite:
 			a.processMySQLProtocol(pkt)
+
+		// MSSQL Prorotocl
+		case pbagent.MSSQLConnectionWrite:
+			a.processMSSQLProtocol(pkt)
 
 		// raw tcp
 		case pbagent.TCPConnectionWrite:
@@ -234,6 +247,8 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 			connParams.EnvVars["envvar:PGPASSWORD"] = b64EncPaswd
 		case pb.ConnectionTypeMySQL:
 			connParams.EnvVars["envvar:MYSQL_PWD"] = b64EncPaswd
+		case pb.ConnectionTypeMSSQL:
+			connParams.EnvVars["envvar:SQLCMDPASSWORD"] = b64EncPaswd
 		}
 	}
 	return connParams, nil
@@ -242,7 +257,10 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 func (a *Agent) checkTCPLiveness(pkt *pb.Packet, envVars map[string]any) error {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 	connType := string(pkt.Spec[pb.SpecConnectionType])
-	if connType == pb.ConnectionTypePostgres || connType == pb.ConnectionTypeTCP || connType == pb.ConnectionTypeMySQL {
+	if connType == pb.ConnectionTypePostgres ||
+		connType == pb.ConnectionTypeTCP ||
+		connType == pb.ConnectionTypeMySQL ||
+		connType == pb.ConnectionTypeMSSQL {
 		connEnvVars, _ := parseConnectionEnvVars(envVars, connType)
 		if connEnvVars == nil {
 			return nil
@@ -483,7 +501,7 @@ func (a *Agent) processTCPCloseConnection(pkt *pb.Packet) {
 	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 	clientConnID := pkt.Spec[pb.SpecClientConnectionID]
 	filterKey := fmt.Sprintf("%s:%s", string(sessionID), string(clientConnID))
-	log.Infof("received %s, filter-by=%s", pkt.Type, filterKey)
+	log.Infof("closing tcp session, filter-by=%s", filterKey)
 	filterFn := func(k string) bool { return strings.HasPrefix(k, filterKey) }
 	for key, obj := range a.connStore.Filter(filterFn) {
 		if client, _ := obj.(io.Closer); client != nil {

@@ -15,6 +15,7 @@ const (
 	TCPConnectionWrite   = "ClientTCPConnectionWrite"
 	PGConnectionWrite    = "ClientPGConnectionWrite"
 	MySQLConnectionWrite = "ClientMySQLConnectionWrite"
+	MSSQLConnectionWrite = "ClientMSSQLConnectionWrite"
 	WriteStdout          = "ClientWriteStdout"
 	WriteStderr          = "ClientWriteStderr"
 )

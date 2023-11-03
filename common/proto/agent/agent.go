@@ -16,4 +16,5 @@ const (
 	TCPConnectionWrite   = "AgentTCPConnectionWrite"
 	PGConnectionWrite    = "AgentPGConnectionWrite"
 	MySQLConnectionWrite = "AgentMySQLConnectionWrite"
+	MSSQLConnectionWrite = "AgentMSSQLConnectionWrite"
 )

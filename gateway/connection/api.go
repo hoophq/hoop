@@ -96,6 +96,10 @@ func (a *Handler) Post(c *gin.Context) {
 			connection.Command = []string{"psql", "-A", "-F\t", "-P", "pager=off", "-h", "$HOST", "-U", "$USER", "--port=$PORT", "$DB"}
 		case pb.ConnectionTypeMySQL:
 			connection.Command = []string{"mysql", "-h$HOST", "-u$USER", "--port=$PORT", "-D$DB"}
+		case pb.ConnectionTypeMSSQL:
+			connection.Command = []string{
+				"sqlcmd", "--exit-on-error", "--trim-spaces", "-r",
+				"-S$HOST:$PORT", "-U$USER", "-d$DB", "-i/dev/stdin"}
 		}
 	}
 
@@ -135,13 +139,16 @@ func (a *Handler) Put(c *gin.Context) {
 	}
 
 	connection.Id = existingConnection.Id
-
 	if len(connection.Command) == 0 {
 		switch string(connection.Type) {
 		case pb.ConnectionTypePostgres:
 			connection.Command = []string{"psql", "-A", "-F\t", "-P", "pager=off", "-h", "$HOST", "-U", "$USER", "--port=$PORT", "$DB"}
 		case pb.ConnectionTypeMySQL:
 			connection.Command = []string{"mysql", "-h$HOST", "-u$USER", "--port=$PORT", "-D$DB"}
+		case pb.ConnectionTypeMSSQL:
+			connection.Command = []string{
+				"sqlcmd", "--exit-on-error", "--trim-spaces", "-r",
+				"-S$HOST:$PORT", "-U$USER", "-d$DB", "-i/dev/stdin"}
 		}
 	}
 
