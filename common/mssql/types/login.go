@@ -137,9 +137,8 @@ func DecodeLogin(data []byte) *login {
 	l.header.AtchDBFileLength = binary.LittleEndian.Uint16(buf.Next(2))
 
 	// don't let the client to change the password
-	_ = buf.Next(4)
-	// l.header.ChangePasswordOffset = binary.LittleEndian.Uint16(buf.Next(2))
-	// l.header.ChangePasswordLength = binary.LittleEndian.Uint16(buf.Next(2))
+	l.header.ChangePasswordOffset = binary.LittleEndian.Uint16(buf.Next(2))
+	l.header.ChangePasswordLength = binary.LittleEndian.Uint16(buf.Next(2))
 	l.header.SSPILongLength = binary.LittleEndian.Uint32(buf.Next(4))
 
 	l.HostName = getOption(data, l.header.HostNameOffset, l.header.HostNameLength)
@@ -154,7 +153,7 @@ func DecodeLogin(data []byte) *login {
 	// TODO: fix this?
 	// l.SSPI = []byte(getOption(data, l.header.SSPIOffset, l.header.SSPILength))
 	l.AtchDBFile = getOption(data, l.header.AtchDBFileOffset, l.header.AtchDBFileLength)
-	// l.ChangePassword = getOption(data, l.header.ChangePasswordOffset, l.header.ChangePasswordLength)
+	l.ChangePassword = getOption(data, l.header.ChangePasswordOffset, l.header.ChangePasswordLength)
 
 	if l.header.ExtensionOffset > 0 {
 		featureExtOffset := binary.LittleEndian.Uint32(

@@ -105,9 +105,6 @@ func (s *MSSQLServer) CloseTCPConnection(connectionID string) {
 func (s *MSSQLServer) Close() error       { return s.listener.Close() }
 func (s *MSSQLServer) ListenPort() string { return s.listenPort }
 
-// TODO: set packet size per connection
-// func (s *MSSQLServer) SetPacketSize(packetSize int) { s.connWriter.packetSize = packetSize }
-
 func (s *MSSQLServer) getConnection(connectionID string) (io.WriteCloser, error) {
 	connWrapperObj := s.connectionStore.Get(connectionID)
 	conn, ok := connWrapperObj.(io.WriteCloser)
