@@ -86,7 +86,7 @@ func (p *PGServer) serveConn(sessionID, connectionID string, pgClient net.Conn) 
 		string(pb.SpecClientConnectionID): []byte(connectionID),
 		string(pb.SpecGatewaySessionID):   []byte(sessionID),
 	})
-	if _, err := copyBuffer(pgServerWriter, pgClient); err != nil {
+	if _, err := copyPgBuffer(pgServerWriter, pgClient); err != nil {
 		log.Warnf("failed copying buffer, err=%v", err)
 	}
 }
@@ -126,7 +126,7 @@ func (p *PGServer) ListenPort() string {
 
 // copyBuffer is an adaptation of the actual implementation of Copy and CopyBuffer.
 // it parses simple query packets fully.
-func copyBuffer(dst io.Writer, src io.Reader) (written int64, err error) {
+func copyPgBuffer(dst io.Writer, src io.Reader) (written int64, err error) {
 	buf := make([]byte, 32*1024)
 	var fullBuffer []byte
 	for {

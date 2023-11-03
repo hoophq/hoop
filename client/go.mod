@@ -1,6 +1,6 @@
 module github.com/runopsio/hoop/client
 
-go 1.19
+go 1.21
 
 require (
 	// latest version breaks when using the loader to stderr

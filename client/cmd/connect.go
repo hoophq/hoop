@@ -163,6 +163,21 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				fmt.Printf("      host=127.0.0.1 port=%s user=noop password=noop\n", srv.ListenPort())
 				fmt.Println("------------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
+			case pb.ConnectionTypeMSSQL:
+				srv := proxy.NewMSSQLServer(c.proxyPort, c.client)
+				if err := srv.Serve(string(sessionID)); err != nil {
+					sentry.CaptureException(fmt.Errorf("connect - failed initializing mssql proxy, err=%v", err))
+					c.processGracefulExit(err)
+				}
+				c.loader.Stop()
+				c.client.StartKeepAlive()
+				c.connStore.Set(string(sessionID), srv)
+				c.printHeader(string(sessionID))
+				fmt.Println()
+				fmt.Println("---------------------mssql-credentials----------------------")
+				fmt.Printf("      host=127.0.0.1 port=%s user=noop password=noop\n", srv.ListenPort())
+				fmt.Println("------------------------------------------------------------")
+				fmt.Println("ready to accept connections!")
 			case pb.ConnectionTypeTCP:
 				proxyPort := "8999"
 				if c.proxyPort != "" {
@@ -243,6 +258,20 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 			srvObj := c.connStore.Get(string(sessionID))
 			srv, ok := srvObj.(*proxy.MySQLServer)
+			if !ok {
+				return
+			}
+			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
+			_, err := srv.PacketWriteClient(connectionID, pkt)
+			if err != nil {
+				errMsg := fmt.Errorf("failed writing to client, err=%v", err)
+				sentry.CaptureException(fmt.Errorf("connect - %v - %v", pbclient.MySQLConnectionWrite, errMsg))
+				c.processGracefulExit(errMsg)
+			}
+		case pbclient.MSSQLConnectionWrite:
+			sessionID := pkt.Spec[pb.SpecGatewaySessionID]
+			srvObj := c.connStore.Get(string(sessionID))
+			srv, ok := srvObj.(*proxy.MSSQLServer)
 			if !ok {
 				return
 			}

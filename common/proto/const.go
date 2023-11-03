@@ -27,6 +27,7 @@ const (
 	ConnectionTypeCommandLine string = "command-line"
 	ConnectionTypePostgres    string = "postgres"
 	ConnectionTypeMySQL       string = "mysql"
+	ConnectionTypeMSSQL       string = "mssql"
 	ConnectionTypeTCP         string = "tcp"
 
 	DevProfile = "dev"
