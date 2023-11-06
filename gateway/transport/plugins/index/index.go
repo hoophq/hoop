@@ -8,6 +8,7 @@ import (
 	"github.com/go-co-op/gocron"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/memory"
+	mssqltypes "github.com/runopsio/hoop/common/mssql/types"
 	"github.com/runopsio/hoop/common/pg"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
@@ -91,6 +92,21 @@ func (p *indexPlugin) OnReceive(c plugintypes.Context, pkt *pb.Packet) (*plugint
 			return nil, fmt.Errorf("session=%v - failed obtaining simple query data, err=%v", c.SID, err)
 		}
 		return nil, p.writeOnReceive(c.SID, eventlogv0.InputType, queryBytes)
+	case pbagent.MSSQLConnectionWrite:
+		var mssqlPacketType mssqltypes.PacketType
+		if len(pkt.Payload) > 0 {
+			mssqlPacketType = mssqltypes.PacketType(pkt.Payload[0])
+		}
+		switch mssqlPacketType {
+		case mssqltypes.PacketSQLBatchType:
+			query, err := mssqltypes.DecodeSQLBatchToRawQuery(pkt.Payload)
+			if err != nil {
+				return nil, err
+			}
+			if query != "" {
+				return nil, p.writeOnReceive(c.SID, eventlogv0.InputType, []byte(query))
+			}
+		}
 	case pbclient.WriteStdout:
 		return nil, p.writeOnReceive(c.SID, eventlogv0.OutputType, pkt.Payload)
 	case pbclient.WriteStderr:

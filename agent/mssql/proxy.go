@@ -9,10 +9,9 @@ import (
 	"io"
 	"net"
 	"net/url"
-	"time"
 
 	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/mssql/types"
+	mssqltypes "github.com/runopsio/hoop/common/mssql/types"
 )
 
 const (
@@ -68,8 +67,8 @@ func NewProxy(ctx context.Context, connStr *url.URL, serverRW io.ReadWriteCloser
 		cancelFn:         cancelFn}
 }
 
-func (r *proxy) readNextInitPacket(reader io.Reader, packetType types.PacketType) (pkt *types.Packet, err error) {
-	pkt, err = types.Decode(reader)
+func (r *proxy) readNextInitPacket(reader io.Reader, packetType mssqltypes.PacketType) (pkt *mssqltypes.Packet, err error) {
+	pkt, err = mssqltypes.Decode(reader)
 	if err != nil {
 		return
 	}
@@ -84,7 +83,7 @@ func (r *proxy) initalizeConnection() error {
 		return fmt.Errorf("missing password or username")
 	}
 	log.Infof("reading PRE-LOGIN")
-	pkt, err := r.readNextInitPacket(r.clientInitBuffer, types.PacketPreloginType)
+	pkt, err := r.readNextInitPacket(r.clientInitBuffer, mssqltypes.PacketPreloginType)
 	if err != nil {
 		return err
 	}
@@ -96,7 +95,7 @@ func (r *proxy) initalizeConnection() error {
 	_, _ = r.serverRW.Write(pkt.Encode())
 
 	log.Infof("reading PRE-LOGIN REPLY packet from server")
-	pkt, err = r.readNextInitPacket(r.serverRW, types.PacketReplyType)
+	pkt, err = r.readNextInitPacket(r.serverRW, mssqltypes.PacketReplyType)
 	if err != nil {
 		return err
 	}
@@ -110,12 +109,12 @@ func (r *proxy) initalizeConnection() error {
 	_, _ = r.clientW.Write(pkt.Encode())
 
 	log.Infof("reading LOGIN packet from client")
-	pkt, err = r.readNextInitPacket(r.clientInitBuffer, types.PacketLogin7Type)
+	pkt, err = r.readNextInitPacket(r.clientInitBuffer, mssqltypes.PacketLogin7Type)
 	if err != nil {
 		return err
 	}
 
-	l := types.DecodeLogin(pkt.Frame)
+	l := mssqltypes.DecodeLogin(pkt.Frame)
 	l.UserName = r.username
 	l.Password = r.password
 	l.ServerName = r.tlsConfig.ServerName
@@ -127,7 +126,7 @@ func (r *proxy) initalizeConnection() error {
 	log.Infof("decoded LOGIN packet from client. tds-version=%X, app-name=%v, database=%v, hostname=%v, servername=%v, packet-size=%v",
 		l.TDSVersion(), l.AppName, l.Database, l.HostName, l.ServerName, l.PacketSize())
 
-	pkt, err = types.EncodeLogin(*l)
+	pkt, err = mssqltypes.EncodeLogin(*l)
 	if err != nil {
 		return fmt.Errorf("failed encoding login: %v", err)
 	}
@@ -136,7 +135,6 @@ func (r *proxy) initalizeConnection() error {
 	if !ok {
 		return fmt.Errorf("server is not a net.Conn type")
 	}
-	conn.SetDeadline(time.Now().Add(time.Second * 15))
 
 	log.Infof("begin tls handshake")
 	handshakeConn := &tlsHandshakeConn{c: conn}
@@ -156,7 +154,9 @@ func (r *proxy) initalizeConnection() error {
 	return nil
 }
 
-func (r *proxy) processPacket(data io.Reader) (*types.Packet, error) { return types.Decode(data) }
+func (r *proxy) processPacket(data io.Reader) (*mssqltypes.Packet, error) {
+	return mssqltypes.Decode(data)
+}
 
 // Run reads packets in a goroutine of the server and writes back to client
 func (r *proxy) Run(onErrCallback onRunErrFnType) Proxy {
