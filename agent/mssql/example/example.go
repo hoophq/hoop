@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/agent/mssql"
 	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/mssql/types"
+	mssqltypes "github.com/runopsio/hoop/common/mssql/types"
 )
 
 const (
@@ -112,7 +112,7 @@ type clientWriter struct {
 }
 
 func (w clientWriter) Write(p []byte) (int, error) {
-	pktList, err := types.DecodeFull(p, types.DefaultPacketSize)
+	pktList, err := mssqltypes.DecodeFull(p, mssqltypes.DefaultPacketSize)
 	if err != nil {
 		return 0, err
 	}

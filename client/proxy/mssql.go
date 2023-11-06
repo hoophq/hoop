@@ -8,7 +8,7 @@ import (
 
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/memory"
-	"github.com/runopsio/hoop/common/mssql/types"
+	mssqltypes "github.com/runopsio/hoop/common/mssql/types"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 )
@@ -82,7 +82,7 @@ func (s *MSSQLServer) serveConn(sessionID, connectionID string, mssqlClient net.
 		string(pb.SpecClientConnectionID): []byte(connectionID),
 		string(pb.SpecGatewaySessionID):   []byte(sessionID),
 	})
-	if _, err := copyMSSQLBuffer(&mssqlStreamWriter{w, types.DefaultPacketSize}, mssqlClient); err != nil {
+	if _, err := copyMSSQLBuffer(&mssqlStreamWriter{w, mssqltypes.DefaultPacketSize}, mssqlClient); err != nil {
 		log.Infof("failed copying buffer, err=%v", err)
 		connWrapper.Close()
 	}
@@ -120,13 +120,13 @@ type mssqlStreamWriter struct {
 }
 
 func (w *mssqlStreamWriter) Write(p []byte) (int, error) {
-	pktList, err := types.DecodeFull(p, w.packetSize)
+	pktList, err := mssqltypes.DecodeFull(p, w.packetSize)
 	if err != nil {
 		return 0, err
 	}
 	for _, pkt := range pktList {
-		if pkt.Type() == types.PacketLogin7Type {
-			l := types.DecodeLogin(pkt.Frame)
+		if pkt.Type() == mssqltypes.PacketLogin7Type {
+			l := mssqltypes.DecodeLogin(pkt.Frame)
 			// TODO: the server must reply informing the packet size accept
 			// for now we're assuming that this value is being accepted by the server
 			if l.PacketSize() >= minPacketSize {

@@ -1,4 +1,4 @@
-package types
+package mssqltypes
 
 type PacketType byte
 
@@ -37,3 +37,9 @@ var packetTypeMap = map[PacketType]string{
 	PacketSSPIMessageType:  "PacketSSPIMessageType",
 	PacketPreloginType:     "PacketPreloginType",
 }
+
+const sp_ExecuteSql byte = 0x0a
+
+// variable-length data types
+// http://msdn.microsoft.com/en-us/library/dd358341.aspx
+const typeNVarChar = 0xe7

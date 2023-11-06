@@ -6,7 +6,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/runopsio/hoop/common/mssql/types"
+	mssqltypes "github.com/runopsio/hoop/common/mssql/types"
 )
 
 // this connection is used during TLS Handshake
@@ -32,7 +32,7 @@ func (c *tlsHandshakeConn) Read(b []byte) (n int, err error) {
 		if _, err := c.c.Read(header[:]); err != nil {
 			return 0, fmt.Errorf("failed reading packet header, err=%v", err)
 		}
-		if header[0] != byte(types.PacketPreloginType) {
+		if header[0] != byte(mssqltypes.PacketPreloginType) {
 			return 0, fmt.Errorf("unexpected packet, header=% X", header)
 		}
 		c.pktLen = binary.BigEndian.Uint16(header[2:4]) - 8
@@ -75,7 +75,7 @@ func (c *tlsHandshakeConn) SetWriteDeadline(_ time.Time) error { return nil }
 // provided size. For now it's safe to rely on those hard-coded values.
 func newPacketPreLoginHeader(headerSize uint16) [8]byte {
 	var header [8]byte
-	header[0] = byte(types.PacketPreloginType)
+	header[0] = byte(mssqltypes.PacketPreloginType)
 
 	// status
 	header[1] = 0x01

@@ -11,6 +11,7 @@ import (
 
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/memory"
+	mssqltypes "github.com/runopsio/hoop/common/mssql/types"
 	"github.com/runopsio/hoop/common/pg"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
@@ -95,7 +96,7 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 	switch pb.PacketType(pkt.GetType()) {
 	case pbclient.PGConnectionWrite, pbclient.MySQLConnectionWrite:
 		if redactCount > 0 {
-			return nil, p.writeOnReceive(pctx.SID, 'o', redactCount, nil)
+			return nil, p.writeOnReceive(pctx.SID, eventlogv0.OutputType, redactCount, nil)
 		}
 	case pbagent.PGConnectionWrite:
 		isSimpleQuery, queryBytes, err := pg.SimpleQueryContent(pkt.Payload)
@@ -106,14 +107,29 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 			log.With("sid", pctx.SID).Errorf("failed parsing simple query data, err=%v", err)
 			return nil, fmt.Errorf("failed obtaining simple query data, reason=%v", err)
 		}
-		return nil, p.writeOnReceive(pctx.SID, 'i', 0, queryBytes)
+		return nil, p.writeOnReceive(pctx.SID, eventlogv0.InputType, 0, queryBytes)
 	case pbagent.MySQLConnectionWrite:
 		if queryBytes := decodeMySQLCommandQuery(pkt.Payload); queryBytes != nil {
-			return nil, p.writeOnReceive(pctx.SID, 'i', 0, queryBytes)
+			return nil, p.writeOnReceive(pctx.SID, eventlogv0.InputType, 0, queryBytes)
+		}
+	case pbagent.MSSQLConnectionWrite:
+		var mssqlPacketType mssqltypes.PacketType
+		if len(pkt.Payload) > 0 {
+			mssqlPacketType = mssqltypes.PacketType(pkt.Payload[0])
+		}
+		switch mssqlPacketType {
+		case mssqltypes.PacketSQLBatchType:
+			query, err := mssqltypes.DecodeSQLBatchToRawQuery(pkt.Payload)
+			if err != nil {
+				return nil, err
+			}
+			if query != "" {
+				return nil, p.writeOnReceive(pctx.SID, eventlogv0.InputType, 0, []byte(query))
+			}
 		}
 	case pbclient.WriteStdout,
 		pbclient.WriteStderr:
-		err := p.writeOnReceive(pctx.SID, 'o', redactCount, pkt.Payload)
+		err := p.writeOnReceive(pctx.SID, eventlogv0.OutputType, redactCount, pkt.Payload)
 		if err != nil {
 			log.Warnf("failed writing agent packet response, err=%v", err)
 		}
@@ -126,7 +142,7 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 	case pbagent.ExecWriteStdin,
 		pbagent.TerminalWriteStdin,
 		pbagent.TCPConnectionWrite:
-		return nil, p.writeOnReceive(pctx.SID, 'i', redactCount, pkt.Payload)
+		return nil, p.writeOnReceive(pctx.SID, eventlogv0.InputType, redactCount, pkt.Payload)
 	}
 	return nil, nil
 }
@@ -172,7 +188,7 @@ func (p *auditPlugin) OnDisconnect(pctx plugintypes.Context, errMsg error) error
 				}
 				p.log.With("session", sessionID).Infof("closing session, agent %v was shutdown", agentID)
 				if errMsg != nil {
-					_ = p.writeOnReceive(sessionID, 'e', 0, []byte(errMsg.Error()))
+					_ = p.writeOnReceive(sessionID, eventlogv0.ErrorType, 0, []byte(errMsg.Error()))
 					p.closeSession(pctx)
 					continue
 				}

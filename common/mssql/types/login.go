@@ -1,4 +1,4 @@
-package types
+package mssqltypes
 
 import (
 	"bytes"
@@ -17,6 +17,7 @@ const (
 	fExtension
 )
 
+// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/773a62b6-ee89-4c02-9e5e-344882630aac
 type login struct {
 	HostName       string
 	UserName       string
@@ -127,7 +128,6 @@ func DecodeLogin(data []byte) *login {
 	l.header.DatabaseOffset = binary.LittleEndian.Uint16(buf.Next(2))
 	l.header.DatabaseLength = binary.LittleEndian.Uint16(buf.Next(2))
 
-	// TODO: need to obtain these offset as well
 	var clientID [6]byte
 	copy(clientID[:], buf.Next(6))
 	l.header.ClientID = clientID // not used
@@ -136,13 +136,13 @@ func DecodeLogin(data []byte) *login {
 	l.header.AtchDBFileOffset = binary.LittleEndian.Uint16(buf.Next(2))
 	l.header.AtchDBFileLength = binary.LittleEndian.Uint16(buf.Next(2))
 
-	// don't let the client to change the password
 	l.header.ChangePasswordOffset = binary.LittleEndian.Uint16(buf.Next(2))
 	l.header.ChangePasswordLength = binary.LittleEndian.Uint16(buf.Next(2))
 	l.header.SSPILongLength = binary.LittleEndian.Uint32(buf.Next(4))
 
 	l.HostName = getOption(data, l.header.HostNameOffset, l.header.HostNameLength)
 	l.UserName = getOption(data, l.header.UserNameOffset, l.header.UserNameLength)
+	// the password it's not used neither decoded properly (unmangled)
 	l.Password = getOption(data, l.header.PasswordOffset, l.header.PasswordLength)
 	l.AppName = getOption(data, l.header.AppNameOffset, l.header.AppNameLength)
 	l.ServerName = getOption(data, l.header.ServerNameOffset, l.header.ServerNameLength)
