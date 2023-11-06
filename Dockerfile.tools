@@ -17,6 +17,8 @@ RUN mkdir -p /app && \
         curl \
         gnupg \
         gnupg2 \
+        net-tools \
+        netcat \
         groff \
         jq \
         openssh-client \
@@ -62,7 +64,7 @@ RUN apt-get update -y && \
         heroku \
         default-mysql-client \
         postgresql-client-15 \
-        mssql-tools \
+        sqlcmd \
         unixodbc-dev \
         google-cloud-cli=441.0.0-0 \
         google-cloud-sdk-gke-gcloud-auth-plugin=441.0.0-0 && \
@@ -75,14 +77,6 @@ RUN curl -sL https://download.clojure.org/install/linux-install-$CLOJURE_VERSION
     bash clojure-install.sh && \
     rm clojure-install.sh && \
     clojure -e "(clojure-version)"
-
-# sqsmover https://github.com/mercury2269/sqsmover/releases
-RUN curl -sL https://github.com/mercury2269/sqsmover/releases/download/v0.4.0/sqsmover_Linux_x86_64.tar.gz -o sqsmover.tar.gz && \
-        sha256sum sqsmover.tar.gz && \
-        echo "870bd37ed21618d4b429cb60ba10fa17ba6e48bf779df59eea0119b75155745c  sqsmover.tar.gz" | sha256sum -c - && \
-        tar -xf sqsmover.tar.gz -C /usr/local/bin --no-same-owner && \
-        rm -f sqsmover.tar.gz && \
-        sqsmover --version
 
 RUN pip3 install -U \
     boto3==1.20.39 \
