@@ -19,6 +19,7 @@ import (
 	apiplugins "github.com/runopsio/hoop/gateway/api/plugins"
 	apiproxymanager "github.com/runopsio/hoop/gateway/api/proxymanager"
 	reviewapi "github.com/runopsio/hoop/gateway/api/review"
+	serviceaccountapi "github.com/runopsio/hoop/gateway/api/serviceaccount"
 	sessionapi "github.com/runopsio/hoop/gateway/api/session"
 	userapi "github.com/runopsio/hoop/gateway/api/user"
 	webhooksapi "github.com/runopsio/hoop/gateway/api/webhooks"
@@ -134,6 +135,21 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest(analytics.EventCreateUser),
 		api.AdminOnly,
 		userapi.Create)
+
+	route.GET("/serviceaccounts",
+		api.Authenticate,
+		api.AdminOnly,
+		serviceaccountapi.List)
+	route.POST("/serviceaccounts",
+		api.Authenticate,
+		api.TrackRequest(analytics.EventCreateServiceAccount),
+		api.AdminOnly,
+		serviceaccountapi.Create)
+	route.PUT("/serviceaccounts/:subject",
+		api.Authenticate,
+		api.TrackRequest(analytics.EventCreateServiceAccount),
+		api.AdminOnly,
+		serviceaccountapi.Update)
 
 	route.POST("/connections",
 		api.Authenticate,

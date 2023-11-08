@@ -87,9 +87,9 @@ func (api *Api) proxyNodeAPIMiddleware() gin.HandlerFunc {
 			return
 		}
 		// once we have the subject, we must enforce the authentication in this layer
-		ctx, err := api.UserHandler.Service.FindBySub(sub)
+		ctx, err := user.GetUserContext(api.UserHandler.Service, sub)
 		if err != nil || ctx.User == nil {
-			log.Debugf("failed searching for user, sub=%v, err=%v", sub, err)
+			log.Debugf("failed searching for user, subject=%v, err=%v", sub, err)
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
@@ -150,9 +150,9 @@ func (api *Api) Authenticate(c *gin.Context) {
 		return
 	}
 
-	ctx, err := api.UserHandler.Service.FindBySub(sub)
+	ctx, err := user.GetUserContext(api.UserHandler.Service, sub)
 	if err != nil || ctx.User == nil {
-		log.Debugf("failed searching for user, sub=%v, err=%v", sub, err)
+		log.Debugf("failed searching for user, subject=%v, err=%v", sub, err)
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}

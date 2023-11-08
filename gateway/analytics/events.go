@@ -8,6 +8,8 @@ const (
 	EventUpdateUser             = "hoop-update-user"
 	EventCreateUser             = "hoop-create-user"
 	EventCreateConnection       = "hoop-create-connection"
+	EventCreateServiceAccount   = "hoop-create-serviceaccount"
+	EventUpdateServiceAccount   = "hoop-update-serviceaccount"
 	EventUpdateConnection       = "hoop-update-connection"
 	EventDeleteConnection       = "hoop-delete-connection"
 	EventFetchConnections       = "hoop-fetch-connections"

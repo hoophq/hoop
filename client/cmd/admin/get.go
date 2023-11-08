@@ -29,6 +29,7 @@ var getLongDesc = `Display one or many resources. Available ones:
 * runbooks
 * sessions
 * users (tabview)
+* serviceaccounts (tabview)
 `
 
 var getExamplesDesc = `
@@ -196,14 +197,34 @@ var getCmd = &cobra.Command{
 			case map[string]any:
 				fmt.Fprintln(w, "ID\tEMAIL\tNAME\tSLACKID\tSTATUS\tAPIV2\tGROUPS\t")
 				m := contents
-				groupList := joinItems(m["groups"].([]any))
+				groupsObject, _ := m["groups"].([]any)
+				groupList := joinItems(groupsObject)
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%v\t%v\t%v\t", m["id"], m["email"], m["name"], m["slack_id"], m["status"], m["is_apiv2"], groupList)
 				fmt.Fprintln(w)
 			case []map[string]any:
 				fmt.Fprintln(w, "ID\tEMAIL\tNAME\tSLACKID\tSTATUS\tGROUPS\t")
 				for _, m := range contents {
-					groupList := joinItems(m["groups"].([]any))
+					groupsObject, _ := m["groups"].([]any)
+					groupList := joinItems(groupsObject)
 					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%v\t%v\t", m["id"], m["email"], m["name"], m["slack_id"], m["status"], groupList)
+					fmt.Fprintln(w)
+				}
+			}
+		case "serviceaccount", "serviceaccounts", "sa":
+			switch contents := obj.(type) {
+			case map[string]any:
+				fmt.Fprintln(w, "SUBJECT\tNAME\tSTATUS\tGROUPS\t")
+				m := contents
+				groupsObject, _ := m["groups"].([]any)
+				groupList := joinItems(groupsObject)
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t", m["subject"], m["name"], m["status"], groupList)
+				fmt.Fprintln(w)
+			case []map[string]any:
+				fmt.Fprintln(w, "SUBJECT\tNAME\tSTATUS\tGROUPS\t")
+				for _, m := range contents {
+					groupsObject, _ := m["groups"].([]any)
+					groupList := joinItems(groupsObject)
+					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t", m["subject"], m["name"], m["status"], groupList)
 					fmt.Fprintln(w)
 				}
 			}

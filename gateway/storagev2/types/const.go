@@ -2,8 +2,11 @@ package types
 
 import "os"
 
-type ClientStatusType string
-type UserStatusType string
+type (
+	ClientStatusType         string
+	UserStatusType           string
+	ServiceAccountStatusType string
+)
 
 // GroupAdmin is the name of the admin user, defaults to "admin"
 // if the env ADMIN_USERNAME is not set
@@ -27,6 +30,9 @@ const (
 	UserStatusActive    UserStatusType = "active"
 	UserStatusReviewing UserStatusType = "reviewing"
 	UserStatusInactive  UserStatusType = "inactive"
+
+	ServiceAccountStatusActive   ServiceAccountStatusType = "active"
+	ServiceAccountStatusInactive ServiceAccountStatusType = "inactive"
 )
 
 type ReviewStatus string
