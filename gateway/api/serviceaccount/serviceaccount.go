@@ -47,7 +47,7 @@ func Create(c *gin.Context) {
 		return
 	}
 	objID := serviceaccountstorage.DeterministicXtID(req.Subject)
-	svcAccount, err := serviceaccountstorage.GetEntity(ctx, objID)
+	svcAccount, err := serviceaccountstorage.GetEntityWithOrgContext(ctx, objID)
 	if err != nil {
 		sentry.CaptureException(err)
 		log.Errorf("failed retrieving service account entity, err=%v", err)
@@ -88,7 +88,7 @@ func Update(c *gin.Context) {
 		return
 	}
 	objID := serviceaccountstorage.DeterministicXtID(c.Param("subject"))
-	svcAccount, err := serviceaccountstorage.GetEntity(ctx, objID)
+	svcAccount, err := serviceaccountstorage.GetEntityWithOrgContext(ctx, objID)
 	if err != nil {
 		sentry.CaptureException(err)
 		log.Errorf("failed retrieving service account entity, err=%v", err)

@@ -9,6 +9,16 @@ import (
 	"olympos.io/encoding/edn"
 )
 
+// GetEntityWithOrgContext fetches a service account enforcing the organization id context
+func GetEntityWithOrgContext(ctx *storagev2.Context, xtID string) (*types.ServiceAccount, error) {
+	sa, err := GetEntity(ctx, xtID)
+	if sa != nil && sa.OrgID != ctx.OrgID {
+		return nil, err
+	}
+	return sa, err
+}
+
+// GetEntity returns active service account resources based on the xtid
 func GetEntity(ctx *storagev2.Context, xtID string) (*types.ServiceAccount, error) {
 	data, err := ctx.GetEntity(xtID)
 	if err != nil {
@@ -21,7 +31,10 @@ func GetEntity(ctx *storagev2.Context, xtID string) (*types.ServiceAccount, erro
 	if err := edn.Unmarshal(data, &obj); err != nil {
 		return nil, err
 	}
-	return &obj, nil
+	if obj.Status == types.ServiceAccountStatusActive {
+		return &obj, nil
+	}
+	return nil, nil
 }
 
 func UpdateServiceAccount(ctx *storagev2.Context, svcAccount *types.ServiceAccount) error {
