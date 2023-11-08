@@ -209,6 +209,15 @@ type User struct {
 	Groups  []string       `json:"groups"   edn:"user/groups"`
 }
 
+type ServiceAccount struct {
+	ID      string                   `json:"id"          edn:"xt/id"`
+	Subject string                   `json:"subject"     edn:"serviceaccount/subject"`
+	OrgID   string                   `json:"-"           edn:"serviceaccount/org"`
+	Name    string                   `json:"description" edn:"serviceaccount/name"`
+	Status  ServiceAccountStatusType `json:"status"      edn:"serviceaccount/status"`
+	Groups  []string                 `json:"groups"      edn:"serviceaccount/groups"`
+}
+
 type InvitedUser struct {
 	ID      string   `json:"id"       edn:"xt/id"`
 	OrgID   string   `json:"-"        edn:"invited-user/org"`

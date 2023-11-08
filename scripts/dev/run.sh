@@ -20,7 +20,6 @@ set +o allexport
 : "${IDP_CLIENT_ID:?Variable not set or empty}"
 : "${IDP_CLIENT_SECRET:?Variable not set or empty}"
 : "${IDP_ISSUER:?Variable not set or empty}"
-: "${IDP_AUDIENCE:?Variable not set or empty}"
 
 : "${API_URL:=http://localhost:8009}"
 : "${GRPC_URL:=http://127.0.0.1:8010}"

@@ -19,7 +19,7 @@ var (
 )
 
 func init() {
-	createUserCmd.Flags().BoolVar(&userOverwriteFlag, "overwrite", false, "It will create or update it if a connection already exists")
+	createUserCmd.Flags().BoolVar(&userOverwriteFlag, "overwrite", false, "It will create or update if a user already exists")
 	createUserCmd.Flags().StringSliceVar(&userGroupsFlag, "groups", []string{}, "The list of groups this user belongs to, e.g.: admin,devops,...")
 	createUserCmd.Flags().StringVar(&userNameFlag, "name", "", "The display name of the user")
 	createUserCmd.Flags().StringVar(&userSlackIDFlag, "slackid", "", "The slack id of the user, only useful with slack plugin")

@@ -7,6 +7,8 @@ import (
 
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/gateway/storagev2"
+	serviceaccountstorage "github.com/runopsio/hoop/gateway/storagev2/serviceaccount"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 )
 
@@ -257,4 +259,29 @@ func IsOrgMultiTenant() bool {
 // NewContext returns a user.Context with Id and Org ID set
 func NewContext(orgID, userID string) *Context {
 	return &Context{Org: &Org{Id: orgID}, User: &User{Id: userID}}
+}
+
+// GetUserContext loads a user or a service account type
+func GetUserContext(usrSvc service, subject string) (*Context, error) {
+	userCtx, err := usrSvc.FindBySub(subject)
+	if err != nil {
+		return nil, fmt.Errorf("failed obtaining user from store: %v", err)
+	}
+	if userCtx.User == nil {
+		ctx := storagev2.NewContext("", "", storagev2.NewStorage(nil))
+		objID := serviceaccountstorage.DeterministicXtID(subject)
+		sa, err := serviceaccountstorage.GetEntity(ctx, objID)
+		if err != nil {
+			return nil, fmt.Errorf("failed obtaining service account from store: %v", err)
+		}
+		if sa == nil {
+			return &Context{}, nil
+		}
+		userCtx = NewContext(sa.OrgID, sa.ID)
+		userCtx.User.Groups = sa.Groups
+		userCtx.User.Email = sa.Subject
+		userCtx.User.Name = sa.Name
+		return userCtx, nil
+	}
+	return userCtx, nil
 }

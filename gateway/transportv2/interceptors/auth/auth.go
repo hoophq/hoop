@@ -194,8 +194,11 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			log.Debugf("failed verifying access token, reason=%v", err)
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
-		userCtx, err := i.userService.FindBySub(sub)
-		if err != nil || userCtx.User == nil {
+		userCtx, err := user.GetUserContext(i.userService, sub)
+		if userCtx.User == nil {
+			if err != nil {
+				log.Error(err)
+			}
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
 		ctxVal = &GatewayContext{
@@ -210,8 +213,11 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			log.Debugf("failed verifying access token, reason=%v", err)
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
-		userCtx, err := i.userService.FindBySub(sub)
-		if err != nil || userCtx.User == nil {
+		userCtx, err := user.GetUserContext(i.userService, sub)
+		if userCtx.User == nil {
+			if err != nil {
+				log.Error(err)
+			}
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
 		gwctx := &GatewayContext{
