@@ -281,6 +281,7 @@ func GetUserContext(usrSvc service, subject string) (*Context, error) {
 		userCtx.User.Groups = sa.Groups
 		userCtx.User.Email = sa.Subject
 		userCtx.User.Name = sa.Name
+		userCtx.User.Status = StatusType(sa.Status)
 		return userCtx, nil
 	}
 	return userCtx, nil
