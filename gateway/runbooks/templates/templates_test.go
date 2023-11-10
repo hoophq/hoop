@@ -165,6 +165,12 @@ func TestTemplateParseHelperFuncs(t *testing.T) {
 			inputs:   map[string]string{"name": ""},
 		},
 		{
+			msg:      "it should parse with a default value if the input is empty and using noop functions",
+			tmpl:     `name = {{ .name | options "Peter Parker" | default "Tony Stark" }}`,
+			wantTmpl: "name = Tony Stark",
+			inputs:   map[string]string{"name": ""},
+		},
+		{
 			msg:      "it should put the values in single and double quotes",
 			tmpl:     `firstname = {{ .firstname |squote }}, lastname = {{ .lastname |dquote }}`,
 			wantTmpl: `firstname = 'Tony', lastname = "Stark"`,
