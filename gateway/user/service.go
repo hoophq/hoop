@@ -18,9 +18,8 @@ type (
 	}
 
 	storage interface {
-		Signup(org *Org, user *User) (txId int64, err error)
 		FindById(identifier string) (*Context, error)
-		FindByEmail(ctx *Context, email string) (*User, error)
+		// FindByEmail(ctx *Context, email string) (*User, error)
 		FindBySlackID(ctx *Org, slackID string) (*User, error)
 		Persist(user any) (int64, error)
 		FindAll(context *Context) ([]User, error)
@@ -120,9 +119,9 @@ func (s *Service) FindOne(context *Context, id string) (*User, error) {
 
 }
 
-func (s *Service) FindByEmail(ctx *Context, email string) (*User, error) {
-	return s.Storage.FindByEmail(ctx, email)
-}
+// func (s *Service) FindByEmail(ctx *Context, email string) (*User, error) {
+// 	return s.Storage.FindByEmail(ctx, email)
+// }
 
 func (s *Service) FindBySlackID(ctx *Org, slackID string) (*User, error) {
 	return s.Storage.FindBySlackID(ctx, slackID)
@@ -138,10 +137,6 @@ func (s *Service) Persist(user any) error {
 		return err
 	}
 	return nil
-}
-
-func (s *Service) Signup(org *Org, user *User) (txId int64, err error) {
-	return s.Storage.Signup(org, user)
 }
 
 func (s *Service) GetOrgByName(name string) (*Org, error) {

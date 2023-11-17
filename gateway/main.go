@@ -203,11 +203,6 @@ func Run(listenAdmAddr string) {
 		})
 	}
 
-	if profile == pb.DevProfile {
-		if err := a.CreateTrialEntities(); err != nil {
-			log.Fatal(err)
-		}
-	}
 	if grpc.ShouldDebugGrpc() {
 		log.SetGrpcLogger()
 	}

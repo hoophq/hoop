@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/google/uuid"
+	"github.com/runopsio/hoop/gateway/pgrest"
 	st "github.com/runopsio/hoop/gateway/storage"
 	"olympos.io/encoding/edn"
 )
@@ -15,59 +17,74 @@ type (
 )
 
 func (s *Storage) FindById(identifier string) (*Context, error) {
-	c := &Context{}
-
-	b, err := s.GetEntity(identifier)
-	if err != nil {
+	path := fmt.Sprintf("/users?select=*,org(id,name)&subject=eq.%v", identifier)
+	if _, err := uuid.Parse(identifier); err == nil {
+		path = fmt.Sprintf("/users?select=*,org(id,name)&or=(subject.eq.%v,id.eq.%v)", identifier, identifier)
+	}
+	var u pgrest.User
+	if err := pgrest.New(path).FetchOne().DecodeInto(&u); err != nil {
+		if err == pgrest.ErrNotFound {
+			return &Context{}, nil
+		}
 		return nil, err
 	}
+	fmt.Printf("USER: %#v\n", u)
+	return &Context{
+			User: &User{u.ID, u.Org.ID, u.Name, u.Email, StatusType(u.Status), u.SlackID, u.Groups},
+			Org:  &Org{Id: u.Org.ID, Name: u.Org.Name}},
+		nil
 
-	if b == nil {
-		return c, nil
-	}
+	// b, err := s.GetEntity(identifier)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	var u User
-	if err := edn.Unmarshal(b, &u); err != nil {
-		return nil, err
-	}
+	// if b == nil {
+	// 	return c, nil
+	// }
 
-	o, err := s.getOrg(u.Org)
-	if err != nil {
-		return nil, err
-	}
+	// var u User
+	// if err := edn.Unmarshal(b, &u); err != nil {
+	// 	return nil, err
+	// }
 
-	c.User = &u
-	c.Org = o
+	// o, err := s.getOrg(u.Org)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	return c, nil
+	// c.User = &u
+	// c.Org = o
+
+	// return c, nil
 }
 
-func (s *Storage) FindByEmail(ctx *Context, email string) (*User, error) {
-	qs := fmt.Sprintf(`{:query {
-		:find [(pull ?u [*])] 
-		:in [orgid email]
-		:where [[?u :user/org orgid]
-				[?u :user/email email]]}
-		:in-args [%q %q]}`, ctx.Org.Id, email)
-	data, err := s.Query([]byte(qs))
-	if err != nil {
-		return nil, err
-	}
-	var user []User
-	if err := edn.Unmarshal(data, &user); err != nil {
-		return nil, err
-	}
+// func (s *Storage) FindByEmail(ctx *Context, email string) (*User, error) {
+// 	qs := fmt.Sprintf(`{:query {
+// 		:find [(pull ?u [*])]
+// 		:in [orgid email]
+// 		:where [[?u :user/org orgid]
+// 				[?u :user/email email]]}
+// 		:in-args [%q %q]}`, ctx.Org.Id, email)
+// 	data, err := s.Query([]byte(qs))
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	var user []User
+// 	if err := edn.Unmarshal(data, &user); err != nil {
+// 		return nil, err
+// 	}
 
-	if len(user) > 1 {
-		return nil, fmt.Errorf("user storage is inconsistent")
-	}
+// 	if len(user) > 1 {
+// 		return nil, fmt.Errorf("user storage is inconsistent")
+// 	}
 
-	if len(user) == 0 {
-		return nil, nil
-	}
+// 	if len(user) == 0 {
+// 		return nil, nil
+// 	}
 
-	return &user[0], nil
-}
+// 	return &user[0], nil
+// }
 
 func (s *Storage) FindBySlackID(ctx *Org, slackID string) (*User, error) {
 	qs := fmt.Sprintf(`{:query {
@@ -97,118 +114,202 @@ func (s *Storage) FindBySlackID(ctx *Org, slackID string) (*User, error) {
 	return &user[0], nil
 }
 
+// TODO: SECURITY BUG - need to lookup based on the context organization!
 func (s *Storage) FindInvitedUser(email string) (*InvitedUser, error) {
-	var payload = `{:query {
-		:find [(pull ?invited-user [*])] 
-		:in [email]
-		:where [[?invited-user :invited-user/email email]]}
-		:in-args ["` + email + `"]}`
-
-	b, err := s.Query([]byte(payload))
-	if err != nil {
+	client := pgrest.New("/users?select=*,org(id,name)&email=eq.%v&verified=is.false", email)
+	var u pgrest.User
+	if err := client.FetchOne().DecodeInto(&u); err != nil {
+		if err == pgrest.ErrNotFound {
+			return nil, nil
+		}
 		return nil, err
 	}
+	return &InvitedUser{u.ID, u.OrgID, u.Email, u.Name, u.SlackID, u.Groups}, nil
 
-	var invitedUser []InvitedUser
-	if err := edn.Unmarshal(b, &invitedUser); err != nil {
-		return nil, err
-	}
+	// var payload = `{:query {
+	// 	:find [(pull ?invited-user [*])]
+	// 	:in [email]
+	// 	:where [[?invited-user :invited-user/email email]]}
+	// 	:in-args ["` + email + `"]}`
 
-	if len(invitedUser) == 0 {
-		return nil, nil
-	}
+	// b, err := s.Query([]byte(payload))
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	return &invitedUser[0], nil
+	// var invitedUser []InvitedUser
+	// if err := edn.Unmarshal(b, &invitedUser); err != nil {
+	// 	return nil, err
+	// }
+
+	// if len(invitedUser) == 0 {
+	// 	return nil, nil
+	// }
+
+	// return &invitedUser[0], nil
 }
 
-func (s *Storage) FindAll(context *Context) ([]User, error) {
-	var payload = `{:query {
-		:find [(pull ?user [*])] 
-		:in [org]
-		:where [[?user :user/org org]]}
-		:in-args ["` + context.Org.Id + `"]}`
-
-	b, err := s.Query([]byte(payload))
-	if err != nil {
+func (s *Storage) FindAll(ctx *Context) ([]User, error) {
+	client := pgrest.New("/users?select=*,org(id,name)&org_id=eq.%v&verified=is.true", ctx.Org.Id)
+	var users []pgrest.User
+	if err := client.List().DecodeInto(&users); err != nil && err != pgrest.ErrNotFound {
 		return nil, err
 	}
-
-	var users []User
-	if err := edn.Unmarshal(b, &users); err != nil {
-		return nil, err
+	var xtdbUsers []User
+	for _, u := range users {
+		xtdbUsers = append(xtdbUsers,
+			User{u.ID, u.OrgID, u.Name, u.Email, StatusType(u.Status), u.SlackID, u.Groups})
 	}
+	return xtdbUsers, nil
 
-	return users, nil
+	// var payload = `{:query {
+	// 	:find [(pull ?user [*])]
+	// 	:in [org]
+	// 	:where [[?user :user/org org]]}
+	// 	:in-args ["` + context.Org.Id + `"]}`
+
+	// b, err := s.Query([]byte(payload))
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	// var users []User
+	// if err := edn.Unmarshal(b, &users); err != nil {
+	// 	return nil, err
+	// }
+
+	// return users, nil
 }
 
-func (s *Storage) Persist(user any) (int64, error) {
-	payload := st.EntityToMap(user)
+func (s *Storage) Persist(user any) (res int64, err error) {
+	switch v := user.(type) {
+	case *User:
+		var existentUsr pgrest.User
+		if err := pgrest.New("/users?select=*,org(id,name)&org_id=eq.%v&verified=is.true", v.Org).
+			FetchOne().
+			DecodeInto(&existentUsr); err != nil && err != pgrest.ErrNotFound {
+			return 0, fmt.Errorf("failed fetching user: %v", err)
+		}
+		userID := uuid.NewString()
+		if existentUsr.ID != "" {
+			userID = existentUsr.ID
+		}
 
-	txId, err := s.PersistEntities([]map[string]any{payload})
-	if err != nil {
-		return 0, err
+		defer func() {
+			if err == nil {
+				err = pgrest.New("/rpc/update_groups").RpcCreate(map[string]any{
+					"user_id": userID,
+					"org_id":  v.Org,
+					"groups":  v.Groups,
+				}).Error()
+			}
+		}()
+		if existentUsr.ID != "" {
+			return 0, pgrest.New("/users_update?id=eq.%v", userID).Patch(map[string]any{
+				"name":     v.Name,
+				"verified": true,
+				"status":   v.Status,
+				"slack_id": v.SlackID,
+			}).Error()
+		}
+		return 0, pgrest.New("/users_update").Create(map[string]any{
+			"id":       userID,
+			"subject":  v.Id,
+			"org_id":   v.Org,
+			"name":     v.Name,
+			"email":    v.Email,
+			"verified": true,
+			"status":   v.Status,
+			"slack_id": v.SlackID,
+		}).Error()
+	case *Org:
+		defer func() {
+			if err == nil {
+				payload := st.EntityToMap(user)
+				_, _ = s.PersistEntities([]map[string]any{payload})
+			}
+		}()
+		payload := map[string]any{"id": v.Id, "name": v.Name}
+		return 0, pgrest.New("/orgs").Create(payload).Error()
+	default:
+		return 0, fmt.Errorf("failed type casting to user or org, found=%T", user)
 	}
+	// payload := st.EntityToMap(user)
 
-	return txId, nil
-}
+	// txId, err := s.PersistEntities([]map[string]any{payload})
+	// if err != nil {
+	// 	return 0, err
+	// }
 
-func (s *Storage) Signup(org *Org, user *User) (txId int64, err error) {
-	orgPayload := st.EntityToMap(org)
-	userPayload := st.EntityToMap(user)
-
-	entities := []map[string]any{orgPayload, userPayload}
-	txId, err = s.PersistEntities(entities)
-	if err != nil {
-		return 0, err
-	}
-
-	return txId, nil
+	// return txId, nil
 }
 
 func (s *Storage) GetOrgNameByID(orgID string) (*Org, error) {
-	ednQuery := fmt.Sprintf(`{:query {
-		:find [(pull ?o [*])]
-		:in [orgid]
-		:where [[?o :xt/id orgid]]}
-        :in-args [%q]}`, orgID)
-	b, err := s.Query([]byte(ednQuery))
-	if err != nil {
+	var u pgrest.Org
+	if err := pgrest.New("/orgs?id=eq.%s", orgID).
+		FetchOne().
+		DecodeInto(&u); err != nil {
+		if err == pgrest.ErrNotFound {
+			return nil, nil
+		}
 		return nil, err
 	}
+	return &Org{u.ID, u.Name, false}, nil
 
-	var u []Org
-	if err := edn.Unmarshal(b, &u); err != nil {
-		return nil, err
-	}
+	// ednQuery := fmt.Sprintf(`{:query {
+	// 	:find [(pull ?o [*])]
+	// 	:in [orgid]
+	// 	:where [[?o :xt/id orgid]]}
+	//     :in-args [%q]}`, orgID)
+	// b, err := s.Query([]byte(ednQuery))
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	if len(u) == 0 {
-		return nil, nil
-	}
-	return &u[0], nil
+	// var u []Org
+	// if err := edn.Unmarshal(b, &u); err != nil {
+	// 	return nil, err
+	// }
+
+	// if len(u) == 0 {
+	// 	return nil, nil
+	// }
+	// return &u[0], nil
 }
 
 func (s *Storage) GetOrgByName(name string) (*Org, error) {
-	var payload = `{:query {
-		:find [(pull ?org [*])] 
-		:in [name]
-		:where [[?org :org/name name]]}
-		:in-args ["` + name + `"]}`
-
-	b, err := s.Query([]byte(payload))
+	client := pgrest.New(fmt.Sprintf("/orgs?name=eq.%v", name))
+	var org pgrest.Org
+	err := client.FetchOne().DecodeInto(&org)
+	if err == pgrest.ErrNotFound {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
+	return &Org{Id: org.ID, Name: org.Name}, nil
 
-	var u []Org
-	if err := edn.Unmarshal(b, &u); err != nil {
-		return nil, err
-	}
+	// var payload = `{:query {
+	// 	:find [(pull ?org [*])]
+	// 	:in [name]
+	// 	:where [[?org :org/name name]]}
+	// 	:in-args ["` + name + `"]}`
 
-	if len(u) == 0 {
-		return nil, nil
-	}
+	// b, err := s.Query([]byte(payload))
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	return &u[0], nil
+	// var u []Org
+	// if err := edn.Unmarshal(b, &u); err != nil {
+	// 	return nil, err
+	// }
+
+	// if len(u) == 0 {
+	// 	return nil, nil
+	// }
+
+	// return &u[0], nil
 }
 
 func (s *Storage) FindByGroups(context *Context, groups []string) ([]User, error) {
@@ -262,28 +363,28 @@ func (s *Storage) ListAllGroups(context *Context) ([]string, error) {
 	return groups, nil
 }
 
-func (s *Storage) getOrg(orgId string) (*Org, error) {
-	var payload = `{:query {
-		:find [(pull ?org [*])] 
-		:where [[?org :xt/id "` +
-		orgId + `"]]}}`
+// func (s *Storage) getOrg(orgId string) (*Org, error) {
+// 	var payload = `{:query {
+// 		:find [(pull ?org [*])]
+// 		:where [[?org :xt/id "` +
+// 		orgId + `"]]}}`
 
-	b, err := s.Query([]byte(payload))
-	if err != nil {
-		return nil, err
-	}
+// 	b, err := s.Query([]byte(payload))
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	var org []Org
-	if err := edn.Unmarshal(b, &org); err != nil {
-		return nil, err
-	}
+// 	var org []Org
+// 	if err := edn.Unmarshal(b, &org); err != nil {
+// 		return nil, err
+// 	}
 
-	if len(org) == 0 {
-		return nil, nil
-	}
+// 	if len(org) == 0 {
+// 		return nil, nil
+// 	}
 
-	return &org[0], nil
-}
+// 	return &org[0], nil
+// }
 
 func (s *Storage) FindOrgs() ([]Org, error) {
 	var payload = `{:query 

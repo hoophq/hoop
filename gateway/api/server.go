@@ -333,34 +333,3 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.AdminOnly,
 		webhooksapi.Get)
 }
-
-func (api *Api) CreateTrialEntities() error {
-	orgId := "test-org"
-	userId := "test-user"
-	agentId := "test-agent"
-
-	org := user.Org{
-		Id:   orgId,
-		Name: "hoop",
-	}
-
-	u := user.User{
-		Id:     userId,
-		Org:    orgId,
-		Name:   "hooper",
-		Email:  "tester@hoop.dev",
-		Status: "active",
-		Groups: []string{"admin", "sre", "dba", "security", "devops", "support", "engineering"},
-	}
-
-	a := agent.Agent{
-		Id:    agentId,
-		Token: "x-agt-test-token",
-		Name:  "test-agent",
-		OrgId: orgId,
-	}
-
-	_, _ = api.UserHandler.Service.Signup(&org, &u)
-	_, err := api.AgentHandler.Service.Persist(&a)
-	return err
-}

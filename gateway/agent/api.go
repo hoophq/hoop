@@ -66,7 +66,7 @@ func (s *Handler) Post(c *gin.Context) {
 		return
 	}
 	if existentAgent != nil {
-		log.Errorf("agent %v already exists", req.Name)
+		log.Infof("agent %v already exists", req.Name)
 		c.JSON(http.StatusConflict, gin.H{"message": "agent already exists"})
 		return
 	}

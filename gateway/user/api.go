@@ -22,11 +22,10 @@ type (
 	}
 
 	service interface {
-		Signup(org *Org, user *User) (txId int64, err error)
 		FindBySub(sub string) (*Context, error)
 		FindAll(context *Context) ([]User, error)
 		FindOne(context *Context, id string) (*User, error)
-		FindByEmail(ctx *Context, email string) (*User, error)
+		// FindByEmail(ctx *Context, email string) (*User, error)
 		FindBySlackID(ctx *Org, slackID string) (*User, error)
 		FindInvitedUser(email string) (*InvitedUser, error)
 		Persist(user any) error
@@ -55,31 +54,31 @@ func (a *Handler) FindAll(c *gin.Context) {
 	c.PureJSON(http.StatusOK, users)
 }
 
-func (a *Handler) FindOne(c *gin.Context) {
-	ctx, _ := c.Get("context")
-	context := ctx.(*Context)
+// func (a *Handler) FindOne(c *gin.Context) {
+// 	ctx, _ := c.Get("context")
+// 	context := ctx.(*Context)
 
-	emailOrID := c.Param("id")
-	var user *User
-	var err error
-	if isValidMailAddress(emailOrID) {
-		user, err = a.Service.FindByEmail(context, emailOrID)
-	} else {
-		user, err = a.Service.FindOne(context, emailOrID)
-	}
-	if err != nil {
-		sentry.CaptureException(err)
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
+// 	emailOrID := c.Param("id")
+// 	var user *User
+// 	var err error
+// 	if isValidMailAddress(emailOrID) {
+// 		user, err = a.Service.FindByEmail(context, emailOrID)
+// 	} else {
+// 		user, err = a.Service.FindOne(context, emailOrID)
+// 	}
+// 	if err != nil {
+// 		sentry.CaptureException(err)
+// 		c.AbortWithStatus(http.StatusInternalServerError)
+// 		return
+// 	}
 
-	if user == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
-		return
-	}
+// 	if user == nil {
+// 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+// 		return
+// 	}
 
-	c.PureJSON(http.StatusOK, user)
-}
+// 	c.PureJSON(http.StatusOK, user)
+// }
 
 func (a *Handler) Put(c *gin.Context) {
 	ctx, _ := c.Get("context")

@@ -11,7 +11,7 @@ import (
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
 	"github.com/runopsio/hoop/gateway/apiclient"
-	apitypes "github.com/runopsio/hoop/gateway/apiclient/types"
+	"github.com/runopsio/hoop/gateway/pgrest"
 	"github.com/runopsio/hoop/gateway/transportv2/auditfs"
 	"github.com/runopsio/hoop/gateway/transportv2/memorystreams"
 	"google.golang.org/grpc/codes"
@@ -24,7 +24,7 @@ func SubscribeAgent(ctx *AgentContext, grpcStream pb.Transport_ConnectServer) er
 	defer func() {
 		memorystreams.DelAgent(ctx.Agent.ID)
 		// best effort
-		publishAgentDisconnect(ctx.ApiURL, ctx.BearerToken)
+		publishAgentDisconnect(ctx.ApiURL, ctx.Agent.ID)
 	}()
 	log.With("id", ctx.Agent.ID).Infof("agent connected: %s", ctx.Agent)
 	_ = stream.Send(&pb.Packet{
@@ -90,8 +90,10 @@ func listenAgentMessages(ctx *AgentContext, stream memorystreams.Wrapper) error 
 	}
 }
 
-func publishAgentDisconnect(apiURL, bearerToken string) error {
-	reqBody := apitypes.AgentAuthRequest{Status: "DISCONNECTED"}
-	_, err := apiclient.New(bearerToken).AuthAgent(reqBody)
-	return err
+func publishAgentDisconnect(apiURL, agentID string) error {
+	return pgrest.New("/agents?id=eq.%s", agentID).Patch(
+		map[string]any{"status": "DISCONNECTED"}).Error()
+	// reqBody := apitypes.AgentAuthRequest{Status: "DISCONNECTED"}
+	// _, err := apiclient.New(bearerToken).AuthAgent(reqBody)
+	// return err
 }
