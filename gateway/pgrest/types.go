@@ -25,11 +25,9 @@ type User struct {
 }
 
 type EnvVar struct {
-	ID           string `json:"id"`
-	ConnectionID string `json:"connection_id"`
-	PluginID     string `json:"plugin_id"`
-
-	Envs map[string]string `json:"envs"`
+	ID    string            `json:"id"`
+	OrgID string            `json:"org_id"`
+	Envs  map[string]string `json:"envs"`
 }
 
 type Agent struct {
@@ -55,4 +53,26 @@ type Connection struct {
 
 	Org Org `json:"org"`
 	// Agent Agent  `json:"agent"`
+}
+
+type Plugin struct {
+	ID     string  `json:"id"`
+	OrgID  string  `json:"org_id"`
+	Name   string  `json:"name"`
+	Source *string `json:"source"`
+
+	EnvVar *EnvVar `json:"env_vars"`
+}
+
+type PluginConnection struct {
+	ID               string   `json:"id"`
+	OrgID            string   `json:"org_id"`
+	PluginID         string   `json:"plugin_id"`
+	ConnectionID     string   `json:"connection_id"`
+	Enabled          bool     `json:"enabled"`
+	ConnectionConfig []string `json:"config"`
+
+	Plugin     Plugin     `json:"plugins"`
+	EnvVar     EnvVar     `json:"env_vars"`
+	Connection Connection `json:"connections"`
 }

@@ -36,6 +36,7 @@ func (s *Storage) Persist(ctx *user.Context, c *Connection) (int64, error) {
 		envs[key] = fmt.Sprintf("%v", val)
 	}
 	return 0, pgrest.New("/rpc/update_connection").Create(map[string]any{
+		"id":       c.Id,
 		"org_id":   ctx.Org.Id,
 		"name":     c.Name,
 		"agent_id": c.AgentId,

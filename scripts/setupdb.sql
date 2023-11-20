@@ -8,7 +8,7 @@ CREATE EXTENSION "uuid-ossp";
 CREATE TYPE enum_login_outcome AS ENUM ('success', 'error', 'pending_review', 'email_mismatch');
 CREATE TABLE login(
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-    
+
     redirect VARCHAR(255) NULL,
     outcome enum_login_outcome NULL,
     created_at TIMESTAMP DEFAULT NOW()
@@ -16,7 +16,7 @@ CREATE TABLE login(
 
 CREATE TABLE orgs(
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-    
+
     name VARCHAR(100) UNIQUE,
     created_at TIMESTAMP DEFAULT NOW()
 );
@@ -26,7 +26,7 @@ CREATE TABLE users(
     id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
     org_id UUID NOT NULL REFERENCES orgs (id),
     subject VARCHAR(255) NOT NULL UNIQUE,
-    
+
     email VARCHAR(255) NOT NULL,
     name VARCHAR(255) NOT NULL,
     verified BOOLEAN DEFAULT FALSE, -- invited user
@@ -41,10 +41,10 @@ CREATE TABLE service_accounts(
     id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
     org_id UUID NOT NULL REFERENCES orgs (id),
     subject VARCHAR(255) NOT NULL UNIQUE,
-    
+
     name VARCHAR(255) NOT NULL,
     status enum_service_account_status DEFAULT 'active',
-    
+
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -66,7 +66,7 @@ CREATE TYPE enum_agent_status AS ENUM ('CONNECTED', 'DISCONNECTED');
 CREATE TABLE agents(
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
     org_id UUID NOT NULL REFERENCES orgs (id),
-    
+
     name VARCHAR(63) CHECK (name ~ '^[a-z]([-a-z0-9]*[a-z0-9])?$'),
     mode enum_agent_mode NOT NULL,
     token VARCHAR(255) NOT NULL,
@@ -82,12 +82,12 @@ CREATE TYPE enum_client_keys_status AS ENUM ('active', 'inactive');
 CREATE TABLE client_keys(
     id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
     org_id UUID NOT NULL REFERENCES orgs (id),
-    
+
     name VARCHAR(255) NOT NULL,
     mode enum_agent_mode NOT NULL,
     status enum_client_keys_status DEFAULT 'inactive',
     dsn_hash VARCHAR(255) NOT NULL,
-    
+
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -97,7 +97,7 @@ CREATE TABLE connections(
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
     org_id UUID NOT NULL REFERENCES orgs (id),
     agent_id UUID NULL,
-    
+
     name VARCHAR(128) NOT NULL,
     command text[] NULL,
     type enum_connection_type NOT NULL,
@@ -111,23 +111,29 @@ CREATE TABLE plugins(
     id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
     org_id UUID NOT NULL REFERENCES orgs (id),
 
-    name VARCHAR(50) NOT NULL,
-    source VARCHAR(50) NULL,
+    name VARCHAR(128) NOT NULL,
+    source VARCHAR(128) NULL,
     priority int DEFAULT 0,
 
     created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
+    updated_at TIMESTAMP DEFAULT NOW(),
+
+    UNIQUE(org_id, name)
 );
 
-CREATE TABLE connection_plugins(
+CREATE TABLE plugin_connections(
     id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
+    org_id UUID NULL REFERENCES orgs (id),
     plugin_id UUID NOT NULL REFERENCES plugins (id),
     connection_id UUID NOT NULL REFERENCES connections (id),
 
+    enabled BOOLEAN DEFAULT TRUE,
     config TEXT[] NULL,
 
     created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
+    updated_at TIMESTAMP DEFAULT NOW(),
+
+    UNIQUE(plugin_id, connection_id)
 );
 
 CREATE TABLE env_vars(
@@ -138,82 +144,96 @@ CREATE TABLE env_vars(
 );
 
 
-CREATE TYPE enum_session_status AS ENUM ('open', 'done');
-CREATE TYPE enum_session_verb AS ENUM ('connect', 'exec');
-CREATE TABLE sessions(
-    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-    org_id UUID NOT NULL REFERENCES orgs (id),
-    
-    connection VARCHAR(128) NOT NULL,
-    connection_type enum_connection_type NOT NULL,
-    input TEXT NULL,
-    verb enum_session_verb NOT NULL,
-    labels JSONB NULL,
-    user_name VARCHAR(255) NULL,
-    user_email VARCHAR(255) NULL,
-    event_stream JSONB NULL,
-    event_size int DEFAULT 0,
-    status enum_session_status NOT NULL,
-    metadata JSONB NULL, -- contains the redact count and other stuff
+-- CREATE TYPE enum_session_status AS ENUM ('open', 'done');
+-- CREATE TYPE enum_session_verb AS ENUM ('connect', 'exec');
+-- CREATE TABLE sessions(
+--     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+--     org_id UUID NOT NULL REFERENCES orgs (id),
 
-    created_at TIMESTAMP DEFAULT NOW(),
-    ended_at TIMESTAMP NULL,
+--     connection VARCHAR(128) NOT NULL,
+--     connection_type enum_connection_type NOT NULL,
+--     -- input TEXT NULL,
+--     verb enum_session_verb NOT NULL,
+--     labels JSONB NULL,
+--     user_id VARCHAR(255) NULL,
+--     user_name VARCHAR(255) NULL,
+--     user_email VARCHAR(255) NULL,
+--     -- event_stream JSONB NULL,
+--     -- blob_size int DEFAULT 0,
+--     status enum_session_status NOT NULL,
+--     -- blob-size, dlp count
+--     metadata JSONB NULL,
 
-    UNIQUE(org_id, id)
-);
+--     created_at TIMESTAMP DEFAULT NOW(),
+--     ended_at TIMESTAMP NULL,
 
-CREATE TYPE enum_reviews_status AS ENUM ('PENDING', 'APPROVED', 'REVOKED', 'REJECTED', 'PROCESSING', 'EXECUTED', 'UNKNOWN');
-CREATE TYPE enum_reviews_type AS ENUM ('onetime', 'jit');
-CREATE TABLE reviews(
-    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-    org_id UUID NOT NULL REFERENCES orgs (id),
-    -- check when deleting a particular connection
-    session_id UUID NULL REFERENCES sessions (id),
-    connection_id UUID NULL REFERENCES connections (id),
+--     UNIQUE(org_id, id)
+-- );
+
+-- CREATE TYPE enum_blob_type AS ENUM ('review-input', 'session-input', 'session-stream');
+-- CREATE table blobs(
+--     -- refers to any resource/table that needs to manage blobs
+--     resource_id UUID DEFAULT uuid_generate_v4(),
+--     org_id UUID NOT NULL REFERENCES orgs (id),
+
+--     type enum_blob_type NOT NULL,
+--     blob_stream JSONB NOT NULL,
+
+--     created_at TIMESTAMP DEFAULT NOW()
+-- );
+
+-- CREATE TYPE enum_reviews_status AS ENUM ('PENDING', 'APPROVED', 'REVOKED', 'REJECTED', 'PROCESSING', 'EXECUTED', 'UNKNOWN');
+-- CREATE TYPE enum_reviews_type AS ENUM ('onetime', 'jit');
+-- CREATE TABLE reviews(
+--     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+--     org_id UUID NOT NULL REFERENCES orgs (id),
+--     -- check when deleting a particular connection
+--     session_id UUID NULL REFERENCES sessions (id),
+--     connection_id UUID NULL REFERENCES connections (id),
     
-    type enum_reviews_type NOT NULL,
+--     type enum_reviews_type NOT NULL,
     
-    connection_name VARCHAR(128) NOT NULL,
-    input TEXT NULL,
-    input_env_vars JSONB NULL,
-    input_client_args TEXT[] NULL,
-    access_duration BIGINT DEFAULT 0,
-    status enum_reviews_status NOT NULL,
+--     connection_name VARCHAR(128) NOT NULL,
+--     input TEXT NULL,
+--     input_env_vars JSONB NULL,
+--     input_client_args TEXT[] NULL,
+--     access_duration BIGINT DEFAULT 0,
+--     status enum_reviews_status NOT NULL,
         
-    created_at TIMESTAMP DEFAULT NOW(),
-    revoked_at TIMESTAMP NULL
-);
+--     created_at TIMESTAMP DEFAULT NOW(),
+--     revoked_at TIMESTAMP NULL
+-- );
 
-CREATE TABLE review_owners(
-    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-    review_id UUID NOT NULL REFERENCES reviews (id),
+-- CREATE TABLE review_owners(
+--     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+--     review_id UUID NOT NULL REFERENCES reviews (id),
 
-    email VARCHAR(255) NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    slack_id VARCHAR(50) NULL
-);
+--     email VARCHAR(255) NOT NULL,
+--     name VARCHAR(255) NOT NULL,
+--     slack_id VARCHAR(50) NULL
+-- );
 
-CREATE TABLE review_groups(
-    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-    review_id UUID NOT NULL REFERENCES reviews (id),
-    review_owner_id UUID NOT NULL REFERENCES review_owners (id),
+-- CREATE TABLE review_groups(
+--     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+--     review_id UUID NOT NULL REFERENCES reviews (id),
+--     review_owner_id UUID NOT NULL REFERENCES review_owners (id),
 
-    group_name VARCHAR(100) NOT NULL,
-    status enum_reviews_status NOT NULL,
-    created_at TIMESTAMP DEFAULT NOW()
-);
+--     group_name VARCHAR(100) NOT NULL,
+--     status enum_reviews_status NOT NULL,
+--     created_at TIMESTAMP DEFAULT NOW()
+-- );
 
-CREATE TABLE proxy_manager_state(
-    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-    org_id UUID NOT NULL REFERENCES orgs (id),
+-- CREATE TABLE proxy_manager_state(
+--     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+--     org_id UUID NOT NULL REFERENCES orgs (id),
 
-    request_connection VARCHAR(128) NOT NULL,
-    request_port VARCHAR(5) NOT NULL,
-    request_access_duration bigint NOT NULL,
-    metadata JSONB NULL,
+--     request_connection VARCHAR(128) NOT NULL,
+--     request_port VARCHAR(5) NOT NULL,
+--     request_access_duration bigint NOT NULL,
+--     metadata JSONB NULL,
 
-    connected_at TIMESTAMP NULL
-);
+--     connected_at TIMESTAMP NULL
+-- );
 
 -- org
 CREATE OR REPLACE VIEW public.orgs AS
@@ -224,9 +244,9 @@ CREATE OR REPLACE VIEW public.login AS
     SELECT id, redirect, outcome FROM login;
 
 CREATE OR REPLACE VIEW public.users AS
-    SELECT 
-        u.id, u.org_id, u.subject, u.email, u.name, u.verified, u.status, u.slack_id, 
-        coalesce(array_agg(g.name) filter (WHERE g.name IS NOT NULL), NULL) AS groups, 
+    SELECT
+        u.id, u.org_id, u.subject, u.email, u.name, u.verified, u.status, u.slack_id,
+        coalesce(array_agg(g.name) filter (WHERE g.name IS NOT NULL), NULL) AS groups,
         u.created_at, u.updated_at
     FROM users u
     LEFT JOIN user_groups g
@@ -248,19 +268,19 @@ CREATE OR REPLACE FUNCTION public.org(public.users) RETURNS SETOF public.orgs RO
   SELECT * FROM public.orgs WHERE id = $1.org_id
 $$ stable language sql;
 
--- 
+--
 CREATE OR REPLACE FUNCTION public.update_groups(org_id UUID, user_id UUID, groups VARCHAR(100)[]) RETURNS SETOF public.user_groups_update AS $$
     DELETE FROM public.user_groups_update where user_id = user_id;
     WITH groups AS (
         SELECT org_id as org_id, user_id as user_id, UNNEST(groups) as name
     )
-    INSERT INTO public.user_groups_update (org_id, user_id, name) 
+    INSERT INTO public.user_groups_update (org_id, user_id, name)
     SELECT org_id, user_id, name FROM groups RETURNING *;
 $$ LANGUAGE SQL;
 
 -- agents
 CREATE OR REPLACE VIEW public.agents AS
-    SELECT 
+    SELECT
         id, org_id, name, mode, token, metadata, status, created_at, updated_at
     FROM agents;
 
@@ -276,15 +296,15 @@ CREATE OR REPLACE VIEW public.connections AS
     SELECT id, org_id, agent_id, name, command, type, (SELECT envs FROM public.env_vars WHERE id = c.id) AS envs, created_at, updated_at
     FROM connections c;
 
-CREATE OR REPLACE FUNCTION public.update_connection(org_id uuid, agent_id uuid, name text, command text[], type enum_connection_type, envs JSON) RETURNS SETOF public.connections ROWS 1 AS $$
+CREATE OR REPLACE FUNCTION public.update_connection(id uuid, org_id uuid, agent_id uuid, name text, command text[], type enum_connection_type, envs JSON) RETURNS SETOF public.connections ROWS 1 AS $$
     WITH p AS (
-        SELECT 
-            gen_random_uuid() as id, 
-            org_id as org_id, 
-            agent_id as agent_id, 
-            name as name, 
-            command as command, 
-            type as type, 
+        SELECT
+            id as id,
+            org_id as org_id,
+            agent_id as agent_id,
+            name as name,
+            command as command,
+            type as type,
             envs as envs
     ), conn AS (
         INSERT INTO connections (id, org_id, agent_id, name, command, type)
@@ -304,6 +324,39 @@ CREATE OR REPLACE FUNCTION public.update_connection(org_id uuid, agent_id uuid, 
         ON e.id = c.id;
 $$ LANGUAGE SQL;
 
+-- plugins
+CREATE OR REPLACE VIEW public.plugins AS
+    SELECT id, org_id, name, source
+    FROM plugins;
+
+CREATE OR REPLACE FUNCTION public.env_vars(public.plugins) RETURNS SETOF public.env_vars ROWS 1 AS $$
+  SELECT * FROM public.env_vars WHERE id = $1.id
+$$ stable language sql;
+
+CREATE OR REPLACE VIEW public.plugin_connections AS
+    SELECT id, org_id, plugin_id, connection_id, enabled, config
+    FROM plugin_connections;
+
+CREATE OR REPLACE FUNCTION public.env_vars(public.plugin_connections) RETURNS SETOF public.env_vars ROWS 1 AS $$
+  SELECT * FROM public.env_vars WHERE id = $1.plugin_id
+$$ stable language sql;
+
+-- sessions
+CREATE OR REPLACE VIEW public.sessions AS
+    SELECT
+        id, org_id, labels, connection, connection_type, verb, user_id, user_name, user_email, status,
+        metadata, created_at, ended_at
+    FROM sessions;
+
+CREATE OR REPLACE VIEW public.blobs AS
+    SELECT resource_id, org_id, type, pg_column_size(blob_stream) AS size, blob_stream, created_at
+    FROM blobs;
+
+-- RETURNS SETOF public.user_groups_update AS $$
+CREATE OR REPLACE FUNCTION public.blobs(public.sessions) RETURNS SETOF public.blobs AS $$
+  SELECT * FROM public.blobs WHERE resource_id = $1.id
+$$ stable language sql;
+
 
 GRANT webuser TO hoopadm;
 GRANT usage ON SCHEMA public TO webuser;
@@ -317,4 +370,14 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_groups_update to webuser;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.connections to webuser;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.env_vars to webuser;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.agents to webuser;
+GRANT SELECT ON public.plugin_connections to webuser;
+-- GRANT SELECT, INSERT, UPDATE, DELETE ON public.plugin_connections_update to webuser;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.plugin_connections to webuser;
+GRANT SELECT, INSERT, UPDATE ON public.plugins to webuser;
+-- GRANT SELECT ON public.plugin_connections to webuser;
+GRANT SELECT, INSERT, UPDATE ON public.sessions to webuser;
+GRANT SELECT, INSERT, UPDATE ON public.blobs to webuser;
 GRANT SELECT, INSERT ON public.orgs to webuser;
+
+INSERT INTO agents (org_id, id, name, mode, token, status)
+    VALUES ((SELECT id from private.orgs), '75122BCE-F957-49EB-A812-2AB60977CD9F', 'dev', 'standard', '7854115b1ae448fec54d8bf50d3ce223e30c1c933edcd12767692574f326df57', 'DISCONNECTED');
