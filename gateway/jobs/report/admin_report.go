@@ -93,7 +93,7 @@ func (s *Scheduler) sendReport(o user.Org) {
 	})
 }
 
-func (s *Scheduler) buildTemplate(o *user.Org, sessionCount int, dlpCount int64) string {
+func (s *Scheduler) buildTemplate(o *user.Org, sessionCount, dlpCount int64) string {
 	return fmt.Sprintf("Hi %s administrator, You had %d session(s) executed and %d DLP fields redacted in the past 7 days.",
 		o.Name, sessionCount, dlpCount)
 }

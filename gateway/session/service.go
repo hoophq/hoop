@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	st "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
@@ -20,10 +19,10 @@ type (
 	}
 
 	storage interface {
-		Persist(ctx *user.Context, sess *types.Session) (*st.TxResponse, error)
-		PersistStatus(sess *SessionStatus) (*st.TxResponse, error)
-		EntityHistory(ctx *user.Context, sessionID string) ([]SessionStatusHistory, error)
-		ValidateSessionID(sessionID string) error
+		// Persist(ctx *user.Context, sess *types.Session) (*st.TxResponse, error)
+		// PersistStatus(sess *SessionStatus) (*st.TxResponse, error)
+		// EntityHistory(ctx *user.Context, sessionID string) ([]SessionStatusHistory, error)
+		// ValidateSessionID(sessionID string) error
 		FindAll(*user.Context, ...*SessionOption) (*SessionList, error)
 		FindOne(ctx *user.Context, name string) (*types.Session, error)
 		ListAllSessionsID(startDate time.Time) ([]*types.Session, error)
@@ -33,7 +32,7 @@ type (
 
 	// [time.Time, string, []byte]
 	SessionList struct {
-		Total       int             `json:"total"`
+		Total       int64           `json:"total"`
 		HasNextPage bool            `json:"has_next_page"`
 		Items       []types.Session `json:"data"`
 	}
@@ -52,34 +51,34 @@ type (
 	}
 )
 
-func NewNonIndexedEventStreamList(eventStartDate time.Time, eventStreams ...types.SessionEventStream) (types.SessionNonIndexedEventStreamList, error) {
-	for idx, ev := range eventStreams {
-		if len(ev) != 3 {
-			return nil, fmt.Errorf("event stream [%v] in wrong format, accept [time.Time, byte, []byte]", idx)
-		}
-		eventTime, ok := ev[0].(time.Time)
-		if !ok {
-			return nil, fmt.Errorf("time in wrong format, expected time.Time, got=%T", ev[0])
-		}
-		eventTypeByte, _ := ev[1].(byte)
-		eventType := string(eventTypeByte)
-		if eventType != "o" && eventType != "i" && eventType != "e" {
-			return nil, fmt.Errorf(`event-type in wrong format, expected "i", "o" or "e", got=%v`, eventType)
-		}
-		eventData, ok := ev[2].([]byte)
-		if !ok {
-			return nil, fmt.Errorf("event-data in wrong format, expected []byte, got=%T", ev[2])
-		}
+// func NewNonIndexedEventStreamList(eventStartDate time.Time, eventStreams ...types.SessionEventStream) (types.SessionNonIndexedEventStreamList, error) {
+// 	for idx, ev := range eventStreams {
+// 		if len(ev) != 3 {
+// 			return nil, fmt.Errorf("event stream [%v] in wrong format, accept [time.Time, byte, []byte]", idx)
+// 		}
+// 		eventTime, ok := ev[0].(time.Time)
+// 		if !ok {
+// 			return nil, fmt.Errorf("time in wrong format, expected time.Time, got=%T", ev[0])
+// 		}
+// 		eventTypeByte, _ := ev[1].(byte)
+// 		eventType := string(eventTypeByte)
+// 		if eventType != "o" && eventType != "i" && eventType != "e" {
+// 			return nil, fmt.Errorf(`event-type in wrong format, expected "i", "o" or "e", got=%v`, eventType)
+// 		}
+// 		eventData, ok := ev[2].([]byte)
+// 		if !ok {
+// 			return nil, fmt.Errorf("event-data in wrong format, expected []byte, got=%T", ev[2])
+// 		}
 
-		elapsedTimeInSec := eventTime.Sub(eventStartDate).Seconds()
-		eventStreams[idx][0] = elapsedTimeInSec
-		eventStreams[idx][1] = eventType
-		eventStreams[idx][2] = base64.StdEncoding.EncodeToString(eventData)
-	}
-	return types.SessionNonIndexedEventStreamList{
-		"stream": eventStreams,
-	}, nil
-}
+// 		elapsedTimeInSec := eventTime.Sub(eventStartDate).Seconds()
+// 		eventStreams[idx][0] = elapsedTimeInSec
+// 		eventStreams[idx][1] = eventType
+// 		eventStreams[idx][2] = base64.StdEncoding.EncodeToString(eventData)
+// 	}
+// 	return types.SessionNonIndexedEventStreamList{
+// 		"stream": eventStreams,
+// 	}, nil
+// }
 
 func (s *Service) FindReviewBySessionID(sessionID string) (*types.Review, error) {
 	return s.Storage.FindReviewBySessionID(sessionID)
@@ -93,20 +92,20 @@ func (s *Service) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionLi
 	return s.Storage.FindAll(ctx, opts...)
 }
 
-func (s *Service) EntityHistory(ctx *user.Context, sessionID string) ([]SessionStatusHistory, error) {
-	if ctx.Org.Id == "" {
-		return nil, fmt.Errorf("organization id is empty")
-	}
-	return s.Storage.EntityHistory(ctx, sessionID)
-}
+// func (s *Service) EntityHistory(ctx *user.Context, sessionID string) ([]SessionStatusHistory, error) {
+// 	if ctx.Org.Id == "" {
+// 		return nil, fmt.Errorf("organization id is empty")
+// 	}
+// 	return s.Storage.EntityHistory(ctx, sessionID)
+// }
 
-func (s *Service) PersistStatus(status *SessionStatus) (*st.TxResponse, error) {
-	return s.Storage.PersistStatus(status)
-}
+// func (s *Service) PersistStatus(status *SessionStatus) (*st.TxResponse, error) {
+// 	return s.Storage.PersistStatus(status)
+// }
 
-func (s *Service) ValidateSessionID(sessionID string) error {
-	return s.Storage.ValidateSessionID(sessionID)
-}
+// func (s *Service) ValidateSessionID(sessionID string) error {
+// 	return s.Storage.ValidateSessionID(sessionID)
+// }
 
 func (s *Service) PersistReview(context *user.Context, review *types.Review) error {
 	if review.Id == "" {

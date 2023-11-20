@@ -174,14 +174,13 @@ func (s *Service) CreateDefaultOrganization() error {
 	}
 	// if this env is not set, it will by default
 	// create the organization to proxy requests to the new api.
-	isLegacyApi := os.Getenv("LEGACY_API") == "true"
 	switch len(orgList) {
 	case 1:
 		org := &orgList[0]
 		if org.Name == pb.DefaultOrgName {
 			return nil
 		}
-		org.IsApiV2 = !isLegacyApi
+		org.IsApiV2 = false
 		org.Name = pb.DefaultOrgName
 		if err := s.Persist(org); err != nil {
 			return fmt.Errorf("failed promoting %v to single tenant, err=%v", orgList[0], err)
@@ -190,7 +189,7 @@ func (s *Service) CreateDefaultOrganization() error {
 		if err := s.Persist(&Org{
 			Id:      uuid.NewString(),
 			Name:    pb.DefaultOrgName,
-			IsApiV2: !isLegacyApi,
+			IsApiV2: false,
 		}); err != nil {
 			return fmt.Errorf("failed creating the default organization, err=%v", err)
 		}

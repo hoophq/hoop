@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -88,6 +89,19 @@ func (c *Client) List() *Response {
 	return &resp
 }
 
+// ExactCount returns the total of records in the table, in case of error it returns -1
+func (c *Client) ExactCount() int64 {
+	reqHeader := map[string]string{"Prefer": "count=exact"}
+	resp := httpRequest(c.apiURL, "HEAD", c.accessToken, reqHeader, nil)
+	if contentRange := resp.headers.Get("Content-Range"); contentRange != "" {
+		_, size, _ := strings.Cut(contentRange, "/")
+		if total, err := strconv.ParseInt(size, 10, 64); err == nil {
+			return total
+		}
+	}
+	return -1
+}
+
 func (c *Client) Delete() *Response {
 	resp := httpRequest(c.apiURL, "DELETE", c.accessToken, nil, nil)
 	return &resp
@@ -127,7 +141,7 @@ func httpRequest(apiURL, method, bearerToken string, reqHeaders map[string]strin
 		return
 	}
 	resp.statusCode = httpResp.StatusCode
-	// resp.headers = httpResp.Header.Clone()
+	resp.headers = httpResp.Header.Clone()
 	// resp.contentLength = httpResp.ContentLength
 
 	log.Infof("%v %v %v", resp.statusCode, method, apiURL)
@@ -145,7 +159,7 @@ func httpRequest(apiURL, method, bearerToken string, reqHeaders map[string]strin
 type Response struct {
 	data       []byte
 	statusCode int
-	// headers       http.Header
+	headers    http.Header
 	// contentLength int64
 	err error
 }

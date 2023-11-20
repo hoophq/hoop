@@ -40,8 +40,8 @@ type (
 	service interface {
 		FindAll(*user.Context, ...*SessionOption) (*SessionList, error)
 		FindOne(context *user.Context, name string) (*types.Session, error)
-		EntityHistory(ctx *user.Context, sessionID string) ([]SessionStatusHistory, error)
-		ValidateSessionID(sessionID string) error
+		// EntityHistory(ctx *user.Context, sessionID string) ([]SessionStatusHistory, error)
+		// ValidateSessionID(sessionID string) error
 		FindReviewBySessionID(sessionID string) (*types.Review, error)
 		PersistReview(context *user.Context, review *types.Review) error
 	}
@@ -72,25 +72,25 @@ var (
 	defaultDownloadExpireTime = time.Minute * 5
 )
 
-func (a *Handler) StatusHistory(c *gin.Context) {
-	context := user.ContextUser(c)
-	log := user.ContextLogger(c)
+// func (a *Handler) StatusHistory(c *gin.Context) {
+// 	context := user.ContextUser(c)
+// 	log := user.ContextLogger(c)
 
-	sessionID := c.Param("session_id")
-	historyList, err := a.Service.EntityHistory(context, sessionID)
-	if err != nil {
-		log.Errorf("failed fetching session history, err=%v", err)
-		sentry.CaptureException(err)
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
+// 	sessionID := c.Param("session_id")
+// 	historyList, err := a.Service.EntityHistory(context, sessionID)
+// 	if err != nil {
+// 		log.Errorf("failed fetching session history, err=%v", err)
+// 		sentry.CaptureException(err)
+// 		c.AbortWithStatus(http.StatusInternalServerError)
+// 		return
+// 	}
 
-	if historyList == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
-		return
-	}
-	c.PureJSON(http.StatusOK, historyList)
-}
+// 	if historyList == nil {
+// 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+// 		return
+// 	}
+// 	c.PureJSON(http.StatusOK, historyList)
+// }
 
 func (a *Handler) FindOne(c *gin.Context) {
 	context := user.ContextUser(c)
@@ -265,9 +265,13 @@ func (a *Handler) FindAll(c *gin.Context) {
 			var optVal any
 			switch optKey {
 			case OptionStartDate, OptionEndDate:
-				if optTimeVal, err := time.Parse(time.RFC3339, queryOptVal); err == nil {
-					optVal = optTimeVal
+				optTimeVal, err := time.Parse(time.RFC3339, queryOptVal)
+				if err != nil {
+					log.Warnf("failed listing sessions, wrong start_date option value, err=%v", err)
+					c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "failed listing sessions, start_date in wrong format"})
+					return
 				}
+				optVal = optTimeVal
 			case OptionLimit, OptionOffset:
 				if paginationOptVal, err := strconv.Atoi(queryOptVal); err == nil {
 					optVal = paginationOptVal

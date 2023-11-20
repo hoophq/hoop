@@ -144,43 +144,46 @@ CREATE TABLE env_vars(
 );
 
 
--- CREATE TYPE enum_session_status AS ENUM ('open', 'done');
--- CREATE TYPE enum_session_verb AS ENUM ('connect', 'exec');
--- CREATE TABLE sessions(
---     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
---     org_id UUID NOT NULL REFERENCES orgs (id),
+CREATE TYPE enum_session_status AS ENUM ('open', 'done');
+CREATE TYPE enum_session_verb AS ENUM ('connect', 'exec');
+CREATE TABLE sessions(
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    org_id UUID NOT NULL REFERENCES orgs (id),
 
---     connection VARCHAR(128) NOT NULL,
---     connection_type enum_connection_type NOT NULL,
---     -- input TEXT NULL,
---     verb enum_session_verb NOT NULL,
---     labels JSONB NULL,
---     user_id VARCHAR(255) NULL,
---     user_name VARCHAR(255) NULL,
---     user_email VARCHAR(255) NULL,
---     -- event_stream JSONB NULL,
---     -- blob_size int DEFAULT 0,
---     status enum_session_status NOT NULL,
---     -- blob-size, dlp count
---     metadata JSONB NULL,
+    connection VARCHAR(128) NOT NULL,
+    connection_type enum_connection_type NOT NULL,
+    -- input TEXT NULL,
+    verb enum_session_verb NOT NULL,
+    labels JSONB NULL,
+    user_id VARCHAR(255) NULL,
+    user_name VARCHAR(255) NULL,
+    user_email VARCHAR(255) NULL,
+    -- event_stream JSONB NULL,
+    -- blob_size int DEFAULT 0,
+    status enum_session_status NOT NULL,
+    blob_input_id UUID NULL,
+    blob_stream_id UUID NULL,
+    -- blob-size, dlp count
+    metadata JSONB NULL,
 
---     created_at TIMESTAMP DEFAULT NOW(),
---     ended_at TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    ended_at TIMESTAMP NULL,
 
---     UNIQUE(org_id, id)
--- );
+    UNIQUE(org_id, id)
+);
 
--- CREATE TYPE enum_blob_type AS ENUM ('review-input', 'session-input', 'session-stream');
--- CREATE table blobs(
---     -- refers to any resource/table that needs to manage blobs
---     resource_id UUID DEFAULT uuid_generate_v4(),
---     org_id UUID NOT NULL REFERENCES orgs (id),
+CREATE TYPE enum_blob_type AS ENUM ('review-input', 'session-input', 'session-stream');
+CREATE table blobs(
+    -- refers to any resource/table that needs to manage blobs
+    id UUID DEFAULT uuid_generate_v4(),
+    org_id UUID NOT NULL REFERENCES orgs (id),
 
---     type enum_blob_type NOT NULL,
---     blob_stream JSONB NOT NULL,
+    type enum_blob_type NOT NULL,
+    blob_stream JSONB NOT NULL,
 
---     created_at TIMESTAMP DEFAULT NOW()
--- );
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(org_id, id)
+);
 
 -- CREATE TYPE enum_reviews_status AS ENUM ('PENDING', 'APPROVED', 'REVOKED', 'REJECTED', 'PROCESSING', 'EXECUTED', 'UNKNOWN');
 -- CREATE TYPE enum_reviews_type AS ENUM ('onetime', 'jit');
@@ -345,18 +348,20 @@ $$ stable language sql;
 CREATE OR REPLACE VIEW public.sessions AS
     SELECT
         id, org_id, labels, connection, connection_type, verb, user_id, user_name, user_email, status,
-        metadata, created_at, ended_at
+        blob_input_id, blob_stream_id, metadata, created_at, ended_at
     FROM sessions;
 
 CREATE OR REPLACE VIEW public.blobs AS
-    SELECT resource_id, org_id, type, pg_column_size(blob_stream) AS size, blob_stream, created_at
+    SELECT id, org_id, type, pg_column_size(blob_stream) AS size, blob_stream, created_at
     FROM blobs;
 
--- RETURNS SETOF public.user_groups_update AS $$
-CREATE OR REPLACE FUNCTION public.blobs(public.sessions) RETURNS SETOF public.blobs AS $$
-  SELECT * FROM public.blobs WHERE resource_id = $1.id
+CREATE OR REPLACE FUNCTION public.blob_input(public.sessions) RETURNS SETOF public.blobs ROWS 1 AS $$
+  SELECT * FROM public.blobs WHERE id = $1.blob_input_id
 $$ stable language sql;
 
+CREATE OR REPLACE FUNCTION public.blob_stream(public.sessions) RETURNS SETOF public.blobs ROWS 1 AS $$
+  SELECT * FROM public.blobs WHERE id = $1.blob_stream_id
+$$ stable language sql;
 
 GRANT webuser TO hoopadm;
 GRANT usage ON SCHEMA public TO webuser;
@@ -378,6 +383,19 @@ GRANT SELECT, INSERT, UPDATE ON public.plugins to webuser;
 GRANT SELECT, INSERT, UPDATE ON public.sessions to webuser;
 GRANT SELECT, INSERT, UPDATE ON public.blobs to webuser;
 GRANT SELECT, INSERT ON public.orgs to webuser;
+
+
+
+INSERT INTO plugins (id, org_id, name) VALUES
+    ('DC0F40AF-12A8-495A-974D-FF03DD921406', (SELECT id FROM private.orgs), 'dlp'),
+    ('F73A6FD7-A84C-4E00-A3AE-475150392224', (SELECT id FROM private.orgs), 'audit');
+
+INSERT INTO plugin_connections (plugin_id, org_id, connection_id, config) VALUES
+    ('F73A6FD7-A84C-4E00-A3AE-475150392224', (SELECT id FROM private.orgs), '90a612d8-4962-4426-9d57-01ed4ba110ce', ARRAY['myconfig01']),
+    ('F73A6FD7-A84C-4E00-A3AE-475150392224', (SELECT id FROM private.orgs), '02cfd4a1-d108-4daa-b06f-54b9b7fed66d', ARRAY['myconfig02']);
+
+INSERT INTO env_vars (id, org_id, envs) VALUES
+    ('F73A6FD7-A84C-4E00-A3AE-475150392224', (SELECT id FROM private.orgs), '{"GIT_URL": "haha", "GIT_PASS": "pwd"}');
 
 INSERT INTO agents (org_id, id, name, mode, token, status)
     VALUES ((SELECT id from private.orgs), '75122BCE-F957-49EB-A812-2AB60977CD9F', 'dev', 'standard', '7854115b1ae448fec54d8bf50d3ce223e30c1c933edcd12767692574f326df57', 'DISCONNECTED');

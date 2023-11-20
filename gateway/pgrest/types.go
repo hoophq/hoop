@@ -76,3 +76,32 @@ type PluginConnection struct {
 	EnvVar     EnvVar     `json:"env_vars"`
 	Connection Connection `json:"connections"`
 }
+
+type Blob struct {
+	ID         string `json:"id"`
+	OrgID      string `json:"org_id"`
+	Type       string `json:"type"`
+	Size       int64  `json:"size"`
+	BlobStream []any  `json:"blob_stream"`
+}
+
+type Session struct {
+	ID             string            `json:"id"`
+	OrgID          string            `json:"org_id"`
+	Labels         map[string]string `json:"labels"`
+	Connection     string            `json:"connection"`
+	ConnectionType string            `json:"connection_type"`
+	Verb           string            `json:"verb"`
+	UserID         string            `json:"user_id"`
+	UserName       string            `json:"user_name"`
+	UserEmail      string            `json:"user_email"`
+	Status         string            `json:"status"`
+	BlobInputID    string            `json:"blob_input_id"`
+	BlobStreamID   string            `json:"blob_stream_id"`
+	BlobInput      *Blob             `json:"blob_input"`
+	BlobStream     *Blob             `json:"blob_stream"`
+	Metadata       map[string]any    `json:"metadata"`
+	// TODO: convert to time.Time
+	CreatedAt string  `json:"created_at"`
+	EndedAt   *string `json:"ended_at"`
+}

@@ -275,9 +275,9 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest(analytics.EventFetchSessions),
 		api.SessionHandler.FindOne)
 	// DEPRECATED
-	route.GET("/plugins/audit/sessions/:session_id/status",
-		api.Authenticate,
-		api.SessionHandler.StatusHistory)
+	// route.GET("/plugins/audit/sessions/:session_id/status",
+	// 	api.Authenticate,
+	// 	api.SessionHandler.StatusHistory)
 	route.GET("/plugins/audit/sessions",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventFetchSessions),
@@ -287,9 +287,9 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest(analytics.EventFetchSessions),
 		api.SessionHandler.FindOne)
-	route.GET("/sessions/:session_id/status",
-		api.Authenticate,
-		api.SessionHandler.StatusHistory)
+	// route.GET("/sessions/:session_id/status",
+	// 	api.Authenticate,
+	// 	api.SessionHandler.StatusHistory)
 	route.GET("/sessions/:session_id/download", api.SessionHandler.DownloadSession)
 	route.GET("/sessions",
 		api.Authenticate,
