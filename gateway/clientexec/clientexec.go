@@ -66,7 +66,6 @@ type (
 		BearerToken    string
 		ConnectionInfo *types.ConnectionInfo
 		UserInfo       *types.APIContext
-		IsApiV2        bool
 	}
 )
 
@@ -164,7 +163,6 @@ func New(opts *Options) (*clientExec, error) {
 		grpc.WithOption("origin", pb.ConnectionOriginClientAPI),
 		grpc.WithOption("verb", pb.ClientVerbExec),
 		grpc.WithOption("session-id", opts.SessionID),
-		grpc.WithOption("apiv2", fmt.Sprintf("%v", opts.IsApiV2)),
 	)
 	if err != nil {
 		_ = wlog.Close()

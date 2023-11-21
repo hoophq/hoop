@@ -113,11 +113,6 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 		return err
 	}
 
-	var clientHeaderApiV2 bool
-	if v := md.Get("apiv2"); len(v) > 0 {
-		clientHeaderApiV2 = v[0] == "true"
-	}
-
 	var ctxVal any
 	switch {
 	// administrative api authentication
@@ -138,7 +133,7 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			"slackid", uctx.SlackID, "status", uctx.UserStatus,
 		).Infof("admin api - decoded userinfo")
 
-		gwctx := &GatewayContext{UserContext: *uctx, IsAdminExec: true, IsApiV2: true}
+		gwctx := &GatewayContext{UserContext: *uctx, IsAdminExec: true}
 		conn, err := parseConnectionInfoFromHeader(md)
 		if err != nil {
 			return err
@@ -185,7 +180,6 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 		ctxVal = &GatewayContext{
 			Agent:       *ag,
 			BearerToken: bearerToken,
-			IsApiV2:     org.IsApiV2 || clientHeaderApiV2,
 		}
 	// client proxy manager authentication (access token)
 	case clientOrigin[0] == pb.ConnectionOriginClientProxyManager:
@@ -204,7 +198,6 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 		ctxVal = &GatewayContext{
 			UserContext: *userCtx.ToAPIContext(),
 			BearerToken: bearerToken,
-			IsApiV2:     userCtx.Org.IsApiV2 || clientHeaderApiV2,
 		}
 	// client proxy authentication (access token)
 	default:
@@ -223,24 +216,23 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 		gwctx := &GatewayContext{
 			UserContext: *userCtx.ToAPIContext(),
 			BearerToken: bearerToken,
-			IsApiV2:     userCtx.Org.IsApiV2 || clientHeaderApiV2,
 		}
 		gwctx.UserContext.ApiURL = i.idp.ApiURL
 		connectionName := commongrpc.MetaGet(md, "connection-name")
-		if gwctx.IsApiV2 {
-			conn, err := i.getConnectionV2(bearerToken, connectionName, userCtx)
-			if err != nil {
-				if err == apiclient.ErrNotFound {
-					return status.Errorf(codes.NotFound, "connection not found")
-				}
-				log.Errorf("failed obtaining connection %v, err=%v", connectionName, err)
-				sentry.CaptureException(err)
-				return status.Error(codes.Internal, "internal error, failed obtaining connection")
-			}
-			gwctx.Connection = *conn
-			ctxVal = gwctx
-			break
-		}
+		// if gwctx.IsApiV2 {
+		// 	conn, err := i.getConnectionV2(bearerToken, connectionName, userCtx)
+		// 	if err != nil {
+		// 		if err == apiclient.ErrNotFound {
+		// 			return status.Errorf(codes.NotFound, "connection not found")
+		// 		}
+		// 		log.Errorf("failed obtaining connection %v, err=%v", connectionName, err)
+		// 		sentry.CaptureException(err)
+		// 		return status.Error(codes.Internal, "internal error, failed obtaining connection")
+		// 	}
+		// 	gwctx.Connection = *conn
+		// 	ctxVal = gwctx
+		// 	break
+		// }
 		conn, err := i.getConnection(connectionName, userCtx)
 		if err != nil {
 			return err

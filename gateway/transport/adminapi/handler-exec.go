@@ -78,7 +78,6 @@ func execPost(c *gin.Context) {
 		},
 		BearerToken: authKey,
 		UserInfo:    &req.UserInfo,
-		IsApiV2:     true,
 	})
 	if err != nil {
 		c.PureJSON(http.StatusBadRequest, &ExecResponse{Message: err.Error()})
