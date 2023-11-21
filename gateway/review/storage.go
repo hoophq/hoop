@@ -5,6 +5,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/runopsio/hoop/gateway/pgrest"
 	st "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
@@ -236,48 +238,65 @@ func (s *Storage) findGroupsByReviewId(orgID string, reviewID string) ([]types.R
 	return reviewsGroups[0][0].ReviewGroups, nil
 }
 
-func (s *Storage) Persist(ctx *user.Context, review *types.Review) (int64, error) {
-	reviewGroupIds := make([]string, 0)
+func (s *Storage) Persist(ctx *user.Context, r *types.Review) (int64, error) {
+	blobInputID := uuid.NewString()
+	pgrest.New("/reviews").Create(map[string]any{
+		"id":                  r.Id,
+		"org_id":              r.OrgId,
+		"connection_id":       r.Connection.Id,
+		"connection_name":     r.Connection.Name,
+		"type":                r.Type,
+		"blob_input_id":       blobInputID,
+		"input_env_vars":      r.InputEnvVars,
+		"input_clientargs":    r.InputClientArgs,
+		"access_duration_sec": int(r.AccessDuration.Seconds()),
+		"status":              r.Status,
+		"owner_email":         r.ReviewOwner.Email,
+		"owner_name":          r.ReviewOwner.Name,
+		"owner_slack_id":      r.ReviewOwner.SlackID,
+	})
+	return 0, nil
+	// reviewGroupIds := make([]string, 0)
 
-	var payloads []st.TxEdnStruct
-	for _, r := range review.ReviewGroupsData {
-		reviewGroupIds = append(reviewGroupIds, r.Id)
-		xg := &types.ReviewGroup{
-			Id:         r.Id,
-			Group:      r.Group,
-			Status:     r.Status,
-			ReviewDate: r.ReviewDate,
-		}
-		if r.ReviewedBy != nil {
-			xg.ReviewedBy = r.ReviewedBy
-		}
-		payloads = append(payloads, xg)
-	}
+	// var payloads []st.TxEdnStruct
+	// for _, r := range review.ReviewGroupsData {
+	// 	reviewGroupIds = append(reviewGroupIds, r.Id)
+	// 	xg := &types.ReviewGroup{
+	// 		Id:         r.Id,
+	// 		Group:      r.Group,
+	// 		Status:     r.Status,
+	// 		ReviewDate: r.ReviewDate,
+	// 	}
+	// 	if r.ReviewedBy != nil {
+	// 		xg.ReviewedBy = r.ReviewedBy
+	// 	}
+	// 	payloads = append(payloads, xg)
+	// }
 
-	xtdbReview := &types.Review{
-		Id:               review.Id,
-		CreatedAt:        review.CreatedAt,
-		OrgId:            review.OrgId,
-		Type:             review.Type,
-		Session:          review.Session,
-		Connection:       review.Connection,
-		ConnectionId:     review.ConnectionId,
-		CreatedBy:        review.CreatedBy,
-		ReviewOwner:      review.ReviewOwner,
-		Input:            review.Input,
-		InputEnvVars:     review.InputEnvVars,
-		InputClientArgs:  review.InputClientArgs,
-		AccessDuration:   review.AccessDuration,
-		RevokeAt:         review.RevokeAt,
-		Status:           review.Status,
-		ReviewGroupsIds:  reviewGroupIds,
-		ReviewGroupsData: review.ReviewGroupsData,
-	}
+	// xtdbReview := &types.Review{
+	// 	Id:               review.Id,
+	// 	CreatedAt:        review.CreatedAt,
+	// 	OrgId:            review.OrgId,
+	// 	Type:             review.Type,
+	// 	Session:          review.Session,
+	// 	Connection:       review.Connection,
+	// 	ConnectionId:     review.ConnectionId,
+	// 	CreatedBy:        review.CreatedBy,
+	// 	ReviewOwner:      review.ReviewOwner,
+	// 	Input:            review.Input,
+	// 	InputEnvVars:     review.InputEnvVars,
+	// 	InputClientArgs:  review.InputClientArgs,
+	// 	AccessDuration:   review.AccessDuration,
+	// 	RevokeAt:         review.RevokeAt,
+	// 	Status:           review.Status,
+	// 	ReviewGroupsIds:  reviewGroupIds,
+	// 	ReviewGroupsData: review.ReviewGroupsData,
+	// }
 
-	tx, err := s.SubmitPutTx(append(payloads, xtdbReview)...)
-	if err != nil {
-		return 0, err
-	}
+	// tx, err := s.SubmitPutTx(append(payloads, xtdbReview)...)
+	// if err != nil {
+	// 	return 0, err
+	// }
 
-	return tx.TxID, nil
+	// return tx.TxID, nil
 }

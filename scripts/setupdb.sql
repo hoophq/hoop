@@ -51,8 +51,8 @@ CREATE TABLE service_accounts(
 
 CREATE TABLE user_groups(
     org_id UUID NOT NULL REFERENCES orgs (id),
-    user_id UUID NULL REFERENCES users(id),
-    service_account_id UUID NULL REFERENCES service_accounts(id),
+    user_id UUID NULL REFERENCES users(id) ON DELETE CASCADE,
+    service_account_id UUID NULL REFERENCES service_accounts(id) ON DELETE CASCADE,
 
     name VARCHAR(100) NOT NULL,
 
@@ -124,8 +124,8 @@ CREATE TABLE plugins(
 CREATE TABLE plugin_connections(
     id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
     org_id UUID NULL REFERENCES orgs (id),
-    plugin_id UUID NOT NULL REFERENCES plugins (id),
-    connection_id UUID NOT NULL REFERENCES connections (id),
+    plugin_id UUID NOT NULL REFERENCES plugins (id) ON DELETE CASCADE,
+    connection_id UUID NOT NULL REFERENCES connections (id) ON DELETE CASCADE,
 
     enabled BOOLEAN DEFAULT TRUE,
     config TEXT[] NULL,
@@ -142,7 +142,6 @@ CREATE TABLE env_vars(
 
     envs JSONB NULL
 );
-
 
 CREATE TYPE enum_session_status AS ENUM ('open', 'done');
 CREATE TYPE enum_session_verb AS ENUM ('connect', 'exec');
@@ -185,46 +184,45 @@ CREATE table blobs(
     UNIQUE(org_id, id)
 );
 
--- CREATE TYPE enum_reviews_status AS ENUM ('PENDING', 'APPROVED', 'REVOKED', 'REJECTED', 'PROCESSING', 'EXECUTED', 'UNKNOWN');
--- CREATE TYPE enum_reviews_type AS ENUM ('onetime', 'jit');
--- CREATE TABLE reviews(
---     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
---     org_id UUID NOT NULL REFERENCES orgs (id),
---     -- check when deleting a particular connection
---     session_id UUID NULL REFERENCES sessions (id),
---     connection_id UUID NULL REFERENCES connections (id),
-    
---     type enum_reviews_type NOT NULL,
-    
---     connection_name VARCHAR(128) NOT NULL,
---     input TEXT NULL,
---     input_env_vars JSONB NULL,
---     input_client_args TEXT[] NULL,
---     access_duration BIGINT DEFAULT 0,
---     status enum_reviews_status NOT NULL,
-        
---     created_at TIMESTAMP DEFAULT NOW(),
---     revoked_at TIMESTAMP NULL
--- );
+CREATE TYPE enum_reviews_status AS ENUM ('PENDING', 'APPROVED', 'REVOKED', 'REJECTED', 'PROCESSING', 'EXECUTED', 'UNKNOWN');
+CREATE TYPE enum_reviews_type AS ENUM ('onetime', 'jit');
+CREATE TABLE reviews(
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    org_id UUID NOT NULL REFERENCES orgs (id),
 
--- CREATE TABLE review_owners(
---     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
---     review_id UUID NOT NULL REFERENCES reviews (id),
+    session_id UUID NULL,
+    connection_id UUID NULL,
+    connection_name VARCHAR(128) NOT NULL,
+    connection_type enum_connection_type NOT NULL,
 
---     email VARCHAR(255) NOT NULL,
---     name VARCHAR(255) NOT NULL,
---     slack_id VARCHAR(50) NULL
--- );
+    type enum_reviews_type NOT NULL,
+    blob_input_id UUID NULL,
+    input_env_vars JSONB NULL,
+    input_client_args TEXT[] NULL,
+    access_duration_sec INT DEFAULT 0,
+    status enum_reviews_status NOT NULL,
 
--- CREATE TABLE review_groups(
---     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
---     review_id UUID NOT NULL REFERENCES reviews (id),
---     review_owner_id UUID NOT NULL REFERENCES review_owners (id),
+    owner_email VARCHAR(255) NOT NULL,
+    owner_name VARCHAR(255) NULL,
+    owner_slack_id VARCHAR(50) NULL,
 
---     group_name VARCHAR(100) NOT NULL,
---     status enum_reviews_status NOT NULL,
---     created_at TIMESTAMP DEFAULT NOW()
--- );
+    created_at TIMESTAMP DEFAULT NOW(),
+    revoked_at TIMESTAMP NULL
+);
+
+CREATE TABLE review_groups(
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    review_id UUID NOT NULL REFERENCES reviews (id) ON DELETE CASCADE,
+
+    group_name VARCHAR(100) NOT NULL,
+    status enum_reviews_status NOT NULL,
+
+    owner_email VARCHAR(255) NOT NULL,
+    owner_name VARCHAR(255) NOT NULL,
+    owner_slack_id VARCHAR(50) NULL,
+
+    reviewed_at TIMESTAMP NULL
+);
 
 -- CREATE TABLE proxy_manager_state(
 --     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -363,10 +361,25 @@ CREATE OR REPLACE FUNCTION public.blob_stream(public.sessions) RETURNS SETOF pub
   SELECT * FROM public.blobs WHERE id = $1.blob_stream_id
 $$ stable language sql;
 
+-- reviews
+CREATE OR REPLACE VIEW public.reviews AS
+    SELECT
+        id, org_id, session_id, connection_id, connection_name, type, blob_input_id,
+        input_env_vars, input_client_args, access_duration_sec, status,
+        owner_email, owner_name, owner_slack_id, created_at, revoked_at
+    FROM reviews;
+
+CREATE OR REPLACE VIEW public.review_groups AS
+    SELECT
+        id, review_id, group_name, status,
+        owner_email, owner_name, owner_slack_id, reviewed_at
+    FROM review_groups;
+
 GRANT webuser TO hoopadm;
 GRANT usage ON SCHEMA public TO webuser;
 GRANT usage ON SCHEMA private TO webuser;
 
+GRANT SELECT, INSERT ON public.orgs to webuser;
 GRANT INSERT, SELECT, UPDATE on public.login to webuser;
 GRANT SELECT, INSERT, UPDATE ON public.users to webuser;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.users_update to webuser;
@@ -376,15 +389,12 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.connections to webuser;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.env_vars to webuser;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.agents to webuser;
 GRANT SELECT ON public.plugin_connections to webuser;
--- GRANT SELECT, INSERT, UPDATE, DELETE ON public.plugin_connections_update to webuser;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.plugin_connections to webuser;
 GRANT SELECT, INSERT, UPDATE ON public.plugins to webuser;
--- GRANT SELECT ON public.plugin_connections to webuser;
 GRANT SELECT, INSERT, UPDATE ON public.sessions to webuser;
 GRANT SELECT, INSERT, UPDATE ON public.blobs to webuser;
-GRANT SELECT, INSERT ON public.orgs to webuser;
-
-
+GRANT SELECT, INSERT, UPDATE ON public.reviews to webuser;
+GRANT SELECT, INSERT, UPDATE ON public.review_groups to webuser;
 
 INSERT INTO plugins (id, org_id, name) VALUES
     ('DC0F40AF-12A8-495A-974D-FF03DD921406', (SELECT id FROM private.orgs), 'dlp'),
