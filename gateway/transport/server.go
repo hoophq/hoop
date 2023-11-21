@@ -30,7 +30,6 @@ import (
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
-	transportv2 "github.com/runopsio/hoop/gateway/transportv2"
 	authinterceptor "github.com/runopsio/hoop/gateway/transportv2/interceptors/auth"
 	sessionuuidinterceptor "github.com/runopsio/hoop/gateway/transportv2/interceptors/sessionuuid"
 	tracinginterceptor "github.com/runopsio/hoop/gateway/transportv2/interceptors/tracing"
@@ -167,28 +166,28 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 		return status.Error(codes.InvalidArgument, "missing origin")
 	}
 
-	val := ctx.Value(authinterceptor.GatewayContextKey{})
-	gwctx, _ := val.(*authinterceptor.GatewayContext)
-	if gwctx != nil && gwctx.IsApiV2 {
-		switch clientOrigin[0] {
-		case pb.ConnectionOriginAgent:
-			return transportv2.SubscribeAgent(&transportv2.AgentContext{
-				Agent:       &gwctx.Agent,
-				ApiURL:      s.IDProvider.ApiURL,
-				BearerToken: gwctx.BearerToken,
-			}, stream)
-		case pb.ConnectionOriginClientProxyManager:
-			return status.Error(codes.Unimplemented, "not implemented")
-			// return s.proxyManagerV2(stream)
-		default:
-			return transportv2.SubscribeClient(&transportv2.ClientContext{
-				UserContext: gwctx.UserContext,
-				Connection:  gwctx.Connection,
-				BearerToken: gwctx.BearerToken,
-				IsAdminExec: gwctx.IsAdminExec,
-			}, stream)
-		}
-	}
+	// val := ctx.Value(authinterceptor.GatewayContextKey{})
+	// gwctx, _ := val.(*authinterceptor.GatewayContext)
+	// if gwctx != nil && gwctx.IsApiV2 {
+	// 	switch clientOrigin[0] {
+	// 	case pb.ConnectionOriginAgent:
+	// 		return transportv2.SubscribeAgent(&transportv2.AgentContext{
+	// 			Agent:       &gwctx.Agent,
+	// 			ApiURL:      s.IDProvider.ApiURL,
+	// 			BearerToken: gwctx.BearerToken,
+	// 		}, stream)
+	// 	case pb.ConnectionOriginClientProxyManager:
+	// 		return status.Error(codes.Unimplemented, "not implemented")
+	// 		// return s.proxyManagerV2(stream)
+	// 	default:
+	// 		return transportv2.SubscribeClient(&transportv2.ClientContext{
+	// 			UserContext: gwctx.UserContext,
+	// 			Connection:  gwctx.Connection,
+	// 			BearerToken: gwctx.BearerToken,
+	// 			IsAdminExec: gwctx.IsAdminExec,
+	// 		}, stream)
+	// 	}
+	// }
 
 	// legacy clients
 	switch clientOrigin[0] {
