@@ -6,6 +6,8 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
+	"github.com/runopsio/hoop/gateway/pgrest"
+	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
 	"olympos.io/encoding/edn"
@@ -69,6 +71,20 @@ func (h *Handler) FindAll(c *gin.Context) {
 	context := user.ContextUser(c)
 	log := user.ContextLogger(c)
 
+	if pgrest.WithPostgres(context) {
+		reviews, err := pgreview.New().FetchAll(context)
+		if err != nil && err != pgrest.ErrNotFound {
+			log.Errorf("failed listing reviews, err=%v", err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		var reviewList []types.ReviewJSON
+		for _, obj := range reviews {
+			reviewList = append(reviewList, *pgreview.ToJson(obj))
+		}
+		c.JSON(http.StatusOK, reviewList)
+		return
+	}
 	reviews, err := h.Service.FindAll(context)
 	if err != nil {
 		log.Errorf("failed listing reviews, err=%v", err)

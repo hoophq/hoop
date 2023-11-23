@@ -1,5 +1,18 @@
 package pgrest
 
+type Context interface {
+	OrgContext
+	UserContext
+}
+
+type OrgContext interface {
+	GetOrgID() string
+}
+
+type UserContext interface {
+	GetUserID() string
+}
+
 type Login struct {
 	ID       string `json:"id"`
 	Outcome  string `json:"outcome"`

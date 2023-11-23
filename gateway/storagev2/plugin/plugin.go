@@ -231,7 +231,7 @@ func List(ctx *storagev2.Context) ([]types.Plugin, error) {
 		List().
 		DecodeInto(&pgplugins)
 	if err != nil {
-		if err != pgrest.ErrNotFound {
+		if err == pgrest.ErrNotFound {
 			return nil, nil
 		}
 		return nil, err

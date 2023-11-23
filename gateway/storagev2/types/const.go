@@ -57,6 +57,7 @@ const (
 )
 
 const (
-	SessionStatusOpen = "open"
-	SessionStatusDone = "done"
+	SessionStatusOpen  = "open"
+	SessionStatusReady = "ready"
+	SessionStatusDone  = "done"
 )

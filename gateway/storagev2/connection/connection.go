@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/runopsio/hoop/gateway/pgrest"
+	pgconnections "github.com/runopsio/hoop/gateway/pgrest/connections"
 	storage "github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"olympos.io/encoding/edn"
@@ -15,6 +16,9 @@ func Put(ctx *storage.Context, conn *types.Connection) error {
 }
 
 func GetOneByName(ctx *storage.Context, name string) (*types.Connection, error) {
+	if pgrest.WithPostgres(ctx) {
+		return pgconnections.New().FetchOneForExec(ctx, name)
+	}
 	payload := fmt.Sprintf(`{:query {
 		:find [(pull ?connection [*])]
 		:in [name org]

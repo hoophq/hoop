@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/gateway/pgrest"
+	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
 	st "github.com/runopsio/hoop/gateway/storage"
 	"olympos.io/encoding/edn"
 )
@@ -28,7 +29,6 @@ func (s *Storage) FindById(identifier string) (*Context, error) {
 		}
 		return nil, err
 	}
-	fmt.Printf("USER: %#v\n", u)
 	return &Context{
 			User: &User{u.ID, u.Org.ID, u.Name, u.Email, StatusType(u.Status), u.SlackID, u.Groups},
 			Org:  &Org{Id: u.Org.ID, Name: u.Org.Name}},
@@ -312,6 +312,7 @@ func (s *Storage) GetOrgByName(name string) (*Org, error) {
 	// return &u[0], nil
 }
 
+// used when sending reports
 func (s *Storage) FindByGroups(context *Context, groups []string) ([]User, error) {
 	if len(groups) == 0 {
 		return make([]User, 0), nil
@@ -338,6 +339,9 @@ func (s *Storage) FindByGroups(context *Context, groups []string) ([]User, error
 }
 
 func (s *Storage) ListAllGroups(context *Context) ([]string, error) {
+	if pgrest.WithPostgres(context) {
+		return pgusers.New().ListGroups(context)
+	}
 	var payload = fmt.Sprintf(`{:query {
 		:find [(distinct g)]
 	  	:in [org]
@@ -386,6 +390,7 @@ func (s *Storage) ListAllGroups(context *Context) ([]string, error) {
 // 	return &org[0], nil
 // }
 
+// used when sending reports and by slack plugin
 func (s *Storage) FindOrgs() ([]Org, error) {
 	var payload = `{:query 
                     {:find [(pull p [*])]

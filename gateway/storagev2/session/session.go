@@ -12,20 +12,24 @@ import (
 
 func Put(ctx *storagev2.Context, s types.Session) (err error) {
 	switch s.Status {
+	// this will be executed in distinct flows
 	case types.SessionStatusOpen:
-		blobInputID := uuid.NewString()
+		// generate deterministic uuid based on the session id to avoid duplicates
+		blobInputID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf("blobinput:%s", s.ID)))
 		defer func() {
 			if err != nil {
 				return
 			}
-			err = pgrest.New("/blobs").Create(map[string]any{
-				"id":          blobInputID,
-				"org_id":      s.OrgID,
-				"type":        "session-input",
-				"blob_stream": []any{s.Script},
-			}).Error()
+			if input := s.Script["data"]; input != "" {
+				err = pgrest.New("/blobs?on_conflict=org_id,id").Upsert(map[string]any{
+					"id":          blobInputID,
+					"org_id":      s.OrgID,
+					"type":        "session-input",
+					"blob_stream": []any{input},
+				}).Error()
+			}
 		}()
-		err = pgrest.New("/sessions").Create(map[string]any{
+		err = pgrest.New("/sessions").Upsert(map[string]any{
 			"id":              s.ID,
 			"org_id":          s.OrgID,
 			"labels":          s.Labels,

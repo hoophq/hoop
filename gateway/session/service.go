@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/runopsio/hoop/gateway/pgrest"
+	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
@@ -26,7 +28,7 @@ type (
 		FindAll(*user.Context, ...*SessionOption) (*SessionList, error)
 		FindOne(ctx *user.Context, name string) (*types.Session, error)
 		ListAllSessionsID(startDate time.Time) ([]*types.Session, error)
-		FindReviewBySessionID(sessionID string) (*types.Review, error)
+		FindReviewBySessionID(ctx *user.Context, sessionID string) (*types.Review, error)
 		PersistReview(ctx *user.Context, review *types.Review) (int64, error)
 	}
 
@@ -80,8 +82,8 @@ type (
 // 	}, nil
 // }
 
-func (s *Service) FindReviewBySessionID(sessionID string) (*types.Review, error) {
-	return s.Storage.FindReviewBySessionID(sessionID)
+func (s *Service) FindReviewBySessionID(ctx *user.Context, sessionID string) (*types.Review, error) {
+	return s.Storage.FindReviewBySessionID(ctx, sessionID)
 }
 
 func (s *Service) FindOne(context *user.Context, name string) (*types.Session, error) {
@@ -108,6 +110,10 @@ func (s *Service) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionLi
 // }
 
 func (s *Service) PersistReview(context *user.Context, review *types.Review) error {
+	if pgrest.WithPostgres(context) {
+		// the usage of this function is only to update the status of the review
+		return pgreview.New().PatchStatus(context, review.Id, review.Status)
+	}
 	if review.Id == "" {
 		review.Id = uuid.NewString()
 	}

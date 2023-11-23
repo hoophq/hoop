@@ -143,7 +143,7 @@ CREATE TABLE env_vars(
     envs JSONB NULL
 );
 
-CREATE TYPE enum_session_status AS ENUM ('open', 'done');
+CREATE TYPE enum_session_status AS ENUM ('open', 'ready', 'done');
 CREATE TYPE enum_session_verb AS ENUM ('connect', 'exec');
 CREATE TABLE sessions(
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -193,7 +193,6 @@ CREATE TABLE reviews(
     session_id UUID NULL,
     connection_id UUID NULL,
     connection_name VARCHAR(128) NOT NULL,
-    connection_type enum_connection_type NOT NULL,
 
     type enum_reviews_type NOT NULL,
     blob_input_id UUID NULL,
@@ -202,23 +201,28 @@ CREATE TABLE reviews(
     access_duration_sec INT DEFAULT 0,
     status enum_reviews_status NOT NULL,
 
+    owner_id VARCHAR(255) NOT NULL,
     owner_email VARCHAR(255) NOT NULL,
     owner_name VARCHAR(255) NULL,
     owner_slack_id VARCHAR(50) NULL,
 
     created_at TIMESTAMP DEFAULT NOW(),
-    revoked_at TIMESTAMP NULL
+    revoked_at TIMESTAMP NULL,
+
+    UNIQUE(org_id, session_id)
 );
 
 CREATE TABLE review_groups(
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    org_id UUID NOT NULL REFERENCES orgs (id),
     review_id UUID NOT NULL REFERENCES reviews (id) ON DELETE CASCADE,
 
     group_name VARCHAR(100) NOT NULL,
     status enum_reviews_status NOT NULL,
 
-    owner_email VARCHAR(255) NOT NULL,
-    owner_name VARCHAR(255) NOT NULL,
+    owner_id VARCHAR(255) NULL,
+    owner_email VARCHAR(255) NULL,
+    owner_name VARCHAR(255) NULL,
     owner_slack_id VARCHAR(50) NULL,
 
     reviewed_at TIMESTAMP NULL
@@ -366,14 +370,18 @@ CREATE OR REPLACE VIEW public.reviews AS
     SELECT
         id, org_id, session_id, connection_id, connection_name, type, blob_input_id,
         input_env_vars, input_client_args, access_duration_sec, status,
-        owner_email, owner_name, owner_slack_id, created_at, revoked_at
+        owner_id, owner_email, owner_name, owner_slack_id, created_at, revoked_at
     FROM reviews;
 
 CREATE OR REPLACE VIEW public.review_groups AS
     SELECT
-        id, review_id, group_name, status,
-        owner_email, owner_name, owner_slack_id, reviewed_at
+        id, org_id, review_id, group_name, status,
+        owner_id, owner_email, owner_name, owner_slack_id, reviewed_at
     FROM review_groups;
+
+CREATE OR REPLACE FUNCTION public.blob_input(public.reviews) RETURNS SETOF public.blobs ROWS 1 AS $$
+  SELECT * FROM public.blobs WHERE id = $1.blob_input_id
+$$ stable language sql;
 
 GRANT webuser TO hoopadm;
 GRANT usage ON SCHEMA public TO webuser;

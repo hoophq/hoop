@@ -5,6 +5,8 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
+	"github.com/runopsio/hoop/gateway/pgrest"
+	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	reviewstorage "github.com/runopsio/hoop/gateway/storagev2/review"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
@@ -17,6 +19,21 @@ func GetById(c *gin.Context) {
 	log := user.ContextLogger(c)
 
 	id := c.Param("id")
+	if pgrest.WithPostgres(storageCtx) {
+		review, err := pgreview.New().FetchOneByID(storageCtx, id)
+		if err != nil {
+			if err == pgrest.ErrNotFound {
+				c.JSON(http.StatusNotFound, gin.H{"message": "review not found"})
+				return
+			}
+			log.Errorf("failed fetching review %v, err=%v", id, err)
+			sentry.CaptureException(err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		c.PureJSON(http.StatusOK, pgreview.ToJson(*review))
+		return
+	}
 	review, err := reviewstorage.FindOne(storageCtx, id)
 	if err != nil {
 		log.Errorf("failed fetching review %v, err=%v", id, err)

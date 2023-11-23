@@ -101,6 +101,20 @@ func (c *Context) ToAPIContext() *types.APIContext {
 	return apiCtx
 }
 
+func (c *Context) GetOrgID() (v string) {
+	if c.Org != nil {
+		return c.Org.Id
+	}
+	return
+}
+
+func (c *Context) GetUserID() (v string) {
+	if c.User != nil {
+		return c.User.Id
+	}
+	return
+}
+
 func (s *Service) FindAll(context *Context) ([]User, error) {
 	return s.Storage.FindAll(context)
 }

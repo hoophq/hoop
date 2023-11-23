@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/runopsio/hoop/gateway/pgrest"
+	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
 	st "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	sessionstorage "github.com/runopsio/hoop/gateway/storagev2/session"
@@ -312,7 +313,10 @@ func (s *Storage) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionLi
 	// return sessionList, err
 }
 
-func (s *Storage) FindReviewBySessionID(sessionID string) (*types.Review, error) {
+func (s *Storage) FindReviewBySessionID(ctx *user.Context, sessionID string) (*types.Review, error) {
+	if pgrest.WithPostgres(ctx) {
+		return pgreview.New().FetchOneBySid(ctx, sessionID)
+	}
 	var payload = fmt.Sprintf(`{:query {
 		:find [(pull ?r [*])]
 		:in [session-id]

@@ -42,7 +42,7 @@ type (
 		FindOne(context *user.Context, name string) (*types.Session, error)
 		// EntityHistory(ctx *user.Context, sessionID string) ([]SessionStatusHistory, error)
 		// ValidateSessionID(sessionID string) error
-		FindReviewBySessionID(sessionID string) (*types.Review, error)
+		FindReviewBySessionID(ctx *user.Context, sessionID string) (*types.Review, error)
 		PersistReview(context *user.Context, review *types.Review) error
 	}
 )
@@ -139,7 +139,7 @@ func (a *Handler) FindOne(c *gin.Context) {
 		return
 	}
 
-	review, err := a.Service.FindReviewBySessionID(sessionID)
+	review, err := a.Service.FindReviewBySessionID(context, sessionID)
 	if err != nil {
 		return
 	}
@@ -327,7 +327,7 @@ func (h *Handler) RunReviewedExec(c *gin.Context) {
 		return
 	}
 
-	review, err := h.Service.FindReviewBySessionID(sessionId)
+	review, err := h.Service.FindReviewBySessionID(ctx, sessionId)
 	if err != nil {
 		log.Errorf("failed retrieving review, err=%v", err)
 		c.JSON(http.StatusInternalServerError, &clientexec.ExecErrResponse{Message: "failed retrieving review"})
@@ -402,6 +402,7 @@ func (h *Handler) RunReviewedExec(c *gin.Context) {
 	}
 
 	if err != nil {
+		log.Errorf("failed persisting session, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "The session couldn't be created"})
 		return
 	}

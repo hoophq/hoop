@@ -89,6 +89,8 @@ func (c *Client) List() *Response {
 	return &resp
 }
 
+func (c *Client) FetchAll() *Response { return c.List() }
+
 // ExactCount returns the total of records in the table, in case of error it returns -1
 func (c *Client) ExactCount() int64 {
 	reqHeader := map[string]string{"Prefer": "count=exact"}
