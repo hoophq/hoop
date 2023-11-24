@@ -13,20 +13,23 @@ import (
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
+	"github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+	"github.com/runopsio/hoop/gateway/user"
 	svix "github.com/svix/svix-webhooks/go"
 )
 
 type plugin struct {
-	client   *svix.Svix
-	appStore memory.Store
+	client    *svix.Svix
+	appStore  memory.Store
+	reviewSvc *review.Service
 }
 
-func New() *plugin {
+func New(reviewSvc *review.Service) *plugin {
 	if webhookAppKey := os.Getenv("WEBHOOK_APPKEY"); webhookAppKey != "" {
 		log.Infof("loaded webhook app key with success")
-		return &plugin{svix.New(webhookAppKey, nil), memory.New()}
+		return &plugin{svix.New(webhookAppKey, nil), memory.New(), reviewSvc}
 	}
 	return &plugin{}
 }
@@ -80,11 +83,90 @@ func (p *plugin) OnReceive(ctx plugintypes.Context, pkt *pb.Packet) (*plugintype
 		switch pkt.Type {
 		case pbagent.SessionOpen:
 			p.processSessionOpenEvent(ctx, pkt)
+			p.processReviewCreateEvent(ctx, pkt)
 		case pbclient.SessionClose:
 			p.processSessionCloseEvent(ctx, pkt)
 		}
 	}
 	return nil, nil
+}
+
+func (p *plugin) processReviewCreateEvent(ctx plugintypes.Context, pkt *pb.Packet) {
+	rev, err := p.reviewSvc.FindBySessionID(user.NewContext(ctx.OrgID, ctx.UserID), ctx.SID)
+	if err != nil {
+		log.Warnf("failed obtaining review, err=%v", err)
+		return
+	}
+	if rev == nil {
+		return
+	}
+	// it's recommended to sent events up to 20KB (Microsoft Teams)
+	// that's why we truncated the input payload
+	if len(rev.Input) > maxInputSize {
+		rev.Input = rev.Input[0:maxInputSize]
+	}
+	appID := ctx.OrgID
+	ctxtimeout, cancelFn := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancelFn()
+
+	eventID := uuid.NewString()
+	accessDuration := rev.AccessDuration.String()
+	if accessDuration == "0s" {
+		accessDuration = "```-```"
+	}
+	apiURL := os.Getenv("API_URL")
+	out, err := p.client.Message.Create(ctxtimeout, appID, &svix.MessageIn{
+		EventType: eventMSTeamsReviewCreateType,
+		EventId:   *svix.NullableString(func() *string { v := eventID; return &v }()),
+		Payload: map[string]any{
+			"@type":      "MessageCard",
+			"@context":   "http://schema.org/extensions",
+			"themeColor": "0076D7",
+			"summary":    "Review Created",
+			"sections": []map[string]any{
+				{
+					"startGroup": true,
+					"title":      fmt.Sprintf("• Session Created [%s](%s/sessions/%s)", rev.Session, apiURL, rev.Session),
+					"facts": []map[string]string{
+						{
+							"name":  "Created By:",
+							"value": fmt.Sprintf("%s | %s", rev.ReviewOwner.Name, rev.ReviewOwner.Email),
+						},
+						{
+							"name":  "Approval Groups:",
+							"value": fmt.Sprintf("%q", parseGroups(rev.ReviewGroupsData)),
+						},
+						{
+							"name":  "Session Time:",
+							"value": accessDuration,
+						},
+					},
+				},
+				{
+					"title": "Session Details",
+					"facts": []map[string]string{
+						{
+							"name":  "Connection:",
+							"value": rev.Connection.Name,
+						},
+						{
+							"name":  "Script:",
+							"value": fmt.Sprintf("```%s```", rev.Input),
+						},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		log.With("appid", appID).Warnf("failed sending webhook event to remote source, err=%v", err)
+		return
+	}
+	if out != nil {
+		log.With("appid", appID).Infof("sent webhook with success, id=%s, event=%s, eventid=%s",
+			out.Id, out.EventType, eventID)
+	}
+
 }
 
 func (p *plugin) processSessionOpenEvent(ctx plugintypes.Context, pkt *pb.Packet) {
@@ -217,4 +299,12 @@ func decodeClientEnvVars(pkt *pb.Packet) map[string]string {
 		}
 	}
 	return clientEnvVars
+}
+
+func parseGroups(reviewGroups []types.ReviewGroup) []string {
+	groups := make([]string, 0)
+	for _, g := range reviewGroups {
+		groups = append(groups, g.Group)
+	}
+	return groups
 }
