@@ -115,11 +115,6 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 		return err
 	}
 
-	// var clientHeaderApiV2 bool
-	// if v := md.Get("apiv2"); len(v) > 0 {
-	// 	clientHeaderApiV2 = v[0] == "true"
-	// }
-
 	var ctxVal any
 	switch {
 	// administrative api authentication
@@ -187,7 +182,6 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 		ctxVal = &GatewayContext{
 			Agent:       *ag,
 			BearerToken: bearerToken,
-			IsApiV2:     false,
 		}
 	// client proxy manager authentication (access token)
 	case clientOrigin[0] == pb.ConnectionOriginClientProxyManager:

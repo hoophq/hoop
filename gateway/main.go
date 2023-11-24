@@ -158,7 +158,7 @@ func Run(listenAdmAddr string) {
 		pluginsindex.New(&session.Storage{Storage: s}),
 		pluginsdlp.New(),
 		pluginsrbac.New(),
-		pluginswebhooks.New(),
+		pluginswebhooks.New(&review.Service{Storage: &review.Storage{Storage: s}, TransportService: g}),
 		pluginsslack.New(
 			&review.Service{Storage: &review.Storage{Storage: s}, TransportService: g},
 			&user.Service{Storage: &user.Storage{Storage: s}},

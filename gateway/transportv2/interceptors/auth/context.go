@@ -19,7 +19,6 @@ type GatewayContext struct {
 
 	BearerToken string
 	IsAdminExec bool
-	IsApiV2     bool
 }
 
 func (c *GatewayContext) ValidateConnectionAttrs() error {

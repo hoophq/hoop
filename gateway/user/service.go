@@ -194,16 +194,14 @@ func (s *Service) CreateDefaultOrganization() error {
 		if org.Name == pb.DefaultOrgName {
 			return nil
 		}
-		org.IsApiV2 = false
 		org.Name = pb.DefaultOrgName
 		if err := s.Persist(org); err != nil {
 			return fmt.Errorf("failed promoting %v to single tenant, err=%v", orgList[0], err)
 		}
 	case 0:
 		if err := s.Persist(&Org{
-			Id:      uuid.NewString(),
-			Name:    pb.DefaultOrgName,
-			IsApiV2: false,
+			Id:   uuid.NewString(),
+			Name: pb.DefaultOrgName,
 		}); err != nil {
 			return fmt.Errorf("failed creating the default organization, err=%v", err)
 		}
