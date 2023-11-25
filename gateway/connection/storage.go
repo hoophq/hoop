@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/runopsio/hoop/gateway/pgrest"
 	st "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/user"
@@ -36,13 +37,14 @@ func (s *Storage) Persist(ctx *user.Context, c *Connection) (int64, error) {
 		envs[key] = fmt.Sprintf("%v", val)
 	}
 	return 0, pgrest.New("/rpc/update_connection").Create(map[string]any{
-		"id":       c.Id,
-		"org_id":   ctx.Org.Id,
-		"name":     c.Name,
-		"agent_id": c.AgentId,
-		"type":     string(c.Type),
-		"command":  c.Command,
-		"envs":     envs,
+		"id":              c.Id,
+		"org_id":          ctx.Org.Id,
+		"name":            c.Name,
+		"agent_id":        toAgentID(c.AgentId),
+		"legacy_agent_id": toLegacyAgentID(c.AgentId),
+		"type":            string(c.Type),
+		"command":         c.Command,
+		"envs":            envs,
 	}).Error()
 
 	// secretId := uuid.New().String()
@@ -140,6 +142,9 @@ func (s *Storage) FindAll(ctx *user.Context) ([]BaseConnection, error) {
 	}
 	var connections []BaseConnection
 	for _, c := range items {
+		if c.LegacyAgentID != "" {
+			c.AgentID = c.LegacyAgentID
+		}
 		connections = append(connections, BaseConnection{
 			c.ID, c.Name, "", c.Command, Type(c.Type), c.AgentID, DBSecretProvider,
 		})
@@ -179,6 +184,9 @@ func (s *Storage) FindOne(ctx *user.Context, name string) (*Connection, error) {
 	secrets := Secret{}
 	for key, val := range c.Envs {
 		secrets[key] = val
+	}
+	if c.LegacyAgentID != "" {
+		c.AgentID = c.LegacyAgentID
 	}
 	return &Connection{
 		BaseConnection: BaseConnection{
@@ -275,3 +283,17 @@ func (s *Storage) FindOne(ctx *user.Context, name string) (*Connection, error) {
 // 	}
 // 	return n
 // }
+
+func toAgentID(agentID string) (v *string) {
+	if _, err := uuid.Parse(agentID); err == nil {
+		return &agentID
+	}
+	return
+}
+
+func toLegacyAgentID(agentID string) (v *string) {
+	if _, err := uuid.Parse(agentID); err != nil {
+		return &agentID
+	}
+	return
+}

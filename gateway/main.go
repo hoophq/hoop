@@ -14,14 +14,12 @@ import (
 	"github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/monitoring"
-	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/common/version"
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/analytics"
 	"github.com/runopsio/hoop/gateway/api"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/indexer"
-	"github.com/runopsio/hoop/gateway/jobs/report"
 	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/runbooks"
@@ -195,13 +193,13 @@ func Run(listenAdmAddr string) {
 	reviewService.TransportService = g
 
 	//start scheduler for "weekly" report service (production mode)
-	if profile != pb.DevProfile {
-		report.InitReportScheduler(&report.Scheduler{
-			UserStorage:    &userService,
-			SessionStorage: &sessionService,
-			Notification:   notificationService,
-		})
-	}
+	// if profile != pb.DevProfile {
+	// 	report.InitReportScheduler(&report.Scheduler{
+	// 		UserStorage:    &userService,
+	// 		SessionStorage: &sessionService,
+	// 		Notification:   notificationService,
+	// 	})
+	// }
 
 	if grpc.ShouldDebugGrpc() {
 		log.SetGrpcLogger()

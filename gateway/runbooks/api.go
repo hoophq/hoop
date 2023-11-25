@@ -209,6 +209,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 		Script:       types.SessionScript{"data": string(runbook.InputFile)},
 		UserEmail:    ctx.User.Email,
 		UserID:       ctx.User.Id,
+		Type:         proto.ConnectionTypeCommandLine,
 		UserName:     ctx.User.Name,
 		Connection:   connectionName,
 		Verb:         proto.ClientVerbExec,
@@ -221,6 +222,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 	if err != nil {
 		log.Errorf("failed persisting session, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "The session couldn't be created"})
+		return
 	}
 
 	client, err := clientexec.New(&clientexec.Options{

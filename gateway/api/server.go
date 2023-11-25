@@ -14,7 +14,6 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/analytics"
-	apiclientkeys "github.com/runopsio/hoop/gateway/api/clientkeys"
 	apiconnectionapps "github.com/runopsio/hoop/gateway/api/connectionapps"
 	apiplugins "github.com/runopsio/hoop/gateway/api/plugins"
 	apiproxymanager "github.com/runopsio/hoop/gateway/api/proxymanager"
@@ -228,25 +227,25 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.AgentHandler.Evict)
 
 	// DEPRECATED in flavor of /api/agents
-	route.POST("/clientkeys",
-		api.Authenticate,
-		api.TrackRequest(analytics.EventCreateClientKey),
-		api.AdminOnly,
-		apiclientkeys.Post)
-	route.GET("/clientkeys",
-		api.Authenticate,
-		api.TrackRequest(analytics.EventFetchClientKey),
-		api.AdminOnly,
-		apiclientkeys.List)
-	route.GET("/clientkeys/:name",
-		api.Authenticate,
-		api.TrackRequest(analytics.EventFetchClientKey),
-		api.AdminOnly,
-		apiclientkeys.Get)
-	route.PUT("/clientkeys/:name",
-		api.Authenticate,
-		api.AdminOnly,
-		apiclientkeys.Put)
+	// route.POST("/clientkeys",
+	// 	api.Authenticate,
+	// 	api.TrackRequest(analytics.EventCreateClientKey),
+	// 	api.AdminOnly,
+	// 	apiclientkeys.Post)
+	// route.GET("/clientkeys",
+	// 	api.Authenticate,
+	// 	api.TrackRequest(analytics.EventFetchClientKey),
+	// 	api.AdminOnly,
+	// 	apiclientkeys.List)
+	// route.GET("/clientkeys/:name",
+	// 	api.Authenticate,
+	// 	api.TrackRequest(analytics.EventFetchClientKey),
+	// 	api.AdminOnly,
+	// 	apiclientkeys.Get)
+	// route.PUT("/clientkeys/:name",
+	// 	api.Authenticate,
+	// 	api.AdminOnly,
+	// 	apiclientkeys.Put)
 
 	route.POST("/plugins",
 		api.Authenticate,

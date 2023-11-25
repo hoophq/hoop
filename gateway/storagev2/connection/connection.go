@@ -11,6 +11,9 @@ import (
 )
 
 func Put(ctx *storage.Context, conn *types.Connection) error {
+	if pgrest.WithPostgres(ctx) {
+		return pgconnections.New().Upsert(ctx, conn)
+	}
 	_, err := ctx.Put(conn)
 	return err
 }
@@ -45,6 +48,9 @@ func GetOneByName(ctx *storage.Context, name string) (*types.Connection, error) 
 }
 
 func ListConnectionsByList(ctx *storage.Context, connectionNameList []string) (map[string]types.Connection, error) {
+	if pgrest.WithPostgres(ctx) {
+		return pgconnections.New().FetchByNames(ctx, connectionNameList)
+	}
 	var ednColBinding string
 	for _, connName := range connectionNameList {
 		ednColBinding += fmt.Sprintf("%q ", connName)
@@ -87,6 +93,9 @@ func ConnectionsMapByID(ctx *storage.Context, connectionIDList []string) (map[st
 	for _, conn := range connList {
 		for _, connID := range connectionIDList {
 			if conn.ID == connID {
+				if conn.LegacyAgentID != "" {
+					conn.AgentID = conn.LegacyAgentID
+				}
 				itemMap[connID] = types.Connection{
 					Id:             conn.ID,
 					OrgId:          conn.OrgID,
@@ -131,14 +140,14 @@ func ConnectionsMapByID(ctx *storage.Context, connectionIDList []string) (map[st
 	// return itemMap, nil
 }
 
-func GetEntity(ctx *storage.Context, xtID string) (*types.Connection, error) {
-	data, err := ctx.GetEntity(xtID)
-	if err != nil {
-		return nil, err
-	}
-	if data == nil {
-		return nil, nil
-	}
-	var obj types.Connection
-	return &obj, edn.Unmarshal(data, &obj)
-}
+// func GetEntity(ctx *storage.Context, xtID string) (*types.Connection, error) {
+// 	data, err := ctx.GetEntity(xtID)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	if data == nil {
+// 		return nil, nil
+// 	}
+// 	var obj types.Connection
+// 	return &obj, edn.Unmarshal(data, &obj)
+// }

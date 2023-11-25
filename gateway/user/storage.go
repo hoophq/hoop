@@ -87,8 +87,23 @@ func (s *Storage) FindById(identifier string) (*Context, error) {
 // }
 
 func (s *Storage) FindBySlackID(ctx *Org, slackID string) (*User, error) {
+	if pgrest.WithPostgres(ctx) {
+		u, err := pgusers.New().FetchOneBySlackID(ctx, slackID)
+		if err != nil {
+			return nil, err
+		}
+		return &User{
+			Id:      u.Id,
+			Org:     u.Org,
+			Name:    u.Name,
+			Email:   u.Email,
+			Status:  StatusType(u.Status),
+			SlackID: u.SlackID,
+			Groups:  u.Groups,
+		}, nil
+	}
 	qs := fmt.Sprintf(`{:query {
-		:find [(pull ?u [*])] 
+		:find [(pull ?u [*])]
 		:in [orgid slack-id]
 		:where [[?u :user/org orgid]
 				[?u :user/slack-id slack-id]
@@ -312,31 +327,31 @@ func (s *Storage) GetOrgByName(name string) (*Org, error) {
 	// return &u[0], nil
 }
 
-// used when sending reports
-func (s *Storage) FindByGroups(context *Context, groups []string) ([]User, error) {
-	if len(groups) == 0 {
-		return make([]User, 0), nil
-	}
+// used when sending reports, disabled for now!
+// func (s *Storage) FindByGroups(context *Context, groups []string) ([]User, error) {
+// 	if len(groups) == 0 {
+// 		return make([]User, 0), nil
+// 	}
 
-	var payload = fmt.Sprintf(`{:query {
-		:find [(pull ?user [*])]
-	  	:in [org [g ...]]
-    	:where [[?user :user/org org]
-				[?user :user/groups g]]}
-		:in-args ["%s" %q]}}`, context.Org.Id, groups)
+// 	var payload = fmt.Sprintf(`{:query {
+// 		:find [(pull ?user [*])]
+// 	  	:in [org [g ...]]
+//     	:where [[?user :user/org org]
+// 				[?user :user/groups g]]}
+// 		:in-args ["%s" %q]}}`, context.Org.Id, groups)
 
-	b, err := s.Query([]byte(payload))
-	if err != nil {
-		return nil, err
-	}
+// 	b, err := s.Query([]byte(payload))
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	var users []User
-	if err := edn.Unmarshal(b, &users); err != nil {
-		return nil, err
-	}
+// 	var users []User
+// 	if err := edn.Unmarshal(b, &users); err != nil {
+// 		return nil, err
+// 	}
 
-	return users, nil
-}
+// 	return users, nil
+// }
 
 func (s *Storage) ListAllGroups(context *Context) ([]string, error) {
 	if pgrest.WithPostgres(context) {

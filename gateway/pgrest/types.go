@@ -56,13 +56,14 @@ type Agent struct {
 }
 
 type Connection struct {
-	ID      string            `json:"id"`
-	OrgID   string            `json:"org_id"`
-	AgentID string            `json:"agent_id"`
-	Name    string            `json:"name"`
-	Command []string          `json:"command"`
-	Type    string            `json:"type"`
-	Envs    map[string]string `json:"envs"`
+	ID            string            `json:"id"`
+	OrgID         string            `json:"org_id"`
+	AgentID       string            `json:"agent_id"`
+	LegacyAgentID string            `json:"legacy_agent_id"`
+	Name          string            `json:"name"`
+	Command       []string          `json:"command"`
+	Type          string            `json:"type"`
+	Envs          map[string]string `json:"envs"`
 
 	Org Org `json:"org"`
 	// Agent Agent  `json:"agent"`
@@ -117,4 +118,34 @@ type Session struct {
 	// TODO: convert to time.Time
 	CreatedAt string  `json:"created_at"`
 	EndedAt   *string `json:"ended_at"`
+}
+
+type ServiceAccount struct {
+	ID        string   `json:"id"`
+	OrgID     string   `json:"org_id"`
+	Subject   string   `json:"subject"`
+	Name      string   `json:"name"`
+	Status    string   `json:"status"`
+	Groups    []string `json:"groups"`
+	CreatedAt string   `json:"created_at"`
+	UpdateAt  string   `json:"updated_at"`
+}
+
+type ProxyManagerState struct {
+	ID             string            `json:"id"`
+	OrgID          string            `json:"org_id"`
+	Status         string            `json:"status"`
+	Connection     string            `json:"connection"`
+	Port           string            `json:"port"`
+	AccessDuration int               `json:"access_duration"`
+	ClientMetadata map[string]string `json:"metadata"`
+	ConnectedAt    string            `json:"connected_at"`
+}
+
+type ClientKey struct {
+	ID      string `json:"id"`
+	OrgID   string `json:"org_id"`
+	Name    string `json:"name"`
+	Status  string `json:"status"`
+	DSNHash string `json:"dsn_hash"`
 }

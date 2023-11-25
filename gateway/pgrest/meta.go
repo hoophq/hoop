@@ -60,3 +60,8 @@ func (s *Session) GetRedactCount() (count int64) {
 	}
 	return
 }
+
+func (s *ProxyManagerState) GetConnectedAt() (t time.Time) {
+	t, _ = time.ParseInLocation("2006-01-02T15:04:05", s.ConnectedAt, time.UTC)
+	return
+}

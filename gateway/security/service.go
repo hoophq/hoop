@@ -78,12 +78,11 @@ func (s *Service) Callback(c *gin.Context, state, code string) string {
 	log.With("code", code, "state", state).Infof("starting callback")
 	login, err := s.Storage.FindLogin(state)
 	if err != nil {
-		if login != nil {
-			log.With("code", code, "state", state).Debugf("Login not found. Skipping...")
-			s.loginOutcome(login, outcomeError)
-			return login.Redirect + "?error=unexpected_error"
-		}
-		log.Warnf("login not found, err=%v", err)
+		log.Warnf("failed obtaining login, err=%v", err)
+		return fmt.Sprintf("%s/callback?error=unexpected_error", s.Provider.ApiURL)
+	}
+	if login == nil {
+		log.With("code", code, "state", state).Infof("login not found")
 		return fmt.Sprintf("%s/callback?error=unexpected_error", s.Provider.ApiURL)
 	}
 
@@ -375,5 +374,7 @@ func debugClaims(subject string, claims map[string]any) {
 
 func (s *Service) loginOutcome(login *login, outcome outcomeType) {
 	login.Outcome = outcome
-	s.Storage.PersistLogin(login)
+	if _, err := s.Storage.PersistLogin(login); err != nil {
+		log.Warnf("failed persisting login outcome, err=%v", err)
+	}
 }

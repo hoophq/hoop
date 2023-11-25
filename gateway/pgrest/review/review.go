@@ -17,7 +17,7 @@ func (r *review) Upsert(rev *types.Review) error {
 	if rev.Input != "" {
 		blobInputID = toStringPtr(uuid.NewString())
 	}
-	err := pgrest.New("/reviews").Upsert(map[string]any{
+	err := pgrest.New("/reviews?on_conflict=org_id,session_id").Upsert(map[string]any{
 		"id":                  rev.Id,
 		"org_id":              rev.OrgId,
 		"connection_id":       toStringPtr(rev.Connection.Id),
@@ -33,6 +33,7 @@ func (r *review) Upsert(rev *types.Review) error {
 		"owner_email":         rev.ReviewOwner.Email,
 		"owner_name":          rev.ReviewOwner.Name,
 		"owner_slack_id":      rev.ReviewOwner.SlackID,
+		"revoked_at":          rev.RevokeAt,
 	}).Error()
 	if err != nil {
 		return fmt.Errorf("failed creating or updating review, err=%v", err)

@@ -11,6 +11,7 @@ CREATE TABLE login(
 
     redirect VARCHAR(255) NULL,
     outcome enum_login_outcome NULL,
+    slack_id VARCHAR(50) NULL,
     created_at TIMESTAMP DEFAULT NOW()
 );
 
@@ -78,14 +79,13 @@ CREATE TABLE agents(
     UNIQUE(org_id, name)
 );
 
-CREATE TYPE enum_client_keys_status AS ENUM ('active', 'inactive');
-CREATE TABLE client_keys(
+CREATE TYPE enum_clientkeys_status AS ENUM ('active', 'inactive');
+CREATE TABLE clientkeys(
     id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
     org_id UUID NOT NULL REFERENCES orgs (id),
 
     name VARCHAR(255) NOT NULL,
-    mode enum_agent_mode NOT NULL,
-    status enum_client_keys_status DEFAULT 'inactive',
+    status enum_clientkeys_status DEFAULT 'inactive',
     dsn_hash VARCHAR(255) NOT NULL,
 
     created_at TIMESTAMP DEFAULT NOW(),
@@ -97,6 +97,9 @@ CREATE TABLE connections(
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
     org_id UUID NOT NULL REFERENCES orgs (id),
     agent_id UUID NULL,
+    -- maintain compatibility with embedded flows
+    -- that uses the agent id as non uuid
+    legacy_agent_id VARCHAR(255) NULL,
 
     name VARCHAR(128) NOT NULL,
     command text[] NULL,
@@ -228,17 +231,19 @@ CREATE TABLE review_groups(
     reviewed_at TIMESTAMP NULL
 );
 
--- CREATE TABLE proxy_manager_state(
---     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
---     org_id UUID NOT NULL REFERENCES orgs (id),
+CREATE TYPE enum_proxymanager_status AS ENUM ('ready', 'connected', 'disconnected');
+CREATE TABLE proxymanager_state(
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    org_id UUID NOT NULL REFERENCES orgs (id),
 
---     request_connection VARCHAR(128) NOT NULL,
---     request_port VARCHAR(5) NOT NULL,
---     request_access_duration bigint NOT NULL,
---     metadata JSONB NULL,
+    status enum_proxymanager_status DEFAULT 'ready',
+    connection VARCHAR(128) NOT NULL,
+    port VARCHAR(5) NOT NULL,
+    access_duration int DEFAULT 0,
+    metadata JSONB NULL,
 
---     connected_at TIMESTAMP NULL
--- );
+    connected_at TIMESTAMP DEFAULT NOW()
+);
 
 -- org
 CREATE OR REPLACE VIEW public.orgs AS
@@ -246,7 +251,7 @@ CREATE OR REPLACE VIEW public.orgs AS
 
 -- users / login
 CREATE OR REPLACE VIEW public.login AS
-    SELECT id, redirect, outcome FROM login;
+    SELECT id, redirect, slack_id, outcome FROM login;
 
 CREATE OR REPLACE VIEW public.users AS
     SELECT
@@ -273,7 +278,6 @@ CREATE OR REPLACE FUNCTION public.org(public.users) RETURNS SETOF public.orgs RO
   SELECT * FROM public.orgs WHERE id = $1.org_id
 $$ stable language sql;
 
---
 CREATE OR REPLACE FUNCTION public.update_groups(org_id UUID, user_id UUID, groups VARCHAR(100)[]) RETURNS SETOF public.user_groups_update AS $$
     DELETE FROM public.user_groups_update where user_id = user_id;
     WITH groups AS (
@@ -281,6 +285,52 @@ CREATE OR REPLACE FUNCTION public.update_groups(org_id UUID, user_id UUID, group
     )
     INSERT INTO public.user_groups_update (org_id, user_id, name)
     SELECT org_id, user_id, name FROM groups RETURNING *;
+$$ LANGUAGE SQL;
+
+-- service accounts
+CREATE OR REPLACE VIEW public.serviceaccounts AS
+    SELECT
+        id, org_id, subject, name, status, created_at, updated_at
+    FROM service_accounts;
+
+CREATE OR REPLACE FUNCTION
+    public.update_serviceaccounts(id UUID, org_id UUID, subject TEXT, name TEXT, status enum_service_account_status, groups VARCHAR(100)[]) RETURNS SETOF public.serviceaccounts AS $$
+    WITH params AS (
+        SELECT
+            id AS id,
+            org_id AS org_id,
+            subject AS subject,
+            name AS name,
+            status AS status
+    ), upsert_svc_account AS (
+        INSERT INTO public.serviceaccounts (id, org_id, subject, name, status)
+            (SELECT id, org_id, subject, name, status FROM params)
+        ON CONFLICT (id)
+            DO UPDATE SET name = (SELECT name FROM params), status = (SELECT status FROM params), updated_at = NOW()
+        RETURNING *
+    ), grps AS (
+        SELECT
+            org_id AS org_id,
+            id AS service_account_id,
+            UNNEST(groups) AS name
+    ), update_user_groups AS (
+        INSERT INTO public.user_groups_update (org_id, service_account_id, name)
+            SELECT org_id, service_account_id, name FROM grps
+            ON CONFLICT DO NOTHING
+    ), del_grousp AS (
+        DELETE FROM public.user_groups_update
+        WHERE service_account_id = id
+        AND org_id = org_id
+        AND name NOT IN (SELECT name FROM grps)
+    )
+    SELECT * FROM upsert_svc_account
+$$ LANGUAGE SQL;
+
+CREATE OR REPLACE FUNCTION public.groups(public.serviceaccounts) RETURNS TEXT[] AS $$
+  SELECT coalesce(array_agg(g.name) filter (WHERE g.name IS NOT NULL), NULL)
+  FROM public.user_groups_update g
+  WHERE service_account_id = $1.id
+  AND org_id = $1.org_id
 $$ LANGUAGE SQL;
 
 -- agents
@@ -298,24 +348,29 @@ CREATE OR REPLACE VIEW public.env_vars AS
     SELECT id, org_id, envs FROM env_vars;
 
 CREATE OR REPLACE VIEW public.connections AS
-    SELECT id, org_id, agent_id, name, command, type, (SELECT envs FROM public.env_vars WHERE id = c.id) AS envs, created_at, updated_at
+    SELECT id, org_id, agent_id, legacy_agent_id, name, command, type, (SELECT envs FROM public.env_vars WHERE id = c.id) AS envs, created_at, updated_at
     FROM connections c;
 
-CREATE OR REPLACE FUNCTION public.update_connection(id uuid, org_id uuid, agent_id uuid, name text, command text[], type enum_connection_type, envs JSON) RETURNS SETOF public.connections ROWS 1 AS $$
+CREATE OR REPLACE FUNCTION public.update_connection(id uuid, org_id uuid, agent_id uuid, legacy_agent_id text, name text, command text[], type enum_connection_type, envs JSON) RETURNS SETOF public.connections ROWS 1 AS $$
     WITH p AS (
         SELECT
             id as id,
             org_id as org_id,
             agent_id as agent_id,
+            legacy_agent_id as legacy_agent_id,
             name as name,
             command as command,
             type as type,
             envs as envs
     ), conn AS (
-        INSERT INTO connections (id, org_id, agent_id, name, command, type)
-            (SELECT id, org_id, agent_id, name, command, type FROM p)
+        INSERT INTO connections (id, org_id, agent_id, legacy_agent_id, name, command, type)
+            (SELECT id, org_id, agent_id, legacy_agent_id, name, command, type FROM p)
         ON CONFLICT (org_id, name)
-            DO UPDATE SET agent_id = (SELECT agent_id FROM p), command = (SELECT command FROM p), updated_at = NOW()
+            DO UPDATE SET
+                agent_id = (SELECT agent_id FROM p),
+                legacy_agent_id = (SELECT legacy_agent_id FROM p),
+                command = (SELECT command FROM p),
+                updated_at = NOW()
         RETURNING *
     ), envs AS (
     INSERT INTO env_vars (id, org_id, envs) VALUES ((SELECT id FROM conn), (SELECT org_id FROM conn), (SELECT envs FROM p))
@@ -323,7 +378,7 @@ CREATE OR REPLACE FUNCTION public.update_connection(id uuid, org_id uuid, agent_
         DO UPDATE SET envs = (SELECT envs FROM p)
         RETURNING *
     )
-    SELECT c.id, c.org_id, c.agent_id, c.name, c.command, c.type, e.envs, c.created_at, c.updated_at
+    SELECT c.id, c.org_id, c.agent_id, c.legacy_agent_id, c.name, c.command, c.type, e.envs, c.created_at, c.updated_at
     FROM conn c
     INNER JOIN envs e
         ON e.id = c.id;
@@ -383,6 +438,18 @@ CREATE OR REPLACE FUNCTION public.blob_input(public.reviews) RETURNS SETOF publi
   SELECT * FROM public.blobs WHERE id = $1.blob_input_id
 $$ stable language sql;
 
+-- proxymanager
+CREATE OR REPLACE VIEW public.proxymanager_state AS
+    SELECT
+        id, org_id, status, connection, port, access_duration, metadata, connected_at
+    FROM proxymanager_state;
+
+-- clientkeys
+CREATE OR REPLACE VIEW public.clientkeys AS
+    SELECT
+        id, org_id, name, status, dsn_hash, created_at, updated_at
+    FROM clientkeys;
+
 GRANT webuser TO hoopadm;
 GRANT usage ON SCHEMA public TO webuser;
 GRANT usage ON SCHEMA private TO webuser;
@@ -392,7 +459,7 @@ GRANT INSERT, SELECT, UPDATE on public.login to webuser;
 GRANT SELECT, INSERT, UPDATE ON public.users to webuser;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.users_update to webuser;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_groups_update to webuser;
--- GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_groups to webuser;
+GRANT SELECT, INSERT, UPDATE ON public.serviceaccounts to webuser;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.connections to webuser;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.env_vars to webuser;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.agents to webuser;
@@ -403,6 +470,9 @@ GRANT SELECT, INSERT, UPDATE ON public.sessions to webuser;
 GRANT SELECT, INSERT, UPDATE ON public.blobs to webuser;
 GRANT SELECT, INSERT, UPDATE ON public.reviews to webuser;
 GRANT SELECT, INSERT, UPDATE ON public.review_groups to webuser;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.proxymanager_state to webuser;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.clientkeys to webuser;
+
 
 INSERT INTO plugins (id, org_id, name) VALUES
     ('DC0F40AF-12A8-495A-974D-FF03DD921406', (SELECT id FROM private.orgs), 'dlp'),
@@ -417,3 +487,6 @@ INSERT INTO env_vars (id, org_id, envs) VALUES
 
 INSERT INTO agents (org_id, id, name, mode, token, status)
     VALUES ((SELECT id from private.orgs), '75122BCE-F957-49EB-A812-2AB60977CD9F', 'dev', 'standard', '7854115b1ae448fec54d8bf50d3ce223e30c1c933edcd12767692574f326df57', 'DISCONNECTED');
+
+INSERT INTO clientkeys (org_id, name, status, dsn_hash) VALUES
+    ((SELECT id from private.orgs), 'heroku', 'active', '99bce555b51d55e6b665dd3ad452b0f8b3a466f3cb9b095d307506b16eb77fb1');

@@ -4,11 +4,15 @@ import (
 	"fmt"
 
 	"github.com/runopsio/hoop/gateway/pgrest"
+	pglogin "github.com/runopsio/hoop/gateway/pgrest/login"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 )
 
 func UpdateLoginState(ctx *storagev2.Context, login *types.Login) error {
+	if pgrest.WithPostgres(ctx) {
+		return pglogin.New().Upsert(login)
+	}
 	_, err := ctx.Put(login)
 	return err
 }

@@ -20,6 +20,8 @@ import (
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/pgrest"
 	"github.com/runopsio/hoop/gateway/security/idp"
+	"github.com/runopsio/hoop/gateway/storagev2"
+	clientkeysstorage "github.com/runopsio/hoop/gateway/storagev2/clientkeys"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc"
@@ -160,9 +162,9 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 	// keep compatibility with old clients (hoopagent/<version>, hoopagent/sdk or hoopagent/sidecar)
 	case strings.HasPrefix(commongrpc.MetaGet(md, "user-agent"), "hoopagent"):
 		// TODO: deprecated in flavor of agent keys dsn
-		clientKey, err := authenticateClientKeyAgent(i.idp.ApiURL, bearerToken)
+		clientKey, err := clientkeysstorage.ValidateDSN(storagev2.NewStorage(nil), bearerToken)
 		if err != nil {
-			log.Error("failed validating dsn authentication, err=%v", err)
+			log.Error("failed validating dsn authentication (clientkeys), err=%v", err)
 			sentry.CaptureException(err)
 			return status.Errorf(codes.Internal, "failed validating dsn")
 		}

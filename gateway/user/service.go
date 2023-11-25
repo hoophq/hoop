@@ -26,7 +26,7 @@ type (
 		FindInvitedUser(email string) (*InvitedUser, error)
 		GetOrgByName(name string) (*Org, error)
 		GetOrgNameByID(orgID string) (*Org, error)
-		FindByGroups(context *Context, groups []string) ([]User, error)
+		// FindByGroups(context *Context, groups []string) ([]User, error)
 		ListAllGroups(context *Context) ([]string, error)
 		FindOrgs() ([]Org, error)
 	}
@@ -115,6 +115,8 @@ func (c *Context) GetUserID() (v string) {
 	return
 }
 
+func (c *Org) GetOrgID() string { return c.Id }
+
 func (s *Service) FindAll(context *Context) ([]User, error) {
 	return s.Storage.FindAll(context)
 }
@@ -165,9 +167,9 @@ func (s *Service) FindInvitedUser(email string) (*InvitedUser, error) {
 	return s.Storage.FindInvitedUser(email)
 }
 
-func (s *Service) FindByGroups(context *Context, groups []string) ([]User, error) {
-	return s.Storage.FindByGroups(context, groups)
-}
+// func (s *Service) FindByGroups(context *Context, groups []string) ([]User, error) {
+// 	return s.Storage.FindByGroups(context, groups)
+// }
 
 func (s *Service) ListAllGroups(context *Context) ([]string, error) {
 	return s.Storage.ListAllGroups(context)

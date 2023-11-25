@@ -25,15 +25,14 @@ func (s *Storage) FindLogin(state string) (*login, error) {
 	default:
 		return nil, err
 	}
-	// if err := client.Fetch().DecodeInto(&l); err != nil {
-	// 	return nil, err
-	// }
-	// return &login{l.ID, l.Redirect, outcomeType(l.Outcome), l.SlackID}, nil
-	// return &login, client.Fetch().DecodeInto(&login)
 
 	// b, err := s.GetEntity(state)
 	// if err != nil {
 	// 	return nil, err
+	// }
+
+	// if b == nil {
+	// 	return nil, nil
 	// }
 
 	// var login login
@@ -51,7 +50,10 @@ func (s *Storage) PersistLogin(login *login) (int64, error) {
 	if login.Outcome != "" {
 		req["outcome"] = string(login.Outcome)
 	}
-	return 0, client.Create(req).Error()
+	if login.SlackID != "" {
+		req["slack_id"] = login.SlackID
+	}
+	return 0, client.Upsert(req).Error()
 
 	// payload := st.EntityToMap(login)
 
