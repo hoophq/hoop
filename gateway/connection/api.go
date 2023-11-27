@@ -35,7 +35,7 @@ type (
 func (a *Handler) FindOne(c *gin.Context) {
 	context := user.ContextUser(c)
 
-	name := c.Param("name")
+	name := c.Param("nameOrID")
 	connection, err := a.Service.FindOne(context, name)
 	if err != nil {
 		sentry.CaptureException(err)
@@ -118,7 +118,7 @@ func (a *Handler) Put(c *gin.Context) {
 	context := user.ContextUser(c)
 	log := user.ContextLogger(c)
 
-	name := c.Param("name")
+	name := c.Param("nameOrID")
 	existingConnection, err := a.Service.FindOne(context, name)
 	if err != nil {
 		log.Errorf("failed fetching connection, err=%v", err)
