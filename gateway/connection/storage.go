@@ -147,8 +147,8 @@ func (s *Storage) FindOne(context *user.Context, nameOrID string) (*Connection, 
 		:find [(pull ?c [*])]
 		:in [org-id connection-name connection-id]
 		:where [[?c :connection/org org]
-				(or [?a :connection/name connection-name]
-					[?a :xt/id connection-id])]}
+				(or [?c :connection/name connection-name]
+					[?c :xt/id connection-id])]}
 		:in-args [%q %q %q]}`, context.Org.Id, connectionName, connectionID)
 
 	b, err := s.Query([]byte(payload))
