@@ -156,7 +156,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest(analytics.EventCreateConnection),
 		api.AdminOnly,
 		api.ConnectionHandler.Post)
-	route.PUT("/connections/:name",
+	route.PUT("/connections/:nameOrID",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventUpdateConnection),
 		api.AdminOnly,
@@ -170,7 +170,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest(analytics.EventFetchConnections),
 		api.ConnectionHandler.FindAll)
-	route.GET("/connections/:name",
+	route.GET("/connections/:nameOrID",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventFetchConnections),
 		api.ConnectionHandler.FindOne)

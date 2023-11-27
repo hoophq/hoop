@@ -16,6 +16,8 @@ const (
 	EventApiExecConnection      = "hoop-api-exec-connection"
 	EventApiProxymanagerConnect = "hoop-api-proxymanager-connect"
 	EventCreateAgent            = "hoop-create-agent"
+	EventCreateStandardAgent    = "hoop-create-standard-agent"
+	EventCreateEmbeddedAgent    = "hoop-create-embedded-agent"
 	EventDeleteAgent            = "hoop-delete-agent"
 	EventCreatePlugin           = "hoop-create-plugin"
 	EventUdpatePlugin           = "hoop-udpate-plugin"

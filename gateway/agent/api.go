@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/common/dsnkeys"
 	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/gateway/analytics"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/user"
 )
@@ -111,6 +112,16 @@ func (s *Handler) Post(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
+
+	eventName := analytics.EventCreateStandardAgent
+	if agt.Mode == pb.AgentModeEmbeddedType {
+		eventName = analytics.EventCreateEmbeddedAgent
+	}
+	analytics.New().Track(ctx.ToAPIContext(), eventName, map[string]any{
+		"host":           c.Request.Host,
+		"content-length": c.Request.ContentLength,
+		"user-agent":     c.Request.Header.Get("User-Agent"),
+	})
 
 	c.JSON(http.StatusCreated, map[string]string{"token": dsn})
 }

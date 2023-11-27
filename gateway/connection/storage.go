@@ -137,13 +137,19 @@ func (s *Storage) FindAll(context *user.Context) ([]BaseConnection, error) {
 	return connections, nil
 }
 
-func (s *Storage) FindOne(context *user.Context, name string) (*Connection, error) {
-	var payload = `{:query {
-		:find [(pull ?connection [*])] 
-		:in [name org]
-		:where [[?connection :connection/name name]
-                [?connection :connection/org org]]}
-		:in-args ["` + name + `" "` + context.Org.Id + `"]}`
+func (s *Storage) FindOne(context *user.Context, nameOrID string) (*Connection, error) {
+	connectionID, connectionName := "", nameOrID
+	if _, err := uuid.Parse(nameOrID); err == nil {
+		connectionID = nameOrID
+		connectionName = ""
+	}
+	var payload = fmt.Sprintf(`{:query {
+		:find [(pull ?c [*])]
+		:in [org-id connection-name connection-id]
+		:where [[?c :connection/org org]
+				(or [?a :connection/name connection-name]
+					[?a :xt/id connection-id])]}
+		:in-args [%q %q %q]}`, context.Org.Id, connectionName, connectionID)
 
 	b, err := s.Query([]byte(payload))
 	if err != nil {
