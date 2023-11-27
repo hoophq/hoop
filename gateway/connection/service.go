@@ -136,7 +136,7 @@ func (s *Service) FindOne(context *user.Context, nameOrID string) (*Connection, 
 	}
 
 	for _, c := range p.Connections {
-		if c.Name == nameOrID || c.ID == nameOrID {
+		if c.Name == result.Name {
 			for _, ug := range context.User.Groups {
 				if pb.IsInList(ug, c.Config) {
 					return result, nil
