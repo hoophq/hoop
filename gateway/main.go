@@ -313,13 +313,15 @@ func startPostgrestProcessManager(pgrestJwtSecret []byte) error {
 	if err != nil && err != migrate.ErrNilVersion {
 		return fmt.Errorf("failed obtaining db migration version, err=%v", err)
 	}
-	log.Infof("loaded migration version=%v, dirty=%v, is-nil-version=%v", ver, dirty, err == migrate.ErrNilVersion)
-	switch m.Up() {
-	case migrate.ErrNoChange, nil: // noop
-	default:
-		return err
+	if dirty {
+		return fmt.Errorf("database is in a dirty state, requires manual intervention to fix it")
 	}
-	log.Infof("processed db migration with success")
+	log.Infof("loaded migration version=%v, is-nil-version=%v", ver, err == migrate.ErrNilVersion)
+	err = m.Up()
+	if err != nil && err != migrate.ErrNilVersion && err != migrate.ErrNoChange {
+		return fmt.Errorf("failed running db migration, err=%v", err)
+	}
+	log.Infof("processed db migration with success, nochange=%v", err == migrate.ErrNoChange)
 
 	// https://postgrest.org/en/stable/references/configuration.html#env-variables-config
 	envs := []string{
