@@ -166,17 +166,17 @@ func (r *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 		return nil, plugintypes.InternalErr("failed saving review", err)
 	}
 
-	reviewers, err := r.userSvc.FindByGroups(userContext, groups)
-	if err != nil {
-		return nil, plugintypes.InternalErr("failed obtaining approvers", err)
-	}
+	// reviewers, err := r.userSvc.FindByGroups(userContext, groups)
+	// if err != nil {
+	// 	return nil, plugintypes.InternalErr("failed obtaining approvers", err)
+	// }
 
-	reviewersEmail := listEmails(reviewers)
-	r.notificationService.Send(notification.Notification{
-		Title:      "[hoop.dev] Pending review",
-		Message:    r.buildReviewUrl(newRev.Id),
-		Recipients: reviewersEmail,
-	})
+	// reviewersEmail := listEmails(reviewers)
+	// r.notificationService.Send(notification.Notification{
+	// 	Title:      "[hoop.dev] Pending review",
+	// 	Message:    r.buildReviewUrl(newRev.Id),
+	// 	Recipients: reviewersEmail,
+	// })
 	return &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{
 		Type:    pbclient.SessionOpenWaitingApproval,
 		Payload: []byte(fmt.Sprintf("%s/plugins/reviews/%s", r.apiURL, newRev.Id)),
@@ -186,15 +186,15 @@ func (r *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 func (r *reviewPlugin) OnDisconnect(_ plugintypes.Context, errMsg error) error { return nil }
 func (r *reviewPlugin) OnShutdown()                                            {}
 
-func (r *reviewPlugin) buildReviewUrl(reviewID string) string {
-	url := fmt.Sprintf("%s/plugins/reviews/%s", r.apiURL, reviewID)
-	return fmt.Sprintf("A user is waiting for your review at hoop.dev.\n\n Visit %s for more information.\n\n Hoop Team.", url)
-}
+// func (r *reviewPlugin) buildReviewUrl(reviewID string) string {
+// 	url := fmt.Sprintf("%s/plugins/reviews/%s", r.apiURL, reviewID)
+// 	return fmt.Sprintf("A user is waiting for your review at hoop.dev.\n\n Visit %s for more information.\n\n Hoop Team.", url)
+// }
 
-func listEmails(reviewers []user.User) []string {
-	emails := make([]string, 0)
-	for _, r := range reviewers {
-		emails = append(emails, r.Email)
-	}
-	return emails
-}
+// func listEmails(reviewers []user.User) []string {
+// 	emails := make([]string, 0)
+// 	for _, r := range reviewers {
+// 		emails = append(emails, r.Email)
+// 	}
+// 	return emails
+// }

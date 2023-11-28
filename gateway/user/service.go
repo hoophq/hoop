@@ -18,16 +18,15 @@ type (
 	}
 
 	storage interface {
-		Signup(org *Org, user *User) (txId int64, err error)
-		FindById(identifier string) (*Context, error)
-		FindByEmail(ctx *Context, email string) (*User, error)
+		FindById(ctx *Context, xtID string) (*Context, error)
+		// FindByEmail(ctx *Context, email string) (*User, error)
 		FindBySlackID(ctx *Org, slackID string) (*User, error)
 		Persist(user any) (int64, error)
 		FindAll(context *Context) ([]User, error)
 		FindInvitedUser(email string) (*InvitedUser, error)
 		GetOrgByName(name string) (*Org, error)
 		GetOrgNameByID(orgID string) (*Org, error)
-		FindByGroups(context *Context, groups []string) ([]User, error)
+		// FindByGroups(context *Context, groups []string) ([]User, error)
 		ListAllGroups(context *Context) ([]string, error)
 		FindOrgs() ([]Org, error)
 	}
@@ -102,12 +101,39 @@ func (c *Context) ToAPIContext() *types.APIContext {
 	return apiCtx
 }
 
+func (c *User) GetOrgID() (v string) {
+	if c != nil {
+		return c.Org
+	}
+	return
+}
+func (c *Context) GetOrgID() (v string) {
+	if c != nil && c.Org != nil {
+		return c.Org.Id
+	}
+	return
+}
+
+func (c *Context) GetSubject() (v string) {
+	if c.User == nil {
+		return
+	}
+	return c.User.Id
+}
+
+func (c *Org) GetOrgID() (v string) {
+	if c != nil {
+		return c.Id
+	}
+	return
+}
+
 func (s *Service) FindAll(context *Context) ([]User, error) {
 	return s.Storage.FindAll(context)
 }
 
 func (s *Service) FindOne(context *Context, id string) (*User, error) {
-	ctx, err := s.Storage.FindById(id)
+	ctx, err := s.Storage.FindById(context, id)
 	if err != nil {
 		return nil, err
 	}
@@ -120,16 +146,16 @@ func (s *Service) FindOne(context *Context, id string) (*User, error) {
 
 }
 
-func (s *Service) FindByEmail(ctx *Context, email string) (*User, error) {
-	return s.Storage.FindByEmail(ctx, email)
-}
+// func (s *Service) FindByEmail(ctx *Context, email string) (*User, error) {
+// 	return s.Storage.FindByEmail(ctx, email)
+// }
 
 func (s *Service) FindBySlackID(ctx *Org, slackID string) (*User, error) {
 	return s.Storage.FindBySlackID(ctx, slackID)
 }
 
 func (s *Service) FindBySub(sub string) (*Context, error) {
-	return s.Storage.FindById(sub)
+	return s.Storage.FindById(&Context{}, sub)
 }
 
 func (s *Service) Persist(user any) error {
@@ -138,10 +164,6 @@ func (s *Service) Persist(user any) error {
 		return err
 	}
 	return nil
-}
-
-func (s *Service) Signup(org *Org, user *User) (txId int64, err error) {
-	return s.Storage.Signup(org, user)
 }
 
 func (s *Service) GetOrgByName(name string) (*Org, error) {
@@ -156,9 +178,9 @@ func (s *Service) FindInvitedUser(email string) (*InvitedUser, error) {
 	return s.Storage.FindInvitedUser(email)
 }
 
-func (s *Service) FindByGroups(context *Context, groups []string) ([]User, error) {
-	return s.Storage.FindByGroups(context, groups)
-}
+// func (s *Service) FindByGroups(context *Context, groups []string) ([]User, error) {
+// 	return s.Storage.FindByGroups(context, groups)
+// }
 
 func (s *Service) ListAllGroups(context *Context) ([]string, error) {
 	return s.Storage.ListAllGroups(context)

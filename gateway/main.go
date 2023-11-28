@@ -2,8 +2,11 @@ package gateway
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"os/exec"
@@ -14,15 +17,14 @@ import (
 	"github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/monitoring"
-	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/common/version"
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/analytics"
 	"github.com/runopsio/hoop/gateway/api"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/indexer"
-	"github.com/runopsio/hoop/gateway/jobs/report"
 	"github.com/runopsio/hoop/gateway/notification"
+	"github.com/runopsio/hoop/gateway/pgrest"
 	"github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/runbooks"
 	"github.com/runopsio/hoop/gateway/security"
@@ -33,8 +35,11 @@ import (
 	"github.com/runopsio/hoop/gateway/transport"
 	"github.com/runopsio/hoop/gateway/user"
 
-	// plugins
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 
+	// plugins
 	"github.com/runopsio/hoop/gateway/transport/adminapi"
 	pluginsrbac "github.com/runopsio/hoop/gateway/transport/plugins/accesscontrol"
 	pluginsaudit "github.com/runopsio/hoop/gateway/transport/plugins/audit"
@@ -56,13 +61,29 @@ func Run(listenAdmAddr string) {
 	if err := changeWebappApiURL(apiURL); err != nil {
 		log.Fatal(err)
 	}
-	defer log.Sync()
-	s := xtdb.New()
-	log.Infof("syncing xtdb at %s", s.Address())
-	if err := s.Sync(time.Second * 80); err != nil {
+
+	// by default start postgrest process
+	pgrestUrl, pgrestJwtSecret, err := pgRestConfig()
+	if err != nil {
 		log.Fatal(err)
 	}
-	log.Infof("sync with success")
+	pgrest.JwtSecretKey = pgrestJwtSecret
+	pgrest.URL = pgrestUrl
+	if err := startPostgrestProcessManager(pgrestJwtSecret); err != nil {
+		log.Fatal(err)
+	}
+
+	s := xtdb.New()
+	// sync xtdb if it's a legacy environment
+	if !pgrest.Rollout {
+		defer log.Sync()
+		log.Infof("syncing xtdb at %s", s.Address())
+		if err := s.Sync(time.Second * 80); err != nil {
+			log.Fatal(err)
+		}
+		log.Infof("sync with success")
+	}
+
 	storev2 := storagev2.NewStorage(nil)
 
 	profile := os.Getenv("PROFILE")
@@ -80,15 +101,6 @@ func Run(listenAdmAddr string) {
 			scheme = "grpc"
 		}
 		grpcURL = fmt.Sprintf("%s://%s:8443", scheme, u.Hostname())
-	}
-
-	nodeApiUrlStr := os.Getenv("NODE_API_URL")
-	if nodeApiUrlStr == "" {
-		nodeApiUrlStr = "http://127.0.0.1:4001"
-	}
-	nodeApiUrl, err := url.Parse(nodeApiUrlStr)
-	if err != nil {
-		log.Fatalf("NODE_API_URL in wrong format, err=%v", err)
 	}
 
 	agentService := agent.Service{Storage: &agent.Storage{Storage: s}}
@@ -123,7 +135,6 @@ func Run(listenAdmAddr string) {
 		Profile:           profile,
 		Analytics:         analyticsService,
 		GrpcURL:           grpcURL,
-		NodeApiURL:        nodeApiUrl,
 
 		StoreV2: storev2,
 	}
@@ -194,20 +205,6 @@ func Run(listenAdmAddr string) {
 	}
 	reviewService.TransportService = g
 
-	//start scheduler for "weekly" report service (production mode)
-	if profile != pb.DevProfile {
-		report.InitReportScheduler(&report.Scheduler{
-			UserStorage:    &userService,
-			SessionStorage: &sessionService,
-			Notification:   notificationService,
-		})
-	}
-
-	if profile == pb.DevProfile {
-		if err := a.CreateTrialEntities(); err != nil {
-			log.Fatal(err)
-		}
-	}
 	if grpc.ShouldDebugGrpc() {
 		log.SetGrpcLogger()
 	}
@@ -215,7 +212,6 @@ func Run(listenAdmAddr string) {
 	log.Infof("profile=%v - starting servers", profile)
 	go g.StartRPCServer()
 	go adminapi.RunServer(listenAdmAddr)
-	startNodeApiProcessManager()
 	a.StartAPI(sentryStarted)
 }
 
@@ -297,29 +293,62 @@ channel="general"`
 	return notification.NewMagicBell()
 }
 
-func startNodeApiProcessManager() {
-	mainFilePath := "/app/api/main.js"
-	if _, err := os.Stat(mainFilePath); err != nil && os.IsNotExist(err) {
-		return
+func startPostgrestProcessManager(pgrestJwtSecret []byte) error {
+	postgrestBinFile := "/usr/local/bin/postgrest"
+	if _, err := os.Stat(postgrestBinFile); err != nil && os.IsNotExist(err) {
+		return nil
+	}
+	// validate if the migration files are present
+	if _, err := os.Stat("/app/migrations/000001_init.up.sql"); err != nil {
+		return fmt.Errorf("failed validating migration files, err=%v", err)
+	}
+
+	// migration
+	dbURL := fmt.Sprintf("%s?sslmode=disable", toPostgresURI())
+	m, err := migrate.New("file:///app/migrations", dbURL)
+	if err != nil {
+		return fmt.Errorf("failed initializing db migration, err=%v", err)
+	}
+	ver, dirty, err := m.Version()
+	if err != nil && err != migrate.ErrNilVersion {
+		return fmt.Errorf("failed obtaining db migration version, err=%v", err)
+	}
+	log.Infof("loaded migration version=%v, dirty=%v, is-nil-version=%v", ver, dirty, err == migrate.ErrNilVersion)
+	switch m.Up() {
+	case migrate.ErrNoChange, nil: // noop
+	default:
+		return err
+	}
+	log.Infof("processed db migration with success")
+
+	// https://postgrest.org/en/stable/references/configuration.html#env-variables-config
+	envs := []string{
+		"PGRST_DB_ANON_ROLE=web_anon",
+		"PGRST_DB_CHANNEL_ENABLED=False",
+		"PGRST_DB_CONFIG=False",
+		"PGRST_DB_PLAN_ENABLED=True",
+		"PGRST_LOG_LEVEL=info",
+		"PGRST_SERVER_HOST=!4",
+		"PGRST_SERVER_PORT=8008",
+		fmt.Sprintf("PGRST_DB_URI=%s", toPostgresURI()),
+		fmt.Sprintf("PGRST_JWT_SECRET=%s", string(pgrestJwtSecret)),
 	}
 
 	startProcessFn := func(i int) {
-		log.Infof("starting node api process, attempt=%v ...", i)
-		cmd := exec.Command("node", mainFilePath)
-		cmd.Env = os.Environ()
-		// https://expressjs.com/en/advanced/best-practice-performance.html#set-node_env-to-production
-		cmd.Env = append(cmd.Env, "NODE_ENV", "production")
+		log.Infof("starting postgrest process, attempt=%v ...", i)
+		cmd := exec.Command(postgrestBinFile)
+		cmd.Env = envs
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
-			log.Errorf("failed running node api process, err=%v", err)
+			log.Errorf("failed running postgrest process, err=%v", err)
 			return
 		}
 		pid := -1
 		if cmd.Process != nil {
 			pid = cmd.Process.Pid
 		}
-		log.Infof("node api process (pid:%v) finished", pid)
+		log.Infof("postgrest process (pid:%v) finished", pid)
 	}
 
 	go func() {
@@ -329,4 +358,54 @@ func startNodeApiProcessManager() {
 			time.Sleep(time.Second * 5)
 		}
 	}()
+
+	for i := 1; ; i++ {
+		if i > 15 {
+			log.Fatal("max attempts (15) reached. failed to validate postgrest liveness at %v", pgrest.URL.Host)
+		}
+		if err := checkAddrLiveness(pgrest.URL.Host); err != nil {
+			time.Sleep(time.Second * 1)
+			continue
+		}
+		log.Infof("postgrest is ready at %v", pgrest.URL.Host)
+		break
+	}
+	return nil
+}
+
+func toPostgresURI() string {
+	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s",
+		os.Getenv("PG_USER"),
+		os.Getenv("PG_PASSWORD"),
+		os.Getenv("PG_HOST"),
+		os.Getenv("PG_PORT"),
+		os.Getenv("PG_DB"),
+	)
+}
+
+func pgRestConfig() (u *url.URL, jwtSecret []byte, err error) {
+	secretRandomBytes := make([]byte, 32)
+	if _, err := rand.Read(secretRandomBytes); err != nil {
+		return nil, nil, fmt.Errorf("failed generating entropy, err=%v", err)
+	}
+
+	pgrestUrlStr := os.Getenv("PGREST_URL")
+	if pgrestUrlStr == "" {
+		pgrestUrlStr = "http://127.0.0.1:8008"
+	}
+	pgrestUrl, err := url.Parse(pgrestUrlStr)
+	if err != nil {
+		return nil, nil, fmt.Errorf("PGREST_URL in wrong format, err=%v", err)
+	}
+	return pgrestUrl, []byte(base64.RawURLEncoding.EncodeToString(secretRandomBytes)), nil
+}
+
+func checkAddrLiveness(addr string) error {
+	timeout := time.Second * 3
+	conn, err := net.DialTimeout("tcp", addr, timeout)
+	if err != nil {
+		return fmt.Errorf("not responding, err=%v", err)
+	}
+	_ = conn.Close()
+	return nil
 }

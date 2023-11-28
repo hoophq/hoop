@@ -3,6 +3,7 @@ FROM ubuntu:focal-20230605
 ENV DEBIAN_FRONTEND=noninteractive
 ENV ACCEPT_EULA=y
 ENV NODE_VERSION 18.17.0
+ENV POSTGREST_VERSION 11.2.2
 
 RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
     && case "${dpkgArch##*-}" in \
@@ -62,6 +63,7 @@ RUN mkdir -p /app && \
     mkdir -p /opt/hoop/sessions && \
     apt-get update -y && \
     apt-get install -y \
+        xz-utils \
         locales \
         tini \
         jq \
@@ -89,10 +91,22 @@ RUN curl -sL "https://dl.k8s.io/release/v1.22.1/bin/linux/amd64/kubectl" -o kube
         chmod 755 kubectl && \
         mv kubectl /usr/local/bin/kubectl
 
+RUN URL= && dpkgArch="$(dpkg --print-architecture)" \
+    && case "${dpkgArch##*-}" in \
+      amd64) URL="https://github.com/PostgREST/postgrest/releases/download/v$POSTGREST_VERSION/postgrest-v$POSTGREST_VERSION-linux-static-x64.tar.xz";; \
+      arm64) URL="https://github.com/PostgREST/postgrest/releases/download/v$POSTGREST_VERSION/postgrest-v$POSTGREST_VERSION-ubuntu-aarch64.tar.xz";; \
+      *) echo "unsupported architecture"; exit 1 ;; \
+    esac \
+    && curl -sL $URL -o postgrest.tar.xz && \
+    tar -xf postgrest.tar.xz && rm -f postgrest.tar.xz && \
+    mv postgrest /usr/local/bin/postgrest && \
+    chmod 0755 /usr/local/bin/postgrest && \
+    postgrest --version
+
 RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
     locale-gen
 ENV LANG en_US.UTF-8
-ENV LANGUAGE en_US:en 
+ENV LANGUAGE en_US:en
 ENV LC_ALL en_US.UTF-8
 
 ENV PATH="/app:${PATH}"

@@ -2,6 +2,8 @@
 
 set -eo pipefail
 
+# clear before starting
+rm -rf $HOME/.hoop/dev/pgdata
 mkdir -p $HOME/.hoop/dev/pgdata
 
 echo "--> STARTING POSTGRES DEV SERVER ..."
@@ -33,7 +35,4 @@ echo ""
 echo "--> done!"
 
 echo ""
-echo "PGUSER=$PGUSER"
-echo "PGDATABASE=$PGDATABASE"
-echo "PGPASSWORD=$PGPASSWWORD"
-echo "PGPORT=5449"
+echo "postgres://$PGUSER:$PGPASSWORD@127.0.0.1:5449/$PGDATABASE"

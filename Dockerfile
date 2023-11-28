@@ -3,6 +3,7 @@ FROM ubuntu:focal-20230605
 ENV DEBIAN_FRONTEND=noninteractive
 ENV ACCEPT_EULA=y
 ENV NODE_VERSION 18.17.0
+ENV POSTGREST_VERSION 11.2.2
 
 RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
     && case "${dpkgArch##*-}" in \
@@ -62,15 +63,24 @@ RUN mkdir -p /app && \
     mkdir -p /opt/hoop/sessions && \
     apt-get update -y && \
     apt-get install -y \
+        xz-utils \
         locales \
         tini \
         openssh-client \
         procps \
         curl
 
-RUN curl -sL https://github.com/42wim/matterbridge/releases/download/v1.26.0/matterbridge-1.26.0-linux-64bit -o /usr/local/bin/matterbridge && \
-    chmod +x /usr/local/bin/matterbridge && \
-    matterbridge -version
+RUN URL= && dpkgArch="$(dpkg --print-architecture)" \
+    && case "${dpkgArch##*-}" in \
+      amd64) URL="https://github.com/PostgREST/postgrest/releases/download/v$POSTGREST_VERSION/postgrest-v$POSTGREST_VERSION-linux-static-x64.tar.xz";; \
+      arm64) URL="https://github.com/PostgREST/postgrest/releases/download/v$POSTGREST_VERSION/postgrest-v$POSTGREST_VERSION-ubuntu-aarch64.tar.xz";; \
+      *) echo "unsupported architecture"; exit 1 ;; \
+    esac \
+    && curl -sL $URL -o postgrest.tar.xz && \
+    tar -xf postgrest.tar.xz && rm -f postgrest.tar.xz && \
+    mv postgrest /usr/local/bin/postgrest && \
+    chmod 0755 /usr/local/bin/postgrest && \
+    postgrest --version
 
 RUN mkdir -p /app && \
     mkdir -p /opt/hoop/sessions
@@ -78,7 +88,7 @@ RUN mkdir -p /app && \
 RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
     locale-gen
 ENV LANG en_US.UTF-8
-ENV LANGUAGE en_US:en 
+ENV LANGUAGE en_US:en
 ENV LC_ALL en_US.UTF-8
 
 COPY rootfs /

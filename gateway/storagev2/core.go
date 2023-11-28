@@ -182,3 +182,5 @@ func (c *Context) Analytics() *analytics.Segment {
 }
 
 func (c *Context) DSN() *types.DSNContext { return c.dsnctx }
+
+func (c *Context) GetOrgID() string { return c.OrgID }

@@ -5,6 +5,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/runopsio/hoop/gateway/pgrest"
+	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
+	pgsession "github.com/runopsio/hoop/gateway/pgrest/session"
 	st "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
@@ -18,6 +21,7 @@ type (
 )
 
 func (s *Storage) FindAll(context *user.Context) ([]types.Review, error) {
+	// intercepted in api.go fetch all handler
 	var payload = fmt.Sprintf(`{:query {
 		:find [(pull ?r [:xt/id
 						:review/type
@@ -53,6 +57,9 @@ func (s *Storage) FindAll(context *user.Context) ([]types.Review, error) {
 }
 
 func (s *Storage) FindApprovedJitReviews(ctx *user.Context, connID string) (*types.Review, error) {
+	if pgrest.Rollout {
+		return pgreview.New().FetchJit(ctx, connID)
+	}
 	var payload = fmt.Sprintf(`{:query {
 		:find [(pull ?r [:xt/id
 						:review/type
@@ -97,6 +104,9 @@ func (s *Storage) FindApprovedJitReviews(ctx *user.Context, connID string) (*typ
 }
 
 func (s *Storage) FindById(ctx *user.Context, id string) (*types.Review, error) {
+	if pgrest.Rollout {
+		return pgreview.New().FetchOneByID(ctx, id)
+	}
 	var payload = fmt.Sprintf(`{:query {
 		:find [(pull ?r [*
 						{:review/connection [:xt/id :connection/name]}
@@ -142,12 +152,11 @@ func (s *Storage) queryDecoder(query string, into any, args ...any) error {
 	return edn.Unmarshal(httpBody, into)
 }
 
-func (s *Storage) PersistSessionAsReady(sess *types.Session) (*st.TxResponse, error) {
-	sess.Status = "ready"
-	return s.SubmitPutTx(sess)
-}
-
-func (s *Storage) FindSessionBySessionId(sessionID string) (*types.Session, error) {
+func (s *Storage) PersistSessionAsReady(ctx *user.Context, sessionID string) (*st.TxResponse, error) {
+	if pgrest.Rollout {
+		return &st.TxResponse{},
+			pgsession.New().UpdateStatus(ctx, sessionID, types.SessionStatusReady)
+	}
 	var resultItems [][]types.Session
 	err := s.queryDecoder(`
 	{:query {
@@ -168,12 +177,16 @@ func (s *Storage) FindSessionBySessionId(sessionID string) (*types.Session, erro
 		for _, i := range nonIndexedStreams {
 			session.EventStream = append(session.EventStream, i)
 		}
-		return &session, nil
+		session.Status = types.SessionStatusReady
+		return s.SubmitPutTx(session)
 	}
-	return nil, nil
+	return nil, fmt.Errorf("session %v not found", sessionID)
 }
 
 func (s *Storage) FindBySessionID(ctx *user.Context, sessionID string) (*types.Review, error) {
+	if pgrest.Rollout {
+		return pgreview.New().FetchOneBySid(ctx, sessionID)
+	}
 	var payload = fmt.Sprintf(`{:query {
 		:find [(pull ?r [*
 						{:review/connection [:xt/id :connection/name]}
@@ -237,6 +250,9 @@ func (s *Storage) findGroupsByReviewId(orgID string, reviewID string) ([]types.R
 }
 
 func (s *Storage) Persist(ctx *user.Context, review *types.Review) (int64, error) {
+	if pgrest.Rollout {
+		return 0, pgreview.New().Upsert(review)
+	}
 	reviewGroupIds := make([]string, 0)
 
 	var payloads []st.TxEdnStruct

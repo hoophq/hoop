@@ -23,7 +23,7 @@ type (
 		FindAll(context *user.Context) ([]Agent, error)
 		FindByNameOrID(ctx *user.Context, name string) (*Agent, error)
 		FindByToken(token string) (*Agent, error)
-		Evict(xtID string) error
+		Evict(ctx *user.Context, xtID string) error
 	}
 )
 
@@ -66,7 +66,7 @@ func (s *Handler) Post(c *gin.Context) {
 		return
 	}
 	if existentAgent != nil {
-		log.Errorf("agent %v already exists", req.Name)
+		log.Infof("agent %v already exists", req.Name)
 		c.JSON(http.StatusConflict, gin.H{"message": "agent already exists"})
 		return
 	}
@@ -130,7 +130,7 @@ func (s *Handler) Evict(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 		return
 	}
-	if err := s.Service.Evict(agent.Id); err != nil {
+	if err := s.Service.Evict(ctx, agent.Id); err != nil {
 		log.Errorf("failed evicting agent %v, err=%v", agent.Id, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return

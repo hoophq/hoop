@@ -2,7 +2,6 @@ package api
 
 import (
 	"fmt"
-	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -14,7 +13,6 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/analytics"
-	apiclientkeys "github.com/runopsio/hoop/gateway/api/clientkeys"
 	apiconnectionapps "github.com/runopsio/hoop/gateway/api/connectionapps"
 	apiplugins "github.com/runopsio/hoop/gateway/api/plugins"
 	apiproxymanager "github.com/runopsio/hoop/gateway/api/proxymanager"
@@ -48,7 +46,6 @@ type (
 		SecurityHandler   security.Handler
 		IDProvider        *idp.Provider
 		GrpcURL           string
-		NodeApiURL        *url.URL
 		Profile           string
 		Analytics         user.Analytics
 		logger            *zap.Logger
@@ -72,7 +69,7 @@ func (api *Api) StartAPI(sentryInit bool) {
 	// https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies
 	route.SetTrustedProxies(nil)
 	route.Use(CORSMiddleware())
-	route.Use(api.proxyNodeAPIMiddleware())
+	// route.Use(api.proxyNodeAPIMiddleware())
 	// UI
 	staticUiPath := os.Getenv("STATIC_UI_PATH")
 	if staticUiPath == "" {
@@ -102,7 +99,7 @@ func (api *Api) StartAPI(sentryInit bool) {
 func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.GET("/login", api.SecurityHandler.Login)
 	route.GET("/callback", api.SecurityHandler.Callback)
-	route.GET("/healthz", healthz.LivenessHandler(api.NodeApiURL.Host))
+	route.GET("/healthz", healthz.LivenessHandler())
 
 	route.GET("/users",
 		api.Authenticate,
@@ -228,25 +225,25 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.AgentHandler.Evict)
 
 	// DEPRECATED in flavor of /api/agents
-	route.POST("/clientkeys",
-		api.Authenticate,
-		api.TrackRequest(analytics.EventCreateClientKey),
-		api.AdminOnly,
-		apiclientkeys.Post)
-	route.GET("/clientkeys",
-		api.Authenticate,
-		api.TrackRequest(analytics.EventFetchClientKey),
-		api.AdminOnly,
-		apiclientkeys.List)
-	route.GET("/clientkeys/:name",
-		api.Authenticate,
-		api.TrackRequest(analytics.EventFetchClientKey),
-		api.AdminOnly,
-		apiclientkeys.Get)
-	route.PUT("/clientkeys/:name",
-		api.Authenticate,
-		api.AdminOnly,
-		apiclientkeys.Put)
+	// route.POST("/clientkeys",
+	// 	api.Authenticate,
+	// 	api.TrackRequest(analytics.EventCreateClientKey),
+	// 	api.AdminOnly,
+	// 	apiclientkeys.Post)
+	// route.GET("/clientkeys",
+	// 	api.Authenticate,
+	// 	api.TrackRequest(analytics.EventFetchClientKey),
+	// 	api.AdminOnly,
+	// 	apiclientkeys.List)
+	// route.GET("/clientkeys/:name",
+	// 	api.Authenticate,
+	// 	api.TrackRequest(analytics.EventFetchClientKey),
+	// 	api.AdminOnly,
+	// 	apiclientkeys.Get)
+	// route.PUT("/clientkeys/:name",
+	// 	api.Authenticate,
+	// 	api.AdminOnly,
+	// 	apiclientkeys.Put)
 
 	route.POST("/plugins",
 		api.Authenticate,
@@ -275,9 +272,9 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest(analytics.EventFetchSessions),
 		api.SessionHandler.FindOne)
 	// DEPRECATED
-	route.GET("/plugins/audit/sessions/:session_id/status",
-		api.Authenticate,
-		api.SessionHandler.StatusHistory)
+	// route.GET("/plugins/audit/sessions/:session_id/status",
+	// 	api.Authenticate,
+	// 	api.SessionHandler.StatusHistory)
 	route.GET("/plugins/audit/sessions",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventFetchSessions),
@@ -287,9 +284,9 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest(analytics.EventFetchSessions),
 		api.SessionHandler.FindOne)
-	route.GET("/sessions/:session_id/status",
-		api.Authenticate,
-		api.SessionHandler.StatusHistory)
+	// route.GET("/sessions/:session_id/status",
+	// 	api.Authenticate,
+	// 	api.SessionHandler.StatusHistory)
 	route.GET("/sessions/:session_id/download", api.SessionHandler.DownloadSession)
 	route.GET("/sessions",
 		api.Authenticate,
@@ -332,35 +329,4 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest(analytics.EventOpenWebhooksDashboard),
 		api.AdminOnly,
 		webhooksapi.Get)
-}
-
-func (api *Api) CreateTrialEntities() error {
-	orgId := "test-org"
-	userId := "test-user"
-	agentId := "test-agent"
-
-	org := user.Org{
-		Id:   orgId,
-		Name: "hoop",
-	}
-
-	u := user.User{
-		Id:     userId,
-		Org:    orgId,
-		Name:   "hooper",
-		Email:  "tester@hoop.dev",
-		Status: "active",
-		Groups: []string{"admin", "sre", "dba", "security", "devops", "support", "engineering"},
-	}
-
-	a := agent.Agent{
-		Id:    agentId,
-		Token: "x-agt-test-token",
-		Name:  "test-agent",
-		OrgId: orgId,
-	}
-
-	_, _ = api.UserHandler.Service.Signup(&org, &u)
-	_, err := api.AgentHandler.Service.Persist(&a)
-	return err
 }

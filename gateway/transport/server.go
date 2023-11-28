@@ -20,8 +20,6 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/agent"
-	"github.com/runopsio/hoop/gateway/apiclient"
-	apitypes "github.com/runopsio/hoop/gateway/apiclient/types"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/review"
@@ -367,12 +365,6 @@ func (s *Server) getConnection(name string, userCtx *user.Context) (*types.Conne
 		AgentMode:     ag.Mode,
 		AgentName:     ag.Name,
 	}, nil
-}
-
-func publishAgentDisconnect(apiURL, bearerToken string) error {
-	reqBody := apitypes.AgentAuthRequest{Status: "DISCONNECTED"}
-	_, err := apiclient.New(bearerToken).AuthAgent(reqBody)
-	return err
 }
 
 func parseToLegacyUserContext(apictx *types.APIContext) *user.Context {

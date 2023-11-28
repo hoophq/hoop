@@ -10,14 +10,16 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/google/uuid"
+	"github.com/runopsio/hoop/common/dsnkeys"
 	commongrpc "github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/agent"
-	"github.com/runopsio/hoop/gateway/apiclient"
 	apitypes "github.com/runopsio/hoop/gateway/apiclient/types"
 	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/security/idp"
+	"github.com/runopsio/hoop/gateway/storagev2"
+	clientkeysstorage "github.com/runopsio/hoop/gateway/storagev2/clientkeys"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc"
@@ -149,7 +151,7 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 	// DEPRECATED in flavor of dsn agent keys
 	// shared agent key authentication
 	case strings.HasPrefix(bearerToken, "x-agt-"):
-		ag, err := authenticateAgent(i.idp.ApiURL, bearerToken, md)
+		ag, err := i.authenticateAgent(i.idp.ApiURL, bearerToken, md)
 		if err != nil {
 			return err
 		}
@@ -160,7 +162,7 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 		// TODO: deprecated in flavor of agent keys dsn
 		clientKey, err := authenticateClientKeyAgent(i.idp.ApiURL, bearerToken)
 		if err != nil {
-			log.Error("failed validating dsn authentication, err=%v", err)
+			log.Error("failed validating dsn authentication (clientkeys), err=%v", err)
 			sentry.CaptureException(err)
 			return status.Errorf(codes.Internal, "failed validating dsn")
 		}
@@ -169,7 +171,7 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			break
 		}
 		// fallback to dsn agent authentication
-		ag, err := authenticateAgent(i.idp.ApiURL, bearerToken, md)
+		ag, err := i.authenticateAgent(i.idp.ApiURL, bearerToken, md)
 		if err != nil {
 			return err
 		}
@@ -248,34 +250,33 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 }
 
 // getConnectionV2 obtains connection & agent information from the node api v2
-func (i *interceptor) getConnectionV2(bearerToken, name string, userCtx *user.Context) (*types.ConnectionInfo, error) {
-	client := apiclient.New(bearerToken)
-	conn, err := client.GetConnection(name)
-	if err != nil {
-		return nil, err
-	}
-	var policies []types.PolicyInfo
-	for _, p := range conn.Policies {
-		policies = append(policies, types.PolicyInfo{
-			ID:     p.ID,
-			Name:   p.Name,
-			Type:   p.Type,
-			Config: p.Config,
-		})
-	}
-	return &types.ConnectionInfo{
-		ID:            conn.ID,
-		Name:          conn.Name,
-		Type:          conn.Type,
-		CmdEntrypoint: conn.Command,
-		Secrets:       conn.Secrets,
-		AgentID:       conn.AgentId,
-		AgentName:     conn.Agent.Name,
-		AgentMode:     conn.Agent.Mode,
-		Policies:      policies,
-	}, nil
-
-}
+// func (i *interceptor) getConnectionV2(bearerToken, name string, userCtx *user.Context) (*types.ConnectionInfo, error) {
+// 	client := apiclient.New(bearerToken)
+// 	conn, err := client.GetConnection(name)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	var policies []types.PolicyInfo
+// 	for _, p := range conn.Policies {
+// 		policies = append(policies, types.PolicyInfo{
+// 			ID:     p.ID,
+// 			Name:   p.Name,
+// 			Type:   p.Type,
+// 			Config: p.Config,
+// 		})
+// 	}
+// 	return &types.ConnectionInfo{
+// 		ID:            conn.ID,
+// 		Name:          conn.Name,
+// 		Type:          conn.Type,
+// 		CmdEntrypoint: conn.Command,
+// 		Secrets:       conn.Secrets,
+// 		AgentID:       conn.AgentId,
+// 		AgentName:     conn.Agent.Name,
+// 		AgentMode:     conn.Agent.Mode,
+// 		Policies:      policies,
+// 	}, nil
+// }
 
 func (i *interceptor) getConnection(name string, userCtx *user.Context) (*types.ConnectionInfo, error) {
 	conn, err := i.connectionService.FindOne(userCtx, name)
@@ -316,49 +317,78 @@ func (i *interceptor) getConnection(name string, userCtx *user.Context) (*types.
 	}, nil
 }
 
-func authenticateClientKeyAgent(apiURL, dsnToken string) (*types.ClientKey, error) {
-	// it is an old dsn, maintain compatibility
-	// <scheme>://<host>:<port>/<secretkey-hash>
-	if u, _ := url.Parse(dsnToken); u != nil && len(u.Path) == 65 {
-		ag, err := apiclient.New(dsnToken).AuthClientKeys()
-		if err != nil {
-			return nil, err
+func (i *interceptor) authenticateAgent(apiURL, bearerToken string, md metadata.MD) (*apitypes.Agent, error) {
+	if strings.HasPrefix(bearerToken, "x-agt-") {
+		ag, err := i.agentService.FindByToken(bearerToken)
+		if err != nil || ag == nil {
+			md.Delete("authorization")
+			log.Debugf("invalid agent authentication (legacy auth), tokenlength=%v, client-metadata=%v, err=%v", len(bearerToken), md, err)
+			return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
-		return &types.ClientKey{
-			ID:        ag.ID,
-			OrgID:     ag.OrgID,
-			Name:      ag.Name,
-			AgentMode: ag.Mode,
-			Active:    true,
-		}, nil
+		return &apitypes.Agent{ID: ag.Id, OrgID: ag.OrgId, Name: ag.Name, Mode: ag.Mode,
+			Metadata: apitypes.AgentAuthMetadata{
+				Hostname:      commongrpc.MetaGet(md, "hostname"),
+				Platform:      commongrpc.MetaGet(md, "platform"),
+				MachineID:     commongrpc.MetaGet(md, "machine_id"),
+				KernelVersion: commongrpc.MetaGet(md, "kernel_version"),
+				Version:       commongrpc.MetaGet(md, "version"),
+				GoVersion:     commongrpc.MetaGet(md, "go-version"),
+				Compiler:      commongrpc.MetaGet(md, "compiler")}}, nil
 	}
-	return nil, nil
-}
+	dsn, err := dsnkeys.Parse(bearerToken)
+	if err != nil {
+		md.Delete("authorization")
+		log.Debugf("invalid agent authentication (dsn), tokenlength=%v, client-metadata=%v, err=%v", len(bearerToken), md, err)
+		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
+	}
 
-func authenticateAgent(apiURL, bearerToken string, md metadata.MD) (*apitypes.Agent, error) {
-	reqBody := apitypes.AgentAuthRequest{
-		Status: "CONNECTED",
-		Metadata: &apitypes.AgentAuthMetadata{
+	ag, err := i.agentService.FindByToken(dsn.SecretKeyHash)
+	if err != nil || ag == nil {
+		md.Delete("authorization")
+		log.Debugf("invalid agent authentication (dsn), tokenlength=%v, client-metadata=%v, err=%v", len(bearerToken), md, err)
+		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
+	}
+	if ag.Name != dsn.Name || ag.Mode != dsn.AgentMode {
+		log.Errorf("failed authenticating agent (agent dsn), mismatch dsn attributes. id=%v, name=%v, mode=%v",
+			ag.Id, dsn.Name, dsn.AgentMode)
+		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication, mismatch dsn attributes")
+	}
+
+	return &apitypes.Agent{ID: ag.Id, OrgID: ag.OrgId, Name: ag.Name, Mode: ag.Mode,
+		Metadata: apitypes.AgentAuthMetadata{
 			Hostname:      commongrpc.MetaGet(md, "hostname"),
+			Platform:      commongrpc.MetaGet(md, "platform"),
 			MachineID:     commongrpc.MetaGet(md, "machine_id"),
 			KernelVersion: commongrpc.MetaGet(md, "kernel_version"),
 			Version:       commongrpc.MetaGet(md, "version"),
 			GoVersion:     commongrpc.MetaGet(md, "go-version"),
-			Compiler:      commongrpc.MetaGet(md, "compiler"),
-			Platform:      commongrpc.MetaGet(md, "platform"),
-		},
+			Compiler:      commongrpc.MetaGet(md, "compiler")}}, nil
+}
+
+func authenticateClientKeyAgent(apiURL, dsnToken string) (*types.ClientKey, error) {
+	// it is an old dsn, maintain compatibility
+	// <scheme>://<host>:<port>/<secretkey-hash>
+	if u, _ := url.Parse(dsnToken); u != nil && len(u.Path) == 65 {
+		clientKey, err := clientkeysstorage.ValidateDSN(storagev2.NewStorage(nil), dsnToken)
+		if err != nil {
+			log.Error("failed validating dsn authentication (clientkeys), err=%v", err)
+			sentry.CaptureException(err)
+			return nil, status.Errorf(codes.Internal, "failed validating dsn")
+		}
+		return clientKey, nil
+		// ag, err := apiclient.New(dsnToken).AuthClientKeys()
+		// if err != nil {
+		// 	return nil, err
+		// }
+		// return &types.ClientKey{
+		// 	ID:        ag.ID,
+		// 	OrgID:     ag.OrgID,
+		// 	Name:      ag.Name,
+		// 	AgentMode: ag.Mode,
+		// 	Active:    true,
+		// }, nil
 	}
-	ag, err := apiclient.New(bearerToken).AuthAgent(reqBody)
-	switch err {
-	case apiclient.ErrUnauthorized:
-		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
-	case nil: // noop
-	default:
-		log.Errorf("failed validating agent authentication, reason=%v", err)
-		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
-	}
-	ag.Metadata = *reqBody.Metadata
-	return ag, nil
+	return nil, nil
 }
 
 func getUserInfo(md metadata.MD) (*types.APIContext, error) {
