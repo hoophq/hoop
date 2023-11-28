@@ -267,7 +267,6 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, ag *apitypes.Age
 		// keep track of sessions being processed per agent
 		agentSessionKeyID := fmt.Sprintf("%s:%s", ag.ID, sessionID)
 		pctx.ParamsData[agentSessionKeyID] = nil
-		log.With("session", sessionID).Debugf("receive agent packet type [%s]", pkt.Type)
 		if _, err := s.pluginOnReceive(*pctx, pkt); err != nil {
 			log.Warnf("plugin reject packet, err=%v", err)
 			sentry.CaptureException(err)

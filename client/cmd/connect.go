@@ -42,7 +42,7 @@ var (
 		Short: "Connect to a remote resource",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 1 {
-				return cmd.Usage()
+				return fmt.Errorf("missing connection name")
 			}
 			dur, err := time.ParseDuration(connectFlags.duration)
 			if err != nil {

@@ -325,6 +325,7 @@ func startPostgrestProcessManager(pgrestJwtSecret []byte) error {
 
 	// https://postgrest.org/en/stable/references/configuration.html#env-variables-config
 	envs := []string{
+		"PGTZ=UTC", // generate timestamps in UTC
 		"PGRST_DB_ANON_ROLE=web_anon",
 		"PGRST_DB_CHANNEL_ENABLED=False",
 		"PGRST_DB_CONFIG=False",
