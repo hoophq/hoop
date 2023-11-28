@@ -125,6 +125,24 @@ func (c *connections) FetchOne(ctx pgrest.OrgContext, name string) (*pgrest.Conn
 	return &conn, nil
 }
 
+func (a *connections) FetchOneByNameOrID(ctx pgrest.OrgContext, nameOrID string) (*pgrest.Connection, error) {
+	client := pgrest.New("/connections?select=*,orgs(id,name)&org_id=eq.%v&name=eq.%v", ctx.GetOrgID(), nameOrID)
+	if _, err := uuid.Parse(nameOrID); err == nil {
+		client = pgrest.New("/connections?select=*,orgs(id,name)&org_id=eq.%v&id=eq.%v", ctx.GetOrgID(), nameOrID)
+	}
+	var conn pgrest.Connection
+	if err := client.FetchOne().DecodeInto(&conn); err != nil {
+		if err == pgrest.ErrNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if conn.LegacyAgentID != "" {
+		conn.AgentID = conn.LegacyAgentID
+	}
+	return &conn, nil
+}
+
 func (c *connections) FetchAll(ctx pgrest.OrgContext) ([]pgrest.Connection, error) {
 	var items []pgrest.Connection
 	err := pgrest.New("/connections?select=*,orgs(id,name)&org_id=eq.%v", ctx.GetOrgID()).

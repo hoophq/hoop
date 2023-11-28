@@ -19,7 +19,7 @@ type (
 	storage interface {
 		Persist(context *user.Context, c *Connection) (int64, error)
 		FindAll(context *user.Context) ([]BaseConnection, error)
-		FindOne(context *user.Context, name string) (*Connection, error)
+		FindOne(context *user.Context, nameOrID string) (*Connection, error)
 		Evict(ctx *user.Context, connectionName string) error
 	}
 
@@ -112,11 +112,11 @@ func (s *Service) Evict(ctx *user.Context, connectionName string) error {
 	return s.Storage.Evict(ctx, connectionName)
 }
 
-func (s *Service) FindOne(context *user.Context, name string) (*Connection, error) {
-	if name == "" {
+func (s *Service) FindOne(context *user.Context, nameOrID string) (*Connection, error) {
+	if nameOrID == "" {
 		return nil, nil
 	}
-	result, err := s.Storage.FindOne(context, name)
+	result, err := s.Storage.FindOne(context, nameOrID)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +136,7 @@ func (s *Service) FindOne(context *user.Context, name string) (*Connection, erro
 	}
 
 	for _, c := range p.Connections {
-		if c.Name == name {
+		if c.Name == result.Name {
 			for _, ug := range context.User.Groups {
 				if pb.IsInList(ug, c.Config) {
 					return result, nil
