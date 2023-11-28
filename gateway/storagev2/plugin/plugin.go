@@ -6,6 +6,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/gateway/pgrest"
+	pgplugins "github.com/runopsio/hoop/gateway/pgrest/plugins"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
@@ -13,6 +15,13 @@ import (
 )
 
 func Put(ctx *storagev2.Context, pl *types.Plugin) error {
+	if pgrest.Rollout {
+		existentPlugin, err := GetByName(ctx, pl.Name)
+		if err != nil {
+			return fmt.Errorf("failed obtaining existent plugin, err=%v", err)
+		}
+		return pgplugins.New().Upsert(ctx, existentPlugin, pl)
+	}
 	txList := []types.TxObject{
 		&struct {
 			DocID          string   `edn:"xt/id"`
@@ -55,6 +64,9 @@ func Put(ctx *storagev2.Context, pl *types.Plugin) error {
 }
 
 func GetByName(ctx *storagev2.Context, name string) (*types.Plugin, error) {
+	if pgrest.Rollout {
+		return pgplugins.New().FetchOne(ctx, name)
+	}
 	payload := fmt.Sprintf(`{:query {
 		:find [(pull ?p
 			[:xt/id
@@ -106,6 +118,9 @@ func GetByName(ctx *storagev2.Context, name string) (*types.Plugin, error) {
 }
 
 func List(ctx *storagev2.Context) ([]types.Plugin, error) {
+	if pgrest.Rollout {
+		return pgplugins.New().FetchAll(ctx)
+	}
 	payload := fmt.Sprintf(`{:query {
 		:find [(pull ?p
 			[:xt/id
@@ -117,10 +132,10 @@ func List(ctx *storagev2.Context) ([]types.Plugin, error) {
             :plugin/config-id
             :plugin/connection-ids
             {(:plugin/config-id {:as :plugin/config}) [:xt/id :pluginconfig/envvars]}
-            {(:plugin/connection-ids {:as :plugin/connections}) 
+            {(:plugin/connection-ids {:as :plugin/connections})
 									[:xt/id
 									 :plugin-connection/id
-                                     :plugin-connection/name                                     
+                                     :plugin-connection/name
                                      :plugin-connection/config
 									 {(:plugin-connection/id {:as :connection}) [:connection/name]}]}])]
 		:in [orgid]
@@ -197,7 +212,7 @@ func EnableDefaultPlugins(ctx *storagev2.Context, connID, connName string) {
 				InstalledById:  ctx.UserID,
 			}
 			if err := Put(ctx, newPlugin); err != nil {
-				log.Warnf("failed creating plugin %v, reason=%v", pl.Name, err)
+				log.Warnf("failed creating plugin %v, reason=%v", name, err)
 			}
 			continue
 		}

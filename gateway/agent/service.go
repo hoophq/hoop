@@ -18,7 +18,7 @@ type (
 		FindAll(context *user.Context) ([]Agent, error)
 		FindByNameOrID(ctx *user.Context, name string) (*Agent, error)
 		FindByToken(token string) (*Agent, error)
-		Evict(xtID string) error
+		Evict(ctx *user.Context, xtID string) error
 	}
 
 	Agent struct {
@@ -57,7 +57,9 @@ func (s *Service) FindByToken(token string) (*Agent, error) {
 	return agt, err
 }
 
-func (s *Service) Persist(agent *Agent) (int64, error) { return s.Storage.Persist(agent) }
+func (s *Service) Persist(agent *Agent) (int64, error) {
+	return s.Storage.Persist(agent)
+}
 
 func (s *Service) FindAll(context *user.Context) ([]Agent, error) {
 	result, err := s.Storage.FindAll(context)
@@ -71,8 +73,8 @@ func (s *Service) FindAll(context *user.Context) ([]Agent, error) {
 	return result, nil
 }
 
-func (s *Service) Evict(xtID string) error {
-	return s.Storage.Evict(xtID)
+func (s *Service) Evict(ctx *user.Context, xtID string) error {
+	return s.Storage.Evict(ctx, xtID)
 }
 
 // set to default mode if the entity doesn't contain any value

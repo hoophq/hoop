@@ -294,7 +294,6 @@ func (s *Server) listenClientMessages(stream pb.Transport_ConnectServer, pctx pl
 			pkt.Spec = make(map[string][]byte)
 		}
 		pkt.Spec[pb.SpecGatewaySessionID] = []byte(pctx.SID)
-		log.With("sid", pctx.SID).Debugf("receive client packet type [%s]", pkt.Type)
 		shouldProcessClientPacket := true
 		connectResponse, err := s.pluginOnReceive(pctx, pkt)
 		switch v := err.(type) {

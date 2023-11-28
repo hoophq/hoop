@@ -8,6 +8,7 @@ import (
 	"olympos.io/encoding/edn"
 )
 
+// intercepted on api layer
 func FindOne(storageCtx *storagev2.Context, reviewID string) (*types.Review, error) {
 	var payload = fmt.Sprintf(`{:query {
 		:find [(pull ?r [*

@@ -226,10 +226,9 @@ func (h *Handler) RunExec(c *gin.Context) {
 		StartSession: time.Now().UTC(),
 	}
 
-	log.Debugf("persisting session")
-
 	err = sessionStorage.Put(storageCtx, newSession)
 	if err != nil {
+		log.Errorf("failed persisting session, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "The session couldn't be created"})
 		return
 	}

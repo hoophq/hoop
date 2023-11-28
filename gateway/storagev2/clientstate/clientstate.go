@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/runopsio/hoop/gateway/pgrest"
+	pgproxymanager "github.com/runopsio/hoop/gateway/pgrest/proxymanager"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"olympos.io/encoding/edn"
@@ -20,6 +22,9 @@ func DeterministicClientUUID(userID string) string {
 }
 
 func GetEntity(ctx *storagev2.Context, xtID string) (*types.Client, error) {
+	if pgrest.Rollout {
+		return pgproxymanager.New().FetchOne(ctx, xtID)
+	}
 	data, err := ctx.GetEntity(xtID)
 	if err != nil {
 		return nil, err
@@ -76,6 +81,10 @@ func Update(ctx *storagev2.Context, status types.ClientStatusType, opts ...*opti
 		if obj.RequestConnectionName == "" || obj.RequestPort == "" {
 			return nil, fmt.Errorf("connection and port attributes are required for connected state")
 		}
+	}
+
+	if pgrest.Rollout {
+		return obj, pgproxymanager.New().Update(ctx, obj)
 	}
 
 	_, err = ctx.Put(obj)

@@ -10,13 +10,14 @@ import (
 	"github.com/runopsio/hoop/common/appruntime"
 	"github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/version"
+	"github.com/runopsio/hoop/gateway/pgrest"
 )
 
 // Liveness validates if the gateway ports has connectivity
-func LivenessHandler(nodeApiAddr string) func(_ *gin.Context) {
+func LivenessHandler() func(_ *gin.Context) {
 	return func(c *gin.Context) {
 		grpcLivenessErr := checkAddrLiveness(grpc.LocalhostAddr)
-		apiLivenessErr := checkAddrLiveness(nodeApiAddr)
+		apiLivenessErr := checkAddrLiveness(pgrest.URL.Host)
 		if grpcLivenessErr != nil || apiLivenessErr != nil {
 			msg := fmt.Sprintf("gateway-grpc=%v, gateway-api=%v", grpcLivenessErr, apiLivenessErr)
 			c.JSON(http.StatusBadRequest, gin.H{"liveness": msg})

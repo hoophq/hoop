@@ -3,17 +3,25 @@ package connectionstorage
 import (
 	"fmt"
 
+	"github.com/runopsio/hoop/gateway/pgrest"
+	pgconnections "github.com/runopsio/hoop/gateway/pgrest/connections"
 	storage "github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"olympos.io/encoding/edn"
 )
 
 func Put(ctx *storage.Context, conn *types.Connection) error {
+	if pgrest.Rollout {
+		return pgconnections.New().Upsert(ctx, conn)
+	}
 	_, err := ctx.Put(conn)
 	return err
 }
 
 func GetOneByName(ctx *storage.Context, name string) (*types.Connection, error) {
+	if pgrest.Rollout {
+		return pgconnections.New().FetchOneForExec(ctx, name)
+	}
 	payload := fmt.Sprintf(`{:query {
 		:find [(pull ?connection [*])] 
 		:in [name org]
@@ -40,6 +48,9 @@ func GetOneByName(ctx *storage.Context, name string) (*types.Connection, error) 
 }
 
 func ListConnectionsByList(ctx *storage.Context, connectionNameList []string) (map[string]types.Connection, error) {
+	if pgrest.Rollout {
+		return pgconnections.New().FetchByNames(ctx, connectionNameList)
+	}
 	var ednColBinding string
 	for _, connName := range connectionNameList {
 		ednColBinding += fmt.Sprintf("%q ", connName)
@@ -68,6 +79,10 @@ func ListConnectionsByList(ctx *storage.Context, connectionNameList []string) (m
 }
 
 func ConnectionsMapByID(ctx *storage.Context, connectionIDList []string) (map[string]types.Connection, error) {
+	if pgrest.Rollout {
+		return pgconnections.New().FetchByIDs(ctx, connectionIDList)
+	}
+
 	var ednColBinding string
 	for _, connID := range connectionIDList {
 		ednColBinding += fmt.Sprintf("%q ", connID)
@@ -95,14 +110,14 @@ func ConnectionsMapByID(ctx *storage.Context, connectionIDList []string) (map[st
 	return itemMap, nil
 }
 
-func GetEntity(ctx *storage.Context, xtID string) (*types.Connection, error) {
-	data, err := ctx.GetEntity(xtID)
-	if err != nil {
-		return nil, err
-	}
-	if data == nil {
-		return nil, nil
-	}
-	var obj types.Connection
-	return &obj, edn.Unmarshal(data, &obj)
-}
+// func GetEntity(ctx *storage.Context, xtID string) (*types.Connection, error) {
+// 	data, err := ctx.GetEntity(xtID)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	if data == nil {
+// 		return nil, nil
+// 	}
+// 	var obj types.Connection
+// 	return &obj, edn.Unmarshal(data, &obj)
+// }

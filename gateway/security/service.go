@@ -52,6 +52,7 @@ const (
 	outcomeError         outcomeType = "error"
 	pendingReviewError   outcomeType = "pending_review"
 	outcomeEmailMismatch outcomeType = "email_mismatch"
+	outcomeUnauthorized  outcomeType = "unauthorized"
 )
 
 var errAuthDisabled = fmt.Errorf("authentication is disabled when running on dev mode")
@@ -78,12 +79,11 @@ func (s *Service) Callback(c *gin.Context, state, code string) string {
 	log.With("code", code, "state", state).Infof("starting callback")
 	login, err := s.Storage.FindLogin(state)
 	if err != nil {
-		if login != nil {
-			log.With("code", code, "state", state).Debugf("Login not found. Skipping...")
-			s.loginOutcome(login, outcomeError)
-			return login.Redirect + "?error=unexpected_error"
-		}
-		log.Warnf("login not found, err=%v", err)
+		log.Warnf("failed obtaining login, err=%v", err)
+		return fmt.Sprintf("%s/callback?error=unexpected_error", s.Provider.ApiURL)
+	}
+	if login == nil {
+		log.With("code", code, "state", state).Infof("login not found")
 		return fmt.Sprintf("%s/callback?error=unexpected_error", s.Provider.ApiURL)
 	}
 
@@ -147,7 +147,7 @@ func (s *Service) Callback(c *gin.Context, state, code string) string {
 
 	if ctx.User.Status != user.StatusActive {
 		log.With("sub", sub, "org", ctx.User.Org).Infof("user is not active")
-		s.loginOutcome(login, "unauthorized")
+		s.loginOutcome(login, outcomeUnauthorized)
 		return login.Redirect + "?error=unauthorized"
 	}
 
@@ -220,6 +220,9 @@ func (s *Service) signup(ctx *user.Context, sub string, idTokenClaims map[string
 	var slackID string
 	if iuser, _ := s.UserService.FindInvitedUser(email); iuser != nil {
 		slackID = iuser.SlackID
+		if len(groupList) == 0 {
+			groupList = iuser.Groups
+		}
 	}
 	ctx.User = &user.User{
 		Id:      sub,
@@ -375,5 +378,7 @@ func debugClaims(subject string, claims map[string]any) {
 
 func (s *Service) loginOutcome(login *login, outcome outcomeType) {
 	login.Outcome = outcome
-	s.Storage.PersistLogin(login)
+	if _, err := s.Storage.PersistLogin(login); err != nil {
+		log.Warnf("failed persisting login outcome, err=%v", err)
+	}
 }

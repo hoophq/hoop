@@ -8,6 +8,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/log"
+	"github.com/runopsio/hoop/gateway/pgrest"
+	pgconnections "github.com/runopsio/hoop/gateway/pgrest/connections"
 	st "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/user"
 	"olympos.io/encoding/edn"
@@ -35,6 +37,22 @@ type (
 var errNotFound = errors.New("not found")
 
 func (s *Storage) Persist(context *user.Context, c *Connection) (int64, error) {
+	if pgrest.Rollout {
+		envs := map[string]string{}
+		for key, val := range c.Secret {
+			envs[key] = fmt.Sprintf("%v", val)
+		}
+		return 0, pgconnections.New().Create(context, pgrest.Connection{
+			ID:            c.Id,
+			OrgID:         context.Org.Id,
+			AgentID:       c.AgentId,
+			LegacyAgentID: c.AgentId,
+			Name:          c.Name,
+			Command:       c.Command,
+			Type:          string(c.Type),
+			Envs:          envs,
+		})
+	}
 	secretId := uuid.New().String()
 
 	conn := xtdb{
@@ -63,6 +81,9 @@ func (s *Storage) Persist(context *user.Context, c *Connection) (int64, error) {
 }
 
 func (s *Storage) Evict(ctx *user.Context, connectionName string) error {
+	if pgrest.Rollout {
+		return pgconnections.New().Delete(ctx, connectionName)
+	}
 	pluginQuery := fmt.Sprintf(`{:query {
 		:find [xtid connid]
 		:in [orgid name]
@@ -118,6 +139,23 @@ func (s *Storage) Evict(ctx *user.Context, connectionName string) error {
 }
 
 func (s *Storage) FindAll(context *user.Context) ([]BaseConnection, error) {
+	if pgrest.Rollout {
+		items, err := pgconnections.New().FetchAll(context)
+		if err != nil {
+			return nil, err
+		}
+		var connections []BaseConnection
+		for _, c := range items {
+			if c.LegacyAgentID != "" {
+				c.AgentID = c.LegacyAgentID
+			}
+			connections = append(connections, BaseConnection{
+				c.ID, c.Name, "", c.Command, Type(c.Type), c.AgentID, DBSecretProvider,
+			})
+		}
+		return connections, nil
+	}
+
 	var payload = `{:query {
 		:find [(pull ?connection [*])] 
 		:in [org]
@@ -138,6 +176,30 @@ func (s *Storage) FindAll(context *user.Context) ([]BaseConnection, error) {
 }
 
 func (s *Storage) FindOne(context *user.Context, nameOrID string) (*Connection, error) {
+	if pgrest.Rollout {
+		conn, err := pgconnections.New().FetchOneByNameOrID(context, nameOrID)
+		if err != nil {
+			return nil, err
+		}
+		if conn == nil {
+			return nil, nil
+		}
+		secrets := Secret{}
+		for key, val := range conn.Envs {
+			secrets[key] = val
+		}
+		return &Connection{
+			BaseConnection: BaseConnection{
+				Id:             conn.ID,
+				Name:           conn.Name,
+				IconName:       "",
+				Command:        conn.Command,
+				Type:           Type(conn.Type),
+				AgentId:        conn.AgentID,
+				SecretProvider: DBSecretProvider},
+			Secret: secrets,
+		}, nil
+	}
 	connectionID, connectionName := "", nameOrID
 	if _, err := uuid.Parse(nameOrID); err == nil {
 		connectionID = nameOrID

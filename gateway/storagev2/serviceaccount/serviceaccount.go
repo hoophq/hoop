@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/runopsio/hoop/gateway/pgrest"
+	pgserviceaccounts "github.com/runopsio/hoop/gateway/pgrest/serviceaccounts"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"olympos.io/encoding/edn"
@@ -20,6 +22,9 @@ func GetEntityWithOrgContext(ctx *storagev2.Context, xtID string) (*types.Servic
 
 // GetEntity returns active service account resources based on the xtid
 func GetEntity(ctx *storagev2.Context, xtID string) (*types.ServiceAccount, error) {
+	if pgrest.Rollout {
+		return pgserviceaccounts.New().FetchOne(ctx, xtID)
+	}
 	data, err := ctx.GetEntity(xtID)
 	if err != nil {
 		return nil, err
@@ -38,11 +43,18 @@ func GetEntity(ctx *storagev2.Context, xtID string) (*types.ServiceAccount, erro
 }
 
 func UpdateServiceAccount(ctx *storagev2.Context, svcAccount *types.ServiceAccount) error {
+	if pgrest.Rollout {
+		_, err := pgserviceaccounts.New().Upsert(ctx, svcAccount)
+		return err
+	}
 	_, err := ctx.Put(svcAccount)
 	return err
 }
 
 func List(ctx *storagev2.Context) ([]types.ServiceAccount, error) {
+	if pgrest.Rollout {
+		return pgserviceaccounts.New().FetchAll(ctx)
+	}
 	payload := fmt.Sprintf(`{:query {
 		:find [(pull ?c [*])] 
 		:in [org]

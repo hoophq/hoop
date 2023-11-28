@@ -179,7 +179,7 @@ type SessionLabels map[string]string
 
 type Session struct {
 	ID          string             `json:"id"           edn:"xt/id"`
-	OrgID       string             `json:"-"            edn:"session/org-id"`
+	OrgID       string             `json:"org_id"       edn:"session/org-id"`
 	Script      SessionScript      `json:"script"       edn:"session/script"`
 	Labels      SessionLabels      `json:"labels"       edn:"session/labels"`
 	UserEmail   string             `json:"user"         edn:"session/user"`

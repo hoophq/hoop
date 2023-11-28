@@ -1,92 +1,81 @@
 package apiclientkeys
 
-import (
-	"net/http"
-	"regexp"
+// var rfc1035Err = "invalid name. It must contain 63 characters; start and end with alphanumeric lowercase character or contains '-'"
 
-	"github.com/getsentry/sentry-go"
-	"github.com/gin-gonic/gin"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/gateway/storagev2"
-	clientkeysstorage "github.com/runopsio/hoop/gateway/storagev2/clientkeys"
-)
+// func isValidRFC1035LabelName(label string) bool {
+// 	re := regexp.MustCompile(`^[a-z]([-a-z0-9]*[a-z0-9])?$`)
+// 	if len(label) > 63 || !re.MatchString(label) {
+// 		return false
+// 	}
+// 	return true
+// }
 
-var rfc1035Err = "invalid name. It must contain 63 characters; start and end with alphanumeric lowercase character or contains '-'"
+// type ClientKeysRequest struct {
+// 	Name   string `json:"name"`
+// 	Active bool   `json:"active"`
+// }
 
-func isValidRFC1035LabelName(label string) bool {
-	re := regexp.MustCompile(`^[a-z]([-a-z0-9]*[a-z0-9])?$`)
-	if len(label) > 63 || !re.MatchString(label) {
-		return false
-	}
-	return true
-}
+// func Post(c *gin.Context) {
+// 	ctx := storagev2.ParseContext(c)
+// 	log.Warnf("POST /api/clientkeys is deprecated, user %v must use client keys instead", ctx.UserEmail)
+// 	c.JSON(http.StatusGone, gin.H{"message": "endpoint deprecated, use agents instead"})
+// }
 
-type ClientKeysRequest struct {
-	Name   string `json:"name"`
-	Active bool   `json:"active"`
-}
+// func Put(c *gin.Context) {
+// 	ctx := storagev2.ParseContext(c)
+// 	var reqBody ClientKeysRequest
+// 	if err := c.ShouldBindJSON(&reqBody); err != nil {
+// 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+// 		return
+// 	}
+// 	clientKeyName := c.Param("name")
+// 	clientKey, err := clientkeysstorage.GetByName(ctx, clientKeyName)
+// 	if err != nil {
+// 		log.Errorf("failed obtaining client key, err=%v", err)
+// 		sentry.CaptureException(err)
+// 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+// 		return
+// 	}
+// 	if clientKey == nil {
+// 		c.JSON(http.StatusNotFound, gin.H{"message": "client key not found"})
+// 		return
+// 	}
+// 	obj, _, err := clientkeysstorage.Put(ctx, clientKeyName, reqBody.Active)
+// 	if err != nil {
+// 		log.Errorf("failed updating client key, err=%v", err)
+// 		sentry.CaptureException(err)
+// 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+// 		return
+// 	}
+// 	c.PureJSON(200, obj)
+// }
 
-func Post(c *gin.Context) {
-	ctx := storagev2.ParseContext(c)
-	log.Warnf("POST /api/clientkeys is deprecated, user %v must use client keys instead", ctx.UserEmail)
-	c.JSON(http.StatusGone, gin.H{"message": "endpoint deprecated, use agents instead"})
-}
+// func List(c *gin.Context) {
+// 	ctx := storagev2.ParseContext(c)
+// 	itemList, err := clientkeysstorage.List(ctx)
+// 	if err != nil {
+// 		log.Errorf("failed listing client keys, err=%v", err)
+// 		sentry.CaptureException(err)
+// 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+// 		return
+// 	}
+// 	c.PureJSON(200, itemList)
+// }
 
-func Put(c *gin.Context) {
-	ctx := storagev2.ParseContext(c)
-	var reqBody ClientKeysRequest
-	if err := c.ShouldBindJSON(&reqBody); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
-		return
-	}
-	clientKeyName := c.Param("name")
-	clientKey, err := clientkeysstorage.GetByName(ctx, clientKeyName)
-	if err != nil {
-		log.Errorf("failed obtaining client key, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
-	}
-	if clientKey == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "client key not found"})
-		return
-	}
-	obj, _, err := clientkeysstorage.Put(ctx, clientKeyName, reqBody.Active)
-	if err != nil {
-		log.Errorf("failed updating client key, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
-	}
-	c.PureJSON(200, obj)
-}
+// func Get(c *gin.Context) {
+// 	ctx := storagev2.ParseContext(c)
+// 	clientKeyName := c.Param("name")
+// 	obj, err := clientkeysstorage.GetByName(ctx, clientKeyName)
+// 	if err != nil {
+// 		log.Errorf("failed obtaining client key, err=%v", err)
+// 		sentry.CaptureException(err)
+// 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+// 		return
+// 	}
+// 	if obj == nil {
+// 		c.JSON(http.StatusNotFound, gin.H{"message": "client key not found"})
+// 		return
+// 	}
 
-func List(c *gin.Context) {
-	ctx := storagev2.ParseContext(c)
-	itemList, err := clientkeysstorage.List(ctx)
-	if err != nil {
-		log.Errorf("failed listing client keys, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
-	}
-	c.PureJSON(200, itemList)
-}
-
-func Get(c *gin.Context) {
-	ctx := storagev2.ParseContext(c)
-	clientKeyName := c.Param("name")
-	obj, err := clientkeysstorage.GetByName(ctx, clientKeyName)
-	if err != nil {
-		log.Errorf("failed obtaining client key, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
-	}
-	if obj == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "client key not found"})
-		return
-	}
-
-	c.PureJSON(200, obj)
-}
+// 	c.PureJSON(200, obj)
+// }

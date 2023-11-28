@@ -29,6 +29,7 @@ func Post(c *gin.Context) {
 	var body SessionPostBody
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
 	}
 
 	if body.Connection == "" {
@@ -61,11 +62,12 @@ func Post(c *gin.Context) {
 		DlpCount:     0,
 		StartSession: time.Now().UTC(),
 	}
-	log.Debugf("persisting session")
 
 	err = sessionStorage.Put(storageCtx, newSession)
 	if err != nil {
+		log.Errorf("failed persisting session, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "The session couldn't be created"})
+		return
 	}
 
 	// running RunExec from run-exec.go

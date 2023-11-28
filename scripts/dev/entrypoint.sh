@@ -1,10 +1,13 @@
 #!/bin/bash
 
 cd /app/
-java $JVM_OPTS -Dlogback.configurationFile=/app/logback.xml \
+if [ "$LEGACY_XTDB" == "true" ]; then
+  echo "--> STARTING LEGACY XTDB ..."
+  java $JVM_OPTS -Dlogback.configurationFile=/app/logback.xml \
      -jar /app/xtdb-pg.jar &
-echo "--> STARTING GATEWAY ..."
+fi
 
+echo "--> STARTING GATEWAY ..."
 /app/hooplinux start gateway --listen-admin-addr "0.0.0.0:8099" &
 
 until curl -s -f -o /dev/null "http://127.0.0.1:8009/api/healthz"
@@ -13,7 +16,9 @@ do
 done
 echo "done"
 
-curl -s -f -o /dev/null "http://127.0.0.1:3001/_xtdb/status" || { echo "THE XTDB IS DOWN"; exit 1; }
+if [ "$LEGACY_XTDB" == "true" ]; then
+  curl -s -f -o /dev/null "http://127.0.0.1:3001/_xtdb/status" || { echo "THE XTDB IS DOWN"; exit 1; }
+fi
 
 # don't start a default agent if it's an org multi tenant setup
 if [ "$ORG_MULTI_TENANT" == "true" ]; then
@@ -21,28 +26,15 @@ if [ "$ORG_MULTI_TENANT" == "true" ]; then
   exit $?
 fi
 
-echo "--> STARTING AGENT (xtdb) ..."
-
-AUTO_REGISTER=1 /app/hooplinux start agent &
-
-ORG_ID=$(curl -s -XPOST '127.0.0.1:3001/_xtdb/query' \
-  -H 'Content-Type: application/edn' \
-  -H 'Accept: application/json' \
-  --data-raw '{:query {
-    :find [(pull ?org [*])]
-    :where [[?org :org/name]]
-  }}' | jq '.[][]["xt/id"]' -r)
-
 PGPASSWORD=$PG_PASSWORD psql -h $PG_HOST -U $PG_USER --port $PG_PORT $PG_DB <<EOT
-DELETE FROM agents WHERE id = '75122BCE-F957-49EB-A812-2AB60977CD9F';
-INSERT INTO agents ("orgId", "createdBy", name, mode, token, status, id, "createdAt", "updatedAt")
-VALUES ('${ORG_ID}', 'bot-dev', 'dev', 'standard', '7854115b1ae448fec54d8bf50d3ce223e30c1c933edcd12767692574f326df57', 'DISCONNECTED', '75122BCE-F957-49EB-A812-2AB60977CD9F', NOW(), NOW());
+INSERT INTO agents (org_id, id, name, mode, token, status)
+    VALUES ((SELECT id from private.orgs), '75122BCE-F957-49EB-A812-2AB60977CD9F', 'default', 'standard', '7854115b1ae448fec54d8bf50d3ce223e30c1c933edcd12767692574f326df57', 'DISCONNECTED')
+    ON CONFLICT DO NOTHING;
 EOT
 
-echo "--> STARTING AGENT (postgres) ..."
-unset AUTO_REGISTER
+echo "--> STARTING AGENT ..."
 # get digest of the agent secret key
-# echo -n xagt-zKQQA9PAjCVJ4O8VlE2QZScNEbfmFisg_OerkI21NE |sha256sum
-HOOP_DSN="http://dev:xagt-zKQQA9PAjCVJ4O8VlE2QZScNEbfmFisg_OerkI21NEg@127.0.0.1:8010?mode=standard&v2=true" /app/hooplinux start agent &
+# echo -n xagt-zKQQA9PAjCVJ4O8VlE2QZScNEbfmFisg_OerkI21NEg |sha256sum
+HOOP_DSN="http://default:xagt-zKQQA9PAjCVJ4O8VlE2QZScNEbfmFisg_OerkI21NEg@127.0.0.1:8010?mode=standard" /app/hooplinux start agent &
 
 sleep infinity

@@ -15,10 +15,12 @@ import (
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
+	"github.com/runopsio/hoop/gateway/agent"
 	apitypes "github.com/runopsio/hoop/gateway/apiclient/types"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	authinterceptor "github.com/runopsio/hoop/gateway/transportv2/interceptors/auth"
+	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -203,6 +205,11 @@ func (s *Server) subscribeAgent(grpcStream pb.Transport_ConnectServer) error {
 		ClientOrigin: clientOrigin,
 		ParamsData:   map[string]any{"client": clientOrigin},
 	}
+	if err := s.updateAgentStatus(gwctx.BearerToken, agent.StatusConnected, gwctx.Agent); err != nil {
+		log.Errorf("failed updating agent to connected status, err=%v", err)
+		sentry.CaptureException(err)
+		return status.Errorf(codes.Internal, "failed updating agent, internal error")
+	}
 	stream := newStreamWrapper(grpcStream, gwctx.Agent.OrgID)
 	bindAgent(agentBindID, stream)
 
@@ -215,7 +222,8 @@ func (s *Server) subscribeAgent(grpcStream pb.Transport_ConnectServer) error {
 	pluginContext.ParamsData["disconnect-agent-id"] = gwctx.Agent.ID
 	s.startDisconnectClientSink(agentBindID, clientOrigin, func(err error) {
 		defer unbindAgent(agentBindID)
-		if err := publishAgentDisconnect(s.IDProvider.ApiURL, gwctx.BearerToken); err != nil {
+		err = s.updateAgentStatus(gwctx.BearerToken, agent.StatusDisconnected, gwctx.Agent)
+		if err != nil {
 			log.Warnf("failed publishing disconnect agent state, err=%v", err)
 		}
 		stream.Disconnect(context.Canceled)
@@ -283,6 +291,25 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, ag *apitypes.Age
 			_ = clientStream.Send(pkt)
 		}
 	}
+}
+
+func (s *Server) updateAgentStatus(bearerToken string, agentStatus agent.Status, agentCtx apitypes.Agent) error {
+	ag, err := s.AgentService.FindByNameOrID(user.NewContext(agentCtx.OrgID, ""), agentCtx.Name)
+	if err != nil || ag == nil {
+		return fmt.Errorf("failed to obtain agent: %v", err)
+	}
+	if agentStatus == agent.StatusConnected {
+		ag.Hostname = agentCtx.Metadata.Hostname
+		ag.MachineId = agentCtx.Metadata.MachineID
+		ag.KernelVersion = agentCtx.Metadata.KernelVersion
+		ag.Version = agentCtx.Metadata.Version
+		ag.GoVersion = agentCtx.Metadata.GoVersion
+		ag.Compiler = agentCtx.Metadata.Compiler
+		ag.Platform = agentCtx.Metadata.Platform
+	}
+	ag.Status = agentStatus
+	_, err = s.AgentService.Persist(ag)
+	return err
 }
 
 func (s *Server) configurationData(orgName string) []byte {

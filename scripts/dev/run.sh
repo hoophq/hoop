@@ -91,8 +91,10 @@ cat - > $HOME/.hoop/dev/xtdb.edn <<EOF
 EOF
 
 cp ./scripts/dev/entrypoint.sh $HOME/.hoop/dev/entrypoint.sh
-chmod +x $HOME/.hoop/dev/entrypoint.sh
+rm -rf $HOME/.hoop/dev/migrations && \
+  cp -a ./rootfs/app/migrations $HOME/.hoop/dev/migrations
 
+chmod +x $HOME/.hoop/dev/entrypoint.sh
 docker build -t hoopdev -f $HOME/.hoop/dev/Dockerfile $HOME/.hoop/dev/
 
 GOOS=linux go build -ldflags "-s -w -X github.com/runopsio/hoop/common/version.strictTLS=false" -o $HOME/.hoop/dev/hooplinux github.com/runopsio/hoop/client

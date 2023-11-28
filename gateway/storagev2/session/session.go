@@ -3,17 +3,25 @@ package sessionstorage
 import (
 	"fmt"
 
+	"github.com/runopsio/hoop/gateway/pgrest"
+	pgsession "github.com/runopsio/hoop/gateway/pgrest/session"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"olympos.io/encoding/edn"
 )
 
 func Put(storage *storagev2.Context, session types.Session) error {
+	if pgrest.Rollout {
+		return pgsession.New().Upsert(storage, session)
+	}
 	_, err := storage.Put(session)
 	return err
 }
 
 func FindOne(storageCtx *storagev2.Context, sessionID string) (*types.Session, error) {
+	if pgrest.Rollout {
+		return pgsession.New().FetchOne(storageCtx, sessionID)
+	}
 	payload := fmt.Sprintf(`{:query {
 		:find [(pull ?session [*])] 
 		:in [org-id session-id user-id]

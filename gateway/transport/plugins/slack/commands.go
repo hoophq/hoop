@@ -24,6 +24,7 @@ func (c *eventCallback) CommandSlackSubscribe(command, slackID string) (string, 
 	err := userstorage.UpdateLoginState(c.ctx, &types.Login{
 		ID:      stateUID,
 		SlackID: slackID,
+		Outcome: "success",
 		// redirect to webapp
 		Redirect: fmt.Sprintf("%s/auth/callback", c.idpProvider.ApiURL),
 	})

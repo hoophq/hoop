@@ -5,7 +5,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/runopsio/hoop/gateway/pgrest"
+	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
+	pgsession "github.com/runopsio/hoop/gateway/pgrest/session"
 	st "github.com/runopsio/hoop/gateway/storage"
+	"github.com/runopsio/hoop/gateway/storagev2"
+	sessionstorage "github.com/runopsio/hoop/gateway/storagev2/session"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
 	"olympos.io/encoding/edn"
@@ -57,74 +62,117 @@ func xtdbQueryParams(orgID string, opts ...*SessionOption) (string, int, int) {
 	return inArgsEdn, limit, offset
 }
 
-func (s *Storage) Persist(context *user.Context, session *types.Session) (*st.TxResponse, error) {
-	session.OrgID = context.Org.Id
-	if session.OrgID == "" || session.ID == "" {
-		return nil, fmt.Errorf("session id and organization must not be empty")
-	}
-	if session.EventStream != nil {
-		return nil, fmt.Errorf("accept only non indexed event stream")
-	}
+// func (s *Storage) Persist(context *user.Context, session *types.Session) (*st.TxResponse, error) {
+// 	session.OrgID = context.Org.Id
+// 	if session.OrgID == "" || session.ID == "" {
+// 		return nil, fmt.Errorf("session id and organization must not be empty")
+// 	}
+// 	if session.EventStream != nil {
+// 		return nil, fmt.Errorf("accept only non indexed event stream")
+// 	}
 
-	return s.SubmitPutTx(session)
-}
+// 	return s.SubmitPutTx(session)
+// }
 
-func (s *Storage) PersistStatus(status *SessionStatus) (*st.TxResponse, error) {
-	if status.ID == "" || status.SessionID == "" {
-		return nil, fmt.Errorf("session id and xt/id must not be empty")
-	}
-	return s.SubmitPutTx(status)
-}
+// func (s *Storage) PersistStatus(status *SessionStatus) (*st.TxResponse, error) {
+// 	if status.ID == "" || status.SessionID == "" {
+// 		return nil, fmt.Errorf("session id and xt/id must not be empty")
+// 	}
+// 	return s.SubmitPutTx(status)
+// }
 
-func (s *Storage) EntityHistory(ctx *user.Context, sessionID string) ([]SessionStatusHistory, error) {
-	var obj [][]SessionStatus
-	argUserID := fmt.Sprintf(`"%s"`, ctx.User.Id)
-	if ctx.User.IsAdmin() {
-		argUserIDBytes, _ := edn.Marshal(nil)
-		argUserID = string(argUserIDBytes)
-	}
-	err := s.queryDecoder(`{:query {
-		:find [(pull ?o [*])]
-        :in [org-id session-id arg-user-id]
-		:where [[?s :xt/id session-id]
-                [?s :session/org-id org-id]
-				[?s :session/user-id user-id]
-				(or [(= arg-user-id nil)]
-				[(= arg-user-id user-id)])
-                [?o :session-status/session-id ?s]]}
-        :in-args [%q %q %v]}`, &obj, ctx.Org.Id, sessionID, argUserID)
-	if err != nil {
-		return nil, fmt.Errorf("failed fetching previous session status, err=%v", err)
-	}
-	if len(obj) > 0 {
-		statusID := obj[0][0].ID
-		entityHistory, err := s.Storage.GetEntityHistory(statusID, "asc", true)
-		if err != nil {
-			return nil, err
-		}
-		var historyList []SessionStatusHistory
-		return historyList, edn.Unmarshal(entityHistory, &historyList)
-	}
-	return nil, nil
-}
+// func (s *Storage) EntityHistory(ctx *user.Context, sessionID string) ([]SessionStatusHistory, error) {
+// 	var obj [][]SessionStatus
+// 	argUserID := fmt.Sprintf(`"%s"`, ctx.User.Id)
+// 	if ctx.User.IsAdmin() {
+// 		argUserIDBytes, _ := edn.Marshal(nil)
+// 		argUserID = string(argUserIDBytes)
+// 	}
+// 	err := s.queryDecoder(`{:query {
+// 		:find [(pull ?o [*])]
+//         :in [org-id session-id arg-user-id]
+// 		:where [[?s :xt/id session-id]
+//                 [?s :session/org-id org-id]
+// 				[?s :session/user-id user-id]
+// 				(or [(= arg-user-id nil)]
+// 				[(= arg-user-id user-id)])
+//                 [?o :session-status/session-id ?s]]}
+//         :in-args [%q %q %v]}`, &obj, ctx.Org.Id, sessionID, argUserID)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed fetching previous session status, err=%v", err)
+// 	}
+// 	if len(obj) > 0 {
+// 		statusID := obj[0][0].ID
+// 		entityHistory, err := s.Storage.GetEntityHistory(statusID, "asc", true)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+// 		var historyList []SessionStatusHistory
+// 		return historyList, edn.Unmarshal(entityHistory, &historyList)
+// 	}
+// 	return nil, nil
+// }
 
-func (s *Storage) ValidateSessionID(sessionID string) error {
-	var res [][]string
-	err := s.queryDecoder(`{:query {
-		:find [session-id]
-        :in [session-id]
-		:where [[?s :xt/id session-id]]}
-        :in-args [%q]}`, &res, sessionID)
-	if err != nil {
-		return fmt.Errorf("failed validating session id, err=%v", err)
-	}
-	if len(res) > 0 {
-		return fmt.Errorf("session id %v already exists", sessionID)
-	}
-	return nil
-}
+// func (s *Storage) ValidateSessionID(sessionID string) error {
+// 	var res [][]string
+// 	err := s.queryDecoder(`{:query {
+// 		:find [session-id]
+//         :in [session-id]
+// 		:where [[?s :xt/id session-id]]}
+//         :in-args [%q]}`, &res, sessionID)
+// 	if err != nil {
+// 		return fmt.Errorf("failed validating session id, err=%v", err)
+// 	}
+// 	if len(res) > 0 {
+// 		return fmt.Errorf("session id %v already exists", sessionID)
+// 	}
+// 	return nil
+// }
 
 func (s *Storage) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionList, error) {
+	if pgrest.Rollout {
+		var options []*pgrest.SessionOption
+		for _, opt := range opts {
+			options = append(options, &pgrest.SessionOption{
+				OptionKey: pgrest.SessionOptionKey(opt.optionKey),
+				OptionVal: opt.optionVal,
+			})
+		}
+		sl, err := pgsession.New().FetchAll(ctx, options...)
+		if err != nil {
+			if err == pgrest.ErrNotFound {
+				return nil, nil
+			}
+			return nil, err
+		}
+		sessionList := &SessionList{
+			Total:       int(sl.Total),
+			HasNextPage: sl.HasNextPage,
+		}
+		for _, s := range sl.Items {
+			_, eventSize := s.GetBlobStream()
+			sessionList.Items = append(sessionList.Items, types.Session{
+				ID:               s.ID,
+				OrgID:            s.OrgID,
+				Script:           types.SessionScript{"data": ""}, // do not show the script on listing
+				Labels:           s.Labels,
+				UserEmail:        s.UserEmail,
+				UserID:           s.UserID,
+				UserName:         s.UserName,
+				Type:             s.ConnectionType,
+				Connection:       s.Connection,
+				Verb:             s.Verb,
+				Status:           s.Status,
+				DlpCount:         s.GetRedactCount(),
+				EventStream:      nil,
+				NonIndexedStream: nil,
+				EventSize:        eventSize,
+				StartSession:     s.GetCreatedAt(),
+				EndSession:       s.GetEndedAt(),
+			})
+		}
+		return sessionList, nil
+	}
 	inArgsEdn, limit, offset := xtdbQueryParams(ctx.Org.Id, opts...)
 	var queryCountResult []any
 	if err := s.queryDecoder(`{:query {
@@ -197,7 +245,10 @@ func (s *Storage) FindAll(ctx *user.Context, opts ...*SessionOption) (*SessionLi
 	return sessionList, err
 }
 
-func (s *Storage) FindReviewBySessionID(sessionID string) (*types.Review, error) {
+func (s *Storage) FindReviewBySessionID(ctx *user.Context, sessionID string) (*types.Review, error) {
+	if pgrest.Rollout {
+		return pgreview.New().FetchOneBySid(ctx, sessionID)
+	}
 	var payload = fmt.Sprintf(`{:query {
 		:find [(pull ?r [*])]
 		:in [session-id]
@@ -224,6 +275,24 @@ func (s *Storage) FindReviewBySessionID(sessionID string) (*types.Review, error)
 }
 
 func (s *Storage) FindOne(ctx *user.Context, sessionID string) (*types.Session, error) {
+	if pgrest.Rollout {
+		storectx := storagev2.NewContext(ctx.User.Id, ctx.Org.Id, storagev2.NewStorage(nil))
+		sess, err := sessionstorage.FindOne(storectx, sessionID)
+		if err != nil {
+			return nil, err
+		}
+		if sess == nil {
+			return nil, nil
+		}
+		if sess.NonIndexedStream != nil {
+			nonIndexedStreams := sess.NonIndexedStream["stream"]
+			for _, i := range nonIndexedStreams {
+				sess.EventStream = append(sess.EventStream, i)
+			}
+		}
+		return sess, nil
+	}
+
 	var resultItems [][]types.Session
 	argUserID := fmt.Sprintf(`"%s"`, ctx.User.Id)
 	if ctx.User.IsAdmin() {
@@ -276,6 +345,9 @@ func (s *Storage) queryDecoder(query string, into any, args ...any) error {
 
 // ListAllSessionsID fetches sessions (id,org-id) where start_date > fromDate
 func (s *Storage) ListAllSessionsID(fromDate time.Time) ([]*types.Session, error) {
+	if pgrest.Rollout {
+		return pgsession.New().FetchAllFromDate(fromDate)
+	}
 	query := fmt.Sprintf(`
     {:query {
         :find [id org-id]
@@ -297,6 +369,7 @@ func (s *Storage) ListAllSessionsID(fromDate time.Time) ([]*types.Session, error
 	return sessionList, edn.Unmarshal(httpBody, &sessionList)
 }
 
+// intercepted on service.go
 func (s *Storage) PersistReview(ctx *user.Context, review *types.Review) (int64, error) {
 	reviewGroups := make([]types.ReviewGroup, 0)
 	reviewGroupIds := make([]string, 0)
