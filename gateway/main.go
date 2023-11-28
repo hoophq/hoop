@@ -329,7 +329,7 @@ func startPostgrestProcessManager(pgrestJwtSecret []byte) error {
 		"PGRST_DB_CHANNEL_ENABLED=False",
 		"PGRST_DB_CONFIG=False",
 		"PGRST_DB_PLAN_ENABLED=True",
-		"PGRST_LOG_LEVEL=info",
+		"PGRST_LOG_LEVEL=warn",
 		"PGRST_SERVER_HOST=!4",
 		"PGRST_SERVER_PORT=8008",
 		fmt.Sprintf("PGRST_DB_URI=%s", toPostgresURI()),

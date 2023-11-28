@@ -89,7 +89,7 @@ func (s *session) FetchAll(ctx pgrest.OrgContext, opts ...*pgrest.SessionOption)
 	err := pgrest.New("/sessions?%s", qs).List().DecodeInto(&items)
 	if err != nil {
 		if err == pgrest.ErrNotFound {
-			return nil, nil
+			return &pgrest.SessionList{}, nil
 		}
 		return nil, err
 	}
