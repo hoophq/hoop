@@ -16,10 +16,11 @@ import (
 	"github.com/runopsio/hoop/common/log"
 )
 
-// JwtSecretKey and URL are set when the gateway starts
+// these values are initialized when running postgrest on bootstrap.go
 var (
-	JwtSecretKey []byte
-	URL          *url.URL
+	jwtSecretKey []byte
+	baseURL      *url.URL
+	roleName     string
 )
 
 var (
@@ -48,17 +49,17 @@ func New(path string, a ...any) *Client { return newClient("", "", fmt.Sprintf(p
 func newClient(org, email, path string) *Client {
 	now := time.Now().UTC()
 	j := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"role": "webuser",
+		"role": roleName,
 		// make access tokens to expire due to possible leaking tokens in logs
 		"iat": now.Unix(),
 		"exp": now.Add(time.Minute * 15).Unix(),
 	})
-	accessToken, err := j.SignedString(JwtSecretKey)
+	accessToken, err := j.SignedString(jwtSecretKey)
 	if err != nil {
 		log.Fatalf("failed generating postgrest access token, reason=%v", err)
 	}
 
-	apiURL := fmt.Sprintf("http://%s/%s", URL.Host, strings.TrimPrefix(path, "/"))
+	apiURL := fmt.Sprintf("http://%s/%s", baseURL.Host, strings.TrimPrefix(path, "/"))
 	return &Client{apiURL: apiURL, accessToken: accessToken}
 }
 

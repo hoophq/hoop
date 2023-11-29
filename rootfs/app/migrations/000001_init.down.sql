@@ -1,25 +1,5 @@
 BEGIN;
 
-REVOKE ALL ON public.orgs FROM webuser;
-REVOKE ALL ON public.login FROM webuser;
-REVOKE ALL ON public.users FROM webuser;
-REVOKE ALL ON public.user_groups FROM webuser;
-REVOKE ALL ON public.serviceaccounts FROM webuser;
-REVOKE ALL ON public.connections FROM webuser;
-REVOKE ALL ON public.env_vars FROM webuser;
-REVOKE ALL ON public.agents FROM webuser;
-REVOKE ALL ON public.plugin_connections FROM webuser;
-REVOKE ALL ON public.plugins FROM webuser;
-REVOKE ALL ON public.sessions FROM webuser;
-REVOKE ALL ON public.blobs FROM webuser;
-REVOKE ALL ON public.reviews FROM webuser;
-REVOKE ALL ON public.review_groups FROM webuser;
-REVOKE ALL ON public.proxymanager_state FROM webuser;
-REVOKE ALL ON public.clientkeys FROM webuser;
-REVOKE ALL ON SCHEMA public FROM webuser;
-REVOKE ALL ON SCHEMA private FROM webuser;
-DROP ROLE IF EXISTS webuser;
-
 DROP TABLE private.login CASCADE;
 DROP TABLE private.users CASCADE;
 DROP TABLE private.service_accounts CASCADE;
