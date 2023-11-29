@@ -219,6 +219,11 @@ func provisionPgRoles(roleName string) error {
 			return fmt.Errorf("failed executing statement %q, err=%v", stmt, err)
 		}
 	}
+	// allow the main role to impersonate the apiuser role
+	impersonateGrantStmt := fmt.Sprintf(`GRANT %s TO %s`, roleName, os.Getenv("PG_USER"))
+	if _, err := tx.Exec(impersonateGrantStmt); err != nil {
+		return fmt.Errorf("failed granting impersonate grant, err=%v", err)
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("failed committing transaction, err=%v", err)
 	}
