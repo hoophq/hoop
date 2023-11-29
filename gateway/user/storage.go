@@ -150,7 +150,7 @@ func (s *Storage) FindInvitedUser(email string) (*InvitedUser, error) {
 	}
 
 	var payload = `{:query {
-		:find [(pull ?invited-user [*])] 
+		:find [(pull ?invited-user [*])]
 		:in [email]
 		:where [[?invited-user :invited-user/email email]]}
 		:in-args ["` + email + `"]}`

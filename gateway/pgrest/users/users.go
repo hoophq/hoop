@@ -22,6 +22,7 @@ func New() *user { return &user{} }
 func (u *user) UpsertUnverified(ctx pgrest.OrgContext, user *types.InvitedUser) error {
 	return pgrest.New("/rpc/update_users?select=id,org_id,subject,email,name,verified,status,slack_id,created_at,updated_at,groups").
 		RpcCreate(map[string]any{
+			"id":       user.ID,
 			"subject":  user.ID,
 			"org_id":   ctx.GetOrgID(),
 			"name":     user.Name,
