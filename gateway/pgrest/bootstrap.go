@@ -155,7 +155,7 @@ func loadConfig() (u *url.URL, jwtSecret []byte, err error) {
 	return pgrestUrl, []byte(base64.RawURLEncoding.EncodeToString(secretRandomBytes)), nil
 }
 
-var roleStatements = []string{
+var grantStatements = []string{
 	`CREATE ROLE %s LOGIN NOINHERIT NOCREATEDB NOCREATEROLE NOSUPERUSER`,
 	`COMMENT ON ROLE %s IS 'Used to authenticate requests in postgrest'`,
 	`GRANT usage ON SCHEMA public TO %s`,
@@ -179,6 +179,15 @@ var roleStatements = []string{
 	`GRANT SELECT, INSERT, UPDATE, DELETE ON public.clientkeys TO %s`,
 }
 
+var dropStatements = []string{
+	`REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM %s`,
+	`REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM %s`,
+	`REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public FROM %s`,
+	`REVOKE USAGE ON SCHEMA private FROM %s`,
+	`REVOKE USAGE ON SCHEMA public FROM %s`,
+	`DROP ROLE IF EXISTS %s`,
+}
+
 func provisionPgRoles(roleName string) error {
 	log.Infof("provisioning default role %s", roleName)
 	db, err := sql.Open("postgres", toPostgresURI())
@@ -199,16 +208,13 @@ func provisionPgRoles(roleName string) error {
 	}
 	// drop all privileges of the role and then the role itself
 	if fmt.Sprintf("%v", res) == "1" {
-		for _, stmt := range []string{
-			fmt.Sprintf("DROP OWNED BY %s", roleName),
-			fmt.Sprintf("DROP ROLE %s", roleName),
-		} {
-			if _, err := tx.Exec(stmt); err != nil {
+		for _, stmt := range dropStatements {
+			if _, err := tx.Exec(fmt.Sprintf(stmt, roleName)); err != nil {
 				return fmt.Errorf("fail to drop current role %v, err=%v", roleName, err)
 			}
 		}
 	}
-	for _, stmt := range roleStatements {
+	for _, stmt := range grantStatements {
 		if _, err := tx.Exec(fmt.Sprintf(stmt, roleName)); err != nil {
 			return fmt.Errorf("failed executing statement %q, err=%v", stmt, err)
 		}
