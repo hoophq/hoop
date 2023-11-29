@@ -2,11 +2,8 @@ package gateway
 
 import (
 	"bytes"
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/url"
 	"os"
 	"os/exec"
@@ -35,10 +32,6 @@ import (
 	"github.com/runopsio/hoop/gateway/transport"
 	"github.com/runopsio/hoop/gateway/user"
 
-	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
-
 	// plugins
 	"github.com/runopsio/hoop/gateway/transport/adminapi"
 	pluginsrbac "github.com/runopsio/hoop/gateway/transport/plugins/accesscontrol"
@@ -63,13 +56,7 @@ func Run(listenAdmAddr string) {
 	}
 
 	// by default start postgrest process
-	pgrestUrl, pgrestJwtSecret, err := pgRestConfig()
-	if err != nil {
-		log.Fatal(err)
-	}
-	pgrest.JwtSecretKey = pgrestJwtSecret
-	pgrest.URL = pgrestUrl
-	if err := startPostgrestProcessManager(pgrestJwtSecret); err != nil {
+	if err := pgrest.Run(); err != nil {
 		log.Fatal(err)
 	}
 
@@ -291,124 +278,4 @@ channel="general"`
 	}
 	log.Printf("MagicBell notifications selected")
 	return notification.NewMagicBell()
-}
-
-func startPostgrestProcessManager(pgrestJwtSecret []byte) error {
-	postgrestBinFile := "/usr/local/bin/postgrest"
-	if _, err := os.Stat(postgrestBinFile); err != nil && os.IsNotExist(err) {
-		return nil
-	}
-	// validate if the migration files are present
-	if _, err := os.Stat("/app/migrations/000001_init.up.sql"); err != nil {
-		return fmt.Errorf("failed validating migration files, err=%v", err)
-	}
-
-	// migration
-	dbURL := fmt.Sprintf("%s?sslmode=disable", toPostgresURI())
-	m, err := migrate.New("file:///app/migrations", dbURL)
-	if err != nil {
-		return fmt.Errorf("failed initializing db migration, err=%v", err)
-	}
-	ver, dirty, err := m.Version()
-	if err != nil && err != migrate.ErrNilVersion {
-		return fmt.Errorf("failed obtaining db migration version, err=%v", err)
-	}
-	if dirty {
-		return fmt.Errorf("database is in a dirty state, requires manual intervention to fix it")
-	}
-	log.Infof("loaded migration version=%v, is-nil-version=%v", ver, err == migrate.ErrNilVersion)
-	err = m.Up()
-	if err != nil && err != migrate.ErrNilVersion && err != migrate.ErrNoChange {
-		return fmt.Errorf("failed running db migration, err=%v", err)
-	}
-	log.Infof("processed db migration with success, nochange=%v", err == migrate.ErrNoChange)
-
-	// https://postgrest.org/en/stable/references/configuration.html#env-variables-config
-	envs := []string{
-		"PGTZ=UTC", // generate timestamps in UTC
-		"PGRST_DB_ANON_ROLE=web_anon",
-		"PGRST_DB_CHANNEL_ENABLED=False",
-		"PGRST_DB_CONFIG=False",
-		"PGRST_DB_PLAN_ENABLED=True",
-		"PGRST_LOG_LEVEL=error",
-		"PGRST_SERVER_HOST=!4",
-		"PGRST_SERVER_PORT=8008",
-		fmt.Sprintf("PGRST_DB_URI=%s", toPostgresURI()),
-		fmt.Sprintf("PGRST_JWT_SECRET=%s", string(pgrestJwtSecret)),
-	}
-
-	startProcessFn := func(i int) {
-		log.Infof("starting postgrest process, attempt=%v ...", i)
-		cmd := exec.Command(postgrestBinFile)
-		cmd.Env = envs
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			log.Errorf("failed running postgrest process, err=%v", err)
-			return
-		}
-		pid := -1
-		if cmd.Process != nil {
-			pid = cmd.Process.Pid
-		}
-		log.Infof("postgrest process (pid:%v) finished", pid)
-	}
-
-	go func() {
-		for i := 1; ; i++ {
-			startProcessFn(i)
-			// give some time to retry
-			time.Sleep(time.Second * 5)
-		}
-	}()
-
-	for i := 1; ; i++ {
-		if i > 15 {
-			log.Fatal("max attempts (15) reached. failed to validate postgrest liveness at %v", pgrest.URL.Host)
-		}
-		if err := checkAddrLiveness(pgrest.URL.Host); err != nil {
-			time.Sleep(time.Second * 1)
-			continue
-		}
-		log.Infof("postgrest is ready at %v", pgrest.URL.Host)
-		break
-	}
-	return nil
-}
-
-func toPostgresURI() string {
-	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s",
-		os.Getenv("PG_USER"),
-		os.Getenv("PG_PASSWORD"),
-		os.Getenv("PG_HOST"),
-		os.Getenv("PG_PORT"),
-		os.Getenv("PG_DB"),
-	)
-}
-
-func pgRestConfig() (u *url.URL, jwtSecret []byte, err error) {
-	secretRandomBytes := make([]byte, 32)
-	if _, err := rand.Read(secretRandomBytes); err != nil {
-		return nil, nil, fmt.Errorf("failed generating entropy, err=%v", err)
-	}
-
-	pgrestUrlStr := os.Getenv("PGREST_URL")
-	if pgrestUrlStr == "" {
-		pgrestUrlStr = "http://127.0.0.1:8008"
-	}
-	pgrestUrl, err := url.Parse(pgrestUrlStr)
-	if err != nil {
-		return nil, nil, fmt.Errorf("PGREST_URL in wrong format, err=%v", err)
-	}
-	return pgrestUrl, []byte(base64.RawURLEncoding.EncodeToString(secretRandomBytes)), nil
-}
-
-func checkAddrLiveness(addr string) error {
-	timeout := time.Second * 3
-	conn, err := net.DialTimeout("tcp", addr, timeout)
-	if err != nil {
-		return fmt.Errorf("not responding, err=%v", err)
-	}
-	_ = conn.Close()
-	return nil
 }

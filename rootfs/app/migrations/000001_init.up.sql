@@ -471,28 +471,4 @@ CREATE VIEW public.clientkeys AS
     SELECT id, org_id, name, status, dsn_hash, created_at, updated_at
     FROM clientkeys;
 
--- TODO: add web_anon role
---  roles
---
-CREATE ROLE webuser LOGIN NOINHERIT NOCREATEDB NOCREATEROLE NOSUPERUSER;
-GRANT usage ON SCHEMA public TO webuser;
-GRANT usage ON SCHEMA private TO webuser;
-
-GRANT SELECT, INSERT ON public.orgs to webuser;
-GRANT INSERT, SELECT, UPDATE on public.login to webuser;
-GRANT SELECT, INSERT, UPDATE ON public.users to webuser;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_groups to webuser;
-GRANT SELECT, INSERT, UPDATE ON public.serviceaccounts to webuser;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.connections to webuser;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.env_vars to webuser;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.agents to webuser;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.plugin_connections to webuser;
-GRANT SELECT, INSERT, UPDATE ON public.plugins to webuser;
-GRANT SELECT, INSERT, UPDATE ON public.sessions to webuser;
-GRANT SELECT, INSERT, UPDATE ON public.blobs to webuser;
-GRANT SELECT, INSERT, UPDATE ON public.reviews to webuser;
-GRANT SELECT, INSERT, UPDATE ON public.review_groups to webuser;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.proxymanager_state to webuser;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.clientkeys to webuser;
-
 COMMIT;

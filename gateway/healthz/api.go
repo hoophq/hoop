@@ -17,7 +17,7 @@ import (
 func LivenessHandler() func(_ *gin.Context) {
 	return func(c *gin.Context) {
 		grpcLivenessErr := checkAddrLiveness(grpc.LocalhostAddr)
-		apiLivenessErr := checkAddrLiveness(pgrest.URL.Host)
+		apiLivenessErr := pgrest.CheckLiveness()
 		if grpcLivenessErr != nil || apiLivenessErr != nil {
 			msg := fmt.Sprintf("gateway-grpc=%v, gateway-api=%v", grpcLivenessErr, apiLivenessErr)
 			c.JSON(http.StatusBadRequest, gin.H{"liveness": msg})
