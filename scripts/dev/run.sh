@@ -101,9 +101,9 @@ GOOS=linux go build -ldflags "-s -w -X github.com/runopsio/hoop/common/version.s
 docker stop hoopdev > /dev/null || true
 docker run --name hoopdev \
   -p 3001:3001 \
+  -p 8008:8008 \
   -p 8009:8009 \
   -p 8010:8010 \
-  -p 8099:8099 \
   --env-file=.env \
   -v $HOME/.hoop/dev:/app/ \
   -v $HOME/.hoop/dev/webapp/resources:/app/ui/ \

@@ -22,7 +22,6 @@ To start a development server it requires the following local tools:
 - [node / npm](https://nodejs.org/en/download) (optional)
  - Permission to clone `runopsio/webapp` repository
  - Permission to clone `hoophq/api` repository
-- The [node api server](https://github.com/hoophq/api) running locally (optional)
 
 ### Start a postgres server
 
@@ -55,14 +54,6 @@ If you want to run a development server with the webapp, run the command below b
 
 ```sh
 ./scripts/dev/build-webapp.sh
-```
-
-#### API Setup
-
-The API is a required dependency to run the gateway. Make sure to run your own instance for development purposes.
-
-```sh
-./scripts/dev/build-api.sh
 ```
 
 ### Build Dev Client

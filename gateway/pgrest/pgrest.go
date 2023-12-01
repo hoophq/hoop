@@ -56,6 +56,7 @@ func newClient(org, email, path string) *Client {
 	})
 	accessToken, err := j.SignedString(jwtSecretKey)
 	if err != nil {
+		// TODO: defer the error instead of panicking
 		log.Fatalf("failed generating postgrest access token, reason=%v", err)
 	}
 
@@ -175,8 +176,7 @@ type Response struct {
 	data       []byte
 	statusCode int
 	headers    http.Header
-	// contentLength int64
-	err error
+	err        error
 }
 
 // DecodeInto will copy the bytes of the response if obj is []byte
