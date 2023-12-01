@@ -147,6 +147,13 @@ func NewProvider(profile string) *Provider {
 	if provider.CustomScopes != "" {
 		scopes = addCustomScopes(scopes, provider.CustomScopes)
 	}
+	log.Infof("loaded oidc provider configuration, auth=%v, token=%v, userinfo=%v, jwks=%v, algorithms=%v, scopes=%v",
+		oidcProviderConfig.AuthURL,
+		oidcProviderConfig.TokenURL,
+		oidcProviderConfig.UserInfoURL,
+		oidcProviderConfig.JWKSURL,
+		oidcProviderConfig.Algorithms,
+		scopes)
 
 	conf := oauth2.Config{
 		ClientID:     provider.ClientID,
@@ -176,26 +183,22 @@ func addCustomScopes(scopes []string, customScope string) []string {
 }
 
 func downloadJWKS(jwksURL string) *keyfunc.JWKS {
-	log.Println("downloading provider public key")
+	log.Infof("downloading provider public key from=%v", jwksURL)
 	options := keyfunc.Options{
-		Ctx: context.Background(),
-		RefreshErrorHandler: func(err error) {
-			log.Printf("There was an error with the jwt.Keyfunc\nError: %s", err.Error())
-		},
-		RefreshInterval:   time.Hour,
-		RefreshRateLimit:  time.Minute * 5,
-		RefreshTimeout:    time.Second * 10,
-		RefreshUnknownKID: true,
+		Ctx:                 context.Background(),
+		RefreshErrorHandler: func(err error) { log.Errorf("error while refreshing public key, reason=%v", err) },
+		RefreshInterval:     time.Hour,
+		RefreshRateLimit:    time.Minute * 5,
+		RefreshTimeout:      time.Second * 10,
+		RefreshUnknownKID:   true,
 	}
 
 	var err error
 	jwks, err := keyfunc.Get(jwksURL, options)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("failed loading jwks url, reason=%v", err)
 	}
 	return jwks
 }
 
-func (u *UserInfoToken) Token() (*oauth2.Token, error) {
-	return u.token, nil
-}
+func (u *UserInfoToken) Token() (*oauth2.Token, error) { return u.token, nil }

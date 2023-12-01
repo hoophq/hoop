@@ -1,7 +1,9 @@
 package security
 
 import (
+	"encoding/base64"
 	"fmt"
+	"strings"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gin-gonic/gin"
@@ -104,7 +106,7 @@ func (s *Service) Callback(c *gin.Context, state, code string) string {
 		return login.Redirect + "?error=unexpected_error"
 	}
 
-	debugClaims(idToken.Subject, idTokenClaims)
+	debugClaims(idToken.Subject, idTokenClaims, token)
 
 	sub, err := s.Provider.VerifyAccessToken(token.AccessToken)
 	if err != nil {
@@ -364,7 +366,7 @@ func parseJWTClaims(idTokenClaims map[string]any) (email, profile string, syncGr
 	return
 }
 
-func debugClaims(subject string, claims map[string]any) {
+func debugClaims(subject string, claims map[string]any, accessToken *oauth2.Token) {
 	log := log.With()
 	for claimKey, claimVal := range claims {
 		if claimKey == pb.CustomClaimGroups {
@@ -373,7 +375,15 @@ func debugClaims(subject string, claims map[string]any) {
 		}
 		log = log.With(claimKey, fmt.Sprintf("%v", claimVal))
 	}
-	log.Infof("id_token claims=%v, subject=%s, admingroup=%q", len(claims), subject, types.GroupAdmin)
+	var isJWT bool
+	var jwtHeader []byte
+	if parts := strings.Split(accessToken.AccessToken, "."); len(parts) == 3 {
+		isJWT = true
+		jwtHeader, _ = base64.RawStdEncoding.DecodeString(parts[0])
+	}
+	log.Infof("jwt-access-token=%v, jwt-header=%v, id_token claims=%v, subject=%s, admingroup=%q",
+		isJWT, string(jwtHeader),
+		len(claims), subject, types.GroupAdmin)
 }
 
 func (s *Service) loginOutcome(login *login, outcome outcomeType) {
