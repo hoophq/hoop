@@ -205,7 +205,7 @@ func (s *Server) subscribeAgent(grpcStream pb.Transport_ConnectServer) error {
 		ClientOrigin: clientOrigin,
 		ParamsData:   map[string]any{"client": clientOrigin},
 	}
-	if err := s.updateAgentStatus(gwctx.BearerToken, agent.StatusConnected, gwctx.Agent); err != nil {
+	if err := s.updateAgentStatus(agent.StatusConnected, gwctx.Agent); err != nil {
 		log.Errorf("failed updating agent to connected status, err=%v", err)
 		sentry.CaptureException(err)
 		return status.Errorf(codes.Internal, "failed updating agent, internal error")
@@ -222,9 +222,8 @@ func (s *Server) subscribeAgent(grpcStream pb.Transport_ConnectServer) error {
 	pluginContext.ParamsData["disconnect-agent-id"] = gwctx.Agent.ID
 	s.startDisconnectClientSink(agentBindID, clientOrigin, func(err error) {
 		defer unbindAgent(agentBindID)
-		err = s.updateAgentStatus(gwctx.BearerToken, agent.StatusDisconnected, gwctx.Agent)
-		if err != nil {
-			log.Warnf("failed publishing disconnect agent state, err=%v", err)
+		if err := s.updateAgentStatus(agent.StatusDisconnected, gwctx.Agent); err != nil {
+			log.Warnf("failed publishing disconnect agent state, org=%v, name=%v, err=%v", gwctx.Agent, err)
 		}
 		stream.Disconnect(context.Canceled)
 		_ = s.pluginOnDisconnect(pluginContext, err)
@@ -292,13 +291,14 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, ag *apitypes.Age
 	}
 }
 
-func (s *Server) updateAgentStatus(bearerToken string, agentStatus agent.Status, agentCtx apitypes.Agent) error {
+func (s *Server) updateAgentStatus(agentStatus agent.Status, agentCtx apitypes.Agent) error {
+	// client keys doesn't have an agent record, it should be ignored
+	if strings.HasPrefix(agentCtx.Name, "clientkey:") {
+		return nil
+	}
 	ag, err := s.AgentService.FindByNameOrID(user.NewContext(agentCtx.OrgID, ""), agentCtx.Name)
 	if err != nil || ag == nil {
-		log.Errorf("failed to obtain agent org=%v, name=%v, err=%v", agentCtx.OrgID, agentCtx.Name, err)
-		// TODO: fix me later
-		return nil
-		// return fmt.Errorf("failed to obtain agent org=%v, name=%v, err=%v", agentCtx.OrgID, agentCtx.Name, err)
+		return fmt.Errorf("failed to obtain agent org=%v, name=%v, err=%v", agentCtx.OrgID, agentCtx.Name, err)
 	}
 	if agentStatus == agent.StatusConnected {
 		ag.Hostname = agentCtx.Metadata.Hostname

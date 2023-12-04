@@ -29,3 +29,5 @@ rootfs/app/ui
 build
 go.work.sum
 .env
+
+.control
