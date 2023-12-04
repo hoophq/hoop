@@ -295,7 +295,10 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, ag *apitypes.Age
 func (s *Server) updateAgentStatus(bearerToken string, agentStatus agent.Status, agentCtx apitypes.Agent) error {
 	ag, err := s.AgentService.FindByNameOrID(user.NewContext(agentCtx.OrgID, ""), agentCtx.Name)
 	if err != nil || ag == nil {
-		return fmt.Errorf("failed to obtain agent: %v", err)
+		log.Errorf("failed to obtain agent org=%v, name=%v, err=%v", agentCtx.OrgID, agentCtx.Name, err)
+		// TODO: fix me later
+		return nil
+		// return fmt.Errorf("failed to obtain agent org=%v, name=%v, err=%v", agentCtx.OrgID, agentCtx.Name, err)
 	}
 	if agentStatus == agent.StatusConnected {
 		ag.Hostname = agentCtx.Metadata.Hostname
