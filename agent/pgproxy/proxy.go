@@ -13,14 +13,6 @@ import (
 	"github.com/xo/dburl"
 )
 
-// type Proxy interface {
-// 	Run(onRunErrFnType) Proxy
-// 	Write(b []byte) (int, error)
-// 	WithDataLossPrevention(dlpClient dlp.Client, infoTypes []string) Proxy
-// 	Done() <-chan struct{}
-// 	Close() error
-// }
-
 type clientErrType error
 
 func clientErrorF(format string, a ...any) clientErrType { return fmt.Errorf(format, a...) }
