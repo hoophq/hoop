@@ -12,7 +12,7 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/memory"
 	mssqltypes "github.com/runopsio/hoop/common/mssql/types"
-	"github.com/runopsio/hoop/common/pg"
+	pgtypes "github.com/runopsio/hoop/common/pgtypes"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
@@ -99,7 +99,7 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 			return nil, p.writeOnReceive(pctx.SID, eventlogv0.OutputType, redactCount, nil)
 		}
 	case pbagent.PGConnectionWrite:
-		isSimpleQuery, queryBytes, err := pg.SimpleQueryContent(pkt.Payload)
+		isSimpleQuery, queryBytes, err := pgtypes.SimpleQueryContent(pkt.Payload)
 		if !isSimpleQuery {
 			break
 		}

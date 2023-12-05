@@ -10,6 +10,7 @@ import (
 	dlp "cloud.google.com/go/dlp/apiv2"
 	"cloud.google.com/go/dlp/apiv2/dlppb"
 	"github.com/hoophq/pluginhooks"
+	pgtypes "github.com/runopsio/hoop/common/pgtypes"
 	pb "github.com/runopsio/hoop/common/proto"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
@@ -37,12 +38,9 @@ func NewDLPStreamWriter(
 	packetType pb.PacketType,
 	spec map[string][]byte,
 	infoTypeList []string) *streamWriter {
-	dlpConfig := &deidentifyConfig{
-		maskingCharacter: defaultMaskingCharacter,
-		numberToMask:     defaultNumberToMask,
-		infoTypes:        parseInfoTypes(infoTypeList),
-		projectID:        dlpClient.ProjectID(),
-	}
+	dlpConfig := NewDeidentifyConfig(
+		defaultMaskingCharacter, defaultNumberToMask,
+		dlpClient.ProjectID(), infoTypeList)
 	return &streamWriter{
 		client:     client,
 		dlpClient:  dlpClient,
@@ -74,7 +72,7 @@ func (s *streamWriter) Write(data []byte) (int, error) {
 		}
 		return err
 	}
-	if s.dlpClient != nil && len(data) > 30 && len(s.dlpConfig.infoTypes) > 0 {
+	if s.dlpClient != nil && len(data) > 30 && len(s.dlpConfig.InfoTypes()) > 0 {
 		chunksBuffer := breakPayloadIntoChunks(bytes.NewBuffer(data), defaultMaxChunkSize)
 		redactedChunks := redactChunks(s.dlpClient, s.dlpConfig, chunksBuffer)
 		dataBuffer, tsList, err := joinChunks(redactedChunks)
@@ -102,9 +100,9 @@ func (s *streamWriter) Close() error {
 	return nil
 }
 
-func (c *client) DeidentifyContent(ctx context.Context, conf *deidentifyConfig, chunkIndex int, data *inputData) *Chunk {
+func (c *client) DeidentifyContent(ctx context.Context, conf DeidentifyConfig, chunkIndex int, data InputData) *Chunk {
 	req := newDeindentifyContentRequest(conf)
-	req.Item = data.contentItem()
+	req.Item = data.ContentItem()
 	r, err := c.dlpClient.DeidentifyContent(ctx, req)
 	if err != nil {
 		return &Chunk{
@@ -127,7 +125,7 @@ func (c *client) DeidentifyContent(ctx context.Context, conf *deidentifyConfig, 
 
 	responseTable := r.GetItem().GetTable()
 	if responseTable != nil {
-		dataRowsBuffer := encodeToDataRow(responseTable)
+		dataRowsBuffer := EncodeToDataRow(responseTable)
 		return &Chunk{
 			index:                 chunkIndex,
 			transformationSummary: chunk.transformationSummary,
@@ -137,10 +135,23 @@ func (c *client) DeidentifyContent(ctx context.Context, conf *deidentifyConfig, 
 	return chunk
 }
 
+func EncodeToDataRow(table *dlppb.Table) *bytes.Buffer {
+	var dataRowPackets []byte
+	for _, row := range table.Rows {
+		var dataRowValues []string
+		for _, val := range row.Values {
+			dataRowValues = append(dataRowValues, val.GetStringValue())
+		}
+		pktBytes := pgtypes.NewDataRowPacket(uint16(len(row.Values)), dataRowValues...).Encode()
+		dataRowPackets = append(dataRowPackets, pktBytes...)
+	}
+	return bytes.NewBuffer(dataRowPackets)
+}
+
 // redactChunks process chunks in parallel reordering after the end of each execution.
 // A default timeout is applied for each chunk. If a requests timeout or returns an error the chunk is returned
 // without redacting its content.
-func redactChunks(client Client, conf *deidentifyConfig, chunksBuffer []*bytes.Buffer) []*Chunk {
+func redactChunks(client Client, conf DeidentifyConfig, chunksBuffer []*bytes.Buffer) []*Chunk {
 	chunkCh := make(chan *Chunk)
 	for idx, chunkBuf := range chunksBuffer {
 		go func(idx int, chunkB *bytes.Buffer) {
@@ -222,11 +233,11 @@ func parseInfoTypes(infoTypesList []string) []*dlppb.InfoType {
 	return infoTypes
 }
 
-func newDeindentifyContentRequest(conf *deidentifyConfig) *dlppb.DeidentifyContentRequest {
+func newDeindentifyContentRequest(conf DeidentifyConfig) *dlppb.DeidentifyContentRequest {
 	return &dlppb.DeidentifyContentRequest{
-		Parent: fmt.Sprintf("projects/%s/locations/global", conf.projectID),
+		Parent: fmt.Sprintf("projects/%s/locations/global", conf.ProjectID()),
 		InspectConfig: &dlppb.InspectConfig{
-			InfoTypes:     conf.infoTypes,
+			InfoTypes:     conf.InfoTypes(),
 			MinLikelihood: dlppb.Likelihood_POSSIBLE,
 		},
 		DeidentifyConfig: &dlppb.DeidentifyConfig{
@@ -234,12 +245,12 @@ func newDeindentifyContentRequest(conf *deidentifyConfig) *dlppb.DeidentifyConte
 				InfoTypeTransformations: &dlppb.InfoTypeTransformations{
 					Transformations: []*dlppb.InfoTypeTransformations_InfoTypeTransformation{
 						{
-							InfoTypes: conf.infoTypes, // Match all info types.
+							InfoTypes: conf.InfoTypes(), // Match all info types.
 							PrimitiveTransformation: &dlppb.PrimitiveTransformation{
 								Transformation: &dlppb.PrimitiveTransformation_CharacterMaskConfig{
 									CharacterMaskConfig: &dlppb.CharacterMaskConfig{
-										MaskingCharacter: conf.maskingCharacter,
-										NumberToMask:     conf.numberToMask,
+										MaskingCharacter: conf.MaskingCharacter(),
+										NumberToMask:     int32(conf.NumberToMask()),
 									},
 								},
 							},

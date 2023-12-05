@@ -1,4 +1,4 @@
-package pg
+package pgtypes
 
 import (
 	"bufio"
@@ -7,8 +7,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-
-	"github.com/runopsio/hoop/common/pg"
 )
 
 type Packet struct {
@@ -38,10 +36,6 @@ func (p *Packet) Encode() []byte {
 	return dst
 }
 
-func (p *Packet) EncodeAsReader() *bufio.Reader {
-	return bufio.NewReader(bytes.NewBuffer(p.Encode()))
-}
-
 // HeaderLength return the packet length (frame) including itself (header)
 func (p *Packet) HeaderLength() int {
 	pktLen := binary.BigEndian.Uint32(p.header[:])
@@ -51,25 +45,23 @@ func (p *Packet) HeaderLength() int {
 // Length returns the packet header length + type
 func (p *Packet) Length() int { return p.HeaderLength() + 1 }
 
-func (p *Packet) Type() pg.PacketType {
-	return pg.PacketType(*p.typ)
+func (p *Packet) Type() (b PacketType) {
+	if p.typ != nil {
+		return PacketType(*p.typ)
+	}
+	return
 }
 
-func (p *Packet) Frame() []byte {
-	return p.frame
-}
-
-func (p *Packet) Dump() {
-	fmt.Print(hex.Dump(p.Encode()))
-}
+func (p *Packet) Frame() []byte { return p.frame }
+func (p *Packet) Dump()         { fmt.Print(hex.Dump(p.Encode())) }
 
 func (p *Packet) IsFrontendSSLRequest() bool {
 	if len(p.frame) == 4 {
 		v := make([]byte, 4)
 		_ = copy(v, p.frame)
 		sslRequest := binary.BigEndian.Uint32(v)
-		return sslRequest == pg.ClientSSLRequestMessage ||
-			sslRequest == pg.ClientGSSENCRequestMessage
+		return sslRequest == ClientSSLRequestMessage ||
+			sslRequest == ClientGSSENCRequestMessage
 	}
 	return false
 }
@@ -79,50 +71,85 @@ func (p *Packet) IsCancelRequest() bool {
 		v := make([]byte, 4)
 		_ = copy(v, p.frame[:4])
 		cancelRequest := binary.BigEndian.Uint32(v)
-		return cancelRequest == pg.ClientCancelRequestMessage
+		return cancelRequest == ClientCancelRequestMessage
 	}
 	return false
 }
 
-func NewReader(rd io.Reader) Reader {
-	return bufio.NewReader(rd)
-}
-
-func NewPacketWithType(t pg.PacketType) *Packet {
+func NewPacketWithType(t PacketType) *Packet {
 	typ := byte(t)
 	return &Packet{typ: &typ}
 }
 
-func DecodeTypedPacket(r Reader) (int, *Packet, error) {
-	typ, err := r.ReadByte()
+func DecodeTypedPacket(r io.Reader) (int, *Packet, error) {
+	typ := make([]byte, 1)
+	read, err := r.Read(typ)
 	if err != nil {
 		return 0, nil, err
 	}
-	p := &Packet{typ: &typ}
+	p := &Packet{typ: &typ[0]}
 	nread, err := io.ReadFull(r, p.header[:])
 	if err != nil {
 		return nread, nil, err
 	}
 	pktLen := p.HeaderLength() - 4 // length includes itself.
-	if pktLen > pg.DefaultBufferSize || pktLen < 0 {
-		return nread, nil, fmt.Errorf("max size reached")
+	if pktLen > DefaultBufferSize || pktLen < 0 {
+		return nread, nil, fmt.Errorf("max size (%v) reached", DefaultBufferSize)
 	}
 	p.frame = make([]byte, pktLen)
 	n, err := io.ReadFull(r, p.frame)
 	if err != nil {
 		return n, nil, err
 	}
-	return nread + n, p, nil
+	return read + nread + n, p, nil
 }
 
-func DecodeStartupPacket(startupPacket Reader) (int, *Packet, error) {
+func Decode(data io.Reader) (*Packet, error) {
+	typ := make([]byte, 1)
+	_, err := data.Read(typ)
+	if err != nil {
+		return nil, err
+	}
+	pkt := &Packet{typ: nil}
+	if !isClientType(typ[0]) {
+		pkt.header[0] = typ[0]
+		if _, err := io.ReadFull(data, pkt.header[1:]); err != nil {
+			return nil, err
+		}
+		pktLen := pkt.HeaderLength() - 4 // length includes itself.
+		if pktLen > DefaultBufferSize || pktLen < 0 {
+			return nil, fmt.Errorf("max size (%v) reached", DefaultBufferSize)
+		}
+		pkt.frame = make([]byte, pktLen)
+		_, err := io.ReadFull(data, pkt.frame)
+		if err != nil {
+			return nil, fmt.Errorf("failed reading packet frame, err=%v", err)
+		}
+		return pkt, err
+	}
+	pkt = &Packet{typ: &typ[0]}
+	if _, err := io.ReadFull(data, pkt.header[:]); err != nil {
+		return nil, err
+	}
+	pktLen := pkt.HeaderLength() - 4 // length includes itself.
+	if pktLen > DefaultBufferSize || pktLen < 0 {
+		return nil, fmt.Errorf("max size (%v) reached", DefaultBufferSize)
+	}
+	pkt.frame = make([]byte, pktLen)
+	if _, err := io.ReadFull(data, pkt.frame); err != nil {
+		return nil, err
+	}
+	return pkt, nil
+}
+
+func DecodeStartupPacket(startupPacket io.Reader) (int, *Packet, error) {
 	p := &Packet{typ: nil}
 	nread, err := io.ReadFull(startupPacket, p.header[:])
 	if err != nil {
 		return nread, nil, err
 	}
 	pktLen := p.HeaderLength() - 4 // length includes itself.
-	if pktLen > pg.DefaultBufferSize || pktLen < 0 {
+	if pktLen > DefaultBufferSize || pktLen < 0 {
 		return nread, nil, fmt.Errorf("max size reached")
 	}
 	p.frame = make([]byte, pktLen)
@@ -133,7 +160,32 @@ func DecodeStartupPacket(startupPacket Reader) (int, *Packet, error) {
 	return nread + n, p, err
 }
 
-func DecodeStartupPacketWithUsername(startupPacket Reader, pgUsername string) (*Packet, error) {
+func SimpleQueryContent(payload []byte) (bool, []byte, error) {
+	r := bufio.NewReaderSize(bytes.NewBuffer(payload), DefaultBufferSize)
+	typ, err := r.ReadByte()
+	if err != nil {
+		return false, nil, fmt.Errorf("failed reading first byte: %v", err)
+	}
+	if PacketType(typ) != ClientSimpleQuery {
+		return false, nil, nil
+	}
+
+	header := [4]byte{}
+	if _, err := io.ReadFull(r, header[:]); err != nil {
+		return true, nil, fmt.Errorf("failed reading header, err=%v", err)
+	}
+	pktLen := binary.BigEndian.Uint32(header[:]) - 4 // don't include header size (4)
+	if uint32(len(payload[5:])) != pktLen {
+		return true, nil, fmt.Errorf("unexpected packet payload, received %v/%v", len(payload[5:]), pktLen)
+	}
+	queryFrame := make([]byte, pktLen)
+	if _, err := io.ReadFull(r, queryFrame); err != nil {
+		return true, nil, fmt.Errorf("failed reading query, err=%v", err)
+	}
+	return true, queryFrame, nil
+}
+
+func DecodeStartupPacketWithUsername(startupPacket io.Reader, pgUsername string) (*Packet, error) {
 	_, decPkt, err := DecodeStartupPacket(startupPacket)
 	if err != nil {
 		return decPkt, err
@@ -157,8 +209,15 @@ func DecodeStartupPacketWithUsername(startupPacket Reader, pgUsername string) (*
 	return decPkt.setHeaderLength(pktLen), nil
 }
 
+func NewSSLRequestPacket() [8]byte {
+	var packet [8]byte
+	binary.BigEndian.PutUint32(packet[0:4], 8)
+	binary.BigEndian.PutUint32(packet[4:8], ClientSSLRequestMessage)
+	return packet
+}
+
 func NewSASLInitialResponsePacket(authData []byte) *Packet {
-	p := NewPacketWithType(pg.ClientPassword)
+	p := NewPacketWithType(ClientPassword)
 	p.frame = append(p.frame, "SCRAM-SHA-256"...)
 	p.frame = append(p.frame, byte(0))
 	authLength := make([]byte, 4)
@@ -169,26 +228,26 @@ func NewSASLInitialResponsePacket(authData []byte) *Packet {
 }
 
 func NewSASLResponse(authData []byte) *Packet {
-	return NewPacketWithType(pg.ClientPassword).
+	return NewPacketWithType(ClientPassword).
 		setFrame(authData).
 		setHeaderLength(len(authData) + 4)
 }
 
 func NewPasswordMessage(authData []byte) *Packet {
-	p := NewPacketWithType(pg.ClientPassword)
+	p := NewPacketWithType(ClientPassword)
 	p.frame = append(p.frame, authData...)
 	return p.setHeaderLength(len(p.frame) + 4)
 }
 
 func NewAuthenticationOK() *Packet {
 	var okPacket [4]byte
-	return NewPacketWithType(pg.ServerAuth).
+	return NewPacketWithType(ServerAuth).
 		setFrame(okPacket[:]).
 		setHeaderLength(8)
 }
 
 func NewDataRowPacket(fieldCount uint16, dataRowValues ...string) *Packet {
-	typ := pg.ServerDataRow.Byte()
+	typ := ServerDataRow.Byte()
 	p := &Packet{typ: &typ}
 	var fieldCountBytes [2]byte
 	binary.BigEndian.PutUint16(fieldCountBytes[:], fieldCount)
@@ -196,7 +255,7 @@ func NewDataRowPacket(fieldCount uint16, dataRowValues ...string) *Packet {
 	for _, val := range dataRowValues {
 		var columnLen [4]byte
 		if val == DLPColumnNullType {
-			binary.BigEndian.PutUint32(columnLen[:], pg.ServerDataRowNull)
+			binary.BigEndian.PutUint32(columnLen[:], ServerDataRowNull)
 			p.frame = append(p.frame, columnLen[:]...)
 			continue
 		}
@@ -208,8 +267,8 @@ func NewDataRowPacket(fieldCount uint16, dataRowValues ...string) *Packet {
 }
 
 // https://www.postgresql.org/docs/current/protocol-error-fields.html
-func NewErrorPacketResponse(msg string, sev pg.Severity, errCode pg.Code) []*Packet {
-	p := NewPacketWithType(pg.ServerErrorResponse)
+func NewErrorPacketResponse(msg string, sev Severity, errCode Code) []*Packet {
+	p := NewPacketWithType(ServerErrorResponse)
 	// Severity: ERROR, FATAL, INFO, etc
 	p.frame = append(p.frame, 'S')
 	p.frame = append(p.frame, sev...)
@@ -228,24 +287,24 @@ func NewErrorPacketResponse(msg string, sev pg.Severity, errCode pg.Code) []*Pac
 	p.frame = append(p.frame, '\000', '\000')
 
 	p.setHeaderLength(len(p.frame) + 4)
-	readyPkt := NewPacketWithType(pg.ServerReadyForQuery).
-		setFrame([]byte{pg.ServerIdle}).
+	readyPkt := NewPacketWithType(ServerReadyForQuery).
+		setFrame([]byte{ServerIdle}).
 		setHeaderLength(1 + 4)
 	return []*Packet{p, readyPkt}
 }
 
 func NewFatalError(msg string) *Packet {
-	p := NewPacketWithType(pg.ServerErrorResponse)
+	p := NewPacketWithType(ServerErrorResponse)
 	// Severity: ERROR, FATAL, INFO, etc
 	p.frame = append(p.frame, 'S')
-	p.frame = append(p.frame, pg.LevelFatal...)
+	p.frame = append(p.frame, LevelFatal...)
 	p.frame = append(p.frame, '\000')
 	p.frame = append(p.frame, 'V')
-	p.frame = append(p.frame, pg.LevelFatal...)
+	p.frame = append(p.frame, LevelFatal...)
 	p.frame = append(p.frame, '\000')
 	// the SQLSTATE code for the error
 	p.frame = append(p.frame, 'C')
-	p.frame = append(p.frame, pg.ConnectionFailure...)
+	p.frame = append(p.frame, ConnectionFailure...)
 	p.frame = append(p.frame, '\000')
 	// Message: the primary human-readable error message.
 	// This should be accurate but terse (typically one line).

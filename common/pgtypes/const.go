@@ -1,19 +1,11 @@
-package pg
-
-import (
-	"bufio"
-	"bytes"
-	"encoding/binary"
-	"fmt"
-	"io"
-)
+package pgtypes
 
 type (
 	contextKey int
 )
 
 const (
-	DefaultBufferSize              = 1 << 24 // 16777216 bytes
+	DefaultBufferSize              = 1 << 24
 	SessionIDContextKey contextKey = iota
 )
 
@@ -22,8 +14,12 @@ type (
 	AuthPacketType int
 )
 
-func (t PacketType) Byte() byte {
-	return byte(t)
+func (t PacketType) Byte() byte { return byte(t) }
+func (t PacketType) String() string {
+	if s, ok := clientPacketType[t]; ok {
+		return s
+	}
+	return "unknown"
 }
 
 // client
@@ -115,29 +111,23 @@ const (
 	InvalidAuthorizationSpecification Code = "28000"
 )
 
-// SimpleQueryContent returns the content of the query and a boolean indicating
-// if it's a Simple Query packet
-func SimpleQueryContent(payload []byte) (bool, []byte, error) {
-	r := bufio.NewReaderSize(bytes.NewBuffer(payload), DefaultBufferSize)
-	typ, err := r.ReadByte()
-	if err != nil {
-		return false, nil, fmt.Errorf("failed reading first byte: %v", err)
-	}
-	if PacketType(typ) != ClientSimpleQuery {
-		return false, nil, nil
-	}
+var clientPacketType = map[PacketType]string{
+	ClientBind:        "ClientBind",
+	ClientClose:       "ClientClose",
+	ClientCopyData:    "ClientCopyData",
+	ClientCopyDone:    "ClientCopyDone",
+	ClientCopyFail:    "ClientCopyFail",
+	ClientDescribe:    "ClientDescribe",
+	ClientExecute:     "ClientExecute",
+	ClientFlush:       "ClientFlush",
+	ClientParse:       "ClientParse",
+	ClientPassword:    "ClientPassword",
+	ClientSimpleQuery: "ClientSimpleQuery",
+	ClientSync:        "ClientSync",
+	ClientTerminate:   "ClientTerminate",
+}
 
-	header := [4]byte{}
-	if _, err := io.ReadFull(r, header[:]); err != nil {
-		return true, nil, fmt.Errorf("failed reading header, err=%v", err)
-	}
-	pktLen := binary.BigEndian.Uint32(header[:]) - 4 // don't include header size (4)
-	if uint32(len(payload[5:])) != pktLen {
-		return true, nil, fmt.Errorf("unexpected packet payload, received %v/%v", len(payload[5:]), pktLen)
-	}
-	queryFrame := make([]byte, pktLen)
-	if _, err := io.ReadFull(r, queryFrame); err != nil {
-		return true, nil, fmt.Errorf("failed reading query, err=%v", err)
-	}
-	return true, queryFrame, nil
+func isClientType(packetType byte) (isClient bool) {
+	_, isClient = clientPacketType[PacketType(packetType)]
+	return
 }

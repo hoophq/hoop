@@ -9,7 +9,7 @@ import (
 
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/memory"
-	"github.com/runopsio/hoop/common/pg"
+	pgtypes "github.com/runopsio/hoop/common/pgtypes"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
@@ -76,7 +76,7 @@ func Write(sessionID string, pkt *pb.Packet) error {
 	defer auditWal.mu.Unlock()
 	switch pb.PacketType(pkt.Type) {
 	case pbagent.PGConnectionWrite:
-		isSimpleQuery, queryBytes, err := pg.SimpleQueryContent(pkt.Payload)
+		isSimpleQuery, queryBytes, err := pgtypes.SimpleQueryContent(pkt.Payload)
 		if !isSimpleQuery {
 			break
 		}
