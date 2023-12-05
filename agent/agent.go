@@ -33,11 +33,12 @@ type (
 		config    *config.Config
 	}
 	connEnv struct {
-		host     string
-		user     string
-		pass     string
-		port     string
-		insecure bool
+		host            string
+		user            string
+		pass            string
+		port            string
+		insecure        bool
+		postgresSSLMode string
 	}
 )
 
@@ -72,12 +73,14 @@ func parseConnectionEnvVars(envVars map[string]any, connType string) (*connEnv, 
 	if err != nil {
 		return nil, err
 	}
+
 	env := &connEnv{
-		host:     envVarS.Getenv("HOST"),
-		user:     envVarS.Getenv("USER"),
-		pass:     envVarS.Getenv("PASS"),
-		port:     envVarS.Getenv("PORT"),
-		insecure: envVarS.Getenv("INSECURE") == "true",
+		host:            envVarS.Getenv("HOST"),
+		user:            envVarS.Getenv("USER"),
+		pass:            envVarS.Getenv("PASS"),
+		port:            envVarS.Getenv("PORT"),
+		insecure:        envVarS.Getenv("INSECURE") == "true",
+		postgresSSLMode: envVarS.Getenv("SSLMODE"),
 	}
 	switch connType {
 	case pb.ConnectionTypePostgres:
@@ -86,6 +89,14 @@ func parseConnectionEnvVars(envVars map[string]any, connType string) (*connEnv, 
 		}
 		if env.host == "" || env.pass == "" || env.user == "" {
 			return nil, fmt.Errorf("missing required secrets for postgres connection [HOST, USER, PASS]")
+		}
+		mode := env.postgresSSLMode
+		if mode == "" {
+			mode = "prefer"
+		}
+		if mode != "require" && mode != "verify-full" && mode != "prefer" && mode != "disable" {
+			return nil, fmt.Errorf("wrong option (%q) for SSLMODE, accept only: %v", mode,
+				[]string{"disable", "prefer", "require", "verify-full"})
 		}
 	case pb.ConnectionTypeMySQL:
 		if env.port == "" {
@@ -261,9 +272,9 @@ func (a *Agent) checkTCPLiveness(pkt *pb.Packet, envVars map[string]any) error {
 		connType == pb.ConnectionTypeTCP ||
 		connType == pb.ConnectionTypeMySQL ||
 		connType == pb.ConnectionTypeMSSQL {
-		connEnvVars, _ := parseConnectionEnvVars(envVars, connType)
-		if connEnvVars == nil {
-			return nil
+		connEnvVars, err := parseConnectionEnvVars(envVars, connType)
+		if err != nil {
+			return err
 		}
 		if err := isPortActive(connEnvVars.host, connEnvVars.port); err != nil {
 			msg := fmt.Sprintf("failed connecting to remote host=%s, port=%s, reason=%v",

@@ -13,10 +13,11 @@ type fakeClient struct {
 	err error
 }
 
-func (c *fakeClient) DeidentifyContent(ctx context.Context, conf *deidentifyConfig, chunkIdx int, input *inputData) *Chunk {
+func (c *fakeClient) DeidentifyContent(ctx context.Context, conf DeidentifyConfig, chunkIdx int, data InputData) *Chunk {
 	chunk := &Chunk{index: chunkIdx, transformationSummary: &pb.TransformationSummary{}}
+	input := data.(*inputData)
 	if input.inputTable != nil {
-		chunk.data = encodeToDataRow(input.inputTable)
+		chunk.data = EncodeToDataRow(input.inputTable)
 	}
 	if input.inputBuffer != nil {
 		chunk.data = input.inputBuffer

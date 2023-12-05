@@ -22,21 +22,15 @@ const (
 
 type (
 	Client interface {
-		DeidentifyContent(context.Context, *deidentifyConfig, int, *inputData) *Chunk
+		DeidentifyContent(ctx context.Context, config DeidentifyConfig, chunkIndex int, data InputData) *Chunk
 		ProjectID() string
+	}
+	InputData interface {
+		ContentItem() *dlppb.ContentItem
 	}
 	inputData struct {
 		inputTable  *dlppb.Table
 		inputBuffer *bytes.Buffer
-	}
-	redactPostgresMiddleware struct {
-		dlpClient       Client
-		dataRowPackets  *bytes.Buffer
-		typedPackets    *bytes.Buffer
-		infoTypes       []*dlppb.InfoType
-		maxRows         int
-		maxPacketLength int
-		rowCount        int
 	}
 
 	Chunk struct {
@@ -53,15 +47,15 @@ type (
 		dlpClient  Client
 		packetType pb.PacketType
 		packetSpec map[string][]byte
-		dlpConfig  *deidentifyConfig
+		dlpConfig  DeidentifyConfig
 		hookExec   pb.PluginHookExec
 	}
-	deidentifyConfig struct {
+	DeidentifyConfig interface {
 		// Character to use to mask the sensitive values, for example, `*` for an
 		// alphabetic string such as a name, or `0` for a numeric string such as ZIP
 		// code or credit card number. This string must have a length of 1. If not
 		// supplied, this value defaults to `*`.
-		maskingCharacter string
+		MaskingCharacter() string
 		// Number of characters to mask. If not set, all matching chars will be
 		// masked. Skipped characters do not count towards this tally.
 		//
@@ -79,17 +73,22 @@ type (
 		// `****-****-****-3456`. Cloud DLP masks all but the last four characters.
 		// If `reverse_order` is `true`, all but the first four characters are masked
 		// as `1234-****-****-****`.
-		numberToMask int32
-		projectID    string
-		infoTypes    []*dlppb.InfoType
+		NumberToMask() int
+		ProjectID() string
+		InfoTypes() []*dlppb.InfoType
+	}
+	deidentifyConfig struct {
+		maskingCharacter string
+		numberToMask     int
+		projectID        string
+		infoTypes        []*dlppb.InfoType
 	}
 )
 
-func newTableInputData(data *dlppb.Table) *inputData {
-	return &inputData{
-		inputTable: data,
-	}
-}
+func (c *deidentifyConfig) MaskingCharacter() string     { return c.maskingCharacter }
+func (c *deidentifyConfig) NumberToMask() int            { return c.numberToMask }
+func (c *deidentifyConfig) ProjectID() string            { return c.projectID }
+func (c *deidentifyConfig) InfoTypes() []*dlppb.InfoType { return c.infoTypes }
 
 func newBufferInputData(data *bytes.Buffer) *inputData {
 	return &inputData{
@@ -97,7 +96,7 @@ func newBufferInputData(data *bytes.Buffer) *inputData {
 	}
 }
 
-func (i *inputData) contentItem() *dlppb.ContentItem {
+func (i *inputData) ContentItem() *dlppb.ContentItem {
 	switch {
 	case i.inputTable != nil:
 		return &dlppb.ContentItem{DataItem: &dlppb.ContentItem_Table{Table: i.inputTable}}
@@ -113,10 +112,33 @@ func (i *inputData) contentItem() *dlppb.ContentItem {
 	}
 }
 
-func (c *Chunk) Data() *bytes.Buffer {
-	return c.data
+func (c *Chunk) Data() *bytes.Buffer { return c.data }
+func (c *client) ProjectID() string  { return c.projectID }
+func NewDeidentifyConfig(maskChar string, numberToMask int, projectID string, infoTypes []string) *deidentifyConfig {
+	return &deidentifyConfig{
+		maskingCharacter: maskChar,
+		numberToMask:     numberToMask,
+		projectID:        projectID,
+		infoTypes:        parseInfoTypes(infoTypes),
+	}
 }
-
-func (c *client) ProjectID() string {
-	return c.projectID
+func NewChunk(data *bytes.Buffer) *Chunk { return &Chunk{data: data} }
+func (c *Chunk) Error() error {
+	if c.transformationSummary != nil {
+		return c.transformationSummary.Err
+	}
+	return nil
 }
+func (c *Chunk) SetIndex(chunkIdx int) *Chunk {
+	c.index = chunkIdx
+	return c
+}
+func (c *Chunk) SetError(err error) *Chunk {
+	if c.transformationSummary != nil {
+		c.transformationSummary.Err = err
+		return c
+	}
+	c.transformationSummary = &pb.TransformationSummary{Err: err}
+	return c
+}
+func (c *Chunk) TransformationSummary() *pb.TransformationSummary { return c.transformationSummary }
