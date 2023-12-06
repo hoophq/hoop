@@ -17,6 +17,7 @@ import (
 	apiconnectionapps "github.com/runopsio/hoop/gateway/api/connectionapps"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	pluginstorage "github.com/runopsio/hoop/gateway/storagev2/plugin"
+	sessionstorage "github.com/runopsio/hoop/gateway/storagev2/session"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	pluginsslack "github.com/runopsio/hoop/gateway/transport/plugins/slack"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
@@ -142,7 +143,8 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 	sessionLabels := map[string]string{}
 
 	if sessionID != "" {
-		session, err := s.SessionService.FindOne(parseToLegacyUserContext(&gwctx.UserContext), sessionID)
+		storeCtx := storagev2.NewContext(gwctx.UserContext.UserID, gwctx.UserContext.OrgID, s.StoreV2)
+		session, err := sessionstorage.FindOne(storeCtx, sessionID)
 		if err != nil {
 			log.Errorf("Failed getting the session, err=%v", err)
 			sentry.CaptureException(err)

@@ -40,9 +40,10 @@ type RunbookRequest struct {
 }
 
 type RunbookErrResponse struct {
-	Message   string  `json:"message"`
-	ExitCode  *int    `json:"exit_code"`
-	SessionID *string `json:"session_id"`
+	Message           string  `json:"message"`
+	ExitCode          *int    `json:"exit_code"`
+	SessionID         *string `json:"session_id"`
+	ExecutionTimeMili int64   `json:"execution_time"`
 }
 
 type RunbookList struct {
@@ -264,9 +265,10 @@ func (h *Handler) RunExec(c *gin.Context) {
 			resp.GetExitCode(), resp.Truncated, len(resp.ErrorMessage()))
 		if resp.IsError() {
 			c.JSON(http.StatusBadRequest, &RunbookErrResponse{
-				SessionID: &resp.SessionID,
-				Message:   resp.ErrorMessage(),
-				ExitCode:  resp.ExitCode,
+				SessionID:         &resp.SessionID,
+				Message:           resp.ErrorMessage(),
+				ExitCode:          resp.ExitCode,
+				ExecutionTimeMili: resp.ExecutionTimeMili,
 			})
 			return
 		}

@@ -28,7 +28,6 @@ import (
 	"github.com/runopsio/hoop/gateway/runbooks"
 	"github.com/runopsio/hoop/gateway/security"
 	"github.com/runopsio/hoop/gateway/security/idp"
-	"github.com/runopsio/hoop/gateway/session"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/user"
 	"go.uber.org/zap"
@@ -39,7 +38,6 @@ type (
 		AgentHandler      agent.Handler
 		ConnectionHandler connection.Handler
 		UserHandler       user.Handler
-		SessionHandler    session.Handler
 		IndexerHandler    indexer.Handler
 		ReviewHandler     review.Handler
 		RunbooksHandler   runbooks.Handler
@@ -224,27 +222,6 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.AdminOnly,
 		api.AgentHandler.Evict)
 
-	// DEPRECATED in flavor of /api/agents
-	// route.POST("/clientkeys",
-	// 	api.Authenticate,
-	// 	api.TrackRequest(analytics.EventCreateClientKey),
-	// 	api.AdminOnly,
-	// 	apiclientkeys.Post)
-	// route.GET("/clientkeys",
-	// 	api.Authenticate,
-	// 	api.TrackRequest(analytics.EventFetchClientKey),
-	// 	api.AdminOnly,
-	// 	apiclientkeys.List)
-	// route.GET("/clientkeys/:name",
-	// 	api.Authenticate,
-	// 	api.TrackRequest(analytics.EventFetchClientKey),
-	// 	api.AdminOnly,
-	// 	apiclientkeys.Get)
-	// route.PUT("/clientkeys/:name",
-	// 	api.Authenticate,
-	// 	api.AdminOnly,
-	// 	apiclientkeys.Put)
-
 	route.POST("/plugins",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventCreatePlugin),
@@ -267,31 +244,25 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.AdminOnly,
 		apiplugins.PutConfig)
 
+	// alias routes
 	route.GET("/plugins/audit/sessions/:session_id",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventFetchSessions),
-		api.SessionHandler.FindOne)
-	// DEPRECATED
-	// route.GET("/plugins/audit/sessions/:session_id/status",
-	// 	api.Authenticate,
-	// 	api.SessionHandler.StatusHistory)
+		sessionapi.Get)
 	route.GET("/plugins/audit/sessions",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventFetchSessions),
-		api.SessionHandler.FindAll)
+		sessionapi.List)
 
 	route.GET("/sessions/:session_id",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventFetchSessions),
-		api.SessionHandler.FindOne)
-	// route.GET("/sessions/:session_id/status",
-	// 	api.Authenticate,
-	// 	api.SessionHandler.StatusHistory)
-	route.GET("/sessions/:session_id/download", api.SessionHandler.DownloadSession)
+		sessionapi.Get)
+	route.GET("/sessions/:session_id/download", sessionapi.DownloadSession)
 	route.GET("/sessions",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventFetchSessions),
-		api.SessionHandler.FindAll)
+		sessionapi.List)
 	route.POST("/sessions",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventApiExecSession),
@@ -299,7 +270,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.POST("/sessions/:session_id/exec",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventApiExecReview),
-		api.SessionHandler.RunReviewedExec)
+		sessionapi.RunReviewedExec)
 
 	route.POST("/plugins/indexer/sessions/search",
 		api.Authenticate,

@@ -8,12 +8,11 @@ import (
 	"github.com/runopsio/hoop/common/log"
 
 	"github.com/blevesearch/bleve/v2"
-	"github.com/runopsio/hoop/gateway/session"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	pluginstorage "github.com/runopsio/hoop/gateway/storagev2/plugin"
+	sessionstorage "github.com/runopsio/hoop/gateway/storagev2/session"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
-	"github.com/runopsio/hoop/gateway/user"
 )
 
 var jobMutex = sync.RWMutex{}
@@ -26,11 +25,11 @@ var jobMutex = sync.RWMutex{}
 // downtime in search items in the current index.
 //
 // See also: http://blevesearch.com/docs/IndexAlias/
-func StartJobIndex(sessionStore *session.Storage) error {
+func StartJobIndex() error {
 	jobMutex.Lock()
 	defer jobMutex.Unlock()
 	startDate := time.Now().UTC().Add(-defaultIndexPeriod)
-	sessionsByOrg, err := listAllSessionsID(sessionStore, startDate)
+	sessionsByOrg, err := listAllSessionsID(startDate)
 	if err != nil {
 		return err
 	}
@@ -61,7 +60,8 @@ func StartJobIndex(sessionStore *session.Storage) error {
 				batch = newIndex.NewBatch()
 				batchCount = 0
 			}
-			sess, err := sessionStore.FindOne(&user.Context{Org: &user.Org{Id: orgID}}, sessionID)
+			storeCtx := storagev2.NewOrganizationContext(orgID, storagev2.NewStorage(nil))
+			sess, err := sessionstorage.FindOne(storeCtx, sessionID)
 			if err != nil {
 				log.Printf("job=index, org=%v, session=%v - error getting session, reason=%v", orgIDShort, sessionID, err)
 				continue
@@ -90,8 +90,8 @@ func StartJobIndex(sessionStore *session.Storage) error {
 	return nil
 }
 
-func listAllSessionsID(s *session.Storage, startDate time.Time) (map[string][]string, error) {
-	sessionList, err := s.ListAllSessionsID(startDate)
+func listAllSessionsID(startDate time.Time) (map[string][]string, error) {
+	sessionList, err := sessionstorage.ListAllSessionsID(startDate)
 	if err != nil {
 		return nil, err
 	}

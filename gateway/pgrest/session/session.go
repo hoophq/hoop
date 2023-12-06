@@ -58,7 +58,7 @@ func (s *session) Upsert(ctx pgrest.OrgContext, sess types.Session) (err error) 
 	case types.SessionStatusDone:
 		blobStreamID := uuid.NewString()
 		defer func() {
-			if err != nil {
+			if err != nil || len(sess.NonIndexedStream["stream"]) == 0 {
 				return
 			}
 			err = pgrest.New("/blobs").Create(map[string]any{

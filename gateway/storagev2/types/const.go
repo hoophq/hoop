@@ -61,3 +61,13 @@ const (
 	SessionStatusReady = "ready"
 	SessionStatusDone  = "done"
 )
+
+var AvailableSessionOptions = []SessionOptionKey{
+	SessionOptionUser,
+	SessionOptionType,
+	SessionOptionConnection,
+	SessionOptionStartDate,
+	SessionOptionEndDate,
+	SessionOptionLimit,
+	SessionOptionOffset,
+}
