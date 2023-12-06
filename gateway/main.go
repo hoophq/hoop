@@ -26,14 +26,12 @@ import (
 	"github.com/runopsio/hoop/gateway/runbooks"
 	"github.com/runopsio/hoop/gateway/security"
 	"github.com/runopsio/hoop/gateway/security/idp"
-	"github.com/runopsio/hoop/gateway/session"
 	xtdb "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/transport"
 	"github.com/runopsio/hoop/gateway/user"
 
 	// plugins
-	"github.com/runopsio/hoop/gateway/transport/adminapi"
 	pluginsrbac "github.com/runopsio/hoop/gateway/transport/plugins/accesscontrol"
 	pluginsaudit "github.com/runopsio/hoop/gateway/transport/plugins/audit"
 	pluginsdcm "github.com/runopsio/hoop/gateway/transport/plugins/dcm"
@@ -93,7 +91,6 @@ func Run(listenAdmAddr string) {
 	agentService := agent.Service{Storage: &agent.Storage{Storage: s}}
 	connectionService := connection.Service{Storage: &connection.Storage{Storage: s}}
 	userService := user.Service{Storage: &user.Storage{Storage: s}}
-	sessionService := session.Service{Storage: &session.Storage{Storage: s}}
 	reviewService := review.Service{Storage: &review.Storage{Storage: s}}
 	notificationService := getNotification()
 	securityService := security.Service{
@@ -113,7 +110,6 @@ func Run(listenAdmAddr string) {
 		AgentHandler:      agent.Handler{Service: &agentService},
 		ConnectionHandler: connection.Handler{Service: &connectionService},
 		UserHandler:       user.Handler{Service: &userService, Analytics: analyticsService},
-		SessionHandler:    session.Handler{ApiURL: apiURL, Service: &sessionService, ConnectionService: &connectionService},
 		IndexerHandler:    indexer.Handler{},
 		ReviewHandler:     review.Handler{Service: &reviewService},
 		SecurityHandler:   security.Handler{Service: &securityService},
@@ -130,7 +126,6 @@ func Run(listenAdmAddr string) {
 		AgentService:         agentService,
 		ConnectionService:    connectionService,
 		UserService:          userService,
-		SessionService:       sessionService,
 		ReviewService:        reviewService,
 		NotificationService:  notificationService,
 		IDProvider:           idProvider,
@@ -153,7 +148,7 @@ func Run(listenAdmAddr string) {
 			idProvider.ApiURL,
 		),
 		pluginsaudit.New(),
-		pluginsindex.New(&session.Storage{Storage: s}),
+		pluginsindex.New(),
 		pluginsdlp.New(),
 		pluginsrbac.New(),
 		pluginswebhooks.New(&review.Service{Storage: &review.Storage{Storage: s}, TransportService: g}),
@@ -198,7 +193,6 @@ func Run(listenAdmAddr string) {
 
 	log.Infof("profile=%v - starting servers", profile)
 	go g.StartRPCServer()
-	go adminapi.RunServer(listenAdmAddr)
 	a.StartAPI(sentryStarted)
 }
 

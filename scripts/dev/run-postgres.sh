@@ -3,6 +3,7 @@
 set -eo pipefail
 
 # clear before starting
+docker stop hoopdevpg 2&> /dev/null || true
 rm -rf $HOME/.hoop/dev/pgdata
 mkdir -p $HOME/.hoop/dev/pgdata
 
@@ -12,7 +13,6 @@ PGUSER=hoopdevuser
 PGDATABASE=hoopdevdb
 PGPASSWORD="1a2b3c4d"
 
-docker stop hoopdevpg 2&> /dev/null || true
 docker run -p 5449:5432 -d --rm --name hoopdevpg \
     -e POSTGRES_USER=$PGUSER \
     -e POSTGRES_DB=$PGDATABASE \

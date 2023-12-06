@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/grpc"
@@ -55,9 +56,10 @@ type (
 		ExitCode int
 	}
 	ExecErrResponse struct {
-		Message   string  `json:"message"`
-		ExitCode  *int    `json:"exit_code"`
-		SessionID *string `json:"session_id"`
+		Message           string  `json:"message"`
+		ExitCode          *int    `json:"exit_code"`
+		SessionID         *string `json:"session_id"`
+		ExecutionTimeMili int64   `json:"execution_time"`
 	}
 	Options struct {
 		OrgID          string
@@ -79,12 +81,13 @@ func (r *clientExec) Close() {
 }
 
 type Response struct {
-	ExitCode  *int   `json:"exit_code"`
-	SessionID string `json:"session_id"`
-	HasReview bool   `json:"has_review"`
-	Output    string `json:"output"`
-	Truncated bool   `json:"truncated"`
-	err       error
+	ExitCode          *int   `json:"exit_code"`
+	SessionID         string `json:"session_id"`
+	HasReview         bool   `json:"has_review"`
+	Output            string `json:"output"`
+	Truncated         bool   `json:"truncated"`
+	ExecutionTimeMili int64  `json:"execution_time"`
+	err               error
 }
 
 func (r *Response) setExitCode(code int) *Response {
@@ -191,7 +194,9 @@ func (c *clientExec) Run(inputPayload []byte, clientEnvVars map[string]string, c
 		}
 		openSessionSpec[pb.SpecClientExecArgsKey] = encClientArgs
 	}
+	now := time.Now().UTC()
 	resp := c.run(inputPayload, openSessionSpec)
+	resp.ExecutionTimeMili = time.Since(now).Milliseconds()
 	resp.SessionID = c.sessionID
 	return resp
 }

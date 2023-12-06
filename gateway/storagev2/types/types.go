@@ -177,6 +177,28 @@ type SessionNonIndexedEventStreamList map[edn.Keyword][]SessionEventStream
 type SessionScript map[edn.Keyword]string
 type SessionLabels map[string]string
 
+type SessionOptionKey string
+type SessionOption struct {
+	OptionKey SessionOptionKey
+	OptionVal any
+}
+
+const (
+	SessionOptionUser       SessionOptionKey = "user"
+	SessionOptionType       SessionOptionKey = "type"
+	SessionOptionConnection SessionOptionKey = "connection"
+	SessionOptionStartDate  SessionOptionKey = "start_date"
+	SessionOptionEndDate    SessionOptionKey = "end_date"
+	SessionOptionOffset     SessionOptionKey = "offset"
+	SessionOptionLimit      SessionOptionKey = "limit"
+)
+
+type SessionList struct {
+	Items       []Session `json:"data"`
+	Total       int64     `json:"total"`
+	HasNextPage bool      `json:"has_next_page"`
+}
+
 type Session struct {
 	ID          string             `json:"id"           edn:"xt/id"`
 	OrgID       string             `json:"org_id"       edn:"session/org-id"`
