@@ -134,7 +134,7 @@ func Run(listenAdmAddr string) {
 		PluginRegistryURL:    os.Getenv("PLUGIN_REGISTRY_URL"),
 		PyroscopeIngestURL:   os.Getenv("PYROSCOPE_INGEST_URL"),
 		PyroscopeAuthToken:   os.Getenv("PYROSCOPE_AUTH_TOKEN"),
-		AgentSentryDSN:       os.Getenv("AGENT_SENTRY_DSN"),
+		AgentSentryDSN:       "https://a6ecaeba31684f02ab8606a59301cd15@o4504559799566336.ingest.sentry.io/4504571759230976",
 		Analytics:            analyticsService,
 
 		StoreV2: storev2,
@@ -179,7 +179,7 @@ func Run(listenAdmAddr string) {
 		}
 	}
 	sentryStarted, err := monitoring.StartSentry(nil, monitoring.SentryConfig{
-		DSN:         os.Getenv("SENTRY_DSN"),
+		DSN:         "https://7c3bcdf7772943b9b70bcf69b07408ae@o4504559799566336.ingest.sentry.io/4504559805923328",
 		Environment: g.IDProvider.ApiURL,
 	})
 	if err != nil {

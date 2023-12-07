@@ -12,7 +12,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/common/dsnkeys"
 	"github.com/runopsio/hoop/common/log"
-	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/common/version"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	clientkeysstorage "github.com/runopsio/hoop/gateway/storagev2/clientkeys"
@@ -225,10 +224,6 @@ func (api *Api) AuthenticateAgent(c *gin.Context) {
 }
 
 func (api *Api) validateClaims(c *gin.Context) (string, error) {
-	if api.Profile == pb.DevProfile {
-		return "test-user", nil
-	}
-
 	tokenHeader := c.GetHeader("authorization")
 	tokenParts := strings.Split(tokenHeader, " ")
 	if len(tokenParts) != 2 || tokenParts[0] != "Bearer" || tokenParts[1] == "" {
