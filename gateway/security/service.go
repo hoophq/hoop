@@ -60,9 +60,6 @@ const (
 var errAuthDisabled = fmt.Errorf("authentication is disabled when running on dev mode")
 
 func (s *Service) Login(redirect string) (string, error) {
-	if s.Provider.Profile == pb.DevProfile {
-		return "", errAuthDisabled
-	}
 	stateUID := uuid.NewString()
 	if _, err := s.Storage.PersistLogin(&login{Id: stateUID, Redirect: redirect}); err != nil {
 		return "", err
@@ -282,9 +279,6 @@ func (s *Service) signupMultiTenant(context *user.Context, sub string, idTokenCl
 
 	if context.User == nil {
 		status := user.StatusReviewing
-		if s.Provider.Issuer != idp.DefaultProviderIssuer {
-			status = user.StatusActive
-		}
 
 		if newOrg {
 			status = user.StatusActive

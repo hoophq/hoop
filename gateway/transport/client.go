@@ -490,19 +490,6 @@ func (s *Server) ReviewStatusChange(ctx *user.Context, rev *types.Review) {
 	}
 }
 
-func (s *Server) exchangeUserToken(token string) (string, error) {
-	if s.Profile == pb.DevProfile {
-		return "test-user", nil
-	}
-
-	sub, err := s.IDProvider.VerifyAccessToken(token)
-	if err != nil {
-		return "", err
-	}
-
-	return sub, nil
-}
-
 func (s *Server) loadConnectPlugins(ctx *types.APIContext, pctx plugintypes.Context) ([]pluginConfig, error) {
 	pluginsConfig := make([]pluginConfig, 0)
 	var nonRegisteredPlugins []string

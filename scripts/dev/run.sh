@@ -7,33 +7,18 @@ if ! [[ -f .env ]]; then
   exit 1
 fi
 
-set -o allexport
-source .env
-set +o allexport
+while read -r LINE; do
+  if [[ $LINE == *'='* ]] && [[ $LINE != '#'* ]] && [[ $LINE == *"PG_"* ]]; then
+    ENV_VAR=$(echo $LINE | envsubst)
+    eval export $(echo $ENV_VAR)
+  fi
+done < .env
 
 : "${PG_HOST:?Variable not set or empty}"
 : "${PG_DB:?Variable not set or empty}"
 : "${PG_USER:?Variable not set or empty}"
 : "${PG_PASSWORD:?Variable not set or empty}"
 : "${PG_PORT:=5432}"
-
-: "${IDP_CLIENT_ID:?Variable not set or empty}"
-: "${IDP_CLIENT_SECRET:?Variable not set or empty}"
-: "${IDP_ISSUER:?Variable not set or empty}"
-
-: "${API_URL:=http://localhost:8009}"
-: "${GRPC_URL:=http://127.0.0.1:8010}"
-: "${ORG_MULTI_TENANT:=false}"
-: "${GIN_MODE:=release}"
-: "${AUTO_REGISTER:=1}"
-: "${PORT:=8009}"
-: "${XTDB_ADDRESS:=http://127.0.0.1:3001}"
-: "${LOG_LEVEL:=info}"
-: "${LOG_ENCODING:=console}"
-: "${ADMIN_USERNAME:=admin}"
-: "${PLUGIN_REGISTRY_URL:=https://pluginregistry.s3.amazonaws.com/packages.json}"
-: "${NODE_API_URL:=http://localhost:4001}"
-
 
 trap ctrl_c INT
 

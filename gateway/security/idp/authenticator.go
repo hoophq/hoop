@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -12,27 +13,19 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/runopsio/hoop/common/log"
-	pb "github.com/runopsio/hoop/common/proto"
 	"golang.org/x/oauth2"
 )
 
-const (
-	DefaultProviderIssuer   = "https://hoophq.us.auth0.com/"
-	defaultProviderClientID = "DatIOCxntNv8AZrQLVnLb3tr1Y3oVwGW"
-	defaultProviderAudience = DefaultProviderIssuer + "api/v2/"
-)
-
-var invalidAuthErr = errors.New("invalid auth")
-
 type (
 	Provider struct {
-		Issuer       string
-		Audience     string
-		ClientID     string
-		ClientSecret string
-		Profile      string
-		CustomScopes string
-		ApiURL       string
+		Issuer           string
+		Audience         string
+		ClientID         string
+		ClientSecret     string
+		Profile          string
+		CustomScopes     string
+		ApiURL           string
+		authWithUserInfo bool
 
 		*oidc.Provider
 		oauth2.Config
@@ -55,7 +48,7 @@ func (p *Provider) VerifyIDToken(token *oauth2.Token) (*oidc.IDToken, error) {
 }
 
 func (p *Provider) VerifyAccessToken(accessToken string) (string, error) {
-	if len(strings.Split(accessToken, ".")) != 3 {
+	if len(strings.Split(accessToken, ".")) != 3 || p.authWithUserInfo {
 		return p.userInfoEndpoint(accessToken)
 	}
 
@@ -102,11 +95,7 @@ func NewProvider(profile string) *Provider {
 
 	apiURL := os.Getenv("API_URL")
 	if apiURL == "" {
-		if profile == pb.DevProfile {
-			apiURL = "http://localhost:8009"
-		} else {
-			log.Fatal("API_URL environment variable is required")
-		}
+		log.Fatal("API_URL environment variable is required")
 	}
 	apiURL = strings.TrimSuffix(apiURL, "/")
 
@@ -116,28 +105,34 @@ func NewProvider(profile string) *Provider {
 		ApiURL:  apiURL,
 	}
 
-	if profile == pb.DevProfile {
-		return provider
-	}
-
 	provider.Issuer = os.Getenv("IDP_ISSUER")
 	provider.ClientID = os.Getenv("IDP_CLIENT_ID")
 	provider.ClientSecret = os.Getenv("IDP_CLIENT_SECRET")
 	provider.Audience = os.Getenv("IDP_AUDIENCE")
 	provider.CustomScopes = os.Getenv("IDP_CUSTOM_SCOPES")
 
+	issuerURL, err := url.Parse(provider.Issuer)
+	if err != nil {
+		log.Fatalf("failed parsing IDP_ISSUER url, err=%v", err)
+	}
+	provider.authWithUserInfo = issuerURL.Query().Get("_userinfo") == "1"
 	if provider.ClientSecret == "" {
 		log.Fatal(errors.New("missing required ID provider variables"))
 	}
-
-	if provider.Issuer == "" {
-		provider.Issuer = DefaultProviderIssuer
+	qs := issuerURL.Query()
+	qs.Del("_userinfo")
+	encQueryStr := qs.Encode()
+	if encQueryStr != "" {
+		encQueryStr = "?" + encQueryStr
 	}
-
-	if provider.ClientID == "" {
-		provider.ClientID = defaultProviderClientID
-	}
-
+	// scheme://host:port/path?query#fragment
+	provider.Issuer = fmt.Sprintf("%s://%s%s%s",
+		issuerURL.Scheme,
+		issuerURL.Hostname(),
+		issuerURL.Path,
+		encQueryStr,
+	)
+	log.Infof("issuer-url=%s", provider.Issuer)
 	oidcProviderConfig, err := newProviderConfig(provider.Context, provider.Issuer)
 	if err != nil {
 		log.Fatal(err)
@@ -147,7 +142,8 @@ func NewProvider(profile string) *Provider {
 	if provider.CustomScopes != "" {
 		scopes = addCustomScopes(scopes, provider.CustomScopes)
 	}
-	log.Infof("loaded oidc provider configuration, auth=%v, token=%v, userinfo=%v, jwks=%v, algorithms=%v, scopes=%v",
+	log.Infof("loaded oidc provider configuration, with-user-info=%v, auth=%v, token=%v, userinfo=%v, jwks=%v, algorithms=%v, scopes=%v",
+		provider.authWithUserInfo,
 		oidcProviderConfig.AuthURL,
 		oidcProviderConfig.TokenURL,
 		oidcProviderConfig.UserInfoURL,

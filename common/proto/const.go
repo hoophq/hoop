@@ -30,10 +30,6 @@ const (
 	ConnectionTypeMSSQL       string = "mssql"
 	ConnectionTypeTCP         string = "tcp"
 
-	DevProfile = "dev"
-
-	ProviderOkta = "okta"
-
 	ConnectionOriginAgent              = "agent"
 	ConnectionOriginClient             = "client"
 	ConnectionOriginClientProxyManager = "client-proxymanager"

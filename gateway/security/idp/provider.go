@@ -44,10 +44,6 @@ func unmarshalResp(r *http.Response, body []byte, v interface{}) error {
 // custom open id suffixes. It has the same logic of oidc.NewProvider(...)
 func newProviderConfig(ctx context.Context, issuer string) (*oidc.ProviderConfig, error) {
 	openidConfigSuffix := "/.well-known/openid-configuration"
-	// switch {
-	// case strings.Contains(issuer, "okta.com"):
-	// 	openidConfigSuffix = "/.well-known/oauth-authorization-server"
-	// }
 	wellKnown := strings.TrimSuffix(issuer, "/") + openidConfigSuffix
 	req, err := http.NewRequest("GET", wellKnown, nil)
 	if err != nil {
