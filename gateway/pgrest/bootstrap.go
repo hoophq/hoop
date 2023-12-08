@@ -53,7 +53,7 @@ func Run() (err error) {
 	}
 
 	// migration
-	m, err := migrate.New("file:///app/migrations", toPostgresURI())
+	m, err := migrate.New("file:///app/migrations", PgConnectionURI())
 	if err != nil {
 		return fmt.Errorf("failed initializing db migration, err=%v", err)
 	}
@@ -85,7 +85,7 @@ func Run() (err error) {
 		"PGRST_LOG_LEVEL=error",
 		"PGRST_SERVER_HOST=!4",
 		"PGRST_SERVER_PORT=8008",
-		fmt.Sprintf("PGRST_DB_URI=%s", toPostgresURI()),
+		fmt.Sprintf("PGRST_DB_URI=%s", PgConnectionURI()),
 		fmt.Sprintf("PGRST_JWT_SECRET=%s", string(jwtSecretKey)),
 	}
 
@@ -128,7 +128,12 @@ func Run() (err error) {
 	return nil
 }
 
-func toPostgresURI() string {
+func PgConnectionURI() string {
+	pgDbURI := os.Getenv("POSTGRES_DB_URI")
+	if pgDbURI != "" {
+		return pgDbURI
+	}
+	log.Warnf("using legacy postgres connection uri configuration, sslmode is disabled. Please use POSTGRES_DB_URI instead")
 	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
 		os.Getenv("PG_USER"),
 		os.Getenv("PG_PASSWORD"),
@@ -190,7 +195,7 @@ var dropStatements = []string{
 
 func provisionPgRoles(roleName string) error {
 	log.Infof("provisioning default role %s", roleName)
-	db, err := sql.Open("postgres", toPostgresURI())
+	db, err := sql.Open("postgres", PgConnectionURI())
 	if err != nil {
 		return fmt.Errorf("failed opening connection with postgres, err=%v", err)
 	}
