@@ -131,6 +131,7 @@ func Run() (err error) {
 func PgConnectionURI() string {
 	pgDbURI := os.Getenv("POSTGRES_DB_URI")
 	if pgDbURI != "" {
+		log.Infof("using POSTGRES_DB_URI env configuration")
 		return pgDbURI
 	}
 	log.Warnf("using legacy postgres connection uri configuration, sslmode is disabled. Please use POSTGRES_DB_URI instead")
