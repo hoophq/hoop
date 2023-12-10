@@ -108,7 +108,8 @@ func (m *MessageReviewRequest) sessionTime() string {
 }
 
 func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) error {
-	title := fmt.Sprintf("Review Session %s", msg.SessionID)
+	title := fmt.Sprintf("<%s|%s>", msg.WebappURL, "Open Review Details")
+	
 	header := slack.NewHeaderBlock(&slack.TextBlockObject{
 		Type: slack.PlainTextType,
 		Text: title,
