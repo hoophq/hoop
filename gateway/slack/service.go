@@ -142,16 +142,9 @@ func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) error {
 		scriptBlock = slack.NewSectionBlock(&slack.TextBlockObject{Type: slack.PlainTextType, Text: "-"}, nil, nil)
 	}
 
-	// URI to the review at portal
-	reviewLocation := slack.NewSectionBlock(&slack.TextBlockObject{
-		Type: slack.MarkdownType,
-		Text: fmt.Sprintf("_Details: <%s|%s>_", msg.WebappURL, msg.ID),
-	}, nil, nil)
-
 	blocks := []slack.Block{
 		slack.NewDividerBlock(),
 		header,
-		reviewLocation,
 		slack.NewDividerBlock(),
 
 		metaSection1,
