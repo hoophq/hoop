@@ -45,9 +45,8 @@ func New() *Storage {
 	return s
 }
 
-func (s *Storage) Address() string {
-	return s.address
-}
+func (s *Storage) Address() string       { return s.address }
+func (s *Storage) SetURL(xtdbURL string) { s.address = xtdbURL }
 
 // buildTrxPutEdn build transaction put operation as string
 func (s *Storage) buildTrxPutEdn(trxs ...TxEdnStruct) (string, error) {

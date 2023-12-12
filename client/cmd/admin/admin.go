@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"runtime"
 
+	"github.com/runopsio/hoop/client/cmd/admin/migrate"
 	"github.com/runopsio/hoop/client/cmd/styles"
 	clientconfig "github.com/runopsio/hoop/client/config"
 	"github.com/runopsio/hoop/common/version"
@@ -21,7 +22,7 @@ func init() {
 	MainCmd.AddCommand(createCmd)
 	MainCmd.AddCommand(gatewayInfoCmd)
 	MainCmd.AddCommand(openWebhooksDashboardCmd)
-	MainCmd.AddCommand(targetToConnection)
+	MainCmd.AddCommand(migrate.MainCmd)
 }
 
 var MainCmd = &cobra.Command{

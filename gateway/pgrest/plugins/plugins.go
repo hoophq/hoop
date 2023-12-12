@@ -74,7 +74,7 @@ func (p *plugins) Upsert(ctx pgrest.OrgContext, existentPlugin, pl *types.Plugin
 		Upsert(reqBody).
 		Error()
 	if err != nil {
-		return err
+		return fmt.Errorf("plugin_connections: %v", err)
 	}
 	// best effort, delete all non-enabled plugin connections
 	_ = pgrest.New("/plugin_connections?org_id=eq.%s&enabled=is.false", pl.OrgID).Delete()

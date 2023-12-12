@@ -44,9 +44,13 @@ type Client struct {
 	accessToken string
 }
 
-func New(path string, a ...any) *Client { return newClient("", "", fmt.Sprintf(path, a...)) }
+func SetRoleName(name string) { roleName = name }
+func SetJwtKey(key []byte)    { jwtSecretKey = key }
+func SetBaseURL(url *url.URL) { baseURL = url }
+func DisableRollout()         { Rollout = false }
 
-func newClient(org, email, path string) *Client {
+func New(path string, a ...any) *Client { return newClient(fmt.Sprintf(path, a...)) }
+func newClient(path string) *Client {
 	now := time.Now().UTC()
 	j := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"role": roleName,

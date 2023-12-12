@@ -2,7 +2,6 @@ package pgconnections
 
 import (
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/gateway/pgrest"
@@ -160,7 +159,7 @@ func (c *connections) Delete(ctx pgrest.OrgContext, name string) error {
 		Error()
 }
 
-func (c *connections) Create(ctx pgrest.OrgContext, conn pgrest.Connection) error {
+func (c *connections) Upsert(ctx pgrest.OrgContext, conn pgrest.Connection) error {
 	return pgrest.New("/rpc/update_connection").Create(map[string]any{
 		"id":              conn.ID,
 		"org_id":          ctx.GetOrgID(),
@@ -170,19 +169,6 @@ func (c *connections) Create(ctx pgrest.OrgContext, conn pgrest.Connection) erro
 		"type":            conn.Type,
 		"command":         conn.Command,
 		"envs":            conn.Envs,
-	}).Error()
-}
-
-func (c *connections) Upsert(ctx pgrest.OrgContext, reqConn *types.Connection) error {
-	return pgrest.New("/connections").Upsert(map[string]any{
-		"id":              reqConn.Id,
-		"org_id":          reqConn.OrgId,
-		"name":            reqConn.Name,
-		"command":         reqConn.Command,
-		"type":            reqConn.Type,
-		"agent_id":        toAgentID(reqConn.AgentId),
-		"legacy_agent_id": toLegacyAgentID(reqConn.AgentId),
-		"updated_at":      time.Now().UTC().Format(time.RFC3339),
 	}).Error()
 }
 

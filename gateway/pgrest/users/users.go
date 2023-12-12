@@ -41,7 +41,7 @@ func (u *user) Upsert(v pgrest.User) (err error) {
 		DecodeInto(&existentUsr); err != nil && err != pgrest.ErrNotFound {
 		return fmt.Errorf("failed fetching user: %v", err)
 	}
-	userID := uuid.NewString()
+	userID := uuid.NewSHA1(uuid.NameSpaceOID, []byte(v.Subject)).String()
 	if existentUsr.ID != "" {
 		userID = existentUsr.ID
 	}
