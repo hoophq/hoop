@@ -158,7 +158,12 @@ func loadConfig() (u *url.URL, jwtSecret []byte, err error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("PGREST_URL in wrong format, err=%v", err)
 	}
-	return pgrestUrl, []byte(base64.RawURLEncoding.EncodeToString(secretRandomBytes)), nil
+	encSecretKey := []byte(base64.RawURLEncoding.EncodeToString(secretRandomBytes))
+	// write the secret key to a file
+	// so it can be used by any internal ad-hoc process
+	_ = os.Remove("/app/pgrest-secret-key")
+	_ = os.WriteFile("/app/pgrest-secret-key", encSecretKey, 0400)
+	return pgrestUrl, encSecretKey, nil
 }
 
 var grantStatements = []string{

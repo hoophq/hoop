@@ -42,7 +42,7 @@ func (s *Storage) Persist(context *user.Context, c *Connection) (int64, error) {
 		for key, val := range c.Secret {
 			envs[key] = fmt.Sprintf("%v", val)
 		}
-		return 0, pgconnections.New().Create(context, pgrest.Connection{
+		return 0, pgconnections.New().Upsert(context, pgrest.Connection{
 			ID:            c.Id,
 			OrgID:         context.Org.Id,
 			AgentID:       c.AgentId,

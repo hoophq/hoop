@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 
 	"github.com/gin-gonic/gin"
@@ -33,6 +34,13 @@ func NewStorage(httpClient HTTPClient) *Store {
 	}
 	return s
 }
+
+func (s *Store) URL() *url.URL {
+	u, _ := url.Parse(s.address)
+	return u
+}
+
+func (s *Store) SetURL(xtdbURL string) { s.address = xtdbURL }
 
 func (s *Store) Put(trxs ...types.TxObject) (*types.TxResponse, error) {
 	return submitPutTx(s.client, s.address, trxs...)

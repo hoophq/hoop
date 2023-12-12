@@ -12,7 +12,15 @@ import (
 
 func Put(ctx *storage.Context, conn *types.Connection) error {
 	if pgrest.Rollout {
-		return pgconnections.New().Upsert(ctx, conn)
+		return pgconnections.New().Upsert(ctx, pgrest.Connection{
+			ID:            conn.Id,
+			OrgID:         ctx.OrgID,
+			AgentID:       conn.AgentId,
+			LegacyAgentID: conn.AgentId,
+			Name:          conn.Name,
+			Command:       conn.Command,
+			Type:          string(conn.Type),
+		})
 	}
 	_, err := ctx.Put(conn)
 	return err
@@ -23,7 +31,7 @@ func GetOneByName(ctx *storage.Context, name string) (*types.Connection, error) 
 		return pgconnections.New().FetchOneForExec(ctx, name)
 	}
 	payload := fmt.Sprintf(`{:query {
-		:find [(pull ?connection [*])] 
+		:find [(pull ?connection [*])]
 		:in [name org]
 		:where [[?connection :connection/name name]
                 [?connection :connection/org org]]}
