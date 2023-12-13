@@ -38,13 +38,14 @@ func shouldMigrate() (v bool) {
 	return true
 }
 
-// RunCore performs the migration from xtdb to postgrest.
+// RunCore performs the migration of core resources like
+// org, users, service accounts, agents, connections and plugins.
 func RunCore(xtdbURL, orgName string) {
 	store.SetURL(xtdbURL)
 	if !shouldMigrate() {
 		return
 	}
-	log.Infof("starting xtdb to postgrest migration")
+	log.Infof("starting xtdb to postgrest migration (core resources)")
 	// it will disable the rollout logic, allowing to obtain data
 	// from the xtdb storage, instead of falling back to the postgrest storage.
 	pgrest.DisableRollout()
@@ -64,4 +65,44 @@ func RunCore(xtdbURL, orgName string) {
 	migrateAgents(xtdbURL, org.Id)
 	migrateConnections(xtdbURL, org.Id)
 	migratePlugins(xtdbURL, org.Id)
+}
+
+// RunReviews performs the migration of reviews from xtdb to postgrest.
+func RunReviews(xtdbURL, orgName string) {
+	store.SetURL(xtdbURL)
+	if !shouldMigrate() {
+		return
+	}
+	log.Infof("starting xtdb to postgrest migration (review resources)")
+	userStore := user.Storage{Storage: storage.New()}
+	userStore.SetURL(xtdbURL)
+	org, err := userStore.GetOrgByName(orgName)
+	if err != nil || org == nil {
+		log.Warnf("pgrest migration: failed fetching default organization, err=%v", err)
+		return
+	}
+	// it will disable the rollout logic, allowing to obtain data
+	// from the xtdb storage, instead of falling back to the postgrest storage.
+	pgrest.DisableRollout()
+	migrateReviews(xtdbURL, org.Id)
+}
+
+// RunSessions performs the migration of sessions from xtdb to postgrest.
+func RunSessions(xtdbURL, orgName string, fromDate time.Time) {
+	store.SetURL(xtdbURL)
+	if !shouldMigrate() {
+		return
+	}
+	log.Infof("starting xtdb to postgrest migration (session resources)")
+	userStore := user.Storage{Storage: storage.New()}
+	userStore.SetURL(xtdbURL)
+	org, err := userStore.GetOrgByName(orgName)
+	if err != nil || org == nil {
+		log.Warnf("pgrest migration: failed fetching default organization, err=%v", err)
+		return
+	}
+	// it will disable the rollout logic, allowing to obtain data
+	// from the xtdb storage, instead of falling back to the postgrest storage.
+	pgrest.DisableRollout()
+	migrateSessions(xtdbURL, org.Id, fromDate)
 }
