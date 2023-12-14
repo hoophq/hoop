@@ -16,6 +16,7 @@ var store = storagev2.NewStorage(nil)
 type migrationState struct {
 	success int
 	failed  int
+	skip    int
 }
 
 // shouldMigrate validates if the postgrest and xtdb are running
@@ -88,7 +89,7 @@ func RunReviews(xtdbURL, orgName string) {
 }
 
 // RunSessions performs the migration of sessions from xtdb to postgrest.
-func RunSessions(xtdbURL, orgName string, fromDate time.Time) {
+func RunSessions(xtdbURL, orgName string, dryRun bool, fromDate time.Time) {
 	store.SetURL(xtdbURL)
 	if !shouldMigrate() {
 		return
@@ -104,5 +105,5 @@ func RunSessions(xtdbURL, orgName string, fromDate time.Time) {
 	// it will disable the rollout logic, allowing to obtain data
 	// from the xtdb storage, instead of falling back to the postgrest storage.
 	pgrest.DisableRollout()
-	migrateSessions(xtdbURL, org.Id, fromDate)
+	migrateSessions(xtdbURL, org.Id, dryRun, fromDate)
 }

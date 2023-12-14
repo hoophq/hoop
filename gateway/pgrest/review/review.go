@@ -2,6 +2,7 @@ package pgreview
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/gateway/pgrest"
@@ -16,6 +17,10 @@ func (r *review) Upsert(rev *types.Review) error {
 	var blobInputID *string
 	if rev.Input != "" {
 		blobInputID = toStringPtr(uuid.NewString())
+	}
+	var createdAt string
+	if !rev.CreatedAt.IsZero() {
+		createdAt = rev.CreatedAt.Format(time.RFC3339)
 	}
 	err := pgrest.New("/reviews?on_conflict=org_id,session_id").Upsert(map[string]any{
 		"id":                  rev.Id,
@@ -34,6 +39,8 @@ func (r *review) Upsert(rev *types.Review) error {
 		"owner_name":          rev.ReviewOwner.Name,
 		"owner_slack_id":      rev.ReviewOwner.SlackID,
 		"revoked_at":          rev.RevokeAt,
+		// required only for migrating resources from xtdb to postgrest
+		"created_at": toStringPtr(createdAt),
 	}).Error()
 	if err != nil {
 		return fmt.Errorf("failed creating or updating review, err=%v", err)

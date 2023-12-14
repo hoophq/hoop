@@ -22,6 +22,7 @@ var (
 	xtdbURLFlag      string
 	orgNameFlag      string
 	fromDateFlag     string
+	dryRunFlag       bool
 )
 
 func defaultPgRestRole() string {
@@ -55,7 +56,8 @@ func init() {
 	sessionResourcesCmd.Flags().StringVar(&jwtSecretKeyFlag, "key", defaultJwtSecretKey(), "The jwt secret key to generate access tokens")
 	sessionResourcesCmd.Flags().StringVar(&xtdbURLFlag, "xtdb-url", os.Getenv("XTDB_ADDRESS"), "The address of the xtdb server")
 	sessionResourcesCmd.Flags().StringVar(&orgNameFlag, "org", "default", "The name of the organization to migrate")
-	sessionResourcesCmd.Flags().StringVar(&fromDateFlag, "from-date", "", "The timestamp to start migrating sessions from, format: 2023-12-29")
+	sessionResourcesCmd.Flags().StringVar(&fromDateFlag, "from-date", "", "The timestamp to start migrating sessions from, format: YYYY-MM-DD")
+	sessionResourcesCmd.Flags().BoolVar(&dryRunFlag, "dry-run", false, "Don't run the migration, just count the sessions")
 
 	MainCmd.AddCommand(coreResourcesCmd)
 	MainCmd.AddCommand(sessionResourcesCmd)
@@ -113,6 +115,6 @@ var sessionResourcesCmd = &cobra.Command{
 		if err != nil {
 			styles.PrintErrorAndExit("fail to parse --from-date, err=%v", err)
 		}
-		xtdbmigration.RunSessions(xtdbURLFlag, orgNameFlag, fromDate.UTC())
+		xtdbmigration.RunSessions(xtdbURLFlag, orgNameFlag, dryRunFlag, fromDate.UTC())
 	},
 }

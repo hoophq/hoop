@@ -22,7 +22,7 @@ const (
 
 var (
 	zlog  = NewDefaultLogger()
-	sugar = zlog.Sugar().With("runtime", "go")
+	sugar = zlog.Sugar()
 
 	// aliases
 	Printf                = sugar.Infof
