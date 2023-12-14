@@ -48,11 +48,11 @@ func FindOne(storageCtx *storagev2.Context, sessionID string) (*types.Session, e
 	}
 	// the user id is used to enforce querying by the user when using xtdb
 	payload := fmt.Sprintf(`{:query {
-		:find [(pull ?session [*])]
-		:in [org-id session-id user-id]
-		:where [[?session :session/org-id org-id]
-          	[?session :xt/id session-id]
-						[?session :session/user-id user-id]]}
+        :find [(pull ?session [*])]
+        :in [org-id session-id user-id]
+        :where [[?session :session/org-id org-id]
+                [?session :xt/id session-id]
+                [?session :session/user-id user-id]]}
 		:in-args [%q %q %q]}`, storageCtx.OrgID, sessionID, storageCtx.UserID)
 
 	b, err := storageCtx.Query(payload)
@@ -266,21 +266,36 @@ func queryDecoder(ctx *storagev2.Context, query string, into any, args ...any) e
 	return edn.Unmarshal(httpBody, into)
 }
 
-func ListAllSessionsID(fromDate time.Time) ([]*types.Session, error) {
+func ListAllSessionsID(ctx *storagev2.Context, fromDate time.Time) ([]*types.Session, error) {
 	if pgrest.Rollout {
 		return pgsession.New().FetchAllFromDate(fromDate)
 	}
-	ctx := storagev2.NewStorage(nil)
 	query := fmt.Sprintf(`
     {:query {
-        :find [id org-id]
+        :find [id org-id start-date]
         :in [arg-start-date]
-        :keys [xt/id session/org-id]
+        :keys [xt/id session/org-id session/start-date]
         :where [[?s :xt/id id]
                 [?s :session/org-id org-id]
                 [?s :session/start-date start-date]
-                [(> start-date arg-start-date)]]}
+                [(> start-date arg-start-date)]]
+		:order-by [[start-date :asc]]}
     :in-args [#inst%q]}`, fromDate.Format(time.RFC3339))
+
+	if ctx.OrgID != "" {
+		query = fmt.Sprintf(`{:query {
+			:find [id org-id user-id start-date]
+			:in [arg-start-date arg-org-id]
+			:keys [xt/id session/org-id session/user-id session/start-date]
+			:where [[?s :xt/id id]
+					[?s :session/org-id arg-org-id]
+					[?s :session/org-id org-id]
+					[?s :session/user-id user-id]
+					[?s :session/start-date start-date]
+					[(> start-date arg-start-date)]]
+			:order-by [[start-date :asc]]}
+		:in-args [#inst%q %q]}`, fromDate.Format(time.RFC3339), ctx.OrgID)
+	}
 	httpBody, err := ctx.Query(query)
 	if err != nil {
 		return nil, err

@@ -91,7 +91,8 @@ func StartJobIndex() error {
 }
 
 func listAllSessionsID(startDate time.Time) (map[string][]string, error) {
-	sessionList, err := sessionstorage.ListAllSessionsID(startDate)
+	ctx := storagev2.NewContext("", "", storagev2.NewStorage(nil))
+	sessionList, err := sessionstorage.ListAllSessionsID(ctx, startDate)
 	if err != nil {
 		return nil, err
 	}
