@@ -18,21 +18,27 @@ import (
 	"github.com/runopsio/hoop/gateway/user"
 )
 
-func migrateSessions(xtdbURL, orgID string, dryRun bool, fromDate time.Time) {
+func migrateSessions(xtdbURL, orgID string, dryRun bool, fromDate time.Time, sessionIDs map[string]any) {
 	log.Infof("pgrest migration: migrating sessions starting at %v", fromDate.Format(time.RFC3339))
 	ctx := storagev2.NewOrganizationContext(orgID, store)
 	ctx.SetURL(xtdbURL)
-	sessionIDList, err := sessionstorage.ListAllSessionsID(ctx, fromDate)
+	partialSessionList, err := sessionstorage.ListAllSessionsID(ctx, fromDate)
 	if err != nil {
 		log.Warnf("pgrest migration: failed listing sessions, err=%v", err)
 		return
 	}
-	log.Infof("pgrest migration: sessions to migrate, total=%v", len(sessionIDList))
+	log.Infof("pgrest migration: sessions to migrate, total=%v", len(partialSessionList))
 
 	var state migrationState
-	for _, s := range sessionIDList {
+	for _, s := range partialSessionList {
 		if dryRun {
 			break
+		}
+		// skip sessions not in the list
+		if sessionIDs != nil {
+			if _, ok := sessionIDs[s.ID]; !ok {
+				continue
+			}
 		}
 		sid := s.ID
 		ctx.UserID = s.UserID
@@ -166,7 +172,7 @@ func migrateSessions(xtdbURL, orgID string, dryRun bool, fromDate time.Time) {
 		state.success++
 	}
 	log.Infof("pgrest migration: sessions migrated, total=%v, skip=%v, success=%v, failed=%v",
-		len(sessionIDList), state.skip, state.success, state.failed)
+		len(partialSessionList), state.skip, state.success, state.failed)
 }
 
 func migrateReviews(xtdbURL, orgID string) {

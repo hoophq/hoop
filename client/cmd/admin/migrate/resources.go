@@ -17,12 +17,13 @@ var MainCmd = &cobra.Command{
 }
 
 var (
-	roleNameFlag     string
-	jwtSecretKeyFlag string
-	xtdbURLFlag      string
-	orgNameFlag      string
-	fromDateFlag     string
-	dryRunFlag       bool
+	roleNameFlag      string
+	jwtSecretKeyFlag  string
+	xtdbURLFlag       string
+	orgNameFlag       string
+	fromDateFlag      string
+	dryRunFlag        bool
+	sessionIDListFlag []string
 )
 
 func defaultPgRestRole() string {
@@ -56,8 +57,9 @@ func init() {
 	sessionResourcesCmd.Flags().StringVar(&jwtSecretKeyFlag, "key", defaultJwtSecretKey(), "The jwt secret key to generate access tokens")
 	sessionResourcesCmd.Flags().StringVar(&xtdbURLFlag, "xtdb-url", os.Getenv("XTDB_ADDRESS"), "The address of the xtdb server")
 	sessionResourcesCmd.Flags().StringVar(&orgNameFlag, "org", "default", "The name of the organization to migrate")
-	sessionResourcesCmd.Flags().StringVar(&fromDateFlag, "from-date", "", "The timestamp to start migrating sessions from, format: YYYY-MM-DD")
+	sessionResourcesCmd.Flags().StringVar(&fromDateFlag, "from-date", "", "The timestamp to start migrating sessions from, format: YYYY-MM-DDTHH:MM:SSZ")
 	sessionResourcesCmd.Flags().BoolVar(&dryRunFlag, "dry-run", false, "Don't run the migration, just count the sessions")
+	sessionResourcesCmd.Flags().StringSliceVarP(&sessionIDListFlag, "sid", "s", nil, "The list of session ids to migrate")
 
 	MainCmd.AddCommand(coreResourcesCmd)
 	MainCmd.AddCommand(sessionResourcesCmd)
@@ -110,7 +112,12 @@ var sessionResourcesCmd = &cobra.Command{
 		pgrest.SetJwtKey([]byte(jwtSecretKeyFlag))
 		baseURL, _ := url.Parse("http://127.0.0.1:8008")
 		pgrest.SetBaseURL(baseURL)
-
+		// migrate by session id
+		if len(sessionIDListFlag) > 0 {
+			xtdbmigration.RunSessions(xtdbURLFlag, orgNameFlag, dryRunFlag, time.Time{}, sessionIDListFlag...)
+			return
+		}
+		// migrate by time range
 		fromDate, err := time.Parse(time.RFC3339, fromDateFlag)
 		if err != nil {
 			styles.PrintErrorAndExit("fail to parse --from-date, err=%v", err)
