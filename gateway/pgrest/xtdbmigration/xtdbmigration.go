@@ -89,7 +89,7 @@ func RunReviews(xtdbURL, orgName string) {
 }
 
 // RunSessions performs the migration of sessions from xtdb to postgrest.
-func RunSessions(xtdbURL, orgName string, dryRun bool, fromDate time.Time) {
+func RunSessions(xtdbURL, orgName string, dryRun bool, fromDate time.Time, sessionIDList ...string) {
 	store.SetURL(xtdbURL)
 	if !shouldMigrate() {
 		return
@@ -105,5 +105,12 @@ func RunSessions(xtdbURL, orgName string, dryRun bool, fromDate time.Time) {
 	// it will disable the rollout logic, allowing to obtain data
 	// from the xtdb storage, instead of falling back to the postgrest storage.
 	pgrest.DisableRollout()
-	migrateSessions(xtdbURL, org.Id, dryRun, fromDate)
+	var sessionIDs map[string]any
+	if len(sessionIDList) > 0 {
+		sessionIDs = map[string]any{}
+		for _, sid := range sessionIDList {
+			sessionIDs[sid] = nil
+		}
+	}
+	migrateSessions(xtdbURL, org.Id, dryRun, fromDate, sessionIDs)
 }
