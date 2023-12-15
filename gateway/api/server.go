@@ -127,7 +127,6 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.UserHandler.Put)
 	route.POST("/users",
 		api.Authenticate,
-		api.TrackRequest(analytics.EventCreateUser),
 		api.AdminOnly,
 		userapi.Create)
 

@@ -3,6 +3,7 @@ package userapi
 import (
 	"net/http"
 	"net/mail"
+	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
@@ -58,11 +59,16 @@ func Create(c *gin.Context) {
 		UserGroups: newUser.Groups,
 	}
 	ctx.Analytics().Identify(trackInvitedUserContext)
-	ctx.Analytics().Track(trackInvitedUserContext, analytics.EventSignup,
-		map[string]any{"user-agent": c.GetHeader("user-agent")})
+	go func() {
+		// wait some time until the identify call get times to reach to intercom
+		time.Sleep(time.Second * 10)
+		ctx.Analytics().Track(trackInvitedUserContext, analytics.EventSignup,
+			map[string]any{"user-agent": c.GetHeader("user-agent")})
+		ctx.Analytics().Track(trackInvitedUserContext, analytics.EventCreateInvitedUser,
+			map[string]any{"user-agent": c.GetHeader("user-agent")})
+	}()
 
 	c.JSON(http.StatusCreated, newUser)
-
 }
 
 func GetUserByID(c *gin.Context) {

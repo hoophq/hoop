@@ -6,7 +6,7 @@ const (
 
 	EventFetchUsers             = "hoop-fetch-users"
 	EventUpdateUser             = "hoop-update-user"
-	EventCreateUser             = "hoop-create-user"
+	EventCreateInvitedUser      = "hoop-create-invited-user"
 	EventCreateConnection       = "hoop-create-connection"
 	EventCreateServiceAccount   = "hoop-create-serviceaccount"
 	EventUpdateServiceAccount   = "hoop-update-serviceaccount"
