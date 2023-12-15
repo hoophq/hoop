@@ -89,7 +89,7 @@ func RunReviews(xtdbURL, orgName string) {
 }
 
 // RunSessions performs the migration of sessions from xtdb to postgrest.
-func RunSessions(xtdbURL, orgName string, dryRun bool, fromDate time.Time, sessionIDList ...string) {
+func RunSessions(xtdbURL, orgName string, dryRun bool, fromDate time.Time, maxSize int64, sessionIDList ...string) {
 	store.SetURL(xtdbURL)
 	if !shouldMigrate() {
 		return
@@ -112,5 +112,5 @@ func RunSessions(xtdbURL, orgName string, dryRun bool, fromDate time.Time, sessi
 			sessionIDs[sid] = nil
 		}
 	}
-	migrateSessions(xtdbURL, org.Id, dryRun, fromDate, sessionIDs)
+	migrateSessions(xtdbURL, org.Id, dryRun, fromDate, maxSize, sessionIDs)
 }

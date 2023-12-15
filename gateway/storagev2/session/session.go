@@ -29,9 +29,9 @@ func Put(storage *storagev2.Context, session types.Session) error {
 // FindOne doe not enforce fetching the session by its user.
 // However, this is somehow protected by obscurity,
 // since the user won't know the session id of a distinct user.
-func FindOne(storageCtx *storagev2.Context, sessionID string) (*types.Session, error) {
+func FindOne(ctx *storagev2.Context, sessionID string) (*types.Session, error) {
 	if pgrest.Rollout {
-		sess, err := pgsession.New().FetchOne(storageCtx, sessionID)
+		sess, err := pgsession.New().FetchOne(ctx, sessionID)
 		if err != nil {
 			return nil, err
 		}
@@ -46,16 +46,23 @@ func FindOne(storageCtx *storagev2.Context, sessionID string) (*types.Session, e
 		}
 		return sess, nil
 	}
-	// the user id is used to enforce querying by the user when using xtdb
+	// the user id is only enforced when it's set or the user is an admin
+	argUserID := fmt.Sprintf(`"%s"`, ctx.UserID)
+	if ctx.IsAdminUser() || ctx.UserID == "" {
+		argUserIDBytes, _ := edn.Marshal(nil)
+		argUserID = string(argUserIDBytes)
+	}
 	payload := fmt.Sprintf(`{:query {
-        :find [(pull ?session [*])]
-        :in [org-id session-id user-id]
-        :where [[?session :session/org-id org-id]
-                [?session :xt/id session-id]
-                [?session :session/user-id user-id]]}
-		:in-args [%q %q %q]}`, storageCtx.OrgID, sessionID, storageCtx.UserID)
+        :find [(pull ?s [*])]
+        :in [org-id session-id arg-user-id]
+        :where [[?s :session/org-id org-id]
+                [?s :xt/id session-id]
+                [?s :session/user-id user-id]
+                (or [(= arg-user-id nil)]
+                    [(= user-id arg-user-id)])]}
+		:in-args [%q %q %v]}`, ctx.OrgID, sessionID, argUserID)
 
-	b, err := storageCtx.Query(payload)
+	b, err := ctx.Query(payload)
 	if err != nil {
 		return nil, err
 	}
@@ -271,26 +278,28 @@ func ListAllSessionsID(ctx *storagev2.Context, fromDate time.Time) ([]*types.Ses
 		return pgsession.New().FetchAllFromDate(fromDate)
 	}
 	query := fmt.Sprintf(`
-    {:query {
-        :find [id org-id start-date]
+	{:query {
+        :find [id org-id start-date event-size]
         :in [arg-start-date]
-        :keys [xt/id session/org-id session/start-date]
+        :keys [xt/id session/org-id session/start-date session/event-size]
         :where [[?s :xt/id id]
                 [?s :session/org-id org-id]
                 [?s :session/start-date start-date]
+                [?s :session/event-size event-size]
                 [(> start-date arg-start-date)]]
 		:order-by [[start-date :asc]]}
     :in-args [#inst%q]}`, fromDate.Format(time.RFC3339))
 
 	if ctx.OrgID != "" {
 		query = fmt.Sprintf(`{:query {
-			:find [id org-id user-id start-date]
+			:find [id org-id user-id start-date event-size]
 			:in [arg-start-date arg-org-id]
-			:keys [xt/id session/org-id session/user-id session/start-date]
+			:keys [xt/id session/org-id session/user-id session/start-date session/event-size]
 			:where [[?s :xt/id id]
 					[?s :session/org-id arg-org-id]
 					[?s :session/org-id org-id]
 					[?s :session/user-id user-id]
+					[?s :session/event-size event-size]
 					[?s :session/start-date start-date]
 					[(> start-date arg-start-date)]]
 			:order-by [[start-date :asc]]}

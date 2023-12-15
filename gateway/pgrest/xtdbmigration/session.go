@@ -18,7 +18,7 @@ import (
 	"github.com/runopsio/hoop/gateway/user"
 )
 
-func migrateSessions(xtdbURL, orgID string, dryRun bool, fromDate time.Time, sessionIDs map[string]any) {
+func migrateSessions(xtdbURL, orgID string, dryRun bool, fromDate time.Time, maxSize int64, sessionIDs map[string]any) {
 	log.Infof("pgrest migration: migrating sessions starting at %v", fromDate.Format(time.RFC3339))
 	ctx := storagev2.NewOrganizationContext(orgID, store)
 	ctx.SetURL(xtdbURL)
@@ -32,13 +32,26 @@ func migrateSessions(xtdbURL, orgID string, dryRun bool, fromDate time.Time, ses
 	var state migrationState
 	for _, s := range partialSessionList {
 		if dryRun {
-			break
+			if maxSize > 0 && s.EventSize >= maxSize {
+				log.Infof("pgrest migration: dry-run session exceeds the limit: %s %s %v", s.ID, s.StartSession.Format("2006-01-02"), s.EventSize)
+				state.skip++
+				continue
+			}
+			log.Infof("pgrest migration: dry-run session %s %s %v",
+				s.ID, s.StartSession.Format("2006-01-02"), s.EventSize,
+			)
+			continue
 		}
 		// skip sessions not in the list
 		if sessionIDs != nil {
 			if _, ok := sessionIDs[s.ID]; !ok {
 				continue
 			}
+		}
+		if maxSize > 0 && s.EventSize >= maxSize {
+			log.Infof("pgrest migration: session exceeds the limit: %s %s %v", s.ID, s.StartSession.Format("2006-01-02"), s.EventSize)
+			state.skip++
+			continue
 		}
 		sid := s.ID
 		ctx.UserID = s.UserID
