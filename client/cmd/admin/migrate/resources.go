@@ -23,6 +23,7 @@ var (
 	orgNameFlag       string
 	fromDateFlag      string
 	dryRunFlag        bool
+	maxSizeFlag       int64
 	sessionIDListFlag []string
 )
 
@@ -59,6 +60,7 @@ func init() {
 	sessionResourcesCmd.Flags().StringVar(&orgNameFlag, "org", "default", "The name of the organization to migrate")
 	sessionResourcesCmd.Flags().StringVar(&fromDateFlag, "from-date", "", "The timestamp to start migrating sessions from, format: YYYY-MM-DDTHH:MM:SSZ")
 	sessionResourcesCmd.Flags().BoolVar(&dryRunFlag, "dry-run", false, "Don't run the migration, just count the sessions")
+	sessionResourcesCmd.Flags().Int64Var(&maxSizeFlag, "max-size", 0, "The max size of sessions to process, defaults to no limit")
 	sessionResourcesCmd.Flags().StringSliceVarP(&sessionIDListFlag, "sid", "s", nil, "The list of session ids to migrate")
 
 	MainCmd.AddCommand(coreResourcesCmd)
@@ -114,7 +116,7 @@ var sessionResourcesCmd = &cobra.Command{
 		pgrest.SetBaseURL(baseURL)
 		// migrate by session id
 		if len(sessionIDListFlag) > 0 {
-			xtdbmigration.RunSessions(xtdbURLFlag, orgNameFlag, dryRunFlag, time.Time{}, sessionIDListFlag...)
+			xtdbmigration.RunSessions(xtdbURLFlag, orgNameFlag, dryRunFlag, time.Time{}, maxSizeFlag, sessionIDListFlag...)
 			return
 		}
 		// migrate by time range
@@ -122,6 +124,6 @@ var sessionResourcesCmd = &cobra.Command{
 		if err != nil {
 			styles.PrintErrorAndExit("fail to parse --from-date, err=%v", err)
 		}
-		xtdbmigration.RunSessions(xtdbURLFlag, orgNameFlag, dryRunFlag, fromDate.UTC())
+		xtdbmigration.RunSessions(xtdbURLFlag, orgNameFlag, dryRunFlag, fromDate.UTC(), maxSizeFlag)
 	},
 }
