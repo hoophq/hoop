@@ -75,9 +75,10 @@ func (u *user) FetchOneBySubject(ctx pgrest.OrgContext, subject string) (*pgrest
 	return &usr, nil
 }
 
-func (u *user) ListGroups(ctx pgrest.Context) ([]string, error) {
+// ListAllGroups of an organization
+func (u *user) ListAllGroups(ctx pgrest.OrgContext) ([]string, error) {
 	var userGroups []UserGroups
-	err := pgrest.New("/user_groups?select=name,users!inner()&org_id=eq.%s&users.subject=eq.%s", ctx.GetOrgID(), ctx.GetSubject()).
+	err := pgrest.New("/user_groups?select=name&org_id=eq.%s", ctx.GetOrgID()).
 		List().
 		DecodeInto(&userGroups)
 	if err != nil {

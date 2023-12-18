@@ -187,7 +187,7 @@ func (s *Storage) FindAll(context *Context) ([]User, error) {
 	}
 
 	var payload = `{:query {
-		:find [(pull ?user [*])] 
+		:find [(pull ?user [*])]
 		:in [org]
 		:where [[?user :user/org org]]}
 		:in-args ["` + context.Org.Id + `"]}`
@@ -332,7 +332,7 @@ func (s *Storage) GetOrgByName(name string) (*Org, error) {
 
 func (s *Storage) ListAllGroups(context *Context) ([]string, error) {
 	if pgrest.Rollout {
-		return pgusers.New().ListGroups(context)
+		return pgusers.New().ListAllGroups(context)
 	}
 	var payload = fmt.Sprintf(`{:query {
 		:find [(distinct g)]
@@ -361,7 +361,7 @@ func (s *Storage) ListAllGroups(context *Context) ([]string, error) {
 
 func (s *Storage) getOrg(orgId string) (*Org, error) {
 	var payload = `{:query {
-		:find [(pull ?org [*])] 
+		:find [(pull ?org [*])]
 		:where [[?org :xt/id "` +
 		orgId + `"]]}}`
 
@@ -396,7 +396,7 @@ func (s *Storage) FindOrgs() ([]Org, error) {
 		return orgList, nil
 	}
 
-	var payload = `{:query 
+	var payload = `{:query
                     {:find [(pull p [*])]
 					 :where [[p :org/name s]
 							 [p :xt/id i]]}}`

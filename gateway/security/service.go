@@ -132,7 +132,7 @@ func (s *Service) Callback(c *gin.Context, state, code string) string {
 		}
 		log.Infof("signup finished for sub=%v, success=%v", sub, err == nil)
 		if err != nil {
-			log.Errorf("failed signup %v, err=%v", sub, err)
+			log.Warnf("failed signup %v, err=%v", sub, err)
 			s.loginOutcome(login, outcomeError)
 			return login.Redirect + "?error=unexpected_error"
 		}
@@ -242,94 +242,44 @@ func (s *Service) signup(ctx *user.Context, sub string, idTokenClaims map[string
 
 func (s *Service) signupMultiTenant(context *user.Context, sub string, idTokenClaims map[string]any) error {
 	email, profileName, _, groups := parseJWTClaims(idTokenClaims)
-	newOrg := false
-
 	invitedUser, err := s.UserService.FindInvitedUser(email)
 	if err != nil {
 		return err
 	}
 
 	if context.Org == nil && invitedUser == nil {
-		orgName, _ := idTokenClaims[pb.CustomClaimOrg].(string)
-		if orgName == "" {
-			orgName = user.ExtractDomain(email)
-		}
-		orgData, err := s.UserService.GetOrgByName(orgName)
-		if err != nil {
-			return err
-		}
-
-		if orgData == nil {
-			// if this env is not set, it will by default
-			// create the organization to proxy requests to the new api.
-			orgData = &user.Org{
-				Id:   uuid.NewString(),
-				Name: orgName,
-			}
-
-			if err := s.UserService.Persist(orgData); err != nil {
-				return err
-			}
-
-			newOrg = true
-		}
-
-		context.Org = orgData
+		return fmt.Errorf("user %s was not invited", email)
 	}
 
-	if context.User == nil {
-		status := user.StatusReviewing
-
-		if newOrg {
-			status = user.StatusActive
-			if len(groups) == 0 {
-				groups = append(groups,
-					types.GroupAdmin,
-					types.GroupSecurity,
-					types.GroupSRE,
-					types.GroupDBA,
-					types.GroupDevops,
-					types.GroupSupport,
-					types.GroupEngineering)
+	if context.User == nil && invitedUser != nil {
+		if context.Org == nil {
+			org, err := s.UserService.GetOrgNameByID(invitedUser.Org)
+			if err != nil {
+				return err
+			}
+			if org == nil {
+				return fmt.Errorf("failed to obtain organization %q", invitedUser.Org)
+			}
+			context.Org = &user.Org{
+				Id:   invitedUser.Org,
+				Name: org.Name,
 			}
 		}
 
-		var slackID string
-		if invitedUser != nil {
-			slackID = invitedUser.SlackID
-			if context.Org == nil {
-				org, err := s.UserService.GetOrgNameByID(invitedUser.Org)
-				if err != nil {
-					return err
-				}
-				if org == nil {
-					return fmt.Errorf("failed to obtain organization")
-				}
-				context.Org = &user.Org{
-					Id:   invitedUser.Org,
-					Name: org.Name,
-				}
-			}
-
-			status = user.StatusActive
-			if len(groups) == 0 {
-				groups = invitedUser.Groups
-			}
+		// add groups from invited user if none were found in the jwt claims
+		if len(groups) == 0 {
+			groups = invitedUser.Groups
 		}
-
 		context.User = &user.User{
 			Id:      sub,
 			Org:     context.Org.Id,
 			Name:    profileName,
 			Email:   email,
-			Status:  status,
-			SlackID: slackID,
+			Status:  user.StatusActive,
+			SlackID: invitedUser.SlackID,
 			Groups:  groups,
 		}
-
-		if err := s.UserService.Persist(context.User); err != nil {
-			return err
-		}
+		return s.UserService.Persist(context.User)
 	}
 
 	return nil
