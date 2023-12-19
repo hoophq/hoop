@@ -309,6 +309,11 @@ func (s *Server) updateAgentStatus(agentStatus agent.Status, agentCtx apitypes.A
 		ag.Compiler = agentCtx.Metadata.Compiler
 		ag.Platform = agentCtx.Metadata.Platform
 	}
+	// set platform to empty string when agent is disconnected
+	// it will allow to identify embedded agents connected status
+	if agentStatus == agent.StatusDisconnected {
+		ag.Platform = ""
+	}
 	ag.Status = agentStatus
 	_, err = s.AgentService.Persist(ag)
 	return err

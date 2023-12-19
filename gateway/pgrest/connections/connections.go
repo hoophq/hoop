@@ -32,6 +32,7 @@ func (c *connections) FetchOneForExec(ctx pgrest.OrgContext, name string) (*type
 		Name:           conn.Name,
 		Command:        conn.Command,
 		Type:           conn.Type,
+		SubType:        conn.SubType,
 		SecretProvider: "database",
 		SecretId:       "",
 		CreatedById:    "",
@@ -62,6 +63,7 @@ func (c *connections) FetchByNames(ctx pgrest.OrgContext, connectionNames []stri
 			Name:           conn.Name,
 			Command:        conn.Command,
 			Type:           conn.Type,
+			SubType:        conn.SubType,
 			SecretProvider: "database",
 			SecretId:       "",
 			CreatedById:    "",
@@ -95,6 +97,7 @@ func (c *connections) FetchByIDs(ctx pgrest.OrgContext, connectionIDs []string) 
 					Name:           conn.Name,
 					Command:        conn.Command,
 					Type:           conn.Type,
+					SubType:        conn.SubType,
 					SecretProvider: "database",
 					SecretId:       "",
 					CreatedById:    "",
@@ -160,6 +163,10 @@ func (c *connections) Delete(ctx pgrest.OrgContext, name string) error {
 }
 
 func (c *connections) Upsert(ctx pgrest.OrgContext, conn pgrest.Connection) error {
+	var subType *string
+	if conn.SubType != "" {
+		subType = &conn.SubType
+	}
 	return pgrest.New("/rpc/update_connection").Create(map[string]any{
 		"id":              conn.ID,
 		"org_id":          ctx.GetOrgID(),
@@ -167,6 +174,7 @@ func (c *connections) Upsert(ctx pgrest.OrgContext, conn pgrest.Connection) erro
 		"agent_id":        toAgentID(conn.AgentID),
 		"legacy_agent_id": toLegacyAgentID(conn.LegacyAgentID),
 		"type":            conn.Type,
+		"subtype":         subType,
 		"command":         conn.Command,
 		"envs":            conn.Envs,
 	}).Error()

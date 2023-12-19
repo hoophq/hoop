@@ -74,7 +74,8 @@ var createConnectionCmd = &cobra.Command{
 		if err != nil {
 			styles.PrintErrorAndExit(err.Error())
 		}
-		switch connTypeFlag {
+		connType, subType, _ := strings.Cut(connTypeFlag, "/")
+		switch connType {
 		case "command-line":
 			if len(cmdList) == 0 && !skipStrictValidation {
 				styles.PrintErrorAndExit("command-line type must be at least one command")
@@ -92,7 +93,7 @@ var createConnectionCmd = &cobra.Command{
 				envVar["envvar:INSECURE"] = base64.StdEncoding.EncodeToString([]byte(`false`))
 			}
 		default:
-			styles.PrintErrorAndExit(err.Error())
+			styles.PrintErrorAndExit("invalid connection type %q", connType)
 		}
 		agentID, err := getAgentIDByName(apir.conf, connAgentFlag)
 		if err != nil {
@@ -103,13 +104,11 @@ var createConnectionCmd = &cobra.Command{
 		}
 		connectionBody := map[string]any{
 			"name":     apir.name,
-			"type":     connTypeFlag,
+			"type":     connType,
+			"subtype":  subType,
 			"command":  cmdList,
 			"secret":   envVar,
 			"agent_id": agentID,
-			// apiv2
-			"agentId": agentID,
-			"secrets": envVar,
 		}
 
 		resp, err := httpBodyRequest(apir, method, connectionBody)

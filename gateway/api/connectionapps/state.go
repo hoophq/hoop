@@ -6,13 +6,20 @@ import (
 
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/memory"
+	"github.com/runopsio/hoop/gateway/pgrest"
+	pgagents "github.com/runopsio/hoop/gateway/pgrest/agents"
+	"github.com/runopsio/hoop/gateway/storagev2"
 )
 
 type IsConnectedFn func(connectionName string) bool
 
-var timeoutDuration = time.Second * 30
-var ErrRequestConnectionTimeout = fmt.Errorf("timeout (%vs) on acquiring connection", timeoutDuration.Seconds())
-var connectionRequestStore = memory.New()
+var (
+	timeoutDuration             = time.Second * 30
+	ErrRequestConnectionTimeout = fmt.Errorf("timeout (%vs) on acquiring connection", timeoutDuration.Seconds())
+	connectionRequestStore      = memory.New()
+	agentUpdateStore            = memory.New()
+	intervalUpdateAgentStatus   = time.Minute * 2
+)
 
 // RequestGrpcConnection will store a request to connect in the gateway via gRPC.
 // A timeout (25s) error will occour if a connection was not established or
@@ -57,4 +64,40 @@ func requestGrpcConnectionOK(agentID string) bool {
 		}
 	}
 	return false
+}
+
+// updateAgentStatus will update the agent status to CONNECTED
+// in a 5 minutes interval
+func updateAgentStatus(orgID, agentName string) {
+	if !pgrest.Rollout {
+		return
+	}
+
+	key := fmt.Sprintf("%s:%s", orgID, agentName)
+	now := time.Now().UTC()
+	t1, _ := agentUpdateStore.Get(key).(time.Time)
+	if t1.IsZero() || t1.Add(intervalUpdateAgentStatus).Before(now) {
+		agentUpdateStore.Del(key)
+		orgCtx := storagev2.NewOrganizationContext(orgID, nil)
+		agent, err := pgagents.New().FetchOneByNameOrID(orgCtx, agentName)
+		if err != nil || agent == nil {
+			log.Warnf("failed fetching agent %v, err=%v", agentName, err)
+			return
+		}
+		// if the agent already has the platform metadata,
+		// it means that it's already connected via gRPC
+		if agent.GetMeta("platform") != "" {
+			agentUpdateStore.Set(key, now)
+			return
+		}
+		log.With("org", orgID).Debugf("sync agent embedded status %v", agentName)
+		agent.Status = "CONNECTED"
+		agent.UpdatedAt = func() *string { t := now.Format(time.RFC3339Nano); return &t }()
+		if err := pgagents.New().Upsert(agent); err != nil {
+			log.With("org", orgID).Warnf("failed updating agent status for %v, err=%v", agentName, err)
+			return
+		}
+		agentUpdateStore.Set(key, now)
+		return
+	}
 }

@@ -97,6 +97,9 @@ func StartProfiler(appName string, config ProfilerConfig) (*pyroscope.Profiler, 
 // sentryTransport defines which transport to start, sync or async.
 // a nil value defaults initalizing a sync sentry transport.
 func StartSentry(sentryTransport sentry.Transport, conf SentryConfig) (bool, error) {
+	if conf.Environment == "localhost" || conf.Environment == "127.0.0.1" {
+		return false, nil
+	}
 	if conf.DSN == "" {
 		return false, nil
 	}

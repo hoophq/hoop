@@ -18,7 +18,7 @@ To start a development server it requires the following local tools:
 - [Clojure / Java](https://clojure.org/guides/install_clojure)
 - [git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git)
 - Permission to clone `hoophq/xtdb` repository
-- Postgres Server (remote or local) (optional)
+- Postgres Server (remote or local)
 - [node / npm](https://nodejs.org/en/download) (optional)
  - Permission to clone `runopsio/webapp` repository
  - Permission to clone `hoophq/api` repository
@@ -74,3 +74,36 @@ To clean up all data and build scripts
 ```sh
 rm -rf $HOME/.hoop/dev
 ```
+
+## Postgrest
+
+This project uses [postgrest](https://postgrest.org/en/stable/) as an interface to Postgres, it allows creating api's based on tables schema and permissions.
+The bootstrap process performs all the necessary setup to make the postgrest fully functional, it consists in three steps:
+
+- Perform the migration process using the [go-migrate library](https://github.com/golang-migrate/migrate)
+- Provisioning the roles and permissions required for postgrest to work properly. [See authentication.](https://postgrest.org/en/stable/references/auth.html)
+- Running the postgrest process in background
+
+### Running Migrations
+
+Install the [golang migrate cli](https://github.com/golang-migrate/migrate/releases/tag/v4.16.2) in your local machine
+
+1. In the root folder of the project, run the following command:
+
+```sh
+ migrate create -ext sql -dir rootfs/app/migrations -seq my_new_change
+```
+
+2. Add the `up` and `down` migrations
+3. Start the gateway and it will automatically apply all migrations
+4. Test reverting the migration
+
+```sh
+migrate -database 'postgres://hoopdevuser:1a2b3c4d@127.0.0.1:5449/hoopdevdb?sslmode=disable' -path rootfs/app/migrations/ down 1
+```
+
+> In case of adding new views, make sure to add the proper permissions in the bootstrap process of postgrest
+
+### Migration Best Practices
+
+- https://github.com/golang-migrate/migrate/blob/master/MIGRATIONS.md

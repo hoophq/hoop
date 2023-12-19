@@ -53,6 +53,7 @@ func Post(c *gin.Context) {
 		return
 	}
 
+	updateAgentStatus(dsnCtx.OrgID, dsnCtx.ClientKeyName)
 	// persist the requested connections if it doesn't exist in the storage yet
 	for _, connectionName := range requestConnectionItems {
 		if _, ok := connectionMap[connectionName]; ok {

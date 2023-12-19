@@ -53,12 +53,13 @@ func (a *agent) Upsert(agent *pgrest.Agent) error {
 		status = agent.Status
 	}
 	return pgrest.New("/agents").Upsert(map[string]any{
-		"id":     agent.ID,
-		"token":  agent.Token,
-		"org_id": agent.OrgID,
-		"name":   agent.Name,
-		"mode":   agent.Mode,
-		"status": status,
+		"id":         agent.ID,
+		"token":      agent.Token,
+		"org_id":     agent.OrgID,
+		"name":       agent.Name,
+		"mode":       agent.Mode,
+		"status":     status,
+		"updated_at": agent.UpdatedAt,
 		"metadata": map[string]string{
 			"hostname":       agent.GetMeta("hostname"),
 			"platform":       agent.GetMeta("platform"),
