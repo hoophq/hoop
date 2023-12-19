@@ -50,6 +50,7 @@ func (s *Storage) Persist(context *user.Context, c *Connection) (int64, error) {
 			Name:          c.Name,
 			Command:       c.Command,
 			Type:          string(c.Type),
+			SubType:       c.Subtype,
 			Envs:          envs,
 		})
 	}
@@ -150,7 +151,7 @@ func (s *Storage) FindAll(context *user.Context) ([]BaseConnection, error) {
 				c.AgentID = c.LegacyAgentID
 			}
 			connections = append(connections, BaseConnection{
-				c.ID, c.Name, "", c.Command, Type(c.Type), c.AgentID, DBSecretProvider,
+				c.ID, c.Name, "", c.Command, Type(c.Type), c.SubType, c.AgentID, DBSecretProvider,
 			})
 		}
 		return connections, nil
@@ -195,6 +196,7 @@ func (s *Storage) FindOne(context *user.Context, nameOrID string) (*Connection, 
 				IconName:       "",
 				Command:        conn.Command,
 				Type:           Type(conn.Type),
+				Subtype:        conn.SubType,
 				AgentId:        conn.AgentID,
 				SecretProvider: DBSecretProvider},
 			Secret: secrets,

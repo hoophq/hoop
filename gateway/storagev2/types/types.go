@@ -89,6 +89,7 @@ type Connection struct {
 	IconName       string   `edn:"connection/icon-name"`
 	Command        []string `edn:"connection/command"`
 	Type           string   `edn:"connection/type"`
+	SubType        string   `edn:"-"`
 	SecretProvider string   `edn:"connection/secret-provider"`
 	SecretId       string   `edn:"connection/secret"`
 	CreatedById    string   `edn:"connection/created-by"`

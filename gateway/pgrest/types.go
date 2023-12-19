@@ -45,13 +45,14 @@ type EnvVar struct {
 }
 
 type Agent struct {
-	ID       string            `json:"id"`
-	OrgID    string            `json:"org_id"`
-	Name     string            `json:"name"`
-	Mode     string            `json:"mode"`
-	Token    string            `json:"token"`
-	Status   string            `json:"status"`
-	Metadata map[string]string `json:"metadata"`
+	ID        string            `json:"id"`
+	OrgID     string            `json:"org_id"`
+	Name      string            `json:"name"`
+	Mode      string            `json:"mode"`
+	Token     string            `json:"token"`
+	Status    string            `json:"status"`
+	Metadata  map[string]string `json:"metadata"`
+	UpdatedAt *string           `json:"updated_at"`
 
 	Org Org `json:"orgs"`
 }
@@ -64,6 +65,7 @@ type Connection struct {
 	Name          string            `json:"name"`
 	Command       []string          `json:"command"`
 	Type          string            `json:"type"`
+	SubType       string            `json:"subtype"`
 	Envs          map[string]string `json:"envs"`
 
 	Org Org `json:"orgs"`
