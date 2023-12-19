@@ -118,9 +118,9 @@ func (c *client) DeidentifyContent(ctx context.Context, conf DeidentifyConfig, c
 				chunk.transformationSummary.SummaryResult,
 				result)
 		}
-		chunk.transformationSummary.Summary = []string{
+		chunk.transformationSummary.Summary = append(chunk.transformationSummary.Summary,
 			s.InfoType.GetName(),
-			fmt.Sprintf("%v", s.TransformedBytes)}
+			fmt.Sprintf("%v", s.TransformedBytes))
 	}
 
 	responseTable := r.GetItem().GetTable()
