@@ -52,8 +52,20 @@ func Run() (err error) {
 		return fmt.Errorf("failed validating migration files, err=%v", err)
 	}
 
+	pgConnectionURI := os.Getenv("POSTGRES_DB_URI")
+	pgURL, err := url.Parse(pgConnectionURI)
+	if err != nil {
+		return fmt.Errorf("failed parsing POSTGRES_DB_URI, err=%v", err)
+	}
+	var pgUser string
+	if pgURL.User != nil {
+		pgUser = pgURL.User.Username()
+	}
+	if pgUser == "" {
+		return fmt.Errorf("invalid format for POSTGRES_DB_URI, missing user")
+	}
 	// migration
-	m, err := migrate.New("file:///app/migrations", PgConnectionURI())
+	m, err := migrate.New("file:///app/migrations", pgConnectionURI)
 	if err != nil {
 		return fmt.Errorf("failed initializing db migration, err=%v", err)
 	}
@@ -71,7 +83,7 @@ func Run() (err error) {
 	}
 	log.Infof("processed db migration with success, nochange=%v", err == migrate.ErrNoChange)
 
-	if err := provisionPgRoles(roleName); err != nil {
+	if err := provisionPgRoles(roleName, pgUser, pgConnectionURI); err != nil {
 		return fmt.Errorf("failed provisioning roles: %v", err)
 	}
 
@@ -85,7 +97,7 @@ func Run() (err error) {
 		"PGRST_LOG_LEVEL=error",
 		"PGRST_SERVER_HOST=!4",
 		"PGRST_SERVER_PORT=8008",
-		fmt.Sprintf("PGRST_DB_URI=%s", PgConnectionURI()),
+		fmt.Sprintf("PGRST_DB_URI=%s", pgConnectionURI),
 		fmt.Sprintf("PGRST_JWT_SECRET=%s", string(jwtSecretKey)),
 	}
 
@@ -126,22 +138,6 @@ func Run() (err error) {
 		break
 	}
 	return nil
-}
-
-func PgConnectionURI() string {
-	pgDbURI := os.Getenv("POSTGRES_DB_URI")
-	if pgDbURI != "" {
-		log.Infof("using POSTGRES_DB_URI env configuration")
-		return pgDbURI
-	}
-	log.Warnf("using legacy postgres connection uri configuration, sslmode is disabled. Please use POSTGRES_DB_URI instead")
-	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-		os.Getenv("PG_USER"),
-		os.Getenv("PG_PASSWORD"),
-		os.Getenv("PG_HOST"),
-		os.Getenv("PG_PORT"),
-		os.Getenv("PG_DB"),
-	)
 }
 
 func loadConfig() (u *url.URL, jwtSecret []byte, err error) {
@@ -199,9 +195,9 @@ var dropStatements = []string{
 	`DROP ROLE IF EXISTS %s`,
 }
 
-func provisionPgRoles(roleName string) error {
+func provisionPgRoles(roleName, pgUser, connectionString string) error {
 	log.Infof("provisioning default role %s", roleName)
-	db, err := sql.Open("postgres", PgConnectionURI())
+	db, err := sql.Open("postgres", connectionString)
 	if err != nil {
 		return fmt.Errorf("failed opening connection with postgres, err=%v", err)
 	}
@@ -231,7 +227,7 @@ func provisionPgRoles(roleName string) error {
 		}
 	}
 	// allow the main role to impersonate the apiuser role
-	impersonateGrantStmt := fmt.Sprintf(`GRANT %s TO %s`, roleName, os.Getenv("PG_USER"))
+	impersonateGrantStmt := fmt.Sprintf(`GRANT %s TO %s`, roleName, pgUser)
 	if _, err := tx.Exec(impersonateGrantStmt); err != nil {
 		return fmt.Errorf("failed granting impersonate grant, err=%v", err)
 	}

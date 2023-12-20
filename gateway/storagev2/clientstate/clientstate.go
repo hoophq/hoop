@@ -5,11 +5,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/gateway/pgrest"
 	pgproxymanager "github.com/runopsio/hoop/gateway/pgrest/proxymanager"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
-	"olympos.io/encoding/edn"
 )
 
 type option struct {
@@ -22,18 +20,7 @@ func DeterministicClientUUID(userID string) string {
 }
 
 func GetEntity(ctx *storagev2.Context, xtID string) (*types.Client, error) {
-	if pgrest.Rollout {
-		return pgproxymanager.New().FetchOne(ctx, xtID)
-	}
-	data, err := ctx.GetEntity(xtID)
-	if err != nil {
-		return nil, err
-	}
-	if data == nil {
-		return nil, nil
-	}
-	var obj types.Client
-	return &obj, edn.Unmarshal(data, &obj)
+	return pgproxymanager.New().FetchOne(ctx, xtID)
 }
 
 // Update creates or updates a new entity with the given status based in the user uid.
@@ -83,12 +70,7 @@ func Update(ctx *storagev2.Context, status types.ClientStatusType, opts ...*opti
 		}
 	}
 
-	if pgrest.Rollout {
-		return obj, pgproxymanager.New().Update(ctx, obj)
-	}
-
-	_, err = ctx.Put(obj)
-	return obj, err
+	return obj, pgproxymanager.New().Update(ctx, obj)
 }
 
 func WithOption(k, v string) *option { return &option{key: k, val: v} }

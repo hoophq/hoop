@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"time"
 
 	"github.com/runopsio/hoop/common/clientconfig"
 	"github.com/runopsio/hoop/common/grpc"
@@ -26,7 +25,6 @@ import (
 	"github.com/runopsio/hoop/gateway/runbooks"
 	"github.com/runopsio/hoop/gateway/security"
 	"github.com/runopsio/hoop/gateway/security/idp"
-	xtdb "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/transport"
 	"github.com/runopsio/hoop/gateway/user"
@@ -58,17 +56,6 @@ func Run(listenAdmAddr string) {
 		log.Fatal(err)
 	}
 
-	s := xtdb.New()
-	// sync xtdb if it's a legacy environment
-	if !pgrest.Rollout {
-		defer log.Sync()
-		log.Infof("syncing xtdb at %s", s.Address())
-		if err := s.Sync(time.Second * 80); err != nil {
-			log.Fatal(err)
-		}
-		log.Infof("sync with success")
-	}
-
 	storev2 := storagev2.NewStorage(nil)
 
 	profile := os.Getenv("PROFILE")
@@ -88,13 +75,13 @@ func Run(listenAdmAddr string) {
 		grpcURL = fmt.Sprintf("%s://%s:8443", scheme, u.Hostname())
 	}
 
-	agentService := agent.Service{Storage: &agent.Storage{Storage: s}}
-	connectionService := connection.Service{Storage: &connection.Storage{Storage: s}}
-	userService := user.Service{Storage: &user.Storage{Storage: s}}
-	reviewService := review.Service{Storage: &review.Storage{Storage: s}}
+	agentService := agent.Service{Storage: &agent.Storage{}}
+	connectionService := connection.Service{Storage: &connection.Storage{}}
+	userService := user.Service{Storage: &user.Storage{}}
+	reviewService := review.Service{Storage: &review.Storage{}}
 	notificationService := getNotification()
 	securityService := security.Service{
-		Storage:     &security.Storage{Storage: s},
+		Storage:     &security.Storage{},
 		Provider:    idProvider,
 		UserService: &userService,
 		Analytics:   analyticsService}
@@ -142,8 +129,8 @@ func Run(listenAdmAddr string) {
 	// order matters
 	g.RegisteredPlugins = []plugintypes.Plugin{
 		pluginsreview.New(
-			&review.Service{Storage: &review.Storage{Storage: s}, TransportService: g},
-			&user.Service{Storage: &user.Storage{Storage: s}},
+			&review.Service{Storage: &review.Storage{}, TransportService: g},
+			&user.Service{Storage: &user.Storage{}},
 			notificationService,
 			idProvider.ApiURL,
 		),
@@ -151,10 +138,10 @@ func Run(listenAdmAddr string) {
 		pluginsindex.New(),
 		pluginsdlp.New(),
 		pluginsrbac.New(),
-		pluginswebhooks.New(&review.Service{Storage: &review.Storage{Storage: s}, TransportService: g}),
+		pluginswebhooks.New(&review.Service{Storage: &review.Storage{}, TransportService: g}),
 		pluginsslack.New(
-			&review.Service{Storage: &review.Storage{Storage: s}, TransportService: g},
-			&user.Service{Storage: &user.Storage{Storage: s}},
+			&review.Service{Storage: &review.Storage{}, TransportService: g},
+			&user.Service{Storage: &user.Storage{}},
 			idProvider),
 		pluginsdcm.New(),
 	}

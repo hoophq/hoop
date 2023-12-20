@@ -14,8 +14,6 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/version"
 	"github.com/runopsio/hoop/gateway/storagev2"
-	clientkeysstorage "github.com/runopsio/hoop/gateway/storagev2/clientkeys"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
 	"go.uber.org/zap"
 )
@@ -184,40 +182,30 @@ func (api *Api) AuthenticateAgent(c *gin.Context) {
 		return
 	}
 
-	ck, err := clientkeysstorage.ValidateDSN(api.StoreV2, tokenParts[1])
+	// fallback to agent dsn keys
+	dsn, err := dsnkeys.Parse(tokenParts[1])
 	if err != nil {
-		log.Debugf("failed authenticating agent (clientkey), %v, length=%v, err=%v",
+		log.Debugf("failed parsing dsn (agent dsn), %v, length=%v, err=%v",
 			parseHeaderForDebug(tokenHeader), len(tokenHeader), err)
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
-	if ck == nil {
-		// fallback to agent dsn keys
-		dsn, err := dsnkeys.Parse(tokenParts[1])
-		if err != nil {
-			log.Debugf("failed parsing dsn (agent dsn), %v, length=%v, err=%v",
-				parseHeaderForDebug(tokenHeader), len(tokenHeader), err)
-			c.AbortWithStatus(http.StatusUnauthorized)
-			return
-		}
-		ag, err := api.AgentHandler.Service.FindByToken(dsn.SecretKeyHash)
-		if ag == nil || err != nil {
-			log.Debugf("failed authenticating agent (agent dsn), %v, length=%v, err=%v",
-				parseHeaderForDebug(tokenHeader), len(tokenHeader), err)
-			c.AbortWithStatus(http.StatusUnauthorized)
-			return
-		}
-		if ag.Name != dsn.Name || ag.Mode != dsn.AgentMode {
-			log.Errorf("failed authenticating agent (agent dsn), mismatch dsn attributes. id=%v, name=%v, mode=%v",
-				ag.Id, dsn.Name, dsn.AgentMode)
-			c.AbortWithStatus(http.StatusUnauthorized)
-			return
-		}
-		ck = &types.ClientKey{ID: ag.Id, OrgID: ag.OrgId, Name: ag.Name}
+	ag, err := api.AgentHandler.Service.FindByToken(dsn.SecretKeyHash)
+	if ag == nil || err != nil {
+		log.Debugf("failed authenticating agent (agent dsn), %v, length=%v, err=%v",
+			parseHeaderForDebug(tokenHeader), len(tokenHeader), err)
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+	if ag.Name != dsn.Name || ag.Mode != dsn.AgentMode {
+		log.Errorf("failed authenticating agent (agent dsn), mismatch dsn attributes. id=%v, name=%v, mode=%v",
+			ag.Id, dsn.Name, dsn.AgentMode)
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
 	}
 
 	c.Set(storagev2.ContextKey,
-		storagev2.NewDSNContext(ck.ID, ck.OrgID, ck.Name, api.StoreV2).
+		storagev2.NewDSNContext(ag.Id, ag.OrgId, ag.Name, api.StoreV2).
 			WithApiURL(api.IDProvider.ApiURL).
 			WithGrpcURL(api.GrpcURL))
 	c.Next()

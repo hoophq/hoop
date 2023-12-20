@@ -6,15 +6,6 @@ import (
 	"olympos.io/encoding/edn"
 )
 
-// TxObject must be a struct containing edn or a raw edn string.
-// See https://github.com/go-edn/edn.
-type TxObject any
-
-type TxResponse struct {
-	TxID   int64     `edn:"xtdb.api/tx-id"`
-	TxTime time.Time `edn:"xtdb.api/tx-time"`
-}
-
 type APIContext struct {
 	OrgID      string   `json:"org_id"`
 	OrgName    string   `json:"org_name"`
@@ -248,15 +239,6 @@ type InvitedUser struct {
 	Name    string   `json:"name"     end:"invited-user/name"`
 	SlackID string   `json:"slack_id" edn:"invited-user/slack-id"`
 	Groups  []string `json:"groups"   edn:"invited-user/groups"`
-}
-
-type ClientKey struct {
-	ID        string `json:"id"         edn:"xt/id"`
-	OrgID     string `json:"-"          edn:"clientkey/org"`
-	Name      string `json:"name"       edn:"clientkey/name"`
-	AgentMode string `json:"agent_mode" edn:"clientkey/agent-mode"`
-	Active    bool   `json:"active"     edn:"clientkey/enabled"`
-	DSNHash   string `json:"-"          edn:"clientkey/dsnhash"`
 }
 
 type Org struct {

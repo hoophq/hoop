@@ -14,11 +14,11 @@ while read -r LINE; do
   fi
 done < .env
 
-: "${PG_HOST:?Variable not set or empty}"
-: "${PG_DB:?Variable not set or empty}"
-: "${PG_USER:?Variable not set or empty}"
-: "${PG_PASSWORD:?Variable not set or empty}"
-: "${PG_PORT:=5432}"
+# : "${PG_HOST:?Variable not set or empty}"
+# : "${PG_DB:?Variable not set or empty}"
+# : "${PG_USER:?Variable not set or empty}"
+# : "${PG_PASSWORD:?Variable not set or empty}"
+# : "${PG_PORT:=5432}"
 
 trap ctrl_c INT
 
@@ -31,49 +31,6 @@ mkdir -p $HOME/.hoop/dev
 
 # Dockerfile with agent tools
 cp ./scripts/dev/Dockerfile $HOME/.hoop/dev/Dockerfile
-
-cat - > $HOME/.hoop/dev/logback.xml <<EOF
-<configuration>
-  <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
-    <encoder>
-      <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
-    </encoder>
-  </appender>
-  <root level="INFO">
-    <appender-ref ref="STDOUT" />
-  </root>
-
-  <logger name="org.apache.kafka" level="ERROR" />
-  <logger name="org.apache.zookeeper" level="ERROR" />
-  <logger name="kafka" level="ERROR" />
-</configuration>
-EOF
-
-cat - > $HOME/.hoop/dev/xtdb.edn <<EOF
-{:xtdb.jdbc/connection-pool
- {:dialect #:xtdb{:module xtdb.jdbc.psql/->dialect},
-  :db-spec
-  {:host "$PG_HOST",
-   :dbname "$PG_DB",
-   :user "$PG_USER",
-   :password "$PG_PASSWORD",
-   :port $PG_PORT}},
- :xtdb.rocksdb/block-cache {:xtdb/module xtdb.rocksdb/->lru-block-cache
-                            :cache-size 536870912}
- :xtdb/index-store
- {:kv-store {:xtdb/module xtdb.rocksdb/->kv-store
-             :block-cache :xtdb.rocksdb/block-cache
-             :db-dir "/opt/hoop/sessions/rocksdb"
-             :sync? false}}
- :xtdb/tx-log
- {:xtdb/module xtdb.jdbc/->tx-log,
-  :connection-pool :xtdb.jdbc/connection-pool},
- :xtdb/document-store
- {:xtdb/module xtdb.jdbc/->document-store,
-  :connection-pool :xtdb.jdbc/connection-pool}
- :xtdb.http-server/server {:port 3001
-                           :jetty-opts {:host "0.0.0.0"}}}
-EOF
 
 cp ./scripts/dev/entrypoint.sh $HOME/.hoop/dev/entrypoint.sh
 rm -rf $HOME/.hoop/dev/migrations && \

@@ -1,299 +1,32 @@
 package review
 
 import (
-	"fmt"
-	"strings"
-	"time"
-
-	"github.com/runopsio/hoop/gateway/pgrest"
 	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
 	pgsession "github.com/runopsio/hoop/gateway/pgrest/session"
-	st "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
-	"olympos.io/encoding/edn"
 )
 
 type (
-	Storage struct {
-		*st.Storage
-	}
+	Storage struct{}
 )
 
-func (s *Storage) FindAll(context *user.Context) ([]types.Review, error) {
-	// intercepted in api.go fetch all handler
-	var payload = fmt.Sprintf(`{:query {
-		:find [(pull ?r [:xt/id
-						:review/type
-						:review/created-at
-						:review/status
-						:review/access-duration
-						:review/approved-at
-						:review/input
-						:review/input-envvars
-						:review/input-clientargs
-						:review/session
-						:review/connection
-						:review/created-by
-						{:review/created-by [:user/email :user/slack-id]}
-						{:review/connection [:connection/name]}])]
-		:in [org]
-		:where [[?r :review/org org]
-				[?r :review/connection connid]
-				[?c :xt/id connid]]}
-		:in-args [%q]}`, context.Org.Id)
-
-	b, err := s.Query([]byte(payload))
-	if err != nil {
-		return nil, err
-	}
-
-	var reviews []types.Review
-	if err := edn.Unmarshal(b, &reviews); err != nil {
-		return nil, err
-	}
-
-	return reviews, nil
-}
-
 func (s *Storage) FindApprovedJitReviews(ctx *user.Context, connID string) (*types.Review, error) {
-	if pgrest.Rollout {
-		return pgreview.New().FetchJit(ctx, connID)
-	}
-	var payload = fmt.Sprintf(`{:query {
-		:find [(pull ?r [:xt/id
-						:review/type
-						:review/status
-						:review/access-duration
-						:review/revoke-at
-						:review/input
-						:review/input-envvars
-						:review/input-clientargs
-						:review/session
-						:review/connection
-						:review/created-by
-						{:review/created-by [:user/email :user/slack-id]}
-						{:review/connection [:connection/name]}])]
-		:in [arg-orgid arg-userid arg-connid arg-status arg-now-date]
-		:where [[?r :review/org arg-orgid]
-				[?r :review/created-by arg-userid]
-				[?r :review/connection arg-connid]
-				[?r :review/status arg-status]
-				[?c :xt/id arg-connid]
-				[?r :review/revoke-at revoke-at]
-				[(< arg-now-date revoke-at)]]}
-		:in-args [%q %q %q %q #inst%q]}`,
-		ctx.Org.Id, ctx.User.Id,
-		connID, types.ReviewStatusApproved,
-		time.Now().UTC().Format(time.RFC3339Nano))
-	b, err := s.Query([]byte(payload))
-	if err != nil {
-		return nil, err
-	}
-
-	var reviews []types.Review
-	if err := edn.Unmarshal(b, &reviews); err != nil {
-		return nil, err
-	}
-	if len(reviews) == 0 {
-		return nil, nil
-	}
-	// in case of multiple reviews approved
-	// there shouldn't be a problem, return the first one
-	return &reviews[0], nil
+	return pgreview.New().FetchJit(ctx, connID)
 }
 
 func (s *Storage) FindById(ctx *user.Context, id string) (*types.Review, error) {
-	if pgrest.Rollout {
-		return pgreview.New().FetchOneByID(ctx, id)
-	}
-	var payload = fmt.Sprintf(`{:query {
-		:find [(pull ?r [*
-						{:review/connection [:xt/id :connection/name]}
-						{:review/created-by [:xt/id :user/name :user/email :user/slack-id]}])]
-		:in [org id]
-		:where [[?r :review/org org]
-				[?r :xt/id id]
-				[?r :review/connection connid]
-				[?c :xt/id connid]]}
-        :in-args [%q %q]}`, ctx.Org.Id, id)
-
-	b, err := s.QueryRaw([]byte(payload))
-	if err != nil {
-		return nil, err
-	}
-	var reviews [][]types.Review
-	if err := edn.Unmarshal(b, &reviews); err != nil {
-		return nil, err
-	}
-
-	if len(reviews) == 0 {
-		return nil, nil
-	}
-
-	reviewData := reviews[0][0]
-	groups, err := s.findGroupsByReviewId(ctx.Org.Id, reviewData.Id)
-	if err != nil {
-		return nil, err
-	}
-	reviewData.ReviewGroupsData = groups
-	return &reviewData, nil
+	return pgreview.New().FetchOneByID(ctx, id)
 }
 
-func (s *Storage) queryDecoder(query string, into any, args ...any) error {
-	qs := fmt.Sprintf(query, args...)
-	httpBody, err := s.QueryRaw([]byte(qs))
-	if err != nil {
-		return err
-	}
-	if strings.Contains(string(httpBody), ":xtdb.error") {
-		return fmt.Errorf(string(httpBody))
-	}
-	return edn.Unmarshal(httpBody, into)
-}
-
-func (s *Storage) PersistSessionAsReady(ctx *user.Context, sessionID string) (*st.TxResponse, error) {
-	if pgrest.Rollout {
-		return &st.TxResponse{},
-			pgsession.New().UpdateStatus(ctx, sessionID, types.SessionStatusReady)
-	}
-	var resultItems [][]types.Session
-	err := s.queryDecoder(`
-	{:query {
-		:find [(pull ?s [*])]
-		:in [session-id]
-		:where [[?s :xt/id session-id]]}
-	:in-args [%q]}`, &resultItems, sessionID)
-	if err != nil {
-		return nil, err
-	}
-	items := make([]types.Session, 0)
-	for _, i := range resultItems {
-		items = append(items, i[0])
-	}
-	if len(items) > 0 {
-		session := items[0]
-		nonIndexedStreams := session.NonIndexedStream["stream"]
-		for _, i := range nonIndexedStreams {
-			session.EventStream = append(session.EventStream, i)
-		}
-		session.Status = types.SessionStatusReady
-		return s.SubmitPutTx(session)
-	}
-	return nil, fmt.Errorf("session %v not found", sessionID)
+func (s *Storage) PersistSessionAsReady(ctx *user.Context, sessionID string) error {
+	return pgsession.New().UpdateStatus(ctx, sessionID, types.SessionStatusReady)
 }
 
 func (s *Storage) FindBySessionID(ctx *user.Context, sessionID string) (*types.Review, error) {
-	if pgrest.Rollout {
-		return pgreview.New().FetchOneBySid(ctx, sessionID)
-	}
-	var payload = fmt.Sprintf(`{:query {
-		:find [(pull ?r [*
-						{:review/connection [:xt/id :connection/name]}
-						{:review/created-by [:xt/id :user/name :user/email :user/slack-id]}])]
-		:in [session-id]
-		:where [[?r :review/session session-id]
-				[?r :review/connection connid]
-				[?c :xt/id connid]]}
-        :in-args [%q]}`, sessionID)
-
-	b, err := s.QueryRaw([]byte(payload))
-	if err != nil {
-		return nil, err
-	}
-
-	var reviews [][]types.Review
-	if err := edn.Unmarshal(b, &reviews); err != nil {
-		return nil, err
-	}
-
-	if len(reviews) == 0 {
-		return nil, nil
-	}
-
-	reviewData := reviews[0][0]
-	groups, err := s.findGroupsByReviewId(ctx.Org.Id, reviewData.Id)
-	if err != nil {
-		return nil, err
-	}
-	reviewData.ReviewGroupsData = groups
-	return &reviewData, nil
-}
-
-func (s *Storage) findGroupsByReviewId(orgID string, reviewID string) ([]types.ReviewGroup, error) {
-	var payload = fmt.Sprintf(`{:query {
-		:find [(pull ?r [{:review/review-groups 
-			[* {:review-group/reviewed-by [:xt/id :user/name :user/email]}]}])]
-		:in [org-id review-id]
-		:where [[?r :review/org org-id]
-				[?r :xt/id review-id]]}
-        :in-args [%q %q]}`, orgID, reviewID)
-	b, err := s.QueryRaw([]byte(payload))
-	if err != nil {
-		return nil, err
-	}
-
-	type reviewGroups struct {
-		ReviewGroups []types.ReviewGroup `edn:"review/review-groups"`
-	}
-
-	var reviewsGroups [][]reviewGroups
-	if err := edn.Unmarshal(b, &reviewsGroups); err != nil {
-		return nil, err
-	}
-
-	if len(reviewsGroups) == 0 {
-		return nil, nil
-	}
-
-	return reviewsGroups[0][0].ReviewGroups, nil
+	return pgreview.New().FetchOneBySid(ctx, sessionID)
 }
 
 func (s *Storage) Persist(ctx *user.Context, review *types.Review) (int64, error) {
-	if pgrest.Rollout {
-		return 0, pgreview.New().Upsert(review)
-	}
-	reviewGroupIds := make([]string, 0)
-
-	var payloads []st.TxEdnStruct
-	for _, r := range review.ReviewGroupsData {
-		reviewGroupIds = append(reviewGroupIds, r.Id)
-		xg := &types.ReviewGroup{
-			Id:         r.Id,
-			Group:      r.Group,
-			Status:     r.Status,
-			ReviewDate: r.ReviewDate,
-		}
-		if r.ReviewedBy != nil {
-			xg.ReviewedBy = r.ReviewedBy
-		}
-		payloads = append(payloads, xg)
-	}
-
-	xtdbReview := &types.Review{
-		Id:               review.Id,
-		CreatedAt:        review.CreatedAt,
-		OrgId:            review.OrgId,
-		Type:             review.Type,
-		Session:          review.Session,
-		Connection:       review.Connection,
-		ConnectionId:     review.ConnectionId,
-		CreatedBy:        review.CreatedBy,
-		ReviewOwner:      review.ReviewOwner,
-		Input:            review.Input,
-		InputEnvVars:     review.InputEnvVars,
-		InputClientArgs:  review.InputClientArgs,
-		AccessDuration:   review.AccessDuration,
-		RevokeAt:         review.RevokeAt,
-		Status:           review.Status,
-		ReviewGroupsIds:  reviewGroupIds,
-		ReviewGroupsData: review.ReviewGroupsData,
-	}
-
-	tx, err := s.SubmitPutTx(append(payloads, xtdbReview)...)
-	if err != nil {
-		return 0, err
-	}
-
-	return tx.TxID, nil
+	return 0, pgreview.New().Upsert(review)
 }

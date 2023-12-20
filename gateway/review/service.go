@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
-	st "github.com/runopsio/hoop/gateway/storage"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
@@ -21,11 +20,9 @@ type (
 	storage interface {
 		Persist(context *user.Context, review *types.Review) (int64, error)
 		FindById(context *user.Context, id string) (*types.Review, error)
-		FindAll(context *user.Context) ([]types.Review, error)
 		FindBySessionID(context *user.Context, sessionID string) (*types.Review, error)
 		FindApprovedJitReviews(ctx *user.Context, connID string) (*types.Review, error)
-		PersistSessionAsReady(ctx *user.Context, sessionID string) (*st.TxResponse, error)
-		// FindSessionBySessionId(ctx *user.Context, sessionID string) (*types.Session, error)
+		PersistSessionAsReady(ctx *user.Context, sessionID string) error
 	}
 
 	transportService interface {
@@ -51,14 +48,6 @@ func (s *Service) FindOne(context *user.Context, id string) (*types.Review, erro
 // FindOneTimeReview returns an one time review by session id
 func (s *Service) FindBySessionID(context *user.Context, sessionID string) (*types.Review, error) {
 	return s.Storage.FindBySessionID(context, sessionID)
-}
-
-// func (s *Service) FindSessionBySessionId(ctx *user.Context, sessionID string) (*types.Session, error) {
-// 	return s.Storage.FindSessionBySessionId(ctx, sessionID)
-// }
-
-func (s *Service) FindAll(context *user.Context) ([]types.Review, error) {
-	return s.Storage.FindAll(context)
 }
 
 func (s *Service) Persist(context *user.Context, review *types.Review) error {
@@ -177,8 +166,7 @@ func (s *Service) Review(context *user.Context, reviewID string, status types.Re
 	}
 
 	if rev.Status == types.ReviewStatusApproved || rev.Status == types.ReviewStatusRejected {
-		_, err = s.Storage.PersistSessionAsReady(context, rev.Session)
-		if err != nil {
+		if err := s.Storage.PersistSessionAsReady(context, rev.Session); err != nil {
 			return nil, fmt.Errorf("save sesession as ready error: %v", err)
 		}
 		// release the connection if there's a client waiting

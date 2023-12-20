@@ -6,7 +6,6 @@ import (
 
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/memory"
-	"github.com/runopsio/hoop/gateway/pgrest"
 	pgagents "github.com/runopsio/hoop/gateway/pgrest/agents"
 	"github.com/runopsio/hoop/gateway/storagev2"
 )
@@ -69,10 +68,6 @@ func requestGrpcConnectionOK(agentID string) bool {
 // updateAgentStatus will update the agent status to CONNECTED
 // in a 5 minutes interval
 func updateAgentStatus(orgID, agentName string) {
-	if !pgrest.Rollout {
-		return
-	}
-
 	key := fmt.Sprintf("%s:%s", orgID, agentName)
 	now := time.Now().UTC()
 	t1, _ := agentUpdateStore.Get(key).(time.Time)

@@ -61,7 +61,6 @@ publish-tools:
 	./scripts/publish-tools.sh
 
 run-dev:
-	./scripts/dev/run-setup.sh
 	./scripts/dev/run.sh
 
 run-dev-postgres:

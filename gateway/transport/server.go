@@ -26,10 +26,10 @@ import (
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
+	authinterceptor "github.com/runopsio/hoop/gateway/transport/interceptors/auth"
+	sessionuuidinterceptor "github.com/runopsio/hoop/gateway/transport/interceptors/sessionuuid"
+	tracinginterceptor "github.com/runopsio/hoop/gateway/transport/interceptors/tracing"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
-	authinterceptor "github.com/runopsio/hoop/gateway/transportv2/interceptors/auth"
-	sessionuuidinterceptor "github.com/runopsio/hoop/gateway/transportv2/interceptors/sessionuuid"
-	tracinginterceptor "github.com/runopsio/hoop/gateway/transportv2/interceptors/tracing"
 	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc"
 
@@ -162,38 +162,8 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 		return status.Error(codes.InvalidArgument, "missing origin")
 	}
 
-	// val := ctx.Value(authinterceptor.GatewayContextKey{})
-	// gwctx, _ := val.(*authinterceptor.GatewayContext)
-	// if gwctx != nil && gwctx.IsApiV2 {
-	// 	switch clientOrigin[0] {
-	// 	case pb.ConnectionOriginAgent:
-	// 		return transportv2.SubscribeAgent(&transportv2.AgentContext{
-	// 			Agent:       &gwctx.Agent,
-	// 			ApiURL:      s.IDProvider.ApiURL,
-	// 			BearerToken: gwctx.BearerToken,
-	// 		}, stream)
-	// 	case pb.ConnectionOriginClientProxyManager:
-	// 		return status.Error(codes.Unimplemented, "not implemented")
-	// 		// return s.proxyManagerV2(stream)
-	// 	default:
-	// 		return transportv2.SubscribeClient(&transportv2.ClientContext{
-	// 			UserContext: gwctx.UserContext,
-	// 			Connection:  gwctx.Connection,
-	// 			BearerToken: gwctx.BearerToken,
-	// 			IsAdminExec: gwctx.IsAdminExec,
-	// 		}, stream)
-	// 	}
-	// }
-
-	// legacy clients
 	switch clientOrigin[0] {
 	case pb.ConnectionOriginAgent:
-		// keep compatibility with old clients
-		// hoopagent/sdk or hoopagent/sidecar
-		// TODO: remove in flavor of subscribeAgent.
-		if strings.HasPrefix(mdget(md, "user-agent"), "hoopagent/s") {
-			return s.subscribeAgentSidecar(stream)
-		}
 		return s.subscribeAgent(stream)
 	case pb.ConnectionOriginClientProxyManager:
 		return s.proxyManager(stream)
@@ -266,12 +236,6 @@ func (s *Server) disconnectAllClients() context.Context {
 				log.Warnf("timeout (0.5s) on disconnecting channel %v, moving to next one", itemKey)
 			}
 		}
-		// a state to signalize to shutdown xtdb when it's running
-		// in a sidecar container.
-		// https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/#container-hooks
-		preStopFilePath := "/tmp/xtdb-shutdown.placeholder"
-		_ = os.Remove(preStopFilePath)
-		_ = os.WriteFile(preStopFilePath, []byte(``), 0777)
 	}()
 	return ctx
 }
