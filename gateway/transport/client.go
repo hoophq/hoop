@@ -141,6 +141,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 
 	sessionScript := ""
 	sessionLabels := map[string]string{}
+	var sessionMetadata map[string]any
 
 	if sessionID != "" {
 		storeCtx := storagev2.NewContext(gwctx.UserContext.UserID, gwctx.UserContext.OrgID, s.StoreV2)
@@ -153,6 +154,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 		if session != nil {
 			sessionScript = session.Script["data"]
 			sessionLabels = session.Labels
+			sessionMetadata = session.Metadata
 		}
 	}
 
@@ -182,8 +184,9 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 		ClientVerb:   clientVerb,
 		ClientOrigin: clientOrigin,
 
-		Script: sessionScript,
-		Labels: sessionLabels,
+		Script:   sessionScript,
+		Labels:   sessionLabels,
+		Metadata: sessionMetadata,
 
 		ParamsData: map[string]any{},
 	}

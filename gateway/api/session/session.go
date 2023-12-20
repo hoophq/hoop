@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -21,10 +22,13 @@ import (
 	"github.com/runopsio/hoop/gateway/user"
 )
 
+var metadataRegexp = regexp.MustCompile(`^[a-zA-Z0-9][\.a-zA-Z0-9_-]*[a-zA-Z0-9]$`)
+
 type SessionPostBody struct {
 	Script     string              `json:"script"`
 	Connection string              `json:"connection"`
 	Labels     types.SessionLabels `json:"labels"`
+	Metadata   map[string]any      `json:"metadata"`
 	ClientArgs []string            `json:"client_args"`
 }
 
@@ -35,6 +39,10 @@ func Post(c *gin.Context) {
 	var body SessionPostBody
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	if err := CoerceMetadataFields(body.Metadata); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
 
@@ -57,6 +65,7 @@ func Post(c *gin.Context) {
 		ID:           uuid.NewString(),
 		OrgID:        ctx.Org.Id,
 		Labels:       body.Labels,
+		Metadata:     body.Metadata,
 		Script:       types.SessionScript{"data": body.Script},
 		UserEmail:    ctx.User.Email,
 		UserID:       ctx.User.Id,
@@ -78,6 +87,29 @@ func Post(c *gin.Context) {
 
 	// running RunExec from run-exec.go
 	RunExec(c, newSession, body.ClientArgs)
+}
+
+func CoerceMetadataFields(metadata map[string]any) error {
+	if len(metadata) > 10 {
+		return fmt.Errorf("metadata field must have less than 10 fields")
+	}
+	var invalidFields []string
+	for key, val := range metadata {
+		if !metadataRegexp.MatchString(key) || len(key) > 63 {
+			invalidFields = append(invalidFields, fmt.Sprintf("key=%v", key))
+			continue
+		}
+		val := fmt.Sprintf("%v", val)
+		if !metadataRegexp.MatchString(val) || len(key) > 63 {
+			invalidFields = append(invalidFields, fmt.Sprintf("val=%v", val))
+		}
+		metadata[key] = val
+	}
+	if len(invalidFields) > 0 {
+		return fmt.Errorf("metadata keys and values must begin and end with a letter or number, and may contain letters, numbers, hyphens, dots, and underscores, up to 63 characters each, invalid-fields=%v",
+			invalidFields)
+	}
+	return nil
 }
 
 func List(c *gin.Context) {
@@ -212,6 +244,7 @@ func Get(c *gin.Context) {
 		"org_id":       session.OrgID,
 		"script":       session.Script,
 		"labels":       session.Labels,
+		"metadata":     session.Metadata,
 		"user":         session.UserEmail,
 		"user_id":      session.UserID,
 		"user_name":    session.UserName,

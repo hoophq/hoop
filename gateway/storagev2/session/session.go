@@ -69,6 +69,7 @@ func List(ctx *storagev2.Context, opts ...*types.SessionOption) (*types.SessionL
 			OrgID:            s.OrgID,
 			Script:           types.SessionScript{"data": ""}, // do not show the script on listing
 			Labels:           s.Labels,
+			Metadata:         s.Metadata,
 			UserEmail:        s.UserEmail,
 			UserID:           s.UserID,
 			UserName:         s.UserName,

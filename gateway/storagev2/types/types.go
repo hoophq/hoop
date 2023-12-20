@@ -196,6 +196,7 @@ type Session struct {
 	OrgID       string             `json:"org_id"       edn:"session/org-id"`
 	Script      SessionScript      `json:"script"       edn:"session/script"`
 	Labels      SessionLabels      `json:"labels"       edn:"session/labels"`
+	Metadata    map[string]any     `json:"metadata"     edn:"session/metadata"`
 	UserEmail   string             `json:"user"         edn:"session/user"`
 	UserID      string             `json:"user_id"      edn:"session/user-id"`
 	UserName    string             `json:"user_name"    edn:"session/user-name"`
