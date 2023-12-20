@@ -183,9 +183,6 @@ func (s *Server) ValidateConfiguration() error {
 	return nil
 }
 
-// DEPRECATED implement honeycomb instead of tracking in xtdb
-func (s *Server) trackSessionStatus(sessionID, phase string, err error) {}
-
 func (s *Server) handleGracefulShutdown() {
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc,

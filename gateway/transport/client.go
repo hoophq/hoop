@@ -162,8 +162,6 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 		sessionID = uuid.NewString()
 	}
 
-	s.trackSessionStatus(sessionID, pb.SessionPhaseClientConnect, nil)
-
 	pluginContext := plugintypes.Context{
 		Context: context.Background(),
 		SID:     sessionID,
@@ -199,7 +197,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 	}
 
 	switch string(conn.Type) {
-	case pb.ConnectionTypeCommandLine: // noop - this type can connect/exec
+	case pb.ConnectionTypeCommandLine, pb.ConnectionTypeApplication: // noop - this type can connect/exec
 	case pb.ConnectionTypeTCP:
 		if clientVerb == pb.ClientVerbExec {
 			return status.Errorf(codes.InvalidArgument,
@@ -223,7 +221,6 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 	bindClient(sessionID, stream, plugins)
 	if err != nil {
 		DisconnectClient(sessionID, err)
-		s.trackSessionStatus(sessionID, pb.SessionPhaseClientErr, err)
 		return status.Errorf(codes.FailedPrecondition, err.Error())
 	}
 	eventName := analytics.EventGrpcExec
@@ -246,7 +243,6 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 		Infof("proxy connected: user=%v,hostname=%v,origin=%v,verb=%v,platform=%v,version=%v,goversion=%v",
 			gwctx.UserContext.UserEmail, mdget(md, "hostname"), clientOrigin, clientVerb,
 			mdget(md, "platform"), mdget(md, "version"), mdget(md, "goversion"))
-	s.trackSessionStatus(sessionID, pb.SessionPhaseClientConnected, nil)
 	clientErr := s.listenClientMessages(stream, pluginContext)
 	if status, ok := status.FromError(clientErr); ok && status.Code() == codes.Canceled {
 		log.With("sid", sessionID, "origin", clientOrigin, "mode", agentMode).Infof("grpc client connection canceled")
@@ -260,10 +256,8 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 	}
 	defer DisconnectClient(sessionID, clientErr)
 	if clientErr != nil {
-		s.trackSessionStatus(sessionID, pb.SessionPhaseClientErr, clientErr)
 		return clientErr
 	}
-	s.trackSessionStatus(sessionID, pb.SessionPhaseGatewaySessionClose, clientErr)
 	return clientErr
 }
 

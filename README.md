@@ -90,7 +90,7 @@ Install the [golang migrate cli](https://github.com/golang-migrate/migrate/relea
 1. In the root folder of the project, run the following command:
 
 ```sh
- migrate create -ext sql -dir rootfs/app/migrations -seq my_new_change
+migrate create -ext sql -dir rootfs/app/migrations -seq my_new_change
 ```
 
 2. Add the `up` and `down` migrations
