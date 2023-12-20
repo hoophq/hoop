@@ -54,6 +54,7 @@ func Post(c *gin.Context) {
 	}
 
 	updateAgentStatus(dsnCtx.OrgID, dsnCtx.ClientKeyName)
+	// DEPRECATE: we should not support more this kind of flow
 	// persist the requested connections if it doesn't exist in the storage yet
 	for _, connectionName := range requestConnectionItems {
 		if _, ok := connectionMap[connectionName]; ok {

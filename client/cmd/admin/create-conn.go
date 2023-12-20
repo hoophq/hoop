@@ -22,7 +22,7 @@ var (
 
 func init() {
 	createConnectionCmd.Flags().StringVarP(&connAgentFlag, "agent", "a", "", "Name of the agent")
-	createConnectionCmd.Flags().StringVarP(&connTypeFlag, "type", "t", "command-line", "Type of the connection. One off: (command-line,postgres,mysql,mssql,tcp)")
+	createConnectionCmd.Flags().StringVarP(&connTypeFlag, "type", "t", "command-line", "Type of the connection. One off: (command-line,application,postgres,mysql,mssql,tcp)")
 	createConnectionCmd.Flags().StringSliceVarP(&connPuginFlag, "plugin", "p", nil, "Plugins that will be enabled for this connection in the form of: <plugin>:<config01>;<config02>,...")
 	createConnectionCmd.Flags().BoolVar(&connOverwriteFlag, "overwrite", false, "It will create or update it if a connection already exists")
 	createConnectionCmd.Flags().BoolVar(&skipStrictValidation, "skip-validation", false, "It will skip any strict validation")
@@ -76,7 +76,7 @@ var createConnectionCmd = &cobra.Command{
 		}
 		connType, subType, _ := strings.Cut(connTypeFlag, "/")
 		switch connType {
-		case "command-line":
+		case "command-line", "application":
 			if len(cmdList) == 0 && !skipStrictValidation {
 				styles.PrintErrorAndExit("command-line type must be at least one command")
 			}

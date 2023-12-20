@@ -197,7 +197,7 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				fmt.Printf("               host=127.0.0.1 port=%s\n", tcp.ListenPort())
 				fmt.Println("------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
-			case pb.ConnectionTypeCommandLine:
+			case pb.ConnectionTypeCommandLine, pb.ConnectionTypeApplication:
 				// https://github.com/creack/pty/issues/95
 				if runtime.GOOS == "windows" {
 					fmt.Println("command line is not supported on Windows")

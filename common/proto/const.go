@@ -25,6 +25,7 @@ const (
 	DefaultKeepAlive time.Duration = 10 * time.Second
 
 	ConnectionTypeCommandLine string = "command-line"
+	ConnectionTypeApplication string = "application"
 	ConnectionTypePostgres    string = "postgres"
 	ConnectionTypeMySQL       string = "mysql"
 	ConnectionTypeMSSQL       string = "mssql"

@@ -197,7 +197,6 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, ag *apitypes.Age
 				if len(pkt.Payload) > 0 {
 					trackErr = fmt.Errorf(string(pkt.Payload))
 				}
-				s.trackSessionStatus(string(sessionID), pb.SessionPhaseClientSessionClose, trackErr)
 				DisconnectClient(string(sessionID), trackErr)
 				// now it's safe to remove the session from memory
 				delete(pctx.ParamsData, agentSessionKeyID)
