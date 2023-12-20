@@ -28,8 +28,6 @@ var (
 	ErrEmptyResponse = fmt.Errorf("empty response")
 )
 
-// returns true if LEGACY_XTDB is not set
-// or ORG_MULTI_TENANT is not true
 type Client struct {
 	apiURL      string
 	accessToken string
