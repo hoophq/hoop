@@ -78,6 +78,7 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 		Status:           types.SessionStatusOpen,
 		Script:           types.SessionScript{"data": pctx.Script},
 		Labels:           pctx.Labels,
+		Metadata:         pctx.Metadata,
 		NonIndexedStream: nil,
 		EventSize:        0,
 		StartSession:     startDate,

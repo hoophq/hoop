@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/proto"
+	sessionapi "github.com/runopsio/hoop/gateway/api/session"
 	"github.com/runopsio/hoop/gateway/clientexec"
 	"github.com/runopsio/hoop/gateway/runbooks/templates"
 	"github.com/runopsio/hoop/gateway/storagev2"
@@ -37,6 +38,7 @@ type RunbookRequest struct {
 	Parameters map[string]string `json:"parameters"`
 	ClientArgs []string          `json:"client_args"`
 	Redirect   bool              `json:"redirect"`
+	Metadata   map[string]any    `json:"metadata"`
 }
 
 type RunbookErrResponse struct {
@@ -177,6 +179,12 @@ func (h *Handler) RunExec(c *gin.Context) {
 			"message":    err.Error()})
 		return
 	}
+	if err := sessionapi.CoerceMetadataFields(req.Metadata); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"session_id": nil,
+			"message":    err.Error()})
+		return
+	}
 	connectionName := c.Param("name")
 	config, pathPrefix, err := h.getRunbookConfig(ctx, c, connectionName)
 	if err != nil {
@@ -207,6 +215,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 		ID:           uuid.NewString(),
 		OrgID:        ctx.Org.Id,
 		Labels:       sessionLabels,
+		Metadata:     req.Metadata,
 		Script:       types.SessionScript{"data": string(runbook.InputFile)},
 		UserEmail:    ctx.User.Email,
 		UserID:       ctx.User.Id,

@@ -77,11 +77,13 @@ func ProcessWalSessions(auditPath string, _ gocron.Job) {
 
 		labels := map[string]string{}
 		var inputScript types.SessionScript
+		var metadata map[string]any
 		if session != nil {
 			inputScript = session.Script
 			for key, val := range session.Labels {
 				labels[key] = val
 			}
+			metadata = session.Metadata
 		}
 		labels["processed-by"] = "job-walsessions"
 		labels["truncated"] = fmt.Sprintf("%v", ev.truncated)
@@ -98,6 +100,7 @@ func ProcessWalSessions(auditPath string, _ gocron.Job) {
 			Status:           types.SessionStatusDone,
 			Script:           inputScript,
 			Labels:           labels,
+			Metadata:         metadata,
 			NonIndexedStream: ev.nonIndexedEvents,
 			EventSize:        ev.size,
 			StartSession:     *wh.StartDate,

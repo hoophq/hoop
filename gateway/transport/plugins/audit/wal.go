@@ -129,11 +129,13 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context) error {
 	endDate := time.Now().UTC()
 	labels := map[string]string{}
 	var inputScript types.SessionScript
+	var metadata map[string]any
 	if session != nil {
 		inputScript = session.Script
 		for key, val := range session.Labels {
 			labels[key] = val
 		}
+		metadata = session.Metadata
 	}
 	labels["processed-by"] = "plugin-audit"
 	labels["truncated"] = fmt.Sprintf("%v", truncated)
@@ -149,6 +151,7 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context) error {
 		Status:           types.SessionStatusDone,
 		Script:           inputScript,
 		Labels:           labels,
+		Metadata:         metadata,
 		NonIndexedStream: types.SessionNonIndexedEventStreamList{"stream": eventStreamList},
 		EventSize:        eventSize,
 		StartSession:     *wh.StartDate,
