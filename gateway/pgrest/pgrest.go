@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -31,23 +30,10 @@ var (
 
 // returns true if LEGACY_XTDB is not set
 // or ORG_MULTI_TENANT is not true
-var Rollout = func() bool {
-	if os.Getenv("ORG_MULTI_TENANT") == "true" {
-		return false
-	}
-	isLegacyXtdb := os.Getenv("LEGACY_XTDB") == "true"
-	return !isLegacyXtdb
-}()
-
 type Client struct {
 	apiURL      string
 	accessToken string
 }
-
-func SetRoleName(name string) { roleName = name }
-func SetJwtKey(key []byte)    { jwtSecretKey = key }
-func SetBaseURL(url *url.URL) { baseURL = url }
-func DisableRollout()         { Rollout = false }
 
 func New(path string, a ...any) *Client { return newClient(fmt.Sprintf(path, a...)) }
 func newClient(path string) *Client {

@@ -52,11 +52,6 @@ func ParseGatewayContextInto(ctx context.Context, into any) error {
 			*into.(*GatewayContext) = *v
 			assigned = true
 		}
-	case *types.ClientKey:
-		if _, ok := into.(*types.ClientKey); ok {
-			*into.(*types.ClientKey) = *v
-			assigned = true
-		}
 	case *apitypes.Agent:
 		if _, ok := into.(*agent.Agent); ok {
 			*into.(*apitypes.Agent) = *v

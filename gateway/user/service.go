@@ -3,7 +3,6 @@ package user
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -19,14 +18,12 @@ type (
 
 	storage interface {
 		FindById(ctx *Context, xtID string) (*Context, error)
-		// FindByEmail(ctx *Context, email string) (*User, error)
 		FindBySlackID(ctx *Org, slackID string) (*User, error)
 		Persist(user any) (int64, error)
 		FindAll(context *Context) ([]User, error)
 		FindInvitedUser(email string) (*InvitedUser, error)
 		GetOrgByName(name string) (*Org, error)
 		GetOrgNameByID(orgID string) (*Org, error)
-		// FindByGroups(context *Context, groups []string) ([]User, error)
 		ListAllGroups(context *Context) ([]string, error)
 		FindOrgs() ([]Org, error)
 	}
@@ -146,10 +143,6 @@ func (s *Service) FindOne(context *Context, id string) (*User, error) {
 
 }
 
-// func (s *Service) FindByEmail(ctx *Context, email string) (*User, error) {
-// 	return s.Storage.FindByEmail(ctx, email)
-// }
-
 func (s *Service) FindBySlackID(ctx *Org, slackID string) (*User, error) {
 	return s.Storage.FindBySlackID(ctx, slackID)
 }
@@ -177,10 +170,6 @@ func (s *Service) GetOrgNameByID(id string) (*Org, error) {
 func (s *Service) FindInvitedUser(email string) (*InvitedUser, error) {
 	return s.Storage.FindInvitedUser(email)
 }
-
-// func (s *Service) FindByGroups(context *Context, groups []string) ([]User, error) {
-// 	return s.Storage.FindByGroups(context, groups)
-// }
 
 func (s *Service) ListAllGroups(context *Context) ([]string, error) {
 	return s.Storage.ListAllGroups(context)
@@ -222,40 +211,6 @@ func (s *Service) CreateDefaultOrganization() error {
 		return fmt.Errorf("found multiple organizations, cannot promote. orgs=%v", orgList)
 	}
 	return nil
-}
-
-func ExtractDomain(email string) string {
-	emailsParts := strings.Split(email, "@")
-	domainParts := strings.Split(emailsParts[1], ".")
-	orgName := domainParts[0]
-
-	if isPublicDomain(orgName) {
-		orgName = emailsParts[0]
-	}
-
-	return orgName
-}
-
-func isPublicDomain(domain string) bool {
-	publicDomains := []string{
-		"gmail",
-		"outlook",
-		"hotmail",
-		"yahoo",
-		"protonmail",
-		"zoho",
-		"aim",
-		"gmx",
-		"icloud",
-		"yandex",
-	}
-
-	for _, d := range publicDomains {
-		if domain == d {
-			return true
-		}
-	}
-	return false
 }
 
 func (user *User) IsAdmin() bool {

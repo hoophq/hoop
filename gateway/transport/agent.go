@@ -17,9 +17,8 @@ import (
 	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
 	"github.com/runopsio/hoop/gateway/agent"
 	apitypes "github.com/runopsio/hoop/gateway/apiclient/types"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
+	authinterceptor "github.com/runopsio/hoop/gateway/transport/interceptors/auth"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
-	authinterceptor "github.com/runopsio/hoop/gateway/transportv2/interceptors/auth"
 	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -86,73 +85,6 @@ func normalizeAgentID(orgID, resourceName string, connectionItems []string) stri
 	return strings.Join(items, ",")
 }
 
-// Deprecated: subscribeAgentSidecar is deprecated in flavor of subscribeAgent
-func (s *Server) subscribeAgentSidecar(stream pb.Transport_ConnectServer) error {
-	ctx := stream.Context()
-	md, _ := metadata.FromIncomingContext(ctx)
-
-	var clientKey types.ClientKey
-	err := authinterceptor.ParseGatewayContextInto(ctx, &clientKey)
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-
-	var agentID string
-	// connection-name header is keep for compatibility with old agents
-	connectionName := mdget(md, "connection-name")
-	connectionItems := mdget(md, "connection-items")
-	switch {
-	case connectionName != "":
-		agentID = normalizeAgentID(clientKey.OrgID, clientKey.Name, []string{connectionName})
-		log.Warnf("agent %v using deprecated header CONNECTION-NAME", mdget(md, "version"))
-	case connectionItems != "":
-		agentID = normalizeAgentID(clientKey.OrgID, clientKey.Name, strings.Split(connectionItems, ","))
-	}
-	if agentID == "" {
-		log.Error("missing required connection-items attribute, connection-name=%v, connection-items=%v, err=%v",
-			connectionName, connectionItems, err)
-		sentry.CaptureException(err)
-		return status.Errorf(codes.Internal, "missing connection-items header")
-	}
-
-	org, _ := s.UserService.GetOrgNameByID(clientKey.OrgID)
-	var orgName string
-	if org != nil {
-		orgName = org.Name
-	}
-	clientOrigin := pb.ConnectionOriginAgent
-
-	pluginContext := plugintypes.Context{
-		OrgID:        clientKey.OrgID,
-		ClientOrigin: clientOrigin,
-		ParamsData:   map[string]any{"client": clientOrigin},
-	}
-	// TODO: in case of overwriting, send a disconnect to the old
-	// stream
-	bindAgent(agentID, stream)
-	log.Infof("agent sidecar connected: org=%v,key=%v,id=%v,platform=%v,version=%v",
-		orgName, clientKey.Name, agentID, mdget(md, "platform"), mdget(md, "version"))
-
-	_ = stream.Send(&pb.Packet{
-		Type:    pbagent.GatewayConnectOK,
-		Payload: s.configurationData(orgName),
-	})
-	var agentErr error
-	pluginContext.ParamsData["disconnect-agent-id"] = agentID
-	s.startDisconnectClientSink(agentID, clientOrigin, func(err error) {
-		defer unbindAgent(agentID)
-		_ = s.pluginOnDisconnect(pluginContext, err)
-	})
-	agentObj := &apitypes.Agent{ID: agentID, Name: clientKey.Name}
-	agentErr = s.listenAgentMessages(&pluginContext, agentObj, newStreamWrapper(stream, clientKey.OrgID))
-	if agentErr == nil {
-		log.Warnf("agent return a nil error, it will not disconnect it properly, id=%v", agentID)
-	}
-	DisconnectClient(agentID, agentErr)
-	return agentErr
-}
-
 func (s *Server) subscribeAgent(grpcStream pb.Transport_ConnectServer) error {
 	ctx := grpcStream.Context()
 	md, _ := metadata.FromIncomingContext(ctx)
@@ -170,20 +102,6 @@ func (s *Server) subscribeAgent(grpcStream pb.Transport_ConnectServer) error {
 	}
 	var agentBindID string
 	switch v := ctxVal.(type) {
-	// TODO: it should be removed after there're no more client keys being used
-	case *types.ClientKey:
-		agentBindID = normalizeAgentID(v.OrgID, v.Name, connectionNameList)
-		if agentBindID == "" {
-			log.Error("missing required connection-items attribute, connection-items=%v, err=%v",
-				connectionItems, err)
-			sentry.CaptureException(err)
-			return status.Errorf(codes.Internal, "missing connection-items header")
-		}
-
-		gwctx.Agent.ID = agentBindID
-		gwctx.Agent.Mode = pb.AgentModeEmbeddedType
-		gwctx.Agent.Name = fmt.Sprintf("clientkey:%s", v.Name)
-		gwctx.Agent.OrgID = v.OrgID
 	case *authinterceptor.GatewayContext:
 		gwctx = *v
 		agentBindID = gwctx.Agent.ID

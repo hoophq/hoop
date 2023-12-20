@@ -1,11 +1,6 @@
 #!/bin/bash
 
 cd /app/
-if [ "$LEGACY_XTDB" == "true" ]; then
-  echo "--> STARTING LEGACY XTDB ..."
-  java $JVM_OPTS -Dlogback.configurationFile=/app/logback.xml \
-     -jar /app/xtdb-pg.jar &
-fi
 
 echo "--> STARTING GATEWAY ..."
 /app/hooplinux start gateway --listen-admin-addr "0.0.0.0:8099" &
@@ -15,10 +10,6 @@ do
   sleep 1
 done
 echo "done"
-
-if [ "$LEGACY_XTDB" == "true" ]; then
-  curl -s -f -o /dev/null "http://127.0.0.1:3001/_xtdb/status" || { echo "THE XTDB IS DOWN"; exit 1; }
-fi
 
 # don't start a default agent if it's an org multi tenant setup
 if [ "$ORG_MULTI_TENANT" == "true" ]; then

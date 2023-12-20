@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/gateway/pgrest"
 	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
@@ -19,7 +18,6 @@ type (
 	}
 
 	service interface {
-		FindAll(context *user.Context) ([]types.Review, error)
 		Review(context *user.Context, id string, status types.ReviewStatus) (*types.Review, error)
 		Revoke(ctx *user.Context, id string) (*types.Review, error)
 		Persist(context *user.Context, review *types.Review) error
@@ -70,35 +68,17 @@ func (h *Handler) Put(c *gin.Context) {
 func (h *Handler) FindAll(c *gin.Context) {
 	context := user.ContextUser(c)
 	log := user.ContextLogger(c)
-
-	if pgrest.Rollout {
-		reviews, err := pgreview.New().FetchAll(context)
-		if err != nil && err != pgrest.ErrNotFound {
-			log.Errorf("failed listing reviews, err=%v", err)
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
-		var reviewList []types.ReviewJSON
-		for _, obj := range reviews {
-			reviewList = append(reviewList, *pgreview.ToJson(obj))
-		}
-		c.JSON(http.StatusOK, reviewList)
-		return
-	}
-	reviews, err := h.Service.FindAll(context)
-	if err != nil {
+	reviews, err := pgreview.New().FetchAll(context)
+	if err != nil && err != pgrest.ErrNotFound {
 		log.Errorf("failed listing reviews, err=%v", err)
-		sentry.CaptureException(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
-
-	var reviewsList []types.ReviewJSON
+	var reviewList []types.ReviewJSON
 	for _, obj := range reviews {
-		reviewsList = append(reviewsList, sanitizeReview(&obj))
+		reviewList = append(reviewList, *pgreview.ToJson(obj))
 	}
-
-	c.JSON(http.StatusOK, reviewsList)
+	c.JSON(http.StatusOK, reviewList)
 }
 
 func sanitizeReview(review *types.Review) types.ReviewJSON {
