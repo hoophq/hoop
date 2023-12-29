@@ -226,7 +226,7 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 			return nil, nil
 		}
 		sreq.ID = rev.Id
-		sreq.WebappURL = fmt.Sprintf("%s/plugins/reviews/%s", p.idpProvider.ApiURL, rev.Id)
+		sreq.WebappURL = fmt.Sprintf("%s/sessions/%s", p.idpProvider.ApiURL, pctx.SID)
 		sreq.ApprovalGroups = parseGroups(rev.ReviewGroupsData)
 		if rev.AccessDuration > 0 {
 			sreq.SessionTime = &rev.AccessDuration

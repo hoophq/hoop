@@ -108,7 +108,7 @@ func (m *MessageReviewRequest) sessionTime() string {
 }
 
 func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) error {
-	title := fmt.Sprintf("Review Session %s", msg.SessionID)
+	title := "Review"
 
 	header := slack.NewHeaderBlock(&slack.TextBlockObject{
 		Type: slack.PlainTextType,
@@ -118,7 +118,7 @@ func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) error {
 	// name and groups metadata
 	metaSection1 := slack.NewSectionBlock(nil, []*slack.TextBlockObject{
 		{Type: slack.MarkdownType, Text: fmt.Sprintf("name\n*%s*", msg.Name)},
-		{Type: slack.MarkdownType, Text: fmt.Sprintf("groups\n*%v*", msg.UserGroups)},
+		{Type: slack.MarkdownType, Text: fmt.Sprintf("groups\n*%s*", strings.Join(msg.UserGroups, ", "))},
 	}, nil)
 
 	// email, session time metadata
@@ -145,14 +145,11 @@ func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) error {
 	// URI to the review at portal
 	reviewLocation := slack.NewSectionBlock(&slack.TextBlockObject{
 		Type: slack.MarkdownType,
-		Text: fmt.Sprintf("_Details: <%s|%s>_", msg.WebappURL, msg.ID),
+		Text: fmt.Sprintf("More details: %s", msg.WebappURL),
 	}, nil, nil)
 
 	blocks := []slack.Block{
-		slack.NewDividerBlock(),
 		header,
-		reviewLocation,
-		slack.NewDividerBlock(),
 
 		metaSection1,
 		metaSection2,
@@ -160,6 +157,9 @@ func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) error {
 
 		scriptBlock,
 
+		slack.NewDividerBlock(),
+
+		reviewLocation,
 		slack.NewDividerBlock(),
 	}
 
@@ -171,7 +171,7 @@ func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) error {
 		blocks = append(blocks,
 			slack.NewSectionBlock(&slack.TextBlockObject{
 				Type: slack.MarkdownType,
-				Text: fmt.Sprintf("*Group:* %s", groupName),
+				Text: fmt.Sprintf("group *%s*", groupName),
 			}, nil, nil),
 			slack.NewActionBlock(
 				blockID,
@@ -287,4 +287,27 @@ func (s *SlackService) SendDirectMessage(sessionID, slackID string) error {
 	msg := fmt.Sprintf("✅ Session <%s/sessions/%s|%s> approved, visit the link to execute it.", s.apiURL, sessionID, sessionID)
 	_, _, err = s.apiClient.PostMessage(channel.ID, slack.MsgOptionText(msg, false))
 	return err
+}
+
+func (s *SlackService) PostMessage(SlackID string, message string) error {
+	channelID, timestamp, err := s.apiClient.PostMessage(SlackID, slack.MsgOptionText(message, false))
+	if err != nil {
+		return fmt.Errorf("failed post message to the channel %v at %v, err=%v", channelID, timestamp, err)
+	}
+
+	fmt.Printf("Message successfully sent to the channel %s at %s", channelID, timestamp)
+	return nil
+}
+
+func (s *SlackService) PostEphemeralMessage(msg *MessageReviewResponse, message string) error {
+	channelID := msg.item.Channel.ID
+	userID := msg.item.User.ID
+
+	timestamp, err := s.apiClient.PostEphemeral(channelID, userID, slack.MsgOptionText(message, false))
+	if err != nil {
+		return fmt.Errorf("failed post ephemeral message to the user %v on the channel %v at %v, err=%v", userID, channelID, timestamp, err)
+	}
+
+	fmt.Printf("Message successfully sent to the user %s on the channel %s at %s", userID, channelID, timestamp)
+	return nil
 }

@@ -27,17 +27,20 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 	slackApprover, err := p.userSvc.FindBySlackID(&user.Org{Id: ev.orgID}, ev.msg.SlackID)
 	if err != nil {
 		log.With("session", sid).Errorf("failed obtaning approver information, err=%v", err)
-		_ = ev.ss.OpenModalError(ev.msg, "failed obtaining approver's information")
+		_ = ev.ss.PostEphemeralMessage(ev.msg, "failed obtaining approver's information")
 		return
 	}
 	if slackApprover == nil {
 		log.With("session", sid).Infof("approver is not allowed")
-		_ = ev.ss.OpenModalError(ev.msg, "approver is not allowed")
+		_ = ev.ss.PostEphemeralMessage(ev.msg, fmt.Sprintf("You are not registered. "+
+			"Please click on this link to integrate your slack user with your user hoop.\n"+
+			"%s/slack/user/new/%s", p.idpProvider.ApiURL, ev.msg.SlackID))
 		return
 	}
 	if !pb.IsInList(ev.msg.GroupName, slackApprover.Groups) {
 		log.With("session", sid).Infof("approver not allowed, it does not belong to %s", ev.msg.GroupName)
-		_ = ev.ss.OpenModalError(ev.msg, "approver does not belong to this group")
+		_ = ev.ss.PostEphemeralMessage(ev.msg, fmt.Sprintf("You can't review this session for group %s"+
+			" because you do not belong to this group", ev.msg.GroupName))
 		return
 	}
 	log.With("session", sid).Infof("found a valid approver user=%s, slackid=%s",
@@ -82,8 +85,14 @@ func (p *slackPlugin) performExecReview(ev *event, ctx *user.Context, status typ
 		err = ev.ss.UpdateMessageStatus(ev.msg, fmt.Sprintf("• _review has already been `%s`_", status))
 	case nil:
 		isApproved := rev.Status == types.ReviewStatusApproved
-		SendApprovedMessage(ctx, rev)
 		err = ev.ss.UpdateMessage(ev.msg, isApproved)
+
+		if isApproved {
+			ev.ss.PostMessage(rev.ReviewOwner.SlackID, fmt.Sprintf("Your session is ready to be executed.\n"+
+				"Please follow this link to execute it: "+
+				"%s/sessions/%s", p.idpProvider.ApiURL, ev.msg.SessionID))
+		}
+
 		log.With("session", sid).Infof("review id=%s, status=%v", ev.msg.ID, rev.Status)
 	default:
 		log.With("session", sid).Warnf("failed reviewing, id=%s, internal error=%v",
@@ -107,8 +116,14 @@ func (p *slackPlugin) performJitReview(ev *event, ctx *user.Context, status type
 		err = ev.ss.UpdateMessageStatus(ev.msg, fmt.Sprintf("• _jit has already been `%s`_", status))
 	case nil:
 		isApproved := j.Status == types.ReviewStatusApproved
-		SendApprovedMessage(ctx, j)
 		err = ev.ss.UpdateMessage(ev.msg, isApproved)
+
+		if isApproved {
+			ev.ss.PostMessage(j.ReviewOwner.SlackID, fmt.Sprintf("Your interactive session is ready to be executed.\n"+
+				"Please follow this link to execute it: "+
+				"%s/sessions/%s", p.idpProvider.ApiURL, ev.msg.SessionID))
+		}
+
 		log.With("session", sid).Infof("jit review id=%s, status=%v", ev.msg.ID, j.Status)
 	default:
 		log.With("session", sid).Warnf("failed reviewing jit, id=%s, internal error=%v",

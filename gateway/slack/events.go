@@ -32,7 +32,7 @@ func (s *SlackService) processEvents(respCh chan *MessageReviewResponse) {
 		case socketmode.EventTypeInteractive:
 			s.processInteractive(respCh, evt)
 		case socketmode.EventTypeSlashCommand:
-			s.processSlashCommandRequest(evt)
+			s.processSlashCommandRequest(respCh, evt)
 		case socketmode.EventTypeHello:
 			log.Info("socket live, received ping from slack")
 		case socketmode.EventTypeIncomingError:
@@ -52,6 +52,7 @@ func (s *SlackService) processInteractive(respCh chan *MessageReviewResponse, ev
 	}
 	log.Infof("received interaction, user=%v, domain=%s, metaevent=%s",
 		cb.User.ID, cb.Team.Domain, cb.Message.Metadata.EventType)
+
 	switch cb.Type {
 	case slack.InteractionTypeBlockActions:
 		// See https://api.slack.com/apis/connections/socket-implement#button
@@ -84,7 +85,7 @@ func (s *SlackService) processInteractive(respCh chan *MessageReviewResponse, ev
 	s.socketClient.Ack(*ev.Request, ack)
 }
 
-func (s *SlackService) processSlashCommandRequest(ev socketmode.Event) {
+func (s *SlackService) processSlashCommandRequest(respCh chan *MessageReviewResponse, ev socketmode.Event) {
 	cmd, ok := ev.Data.(slack.SlashCommand)
 	if !ok {
 		fmt.Printf("Ignored %+v\n", ev)
