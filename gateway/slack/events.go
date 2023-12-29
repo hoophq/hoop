@@ -32,7 +32,7 @@ func (s *SlackService) processEvents(respCh chan *MessageReviewResponse) {
 		case socketmode.EventTypeInteractive:
 			s.processInteractive(respCh, evt)
 		case socketmode.EventTypeSlashCommand:
-			s.processSlashCommandRequest(respCh, evt)
+			s.processSlashCommandRequest(evt)
 		case socketmode.EventTypeHello:
 			log.Info("socket live, received ping from slack")
 		case socketmode.EventTypeIncomingError:
@@ -85,7 +85,7 @@ func (s *SlackService) processInteractive(respCh chan *MessageReviewResponse, ev
 	s.socketClient.Ack(*ev.Request, ack)
 }
 
-func (s *SlackService) processSlashCommandRequest(respCh chan *MessageReviewResponse, ev socketmode.Event) {
+func (s *SlackService) processSlashCommandRequest(ev socketmode.Event) {
 	cmd, ok := ev.Data.(slack.SlashCommand)
 	if !ok {
 		fmt.Printf("Ignored %+v\n", ev)
