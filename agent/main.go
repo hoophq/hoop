@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"net/http"
 	"os"
@@ -27,35 +28,56 @@ var (
 	vi               = version.Get()
 )
 
+func tokenCrc32KeySuffix(keyName string) string {
+	t := crc32.MakeTable(crc32.IEEE)
+	return fmt.Sprintf("%s/%08x", keyName, crc32.Checksum([]byte(os.Getenv("HOOP_DSN")), t))
+}
+
 func Run() {
 	config, err := agentconfig.Load()
 	if err != nil {
 		log.With("version", vi.Version).Fatal(err)
 	}
+
+	var environment string
+	if hostname, _, found := strings.Cut(config.URL, ":"); found && config.Type == clientconfig.ModeDsn {
+		environment = hostname
+	}
+	s3Logger := log.NewS3LoggerWriter("agent", environment, tokenCrc32KeySuffix(config.Name))
+	if err := s3Logger.Init(); err != nil {
+		log.With("version", vi.Version).Fatal(err)
+	}
+	defer s3Logger.Flush()
 	// default to embedded mode if it's dsn type config to keep
 	// compatibility with old client keys that doesn't have the mode attribute param
 	if config.Type == clientconfig.ModeDsn &&
 		config.AgentMode == pb.AgentModeEmbeddedType || config.AgentMode == "" {
-		runEmbeddedMode(config)
+		if err := runEmbeddedMode(s3Logger, config); err != nil {
+			s3Logger.Flush()
+			log.With("version", vi.Version).Fatal(err)
+		}
 		return
 	}
-	runDefaultMode(config)
+	if err := runDefaultMode(s3Logger, config); err != nil {
+		s3Logger.Flush()
+		log.With("version", vi.Version).Fatal(err)
+	}
 }
 
-func runDefaultMode(config *agentconfig.Config) {
+func runDefaultMode(s3Log *log.S3LogWriter, config *agentconfig.Config) error {
 	clientOptions := []*grpc.ClientOptions{
 		grpc.WithOption("origin", pb.ConnectionOriginAgent),
 		grpc.WithOption("apiv2", fmt.Sprintf("%v", config.IsV2)),
 	}
 	clientConfig, err := config.GrpcClientConfig()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	clientConfig.UserAgent = defaultUserAgent
 	log.Infof("version=%v, platform=%v, type=%v, mode=%v, grpc_server=%v, tls=%v, strict-tls=%v - starting agent",
 		vi.Version, vi.Platform, config.Type, config.AgentMode, config.URL, !config.IsInsecure(), vi.StrictTLS)
 
-	_ = backoff.Exponential2x(func(v time.Duration) error {
+	return backoff.Exponential2x(func(v time.Duration) error {
 		log.With("version", vi.Version, "backoff", v.String()).
 			Infof("connecting to %v, tls=%v", clientConfig.ServerAddress, !config.IsInsecure())
 		client, err := grpc.Connect(clientConfig, clientOptions...)
@@ -65,7 +87,7 @@ func runDefaultMode(config *agentconfig.Config) {
 			return backoff.Error()
 		}
 		defer client.Close()
-		err = New(client, config).Run()
+		err = New(client, config, s3Log).Run()
 		var grpcStatusCode = codes.Code(99)
 		if status, ok := status.FromError(err); ok {
 			grpcStatusCode = status.Code()
@@ -85,7 +107,7 @@ func runDefaultMode(config *agentconfig.Config) {
 	})
 }
 
-func runEmbeddedMode(config *agentconfig.Config) {
+func runEmbeddedMode(s3Log *log.S3LogWriter, config *agentconfig.Config) error {
 	apiURL := fmt.Sprintf("https://%s/api/connectionapps", config.URL)
 	if config.IsInsecure() {
 		apiURL = fmt.Sprintf("http://%s/api/connectionapps", config.URL)
@@ -94,8 +116,7 @@ func runEmbeddedMode(config *agentconfig.Config) {
 
 	connectionList, connectionEnvVal, err := getConnectionList()
 	if err != nil {
-		log.Error(err)
-		return
+		return err
 	}
 	log.Infof("v2=%v, version=%v, platform=%v, api-url=%v, strict-tls=%v, connections=%v - starting agent",
 		config.IsV2, vi.Version, vi.Platform, apiURL, vi.StrictTLS, connectionList)
@@ -129,7 +150,7 @@ func runEmbeddedMode(config *agentconfig.Config) {
 			Type:      clientconfig.ModeDsn,
 			AgentMode: pb.AgentModeEmbeddedType,
 		}
-		err = New(client, agentConfig).Run()
+		err = New(client, agentConfig, s3Log).Run()
 		if err != io.EOF {
 			log.Errorf("disconnected from %v, err=%v", grpcURL, err.Error())
 			continue

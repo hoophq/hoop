@@ -16,6 +16,7 @@ import (
 type Config struct {
 	Token     string `toml:"token"`
 	URL       string `toml:"grpc_url"`
+	Name      string `toml:"-"`
 	Type      string `toml:"-"`
 	AgentMode string `toml:"-"`
 	IsV2      bool   `toml:"-"`
@@ -47,6 +48,7 @@ func Load() (*Config, error) {
 	}
 	if dsn != nil {
 		return &Config{
+			Name:      dsn.Name,
 			Type:      clientconfig.ModeDsn,
 			AgentMode: dsn.AgentMode,
 			Token:     dsn.Key(),

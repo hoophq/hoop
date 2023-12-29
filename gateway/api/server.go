@@ -56,7 +56,7 @@ func (api *Api) StartAPI(sentryInit bool) {
 	if os.Getenv("PORT") == "" {
 		os.Setenv("PORT", "8009")
 	}
-	zaplogger := log.NewDefaultLogger()
+	zaplogger := log.NewDefaultLogger(nil)
 	defer zaplogger.Sync()
 	route := gin.New()
 	route.Use(ginzap.RecoveryWithZap(zaplogger, false))

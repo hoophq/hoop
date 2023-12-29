@@ -14,16 +14,10 @@ while read -r LINE; do
   fi
 done < .env
 
-# : "${PG_HOST:?Variable not set or empty}"
-# : "${PG_DB:?Variable not set or empty}"
-# : "${PG_USER:?Variable not set or empty}"
-# : "${PG_PASSWORD:?Variable not set or empty}"
-# : "${PG_PORT:=5432}"
-
 trap ctrl_c INT
 
 function ctrl_c() {
-    docker stop hoopdev && docker rm hoopdev
+    docker stop hoopdev
     exit 130
 }
 
@@ -40,7 +34,8 @@ chmod +x $HOME/.hoop/dev/entrypoint.sh
 docker build -t hoopdev -f $HOME/.hoop/dev/Dockerfile $HOME/.hoop/dev/
 
 GOOS=linux go build -ldflags "-s -w -X github.com/runopsio/hoop/common/version.strictTLS=false" -o $HOME/.hoop/dev/hooplinux github.com/runopsio/hoop/client
-docker stop hoopdev > /dev/null || true
+docker stop hoopdev &> /dev/null || true
+docker rm hoopdev &> /dev/null || true
 docker run --name hoopdev \
   -p 3001:3001 \
   -p 8008:8008 \
@@ -50,4 +45,4 @@ docker run --name hoopdev \
   -v $HOME/.hoop/dev:/app/ \
   -v $HOME/.hoop/dev/webapp/resources:/app/ui/ \
   -v $HOME/.hoop/dev/sessions:/opt/hoop/sessions/ \
-  --rm -it hoopdev /app/entrypoint.sh
+  -it hoopdev /app/entrypoint.sh

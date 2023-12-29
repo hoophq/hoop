@@ -1,6 +1,7 @@
 package log
 
 import (
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -21,13 +22,16 @@ const (
 )
 
 var (
-	zlog  = NewDefaultLogger()
+	defaultLoggerSetLevel        = func(l zapcore.Level) {}
+	LogEncoding           string = os.Getenv("LOG_ENCODING")
+	// ff, _                        = os.OpenFile("/tmp/agent.stdout.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+
+	zlog  = NewDefaultLogger(nil)
 	sugar = zlog.Sugar()
 
 	// aliases
-	Printf                = sugar.Infof
-	Println               = sugar.Info
-	defaultLoggerSetLevel = func(l zapcore.Level) {}
+	Printf  = sugar.Infof
+	Println = sugar.Info
 
 	Debugf = sugar.Debugf
 	Infof  = sugar.Infof
@@ -39,47 +43,65 @@ var (
 	Fatalf = sugar.Fatalf
 	Fatal  = sugar.Fatal
 
-	With                = sugar.With
-	IsDebugLevel        = zlog.Level() == zapcore.DebugLevel
-	LogEncoding  string = os.Getenv("LOG_ENCODING")
+	With         = sugar.With
+	IsDebugLevel = zlog.Level() == zapcore.DebugLevel
 )
 
-func NewDefaultLogger() *zap.Logger {
-
+func NewDefaultLogger(additionalWriterLogger io.Writer) *zap.Logger {
 	if LogEncoding == "" {
 		LogEncoding = "json"
 	}
 	logLevel := parseToAtomicLevel(os.Getenv("LOG_LEVEL"))
-	loggerConfig := &zap.Config{
-		Level:    logLevel,
-		Encoding: LogEncoding,
-		EncoderConfig: zapcore.EncoderConfig{
-			LevelKey:       "level",
-			TimeKey:        "timestamp",
-			NameKey:        "logger",
-			CallerKey:      "logger",
-			FunctionKey:    zapcore.OmitKey,
-			MessageKey:     "msg",
-			StacktraceKey:  "stacktrace",
-			LineEnding:     zapcore.DefaultLineEnding,
-			EncodeLevel:    zapcore.LowercaseLevelEncoder,
-			EncodeTime:     zapcore.TimeEncoderOfLayout(time.RFC3339),
-			EncodeDuration: zapcore.SecondsDurationEncoder,
-			EncodeCaller:   zapcore.ShortCallerEncoder,
-		},
-		Sampling: &zap.SamplingConfig{
-			Initial:    1000, // allow the first 1000 logs
-			Thereafter: 15,   // take every 15th log afterwards
-		},
-		OutputPaths:      []string{"stdout"},
-		ErrorOutputPaths: []string{"stderr"},
-	}
-	defaultLoggerSetLevel = loggerConfig.Level.SetLevel
-	logger, err := loggerConfig.Build()
-
+	stdoutSink, closeOut, err := zap.Open("stdout")
 	if err != nil {
 		log.Fatal(err)
 	}
+	stderrSink, _, err := zap.Open("stderr")
+	if err != nil {
+		closeOut()
+		log.Fatal(err)
+	}
+	encoderConfig := zapcore.EncoderConfig{
+		LevelKey:       "level",
+		TimeKey:        "timestamp",
+		NameKey:        "logger",
+		CallerKey:      "logger",
+		FunctionKey:    zapcore.OmitKey,
+		MessageKey:     "msg",
+		StacktraceKey:  "stacktrace",
+		LineEnding:     zapcore.DefaultLineEnding,
+		EncodeLevel:    zapcore.LowercaseLevelEncoder,
+		EncodeTime:     zapcore.TimeEncoderOfLayout(time.RFC3339),
+		EncodeDuration: zapcore.SecondsDurationEncoder,
+		EncodeCaller:   zapcore.ShortCallerEncoder,
+	}
+	core := zapcore.NewCore(zapcore.NewJSONEncoder(encoderConfig), stdoutSink, logLevel)
+	if additionalWriterLogger != nil {
+		core = zapcore.NewTee(
+			zapcore.NewCore(zapcore.NewJSONEncoder(encoderConfig), stdoutSink, logLevel),
+			zapcore.NewCore(zapcore.NewJSONEncoder(encoderConfig), zapcore.AddSync(additionalWriterLogger), logLevel),
+		)
+	}
+	if LogEncoding == "console" {
+		core = zapcore.NewCore(zapcore.NewConsoleEncoder(encoderConfig), stdoutSink, logLevel)
+		if additionalWriterLogger != nil {
+			core = zapcore.NewTee(
+				zapcore.NewCore(zapcore.NewConsoleEncoder(encoderConfig), stdoutSink, logLevel),
+				zapcore.NewCore(zapcore.NewConsoleEncoder(encoderConfig), zapcore.AddSync(additionalWriterLogger), logLevel),
+			)
+		}
+	}
+	defaultLoggerSetLevel = logLevel.SetLevel
+	logger := zap.New(core,
+		// sampler
+		zap.WrapCore(func(core zapcore.Core) zapcore.Core {
+			return zapcore.NewSamplerWithOptions(core, time.Second, 1000, 15)
+		}),
+		zap.ErrorOutput(stderrSink),
+		zap.AddCaller(),
+		zap.AddStacktrace(zapcore.ErrorLevel),
+	)
+	zap.ReplaceGlobals(logger)
 	return logger
 }
 
