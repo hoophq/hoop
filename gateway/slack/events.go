@@ -95,32 +95,13 @@ func (s *SlackService) processSlashCommandRequest(ev socketmode.Event) {
 	log.Infof("received slash command, slackid=%v, domain=%s, command=%v",
 		cmd.UserID, cmd.TeamDomain, cmd.Command)
 
-	var modalContent string
-	authURL, err := s.callback.CommandSlackSubscribe(cmd.Command, cmd.UserID)
-	switch err {
-	case nil:
-		modalContent = fmt.Sprintf("Visit *<%s|this link>* to subscribe to notifications.", authURL)
-	default:
-		modalContent = fmt.Sprintf("⚠️ failed subscribing!\nreason=%v", err)
-	}
-	viewresp, err := s.apiClient.OpenView(cmd.TriggerID, slack.ModalViewRequest{
-		ClearOnClose: true,
-		Type:         slack.VTModal,
-		Title: &slack.TextBlockObject{
-			Type: slack.PlainTextType,
-			Text: "Subscribe to Hoop",
-		},
-		Blocks: slack.Blocks{
-			BlockSet: []slack.Block{
-				slack.NewSectionBlock(&slack.TextBlockObject{
-					Type: slack.MarkdownType,
-					Text: modalContent,
-				}, nil, nil),
-			},
-		},
-	})
+	message := fmt.Sprintf("Please click on this link to integrate your slack user with your user hoop.\n"+
+		"%s/slack/user/new/%s", s.apiURL, cmd.UserID)
+
+	_, _, err := s.apiClient.PostMessage(cmd.UserID, slack.MsgOptionText(message, false))
 	if err != nil {
-		log.Warnf("failed sending slash command response, view=%#v, err=%v", viewresp, err)
+		log.Warnf("failed sending slash command response, err=%v", err)
 	}
+
 	s.socketClient.Ack(*ev.Request, nil)
 }
