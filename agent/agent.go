@@ -28,9 +28,10 @@ import (
 
 type (
 	Agent struct {
-		client    pb.ClientTransport
-		connStore memory.Store
-		config    *config.Config
+		client         pb.ClientTransport
+		connStore      memory.Store
+		config         *config.Config
+		s3LoggerWriter *log.S3LogWriter
 	}
 	connEnv struct {
 		host            string
@@ -120,11 +121,12 @@ func parseConnectionEnvVars(envVars map[string]any, connType string) (*connEnv, 
 	return env, nil
 }
 
-func New(client pb.ClientTransport, cfg *config.Config) *Agent {
+func New(client pb.ClientTransport, cfg *config.Config, s3LoggerWriter *log.S3LogWriter) *Agent {
 	return &Agent{
-		client:    client,
-		connStore: memory.New(),
-		config:    cfg,
+		client:         client,
+		connStore:      memory.New(),
+		config:         cfg,
+		s3LoggerWriter: s3LoggerWriter,
 	}
 }
 
@@ -145,6 +147,7 @@ func (a *Agent) handleGracefulExit() {
 			}
 		}
 		_ = sentry.Flush(time.Second * 2)
+		_ = a.s3LoggerWriter.Flush()
 
 		switch sigval {
 		case syscall.SIGHUP:

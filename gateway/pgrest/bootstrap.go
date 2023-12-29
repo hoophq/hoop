@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -105,8 +106,8 @@ func Run() (err error) {
 		log.Infof("starting postgrest process, attempt=%v ...", i)
 		cmd := exec.Command(postgrestBinFile)
 		cmd.Env = envs
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+		cmd.Stdout = &logInfoWriter{}
+		cmd.Stderr = &logInfoWriter{}
 		if err := cmd.Run(); err != nil {
 			log.Errorf("failed running postgrest process, err=%v", err)
 			return
@@ -138,6 +139,15 @@ func Run() (err error) {
 		break
 	}
 	return nil
+}
+
+type logInfoWriter struct{}
+
+func (w *logInfoWriter) Write(p []byte) (n int, err error) {
+	v := strings.TrimSuffix(string(p), "\n")
+	v = strings.TrimPrefix(v, "\n")
+	log.With("app", "postgrest").Info(v)
+	return len(p), nil
 }
 
 func loadConfig() (u *url.URL, jwtSecret []byte, err error) {
