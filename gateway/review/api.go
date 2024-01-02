@@ -85,9 +85,10 @@ func sanitizeReview(review *types.Review) types.ReviewJSON {
 	reviewOwnerMap, _ := review.CreatedBy.(map[any]any)
 	if reviewOwnerMap == nil {
 		reviewOwnerMap = map[any]any{
-			edn.Keyword("xt/id"):      "",
-			edn.Keyword("user/name"):  "",
-			edn.Keyword("user/email"): "",
+			edn.Keyword("xt/id"):         "",
+			edn.Keyword("user/name"):     "",
+			edn.Keyword("user/email"):    "",
+			edn.Keyword("user/slack-id"): "",
 		}
 	}
 
@@ -122,9 +123,10 @@ func sanitizeReview(review *types.Review) types.ReviewJSON {
 		Status:          review.Status,
 		RevokeAt:        review.RevokeAt,
 		ReviewOwner: types.ReviewOwner{
-			Id:    reviewOwnerToStringFn("xt/id"),
-			Name:  reviewOwnerToStringFn("user/name"),
-			Email: reviewOwnerToStringFn("user/email"),
+			Id:      reviewOwnerToStringFn("xt/id"),
+			Name:    reviewOwnerToStringFn("user/name"),
+			Email:   reviewOwnerToStringFn("user/email"),
+			SlackID: reviewOwnerToStringFn("user/slack-id"),
 		},
 		Connection: types.ReviewConnection{
 			Id:   connectionToStringFn("xt/id"),

@@ -166,11 +166,12 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 		Context: context.Background(),
 		SID:     sessionID,
 
-		OrgID:      gwctx.UserContext.OrgID,
-		UserID:     gwctx.UserContext.UserID,
-		UserName:   gwctx.UserContext.UserName,
-		UserEmail:  gwctx.UserContext.UserEmail,
-		UserGroups: gwctx.UserContext.UserGroups,
+		OrgID:       gwctx.UserContext.OrgID,
+		UserID:      gwctx.UserContext.UserID,
+		UserName:    gwctx.UserContext.UserName,
+		UserEmail:   gwctx.UserContext.UserEmail,
+		UserSlackID: gwctx.UserContext.SlackID,
+		UserGroups:  gwctx.UserContext.UserGroups,
 
 		ConnectionID:      conn.ID,
 		ConnectionName:    conn.Name,
@@ -470,7 +471,6 @@ func (s *Server) addConnectionParams(clientArgs []string, pctx plugintypes.Conte
 }
 
 func (s *Server) ReviewStatusChange(ctx *user.Context, rev *types.Review) {
-	pluginsslack.SendApprovedMessage(ctx, rev)
 	if clientStream := getClientStream(rev.Session); clientStream != nil {
 		payload := []byte(rev.Input)
 		packetType := pbclient.SessionOpenApproveOK

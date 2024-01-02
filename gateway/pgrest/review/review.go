@@ -22,6 +22,7 @@ func (r *review) Upsert(rev *types.Review) error {
 	if !rev.CreatedAt.IsZero() {
 		createdAt = rev.CreatedAt.Format(time.RFC3339)
 	}
+
 	err := pgrest.New("/reviews?on_conflict=org_id,session_id").Upsert(map[string]any{
 		"id":                  rev.Id,
 		"org_id":              rev.OrgId,

@@ -17,11 +17,12 @@ type Context struct {
 	SID string
 
 	// Use Attributes
-	OrgID      string
-	UserID     string
-	UserName   string
-	UserEmail  string
-	UserGroups []string
+	OrgID       string
+	UserID      string
+	UserName    string
+	UserEmail   string
+	UserSlackID string
+	UserGroups  []string
 
 	// Connection attributes
 	ConnectionID      string

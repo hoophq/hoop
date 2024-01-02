@@ -137,9 +137,10 @@ func (r *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 		},
 		CreatedBy: pctx.UserID,
 		ReviewOwner: types.ReviewOwner{
-			Id:    pctx.UserID,
-			Name:  pctx.UserName,
-			Email: pctx.UserEmail,
+			Id:      pctx.UserID,
+			Name:    pctx.UserName,
+			Email:   pctx.UserEmail,
+			SlackID: pctx.UserSlackID,
 		},
 		AccessDuration:   accessDuration,
 		Status:           types.ReviewStatusPending,
