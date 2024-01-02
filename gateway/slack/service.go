@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/runopsio/hoop/common/log"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/socketmode"
 )
@@ -292,10 +293,11 @@ func (s *SlackService) SendDirectMessage(sessionID, slackID string) error {
 func (s *SlackService) PostMessage(SlackID string, message string) error {
 	channelID, timestamp, err := s.apiClient.PostMessage(SlackID, slack.MsgOptionText(message, false))
 	if err != nil {
-		return fmt.Errorf("failed post message to the channel %v at %v, err=%v", channelID, timestamp, err)
+		log.Errorf("failed post message to the channel %s at %v, err=%v", channelID, timestamp, err)
+		return err
 	}
 
-	fmt.Printf("Message successfully sent to the channel %s at %s", channelID, timestamp)
+	log.Infof("Message successfully sent to the channel %s at %s", channelID, timestamp)
 	return nil
 }
 
@@ -305,9 +307,10 @@ func (s *SlackService) PostEphemeralMessage(msg *MessageReviewResponse, message 
 
 	timestamp, err := s.apiClient.PostEphemeral(channelID, userID, slack.MsgOptionText(message, false))
 	if err != nil {
-		return fmt.Errorf("failed post ephemeral message to the user %v on the channel %v at %v, err=%v", userID, channelID, timestamp, err)
+		log.Errorf("failed post ephemeral message to the user %s on the channel %s at %v, err=%v", userID, channelID, timestamp, err)
+		return err
 	}
 
-	fmt.Printf("Message successfully sent to the user %s on the channel %s at %s", userID, channelID, timestamp)
+	log.Infof("Message successfully sent to the user %s on the channel %s at %s", userID, channelID, timestamp)
 	return nil
 }
