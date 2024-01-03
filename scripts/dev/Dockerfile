@@ -63,6 +63,8 @@ RUN mkdir -p /app && \
     mkdir -p /opt/hoop/sessions && \
     apt-get update -y && \
     apt-get install -y \
+        net-tools \
+        iproute2 \
         xz-utils \
         locales \
         tini \

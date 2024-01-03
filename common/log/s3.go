@@ -92,8 +92,6 @@ func (w *S3LogWriter) Write(p []byte) (n int, err error) {
 
 // Flush the buffer to s3.
 func (w *S3LogWriter) Flush() (err error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
 	if w.flushed || w.environment == "" {
 		return
 	}

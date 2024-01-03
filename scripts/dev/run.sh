@@ -42,6 +42,7 @@ docker run --name hoopdev \
   -p 8009:8009 \
   -p 8010:8010 \
   --env-file=.env \
+  --cap-add=NET_ADMIN \
   -v $HOME/.hoop/dev:/app/ \
   -v $HOME/.hoop/dev/webapp/resources:/app/ui/ \
   -v $HOME/.hoop/dev/sessions:/opt/hoop/sessions/ \
