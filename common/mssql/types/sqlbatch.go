@@ -1,6 +1,7 @@
 package mssqltypes
 
 import (
+	"encoding/binary"
 	"fmt"
 )
 
@@ -15,10 +16,12 @@ func DecodeSQLBatchToRawQuery(data []byte) (string, error) {
 		return "", fmt.Errorf("it's not a sql batch type, found=%X", data[0])
 	}
 	// re slice after packet header
+	packetNo := data[6]
 	data = data[8:]
-	if data[6] == 0x01 {
+	if packetNo == 0x01 {
 		// skip ALL_HEADERS
-		return ucs22str(data[22:]), nil
+		batchHeaderLength := binary.LittleEndian.Uint32(data[:4])
+		return ucs22str(data[batchHeaderLength:]), nil
 	}
 	return ucs22str(data), nil
 }
