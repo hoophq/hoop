@@ -41,7 +41,9 @@ func (c *tlsHandshakeConn) Read(b []byte) (n int, err error) {
 	// to the next packet.
 	if len(b) > int(c.pktLen) {
 		n, err = c.c.Read(b[:c.pktLen])
-		c.pktLen = 0
+		if err == nil {
+			c.pktLen = uint16(c.pktLen - uint16(n))
+		}
 		return
 	}
 	// read it and decrease the amount
