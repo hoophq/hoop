@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/proto"
+	apiconnections "github.com/runopsio/hoop/gateway/api/connections"
 	sessionapi "github.com/runopsio/hoop/gateway/api/session"
 	"github.com/runopsio/hoop/gateway/clientexec"
 	"github.com/runopsio/hoop/gateway/runbooks/templates"
@@ -56,13 +57,10 @@ type RunbookList struct {
 }
 
 type Service struct {
-	PluginService     pluginService
-	ConnectionService connectionService
+	PluginService pluginService
 }
 
 type Handler struct {
-	ConnectionService connectionService
-
 	scanedKnownHosts bool
 }
 
@@ -291,8 +289,8 @@ func (h *Handler) RunExec(c *gin.Context) {
 	}
 }
 
-func (h *Handler) getConnection(ctx *user.Context, c *gin.Context, connectionName string) (string, error) {
-	conn, err := h.ConnectionService.FindOne(ctx, connectionName)
+func (h *Handler) getConnectionID(ctx *user.Context, c *gin.Context, connectionName string) (string, error) {
+	conn, err := apiconnections.FetchByName(ctx, connectionName)
 	if err != nil {
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, &RunbookErrResponse{Message: "failed retrieving connection"})
@@ -302,11 +300,11 @@ func (h *Handler) getConnection(ctx *user.Context, c *gin.Context, connectionNam
 		c.JSON(http.StatusNotFound, &RunbookErrResponse{Message: "connection not found"})
 		return "", fmt.Errorf("connection not found")
 	}
-	return conn.Id, nil
+	return conn.ID, nil
 }
 
 func (h *Handler) getRunbookConfig(ctx *user.Context, c *gin.Context, connectionName string) (*templates.RunbookConfig, string, error) {
-	connectionID, err := h.getConnection(ctx, c, connectionName)
+	connectionID, err := h.getConnectionID(ctx, c, connectionName)
 	if err != nil {
 		return nil, "", err
 	}

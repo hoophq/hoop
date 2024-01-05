@@ -3,6 +3,7 @@ package user
 import (
 	"fmt"
 	"os"
+	"slices"
 
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -118,6 +119,20 @@ func (c *Context) GetSubject() (v string) {
 	return c.User.Id
 }
 
+func (c *Context) IsAdmin() bool {
+	if c.User == nil {
+		return false
+	}
+	return c.User.IsAdmin()
+}
+
+func (c *Context) GetUserGroups() []string {
+	if c.User == nil {
+		return nil
+	}
+	return c.User.Groups
+}
+
 func (c *Org) GetOrgID() (v string) {
 	if c != nil {
 		return c.Id
@@ -213,9 +228,7 @@ func (s *Service) CreateDefaultOrganization() error {
 	return nil
 }
 
-func (user *User) IsAdmin() bool {
-	return pb.IsInList(types.GroupAdmin, user.Groups)
-}
+func (user *User) IsAdmin() bool { return slices.Contains(user.Groups, types.GroupAdmin) }
 
 func isInStatus(status StatusType) bool {
 	for _, s := range statuses {

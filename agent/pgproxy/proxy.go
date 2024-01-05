@@ -207,7 +207,7 @@ func (p *proxy) Write(b []byte) (n int, err error) {
 		return
 	}
 	if pkt.IsCancelRequest() {
-		log.Infof("got cancel request!!")
+		log.Infof("cancel request, not implemented!")
 	}
 	return p.serverRW.Write(pkt.Encode())
 }

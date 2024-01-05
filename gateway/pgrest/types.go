@@ -11,6 +11,8 @@ type OrgContext interface {
 
 type UserContext interface {
 	GetSubject() string
+	IsAdmin() bool
+	GetUserGroups() []string
 }
 
 type Login struct {
@@ -68,8 +70,9 @@ type Connection struct {
 	SubType       string            `json:"subtype"`
 	Envs          map[string]string `json:"envs"`
 
-	Org Org `json:"orgs"`
-	// Agent Agent  `json:"agent"`
+	// read only attributes
+	Org              Org                `json:"orgs"`
+	PluginConnection []PluginConnection `json:"plugin_connections"`
 }
 
 type Plugin struct {

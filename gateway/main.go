@@ -17,7 +17,6 @@ import (
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/analytics"
 	"github.com/runopsio/hoop/gateway/api"
-	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/indexer"
 	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/pgrest"
@@ -76,7 +75,6 @@ func Run(listenAdmAddr string) {
 	}
 
 	agentService := agent.Service{Storage: &agent.Storage{}}
-	connectionService := connection.Service{Storage: &connection.Storage{}}
 	userService := user.Service{Storage: &user.Storage{}}
 	reviewService := review.Service{Storage: &review.Storage{}}
 	notificationService := getNotification()
@@ -94,24 +92,22 @@ func Run(listenAdmAddr string) {
 	}
 
 	a := &api.Api{
-		AgentHandler:      agent.Handler{Service: &agentService},
-		ConnectionHandler: connection.Handler{Service: &connectionService},
-		UserHandler:       user.Handler{Service: &userService, Analytics: analyticsService},
-		IndexerHandler:    indexer.Handler{},
-		ReviewHandler:     review.Handler{Service: &reviewService},
-		SecurityHandler:   security.Handler{Service: &securityService},
-		RunbooksHandler:   runbooks.Handler{ConnectionService: &connectionService},
-		IDProvider:        idProvider,
-		Profile:           profile,
-		Analytics:         analyticsService,
-		GrpcURL:           grpcURL,
+		AgentHandler:    agent.Handler{Service: &agentService},
+		UserHandler:     user.Handler{Service: &userService, Analytics: analyticsService},
+		IndexerHandler:  indexer.Handler{},
+		ReviewHandler:   review.Handler{Service: &reviewService},
+		SecurityHandler: security.Handler{Service: &securityService},
+		RunbooksHandler: runbooks.Handler{},
+		IDProvider:      idProvider,
+		Profile:         profile,
+		Analytics:       analyticsService,
+		GrpcURL:         grpcURL,
 
 		StoreV2: storev2,
 	}
 
 	g := &transport.Server{
 		AgentService:         agentService,
-		ConnectionService:    connectionService,
 		UserService:          userService,
 		ReviewService:        reviewService,
 		NotificationService:  notificationService,

@@ -8,12 +8,15 @@ import (
 	"github.com/runopsio/hoop/client/cmd/styles"
 	clientconfig "github.com/runopsio/hoop/client/config"
 	"github.com/runopsio/hoop/common/log"
+	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/spf13/cobra"
 )
 
 var (
 	connAgentFlag        string
 	connPuginFlag        []string
+	reviewersFlag        []string
+	connRedactTypesFlag  []string
 	connTypeFlag         string
 	connSecretFlag       []string
 	skipStrictValidation bool
@@ -24,6 +27,8 @@ func init() {
 	createConnectionCmd.Flags().StringVarP(&connAgentFlag, "agent", "a", "", "Name of the agent")
 	createConnectionCmd.Flags().StringVarP(&connTypeFlag, "type", "t", "command-line", "Type of the connection. One off: (command-line,application,postgres,mysql,mssql,tcp)")
 	createConnectionCmd.Flags().StringSliceVarP(&connPuginFlag, "plugin", "p", nil, "Plugins that will be enabled for this connection in the form of: <plugin>:<config01>;<config02>,...")
+	createConnectionCmd.Flags().StringSliceVar(&reviewersFlag, "reviewers", nil, "The approval groups for this connection")
+	createConnectionCmd.Flags().StringSliceVar(&connRedactTypesFlag, "redact-types", nil, "The redact types for this connection")
 	createConnectionCmd.Flags().BoolVar(&connOverwriteFlag, "overwrite", false, "It will create or update it if a connection already exists")
 	createConnectionCmd.Flags().BoolVar(&skipStrictValidation, "skip-validation", false, "It will skip any strict validation")
 	createConnectionCmd.Flags().StringSliceVarP(&connSecretFlag, "env", "e", nil, "The environment variables of the connection")
@@ -102,13 +107,19 @@ var createConnectionCmd = &cobra.Command{
 		if agentID == "" && !skipStrictValidation {
 			styles.PrintErrorAndExit("could not find agent by name %q", connAgentFlag)
 		}
+		redactTypes := connRedactTypesFlag
+		if len(redactTypes) == 0 {
+			redactTypes = pb.DefaultInfoTypes
+		}
 		connectionBody := map[string]any{
-			"name":     apir.name,
-			"type":     connType,
-			"subtype":  subType,
-			"command":  cmdList,
-			"secret":   envVar,
-			"agent_id": agentID,
+			"name":         apir.name,
+			"type":         connType,
+			"subtype":      subType,
+			"command":      cmdList,
+			"secret":       envVar,
+			"agent_id":     agentID,
+			"reviewers":    reviewersFlag,
+			"redact_types": redactTypes,
 		}
 
 		resp, err := httpBodyRequest(apir, method, connectionBody)

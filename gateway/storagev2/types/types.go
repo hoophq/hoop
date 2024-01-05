@@ -74,17 +74,19 @@ type Client struct {
 }
 
 type Connection struct {
-	Id             string   `edn:"xt/id"`
-	OrgId          string   `edn:"connection/org"`
-	Name           string   `edn:"connection/name"`
-	IconName       string   `edn:"connection/icon-name"`
-	Command        []string `edn:"connection/command"`
-	Type           string   `edn:"connection/type"`
-	SubType        string   `edn:"-"`
-	SecretProvider string   `edn:"connection/secret-provider"`
-	SecretId       string   `edn:"connection/secret"`
-	CreatedById    string   `edn:"connection/created-by"`
-	AgentId        string   `edn:"connection/agent"`
+	Id       string         `json:"id"`
+	OrgId    string         `json:"-"`
+	Name     string         `json:"name"`
+	IconName string         `json:"icon_name"`
+	Command  []string       `json:"command"`
+	Type     string         `json:"type"`
+	SubType  string         `json:"subtype"`
+	Secret   map[string]any `json:"secret"`
+	AgentId  string         `json:"agent_id"`
+	// TODO: remove
+	SecretProvider string `json:"-"`
+	SecretId       string `json:"-"`
+	CreatedById    string `json:"-"`
 }
 
 type ConnectionInfo struct {

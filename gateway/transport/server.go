@@ -20,7 +20,7 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/agent"
-	"github.com/runopsio/hoop/gateway/connection"
+	apiconnections "github.com/runopsio/hoop/gateway/api/connections"
 	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/security/idp"
@@ -43,7 +43,6 @@ type (
 	Server struct {
 		pb.UnimplementedTransportServer
 		AgentService        agent.Service
-		ConnectionService   connection.Service
 		UserService         user.Service
 		ReviewService       review.Service
 		NotificationService notification.Service
@@ -126,7 +125,7 @@ func (s *Server) StartRPCServer() {
 
 	grpcInterceptors := grpc.ChainStreamInterceptor(
 		sessionuuidinterceptor.New(),
-		authinterceptor.New(s.IDProvider, &s.UserService, &s.AgentService, &s.ConnectionService),
+		authinterceptor.New(s.IDProvider, &s.UserService, &s.AgentService),
 		tracinginterceptor.New(s.IDProvider.ApiURL),
 	)
 	var grpcServer *grpc.Server
@@ -288,7 +287,7 @@ func DisconnectClient(uid string, err error) {
 }
 
 func (s *Server) getConnection(name string, userCtx *user.Context) (*types.ConnectionInfo, error) {
-	conn, err := s.ConnectionService.FindOne(userCtx, name)
+	conn, err := apiconnections.FetchByName(userCtx, name)
 	if err != nil {
 		log.Errorf("failed retrieving connection %v, err=%v", name, err)
 		sentry.CaptureException(err)
@@ -315,11 +314,11 @@ func (s *Server) getConnection(name string, userCtx *user.Context) (*types.Conne
 		}
 	}
 	return &types.ConnectionInfo{
-		ID:            conn.Id,
+		ID:            conn.ID,
 		Name:          conn.Name,
 		Type:          string(conn.Type),
 		CmdEntrypoint: conn.Command,
-		Secrets:       conn.Secret,
+		Secrets:       conn.Secrets,
 		AgentID:       conn.AgentId,
 		AgentMode:     ag.Mode,
 		AgentName:     ag.Name,

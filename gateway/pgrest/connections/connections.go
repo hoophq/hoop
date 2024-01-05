@@ -110,27 +110,12 @@ func (c *connections) FetchByIDs(ctx pgrest.OrgContext, connectionIDs []string) 
 	return itemMap, nil
 }
 
-func (c *connections) FetchOne(ctx pgrest.OrgContext, name string) (*pgrest.Connection, error) {
-	var conn pgrest.Connection
-	err := pgrest.New("/connections?select=*,orgs(id,name)&org_id=eq.%v&name=eq.%v", ctx.GetOrgID(), name).
-		FetchOne().
-		DecodeInto(&conn)
-	if err != nil {
-		if err == pgrest.ErrNotFound {
-			return nil, nil
-		}
-		return nil, err
-	}
-	if conn.LegacyAgentID != "" {
-		conn.AgentID = conn.LegacyAgentID
-	}
-	return &conn, nil
-}
-
 func (a *connections) FetchOneByNameOrID(ctx pgrest.OrgContext, nameOrID string) (*pgrest.Connection, error) {
-	client := pgrest.New("/connections?select=*,orgs(id,name)&org_id=eq.%v&name=eq.%v", ctx.GetOrgID(), nameOrID)
+	client := pgrest.New("/connections?select=*,orgs(id,name),plugin_connections(config,plugins(name))&org_id=eq.%s&name=eq.%s",
+		ctx.GetOrgID(), nameOrID)
 	if _, err := uuid.Parse(nameOrID); err == nil {
-		client = pgrest.New("/connections?select=*,orgs(id,name)&org_id=eq.%v&id=eq.%v", ctx.GetOrgID(), nameOrID)
+		client = pgrest.New("/connections?select=*,orgs(id,name),plugin_connections(config,plugins(name))&org_id=eq.%s&id=eq.%s",
+			ctx.GetOrgID(), nameOrID)
 	}
 	var conn pgrest.Connection
 	if err := client.FetchOne().DecodeInto(&conn); err != nil {
@@ -147,7 +132,7 @@ func (a *connections) FetchOneByNameOrID(ctx pgrest.OrgContext, nameOrID string)
 
 func (c *connections) FetchAll(ctx pgrest.OrgContext) ([]pgrest.Connection, error) {
 	var items []pgrest.Connection
-	err := pgrest.New("/connections?select=*,orgs(id,name)&org_id=eq.%v", ctx.GetOrgID()).
+	err := pgrest.New("/connections?select=*,orgs(id,name),plugin_connections(config,plugins(name))&org_id=eq.%s", ctx.GetOrgID()).
 		List().
 		DecodeInto(&items)
 	if err != nil && err != pgrest.ErrNotFound {

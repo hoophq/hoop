@@ -14,6 +14,7 @@ import (
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/analytics"
 	apiconnectionapps "github.com/runopsio/hoop/gateway/api/connectionapps"
+	apiconnections "github.com/runopsio/hoop/gateway/api/connections"
 	apiplugins "github.com/runopsio/hoop/gateway/api/plugins"
 	apiproxymanager "github.com/runopsio/hoop/gateway/api/proxymanager"
 	reviewapi "github.com/runopsio/hoop/gateway/api/review"
@@ -21,7 +22,6 @@ import (
 	sessionapi "github.com/runopsio/hoop/gateway/api/session"
 	userapi "github.com/runopsio/hoop/gateway/api/user"
 	webhooksapi "github.com/runopsio/hoop/gateway/api/webhooks"
-	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/healthz"
 	"github.com/runopsio/hoop/gateway/indexer"
 	"github.com/runopsio/hoop/gateway/review"
@@ -35,18 +35,17 @@ import (
 
 type (
 	Api struct {
-		AgentHandler      agent.Handler
-		ConnectionHandler connection.Handler
-		UserHandler       user.Handler
-		IndexerHandler    indexer.Handler
-		ReviewHandler     review.Handler
-		RunbooksHandler   runbooks.Handler
-		SecurityHandler   security.Handler
-		IDProvider        *idp.Provider
-		GrpcURL           string
-		Profile           string
-		Analytics         user.Analytics
-		logger            *zap.Logger
+		AgentHandler    agent.Handler
+		UserHandler     user.Handler
+		IndexerHandler  indexer.Handler
+		ReviewHandler   review.Handler
+		RunbooksHandler runbooks.Handler
+		SecurityHandler security.Handler
+		IDProvider      *idp.Provider
+		GrpcURL         string
+		Profile         string
+		Analytics       user.Analytics
+		logger          *zap.Logger
 
 		StoreV2 *storagev2.Store
 	}
@@ -149,30 +148,30 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest(analytics.EventCreateConnection),
 		api.AdminOnly,
-		api.ConnectionHandler.Post)
+		apiconnections.Post)
 	route.PUT("/connections/:nameOrID",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventUpdateConnection),
 		api.AdminOnly,
-		api.ConnectionHandler.Put)
+		apiconnections.Put)
 	// DEPRECATED in flavor of POST /sessions
 	route.POST("/connections/:name/exec",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventApiExecConnection),
-		api.ConnectionHandler.RunExec)
+		apiconnections.RunExec)
 	route.GET("/connections",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventFetchConnections),
-		api.ConnectionHandler.FindAll)
+		apiconnections.List)
 	route.GET("/connections/:nameOrID",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventFetchConnections),
-		api.ConnectionHandler.FindOne)
+		apiconnections.Get)
 	route.DELETE("/connections/:name",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventDeleteConnection),
 		api.AdminOnly,
-		api.ConnectionHandler.Evict)
+		apiconnections.Delete)
 
 	route.POST("/connectionapps",
 		api.AuthenticateAgent,

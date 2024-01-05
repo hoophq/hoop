@@ -2,6 +2,7 @@ package storagev2
 
 import (
 	"net/http"
+	"slices"
 
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/common/log"
@@ -102,6 +103,8 @@ func (c *Context) Analytics() *analytics.Segment {
 	return c.segment
 }
 
-func (c *Context) DSN() *types.DSNContext { return c.dsnctx }
-
-func (c *Context) GetOrgID() string { return c.OrgID }
+func (c *Context) DSN() *types.DSNContext  { return c.dsnctx }
+func (c *Context) GetOrgID() string        { return c.OrgID }
+func (c *Context) GetUserGroups() []string { return c.UserGroups }
+func (c *Context) IsAdmin() bool           { return slices.Contains(c.UserGroups, types.GroupAdmin) }
+func (c *Context) GetSubject() string      { return c.UserID }
