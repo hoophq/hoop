@@ -11,7 +11,7 @@ import (
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 )
 
-func accessControlAllowed(ctx pgrest.Context) (func(name string) bool, error) {
+func accessControlAllowed(ctx pgrest.Context) (func(connName string) bool, error) {
 	p, err := pgplugins.New().FetchOne(ctx, plugintypes.PluginAccessControlName)
 	if err != nil {
 		return nil, err

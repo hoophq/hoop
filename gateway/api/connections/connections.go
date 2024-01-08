@@ -26,16 +26,17 @@ type Review struct {
 }
 
 type Connection struct {
-	ID          string         `json:"id"`
-	Name        string         `json:"name"`
-	IconName    string         `json:"icon_name"`
-	Command     []string       `json:"command"`
-	Type        string         `json:"type"`
-	SubType     string         `json:"subtype"`
-	Secrets     map[string]any `json:"secret"`
-	AgentId     string         `json:"agent_id"`
-	Reviewers   []string       `json:"reviewers"`
-	RedactTypes []string       `json:"redact_types"`
+	ID            string         `json:"id"`
+	Name          string         `json:"name"`
+	IconName      string         `json:"icon_name"`
+	Command       []string       `json:"command"`
+	Type          string         `json:"type"`
+	SubType       string         `json:"subtype"`
+	Secrets       map[string]any `json:"secret"`
+	AgentId       string         `json:"agent_id"`
+	Reviewers     []string       `json:"reviewers"`
+	RedactEnabled bool           `json:"redact_enabled"`
+	RedactTypes   []string       `json:"redact_types"`
 }
 
 func Post(c *gin.Context) {
@@ -98,6 +99,11 @@ func Post(c *gin.Context) {
 	pluginstorage.EnableDefaultPlugins(ctx, req.ID, req.Name)
 	// configure review and dlp plugins (best-effort)
 	for _, pluginName := range []string{plugintypes.PluginReviewName, plugintypes.PluginDLPName} {
+		// skip configuring redact if the client doesn't set redact_enabled
+		// it maintain compatibility with old clients since we enable dlp with default redact types
+		if pluginName == plugintypes.PluginDLPName && !req.RedactEnabled {
+			continue
+		}
 		pluginConnConfig := req.Reviewers
 		if pluginName == plugintypes.PluginDLPName {
 			pluginConnConfig = req.RedactTypes
@@ -165,6 +171,11 @@ func Put(c *gin.Context) {
 	}
 	// configure review and dlp plugins (best-effort)
 	for _, pluginName := range []string{plugintypes.PluginReviewName, plugintypes.PluginDLPName} {
+		// skip configuring redact if the client doesn't set redact_enabled
+		// it maintain compatibility with old clients since we enable dlp with default redact types
+		if pluginName == plugintypes.PluginDLPName && !req.RedactEnabled {
+			continue
+		}
 		pluginConnConfig := req.Reviewers
 		if pluginName == plugintypes.PluginDLPName {
 			pluginConnConfig = req.RedactTypes
@@ -227,16 +238,17 @@ func List(c *gin.Context) {
 				}
 			}
 			responseConnList = append(responseConnList, Connection{
-				ID:          conn.ID,
-				Name:        conn.Name,
-				IconName:    "",
-				Command:     conn.Command,
-				Type:        conn.Type,
-				SubType:     conn.SubType,
-				Secrets:     pgrest.CoerceToAnyMap(conn.Envs),
-				AgentId:     conn.AgentID,
-				Reviewers:   reviewers,
-				RedactTypes: redactTypes,
+				ID:            conn.ID,
+				Name:          conn.Name,
+				IconName:      "",
+				Command:       conn.Command,
+				Type:          conn.Type,
+				SubType:       conn.SubType,
+				Secrets:       pgrest.CoerceToAnyMap(conn.Envs),
+				AgentId:       conn.AgentID,
+				Reviewers:     reviewers,
+				RedactEnabled: len(redactTypes) > 0,
+				RedactTypes:   redactTypes,
 			})
 		}
 
@@ -275,16 +287,17 @@ func Get(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, Connection{
-		ID:          conn.ID,
-		Name:        conn.Name,
-		IconName:    "",
-		Command:     conn.Command,
-		Type:        conn.Type,
-		SubType:     conn.SubType,
-		Secrets:     pgrest.CoerceToAnyMap(conn.Envs),
-		AgentId:     conn.AgentID,
-		Reviewers:   reviewers,
-		RedactTypes: redactTypes,
+		ID:            conn.ID,
+		Name:          conn.Name,
+		IconName:      "",
+		Command:       conn.Command,
+		Type:          conn.Type,
+		SubType:       conn.SubType,
+		Secrets:       pgrest.CoerceToAnyMap(conn.Envs),
+		AgentId:       conn.AgentID,
+		Reviewers:     reviewers,
+		RedactEnabled: len(redactTypes) > 0,
+		RedactTypes:   redactTypes,
 	})
 }
 
@@ -353,6 +366,8 @@ func FetchByName(ctx pgrest.Context, connectionName string) (*Connection, error)
 	if conn == nil || !allowedFn(conn.Name) {
 		return nil, nil
 	}
+	// we do not propagate reviewers and redact configuration.
+	// it needs to be implemented in the other layers
 	return &Connection{
 		ID:       conn.ID,
 		Name:     conn.Name,

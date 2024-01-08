@@ -8,7 +8,6 @@ import (
 	"github.com/runopsio/hoop/client/cmd/styles"
 	clientconfig "github.com/runopsio/hoop/client/config"
 	"github.com/runopsio/hoop/common/log"
-	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/spf13/cobra"
 )
 
@@ -107,19 +106,20 @@ var createConnectionCmd = &cobra.Command{
 		if agentID == "" && !skipStrictValidation {
 			styles.PrintErrorAndExit("could not find agent by name %q", connAgentFlag)
 		}
-		redactTypes := connRedactTypesFlag
-		if len(redactTypes) == 0 {
-			redactTypes = pb.DefaultInfoTypes
+		redactEnabled := false
+		if len(connRedactTypesFlag) > 0 {
+			redactEnabled = true
 		}
 		connectionBody := map[string]any{
-			"name":         apir.name,
-			"type":         connType,
-			"subtype":      subType,
-			"command":      cmdList,
-			"secret":       envVar,
-			"agent_id":     agentID,
-			"reviewers":    reviewersFlag,
-			"redact_types": redactTypes,
+			"name":           apir.name,
+			"type":           connType,
+			"subtype":        subType,
+			"command":        cmdList,
+			"secret":         envVar,
+			"agent_id":       agentID,
+			"reviewers":      reviewersFlag,
+			"redact_enabled": redactEnabled,
+			"redact_types":   connRedactTypesFlag,
 		}
 
 		resp, err := httpBodyRequest(apir, method, connectionBody)
