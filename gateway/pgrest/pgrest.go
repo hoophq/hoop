@@ -15,11 +15,17 @@ import (
 	"github.com/runopsio/hoop/common/log"
 )
 
+// HTTPClient is an interface for testing a request object.
+type HTTPClient interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
 // these values are initialized when running postgrest on bootstrap.go
 var (
 	jwtSecretKey []byte
 	baseURL      *url.URL
 	roleName     string
+	httpClient   HTTPClient
 )
 
 var (
@@ -27,6 +33,8 @@ var (
 	ErrUnauthorized  = fmt.Errorf("unauthorized")
 	ErrEmptyResponse = fmt.Errorf("empty response")
 )
+
+func init() { httpClient = http.DefaultClient }
 
 type Client struct {
 	apiURL      string
@@ -106,6 +114,8 @@ func (c *Client) ExactCount() int64 {
 	return -1
 }
 
+func WithHttpClient(newClient HTTPClient) { httpClient = newClient }
+func WithBaseURL(newBaseURL *url.URL)     { baseURL = newBaseURL }
 func (c *Client) Delete() *Response {
 	resp := httpRequest(c.apiURL, "DELETE", c.accessToken, nil, nil)
 	return &resp
@@ -139,7 +149,7 @@ func httpRequest(apiURL, method, bearerToken string, reqHeaders map[string]strin
 	for key, val := range reqHeaders {
 		req.Header.Add(key, val)
 	}
-	httpResp, err := http.DefaultClient.Do(req)
+	httpResp, err := httpClient.Do(req)
 	if err != nil {
 		resp.err = fmt.Errorf("failed performing request: %v", err)
 		return
