@@ -138,14 +138,14 @@ func Put(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	if len(conn.Command) == 0 {
-		switch string(conn.Type) {
+	if len(req.Command) == 0 {
+		switch string(req.Type) {
 		case pb.ConnectionTypePostgres:
-			conn.Command = []string{"psql", "-A", "-F\t", "-P", "pager=off", "-h", "$HOST", "-U", "$USER", "--port=$PORT", "$DB"}
+			req.Command = []string{"psql", "-A", "-F\t", "-P", "pager=off", "-h", "$HOST", "-U", "$USER", "--port=$PORT", "$DB"}
 		case pb.ConnectionTypeMySQL:
-			conn.Command = []string{"mysql", "-h$HOST", "-u$USER", "--port=$PORT", "-D$DB"}
+			req.Command = []string{"mysql", "-h$HOST", "-u$USER", "--port=$PORT", "-D$DB"}
 		case pb.ConnectionTypeMSSQL:
-			conn.Command = []string{
+			req.Command = []string{
 				"sqlcmd", "--exit-on-error", "--trim-spaces", "-r",
 				"-S$HOST:$PORT", "-U$USER", "-d$DB", "-i/dev/stdin"}
 		}
