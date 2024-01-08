@@ -199,7 +199,7 @@ func (a *Agent) Run() error {
 		case pbagent.MySQLConnectionWrite:
 			a.processMySQLProtocol(pkt)
 
-		// MSSQL Prorotocl
+		// MSSQL Protocol
 		case pbagent.MSSQLConnectionWrite:
 			a.processMSSQLProtocol(pkt)
 

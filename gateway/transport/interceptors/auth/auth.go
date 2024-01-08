@@ -12,8 +12,8 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/agent"
+	apiconnections "github.com/runopsio/hoop/gateway/api/connections"
 	apitypes "github.com/runopsio/hoop/gateway/apiclient/types"
-	"github.com/runopsio/hoop/gateway/connection"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
@@ -33,22 +33,16 @@ type serverStreamWrapper struct {
 }
 
 type interceptor struct {
-	idp               *idp.Provider
-	userService       *user.Service
-	agentService      *agent.Service
-	connectionService *connection.Service
+	idp          *idp.Provider
+	userService  *user.Service
+	agentService *agent.Service
 }
 
-func New(
-	idpProvider *idp.Provider,
-	usrsvc *user.Service,
-	agentsvc *agent.Service,
-	connSvc *connection.Service) grpc.StreamServerInterceptor {
+func New(idpProvider *idp.Provider, usrsvc *user.Service, agentsvc *agent.Service) grpc.StreamServerInterceptor {
 	return (&interceptor{
-		idp:               idpProvider,
-		userService:       usrsvc,
-		agentService:      agentsvc,
-		connectionService: connSvc,
+		idp:          idpProvider,
+		userService:  usrsvc,
+		agentService: agentsvc,
 	}).StreamServerInterceptor
 }
 
@@ -171,7 +165,7 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 }
 
 func (i *interceptor) getConnection(name string, userCtx *user.Context) (*types.ConnectionInfo, error) {
-	conn, err := i.connectionService.FindOne(userCtx, name)
+	conn, err := apiconnections.FetchByName(userCtx, name)
 	if err != nil {
 		log.Errorf("failed retrieving connection %v, err=%v", name, err)
 		sentry.CaptureException(err)
@@ -198,11 +192,11 @@ func (i *interceptor) getConnection(name string, userCtx *user.Context) (*types.
 		}
 	}
 	return &types.ConnectionInfo{
-		ID:            conn.Id,
+		ID:            conn.ID,
 		Name:          conn.Name,
 		Type:          string(conn.Type),
 		CmdEntrypoint: conn.Command,
-		Secrets:       conn.Secret,
+		Secrets:       conn.Secrets,
 		AgentID:       conn.AgentId,
 		AgentMode:     ag.Mode,
 		AgentName:     ag.Name,
