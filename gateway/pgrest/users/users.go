@@ -87,9 +87,13 @@ func (u *user) ListAllGroups(ctx pgrest.OrgContext) ([]string, error) {
 		}
 		return nil, err
 	}
-	var groups []string
+	dedupeGroups := map[string]string{}
 	for _, ug := range userGroups {
-		groups = append(groups, ug.Name)
+		dedupeGroups[ug.Name] = ug.Name
+	}
+	var groups []string
+	for groupName := range dedupeGroups {
+		groups = append(groups, groupName)
 	}
 	return groups, nil
 }
