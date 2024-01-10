@@ -78,7 +78,7 @@ func TestAccessControlAllowed(t *testing.T) {
 			fakeClient: createTestServer(t, []*pgrest.PluginConnection{
 				{ConnectionConfig: []string{"support"}, Connection: pgrest.Connection{Name: "bash"}},
 			}),
-			groups: []string{"sre", "support"},
+			groups: []string{"sre", "support", "devops"},
 		},
 		{
 			msg:                "it should deny access if the connection is not found",
