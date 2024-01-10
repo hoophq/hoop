@@ -19,12 +19,14 @@ func accessControlAllowed(ctx pgrest.Context) (func(connName string) bool, error
 	if p == nil || ctx.IsAdmin() {
 		return func(_ string) bool { return true }, nil
 	}
-	return func(connName string) bool {
+
+	return func(connName string) (allow bool) {
 		for _, c := range p.Connections {
 			if c.Name == connName {
-				for _, userGroups := range ctx.GetUserGroups() {
-					return slices.Contains(c.Config, userGroups)
+				for _, userGroup := range ctx.GetUserGroups() {
+					allow = slices.Contains(c.Config, userGroup)
 				}
+				return allow
 			}
 		}
 		return false
