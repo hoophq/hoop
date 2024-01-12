@@ -29,7 +29,8 @@ jobs:
         ( echo "cat <<EOF" ; cat ./infra/appdemo/values.yml ; echo EOF ) | sh > ./appdemo-values.yml
     - name: Upgrade App Demo
       run: |-
-        VERSION=$(curl -s https://hoopartifacts.s3.amazonaws.com/release/latest.txt)
+        # VERSION=$(curl -s https://hoopartifacts.s3.amazonaws.com/release/latest.txt)
+        VERSION=1.19.11
         helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/$VERSION/hoop-chart-$VERSION.tgz \
           -f ./appdemo-values.yml \
           --set gw.image.tag=$VERSION \
