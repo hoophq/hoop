@@ -25,4 +25,5 @@ jobs:
         parse-json-secrets: true
         secret-ids: |
           hoop/self-hosted/appdemo
-    - run: echo "done"
+    - run: env
+    - run: done
