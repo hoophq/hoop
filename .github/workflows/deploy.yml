@@ -38,14 +38,14 @@ jobs:
       run: ( echo "cat <<EOF" ; cat ./infra/clari/values.yml ; echo EOF ) | sh > ./values-clari.yml
     - name: Upgrade App Demo
       run: |-
-        helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/${{ inputs.version }}/hoop-chart-$VERSION.tgz \
+        helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/${{ inputs.version }}/hoop-chart-${{ inputs.version }}.tgz \
           -f ./values-appdemo.yml \
           --set image.gw.tag=${{ inputs.version }} \
           --wait \
           -n appdemo
     - name: Upgrade Clari (Dry Run)
       run: |-
-        helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/${{ inputs.version }}/hoop-chart-$VERSION.tgz \
+        helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/${{ inputs.version }}/hoop-chart-${{ inputs.version }}.tgz \
           -f ./values-clari.yml \
           --set image.gw.tag=${{ inputs.version }} \
           --wait \
