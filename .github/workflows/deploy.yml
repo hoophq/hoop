@@ -33,6 +33,6 @@ jobs:
         VERSION=1.19.11
         helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/$VERSION/hoop-chart-$VERSION.tgz \
           -f ./appdemo-values.yml \
-          --set gw.image.tag=$VERSION \
+          --set image.gw.tag=$VERSION \
           -n appdemo
 
