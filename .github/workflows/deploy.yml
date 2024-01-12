@@ -16,10 +16,6 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v3
-    - name: Setup Helm3
-      uses: azure/setup-helm@v3
-      with:
-        token: ${{ secrets.GH_TOKEN }}
     - name: Assume Role
       uses: aws-actions/configure-aws-credentials@v4
       with:
@@ -31,6 +27,7 @@ jobs:
         parse-json-secrets: true
         secret-ids: |
           hoop/self-hosted/appdemo
+    - run: helm version
     - run: |-
         ( echo "cat <<EOF" ; cat ./infra/appdemo/values.yml ; echo EOF ) | sh > ./appdemo-values.yml
     - run: grep CLIENT_ID ./appdemo-values.yml
