@@ -3,17 +3,17 @@ agentConfig:
 
 config:
   ORG_MULTI_TENANT: 'false'
-  POSTGRES_DB_URI: "${POSTGRES_DB_URI}"
+  POSTGRES_DB_URI: "${HOOP_SELF_HOSTED_APPDEMO_POSTGRES_DB_URI}"
   PGREST_ROLE: 'hoop_apiuser_appdemo'
   AUTO_REGISTER: 'false'
   LOG_LEVEL: 'info'
   API_URL: 'https://appdemo.hoop.dev'
-  IDP_CLIENT_ID: "${IDP_CLIENT_ID}"
-  IDP_CLIENT_SECRET: "${IDP_CLIENT_SECRET}"
+  IDP_CLIENT_ID: "${HOOP_SELF_HOSTED_APPDEMO_IDP_CLIENT_ID}"
+  IDP_CLIENT_SECRET: "${HOOP_SELF_HOSTED_APPDEMO_IDP_CLIENT_SECRET}"
   IDP_ISSUER: 'https://hoophq.us.auth0.com/'
   IDP_AUDIENCE: 'https://hoophq.us.auth0.com/api/v2/'
   GOOGLE_APPLICATION_CREDENTIALS_JSON: ''
-  WEBHOOK_APPKEY: "${WEBHOOK_APPKEY}"
+  WEBHOOK_APPKEY: "${HOOP_SELF_HOSTED_APPDEMO_WEBHOOK_APPKEY}"
   PLUGIN_AUDIT_PATH: '/opt/hoop/sessions'
   PLUGIN_INDEX_PATH: '/opt/hoop/sessions/indexes'
   PLUGIN_REGISTRY_URL: 'https://pluginregistry.s3.amazonaws.com/packages.json'
