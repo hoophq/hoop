@@ -31,7 +31,7 @@ jobs:
       run: |-
         VERSION=$(curl -s https://hoopartifacts.s3.amazonaws.com/release/latest.txt)
         helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/$VERSION/hoop-chart-$VERSION.tgz \
-          -f ./appdemo-values.yaml \
+          -f ./appdemo-values.yml \
           --set gw.image.tag=$VERSION \
           -n appdemo
 
