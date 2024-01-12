@@ -20,14 +20,4 @@ jobs:
         parse-json-secrets: true
         secret-ids: |
           hoop/self-hosted/appdemo
-    - name: Environment Substitution
-      uses: danielr1996/envsubst-action@1.0.0
-      env:
-        POSTGRES_DB_URI: $HOOP_SELF_HOSTED_APPDEMO_POSTGRES_DB_URI
-        IDP_CLIENT_ID: $HOOP_SELF_HOSTED_APPDEMO_IDP_CLIENT_ID
-        IDP_CLIENT_SECRET: $HOOP_SELF_HOSTED_APPDEMO_IDP_CLIENT_SECRET
-        WEBHOOK_APPKEY: $HOOP_SELF_HOSTED_APPDEMO_WEBHOOK_APPKEY
-      with:
-        input: infra/appdemo/values.yml
-        output: appdemo-values.yml
-    - run: cat appdemo-values.yml
+    - run: echo "done"
