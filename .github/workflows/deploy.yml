@@ -25,8 +25,8 @@ jobs:
         parse-json-secrets: true
         secret-ids: |
           hoop/self-hosted/appdemo
-    - run: helm version
     - run: kubectl version
+    - run: helm version
     - run: |-
         ( echo "cat <<EOF" ; cat ./infra/appdemo/values.yml ; echo EOF ) | sh > ./appdemo-values.yml
     - run: grep CLIENT_ID ./appdemo-values.yml
