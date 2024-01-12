@@ -9,8 +9,6 @@ on:
 
 jobs:
   deploy-gateway:
-    container:
-      image: hoophq/hoopdev:latest
     # You need to use the INSTALLATION_NAME from the previous step
     runs-on: arc-runner-set
     steps:
