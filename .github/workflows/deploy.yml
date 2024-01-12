@@ -25,7 +25,6 @@ jobs:
         parse-json-secrets: true
         secret-ids: |
           hoop/self-hosted/appdemo
-    - run: eval "echo $(cat ./infra/appdemo/values.yml)" > ./appdemo-values.yml
     - run: |-
         ( echo "cat <<EOF" ; cat ./infra/appdemo/values.yml ; echo EOF ) | sh > ./appdemo-values.yml
     - run: grep CLIENT_ID ./appdemo-values.yml
