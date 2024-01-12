@@ -1,11 +1,12 @@
 name: Deploy All Instances
-# on:
-#   workflow_dispatch:
 
 on:
-  push:
-    branches:
-      - feat/continuous-deploy
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'The semantic version to use to generate a new release'
+        required: true
+        type: string
 
 jobs:
   deploy-latest:
@@ -17,23 +18,36 @@ jobs:
     - name: Assume Role
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        output-credentials: true
+        output-credentials: false
         aws-region: us-east-1
-    - name: Get secrets by name and by ARN
+    - name: Google Aplication Credentials
+      uses: aws-actions/aws-secretsmanager-get-secrets@v1
+      with:
+        secret-ids: |
+          GOOGLE_APPLICATION_CREDENTIALS_JSON,hoop/google-application-credentials
+    - name: Customer App Secrets
       uses: aws-actions/aws-secretsmanager-get-secrets@v1
       with:
         parse-json-secrets: true
         secret-ids: |
           hoop/self-hosted/appdemo
-    - run: |-
-        ( echo "cat <<EOF" ; cat ./infra/appdemo/values.yml ; echo EOF ) | sh > ./appdemo-values.yml
+          hoop/self-hosted/clari
+    - name: Populate App Demo Values
+      run: ( echo "cat <<EOF" ; cat ./infra/appdemo/values.yml ; echo EOF ) | sh > ./values-appdemo.yml
+    - name: Populate Clari Values
+      run: ( echo "cat <<EOF" ; cat ./infra/clari/values.yml ; echo EOF ) | sh > ./values-clari.yml
     - name: Upgrade App Demo
       run: |-
-        VERSION=$(curl -s https://hoopartifacts.s3.amazonaws.com/release/latest.txt)
-        # VERSION=1.19.11
-        helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/$VERSION/hoop-chart-$VERSION.tgz \
-          -f ./appdemo-values.yml \
-          --set image.gw.tag=$VERSION \
+        helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/${{ inputs.version }}/hoop-chart-$VERSION.tgz \
+          -f ./values-appdemo.yml \
+          --set image.gw.tag=${{ inputs.version }} \
           --wait \
           -n appdemo
-
+    - name: Upgrade Clari (Dry Run)
+      run: |-
+        helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/${{ inputs.version }}/hoop-chart-$VERSION.tgz \
+          -f ./values-clari.yml \
+          --set image.gw.tag=${{ inputs.version }} \
+          --wait \
+          --dry-run \
+          -n clari
