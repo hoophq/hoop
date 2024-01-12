@@ -9,6 +9,8 @@ on:
 
 jobs:
   deploy-gateway:
+    container:
+      image: hoophq/hoopdev:latest
     # You need to use the INSTALLATION_NAME from the previous step
     runs-on: arc-runner-set
     steps:
@@ -16,6 +18,8 @@ jobs:
       uses: actions/checkout@v3
     - name: Setup Helm3
       uses: azure/setup-helm@v3
+      with:
+        token: ${{ secrets.GH_TOKEN }}
     - name: Assume Role
       uses: aws-actions/configure-aws-credentials@v4
       with:
