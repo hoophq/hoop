@@ -1,10 +1,33 @@
-name: Actions Runner Controller Demo
+name: Deploy Gateway
+# on:
+#   workflow_dispatch:
+
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - feat/continuous-deploy
 
 jobs:
   deploy-gateway:
     # You need to use the INSTALLATION_NAME from the previous step
     runs-on: arc-runner-set
     steps:
-    - run: echo "🎉 This job uses runner scale set runners!"
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Get secrets by name and by ARN
+      uses: aws-actions/aws-secretsmanager-get-secrets@v1
+      with:
+        parse-json-secrets: true
+        secret-ids: |
+          hoop/self-hosted/appdemo
+    - name: Environment Substitution
+      uses: danielr1996/envsubst-action@1.0.0
+      env:
+        POSTGRES_DB_URI: $HOOP_SELF_HOSTED_APPDEMO_POSTGRES_DB_URI
+        IDP_CLIENT_ID: $HOOP_SELF_HOSTED_APPDEMO_IDP_CLIENT_ID
+        IDP_CLIENT_SECRET: $HOOP_SELF_HOSTED_APPDEMO_IDP_CLIENT_SECRET
+        WEBHOOK_APPKEY: $HOOP_SELF_HOSTED_APPDEMO_WEBHOOK_APPKEY
+      with:
+        input: infra/appdemo/values.yml
+        output: appdemo-values.yml
+    - run: cat appdemo-values.yml

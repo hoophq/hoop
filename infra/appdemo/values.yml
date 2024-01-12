@@ -1,0 +1,69 @@
+agentConfig:
+  enabled: false
+
+config:
+  ORG_MULTI_TENANT: 'false'
+  POSTGRES_DB_URI: "${POSTGRES_DB_URI}"
+  PGREST_ROLE: 'hoop_apiuser_appdemo'
+  AUTO_REGISTER: 'false'
+  LOG_LEVEL: 'info'
+  API_URL: 'https://appdemo.hoop.dev'
+  IDP_CLIENT_ID: "${IDP_CLIENT_ID}"
+  IDP_CLIENT_SECRET: "${IDP_CLIENT_SECRET}"
+  IDP_ISSUER: 'https://hoophq.us.auth0.com/'
+  IDP_AUDIENCE: 'https://hoophq.us.auth0.com/api/v2/'
+  GOOGLE_APPLICATION_CREDENTIALS_JSON: ''
+  WEBHOOK_APPKEY: "${WEBHOOK_APPKEY}"
+  PLUGIN_AUDIT_PATH: '/opt/hoop/sessions'
+  PLUGIN_INDEX_PATH: '/opt/hoop/sessions/indexes'
+  PLUGIN_REGISTRY_URL: 'https://pluginregistry.s3.amazonaws.com/packages.json'
+
+persistence:
+  # -- Use persistent volume for write ahead log sessions
+  enabled: true
+  storageClassName: gp2
+
+  # -- Size of persistent volume claim
+  size: 10Gi
+
+ingressApi:
+  enabled: true
+  host: appdemo.hoop.dev
+  ingressClassName: alb
+  annotations:
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:200074533906:certificate/9658b3bc-60bf-4097-aa48-a73c0a0c0baf
+    alb.ingress.kubernetes.io/group.name: appdemo
+    alb.ingress.kubernetes.io/healthcheck-path: /
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/security-groups: sg-0bdc19ae6ee7cce13
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/subnets: subnet-0f394046eac321c69,subnet-09a64d73f653d6562
+    alb.ingress.kubernetes.io/target-type: ip
+
+ingressGrpc:
+  enabled: true
+  host: appdemo.hoop.dev
+  ingressClassName: alb
+  annotations:
+    alb.ingress.kubernetes.io/backend-protocol-version: GRPC
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:200074533906:certificate/9658b3bc-60bf-4097-aa48-a73c0a0c0baf
+    alb.ingress.kubernetes.io/group.name: appdemo
+    alb.ingress.kubernetes.io/healthcheck-path: /
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS": 8443}]'
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/security-groups: sg-0bdc19ae6ee7cce13
+    alb.ingress.kubernetes.io/subnets: subnet-0f394046eac321c69,subnet-09a64d73f653d6562
+    alb.ingress.kubernetes.io/target-type: ip
+
+# -- CPU/Memory resource requests/limits
+resources:
+  gw:
+    limits:
+      cpu: 512m
+      memory: 1Gi
+    requests:
+      cpu: 256m
+      memory: 1Gi
