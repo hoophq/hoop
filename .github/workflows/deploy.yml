@@ -1,4 +1,4 @@
-name: Deploy Gateway
+name: Deploy All Instances
 # on:
 #   workflow_dispatch:
 
@@ -8,7 +8,7 @@ on:
       - feat/continuous-deploy
 
 jobs:
-  deploy-gateway:
+  deploy-latest:
     # You need to use the INSTALLATION_NAME from the previous step
     runs-on: arc-runner-set
     steps:
@@ -25,9 +25,13 @@ jobs:
         parse-json-secrets: true
         secret-ids: |
           hoop/self-hosted/appdemo
-    - run: kubectl version
-    - run: helm version
     - run: |-
         ( echo "cat <<EOF" ; cat ./infra/appdemo/values.yml ; echo EOF ) | sh > ./appdemo-values.yml
-    - run: grep CLIENT_ID ./appdemo-values.yml
+    - name: Upgrade App Demo
+      run: |-
+        VERSION=$(curl -s https://hoopartifacts.s3.amazonaws.com/release/latest.txt)
+        helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/$VERSION/hoop-chart-$VERSION.tgz \
+          -f ./appdemo-values.yaml \
+          --set gw.image.tag=$VERSION \
+          -n appdemo
 
