@@ -14,6 +14,8 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v3
+    - name: Setup Helm3
+      uses: azure/setup-helm@v3
     - name: Assume Role
       uses: aws-actions/configure-aws-credentials@v4
       with:
