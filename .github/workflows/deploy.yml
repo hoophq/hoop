@@ -1,10 +1,53 @@
-name: Actions Runner Controller Demo
+name: Deploy All Instances
+
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'The semantic version to use to generate a new release'
+        required: true
+        type: string
 
 jobs:
-  deploy-gateway:
+  deploy-latest:
     # You need to use the INSTALLATION_NAME from the previous step
     runs-on: arc-runner-set
     steps:
-    - run: echo "🎉 This job uses runner scale set runners!"
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Assume Role
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        output-credentials: false
+        aws-region: us-east-1
+    - name: Google Aplication Credentials
+      uses: aws-actions/aws-secretsmanager-get-secrets@v1
+      with:
+        secret-ids: |
+          GOOGLE_APPLICATION_CREDENTIALS_JSON,hoop/google-application-credentials
+    - name: Customer App Secrets
+      uses: aws-actions/aws-secretsmanager-get-secrets@v1
+      with:
+        parse-json-secrets: true
+        secret-ids: |
+          hoop/self-hosted/appdemo
+          hoop/self-hosted/clari
+    - name: Populate App Demo Values
+      run: ( echo "cat <<EOF" ; cat ./infra/appdemo/values.yml ; echo EOF ) | sh > ./values-appdemo.yml
+    - name: Populate Clari Values
+      run: ( echo "cat <<EOF" ; cat ./infra/clari/values.yml ; echo EOF ) | sh > ./values-clari.yml
+    - name: Upgrade App Demo
+      run: |-
+        helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/${{ inputs.version }}/hoop-chart-$VERSION.tgz \
+          -f ./values-appdemo.yml \
+          --set image.gw.tag=${{ inputs.version }} \
+          --wait \
+          -n appdemo
+    - name: Upgrade Clari (Dry Run)
+      run: |-
+        helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/${{ inputs.version }}/hoop-chart-$VERSION.tgz \
+          -f ./values-clari.yml \
+          --set image.gw.tag=${{ inputs.version }} \
+          --wait \
+          --dry-run \
+          -n clari
