@@ -29,15 +29,15 @@ jobs:
       with:
         secret-ids: |
           GOOGLE_APPLICATION_CREDENTIALS_JSON,hoop/google-application-credentials
-    - name: Customer App Secrets
+    - name: 'Customer App Secrets ${{ inputs.app }}'
       uses: aws-actions/aws-secretsmanager-get-secrets@v1
       with:
         parse-json-secrets: true
         secret-ids: |
           hoop/self-hosted/${{ inputs.app }}
-    - name: Populate App Values
+    - name: 'Populate App Values ${{ inputs.app }}'
       run: ( echo "cat <<EOF" ; cat ./infra/${{ inputs.app }}/values.yml ; echo EOF ) | sh > ./values-${{ inputs.app }}.yml
-    - name: Upgrade App
+    - name: 'Upgrade App ${{ inputs.app }}'
       run: |-
         helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/${{ inputs.version }}/hoop-chart-${{ inputs.version }}.tgz \
           -f ./values-${{ inputs.app }}.yml \

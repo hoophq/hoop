@@ -42,6 +42,9 @@ release:
 	aws s3 cp ./scripts/install-cli.sh s3://hoopartifacts/release/install-cli.sh
 	aws s3 cp ${DIST_FOLDER}/CHANGELOG.txt s3://hoopartifacts/release/${VERSION}/CHANGELOG.txt
 
+deploy-by-app:
+	./scripts/deploy-by-app.sh
+
 download-artifacts:
 	mkdir -p ./dist
 	aws s3 cp s3://hoopartifacts/nodeapi/latest.tar.gz nodeapi-latest.tar.gz
@@ -72,4 +75,4 @@ clean:
 test:
 	go test -v github.com/runopsio/hoop/...
 
-.PHONY: release publish publish-tools clean test build build-dev-client package-binaries package-helmchart publish-assets run-dev run-dev-postgres download-artifacts
+.PHONY: release publish publish-tools clean test build build-dev-client package-binaries package-helmchart publish-assets run-dev run-dev-postgres download-artifacts deploy-by-app
