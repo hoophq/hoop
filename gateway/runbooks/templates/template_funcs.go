@@ -43,7 +43,7 @@ func defaultStaticTemplateFuncs() ttemplate.FuncMap {
 			return "", fmt.Errorf("pattern didn't match:%s", p)
 		},
 		"placeholder": func(_, s string) string { return s },
-		"options":     func(s ...string) string { return "" },
+		"options":     func(_, s string, v ...string) string { return s },
 		"description": func(_, s string) string { return s },
 		"type":        func(_, s string) string { return s },
 		"squote":      func(s string) string { return fmt.Sprintf(`'%s'`, s) },
