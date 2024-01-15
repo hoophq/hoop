@@ -27,7 +27,7 @@ GIT_TAG="${GIT_TAG:=$LATEST_VERSION}"
 ghRunWorkflow(){
   echo "running workflow for $APP_NAME/$GIT_TAG ..."
   gh workflow run deploy-by-app.yml -f version=$GIT_TAG -f app=$APP_NAME --repo hoophq/hoop
-  echo "deployment for $APP_NAME/$GIT_TAG started, redirecting to workflow in 5 seconds ..."
+  echo "=> deployment for $APP_NAME/$GIT_TAG started, redirecting to workflow in 5 seconds ..."
   sleep 5 # give some time to github to update the workflow status
   gh workflow view deploy-by-app.yml -w
 }

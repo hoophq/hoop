@@ -106,3 +106,16 @@ migrate -database 'postgres://hoopdevuser:1a2b3c4d@127.0.0.1:5449/hoopdevdb?sslm
 ### Migration Best Practices
 
 - https://github.com/golang-migrate/migrate/blob/master/MIGRATIONS.md
+
+### Deployment
+
+The deployment is done with [github action self hosted](https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/about-self-hosted-runners). The production Kubernetes cluster has the namespaces `arc-system` and `arc-runners` which runs the deployment workflows.
+
+The command below will show an interactive prompt and show the releases and apps available to deploy. It's important to follow up the deploy until it finishes.
+
+```shell
+make deploy-by-app
+```
+
+> There's another workflow that allows deploying all instances at the same time.
+> It's still in testing phase.
