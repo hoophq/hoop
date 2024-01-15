@@ -1,0 +1,46 @@
+name: Deploy By App
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'The semantic version to use to generate a new release'
+        required: true
+        type: string
+      app:
+        description: 'The name of the app to deploy'
+        required: true
+        type: string
+
+jobs:
+  deploy-by-app:
+    # You need to use the INSTALLATION_NAME from the previous step
+    runs-on: arc-runner-set
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Assume Role
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        output-credentials: false
+        aws-region: us-east-1
+    - name: Google Aplication Credentials
+      uses: aws-actions/aws-secretsmanager-get-secrets@v1
+      with:
+        secret-ids: |
+          GOOGLE_APPLICATION_CREDENTIALS_JSON,hoop/google-application-credentials
+    - name: Customer App Secrets
+      uses: aws-actions/aws-secretsmanager-get-secrets@v1
+      with:
+        parse-json-secrets: true
+        secret-ids: |
+          hoop/self-hosted/${{ inputs.app }}
+    - name: Populate App Values
+      run: ( echo "cat <<EOF" ; cat ./infra/${{ inputs.app }}/values.yml ; echo EOF ) | sh > ./values-${{ inputs.app }}.yml
+    - name: Upgrade App
+      run: |-
+        helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/${{ inputs.version }}/hoop-chart-${{ inputs.version }}.tgz \
+          -f ./values-${{ inputs.app }}.yml \
+          --set image.gw.tag=${{ inputs.version }} \
+          --wait \
+          -n ${{ inputs.app }}

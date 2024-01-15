@@ -1,0 +1,73 @@
+agentConfig:
+  enabled: false
+
+config:
+  ORG_MULTI_TENANT: ''
+  POSTGRES_DB_URI: '${HOOP_SELF_HOSTED_EBANX_POSTGRES_DB_URI}'
+  PGREST_ROLE: 'hoop_apiuser_ebanx'
+  API_URL: 'https://ebanx.hoop.dev'
+  IDP_ISSUER: 'https://login.microsoftonline.com/df3e8d5d-4957-42ee-a495-f43251fa2a94/v2.0'
+  IDP_CLIENT_ID: '${HOOP_SELF_HOSTED_EBANX_IDP_CLIENT_ID}'
+  IDP_CLIENT_SECRET: '${HOOP_SELF_HOSTED_EBANX_IDP_CLIENT_SECRET}'
+  IDP_CUSTOM_SCOPES: 'a46c7813-1a05-45c7-b7ab-72f7b6f14543/.default'
+  IDP_AUDIENCE: ''
+  GOOGLE_APPLICATION_CREDENTIALS_JSON: '${GOOGLE_APPLICATION_CREDENTIALS_JSON}'
+  WEBHOOK_APPKEY: '${HOOP_SELF_HOSTED_EBANX_WEBHOOK_APPKEY}'
+  PYROSCOPE_AUTH_TOKEN: ''
+  PYROSCOPE_INGEST_URL: ''
+  ADMIN_USERNAME: 'efbbf6e2-72af-429f-b1e9-c35ecdbe26d1'
+  PLUGIN_AUDIT_PATH: '/opt/hoop/sessions'
+  PLUGIN_INDEX_PATH: '/opt/hoop/sessions/indexes'
+  PLUGIN_REGISTRY_URL: 'https://pluginregistry.s3.amazonaws.com/packages.json'
+  MAGIC_BELL_API_KEY: ''
+  MAGIC_BELL_API_SECRET: ''
+
+persistence:
+  # -- Use persistent volume for write ahead log sessions
+  enabled: true
+  storageClassName: gp2
+
+  # -- Size of persistent volume claim
+  size: 100Gi
+
+ingressApi:
+  enabled: true
+  host: ebanx.hoop.dev
+  ingressClassName: alb
+  annotations:
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:200074533906:certificate/e5de1711-52fa-4f50-90de-dc362a5a3afb
+    alb.ingress.kubernetes.io/group.name: ebanx
+    alb.ingress.kubernetes.io/healthcheck-path: /
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/security-groups: sg-0bdc19ae6ee7cce13
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/subnets: subnet-0f394046eac321c69,subnet-09a64d73f653d6562
+    alb.ingress.kubernetes.io/target-type: ip
+
+ingressGrpc:
+  enabled: true
+  host: ebanx.hoop.dev
+  ingressClassName: alb
+  annotations:
+    alb.ingress.kubernetes.io/backend-protocol-version: GRPC
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:200074533906:certificate/e5de1711-52fa-4f50-90de-dc362a5a3afb
+    alb.ingress.kubernetes.io/group.name: ebanx
+    alb.ingress.kubernetes.io/healthcheck-path: /
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS": 8443}]'
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/security-groups: sg-0bdc19ae6ee7cce13
+    alb.ingress.kubernetes.io/subnets: subnet-0f394046eac321c69,subnet-09a64d73f653d6562
+    alb.ingress.kubernetes.io/target-type: ip
+
+# -- CPU/Memory resource requests/limits
+resources:
+  gw:
+    limits:
+      cpu: 1024m
+      memory: 1024Mi
+    requests:
+      cpu: 256m
+      memory: 1024Mi
