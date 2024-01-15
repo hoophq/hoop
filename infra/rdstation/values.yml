@@ -62,13 +62,6 @@ ingressGrpc:
 
 # -- CPU/Memory resource requests/limits
 resources:
-  xtdb:
-    limits:
-      cpu: 1024m
-      memory: 1024Mi
-    requests:
-      cpu: 256m
-      memory: 1024Mi
   gw:
     limits:
       cpu: 2048m
