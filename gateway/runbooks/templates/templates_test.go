@@ -189,6 +189,12 @@ func TestTemplateParseHelperFuncs(t *testing.T) {
 			inputs:   map[string]string{"wallet_id": "1234567890"},
 		},
 		{
+			msg:      "it should render the template when using options function",
+			tmpl:     `type = {{ .type | options "house" "car" "boat" }}`,
+			wantTmpl: `type = car`,
+			inputs:   map[string]string{"type": "car"},
+		},
+		{
 			msg:     "it should faild validating the number regexp pattern",
 			tmpl:    `wallet_id = {{ .wallet_id | pattern "^[0-9]+" }}`,
 			inputs:  map[string]string{"wallet_id": "abc1234567890"},
