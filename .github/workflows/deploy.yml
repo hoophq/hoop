@@ -32,10 +32,19 @@ jobs:
         secret-ids: |
           hoop/self-hosted/appdemo
           hoop/self-hosted/clari
+          hoop/sefl-hosted/rdstation
+          hoop/self-hosted/unico
+          hoop/self-hosted/enjoei
     - name: Populate App Demo Values
       run: ( echo "cat <<EOF" ; cat ./infra/appdemo/values.yml ; echo EOF ) | sh > ./values-appdemo.yml
     - name: Populate Clari Values
       run: ( echo "cat <<EOF" ; cat ./infra/clari/values.yml ; echo EOF ) | sh > ./values-clari.yml
+    - name: Populate Rdstation Values
+      run: ( echo "cat <<EOF" ; cat ./infra/rdstation/values.yml ; echo EOF ) | sh > ./values-rdstation.yml
+    - name: Populate Ebanx Values
+      run: ( echo "cat <<EOF" ; cat ./infra/ebanx/values.yml ; echo EOF ) | sh > ./values-ebanx.yml
+    - name: Populate Enjoei Values
+      run: ( echo "cat <<EOF" ; cat ./infra/enjoei/values.yml ; echo EOF ) | sh > ./values-enjoei.yml
     - name: Upgrade App Demo
       run: |-
         helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/${{ inputs.version }}/hoop-chart-${{ inputs.version }}.tgz \
@@ -51,3 +60,27 @@ jobs:
           --wait \
           --dry-run \
           -n clari
+    - name: Upgrade Rdstation (Dry Run)
+      run: |-
+        helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/${{ inputs.version }}/hoop-chart-${{ inputs.version }}.tgz \
+          -f ./values-rdstation.yml \
+          --set image.gw.tag=${{ inputs.version }} \
+          --wait \
+          --dry-run \
+          -n rdstation
+    - name: Upgrade Unico (Dry Run)
+      run: |-
+        helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/${{ inputs.version }}/hoop-chart-${{ inputs.version }}.tgz \
+          -f ./values-unico.yml \
+          --set image.gw.tag=${{ inputs.version }} \
+          --wait \
+          --dry-run \
+          -n unico
+    - name: Upgrade Enjoei (Dry Run)
+      run: |-
+        helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/${{ inputs.version }}/hoop-chart-${{ inputs.version }}.tgz \
+          -f ./values-enjoei.yml \
+          --set image.gw.tag=${{ inputs.version }} \
+          --wait \
+          --dry-run \
+          -n enjoei

@@ -3,20 +3,22 @@ agentConfig:
 
 config:
   ORG_MULTI_TENANT: ''
-  POSTGRES_DB_URI: '${HOOP_SELF_HOSTED_CLARI_POSTGRES_DB_URI}'
-  PGREST_ROLE: 'hoop_apiuser_clari'
-  API_URL: 'https://clari.hoop.dev'
-  IDP_ISSUER: 'https://clari.okta.com?_userinfo=1'
-  IDP_CLIENT_ID: '${HOOP_SELF_HOSTED_CLARI_IDP_CLIENT_ID}'
-  IDP_CLIENT_SECRET: '${HOOP_SELF_HOSTED_CLARI_IDP_CLIENT_SECRET}'
+  POSTGRES_DB_URI: '${HOOP_SELF_HOSTED_ENJOEI_POSTGRES_DB_URI}'
+  PGREST_ROLE: 'hoop_apiuser_enjoei'
+  API_URL: 'https://enjoei.hoop.dev'
+  IDP_ISSUER: 'https://oauth.id.jumpcloud.com/'
+  IDP_CLIENT_ID: '${HOOP_SELF_HOSTED_ENJOEI_IDP_CLIENT_ID}'
+  IDP_CLIENT_SECRET: '${HOOP_SELF_HOSTED_ENJOEI_IDP_CLIENT_SECRET}'
   IDP_CUSTOM_SCOPES: ''
   IDP_AUDIENCE: ''
   GOOGLE_APPLICATION_CREDENTIALS_JSON: '${GOOGLE_APPLICATION_CREDENTIALS_JSON}'
-  WEBHOOK_APPKEY: '${HOOP_SELF_HOSTED_CLARI_WEBHOOK_APPKEY}'
+  WEBHOOK_APPKEY: '${HOOP_SELF_HOSTED_ENJOEI_WEBHOOK_APPKEY}'
   PYROSCOPE_AUTH_TOKEN: ''
   PYROSCOPE_INGEST_URL: ''
+  ADMIN_USERNAME: 'RunOps - Admin'
   PLUGIN_AUDIT_PATH: '/opt/hoop/sessions'
   PLUGIN_INDEX_PATH: '/opt/hoop/sessions/indexes'
+  PLUGIN_REGISTRY_URL: 'https://pluginregistry.s3.amazonaws.com/packages.json'
   MAGIC_BELL_API_KEY: ''
   MAGIC_BELL_API_SECRET: ''
 
@@ -30,11 +32,11 @@ persistence:
 
 ingressApi:
   enabled: true
-  host: clari.hoop.dev
+  host: enjoei.hoop.dev
   ingressClassName: alb
   annotations:
-    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:200074533906:certificate/6352f460-b9a9-49f5-b146-ddcf6b938d06
-    alb.ingress.kubernetes.io/group.name: clari
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:200074533906:certificate/8bd787af-787a-47fd-8010-1cef0c28228d
+    alb.ingress.kubernetes.io/group.name: enjoei
     alb.ingress.kubernetes.io/healthcheck-path: /
     alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
@@ -46,12 +48,12 @@ ingressApi:
 
 ingressGrpc:
   enabled: true
-  host: clari.hoop.dev
+  host: enjoei.hoop.dev
   ingressClassName: alb
   annotations:
     alb.ingress.kubernetes.io/backend-protocol-version: GRPC
-    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:200074533906:certificate/6352f460-b9a9-49f5-b146-ddcf6b938d06
-    alb.ingress.kubernetes.io/group.name: clari
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:200074533906:certificate/8bd787af-787a-47fd-8010-1cef0c28228d
+    alb.ingress.kubernetes.io/group.name: enjoei
     alb.ingress.kubernetes.io/healthcheck-path: /
     alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS": 8443}]'
@@ -65,7 +67,7 @@ resources:
   gw:
     limits:
       cpu: 2048m
-      memory: 1Gi
+      memory: 2Gi
     requests:
       cpu: 512m
-      memory: 1Gi
+      memory: 2Gi

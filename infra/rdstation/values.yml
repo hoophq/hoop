@@ -3,16 +3,16 @@ agentConfig:
 
 config:
   ORG_MULTI_TENANT: ''
-  POSTGRES_DB_URI: '${HOOP_SELF_HOSTED_CLARI_POSTGRES_DB_URI}'
-  PGREST_ROLE: 'hoop_apiuser_clari'
-  API_URL: 'https://clari.hoop.dev'
-  IDP_ISSUER: 'https://clari.okta.com?_userinfo=1'
-  IDP_CLIENT_ID: '${HOOP_SELF_HOSTED_CLARI_IDP_CLIENT_ID}'
-  IDP_CLIENT_SECRET: '${HOOP_SELF_HOSTED_CLARI_IDP_CLIENT_SECRET}'
+  POSTGRES_DB_URI: '${HOOP_SELF_HOSTED_RDSTATION_POSTGRES_DB_URI}'
+  PGREST_ROLE: 'hoop_apiuser_rdstation'
+  API_URL: 'https://rdstation.hoop.dev'
+  IDP_ISSUER: 'https://rd.okta.com?_userinfo=1'
+  IDP_CLIENT_ID: '${HOOP_SELF_HOSTED_RDSTATION_IDP_CLIENT_ID}'
+  IDP_CLIENT_SECRET: '${HOOP_SELF_HOSTED_RDSTATION_IDP_CLIENT_SECRET}'
   IDP_CUSTOM_SCOPES: ''
   IDP_AUDIENCE: ''
   GOOGLE_APPLICATION_CREDENTIALS_JSON: '${GOOGLE_APPLICATION_CREDENTIALS_JSON}'
-  WEBHOOK_APPKEY: '${HOOP_SELF_HOSTED_CLARI_WEBHOOK_APPKEY}'
+  WEBHOOK_APPKEY: '${HOOP_SELF_HOSTED_RDSTATION_WEBHOOK_APPKEY}'
   PYROSCOPE_AUTH_TOKEN: ''
   PYROSCOPE_INGEST_URL: ''
   PLUGIN_AUDIT_PATH: '/opt/hoop/sessions'
@@ -30,11 +30,11 @@ persistence:
 
 ingressApi:
   enabled: true
-  host: clari.hoop.dev
+  host: rdstation.hoop.dev
   ingressClassName: alb
   annotations:
-    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:200074533906:certificate/6352f460-b9a9-49f5-b146-ddcf6b938d06
-    alb.ingress.kubernetes.io/group.name: clari
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:200074533906:certificate/41939435-851c-44a5-910b-e0b484735c37
+    alb.ingress.kubernetes.io/group.name: rdstation
     alb.ingress.kubernetes.io/healthcheck-path: /
     alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
@@ -46,12 +46,12 @@ ingressApi:
 
 ingressGrpc:
   enabled: true
-  host: clari.hoop.dev
+  host: rdstation.hoop.dev
   ingressClassName: alb
   annotations:
     alb.ingress.kubernetes.io/backend-protocol-version: GRPC
-    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:200074533906:certificate/6352f460-b9a9-49f5-b146-ddcf6b938d06
-    alb.ingress.kubernetes.io/group.name: clari
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:200074533906:certificate/41939435-851c-44a5-910b-e0b484735c37
+    alb.ingress.kubernetes.io/group.name: rdstation
     alb.ingress.kubernetes.io/healthcheck-path: /
     alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS": 8443}]'
