@@ -10,7 +10,6 @@ import (
 	"syscall"
 
 	"github.com/creack/pty"
-	"github.com/runopsio/hoop/common/appruntime"
 	"github.com/runopsio/hoop/common/log"
 	term "github.com/runopsio/hoop/common/terminal"
 )
@@ -47,13 +46,14 @@ func (c *Command) Pid() int {
 }
 
 func (c *Command) Close() error {
-	procPid := c.Pid()
-	if procPid != -1 {
-		log.Printf("sending SIGTERM signal to process %v ...", procPid)
-		return appruntime.Kill(procPid, syscall.SIGTERM)
-	}
 	if c.ptty != nil {
-		return c.ptty.Close()
+		_ = c.ptty.Close()
+	}
+	procPid := c.Pid()
+	log.Infof("closing process %v ...", procPid)
+	if procPid != -1 {
+		// negative pid means that the signal will be sent to the process group
+		return syscall.Kill(-procPid, syscall.SIGINT)
 	}
 	return nil
 }
@@ -98,6 +98,12 @@ func (c *Command) Run(stdoutw, stderrw io.WriteCloser, stdinInput []byte, onExec
 	if err := c.OnPreExec(); err != nil {
 		onExecErr(term.InternalErrorExitCode, "internal error, failed executing pre command, reason=%v", err)
 		return
+	}
+	// it configures the command to start in a new process group
+	// it will allow killing child processes when the parent process is killed
+	c.cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+		Pgid:    0,
 	}
 	c.cmd.Stdin = bytes.NewBuffer(stdinInput)
 	if err := c.cmd.Start(); err != nil {

@@ -1,6 +1,7 @@
 package agent
 
 const (
+	execStoreKey          string = "exec:%s"
 	cmdStoreKey           string = "cmd:%s"
 	dlpClientKey          string = "dlp_client"
 	connEnvKey            string = "connenv"
