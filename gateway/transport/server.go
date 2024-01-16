@@ -43,7 +43,6 @@ type (
 	Server struct {
 		pb.UnimplementedTransportServer
 		AgentService        agent.Service
-		UserService         user.Service
 		ReviewService       review.Service
 		NotificationService notification.Service
 
@@ -125,7 +124,7 @@ func (s *Server) StartRPCServer() {
 
 	grpcInterceptors := grpc.ChainStreamInterceptor(
 		sessionuuidinterceptor.New(),
-		authinterceptor.New(s.IDProvider, &s.UserService, &s.AgentService),
+		authinterceptor.New(s.IDProvider, &s.AgentService),
 		tracinginterceptor.New(s.IDProvider.ApiURL),
 	)
 	var grpcServer *grpc.Server

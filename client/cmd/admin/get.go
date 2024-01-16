@@ -195,18 +195,21 @@ var getCmd = &cobra.Command{
 		case "user", "users", "userinfo":
 			switch contents := obj.(type) {
 			case map[string]any:
-				fmt.Fprintln(w, "ID\tEMAIL\tNAME\tSLACKID\tSTATUS\tAPIV2\tGROUPS\t")
+				fmt.Fprintln(w, "ID\tEMAIL\tNAME\tSLACKID\tSTATUS\tVERIFIED\tGROUPS\t")
 				m := contents
 				groupsObject, _ := m["groups"].([]any)
 				groupList := joinItems(groupsObject)
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%v\t%v\t%v\t", m["id"], m["email"], m["name"], m["slack_id"], m["status"], m["is_apiv2"], groupList)
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%v\t%v\t%v\t", m["id"], m["email"], m["name"], m["slack_id"], m["status"], m["verified"], groupList)
 				fmt.Fprintln(w)
 			case []map[string]any:
-				fmt.Fprintln(w, "ID\tEMAIL\tNAME\tSLACKID\tSTATUS\tGROUPS\t")
+				fmt.Fprintln(w, "ID\tEMAIL\tNAME\tSLACKID\tSTATUS\tVERIFIED\tGROUPS\t")
 				for _, m := range contents {
 					groupsObject, _ := m["groups"].([]any)
 					groupList := joinItems(groupsObject)
-					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%v\t%v\t", m["id"], m["email"], m["name"], m["slack_id"], m["status"], groupList)
+					if len(groupList) > 70 {
+						groupList = groupList[:70] + "..."
+					}
+					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%v\t%v\t%v\t", m["id"], m["email"], m["name"], m["slack_id"], m["status"], m["verified"], groupList)
 					fmt.Fprintln(w)
 				}
 			}

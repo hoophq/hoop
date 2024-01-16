@@ -26,7 +26,7 @@ func NewStorage(httpClient HTTPClient) *Store {
 	return &Store{client: httpClient}
 }
 
-const ContextKey = "storagev2"
+const ContextKey string = "storagev2"
 
 type Context struct {
 	*Store

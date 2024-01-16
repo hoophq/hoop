@@ -6,42 +6,21 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/common/dsnkeys"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/version"
+	pguserauth "github.com/runopsio/hoop/gateway/pgrest/userauth"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/user"
 	"go.uber.org/zap"
 )
 
-var (
-	errInvalidAuthHeaderErr = errors.New("invalid authorization header")
-	debugRoutes             = os.Getenv("DEBUG_ROUTES") == "1" || os.Getenv("DEBUG_ROUTES") == "true"
-)
+var errInvalidAuthHeaderErr = errors.New("invalid authorization header")
 
 func (api *Api) Authenticate(c *gin.Context) {
-	// validate if the proxy layer performed the authentication
-	// in this case just set the logger and do nothing.
-	if obj, exists := c.Get(user.ContextUserKey); exists {
-		if ctx, _ := obj.(*user.Context); ctx != nil {
-			if api.logger != nil {
-				zaplogger := api.logger.With(
-					zap.String("org", ctx.User.Org),
-					zap.String("user", ctx.User.Email),
-					zap.Bool("isadm", ctx.User.IsAdmin()),
-				)
-				c.Set(user.ContextLoggerKey, zaplogger.Sugar())
-			}
-		}
-		c.Next()
-		return
-	}
-	// perform the normal authentication, the proxy was unable to
-	// to authenticate the request.
 	sub, err := api.validateClaims(c)
 	if err != nil {
 		tokenHeader := c.GetHeader("authorization")
@@ -51,29 +30,40 @@ func (api *Api) Authenticate(c *gin.Context) {
 		return
 	}
 
-	ctx, err := user.GetUserContext(api.UserHandler.Service, sub)
-	if err != nil || ctx.User == nil {
+	ctx, err := pguserauth.New().FetchUserContext(sub)
+	if err != nil || ctx.IsEmpty() {
 		log.Debugf("failed searching for user, subject=%v, err=%v", sub, err)
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
 	if api.logger != nil {
 		zaplogger := api.logger.With(
-			zap.String("org", ctx.User.Org),
-			zap.String("user", ctx.User.Email),
-			zap.Bool("isadm", ctx.User.IsAdmin()),
+			zap.String("org", ctx.OrgName),
+			zap.String("user", ctx.UserEmail),
+			zap.Bool("isadm", ctx.IsAdmin()),
 		)
 		c.Set(user.ContextLoggerKey, zaplogger.Sugar())
 	}
 
 	c.Set(storagev2.ContextKey,
-		storagev2.NewContext(ctx.User.Id, ctx.Org.Id, api.StoreV2).
-			WithUserInfo(ctx.User.Name, ctx.User.Email, string(ctx.User.Status), ctx.User.Groups).
-			WithOrgName(ctx.Org.Name).
+		storagev2.NewContext(ctx.UserSubject, ctx.OrgID, api.StoreV2).
+			WithUserInfo(ctx.UserName, ctx.UserEmail, string(ctx.UserStatus), ctx.UserGroups).
+			WithOrgName(ctx.OrgName).
 			WithApiURL(api.IDProvider.ApiURL).
 			WithGrpcURL(api.GrpcURL),
 	)
-	c.Set(user.ContextUserKey, ctx)
+	c.Set(user.ContextUserKey, &user.Context{
+		Org: &user.Org{Id: ctx.OrgID, Name: ctx.OrgName},
+		User: &user.User{
+			Id:      ctx.UserSubject,
+			Org:     ctx.OrgID,
+			Name:    ctx.UserName,
+			Email:   ctx.UserEmail,
+			Status:  user.StatusType(ctx.UserStatus),
+			SlackID: ctx.UserSlackID,
+			Groups:  ctx.UserGroups,
+		},
+	})
 	c.Next()
 }
 
@@ -134,6 +124,19 @@ func (api *Api) AdminOnly(c *gin.Context) {
 		return
 	}
 
+	c.Next()
+}
+
+func (api *Api) AuditApiChanges(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	log.With(
+		"subject", ctx.UserID,
+		"org", ctx.OrgName,
+		"method", c.Request.Method,
+		"path", c.Request.URL.Path,
+		"user-agent", c.GetHeader("user-agent"),
+		"content-length", c.Request.ContentLength,
+	).Info("api-audit")
 	c.Next()
 }
 

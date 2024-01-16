@@ -180,7 +180,7 @@ var grantStatements = []string{
 
 	`GRANT SELECT, INSERT ON public.orgs TO %s`,
 	`GRANT INSERT, SELECT, UPDATE on public.login TO %s`,
-	`GRANT SELECT, INSERT, UPDATE ON public.users TO %s`,
+	`GRANT SELECT, INSERT, UPDATE, DELETE ON public.users TO %s`,
 	`GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_groups TO %s`,
 	`GRANT SELECT, INSERT, UPDATE ON public.serviceaccounts TO %s`,
 	`GRANT SELECT, INSERT, UPDATE, DELETE ON public.connections TO %s`,

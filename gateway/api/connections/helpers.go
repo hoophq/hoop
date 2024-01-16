@@ -56,6 +56,10 @@ func upsertPluginConnection(ctx pgrest.Context, pluginName string, pluginConn *t
 		Config: nil,
 	}
 	if existentPlugin == nil {
+		// don't enable the plugin if the config is empty
+		if len(pluginConn.Config) == 0 {
+			return
+		}
 		if err := pgplugins.New().Upsert(ctx, nil, newPlugin); err != nil {
 			log.Warnf("failed creating plugin %v, reason=%v", pluginName, err)
 		}
