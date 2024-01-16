@@ -120,7 +120,7 @@ func (s *Service) Callback(c *gin.Context, state, code string) string {
 	ctx := toLegacyUserContext(authUserCtx)
 
 	var isSignup bool
-	if ctx.Org == nil || ctx.User == nil {
+	if authUserCtx.IsEmpty() {
 		log.Infof("starting signup for sub=%v, multitenant=%v, ctxorg=%v, ctxuser=%v",
 			sub, user.IsOrgMultiTenant(), ctx.Org, ctx.User)
 		isSignup = true
@@ -164,14 +164,15 @@ func (s *Service) Callback(c *gin.Context, state, code string) string {
 			ctx.User.SlackID = login.SlackID
 		}
 		err = pgusers.New().Upsert(pgrest.User{
-			ID:      authUserCtx.UserUUID,
-			OrgID:   ctx.User.Org,
-			Subject: ctx.User.Id,
-			Name:    ctx.User.Name,
-			Email:   ctx.User.Email,
-			Status:  string(ctx.User.Status),
-			SlackID: ctx.User.SlackID,
-			Groups:  ctx.User.Groups,
+			ID:       authUserCtx.UserUUID,
+			OrgID:    ctx.User.Org,
+			Subject:  ctx.User.Id,
+			Name:     ctx.User.Name,
+			Email:    ctx.User.Email,
+			Verified: true, // an authenticated user is always verified
+			Status:   string(ctx.User.Status),
+			SlackID:  ctx.User.SlackID,
+			Groups:   ctx.User.Groups,
 		})
 		if err != nil {
 			log.Errorf("failed saving user to database, reason=%v", err)

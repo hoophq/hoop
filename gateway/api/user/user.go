@@ -73,7 +73,7 @@ func Create(c *gin.Context) {
 		Name:     newUser.Name,
 		Email:    newUser.Email,
 		Verified: newUser.Verified,
-		Status:   string(StatusReviewing),
+		Status:   string(StatusActive),
 		SlackID:  newUser.SlackID,
 		Groups:   newUser.Groups,
 	})
