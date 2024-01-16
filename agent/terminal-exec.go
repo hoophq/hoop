@@ -44,6 +44,8 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 	}
 	log.Printf("session=%v, tty=false, stdinsize=%v - executing command:%v",
 		string(sessionID), len(pkt.Payload), cmd.String())
+	sessionIDKey := fmt.Sprintf(execStoreKey, sessionID)
+	a.connStore.Set(sessionIDKey, cmd)
 
 	spec := map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)}
 	stdoutw := pb.NewHookStreamWriter(a.client, pbclient.WriteStdout, spec, pluginHooks)
@@ -66,9 +68,13 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 	}
 
 	cmd.Run(stdoutw, stderrw, pkt.Payload, func(exitCode int, errMsg string, v ...any) {
+		if err := cmd.Close(); err != nil {
+			log.Warnf("session=%v - failed closing command, err=%v", string(sessionID), err)
+		}
+		a.connStore.Del(sessionIDKey)
 		errMsg = fmt.Sprintf(errMsg, v...)
 		if errMsg != "" {
-			log.Printf("session=%v, exitcode=%v - err=%v", string(sessionID), exitCode, errMsg)
+			log.Infof("session=%v, exitcode=%v - err=%v", string(sessionID), exitCode, errMsg)
 		}
 		_, _ = pb.NewHookStreamWriter(
 			a.client,
