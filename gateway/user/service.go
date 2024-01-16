@@ -7,8 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/storagev2"
-	serviceaccountstorage "github.com/runopsio/hoop/gateway/storagev2/serviceaccount"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 )
 
@@ -18,14 +16,10 @@ type (
 	}
 
 	storage interface {
-		FindById(ctx *Context, xtID string) (*Context, error)
-		FindBySlackID(ctx *Org, slackID string) (*User, error)
 		Persist(user any) (int64, error)
 		FindAll(context *Context) ([]User, error)
-		FindInvitedUser(email string) (*InvitedUser, error)
 		GetOrgByName(name string) (*Org, error)
 		GetOrgNameByID(orgID string) (*Org, error)
-		ListAllGroups(context *Context) ([]string, error)
 		FindOrgs() ([]Org, error)
 	}
 
@@ -70,12 +64,6 @@ const (
 	ContextLoggerKey = "context-logger"
 	ContextUserKey   = "context"
 )
-
-var statuses = []StatusType{
-	StatusActive,
-	StatusReviewing,
-	StatusInactive,
-}
 
 // ToAPIContext converts a *user.Context to the new structure *types.APIContext
 func (c *Context) ToAPIContext() *types.APIContext {
@@ -144,28 +132,6 @@ func (s *Service) FindAll(context *Context) ([]User, error) {
 	return s.Storage.FindAll(context)
 }
 
-func (s *Service) FindOne(context *Context, id string) (*User, error) {
-	ctx, err := s.Storage.FindById(context, id)
-	if err != nil {
-		return nil, err
-	}
-
-	if ctx.User == nil || ctx.User.Org != context.Org.Id {
-		return nil, nil
-	}
-
-	return ctx.User, nil
-
-}
-
-func (s *Service) FindBySlackID(ctx *Org, slackID string) (*User, error) {
-	return s.Storage.FindBySlackID(ctx, slackID)
-}
-
-func (s *Service) FindBySub(sub string) (*Context, error) {
-	return s.Storage.FindById(&Context{}, sub)
-}
-
 func (s *Service) Persist(user any) error {
 	_, err := s.Storage.Persist(user)
 	if err != nil {
@@ -180,14 +146,6 @@ func (s *Service) GetOrgByName(name string) (*Org, error) {
 
 func (s *Service) GetOrgNameByID(id string) (*Org, error) {
 	return s.Storage.GetOrgNameByID(id)
-}
-
-func (s *Service) FindInvitedUser(email string) (*InvitedUser, error) {
-	return s.Storage.FindInvitedUser(email)
-}
-
-func (s *Service) ListAllGroups(context *Context) ([]string, error) {
-	return s.Storage.ListAllGroups(context)
 }
 
 func (s *Service) FindOrgs() ([]Org, error) {
@@ -230,15 +188,6 @@ func (s *Service) CreateDefaultOrganization() error {
 
 func (user *User) IsAdmin() bool { return slices.Contains(user.Groups, types.GroupAdmin) }
 
-func isInStatus(status StatusType) bool {
-	for _, s := range statuses {
-		if s == status {
-			return true
-		}
-	}
-	return false
-}
-
 func IsOrgMultiTenant() bool {
 	return os.Getenv("ORG_MULTI_TENANT") == "true"
 }
@@ -246,30 +195,4 @@ func IsOrgMultiTenant() bool {
 // NewContext returns a user.Context with Id and Org ID set
 func NewContext(orgID, userID string) *Context {
 	return &Context{Org: &Org{Id: orgID}, User: &User{Id: userID}}
-}
-
-// GetUserContext loads a user or a service account type
-func GetUserContext(usrSvc service, subject string) (*Context, error) {
-	userCtx, err := usrSvc.FindBySub(subject)
-	if err != nil {
-		return nil, fmt.Errorf("failed obtaining user from store: %v", err)
-	}
-	if userCtx.User == nil {
-		ctx := storagev2.NewContext("", "", storagev2.NewStorage(nil))
-		objID := serviceaccountstorage.DeterministicXtID(subject)
-		sa, err := serviceaccountstorage.GetEntity(ctx, objID)
-		if err != nil {
-			return nil, fmt.Errorf("failed obtaining service account from store: %v", err)
-		}
-		if sa == nil {
-			return &Context{}, nil
-		}
-		userCtx = NewContext(sa.OrgID, sa.ID)
-		userCtx.User.Groups = sa.Groups
-		userCtx.User.Email = sa.Subject
-		userCtx.User.Name = sa.Name
-		userCtx.User.Status = StatusType(sa.Status)
-		return userCtx, nil
-	}
-	return userCtx, nil
 }

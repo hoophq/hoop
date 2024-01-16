@@ -1,8 +1,11 @@
 package userapi
 
 import (
+	"fmt"
 	"net/http"
 	"net/mail"
+	"os"
+	"slices"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -10,14 +13,35 @@ import (
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/gateway/analytics"
+	"github.com/runopsio/hoop/gateway/pgrest"
+	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
-	userstorage "github.com/runopsio/hoop/gateway/storagev2/user"
 )
+
+type StatusType string
+
+const (
+	StatusActive    StatusType = "active"
+	StatusReviewing StatusType = "reviewing"
+	StatusInactive  StatusType = "inactive"
+)
+
+type User struct {
+	ID       string     `json:"id"`
+	Name     string     `json:"name"`
+	Email    string     `json:"email"`
+	Status   StatusType `json:"status"`
+	Verified bool       `json:"verified"`
+	SlackID  string     `json:"slack_id"`
+	Groups   []string   `json:"groups"`
+}
+
+var isOrgMultiTenant = os.Getenv("ORG_MULTI_TENANT") == "true"
 
 func Create(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	var newUser types.InvitedUser
+	var newUser User
 	if err := c.ShouldBindJSON(&newUser); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
@@ -28,22 +52,32 @@ func Create(c *gin.Context) {
 		return
 	}
 
-	invitedUser, err := userstorage.FindInvitedUser(ctx, newUser.Email)
+	existingUser, err := pgusers.New().FetchOneByEmail(ctx, newUser.Email)
 	if err != nil {
 		log.Errorf("failed fetching existing invited user, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching existing invited user"})
 		return
 	}
-	if invitedUser != nil {
-		c.JSON(http.StatusConflict, gin.H{"message": "user was already invited"})
+	if existingUser != nil {
+		c.JSON(http.StatusConflict, gin.H{"message": fmt.Sprintf("user already exists with email %s", newUser.Email)})
 		return
 	}
 
 	newUser.ID = uuid.NewString()
-	newUser.OrgID = ctx.OrgID
-
-	if err := userstorage.UpdateInvitedUser(ctx, &newUser); err != nil {
+	newUser.Verified = false
+	err = pgusers.New().Upsert(pgrest.User{
+		ID:       newUser.ID,
+		Subject:  newUser.Email,
+		OrgID:    ctx.OrgID,
+		Name:     newUser.Name,
+		Email:    newUser.Email,
+		Verified: newUser.Verified,
+		Status:   string(StatusReviewing),
+		SlackID:  newUser.SlackID,
+		Groups:   newUser.Groups,
+	})
+	if err != nil {
 		log.Errorf("failed persisting invited user, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -74,26 +108,226 @@ func Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, newUser)
 }
 
-func GetUserByID(c *gin.Context) {
+func Update(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	emailOrID := c.Param("id")
-	var user *types.User
-	var err error
-	if isValidMailAddress(emailOrID) {
-		user, err = userstorage.FindByEmail(ctx, emailOrID)
-	} else {
-		user, err = userstorage.GetEntity(ctx, emailOrID)
-	}
+	userID := c.Param("id")
+
+	existingUser, err := pgusers.New().FetchOneBySubject(ctx, userID)
 	if err != nil {
+		log.Errorf("failed getting user %s, err=%v", userID, err)
 		sentry.CaptureException(err)
-		c.AbortWithStatus(http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed getting user"})
+		return
+	}
+	if existingUser == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+		return
+	}
+	var req User
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	// don't let admin users to remove admin group from themselves
+	if existingUser.Subject == ctx.UserID {
+		if !slices.Contains(req.Groups, types.GroupAdmin) {
+			req.Groups = append(req.Groups, types.GroupAdmin)
+		}
+		if req.Status != StatusActive {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "cannot deactivate yourself"})
+			return
+		}
+	}
+
+	existingUser.Name = req.Name
+	existingUser.Status = string(req.Status)
+	existingUser.SlackID = req.SlackID
+	existingUser.Groups = req.Groups
+
+	if err := pgusers.New().Upsert(*existingUser); err != nil {
+		log.Errorf("failed updating user %s, err=%v", userID, err)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
+	analytics.New().Identify(&types.APIContext{
+		OrgID:      ctx.OrgID,
+		OrgName:    ctx.OrgName,
+		UserID:     existingUser.Subject,
+		UserName:   existingUser.Name,
+		UserEmail:  existingUser.Email,
+		UserGroups: existingUser.Groups,
+		UserStatus: existingUser.Status,
+		SlackID:    existingUser.SlackID,
+		ApiURL:     ctx.ApiURL,
+		GrpcURL:    ctx.GrpcURL,
+	})
+
+	c.JSON(http.StatusOK, User{
+		ID:       existingUser.Subject,
+		Name:     existingUser.Name,
+		Email:    existingUser.Email,
+		Status:   StatusType(existingUser.Status),
+		Verified: existingUser.Verified,
+		SlackID:  existingUser.SlackID,
+		Groups:   existingUser.Groups,
+	})
+}
+
+func List(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	users, err := pgusers.New().FetchAll(ctx)
+	if err != nil {
+		log.Errorf("failed listing users, err=%v", err)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed listing users"})
+		return
+	}
+	userList := []User{}
+	for _, u := range users {
+		userList = append(userList,
+			User{
+				ID:       u.Subject,
+				Name:     u.Name,
+				Email:    u.Email,
+				Status:   StatusType(u.Status),
+				Verified: u.Verified,
+				SlackID:  u.SlackID,
+				Groups:   u.Groups,
+			})
+	}
+	c.JSON(http.StatusOK, userList)
+}
+
+func Delete(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	subject := c.Param("id")
+	user, err := pgusers.New().FetchOneBySubject(ctx, subject)
+	if err != nil {
+		log.Errorf("failed getting user %s, err=%v", subject, err)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed getting user"})
 		return
 	}
 	if user == nil {
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 		return
 	}
-	c.PureJSON(http.StatusOK, user)
+	if user.Subject == ctx.UserID {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "cannot delete yourself"})
+		return
+	}
+	if err := pgusers.New().Delete(ctx, subject); err != nil {
+		log.Errorf("failed removing user %s, err=%v", subject, err)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed deleting user"})
+		return
+	}
+	c.Writer.WriteHeader(204)
+}
+
+func GetUserByID(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	emailOrID := c.Param("id")
+	var user *pgrest.User
+	var err error
+	if isValidMailAddress(emailOrID) {
+		user, err = pgusers.New().FetchOneByEmail(ctx, emailOrID)
+	} else {
+		user, err = pgusers.New().FetchOneBySubject(ctx, emailOrID)
+	}
+	if err != nil {
+		log.Errorf("failed getting user %s, err=%v", emailOrID, err)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed getting user"})
+		return
+	}
+	if user == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+		return
+	}
+	c.JSON(http.StatusOK, User{
+		ID:       user.Subject,
+		Name:     user.Name,
+		Email:    user.Email,
+		Status:   StatusType(user.Status),
+		Verified: user.Verified,
+		SlackID:  user.SlackID,
+		Groups:   user.Groups,
+	})
+}
+
+func GetUserInfo(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	groupList := []string{}
+	if len(ctx.UserGroups) > 0 {
+		groupList = ctx.UserGroups
+	}
+	c.JSON(http.StatusOK, map[string]any{
+		"id":             ctx.UserID,
+		"name":           ctx.UserName,
+		"email":          ctx.UserEmail,
+		"status":         ctx.UserStatus,
+		"verified":       true, // authenticated user is always verified
+		"slack_id":       ctx.SlackID,
+		"groups":         groupList,
+		"is_admin":       ctx.IsAdminUser(),
+		"is_multitenant": isOrgMultiTenant,
+		"org_id":         ctx.OrgID,
+	})
+}
+
+func PatchSlackID(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	u, err := pgusers.New().FetchOneBySubject(ctx, ctx.UserID)
+	if err != nil || u == nil {
+		errMsg := fmt.Errorf("failed obtaining user from store, notfound=%v, err=%v", u == nil, err)
+		sentry.CaptureException(errMsg)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining user"})
+		return
+	}
+	var req map[string]any
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	var slackID string
+	if id, ok := req["slack_id"]; ok {
+		slackID = fmt.Sprintf("%v", id)
+	}
+	if slackID == "" {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "missing slack_id attribute"})
+		return
+	}
+	u.SlackID = slackID
+	if err := pgusers.New().Upsert(*u); err != nil {
+		log.Errorf("failed updating slack id of user, reason=%v", err)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating slack id"})
+		return
+	}
+	c.JSON(http.StatusOK, User{
+		ID:       u.Subject,
+		Name:     u.Name,
+		Email:    u.Email,
+		Status:   StatusType(u.Status),
+		Verified: u.Verified,
+		SlackID:  u.SlackID,
+		Groups:   u.Groups,
+	})
+}
+
+func ListAllGroups(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	groups, err := pgusers.New().ListAllGroups(ctx)
+	if err != nil {
+		log.Errorf("failed listing groups, err=%v", err)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed listing groups"})
+		return
+	}
+	c.JSON(http.StatusOK, groups)
 }
 
 func isValidMailAddress(email string) bool {

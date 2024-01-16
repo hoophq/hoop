@@ -11,6 +11,9 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/analytics"
+	"github.com/runopsio/hoop/gateway/pgrest"
+	pguserauth "github.com/runopsio/hoop/gateway/pgrest/userauth"
+	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
@@ -32,11 +35,7 @@ type (
 
 	UserService interface {
 		FindAll(context *user.Context) ([]user.User, error)
-		FindBySub(sub string) (*user.Context, error)
 		GetOrgByName(name string) (*user.Org, error)
-		GetOrgNameByID(orgID string) (*user.Org, error)
-		FindInvitedUser(email string) (*user.InvitedUser, error)
-		Persist(u any) error
 	}
 
 	login struct {
@@ -112,12 +111,13 @@ func (s *Service) Callback(c *gin.Context, state, code string) string {
 		return login.Redirect + "?error=unexpected_error"
 	}
 
-	ctx, err := s.UserService.FindBySub(sub)
+	authUserCtx, err := pguserauth.New().FetchUserContext(sub)
 	if err != nil {
 		log.Errorf("failed fetching user by sub, reason=%v", err)
 		s.loginOutcome(login, outcomeError)
 		return login.Redirect + "?error=unexpected_error"
 	}
+	ctx := toLegacyUserContext(authUserCtx)
 
 	var isSignup bool
 	if ctx.Org == nil || ctx.User == nil {
@@ -126,7 +126,11 @@ func (s *Service) Callback(c *gin.Context, state, code string) string {
 		isSignup = true
 		switch user.IsOrgMultiTenant() {
 		case true:
-			err = s.signupMultiTenant(ctx, sub, idTokenClaims)
+			// TODO: this function is not being used because we removed the signup
+			// capabilities and pinned the deployment (1.18.33) of new multi tenant instances.
+			// This code needs review after signup is re-enabled.
+			// err = s.signupMultiTenant(ctx, sub, idTokenClaims)
+			err = fmt.Errorf("signup is disabled for multi tenant instances")
 		default:
 			err = s.signup(ctx, sub, idTokenClaims)
 		}
@@ -159,7 +163,17 @@ func (s *Service) Callback(c *gin.Context, state, code string) string {
 		if login.SlackID != "" {
 			ctx.User.SlackID = login.SlackID
 		}
-		if err := s.UserService.Persist(ctx.User); err != nil {
+		err = pgusers.New().Upsert(pgrest.User{
+			ID:      authUserCtx.UserUUID,
+			OrgID:   ctx.User.Org,
+			Subject: ctx.User.Id,
+			Name:    ctx.User.Name,
+			Email:   ctx.User.Email,
+			Status:  string(ctx.User.Status),
+			SlackID: ctx.User.SlackID,
+			Groups:  ctx.User.Groups,
+		})
+		if err != nil {
 			log.Errorf("failed saving user to database, reason=%v", err)
 			s.loginOutcome(login, outcomeError)
 			return login.Redirect + "?error=unexpected_error"
@@ -216,74 +230,99 @@ func (s *Service) signup(ctx *user.Context, sub string, idTokenClaims map[string
 		}...)
 	}
 
-	var slackID string
-	if iuser, _ := s.UserService.FindInvitedUser(email); iuser != nil {
-		slackID = iuser.SlackID
-		if len(groupList) == 0 {
-			groupList = iuser.Groups
-		}
-	}
 	ctx.User = &user.User{
 		Id:      sub,
 		Org:     org.Id,
 		Name:    profileName,
 		Email:   email,
 		Status:  user.StatusActive,
-		SlackID: slackID,
+		SlackID: "",
 		Groups:  groupList,
 	}
 	ctx.Org = org
-
-	if err := s.UserService.Persist(ctx.User); err != nil {
+	iuser, err := pgusers.New().FetchUnverifiedUser(org, email)
+	if err != nil {
+		return fmt.Errorf("failed fetching user %s, err=%v", email, err)
+	}
+	if iuser != nil {
+		if iuser.Status != string(user.StatusActive) {
+			return fmt.Errorf("user %s/%s is not active", sub, iuser.Email)
+		}
+		iuser.Subject = ctx.User.Id
+		iuser.Status = string(ctx.User.Status)
+		iuser.Verified = true
+		if len(ctx.User.Name) > 0 {
+			iuser.Name = ctx.User.Name
+		}
+		if len(ctx.User.Groups) > 0 {
+			iuser.Groups = ctx.User.Groups
+		}
+		if err := pgusers.New().Upsert(*iuser); err != nil {
+			return fmt.Errorf("failed updating unverified user %s/%s, err=%v", sub, iuser.Email, err)
+		}
+		return nil
+	}
+	err = pgusers.New().Upsert(pgrest.User{
+		ID:       uuid.NewString(),
+		OrgID:    ctx.Org.Id,
+		Subject:  ctx.User.Id,
+		Name:     ctx.User.Name,
+		Email:    ctx.User.Email,
+		Status:   string(ctx.User.Status),
+		Verified: true,
+		SlackID:  "",
+		Groups:   ctx.User.Groups,
+	})
+	if err != nil {
 		return fmt.Errorf("failed persisting user %v to default org, err=%v", sub, err)
 	}
 	return nil
 }
 
-func (s *Service) signupMultiTenant(context *user.Context, sub string, idTokenClaims map[string]any) error {
-	email, profileName, _, groups := parseJWTClaims(idTokenClaims)
-	invitedUser, err := s.UserService.FindInvitedUser(email)
-	if err != nil {
-		return err
-	}
+// func (s *Service) signupMultiTenant(context *user.Context, sub string, idTokenClaims map[string]any) error {
+// 	email, profileName, _, groups := parseJWTClaims(idTokenClaims)
+// 	invitedUser, err := s.UserService.FindInvitedUser(email)
+// 	if err != nil {
+// 		return err
+// 	}
 
-	if context.Org == nil && invitedUser == nil {
-		return fmt.Errorf("user %s was not invited", email)
-	}
+// 	if context.Org == nil && invitedUser == nil {
+// 		return fmt.Errorf("user %s was not invited", email)
+// 	}
 
-	if context.User == nil && invitedUser != nil {
-		if context.Org == nil {
-			org, err := s.UserService.GetOrgNameByID(invitedUser.Org)
-			if err != nil {
-				return err
-			}
-			if org == nil {
-				return fmt.Errorf("failed to obtain organization %q", invitedUser.Org)
-			}
-			context.Org = &user.Org{
-				Id:   invitedUser.Org,
-				Name: org.Name,
-			}
-		}
+// 	if context.User == nil && invitedUser != nil {
+// 		if context.Org == nil {
+// 			org, err := s.UserService.GetOrgNameByID(invitedUser.Org)
+// 			if err != nil {
+// 				return err
+// 			}
+// 			if org == nil {
+// 				return fmt.Errorf("failed to obtain organization %q", invitedUser.Org)
+// 			}
+// 			context.Org = &user.Org{
+// 				Id:   invitedUser.Org,
+// 				Name: org.Name,
+// 			}
+// 		}
 
-		// add groups from invited user if none were found in the jwt claims
-		if len(groups) == 0 {
-			groups = invitedUser.Groups
-		}
-		context.User = &user.User{
-			Id:      sub,
-			Org:     context.Org.Id,
-			Name:    profileName,
-			Email:   email,
-			Status:  user.StatusActive,
-			SlackID: invitedUser.SlackID,
-			Groups:  groups,
-		}
-		return s.UserService.Persist(context.User)
-	}
+// 		// add groups from invited user if none were found in the jwt claims
+// 		if len(groups) == 0 {
+// 			groups = invitedUser.Groups
+// 		}
+// 		context.User = &user.User{
+// 			Id:      sub,
+// 			Org:     context.Org.Id,
+// 			Name:    profileName,
+// 			Email:   email,
+// 			Status:  user.StatusActive,
+// 			SlackID: invitedUser.SlackID,
+// 			Groups:  groups,
+// 		}
+// 		return s.UserService.Persist(context.User)
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
 func parseJWTClaims(idTokenClaims map[string]any) (email, profile string, syncGroups bool, groups []string) {
 	email, _ = idTokenClaims["email"].(string)
@@ -308,6 +347,24 @@ func parseJWTClaims(idTokenClaims map[string]any) (email, profile string, syncGr
 		log.Errorf("failed syncing group claims, reason=unknown type:%T", groupsClaim)
 	}
 	return
+}
+
+func toLegacyUserContext(ctx *pguserauth.Context) *user.Context {
+	if ctx.IsEmpty() {
+		return &user.Context{}
+	}
+	return &user.Context{
+		Org: &user.Org{Id: ctx.OrgID, Name: ctx.OrgID},
+		User: &user.User{
+			Id:      ctx.UserSubject,
+			Org:     ctx.OrgID,
+			Name:    ctx.UserName,
+			Email:   ctx.UserEmail,
+			Status:  user.StatusType(ctx.UserStatus),
+			SlackID: ctx.UserSlackID,
+			Groups:  ctx.UserGroups,
+		},
+	}
 }
 
 func debugClaims(subject string, claims map[string]any, accessToken *oauth2.Token) {

@@ -20,7 +20,7 @@ func (s *Storage) FindAll(context *user.Context) ([]Agent, error) {
 	return agents, nil
 }
 
-func (s *Storage) FindByNameOrID(ctx *user.Context, nameOrID string) (*Agent, error) {
+func (s *Storage) FindByNameOrID(ctx pgrest.OrgContext, nameOrID string) (*Agent, error) {
 	a, err := pgagents.New().FetchOneByNameOrID(ctx, nameOrID)
 	if err != nil {
 		return nil, err

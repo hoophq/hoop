@@ -10,6 +10,7 @@ import (
 	"github.com/runopsio/hoop/common/dsnkeys"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/analytics"
+	"github.com/runopsio/hoop/gateway/pgrest"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/user"
 )
@@ -22,7 +23,7 @@ type (
 	service interface {
 		Persist(agent *Agent) (int64, error)
 		FindAll(context *user.Context) ([]Agent, error)
-		FindByNameOrID(ctx *user.Context, name string) (*Agent, error)
+		FindByNameOrID(ctx pgrest.OrgContext, name string) (*Agent, error)
 		FindByToken(token string) (*Agent, error)
 		Evict(ctx *user.Context, xtID string) error
 	}

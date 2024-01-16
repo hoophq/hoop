@@ -6,6 +6,7 @@ import (
 
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
+	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
 	"github.com/runopsio/hoop/gateway/review"
 	slackservice "github.com/runopsio/hoop/gateway/slack"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
@@ -24,7 +25,7 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 		ev.msg.ID, ev.msg.Status)
 
 	// validate if the slack user is able to review it
-	slackApprover, err := p.userSvc.FindBySlackID(&user.Org{Id: ev.orgID}, ev.msg.SlackID)
+	slackApprover, err := pgusers.New().FetchOneBySlackID(&user.Org{Id: ev.orgID}, ev.msg.SlackID)
 	if err != nil {
 		log.With("session", sid).Errorf("failed obtaning approver information, err=%v", err)
 		_ = ev.ss.PostEphemeralMessage(ev.msg, "failed obtaining approver's information")

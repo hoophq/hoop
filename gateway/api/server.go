@@ -36,7 +36,6 @@ import (
 type (
 	Api struct {
 		AgentHandler    agent.Handler
-		UserHandler     user.Handler
 		IndexerHandler  indexer.Handler
 		ReviewHandler   review.Handler
 		RunbooksHandler runbooks.Handler
@@ -102,7 +101,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest(analytics.EventFetchUsers),
 		api.AdminOnly,
-		api.UserHandler.FindAll)
+		userapi.List)
 	route.GET("/users/:id",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventFetchUsers),
@@ -111,23 +110,31 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.GET("/userinfo",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventFetchUsers),
-		api.UserHandler.Userinfo)
+		userapi.GetUserInfo)
 	route.PATCH("/users/self/slack",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventUpdateUser),
-		api.UserHandler.UpdateSelfSlackID)
+		api.AuditApiChanges,
+		userapi.PatchSlackID)
 	route.GET("/users/groups",
 		api.Authenticate,
-		api.UserHandler.UsersGroups)
+		userapi.ListAllGroups)
 	route.PUT("/users/:id",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventUpdateUser),
 		api.AdminOnly,
-		api.UserHandler.Put)
+		api.AuditApiChanges,
+		userapi.Update)
 	route.POST("/users",
 		api.Authenticate,
 		api.AdminOnly,
+		api.AuditApiChanges,
 		userapi.Create)
+	route.DELETE("/users/:id",
+		api.Authenticate,
+		api.AdminOnly,
+		api.AuditApiChanges,
+		userapi.Delete)
 
 	route.GET("/serviceaccounts",
 		api.Authenticate,
@@ -137,22 +144,26 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest(analytics.EventCreateServiceAccount),
 		api.AdminOnly,
+		api.AuditApiChanges,
 		serviceaccountapi.Create)
 	route.PUT("/serviceaccounts/:subject",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventCreateServiceAccount),
 		api.AdminOnly,
+		api.AuditApiChanges,
 		serviceaccountapi.Update)
 
 	route.POST("/connections",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventCreateConnection),
 		api.AdminOnly,
+		api.AuditApiChanges,
 		apiconnections.Post)
 	route.PUT("/connections/:nameOrID",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventUpdateConnection),
 		api.AdminOnly,
+		api.AuditApiChanges,
 		apiconnections.Put)
 	// DEPRECATED in flavor of POST /sessions
 	route.POST("/connections/:name/exec",
@@ -171,6 +182,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest(analytics.EventDeleteConnection),
 		api.AdminOnly,
+		api.AuditApiChanges,
 		apiconnections.Delete)
 
 	route.POST("/connectionapps",
@@ -203,12 +215,14 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.PUT("/reviews/:id",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventUpdateReview),
+		api.AuditApiChanges,
 		api.ReviewHandler.Put)
 
 	route.POST("/agents",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventCreateAgent),
 		api.AdminOnly,
+		api.AuditApiChanges,
 		api.AgentHandler.Post)
 	route.GET("/agents",
 		api.Authenticate,
@@ -218,17 +232,20 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest(analytics.EventDeleteAgent),
 		api.AdminOnly,
+		api.AuditApiChanges,
 		api.AgentHandler.Evict)
 
 	route.POST("/plugins",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventCreatePlugin),
 		api.AdminOnly,
+		api.AuditApiChanges,
 		apiplugins.Post)
 	route.PUT("/plugins/:name",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventUdpatePlugin),
 		api.AdminOnly,
+		api.AuditApiChanges,
 		apiplugins.Put)
 	route.GET("/plugins",
 		api.Authenticate,
@@ -240,6 +257,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest(analytics.EventUdpatePluginConfig),
 		api.AdminOnly,
+		api.AuditApiChanges,
 		apiplugins.PutConfig)
 
 	// alias routes
@@ -297,5 +315,6 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest(analytics.EventOpenWebhooksDashboard),
 		api.AdminOnly,
+		api.AuditApiChanges,
 		webhooksapi.Get)
 }

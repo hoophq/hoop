@@ -11,7 +11,7 @@ var deleteLongDesc = `Delete resource by its name. Available ones:
 
 * agent
 * connection
-* policies
+* users
 `
 
 var deleteCmd = &cobra.Command{

@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/gateway/pgrest"
 	"github.com/runopsio/hoop/gateway/user"
 )
 
@@ -16,7 +17,7 @@ type (
 	storage interface {
 		Persist(agent *Agent) (int64, error)
 		FindAll(context *user.Context) ([]Agent, error)
-		FindByNameOrID(ctx *user.Context, name string) (*Agent, error)
+		FindByNameOrID(ctx pgrest.OrgContext, name string) (*Agent, error)
 		FindByToken(token string) (*Agent, error)
 		Evict(ctx *user.Context, xtID string) error
 	}
@@ -45,7 +46,7 @@ const (
 	StatusDisconnected Status = "DISCONNECTED"
 )
 
-func (s *Service) FindByNameOrID(ctx *user.Context, name string) (*Agent, error) {
+func (s *Service) FindByNameOrID(ctx pgrest.OrgContext, name string) (*Agent, error) {
 	agt, err := s.Storage.FindByNameOrID(ctx, name)
 	setAgentModeDefault(agt)
 	return agt, err

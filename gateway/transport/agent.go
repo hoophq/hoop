@@ -17,6 +17,7 @@ import (
 	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
 	"github.com/runopsio/hoop/gateway/agent"
 	apitypes "github.com/runopsio/hoop/gateway/apiclient/types"
+	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
 	authinterceptor "github.com/runopsio/hoop/gateway/transport/interceptors/auth"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
@@ -112,7 +113,7 @@ func (s *Server) subscribeAgent(grpcStream pb.Transport_ConnectServer) error {
 		log.Warnf("failed authenticating, could not assign authentication context, type=%T", ctxVal)
 		return status.Error(codes.Unauthenticated, "invalid authentication, could not assign authentication context")
 	}
-	org, _ := s.UserService.GetOrgNameByID(gwctx.Agent.OrgID)
+	org, _ := pgusers.New().FetchOrgByID(gwctx.Agent.OrgID)
 	var orgName string
 	if org != nil {
 		orgName = org.Name

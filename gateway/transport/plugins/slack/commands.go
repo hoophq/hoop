@@ -5,10 +5,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/log"
+	pglogin "github.com/runopsio/hoop/gateway/pgrest/login"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
-	userstorage "github.com/runopsio/hoop/gateway/storagev2/user"
 	"golang.org/x/oauth2"
 )
 
@@ -21,7 +21,7 @@ type eventCallback struct {
 func (c *eventCallback) CommandSlackSubscribe(command, slackID string) (string, error) {
 	log.Infof("received slash command request, org=%s, command=%s, slackid=%s", c.orgID, command, slackID)
 	stateUID := uuid.NewString()
-	err := userstorage.UpdateLoginState(c.ctx, &types.Login{
+	err := pglogin.New().Upsert(&types.Login{
 		ID:      stateUID,
 		SlackID: slackID,
 		Outcome: "success",

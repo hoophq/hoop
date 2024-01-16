@@ -14,9 +14,9 @@ import (
 	"github.com/runopsio/hoop/gateway/agent"
 	apiconnections "github.com/runopsio/hoop/gateway/api/connections"
 	apitypes "github.com/runopsio/hoop/gateway/apiclient/types"
+	pguserauth "github.com/runopsio/hoop/gateway/pgrest/userauth"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
-	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -34,14 +34,12 @@ type serverStreamWrapper struct {
 
 type interceptor struct {
 	idp          *idp.Provider
-	userService  *user.Service
 	agentService *agent.Service
 }
 
-func New(idpProvider *idp.Provider, usrsvc *user.Service, agentsvc *agent.Service) grpc.StreamServerInterceptor {
+func New(idpProvider *idp.Provider, agentsvc *agent.Service) grpc.StreamServerInterceptor {
 	return (&interceptor{
 		idp:          idpProvider,
-		userService:  usrsvc,
 		agentService: agentsvc,
 	}).StreamServerInterceptor
 }
@@ -119,8 +117,8 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			log.Debugf("failed verifying access token, reason=%v", err)
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
-		userCtx, err := user.GetUserContext(i.userService, sub)
-		if userCtx.User == nil {
+		userCtx, err := pguserauth.New().FetchUserContext(sub)
+		if userCtx.IsEmpty() {
 			if err != nil {
 				log.Error(err)
 			}
@@ -137,8 +135,8 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			log.Debugf("failed verifying access token, reason=%v", err)
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
-		userCtx, err := user.GetUserContext(i.userService, sub)
-		if userCtx.User == nil {
+		userCtx, err := pguserauth.New().FetchUserContext(sub)
+		if userCtx.IsEmpty() {
 			if err != nil {
 				log.Error(err)
 			}
@@ -164,7 +162,7 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 	return handler(srv, &serverStreamWrapper{ss, nil, ctxVal})
 }
 
-func (i *interceptor) getConnection(name string, userCtx *user.Context) (*types.ConnectionInfo, error) {
+func (i *interceptor) getConnection(name string, userCtx *pguserauth.Context) (*types.ConnectionInfo, error) {
 	conn, err := apiconnections.FetchByName(userCtx, name)
 	if err != nil {
 		log.Errorf("failed retrieving connection %v, err=%v", name, err)

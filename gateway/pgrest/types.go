@@ -14,7 +14,6 @@ type UserContext interface {
 	IsAdmin() bool
 	GetUserGroups() []string
 }
-
 type Login struct {
 	ID       string `json:"id"`
 	Outcome  string `json:"outcome"`
@@ -28,14 +27,15 @@ type Org struct {
 }
 
 type User struct {
-	ID      string   `json:"id"`
-	OrgID   string   `json:"org_id"`
-	Subject string   `json:"subject"`
-	Name    string   `json:"name"`
-	Email   string   `json:"email"`
-	Status  string   `json:"status"`
-	SlackID string   `json:"slack_id"`
-	Groups  []string `json:"groups"`
+	ID       string   `json:"id"`
+	OrgID    string   `json:"org_id"`
+	Subject  string   `json:"subject"`
+	Name     string   `json:"name"`
+	Email    string   `json:"email"`
+	Verified bool     `json:"verified"`
+	Status   string   `json:"status"`
+	SlackID  string   `json:"slack_id"`
+	Groups   []string `json:"groups"`
 
 	Org *Org `json:"orgs"`
 }

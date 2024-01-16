@@ -93,7 +93,6 @@ func Run(listenAdmAddr string) {
 
 	a := &api.Api{
 		AgentHandler:    agent.Handler{Service: &agentService},
-		UserHandler:     user.Handler{Service: &userService, Analytics: analyticsService},
 		IndexerHandler:  indexer.Handler{},
 		ReviewHandler:   review.Handler{Service: &reviewService},
 		SecurityHandler: security.Handler{Service: &securityService},
@@ -108,7 +107,6 @@ func Run(listenAdmAddr string) {
 
 	g := &transport.Server{
 		AgentService:         agentService,
-		UserService:          userService,
 		ReviewService:        reviewService,
 		NotificationService:  notificationService,
 		IDProvider:           idProvider,
