@@ -9,8 +9,7 @@ on:
         type: string
 
 jobs:
-  deploy-latest:
-    # You need to use the INSTALLATION_NAME from the previous step
+  deploy-appdemo:
     runs-on: arc-runner-set
     steps:
     - name: Checkout
@@ -31,56 +30,162 @@ jobs:
         parse-json-secrets: true
         secret-ids: |
           hoop/self-hosted/appdemo
-          hoop/self-hosted/clari
-          hoop/sefl-hosted/rdstation
-          hoop/self-hosted/unico
-          hoop/self-hosted/enjoei
-    - name: Populate App Demo Values
+    - name: Populate App Values
       run: ( echo "cat <<EOF" ; cat ./infra/appdemo/values.yml ; echo EOF ) | sh > ./values-appdemo.yml
-    - name: Populate Clari Values
-      run: ( echo "cat <<EOF" ; cat ./infra/clari/values.yml ; echo EOF ) | sh > ./values-clari.yml
-    - name: Populate Rdstation Values
-      run: ( echo "cat <<EOF" ; cat ./infra/rdstation/values.yml ; echo EOF ) | sh > ./values-rdstation.yml
-    - name: Populate Ebanx Values
-      run: ( echo "cat <<EOF" ; cat ./infra/ebanx/values.yml ; echo EOF ) | sh > ./values-ebanx.yml
-    - name: Populate Enjoei Values
-      run: ( echo "cat <<EOF" ; cat ./infra/enjoei/values.yml ; echo EOF ) | sh > ./values-enjoei.yml
-    - name: Upgrade App Demo
+    - name: Upgrade App
       run: |-
         helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/${{ inputs.version }}/hoop-chart-${{ inputs.version }}.tgz \
           -f ./values-appdemo.yml \
           --set image.gw.tag=${{ inputs.version }} \
           --wait \
           -n appdemo
-    - name: Upgrade Clari (Dry Run)
+  deploy-clari:
+    runs-on: arc-runner-set
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Assume Role
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        output-credentials: false
+        aws-region: us-east-1
+    - name: Google Aplication Credentials
+      uses: aws-actions/aws-secretsmanager-get-secrets@v1
+      with:
+        secret-ids: |
+          GOOGLE_APPLICATION_CREDENTIALS_JSON,hoop/google-application-credentials
+    - name: Customer App Secrets
+      uses: aws-actions/aws-secretsmanager-get-secrets@v1
+      with:
+        parse-json-secrets: true
+        secret-ids: |
+          hoop/self-hosted/clari
+    - name: Populate App Values
+      run: ( echo "cat <<EOF" ; cat ./infra/clari/values.yml ; echo EOF ) | sh > ./values-clari.yml
+    - name: Upgrade App
       run: |-
         helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/${{ inputs.version }}/hoop-chart-${{ inputs.version }}.tgz \
           -f ./values-clari.yml \
           --set image.gw.tag=${{ inputs.version }} \
           --wait \
-          --dry-run \
           -n clari
-    - name: Upgrade Rdstation (Dry Run)
+  deploy-ebanx:
+    runs-on: arc-runner-set
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Assume Role
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        output-credentials: false
+        aws-region: us-east-1
+    - name: Google Aplication Credentials
+      uses: aws-actions/aws-secretsmanager-get-secrets@v1
+      with:
+        secret-ids: |
+          GOOGLE_APPLICATION_CREDENTIALS_JSON,hoop/google-application-credentials
+    - name: Customer App Secrets
+      uses: aws-actions/aws-secretsmanager-get-secrets@v1
+      with:
+        parse-json-secrets: true
+        secret-ids: |
+          hoop/self-hosted/ebanx
+    - name: Populate App Values
+      run: ( echo "cat <<EOF" ; cat ./infra/ebanx/values.yml ; echo EOF ) | sh > ./values-ebanx.yml
+    - name: Upgrade App
       run: |-
         helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/${{ inputs.version }}/hoop-chart-${{ inputs.version }}.tgz \
-          -f ./values-rdstation.yml \
+          -f ./values-ebanx.yml \
           --set image.gw.tag=${{ inputs.version }} \
           --wait \
-          --dry-run \
-          -n rdstation
-    - name: Upgrade Unico (Dry Run)
-      run: |-
-        helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/${{ inputs.version }}/hoop-chart-${{ inputs.version }}.tgz \
-          -f ./values-unico.yml \
-          --set image.gw.tag=${{ inputs.version }} \
-          --wait \
-          --dry-run \
-          -n unico
-    - name: Upgrade Enjoei (Dry Run)
+          -n ebanx
+  deploy-enjoei:
+    runs-on: arc-runner-set
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Assume Role
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        output-credentials: false
+        aws-region: us-east-1
+    - name: Google Aplication Credentials
+      uses: aws-actions/aws-secretsmanager-get-secrets@v1
+      with:
+        secret-ids: |
+          GOOGLE_APPLICATION_CREDENTIALS_JSON,hoop/google-application-credentials
+    - name: Customer App Secrets
+      uses: aws-actions/aws-secretsmanager-get-secrets@v1
+      with:
+        parse-json-secrets: true
+        secret-ids: |
+          hoop/self-hosted/enjoei
+    - name: Populate App Values
+      run: ( echo "cat <<EOF" ; cat ./infra/enjoei/values.yml ; echo EOF ) | sh > ./values-enjoei.yml
+    - name: Upgrade App
       run: |-
         helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/${{ inputs.version }}/hoop-chart-${{ inputs.version }}.tgz \
           -f ./values-enjoei.yml \
           --set image.gw.tag=${{ inputs.version }} \
           --wait \
-          --dry-run \
           -n enjoei
+  deploy-rdstation:
+    runs-on: arc-runner-set
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Assume Role
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        output-credentials: false
+        aws-region: us-east-1
+    - name: Google Aplication Credentials
+      uses: aws-actions/aws-secretsmanager-get-secrets@v1
+      with:
+        secret-ids: |
+          GOOGLE_APPLICATION_CREDENTIALS_JSON,hoop/google-application-credentials
+    - name: Customer App Secrets
+      uses: aws-actions/aws-secretsmanager-get-secrets@v1
+      with:
+        parse-json-secrets: true
+        secret-ids: |
+          hoop/self-hosted/rdstation
+    - name: Populate App Values
+      run: ( echo "cat <<EOF" ; cat ./infra/rdstation/values.yml ; echo EOF ) | sh > ./values-rdstation.yml
+    - name: Upgrade App
+      run: |-
+        helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/${{ inputs.version }}/hoop-chart-${{ inputs.version }}.tgz \
+          -f ./values-rdstation.yml \
+          --set image.gw.tag=${{ inputs.version }} \
+          --wait \
+          -n rdstation
+  deploy-unico:
+    runs-on: arc-runner-set
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Assume Role
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        output-credentials: false
+        aws-region: us-east-1
+    - name: Google Aplication Credentials
+      uses: aws-actions/aws-secretsmanager-get-secrets@v1
+      with:
+        secret-ids: |
+          GOOGLE_APPLICATION_CREDENTIALS_JSON,hoop/google-application-credentials
+    - name: Customer App Secrets
+      uses: aws-actions/aws-secretsmanager-get-secrets@v1
+      with:
+        parse-json-secrets: true
+        secret-ids: |
+          hoop/self-hosted/unico
+    - name: Populate App Values
+      run: ( echo "cat <<EOF" ; cat ./infra/unico/values.yml ; echo EOF ) | sh > ./values-unico.yml
+    - name: Upgrade App
+      run: |-
+        helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/${{ inputs.version }}/hoop-chart-${{ inputs.version }}.tgz \
+          -f ./values-unico.yml \
+          --set image.gw.tag=${{ inputs.version }} \
+          --wait \
+          -n unico
