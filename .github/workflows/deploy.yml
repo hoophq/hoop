@@ -41,6 +41,7 @@ jobs:
           -n appdemo
   deploy-clari:
     runs-on: arc-runner-set
+    needs: [deploy-appdemo]
     steps:
     - name: Checkout
       uses: actions/checkout@v3
@@ -71,6 +72,7 @@ jobs:
           -n clari
   deploy-ebanx:
     runs-on: arc-runner-set
+    needs: [deploy-appdemo]
     steps:
     - name: Checkout
       uses: actions/checkout@v3
@@ -101,6 +103,7 @@ jobs:
           -n ebanx
   deploy-enjoei:
     runs-on: arc-runner-set
+    needs: [deploy-appdemo]
     steps:
     - name: Checkout
       uses: actions/checkout@v3
@@ -131,6 +134,7 @@ jobs:
           -n enjoei
   deploy-rdstation:
     runs-on: arc-runner-set
+    needs: [deploy-appdemo]
     steps:
     - name: Checkout
       uses: actions/checkout@v3
@@ -159,8 +163,40 @@ jobs:
           --set image.gw.tag=${{ inputs.version }} \
           --wait \
           -n rdstation
+  deploy-tryrunops:
+    runs-on: arc-runner-set
+    needs: [deploy-appdemo]
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Assume Role
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        output-credentials: false
+        aws-region: us-east-1
+    - name: Google Aplication Credentials
+      uses: aws-actions/aws-secretsmanager-get-secrets@v1
+      with:
+        secret-ids: |
+          GOOGLE_APPLICATION_CREDENTIALS_JSON,hoop/google-application-credentials
+    - name: Customer App Secrets
+      uses: aws-actions/aws-secretsmanager-get-secrets@v1
+      with:
+        parse-json-secrets: true
+        secret-ids: |
+          hoop/self-hosted/tryrunops
+    - name: Populate App Values
+      run: ( echo "cat <<EOF" ; cat ./infra/tryrunops/values.yml ; echo EOF ) | sh > ./values-tryrunops.yml
+    - name: Upgrade App
+      run: |-
+        helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/${{ inputs.version }}/hoop-chart-${{ inputs.version }}.tgz \
+          -f ./values-tryrunops.yml \
+          --set image.gw.tag=${{ inputs.version }} \
+          --wait \
+          -n tryrunops
   deploy-unico:
     runs-on: arc-runner-set
+    needs: [deploy-appdemo]
     steps:
     - name: Checkout
       uses: actions/checkout@v3
