@@ -113,9 +113,14 @@ The deployment is done with [github action self hosted](https://docs.github.com/
 
 The command below will show an interactive prompt and show the releases and apps available to deploy. It's important to follow up the deploy until it finishes.
 
-```shell
+#### Deploy By App
+
+```sh
 make deploy-by-app
 ```
 
-> There's another workflow that allows deploying all instances at the same time.
-> It's still in testing phase.
+#### Deploy All Instances
+
+```sh
+make deploy-all
+```
