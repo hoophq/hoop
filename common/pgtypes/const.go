@@ -66,6 +66,7 @@ const (
 )
 
 const (
+	ServerAuthenticationClearTextPassword AuthPacketType = 3
 	ServerAuthenticationSASL              AuthPacketType = 10
 	ServerAuthenticationSASLContinue      AuthPacketType = 11
 	ServerAuthenticationSASLFinal         AuthPacketType = 12

@@ -38,6 +38,9 @@ func (p *proxy) handleAuth(startupMessage *pgtypes.Packet) error {
 	}
 	authType := toAuthType(pkt)
 	switch authType {
+	case pgtypes.ServerAuthenticationClearTextPassword:
+		log.Infof("server supports clear text password authentication")
+		return p.processClearTextPasswordAuth()
 	case pgtypes.ServerAuthenticationSASL:
 		log.Infof("server supports SASL authentication")
 		return p.processSaslAuth()
@@ -47,6 +50,29 @@ func (p *proxy) handleAuth(startupMessage *pgtypes.Packet) error {
 	default:
 		return fmt.Errorf("authentication type [%v] not supported", authType)
 	}
+}
+
+func (p *proxy) processClearTextPasswordAuth() error {
+	authDataString := p.password
+	authData := append([]byte(authDataString), byte(0))
+	resp := pgtypes.NewPasswordMessage(authData)
+	if _, err := p.serverRW.Write(resp.Encode()); err != nil {
+		return fmt.Errorf("failed writing clear text password to server, reason=%v", err)
+	}
+	pkt, err := p.readNextAuthPacket(p.serverRW, pgtypes.ServerAuth)
+	if err != nil {
+		return err
+	}
+	if toAuthType(pkt) != pgtypes.ServerAuthenticationOK {
+		log.Infof("receive a non-ok auth response from server")
+		pkt.Dump()
+		return fmt.Errorf("password clear text authentication failed")
+	}
+	log.Infof("authenticated (clear text) user %v with success", p.username)
+	if _, err := p.clientW.Write(pgtypes.NewAuthenticationOK().Encode()); err != nil {
+		return fmt.Errorf("failed writing auth ok to client, reason=%v", err)
+	}
+	return nil
 }
 
 func (p *proxy) processMd5Auth(pkt *pgtypes.Packet) error {
