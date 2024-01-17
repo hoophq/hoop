@@ -45,6 +45,9 @@ release:
 deploy-by-app:
 	./scripts/deploy-by-app.sh
 
+deploy-all:
+	./scripts/deploy-all.sh
+
 download-artifacts:
 	mkdir -p ./dist
 	aws s3 cp s3://hoopartifacts/nodeapi/latest.tar.gz nodeapi-latest.tar.gz
