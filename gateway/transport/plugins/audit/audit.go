@@ -138,7 +138,10 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 	case pbclient.SessionClose:
 		defer p.closeSession(pctx)
 		if len(pkt.Payload) > 0 {
-			return nil, p.writeOnReceive(pctx.SID, eventlogv0.ErrorType, redactCount, pkt.Payload)
+			err := p.writeOnReceive(pctx.SID, eventlogv0.ErrorType, redactCount, pkt.Payload)
+			if err != nil {
+				log.With("sid", pctx.SID).Warnf("failed writing last session packet, err=%v", err)
+			}
 		}
 	case pbagent.ExecWriteStdin,
 		pbagent.TerminalWriteStdin,

@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/smithy-go/logging"
+	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/memory"
 )
 
@@ -24,7 +25,10 @@ func newAwsProvider() (*awsProvider, error) {
 		return nil, err
 	}
 	svc := secretsmanager.NewFromConfig(cfg, func(o *secretsmanager.Options) {
-		o.ClientLogMode = aws.LogSigning | aws.LogRequest | aws.LogResponseWithBody
+		if log.IsDebugLevel {
+			o.ClientLogMode = aws.LogSigning | aws.LogRequest | aws.LogResponseWithBody
+		}
+		// TODO: add zap as logger
 		o.Logger = logging.NewStandardLogger(os.Stdout)
 	})
 	return &awsProvider{svc, memory.New()}, nil
