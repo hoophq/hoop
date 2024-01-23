@@ -45,9 +45,6 @@ func (c *Command) Pid() int {
 }
 
 func (c *Command) Close() error {
-	if c.ptty != nil {
-		_ = c.ptty.Close()
-	}
 	procPid := c.Pid()
 	log.Infof("closing process %v ...", procPid)
 	if procPid != -1 {
@@ -152,17 +149,10 @@ func (c *Command) RunOnTTY(stdoutWriter io.WriteCloser, onExecErr OnExecErrFn) {
 	go func() {
 		// TODO: need to make distinction between stderr / stdout when writing back to client
 		if _, err := io.Copy(stdoutWriter, ptmx); err != nil {
-			log.Printf("failed copying stdout from tty, err=%v", err)
+			log.Infof("failed copying stdout from tty, err=%v", err)
 		}
 
-		log.Println("closing tty ...")
-		if err := ptmx.Close(); err != nil {
-			log.Printf("failed closing tty, err=%v", err)
-		}
-		if err := c.OnPostExec(); err != nil {
-			log.Printf("failed executing post execution command, err=%v", err)
-		}
-
+		log.Infof("waiting program to gracefully end ...")
 		exitCode := 0
 		err := c.cmd.Wait()
 		if err != nil {
@@ -173,6 +163,14 @@ func (c *Command) RunOnTTY(stdoutWriter io.WriteCloser, onExecErr OnExecErrFn) {
 				}
 			}
 		}
+		log.Info("running post execution cleanup")
+		if err := ptmx.Close(); err != nil {
+			log.Infof("failed closing tty, err=%v", err)
+		}
+		if err := c.OnPostExec(); err != nil {
+			log.Infof("failed executing post execution command, err=%v", err)
+		}
+
 		if exitCode == 0 {
 			onExecErr(exitCode, "")
 			return

@@ -24,7 +24,6 @@ const (
 var (
 	defaultLoggerSetLevel        = func(l zapcore.Level) {}
 	LogEncoding           string = os.Getenv("LOG_ENCODING")
-	// ff, _                        = os.OpenFile("/tmp/agent.stdout.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 
 	zlog  = NewDefaultLogger(nil)
 	sugar = zlog.Sugar()
