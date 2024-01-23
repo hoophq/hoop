@@ -3,6 +3,7 @@ package slack
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -36,15 +37,6 @@ const (
 	EventKindOneTime     = "onetime"
 	EventKindJit         = "jit"
 )
-
-func contains(slice []string, val string) bool {
-	for _, item := range slice {
-		if item == val {
-			return true
-		}
-	}
-	return false
-}
 
 func New(slackBotToken, slackAppToken, slackChannel, instanceID, apiURL string, callback EventCallback) (*SlackService, error) {
 	apiClient := slack.New(
@@ -209,7 +201,7 @@ func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) error {
 	})
 
 	slackChannels := msg.SlackChannels
-	if s.slackChannel != "" && !contains(slackChannels, s.slackChannel) {
+	if s.slackChannel != "" && !slices.Contains(slackChannels, s.slackChannel) {
 		slackChannels = append(slackChannels, s.slackChannel)
 	}
 
