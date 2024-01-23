@@ -161,8 +161,7 @@ func (p *slackPlugin) OnUpdate(oldState, newState *types.Plugin) error {
 				return err
 			}
 			if oldSlackConfig.slackAppToken != newSlackConfig.slackAppToken ||
-				oldSlackConfig.slackBotToken != newSlackConfig.slackBotToken ||
-				oldSlackConfig.slackChannel != newSlackConfig.slackChannel {
+				oldSlackConfig.slackBotToken != newSlackConfig.slackBotToken {
 				log.Warnf("configuration has changed, (re)starting slack instance %v", newState.OrgID)
 				if slackInstance != nil {
 					slackInstance.Close()
@@ -215,6 +214,7 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		ConnectionType: pctx.ConnectionType,
 		SessionID:      pctx.SID,
 		UserGroups:     pctx.UserGroups,
+		SlackChannels:  pctx.PluginConnectionConfig,
 	}
 
 	rev, err := p.reviewSvc.FindBySessionID(userContext, pctx.SID)
@@ -266,7 +266,7 @@ func parseSlackConfig(pconf *types.PluginConfig) (*slackConfig, error) {
 		slackAppToken: string(slackAppToken),
 		slackChannel:  string(slackChannel),
 	}
-	if sc.slackBotToken == "" || sc.slackAppToken == "" || sc.slackChannel == "" {
+	if sc.slackBotToken == "" || sc.slackAppToken == "" {
 		return nil, fmt.Errorf("missing required slack credentials")
 	}
 	return &sc, nil

@@ -3,6 +3,7 @@ package slack
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -82,6 +83,7 @@ type MessageReviewRequest struct {
 	SessionTime    *time.Duration
 	WebappURL      string
 	SessionID      string
+	SlackChannels  []string
 }
 
 type MessageReviewResponse struct {
@@ -185,8 +187,7 @@ func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) error {
 			),
 		)
 	}
-	ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancelFn()
+
 	eventKind := EventKindOneTime
 	if msg.SessionTime != nil {
 		eventKind = EventKindJit
@@ -198,9 +199,17 @@ func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) error {
 			sessionIDMetadataKey: msg.SessionID,
 		},
 	})
-	_, _, err := s.apiClient.PostMessageContext(ctx, s.slackChannel, slack.MsgOptionBlocks(blocks...), metadata)
-	if err != nil {
-		return fmt.Errorf("failed sending message to slack channel %v, reason=%v", s.slackChannel, err)
+
+	slackChannels := msg.SlackChannels
+	if s.slackChannel != "" && !slices.Contains(slackChannels, s.slackChannel) {
+		slackChannels = append(slackChannels, s.slackChannel)
+	}
+
+	for _, slackChannel := range slackChannels {
+		_, _, err := s.apiClient.PostMessage(slackChannel, slack.MsgOptionBlocks(blocks...), metadata)
+		if err != nil {
+			return fmt.Errorf("failed sending message to slack channel %v, reason=%v", slackChannel, err)
+		}
 	}
 	return nil
 }
