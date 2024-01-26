@@ -43,7 +43,7 @@ func (s *Storage) GetOrgNameByID(orgID string) (*Org, error) {
 }
 
 func (s *Storage) GetOrgByName(name string) (*Org, error) {
-	org, err := pgusers.New().FetchOrgByName(name)
+	org, _, err := pgusers.New().FetchOrgByName(name)
 	if err != nil {
 		return nil, err
 	}

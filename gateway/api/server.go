@@ -15,18 +15,19 @@ import (
 	"github.com/runopsio/hoop/gateway/analytics"
 	apiconnectionapps "github.com/runopsio/hoop/gateway/api/connectionapps"
 	apiconnections "github.com/runopsio/hoop/gateway/api/connections"
+	loginapi "github.com/runopsio/hoop/gateway/api/login"
 	apiplugins "github.com/runopsio/hoop/gateway/api/plugins"
 	apiproxymanager "github.com/runopsio/hoop/gateway/api/proxymanager"
 	reviewapi "github.com/runopsio/hoop/gateway/api/review"
 	serviceaccountapi "github.com/runopsio/hoop/gateway/api/serviceaccount"
 	sessionapi "github.com/runopsio/hoop/gateway/api/session"
+	signupapi "github.com/runopsio/hoop/gateway/api/signup"
 	userapi "github.com/runopsio/hoop/gateway/api/user"
 	webhooksapi "github.com/runopsio/hoop/gateway/api/webhooks"
 	"github.com/runopsio/hoop/gateway/healthz"
 	"github.com/runopsio/hoop/gateway/indexer"
 	"github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/runbooks"
-	"github.com/runopsio/hoop/gateway/security"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/user"
@@ -39,10 +40,8 @@ type (
 		IndexerHandler  indexer.Handler
 		ReviewHandler   review.Handler
 		RunbooksHandler runbooks.Handler
-		SecurityHandler security.Handler
 		IDProvider      *idp.Provider
 		GrpcURL         string
-		Profile         string
 		Analytics       user.Analytics
 		logger          *zap.Logger
 
@@ -93,77 +92,86 @@ func (api *Api) StartAPI(sentryInit bool) {
 }
 
 func (api *Api) buildRoutes(route *gin.RouterGroup) {
-	route.GET("/login", api.SecurityHandler.Login)
-	route.GET("/callback", api.SecurityHandler.Callback)
-	route.GET("/healthz", healthz.LivenessHandler())
+	// set default role to all routes
+	route.Use(DefaultAccessRole)
 
+	loginHandler := loginapi.New(api.IDProvider)
+	route.GET("/login", loginHandler.Login)
+	route.GET("/callback", loginHandler.LoginCallback)
+	route.GET("/healthz", healthz.LivenessHandler())
+	route.POST("/signup",
+		FullAccessRole,
+		api.Authenticate,
+		api.TrackRequest(analytics.EventSignup),
+		signupapi.Post)
 	route.GET("/users",
+		AdminOnlyAccessRole,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventFetchUsers),
-		api.AdminOnly,
 		userapi.List)
 	route.GET("/users/:id",
+		AdminOnlyAccessRole,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventFetchUsers),
-		api.AdminOnly,
 		userapi.GetUserByID)
 	route.GET("/userinfo",
+		FullAccessRole,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventFetchUsers),
 		userapi.GetUserInfo)
 	route.PATCH("/users/self/slack",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventUpdateUser),
-		api.AuditApiChanges,
+		AuditApiChanges,
 		userapi.PatchSlackID)
 	route.GET("/users/groups",
 		api.Authenticate,
 		userapi.ListAllGroups)
 	route.PUT("/users/:id",
+		AdminOnlyAccessRole,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventUpdateUser),
-		api.AdminOnly,
-		api.AuditApiChanges,
+		AuditApiChanges,
 		userapi.Update)
 	route.POST("/users",
+		AdminOnlyAccessRole,
 		api.Authenticate,
-		api.AdminOnly,
-		api.AuditApiChanges,
+		AuditApiChanges,
 		userapi.Create)
 	route.DELETE("/users/:id",
+		AdminOnlyAccessRole,
 		api.Authenticate,
-		api.AdminOnly,
-		api.AuditApiChanges,
+		AuditApiChanges,
 		userapi.Delete)
 
 	route.GET("/serviceaccounts",
+		AdminOnlyAccessRole,
 		api.Authenticate,
-		api.AdminOnly,
 		serviceaccountapi.List)
 	route.POST("/serviceaccounts",
+		AdminOnlyAccessRole,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventCreateServiceAccount),
-		api.AdminOnly,
-		api.AuditApiChanges,
+		AuditApiChanges,
 		serviceaccountapi.Create)
 	route.PUT("/serviceaccounts/:subject",
+		AdminOnlyAccessRole,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventCreateServiceAccount),
-		api.AdminOnly,
-		api.AuditApiChanges,
+		AuditApiChanges,
 		serviceaccountapi.Update)
 
 	route.POST("/connections",
+		AdminOnlyAccessRole,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventCreateConnection),
-		api.AdminOnly,
-		api.AuditApiChanges,
+		AuditApiChanges,
 		apiconnections.Post)
 	route.PUT("/connections/:nameOrID",
+		AdminOnlyAccessRole,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventUpdateConnection),
-		api.AdminOnly,
-		api.AuditApiChanges,
+		AuditApiChanges,
 		apiconnections.Put)
 	// DEPRECATED in flavor of POST /sessions
 	route.POST("/connections/:name/exec",
@@ -179,10 +187,10 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest(analytics.EventFetchConnections),
 		apiconnections.Get)
 	route.DELETE("/connections/:name",
+		AdminOnlyAccessRole,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventDeleteConnection),
-		api.AdminOnly,
-		api.AuditApiChanges,
+		AuditApiChanges,
 		apiconnections.Delete)
 
 	route.POST("/connectionapps",
@@ -215,37 +223,37 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.PUT("/reviews/:id",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventUpdateReview),
-		api.AuditApiChanges,
+		AuditApiChanges,
 		api.ReviewHandler.Put)
 
 	route.POST("/agents",
+		AdminOnlyAccessRole,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventCreateAgent),
-		api.AdminOnly,
-		api.AuditApiChanges,
+		AuditApiChanges,
 		api.AgentHandler.Post)
 	route.GET("/agents",
+		AdminOnlyAccessRole,
 		api.Authenticate,
-		api.AdminOnly,
 		api.AgentHandler.FindAll)
 	route.DELETE("/agents/:nameOrID",
+		AdminOnlyAccessRole,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventDeleteAgent),
-		api.AdminOnly,
-		api.AuditApiChanges,
+		AuditApiChanges,
 		api.AgentHandler.Evict)
 
 	route.POST("/plugins",
+		AdminOnlyAccessRole,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventCreatePlugin),
-		api.AdminOnly,
-		api.AuditApiChanges,
+		AuditApiChanges,
 		apiplugins.Post)
 	route.PUT("/plugins/:name",
+		AdminOnlyAccessRole,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventUdpatePlugin),
-		api.AdminOnly,
-		api.AuditApiChanges,
+		AuditApiChanges,
 		apiplugins.Put)
 	route.GET("/plugins",
 		api.Authenticate,
@@ -254,10 +262,10 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		apiplugins.Get)
 	route.PUT("/plugins/:name/config",
+		AdminOnlyAccessRole,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventUdpatePluginConfig),
-		api.AdminOnly,
-		api.AuditApiChanges,
+		AuditApiChanges,
 		apiplugins.PutConfig)
 
 	// alias routes
@@ -312,9 +320,9 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.RunbooksHandler.RunExec)
 
 	route.GET("/webhooks-dashboard",
+		AdminOnlyAccessRole,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventOpenWebhooksDashboard),
-		api.AdminOnly,
-		api.AuditApiChanges,
+		AuditApiChanges,
 		webhooksapi.Get)
 }

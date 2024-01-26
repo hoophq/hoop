@@ -47,7 +47,6 @@ type (
 		NotificationService notification.Service
 
 		IDProvider           *idp.Provider
-		Profile              string
 		GcpDLPRawCredentials string
 		PluginRegistryURL    string
 		PyroscopeIngestURL   string

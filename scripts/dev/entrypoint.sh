@@ -9,7 +9,7 @@ until curl -s -f -o /dev/null "http://127.0.0.1:8009/api/healthz"
 do
   sleep 1
 done
-echo "done"
+echo "--> GATEWAY IS UP"
 
 # don't start a default agent if it's an org multi tenant setup
 if [ "$ORG_MULTI_TENANT" == "true" ]; then

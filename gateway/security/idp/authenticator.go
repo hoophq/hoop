@@ -22,7 +22,6 @@ type (
 		Audience         string
 		ClientID         string
 		ClientSecret     string
-		Profile          string
 		CustomScopes     string
 		ApiURL           string
 		authWithUserInfo bool
@@ -36,6 +35,13 @@ type (
 	UserInfoToken struct {
 		token *oauth2.Token
 	}
+	ProviderUserInfo struct {
+		Subject        string
+		Email          string
+		Groups         []string
+		MustSyncGroups bool
+		Profile        string
+	}
 )
 
 func (p *Provider) VerifyIDToken(token *oauth2.Token) (*oidc.IDToken, error) {
@@ -47,9 +53,17 @@ func (p *Provider) VerifyIDToken(token *oauth2.Token) (*oidc.IDToken, error) {
 	return p.Verify(p.Context, rawIDToken)
 }
 
+func (p *Provider) VerifyAccessTokenWithUserInfo(accessToken string) (*oidc.UserInfo, error) {
+	return p.userInfoEndpoint(accessToken)
+}
+
 func (p *Provider) VerifyAccessToken(accessToken string) (string, error) {
 	if len(strings.Split(accessToken, ".")) != 3 || p.authWithUserInfo {
-		return p.userInfoEndpoint(accessToken)
+		uinfo, err := p.userInfoEndpoint(accessToken)
+		if err != nil {
+			return "", err
+		}
+		return uinfo.Subject, nil
 	}
 
 	token, err := jwt.Parse(accessToken, p.JWKS.Keyfunc)
@@ -62,8 +76,8 @@ func (p *Provider) VerifyAccessToken(accessToken string) (string, error) {
 	}
 
 	if claims, ok := token.Claims.(jwt.MapClaims); ok {
-		identifier, ok := claims["sub"].(string)
-		if !ok || identifier == "" {
+		subject, ok := claims["sub"].(string)
+		if !ok || subject == "" {
 			return "", fmt.Errorf("'sub' not found or has an empty value")
 		}
 		// https://openid.net/specs/openid-connect-core-1_0.html
@@ -73,24 +87,23 @@ func (p *Provider) VerifyAccessToken(accessToken string) (string, error) {
 				return "", fmt.Errorf("it's not an authorized party")
 			}
 		}
-		return identifier, nil
+		return subject, nil
 	}
 	return "", fmt.Errorf("failed type casting token.Claims (%T) to jwt.MapClaims", token.Claims)
 }
 
-func (p *Provider) userInfoEndpoint(accessToken string) (string, error) {
-	log.Debugf("starting user info endpoint token check")
+func (p *Provider) userInfoEndpoint(accessToken string) (*oidc.UserInfo, error) {
 	user, err := p.Provider.UserInfo(context.Background(), &UserInfoToken{token: &oauth2.Token{
 		AccessToken: accessToken,
 		TokenType:   "Bearer",
 	}})
 	if err != nil {
-		return "", fmt.Errorf("failed validating token at userinfo endpoint, err=%v", err)
+		return nil, fmt.Errorf("failed validating token at userinfo endpoint, err=%v", err)
 	}
-	return user.Subject, nil
+	return user, nil
 }
 
-func NewProvider(profile string) *Provider {
+func NewProvider() *Provider {
 	ctx := context.Background()
 
 	apiURL := os.Getenv("API_URL")
@@ -101,7 +114,6 @@ func NewProvider(profile string) *Provider {
 
 	provider := &Provider{
 		Context: ctx,
-		Profile: profile,
 		ApiURL:  apiURL,
 	}
 

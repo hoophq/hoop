@@ -79,7 +79,7 @@ var getCmd = &cobra.Command{
 			}
 		case "conn", "connection", "connections":
 			agentHandlerFn := agentConnectedHandler(apir.conf)
-			if policyHandlerFn, requestOK := policiesHandler(apir); requestOK || isApiV2 {
+			if policyHandlerFn, requestOK := policiesHandler(apir); requestOK {
 				fmt.Fprintln(w, "NAME\tCOMMAND\tTYPE\tREVIEW\tAGENT\tSTATUS\tPOLICIES\tUPDATED")
 				switch contents := obj.(type) {
 				case map[string]any:

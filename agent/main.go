@@ -118,8 +118,8 @@ func runEmbeddedMode(s3Log *log.S3LogWriter, config *agentconfig.Config) error {
 	if err != nil {
 		return err
 	}
-	log.Infof("v2=%v, version=%v, platform=%v, api-url=%v, strict-tls=%v, connections=%v - starting agent",
-		config.IsV2, vi.Version, vi.Platform, apiURL, vi.StrictTLS, connectionList)
+	log.Infof("version=%v, platform=%v, api-url=%v, strict-tls=%v, connections=%v - starting agent",
+		vi.Version, vi.Platform, apiURL, vi.StrictTLS, connectionList)
 	for {
 		grpcURL := fetchGrpcURL(apiURL, dsnKey, connectionList)
 		isInsecure := !vi.StrictTLS && (strings.HasPrefix(grpcURL, "http://") || strings.HasPrefix(grpcURL, "grpc://"))

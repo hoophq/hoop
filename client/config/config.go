@@ -12,7 +12,6 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/runopsio/hoop/client/cmd/styles"
-	"github.com/runopsio/hoop/common/appruntime"
 	"github.com/runopsio/hoop/common/clientconfig"
 	"github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
@@ -159,8 +158,8 @@ func GetClientConfigOrDie() *Config {
 	default:
 		styles.PrintErrorAndExit(err.Error())
 	}
-	log.Debugf("loaded clientconfig, v2=%v, mode=%v, tls=%v, api_url=%v, grpc_url=%v, tokenlength=%v",
-		appruntime.IsApiV2(), config.Mode, !config.IsInsecure(), config.ApiURL, config.GrpcURL, len(config.Token))
+	log.Debugf("loaded clientconfig, mode=%v, tls=%v, api_url=%v, grpc_url=%v, tokenlength=%v",
+		config.Mode, !config.IsInsecure(), config.ApiURL, config.GrpcURL, len(config.Token))
 	return config
 }
 

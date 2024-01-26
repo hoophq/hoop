@@ -12,11 +12,8 @@ import (
 
 	"github.com/runopsio/hoop/client/cmd/styles"
 	clientconfig "github.com/runopsio/hoop/client/config"
-	"github.com/runopsio/hoop/common/appruntime"
 	"github.com/runopsio/hoop/common/log"
 )
-
-var isApiV2 = appruntime.IsApiV2()
 
 type apiResource struct {
 	resourceType   string
@@ -190,9 +187,9 @@ func parseResourceOrDie(args []string, method, outputFlag string) *apiResource {
 		apir.decodeTo = "raw"
 	}
 
-	log.Debugf("decode=%v, method=%v, create=%v, list=%v, get=%v, delete=%v, apiv2=%v, path=%v",
+	log.Debugf("decode=%v, method=%v, create=%v, list=%v, get=%v, delete=%v, path=%v",
 		apir.decodeTo, apir.method, apir.resourceCreate, apir.resourceList,
-		apir.resourceGet, apir.resourceDelete, isApiV2, apir.suffixEndpoint)
+		apir.resourceGet, apir.resourceDelete, apir.suffixEndpoint)
 	return apir
 }
 
@@ -209,9 +206,6 @@ func httpRequest(apir *apiResource) (any, http.Header, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed creating http request, err=%v", err)
-	}
-	if isApiV2 {
-		req.Header.Set("x-backend-api", "express")
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", apir.conf.Token))
@@ -262,9 +256,6 @@ func httpDeleteRequest(apir *apiResource) error {
 	if err != nil {
 		return fmt.Errorf("failed creating http request, err=%v", err)
 	}
-	if isApiV2 {
-		req.Header.Set("x-backend-api", "express")
-	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", apir.conf.Token))
 	req.Header.Set("User-Agent", fmt.Sprintf("hoopcli/%s", hoopVersionStr))
@@ -297,9 +288,6 @@ func httpBodyRequest(apir *apiResource, method string, bodyMap map[string]any) (
 		return nil, fmt.Errorf("failed creating http request, err=%v", err)
 	}
 
-	if isApiV2 {
-		req.Header.Set("x-backend-api", "express")
-	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", apir.conf.Token))
 	req.Header.Set("User-Agent", fmt.Sprintf("hoopcli/%s", hoopVersionStr))

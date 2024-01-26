@@ -15,7 +15,11 @@ type APIContext struct {
 	UserGroups []string `json:"user_groups"`
 	UserStatus string   `json:"user_status"`
 	SlackID    string   `json:"slack_id"`
-	IsApiV2    bool     `json:"api_v2"`
+
+	UserAnonSubject       string
+	UserAnonEmail         string
+	UserAnonProfile       string
+	UserAnonEmailVerified bool
 
 	ApiURL  string `json:"-"`
 	GrpcURL string `json:"-"`

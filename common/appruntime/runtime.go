@@ -13,8 +13,6 @@ var WebAppCommit = readFile("/app/ui/commit.txt")
 // NodeApiCommit returns the local commit information from the node api
 var NodeApiCommit = readFile("/app/api/commit.txt")
 
-// IsApiV2 returns true if the env is set as HOOP_APIV2=true
-func IsApiV2() bool { return os.Getenv("HOOP_API") == "v2" }
 func Kill(pid int, signum syscall.Signal) error {
 	p, err := os.FindProcess(pid)
 	if err != nil {
