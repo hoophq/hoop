@@ -225,3 +225,37 @@ jobs:
           --set image.gw.tag=${{ inputs.version }} \
           --wait \
           -n unico
+  deploy-multitenant:
+    runs-on: arc-runner-set
+    needs: [deploy-appdemo]
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Assume Role
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        output-credentials: false
+        aws-region: us-east-1
+    - name: Google Aplication Credentials
+      uses: aws-actions/aws-secretsmanager-get-secrets@v1
+      with:
+        secret-ids: |
+          GOOGLE_APPLICATION_CREDENTIALS_JSON,hoop/google-application-credentials
+    - name: Customer App Secrets
+      uses: aws-actions/aws-secretsmanager-get-secrets@v1
+      with:
+        parse-json-secrets: true
+        # this secret id does not make sense,
+        # we should migrate the names to something more aligned with
+        # with self-hosted and multi tenant environments, e.g.: hoop/gateway-secrets/<environment>
+        secret-ids: |
+          hoop/self-hosted/multitenant
+    - name: Populate App Values
+      run: ( echo "cat <<EOF" ; cat ./infra/multitenant/values.yml ; echo EOF ) | sh > ./values-multitenant.yml
+    - name: Upgrade App
+      run: |-
+        helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/${{ inputs.version }}/hoop-chart-${{ inputs.version }}.tgz \
+          -f ./values-multitenant.yml \
+          --set image.gw.tag=${{ inputs.version }} \
+          --wait \
+          -n multitenant
