@@ -82,7 +82,6 @@ func (c *Context) ToAPIContext() *types.APIContext {
 	if c.Org != nil {
 		apiCtx.OrgID = c.Org.Id
 		apiCtx.OrgName = c.Org.Name
-		apiCtx.IsApiV2 = c.Org.IsApiV2
 	}
 	return apiCtx
 }

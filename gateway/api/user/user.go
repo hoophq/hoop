@@ -264,18 +264,28 @@ func GetUserInfo(c *gin.Context) {
 	if len(ctx.UserGroups) > 0 {
 		groupList = ctx.UserGroups
 	}
-	c.JSON(http.StatusOK, map[string]any{
+	userInfoData := map[string]any{
 		"id":             ctx.UserID,
 		"name":           ctx.UserName,
 		"email":          ctx.UserEmail,
 		"status":         ctx.UserStatus,
-		"verified":       true, // authenticated user is always verified
+		"verified":       true,
 		"slack_id":       ctx.SlackID,
 		"groups":         groupList,
+		"is_anonymous":   false,
 		"is_admin":       ctx.IsAdminUser(),
 		"is_multitenant": isOrgMultiTenant,
 		"org_id":         ctx.OrgID,
-	})
+		"org_name":       ctx.OrgName,
+	}
+	if ctx.IsAnonymous() {
+		userInfoData["verified"] = false
+		userInfoData["email"] = ctx.UserAnonEmail
+		userInfoData["name"] = ctx.UserAnonProfile
+		userInfoData["id"] = ctx.UserAnonSubject
+		userInfoData["is_anonymous"] = true
+	}
+	c.JSON(http.StatusOK, userInfoData)
 }
 
 func PatchSlackID(c *gin.Context) {

@@ -16,9 +16,21 @@ type Context struct {
 	UserStatus  string
 	UserSlackID string
 	UserGroups  []string
+
+	UserAnonSubject       string
+	UserAnonProfile       string
+	UserAnonEmail         string
+	UserAnonEmailVerified bool
 }
 
-func (c *Context) IsEmpty() bool           { return c.OrgID == "" && c.UserSubject == "" }
+// IsEmpty returns true if the user is not logged in and has not signed up yet.
+// The user is considered empty if the OrgID and UserSubject is not set.
+func (c *Context) IsEmpty() bool { return c.OrgID == "" && c.UserSubject == "" }
+
+// IsAnonymous returns true if the user is not logged in and has not signed up yet.
+// The user is considered anonymous if the UserAnonSubject and UserAnonEmail are not set.
+func (c *Context) IsAnonymous() bool { return c.UserAnonSubject != "" && c.UserAnonEmail != "" }
+
 func (c *Context) GetSubject() string      { return c.UserSubject }
 func (c *Context) GetOrgID() string        { return c.OrgID }
 func (c *Context) GetUserGroups() []string { return c.UserGroups }

@@ -146,6 +146,9 @@ type logInfoWriter struct{}
 func (w *logInfoWriter) Write(p []byte) (n int, err error) {
 	v := strings.TrimSuffix(string(p), "\n")
 	v = strings.TrimPrefix(v, "\n")
+	if v == "" {
+		return len(p), nil
+	}
 	log.With("app", "postgrest").Info(v)
 	return len(p), nil
 }

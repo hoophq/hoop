@@ -24,7 +24,7 @@ func (c *eventCallback) CommandSlackSubscribe(command, slackID string) (string, 
 	err := pglogin.New().Upsert(&types.Login{
 		ID:      stateUID,
 		SlackID: slackID,
-		Outcome: "success",
+		Outcome: "",
 		// redirect to webapp
 		Redirect: fmt.Sprintf("%s/auth/callback", c.idpProvider.ApiURL),
 	})

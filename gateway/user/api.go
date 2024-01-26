@@ -29,8 +29,8 @@ func ContextLogger(c *gin.Context) *zap.SugaredLogger {
 // ContextUser do a best effort to get the user context from the request
 // if it fail, it will return an empty one that can be used safely
 func ContextUser(c *gin.Context) *Context {
-	obj, _ := c.Get("context")
-	ctx := obj.(*Context)
+	obj, _ := c.Get(ContextUserKey)
+	ctx, _ := obj.(*Context)
 	if ctx == nil {
 		return &Context{Org: &Org{}, User: &User{}}
 	}

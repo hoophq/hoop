@@ -2,14 +2,11 @@ package gateway
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 
-	"github.com/runopsio/hoop/common/clientconfig"
 	"github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/monitoring"
@@ -22,7 +19,6 @@ import (
 	"github.com/runopsio/hoop/gateway/pgrest"
 	"github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/runbooks"
-	"github.com/runopsio/hoop/gateway/security"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/transport"
@@ -57,8 +53,7 @@ func Run(listenAdmAddr string) {
 
 	storev2 := storagev2.NewStorage(nil)
 
-	profile := os.Getenv("PROFILE")
-	idProvider := idp.NewProvider(profile)
+	idProvider := idp.NewProvider()
 	analyticsService := analytics.New()
 
 	grpcURL := os.Getenv("GRPC_URL")
@@ -78,11 +73,6 @@ func Run(listenAdmAddr string) {
 	userService := user.Service{Storage: &user.Storage{}}
 	reviewService := review.Service{Storage: &review.Storage{}}
 	notificationService := getNotification()
-	securityService := security.Service{
-		Storage:     &security.Storage{},
-		Provider:    idProvider,
-		UserService: &userService,
-		Analytics:   analyticsService}
 
 	if !user.IsOrgMultiTenant() {
 		log.Infof("provisioning / promoting default organization")
@@ -95,10 +85,8 @@ func Run(listenAdmAddr string) {
 		AgentHandler:    agent.Handler{Service: &agentService},
 		IndexerHandler:  indexer.Handler{},
 		ReviewHandler:   review.Handler{Service: &reviewService},
-		SecurityHandler: security.Handler{Service: &securityService},
 		RunbooksHandler: runbooks.Handler{},
 		IDProvider:      idProvider,
-		Profile:         profile,
 		Analytics:       analyticsService,
 		GrpcURL:         grpcURL,
 
@@ -110,7 +98,6 @@ func Run(listenAdmAddr string) {
 		ReviewService:        reviewService,
 		NotificationService:  notificationService,
 		IDProvider:           idProvider,
-		Profile:              profile,
 		GcpDLPRawCredentials: os.Getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"),
 		PluginRegistryURL:    os.Getenv("PLUGIN_REGISTRY_URL"),
 		PyroscopeIngestURL:   os.Getenv("PYROSCOPE_INGEST_URL"),
@@ -172,7 +159,7 @@ func Run(listenAdmAddr string) {
 		log.SetGrpcLogger()
 	}
 
-	log.Infof("profile=%v - starting servers", profile)
+	log.Infof("starting servers")
 	go g.StartRPCServer()
 	a.StartAPI(sentryStarted)
 }
@@ -203,54 +190,10 @@ func changeWebappApiURL(apiURL string) error {
 }
 
 func getNotification() notification.Service {
-	if os.Getenv("NOTIFICATIONS_BRIDGE_CONFIG") != "" && os.Getenv("ORG_MULTI_TENANT") != "true" {
-		mBridgeConfigRaw := []byte(os.Getenv("NOTIFICATIONS_BRIDGE_CONFIG"))
-		var mBridgeConfigMap map[string]string
-		if err := json.Unmarshal(mBridgeConfigRaw, &mBridgeConfigMap); err != nil {
-			log.Fatalf("failed decoding notifications bridge config")
-		}
-		log.Printf("Bridge notifications selected")
-		matterbridgeConfig := `[slack]
-[slack.myslack]
-Token="%s"
-PreserveThreading=true
-
-[api.myapi]
-BindAddress="127.0.0.1:4242"
-Buffer=10000
-
-[[gateway]]
-name="hoop-notifications-bridge"
-enable=true
-
-[[gateway.in]]
-account="api.myapi"
-channel="api"
-
-[[gateway.out]]
-account="slack.myslack"
-channel="general"`
-		matterbridgeFolder, err := clientconfig.NewHomeDir("matterbridge")
-		if err != nil {
-			log.Fatal(err)
-		}
-		configFile := filepath.Join(matterbridgeFolder, "matterbridge.toml")
-		configFileBytes := []byte(fmt.Sprintf(matterbridgeConfig, mBridgeConfigMap["slackBotToken"]))
-		err = os.WriteFile(configFile, configFileBytes, 0600)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		err = exec.Command("matterbridge", "-conf", configFile).Start()
-
-		if err != nil {
-			log.Fatal(err)
-		}
-		return notification.NewMatterbridge()
-	} else if os.Getenv("SMTP_HOST") != "" {
-		log.Printf("SMTP notifications selected")
+	if os.Getenv("SMTP_HOST") != "" {
+		log.Infof("SMTP notifications selected")
 		return notification.NewSmtpSender()
 	}
-	log.Printf("MagicBell notifications selected")
+	log.Infof("MagicBell notifications selected")
 	return notification.NewMagicBell()
 }

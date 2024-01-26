@@ -3,9 +3,12 @@ package pgusers
 import (
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/runopsio/hoop/gateway/pgrest"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 )
+
+var ErrOrgAlreadyExists = fmt.Errorf("organization already exists")
 
 type UserGroups struct {
 	OrgID            string  `json:"org_id"`
@@ -138,18 +141,45 @@ func (u *user) CreateOrg(id, name string) error {
 	return pgrest.New("/orgs").Create(map[string]any{"id": id, "name": name}).Error()
 }
 
-func (u *user) FetchOrgByName(name string) (*pgrest.Org, error) {
+// CreateOrGetOrg creates an organization if it doesn't exist, otherwise
+// it returns if the organization does not contain any users
+func (u *user) CreateOrGetOrg(name string) (orgID string, err error) {
+	org, _, err := u.FetchOrgByName(name)
+	if err != nil {
+		return "", err
+	}
+	if org != nil {
+		var users []pgrest.User
+		err = pgrest.New("/users?select=*,groups,orgs(id,name)&org_id=eq.%v", org.ID).
+			List().
+			DecodeInto(&users)
+		if err != nil {
+			return "", fmt.Errorf("failed veryfing if org %s is empty, err=%v", org.ID, err)
+		}
+		// organization already exists and it's being used
+		if len(users) > 0 {
+			return "", ErrOrgAlreadyExists
+		}
+		return org.ID, nil
+	}
+	orgID = uuid.NewString()
+	return orgID, pgrest.New("/orgs").Create(map[string]any{"id": orgID, "name": name}).Error()
+}
+
+// FetchOrgByName returns an organization and the total number of users
+func (u *user) FetchOrgByName(name string) (*pgrest.Org, int64, error) {
 	var org pgrest.Org
 	err := pgrest.New("/orgs?name=eq.%v", name).
 		FetchOne().
 		DecodeInto(&org)
 	if err != nil {
 		if err == pgrest.ErrNotFound {
-			return nil, nil
+			return nil, 0, nil
 		}
-		return nil, err
+		return nil, 0, err
 	}
-	return &org, nil
+	total := pgrest.New("/users?org_id=eq.%s", org.ID).ExactCount()
+	return &org, total, nil
 }
 
 func (u *user) FetchOrgByID(id string) (*pgrest.Org, error) {
@@ -181,3 +211,7 @@ func (u *user) Delete(ctx pgrest.OrgContext, subject string) error {
 	}
 	return pgrest.New("/users?org_id=eq.%s&subject=eq.%s", orgID, subject).Delete().Error()
 }
+
+type orgCtx struct{ OrgID string }
+
+func (c orgCtx) GetOrgID() string { return c.OrgID }
