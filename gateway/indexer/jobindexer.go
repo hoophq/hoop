@@ -153,7 +153,11 @@ func parseSessionToIndexObject(orgID string, s *types.Session) *Session {
 
 	truncateStdin, truncateStdout := false, false
 	for _, eventList := range s.EventStream {
-		event := eventList.([]any)
+		event, ok := eventList.(types.SessionEventStream)
+		if !ok {
+			log.Warnf("job=index, fail to type cast to types.SessionEventStream, found=%T", eventList)
+			continue
+		}
 		stdin, stdout := parseEventStream(event)
 		stdinData = append(stdinData, stdin...)
 		stdoutData = append(stdoutData, stdout...)
@@ -190,7 +194,7 @@ func parseSessionToIndexObject(orgID string, s *types.Session) *Session {
 	}
 }
 
-func parseEventStream(event []any) (stdin, stdout []byte) {
+func parseEventStream(event types.SessionEventStream) (stdin, stdout []byte) {
 	eventType, _ := event[1].(string)
 	eventData, _ := base64.StdEncoding.DecodeString(event[2].(string))
 	switch eventType {

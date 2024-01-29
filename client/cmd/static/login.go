@@ -21,14 +21,14 @@ const LoginHTML = `
       }
     </style>
 
-    <link rel="icon" type="image/x-icon" href="https://app.hoop.dev/images/hoop-branding/PNG/hoop-symbol_black@4x.png">
+    <link rel="icon" type="image/x-icon" href="https://use.hoop.dev/images/hoop-branding/PNG/hoop-symbol_black@4x.png">
   </head>
   <body class="bg-gray-50 h-screen">
     <div class="h-full">
       <div class="flex flex-col gap-4 h-full">
         <header class="container mx-auto py-4">
           <figure class="w-36">
-            <img src="https://app.hoop.dev/images/hoop-branding/PNG/hoop-symbol+text_black@4x.png" />
+            <img src="https://use.hoop.dev/images/hoop-branding/PNG/hoop-symbol+text_black@4x.png" />
           </figure>
         </header>
 

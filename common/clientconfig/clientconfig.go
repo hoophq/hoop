@@ -11,8 +11,8 @@ const (
 	ClientFile         string = "config.toml"
 	clientConfigFolder string = ".hoop"
 
-	SaaSWebURL  string = "https://app.hoop.dev"
-	SaaSGrpcURL string = "app.hoop.dev:8443"
+	SaaSWebURL  string = "https://use.hoop.dev"
+	SaaSGrpcURL string = "use.hoop.dev:8443"
 
 	// ModeEnv is when a client is loaded with environment variables
 	ModeEnv = "env"

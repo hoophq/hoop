@@ -39,6 +39,7 @@ func New() *indexPlugin {
 		if err := indexer.StartJobIndex(); err != nil {
 			log.Infof("job=index - failed processing, err=%v", err)
 		}
+		log.Infof("job=index - finished")
 	})
 	scheduler.StartAsync()
 	return p
