@@ -211,7 +211,8 @@ func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) error {
 			return fmt.Errorf("failed sending message to slack channel %v, reason=%v", slackChannel, err)
 		}
 
-		time.Sleep(time.Second*1 + time.Millisecond*200)
+		// Slack allows 1 post message per second. reference: https://api.slack.com/apis/rate-limits
+		time.Sleep(time.Millisecond * 1200)
 	}
 	return nil
 }
