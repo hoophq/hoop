@@ -313,3 +313,35 @@ func NewFatalError(msg string) *Packet {
 	p.frame = append(p.frame, '\000', '\000')
 	return p.setHeaderLength(len(p.frame) + 4)
 }
+
+// https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-BACKENDKEYDATA
+type BackendKeyData struct {
+	Pid       uint32
+	SecretKey uint32
+}
+
+func NewBackendKeyData(pkt *Packet) (*BackendKeyData, error) {
+	frame := pkt.Frame()
+	if len(frame) < 8 {
+		return nil, fmt.Errorf("BackendKeyData packet with wrong size (%v), frame=%X", len(frame), frame)
+	}
+	return &BackendKeyData{
+		Pid:       binary.BigEndian.Uint32(frame[:4]),
+		SecretKey: binary.BigEndian.Uint32(frame[4:]),
+	}, nil
+}
+
+// https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-CANCELREQUEST
+// Return a cancel + termination packet
+func NewCancelRequestPacket(keyData *BackendKeyData) [22]byte {
+	pkt := [22]byte{}
+	binary.BigEndian.PutUint32(pkt[0:4], 16)
+	binary.BigEndian.PutUint32(pkt[4:8], ClientCancelRequestMessage)
+	binary.BigEndian.PutUint32(pkt[8:12], keyData.Pid)
+	binary.BigEndian.PutUint32(pkt[12:16], keyData.SecretKey)
+
+	// termination packet
+	pkt[17] = 0x58
+	binary.BigEndian.PutUint32(pkt[18:22], 4)
+	return pkt
+}

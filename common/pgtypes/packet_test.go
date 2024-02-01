@@ -85,3 +85,31 @@ func TestDecodeEncodeTypedPacket(t *testing.T) {
 		t.Fatalf("packet not re-encoded properly, want=%v, got=%v", pkt.Encode(), authRequestTypedPacket)
 	}
 }
+
+// func TestDecodeEncodeCancelRequest(t *testing.T) {
+// 	typ := ServerBackendKeyData.Byte()
+// 	wantPid := [4]byte{0x00, 0x00, 0x43, 0xa9}
+// 	wantSecretKey := [4]byte{0x86, 0x19, 0x40, 0x2b}
+// 	var frame []byte
+// 	frame = append(frame, wantPid[:]...)
+// 	frame = append(frame, wantSecretKey[:]...)
+// 	backendKeyDataPkt := &Packet{
+// 		typ:    &typ,
+// 		header: [4]byte{0x00, 0x00, 0x00, 0x0c},
+// 		frame:  frame,
+// 	}
+
+// 	keyData, err := NewBackendKeyData(backendKeyDataPkt)
+// 	if err != nil {
+// 		t.Fatalf("failed creating new backend key data, err=%v", err)
+// 	}
+// 	pkt := CancelRequestPacket(keyData)
+// 	got := pkt.Frame()
+// 	gotPid, gotSecretKey := got[4:8], got[8:12]
+// 	if !bytes.Equal(wantPid[:], gotPid) {
+// 		t.Errorf("pid does not match, want % X, got=% X", wantPid, gotPid)
+// 	}
+// 	if !bytes.Equal(wantSecretKey[:], gotSecretKey) {
+// 		t.Errorf("secret key does not match, want % X, got=% X", wantSecretKey, gotSecretKey)
+// 	}
+// }

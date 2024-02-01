@@ -73,5 +73,10 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	})
 	// write the first packet when establishing the connection
 	_, _ = serverWriter.Write(pkt.Payload)
+	// go func() {
+	// 	time.Sleep(time.Second * 5)
+	// 	log.Warn("force closing tcp connection %s", sessionID)
+	// 	serverWriter.Close()
+	// }()
 	a.connStore.Set(clientConnectionIDKey, serverWriter)
 }
