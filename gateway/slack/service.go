@@ -210,6 +210,8 @@ func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) error {
 		if err != nil {
 			return fmt.Errorf("failed sending message to slack channel %v, reason=%v", slackChannel, err)
 		}
+
+		time.Sleep(time.Second*1 + time.Millisecond*200)
 	}
 	return nil
 }
