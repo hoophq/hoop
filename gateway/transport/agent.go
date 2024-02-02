@@ -144,6 +144,8 @@ func (s *Server) subscribeAgent(grpcStream pb.Transport_ConnectServer) error {
 		if err := s.updateAgentStatus(agent.StatusDisconnected, gwctx.Agent); err != nil {
 			log.Warnf("failed publishing disconnect agent state, org=%v, name=%v, err=%v", gwctx.Agent, err)
 		}
+		// TODO: need to disconnect all proxy clients connected
+		// or implement a reconnect strategy in the proxy client
 		stream.Disconnect(context.Canceled)
 		_ = s.pluginOnDisconnect(pluginContext, err)
 	})

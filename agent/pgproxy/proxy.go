@@ -13,6 +13,8 @@ import (
 	"github.com/xo/dburl"
 )
 
+var errConnectionClose = fmt.Errorf("connection closed")
+
 type clientErrType error
 
 func clientErrorF(format string, a ...any) clientErrType { return fmt.Errorf(format, a...) }
@@ -22,13 +24,17 @@ type onRunErrFnType func(errMsg string)
 type proxy struct {
 	ctx              context.Context
 	tlsConfig        *tlsConfig
+	host             string
+	port             string
 	username         string
 	password         string
+	pid              uint32
 	serverRW         io.ReadWriteCloser
 	clientW          io.Writer
 	cancelFn         context.CancelFunc
 	clientInitBuffer io.ReadWriter
 	initialized      bool
+	closed           bool
 
 	dlp *dlpHandler
 }
@@ -43,6 +49,7 @@ func New(ctx context.Context, connStr *dburl.URL, serverRW io.ReadWriteCloser, c
 	if sslMode == "" {
 		sslMode = sslModePrefer
 	}
+
 	return &proxy{
 		ctx: cancelCtx,
 		tlsConfig: &tlsConfig{
@@ -51,8 +58,11 @@ func New(ctx context.Context, connStr *dburl.URL, serverRW io.ReadWriteCloser, c
 			rootCertPath: connStr.Query().Get("sslrootcert"),
 		},
 		dlp:              &dlpHandler{},
+		host:             connStr.Hostname(),
+		port:             connStr.Port(),
 		username:         connStr.User.Username(),
 		password:         passwd,
+		pid:              0,
 		serverRW:         serverRW,
 		clientW:          clientW,
 		clientInitBuffer: newBlockingReader(),
@@ -82,7 +92,10 @@ func (p *proxy) initalizeConnection() error {
 		}
 	}
 	if pkt.IsCancelRequest() {
-		return fmt.Errorf("cancel request is not implemented")
+		if err := p.handleCancelRequest(pkt); err != nil {
+			log.Warn(err)
+		}
+		return nil
 	}
 
 	startupMessage, err := pgtypes.DecodeStartupPacketWithUsername(bytes.NewBuffer(pkt.Encode()), p.username)
@@ -117,13 +130,23 @@ func (p *proxy) initalizeConnection() error {
 	if err := p.handleAuth(startupMessage); err != nil {
 		return err
 	}
-	p.initialized = true
 	return nil
 }
 
 func (p *proxy) processPacket(data io.Reader) (pkt *pgtypes.Packet, err error) {
 	_, pkt, err = pgtypes.DecodeTypedPacket(data)
-	return
+	if err == nil && pkt.Type() == pgtypes.ServerBackendKeyData {
+		keyData, err := pgtypes.NewBackendKeyData(pkt)
+		if err != nil {
+			log.Warnf("failed decoding BackendKeyData from server, err=%v", err)
+		}
+		if keyData != nil {
+			log.Infof("process %v registered in proc manager", keyData.Pid)
+			ProcManager().add(&procInfo{host: p.host, port: p.port, pid: keyData.Pid, secretKey: keyData.SecretKey})
+			p.pid = keyData.Pid
+		}
+	}
+	return pkt, p.parseIOError(err)
 }
 
 // Run start the prox by offloading the authentication and the tls with the postgres server
@@ -137,7 +160,7 @@ func (p *proxy) Run(onErrCallback onRunErrFnType) *proxy {
 		if err := <-initCh; err != nil {
 			errMsg := fmt.Sprintf("failed initializing connection, reason=%v", err)
 			log.Warn(errMsg)
-			defer p.serverRW.Close()
+			defer p.Close()
 			close(initCh)
 			if _, ok := err.(clientErrType); ok {
 				_, _ = p.clientW.Write(pgtypes.NewFatalError(errMsg).Encode())
@@ -148,7 +171,7 @@ func (p *proxy) Run(onErrCallback onRunErrFnType) *proxy {
 		}
 		p.initialized = true
 		log.Infof("initialized postgres session with success")
-		defer p.serverRW.Close()
+		defer p.Close()
 	exit:
 		for {
 			select {
@@ -158,7 +181,7 @@ func (p *proxy) Run(onErrCallback onRunErrFnType) *proxy {
 			default:
 				pkt, err := p.processPacket(p.serverRW)
 				if err != nil {
-					if err != io.EOF {
+					if err != errConnectionClose {
 						errMsg := fmt.Sprintf("failed processing packet, reason=%v", err)
 						log.Warn(errMsg)
 						onErrCallback(errMsg)
@@ -194,8 +217,10 @@ func (p *proxy) Run(onErrCallback onRunErrFnType) *proxy {
 
 func (p *proxy) Done() <-chan struct{} { return p.ctx.Done() }
 func (p *proxy) Close() error {
+	ProcManager().flush(p.host, p.pid)
+	p.closed = true
 	p.cancelFn()
-	return nil
+	return p.serverRW.Close()
 }
 
 func (p *proxy) Write(b []byte) (n int, err error) {
@@ -206,8 +231,16 @@ func (p *proxy) Write(b []byte) (n int, err error) {
 	if err != nil || pkt == nil {
 		return
 	}
-	if pkt.IsCancelRequest() {
-		log.Infof("cancel request, not implemented!")
-	}
 	return p.serverRW.Write(pkt.Encode())
+}
+
+func (p *proxy) parseIOError(err error) error {
+	// the connection was closed, ignore any errors
+	if p.closed {
+		return errConnectionClose
+	}
+	if err == io.EOF {
+		return errConnectionClose
+	}
+	return err
 }

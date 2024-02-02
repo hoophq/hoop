@@ -515,7 +515,7 @@ func (a *Agent) processTCPCloseConnection(pkt *pb.Packet) {
 	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 	clientConnID := pkt.Spec[pb.SpecClientConnectionID]
 	filterKey := fmt.Sprintf("%s:%s", string(sessionID), string(clientConnID))
-	log.Infof("closing tcp session, filter-by=%s", filterKey)
+	log.Infof("closing tcp session, connid=%s, filter-by=%s", clientConnID, filterKey)
 	filterFn := func(k string) bool { return strings.HasPrefix(k, filterKey) }
 	for key, obj := range a.connStore.Filter(filterFn) {
 		if client, _ := obj.(io.Closer); client != nil {
