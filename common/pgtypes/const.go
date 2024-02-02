@@ -25,20 +25,19 @@ func (t PacketType) String() string {
 // client
 // http://www.postgresql.org/docs/9.4/static/protocol-message-formats.html
 const (
-	ClientBind          PacketType = 'B'
-	ClientCancelRequest PacketType = 'F'
-	ClientClose         PacketType = 'C'
-	ClientCopyData      PacketType = 'd'
-	ClientCopyDone      PacketType = 'c'
-	ClientCopyFail      PacketType = 'f'
-	ClientDescribe      PacketType = 'D'
-	ClientExecute       PacketType = 'E'
-	ClientFlush         PacketType = 'H'
-	ClientParse         PacketType = 'P'
-	ClientPassword      PacketType = 'p'
-	ClientSimpleQuery   PacketType = 'Q'
-	ClientSync          PacketType = 'S'
-	ClientTerminate     PacketType = 'X'
+	ClientBind        PacketType = 'B'
+	ClientClose       PacketType = 'C'
+	ClientCopyData    PacketType = 'd'
+	ClientCopyDone    PacketType = 'c'
+	ClientCopyFail    PacketType = 'f'
+	ClientDescribe    PacketType = 'D'
+	ClientExecute     PacketType = 'E'
+	ClientFlush       PacketType = 'H'
+	ClientParse       PacketType = 'P'
+	ClientPassword    PacketType = 'p'
+	ClientSimpleQuery PacketType = 'Q'
+	ClientSync        PacketType = 'S'
+	ClientTerminate   PacketType = 'X'
 
 	ServerAuth                 PacketType = 'R'
 	ServerBindComplete         PacketType = '2'
@@ -114,20 +113,19 @@ const (
 )
 
 var clientPacketType = map[PacketType]string{
-	ClientBind:          "ClientBind",
-	ClientCancelRequest: "ClientCancelRequest",
-	ClientClose:         "ClientClose",
-	ClientCopyData:      "ClientCopyData",
-	ClientCopyDone:      "ClientCopyDone",
-	ClientCopyFail:      "ClientCopyFail",
-	ClientDescribe:      "ClientDescribe",
-	ClientExecute:       "ClientExecute",
-	ClientFlush:         "ClientFlush",
-	ClientParse:         "ClientParse",
-	ClientPassword:      "ClientPassword",
-	ClientSimpleQuery:   "ClientSimpleQuery",
-	ClientSync:          "ClientSync",
-	ClientTerminate:     "ClientTerminate",
+	ClientBind:        "ClientBind",
+	ClientClose:       "ClientClose",
+	ClientCopyData:    "ClientCopyData",
+	ClientCopyDone:    "ClientCopyDone",
+	ClientCopyFail:    "ClientCopyFail",
+	ClientDescribe:    "ClientDescribe",
+	ClientExecute:     "ClientExecute",
+	ClientFlush:       "ClientFlush",
+	ClientParse:       "ClientParse",
+	ClientPassword:    "ClientPassword",
+	ClientSimpleQuery: "ClientSimpleQuery",
+	ClientSync:        "ClientSync",
+	ClientTerminate:   "ClientTerminate",
 }
 
 func isClientType(packetType byte) (isClient bool) {
