@@ -108,7 +108,8 @@ func (p *PGServer) PacketWriteClient(connectionID string, pkt *pb.Packet) (int, 
 			// skip header
 			_ = copy(data, pkt.Payload[5:])
 			pgPid := binary.BigEndian.Uint32(data[0:4])
-			log.Infof("connection process started in the backend with pid=%v", pgPid)
+			log.Infof("session=%v | conn=%v | pid=%v - connection process started in the backend",
+				string(pkt.Spec[pb.SpecGatewaySessionID]), connectionID, pgPid)
 			conn.backendKeyData = &pgtypes.BackendKeyData{
 				Pid:       pgPid,
 				SecretKey: binary.BigEndian.Uint32(data[4:8]),
@@ -118,7 +119,8 @@ func (p *PGServer) PacketWriteClient(connectionID string, pkt *pb.Packet) (int, 
 	}
 	n, err := conn.client.Write(pkt.Payload)
 	if err != nil {
-		log.Warnf("failed writing packet")
+		log.Warnf("session=%v | conn=%v - failed writing packet, err=%v",
+			string(pkt.Spec[pb.SpecGatewaySessionID]), connectionID, err)
 	}
 	return n, err
 }
@@ -162,16 +164,17 @@ func (p *PGServer) lookupConnectionByPid(pid uint32) *pgConnection {
 }
 
 func (p *PGServer) copyPGBuffer(dst io.Writer, src *pgConnection) (written int64, err error) {
+	closedConn := false
 	for {
 		pkt, err := pgtypes.Decode(src.client)
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF || closedConn {
 				break
 			}
 			return 0, fmt.Errorf("fail to decode typed packet, err=%v", err)
 		}
 		// A cancel request is sent by a second connection
-		// the response should be received by the pid's connection.
+		// the response must be received by the pid's connection.
 		// See: https://www.postgresql.org/docs/current/protocol-flow.html#PROTOCOL-FLOW-CANCELING-REQUESTS
 		if pkt.IsCancelRequest() {
 			frame := pkt.Frame()
@@ -184,16 +187,17 @@ func (p *PGServer) copyPGBuffer(dst io.Writer, src *pgConnection) (written int64
 				// and close the cancel connection
 				go func() {
 					time.Sleep(time.Second * 4)
+					closedConn = true
 					_ = src.client.Close()
 				}()
 			}
-			log.Infof("cancel request received by the client, pid=%v, swap-connection=%v", pid, pidsConn != nil)
+			log.Infof("conn=%s | pid=%v | swapped=%v - cancel request received by the client", src.id, pid, pidsConn != nil)
 		}
 		writtenSize, err := dst.Write(pkt.Encode())
 		if err != nil {
 			return 0, fmt.Errorf("fail to write typed packet, err=%v", err)
 		}
-		log.Infof("%s, copied %v byte(s) from connection %v", pkt.Type(), writtenSize, src.id)
+		log.Debugf("%s, copied %v byte(s) from connection %v", pkt.Type(), writtenSize, src.id)
 		written += int64(writtenSize)
 	}
 	return written, err

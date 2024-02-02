@@ -11,7 +11,7 @@ import (
 // https://www.postgresql.org/docs/current/protocol-flow.html#PROTOCOL-FLOW-CANCELING-REQUESTS
 func (p *proxy) handleCancelRequest(pkt *pgtypes.Packet) error {
 	frame := pkt.Frame()
-	log.Infof("handling cancel request for pid %v", binary.BigEndian.Uint32(frame[4:8]))
+	log.Infof("handling user cancel request for pid %v", binary.BigEndian.Uint32(frame[4:8]))
 	if _, err := p.serverRW.Write(pkt.Encode()); err != nil {
 		return fmt.Errorf("fail to write cancel request to server: %v", err)
 	}

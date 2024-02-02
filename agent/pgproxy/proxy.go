@@ -217,7 +217,7 @@ func (p *proxy) Run(onErrCallback onRunErrFnType) *proxy {
 
 func (p *proxy) Done() <-chan struct{} { return p.ctx.Done() }
 func (p *proxy) Close() error {
-	ProcManager().remove(p.host, p.pid)
+	ProcManager().flush(p.host, p.pid)
 	p.closed = true
 	p.cancelFn()
 	return p.serverRW.Close()
