@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -21,8 +20,6 @@ import (
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
 )
-
-var metadataRegexp = regexp.MustCompile(`^[a-zA-Z0-9][\.a-zA-Z0-9_-]*[a-zA-Z0-9]$`)
 
 type SessionPostBody struct {
 	Script     string              `json:"script"`
@@ -90,24 +87,16 @@ func Post(c *gin.Context) {
 }
 
 func CoerceMetadataFields(metadata map[string]any) error {
-	if len(metadata) > 10 {
+	if len(metadata) > 20 {
 		return fmt.Errorf("metadata field must have less than 10 fields")
 	}
-	var invalidFields []string
 	for key, val := range metadata {
-		if !metadataRegexp.MatchString(key) || len(key) > 63 {
-			invalidFields = append(invalidFields, fmt.Sprintf("key=%v", key))
-			continue
-		}
 		val := fmt.Sprintf("%v", val)
-		if !metadataRegexp.MatchString(val) || len(key) > 63 {
-			invalidFields = append(invalidFields, fmt.Sprintf("val=%v", val))
+		if len(key) >= 2500 || len(val) >= 2500 {
+			return fmt.Errorf("metadata key or value must not contain more than 2500 characteres")
 		}
+		// convert to string
 		metadata[key] = val
-	}
-	if len(invalidFields) > 0 {
-		return fmt.Errorf("metadata keys and values must begin and end with a letter or number, and may contain letters, numbers, hyphens, dots, and underscores, up to 63 characters each, invalid-fields=%v",
-			invalidFields)
 	}
 	return nil
 }
