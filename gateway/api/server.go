@@ -92,8 +92,8 @@ func (api *Api) StartAPI(sentryInit bool) {
 }
 
 func (api *Api) buildRoutes(route *gin.RouterGroup) {
-	// set default role to all routes
-	route.Use(DefaultAccessRole)
+	// set standard role to all routes
+	route.Use(StandardAccessRole)
 
 	loginHandler := loginapi.New(api.IDProvider)
 	route.GET("/login", loginHandler.Login)
