@@ -25,6 +25,11 @@ const (
 	StatusActive    StatusType = "active"
 	StatusReviewing StatusType = "reviewing"
 	StatusInactive  StatusType = "inactive"
+
+	RoleAdminType        string = "admin"
+	RoleStandardType     string = "standard"
+	RoleUnregisteredType string = "unregistered"
+	RoleGuestType        string = "guest"
 )
 
 type User struct {
@@ -32,7 +37,8 @@ type User struct {
 	Name     string     `json:"name"`
 	Email    string     `json:"email"`
 	Status   StatusType `json:"status"`
-	Verified bool       `json:"verified"`
+	Verified bool       `json:"verified"` // DEPRECATED in flavor of role
+	Role     string     `json:"role"`
 	SlackID  string     `json:"slack_id"`
 	Groups   []string   `json:"groups"`
 }
@@ -66,18 +72,19 @@ func Create(c *gin.Context) {
 
 	newUser.ID = uuid.NewString()
 	newUser.Verified = false
-	err = pgusers.New().Upsert(pgrest.User{
+	pguser := pgrest.User{
 		ID:       newUser.ID,
 		Subject:  newUser.Email,
 		OrgID:    ctx.OrgID,
 		Name:     newUser.Name,
 		Email:    newUser.Email,
-		Verified: newUser.Verified,
+		Verified: newUser.Verified, // DEPRECATED in flavor of role
 		Status:   string(StatusActive),
 		SlackID:  newUser.SlackID,
 		Groups:   newUser.Groups,
-	})
-	if err != nil {
+	}
+	newUser.Role = toRole(pguser)
+	if err := pgusers.New().Upsert(pguser); err != nil {
 		log.Errorf("failed persisting invited user, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -169,7 +176,8 @@ func Update(c *gin.Context) {
 		Name:     existingUser.Name,
 		Email:    existingUser.Email,
 		Status:   StatusType(existingUser.Status),
-		Verified: existingUser.Verified,
+		Verified: existingUser.Verified, // DEPRECATED in flavor of role
+		Role:     toRole(*existingUser),
 		SlackID:  existingUser.SlackID,
 		Groups:   existingUser.Groups,
 	})
@@ -193,6 +201,7 @@ func List(c *gin.Context) {
 				Email:    u.Email,
 				Status:   StatusType(u.Status),
 				Verified: u.Verified,
+				Role:     toRole(u), // DEPRECATED in flavor of role
 				SlackID:  u.SlackID,
 				Groups:   u.Groups,
 			})
@@ -252,7 +261,8 @@ func GetUserByID(c *gin.Context) {
 		Name:     user.Name,
 		Email:    user.Email,
 		Status:   StatusType(user.Status),
-		Verified: user.Verified,
+		Verified: user.Verified, // DEPRECATED in flavor of role
+		Role:     toRole(*user),
 		SlackID:  user.SlackID,
 		Groups:   user.Groups,
 	})
@@ -264,17 +274,29 @@ func GetUserInfo(c *gin.Context) {
 	if len(ctx.UserGroups) > 0 {
 		groupList = ctx.UserGroups
 	}
+	tenancyType := "selfhosted"
+	if isOrgMultiTenant {
+		tenancyType = "multitenant"
+	}
+	roleName := RoleStandardType
+	switch {
+	case ctx.IsAnonymous():
+		roleName = RoleUnregisteredType
+	case ctx.IsAdminUser():
+		roleName = RoleAdminType
+	}
 	userInfoData := map[string]any{
 		"id":             ctx.UserID,
 		"name":           ctx.UserName,
 		"email":          ctx.UserEmail,
 		"status":         ctx.UserStatus,
-		"verified":       true,
+		"verified":       true, // DEPRECATED in flavor of role (guest)
 		"slack_id":       ctx.SlackID,
 		"groups":         groupList,
-		"is_anonymous":   false,
-		"is_admin":       ctx.IsAdminUser(),
-		"is_multitenant": isOrgMultiTenant,
+		"is_admin":       ctx.IsAdminUser(), // DEPRECATED in flavor of role (admin)
+		"is_multitenant": isOrgMultiTenant,  // DEPRECATED is flavor of tenancy_type
+		"tenancy_type":   tenancyType,
+		"role":           roleName,
 		"org_id":         ctx.OrgID,
 		"org_name":       ctx.OrgName,
 	}
@@ -283,7 +305,6 @@ func GetUserInfo(c *gin.Context) {
 		userInfoData["email"] = ctx.UserAnonEmail
 		userInfoData["name"] = ctx.UserAnonProfile
 		userInfoData["id"] = ctx.UserAnonSubject
-		userInfoData["is_anonymous"] = true
 	}
 	c.JSON(http.StatusOK, userInfoData)
 }
@@ -343,4 +364,14 @@ func ListAllGroups(c *gin.Context) {
 func isValidMailAddress(email string) bool {
 	_, err := mail.ParseAddress(email)
 	return err == nil
+}
+
+func toRole(user pgrest.User) string {
+	if !user.Verified {
+		return RoleGuestType
+	}
+	if slices.Contains(user.Groups, types.GroupAdmin) {
+		return RoleAdminType
+	}
+	return RoleStandardType
 }

@@ -30,10 +30,6 @@ const (
 	EventFetchReviews           = "hoop-fetch-reviews"
 	EventApiExecReview          = "hoop-api-exec-review"
 	EventSearch                 = "hoop-search"
-	EventCreateClientKey        = "hoop-create-clientkey"
-	EventFetchClientKey         = "hoop-fetch-clientkey"
-	EventUpdateClientKey        = "hoop-update-clientkey"
-	EventDeleteClientKey        = "hoop-delete-clientkey"
 	EventOpenWebhooksDashboard  = "hoop-open-webhooks-dashboard"
 
 	EventGrpcExec                = "hoop-grpc-exec"

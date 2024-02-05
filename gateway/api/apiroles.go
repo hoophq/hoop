@@ -27,8 +27,8 @@ func FullAccessRole(c *gin.Context) {
 	c.Next()
 }
 
-// DefaultAccessRole grants access to admin and regular users
-func DefaultAccessRole(c *gin.Context) {
+// StandardAccessRole grants access to admin and regular users
+func StandardAccessRole(c *gin.Context) {
 	c.Set(roleContextKey, RoleDefaultAccess)
 	c.Next()
 }
