@@ -52,15 +52,10 @@ type (
 		PyroscopeIngestURL   string
 		PyroscopeAuthToken   string
 		AgentSentryDSN       string
-		Analytics            user.Analytics
 
 		RegisteredPlugins []plugintypes.Plugin
 
 		StoreV2 *storagev2.Store
-	}
-
-	AnalyticsService interface {
-		Track(ctx *types.APIContext, eventName string, properties map[string]any)
 	}
 )
 
@@ -321,24 +316,6 @@ func (s *Server) getConnection(name string, userCtx *user.Context) (*types.Conne
 		AgentMode:     ag.Mode,
 		AgentName:     ag.Name,
 	}, nil
-}
-
-func parseToLegacyUserContext(apictx *types.APIContext) *user.Context {
-	return &user.Context{
-		Org: &user.Org{
-			Id:   apictx.OrgID,
-			Name: apictx.OrgName,
-		},
-		User: &user.User{
-			Id:      apictx.UserID,
-			Org:     apictx.OrgID,
-			Name:    apictx.UserName,
-			Email:   apictx.UserEmail,
-			Status:  user.StatusType(apictx.UserStatus),
-			SlackID: apictx.SlackID, // TODO: check this
-			Groups:  apictx.UserGroups,
-		},
-	}
 }
 
 // closeChWithSleep sleep for d before closing the channel

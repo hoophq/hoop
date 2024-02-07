@@ -12,7 +12,6 @@ import (
 	"github.com/runopsio/hoop/common/monitoring"
 	"github.com/runopsio/hoop/common/version"
 	"github.com/runopsio/hoop/gateway/agent"
-	"github.com/runopsio/hoop/gateway/analytics"
 	"github.com/runopsio/hoop/gateway/api"
 	"github.com/runopsio/hoop/gateway/indexer"
 	"github.com/runopsio/hoop/gateway/notification"
@@ -52,9 +51,7 @@ func Run(listenAdmAddr string) {
 	}
 
 	storev2 := storagev2.NewStorage(nil)
-
 	idProvider := idp.NewProvider()
-	analyticsService := analytics.New()
 
 	grpcURL := os.Getenv("GRPC_URL")
 	if grpcURL == "" {
@@ -87,7 +84,6 @@ func Run(listenAdmAddr string) {
 		ReviewHandler:   review.Handler{Service: &reviewService},
 		RunbooksHandler: runbooks.Handler{},
 		IDProvider:      idProvider,
-		Analytics:       analyticsService,
 		GrpcURL:         grpcURL,
 
 		StoreV2: storev2,
@@ -103,7 +99,6 @@ func Run(listenAdmAddr string) {
 		PyroscopeIngestURL:   os.Getenv("PYROSCOPE_INGEST_URL"),
 		PyroscopeAuthToken:   os.Getenv("PYROSCOPE_AUTH_TOKEN"),
 		AgentSentryDSN:       "https://a6ecaeba31684f02ab8606a59301cd15@o4504559799566336.ingest.sentry.io/4504571759230976",
-		Analytics:            analyticsService,
 
 		StoreV2: storev2,
 	}

@@ -63,20 +63,19 @@ func Post(c *gin.Context) {
 }
 
 func identifySignup(u pgrest.User, orgName, userAgent, apiURL string) {
-	trackSignupContext := &types.APIContext{
+	client := analytics.New()
+	client.Identify(&types.APIContext{
 		OrgID:      u.OrgID,
 		OrgName:    orgName,
-		UserID:     u.Email,
+		UserID:     u.Email, // use user id as email
 		UserName:   u.Name,
 		UserEmail:  u.Email,
 		UserGroups: u.Groups,
-	}
-	client := analytics.New()
-	client.Identify(trackSignupContext)
+	})
 	go func() {
 		// wait some time until the identify call get times to reach to intercom
 		time.Sleep(time.Second * 10)
-		client.Track(trackSignupContext, analytics.EventSignup, map[string]any{
+		client.Track(u.Email, analytics.EventSignup, map[string]any{
 			"user-agent": userAgent,
 			"name":       u.Name,
 			"api-url":    apiURL,

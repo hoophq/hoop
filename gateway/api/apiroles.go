@@ -8,11 +8,11 @@ type roleType string
 
 const (
 	// RoleAdminOnly must allow only admins to access certain resources
-	RoleAdminOnly roleType = "admin-only"
-	// RoleFullAccess must grant access to admin, regular and anonymous users
-	RoleFullAccess roleType = "full-access"
-	// RoleDefaultAccess must grant access to admin and regular users
-	RoleDefaultAccess roleType = "default-access"
+	RoleAdminOnly roleType = "admin"
+	// RoleAnontAccess must grant access to admin, regular and anonymous users
+	RoleAnonAccess roleType = "anon"
+	// RoleStandardAccess must grant access to admin and regular users
+	RoleStandardAccess roleType = "standard"
 )
 
 // AdminOnlyAccessPermission is a middleware that checks if the user has admin access.
@@ -21,15 +21,15 @@ func AdminOnlyAccessRole(c *gin.Context) {
 	c.Next()
 }
 
-// FullAccessRole grants access to admin, regular and anonymous users
-func FullAccessRole(c *gin.Context) {
-	c.Set(roleContextKey, RoleFullAccess)
+// AnonAccessRole grants access to admin, regular and anonymous users
+func AnonAccessRole(c *gin.Context) {
+	c.Set(roleContextKey, RoleAnonAccess)
 	c.Next()
 }
 
 // StandardAccessRole grants access to admin and regular users
 func StandardAccessRole(c *gin.Context) {
-	c.Set(roleContextKey, RoleDefaultAccess)
+	c.Set(roleContextKey, RoleStandardAccess)
 	c.Next()
 }
 

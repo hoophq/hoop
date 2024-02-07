@@ -1,20 +1,12 @@
 package user
 
 import (
-	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"go.uber.org/zap"
 
 	"github.com/gin-gonic/gin"
 )
 
-type (
-	Handler struct{}
-
-	Analytics interface {
-		Identify(ctx *types.APIContext)
-		Track(ctx *types.APIContext, eventName string, properties map[string]any)
-	}
-)
+type Handler struct{}
 
 // ContextLogger do a best effort to get the context logger,
 // if it fail to retrieve, returns a noop logger

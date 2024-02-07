@@ -5,7 +5,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/segmentio/analytics-go/v3"
@@ -19,13 +18,16 @@ type Segment struct {
 
 func New() *Segment { return &Segment{analytics.New("IuHRCK0Q9fdliDdgjQDddfrPFRG0X0RA")} }
 func (s *Segment) Identify(ctx *types.APIContext) {
-	if s.Client == nil || ctx == nil || ctx.UserID == "" || ctx.OrgID == "" ||
+	if s.Client == nil || ctx == nil || ctx.UserEmail == "" || ctx.OrgID == "" ||
 		envName == "127.0.0.1" || envName == "localhost" {
 		return
 	}
 
 	_ = s.Client.Enqueue(analytics.Identify{
-		UserId: ctx.UserID,
+		// Segment recommends using an unique id for user id
+		// However we use the e-mail to avoid having to associate the
+		// user id with the e-mail.
+		UserId: ctx.UserEmail,
 		Traits: analytics.NewTraits().
 			SetName(ctx.UserName).
 			SetEmail(ctx.UserEmail).
@@ -49,25 +51,17 @@ func (s *Segment) Identify(ctx *types.APIContext) {
 }
 
 // Track generates an event to segment, if the context is not set, it will emit an anoynimous event
-func (s *Segment) Track(ctx *types.APIContext, eventName string, properties map[string]any) {
-	if s.Client == nil || envName == "127.0.0.1" || envName == "localhost" {
+func (s *Segment) Track(userEmail, eventName string, properties map[string]any) {
+	if s.Client == nil || envName == "127.0.0.1" || envName == "localhost" || userEmail == "" {
 		return
 	}
 	if properties == nil {
 		properties = map[string]any{}
 	}
 	properties["environment"] = envName
-	if ctx == nil || ctx.UserID == "" {
-		_ = s.Client.Enqueue(analytics.Track{
-			AnonymousId: uuid.NewString(),
-			Event:       eventName,
-			Properties:  properties,
-		})
-		return
-	}
-	properties["email"] = ctx.UserEmail
+	properties["email"] = userEmail
 	_ = s.Client.Enqueue(analytics.Track{
-		UserId:     ctx.UserID,
+		UserId:     userEmail,
 		Event:      eventName,
 		Properties: properties,
 	})

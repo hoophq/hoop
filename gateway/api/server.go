@@ -30,7 +30,6 @@ import (
 	"github.com/runopsio/hoop/gateway/runbooks"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/storagev2"
-	"github.com/runopsio/hoop/gateway/user"
 	"go.uber.org/zap"
 )
 
@@ -42,7 +41,6 @@ type (
 		RunbooksHandler runbooks.Handler
 		IDProvider      *idp.Provider
 		GrpcURL         string
-		Analytics       user.Analytics
 		logger          *zap.Logger
 
 		StoreV2 *storagev2.Store
@@ -100,24 +98,21 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.GET("/callback", loginHandler.LoginCallback)
 	route.GET("/healthz", healthz.LivenessHandler())
 	route.POST("/signup",
-		FullAccessRole,
+		AnonAccessRole,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventSignup),
 		signupapi.Post)
 	route.GET("/users",
 		AdminOnlyAccessRole,
 		api.Authenticate,
-		api.TrackRequest(analytics.EventFetchUsers),
 		userapi.List)
 	route.GET("/users/:id",
 		AdminOnlyAccessRole,
 		api.Authenticate,
-		api.TrackRequest(analytics.EventFetchUsers),
 		userapi.GetUserByID)
 	route.GET("/userinfo",
-		FullAccessRole,
+		AnonAccessRole,
 		api.Authenticate,
-		api.TrackRequest(analytics.EventFetchUsers),
 		userapi.GetUserInfo)
 	route.PATCH("/users/self/slack",
 		api.Authenticate,
@@ -180,11 +175,9 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		apiconnections.RunExec)
 	route.GET("/connections",
 		api.Authenticate,
-		api.TrackRequest(analytics.EventFetchConnections),
 		apiconnections.List)
 	route.GET("/connections/:nameOrID",
 		api.Authenticate,
-		api.TrackRequest(analytics.EventFetchConnections),
 		apiconnections.Get)
 	route.DELETE("/connections/:name",
 		AdminOnlyAccessRole,
@@ -252,7 +245,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.PUT("/plugins/:name",
 		AdminOnlyAccessRole,
 		api.Authenticate,
-		api.TrackRequest(analytics.EventUdpatePlugin),
+		api.TrackRequest(analytics.EventUpdatePlugin),
 		AuditApiChanges,
 		apiplugins.Put)
 	route.GET("/plugins",
@@ -264,28 +257,24 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.PUT("/plugins/:name/config",
 		AdminOnlyAccessRole,
 		api.Authenticate,
-		api.TrackRequest(analytics.EventUdpatePluginConfig),
+		api.TrackRequest(analytics.EventUpdatePluginConfig),
 		AuditApiChanges,
 		apiplugins.PutConfig)
 
 	// alias routes
 	route.GET("/plugins/audit/sessions/:session_id",
 		api.Authenticate,
-		api.TrackRequest(analytics.EventFetchSessions),
 		sessionapi.Get)
 	route.GET("/plugins/audit/sessions",
 		api.Authenticate,
-		api.TrackRequest(analytics.EventFetchSessions),
 		sessionapi.List)
 
 	route.GET("/sessions/:session_id",
 		api.Authenticate,
-		api.TrackRequest(analytics.EventFetchSessions),
 		sessionapi.Get)
 	route.GET("/sessions/:session_id/download", sessionapi.DownloadSession)
 	route.GET("/sessions",
 		api.Authenticate,
-		api.TrackRequest(analytics.EventFetchSessions),
 		sessionapi.List)
 	route.POST("/sessions",
 		api.Authenticate,
@@ -304,13 +293,11 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 
 	route.GET("/plugins/runbooks/connections/:name/templates",
 		api.Authenticate,
-		api.TrackRequest(analytics.EventListRunbooks),
 		api.RunbooksHandler.ListByConnection,
 	)
 
 	route.GET("/plugins/runbooks/templates",
 		api.Authenticate,
-		api.TrackRequest(analytics.EventListRunbooks),
 		api.RunbooksHandler.List,
 	)
 

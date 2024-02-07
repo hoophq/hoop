@@ -11,6 +11,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/runopsio/hoop/common/apiutils"
 	"github.com/runopsio/hoop/common/proto"
 	apiconnections "github.com/runopsio/hoop/gateway/api/connections"
 	sessionapi "github.com/runopsio/hoop/gateway/api/session"
@@ -238,6 +239,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 		SessionID:      newSession.ID,
 		ConnectionName: connectionName,
 		BearerToken:    getAccessToken(c),
+		UserAgent:      apiutils.NormalizeUserAgent(c.Request.Header.Values),
 		UserInfo:       nil,
 	})
 	if err != nil {

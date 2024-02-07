@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/runopsio/hoop/common/apiutils"
 	"github.com/runopsio/hoop/gateway/clientexec"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	pluginstorage "github.com/runopsio/hoop/gateway/storagev2/plugin"
@@ -26,6 +27,7 @@ func RunExec(c *gin.Context, session types.Session, clientArgs []string) {
 		SessionID:      session.ID,
 		ConnectionName: session.Connection,
 		BearerToken:    getAccessToken(c),
+		UserAgent:      apiutils.NormalizeUserAgent(c.Request.Header.Values),
 		UserInfo:       nil,
 	})
 	if err != nil {
@@ -181,6 +183,7 @@ func RunReviewedExec(c *gin.Context) {
 		SessionID:      session.ID,
 		ConnectionName: session.Connection,
 		BearerToken:    getAccessToken(c),
+		UserAgent:      apiutils.NormalizeUserAgent(c.Request.Header.Values),
 		UserInfo:       nil,
 	})
 	if err != nil {

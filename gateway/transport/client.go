@@ -8,6 +8,7 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/google/uuid"
+	"github.com/runopsio/hoop/common/apiutils"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
@@ -228,22 +229,29 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 	if clientVerb == pb.ClientVerbConnect {
 		eventName = analytics.EventGrpcConnect
 	}
-	s.Analytics.Track(&gwctx.UserContext, eventName, map[string]any{
-		"connection-name": gwctx.Connection.Name,
-		"connection-type": conn.Type,
-		"client-version":  mdget(md, "version"),
-		"go-version":      mdget(md, "go-version"),
-		"platform":        mdget(md, "platform"),
-		"hostname":        hostname,
-		"user-agent":      mdget(md, "user-agent"),
-		"origin":          clientOrigin,
-		"verb":            clientVerb,
+	var cmdEntrypoint string
+	if len(conn.CmdEntrypoint) > 0 {
+		cmdEntrypoint = conn.CmdEntrypoint[0]
+	}
+
+	userAgent := apiutils.NormalizeUserAgent(md.Get)
+	analytics.New().Track(gwctx.UserContext.UserEmail, eventName, map[string]any{
+		"connection-name":       gwctx.Connection.Name,
+		"connection-type":       conn.Type,
+		"connection-entrypoint": cmdEntrypoint,
+		"client-version":        mdget(md, "version"),
+		"platform":              mdget(md, "platform"),
+		"hostname":              hostname,
+		"user-agent":            userAgent,
+		"origin":                clientOrigin,
+		"verb":                  clientVerb,
 	})
 
-	log.With("sid", sessionID, "mode", agentMode, "agent-name", conn.AgentName, "agent-id", conn.AgentID).
-		Infof("proxy connected: user=%v,hostname=%v,origin=%v,verb=%v,platform=%v,version=%v,goversion=%v",
-			gwctx.UserContext.UserEmail, mdget(md, "hostname"), clientOrigin, clientVerb,
-			mdget(md, "platform"), mdget(md, "version"), mdget(md, "goversion"))
+	logAttrs := []any{"sid", sessionID, "mode", agentMode, "agent-name", conn.AgentName,
+		"agent-id", conn.AgentID, "ua", userAgent}
+	log.With(logAttrs...).Infof("proxy connected: user=%v,hostname=%v,origin=%v,verb=%v,platform=%v,version=%v,goversion=%v",
+		gwctx.UserContext.UserEmail, mdget(md, "hostname"), clientOrigin, clientVerb,
+		mdget(md, "platform"), mdget(md, "version"), mdget(md, "goversion"))
 	clientErr := s.listenClientMessages(stream, pluginContext)
 	if status, ok := status.FromError(clientErr); ok && status.Code() == codes.Canceled {
 		log.With("sid", sessionID, "origin", clientOrigin, "mode", agentMode).Infof("grpc client connection canceled")
