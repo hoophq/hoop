@@ -81,7 +81,6 @@ func (s *serverStreamWrapper) Context() context.Context {
 }
 
 func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	log.Debugf("auth grpc interceptor, method=%v", info.FullMethod)
 	md, ok := metadata.FromIncomingContext(ss.Context())
 	if !ok {
 		return status.Error(codes.InvalidArgument, "missing context metadata")

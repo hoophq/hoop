@@ -8,6 +8,7 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/google/uuid"
+	"github.com/runopsio/hoop/common/apiutils"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
@@ -202,15 +203,13 @@ func (s *Server) listenProxyManagerMessages(bearerToken, sessionID string, ctx *
 					disp.sendResponse(nil, err)
 					return status.Errorf(codes.FailedPrecondition, err.Error())
 				}
-
-				s.Analytics.Track(ctx.APIContext, analytics.EventGrpcProxyManagerConnect, map[string]any{
+				analytics.New().Track(ctx.UserEmail, analytics.EventGrpcProxyManagerConnect, map[string]any{
 					"connection-name": req.RequestConnectionName,
 					"connection-type": conn.Type,
 					"client-version":  mdget(md, "version"),
-					"go-version":      mdget(md, "go-version"),
 					"platform":        mdget(md, "platform"),
 					"hostname":        mdget(md, "hostname"),
-					"user-agent":      mdget(md, "user-agent"),
+					"user-agent":      apiutils.NormalizeUserAgent(md.Get),
 					"origin":          clientOrigin,
 					"verb":            pb.ClientVerbConnect,
 				})

@@ -11,6 +11,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/runopsio/hoop/common/apiutils"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/gateway/analytics"
 	"github.com/runopsio/hoop/gateway/pgrest"
@@ -91,25 +92,24 @@ func Create(c *gin.Context) {
 		return
 	}
 
-	trackInvitedUserContext := &types.APIContext{
+	ctx.Analytics().Identify(&types.APIContext{
 		OrgID:      ctx.OrgID,
 		OrgName:    ctx.OrgName,
 		UserID:     newUser.Email,
 		UserName:   newUser.Name,
 		UserEmail:  newUser.Email,
 		UserGroups: newUser.Groups,
-	}
-	ctx.Analytics().Identify(trackInvitedUserContext)
+	})
 	go func() {
 		// wait some time until the identify call get times to reach to intercom
 		time.Sleep(time.Second * 10)
 		properties := map[string]any{
-			"user-agent": c.GetHeader("user-agent"),
+			"user-agent": apiutils.NormalizeUserAgent(c.Request.Header.Values),
 			"name":       newUser.Name,
 			"api-url":    ctx.ApiURL,
 		}
-		ctx.Analytics().Track(trackInvitedUserContext, analytics.EventSignup, properties)
-		ctx.Analytics().Track(trackInvitedUserContext, analytics.EventCreateInvitedUser, properties)
+		ctx.Analytics().Track(newUser.Email, analytics.EventSignup, properties)
+		ctx.Analytics().Track(newUser.Email, analytics.EventCreateInvitedUser, properties)
 	}()
 
 	c.JSON(http.StatusCreated, newUser)
@@ -161,7 +161,7 @@ func Update(c *gin.Context) {
 	analytics.New().Identify(&types.APIContext{
 		OrgID:      ctx.OrgID,
 		OrgName:    ctx.OrgName,
-		UserID:     existingUser.Subject,
+		UserID:     existingUser.Email,
 		UserName:   existingUser.Name,
 		UserEmail:  existingUser.Email,
 		UserGroups: existingUser.Groups,

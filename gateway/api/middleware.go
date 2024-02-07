@@ -3,17 +3,21 @@ package api
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
+	"github.com/runopsio/hoop/common/apiutils"
 	"github.com/runopsio/hoop/common/dsnkeys"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/version"
+	"github.com/runopsio/hoop/gateway/analytics"
 	pguserauth "github.com/runopsio/hoop/gateway/pgrest/userauth"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/user"
@@ -48,8 +52,8 @@ func (a *Api) Authenticate(c *gin.Context) {
 		c.Set(user.ContextLoggerKey, zaplogger.Sugar())
 	}
 	switch roleName {
-	case RoleDefaultAccess: // noop
-	case RoleFullAccess:
+	case RoleStandardAccess: // noop
+	case RoleAnonAccess:
 		if !ctx.IsEmpty() {
 			break
 		}
@@ -197,7 +201,7 @@ func AuditApiChanges(c *gin.Context) {
 		"org", ctx.OrgName,
 		"method", c.Request.Method,
 		"path", c.Request.URL.Path,
-		"user-agent", c.GetHeader("user-agent"),
+		"user-agent", apiutils.NormalizeUserAgent(c.Request.Header.Values),
 		"content-length", c.Request.ContentLength,
 	).Info("api-audit")
 	c.Next()
@@ -210,13 +214,65 @@ func (a *Api) TrackRequest(eventName string) func(c *gin.Context) {
 			c.Next()
 			return
 		}
-		a.Analytics.Track(ctx.ToAPIContext(), eventName, map[string]any{
+
+		properties := map[string]any{
 			"host":           c.Request.Host,
 			"content-length": c.Request.ContentLength,
-			"user-agent":     c.Request.Header.Get("User-Agent"),
-		})
+			"user-agent":     apiutils.NormalizeUserAgent(c.Request.Header.Values),
+		}
+		switch eventName {
+		case analytics.EventCreateAgent:
+			requestBody, _ := io.ReadAll(c.Request.Body)
+			data := getBodyAsMap(requestBody)
+			reCopyBody(requestBody, c)
+			if agentMode, ok := data["mode"]; ok {
+				properties["mode"] = fmt.Sprintf("%v", agentMode)
+			}
+		case analytics.EventUpdateConnection, analytics.EventCreateConnection:
+			requestBody, _ := io.ReadAll(c.Request.Body)
+			data := getBodyAsMap(requestBody)
+			reCopyBody(requestBody, c)
+			for key, val := range data {
+				val := fmt.Sprintf("%v", val)
+				switch key {
+				case "command", "type", "subtype":
+					properties[key] = fmt.Sprintf("%v", val)
+				}
+			}
+		case analytics.EventCreatePlugin, analytics.EventUpdatePlugin, analytics.EventUpdatePluginConfig:
+			resourceName, ok := c.Params.Get("name")
+			if !ok {
+				requestBody, _ := io.ReadAll(c.Request.Body)
+				data := getBodyAsMap(requestBody)
+				reCopyBody(requestBody, c)
+				resourceName = fmt.Sprintf("%v", data["name"])
+			}
+			if resourceName != "" {
+				properties["plugin-name"] = resourceName
+			}
+		}
+		var userEmail string
+		if ctx.User != nil {
+			userEmail = ctx.User.Email
+		}
+		analytics.New().Track(userEmail, eventName, properties)
 		c.Next()
 	}
+}
+
+func reCopyBody(requestBody []byte, c *gin.Context) {
+	if len(requestBody) == 0 {
+		return
+	}
+	newBody := make([]byte, len(requestBody))
+	_ = copy(newBody, requestBody)
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(newBody))
+}
+
+func getBodyAsMap(data []byte) map[string]any {
+	out := map[string]any{}
+	_ = json.Unmarshal(data, &out)
+	return out
 }
 
 func CORSMiddleware() gin.HandlerFunc {
@@ -225,7 +281,7 @@ func CORSMiddleware() gin.HandlerFunc {
 		c.Writer.Header().Set("Server", fmt.Sprintf("hoopgateway/%s", vs.Version))
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, accept, origin, x-backend-api")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, accept, origin, x-backend-api, user-client")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
 
 		if c.Request.Method == "OPTIONS" {

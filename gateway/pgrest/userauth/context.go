@@ -31,6 +31,7 @@ func (c *Context) IsEmpty() bool { return c.OrgID == "" && c.UserSubject == "" }
 // The user is considered anonymous if the UserAnonSubject and UserAnonEmail are not set.
 func (c *Context) IsAnonymous() bool { return c.UserAnonSubject != "" && c.UserAnonEmail != "" }
 
+// func (c *Context) GetUserEmail() string    { return c.UserEmail }
 func (c *Context) GetSubject() string      { return c.UserSubject }
 func (c *Context) GetOrgID() string        { return c.OrgID }
 func (c *Context) GetUserGroups() []string { return c.UserGroups }

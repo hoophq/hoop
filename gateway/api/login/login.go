@@ -10,6 +10,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/runopsio/hoop/common/apiutils"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/analytics"
@@ -137,7 +138,7 @@ func (h *handler) LoginCallback(c *gin.Context) {
 		// the signup process is performed by /api/signup when the gateway is running multi tenant mode
 		// track as a login event
 		if isNewUser {
-			h.analyticsTrack(false, c.GetHeader("user-agent"), ctx)
+			h.analyticsTrack(false, apiutils.NormalizeUserAgent(c.Request.Header.Values), ctx)
 		}
 		login.Outcome = "success"
 		c.Redirect(http.StatusTemporaryRedirect, redirectSuccessURL)
@@ -350,25 +351,24 @@ func debugClaims(subject string, claims map[string]any, accessToken *oauth2.Toke
 
 // analyticsTrack tracks the user signup/login event
 func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *pguserauth.Context) {
-	trackCtx := &types.APIContext{
+	client := analytics.New()
+	if !isNewUser {
+		client.Track(ctx.UserEmail, analytics.EventLogin, map[string]any{"user-agent": userAgent})
+		return
+	}
+	client.Identify(&types.APIContext{
 		OrgID:      ctx.OrgID,
 		OrgName:    ctx.OrgName,
-		UserID:     ctx.UserEmail,
+		UserID:     ctx.UserEmail, // use user id as email
 		UserName:   ctx.UserName,
 		UserEmail:  ctx.UserEmail,
 		UserGroups: ctx.UserGroups,
 		ApiURL:     h.idpProv.ApiURL,
-	}
-	client := analytics.New()
-	if !isNewUser {
-		client.Track(trackCtx, analytics.EventLogin, map[string]any{"user-agent": userAgent})
-		return
-	}
-	client.Identify(trackCtx)
+	})
 	go func() {
 		// wait some time until the identify call get times to reach to intercom
 		time.Sleep(time.Second * 10)
-		client.Track(trackCtx, analytics.EventSignup, map[string]any{
+		client.Track(ctx.UserEmail, analytics.EventSignup, map[string]any{
 			"user-agent": userAgent,
 			"name":       ctx.UserName,
 			"api-url":    h.idpProv.ApiURL,

@@ -12,6 +12,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/runopsio/hoop/common/apiutils"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/storagev2"
@@ -312,7 +313,7 @@ func DownloadSession(c *gin.Context) {
 		"line-break", withLineBreak, "event-time", withEventTime,
 		"jsonfmt", jsonFmt, "csvfmt", csvFmt, "event-types", eventTypes).
 		Infof("session download request, valid=%v, org=%v, user=%v, groups=%#v, user-agent=%v",
-			token == requestToken, ctx.OrgID, ctx.UserID, ctx.UserGroups, c.GetHeader("user-agent"))
+			token == requestToken, ctx.OrgID, ctx.UserID, ctx.UserGroups, apiutils.NormalizeUserAgent(c.Request.Header.Values))
 	if token != requestToken {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"status":  http.StatusUnauthorized,

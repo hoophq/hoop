@@ -66,6 +66,7 @@ type (
 		SessionID      string
 		ConnectionName string
 		BearerToken    string
+		UserAgent      string
 		ConnectionInfo *types.ConnectionInfo
 		UserInfo       *types.APIContext
 	}
@@ -157,6 +158,9 @@ func New(opts *Options) (*clientExec, error) {
 		encConnInfo = base64.StdEncoding.EncodeToString(connInfoBytes)
 	}
 	userAgent := fmt.Sprintf("clientexec/%v", version.Get().Version)
+	if opts.UserAgent != "" {
+		userAgent = opts.UserAgent
+	}
 	client, err := grpc.ConnectLocalhost(
 		opts.BearerToken,
 		userAgent,
