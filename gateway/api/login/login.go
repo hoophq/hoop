@@ -121,7 +121,9 @@ func (h *handler) LoginCallback(c *gin.Context) {
 		return
 	}
 
-	log.With("sub", uinfo.Subject, "email", uinfo.Email, "profile", uinfo.Profile, "multitenant", user.IsOrgMultiTenant()).
+	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
+	log.With("sub", uinfo.Subject, "email", uinfo.Email, "profile", uinfo.Profile,
+		"multitenant", user.IsOrgMultiTenant(), "ua", userAgent).
 		Infof("success login on identity provider")
 
 	// multi tenant won't sync users
@@ -138,7 +140,7 @@ func (h *handler) LoginCallback(c *gin.Context) {
 		// the signup process is performed by /api/signup when the gateway is running multi tenant mode
 		// track as a login event
 		if isNewUser {
-			h.analyticsTrack(false, apiutils.NormalizeUserAgent(c.Request.Header.Values), ctx)
+			h.analyticsTrack(false, userAgent, ctx)
 		}
 		login.Outcome = "success"
 		c.Redirect(http.StatusTemporaryRedirect, redirectSuccessURL)
@@ -159,7 +161,7 @@ func (h *handler) LoginCallback(c *gin.Context) {
 		return
 	}
 
-	h.analyticsTrack(isNewUser, c.GetHeader("user-agent"), ctx)
+	h.analyticsTrack(isNewUser, userAgent, ctx)
 
 	// TODO: add analytics (identify / track)
 	login.Outcome = "success"

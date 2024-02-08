@@ -97,6 +97,14 @@ func (p *Provider) userInfoEndpoint(accessToken string) (*oidc.UserInfo, error) 
 		AccessToken: accessToken,
 		TokenType:   "Bearer",
 	}})
+	claims := map[string]any{}
+	if err = user.Claims(&claims); err != nil {
+		return nil, fmt.Errorf("failed verifying user info claims, err=%v", err)
+	}
+	// when profile is empty, try to obtain from the name claims
+	if name, ok := claims["name"]; ok && len(user.Profile) == 0 {
+		user.Profile = fmt.Sprintf("%v", name)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed validating token at userinfo endpoint, err=%v", err)
 	}
