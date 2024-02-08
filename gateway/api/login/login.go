@@ -293,34 +293,7 @@ func (h *handler) verifyIDToken(code string) (token *oauth2.Token, uinfo idp.Pro
 		return nil, uinfo, fmt.Errorf("failed extracting id token claims, reason=%v", err)
 	}
 	debugClaims(idToken.Subject, idTokenClaims, token)
-	uinfo = parseIDTokenClaims(idTokenClaims)
-	return
-}
-
-func parseIDTokenClaims(idTokenClaims map[string]any) (u idp.ProviderUserInfo) {
-	email, _ := idTokenClaims["email"].(string)
-	profile, _ := idTokenClaims["name"].(string)
-	u.Email = email
-	u.Profile = profile
-	switch groupsClaim := idTokenClaims[proto.CustomClaimGroups].(type) {
-	case string:
-		u.MustSyncGroups = true
-		if groupsClaim != "" {
-			u.Groups = []string{groupsClaim}
-		}
-	case []any:
-		u.MustSyncGroups = true
-		for _, g := range groupsClaim {
-			groupName, _ := g.(string)
-			if groupName == "" {
-				continue
-			}
-			u.Groups = append(u.Groups, groupName)
-		}
-	case nil: // noop
-	default:
-		log.Errorf("failed syncing group claims, reason=unknown type:%T", groupsClaim)
-	}
+	uinfo = idp.ParseIDTokenClaims(idTokenClaims)
 	return
 }
 

@@ -20,7 +20,7 @@ type Context struct {
 	UserAnonSubject       string
 	UserAnonProfile       string
 	UserAnonEmail         string
-	UserAnonEmailVerified bool
+	UserAnonEmailVerified *bool
 }
 
 // IsEmpty returns true if the user is not logged in and has not signed up yet.

@@ -13,6 +13,7 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/runopsio/hoop/common/log"
+	"github.com/runopsio/hoop/common/proto"
 	"golang.org/x/oauth2"
 )
 
@@ -36,11 +37,14 @@ type (
 		token *oauth2.Token
 	}
 	ProviderUserInfo struct {
-		Subject        string
-		Email          string
-		Groups         []string
+		Subject       string
+		Email         string
+		EmailVerified *bool
+		Groups        []string
+		Profile       string
+		Picture       string
+
 		MustSyncGroups bool
-		Profile        string
 	}
 )
 
@@ -53,7 +57,7 @@ func (p *Provider) VerifyIDToken(token *oauth2.Token) (*oidc.IDToken, error) {
 	return p.Verify(p.Context, rawIDToken)
 }
 
-func (p *Provider) VerifyAccessTokenWithUserInfo(accessToken string) (*oidc.UserInfo, error) {
+func (p *Provider) VerifyAccessTokenWithUserInfo(accessToken string) (*ProviderUserInfo, error) {
 	return p.userInfoEndpoint(accessToken)
 }
 
@@ -92,23 +96,26 @@ func (p *Provider) VerifyAccessToken(accessToken string) (string, error) {
 	return "", fmt.Errorf("failed type casting token.Claims (%T) to jwt.MapClaims", token.Claims)
 }
 
-func (p *Provider) userInfoEndpoint(accessToken string) (*oidc.UserInfo, error) {
+func (p *Provider) userInfoEndpoint(accessToken string) (*ProviderUserInfo, error) {
 	user, err := p.Provider.UserInfo(context.Background(), &UserInfoToken{token: &oauth2.Token{
 		AccessToken: accessToken,
 		TokenType:   "Bearer",
 	}})
+	if err != nil {
+		return nil, fmt.Errorf("failed validating token at userinfo endpoint, err=%v", err)
+	}
 	claims := map[string]any{}
 	if err = user.Claims(&claims); err != nil {
 		return nil, fmt.Errorf("failed verifying user info claims, err=%v", err)
 	}
-	// when profile is empty, try to obtain from the name claims
-	if name, ok := claims["name"]; ok && len(user.Profile) == 0 {
-		user.Profile = fmt.Sprintf("%v", name)
+	uinfo := ParseIDTokenClaims(claims)
+	uinfo.Email = user.Email
+	uinfo.Subject = user.Subject
+	uinfo.EmailVerified = &user.EmailVerified
+	if len(user.Profile) > 0 {
+		uinfo.Profile = user.Profile
 	}
-	if err != nil {
-		return nil, fmt.Errorf("failed validating token at userinfo endpoint, err=%v", err)
-	}
-	return user, nil
+	return &uinfo, nil
 }
 
 func NewProvider() *Provider {
@@ -215,6 +222,39 @@ func downloadJWKS(jwksURL string) *keyfunc.JWKS {
 		log.Fatalf("failed loading jwks url, reason=%v", err)
 	}
 	return jwks
+}
+
+func ParseIDTokenClaims(idTokenClaims map[string]any) (u ProviderUserInfo) {
+	email, _ := idTokenClaims["email"].(string)
+	if profile, ok := idTokenClaims["name"].(string); ok {
+		u.Profile = profile
+	}
+	profilePicture, _ := idTokenClaims["picture"].(string)
+	if emailVerified, ok := idTokenClaims["email_verified"].(bool); ok {
+		u.EmailVerified = &emailVerified
+	}
+	u.Picture = profilePicture
+	u.Email = email
+	switch groupsClaim := idTokenClaims[proto.CustomClaimGroups].(type) {
+	case string:
+		u.MustSyncGroups = true
+		if groupsClaim != "" {
+			u.Groups = []string{groupsClaim}
+		}
+	case []any:
+		u.MustSyncGroups = true
+		for _, g := range groupsClaim {
+			groupName, _ := g.(string)
+			if groupName == "" {
+				continue
+			}
+			u.Groups = append(u.Groups, groupName)
+		}
+	case nil: // noop
+	default:
+		log.Errorf("failed syncing group claims, reason=unknown type:%T", groupsClaim)
+	}
+	return
 }
 
 func (u *UserInfoToken) Token() (*oauth2.Token, error) { return u.token, nil }

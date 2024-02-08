@@ -19,7 +19,7 @@ type APIContext struct {
 	UserAnonSubject       string
 	UserAnonEmail         string
 	UserAnonProfile       string
-	UserAnonEmailVerified bool
+	UserAnonEmailVerified *bool
 
 	ApiURL  string `json:"-"`
 	GrpcURL string `json:"-"`

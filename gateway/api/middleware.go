@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/common/apiutils"
@@ -19,6 +18,7 @@ import (
 	"github.com/runopsio/hoop/common/version"
 	"github.com/runopsio/hoop/gateway/analytics"
 	pguserauth "github.com/runopsio/hoop/gateway/pgrest/userauth"
+	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/user"
 	"go.uber.org/zap"
@@ -186,7 +186,7 @@ func (a *Api) validateAccessToken(c *gin.Context) (string, error) {
 }
 
 // validateTokenWithUserInfo validates the access token by the user info endpoint
-func (a *Api) validateTokenWithUserInfo(c *gin.Context) (*oidc.UserInfo, error) {
+func (a *Api) validateTokenWithUserInfo(c *gin.Context) (*idp.ProviderUserInfo, error) {
 	accessToken, err := parseToken(c)
 	if err != nil {
 		return nil, err

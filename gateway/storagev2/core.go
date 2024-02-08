@@ -80,7 +80,7 @@ func (c *Context) WithUserInfo(name, email, status string, groups []string) *Con
 	return c
 }
 
-func (c *Context) WithAnonymousInfo(profileName, email, subject string, emailVerified bool) *Context {
+func (c *Context) WithAnonymousInfo(profileName, email, subject string, emailVerified *bool) *Context {
 	c.UserAnonEmail = email
 	c.UserAnonProfile = profileName
 	c.UserAnonSubject = subject
