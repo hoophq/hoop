@@ -82,9 +82,13 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "The session couldn't be created"})
 		return
 	}
+	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
+	if userAgent == "webapp.core" {
+		userAgent = "webapp.editor.exec"
+	}
 
 	// running RunExec from run-exec.go
-	RunExec(c, newSession, body.ClientArgs)
+	RunExec(c, newSession, userAgent, body.ClientArgs)
 }
 
 func CoerceMetadataFields(metadata map[string]any) error {

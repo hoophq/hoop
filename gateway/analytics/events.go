@@ -36,13 +36,12 @@ const (
 
 	// exec
 	EventGrpcExec          = "hoop-grpc-exec"
-	EventApiExecConnection = "hoop-api-exec-connection"
+	EventApiExecConnection = "hoop-api-exec-connection" // endpoint deprecated
 	EventApiExecSession    = "hoop-api-exec-session"
 	EventExecRunbook       = "hoop-exec-runbook"
 	EventApiExecReview     = "hoop-api-exec-review"
 
 	// connect
-	EventGrpcConnect             = "hoop-grpc-connect"
-	EventGrpcProxyManagerConnect = "hoop-grpc-proxy-manager-connect"
-	EventApiProxymanagerConnect  = "hoop-api-proxymanager-connect"
+	EventGrpcConnect            = "hoop-grpc-connect"
+	EventApiProxymanagerConnect = "hoop-api-proxymanager-connect"
 )

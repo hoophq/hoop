@@ -9,6 +9,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/runopsio/hoop/common/apiutils"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	sessionapi "github.com/runopsio/hoop/gateway/api/session"
@@ -350,7 +351,11 @@ func RunExec(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "The session couldn't be created"})
 		return
 	}
-	sessionapi.RunExec(c, newSession, body.ClientArgs)
+	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
+	if userAgent == "webapp.core" {
+		userAgent = "webapp.editor.exec"
+	}
+	sessionapi.RunExec(c, newSession, userAgent, body.ClientArgs)
 }
 
 // FetchByName fetches a connection based in access control rules

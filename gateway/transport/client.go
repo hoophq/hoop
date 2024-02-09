@@ -238,6 +238,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 	analytics.New().Track(gwctx.UserContext.UserEmail, eventName, map[string]any{
 		"connection-name":       gwctx.Connection.Name,
 		"connection-type":       conn.Type,
+		"connection-subtype":    conn.SubType,
 		"connection-entrypoint": cmdEntrypoint,
 		"client-version":        mdget(md, "version"),
 		"platform":              mdget(md, "platform"),
