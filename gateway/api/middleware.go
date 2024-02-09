@@ -233,9 +233,21 @@ func (a *Api) TrackRequest(eventName string) func(c *gin.Context) {
 			data := getBodyAsMap(requestBody)
 			reCopyBody(requestBody, c)
 			for key, val := range data {
-				val := fmt.Sprintf("%v", val)
 				switch key {
-				case "command", "type", "subtype":
+				case "command":
+					properties[key] = ""
+					cmd, ok := val.([]any)
+					if ok && len(cmd) > 0 {
+						properties[key] = fmt.Sprintf("%v", cmd[0])
+						continue
+					}
+					cmd2, ok := val.([]string)
+					if ok && len(cmd2) > 0 {
+						properties[key] = fmt.Sprintf("%v", cmd2[0])
+					}
+				case "type", "subtype":
+					val := fmt.Sprintf("%v", val)
+					// TODO; command must only have the first name of the command
 					properties[key] = fmt.Sprintf("%v", val)
 				}
 			}
