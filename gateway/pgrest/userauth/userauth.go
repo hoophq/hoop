@@ -34,6 +34,7 @@ func (u *userAuth) FetchUserContext(subject string) (*Context, error) {
 			UserName:    sa.Name,
 			UserEmail:   sa.Subject,
 			UserStatus:  sa.Status,
+			UserPicture: "",
 			UserGroups:  sa.Groups,
 		}, nil
 	}
@@ -49,6 +50,7 @@ func (u *userAuth) FetchUserContext(subject string) (*Context, error) {
 		UserName:    usr.Name,
 		UserStatus:  usr.Status,
 		UserSlackID: usr.SlackID,
+		UserPicture: usr.Picture,
 		UserGroups:  usr.Groups,
 	}, nil
 }

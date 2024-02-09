@@ -15,6 +15,7 @@ var (
 	userGroupsFlag    []string
 	userNameFlag      string
 	userSlackIDFlag   string
+	userPictureFlag   string
 	userOverwriteFlag bool
 )
 
@@ -23,6 +24,7 @@ func init() {
 	createUserCmd.Flags().StringSliceVar(&userGroupsFlag, "groups", []string{}, "The list of groups this user belongs to, e.g.: admin,devops,...")
 	createUserCmd.Flags().StringVar(&userNameFlag, "name", "", "The display name of the user")
 	createUserCmd.Flags().StringVar(&userSlackIDFlag, "slackid", "", "The slack id of the user, only useful with slack plugin")
+	createUserCmd.Flags().StringVar(&userPictureFlag, "picture", "", "The profile picture link")
 	createUserCmd.Flags().BoolVar(&userDisableFlag, "disable", false, "Disable the user")
 }
 
@@ -58,10 +60,11 @@ var createUserCmd = &cobra.Command{
 		resp, err := httpBodyRequest(apir, method, map[string]any{
 			// immutable fields
 			"email": resourceName,
-			"name":  userNameFlag,
 			// updatable fields
+			"name":     userNameFlag,
 			"groups":   userGroupsFlag,
 			"slack_id": userSlackIDFlag,
+			"picture":  userPictureFlag,
 			"status":   status,
 		})
 		if err != nil {

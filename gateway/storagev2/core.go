@@ -72,17 +72,19 @@ func NewDSNContext(entityID, orgID, clientKeyName string, store *Store) *Context
 	}
 }
 
-func (c *Context) WithUserInfo(name, email, status string, groups []string) *Context {
+func (c *Context) WithUserInfo(name, email, status, picture string, groups []string) *Context {
 	c.UserName = name
 	c.UserEmail = email
 	c.UserGroups = groups
 	c.UserStatus = status
+	c.UserPicture = picture
 	return c
 }
 
-func (c *Context) WithAnonymousInfo(profileName, email, subject string, emailVerified *bool) *Context {
+func (c *Context) WithAnonymousInfo(profileName, email, subject, picture string, emailVerified *bool) *Context {
 	c.UserAnonEmail = email
 	c.UserAnonProfile = profileName
+	c.UserAnonPicture = picture
 	c.UserAnonSubject = subject
 	c.UserAnonEmailVerified = emailVerified
 	return c

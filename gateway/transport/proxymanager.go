@@ -53,10 +53,8 @@ func (s *Server) proxyManager(stream pb.Transport_ConnectServer) error {
 	storectx := storagev2.NewContext(userCtx.UserID, userCtx.OrgID, s.StoreV2).
 		WithOrgName(userCtx.OrgName).
 		WithUserInfo(
-			userCtx.UserName,
-			userCtx.UserEmail,
-			string(userCtx.UserStatus),
-			userCtx.UserGroups)
+			userCtx.UserName, userCtx.UserEmail, string(userCtx.UserStatus),
+			userCtx.UserPicture, userCtx.UserGroups)
 	sessionID := uuid.NewString()
 	err = s.listenProxyManagerMessages(gwctx.BearerToken, sessionID, storectx, stream)
 	if status, ok := status.FromError(err); ok && status.Code() == codes.Canceled {

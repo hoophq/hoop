@@ -41,6 +41,7 @@ type User struct {
 	Verified bool       `json:"verified"` // DEPRECATED in flavor of role
 	Role     string     `json:"role"`
 	SlackID  string     `json:"slack_id"`
+	Picture  string     `json:"picture"`
 	Groups   []string   `json:"groups"`
 }
 
@@ -78,6 +79,7 @@ func Create(c *gin.Context) {
 		Subject:  newUser.Email,
 		OrgID:    ctx.OrgID,
 		Name:     newUser.Name,
+		Picture:  newUser.Picture,
 		Email:    newUser.Email,
 		Verified: newUser.Verified, // DEPRECATED in flavor of role
 		Status:   string(StatusActive),
@@ -147,6 +149,7 @@ func Update(c *gin.Context) {
 	}
 
 	existingUser.Name = req.Name
+	existingUser.Picture = req.Picture
 	existingUser.Status = string(req.Status)
 	existingUser.SlackID = req.SlackID
 	existingUser.Groups = req.Groups
@@ -179,6 +182,7 @@ func Update(c *gin.Context) {
 		Verified: existingUser.Verified, // DEPRECATED in flavor of role
 		Role:     toRole(*existingUser),
 		SlackID:  existingUser.SlackID,
+		Picture:  existingUser.Picture,
 		Groups:   existingUser.Groups,
 	})
 }
@@ -203,6 +207,7 @@ func List(c *gin.Context) {
 				Verified: u.Verified,
 				Role:     toRole(u), // DEPRECATED in flavor of role
 				SlackID:  u.SlackID,
+				Picture:  u.Picture,
 				Groups:   u.Groups,
 			})
 	}
@@ -264,6 +269,7 @@ func GetUserByID(c *gin.Context) {
 		Verified: user.Verified, // DEPRECATED in flavor of role
 		Role:     toRole(*user),
 		SlackID:  user.SlackID,
+		Picture:  user.Picture,
 		Groups:   user.Groups,
 	})
 }
@@ -289,6 +295,7 @@ func GetUserInfo(c *gin.Context) {
 		"id":             ctx.UserID,
 		"name":           ctx.UserName,
 		"email":          ctx.UserEmail,
+		"picture":        ctx.UserPicture,
 		"status":         ctx.UserStatus,
 		"verified":       true, // DEPRECATED in flavor of role (guest)
 		"slack_id":       ctx.SlackID,
@@ -304,6 +311,7 @@ func GetUserInfo(c *gin.Context) {
 		userInfoData["verified"] = false
 		userInfoData["email"] = ctx.UserAnonEmail
 		userInfoData["name"] = ctx.UserAnonProfile
+		userInfoData["picture"] = ctx.UserAnonPicture
 		userInfoData["id"] = ctx.UserAnonSubject
 	}
 	c.JSON(http.StatusOK, userInfoData)
@@ -345,6 +353,7 @@ func PatchSlackID(c *gin.Context) {
 		Status:   StatusType(u.Status),
 		Verified: u.Verified,
 		SlackID:  u.SlackID,
+		Picture:  u.Picture,
 		Groups:   u.Groups,
 	})
 }

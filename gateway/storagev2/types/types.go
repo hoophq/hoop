@@ -7,18 +7,20 @@ import (
 )
 
 type APIContext struct {
-	OrgID      string   `json:"org_id"`
-	OrgName    string   `json:"org_name"`
-	UserID     string   `json:"user_id"`
-	UserName   string   `json:"user_name"`
-	UserEmail  string   `json:"user_email"`
-	UserGroups []string `json:"user_groups"`
-	UserStatus string   `json:"user_status"`
-	SlackID    string   `json:"slack_id"`
+	OrgID       string   `json:"org_id"`
+	OrgName     string   `json:"org_name"`
+	UserID      string   `json:"user_id"`
+	UserName    string   `json:"user_name"`
+	UserEmail   string   `json:"user_email"`
+	UserGroups  []string `json:"user_groups"`
+	UserStatus  string   `json:"user_status"`
+	SlackID     string   `json:"slack_id"`
+	UserPicture string   `json:"picture"`
 
 	UserAnonSubject       string
 	UserAnonEmail         string
 	UserAnonProfile       string
+	UserAnonPicture       string
 	UserAnonEmailVerified *bool
 
 	ApiURL  string `json:"-"`
