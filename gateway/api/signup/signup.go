@@ -17,7 +17,9 @@ import (
 )
 
 type SignupRequest struct {
-	OrgName string `json:"organization_name" binding:"required,alphanum,min=3,max=30"`
+	OrgName        string `json:"org_name" binding:"required,alphanum,min=3,max=30"`
+	ProfileName    string `json:"profile_name" binding:"max=255"`
+	ProfilePicture string `json:"profile_picture" binding:"max=2048"`
 }
 
 func Post(c *gin.Context) {
@@ -36,11 +38,20 @@ func Post(c *gin.Context) {
 	case pgusers.ErrOrgAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": "organization name is already claimed"})
 	case nil:
+		profileName := ctx.UserAnonProfile
+		if len(req.ProfileName) > 0 {
+			profileName = req.ProfileName
+		}
+		profilePicture := ctx.UserAnonPicture
+		if len(req.ProfilePicture) > 0 {
+			profilePicture = req.ProfilePicture
+		}
 		user := pgrest.User{
 			ID:       uuid.NewString(),
 			OrgID:    orgID,
 			Subject:  ctx.UserAnonSubject,
-			Name:     ctx.UserAnonProfile,
+			Name:     profileName,
+			Picture:  profilePicture,
 			Email:    ctx.UserAnonEmail,
 			Verified: true,
 			Status:   "active",
@@ -53,8 +64,14 @@ func Post(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating user"})
 			return
 		}
+		log.With("org_name", req.OrgName, "org_id", orgID).Infof("user signup up with success")
 		identifySignup(user, req.OrgName, c.GetHeader("user-agent"), ctx.ApiURL)
-		c.JSON(http.StatusOK, gin.H{"org_id": orgID, "name": req.OrgName})
+		c.JSON(http.StatusOK, gin.H{
+			"org_id":          orgID,
+			"org_name":        req.OrgName,
+			"profile_name":    profileName,
+			"profile_picture": profilePicture,
+		})
 	default:
 		log.Errorf("failed creating organization, err=%v", err)
 		sentry.CaptureException(err)

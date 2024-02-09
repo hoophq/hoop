@@ -31,6 +31,7 @@ type User struct {
 	OrgID    string   `json:"org_id"`
 	Subject  string   `json:"subject"`
 	Name     string   `json:"name"`
+	Picture  string   `json:"picture"`
 	Email    string   `json:"email"`
 	Verified bool     `json:"verified"`
 	Status   string   `json:"status"`

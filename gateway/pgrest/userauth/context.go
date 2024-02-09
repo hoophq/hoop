@@ -15,10 +15,12 @@ type Context struct {
 	UserName    string
 	UserStatus  string
 	UserSlackID string
+	UserPicture string
 	UserGroups  []string
 
 	UserAnonSubject       string
 	UserAnonProfile       string
+	UserAnonPicture       string
 	UserAnonEmail         string
 	UserAnonEmailVerified *bool
 }

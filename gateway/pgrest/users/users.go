@@ -22,12 +22,13 @@ type user struct{}
 func New() *user { return &user{} }
 
 func (u *user) Upsert(v pgrest.User) (err error) {
-	return pgrest.New("/rpc/update_users?select=id,org_id,subject,email,name,verified,status,slack_id,created_at,updated_at,groups").
+	return pgrest.New("/rpc/update_users?select=id,org_id,subject,email,name,picture,verified,status,slack_id,created_at,updated_at,groups").
 		RpcCreate(map[string]any{
 			"id":       v.ID,
 			"subject":  v.Subject,
 			"org_id":   v.OrgID,
 			"name":     v.Name,
+			"picture":  v.Picture,
 			"email":    v.Email,
 			"verified": v.Verified,
 			"status":   v.Status,
@@ -153,7 +154,7 @@ func (u *user) CreateOrGetOrg(name string) (orgID string, err error) {
 		err = pgrest.New("/users?select=*,groups,orgs(id,name)&org_id=eq.%v", org.ID).
 			List().
 			DecodeInto(&users)
-		if err != nil {
+		if err != nil && err != pgrest.ErrNotFound {
 			return "", fmt.Errorf("failed veryfing if org %s is empty, err=%v", org.ID, err)
 		}
 		// organization already exists and it's being used
@@ -211,7 +212,3 @@ func (u *user) Delete(ctx pgrest.OrgContext, subject string) error {
 	}
 	return pgrest.New("/users?org_id=eq.%s&subject=eq.%s", orgID, subject).Delete().Error()
 }
-
-type orgCtx struct{ OrgID string }
-
-func (c orgCtx) GetOrgID() string { return c.OrgID }

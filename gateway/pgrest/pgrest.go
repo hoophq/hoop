@@ -67,7 +67,9 @@ func (c *Client) Create(reqBody any) *Response {
 }
 
 func (c *Client) RpcCreate(reqBody any) *Response {
-	resp := httpRequest(c.apiURL, "POST", c.accessToken, nil, reqBody)
+	// https://postgrest.org/en/v12.0/references/api/stored_procedures.html#functions-with-a-single-json-parameter
+	reqHeader := map[string]string{"Prefer": "params=single-object"}
+	resp := httpRequest(c.apiURL, "POST", c.accessToken, reqHeader, reqBody)
 	return &resp
 }
 

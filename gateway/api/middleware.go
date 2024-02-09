@@ -69,6 +69,7 @@ func (a *Api) Authenticate(c *gin.Context) {
 		ctx.UserAnonProfile = uinfo.Profile
 		ctx.UserAnonEmailVerified = uinfo.EmailVerified
 		ctx.UserAnonSubject = uinfo.Subject
+		ctx.UserAnonPicture = uinfo.Picture
 		if ctx.UserAnonEmail == "" || ctx.UserAnonSubject == "" {
 			log.Warnf("failed authenticating anonymous user via userinfo endpoint, email=(set=%v), subject=(set=%v)",
 				ctx.UserAnonEmail != "", ctx.UserAnonSubject != "")
@@ -77,7 +78,9 @@ func (a *Api) Authenticate(c *gin.Context) {
 		}
 		c.Set(storagev2.ContextKey,
 			storagev2.NewContext("", "", a.StoreV2).
-				WithAnonymousInfo(ctx.UserAnonProfile, ctx.UserAnonEmail, ctx.UserAnonSubject, ctx.UserAnonEmailVerified).
+				WithAnonymousInfo(
+					ctx.UserAnonProfile, ctx.UserAnonEmail, ctx.UserAnonSubject,
+					ctx.UserAnonPicture, ctx.UserAnonEmailVerified).
 				WithApiURL(a.IDProvider.ApiURL).
 				WithGrpcURL(a.GrpcURL),
 		)
@@ -105,12 +108,13 @@ func (a *Api) Authenticate(c *gin.Context) {
 
 	c.Set(storagev2.ContextKey,
 		storagev2.NewContext(ctx.UserSubject, ctx.OrgID, a.StoreV2).
-			WithUserInfo(ctx.UserName, ctx.UserEmail, string(ctx.UserStatus), ctx.UserGroups).
+			WithUserInfo(ctx.UserName, ctx.UserEmail, string(ctx.UserStatus), ctx.UserPicture, ctx.UserGroups).
 			WithSlackID(ctx.UserSlackID).
 			WithOrgName(ctx.OrgName).
 			WithApiURL(a.IDProvider.ApiURL).
 			WithGrpcURL(a.GrpcURL),
 	)
+	// TODO: deprecate it in flavor of the context above
 	c.Set(user.ContextUserKey, &user.Context{
 		Org: &user.Org{Id: ctx.OrgID, Name: ctx.OrgName},
 		User: &user.User{
