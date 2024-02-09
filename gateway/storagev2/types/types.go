@@ -97,6 +97,7 @@ type ConnectionInfo struct {
 	ID                   string         `json:"id"`
 	Name                 string         `json:"name"`
 	Type                 string         `json:"type"`
+	SubType              string         `json:"subtype"`
 	CmdEntrypoint        []string       `json:"cmd"`
 	Secrets              map[string]any `json:"secrets"`
 	AgentID              string         `json:"agent_id"`

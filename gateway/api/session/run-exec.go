@@ -18,7 +18,7 @@ import (
 	"github.com/runopsio/hoop/gateway/user"
 )
 
-func RunExec(c *gin.Context, session types.Session, clientArgs []string) {
+func RunExec(c *gin.Context, session types.Session, userAgent string, clientArgs []string) {
 	ctx := user.ContextUser(c)
 	log := user.ContextLogger(c)
 
@@ -27,7 +27,7 @@ func RunExec(c *gin.Context, session types.Session, clientArgs []string) {
 		SessionID:      session.ID,
 		ConnectionName: session.Connection,
 		BearerToken:    getAccessToken(c),
-		UserAgent:      apiutils.NormalizeUserAgent(c.Request.Header.Values),
+		UserAgent:      userAgent,
 		UserInfo:       nil,
 	})
 	if err != nil {
@@ -177,13 +177,18 @@ func RunReviewedExec(c *gin.Context) {
 		return
 	}
 
+	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
+	if userAgent == "webapp.core" {
+		userAgent = "webapp.review.exec"
+	}
+
 	// TODO use the new RunExec here
 	client, err := clientexec.New(&clientexec.Options{
 		OrgID:          ctx.Org.Id,
 		SessionID:      session.ID,
 		ConnectionName: session.Connection,
 		BearerToken:    getAccessToken(c),
-		UserAgent:      apiutils.NormalizeUserAgent(c.Request.Header.Values),
+		UserAgent:      userAgent,
 		UserInfo:       nil,
 	})
 	if err != nil {

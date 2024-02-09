@@ -234,12 +234,17 @@ func (h *Handler) RunExec(c *gin.Context) {
 		return
 	}
 
+	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
+	if userAgent == "webapp.core" {
+		userAgent = "webapp.runbook.exec"
+	}
+
 	client, err := clientexec.New(&clientexec.Options{
 		OrgID:          ctx.Org.Id,
 		SessionID:      newSession.ID,
 		ConnectionName: connectionName,
 		BearerToken:    getAccessToken(c),
-		UserAgent:      apiutils.NormalizeUserAgent(c.Request.Header.Values),
+		UserAgent:      userAgent,
 		UserInfo:       nil,
 	})
 	if err != nil {

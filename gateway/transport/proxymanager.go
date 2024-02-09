@@ -203,15 +203,16 @@ func (s *Server) listenProxyManagerMessages(bearerToken, sessionID string, ctx *
 					disp.sendResponse(nil, err)
 					return status.Errorf(codes.FailedPrecondition, err.Error())
 				}
-				analytics.New().Track(ctx.UserEmail, analytics.EventGrpcProxyManagerConnect, map[string]any{
-					"connection-name": req.RequestConnectionName,
-					"connection-type": conn.Type,
-					"client-version":  mdget(md, "version"),
-					"platform":        mdget(md, "platform"),
-					"hostname":        mdget(md, "hostname"),
-					"user-agent":      apiutils.NormalizeUserAgent(md.Get),
-					"origin":          clientOrigin,
-					"verb":            pb.ClientVerbConnect,
+				analytics.New().Track(ctx.UserEmail, analytics.EventGrpcConnect, map[string]any{
+					"connection-name":    req.RequestConnectionName,
+					"connection-type":    conn.Type,
+					"connection-subtype": conn.SubType,
+					"client-version":     mdget(md, "version"),
+					"platform":           mdget(md, "platform"),
+					"hostname":           mdget(md, "hostname"),
+					"user-agent":         apiutils.NormalizeUserAgent(md.Get),
+					"origin":             clientOrigin,
+					"verb":               pb.ClientVerbConnect,
 				})
 
 				log.With("session", sessionID).Infof("proxymanager - starting open session phase")

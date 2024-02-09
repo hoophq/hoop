@@ -310,6 +310,7 @@ func (s *Server) getConnection(name string, userCtx *user.Context) (*types.Conne
 		ID:            conn.ID,
 		Name:          conn.Name,
 		Type:          string(conn.Type),
+		SubType:       conn.SubType,
 		CmdEntrypoint: conn.Command,
 		Secrets:       conn.Secrets,
 		AgentID:       conn.AgentId,
