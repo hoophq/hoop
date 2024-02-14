@@ -23,17 +23,6 @@ func (a *Agent) startMonitoring(pkt *pb.Packet) {
 		return
 	}
 
-	prof, err := monitoring.StartProfiler("agent", conf.Profiler)
-	if err != nil {
-		log.Infof("profiler - failed starting, err=%v", err)
-		return
-	}
-	if prof != nil {
-		log.Infof("profiler - started profiler, environment=%v, serveraddress=%v",
-			conf.Profiler.Environment, conf.Profiler.PyroscopeServerAddress)
-		a.connStore.Set(profilerInstanceKey, prof)
-	}
-
 	if _, err := monitoring.StartSentry(nil, conf.Sentry); err != nil {
 		log.Infof("sentry - failed to initialize, err=%v", err)
 		return

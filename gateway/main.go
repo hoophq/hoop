@@ -129,18 +129,6 @@ func Run(listenAdmAddr string) {
 			log.Fatalf("failed initializing plugin %s, reason=%v", p.Name(), err)
 		}
 	}
-
-	if g.PyroscopeIngestURL != "" && g.PyroscopeAuthToken != "" {
-		log.Infof("starting profiler, ingest-url=%v", g.PyroscopeIngestURL)
-		_, err := monitoring.StartProfiler("gateway", monitoring.ProfilerConfig{
-			PyroscopeServerAddress: g.PyroscopeIngestURL,
-			PyroscopeAuthToken:     g.PyroscopeAuthToken,
-			Environment:            g.IDProvider.ApiURL,
-		})
-		if err != nil {
-			log.Fatalf("failed starting profiler, err=%v", err)
-		}
-	}
 	sentryStarted, err := monitoring.StartSentry(nil, monitoring.SentryConfig{
 		DSN:         "https://7c3bcdf7772943b9b70bcf69b07408ae@o4504559799566336.ingest.sentry.io/4504559805923328",
 		Environment: g.IDProvider.ApiURL,
