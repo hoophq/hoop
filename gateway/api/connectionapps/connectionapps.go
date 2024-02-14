@@ -67,7 +67,7 @@ func Post(c *gin.Context) {
 			OrgId:   dsnCtx.OrgID,
 			Name:    connectionName,
 			Command: []string{"/bin/bash"},
-			Type:    pb.ConnectionTypeCommandLine,
+			Type:    string(pb.ConnectionTypeCommandLine),
 			AgentId: connectionName,
 		})
 		if err != nil {

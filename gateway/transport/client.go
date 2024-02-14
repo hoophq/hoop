@@ -177,6 +177,7 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 		ConnectionID:      conn.ID,
 		ConnectionName:    conn.Name,
 		ConnectionType:    conn.Type,
+		ConnectionSubType: conn.SubType,
 		ConnectionCommand: conn.CmdEntrypoint,
 		ConnectionSecret:  conn.Secrets,
 		ConnectionAgentID: conn.AgentID,
@@ -198,8 +199,8 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 			"failed validating connection context, contact the administrator")
 	}
 
-	switch string(conn.Type) {
-	case pb.ConnectionTypeCommandLine, pb.ConnectionTypeApplication: // noop - this type can connect/exec
+	switch pb.ToConnectionType(conn.Type, conn.SubType) {
+	case pb.ConnectionTypeCommandLine: // noop - this type can connect/exec
 	case pb.ConnectionTypeTCP:
 		if clientVerb == pb.ClientVerbExec {
 			return status.Errorf(codes.InvalidArgument,
@@ -352,7 +353,7 @@ func (s *Server) processClientPacket(pkt *pb.Packet, pctx plugintypes.Context) e
 func (s *Server) processSessionOpenPacket(pkt *pb.Packet, pctx plugintypes.Context) error {
 	spec := map[string][]byte{
 		pb.SpecGatewaySessionID: []byte(pctx.SID),
-		pb.SpecConnectionType:   []byte(pctx.ConnectionType),
+		pb.SpecConnectionType:   pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType).Bytes(),
 	}
 
 	if s.GcpDLPRawCredentials != "" {
@@ -463,7 +464,7 @@ func (s *Server) addConnectionParams(clientArgs []string, pctx plugintypes.Conte
 	}
 	encConnectionParams, err := pb.GobEncode(&pb.AgentConnectionParams{
 		ConnectionName: pctx.ConnectionName,
-		ConnectionType: pctx.ConnectionType,
+		ConnectionType: pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType).String(),
 		UserID:         pctx.UserID,
 		EnvVars:        pctx.ConnectionSecret,
 		CmdList:        pctx.ConnectionCommand,

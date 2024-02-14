@@ -163,7 +163,8 @@ func (s *Server) listenProxyManagerMessages(bearerToken, sessionID string, ctx *
 
 					ConnectionID:      conn.ID,
 					ConnectionName:    conn.Name,
-					ConnectionType:    fmt.Sprintf("%v", conn.Type),
+					ConnectionType:    conn.Type,
+					ConnectionSubType: conn.SubType,
 					ConnectionCommand: conn.CmdEntrypoint,
 					ConnectionSecret:  conn.Secrets,
 					ConnectionAgentID: conn.AgentID,

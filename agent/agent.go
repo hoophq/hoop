@@ -66,7 +66,7 @@ func newTCPConn(host, port string) (net.Conn, error) {
 	return serverConn, nil
 }
 
-func parseConnectionEnvVars(envVars map[string]any, connType string) (*connEnv, error) {
+func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) (*connEnv, error) {
 	if envVars == nil {
 		return nil, fmt.Errorf("empty env vars")
 	}
@@ -238,7 +238,7 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 		return nil, err
 	}
 
-	connType := string(pkt.Spec[pb.SpecConnectionType])
+	connType := pb.ConnectionType(pkt.Spec[pb.SpecConnectionType])
 	for key, b64EncVal := range connParams.EnvVars {
 		if !strings.HasPrefix(key, "envvar:") {
 			continue
@@ -270,7 +270,7 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 
 func (a *Agent) checkTCPLiveness(pkt *pb.Packet, envVars map[string]any) error {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
-	connType := string(pkt.Spec[pb.SpecConnectionType])
+	connType := pb.ConnectionType(pkt.Spec[pb.SpecConnectionType])
 	if connType == pb.ConnectionTypePostgres ||
 		connType == pb.ConnectionTypeTCP ||
 		connType == pb.ConnectionTypeMySQL ||

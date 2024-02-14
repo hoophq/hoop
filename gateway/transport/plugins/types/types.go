@@ -28,6 +28,7 @@ type Context struct {
 	ConnectionID      string
 	ConnectionName    string
 	ConnectionType    string
+	ConnectionSubType string
 	ConnectionCommand []string
 	ConnectionSecret  map[string]any
 	ConnectionAgentID string

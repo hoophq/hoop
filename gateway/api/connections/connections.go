@@ -63,7 +63,7 @@ func Post(c *gin.Context) {
 		return
 	}
 	if len(req.Command) == 0 {
-		switch string(req.Type) {
+		switch pb.ToConnectionType(req.Type, req.SubType) {
 		case pb.ConnectionTypePostgres:
 			req.Command = []string{"psql", "-A", "-F\t", "-P", "pager=off", "-h", "$HOST", "-U", "$USER", "--port=$PORT", "$DB"}
 		case pb.ConnectionTypeMySQL:
@@ -140,7 +140,7 @@ func Put(c *gin.Context) {
 		return
 	}
 	if len(req.Command) == 0 {
-		switch string(req.Type) {
+		switch pb.ToConnectionType(req.Type, req.SubType) {
 		case pb.ConnectionTypePostgres:
 			req.Command = []string{"psql", "-A", "-F\t", "-P", "pager=off", "-h", "$HOST", "-U", "$USER", "--port=$PORT", "$DB"}
 		case pb.ConnectionTypeMySQL:
@@ -160,7 +160,7 @@ func Put(c *gin.Context) {
 		LegacyAgentID: req.AgentId,
 		Name:          req.Name,
 		Command:       req.Command,
-		Type:          string(req.Type),
+		Type:          req.Type,
 		SubType:       req.SubType,
 		Envs:          pgrest.CoerceToMapString(req.Secrets),
 	})

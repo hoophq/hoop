@@ -125,8 +125,8 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			if !ok || sessionID == nil {
 				c.processGracefulExit(fmt.Errorf("internal error, session not found"))
 			}
-			connnectionType := pkt.Spec[pb.SpecConnectionType]
-			switch string(connnectionType) {
+			connnectionType := pb.ConnectionType(pkt.Spec[pb.SpecConnectionType])
+			switch connnectionType {
 			case pb.ConnectionTypePostgres:
 				// TODO: temporary until we ship a agent as proxy mode
 				listenAddr := connectFlags.listenAddr
@@ -196,7 +196,7 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				fmt.Printf("               host=127.0.0.1 port=%s\n", tcp.ListenPort())
 				fmt.Println("------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
-			case pb.ConnectionTypeCommandLine, pb.ConnectionTypeApplication:
+			case pb.ConnectionTypeCommandLine:
 				// https://github.com/creack/pty/issues/95
 				if runtime.GOOS == "windows" {
 					fmt.Println("command line is not supported on Windows")
@@ -213,7 +213,7 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 					c.processGracefulExit(err)
 				}
 			default:
-				errMsg := fmt.Errorf(`connection type %q not implemented`, string(connnectionType))
+				errMsg := fmt.Errorf(`connection type %q not implemented`, connnectionType.String())
 				sentry.CaptureException(fmt.Errorf("connect - %v", errMsg))
 				c.processGracefulExit(errMsg)
 			}

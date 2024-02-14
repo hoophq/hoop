@@ -149,18 +149,3 @@ func NewOpenTracing(apiKey string) (ShutdownFn, error) {
 		}),
 	)
 }
-
-// func ExamplePusher_Push(jobName string) {
-// 	completionTime := prometheus.NewGauge(prometheus.GaugeOpts{
-// 		Name: "db_backup_last_completion_timestamp_seconds",
-// 		Help: "The timestamp of the last successful completion of a DB backup.",
-// 	})
-// 	completionTime.SetToCurrentTime()
-// 	if err := push.New("https://prom.hoop.dev", jobName).
-// 		BasicAuth("push", "1a2b3c4d").
-// 		Collector(completionTime).
-// 		// Grouping("db", "customers").
-// 		Push(); err != nil {
-// 		fmt.Println("Could not push completion time to Pushgateway:", err)
-// 	}
-// }

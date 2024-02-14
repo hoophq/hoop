@@ -9,6 +9,7 @@ import (
 
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
+	pgsession "github.com/runopsio/hoop/gateway/pgrest/session"
 	"github.com/runopsio/hoop/gateway/session/eventlog"
 	eventlogv0 "github.com/runopsio/hoop/gateway/session/eventlog/v0"
 	sessionwal "github.com/runopsio/hoop/gateway/session/wal"
@@ -139,7 +140,7 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context) error {
 	}
 	labels["processed-by"] = "plugin-audit"
 	labels["truncated"] = fmt.Sprintf("%v", truncated)
-	err = sessionstorage.Put(storageContext, types.Session{
+	pgsession.New().Upsert(storageContext, types.Session{
 		ID:               wh.SessionID,
 		OrgID:            wh.OrgID,
 		UserEmail:        wh.UserEmail,
@@ -175,7 +176,7 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context) error {
 }
 
 func (p *auditPlugin) truncateTCPEventStream(eventStream []byte, connType string) []byte {
-	if len(eventStream) > 5000 && connType == pb.ConnectionTypeTCP {
+	if len(eventStream) > 5000 && connType == pb.ConnectionTypeTCP.String() {
 		return eventStream[0:5000]
 	}
 	return eventStream

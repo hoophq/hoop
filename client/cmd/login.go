@@ -55,8 +55,16 @@ var loginCmd = &cobra.Command{
 			printErrorAndExit(err.Error())
 		}
 		log.Debugf("saving token, length=%v", len(conf.Token))
-		if err := conf.Save(); err != nil {
+		saved, err := conf.Save()
+		if err != nil {
 			printErrorAndExit(err.Error())
+		}
+		if saved {
+			fmt.Println("Login succeeded")
+		} else {
+			// means it's a local gateway (development)
+			// print to stdout
+			fmt.Println(conf.Token)
 		}
 	},
 }
@@ -85,7 +93,7 @@ func configureHostsPrompt(conf *proxyconfig.Config) {
 	}
 	conf.ApiURL = apiURL
 	conf.GrpcURL = grpcURL
-	if err := conf.Save(); err != nil {
+	if _, err := conf.Save(); err != nil {
 		printErrorAndExit(err.Error())
 	}
 }
@@ -117,7 +125,6 @@ func doLogin(apiURL string) (string, error) {
 			return
 		}
 		_, _ = io.WriteString(rw, static.LoginHTML)
-		fmt.Println("Login succeeded")
 		tokenCh <- accessToken
 	})
 
