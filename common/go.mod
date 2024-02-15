@@ -12,7 +12,6 @@ require (
 	github.com/honeycombio/honeycomb-opentelemetry-go v0.8.1
 	github.com/honeycombio/otel-config-go v1.12.1
 	github.com/hoophq/pluginhooks v0.0.6
-	github.com/pyroscope-io/client v0.7.2
 	github.com/spf13/cobra v1.6.1
 	go.uber.org/zap v1.24.0
 	golang.org/x/oauth2 v0.12.0
@@ -59,7 +58,6 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.16.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20230326075908-cb1d2100619a // indirect
 	github.com/power-devops/perfstat v0.0.0-20221212215047-62379fc7944b // indirect
-	github.com/pyroscope-io/godeltaprof v0.1.2 // indirect
 	github.com/sethvargo/go-envconfig v0.9.0 // indirect
 	github.com/shirou/gopsutil/v3 v3.23.8 // indirect
 	github.com/shoenig/go-m1cpu v0.1.6 // indirect

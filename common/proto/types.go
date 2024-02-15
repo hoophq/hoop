@@ -197,3 +197,34 @@ func (t *TransformationSummary) String() string {
 	}
 	return ""
 }
+
+// ToProtoConnectionType parse the connection type and subtype into proto type.
+// These constants should be used by clients (proxy or agent)
+// that will know how to deal with the underline protocol.
+//
+// It defaults returning the connectionType if a combination doesn't match
+// to maintain compatibility with old types enums in the database
+func ToConnectionType(connectionType, subtype string) ConnectionType {
+	switch connectionType {
+	case "application":
+		if subtype == "tcp" {
+			return ConnectionType(ConnectionTypeTCP)
+		}
+		return ConnectionType(ConnectionTypeCommandLine)
+	case "custom":
+		return ConnectionType(ConnectionTypeCommandLine)
+	case "database":
+		switch subtype {
+		case "postgres":
+			return ConnectionType(ConnectionTypePostgres)
+		case "mysql":
+			return ConnectionType(ConnectionTypeMySQL)
+		case "mongo":
+			// mongo only supports command line for now
+			return ConnectionType(ConnectionTypeCommandLine)
+		case "mssql":
+			return ConnectionType(ConnectionTypeMSSQL)
+		}
+	}
+	return ConnectionType(connectionType)
+}

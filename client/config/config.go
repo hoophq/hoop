@@ -35,8 +35,8 @@ func NewConfigFile(apiURL, grpcURL, token string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	c := &Config{filepath: filepath, Token: token, ApiURL: apiURL, GrpcURL: grpcURL}
-	return filepath, c.Save()
+	_, err = (&Config{filepath: filepath, Token: token, ApiURL: apiURL, GrpcURL: grpcURL}).Save()
+	return filepath, err
 }
 
 // Remove the configuration file if it exists
@@ -116,19 +116,19 @@ func (c *Config) IsInsecure() (insecure bool) {
 }
 func (c *Config) IsValid() bool  { return c.GrpcURL != "" && c.ApiURL != "" }
 func (c *Config) HasToken() bool { return c.Mode == clientconfig.ModeLocal || c.Token != "" }
-func (c *Config) Save() error {
+func (c *Config) Save() (bool, error) {
 	if c.filepath == "" {
-		return nil
+		return false, nil
 	}
 	debugTokenClaims(c.Token)
 	confBuffer := bytes.NewBuffer([]byte{})
 	if err := toml.NewEncoder(confBuffer).Encode(c); err != nil {
-		return fmt.Errorf("failed saving config to %s, encode-err=%v", c.filepath, err)
+		return false, fmt.Errorf("failed saving config to %s, encode-err=%v", c.filepath, err)
 	}
 	if err := os.WriteFile(c.filepath, confBuffer.Bytes(), 0600); err != nil {
-		return fmt.Errorf("failed saving config to %s, err=%v", c.filepath, err)
+		return false, fmt.Errorf("failed saving config to %s, err=%v", c.filepath, err)
 	}
-	return nil
+	return true, nil
 }
 
 func debugTokenClaims(jwtToken string) {

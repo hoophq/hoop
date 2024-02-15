@@ -16,9 +16,9 @@ import (
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
+	pgsession "github.com/runopsio/hoop/gateway/pgrest/session"
 	eventlogv0 "github.com/runopsio/hoop/gateway/session/eventlog/v0"
 	"github.com/runopsio/hoop/gateway/storagev2"
-	sessionstorage "github.com/runopsio/hoop/gateway/storagev2/session"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"go.uber.org/zap"
@@ -66,7 +66,7 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 	}
 	// Persist the session in the storage
 	ctx := storagev2.NewContext(pctx.UserID, pctx.OrgID, storagev2.NewStorage(nil))
-	err := sessionstorage.Put(ctx, types.Session{
+	err := pgsession.New().Upsert(ctx, types.Session{
 		ID:               pctx.SID,
 		OrgID:            pctx.OrgID,
 		UserEmail:        pctx.UserEmail,

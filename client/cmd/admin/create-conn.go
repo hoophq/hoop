@@ -8,6 +8,7 @@ import (
 	"github.com/runopsio/hoop/client/cmd/styles"
 	clientconfig "github.com/runopsio/hoop/client/config"
 	"github.com/runopsio/hoop/common/log"
+	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/spf13/cobra"
 )
 
@@ -24,7 +25,7 @@ var (
 
 func init() {
 	createConnectionCmd.Flags().StringVarP(&connAgentFlag, "agent", "a", "", "Name of the agent")
-	createConnectionCmd.Flags().StringVarP(&connTypeFlag, "type", "t", "command-line", "Type of the connection. One off: (command-line,application,postgres,mysql,mssql,tcp)")
+	createConnectionCmd.Flags().StringVarP(&connTypeFlag, "type", "t", "custom", "Type of the connection. One off: (application,custom,database,application/tcp,database/mssql,database/mysql,database/postgres,database/mongo)")
 	createConnectionCmd.Flags().StringSliceVarP(&connPuginFlag, "plugin", "p", nil, "Plugins that will be enabled for this connection in the form of: <plugin>:<config01>;<config02>,...")
 	createConnectionCmd.Flags().StringSliceVar(&reviewersFlag, "reviewers", nil, "The approval groups for this connection")
 	createConnectionCmd.Flags().StringSliceVar(&connRedactTypesFlag, "redact-types", nil, "The redact types for this connection")
@@ -79,16 +80,17 @@ var createConnectionCmd = &cobra.Command{
 			styles.PrintErrorAndExit(err.Error())
 		}
 		connType, subType, _ := strings.Cut(connTypeFlag, "/")
-		switch connType {
-		case "command-line", "application":
+		protocolConnectionType := pb.ToConnectionType(connType, subType)
+		switch protocolConnectionType {
+		case pb.ConnectionTypeCommandLine:
 			if len(cmdList) == 0 && !skipStrictValidation {
 				styles.PrintErrorAndExit("command-line type must be at least one command")
 			}
-		case "tcp":
+		case pb.ConnectionTypeTCP:
 			if err := validateTcpEnvs(envVar); !skipStrictValidation && err != nil {
 				styles.PrintErrorAndExit(err.Error())
 			}
-		case "postgres", "mysql", "mssql":
+		case pb.ConnectionTypePostgres, pb.ConnectionTypeMySQL, pb.ConnectionTypeMSSQL:
 			if err := validateNativeDbEnvs(envVar); !skipStrictValidation && err != nil {
 				styles.PrintErrorAndExit(err.Error())
 			}

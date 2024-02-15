@@ -15,6 +15,7 @@ import (
 	"github.com/runopsio/hoop/common/apiutils"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
+	pgsession "github.com/runopsio/hoop/gateway/pgrest/session"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	connectionstorage "github.com/runopsio/hoop/gateway/storagev2/connection"
 	sessionstorage "github.com/runopsio/hoop/gateway/storagev2/session"
@@ -76,7 +77,7 @@ func Post(c *gin.Context) {
 		StartSession: time.Now().UTC(),
 	}
 
-	err = sessionstorage.Put(storageCtx, newSession)
+	err = pgsession.New().Upsert(storageCtx, newSession)
 	if err != nil {
 		log.Errorf("failed persisting session, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "The session couldn't be created"})

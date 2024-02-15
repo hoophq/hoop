@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-co-op/gocron"
 	"github.com/runopsio/hoop/common/log"
+	pgsession "github.com/runopsio/hoop/gateway/pgrest/session"
 	"github.com/runopsio/hoop/gateway/session/eventlog"
 	sessionwal "github.com/runopsio/hoop/gateway/session/wal"
 	"github.com/runopsio/hoop/gateway/storagev2"
@@ -88,7 +89,7 @@ func ProcessWalSessions(auditPath string, _ gocron.Job) {
 		labels["processed-by"] = "job-walsessions"
 		labels["truncated"] = fmt.Sprintf("%v", ev.truncated)
 		labels["commit-error"] = fmt.Sprintf("%v", ev.commitError != "")
-		err = sessionstorage.Put(ctx, types.Session{
+		err = pgsession.New().Upsert(ctx, types.Session{
 			ID:               wh.SessionID,
 			OrgID:            wh.OrgID,
 			UserEmail:        wh.UserEmail,

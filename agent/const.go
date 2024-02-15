@@ -7,5 +7,5 @@ const (
 	connEnvKey            string = "connenv"
 	pluginHooksKey        string = "pluginhooks"
 	pluginHookSessionsKey string = "pluginhooks-sessions:%s"
-	profilerInstanceKey   string = "profiler"
+	// profilerInstanceKey   string = "profiler"
 )

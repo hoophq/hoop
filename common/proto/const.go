@@ -2,6 +2,11 @@ package proto
 
 import "time"
 
+type ConnectionType string
+
+func (c ConnectionType) String() string { return string(c) }
+func (c ConnectionType) Bytes() []byte  { return []byte(c) }
+
 const (
 	SpecGatewaySessionID          string = "gateway.session_id"
 	SpecConnectionName            string = "gateway.connection_name"
@@ -24,12 +29,11 @@ const (
 
 	DefaultKeepAlive time.Duration = 10 * time.Second
 
-	ConnectionTypeCommandLine string = "command-line"
-	ConnectionTypeApplication string = "application"
-	ConnectionTypePostgres    string = "postgres"
-	ConnectionTypeMySQL       string = "mysql"
-	ConnectionTypeMSSQL       string = "mssql"
-	ConnectionTypeTCP         string = "tcp"
+	ConnectionTypeCommandLine ConnectionType = "command-line"
+	ConnectionTypePostgres    ConnectionType = "postgres"
+	ConnectionTypeMySQL       ConnectionType = "mysql"
+	ConnectionTypeMSSQL       ConnectionType = "mssql"
+	ConnectionTypeTCP         ConnectionType = "tcp"
 
 	ConnectionOriginAgent              = "agent"
 	ConnectionOriginClient             = "client"

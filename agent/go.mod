@@ -15,7 +15,6 @@ require (
 	github.com/hashicorp/go-hclog v0.14.1
 	github.com/hashicorp/go-plugin v1.4.8
 	github.com/hoophq/pluginhooks v0.0.6
-	github.com/pyroscope-io/client v0.7.2
 	github.com/runopsio/hoop/common v0.0.0-00010101000000-000000000000
 	github.com/sethvargo/go-password v0.2.0
 	github.com/stretchr/testify v1.8.4
@@ -67,7 +66,6 @@ require (
 	github.com/oklog/run v1.0.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20221212215047-62379fc7944b // indirect
-	github.com/pyroscope-io/godeltaprof v0.1.2 // indirect
 	github.com/sethvargo/go-envconfig v0.9.0 // indirect
 	github.com/shirou/gopsutil/v3 v3.23.8 // indirect
 	github.com/shoenig/go-m1cpu v0.1.6 // indirect

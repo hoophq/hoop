@@ -107,7 +107,7 @@ func runAutoConnect(client pb.ClientTransport) (err error) {
 			log.Infof("waiting for approval %v", string(pkt.Payload))
 		case pbclient.SessionOpenOK:
 			proxyPort := string(pkt.Spec[pb.SpecClientRequestPort])
-			connnectionType := string(pkt.Spec[pb.SpecConnectionType])
+			connnectionType := pb.ConnectionType(pkt.Spec[pb.SpecConnectionType])
 			if sid == "" {
 				return fmt.Errorf("session is empty")
 			}

@@ -15,10 +15,6 @@ const (
 	defaultOffset int = 0
 )
 
-func Put(storage *storagev2.Context, session types.Session) error {
-	return pgsession.New().Upsert(storage, session)
-}
-
 // FindOne doe not enforce fetching the session by its user.
 // However, this is somehow protected by obscurity,
 // since the user won't know the session id of a distinct user.

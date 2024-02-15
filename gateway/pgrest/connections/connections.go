@@ -152,7 +152,7 @@ func (c *connections) Upsert(ctx pgrest.OrgContext, conn pgrest.Connection) erro
 	if conn.SubType != "" {
 		subType = &conn.SubType
 	}
-	return pgrest.New("/rpc/update_connection").Create(map[string]any{
+	return pgrest.New("/rpc/update_connection").RpcCreate(map[string]any{
 		"id":              conn.ID,
 		"org_id":          ctx.GetOrgID(),
 		"name":            conn.Name,

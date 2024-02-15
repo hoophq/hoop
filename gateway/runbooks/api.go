@@ -16,10 +16,10 @@ import (
 	apiconnections "github.com/runopsio/hoop/gateway/api/connections"
 	sessionapi "github.com/runopsio/hoop/gateway/api/session"
 	"github.com/runopsio/hoop/gateway/clientexec"
+	pgsession "github.com/runopsio/hoop/gateway/pgrest/session"
 	"github.com/runopsio/hoop/gateway/runbooks/templates"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	pluginstorage "github.com/runopsio/hoop/gateway/storagev2/plugin"
-	sessionStorage "github.com/runopsio/hoop/gateway/storagev2/session"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
@@ -218,7 +218,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 		Script:       types.SessionScript{"data": string(runbook.InputFile)},
 		UserEmail:    ctx.User.Email,
 		UserID:       ctx.User.Id,
-		Type:         proto.ConnectionTypeCommandLine,
+		Type:         proto.ConnectionTypeCommandLine.String(),
 		UserName:     ctx.User.Name,
 		Connection:   connectionName,
 		Verb:         proto.ClientVerbExec,
@@ -227,7 +227,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 		StartSession: time.Now().UTC(),
 	}
 
-	err = sessionStorage.Put(storageCtx, newSession)
+	err = pgsession.New().Upsert(storageCtx, newSession)
 	if err != nil {
 		log.Errorf("failed persisting session, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "The session couldn't be created"})
