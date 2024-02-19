@@ -17,7 +17,7 @@ import (
 )
 
 type SignupRequest struct {
-	OrgName        string `json:"org_name" binding:"required,alphanum,min=3,max=30"`
+	OrgName        string `json:"org_name" binding:"required,min=2,max=100"`
 	ProfileName    string `json:"profile_name" binding:"max=255"`
 	ProfilePicture string `json:"profile_picture" binding:"max=2048"`
 }

@@ -61,6 +61,7 @@ func (h *handler) Login(c *gin.Context) {
 }
 
 func (h *handler) LoginCallback(c *gin.Context) {
+	// https://www.oauth.com/oauth2-servers/authorization/the-authorization-response/
 	errorMsg := c.Query("error")
 	if errorMsg != "" {
 		log.Warnf("login callback error response from identity provider: %v", errorMsg)
