@@ -185,28 +185,56 @@ func SimpleQueryContent(payload []byte) (bool, []byte, error) {
 	return true, queryFrame, nil
 }
 
-func DecodeStartupPacketWithUsername(startupPacket io.Reader, pgUsername string) (*Packet, error) {
-	_, decPkt, err := DecodeStartupPacket(startupPacket)
+func DecodeStartupPacketWithUsername(startupPacketReader io.Reader, pgUsername string) (*Packet, error) {
+	_, decPkt, err := DecodeStartupPacket(startupPacketReader)
 	if err != nil {
 		return decPkt, err
 	}
-	// protocol version + user name string
-	pos := 4 + 5
+	// protocol version
+	pos := 4
 	if len(decPkt.frame) <= pos {
 		return nil, fmt.Errorf("it's not a startup packet")
 	}
-	usridx := bytes.IndexByte(decPkt.frame[pos:], 0x00)
-	if usridx == -1 {
-		return nil, fmt.Errorf("startup packet doesn't have user attribute")
+	var parameters []string
+	var param string
+	for _, p := range decPkt.frame[pos : len(decPkt.frame)-1] {
+		if p == 0x00 {
+			parameters = append(parameters, param)
+			param = ""
+			continue
+		}
+		param += string(p)
 	}
-	pktFrame := bytes.Replace(
-		decPkt.frame,
-		decPkt.frame[pos:pos+usridx],
-		[]byte(pgUsername),
-		1)
-	decPkt.frame = pktFrame
-	pktLen := len(decPkt.frame) + 4
-	return decPkt.setHeaderLength(pktLen), nil
+
+	// should not proceed if it's odd
+	if len(parameters)%2 != 0 {
+		return nil, fmt.Errorf("fail to parse startup parameters")
+	}
+
+	newPkt := bytes.NewBuffer([]byte{})
+	_, _ = newPkt.Write(decPkt.frame[:4]) // protocol version
+	writeBufString(newPkt, "user", pgUsername)
+	for i := 0; i < len(parameters); {
+		key, val := parameters[i], parameters[i+1]
+		if key == "user" {
+			// skip current use parameter
+			i += 2
+			continue
+		}
+		writeBufString(newPkt, key, val)
+		i += 2
+	}
+	_ = newPkt.WriteByte(0x00) // end of packet
+	startupPkt := &Packet{typ: nil, frame: newPkt.Bytes()}
+	startupPkt.setHeaderLength(len(startupPkt.frame) + 4)
+	return startupPkt, nil
+}
+
+func writeBufString(b *bytes.Buffer, dataItems ...string) {
+	for _, data := range dataItems {
+		_, _ = b.Write([]byte(data))
+		_ = b.WriteByte(0x00)
+	}
 }
 
 func NewSSLRequestPacket() [8]byte {
