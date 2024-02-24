@@ -230,7 +230,7 @@ func decodeDlpSummary(pkt *pb.Packet) (counter int64) {
 	}
 	var ts []*pb.TransformationSummary
 	if err := pb.GobDecodeInto(tsEnc, &ts); err != nil {
-		log.With("plugin", "audit").Warnf("failed decoding dlp transformation summary, err=%v", err)
+		log.With("plugin", "audit").Debugf("failed decoding dlp transformation summary, err=%v", err)
 		return 0
 	}
 	for _, t := range ts {

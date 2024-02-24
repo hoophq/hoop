@@ -35,7 +35,7 @@ import (
 	pluginswebhooks "github.com/runopsio/hoop/gateway/transport/plugins/webhooks"
 )
 
-func Run(listenAdmAddr string) {
+func Run() {
 	ver := version.Get()
 	log.Infof("version=%s, compiler=%s, go=%s, platform=%s, commit=%s, multitenant=%v, build-date=%s",
 		ver.Version, ver.Compiler, ver.GoVersion, ver.Platform, ver.GitCommit, user.IsOrgMultiTenant(), ver.BuildDate)

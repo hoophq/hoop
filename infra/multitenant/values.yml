@@ -32,14 +32,12 @@ ingressApi:
   ingressClassName: alb
   annotations:
     alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:200074533906:certificate/e15601e8-ba86-4dfb-8fdb-b8f5c585702c
-    alb.ingress.kubernetes.io/group.name: use
+    alb.ingress.kubernetes.io/group.name: usegroup
     alb.ingress.kubernetes.io/healthcheck-path: /
     alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS": 443}]'
     alb.ingress.kubernetes.io/scheme: internet-facing
-    alb.ingress.kubernetes.io/security-groups: sg-0bdc19ae6ee7cce13
     alb.ingress.kubernetes.io/ssl-redirect: "443"
-    alb.ingress.kubernetes.io/subnets: subnet-0f394046eac321c69,subnet-09a64d73f653d6562
     alb.ingress.kubernetes.io/target-type: ip
 
 ingressGrpc:
@@ -49,13 +47,11 @@ ingressGrpc:
   annotations:
     alb.ingress.kubernetes.io/backend-protocol-version: GRPC
     alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:200074533906:certificate/e15601e8-ba86-4dfb-8fdb-b8f5c585702c
-    alb.ingress.kubernetes.io/group.name: use
+    alb.ingress.kubernetes.io/group.name: usegroup
     alb.ingress.kubernetes.io/healthcheck-path: /
     alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS": 8443}]'
     alb.ingress.kubernetes.io/scheme: internet-facing
-    alb.ingress.kubernetes.io/security-groups: sg-0bdc19ae6ee7cce13
-    alb.ingress.kubernetes.io/subnets: subnet-0f394046eac321c69,subnet-09a64d73f653d6562
     alb.ingress.kubernetes.io/target-type: ip
 
 # -- CPU/Memory resource requests/limits
