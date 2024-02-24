@@ -32,7 +32,7 @@ ingressApi:
   ingressClassName: alb
   annotations:
     alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:200074533906:certificate/9658b3bc-60bf-4097-aa48-a73c0a0c0baf
-    alb.ingress.kubernetes.io/group.name: appdemo
+    alb.ingress.kubernetes.io/group.name: appdemo-group
     alb.ingress.kubernetes.io/healthcheck-path: /
     alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS": 443}]'
@@ -47,7 +47,7 @@ ingressGrpc:
   annotations:
     alb.ingress.kubernetes.io/backend-protocol-version: GRPC
     alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:200074533906:certificate/9658b3bc-60bf-4097-aa48-a73c0a0c0baf
-    alb.ingress.kubernetes.io/group.name: appdemo
+    alb.ingress.kubernetes.io/group.name: appdemo-group
     alb.ingress.kubernetes.io/healthcheck-path: /
     alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS": 8443}]'
