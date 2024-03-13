@@ -1,6 +1,6 @@
 module github.com/runopsio/hoop/agent
 
-go 1.21
+go 1.22
 
 replace github.com/runopsio/hoop/common => ../common
 
