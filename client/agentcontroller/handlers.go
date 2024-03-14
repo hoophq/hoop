@@ -3,13 +3,12 @@ package agentcontroller
 import (
 	"encoding/json"
 	"fmt"
+	"hash/crc32"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/runopsio/hoop/common/log"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
 const (
@@ -17,25 +16,33 @@ const (
 	defaultNamespace = "hoopagents"
 )
 
-var defaultLabels = map[string]string{
-	"app.kubernetes.io/managed-by": "agentcontroller",
-}
-
 type AgentRequest struct {
-	DSNKey     string `json:"dsn_key"`
+	ID         string `json:"id"`
 	DeployName string `json:"name"`
+	DSNKey     string `json:"dsn_key"`
 	ImageRef   string `json:"image"`
 }
 
 func (r *AgentRequest) IsValid(w http.ResponseWriter) (valid bool) {
-	if r.DSNKey == "" || r.DeployName == "" {
-		httpError(w, http.StatusBadRequest, `'dsn_key' and 'name' attributes are required`)
+	if r.DSNKey == "" || r.DeployName == "" || r.ID == "" {
+		httpError(w, http.StatusBadRequest, `'dsn_key', 'id' and 'name' attributes are required`)
 		return
 	}
+	if len(r.DeployName) > 45 {
+		httpError(w, http.StatusBadRequest, `'name' attribute max size reach (45 characters)`)
+		return
+	}
+	r.DeployName = strings.ToLower(r.DeployName)
+
 	if r.ImageRef == "" {
 		r.ImageRef = defaultImageRef
 	}
 	return true
+}
+
+func deployNameHash(name, id string) string {
+	t := crc32.MakeTable(crc32.IEEE)
+	return fmt.Sprintf("%s-%08x", name, crc32.Checksum([]byte(id), t))
 }
 
 func httpError(w http.ResponseWriter, code int, msg string, a ...any) {
@@ -49,35 +56,7 @@ func httpError(w http.ResponseWriter, code int, msg string, a ...any) {
 	})
 }
 
-func getKubeClientSet() (*kubernetes.Clientset, error) {
-	kubeconfigPath := os.Getenv("KUBECONFIG")
-	if kubeconfigPath != "" {
-		config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
-		if err != nil {
-			return nil, err
-		}
-		return kubernetes.NewForConfig(config)
-	}
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		return nil, err
-	}
-	// creates the clientset
-	return kubernetes.NewForConfig(config)
-}
-
-func agentHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case "GET":
-		handleList(w)
-	case "PUT":
-		handlePut(w, r)
-	default:
-		httpError(w, http.StatusMethodNotAllowed, "method not allowed")
-	}
-}
-
-func handleList(w http.ResponseWriter) {
+func agentListHandler(w http.ResponseWriter, r *http.Request) {
 	clientset, err := getKubeClientSet()
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, "fail obtaining cluster clientset, reason=%v", err)
@@ -97,11 +76,13 @@ func handleList(w http.ResponseWriter) {
 }
 
 func agentDeleteHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "DELETE" {
-		httpError(w, http.StatusMethodNotAllowed, "method not allowed")
+	deployName := r.PathValue("name")
+	id := r.URL.Query().Get("id")
+	if len(id) == 0 {
+		httpError(w, http.StatusBadRequest, "id query string is missing")
 		return
 	}
-	deployName := r.PathValue("name")
+	deployName = deployNameHash(deployName, id)
 	clientset, err := getKubeClientSet()
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, "fail obtaining cluster clientset, reason=%v", err)
@@ -115,7 +96,7 @@ func agentDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func handlePut(w http.ResponseWriter, r *http.Request) {
+func agentPutHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Content-Type") != "application/json" {
 		httpError(w, http.StatusUnsupportedMediaType, "unsupported media type")
 		return
@@ -130,37 +111,50 @@ func handlePut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("deploying agent %v, image=%v, ua=%v", req.DeployName, req.ImageRef, r.Header.Get("user-agent"))
+	deployName := deployNameHash(req.DeployName, req.ID)
+	log.Printf("deploying agent %v, image=%v, ua=%v", deployName, req.ImageRef, r.Header.Get("user-agent"))
 	clientset, err := getKubeClientSet()
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, "fail obtaining cluster clientset, reason=%v", err)
 		return
 	}
-	if err := applyAgentDeployment(req.DeployName, req.DSNKey, req.ImageRef, clientset); err != nil {
-		httpError(w, http.StatusInternalServerError, "fail creating deployment %s, reason=%v", req.DeployName, err)
+	if err := applyAgentDeployment(deployName, req.DSNKey, req.ImageRef, clientset); err != nil {
+		httpError(w, http.StatusInternalServerError, "fail creating deployment %s, reason=%v", deployName, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"deployment": req.DeployName,
+		"deployment": deployName,
 		"namespace":  defaultNamespace,
 	})
 }
 
 func RunServer() {
-	// TODO: make requests authenticated
-	apiKey := os.Getenv("APIKEY")
-	if apiKey == "" {
-		log.Fatalf("APIKEY env not set")
+	jwtSecretKey := os.Getenv("JWT_KEY")
+	if len(jwtSecretKey) < 40 {
+		log.Fatalf("JWT_KEY must be at least 40 characters")
 	}
-	http.HandleFunc("/api/agents", agentHandler)
-	http.HandleFunc("/api/agents/{name}", agentDeleteHandler)
+	auth := NewAuthMiddleware(jwtSecretKey)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("PUT /api/agents", auth.Handler(agentPutHandler))
+	mux.HandleFunc("GET /api/agents", auth.Handler(agentListHandler))
+	mux.HandleFunc("DELETE /api/agents/{name}", auth.Handler(agentDeleteHandler))
+	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status": "OK",
+		})
+	})
+
 	log.Println("listening api on port :8015")
-	log.Println("POST /api/agents")
+	log.Println("PUT /api/agents")
 	log.Println("GET /api/agents")
-	log.Println("DELETE /api/agents/{name}")
-	if err := http.ListenAndServe(":8015", nil); err != nil {
+	log.Println("DELETE /api/agents/{name}?id=")
+	log.Println("GET /api/healthz")
+	if err := http.ListenAndServe(":8015", mux); err != nil {
 		log.Fatalf("failed starting api server, err=%v", err)
 	}
 }

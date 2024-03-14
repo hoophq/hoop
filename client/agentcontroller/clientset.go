@@ -3,16 +3,48 @@ package agentcontroller
 import (
 	"context"
 	"fmt"
-	"log"
-	"time"
+	"os"
 
 	"github.com/google/uuid"
+	"github.com/runopsio/hoop/common/log"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 )
+
+var defaultLabels = map[string]string{
+	"hoop.dev/managed-by": "agentcontroller",
+}
+
+func getKubeClientSet() (*kubernetes.Clientset, error) {
+	kubeconfigPath := os.Getenv("KUBECONFIG")
+	if kubeconfigPath != "" {
+		config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+		if err != nil {
+			return nil, err
+		}
+		return kubernetes.NewForConfig(config)
+	}
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, err
+	}
+	// creates the clientset
+	return kubernetes.NewForConfig(config)
+}
+
+// defaultLabelSelector returns the first value of defaultLabels
+// as key=val string
+func defaultLabelSelector() string {
+	for key, val := range defaultLabels {
+		return fmt.Sprintf("%s=%s", key, val)
+	}
+	return ""
+}
 
 func applyAgentDeployment(deployName, dsnKey, imageRef string, clientset *kubernetes.Clientset) error {
 	_, err := clientset.CoreV1().Namespaces().Get(context.Background(), defaultNamespace, metav1.GetOptions{})
@@ -52,26 +84,68 @@ func applyAgentDeployment(deployName, dsnKey, imageRef string, clientset *kubern
 	return nil
 }
 
+type PodStatus struct {
+	Name              string               `json:"name"`
+	Phase             v1.PodPhase          `json:"phase"`
+	StartTime         *metav1.Time         `json:"start_time"`
+	PodIP             string               `json:"pod_ip"`
+	HostIP            string               `json:"host_ip"`
+	ContainerStatuses []v1.ContainerStatus `json:"container_status"`
+}
+
 type AgentDeployment struct {
 	Name      string                  `json:"name"`
-	CreatedAt time.Time               `json:"created_at"`
+	CreatedAt metav1.Time             `json:"created_at"`
 	Status    appsv1.DeploymentStatus `json:"status"`
+	PodStatus *PodStatus              `json:"pod_status"`
 }
 
 func listAgents(clientset *kubernetes.Clientset) ([]AgentDeployment, error) {
-	deploymentList, err := clientset.AppsV1().Deployments(defaultNamespace).List(context.Background(), metav1.ListOptions{})
+	deploymentList, err := clientset.AppsV1().Deployments(defaultNamespace).List(
+		context.Background(),
+		metav1.ListOptions{LabelSelector: defaultLabelSelector()},
+	)
 	if err != nil {
 		return nil, err
 	}
-	var items []AgentDeployment
+	podList, err := clientset.CoreV1().Pods(defaultNamespace).List(context.Background(), metav1.ListOptions{LabelSelector: defaultLabelSelector()})
+	if err != nil {
+		log.Warnf("failed listing pods: %v", err)
+	}
+	items := []AgentDeployment{}
 	for _, obj := range deploymentList.Items {
+		podStatus := lookupPod(obj.Name, podList)
 		items = append(items, AgentDeployment{
 			Name:      obj.Name,
-			CreatedAt: obj.CreationTimestamp.Time,
+			CreatedAt: obj.CreationTimestamp,
 			Status:    obj.Status,
+			PodStatus: podStatus,
 		})
 	}
 	return items, nil
+}
+
+func lookupPod(matchAppName string, podList *v1.PodList) *PodStatus {
+	if podList == nil {
+		return nil
+	}
+	for _, obj := range podList.Items {
+		if obj.Labels != nil {
+			labelSelectorName := obj.Labels["app"]
+			if matchAppName != labelSelectorName {
+				continue
+			}
+			return &PodStatus{
+				Name:              obj.Name,
+				Phase:             obj.Status.Phase,
+				StartTime:         obj.Status.StartTime,
+				PodIP:             obj.Status.PodIP,
+				HostIP:            obj.Status.HostIP,
+				ContainerStatuses: obj.Status.ContainerStatuses,
+			}
+		}
+	}
+	return nil
 }
 
 func removeDeployment(deployName string, clientset *kubernetes.Clientset) error {
@@ -103,6 +177,11 @@ func secretRef(name, dsnKey string) *v1.Secret {
 }
 
 func agentDeploymentSpec(deployName, imageRef string) *appsv1.Deployment {
+	podLabels := map[string]string{}
+	for key, val := range defaultLabels {
+		podLabels[key] = val
+	}
+	podLabels["app"] = deployName
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      deployName,
@@ -113,15 +192,11 @@ func agentDeploymentSpec(deployName, imageRef string) *appsv1.Deployment {
 			Replicas: int32Ptr(1),
 			Strategy: appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType},
 			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"app": deployName,
-				},
+				MatchLabels: podLabels,
 			},
 			Template: v1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						"app": deployName,
-					},
+					Labels: podLabels,
 					Annotations: map[string]string{
 						"checksum/config": uuid.NewString(), // force redeploy on updates
 					},
