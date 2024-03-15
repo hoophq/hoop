@@ -140,7 +140,7 @@ func Run() {
 		log.Fatalf("failed starting sentry, err=%v", err)
 	}
 
-	if err := agentcontroller.Run(apiURL); err != nil {
+	if err := agentcontroller.Run(grpcURL); err != nil {
 		err := fmt.Errorf("failed to start agent controller, reason=%v", err)
 		log.Warn(err)
 		sentry.CaptureException(err)

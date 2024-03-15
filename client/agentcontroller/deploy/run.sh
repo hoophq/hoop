@@ -2,7 +2,8 @@
 set -eo pipefail
 
 echo "--> obtaining jwt secret key ..."
-JWT_KEY_ENC=$(aws secretsmanager get-secret-value --secret-id hoop/system/agentcontroller |jq .SecretString -r |jq '.AGENTCONTROLLER_SECRET_KEY' -r | base64)
+JWT_KEY=$(aws secretsmanager get-secret-value --secret-id hoop/system/agentcontroller |jq .SecretString -r |jq '.AGENTCONTROLLER_SECRET_KEY' -r)
+JWT_KEY_ENC=$(echo -n $JWT_KEY |base64)
 CHECKSUM_CONFIG=$(uuidgen)
 echo "--> deploying agent controller ..."
 
