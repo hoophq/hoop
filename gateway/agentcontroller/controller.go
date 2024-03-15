@@ -32,7 +32,7 @@ var (
 	jobMutex sync.RWMutex
 )
 
-func Run(gatewayApiURL string) error {
+func Run(gatewayGrpcURL string) error {
 	if !user.IsOrgMultiTenant() {
 		return nil
 	}
@@ -75,7 +75,7 @@ func Run(gatewayApiURL string) error {
 			}
 			var errReport []string
 			if len(conciliationItems) > 0 {
-				errReport = conciliateDeployments(gatewayApiURL, conciliationItems, client)
+				errReport = conciliateDeployments(gatewayGrpcURL, conciliationItems, client)
 			}
 			successSyncItems := len(conciliationItems) - len(errReport)
 			log.Infof("finish deployment concialtion, sync=%v, success=%v/%v",
@@ -100,10 +100,10 @@ func Sync() {
 	}
 }
 
-func conciliateDeployments(gatewayApiURL string, items []*agentcontroller.AgentRequest, client *apiClient) (errReport []string) {
+func conciliateDeployments(gatewayGrpcURL string, items []*agentcontroller.AgentRequest, client *apiClient) (errReport []string) {
 	agentcli := pgagents.New()
 	for _, req := range items {
-		dsnKey, secretKeyHash, err := generateDsnKey(gatewayApiURL, req.Name)
+		dsnKey, secretKeyHash, err := generateDsnKey(gatewayGrpcURL, req.Name)
 		if err != nil {
 			errReport = append(errReport, fmt.Sprintf("failed generating secret key for agent demo %s/%s, err=%v", req.ID, req.Name, err))
 			continue
@@ -175,13 +175,13 @@ func listAgents(client *apiClient) (map[string]*agentcontroller.Deployment, erro
 	return items, nil
 }
 
-func generateDsnKey(gatewayApiURL, agentName string) (dsnKey, secretKeyHash string, err error) {
+func generateDsnKey(gatewayGrpcURL, agentName string) (dsnKey, secretKeyHash string, err error) {
 	var secretKey string
 	secretKey, secretKeyHash, err = dsnkeys.GenerateSecureRandomKey()
 	if err != nil {
 		return
 	}
-	dsnKey, err = dsnkeys.NewString(gatewayApiURL, agentName, secretKey, proto.AgentModeStandardType)
+	dsnKey, err = dsnkeys.NewString(gatewayGrpcURL, agentName, secretKey, proto.AgentModeStandardType)
 	return dsnKey, secretKeyHash, err
 }
 
