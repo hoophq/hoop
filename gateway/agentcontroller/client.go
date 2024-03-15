@@ -106,6 +106,6 @@ func (c *apiClient) newRequest(method, apiURI string, reqBody io.Reader) (*http.
 		return nil, fmt.Errorf("failed generating request token, reason=%v", err)
 	}
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Authorization", fmt.Sprintf("Bearer: %v", requestToken))
+	request.Header.Set("Authorization", fmt.Sprintf("Bearer %v", requestToken))
 	return request, nil
 }

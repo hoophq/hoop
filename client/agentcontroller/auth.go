@@ -12,7 +12,7 @@ import (
 func parseToken(r *http.Request) (string, error) {
 	tokenHeader := r.Header.Get("Authorization")
 	tokenParts := strings.Split(tokenHeader, " ")
-	if len(tokenParts) != 2 || tokenParts[0] != "Bearer:" || tokenParts[1] == "" {
+	if len(tokenParts) != 2 || tokenParts[0] != "Bearer" || tokenParts[1] == "" {
 		return "", errors.New("invalid authorization header")
 	}
 	return strings.TrimSpace(tokenParts[1]), nil
