@@ -2,6 +2,7 @@ package pgusers
 
 import (
 	"fmt"
+	"net/url"
 
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/gateway/pgrest"
@@ -170,7 +171,7 @@ func (u *user) CreateOrGetOrg(name string) (orgID string, err error) {
 // FetchOrgByName returns an organization and the total number of users
 func (u *user) FetchOrgByName(name string) (*pgrest.Org, int64, error) {
 	var org pgrest.Org
-	err := pgrest.New("/orgs?name=eq.%v", name).
+	err := pgrest.New("/orgs?name=eq.%v", url.QueryEscape(name)).
 		FetchOne().
 		DecodeInto(&org)
 	if err != nil {

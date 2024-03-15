@@ -1,0 +1,151 @@
+apiVersion: v1
+data:
+  # openssl rand -base64 32 |base64
+  JWT_KEY: '{{AGENTCONTROLLER_SECRET_KEY}}'
+kind: Secret
+metadata:
+  name: agentcontroller-config
+  namespace: hoopagents
+type: Opaque
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentcontroller
+  namespace: hoopagents
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agentcontroller
+  template:
+    metadata:
+      labels:
+        app: agentcontroller
+      annotations:
+        checksum/config: '{{CHECKSUM_CONFIG}}'
+    spec:
+      serviceAccountName: agentcontroller
+      containers:
+      - args:
+        - hoop
+        - start
+        - agentcontroller
+        envFrom:
+        - secretRef:
+            name: agentcontroller-config
+        image: hoophq/hoop
+        imagePullPolicy: Always
+        name: agentcontroller
+        ports:
+        - containerPort: 8015
+          name: api
+          protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agentcontroller
+  namespace: hoopagents
+spec:
+  ports:
+  - name: http
+    port: 8015
+    protocol: TCP
+    targetPort: 8015
+  selector:
+    app: agentcontroller
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentcontroller
+  namespace: hoopagents
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - namespaces
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - delete
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - get
+  - list
+  - create
+  - delete
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentcontroller
+  namespace: hoopagents
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  annotations:
+    description: used to deploy agents in a Kubernetes cluster
+  name: agentcontroller
+  namespace: hoopagents
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentcontroller
+subjects:
+- kind: ServiceAccount
+  name: agentcontroller
+  namespace: hoopagents
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-2:200074533906:certificate/bfde2bd9-fdcb-4e48-be2d-01edd8cfe1e6
+    alb.ingress.kubernetes.io/group.name: agentcontroller
+    alb.ingress.kubernetes.io/healthcheck-path: /api/healthz
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/target-type: ip
+  labels:
+    app: agentcontroller
+  name: agentcontroller
+  namespace: hoopagents
+spec:
+  ingressClassName: alb
+  rules:
+  - host: agentcontroller.hoop.dev
+    http:
+      paths:
+      - backend:
+          service:
+            name: agentcontroller
+            port:
+              number: 8015
+        pathType: ImplementationSpecific

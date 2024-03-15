@@ -3,12 +3,13 @@ package agentcontroller
 import (
 	"encoding/json"
 	"fmt"
-	"hash/crc32"
 	"net/http"
 	"os"
 	"strings"
 
+	"github.com/runopsio/hoop/common/agentcontroller"
 	"github.com/runopsio/hoop/common/log"
+	"github.com/runopsio/hoop/common/version"
 )
 
 const (
@@ -16,33 +17,22 @@ const (
 	defaultNamespace = "hoopagents"
 )
 
-type AgentRequest struct {
-	ID         string `json:"id"`
-	DeployName string `json:"name"`
-	DSNKey     string `json:"dsn_key"`
-	ImageRef   string `json:"image"`
-}
-
-func (r *AgentRequest) IsValid(w http.ResponseWriter) (valid bool) {
-	if r.DSNKey == "" || r.DeployName == "" || r.ID == "" {
+func isValidateAgentRequest(r *agentcontroller.AgentRequest, w http.ResponseWriter) (valid bool) {
+	if r.DSNKey == "" || r.Name == "" || r.ID == "" {
 		httpError(w, http.StatusBadRequest, `'dsn_key', 'id' and 'name' attributes are required`)
 		return
 	}
-	if len(r.DeployName) > 45 {
+	// it must be a safe length to avoid problems with limitation names on Kubernetes
+	if len(r.Name) > 45 {
 		httpError(w, http.StatusBadRequest, `'name' attribute max size reach (45 characters)`)
 		return
 	}
-	r.DeployName = strings.ToLower(r.DeployName)
+	r.Name = strings.ToLower(r.Name)
 
 	if r.ImageRef == "" {
 		r.ImageRef = defaultImageRef
 	}
 	return true
-}
-
-func deployNameHash(name, id string) string {
-	t := crc32.MakeTable(crc32.IEEE)
-	return fmt.Sprintf("%s-%08x", name, crc32.Checksum([]byte(id), t))
 }
 
 func httpError(w http.ResponseWriter, code int, msg string, a ...any) {
@@ -82,7 +72,6 @@ func agentDeleteHandler(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, "id query string is missing")
 		return
 	}
-	deployName = deployNameHash(deployName, id)
 	clientset, err := getKubeClientSet()
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, "fail obtaining cluster clientset, reason=%v", err)
@@ -101,33 +90,30 @@ func agentPutHandler(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusUnsupportedMediaType, "unsupported media type")
 		return
 	}
-	var req AgentRequest
+	var req agentcontroller.AgentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpError(w, http.StatusBadRequest, "fail decoding request body, reason=%v", err)
 		return
 	}
 
-	if !req.IsValid(w) {
+	if !isValidateAgentRequest(&req, w) {
 		return
 	}
 
-	deployName := deployNameHash(req.DeployName, req.ID)
-	log.Printf("deploying agent %v, image=%v, ua=%v", deployName, req.ImageRef, r.Header.Get("user-agent"))
+	log.Printf("deploying agent %v, image=%v, ua=%v", req.Name, req.ImageRef, r.Header.Get("user-agent"))
 	clientset, err := getKubeClientSet()
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, "fail obtaining cluster clientset, reason=%v", err)
 		return
 	}
-	if err := applyAgentDeployment(deployName, req.DSNKey, req.ImageRef, clientset); err != nil {
-		httpError(w, http.StatusInternalServerError, "fail creating deployment %s, reason=%v", deployName, err)
+	if err := applyAgentDeployment(req, clientset); err != nil {
+		httpError(w, http.StatusInternalServerError, "fail creating deployment %s, reason=%v", req.Name, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"deployment": deployName,
-		"namespace":  defaultNamespace,
-	})
+	_ = json.NewEncoder(w).
+		Encode(&agentcontroller.AgentResponse{Deployment: req.Name})
 }
 
 func RunServer() {
@@ -149,11 +135,12 @@ func RunServer() {
 		})
 	})
 
-	log.Println("listening api on port :8015")
-	log.Println("PUT /api/agents")
-	log.Println("GET /api/agents")
-	log.Println("DELETE /api/agents/{name}?id=")
-	log.Println("GET /api/healthz")
+	vi := version.Get()
+	log.Infof("starting agent controller at port :8015. version=%v, goversion=%v", vi.Version, vi.GoVersion)
+	log.Info("PUT /api/agents")
+	log.Info("GET /api/agents")
+	log.Info("DELETE /api/agents/{name}?id=")
+	log.Info("GET /api/healthz")
 	if err := http.ListenAndServe(":8015", mux); err != nil {
 		log.Fatalf("failed starting api server, err=%v", err)
 	}
