@@ -22,6 +22,7 @@ func isValidateAgentRequest(r *agentcontroller.AgentRequest, w http.ResponseWrit
 		httpError(w, http.StatusBadRequest, `'dsn_key', 'id' and 'name' attributes are required`)
 		return
 	}
+	// it must be a safe length to avoid problems with limitation names on Kubernetes
 	if len(r.Name) > 45 {
 		httpError(w, http.StatusBadRequest, `'name' attribute max size reach (45 characters)`)
 		return
