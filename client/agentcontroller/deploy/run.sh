@@ -11,6 +11,6 @@ if [ "$CONTEXT" != "arn:aws:eks:us-east-2:200074533906:cluster/misc-prod" ]; the
     echo "--> wrong kubernetes context, want=arn:aws:eks:us-east-2:200074533906:cluster/misc-prod, got=$CONTEXT"
     exit 1
 fi
-sed "s|{{AGENTCONTROLLER_SECRET_KEY}}|$JWT_KEY_ENC|g;s|{{CHECKSUM_CONFIG}}|$CHECKSUM_CONFIG|g" setup.yaml | kubectl apply -f -
+sed "s|{{AGENTCONTROLLER_SECRET_KEY}}|$JWT_KEY_ENC|g;s|{{CHECKSUM_CONFIG}}|$CHECKSUM_CONFIG|g" deploy/setup.yaml | kubectl apply -f -
 
 echo "--> done"
