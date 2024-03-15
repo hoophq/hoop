@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/google/uuid"
+	"github.com/runopsio/hoop/common/agentcontroller"
 	"github.com/runopsio/hoop/common/log"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
@@ -46,7 +47,7 @@ func defaultLabelSelector() string {
 	return ""
 }
 
-func applyAgentDeployment(deployName, dsnKey, imageRef string, clientset *kubernetes.Clientset) error {
+func applyAgentDeployment(req agentcontroller.AgentRequest, clientset *kubernetes.Clientset) error {
 	_, err := clientset.CoreV1().Namespaces().Get(context.Background(), defaultNamespace, metav1.GetOptions{})
 	if err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("failed to obtain default namespace: %v", err)
@@ -64,12 +65,12 @@ func applyAgentDeployment(deployName, dsnKey, imageRef string, clientset *kubern
 	}
 
 	secretsCli := clientset.CoreV1().Secrets(defaultNamespace)
-	_ = secretsCli.Delete(context.Background(), deployName, metav1.DeleteOptions{})
-	_, err = secretsCli.Create(context.Background(), secretRef(deployName, dsnKey), metav1.CreateOptions{})
+	_ = secretsCli.Delete(context.Background(), req.Name, metav1.DeleteOptions{})
+	_, err = secretsCli.Create(context.Background(), secretRef(req.Name, req.DSNKey), metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("fail creating secret: %v", err)
 	}
-	deploymentSpec := agentDeploymentSpec(deployName, imageRef)
+	deploymentSpec := agentDeploymentSpec(req.Name, req.ImageRef)
 	deployCli := clientset.AppsV1().Deployments(defaultNamespace)
 	_, err = deployCli.Create(context.Background(), deploymentSpec, metav1.CreateOptions{})
 	if err != nil && !apierrors.IsAlreadyExists(err) {
@@ -84,23 +85,7 @@ func applyAgentDeployment(deployName, dsnKey, imageRef string, clientset *kubern
 	return nil
 }
 
-type PodStatus struct {
-	Name              string               `json:"name"`
-	Phase             v1.PodPhase          `json:"phase"`
-	StartTime         *metav1.Time         `json:"start_time"`
-	PodIP             string               `json:"pod_ip"`
-	HostIP            string               `json:"host_ip"`
-	ContainerStatuses []v1.ContainerStatus `json:"container_status"`
-}
-
-type AgentDeployment struct {
-	Name      string                  `json:"name"`
-	CreatedAt metav1.Time             `json:"created_at"`
-	Status    appsv1.DeploymentStatus `json:"status"`
-	PodStatus *PodStatus              `json:"pod_status"`
-}
-
-func listAgents(clientset *kubernetes.Clientset) ([]AgentDeployment, error) {
+func listAgents(clientset *kubernetes.Clientset) ([]agentcontroller.Deployment, error) {
 	deploymentList, err := clientset.AppsV1().Deployments(defaultNamespace).List(
 		context.Background(),
 		metav1.ListOptions{LabelSelector: defaultLabelSelector()},
@@ -112,10 +97,10 @@ func listAgents(clientset *kubernetes.Clientset) ([]AgentDeployment, error) {
 	if err != nil {
 		log.Warnf("failed listing pods: %v", err)
 	}
-	items := []AgentDeployment{}
+	items := []agentcontroller.Deployment{}
 	for _, obj := range deploymentList.Items {
 		podStatus := lookupPod(obj.Name, podList)
-		items = append(items, AgentDeployment{
+		items = append(items, agentcontroller.Deployment{
 			Name:      obj.Name,
 			CreatedAt: obj.CreationTimestamp,
 			Status:    obj.Status,
@@ -125,7 +110,7 @@ func listAgents(clientset *kubernetes.Clientset) ([]AgentDeployment, error) {
 	return items, nil
 }
 
-func lookupPod(matchAppName string, podList *v1.PodList) *PodStatus {
+func lookupPod(matchAppName string, podList *v1.PodList) *agentcontroller.PodStatus {
 	if podList == nil {
 		return nil
 	}
@@ -135,7 +120,7 @@ func lookupPod(matchAppName string, podList *v1.PodList) *PodStatus {
 			if matchAppName != labelSelectorName {
 				continue
 			}
-			return &PodStatus{
+			return &agentcontroller.PodStatus{
 				Name:              obj.Name,
 				Phase:             obj.Status.Phase,
 				StartTime:         obj.Status.StartTime,

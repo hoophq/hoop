@@ -7,11 +7,13 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/monitoring"
 	"github.com/runopsio/hoop/common/version"
 	"github.com/runopsio/hoop/gateway/agent"
+	"github.com/runopsio/hoop/gateway/agentcontroller"
 	"github.com/runopsio/hoop/gateway/api"
 	"github.com/runopsio/hoop/gateway/indexer"
 	"github.com/runopsio/hoop/gateway/notification"
@@ -122,6 +124,7 @@ func Run() {
 		pluginsdcm.New(),
 	}
 	plugintypes.RegisteredPlugins = g.RegisteredPlugins
+	reviewService.TransportService = g
 
 	for _, p := range g.RegisteredPlugins {
 		pluginContext := plugintypes.Context{}
@@ -136,7 +139,12 @@ func Run() {
 	if err != nil {
 		log.Fatalf("failed starting sentry, err=%v", err)
 	}
-	reviewService.TransportService = g
+
+	if err := agentcontroller.Run(apiURL); err != nil {
+		err := fmt.Errorf("failed to start agent controller, reason=%v", err)
+		log.Warn(err)
+		sentry.CaptureException(err)
+	}
 
 	if grpc.ShouldDebugGrpc() {
 		log.SetGrpcLogger()

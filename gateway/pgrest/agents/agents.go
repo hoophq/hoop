@@ -9,11 +9,16 @@ type agent struct{}
 
 func New() *agent { return &agent{} }
 
+// FindAll returns all agents from all organization if the context is empty.
+// Otherwise return all the agents from a specific organization.
 func (a *agent) FindAll(ctx pgrest.OrgContext) ([]pgrest.Agent, error) {
+	orgID := ctx.GetOrgID()
+	client := pgrest.New("/agents")
+	if orgID != "" {
+		client = pgrest.New("/agents?org_id=eq.%v", orgID)
+	}
 	var res []pgrest.Agent
-	if err := pgrest.New("/agents?org_id=eq.%v", ctx.GetOrgID()).
-		List().
-		DecodeInto(&res); err != nil && err != pgrest.ErrNotFound {
+	if err := client.List().DecodeInto(&res); err != nil && err != pgrest.ErrNotFound {
 		return nil, err
 	}
 	return res, nil

@@ -3,7 +3,7 @@
 cd /app/
 
 echo "--> STARTING GATEWAY ..."
-/app/hooplinux start gateway --listen-admin-addr "0.0.0.0:8099" &
+/app/hooplinux start gateway &
 
 until curl -s -f -o /dev/null "http://127.0.0.1:8009/api/healthz"
 do
