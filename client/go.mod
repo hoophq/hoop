@@ -17,6 +17,7 @@ require (
 	github.com/blevesearch/bleve/v2 v2.3.7
 	github.com/getsentry/sentry-go v0.18.0
 	github.com/go-co-op/gocron v1.18.1
+	github.com/golang-jwt/jwt/v5 v5.0.0
 	github.com/google/uuid v1.3.0
 	github.com/runopsio/hoop/agent v0.0.0-00010101000000-000000000000
 	github.com/runopsio/hoop/gateway v0.0.0-00010101000000-000000000000
@@ -102,7 +103,6 @@ require (
 	github.com/go-playground/validator/v10 v10.15.3 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/golang-jwt/jwt/v5 v5.0.0 // indirect
 	github.com/golang-migrate/migrate/v4 v4.16.2 // indirect
 	github.com/golang/geo v0.0.0-20210211234256-740aa86cb551 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
@@ -232,7 +232,7 @@ require (
 	golang.org/x/sys v0.15.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	google.golang.org/genproto v0.0.0-20230711160842-782d3b101e98 // indirect
-	google.golang.org/protobuf v1.31.0 // indirect
+	google.golang.org/protobuf v1.33.0 // indirect
 )
 
 replace github.com/runopsio/hoop/common => ../common
