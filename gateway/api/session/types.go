@@ -22,11 +22,6 @@ var (
 	defaultDownloadExpireTime = time.Minute * 5
 )
 
-const (
-	defaultLimit  int = 100
-	defaultOffset int = 0
-)
-
 type sessionParseOption struct {
 	withLineBreak bool
 	withEventTime bool

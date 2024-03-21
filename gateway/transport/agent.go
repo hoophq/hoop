@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"sort"
-	"strings"
 	"sync"
 
 	"github.com/getsentry/sentry-go"
@@ -18,11 +16,11 @@ import (
 	"github.com/runopsio/hoop/gateway/agent"
 	apitypes "github.com/runopsio/hoop/gateway/apiclient/types"
 	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
+	"github.com/runopsio/hoop/gateway/transport/connectionrequests"
 	authinterceptor "github.com/runopsio/hoop/gateway/transport/interceptors/auth"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -41,26 +39,12 @@ var ca = connectedAgents{
 func bindAgent(agentId string, stream pb.Transport_ConnectServer) {
 	ca.mu.Lock()
 	defer ca.mu.Unlock()
-
-	if strings.Contains(agentId, ",") {
-		for _, id := range strings.Split(agentId, ",") {
-			ca.agents[id] = stream
-		}
-		return
-	}
 	ca.agents[agentId] = stream
 }
 
 func unbindAgent(agentId string) {
 	ca.mu.Lock()
 	defer ca.mu.Unlock()
-
-	if strings.Contains(agentId, ",") {
-		for _, id := range strings.Split(agentId, ",") {
-			delete(ca.agents, id)
-		}
-		return
-	}
 	delete(ca.agents, agentId)
 }
 
@@ -72,47 +56,19 @@ func getAgentStream(id string) pb.Transport_ConnectServer {
 	return ca.agents[id]
 }
 
-func normalizeAgentID(orgID, resourceName string, connectionItems []string) string {
-	var items []string
-	if len(connectionItems) == 0 {
-		return ""
-	}
-	for _, connName := range connectionItems {
-		connName = strings.TrimSpace(strings.ToLower(connName))
-		connName = fmt.Sprintf("%s:%s:%s", orgID, resourceName, connName)
-		items = append(items, connName)
-	}
-	sort.Strings(items)
-	return strings.Join(items, ",")
-}
-
 func (s *Server) subscribeAgent(grpcStream pb.Transport_ConnectServer) error {
-	ctx := grpcStream.Context()
-	md, _ := metadata.FromIncomingContext(ctx)
-
 	var gwctx authinterceptor.GatewayContext
-	ctxVal, err := authinterceptor.GetGatewayContext(ctx)
+	err := authinterceptor.ParseGatewayContextInto(grpcStream.Context(), &gwctx)
 	if err != nil {
 		log.Error(err)
 		return err
 	}
-	connectionItems := mdget(md, "connection-items")
-	var connectionNameList []string
-	if connectionItems != "" {
-		connectionNameList = strings.Split(connectionItems, ",")
+	agentID := gwctx.Agent.ID
+	if hasAgentStream(agentID) {
+		log.Warnf("agent %s is already connected", gwctx.Agent.Name)
+		return status.Errorf(codes.FailedPrecondition, "agent %s already connected", gwctx.Agent.Name)
 	}
-	var agentBindID string
-	switch v := ctxVal.(type) {
-	case *authinterceptor.GatewayContext:
-		gwctx = *v
-		agentBindID = gwctx.Agent.ID
-		if gwctx.Agent.Mode == pb.AgentModeEmbeddedType && len(connectionNameList) > 0 {
-			agentBindID = normalizeAgentID(gwctx.Agent.OrgID, gwctx.Agent.Name, connectionNameList)
-		}
-	default:
-		log.Warnf("failed authenticating, could not assign authentication context, type=%T", ctxVal)
-		return status.Error(codes.Unauthenticated, "invalid authentication, could not assign authentication context")
-	}
+	// TODO: refactor me, obtain the org name in the authentication layer interceptor
 	org, _ := pgusers.New().FetchOrgByID(gwctx.Agent.OrgID)
 	var orgName string
 	if org != nil {
@@ -130,17 +86,18 @@ func (s *Server) subscribeAgent(grpcStream pb.Transport_ConnectServer) error {
 		return status.Errorf(codes.Internal, "failed updating agent, internal error")
 	}
 	stream := newStreamWrapper(grpcStream, gwctx.Agent.OrgID)
-	bindAgent(agentBindID, stream)
+	bindAgent(agentID, stream)
 
-	log.With("bind-id", agentBindID).Infof("agent connected: %s", gwctx.Agent)
+	connectionrequests.AcceptProxyConnection(gwctx.Agent.OrgID, agentID, nil)
+	log.With("agentid", agentID).Infof("agent connected: %s", gwctx.Agent)
 	_ = stream.Send(&pb.Packet{
 		Type:    pbagent.GatewayConnectOK,
 		Payload: s.configurationData(orgName),
 	})
 	var agentErr error
 	pluginContext.ParamsData["disconnect-agent-id"] = gwctx.Agent.ID
-	s.startDisconnectClientSink(agentBindID, clientOrigin, func(err error) {
-		defer unbindAgent(agentBindID)
+	s.startDisconnectClientSink(agentID, clientOrigin, func(err error) {
+		defer unbindAgent(agentID)
 		if err := s.updateAgentStatus(agent.StatusDisconnected, gwctx.Agent); err != nil {
 			log.Warnf("failed publishing disconnect agent state, org=%v, name=%v, err=%v", gwctx.Agent, err)
 		}
@@ -150,7 +107,7 @@ func (s *Server) subscribeAgent(grpcStream pb.Transport_ConnectServer) error {
 		_ = s.pluginOnDisconnect(pluginContext, err)
 	})
 	agentErr = s.listenAgentMessages(&pluginContext, &gwctx.Agent, stream)
-	DisconnectClient(agentBindID, agentErr)
+	DisconnectClient(agentID, agentErr)
 	return agentErr
 }
 
@@ -212,10 +169,6 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, ag *apitypes.Age
 }
 
 func (s *Server) updateAgentStatus(agentStatus agent.Status, agentCtx apitypes.Agent) error {
-	// client keys doesn't have an agent record, it should be ignored
-	if strings.HasPrefix(agentCtx.Name, "clientkey:") {
-		return nil
-	}
 	ag, err := s.AgentService.FindByNameOrID(user.NewContext(agentCtx.OrgID, ""), agentCtx.Name)
 	if err != nil || ag == nil {
 		return fmt.Errorf("failed to obtain agent org=%v, name=%v, err=%v", agentCtx.OrgID, agentCtx.Name, err)

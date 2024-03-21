@@ -13,7 +13,6 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/analytics"
-	apiconnectionapps "github.com/runopsio/hoop/gateway/api/connectionapps"
 	apiconnections "github.com/runopsio/hoop/gateway/api/connections"
 	loginapi "github.com/runopsio/hoop/gateway/api/login"
 	apiplugins "github.com/runopsio/hoop/gateway/api/plugins"
@@ -185,11 +184,6 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest(analytics.EventDeleteConnection),
 		AuditApiChanges,
 		apiconnections.Delete)
-
-	route.POST("/connectionapps",
-		api.AuthenticateAgent,
-		apiconnectionapps.Post,
-	)
 
 	route.POST("/proxymanager/connect",
 		api.Authenticate,

@@ -11,8 +11,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/proto"
+	pgconnections "github.com/runopsio/hoop/gateway/pgrest/connections"
 	"github.com/runopsio/hoop/gateway/storagev2"
-	connectionstorage "github.com/runopsio/hoop/gateway/storagev2/connection"
 	pluginstorage "github.com/runopsio/hoop/gateway/storagev2/plugin"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
@@ -237,7 +237,7 @@ func parsePluginConnections(c *gin.Context, req PluginRequest) ([]*types.PluginC
 	for connID := range dedupePluginConnectionRequest {
 		connectionIDList = append(connectionIDList, connID)
 	}
-	connectionsMap, err := connectionstorage.ConnectionsMapByID(ctx, connectionIDList)
+	connectionsMap, err := pgconnections.New().FetchByIDs(ctx, connectionIDList)
 	if err != nil {
 		log.Errorf("failed retrieving existing plugin, err=%v", err)
 		sentry.CaptureException(err)

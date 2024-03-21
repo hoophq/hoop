@@ -70,6 +70,7 @@ type Connection struct {
 	Type          string            `json:"type"`
 	SubType       string            `json:"subtype"`
 	Envs          map[string]string `json:"envs"`
+	ManagedBy     *string           `json:"managed_by"`
 
 	// read only attributes
 	Org              Org                `json:"orgs"`
@@ -153,14 +154,6 @@ type ProxyManagerState struct {
 	AccessDuration int               `json:"access_duration"`
 	ClientMetadata map[string]string `json:"metadata"`
 	ConnectedAt    string            `json:"connected_at"`
-}
-
-type ClientKey struct {
-	ID      string `json:"id"`
-	OrgID   string `json:"org_id"`
-	Name    string `json:"name"`
-	Status  string `json:"status"`
-	DSNHash string `json:"dsn_hash"`
 }
 
 type SessionOptionKey string

@@ -68,11 +68,52 @@ func ConnectLocalhost(token, userAgent string, opts ...*ClientOptions) (pb.Clien
 		optionKey: "authorization",
 		optionVal: fmt.Sprintf("Bearer %s", token),
 	})
-	return connect(LocalhostAddr,
+	return connectRPC(LocalhostAddr,
 		[]grpc.DialOption{
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 			grpc.WithUserAgent(userAgent)},
 		opts...)
+}
+
+func PreConnectRPC(cc ClientConfig, req *pb.PreConnectRequest) (*pb.PreConnectResponse, error) {
+	if cc.Insecure {
+		dialOptions := []grpc.DialOption{
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithUserAgent(cc.UserAgent),
+			grpc.WithDefaultCallOptions(
+				grpc.MaxCallRecvMsgSize(MaxRecvMsgSize),
+			),
+		}
+		contextOptions := []string{
+			"authorization", fmt.Sprintf("Bearer %s", cc.Token),
+		}
+		requestCtx := metadata.AppendToOutgoingContext(context.Background(), contextOptions...)
+		ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*15)
+		defer cancelFn()
+		conn, err := grpc.DialContext(ctx, cc.ServerAddress, dialOptions...)
+		if err != nil {
+			return nil, fmt.Errorf("failed dialing to grpc server, err=%v", err)
+		}
+		return pb.NewTransportClient(conn).PreConnect(requestCtx, req)
+	}
+	// TODO: it's deprecated, use oauth.TokenSource
+	rpcCred := oauth.NewOauthAccess(&oauth2.Token{AccessToken: cc.Token})
+	tlsConfig := &tls.Config{ServerName: cc.TLSServerName}
+	dialOptions := []grpc.DialOption{
+		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
+		grpc.WithPerRPCCredentials(rpcCred),
+		grpc.WithUserAgent(cc.UserAgent),
+		grpc.WithDefaultCallOptions(
+			grpc.MaxCallRecvMsgSize(MaxRecvMsgSize),
+		),
+	}
+	ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*15)
+	defer cancelFn()
+	conn, err := grpc.DialContext(ctx, cc.ServerAddress, dialOptions...)
+	if err != nil {
+		return nil, fmt.Errorf("failed dialing to grpc server, err=%v", err)
+	}
+	return pb.NewTransportClient(conn).PreConnect(context.Background(), req)
 }
 
 func Connect(clientConfig ClientConfig, opts ...*ClientOptions) (pb.ClientTransport, error) {
@@ -81,7 +122,7 @@ func Connect(clientConfig ClientConfig, opts ...*ClientOptions) (pb.ClientTransp
 			optionKey: "authorization",
 			optionVal: fmt.Sprintf("Bearer %s", clientConfig.Token),
 		})
-		return connect(clientConfig.ServerAddress,
+		return connectRPC(clientConfig.ServerAddress,
 			[]grpc.DialOption{
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
 				grpc.WithUserAgent(clientConfig.UserAgent),
@@ -102,10 +143,10 @@ func Connect(clientConfig ClientConfig, opts ...*ClientOptions) (pb.ClientTransp
 			grpc.MaxCallRecvMsgSize(MaxRecvMsgSize),
 		),
 	}
-	return connect(clientConfig.ServerAddress, dialOptions, opts...)
+	return connectRPC(clientConfig.ServerAddress, dialOptions, opts...)
 }
 
-func connect(serverAddress string, dialOptions []grpc.DialOption, opts ...*ClientOptions) (pb.ClientTransport, error) {
+func connectRPC(serverAddress string, dialOptions []grpc.DialOption, opts ...*ClientOptions) (pb.ClientTransport, error) {
 	ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*15)
 	defer cancelFn()
 	conn, err := grpc.DialContext(ctx, serverAddress, dialOptions...)
@@ -170,9 +211,7 @@ func (c *mutexClient) StartKeepAlive() {
 		for {
 			proto := &pb.Packet{Type: pbgateway.KeepAlive}
 			if err := c.Send(proto); err != nil {
-				if err != nil {
-					break
-				}
+				break
 			}
 			time.Sleep(pb.DefaultKeepAlive)
 		}

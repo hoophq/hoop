@@ -171,12 +171,6 @@ func RunReviewedExec(c *gin.Context) {
 		return
 	}
 
-	if err != nil {
-		log.Errorf("failed persisting session, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "The session couldn't be created"})
-		return
-	}
-
 	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
 	if userAgent == "webapp.core" {
 		userAgent = "webapp.review.exec"

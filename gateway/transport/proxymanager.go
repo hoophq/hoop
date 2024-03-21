@@ -140,12 +140,6 @@ func (s *Server) listenProxyManagerMessages(bearerToken, sessionID string, ctx *
 					disp.sendResponse(nil, err)
 					return err
 				}
-
-				if err != nil {
-					sentry.CaptureException(err)
-					disp.sendResponse(nil, err)
-					return status.Errorf(codes.Internal, err.Error())
-				}
 				if conn == nil {
 					disp.sendResponse(nil, status.Errorf(codes.NotFound, ""))
 					return status.Errorf(codes.NotFound, fmt.Sprintf("connection '%v' not found", req.RequestConnectionName))

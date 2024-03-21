@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/google/uuid"
 	commongrpc "github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -26,6 +25,7 @@ import (
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
+	"github.com/runopsio/hoop/gateway/transport/connectionrequests"
 	authinterceptor "github.com/runopsio/hoop/gateway/transport/interceptors/auth"
 	sessionuuidinterceptor "github.com/runopsio/hoop/gateway/transport/interceptors/sessionuuid"
 	tracinginterceptor "github.com/runopsio/hoop/gateway/transport/interceptors/tracing"
@@ -127,12 +127,14 @@ func (s *Server) StartRPCServer() {
 			grpc.MaxRecvMsgSize(commongrpc.MaxRecvMsgSize),
 			grpc.Creds(credentials.NewTLS(tlsConfig)),
 			grpcInterceptors,
+			authinterceptor.WithUnaryValidator(s.IDProvider, &s.AgentService),
 		)
 	}
 	if grpcServer == nil {
 		grpcServer = grpc.NewServer(
 			grpc.MaxRecvMsgSize(commongrpc.MaxRecvMsgSize),
 			grpcInterceptors,
+			authinterceptor.WithUnaryValidator(s.IDProvider, &s.AgentService),
 		)
 	}
 	pb.RegisterTransportServer(grpcServer, s)
@@ -142,6 +144,25 @@ func (s *Server) StartRPCServer() {
 		sentry.CaptureException(err)
 		log.Fatalf("failed to serve: %v", err)
 	}
+}
+
+func (s *Server) PreConnect(ctx context.Context, req *pb.PreConnectRequest) (*pb.PreConnectResponse, error) {
+	var gwctx authinterceptor.GatewayContext
+	err := authinterceptor.ParseGatewayContextInto(ctx, &gwctx)
+	orgID, agentID, agentName := gwctx.Agent.OrgID, gwctx.Agent.ID, gwctx.Agent.Name
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if orgID == "" || agentID == "" || agentName == "" {
+		return nil, status.Errorf(codes.Internal, "missing agent context")
+	}
+	resp := connectionrequests.AgentPreConnect(orgID, agentID, req, hasAgentStream)
+	if resp.Message != "" {
+		err := fmt.Errorf("failed processing pre-connect, org=%v, agent=%v, reason=%v", orgID, agentName, err)
+		log.Warn(err)
+		sentry.CaptureException(err)
+	}
+	return resp, nil
 }
 
 func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
@@ -295,16 +316,7 @@ func (s *Server) getConnection(name string, userCtx *user.Context) (*types.Conne
 		return nil, status.Errorf(codes.Internal, "internal error, failed to obtain agent from connection")
 	}
 	if ag == nil {
-		// the agent id is not a uuid when the connection
-		// is published (connectionapps) via embedded mode
-		if _, err := uuid.Parse(conn.AgentId); err == nil {
-			return nil, status.Errorf(codes.NotFound, "agent not found")
-		}
-		// keep compatibility with published agents
-		ag = &agent.Agent{
-			Name: fmt.Sprintf("[clientkey=%v]", strings.Split(conn.AgentId, ":")[0]), // <clientkey-name>:<connection>
-			Mode: pb.AgentModeEmbeddedType,
-		}
+		return nil, status.Errorf(codes.NotFound, "agent not found")
 	}
 	return &types.ConnectionInfo{
 		ID:            conn.ID,

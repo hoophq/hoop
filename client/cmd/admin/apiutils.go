@@ -129,14 +129,6 @@ func parseResourceOrDie(args []string, method, outputFlag string) *apiResource {
 
 		apir.resourceList = false
 		apir.suffixEndpoint = "/api/plugins/runbooks/templates"
-	// DEPRECATED
-	case "clientkeys":
-		apir.resourceCreate = true
-		apir.resourceUpdate = true
-		apir.suffixEndpoint = path.Join("/api/clientkeys", apir.name)
-		if method == "POST" {
-			apir.suffixEndpoint = "/api/clientkeys"
-		}
 	default:
 		styles.PrintErrorAndExit("resource type %q not supported", apir.resourceType)
 	}

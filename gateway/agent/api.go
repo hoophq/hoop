@@ -81,12 +81,8 @@ func (s *Handler) Post(c *gin.Context) {
 
 	var dsn string
 	switch req.Mode {
-	case pb.AgentModeEmbeddedType:
-		// this mode negotiates the grpc url with the api.
-		// In the future we may consolidate to use the grpc url instead
-		dsn, err = dsnkeys.NewString(ctxv2.ApiURL, req.Name, secretKey, pb.AgentModeEmbeddedType)
-	case pb.AgentModeStandardType:
-		dsn, err = dsnkeys.NewString(ctxv2.GrpcURL, req.Name, secretKey, pb.AgentModeStandardType)
+	case pb.AgentModeEmbeddedType, pb.AgentModeStandardType:
+		dsn, err = dsnkeys.NewString(ctxv2.GrpcURL, req.Name, secretKey, req.Mode)
 	default:
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("unknown agent mode %q", req.Mode)})
 		return

@@ -2,11 +2,9 @@ package authinterceptor
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/dsnkeys"
 	commongrpc "github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
@@ -101,7 +99,7 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 	switch {
 	case clientOrigin[0] == pb.ConnectionOriginAgent:
 		// fallback to dsn agent authentication
-		ag, err := i.authenticateAgent(i.idp.ApiURL, bearerToken, md)
+		ag, err := i.authenticateAgent(bearerToken, md)
 		if err != nil {
 			return err
 		}
@@ -177,16 +175,7 @@ func (i *interceptor) getConnection(name string, userCtx *pguserauth.Context) (*
 		return nil, status.Errorf(codes.Internal, "internal error, failed to obtain agent from connection")
 	}
 	if ag == nil {
-		// the agent id is not a uuid when the connection
-		// is published (connectionapps) via embedded mode
-		if _, err := uuid.Parse(conn.AgentId); err == nil {
-			return nil, status.Errorf(codes.NotFound, "agent not found")
-		}
-		// keep compatibility with published agents
-		ag = &agent.Agent{
-			Name: fmt.Sprintf("[clientkey=%v]", strings.Split(conn.AgentId, ":")[0]), // <clientkey-name>:<connection>
-			Mode: pb.AgentModeEmbeddedType,
-		}
+		return nil, status.Errorf(codes.NotFound, "agent not found")
 	}
 	return &types.ConnectionInfo{
 		ID:            conn.ID,
@@ -201,7 +190,7 @@ func (i *interceptor) getConnection(name string, userCtx *pguserauth.Context) (*
 	}, nil
 }
 
-func (i *interceptor) authenticateAgent(apiURL, bearerToken string, md metadata.MD) (*apitypes.Agent, error) {
+func (i *interceptor) authenticateAgent(bearerToken string, md metadata.MD) (*apitypes.Agent, error) {
 	if strings.HasPrefix(bearerToken, "x-agt-") {
 		ag, err := i.agentService.FindByToken(bearerToken)
 		if err != nil || ag == nil {
