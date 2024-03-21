@@ -27,12 +27,6 @@ type APIContext struct {
 	GrpcURL string `json:"-"`
 }
 
-type DSNContext struct {
-	EntityID      string
-	OrgID         string
-	ClientKeyName string
-}
-
 type Plugin struct {
 	ID             string              `json:"id"          edn:"xt/id"`
 	OrgID          string              `json:"-"           edn:"plugin/org"`

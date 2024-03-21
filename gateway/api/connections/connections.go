@@ -19,6 +19,7 @@ import (
 	"github.com/runopsio/hoop/gateway/storagev2"
 	pluginstorage "github.com/runopsio/hoop/gateway/storagev2/plugin"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
+	"github.com/runopsio/hoop/gateway/transport/connectionrequests"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 )
 
@@ -152,17 +153,25 @@ func Put(c *gin.Context) {
 		}
 	}
 
-	req.ID = conn.ID // immutable field
+	// An agent will not longer be able to sync the attributes
+	// of this connection when the agent is changed.
+	if conn.AgentID != req.AgentId {
+		conn.ManagedBy = nil
+	}
+	// immutable fields
+	req.ID = conn.ID
+	req.Name = conn.Name
 	err = pgconnections.New().Upsert(ctx, pgrest.Connection{
 		ID:            conn.ID,
 		OrgID:         conn.OrgID,
 		AgentID:       req.AgentId,
 		LegacyAgentID: req.AgentId,
-		Name:          req.Name,
+		Name:          conn.Name,
 		Command:       req.Command,
 		Type:          req.Type,
 		SubType:       req.SubType,
 		Envs:          pgrest.CoerceToMapString(req.Secrets),
+		ManagedBy:     conn.ManagedBy,
 	})
 	if err != nil {
 		log.Errorf("failed updating connection, err=%v", err)
@@ -170,6 +179,7 @@ func Put(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
+	connectionrequests.InvalidateSyncCache(ctx.OrgID, conn.Name)
 	// configure review and dlp plugins (best-effort)
 	for _, pluginName := range []string{plugintypes.PluginReviewName, plugintypes.PluginDLPName} {
 		// skip configuring redact if the client doesn't set redact_enabled
@@ -203,6 +213,7 @@ func Delete(c *gin.Context) {
 	case pgrest.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 	case nil:
+		connectionrequests.InvalidateSyncCache(ctx.OrgID, connName)
 		c.Writer.WriteHeader(http.StatusNoContent)
 	default:
 		log.Errorf("failed removing connection %v, err=%v", connName, err)

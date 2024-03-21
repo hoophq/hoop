@@ -22,8 +22,8 @@ require (
 	github.com/runopsio/hoop/agent v0.0.0-00010101000000-000000000000
 	github.com/runopsio/hoop/gateway v0.0.0-00010101000000-000000000000
 	google.golang.org/grpc v1.58.3
-	k8s.io/api v0.29.2
-	k8s.io/apimachinery v0.29.2
+	k8s.io/api v0.29.3
+	k8s.io/apimachinery v0.29.3
 	k8s.io/client-go v0.29.2
 )
 
@@ -222,7 +222,7 @@ require (
 require (
 	github.com/charmbracelet/lipgloss v0.7.1
 	github.com/fatih/color v1.15.0 // indirect
-	github.com/golang/protobuf v1.5.3 // indirect
+	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
@@ -230,7 +230,7 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	golang.org/x/net v0.19.0 // indirect
 	golang.org/x/sys v0.15.0 // indirect
-	golang.org/x/text v0.14.0 // indirect
+	golang.org/x/text v0.14.0
 	google.golang.org/genproto v0.0.0-20230711160842-782d3b101e98 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
 )

@@ -128,19 +128,12 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context) error {
 			session == nil, err)
 	}
 	endDate := time.Now().UTC()
-	labels := map[string]string{}
-	var inputScript types.SessionScript
-	var metadata map[string]any
-	if session != nil {
-		inputScript = session.Script
-		for key, val := range session.Labels {
-			labels[key] = val
-		}
-		metadata = session.Metadata
+	if len(session.Labels) == 0 {
+		session.Labels = map[string]string{}
 	}
-	labels["processed-by"] = "plugin-audit"
-	labels["truncated"] = fmt.Sprintf("%v", truncated)
-	pgsession.New().Upsert(storageContext, types.Session{
+	session.Labels["processed-by"] = "plugin-audit"
+	session.Labels["truncated"] = fmt.Sprintf("%v", truncated)
+	err = pgsession.New().Upsert(storageContext, types.Session{
 		ID:               wh.SessionID,
 		OrgID:            wh.OrgID,
 		UserEmail:        wh.UserEmail,
@@ -150,9 +143,9 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context) error {
 		Connection:       wh.ConnectionName,
 		Verb:             wh.Verb,
 		Status:           types.SessionStatusDone,
-		Script:           inputScript,
-		Labels:           labels,
-		Metadata:         metadata,
+		Script:           session.Script,
+		Labels:           session.Labels,
+		Metadata:         session.Metadata,
 		NonIndexedStream: types.SessionNonIndexedEventStreamList{"stream": eventStreamList},
 		EventSize:        eventSize,
 		StartSession:     *wh.StartDate,

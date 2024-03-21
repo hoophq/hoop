@@ -1,13 +1,8 @@
 package agent
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
 	"fmt"
 	"hash/crc32"
-	"io"
-	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -49,13 +44,8 @@ func Run() {
 	}
 	defer s3Logger.Flush()
 	// default to embedded mode if it's dsn type config to keep
-	// compatibility with old client keys that doesn't have the mode attribute param
-	if config.Type == clientconfig.ModeDsn &&
-		config.AgentMode == pb.AgentModeEmbeddedType || config.AgentMode == "" {
-		if err := runEmbeddedMode(s3Logger, config); err != nil {
-			s3Logger.Flush()
-			log.With("version", vi.Version).Fatal(err)
-		}
+	if config.Type == clientconfig.ModeDsn && config.AgentMode == pb.AgentModeEmbeddedType {
+		RunV2(&pb.PreConnectRequest{}, nil)
 		return
 	}
 	if err := runDefaultMode(s3Logger, config); err != nil {
@@ -64,11 +54,67 @@ func Run() {
 	}
 }
 
-func runDefaultMode(s3Log *log.S3LogWriter, config *agentconfig.Config) error {
-	clientOptions := []*grpc.ClientOptions{
-		grpc.WithOption("origin", pb.ConnectionOriginAgent),
-		grpc.WithOption("apiv2", fmt.Sprintf("%v", config.IsV2)),
+// RunV2 should supersedes agent modes, instead of relying in two distincts modes of execution
+// this method should deprecate old behaviors.
+func RunV2(request *pb.PreConnectRequest, hostEnvs []string) {
+	c, err := agentconfig.Load()
+	if err != nil {
+		log.With("version", vi.Version).Fatal(err)
 	}
+	clientConfig, err := c.GrpcClientConfig()
+	if err != nil {
+		log.With("version", vi.Version).Fatal(err)
+	}
+	clientConfig.UserAgent = defaultUserAgent
+	log.Infof("version=%v, platform=%v, type=%v, grpc_server=%v, tls=%v, strict-tls=%v - starting agent",
+		vi.Version, vi.Platform, c.Type, c.URL, !c.IsInsecure(), vi.StrictTLS)
+
+	// TODO: handle go routine ending for graceful shutdown
+	for {
+		resp, err := grpc.PreConnectRPC(clientConfig, request)
+		if err != nil {
+			log.With("version", vi.Version).Infof("failed pre-connect, reason=%v", err)
+			time.Sleep(time.Second * 10)
+			continue
+		}
+		switch resp.Status {
+		case pb.PreConnectStatusConnectType:
+			runAgent(c, clientConfig)
+		case pb.PreConnectStatusBackoffType:
+			if resp.Message != "" {
+				log.Infof("fail connecting to server, reason=%v", resp.Message)
+			}
+		default:
+			log.Warnf("pre-connect status %q not implement", resp.Status)
+		}
+		time.Sleep(time.Second * 10)
+	}
+}
+
+func runAgent(config *agentconfig.Config, clientConfig grpc.ClientConfig) {
+	log.Infof("connecting to grpc server %v", config.URL)
+	client, err := grpc.Connect(clientConfig, grpc.WithOption("origin", pb.ConnectionOriginAgent))
+	if err != nil {
+		log.Errorf("failed connecting to gateway, err=%v", err)
+		return
+	}
+	defer client.Close()
+	err = New(client, config, nil).Run()
+	var grpcStatusCode = codes.Code(99)
+	if status, ok := status.FromError(err); ok {
+		grpcStatusCode = status.Code()
+	}
+	switch grpcStatusCode {
+	case codes.Canceled:
+		log.With("version", vi.Version).Infof("context canceled")
+	case codes.Unauthenticated:
+		log.With("version", vi.Version).Infof("unauthenticated")
+	default:
+		log.With("version", vi.Version, "status", grpcStatusCode).Infof("disconnected from %v, reason=%v", config.URL, err)
+	}
+}
+
+func runDefaultMode(s3Log *log.S3LogWriter, config *agentconfig.Config) error {
 	clientConfig, err := config.GrpcClientConfig()
 	if err != nil {
 		return err
@@ -80,7 +126,7 @@ func runDefaultMode(s3Log *log.S3LogWriter, config *agentconfig.Config) error {
 	return backoff.Exponential2x(func(v time.Duration) error {
 		log.With("version", vi.Version, "backoff", v.String()).
 			Infof("connecting to %v, tls=%v", clientConfig.ServerAddress, !config.IsInsecure())
-		client, err := grpc.Connect(clientConfig, clientOptions...)
+		client, err := grpc.Connect(clientConfig, grpc.WithOption("origin", pb.ConnectionOriginAgent))
 		if err != nil {
 			log.With("version", vi.Version, "backoff", v.String()).
 				Warnf("failed to connect to %s, reason=%v", config.URL, err.Error())
@@ -105,124 +151,4 @@ func runDefaultMode(s3Log *log.S3LogWriter, config *agentconfig.Config) error {
 			Infof("disconnected from %v, reason=%v", config.URL, err)
 		return backoff.Error()
 	})
-}
-
-func runEmbeddedMode(s3Log *log.S3LogWriter, config *agentconfig.Config) error {
-	apiURL := fmt.Sprintf("https://%s/api/connectionapps", config.URL)
-	if config.IsInsecure() {
-		apiURL = fmt.Sprintf("http://%s/api/connectionapps", config.URL)
-	}
-	dsnKey := config.Token
-
-	connectionList, connectionEnvVal, err := getConnectionList()
-	if err != nil {
-		return err
-	}
-	log.Infof("version=%v, platform=%v, api-url=%v, strict-tls=%v, connections=%v - starting agent",
-		vi.Version, vi.Platform, apiURL, vi.StrictTLS, connectionList)
-	for {
-		grpcURL := fetchGrpcURL(apiURL, dsnKey, connectionList)
-		isInsecure := !vi.StrictTLS && (strings.HasPrefix(grpcURL, "http://") || strings.HasPrefix(grpcURL, "grpc://"))
-		log.Infof("connecting to %v, tls=%v", grpcURL, !isInsecure)
-		srvAddr, err := grpc.ParseServerAddress(grpcURL)
-		if err != nil {
-			log.Errorf("failed parsing grpc address, err=%v", err)
-			continue
-		}
-		client, err := grpc.Connect(
-			grpc.ClientConfig{
-				ServerAddress: srvAddr,
-				Token:         dsnKey,
-				UserAgent:     defaultUserAgent,
-				Insecure:      isInsecure,
-			},
-			grpc.WithOption("origin", pb.ConnectionOriginAgent),
-			grpc.WithOption("connection-items", connectionEnvVal),
-			grpc.WithOption("apiv2", fmt.Sprintf("%v", config.IsV2)),
-		)
-		if err != nil {
-			log.Errorf("failed connecting to grpc gateway, err=%v", err)
-			continue
-		}
-		agentConfig := &agentconfig.Config{
-			Token:     dsnKey,
-			URL:       grpcURL,
-			Type:      clientconfig.ModeDsn,
-			AgentMode: pb.AgentModeEmbeddedType,
-		}
-		err = New(client, agentConfig, s3Log).Run()
-		if err != io.EOF {
-			log.Errorf("disconnected from %v, err=%v", grpcURL, err.Error())
-			continue
-		}
-		log.Info("disconnected from %v", grpcURL)
-	}
-}
-
-func fetchGrpcURL(apiURL, dsnKey string, connectionItems []string) string {
-	log.Infof("waiting for connection request")
-	reqBody, _ := json.Marshal(map[string]any{
-		"connection":       "", // deprecated
-		"connection_items": connectionItems,
-	})
-	for {
-		ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*5)
-		defer cancelFn()
-		resp, err := func() (*http.Response, error) {
-			req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(reqBody))
-			if err != nil {
-				return nil, err
-			}
-			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", dsnKey))
-			return http.DefaultClient.Do(req)
-		}()
-		if err != nil {
-			log.Warnf("failed connecting to api, err=%v", err)
-			time.Sleep(time.Second * 10) // backoff
-			continue
-		}
-
-		defer resp.Body.Close()
-		switch resp.StatusCode {
-		case 200:
-			var data map[string]any
-			if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-				log.Warnf("failed decoding response, err=%v", err)
-				time.Sleep(time.Second * 10) // backoff
-				continue
-			}
-			return fmt.Sprintf("%v", data["grpc_url"])
-		case 204: // noop
-		case 401:
-			log.Warnf("dsn is disabled or invalid, contact the administrator")
-		default:
-			data, _ := io.ReadAll(resp.Body)
-			log.Warnf("api responded status=%v, body=%v", resp.StatusCode, string(data))
-		}
-		time.Sleep(time.Second * 10) // backoff
-	}
-}
-
-func getConnectionList() ([]string, string, error) {
-	envValue := os.Getenv("HOOP_CONNECTION")
-	if envValue == "" {
-		return nil, "", nil
-	}
-	if len(envValue) > 255 {
-		return nil, "", fmt.Errorf("reached max value (255) for HOOP_CONNECTION env")
-	}
-	var connections []string
-	for _, connectionName := range strings.Split(envValue, ",") {
-		if strings.HasPrefix(connectionName, "env.") {
-			envName := connectionName[4:]
-			connectionName = os.Getenv(envName)
-			if connectionName == "" {
-				return nil, "", fmt.Errorf("environment variable %q doesn't exist", envName)
-			}
-		}
-		connectionName = strings.TrimSpace(strings.ToLower(connectionName))
-		connections = append(connections, connectionName)
-	}
-
-	return connections, envValue, nil
 }

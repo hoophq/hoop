@@ -147,7 +147,9 @@ func (a *Agent) handleGracefulExit() {
 			}
 		}
 		_ = sentry.Flush(time.Second * 2)
-		_ = a.s3LoggerWriter.Flush()
+		if a.s3LoggerWriter != nil {
+			_ = a.s3LoggerWriter.Flush()
+		}
 
 		switch sigval {
 		case syscall.SIGHUP:

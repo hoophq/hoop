@@ -15,11 +15,11 @@ import (
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
 	"github.com/runopsio/hoop/gateway/analytics"
-	apiconnectionapps "github.com/runopsio/hoop/gateway/api/connectionapps"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	pluginstorage "github.com/runopsio/hoop/gateway/storagev2/plugin"
 	sessionstorage "github.com/runopsio/hoop/gateway/storagev2/session"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
+	"github.com/runopsio/hoop/gateway/transport/connectionrequests"
 	authinterceptor "github.com/runopsio/hoop/gateway/transport/interceptors/auth"
 	pluginsslack "github.com/runopsio/hoop/gateway/transport/plugins/slack"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
@@ -101,39 +101,6 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 	if err := gwctx.ValidateConnectionAttrs(); err != nil {
 		return err
 	}
-	conn := gwctx.Connection
-
-	agentMode := conn.AgentMode
-	// the connection (auto published) has an embedded agent, request it to connect
-	agentStreamID := fmt.Sprintf("%s:%s", gwctx.UserContext.OrgID, conn.AgentID)
-	if conn.AgentID == conn.Name {
-		agentMode = pb.AgentModeEmbeddedType
-		if !hasAgentStream(agentStreamID) {
-			log.With("user", gwctx.UserContext.UserEmail).Infof("requesting connection (auto published) with remote agent [%s/%s]",
-				conn.AgentName, conn.AgentID)
-			err = apiconnectionapps.RequestGrpcConnection(agentStreamID, hasAgentStream)
-			if err != nil {
-				log.Warnf("%v %v", err, agentStreamID)
-				return status.Errorf(codes.Aborted, err.Error())
-			}
-			log.With("conn", conn.Name).Infof("agent connection established [%s:%s]", conn.AgentName, conn.AgentID)
-		}
-		conn.AgentID = agentStreamID
-	}
-
-	// the connection has an embedded agent, request it to connect
-	if agentMode == pb.AgentModeEmbeddedType && conn.AgentID != agentStreamID {
-		if !hasAgentStream(conn.AgentID) {
-			log.With("user", gwctx.UserContext.UserEmail).Infof("requesting connection with remote agent [%s/%s]",
-				conn.AgentName, conn.AgentID)
-			err = apiconnectionapps.RequestGrpcConnection(conn.AgentID, hasAgentStream)
-			if err != nil {
-				log.Warnf("%v %v", err, conn.AgentID)
-				return status.Errorf(codes.Aborted, err.Error())
-			}
-			log.With("conn", conn.Name).Infof("agent connection established [%s:%s]", conn.AgentName, conn.AgentID)
-		}
-	}
 
 	// When a session id is coming from the client,
 	// it's not safe to rely on it. A validation is required
@@ -161,6 +128,24 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 
 	if sessionID == "" {
 		sessionID = uuid.NewString()
+	}
+
+	conn := gwctx.Connection
+	if !hasAgentStream(conn.AgentID) {
+		log.With("user", gwctx.UserContext.UserEmail).Infof("requesting connection with remote agent [%s/%s]",
+			conn.AgentName, conn.AgentID)
+		err = connectionrequests.RequestProxyConnection(connectionrequests.Info{
+			OrgID:          gwctx.UserContext.OrgID,
+			AgentID:        conn.AgentID,
+			ConnectionName: conn.Name,
+			SID:            sessionID,
+		})
+		// err = apiconnectionapps.RequestGrpcConnection(conn.AgentID, hasAgentStream)
+		if err != nil {
+			log.Warnf("%v %v", err, conn.AgentID)
+			return status.Errorf(codes.Aborted, err.Error())
+		}
+		log.With("conn", conn.Name).Infof("agent connection established [%s:%s]", conn.AgentName, conn.AgentID)
 	}
 
 	pluginContext := plugintypes.Context{
@@ -249,14 +234,14 @@ func (s *Server) subscribeClient(stream pb.Transport_ConnectServer) error {
 		"verb":                  clientVerb,
 	})
 
-	logAttrs := []any{"sid", sessionID, "mode", agentMode, "agent-name", conn.AgentName,
+	logAttrs := []any{"sid", sessionID, "mode", conn.AgentMode, "agent-name", conn.AgentName,
 		"agent-id", conn.AgentID, "ua", userAgent}
 	log.With(logAttrs...).Infof("proxy connected: user=%v,hostname=%v,origin=%v,verb=%v,platform=%v,version=%v,goversion=%v",
 		gwctx.UserContext.UserEmail, mdget(md, "hostname"), clientOrigin, clientVerb,
 		mdget(md, "platform"), mdget(md, "version"), mdget(md, "goversion"))
 	clientErr := s.listenClientMessages(stream, pluginContext)
 	if status, ok := status.FromError(clientErr); ok && status.Code() == codes.Canceled {
-		log.With("sid", sessionID, "origin", clientOrigin, "mode", agentMode).Infof("grpc client connection canceled")
+		log.With("sid", sessionID, "origin", clientOrigin, "mode", conn.AgentMode).Infof("grpc client connection canceled")
 		// it means the api client has disconnected,
 		// it will let the session open to receive packets
 		// until a session close packet is received or the

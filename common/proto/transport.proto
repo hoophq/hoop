@@ -2,13 +2,30 @@ syntax = "proto3";
 
 package protobuf;
 
-option go_package="github.com/runopsio/hoop/common";
+option go_package="github.com/runopsio/hoop/common;proto";
 
 service Transport {
+  rpc PreConnect (PreConnectRequest) returns (PreConnectResponse);
   rpc Connect (stream Packet) returns (stream Packet);
 }
 
+message PreConnectRequest {
+  string name = 1;
+  string type = 2;
+  string subtype = 3;
+  repeated string command = 4;
+  map<string, string> envs = 5;
+  repeated string reviewers = 6;
+  repeated string redact_types = 7;
+}
+
+message PreConnectResponse {
+  string status = 1;
+  string message = 2;
+}
+
 message Packet {
+  // component is unused
   string component = 1;
   string type = 2;
 

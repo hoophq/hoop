@@ -33,6 +33,7 @@ const (
 	ConnectionTypePostgres    ConnectionType = "postgres"
 	ConnectionTypeMySQL       ConnectionType = "mysql"
 	ConnectionTypeMSSQL       ConnectionType = "mssql"
+	ConnectionTypeMongo       ConnectionType = "mongodb"
 	ConnectionTypeTCP         ConnectionType = "tcp"
 
 	ConnectionOriginAgent              = "agent"
@@ -60,6 +61,9 @@ const (
 
 	AgentModeEmbeddedType string = "embedded"
 	AgentModeStandardType string = "standard"
+
+	PreConnectStatusConnectType string = "CONNECT"
+	PreConnectStatusBackoffType string = "BACKOFF"
 )
 
 var DefaultInfoTypes = []string{

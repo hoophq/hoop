@@ -162,6 +162,7 @@ func (c *connections) Upsert(ctx pgrest.OrgContext, conn pgrest.Connection) erro
 		"subtype":         subType,
 		"command":         conn.Command,
 		"envs":            conn.Envs,
+		"managed_by":      conn.ManagedBy,
 	}).Error()
 }
 
