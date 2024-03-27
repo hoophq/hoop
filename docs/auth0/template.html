@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="{{locale}}">
+  <head>
+    {%- auth0:head -%}
+    <style>
+      body {
+        background-image: url("https://hoopdev.directus.app/assets/87fb827e-d17f-46f1-834e-0cf872e9ef85.png");
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-color: '#111827';
+      }
+    </style>
+     <title>{{ prompt.screen.texts.pageTitle }}</title>
+  </head>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-J6W26GV6XG"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-J6W26GV6XG');
+  </script>
+  <script type="text/javascript">
+    (function(c,l,a,r,i,t,y){
+        c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+        t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+        y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+    })(window, document, "clarity", "script", "h9osgp95be");
+  </script>
+  <body class="_widget-auto-layout">
+    {%- auth0:widget -%}
+  </body>
+</html>
