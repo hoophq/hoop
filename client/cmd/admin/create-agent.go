@@ -47,3 +47,11 @@ var createAgentCmd = &cobra.Command{
 		fmt.Printf("%v\n", respMap["token"])
 	},
 }
+
+// func normalizeAgentName(name string) string {
+// 	t := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
+// 	name, _, _ = transform.String(t, name)
+// 	name = strings.ToLower(name)
+// 	name = strings.ReplaceAll(name, " ", "")
+// 	return name
+// }

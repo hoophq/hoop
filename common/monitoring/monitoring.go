@@ -38,10 +38,17 @@ func NormalizeEnvironment(apiURL string) string {
 	return strings.TrimPrefix(environment, "https://")
 }
 
+func isLocalEnvironment(environment string) bool {
+	return environment == "localhost" ||
+		environment == "127.0.0.1" ||
+		strings.HasPrefix(environment, "http://localhost") ||
+		strings.HasPrefix(environment, "http://127.0.0.1")
+}
+
 // sentryTransport defines which transport to start, sync or async.
 // a nil value defaults initalizing a sync sentry transport.
 func StartSentry(sentryTransport sentry.Transport, conf SentryConfig) (bool, error) {
-	if conf.Environment == "localhost" || conf.Environment == "127.0.0.1" {
+	if isLocalEnvironment(conf.Environment) {
 		return false, nil
 	}
 	if conf.DSN == "" {

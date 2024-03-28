@@ -18,9 +18,9 @@ import (
 	commongrpc "github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/agent"
 	apiconnections "github.com/runopsio/hoop/gateway/api/connections"
 	"github.com/runopsio/hoop/gateway/notification"
+	pgagents "github.com/runopsio/hoop/gateway/pgrest/agents"
 	"github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/storagev2"
@@ -42,7 +42,6 @@ import (
 type (
 	Server struct {
 		pb.UnimplementedTransportServer
-		AgentService        agent.Service
 		ReviewService       review.Service
 		NotificationService notification.Service
 
@@ -118,7 +117,7 @@ func (s *Server) StartRPCServer() {
 
 	grpcInterceptors := grpc.ChainStreamInterceptor(
 		sessionuuidinterceptor.New(),
-		authinterceptor.New(s.IDProvider, &s.AgentService),
+		authinterceptor.New(s.IDProvider),
 		tracinginterceptor.New(s.IDProvider.ApiURL),
 	)
 	var grpcServer *grpc.Server
@@ -127,14 +126,14 @@ func (s *Server) StartRPCServer() {
 			grpc.MaxRecvMsgSize(commongrpc.MaxRecvMsgSize),
 			grpc.Creds(credentials.NewTLS(tlsConfig)),
 			grpcInterceptors,
-			authinterceptor.WithUnaryValidator(s.IDProvider, &s.AgentService),
+			authinterceptor.WithUnaryValidator(s.IDProvider),
 		)
 	}
 	if grpcServer == nil {
 		grpcServer = grpc.NewServer(
 			grpc.MaxRecvMsgSize(commongrpc.MaxRecvMsgSize),
 			grpcInterceptors,
-			authinterceptor.WithUnaryValidator(s.IDProvider, &s.AgentService),
+			authinterceptor.WithUnaryValidator(s.IDProvider),
 		)
 	}
 	pb.RegisterTransportServer(grpcServer, s)
@@ -310,7 +309,7 @@ func (s *Server) getConnection(name string, userCtx *user.Context) (*types.Conne
 	if conn == nil {
 		return nil, nil
 	}
-	ag, err := s.AgentService.FindByNameOrID(userCtx, conn.AgentId)
+	ag, err := pgagents.New().FetchOneByNameOrID(userCtx, conn.AgentId)
 	if err != nil {
 		log.Errorf("failed obtaining agent %v, err=%v", err)
 		return nil, status.Errorf(codes.Internal, "internal error, failed to obtain agent from connection")

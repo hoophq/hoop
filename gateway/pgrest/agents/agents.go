@@ -50,7 +50,7 @@ func (a *agent) FetchOneByToken(token string) (*pgrest.Agent, error) {
 }
 
 func (a *agent) Upsert(agent *pgrest.Agent) error {
-	status := "DISCONNECTED"
+	status := pgrest.AgentStatusDisconnected
 	if agent.Status != "" {
 		status = agent.Status
 	}

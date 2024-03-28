@@ -1,9 +1,7 @@
 package admin
 
 import (
-	"bytes"
 	"fmt"
-	"net/http"
 	"os/exec"
 	"runtime"
 
@@ -19,8 +17,10 @@ func init() {
 	MainCmd.AddCommand(deleteCmd)
 	MainCmd.AddCommand(getCmd)
 	MainCmd.AddCommand(createCmd)
-	MainCmd.AddCommand(gatewayInfoCmd)
+	MainCmd.AddCommand(serverInfoCmd)
 	MainCmd.AddCommand(openWebhooksDashboardCmd)
+
+	serverInfoCmd.Flags().StringVarP(&outputFlag, "output", "o", "", "Output format. One off: (json)")
 }
 
 var MainCmd = &cobra.Command{
@@ -28,32 +28,70 @@ var MainCmd = &cobra.Command{
 	Short: "Experimental admin commands",
 }
 
-var gatewayInfoCmd = &cobra.Command{
-	Use:   "gateway-info",
-	Short: "Get information about the gateway",
+var serverInfoOutput = `Tenant Type:    %v
+Grpc URL:       %v
+Version:        %v
+Gateway Commit: %v
+Webapp Commit:  %v
+
+Configuration:
+  Log Level:               %v
+  Go Debug:                %v
+  Admin Username:          %v
+  Redact Credentials:      %v
+  Webhook App Credentials: %v
+  IDP Audience:            %v
+  IDP Custom Scopes:       %v
+  Postgrest Role:          %v
+`
+
+var serverInfoCmd = &cobra.Command{
+	Use:     "serverinfo",
+	Aliases: []string{"server-info"},
+	Short:   "Get information about the gateway",
 	Run: func(cmd *cobra.Command, args []string) {
 		conf := clientconfig.GetClientConfigOrDie()
-		_, headers, err := httpRequest(&apiResource{suffixEndpoint: "/api/healthz", conf: conf})
-		if err != nil {
-			out := styles.ClientErrorSimple(fmt.Sprintf("API at %v, GET /api/healthz responded with error=%v", conf.ApiURL, err))
-			fmt.Println(out)
-		} else {
-			fmt.Printf("API is running at %v, GET /api/healthz %v\n", conf.ApiURL, headers[http.CanonicalHeaderKey("server")])
+		decodeTo := "object"
+		if outputFlag == "json" {
+			decodeTo = "raw"
 		}
-
-		data, _, err := httpRequest(&apiResource{suffixEndpoint: "/js/manifest.edn", conf: conf})
+		obj, _, err := httpRequest(&apiResource{suffixEndpoint: "/api/serverinfo", conf: conf, decodeTo: decodeTo})
 		if err != nil {
-			out := styles.ClientErrorSimple(fmt.Sprintf("Webapp is running at %v, responded with error=%v", conf.ApiURL, err))
+			out := styles.ClientErrorSimple(fmt.Sprintf("failed obtaining server info response, reason=%v", err))
 			fmt.Println(out)
 			return
 		}
-		ok := bytes.Contains(data.([]byte), []byte(`:module-id :app, :name :app, :output-name "app.js"`))
-		if ok {
-			fmt.Printf("Webapp is running at %v, GET /js/manifest.edn responded with success!\n", conf.ApiURL)
+		if outputFlag == "json" {
+			rawData, _ := obj.([]byte)
+			fmt.Println(string(rawData))
 			return
 		}
-		out := styles.ClientErrorSimple(fmt.Sprintf("Webapp is running at %v, GET /js/manifest.edn did not render correctly!", conf.ApiURL))
-		fmt.Println(out)
+		displayFn := func(val any) string {
+			isSet, ok := val.(bool)
+			if ok && isSet {
+				return "set"
+			}
+			return "not set"
+		}
+		if resp, _ := obj.(map[string]any); len(resp) > 0 {
+			fmt.Printf(serverInfoOutput,
+				resp["tenancy_type"],
+				resp["grpc_url"],
+				resp["version"],
+				resp["gateway_commit"],
+				resp["webapp_commit"],
+				resp["log_level"],
+				resp["go_debug"],
+				resp["admin_username"],
+				displayFn(resp["has_redact_credentials"]),
+				displayFn(resp["has_webhook_app_key"]),
+				displayFn(resp["has_idp_audience"]),
+				displayFn(resp["has_idp_custom_scopes"]),
+				displayFn(resp["has_postgrest_role"]),
+			)
+			return
+		}
+		fmt.Println("Empty response")
 	},
 }
 

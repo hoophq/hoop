@@ -11,19 +11,20 @@ import (
 	ginzap "github.com/gin-contrib/zap"
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/analytics"
+	apiagents "github.com/runopsio/hoop/gateway/api/agents"
 	apiconnections "github.com/runopsio/hoop/gateway/api/connections"
+	apihealthz "github.com/runopsio/hoop/gateway/api/healthz"
 	loginapi "github.com/runopsio/hoop/gateway/api/login"
 	apiplugins "github.com/runopsio/hoop/gateway/api/plugins"
 	apiproxymanager "github.com/runopsio/hoop/gateway/api/proxymanager"
 	reviewapi "github.com/runopsio/hoop/gateway/api/review"
+	apiserverinfo "github.com/runopsio/hoop/gateway/api/serverinfo"
 	serviceaccountapi "github.com/runopsio/hoop/gateway/api/serviceaccount"
 	sessionapi "github.com/runopsio/hoop/gateway/api/session"
 	signupapi "github.com/runopsio/hoop/gateway/api/signup"
 	userapi "github.com/runopsio/hoop/gateway/api/user"
 	webhooksapi "github.com/runopsio/hoop/gateway/api/webhooks"
-	"github.com/runopsio/hoop/gateway/healthz"
 	"github.com/runopsio/hoop/gateway/indexer"
 	"github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/runbooks"
@@ -34,7 +35,6 @@ import (
 
 type (
 	Api struct {
-		AgentHandler    agent.Handler
 		IndexerHandler  indexer.Handler
 		ReviewHandler   review.Handler
 		RunbooksHandler runbooks.Handler
@@ -95,7 +95,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	loginHandler := loginapi.New(api.IDProvider)
 	route.GET("/login", loginHandler.Login)
 	route.GET("/callback", loginHandler.LoginCallback)
-	route.GET("/healthz", healthz.LivenessHandler())
+	route.GET("/healthz", apihealthz.LivenessHandler())
 	route.POST("/signup",
 		AnonAccessRole,
 		api.Authenticate,
@@ -218,17 +218,17 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest(analytics.EventCreateAgent),
 		AuditApiChanges,
-		api.AgentHandler.Post)
+		apiagents.Post)
 	route.GET("/agents",
 		AdminOnlyAccessRole,
 		api.Authenticate,
-		api.AgentHandler.FindAll)
+		apiagents.List)
 	route.DELETE("/agents/:nameOrID",
 		AdminOnlyAccessRole,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventDeleteAgent),
 		AuditApiChanges,
-		api.AgentHandler.Evict)
+		apiagents.Delete)
 
 	route.POST("/plugins",
 		AdminOnlyAccessRole,
@@ -306,4 +306,8 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest(analytics.EventOpenWebhooksDashboard),
 		AuditApiChanges,
 		webhooksapi.Get)
+
+	route.GET("/serverinfo",
+		api.Authenticate,
+		apiserverinfo.New(api.GrpcURL).Get)
 }
