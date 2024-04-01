@@ -12,7 +12,6 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/monitoring"
 	"github.com/runopsio/hoop/common/version"
-	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/agentcontroller"
 	"github.com/runopsio/hoop/gateway/api"
 	"github.com/runopsio/hoop/gateway/indexer"
@@ -68,7 +67,6 @@ func Run() {
 		grpcURL = fmt.Sprintf("%s://%s:8443", scheme, u.Hostname())
 	}
 
-	agentService := agent.Service{Storage: &agent.Storage{}}
 	userService := user.Service{Storage: &user.Storage{}}
 	reviewService := review.Service{Storage: &review.Storage{}}
 	notificationService := getNotification()
@@ -81,7 +79,6 @@ func Run() {
 	}
 
 	a := &api.Api{
-		AgentHandler:    agent.Handler{Service: &agentService},
 		IndexerHandler:  indexer.Handler{},
 		ReviewHandler:   review.Handler{Service: &reviewService},
 		RunbooksHandler: runbooks.Handler{},
@@ -92,7 +89,6 @@ func Run() {
 	}
 
 	g := &transport.Server{
-		AgentService:         agentService,
 		ReviewService:        reviewService,
 		NotificationService:  notificationService,
 		IDProvider:           idProvider,

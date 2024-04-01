@@ -47,6 +47,11 @@ type EnvVar struct {
 	Envs  map[string]string `json:"envs"`
 }
 
+const (
+	AgentStatusConnected    = "CONNECTED"
+	AgentStatusDisconnected = "DISCONNECTED"
+)
+
 type Agent struct {
 	ID        string            `json:"id"`
 	OrgID     string            `json:"org_id"`

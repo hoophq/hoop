@@ -20,7 +20,6 @@ func init() {
 	createCmd.Flags().StringVar(&apiURLFlag, "api-url", "", "The API URL to configure")
 	createCmd.Flags().StringVar(&grpcURLFlag, "grpc-url", "", "The gRPC URL to configure")
 	createCmd.MarkFlagRequired("api-url")
-	createCmd.MarkFlagRequired("grpc-url")
 
 	viewCmd.Flags().BoolVar(&viewRawFlag, "raw", false, "Display sensitive credentials information")
 

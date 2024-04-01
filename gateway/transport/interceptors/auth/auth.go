@@ -9,9 +9,9 @@ import (
 	commongrpc "github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/agent"
 	apiconnections "github.com/runopsio/hoop/gateway/api/connections"
-	apitypes "github.com/runopsio/hoop/gateway/apiclient/types"
+	"github.com/runopsio/hoop/gateway/pgrest"
+	pgagents "github.com/runopsio/hoop/gateway/pgrest/agents"
 	pguserauth "github.com/runopsio/hoop/gateway/pgrest/userauth"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
@@ -31,14 +31,12 @@ type serverStreamWrapper struct {
 }
 
 type interceptor struct {
-	idp          *idp.Provider
-	agentService *agent.Service
+	idp *idp.Provider
 }
 
-func New(idpProvider *idp.Provider, agentsvc *agent.Service) grpc.StreamServerInterceptor {
+func New(idpProvider *idp.Provider) grpc.StreamServerInterceptor {
 	return (&interceptor{
-		idp:          idpProvider,
-		agentService: agentsvc,
+		idp: idpProvider,
 	}).StreamServerInterceptor
 }
 
@@ -169,7 +167,7 @@ func (i *interceptor) getConnection(name string, userCtx *pguserauth.Context) (*
 	if conn == nil {
 		return nil, nil
 	}
-	ag, err := i.agentService.FindByNameOrID(userCtx, conn.AgentId)
+	ag, err := pgagents.New().FetchOneByNameOrID(userCtx, conn.AgentId)
 	if err != nil {
 		log.Errorf("failed obtaining agent %v, err=%v", err)
 		return nil, status.Errorf(codes.Internal, "internal error, failed to obtain agent from connection")
@@ -190,23 +188,24 @@ func (i *interceptor) getConnection(name string, userCtx *pguserauth.Context) (*
 	}, nil
 }
 
-func (i *interceptor) authenticateAgent(bearerToken string, md metadata.MD) (*apitypes.Agent, error) {
+func (i *interceptor) authenticateAgent(bearerToken string, md metadata.MD) (*pgrest.Agent, error) {
 	if strings.HasPrefix(bearerToken, "x-agt-") {
-		ag, err := i.agentService.FindByToken(bearerToken)
+		ag, err := pgagents.New().FetchOneByToken(bearerToken)
 		if err != nil || ag == nil {
 			md.Delete("authorization")
 			log.Debugf("invalid agent authentication (legacy auth), tokenlength=%v, client-metadata=%v, err=%v", len(bearerToken), md, err)
 			return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
-		return &apitypes.Agent{ID: ag.Id, OrgID: ag.OrgId, Name: ag.Name, Mode: ag.Mode,
-			Metadata: apitypes.AgentAuthMetadata{
-				Hostname:      commongrpc.MetaGet(md, "hostname"),
-				Platform:      commongrpc.MetaGet(md, "platform"),
-				MachineID:     commongrpc.MetaGet(md, "machine_id"),
-				KernelVersion: commongrpc.MetaGet(md, "kernel_version"),
-				Version:       commongrpc.MetaGet(md, "version"),
-				GoVersion:     commongrpc.MetaGet(md, "go-version"),
-				Compiler:      commongrpc.MetaGet(md, "compiler")}}, nil
+		ag.Metadata = map[string]string{
+			"hostname":       commongrpc.MetaGet(md, "hostname"),
+			"platform":       commongrpc.MetaGet(md, "platform"),
+			"machine_id":     commongrpc.MetaGet(md, "machine-id"),
+			"kernel_version": commongrpc.MetaGet(md, "kernel-version"),
+			"version":        commongrpc.MetaGet(md, "version"),
+			"goversion":      commongrpc.MetaGet(md, "go-version"),
+			"compiler":       commongrpc.MetaGet(md, "compiler"),
+		}
+		return ag, nil
 	}
 	dsn, err := dsnkeys.Parse(bearerToken)
 	if err != nil {
@@ -215,7 +214,7 @@ func (i *interceptor) authenticateAgent(bearerToken string, md metadata.MD) (*ap
 		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
 	}
 
-	ag, err := i.agentService.FindByToken(dsn.SecretKeyHash)
+	ag, err := pgagents.New().FetchOneByToken(dsn.SecretKeyHash)
 	if err != nil || ag == nil {
 		md.Delete("authorization")
 		log.Debugf("invalid agent authentication (dsn), tokenlength=%v, client-metadata=%v, err=%v", len(bearerToken), md, err)
@@ -223,19 +222,19 @@ func (i *interceptor) authenticateAgent(bearerToken string, md metadata.MD) (*ap
 	}
 	if ag.Name != dsn.Name || ag.Mode != dsn.AgentMode {
 		log.Errorf("failed authenticating agent (agent dsn), mismatch dsn attributes. id=%v, name=%v, mode=%v",
-			ag.Id, dsn.Name, dsn.AgentMode)
+			ag.ID, dsn.Name, dsn.AgentMode)
 		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication, mismatch dsn attributes")
 	}
-
-	return &apitypes.Agent{ID: ag.Id, OrgID: ag.OrgId, Name: ag.Name, Mode: ag.Mode,
-		Metadata: apitypes.AgentAuthMetadata{
-			Hostname:      commongrpc.MetaGet(md, "hostname"),
-			Platform:      commongrpc.MetaGet(md, "platform"),
-			MachineID:     commongrpc.MetaGet(md, "machine_id"),
-			KernelVersion: commongrpc.MetaGet(md, "kernel_version"),
-			Version:       commongrpc.MetaGet(md, "version"),
-			GoVersion:     commongrpc.MetaGet(md, "go-version"),
-			Compiler:      commongrpc.MetaGet(md, "compiler")}}, nil
+	ag.Metadata = map[string]string{
+		"hostname":       commongrpc.MetaGet(md, "hostname"),
+		"platform":       commongrpc.MetaGet(md, "platform"),
+		"machine_id":     commongrpc.MetaGet(md, "machine-id"),
+		"kernel_version": commongrpc.MetaGet(md, "kernel-version"),
+		"version":        commongrpc.MetaGet(md, "version"),
+		"goversion":      commongrpc.MetaGet(md, "go-version"),
+		"compiler":       commongrpc.MetaGet(md, "compiler"),
+	}
+	return ag, nil
 }
 
 func parseBearerToken(md metadata.MD) (string, error) {

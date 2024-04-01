@@ -13,8 +13,8 @@ import (
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
-	"github.com/runopsio/hoop/gateway/agent"
-	apitypes "github.com/runopsio/hoop/gateway/apiclient/types"
+	"github.com/runopsio/hoop/gateway/pgrest"
+	pgagents "github.com/runopsio/hoop/gateway/pgrest/agents"
 	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
 	"github.com/runopsio/hoop/gateway/transport/connectionrequests"
 	authinterceptor "github.com/runopsio/hoop/gateway/transport/interceptors/auth"
@@ -80,7 +80,7 @@ func (s *Server) subscribeAgent(grpcStream pb.Transport_ConnectServer) error {
 		ClientOrigin: clientOrigin,
 		ParamsData:   map[string]any{"client": clientOrigin},
 	}
-	if err := s.updateAgentStatus(agent.StatusConnected, gwctx.Agent); err != nil {
+	if err := s.updateAgentStatus(pgrest.AgentStatusConnected, gwctx.Agent); err != nil {
 		log.Errorf("failed updating agent to connected status, err=%v", err)
 		sentry.CaptureException(err)
 		return status.Errorf(codes.Internal, "failed updating agent, internal error")
@@ -98,7 +98,7 @@ func (s *Server) subscribeAgent(grpcStream pb.Transport_ConnectServer) error {
 	pluginContext.ParamsData["disconnect-agent-id"] = gwctx.Agent.ID
 	s.startDisconnectClientSink(agentID, clientOrigin, func(err error) {
 		defer unbindAgent(agentID)
-		if err := s.updateAgentStatus(agent.StatusDisconnected, gwctx.Agent); err != nil {
+		if err := s.updateAgentStatus(pgrest.AgentStatusDisconnected, gwctx.Agent); err != nil {
 			log.Warnf("failed publishing disconnect agent state, org=%v, name=%v, err=%v", gwctx.Agent, err)
 		}
 		// TODO: need to disconnect all proxy clients connected
@@ -111,7 +111,7 @@ func (s *Server) subscribeAgent(grpcStream pb.Transport_ConnectServer) error {
 	return agentErr
 }
 
-func (s *Server) listenAgentMessages(pctx *plugintypes.Context, ag *apitypes.Agent, stream streamWrapper) error {
+func (s *Server) listenAgentMessages(pctx *plugintypes.Context, ag *pgrest.Agent, stream streamWrapper) error {
 	ctx := stream.Context()
 
 	for {
@@ -168,28 +168,30 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, ag *apitypes.Age
 	}
 }
 
-func (s *Server) updateAgentStatus(agentStatus agent.Status, agentCtx apitypes.Agent) error {
-	ag, err := s.AgentService.FindByNameOrID(user.NewContext(agentCtx.OrgID, ""), agentCtx.Name)
+func (s *Server) updateAgentStatus(agentStatus string, agentCtx pgrest.Agent) error {
+	client := pgagents.New()
+	ag, err := client.FetchOneByNameOrID(user.NewContext(agentCtx.OrgID, ""), agentCtx.Name)
 	if err != nil || ag == nil {
 		return fmt.Errorf("failed to obtain agent org=%v, name=%v, err=%v", agentCtx.OrgID, agentCtx.Name, err)
 	}
-	if agentStatus == agent.StatusConnected {
-		ag.Hostname = agentCtx.Metadata.Hostname
-		ag.MachineId = agentCtx.Metadata.MachineID
-		ag.KernelVersion = agentCtx.Metadata.KernelVersion
-		ag.Version = agentCtx.Metadata.Version
-		ag.GoVersion = agentCtx.Metadata.GoVersion
-		ag.Compiler = agentCtx.Metadata.Compiler
-		ag.Platform = agentCtx.Metadata.Platform
+	if agentStatus == pgrest.AgentStatusConnected {
+		ag.Metadata = map[string]string{
+			"hostname":       agentCtx.GetMeta("hostname"),
+			"machine_id":     agentCtx.GetMeta("machine_id"),
+			"kernel_version": agentCtx.GetMeta("kernel_version"),
+			"version":        agentCtx.GetMeta("version"),
+			"goversion":      agentCtx.GetMeta("goversion"),
+			"compiler":       agentCtx.GetMeta("compiler"),
+			"platform":       agentCtx.GetMeta("platform"),
+		}
 	}
 	// set platform to empty string when agent is disconnected
 	// it will allow to identify embedded agents connected status
-	if agentStatus == agent.StatusDisconnected {
-		ag.Platform = ""
+	if agentStatus == pgrest.AgentStatusDisconnected && len(ag.Metadata) > 0 {
+		ag.Metadata["platform"] = ""
 	}
 	ag.Status = agentStatus
-	_, err = s.AgentService.Persist(ag)
-	return err
+	return client.Upsert(ag)
 }
 
 func (s *Server) configurationData(orgName string) []byte {

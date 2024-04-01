@@ -3,7 +3,6 @@ package authinterceptor
 import (
 	"context"
 
-	"github.com/runopsio/hoop/gateway/agent"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -11,8 +10,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func WithUnaryValidator(idpProvider *idp.Provider, agentsvc *agent.Service) grpc.ServerOption {
-	i := &interceptor{idp: idpProvider, agentService: agentsvc}
+func WithUnaryValidator(idpProvider *idp.Provider) grpc.ServerOption {
+	i := &interceptor{idp: idpProvider}
 	return grpc.UnaryInterceptor(i.UnaryValidator)
 }
 

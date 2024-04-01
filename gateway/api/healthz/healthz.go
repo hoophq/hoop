@@ -1,4 +1,4 @@
-package healthz
+package apihealthz
 
 import (
 	"fmt"

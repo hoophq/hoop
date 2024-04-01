@@ -28,6 +28,7 @@ var createAgentCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		args = []string{"agent", args[0]}
 		apir := parseResourceOrDie(args, "POST", outputFlag)
+		apir.name = NormalizeResourceName(apir.name)
 		resp, err := httpBodyRequest(apir, "POST", map[string]any{
 			"name": apir.name,
 			"mode": createAgentModeFlag,

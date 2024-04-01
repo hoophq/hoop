@@ -8,15 +8,12 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"unicode"
 
 	"github.com/runopsio/hoop/agent"
+	"github.com/runopsio/hoop/client/cmd/admin"
 	"github.com/runopsio/hoop/common/appruntime"
 	"github.com/runopsio/hoop/common/proto"
 	"github.com/spf13/cobra"
-	"golang.org/x/text/runes"
-	"golang.org/x/text/transform"
-	"golang.org/x/text/unicode/norm"
 )
 
 var runFlags = struct {
@@ -64,7 +61,7 @@ var runCmd = &cobra.Command{
 		}
 
 		request := proto.PreConnectRequest{
-			Name: normalizeConnectionName(runFlags.Name),
+			Name: admin.NormalizeResourceName(runFlags.Name),
 			Type: "custom",
 		}
 		switch {
@@ -168,14 +165,6 @@ func parseDefaultShell() (shellPath string, err error) {
 		shellPath, err = exec.LookPath("sh")
 	}
 	return
-}
-
-func normalizeConnectionName(name string) string {
-	t := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
-	name, _, _ = transform.String(t, name)
-	name = strings.ToLower(name)
-	name = strings.ReplaceAll(name, " ", "")
-	return name
 }
 
 func encb64(v any) string {

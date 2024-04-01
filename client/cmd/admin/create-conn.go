@@ -75,6 +75,7 @@ var createConnectionCmd = &cobra.Command{
 				cmdList = append(cmdList, cmdparam)
 			}
 		}
+		apir.name = NormalizeResourceName(apir.name)
 		envVar, err := parseEnvPerType()
 		if err != nil {
 			styles.PrintErrorAndExit(err.Error())

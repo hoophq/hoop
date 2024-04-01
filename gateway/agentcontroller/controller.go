@@ -121,7 +121,7 @@ func conciliateDeployments(gatewayGrpcURL string, items []*agentcontroller.Agent
 				Name:     req.Name,
 				Mode:     proto.AgentModeStandardType,
 				Token:    "",
-				Status:   "DISCONNECTED",
+				Status:   pgrest.AgentStatusDisconnected,
 				Metadata: map[string]string{},
 			}
 		}
