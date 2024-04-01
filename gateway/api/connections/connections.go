@@ -3,7 +3,6 @@ package apiconnections
 import (
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -13,6 +12,7 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	sessionapi "github.com/runopsio/hoop/gateway/api/session"
+	apivalidation "github.com/runopsio/hoop/gateway/api/validation"
 	"github.com/runopsio/hoop/gateway/pgrest"
 	pgconnections "github.com/runopsio/hoop/gateway/pgrest/connections"
 	pgsession "github.com/runopsio/hoop/gateway/pgrest/session"
@@ -48,8 +48,8 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	if req.Name == "" || strings.Contains(req.Name, "/") {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "connection name must not be empty or contain slash characters"})
+	if err := apivalidation.ValidateResourceName(req.Name); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
 	existingConn, err := pgconnections.New().FetchOneByNameOrID(ctx, req.Name)

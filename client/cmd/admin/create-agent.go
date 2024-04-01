@@ -28,6 +28,7 @@ var createAgentCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		args = []string{"agent", args[0]}
 		apir := parseResourceOrDie(args, "POST", outputFlag)
+		apir.name = NormalizeResourceName(apir.name)
 		resp, err := httpBodyRequest(apir, "POST", map[string]any{
 			"name": apir.name,
 			"mode": createAgentModeFlag,
@@ -47,11 +48,3 @@ var createAgentCmd = &cobra.Command{
 		fmt.Printf("%v\n", respMap["token"])
 	},
 }
-
-// func normalizeAgentName(name string) string {
-// 	t := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
-// 	name, _, _ = transform.String(t, name)
-// 	name = strings.ToLower(name)
-// 	name = strings.ReplaceAll(name, " ", "")
-// 	return name
-// }

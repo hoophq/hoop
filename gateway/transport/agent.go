@@ -187,7 +187,7 @@ func (s *Server) updateAgentStatus(agentStatus string, agentCtx pgrest.Agent) er
 	}
 	// set platform to empty string when agent is disconnected
 	// it will allow to identify embedded agents connected status
-	if agentStatus == pgrest.AgentStatusDisconnected {
+	if agentStatus == pgrest.AgentStatusDisconnected && len(ag.Metadata) > 0 {
 		ag.Metadata["platform"] = ""
 	}
 	ag.Status = agentStatus

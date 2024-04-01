@@ -11,6 +11,7 @@ import (
 	"github.com/runopsio/hoop/common/dsnkeys"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/proto"
+	apivalidation "github.com/runopsio/hoop/gateway/api/validation"
 	"github.com/runopsio/hoop/gateway/pgrest"
 	pgagents "github.com/runopsio/hoop/gateway/pgrest/agents"
 	"github.com/runopsio/hoop/gateway/storagev2"
@@ -30,6 +31,10 @@ func Post(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		log.Infof("failed parsing request payload, err=%v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	if err := apivalidation.ValidateResourceName(req.Name); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
 
