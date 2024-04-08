@@ -59,8 +59,9 @@ const (
 	CustomClaimGroups = "https://app.hoop.dev/groups"
 	DefaultOrgName    = "default"
 
-	AgentModeEmbeddedType string = "embedded"
-	AgentModeStandardType string = "standard"
+	AgentModeEmbeddedType        string = "embedded"
+	AgentModeStandardType        string = "standard"
+	AgentModeMultiConnectionType string = "multi-connection"
 
 	PreConnectStatusConnectType string = "CONNECT"
 	PreConnectStatusBackoffType string = "BACKOFF"

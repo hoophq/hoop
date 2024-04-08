@@ -38,8 +38,10 @@ var createCmd = &cobra.Command{
 	Short:        "Creates or override a client hoop configuration file",
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
-		if _, err := grpc.ParseServerAddress(grpcURLFlag); err != nil {
-			styles.PrintErrorAndExit("--grpc-url value is not a gRPC address")
+		if grpcURLFlag != "" {
+			if _, err := grpc.ParseServerAddress(grpcURLFlag); err != nil {
+				styles.PrintErrorAndExit("--grpc-url value is not a gRPC address")
+			}
 		}
 
 		if _, err := grpc.ParseServerAddress(apiURLFlag); err != nil {

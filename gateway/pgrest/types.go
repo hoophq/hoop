@@ -57,7 +57,8 @@ type Agent struct {
 	OrgID     string            `json:"org_id"`
 	Name      string            `json:"name"`
 	Mode      string            `json:"mode"`
-	Token     string            `json:"token"`
+	Key       string            `json:"key"`
+	KeyHash   string            `json:"key_hash"`
 	Status    string            `json:"status"`
 	Metadata  map[string]string `json:"metadata"`
 	UpdatedAt *string           `json:"updated_at"`

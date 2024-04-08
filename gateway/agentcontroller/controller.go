@@ -120,18 +120,18 @@ func conciliateDeployments(gatewayGrpcURL string, items []*agentcontroller.Agent
 				OrgID:    req.ID,
 				Name:     req.Name,
 				Mode:     proto.AgentModeStandardType,
-				Token:    "",
+				KeyHash:  "",
 				Status:   pgrest.AgentStatusDisconnected,
 				Metadata: map[string]string{},
 			}
 		}
 		err = agentcli.Upsert(&pgrest.Agent{
-			ID:     agent.ID,
-			OrgID:  agent.OrgID,
-			Token:  secretKeyHash,
-			Name:   agent.Name,
-			Mode:   agent.Mode,
-			Status: string(agent.Status),
+			ID:      agent.ID,
+			OrgID:   agent.OrgID,
+			KeyHash: secretKeyHash,
+			Name:    agent.Name,
+			Mode:    agent.Mode,
+			Status:  string(agent.Status),
 			Metadata: map[string]string{
 				"hostname":       agent.GetMeta("hostname"),
 				"platform":       agent.GetMeta("platform"),

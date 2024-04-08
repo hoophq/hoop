@@ -65,8 +65,8 @@ func (s *Server) subscribeAgent(grpcStream pb.Transport_ConnectServer) error {
 	}
 	agentID := gwctx.Agent.ID
 	if hasAgentStream(agentID) {
-		log.Warnf("agent %s is already connected", gwctx.Agent.Name)
-		return status.Errorf(codes.FailedPrecondition, "agent %s already connected", gwctx.Agent.Name)
+		log.Debugf("agent %s is already connected", gwctx.Agent.Name)
+		return status.Error(codes.FailedPrecondition, "agent already connected")
 	}
 	// TODO: refactor me, obtain the org name in the authentication layer interceptor
 	org, _ := pgusers.New().FetchOrgByID(gwctx.Agent.OrgID)
@@ -174,22 +174,25 @@ func (s *Server) updateAgentStatus(agentStatus string, agentCtx pgrest.Agent) er
 	if err != nil || ag == nil {
 		return fmt.Errorf("failed to obtain agent org=%v, name=%v, err=%v", agentCtx.OrgID, agentCtx.Name, err)
 	}
+	metadata := map[string]string{}
+	for key, val := range ag.Metadata {
+		metadata[key] = val
+	}
 	if agentStatus == pgrest.AgentStatusConnected {
-		ag.Metadata = map[string]string{
-			"hostname":       agentCtx.GetMeta("hostname"),
-			"machine_id":     agentCtx.GetMeta("machine_id"),
-			"kernel_version": agentCtx.GetMeta("kernel_version"),
-			"version":        agentCtx.GetMeta("version"),
-			"goversion":      agentCtx.GetMeta("goversion"),
-			"compiler":       agentCtx.GetMeta("compiler"),
-			"platform":       agentCtx.GetMeta("platform"),
-		}
+		metadata["hostname"] = agentCtx.GetMeta("hostname")
+		metadata["machine_id"] = agentCtx.GetMeta("machine_id")
+		metadata["kernel_version"] = agentCtx.GetMeta("kernel_version")
+		metadata["version"] = agentCtx.GetMeta("version")
+		metadata["goversion"] = agentCtx.GetMeta("goversion")
+		metadata["compiler"] = agentCtx.GetMeta("compiler")
+		metadata["platform"] = agentCtx.GetMeta("platform")
 	}
 	// set platform to empty string when agent is disconnected
 	// it will allow to identify embedded agents connected status
 	if agentStatus == pgrest.AgentStatusDisconnected && len(ag.Metadata) > 0 {
-		ag.Metadata["platform"] = ""
+		metadata["platform"] = ""
 	}
+	ag.Metadata = metadata
 	ag.Status = agentStatus
 	return client.Upsert(ag)
 }

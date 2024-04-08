@@ -16,6 +16,7 @@ import (
 	apiconnections "github.com/runopsio/hoop/gateway/api/connections"
 	apihealthz "github.com/runopsio/hoop/gateway/api/healthz"
 	loginapi "github.com/runopsio/hoop/gateway/api/login"
+	apiorgs "github.com/runopsio/hoop/gateway/api/orgs"
 	apiplugins "github.com/runopsio/hoop/gateway/api/plugins"
 	apiproxymanager "github.com/runopsio/hoop/gateway/api/proxymanager"
 	reviewapi "github.com/runopsio/hoop/gateway/api/review"
@@ -229,6 +230,20 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest(analytics.EventDeleteAgent),
 		AuditApiChanges,
 		apiagents.Delete)
+
+	route.POST("/orgs/keys",
+		AdminOnlyAccessRole,
+		api.Authenticate,
+		AuditApiChanges,
+		apiorgs.CreateAgentKey)
+	route.GET("/orgs/keys",
+		AdminOnlyAccessRole,
+		api.Authenticate,
+		apiorgs.GetAgentKey)
+	route.DELETE("/orgs/keys",
+		AdminOnlyAccessRole,
+		api.Authenticate,
+		apiorgs.RevokeAgentKey)
 
 	route.POST("/plugins",
 		AdminOnlyAccessRole,

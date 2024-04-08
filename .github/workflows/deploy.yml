@@ -65,7 +65,7 @@ jobs:
       run: ( echo "cat <<EOF" ; cat ./infra/clari/values.yml ; echo EOF ) | sh > ./values-clari.yml
     - name: Upgrade App
       run: |-
-        helm upgrade --install hoop https://hoopartifacts.s3.amazonaws.com/release/${{ inputs.version }}/hoop-chart-${{ inputs.version }}.tgz \
+        helm upgrade --dry-run --install hoop https://hoopartifacts.s3.amazonaws.com/release/${{ inputs.version }}/hoop-chart-${{ inputs.version }}.tgz \
           -f ./values-clari.yml \
           --set image.gw.tag=${{ inputs.version }} \
           --wait \

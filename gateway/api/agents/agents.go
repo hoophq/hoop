@@ -3,6 +3,7 @@ package apiagents
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/getsentry/sentry-go"
@@ -71,21 +72,13 @@ func Post(c *gin.Context) {
 	err = pgagents.New().Upsert(&pgrest.Agent{
 		// a deterministic uuid allows automatic reasign of resources
 		// in case of removal and creating with the same name (e.g. connections)
-		ID:     deterministicAgentUUID(ctx.Org.Id, req.Name),
-		Name:   req.Name,
-		OrgID:  ctx.GetOrgID(),
-		Token:  secretKeyHash,
-		Mode:   req.Mode,
-		Status: pgrest.AgentStatusDisconnected,
-		Metadata: map[string]string{
-			"hostname":       "",
-			"platform":       "",
-			"goversion":      "",
-			"version":        "",
-			"kernel_version": "",
-			"compiler":       "",
-			"machine_id":     "",
-		},
+		ID:       DeterministicAgentUUID(ctx.Org.Id, req.Name),
+		Name:     req.Name,
+		OrgID:    ctx.GetOrgID(),
+		KeyHash:  secretKeyHash,
+		Mode:     req.Mode,
+		Status:   pgrest.AgentStatusDisconnected,
+		Metadata: map[string]string{},
 	})
 	if err != nil {
 		log.Errorf("failed persisting agent token, err=%v", err)
@@ -121,8 +114,8 @@ func Delete(c *gin.Context) {
 
 func List(c *gin.Context) {
 	context := user.ContextUser(c)
-
-	items, err := pgagents.New().FindAll(context)
+	// items, err := pgagents.New().FindAll(context, pgrest.WithEqFilter(c.Request.URL.Query()))
+	items, err := pgagents.New().FindAll(context, pgrest.WithEqFilter(url.Values{}))
 	if err != nil {
 		log.Errorf("failed listing agents, reason=%v", err)
 		sentry.CaptureException(err)
@@ -130,15 +123,24 @@ func List(c *gin.Context) {
 	}
 	result := []map[string]any{}
 	for _, a := range items {
-		if a.Mode == "" {
+		switch a.Mode {
+		case proto.AgentModeMultiConnectionType:
+			// for now, skip listing multi-connection keys
+			// there's a special route for managing these kind of token.
+			// See orgs/orgs.go
+			continue
+		case "":
 			// set to default mode if the entity doesn't contain any value
 			a.Mode = proto.AgentModeStandardType
 		}
 		result = append(result, map[string]any{
-			"id":             a.ID,
-			"token":          "", // don't show the hashed token
-			"name":           a.Name,
-			"mode":           a.Mode,
+			"id":       a.ID,
+			"token":    "", // don't show the hashed token
+			"name":     a.Name,
+			"mode":     a.Mode,
+			"status":   a.Status,
+			"metadata": a.Metadata,
+			// DEPRECATE top level metadata keys
 			"hostname":       a.GetMeta("hostname"),
 			"machine_id":     a.GetMeta("machine_id"),
 			"kernel_version": a.GetMeta("kernel_version"),
@@ -146,13 +148,12 @@ func List(c *gin.Context) {
 			"goversion":      a.GetMeta("goversion"),
 			"compiler":       a.GetMeta("compiler"),
 			"platform":       a.GetMeta("platform"),
-			"status":         a.Status,
 		})
 	}
 	c.JSON(http.StatusOK, result)
 }
 
-func deterministicAgentUUID(orgID, agentName string) string {
+func DeterministicAgentUUID(orgID, agentName string) string {
 	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(
 		strings.Join([]string{"agent", orgID, agentName}, "/"))).String()
 }
