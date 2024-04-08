@@ -123,7 +123,7 @@ func hash256Key(secretKey string) (secret256Hash string, err error) {
 }
 
 func validateAgentMode(mode string) error {
-	if mode != pb.AgentModeStandardType && mode != pb.AgentModeEmbeddedType {
+	if mode != pb.AgentModeStandardType && mode != pb.AgentModeEmbeddedType && mode != pb.AgentModeMultiConnectionType {
 		return ErrInvalidMode
 	}
 	return nil

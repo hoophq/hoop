@@ -39,6 +39,7 @@ type Connection struct {
 	Reviewers     []string       `json:"reviewers"`
 	RedactEnabled bool           `json:"redact_enabled"`
 	RedactTypes   []string       `json:"redact_types"`
+	ManagedBy     *string        `json:"managed_by"`
 }
 
 func Post(c *gin.Context) {
@@ -91,6 +92,7 @@ func Post(c *gin.Context) {
 		Type:          string(req.Type),
 		SubType:       req.SubType,
 		Envs:          envs,
+		ManagedBy:     nil,
 	})
 	if err != nil {
 		log.Errorf("failed creating connection, err=%v", err)
@@ -134,6 +136,11 @@ func Put(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 		return
 	}
+	// when the connection is managed by the agent, make sure to deny any change
+	if conn.ManagedBy != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "unable to update a connection managed by its agent"})
+		return
+	}
 
 	var req Connection
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -153,11 +160,6 @@ func Put(c *gin.Context) {
 		}
 	}
 
-	// An agent will not longer be able to sync the attributes
-	// of this connection when the agent is changed.
-	if conn.AgentID != req.AgentId {
-		conn.ManagedBy = nil
-	}
 	// immutable fields
 	req.ID = conn.ID
 	req.Name = conn.Name
@@ -171,7 +173,7 @@ func Put(c *gin.Context) {
 		Type:          req.Type,
 		SubType:       req.SubType,
 		Envs:          pgrest.CoerceToMapString(req.Secrets),
-		ManagedBy:     conn.ManagedBy,
+		ManagedBy:     nil,
 	})
 	if err != nil {
 		log.Errorf("failed updating connection, err=%v", err)
@@ -261,6 +263,7 @@ func List(c *gin.Context) {
 				Reviewers:     reviewers,
 				RedactEnabled: len(redactTypes) > 0,
 				RedactTypes:   redactTypes,
+				ManagedBy:     conn.ManagedBy,
 			})
 		}
 
@@ -310,6 +313,7 @@ func Get(c *gin.Context) {
 		Reviewers:     reviewers,
 		RedactEnabled: len(redactTypes) > 0,
 		RedactTypes:   redactTypes,
+		ManagedBy:     conn.ManagedBy,
 	})
 }
 
@@ -385,13 +389,14 @@ func FetchByName(ctx pgrest.Context, connectionName string) (*Connection, error)
 	// we do not propagate reviewers and redact configuration.
 	// it needs to be implemented in the other layers
 	return &Connection{
-		ID:       conn.ID,
-		Name:     conn.Name,
-		IconName: "",
-		Command:  conn.Command,
-		Type:     conn.Type,
-		SubType:  conn.SubType,
-		Secrets:  pgrest.CoerceToAnyMap(conn.Envs),
-		AgentId:  conn.AgentID,
+		ID:        conn.ID,
+		Name:      conn.Name,
+		IconName:  "",
+		Command:   conn.Command,
+		Type:      conn.Type,
+		SubType:   conn.SubType,
+		Secrets:   pgrest.CoerceToAnyMap(conn.Envs),
+		AgentId:   conn.AgentID,
+		ManagedBy: conn.ManagedBy,
 	}, nil
 }

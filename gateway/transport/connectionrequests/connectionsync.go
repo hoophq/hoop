@@ -70,30 +70,31 @@ func upsertConnection(orgID, agentID string, req *proto.PreConnectRequest, conn 
 }
 
 func connectionSync(orgID, agentID string, req *proto.PreConnectRequest) error {
-	if !checksumCacheMatches(orgID, req) {
-		conn, err := pgconnections.New().FetchOneByNameOrID(pgrest.NewOrgContext(orgID), req.Name)
-		if err != nil {
-			return err
-		}
-		// It will only sync connections that are managed by this process/agent.
-		// A user could change the state of the connection and make it unmanageable
-		if conn != nil {
-			var managedBy string
-			if conn.ManagedBy != nil {
-				managedBy = *conn.ManagedBy
-			}
-			if managedBy != managedByAgent || conn.AgentID != agentID {
-				log.Warnf("manage inconsistency, managed-val=%q, conn-agentid=%q, request-agentid=%q",
-					managedBy, conn.AgentID, agentID)
-				return fmt.Errorf("connection %s is not being managed by this process, choose another name", conn.Name)
-			}
-		}
-
-		// update or create a connection with new values
-		if err := upsertConnection(orgID, agentID, req, conn); err != nil {
-			return err
-		}
-		setChecksumCache(orgID, req)
+	if checksumCacheMatches(orgID, req) {
+		return nil
 	}
+	conn, err := pgconnections.New().FetchOneByNameOrID(pgrest.NewOrgContext(orgID), req.Name)
+	if err != nil {
+		return err
+	}
+	// It will only sync connections that are managed by this process/agent.
+	// A user could change the state of the connection and make it unmanageable
+	if conn != nil {
+		var managedBy string
+		if conn.ManagedBy != nil {
+			managedBy = *conn.ManagedBy
+		}
+		if managedBy != managedByAgent || conn.AgentID != agentID {
+			log.Warnf("manage inconsistency, managed-val=%q, conn-agentid=%q, request-agentid=%q",
+				managedBy, conn.AgentID, agentID)
+			return fmt.Errorf("connection %s is not being managed by this process, choose another name", conn.Name)
+		}
+	}
+
+	// update or create a connection with new values
+	if err := upsertConnection(orgID, agentID, req, conn); err != nil {
+		return err
+	}
+	setChecksumCache(orgID, req)
 	return nil
 }
