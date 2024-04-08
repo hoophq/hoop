@@ -231,16 +231,16 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		AuditApiChanges,
 		apiagents.Delete)
 
-	route.POST("/orgs/token",
+	route.POST("/orgs/keys",
 		AdminOnlyAccessRole,
 		api.Authenticate,
 		AuditApiChanges,
 		apiorgs.CreateAgentKey)
-	route.GET("/orgs/token",
+	route.GET("/orgs/keys",
 		AdminOnlyAccessRole,
 		api.Authenticate,
 		apiorgs.GetAgentKey)
-	route.DELETE("/orgs/token",
+	route.DELETE("/orgs/keys",
 		AdminOnlyAccessRole,
 		api.Authenticate,
 		apiorgs.RevokeAgentKey)
