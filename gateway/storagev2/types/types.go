@@ -83,10 +83,6 @@ type Connection struct {
 	SubType  string         `json:"subtype"`
 	Secret   map[string]any `json:"secret"`
 	AgentId  string         `json:"agent_id"`
-	// TODO: remove
-	SecretProvider string `json:"-"`
-	SecretId       string `json:"-"`
-	CreatedById    string `json:"-"`
 }
 
 type ConnectionInfo struct {

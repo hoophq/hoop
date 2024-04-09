@@ -23,20 +23,14 @@ func (c *connections) FetchOneForExec(ctx pgrest.OrgContext, name string) (*type
 		}
 		return nil, err
 	}
-	if conn.LegacyAgentID != "" {
-		conn.AgentID = conn.LegacyAgentID
-	}
 	return &types.Connection{
-		Id:             conn.ID,
-		OrgId:          conn.OrgID,
-		Name:           conn.Name,
-		Command:        conn.Command,
-		Type:           conn.Type,
-		SubType:        conn.SubType,
-		SecretProvider: "database",
-		SecretId:       "",
-		CreatedById:    "",
-		AgentId:        conn.AgentID,
+		Id:      conn.ID,
+		OrgId:   conn.OrgID,
+		Name:    conn.Name,
+		Command: conn.Command,
+		Type:    conn.Type,
+		SubType: conn.SubType,
+		AgentId: conn.AgentID,
 	}, nil
 }
 
@@ -54,20 +48,14 @@ func (c *connections) FetchByNames(ctx pgrest.OrgContext, connectionNames []stri
 	}
 	var result = map[string]types.Connection{}
 	for _, conn := range connList {
-		if conn.LegacyAgentID != "" {
-			conn.AgentID = conn.LegacyAgentID
-		}
 		result[conn.Name] = types.Connection{
-			Id:             conn.ID,
-			OrgId:          conn.OrgID,
-			Name:           conn.Name,
-			Command:        conn.Command,
-			Type:           conn.Type,
-			SubType:        conn.SubType,
-			SecretProvider: "database",
-			SecretId:       "",
-			CreatedById:    "",
-			AgentId:        conn.AgentID,
+			Id:      conn.ID,
+			OrgId:   conn.OrgID,
+			Name:    conn.Name,
+			Command: conn.Command,
+			Type:    conn.Type,
+			SubType: conn.SubType,
+			AgentId: conn.AgentID,
 		}
 	}
 	return result, nil
@@ -88,20 +76,14 @@ func (c *connections) FetchByIDs(ctx pgrest.OrgContext, connectionIDs []string) 
 	for _, conn := range connList {
 		for _, connID := range connectionIDs {
 			if conn.ID == connID {
-				if conn.LegacyAgentID != "" {
-					conn.AgentID = conn.LegacyAgentID
-				}
 				itemMap[connID] = types.Connection{
-					Id:             conn.ID,
-					OrgId:          conn.OrgID,
-					Name:           conn.Name,
-					Command:        conn.Command,
-					Type:           conn.Type,
-					SubType:        conn.SubType,
-					SecretProvider: "database",
-					SecretId:       "",
-					CreatedById:    "",
-					AgentId:        conn.AgentID,
+					Id:      conn.ID,
+					OrgId:   conn.OrgID,
+					Name:    conn.Name,
+					Command: conn.Command,
+					Type:    conn.Type,
+					SubType: conn.SubType,
+					AgentId: conn.AgentID,
 				}
 				break
 			}
@@ -123,9 +105,6 @@ func (a *connections) FetchOneByNameOrID(ctx pgrest.OrgContext, nameOrID string)
 			return nil, nil
 		}
 		return nil, err
-	}
-	if conn.LegacyAgentID != "" {
-		conn.AgentID = conn.LegacyAgentID
 	}
 	return &conn, nil
 }
@@ -153,28 +132,20 @@ func (c *connections) Upsert(ctx pgrest.OrgContext, conn pgrest.Connection) erro
 		subType = &conn.SubType
 	}
 	return pgrest.New("/rpc/update_connection").RpcCreate(map[string]any{
-		"id":              conn.ID,
-		"org_id":          ctx.GetOrgID(),
-		"name":            conn.Name,
-		"agent_id":        toAgentID(conn.AgentID),
-		"legacy_agent_id": toLegacyAgentID(conn.LegacyAgentID),
-		"type":            conn.Type,
-		"subtype":         subType,
-		"command":         conn.Command,
-		"envs":            conn.Envs,
-		"managed_by":      conn.ManagedBy,
+		"id":         conn.ID,
+		"org_id":     ctx.GetOrgID(),
+		"name":       conn.Name,
+		"agent_id":   toAgentID(conn.AgentID),
+		"type":       conn.Type,
+		"subtype":    subType,
+		"command":    conn.Command,
+		"envs":       conn.Envs,
+		"managed_by": conn.ManagedBy,
 	}).Error()
 }
 
 func toAgentID(agentID string) (v *string) {
 	if _, err := uuid.Parse(agentID); err == nil {
-		return &agentID
-	}
-	return
-}
-
-func toLegacyAgentID(agentID string) (v *string) {
-	if _, err := uuid.Parse(agentID); err != nil {
 		return &agentID
 	}
 	return
