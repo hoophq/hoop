@@ -36,6 +36,7 @@ type Connection struct {
 	SubType       string         `json:"subtype"`
 	Secrets       map[string]any `json:"secret"`
 	AgentId       string         `json:"agent_id"`
+	Status        string         `json:"status"` // read only field
 	Reviewers     []string       `json:"reviewers"`
 	RedactEnabled bool           `json:"redact_enabled"`
 	RedactTypes   []string       `json:"redact_types"`
@@ -82,17 +83,17 @@ func Post(c *gin.Context) {
 		envs[k] = fmt.Sprintf("%v", v)
 	}
 	req.ID = uuid.NewString()
+	req.Status = pgrest.ConnectionStatusOffline
 	err = pgconnections.New().Upsert(ctx, pgrest.Connection{
-		ID:            req.ID,
-		OrgID:         ctx.OrgID,
-		AgentID:       req.AgentId,
-		LegacyAgentID: req.AgentId,
-		Name:          req.Name,
-		Command:       req.Command,
-		Type:          string(req.Type),
-		SubType:       req.SubType,
-		Envs:          envs,
-		ManagedBy:     nil,
+		ID:        req.ID,
+		OrgID:     ctx.OrgID,
+		AgentID:   req.AgentId,
+		Name:      req.Name,
+		Command:   req.Command,
+		Type:      string(req.Type),
+		SubType:   req.SubType,
+		Envs:      envs,
+		ManagedBy: nil,
 	})
 	if err != nil {
 		log.Errorf("failed creating connection, err=%v", err)
@@ -163,17 +164,17 @@ func Put(c *gin.Context) {
 	// immutable fields
 	req.ID = conn.ID
 	req.Name = conn.Name
+	req.Status = conn.Status
 	err = pgconnections.New().Upsert(ctx, pgrest.Connection{
-		ID:            conn.ID,
-		OrgID:         conn.OrgID,
-		AgentID:       req.AgentId,
-		LegacyAgentID: req.AgentId,
-		Name:          conn.Name,
-		Command:       req.Command,
-		Type:          req.Type,
-		SubType:       req.SubType,
-		Envs:          pgrest.CoerceToMapString(req.Secrets),
-		ManagedBy:     nil,
+		ID:        conn.ID,
+		OrgID:     conn.OrgID,
+		AgentID:   req.AgentId,
+		Name:      conn.Name,
+		Command:   req.Command,
+		Type:      req.Type,
+		SubType:   req.SubType,
+		Envs:      pgrest.CoerceToMapString(req.Secrets),
+		ManagedBy: nil,
 	})
 	if err != nil {
 		log.Errorf("failed updating connection, err=%v", err)
@@ -260,6 +261,7 @@ func List(c *gin.Context) {
 				SubType:       conn.SubType,
 				Secrets:       pgrest.CoerceToAnyMap(conn.Envs),
 				AgentId:       conn.AgentID,
+				Status:        conn.Status,
 				Reviewers:     reviewers,
 				RedactEnabled: len(redactTypes) > 0,
 				RedactTypes:   redactTypes,
@@ -310,6 +312,7 @@ func Get(c *gin.Context) {
 		SubType:       conn.SubType,
 		Secrets:       pgrest.CoerceToAnyMap(conn.Envs),
 		AgentId:       conn.AgentID,
+		Status:        conn.Status,
 		Reviewers:     reviewers,
 		RedactEnabled: len(redactTypes) > 0,
 		RedactTypes:   redactTypes,
@@ -397,6 +400,7 @@ func FetchByName(ctx pgrest.Context, connectionName string) (*Connection, error)
 		SubType:   conn.SubType,
 		Secrets:   pgrest.CoerceToAnyMap(conn.Envs),
 		AgentId:   conn.AgentID,
+		Status:    conn.Status,
 		ManagedBy: conn.ManagedBy,
 	}, nil
 }

@@ -66,17 +66,22 @@ type Agent struct {
 	Org Org `json:"orgs"`
 }
 
+const (
+	ConnectionStatusOnline  = "online"
+	ConnectionStatusOffline = "offline"
+)
+
 type Connection struct {
-	ID            string            `json:"id"`
-	OrgID         string            `json:"org_id"`
-	AgentID       string            `json:"agent_id"`
-	LegacyAgentID string            `json:"legacy_agent_id"`
-	Name          string            `json:"name"`
-	Command       []string          `json:"command"`
-	Type          string            `json:"type"`
-	SubType       string            `json:"subtype"`
-	Envs          map[string]string `json:"envs"`
-	ManagedBy     *string           `json:"managed_by"`
+	ID        string            `json:"id"`
+	OrgID     string            `json:"org_id"`
+	AgentID   string            `json:"agent_id"`
+	Name      string            `json:"name"`
+	Command   []string          `json:"command"`
+	Type      string            `json:"type"`
+	SubType   string            `json:"subtype"`
+	Envs      map[string]string `json:"envs"`
+	Status    string            `json:"status"` // read only field
+	ManagedBy *string           `json:"managed_by"`
 
 	// read only attributes
 	Org              Org                `json:"orgs"`
