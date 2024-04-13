@@ -9,19 +9,24 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/memory"
 	"github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/gateway/transport/streamclient"
+	streamtypes "github.com/runopsio/hoop/gateway/transport/streamclient/types"
 )
-
-type IsOnlineFn func(agentID string) bool
 
 type Info struct {
 	OrgID          string
 	AgentID        string
+	AgentMode      string
 	ConnectionName string
 	SID            string
 }
 
 func (i *Info) id() string {
-	return fmt.Sprintf("%s:%s:%s:%s", i.OrgID, i.AgentID, i.ConnectionName, i.SID)
+	agentIdentifier := streamtypes.NewStreamID(i.AgentID, "")
+	if i.AgentMode == proto.AgentModeMultiConnectionType {
+		agentIdentifier = streamtypes.NewStreamID(i.AgentID, i.ConnectionName)
+	}
+	return fmt.Sprintf("%s:%s:%s:%s", i.OrgID, agentIdentifier, i.ConnectionName, i.SID)
 }
 
 // IsSet report if all attributes are set
@@ -54,9 +59,9 @@ var (
 // returned when there are connection requests and also if the sync was performed with success.
 //
 // This function also release the proxy connections if there's an agent online or
-// if the synchronize process returns with an error. The error is sent to the all clients
+// if the synchronize process returns with an error. The error is sent to all clients
 // waiting for a response
-func AgentPreConnect(orgID, agentID string, req *proto.PreConnectRequest, isAgentOnlineFn IsOnlineFn) *proto.PreConnectResponse {
+func AgentPreConnect(orgID, agentID string, req *proto.PreConnectRequest) *proto.PreConnectResponse {
 	// sync the connection with the store
 	var syncErr error
 	if req.Name != "" {
@@ -64,12 +69,13 @@ func AgentPreConnect(orgID, agentID string, req *proto.PreConnectRequest, isAgen
 	}
 
 	// only release it if has an agent online or it returned error from sync process
-	if isAgentOnlineFn(agentID) || syncErr != nil {
-		_ = AcceptProxyConnection(orgID, agentID, syncErr)
+	streamAgentID := streamtypes.NewStreamID(agentID, req.Name)
+	if streamclient.IsAgentOnline(streamAgentID) || syncErr != nil {
+		_ = AcceptProxyConnection(orgID, streamAgentID, syncErr)
 	}
 
 	// if there's pending connection requests, allow an agent to connect
-	hasConnectionRequests := len(connectionRequestItems(orgID, agentID)) > 0
+	hasConnectionRequests := len(connectionRequestItems(orgID, streamAgentID)) > 0
 	if hasConnectionRequests && syncErr == nil {
 		return &proto.PreConnectResponse{
 			Status:  proto.PreConnectStatusConnectType,
@@ -87,8 +93,8 @@ func AgentPreConnect(orgID, agentID string, req *proto.PreConnectRequest, isAgen
 	}
 }
 
-func connectionRequestItems(orgID, agentID string) map[string]any {
-	keyPrefix := fmt.Sprintf("%s:%s", orgID, agentID)
+func connectionRequestItems(orgID string, streamAgentID streamtypes.ID) map[string]any {
+	keyPrefix := fmt.Sprintf("%s:%s", orgID, streamAgentID)
 	return requestConnectionStore.Filter(func(k string) bool {
 		return strings.HasPrefix(k, keyPrefix)
 	})
@@ -97,8 +103,8 @@ func connectionRequestItems(orgID, agentID string) map[string]any {
 // AcceptProxyConnection release all connections performed for this organization and agent
 //
 // When an agent performs a connection, it could call this function to release connection requests
-func AcceptProxyConnection(orgID, agentID string, err error) (v bool) {
-	conectionRequests := connectionRequestItems(orgID, agentID)
+func AcceptProxyConnection(orgID string, streamAgentID streamtypes.ID, err error) (v bool) {
+	conectionRequests := connectionRequestItems(orgID, streamAgentID)
 	for key := range conectionRequests {
 		obj := requestConnectionStore.Pop(key)
 		if requestCh, _ := obj.(chan error); requestCh != nil {
@@ -106,7 +112,7 @@ func AcceptProxyConnection(orgID, agentID string, err error) (v bool) {
 			defer cancelFn()
 			select {
 			case <-timeout.Done():
-				log.Warnf("timeout releasing proxy connection, orgid=%v, agentid=%v", orgID, agentID)
+				log.Warnf("timeout releasing proxy connection, orgid=%v, agentid=%v", orgID, streamAgentID)
 			case requestCh <- err:
 			}
 		}

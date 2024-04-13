@@ -10,8 +10,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/common/apiutils"
 	"github.com/runopsio/hoop/gateway/clientexec"
+	pgplugins "github.com/runopsio/hoop/gateway/pgrest/plugins"
+	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
 	"github.com/runopsio/hoop/gateway/storagev2"
-	pluginstorage "github.com/runopsio/hoop/gateway/storagev2/plugin"
 	sessionstorage "github.com/runopsio/hoop/gateway/storagev2/session"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
@@ -97,7 +98,7 @@ func RunReviewedExec(c *gin.Context) {
 		return
 	}
 
-	review, err := sessionstorage.FindReviewBySID(ctxv2, sessionId)
+	review, err := pgreview.New().FetchOneBySid(ctx, sessionId)
 	if err != nil {
 		log.Errorf("failed retrieving review, err=%v", err)
 		c.JSON(http.StatusInternalServerError, &clientexec.ExecErrResponse{Message: "failed retrieving review"})
@@ -146,7 +147,7 @@ func RunReviewedExec(c *gin.Context) {
 		return
 	}
 
-	p, err := pluginstorage.GetByName(ctxv2, plugintypes.PluginReviewName)
+	p, err := pgplugins.New().FetchOne(ctx, plugintypes.PluginReviewName)
 	if err != nil {
 		log.Errorf("failed obtaining review plugin, err=%v", err)
 		c.JSON(http.StatusInternalServerError, &clientexec.ExecErrResponse{Message: "failed retrieving review plugin"})

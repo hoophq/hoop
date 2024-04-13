@@ -28,7 +28,7 @@ func (u *userAuth) FetchUserContext(subject string) (*Context, error) {
 		}
 		return &Context{
 			OrgID:       sa.OrgID,
-			OrgName:     "",
+			OrgName:     "", // TODO: propagate org name
 			UserUUID:    sa.ID,
 			UserSubject: sa.Subject,
 			UserName:    sa.Name,

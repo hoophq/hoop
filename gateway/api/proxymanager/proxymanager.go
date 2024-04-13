@@ -9,10 +9,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/common/log"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
-	"github.com/runopsio/hoop/gateway/storagev2"
+	pgproxymanager "github.com/runopsio/hoop/gateway/pgrest/proxymanager"
 	"github.com/runopsio/hoop/gateway/storagev2/clientstate"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/transport"
+	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -33,17 +34,18 @@ type ProxyManagerResponse struct {
 	ConnectedAt           string                 `json:"connected-at"`
 }
 
-func getEntity(ctx *storagev2.Context) (*types.Client, error) {
-	obj, err := clientstate.GetEntity(ctx, clientstate.DeterministicClientUUID(ctx.UserID))
-	if err != nil {
-		return nil, fmt.Errorf("failed obtaining client state resource, err=%v", err)
-	}
-	return obj, nil
-}
+// func getEntity(ctx *storagev2.Context) (*types.Client, error) {
+// 	obj, err := clientstate.GetEntity(ctx, clientstate.DeterministicClientUUID(ctx.UserID))
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed obtaining client state resource, err=%v", err)
+// 	}
+// 	return obj, nil
+// }
 
 func Get(c *gin.Context) {
-	ctx := storagev2.ParseContext(c)
-	obj, err := getEntity(ctx)
+	ctx := user.ContextUser(c)
+	obj, err := pgproxymanager.New().FetchOne(ctx, clientstate.DeterministicClientUUID(ctx.GetUserID()))
+	// obj, err := getEntity(ctx)
 	if err != nil {
 		log.Error(err)
 		sentry.CaptureException(err)
@@ -66,7 +68,7 @@ func Get(c *gin.Context) {
 }
 
 func Post(c *gin.Context) {
-	ctx := storagev2.ParseContext(c)
+	ctx := user.ContextUser(c)
 	var req ProxyManagerRequest
 	err := c.ShouldBindJSON(&req)
 	if err != nil {
@@ -86,7 +88,7 @@ func Post(c *gin.Context) {
 	for i := 1; i <= 10; i++ {
 		log.Debugf("attempt=%v - dispatching open session", i)
 		pkt, err := transport.DispatchOpenSession(&types.Client{
-			ID:                    clientstate.DeterministicClientUUID(ctx.UserID),
+			ID:                    clientstate.DeterministicClientUUID(ctx.GetUserID()),
 			RequestConnectionName: req.ConnectionName,
 			RequestPort:           req.Port,
 			RequestAccessDuration: req.AccessDuration,
@@ -160,8 +162,8 @@ func Post(c *gin.Context) {
 }
 
 func Disconnect(c *gin.Context) {
-	ctx := storagev2.ParseContext(c)
-	obj, err := getEntity(ctx)
+	ctx := user.ContextUser(c)
+	obj, err := pgproxymanager.New().FetchOne(ctx, clientstate.DeterministicClientUUID(ctx.GetUserID()))
 	if err != nil {
 		log.Error(err)
 		sentry.CaptureException(err)

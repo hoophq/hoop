@@ -20,17 +20,19 @@ import (
 	pb "github.com/runopsio/hoop/common/proto"
 	apiconnections "github.com/runopsio/hoop/gateway/api/connections"
 	"github.com/runopsio/hoop/gateway/notification"
+	"github.com/runopsio/hoop/gateway/pgrest"
 	pgagents "github.com/runopsio/hoop/gateway/pgrest/agents"
 	"github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/security/idp"
-	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/transport/connectionrequests"
+	"github.com/runopsio/hoop/gateway/transport/connectionstatus"
 	authinterceptor "github.com/runopsio/hoop/gateway/transport/interceptors/auth"
 	sessionuuidinterceptor "github.com/runopsio/hoop/gateway/transport/interceptors/sessionuuid"
 	tracinginterceptor "github.com/runopsio/hoop/gateway/transport/interceptors/tracing"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
-	"github.com/runopsio/hoop/gateway/user"
+	"github.com/runopsio/hoop/gateway/transport/streamclient"
+	streamtypes "github.com/runopsio/hoop/gateway/transport/streamclient/types"
 	"google.golang.org/grpc"
 
 	"google.golang.org/grpc/codes"
@@ -51,10 +53,6 @@ type (
 		PyroscopeIngestURL   string
 		PyroscopeAuthToken   string
 		AgentSentryDSN       string
-
-		RegisteredPlugins []plugintypes.Plugin
-
-		StoreV2 *storagev2.Store
 	}
 )
 
@@ -155,18 +153,18 @@ func (s *Server) PreConnect(ctx context.Context, req *pb.PreConnectRequest) (*pb
 	if orgID == "" || agentID == "" || agentName == "" {
 		return nil, status.Errorf(codes.Internal, "missing agent context")
 	}
-	resp := connectionrequests.AgentPreConnect(orgID, agentID, req, hasAgentStream)
+	resp := connectionrequests.AgentPreConnect(orgID, agentID, req)
 	if resp.Message != "" {
 		err := fmt.Errorf("failed processing pre-connect, org=%v, agent=%v, reason=%v", orgID, agentName, err)
 		log.Warn(err)
 		sentry.CaptureException(err)
 	}
+	connectionstatus.SetOnlinePreConnect(pgrest.NewOrgContext(orgID), streamtypes.NewStreamID(agentID, req.Name))
 	return resp, nil
 }
 
-func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
-	ctx := stream.Context()
-	md, _ := metadata.FromIncomingContext(ctx)
+func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
+	md, _ := metadata.FromIncomingContext(stream.Context())
 	clientOrigin := md.Get("origin")
 	if len(clientOrigin) == 0 {
 		md.Delete("authorization")
@@ -174,13 +172,54 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) error {
 		return status.Error(codes.InvalidArgument, "missing origin")
 	}
 
+	var gwctx authinterceptor.GatewayContext
+	err = authinterceptor.ParseGatewayContextInto(stream.Context(), &gwctx)
+	if err != nil {
+		log.Error(err)
+		return err
+	}
+
 	switch clientOrigin[0] {
 	case pb.ConnectionOriginAgent:
-		return s.subscribeAgent(stream)
+		return s.subscribeAgent(streamclient.NewAgent(gwctx.Agent, stream))
 	case pb.ConnectionOriginClientProxyManager:
-		return s.proxyManager(stream)
+		// return s.proxyManager(stream)
+		return fmt.Errorf("unavailable implementation")
 	default:
-		return s.subscribeClient(stream)
+		return s.subscribeClient(streamclient.NewProxy(&plugintypes.Context{
+			Context: context.Background(),
+			SID:     "",
+
+			OrgID:       gwctx.UserContext.OrgID,
+			OrgName:     gwctx.UserContext.OrgName, // TODO: it's not set when it's a service account
+			UserID:      gwctx.UserContext.UserID,
+			UserName:    gwctx.UserContext.UserName,
+			UserEmail:   gwctx.UserContext.UserEmail,
+			UserSlackID: gwctx.UserContext.SlackID,
+			UserGroups:  gwctx.UserContext.UserGroups,
+
+			ConnectionID:      gwctx.Connection.ID,
+			ConnectionName:    gwctx.Connection.Name,
+			ConnectionType:    gwctx.Connection.Type,
+			ConnectionSubType: gwctx.Connection.SubType,
+			ConnectionCommand: gwctx.Connection.CmdEntrypoint,
+			ConnectionSecret:  gwctx.Connection.Secrets,
+
+			AgentID:   gwctx.Connection.AgentID,
+			AgentName: gwctx.Connection.AgentName,
+			AgentMode: gwctx.Connection.AgentMode,
+
+			ClientVerb:   "",
+			ClientOrigin: "",
+
+			// TODO: deprecate it and allow the
+			// audit plugin to update these attributes
+			Script:   "",
+			Labels:   nil,
+			Metadata: nil,
+
+			ParamsData: map[string]any{},
+		}, stream))
 	}
 }
 
@@ -203,103 +242,20 @@ func (s *Server) handleGracefulShutdown() {
 		syscall.SIGTERM,
 		syscall.SIGQUIT)
 	go func() {
-		<-sigc
-		ctx := s.disconnectAllClients()
-		<-ctx.Done()
-		if err := ctx.Err(); err != nil {
-			if context.Canceled == err {
-				log.Infof("gateway shutdown gracefully")
-			} else {
-				log.Errorf("gateway shutdown timeout (15s), force closing it, err=%v", err)
-			}
+		signalNo := <-sigc
+		timeout, cancelFn := context.WithTimeout(context.Background(), time.Second*10)
+		defer cancelFn()
+		select {
+		case <-timeout.Done():
+			log.Warn("timeout (10s) waiting for all proxies to disconnect")
+		case <-streamclient.DisconnectAllProxies(fmt.Errorf("gateway shutdown")):
 		}
+		log.Warnf("gateway shutdown (%v)", signalNo)
 		os.Exit(143)
 	}()
 }
 
-// disconnectAllClients closes the disconnect sink channel for all clients
-func (s *Server) disconnectAllClients() context.Context {
-	disconnectSink.mu.Lock()
-	defer disconnectSink.mu.Unlock()
-
-	var clientItems []string
-	for key := range disconnectSink.items {
-		clientItems = append(clientItems, key)
-	}
-	log.Infof("disconnecting all clients, length=%v, items=%v", len(disconnectSink.items), clientItems)
-	ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*25)
-	go func() {
-
-		defer cancelFn()
-		for itemKey, disconnectCh := range disconnectSink.items {
-			select {
-			case disconnectCh <- fmt.Errorf("gateway shut down"):
-			case <-time.After(time.Millisecond * 100):
-				log.Errorf("timeout (100ms) send disconnect gateway error to sink")
-			}
-			// wait up to 0.5 seconds to close channel
-			// continue to the next one if it takes more time
-			select {
-			case <-disconnectCh:
-			case <-time.After(time.Millisecond * 500):
-				log.Warnf("timeout (0.5s) on disconnecting channel %v, moving to next one", itemKey)
-			}
-		}
-	}()
-	return ctx
-}
-
-// startDisconnectClientSink listen for disconnects when the disconnect channel is closed
-// it timeout after 48 hours closing the client.
-func (s *Server) startDisconnectClientSink(clientID, clientOrigin string, disconnectFn func(err error)) {
-	disconnectSink.mu.Lock()
-	defer disconnectSink.mu.Unlock()
-	disconnectCh := make(chan error)
-	disconnectSink.items[clientID] = disconnectCh
-	log.With("id", clientID).Debugf("start disconnect sink for %v", clientOrigin)
-	go func() {
-		switch clientOrigin {
-		case pb.ConnectionOriginAgent:
-			err := <-disconnectCh
-			// wait to get time to persist any resources performed async
-			defer closeChWithSleep(disconnectCh, time.Millisecond*150)
-			log.With("id", clientID).Infof("disconnecting agent client, reason=%v", err)
-			disconnectFn(err)
-		default:
-			// wait to get time to persist any resources performed async
-			defer closeChWithSleep(disconnectCh, time.Millisecond*150)
-			select {
-			case err := <-disconnectCh:
-				log.With("id", clientID).Infof("disconnecting proxy client, reason=%v", err)
-				disconnectFn(err)
-			case <-time.After(time.Hour * 48):
-				log.With("id", clientID).Warnf("timeout (48h), disconnecting proxy client")
-				disconnectFn(fmt.Errorf("timeout (48h)"))
-			}
-		}
-	}()
-}
-
-// DisconnectClient closes the disconnect sink channel
-// triggering the disconnect logic at startDisconnectClientSink
-func DisconnectClient(uid string, err error) {
-	disconnectSink.mu.Lock()
-	defer disconnectSink.mu.Unlock()
-	disconnectCh, ok := disconnectSink.items[uid]
-	if !ok {
-		return
-	}
-	if err != nil {
-		select {
-		case disconnectCh <- err:
-		case <-time.After(time.Millisecond * 100):
-			log.With("uid", uid).Errorf("timeout (100ms) send disconnect error to sink")
-		}
-	}
-	delete(disconnectSink.items, uid)
-}
-
-func (s *Server) getConnection(name string, userCtx *user.Context) (*types.ConnectionInfo, error) {
+func (s *Server) getConnection(name string, userCtx pgrest.Context) (*types.ConnectionInfo, error) {
 	conn, err := apiconnections.FetchByName(userCtx, name)
 	if err != nil {
 		log.Errorf("failed retrieving connection %v, err=%v", name, err)
@@ -309,6 +265,7 @@ func (s *Server) getConnection(name string, userCtx *user.Context) (*types.Conne
 	if conn == nil {
 		return nil, nil
 	}
+
 	ag, err := pgagents.New().FetchOneByNameOrID(userCtx, conn.AgentId)
 	if err != nil {
 		log.Errorf("failed obtaining agent %v, err=%v", err)
@@ -328,12 +285,6 @@ func (s *Server) getConnection(name string, userCtx *user.Context) (*types.Conne
 		AgentMode:     ag.Mode,
 		AgentName:     ag.Name,
 	}, nil
-}
-
-// closeChWithSleep sleep for d before closing the channel
-func closeChWithSleep(ch chan error, d time.Duration) {
-	time.Sleep(d)
-	close(ch)
 }
 
 func mdget(md metadata.MD, metaName string) string {

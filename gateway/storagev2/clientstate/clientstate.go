@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/runopsio/hoop/gateway/pgrest"
 	pgproxymanager "github.com/runopsio/hoop/gateway/pgrest/proxymanager"
-	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 )
 
@@ -19,18 +19,11 @@ func DeterministicClientUUID(userID string) string {
 	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("clientstate/"+userID)).String()
 }
 
-func GetEntity(ctx *storagev2.Context, xtID string) (*types.Client, error) {
-	return pgproxymanager.New().FetchOne(ctx, xtID)
-}
-
+// TODO: move to pgproxymanger package
 // Update creates or updates a new entity with the given status based in the user uid.
-func Update(ctx *storagev2.Context, status types.ClientStatusType, opts ...*option) (*types.Client, error) {
-	if err := ctx.Validate(); err != nil {
-		return nil, err
-	}
-
-	docuuid := DeterministicClientUUID(ctx.UserID)
-	obj, err := GetEntity(ctx, docuuid)
+func Update(ctx pgrest.UserContext, status types.ClientStatusType, opts ...*option) (*types.Client, error) {
+	docuuid := DeterministicClientUUID(ctx.GetUserID())
+	obj, err := pgproxymanager.New().FetchOne(ctx, docuuid)
 	if err != nil {
 		return nil, fmt.Errorf("failed fetching auto connect entity, err=%v", err)
 	}
@@ -39,7 +32,7 @@ func Update(ctx *storagev2.Context, status types.ClientStatusType, opts ...*opti
 	if obj == nil || status == types.ClientStatusReady {
 		obj = &types.Client{
 			ID:          docuuid,
-			OrgID:       ctx.OrgID,
+			OrgID:       ctx.GetOrgID(),
 			ConnectedAt: time.Now().UTC(),
 		}
 	}

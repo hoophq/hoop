@@ -12,8 +12,8 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/proto"
 	pgconnections "github.com/runopsio/hoop/gateway/pgrest/connections"
+	pgplugins "github.com/runopsio/hoop/gateway/pgrest/plugins"
 	"github.com/runopsio/hoop/gateway/storagev2"
-	pluginstorage "github.com/runopsio/hoop/gateway/storagev2/plugin"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 )
@@ -40,7 +40,7 @@ func Post(c *gin.Context) {
 		return
 	}
 
-	existingPlugin, err := pluginstorage.GetByName(ctx, req.Name)
+	existingPlugin, err := pgplugins.New().FetchOne(ctx, req.Name)
 	if err != nil {
 		log.Errorf("failed retrieving existing plugin, err=%v", err)
 		sentry.CaptureException(err)
@@ -87,7 +87,7 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": msg})
 		return
 	}
-	if err := pluginstorage.Put(ctx, &newPlugin); err != nil {
+	if err := pgplugins.UpdatePlugin(ctx, &newPlugin); err != nil {
 		log.Errorf("failed enabling plugin, reason=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed enabling plugin"})
@@ -104,7 +104,7 @@ func Put(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	existingPlugin, err := pluginstorage.GetByName(ctx, req.Name)
+	existingPlugin, err := pgplugins.New().FetchOne(ctx, req.Name)
 	if err != nil {
 		log.Errorf("failed retrieving existing plugin, err=%v", err)
 		sentry.CaptureException(err)
@@ -130,7 +130,7 @@ func Put(c *gin.Context) {
 	// this is kept for compatibility with webapp
 	pluginConfig := existingPlugin.Config
 	existingPlugin.Config = nil
-	if err := pluginstorage.Put(ctx, existingPlugin); err != nil {
+	if err := pgplugins.UpdatePlugin(ctx, existingPlugin); err != nil {
 		log.Errorf("failed updating plugin, reason=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating plugin"})
@@ -149,7 +149,7 @@ func PutConfig(c *gin.Context) {
 		return
 	}
 
-	existingPlugin, err := pluginstorage.GetByName(ctx, pluginName)
+	existingPlugin, err := pgplugins.New().FetchOne(ctx, pluginName)
 	if err != nil {
 		log.Errorf("failed retrieving existing plugin, err=%v", err)
 		sentry.CaptureException(err)
@@ -184,7 +184,7 @@ func PutConfig(c *gin.Context) {
 	}
 	existingPlugin.ConfigID = &pluginConfig.ID
 	existingPlugin.Config = pluginConfig
-	if err := pluginstorage.Put(ctx, existingPlugin); err != nil {
+	if err := pgplugins.UpdatePlugin(ctx, existingPlugin); err != nil {
 		log.Errorf("failed updating plugin configuration, reason=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating plugin configuration"})
@@ -196,7 +196,7 @@ func PutConfig(c *gin.Context) {
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	name := c.Param("name")
-	obj, err := pluginstorage.GetByName(ctx, name)
+	obj, err := pgplugins.New().FetchOne(ctx, name)
 	if err != nil {
 		log.Errorf("failed obtaining plugin, err=%v", err)
 		sentry.CaptureException(err)
@@ -213,7 +213,7 @@ func Get(c *gin.Context) {
 
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	itemList, err := pluginstorage.List(ctx)
+	itemList, err := pgplugins.New().FetchAll(ctx)
 	if err != nil {
 		log.Errorf("failed obtaining plugin, err=%v", err)
 		sentry.CaptureException(err)

@@ -100,8 +100,8 @@ func (c *Client) Upsert(reqBody any) *Response {
 }
 
 func (c *Client) Patch(reqBody any) *Response {
-	reqHeader := map[string]string{"Accept": "application/vnd.pgrst.object+json"}
-	resp := httpRequest(c.apiURL, "PATCH", c.accessToken, reqHeader, reqBody)
+	// reqHeader := map[string]string{"Accept": "application/vnd.pgrst.object+json"}
+	resp := httpRequest(c.apiURL, "PATCH", c.accessToken, nil, reqBody)
 	return &resp
 }
 

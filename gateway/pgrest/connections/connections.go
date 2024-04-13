@@ -111,7 +111,7 @@ func (a *connections) FetchOneByNameOrID(ctx pgrest.OrgContext, nameOrID string)
 
 func (c *connections) FetchAll(ctx pgrest.OrgContext) ([]pgrest.Connection, error) {
 	var items []pgrest.Connection
-	err := pgrest.New("/connections?select=*,orgs(id,name),plugin_connections(config,plugins(name))&org_id=eq.%s", ctx.GetOrgID()).
+	err := pgrest.New("/connections?select=*,orgs(id,name),plugin_connections(config,plugins(name))&org_id=eq.%s&order=name.asc", ctx.GetOrgID()).
 		List().
 		DecodeInto(&items)
 	if err != nil && err != pgrest.ErrNotFound {
@@ -131,6 +131,9 @@ func (c *connections) Upsert(ctx pgrest.OrgContext, conn pgrest.Connection) erro
 	if conn.SubType != "" {
 		subType = &conn.SubType
 	}
+	if conn.Status == "" {
+		conn.Status = pgrest.ConnectionStatusOffline
+	}
 	return pgrest.New("/rpc/update_connection").RpcCreate(map[string]any{
 		"id":         conn.ID,
 		"org_id":     ctx.GetOrgID(),
@@ -140,6 +143,7 @@ func (c *connections) Upsert(ctx pgrest.OrgContext, conn pgrest.Connection) erro
 		"subtype":    subType,
 		"command":    conn.Command,
 		"envs":       conn.Envs,
+		"status":     conn.Status,
 		"managed_by": conn.ManagedBy,
 	}).Error()
 }
@@ -149,4 +153,33 @@ func toAgentID(agentID string) (v *string) {
 		return &agentID
 	}
 	return
+}
+
+func (c *connections) UpdateStatusByName(ctx pgrest.OrgContext, connectionName, status string) error {
+	err := pgrest.New("/connections?org_id=eq.%v&name=eq.%v", ctx.GetOrgID(), connectionName).
+		Patch(map[string]any{"status": status}).
+		Error()
+	if err == pgrest.ErrNotFound {
+		return nil
+	}
+	return err
+}
+
+func (c *connections) UpdateStatusByAgentID(ctx pgrest.OrgContext, agentID, status string) error {
+	err := pgrest.New("/connections?org_id=eq.%v&agent_id=eq.%v", ctx.GetOrgID(), agentID).
+		Patch(map[string]any{"status": status}).
+		Error()
+	if err == pgrest.ErrNotFound {
+		return nil
+	}
+	return err
+}
+
+// UpdateAllToOffline update the status of all connection resources to offline
+func (a *connections) UpdateAllToOffline() error {
+	err := pgrest.New("/connections").Patch(map[string]any{"status": pgrest.ConnectionStatusOffline}).Error()
+	if err == pgrest.ErrNotFound {
+		return nil
+	}
+	return err
 }

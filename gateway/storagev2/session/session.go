@@ -1,24 +1,16 @@
 package sessionstorage
 
 import (
-	"time"
-
 	"github.com/runopsio/hoop/gateway/pgrest"
-	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
 	pgsession "github.com/runopsio/hoop/gateway/pgrest/session"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 )
 
-const (
-	defaultLimit  int = 100
-	defaultOffset int = 0
-)
-
 // FindOne doe not enforce fetching the session by its user.
 // However, this is somehow protected by obscurity,
 // since the user won't know the session id of a distinct user.
-func FindOne(ctx *storagev2.Context, sessionID string) (*types.Session, error) {
+func FindOne(ctx pgrest.OrgContext, sessionID string) (*types.Session, error) {
 	sess, err := pgsession.New().FetchOne(ctx, sessionID)
 	if err != nil {
 		return nil, err
@@ -33,10 +25,6 @@ func FindOne(ctx *storagev2.Context, sessionID string) (*types.Session, error) {
 		}
 	}
 	return sess, nil
-}
-
-func FindReviewBySID(ctx *storagev2.Context, sessionID string) (*types.Review, error) {
-	return pgreview.New().FetchOneBySid(ctx, sessionID)
 }
 
 func List(ctx *storagev2.Context, opts ...*types.SessionOption) (*types.SessionList, error) {
@@ -82,8 +70,4 @@ func List(ctx *storagev2.Context, opts ...*types.SessionOption) (*types.SessionL
 		})
 	}
 	return sessionList, nil
-}
-
-func ListAllSessionsID(ctx *storagev2.Context, fromDate time.Time) ([]*types.Session, error) {
-	return pgsession.New().FetchAllFromDate(fromDate)
 }

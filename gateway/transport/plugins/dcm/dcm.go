@@ -5,8 +5,8 @@ import (
 
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
-	"github.com/runopsio/hoop/gateway/storagev2"
-	pluginstorage "github.com/runopsio/hoop/gateway/storagev2/plugin"
+	"github.com/runopsio/hoop/gateway/pgrest"
+	pgplugins "github.com/runopsio/hoop/gateway/pgrest/plugins"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 )
@@ -22,8 +22,7 @@ func (p *dcm) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.
 	if pkt.Type != pbagent.SessionOpen {
 		return nil, nil
 	}
-	ctx := storagev2.NewContext(pctx.UserID, pctx.OrgID, storagev2.NewStorage(nil))
-	pl, err := pluginstorage.GetByName(ctx, p.Name())
+	pl, err := pgplugins.New().FetchOne(pgrest.NewOrgContext(pctx.OrgID), p.Name())
 	if err != nil {
 		return nil, plugintypes.InternalErr("failed fetching database credentials manager plugin", err)
 	}

@@ -45,7 +45,8 @@ func CreateAgentKey(c *gin.Context) {
 		Status:   pgrest.AgentStatusDisconnected,
 		Metadata: map[string]string{},
 	}
-	dsn, err := dsnkeys.NewString(storagev2.ParseContext(c).GrpcURL, agentKeyDefaultName, secretKey, ag.Mode)
+	grpcURL := storagev2.ParseContext(c).GrpcURL
+	dsn, err := dsnkeys.New(grpcURL, agentKeyDefaultName, secretKey)
 	if err != nil {
 		log.Errorf("failed generating agent key, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed generating dsn"})
@@ -75,7 +76,8 @@ func GetAgentKey(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "organization token not found"})
 		return
 	}
-	dsn, err := dsnkeys.NewString(storagev2.ParseContext(c).GrpcURL, agentKeyDefaultName, ag.Key, ag.Mode)
+	grpcURL := storagev2.ParseContext(c).GrpcURL
+	dsn, err := dsnkeys.New(grpcURL, agentKeyDefaultName, ag.Key)
 	if err != nil {
 		log.Errorf("failed generating agent key, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed generating dsn"})

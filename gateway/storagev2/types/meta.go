@@ -14,6 +14,14 @@ func (c *APIContext) Validate() error {
 	return nil
 }
 
+func (c *ConnectionInfo) Validate() error {
+	if c.Name == "" || c.AgentID == "" ||
+		c.ID == "" || c.Type == "" {
+		return fmt.Errorf("missing required connection attributes")
+	}
+	return nil
+}
+
 func (c *APIContext) IsAdminUser() bool { return pb.IsInList(GroupAdmin, c.UserGroups) }
 
 // SetName set the attribute name using from the Connection structure

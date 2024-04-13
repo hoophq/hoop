@@ -20,6 +20,8 @@ var runFlags = struct {
 	Name             string
 	EnvExport        string
 	ConnectionString string
+	Reviewers        []string
+	RedactTypes      []string
 }{}
 
 var exampleRunFlag = `
@@ -38,6 +40,8 @@ func init() {
 	runCmd.Flags().StringVar(&runFlags.ConnectionString, "mssql", "", "The database connection uri, e.g.: sqlserver://...")
 	runCmd.Flags().StringVar(&runFlags.ConnectionString, "mongodb", "", "The database connection uri, e.g.: mongodb://...")
 	runCmd.Flags().StringVar(&runFlags.ConnectionString, "database", "", "Generic option for providing a database connection, e.g.: (postgres://,mysql://,sqlserver://,mongodb://)")
+	runCmd.Flags().StringSliceVar(&runFlags.Reviewers, "reviewers", nil, "The approval groups for this connection, interactions are reviewed when enabled")
+	runCmd.Flags().StringSliceVar(&runFlags.RedactTypes, "redact-types", nil, "The redact types for this connection, content is redacted when enabled")
 
 	_ = runCmd.Flags().MarkHidden("export")
 	rootCmd.AddCommand(runCmd)
@@ -61,8 +65,10 @@ var runCmd = &cobra.Command{
 		}
 
 		request := proto.PreConnectRequest{
-			Name: admin.NormalizeResourceName(runFlags.Name),
-			Type: "custom",
+			Name:        admin.NormalizeResourceName(runFlags.Name),
+			Type:        "custom",
+			Reviewers:   runFlags.Reviewers,
+			RedactTypes: runFlags.RedactTypes,
 		}
 		switch {
 		case runFlags.ConnectionString != "":
