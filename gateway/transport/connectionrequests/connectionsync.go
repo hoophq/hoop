@@ -113,7 +113,7 @@ func connectionSync(orgID, agentID string, req *proto.PreConnectRequest) error {
 			managedBy = *conn.ManagedBy
 		}
 		if managedBy != managedByAgent || conn.AgentID != agentID {
-			log.Warnf("cannot sync connection, managed-by=%v, connection-agentid=%q, requested-agentid=%q",
+			log.Warnf("unable to sync connection, managed-by=%v, connection-agentid=%q, requested-agentid=%q",
 				managedBy, conn.AgentID, agentID)
 			return fmt.Errorf("connection %s is not being managed by this process, choose another name", conn.Name)
 		}

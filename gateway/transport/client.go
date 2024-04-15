@@ -96,7 +96,7 @@ func (s *Server) subscribeClient(stream *streamclient.ProxyStream) (err error) {
 	logAttrs := []any{"sid", pctx.SID, "connection", pctx.ConnectionName,
 		"agent-name", pctx.AgentName, "mode", pctx.AgentMode, "ua", userAgent}
 	log.With(logAttrs...).Infof("proxy connected: %v", stream)
-	defer log.With(logAttrs...).Infof("proxy disconnected, err=%v", err)
+	defer func() { log.With(logAttrs...).Infof("proxy disconnected, err=%v", err) }()
 	return s.listenClientMessages(stream)
 }
 
