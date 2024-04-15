@@ -16,6 +16,7 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	pgconnections "github.com/runopsio/hoop/gateway/pgrest/connections"
+	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
 	pgsession "github.com/runopsio/hoop/gateway/pgrest/session"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	sessionstorage "github.com/runopsio/hoop/gateway/storagev2/session"
@@ -203,7 +204,7 @@ func Get(c *gin.Context) {
 		return
 	}
 
-	review, err := sessionstorage.FindReviewBySID(ctx, sessionID)
+	review, err := pgreview.New().FetchOneBySid(ctx, sessionID)
 	if err != nil {
 		log.Errorf("failed fetching review, err=%v", err)
 		sentry.CaptureException(err)

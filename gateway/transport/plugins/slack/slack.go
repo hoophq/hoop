@@ -8,11 +8,12 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
+	"github.com/runopsio/hoop/gateway/pgrest"
+	pgplugins "github.com/runopsio/hoop/gateway/pgrest/plugins"
 	"github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/slack"
 	"github.com/runopsio/hoop/gateway/storagev2"
-	pluginstorage "github.com/runopsio/hoop/gateway/storagev2/plugin"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
@@ -108,8 +109,7 @@ func (p *slackPlugin) OnStartup(_ plugintypes.Context) error {
 	}
 
 	for _, org := range orgList {
-		ctx := storagev2.NewOrganizationContext(org.Id, storagev2.NewStorage(nil))
-		pl, err := pluginstorage.GetByName(ctx, plugintypes.PluginSlackName)
+		pl, err := pgplugins.New().FetchOne(pgrest.NewOrgContext(org.Id), plugintypes.PluginSlackName)
 		if err != nil {
 			log.Errorf("failed retrieving plugin entity %v", err)
 			continue

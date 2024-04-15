@@ -3,6 +3,7 @@ package plugintypes
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	pb "github.com/runopsio/hoop/common/proto"
@@ -18,6 +19,7 @@ type Context struct {
 
 	// Use Attributes
 	OrgID       string
+	OrgName     string
 	UserID      string
 	UserName    string
 	UserEmail   string
@@ -31,7 +33,11 @@ type Context struct {
 	ConnectionSubType string
 	ConnectionCommand []string
 	ConnectionSecret  map[string]any
-	ConnectionAgentID string
+
+	// Agent attributes
+	AgentID   string
+	AgentName string
+	AgentMode string
 
 	// Plugin attributes
 	PluginConnectionConfig []string
@@ -68,10 +74,14 @@ type ConnectResponse struct {
 	ClientPacket *pb.Packet
 }
 
+func (c Context) GetOrgID() string        { return c.OrgID }
+func (c Context) GetUserID() string       { return c.UserID }
+func (c Context) GetUserGroups() []string { return c.UserGroups }
+func (c Context) IsAdmin() bool           { return slices.Contains(c.UserGroups, types.GroupAdmin) }
 func (c *Context) Validate() error {
 	if c.SID == "" ||
 		c.ConnectionID == "" || c.ConnectionName == "" || c.ConnectionType == "" ||
-		c.ConnectionAgentID == "" || c.OrgID == "" || c.UserID == "" ||
+		c.AgentID == "" || c.OrgID == "" || c.UserID == "" ||
 		c.ClientVerb == "" || c.ClientOrigin == "" {
 		return fmt.Errorf("missing required context attributes")
 	}

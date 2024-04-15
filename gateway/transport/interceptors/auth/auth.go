@@ -196,15 +196,6 @@ func (i *interceptor) authenticateAgent(bearerToken string, md metadata.MD) (*pg
 			log.Debugf("invalid agent authentication (legacy auth), tokenlength=%v, client-metadata=%v, err=%v", len(bearerToken), md, err)
 			return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
-		ag.Metadata = map[string]string{
-			"hostname":       commongrpc.MetaGet(md, "hostname"),
-			"platform":       commongrpc.MetaGet(md, "platform"),
-			"machine_id":     commongrpc.MetaGet(md, "machine-id"),
-			"kernel_version": commongrpc.MetaGet(md, "kernel-version"),
-			"version":        commongrpc.MetaGet(md, "version"),
-			"goversion":      commongrpc.MetaGet(md, "go-version"),
-			"compiler":       commongrpc.MetaGet(md, "compiler"),
-		}
 		return ag, nil
 	}
 	dsn, err := dsnkeys.Parse(bearerToken)
@@ -220,19 +211,10 @@ func (i *interceptor) authenticateAgent(bearerToken string, md metadata.MD) (*pg
 		log.Debugf("invalid agent authentication (dsn), tokenlength=%v, client-metadata=%v, err=%v", len(bearerToken), md, err)
 		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
 	}
-	if ag.Name != dsn.Name || ag.Mode != dsn.AgentMode {
+	if ag.Name != dsn.Name {
 		log.Errorf("failed authenticating agent (agent dsn), mismatch dsn attributes. id=%v, name=%v, mode=%v",
 			ag.ID, dsn.Name, dsn.AgentMode)
 		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication, mismatch dsn attributes")
-	}
-	ag.Metadata = map[string]string{
-		"hostname":       commongrpc.MetaGet(md, "hostname"),
-		"platform":       commongrpc.MetaGet(md, "platform"),
-		"machine_id":     commongrpc.MetaGet(md, "machine-id"),
-		"kernel_version": commongrpc.MetaGet(md, "kernel-version"),
-		"version":        commongrpc.MetaGet(md, "version"),
-		"goversion":      commongrpc.MetaGet(md, "go-version"),
-		"compiler":       commongrpc.MetaGet(md, "compiler"),
 	}
 	return ag, nil
 }

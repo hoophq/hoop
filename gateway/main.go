@@ -25,6 +25,7 @@ import (
 	"github.com/runopsio/hoop/gateway/user"
 
 	// plugins
+	"github.com/runopsio/hoop/gateway/transport/connectionstatus"
 	pluginsrbac "github.com/runopsio/hoop/gateway/transport/plugins/accesscontrol"
 	pluginsaudit "github.com/runopsio/hoop/gateway/transport/plugins/audit"
 	pluginsdcm "github.com/runopsio/hoop/gateway/transport/plugins/dcm"
@@ -34,6 +35,7 @@ import (
 	pluginsslack "github.com/runopsio/hoop/gateway/transport/plugins/slack"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	pluginswebhooks "github.com/runopsio/hoop/gateway/transport/plugins/webhooks"
+	"github.com/runopsio/hoop/gateway/transport/streamclient"
 )
 
 func Run() {
@@ -97,11 +99,9 @@ func Run() {
 		PyroscopeIngestURL:   os.Getenv("PYROSCOPE_INGEST_URL"),
 		PyroscopeAuthToken:   os.Getenv("PYROSCOPE_AUTH_TOKEN"),
 		AgentSentryDSN:       "https://a6ecaeba31684f02ab8606a59301cd15@o4504559799566336.ingest.sentry.io/4504571759230976",
-
-		StoreV2: storev2,
 	}
 	// order matters
-	g.RegisteredPlugins = []plugintypes.Plugin{
+	plugintypes.RegisteredPlugins = []plugintypes.Plugin{
 		pluginsreview.New(
 			&review.Service{Storage: &review.Storage{}, TransportService: g},
 			&user.Service{Storage: &user.Storage{}},
@@ -119,10 +119,9 @@ func Run() {
 			idProvider),
 		pluginsdcm.New(),
 	}
-	plugintypes.RegisteredPlugins = g.RegisteredPlugins
 	reviewService.TransportService = g
 
-	for _, p := range g.RegisteredPlugins {
+	for _, p := range plugintypes.RegisteredPlugins {
 		pluginContext := plugintypes.Context{}
 		if err := p.OnStartup(pluginContext); err != nil {
 			log.Fatalf("failed initializing plugin %s, reason=%v", p.Name(), err)
@@ -141,6 +140,8 @@ func Run() {
 		log.Warn(err)
 		sentry.CaptureException(err)
 	}
+	connectionstatus.InitConciliationProcess()
+	streamclient.InitProxyMemoryCleanup()
 
 	if grpc.ShouldDebugGrpc() {
 		log.SetGrpcLogger()

@@ -2,7 +2,8 @@ package pgrest
 
 type Context interface {
 	OrgContext
-	UserContext
+	IsAdmin() bool
+	GetUserGroups() []string
 }
 
 type OrgContext interface {
@@ -10,9 +11,8 @@ type OrgContext interface {
 }
 
 type UserContext interface {
-	GetSubject() string
-	IsAdmin() bool
-	GetUserGroups() []string
+	GetOrgID() string
+	GetUserID() string
 }
 type Login struct {
 	ID       string `json:"id"`

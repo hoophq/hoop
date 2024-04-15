@@ -16,10 +16,10 @@ import (
 	apiconnections "github.com/runopsio/hoop/gateway/api/connections"
 	sessionapi "github.com/runopsio/hoop/gateway/api/session"
 	"github.com/runopsio/hoop/gateway/clientexec"
+	pgplugins "github.com/runopsio/hoop/gateway/pgrest/plugins"
 	pgsession "github.com/runopsio/hoop/gateway/pgrest/session"
 	"github.com/runopsio/hoop/gateway/runbooks/templates"
 	"github.com/runopsio/hoop/gateway/storagev2"
-	pluginstorage "github.com/runopsio/hoop/gateway/storagev2/plugin"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/user"
@@ -69,7 +69,7 @@ func (h *Handler) ListByConnection(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	log := user.ContextLogger(c)
 	connectionName := c.Param("name")
-	p, err := pluginstorage.GetByName(ctx, plugintypes.PluginRunbooksName)
+	p, err := pgplugins.New().FetchOne(ctx, plugintypes.PluginRunbooksName)
 	if err != nil {
 		log.Error(err)
 		sentry.CaptureException(err)
@@ -133,7 +133,7 @@ func (h *Handler) List(c *gin.Context) {
 		h.scanedKnownHosts = true
 	}
 
-	p, err := pluginstorage.GetByName(ctx, plugintypes.PluginRunbooksName)
+	p, err := pgplugins.New().FetchOne(ctx, plugintypes.PluginRunbooksName)
 	if err != nil {
 		log.Error(err)
 		sentry.CaptureException(err)
@@ -315,8 +315,7 @@ func (h *Handler) getRunbookConfig(ctx *user.Context, c *gin.Context, connection
 	if err != nil {
 		return nil, "", err
 	}
-	ctxv2 := storagev2.NewContext(ctx.User.Id, ctx.Org.Id, storagev2.NewStorage(nil))
-	p, err := pluginstorage.GetByName(ctxv2, plugintypes.PluginRunbooksName)
+	p, err := pgplugins.New().FetchOne(ctx, plugintypes.PluginRunbooksName)
 	if err != nil {
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError,

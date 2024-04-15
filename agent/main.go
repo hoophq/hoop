@@ -74,12 +74,13 @@ func RunV2(request *pb.PreConnectRequest, hostEnvs []string) {
 		resp, err := grpc.PreConnectRPC(clientConfig, request)
 		if err != nil {
 			log.With("version", vi.Version).Infof("failed pre-connect, reason=%v", err)
-			time.Sleep(time.Second * 10)
+			time.Sleep(time.Second * 5)
 			continue
 		}
+		log.Debugf("pre-connect rpc, status=%v, message=%v", resp.Status, resp.Message)
 		switch resp.Status {
 		case pb.PreConnectStatusConnectType:
-			runAgent(c, clientConfig)
+			runAgent(c, clientConfig, request.Name)
 		case pb.PreConnectStatusBackoffType:
 			if resp.Message != "" {
 				log.Infof("fail connecting to server, reason=%v", resp.Message)
@@ -87,13 +88,17 @@ func RunV2(request *pb.PreConnectRequest, hostEnvs []string) {
 		default:
 			log.Warnf("pre-connect status %q not implement", resp.Status)
 		}
-		time.Sleep(time.Second * 10)
+		time.Sleep(time.Second * 5)
 	}
 }
 
-func runAgent(config *agentconfig.Config, clientConfig grpc.ClientConfig) {
+func runAgent(config *agentconfig.Config, clientConfig grpc.ClientConfig, connectionName string) {
 	log.Infof("connecting to grpc server %v", config.URL)
-	client, err := grpc.Connect(clientConfig, grpc.WithOption("origin", pb.ConnectionOriginAgent))
+	grpcOptions := []*grpc.ClientOptions{grpc.WithOption("origin", pb.ConnectionOriginAgent)}
+	if connectionName != "" {
+		grpcOptions = append(grpcOptions, grpc.WithOption("connection-name", connectionName))
+	}
+	client, err := grpc.Connect(clientConfig, grpcOptions...)
 	if err != nil {
 		log.Errorf("failed connecting to gateway, err=%v", err)
 		return

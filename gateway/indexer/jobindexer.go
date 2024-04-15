@@ -8,8 +8,10 @@ import (
 	"github.com/runopsio/hoop/common/log"
 
 	"github.com/blevesearch/bleve/v2"
+	"github.com/runopsio/hoop/gateway/pgrest"
+	pgplugins "github.com/runopsio/hoop/gateway/pgrest/plugins"
+	pgsession "github.com/runopsio/hoop/gateway/pgrest/session"
 	"github.com/runopsio/hoop/gateway/storagev2"
-	pluginstorage "github.com/runopsio/hoop/gateway/storagev2/plugin"
 	sessionstorage "github.com/runopsio/hoop/gateway/storagev2/session"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
@@ -91,8 +93,7 @@ func StartJobIndex() error {
 }
 
 func listAllSessionsID(startDate time.Time) (map[string][]string, error) {
-	ctx := storagev2.NewContext("", "", storagev2.NewStorage(nil))
-	sessionList, err := sessionstorage.ListAllSessionsID(ctx, startDate)
+	sessionList, err := pgsession.New().FetchAllFromDate(startDate)
 	if err != nil {
 		return nil, err
 	}
@@ -110,8 +111,7 @@ func listAllSessionsID(startDate time.Time) (map[string][]string, error) {
 // fetchPlugin retrieve the indexer plugin for the given org
 // it returns a closure that validates if the session could be processed
 func fetchIndexerPlugin(orgID string) (func(s *types.Session) bool, error) {
-	ctx := storagev2.NewOrganizationContext(orgID, storagev2.NewStorage(nil))
-	plugin, err := pluginstorage.GetByName(ctx, plugintypes.PluginIndexName)
+	plugin, err := pgplugins.New().FetchOne(pgrest.NewOrgContext(orgID), plugintypes.PluginIndexName)
 	if err != nil {
 		return nil, err
 	}

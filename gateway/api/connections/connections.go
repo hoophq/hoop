@@ -15,12 +15,14 @@ import (
 	apivalidation "github.com/runopsio/hoop/gateway/api/validation"
 	"github.com/runopsio/hoop/gateway/pgrest"
 	pgconnections "github.com/runopsio/hoop/gateway/pgrest/connections"
+	pgplugins "github.com/runopsio/hoop/gateway/pgrest/plugins"
 	pgsession "github.com/runopsio/hoop/gateway/pgrest/session"
 	"github.com/runopsio/hoop/gateway/storagev2"
-	pluginstorage "github.com/runopsio/hoop/gateway/storagev2/plugin"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/transport/connectionrequests"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+	"github.com/runopsio/hoop/gateway/transport/streamclient"
+	streamtypes "github.com/runopsio/hoop/gateway/transport/streamclient/types"
 )
 
 type Review struct {
@@ -65,6 +67,7 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"message": "Connection already exists."})
 		return
 	}
+
 	if len(req.Command) == 0 {
 		switch pb.ToConnectionType(req.Type, req.SubType) {
 		case pb.ConnectionTypePostgres:
@@ -84,6 +87,9 @@ func Post(c *gin.Context) {
 	}
 	req.ID = uuid.NewString()
 	req.Status = pgrest.ConnectionStatusOffline
+	if streamclient.IsAgentOnline(streamtypes.NewStreamID(req.AgentId, "")) {
+		req.Status = pgrest.ConnectionStatusOnline
+	}
 	err = pgconnections.New().Upsert(ctx, pgrest.Connection{
 		ID:        req.ID,
 		OrgID:     ctx.OrgID,
@@ -93,6 +99,7 @@ func Post(c *gin.Context) {
 		Type:      string(req.Type),
 		SubType:   req.SubType,
 		Envs:      envs,
+		Status:    req.Status,
 		ManagedBy: nil,
 	})
 	if err != nil {
@@ -101,7 +108,7 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
-	pluginstorage.EnableDefaultPlugins(ctx, req.ID, req.Name)
+	pgplugins.EnableDefaultPlugins(ctx, req.ID, req.Name, pgplugins.DefaultPluginNames)
 	// configure review and dlp plugins (best-effort)
 	for _, pluginName := range []string{plugintypes.PluginReviewName, plugintypes.PluginDLPName} {
 		// skip configuring redact if the client doesn't set redact_enabled
@@ -113,7 +120,7 @@ func Post(c *gin.Context) {
 		if pluginName == plugintypes.PluginDLPName {
 			pluginConnConfig = req.RedactTypes
 		}
-		upsertPluginConnection(ctx, pluginName, &types.PluginConnection{
+		pgplugins.UpsertPluginConnection(ctx, pluginName, &types.PluginConnection{
 			ID:           uuid.NewString(),
 			ConnectionID: req.ID,
 			Name:         req.Name,
@@ -174,6 +181,7 @@ func Put(c *gin.Context) {
 		Type:      req.Type,
 		SubType:   req.SubType,
 		Envs:      pgrest.CoerceToMapString(req.Secrets),
+		Status:    conn.Status,
 		ManagedBy: nil,
 	})
 	if err != nil {
@@ -194,7 +202,7 @@ func Put(c *gin.Context) {
 		if pluginName == plugintypes.PluginDLPName {
 			pluginConnConfig = req.RedactTypes
 		}
-		upsertPluginConnection(ctx, pluginName, &types.PluginConnection{
+		pgplugins.UpsertPluginConnection(ctx, pluginName, &types.PluginConnection{
 			ID:           uuid.NewString(),
 			ConnectionID: conn.ID,
 			Name:         req.Name,

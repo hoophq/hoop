@@ -11,11 +11,22 @@ import (
 	"github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/pgrest"
 	pgconnections "github.com/runopsio/hoop/gateway/pgrest/connections"
+	pgplugins "github.com/runopsio/hoop/gateway/pgrest/plugins"
+	"github.com/runopsio/hoop/gateway/storagev2/types"
+	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 )
 
 var (
 	connectionChecksumStore = memory.New()
 	managedByAgent          = "hoopagent"
+	defaultPlugins          = []string{
+		plugintypes.PluginAuditName,
+		plugintypes.PluginIndexName,
+		plugintypes.PluginEditorName,
+		plugintypes.PluginSlackName,
+		plugintypes.PluginRunbooksName,
+		plugintypes.PluginWebhookName,
+	}
 )
 
 // InvalidateSyncCache remove the connection cache sync state
@@ -45,11 +56,11 @@ func setChecksumCache(orgID string, req *proto.PreConnectRequest) {
 	connectionChecksumStore.Set(syncKey, checksum)
 }
 
-func upsertConnection(orgID, agentID string, req *proto.PreConnectRequest, conn *pgrest.Connection) error {
+func upsertConnection(ctx pgrest.OrgContext, agentID string, req *proto.PreConnectRequest, conn *pgrest.Connection) error {
 	if conn == nil {
 		conn = &pgrest.Connection{
 			ID:        uuid.NewString(),
-			OrgID:     orgID,
+			OrgID:     ctx.GetOrgID(),
 			AgentID:   agentID,
 			ManagedBy: &managedByAgent,
 		}
@@ -61,19 +72,36 @@ func upsertConnection(orgID, agentID string, req *proto.PreConnectRequest, conn 
 	conn.Name = req.Name
 	conn.Type = req.Type
 	conn.SubType = req.Subtype
+	conn.Status = pgrest.ConnectionStatusOnline
 	for key, val := range req.Envs {
 		conn.Envs[key] = val
 	}
-	// TODO: add reviews
-	// TODO: add redact type plugin
-	return pgconnections.New().Upsert(pgrest.NewOrgContext(orgID), *conn)
+	err := pgconnections.New().Upsert(ctx, *conn)
+	if err != nil {
+		return err
+	}
+	pgplugins.EnableDefaultPlugins(ctx, conn.ID, req.Name, defaultPlugins)
+	pgplugins.UpsertPluginConnection(ctx, plugintypes.PluginDLPName, &types.PluginConnection{
+		ID:           uuid.NewString(),
+		ConnectionID: conn.ID,
+		Name:         req.Name,
+		Config:       req.RedactTypes,
+	})
+	pgplugins.UpsertPluginConnection(ctx, plugintypes.PluginReviewName, &types.PluginConnection{
+		ID:           uuid.NewString(),
+		ConnectionID: conn.ID,
+		Name:         req.Name,
+		Config:       req.Reviewers,
+	})
+	return nil
 }
 
 func connectionSync(orgID, agentID string, req *proto.PreConnectRequest) error {
 	if checksumCacheMatches(orgID, req) {
 		return nil
 	}
-	conn, err := pgconnections.New().FetchOneByNameOrID(pgrest.NewOrgContext(orgID), req.Name)
+	ctx := pgrest.NewOrgContext(orgID)
+	conn, err := pgconnections.New().FetchOneByNameOrID(ctx, req.Name)
 	if err != nil {
 		return err
 	}
@@ -85,14 +113,14 @@ func connectionSync(orgID, agentID string, req *proto.PreConnectRequest) error {
 			managedBy = *conn.ManagedBy
 		}
 		if managedBy != managedByAgent || conn.AgentID != agentID {
-			log.Warnf("manage inconsistency, managed-val=%q, conn-agentid=%q, request-agentid=%q",
+			log.Warnf("unable to sync connection, managed-by=%v, connection-agentid=%q, requested-agentid=%q",
 				managedBy, conn.AgentID, agentID)
 			return fmt.Errorf("connection %s is not being managed by this process, choose another name", conn.Name)
 		}
 	}
 
 	// update or create a connection with new values
-	if err := upsertConnection(orgID, agentID, req, conn); err != nil {
+	if err := upsertConnection(ctx, agentID, req, conn); err != nil {
 		return err
 	}
 	setChecksumCache(orgID, req)
