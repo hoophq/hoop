@@ -70,16 +70,28 @@ func listRunbookFiles(pluginConnectionList []*types.PluginConnection, config *te
 		if !templates.IsRunbookFile(f.Name) {
 			return nil
 		}
+		runbook := &Runbook{
+			Name:           f.Name,
+			Metadata:       map[string]any{},
+			ConnectionList: []string{},
+			Error:          nil,
+		}
 		blobData, err := templates.ReadBlob(f)
 		if err != nil {
-			return fmt.Errorf("name=%v - read blob error %v", f.Name, err)
+			runbook.Error = toPtrStr(err)
+			runbookList.Items = append(runbookList.Items, runbook)
+			return nil
 		}
 		if len(blobData) > maxTemplateSize {
-			return fmt.Errorf("max template size [%v KB] reached for %v", maxTemplateSize/1000, f.Name)
+			runbook.Error = toPtrStr(fmt.Errorf("max template size [%v KB] reached", maxTemplateSize/1000))
+			runbookList.Items = append(runbookList.Items, runbook)
+			return nil
 		}
 		t, err := templates.Parse(string(blobData))
 		if err != nil {
-			return fmt.Errorf("name=%v - failed parsing template %v", f.Name, err)
+			runbook.Error = toPtrStr(fmt.Errorf("template parse error: %v", err))
+			runbookList.Items = append(runbookList.Items, runbook)
+			return nil
 		}
 
 		var connectionList []string
@@ -93,11 +105,9 @@ func listRunbookFiles(pluginConnectionList []*types.PluginConnection, config *te
 				connectionList = append(connectionList, conn.Name)
 			}
 		}
-		runbookList.Items = append(runbookList.Items, &Runbook{
-			Name:           f.Name,
-			Metadata:       t.Attributes(),
-			ConnectionList: connectionList,
-		})
+		runbook.ConnectionList = connectionList
+		runbook.Metadata = t.Attributes()
+		runbookList.Items = append(runbookList.Items, runbook)
 		return nil
 	})
 }
@@ -124,22 +134,40 @@ func listRunbookFilesByPathPrefix(pathPrefix string, config *templates.RunbookCo
 		if pathPrefix != "" && !strings.HasPrefix(f.Name, pathPrefix) {
 			return nil
 		}
+		runbook := &Runbook{
+			Name:           f.Name,
+			Metadata:       map[string]any{},
+			ConnectionList: nil,
+			Error:          nil,
+		}
 		blobData, err := templates.ReadBlob(f)
 		if err != nil {
-			return fmt.Errorf("name=%v - read blob error %v", f.Name, err)
+			runbook.Error = toPtrStr(err)
+			runbookList.Items = append(runbookList.Items, runbook)
+			return nil
 		}
 		if len(blobData) > maxTemplateSize {
-			return fmt.Errorf("max template size [%v KB] reached for %v", maxTemplateSize/1000, f.Name)
+			runbook.Error = toPtrStr(fmt.Errorf("max template size [%v KB] reached", maxTemplateSize/1000))
+			runbookList.Items = append(runbookList.Items, runbook)
+			return nil
 		}
 		t, err := templates.Parse(string(blobData))
 		if err != nil {
-			return fmt.Errorf("name=%v - failed parsing template %v", f.Name, err)
+			runbook.Error = toPtrStr(fmt.Errorf("template parse error: %v", err))
+			runbookList.Items = append(runbookList.Items, runbook)
+			return nil
 		}
-		runbookList.Items = append(runbookList.Items, &Runbook{
-			Name:           f.Name,
-			Metadata:       t.Attributes(),
-			ConnectionList: nil,
-		})
+		runbook.ConnectionList = nil
+		runbook.Metadata = t.Attributes()
+		runbookList.Items = append(runbookList.Items, runbook)
 		return nil
 	})
+}
+
+func toPtrStr(v any) *string {
+	if v == nil || fmt.Sprintf("%v", v) == "" {
+		return nil
+	}
+	val := fmt.Sprintf("%v", v)
+	return &val
 }

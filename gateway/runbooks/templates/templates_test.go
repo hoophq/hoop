@@ -107,7 +107,7 @@ func TestTemplateParseAttributes(t *testing.T) {
 			tmpl: `url = {{ .url 
 					| default "http://localhost:3000"
 					| required "url is required"
-					| description "The URL to fetch" 
+					| description "The URL to fetch"
 					| type "url"
 					| asenv "FETCH_URL" }}`,
 			wantAttrs: map[string]any{
@@ -159,10 +159,16 @@ func TestTemplateParseHelperFuncs(t *testing.T) {
 		execErr  error
 	}{
 		{
-			msg:      "it should parse with a default value if the input is empty",
+			msg:      "it should parse with a default value if the input attribute is empty",
 			tmpl:     `name = {{ .name | default "Tony Stark" }}`,
 			wantTmpl: "name = Tony Stark",
 			inputs:   map[string]string{"name": ""},
+		},
+		{
+			msg:      "it should parse with a default value if the input is empty",
+			tmpl:     `name = {{ .name | default "Tony Stark" }}`,
+			wantTmpl: `name = Tony Stark`,
+			inputs:   map[string]string{},
 		},
 		{
 			msg:      "it should parse with a default value if the input is empty and using noop functions",
@@ -195,7 +201,7 @@ func TestTemplateParseHelperFuncs(t *testing.T) {
 			inputs:   map[string]string{"type": "car"},
 		},
 		{
-			msg:     "it should faild validating the number regexp pattern",
+			msg:     "it should fail validating the number regexp pattern",
 			tmpl:    `wallet_id = {{ .wallet_id | pattern "^[0-9]+" }}`,
 			inputs:  map[string]string{"wallet_id": "abc1234567890"},
 			execErr: fmt.Errorf("pattern didn't match:^[0-9]+"),

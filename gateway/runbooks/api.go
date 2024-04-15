@@ -29,6 +29,7 @@ type Runbook struct {
 	Name           string            `json:"name"`
 	Metadata       map[string]any    `json:"metadata"`
 	ConnectionList []string          `json:"connections,omitempty"`
+	Error          *string           `json:"error"`
 	EnvVars        map[string]string `json:"-"`
 	InputFile      []byte            `json:"-"`
 	CommitHash     string            `json:"-"`

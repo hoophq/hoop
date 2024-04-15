@@ -206,7 +206,7 @@ var getCmd = &cobra.Command{
 				if len(commit) > 7 {
 					commit = commit[:7]
 				}
-				fmt.Fprintln(w, "NAME\tMETADATA\tCONNECTIONS\tCOMMIT")
+				fmt.Fprintln(w, "NAME\tMETADATA\tCONNECTIONS\tCOMMIT\tERROR")
 				runbookList, _ := contents["items"].([]interface{})
 				for _, obj := range runbookList {
 					m, ok := obj.(map[string]any)
@@ -223,11 +223,16 @@ var getCmd = &cobra.Command{
 					if connectionList != nil {
 						connections = joinItems(connectionList)
 					}
-					fmt.Fprintf(w, "%v\t%v\t%v\t%s",
+					hasError := "-"
+					if m["error"] != nil {
+						hasError = "yes"
+					}
+					fmt.Fprintf(w, "%v\t%v\t%v\t%s\t%v",
 						m["name"],
 						strings.Join(metadataList, ", "),
 						connections,
 						commit,
+						hasError,
 					)
 					fmt.Fprintln(w)
 				}
