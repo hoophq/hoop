@@ -237,7 +237,7 @@ func parseClientEnvVars() (map[string]string, error) {
 			invalidEnvs = append(invalidEnvs, envvarStr)
 			continue
 		}
-		envKey := fmt.Sprintf("envvar:%s", strings.ToUpper(key))
+		envKey := fmt.Sprintf("envvar:%s", key)
 		envVar[envKey] = base64.StdEncoding.EncodeToString([]byte(val))
 	}
 	if len(invalidEnvs) > 0 {
