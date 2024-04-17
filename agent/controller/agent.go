@@ -29,7 +29,6 @@ type (
 		client           pb.ClientTransport
 		connStore        memory.Store
 		config           *config.Config
-		shutdown         bool
 		shutdownCtx      context.Context
 		shutdownCancelFn context.CancelCauseFunc
 	}
