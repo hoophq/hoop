@@ -61,12 +61,8 @@ func (a *Agent) Close(cause error) {
 			_ = client.Close()
 		}
 	}
-
 	a.shutdownCancelFn(cause)
-	// foo bar
-	// zika virus
 	_, _ = a.client.Close()
-	// _ = sentry.Flush(time.Second * 2)
 }
 
 func (a *Agent) Run() error {
