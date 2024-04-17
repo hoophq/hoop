@@ -16,7 +16,7 @@ const (
 
 	// ModeEnv is when a client is loaded with environment variables
 	ModeEnv = "env"
-	// ModeEnv is when a client is loaded with the environment variable HOOP_DSN
+	// ModeEnv is when a client is loaded with the environment variable HOOP_KEY
 	ModeDsn = "dsn"
 	// ModeLocal detects if the client has found a local instance
 	// of the hoop gateway, this mode indicates the gRPC connection

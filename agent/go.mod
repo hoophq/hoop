@@ -6,7 +6,6 @@ replace github.com/runopsio/hoop/common => ../common
 
 require (
 	cloud.google.com/go/dlp v1.10.1
-	github.com/BurntSushi/toml v1.2.1
 	github.com/aws/aws-sdk-go-v2 v1.26.0
 	github.com/aws/aws-sdk-go-v2/config v1.27.9
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.28.4

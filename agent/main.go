@@ -1,17 +1,22 @@
 package agent
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"hash/crc32"
 	"os"
-	"strings"
+	"os/signal"
+	"syscall"
 	"time"
 
+	"github.com/getsentry/sentry-go"
 	agentconfig "github.com/runopsio/hoop/agent/config"
+	"github.com/runopsio/hoop/agent/controller"
 	"github.com/runopsio/hoop/common/backoff"
 	"github.com/runopsio/hoop/common/clientconfig"
 	"github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
+	"github.com/runopsio/hoop/common/memory"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/common/version"
 	"google.golang.org/grpc/codes"
@@ -21,12 +26,9 @@ import (
 var (
 	defaultUserAgent = fmt.Sprintf("hoopagent/%v", version.Get().Version)
 	vi               = version.Get()
+	agentStore       = memory.New()
+	agentInstanceKey = "instance"
 )
-
-func tokenCrc32KeySuffix(keyName string) string {
-	t := crc32.MakeTable(crc32.IEEE)
-	return fmt.Sprintf("%s/%08x", keyName, crc32.Checksum([]byte(os.Getenv("HOOP_DSN")), t))
-}
 
 func Run() {
 	config, err := agentconfig.Load()
@@ -34,22 +36,13 @@ func Run() {
 		log.With("version", vi.Version).Fatal(err)
 	}
 
-	var environment string
-	if hostname, _, found := strings.Cut(config.URL, ":"); found && config.Type == clientconfig.ModeDsn {
-		environment = hostname
-	}
-	s3Logger := log.NewS3LoggerWriter("agent", environment, tokenCrc32KeySuffix(config.Name))
-	if err := s3Logger.Init(); err != nil {
-		log.With("version", vi.Version).Fatal(err)
-	}
-	defer s3Logger.Flush()
 	// default to embedded mode if it's dsn type config to keep
 	if config.Type == clientconfig.ModeDsn && config.AgentMode == pb.AgentModeEmbeddedType {
 		RunV2(&pb.PreConnectRequest{}, nil)
 		return
 	}
-	if err := runDefaultMode(s3Logger, config); err != nil {
-		s3Logger.Flush()
+	handleOsInterrupt()
+	if err := runDefaultMode(config); err != nil {
 		log.With("version", vi.Version).Fatal(err)
 	}
 }
@@ -57,6 +50,7 @@ func Run() {
 // RunV2 should supersedes agent modes, instead of relying in two distincts modes of execution
 // this method should deprecate old behaviors.
 func RunV2(request *pb.PreConnectRequest, hostEnvs []string) {
+	handleOsInterrupt()
 	c, err := agentconfig.Load()
 	if err != nil {
 		log.With("version", vi.Version).Fatal(err)
@@ -103,8 +97,11 @@ func runAgent(config *agentconfig.Config, clientConfig grpc.ClientConfig, connec
 		log.Errorf("failed connecting to gateway, err=%v", err)
 		return
 	}
-	defer client.Close()
-	err = New(client, config, nil).Run()
+	ctrl := controller.New(client, config)
+	agentStore.Set(agentInstanceKey, ctrl)
+	defer func() { agentStore.Del(agentInstanceKey); ctrl.Close(nil) }()
+	err = ctrl.Run()
+	// err = New(client, config).Run()
 	var grpcStatusCode = codes.Code(99)
 	if status, ok := status.FromError(err); ok {
 		grpcStatusCode = status.Code()
@@ -119,7 +116,7 @@ func runAgent(config *agentconfig.Config, clientConfig grpc.ClientConfig, connec
 	}
 }
 
-func runDefaultMode(s3Log *log.S3LogWriter, config *agentconfig.Config) error {
+func runDefaultMode(config *agentconfig.Config) error {
 	clientConfig, err := config.GrpcClientConfig()
 	if err != nil {
 		return err
@@ -137,8 +134,10 @@ func runDefaultMode(s3Log *log.S3LogWriter, config *agentconfig.Config) error {
 				Warnf("failed to connect to %s, reason=%v", config.URL, err.Error())
 			return backoff.Error()
 		}
-		defer client.Close()
-		err = New(client, config, s3Log).Run()
+		ctrl := controller.New(client, config)
+		agentStore.Set(agentInstanceKey, ctrl)
+		defer func() { agentStore.Del(agentInstanceKey); ctrl.Close(nil) }()
+		err = ctrl.Run()
 		var grpcStatusCode = codes.Code(99)
 		if status, ok := status.FromError(err); ok {
 			grpcStatusCode = status.Code()
@@ -156,4 +155,42 @@ func runDefaultMode(s3Log *log.S3LogWriter, config *agentconfig.Config) error {
 			Infof("disconnected from %v, reason=%v", config.URL, err)
 		return backoff.Error()
 	})
+}
+
+func handleOsInterrupt() {
+	sigc := make(chan os.Signal, 1)
+	signal.Notify(sigc,
+		syscall.SIGHUP,
+		syscall.SIGINT,
+		syscall.SIGTERM,
+		syscall.SIGQUIT)
+	go func() {
+		sigval := <-sigc
+		msg := fmt.Sprintf("received signal '%v' from the operating system", sigval)
+		log.Debugf(msg)
+		obj := agentStore.Pop(agentInstanceKey)
+		instance, _ := obj.(*controller.Agent)
+		cleanExit := true
+		if instance != nil {
+			timeoutCtx, timeoutCancelFn := context.WithTimeout(context.Background(), time.Second*10)
+			go func() { instance.Close(errors.New(msg)); timeoutCancelFn() }()
+			<-timeoutCtx.Done()
+			if err := timeoutCtx.Err(); err == context.DeadlineExceeded {
+				cleanExit = false
+				log.Warnf("timeout (10s) waiting for agent to close graceful")
+			}
+		}
+		sentry.Flush(time.Second * 2)
+		log.With("clean-exit", cleanExit).Debugf("exiting program")
+		switch sigval {
+		case syscall.SIGHUP:
+			os.Exit(int(syscall.SIGHUP))
+		case syscall.SIGINT:
+			os.Exit(int(syscall.SIGINT))
+		case syscall.SIGTERM:
+			os.Exit(int(syscall.SIGTERM))
+		case syscall.SIGQUIT:
+			os.Exit(int(syscall.SIGQUIT))
+		}
+	}()
 }
