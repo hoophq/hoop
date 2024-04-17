@@ -1,4 +1,4 @@
-package agent
+package controller
 
 import (
 	"context"
@@ -7,9 +7,7 @@ import (
 	"io"
 	"net"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -28,10 +26,12 @@ import (
 
 type (
 	Agent struct {
-		client         pb.ClientTransport
-		connStore      memory.Store
-		config         *config.Config
-		s3LoggerWriter *log.S3LogWriter
+		client           pb.ClientTransport
+		connStore        memory.Store
+		config           *config.Config
+		shutdown         bool
+		shutdownCtx      context.Context
+		shutdownCancelFn context.CancelCauseFunc
 	}
 	connEnv struct {
 		host            string
@@ -43,148 +43,50 @@ type (
 	}
 )
 
-func isPortActive(host, port string) error {
-	timeout := time.Second * 5
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), timeout)
-	if err != nil {
-		return err
-	}
-	if conn != nil {
-		defer conn.Close()
-	}
-	return nil
-}
-
-func newTCPConn(host, port string) (net.Conn, error) {
-	serverConn, err := net.DialTimeout("tcp4", fmt.Sprintf("%s:%s", host, port), time.Second*10)
-	if err != nil {
-		return nil, fmt.Errorf("failed dialing server: %s", err)
-	}
-	log.Infof("tcp connection stablished with server. address=%v, local-addr=%v",
-		serverConn.LocalAddr(),
-		serverConn.RemoteAddr())
-	return serverConn, nil
-}
-
-func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) (*connEnv, error) {
-	if envVars == nil {
-		return nil, fmt.Errorf("empty env vars")
-	}
-	envVarS, err := term.NewEnvVarStore(envVars)
-	if err != nil {
-		return nil, err
-	}
-
-	env := &connEnv{
-		host:            envVarS.Getenv("HOST"),
-		user:            envVarS.Getenv("USER"),
-		pass:            envVarS.Getenv("PASS"),
-		port:            envVarS.Getenv("PORT"),
-		insecure:        envVarS.Getenv("INSECURE") == "true",
-		postgresSSLMode: envVarS.Getenv("SSLMODE"),
-	}
-	switch connType {
-	case pb.ConnectionTypePostgres:
-		if env.port == "" {
-			env.port = "5432"
-		}
-		if env.host == "" || env.pass == "" || env.user == "" {
-			return nil, fmt.Errorf("missing required secrets for postgres connection [HOST, USER, PASS]")
-		}
-		mode := env.postgresSSLMode
-		if mode == "" {
-			mode = "prefer"
-		}
-		if mode != "require" && mode != "verify-full" && mode != "prefer" && mode != "disable" {
-			return nil, fmt.Errorf("wrong option (%q) for SSLMODE, accept only: %v", mode,
-				[]string{"disable", "prefer", "require", "verify-full"})
-		}
-	case pb.ConnectionTypeMySQL:
-		if env.port == "" {
-			env.port = "3307"
-		}
-		if env.host == "" || env.pass == "" || env.user == "" {
-			return nil, fmt.Errorf("missing required secrets for mysql connection [HOST, USER, PASS]")
-		}
-	case pb.ConnectionTypeMSSQL:
-		if env.port == "" {
-			env.port = "1433"
-		}
-		if env.host == "" || env.pass == "" || env.user == "" {
-			return nil, fmt.Errorf("missing required secrets for mssql connection [HOST, USER, PASS]")
-		}
-	case pb.ConnectionTypeTCP:
-		if env.host == "" || env.port == "" {
-			return nil, fmt.Errorf("missing required environment for connection [HOST, PORT]")
-		}
-	}
-	return env, nil
-}
-
-func New(client pb.ClientTransport, cfg *config.Config, s3LoggerWriter *log.S3LogWriter) *Agent {
+func New(client pb.ClientTransport, cfg *config.Config) *Agent {
+	shutdownCtx, cancelFn := context.WithCancelCause(context.Background())
 	return &Agent{
-		client:         client,
-		connStore:      memory.New(),
-		config:         cfg,
-		s3LoggerWriter: s3LoggerWriter,
+		client:           client,
+		connStore:        memory.New(),
+		config:           cfg,
+		shutdownCtx:      shutdownCtx,
+		shutdownCancelFn: cancelFn,
 	}
 }
 
-func (a *Agent) handleGracefulExit() {
-	sigc := make(chan os.Signal, 1)
-	signal.Notify(sigc,
-		syscall.SIGHUP,
-		syscall.SIGINT,
-		syscall.SIGTERM,
-		syscall.SIGQUIT)
-	go func() {
-		sigval := <-sigc
-		log.Infof("received %q, gracefully closing sessions, objects=%v",
-			sigval, len(a.connStore.List()))
-		for _, obj := range a.connStore.List() {
-			if client, _ := obj.(io.Closer); client != nil {
-				_ = client.Close()
-			}
+func (a *Agent) Close(cause error) {
+	log.Infof("shutting down agent controller")
+	for _, obj := range a.connStore.List() {
+		if client, _ := obj.(io.Closer); client != nil {
+			_ = client.Close()
 		}
-		_ = sentry.Flush(time.Second * 2)
-		if a.s3LoggerWriter != nil {
-			_ = a.s3LoggerWriter.Flush()
-		}
-
-		switch sigval {
-		case syscall.SIGHUP:
-			os.Exit(int(syscall.SIGHUP))
-		case syscall.SIGINT:
-			os.Exit(int(syscall.SIGINT))
-		case syscall.SIGTERM:
-			os.Exit(int(syscall.SIGTERM))
-		case syscall.SIGQUIT:
-			os.Exit(int(syscall.SIGQUIT))
-		}
-	}()
-}
-
-func (a *Agent) connectionParams(sessionID string) (*pb.AgentConnectionParams, *hook.ClientList) {
-	storeKey := fmt.Sprintf(pluginHookSessionsKey, sessionID)
-	if hooks, ok := a.connStore.Get(storeKey).(*hook.ClientList); ok {
-		return hooks.ConnectionParams(), hooks
 	}
-	return nil, nil
+
+	a.shutdownCancelFn(cause)
+	// foo bar
+	// zika virus
+	_, _ = a.client.Close()
+	// _ = sentry.Flush(time.Second * 2)
 }
 
 func (a *Agent) Run() error {
+	a.client.StartKeepAlive()
 	for {
+		select {
+		case <-a.shutdownCtx.Done():
+			log.Infof("returning context done ...")
+			return context.Cause(a.shutdownCtx)
+		default:
+		}
 		pkt, err := a.client.Recv()
 		if err != nil {
 			return err
 		}
-		log.With("sid", string(pkt.Spec[pb.SpecGatewaySessionID])).
-			Debugf("received client packet [%v]", pkt.Type)
+		sid := string(pkt.Spec[pb.SpecGatewaySessionID])
+		log.With("sid", sid).Debugf("received client packet [%v]", pkt.Type)
 		switch pkt.Type {
 		case pbagent.GatewayConnectOK:
 			log.Infof("connected with success to %v", a.config.URL)
-			a.handleGracefulExit()
-			a.client.StartKeepAlive()
 			go a.startMonitoring(pkt)
 		case pbagent.SessionOpen:
 			a.processSessionOpen(pkt)
@@ -222,6 +124,178 @@ func (a *Agent) Run() error {
 			a.processTCPCloseConnection(pkt)
 		}
 	}
+}
+
+func (a *Agent) processSessionOpen(pkt *pb.Packet) {
+	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
+	sessionIDKey := string(sessionID)
+	log.Infof("session=%s - received connect request", sessionIDKey)
+
+	connParams, err := a.buildConnectionParams(pkt)
+	if err != nil {
+		log.Warnf("failed building connection params, err=%v", err)
+		_ = a.client.Send(&pb.Packet{
+			Type:    pbclient.SessionClose,
+			Payload: []byte(err.Error()),
+			Spec: map[string][]byte{
+				pb.SpecClientExitCodeKey: []byte(`1`),
+				pb.SpecGatewaySessionID:  sessionID,
+			},
+		})
+		return
+	}
+
+	connParams.EnvVars["envvar:HOOP_CONNECTION_NAME"] = b64Enc([]byte(connParams.ConnectionName))
+	connParams.EnvVars["envvar:HOOP_CONNECTION_TYPE"] = b64Enc([]byte(connParams.ConnectionType))
+	connParams.EnvVars["envvar:HOOP_USER_ID"] = b64Enc([]byte(connParams.UserID))
+	connParams.EnvVars["envvar:HOOP_SESSION_ID"] = b64Enc(sessionID)
+
+	// Embedded mode usually has the context of the application.
+	// By having all environment variable in the context of execution
+	// permits a more seamless integration with internal language tooling.
+	if a.config.AgentMode == pb.AgentModeEmbeddedType {
+		for _, envKeyVal := range os.Environ() {
+			envKey, envVal, found := strings.Cut(envKeyVal, "=")
+			if !found || envKey == "HOOP_DSN" || envKey == "HOOP_KEY" {
+				continue
+			}
+			key := fmt.Sprintf("envvar:%s", envKey)
+			connParams.EnvVars[key] = b64Enc([]byte(envVal))
+		}
+	}
+
+	if a.connStore.Get(dlpClientKey) == nil {
+		dlpClient := a.decodeDLPCredentials(sessionID, pkt)
+		if dlpClient != nil {
+			a.connStore.Set(dlpClientKey, dlpClient)
+		}
+	}
+
+	go func() {
+		if err := a.loadHooks(sessionIDKey, connParams); err != nil {
+			log.Error(err)
+			sentry.CaptureException(err)
+			_ = a.client.Send(&pb.Packet{
+				Type:    pbclient.SessionClose,
+				Payload: []byte(`failed loading plugin hooks for this connection`),
+				Spec: map[string][]byte{
+					pb.SpecClientExitCodeKey: []byte(`1`),
+					pb.SpecGatewaySessionID:  sessionID,
+				},
+			})
+			return
+		}
+		if err := a.checkTCPLiveness(pkt, connParams.EnvVars); err != nil {
+			_ = a.client.Send(&pb.Packet{
+				Type:    pbclient.SessionClose,
+				Payload: []byte(err.Error()),
+				Spec: map[string][]byte{
+					pb.SpecClientExitCodeKey: []byte(`1`),
+					pb.SpecGatewaySessionID:  sessionID,
+				},
+			})
+		}
+		a.client.Send(&pb.Packet{
+			Type: pbclient.SessionOpenOK,
+			Spec: map[string][]byte{
+				pb.SpecGatewaySessionID:  sessionID,
+				pb.SpecConnectionType:    pkt.Spec[pb.SpecConnectionType],
+				pb.SpecClientRequestPort: pkt.Spec[pb.SpecClientRequestPort],
+			}})
+		log.Infof("session=%v - sent gateway connect ok", string(sessionID))
+	}()
+}
+
+func (a *Agent) processTCPCloseConnection(pkt *pb.Packet) {
+	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
+	clientConnID := pkt.Spec[pb.SpecClientConnectionID]
+	filterKey := fmt.Sprintf("%s:%s", string(sessionID), string(clientConnID))
+	log.Infof("closing tcp session, connid=%s, filter-by=%s", clientConnID, filterKey)
+	filterFn := func(k string) bool { return strings.HasPrefix(k, filterKey) }
+	for key, obj := range a.connStore.Filter(filterFn) {
+		if client, _ := obj.(io.Closer); client != nil {
+			defer func() {
+				if err := client.Close(); err != nil {
+					log.Warnf("failed closing connection, err=%v", err)
+				}
+			}()
+			a.connStore.Del(key)
+		}
+	}
+}
+
+func (a *Agent) processSessionClose(pkt *pb.Packet) {
+	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
+	if sessionID == "" {
+		log.Warnf("received packet %v without a session", pkt.Type)
+		return
+	}
+	a.sessionCleanup(sessionID)
+}
+
+func (a *Agent) sessionCleanup(sessionID string) {
+	log.Infof("session=%s - cleaning up session", sessionID)
+	filterFn := func(k string) bool { return strings.Contains(k, sessionID) }
+	for key, obj := range a.connStore.Filter(filterFn) {
+		switch v := obj.(type) {
+		case *hook.ClientList:
+			a.connStore.Del(key)
+			for _, hookClient := range v.Items() {
+				*hookClient.SessionCounter()--
+				if *hookClient.SessionCounter() <= 0 {
+					go hookClient.Kill()
+				}
+			}
+		case io.Closer:
+			go func() {
+				if err := v.Close(); err != nil {
+					log.Printf("failed closing connection, err=%v", err)
+				}
+			}()
+			a.connStore.Del(key)
+		}
+	}
+}
+
+func (a *Agent) sendClientSessionClose(sessionID string, errMsg string, specKeyVal ...string) {
+	if sessionID == "" {
+		return
+	}
+	var errPayload []byte
+	spec := map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)}
+	for _, keyval := range specKeyVal {
+		parts := strings.Split(keyval, "=")
+		if len(parts) == 2 {
+			spec[parts[0]] = []byte(parts[1])
+		}
+	}
+	if errMsg != "" {
+		errPayload = []byte(errMsg)
+	}
+	_ = a.client.Send(&pb.Packet{
+		Type:    pbclient.SessionClose,
+		Payload: errPayload,
+		Spec:    spec,
+	})
+}
+
+func (a *Agent) sendClientTCPConnectionClose(sessionID, connectionID string) {
+	_ = a.client.Send(&pb.Packet{
+		Type:    pbclient.TCPConnectionClose,
+		Payload: nil,
+		Spec: map[string][]byte{
+			pb.SpecGatewaySessionID:   []byte(sessionID),
+			pb.SpecClientConnectionID: []byte(connectionID),
+		},
+	})
+}
+
+func (a *Agent) connectionParams(sessionID string) (*pb.AgentConnectionParams, *hook.ClientList) {
+	storeKey := fmt.Sprintf(pluginHookSessionsKey, sessionID)
+	if hooks, ok := a.connStore.Get(storeKey).(*hook.ClientList); ok {
+		return hooks.ConnectionParams(), hooks
+	}
+	return nil, nil
 }
 
 func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams, error) {
@@ -433,168 +507,82 @@ func (a *Agent) setDatabaseCredentials(pkt *pb.Packet, params *pb.AgentConnectio
 	return nil
 }
 
-func (a *Agent) processSessionOpen(pkt *pb.Packet) {
-	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
-	sessionIDKey := string(sessionID)
-	log.Infof("session=%s - received connect request", sessionIDKey)
-
-	connParams, err := a.buildConnectionParams(pkt)
-	if err != nil {
-		log.Warnf("failed building connection params, err=%v", err)
-		_ = a.client.Send(&pb.Packet{
-			Type:    pbclient.SessionClose,
-			Payload: []byte(err.Error()),
-			Spec: map[string][]byte{
-				pb.SpecClientExitCodeKey: []byte(`1`),
-				pb.SpecGatewaySessionID:  sessionID,
-			},
-		})
-		return
-	}
-
-	connParams.EnvVars["envvar:HOOP_CONNECTION_NAME"] = b64Enc([]byte(connParams.ConnectionName))
-	connParams.EnvVars["envvar:HOOP_CONNECTION_TYPE"] = b64Enc([]byte(connParams.ConnectionType))
-	connParams.EnvVars["envvar:HOOP_USER_ID"] = b64Enc([]byte(connParams.UserID))
-	connParams.EnvVars["envvar:HOOP_SESSION_ID"] = b64Enc(sessionID)
-
-	// Embedded mode usually has the context of the application.
-	// By having all environment variable in the context of execution
-	// permits a more seamless integration with internal language tooling.
-	if a.config.AgentMode == pb.AgentModeEmbeddedType {
-		for _, envKeyVal := range os.Environ() {
-			envKey, envVal, found := strings.Cut(envKeyVal, "=")
-			if !found || envKey == "HOOP_DSN" {
-				continue
-			}
-			key := fmt.Sprintf("envvar:%s", envKey)
-			connParams.EnvVars[key] = b64Enc([]byte(envVal))
-		}
-	}
-
-	if a.connStore.Get(dlpClientKey) == nil {
-		dlpClient := a.decodeDLPCredentials(sessionID, pkt)
-		if dlpClient != nil {
-			a.connStore.Set(dlpClientKey, dlpClient)
-		}
-	}
-
-	go func() {
-		if err := a.loadHooks(sessionIDKey, connParams); err != nil {
-			log.Error(err)
-			sentry.CaptureException(err)
-			_ = a.client.Send(&pb.Packet{
-				Type:    pbclient.SessionClose,
-				Payload: []byte(`failed loading plugin hooks for this connection`),
-				Spec: map[string][]byte{
-					pb.SpecClientExitCodeKey: []byte(`1`),
-					pb.SpecGatewaySessionID:  sessionID,
-				},
-			})
-			return
-		}
-		if err := a.checkTCPLiveness(pkt, connParams.EnvVars); err != nil {
-			_ = a.client.Send(&pb.Packet{
-				Type:    pbclient.SessionClose,
-				Payload: []byte(err.Error()),
-				Spec: map[string][]byte{
-					pb.SpecClientExitCodeKey: []byte(`1`),
-					pb.SpecGatewaySessionID:  sessionID,
-				},
-			})
-		}
-		a.client.Send(&pb.Packet{
-			Type: pbclient.SessionOpenOK,
-			Spec: map[string][]byte{
-				pb.SpecGatewaySessionID:  sessionID,
-				pb.SpecConnectionType:    pkt.Spec[pb.SpecConnectionType],
-				pb.SpecClientRequestPort: pkt.Spec[pb.SpecClientRequestPort],
-			}})
-		log.Infof("session=%v - sent gateway connect ok", string(sessionID))
-	}()
-}
-
-func (a *Agent) processTCPCloseConnection(pkt *pb.Packet) {
-	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
-	clientConnID := pkt.Spec[pb.SpecClientConnectionID]
-	filterKey := fmt.Sprintf("%s:%s", string(sessionID), string(clientConnID))
-	log.Infof("closing tcp session, connid=%s, filter-by=%s", clientConnID, filterKey)
-	filterFn := func(k string) bool { return strings.HasPrefix(k, filterKey) }
-	for key, obj := range a.connStore.Filter(filterFn) {
-		if client, _ := obj.(io.Closer); client != nil {
-			defer func() {
-				if err := client.Close(); err != nil {
-					log.Warnf("failed closing connection, err=%v", err)
-				}
-			}()
-			a.connStore.Del(key)
-		}
-	}
-}
-
-func (a *Agent) processSessionClose(pkt *pb.Packet) {
-	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
-	if sessionID == "" {
-		log.Warnf("received packet %v without a session", pkt.Type)
-		return
-	}
-	a.sessionCleanup(sessionID)
-}
-
-func (a *Agent) sessionCleanup(sessionID string) {
-	log.Infof("session=%s - cleaning up session", sessionID)
-	filterFn := func(k string) bool { return strings.Contains(k, sessionID) }
-	for key, obj := range a.connStore.Filter(filterFn) {
-		switch v := obj.(type) {
-		case *hook.ClientList:
-			a.connStore.Del(key)
-			for _, hookClient := range v.Items() {
-				*hookClient.SessionCounter()--
-				if *hookClient.SessionCounter() <= 0 {
-					go hookClient.Kill()
-				}
-			}
-		case io.Closer:
-			go func() {
-				if err := v.Close(); err != nil {
-					log.Printf("failed closing connection, err=%v", err)
-				}
-			}()
-			a.connStore.Del(key)
-		}
-	}
-}
-
-func (a *Agent) sendClientSessionClose(sessionID string, errMsg string, specKeyVal ...string) {
-	if sessionID == "" {
-		return
-	}
-	var errPayload []byte
-	spec := map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)}
-	for _, keyval := range specKeyVal {
-		parts := strings.Split(keyval, "=")
-		if len(parts) == 2 {
-			spec[parts[0]] = []byte(parts[1])
-		}
-	}
-	if errMsg != "" {
-		errPayload = []byte(errMsg)
-	}
-	_ = a.client.Send(&pb.Packet{
-		Type:    pbclient.SessionClose,
-		Payload: errPayload,
-		Spec:    spec,
-	})
-}
-
-func (a *Agent) sendClientTCPConnectionClose(sessionID, connectionID string) {
-	_ = a.client.Send(&pb.Packet{
-		Type:    pbclient.TCPConnectionClose,
-		Payload: nil,
-		Spec: map[string][]byte{
-			pb.SpecGatewaySessionID:   []byte(sessionID),
-			pb.SpecClientConnectionID: []byte(connectionID),
-		},
-	})
-}
-
 func b64Enc(src []byte) string { return base64.StdEncoding.EncodeToString(src) }
+
+func isPortActive(host, port string) error {
+	timeout := time.Second * 5
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), timeout)
+	if err != nil {
+		return err
+	}
+	if conn != nil {
+		defer conn.Close()
+	}
+	return nil
+}
+
+func newTCPConn(host, port string) (net.Conn, error) {
+	serverConn, err := net.DialTimeout("tcp4", fmt.Sprintf("%s:%s", host, port), time.Second*10)
+	if err != nil {
+		return nil, fmt.Errorf("failed dialing server: %s", err)
+	}
+	log.Infof("tcp connection stablished with server. address=%v, local-addr=%v",
+		serverConn.LocalAddr(),
+		serverConn.RemoteAddr())
+	return serverConn, nil
+}
+
+func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) (*connEnv, error) {
+	if envVars == nil {
+		return nil, fmt.Errorf("empty env vars")
+	}
+	envVarS, err := term.NewEnvVarStore(envVars)
+	if err != nil {
+		return nil, err
+	}
+
+	env := &connEnv{
+		host:            envVarS.Getenv("HOST"),
+		user:            envVarS.Getenv("USER"),
+		pass:            envVarS.Getenv("PASS"),
+		port:            envVarS.Getenv("PORT"),
+		insecure:        envVarS.Getenv("INSECURE") == "true",
+		postgresSSLMode: envVarS.Getenv("SSLMODE"),
+	}
+	switch connType {
+	case pb.ConnectionTypePostgres:
+		if env.port == "" {
+			env.port = "5432"
+		}
+		if env.host == "" || env.pass == "" || env.user == "" {
+			return nil, fmt.Errorf("missing required secrets for postgres connection [HOST, USER, PASS]")
+		}
+		mode := env.postgresSSLMode
+		if mode == "" {
+			mode = "prefer"
+		}
+		if mode != "require" && mode != "verify-full" && mode != "prefer" && mode != "disable" {
+			return nil, fmt.Errorf("wrong option (%q) for SSLMODE, accept only: %v", mode,
+				[]string{"disable", "prefer", "require", "verify-full"})
+		}
+	case pb.ConnectionTypeMySQL:
+		if env.port == "" {
+			env.port = "3307"
+		}
+		if env.host == "" || env.pass == "" || env.user == "" {
+			return nil, fmt.Errorf("missing required secrets for mysql connection [HOST, USER, PASS]")
+		}
+	case pb.ConnectionTypeMSSQL:
+		if env.port == "" {
+			env.port = "1433"
+		}
+		if env.host == "" || env.pass == "" || env.user == "" {
+			return nil, fmt.Errorf("missing required secrets for mssql connection [HOST, USER, PASS]")
+		}
+	case pb.ConnectionTypeTCP:
+		if env.host == "" || env.port == "" {
+			return nil, fmt.Errorf("missing required environment for connection [HOST, PORT]")
+		}
+	}
+	return env, nil
+}

@@ -1,4 +1,4 @@
-package agent
+package controller
 
 import (
 	"github.com/runopsio/hoop/common/log"

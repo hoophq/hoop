@@ -25,7 +25,7 @@ func (s *Server) subscribeAgent(stream *streamclient.AgentStream) (err error) {
 		AgentName:    stream.AgentName(),
 	}
 	if err := stream.Save(); err != nil {
-		log.Warnf("failed saving agent state, err=%v", err)
+		log.With("agent", stream.AgentName()).Warnf("failed saving agent state, err=%v", err)
 		_ = connectionrequests.AcceptProxyConnection(stream.GetOrgID(), stream.StreamAgentID(),
 			fmt.Errorf("agent failed to connect, reason=%v", err))
 		return err

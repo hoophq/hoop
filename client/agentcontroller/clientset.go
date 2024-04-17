@@ -153,7 +153,7 @@ func secretRef(name, dsnKey string) *v1.Secret {
 			Labels:    defaultLabels,
 		},
 		StringData: map[string]string{
-			"HOOP_DSN":     dsnKey,
+			"HOOP_KEY":     dsnKey,
 			"LOG_LEVEL":    "info",
 			"LOG_ENCODING": "json",
 		},

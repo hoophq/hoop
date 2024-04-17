@@ -58,7 +58,7 @@ download-artifacts:
 	mv ./out ./dist/api
 
 build-dev-client:
-	go build -ldflags "-s -w -X github.com/runopsio/hoop/common/version.strictTLS=false" -o ${HOME}/.hoop/bin/hoop github.com/runopsio/hoop/client
+	go build -race -ldflags "-s -w -X github.com/runopsio/hoop/common/version.strictTLS=false" -o ${HOME}/.hoop/bin/hoop github.com/runopsio/hoop/client
 
 publish:
 	./scripts/publish-release.sh
