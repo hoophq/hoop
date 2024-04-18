@@ -39,13 +39,17 @@ func (s *Server) subscribeClient(stream *streamclient.ProxyStream) (err error) {
 		switch err {
 		case connectionrequests.ErrConnTimeout:
 			if err := stream.ContextCauseError(); err != nil {
+				log.With("user", pctx.UserEmail, "agentname", pctx.AgentName, "connection", pctx.ConnectionName).
+					Infof("timeout requesting connection with agent, reason=%v", err)
 				return err
 			}
+			log.With("user", pctx.UserEmail, "agentname", pctx.AgentName, "connection", pctx.ConnectionName).Infof("agent offline")
 			return pb.ErrAgentOffline
 		case nil:
 			log.With("user", pctx.UserEmail, "agentname", pctx.AgentName, "connection", pctx.ConnectionName).Infof("connection established with agent")
 		default:
-			log.Warnf("%v %v", pctx.AgentID, err)
+			log.With("user", pctx.UserEmail, "agentname", pctx.AgentName, "connection", pctx.ConnectionName).
+				Warnf("failed to establish connection with agent, reason=%v", err)
 			return status.Errorf(codes.Aborted, err.Error())
 		}
 	}

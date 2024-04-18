@@ -44,10 +44,10 @@ func Load() (*Config, error) {
 			// allow connecting insecure if a build disables this flag
 			insecure: !version.Get().StrictTLS && (dsn.Scheme == "http" || dsn.Scheme == "grpc")}, nil
 	}
-	legacyToken := os.Getenv("TOKEN")
+	legacyToken := getLegacyHoopTokenCredentials()
 	grpcURL := os.Getenv("HOOP_GRPCURL")
 	if legacyToken != "" && grpcURL != "" {
-		log.Warnf("TOKEN and HOOP_GRPCURL environment variables are deprecated, create a new token to use the new format")
+		log.Warnf("HOOP_TOKEN and HOOP_GRPCURL environment variables are deprecated, create a new token to use the new format")
 		return &Config{
 			Type:      clientconfig.ModeEnv,
 			AgentMode: proto.AgentModeStandardType,
@@ -78,4 +78,12 @@ func getEnvCredentials() (legacy bool, v string) {
 		return
 	}
 	return true, os.Getenv("HOOP_DSN")
+}
+
+func getLegacyHoopTokenCredentials() string {
+	token := os.Getenv("TOKEN")
+	if token != "" {
+		return token
+	}
+	return os.Getenv("HOOP_TOKEN")
 }
