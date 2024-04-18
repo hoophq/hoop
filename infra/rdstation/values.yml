@@ -61,7 +61,7 @@ resources:
   gw:
     limits:
       cpu: 2048m
-      memory: 1Gi
+      memory: 2Gi
     requests:
       cpu: 512m
-      memory: 1Gi
+      memory: 2Gi

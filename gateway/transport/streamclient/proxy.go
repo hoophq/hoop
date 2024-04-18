@@ -23,7 +23,7 @@ func InitProxyMemoryCleanup() {
 	go func() {
 		for {
 			items := proxyStore.List()
-			log.Infof("executing proxy memory cleanup process, total=%v", len(items))
+			log.Debugf("executing proxy memory cleanup process, total=%v", len(items))
 			for sid, obj := range proxyStore.List() {
 				s, _ := obj.(*ProxyStream)
 				if s == nil {

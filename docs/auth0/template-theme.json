@@ -69,7 +69,7 @@
     "header_text_alignment": "center",
     "logo_height": 52,
     "logo_position": "center",
-    "logo_url": "https://app.hoop.dev/images/hoop-branding/PNG/hoop-symbol_black@4x.png",
+    "logo_url": "https://cdn.hoop.dev/0.0.1/logo/png/logo_symbol_black.png",
     "social_buttons_layout": "top"
   }
 }
