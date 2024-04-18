@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/apiutils"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
@@ -15,16 +14,19 @@ import (
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
 	"github.com/runopsio/hoop/gateway/analytics"
+	apiconnections "github.com/runopsio/hoop/gateway/api/connections"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/clientstate"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
-	authinterceptor "github.com/runopsio/hoop/gateway/transport/interceptors/auth"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+	"github.com/runopsio/hoop/gateway/transport/streamclient"
 	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
+
+// type proxyManagerContext
 
 // proxyManager listen for API REST commands to manage grpc-client connections.
 // The dispatcher functions are used to communicate directly with a channel performing
@@ -33,37 +35,38 @@ import (
 //
 // In order for this to work properly, a grpc-client must be always connected, otherwise
 // the API will fail to manage connections.
-func (s *Server) proxyManager(stream pb.Transport_ConnectServer) error {
-	ctx := stream.Context()
-	md, _ := metadata.FromIncomingContext(ctx)
-	clientOrigin := mdget(md, "origin")
+func (s *Server) proxyManager(stream *streamclient.ProxyStream) error {
+	// ctx := stream.Context()
+	// md, _ := metadata.FromIncomingContext(ctx)
+	// clientOrigin := mdget(md, "origin")
 	// TODO: validate origin
 
-	var gwctx authinterceptor.GatewayContext
-	err := authinterceptor.ParseGatewayContextInto(ctx, &gwctx)
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-	userCtx := gwctx.UserContext
+	// var gwctx authinterceptor.GatewayContext
+	// err := authinterceptor.ParseGatewayContextInto(ctx, &gwctx)
+	// if err != nil {
+	// 	log.Error(err)
+	// 	return err
+	// }
+	// userCtx := gwctx.UserContext
 	if err := stream.Send(&pb.Packet{Type: pbclient.ProxyManagerConnectOK}); err != nil {
 		return err
 	}
 	log.Infof("proxymanager - client connected")
-	storectx := storagev2.NewContext(userCtx.UserID, userCtx.OrgID, s.StoreV2).
-		WithOrgName(userCtx.OrgName).
-		WithUserInfo(
-			userCtx.UserName, userCtx.UserEmail, string(userCtx.UserStatus),
-			userCtx.UserPicture, userCtx.UserGroups)
-	sessionID := uuid.NewString()
-	err = s.listenProxyManagerMessages(gwctx.BearerToken, sessionID, storectx, stream)
+	// storectx := storagev2.NewContext(userCtx.UserID, userCtx.OrgID, s.StoreV2).
+	// 	WithOrgName(userCtx.OrgName).
+	// 	WithUserInfo(
+	// 		userCtx.UserName, userCtx.UserEmail, string(userCtx.UserStatus),
+	// 		userCtx.UserPicture, userCtx.UserGroups)
+	err := s.listenProxyManagerMessages(stream)
 	if status, ok := status.FromError(err); ok && status.Code() == codes.Canceled {
-		log.With("origin", clientOrigin).Infof("grpc client connection canceled")
+		log.Infof("grpc client connection canceled")
 	}
+	pluginCtx := stream.PluginContext()
+
 	defer func() {
-		DisconnectClient(sessionID, err)
-		_, _ = clientstate.Update(storectx, types.ClientStatusDisconnected)
-		stateID := clientstate.DeterministicClientUUID(storectx.UserID)
+		// DisconnectClient(sessionID, err)
+		_, _ = clientstate.Update(pluginCtx, types.ClientStatusDisconnected)
+		stateID := clientstate.DeterministicClientUUID(pluginCtx.GetUserID())
 		if len(stateID) > 0 {
 			removeDispatcherState(stateID)
 		}
@@ -79,7 +82,7 @@ func (s *Server) proxyManager(stream pb.Transport_ConnectServer) error {
 	return err
 }
 
-func (s *Server) listenProxyManagerMessages(bearerToken, sessionID string, ctx *storagev2.Context, stream pb.Transport_ConnectServer) error {
+func (s *Server) listenProxyManagerMessages(stream *streamclient.ProxyStream) error {
 	var pctx plugintypes.Context
 	streamCtx, cancelFn := context.WithCancel(stream.Context())
 	recvCh := newDataStreamCh(stream, cancelFn)
@@ -108,72 +111,69 @@ func (s *Server) listenProxyManagerMessages(bearerToken, sessionID string, ctx *
 			pkt.Spec = make(map[string][]byte)
 		}
 
-		pkt.Spec[pb.SpecGatewaySessionID] = []byte(sessionID)
-
+		pkt.Spec[pb.SpecGatewaySessionID] = []byte(pctx.SID)
 		switch pkt.Type {
 		case pbgateway.KeepAlive: // noop
 		case pbgateway.ProxyManagerConnectOKAck:
 			md, _ := metadata.FromIncomingContext(streamCtx)
-			newClient, err := clientstate.Update(ctx, types.ClientStatusReady,
-				clientstate.WithOption("session", sessionID),
-				clientstate.WithOption("version", mdget(md, "version")),
-				clientstate.WithOption("go-version", mdget(md, "go-version")),
-				clientstate.WithOption("platform", mdget(md, "platform")),
-				clientstate.WithOption("hostname", mdget(md, "hostname")),
+			newClient, err := clientstate.Update(pctx, types.ClientStatusReady,
+				clientstate.WithOption("session", pctx.SID),
+				clientstate.WithOption("version", stream.GetMeta("version")),
+				clientstate.WithOption("go-version", stream.GetMeta("go-version")),
+				clientstate.WithOption("platform", stream.GetMeta("platform")),
+				clientstate.WithOption("hostname", stream.GetMeta("hostname")),
 			)
 			if err != nil {
 				log.Errorf("failed client state to database, err=%v", err)
 				return err
 			}
-			log.With("session", sessionID).Infof("proxymanager - client is ready: user=%v,hostname=%v,platform=%v,version=%v",
-				ctx.UserEmail, mdget(md, "hostname"), mdget(md, "platform"), mdget(md, "version"))
+
+			logAttrs := []any{"connection", pctx.ConnectionName, "sid", pctx.SID,
+				"mode", pctx.AgentMode, "agent-name", pctx.AgentName, "ua", stream.GetMeta("user-agent")}
+			log.With(logAttrs...).Infof("proxy manager connected: %v", stream)
 			disp := newDispatcherState(cancelFn)
 			addDispatcherStateEntry(newClient.ID, disp)
 			select {
 			case <-streamCtx.Done():
 				return status.Errorf(codes.Canceled, "context canceled")
 			case req := <-disp.requestCh:
-				log.With("session", sessionID).Infof("starting connect phase for %s", req.RequestConnectionName)
-				conn, err := s.getConnection(req.RequestConnectionName, storageCtxToUser(ctx))
+				log.With("session", pctx.SID).Infof("starting connect phase for %s", req.RequestConnectionName)
+				conn, err := apiconnections.FetchByName(pctx, req.RequestConnectionName)
 				if err != nil {
+					log.Warn(err)
 					sentry.CaptureException(err)
 					disp.sendResponse(nil, err)
 					return err
-				}
-
-				if err != nil {
-					sentry.CaptureException(err)
-					disp.sendResponse(nil, err)
-					return status.Errorf(codes.Internal, err.Error())
 				}
 				if conn == nil {
 					disp.sendResponse(nil, status.Errorf(codes.NotFound, ""))
 					return status.Errorf(codes.NotFound, fmt.Sprintf("connection '%v' not found", req.RequestConnectionName))
 				}
 				clientOrigin := pb.ConnectionOriginClientProxyManager
-				pctx = plugintypes.Context{
-					Context: context.Background(),
-					SID:     sessionID,
+				// pctx = plugintypes.Context{
+				// 	Context: context.Background(),
+				// 	SID:     sessionID,
 
-					OrgID:      ctx.OrgID,
-					UserID:     ctx.UserID,
-					UserName:   ctx.UserName,
-					UserEmail:  ctx.UserEmail,
-					UserGroups: ctx.UserGroups,
+				// 	OrgID:      ctx.OrgID,
+				// 	UserID:     ctx.UserID,
+				// 	UserName:   ctx.UserName,
+				// 	UserEmail:  ctx.UserEmail,
+				// 	UserGroups: ctx.UserGroups,
 
-					ConnectionID:      conn.ID,
-					ConnectionName:    conn.Name,
-					ConnectionType:    conn.Type,
-					ConnectionSubType: conn.SubType,
-					ConnectionCommand: conn.CmdEntrypoint,
-					ConnectionSecret:  conn.Secrets,
-					ConnectionAgentID: conn.AgentID,
+				// 	ConnectionID:      conn.ID,
+				// 	ConnectionName:    conn.Name,
+				// 	ConnectionType:    conn.Type,
+				// 	ConnectionSubType: conn.SubType,
+				// 	ConnectionCommand: conn.CmdEntrypoint,
+				// 	ConnectionSecret:  conn.Secrets,
 
-					ClientVerb:   pb.ClientVerbConnect,
-					ClientOrigin: clientOrigin,
+				// 	AgentID: conn.AgentID,
 
-					ParamsData: map[string]any{},
-				}
+				// 	ClientVerb:   pb.ClientVerbConnect,
+				// 	ClientOrigin: clientOrigin,
+
+				// 	ParamsData: map[string]any{},
+				// }
 				if err := pctx.Validate(); err != nil {
 					log.Errorf("failed validating plugin context, err=%v", err)
 					sentry.CaptureException(err)
@@ -182,27 +182,27 @@ func (s *Server) listenProxyManagerMessages(bearerToken, sessionID string, ctx *
 						"failed validating connection context, contact the administrator")
 				}
 
-				s.startDisconnectClientSink(sessionID, clientOrigin, func(err error) {
-					defer unbindClient(sessionID)
-					if stream := getAgentStream(conn.AgentID); stream != nil {
-						_ = stream.Send(&pb.Packet{
-							Type: pbagent.SessionClose,
-							Spec: map[string][]byte{
-								pb.SpecGatewaySessionID: []byte(sessionID),
-							},
-						})
-					}
-					_ = s.pluginOnDisconnect(pctx, err)
-				})
+				// s.startDisconnectClientSink(sessionID, clientOrigin, func(err error) {
+				// 	defer unbindClient(sessionID)
+				// 	if stream := getAgentStream(conn.AgentID); stream != nil {
+				// 		_ = stream.Send(&pb.Packet{
+				// 			Type: pbagent.SessionClose,
+				// 			Spec: map[string][]byte{
+				// 				pb.SpecGatewaySessionID: []byte(sessionID),
+				// 			},
+				// 		})
+				// 	}
+				// 	_ = s.pluginOnDisconnect(pctx, err)
+				// })
 
 				// On Connect Phase Plugin
-				plugins, err := s.loadConnectPlugins(ctx.APIContext, pctx)
-				bindClient(sessionID, stream, plugins)
-				if err != nil {
-					disp.sendResponse(nil, err)
-					return status.Errorf(codes.FailedPrecondition, err.Error())
-				}
-				analytics.New().Track(ctx.UserEmail, analytics.EventGrpcConnect, map[string]any{
+				// plugins, err := s.loadConnectPlugins(pgrest.NewOrgContext(ctx.OrgID), pctx)
+				// bindClient(sessionID, stream, plugins)
+				// if err != nil {
+				// 	disp.sendResponse(nil, err)
+				// 	return status.Errorf(codes.FailedPrecondition, err.Error())
+				// }
+				analytics.New().Track(pctx.UserEmail, analytics.EventGrpcConnect, map[string]any{
 					"connection-name":    req.RequestConnectionName,
 					"connection-type":    conn.Type,
 					"connection-subtype": conn.SubType,
@@ -214,16 +214,16 @@ func (s *Server) listenProxyManagerMessages(bearerToken, sessionID string, ctx *
 					"verb":               pb.ClientVerbConnect,
 				})
 
-				log.With("session", sessionID).Infof("proxymanager - starting open session phase")
+				log.With("session", pctx.SID).Infof("proxymanager - starting open session phase")
 				onOpenSessionPkt := &pb.Packet{
 					Type: pbagent.SessionOpen,
 					Spec: map[string][]byte{
 						pb.SpecJitTimeout:        []byte(req.RequestAccessDuration.String()),
-						pb.SpecGatewaySessionID:  []byte(sessionID),
+						pb.SpecGatewaySessionID:  []byte(pctx.SID),
 						pb.SpecClientRequestPort: []byte(req.RequestPort),
 					},
 				}
-				connectResponse, err := s.pluginOnReceive(pctx, onOpenSessionPkt)
+				connectResponse, err := stream.PluginExecOnReceive(pctx, onOpenSessionPkt)
 				if err != nil {
 					disp.sendResponse(nil, err)
 					return err
@@ -232,24 +232,29 @@ func (s *Server) listenProxyManagerMessages(bearerToken, sessionID string, ctx *
 					if connectResponse.Context != nil {
 						streamCtx = connectResponse.Context
 					}
-					if cs := getClientStream(pctx.SID); cs != nil && connectResponse.ClientPacket != nil {
-						_ = cs.Send(connectResponse.ClientPacket)
+					if connectResponse.ClientPacket != nil {
+						_ = stream.Send(connectResponse.ClientPacket)
 						disp.sendResponse(connectResponse.ClientPacket, nil)
 						continue
 					}
+					// if cs := getClientStream(pctx.SID); cs != nil && connectResponse.ClientPacket != nil {
+					// 	_ = cs.Send(connectResponse.ClientPacket)
+					// 	disp.sendResponse(connectResponse.ClientPacket, nil)
+					// 	continue
+					// }
 				}
 
-				err = s.processSessionOpenPacket(onOpenSessionPkt, pctx)
+				err = s.processClientPacket(stream, onOpenSessionPkt, pctx)
 				disp.sendResponse(nil, err)
 				if err != nil {
 					return err
 				}
-				log.With("session", sessionID).Info("proxymanager - session opened")
+				log.With("session", pctx.SID).Info("proxymanager - session opened")
 			case <-time.After(time.Hour * 12):
 				log.Warnf("timeout (12h) waiting for api response")
 			}
 		default:
-			connectResponse, err := s.pluginOnReceive(pctx, pkt)
+			connectResponse, err := stream.PluginExecOnReceive(pctx, pkt)
 			if err != nil {
 				return err
 			}
@@ -257,16 +262,22 @@ func (s *Server) listenProxyManagerMessages(bearerToken, sessionID string, ctx *
 				if connectResponse.Context != nil {
 					streamCtx = connectResponse.Context
 				}
-				if cs := getClientStream(pctx.SID); cs != nil && connectResponse.ClientPacket != nil {
-					_ = cs.Send(connectResponse.ClientPacket)
+				if connectResponse.ClientPacket != nil {
+					_ = stream.Send(connectResponse.ClientPacket)
 					continue
 				}
+
+				// if cs := getClientStream(pctx.SID); cs != nil && connectResponse.ClientPacket != nil {
+				// 	_ = cs.Send(connectResponse.ClientPacket)
+				// 	continue
+				// }
 			}
-			agentStream := getAgentStream(pctx.ConnectionAgentID)
-			if agentStream == nil {
-				return status.Errorf(codes.FailedPrecondition, fmt.Sprintf("agent not found for connection %s", pctx.ConnectionName))
-			}
-			_ = agentStream.Send(pkt)
+			return stream.SendToAgent(pkt)
+			// agentStream := getAgentStream(pctx.ConnectionAgentID)
+			// if agentStream == nil {
+			// 	return status.Errorf(codes.FailedPrecondition, fmt.Sprintf("agent not found for connection %s", pctx.ConnectionName))
+			// }
+			// _ = agentStream.Send(pkt)
 		}
 	}
 }

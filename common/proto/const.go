@@ -33,6 +33,7 @@ const (
 	ConnectionTypePostgres    ConnectionType = "postgres"
 	ConnectionTypeMySQL       ConnectionType = "mysql"
 	ConnectionTypeMSSQL       ConnectionType = "mssql"
+	ConnectionTypeMongo       ConnectionType = "mongodb"
 	ConnectionTypeTCP         ConnectionType = "tcp"
 
 	ConnectionOriginAgent              = "agent"
@@ -58,8 +59,12 @@ const (
 	CustomClaimGroups = "https://app.hoop.dev/groups"
 	DefaultOrgName    = "default"
 
-	AgentModeEmbeddedType string = "embedded"
-	AgentModeStandardType string = "standard"
+	AgentModeEmbeddedType        string = "embedded"
+	AgentModeStandardType        string = "standard"
+	AgentModeMultiConnectionType string = "multi-connection"
+
+	PreConnectStatusConnectType string = "CONNECT"
+	PreConnectStatusBackoffType string = "BACKOFF"
 )
 
 var DefaultInfoTypes = []string{

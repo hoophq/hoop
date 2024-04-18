@@ -75,6 +75,7 @@ var createConnectionCmd = &cobra.Command{
 				cmdList = append(cmdList, cmdparam)
 			}
 		}
+		apir.name = NormalizeResourceName(apir.name)
 		envVar, err := parseEnvPerType()
 		if err != nil {
 			styles.PrintErrorAndExit(err.Error())
@@ -193,7 +194,7 @@ func parseEnvPerType() (map[string]string, error) {
 		}
 		isBase64Env := strings.HasPrefix(envType, "b64-")
 		envType = strings.TrimPrefix(envType, "b64-")
-		key = fmt.Sprintf("%v:%v", envType, strings.ToUpper(key))
+		key = fmt.Sprintf("%v:%v", envType, key)
 		envVar[key] = val
 		if !isBase64Env {
 			envVar[key] = base64.StdEncoding.EncodeToString([]byte(val))

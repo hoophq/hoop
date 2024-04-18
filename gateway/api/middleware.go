@@ -13,7 +13,6 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/common/apiutils"
-	"github.com/runopsio/hoop/common/dsnkeys"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/version"
 	"github.com/runopsio/hoop/gateway/analytics"
@@ -127,46 +126,6 @@ func (a *Api) Authenticate(c *gin.Context) {
 			Groups:  ctx.UserGroups,
 		},
 	})
-	c.Next()
-}
-
-// TODO: refactor to perform unary calls instead of relying in the public api
-func (a *Api) AuthenticateAgent(c *gin.Context) {
-	tokenHeader := c.GetHeader("authorization")
-	tokenParts := strings.Split(tokenHeader, " ")
-	if len(tokenParts) != 2 || tokenParts[0] != "Bearer" || tokenParts[1] == "" {
-		log.Debugf("failed authenticating agent, %v, length=%v",
-			parseHeaderForDebug(tokenHeader), len(tokenHeader))
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
-
-	// fallback to agent dsn keys
-	dsn, err := dsnkeys.Parse(tokenParts[1])
-	if err != nil {
-		log.Debugf("failed parsing dsn (agent dsn), %v, length=%v, err=%v",
-			parseHeaderForDebug(tokenHeader), len(tokenHeader), err)
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
-	ag, err := a.AgentHandler.Service.FindByToken(dsn.SecretKeyHash)
-	if ag == nil || err != nil {
-		log.Debugf("failed authenticating agent (agent dsn), %v, length=%v, err=%v",
-			parseHeaderForDebug(tokenHeader), len(tokenHeader), err)
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
-	if ag.Name != dsn.Name || ag.Mode != dsn.AgentMode {
-		log.Errorf("failed authenticating agent (agent dsn), mismatch dsn attributes. id=%v, name=%v, mode=%v",
-			ag.Id, dsn.Name, dsn.AgentMode)
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
-
-	c.Set(storagev2.ContextKey,
-		storagev2.NewDSNContext(ag.Id, ag.OrgId, ag.Name, a.StoreV2).
-			WithApiURL(a.IDProvider.ApiURL).
-			WithGrpcURL(a.GrpcURL))
 	c.Next()
 }
 

@@ -7,11 +7,12 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/monitoring"
 	"github.com/runopsio/hoop/common/version"
-	"github.com/runopsio/hoop/gateway/agent"
+	"github.com/runopsio/hoop/gateway/agentcontroller"
 	"github.com/runopsio/hoop/gateway/api"
 	"github.com/runopsio/hoop/gateway/indexer"
 	"github.com/runopsio/hoop/gateway/notification"
@@ -24,6 +25,7 @@ import (
 	"github.com/runopsio/hoop/gateway/user"
 
 	// plugins
+	"github.com/runopsio/hoop/gateway/transport/connectionstatus"
 	pluginsrbac "github.com/runopsio/hoop/gateway/transport/plugins/accesscontrol"
 	pluginsaudit "github.com/runopsio/hoop/gateway/transport/plugins/audit"
 	pluginsdcm "github.com/runopsio/hoop/gateway/transport/plugins/dcm"
@@ -33,6 +35,7 @@ import (
 	pluginsslack "github.com/runopsio/hoop/gateway/transport/plugins/slack"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	pluginswebhooks "github.com/runopsio/hoop/gateway/transport/plugins/webhooks"
+	"github.com/runopsio/hoop/gateway/transport/streamclient"
 )
 
 func Run() {
@@ -66,7 +69,6 @@ func Run() {
 		grpcURL = fmt.Sprintf("%s://%s:8443", scheme, u.Hostname())
 	}
 
-	agentService := agent.Service{Storage: &agent.Storage{}}
 	userService := user.Service{Storage: &user.Storage{}}
 	reviewService := review.Service{Storage: &review.Storage{}}
 	notificationService := getNotification()
@@ -79,7 +81,6 @@ func Run() {
 	}
 
 	a := &api.Api{
-		AgentHandler:    agent.Handler{Service: &agentService},
 		IndexerHandler:  indexer.Handler{},
 		ReviewHandler:   review.Handler{Service: &reviewService},
 		RunbooksHandler: runbooks.Handler{},
@@ -90,7 +91,6 @@ func Run() {
 	}
 
 	g := &transport.Server{
-		AgentService:         agentService,
 		ReviewService:        reviewService,
 		NotificationService:  notificationService,
 		IDProvider:           idProvider,
@@ -99,11 +99,9 @@ func Run() {
 		PyroscopeIngestURL:   os.Getenv("PYROSCOPE_INGEST_URL"),
 		PyroscopeAuthToken:   os.Getenv("PYROSCOPE_AUTH_TOKEN"),
 		AgentSentryDSN:       "https://a6ecaeba31684f02ab8606a59301cd15@o4504559799566336.ingest.sentry.io/4504571759230976",
-
-		StoreV2: storev2,
 	}
 	// order matters
-	g.RegisteredPlugins = []plugintypes.Plugin{
+	plugintypes.RegisteredPlugins = []plugintypes.Plugin{
 		pluginsreview.New(
 			&review.Service{Storage: &review.Storage{}, TransportService: g},
 			&user.Service{Storage: &user.Storage{}},
@@ -121,9 +119,9 @@ func Run() {
 			idProvider),
 		pluginsdcm.New(),
 	}
-	plugintypes.RegisteredPlugins = g.RegisteredPlugins
+	reviewService.TransportService = g
 
-	for _, p := range g.RegisteredPlugins {
+	for _, p := range plugintypes.RegisteredPlugins {
 		pluginContext := plugintypes.Context{}
 		if err := p.OnStartup(pluginContext); err != nil {
 			log.Fatalf("failed initializing plugin %s, reason=%v", p.Name(), err)
@@ -136,7 +134,14 @@ func Run() {
 	if err != nil {
 		log.Fatalf("failed starting sentry, err=%v", err)
 	}
-	reviewService.TransportService = g
+
+	if err := agentcontroller.Run(grpcURL); err != nil {
+		err := fmt.Errorf("failed to start agent controller, reason=%v", err)
+		log.Warn(err)
+		sentry.CaptureException(err)
+	}
+	connectionstatus.InitConciliationProcess()
+	streamclient.InitProxyMemoryCleanup()
 
 	if grpc.ShouldDebugGrpc() {
 		log.SetGrpcLogger()

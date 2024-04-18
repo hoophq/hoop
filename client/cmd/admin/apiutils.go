@@ -9,10 +9,14 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"unicode"
 
 	"github.com/runopsio/hoop/client/cmd/styles"
 	clientconfig "github.com/runopsio/hoop/client/config"
 	"github.com/runopsio/hoop/common/log"
+	"golang.org/x/text/runes"
+	"golang.org/x/text/transform"
+	"golang.org/x/text/unicode/norm"
 )
 
 type apiResource struct {
@@ -307,4 +311,12 @@ func httpBodyRequest(apir *apiResource, method string, bodyMap map[string]any) (
 			apir.decodeTo, resp.StatusCode, err)
 	}
 	return respMap, nil
+}
+
+func NormalizeResourceName(name string) string {
+	t := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
+	name, _, _ = transform.String(t, name)
+	name = strings.ToLower(name)
+	name = strings.ReplaceAll(name, " ", "_")
+	return name
 }

@@ -17,13 +17,11 @@ var (
 )
 
 func init() {
-	createCmd.Flags().StringVar(&apiURLFlag, "api-url", "", "The API URL to configure")
-	createCmd.Flags().StringVar(&grpcURLFlag, "grpc-url", "", "The gRPC URL to configure")
-	createCmd.MarkFlagRequired("api-url")
-	createCmd.MarkFlagRequired("grpc-url")
-
+	createCmd.Flags().StringVar(&apiURLFlag, "api-url", "", "The API URL to configure (required)")
+	createCmd.Flags().StringVar(&grpcURLFlag, "grpc-url", "", "The gRPC URL to configure (optional)")
 	viewCmd.Flags().BoolVar(&viewRawFlag, "raw", false, "Display sensitive credentials information")
 
+	_ = createCmd.MarkFlagRequired("api-url")
 	MainCmd.AddCommand(createCmd, viewCmd, clearCmd)
 }
 
@@ -39,8 +37,10 @@ var createCmd = &cobra.Command{
 	Short:        "Creates or override a client hoop configuration file",
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
-		if _, err := grpc.ParseServerAddress(grpcURLFlag); err != nil {
-			styles.PrintErrorAndExit("--grpc-url value is not a gRPC address")
+		if grpcURLFlag != "" {
+			if _, err := grpc.ParseServerAddress(grpcURLFlag); err != nil {
+				styles.PrintErrorAndExit("--grpc-url value is not a gRPC address")
+			}
 		}
 
 		if _, err := grpc.ParseServerAddress(apiURLFlag); err != nil {

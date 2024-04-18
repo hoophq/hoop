@@ -27,12 +27,6 @@ type APIContext struct {
 	GrpcURL string `json:"-"`
 }
 
-type DSNContext struct {
-	EntityID      string
-	OrgID         string
-	ClientKeyName string
-}
-
 type Plugin struct {
 	ID             string              `json:"id"          edn:"xt/id"`
 	OrgID          string              `json:"-"           edn:"plugin/org"`
@@ -89,10 +83,6 @@ type Connection struct {
 	SubType  string         `json:"subtype"`
 	Secret   map[string]any `json:"secret"`
 	AgentId  string         `json:"agent_id"`
-	// TODO: remove
-	SecretProvider string `json:"-"`
-	SecretId       string `json:"-"`
-	CreatedById    string `json:"-"`
 }
 
 type ConnectionInfo struct {

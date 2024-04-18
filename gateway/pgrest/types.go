@@ -2,7 +2,8 @@ package pgrest
 
 type Context interface {
 	OrgContext
-	UserContext
+	IsAdmin() bool
+	GetUserGroups() []string
 }
 
 type OrgContext interface {
@@ -10,9 +11,8 @@ type OrgContext interface {
 }
 
 type UserContext interface {
-	GetSubject() string
-	IsAdmin() bool
-	GetUserGroups() []string
+	GetOrgID() string
+	GetUserID() string
 }
 type Login struct {
 	ID       string `json:"id"`
@@ -47,12 +47,18 @@ type EnvVar struct {
 	Envs  map[string]string `json:"envs"`
 }
 
+const (
+	AgentStatusConnected    = "CONNECTED"
+	AgentStatusDisconnected = "DISCONNECTED"
+)
+
 type Agent struct {
 	ID        string            `json:"id"`
 	OrgID     string            `json:"org_id"`
 	Name      string            `json:"name"`
 	Mode      string            `json:"mode"`
-	Token     string            `json:"token"`
+	Key       string            `json:"key"`
+	KeyHash   string            `json:"key_hash"`
 	Status    string            `json:"status"`
 	Metadata  map[string]string `json:"metadata"`
 	UpdatedAt *string           `json:"updated_at"`
@@ -60,16 +66,22 @@ type Agent struct {
 	Org Org `json:"orgs"`
 }
 
+const (
+	ConnectionStatusOnline  = "online"
+	ConnectionStatusOffline = "offline"
+)
+
 type Connection struct {
-	ID            string            `json:"id"`
-	OrgID         string            `json:"org_id"`
-	AgentID       string            `json:"agent_id"`
-	LegacyAgentID string            `json:"legacy_agent_id"`
-	Name          string            `json:"name"`
-	Command       []string          `json:"command"`
-	Type          string            `json:"type"`
-	SubType       string            `json:"subtype"`
-	Envs          map[string]string `json:"envs"`
+	ID        string            `json:"id"`
+	OrgID     string            `json:"org_id"`
+	AgentID   string            `json:"agent_id"`
+	Name      string            `json:"name"`
+	Command   []string          `json:"command"`
+	Type      string            `json:"type"`
+	SubType   string            `json:"subtype"`
+	Envs      map[string]string `json:"envs"`
+	Status    string            `json:"status"` // read only field
+	ManagedBy *string           `json:"managed_by"`
 
 	// read only attributes
 	Org              Org                `json:"orgs"`
@@ -153,14 +165,6 @@ type ProxyManagerState struct {
 	AccessDuration int               `json:"access_duration"`
 	ClientMetadata map[string]string `json:"metadata"`
 	ConnectedAt    string            `json:"connected_at"`
-}
-
-type ClientKey struct {
-	ID      string `json:"id"`
-	OrgID   string `json:"org_id"`
-	Name    string `json:"name"`
-	Status  string `json:"status"`
-	DSNHash string `json:"dsn_hash"`
 }
 
 type SessionOptionKey string

@@ -54,6 +54,15 @@ var loginCmd = &cobra.Command{
 		if err != nil {
 			printErrorAndExit(err.Error())
 		}
+		if conf.GrpcURL == "" {
+			// best-effort to obtain the obtain the grpc url
+			// if it's not set
+			conf.GrpcURL, err = fetchGrpcURL(conf.ApiURL, conf.Token)
+			if err != nil {
+				printErrorAndExit(err.Error())
+			}
+			log.Debugf("obtained remote grpc url %v", conf.GrpcURL)
+		}
 		log.Debugf("saving token, length=%v", len(conf.Token))
 		saved, err := conf.Save()
 		if err != nil {
@@ -80,19 +89,10 @@ func configureHostsPrompt(conf *proxyconfig.Config) {
 	apiURL, _ := reader.ReadString('\n')
 	apiURL = strings.Trim(apiURL, " \n")
 	apiURL = strings.TrimSpace(apiURL)
-
-	fmt.Printf("GRPC_URL [%s]: ", clientconfig.SaaSGrpcURL)
-	grpcURL, _ := reader.ReadString('\n')
-	grpcURL = strings.Trim(grpcURL, " \n")
-	grpcURL = strings.TrimSpace(grpcURL)
-	if grpcURL == "" {
-		grpcURL = clientconfig.SaaSGrpcURL
-	}
 	if apiURL == "" {
 		apiURL = clientconfig.SaaSWebURL
 	}
 	conf.ApiURL = apiURL
-	conf.GrpcURL = grpcURL
 	if _, err := conf.Save(); err != nil {
 		printErrorAndExit(err.Error())
 	}
@@ -171,6 +171,40 @@ func requestForUrl(apiUrl string) (string, error) {
 		return l.Url, nil
 	}
 	return "", fmt.Errorf("failed authenticating, status=%v, response=%v", resp.StatusCode, l.Message)
+}
+
+func fetchGrpcURL(apiURL, bearerToken string) (string, error) {
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/api/serverinfo", apiURL), nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Add("authorization", fmt.Sprintf("Bearer %s", bearerToken))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	log.Debugf("GET %s/api/serverinfo status=%v", apiURL, resp.StatusCode)
+	switch resp.StatusCode {
+	case http.StatusOK:
+		defer resp.Body.Close()
+		serverInfo := map[string]any{}
+		if err := json.NewDecoder(resp.Body).Decode(&serverInfo); err != nil {
+			return "", fmt.Errorf("failed decoding response body, err=%v", err)
+		}
+		obj, ok := serverInfo["grpc_url"]
+		if !ok {
+			return "", fmt.Errorf("grpc_url parameter not present")
+		}
+		grpcURL, _ := obj.(string)
+		if u, err := url.Parse(grpcURL); err != nil || u == nil {
+			return "", fmt.Errorf("grpc_url parameter (%#v) is not a valid url, err=%v", obj, err)
+		}
+		return grpcURL, nil
+	case http.StatusNotFound:
+		return "", fmt.Errorf("the gateway does not have the serverinfo route")
+	default:
+		return "", fmt.Errorf("failed obtaining grpc url, status=%v", resp.StatusCode)
+	}
 }
 
 func openBrowser(url string) (err error) {

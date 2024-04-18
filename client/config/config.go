@@ -114,7 +114,7 @@ func (c *Config) IsInsecure() (insecure bool) {
 	}
 	return
 }
-func (c *Config) IsValid() bool  { return c.GrpcURL != "" && c.ApiURL != "" }
+func (c *Config) IsValid() bool  { return c.ApiURL != "" }
 func (c *Config) HasToken() bool { return c.Mode == clientconfig.ModeLocal || c.Token != "" }
 func (c *Config) Save() (bool, error) {
 	if c.filepath == "" {

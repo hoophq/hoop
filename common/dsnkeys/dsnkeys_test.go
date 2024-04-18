@@ -31,12 +31,11 @@ func TestDsnKeysMatch(t *testing.T) {
 			mode: proto.AgentModeEmbeddedType,
 		},
 		{
-			msg:  "it must fail with invalid agent mode",
-			url:  "grpcs://127.0.0.1:8009",
+			msg:  "it must match with multi-connection agent mode",
+			url:  "grpc://127.0.0.1:8010",
 			name: "prod",
 			sk:   "sk-secure",
-			mode: "",
-			err:  ErrInvalidMode,
+			mode: proto.AgentModeMultiConnectionType,
 		},
 		{
 			msg:  "it must fail with parse url error",

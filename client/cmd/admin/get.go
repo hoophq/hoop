@@ -79,36 +79,6 @@ var getCmd = &cobra.Command{
 			}
 		case "conn", "connection", "connections":
 			agentHandlerFn := agentConnectedHandler(apir.conf)
-			if policyHandlerFn, requestOK := policiesHandler(apir); requestOK {
-				fmt.Fprintln(w, "NAME\tCOMMAND\tTYPE\tREVIEW\tAGENT\tSTATUS\tPOLICIES\tUPDATED")
-				switch contents := obj.(type) {
-				case map[string]any:
-					m := contents
-					enabledPolicies := policyHandlerFn(fmt.Sprintf("%v", m["id"]), false)
-					agentID := fmt.Sprintf("%v", m["agentId"])
-					status := agentHandlerFn("status", agentID)
-					agentName := agentHandlerFn("name", agentID)
-					cmdList, _ := m["command"].([]any)
-					cmd := joinCmd(cmdList, false)
-					fmt.Fprintf(w, "%s\t%s\t%s\t%v\t%s\t%s\t%v\t%s\t",
-						m["name"], cmd, m["type"], m["hasReview"], agentName, status, enabledPolicies, absTime(m["updatedAt"]))
-					fmt.Fprintln(w)
-				case []map[string]any:
-					for _, m := range contents {
-						enabledPolicies := policyHandlerFn(fmt.Sprintf("%v", m["id"]), true)
-						agentID := fmt.Sprintf("%v", m["agentId"])
-						status := agentHandlerFn("status", agentID)
-						agentName := agentHandlerFn("name", agentID)
-						cmdList, _ := m["command"].([]any)
-						cmd := joinCmd(cmdList, true)
-						fmt.Fprintf(w, "%s\t%s\t%s\t%v\t%s\t%s\t%v\t%s\t",
-							m["name"], cmd, m["type"], m["hasReview"], agentName, status, enabledPolicies, absTime(m["updatedAt"]))
-						fmt.Fprintln(w)
-					}
-				}
-				return
-			}
-			// fallback to plugins
 			plugingHandlerFn := pluginHandler(apir)
 			fmt.Fprintln(w, "NAME\tCOMMAND\tTYPE\tAGENT\tSTATUS\tSECRETS\tPLUGINS\t")
 			switch contents := obj.(type) {
@@ -116,7 +86,6 @@ var getCmd = &cobra.Command{
 				m := contents
 				enabledPlugins := plugingHandlerFn(fmt.Sprintf("%v", m["name"]), false)
 				agentID := fmt.Sprintf("%v", m["name"])
-				status := agentHandlerFn("status", agentID)
 				agentName := agentHandlerFn("name", agentID)
 				secrets, _ := m["secret"].(map[string]any)
 				if secrets == nil {
@@ -125,18 +94,17 @@ var getCmd = &cobra.Command{
 				cmdList, _ := m["command"].([]any)
 				cmd := joinCmd(cmdList, false)
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%v\t%s\t",
-					m["name"], cmd, m["type"], agentName, status, len(secrets), enabledPlugins)
+					m["name"], cmd, m["type"], agentName, m["status"], len(secrets), enabledPlugins)
 				fmt.Fprintln(w)
 			case []map[string]any:
 				for _, m := range contents {
 					enabledPlugins := plugingHandlerFn(fmt.Sprintf("%v", m["name"]), true)
 					agentID := fmt.Sprintf("%v", m["agent_id"])
-					status := agentHandlerFn("status", agentID)
 					agentName := agentHandlerFn("name", agentID)
 					cmdList, _ := m["command"].([]any)
 					cmd := joinCmd(cmdList, true)
 					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%v\t%s\t",
-						m["name"], cmd, m["type"], agentName, status, "-", enabledPlugins)
+						m["name"], cmd, m["type"], agentName, m["status"], "-", enabledPlugins)
 					fmt.Fprintln(w)
 				}
 			}
@@ -238,7 +206,7 @@ var getCmd = &cobra.Command{
 				if len(commit) > 7 {
 					commit = commit[:7]
 				}
-				fmt.Fprintln(w, "NAME\tMETADATA\tCONNECTIONS\tCOMMIT")
+				fmt.Fprintln(w, "NAME\tMETADATA\tCONNECTIONS\tCOMMIT\tERROR")
 				runbookList, _ := contents["items"].([]interface{})
 				for _, obj := range runbookList {
 					m, ok := obj.(map[string]any)
@@ -255,11 +223,16 @@ var getCmd = &cobra.Command{
 					if connectionList != nil {
 						connections = joinItems(connectionList)
 					}
-					fmt.Fprintf(w, "%v\t%v\t%v\t%s",
+					hasError := "-"
+					if m["error"] != nil {
+						hasError = "yes"
+					}
+					fmt.Fprintf(w, "%v\t%v\t%v\t%s\t%v",
 						m["name"],
 						strings.Join(metadataList, ", "),
 						connections,
 						commit,
+						hasError,
 					)
 					fmt.Fprintln(w)
 				}
@@ -381,45 +354,6 @@ func agentConnectedHandler(conf *clientconfig.Config) func(key, agentID string) 
 		}
 		return "-"
 	}
-}
-
-func policiesHandler(apir *apiResource) (func(connectionID string, trunc bool) string, bool) {
-	requestOK := true
-	data, _, err := httpRequest(&apiResource{suffixEndpoint: "/api/policies", conf: apir.conf, decodeTo: "list"})
-	if err != nil {
-		log.Debugf("failed retrieving list of policies, err=%v", err)
-		requestOK = false
-	}
-	contents, ok := data.([]map[string]any)
-	if !ok {
-		log.Debugf("failed type casting to []map[string]any")
-		requestOK = false
-	}
-
-	return func(connectionID string, trunc bool) string {
-		if err != nil || len(contents) == 0 {
-			return "-"
-		}
-		var policies []string
-		for _, m := range contents {
-			connList, _ := m["connections"].([]any)
-			for _, connID := range connList {
-				if connID == connectionID {
-					policyName := fmt.Sprintf("%v", m["name"])
-					policies = append(policies, policyName)
-				}
-			}
-		}
-		if len(policies) == 0 {
-			return "-"
-		}
-		sort.Strings(policies)
-		plugins := strings.Join(policies, ", ")
-		if len(plugins) > 30 && trunc {
-			plugins = plugins[0:30] + "..."
-		}
-		return fmt.Sprintf("(%v) %s", len(policies), plugins)
-	}, requestOK
 }
 
 func joinCmd(cmdList []any, trunc bool) string {

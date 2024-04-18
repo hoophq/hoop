@@ -106,6 +106,13 @@ func (c *Context) GetSubject() (v string) {
 	return c.User.Id
 }
 
+func (c *Context) GetUserID() (v string) {
+	if c.User == nil {
+		return
+	}
+	return c.User.Id
+}
+
 func (c *Context) IsAdmin() bool {
 	if c.User == nil {
 		return false

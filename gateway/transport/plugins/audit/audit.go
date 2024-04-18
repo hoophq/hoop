@@ -2,10 +2,8 @@ package audit
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -23,6 +21,8 @@ import (
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"go.uber.org/zap"
 )
+
+var memorySessionStore = memory.New()
 
 type (
 	auditPlugin struct {
@@ -89,6 +89,7 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 		return fmt.Errorf("failed persisting sessino to store, reason=%v", err)
 	}
 	p.mu = sync.RWMutex{}
+	memorySessionStore.Set(pctx.SID, pctx.AgentID)
 	return nil
 }
 
@@ -136,13 +137,11 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		}
 		return nil, nil
 	case pbclient.SessionClose:
-		defer p.closeSession(pctx)
 		if len(pkt.Payload) > 0 {
-			err := p.writeOnReceive(pctx.SID, eventlogv0.ErrorType, redactCount, pkt.Payload)
-			if err != nil {
-				log.With("sid", pctx.SID).Warnf("failed writing last session packet, err=%v", err)
-			}
+			p.closeSession(pctx, fmt.Errorf(string(pkt.Payload)))
+			return nil, nil
 		}
+		p.closeSession(pctx, nil)
 	case pbagent.ExecWriteStdin,
 		pbagent.TerminalWriteStdin,
 		pbagent.TCPConnectionWrite:
@@ -152,72 +151,32 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 }
 
 func (p *auditPlugin) OnDisconnect(pctx plugintypes.Context, errMsg error) error {
-	p.log.With("session", pctx.SID, "origin", pctx.ClientOrigin).
+	p.log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "agent", pctx.AgentName).
 		Debugf("processing disconnect")
 	switch pctx.ClientOrigin {
-	case pb.ConnectionOriginClient,
-		pb.ConnectionOriginClientProxyManager:
-		defer p.closeSession(pctx)
-		if errMsg != nil {
-			if errMsg == io.EOF {
-				errMsg = fmt.Errorf("client disconnected, end-of-file stream")
-			}
-			_ = p.writeOnReceive(pctx.SID, eventlogv0.ErrorType, 0, []byte(errMsg.Error()))
-			return nil
-		}
-	case pb.ConnectionOriginClientAPI:
-		if errMsg != nil {
-			// on errors, close the session right away
-			if errMsg != io.EOF {
-				_ = p.writeOnReceive(pctx.SID, eventlogv0.ErrorType, 0, []byte(errMsg.Error()))
-			}
-			p.closeSession(pctx)
-			return nil
-		}
-		// keep the connection open to let packets flow async
 	case pb.ConnectionOriginAgent:
-		agentID := fmt.Sprintf("%v", pctx.ParamsData.GetString("disconnect-agent-id"))
-		if agentID != "" {
-			p.log.Warnf("agent %v was shutdown, graceful closing sessions", agentID)
-			// always close all sessions of this agent when it disconnects
-			// there's no capability of recovering the state of execution
-			// when this condition is present.
-			for key := range pctx.ParamsData {
-				if !strings.HasPrefix(key, agentID) {
-					continue
-				}
-				_, sessionID, found := strings.Cut(key, ":")
-				if !found {
-					continue
-				}
-				p.log.With("session", sessionID).Infof("closing session, agent %v was shutdown", agentID)
-				if errMsg != nil {
-					_ = p.writeOnReceive(sessionID, eventlogv0.ErrorType, 0, []byte(errMsg.Error()))
-					p.closeSession(pctx)
-					continue
-				}
-				p.closeSession(pctx)
+		p.log.With("agent", pctx.AgentName).Infof("agent shutdown, graceful closing session")
+		for msid, objAgentID := range memorySessionStore.List() {
+			if pctx.AgentID != fmt.Sprintf("%v", objAgentID) {
+				continue
 			}
-			return nil
+			pctx.SID = msid
+			p.closeSession(pctx, errMsg)
 		}
-		// it close sessions that are being processed async
-		// e.g.: when it receives a session close packet
-		defer p.closeSession(pctx)
-		if errMsg != nil {
-			_ = p.writeOnReceive(pctx.SID, eventlogv0.ErrorType, 0, []byte(errMsg.Error()))
-			return nil
-		}
+	default:
+		p.closeSession(pctx, errMsg)
 	}
 	return nil
 }
 
-func (p *auditPlugin) closeSession(pctx plugintypes.Context) {
-	sessionID := pctx.SID
-	log.With("session", sessionID).Infof("closing session")
+func (p *auditPlugin) closeSession(pctx plugintypes.Context, errMsg error) {
+	log.With("sid", pctx.SID).Infof("closing session, reason=%v", errMsg)
 	go func() {
-		if err := p.writeOnClose(pctx); err != nil {
-			p.log.Warnf("session=%v - failed closing session: %v", sessionID, err)
+		if err := p.writeOnClose(pctx, errMsg); err != nil {
+			p.log.Warnf("session=%v - failed closing session: %v", pctx.SID, err)
+			return
 		}
+		memorySessionStore.Del(pctx.SID)
 	}()
 }
 

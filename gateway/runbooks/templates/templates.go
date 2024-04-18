@@ -20,16 +20,30 @@ type template struct {
 }
 
 func (t *template) Execute(wr io.Writer, inputs map[string]string) error {
+	execInputs := map[string]string{}
+	for inputKey, inputVal := range inputs {
+		execInputs[inputKey] = inputVal
+	}
+
 	var missingKeys []string
-	for inputKey := range t.attributes {
-		if _, ok := inputs[inputKey]; !ok {
+	for inputKey, obj := range t.attributes {
+		if _, ok := execInputs[inputKey]; !ok {
+			metadata, _ := obj.(map[string]any)
+			if metadata != nil {
+				// if it has a default attribute and it's non empty
+				// add as a entry key to render the default value from the template
+				if defaultVal, _ := metadata["default"].(string); defaultVal != "" {
+					execInputs[inputKey] = ""
+					continue
+				}
+			}
 			missingKeys = append(missingKeys, inputKey)
 		}
 	}
 	if len(missingKeys) > 0 {
 		return fmt.Errorf("the following inputs are missing %v", missingKeys)
 	}
-	return t.textTmpl.Execute(wr, inputs)
+	return t.textTmpl.Execute(wr, execInputs)
 }
 
 func (t *template) Attributes() map[string]any {

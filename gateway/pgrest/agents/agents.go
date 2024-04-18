@@ -1,6 +1,8 @@
 package pgagents
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/gateway/pgrest"
 )
@@ -9,9 +11,12 @@ type agent struct{}
 
 func New() *agent { return &agent{} }
 
-func (a *agent) FindAll(ctx pgrest.OrgContext) ([]pgrest.Agent, error) {
+// FindAll returns all agents from all organization if the context is empty.
+// Otherwise return all the agents from a specific organization.
+func (a *agent) FindAll(ctx pgrest.OrgContext, filters ...pgrest.Filter) ([]pgrest.Agent, error) {
 	var res []pgrest.Agent
-	if err := pgrest.New("/agents?org_id=eq.%v", ctx.GetOrgID()).
+	if err := pgrest.New("/agents?org_id=eq.%v&order=name.asc", ctx.GetOrgID()).
+		WithFilterOptions(filters...).
 		List().
 		DecodeInto(&res); err != nil && err != pgrest.ErrNotFound {
 		return nil, err
@@ -36,7 +41,7 @@ func (a *agent) FetchOneByNameOrID(ctx pgrest.OrgContext, nameOrID string) (*pgr
 
 func (a *agent) FetchOneByToken(token string) (*pgrest.Agent, error) {
 	var agent pgrest.Agent
-	if err := pgrest.New("/agents?token=eq.%v", token).
+	if err := pgrest.New("/agents?select=*,orgs(name)&key_hash=eq.%v", token).
 		FetchOne().
 		DecodeInto(&agent); err != nil {
 		if err == pgrest.ErrNotFound {
@@ -48,28 +53,50 @@ func (a *agent) FetchOneByToken(token string) (*pgrest.Agent, error) {
 }
 
 func (a *agent) Upsert(agent *pgrest.Agent) error {
-	status := "DISCONNECTED"
+	status := pgrest.AgentStatusDisconnected
 	if agent.Status != "" {
 		status = agent.Status
 	}
 	return pgrest.New("/agents").Upsert(map[string]any{
 		"id":         agent.ID,
-		"token":      agent.Token,
+		"key_hash":   agent.KeyHash,
+		"key":        agent.Key,
 		"org_id":     agent.OrgID,
 		"name":       agent.Name,
 		"mode":       agent.Mode,
 		"status":     status,
 		"updated_at": agent.UpdatedAt,
-		"metadata": map[string]string{
-			"hostname":       agent.GetMeta("hostname"),
-			"platform":       agent.GetMeta("platform"),
-			"goversion":      agent.GetMeta("goversion"),
-			"version":        agent.GetMeta("version"),
-			"kernel_version": agent.GetMeta("kernel_version"),
-			"compiler":       agent.GetMeta("compiler"),
-			"machine_id":     agent.GetMeta("machine_id"),
-		},
+		"metadata":   agent.Metadata,
 	}).Error()
+}
+
+func (a *agent) UpdateStatus(ctx pgrest.OrgContext, agentID, status string, metadata map[string]string) error {
+	patchBody := map[string]any{
+		"status":     status,
+		"updated_at": time.Now().UTC(),
+	}
+	if len(metadata) > 0 {
+		patchBody["metadata"] = metadata
+	}
+	err := pgrest.New("/agents?org_id=eq.%v&id=eq.%v", ctx.GetOrgID(), agentID).
+		Patch(patchBody).
+		Error()
+	if err == pgrest.ErrNotFound {
+		return nil
+	}
+	return err
+}
+
+// UpdateAllToOffline update the status of all agent resources to offline
+func (a *agent) UpdateAllToOffline() error {
+	err := pgrest.New("/agents").Patch(map[string]any{
+		"status":     pgrest.AgentStatusDisconnected,
+		"updated_at": time.Now().UTC(),
+	}).Error()
+	if err == pgrest.ErrNotFound {
+		return nil
+	}
+	return err
 }
 
 func (a *agent) Delete(ctx pgrest.OrgContext, id string) error {

@@ -15,9 +15,10 @@ import (
 	"github.com/runopsio/hoop/common/apiutils"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
+	pgconnections "github.com/runopsio/hoop/gateway/pgrest/connections"
+	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
 	pgsession "github.com/runopsio/hoop/gateway/pgrest/session"
 	"github.com/runopsio/hoop/gateway/storagev2"
-	connectionstorage "github.com/runopsio/hoop/gateway/storagev2/connection"
 	sessionstorage "github.com/runopsio/hoop/gateway/storagev2/session"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/user"
@@ -50,7 +51,7 @@ func Post(c *gin.Context) {
 		return
 	}
 
-	connection, err := connectionstorage.GetOneByName(storageCtx, body.Connection)
+	connection, err := pgconnections.New().FetchOneForExec(storageCtx, body.Connection)
 	if connection == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "Connection not found"})
 		return
@@ -203,7 +204,7 @@ func Get(c *gin.Context) {
 		return
 	}
 
-	review, err := sessionstorage.FindReviewBySID(ctx, sessionID)
+	review, err := pgreview.New().FetchOneBySid(ctx, sessionID)
 	if err != nil {
 		log.Errorf("failed fetching review, err=%v", err)
 		sentry.CaptureException(err)

@@ -3,7 +3,7 @@ set -e
 
 gh auth status
 
-declare -a apps=("appdemo" "clari" "ebanx" "enjoei" "rdstation" "tryrunops" "unico" "multitenant")
+declare -a apps=("appdemo" "ebanx" "enjoei" "rdstation" "tryrunops" "unico" "multitenant")
 echo -e "=> Here are the available apps to deploy"
 for app in "${apps[@]}"; do
   echo $app

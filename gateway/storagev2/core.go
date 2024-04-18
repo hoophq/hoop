@@ -31,7 +31,6 @@ const ContextKey string = "storagev2"
 type Context struct {
 	*Store
 	*types.APIContext
-	dsnctx  *types.DSNContext
 	segment *analytics.Segment
 }
 
@@ -62,14 +61,6 @@ func NewContext(userID, orgID string, store *Store) *Context {
 // NewOrganizationContext returns a context without a user
 func NewOrganizationContext(orgID string, store *Store) *Context {
 	return NewContext("", orgID, store)
-}
-
-func NewDSNContext(entityID, orgID, clientKeyName string, store *Store) *Context {
-	return &Context{
-		dsnctx:     &types.DSNContext{EntityID: entityID, OrgID: orgID, ClientKeyName: clientKeyName},
-		APIContext: &types.APIContext{OrgID: orgID},
-		segment:    nil,
-	}
 }
 
 func (c *Context) WithUserInfo(name, email, status, picture string, groups []string) *Context {
@@ -118,7 +109,6 @@ func (c *Context) Analytics() *analytics.Segment {
 	return c.segment
 }
 
-func (c *Context) DSN() *types.DSNContext  { return c.dsnctx }
 func (c *Context) GetOrgID() string        { return c.OrgID }
 func (c *Context) GetUserGroups() []string { return c.UserGroups }
 func (c *Context) IsAdmin() bool           { return slices.Contains(c.UserGroups, types.GroupAdmin) }

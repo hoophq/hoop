@@ -50,13 +50,14 @@ func (h *handler) Login(c *gin.Context) {
 		return
 	}
 
-	url := h.idpProv.AuthCodeURL(stateUID)
+	var params = []oauth2.AuthCodeOption{}
 	if h.idpProv.Audience != "" {
-		params := []oauth2.AuthCodeOption{
-			oauth2.SetAuthURLParam("audience", h.idpProv.Audience),
-		}
-		url = h.idpProv.AuthCodeURL(stateUID, params...)
+		params = append(params, oauth2.SetAuthURLParam("audience", h.idpProv.Audience))
 	}
+	if auth0Params := h.parseAuth0QueryParams(c); len(auth0Params) > 0 {
+		params = append(params, auth0Params...)
+	}
+	url := h.idpProv.AuthCodeURL(stateUID, params...)
 	c.JSON(http.StatusOK, map[string]string{"login_url": url})
 }
 

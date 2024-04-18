@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/log"
+	"github.com/runopsio/hoop/gateway/agentcontroller"
 	"github.com/runopsio/hoop/gateway/analytics"
 	"github.com/runopsio/hoop/gateway/pgrest"
 	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
@@ -38,6 +39,7 @@ func Post(c *gin.Context) {
 	case pgusers.ErrOrgAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": "organization name is already claimed"})
 	case nil:
+		agentcontroller.Sync()
 		profileName := ctx.UserAnonProfile
 		if len(req.ProfileName) > 0 {
 			profileName = req.ProfileName

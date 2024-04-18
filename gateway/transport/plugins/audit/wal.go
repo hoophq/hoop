@@ -3,6 +3,7 @@ package audit
 import (
 	"encoding/base64"
 	"fmt"
+	"io"
 	"os"
 	"sync"
 	"time"
@@ -60,7 +61,7 @@ func (p *auditPlugin) writeOnReceive(sessionID string, eventType eventlogv0.Even
 	walLogObj := p.walSessionStore.Get(sessionID)
 	walogm, ok := walLogObj.(*walLogRWMutex)
 	if !ok {
-		return fmt.Errorf("failed obtaining wallog for sid=%v, obj=%v", sessionID, walLogObj)
+		return fmt.Errorf("failed obtaining write ahead log for session %v", sessionID)
 	}
 	walogm.mu.Lock()
 	defer walogm.mu.Unlock()
@@ -71,26 +72,29 @@ func (p *auditPlugin) writeOnReceive(sessionID string, eventType eventlogv0.Even
 		event))
 }
 
-func (p *auditPlugin) writeOnClose(pctx plugintypes.Context) error {
-	sessionID := pctx.SID
-	walLogObj := p.walSessionStore.Get(sessionID)
+func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error {
+	walLogObj := p.walSessionStore.Pop(pctx.SID)
 	walogm, ok := walLogObj.(*walLogRWMutex)
 	if !ok {
 		return nil
 	}
 	walogm.mu.Lock()
-	defer func() {
-		p.walSessionStore.Del(sessionID)
-		_ = walogm.log.Close()
-		walogm.mu.Unlock()
-	}()
+	defer func() { _ = walogm.log.Close(); walogm.mu.Unlock() }()
+	// we could add an attribute to have the last message
+	// propagated as metadata instead inside the stream
+	if errMsg != nil && errMsg != io.EOF {
+		err := walogm.log.Write(eventlogv0.New(time.Now().UTC(), eventlogv0.ErrorType, 0, []byte(errMsg.Error())))
+		if err != nil {
+			log.With("sid", pctx.SID).Warnf("failed writing end error message, err=%v", err)
+		}
+	}
 	wh, err := walogm.log.Header()
 	if err != nil {
 		return fmt.Errorf("failed decoding wal header object, err=%v", err)
 	}
-	if wh.SessionID != sessionID {
+	if wh.SessionID != pctx.SID {
 		return fmt.Errorf("mismatch wal header session id, session=%v, session-header=%v",
-			sessionID, wh.SessionID)
+			pctx.SID, wh.SessionID)
 	}
 	var eventStreamList []types.SessionEventStream
 	eventSize := int64(0)
@@ -128,19 +132,12 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context) error {
 			session == nil, err)
 	}
 	endDate := time.Now().UTC()
-	labels := map[string]string{}
-	var inputScript types.SessionScript
-	var metadata map[string]any
-	if session != nil {
-		inputScript = session.Script
-		for key, val := range session.Labels {
-			labels[key] = val
-		}
-		metadata = session.Metadata
+	if len(session.Labels) == 0 {
+		session.Labels = map[string]string{}
 	}
-	labels["processed-by"] = "plugin-audit"
-	labels["truncated"] = fmt.Sprintf("%v", truncated)
-	pgsession.New().Upsert(storageContext, types.Session{
+	session.Labels["processed-by"] = "plugin-audit"
+	session.Labels["truncated"] = fmt.Sprintf("%v", truncated)
+	err = pgsession.New().Upsert(storageContext, types.Session{
 		ID:               wh.SessionID,
 		OrgID:            wh.OrgID,
 		UserEmail:        wh.UserEmail,
@@ -150,9 +147,9 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context) error {
 		Connection:       wh.ConnectionName,
 		Verb:             wh.Verb,
 		Status:           types.SessionStatusDone,
-		Script:           inputScript,
-		Labels:           labels,
-		Metadata:         metadata,
+		Script:           session.Script,
+		Labels:           session.Labels,
+		Metadata:         session.Metadata,
 		NonIndexedStream: types.SessionNonIndexedEventStreamList{"stream": eventStreamList},
 		EventSize:        eventSize,
 		StartSession:     *wh.StartDate,

@@ -32,10 +32,6 @@ type DSN struct {
 	// the secret key hashed
 	SecretKeyHash string
 
-	// temporary to support migration
-	// indicates if the gateway should connect the agent using v2 api
-	ApiV2 bool
-
 	key string
 }
 
@@ -49,6 +45,17 @@ func NewString(targetURL, name, secretKey, agentMode string) (string, error) {
 	}
 	dsn := fmt.Sprintf("%s://%s:%s@%s:%s?mode=%s",
 		u.Scheme, name, secretKey, u.Hostname(), u.Port(), agentMode)
+	_, err = Parse(dsn)
+	return dsn, err
+}
+
+// New generates a dsn key without the mode query string option
+func New(targetURL, name, secretKey string) (string, error) {
+	u, err := url.Parse(targetURL)
+	if err != nil {
+		return "", fmt.Errorf("failed parsing target url, reason=%v", err)
+	}
+	dsn := fmt.Sprintf("%s://%s:%s@%s:%s", u.Scheme, name, secretKey, u.Hostname(), u.Port())
 	_, err = Parse(dsn)
 	return dsn, err
 }
@@ -80,9 +87,6 @@ func Parse(keyDsn string) (*DSN, error) {
 		}, err
 	}
 	agentMode := u.Query().Get("mode")
-	if err := validateAgentMode(agentMode); err != nil {
-		return nil, err
-	}
 	secretKey, _ := u.User.Password()
 	if secretKey == "" {
 		return nil, ErrSecretKeyNotFound
@@ -94,7 +98,6 @@ func Parse(keyDsn string) (*DSN, error) {
 		AgentMode:     agentMode,
 		Name:          u.User.Username(),
 		SecretKeyHash: secretKeyHash,
-		ApiV2:         u.Query().Get("v2") == "true",
 		key:           keyDsn,
 	}, err
 }
@@ -120,11 +123,4 @@ func hash256Key(secretKey string) (secret256Hash string, err error) {
 		return "", fmt.Errorf("failed hashing secret key, err=%v", err)
 	}
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
-}
-
-func validateAgentMode(mode string) error {
-	if mode != pb.AgentModeStandardType && mode != pb.AgentModeEmbeddedType {
-		return ErrInvalidMode
-	}
-	return nil
 }
