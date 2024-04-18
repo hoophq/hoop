@@ -7,6 +7,8 @@ import (
 	"github.com/runopsio/hoop/common/clientconfig"
 	"github.com/runopsio/hoop/common/dsnkeys"
 	"github.com/runopsio/hoop/common/grpc"
+	"github.com/runopsio/hoop/common/log"
+	"github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/common/version"
 )
 
@@ -25,18 +27,35 @@ func Load() (*Config, error) {
 	dsn, err := dsnkeys.Parse(key)
 	if err != nil && err != dsnkeys.ErrEmpty {
 		if isLegacy {
-			return nil, fmt.Errorf("HOOP_DSN (deprecated) in wrong format, reason=%v", err)
+			return nil, fmt.Errorf("HOOP_DSN (deprecated) is in wrong format, reason=%v", err)
 		}
-		return nil, fmt.Errorf("HOOP_KEY in wrong format, reason=%v", err)
+		return nil, fmt.Errorf("HOOP_KEY is in wrong format, reason=%v", err)
 	}
-	return &Config{
-		Name:      dsn.Name,
-		Type:      clientconfig.ModeDsn,
-		AgentMode: dsn.AgentMode,
-		Token:     dsn.Key(),
-		URL:       dsn.Address,
-		// allow connecting insecure if a build disables this flag
-		insecure: !version.Get().StrictTLS && (dsn.Scheme == "http" || dsn.Scheme == "grpc")}, nil
+	if dsn != nil {
+		if isLegacy {
+			log.Warnf("HOOP_DSN environment variable is deprecated, use HOOP_KEY instead")
+		}
+		return &Config{
+			Name:      dsn.Name,
+			Type:      clientconfig.ModeDsn,
+			AgentMode: dsn.AgentMode,
+			Token:     dsn.Key(),
+			URL:       dsn.Address,
+			// allow connecting insecure if a build disables this flag
+			insecure: !version.Get().StrictTLS && (dsn.Scheme == "http" || dsn.Scheme == "grpc")}, nil
+	}
+	legacyToken := os.Getenv("TOKEN")
+	grpcURL := os.Getenv("HOOP_GRPCURL")
+	if legacyToken != "" && grpcURL != "" {
+		log.Warnf("TOKEN and HOOP_GRPCURL environment variables are deprecated, create a new token to use the new format")
+		return &Config{
+			Type:      clientconfig.ModeEnv,
+			AgentMode: proto.AgentModeStandardType,
+			Token:     legacyToken,
+			URL:       grpcURL,
+			insecure:  grpcURL == grpc.LocalhostAddr}, nil
+	}
+	return nil, fmt.Errorf("missing HOOP_KEY environment variable")
 }
 
 func (c *Config) GrpcClientConfig() (grpc.ClientConfig, error) {
