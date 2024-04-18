@@ -17,10 +17,11 @@ auth0 login
 auth0 universal-login customize
 ```
 
-1. In the tab `Theme`, paste the contents of the file `template-theme.json`
-2. In the tab `Page Layout` paste the contents of the file `template.html`
-3. Click on `Deploy Changes`
-4. Visit http://localhost:8009 and login to see the changes
+1. In the tab `Settings`, paste the contents of the `settings.json`
+2. In the tab `Theme`, paste the contents of the file `template-theme.json`
+3. In the tab `Page Layout` paste the contents of the file `template.html`
+4. Click on `Deploy Changes`
+5. Visit http://localhost:8009 and login to see the changes
 
 ## Reference
 
