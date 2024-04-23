@@ -307,13 +307,14 @@ func updateLoginState(l *pgrest.Login) {
 }
 
 func debugClaims(subject string, claims map[string]any, accessToken *oauth2.Token) {
-	log := log.With()
+	logClaims := []any{}
 	for claimKey, claimVal := range claims {
-		if claimKey == proto.CustomClaimGroups {
-			log = log.With(claimKey, fmt.Sprintf("%q", claimVal))
+		val := fmt.Sprintf("%v", claimVal)
+		if len(val) > 200 {
+			logClaims = append(logClaims, claimKey, val[:200]+fmt.Sprintf(" (... %v)", len(val)-200))
 			continue
 		}
-		log = log.With(claimKey, fmt.Sprintf("%v", claimVal))
+		logClaims = append(logClaims, claimKey, val)
 	}
 	var isJWT bool
 	var jwtHeader []byte
@@ -321,7 +322,7 @@ func debugClaims(subject string, claims map[string]any, accessToken *oauth2.Toke
 		isJWT = true
 		jwtHeader, _ = base64.RawStdEncoding.DecodeString(parts[0])
 	}
-	log.Infof("jwt-access-token=%v, jwt-header=%v, id_token claims=%v, subject=%s, admingroup=%q",
+	log.With(logClaims...).Infof("jwt-access-token=%v, jwt-header=%v, id_token claims=%v, subject=%s, admingroup=%q",
 		isJWT, string(jwtHeader),
 		len(claims), subject, types.GroupAdmin)
 }
