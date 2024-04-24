@@ -2,10 +2,11 @@ package mongoproxy
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"io"
-	"time"
 
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/mongotypes"
@@ -57,11 +58,18 @@ func newSaslRequest(conversation *scram.ClientConversation) (*mongotypes.SaslReq
 	}, nil
 }
 
-func (p *proxy) writeOperation(pkt *mongotypes.Packet) (*mongotypes.Packet, error) {
-	if _, err := p.serverRW.Write(pkt.Encode()); err != nil {
+func (p *proxy) writeOperation(rw io.ReadWriter, pkt *mongotypes.Packet) (*mongotypes.Packet, error) {
+	if _, err := rw.Write(pkt.Encode()); err != nil {
 		return nil, fmt.Errorf("fail write to mongo server, err=%v", err)
 	}
-	return p.readNextAuthPacket(p.serverRW)
+	return p.readNextAuthPacket(rw)
+}
+
+func (p *proxy) writeClientOperation(pkt *mongotypes.Packet) (*mongotypes.Packet, error) {
+	if _, err := p.clientW.Write(pkt.Encode()); err != nil {
+		return nil, fmt.Errorf("fail write to mongo client, err=%v", err)
+	}
+	return p.readNextAuthPacket(p.clientInitBuffer)
 }
 
 // TODO: validate the mechanism, only scram is accepted!
@@ -81,7 +89,7 @@ func (p *proxy) handleServerAuth(authPkt *mongotypes.Packet) (bypass bool, err e
 		// it's not a speculative packet, bypass
 		return true, nil
 	}
-	client, err := newScramSHA256Client("root", "1a2b3c4d")
+	client, err := newScramSHA256Client(p.username, p.password)
 	if err != nil {
 		return
 	}
@@ -94,7 +102,13 @@ func (p *proxy) handleServerAuth(authPkt *mongotypes.Packet) (bypass bool, err e
 	if err != nil {
 		return false, err
 	}
-	helloCommand.SpeculativeAuthenticate = *saslStartRequest
+	var clientAuthPayload []byte
+	if helloCommand.SpeculativeAuthenticate != nil {
+		clientAuthPayload = helloCommand.SpeculativeAuthenticate.Payload
+	}
+	log.Infof("client payload before")
+	fmt.Println(hex.Dump(clientAuthPayload))
+	helloCommand.SpeculativeAuthenticate = saslStartRequest
 	flagBits := binary.LittleEndian.Uint32(authPkt.Frame[:4])
 	newHelloCmd, err := mongotypes.NewHelloCommandPacket(
 		helloCommand,
@@ -106,9 +120,11 @@ func (p *proxy) handleServerAuth(authPkt *mongotypes.Packet) (bypass bool, err e
 	if err != nil {
 		return false, err
 	}
+	log.Infof("hello auth packet, connid=%v", p.connectionID)
+	authPkt.Dump()
 	log.Infof("writing hello command, connid=%v, validconv=%v", p.connectionID, conversation.Valid())
 	newHelloCmd.Dump()
-	respPkt, err := p.writeOperation(newHelloCmd)
+	respPkt, err := p.writeOperation(p.serverRW, newHelloCmd)
 	if err != nil {
 		return false, err
 	}
@@ -136,20 +152,24 @@ func (p *proxy) handleServerAuth(authPkt *mongotypes.Packet) (bypass bool, err e
 
 	// requestID := authPkt.RequestID
 	cid := saslResp.ConversationID
+	var err2 error
 	// var payload string
 	i := 0
 	for {
 		fmt.Printf("idx=%v, SASLRESP: %+v\n", i, saslResp)
 		i++
 		if saslResp.Code != 0 {
-			return false, fmt.Errorf("unable to authenticate, wrong code response (!= 0)")
+			err2 = fmt.Errorf("unable to authenticate, wrong code response (!= 0)")
+			break
 		}
 		payload, err := conversation.Step(string(saslResp.Payload))
 		if err != nil {
-			return false, fmt.Errorf("failed generation step: %v", err)
+			err2 = fmt.Errorf("failed generation step: %v", err)
+			break
 		}
 		if saslResp.Done && conversation.Done() {
-			return false, nil
+			err2 = nil
+			break
 		}
 		log.Infof("writing sasl continue packet, connid=%v, convvalid=%v", p.connectionID, conversation.Valid())
 		// requestID++
@@ -160,86 +180,86 @@ func (p *proxy) handleServerAuth(authPkt *mongotypes.Packet) (bypass bool, err e
 			Database:       "admin",
 		}, 0, 0)
 		if err != nil {
-			return false, fmt.Errorf("failed creating sasl continue packet")
+			err2 = fmt.Errorf("failed creating sasl continue packet, reason=%v", err)
+			break
 		}
 		pkt.Dump()
-		respPkt, err = p.writeOperation(pkt)
+		respPkt2, err := p.writeOperation(p.serverRW, pkt)
 		if err != nil {
-			return false, fmt.Errorf("failed writing operation: %v", err)
+			err2 = fmt.Errorf("failed writing operation: %v", err)
+			break
 		}
 		log.Infof("response sasl continue")
-		respPkt.Dump()
-		if err := bson.Unmarshal(respPkt.Frame[5:], &saslResp); err != nil {
-			return false, fmt.Errorf("unmarshal error: %v", err)
+		respPkt2.Dump()
+		if err := bson.Unmarshal(respPkt2.Frame[5:], &saslResp); err != nil {
+			err2 = fmt.Errorf("unmarshal error: %v", err)
+			break
 		}
 	}
+
+	if err2 != nil {
+		return false, err2
+	}
+	return false, p.handleClientAuth(clientAuthPayload, client, int(authPkt.ResponseTo), 2)
+	// return false, err2
 }
 
-type TopologyVersion struct {
-	ProcessID primitive.ObjectID `bson:"processId"`
-	Counter   int64              `bson:"counter"`
-}
-
-type AuthResponseReply struct {
-	HelloOk                      bool               `bson:"helloOk"`
-	IsMaster                     bool               `bson:"ismaster"`
-	TopologyVersion              TopologyVersion    `bson:"topologyVersion"`
-	MaxBsonObjectSize            int32              `bson:"maxBsonObjectSize"`
-	MaxMessageSizeBytes          int32              `bson:"maxMessageSizeBytes"`
-	MaxWriteBatchSize            int32              `bson:"maxWriteBatchSize"`
-	LocalTime                    primitive.DateTime `bson:"localTime"`
-	LogicalSessionTimeoutMinutes int32              `bson:"logicalSessionTimeoutMinutes"`
-	ConnectionID                 int32              `bson:"connectionId"`
-	MinWireVersion               int32              `bson:"minWireVersion"`
-	MaxWireVersion               int32              `bson:"maxWireVersion"`
-	ReadOnly                     bool               `bson:"readOnly"`
-	SpeculativeAuthenticate      SASLResponse       `bson:"speculativeAuthenticate"`
-	OK                           float64            `bson:"ok"`
-}
-
-func (r *AuthResponseReply) Size() int {
-	enc, err := bson.Marshal(r)
+func newFakeServer(user, pwd string) (*scram.Server, error) {
+	client, err := newScramSHA256Client(user, pwd)
 	if err != nil {
-		return -1
+		return nil, err
 	}
-	return len(enc)
-}
-
-func newServerAuthReply(authPayload []byte, connectionID int) *mongotypes.Packet {
-	reply := AuthResponseReply{
-		HelloOk:  true,
-		IsMaster: true,
-		TopologyVersion: TopologyVersion{
-			ProcessID: primitive.NewObjectID(),
-			Counter:   0,
-		},
-		MaxBsonObjectSize:            16777216,
-		MaxMessageSizeBytes:          48000000,
-		MaxWriteBatchSize:            100000,
-		LocalTime:                    primitive.NewDateTimeFromTime(time.Now().UTC()),
-		LogicalSessionTimeoutMinutes: 30,
-		ConnectionID:                 int32(connectionID),
-		MinWireVersion:               0,
-		MaxWireVersion:               21,
-		ReadOnly:                     false,
-		SpeculativeAuthenticate: SASLResponse{
-			ConversationID: 1,
-			Done:           false,
-			Payload:        authPayload,
-		},
-		OK: 1,
-	}
-	pkt := mongotypes.Packet{}
-	pkt.Frame = make([]byte, reply.Size()+20)
-	out, _ := bson.Marshal(&reply)
-	copy(pkt.Frame[36:], out)
-	// pkt := mongotypes.Packet{}
-	return &pkt
-	// make(pkt.Frame,
+	stored := client.GetStoredCredentials(scram.KeyFactors{Salt: "serverNonce", Iters: 4096})
+	return scram.SHA256.NewServer(func(s string) (scram.StoredCredentials, error) {
+		enc := base64.StdEncoding.EncodeToString
+		log.Infof("RETURN STORED, server-key=%v, stored-key=%v", enc(stored.ServerKey), enc(stored.StoredKey))
+		return stored, nil
+	})
 }
 
 // handleClientAuth bypass the client authentication
-func (p *proxy) handleClientAuth(initPkt *mongotypes.Packet) error {
-	// mongotypes.Packet{}
-	return nil
+func (p *proxy) handleClientAuth(clientAuthPayload []byte, client *scram.Client, responseTo, connectionID int) error {
+	log.Infof("client -> write auth reply from server ...")
+
+	srv, err := newFakeServer("noop", "noop")
+	if err != nil {
+		return err
+	}
+	conversation := srv.NewConversation()
+	challengeResp, err := conversation.Step(string(clientAuthPayload))
+	if err != nil {
+		return fmt.Errorf("failed generating fake server step, err=%v", err)
+	}
+	fakeAuthRespReply, err := mongotypes.NewServerAuthReply([]byte(challengeResp), 4, responseTo, connectionID)
+	if err != nil {
+		return err
+	}
+	fakeAuthRespReply.Dump()
+	saslContinuePkt, err := p.writeClientOperation(fakeAuthRespReply)
+	if err != nil {
+		return err
+	}
+	var saslContinue mongotypes.SaslContinueRequest
+	err = bson.Unmarshal(saslContinuePkt.Frame[5:], &saslContinue)
+	if err != nil {
+		return fmt.Errorf("failed unmarshalling sasl continue, reason=%v", err)
+	}
+
+	if saslContinue.Payload == nil {
+		return fmt.Errorf("failed decoding (empty) sasl continue payload")
+	}
+
+	finalResp, err := conversation.Step(string(saslContinue.Payload))
+	if err != nil {
+		return fmt.Errorf("fail server final step, reason=%v", err)
+	}
+	// fmt.Println(hex.Dump(continuePayload))
+
+	// return fmt.Errorf("not implemented, move on")
+
+	log.Info("client -> write final sasl response")
+	// saslContinuePkt.Dump()
+	pkt := mongotypes.NewScramServerDoneResponse(5, 0, 1, []byte(finalResp))
+	_, err = p.clientW.Write(pkt.Encode())
+	return err
 }

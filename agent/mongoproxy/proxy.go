@@ -32,7 +32,7 @@ type proxy struct {
 	password         string
 	pid              uint32
 	serverRW         io.ReadWriteCloser
-	clientW          io.Writer
+	clientW          io.ReadWriter
 	cancelFn         context.CancelFunc
 	clientInitBuffer io.ReadWriter
 	initialized      bool
@@ -41,7 +41,7 @@ type proxy struct {
 	sid              string
 }
 
-func New(ctx context.Context, connStr *url.URL, serverRW io.ReadWriteCloser, clientW io.Writer) *proxy {
+func New(ctx context.Context, connStr *url.URL, serverRW io.ReadWriteCloser, clientW io.ReadWriter) *proxy {
 	if connStr == nil {
 		connStr = &url.URL{}
 	}
@@ -79,14 +79,20 @@ func (p *proxy) initalizeConnection() error {
 		return fmt.Errorf("failed reading initial packet from client, err=%v", err)
 	}
 	bypass, err := p.handleServerAuth(pkt)
+	if err != nil {
+		return err
+	}
 	if bypass {
 		log.Infof("bypassing packet")
 		pkt.Dump()
 		if _, err := p.serverRW.Write(pkt.Encode()); err != nil {
 			return fmt.Errorf("failed bypassing packet, err=%v", err)
 		}
+		return nil
 	}
-	return err
+	return nil
+	// authentication was handled, returns ok to the client!
+	// return p.handleClientAuth(pkt)
 }
 
 func (p *proxy) processPacket(data io.Reader) (pkt *mongotypes.Packet, err error) {

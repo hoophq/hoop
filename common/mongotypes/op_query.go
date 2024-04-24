@@ -137,11 +137,11 @@ type ClientInfo struct {
 }
 
 type HelloCommand struct {
-	IsMaster                int32       `bson:"isMaster"`
-	HelloOK                 bool        `bson:"helloOk"`
-	SpeculativeAuthenticate SaslRequest `bson:"speculativeAuthenticate"`
-	Compression             []any       `bson:"compression"`
-	ClientInfo              ClientInfo  `bson:"client"`
+	IsMaster                int32        `bson:"isMaster"`
+	HelloOK                 bool         `bson:"helloOk"`
+	SpeculativeAuthenticate *SaslRequest `bson:"speculativeAuthenticate"`
+	Compression             []any        `bson:"compression"`
+	ClientInfo              ClientInfo   `bson:"client"`
 }
 
 // IsValid validates if it's a valid hello command request

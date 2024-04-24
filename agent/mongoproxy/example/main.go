@@ -44,10 +44,10 @@ func Serve() {
 	}
 
 	lis, err := net.Listen("tcp4", proxyListenAddr)
-	fmt.Printf("serving incoming connections %v\n", lis.Addr().String())
 	if err != nil {
 		panic(err)
 	}
+	fmt.Printf("serving incoming connections %v\n", lis.Addr().String())
 	connID := 1
 	for {
 		clientConn, err := lis.Accept()
