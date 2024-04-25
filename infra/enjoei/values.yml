@@ -1,6 +1,3 @@
-agentConfig:
-  enabled: false
-
 config:
   ORG_MULTI_TENANT: ''
   POSTGRES_DB_URI: '${HOOP_SELF_HOSTED_ENJOEI_POSTGRES_DB_URI}'
