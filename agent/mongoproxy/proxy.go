@@ -3,15 +3,16 @@ package mongoproxy
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"fmt"
 	"io"
-	"net"
 	"net/url"
+	"strings"
 
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/mongotypes"
 )
+
+const defaultAuthDB = "admin"
 
 var (
 	errConnectionClose = fmt.Errorf("connection closed")
@@ -19,12 +20,7 @@ var (
 	SIDContextKey      struct{}
 )
 
-func clientErrorF(format string, a ...any) clientErrType { return fmt.Errorf(format, a...) }
-
-type (
-	onRunErrFnType func(errMsg string)
-	clientErrType  error
-)
+type onRunErrFnType func(errMsg string)
 
 type proxy struct {
 	ctx              context.Context
@@ -32,12 +28,14 @@ type proxy struct {
 	port             string
 	username         string
 	password         string
-	pid              uint32
 	serverRW         io.ReadWriteCloser
 	clientW          io.ReadWriter
 	cancelFn         context.CancelFunc
 	clientInitBuffer io.ReadWriter
 	initialized      bool
+	tlsProxyConfig   *tlsProxyConfig
+	withSrv          bool
+	authSource       string
 	closed           bool
 	connectionID     string
 	sid              string
@@ -50,10 +48,27 @@ func New(ctx context.Context, connStr *url.URL, serverRW io.ReadWriteCloser, cli
 
 	cancelCtx, cancelFn := context.WithCancel(ctx)
 	passwd, _ := connStr.User.Password()
-	// sslMode := sslModeType(connStr.Query().Get("sslmode"))
-	// if sslMode == "" {
-	// 	sslMode = sslModePrefer
-	// }
+
+	optsGetter := connStr.Query().Get
+
+	authSource := optsGetter("authSource")
+	authDB := strings.TrimPrefix(connStr.Path, "/")
+	switch {
+	case authSource == "" && authDB == "":
+		authSource = defaultAuthDB
+	case authSource == "" && authDB != "":
+		authSource = authDB
+	}
+
+	var tlsConfig *tlsProxyConfig
+	if optsGetter("tls") == "true" {
+		tlsConfig = &tlsProxyConfig{
+			tlsInsecure:           optsGetter("tlsInsecure") == "true",
+			serverName:            connStr.Hostname(),
+			tlsCAFile:             optsGetter("tlsCAFile"),
+			tlsCertificateKeyFile: optsGetter("tlsCertificateKeyFile"),
+		}
+	}
 
 	return &proxy{
 		ctx:              cancelCtx,
@@ -61,10 +76,12 @@ func New(ctx context.Context, connStr *url.URL, serverRW io.ReadWriteCloser, cli
 		port:             connStr.Port(),
 		username:         connStr.User.Username(),
 		password:         passwd,
-		pid:              0,
 		serverRW:         serverRW,
 		clientW:          clientW,
 		clientInitBuffer: newBlockingReader(),
+		tlsProxyConfig:   tlsConfig,
+		withSrv:          strings.Contains(connStr.Scheme, "+srv"),
+		authSource:       authSource,
 		cancelFn:         cancelFn,
 		connectionID:     fmt.Sprintf("%v", ctx.Value(ConnIDContextKey)),
 		sid:              fmt.Sprintf("%v", ctx.Value(SIDContextKey)),
@@ -75,29 +92,24 @@ func (p *proxy) initalizeConnection() error {
 	if p.username == "" || p.password == "" {
 		return fmt.Errorf("missing password or username")
 	}
-	log.Infof("initializing mongo session, user=%v, sslmode=none", p.username)
+	if p.withSrv {
+		return fmt.Errorf("mongodb+srv connection string is not supported")
+	}
+	log.Infof("initializing mongo session, user=%v, authSource=%v, sslmode=%v", p.username, p.authSource, p.tlsProxyConfig != nil)
 	pkt, err := p.processPacket(p.clientInitBuffer)
 	if err != nil {
 		return fmt.Errorf("failed reading initial packet from client, err=%v", err)
 	}
-	conn, ok := p.serverRW.(net.Conn)
-	if !ok {
-		return fmt.Errorf("server is not a net.Conn type")
+
+	tlsConn, err := p.tlsClientHandshake()
+	if err != nil {
+		return err
 	}
-	tlsConn := tls.Client(conn, &tls.Config{
-		InsecureSkipVerify: false,
-		ServerName:         p.host,
-	})
-	if err := tlsConn.Handshake(); err != nil {
-		if verr, ok := err.(tls.RecordHeaderError); ok {
-			return fmt.Errorf("tls handshake error=%v, message=%v, record-header=%X",
-				verr.Msg, verr.Error(), verr.RecordHeader[:])
-		}
-		return fmt.Errorf("handshake error: %v", err)
-	}
+	// upgrade connection to tls
 	if tlsConn != nil {
 		p.serverRW = tlsConn
 	}
+
 	bypass, err := p.handleServerAuth(pkt)
 	if err != nil {
 		return err
@@ -108,16 +120,17 @@ func (p *proxy) initalizeConnection() error {
 		if _, err := p.serverRW.Write(pkt.Encode()); err != nil {
 			return fmt.Errorf("failed bypassing packet, err=%v", err)
 		}
-		return nil
 	}
 	return nil
-	// authentication was handled, returns ok to the client!
-	// return p.handleClientAuth(pkt)
 }
 
 func (p *proxy) processPacket(data io.Reader) (pkt *mongotypes.Packet, err error) {
 	pkt, err = mongotypes.Decode(data)
-	return pkt, p.parseIOError(err)
+	// the connection was closed, ignore any errors
+	if p.closed || err == io.EOF {
+		return nil, errConnectionClose
+	}
+	return pkt, err
 }
 
 // Run start the prox by offloading the authentication and the tls with the postgres server
@@ -197,15 +210,4 @@ func (p *proxy) Write(b []byte) (n int, err error) {
 	n, err = p.serverRW.Write(pkt.Encode())
 
 	return
-}
-
-func (p *proxy) parseIOError(err error) error {
-	// the connection was closed, ignore any errors
-	if p.closed {
-		return errConnectionClose
-	}
-	if err == io.EOF {
-		return errConnectionClose
-	}
-	return err
 }

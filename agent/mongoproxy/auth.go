@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"io"
 
@@ -15,6 +14,8 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
+
+const defaultAuthMechanism = "SCRAM-SHA-256"
 
 type SASLResponse struct {
 	ConversationID int32  `bson:"conversationId"`
@@ -43,19 +44,16 @@ func newScramSHA256Client(username, password string) (*scram.Client, error) {
 	return client.WithMinIterations(4096), nil
 }
 
-func newSaslRequest(conversation *scram.ClientConversation) (*mongotypes.SaslRequest, error) {
-	step, err := conversation.Step("")
-	if err != nil {
-		return nil, err
-	}
-	payload := []byte(step)
+func (p *proxy) newSaslRequest(conversation *scram.ClientConversation) *mongotypes.SaslRequest {
+	// it's safe to ignore the error from the first message
+	step, _ := conversation.Step("")
 	return &mongotypes.SaslRequest{
 		SaslStart: 1,
-		Mechanism: "SCRAM-SHA-256",
-		Payload:   payload,
-		Database:  "admin",
+		Mechanism: defaultAuthMechanism,
+		Payload:   []byte(step),
+		Database:  p.authSource,
 		Options:   mongotypes.SaslOptions{SkipEmptyExchange: true},
-	}, nil
+	}
 }
 
 func (p *proxy) writeOperation(rw io.ReadWriter, pkt *mongotypes.Packet) (*mongotypes.Packet, error) {
@@ -78,37 +76,25 @@ func (p *proxy) handleServerAuth(authPkt *mongotypes.Packet) (bypass bool, err e
 		return true, nil
 	}
 
-	saslRequest := map[string]any{}
-	authDecQuery := mongotypes.DecodeOpQuery(authPkt)
-	err = authDecQuery.UnmarshalBSON(&saslRequest)
+	helloCommand, err := mongotypes.DecodeClientHelloCommand(bytes.NewBuffer(authPkt.Encode()))
 	if err != nil {
-		return false, err
+		return
 	}
-	_, ok := saslRequest["speculativeAuthenticate"]
-	if !ok {
+	if helloCommand.SpeculativeAuthenticate == nil {
 		// it's not a speculative packet, bypass
 		return true, nil
 	}
+	if helloCommand.SpeculativeAuthenticate.Mechanism != defaultAuthMechanism {
+		return false, fmt.Errorf("mechanism %v is not supported", helloCommand.SpeculativeAuthenticate.Mechanism)
+	}
+
 	client, err := newScramSHA256Client(p.username, p.password)
 	if err != nil {
 		return
 	}
 	conversation := client.NewConversation()
-	saslStartRequest, err := newSaslRequest(conversation)
-	if err != nil {
-		return
-	}
-	helloCommand, err := mongotypes.DecodeClientHelloCommand(bytes.NewBuffer(authPkt.Encode()))
-	if err != nil {
-		return false, err
-	}
-	var clientAuthPayload []byte
-	if helloCommand.SpeculativeAuthenticate != nil {
-		clientAuthPayload = helloCommand.SpeculativeAuthenticate.Payload
-	}
-	log.Infof("client payload before")
-	fmt.Println(hex.Dump(clientAuthPayload))
-	helloCommand.SpeculativeAuthenticate = saslStartRequest
+	clientAuthPayload := helloCommand.SpeculativeAuthenticate.Payload
+	helloCommand.SpeculativeAuthenticate = p.newSaslRequest(conversation)
 	flagBits := binary.LittleEndian.Uint32(authPkt.Frame[:4])
 	newHelloCmd, err := mongotypes.NewHelloCommandPacket(
 		helloCommand,
@@ -132,6 +118,7 @@ func (p *proxy) handleServerAuth(authPkt *mongotypes.Packet) (bypass bool, err e
 	log.Infof("read sasl response from server, connid=%v", p.connectionID)
 	respPkt.Dump()
 
+	// TODO: decode me properly
 	respObj := map[string]any{}
 	if err := bson.Unmarshal(respPkt.Frame[20:], &respObj); err != nil {
 		return false, err
