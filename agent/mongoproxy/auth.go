@@ -200,7 +200,7 @@ func (p *proxy) handleServerAuth(authPkt *mongotypes.Packet) (bypass bool, err e
 	if err2 != nil {
 		return false, err2
 	}
-	return false, p.handleClientAuth(clientAuthPayload, client, int(authPkt.ResponseTo), 2)
+	return false, p.handleClientAuth(clientAuthPayload, int(authPkt.ResponseTo), 2)
 	// return false, err2
 }
 
@@ -218,7 +218,7 @@ func newFakeServer(user, pwd string) (*scram.Server, error) {
 }
 
 // handleClientAuth bypass the client authentication
-func (p *proxy) handleClientAuth(clientAuthPayload []byte, client *scram.Client, responseTo, connectionID int) error {
+func (p *proxy) handleClientAuth(clientAuthPayload []byte, responseTo, connectionID int) error {
 	log.Infof("client -> write auth reply from server ...")
 
 	srv, err := newFakeServer("noop", "noop")
