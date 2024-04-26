@@ -3,8 +3,10 @@ package mongoproxy
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 
 	"github.com/runopsio/hoop/common/log"
@@ -77,6 +79,24 @@ func (p *proxy) initalizeConnection() error {
 	pkt, err := p.processPacket(p.clientInitBuffer)
 	if err != nil {
 		return fmt.Errorf("failed reading initial packet from client, err=%v", err)
+	}
+	conn, ok := p.serverRW.(net.Conn)
+	if !ok {
+		return fmt.Errorf("server is not a net.Conn type")
+	}
+	tlsConn := tls.Client(conn, &tls.Config{
+		InsecureSkipVerify: false,
+		ServerName:         p.host,
+	})
+	if err := tlsConn.Handshake(); err != nil {
+		if verr, ok := err.(tls.RecordHeaderError); ok {
+			return fmt.Errorf("tls handshake error=%v, message=%v, record-header=%X",
+				verr.Msg, verr.Error(), verr.RecordHeader[:])
+		}
+		return fmt.Errorf("handshake error: %v", err)
+	}
+	if tlsConn != nil {
+		p.serverRW = tlsConn
 	}
 	bypass, err := p.handleServerAuth(pkt)
 	if err != nil {

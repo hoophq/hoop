@@ -169,9 +169,9 @@ func DecodeClientHelloCommand(reqPacket io.Reader) (*HelloCommand, error) {
 		return nil, err
 	}
 
-	if !resp.IsValid() {
-		return nil, fmt.Errorf("invalid hello command")
-	}
+	// if !resp.IsValid() {
+	// 	return nil, fmt.Errorf("invalid hello command")
+	// }
 	return &resp, nil
 }
 
