@@ -140,7 +140,6 @@ func (p *proxy) handleServerAuth(authPkt *mongotypes.Packet) (bypass bool, err e
 	// requestID := authPkt.RequestID
 	cid := saslResp.ConversationID
 	var err2 error
-	// var payload string
 	i := 0
 	for {
 		fmt.Printf("idx=%v, SASLRESP: %+v\n", i, saslResp)
@@ -188,7 +187,6 @@ func (p *proxy) handleServerAuth(authPkt *mongotypes.Packet) (bypass bool, err e
 		return false, err2
 	}
 	return false, p.handleClientAuth(clientAuthPayload, int(authPkt.ResponseTo), 2)
-	// return false, err2
 }
 
 func newFakeServer(user, pwd string) (*scram.Server, error) {
@@ -240,9 +238,6 @@ func (p *proxy) handleClientAuth(clientAuthPayload []byte, responseTo, connectio
 	if err != nil {
 		return fmt.Errorf("fail server final step, reason=%v", err)
 	}
-	// fmt.Println(hex.Dump(continuePayload))
-
-	// return fmt.Errorf("not implemented, move on")
 
 	log.Info("client -> write final sasl response")
 	// saslContinuePkt.Dump()
