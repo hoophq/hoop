@@ -81,10 +81,8 @@ func serveConn(connURL *url.URL, connID int, clientConn, serverConn net.Conn) {
 			srv.Close()
 			return
 		}
-		log.Infof("done reading it")
 	}()
 	<-srv.Done()
-	log.Infof("end connection")
 }
 
 func copyBuffer(dst io.Writer, src io.Reader) (written int64, err error) {

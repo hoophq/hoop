@@ -2,7 +2,7 @@ package mongotypes
 
 import (
 	"encoding/binary"
-	"time"
+	"fmt"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -34,37 +34,20 @@ type AuthResponseReply struct {
 	MinWireVersion               int32              `bson:"minWireVersion"`
 	MaxWireVersion               int32              `bson:"maxWireVersion"`
 	ReadOnly                     bool               `bson:"readOnly"`
-	SaslSupportedMechs           []string           `bson:"saslSupportedMechs,omitempty"`
-	SpeculativeAuthenticate      SASLResponse       `bson:"speculativeAuthenticate"`
+	SaslSupportedMechs           primitive.A        `bson:"saslSupportedMechs,omitempty"`
+	SpeculativeAuthenticate      *SASLResponse      `bson:"speculativeAuthenticate"`
 	OK                           float64            `bson:"ok"`
 }
 
-func NewServerAuthReply(authPayload []byte, requestID, responseTo, connectionID int) (*Packet, error) {
-	reply := AuthResponseReply{
-		HelloOk:  true,
-		IsMaster: true,
-		TopologyVersion: TopologyVersion{
-			ProcessID: primitive.NewObjectID(),
-			Counter:   0,
-		},
-		MaxBsonObjectSize:            16777216,
-		MaxMessageSizeBytes:          48000000,
-		MaxWriteBatchSize:            100000,
-		LocalTime:                    primitive.NewDateTimeFromTime(time.Now().UTC()),
-		LogicalSessionTimeoutMinutes: 30,
-		ConnectionID:                 int32(connectionID),
-		MinWireVersion:               0,
-		MaxWireVersion:               21,
-		ReadOnly:                     false,
-		SaslSupportedMechs:           []string{"SCRAM-SHA-256"},
-		SpeculativeAuthenticate: SASLResponse{
-			ConversationID: 1,
-			Done:           false,
-			Payload:        authPayload,
-		},
-		OK: 1,
-	}
-	data, err := bson.Marshal(&reply)
+func (r *AuthResponseReply) String() string {
+	return fmt.Sprintf("maxBsonObjSize=%v, maxMsgSizeBytes=%v, maxWriteBatchSize=%v, minWireVersion=%v, maxWireVersion=%v, readOnly=%v",
+		r.MaxBsonObjectSize, r.MaxMessageSizeBytes, r.MaxWriteBatchSize,
+		r.MinWireVersion, r.MaxWireVersion, r.ReadOnly,
+	)
+}
+
+func (r *AuthResponseReply) Encode(requestID uint32) (*Packet, error) {
+	data, err := bson.Marshal(r)
 	if err != nil {
 		return nil, err
 	}
@@ -79,22 +62,26 @@ func NewServerAuthReply(authPayload []byte, requestID, responseTo, connectionID 
 	return &Packet{
 		MessageLength: uint32(frameSize + 16),
 		RequestID:     uint32(requestID),
-		ResponseTo:    uint32(responseTo),
+		ResponseTo:    0,
 		OpCode:        OpReplyType,
 		Frame:         frame,
 	}, nil
 }
 
-type SaslDoneRequest struct {
-	ConversationID int32  `bson:"conversationId"`
-	Done           bool   `bson:"done"`
-	Ok             bool   `bson:"ok"`
-	Payload        []byte `bson:"payload"`
+func DecodeServerAuthReply(pkt *Packet) (*AuthResponseReply, error) {
+	if pkt.OpCode != OpReplyType {
+		return nil, fmt.Errorf("wrong op code, expected OpReplyType (1)")
+	}
+	var reply AuthResponseReply
+	if err := bson.Unmarshal(pkt.Frame[20:], &reply); err != nil {
+		return nil, err
+	}
+	return &reply, nil
 }
 
-func NewScramServerDoneResponse(requestID, responseTo, convID int, payload []byte) *Packet {
+func NewScramServerDoneResponse(payload []byte) *Packet {
 	saslDoneDoc := bsoncore.BuildDocumentFromElements(nil,
-		bsoncore.AppendInt32Element(nil, "conversationId", int32(convID)),
+		bsoncore.AppendInt32Element(nil, "conversationId", 0),
 		bsoncore.AppendBinaryElement(nil, "payload", 0x00, payload),
 		bsoncore.AppendBooleanElement(nil, "done", true),
 		bsoncore.AppendInt32Element(nil, "ok", 1),
@@ -108,31 +95,9 @@ func NewScramServerDoneResponse(requestID, responseTo, convID int, payload []byt
 	_ = copy(frame[5:], saslDoneDoc)
 	return &Packet{
 		MessageLength: uint32(frameSize + 16),
-		RequestID:     uint32(requestID),
-		ResponseTo:    uint32(responseTo),
+		RequestID:     0,
+		ResponseTo:    0,
 		OpCode:        OpMsgType,
 		Frame:         frame,
 	}
-}
-
-func NewSaslDonePacket(requestID, flagBits uint32) (*Packet, error) {
-	req := &SaslDoneRequest{ConversationID: 1, Done: true, Ok: true}
-	data, err := bson.Marshal(req)
-	if err != nil {
-		return nil, err
-	}
-	frameSize :=
-		binary.Size(flagBits) +
-			len(data) +
-			1 // document kind body
-	frame := make([]byte, frameSize)
-	binary.LittleEndian.PutUint32(frame[0:4], flagBits)
-
-	_ = copy(frame[5:], data)
-	return &Packet{
-		MessageLength: uint32(frameSize + 16),
-		RequestID:     requestID,
-		OpCode:        OpMsgType,
-		Frame:         frame,
-	}, nil
 }

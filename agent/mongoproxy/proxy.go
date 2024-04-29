@@ -17,7 +17,6 @@ const defaultAuthDB = "admin"
 var (
 	errConnectionClose = fmt.Errorf("connection closed")
 	ConnIDContextKey   struct{}
-	SIDContextKey      struct{}
 )
 
 type onRunErrFnType func(errMsg string)
@@ -38,7 +37,6 @@ type proxy struct {
 	authSource       string
 	closed           bool
 	connectionID     string
-	sid              string
 }
 
 func New(ctx context.Context, connStr *url.URL, serverRW io.ReadWriteCloser, clientW io.ReadWriter) *proxy {
@@ -48,9 +46,10 @@ func New(ctx context.Context, connStr *url.URL, serverRW io.ReadWriteCloser, cli
 
 	cancelCtx, cancelFn := context.WithCancel(ctx)
 	passwd, _ := connStr.User.Password()
-
 	optsGetter := connStr.Query().Get
 
+	// use authSource, or the database if is provided, otherwiser fallback to default db
+	// https://github.com/mongodb/specifications/blob/master/source/auth/auth.md#connection-string-options
 	authSource := optsGetter("authSource")
 	authDB := strings.TrimPrefix(connStr.Path, "/")
 	switch {
@@ -84,7 +83,6 @@ func New(ctx context.Context, connStr *url.URL, serverRW io.ReadWriteCloser, cli
 		authSource:       authSource,
 		cancelFn:         cancelFn,
 		connectionID:     fmt.Sprintf("%v", ctx.Value(ConnIDContextKey)),
-		sid:              fmt.Sprintf("%v", ctx.Value(SIDContextKey)),
 	}
 }
 
@@ -95,7 +93,9 @@ func (p *proxy) initalizeConnection() error {
 	if p.withSrv {
 		return fmt.Errorf("mongodb+srv connection string is not supported")
 	}
-	log.Infof("initializing mongo session, user=%v, authSource=%v, sslmode=%v", p.username, p.authSource, p.tlsProxyConfig != nil)
+
+	log.With("conn", p.connectionID).Infof("initializing connection, host=%v, auth-source=%v, tls=%v",
+		p.host, p.authSource, p.tlsProxyConfig != nil)
 	pkt, err := p.processPacket(p.clientInitBuffer)
 	if err != nil {
 		return fmt.Errorf("failed reading initial packet from client, err=%v", err)
@@ -110,18 +110,19 @@ func (p *proxy) initalizeConnection() error {
 		p.serverRW = tlsConn
 	}
 
-	bypass, err := p.handleServerAuth(pkt)
-	if err != nil {
-		return err
-	}
-	if bypass {
-		log.Infof("bypassing packet")
-		pkt.Dump()
+	err = p.handleServerAuth(pkt)
+	// Authentication must not happen on monitoring only sockets.
+	// Make sure to bypass these packets/
+	// https://github.com/mongodb/specifications/blob/master/source/auth/auth.md#authentication
+	if err == errNonSpeculativeAuthConnection {
+		log.With("conn", p.connectionID).Debug("monitoring only connection packet")
 		if _, err := p.serverRW.Write(pkt.Encode()); err != nil {
-			return fmt.Errorf("failed bypassing packet, err=%v", err)
+			return fmt.Errorf("failed write non monitoring packet, err=%v", err)
 		}
+		return nil
 	}
-	return nil
+	log.With("conn", p.connectionID).Infof("initialized authenticated session, host=%v, tls=%v", p.host, tlsConn != nil)
+	return err
 }
 
 func (p *proxy) processPacket(data io.Reader) (pkt *mongotypes.Packet, err error) {
@@ -133,7 +134,7 @@ func (p *proxy) processPacket(data io.Reader) (pkt *mongotypes.Packet, err error
 	return pkt, err
 }
 
-// Run start the prox by offloading the authentication and the tls with the postgres server
+// Run start the proxy by offloading the authentication and the tls with the mongo server
 func (p *proxy) Run(onErrCallback onRunErrFnType) *proxy {
 	if onErrCallback == nil {
 		onErrCallback = func(errMsg string) {} // noop callback
@@ -146,16 +147,11 @@ func (p *proxy) Run(onErrCallback onRunErrFnType) *proxy {
 			log.Warn(errMsg)
 			defer p.Close()
 			close(initCh)
-			// if _, ok := err.(clientErrType); ok {
-			// 	_, _ = p.clientW.Write(pgtypes.NewFatalError(errMsg).Encode())
-			// 	return
-			// }
+			// TODO: return mongo protocol errors to client!
 			onErrCallback(errMsg)
 			return
 		}
 		p.initialized = true
-
-		log.Infof("initialized mongo session with success")
 		defer p.Close()
 	exit:
 		for {
@@ -180,11 +176,9 @@ func (p *proxy) Run(onErrCallback onRunErrFnType) *proxy {
 					onErrCallback(errMsg)
 					break exit
 				}
-				fmt.Printf("server read connid=%v ---->>\n", p.connectionID)
-				pkt.Dump()
 			}
 		}
-		log.Infof("done reading connection=%v", p.connectionID)
+		log.With("conn", p.connectionID).Infof("end connection, host=%v", p.host)
 	}()
 	return p
 }
@@ -198,16 +192,11 @@ func (p *proxy) Close() error {
 
 func (p *proxy) Write(b []byte) (n int, err error) {
 	if !p.initialized {
-		log.Infof("writing to init buffer, %v", len(b))
 		return p.clientInitBuffer.Write(b)
 	}
 	pkt, err := p.processPacket(bytes.NewBuffer(b))
 	if err != nil || pkt == nil {
 		return
 	}
-	fmt.Printf("server write connid=%v ---->>\n", p.connectionID)
-	pkt.Dump()
-	n, err = p.serverRW.Write(pkt.Encode())
-
-	return
+	return p.serverRW.Write(pkt.Encode())
 }
