@@ -52,8 +52,9 @@ func setConnectionDefaults(req *Connection) {
 			"sqlcmd", "--exit-on-error", "--trim-spaces", "-r",
 			"-S$HOST:$PORT", "-U$USER", "-d$DB", "-i/dev/stdin"}
 	case pb.ConnectionTypeMongoDB:
-		defaultEnvVars["envvar:TLS"] = base64.StdEncoding.EncodeToString([]byte(`true`))
-		defaultCommand = []string{"mongo", "--quiet", "mongodb://$USER:$PASS@$HOST:$PORT/$DB?tls=true"}
+		defaultEnvVars["envvar:OPTIONS"] = base64.StdEncoding.EncodeToString([]byte(`tls=true`))
+		defaultEnvVars["envvar:PORT"] = base64.StdEncoding.EncodeToString([]byte(`27017`))
+		defaultCommand = []string{"mongo", "--quiet", "mongodb://$USER:$PASS@$HOST:$PORT/$DB?$OPTIONS"}
 	}
 
 	if len(req.Command) == 0 {

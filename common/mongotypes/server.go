@@ -3,6 +3,7 @@ package mongotypes
 import (
 	"encoding/binary"
 	"fmt"
+	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -21,28 +22,47 @@ type TopologyVersion struct {
 	Counter   int64              `bson:"counter"`
 }
 
+type lastWriteDate struct {
+	LastWriteDate time.Time `bson:"lastWriteDate"`
+}
+
 type AuthResponseReply struct {
-	HelloOk                      bool               `bson:"helloOk"`
-	IsMaster                     bool               `bson:"ismaster"`
-	TopologyVersion              TopologyVersion    `bson:"topologyVersion"`
-	MaxBsonObjectSize            int32              `bson:"maxBsonObjectSize"`
-	MaxMessageSizeBytes          int32              `bson:"maxMessageSizeBytes"`
-	MaxWriteBatchSize            int32              `bson:"maxWriteBatchSize"`
-	LocalTime                    primitive.DateTime `bson:"localTime"`
-	LogicalSessionTimeoutMinutes int32              `bson:"logicalSessionTimeoutMinutes"`
-	ConnectionID                 int32              `bson:"connectionId"`
-	MinWireVersion               int32              `bson:"minWireVersion"`
-	MaxWireVersion               int32              `bson:"maxWireVersion"`
-	ReadOnly                     bool               `bson:"readOnly"`
+	Arbiters                     []string           `bson:"arbiters,omitempty"`
+	ArbiterOnly                  bool               `bson:"arbiterOnly,omitempty"`
+	ClusterTime                  bson.Raw           `bson:"$clusterTime,omitempty"`
+	Compression                  []string           `bson:"compression,omitempty"`
+	ElectionID                   primitive.ObjectID `bson:"electionId,omitempty"`
+	Hidden                       bool               `bson:"hidden,omitempty"`
+	Hosts                        []string           `bson:"hosts,omitempty"`
+	HelloOK                      bool               `bson:"helloOk,omitempty"`
+	IsWritablePrimary            bool               `bson:"isWritablePrimary,omitempty"`
+	IsReplicaSet                 bool               `bson:"isreplicaset,omitempty"`
+	LastWrite                    *lastWriteDate     `bson:"lastWrite,omitempty"`
+	LogicalSessionTimeoutMinutes uint32             `bson:"logicalSessionTimeoutMinutes,omitempty"`
+	MaxBSONObjectSize            uint32             `bson:"maxBsonObjectSize,omitempty"`
+	MaxMessageSizeBytes          uint32             `bson:"maxMessageSizeBytes,omitempty"`
+	MaxWriteBatchSize            uint32             `bson:"maxWriteBatchSize,omitempty"`
+	Me                           string             `bson:"me,omitempty"`
+	MaxWireVersion               int32              `bson:"maxWireVersion,omitempty"`
+	MinWireVersion               int32              `bson:"minWireVersion,omitempty"`
+	Msg                          string             `bson:"msg,omitempty"`
+	OK                           int32              `bson:"ok"`
+	Passives                     []string           `bson:"passives,omitempty"`
+	Primary                      string             `bson:"primary,omitempty"`
+	ReadOnly                     bool               `bson:"readOnly,omitempty"`
 	SaslSupportedMechs           []string           `bson:"saslSupportedMechs,omitempty"`
+	Secondary                    bool               `bson:"secondary,omitempty"`
+	SetName                      string             `bson:"setName,omitempty"`
+	SetVersion                   uint32             `bson:"setVersion,omitempty"`
 	SpeculativeAuthenticate      *SASLResponse      `bson:"speculativeAuthenticate"`
-	OK                           float64            `bson:"ok"`
+	Tags                         map[string]string  `bson:"tags,omitempty"`
+	TopologyVersion              *TopologyVersion   `bson:"topologyVersion,omitempty"`
 }
 
 func (r *AuthResponseReply) String() string {
-	return fmt.Sprintf("maxBsonObjSize=%v, maxMsgSizeBytes=%v, maxWBtchSize=%v, minWireVer=%v, maxWireVer=%v, ro=%v",
-		r.MaxBsonObjectSize, r.MaxMessageSizeBytes, r.MaxWriteBatchSize,
-		r.MinWireVersion, r.MaxWireVersion, r.ReadOnly,
+	return fmt.Sprintf("[%v %v %v] [%v %v] primary=%v, issecondary=%v, ro=%v",
+		r.MaxBSONObjectSize, r.MaxMessageSizeBytes, r.MaxWriteBatchSize,
+		r.MinWireVersion, r.MaxWireVersion, r.Primary, r.Secondary, r.ReadOnly,
 	)
 }
 

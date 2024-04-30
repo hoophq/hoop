@@ -116,11 +116,6 @@ func (p *proxy) initalizeConnection() error {
 		p.serverRW = tlsConn
 	}
 
-	// log.Infof("first packet initliaze connection")
-	// pkt.Dump()
-	// _, err = p.serverRW.Write(pkt.Encode())
-	// return err
-
 	err = p.handleServerAuth(pkt)
 	// Authentication must not happen on monitoring only sockets.
 	// Make sure to bypass these packets/

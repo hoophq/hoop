@@ -72,7 +72,7 @@ func (p *proxy) handleServerAuth(authPkt *mongotypes.Packet) (err error) {
 		return err
 	}
 	if authReply.SpeculativeAuthenticate == nil {
-		return fmt.Errorf("missing speculative authentication section")
+		return fmt.Errorf("unable to negotiate authentication for %s, please contact the administrator", p.authSource)
 	}
 	saslResp := mongotypes.SASLResponse{
 		ConversationID: authReply.SpeculativeAuthenticate.ConversationID,

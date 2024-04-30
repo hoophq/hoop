@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -41,10 +42,20 @@ type (
 		port            string
 		dbname          string
 		insecure        bool
-		tls             bool
+		options         string
 		postgresSSLMode string
 	}
 )
+
+func (e *connEnv) Get(key string) string {
+	values, _ := url.ParseQuery(e.options)
+	if values == nil {
+		return ""
+	}
+	return values.Get(key)
+}
+
+func (e *connEnv) Has(key string) bool { return e.Get(key) != "" }
 
 func New(client pb.ClientTransport, cfg *config.Config) *Agent {
 	shutdownCtx, cancelFn := context.WithCancelCause(context.Background())
@@ -554,7 +565,7 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		dbname:          envVarS.Getenv("DB"),
 		insecure:        envVarS.Getenv("INSECURE") == "true",
 		postgresSSLMode: envVarS.Getenv("SSLMODE"),
-		tls:             envVarS.Getenv("TLS") == "true",
+		options:         envVarS.Getenv("OPTIONS"),
 	}
 	switch connType {
 	case pb.ConnectionTypePostgres:
@@ -616,11 +627,11 @@ func parseMongoDbUriHost(env *connEnv) (hostname string, port string, err error)
 	if env.scheme == "mongodb+srv" {
 		uri = fmt.Sprintf("%s://%s:%s@%s/", env.scheme, env.user, env.pass, env.host)
 	}
+	// it allow to obtain the options from a mongodb+srv scheme (TXT, SRV dns records)
 	connStr, err := connstring.ParseAndValidate(uri)
 	if err != nil {
 		return "", "", err
 	}
-
 	parts := strings.Split(connStr.Hosts[0], ":")
 	if len(parts) > 1 {
 		return parts[0], parts[1], nil

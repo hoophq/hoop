@@ -55,9 +55,11 @@ func (a *Agent) processMongoDBProtocol(pkt *pb.Packet) {
 		a.sendClientSessionClose(sid, errMsg)
 		return
 	}
-	connString, _ := url.Parse(fmt.Sprintf("mongodb://%s:%s@%s:%v/%v?tls=%v",
-		connenv.user, connenv.pass, connenv.host, connenv.port, connenv.dbname, connenv.tls))
-	if !connenv.tls {
+	connString, _ := url.Parse(fmt.Sprintf("mongodb://%s:%s@%s:%v/%v?tls=%v&authSource=%v",
+		connenv.user, connenv.pass, connenv.host, connenv.port, connenv.dbname,
+		connenv.Get("tls") == "true", connenv.Get("authSource")),
+	)
+	if connenv.Get("tls") != "true" {
 		log.Warn(nonTLSMsg)
 	}
 	if connString == nil {
