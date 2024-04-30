@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -75,7 +74,7 @@ func serveConn(connURL *url.URL, connID int, clientConn, serverConn net.Conn) {
 	go func() {
 		defer srv.Close()
 		// copy from client and write to server proxy
-		written, err := copyBuffer(srv, clientConn)
+		written, err := io.Copy(srv, clientConn)
 		if err != nil && err != io.EOF {
 			log.Warnf("failed copying, written=%v, err=%v", written, err)
 			srv.Close()
@@ -83,32 +82,4 @@ func serveConn(connURL *url.URL, connID int, clientConn, serverConn net.Conn) {
 		}
 	}()
 	<-srv.Done()
-}
-
-func copyBuffer(dst io.Writer, src io.Reader) (written int64, err error) {
-	for {
-		buf := make([]byte, 32*1024)
-		nr, er := src.Read(buf)
-		if nr > 0 {
-			nw, ew := dst.Write(buf[0:nr])
-			if nw < 0 || nr < nw {
-				nw = 0
-				if ew == nil {
-					ew = errors.New("invalid write result")
-				}
-			}
-			written += int64(nw)
-			if ew != nil {
-				err = ew
-				break
-			}
-		}
-		if er != nil {
-			if er != io.EOF {
-				err = er
-			}
-			break
-		}
-	}
-	return written, err
 }

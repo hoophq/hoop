@@ -39,7 +39,6 @@ type proxy struct {
 	clientInitBuffer io.ReadWriter
 	initialized      bool
 	tlsProxyConfig   *tlsProxyConfig
-	withSrv          bool
 	authSource       string
 	closed           bool
 	connectionID     string
@@ -84,7 +83,6 @@ func New(ctx context.Context, connStr *url.URL, serverRW io.ReadWriteCloser, cli
 		clientW:          clientW,
 		clientInitBuffer: newBlockingReader(),
 		tlsProxyConfig:   tlsConfig,
-		withSrv:          strings.Contains(connStr.Scheme, "+srv"),
 		authSource:       authSource,
 		cancelFn:         cancelFn,
 		connectionID:     fmt.Sprintf("%v", ctx.Value(ConnIDContextKey)),
@@ -94,9 +92,6 @@ func New(ctx context.Context, connStr *url.URL, serverRW io.ReadWriteCloser, cli
 func (p *proxy) initalizeConnection() error {
 	if p.username == "" || p.password == "" {
 		return fmt.Errorf("missing password or username")
-	}
-	if p.withSrv {
-		return fmt.Errorf("mongodb+srv connection string is not supported")
 	}
 
 	log.With("conn", p.connectionID).Infof("initializing connection, host=%v, auth-source=%v, tls=%v",

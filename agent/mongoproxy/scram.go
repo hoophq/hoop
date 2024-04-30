@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/runopsio/hoop/common/log"
 	"github.com/xdg-go/scram"
 )
 
@@ -24,7 +23,6 @@ const (
 )
 
 func newScramClient(mechanism string, username, password string) (client *scram.Client, err error) {
-	log.Infof("creating new scram client, mechanism=%v", mechanism)
 	switch mechanism {
 	case scramSHA1:
 		// client, err = scram.SHA1.NewClient(username, password, "")
