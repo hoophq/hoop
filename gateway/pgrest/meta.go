@@ -71,19 +71,3 @@ func (s *ProxyManagerState) GetConnectedAt() (t time.Time) {
 	t, _ = time.ParseInLocation("2006-01-02T15:04:05", s.ConnectedAt, time.UTC)
 	return
 }
-
-func CoerceToAnyMap(src map[string]string) map[string]any {
-	dst := map[string]any{}
-	for k, v := range src {
-		dst[k] = v
-	}
-	return dst
-}
-
-func CoerceToMapString(src map[string]any) map[string]string {
-	dst := map[string]string{}
-	for k, v := range src {
-		dst[k] = fmt.Sprintf("%v", v)
-	}
-	return dst
-}

@@ -28,9 +28,8 @@ import (
 )
 
 type ConnectFlags struct {
-	listenAddr string
-	proxyPort  string
-	duration   string
+	proxyPort string
+	duration  string
 }
 
 var connectFlags = ConnectFlags{}
@@ -68,10 +67,8 @@ var (
 func init() {
 	connectCmd.Flags().StringVarP(&connectFlags.proxyPort, "port", "p", "", "The port to listen the proxy")
 	// TODO: temporary until we ship a agent as proxy mode
-	connectCmd.Flags().StringVar(&connectFlags.listenAddr, "listen", "", "The listen address (host:port) to bind")
 	connectCmd.Flags().StringSliceVarP(&inputEnvVars, "env", "e", nil, "Input environment variables to send")
 	connectCmd.Flags().StringVarP(&connectFlags.duration, "duration", "d", "30m", "The amount of time that the session will last. Valid time units are 's', 'm', 'h'")
-	_ = connectCmd.Flags().MarkHidden("listen")
 	rootCmd.AddCommand(connectCmd)
 }
 
@@ -128,12 +125,7 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			connnectionType := pb.ConnectionType(pkt.Spec[pb.SpecConnectionType])
 			switch connnectionType {
 			case pb.ConnectionTypePostgres:
-				// TODO: temporary until we ship a agent as proxy mode
-				listenAddr := connectFlags.listenAddr
-				if connectFlags.proxyPort != "" {
-					listenAddr = fmt.Sprintf("127.0.0.1:%s", connectFlags.proxyPort)
-				}
-				srv := proxy.NewPGServer(listenAddr, c.client)
+				srv := proxy.NewPGServer(c.proxyPort, c.client)
 				if err := srv.Serve(string(sessionID)); err != nil {
 					sentry.CaptureException(fmt.Errorf("connect - failed initializing postgres proxy, err=%v", err))
 					c.processGracefulExit(err)
@@ -175,6 +167,21 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				fmt.Println()
 				fmt.Println("---------------------mssql-credentials----------------------")
 				fmt.Printf("      host=127.0.0.1 port=%s user=noop password=noop\n", srv.ListenPort())
+				fmt.Println("------------------------------------------------------------")
+				fmt.Println("ready to accept connections!")
+			case pb.ConnectionTypeMongoDB:
+				srv := proxy.NewMongoDBServer(c.proxyPort, c.client)
+				if err := srv.Serve(string(sessionID)); err != nil {
+					sentry.CaptureException(fmt.Errorf("connect - failed initializing mongo proxy, err=%v", err))
+					c.processGracefulExit(err)
+				}
+				c.loader.Stop()
+				c.client.StartKeepAlive()
+				c.connStore.Set(string(sessionID), srv)
+				c.printHeader(string(sessionID))
+				fmt.Println()
+				fmt.Println("---------------------mongo-credentials----------------------")
+				fmt.Printf(" mongodb://noop:noop@127.0.0.1:%s/?directConnection=true\n", srv.ListenPort())
 				fmt.Println("------------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
 			case pb.ConnectionTypeTCP:
@@ -278,7 +285,21 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			_, err := srv.PacketWriteClient(connectionID, pkt)
 			if err != nil {
 				errMsg := fmt.Errorf("failed writing to client, err=%v", err)
-				sentry.CaptureException(fmt.Errorf("connect - %v - %v", pbclient.MySQLConnectionWrite, errMsg))
+				sentry.CaptureException(fmt.Errorf("connect - %v - %v", pbclient.MSSQLConnectionWrite, errMsg))
+				c.processGracefulExit(errMsg)
+			}
+		case pbclient.MongoDBConnectionWrite:
+			sessionID := pkt.Spec[pb.SpecGatewaySessionID]
+			srvObj := c.connStore.Get(string(sessionID))
+			srv, ok := srvObj.(*proxy.MongoDBServer)
+			if !ok {
+				return
+			}
+			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
+			_, err := srv.PacketWriteClient(connectionID, pkt)
+			if err != nil {
+				errMsg := fmt.Errorf("failed writing to client, err=%v", err)
+				sentry.CaptureException(fmt.Errorf("connect - %v - %v", pbclient.MongoDBConnectionWrite, errMsg))
 				c.processGracefulExit(errMsg)
 			}
 		case pbclient.TCPConnectionWrite:

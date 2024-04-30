@@ -33,7 +33,7 @@ const (
 	ConnectionTypePostgres    ConnectionType = "postgres"
 	ConnectionTypeMySQL       ConnectionType = "mysql"
 	ConnectionTypeMSSQL       ConnectionType = "mssql"
-	ConnectionTypeMongo       ConnectionType = "mongodb"
+	ConnectionTypeMongoDB     ConnectionType = "mongodb"
 	ConnectionTypeTCP         ConnectionType = "tcp"
 
 	ConnectionOriginAgent              = "agent"

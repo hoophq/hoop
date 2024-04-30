@@ -34,13 +34,13 @@ type AuthResponseReply struct {
 	MinWireVersion               int32              `bson:"minWireVersion"`
 	MaxWireVersion               int32              `bson:"maxWireVersion"`
 	ReadOnly                     bool               `bson:"readOnly"`
-	SaslSupportedMechs           primitive.A        `bson:"saslSupportedMechs,omitempty"`
+	SaslSupportedMechs           []string           `bson:"saslSupportedMechs,omitempty"`
 	SpeculativeAuthenticate      *SASLResponse      `bson:"speculativeAuthenticate"`
 	OK                           float64            `bson:"ok"`
 }
 
 func (r *AuthResponseReply) String() string {
-	return fmt.Sprintf("maxBsonObjSize=%v, maxMsgSizeBytes=%v, maxWriteBatchSize=%v, minWireVersion=%v, maxWireVersion=%v, readOnly=%v",
+	return fmt.Sprintf("maxBsonObjSize=%v, maxMsgSizeBytes=%v, maxWBtchSize=%v, minWireVer=%v, maxWireVer=%v, ro=%v",
 		r.MaxBsonObjectSize, r.MaxMessageSizeBytes, r.MaxWriteBatchSize,
 		r.MinWireVersion, r.MaxWireVersion, r.ReadOnly,
 	)

@@ -48,6 +48,7 @@ type ClientInfo struct {
 type HelloCommand struct {
 	IsMaster                int32        `bson:"isMaster"`
 	HelloOK                 bool         `bson:"helloOk"`
+	SaslSupportedMechs      *string      `bson:"saslSupportedMechs,omitempty"`
 	SpeculativeAuthenticate *SaslRequest `bson:"speculativeAuthenticate"`
 	Compression             []any        `bson:"compression"`
 	ClientInfo              ClientInfo   `bson:"client"`
@@ -72,6 +73,13 @@ func DecodeClientHelloCommand(reqPacket io.Reader) (*HelloCommand, error) {
 	return &resp, nil
 }
 
+// CopyAuthPayload returns a copy of the speculative authenticate payload
+func (h *HelloCommand) CopyAuthPayload() []byte {
+	authPayload := make([]byte, len(h.SpeculativeAuthenticate.Payload))
+	_ = copy(authPayload, h.SpeculativeAuthenticate.Payload)
+	return authPayload
+}
+
 func (h *HelloCommand) Encode(requestID, flagBits uint32) (*Packet, error) {
 	helloCommandBytes, err := bson.Marshal(h)
 	if err != nil {
@@ -90,7 +98,7 @@ func (h *HelloCommand) Encode(requestID, flagBits uint32) (*Packet, error) {
 	binary.LittleEndian.PutUint32(frame[0:4], flagBits)
 	idx := len(fullCollectionName) + 1 // 0x00 delimiter
 	if copied := copy(frame[4:idx+4], fullCollectionName); copied != len(fullCollectionName) {
-		return nil, fmt.Errorf("did not copied full collection name, copied=%v, data=%v", copied, len(helloCommandBytes))
+		return nil, fmt.Errorf("did not copied full collection name, copied=%v/%v", copied, len(helloCommandBytes))
 	}
 
 	idx += 4 + 4 // numberToSkip + numberToReturn
@@ -98,8 +106,9 @@ func (h *HelloCommand) Encode(requestID, flagBits uint32) (*Packet, error) {
 	binary.LittleEndian.PutUint32(frame[idx:idx+4], numberToReturn)
 	idx += 4
 	if copied := copy(frame[idx:], helloCommandBytes); copied != len(helloCommandBytes) {
-		return nil, fmt.Errorf("did not copied full frame, copied=%v, data=%v", copied, len(helloCommandBytes))
+		return nil, fmt.Errorf("did not copied full frame, copied=%v/%v", copied, len(helloCommandBytes))
 	}
+
 	return &Packet{
 		MessageLength: uint32(binary.Size(header) + frameSize),
 		RequestID:     requestID,

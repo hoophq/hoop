@@ -22,6 +22,7 @@ import (
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
+	"go.mongodb.org/mongo-driver/x/mongo/driver/connstring"
 )
 
 type (
@@ -33,11 +34,14 @@ type (
 		shutdownCancelFn context.CancelCauseFunc
 	}
 	connEnv struct {
+		scheme          string
 		host            string
 		user            string
 		pass            string
 		port            string
+		dbname          string
 		insecure        bool
+		tls             bool
 		postgresSSLMode string
 	}
 )
@@ -101,6 +105,10 @@ func (a *Agent) Run() error {
 		// MSSQL Protocol
 		case pbagent.MSSQLConnectionWrite:
 			a.processMSSQLProtocol(pkt)
+
+		// MongoDB Protocol
+		case pbagent.MongoDBConnectionWrite:
+			a.processMongoDBProtocol(pkt)
 
 		// raw tcp
 		case pbagent.TCPConnectionWrite:
@@ -345,7 +353,8 @@ func (a *Agent) checkTCPLiveness(pkt *pb.Packet, envVars map[string]any) error {
 	if connType == pb.ConnectionTypePostgres ||
 		connType == pb.ConnectionTypeTCP ||
 		connType == pb.ConnectionTypeMySQL ||
-		connType == pb.ConnectionTypeMSSQL {
+		connType == pb.ConnectionTypeMSSQL ||
+		connType == pb.ConnectionTypeMongoDB {
 		connEnvVars, err := parseConnectionEnvVars(envVars, connType)
 		if err != nil {
 			return err
@@ -537,12 +546,15 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 	}
 
 	env := &connEnv{
+		scheme:          envVarS.Getenv("SCHEME"),
 		host:            envVarS.Getenv("HOST"),
 		user:            envVarS.Getenv("USER"),
 		pass:            envVarS.Getenv("PASS"),
 		port:            envVarS.Getenv("PORT"),
+		dbname:          envVarS.Getenv("DB"),
 		insecure:        envVarS.Getenv("INSECURE") == "true",
 		postgresSSLMode: envVarS.Getenv("SSLMODE"),
+		tls:             envVarS.Getenv("TLS") == "true",
 	}
 	switch connType {
 	case pb.ConnectionTypePostgres:
@@ -562,7 +574,7 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		}
 	case pb.ConnectionTypeMySQL:
 		if env.port == "" {
-			env.port = "3307"
+			env.port = "3306"
 		}
 		if env.host == "" || env.pass == "" || env.user == "" {
 			return nil, fmt.Errorf("missing required secrets for mysql connection [HOST, USER, PASS]")
@@ -574,10 +586,44 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		if env.host == "" || env.pass == "" || env.user == "" {
 			return nil, fmt.Errorf("missing required secrets for mssql connection [HOST, USER, PASS]")
 		}
+	case pb.ConnectionTypeMongoDB:
+		if env.port == "" {
+			env.port = "27017"
+		}
+		if env.scheme == "" {
+			env.scheme = "mongodb"
+		}
+		host, port, err := parseMongoDbUriHost(env)
+		if err != nil {
+			return nil, err
+		}
+		env.host = host
+		env.port = port
+		if env.host == "" || env.pass == "" || env.user == "" {
+			return nil, fmt.Errorf("missing required secrets for mongodb connection [HOST, USER, PASS]")
+		}
+
 	case pb.ConnectionTypeTCP:
 		if env.host == "" || env.port == "" {
 			return nil, fmt.Errorf("missing required environment for connection [HOST, PORT]")
 		}
 	}
 	return env, nil
+}
+
+func parseMongoDbUriHost(env *connEnv) (hostname string, port string, err error) {
+	uri := fmt.Sprintf("%s://%s:%s@%s:%s/", env.scheme, env.user, env.pass, env.host, env.port)
+	if env.scheme == "mongodb+srv" {
+		uri = fmt.Sprintf("%s://%s:%s@%s/", env.scheme, env.user, env.pass, env.host)
+	}
+	connStr, err := connstring.ParseAndValidate(uri)
+	if err != nil {
+		return "", "", err
+	}
+
+	parts := strings.Split(connStr.Hosts[0], ":")
+	if len(parts) > 1 {
+		return parts[0], parts[1], nil
+	}
+	return connStr.Hosts[0], "27017", nil
 }

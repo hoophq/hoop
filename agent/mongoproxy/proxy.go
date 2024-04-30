@@ -21,14 +21,20 @@ var (
 
 type onRunErrFnType func(errMsg string)
 
+type Proxy interface {
+	Run(onErrCallback onRunErrFnType) Proxy
+	Write(b []byte) (int, error)
+	Done() <-chan struct{}
+	Close() error
+}
+
 type proxy struct {
 	ctx              context.Context
 	host             string
-	port             string
 	username         string
 	password         string
 	serverRW         io.ReadWriteCloser
-	clientW          io.ReadWriter
+	clientW          io.Writer
 	cancelFn         context.CancelFunc
 	clientInitBuffer io.ReadWriter
 	initialized      bool
@@ -39,7 +45,7 @@ type proxy struct {
 	connectionID     string
 }
 
-func New(ctx context.Context, connStr *url.URL, serverRW io.ReadWriteCloser, clientW io.ReadWriter) *proxy {
+func New(ctx context.Context, connStr *url.URL, serverRW io.ReadWriteCloser, clientW io.Writer) Proxy {
 	if connStr == nil {
 		connStr = &url.URL{}
 	}
@@ -72,7 +78,6 @@ func New(ctx context.Context, connStr *url.URL, serverRW io.ReadWriteCloser, cli
 	return &proxy{
 		ctx:              cancelCtx,
 		host:             connStr.Hostname(),
-		port:             connStr.Port(),
 		username:         connStr.User.Username(),
 		password:         passwd,
 		serverRW:         serverRW,
@@ -107,21 +112,29 @@ func (p *proxy) initalizeConnection() error {
 	}
 	// upgrade connection to tls
 	if tlsConn != nil {
+		log.With("conn", p.connectionID).Infof("connection upgraded to tls with success")
 		p.serverRW = tlsConn
 	}
+
+	// log.Infof("first packet initliaze connection")
+	// pkt.Dump()
+	// _, err = p.serverRW.Write(pkt.Encode())
+	// return err
 
 	err = p.handleServerAuth(pkt)
 	// Authentication must not happen on monitoring only sockets.
 	// Make sure to bypass these packets/
 	// https://github.com/mongodb/specifications/blob/master/source/auth/auth.md#authentication
-	if err == errNonSpeculativeAuthConnection {
-		log.With("conn", p.connectionID).Debug("monitoring only connection packet")
+	switch err {
+	case errNonSpeculativeAuthConnection:
+		log.With("conn", p.connectionID).Infof("monitoring only connection packet")
 		if _, err := p.serverRW.Write(pkt.Encode()); err != nil {
 			return fmt.Errorf("failed write non monitoring packet, err=%v", err)
 		}
 		return nil
+	case nil:
+		log.With("conn", p.connectionID).Infof("initialized authenticated session, host=%v, tls=%v", p.host, tlsConn != nil)
 	}
-	log.With("conn", p.connectionID).Infof("initialized authenticated session, host=%v, tls=%v", p.host, tlsConn != nil)
 	return err
 }
 
@@ -135,7 +148,7 @@ func (p *proxy) processPacket(data io.Reader) (pkt *mongotypes.Packet, err error
 }
 
 // Run start the proxy by offloading the authentication and the tls with the mongo server
-func (p *proxy) Run(onErrCallback onRunErrFnType) *proxy {
+func (p *proxy) Run(onErrCallback onRunErrFnType) Proxy {
 	if onErrCallback == nil {
 		onErrCallback = func(errMsg string) {} // noop callback
 	}

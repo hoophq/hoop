@@ -26,7 +26,7 @@ func TestAuthResponseReplyDecode(t *testing.T) {
 		MinWireVersion:               0,
 		MaxWireVersion:               21,
 		ReadOnly:                     false,
-		SaslSupportedMechs:           primitive.A{"SCRAM-SHA-256", "SCRAM-SHA-1"},
+		SaslSupportedMechs:           []string{"SCRAM-SHA-256", "SCRAM-SHA-1"},
 		SpeculativeAuthenticate: &SASLResponse{
 			ConversationID: 1,
 			Done:           false,
