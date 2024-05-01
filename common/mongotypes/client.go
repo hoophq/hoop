@@ -98,7 +98,7 @@ func (h *HelloCommand) Encode(requestID, flagBits uint32) (*Packet, error) {
 	binary.LittleEndian.PutUint32(frame[0:4], flagBits)
 	idx := len(fullCollectionName) + 1 // 0x00 delimiter
 	if copied := copy(frame[4:idx+4], fullCollectionName); copied != len(fullCollectionName) {
-		return nil, fmt.Errorf("did not copied full collection name, copied=%v/%v", copied, len(helloCommandBytes))
+		return nil, fmt.Errorf("unable to copy full collection name, copied=%v/%v", copied, len(helloCommandBytes))
 	}
 
 	idx += 4 + 4 // numberToSkip + numberToReturn
@@ -106,7 +106,7 @@ func (h *HelloCommand) Encode(requestID, flagBits uint32) (*Packet, error) {
 	binary.LittleEndian.PutUint32(frame[idx:idx+4], numberToReturn)
 	idx += 4
 	if copied := copy(frame[idx:], helloCommandBytes); copied != len(helloCommandBytes) {
-		return nil, fmt.Errorf("did not copied full frame, copied=%v/%v", copied, len(helloCommandBytes))
+		return nil, fmt.Errorf("unable to copy full frame, copied=%v/%v", copied, len(helloCommandBytes))
 	}
 
 	return &Packet{
@@ -171,11 +171,24 @@ func (o *OpQuery) UnmarshalBSON(v any) error {
 	return bson.Unmarshal(bodyRaw, v)
 }
 
-type SaslContinueRequest struct {
+type saslContinueRequest struct {
 	SaslContinue   int32  `bson:"saslContinue"`
 	ConversationID int32  `bson:"conversationId"`
 	Payload        []byte `bson:"payload"`
 	Database       string `bson:"$db"`
+}
+
+func DecodeSASLContinueRequest(pkt *Packet) ([]byte, error) {
+	var req saslContinueRequest
+	// skip flag bits (4) and document kind body (0)
+	err := bson.Unmarshal(pkt.Frame[5:], &req)
+	if err != nil {
+		return nil, fmt.Errorf("failed decoding SASL continue packet, reason=%v", err)
+	}
+	if len(req.Payload) == 0 {
+		return nil, fmt.Errorf("failed decoding (empty) SAS continue payload")
+	}
+	return req.Payload, nil
 }
 
 func NewSaslContinuePacket(requestID uint32, cid int32, payload []byte, dbName string) *Packet {

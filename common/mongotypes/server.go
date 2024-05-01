@@ -30,6 +30,7 @@ type AuthResponseReply struct {
 	Arbiters                     []string           `bson:"arbiters,omitempty"`
 	ArbiterOnly                  bool               `bson:"arbiterOnly,omitempty"`
 	ClusterTime                  bson.Raw           `bson:"$clusterTime,omitempty"`
+	ConnectionID                 int32              `bson:"connectionId"`
 	Compression                  []string           `bson:"compression,omitempty"`
 	ElectionID                   primitive.ObjectID `bson:"electionId,omitempty"`
 	Hidden                       bool               `bson:"hidden,omitempty"`
@@ -39,12 +40,12 @@ type AuthResponseReply struct {
 	IsReplicaSet                 bool               `bson:"isreplicaset,omitempty"`
 	LastWrite                    *lastWriteDate     `bson:"lastWrite,omitempty"`
 	LogicalSessionTimeoutMinutes uint32             `bson:"logicalSessionTimeoutMinutes,omitempty"`
-	MaxBSONObjectSize            uint32             `bson:"maxBsonObjectSize,omitempty"`
-	MaxMessageSizeBytes          uint32             `bson:"maxMessageSizeBytes,omitempty"`
-	MaxWriteBatchSize            uint32             `bson:"maxWriteBatchSize,omitempty"`
+	MaxBSONObjectSize            uint32             `bson:"maxBsonObjectSize"`
+	MaxMessageSizeBytes          uint32             `bson:"maxMessageSizeBytes"`
+	MaxWriteBatchSize            uint32             `bson:"maxWriteBatchSize"`
 	Me                           string             `bson:"me,omitempty"`
-	MaxWireVersion               int32              `bson:"maxWireVersion,omitempty"`
-	MinWireVersion               int32              `bson:"minWireVersion,omitempty"`
+	MaxWireVersion               int32              `bson:"maxWireVersion"`
+	MinWireVersion               int32              `bson:"minWireVersion"`
 	Msg                          string             `bson:"msg,omitempty"`
 	OK                           int32              `bson:"ok"`
 	Passives                     []string           `bson:"passives,omitempty"`
@@ -83,15 +84,15 @@ func (r *AuthResponseReply) Encode(requestID uint32) (*Packet, error) {
 		MessageLength: uint32(frameSize + 16),
 		RequestID:     uint32(requestID),
 		ResponseTo:    0,
-		OpCode:        OpReplyType,
-		Frame:         frame,
+		// TODO: it's removed on mongodb 5.1, however it worked
+		// in local tests and with the latest atlas mongodb instance.
+		// Need to verify if it's going to be a problem
+		OpCode: OpReplyType,
+		Frame:  frame,
 	}, nil
 }
 
 func DecodeServerAuthReply(pkt *Packet) (*AuthResponseReply, error) {
-	if pkt.OpCode != OpReplyType {
-		return nil, fmt.Errorf("wrong op code, expected OpReplyType (1)")
-	}
 	var reply AuthResponseReply
 	if err := bson.Unmarshal(pkt.Frame[20:], &reply); err != nil {
 		return nil, err

@@ -136,17 +136,12 @@ func (p *proxy) bypassClientAuth(authMechanism string, clientAuthPayload []byte,
 	if err != nil {
 		return err
 	}
-	var saslContinue mongotypes.SaslContinueRequest
-	err = bson.Unmarshal(saslContinuePkt.Frame[5:], &saslContinue)
+	saslPayload, err := mongotypes.DecodeSASLContinueRequest(saslContinuePkt)
 	if err != nil {
-		return fmt.Errorf("client auth: failed unmarshalling SASL continue packet, reason=%v", err)
+		return fmt.Errorf("client auth: %v", err)
 	}
 
-	if len(saslContinue.Payload) == 0 {
-		return fmt.Errorf("client auth: failed decoding (empty) SAS continue payload")
-	}
-
-	finalResp, err := conversation.Step(string(saslContinue.Payload))
+	finalResp, err := conversation.Step(string(saslPayload))
 	if err != nil {
 		return fmt.Errorf("client auth: fail validating final conversation, reason=%v", err)
 	}

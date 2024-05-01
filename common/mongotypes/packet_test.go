@@ -3,7 +3,10 @@ package mongotypes
 import (
 	"bytes"
 	"encoding/hex"
+	"fmt"
 	"testing"
+
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 func TestPacketEncodingDecoding(t *testing.T) {
@@ -21,4 +24,24 @@ func TestPacketEncodingDecoding(t *testing.T) {
 	if !bytes.Equal(encHex, pkt.Encode()) {
 		t.Errorf("packet frame must match, want=%X, got=%X", encHex[16:], pkt.Frame)
 	}
+}
+
+func TestPacketJsonEncodeDecoding(t *testing.T) {
+	encHex, _ := hex.DecodeString(`c50000000400000000000000dd0700000000010000b00000001068656c6c6f00010000000868656c6c6f4f6b000103746f706f6c6f677956657273696f6e002d0000000770726f6365737349640066314ea2a13a0bf9a6366d7412636f756e74657200060000000000000000126d6178417761697454696d654d5300102700000000000002246462000600000061646d696e00032472656164507265666572656e63650020000000026d6f646500110000007072696d617279507265666572726564000000`)
+	pkt, err := Decode(bytes.NewBuffer(encHex))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc bson.D
+	// skip message flags (4) and document kind body (1)
+	if err := bson.Unmarshal(pkt.Frame[5:], &doc); err != nil {
+		t.Fatal(err)
+	}
+	data, err := bson.MarshalExtJSON(doc, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fmt.Println(string(data))
+	t.Errorf("")
 }

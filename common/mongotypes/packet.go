@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 type PacketHeader struct {
@@ -65,4 +67,17 @@ func Decode(r io.Reader) (*Packet, error) {
 	}
 	p.Frame = frame
 	return &p, nil
+}
+
+func DecodeOpMsgToJSON(pkt *Packet) (data []byte, err error) {
+	if pkt.OpCode != OpMsgType {
+		return
+	}
+	var decDoc bson.D
+	// skip message flags (4) and document kind body (1)
+	err = bson.Unmarshal(pkt.Frame[5:], &decDoc)
+	if err != nil {
+		return nil, fmt.Errorf("failed decoding OP_MSG document: %v", err)
+	}
+	return bson.MarshalExtJSON(decDoc, false, false)
 }
