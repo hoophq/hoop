@@ -220,8 +220,7 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 		case "mysql":
 			return ConnectionType(ConnectionTypeMySQL)
 		case "mongodb":
-			// mongo only supports command line for now
-			return ConnectionType(ConnectionTypeCommandLine)
+			return ConnectionType(ConnectionTypeMongoDB)
 		case "mssql":
 			return ConnectionType(ConnectionTypeMSSQL)
 		}

@@ -126,7 +126,7 @@ func setDatabaseType(req *proto.PreConnectRequest) (err error) {
 			port = "3306"
 		}
 	case strings.HasSuffix(u.Scheme, "mongodb"):
-		req.Subtype = proto.ConnectionTypeMongo.String()
+		req.Subtype = proto.ConnectionTypeMongoDB.String()
 		req.Command = []string{"mongo", "--quiet", "mongodb://$USER:$PASS@$HOST:$PORT/"}
 		if port == "" {
 			port = "27017"

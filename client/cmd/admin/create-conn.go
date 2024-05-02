@@ -25,7 +25,7 @@ var (
 
 func init() {
 	createConnectionCmd.Flags().StringVarP(&connAgentFlag, "agent", "a", "", "Name of the agent")
-	createConnectionCmd.Flags().StringVarP(&connTypeFlag, "type", "t", "custom", "Type of the connection. One off: (application,custom,database,application/tcp,database/mssql,database/mysql,database/postgres,database/mongo)")
+	createConnectionCmd.Flags().StringVarP(&connTypeFlag, "type", "t", "custom", "Type of the connection. One off: (application,custom,database,application/tcp,database/mssql,database/mysql,database/postgres,database/mongodb)")
 	createConnectionCmd.Flags().StringSliceVarP(&connPuginFlag, "plugin", "p", nil, "Plugins that will be enabled for this connection in the form of: <plugin>:<config01>;<config02>,...")
 	createConnectionCmd.Flags().StringSliceVar(&reviewersFlag, "reviewers", nil, "The approval groups for this connection")
 	createConnectionCmd.Flags().StringSliceVar(&connRedactTypesFlag, "redact-types", nil, "The redact types for this connection")
@@ -91,13 +91,10 @@ var createConnectionCmd = &cobra.Command{
 			if err := validateTcpEnvs(envVar); !skipStrictValidation && err != nil {
 				styles.PrintErrorAndExit(err.Error())
 			}
-		case pb.ConnectionTypePostgres, pb.ConnectionTypeMySQL, pb.ConnectionTypeMSSQL:
+		case pb.ConnectionTypePostgres, pb.ConnectionTypeMySQL,
+			pb.ConnectionTypeMSSQL, pb.ConnectionTypeMongoDB:
 			if err := validateNativeDbEnvs(envVar); !skipStrictValidation && err != nil {
 				styles.PrintErrorAndExit(err.Error())
-			}
-			// by default, default to secure
-			if _, ok := envVar["envvar:INSECURE"]; !ok {
-				envVar["envvar:INSECURE"] = base64.StdEncoding.EncodeToString([]byte(`false`))
 			}
 		default:
 			styles.PrintErrorAndExit("invalid connection type %q", connType)

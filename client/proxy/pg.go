@@ -34,9 +34,10 @@ type pgConnection struct {
 	backendKeyData *pgtypes.BackendKeyData
 }
 
-func NewPGServer(listenAddr string, client pb.ClientTransport) *PGServer {
-	if listenAddr == "" {
-		listenAddr = fmt.Sprintf("127.0.0.1:%s", defaultPostgresPort)
+func NewPGServer(proxyPort string, client pb.ClientTransport) *PGServer {
+	listenAddr := fmt.Sprintf("127.0.0.1:%s", defaultPostgresPort)
+	if proxyPort != "" {
+		listenAddr = fmt.Sprintf("127.0.0.1:%s", proxyPort)
 	}
 	return &PGServer{
 		listenAddr:      listenAddr,

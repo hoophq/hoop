@@ -8,11 +8,13 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.16.13
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.47.7
 	github.com/getsentry/sentry-go v0.18.0
+	github.com/google/go-cmp v0.6.0
 	github.com/google/uuid v1.3.0
 	github.com/honeycombio/honeycomb-opentelemetry-go v0.8.1
 	github.com/honeycombio/otel-config-go v1.12.1
 	github.com/hoophq/pluginhooks v0.0.6
 	github.com/spf13/cobra v1.6.1
+	go.mongodb.org/mongo-driver v1.15.0
 	go.uber.org/zap v1.24.0
 	golang.org/x/oauth2 v0.12.0
 	google.golang.org/grpc v1.58.3

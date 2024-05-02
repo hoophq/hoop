@@ -129,6 +129,14 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 				return nil, p.writeOnReceive(pctx.SID, eventlogv0.InputType, 0, []byte(query))
 			}
 		}
+	case pbagent.MongoDBConnectionWrite:
+		decJSONPayload, err := decodeClientMongoOpMsgPacket(pkt.Payload)
+		if err != nil {
+			return nil, err
+		}
+		if decJSONPayload != nil {
+			return nil, p.writeOnReceive(pctx.SID, eventlogv0.InputType, redactCount, decJSONPayload)
+		}
 	case pbclient.WriteStdout,
 		pbclient.WriteStderr:
 		err := p.writeOnReceive(pctx.SID, eventlogv0.OutputType, redactCount, pkt.Payload)

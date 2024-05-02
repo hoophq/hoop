@@ -1,7 +1,6 @@
 package apiconnections
 
 import (
-	"fmt"
 	"net/http"
 	"time"
 
@@ -68,23 +67,8 @@ func Post(c *gin.Context) {
 		return
 	}
 
-	if len(req.Command) == 0 {
-		switch pb.ToConnectionType(req.Type, req.SubType) {
-		case pb.ConnectionTypePostgres:
-			req.Command = []string{"psql", "-A", "-F\t", "-P", "pager=off", "-h", "$HOST", "-U", "$USER", "--port=$PORT", "$DB"}
-		case pb.ConnectionTypeMySQL:
-			req.Command = []string{"mysql", "-h$HOST", "-u$USER", "--port=$PORT", "-D$DB"}
-		case pb.ConnectionTypeMSSQL:
-			req.Command = []string{
-				"sqlcmd", "--exit-on-error", "--trim-spaces", "-r",
-				"-S$HOST:$PORT", "-U$USER", "-d$DB", "-i/dev/stdin"}
-		}
-	}
+	setConnectionDefaults(&req)
 
-	envs := make(map[string]string)
-	for k, v := range req.Secrets {
-		envs[k] = fmt.Sprintf("%v", v)
-	}
 	req.ID = uuid.NewString()
 	req.Status = pgrest.ConnectionStatusOffline
 	if streamclient.IsAgentOnline(streamtypes.NewStreamID(req.AgentId, "")) {
@@ -98,7 +82,7 @@ func Post(c *gin.Context) {
 		Command:   req.Command,
 		Type:      string(req.Type),
 		SubType:   req.SubType,
-		Envs:      envs,
+		Envs:      coerceToMapString(req.Secrets),
 		Status:    req.Status,
 		ManagedBy: nil,
 	})
@@ -155,18 +139,7 @@ func Put(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	if len(req.Command) == 0 {
-		switch pb.ToConnectionType(req.Type, req.SubType) {
-		case pb.ConnectionTypePostgres:
-			req.Command = []string{"psql", "-A", "-F\t", "-P", "pager=off", "-h", "$HOST", "-U", "$USER", "--port=$PORT", "$DB"}
-		case pb.ConnectionTypeMySQL:
-			req.Command = []string{"mysql", "-h$HOST", "-u$USER", "--port=$PORT", "-D$DB"}
-		case pb.ConnectionTypeMSSQL:
-			req.Command = []string{
-				"sqlcmd", "--exit-on-error", "--trim-spaces", "-r",
-				"-S$HOST:$PORT", "-U$USER", "-d$DB", "-i/dev/stdin"}
-		}
-	}
+	setConnectionDefaults(&req)
 
 	// immutable fields
 	req.ID = conn.ID
@@ -180,7 +153,7 @@ func Put(c *gin.Context) {
 		Command:   req.Command,
 		Type:      req.Type,
 		SubType:   req.SubType,
-		Envs:      pgrest.CoerceToMapString(req.Secrets),
+		Envs:      coerceToMapString(req.Secrets),
 		Status:    conn.Status,
 		ManagedBy: nil,
 	})
@@ -267,7 +240,7 @@ func List(c *gin.Context) {
 				Command:       conn.Command,
 				Type:          conn.Type,
 				SubType:       conn.SubType,
-				Secrets:       pgrest.CoerceToAnyMap(conn.Envs),
+				Secrets:       coerceToAnyMap(conn.Envs),
 				AgentId:       conn.AgentID,
 				Status:        conn.Status,
 				Reviewers:     reviewers,
@@ -318,7 +291,7 @@ func Get(c *gin.Context) {
 		Command:       conn.Command,
 		Type:          conn.Type,
 		SubType:       conn.SubType,
-		Secrets:       pgrest.CoerceToAnyMap(conn.Envs),
+		Secrets:       coerceToAnyMap(conn.Envs),
 		AgentId:       conn.AgentID,
 		Status:        conn.Status,
 		Reviewers:     reviewers,
@@ -406,7 +379,7 @@ func FetchByName(ctx pgrest.Context, connectionName string) (*Connection, error)
 		Command:   conn.Command,
 		Type:      conn.Type,
 		SubType:   conn.SubType,
-		Secrets:   pgrest.CoerceToAnyMap(conn.Envs),
+		Secrets:   coerceToAnyMap(conn.Envs),
 		AgentId:   conn.AgentID,
 		Status:    conn.Status,
 		ManagedBy: conn.ManagedBy,

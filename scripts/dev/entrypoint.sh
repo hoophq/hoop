@@ -18,7 +18,7 @@ if [ "$ORG_MULTI_TENANT" == "true" ]; then
 fi
 
 psql $POSTGRES_DB_URI <<EOT
-INSERT INTO agents (org_id, id, name, mode, token, status)
+INSERT INTO agents (org_id, id, name, mode, key_hash, status)
     VALUES ((SELECT id from private.orgs), '75122BCE-F957-49EB-A812-2AB60977CD9F', 'default', 'standard', '7854115b1ae448fec54d8bf50d3ce223e30c1c933edcd12767692574f326df57', 'DISCONNECTED')
     ON CONFLICT DO NOTHING;
 EOT
