@@ -8,6 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.16.13
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.47.7
 	github.com/getsentry/sentry-go v0.18.0
+	github.com/google/go-cmp v0.6.0
 	github.com/google/uuid v1.3.0
 	github.com/honeycombio/honeycomb-opentelemetry-go v0.8.1
 	github.com/honeycombio/otel-config-go v1.12.1

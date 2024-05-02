@@ -36,8 +36,9 @@ type AuthResponseReply struct {
 	Hidden                       bool               `bson:"hidden,omitempty"`
 	Hosts                        []string           `bson:"hosts,omitempty"`
 	HelloOK                      bool               `bson:"helloOk,omitempty"`
-	IsWritablePrimary            bool               `bson:"isWritablePrimary,omitempty"`
+	IsMaster                     bool               `bson:"ismaster,omitempty"`
 	IsReplicaSet                 bool               `bson:"isreplicaset,omitempty"`
+	IsWritablePrimary            bool               `bson:"isWritablePrimary,omitempty"`
 	LastWrite                    *lastWriteDate     `bson:"lastWrite,omitempty"`
 	LogicalSessionTimeoutMinutes uint32             `bson:"logicalSessionTimeoutMinutes,omitempty"`
 	MaxBSONObjectSize            uint32             `bson:"maxBsonObjectSize"`

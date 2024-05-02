@@ -46,7 +46,8 @@ type ClientInfo struct {
 }
 
 type HelloCommand struct {
-	IsMaster                int32        `bson:"isMaster"`
+	// TODO: test this
+	IsMaster                int32        `bson:"ismaster"`
 	HelloOK                 bool         `bson:"helloOk"`
 	SaslSupportedMechs      *string      `bson:"saslSupportedMechs,omitempty"`
 	SpeculativeAuthenticate *SaslRequest `bson:"speculativeAuthenticate"`
@@ -65,6 +66,9 @@ func DecodeClientHelloCommand(reqPacket io.Reader) (*HelloCommand, error) {
 	pkt, err := Decode(reqPacket)
 	if err != nil {
 		return nil, err
+	}
+	if pkt.OpCode != OpQueryType {
+		return nil, fmt.Errorf("wrong type of packet %v", pkt.OpCode)
 	}
 	var resp HelloCommand
 	if err := decodeOpQuery(pkt).UnmarshalBSON(&resp); err != nil {
@@ -128,9 +132,6 @@ type OpQuery struct {
 }
 
 func decodeOpQuery(pkt *Packet) *OpQuery {
-	if pkt.OpCode != OpQueryType {
-		return nil
-	}
 	m := OpQuery{
 		PacketHeader: PacketHeader{
 			MessageLength: pkt.MessageLength,
