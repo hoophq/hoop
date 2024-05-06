@@ -10,6 +10,11 @@ type OrgContext interface {
 	GetOrgID() string
 }
 
+type LicenseContext interface {
+	OrgContext
+	GetLicenseName() string
+}
+
 type UserContext interface {
 	GetOrgID() string
 	GetUserID() string
@@ -22,8 +27,9 @@ type Login struct {
 }
 
 type Org struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	License string `json:"license"`
 }
 
 type User struct {
@@ -154,6 +160,8 @@ type ServiceAccount struct {
 	Groups    []string `json:"groups"`
 	CreatedAt string   `json:"created_at"`
 	UpdateAt  string   `json:"updated_at"`
+
+	Org Org `json:"orgs"`
 }
 
 type ProxyManagerState struct {

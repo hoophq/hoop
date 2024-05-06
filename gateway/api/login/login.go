@@ -20,7 +20,6 @@ import (
 	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
-	"github.com/runopsio/hoop/gateway/user"
 	"golang.org/x/oauth2"
 )
 
@@ -116,7 +115,7 @@ func (h *handler) LoginCallback(c *gin.Context) {
 	}
 	redirectSuccessURL := login.Redirect + "?token=" + token.AccessToken
 
-	if !ctx.IsEmpty() && ctx.UserStatus != string(user.StatusActive) {
+	if !ctx.IsEmpty() && ctx.UserStatus != string(types.UserStatusActive) {
 		login.Outcome = fmt.Sprintf("user is not active subject=%s, email=%s", uinfo.Subject, uinfo.Email)
 		log.With("org", ctx.OrgID).Warn(login.Outcome)
 		c.Redirect(http.StatusTemporaryRedirect, redirectErrorURL)
@@ -125,11 +124,11 @@ func (h *handler) LoginCallback(c *gin.Context) {
 
 	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
 	log.With("sub", uinfo.Subject, "email", uinfo.Email, "profile", uinfo.Profile,
-		"multitenant", user.IsOrgMultiTenant(), "ua", userAgent).
+		"multitenant", pgusers.IsOrgMultiTenant(), "ua", userAgent).
 		Infof("success login on identity provider")
 
 	// multi tenant won't sync users
-	if user.IsOrgMultiTenant() {
+	if pgusers.IsOrgMultiTenant() {
 		isNewUser, err := registerMultiTenantUser(uinfo, login.SlackID)
 		if err != nil {
 			login.Outcome = fmt.Sprintf("failed registering multi tenant user subject=%s, email=%s, reason=%v",
@@ -178,7 +177,7 @@ func registerMultiTenantUser(uinfo idp.ProviderUserInfo, slackID string) (isNewU
 	if iuser == nil {
 		return false, nil
 	}
-	if iuser.Status != string(user.StatusActive) {
+	if iuser.Status != string(types.UserStatusActive) {
 		log.With("multitenant", true).Warnf("invited user %s is not active", iuser.Email)
 		return false, nil
 	}
@@ -234,7 +233,7 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 	// validate if an invited user exists and is active and
 	// persists as a verified user
 	if iuser != nil {
-		if iuser.Status != string(user.StatusActive) {
+		if iuser.Status != string(types.UserStatusActive) {
 			return false, errUserInactive
 		}
 		log.With("multitenant", false).Infof("registering invited user %s/%s", iuser.Subject, iuser.Email)
@@ -270,7 +269,7 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 		Name:     uinfo.Profile,
 		Email:    uinfo.Email,
 		Verified: true,
-		Status:   string(user.StatusActive),
+		Status:   string(types.UserStatusActive),
 		SlackID:  ctx.UserSlackID,
 		Groups:   userGroups,
 	})

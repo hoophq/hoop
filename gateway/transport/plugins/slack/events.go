@@ -6,11 +6,12 @@ import (
 
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/gateway/pgrest"
 	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
 	"github.com/runopsio/hoop/gateway/review"
 	slackservice "github.com/runopsio/hoop/gateway/slack"
+	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
-	"github.com/runopsio/hoop/gateway/user"
 )
 
 type event struct {
@@ -25,7 +26,8 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 		ev.msg.ID, ev.msg.Status)
 
 	// validate if the slack user is able to review it
-	slackApprover, err := pgusers.New().FetchOneBySlackID(&user.Org{Id: ev.orgID}, ev.msg.SlackID)
+	orgCtx := pgrest.NewOrgContext(ev.orgID)
+	slackApprover, err := pgusers.New().FetchOneBySlackID(orgCtx, ev.msg.SlackID)
 	if err != nil {
 		log.With("session", sid).Errorf("failed obtaning approver information, err=%v", err)
 		_ = ev.ss.PostEphemeralMessage(ev.msg, "failed obtaining approver's information")
@@ -46,12 +48,8 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 	}
 	log.With("session", sid).Infof("found a valid approver user=%s, slackid=%s",
 		slackApprover.Email, ev.msg.SlackID)
-	userContext := &user.Context{
-		Org: &user.Org{Id: ev.orgID},
-		User: &user.User{
-			Id:     slackApprover.Id,
-			Groups: slackApprover.Groups,
-		}}
+	userContext := storagev2.NewContext(slackApprover.Id, ev.orgID)
+	userContext.UserGroups = slackApprover.Groups
 
 	// perform the review in the system
 	log.With("session", sid).Infof("performing review, kind=%v, id=%v, status=%s, group=%v",
@@ -74,7 +72,7 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 	}
 }
 
-func (p *slackPlugin) performExecReview(ev *event, ctx *user.Context, status types.ReviewStatus) {
+func (p *slackPlugin) performExecReview(ev *event, ctx *storagev2.Context, status types.ReviewStatus) {
 	rev, err := p.reviewSvc.Review(ctx, ev.msg.ID, status)
 	sid := ev.msg.SessionID
 	switch err {
@@ -105,7 +103,7 @@ func (p *slackPlugin) performExecReview(ev *event, ctx *user.Context, status typ
 	}
 }
 
-func (p *slackPlugin) performJitReview(ev *event, ctx *user.Context, status types.ReviewStatus) {
+func (p *slackPlugin) performJitReview(ev *event, ctx *storagev2.Context, status types.ReviewStatus) {
 	j, err := p.reviewSvc.Review(ctx, ev.msg.ID, status)
 	sid := ev.msg.SessionID
 	switch err {

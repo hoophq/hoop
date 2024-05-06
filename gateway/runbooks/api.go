@@ -16,13 +16,14 @@ import (
 	apiconnections "github.com/runopsio/hoop/gateway/api/connections"
 	sessionapi "github.com/runopsio/hoop/gateway/api/session"
 	"github.com/runopsio/hoop/gateway/clientexec"
+	"github.com/runopsio/hoop/gateway/pgrest"
 	pgplugins "github.com/runopsio/hoop/gateway/pgrest/plugins"
 	pgsession "github.com/runopsio/hoop/gateway/pgrest/session"
+	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
 	"github.com/runopsio/hoop/gateway/runbooks/templates"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
-	"github.com/runopsio/hoop/gateway/user"
 )
 
 type Runbook struct {
@@ -58,17 +59,13 @@ type RunbookList struct {
 	CommitMessage string     `json:"commit_message"`
 }
 
-type Service struct {
-	PluginService pluginService
-}
-
 type Handler struct {
 	scanedKnownHosts bool
 }
 
 func (h *Handler) ListByConnection(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	log := user.ContextLogger(c)
+	log := pgusers.ContextLogger(c)
 	connectionName := c.Param("name")
 	p, err := pgplugins.New().FetchOne(ctx, plugintypes.PluginRunbooksName)
 	if err != nil {
@@ -119,7 +116,7 @@ func (h *Handler) ListByConnection(c *gin.Context) {
 
 func (h *Handler) List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	log := user.ContextLogger(c)
+	log := pgusers.ContextLogger(c)
 	if !h.scanedKnownHosts {
 		knownHostsFilePath, err := templates.SSHKeyScan()
 		if err != nil {
@@ -168,8 +165,8 @@ func (h *Handler) List(c *gin.Context) {
 
 // TODO: Refactor to use sessionapi.RunExec
 func (h *Handler) RunExec(c *gin.Context) {
-	ctx := user.ContextUser(c)
-	log := user.ContextLogger(c)
+	ctx := storagev2.ParseContext(c)
+	log := pgusers.ContextLogger(c)
 	storageCtx := storagev2.ParseContext(c)
 
 	var req RunbookRequest
@@ -213,14 +210,14 @@ func (h *Handler) RunExec(c *gin.Context) {
 
 	newSession := types.Session{
 		ID:           uuid.NewString(),
-		OrgID:        ctx.Org.Id,
+		OrgID:        ctx.GetOrgID(),
 		Labels:       sessionLabels,
 		Metadata:     req.Metadata,
 		Script:       types.SessionScript{"data": string(runbook.InputFile)},
-		UserEmail:    ctx.User.Email,
-		UserID:       ctx.User.Id,
+		UserEmail:    ctx.UserEmail,
+		UserID:       ctx.UserID,
 		Type:         proto.ConnectionTypeCommandLine.String(),
-		UserName:     ctx.User.Name,
+		UserName:     ctx.UserName,
 		Connection:   connectionName,
 		Verb:         proto.ClientVerbExec,
 		Status:       types.SessionStatusOpen,
@@ -241,7 +238,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 	}
 
 	client, err := clientexec.New(&clientexec.Options{
-		OrgID:          ctx.Org.Id,
+		OrgID:          ctx.GetOrgID(),
 		SessionID:      newSession.ID,
 		ConnectionName: connectionName,
 		BearerToken:    getAccessToken(c),
@@ -297,7 +294,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 	}
 }
 
-func (h *Handler) getConnectionID(ctx *user.Context, c *gin.Context, connectionName string) (string, error) {
+func (h *Handler) getConnectionID(ctx pgrest.Context, c *gin.Context, connectionName string) (string, error) {
 	conn, err := apiconnections.FetchByName(ctx, connectionName)
 	if err != nil {
 		sentry.CaptureException(err)
@@ -311,7 +308,7 @@ func (h *Handler) getConnectionID(ctx *user.Context, c *gin.Context, connectionN
 	return conn.ID, nil
 }
 
-func (h *Handler) getRunbookConfig(ctx *user.Context, c *gin.Context, connectionName string) (*templates.RunbookConfig, string, error) {
+func (h *Handler) getRunbookConfig(ctx pgrest.Context, c *gin.Context, connectionName string) (*templates.RunbookConfig, string, error) {
 	connectionID, err := h.getConnectionID(ctx, c, connectionName)
 	if err != nil {
 		return nil, "", err

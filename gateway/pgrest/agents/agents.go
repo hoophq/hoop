@@ -41,7 +41,7 @@ func (a *agent) FetchOneByNameOrID(ctx pgrest.OrgContext, nameOrID string) (*pgr
 
 func (a *agent) FetchOneByToken(token string) (*pgrest.Agent, error) {
 	var agent pgrest.Agent
-	if err := pgrest.New("/agents?select=*,orgs(name)&key_hash=eq.%v", token).
+	if err := pgrest.New("/agents?select=*,orgs(name,license)&key_hash=eq.%v", token).
 		FetchOne().
 		DecodeInto(&agent); err != nil {
 		if err == pgrest.ErrNotFound {

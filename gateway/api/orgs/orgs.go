@@ -11,13 +11,12 @@ import (
 	"github.com/runopsio/hoop/gateway/pgrest"
 	pgagents "github.com/runopsio/hoop/gateway/pgrest/agents"
 	"github.com/runopsio/hoop/gateway/storagev2"
-	"github.com/runopsio/hoop/gateway/user"
 )
 
 var agentKeyDefaultName = "_default"
 
 func CreateAgentKey(c *gin.Context) {
-	ctx := user.ContextUser(c)
+	ctx := storagev2.ParseContext(c)
 	secretKey, secretKeyHash, err := dsnkeys.GenerateSecureRandomKey()
 	if err != nil {
 		log.Errorf("failed generating organization token, err=%v", err)
@@ -64,7 +63,7 @@ func CreateAgentKey(c *gin.Context) {
 }
 
 func GetAgentKey(c *gin.Context) {
-	ctx := user.ContextUser(c)
+	ctx := storagev2.ParseContext(c)
 	ag, err := pgagents.New().FetchOneByNameOrID(ctx, agentKeyDefaultName)
 	if err != nil {
 		log.Errorf("failed fetching for existing organization token, err=%v", err)
@@ -72,7 +71,6 @@ func GetAgentKey(c *gin.Context) {
 		return
 	}
 	if ag == nil {
-		log.Infof("%v already exists", agentKeyDefaultName)
 		c.JSON(http.StatusNotFound, gin.H{"message": "organization token not found"})
 		return
 	}
@@ -90,7 +88,7 @@ func GetAgentKey(c *gin.Context) {
 }
 
 func RevokeAgentKey(c *gin.Context) {
-	ctx := user.ContextUser(c)
+	ctx := storagev2.ParseContext(c)
 	ag, err := pgagents.New().FetchOneByNameOrID(ctx, agentKeyDefaultName)
 	if err != nil {
 		log.Errorf("failed fetching organization token, err=%v", err)

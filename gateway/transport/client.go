@@ -17,7 +17,6 @@ import (
 	"github.com/runopsio/hoop/gateway/transport/connectionrequests"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/transport/streamclient"
-	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -287,7 +286,7 @@ func (s *Server) addConnectionParams(clientArgs, infoTypes []string, pctx plugin
 	return encConnectionParams, nil
 }
 
-func (s *Server) ReviewStatusChange(ctx *user.Context, rev *types.Review) {
+func (s *Server) ReviewStatusChange(rev *types.Review) {
 	if proxyStream := streamclient.GetProxyStream(rev.Session); proxyStream != nil {
 		payload := []byte(rev.Input)
 		packetType := pbclient.SessionOpenApproveOK

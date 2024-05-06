@@ -13,23 +13,21 @@ import (
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
-	"github.com/runopsio/hoop/gateway/review"
+	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
-	"github.com/runopsio/hoop/gateway/user"
 	svix "github.com/svix/svix-webhooks/go"
 )
 
 type plugin struct {
-	client    *svix.Svix
-	appStore  memory.Store
-	reviewSvc *review.Service
+	client   *svix.Svix
+	appStore memory.Store
 }
 
-func New(reviewSvc *review.Service) *plugin {
+func New() *plugin {
 	if webhookAppKey := os.Getenv("WEBHOOK_APPKEY"); webhookAppKey != "" {
 		log.Infof("loaded webhook app key with success")
-		return &plugin{svix.New(webhookAppKey, nil), memory.New(), reviewSvc}
+		return &plugin{svix.New(webhookAppKey, nil), memory.New()}
 	}
 	return &plugin{}
 }
@@ -92,7 +90,7 @@ func (p *plugin) OnReceive(ctx plugintypes.Context, pkt *pb.Packet) (*plugintype
 }
 
 func (p *plugin) processReviewCreateEvent(ctx plugintypes.Context, pkt *pb.Packet) {
-	rev, err := p.reviewSvc.FindBySessionID(user.NewContext(ctx.OrgID, ctx.UserID), ctx.SID)
+	rev, err := pgreview.New().FetchOneBySid(ctx, ctx.SID)
 	if err != nil {
 		log.Warnf("failed obtaining review, err=%v", err)
 		return

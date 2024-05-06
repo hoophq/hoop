@@ -5,15 +5,14 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
+	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/gateway/pgrest"
 	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
 	"github.com/runopsio/hoop/gateway/storagev2"
-	"github.com/runopsio/hoop/gateway/user"
 )
 
 func GetById(c *gin.Context) {
 	storageCtx := storagev2.ParseContext(c)
-	log := user.ContextLogger(c)
 
 	id := c.Param("id")
 	review, err := pgreview.New().FetchOneByID(storageCtx, id)

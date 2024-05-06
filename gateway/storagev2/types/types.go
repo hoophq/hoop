@@ -9,6 +9,7 @@ import (
 type APIContext struct {
 	OrgID       string   `json:"org_id"`
 	OrgName     string   `json:"org_name"`
+	OrgLicense  string   `json:"org_license"`
 	UserID      string   `json:"user_id"`
 	UserName    string   `json:"user_name"`
 	UserEmail   string   `json:"user_email"`

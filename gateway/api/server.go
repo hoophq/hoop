@@ -30,7 +30,6 @@ import (
 	"github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/runbooks"
 	"github.com/runopsio/hoop/gateway/security/idp"
-	"github.com/runopsio/hoop/gateway/storagev2"
 	"go.uber.org/zap"
 )
 
@@ -42,8 +41,6 @@ type (
 		IDProvider      *idp.Provider
 		GrpcURL         string
 		logger          *zap.Logger
-
-		StoreV2 *storagev2.Store
 	}
 )
 

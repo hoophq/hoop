@@ -10,13 +10,14 @@ import (
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	"github.com/runopsio/hoop/gateway/pgrest"
 	pgplugins "github.com/runopsio/hoop/gateway/pgrest/plugins"
+	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
+	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
 	"github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/slack"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
-	"github.com/runopsio/hoop/gateway/user"
 )
 
 const (
@@ -27,7 +28,6 @@ const (
 type (
 	slackPlugin struct {
 		reviewSvc   *review.Service
-		userSvc     *user.Service
 		idpProvider *idp.Provider
 	}
 )
@@ -53,12 +53,11 @@ func addSlackServiceInstance(orgID string, slackSvc *slack.SlackService) {
 	instances[orgID] = slackSvc
 }
 
-func New(reviewSvc *review.Service, userSvc *user.Service, idpProvider *idp.Provider) *slackPlugin {
+func New(reviewSvc *review.Service, idpProvider *idp.Provider) *slackPlugin {
 	instances = map[string]*slack.SlackService{}
 	mu = sync.RWMutex{}
 	return &slackPlugin{
 		reviewSvc:   reviewSvc,
-		userSvc:     userSvc,
 		idpProvider: idpProvider,
 	}
 }
@@ -66,7 +65,7 @@ func New(reviewSvc *review.Service, userSvc *user.Service, idpProvider *idp.Prov
 func (p *slackPlugin) Name() string { return plugintypes.PluginSlackName }
 
 func (p *slackPlugin) startSlackServiceInstance(orgID string, slackConfig *slackConfig) error {
-	storectx := storagev2.NewOrganizationContext(orgID, storagev2.NewStorage(nil))
+	storectx := storagev2.NewOrganizationContext(orgID)
 	log.Infof("starting slack service instance for org %v", orgID)
 	ss, err := slack.New(
 		slackConfig.slackBotToken,
@@ -103,13 +102,13 @@ func (p *slackPlugin) startSlackServiceInstance(orgID string, slackConfig *slack
 }
 
 func (p *slackPlugin) OnStartup(_ plugintypes.Context) error {
-	orgList, err := p.userSvc.FindOrgs()
+	orgList, err := pgusers.New().FetchAllOrgs()
 	if err != nil {
 		return fmt.Errorf("failed listing organizations: %v", err)
 	}
 
 	for _, org := range orgList {
-		pl, err := pgplugins.New().FetchOne(pgrest.NewOrgContext(org.Id), plugintypes.PluginSlackName)
+		pl, err := pgplugins.New().FetchOne(pgrest.NewOrgContext(org.ID), plugintypes.PluginSlackName)
 		if err != nil {
 			log.Errorf("failed retrieving plugin entity %v", err)
 			continue
@@ -176,20 +175,20 @@ func (p *slackPlugin) OnUpdate(oldState, newState *types.Plugin) error {
 
 // SendApprovedMessage sends a direct message to the owner of the review
 // if it's approved
-func SendApprovedMessage(ctx *user.Context, rev *types.Review) {
-	if rev.Status != types.ReviewStatusApproved {
-		return
-	}
-	if slacksvc := getSlackServiceInstance(ctx.Org.Id); slacksvc != nil {
-		if rev.ReviewOwner.SlackID != "" {
-			log.Debugf("sending direct slack message to email=%v, slackid=%v",
-				rev.ReviewOwner.Email, rev.ReviewOwner.SlackID)
-			if err := slacksvc.SendDirectMessage(rev.Session, rev.ReviewOwner.SlackID); err != nil {
-				log.Warn(err)
-			}
-		}
-	}
-}
+// func SendApprovedMessage(ctx *user.Context, rev *types.Review) {
+// 	if rev.Status != types.ReviewStatusApproved {
+// 		return
+// 	}
+// 	if slacksvc := getSlackServiceInstance(ctx.Org.Id); slacksvc != nil {
+// 		if rev.ReviewOwner.SlackID != "" {
+// 			log.Debugf("sending direct slack message to email=%v, slackid=%v",
+// 				rev.ReviewOwner.Email, rev.ReviewOwner.SlackID)
+// 			if err := slacksvc.SendDirectMessage(rev.Session, rev.ReviewOwner.SlackID); err != nil {
+// 				log.Warn(err)
+// 			}
+// 		}
+// 	}
+// }
 
 func (p *slackPlugin) OnConnect(pctx plugintypes.Context) error { return nil }
 func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {
@@ -202,11 +201,6 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		return nil, nil
 	}
 
-	userContext := &user.Context{
-		Org:  &user.Org{Id: pctx.OrgID},
-		User: &user.User{Id: pctx.UserID},
-	}
-
 	sreq := &slack.MessageReviewRequest{
 		Name:           pctx.UserName,
 		Email:          pctx.UserEmail,
@@ -217,7 +211,7 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		SlackChannels:  pctx.PluginConnectionConfig,
 	}
 
-	rev, err := p.reviewSvc.FindBySessionID(userContext, pctx.SID)
+	rev, err := pgreview.New().FetchOneBySid(pctx, pctx.SID)
 	if err != nil {
 		return nil, plugintypes.InternalErr("internal error, failed fetching review", err)
 	}

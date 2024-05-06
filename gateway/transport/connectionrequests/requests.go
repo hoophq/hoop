@@ -9,6 +9,7 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/memory"
 	"github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/gateway/pgrest"
 	"github.com/runopsio/hoop/gateway/transport/streamclient"
 	streamtypes "github.com/runopsio/hoop/gateway/transport/streamclient/types"
 )
@@ -61,21 +62,21 @@ var (
 // This function also release the proxy connections if there's an agent online or
 // if the synchronize process returns with an error. The error is sent to all clients
 // waiting for a response
-func AgentPreConnect(orgID, agentID string, req *proto.PreConnectRequest) *proto.PreConnectResponse {
+func AgentPreConnect(ctx pgrest.LicenseContext, agentID string, req *proto.PreConnectRequest) *proto.PreConnectResponse {
 	// sync the connection with the store
 	var syncErr error
 	if req.Name != "" {
-		syncErr = connectionSync(orgID, agentID, req)
+		syncErr = connectionSync(ctx, agentID, req)
 	}
 
 	// only release it if has an agent online or it returned error from sync process
 	streamAgentID := streamtypes.NewStreamID(agentID, req.Name)
 	if streamclient.IsAgentOnline(streamAgentID) || syncErr != nil {
-		_ = AcceptProxyConnection(orgID, streamAgentID, syncErr)
+		_ = AcceptProxyConnection(ctx.GetOrgID(), streamAgentID, syncErr)
 	}
 
 	// if there's pending connection requests, allow an agent to connect
-	hasConnectionRequests := len(connectionRequestItems(orgID, streamAgentID)) > 0
+	hasConnectionRequests := len(connectionRequestItems(ctx.GetOrgID(), streamAgentID)) > 0
 	if hasConnectionRequests && syncErr == nil {
 		return &proto.PreConnectResponse{
 			Status:  proto.PreConnectStatusConnectType,

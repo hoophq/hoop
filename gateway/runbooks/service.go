@@ -4,13 +4,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
-	"github.com/runopsio/hoop/gateway/user"
 )
-
-type pluginService interface {
-	FindOne(context *user.Context, name string) (*types.Plugin, error)
-}
 
 func getAccessToken(c *gin.Context) string {
 	tokenHeader := c.GetHeader("authorization")

@@ -28,7 +28,8 @@ func (u *userAuth) FetchUserContext(subject string) (*Context, error) {
 		}
 		return &Context{
 			OrgID:       sa.OrgID,
-			OrgName:     "", // TODO: propagate org name
+			OrgName:     sa.Org.Name, // TODO: propagate org name
+			OrgLicense:  sa.Org.License,
 			UserUUID:    sa.ID,
 			UserSubject: sa.Subject,
 			UserName:    sa.Name,
@@ -44,6 +45,7 @@ func (u *userAuth) FetchUserContext(subject string) (*Context, error) {
 	return &Context{
 		OrgID:       usr.OrgID,
 		OrgName:     usr.Org.Name,
+		OrgLicense:  usr.Org.License,
 		UserUUID:    usr.ID,
 		UserSubject: usr.Subject,
 		UserEmail:   usr.Email,
@@ -56,7 +58,7 @@ func (u *userAuth) FetchUserContext(subject string) (*Context, error) {
 }
 
 func fetchOneBySubject(subject string) (*pgrest.User, error) {
-	path := fmt.Sprintf("/users?select=*,groups,orgs(id,name)&subject=eq.%v&verified=is.true", subject)
+	path := fmt.Sprintf("/users?select=*,groups,orgs(id,name,license)&subject=eq.%v&verified=is.true", subject)
 	var usr pgrest.User
 	if err := pgrest.New(path).FetchOne().DecodeInto(&usr); err != nil {
 		if err == pgrest.ErrNotFound {
@@ -70,7 +72,7 @@ func fetchOneBySubject(subject string) (*pgrest.User, error) {
 func fetchServiceAccount(subject string) (*pgrest.ServiceAccount, error) {
 	saID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf("serviceaccount/%s", subject))).String()
 	var sa pgrest.ServiceAccount
-	err := pgrest.New("/serviceaccounts?select=id,org_id,subject,name,status,created_at,updated_at,groups&id=eq.%s", saID).
+	err := pgrest.New("/serviceaccounts?select=*,groups,orgs(id,name,license)&id=eq.%s", saID).
 		FetchOne().
 		DecodeInto(&sa)
 	if err != nil {

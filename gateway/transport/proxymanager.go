@@ -15,12 +15,10 @@ import (
 	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
 	"github.com/runopsio/hoop/gateway/analytics"
 	apiconnections "github.com/runopsio/hoop/gateway/api/connections"
-	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/clientstate"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/runopsio/hoop/gateway/transport/streamclient"
-	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -282,12 +280,12 @@ func (s *Server) listenProxyManagerMessages(stream *streamclient.ProxyStream) er
 	}
 }
 
-func storageCtxToUser(ctx *storagev2.Context) *user.Context {
-	return &user.Context{
-		User: &user.User{
-			Id:     ctx.UserID,
-			Name:   ctx.UserName,
-			Email:  ctx.UserEmail,
-			Groups: ctx.UserGroups,
-		}, Org: &user.Org{Id: ctx.OrgID}}
-}
+// func storageCtxToUser(ctx *storagev2.Context) *user.Context {
+// 	return &user.Context{
+// 		User: &user.User{
+// 			Id:     ctx.UserID,
+// 			Name:   ctx.UserName,
+// 			Email:  ctx.UserEmail,
+// 			Groups: ctx.UserGroups,
+// 		}, Org: &user.Org{Id: ctx.OrgID}}
+// }

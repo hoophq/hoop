@@ -7,8 +7,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/gateway/pgrest"
 	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
+	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
+	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
-	"github.com/runopsio/hoop/gateway/user"
 	"olympos.io/encoding/edn"
 )
 
@@ -18,15 +19,15 @@ type (
 	}
 
 	service interface {
-		Review(context *user.Context, id string, status types.ReviewStatus) (*types.Review, error)
-		Revoke(ctx *user.Context, id string) (*types.Review, error)
-		Persist(context *user.Context, review *types.Review) error
+		Review(ctx *storagev2.Context, id string, status types.ReviewStatus) (*types.Review, error)
+		Revoke(ctx pgrest.OrgContext, id string) (*types.Review, error)
+		Persist(ctx pgrest.OrgContext, review *types.Review) error
 	}
 )
 
 func (h *Handler) Put(c *gin.Context) {
-	ctx := user.ContextUser(c)
-	log := user.ContextLogger(c)
+	ctx := storagev2.ParseContext(c)
+	log := pgusers.ContextLogger(c)
 
 	id := c.Param("id")
 	var req map[string]string
@@ -42,7 +43,7 @@ func (h *Handler) Put(c *gin.Context) {
 	case types.ReviewStatusApproved, types.ReviewStatusRejected:
 		review, err = h.Service.Review(ctx, id, status)
 	case types.ReviewStatusRevoked:
-		if !ctx.User.IsAdmin() {
+		if !ctx.IsAdmin() {
 			c.AbortWithStatus(http.StatusForbidden)
 			return
 		}
@@ -66,9 +67,9 @@ func (h *Handler) Put(c *gin.Context) {
 }
 
 func (h *Handler) FindAll(c *gin.Context) {
-	context := user.ContextUser(c)
-	log := user.ContextLogger(c)
-	reviews, err := pgreview.New().FetchAll(context)
+	ctx := storagev2.ParseContext(c)
+	log := pgusers.ContextLogger(c)
+	reviews, err := pgreview.New().FetchAll(ctx)
 	if err != nil && err != pgrest.ErrNotFound {
 		log.Errorf("failed listing reviews, err=%v", err)
 		c.AbortWithStatus(http.StatusInternalServerError)

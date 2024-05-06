@@ -14,7 +14,6 @@ import (
 	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
-	"github.com/runopsio/hoop/gateway/user"
 )
 
 type SignupRequest struct {
@@ -25,7 +24,7 @@ type SignupRequest struct {
 
 func Post(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	if !ctx.IsAnonymous() || !user.IsOrgMultiTenant() {
+	if !ctx.IsAnonymous() || !pgusers.IsOrgMultiTenant() {
 		c.JSON(http.StatusConflict, gin.H{"message": "user already signed up"})
 		return
 	}

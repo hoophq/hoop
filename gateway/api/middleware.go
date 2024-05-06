@@ -17,9 +17,9 @@ import (
 	"github.com/runopsio/hoop/common/version"
 	"github.com/runopsio/hoop/gateway/analytics"
 	pguserauth "github.com/runopsio/hoop/gateway/pgrest/userauth"
+	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/storagev2"
-	"github.com/runopsio/hoop/gateway/user"
 	"go.uber.org/zap"
 )
 
@@ -48,7 +48,7 @@ func (a *Api) Authenticate(c *gin.Context) {
 			zap.String("user", ctx.UserEmail),
 			zap.Bool("isadm", ctx.IsAdmin()),
 		)
-		c.Set(user.ContextLoggerKey, zaplogger.Sugar())
+		c.Set(pgusers.ContextLoggerKey, zaplogger.Sugar())
 	}
 	switch roleName {
 	case RoleStandardAccess: // noop
@@ -76,7 +76,7 @@ func (a *Api) Authenticate(c *gin.Context) {
 			return
 		}
 		c.Set(storagev2.ContextKey,
-			storagev2.NewContext("", "", a.StoreV2).
+			storagev2.NewContext("", "").
 				WithAnonymousInfo(
 					ctx.UserAnonProfile, ctx.UserAnonEmail, ctx.UserAnonSubject,
 					ctx.UserAnonPicture, ctx.UserAnonEmailVerified).
@@ -104,28 +104,15 @@ func (a *Api) Authenticate(c *gin.Context) {
 		return
 	}
 	log.Debugf("user authenticated, role=%s, org=%s, subject=%s, isadmin=%v", roleName, ctx.OrgName, subject, ctx.IsAdmin())
-
 	c.Set(storagev2.ContextKey,
-		storagev2.NewContext(ctx.UserSubject, ctx.OrgID, a.StoreV2).
+		storagev2.NewContext(ctx.UserSubject, ctx.OrgID).
 			WithUserInfo(ctx.UserName, ctx.UserEmail, string(ctx.UserStatus), ctx.UserPicture, ctx.UserGroups).
 			WithSlackID(ctx.UserSlackID).
 			WithOrgName(ctx.OrgName).
+			WithOrgLicense(ctx.OrgLicense).
 			WithApiURL(a.IDProvider.ApiURL).
 			WithGrpcURL(a.GrpcURL),
 	)
-	// TODO: deprecate it in flavor of the context above
-	c.Set(user.ContextUserKey, &user.Context{
-		Org: &user.Org{Id: ctx.OrgID, Name: ctx.OrgName},
-		User: &user.User{
-			Id:      ctx.UserSubject,
-			Org:     ctx.OrgID,
-			Name:    ctx.UserName,
-			Email:   ctx.UserEmail,
-			Status:  user.StatusType(ctx.UserStatus),
-			SlackID: ctx.UserSlackID,
-			Groups:  ctx.UserGroups,
-		},
-	})
 	c.Next()
 }
 
@@ -172,8 +159,8 @@ func AuditApiChanges(c *gin.Context) {
 
 func (a *Api) TrackRequest(eventName string) func(c *gin.Context) {
 	return func(c *gin.Context) {
-		ctx := user.ContextUser(c)
-		if ctx.User.Email == "" || ctx.Org.Id == "" {
+		ctx := storagev2.ParseContext(c)
+		if ctx.UserEmail == "" || ctx.GetOrgID() == "" {
 			c.Next()
 			return
 		}
@@ -226,11 +213,7 @@ func (a *Api) TrackRequest(eventName string) func(c *gin.Context) {
 				properties["plugin-name"] = resourceName
 			}
 		}
-		var userEmail string
-		if ctx.User != nil {
-			userEmail = ctx.User.Email
-		}
-		analytics.New().Track(userEmail, eventName, properties)
+		analytics.New().Track(ctx.UserEmail, eventName, properties)
 		c.Next()
 	}
 }

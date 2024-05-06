@@ -203,7 +203,7 @@ func (u *user) FetchAllOrgs() (items []pgrest.Org, err error) {
 	if err != nil && err != pgrest.ErrNotFound {
 		return nil, err
 	}
-	return
+	return items, nil
 }
 
 func (u *user) Delete(ctx pgrest.OrgContext, subject string) error {

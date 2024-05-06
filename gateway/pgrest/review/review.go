@@ -132,7 +132,7 @@ func (r *review) FetchOneBySid(ctx pgrest.OrgContext, sid string) (*types.Review
 	return parseReview(rev), nil
 }
 
-func (r *review) FetchJit(ctx pgrest.Context, connectionID string) (*types.Review, error) {
+func (r *review) FetchJit(ctx pgrest.OrgContext, connectionID string) (*types.Review, error) {
 	var rev Review
 	err := pgrest.New("/reviews?org_id=eq.%s&connection_id=eq.%s&type=eq.jit&status=eq.APPROVED&revoked_at=gt.now&select=*,review_groups(*)",
 		ctx.GetOrgID(), connectionID).

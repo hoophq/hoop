@@ -62,7 +62,7 @@ func StartJobIndex() error {
 				batch = newIndex.NewBatch()
 				batchCount = 0
 			}
-			storeCtx := storagev2.NewOrganizationContext(orgID, storagev2.NewStorage(nil))
+			storeCtx := storagev2.NewOrganizationContext(orgID)
 			sess, err := sessionstorage.FindOne(storeCtx, sessionID)
 			if err != nil {
 				log.Printf("job=index, org=%v, session=%v - error getting session, reason=%v", orgIDShort, sessionID, err)

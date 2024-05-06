@@ -7,12 +7,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/gateway/user"
+	"github.com/runopsio/hoop/gateway/storagev2"
 	svix "github.com/svix/svix-webhooks/go"
 )
 
 func Get(c *gin.Context) {
-	ctx := user.ContextUser(c)
+	ctx := storagev2.ParseContext(c)
 	appKey := os.Getenv("WEBHOOK_APPKEY")
 	if appKey == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "webhook app key is not configured"})
@@ -21,7 +21,7 @@ func Get(c *gin.Context) {
 	svixClient := svix.New(appKey, nil)
 	dashboard, err := svixClient.Authentication.AppPortalAccess(
 		context.Background(),
-		ctx.Org.Id,
+		ctx.GetOrgID(),
 		&svix.AppPortalAccessIn{},
 	)
 	if err != nil {
