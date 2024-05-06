@@ -11,7 +11,8 @@ import (
 	"github.com/blevesearch/bleve/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/gateway/indexer/searchquery"
-	"github.com/runopsio/hoop/gateway/user"
+	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
+	"github.com/runopsio/hoop/gateway/storagev2"
 )
 
 type Handler struct{}
@@ -26,9 +27,9 @@ type SearchRequest struct {
 }
 
 func (a *Handler) Search(c *gin.Context) {
-	ctx := user.ContextUser(c)
-	log := user.ContextLogger(c)
-	if ctx.User.Email == "" || ctx.Org.Id == "" {
+	ctx := storagev2.ParseContext(c)
+	log := pgusers.ContextLogger(c)
+	if ctx.UserEmail == "" || ctx.GetOrgID() == "" {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "missing org or user identifier"})
 		return
 	}
@@ -37,12 +38,12 @@ func (a *Handler) Search(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	bleveSearchRequest, err := req.parse(ctx.User.Email, ctx.User.IsAdmin())
+	bleveSearchRequest, err := req.parse(ctx.UserEmail, ctx.IsAdmin())
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
-	index, err := NewIndexer(ctx.User.Org)
+	index, err := NewIndexer(ctx.GetOrgID())
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return

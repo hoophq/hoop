@@ -51,7 +51,7 @@ func ProcessWalSessions(auditPath string, _ gocron.Job) {
 		log.With("sid", wh.SessionID).Infof("starting %v/%v", count, len(walFolders))
 
 		defer walog.Close()
-		ctx := storagev2.NewContext(wh.UserID, wh.OrgID, storagev2.NewStorage(nil))
+		ctx := storagev2.NewContext(wh.UserID, wh.OrgID)
 		session, err := sessionstorage.FindOne(ctx, wh.SessionID)
 		if err != nil {
 			log.With("sid", wh.SessionID).Warnf("failed retrieving session, err=%v", err)

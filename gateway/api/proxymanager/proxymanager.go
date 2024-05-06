@@ -10,10 +10,10 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	pgproxymanager "github.com/runopsio/hoop/gateway/pgrest/proxymanager"
+	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/clientstate"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/transport"
-	"github.com/runopsio/hoop/gateway/user"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -43,8 +43,8 @@ type ProxyManagerResponse struct {
 // }
 
 func Get(c *gin.Context) {
-	ctx := user.ContextUser(c)
-	obj, err := pgproxymanager.New().FetchOne(ctx, clientstate.DeterministicClientUUID(ctx.GetUserID()))
+	ctx := storagev2.ParseContext(c)
+	obj, err := pgproxymanager.New().FetchOne(ctx, clientstate.DeterministicClientUUID(ctx.UserID))
 	// obj, err := getEntity(ctx)
 	if err != nil {
 		log.Error(err)
@@ -68,7 +68,7 @@ func Get(c *gin.Context) {
 }
 
 func Post(c *gin.Context) {
-	ctx := user.ContextUser(c)
+	ctx := storagev2.ParseContext(c)
 	var req ProxyManagerRequest
 	err := c.ShouldBindJSON(&req)
 	if err != nil {
@@ -88,7 +88,7 @@ func Post(c *gin.Context) {
 	for i := 1; i <= 10; i++ {
 		log.Debugf("attempt=%v - dispatching open session", i)
 		pkt, err := transport.DispatchOpenSession(&types.Client{
-			ID:                    clientstate.DeterministicClientUUID(ctx.GetUserID()),
+			ID:                    clientstate.DeterministicClientUUID(ctx.UserID),
 			RequestConnectionName: req.ConnectionName,
 			RequestPort:           req.Port,
 			RequestAccessDuration: req.AccessDuration,
@@ -162,7 +162,7 @@ func Post(c *gin.Context) {
 }
 
 func Disconnect(c *gin.Context) {
-	ctx := user.ContextUser(c)
+	ctx := storagev2.ParseContext(c)
 	obj, err := pgproxymanager.New().FetchOne(ctx, clientstate.DeterministicClientUUID(ctx.GetUserID()))
 	if err != nil {
 		log.Error(err)

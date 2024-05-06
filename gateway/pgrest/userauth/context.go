@@ -9,6 +9,7 @@ import (
 type Context struct {
 	OrgID       string
 	OrgName     string
+	OrgLicense  string
 	UserUUID    string
 	UserSubject string
 	UserEmail   string
@@ -43,6 +44,7 @@ func (c Context) ToAPIContext() *types.APIContext {
 	return &types.APIContext{
 		OrgID:      c.OrgID,
 		OrgName:    c.OrgName,
+		OrgLicense: c.OrgLicense,
 		UserID:     c.UserSubject,
 		UserName:   c.UserName,
 		UserEmail:  c.UserEmail,

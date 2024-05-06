@@ -17,12 +17,11 @@ import (
 	"github.com/runopsio/hoop/gateway/indexer"
 	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/pgrest"
+	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
 	"github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/runbooks"
 	"github.com/runopsio/hoop/gateway/security/idp"
-	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/transport"
-	"github.com/runopsio/hoop/gateway/user"
 
 	// plugins
 	"github.com/runopsio/hoop/gateway/transport/connectionstatus"
@@ -41,7 +40,7 @@ import (
 func Run() {
 	ver := version.Get()
 	log.Infof("version=%s, compiler=%s, go=%s, platform=%s, commit=%s, multitenant=%v, build-date=%s",
-		ver.Version, ver.Compiler, ver.GoVersion, ver.Platform, ver.GitCommit, user.IsOrgMultiTenant(), ver.BuildDate)
+		ver.Version, ver.Compiler, ver.GoVersion, ver.Platform, ver.GitCommit, pgusers.IsOrgMultiTenant(), ver.BuildDate)
 
 	apiURL := os.Getenv("API_URL")
 	if err := changeWebappApiURL(apiURL); err != nil {
@@ -53,7 +52,6 @@ func Run() {
 		log.Fatal(err)
 	}
 
-	storev2 := storagev2.NewStorage(nil)
 	idProvider := idp.NewProvider()
 
 	grpcURL := os.Getenv("GRPC_URL")
@@ -69,13 +67,13 @@ func Run() {
 		grpcURL = fmt.Sprintf("%s://%s:8443", scheme, u.Hostname())
 	}
 
-	userService := user.Service{Storage: &user.Storage{}}
-	reviewService := review.Service{Storage: &review.Storage{}}
+	// userService := user.Service{Storage: &user.Storage{}}
+	reviewService := review.Service{}
 	notificationService := getNotification()
 
-	if !user.IsOrgMultiTenant() {
+	if !pgusers.IsOrgMultiTenant() {
 		log.Infof("provisioning / promoting default organization")
-		if err := userService.CreateDefaultOrganization(); err != nil {
+		if err := pgusers.CreateDefaultOrganization(); err != nil {
 			log.Fatal(err)
 		}
 	}
@@ -86,8 +84,6 @@ func Run() {
 		RunbooksHandler: runbooks.Handler{},
 		IDProvider:      idProvider,
 		GrpcURL:         grpcURL,
-
-		StoreV2: storev2,
 	}
 
 	g := &transport.Server{
@@ -103,8 +99,7 @@ func Run() {
 	// order matters
 	plugintypes.RegisteredPlugins = []plugintypes.Plugin{
 		pluginsreview.New(
-			&review.Service{Storage: &review.Storage{}, TransportService: g},
-			&user.Service{Storage: &user.Storage{}},
+			&review.Service{TransportService: g},
 			notificationService,
 			idProvider.ApiURL,
 		),
@@ -112,10 +107,9 @@ func Run() {
 		pluginsindex.New(),
 		pluginsdlp.New(),
 		pluginsrbac.New(),
-		pluginswebhooks.New(&review.Service{Storage: &review.Storage{}, TransportService: g}),
+		pluginswebhooks.New(),
 		pluginsslack.New(
-			&review.Service{Storage: &review.Storage{}, TransportService: g},
-			&user.Service{Storage: &user.Storage{}},
+			&review.Service{TransportService: g},
 			idProvider),
 		pluginsdcm.New(),
 	}

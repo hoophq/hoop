@@ -29,7 +29,7 @@ func UpdatePlugin(ctx pgrest.OrgContext, pl *types.Plugin) error {
 	return New().Upsert(ctx, existentPlugin, pl)
 }
 
-func EnableDefaultPlugins(ctx pgrest.OrgContext, connID, connName string, pluginList []string) {
+func EnableDefaultPlugins(ctx pgrest.LicenseContext, connID, connName string, pluginList []string) {
 	for _, name := range pluginList {
 		pl, err := New().FetchOne(ctx, name)
 		if err != nil {
@@ -54,6 +54,9 @@ func EnableDefaultPlugins(ctx pgrest.OrgContext, connID, connName string, plugin
 				}},
 				ConnectionsIDs: []string{docID},
 			}
+			if !pgrest.IsValidLicense(ctx, name) {
+				newPlugin.Connections = nil
+			}
 			if err := UpdatePlugin(ctx, newPlugin); err != nil {
 				log.Warnf("failed creating plugin %v, reason=%v", name, err)
 			}
@@ -66,7 +69,8 @@ func EnableDefaultPlugins(ctx pgrest.OrgContext, connID, connName string, plugin
 				break
 			}
 		}
-		if !enabled {
+		if !enabled && pgrest.IsValidLicense(ctx, name) {
+
 			docID := uuid.NewString()
 			pl.ConnectionsIDs = append(pl.ConnectionsIDs, docID)
 			pluginConnection := &types.PluginConnection{
@@ -87,7 +91,7 @@ func EnableDefaultPlugins(ctx pgrest.OrgContext, connID, connName string, plugin
 // UpsertPluginConnection will create or update the plugin connection for the target plugin
 // if the plugin does not exist it will be created.
 // this function shouldn't be used if the plugin uses the config field (e.g.: slack)
-func UpsertPluginConnection(ctx pgrest.OrgContext, pluginName string, pluginConn *types.PluginConnection) {
+func UpsertPluginConnection(ctx pgrest.LicenseContext, pluginName string, pluginConn *types.PluginConnection) {
 	existentPlugin, err := New().FetchOne(ctx, pluginName)
 	if err != nil {
 		log.Warnf("failed fetching plugin %v, reason=%v", pluginName, err)
@@ -109,9 +113,17 @@ func UpsertPluginConnection(ctx pgrest.OrgContext, pluginName string, pluginConn
 		if len(pluginConn.Config) == 0 {
 			return
 		}
+		if !pgrest.IsValidLicense(ctx, pluginName) {
+			newPlugin.Connections = nil
+		}
 		if err := New().Upsert(ctx, nil, newPlugin); err != nil {
 			log.Warnf("failed creating plugin %v, reason=%v", pluginName, err)
 		}
+		return
+	}
+
+	// it's not a valid license, don't proceed
+	if !pgrest.IsValidLicense(ctx, pluginName) {
 		return
 	}
 

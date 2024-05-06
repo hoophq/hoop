@@ -56,7 +56,8 @@ func setChecksumCache(orgID string, req *proto.PreConnectRequest) {
 	connectionChecksumStore.Set(syncKey, checksum)
 }
 
-func upsertConnection(ctx pgrest.OrgContext, agentID string, req *proto.PreConnectRequest, conn *pgrest.Connection) error {
+func upsertConnection(ctx pgrest.LicenseContext, agentID string, req *proto.PreConnectRequest, conn *pgrest.Connection) error {
+	// TODO: implement logic based on license
 	if conn == nil {
 		conn = &pgrest.Connection{
 			ID:        uuid.NewString(),
@@ -96,11 +97,11 @@ func upsertConnection(ctx pgrest.OrgContext, agentID string, req *proto.PreConne
 	return nil
 }
 
-func connectionSync(orgID, agentID string, req *proto.PreConnectRequest) error {
-	if checksumCacheMatches(orgID, req) {
+func connectionSync(ctx pgrest.LicenseContext, agentID string, req *proto.PreConnectRequest) error {
+	if checksumCacheMatches(ctx.GetOrgID(), req) {
 		return nil
 	}
-	ctx := pgrest.NewOrgContext(orgID)
+	// ctx := pgrest.NewOrgContext(orgID)
 	conn, err := pgconnections.New().FetchOneByNameOrID(ctx, req.Name)
 	if err != nil {
 		return err
@@ -123,6 +124,6 @@ func connectionSync(orgID, agentID string, req *proto.PreConnectRequest) error {
 	if err := upsertConnection(ctx, agentID, req, conn); err != nil {
 		return err
 	}
-	setChecksumCache(orgID, req)
+	setChecksumCache(ctx.GetOrgID(), req)
 	return nil
 }

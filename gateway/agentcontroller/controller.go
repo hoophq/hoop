@@ -17,7 +17,6 @@ import (
 	"github.com/runopsio/hoop/gateway/pgrest"
 	pgagents "github.com/runopsio/hoop/gateway/pgrest/agents"
 	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
-	"github.com/runopsio/hoop/gateway/user"
 	"golang.org/x/text/transform"
 	"golang.org/x/text/unicode/norm"
 )
@@ -33,7 +32,7 @@ var (
 )
 
 func Run(gatewayGrpcURL string) error {
-	if !user.IsOrgMultiTenant() {
+	if !pgusers.IsOrgMultiTenant() {
 		return nil
 	}
 	client, err := NewApiClient()

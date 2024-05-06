@@ -306,6 +306,7 @@ func GetUserInfo(c *gin.Context) {
 		"role":           roleName,
 		"org_id":         ctx.OrgID,
 		"org_name":       ctx.OrgName,
+		"org_license":    ctx.OrgLicense,
 	}
 	if ctx.IsAnonymous() {
 		userInfoData["verified"] = false

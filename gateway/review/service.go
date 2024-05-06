@@ -7,26 +7,20 @@ import (
 
 	"github.com/google/uuid"
 	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/gateway/pgrest"
+	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
+	pgsession "github.com/runopsio/hoop/gateway/pgrest/session"
+	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
-	"github.com/runopsio/hoop/gateway/user"
 )
 
 type (
 	Service struct {
-		Storage          storage
 		TransportService transportService
 	}
 
-	storage interface {
-		Persist(context *user.Context, review *types.Review) (int64, error)
-		FindById(context *user.Context, id string) (*types.Review, error)
-		FindBySessionID(context *user.Context, sessionID string) (*types.Review, error)
-		FindApprovedJitReviews(ctx *user.Context, connID string) (*types.Review, error)
-		PersistSessionAsReady(ctx *user.Context, sessionID string) error
-	}
-
 	transportService interface {
-		ReviewStatusChange(ctx *user.Context, rev *types.Review)
+		ReviewStatusChange(rev *types.Review)
 	}
 )
 
@@ -41,16 +35,16 @@ const (
 	ReviewTypeOneTime = "onetime"
 )
 
-func (s *Service) FindOne(context *user.Context, id string) (*types.Review, error) {
-	return s.Storage.FindById(context, id)
+func (s *Service) FindOne(ctx pgrest.OrgContext, id string) (*types.Review, error) {
+	return pgreview.New().FetchOneByID(ctx, id)
 }
 
 // FindOneTimeReview returns an one time review by session id
-func (s *Service) FindBySessionID(context *user.Context, sessionID string) (*types.Review, error) {
-	return s.Storage.FindBySessionID(context, sessionID)
+func (s *Service) FindBySessionID(ctx pgrest.Context, sessionID string) (*types.Review, error) {
+	return pgreview.New().FetchOneBySid(ctx, sessionID)
 }
 
-func (s *Service) Persist(context *user.Context, review *types.Review) error {
+func (s *Service) Persist(ctx pgrest.OrgContext, review *types.Review) error {
 	if review.Id == "" {
 		review.Id = uuid.NewString()
 	}
@@ -81,18 +75,18 @@ func (s *Service) Persist(context *user.Context, review *types.Review) error {
 		ReviewGroupsData: review.ReviewGroupsData,
 	}
 
-	if _, err := s.Storage.Persist(context, parsedReview); err != nil {
+	if err := pgreview.New().Upsert(parsedReview); err != nil {
 		return err
 	}
 	return nil
 }
 
 // FindApprovedJitReviews returns jit reviews that are active based on the access duration
-func (s *Service) FindApprovedJitReviews(ctx *user.Context, connID string) (*types.Review, error) {
-	return s.Storage.FindApprovedJitReviews(ctx, connID)
+func (s *Service) FindApprovedJitReviews(ctx pgrest.OrgContext, connID string) (*types.Review, error) {
+	return pgreview.New().FetchJit(ctx, connID)
 }
 
-func (s *Service) Revoke(ctx *user.Context, reviewID string) (*types.Review, error) {
+func (s *Service) Revoke(ctx pgrest.OrgContext, reviewID string) (*types.Review, error) {
 	rev, err := s.FindOne(ctx, reviewID)
 	if err != nil {
 		return nil, err
@@ -110,8 +104,8 @@ func (s *Service) Revoke(ctx *user.Context, reviewID string) (*types.Review, err
 }
 
 // called by slack plugin and webapp
-func (s *Service) Review(context *user.Context, reviewID string, status types.ReviewStatus) (*types.Review, error) {
-	rev, err := s.FindOne(context, reviewID)
+func (s *Service) Review(ctx *storagev2.Context, reviewID string, status types.ReviewStatus) (*types.Review, error) {
+	rev, err := s.FindOne(ctx, reviewID)
 	if err != nil {
 		return nil, fmt.Errorf("fetch review error: %v", err)
 	}
@@ -124,7 +118,7 @@ func (s *Service) Review(context *user.Context, reviewID string, status types.Re
 
 	isEligibleReviewer := false
 	for _, r := range rev.ReviewGroupsData {
-		if pb.IsInList(r.Group, context.User.Groups) {
+		if pb.IsInList(r.Group, ctx.UserGroups) {
 			isEligibleReviewer = true
 			break
 		}
@@ -141,13 +135,13 @@ func (s *Service) Review(context *user.Context, reviewID string, status types.Re
 	}
 
 	for i, r := range rev.ReviewGroupsData {
-		if pb.IsInList(r.Group, context.User.Groups) {
+		if pb.IsInList(r.Group, ctx.UserGroups) {
 			t := time.Now().UTC().Format(time.RFC3339)
 			rev.ReviewGroupsData[i].Status = status
 			rev.ReviewGroupsData[i].ReviewedBy = &types.ReviewOwner{
-				Id:    context.User.Id,
-				Name:  context.User.Name,
-				Email: context.User.Email,
+				Id:    ctx.UserID,
+				Name:  ctx.UserName,
+				Email: ctx.UserEmail,
 			}
 			rev.ReviewGroupsData[i].ReviewDate = &t
 		}
@@ -161,16 +155,16 @@ func (s *Service) Review(context *user.Context, reviewID string, status types.Re
 		rev.Status = types.ReviewStatusApproved
 	}
 
-	if err := s.Persist(context, rev); err != nil {
+	if err := s.Persist(ctx, rev); err != nil {
 		return nil, fmt.Errorf("saving review error: %v", err)
 	}
 
 	if rev.Status == types.ReviewStatusApproved || rev.Status == types.ReviewStatusRejected {
-		if err := s.Storage.PersistSessionAsReady(context, rev.Session); err != nil {
+		if err := pgsession.New().UpdateStatus(ctx, rev.Session, types.SessionStatusReady); err != nil {
 			return nil, fmt.Errorf("save sesession as ready error: %v", err)
 		}
 		// release the connection if there's a client waiting
-		s.TransportService.ReviewStatusChange(context, rev)
+		s.TransportService.ReviewStatusChange(rev)
 	}
 	return rev, nil
 }

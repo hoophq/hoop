@@ -18,10 +18,10 @@ import (
 	pgconnections "github.com/runopsio/hoop/gateway/pgrest/connections"
 	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
 	pgsession "github.com/runopsio/hoop/gateway/pgrest/session"
+	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	sessionstorage "github.com/runopsio/hoop/gateway/storagev2/session"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
-	"github.com/runopsio/hoop/gateway/user"
 )
 
 type SessionPostBody struct {
@@ -33,8 +33,7 @@ type SessionPostBody struct {
 }
 
 func Post(c *gin.Context) {
-	ctx := user.ContextUser(c)
-	storageCtx := storagev2.ParseContext(c)
+	ctx := storagev2.ParseContext(c)
 
 	var body SessionPostBody
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -51,7 +50,7 @@ func Post(c *gin.Context) {
 		return
 	}
 
-	connection, err := pgconnections.New().FetchOneForExec(storageCtx, body.Connection)
+	connection, err := pgconnections.New().FetchOneForExec(ctx, body.Connection)
 	if connection == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "Connection not found"})
 		return
@@ -63,13 +62,13 @@ func Post(c *gin.Context) {
 
 	newSession := types.Session{
 		ID:           uuid.NewString(),
-		OrgID:        ctx.Org.Id,
+		OrgID:        ctx.GetOrgID(),
 		Labels:       body.Labels,
 		Metadata:     body.Metadata,
 		Script:       types.SessionScript{"data": body.Script},
-		UserEmail:    ctx.User.Email,
-		UserID:       ctx.User.Id,
-		UserName:     ctx.User.Name,
+		UserEmail:    ctx.UserEmail,
+		UserID:       ctx.UserID,
+		UserName:     ctx.UserName,
 		Type:         connection.Type,
 		Connection:   connection.Name,
 		Verb:         pb.ClientVerbExec,
@@ -78,7 +77,7 @@ func Post(c *gin.Context) {
 		StartSession: time.Now().UTC(),
 	}
 
-	err = pgsession.New().Upsert(storageCtx, newSession)
+	err = pgsession.New().Upsert(ctx, newSession)
 	if err != nil {
 		log.Errorf("failed persisting session, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "The session couldn't be created"})
@@ -110,7 +109,7 @@ func CoerceMetadataFields(metadata map[string]any) error {
 
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	log := user.ContextLogger(c)
+	log := pgusers.ContextLogger(c)
 
 	var options []*types.SessionOption
 	for _, optKey := range types.AvailableSessionOptions {
@@ -157,9 +156,7 @@ func List(c *gin.Context) {
 
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-
-	context := user.ContextUser(c)
-	log := user.ContextLogger(c)
+	log := pgusers.ContextLogger(c)
 
 	sessionID := c.Param("session_id")
 	session, err := sessionstorage.FindOne(ctx, sessionID)
@@ -195,9 +192,9 @@ func Get(c *gin.Context) {
 		requestPayload := map[string]any{
 			"token":               downloadToken,
 			"expire-at":           expireAtTime,
-			"context-user-id":     context.User.Id,
-			"context-user-groups": context.User.Groups,
-			"context-org-id":      context.Org.Id,
+			"context-user-id":     ctx.UserID,
+			"context-user-groups": ctx.UserGroups,
+			"context-org-id":      ctx.GetOrgID(),
 		}
 		downloadTokenStore.Set(sessionID, requestPayload)
 		c.JSON(200, gin.H{"download_url": downloadURL, "expire_at": expireAtTime})
@@ -311,8 +308,7 @@ func DownloadSession(c *gin.Context) {
 
 	ctx := storagev2.NewContext(
 		fmt.Sprintf("%v", store["context-user-id"]),
-		fmt.Sprintf("%v", store["context-org-id"]),
-		storagev2.NewStorage(nil))
+		fmt.Sprintf("%v", store["context-org-id"]))
 	ctx.UserGroups, _ = store["context-user-groups"].([]string)
 	log.With(
 		"sid", sid, "ext", fileExt,

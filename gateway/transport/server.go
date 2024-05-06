@@ -146,14 +146,15 @@ func (s *Server) StartRPCServer() {
 func (s *Server) PreConnect(ctx context.Context, req *pb.PreConnectRequest) (*pb.PreConnectResponse, error) {
 	var gwctx authinterceptor.GatewayContext
 	err := authinterceptor.ParseGatewayContextInto(ctx, &gwctx)
-	orgID, agentID, agentName := gwctx.Agent.OrgID, gwctx.Agent.ID, gwctx.Agent.Name
+	orgID, orgLicense, agentID, agentName := gwctx.Agent.OrgID, gwctx.Agent.Org.License, gwctx.Agent.ID, gwctx.Agent.Name
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	if orgID == "" || agentID == "" || agentName == "" {
 		return nil, status.Errorf(codes.Internal, "missing agent context")
 	}
-	resp := connectionrequests.AgentPreConnect(orgID, agentID, req)
+	orgCtx := pgrest.NewLicenseContext(orgID, orgLicense)
+	resp := connectionrequests.AgentPreConnect(orgCtx, agentID, req)
 	if resp.Message != "" {
 		err := fmt.Errorf("failed processing pre-connect, org=%v, agent=%v, reason=%v", orgID, agentName, err)
 		log.Warn(err)

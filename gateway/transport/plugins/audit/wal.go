@@ -125,7 +125,7 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error
 		return err
 	}
 
-	storageContext := storagev2.NewContext(wh.UserID, wh.OrgID, storagev2.NewStorage(nil))
+	storageContext := storagev2.NewContext(wh.UserID, wh.OrgID)
 	session, err := sessionstorage.FindOne(storageContext, wh.SessionID)
 	if err != nil || session == nil {
 		return fmt.Errorf("fail to fetch session in the store, empty=%v, err=%v",

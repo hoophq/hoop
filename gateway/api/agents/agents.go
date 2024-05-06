@@ -16,7 +16,6 @@ import (
 	"github.com/runopsio/hoop/gateway/pgrest"
 	pgagents "github.com/runopsio/hoop/gateway/pgrest/agents"
 	"github.com/runopsio/hoop/gateway/storagev2"
-	"github.com/runopsio/hoop/gateway/user"
 )
 
 type AgentRequest struct {
@@ -25,8 +24,7 @@ type AgentRequest struct {
 }
 
 func Post(c *gin.Context) {
-	ctx := user.ContextUser(c)
-	log := user.ContextLogger(c)
+	ctx := storagev2.ParseContext(c)
 
 	req := AgentRequest{Mode: proto.AgentModeStandardType}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -72,7 +70,7 @@ func Post(c *gin.Context) {
 	err = pgagents.New().Upsert(&pgrest.Agent{
 		// a deterministic uuid allows automatic reasign of resources
 		// in case of removal and creating with the same name (e.g. connections)
-		ID:       DeterministicAgentUUID(ctx.Org.Id, req.Name),
+		ID:       DeterministicAgentUUID(ctx.GetOrgID(), req.Name),
 		Name:     req.Name,
 		OrgID:    ctx.GetOrgID(),
 		KeyHash:  secretKeyHash,
@@ -90,8 +88,7 @@ func Post(c *gin.Context) {
 }
 
 func Delete(c *gin.Context) {
-	ctx := user.ContextUser(c)
-	log := user.ContextLogger(c)
+	ctx := storagev2.ParseContext(c)
 
 	nameOrID := c.Param("nameOrID")
 	agent, err := pgagents.New().FetchOneByNameOrID(ctx, nameOrID)
@@ -113,9 +110,9 @@ func Delete(c *gin.Context) {
 }
 
 func List(c *gin.Context) {
-	context := user.ContextUser(c)
+	ctx := storagev2.ParseContext(c)
 	// items, err := pgagents.New().FindAll(context, pgrest.WithEqFilter(c.Request.URL.Query()))
-	items, err := pgagents.New().FindAll(context, pgrest.WithEqFilter(url.Values{}))
+	items, err := pgagents.New().FindAll(ctx, pgrest.WithEqFilter(url.Values{}))
 	if err != nil {
 		log.Errorf("failed listing agents, reason=%v", err)
 		sentry.CaptureException(err)

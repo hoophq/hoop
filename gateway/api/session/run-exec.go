@@ -12,19 +12,19 @@ import (
 	"github.com/runopsio/hoop/gateway/clientexec"
 	pgplugins "github.com/runopsio/hoop/gateway/pgrest/plugins"
 	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
+	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	sessionstorage "github.com/runopsio/hoop/gateway/storagev2/session"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
-	"github.com/runopsio/hoop/gateway/user"
 )
 
 func RunExec(c *gin.Context, session types.Session, userAgent string, clientArgs []string) {
-	ctx := user.ContextUser(c)
-	log := user.ContextLogger(c)
+	ctx := storagev2.ParseContext(c)
+	log := pgusers.ContextLogger(c)
 
 	client, err := clientexec.New(&clientexec.Options{
-		OrgID:          ctx.Org.Id,
+		OrgID:          ctx.GetOrgID(),
 		SessionID:      session.ID,
 		ConnectionName: session.Connection,
 		BearerToken:    getAccessToken(c),
@@ -84,9 +84,8 @@ func getAccessToken(c *gin.Context) string {
 
 // TODO: Refactor to use sessionapi.RunExec
 func RunReviewedExec(c *gin.Context) {
-	ctxv2 := storagev2.ParseContext(c)
-	ctx := user.ContextUser(c)
-	log := user.ContextLogger(c)
+	ctx := storagev2.ParseContext(c)
+	log := pgusers.ContextLogger(c)
 
 	sessionId := c.Param("session_id")
 
@@ -128,7 +127,7 @@ func RunReviewedExec(c *gin.Context) {
 		return
 	}
 
-	session, err := sessionstorage.FindOne(ctxv2, sessionId)
+	session, err := sessionstorage.FindOne(ctx, sessionId)
 	if err != nil {
 		log.Errorf("failed fetching session, reason=%v", err)
 		c.JSON(http.StatusInternalServerError, &clientexec.ExecErrResponse{Message: "failed fetching sessions"})
@@ -138,7 +137,7 @@ func RunReviewedExec(c *gin.Context) {
 		c.JSON(http.StatusNotFound, &clientexec.ExecErrResponse{Message: "session not found"})
 		return
 	}
-	if session.UserEmail != ctx.User.Email {
+	if session.UserEmail != ctx.UserEmail {
 		c.JSON(http.StatusBadRequest, &clientexec.ExecErrResponse{Message: "only the creator can trigger this action"})
 		return
 	}
@@ -179,7 +178,7 @@ func RunReviewedExec(c *gin.Context) {
 
 	// TODO use the new RunExec here
 	client, err := clientexec.New(&clientexec.Options{
-		OrgID:          ctx.Org.Id,
+		OrgID:          ctx.GetOrgID(),
 		SessionID:      session.ID,
 		ConnectionName: session.Connection,
 		BearerToken:    getAccessToken(c),
@@ -208,7 +207,7 @@ func RunReviewedExec(c *gin.Context) {
 	select {
 	case resp := <-clientResp:
 		review.Status = types.ReviewStatusExecuted
-		if _, err := sessionstorage.PutReview(ctxv2, review); err != nil {
+		if _, err := sessionstorage.PutReview(ctx, review); err != nil {
 			log.Warnf("failed updating review to executed status, err=%v", err)
 		}
 		log.Infof("review exec response. exit_code=%v, truncated=%v, response-length=%v",
@@ -233,7 +232,7 @@ func RunReviewedExec(c *gin.Context) {
 		// we do not know the status of this in the future.
 		// replaces the current "PROCESSING" status
 		review.Status = types.ReviewStatusUnknown
-		if _, err := sessionstorage.PutReview(ctxv2, review); err != nil {
+		if _, err := sessionstorage.PutReview(ctx, review); err != nil {
 			log.Warnf("failed updating review to unknown status, err=%v", err)
 		}
 

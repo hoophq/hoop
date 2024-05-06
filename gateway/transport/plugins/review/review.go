@@ -11,24 +11,22 @@ import (
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	"github.com/runopsio/hoop/gateway/notification"
+	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
 	"github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
-	"github.com/runopsio/hoop/gateway/user"
 )
 
 type reviewPlugin struct {
 	apiURL              string
 	reviewSvc           *review.Service
-	userSvc             *user.Service
 	notificationService notification.Service
 }
 
-func New(reviewSvc *review.Service, userSvc *user.Service, notificationSvc notification.Service, apiURL string) *reviewPlugin {
+func New(reviewSvc *review.Service, notificationSvc notification.Service, apiURL string) *reviewPlugin {
 	return &reviewPlugin{
 		apiURL:              apiURL,
 		reviewSvc:           reviewSvc,
-		userSvc:             userSvc,
 		notificationService: notificationSvc,
 	}
 }
@@ -43,12 +41,7 @@ func (r *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 		return nil, nil
 	}
 
-	userContext := &user.Context{
-		Org:  &user.Org{Id: pctx.OrgID},
-		User: &user.User{Id: pctx.UserID},
-	}
-
-	otrev, err := r.reviewSvc.FindBySessionID(userContext, pctx.SID)
+	otrev, err := pgreview.New().FetchOneBySid(pctx, pctx.SID)
 	if err != nil {
 		log.With("session", pctx.SID).Error("failed fetching session, err=%v", err)
 		return nil, plugintypes.InternalErr("failed fetching review", err)
@@ -67,14 +60,14 @@ func (r *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 
 		if otrev.Status == types.ReviewStatusApproved {
 			otrev.Status = types.ReviewStatusProcessing
-			if err := r.reviewSvc.Persist(userContext, otrev); err != nil {
+			if err := r.reviewSvc.Persist(pctx, otrev); err != nil {
 				return nil, plugintypes.InternalErr("failed saving approved review", err)
 			}
 		}
 		return nil, nil
 	}
 
-	jitr, err := r.reviewSvc.FindApprovedJitReviews(userContext, pctx.ConnectionID)
+	jitr, err := pgreview.New().FetchJit(pctx, pctx.ConnectionID)
 	if err != nil {
 		return nil, plugintypes.InternalErr("failed listing time based reviews", err)
 	}
@@ -163,7 +156,7 @@ func (r *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 	log.With("session", pctx.SID, "id", newRev.Id, "user", pctx.UserID, "org", pctx.OrgID,
 		"type", reviewType, "duration", fmt.Sprintf("%vm", accessDuration.Minutes())).
 		Infof("creating review")
-	if err := r.reviewSvc.Persist(userContext, newRev); err != nil {
+	if err := r.reviewSvc.Persist(pctx, newRev); err != nil {
 		return nil, plugintypes.InternalErr("failed saving review", err)
 	}
 	return &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{

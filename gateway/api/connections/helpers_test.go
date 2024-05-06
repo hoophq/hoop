@@ -101,7 +101,7 @@ func TestAccessControlAllowed(t *testing.T) {
 	} {
 		t.Run(tt.msg, func(t *testing.T) {
 			pgrest.WithHttpClient(tt.fakeClient)
-			ctx := storagev2.NewOrganizationContext("", nil).WithUserInfo("", "", "", "", tt.groups)
+			ctx := storagev2.NewOrganizationContext("").WithUserInfo("", "", "", "", tt.groups)
 			allowed, err := accessControlAllowed(ctx)
 			if err != nil {
 				t.Fatalf("did not expect error, got %v", err)

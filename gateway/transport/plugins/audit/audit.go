@@ -65,7 +65,7 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 		return err
 	}
 	// Persist the session in the storage
-	ctx := storagev2.NewContext(pctx.UserID, pctx.OrgID, storagev2.NewStorage(nil))
+	ctx := storagev2.NewContext(pctx.UserID, pctx.OrgID)
 	err := pgsession.New().Upsert(ctx, types.Session{
 		ID:               pctx.SID,
 		OrgID:            pctx.OrgID,
