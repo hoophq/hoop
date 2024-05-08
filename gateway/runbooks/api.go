@@ -1,6 +1,7 @@
 package runbooks
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -41,15 +42,7 @@ type RunbookRequest struct {
 	RefHash    string            `json:"ref_hash"`
 	Parameters map[string]string `json:"parameters"`
 	ClientArgs []string          `json:"client_args"`
-	Redirect   bool              `json:"redirect"`
 	Metadata   map[string]any    `json:"metadata"`
-}
-
-type RunbookErrResponse struct {
-	Message           string  `json:"message"`
-	ExitCode          *int    `json:"exit_code"`
-	SessionID         *string `json:"session_id"`
-	ExecutionTimeMili int64   `json:"execution_time"`
 }
 
 type RunbookList struct {
@@ -69,14 +62,13 @@ func (h *Handler) ListByConnection(c *gin.Context) {
 	connectionName := c.Param("name")
 	p, err := pgplugins.New().FetchOne(ctx, plugintypes.PluginRunbooksName)
 	if err != nil {
-		log.Error(err)
+		log.Errorf("failed retrieving runbook plugin, reason=%v", err)
 		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError,
-			&RunbookErrResponse{Message: "failed retrieving runbook plugin"})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed retrieving runbook plugin"})
 		return
 	}
 	if p == nil {
-		c.JSON(http.StatusBadRequest, &RunbookErrResponse{Message: "plugin runbooks not found"})
+		c.JSON(http.StatusBadRequest, gin.H{"message": "plugin runbooks not found"})
 		return
 	}
 	var configEnvVars map[string]string
@@ -85,7 +77,7 @@ func (h *Handler) ListByConnection(c *gin.Context) {
 	}
 	config, err := templates.NewRunbookConfig(configEnvVars)
 	if err != nil {
-		c.JSON(http.StatusUnprocessableEntity, &RunbookErrResponse{Message: err.Error()})
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
 	hasConnection := false
@@ -100,15 +92,13 @@ func (h *Handler) ListByConnection(c *gin.Context) {
 		}
 	}
 	if !hasConnection {
-		c.JSON(http.StatusNotFound, &RunbookErrResponse{Message: "runbooks plugin does not have this connection"})
+		c.JSON(http.StatusNotFound, gin.H{"message": "runbooks plugin does not have this connection"})
 		return
 	}
 	runbookList, err := listRunbookFilesByPathPrefix(pathPrefix, config)
 	if err != nil {
 		log.Infof("failed listing runbooks, err=%v", err)
-		c.JSON(http.StatusUnprocessableEntity, gin.H{
-			"message": fmt.Sprintf("failed listing runbooks, reason=%v", err),
-		})
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("failed listing runbooks, reason=%v", err)})
 		return
 	}
 	c.JSON(http.StatusOK, runbookList)
@@ -120,11 +110,9 @@ func (h *Handler) List(c *gin.Context) {
 	if !h.scanedKnownHosts {
 		knownHostsFilePath, err := templates.SSHKeyScan()
 		if err != nil {
-			log.Error(err)
+			log.Errorf("failed scanning known_hosts file, reason=%v", err)
 			sentry.CaptureException(err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"session_id": nil,
-				"message":    "failed scanning known_hosts file, contact"})
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed scanning known_hosts file"})
 			return
 		}
 		os.Setenv("SSH_KNOWN_HOSTS", knownHostsFilePath)
@@ -136,11 +124,11 @@ func (h *Handler) List(c *gin.Context) {
 		log.Error(err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError,
-			&RunbookErrResponse{Message: "failed retrieving runbook plugin"})
+			gin.H{"message": "failed retrieving runbook plugin"})
 		return
 	}
 	if p == nil {
-		c.JSON(http.StatusNotFound, &RunbookErrResponse{Message: "plugin runbooks not found"})
+		c.JSON(http.StatusNotFound, gin.H{"message": "plugin runbooks not found"})
 		return
 	}
 	var configEnvVars map[string]string
@@ -149,15 +137,13 @@ func (h *Handler) List(c *gin.Context) {
 	}
 	config, err := templates.NewRunbookConfig(configEnvVars)
 	if err != nil {
-		c.JSON(http.StatusUnprocessableEntity, &RunbookErrResponse{Message: err.Error()})
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
 	runbookList, err := listRunbookFiles(p.Connections, config)
 	if err != nil {
 		log.Infof("failed listing runbooks, err=%v", err)
-		c.JSON(http.StatusUnprocessableEntity, gin.H{
-			"message": fmt.Sprintf("failed listing runbooks, reason=%v", err),
-		})
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("failed listing runbooks, reason=%v", err)})
 		return
 	}
 	c.PureJSON(http.StatusOK, runbookList)
@@ -171,34 +157,26 @@ func (h *Handler) RunExec(c *gin.Context) {
 
 	var req RunbookRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"session_id": nil,
-			"message":    err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 	if err := sessionapi.CoerceMetadataFields(req.Metadata); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{
-			"session_id": nil,
-			"message":    err.Error()})
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
 	connectionName := c.Param("name")
 	config, pathPrefix, err := h.getRunbookConfig(ctx, c, connectionName)
 	if err != nil {
-		log.Infoln(err)
+		log.Error(err)
 		return
 	}
 	if pathPrefix != "" && !strings.HasPrefix(req.FileName, pathPrefix) {
-		c.JSON(http.StatusNotFound, gin.H{
-			"session_id": nil,
-			"message":    fmt.Sprintf("runbook file %v not found", req.FileName)})
+		c.JSON(http.StatusNotFound, gin.H{"message": fmt.Sprintf("runbook file %v not found", req.FileName)})
 		return
 	}
 	runbook, err := fetchRunbookFile(config, req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"session_id": nil,
-			"message":    err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 
@@ -208,8 +186,27 @@ func (h *Handler) RunExec(c *gin.Context) {
 		"runbookParameters": string(runbookParamsJson),
 	}
 
+	sessionID := uuid.NewString()
+	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
+	if userAgent == "webapp.core" {
+		userAgent = "webapp.runbook.exec"
+	}
+
+	client, err := clientexec.New(&clientexec.Options{
+		OrgID:          ctx.GetOrgID(),
+		SessionID:      sessionID,
+		ConnectionName: connectionName,
+		BearerToken:    getAccessToken(c),
+		UserAgent:      userAgent,
+	})
+	if err != nil {
+		log.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
 	newSession := types.Session{
-		ID:           uuid.NewString(),
+		ID:           sessionID,
 		OrgID:        ctx.GetOrgID(),
 		Labels:       sessionLabels,
 		Metadata:     req.Metadata,
@@ -232,65 +229,33 @@ func (h *Handler) RunExec(c *gin.Context) {
 		return
 	}
 
-	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
-	if userAgent == "webapp.core" {
-		userAgent = "webapp.runbook.exec"
-	}
-
-	client, err := clientexec.New(&clientexec.Options{
-		OrgID:          ctx.GetOrgID(),
-		SessionID:      newSession.ID,
-		ConnectionName: connectionName,
-		BearerToken:    getAccessToken(c),
-		UserAgent:      userAgent,
-		UserInfo:       nil,
-	})
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"session_id": nil, "message": err.Error()})
-		return
-	}
-	clientResp := make(chan *clientexec.Response)
-	go func() {
-		defer close(clientResp)
-		defer client.Close()
-		select {
-		case clientResp <- client.Run(runbook.InputFile, runbook.EnvVars, req.ClientArgs...):
-		default:
-		}
-	}()
-
 	var params string
 	for key, val := range req.Parameters {
 		params += fmt.Sprintf("%s:len[%v],", key, len(val))
 	}
-	log = log.With("session", client.SessionID())
+	log = log.With("sid", sessionID)
 	log.Infof("runbook exec, commit=%s, name=%s, connection=%s, parameters=%v",
 		runbook.CommitHash[:8], req.FileName, connectionName, strings.TrimSpace(params))
-	c.Header("Location", fmt.Sprintf("/api/plugins/audit/sessions/%s/status", client.SessionID()))
-	statusCode := http.StatusOK
-	if req.Redirect {
-		statusCode = http.StatusFound
-	}
-	select {
-	case resp := <-clientResp:
-		log.Infof("runbook exec response. exit_code=%v, truncated=%v, response-length=%v",
-			resp.GetExitCode(), resp.Truncated, len(resp.ErrorMessage()))
-		if resp.IsError() {
-			c.JSON(http.StatusBadRequest, &RunbookErrResponse{
-				SessionID:         &resp.SessionID,
-				Message:           resp.ErrorMessage(),
-				ExitCode:          resp.ExitCode,
-				ExecutionTimeMili: resp.ExecutionTimeMili,
-			})
-			return
+
+	respCh := make(chan *clientexec.Response)
+	go func() {
+		defer func() { close(respCh); client.Close() }()
+		select {
+		case respCh <- client.Run(runbook.InputFile, runbook.EnvVars, req.ClientArgs...):
+		default:
 		}
-		c.JSON(statusCode, resp)
-	case <-time.After(time.Second * 50):
-		// closing the client will force the goroutine to end
-		// and the result will return async
-		log.Infof("runbook exec timeout (50s), it will return async")
+	}()
+
+	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*50)
+	defer cancelFn()
+	select {
+	case outcome := <-respCh:
+		log.Infof("runbook exec response, %v", outcome)
+		c.JSON(http.StatusOK, outcome)
+	case <-timeoutCtx.Done():
 		client.Close()
-		c.JSON(http.StatusAccepted, gin.H{"session_id": client.SessionID(), "exit_code": nil})
+		log.Infof("runbook exec timeout (50s), it will return async")
+		c.JSON(http.StatusAccepted, clientexec.NewTimeoutResponse(sessionID))
 	}
 }
 
@@ -298,11 +263,11 @@ func (h *Handler) getConnectionID(ctx pgrest.Context, c *gin.Context, connection
 	conn, err := apiconnections.FetchByName(ctx, connectionName)
 	if err != nil {
 		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, &RunbookErrResponse{Message: "failed retrieving connection"})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed retrieving connection"})
 		return "", err
 	}
 	if conn == nil {
-		c.JSON(http.StatusNotFound, &RunbookErrResponse{Message: "connection not found"})
+		c.JSON(http.StatusNotFound, gin.H{"message": "connection not found"})
 		return "", fmt.Errorf("connection not found")
 	}
 	return conn.ID, nil
@@ -315,13 +280,11 @@ func (h *Handler) getRunbookConfig(ctx pgrest.Context, c *gin.Context, connectio
 	}
 	p, err := pgplugins.New().FetchOne(ctx, plugintypes.PluginRunbooksName)
 	if err != nil {
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError,
-			&RunbookErrResponse{Message: "failed retrieving runbook plugin"})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed retrieving runbook plugin"})
 		return nil, "", fmt.Errorf("failed retrieving runbooks plugin, err=%v", err)
 	}
 	if p == nil {
-		c.JSON(http.StatusNotFound, &RunbookErrResponse{Message: "plugin not found"})
+		c.JSON(http.StatusNotFound, gin.H{"message": "plugin not found"})
 		return nil, "", fmt.Errorf("plugin not found")
 	}
 	var repoPrefix string
@@ -336,8 +299,7 @@ func (h *Handler) getRunbookConfig(ctx pgrest.Context, c *gin.Context, connectio
 		}
 	}
 	if !hasConnection {
-		c.JSON(http.StatusUnprocessableEntity,
-			&RunbookErrResponse{Message: "plugin is not enabled for this connection"})
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "plugin is not enabled for this connection"})
 		return nil, repoPrefix, fmt.Errorf("plugin is not enabled for this connection")
 	}
 	var configEnvVars map[string]string
@@ -346,7 +308,7 @@ func (h *Handler) getRunbookConfig(ctx pgrest.Context, c *gin.Context, connectio
 	}
 	runbookConfig, err := templates.NewRunbookConfig(configEnvVars)
 	if err != nil {
-		c.JSON(http.StatusUnprocessableEntity, &RunbookErrResponse{Message: err.Error()})
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return nil, repoPrefix, err
 	}
 	return runbookConfig, repoPrefix, nil

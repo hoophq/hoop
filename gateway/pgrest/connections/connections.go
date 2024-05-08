@@ -11,28 +11,6 @@ import (
 type connections struct{}
 
 func New() *connections { return &connections{} }
-func (c *connections) FetchOneForExec(ctx pgrest.OrgContext, name string) (*types.Connection, error) {
-	var conn pgrest.Connection
-	err := pgrest.New("/connections?select=*,orgs(id,name)&org_id=eq.%v&name=eq.%v",
-		ctx.GetOrgID(), name).
-		FetchOne().
-		DecodeInto(&conn)
-	if err != nil {
-		if err == pgrest.ErrNotFound {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &types.Connection{
-		Id:      conn.ID,
-		OrgId:   conn.OrgID,
-		Name:    conn.Name,
-		Command: conn.Command,
-		Type:    conn.Type,
-		SubType: conn.SubType,
-		AgentId: conn.AgentID,
-	}, nil
-}
 
 func (c *connections) FetchByNames(ctx pgrest.OrgContext, connectionNames []string) (map[string]types.Connection, error) {
 	var connList []pgrest.Connection

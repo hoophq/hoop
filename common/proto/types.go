@@ -13,9 +13,12 @@ import (
 )
 
 type (
-	ClientTransport interface {
-		Send(*Packet) error
+	ClientReceiver interface {
 		Recv() (*Packet, error)
+	}
+	ClientTransport interface {
+		ClientReceiver
+		Send(*Packet) error
 		StreamContext() context.Context
 		StartKeepAlive()
 		Close() (error, error)

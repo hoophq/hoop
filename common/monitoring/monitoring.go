@@ -86,7 +86,10 @@ func SentryPreRun(cmd *cobra.Command, args []string) {
 
 type ShutdownFn func()
 
-func NewOpenTracing(apiKey string) (ShutdownFn, error) {
+func NewOpenTracing(apiURL, apiKey string) (ShutdownFn, error) {
+	if isLocalEnvironment(apiURL) {
+		return func() {}, nil
+	}
 	// Enable multi-span attributes
 	bsp := honeycomb.NewBaggageSpanProcessor()
 

@@ -1,6 +1,7 @@
 package sessionapi
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -19,58 +20,10 @@ import (
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 )
 
-func RunExec(c *gin.Context, session types.Session, userAgent string, clientArgs []string) {
-	ctx := storagev2.ParseContext(c)
-	log := pgusers.ContextLogger(c)
-
-	client, err := clientexec.New(&clientexec.Options{
-		OrgID:          ctx.GetOrgID(),
-		SessionID:      session.ID,
-		ConnectionName: session.Connection,
-		BearerToken:    getAccessToken(c),
-		UserAgent:      userAgent,
-		UserInfo:       nil,
-	})
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"session_id": nil, "message": err.Error()})
-		return
-	}
-	clientResp := make(chan *clientexec.Response)
-
-	sessionScript := session.Script["data"]
-
-	go func() {
-		defer close(clientResp)
-		defer client.Close()
-		select {
-		case clientResp <- client.Run([]byte(sessionScript), nil, clientArgs...):
-		default:
-		}
-	}()
-	log = log.With("session", client.SessionID())
-	log.Infof("started runexec method for connection %v", session.Connection)
-	c.Header("Location", fmt.Sprintf("/api/plugins/audit/sessions/%s/status", client.SessionID()))
-	statusCode := http.StatusOK
-	select {
-	case resp := <-clientResp:
-		log.Infof("runexec response. exit_code=%v, truncated=%v, response-length=%v",
-			resp.GetExitCode(), resp.Truncated, len(resp.ErrorMessage()))
-		if resp.IsError() {
-			c.JSON(http.StatusBadRequest, &clientexec.ExecErrResponse{
-				SessionID: &resp.SessionID,
-				Message:   resp.ErrorMessage(),
-				ExitCode:  resp.ExitCode,
-			})
-			return
-		}
-		c.JSON(statusCode, resp)
-	case <-time.After(time.Second * 50):
-		// closing the client will force the goroutine to end
-		// and the result will return async
-		log.Infof("runexec timeout (50s), it will return async")
-		client.Close()
-		c.JSON(http.StatusAccepted, gin.H{"session_id": client.SessionID(), "exit_code": nil})
-	}
+type ExecRequest struct {
+	Script     string   `json:"script"`
+	ClientArgs []string `json:"client_args"`
+	Redirect   bool     `json:"redirect"`
 }
 
 func getAccessToken(c *gin.Context) string {
@@ -89,23 +42,21 @@ func RunReviewedExec(c *gin.Context) {
 
 	sessionId := c.Param("session_id")
 
-	var req clientexec.ExecRequest
+	var req ExecRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"session_id": sessionId,
-			"message":    err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 
 	review, err := pgreview.New().FetchOneBySid(ctx, sessionId)
 	if err != nil {
 		log.Errorf("failed retrieving review, err=%v", err)
-		c.JSON(http.StatusInternalServerError, &clientexec.ExecErrResponse{Message: "failed retrieving review"})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed retrieving review"})
 		return
 	}
 
 	if review == nil {
-		c.JSON(http.StatusNotFound, &clientexec.ExecErrResponse{Message: "reviewed session not found"})
+		c.JSON(http.StatusNotFound, gin.H{"message": "reviewed session not found"})
 		return
 	}
 
@@ -113,7 +64,7 @@ func RunReviewedExec(c *gin.Context) {
 	// reviewID := review.Id
 	if isLockedForExec(sessionId) {
 		errMsg := fmt.Sprintf("the session %v is already being processed", sessionId)
-		c.JSON(http.StatusConflict, &clientexec.ExecErrResponse{Message: errMsg})
+		c.JSON(http.StatusConflict, gin.H{"message": errMsg})
 		return
 	}
 
@@ -122,34 +73,34 @@ func RunReviewedExec(c *gin.Context) {
 	lockExec(sessionId)
 	defer unlockExec(sessionId)
 
-	if review == nil || review.Type != ReviewTypeOneTime {
-		c.JSON(http.StatusNotFound, &clientexec.ExecErrResponse{Message: "session not found"})
+	if review.Type != ReviewTypeOneTime {
+		c.JSON(http.StatusNotFound, gin.H{"message": "session not found"})
 		return
 	}
 
 	session, err := sessionstorage.FindOne(ctx, sessionId)
 	if err != nil {
 		log.Errorf("failed fetching session, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, &clientexec.ExecErrResponse{Message: "failed fetching sessions"})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching sessions"})
 		return
 	}
 	if session == nil {
-		c.JSON(http.StatusNotFound, &clientexec.ExecErrResponse{Message: "session not found"})
+		c.JSON(http.StatusNotFound, gin.H{"message": "session not found"})
 		return
 	}
 	if session.UserEmail != ctx.UserEmail {
-		c.JSON(http.StatusBadRequest, &clientexec.ExecErrResponse{Message: "only the creator can trigger this action"})
+		c.JSON(http.StatusBadRequest, gin.H{"message": "only the creator can trigger this action"})
 		return
 	}
 	if review.Status != types.ReviewStatusApproved {
-		c.JSON(http.StatusBadRequest, &clientexec.ExecErrResponse{Message: "review not approved or already executed"})
+		c.JSON(http.StatusBadRequest, gin.H{"message": "review not approved or already executed"})
 		return
 	}
 
 	p, err := pgplugins.New().FetchOne(ctx, plugintypes.PluginReviewName)
 	if err != nil {
 		log.Errorf("failed obtaining review plugin, err=%v", err)
-		c.JSON(http.StatusInternalServerError, &clientexec.ExecErrResponse{Message: "failed retrieving review plugin"})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed retrieving review plugin"})
 		return
 	}
 	hasReviewPlugin := false
@@ -167,7 +118,7 @@ func RunReviewedExec(c *gin.Context) {
 	if !hasReviewPlugin {
 		errMsg := fmt.Sprintf("review plugin is not enabled for the connection %s", review.Connection.Name)
 		log.Infof(errMsg)
-		c.JSON(http.StatusUnprocessableEntity, &clientexec.ExecErrResponse{Message: errMsg})
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": errMsg})
 		return
 	}
 
@@ -176,54 +127,42 @@ func RunReviewedExec(c *gin.Context) {
 		userAgent = "webapp.review.exec"
 	}
 
-	// TODO use the new RunExec here
 	client, err := clientexec.New(&clientexec.Options{
 		OrgID:          ctx.GetOrgID(),
 		SessionID:      session.ID,
 		ConnectionName: session.Connection,
 		BearerToken:    getAccessToken(c),
 		UserAgent:      userAgent,
-		UserInfo:       nil,
 	})
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"session_id": nil, "message": err.Error()})
+		log.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
 
-	clientResp := make(chan *clientexec.Response)
+	respCh := make(chan *clientexec.Response)
 	go func() {
-		defer close(clientResp)
-		defer client.Close()
+		defer func() { close(respCh); client.Close() }()
 		select {
-		case clientResp <- client.Run([]byte(session.Script["data"]), review.InputEnvVars, review.InputClientArgs...):
+		case respCh <- client.Run([]byte(session.Script["data"]), review.InputEnvVars, review.InputClientArgs...):
 		default:
 		}
 	}()
-	log = log.With("session", client.SessionID())
+	log = log.With("sid", session.ID)
 	log.Infof("review apiexec, reviewid=%v, connection=%v, owner=%v, input-lenght=%v",
 		review.Id, review.Connection.Name, review.CreatedBy, len(review.Input))
-	c.Header("Location", fmt.Sprintf("/api/plugins/audit/sessions/%s/status", client.SessionID()))
 
+	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*50)
+	defer cancelFn()
 	select {
-	case resp := <-clientResp:
+	case resp := <-respCh:
 		review.Status = types.ReviewStatusExecuted
 		if _, err := sessionstorage.PutReview(ctx, review); err != nil {
 			log.Warnf("failed updating review to executed status, err=%v", err)
 		}
-		log.Infof("review exec response. exit_code=%v, truncated=%v, response-length=%v",
-			resp.GetExitCode(), resp.Truncated, len(resp.ErrorMessage()))
-
-		if resp.IsError() {
-			c.JSON(http.StatusBadRequest, &clientexec.ExecErrResponse{
-				SessionID:         &resp.SessionID,
-				Message:           resp.ErrorMessage(),
-				ExitCode:          resp.ExitCode,
-				ExecutionTimeMili: resp.ExecutionTimeMili,
-			})
-			return
-		}
+		log.Infof("review exec response, %v", resp)
 		c.JSON(http.StatusOK, resp)
-	case <-time.After(time.Second * 50):
+	case <-timeoutCtx.Done():
 		log.Infof("review exec timeout (50s), it will return async")
 		// closing the client will force the goroutine to end
 		// and the result will return async
@@ -235,8 +174,7 @@ func RunReviewedExec(c *gin.Context) {
 		if _, err := sessionstorage.PutReview(ctx, review); err != nil {
 			log.Warnf("failed updating review to unknown status, err=%v", err)
 		}
-
-		c.JSON(http.StatusAccepted, gin.H{"session_id": client.SessionID(), "exit_code": nil})
+		c.JSON(http.StatusAccepted, clientexec.NewTimeoutResponse(session.ID))
 	}
 }
 

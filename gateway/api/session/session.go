@@ -1,6 +1,7 @@
 package sessionapi
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -15,7 +16,8 @@ import (
 	"github.com/runopsio/hoop/common/apiutils"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
-	pgconnections "github.com/runopsio/hoop/gateway/pgrest/connections"
+	apiconnections "github.com/runopsio/hoop/gateway/api/connections"
+	"github.com/runopsio/hoop/gateway/clientexec"
 	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
 	pgsession "github.com/runopsio/hoop/gateway/pgrest/session"
 	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
@@ -34,62 +36,92 @@ type SessionPostBody struct {
 
 func Post(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-
+	log := pgusers.ContextLogger(c)
 	var body SessionPostBody
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
+	}
+
+	// Accept request body and url params as connection name
+	// Maintained for compatibility with legacy endpoint /api/connections/:name/exec
+	if body.Connection == "" {
+		body.Connection = c.Param("name")
 	}
 	if err := CoerceMetadataFields(body.Metadata); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
 
-	if body.Connection == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "You must provide the connection name"})
-		return
-	}
-
-	connection, err := pgconnections.New().FetchOneForExec(ctx, body.Connection)
-	if connection == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "Connection not found"})
-		return
-	}
+	conn, err := apiconnections.FetchByName(ctx, body.Connection)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		log.Errorf("failed fetch connection %v for exec, err=%v", body.Connection, err)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
 
+	sessionID := uuid.NewString()
+	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
+	if userAgent == "webapp.core" {
+		userAgent = "webapp.editor.exec"
+	}
+
+	client, err := clientexec.New(&clientexec.Options{
+		OrgID:          ctx.GetOrgID(),
+		SessionID:      sessionID,
+		ConnectionName: conn.Name,
+		BearerToken:    getAccessToken(c),
+		UserAgent:      userAgent,
+	})
+	if err != nil {
+		log.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
 	newSession := types.Session{
-		ID:           uuid.NewString(),
-		OrgID:        ctx.GetOrgID(),
+		ID:           sessionID,
+		OrgID:        ctx.OrgID,
 		Labels:       body.Labels,
 		Metadata:     body.Metadata,
 		Script:       types.SessionScript{"data": body.Script},
 		UserEmail:    ctx.UserEmail,
 		UserID:       ctx.UserID,
 		UserName:     ctx.UserName,
-		Type:         connection.Type,
-		Connection:   connection.Name,
+		Type:         conn.Type,
+		Connection:   conn.Name,
 		Verb:         pb.ClientVerbExec,
 		Status:       types.SessionStatusOpen,
 		DlpCount:     0,
 		StartSession: time.Now().UTC(),
 	}
-
-	err = pgsession.New().Upsert(ctx, newSession)
-	if err != nil {
-		log.Errorf("failed persisting session, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "The session couldn't be created"})
+	if err := pgsession.New().Upsert(ctx, newSession); err != nil {
+		log.Errorf("failed creating session, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating session"})
 		return
 	}
-	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
-	if userAgent == "webapp.core" {
-		userAgent = "webapp.editor.exec"
-	}
 
-	// running RunExec from run-exec.go
-	RunExec(c, newSession, userAgent, body.ClientArgs)
+	log = log.With("sid", sessionID)
+	log.Infof("started runexec method for connection %v", conn.Name)
+	respCh := make(chan *clientexec.Response)
+	go func() {
+		defer func() { close(respCh); client.Close() }()
+		select {
+		case respCh <- client.Run([]byte(body.Script), nil, body.ClientArgs...):
+		default:
+		}
+	}()
+	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*50)
+	defer cancelFn()
+	select {
+	case outcome := <-respCh:
+		log.Infof("runexec response, %v", outcome)
+		c.JSON(http.StatusOK, outcome)
+	case <-timeoutCtx.Done():
+		client.Close()
+		log.Infof("runexec timeout (50s), it will return async")
+		c.JSON(http.StatusAccepted, clientexec.NewTimeoutResponse(sessionID))
+	}
 }
 
 func CoerceMetadataFields(metadata map[string]any) error {

@@ -169,7 +169,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.POST("/connections/:name/exec",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventApiExecConnection),
-		apiconnections.RunExec)
+		sessionapi.Post)
 	route.GET("/connections",
 		api.Authenticate,
 		apiconnections.List)
