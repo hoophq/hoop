@@ -183,7 +183,6 @@ func (s *ProxyStream) IsAgentOnline() bool { return IsAgentOnline(s.StreamAgentI
 // based on the agent id and the id of the connection, otherwise it returns the
 // agent_id of the connection
 func (s *ProxyStream) StreamAgentID() streamtypes.ID {
-	s.Context().Done()
 	if s.pluginCtx.AgentMode == pb.AgentModeMultiConnectionType {
 		return streamtypes.NewStreamID(s.pluginCtx.AgentID, s.pluginCtx.ConnectionName)
 	}

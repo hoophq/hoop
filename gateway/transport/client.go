@@ -6,6 +6,7 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/runopsio/hoop/common/apiutils"
+	"github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
@@ -105,17 +106,19 @@ func (s *Server) subscribeClient(stream *streamclient.ProxyStream) (err error) {
 
 func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 	pctx := stream.PluginContext()
+	recvCh := grpc.NewStreamRecv(stream)
 	for {
+		var dstream *grpc.DataStream
 		select {
 		case <-stream.Context().Done():
 			return stream.ContextCauseError()
 		case <-pctx.Context.Done():
 			return status.Error(codes.Aborted, "session ended, reached connection duration")
-		default:
+		case dstream = <-recvCh:
 		}
 
-		// receive data from stream
-		pkt, err := stream.Recv()
+		// receive data from stream channel
+		pkt, err := dstream.Recv()
 		if err != nil {
 			if err == io.EOF {
 				log.With("sid", pctx.SID).Debugf("EOF")

@@ -2,20 +2,15 @@ package apiconnections
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/common/apiutils"
 	"github.com/runopsio/hoop/common/log"
-	pb "github.com/runopsio/hoop/common/proto"
-	sessionapi "github.com/runopsio/hoop/gateway/api/session"
 	apivalidation "github.com/runopsio/hoop/gateway/api/validation"
 	"github.com/runopsio/hoop/gateway/pgrest"
 	pgconnections "github.com/runopsio/hoop/gateway/pgrest/connections"
 	pgplugins "github.com/runopsio/hoop/gateway/pgrest/plugins"
-	pgsession "github.com/runopsio/hoop/gateway/pgrest/session"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/transport/connectionrequests"
@@ -299,62 +294,6 @@ func Get(c *gin.Context) {
 		RedactTypes:   redactTypes,
 		ManagedBy:     conn.ManagedBy,
 	})
-}
-
-// DEPRECATED in flavor of POST /api/sessions
-func RunExec(c *gin.Context) {
-	ctx := storagev2.ParseContext(c)
-	var body sessionapi.SessionPostBody
-	if err := c.ShouldBindJSON(&body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
-		return
-	}
-
-	connName := c.Param("name")
-	conn, err := pgconnections.New().FetchOneForExec(ctx, connName)
-	if err != nil {
-		log.Errorf("failed fetch connection %v for exec, err=%v", connName, err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
-	}
-	allowedFn, err := accessControlAllowed(ctx)
-	if err != nil {
-		log.Errorf("failed validating connection access control, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
-	}
-	if conn == nil || !allowedFn(conn.Name) {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "connection not found"})
-		return
-	}
-
-	newSession := types.Session{
-		ID:           uuid.NewString(),
-		OrgID:        ctx.OrgID,
-		Labels:       body.Labels,
-		Script:       types.SessionScript{"data": body.Script},
-		UserEmail:    ctx.UserEmail,
-		UserID:       ctx.UserID,
-		UserName:     ctx.UserName,
-		Type:         conn.Type,
-		Connection:   conn.Name,
-		Verb:         pb.ClientVerbExec,
-		Status:       types.SessionStatusOpen,
-		DlpCount:     0,
-		StartSession: time.Now().UTC(),
-	}
-	if err := pgsession.New().Upsert(ctx, newSession); err != nil {
-		log.Errorf("failed persisting session, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "The session couldn't be created"})
-		return
-	}
-	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
-	if userAgent == "webapp.core" {
-		userAgent = "webapp.editor.exec"
-	}
-	sessionapi.RunExec(c, newSession, userAgent, body.ClientArgs)
 }
 
 // FetchByName fetches a connection based in access control rules

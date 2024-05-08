@@ -1,8 +1,7 @@
 package clientexec
 
 import (
-	"encoding/base64"
-	"encoding/json"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,7 +15,6 @@ import (
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	"github.com/runopsio/hoop/common/version"
 	sessionwal "github.com/runopsio/hoop/gateway/session/wal"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 	"github.com/tidwall/wal"
 )
@@ -27,105 +25,61 @@ var (
 	maxResponseBytes = sessionwal.DefaultMaxRead
 )
 
-func init() {
-	_ = os.MkdirAll(walLogPath, 0755)
-}
+func init() { _ = os.MkdirAll(walLogPath, 0755) }
 
-const nilExitCode int = -100
+const nilExitCode int = -2
+
+func NewTimeoutResponse(sessionID string) *Response {
+	return &Response{SessionID: sessionID, ExitCode: nilExitCode, OutputStatus: "running"}
+}
 
 type clientExec struct {
 	folderName string
 	wlog       *wal.Log
 	client     pb.ClientTransport
+	ctx        context.Context
+	cancelFn   context.CancelFunc
 	sessionID  string
 }
 
-type (
-	Exec struct {
-		Metadata map[string]any
-		EnvVars  map[string]string
-		Script   []byte
-	}
-	ExecRequest struct {
-		Script     string   `json:"script"`
-		ClientArgs []string `json:"client_args"`
-		Redirect   bool     `json:"redirect"`
-	}
-	ExecResponse struct {
-		Err      error
-		ExitCode int
-	}
-	ExecErrResponse struct {
-		Message           string  `json:"message"`
-		ExitCode          *int    `json:"exit_code"`
-		SessionID         *string `json:"session_id"`
-		ExecutionTimeMili int64   `json:"execution_time"`
-	}
-	Options struct {
-		OrgID          string
-		SessionID      string
-		ConnectionName string
-		BearerToken    string
-		UserAgent      string
-		ConnectionInfo *types.ConnectionInfo
-		UserInfo       *types.APIContext
-	}
-)
-
-func (r *clientExec) SessionID() string {
-	return r.sessionID
-}
-
-// Close the gRPC connection
-func (r *clientExec) Close() {
-	r.client.Close()
+type Options struct {
+	OrgID          string
+	SessionID      string
+	ConnectionName string
+	BearerToken    string
+	UserAgent      string
 }
 
 type Response struct {
-	ExitCode          *int   `json:"exit_code"`
-	SessionID         string `json:"session_id"`
 	HasReview         bool   `json:"has_review"`
+	SessionID         string `json:"session_id"`
 	Output            string `json:"output"`
+	OutputStatus      string `json:"output_status"`
 	Truncated         bool   `json:"truncated"`
 	ExecutionTimeMili int64  `json:"execution_time"`
-	err               error
+	ExitCode          int    `json:"exit_code"`
+
+	err error
+}
+
+func (r *Response) String() string {
+	return fmt.Sprintf("exit_code=%v, truncated=%v, has_review=%v, output_length=%v, execution_time_sec=%v",
+		fmt.Sprintf("%v", r.ExitCode), r.Truncated, r.HasReview, len(r.Output), r.ExecutionTimeMili/1000)
 }
 
 func (r *Response) setExitCode(code int) *Response {
-	r.ExitCode = &code
+	r.ExitCode = code
 	return r
 }
 
-func (r *Response) GetExitCode() int {
-	if r.ExitCode != nil {
-		return *r.ExitCode
-	}
-	return nilExitCode
-}
-
-func (r *Response) IsError() bool {
-	if r.ExitCode == nil {
-		return true
-	}
-	// go os.Exec may return -1
-	return *r.ExitCode > 0 || *r.ExitCode == -1
-}
-
-func (r *Response) ErrorMessage() string {
-	if r.err != nil {
-		return r.err.Error()
-	}
-	return r.Output
-}
-
-func newError(err error) *Response {
-	return &Response{err: err}
+func newRawErr(err error) *Response { return &Response{err: err, ExitCode: nilExitCode} }
+func newErr(format string, a ...any) *Response {
+	return &Response{err: fmt.Errorf(format, a...), ExitCode: nilExitCode}
 }
 
 func newReviewedResponse(reviewURI string) *Response {
 	return &Response{
 		HasReview: true,
-		ExitCode:  func() *int { v := nilExitCode; return &v }(),
 		Output:    reviewURI,
 	}
 }
@@ -141,22 +95,6 @@ func New(opts *Options) (*clientExec, error) {
 		return nil, err
 	}
 
-	var encUserInfo string
-	if opts.UserInfo != nil {
-		userInfoBytes, err := json.Marshal(opts.UserInfo)
-		if err != nil {
-			return nil, fmt.Errorf("failed encoding user info: %v", err)
-		}
-		encUserInfo = base64.StdEncoding.EncodeToString(userInfoBytes)
-	}
-	var encConnInfo string
-	if opts.ConnectionInfo != nil {
-		connInfoBytes, err := json.Marshal(opts.ConnectionInfo)
-		if err != nil {
-			return nil, fmt.Errorf("failed encoding connection info: %v", err)
-		}
-		encConnInfo = base64.StdEncoding.EncodeToString(connInfoBytes)
-	}
 	userAgent := fmt.Sprintf("clientexec/%v", version.Get().Version)
 	if opts.UserAgent != "" {
 		userAgent = opts.UserAgent
@@ -165,8 +103,6 @@ func New(opts *Options) (*clientExec, error) {
 		opts.BearerToken,
 		userAgent,
 		grpc.WithOption(grpc.OptionConnectionName, opts.ConnectionName),
-		grpc.WithOption(grpc.OptionUserInfo, encUserInfo),
-		grpc.WithOption(grpc.OptionConnectionInfo, encConnInfo),
 		grpc.WithOption("origin", pb.ConnectionOriginClientAPI),
 		grpc.WithOption("verb", pb.ClientVerbExec),
 		grpc.WithOption("session-id", opts.SessionID),
@@ -175,10 +111,13 @@ func New(opts *Options) (*clientExec, error) {
 		_ = wlog.Close()
 		return nil, err
 	}
+	ctx, cancelFn := context.WithCancel(context.Background())
 	return &clientExec{
 		folderName: folderName,
 		wlog:       wlog,
 		client:     client,
+		ctx:        ctx,
+		cancelFn:   cancelFn,
 		sessionID:  opts.SessionID}, nil
 }
 
@@ -187,14 +126,14 @@ func (c *clientExec) Run(inputPayload []byte, clientEnvVars map[string]string, c
 	if len(clientEnvVars) > 0 {
 		encEnvVars, err := pb.GobEncode(clientEnvVars)
 		if err != nil {
-			return newError(err)
+			return newErr("failed encoding client env vars, reason=%v", err)
 		}
 		openSessionSpec[pb.SpecClientExecEnvVar] = encEnvVars
 	}
 	if len(clientArgs) > 0 {
 		encClientArgs, err := pb.GobEncode(clientArgs)
 		if err != nil {
-			return newError(err)
+			return newErr("failed encoding client arguments, reason=%v", err)
 		}
 		openSessionSpec[pb.SpecClientExecArgsKey] = encClientArgs
 	}
@@ -202,6 +141,15 @@ func (c *clientExec) Run(inputPayload []byte, clientEnvVars map[string]string, c
 	resp := c.run(inputPayload, openSessionSpec)
 	resp.ExecutionTimeMili = time.Since(now).Milliseconds()
 	resp.SessionID = c.sessionID
+	resp.OutputStatus = "success"
+	if resp.err != nil {
+		resp.Output = resp.err.Error()
+		resp.OutputStatus = "failed"
+	}
+	// mark as failed when the exit code is above 0 or different from nil
+	if resp.ExitCode != nilExitCode && resp.ExitCode > 0 {
+		resp.OutputStatus = "failed"
+	}
 	return resp
 }
 
@@ -214,13 +162,21 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 		})
 	}
 	if err := sendOpenSessionPktFn(); err != nil {
-		return newError(err)
+		return newErr("failed sending open session packet, reason=%v", err)
 	}
 	defer func() { c.wlog.Close(); os.RemoveAll(c.folderName) }()
+	recvCh := grpc.NewStreamRecv(c.client)
 	for {
-		pkt, err := c.client.Recv()
+		var dstream *grpc.DataStream
+		select {
+		case <-c.ctx.Done():
+			return newRawErr(context.Cause(c.ctx))
+		case dstream = <-recvCh:
+		}
+
+		pkt, err := dstream.Recv()
 		if err != nil {
-			return newError(err)
+			return newErr(err.Error())
 		}
 		if pkt == nil {
 			continue
@@ -230,10 +186,10 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 			return newReviewedResponse(string(pkt.Payload))
 		case pbclient.SessionOpenApproveOK:
 			if err := sendOpenSessionPktFn(); err != nil {
-				return newError(err)
+				return newErr("failed sending open session packet, reason=%v", err)
 			}
 		case pbclient.SessionOpenAgentOffline:
-			return newError(fmt.Errorf("agent is offline"))
+			return newErr("agent is offline")
 		case pbclient.SessionOpenOK:
 			stdinPkt := &pb.Packet{
 				Type:    pbagent.ExecWriteStdin,
@@ -243,11 +199,11 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 				},
 			}
 			if err := c.client.Send(stdinPkt); err != nil {
-				return newError(fmt.Errorf("failed executing command, err=%v", err))
+				return newErr("failed executing command, reason=%v", err)
 			}
 		case pbclient.WriteStdout, pbclient.WriteStderr:
 			if err := c.write(pkt.Payload); err != nil {
-				return newError(err)
+				return newErr("failed writing payload to log, reason=%v", err)
 			}
 		case pbclient.SessionClose:
 			exitCode, err := strconv.Atoi(string(pkt.Spec[pb.SpecClientExitCodeKey]))
@@ -255,21 +211,26 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 				exitCode = nilExitCode
 			}
 			if err := c.write(pkt.Payload); err != nil {
-				return newError(err).setExitCode(exitCode)
+				return newErr("failed writing last payload to log, reason=%v", err).
+					setExitCode(exitCode)
 			}
 			output, isTrunc, err := c.readAll()
+			if err != nil {
+				return newErr("failed reading output response, reason=%v", err).
+					setExitCode(exitCode)
+			}
 			return &Response{
 				Output:    string(output),
-				err:       err,
-				ExitCode:  &exitCode,
+				ExitCode:  exitCode,
 				Truncated: isTrunc,
 			}
 		default:
-			return newError(fmt.Errorf("packet type %v not implemented", pkt.Type))
+			return newErr("packet type %v not implemented", pkt.Type)
 		}
 	}
 }
 
+func (c *clientExec) Close() { c.client.Close(); c.cancelFn() }
 func (c *clientExec) write(input []byte) error {
 	if len(input) == 0 {
 		return nil

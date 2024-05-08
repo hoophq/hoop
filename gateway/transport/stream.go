@@ -33,6 +33,8 @@ type dataStream struct {
 	err error
 }
 
+func (s *dataStream) Recv() (*pb.Packet, error) { return s.pkt, s.err }
+
 // newDataStreamCh starts the stream.Recv() in background.
 // In case it fails to deliver data, it will cancel the given context
 //
