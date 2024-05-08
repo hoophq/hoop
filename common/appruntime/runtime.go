@@ -10,9 +10,6 @@ import (
 // WebAppCommit returns the local commit information from the webapp
 var WebAppCommit = readFile("/app/ui/commit.txt")
 
-// NodeApiCommit returns the local commit information from the node api
-var NodeApiCommit = readFile("/app/api/commit.txt")
-
 func Kill(pid int, signum syscall.Signal) error {
 	p, err := os.FindProcess(pid)
 	if err != nil {

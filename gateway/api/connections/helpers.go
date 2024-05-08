@@ -43,7 +43,7 @@ func setConnectionDefaults(req *Connection) {
 	defaultEnvVars := map[string]any{}
 	switch pb.ToConnectionType(req.Type, req.SubType) {
 	case pb.ConnectionTypePostgres:
-		defaultCommand = []string{"psql", "-A", "-F\t", "-P", "pager=off", "-h", "$HOST", "-U", "$USER", "--port=$PORT", "$DB"}
+		defaultCommand = []string{"psql", "-v", "ON_ERROR_STOP=1", "-A", "-F\t", "-P", "pager=off", "-h", "$HOST", "-U", "$USER", "--port=$PORT", "$DB"}
 	case pb.ConnectionTypeMySQL:
 		defaultCommand = []string{"mysql", "-h$HOST", "-u$USER", "--port=$PORT", "-D$DB"}
 	case pb.ConnectionTypeMSSQL:
