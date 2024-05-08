@@ -25,9 +25,10 @@ type (
 )
 
 var (
-	ErrNotFound    = errors.New("review not found")
-	ErrWrongState  = errors.New("review in wrong state")
-	ErrNotEligible = errors.New("not eligible for review")
+	ErrNotFound     = errors.New("review not found")
+	ErrWrongState   = errors.New("review in wrong state")
+	ErrNotEligible  = errors.New("not eligible for review")
+	ErrSelfApproval = errors.New("unable to self approve review")
 )
 
 const (
@@ -114,6 +115,9 @@ func (s *Service) Review(ctx *storagev2.Context, reviewID string, status types.R
 	}
 	if rev.Status != types.ReviewStatusPending {
 		return rev, ErrWrongState
+	}
+	if rev.ReviewOwner.Id == ctx.UserID && !ctx.IsAdmin() {
+		return nil, ErrSelfApproval
 	}
 
 	isEligibleReviewer := false

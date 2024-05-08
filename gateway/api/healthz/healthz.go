@@ -27,7 +27,6 @@ func LivenessHandler() func(_ *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"liveness": "OK",
 			"webapp":   appruntime.WebAppCommit,
-			"api":      appruntime.NodeApiCommit,
 			"gw":       version.Get().GitCommit,
 		})
 	}
