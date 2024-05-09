@@ -60,6 +60,10 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
+	if conn == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("connection %v not found", body.Connection)})
+		return
+	}
 
 	sessionID := uuid.NewString()
 	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
