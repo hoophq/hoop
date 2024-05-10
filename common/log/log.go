@@ -32,6 +32,7 @@ var (
 	Printf  = sugar.Infof
 	Println = sugar.Info
 
+	Debug  = sugar.Debug
 	Debugf = sugar.Debugf
 	Infof  = sugar.Infof
 	Info   = sugar.Info

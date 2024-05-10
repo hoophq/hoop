@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -12,8 +13,10 @@ import (
 	"github.com/runopsio/hoop/agent"
 	"github.com/runopsio/hoop/client/cmd/admin"
 	"github.com/runopsio/hoop/common/appruntime"
+	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/proto"
 	"github.com/spf13/cobra"
+	"mvdan.cc/sh/v3/syntax"
 )
 
 var runFlags = struct {
@@ -26,15 +29,15 @@ var runFlags = struct {
 
 var exampleRunFlag = `
 hoop run --database 'postgres://user:paswd@externalhost:5432/mydb'
-hoop run --name shell-console bash
-hoop run rails console
-hoop run -- kubectl exec -it deploy/myapp -- bash
+hoop run --name shell-console 'bash'
+hoop run 'rails console'
+hoop run 'kubectl exec -it deploy/myapp -- bash'
 `
 
 func init() {
 	os := appruntime.OS()
 	runCmd.Flags().StringVarP(&runFlags.Name, "name", "n", os["hostname"], "The name of the connection resource, defaults to local hostname")
-	runCmd.Flags().StringVar(&runFlags.EnvExport, "export", "", "Which envs to export from the host. e.g.: --export HOSTNAME,TERM. To expose all use --export _all")
+	runCmd.Flags().StringVar(&runFlags.EnvExport, "export", "", "Which envs to export from the host. e.g.: --export HOSTNAME,TERM. By defaut expose all")
 	runCmd.Flags().StringVar(&runFlags.ConnectionString, "postgres", "", "The database connection uri, e.g.: postgres://...")
 	runCmd.Flags().StringVar(&runFlags.ConnectionString, "mysql", "", "The database connection uri, e.g.: mysql://...")
 	runCmd.Flags().StringVar(&runFlags.ConnectionString, "mssql", "", "The database connection uri, e.g.: sqlserver://...")
@@ -55,13 +58,11 @@ var runCmd = &cobra.Command{
 	DisableFlagsInUseLine: true,
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(runFlags.Name) >= 253 {
-			fmt.Println("--name flag cannot be longer than 128 characters")
-			os.Exit(1)
+			log.Fatal("--name flag cannot be longer than 128 characters")
 		}
 		// this shouldn't happen, it should have a default based on the hostname
 		if runFlags.Name == "" {
-			fmt.Println("It was not possible to retrieve the hostname. Run with --name YOUR_NAME")
-			os.Exit(1)
+			log.Fatal("It was not possible to retrieve the hostname. Run with --name YOUR_NAME")
 		}
 
 		request := proto.PreConnectRequest{
@@ -70,24 +71,33 @@ var runCmd = &cobra.Command{
 			Reviewers:   runFlags.Reviewers,
 			RedactTypes: runFlags.RedactTypes,
 		}
-		switch {
-		case runFlags.ConnectionString != "":
+
+		if runFlags.ConnectionString != "" {
 			if err := setDatabaseType(&request); err != nil {
-				fmt.Println(err)
-				os.Exit(1)
+				log.Fatal(err)
 			}
-		case len(args) > 0:
-			request.Command = args
-			request.Type = "custom"
-		default:
+		} else if len(args) == 0 {
 			defaultShellPath, err := parseDefaultShell()
 			if err != nil {
-				fmt.Println("fail to obtain default shell (bash, sh) based on your $PATH")
-				os.Exit(1)
+				log.Fatal("fail to obtain default shell (bash, sh) based on your $PATH")
 			}
 			request.Command = []string{defaultShellPath}
 		}
-		agent.RunV2(&request, parseHostEnvs())
+
+		if len(args) > 0 {
+			// TODO: check if the first command has double or single quotes
+			reqCommand, err := parsePosixCmd(args[0])
+			if err != nil {
+				log.Debugf("failed parsing command %q, reason=%v", args[0], err)
+				log.Fatal("unable to parse the command, make sure not use any special shell builtins")
+			}
+			request.Command = reqCommand
+			// the rest of the arguments is going to be used
+			// as the main process and the agent will run
+			// on background
+			args = args[1:]
+		}
+		agent.RunV2(&request, parseHostEnvs(), args)
 	},
 }
 
@@ -154,7 +164,7 @@ func setDatabaseType(req *proto.PreConnectRequest) (err error) {
 }
 
 func parseHostEnvs() (envs []string) {
-	if runFlags.EnvExport == "_all" {
+	if runFlags.EnvExport == "" {
 		return os.Environ()
 	}
 	for _, envKey := range strings.Split(runFlags.EnvExport, ",") {
@@ -171,6 +181,32 @@ func parseDefaultShell() (shellPath string, err error) {
 		shellPath, err = exec.LookPath("sh")
 	}
 	return
+}
+
+func parsePosixCmd(command string) ([]string, error) {
+	r := strings.NewReader(command)
+	f, err := syntax.NewParser(syntax.Variant(syntax.LangBash)).Parse(r, "")
+	if err != nil {
+		return nil, err
+	}
+	if len(f.Stmts) == 0 || len(f.Stmts) > 1 {
+		return nil, fmt.Errorf("fail parsing command, empty or multiple statements found")
+	}
+	callExpr, ok := f.Stmts[0].Cmd.(*syntax.CallExpr)
+	if !ok {
+		return nil, errors.New("unable to coerce to CallExpr")
+	}
+	printer := syntax.NewPrinter()
+	var output []string
+	for _, word := range callExpr.Args {
+		var out []byte
+		buf := bytes.NewBuffer(out)
+		if err := printer.Print(buf, word); err != nil {
+			return nil, fmt.Errorf("failed parsing word / part: %v", err)
+		}
+		output = append(output, buf.String())
+	}
+	return output, err
 }
 
 func encb64(v any) string {

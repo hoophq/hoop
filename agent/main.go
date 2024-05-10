@@ -2,14 +2,9 @@ package agent
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
-	"github.com/getsentry/sentry-go"
 	agentconfig "github.com/runopsio/hoop/agent/config"
 	"github.com/runopsio/hoop/agent/controller"
 	"github.com/runopsio/hoop/common/backoff"
@@ -38,10 +33,10 @@ func Run() {
 
 	// default to embedded mode if it's dsn type config to keep
 	if config.Type == clientconfig.ModeDsn && config.AgentMode == pb.AgentModeEmbeddedType {
-		RunV2(&pb.PreConnectRequest{}, nil)
+		RunV2(&pb.PreConnectRequest{}, nil, nil)
 		return
 	}
-	handleOsInterrupt()
+	handleOsInterrupt(nil)
 	if err := runDefaultMode(config); err != nil {
 		log.With("version", vi.Version).Fatal(err)
 	}
@@ -49,8 +44,9 @@ func Run() {
 
 // RunV2 should supersedes agent modes, instead of relying in two distincts modes of execution
 // this method should deprecate old behaviors.
-func RunV2(request *pb.PreConnectRequest, hostEnvs []string) {
-	handleOsInterrupt()
+func RunV2(req *pb.PreConnectRequest, hostEnvs, commandArgs []string) {
+	// 1. run agent on backgroun
+	// 2. run the process in the main thread
 	c, err := agentconfig.Load()
 	if err != nil {
 		log.With("version", vi.Version).Fatal(err)
@@ -60,30 +56,55 @@ func RunV2(request *pb.PreConnectRequest, hostEnvs []string) {
 		log.With("version", vi.Version).Fatal(err)
 	}
 	clientConfig.UserAgent = defaultUserAgent
-	log.Infof("version=%v, platform=%v, type=%v, grpc_server=%v, tls=%v, strict-tls=%v - starting agent",
-		vi.Version, vi.Platform, c.Type, c.URL, !c.IsInsecure(), vi.StrictTLS)
-
-	// TODO: handle go routine ending for graceful shutdown
-	for {
-		resp, err := grpc.PreConnectRPC(clientConfig, request)
-		if err != nil {
-			log.With("version", vi.Version).Infof("failed pre-connect, reason=%v", err)
-			time.Sleep(time.Second * 5)
-			continue
+	cmd := newCommand(hostEnvs, commandArgs)
+	handleOsInterrupt(func() {
+		if err := killProcess(cmd); err != nil {
+			log.With("version", vi.Version).Debug(err)
 		}
-		log.Debugf("pre-connect rpc, status=%v, message=%v", resp.Status, resp.Message)
-		switch resp.Status {
-		case pb.PreConnectStatusConnectType:
-			runAgent(c, clientConfig, request.Name)
-		case pb.PreConnectStatusBackoffType:
-			if resp.Message != "" {
-				log.Infof("fail connecting to server, reason=%v", resp.Message)
-			}
-		default:
-			log.Warnf("pre-connect status %q not implement", resp.Status)
-		}
-		time.Sleep(time.Second * 5)
+	})
+	stopFn := runAgentController(c, clientConfig, req)
+	if len(commandArgs) == 0 {
+		// block forever until it receives
+		// kill signal from the operating system
+		select {}
 	}
+	if err := cmd.Run(); err != nil {
+		log.Info(err)
+	}
+	stopFn()
+	_ = cleanupAgentInstance(nil, nil)
+}
+
+func runAgentController(agentConfig *agentconfig.Config, clientConfig grpc.ClientConfig, req *pb.PreConnectRequest) context.CancelFunc {
+	ctx, cancelFn := context.WithCancel(context.Background())
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			resp, err := grpc.PreConnectRPC(clientConfig, req)
+			if err != nil {
+				log.With("version", vi.Version).Infof("failed pre-connect, reason=%v", err)
+				time.Sleep(time.Second * 5)
+				continue
+			}
+			log.Debugf("pre-connect rpc, status=%v, message=%v", resp.Status, resp.Message)
+			switch resp.Status {
+			case pb.PreConnectStatusConnectType:
+				runAgent(agentConfig, clientConfig, req.Name)
+			case pb.PreConnectStatusBackoffType:
+				if resp.Message != "" {
+					log.Infof("fail connecting to server, reason=%v", resp.Message)
+				}
+			default:
+				log.Warnf("pre-connect status %q not implement", resp.Status)
+			}
+			time.Sleep(time.Second * 5)
+		}
+	}()
+	return cancelFn
 }
 
 func runAgent(config *agentconfig.Config, clientConfig grpc.ClientConfig, connectionName string) {
@@ -155,42 +176,4 @@ func runDefaultMode(config *agentconfig.Config) error {
 			Infof("disconnected from %v, reason=%v", config.URL, err)
 		return backoff.Error()
 	})
-}
-
-func handleOsInterrupt() {
-	sigc := make(chan os.Signal, 1)
-	signal.Notify(sigc,
-		syscall.SIGHUP,
-		syscall.SIGINT,
-		syscall.SIGTERM,
-		syscall.SIGQUIT)
-	go func() {
-		sigval := <-sigc
-		msg := fmt.Sprintf("received signal '%v' from the operating system", sigval)
-		log.Debugf(msg)
-		obj := agentStore.Pop(agentInstanceKey)
-		instance, _ := obj.(*controller.Agent)
-		cleanExit := true
-		if instance != nil {
-			timeoutCtx, timeoutCancelFn := context.WithTimeout(context.Background(), time.Second*10)
-			go func() { instance.Close(errors.New(msg)); timeoutCancelFn() }()
-			<-timeoutCtx.Done()
-			if err := timeoutCtx.Err(); err == context.DeadlineExceeded {
-				cleanExit = false
-				log.Warnf("timeout (10s) waiting for agent to close graceful")
-			}
-		}
-		sentry.Flush(time.Second * 2)
-		log.With("clean-exit", cleanExit).Debugf("exiting program")
-		switch sigval {
-		case syscall.SIGHUP:
-			os.Exit(int(syscall.SIGHUP))
-		case syscall.SIGINT:
-			os.Exit(int(syscall.SIGINT))
-		case syscall.SIGTERM:
-			os.Exit(int(syscall.SIGTERM))
-		case syscall.SIGQUIT:
-			os.Exit(int(syscall.SIGQUIT))
-		}
-	}()
 }
