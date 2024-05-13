@@ -9,6 +9,7 @@ type DataStream struct {
 	err error
 }
 
+// Recv returns the packet and error as a non blocking operation
 func (s *DataStream) Recv() (*pb.Packet, error) { return s.pkt, s.err }
 
 // NewStreamRecv starts the stream.Recv() in background.

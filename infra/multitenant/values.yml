@@ -64,8 +64,8 @@ ingressGrpc:
 resources:
   gw:
     limits:
-      cpu: 512m
-      memory: 1Gi
+      cpu: 2048m
+      memory: 2Gi
     requests:
-      cpu: 256m
-      memory: 1Gi
+      cpu: 1024m
+      memory: 2Gi

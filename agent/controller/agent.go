@@ -31,6 +31,7 @@ type (
 		client           pb.ClientTransport
 		connStore        memory.Store
 		config           *config.Config
+		runtimeEnvs      map[string]string
 		shutdownCtx      context.Context
 		shutdownCancelFn context.CancelCauseFunc
 	}
@@ -57,12 +58,13 @@ func (e *connEnv) Get(key string) string {
 
 func (e *connEnv) Has(key string) bool { return e.Get(key) != "" }
 
-func New(client pb.ClientTransport, cfg *config.Config) *Agent {
+func New(client pb.ClientTransport, cfg *config.Config, runtimeEnvs map[string]string) *Agent {
 	shutdownCtx, cancelFn := context.WithCancelCause(context.Background())
 	return &Agent{
 		client:           client,
 		connStore:        memory.New(),
 		config:           cfg,
+		runtimeEnvs:      runtimeEnvs,
 		shutdownCtx:      shutdownCtx,
 		shutdownCancelFn: cancelFn,
 	}
@@ -319,6 +321,10 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 	connParams := a.decodeConnectionParams(sessionID, pkt)
 	if connParams == nil {
 		return nil, fmt.Errorf("session %s failed to decode connection params", sessionIDKey)
+	}
+
+	for key, val := range a.runtimeEnvs {
+		connParams.EnvVars[key] = val
 	}
 
 	log.Infof("session=%s - connection params decoded with success, dlp-info-types=%d",
