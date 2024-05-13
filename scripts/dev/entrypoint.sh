@@ -14,7 +14,7 @@ echo "--> GATEWAY IS UP"
 # org multi connection token
 psql $POSTGRES_DB_URI <<EOT
 INSERT INTO agents (org_id, id, name, mode, key, key_hash, status)
-    VALUES ((SELECT id from private.orgs), '3BD2DAC4-42FA-4C8A-A842-2DCD5566D54B', '_default', 'multi-connection', 'xagt-zXQQA9PAjCVJ4O8VlE2QZScNEbfmFisg_OerkI21NE', '7ea5053489fb0e5e0437481ffa17dbcc7e94f2aa39e840702810a86905ef458a', 'DISCONNECTED')
+    VALUES ((SELECT id from private.orgs), '3BD2DAC4-42FA-4C8A-A842-2DCD5566D54B', '_default', 'multi-connection', 'xagt-zXQQA9PAjCVJ4O8VlE2QZScNEbfmFisg_OerkI21NE', '111f61419517bb0bef18c6e4f3a8767c7589a3a3a7d0313020ccfb67cf74edf2', 'DISCONNECTED')
     ON CONFLICT DO NOTHING;
 EOT
 

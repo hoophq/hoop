@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"time"
 
 	agentconfig "github.com/runopsio/hoop/agent/config"
@@ -44,9 +45,10 @@ func Run() {
 
 // RunV2 should supersedes agent modes, instead of relying in two distincts modes of execution
 // this method should deprecate old behaviors.
-func RunV2(req *pb.PreConnectRequest, hostEnvs, commandArgs []string) {
-	// 1. run agent on backgroun
-	// 2. run the process in the main thread
+func RunV2(req *pb.PreConnectRequest, runtimeEnvs map[string]string, commandArgs []string) {
+	if runtimeEnvs == nil {
+		runtimeEnvs = map[string]string{}
+	}
 	c, err := agentconfig.Load()
 	if err != nil {
 		log.With("version", vi.Version).Fatal(err)
@@ -55,27 +57,40 @@ func RunV2(req *pb.PreConnectRequest, hostEnvs, commandArgs []string) {
 	if err != nil {
 		log.With("version", vi.Version).Fatal(err)
 	}
+	log.With("version", vi.Version).Infof("initializing agent, args=%v", len(commandArgs))
 	clientConfig.UserAgent = defaultUserAgent
-	cmd := newCommand(hostEnvs, commandArgs)
+	cmd := newCommand(runtimeEnvs, commandArgs)
 	handleOsInterrupt(func() {
 		if err := killProcess(cmd); err != nil {
 			log.With("version", vi.Version).Debug(err)
 		}
 	})
-	stopFn := runAgentController(c, clientConfig, req)
+	for key, val := range req.Envs {
+		runtimeEnvs[key] = val
+	}
+	// do not sync, use the runtime environment variables instead
+	req.Envs = nil
+
+	stopFn := runAgentController(c, clientConfig, req, runtimeEnvs)
 	if len(commandArgs) == 0 {
 		// block forever until it receives
 		// kill signal from the operating system
 		select {}
 	}
-	if err := cmd.Run(); err != nil {
-		log.Info(err)
+	exitCode := 0
+	err = cmd.Run()
+	if err != nil {
+		if exit, _ := err.(*exec.ExitError); exit != nil {
+			exitCode = exit.ExitCode()
+		}
+		log.Warnf("foreground command terminated (%v) with error: %v", exitCode, err)
 	}
+	log.Debugf("foreground command terminated, exit_code=%v, err=%v", exitCode, err)
 	stopFn()
 	_ = cleanupAgentInstance(nil, nil)
 }
 
-func runAgentController(agentConfig *agentconfig.Config, clientConfig grpc.ClientConfig, req *pb.PreConnectRequest) context.CancelFunc {
+func runAgentController(conf *agentconfig.Config, cc grpc.ClientConfig, req *pb.PreConnectRequest, runtimeEnvs map[string]string) context.CancelFunc {
 	ctx, cancelFn := context.WithCancel(context.Background())
 	go func() {
 		for {
@@ -84,7 +99,7 @@ func runAgentController(agentConfig *agentconfig.Config, clientConfig grpc.Clien
 				return
 			default:
 			}
-			resp, err := grpc.PreConnectRPC(clientConfig, req)
+			resp, err := grpc.PreConnectRPC(cc, req)
 			if err != nil {
 				log.With("version", vi.Version).Infof("failed pre-connect, reason=%v", err)
 				time.Sleep(time.Second * 5)
@@ -93,7 +108,7 @@ func runAgentController(agentConfig *agentconfig.Config, clientConfig grpc.Clien
 			log.Debugf("pre-connect rpc, status=%v, message=%v", resp.Status, resp.Message)
 			switch resp.Status {
 			case pb.PreConnectStatusConnectType:
-				runAgent(agentConfig, clientConfig, req.Name)
+				runAgent(conf, cc, req.Name, runtimeEnvs)
 			case pb.PreConnectStatusBackoffType:
 				if resp.Message != "" {
 					log.Infof("fail connecting to server, reason=%v", resp.Message)
@@ -107,7 +122,7 @@ func runAgentController(agentConfig *agentconfig.Config, clientConfig grpc.Clien
 	return cancelFn
 }
 
-func runAgent(config *agentconfig.Config, clientConfig grpc.ClientConfig, connectionName string) {
+func runAgent(config *agentconfig.Config, clientConfig grpc.ClientConfig, connectionName string, runtimeEnvs map[string]string) {
 	log.Infof("connecting to grpc server %v", config.URL)
 	grpcOptions := []*grpc.ClientOptions{grpc.WithOption("origin", pb.ConnectionOriginAgent)}
 	if connectionName != "" {
@@ -118,7 +133,7 @@ func runAgent(config *agentconfig.Config, clientConfig grpc.ClientConfig, connec
 		log.Errorf("failed connecting to gateway, err=%v", err)
 		return
 	}
-	ctrl := controller.New(client, config)
+	ctrl := controller.New(client, config, runtimeEnvs)
 	agentStore.Set(agentInstanceKey, ctrl)
 	defer func() { agentStore.Del(agentInstanceKey); ctrl.Close(nil) }()
 	err = ctrl.Run()
@@ -155,7 +170,7 @@ func runDefaultMode(config *agentconfig.Config) error {
 				Warnf("failed to connect to %s, reason=%v", config.URL, err.Error())
 			return backoff.Error()
 		}
-		ctrl := controller.New(client, config)
+		ctrl := controller.New(client, config, nil)
 		agentStore.Set(agentInstanceKey, ctrl)
 		defer func() { agentStore.Del(agentInstanceKey); ctrl.Close(nil) }()
 		err = ctrl.Run()

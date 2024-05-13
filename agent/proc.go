@@ -2,10 +2,12 @@ package agent
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -14,7 +16,7 @@ import (
 	"github.com/runopsio/hoop/common/log"
 )
 
-func newCommand(envs []string, args []string) *exec.Cmd {
+func newCommand(envs map[string]string, args []string) *exec.Cmd {
 	if len(args) == 0 {
 		return nil
 	}
@@ -23,7 +25,18 @@ func newCommand(envs []string, args []string) *exec.Cmd {
 		args = args[1:]
 	}
 	cmd := exec.Command(mainCmd, args...)
-	cmd.Env = envs
+	cmd.Env = []string{}
+	for key, val := range envs {
+		_, key, _ = strings.Cut(key, ":")
+		if key == "" {
+			continue
+		}
+		val, _ := base64.StdEncoding.DecodeString(val)
+		if val == nil {
+			continue
+		}
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", key, val))
+	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 

@@ -23,26 +23,29 @@ var runFlags = struct {
 	Name             string
 	EnvExport        string
 	ConnectionString string
+	Command          string
 	Reviewers        []string
 	RedactTypes      []string
 }{}
 
 var exampleRunFlag = `
 hoop run --database 'postgres://user:paswd@externalhost:5432/mydb'
-hoop run --name shell-console 'bash'
-hoop run 'rails console'
-hoop run 'kubectl exec -it deploy/myapp -- bash'
+hoop run --name shell-console --command 'bash --verbose'
+
+# run YOUR_COMMAND in foreground
+hoop run --command 'rails console' -- YOUR_COMMAND --YOUR-FLAG
 `
 
 func init() {
-	os := appruntime.OS()
-	runCmd.Flags().StringVarP(&runFlags.Name, "name", "n", os["hostname"], "The name of the connection resource, defaults to local hostname")
+	osruntime := appruntime.OS()
+	dbConnectionURI := os.Getenv("HOOP_DB_URI")
+	runCmd.Flags().StringVarP(&runFlags.Name, "name", "n", osruntime["hostname"], "The name of the connection resource, defaults to local hostname")
 	runCmd.Flags().StringVar(&runFlags.EnvExport, "export", "", "Which envs to export from the host. e.g.: --export HOSTNAME,TERM. By defaut expose all")
-	runCmd.Flags().StringVar(&runFlags.ConnectionString, "postgres", "", "The database connection uri, e.g.: postgres://...")
-	runCmd.Flags().StringVar(&runFlags.ConnectionString, "mysql", "", "The database connection uri, e.g.: mysql://...")
-	runCmd.Flags().StringVar(&runFlags.ConnectionString, "mssql", "", "The database connection uri, e.g.: sqlserver://...")
-	runCmd.Flags().StringVar(&runFlags.ConnectionString, "mongodb", "", "The database connection uri, e.g.: mongodb://...")
-	runCmd.Flags().StringVar(&runFlags.ConnectionString, "database", "", "Generic option for providing a database connection, e.g.: (postgres://,mysql://,sqlserver://,mongodb://)")
+	runCmd.Flags().StringVar(&runFlags.Command, "command", "", "The entrypoint command of the connection. Defaults to $SHELL or database type commands")
+	runCmd.Flags().StringVar(&runFlags.ConnectionString, "postgres", dbConnectionURI, "The database connection uri, e.g.: postgres://...")
+	runCmd.Flags().StringVar(&runFlags.ConnectionString, "mysql", dbConnectionURI, "The database connection uri, e.g.: mysql://...")
+	runCmd.Flags().StringVar(&runFlags.ConnectionString, "mssql", dbConnectionURI, "The database connection uri, e.g.: sqlserver://...")
+	runCmd.Flags().StringVar(&runFlags.ConnectionString, "mongodb", dbConnectionURI, "The database connection uri, e.g.: mongodb://...")
 	runCmd.Flags().StringSliceVar(&runFlags.Reviewers, "review", nil, "The approval groups for this connection, interactions are reviewed when enabled")
 	runCmd.Flags().StringSliceVar(&runFlags.RedactTypes, "data-masking", nil, "The data masking types for this connection, content is redacted when enabled")
 
@@ -56,15 +59,8 @@ var runCmd = &cobra.Command{
 	Example:               exampleRunFlag,
 	DisableFlagParsing:    false,
 	DisableFlagsInUseLine: true,
+	PreRunE:               func(_ *cobra.Command, args []string) error { return validateCommand() },
 	Run: func(cmd *cobra.Command, args []string) {
-		if len(runFlags.Name) >= 253 {
-			log.Fatal("--name flag cannot be longer than 128 characters")
-		}
-		// this shouldn't happen, it should have a default based on the hostname
-		if runFlags.Name == "" {
-			log.Fatal("It was not possible to retrieve the hostname. Run with --name YOUR_NAME")
-		}
-
 		request := proto.PreConnectRequest{
 			Name:        admin.NormalizeResourceName(runFlags.Name),
 			Type:        "custom",
@@ -72,33 +68,41 @@ var runCmd = &cobra.Command{
 			RedactTypes: runFlags.RedactTypes,
 		}
 
+		reqCommand, err := parsePosixCmd(runFlags.Command)
+		if err != nil {
+			log.Fatalf("failed parsing --command flag: %v", err)
+		}
+
 		if runFlags.ConnectionString != "" {
 			if err := setDatabaseType(&request); err != nil {
 				log.Fatal(err)
 			}
-		} else if len(args) == 0 {
+		}
+
+		// set if it's provide by flags
+		if len(reqCommand) > 0 {
+			request.Command = reqCommand
+		}
+		if len(request.Command) == 0 {
 			defaultShellPath, err := parseDefaultShell()
 			if err != nil {
 				log.Fatal("fail to obtain default shell (bash, sh) based on your $PATH")
 			}
 			request.Command = []string{defaultShellPath}
 		}
-
-		if len(args) > 0 {
-			// TODO: check if the first command has double or single quotes
-			reqCommand, err := parsePosixCmd(args[0])
-			if err != nil {
-				log.Debugf("failed parsing command %q, reason=%v", args[0], err)
-				log.Fatal("unable to parse the command, make sure not use any special shell builtins")
-			}
-			request.Command = reqCommand
-			// the rest of the arguments is going to be used
-			// as the main process and the agent will run
-			// on background
-			args = args[1:]
-		}
 		agent.RunV2(&request, parseHostEnvs(), args)
 	},
+}
+
+func validateCommand() (err error) {
+	if len(runFlags.Name) >= 253 {
+		return fmt.Errorf("--name flag cannot be longer than 253 characters")
+	}
+	// this shouldn't happen, it should have a default based on the hostname
+	if runFlags.Name == "" {
+		return fmt.Errorf("it was unable to retrieve the hostname, specify the connection name with --name YOUR_NAME")
+	}
+	return
 }
 
 func setDatabaseType(req *proto.PreConnectRequest) (err error) {
@@ -125,7 +129,7 @@ func setDatabaseType(req *proto.PreConnectRequest) (err error) {
 	switch {
 	case strings.HasSuffix(u.Scheme, "postgres"):
 		req.Subtype = proto.ConnectionTypePostgres.String()
-		req.Command = []string{"psql", "-A", "-F\t", "-P", "pager=off", "-h", "$HOST", "-U", "$USER", "--port=$PORT", "$DB"}
+		req.Command = []string{"psql", "-v", "ON_ERROR_STOP=1", "-A", "-F\t", "-P", "pager=off", "-h", "$HOST", "-U", "$USER", "--port=$PORT", "$DB"}
 		if port == "" {
 			port = "5432"
 		}
@@ -137,7 +141,7 @@ func setDatabaseType(req *proto.PreConnectRequest) (err error) {
 		}
 	case strings.HasSuffix(u.Scheme, "mongodb"):
 		req.Subtype = proto.ConnectionTypeMongoDB.String()
-		req.Command = []string{"mongo", "--quiet", "mongodb://$USER:$PASS@$HOST:$PORT/"}
+		req.Command = []string{"mongo", "--quiet", "mongodb://$USER:$PASS@$HOST:$PORT/$DB?$OPTIONS"}
 		if port == "" {
 			port = "27017"
 		}
@@ -163,19 +167,32 @@ func setDatabaseType(req *proto.PreConnectRequest) (err error) {
 	return
 }
 
-func parseHostEnvs() (envs []string) {
-	if runFlags.EnvExport == "" {
-		return os.Environ()
-	}
+func parseHostEnvs() map[string]string {
+	envs := map[string]string{}
 	for _, envKey := range strings.Split(runFlags.EnvExport, ",") {
+		if envKey == "" {
+			continue
+		}
 		if val, exists := os.LookupEnv(envKey); exists {
-			envs = append(envs, fmt.Sprintf("%s=%s", envKey, val))
+			envs[fmt.Sprintf("envvar:%s", envKey)] = encb64(val)
 		}
 	}
-	return
+	if len(envs) == 0 {
+		for _, keyValEnv := range os.Environ() {
+			key, val, found := strings.Cut(keyValEnv, "=")
+			if !found {
+				continue
+			}
+			envs[fmt.Sprintf("envvar:%s", key)] = encb64(val)
+		}
+	}
+	return envs
 }
 
 func parseDefaultShell() (shellPath string, err error) {
+	if shellEnv := os.Getenv("SHELL"); shellEnv != "" {
+		return shellEnv, nil
+	}
 	shellPath, err = exec.LookPath("bash")
 	if errors.Is(err, exec.ErrNotFound) {
 		shellPath, err = exec.LookPath("sh")
@@ -184,6 +201,9 @@ func parseDefaultShell() (shellPath string, err error) {
 }
 
 func parsePosixCmd(command string) ([]string, error) {
+	if command == "" {
+		return nil, nil
+	}
 	r := strings.NewReader(command)
 	f, err := syntax.NewParser(syntax.Variant(syntax.LangBash)).Parse(r, "")
 	if err != nil {
