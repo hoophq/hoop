@@ -42,10 +42,7 @@ func newCommand(envs map[string]string, args []string) *exec.Cmd {
 
 	// it configures the command to start in a new process group
 	// it will allow killing child processes when the parent process is killed
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-		Pgid:    0,
-	}
+	setPgid(cmd)
 
 	// c.cmd.Env = envStore.ParseToKeyVal()
 	// c.cmd.Env = append(c.cmd.Env, fmt.Sprintf("PATH=%v", os.Getenv("PATH")))
@@ -56,8 +53,7 @@ func killProcess(cmd *exec.Cmd) error {
 	if cmd != nil && cmd.Process != nil {
 		proc := cmd.Process
 		log.Debugf("sending SIGTERM to process %v", proc.Pid)
-		// -proc.Pid sends kill to process group
-		if e := syscall.Kill(-proc.Pid, syscall.SIGTERM); e != nil {
+		if e := killPid(proc.Pid); e != nil {
 			return fmt.Errorf("failed sending SIGTERM to process %v, reason=%v", proc.Pid, e)
 		}
 		var isRunning bool
