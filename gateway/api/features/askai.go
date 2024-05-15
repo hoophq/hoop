@@ -60,7 +60,7 @@ func PostChatCompletions(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed reading request body from remote api"})
 		return
 	}
-	log.Debugf("writing response body for /api/chat/completions, status=%v, response-length=%v",
+	log.Debugf("writing response body for /v1/chat/completions, status=%v, response-length=%v",
 		resp.StatusCode, len(data))
 	if _, err := c.Writer.Write(data); err != nil {
 		log.Errorf("failed writing response body, reason=%v", err)
