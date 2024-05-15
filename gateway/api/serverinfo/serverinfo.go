@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/common/appruntime"
 	"github.com/runopsio/hoop/common/version"
+	"github.com/runopsio/hoop/gateway/appconfig"
 )
 
 var (
@@ -42,6 +43,7 @@ func (h *handler) Get(c *gin.Context) {
 	}
 	serverInfoData["tenancy_type"] = tenancyType
 	serverInfoData["grpc_url"] = h.grpcURL
+	serverInfoData["has_ask_ai_credentials"] = appconfig.Get().IsAskAIAvailable()
 	c.JSON(http.StatusOK, serverInfoData)
 }
 

@@ -15,6 +15,13 @@ type LicenseContext interface {
 	GetLicenseName() string
 }
 
+type AuditContext interface {
+	OrgContext
+	GetEventName() string
+	GetUserEmail() string
+	GetMetadata() map[string]any
+}
+
 type UserContext interface {
 	GetOrgID() string
 	GetUserID() string

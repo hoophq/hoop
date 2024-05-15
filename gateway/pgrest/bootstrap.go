@@ -197,6 +197,7 @@ var grantStatements = []string{
 	`GRANT SELECT, INSERT, UPDATE ON public.review_groups TO %s`,
 	`GRANT SELECT, INSERT, UPDATE, DELETE ON public.proxymanager_state TO %s`,
 	`GRANT SELECT, INSERT, UPDATE, DELETE ON public.clientkeys TO %s`,
+	`GRANT SELECT, INSERT, UPDATE ON public.audit TO %s`,
 }
 
 var dropStatements = []string{

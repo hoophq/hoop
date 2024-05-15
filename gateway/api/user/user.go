@@ -14,7 +14,9 @@ import (
 	"github.com/runopsio/hoop/common/apiutils"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/gateway/analytics"
+	"github.com/runopsio/hoop/gateway/appconfig"
 	"github.com/runopsio/hoop/gateway/pgrest"
+	pgaudit "github.com/runopsio/hoop/gateway/pgrest/audit"
 	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
@@ -274,8 +276,28 @@ func GetUserByID(c *gin.Context) {
 	})
 }
 
+func getAskAIFeatureStatus(ctx pgrest.OrgContext) (string, error) {
+	if !appconfig.Get().IsAskAIAvailable() {
+		return "unavailable", nil
+	}
+	isEnabled, err := pgaudit.New().IsFeatureAskAiEnabled(ctx)
+	if err != nil {
+		return "", err
+	}
+	if isEnabled {
+		return "enabled", nil
+	}
+	return "disabled", nil
+}
+
 func GetUserInfo(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
+	askAIFeatureStatus, err := getAskAIFeatureStatus(ctx)
+	if err != nil {
+		log.Errorf("unable to obtain ask-ai feature status, reason=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "unable to obtain ask-ai feature status"})
+		return
+	}
 	groupList := []string{}
 	if len(ctx.UserGroups) > 0 {
 		groupList = ctx.UserGroups
@@ -307,6 +329,7 @@ func GetUserInfo(c *gin.Context) {
 		"org_id":         ctx.OrgID,
 		"org_name":       ctx.OrgName,
 		"org_license":    ctx.OrgLicense,
+		"feature_ask_ai": askAIFeatureStatus,
 	}
 	if ctx.IsAnonymous() {
 		userInfoData["verified"] = false

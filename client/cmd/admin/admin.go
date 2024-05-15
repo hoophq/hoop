@@ -40,6 +40,7 @@ Configuration:
   Admin Username:          %v
   Redact Credentials:      %v
   Webhook App Credentials: %v
+  Ask AI Credentials:      %v
   IDP Audience:            %v
   IDP Custom Scopes:       %v
   Postgrest Role:          %v
@@ -85,6 +86,7 @@ var serverInfoCmd = &cobra.Command{
 				resp["admin_username"],
 				displayFn(resp["has_redact_credentials"]),
 				displayFn(resp["has_webhook_app_key"]),
+				displayFn(resp["has_ask_ai_credentials"]),
 				displayFn(resp["has_idp_audience"]),
 				displayFn(resp["has_idp_custom_scopes"]),
 				displayFn(resp["has_postgrest_role"]),

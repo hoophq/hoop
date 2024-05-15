@@ -31,6 +31,10 @@ const (
 	EventUpdatePluginConfig    = "hoop-update-plugin-config"
 	EventOpenWebhooksDashboard = "hoop-open-webhooks-dashboard"
 
+	// features
+	EventOrgFeatureUpdate            = "hoop-org-feature-update"
+	EventFeatureAskAIChatCompletions = "hoop-feature-askai-chat-completions"
+
 	// search api
 	EventSearch = "hoop-search"
 

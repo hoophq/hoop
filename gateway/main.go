@@ -14,6 +14,7 @@ import (
 	"github.com/runopsio/hoop/common/version"
 	"github.com/runopsio/hoop/gateway/agentcontroller"
 	"github.com/runopsio/hoop/gateway/api"
+	"github.com/runopsio/hoop/gateway/appconfig"
 	"github.com/runopsio/hoop/gateway/indexer"
 	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/pgrest"
@@ -45,6 +46,11 @@ func Run() {
 	apiURL := os.Getenv("API_URL")
 	if err := changeWebappApiURL(apiURL); err != nil {
 		log.Fatal(err)
+	}
+
+	// TODO: refactor to load all app gateway runtime configuration in this method
+	if err := appconfig.Load(); err != nil {
+		log.Fatalf("failed loading gateway configuration, reason=%v", err)
 	}
 
 	// by default start postgrest process

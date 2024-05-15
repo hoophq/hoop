@@ -3,6 +3,8 @@ package pgrest
 import (
 	"net/url"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestEqFilter(t *testing.T) {
@@ -34,7 +36,7 @@ func TestEqFilter(t *testing.T) {
 	} {
 		t.Run(tt.msg, func(t *testing.T) {
 			got := WithEqFilter(tt.params).Encode()
-			if got != tt.want {
+			if !cmp.Equal(got, tt.want) {
 				t.Errorf("fail to encode filter, got=%v, want=%v", got, tt.want)
 			}
 		})
