@@ -13,11 +13,35 @@ type orgContext struct {
 	orgLicense string
 }
 
+type auditContext struct {
+	orgID     string
+	eventName string
+	userEmail string
+	metadata  map[string]any
+}
+
 func (c *orgContext) GetOrgID() string       { return c.orgID }
 func (c *orgContext) GetLicenseName() string { return c.orgLicense }
 func NewOrgContext(orgID string) OrgContext  { return &orgContext{orgID: orgID} }
 func NewLicenseContext(orgID, orgLicense string) LicenseContext {
 	return &orgContext{orgID, orgLicense}
+}
+
+func NewAuditContext(orgID, eventName, userEmail string) *auditContext {
+	return &auditContext{
+		orgID:     orgID,
+		eventName: eventName,
+		userEmail: userEmail,
+		metadata:  nil,
+	}
+}
+func (c *auditContext) GetOrgID() string            { return c.orgID }
+func (c *auditContext) GetUserEmail() string        { return c.userEmail }
+func (c *auditContext) GetEventName() string        { return c.eventName }
+func (c *auditContext) GetMetadata() map[string]any { return c.metadata }
+func (c *auditContext) WithMetadata(v map[string]any) *auditContext {
+	c.metadata = v
+	return c
 }
 
 const LicenseFreeType string = "free"

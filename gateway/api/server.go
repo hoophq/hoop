@@ -14,6 +14,7 @@ import (
 	"github.com/runopsio/hoop/gateway/analytics"
 	apiagents "github.com/runopsio/hoop/gateway/api/agents"
 	apiconnections "github.com/runopsio/hoop/gateway/api/connections"
+	apifeatures "github.com/runopsio/hoop/gateway/api/features"
 	apihealthz "github.com/runopsio/hoop/gateway/api/healthz"
 	loginapi "github.com/runopsio/hoop/gateway/api/login"
 	apiorgs "github.com/runopsio/hoop/gateway/api/orgs"
@@ -241,6 +242,19 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		AdminOnlyAccessRole,
 		api.Authenticate,
 		apiorgs.RevokeAgentKey)
+
+	route.PUT("/orgs/features",
+		AdminOnlyAccessRole,
+		api.Authenticate,
+		api.TrackRequest(analytics.EventOrgFeatureUpdate),
+		AuditApiChanges,
+		apiorgs.FeatureUpdate)
+
+	route.POST("/features/askai/v1/chats/completions",
+		api.Authenticate,
+		api.TrackRequest(analytics.EventFeatureAskAIChatCompletions),
+		AuditApiChanges,
+		apifeatures.PostChatCompletions)
 
 	route.POST("/plugins",
 		AdminOnlyAccessRole,
