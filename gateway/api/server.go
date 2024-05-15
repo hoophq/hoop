@@ -250,7 +250,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		AuditApiChanges,
 		apiorgs.FeatureUpdate)
 
-	route.POST("/features/askai/v1/chats/completions",
+	route.POST("/features/ask-ai/v1/chats/completions",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventFeatureAskAIChatCompletions),
 		AuditApiChanges,
