@@ -30,7 +30,7 @@ func (a *audit) IsFeatureAskAiEnabled(ctx pgrest.OrgContext) (bool, error) {
 		ctx.GetOrgID(), FeatureAskAiEnabled, FeatureAskAiDisabled).
 		FetchOne().
 		DecodeInto(&out)
-	if err == pgrest.ErrNotFound {
+	if err == pgrest.ErrNotFound || len(out) == 0 {
 		return false, nil
 	}
 	event, ok := out["event"]
