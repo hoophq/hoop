@@ -14,6 +14,7 @@ import (
 	"github.com/runopsio/hoop/common/version"
 	"github.com/runopsio/hoop/gateway/agentcontroller"
 	"github.com/runopsio/hoop/gateway/api"
+	apiorgs "github.com/runopsio/hoop/gateway/api/orgs"
 	"github.com/runopsio/hoop/gateway/appconfig"
 	"github.com/runopsio/hoop/gateway/indexer"
 	"github.com/runopsio/hoop/gateway/notification"
@@ -78,9 +79,14 @@ func Run() {
 	notificationService := getNotification()
 
 	if !pgusers.IsOrgMultiTenant() {
-		log.Infof("provisioning / promoting default organization")
-		if err := pgusers.CreateDefaultOrganization(); err != nil {
+		log.Infof("provisioning default organization")
+		ctx, err := pgusers.CreateDefaultOrganization()
+		if err != nil {
 			log.Fatal(err)
+		}
+		_, _, err = apiorgs.ProvisionOrgAgentKey(ctx, grpcURL)
+		if err != nil {
+			log.Errorf("failed provisioning org agent key, reason=%v", err)
 		}
 	}
 

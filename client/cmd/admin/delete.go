@@ -28,6 +28,10 @@ var deleteCmd = &cobra.Command{
 		if err := httpDeleteRequest(apir); err != nil {
 			styles.PrintErrorAndExit(err.Error())
 		}
-		fmt.Printf("%s %q deleted\n", apir.resourceType, apir.name)
+		if apir.name != "" {
+			fmt.Printf("%s %q deleted\n", apir.resourceType, apir.name)
+			return
+		}
+		fmt.Printf("%s deleted\n", apir.resourceType)
 	},
 }

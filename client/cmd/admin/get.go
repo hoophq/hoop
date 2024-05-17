@@ -23,13 +23,13 @@ var getLongDesc = `Display one or many resources. Available ones:
 
 * agents (tabview)
 * connections (tabview)
-* reviews
+* orgkeys (tabview)
 * plugins (tabview)
-* policies (tabview)
+* reviews
 * runbooks
+* serviceaccounts (tabview)
 * sessions
 * users (tabview)
-* serviceaccounts (tabview)
 `
 
 var getExamplesDesc = `
@@ -108,6 +108,11 @@ var getCmd = &cobra.Command{
 					fmt.Fprintln(w)
 				}
 			}
+		case "orgkey", "orgkeys":
+			switch contents := obj.(type) {
+			case map[string]any:
+				fmt.Println(contents["key"])
+			}
 		case "plugin", "plugins":
 			fmt.Fprintln(w, "NAME\tSOURCE\tPRIORITY\tCONNECTIONS\tCONFIG")
 			switch contents := obj.(type) {
@@ -140,25 +145,6 @@ var getCmd = &cobra.Command{
 						m["name"], source, m["priority"], connections, configID)
 					fmt.Fprintln(w)
 				}
-			}
-		case "policies", "policy":
-			fmt.Fprintln(w, "ID\tNAME\tTYPE\tCONNECTIONS\tCONFIG\tUPDATED")
-			contents, _ := obj.([]map[string]any)
-			for _, m := range contents {
-				connections := len(m["connections"].([]any))
-				pconf := joinList(m["config"], true)
-				fmt.Fprintf(w, "%s\t%s\t%s\t%v\t%v\t%s", m["id"], m["name"], m["type"], connections, pconf, absTime(m["updatedAt"]))
-				fmt.Fprintln(w)
-			}
-		case "sessionstatus":
-			fmt.Fprintln(w, "SESSION\tPHASE\tERROR\tTIME\t")
-			contents, _ := obj.([]map[string]any)
-			for _, m := range contents {
-				id := mapGetter("id", m["status"])
-				phase := mapGetter("phase", m["status"])
-				errorMsg := mapGetter("error", m["status"])
-				fmt.Fprintf(w, "%s\t%s\t%s\t%v\t", id, phase, errorMsg, m["tx_time"])
-				fmt.Fprintln(w)
 			}
 		case "user", "users", "userinfo":
 			switch contents := obj.(type) {

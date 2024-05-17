@@ -72,6 +72,18 @@ func parseResourceOrDie(args []string, method, outputFlag string) *apiResource {
 		if method == "POST" {
 			apir.suffixEndpoint = "/api/connections"
 		}
+	case "orgkey", "orgkeys":
+		apir.resourceDelete = true
+		apir.resourceList = true
+		apir.resourceCreate = true
+		apir.suffixEndpoint = "/api/orgs/keys"
+		defer func() {
+			apir.name = ""
+			if outputFlag == "" {
+				apir.decodeTo = "object"
+			}
+		}()
+		apir.name = "_"
 	case "sessions":
 		apir.resourceList = false
 		apir.suffixEndpoint = path.Join("/api/sessions", apir.name)
