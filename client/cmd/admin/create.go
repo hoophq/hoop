@@ -6,10 +6,10 @@ import (
 
 func init() {
 	createCmd.AddCommand(createAgentCmd)
+	createCmd.AddCommand(createOrgKeyCmd)
 	createCmd.AddCommand(createConnectionCmd)
 	createCmd.AddCommand(createPluginCmd)
 	createCmd.AddCommand(createUserCmd)
-	createCmd.AddCommand(createPolicyCmd)
 	createCmd.AddCommand(createSvcAccountCmd)
 	createCmd.PersistentFlags().StringVarP(&outputFlag, "output", "o", "", "Output format. One off: (json)")
 }

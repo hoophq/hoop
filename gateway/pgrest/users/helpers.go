@@ -28,24 +28,26 @@ func IsLicenseFreePlan(ctx pgrest.LicenseContext, pluginName string) bool {
 	return ctx.GetLicenseName() == LicenseFreeType && !slices.Contains(licenseFreePlugins, pluginName)
 }
 
-// CreateDefaultOrganization creates a default organization if there isn't any.
-// Having multiple organizations returns an error and a manual intervention is
-// required
-func CreateDefaultOrganization() error {
+// CreateDefaultOrganization list all organizations and create a default
+// if there is not any. Otherwise returns the ID of the first organization.
+// In case there are more than one organization, returns an error.
+func CreateDefaultOrganization() (pgrest.OrgContext, error) {
 	orgList, err := New().FetchAllOrgs()
 	if err != nil {
-		return fmt.Errorf("failed fetching orgs, err=%v", err)
+		return nil, fmt.Errorf("failed listing orgs, err=%v", err)
 	}
-	switch len(orgList) {
-	case 0:
-		if err := New().CreateOrg(uuid.NewString(), proto.DefaultOrgName); err != nil {
-			return fmt.Errorf("failed creating the default organization, err=%v", err)
+	switch {
+	case len(orgList) == 0:
+		orgID := uuid.NewString()
+		if err := New().CreateOrg(orgID, proto.DefaultOrgName); err != nil {
+			return nil, fmt.Errorf("failed creating the default organization, err=%v", err)
 		}
-	case 1: // noop
-	default:
-		return fmt.Errorf("found multiple organizations, cannot promote. orgs=%v", orgList)
+		return pgrest.NewOrgContext(orgID), nil
+	case len(orgList) == 1:
+		return pgrest.NewOrgContext(orgList[0].ID), nil
 	}
-	return nil
+	return nil, fmt.Errorf("multiple organizations were found")
+
 }
 
 func IsOrgMultiTenant() bool { return os.Getenv("ORG_MULTI_TENANT") == "true" }
