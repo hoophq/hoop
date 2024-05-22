@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/runopsio/hoop/common/grpc"
@@ -80,12 +81,13 @@ func Run() {
 
 	if !pgusers.IsOrgMultiTenant() {
 		log.Infof("provisioning default organization")
+		time.Sleep(time.Second * 2)
 		ctx, err := pgusers.CreateDefaultOrganization()
 		if err != nil {
 			log.Fatal(err)
 		}
 		_, _, err = apiorgs.ProvisionOrgAgentKey(ctx, grpcURL)
-		if err != nil {
+		if err != nil && err != apiorgs.ErrAlreadyExists {
 			log.Errorf("failed provisioning org agent key, reason=%v", err)
 		}
 	}

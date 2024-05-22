@@ -1,0 +1,405 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: 'AWS CloudFormation to install Hoop Platform.'
+
+Metadata:
+  License: Apache-2.0
+
+Parameters:
+  AwsKeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+
+  AwsInstanceType:
+    Type: String
+    Description: WebServer EC2 instance type
+    AllowedValues:
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - t3.nano
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+      - t3.xlarge
+      - t3.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge
+      - c5.large
+      - c5.xlarge
+      - c5.2xlarge
+      - c5.4xlarge
+      - c5.9xlarge
+      - g3.8xlarge
+      - r5.large
+      - r5.xlarge
+      - r5.2xlarge
+      - r5.4xlarge
+      - i3.xlarge
+      - i3.2xlarge
+      - i3.4xlarge
+      - i3.8xlarge
+      - d2.xlarge
+      - d2.2xlarge
+      - d2.4xlarge
+      - d2.8xlarge
+    Default: t3.small
+    ConstraintDescription: must be a valid EC2 instance type.
+
+  AwsSSHLocation:
+    Type: String
+    Description: The IP address range that can be used to SSH to the EC2 instances
+    Default: 0.0.0.0/0
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  AwsLatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+
+  AwsMasterDbUsername:
+    Type: String
+    Description: The name of the database username
+    Default: hoopdbmaster
+
+  AwsMasterDbPassword:
+    Type: String
+    Description: The database master password
+    NoEcho: "true"
+    Default: UFQEGH8cb1bLMfgjOnOgfXvq7
+
+  AwsCertificateArn:
+    Type: String
+    Description: The certificate arn for the load balancer
+    Default: arn:aws:acm:us-west-2:200074533906:certificate/b99d6325-8ace-4936-8f91-36163177bab0
+
+  AwsVpcId:
+    Type: String
+    Description: The ID of the VPC
+    Default: vpc-b2b42eca
+
+  AwsIdpDomain:
+    Type: String
+    Description: The name of the sign in prefix of Cognito
+    Default: hoopbox
+
+  # Hoop Configuration
+  APIPublicDNS:
+    Type: String
+    Description: 'The public DNS of the API (HTTP and gRPC)'
+
+  AppIDPURI:
+    Type: String
+    Description: 'IDP configuration in URI format. <scheme>://<idp-client-id>:<idp-client-secret>@<idp-host>?<option>='
+
+  AppLogLevel:
+    Type: String
+    Description: The log level of the gateway
+    Default: info
+
+  AppAdminUsernameRole:
+    Type: String
+    Description: 'Changes the name of the group to act as admin'
+    Default: 'admin'
+
+Resources:
+  # Database Instance
+  HoopDB:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      # DeletionPolicy: Snapshot
+      # UpdateReplacePolicy: Snapshot
+      # TODO: configure VPC
+      # TODO: configure AZ
+      # DBInstanceIdentifier: !Join ["-", ["hoopdb", !Sub ${AWS::StackName}]]
+      AllocatedStorage: "10"
+      DBInstanceClass: db.t3.micro
+      BackupRetentionPeriod: 14
+      Engine: postgres
+      MasterUsername: !Ref AwsMasterDbUsername
+      MasterUserPassword: !Ref AwsMasterDbPassword
+      PubliclyAccessible: false
+      StorageEncrypted: true
+      VPCSecurityGroups: [!GetAtt HoopDBSecurityGroup.GroupId]
+
+  # Load Balancer
+  AppLB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Type: application
+      # Name: hoopgateway
+      IpAddressType: ipv4
+      Scheme: internet-facing
+      SecurityGroups: [!GetAtt InstanceSecurityGroup.GroupId]
+      Subnets:
+      - subnet-3a936442
+      - subnet-c6e5f48d
+  AppApiLBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    # DependsOn: ECSServiceRole
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref AppApiTargetGroup
+      LoadBalancerArn: !Ref AppLB
+      Port: "443"
+      Protocol: HTTPS
+      Certificates:
+      - CertificateArn: !Ref AwsCertificateArn
+  AppGrpcLBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    DependsOn: AppLB
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref AppGrpcTargetGroup
+      LoadBalancerArn: !Ref AppLB
+      Port: "8443"
+      Protocol: HTTPS
+      Certificates:
+      - CertificateArn: !Ref AwsCertificateArn
+  AppApiTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      TargetType: instance
+      Targets:
+      - Id: !Ref EC2Instance
+        Port: 8009
+      Protocol: HTTP
+      Port: 8009
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: /api/healthz
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      # TODO: change-me
+      Name: GatewayApiTargetGroup
+      VpcId: !Ref AwsVpcId
+  AppGrpcTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      TargetType: instance
+      Targets:
+      - Id: !Ref EC2Instance
+        Port: 8010
+      Protocol: HTTP
+      ProtocolVersion: GRPC
+      Port: 8010
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      # TODO: change-me
+      Name: GatewayGrpcTargetGroup
+      VpcId: !Ref AwsVpcId
+
+  # idp default Cognito
+  IdpDefault:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      # MfaConfiguration: OFF
+      EmailConfiguration:
+        EmailSendingAccount: COGNITO_DEFAULT
+      AdminCreateUserConfig:
+         AllowAdminCreateUserOnly: true
+      Schema:
+      - Name: name
+        Mutable: true
+        DeveloperOnlyAttribute: false
+        AttributeDataType: String
+      UsernameAttributes:
+      - email
+  IdpDefaultClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref IdpDefault
+      GenerateSecret: true
+      CallbackURLs:
+        - !Sub 'https://${APIPublicDNS}/api/callback'
+      AllowedOAuthFlows:
+        - code
+        - implicit
+      AllowedOAuthScopes:
+        - email
+        - openid
+        - profile
+      AllowedOAuthFlowsUserPoolClient: true
+      SupportedIdentityProviders:
+        - COGNITO
+  IdpDefaultDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      UserPoolId: !Ref IdpDefault
+      Domain: !Ref AwsIdpDomain
+
+  # Gateway App VM
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    DependsOn: HoopDB
+    Properties:
+      InstanceType: !Ref AwsInstanceType
+      SubnetId: subnet-3a936442
+      SecurityGroupIds: [!GetAtt InstanceSecurityGroup.GroupId]
+      KeyName: !Ref AwsKeyName
+      ImageId: !Ref AwsLatestAmiId
+      UserData: !Base64
+        Fn::Sub: |-
+          #!/bin/bash
+          set -ex
+          cfn-init -v --stack ${AWS::StackId} --resource EC2Instance --region ${AWS::Region}
+          cfn-signal -e $? --stack ${AWS::StackId} --resource EC2Instance --region ${AWS::Region}
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          default:
+          - setup_gateway
+        setup_gateway:
+          files:
+            /lib/systemd/system/hoopgateway.service:
+              content: |
+                [Unit]
+                Description=Hoop Gateway
+                After=network.target
+
+                [Service]
+                ExecStart=/opt/hoop/bin/hoop start gateway
+                EnvironmentFile=/etc/hoopgateway.d/config
+                Restart=on-failure
+                RestartSec=15s
+
+                [Install]
+                WantedBy=multi-user.target
+            /etc/hoopgateway.d/config:
+              # Make LOG_LEVEL coerce to GODEBUG
+              content: !Sub |
+                LOG_LEVEL=${AppLogLevel}
+                LOG_ENCODING=json
+                API_URL=https://${APIPublicDNS}
+                GRPC_URL=https://${APIPublicDNS}:8443
+                POSTGRES_DB_URI=postgres://${AwsMasterDbUsername}:${AwsMasterDbPassword}@${HoopDB.Endpoint.Address}:${HoopDB.Endpoint.Port}/postgres
+                IDP_ISSUER=${IdpDefault.ProviderURL}
+                IDP_CLIENT_ID=${IdpDefaultClient.ClientId}
+                IDP_CLIENT_SECRET=${IdpDefaultClient.ClientSecret}
+                ADMIN_USERNAME=${AppAdminUsernameRole}
+              mode: "000400"
+              owner: root
+              group: root
+          commands:
+            install_binaries:
+              cwd: '~'
+              command: |
+                # TODO: transform to a installation script
+                set -eox pipefail
+                mkdir -p /opt/hoop/bin && mkdir -p /app/ui
+                VERSION=$(curl -s https://releases.hoop.dev/release/latest.txt)
+                # TODO: change me to get the migrations directly from the binary
+                curl -sL https://hoopartifacts.s3.amazonaws.com/release/hoop-dev.tar.gz -o hoop_${VERSION}.tar.gz
+                tar --extract --file hoop_${VERSION}.tar.gz -C /opt/hoop/bin && rm -f hoop_${VERSION}.tar.gz
+                chmod 0755 /opt/hoop/bin/hoop && chown root:root /opt/hoop/bin/hoop
+                mv /opt/hoop/bin/migrations /app/migrations
+                /opt/hoop/bin/hoop version
+                curl -sL https://github.com/PostgREST/postgrest/releases/download/v11.2.2/postgrest-v11.2.2-linux-static-x64.tar.xz -o postgrest.tar.xz
+                tar -xf postgrest.tar.xz -C /usr/local/bin && rm -f postgrest.tar.xz
+                chmod 0755 /usr/local/bin/postgrest && chown root:root /usr/local/bin/postgrest
+                postgrest --version
+                curl -sL https://hoopartifacts.s3.amazonaws.com/webapp/latest.tar.gz -o webapp-latest.tar.gz
+                tar -xf webapp-latest.tar.gz && mv ./resources/public /app/ui/public && rm -f webapp-latest.tar.gz && rm -rf ./resources
+              # 02_enable_hoopgateway:
+              #   command: systemctl enable hoopgateway.service
+              # 03_start_hoopgateway:
+              #   command: systemctl start hoopgateway.service
+          services:
+            systemd:
+              hoopgateway:
+                enabled: true
+                ensureRunning: true
+                files:
+                - /etc/hoopgateaway.d/config
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Metadata:
+      guard:
+        SuppressedRules:
+          - INCOMING_SSH_DISABLED
+    Properties:
+      GroupDescription: Enable SSH access and HTTP/GRPC on the inbound port
+      # GroupName: !Join ["-", [webapp-security-group, !Ref EnvironmentType]]
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: !Ref AwsSSHLocation
+      - IpProtocol: tcp
+        FromPort: 8443
+        ToPort: 8443
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 8009
+        ToPort: 8009
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 8010
+        ToPort: 8010
+        CidrIp: 0.0.0.0/0
+
+  HoopDBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow postgres inbound traffic
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupName:
+            Ref: InstanceSecurityGroup
+
+Outputs:
+  InstanceId:
+    Description: InstanceId of the newly created EC2 instance
+    Value: !Ref EC2Instance
+
+  AZ:
+    Description: Availability Zone of the newly created EC2 instance
+    Value: !GetAtt EC2Instance.AvailabilityZone
+
+  PublicDNS:
+    Description: Public DNSName of the newly created EC2 instance
+    Value: !GetAtt EC2Instance.PublicDnsName
+
+  PublicIP:
+    Description: Public IP address of the newly created EC2 instance
+    Value: !GetAtt EC2Instance.PublicIp
+
+  URL:
+    Description: URL of the sample website
+    Value: !Join
+      - ""
+      - - http://
+        - !GetAtt AppLB.DNSName
+
+  HoopDBEndpoint:
+    Description: "Connection endpoint for the database"
+    Value: !GetAtt HoopDB.Endpoint.Address

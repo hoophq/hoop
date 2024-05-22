@@ -132,34 +132,12 @@ func NewProvider() *Provider {
 		ApiURL:  apiURL,
 	}
 
-	provider.Issuer = os.Getenv("IDP_ISSUER")
-	provider.ClientID = os.Getenv("IDP_CLIENT_ID")
-	provider.ClientSecret = os.Getenv("IDP_CLIENT_SECRET")
-	provider.Audience = os.Getenv("IDP_AUDIENCE")
-	provider.CustomScopes = os.Getenv("IDP_CUSTOM_SCOPES")
+	if err := setProviderConfFromEnvs(provider); err != nil {
+		log.Fatal(err)
+	}
 
-	issuerURL, err := url.Parse(provider.Issuer)
-	if err != nil {
-		log.Fatalf("failed parsing IDP_ISSUER url, err=%v", err)
-	}
-	provider.authWithUserInfo = issuerURL.Query().Get("_userinfo") == "1"
-	if provider.ClientSecret == "" {
-		log.Fatal(errors.New("missing required ID provider variables"))
-	}
-	qs := issuerURL.Query()
-	qs.Del("_userinfo")
-	encQueryStr := qs.Encode()
-	if encQueryStr != "" {
-		encQueryStr = "?" + encQueryStr
-	}
-	// scheme://host:port/path?query#fragment
-	provider.Issuer = fmt.Sprintf("%s://%s%s%s",
-		issuerURL.Scheme,
-		issuerURL.Hostname(),
-		issuerURL.Path,
-		encQueryStr,
-	)
-	log.Infof("issuer-url=%s", provider.Issuer)
+	log.Infof("issuer-url=%s, audience=%v, custom-scopes=%v, idp-uri-set=%v",
+		provider.Issuer, provider.Audience, provider.CustomScopes, os.Getenv("IDP_URI") != "")
 	oidcProviderConfig, err := newProviderConfig(provider.Context, provider.Issuer)
 	if err != nil {
 		log.Fatal(err)
@@ -195,6 +173,69 @@ func NewProvider() *Provider {
 	provider.IDTokenVerifier = provider.Verifier(oidcConfig)
 	provider.JWKS = downloadJWKS(oidcProviderConfig.JWKSURL)
 	return provider
+}
+
+func setProviderConfFromEnvs(p *Provider) error {
+	if idpURI := os.Getenv("IDP_URI"); idpURI != "" {
+		u, err := url.Parse(idpURI)
+		if err != nil {
+			return fmt.Errorf("failed parsing IDP_URI env, reason=%v. Valid format is: <scheme>://<client-id>:<client-secret>@<issuer-host>?<options>=", err)
+		}
+		if u.User != nil {
+			p.ClientID = u.User.Username()
+			p.ClientSecret, _ = u.User.Password()
+		}
+		if p.ClientID == "" || p.ClientSecret == "" {
+			return fmt.Errorf("missing credentials for IDP_URI env. Valid format is: <scheme>://<client-id>:<client-secret>@<issuer-host>?<options>=")
+		}
+		p.CustomScopes = u.Query().Get("idp_custom_scopes")
+		p.Audience = u.Query().Get("idp_audience")
+		p.authWithUserInfo = u.Query().Get("_userinfo") == "1"
+		qs := u.Query()
+		qs.Del("idp_custom_scopes")
+		qs.Del("idp_audience")
+		qs.Del("_userinfo")
+		encQueryStr := qs.Encode()
+		if encQueryStr != "" {
+			encQueryStr = "?" + encQueryStr
+		}
+		// scheme://host:port/path?query#fragment
+		p.Issuer = fmt.Sprintf("%s://%s%s%s",
+			u.Scheme,
+			u.Hostname(),
+			u.Path,
+			encQueryStr,
+		)
+		return nil
+	}
+	p.Issuer = os.Getenv("IDP_ISSUER")
+	p.ClientID = os.Getenv("IDP_CLIENT_ID")
+	p.ClientSecret = os.Getenv("IDP_CLIENT_SECRET")
+	p.Audience = os.Getenv("IDP_AUDIENCE")
+	p.CustomScopes = os.Getenv("IDP_CUSTOM_SCOPES")
+
+	issuerURL, err := url.Parse(p.Issuer)
+	if err != nil {
+		return fmt.Errorf("failed parsing IDP_ISSUER env, reason=%v", err)
+	}
+	p.authWithUserInfo = issuerURL.Query().Get("_userinfo") == "1"
+	if p.ClientSecret == "" || p.ClientID == "" {
+		return fmt.Errorf("missing IDP credentials: IDP_CLIENT_ID, IDP_CLIENT_SECRET")
+	}
+	qs := issuerURL.Query()
+	qs.Del("_userinfo")
+	encQueryStr := qs.Encode()
+	if encQueryStr != "" {
+		encQueryStr = "?" + encQueryStr
+	}
+	// scheme://host:port/path?query#fragment
+	p.Issuer = fmt.Sprintf("%s://%s%s%s",
+		issuerURL.Scheme,
+		issuerURL.Hostname(),
+		issuerURL.Path,
+		encQueryStr,
+	)
+	return nil
 }
 
 func addCustomScopes(scopes []string, customScope string) []string {
