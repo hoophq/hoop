@@ -236,7 +236,6 @@ Resources:
         - !Sub 'https://${APIPublicDNS}/api/callback'
       AllowedOAuthFlows:
         - code
-        - implicit
       AllowedOAuthScopes:
         - email
         - openid
@@ -273,6 +272,7 @@ Resources:
           - setup_gateway
         setup_gateway:
           files:
+            # TODO: change to /etc/??
             /lib/systemd/system/hoopgateway.service:
               content: |
                 [Unit]
@@ -303,7 +303,7 @@ Resources:
               owner: root
               group: root
           commands:
-            install_binaries:
+            01_install_binaries:
               cwd: '~'
               command: |
                 # TODO: transform to a installation script
@@ -322,6 +322,42 @@ Resources:
                 postgrest --version
                 curl -sL https://hoopartifacts.s3.amazonaws.com/webapp/latest.tar.gz -o webapp-latest.tar.gz
                 tar -xf webapp-latest.tar.gz && mv ./resources/public /app/ui/public && rm -f webapp-latest.tar.gz && rm -rf ./resources
+            02_install_system_agent:
+              cwd: '~'
+              command: !Sub |
+                set -eo pipefail
+                SECRET_KEY=xagt-$(openssl rand -base64 32)
+                SECRET_KEY_HASH=$(echo -n $SECRET_KEY | sha256sum |awk {'print $1'})
+                POSTGRES_DB_URI=postgres://${AwsMasterDbUsername}:${AwsMasterDbPassword}@${HoopDB.Endpoint.Address}:${HoopDB.Endpoint.Port}/postgres
+                docker run --rm -i hoophq/hoopdev psql $POSTGRES_DB_URI <<EOF
+                BEGIN;
+                DELETE FROM agents WHERE name = 'system';
+                INSERT INTO agents (org_id, name, mode, key_hash, status)
+                    VALUES ((SELECT id from private.orgs), 'system', 'standard', '$SECRET_KEY_HASH', 'DISCONNECTED')
+                    ON CONFLICT DO NOTHING;
+                COMMIT;
+                EOF
+                cat - >/etc/systemd/system/hoopagent.service <<EOF
+                [Unit]
+                Description=System Hoop Agent
+                After=network.target
+
+                [Service]
+                ExecStart=/usr/bin/docker run -e HOOP_KEY=grpc://system:$SECRET_KEY@127.0.0.1:8010?mode=standard --rm --name defaultagent hoophq/hoopdev
+                Restart=on-failure
+                RestartSec=30s
+
+                [Install]
+                WantedBy=multi-user.target
+                EOF
+
+                systemctl daemon-reload
+                systemctl enable hoopagent
+                systemctl restart hoopagent
+              # 1. install docker: yum update -y && yum install docker
+              # systemctl enable docker && systemctl start docker
+              # 2. configure systemd 
+              # 3. install postgresql
               # 02_enable_hoopgateway:
               #   command: systemctl enable hoopgateway.service
               # 03_start_hoopgateway:

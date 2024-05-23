@@ -35,14 +35,19 @@ func Load() (*Config, error) {
 		if isLegacy {
 			log.Warnf("HOOP_DSN environment variable is deprecated, use HOOP_KEY instead")
 		}
+		// allow connecting insecure if a build disables this flag
+		// or the agent has local host connection with the gateway
+		isInsecure := !version.Get().StrictTLS && (dsn.Scheme == "http" || dsn.Scheme == "grpc")
+		if dsn.Address == grpc.LocalhostAddr && (dsn.Scheme == "grpc" || dsn.Scheme == "http") {
+			isInsecure = true
+		}
 		return &Config{
 			Name:      dsn.Name,
 			Type:      clientconfig.ModeDsn,
 			AgentMode: dsn.AgentMode,
 			Token:     dsn.Key(),
 			URL:       dsn.Address,
-			// allow connecting insecure if a build disables this flag
-			insecure: !version.Get().StrictTLS && (dsn.Scheme == "http" || dsn.Scheme == "grpc")}, nil
+			insecure:  isInsecure}, nil
 	}
 	legacyToken := getLegacyHoopTokenCredentials()
 	grpcURL := os.Getenv("HOOP_GRPCURL")
