@@ -152,14 +152,16 @@ func Connect(clientConfig ClientConfig, opts ...*ClientOptions) (pb.ClientTransp
 }
 
 func loadTLSCredentials(cc ClientConfig) (credentials.TransportCredentials, error) {
-	pemServerCA, err := os.ReadFile(os.Getenv("TLS_CA"))
-	if err != nil {
-		return nil, err
-	}
-
-	certPool := x509.NewCertPool()
-	if !certPool.AppendCertsFromPEM(pemServerCA) {
-		return nil, fmt.Errorf("failed to add server CA's certificate")
+	var certPool *x509.CertPool
+	if tlsCA := os.Getenv("TLS_CA"); tlsCA != "" {
+		pemServerCA, err := os.ReadFile(os.Getenv("TLS_CA"))
+		if err != nil {
+			return nil, err
+		}
+		certPool := x509.NewCertPool()
+		if !certPool.AppendCertsFromPEM(pemServerCA) {
+			return nil, fmt.Errorf("failed to add server CA's certificate")
+		}
 	}
 
 	// Create the credentials and return it

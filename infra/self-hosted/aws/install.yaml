@@ -117,6 +117,10 @@ Parameters:
     Description: 'Changes the name of the group to act as admin'
     Default: 'admin'
 
+  AZs:
+    Description: Availability Zones to be used
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+
 Resources:
   # Database Instance
   HoopDB:
@@ -177,9 +181,9 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       TargetType: instance
-      Targets:
-      - Id: !Ref EC2Instance
-        Port: 8009
+      # Targets:
+      # - Id: !Ref EC2Instance
+      #   Port: 8009
       Protocol: HTTP
       Port: 8009
       HealthCheckIntervalSeconds: 10
@@ -189,15 +193,15 @@ Resources:
       HealthyThresholdCount: 2
       UnhealthyThresholdCount: 2
       # TODO: change-me
-      Name: GatewayApiTargetGroup
+      # Name: GatewayApiTargetGroup
       VpcId: !Ref AwsVpcId
   AppGrpcTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       TargetType: instance
-      Targets:
-      - Id: !Ref EC2Instance
-        Port: 8010
+      # Targets:
+      # - Id: !Ref EC2Instance
+      #   Port: 8010
       Protocol: HTTP
       ProtocolVersion: GRPC
       Port: 8010
@@ -208,7 +212,7 @@ Resources:
       HealthyThresholdCount: 2
       UnhealthyThresholdCount: 2
       # TODO: change-me
-      Name: GatewayGrpcTargetGroup
+      # Name: GatewayGrpcTargetGroup
       VpcId: !Ref AwsVpcId
 
   # idp default Cognito
@@ -250,26 +254,52 @@ Resources:
       Domain: !Ref AwsIdpDomain
 
   # Gateway App VM
-  EC2Instance:
-    Type: AWS::EC2::Instance
-    DependsOn: HoopDB
+  GatewayServerGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+        Count: 1
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MaxBatchSize: 1
+        MinInstancesInService: 0
+        PauseTime: PT15M
+        WaitOnResourceSignals: true
     Properties:
-      InstanceType: !Ref AwsInstanceType
-      SubnetId: subnet-3a936442
-      SecurityGroupIds: [!GetAtt InstanceSecurityGroup.GroupId]
-      KeyName: !Ref AwsKeyName
-      ImageId: !Ref AwsLatestAmiId
-      UserData: !Base64
-        Fn::Sub: |-
-          #!/bin/bash
-          set -ex
-          cfn-init -v --stack ${AWS::StackId} --resource EC2Instance --region ${AWS::Region}
-          cfn-signal -e $? --stack ${AWS::StackId} --resource EC2Instance --region ${AWS::Region}
+      AvailabilityZones: !Ref AZs
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MinSize: 1
+      MaxSize: 2
+      TargetGroupARNs:
+      - !Ref AppGrpcTargetGroup
+      - !Ref AppApiTargetGroup
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    # DependsOn: HoopDB
+    Properties:
+      LaunchTemplateData:
+        InstanceType: !Ref AwsInstanceType
+        # SubnetId: subnet-3a936442
+        SecurityGroupIds: [!GetAtt InstanceSecurityGroup.GroupId]
+        KeyName: !Ref AwsKeyName
+        ImageId: !Ref AwsLatestAmiId
+        UserData: !Base64
+          Fn::Sub: |-
+            #!/bin/bash
+            set -ex
+            cfn-init -v --stack ${AWS::StackId} --resource LaunchTemplate --region ${AWS::Region}
+            cfn-signal -e $? --stack ${AWS::StackId} --resource GatewayServerGroup --region ${AWS::Region}
     Metadata:
       AWS::CloudFormation::Init:
         configSets:
           default:
           - setup_gateway
+          - setup_system_agent
+          # - verify_instance_health
         setup_gateway:
           files:
             # TODO: change to /etc/??
@@ -303,7 +333,7 @@ Resources:
               owner: root
               group: root
           commands:
-            01_install_binaries:
+            install_binaries:
               cwd: '~'
               command: |
                 # TODO: transform to a installation script
@@ -314,7 +344,10 @@ Resources:
                 curl -sL https://hoopartifacts.s3.amazonaws.com/release/hoop-dev.tar.gz -o hoop_${VERSION}.tar.gz
                 tar --extract --file hoop_${VERSION}.tar.gz -C /opt/hoop/bin && rm -f hoop_${VERSION}.tar.gz
                 chmod 0755 /opt/hoop/bin/hoop && chown root:root /opt/hoop/bin/hoop
-                mv /opt/hoop/bin/migrations /app/migrations
+                if [ ! -f /app/migrations/000001_init.up.sql ]; then
+                  mv /opt/hoop/bin/migrations /app/migrations
+                fi
+                rm -rf mv /opt/hoop/bin/migrations || true
                 /opt/hoop/bin/hoop version
                 curl -sL https://github.com/PostgREST/postgrest/releases/download/v11.2.2/postgrest-v11.2.2-linux-static-x64.tar.xz -o postgrest.tar.xz
                 tar -xf postgrest.tar.xz -C /usr/local/bin && rm -f postgrest.tar.xz
@@ -322,14 +355,21 @@ Resources:
                 postgrest --version
                 curl -sL https://hoopartifacts.s3.amazonaws.com/webapp/latest.tar.gz -o webapp-latest.tar.gz
                 tar -xf webapp-latest.tar.gz && mv ./resources/public /app/ui/public && rm -f webapp-latest.tar.gz && rm -rf ./resources
-            02_install_system_agent:
-              cwd: '~'
-              command: !Sub |
-                set -eo pipefail
-                SECRET_KEY=xagt-$(openssl rand -base64 32)
+        setup_system_agent:
+          packages:
+            yum:
+              docker: []
+          files:
+            /opt/hoop/bin/run_system_agent.sh:
+              # Make LOG_LEVEL coerce to GODEBUG
+              content: !Sub |
+                #!/bin/bash
+                SECRET_KEY=xagt-$(LC_ALL=C tr -dc A-Za-z0-9_ < /dev/urandom | head -c 43 | xargs)
+                set -eox pipefail
                 SECRET_KEY_HASH=$(echo -n $SECRET_KEY | sha256sum |awk {'print $1'})
-                POSTGRES_DB_URI=postgres://${AwsMasterDbUsername}:${AwsMasterDbPassword}@${HoopDB.Endpoint.Address}:${HoopDB.Endpoint.Port}/postgres
-                docker run --rm -i hoophq/hoopdev psql $POSTGRES_DB_URI <<EOF
+                systemctl enable docker || true
+                systemctl start docker || true
+                docker run --name setup-agent --rm -i hoophq/hoopdev psql $POSTGRES_DB_URI <<EOF
                 BEGIN;
                 DELETE FROM agents WHERE name = 'system';
                 INSERT INTO agents (org_id, name, mode, key_hash, status)
@@ -337,34 +377,42 @@ Resources:
                     ON CONFLICT DO NOTHING;
                 COMMIT;
                 EOF
-                cat - >/etc/systemd/system/hoopagent.service <<EOF
+                HOOP_KEY=grpc://system:$SECRET_KEY@127.0.0.1:8010?mode=standard /opt/hoop/bin/hoop start agent
+              mode: "000755"
+              owner: root
+              group: root
+            /etc/systemd/system/hoopagent.service:
+              content: |
                 [Unit]
-                Description=System Hoop Agent
+                Description=Hoop System Agent
                 After=network.target
 
                 [Service]
-                ExecStart=/usr/bin/docker run -e HOOP_KEY=grpc://system:$SECRET_KEY@127.0.0.1:8010?mode=standard --rm --name defaultagent hoophq/hoopdev
+                ExecStart=/opt/hoop/bin/run_system_agent.sh
+                EnvironmentFile=/etc/hoopgateway.d/config
                 Restart=on-failure
-                RestartSec=30s
+                RestartSec=15s
 
                 [Install]
                 WantedBy=multi-user.target
-                EOF
-
-                systemctl daemon-reload
-                systemctl enable hoopagent
-                systemctl restart hoopagent
-              # 1. install docker: yum update -y && yum install docker
-              # systemctl enable docker && systemctl start docker
-              # 2. configure systemd 
-              # 3. install postgresql
-              # 02_enable_hoopgateway:
-              #   command: systemctl enable hoopgateway.service
-              # 03_start_hoopgateway:
-              #   command: systemctl start hoopgateway.service
+        # verify_instance_health:
+        #   commands:
+        #     ELBHealthCheck:
+        #       command: !Sub |
+        #         until [ "$state" == "\"InService\"" ];
+        #         do state=$(aws --region ${AWS::Region} elb describe-instance-health --load-balancer-name ${AppLB} --instances $(curl -s http://169.254.169.254/latest/meta-data/instance-id) --query InstanceStates[0].State); sleep 10;
+        #         done
           services:
             systemd:
+              docker:
+                enabled: true
+                ensureRunning: true
               hoopgateway:
+                enabled: true
+                ensureRunning: true
+                files:
+                - /etc/hoopgateaway.d/config
+              hoopagent:
                 enabled: true
                 ensureRunning: true
                 files:
@@ -413,22 +461,6 @@ Resources:
             Ref: InstanceSecurityGroup
 
 Outputs:
-  InstanceId:
-    Description: InstanceId of the newly created EC2 instance
-    Value: !Ref EC2Instance
-
-  AZ:
-    Description: Availability Zone of the newly created EC2 instance
-    Value: !GetAtt EC2Instance.AvailabilityZone
-
-  PublicDNS:
-    Description: Public DNSName of the newly created EC2 instance
-    Value: !GetAtt EC2Instance.PublicDnsName
-
-  PublicIP:
-    Description: Public IP address of the newly created EC2 instance
-    Value: !GetAtt EC2Instance.PublicIp
-
   URL:
     Description: URL of the sample website
     Value: !Join
