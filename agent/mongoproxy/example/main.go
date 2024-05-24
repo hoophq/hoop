@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/url"
 	"os"
 	"time"
 
 	"github.com/runopsio/hoop/agent/mongoproxy"
 	"github.com/runopsio/hoop/common/log"
+	"go.mongodb.org/mongo-driver/x/mongo/driver/connstring"
 )
 
 const proxyListenAddr = "0.0.0.0:27017"
@@ -37,7 +37,7 @@ func Serve() {
 		fmt.Println("usage: ./proxy.go server:host")
 		os.Exit(1)
 	}
-	connURL, err := url.Parse(os.Args[1])
+	connURL, err := connstring.ParseAndValidate(os.Args[1])
 	if err != nil {
 		panic(err)
 	}
@@ -55,7 +55,7 @@ func Serve() {
 			time.Sleep(time.Second * 5)
 			continue
 		}
-		serverConn, err := MongoRawConn(connURL.Host)
+		serverConn, err := MongoRawConn(connURL.Hosts[0])
 		if err != nil {
 			panic(err)
 		}
@@ -64,7 +64,7 @@ func Serve() {
 	}
 }
 
-func serveConn(connURL *url.URL, connID int, clientConn, serverConn net.Conn) {
+func serveConn(connURL *connstring.ConnString, connID int, clientConn, serverConn net.Conn) {
 	defer clientConn.Close()
 	defer serverConn.Close()
 

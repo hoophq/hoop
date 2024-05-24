@@ -36,15 +36,17 @@ type (
 		shutdownCancelFn context.CancelCauseFunc
 	}
 	connEnv struct {
-		scheme          string
-		host            string
-		user            string
-		pass            string
-		port            string
-		dbname          string
-		insecure        bool
-		options         string
-		postgresSSLMode string
+		scheme           string
+		host             string
+		address          string
+		user             string
+		pass             string
+		port             string
+		dbname           string
+		insecure         bool
+		options          string
+		postgresSSLMode  string
+		connectionString string
 	}
 )
 
@@ -56,7 +58,13 @@ func (e *connEnv) Get(key string) string {
 	return values.Get(key)
 }
 
-func (e *connEnv) Has(key string) bool { return e.Get(key) != "" }
+// func (e *connEnv) Has(key string) bool { return e.Get(key) != "" }
+func (e *connEnv) Address() string {
+	if e.address != "" {
+		return e.address
+	}
+	return e.host + ":" + e.port
+}
 
 func New(client pb.ClientTransport, cfg *config.Config, runtimeEnvs map[string]string) *Agent {
 	shutdownCtx, cancelFn := context.WithCancelCause(context.Background())
@@ -376,7 +384,7 @@ func (a *Agent) checkTCPLiveness(pkt *pb.Packet, envVars map[string]any) error {
 		if err != nil {
 			return err
 		}
-		if err := isPortActive(connEnvVars.host, connEnvVars.port); err != nil {
+		if err := isPortActive(connEnvVars); err != nil {
 			msg := fmt.Sprintf("failed connecting to remote host=%s, port=%s, reason=%v",
 				connEnvVars.host, connEnvVars.port, err)
 			log.Warnf("session=%v - %v", sessionID, msg)
@@ -530,20 +538,18 @@ func (a *Agent) setDatabaseCredentials(pkt *pb.Packet, params *pb.AgentConnectio
 
 func b64Enc(src []byte) string { return base64.StdEncoding.EncodeToString(src) }
 
-func isPortActive(host, port string) error {
+func isPortActive(e *connEnv) error {
 	timeout := time.Second * 5
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), timeout)
+	conn, err := net.DialTimeout("tcp", e.Address(), timeout)
 	if err != nil {
 		return err
 	}
-	if conn != nil {
-		defer conn.Close()
-	}
+	conn.Close()
 	return nil
 }
 
-func newTCPConn(host, port string) (net.Conn, error) {
-	serverConn, err := net.DialTimeout("tcp4", fmt.Sprintf("%s:%s", host, port), time.Second*10)
+func newTCPConn(c *connEnv) (net.Conn, error) {
+	serverConn, err := net.DialTimeout("tcp4", c.Address(), time.Second*10)
 	if err != nil {
 		return nil, fmt.Errorf("failed dialing server: %s", err)
 	}
@@ -572,6 +578,8 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		insecure:        envVarS.Getenv("INSECURE") == "true",
 		postgresSSLMode: envVarS.Getenv("SSLMODE"),
 		options:         envVarS.Getenv("OPTIONS"),
+		// this option is only used by mongodb at the momento
+		connectionString: envVarS.Getenv("CONNECTION_STRING"),
 	}
 	switch connType {
 	case pb.ConnectionTypePostgres:
@@ -604,6 +612,15 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 			return nil, fmt.Errorf("missing required secrets for mssql connection [HOST, USER, PASS]")
 		}
 	case pb.ConnectionTypeMongoDB:
+		if env.connectionString != "" {
+			connStr, err := connstring.ParseAndValidate(env.connectionString)
+			if err != nil {
+				return nil, fmt.Errorf("failed parsing %v connection string", pb.ConnectionTypeMongoDB)
+			}
+			return &connEnv{connectionString: env.connectionString, address: connStr.Hosts[0]}, nil
+		}
+		// TODO: this usage should be deprecated, only connection string
+		// should be used
 		if env.port == "" {
 			env.port = "27017"
 		}
