@@ -55,6 +55,10 @@ func setConnectionDefaults(req *Connection) {
 		defaultEnvVars["envvar:OPTIONS"] = base64.StdEncoding.EncodeToString([]byte(`tls=true`))
 		defaultEnvVars["envvar:PORT"] = base64.StdEncoding.EncodeToString([]byte(`27017`))
 		defaultCommand = []string{"mongo", "--quiet", "mongodb://$USER:$PASS@$HOST:$PORT/?$OPTIONS"}
+		if connStr, ok := req.Secrets["envvar:CONNECTION_STRING"]; ok && connStr != nil {
+			defaultEnvVars = nil
+			defaultCommand = []string{"mongo", "--quiet", "$CONNECTION_STRING"}
+		}
 	}
 
 	if len(req.Command) == 0 {

@@ -60,7 +60,7 @@ func (a *Agent) processMySQLProtocol(pkt *pb.Packet) {
 	}
 
 	log.Infof("session=%v - starting mysql connection at %v:%v", sessionID, connenv.host, connenv.port)
-	mysqlServer, err := newTCPConn(connenv.host, connenv.port)
+	mysqlServer, err := newTCPConn(connenv)
 	if err != nil {
 		errMsg := fmt.Sprintf("failed connecting with mysql server, err=%v", err)
 		log.Errorf(errMsg)

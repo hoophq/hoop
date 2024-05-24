@@ -3,12 +3,12 @@ package controller
 import (
 	"context"
 	"fmt"
-	"net/url"
 
 	"github.com/runopsio/hoop/agent/mongoproxy"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
+	"go.mongodb.org/mongo-driver/x/mongo/driver/connstring"
 )
 
 const nonTLSMsg = `the connection with the remote server is not encrypted, the connection is subject to eavesdropping. Make sure the network is reliable `
@@ -47,25 +47,39 @@ func (a *Agent) processMongoDBProtocol(pkt *pb.Packet) {
 		return
 	}
 
-	log.With("sid", sid, "conn", clientConnectionID).Infof("starting mongodb connection at %v:%v", connenv.host, connenv.port)
-	mongodbSrv, err := newTCPConn(connenv.host, connenv.port)
+	log.With("sid", sid, "conn", clientConnectionID, "legacy", connenv.connectionString == "").
+		Infof("starting mongodb connection at %v", connenv.Address())
+	mongodbSrv, err := newTCPConn(connenv)
 	if err != nil {
 		errMsg := fmt.Sprintf("failed connecting with mongodb server, err=%v", err)
 		log.Errorf(errMsg)
 		a.sendClientSessionClose(sid, errMsg)
 		return
 	}
-	connString, _ := url.Parse(fmt.Sprintf("mongodb://%s:%s@%s:%v/%v?tls=%v&authSource=%v",
-		connenv.user, connenv.pass, connenv.host, connenv.port, connenv.dbname,
-		connenv.Get("tls") == "true", connenv.Get("authSource")),
-	)
-	if connenv.Get("tls") != "true" {
-		log.Warn(nonTLSMsg)
+	connString := &connstring.ConnString{
+		// [<host:port>, ...]
+		Hosts:      []string{connenv.Address()},
+		SSL:        connenv.Get("tls") == "true",
+		Username:   connenv.user,
+		Password:   connenv.pass,
+		Database:   connenv.dbname,
+		AuthSource: connenv.Get("authSource"),
+	}
+	if connenv.connectionString != "" {
+		connString, err = connstring.ParseAndValidate(connenv.connectionString)
+		if err != nil {
+			log.Warnf("failed parsing mongodb connection string, reason=%v", err)
+			a.sendClientSessionClose(sid, "internal error, failed parsing mongodb connection string")
+			return
+		}
 	}
 	if connString == nil {
-		log.Error("mongodb connection string is empty")
+		log.Warnf("mongodb connection string is empty")
 		a.sendClientSessionClose(sid, "internal error, mongodb connection string is empty")
 		return
+	}
+	if !connString.SSL {
+		log.Warn(nonTLSMsg)
 	}
 
 	ctx := context.WithValue(context.Background(), mongoproxy.ConnIDContextKey, clientConnectionID)
