@@ -48,7 +48,7 @@ func (a *Agent) processMSSQLProtocol(pkt *pb.Packet) {
 	}
 
 	log.Infof("session=%v - starting mssql connection at %v:%v", sessionID, connenv.host, connenv.port)
-	mssqlServer, err := newTCPConn(connenv.host, connenv.port)
+	mssqlServer, err := newTCPConn(connenv)
 	if err != nil {
 		errMsg := fmt.Sprintf("failed connecting with mssql server, err=%v", err)
 		log.Errorf(errMsg)

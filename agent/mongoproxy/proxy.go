@@ -5,11 +5,11 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/url"
 	"strings"
 
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/mongotypes"
+	"go.mongodb.org/mongo-driver/x/mongo/driver/connstring"
 )
 
 const defaultAuthDB = "admin"
@@ -44,19 +44,18 @@ type proxy struct {
 	connectionID     string
 }
 
-func New(ctx context.Context, connStr *url.URL, serverRW io.ReadWriteCloser, clientW io.Writer) Proxy {
-	if connStr == nil {
-		connStr = &url.URL{}
+func New(ctx context.Context, connStr *connstring.ConnString, serverRW io.ReadWriteCloser, clientW io.Writer) Proxy {
+	var mongodbHost string
+	if len(connStr.Hosts) > 0 {
+		parts := strings.Split(connStr.Hosts[0], ":")
+		mongodbHost = parts[0]
 	}
 
 	cancelCtx, cancelFn := context.WithCancel(ctx)
-	passwd, _ := connStr.User.Password()
-	optsGetter := connStr.Query().Get
-
 	// use authSource, or the database if is provided, otherwiser fallback to default db
 	// https://github.com/mongodb/specifications/blob/master/source/auth/auth.md#connection-string-options
-	authSource := optsGetter("authSource")
-	authDB := strings.TrimPrefix(connStr.Path, "/")
+	authSource := connStr.AuthSource
+	authDB := connStr.Database
 	switch {
 	case authSource == "" && authDB == "":
 		authSource = defaultAuthDB
@@ -65,20 +64,20 @@ func New(ctx context.Context, connStr *url.URL, serverRW io.ReadWriteCloser, cli
 	}
 
 	var tlsConfig *tlsProxyConfig
-	if optsGetter("tls") == "true" {
+	if connStr.SSL {
 		tlsConfig = &tlsProxyConfig{
-			tlsInsecure:           optsGetter("tlsInsecure") == "true",
-			serverName:            connStr.Hostname(),
-			tlsCAFile:             optsGetter("tlsCAFile"),
-			tlsCertificateKeyFile: optsGetter("tlsCertificateKeyFile"),
+			tlsInsecure:           connStr.SSLInsecure,
+			serverName:            mongodbHost,
+			tlsCAFile:             connStr.SSLCaFile,
+			tlsCertificateKeyFile: connStr.SSLCertificateFile,
 		}
 	}
 
 	return &proxy{
 		ctx:              cancelCtx,
-		host:             connStr.Hostname(),
-		username:         connStr.User.Username(),
-		password:         passwd,
+		host:             mongodbHost,
+		username:         connStr.Username,
+		password:         connStr.Password,
 		serverRW:         serverRW,
 		clientW:          clientW,
 		clientInitBuffer: newBlockingReader(),
@@ -90,7 +89,7 @@ func New(ctx context.Context, connStr *url.URL, serverRW io.ReadWriteCloser, cli
 }
 
 func (p *proxy) initalizeConnection() error {
-	if p.username == "" || p.password == "" {
+	if p.username == "" || p.password == "" || p.host == "" {
 		return fmt.Errorf("missing password or username")
 	}
 

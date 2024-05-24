@@ -56,7 +56,7 @@ func (a *Agent) processTCPWriteServer(pkt *pb.Packet) {
 		a.sendClientSessionClose(sessionID, "credentials are empty, contact the administrator")
 		return
 	}
-	tcpServer, err := newTCPConn(connenv.host, connenv.port)
+	tcpServer, err := newTCPConn(connenv)
 	if err != nil {
 		log.Printf("session=%s - failed connecting to %v, err=%v", sessionID, connenv.host, err)
 		a.sendClientSessionClose(sessionID, fmt.Sprintf("failed connecting to internal service, reason=%v", err))

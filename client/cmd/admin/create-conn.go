@@ -82,23 +82,29 @@ var createConnectionCmd = &cobra.Command{
 		}
 		connType, subType, _ := strings.Cut(connTypeFlag, "/")
 		protocolConnectionType := pb.ToConnectionType(connType, subType)
-		switch protocolConnectionType {
-		case pb.ConnectionTypeCommandLine:
-			if len(cmdList) == 0 && !skipStrictValidation {
-				styles.PrintErrorAndExit("command-line type must be at least one command")
+		if !skipStrictValidation {
+			switch protocolConnectionType {
+			case pb.ConnectionTypeCommandLine:
+				if len(cmdList) == 0 {
+					styles.PrintErrorAndExit("command-line type must be at least one command")
+				}
+			case pb.ConnectionTypeTCP:
+				if err := validateTcpEnvs(envVar); err != nil {
+					styles.PrintErrorAndExit(err.Error())
+				}
+			case pb.ConnectionTypePostgres, pb.ConnectionTypeMySQL, pb.ConnectionTypeMSSQL:
+				if err := validateNativeDbEnvs(envVar); err != nil {
+					styles.PrintErrorAndExit(err.Error())
+				}
+			case pb.ConnectionTypeMongoDB:
+				if envVar["envvar:CONNECTION_STRING"] == "" {
+					styles.PrintErrorAndExit("missing required CONNECTION_STRING env for %v", pb.ConnectionTypeMongoDB)
+				}
+			default:
+				styles.PrintErrorAndExit("invalid connection type %q", connType)
 			}
-		case pb.ConnectionTypeTCP:
-			if err := validateTcpEnvs(envVar); !skipStrictValidation && err != nil {
-				styles.PrintErrorAndExit(err.Error())
-			}
-		case pb.ConnectionTypePostgres, pb.ConnectionTypeMySQL,
-			pb.ConnectionTypeMSSQL, pb.ConnectionTypeMongoDB:
-			if err := validateNativeDbEnvs(envVar); !skipStrictValidation && err != nil {
-				styles.PrintErrorAndExit(err.Error())
-			}
-		default:
-			styles.PrintErrorAndExit("invalid connection type %q", connType)
 		}
+
 		agentID, err := getAgentIDByName(apir.conf, connAgentFlag)
 		if err != nil {
 			styles.PrintErrorAndExit(err.Error())

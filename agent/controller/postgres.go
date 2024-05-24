@@ -49,7 +49,7 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	}
 
 	log.Infof("session=%v - starting postgres connection at %v:%v", sessionID, connenv.host, connenv.port)
-	pgServer, err := newTCPConn(connenv.host, connenv.port)
+	pgServer, err := newTCPConn(connenv)
 	if err != nil {
 		errMsg := fmt.Sprintf("failed connecting with postgres server, err=%v", err)
 		log.Errorf(errMsg)
