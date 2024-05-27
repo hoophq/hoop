@@ -357,6 +357,7 @@ jobs:
     needs:
     - docker-publish
     - docker-publish-agent
+    - docker-publish-agent-dock
 
     steps:
       - name: Checkout Hoop
