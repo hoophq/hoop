@@ -24,6 +24,7 @@ type (
 		ClientID         string
 		ClientSecret     string
 		CustomScopes     string
+		GroupsClaim      string
 		ApiURL           string
 		authWithUserInfo bool
 
@@ -108,7 +109,7 @@ func (p *Provider) userInfoEndpoint(accessToken string) (*ProviderUserInfo, erro
 	if err = user.Claims(&claims); err != nil {
 		return nil, fmt.Errorf("failed verifying user info claims, err=%v", err)
 	}
-	uinfo := ParseIDTokenClaims(claims)
+	uinfo := ParseIDTokenClaims(claims, p.GroupsClaim)
 	uinfo.Email = user.Email
 	uinfo.Subject = user.Subject
 	uinfo.EmailVerified = &user.EmailVerified
@@ -132,34 +133,12 @@ func NewProvider() *Provider {
 		ApiURL:  apiURL,
 	}
 
-	provider.Issuer = os.Getenv("IDP_ISSUER")
-	provider.ClientID = os.Getenv("IDP_CLIENT_ID")
-	provider.ClientSecret = os.Getenv("IDP_CLIENT_SECRET")
-	provider.Audience = os.Getenv("IDP_AUDIENCE")
-	provider.CustomScopes = os.Getenv("IDP_CUSTOM_SCOPES")
+	if err := setProviderConfFromEnvs(provider); err != nil {
+		log.Fatal(err)
+	}
 
-	issuerURL, err := url.Parse(provider.Issuer)
-	if err != nil {
-		log.Fatalf("failed parsing IDP_ISSUER url, err=%v", err)
-	}
-	provider.authWithUserInfo = issuerURL.Query().Get("_userinfo") == "1"
-	if provider.ClientSecret == "" {
-		log.Fatal(errors.New("missing required ID provider variables"))
-	}
-	qs := issuerURL.Query()
-	qs.Del("_userinfo")
-	encQueryStr := qs.Encode()
-	if encQueryStr != "" {
-		encQueryStr = "?" + encQueryStr
-	}
-	// scheme://host:port/path?query#fragment
-	provider.Issuer = fmt.Sprintf("%s://%s%s%s",
-		issuerURL.Scheme,
-		issuerURL.Hostname(),
-		issuerURL.Path,
-		encQueryStr,
-	)
-	log.Infof("issuer-url=%s", provider.Issuer)
+	log.Infof("issuer-url=%s, audience=%v, custom-scopes=%v, idp-uri-set=%v",
+		provider.Issuer, provider.Audience, provider.CustomScopes, os.Getenv("IDP_URI") != "")
 	oidcProviderConfig, err := newProviderConfig(provider.Context, provider.Issuer)
 	if err != nil {
 		log.Fatal(err)
@@ -169,13 +148,14 @@ func NewProvider() *Provider {
 	if provider.CustomScopes != "" {
 		scopes = addCustomScopes(scopes, provider.CustomScopes)
 	}
-	log.Infof("loaded oidc provider configuration, with-user-info=%v, auth=%v, token=%v, userinfo=%v, jwks=%v, algorithms=%v, scopes=%v",
+	log.Infof("loaded oidc provider configuration, with-user-info=%v, auth=%v, token=%v, userinfo=%v, jwks=%v, algorithms=%v, groupsclaim=%v, scopes=%v",
 		provider.authWithUserInfo,
 		oidcProviderConfig.AuthURL,
 		oidcProviderConfig.TokenURL,
 		oidcProviderConfig.UserInfoURL,
 		oidcProviderConfig.JWKSURL,
 		oidcProviderConfig.Algorithms,
+		provider.GroupsClaim,
 		scopes)
 
 	conf := oauth2.Config{
@@ -195,6 +175,75 @@ func NewProvider() *Provider {
 	provider.IDTokenVerifier = provider.Verifier(oidcConfig)
 	provider.JWKS = downloadJWKS(oidcProviderConfig.JWKSURL)
 	return provider
+}
+
+func setProviderConfFromEnvs(p *Provider) error {
+	if idpURI := os.Getenv("IDP_URI"); idpURI != "" {
+		u, err := url.Parse(idpURI)
+		if err != nil {
+			return fmt.Errorf("failed parsing IDP_URI env, reason=%v. Valid format is: <scheme>://<client-id>:<client-secret>@<issuer-host>?<options>=", err)
+		}
+		if u.User != nil {
+			p.ClientID = u.User.Username()
+			p.ClientSecret, _ = u.User.Password()
+		}
+		if p.ClientID == "" || p.ClientSecret == "" {
+			return fmt.Errorf("missing credentials for IDP_URI env. Valid format is: <scheme>://<client-id>:<client-secret>@<issuer-host>?<options>=")
+		}
+		p.Audience = os.Getenv("IDP_AUDIENCE")
+		p.GroupsClaim = u.Query().Get("groupsclaim")
+		if p.GroupsClaim == "" {
+			// keep default value
+			p.GroupsClaim = proto.CustomClaimGroups
+		}
+		p.CustomScopes = u.Query().Get("scopes")
+		p.authWithUserInfo = u.Query().Get("_userinfo") == "1"
+		qs := u.Query()
+		qs.Del("scopes")
+		qs.Del("_userinfo")
+		qs.Del("groupsclaim")
+		encQueryStr := qs.Encode()
+		if encQueryStr != "" {
+			encQueryStr = "?" + encQueryStr
+		}
+		// scheme://host:port/path?query#fragment
+		p.Issuer = fmt.Sprintf("%s://%s%s%s",
+			u.Scheme,
+			u.Hostname(),
+			u.Path,
+			encQueryStr,
+		)
+		return nil
+	}
+	p.Issuer = os.Getenv("IDP_ISSUER")
+	p.ClientID = os.Getenv("IDP_CLIENT_ID")
+	p.ClientSecret = os.Getenv("IDP_CLIENT_SECRET")
+	p.Audience = os.Getenv("IDP_AUDIENCE")
+	p.CustomScopes = os.Getenv("IDP_CUSTOM_SCOPES")
+	p.GroupsClaim = proto.CustomClaimGroups
+
+	issuerURL, err := url.Parse(p.Issuer)
+	if err != nil {
+		return fmt.Errorf("failed parsing IDP_ISSUER env, reason=%v", err)
+	}
+	p.authWithUserInfo = issuerURL.Query().Get("_userinfo") == "1"
+	if p.ClientSecret == "" || p.ClientID == "" {
+		return fmt.Errorf("missing IDP credentials: IDP_CLIENT_ID, IDP_CLIENT_SECRET")
+	}
+	qs := issuerURL.Query()
+	qs.Del("_userinfo")
+	encQueryStr := qs.Encode()
+	if encQueryStr != "" {
+		encQueryStr = "?" + encQueryStr
+	}
+	// scheme://host:port/path?query#fragment
+	p.Issuer = fmt.Sprintf("%s://%s%s%s",
+		issuerURL.Scheme,
+		issuerURL.Hostname(),
+		issuerURL.Path,
+		encQueryStr,
+	)
+	return nil
 }
 
 func addCustomScopes(scopes []string, customScope string) []string {
@@ -224,7 +273,7 @@ func downloadJWKS(jwksURL string) *keyfunc.JWKS {
 	return jwks
 }
 
-func ParseIDTokenClaims(idTokenClaims map[string]any) (u ProviderUserInfo) {
+func ParseIDTokenClaims(idTokenClaims map[string]any, groupsClaimName string) (u ProviderUserInfo) {
 	email, _ := idTokenClaims["email"].(string)
 	if profile, ok := idTokenClaims["name"].(string); ok {
 		u.Profile = profile
@@ -235,7 +284,7 @@ func ParseIDTokenClaims(idTokenClaims map[string]any) (u ProviderUserInfo) {
 	}
 	u.Picture = profilePicture
 	u.Email = email
-	switch groupsClaim := idTokenClaims[proto.CustomClaimGroups].(type) {
+	switch groupsClaim := idTokenClaims[groupsClaimName].(type) {
 	case string:
 		u.MustSyncGroups = true
 		if groupsClaim != "" {
