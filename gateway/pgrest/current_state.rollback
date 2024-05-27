@@ -1,0 +1,32 @@
+# Instructions to remove the current state of postgrest database
+# hash tags and spaces are ignored. Only accepts functions and views
+# <resource-type> <resource>
+
+function blob_input(reviews)
+function blob_input(sessions)
+function blob_stream(sessions)
+function env_vars(plugin_connections)
+function env_vars(plugins)
+function groups(serviceaccounts)
+function groups(users)
+function update_connection(json)
+function update_serviceaccounts(uuid,uuid,text,text,private.enum_service_account_status,character varying[])
+function update_users(json)
+
+view agents
+view audit
+view blobs
+view clientkeys
+view connections
+view env_vars
+view login
+view orgs
+view plugin_connections
+view plugins
+view proxymanager_state
+view review_groups
+view reviews
+view serviceaccounts
+view sessions
+view user_groups
+view users
