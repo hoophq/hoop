@@ -6,7 +6,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"fmt"
-	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -19,18 +19,28 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/version"
+	"github.com/runopsio/hoop/gateway/appconfig"
 )
 
 // CheckLiveness validates if the postgrest process is running
 // by checking if the port is open and responding.
 func CheckLiveness() error {
-	timeout := time.Second * 3
-	conn, err := net.DialTimeout("tcp", baseURL.Host, timeout)
+	ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*3)
+	defer cancelFn()
+	// ready checks the state of the database connection and the schema cache
+	// https://postgrest.org/en/v12/references/admin.html#health-check
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://127.0.0.1:8007/ready", nil)
 	if err != nil {
-		return fmt.Errorf("not responding, err=%v", err)
+		return fmt.Errorf("failed creating liveness request %v", err)
 	}
-	_ = conn.Close()
-	return nil
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed performing request %v", err)
+	}
+	if resp.StatusCode == http.StatusOK {
+		return nil
+	}
+	return fmt.Errorf("postgrest is not ready, status=%v", resp.StatusCode)
 }
 
 // Run performs the initalization and necessary migrations to
@@ -41,33 +51,15 @@ func Run() (err error) {
 	if err != nil {
 		return err
 	}
-	roleName = os.Getenv("PGREST_ROLE")
-	if roleName == "" {
-		roleName = "hoop_apiuser"
-	}
-	postgrestBinFile := "/usr/local/bin/postgrest"
-	if _, err := os.Stat(postgrestBinFile); err != nil && os.IsNotExist(err) {
-		return nil
-	}
-	// validate if the migration files are present
-	if _, err := os.Stat("/app/migrations/000001_init.up.sql"); err != nil {
-		return fmt.Errorf("failed validating migration files, err=%v", err)
+	roleName = appconfig.Get().PostgRESTRole()
+	postgrestBinFile, err := exec.LookPath("postgrest")
+	if err != nil {
+		return fmt.Errorf("unable to find postgrest binary in PATH, err=%v", err)
 	}
 
-	pgConnectionURI := os.Getenv("POSTGRES_DB_URI")
-	pgURL, err := url.Parse(pgConnectionURI)
-	if err != nil {
-		return fmt.Errorf("failed parsing POSTGRES_DB_URI, err=%v", err)
-	}
-	var pgUser string
-	if pgURL.User != nil {
-		pgUser = pgURL.User.Username()
-	}
-	if pgUser == "" {
-		return fmt.Errorf("invalid format for POSTGRES_DB_URI, missing user")
-	}
 	// migration
-	m, err := migrate.New("file:///app/migrations", pgConnectionURI)
+	sourceURL := "file://" + appconfig.Get().MigrationPathFiles()
+	m, err := migrate.New(sourceURL, appconfig.Get().PgURI())
 	if err != nil {
 		return fmt.Errorf("failed initializing db migration, err=%v", err)
 	}
@@ -85,14 +77,14 @@ func Run() (err error) {
 	}
 	log.Infof("processed db migration with success, nochange=%v", err == migrate.ErrNoChange)
 
-	appState, err := BootstrapState(roleName, pgUser, pgConnectionURI)
+	appState, err := BootstrapState(roleName, appconfig.Get().PgUsername(), appconfig.Get().PgURI())
 	if err != nil {
 		return err
 	}
 	// change role name
 	roleName = appState.RoleName
 	schemaName = appState.Schema
-	log.Infof("bootstrap with success to schema=%v", appState.Schema)
+	log.Infof("bootstrap with success to schema=%v, role=%v, checksum=%v", appState.Schema, appState.RoleName, appState.Checksum)
 	// if err := provisionPgRoles(roleName, pgUser, pgConnectionURI); err != nil {
 	// 	return fmt.Errorf("failed provisioning roles: %v", err)
 	// }
@@ -107,8 +99,9 @@ func Run() (err error) {
 		"PGRST_LOG_LEVEL=error",
 		"PGRST_SERVER_HOST=!4",
 		"PGRST_SERVER_PORT=8008",
+		"PGRST_ADMIN_SERVER_PORT=8007", // health check port
 		fmt.Sprintf("PGRST_DB_SCHEMAS=%s,%s", publicSchemeA, publicSchemeB),
-		fmt.Sprintf("PGRST_DB_URI=%s", pgConnectionURI),
+		fmt.Sprintf("PGRST_DB_URI=%s", appconfig.Get().PgURI()),
 		fmt.Sprintf("PGRST_JWT_SECRET=%s", string(jwtSecretKey)),
 	}
 
@@ -310,7 +303,7 @@ func BootstrapState(roleName, pgUser, connectionString string) (*AppState, error
 		}
 	}
 
-	log.Infof("rollout app state to schema %v with role %v, content-length=%v",
+	log.Infof("rolling out app state to schema %v with role %v, content-length=%v",
 		newState.Schema, newState.RoleName, len(appStateSQL))
 	if _, err := tx.Exec(appStateSQL); err != nil {
 		return nil, fmt.Errorf("failed applying current app state, reason=%v", err)

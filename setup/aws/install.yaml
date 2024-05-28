@@ -69,6 +69,11 @@ Parameters:
     AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
     ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
 
+  AppVersion:
+    Type: String
+    Description: The hoopdev version
+    Default: '1.22.0'
+
   AwsLatestAmiId:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ami-amazon-linux-latest/al2023-ami-minimal-kernel-default-x86_64
@@ -530,6 +535,8 @@ Resources:
               aws-cfn-bootstrap \
               amazon-ssm-agent \
               https://github.com/microsoft/go-sqlcmd/releases/download/v1.6.0/sqlcmd-1.6.0-1.el7.x86_64.rpm
+            # force recreate
+            echo ${AppVersion} >/dev/null
             cfn-init -v --stack ${AWS::StackId} --resource LaunchTemplate --region ${AWS::Region}
             cfn-signal -e $? --stack ${AWS::StackId} --resource GatewayServerGroup --region ${AWS::Region}
     Metadata:
@@ -555,6 +562,7 @@ Resources:
 
                 [Service]
                 ExecStart=/opt/hoop/bin/hoop start gateway
+                Environment=PATH=/opt/hoop/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
                 EnvironmentFile=/etc/hoopgateway.d/config
                 Restart=on-failure
                 RestartSec=15s
@@ -564,6 +572,8 @@ Resources:
             /etc/hoopgateway.d/config:
               # Make LOG_LEVEL coerce to GODEBUG
               content: !Sub |
+                STATIC_UI_PATH=/opt/hoop/webapp/public
+                MIGRATION_PATH_FILES=/opt/hoop/migrations
                 LOG_LEVEL=${AppLogLevel}
                 LOG_ENCODING=json
                 API_URL=https://${APIPublicDNS}
@@ -577,28 +587,14 @@ Resources:
               owner: root
               group: root
           commands:
-            install_binaries:
+            install_gateway:
               cwd: '~'
               command: !Sub |
-                # TODO: transform to a installation script
                 set -eox pipefail
-                mkdir -p /opt/hoop/bin && mkdir -p /app/ui
-                VERSION=$(curl -s https://releases.hoop.dev/release/latest.txt)
-                # TODO: change me to get the migrations directly from the binary
-                curl -sL https://hoopartifacts.s3.amazonaws.com/release/hoop-dev.tar.gz -o hoop_$VERSION.tar.gz
-                tar --extract --file hoop_$VERSION.tar.gz -C /opt/hoop/bin && rm -f hoop_$VERSION.tar.gz
-                chmod 0755 /opt/hoop/bin/hoop && chown root:root /opt/hoop/bin/hoop
-                if [ ! -f /app/migrations/000001_init.up.sql ]; then
-                  mv /opt/hoop/bin/migrations /app/migrations
-                fi
-                rm -rf mv /opt/hoop/bin/migrations || true
-                /opt/hoop/bin/hoop version
-                curl -sL https://github.com/PostgREST/postgrest/releases/download/v11.2.2/postgrest-v11.2.2-linux-static-x64.tar.xz -o postgrest.tar.xz
-                tar -xf postgrest.tar.xz -C /usr/local/bin && rm -f postgrest.tar.xz
-                chmod 0755 /usr/local/bin/postgrest && chown root:root /usr/local/bin/postgrest
-                postgrest --version
-                curl -sL https://hoopartifacts.s3.amazonaws.com/webapp/latest.tar.gz -o webapp-latest.tar.gz
-                tar -xf webapp-latest.tar.gz && mv ./resources/public /app/ui/public && rm -f webapp-latest.tar.gz && rm -rf ./resources
+                curl -sL https://hoopartifacts.s3.amazonaws.com/release/hoop-dev-${AppVersion}-dev.tar.gz -o hoop_${AppVersion}.tar.gz
+                rm -rf /opt/hoop/migrations
+                tar --extract --file hoop_${AppVersion}.tar.gz -C / --strip 1 && rm -f hoop_${AppVersion}.tar.gz
+                chown -R root: /opt/hoop
                 SECRET_JSON=$(aws secretsmanager get-secret-value \
                   --secret-id hoopdev/${AWS::StackName}/pgmaster \
                   --region ${AWS::Region} \
@@ -623,8 +619,8 @@ Resources:
                 psql -v ON_ERROR_STOP=1 "$POSTGRES_DB_URI" <<EOF
                 BEGIN;
                 DELETE FROM agents WHERE name = 'system';
-                INSERT INTO agents (org_id, name, mode, key_hash, status)
-                    VALUES ((SELECT id from private.orgs), 'system', 'standard', '$SECRET_KEY_HASH', 'DISCONNECTED')
+                INSERT INTO agents (id, org_id, name, mode, key_hash, status)
+                    VALUES ('9A7C5A60-C910-4AD1-8A70-997E37123894', (SELECT id from private.orgs), 'system', 'standard', '$SECRET_KEY_HASH', 'DISCONNECTED')
                     ON CONFLICT DO NOTHING;
                 COMMIT;
                 EOF

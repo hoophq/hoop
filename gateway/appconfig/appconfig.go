@@ -4,11 +4,25 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strings"
 )
 
 // TODO: it should include all runtime configuration
+
+const (
+	defaultPostgRESTRole = "hoop_apiuser"
+)
+
+type pgCredentials struct {
+	connectionString string
+	username         string
+	// Postgrest Role Name
+	postgrestRole string
+}
 type Config struct {
-	askAICredentials *url.URL
+	askAICredentials   *url.URL
+	pgCred             *pgCredentials
+	migrationPathFiles string
 
 	isLoaded bool
 }
@@ -21,11 +35,50 @@ func Load() error {
 	if err != nil {
 		return err
 	}
-	runtimeConfig = Config{askAICred, true}
+	pgCred, err := loadPostgresCredentials()
+	if err != nil {
+		return err
+	}
+	pgCred.postgrestRole = os.Getenv("PGREST_ROLE")
+	if pgCred.postgrestRole == "" {
+		pgCred.postgrestRole = defaultPostgRESTRole
+	}
+	migrationPathFiles := strings.TrimSuffix(os.Getenv("MIGRATION_PATH_FILES"), "/")
+	if migrationPathFiles == "" {
+		migrationPathFiles = "/app/migrations"
+	}
+	firstMigrationFilePath := fmt.Sprintf("%s/000001_init.up.sql", migrationPathFiles)
+	if _, err := os.Stat(firstMigrationFilePath); err != nil {
+		return fmt.Errorf("unable to find first migration file %v, err=%v", firstMigrationFilePath, err)
+	}
+	runtimeConfig = Config{
+		askAICredentials:   askAICred,
+		pgCred:             pgCred,
+		migrationPathFiles: migrationPathFiles,
+		isLoaded:           true,
+	}
 	return nil
 }
 
 func Get() Config { return runtimeConfig }
+func loadPostgresCredentials() (*pgCredentials, error) {
+	pgConnectionURI := os.Getenv("POSTGRES_DB_URI")
+	pgURL, err := url.Parse(pgConnectionURI)
+	if err != nil {
+		return nil, fmt.Errorf("failed parsing POSTGRES_DB_URI, err=%v", err)
+	}
+
+	var pgUser, pgPassword string
+	if pgURL.User != nil {
+		pgUser = pgURL.User.Username()
+		pgPassword, _ = pgURL.User.Password()
+	}
+	if pgUser == "" || pgPassword == "" {
+		return nil, fmt.Errorf("missing user or password in POSTGRES_DB_URI env")
+	}
+	return &pgCredentials{connectionString: pgConnectionURI, username: pgUser}, nil
+}
+
 func loadAskAICredentials() (*url.URL, error) {
 	askAICred := os.Getenv("ASK_AI_CREDENTIALS")
 	if askAICred == "" {
@@ -43,6 +96,12 @@ func loadAskAICredentials() (*url.URL, error) {
 	}
 	return u, nil
 }
+
+func (c Config) PgUsername() string    { return c.pgCred.username }
+func (c Config) PgURI() string         { return c.pgCred.connectionString }
+func (c Config) PostgRESTRole() string { return c.pgCred.postgrestRole }
+
+func (c Config) MigrationPathFiles() string { return c.migrationPathFiles }
 
 func (c Config) IsAskAIAvailable() bool { return c.askAICredentials != nil }
 func (c Config) AskAIApiURL() (u string) {

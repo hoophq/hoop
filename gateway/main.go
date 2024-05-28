@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/runopsio/hoop/common/grpc"
@@ -61,7 +60,6 @@ func Run() {
 	}
 
 	idProvider := idp.NewProvider()
-
 	grpcURL := os.Getenv("GRPC_URL")
 	if grpcURL == "" {
 		u, err := url.Parse(idProvider.ApiURL)
@@ -81,7 +79,6 @@ func Run() {
 
 	if !pgusers.IsOrgMultiTenant() {
 		log.Infof("provisioning default organization")
-		time.Sleep(time.Second * 2)
 		ctx, err := pgusers.CreateDefaultOrganization()
 		if err != nil {
 			log.Fatal(err)

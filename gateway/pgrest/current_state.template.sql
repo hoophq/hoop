@@ -285,10 +285,3 @@ GRANT SELECT, INSERT, UPDATE ON audit TO {{ .pgrest_role }};
 
 -- allow the main role to impersonate the apiuser role
 GRANT {{ .pgrest_role }} TO {{ .pg_app_user }};
-
-
-
-
-
-
-
