@@ -6,6 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"strings"
+	"time"
 
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/mongotypes"
@@ -61,7 +64,7 @@ func (p *proxy) handleServerAuth(authPkt *mongotypes.Packet) (err error) {
 	}
 	cinfo := helloCommand.ClientInfo
 	log.With("conn", p.connectionID).Infof("decoded client hello: clientmech=%v, servermech=%v, host=%v, app=%v, driver=%v/%v, os=%v/%v, platform=%v",
-		clientAuthMechanism, serverAuthMechanism, p.host, cinfo.ApplicationName(), cinfo.Driver.Name,
+		clientAuthMechanism, serverAuthMechanism, p.hostAddr, cinfo.ApplicationName(), cinfo.Driver.Name,
 		cinfo.Driver.Version, cinfo.OS.Type, cinfo.OS.Architecture, cinfo.Platform)
 	respPkt, err := p.writeAndReadNextPacket(p.serverRW, p.serverRW, newHelloCmd)
 	if err != nil {
@@ -71,6 +74,7 @@ func (p *proxy) handleServerAuth(authPkt *mongotypes.Packet) (err error) {
 	if err != nil {
 		return err
 	}
+
 	if authReply.SpeculativeAuthenticate == nil {
 		return fmt.Errorf("unable to negotiate authentication for %s, please contact the administrator", p.authSource)
 	}
@@ -162,6 +166,14 @@ func (p *proxy) decodeClientHelloCommand(authPkt *mongotypes.Packet) (*mongotype
 	if hello.SpeculativeAuthenticate == nil {
 		return nil, "", errNonSpeculativeAuthConnection
 	}
+	// primaryConn, err := p.newPrimaryConnection()
+	// if err != nil {
+	// 	return nil, "", fmt.Errorf("unable to upgrade connection to primary, %v", err)
+	// }
+	// // upgrade connection to authenticate with the primary
+	// if primaryConn != nil {
+	// 	p.serverRW = primaryConn
+	// }
 	discover := &mongotypes.HelloCommand{
 		IsMaster:                hello.IsMaster,
 		HelloOK:                 hello.HelloOK,
@@ -195,6 +207,76 @@ func (p *proxy) decodeClientHelloCommand(authPkt *mongotypes.Packet) (*mongotype
 	}
 	return nil, "", fmt.Errorf("unable to obtain supported mechanism from the server, supported-mechs=%v",
 		authReply.SaslSupportedMechs)
+}
+
+// newPrimaryConnection returns a new connection with the primary server
+func (p *proxy) newPrimaryConnection() (net.Conn, error) {
+	serverConn, err := p.newFreshConnection(p.hostAddr)
+	if err != nil {
+		return nil, err
+	}
+	defer serverConn.Close()
+
+	helloPkt, err := (&mongotypes.HelloCommand{
+		IsMaster: 1,
+		HelloOK:  true,
+		// use unknown type, we only care about discovering the primary
+		ClientInfo:  mongotypes.ClientInfo{OS: mongotypes.ClientOS{Type: "unknown"}},
+		Compression: []any{},
+	}).Encode(1, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed encoding hello command: %v", err)
+	}
+	srvReply, err := p.writeAndReadNextPacket(serverConn, serverConn, helloPkt)
+	if err != nil {
+		return nil, fmt.Errorf("failed obtaining server response: %v", err)
+	}
+
+	authReply, err := mongotypes.DecodeServerAuthReply(srvReply)
+	if err != nil {
+		return nil, fmt.Errorf("failed decoding server auth reply: %v", err)
+	}
+	if authReply.Primary == "" {
+		// dump the hex server response to stdout
+		srvReply.Dump()
+		return nil, fmt.Errorf("failed decoding hello reply from server")
+	}
+	if authReply.Primary == p.hostAddr {
+		log.With("conn", p.connectionID).Infof("connection is already primary")
+		return nil, nil
+	}
+	log.With("conn", p.connectionID).Infof("obtaining new fresh connection with primary %v", authReply.Primary)
+	serverPrimaryConn, err := p.newFreshConnection(authReply.Primary)
+	if err != nil {
+		return nil, fmt.Errorf("failed obtaining primary connection: %v", err)
+	}
+	return serverPrimaryConn, nil
+}
+
+func (p *proxy) newFreshConnection(hostAddr string) (net.Conn, error) {
+	host, _, _ := strings.Cut(hostAddr, ":")
+	var tlsConfig *tlsProxyConfig
+	if p.tlsProxyConfig != nil {
+		tlsConfig = &tlsProxyConfig{
+			tlsInsecure:           p.tlsProxyConfig.tlsInsecure,
+			serverName:            host,
+			tlsCAFile:             p.tlsProxyConfig.tlsCAFile,
+			tlsCertificateKeyFile: p.tlsProxyConfig.tlsCertificateKeyFile,
+		}
+	}
+	serverConn, err := net.DialTimeout("tcp4", hostAddr, time.Second*5)
+	if err != nil {
+		return nil, fmt.Errorf("failed dialing to server %v, err=%s", hostAddr, err)
+	}
+	tlsConn, err := p.tlsClientHandshake(serverConn, tlsConfig)
+	if err != nil {
+		_ = serverConn.Close()
+		return nil, fmt.Errorf("tls handshake failed: %v", err)
+	}
+	if tlsConn != nil {
+		serverConn = tlsConn
+	}
+	return serverConn, nil
 }
 
 func newSaslRequest(authMechanism, authSource string, conversation *scram.ClientConversation) *mongotypes.SaslRequest {

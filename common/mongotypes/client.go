@@ -46,11 +46,10 @@ type ClientInfo struct {
 }
 
 type HelloCommand struct {
-	// TODO: test this
 	IsMaster                int32        `bson:"ismaster"`
 	HelloOK                 bool         `bson:"helloOk"`
 	SaslSupportedMechs      *string      `bson:"saslSupportedMechs,omitempty"`
-	SpeculativeAuthenticate *SaslRequest `bson:"speculativeAuthenticate"`
+	SpeculativeAuthenticate *SaslRequest `bson:"speculativeAuthenticate,omitempty"`
 	Compression             []any        `bson:"compression"`
 	ClientInfo              ClientInfo   `bson:"client"`
 }
@@ -89,7 +88,10 @@ func (h *HelloCommand) Encode(requestID, flagBits uint32) (*Packet, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed encode hello command, err=%v", err)
 	}
-	fullCollectionName := fmt.Sprintf("%s.$cmd", h.SpeculativeAuthenticate.Database)
+	fullCollectionName := "admin.$cmd"
+	if h.SpeculativeAuthenticate != nil {
+		fullCollectionName = fmt.Sprintf("%s.$cmd", h.SpeculativeAuthenticate.Database)
+	}
 	var header PacketHeader
 	frameSize :=
 		binary.Size(flagBits) +

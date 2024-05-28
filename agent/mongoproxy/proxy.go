@@ -5,7 +5,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"strings"
+	"time"
 
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/mongotypes"
@@ -30,7 +32,7 @@ type Proxy interface {
 
 type proxy struct {
 	ctx              context.Context
-	host             string
+	hostAddr         string
 	username         string
 	password         string
 	serverRW         io.ReadWriteCloser
@@ -45,10 +47,13 @@ type proxy struct {
 }
 
 func New(ctx context.Context, connStr *connstring.ConnString, serverRW io.ReadWriteCloser, clientW io.Writer) Proxy {
-	var mongodbHost string
+	var hostAddr string
 	if len(connStr.Hosts) > 0 {
-		parts := strings.Split(connStr.Hosts[0], ":")
-		mongodbHost = parts[0]
+		// select a random host could increase the chances
+		// to select the primary host
+		randS := rand.NewSource(time.Now().UnixNano())
+		index := rand.New(randS).Intn(len(connStr.Hosts))
+		hostAddr = connStr.Hosts[index]
 	}
 
 	cancelCtx, cancelFn := context.WithCancel(ctx)
@@ -65,9 +70,10 @@ func New(ctx context.Context, connStr *connstring.ConnString, serverRW io.ReadWr
 
 	var tlsConfig *tlsProxyConfig
 	if connStr.SSL {
+		host, _, _ := strings.Cut(hostAddr, ":")
 		tlsConfig = &tlsProxyConfig{
 			tlsInsecure:           connStr.SSLInsecure,
-			serverName:            mongodbHost,
+			serverName:            host,
 			tlsCAFile:             connStr.SSLCaFile,
 			tlsCertificateKeyFile: connStr.SSLCertificateFile,
 		}
@@ -75,7 +81,7 @@ func New(ctx context.Context, connStr *connstring.ConnString, serverRW io.ReadWr
 
 	return &proxy{
 		ctx:              cancelCtx,
-		host:             mongodbHost,
+		hostAddr:         hostAddr,
 		username:         connStr.Username,
 		password:         connStr.Password,
 		serverRW:         serverRW,
@@ -89,18 +95,18 @@ func New(ctx context.Context, connStr *connstring.ConnString, serverRW io.ReadWr
 }
 
 func (p *proxy) initalizeConnection() error {
-	if p.username == "" || p.password == "" || p.host == "" {
+	if p.username == "" || p.password == "" || p.hostAddr == "" {
 		return fmt.Errorf("missing password or username")
 	}
 
 	log.With("conn", p.connectionID).Infof("initializing connection, host=%v, auth-source=%v, tls=%v",
-		p.host, p.authSource, p.tlsProxyConfig != nil)
+		p.hostAddr, p.authSource, p.tlsProxyConfig != nil)
 	pkt, err := p.processPacket(p.clientInitBuffer)
 	if err != nil {
 		return fmt.Errorf("failed reading initial packet from client, err=%v", err)
 	}
 
-	tlsConn, err := p.tlsClientHandshake()
+	tlsConn, err := p.tlsClientHandshake(p.serverRW, p.tlsProxyConfig)
 	if err != nil {
 		return err
 	}
@@ -122,7 +128,7 @@ func (p *proxy) initalizeConnection() error {
 		}
 		return nil
 	case nil:
-		log.With("conn", p.connectionID).Infof("initialized authenticated session, host=%v, tls=%v", p.host, tlsConn != nil)
+		log.With("conn", p.connectionID).Infof("initialized authenticated session, host=%v, tls=%v", p.hostAddr, tlsConn != nil)
 	}
 	return err
 }
@@ -180,7 +186,7 @@ func (p *proxy) Run(onErrCallback onRunErrFnType) Proxy {
 				}
 			}
 		}
-		log.With("conn", p.connectionID).Infof("end connection, host=%v", p.host)
+		log.With("conn", p.connectionID).Infof("end connection, host=%v", p.hostAddr)
 	}()
 	return p
 }
