@@ -166,14 +166,14 @@ func (p *proxy) decodeClientHelloCommand(authPkt *mongotypes.Packet) (*mongotype
 	if hello.SpeculativeAuthenticate == nil {
 		return nil, "", errNonSpeculativeAuthConnection
 	}
-	// primaryConn, err := p.newPrimaryConnection()
-	// if err != nil {
-	// 	return nil, "", fmt.Errorf("unable to upgrade connection to primary, %v", err)
-	// }
-	// // upgrade connection to authenticate with the primary
-	// if primaryConn != nil {
-	// 	p.serverRW = primaryConn
-	// }
+	primaryConn, err := p.newPrimaryConnection()
+	if err != nil {
+		return nil, "", fmt.Errorf("unable to upgrade connection to primary, %v", err)
+	}
+	// upgrade connection to authenticate with the primary
+	if primaryConn != nil {
+		p.serverRW = primaryConn
+	}
 	discover := &mongotypes.HelloCommand{
 		IsMaster:                hello.IsMaster,
 		HelloOK:                 hello.HelloOK,
