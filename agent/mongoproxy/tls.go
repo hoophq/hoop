@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strings"
@@ -21,18 +22,18 @@ type tlsProxyConfig struct {
 // tlsClientHandshake loads all certificates and performs the tls
 // handshake with the server. If the proxy config is not set
 // returns a nil connection
-func (p *proxy) tlsClientHandshake() (*tls.Conn, error) {
+func (p *proxy) tlsClientHandshake(serverRW io.ReadWriteCloser, tlsProxyConfig *tlsProxyConfig) (*tls.Conn, error) {
 	if p.tlsProxyConfig == nil {
 		return nil, nil
 	}
 
-	conn, ok := p.serverRW.(net.Conn)
+	conn, ok := serverRW.(net.Conn)
 	if !ok {
 		return nil, fmt.Errorf("server is not a net.Conn type")
 	}
 	tlsConfig := &tls.Config{
-		InsecureSkipVerify: p.tlsProxyConfig.tlsInsecure,
-		ServerName:         p.tlsProxyConfig.serverName,
+		InsecureSkipVerify: tlsProxyConfig.tlsInsecure,
+		ServerName:         tlsProxyConfig.serverName,
 		RootCAs:            nil,
 		Certificates:       nil,
 	}

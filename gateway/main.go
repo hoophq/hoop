@@ -85,7 +85,7 @@ func Run() {
 			log.Fatal(err)
 		}
 		_, _, err = apiorgs.ProvisionOrgAgentKey(ctx, grpcURL)
-		if err != nil {
+		if err != nil && err != apiorgs.ErrAlreadyExists {
 			log.Errorf("failed provisioning org agent key, reason=%v", err)
 		}
 	}
