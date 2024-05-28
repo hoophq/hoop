@@ -13,12 +13,12 @@ import (
 )
 
 var (
-	//go:embed current_state.rollback
+	//go:embed current_state.template.rollback
 	currentStateRollback string
 	//go:embed current_state.template.sql
 	currentStateTemplateSQL string
 
-	isStmtRe, _ = regexp.Compile(`[^function|view]`)
+	isStmtRe, _ = regexp.Compile(`^[function|view]`)
 )
 
 const (
@@ -26,37 +26,39 @@ const (
 	publicSchemeB string = "public_b"
 )
 
-type currentState struct {
-	rollbackStmt    []string
-	currentStateSQL string
-	checksum        string
+func renderTmpl(content string, inputs map[string]any) (string, error) {
+	tmpl, err := template.New("").Parse(content)
+	if err != nil {
+		return "", err
+	}
+	data := bytes.NewBuffer([]byte{})
+	// inputs := map[string]any{"pgrest_role": roleName, "pg_app_user": pgUser, "target_schema": "public"}
+	if err := tmpl.Execute(data, inputs); err != nil {
+		return "", err
+	}
+	return data.String(), nil
 }
 
-func getCurrentAppState(pgUser, roleName string) (*currentState, error) {
-	if currentStateRollback == "" || currentStateTemplateSQL == "" {
-		return nil, fmt.Errorf("app current state is empty, rollback_state=%v, current_state=%v",
-			len(currentStateRollback), len(currentStateTemplateSQL))
-	}
-	tmpl, err := template.New("").Parse(currentStateTemplateSQL)
+func parseAppStateSQL(roleName, pgUser, targetSchema string) (string, error) {
+	inputs := map[string]any{"pgrest_role": roleName, "pg_app_user": pgUser, "target_schema": targetSchema}
+	appStmt, err := renderTmpl(currentStateTemplateSQL, inputs)
 	if err != nil {
-		return nil, fmt.Errorf("failed parsing current state template: %v", err)
+		return "", fmt.Errorf("failed rendering app state: %v", err)
 	}
-	// var data []byte
-	data := bytes.NewBuffer([]byte{})
-	inputs := map[string]any{"pgrest_role": roleName, "pg_app_user": pgUser, "target_schema": "public"}
-	if err := tmpl.Execute(data, inputs); err != nil {
-		return nil, fmt.Errorf("failed generating current state sql content: %v", err)
-	}
+	return appStmt, nil
+}
+
+func getCurrentAppStateChecksum() string {
 	checksumData := sha256.Sum256([]byte(currentStateTemplateSQL))
-	state := currentState{
-		currentStateSQL: data.String(),
-		checksum:        hex.EncodeToString(checksumData[:]),
+	return hex.EncodeToString(checksumData[:])
+}
+
+func validateAppState() (err error) {
+	if len(currentStateRollback) == 0 || len(currentStateTemplateSQL) == 0 {
+		err = fmt.Errorf("current app state are empty, state-file-length=%v, state-rollback-file-length=%v",
+			len(currentStateTemplateSQL), len(currentStateRollback))
 	}
-	state.rollbackStmt = parseRollbackStatements(currentStateRollback)
-	if len(state.rollbackStmt) == 0 {
-		return nil, fmt.Errorf("rollback statements are empty, content=%v", currentStateRollback)
-	}
-	return &state, nil
+	return
 }
 
 type AppState struct {
@@ -76,8 +78,6 @@ type AppStateRollout struct {
 	Second *AppState
 }
 
-// func (s *AppStateRollout) HasFirst() bool  { return s.First != nil }
-// func (s *AppStateRollout) HasSecond() bool { return s.Second != nil }
 func (s *AppStateRollout) ShouldRollout(checksum string) bool {
 	if s.First == nil || s.Second == nil {
 		return true
@@ -101,16 +101,8 @@ func (s *AppStateRollout) GetAppState(checksum string) (bool, *AppState) {
 	return false, nil
 }
 
-// func (s *AppStateRollout) RollbackStatemnt()
-
-// func (s *AppStateRollout) GetRunningSchema() *AppState {
-// 	if s.First != nil {
-// 		return s.First
-// 	}
-// 	return s.Second
-// }
-
-func parseRollbackStatements(rollbackFileContent string) (dropStatements []string) {
+func parseRollbackStatements(rollbackFileContent, targetSchema string) []string {
+	var dropStatements []string
 	for _, line := range strings.Split(rollbackFileContent, "\n") {
 		if !isStmtRe.MatchString(line) {
 			continue
@@ -119,5 +111,8 @@ func parseRollbackStatements(rollbackFileContent string) (dropStatements []strin
 		stmt := fmt.Sprintf("DROP %s", line)
 		dropStatements = append(dropStatements, stmt)
 	}
-	return
+	if len(dropStatements) > 0 {
+		dropStatements = append([]string{"SET search_path TO " + targetSchema}, dropStatements...)
+	}
+	return dropStatements
 }

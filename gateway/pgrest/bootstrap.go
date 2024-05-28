@@ -85,9 +85,14 @@ func Run() (err error) {
 	}
 	log.Infof("processed db migration with success, nochange=%v", err == migrate.ErrNoChange)
 
-	if err := BootstrapState(roleName, pgUser, pgConnectionURI); err != nil {
+	appState, err := BootstrapState(roleName, pgUser, pgConnectionURI)
+	if err != nil {
 		return err
 	}
+	// change role name
+	roleName = appState.RoleName
+	schemaName = appState.Schema
+	log.Infof("bootstrap with success to schema=%v", appState.Schema)
 	// if err := provisionPgRoles(roleName, pgUser, pgConnectionURI); err != nil {
 	// 	return fmt.Errorf("failed provisioning roles: %v", err)
 	// }
@@ -102,6 +107,7 @@ func Run() (err error) {
 		"PGRST_LOG_LEVEL=error",
 		"PGRST_SERVER_HOST=!4",
 		"PGRST_SERVER_PORT=8008",
+		fmt.Sprintf("PGRST_DB_SCHEMAS=%s,%s", publicSchemeA, publicSchemeB),
 		fmt.Sprintf("PGRST_DB_URI=%s", pgConnectionURI),
 		fmt.Sprintf("PGRST_JWT_SECRET=%s", string(jwtSecretKey)),
 	}
@@ -214,218 +220,182 @@ FROM private.appstate ORDER BY created_at DESC LIMIT 2`)
 
 func insertAppState(tx *sql.Tx, s AppState) error {
 	_, err := tx.Exec(`
-INSERT INTO private.appstate(state_rollback, checksum, schema, role_name, version, pgversion, commit) VALUES ($1, $2, $3, $4, (SELECT VERSION()), $5)`,
+INSERT INTO private.appstate(state_rollback, checksum, schema, role_name, version, pgversion, commit)
+VALUES ($1, $2, $3, $4, $5, (SELECT VERSION()), $6)`,
 		s.StateRollback, s.Checksum, s.Schema, s.RoleName, s.Version, s.GitCommit)
 	return err
 }
 
-func BootstrapState(roleName, pgUser, connectionString string) error {
-	log := log.With("role", roleName, "pguser", pgUser, "version", version.Get().Version)
-	log.Infof("starting bootstrapping current state")
+func BootstrapState(roleName, pgUser, connectionString string) (*AppState, error) {
+	if err := validateAppState(); err != nil {
+		return nil, err
+	}
 	db, err := sql.Open("postgres", connectionString)
 	if err != nil {
-		return fmt.Errorf("failed opening connection with postgres, err=%v", err)
+		return nil, fmt.Errorf("failed opening connection with postgres, err=%v", err)
 	}
 	ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancelFn()
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("failed opening transaction, reason=%v", err)
+		return nil, fmt.Errorf("failed opening transaction, reason=%v", err)
 	}
 	if _, err := tx.Exec("LOCK TABLE private.appstate IN ACCESS EXCLUSIVE MODE"); err != nil {
-		return fmt.Errorf("failed locking appstate table, reason=%v", err)
+		return nil, fmt.Errorf("failed locking appstate table, reason=%v", err)
 	}
-	// 1.
-	// 2.
+	log := log.With("role", roleName, "pguser", pgUser, "version", version.Get().Version)
+	log.Infof("start bootstrap current state")
+
 	ls, err := getLastAppState(tx)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	currentState, err := getCurrentAppState(pgUser, roleName)
-	if err != nil {
-		return err
-	}
-
-	if checksumMatches, _ := ls.GetAppState(currentState.checksum); checksumMatches {
-		return nil
+	currentStateChecksum := getCurrentAppStateChecksum()
+	if checksumMatches, state := ls.GetAppState(currentStateChecksum); checksumMatches {
+		return state, nil
 	}
 	newState := AppState{
 		StateRollback: currentStateRollback,
-		Checksum:      currentState.checksum,
-		RoleName:      roleName,
+		Checksum:      currentStateChecksum,
+		Schema:        "",
+		RoleName:      "",
 		Version:       version.Get().Version,
 		GitCommit:     version.Get().GitCommit,
 	}
-	_ = newState
-	// 1. if none of the state exists, rollout to public a schema (don't drop anything)
-	// 2. if first state exists and second doesn't, rollout to public b schema (don't drop anything)
-	// 3. if both state exists, rollout to inverse of first schema (drop based on rollback statement)
+	var dropStatements []string
+	switch {
+	case ls.First == nil && ls.Second == nil:
+		// 1. if none of the state exists, rollout to public a schema (don't drop anything)
+		newState.Schema = publicSchemeA
+		newState.RoleName = fmt.Sprintf("%s_a", roleName)
+	case ls.First != nil && ls.Second == nil:
+		// 2. if first state exists and second doesn't, rollout to public b schema (don't drop anything)
+		newState.Schema = publicSchemeB
+		newState.RoleName = fmt.Sprintf("%s_b", roleName)
+	default:
+		// these records must always be distinct between each other
+		if ls.First.Schema == ls.Second.Schema {
+			return nil, fmt.Errorf("app state is inconsistent")
+		}
 
-	// var rollbackStatement string
-	// switch {
-	// case dbState == nil:
-	// 	newState.Schema = publicSchemeA
-	// 	newState.RoleName = fmt.Sprintf("%s_a", roleName)
-	// case dbState.Schema == publicSchemeA:
-	// 	newState.Schema = publicSchemeB
-	// 	newState.RoleName = fmt.Sprintf("%s_b", roleName)
+		// log.With("dropstatements", len(currentState.rollbackStmt), "checksum", currentState.checksum).
+		// Infof("initializing bootstrap process, oldversion=%v,oldchecksum=%v,oldrole=%v,oldpgver=%v,created_at=%v",
+		// 	ls.Version, ls.Checksum, ls.RoleName, ls.PgVersion, ls.CreatedAt.Format(time.RFC3339))
+		// 3. if both state exists, rollout to inverse of first schema (drop based on rollback statement)
+		dropStatements = parseRollbackStatements(ls.Second.StateRollback, ls.Second.Schema)
 
-	// case dbState.Schema == publicSchemeB:
-	// 	newState.Schema = publicSchemeA
-	// 	newState.RoleName = fmt.Sprintf("%s_a", roleName)
-	// }
+		// match always the inverse of the current app state
+		newState.Schema = publicSchemeA
+		newState.RoleName = fmt.Sprintf("%s_a", roleName)
+		if ls.First.Schema == publicSchemeA {
+			newState.Schema = publicSchemeB
+			newState.RoleName = fmt.Sprintf("%s_b", roleName)
+		}
 
-	// for _, dropStmt := range parseRollbackStatements(ls.StateRollback) {
-	// 	if _, err := tx.Exec(dropStmt); err != nil {
-	// 		return fmt.Errorf("failed cleanup last app state, statement=%v, reason=%v", dropStmt, err)
-	// 	}
-	// }
+		// log.With("dropstatements", len(currentState.rollbackStmt), "checksum", currentState.checksum).
+		// Infof("initializing bootstrap process, oldversion=%v,oldchecksum=%v,oldrole=%v,oldpgver=%v,created_at=%v",
+		// 	ls.Version, ls.Checksum, ls.RoleName, ls.PgVersion, ls.CreatedAt.Format(time.RFC3339))
 
-	// switch ls.GetSchemaForChecksum(currentState.checksum) {
-	// case publicSchemeA:
-	// 	log.Infof("initalizing bootstrap process, app state is empty")
-	// 	if _, err := tx.Exec(currentState.currentStateSQL); err != nil {
-	// 		return fmt.Errorf("failed applying current app state, reason=%v", err)
-	// 	}
-	// 	newState.Schema = publicSchemeA
-	// 	newState.RoleName = fmt.Sprintf("%s_a", roleName)
-	// 	if err := insertAppState(tx, newState); err != nil {
-	// 		return fmt.Errorf("failed updating app state, reason=%v", err)
-	// 	}
-	// case !ls.HasSecond():
-	// log.With("current", publicSchemeA).Infof("rolling out to public scheme B")
-	// if _, err := tx.Exec(currentState.currentStateSQL); err != nil {
-	// 	return fmt.Errorf("failed applying current app state, reason=%v", err)
-	// }
-	// newState.Schema = publicSchemeB
-	// newState.RoleName = fmt.Sprintf("%s_b", roleName)
-	// if err := insertAppState(tx, newState); err != nil {
-	// 	return fmt.Errorf("failed updating app state, reason=%v", err)
-	// }
-	// case publicSchemeB:
+	}
 
-	// 	currentAppSchema := ls.First.Schema
-	// 	switch currentAppSchema {
-	// 	case publicSchemeA:
-	// 		newState.Schema = publicSchemeB
-	// 		newState.RoleName = fmt.Sprintf("%s_b", roleName)
-	// 	case publicSchemeB:
-	// 		// clean public schema a
-	// 		newState.Schema = publicSchemeA
-	// 		newState.RoleName = fmt.Sprintf("%s_a", roleName)
-	// 	default:
-
-	// 	}
-
-	// 	log.With("current", currentAppSchema).Infof("rolling out to %v", newState.Schema)
-	// 	if _, err := tx.Exec(currentState.currentStateSQL); err != nil {
-	// 		return fmt.Errorf("failed applying current app state, reason=%v", err)
-	// 	}
-	// 	if err := insertAppState(tx, newState); err != nil {
-	// 		return fmt.Errorf("failed updating app state, reason=%v", err)
-	// 	}
-
-	// log.With("dropstatements", len(currentState.rollbackStmt), "checksum", currentState.checksum).
-	// 	Infof("initializing bootstrap process, oldversion=%v,oldchecksum=%v,oldrole=%v,oldpgver=%v,created_at=%v",
-	// 		ls.Version, ls.Checksum, ls.RoleName, ls.PgVersion, ls.CreatedAt.Format(time.RFC3339))
-	// case ls.Checksum != currentState.checksum:
-	// 	log.With("dropstatements", len(currentState.rollbackStmt), "checksum", currentState.checksum).
-	// 		Infof("initializing bootstrap process, oldversion=%v,oldchecksum=%v,oldrole=%v,oldpgver=%v,created_at=%v",
-	// 			ls.Version, ls.Checksum, ls.RoleName, ls.PgVersion, ls.CreatedAt.Format(time.RFC3339))
-	// 	for _, dropStmt := range parseRollbackStatements(ls.StateRollback) {
-	// 		if _, err := tx.Exec(dropStmt); err != nil {
-	// 			return fmt.Errorf("failed cleanup last app state, statement=%v, reason=%v", dropStmt, err)
-	// 		}
-	// 	}
-	// 	log.Infof("app last state cleanup with success")
-	// 	if _, err := tx.Exec(currentState.currentStateSQL); err != nil {
-	// 		return fmt.Errorf("failed applying current app state, reason=%v", err)
-	// 	}
-	// 	if err := insertAppState(tx, newState); err != nil {
-	// 		return fmt.Errorf("failed updating app state, reason=%v", err)
-	// 	}
-	// default:
-	// 	log.Infof("no changes to perform, app state is already set")
-	// 	return nil
-	// }
-	// if err := tx.Commit(); err != nil {
-	// 	return fmt.Errorf("failed commiting current app state changes, reason=%v", err)
-	// }
-	return nil
-}
-
-var grantStatements = []string{
-	`CREATE ROLE %s LOGIN NOINHERIT NOCREATEDB NOCREATEROLE NOSUPERUSER`,
-	`COMMENT ON ROLE %s IS 'Used to authenticate requests in postgrest'`,
-	`GRANT usage ON SCHEMA public TO %s`,
-	`GRANT usage ON SCHEMA private TO %s`,
-
-	`GRANT SELECT, INSERT ON public.orgs TO %s`,
-	`GRANT INSERT, SELECT, UPDATE on public.login TO %s`,
-	`GRANT SELECT, INSERT, UPDATE, DELETE ON public.users TO %s`,
-	`GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_groups TO %s`,
-	`GRANT SELECT, INSERT, UPDATE ON public.serviceaccounts TO %s`,
-	`GRANT SELECT, INSERT, UPDATE, DELETE ON public.connections TO %s`,
-	`GRANT SELECT, INSERT, UPDATE, DELETE ON public.env_vars TO %s`,
-	`GRANT SELECT, INSERT, UPDATE, DELETE ON public.agents TO %s`,
-	`GRANT SELECT, INSERT, UPDATE, DELETE ON public.plugin_connections TO %s`,
-	`GRANT SELECT, INSERT, UPDATE ON public.plugins TO %s`,
-	`GRANT SELECT, INSERT, UPDATE ON public.sessions TO %s`,
-	`GRANT SELECT, INSERT, UPDATE ON public.blobs TO %s`,
-	`GRANT SELECT, INSERT, UPDATE ON public.reviews TO %s`,
-	`GRANT SELECT, INSERT, UPDATE ON public.review_groups TO %s`,
-	`GRANT SELECT, INSERT, UPDATE, DELETE ON public.proxymanager_state TO %s`,
-	`GRANT SELECT, INSERT, UPDATE, DELETE ON public.clientkeys TO %s`,
-	`GRANT SELECT, INSERT, UPDATE ON public.audit TO %s`,
-}
-
-var dropStatements = []string{
-	`REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM %s`,
-	`REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM %s`,
-	`REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public FROM %s`,
-	`REVOKE USAGE ON SCHEMA private FROM %s`,
-	`REVOKE USAGE ON SCHEMA public FROM %s`,
-	`DROP ROLE IF EXISTS %s`,
-}
-
-func provisionPgRoles(roleName, pgUser, connectionString string) error {
-	log.Infof("provisioning default role %s", roleName)
-	db, err := sql.Open("postgres", connectionString)
+	appStateSQL, err := parseAppStateSQL(newState.RoleName, pgUser, newState.Schema)
 	if err != nil {
-		return fmt.Errorf("failed opening connection with postgres, err=%v", err)
+		return nil, err
 	}
-	ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*10)
-	defer cancelFn()
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("failed opening transaction, err=%v", err)
-	}
-	// validate if the role exists before dropping it
-	var res any
-	err = tx.QueryRow(`SELECT 1 FROM pg_roles WHERE rolname = $1`, roleName).Scan(&res)
-	if err != nil && err != sql.ErrNoRows {
-		return fmt.Errorf("failed querying pg_roles table, errType=%T, err=%v", err, err)
-	}
-	// drop all privileges of the role and then the role itself
-	if fmt.Sprintf("%v", res) == "1" {
-		for _, stmt := range dropStatements {
-			if _, err := tx.Exec(fmt.Sprintf(stmt, roleName)); err != nil {
-				return fmt.Errorf("fail to drop current role %v, err=%v", roleName, err)
-			}
+
+	// rollback existent content if it's applicable
+	for _, dropStmt := range dropStatements {
+		if _, err := tx.Exec(dropStmt); err != nil {
+			return nil, fmt.Errorf("failed cleanup last app state, statement=%v, reason=%v", dropStmt, err)
 		}
 	}
-	for _, stmt := range grantStatements {
-		if _, err := tx.Exec(fmt.Sprintf(stmt, roleName)); err != nil {
-			return fmt.Errorf("failed executing statement %q, err=%v", stmt, err)
-		}
+
+	log.Infof("rollout app state to schema %v with role %v, content-length=%v",
+		newState.Schema, newState.RoleName, len(appStateSQL))
+	if _, err := tx.Exec(appStateSQL); err != nil {
+		return nil, fmt.Errorf("failed applying current app state, reason=%v", err)
 	}
-	// allow the main role to impersonate the apiuser role
-	impersonateGrantStmt := fmt.Sprintf(`GRANT %s TO %s`, roleName, pgUser)
-	if _, err := tx.Exec(impersonateGrantStmt); err != nil {
-		return fmt.Errorf("failed granting impersonate grant, err=%v", err)
+	if err := insertAppState(tx, newState); err != nil {
+		return nil, fmt.Errorf("failed updating app state, reason=%v", err)
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed committing transaction, err=%v", err)
+		return nil, fmt.Errorf("failed commiting current app state changes, reason=%v", err)
 	}
-	return nil
+	return &newState, nil
 }
+
+// var grantStatements = []string{
+// 	`CREATE ROLE %s LOGIN NOINHERIT NOCREATEDB NOCREATEROLE NOSUPERUSER`,
+// 	`COMMENT ON ROLE %s IS 'Used to authenticate requests in postgrest'`,
+// 	`GRANT usage ON SCHEMA public TO %s`,
+// 	`GRANT usage ON SCHEMA private TO %s`,
+
+// 	`GRANT SELECT, INSERT ON public.orgs TO %s`,
+// 	`GRANT INSERT, SELECT, UPDATE on public.login TO %s`,
+// 	`GRANT SELECT, INSERT, UPDATE, DELETE ON public.users TO %s`,
+// 	`GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_groups TO %s`,
+// 	`GRANT SELECT, INSERT, UPDATE ON public.serviceaccounts TO %s`,
+// 	`GRANT SELECT, INSERT, UPDATE, DELETE ON public.connections TO %s`,
+// 	`GRANT SELECT, INSERT, UPDATE, DELETE ON public.env_vars TO %s`,
+// 	`GRANT SELECT, INSERT, UPDATE, DELETE ON public.agents TO %s`,
+// 	`GRANT SELECT, INSERT, UPDATE, DELETE ON public.plugin_connections TO %s`,
+// 	`GRANT SELECT, INSERT, UPDATE ON public.plugins TO %s`,
+// 	`GRANT SELECT, INSERT, UPDATE ON public.sessions TO %s`,
+// 	`GRANT SELECT, INSERT, UPDATE ON public.blobs TO %s`,
+// 	`GRANT SELECT, INSERT, UPDATE ON public.reviews TO %s`,
+// 	`GRANT SELECT, INSERT, UPDATE ON public.review_groups TO %s`,
+// 	`GRANT SELECT, INSERT, UPDATE, DELETE ON public.proxymanager_state TO %s`,
+// 	`GRANT SELECT, INSERT, UPDATE, DELETE ON public.clientkeys TO %s`,
+// 	`GRANT SELECT, INSERT, UPDATE ON public.audit TO %s`,
+// }
+
+// var dropStatements = []string{
+// 	`REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM %s`,
+// 	`REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM %s`,
+// 	`REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public FROM %s`,
+// 	`REVOKE USAGE ON SCHEMA private FROM %s`,
+// 	`REVOKE USAGE ON SCHEMA public FROM %s`,
+// 	`DROP ROLE IF EXISTS %s`,
+// }
+
+// func provisionPgRoles(roleName, pgUser, connectionString string) error {
+// 	log.Infof("provisioning default role %s", roleName)
+// 	db, err := sql.Open("postgres", connectionString)
+// 	if err != nil {
+// 		return fmt.Errorf("failed opening connection with postgres, err=%v", err)
+// 	}
+// 	ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*10)
+// 	defer cancelFn()
+// 	tx, err := db.BeginTx(ctx, nil)
+// 	if err != nil {
+// 		return fmt.Errorf("failed opening transaction, err=%v", err)
+// 	}
+// 	// validate if the role exists before dropping it
+// 	var res any
+// 	err = tx.QueryRow(`SELECT 1 FROM pg_roles WHERE rolname = $1`, roleName).Scan(&res)
+// 	if err != nil && err != sql.ErrNoRows {
+// 		return fmt.Errorf("failed querying pg_roles table, errType=%T, err=%v", err, err)
+// 	}
+// 	// drop all privileges of the role and then the role itself
+// 	if fmt.Sprintf("%v", res) == "1" {
+// 		for _, stmt := range dropStatements {
+// 			if _, err := tx.Exec(fmt.Sprintf(stmt, roleName)); err != nil {
+// 				return fmt.Errorf("fail to drop current role %v, err=%v", roleName, err)
+// 			}
+// 		}
+// 	}
+// 	for _, stmt := range grantStatements {
+// 		if _, err := tx.Exec(fmt.Sprintf(stmt, roleName)); err != nil {
+// 			return fmt.Errorf("failed executing statement %q, err=%v", stmt, err)
+// 		}
+// 	}
+// 	// allow the main role to impersonate the apiuser role
+// 	impersonateGrantStmt := fmt.Sprintf(`GRANT %s TO %s`, roleName, pgUser)
+// 	if _, err := tx.Exec(impersonateGrantStmt); err != nil {
+// 		return fmt.Errorf("failed granting impersonate grant, err=%v", err)
+// 	}
+// 	if err := tx.Commit(); err != nil {
+// 		return fmt.Errorf("failed committing transaction, err=%v", err)
+// 	}
+// 	return nil
+// }

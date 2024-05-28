@@ -25,6 +25,7 @@ var (
 	jwtSecretKey []byte
 	baseURL      *url.URL
 	roleName     string
+	schemaName   string
 	httpClient   HTTPClient
 )
 
@@ -165,6 +166,13 @@ func httpRequest(apiURL, method, bearerToken string, reqHeaders map[string]strin
 		return
 	}
 
+	switch method {
+	case "GET", "HEAD":
+		req.Header.Set("Accept-Profile", schemaName)
+	default:
+		req.Header.Set("Content-Profile", schemaName)
+	}
+	req.Header.Set("Accept-Profile", schemaName)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", bearerToken))
 	req.Header.Set("Prefer", "return=representation")

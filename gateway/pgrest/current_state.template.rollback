@@ -16,7 +16,6 @@ function update_users(json)
 view agents
 view audit
 view blobs
-view clientkeys
 view connections
 view env_vars
 view login

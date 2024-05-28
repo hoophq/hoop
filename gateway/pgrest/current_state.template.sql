@@ -264,7 +264,7 @@ END$$;
 -- add permissions
 CREATE ROLE {{ .pgrest_role }} LOGIN NOINHERIT NOCREATEDB NOCREATEROLE NOSUPERUSER;
 COMMENT ON ROLE {{ .pgrest_role }} IS 'Used to authenticate requests in postgrest';
-GRANT usage ON SCHEMA public TO {{ .pgrest_role }};
+GRANT usage ON SCHEMA {{ .target_schema }} TO {{ .pgrest_role }};
 GRANT usage ON SCHEMA private TO {{ .pgrest_role }};
 GRANT SELECT, INSERT ON orgs TO {{ .pgrest_role }};
 GRANT INSERT, SELECT, UPDATE on login TO {{ .pgrest_role }};
@@ -285,3 +285,10 @@ GRANT SELECT, INSERT, UPDATE ON audit TO {{ .pgrest_role }};
 
 -- allow the main role to impersonate the apiuser role
 GRANT {{ .pgrest_role }} TO {{ .pg_app_user }};
+
+
+
+
+
+
+
