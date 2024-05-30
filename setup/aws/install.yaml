@@ -72,7 +72,7 @@ Parameters:
   AppVersion:
     Type: String
     Description: The hoopdev version
-    Default: '1.22.0'
+    Default: '1.22.0-dev'
 
   AwsLatestAmiId:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
@@ -97,6 +97,14 @@ Parameters:
   # AppIDPURI:
   #   Type: String
   #   Description: 'IDP configuration in URI format. <scheme>://<idp-client-id>:<idp-client-secret>@<idp-host>?<option>='
+
+  AppForceRollout:
+    Type: String
+    Description: Select a value will force the recreation of the VM
+    Default: rolloutA
+    AllowedValues:
+    - rolloutA
+    - rolloutB
 
   AppLogLevel:
     Type: String
@@ -337,8 +345,6 @@ Resources:
         Fn::Sub: "{{resolve:secretsmanager:${HoopDBSecret}::masteruser}}"
       MasterUserPassword:
         Fn::Sub: "{{resolve:secretsmanager:${HoopDBSecret}::masterpassword}}"
-      # MasterUsername: "hooadminuser"
-      # MasterUserPassword: "mybigpassworda8s9a8912"
       PubliclyAccessible: false
       StorageEncrypted: true
       VPCSecurityGroups: [!GetAtt HoopDBSecurityGroup.GroupId]
@@ -385,6 +391,9 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       TargetType: instance
+      # Targets:
+      # - Id: !Ref GatewayVM
+      #   Port: 8009
       Protocol: HTTP
       Port: 8009
       HealthCheckIntervalSeconds: 10
@@ -400,6 +409,9 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       TargetType: instance
+      # Targets:
+      # - Id: !Ref GatewayVM
+      #   Port: 8010
       Protocol: HTTP
       ProtocolVersion: GRPC
       Port: 8010
@@ -465,21 +477,29 @@ Resources:
         Timeout: PT15M
         Count: 1
     UpdatePolicy:
+      # AutoScalingReplacingUpdate:
+      #   WillReplace: true
       AutoScalingRollingUpdate:
         MaxBatchSize: 1
         MinInstancesInService: 0
-        PauseTime: PT15M
+        PauseTime: PT10M
         WaitOnResourceSignals: true
+        # SuspendProcesses:
+        # - HealthCheck
+        # - ReplaceUnhealthy
+        # - AZRebalance
+        # - AlarmNotification
+        # - ScheduledActions
     Properties:
       VPCZoneIdentifier:
       - !Ref PrivateSubnet1
-      - !Ref PrivateSubnet2
+      # - !Ref PrivateSubnet2
       # AvailabilityZones: !Ref AZs
       LaunchTemplate:
         LaunchTemplateId: !Ref LaunchTemplate
         Version: !GetAtt LaunchTemplate.LatestVersionNumber
-      MinSize: 1
-      MaxSize: 2
+      MinSize: 0
+      MaxSize: 1
       TargetGroupARNs:
       - !Ref AppGrpcTargetGroup
       - !Ref AppApiTargetGroup
@@ -509,6 +529,8 @@ Resources:
             Action:
             - secretsmanager:GetSecretValue
             - secretsmanager:DescribeSecret
+            # - ec2:DescribeVolumes
+            # - ec2:AttachVolume
 
   DefaultInstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -516,6 +538,31 @@ Resources:
       Path: '/'
       Roles:
       - !Ref DefaultInstanceRole
+
+  GatewayVMVol:
+    Type: AWS::EC2::Volume
+    Properties:
+      AvailabilityZone: !Select
+      - 0
+      - Fn::GetAZs: !Ref 'AWS::Region'
+      Encrypted: false
+      Size: 11
+      VolumeType: gp3
+
+  # GatewayVMMountPoint:
+  #   Type: AWS::EC2::VolumeAttachment
+  #   Properties:
+  #     VolumeId: !Ref GatewayVMVol
+  #     InstanceId: !Ref GatewayVM
+  #     Device: /dev/xvdbc
+
+  # GatewayVM:
+  #   Type: AWS::EC2::Instance
+  #   Properties:
+  #     SubnetId: !Ref PrivateSubnet1
+  #     LaunchTemplate:
+  #       LaunchTemplateId: !Ref LaunchTemplate
+  #       Version: !GetAtt LaunchTemplate.LatestVersionNumber
 
   LaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
@@ -528,6 +575,10 @@ Resources:
         SecurityGroupIds: [!GetAtt LaunchTemplateSecurityGroup.GroupId]
         KeyName: !Ref AwsKeyName
         ImageId: !Ref AwsLatestAmiId
+        # BlockDeviceMappings:
+        # - DeviceName: /dev/sda1
+        #   Ebs:
+        #     VolumeSize: 10
         UserData:
           Fn::Base64: !Sub |
             #!/bin/bash
@@ -543,9 +594,34 @@ Resources:
       AWS::CloudFormation::Init:
         configSets:
           default:
+          - setup_ebs_volume
           - setup_gateway
           - setup_system_agent
           # - verify_instance_health
+        setup_ebs_volume:
+          commands:
+            setup_volume:
+              cwd: '~'
+              command: !Sub |
+                # https://docs.aws.amazon.com/ebs/latest/userguide/ebs-using-volumes.html
+                set -eox pipefail
+                until [[ $VOL_STATUS == '"available"' ]]; do
+                  VOL_STATUS=$(aws ec2 describe-volumes --volume-ids ${GatewayVMVol} --query 'Volumes[0].State')
+                  echo "Volume not available, sleeping 5 ..."
+                  sleep 5
+                done
+                TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+                INSTANCE_ID=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id)
+                echo "attaching volume ${GatewayVMVol}"
+                aws ec2 attach-volume --volume-id ${GatewayVMVol} --instance-id $INSTANCE_ID --device /dev/xvdbc
+                sleep 5
+                file -sL /dev/xvdbc |egrep '/dev/xvdbc: data' && \
+                mkfs -t xfs /dev/xvdbc && \
+                xfs_admin -L hoopsessions /dev/xvdbc && \
+                mkdir -p /opt/hoop/sessions/indexes && \
+                echo 'LABEL=hoopsessions /opt/hoop/sessions xfs defaults,nofail, 0 2' >> /etc/fstab && \
+                mount -a && \
+                echo "mounted hoopsessions volume with success" || echo "hoopsessions volume already mounted!"
         setup_gateway:
           packages:
             yum:
@@ -572,6 +648,8 @@ Resources:
             /etc/hoopgateway.d/config:
               # Make LOG_LEVEL coerce to GODEBUG
               content: !Sub |
+                PLUGIN_AUDIT_PATH=/opt/hoop/sessions
+                PLUGIN_INDEX_PATH=/opt/hoop/sessions/indexes
                 STATIC_UI_PATH=/opt/hoop/webapp/public
                 MIGRATION_PATH_FILES=/opt/hoop/migrations
                 LOG_LEVEL=${AppLogLevel}
@@ -591,7 +669,7 @@ Resources:
               cwd: '~'
               command: !Sub |
                 set -eox pipefail
-                curl -sL https://hoopartifacts.s3.amazonaws.com/release/hoop-dev-${AppVersion}-dev.tar.gz -o hoop_${AppVersion}.tar.gz
+                curl -sL https://hoopartifacts.s3.amazonaws.com/release/hoop-dev-${AppVersion}.tar.gz -o hoop_${AppVersion}.tar.gz
                 rm -rf /opt/hoop/migrations
                 tar --extract --file hoop_${AppVersion}.tar.gz -C / --strip 1 && rm -f hoop_${AppVersion}.tar.gz
                 chown -R root: /opt/hoop

@@ -203,6 +203,7 @@ FROM private.appstate ORDER BY created_at DESC LIMIT 2`)
 	case len(stateItems) == 1:
 		return &AppStateRollout{First: &stateItems[0]}, nil
 	default:
+		// TODO: Current, Canary
 		return &AppStateRollout{&stateItems[0], &stateItems[1]}, nil
 	}
 	// if s.Checksum == "" || s.StateRollback == "" || s.CreatedAt.IsZero() {

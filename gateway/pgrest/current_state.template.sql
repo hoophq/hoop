@@ -129,8 +129,7 @@ CREATE VIEW agents AS
 
 -- CONNECTIONS
 --
-CREATE VIEW env_vars AS
-    SELECT id, org_id, envs FROM private.env_vars;
+CREATE VIEW env_vars AS SELECT id, org_id, envs FROM private.env_vars;
 
 CREATE VIEW connections AS
     SELECT id, org_id, agent_id, name, command, type, subtype,
