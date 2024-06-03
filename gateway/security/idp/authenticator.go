@@ -24,6 +24,7 @@ type (
 		ClientID         string
 		ClientSecret     string
 		CustomScopes     string
+		GroupsClaim      string
 		ApiURL           string
 		authWithUserInfo bool
 
@@ -108,7 +109,7 @@ func (p *Provider) userInfoEndpoint(accessToken string) (*ProviderUserInfo, erro
 	if err = user.Claims(&claims); err != nil {
 		return nil, fmt.Errorf("failed verifying user info claims, err=%v", err)
 	}
-	uinfo := ParseIDTokenClaims(claims)
+	uinfo := ParseIDTokenClaims(claims, p.GroupsClaim)
 	uinfo.Email = user.Email
 	uinfo.Subject = user.Subject
 	uinfo.EmailVerified = &user.EmailVerified
@@ -147,13 +148,14 @@ func NewProvider() *Provider {
 	if provider.CustomScopes != "" {
 		scopes = addCustomScopes(scopes, provider.CustomScopes)
 	}
-	log.Infof("loaded oidc provider configuration, with-user-info=%v, auth=%v, token=%v, userinfo=%v, jwks=%v, algorithms=%v, scopes=%v",
+	log.Infof("loaded oidc provider configuration, with-user-info=%v, auth=%v, token=%v, userinfo=%v, jwks=%v, algorithms=%v, groupsclaim=%v, scopes=%v",
 		provider.authWithUserInfo,
 		oidcProviderConfig.AuthURL,
 		oidcProviderConfig.TokenURL,
 		oidcProviderConfig.UserInfoURL,
 		oidcProviderConfig.JWKSURL,
 		oidcProviderConfig.Algorithms,
+		provider.GroupsClaim,
 		scopes)
 
 	conf := oauth2.Config{
@@ -188,13 +190,18 @@ func setProviderConfFromEnvs(p *Provider) error {
 		if p.ClientID == "" || p.ClientSecret == "" {
 			return fmt.Errorf("missing credentials for IDP_URI env. Valid format is: <scheme>://<client-id>:<client-secret>@<issuer-host>?<options>=")
 		}
-		p.CustomScopes = u.Query().Get("idp_custom_scopes")
-		p.Audience = u.Query().Get("idp_audience")
+		p.Audience = os.Getenv("IDP_AUDIENCE")
+		p.GroupsClaim = u.Query().Get("groupsclaim")
+		if p.GroupsClaim == "" {
+			// keep default value
+			p.GroupsClaim = proto.CustomClaimGroups
+		}
+		p.CustomScopes = u.Query().Get("scopes")
 		p.authWithUserInfo = u.Query().Get("_userinfo") == "1"
 		qs := u.Query()
-		qs.Del("idp_custom_scopes")
-		qs.Del("idp_audience")
+		qs.Del("scopes")
 		qs.Del("_userinfo")
+		qs.Del("groupsclaim")
 		encQueryStr := qs.Encode()
 		if encQueryStr != "" {
 			encQueryStr = "?" + encQueryStr
@@ -213,6 +220,7 @@ func setProviderConfFromEnvs(p *Provider) error {
 	p.ClientSecret = os.Getenv("IDP_CLIENT_SECRET")
 	p.Audience = os.Getenv("IDP_AUDIENCE")
 	p.CustomScopes = os.Getenv("IDP_CUSTOM_SCOPES")
+	p.GroupsClaim = proto.CustomClaimGroups
 
 	issuerURL, err := url.Parse(p.Issuer)
 	if err != nil {
@@ -265,7 +273,7 @@ func downloadJWKS(jwksURL string) *keyfunc.JWKS {
 	return jwks
 }
 
-func ParseIDTokenClaims(idTokenClaims map[string]any) (u ProviderUserInfo) {
+func ParseIDTokenClaims(idTokenClaims map[string]any, groupsClaimName string) (u ProviderUserInfo) {
 	email, _ := idTokenClaims["email"].(string)
 	if profile, ok := idTokenClaims["name"].(string); ok {
 		u.Profile = profile
@@ -276,7 +284,7 @@ func ParseIDTokenClaims(idTokenClaims map[string]any) (u ProviderUserInfo) {
 	}
 	u.Picture = profilePicture
 	u.Email = email
-	switch groupsClaim := idTokenClaims[proto.CustomClaimGroups].(type) {
+	switch groupsClaim := idTokenClaims[groupsClaimName].(type) {
 	case string:
 		u.MustSyncGroups = true
 		if groupsClaim != "" {
