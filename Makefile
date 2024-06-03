@@ -34,8 +34,7 @@ package-helmchart:
 package-gateway-bundle:
 	rm -rf ${DIST_FOLDER}/hoopgateway && mkdir -p ${DIST_FOLDER}/hoopgateway/opt/hoop/{bin,migrations}
 	curl -sL https://github.com/PostgREST/postgrest/releases/download/v11.2.2/postgrest-v11.2.2-linux-static-x64.tar.xz -o postgrest.tar.xz && \
-	tar -xf postgrest.tar.xz && rm -f postgrest.tar.xz && \
-	mv postgrest ${DIST_FOLDER}/hoopgateway/opt/hoop/bin/postgrest && \
+	tar -xf postgrest.tar.xz -C ${DIST_FOLDER}/hoopgateway/opt/hoop/bin/ && rm -f postgrest.tar.xz && \
 	chmod 0755 ${DIST_FOLDER}/hoopgateway/opt/hoop/bin/postgrest && \
 	tar -xf ${DIST_FOLDER}/binaries/hoop_${VERSION}_Linux_amd64.tar.gz -C ${DIST_FOLDER}/hoopgateway/opt/hoop/bin/ && \
 	cp rootfs/app/migrations/*.up.sql ${DIST_FOLDER}/hoopgateway/opt/hoop/migrations/ && \
