@@ -2,7 +2,7 @@ BEGIN;
 
 SET search_path TO private;
 
--- begining from this version, the migrations files
+-- beginning from this version, the migrations files
 -- will only perform the migration of the private schema
 -- the state of the views and functions will be handled
 -- by another process.

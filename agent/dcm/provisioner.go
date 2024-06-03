@@ -170,7 +170,7 @@ func provisionPostgres(cred *Credentials, passwd string) error {
 
 			tx, err := db.BeginTx(ctx, nil)
 			if err != nil {
-				return fmt.Errorf("failed begining transaction, err=%v", err)
+				return fmt.Errorf("failed beginning transaction, err=%v", err)
 			}
 			for _, stmt := range grantPrivilegesStmt(cred.Username, schema, cred.policyGrantPrivileges) {
 				if _, err := tx.ExecContext(ctx, stmt); err != nil {
