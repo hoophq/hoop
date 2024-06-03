@@ -14,11 +14,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var startEnvFlag []string
-
 var startCmd = &cobra.Command{
 	Use:          "start",
-	Short:        "Runs hoop local demo",
+	Short:        "Start one of the Hoop component",
 	SilenceUsage: false,
 }
 
@@ -60,6 +58,7 @@ Available jobs are:
 
 var startGatewayJobsCmd = &cobra.Command{
 	Use:          "jobs JOBNAME",
+	Short:        "Start a job",
 	Long:         jobsLongDesc,
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -82,6 +81,5 @@ func init() {
 	startCmd.AddCommand(startAgentCmd)
 	startCmd.AddCommand(startGatewayCmd)
 	startCmd.AddCommand(startAgentControllerCmd)
-	startCmd.Flags().StringSliceVarP(&startEnvFlag, "env", "e", nil, "The environment variables to set when starting hoop")
 	rootCmd.AddCommand(startCmd)
 }

@@ -60,7 +60,6 @@ func Run() {
 	}
 
 	idProvider := idp.NewProvider()
-
 	grpcURL := os.Getenv("GRPC_URL")
 	if grpcURL == "" {
 		u, err := url.Parse(idProvider.ApiURL)

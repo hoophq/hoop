@@ -378,6 +378,11 @@ jobs:
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
 
+      - name: Build Gateway Bundle
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: make package-gateway-bundle
+
       - name: Publish Release
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
