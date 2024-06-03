@@ -7,104 +7,69 @@ Metadata:
 
 Parameters:
   AwsKeyName:
-    Type: AWS::EC2::KeyPair::KeyName
-    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
-    ConstraintDescription: must be the name of an existing EC2 KeyPair.
-    Default: cf-test
-
-  AwsInstanceType:
     Type: String
-    Description: WebServer EC2 instance type
+    Description: (OPTIONAL) Name of an existing EC2 KeyPair to enable SSH access to the instance for troubleshooting purporses
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+    Default: ''
+
+  AwsAppInstanceType:
+    Type: String
+    Description: Recommended values to start with t3.medium. Use m6i family for medium or large size installs.
     AllowedValues:
-      - t2.nano
-      - t2.micro
-      - t2.small
-      - t2.medium
-      - t2.large
-      - t2.xlarge
-      - t2.2xlarge
-      - t3.nano
-      - t3.micro
       - t3.small
       - t3.medium
-      - t3.large
-      - t3.xlarge
-      - t3.2xlarge
-      - m4.large
-      - m4.xlarge
-      - m4.2xlarge
-      - m4.4xlarge
-      - m4.10xlarge
-      - m5.large
-      - m5.xlarge
-      - m5.2xlarge
-      - m5.4xlarge
-      - c5.large
-      - c5.xlarge
-      - c5.2xlarge
-      - c5.4xlarge
-      - c5.9xlarge
-      - g3.8xlarge
-      - r5.large
-      - r5.xlarge
-      - r5.2xlarge
-      - r5.4xlarge
-      - i3.xlarge
-      - i3.2xlarge
-      - i3.4xlarge
-      - i3.8xlarge
-      - d2.xlarge
-      - d2.2xlarge
-      - d2.4xlarge
-      - d2.8xlarge
-    Default: t3.small
-    ConstraintDescription: must be a valid EC2 instance type.
+      - m6i.large
+      - m6i.xlarge
+      - m6i.2xlarge
+      - r6i.large
+      - r6i.xlarge
+    Default: t3.medium
+
+  AwsDBInstanceType:
+    Type: String
+    Description: Recommended values to start with t4gSmall50GB. Use m6g family for medium or large size installs.
+    AllowedValues:
+    - t4gSmall50GB
+    - m6g1XLarge100GB
+    - m6g1XLarge500GB
+    - m6g1XLarge2TB
+    - m6g2xLarge25GB
+    - m6g2xLarge100GB
+    - m6g2xLarge500GB
+    - m6g2xLarge2TB
+    Default: t4gSmall50GB
+
+  AwsCertificateArn:
+    Type: String
+    Description: '(REQUIRED) The certificate arn for the load balancer. Example: arn:aws:acm:<region>:<account-id>:certificate/<cert-id>'
+    AllowedPattern: ^arn:aws:acm:.+
 
   AppAccessLocation:
     Type: String
-    Description: The IP address range that can access the Gateway
+    Description: The IP address range that can access the Gateway (HTTP/gRPC)
     Default: 0.0.0.0/0
     MinLength: 9
     MaxLength: 18
     AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
     ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
 
+  # Hoop Configuration
   AppVersion:
     Type: String
-    Description: The hoopdev version
-    Default: '1.22.0-dev'
-
-  AwsLatestAmiId:
-    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-minimal-kernel-default-x86_64
-
-  AwsCertificateArn:
-    Type: String
-    Description: The certificate arn for the load balancer
-    Default: arn:aws:acm:us-west-2:200074533906:certificate/b99d6325-8ace-4936-8f91-36163177bab0
-
-  AwsIdpDomain:
-    Type: String
-    Description: The name of the sign in prefix of Cognito
-    Default: hoopbox
-
-  # Hoop Configuration
-  APIPublicDNS:
-    Type: String
-    Description: 'The public DNS of the API (HTTP and gRPC)'
-    Default: selfhosted-demo.hoop.dev
-
-  # AppIDPURI:
-  #   Type: String
-  #   Description: 'IDP configuration in URI format. <scheme>://<idp-client-id>:<idp-client-secret>@<idp-host>?<option>='
-
-  AppForceRollout:
-    Type: String
-    Description: Select a value will force the recreation of the VM
-    Default: rolloutA
+    Description: The gateway app version
     AllowedValues:
-    - rolloutA
-    - rolloutB
+    - 'LATEST_HOOP_VERSION'
+    Default: 'LATEST_HOOP_VERSION'
+
+  AppPublicDNS:
+    Type: String
+    Description: '(REQUIRED) The public DNS of the App (HTTP and gRPC). It must match with the certificate'
+    AllowedPattern: ^[a-zA-Z0-9-\._]+
+
+  AppIDPURI:
+    Type: String
+    Description: |-
+      (OPTIONAL) It defaults creating Cognito IDP. To use a custom, specify the configuration. Format: https://<idp-client-id>:<idp-client-secret>@<idp-host>?<options>
 
   AppLogLevel:
     Type: String
@@ -115,6 +80,38 @@ Parameters:
     Type: String
     Description: 'Changes the name of the group to act as admin'
     Default: 'admin'
+
+Mappings:
+  DBInstanceTypes:
+    t4gSmall50GB:
+      instanceClass: db.t4g.small
+      allocatedStorage: "50"
+    m6g1XLarge100GB:
+      instanceClass: db.m6g.xlarge
+      allocatedStorage: "100"
+    m6g1XLarge500GB:
+      instanceClass: db.m6g.xlarge
+      allocatedStorage: "500"
+    m6g1XLarge2TB:
+      instanceClass: db.m6g.xlarge
+      allocatedStorage: "2000"
+    m6g2xLarge25GB:
+      instanceClass: db.m6g.2xlarge
+      allocatedStorage: "25"
+    m6g2xLarge100GB:
+      instanceClass: db.m6g.2xlarge
+      allocatedStorage: "100"
+    m6g2xLarge500GB:
+      instanceClass: db.m6g.2xlarge
+      allocatedStorage: "500"
+    m6g2xLarge2TB:
+      instanceClass: db.m6g.2xlarge
+      allocatedStorage: "2000"
+
+Conditions:
+  IsDefaultIDP: !Equals ["", !Ref AppIDPURI]
+  HasSSHKey: !Not
+  - !Equals ["", !Ref AwsKeyName]
 
 Resources:
 
@@ -307,6 +304,7 @@ Resources:
 
   HoopDBSecret:
     UpdateReplacePolicy: Retain
+    DeletionPolicy: Delete
     Type: AWS::SecretsManager::Secret
     Properties:
       Name: !Sub hoopdev/${AWS::StackName}/pgmaster
@@ -317,6 +315,9 @@ Resources:
         PasswordLength: 28
         ExcludePunctuation: true
         ExcludeCharacters: '"@/\'
+      Tags:
+      - Key: Name
+        Value: !Sub ${AWS::StackName}-db-mastersecret
 
   HoopDBSubnetGroup:
     Type: AWS::RDS::DBSubnetGroup
@@ -325,20 +326,23 @@ Resources:
       SubnetIds:
       - !Ref PrivateSubnet1
       - !Ref PrivateSubnet2
+      Tags:
+      - Key: Name
+        Value: !Sub ${AWS::StackName}-db-subnetgroup
 
   HoopDB:
     Type: AWS::RDS::DBInstance
+    UpdateReplacePolicy: Snapshot
+    DeletionPolicy: Snapshot
     DependsOn:
     - HoopDBSecret
     Properties:
-      # DeletionPolicy: Snapshot
-      # UpdateReplacePolicy: Snapshot
       AvailabilityZone: !Select
       - 0
       - Fn::GetAZs: !Ref 'AWS::Region'
       DBSubnetGroupName: !Ref HoopDBSubnetGroup
-      AllocatedStorage: "10"
-      DBInstanceClass: db.t3.micro
+      AllocatedStorage: !FindInMap [DBInstanceTypes, !Ref AwsDBInstanceType, allocatedStorage]
+      DBInstanceClass: !FindInMap [DBInstanceTypes, !Ref AwsDBInstanceType, instanceClass]
       BackupRetentionPeriod: 14
       Engine: postgres
       MasterUsername:
@@ -348,14 +352,18 @@ Resources:
       PubliclyAccessible: false
       StorageEncrypted: true
       VPCSecurityGroups: [!GetAtt HoopDBSecurityGroup.GroupId]
+      Tags:
+      - Key: Name
+        Value: !Sub ${AWS::StackName}-postgresdb
 
   ####
   # Load Balancer
   ####
   AppLB:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DependsOn:
+    - AttachGateway
     Properties:
-      Type: application
       # Name: hoopgateway
       IpAddressType: ipv4
       Scheme: internet-facing
@@ -363,9 +371,11 @@ Resources:
       Subnets:
       - !Ref PublicSubnet1
       - !Ref PublicSubnet2
+      Tags:
+      - Key: Name
+        Value: !Sub ${AWS::StackName}-applb7
   AppApiLBListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
-    # DependsOn: ECSServiceRole
     Properties:
       DefaultActions:
       - Type: forward
@@ -377,7 +387,6 @@ Resources:
       - CertificateArn: !Ref AwsCertificateArn
   AppGrpcLBListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
-    # DependsOn: AppLB
     Properties:
       DefaultActions:
       - Type: forward
@@ -391,9 +400,6 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       TargetType: instance
-      # Targets:
-      # - Id: !Ref GatewayVM
-      #   Port: 8009
       Protocol: HTTP
       Port: 8009
       HealthCheckIntervalSeconds: 10
@@ -402,16 +408,14 @@ Resources:
       HealthCheckTimeoutSeconds: 5
       HealthyThresholdCount: 2
       UnhealthyThresholdCount: 2
-      # TODO: change-me
-      # Name: GatewayApiTargetGroup
+      TargetGroupAttributes:
+      - Key: deregistration_delay.timeout_seconds
+        Value: "20"
       VpcId: !Ref VPC
   AppGrpcTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       TargetType: instance
-      # Targets:
-      # - Id: !Ref GatewayVM
-      #   Port: 8010
       Protocol: HTTP
       ProtocolVersion: GRPC
       Port: 8010
@@ -421,17 +425,20 @@ Resources:
       HealthCheckTimeoutSeconds: 5
       HealthyThresholdCount: 2
       UnhealthyThresholdCount: 2
-      # TODO: change-me
-      # Name: GatewayGrpcTargetGroup
+      TargetGroupAttributes:
+      - Key: deregistration_delay.timeout_seconds
+        Value: "20"
       VpcId: !Ref VPC
 
   ####
   # App Default Identity Provider
   ####
   IdpDefault:
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
     Type: AWS::Cognito::UserPool
+    Condition: IsDefaultIDP
     Properties:
-      # MfaConfiguration: OFF
       EmailConfiguration:
         EmailSendingAccount: COGNITO_DEFAULT
       AdminCreateUserConfig:
@@ -446,11 +453,12 @@ Resources:
 
   IdpDefaultClient:
     Type: AWS::Cognito::UserPoolClient
+    Condition: IsDefaultIDP
     Properties:
       UserPoolId: !Ref IdpDefault
       GenerateSecret: true
       CallbackURLs:
-        - !Sub 'https://${APIPublicDNS}/api/callback'
+        - !Sub 'https://${AppPublicDNS}/api/callback'
       AllowedOAuthFlows:
         - code
       AllowedOAuthScopes:
@@ -463,9 +471,10 @@ Resources:
 
   IdpDefaultDomain:
     Type: AWS::Cognito::UserPoolDomain
+    Condition: IsDefaultIDP
     Properties:
       UserPoolId: !Ref IdpDefault
-      Domain: !Ref AwsIdpDomain
+      Domain: !Sub ${AWS::StackName}
 
   ####
   # App VM
@@ -474,35 +483,36 @@ Resources:
     Type: AWS::AutoScaling::AutoScalingGroup
     CreationPolicy:
       ResourceSignal:
-        Timeout: PT15M
+        Timeout: PT10M
         Count: 1
     UpdatePolicy:
-      # AutoScalingReplacingUpdate:
-      #   WillReplace: true
       AutoScalingRollingUpdate:
         MaxBatchSize: 1
         MinInstancesInService: 0
         PauseTime: PT10M
         WaitOnResourceSignals: true
-        # SuspendProcesses:
-        # - HealthCheck
-        # - ReplaceUnhealthy
-        # - AZRebalance
-        # - AlarmNotification
-        # - ScheduledActions
+        # https://repost.aws/knowledge-center/auto-scaling-group-rolling-updates
+        SuspendProcesses:
+        - HealthCheck
+        - ReplaceUnhealthy
+        - AZRebalance
+        - AlarmNotification
+        - ScheduledActions
     Properties:
       VPCZoneIdentifier:
       - !Ref PrivateSubnet1
-      # - !Ref PrivateSubnet2
-      # AvailabilityZones: !Ref AZs
       LaunchTemplate:
         LaunchTemplateId: !Ref LaunchTemplate
         Version: !GetAtt LaunchTemplate.LatestVersionNumber
-      MinSize: 0
+      MinSize: 1
       MaxSize: 1
       TargetGroupARNs:
       - !Ref AppGrpcTargetGroup
       - !Ref AppApiTargetGroup
+      Tags:
+      - Key: Name
+        PropagateAtLaunch: true
+        Value: !Sub ${AWS::StackName}-app
 
   DefaultInstanceRole:
     Type: AWS::IAM::Role
@@ -529,8 +539,17 @@ Resources:
             Action:
             - secretsmanager:GetSecretValue
             - secretsmanager:DescribeSecret
-            # - ec2:DescribeVolumes
-            # - ec2:AttachVolume
+      - PolicyName: EC2VolumeAttacher
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            # TODO: change to specific resource
+            # See managed policy AmazonECSInfrastructureRolePolicyForVolumes
+            Resource: "*"
+            Action:
+            - ec2:DescribeVolumes
+            - ec2:AttachVolume
 
   DefaultInstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -539,46 +558,36 @@ Resources:
       Roles:
       - !Ref DefaultInstanceRole
 
+  # https://serverfault.com/questions/831974/can-i-re-use-an-ebs-volume-with-aws-asg
   GatewayVMVol:
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Delete
     Type: AWS::EC2::Volume
     Properties:
       AvailabilityZone: !Select
       - 0
       - Fn::GetAZs: !Ref 'AWS::Region'
-      Encrypted: false
-      Size: 11
+      Encrypted: true
       VolumeType: gp3
-
-  # GatewayVMMountPoint:
-  #   Type: AWS::EC2::VolumeAttachment
-  #   Properties:
-  #     VolumeId: !Ref GatewayVMVol
-  #     InstanceId: !Ref GatewayVM
-  #     Device: /dev/xvdbc
-
-  # GatewayVM:
-  #   Type: AWS::EC2::Instance
-  #   Properties:
-  #     SubnetId: !Ref PrivateSubnet1
-  #     LaunchTemplate:
-  #       LaunchTemplateId: !Ref LaunchTemplate
-  #       Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      Iops: 3000
+      Size: 15
+      Tags:
+      - Key: Name
+        Value: !Sub ${AWS::StackName}-hoopsessions
 
   LaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
-    # DependsOn: HoopDB
     Properties:
       LaunchTemplateData:
         IamInstanceProfile:
           Arn: !GetAtt DefaultInstanceProfile.Arn
-        InstanceType: !Ref AwsInstanceType
+        InstanceType: !Ref AwsAppInstanceType
         SecurityGroupIds: [!GetAtt LaunchTemplateSecurityGroup.GroupId]
-        KeyName: !Ref AwsKeyName
-        ImageId: !Ref AwsLatestAmiId
-        # BlockDeviceMappings:
-        # - DeviceName: /dev/sda1
-        #   Ebs:
-        #     VolumeSize: 10
+        KeyName: !If
+          - HasSSHKey
+          - !Ref AwsKeyName
+          - !Ref AWS::NoValue
+        ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-minimal-kernel-default-x86_64}}'
         UserData:
           Fn::Base64: !Sub |
             #!/bin/bash
@@ -587,7 +596,7 @@ Resources:
               amazon-ssm-agent \
               https://github.com/microsoft/go-sqlcmd/releases/download/v1.6.0/sqlcmd-1.6.0-1.el7.x86_64.rpm
             # force recreate
-            echo ${AppVersion} >/dev/null
+            echo "${AppVersion} ${AppIDPURI} ${AppPublicDNS} ${AppLogLevel}" >/dev/null
             cfn-init -v --stack ${AWS::StackId} --resource LaunchTemplate --region ${AWS::Region}
             cfn-signal -e $? --stack ${AWS::StackId} --resource GatewayServerGroup --region ${AWS::Region}
     Metadata:
@@ -597,31 +606,38 @@ Resources:
           - setup_ebs_volume
           - setup_gateway
           - setup_system_agent
-          # - verify_instance_health
+          - verify_gateway_health
         setup_ebs_volume:
           commands:
             setup_volume:
               cwd: '~'
               command: !Sub |
+                #!/bin/bash
+                # https://serverfault.com/questions/831974/can-i-re-use-an-ebs-volume-with-aws-asg
                 # https://docs.aws.amazon.com/ebs/latest/userguide/ebs-using-volumes.html
-                set -eox pipefail
+                set -eo pipefail
                 until [[ $VOL_STATUS == '"available"' ]]; do
                   VOL_STATUS=$(aws ec2 describe-volumes --volume-ids ${GatewayVMVol} --query 'Volumes[0].State')
-                  echo "Volume not available, sleeping 5 ..."
+                  echo "Volume not available yet, waiting 5 seconds ..."
                   sleep 5
                 done
                 TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
                 INSTANCE_ID=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id)
                 echo "attaching volume ${GatewayVMVol}"
-                aws ec2 attach-volume --volume-id ${GatewayVMVol} --instance-id $INSTANCE_ID --device /dev/xvdbc
-                sleep 5
-                file -sL /dev/xvdbc |egrep '/dev/xvdbc: data' && \
-                mkfs -t xfs /dev/xvdbc && \
-                xfs_admin -L hoopsessions /dev/xvdbc && \
-                mkdir -p /opt/hoop/sessions/indexes && \
-                echo 'LABEL=hoopsessions /opt/hoop/sessions xfs defaults,nofail, 0 2' >> /etc/fstab && \
-                mount -a && \
-                echo "mounted hoopsessions volume with success" || echo "hoopsessions volume already mounted!"
+                DEVICE=/dev/xvdbc
+                aws ec2 attach-volume --volume-id ${GatewayVMVol} --instance-id $INSTANCE_ID --device $DEVICE
+
+                OUTPUT=$(file -sL $DEVICE)
+                if [[ $OUTPUT == "$DEVICE: data" ]]; then
+                  mkfs -t xfs $DEVICE && \
+                  xfs_admin -L hoopsessions $DEVICE
+                elif [[ $OUTPUT =~ "$DEVICE: cannot open"* ]]; then
+                  echo "Device $DEVICE is not attached or ready: $OUTPUT"
+                  exit 1
+                fi
+                mkdir -p /opt/hoop/sessions/indexes
+                grep LABEL=hoopsessions /etc/fstab || echo 'LABEL=hoopsessions /opt/hoop/sessions xfs defaults,nofail, 0 2' >> /etc/fstab
+                mount -a
         setup_gateway:
           packages:
             yum:
@@ -647,20 +663,34 @@ Resources:
                 WantedBy=multi-user.target
             /etc/hoopgateway.d/config:
               # Make LOG_LEVEL coerce to GODEBUG
-              content: !Sub |
-                PLUGIN_AUDIT_PATH=/opt/hoop/sessions
-                PLUGIN_INDEX_PATH=/opt/hoop/sessions/indexes
-                STATIC_UI_PATH=/opt/hoop/webapp/public
-                MIGRATION_PATH_FILES=/opt/hoop/migrations
-                LOG_LEVEL=${AppLogLevel}
-                LOG_ENCODING=json
-                API_URL=https://${APIPublicDNS}
-                GRPC_URL=https://${APIPublicDNS}:8443
-                POSTGRES_DB_URI=postgres://MASTER_DB_USER:MASTER_DB_PASSWORD@${HoopDB.Endpoint.Address}:${HoopDB.Endpoint.Port}/postgres
-                IDP_ISSUER=${IdpDefault.ProviderURL}
-                IDP_CLIENT_ID=${IdpDefaultClient.ClientId}
-                IDP_CLIENT_SECRET=${IdpDefaultClient.ClientSecret}
-                ADMIN_USERNAME=${AppAdminUsernameRole}
+              content: !If
+                - IsDefaultIDP
+                - !Sub |
+                  PLUGIN_AUDIT_PATH=/opt/hoop/sessions
+                  PLUGIN_INDEX_PATH=/opt/hoop/sessions/indexes
+                  STATIC_UI_PATH=/opt/hoop/webapp/public
+                  MIGRATION_PATH_FILES=/opt/hoop/migrations
+                  LOG_LEVEL=${AppLogLevel}
+                  LOG_ENCODING=json
+                  API_URL=https://${AppPublicDNS}
+                  GRPC_URL=https://${AppPublicDNS}:8443
+                  POSTGRES_DB_URI=postgres://MASTER_DB_USER:MASTER_DB_PASSWORD@${HoopDB.Endpoint.Address}:${HoopDB.Endpoint.Port}/postgres
+                  IDP_ISSUER=${IdpDefault.ProviderURL}
+                  IDP_CLIENT_ID=${IdpDefaultClient.ClientId}
+                  IDP_CLIENT_SECRET=${IdpDefaultClient.ClientSecret}
+                  ADMIN_USERNAME=${AppAdminUsernameRole}
+                - !Sub |
+                  PLUGIN_AUDIT_PATH=/opt/hoop/sessions
+                  PLUGIN_INDEX_PATH=/opt/hoop/sessions/indexes
+                  STATIC_UI_PATH=/opt/hoop/webapp/public
+                  MIGRATION_PATH_FILES=/opt/hoop/migrations
+                  LOG_LEVEL=${AppLogLevel}
+                  LOG_ENCODING=json
+                  API_URL=https://${AppPublicDNS}
+                  GRPC_URL=https://${AppPublicDNS}:8443
+                  POSTGRES_DB_URI=postgres://MASTER_DB_USER:MASTER_DB_PASSWORD@${HoopDB.Endpoint.Address}:${HoopDB.Endpoint.Port}/postgres
+                  IDP_URI=${AppIDPURI}
+                  ADMIN_USERNAME=${AppAdminUsernameRole}
               mode: "000400"
               owner: root
               group: root
@@ -668,10 +698,11 @@ Resources:
             install_gateway:
               cwd: '~'
               command: !Sub |
-                set -eox pipefail
-                curl -sL https://hoopartifacts.s3.amazonaws.com/release/hoop-dev-${AppVersion}.tar.gz -o hoop_${AppVersion}.tar.gz
+                set -eo pipefail
+                curl -sL https://hoopartifacts.s3.amazonaws.com/release/${AppVersion}/hoopgateway_${AppVersion}-Linux_amd64.tar.gz -o hoopgateway_${AppVersion}-Linux_amd64.tar.gz
+                # make sure the migration path doesn't have any files
                 rm -rf /opt/hoop/migrations
-                tar --extract --file hoop_${AppVersion}.tar.gz -C / --strip 1 && rm -f hoop_${AppVersion}.tar.gz
+                tar --extract --file hoopgateway_${AppVersion}-Linux_amd64.tar.gz -C / --strip 1 && rm -f hoopgateway_${AppVersion}-Linux_amd64.tar.gz
                 chown -R root: /opt/hoop
                 SECRET_JSON=$(aws secretsmanager get-secret-value \
                   --secret-id hoopdev/${AWS::StackName}/pgmaster \
@@ -685,6 +716,7 @@ Resources:
                   exit 1
                 fi
                 sed "s|MASTER_DB_USER|$PGUSER|g;s|MASTER_DB_PASSWORD|$PGPWD|g" -i /etc/hoopgateway.d/config
+                systemctl enable hoopgateway && systemctl start hoopgateway
         setup_system_agent:
           files:
             /opt/hoop/bin/run_system_agent.sh:
@@ -692,7 +724,7 @@ Resources:
               content: |
                 #!/bin/bash
                 SECRET_KEY=xagt-$(LC_ALL=C tr -dc A-Za-z0-9_ < /dev/urandom | head -c 43 | xargs)
-                set -eox pipefail
+                set -eo pipefail
                 SECRET_KEY_HASH=$(echo -n $SECRET_KEY | sha256sum |awk {'print $1'})
                 psql -v ON_ERROR_STOP=1 "$POSTGRES_DB_URI" <<EOF
                 BEGIN;
@@ -720,13 +752,14 @@ Resources:
 
                 [Install]
                 WantedBy=multi-user.target
-        # verify_instance_health:
-        #   commands:
-        #     ELBHealthCheck:
-        #       command: !Sub |
-        #         until [ "$state" == "\"InService\"" ];
-        #         do state=$(aws --region ${AWS::Region} elb describe-instance-health --load-balancer-name ${AppLB} --instances $(curl -s http://169.254.169.254/latest/meta-data/instance-id) --query InstanceStates[0].State); sleep 10;
-        #         done
+        verify_gateway_health:
+          commands:
+            verify_healthz:
+              command: |
+                until [ "$state" == "200" ]; do
+                  state=$(curl -s -o /dev/null -w '%{http_code}' localhost:8009/api/healthz);
+                  sleep 5;
+                done
           services:
             systemd:
               amazon-ssm-agent:
@@ -761,13 +794,12 @@ Resources:
         FromPort: 443
         ToPort: 443
         CidrIp: !Ref AppAccessLocation
+      Tags:
+      - Key: Name
+        Value: !Sub ${AWS::StackName}-lb-sg
 
   LaunchTemplateSecurityGroup:
     Type: AWS::EC2::SecurityGroup
-    Metadata:
-      guard:
-        SuppressedRules:
-          - INCOMING_SSH_DISABLED
     Properties:
       VpcId: !Ref VPC
       GroupDescription: Enable SSH access and HTTP/GRPC on the inbound port
@@ -775,13 +807,14 @@ Resources:
       - IpProtocol: tcp
         FromPort: 8009
         ToPort: 8009
-        # CidrIp: 0.0.0.0/0
         SourceSecurityGroupId: !Ref AppLBSecurityGroup
       - IpProtocol: tcp
         FromPort: 8010
         ToPort: 8010
-        # CidrIp: 0.0.0.0/0
         SourceSecurityGroupId: !Ref AppLBSecurityGroup
+      Tags:
+      - Key: Name
+        Value: !Sub ${AWS::StackName}-app-sg
 
   HoopDBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -793,11 +826,11 @@ Resources:
           FromPort: 5432
           ToPort: 5432
           SourceSecurityGroupId: !Ref LaunchTemplateSecurityGroup
+      Tags:
+      - Key: Name
+        Value: !Sub ${AWS::StackName}-appdb-sg
+
 Outputs:
   URL:
-    Description: DNS of the app
+    Description: Public Load Balancer DNS of the app
     Value: !Sub "${AppLB.DNSName}"
-
-  HoopDBEndpoint:
-    Description: "Connection endpoint for the database"
-    Value: !GetAtt HoopDB.Endpoint.Address
