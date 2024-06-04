@@ -41,7 +41,7 @@ package-gateway-bundle:
 	chmod 0755 ${DIST_FOLDER}/hoopgateway/opt/hoop/bin/postgrest && \
 	tar -xf ${DIST_FOLDER}/binaries/hoop_${VERSION}_Linux_amd64.tar.gz -C ${DIST_FOLDER}/hoopgateway/opt/hoop/bin/ && \
 	cp rootfs/app/migrations/*.up.sql ${DIST_FOLDER}/hoopgateway/opt/hoop/migrations/ && \
-	aws s3 cp s3://hoopartifacts/webapp/latest.tar.gz webapp-latest.tar.gz && \
+	curl -sL https://hoopartifacts.s3.amazonaws.com/webapp/latest.tar.gz -o webapp-latest.tar.gz && \
 	tar -xf webapp-latest.tar.gz -C ${DIST_FOLDER}/hoopgateway/opt/hoop/webapp --strip 2 && \
 	tar -czf ${DIST_FOLDER}/hoopgateway_${VERSION}-Linux_amd64.tar.gz -C ${DIST_FOLDER}/ hoopgateway
 
