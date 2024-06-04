@@ -44,15 +44,6 @@ Parameters:
     Description: '(REQUIRED) The certificate arn for the load balancer. Example: arn:aws:acm:<region>:<account-id>:certificate/<cert-id>'
     AllowedPattern: ^arn:aws:acm:.+
 
-  AppAccessLocation:
-    Type: String
-    Description: The IP address range that can access the Gateway (HTTP/gRPC)
-    Default: 0.0.0.0/0
-    MinLength: 9
-    MaxLength: 18
-    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
-    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
-
   # Hoop Configuration
   AppVersion:
     Type: String
@@ -70,11 +61,6 @@ Parameters:
     Type: String
     Description: |-
       (OPTIONAL) It defaults creating Cognito IDP. To use a custom, specify the configuration. Format: https://<idp-client-id>:<idp-client-secret>@<idp-host>?<options>
-
-  AppLogLevel:
-    Type: String
-    Description: The log level of the gateway
-    Default: info
 
   AppAdminUsernameRole:
     Type: String
@@ -596,7 +582,7 @@ Resources:
               amazon-ssm-agent \
               https://github.com/microsoft/go-sqlcmd/releases/download/v1.6.0/sqlcmd-1.6.0-1.el7.x86_64.rpm
             # force recreate
-            echo "${AppVersion} ${AppIDPURI} ${AppPublicDNS} ${AppLogLevel}" >/dev/null
+            echo "${AppVersion} ${AppIDPURI} ${AppPublicDNS}" >/dev/null
             cfn-init -v --stack ${AWS::StackId} --resource LaunchTemplate --region ${AWS::Region}
             cfn-signal -e $? --stack ${AWS::StackId} --resource GatewayServerGroup --region ${AWS::Region}
     Metadata:
@@ -676,7 +662,7 @@ Resources:
                   PLUGIN_INDEX_PATH=/opt/hoop/sessions/indexes
                   STATIC_UI_PATH=/opt/hoop/webapp/public
                   MIGRATION_PATH_FILES=/opt/hoop/migrations
-                  LOG_LEVEL=${AppLogLevel}
+                  LOG_LEVEL=info
                   LOG_ENCODING=json
                   API_URL=https://${AppPublicDNS}
                   GRPC_URL=https://${AppPublicDNS}:8443
@@ -690,7 +676,7 @@ Resources:
                   PLUGIN_INDEX_PATH=/opt/hoop/sessions/indexes
                   STATIC_UI_PATH=/opt/hoop/webapp/public
                   MIGRATION_PATH_FILES=/opt/hoop/migrations
-                  LOG_LEVEL=${AppLogLevel}
+                  LOG_LEVEL=info
                   LOG_ENCODING=json
                   API_URL=https://${AppPublicDNS}
                   GRPC_URL=https://${AppPublicDNS}:8443
@@ -795,11 +781,11 @@ Resources:
       - IpProtocol: tcp
         FromPort: 8443
         ToPort: 8443
-        CidrIp: !Ref AppAccessLocation
+        CidrIp: '0.0.0.0/0'
       - IpProtocol: tcp
         FromPort: 443
         ToPort: 443
-        CidrIp: !Ref AppAccessLocation
+        CidrIp: '0.0.0.0/0'
       Tags:
       - Key: Name
         Value: !Sub ${AWS::StackName}-lb-sg
