@@ -626,7 +626,13 @@ Resources:
                 echo "attaching volume ${GatewayVMVol}"
                 DEVICE=/dev/xvdbc
                 aws ec2 attach-volume --volume-id ${GatewayVMVol} --instance-id $INSTANCE_ID --device $DEVICE
+                until [[ $VOL_STATUS == '"in-use"' ]]; do
+                  VOL_STATUS=$(aws ec2 describe-volumes --volume-ids ${GatewayVMVol} --query 'Volumes[0].State')
+                  echo "Volume not attached yet, waiting 5 seconds ..."
+                  sleep 5
+                done
 
+                echo "Volume ${GatewayVMVol} is ready for use"
                 OUTPUT=$(file -sL $DEVICE)
                 if [[ $OUTPUT == "$DEVICE: data" ]]; then
                   mkfs -t xfs $DEVICE && \
