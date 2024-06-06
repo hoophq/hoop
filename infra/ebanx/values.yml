@@ -60,5 +60,5 @@ resources:
       cpu: 2048m
       memory: 2048Mi
     requests:
-      cpu: 1024m
+      cpu: 256m
       memory: 2048Mi
