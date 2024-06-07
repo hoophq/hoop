@@ -47,6 +47,7 @@ type Options struct {
 	SessionID      string
 	ConnectionName string
 	BearerToken    string
+	Origin         string
 	UserAgent      string
 }
 
@@ -88,6 +89,9 @@ func New(opts *Options) (*clientExec, error) {
 	if opts.SessionID == "" {
 		opts.SessionID = uuid.NewString()
 	}
+	if opts.Origin == "" {
+		opts.Origin = pb.ConnectionOriginClientAPI
+	}
 
 	folderName := fmt.Sprintf(walFolderTmpl, walLogPath, opts.OrgID, opts.SessionID)
 	wlog, err := wal.Open(folderName, wal.DefaultOptions)
@@ -103,7 +107,7 @@ func New(opts *Options) (*clientExec, error) {
 		opts.BearerToken,
 		userAgent,
 		grpc.WithOption(grpc.OptionConnectionName, opts.ConnectionName),
-		grpc.WithOption("origin", pb.ConnectionOriginClientAPI),
+		grpc.WithOption("origin", opts.Origin),
 		grpc.WithOption("verb", pb.ClientVerbExec),
 		grpc.WithOption("session-id", opts.SessionID),
 	)

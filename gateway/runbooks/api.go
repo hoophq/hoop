@@ -198,6 +198,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 		ConnectionName: connectionName,
 		BearerToken:    getAccessToken(c),
 		UserAgent:      userAgent,
+		Origin:         proto.ConnectionOriginClientAPIRunbooks,
 	})
 	if err != nil {
 		log.Error(err)
