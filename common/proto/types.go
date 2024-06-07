@@ -43,6 +43,7 @@ type (
 		CmdList        []string
 		ClientArgs     []string
 		ClientVerb     string
+		ClientOrigin   string
 		DLPInfoTypes   []string
 		PluginHookList []map[string]any
 	}

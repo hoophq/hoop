@@ -129,7 +129,8 @@ func (s *ProxyStream) Save() (err error) {
 	sessionScript := ""
 	sessionLabels := map[string]string{}
 	var sessionMetadata map[string]any
-	if s.pluginCtx.ClientOrigin == pb.ConnectionOriginClientAPI {
+	if s.pluginCtx.ClientOrigin == pb.ConnectionOriginClientAPI ||
+		s.pluginCtx.ClientOrigin == pb.ConnectionOriginClientAPIRunbooks {
 		// TODO: refactor to use pgrest functions
 		session, err := sessionstorage.FindOne(s.pluginCtx, s.pluginCtx.SID)
 		if err != nil {

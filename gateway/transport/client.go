@@ -64,11 +64,11 @@ func (s *Server) subscribeClient(stream *streamclient.ProxyStream) (err error) {
 		log.With("connection", pctx.ConnectionName).Error(err)
 		return err
 	}
-	// The client api must keep the stream open to be able
+	// The webapp client must keep the stream open to be able
 	// to process packets when the grpc client disconnects.
 	// The stream will be closed when receiving a SessionClose packet
 	// from the agent or when the stream process manager closes it.
-	if clientOrigin != pb.ConnectionOriginClientAPI {
+	if clientOrigin == pb.ConnectionOriginClient {
 		// defer inside a function will bind any returned error
 		defer func() { stream.Close(err) }()
 	}
@@ -279,6 +279,7 @@ func (s *Server) addConnectionParams(clientArgs, infoTypes []string, pctx plugin
 		CmdList:        pctx.ConnectionCommand,
 		ClientArgs:     clientArgs,
 		ClientVerb:     pctx.ClientVerb,
+		ClientOrigin:   pctx.ClientOrigin,
 		DLPInfoTypes:   infoTypes,
 		PluginHookList: pluginHookList,
 	})
