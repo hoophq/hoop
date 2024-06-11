@@ -25,7 +25,7 @@ const (
 	OptionStartDate  OptionKey = "start_date"
 	OptionEndDate    OptionKey = "end_date"
 
-	GroupByConnection string = "connection"
+	GroupByConnection string = "connection_name"
 	GroupByID         string = "id"
 	GroupByUser       string = "user_email"
 	GroupByType       string = "connection_type"
