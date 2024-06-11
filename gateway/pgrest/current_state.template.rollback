@@ -12,6 +12,7 @@ function groups(users)
 function update_connection(json)
 function update_serviceaccounts(uuid,uuid,text,text,private.enum_service_account_status,character varying[])
 function update_users(json)
+function session_report(json)
 
 view agents
 view audit

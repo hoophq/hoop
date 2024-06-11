@@ -20,6 +20,7 @@ import (
 	apiorgs "github.com/runopsio/hoop/gateway/api/orgs"
 	apiplugins "github.com/runopsio/hoop/gateway/api/plugins"
 	apiproxymanager "github.com/runopsio/hoop/gateway/api/proxymanager"
+	apireports "github.com/runopsio/hoop/gateway/api/reports"
 	reviewapi "github.com/runopsio/hoop/gateway/api/review"
 	apiserverinfo "github.com/runopsio/hoop/gateway/api/serverinfo"
 	serviceaccountapi "github.com/runopsio/hoop/gateway/api/serviceaccount"
@@ -304,6 +305,12 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest(analytics.EventApiExecReview),
 		sessionapi.RunReviewedExec)
+
+	route.GET("/reports/sessions",
+		AdminOnlyAccessRole,
+		api.Authenticate,
+		api.TrackRequest(analytics.EventApiExecReview),
+		apireports.SessionReport)
 
 	route.POST("/plugins/indexer/sessions/search",
 		api.Authenticate,

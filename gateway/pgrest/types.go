@@ -147,6 +147,7 @@ type Session struct {
 	BlobInput      *Blob             `json:"blob_input"`
 	BlobStream     *Blob             `json:"blob_stream"`
 	Metadata       map[string]any    `json:"metadata"`
+	Metrics        map[string]any    `json:"metrics"`
 	// TODO: convert to time.Time
 	CreatedAt string  `json:"created_at"`
 	EndedAt   *string `json:"ended_at"`
@@ -156,6 +157,19 @@ type SessionList struct {
 	Total       int64     `json:"total"`
 	HasNextPage bool      `json:"has_next_page"`
 	Items       []Session `json:"data"`
+}
+
+type SessionReport struct {
+	Items                 []SessionReportItem `json:"items"`
+	TotalRedactCount      int64               `json:"total_redact_count"`
+	TotalTransformedBytes int64               `json:"total_transformed_bytes"`
+}
+
+type SessionReportItem struct {
+	ResourceName     string `json:"resource"`
+	InfoType         string `json:"info_type"`
+	RedactTotal      int64  `json:"redact_total"`
+	TransformedBytes int64  `json:"transformed_bytes"`
 }
 
 type ServiceAccount struct {

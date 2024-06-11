@@ -192,26 +192,26 @@ type SessionList struct {
 }
 
 type Session struct {
-	ID          string             `json:"id"           edn:"xt/id"`
-	OrgID       string             `json:"org_id"       edn:"session/org-id"`
-	Script      SessionScript      `json:"script"       edn:"session/script"`
-	Labels      SessionLabels      `json:"labels"       edn:"session/labels"`
-	Metadata    map[string]any     `json:"metadata"     edn:"session/metadata"`
-	UserEmail   string             `json:"user"         edn:"session/user"`
-	UserID      string             `json:"user_id"      edn:"session/user-id"`
-	UserName    string             `json:"user_name"    edn:"session/user-name"`
-	Type        string             `json:"type"         edn:"session/type"`
-	Connection  string             `json:"connection"   edn:"session/connection"`
-	Review      *ReviewJSON        `json:"review"       edn:"session/review"`
-	Verb        string             `json:"verb"         edn:"session/verb"`
-	Status      string             `json:"status"       edn:"session/status"`
-	DlpCount    int64              `json:"dlp_count"    edn:"session/dlp-count"`
-	EventStream SessionEventStream `json:"event_stream" edn:"session/event-stream"`
+	ID          string             `json:"id"`
+	OrgID       string             `json:"org_id"`
+	Script      SessionScript      `json:"script"`
+	Labels      SessionLabels      `json:"labels"`
+	Metadata    map[string]any     `json:"metadata"`
+	Metrics     map[string]any     `json:"metrics"`
+	UserEmail   string             `json:"user"`
+	UserID      string             `json:"user_id"`
+	UserName    string             `json:"user_name"`
+	Type        string             `json:"type"`
+	Connection  string             `json:"connection"`
+	Review      *ReviewJSON        `json:"review"`
+	Verb        string             `json:"verb"`
+	Status      string             `json:"status"`
+	EventStream SessionEventStream `json:"event_stream"`
 	// Must NOT index streams (all top keys are indexed in xtdb)
-	NonIndexedStream SessionNonIndexedEventStreamList `json:"-"          edn:"session/xtdb-stream"`
-	EventSize        int64                            `json:"event_size" edn:"session/event-size"`
-	StartSession     time.Time                        `json:"start_date" edn:"session/start-date"`
-	EndSession       *time.Time                       `json:"end_date"   edn:"session/end-date"`
+	NonIndexedStream SessionNonIndexedEventStreamList `json:"-"`
+	EventSize        int64                            `json:"event_size"`
+	StartSession     time.Time                        `json:"start_date"`
+	EndSession       *time.Time                       `json:"end_date"`
 }
 
 type User struct {

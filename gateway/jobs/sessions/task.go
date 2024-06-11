@@ -90,23 +90,23 @@ func ProcessWalSessions(auditPath string, _ gocron.Job) {
 		labels["truncated"] = fmt.Sprintf("%v", ev.truncated)
 		labels["commit-error"] = fmt.Sprintf("%v", ev.commitError != "")
 		err = pgsession.New().Upsert(ctx, types.Session{
-			ID:               wh.SessionID,
-			OrgID:            wh.OrgID,
-			UserEmail:        wh.UserEmail,
-			UserID:           wh.UserID,
-			UserName:         wh.UserName,
-			Type:             wh.ConnectionType,
-			Connection:       wh.ConnectionName,
-			Verb:             wh.Verb,
-			Status:           types.SessionStatusDone,
-			Script:           inputScript,
-			Labels:           labels,
-			Metadata:         metadata,
+			ID:         wh.SessionID,
+			OrgID:      wh.OrgID,
+			UserEmail:  wh.UserEmail,
+			UserID:     wh.UserID,
+			UserName:   wh.UserName,
+			Type:       wh.ConnectionType,
+			Connection: wh.ConnectionName,
+			Verb:       wh.Verb,
+			Status:     types.SessionStatusDone,
+			Script:     inputScript,
+			Labels:     labels,
+			Metadata:   metadata,
+			// TODO: add metrics
 			NonIndexedStream: ev.nonIndexedEvents,
 			EventSize:        ev.size,
 			StartSession:     *wh.StartDate,
 			EndSession:       &endDate,
-			DlpCount:         ev.redactCount,
 		})
 
 		commitErrorMsg := ev.commitError

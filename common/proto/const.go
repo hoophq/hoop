@@ -12,7 +12,7 @@ const (
 	SpecConnectionName            string = "gateway.connection_name"
 	SpecConnectionType            string = "gateway.connection_type"
 	SpecPluginDcmDataKey          string = "plugin.dcm_data"
-	SpecDLPTransformationSummary  string = "dlp.transformation_summary"
+	SpecDLPTransformationSummary  string = "dlp.transformation_summary" // Deprecated: see spectypes.DataMaskingInfoKey
 	SpecClientConnectionID        string = "client.connection_id"
 	SpecClientExitCodeKey         string = "client.exit_code"
 	SpecClientRequestPort         string = "client.request_port"

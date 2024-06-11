@@ -12,6 +12,7 @@ import (
 	"github.com/hoophq/pluginhooks"
 	pgtypes "github.com/runopsio/hoop/common/pgtypes"
 	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/common/proto/spectypes"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
 )
@@ -75,12 +76,12 @@ func (s *streamWriter) Write(data []byte) (int, error) {
 	if s.dlpClient != nil && len(data) > 30 && len(s.dlpConfig.InfoTypes()) > 0 {
 		chunksBuffer := breakPayloadIntoChunks(bytes.NewBuffer(data), defaultMaxChunkSize)
 		redactedChunks := redactChunks(s.dlpClient, s.dlpConfig, chunksBuffer)
-		dataBuffer, tsList, err := joinChunks(redactedChunks)
+		dataBuffer, redactData, err := joinChunks(redactedChunks)
 		if err != nil {
 			return 0, fmt.Errorf("failed joining chunks, err=%v", err)
 		}
-		if tsEnc, _ := pb.GobEncode(tsList); tsEnc != nil {
-			p.Spec[pb.SpecDLPTransformationSummary] = tsEnc
+		if redactDataEnc, _ := redactData.Encode(); redactDataEnc != nil {
+			p.Spec[spectypes.DataMaskingInfoKey] = redactDataEnc
 		}
 		p.Payload = dataBuffer.Bytes()
 		if err := rpcOnSendFn(); err != nil {
@@ -106,30 +107,40 @@ func (c *client) DeidentifyContent(ctx context.Context, conf DeidentifyConfig, c
 	r, err := c.dlpClient.DeidentifyContent(ctx, req)
 	if err != nil {
 		return &Chunk{
-			index:                 chunkIndex,
-			transformationSummary: &pb.TransformationSummary{Index: chunkIndex, Err: err}}
+			index:                  chunkIndex,
+			transformationOverview: &spectypes.TransformationOverview{Err: err},
+		}
 	}
 
-	chunk := &Chunk{index: chunkIndex, transformationSummary: &pb.TransformationSummary{Index: chunkIndex}}
+	chunk := &Chunk{
+		index: chunkIndex,
+		transformationOverview: &spectypes.TransformationOverview{
+			TransformedBytes: r.GetOverview().TransformedBytes,
+			Summaries:        []spectypes.TransformationSummary{},
+		},
+	}
 	for _, s := range r.GetOverview().GetTransformationSummaries() {
-		for _, r := range s.Results {
-			result := []string{fmt.Sprintf("%v", r.Count), r.Code.String(), r.Details}
-			chunk.transformationSummary.SummaryResult = append(
-				chunk.transformationSummary.SummaryResult,
-				result)
+		ts := spectypes.TransformationSummary{
+			InfoType: s.InfoType.GetName(),
+			Field:    s.Field.GetName(),
+			Results:  []spectypes.SummaryResult{},
 		}
-		chunk.transformationSummary.Summary = append(chunk.transformationSummary.Summary,
-			s.InfoType.GetName(),
-			fmt.Sprintf("%v", s.TransformedBytes))
+		for _, r := range s.Results {
+			ts.Results = append(ts.Results, spectypes.SummaryResult{
+				Count:   r.Count,
+				Code:    r.Code.String(),
+				Details: r.Details})
+		}
+		chunk.transformationOverview.Summaries = append(chunk.transformationOverview.Summaries, ts)
 	}
 
 	responseTable := r.GetItem().GetTable()
 	if responseTable != nil {
 		dataRowsBuffer := EncodeToDataRow(responseTable)
 		return &Chunk{
-			index:                 chunkIndex,
-			transformationSummary: chunk.transformationSummary,
-			data:                  dataRowsBuffer}
+			index:                  chunkIndex,
+			transformationOverview: chunk.transformationOverview,
+			data:                   dataRowsBuffer}
 	}
 	chunk.data = bytes.NewBufferString(r.Item.GetValue())
 	return chunk
@@ -160,7 +171,7 @@ func redactChunks(client Client, conf DeidentifyConfig, chunksBuffer []*bytes.Bu
 			redactedChunk := client.DeidentifyContent(
 				ctx, conf, idx,
 				newBufferInputData(bytes.NewBuffer(chunkB.Bytes())))
-			if redactedChunk.transformationSummary.Err != nil {
+			if redactedChunk.transformationOverview.Err != nil {
 				redactedChunk.data = chunkB
 			}
 			chunkCh <- redactedChunk
@@ -180,18 +191,17 @@ func redactChunks(client Client, conf DeidentifyConfig, chunksBuffer []*bytes.Bu
 	return redactedChunks
 }
 
-// joinChunks will recompose the chunks into a unique buffer along with a list of
-// Transformations Summaries
-func joinChunks(chunks []*Chunk) (*bytes.Buffer, []*pb.TransformationSummary, error) {
-	var tsList []*pb.TransformationSummary
+func joinChunks(chunks []*Chunk) (*bytes.Buffer, *spectypes.DataMaskingInfo, error) {
+	obj := spectypes.DataMaskingInfo{Items: []*spectypes.TransformationOverview{}}
+	// var items []*spectypes.TransformationOverview
 	res := bytes.NewBuffer([]byte{})
 	for _, c := range chunks {
 		if _, err := res.Write(c.data.Bytes()); err != nil {
 			return nil, nil, fmt.Errorf("[dlp] failed writing chunk (%v) to buffer, err=%v", c.index, err)
 		}
-		tsList = append(tsList, c.transformationSummary)
+		obj.Items = append(obj.Items, c.transformationOverview)
 	}
-	return res, tsList, nil
+	return res, &obj, nil
 }
 
 func breakPayloadIntoChunks(payload *bytes.Buffer, maxChunkSize int) []*bytes.Buffer {

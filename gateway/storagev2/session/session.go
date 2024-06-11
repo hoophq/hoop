@@ -47,7 +47,7 @@ func List(ctx *storagev2.Context, opts ...*types.SessionOption) (*types.SessionL
 		HasNextPage: sl.HasNextPage,
 	}
 	for _, s := range sl.Items {
-		_, eventSize := s.GetBlobStream()
+		// _, eventSize := s.GetBlobStream()
 		sessionList.Items = append(sessionList.Items, types.Session{
 			ID:               s.ID,
 			OrgID:            s.OrgID,
@@ -61,10 +61,8 @@ func List(ctx *storagev2.Context, opts ...*types.SessionOption) (*types.SessionL
 			Connection:       s.Connection,
 			Verb:             s.Verb,
 			Status:           s.Status,
-			DlpCount:         s.GetRedactCount(),
 			EventStream:      nil,
 			NonIndexedStream: nil,
-			EventSize:        eventSize,
 			StartSession:     s.GetCreatedAt(),
 			EndSession:       s.GetEndedAt(),
 		})

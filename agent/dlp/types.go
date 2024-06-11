@@ -7,6 +7,7 @@ import (
 	dlp "cloud.google.com/go/dlp/apiv2"
 	"cloud.google.com/go/dlp/apiv2/dlppb"
 	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/common/proto/spectypes"
 )
 
 const (
@@ -34,9 +35,9 @@ type (
 	}
 
 	Chunk struct {
-		index                 int
-		transformationSummary *pb.TransformationSummary
-		data                  *bytes.Buffer
+		index                  int
+		transformationOverview *spectypes.TransformationOverview
+		data                   *bytes.Buffer
 	}
 	client struct {
 		dlpClient *dlp.Client
@@ -124,8 +125,8 @@ func NewDeidentifyConfig(maskChar string, numberToMask int, projectID string, in
 }
 func NewChunk(data *bytes.Buffer) *Chunk { return &Chunk{data: data} }
 func (c *Chunk) Error() error {
-	if c.transformationSummary != nil {
-		return c.transformationSummary.Err
+	if c.transformationOverview != nil {
+		return c.transformationOverview.Err
 	}
 	return nil
 }
@@ -134,11 +135,14 @@ func (c *Chunk) SetIndex(chunkIdx int) *Chunk {
 	return c
 }
 func (c *Chunk) SetError(err error) *Chunk {
-	if c.transformationSummary != nil {
-		c.transformationSummary.Err = err
+	if c.transformationOverview != nil {
+		c.transformationOverview.Err = err
 		return c
 	}
-	c.transformationSummary = &pb.TransformationSummary{Err: err}
+	c.transformationOverview = &spectypes.TransformationOverview{Err: err}
 	return c
 }
-func (c *Chunk) TransformationSummary() *pb.TransformationSummary { return c.transformationSummary }
+
+func (c *Chunk) DataMaskingInfo() *spectypes.DataMaskingInfo {
+	return &spectypes.DataMaskingInfo{Items: []*spectypes.TransformationOverview{c.transformationOverview}}
+}

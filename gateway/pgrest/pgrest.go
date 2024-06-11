@@ -213,7 +213,6 @@ func (r *Response) DecodeInto(obj any) error {
 	if err := r.Error(); err != nil {
 		return err
 	}
-	// fmt.Println("DATA->>", string(r.data))
 	if len(r.data) == 0 || bytes.Equal(r.data, []byte(`[]`)) {
 		return ErrNotFound
 	}
