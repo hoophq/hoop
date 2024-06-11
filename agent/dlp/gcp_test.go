@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/common/proto/spectypes"
 )
 
 type fakeClient struct {
@@ -14,7 +14,7 @@ type fakeClient struct {
 }
 
 func (c *fakeClient) DeidentifyContent(ctx context.Context, conf DeidentifyConfig, chunkIdx int, data InputData) *Chunk {
-	chunk := &Chunk{index: chunkIdx, transformationSummary: &pb.TransformationSummary{}}
+	chunk := &Chunk{index: chunkIdx, transformationOverview: &spectypes.TransformationOverview{}}
 	input := data.(*inputData)
 	if input.inputTable != nil {
 		chunk.data = EncodeToDataRow(input.inputTable)
@@ -23,7 +23,7 @@ func (c *fakeClient) DeidentifyContent(ctx context.Context, conf DeidentifyConfi
 		chunk.data = input.inputBuffer
 	}
 	if c.err != nil {
-		chunk.transformationSummary.Err = c.err
+		chunk.transformationOverview.Err = c.err
 	}
 	return chunk
 }
@@ -63,8 +63,8 @@ func TestRedactChunks(t *testing.T) {
 			}
 			if tt.client.err != nil {
 				for _, c := range chunks {
-					if c.transformationSummary.Err != tt.client.err {
-						t.Errorf("should return error, got=%v, expected=%v", c.transformationSummary.Err, tt.client.err)
+					if c.transformationOverview.Err != tt.client.err {
+						t.Errorf("should return error, got=%v, expected=%v", c.transformationOverview.Err, tt.client.err)
 					}
 				}
 			}

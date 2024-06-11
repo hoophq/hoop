@@ -96,7 +96,6 @@ func Post(c *gin.Context) {
 		Connection:   conn.Name,
 		Verb:         pb.ClientVerbExec,
 		Status:       types.SessionStatusOpen,
-		DlpCount:     0,
 		StartSession: time.Now().UTC(),
 	}
 	if err := pgsession.New().Upsert(ctx, newSession); err != nil {
@@ -245,6 +244,7 @@ func Get(c *gin.Context) {
 		return
 	}
 
+	// TODO: refactor to use the postgrest direct function
 	if review != nil {
 		session.Review = &types.ReviewJSON{
 			Id:               review.Id,
@@ -274,6 +274,7 @@ func Get(c *gin.Context) {
 		"script":       session.Script,
 		"labels":       session.Labels,
 		"metadata":     session.Metadata,
+		"metrics":      session.Metrics,
 		"user":         session.UserEmail,
 		"user_id":      session.UserID,
 		"user_name":    session.UserName,
@@ -282,7 +283,6 @@ func Get(c *gin.Context) {
 		"review":       session.Review,
 		"verb":         session.Verb,
 		"status":       session.Status,
-		"dlp_count":    session.DlpCount,
 		"event_stream": session.EventStream,
 		"event_size":   session.EventSize,
 		"start_date":   session.StartSession,

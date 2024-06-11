@@ -14,6 +14,7 @@ require (
 	github.com/honeycombio/otel-config-go v1.12.1
 	github.com/hoophq/pluginhooks v0.0.6
 	github.com/spf13/cobra v1.6.1
+	github.com/vmihailenco/msgpack/v5 v5.3.5
 	go.mongodb.org/mongo-driver v1.15.0
 	go.uber.org/zap v1.24.0
 	golang.org/x/oauth2 v0.12.0
@@ -72,6 +73,7 @@ require (
 	github.com/shoenig/go-m1cpu v0.1.6 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
+	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.3 // indirect
 	go.opentelemetry.io/contrib/instrumentation/host v0.44.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/runtime v0.44.0 // indirect

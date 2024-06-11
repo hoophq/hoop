@@ -112,8 +112,8 @@ func (h *dlpHandler) redactAndWrite() {
 	}
 
 	switch v := h.clientW.(type) {
-	case proto.WriterWithSummary:
-		_, err = v.WriteWithSummary(chunkData.Bytes(), redactedChunk.TransformationSummary())
+	case proto.WriterWithDataMaskingInfo:
+		_, err = v.WriterWithDataMaskingInfo(chunkData.Bytes(), redactedChunk.DataMaskingInfo())
 	default:
 		_, err = v.Write(chunkData.Bytes())
 	}

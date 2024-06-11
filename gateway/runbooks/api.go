@@ -219,7 +219,6 @@ func (h *Handler) RunExec(c *gin.Context) {
 		Connection:   connectionName,
 		Verb:         proto.ClientVerbExec,
 		Status:       types.SessionStatusOpen,
-		DlpCount:     0,
 		StartSession: time.Now().UTC(),
 	}
 

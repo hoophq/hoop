@@ -72,13 +72,13 @@ func (s *session) Upsert(ctx pgrest.OrgContext, sess types.Session) (err error) 
 		if sess.Metadata == nil {
 			sess.Metadata = map[string]any{}
 		}
-		sess.Metadata["redact_count"] = sess.DlpCount
 		err = pgrest.New("/sessions?org_id=eq.%s&id=eq.%s", sess.OrgID, sess.ID).Patch(map[string]any{
 			"labels":         sess.Labels,
 			"blob_stream_id": blobStreamID,
 			"status":         sess.Status,
 			"ended_at":       sess.EndSession.Format(time.RFC3339Nano),
 			"metadata":       sess.Metadata,
+			"metrics":        sess.Metrics,
 		}).Error()
 	default:
 		return fmt.Errorf("unknown session status %q", sess.Status)
@@ -127,6 +127,7 @@ func (s *session) FetchOne(ctx pgrest.OrgContext, sessionID string) (*types.Sess
 		Script:           types.SessionScript{"data": sess.GetBlobInput()},
 		Labels:           sess.Labels,
 		Metadata:         sess.Metadata,
+		Metrics:          sess.Metrics,
 		UserEmail:        sess.UserEmail,
 		UserID:           sess.UserID,
 		UserName:         sess.UserName,
@@ -134,7 +135,6 @@ func (s *session) FetchOne(ctx pgrest.OrgContext, sessionID string) (*types.Sess
 		Connection:       sess.Connection,
 		Verb:             sess.Verb,
 		Status:           sess.Status,
-		DlpCount:         sess.GetRedactCount(),
 		EventStream:      nil,
 		NonIndexedStream: types.SessionNonIndexedEventStreamList{"stream": blobStream},
 		EventSize:        blobStreamSize,

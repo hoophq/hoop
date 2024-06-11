@@ -10,9 +10,9 @@ import (
 
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/common/proto/spectypes"
 	pgsession "github.com/runopsio/hoop/gateway/pgrest/session"
-	"github.com/runopsio/hoop/gateway/session/eventlog"
-	eventlogv0 "github.com/runopsio/hoop/gateway/session/eventlog/v0"
+	eventlogv1 "github.com/runopsio/hoop/gateway/session/eventlog/v1"
 	sessionwal "github.com/runopsio/hoop/gateway/session/wal"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	sessionstorage "github.com/runopsio/hoop/gateway/storagev2/session"
@@ -21,7 +21,10 @@ import (
 )
 
 // <audit-path>/<orgid>-<sessionid>-wal
-const walFolderTmpl string = `%s/%s-%s-wal`
+const (
+	walFolderTmpl    string = `%s/%s-%s-wal`
+	eventLogTypeName string = "_footer_error"
+)
 
 type walLogRWMutex struct {
 	log        *sessionwal.WalLog
@@ -37,18 +40,19 @@ func (p *auditPlugin) writeOnConnect(pctx plugintypes.Context) error {
 	}
 
 	walog, err := sessionwal.OpenWriteHeader(walFolder, &sessionwal.Header{
-		OrgID:          pctx.OrgID,
-		SessionID:      pctx.SID,
-		UserID:         pctx.UserID,
-		UserName:       pctx.UserName,
-		UserEmail:      pctx.UserEmail,
-		ConnectionName: pctx.ConnectionName,
-		ConnectionType: pctx.ConnectionType,
-		Verb:           pctx.ClientVerb,
-		Script:         pctx.ParamsData.GetString("script"),
-		Labels:         pctx.ParamsData.GetString("labels"),
-		Status:         pctx.ParamsData.GetString("status"),
-		StartDate:      pctx.ParamsData.GetTime("start_date"),
+		EventLogVersion: eventlogv1.Version,
+		OrgID:           pctx.OrgID,
+		SessionID:       pctx.SID,
+		UserID:          pctx.UserID,
+		UserName:        pctx.UserName,
+		UserEmail:       pctx.UserEmail,
+		ConnectionName:  pctx.ConnectionName,
+		ConnectionType:  pctx.ConnectionType,
+		Verb:            pctx.ClientVerb,
+		Script:          pctx.ParamsData.GetString("script"),
+		Labels:          pctx.ParamsData.GetString("labels"),
+		Status:          pctx.ParamsData.GetString("status"),
+		StartDate:       pctx.ParamsData.GetTime("start_date"),
 	})
 	if err != nil {
 		return fmt.Errorf("failed opening wal file, err=%v", err)
@@ -57,7 +61,7 @@ func (p *auditPlugin) writeOnConnect(pctx plugintypes.Context) error {
 	return nil
 }
 
-func (p *auditPlugin) writeOnReceive(sessionID string, eventType eventlogv0.EventType, dlpCount int64, event []byte) error {
+func (p *auditPlugin) writeOnReceive(sessionID string, eventType eventlogv1.EventType, event []byte, metadata map[string][]byte) error {
 	walLogObj := p.walSessionStore.Get(sessionID)
 	walogm, ok := walLogObj.(*walLogRWMutex)
 	if !ok {
@@ -65,11 +69,7 @@ func (p *auditPlugin) writeOnReceive(sessionID string, eventType eventlogv0.Even
 	}
 	walogm.mu.Lock()
 	defer walogm.mu.Unlock()
-	return walogm.log.Write(eventlogv0.New(
-		time.Now().UTC(),
-		eventType,
-		uint64(dlpCount),
-		event))
+	return walogm.log.Write(eventlogv1.New(time.Now().UTC(), eventType, event, metadata))
 }
 
 func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error {
@@ -83,7 +83,7 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error
 	// we could add an attribute to have the last message
 	// propagated as metadata instead inside the stream
 	if errMsg != nil && errMsg != io.EOF {
-		err := walogm.log.Write(eventlogv0.New(time.Now().UTC(), eventlogv0.ErrorType, 0, []byte(errMsg.Error())))
+		err := walogm.log.Write(eventlogv1.New(time.Now().UTC(), eventlogv1.ErrorType, []byte(errMsg.Error()), nil))
 		if err != nil {
 			log.With("sid", pctx.SID).Warnf("failed writing end error message, err=%v", err)
 		}
@@ -97,23 +97,55 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error
 			pctx.SID, wh.SessionID)
 	}
 	var eventStreamList []types.SessionEventStream
-	eventSize := int64(0)
-	redactCount := int64(0)
+	metrics := newSessionMetric()
 	truncated, err := walogm.log.ReadFull(func(data []byte) error {
-		ev, err := eventlog.DecodeLatest(data)
+		ev, err := eventlogv1.Decode(data)
 		if err != nil {
 			return err
 		}
-		eventSize += int64(len(ev.Data))
-		redactCount += int64(ev.RedactCount)
+		metrics.EventSize += int64(len(ev.Payload))
+		if infoEnc := ev.GetMetadata(spectypes.DataMaskingInfoKey); infoEnc != nil {
+			dataMaskingInfo, err := spectypes.Decode(infoEnc)
+			if err != nil {
+				log.Warnf("failed decoding data masking info, reason=%v", err)
+				dataMaskingInfo = &spectypes.DataMaskingInfo{}
+			}
+			for _, item := range dataMaskingInfo.Items {
+				metrics.DataMasking.TransformedBytes += item.TransformedBytes
+				if item.Err != nil {
+					metrics.DataMasking.ErrCount++
+					continue
+				}
+
+				for _, ts := range item.Summaries {
+					var redactPerInfoType int64
+					for _, rs := range ts.Results {
+						switch rs.Code {
+						case "SUCCESS":
+							metrics.DataMasking.TotalRedactCount += int64(rs.Count)
+							redactPerInfoType += int64(rs.Count)
+						case "ERROR":
+							metrics.DataMasking.ErrCount++
+						}
+					}
+					if ts.InfoType == "" {
+						// ignore it, this should only happened
+						// for legacy transformation summary records
+						continue
+					}
+					metrics.addInfoType(ts.InfoType, redactPerInfoType)
+				}
+			}
+		}
+
 		// don't process empty event streams
-		if len(ev.Data) == 0 {
+		if len(ev.Payload) == 0 {
 			return nil
 		}
 
 		// truncate when event is greater than 5000 bytes for tcp type
 		// it avoids auditing blob content for TCP (files, images, etc)
-		eventStream := p.truncateTCPEventStream(ev.Data, wh.ConnectionType)
+		eventStream := p.truncateTCPEventStream(ev.Payload, wh.ConnectionType)
 		eventStreamList = append(eventStreamList, types.SessionEventStream{
 			ev.EventTime.Sub(*wh.StartDate).Seconds(),
 			string(ev.EventType),
@@ -135,6 +167,10 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error
 	if len(session.Labels) == 0 {
 		session.Labels = map[string]string{}
 	}
+	session.Metrics, err = metrics.toMap()
+	if err != nil {
+		log.Warnf("failed parsing session metrics to map, reason=%v", err)
+	}
 	session.Labels["processed-by"] = "plugin-audit"
 	session.Labels["truncated"] = fmt.Sprintf("%v", truncated)
 	err = pgsession.New().Upsert(storageContext, types.Session{
@@ -150,23 +186,18 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error
 		Script:           session.Script,
 		Labels:           session.Labels,
 		Metadata:         session.Metadata,
+		Metrics:          session.Metrics,
 		NonIndexedStream: types.SessionNonIndexedEventStreamList{"stream": eventStreamList},
-		EventSize:        eventSize,
+		EventSize:        metrics.EventSize,
 		StartSession:     *wh.StartDate,
 		EndSession:       &endDate,
-		DlpCount:         redactCount,
 	})
 
 	if err != nil {
-		if err := walogm.log.Write(&eventlogv0.EventLog{
-			CommitError:   err.Error(),
-			CommitEndDate: &endDate,
-		}); err != nil {
-			log.Warnf("failed writing wal footer, err=%v", err)
-		}
+		_ = walogm.log.Write(eventlogv1.NewCommitError(endDate, err.Error()))
 	} else {
 		if err := os.RemoveAll(walogm.folderName); err != nil {
-			log.Printf("failed removing wal file %q, err=%v", walogm.folderName, err)
+			log.Errorf("failed removing wal file %q, err=%v", walogm.folderName, err)
 		}
 	}
 	return err

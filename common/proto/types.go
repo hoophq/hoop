@@ -10,6 +10,7 @@ import (
 	reflect "reflect"
 
 	"github.com/hoophq/pluginhooks"
+	"github.com/runopsio/hoop/common/proto/spectypes"
 )
 
 type (
@@ -52,8 +53,8 @@ type (
 		ExecRPCOnRecv(*pluginhooks.Request) ([]byte, error)
 	}
 
-	WriterWithSummary interface {
-		WriteWithSummary(data []byte, ts *TransformationSummary) (int, error)
+	WriterWithDataMaskingInfo interface {
+		WriterWithDataMaskingInfo(data []byte, info *spectypes.DataMaskingInfo) (int, error)
 	}
 
 	TransformationSummary struct {
@@ -144,13 +145,13 @@ func (s *streamWriter) Write(data []byte) (int, error) {
 	return len(p.Payload), s.client.Send(p)
 }
 
-func (s *streamWriter) WriteWithSummary(data []byte, ts *TransformationSummary) (int, error) {
+func (s *streamWriter) WriterWithDataMaskingInfo(data []byte, info *spectypes.DataMaskingInfo) (int, error) {
 	if s.client == nil {
 		return 0, fmt.Errorf("stream writer client is empty")
 	}
 	p := &Packet{Spec: s.packetSpec, Type: s.packetType.String(), Payload: data}
-	if tsEnc, _ := GobEncode([]*TransformationSummary{ts}); tsEnc != nil {
-		p.Spec[SpecDLPTransformationSummary] = tsEnc
+	if infoEnc, _ := info.Encode(); infoEnc != nil {
+		p.Spec[spectypes.DataMaskingInfoKey] = infoEnc
 	}
 	return len(p.Payload), s.client.Send(p)
 }

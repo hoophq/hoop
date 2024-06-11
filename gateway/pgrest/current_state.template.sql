@@ -199,7 +199,7 @@ $$ stable language sql;
 CREATE VIEW sessions AS
     SELECT
         id, org_id, labels, connection, connection_type, verb, user_id, user_name, user_email, status,
-        blob_input_id, blob_stream_id, metadata, created_at, ended_at
+        blob_input_id, blob_stream_id, metadata, metrics, created_at, ended_at
     FROM private.sessions;
 
 CREATE VIEW blobs AS
@@ -212,6 +212,42 @@ $$ stable language sql;
 CREATE FUNCTION blob_stream(sessions) RETURNS SETOF blobs ROWS 1 AS $$
   SELECT * FROM blobs WHERE id = $1.blob_stream_id
 $$ stable language sql;
+
+-- SESSION REPORTS
+--
+
+CREATE FUNCTION session_report(p json) RETURNS TABLE (resource text, info_type text, redact_total int, transformed_bytes int) AS $$
+    WITH info_types AS (
+        SELECT id, info_type, redact_total::numeric
+        FROM
+            sessions,
+            jsonb_each_text(metrics->'data_masking'->'info_types') AS kv(info_type, redact_total)
+        WHERE org_id::TEXT = p->>'org_id'
+        AND metrics is not null
+    ), metrics AS (
+        SELECT
+            CASE p->>'group_by'
+                WHEN 'connection_name' THEN s.connection
+                WHEN 'id' THEN s.id::text
+                WHEN 'user_email' THEN s.user_email
+                WHEN 'connection_type' THEN s.connection_type::text
+            END AS resource,
+            i.info_type,
+            SUM(i.redact_total) AS redact_total,
+            SUM((metrics->'data_masking'->'transformed_bytes')::INT) AS transformed_bytes
+        FROM sessions s
+        INNER JOIN info_types i ON s.id = i.id
+        WHERE s.org_id::TEXT = p->>'org_id'
+        AND metrics is not null
+        AND ended_at BETWEEN TO_TIMESTAMP(p->>'start_date', 'YYYY-MM-DD') AND TO_TIMESTAMP(p->>'end_date', 'YYYY-MM-DD')
+        AND CASE WHEN p->>'id' != '' THEN s.id::TEXT = p->>'id' ELSE true END
+        AND CASE WHEN p->>'connection_name' != '' THEN s.connection = p->>'connection_name' ELSE true END
+        AND CASE WHEN p->>'connection_type' != '' THEN s.connection_type::TEXT = p->>'connection_type'::TEXT ELSE true END
+        AND CASE WHEN p->>'verb' != '' THEN s.verb::TEXT = p->>'verb' ELSE true END
+        AND CASE WHEN p->>'user_email' != '' THEN s.user_email = p->>'user_email' ELSE true END
+        GROUP BY 1, 2
+    ) SELECT * FROM metrics
+$$ LANGUAGE SQL;
 
 -- REVIEWS
 --

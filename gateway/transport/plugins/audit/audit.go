@@ -14,12 +14,12 @@ import (
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
+	"github.com/runopsio/hoop/common/proto/spectypes"
 	pgsession "github.com/runopsio/hoop/gateway/pgrest/session"
-	eventlogv0 "github.com/runopsio/hoop/gateway/session/eventlog/v0"
+	eventlogv1 "github.com/runopsio/hoop/gateway/session/eventlog/v1"
 	"github.com/runopsio/hoop/gateway/storagev2"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
-	"go.uber.org/zap"
 )
 
 var memorySessionStore = memory.New()
@@ -29,17 +29,10 @@ type (
 		walSessionStore memory.Store
 		started         bool
 		mu              sync.RWMutex
-		log             *zap.SugaredLogger
 	}
 )
 
-func New() *auditPlugin {
-	return &auditPlugin{
-		walSessionStore: memory.New(),
-		log:             log.With("plugin", "audit"),
-	}
-}
-
+func New() *auditPlugin             { return &auditPlugin{walSessionStore: memory.New()} }
 func (p *auditPlugin) Name() string { return plugintypes.PluginAuditName }
 func (p *auditPlugin) OnStartup(pctx plugintypes.Context) error {
 	if p.started {
@@ -54,7 +47,7 @@ func (p *auditPlugin) OnStartup(pctx plugintypes.Context) error {
 }
 func (p *auditPlugin) OnUpdate(_, _ *types.Plugin) error { return nil }
 func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
-	p.log.With("session", pctx.SID).Infof("processing on-connect")
+	log.With("sid", pctx.SID).Infof("processing on-connect")
 	if pctx.OrgID == "" || pctx.SID == "" {
 		return fmt.Errorf("failed processing audit plugin, missing org_id and session_id params")
 	}
@@ -80,10 +73,8 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 		Labels:           pctx.Labels,
 		Metadata:         pctx.Metadata,
 		NonIndexedStream: nil,
-		EventSize:        0,
 		StartSession:     startDate,
 		EndSession:       nil,
-		DlpCount:         0,
 	})
 	if err != nil {
 		return fmt.Errorf("failed persisting sessino to store, reason=%v", err)
@@ -94,11 +85,11 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 }
 
 func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {
-	redactCount := decodeDlpSummary(pkt)
+	eventMetadata := parseSpecAsEventMetadata(pkt)
 	switch pb.PacketType(pkt.GetType()) {
 	case pbclient.PGConnectionWrite, pbclient.MySQLConnectionWrite:
-		if redactCount > 0 {
-			return nil, p.writeOnReceive(pctx.SID, eventlogv0.OutputType, redactCount, nil)
+		if len(eventMetadata) > 0 {
+			return nil, p.writeOnReceive(pctx.SID, eventlogv1.OutputType, nil, eventMetadata)
 		}
 	case pbagent.PGConnectionWrite:
 		isSimpleQuery, queryBytes, err := pgtypes.SimpleQueryContent(pkt.Payload)
@@ -109,10 +100,10 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 			log.With("sid", pctx.SID).Errorf("failed parsing simple query data, err=%v", err)
 			return nil, fmt.Errorf("failed obtaining simple query data, reason=%v", err)
 		}
-		return nil, p.writeOnReceive(pctx.SID, eventlogv0.InputType, 0, queryBytes)
+		return nil, p.writeOnReceive(pctx.SID, eventlogv1.InputType, queryBytes, eventMetadata)
 	case pbagent.MySQLConnectionWrite:
 		if queryBytes := decodeMySQLCommandQuery(pkt.Payload); queryBytes != nil {
-			return nil, p.writeOnReceive(pctx.SID, eventlogv0.InputType, 0, queryBytes)
+			return nil, p.writeOnReceive(pctx.SID, eventlogv1.InputType, queryBytes, eventMetadata)
 		}
 	case pbagent.MSSQLConnectionWrite:
 		var mssqlPacketType mssqltypes.PacketType
@@ -126,7 +117,7 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 				return nil, err
 			}
 			if query != "" {
-				return nil, p.writeOnReceive(pctx.SID, eventlogv0.InputType, 0, []byte(query))
+				return nil, p.writeOnReceive(pctx.SID, eventlogv1.InputType, []byte(query), eventMetadata)
 			}
 		}
 	case pbagent.MongoDBConnectionWrite:
@@ -135,11 +126,11 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 			return nil, err
 		}
 		if decJSONPayload != nil {
-			return nil, p.writeOnReceive(pctx.SID, eventlogv0.InputType, redactCount, decJSONPayload)
+			return nil, p.writeOnReceive(pctx.SID, eventlogv1.InputType, decJSONPayload, eventMetadata)
 		}
 	case pbclient.WriteStdout,
 		pbclient.WriteStderr:
-		err := p.writeOnReceive(pctx.SID, eventlogv0.OutputType, redactCount, pkt.Payload)
+		err := p.writeOnReceive(pctx.SID, eventlogv1.OutputType, pkt.Payload, eventMetadata)
 		if err != nil {
 			log.Warnf("failed writing agent packet response, err=%v", err)
 		}
@@ -153,17 +144,17 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 	case pbagent.ExecWriteStdin,
 		pbagent.TerminalWriteStdin,
 		pbagent.TCPConnectionWrite:
-		return nil, p.writeOnReceive(pctx.SID, eventlogv0.InputType, redactCount, pkt.Payload)
+		return nil, p.writeOnReceive(pctx.SID, eventlogv1.InputType, pkt.Payload, eventMetadata)
 	}
 	return nil, nil
 }
 
 func (p *auditPlugin) OnDisconnect(pctx plugintypes.Context, errMsg error) error {
-	p.log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "agent", pctx.AgentName).
+	log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "agent", pctx.AgentName).
 		Debugf("processing disconnect")
 	switch pctx.ClientOrigin {
 	case pb.ConnectionOriginAgent:
-		p.log.With("agent", pctx.AgentName).Infof("agent shutdown, graceful closing session")
+		log.With("agent", pctx.AgentName).Infof("agent shutdown, graceful closing session")
 		for msid, objAgentID := range memorySessionStore.List() {
 			if pctx.AgentID != fmt.Sprintf("%v", objAgentID) {
 				continue
@@ -181,7 +172,7 @@ func (p *auditPlugin) closeSession(pctx plugintypes.Context, errMsg error) {
 	log.With("sid", pctx.SID).Infof("closing session, reason=%v", errMsg)
 	go func() {
 		if err := p.writeOnClose(pctx, errMsg); err != nil {
-			p.log.Warnf("session=%v - failed closing session: %v", pctx.SID, err)
+			log.Warnf("session=%v - failed closing session: %v", pctx.SID, err)
 			return
 		}
 		memorySessionStore.Del(pctx.SID)
@@ -190,25 +181,51 @@ func (p *auditPlugin) closeSession(pctx plugintypes.Context, errMsg error) {
 
 func (p *auditPlugin) OnShutdown() {}
 
-func decodeDlpSummary(pkt *pb.Packet) (counter int64) {
+func parseSpecAsEventMetadata(pkt *pb.Packet) map[string][]byte {
+	if dataMaskingInfo, ok := pkt.Spec[spectypes.DataMaskingInfoKey]; ok {
+		return map[string][]byte{spectypes.DataMaskingInfoKey: dataMaskingInfo}
+	}
 	tsEnc := pkt.Spec[pb.SpecDLPTransformationSummary]
 	if tsEnc == nil {
-		return 0
+		return nil
 	}
+	// keep compatibility with old clients
+	// in the future it'll be safe to remove this
 	var ts []*pb.TransformationSummary
 	if err := pb.GobDecodeInto(tsEnc, &ts); err != nil {
 		log.With("plugin", "audit").Debugf("failed decoding dlp transformation summary, err=%v", err)
-		return 0
+		return nil
 	}
+	if len(ts) == 0 {
+		return nil
+	}
+	overviewItems := []*spectypes.TransformationOverview{}
 	for _, t := range ts {
-		for _, s := range t.SummaryResult {
-			if len(s) > 0 {
-				countStr := s[0]
-				if n, err := strconv.Atoi(countStr); err == nil {
-					counter += int64(n)
-				}
-			}
+		overview := &spectypes.TransformationOverview{
+			Err:       t.Err,
+			Summaries: []spectypes.TransformationSummary{},
 		}
+		specTs := spectypes.TransformationSummary{Results: []spectypes.SummaryResult{}}
+		for _, s := range t.SummaryResult {
+			if len(s) != 3 {
+				continue
+			}
+			count, err := strconv.ParseInt(s[0], 10, 64)
+			if err != nil {
+				count = -1
+			}
+			specTs.Results = append(specTs.Results, spectypes.SummaryResult{
+				Count:   count,
+				Code:    s[1],
+				Details: s[2],
+			})
+		}
+		overview.Summaries = append(overview.Summaries, specTs)
+		overviewItems = append(overviewItems, overview)
 	}
-	return
+	infoEnc, _ := (&spectypes.DataMaskingInfo{Items: overviewItems}).Encode()
+	if len(infoEnc) > 0 {
+		return map[string][]byte{spectypes.DataMaskingInfoKey: infoEnc}
+	}
+	return nil
 }
