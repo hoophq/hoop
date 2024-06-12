@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/runopsio/hoop/client/cmd/styles"
 	clientconfig "github.com/runopsio/hoop/client/config"
@@ -43,11 +44,12 @@ var createCmd = &cobra.Command{
 			}
 		}
 
-		if _, err := grpc.ParseServerAddress(apiURLFlag); err != nil {
+		apiURL := strings.TrimSuffix(apiURLFlag, "/")
+		if _, err := grpc.ParseServerAddress(apiURL); err != nil {
 			styles.PrintErrorAndExit("--api-url value is not an http address")
 		}
 
-		filepath, err := clientconfig.NewConfigFile(apiURLFlag, grpcURLFlag, os.Getenv("HOOP_TOKEN"))
+		filepath, err := clientconfig.NewConfigFile(apiURL, grpcURLFlag, os.Getenv("HOOP_TOKEN"))
 		if err != nil {
 			styles.PrintErrorAndExit("failed creating configuration file, err=%v", err)
 		}

@@ -31,3 +31,4 @@ go.work.sum
 .env
 
 .control
+.DS_Store

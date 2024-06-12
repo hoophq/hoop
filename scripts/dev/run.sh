@@ -27,6 +27,7 @@ mkdir -p $HOME/.hoop/dev
 cp ./scripts/dev/Dockerfile $HOME/.hoop/dev/Dockerfile
 
 cp ./scripts/dev/entrypoint.sh $HOME/.hoop/dev/entrypoint.sh
+cp ./rootfs/usr/local/bin/mysql $HOME/.hoop/dev/mysql
 rm -rf $HOME/.hoop/dev/migrations && \
   cp -a ./rootfs/app/migrations $HOME/.hoop/dev/migrations
 
