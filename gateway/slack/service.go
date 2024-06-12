@@ -36,6 +36,8 @@ const (
 	sessionIDMetadataKey = "session_id"
 	EventKindOneTime     = "onetime"
 	EventKindJit         = "jit"
+	// it's usually 2000, keep a more safe number
+	maxLabelSize = 1800
 )
 
 func New(slackBotToken, slackAppToken, slackChannel, instanceID, apiURL string, callback EventCallback) (*SlackService, error) {
@@ -118,10 +120,14 @@ func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) error {
 		Text: title,
 	})
 
+	groupList := strings.Join(msg.UserGroups, ", ")
+	if len(groupList) > maxLabelSize {
+		groupList = groupList[:maxLabelSize] + " ..."
+	}
 	// name and groups metadata
 	metaSection1 := slack.NewSectionBlock(nil, []*slack.TextBlockObject{
 		{Type: slack.MarkdownType, Text: fmt.Sprintf("name\n*%s*", msg.Name)},
-		{Type: slack.MarkdownType, Text: fmt.Sprintf("groups\n*%s*", strings.Join(msg.UserGroups, ", "))},
+		{Type: slack.MarkdownType, Text: fmt.Sprintf("groups\n*%s*", groupList)},
 	}, nil)
 
 	// email, session time metadata
@@ -136,10 +142,14 @@ func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) error {
 		{Type: slack.MarkdownType, Text: fmt.Sprintf("type\n*%s*", msg.ConnectionType)},
 	}, nil)
 
+	script := msg.Script
+	if len(script) > maxLabelSize {
+		script = script[:maxLabelSize] + " ..."
+	}
 	// script at the maximum slack allowed size
 	scriptBlock := slack.NewSectionBlock(&slack.TextBlockObject{
 		Type: slack.MarkdownType,
-		Text: fmt.Sprintf("_script_\n```%s```", msg.Script),
+		Text: fmt.Sprintf("_script_\n```%s```", script),
 	}, nil, nil)
 	if msg.SessionTime != nil {
 		scriptBlock = slack.NewSectionBlock(&slack.TextBlockObject{Type: slack.PlainTextType, Text: "-"}, nil, nil)

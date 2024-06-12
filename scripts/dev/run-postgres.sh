@@ -22,7 +22,7 @@ docker run -p 5449:5432 -d --rm --name hoopdevpg \
     -e PGPASSWORD=$PGPASSWORD \
     -e PG_DATA=/var/lib/postgresql/data/pgdata \
     -v $HOME/.hoop/dev/pgdata:/var/lib/postgresql/data/ \
-    postgres:14
+    postgres:16
 
 
 until docker exec -it hoopdevpg psql -h 0 --quiet -c 'select now()' -o /dev/null 1> /dev/null

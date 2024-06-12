@@ -225,11 +225,12 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		if rev.AccessDuration > 0 {
 			sreq.SessionTime = &rev.AccessDuration
 		}
-		sreq.Script = truncateString(rev.Input)
+		sreq.Script = rev.Input
 	}
 
 	if sreq.WebappURL == "" || len(sreq.ApprovalGroups) == 0 || len(sreq.ApprovalGroups) >= slackMaxButtons {
-		log.With("session", pctx.SID).Infof("no review message to process")
+		log.With("session", pctx.SID).Infof("no review message to process, has-webapp-url=%v, approval-groups=%v/%v",
+			sreq.WebappURL != "", len(sreq.ApprovalGroups), slackMaxButtons)
 		return nil, nil
 	}
 	log.With("session", pctx.SID).Infof("sending slack review message, conn=%v, jit=%v", sreq.Connection, sreq.SessionTime != nil)
@@ -272,12 +273,4 @@ func parseGroups(reviewGroups []types.ReviewGroup) []string {
 		groups = append(groups, g.Group)
 	}
 	return groups
-}
-
-func truncateString(s string) string {
-	maxSlackSize := 2750
-	if len(s) > maxSlackSize {
-		return s[:maxSlackSize]
-	}
-	return s
 }

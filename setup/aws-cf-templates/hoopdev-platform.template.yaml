@@ -62,11 +62,6 @@ Parameters:
     Description: |-
       (OPTIONAL) It defaults creating Cognito IDP. To use a custom, specify the configuration. Format: https://<idp-client-id>:<idp-client-secret>@<idp-host>?<options>
 
-  AppAdminUsernameRole:
-    Type: String
-    Description: 'Changes the name of the group to act as admin'
-    Default: 'admin'
-
 Mappings:
   DBInstanceTypes:
     t4gSmall50GB:
@@ -670,7 +665,6 @@ Resources:
                   IDP_ISSUER=${IdpDefault.ProviderURL}
                   IDP_CLIENT_ID=${IdpDefaultClient.ClientId}
                   IDP_CLIENT_SECRET=${IdpDefaultClient.ClientSecret}
-                  ADMIN_USERNAME=${AppAdminUsernameRole}
                 - !Sub |
                   PLUGIN_AUDIT_PATH=/opt/hoop/sessions
                   PLUGIN_INDEX_PATH=/opt/hoop/sessions/indexes
@@ -682,7 +676,6 @@ Resources:
                   GRPC_URL=https://${AppPublicDNS}:8443
                   POSTGRES_DB_URI=postgres://MASTER_DB_USER:MASTER_DB_PASSWORD@${HoopDB.Endpoint.Address}:${HoopDB.Endpoint.Port}/postgres
                   IDP_URI=${AppIDPURI}
-                  ADMIN_USERNAME=${AppAdminUsernameRole}
               mode: "000400"
               owner: root
               group: root
