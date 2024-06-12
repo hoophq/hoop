@@ -174,6 +174,7 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 	connParams.EnvVars["envvar:HOOP_CLIENT_ORIGIN"] = b64Enc([]byte(connParams.ClientOrigin))
 	connParams.EnvVars["envvar:HOOP_CLIENT_VERB"] = b64Enc([]byte(connParams.ClientVerb))
 	connParams.EnvVars["envvar:HOOP_USER_ID"] = b64Enc([]byte(connParams.UserID))
+	connParams.EnvVars["envvar:HOOP_USER_EMAIL"] = b64Enc([]byte(connParams.UserEmail))
 	connParams.EnvVars["envvar:HOOP_SESSION_ID"] = b64Enc(sessionID)
 
 	// Embedded mode usually has the context of the application.

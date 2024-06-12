@@ -275,6 +275,7 @@ func (s *Server) addConnectionParams(clientArgs, infoTypes []string, pctx plugin
 		ConnectionName: pctx.ConnectionName,
 		ConnectionType: pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType).String(),
 		UserID:         pctx.UserID,
+		UserEmail:      pctx.UserEmail,
 		EnvVars:        pctx.ConnectionSecret,
 		CmdList:        pctx.ConnectionCommand,
 		ClientArgs:     clientArgs,

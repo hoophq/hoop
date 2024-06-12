@@ -40,6 +40,7 @@ type (
 		ConnectionName string
 		ConnectionType string
 		UserID         string
+		UserEmail      string
 		EnvVars        map[string]any
 		CmdList        []string
 		ClientArgs     []string
