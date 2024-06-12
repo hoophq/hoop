@@ -1,0 +1,25 @@
+#!/bin/bash
+set -eo pipefail
+
+# remove the mysql wrapper from path to use the real mysql client
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+if [[ -z $PRE_SQL_SCRIPT_FILE ]]; then
+    mysql $@ < /dev/stdin
+    exit $?
+fi
+
+if [ ! -f $PRE_SQL_SCRIPT_FILE ]; then
+    echo "pre sql script not found, file=$PRE_SQL_SCRIPT_FILE"
+    exit 1
+fi
+
+# stdin or pipe redirect
+if [[ ! -t 0 && ! -p /dev/stdin ]] || [[ -p /dev/stdin ]]; then
+    ALLOWED_ENV_EXPANSION='$HOOP_USER_EMAIL $HOOP_SESSION_ID $HOOP_CONNECTION_TYPE $HOOP_CONNECTION_NAME $HOOP_CLIENT_ORIGIN $HOOP_CLIENT_VERB'
+    CONTENT="$(envsubst "$ALLOWED_ENV_EXPANSION" < $PRE_SQL_SCRIPT_FILE)"
+    CONTENT+=$(< /dev/stdin)
+    mysql --comments $@ <<< "$CONTENT"
+    exit $?
+fi
+
+mysql $@ < /dev/stdin

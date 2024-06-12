@@ -68,6 +68,7 @@ RUN mkdir -p /app && \
         tini \
         openssh-client \
         procps \
+        gettext-base \
         curl
 
 RUN URL= && dpkgArch="$(dpkg --print-architecture)" \
