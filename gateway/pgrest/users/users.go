@@ -76,7 +76,7 @@ func (u *user) ListAllGroups(ctx pgrest.OrgContext) ([]string, error) {
 
 func (u *user) FetchAll(ctx pgrest.OrgContext) ([]pgrest.User, error) {
 	var users []pgrest.User
-	err := pgrest.New("/users?select=*,groups,orgs(id,name)&org_id=eq.%v", ctx.GetOrgID()).
+	err := pgrest.New("/users?select=*,groups,orgs(id,name)&org_id=eq.%v&order=email.asc", ctx.GetOrgID()).
 		List().
 		DecodeInto(&users)
 	if err != nil && err != pgrest.ErrNotFound {
