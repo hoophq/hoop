@@ -26,6 +26,7 @@ RUN mkdir -p /app && \
         unzip \
         expect \
         less \
+        gettext-base \
         lsb-release && \
         ln -s /usr/bin/python3 /usr/bin/python
 
