@@ -19,7 +19,7 @@ var availableOptions = map[string]string{
 	"tags":       "map",
 }
 
-// WithOption specify a key pair of options to apply the filtering. all options
+// WithOption specify a key pair of options to apply the filtering.
 // Each applied option is considered a logical operator AND
 func WithOption(optTuple []string, val string) *ConnectionOption {
 	return &ConnectionOption{key: optTuple, val: val}
