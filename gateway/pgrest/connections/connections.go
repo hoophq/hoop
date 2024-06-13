@@ -1,8 +1,6 @@
 package pgconnections
 
 import (
-	"strings"
-
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/gateway/pgrest"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
@@ -11,33 +9,6 @@ import (
 type connections struct{}
 
 func New() *connections { return &connections{} }
-
-func (c *connections) FetchByNames(ctx pgrest.OrgContext, connectionNames []string) (map[string]types.Connection, error) {
-	var connList []pgrest.Connection
-	err := pgrest.New("/connections?&org_id=eq.%v&name=in.(%s)",
-		ctx.GetOrgID(), strings.Join(connectionNames, ",")).
-		FetchAll().
-		DecodeInto(&connList)
-	if err != nil {
-		if err == pgrest.ErrNotFound {
-			return map[string]types.Connection{}, nil
-		}
-		return nil, err
-	}
-	var result = map[string]types.Connection{}
-	for _, conn := range connList {
-		result[conn.Name] = types.Connection{
-			Id:      conn.ID,
-			OrgId:   conn.OrgID,
-			Name:    conn.Name,
-			Command: conn.Command,
-			Type:    conn.Type,
-			SubType: conn.SubType,
-			AgentId: conn.AgentID,
-		}
-	}
-	return result, nil
-}
 
 func (c *connections) FetchByIDs(ctx pgrest.OrgContext, connectionIDs []string) (map[string]types.Connection, error) {
 	var connList []pgrest.Connection
@@ -87,9 +58,10 @@ func (a *connections) FetchOneByNameOrID(ctx pgrest.OrgContext, nameOrID string)
 	return &conn, nil
 }
 
-func (c *connections) FetchAll(ctx pgrest.OrgContext) ([]pgrest.Connection, error) {
+func (c *connections) FetchAll(ctx pgrest.OrgContext, opts ...*ConnectionOption) ([]pgrest.Connection, error) {
 	var items []pgrest.Connection
-	err := pgrest.New("/connections?select=*,orgs(id,name),plugin_connections(config,plugins(name))&org_id=eq.%s&order=name.asc", ctx.GetOrgID()).
+	err := pgrest.New("/connections?select=*,orgs(id,name),plugin_connections(config,plugins(name))&org_id=eq.%s&order=name.asc%s",
+		ctx.GetOrgID(), urlEncodeOptions(opts)).
 		List().
 		DecodeInto(&items)
 	if err != nil && err != pgrest.ErrNotFound {
@@ -123,6 +95,7 @@ func (c *connections) Upsert(ctx pgrest.OrgContext, conn pgrest.Connection) erro
 		"envs":       conn.Envs,
 		"status":     conn.Status,
 		"managed_by": conn.ManagedBy,
+		"tags":       conn.Tags,
 	}).Error()
 }
 
