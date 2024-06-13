@@ -2,12 +2,12 @@ package apiconnections
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/log"
-	apivalidation "github.com/runopsio/hoop/gateway/api/validation"
 	"github.com/runopsio/hoop/gateway/pgrest"
 	pgconnections "github.com/runopsio/hoop/gateway/pgrest/connections"
 	pgplugins "github.com/runopsio/hoop/gateway/pgrest/plugins"
@@ -24,19 +24,19 @@ type Review struct {
 }
 
 type Connection struct {
-	ID            string         `json:"id"`
-	Name          string         `json:"name"`
-	IconName      string         `json:"icon_name"`
-	Command       []string       `json:"command"`
-	Type          string         `json:"type"`
-	SubType       string         `json:"subtype"`
-	Secrets       map[string]any `json:"secret"`
-	AgentId       string         `json:"agent_id"`
-	Status        string         `json:"status"` // read only field
-	Reviewers     []string       `json:"reviewers"`
-	RedactEnabled bool           `json:"redact_enabled"`
-	RedactTypes   []string       `json:"redact_types"`
-	ManagedBy     *string        `json:"managed_by"`
+	ID            string            `json:"id"`
+	Name          string            `json:"name"`
+	Command       []string          `json:"command"`
+	Type          string            `json:"type"`
+	SubType       string            `json:"subtype"`
+	Secrets       map[string]any    `json:"secret"`
+	AgentId       string            `json:"agent_id"`
+	Status        string            `json:"status"` // read only field
+	Reviewers     []string          `json:"reviewers"`
+	RedactEnabled bool              `json:"redact_enabled"`
+	RedactTypes   []string          `json:"redact_types"`
+	ManagedBy     *string           `json:"managed_by"`
+	Tags          map[string]string `json:"tags"`
 }
 
 func Post(c *gin.Context) {
@@ -46,7 +46,7 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	if err := apivalidation.ValidateResourceName(req.Name); err != nil {
+	if err := validateConnectionRequest(req); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
@@ -80,6 +80,7 @@ func Post(c *gin.Context) {
 		Envs:      coerceToMapString(req.Secrets),
 		Status:    req.Status,
 		ManagedBy: nil,
+		Tags:      req.Tags,
 	})
 	if err != nil {
 		log.Errorf("failed creating connection, err=%v", err)
@@ -134,6 +135,10 @@ func Put(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
+	if err := validateConnectionRequest(req); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
 	setConnectionDefaults(&req)
 
 	// immutable fields
@@ -151,6 +156,7 @@ func Put(c *gin.Context) {
 		Envs:      coerceToMapString(req.Secrets),
 		Status:    conn.Status,
 		ManagedBy: nil,
+		Tags:      req.Tags,
 	})
 	if err != nil {
 		log.Errorf("failed updating connection, err=%v", err)
@@ -203,7 +209,11 @@ func Delete(c *gin.Context) {
 
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	connList, err := pgconnections.New().FetchAll(ctx)
+	var opts []*pgconnections.ConnectionOption
+	for key, values := range c.Request.URL.Query() {
+		opts = append(opts, pgconnections.WithOption(strings.Split(key, "."), values[0]))
+	}
+	connList, err := pgconnections.New().FetchAll(ctx, opts...)
 	if err != nil {
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -231,7 +241,6 @@ func List(c *gin.Context) {
 			responseConnList = append(responseConnList, Connection{
 				ID:            conn.ID,
 				Name:          conn.Name,
-				IconName:      "",
 				Command:       conn.Command,
 				Type:          conn.Type,
 				SubType:       conn.SubType,
@@ -242,6 +251,7 @@ func List(c *gin.Context) {
 				RedactEnabled: len(redactTypes) > 0,
 				RedactTypes:   redactTypes,
 				ManagedBy:     conn.ManagedBy,
+				Tags:          conn.Tags,
 			})
 		}
 
@@ -282,7 +292,6 @@ func Get(c *gin.Context) {
 	c.JSON(http.StatusOK, Connection{
 		ID:            conn.ID,
 		Name:          conn.Name,
-		IconName:      "",
 		Command:       conn.Command,
 		Type:          conn.Type,
 		SubType:       conn.SubType,
@@ -293,6 +302,7 @@ func Get(c *gin.Context) {
 		RedactEnabled: len(redactTypes) > 0,
 		RedactTypes:   redactTypes,
 		ManagedBy:     conn.ManagedBy,
+		Tags:          conn.Tags,
 	})
 }
 
@@ -314,7 +324,6 @@ func FetchByName(ctx pgrest.Context, connectionName string) (*Connection, error)
 	return &Connection{
 		ID:        conn.ID,
 		Name:      conn.Name,
-		IconName:  "",
 		Command:   conn.Command,
 		Type:      conn.Type,
 		SubType:   conn.SubType,
@@ -322,5 +331,6 @@ func FetchByName(ctx pgrest.Context, connectionName string) (*Connection, error)
 		AgentId:   conn.AgentID,
 		Status:    conn.Status,
 		ManagedBy: conn.ManagedBy,
+		Tags:      conn.Tags,
 	}, nil
 }

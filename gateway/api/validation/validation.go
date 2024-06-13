@@ -15,7 +15,7 @@ func ValidateResourceName(name string) error {
 		return errCompilingRegexp
 	}
 	if !reResourceName.MatchString(name) {
-		return fmt.Errorf("resource name must contain between 3 and 254 alphanumeric characters, it may include (-), (_) or (.) characters")
+		return fmt.Errorf("name: it must contain between 3 and 254 alphanumeric characters, it may include (-), (_) or (.) characters")
 	}
 	return nil
 }

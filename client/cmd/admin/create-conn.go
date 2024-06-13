@@ -18,6 +18,7 @@ var (
 	reviewersFlag        []string
 	connRedactTypesFlag  []string
 	connTypeFlag         string
+	connTagsFlag         []string
 	connSecretFlag       []string
 	skipStrictValidation bool
 	connOverwriteFlag    bool
@@ -32,6 +33,7 @@ func init() {
 	createConnectionCmd.Flags().BoolVar(&connOverwriteFlag, "overwrite", false, "It will create or update it if a connection already exists")
 	createConnectionCmd.Flags().BoolVar(&skipStrictValidation, "skip-validation", false, "It will skip any strict validation")
 	createConnectionCmd.Flags().StringSliceVarP(&connSecretFlag, "env", "e", nil, "The environment variables of the connection")
+	createConnectionCmd.Flags().StringSliceVar(&connTagsFlag, "tags", nil, "Tags to identify connections in a key=value format")
 	createConnectionCmd.MarkFlagRequired("agent")
 }
 
@@ -126,6 +128,7 @@ var createConnectionCmd = &cobra.Command{
 			"reviewers":      reviewersFlag,
 			"redact_enabled": redactEnabled,
 			"redact_types":   connRedactTypesFlag,
+			"tags":           parseTags(),
 		}
 
 		resp, err := httpBodyRequest(apir, method, connectionBody)
@@ -309,4 +312,16 @@ func parseConnectionPlugins(conf *clientconfig.Config, connectionName, connectio
 		pluginList = append(pluginList, pl)
 	}
 	return pluginList, nil
+}
+
+func parseTags() map[string]string {
+	v := map[string]string{}
+	for _, keyVal := range connTagsFlag {
+		key, val, found := strings.Cut(keyVal, "=")
+		if !found {
+			continue
+		}
+		v[key] = val
+	}
+	return v
 }

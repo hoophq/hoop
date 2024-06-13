@@ -3,12 +3,20 @@ package apiconnections
 import (
 	"encoding/base64"
 	"fmt"
+	"regexp"
 	"slices"
+	"strings"
 
 	pb "github.com/runopsio/hoop/common/proto"
+	apivalidation "github.com/runopsio/hoop/gateway/api/validation"
 	"github.com/runopsio/hoop/gateway/pgrest"
 	pgplugins "github.com/runopsio/hoop/gateway/pgrest/plugins"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+)
+
+var (
+	tagsKeyRe, _ = regexp.Compile(`^[a-zA-Z0-9_]+(?:[-\.]?[a-zA-Z0-9_]+){1,64}$`)
+	tagsValRe, _ = regexp.Compile(`^[a-zA-Z0-9_]+(?:[-\.]?[a-zA-Z0-9_]+){0,128}$`)
 )
 
 func accessControlAllowed(ctx pgrest.Context) (func(connName string) bool, error) {
@@ -86,4 +94,24 @@ func coerceToAnyMap(src map[string]string) map[string]any {
 		dst[k] = v
 	}
 	return dst
+}
+
+func validateConnectionRequest(req Connection) error {
+	errors := []string{}
+	if err := apivalidation.ValidateResourceName(req.Name); err != nil {
+		errors = append(errors, err.Error())
+	}
+
+	for key, val := range req.Tags {
+		if !tagsKeyRe.MatchString(key) {
+			errors = append(errors, "tags.%s: keys must contain between 2 and 64 alphanumeric characters, it may include (-), (_) or (.) characters", key)
+		}
+		if !tagsValRe.MatchString(val) {
+			errors = append(errors, fmt.Sprintf("tags.%s: values must contain between 1 and 128 alphanumeric characters, it may include (-), (_) or (.) characters", key))
+		}
+	}
+	if len(errors) > 0 {
+		return fmt.Errorf(strings.Join(errors, "; "))
+	}
+	return nil
 }
