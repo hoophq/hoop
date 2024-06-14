@@ -2,7 +2,6 @@ package apiconnections
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
@@ -24,19 +23,19 @@ type Review struct {
 }
 
 type Connection struct {
-	ID            string            `json:"id"`
-	Name          string            `json:"name"`
-	Command       []string          `json:"command"`
-	Type          string            `json:"type"`
-	SubType       string            `json:"subtype"`
-	Secrets       map[string]any    `json:"secret"`
-	AgentId       string            `json:"agent_id"`
-	Status        string            `json:"status"` // read only field
-	Reviewers     []string          `json:"reviewers"`
-	RedactEnabled bool              `json:"redact_enabled"`
-	RedactTypes   []string          `json:"redact_types"`
-	ManagedBy     *string           `json:"managed_by"`
-	Tags          map[string]string `json:"tags"`
+	ID            string         `json:"id"`
+	Name          string         `json:"name"`
+	Command       []string       `json:"command"`
+	Type          string         `json:"type"`
+	SubType       string         `json:"subtype"`
+	Secrets       map[string]any `json:"secret"`
+	AgentId       string         `json:"agent_id"`
+	Status        string         `json:"status"` // read only field
+	Reviewers     []string       `json:"reviewers"`
+	RedactEnabled bool           `json:"redact_enabled"`
+	RedactTypes   []string       `json:"redact_types"`
+	ManagedBy     *string        `json:"managed_by"`
+	Tags          []string       `json:"tags"`
 }
 
 func Post(c *gin.Context) {
@@ -211,10 +210,15 @@ func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	var opts []*pgconnections.ConnectionOption
 	for key, values := range c.Request.URL.Query() {
-		opts = append(opts, pgconnections.WithOption(strings.Split(key, "."), values[0]))
+		opts = append(opts, pgconnections.WithOption(key, values[0]))
 	}
 	connList, err := pgconnections.New().FetchAll(ctx, opts...)
-	if err != nil {
+	switch err {
+	case pgconnections.ErrInvalidOptionVal:
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	case nil:
+	default:
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return

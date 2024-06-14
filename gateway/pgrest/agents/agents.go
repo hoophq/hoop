@@ -1,6 +1,7 @@
 package pgagents
 
 import (
+	"net/url"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,7 +26,7 @@ func (a *agent) FindAll(ctx pgrest.OrgContext, filters ...pgrest.Filter) ([]pgre
 }
 
 func (a *agent) FetchOneByNameOrID(ctx pgrest.OrgContext, nameOrID string) (*pgrest.Agent, error) {
-	client := pgrest.New("/agents?org_id=eq.%v&name=eq.%v", ctx.GetOrgID(), nameOrID)
+	client := pgrest.New("/agents?org_id=eq.%v&name=eq.%v", ctx.GetOrgID(), url.QueryEscape(nameOrID))
 	if _, err := uuid.Parse(nameOrID); err == nil {
 		client = pgrest.New("/agents?org_id=eq.%v&id=eq.%v", ctx.GetOrgID(), nameOrID)
 	}
@@ -41,7 +42,7 @@ func (a *agent) FetchOneByNameOrID(ctx pgrest.OrgContext, nameOrID string) (*pgr
 
 func (a *agent) FetchOneByToken(token string) (*pgrest.Agent, error) {
 	var agent pgrest.Agent
-	if err := pgrest.New("/agents?select=*,orgs(name,license)&key_hash=eq.%v", token).
+	if err := pgrest.New("/agents?select=*,orgs(name,license)&key_hash=eq.%v", url.QueryEscape(token)).
 		FetchOne().
 		DecodeInto(&agent); err != nil {
 		if err == pgrest.ErrNotFound {
@@ -100,5 +101,5 @@ func (a *agent) UpdateAllToOffline() error {
 }
 
 func (a *agent) Delete(ctx pgrest.OrgContext, id string) error {
-	return pgrest.New("/agents?org_id=eq.%s&id=eq.%v", ctx.GetOrgID(), id).Delete().Error()
+	return pgrest.New("/agents?org_id=eq.%s&id=eq.%v", ctx.GetOrgID(), url.QueryEscape(id)).Delete().Error()
 }

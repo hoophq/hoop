@@ -110,7 +110,7 @@ func (s *session) FetchAll(ctx pgrest.OrgContext, opts ...*pgrest.SessionOption)
 func (s *session) FetchOne(ctx pgrest.OrgContext, sessionID string) (*types.Session, error) {
 	var sess pgrest.Session
 	err := pgrest.New("/sessions?select=*,blob_input(id,org_id,type,type,size,blob_stream),blob_stream(id,org_id,type,size,blob_stream)&org_id=eq.%s&id=eq.%s",
-		ctx.GetOrgID(), sessionID).
+		ctx.GetOrgID(), url.QueryEscape(sessionID)).
 		FetchOne().
 		DecodeInto(&sess)
 	if err != nil {

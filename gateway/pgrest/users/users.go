@@ -39,10 +39,12 @@ func (u *user) Upsert(v pgrest.User) (err error) {
 }
 
 func (u *user) FetchOneBySubject(ctx pgrest.OrgContext, subject string) (*pgrest.User, error) {
-	path := fmt.Sprintf("/users?select=*,groups,orgs(id,name)&subject=eq.%v&org_id=eq.%s",
-		subject, ctx.GetOrgID())
 	var usr pgrest.User
-	if err := pgrest.New(path).FetchOne().DecodeInto(&usr); err != nil {
+	err := pgrest.New("/users?select=*,groups,orgs(id,name)&subject=eq.%v&org_id=eq.%s",
+		url.QueryEscape(subject), ctx.GetOrgID()).
+		FetchOne().
+		DecodeInto(&usr)
+	if err != nil {
 		if err == pgrest.ErrNotFound {
 			return nil, nil
 		}
@@ -104,7 +106,7 @@ func (u *user) FetchUnverifiedUser(ctx pgrest.OrgContext, email string) (*pgrest
 
 func (u *user) FetchOneByEmail(ctx pgrest.OrgContext, email string) (*pgrest.User, error) {
 	var usr pgrest.User
-	err := pgrest.New(fmt.Sprintf("/users?select=*,groups,orgs(id,name)&org_id=eq.%v&email=eq.%v", ctx.GetOrgID(), email)).
+	err := pgrest.New("/users?select=*,groups,orgs(id,name)&org_id=eq.%v&email=eq.%v", ctx.GetOrgID(), url.QueryEscape(email)).
 		FetchOne().
 		DecodeInto(&usr)
 	if err != nil {

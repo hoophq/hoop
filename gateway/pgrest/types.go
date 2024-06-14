@@ -95,7 +95,7 @@ type Connection struct {
 	Envs      map[string]string `json:"envs"`
 	Status    string            `json:"status"` // read only field
 	ManagedBy *string           `json:"managed_by"`
-	Tags      map[string]string `json:"tags"`
+	Tags      []string          `json:"tags"`
 
 	// read only attributes
 	Org              Org                `json:"orgs"`

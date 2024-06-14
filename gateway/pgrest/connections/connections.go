@@ -1,6 +1,8 @@
 package pgconnections
 
 import (
+	"net/url"
+
 	"github.com/google/uuid"
 	"github.com/runopsio/hoop/gateway/pgrest"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
@@ -43,7 +45,7 @@ func (c *connections) FetchByIDs(ctx pgrest.OrgContext, connectionIDs []string) 
 
 func (a *connections) FetchOneByNameOrID(ctx pgrest.OrgContext, nameOrID string) (*pgrest.Connection, error) {
 	client := pgrest.New("/connections?select=*,orgs(id,name),plugin_connections(config,plugins(name))&org_id=eq.%s&name=eq.%s",
-		ctx.GetOrgID(), nameOrID)
+		ctx.GetOrgID(), url.QueryEscape(nameOrID))
 	if _, err := uuid.Parse(nameOrID); err == nil {
 		client = pgrest.New("/connections?select=*,orgs(id,name),plugin_connections(config,plugins(name))&org_id=eq.%s&id=eq.%s",
 			ctx.GetOrgID(), nameOrID)
@@ -59,9 +61,13 @@ func (a *connections) FetchOneByNameOrID(ctx pgrest.OrgContext, nameOrID string)
 }
 
 func (c *connections) FetchAll(ctx pgrest.OrgContext, opts ...*ConnectionOption) ([]pgrest.Connection, error) {
+	safeEncodedOpts, err := urlEncodeOptions(opts)
+	if err != nil {
+		return nil, err
+	}
 	var items []pgrest.Connection
-	err := pgrest.New("/connections?select=*,orgs(id,name),plugin_connections(config,plugins(name))&org_id=eq.%s&order=name.asc%s",
-		ctx.GetOrgID(), urlEncodeOptions(opts)).
+	err = pgrest.New("/connections?select=*,orgs(id,name),plugin_connections(config,plugins(name))&org_id=eq.%s&order=name.asc%s",
+		ctx.GetOrgID(), safeEncodedOpts).
 		List().
 		DecodeInto(&items)
 	if err != nil && err != pgrest.ErrNotFound {
@@ -71,7 +77,8 @@ func (c *connections) FetchAll(ctx pgrest.OrgContext, opts ...*ConnectionOption)
 }
 
 func (c *connections) Delete(ctx pgrest.OrgContext, name string) error {
-	return pgrest.New("/connections?org_id=eq.%v&name=eq.%v", ctx.GetOrgID(), name).
+	return pgrest.New("/connections?org_id=eq.%v&name=eq.%v", ctx.GetOrgID(),
+		url.QueryEscape(name)).
 		Delete().
 		Error()
 }

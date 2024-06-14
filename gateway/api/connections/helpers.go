@@ -14,10 +14,7 @@ import (
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
 )
 
-var (
-	tagsKeyRe, _ = regexp.Compile(`^[a-zA-Z0-9_]+(?:[-\.]?[a-zA-Z0-9_]+){1,64}$`)
-	tagsValRe, _ = regexp.Compile(`^[a-zA-Z0-9_]+(?:[-\.]?[a-zA-Z0-9_]+){0,128}$`)
-)
+var tagsValRe, _ = regexp.Compile(`^[a-zA-Z0-9_]+(?:[-\.]?[a-zA-Z0-9_]+){0,128}$`)
 
 func accessControlAllowed(ctx pgrest.Context) (func(connName string) bool, error) {
 	p, err := pgplugins.New().FetchOne(ctx, plugintypes.PluginAccessControlName)
@@ -101,13 +98,9 @@ func validateConnectionRequest(req Connection) error {
 	if err := apivalidation.ValidateResourceName(req.Name); err != nil {
 		errors = append(errors, err.Error())
 	}
-
-	for key, val := range req.Tags {
-		if !tagsKeyRe.MatchString(key) {
-			errors = append(errors, "tags.%s: keys must contain between 2 and 64 alphanumeric characters, it may include (-), (_) or (.) characters", key)
-		}
+	for _, val := range req.Tags {
 		if !tagsValRe.MatchString(val) {
-			errors = append(errors, fmt.Sprintf("tags.%s: values must contain between 1 and 128 alphanumeric characters, it may include (-), (_) or (.) characters", key))
+			errors = append(errors, "tags: values must contain between 1 and 128 alphanumeric characters, it may include (-), (_) or (.) characters")
 		}
 	}
 	if len(errors) > 0 {

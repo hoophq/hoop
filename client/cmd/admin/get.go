@@ -101,10 +101,14 @@ var getCmd = &cobra.Command{
 					enabledPlugins := plugingHandlerFn(fmt.Sprintf("%v", m["name"]), true)
 					agentID := fmt.Sprintf("%v", m["agent_id"])
 					agentName := agentHandlerFn("name", agentID)
+					secrets, _ := m["secret"].(map[string]any)
+					if secrets == nil {
+						secrets, _ = m["secrets"].(map[string]any)
+					}
 					cmdList, _ := m["command"].([]any)
 					cmd := joinCmd(cmdList, true)
 					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%v\t%s\t",
-						m["name"], cmd, m["type"], agentName, m["status"], "-", enabledPlugins)
+						m["name"], cmd, m["type"], agentName, m["status"], len(secrets), enabledPlugins)
 					fmt.Fprintln(w)
 				}
 			}

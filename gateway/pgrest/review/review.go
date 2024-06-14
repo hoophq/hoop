@@ -2,6 +2,7 @@ package pgreview
 
 import (
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/google/uuid"
@@ -106,7 +107,7 @@ func (r *review) FetchAll(ctx pgrest.OrgContext) ([]types.Review, error) {
 func (r *review) FetchOneByID(ctx pgrest.OrgContext, reviewID string) (*types.Review, error) {
 	var rev Review
 	err := pgrest.New("/reviews?org_id=eq.%s&id=eq.%s&select=*,review_groups(*),blob_input(*)",
-		ctx.GetOrgID(), reviewID).
+		ctx.GetOrgID(), url.QueryEscape(reviewID)).
 		FetchOne().
 		DecodeInto(&rev)
 	if err != nil {
@@ -120,7 +121,7 @@ func (r *review) FetchOneByID(ctx pgrest.OrgContext, reviewID string) (*types.Re
 
 func (r *review) FetchOneBySid(ctx pgrest.OrgContext, sid string) (*types.Review, error) {
 	var rev Review
-	err := pgrest.New("/reviews?org_id=eq.%s&session_id=eq.%s&select=*,review_groups(*),blob_input(*)", ctx.GetOrgID(), sid).
+	err := pgrest.New("/reviews?org_id=eq.%s&session_id=eq.%s&select=*,review_groups(*),blob_input(*)", ctx.GetOrgID(), url.QueryEscape(sid)).
 		FetchOne().
 		DecodeInto(&rev)
 	if err != nil {
@@ -135,7 +136,7 @@ func (r *review) FetchOneBySid(ctx pgrest.OrgContext, sid string) (*types.Review
 func (r *review) FetchJit(ctx pgrest.OrgContext, connectionID string) (*types.Review, error) {
 	var rev Review
 	err := pgrest.New("/reviews?org_id=eq.%s&connection_id=eq.%s&type=eq.jit&status=eq.APPROVED&revoked_at=gt.now&select=*,review_groups(*)",
-		ctx.GetOrgID(), connectionID).
+		ctx.GetOrgID(), url.QueryEscape(connectionID)).
 		FetchOne().
 		DecodeInto(&rev)
 	if err != nil {
@@ -221,7 +222,7 @@ func parseReview(r Review) *types.Review {
 
 // update the status of a review
 func (r *review) PatchStatus(ctx pgrest.OrgContext, reviewID string, status types.ReviewStatus) error {
-	return pgrest.New("/reviews?org_id=eq.%s&id=eq.%s", ctx.GetOrgID(), reviewID).
+	return pgrest.New("/reviews?org_id=eq.%s&id=eq.%s", ctx.GetOrgID(), url.QueryEscape(reviewID)).
 		Patch(map[string]any{"status": status}).
 		Error()
 }
