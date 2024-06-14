@@ -128,7 +128,7 @@ var createConnectionCmd = &cobra.Command{
 			"reviewers":      reviewersFlag,
 			"redact_enabled": redactEnabled,
 			"redact_types":   connRedactTypesFlag,
-			"tags":           parseTags(),
+			"tags":           connTagsFlag,
 		}
 
 		resp, err := httpBodyRequest(apir, method, connectionBody)
@@ -312,16 +312,4 @@ func parseConnectionPlugins(conf *clientconfig.Config, connectionName, connectio
 		pluginList = append(pluginList, pl)
 	}
 	return pluginList, nil
-}
-
-func parseTags() map[string]string {
-	v := map[string]string{}
-	for _, keyVal := range connTagsFlag {
-		key, val, found := strings.Cut(keyVal, "=")
-		if !found {
-			continue
-		}
-		v[key] = val
-	}
-	return v
 }

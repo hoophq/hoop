@@ -153,7 +153,10 @@ CREATE FUNCTION update_connection(params json) RETURNS SETOF connections ROWS 1 
             (params->>'envs')::JSONB AS envs,
             (params->>'status')::private.enum_connection_status AS status,
             params->>'managed_by' AS managed_by,
-            (params->>'tags')::JSONB AS tags
+            (
+                SELECT array_agg(v)::TEXT[]
+                FROM jsonb_array_elements_text((params->>'tags')::JSONB) AS v
+            ) AS tags
     ), conn AS (
         INSERT INTO connections (id, org_id, agent_id, name, command, type, subtype, status, managed_by, tags)
             (SELECT id, org_id, agent_id, name, command, type, subtype, status, managed_by, tags FROM user_input)

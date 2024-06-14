@@ -1,6 +1,7 @@
 package pgproxymanager
 
 import (
+	"net/url"
 	"time"
 
 	"github.com/runopsio/hoop/gateway/pgrest"
@@ -13,7 +14,7 @@ func New() *proxyManager { return &proxyManager{} }
 
 func (p *proxyManager) FetchOne(ctx pgrest.OrgContext, id string) (*types.Client, error) {
 	var state pgrest.ProxyManagerState
-	err := pgrest.New("/proxymanager_state?org_id=eq.%s&id=eq.%s", ctx.GetOrgID(), id).
+	err := pgrest.New("/proxymanager_state?org_id=eq.%s&id=eq.%s", ctx.GetOrgID(), url.QueryEscape(id)).
 		FetchOne().
 		DecodeInto(&state)
 	if err != nil {

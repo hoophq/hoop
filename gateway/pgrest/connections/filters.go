@@ -1,13 +1,19 @@
 package pgconnections
 
 import (
+	"errors"
 	"fmt"
-	"net/url"
+	"regexp"
 	"strings"
 )
 
+var (
+	reSanitize, _       = regexp.Compile(`^[a-zA-Z0-9_]+(?:[-\.]?[a-zA-Z0-9_]+){1,128}$`)
+	ErrInvalidOptionVal = errors.New("option values must contain between 1 and 127 alphanumeric characters, it may include (-), (_) or (.) characters")
+)
+
 type ConnectionOption struct {
-	key []string
+	key string
 	val string
 }
 
@@ -16,41 +22,52 @@ var availableOptions = map[string]string{
 	"subtype":    "string",
 	"managed_by": "string",
 	"agent_id":   "string",
-	"tags":       "map",
+	"tags":       "array",
 }
 
 // WithOption specify a key pair of options to apply the filtering.
 // Each applied option is considered a logical operator AND
-func WithOption(optTuple []string, val string) *ConnectionOption {
-	return &ConnectionOption{key: optTuple, val: val}
+func WithOption(key string, val string) *ConnectionOption {
+	return &ConnectionOption{key: key, val: val}
 }
 
-func urlEncodeOptions(opts []*ConnectionOption) (v string) {
+func urlEncodeOptions(opts []*ConnectionOption) (string, error) {
+	var outcome string
 	for i, opt := range opts {
-		if len(opt.key) == 0 || len(opt.key) > 2 {
-			continue
-		}
-		optType, found := availableOptions[opt.key[0]]
+		optType, found := availableOptions[opt.key]
 		if !found {
 			continue
 		}
-		optKey := opt.key[0]
+
+		// if val is empty, query for null fields
 		val := "is.null"
-		if opt.val != "" {
-			val = fmt.Sprintf("eq.%s", url.QueryEscape(opt.val))
-		}
-		if optType == "map" {
-			// tags.foo = tags->>foo
-			optKey = strings.Join(opt.key, "->>")
+		if optType == "array" {
+			var tagVals []string
+			for _, tagVal := range strings.Split(opt.val, ",") {
+				tagVal = strings.TrimSpace(tagVal)
+				if !reSanitize.MatchString(tagVal) {
+					return "", ErrInvalidOptionVal
+				}
+				tagVals = append(tagVals, tagVal)
+			}
+			if len(tagVals) > 0 {
+				// contains
+				val = "cs.{" + strings.Join(tagVals, ",") + "}"
+			}
+		} else if opt.val != "" {
+			if !reSanitize.MatchString(opt.val) {
+				return "", ErrInvalidOptionVal
+			}
+			val = fmt.Sprintf("eq.%v", opt.val)
 		}
 		if i == 0 {
-			v = fmt.Sprintf("%s=%s", optKey, val)
+			outcome = fmt.Sprintf("%s=%s", opt.key, val)
 			continue
 		}
-		v += fmt.Sprintf("&%s=%s", optKey, val)
+		outcome += fmt.Sprintf("&%s=%s", opt.key, val)
 	}
-	if len(v) > 0 {
-		return "&" + v
+	if len(outcome) > 0 {
+		return "&" + outcome, nil
 	}
-	return
+	return outcome, nil
 }

@@ -6,9 +6,10 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/runopsio/hoop/common/log"
+	pgserviceaccounts "github.com/runopsio/hoop/gateway/pgrest/serviceaccounts"
 	"github.com/runopsio/hoop/gateway/storagev2"
-	serviceaccountstorage "github.com/runopsio/hoop/gateway/storagev2/serviceaccount"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 )
 
@@ -21,7 +22,7 @@ type ServiceAccountRequest struct {
 
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	serviceAccountList, err := serviceaccountstorage.List(ctx)
+	serviceAccountList, err := pgserviceaccounts.New().FetchAll(ctx)
 	if err != nil {
 		sentry.CaptureException(err)
 		log.Errorf("failed listing service accounts, err=%v", err)
@@ -46,8 +47,8 @@ func Create(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("wrong status value %q", req.Status)})
 		return
 	}
-	objID := serviceaccountstorage.DeterministicXtID(req.Subject)
-	svcAccount, err := serviceaccountstorage.GetEntityWithOrgContext(ctx, objID)
+	objID := genDeterministicUUID(req.Subject)
+	svcAccount, err := pgserviceaccounts.New().FetchOne(ctx, objID)
 	if err != nil {
 		sentry.CaptureException(err)
 		log.Errorf("failed retrieving service account entity, err=%v", err)
@@ -67,7 +68,7 @@ func Create(c *gin.Context) {
 		Status:  types.ServiceAccountStatusActive,
 		Groups:  req.Groups,
 	}
-	if err := serviceaccountstorage.UpdateServiceAccount(ctx, obj); err != nil {
+	if _, err := pgserviceaccounts.New().Upsert(ctx, obj); err != nil {
 		sentry.CaptureException(err)
 		log.Errorf("failed creating service account with subject %s, err=%v", req.Subject, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -87,8 +88,8 @@ func Update(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("wrong status value %q", req.Status)})
 		return
 	}
-	objID := serviceaccountstorage.DeterministicXtID(c.Param("subject"))
-	svcAccount, err := serviceaccountstorage.GetEntityWithOrgContext(ctx, objID)
+	objID := genDeterministicUUID(c.Param("subject"))
+	svcAccount, err := pgserviceaccounts.New().FetchOne(ctx, objID)
 	if err != nil {
 		sentry.CaptureException(err)
 		log.Errorf("failed retrieving service account entity, err=%v", err)
@@ -103,11 +104,15 @@ func Update(c *gin.Context) {
 	svcAccount.Name = req.Name
 	svcAccount.Status = req.Status
 	svcAccount.Groups = req.Groups
-	if err := serviceaccountstorage.UpdateServiceAccount(ctx, svcAccount); err != nil {
+	if _, err := pgserviceaccounts.New().Upsert(ctx, svcAccount); err != nil {
 		sentry.CaptureException(err)
 		log.Errorf("failed updating service account with subject %s, err=%v", req.Subject, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
 	c.JSON(http.StatusCreated, svcAccount)
+}
+
+func genDeterministicUUID(subject string) string {
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf("serviceaccount/%s", subject))).String()
 }

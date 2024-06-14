@@ -1,6 +1,8 @@
 package pgserviceaccounts
 
 import (
+	"net/url"
+
 	"github.com/runopsio/hoop/gateway/pgrest"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 )
@@ -36,7 +38,8 @@ func (s *serviceAccount) FetchAll(ctx pgrest.OrgContext) ([]types.ServiceAccount
 
 func (s *serviceAccount) FetchOne(ctx pgrest.OrgContext, id string) (*types.ServiceAccount, error) {
 	var sa pgrest.ServiceAccount
-	err := pgrest.New("/serviceaccounts?select=id,org_id,subject,name,status,created_at,updated_at,groups&org_id=eq.%s&id=eq.%s", ctx.GetOrgID(), id).
+	err := pgrest.New("/serviceaccounts?select=id,org_id,subject,name,status,created_at,updated_at,groups&org_id=eq.%s&id=eq.%s",
+		ctx.GetOrgID(), url.QueryEscape(id)).
 		FetchOne().
 		DecodeInto(&sa)
 	if err != nil {

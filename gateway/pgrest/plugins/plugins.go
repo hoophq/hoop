@@ -2,6 +2,7 @@ package pgplugins
 
 import (
 	"fmt"
+	"net/url"
 
 	"github.com/runopsio/hoop/gateway/pgrest"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
@@ -82,6 +83,7 @@ func (p *plugins) Upsert(ctx pgrest.OrgContext, existentPlugin, pl *types.Plugin
 }
 
 func (p *plugins) FetchOne(ctx pgrest.OrgContext, name string) (*types.Plugin, error) {
+	name = url.QueryEscape(name)
 	var pl pgrest.Plugin
 	if err := pgrest.New("/plugins?select=*,env_vars(id,envs)&org_id=eq.%v&name=eq.%s", ctx.GetOrgID(), name).
 		FetchOne().
