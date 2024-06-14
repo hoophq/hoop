@@ -134,7 +134,7 @@ CREATE VIEW env_vars AS SELECT id, org_id, envs FROM private.env_vars;
 CREATE VIEW connections AS
     SELECT id, org_id, agent_id, name, command, type, subtype,
         (SELECT envs FROM env_vars WHERE id = c.id) AS envs,
-        status, managed_by, tags, created_at, updated_at
+        status, managed_by, _tags AS tags, created_at, updated_at
     FROM private.connections c;
 
 CREATE FUNCTION update_connection(params json) RETURNS SETOF connections ROWS 1 AS $$

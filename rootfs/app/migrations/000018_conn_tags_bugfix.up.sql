@@ -2,7 +2,6 @@ BEGIN;
 
 SET search_path TO private;
 
-ALTER TABLE connections DROP COLUMN tags;
-ALTER TABLE connections ADD COLUMN tags TEXT[] NULL;
+ALTER TABLE connections ADD COLUMN _tags TEXT[] NULL;
 
 COMMIT;
