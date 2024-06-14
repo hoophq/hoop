@@ -59,7 +59,7 @@ var (
 				fmt.Println(err)
 				os.Exit(1)
 			}
-			runConnect(args, clientEnvVars)
+			RunConnect(args, clientEnvVars)
 		},
 	}
 )
@@ -81,7 +81,7 @@ type connect struct {
 	loader         *spinner.Spinner
 }
 
-func runConnect(args []string, clientEnvVars map[string]string) {
+func RunConnect(args []string, clientEnvVars map[string]string) {
 	config := clientconfig.GetClientConfigOrDie()
 	loader := spinner.New(spinner.CharSets[11], 70*time.Millisecond)
 	loader.Color("green")
