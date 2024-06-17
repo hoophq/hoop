@@ -346,7 +346,9 @@ func (c *connect) processGracefulExit(err error) {
 	if err == nil {
 		return
 	}
-	c.loader.Stop()
+	if c.loader != nil {
+		c.loader.Stop()
+	}
 	for _, obj := range c.connStore.List() {
 		switch v := obj.(type) {
 		case *proxy.Terminal:
@@ -376,7 +378,9 @@ func (c *connect) printHeader(sessionID string) {
 }
 
 func (c *connect) printErrorAndExit(format string, v ...any) {
-	c.loader.Stop()
+	if c.loader != nil {
+		c.loader.Stop()
+	}
 	errOutput := styles.ClientError(fmt.Sprintf(format, v...))
 	fmt.Println(errOutput)
 	os.Exit(1)
