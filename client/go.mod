@@ -9,7 +9,7 @@ require (
 	github.com/creack/pty v1.1.21
 	github.com/runopsio/hoop/common v0.0.0-00010101000000-000000000000
 	github.com/spf13/cobra v1.6.1
-	golang.org/x/term v0.19.0
+	golang.org/x/term v0.21.0
 )
 
 require (
@@ -81,7 +81,7 @@ require (
 	github.com/chenzhuoyu/base64x v0.0.0-20230717121745-296ad89f973d // indirect
 	github.com/chenzhuoyu/iasm v0.9.0 // indirect
 	github.com/cloudflare/circl v1.3.7 // indirect
-	github.com/coreos/go-oidc/v3 v3.4.0 // indirect
+	github.com/coreos/go-oidc/v3 v3.10.0 // indirect
 	github.com/cyphar/filepath-securejoin v0.2.4 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/emicklei/go-restful/v3 v3.11.0 // indirect
@@ -95,6 +95,7 @@ require (
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.5.0 // indirect
 	github.com/go-git/go-git/v5 v5.11.0 // indirect
+	github.com/go-jose/go-jose/v4 v4.0.1 // indirect
 	github.com/go-logr/logr v1.4.1 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
@@ -205,18 +206,17 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.25.0 // indirect
 	golang.org/x/arch v0.5.0 // indirect
-	golang.org/x/crypto v0.22.0 // indirect
-	golang.org/x/mod v0.14.0 // indirect
+	golang.org/x/crypto v0.24.0 // indirect
+	golang.org/x/mod v0.17.0 // indirect
 	golang.org/x/oauth2 v0.17.0 // indirect
-	golang.org/x/sync v0.6.0 // indirect
+	golang.org/x/sync v0.7.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
-	golang.org/x/tools v0.17.0 // indirect
+	golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d // indirect
 	google.golang.org/api v0.162.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240227224415-6ceb2ff114de // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240429193739-8cf5692501f6 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
-	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
@@ -238,9 +238,9 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/muesli/termenv v0.15.1
 	github.com/spf13/pflag v1.0.5 // indirect
-	golang.org/x/net v0.24.0 // indirect
-	golang.org/x/sys v0.19.0 // indirect
-	golang.org/x/text v0.14.0
+	golang.org/x/net v0.26.0 // indirect
+	golang.org/x/sys v0.21.0 // indirect
+	golang.org/x/text v0.16.0
 	google.golang.org/genproto v0.0.0-20240227224415-6ceb2ff114de // indirect
 	google.golang.org/protobuf v1.34.0 // indirect
 )
