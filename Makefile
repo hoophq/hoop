@@ -108,6 +108,6 @@ clean:
 	rm -rf ./rootfs/app/ui
 
 test:
-	env CGO_ENABLED=1 go test -race -v github.com/runopsio/hoop/...
+	env CGO_ENABLED=0 go test -v github.com/runopsio/hoop/...
 
 .PHONY: release publish publish-tools clean test build build-dev-client package-binaries package-helmchart publish-assets run-dev run-dev-postgres download-artifacts deploy-by-app package-gateway-bundle release-aws-cf-templates
