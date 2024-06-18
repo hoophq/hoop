@@ -14,10 +14,9 @@ func New() *agent { return &agent{} }
 
 // FindAll returns all agents from all organization if the context is empty.
 // Otherwise return all the agents from a specific organization.
-func (a *agent) FindAll(ctx pgrest.OrgContext, filters ...pgrest.Filter) ([]pgrest.Agent, error) {
+func (a *agent) FindAll(ctx pgrest.OrgContext) ([]pgrest.Agent, error) {
 	var res []pgrest.Agent
 	if err := pgrest.New("/agents?org_id=eq.%v&order=name.asc", ctx.GetOrgID()).
-		WithFilterOptions(filters...).
 		List().
 		DecodeInto(&res); err != nil && err != pgrest.ErrNotFound {
 		return nil, err
