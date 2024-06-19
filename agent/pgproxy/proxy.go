@@ -10,7 +10,6 @@ import (
 	"github.com/runopsio/hoop/agent/dlp"
 	"github.com/runopsio/hoop/common/log"
 	pgtypes "github.com/runopsio/hoop/common/pgtypes"
-	"github.com/xo/dburl"
 )
 
 var errConnectionClose = fmt.Errorf("connection closed")
@@ -39,13 +38,20 @@ type proxy struct {
 	dlp *dlpHandler
 }
 
-func New(ctx context.Context, connStr *dburl.URL, serverRW io.ReadWriteCloser, clientW io.Writer) *proxy {
-	if connStr == nil {
-		connStr = &dburl.URL{}
-	}
+type Options struct {
+	Hostname string
+	Port     string
+	Username string
+	Password string
+	// https://www.postgresql.org/docs/current/libpq-ssl.html#LIBPQ-SSL-PROTECTION
+	// disable, prefer, require, verify-full
+	SSLMode     string
+	SSLRootCert string
+}
+
+func New(ctx context.Context, opts Options, serverRW io.ReadWriteCloser, clientW io.Writer) *proxy {
 	cancelCtx, cancelFn := context.WithCancel(ctx)
-	passwd, _ := connStr.User.Password()
-	sslMode := sslModeType(connStr.Query().Get("sslmode"))
+	sslMode := sslModeType(opts.SSLMode)
 	if sslMode == "" {
 		sslMode = sslModePrefer
 	}
@@ -54,14 +60,14 @@ func New(ctx context.Context, connStr *dburl.URL, serverRW io.ReadWriteCloser, c
 		ctx: cancelCtx,
 		tlsConfig: &tlsConfig{
 			sslMode:      sslMode,
-			serverName:   connStr.Hostname(),
-			rootCertPath: connStr.Query().Get("sslrootcert"),
+			serverName:   opts.Hostname,
+			rootCertPath: opts.SSLRootCert,
 		},
 		dlp:              &dlpHandler{},
-		host:             connStr.Hostname(),
-		port:             connStr.Port(),
-		username:         connStr.User.Username(),
-		password:         passwd,
+		host:             opts.Hostname,
+		port:             opts.Port,
+		username:         opts.Username,
+		password:         opts.Password,
 		pid:              0,
 		serverRW:         serverRW,
 		clientW:          clientW,

@@ -10,7 +10,6 @@ import (
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
-	"github.com/xo/dburl"
 )
 
 func (a *Agent) processPGProtocol(pkt *pb.Packet) {
@@ -56,15 +55,14 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 		a.sendClientSessionClose(sessionID, errMsg)
 		return
 	}
-	connString, _ := dburl.Parse(fmt.Sprintf("postgres://%s:%s@%s:%v?sslmode=%s",
-		connenv.user, connenv.pass, connenv.host, connenv.port, connenv.postgresSSLMode))
-	if connString == nil {
-		log.Error("postgres connection string is empty")
-		a.sendClientSessionClose(sessionID, "internal error, postgres connection string is empty")
-		return
+	opts := pgproxy.Options{
+		Hostname: connenv.host,
+		Port:     connenv.port,
+		Username: connenv.user,
+		Password: connenv.pass,
+		SSLMode:  connenv.postgresSSLMode,
 	}
-
-	serverWriter := pgproxy.New(context.Background(), connString, pgServer, streamClient)
+	serverWriter := pgproxy.New(context.Background(), opts, pgServer, streamClient)
 	if dlpc, ok := a.connStore.Get(dlpClientKey).(dlp.Client); ok {
 		serverWriter.WithDataLossPrevention(dlpc, connParams.DLPInfoTypes)
 	}
