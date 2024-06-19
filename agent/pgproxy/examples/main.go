@@ -42,6 +42,14 @@ func Serve() {
 	if err != nil {
 		panic(err)
 	}
+	passwd, _ := connURL.User.Password()
+	opts := pgproxy.Options{
+		Hostname: connURL.Host,
+		Username: connURL.User.Username(),
+		Password: passwd,
+		Port:     connURL.Port(),
+		SSLMode:  connURL.Query().Get("sslmode"),
+	}
 
 	lis, err := net.Listen("tcp4", proxyListenAddr)
 	fmt.Printf("serving incoming connections %v\n", lis.Addr().String())
@@ -59,15 +67,15 @@ func Serve() {
 		if err != nil {
 			panic(err)
 		}
-		go serveConn(connURL, clientConn, serverConn)
+		go serveConn(opts, clientConn, serverConn)
 	}
 }
 
-func serveConn(connURL *dburl.URL, client, pgServer net.Conn) {
+func serveConn(opts pgproxy.Options, client, pgServer net.Conn) {
 	defer client.Close()
 	defer pgServer.Close()
 
-	srv := pgproxy.New(context.Background(), connURL, pgServer, client)
+	srv := pgproxy.New(context.Background(), opts, pgServer, client)
 
 	gcpRawCred := []byte(`{}`)
 	dlpClient, err := dlp.NewDLPClient(context.Background(), gcpRawCred)
