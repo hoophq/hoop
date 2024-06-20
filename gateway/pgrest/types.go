@@ -100,6 +100,15 @@ type Connection struct {
 	// read only attributes
 	Org              Org                `json:"orgs"`
 	PluginConnection []PluginConnection `json:"plugin_connections"`
+	Agent            Agent              `json:"agents"`
+}
+
+func (c Connection) AsSecrets() map[string]any {
+	dst := map[string]any{}
+	for k, v := range c.Envs {
+		dst[k] = v
+	}
+	return dst
 }
 
 type Plugin struct {

@@ -10,7 +10,7 @@ import (
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 )
 
-const maxTemplateSize = 50000 // 50KB
+const maxTemplateSize = 1000000 // 1MB
 
 func fetchRunbookFile(config *templates.RunbookConfig, req RunbookRequest) (*Runbook, error) {
 	c, err := templates.FetchRepo(config)

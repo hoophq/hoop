@@ -81,6 +81,13 @@ func init() { rootCmd.AddCommand(proxyManagerCmd) }
 
 func runAutoConnect(client pb.ClientTransport) (err error) {
 	connStore := memory.New()
+	defer func() {
+		for _, obj := range connStore.List() {
+			if c, _ := obj.(proxy.Closer); c != nil {
+				_ = c.Close()
+			}
+		}
+	}()
 	var pkt *pb.Packet
 	for {
 		pkt, err = client.Recv()
@@ -111,40 +118,43 @@ func runAutoConnect(client pb.ClientTransport) (err error) {
 			if sid == "" {
 				return fmt.Errorf("session is empty")
 			}
-			log.With("type", connnectionType).Infof("session opened")
+			log.With("type", connnectionType, "sid", sid).Infof("session opened")
+			client.StartKeepAlive()
 			switch connnectionType {
 			case pb.ConnectionTypePostgres:
-				listenAddr := fmt.Sprintf("127.0.0.1:%s", proxyPort)
-				srv := proxy.NewPGServer(listenAddr, client)
+				srv := proxy.NewPGServer(proxyPort, client)
 				if err := srv.Serve(sid); err != nil {
 					return err
 				}
-				defer srv.Close()
-				client.StartKeepAlive()
 				connStore.Set(sid, srv)
-				log.With("type", connnectionType, "port", proxyPort).Infof("ready to accept connections")
 			case pb.ConnectionTypeMySQL:
 				srv := proxy.NewMySQLServer(proxyPort, client)
 				if err := srv.Serve(sid); err != nil {
 					return err
 				}
-				defer srv.Close()
-				client.StartKeepAlive()
 				connStore.Set(sid, srv)
-				log.With("type", connnectionType, "port", proxyPort).Infof("ready to accept connections")
+			case pb.ConnectionTypeMSSQL:
+				srv := proxy.NewMSSQLServer(proxyPort, client)
+				if err := srv.Serve(sid); err != nil {
+					return err
+				}
+				connStore.Set(sid, srv)
+			case pb.ConnectionTypeMongoDB:
+				srv := proxy.NewMongoDBServer(proxyPort, client)
+				if err := srv.Serve(sid); err != nil {
+					return err
+				}
+				connStore.Set(sid, srv)
 			case pb.ConnectionTypeTCP:
 				srv := proxy.NewTCPServer(proxyPort, client, pbagent.TCPConnectionWrite)
 				if err := srv.Serve(sid); err != nil {
 					return err
 				}
-				defer srv.Close()
-				client.StartKeepAlive()
 				connStore.Set(sid, srv)
-				log.With("type", connnectionType, "port", proxyPort).
-					Infof("ready to accept connections")
 			default:
 				return fmt.Errorf(`connection type %q not implemented`, string(connnectionType))
 			}
+			log.With("type", connnectionType, "port", proxyPort).Infof("ready to accept connections")
 		case pbclient.SessionOpenApproveOK:
 			log.Infof("session approved")
 		case pbclient.SessionOpenAgentOffline:
@@ -165,7 +175,27 @@ func runAutoConnect(client pb.ClientTransport) (err error) {
 			srvObj := connStore.Get(sid)
 			srv, ok := srvObj.(*proxy.MySQLServer)
 			if !ok {
-				return fmt.Errorf("msqyl proxy server instance not found")
+				return fmt.Errorf("mysql proxy server instance not found")
+			}
+			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
+			if _, err := srv.PacketWriteClient(connectionID, pkt); err != nil {
+				return fmt.Errorf("failed writing to client, err=%v", err)
+			}
+		case pbclient.MSSQLConnectionWrite:
+			srvObj := connStore.Get(sid)
+			srv, ok := srvObj.(*proxy.MSSQLServer)
+			if !ok {
+				return fmt.Errorf("mssql proxy server instance not found")
+			}
+			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
+			if _, err := srv.PacketWriteClient(connectionID, pkt); err != nil {
+				return fmt.Errorf("failed writing to client, err=%v", err)
+			}
+		case pbclient.MongoDBConnectionWrite:
+			srvObj := connStore.Get(sid)
+			srv, ok := srvObj.(*proxy.MongoDBServer)
+			if !ok {
+				return fmt.Errorf("mongodb proxy server instance not found")
 			}
 			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
 			if _, err := srv.PacketWriteClient(connectionID, pkt); err != nil {
@@ -190,6 +220,8 @@ func runAutoConnect(client pb.ClientTransport) (err error) {
 				_ = srv.Close()
 				log.Infof("session closed")
 			}
+		default:
+			return fmt.Errorf("unknown packet %v", pkt.Type)
 		}
 	}
 }

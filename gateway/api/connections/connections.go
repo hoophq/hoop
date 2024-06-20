@@ -311,7 +311,7 @@ func Get(c *gin.Context) {
 }
 
 // FetchByName fetches a connection based in access control rules
-func FetchByName(ctx pgrest.Context, connectionName string) (*Connection, error) {
+func FetchByName(ctx pgrest.Context, connectionName string) (*pgrest.Connection, error) {
 	conn, err := pgconnections.New().FetchOneByNameOrID(ctx, connectionName)
 	if err != nil {
 		return nil, err
@@ -323,18 +323,19 @@ func FetchByName(ctx pgrest.Context, connectionName string) (*Connection, error)
 	if conn == nil || !allowedFn(conn.Name) {
 		return nil, nil
 	}
+	return conn, nil
 	// we do not propagate reviewers and redact configuration.
 	// it needs to be implemented in the other layers
-	return &Connection{
-		ID:        conn.ID,
-		Name:      conn.Name,
-		Command:   conn.Command,
-		Type:      conn.Type,
-		SubType:   conn.SubType,
-		Secrets:   coerceToAnyMap(conn.Envs),
-		AgentId:   conn.AgentID,
-		Status:    conn.Status,
-		ManagedBy: conn.ManagedBy,
-		Tags:      conn.Tags,
-	}, nil
+	// return &Connection{
+	// 	ID:        conn.ID,
+	// 	Name:      conn.Name,
+	// 	Command:   conn.Command,
+	// 	Type:      conn.Type,
+	// 	SubType:   conn.SubType,
+	// 	Secrets:   coerceToAnyMap(conn.Envs),
+	// 	AgentId:   conn.AgentID,
+	// 	Status:    conn.Status,
+	// 	ManagedBy: conn.ManagedBy,
+	// 	Tags:      conn.Tags,
+	// }, nil
 }

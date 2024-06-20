@@ -40,7 +40,6 @@ func init() { httpClient = http.DefaultClient }
 type Client struct {
 	apiURL      string
 	accessToken string
-	filters     []Filter
 }
 
 func New(path string, a ...any) *Client { return newClient(fmt.Sprintf(path, a...)) }
@@ -60,25 +59,6 @@ func newClient(path string) *Client {
 
 	apiURL := fmt.Sprintf("http://%s/%s", baseURL.Host, strings.TrimPrefix(path, "/"))
 	return &Client{apiURL: apiURL, accessToken: accessToken}
-}
-
-// WithFilterOptions applies filtering to the request
-func (c *Client) WithFilterOptions(filters ...Filter) *Client {
-	var qs string
-	for i, f := range filters {
-		if i == 0 {
-			qs += f.Encode()
-			continue
-		}
-		qs += "&" + f.Encode()
-	}
-	u, _ := url.Parse(c.apiURL)
-	if u != nil && u.Query().Encode() == "" && len(qs) > 0 {
-		c.apiURL += fmt.Sprintf("?%s", qs)
-		return c
-	}
-	c.apiURL += "&" + qs
-	return c
 }
 
 func (c *Client) Create(reqBody any) *Response {

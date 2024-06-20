@@ -6,12 +6,6 @@ Metadata:
   License: Apache-2.0
 
 Parameters:
-  AwsKeyName:
-    Type: String
-    Description: (OPTIONAL) Name of an existing EC2 KeyPair to enable SSH access to the instance for troubleshooting purporses
-    ConstraintDescription: must be the name of an existing EC2 KeyPair.
-    Default: ''
-
   AwsAppInstanceType:
     Type: String
     Description: Recommended values to start with t3.medium. Use m6i family for medium or large size installs.
@@ -45,13 +39,6 @@ Parameters:
     AllowedPattern: ^arn:aws:acm:.+
 
   # Hoop Configuration
-  AppVersion:
-    Type: String
-    Description: The gateway app version
-    AllowedValues:
-    - 'LATEST_HOOP_VERSION'
-    Default: 'LATEST_HOOP_VERSION'
-
   AppPublicDNS:
     Type: String
     Description: '(REQUIRED) The public DNS of the App (HTTP and gRPC). It must match with the certificate'
@@ -91,8 +78,6 @@ Mappings:
 
 Conditions:
   IsDefaultIDP: !Equals ["", !Ref AppIDPURI]
-  HasSSHKey: !Not
-  - !Equals ["", !Ref AwsKeyName]
 
 Resources:
 
@@ -564,10 +549,6 @@ Resources:
           Arn: !GetAtt DefaultInstanceProfile.Arn
         InstanceType: !Ref AwsAppInstanceType
         SecurityGroupIds: [!GetAtt LaunchTemplateSecurityGroup.GroupId]
-        KeyName: !If
-          - HasSSHKey
-          - !Ref AwsKeyName
-          - !Ref AWS::NoValue
         ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-minimal-kernel-default-x86_64}}'
         UserData:
           Fn::Base64: !Sub |
@@ -577,7 +558,7 @@ Resources:
               amazon-ssm-agent \
               https://github.com/microsoft/go-sqlcmd/releases/download/v1.6.0/sqlcmd-1.6.0-1.el7.x86_64.rpm
             # force recreate
-            echo "${AppVersion} ${AppIDPURI} ${AppPublicDNS}" >/dev/null
+            echo "LATEST_HOOP_VERSION ${AppIDPURI} ${AppPublicDNS}" >/dev/null
             cfn-init -v --stack ${AWS::StackId} --resource LaunchTemplate --region ${AWS::Region}
             cfn-signal -e $? --stack ${AWS::StackId} --resource GatewayServerGroup --region ${AWS::Region}
     Metadata:
@@ -684,10 +665,11 @@ Resources:
               cwd: '~'
               command: !Sub |
                 set -eo pipefail
-                curl -sL https://hoopartifacts.s3.amazonaws.com/release/${AppVersion}/hoopgateway_${AppVersion}-Linux_amd64.tar.gz -o hoopgateway_${AppVersion}-Linux_amd64.tar.gz
+                VERSION=LATEST_HOOP_VERSION
+                curl -sL https://hoopartifacts.s3.amazonaws.com/release/$VERSION/hoopgateway_$VERSION-Linux_amd64.tar.gz -o hoopgateway_$VERSION-Linux_amd64.tar.gz
                 # make sure the migration path doesn't have any files
                 rm -rf /opt/hoop/migrations
-                tar --extract --file hoopgateway_${AppVersion}-Linux_amd64.tar.gz -C / --strip 1 && rm -f hoopgateway_${AppVersion}-Linux_amd64.tar.gz
+                tar --extract --file hoopgateway_$VERSION-Linux_amd64.tar.gz -C / --strip 1 && rm -f hoopgateway_$VERSION-Linux_amd64.tar.gz
                 chown -R root: /opt/hoop
                 SECRET_JSON=$(aws secretsmanager get-secret-value \
                   --secret-id hoopdev/${AWS::StackName}/pgmaster \
@@ -819,3 +801,6 @@ Outputs:
   URL:
     Description: Public Load Balancer DNS of the app
     Value: !Sub "${AppLB.DNSName}"
+  VERSION:
+    Description: The hoop gateway version for this template
+    Value: LATEST_HOOP_VERSION

@@ -3,7 +3,6 @@ package apiagents
 import (
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/getsentry/sentry-go"
@@ -112,7 +111,7 @@ func Delete(c *gin.Context) {
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	// items, err := pgagents.New().FindAll(context, pgrest.WithEqFilter(c.Request.URL.Query()))
-	items, err := pgagents.New().FindAll(ctx, pgrest.WithEqFilter(url.Values{}))
+	items, err := pgagents.New().FindAll(ctx)
 	if err != nil {
 		log.Errorf("failed listing agents, reason=%v", err)
 		sentry.CaptureException(err)
