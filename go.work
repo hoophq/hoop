@@ -5,5 +5,4 @@ use (
 	./client
 	./common
 	./gateway
-	./trayapp
 )
