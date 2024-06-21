@@ -114,6 +114,8 @@ func Post(c *gin.Context) {
 
 		switch pkt.Type {
 		case pbclient.SessionOpenWaitingApproval:
+			// Reviewed sessions won't work seamlessly.
+			// The client must reconnect after the session is approved.
 			obj, err := clientstate.Update(ctx, types.ClientStatusDisconnected)
 			if err != nil {
 				errMsg := fmt.Sprintf("failed updating status, err=%v", err)

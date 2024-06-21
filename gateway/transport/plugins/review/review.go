@@ -55,6 +55,7 @@ func (r *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 			return &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{
 				Type:    pbclient.SessionOpenWaitingApproval,
 				Payload: []byte(reviewURL),
+				Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(pctx.SID)},
 			}}, nil
 		}
 
@@ -162,6 +163,7 @@ func (r *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 	return &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{
 		Type:    pbclient.SessionOpenWaitingApproval,
 		Payload: []byte(fmt.Sprintf("%s/plugins/reviews/%s", r.apiURL, newRev.Id)),
+		Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(pctx.SID)},
 	}}, nil
 }
 

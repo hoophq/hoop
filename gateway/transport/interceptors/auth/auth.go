@@ -167,14 +167,6 @@ func (i *interceptor) getConnection(name string, userCtx *pguserauth.Context) (*
 	if conn == nil {
 		return nil, nil
 	}
-	ag, err := pgagents.New().FetchOneByNameOrID(userCtx, conn.AgentID)
-	if err != nil {
-		log.Errorf("failed obtaining agent %v, err=%v", err)
-		return nil, status.Errorf(codes.Internal, "internal error, failed to obtain agent from connection")
-	}
-	if ag == nil {
-		return nil, status.Errorf(codes.NotFound, "agent not found")
-	}
 	return &types.ConnectionInfo{
 		ID:            conn.ID,
 		Name:          conn.Name,
@@ -183,9 +175,8 @@ func (i *interceptor) getConnection(name string, userCtx *pguserauth.Context) (*
 		CmdEntrypoint: conn.Command,
 		Secrets:       conn.AsSecrets(),
 		AgentID:       conn.AgentID,
-		// TODO: change to conn.Agent.(...)
-		AgentMode: ag.Mode,
-		AgentName: ag.Name,
+		AgentMode:     conn.Agent.Mode,
+		AgentName:     conn.Agent.Name,
 	}, nil
 }
 

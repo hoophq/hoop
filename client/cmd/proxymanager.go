@@ -118,7 +118,7 @@ func runAutoConnect(client pb.ClientTransport) (err error) {
 			if sid == "" {
 				return fmt.Errorf("session is empty")
 			}
-			log.With("type", connnectionType, "sid", sid).Infof("session opened")
+			log.With("type", connnectionType).Infof("session opened")
 			client.StartKeepAlive()
 			switch connnectionType {
 			case pb.ConnectionTypePostgres:
@@ -154,7 +154,7 @@ func runAutoConnect(client pb.ClientTransport) (err error) {
 			default:
 				return fmt.Errorf(`connection type %q not implemented`, string(connnectionType))
 			}
-			log.With("type", connnectionType, "port", proxyPort).Infof("ready to accept connections")
+			log.With("port", proxyPort).Infof("ready to accept connections")
 		case pbclient.SessionOpenApproveOK:
 			log.Infof("session approved")
 		case pbclient.SessionOpenAgentOffline:
@@ -213,6 +213,7 @@ func runAutoConnect(client pb.ClientTransport) (err error) {
 		// to avoid resource leaks in the client.
 		case pbclient.TCPConnectionClose:
 			if srv, ok := connStore.Get(sid).(proxy.Closer); ok {
+				log.Debugf("closing tcp session")
 				srv.CloseTCPConnection(string(pkt.Spec[pb.SpecClientConnectionID]))
 			}
 		case pbclient.SessionClose:

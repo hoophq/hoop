@@ -22,9 +22,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func (s *Server) subscribeClient(stream *streamclient.ProxyStream) (err error) {
-	clientVerb := stream.GetMeta("verb")
-	clientOrigin := stream.GetMeta("origin")
+func requestProxyConnection(stream *streamclient.ProxyStream) error {
 	pctx := stream.PluginContext()
 	if !stream.IsAgentOnline() {
 		log.With("user", pctx.UserEmail, "agentname", pctx.AgentName, "connection", pctx.ConnectionName).
@@ -52,6 +50,16 @@ func (s *Server) subscribeClient(stream *streamclient.ProxyStream) (err error) {
 				Warnf("failed to establish connection with agent, reason=%v", err)
 			return status.Errorf(codes.Aborted, err.Error())
 		}
+	}
+	return nil
+}
+
+func (s *Server) subscribeClient(stream *streamclient.ProxyStream) (err error) {
+	clientVerb := stream.GetMeta("verb")
+	clientOrigin := stream.GetMeta("origin")
+	pctx := stream.PluginContext()
+	if err := requestProxyConnection(stream); err != nil {
+		return err
 	}
 
 	connType := pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType)
@@ -291,8 +299,8 @@ func (s *Server) addConnectionParams(clientArgs, infoTypes []string, pctx plugin
 }
 
 func (s *Server) ReviewStatusChange(rev *types.Review) {
-
-	if proxyStream := streamclient.GetProxyStream(rev.Session); proxyStream != nil {
+	proxyStream := streamclient.GetProxyStream(rev.Session)
+	if proxyStream != nil {
 		payload := []byte(rev.Input)
 		packetType := pbclient.SessionOpenApproveOK
 		if rev.Status == types.ReviewStatusRejected {
@@ -307,5 +315,6 @@ func (s *Server) ReviewStatusChange(rev *types.Review) {
 			Payload: payload,
 		})
 	}
-	log.Infof("review status change, session=%v, conn=%v, obj=%v", rev.Session, rev.Connection, streamclient.GetProxyStream(rev.Session))
+	log.With("sid", rev.Session, "connection", rev.Connection.Name, "has-stream", proxyStream != nil).
+		Infof("review status change")
 }
