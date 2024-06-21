@@ -324,18 +324,4 @@ func FetchByName(ctx pgrest.Context, connectionName string) (*pgrest.Connection,
 		return nil, nil
 	}
 	return conn, nil
-	// we do not propagate reviewers and redact configuration.
-	// it needs to be implemented in the other layers
-	// return &Connection{
-	// 	ID:        conn.ID,
-	// 	Name:      conn.Name,
-	// 	Command:   conn.Command,
-	// 	Type:      conn.Type,
-	// 	SubType:   conn.SubType,
-	// 	Secrets:   coerceToAnyMap(conn.Envs),
-	// 	AgentId:   conn.AgentID,
-	// 	Status:    conn.Status,
-	// 	ManagedBy: conn.ManagedBy,
-	// 	Tags:      conn.Tags,
-	// }, nil
 }
