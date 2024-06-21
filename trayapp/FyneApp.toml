@@ -1,8 +1,0 @@
-Website = "https://hoop.dev"
-
-[Details]
-Icon = "assets/icon.png"
-Name = "Hoop"
-ID = "app.hoop.dev"
-Version = "1.0.0"
-Build = 1

@@ -14,7 +14,6 @@ import (
 	"fyne.io/fyne/v2/driver/desktop"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/runopsio/hoop/client/cmd"
-	clientconfig "github.com/runopsio/hoop/client/config"
 	proxyconfig "github.com/runopsio/hoop/client/config"
 	"github.com/runopsio/hoop/trayapp/connect"
 	"github.com/runopsio/hoop/trayapp/login"
@@ -24,17 +23,9 @@ import (
 var AppIconBlack []byte
 var appIconBlackStatic = &fyne.StaticResource{StaticName: "AppIcon", StaticContent: AppIconBlack}
 
-//go:embed assets/icon_white.png
-var AppIconWhite []byte
-var appIconWhiteStatic = &fyne.StaticResource{StaticName: "AppIconWhite", StaticContent: AppIconWhite}
-
 //go:embed assets/icon_cable.svg
 var IconCable []byte
 var iconCableStatic = &fyne.StaticResource{StaticName: "AppIconCable", StaticContent: IconCable}
-
-// go.embed assets/icons8-connected-80.png
-var IconConnect []byte
-var iconConnectStatic = &fyne.StaticResource{StaticName: "AppIconConnect", StaticContent: IconConnect}
 
 type CustomClaims struct {
 	jwt.RegisteredClaims
@@ -84,44 +75,55 @@ func appNotifyErr(app fyne.App, format string, a ...any) {
 	})
 }
 
-func connectionListMenu(item1, item2 string) *fyne.Menu {
-	// item := fyne.NewMenuItem("Context", func() {
-
-	// })
-	return fyne.NewMenu("",
-		fyne.NewMenuItem(item1, func() {
-
-		}),
-		fyne.NewMenuItem(item2, func() {
-
-		}),
-	)
-	// return item
-}
-
 type Event struct {
 	Name    string
 	Context string
 }
 
 const (
-	ContextLocal = "localhost"
-	ContextHoop  = "use.hoop.dev"
+	ContextLocal     = "localhost"
+	ContextHoop      = "use.hoop.dev"
+	ContextTryRunops = "tryrunops.hoop.dev"
 )
 
-func credentialsForContext(context map[string][]string) (apiURL, grpcURL, token string) {
+type GatewayContext struct {
+	Name        string
+	ApiURL      string
+	GrpcURL     string
+	AccessToken string
+}
+
+func credentialsForContext(context map[string][]string) (ctx GatewayContext) {
 	for ctxName, val := range context {
 		if val[0] != "current" {
 			continue
 		}
+		ctx.Name = ctxName
+		ctx.AccessToken = val[1]
 		switch ctxName {
 		case ContextLocal:
-			return "http://" + ContextLocal + ":8009", ContextLocal + ":8010", val[1]
+			ctx.ApiURL = "http://" + ContextLocal + ":8009"
+			ctx.GrpcURL = ContextLocal + ":8010"
 		case ContextHoop:
-			return "https://" + ContextHoop, ContextHoop + ":8443", val[1]
+			ctx.ApiURL = "https://" + ContextHoop
+			ctx.GrpcURL = ContextHoop + ":8443"
+		case ContextTryRunops:
+			ctx.ApiURL = "https://" + ContextTryRunops
+			ctx.GrpcURL = ContextTryRunops + ":8443"
 		}
 	}
 	return
+}
+
+func SetNewContext(appContext map[string][]string, contextName, token string) {
+	// clear all contexts
+	for _, ctx := range []string{ContextLocal, ContextTryRunops, ContextHoop} {
+		appContext[ctx][0] = ""
+	}
+
+	// set new context
+	appContext[contextName][0] = "current"
+	appContext[contextName][1] = token
 }
 
 func main() {
@@ -133,8 +135,9 @@ func main() {
 		}()
 	})
 	appContext := map[string][]string{
-		"use.hoop.dev": {"", ""},
-		"localhost":    {"", ""},
+		"use.hoop.dev":       {"", ""},
+		"localhost":          {"", ""},
+		"tryrunops.hoop.dev": {"", ""},
 	}
 	// var accessToken string
 	// defer a.Quit()
@@ -158,43 +161,48 @@ func main() {
 		// settingsW.Show()
 	})
 	// connectMenu.ChildMenu =
-	connectMenu.ChildMenu = connectionListMenu("conn01", "conn02")
 	connectMenu.Icon = iconCableStatic
-	connectMenu.Disabled = false
-
+	connectMenu.Disabled = true
 	loginDisplayMsg := fyne.NewMenuItem("Login to connect on services", func() {})
 	loginDisplayMsg.Disabled = true
 
 	eventCh := make(chan Event)
+	menuHoop := fyne.NewMenuItem("Log in (use.hoop.dev) ...", func() {
+		token, err := loadAccessToken("https://"+ContextHoop, appContext[ContextHoop][1])
+		if err != nil {
+			appNotifyErr(a, "failed loading config, reason=%v", err)
+			return
+		}
+		SetNewContext(appContext, ContextHoop, token)
+		eventCh <- Event{"login", ContextHoop}
+	})
+	menuTryRunops := fyne.NewMenuItem("Log in (tryrunops.hoop.dev) ...", func() {
+		token, err := loadAccessToken("https://"+ContextTryRunops, appContext[ContextTryRunops][1])
+		if err != nil {
+			appNotifyErr(a, "failed loading config, reason=%v", err)
+			return
+		}
+		SetNewContext(appContext, ContextTryRunops, token)
+		eventCh <- Event{"login", ContextTryRunops}
+	})
+	menuLocalhost := fyne.NewMenuItem("Log in (localhost) ...", func() {
+		token, err := loadAccessToken("http://localhost:8009", appContext[ContextLocal][1])
+		if err != nil {
+			appNotifyErr(a, "failed loading config, reason=%v", err)
+			return
+		}
+		SetNewContext(appContext, ContextLocal, token)
+		eventCh <- Event{"login", ContextLocal}
+	})
+
 	trayMenu := fyne.NewMenu("Hoop Dev",
 		connectMenu,
 		fyne.NewMenuItemSeparator(),
 		loginDisplayMsg,
 		fyne.NewMenuItemSeparator(),
-		fyne.NewMenuItem("Log in (use.hoop.dev) ...", func() {
-			token, err := loadAccessToken("https://"+ContextHoop, appContext[ContextHoop][1])
-			if err != nil {
-				appNotifyErr(a, "failed loading config, reason=%v", err)
-				return
-			}
-			appContext[ContextLocal][0] = ""
-			appContext[ContextHoop][0] = "current"
-			appContext[ContextHoop][1] = token
-			eventCh <- Event{"login", ContextHoop}
-			// connectMenu.ChildMenu = connectionListMenu("pg-hoop-rw", "pg-hoop-ro")
-			// connectMenu.ChildMenu.Refresh()
-		}),
-		fyne.NewMenuItem("Log in (localhost) ...", func() {
-			token, err := loadAccessToken("http://localhost:8009", appContext[ContextLocal][1])
-			if err != nil {
-				appNotifyErr(a, "failed loading config, reason=%v", err)
-				return
-			}
-			appContext[ContextHoop][0] = ""
-			appContext[ContextLocal][0] = "current"
-			appContext[ContextLocal][1] = token
-			eventCh <- Event{"login", ContextLocal}
-		}),
+		menuHoop,
+		menuLocalhost,
+		menuTryRunops,
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Save Config", func() {
 			config, err := proxyconfig.Load()
@@ -202,39 +210,26 @@ func main() {
 				appNotifyErr(a, "unable to save config, reason=%v", err.Error())
 				return
 			}
-			var contextName string
-			for name, val := range appContext {
-				if val[0] != "current" {
-					continue
-				}
-				contextName = name
-				switch name {
-				case ContextHoop:
-					config.ApiURL = "https://" + ContextHoop
-					config.GrpcURL = ContextHoop + ":8443"
-				case ContextLocal:
-					config.ApiURL = "http://" + ContextLocal + ":8009"
-					config.GrpcURL = ContextLocal + ":8010"
-				}
-				config.Token = val[1]
-			}
+			ctx := credentialsForContext(appContext)
+			config.ApiURL = ctx.ApiURL
+			config.GrpcURL = ctx.GrpcURL
+			config.Token = ctx.AccessToken
 			filepath, err := proxyconfig.NewConfigFile(config.ApiURL, config.GrpcURL, config.Token)
 			if err != nil {
 				appNotifyErr(a, "failed loading config, reason=%v", err)
 				return
 			}
-			if contextName != "" {
-				appNotifyOk(a, "context %v saved at %v", contextName, filepath)
+			if ctx.Name != "" {
+				appNotifyOk(a, "context %v saved at %v", ctx.Name, filepath)
 			}
 		}),
-		// contextMenu(),
 	)
 
 	go func() {
 		var currentCancelFn context.CancelFunc
 		for range eventCh {
-			apiURL, grpcURL, accessToken := credentialsForContext(appContext)
-			connections, err := connect.List(apiURL, accessToken)
+			gwctx := credentialsForContext(appContext)
+			connections, err := connect.List(gwctx.ApiURL, gwctx.AccessToken)
 			if err != nil {
 				appNotifyErr(a, "failed listing connection: %v", err)
 				continue
@@ -249,15 +244,18 @@ func main() {
 					ctx, cancelFn := context.WithCancel(context.Background())
 					currentCancelFn = cancelFn
 					defer cancelFn()
-					clientConfig := &clientconfig.Config{Token: accessToken, ApiURL: apiURL, GrpcURL: grpcURL}
+					clientConfig := &proxyconfig.Config{Token: gwctx.AccessToken, ApiURL: gwctx.ApiURL, GrpcURL: gwctx.GrpcURL}
 					onSuccess := func() { appNotifyOk(a, "connected %v", conn.Name) }
 					if err := cmd.RunConnectV2(ctx, conn.Name, clientConfig, onSuccess); err != nil {
 						appNotifyErr(a, "%s: failed with error: %v", conn.Name, err)
 					}
 				}))
 			}
-			fyne.NewMenu("Connect", menuItems...)
-			connectMenu.ChildMenu = fyne.NewMenu("Connect", menuItems...)
+			connectDisplayMsg := fyne.NewMenuItem(fmt.Sprintf("Click to connect (%s)", gwctx.Name), func() {})
+			connectDisplayMsg.Disabled = true
+			menuItems = append([]*fyne.MenuItem{connectDisplayMsg, fyne.NewMenuItemSeparator()}, menuItems...)
+			connectMenu.ChildMenu = fyne.NewMenu("", menuItems...)
+			connectMenu.Disabled = false
 			trayMenu.Refresh()
 		}
 	}()
