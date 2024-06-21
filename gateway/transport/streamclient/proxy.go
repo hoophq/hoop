@@ -107,7 +107,9 @@ func (s *ProxyStream) GetMeta(key string) string {
 	return ""
 }
 
-func (s *ProxyStream) PluginContext() plugintypes.Context { return *s.pluginCtx }
+// SetPluginContext allows overriding the plugin context configuration
+func (s *ProxyStream) SetPluginContext(fn func(pctx *plugintypes.Context)) { fn(s.pluginCtx) }
+func (s *ProxyStream) PluginContext() plugintypes.Context                  { return *s.pluginCtx }
 
 func (s *ProxyStream) String() string {
 	return fmt.Sprintf("user=%v,hostname=%v,origin=%v,verb=%v,platform=%v,version=%v",

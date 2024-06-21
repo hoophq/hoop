@@ -16,6 +16,7 @@ var (
 	dispatcherStateLock sync.RWMutex
 	dipatcherStateMap   = map[string]*dispatcherState{}
 	ErrForceReconnect   = errors.New("timeout (500ms) dispatching open session, forcing client to reconnect")
+	ErrUnsupportedType  = errors.New("connection type is not supported")
 )
 
 type openSessionResponse struct {

@@ -22,9 +22,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func (s *Server) subscribeClient(stream *streamclient.ProxyStream) (err error) {
-	clientVerb := stream.GetMeta("verb")
-	clientOrigin := stream.GetMeta("origin")
+func requestProxyConnection(stream *streamclient.ProxyStream) error {
 	pctx := stream.PluginContext()
 	if !stream.IsAgentOnline() {
 		log.With("user", pctx.UserEmail, "agentname", pctx.AgentName, "connection", pctx.ConnectionName).
@@ -52,6 +50,16 @@ func (s *Server) subscribeClient(stream *streamclient.ProxyStream) (err error) {
 				Warnf("failed to establish connection with agent, reason=%v", err)
 			return status.Errorf(codes.Aborted, err.Error())
 		}
+	}
+	return nil
+}
+
+func (s *Server) subscribeClient(stream *streamclient.ProxyStream) (err error) {
+	clientVerb := stream.GetMeta("verb")
+	clientOrigin := stream.GetMeta("origin")
+	pctx := stream.PluginContext()
+	if err := requestProxyConnection(stream); err != nil {
+		return err
 	}
 
 	connType := pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType)
@@ -100,7 +108,7 @@ func (s *Server) subscribeClient(stream *streamclient.ProxyStream) (err error) {
 	logAttrs := []any{"sid", pctx.SID, "connection", pctx.ConnectionName,
 		"agent-name", pctx.AgentName, "mode", pctx.AgentMode, "ua", userAgent}
 	log.With(logAttrs...).Infof("proxy connected: %v", stream)
-	defer func() { log.With(logAttrs...).Infof("proxy disconnected, err=%v", err) }()
+	defer func() { log.With(logAttrs...).Infof("proxy disconnected, reason=%v", err) }()
 	return s.listenClientMessages(stream)
 }
 
@@ -121,7 +129,6 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 		pkt, err := dstream.Recv()
 		if err != nil {
 			if err == io.EOF {
-				log.With("sid", pctx.SID).Debugf("EOF")
 				return err
 			}
 			if status, ok := status.FromError(err); ok && status.Code() == codes.Canceled {
@@ -292,7 +299,8 @@ func (s *Server) addConnectionParams(clientArgs, infoTypes []string, pctx plugin
 }
 
 func (s *Server) ReviewStatusChange(rev *types.Review) {
-	if proxyStream := streamclient.GetProxyStream(rev.Session); proxyStream != nil {
+	proxyStream := streamclient.GetProxyStream(rev.Session)
+	if proxyStream != nil {
 		payload := []byte(rev.Input)
 		packetType := pbclient.SessionOpenApproveOK
 		if rev.Status == types.ReviewStatusRejected {
@@ -307,4 +315,6 @@ func (s *Server) ReviewStatusChange(rev *types.Review) {
 			Payload: payload,
 		})
 	}
+	log.With("sid", rev.Session, "connection", rev.Connection.Name, "has-stream", proxyStream != nil).
+		Infof("review status change")
 }

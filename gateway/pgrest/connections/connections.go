@@ -44,10 +44,10 @@ func (c *connections) FetchByIDs(ctx pgrest.OrgContext, connectionIDs []string) 
 }
 
 func (a *connections) FetchOneByNameOrID(ctx pgrest.OrgContext, nameOrID string) (*pgrest.Connection, error) {
-	client := pgrest.New("/connections?select=*,orgs(id,name),plugin_connections(config,plugins(name))&org_id=eq.%s&name=eq.%s",
+	client := pgrest.New("/connections?select=*,orgs(id,name),agents(id,name,mode),plugin_connections(config,plugins(name))&org_id=eq.%s&name=eq.%s",
 		ctx.GetOrgID(), url.QueryEscape(nameOrID))
 	if _, err := uuid.Parse(nameOrID); err == nil {
-		client = pgrest.New("/connections?select=*,orgs(id,name),plugin_connections(config,plugins(name))&org_id=eq.%s&id=eq.%s",
+		client = pgrest.New("/connections?select=*,orgs(id,name),agents(id,name,mode),plugin_connections(config,plugins(name))&org_id=eq.%s&id=eq.%s",
 			ctx.GetOrgID(), nameOrID)
 	}
 	var conn pgrest.Connection

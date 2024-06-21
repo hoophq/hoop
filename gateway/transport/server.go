@@ -10,7 +10,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -18,13 +17,10 @@ import (
 	commongrpc "github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
-	apiconnections "github.com/runopsio/hoop/gateway/api/connections"
 	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/pgrest"
-	pgagents "github.com/runopsio/hoop/gateway/pgrest/agents"
 	"github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/security/idp"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/transport/connectionrequests"
 	"github.com/runopsio/hoop/gateway/transport/connectionstatus"
 	authinterceptor "github.com/runopsio/hoop/gateway/transport/interceptors/auth"
@@ -180,47 +176,50 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 		return err
 	}
 
+	pluginCtx := &plugintypes.Context{
+		Context: context.Background(),
+		SID:     "",
+
+		OrgID:       gwctx.UserContext.OrgID,
+		OrgName:     gwctx.UserContext.OrgName, // TODO: it's not set when it's a service account
+		UserID:      gwctx.UserContext.UserID,
+		UserName:    gwctx.UserContext.UserName,
+		UserEmail:   gwctx.UserContext.UserEmail,
+		UserSlackID: gwctx.UserContext.SlackID,
+		UserGroups:  gwctx.UserContext.UserGroups,
+
+		ConnectionID:      gwctx.Connection.ID,
+		ConnectionName:    gwctx.Connection.Name,
+		ConnectionType:    gwctx.Connection.Type,
+		ConnectionSubType: gwctx.Connection.SubType,
+		ConnectionCommand: gwctx.Connection.CmdEntrypoint,
+		ConnectionSecret:  gwctx.Connection.Secrets,
+
+		AgentID:   gwctx.Connection.AgentID,
+		AgentName: gwctx.Connection.AgentName,
+		AgentMode: gwctx.Connection.AgentMode,
+
+		// added when initializing the streamclient proxy
+		ClientVerb:   "",
+		ClientOrigin: "",
+
+		// TODO: deprecate it and allow the
+		// audit plugin to update these attributes
+		Script:   "",
+		Labels:   nil,
+		Metadata: nil,
+
+		ParamsData: map[string]any{},
+	}
+
 	switch clientOrigin[0] {
 	case pb.ConnectionOriginAgent:
 		return s.subscribeAgent(streamclient.NewAgent(gwctx.Agent, stream))
 	case pb.ConnectionOriginClientProxyManager:
-		// return s.proxyManager(stream)
-		return fmt.Errorf("unavailable implementation")
+		return s.proxyManager(streamclient.NewProxy(pluginCtx, stream))
+		// return fmt.Errorf("unavailable implementation")
 	default:
-		return s.subscribeClient(streamclient.NewProxy(&plugintypes.Context{
-			Context: context.Background(),
-			SID:     "",
-
-			OrgID:       gwctx.UserContext.OrgID,
-			OrgName:     gwctx.UserContext.OrgName, // TODO: it's not set when it's a service account
-			UserID:      gwctx.UserContext.UserID,
-			UserName:    gwctx.UserContext.UserName,
-			UserEmail:   gwctx.UserContext.UserEmail,
-			UserSlackID: gwctx.UserContext.SlackID,
-			UserGroups:  gwctx.UserContext.UserGroups,
-
-			ConnectionID:      gwctx.Connection.ID,
-			ConnectionName:    gwctx.Connection.Name,
-			ConnectionType:    gwctx.Connection.Type,
-			ConnectionSubType: gwctx.Connection.SubType,
-			ConnectionCommand: gwctx.Connection.CmdEntrypoint,
-			ConnectionSecret:  gwctx.Connection.Secrets,
-
-			AgentID:   gwctx.Connection.AgentID,
-			AgentName: gwctx.Connection.AgentName,
-			AgentMode: gwctx.Connection.AgentMode,
-
-			ClientVerb:   "",
-			ClientOrigin: "",
-
-			// TODO: deprecate it and allow the
-			// audit plugin to update these attributes
-			Script:   "",
-			Labels:   nil,
-			Metadata: nil,
-
-			ParamsData: map[string]any{},
-		}, stream))
+		return s.subscribeClient(streamclient.NewProxy(pluginCtx, stream))
 	}
 }
 
@@ -254,50 +253,4 @@ func (s *Server) handleGracefulShutdown() {
 		log.Warnf("gateway shutdown (%v)", signalNo)
 		os.Exit(143)
 	}()
-}
-
-func (s *Server) getConnection(name string, userCtx pgrest.Context) (*types.ConnectionInfo, error) {
-	conn, err := apiconnections.FetchByName(userCtx, name)
-	if err != nil {
-		log.Errorf("failed retrieving connection %v, err=%v", name, err)
-		sentry.CaptureException(err)
-		return nil, status.Errorf(codes.Internal, "internal error, failed to obtain connection")
-	}
-	if conn == nil {
-		return nil, nil
-	}
-
-	ag, err := pgagents.New().FetchOneByNameOrID(userCtx, conn.AgentId)
-	if err != nil {
-		log.Errorf("failed obtaining agent %v, err=%v", err)
-		return nil, status.Errorf(codes.Internal, "internal error, failed to obtain agent from connection")
-	}
-	if ag == nil {
-		return nil, status.Errorf(codes.NotFound, "agent not found")
-	}
-	return &types.ConnectionInfo{
-		ID:            conn.ID,
-		Name:          conn.Name,
-		Type:          string(conn.Type),
-		SubType:       conn.SubType,
-		CmdEntrypoint: conn.Command,
-		Secrets:       conn.Secrets,
-		AgentID:       conn.AgentId,
-		AgentMode:     ag.Mode,
-		AgentName:     ag.Name,
-	}, nil
-}
-
-func mdget(md metadata.MD, metaName string) string {
-	data := md.Get(metaName)
-	if len(data) == 0 {
-		// keeps compatibility with old clients that
-		// pass headers with underline. HTTP headers are not
-		// accepted with underline for some servers, e.g.: nginx
-		data = md.Get(strings.ReplaceAll(metaName, "-", "_"))
-		if len(data) == 0 {
-			return ""
-		}
-	}
-	return data[0]
 }

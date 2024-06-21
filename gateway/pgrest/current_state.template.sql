@@ -137,6 +137,10 @@ CREATE VIEW connections AS
         status, managed_by, _tags AS tags, created_at, updated_at
     FROM private.connections c;
 
+CREATE FUNCTION agents(connections) RETURNS SETOF agents ROWS 1 AS $$
+  SELECT * FROM agents WHERE id = $1.agent_id
+$$ stable language sql;
+
 CREATE FUNCTION update_connection(params json) RETURNS SETOF connections ROWS 1 AS $$
     WITH user_input AS (
         SELECT
