@@ -6,14 +6,15 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/driver/desktop"
+	"fyne.io/fyne/v2/theme"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/runopsio/hoop/client/cmd"
 	proxyconfig "github.com/runopsio/hoop/client/config"
 	"github.com/runopsio/hoop/trayapp/connect"
 	"github.com/runopsio/hoop/trayapp/login"
@@ -69,6 +70,7 @@ func appNotifyOk(app fyne.App, format string, a ...any) {
 }
 
 func appNotifyErr(app fyne.App, format string, a ...any) {
+	log.Printf(format, a...)
 	app.SendNotification(&fyne.Notification{
 		Title:   "",
 		Content: fmt.Sprintf(fmt.Sprintf("❌  %s", format), a...),
@@ -103,7 +105,7 @@ func credentialsForContext(context map[string][]string) (ctx GatewayContext) {
 		switch ctxName {
 		case ContextLocal:
 			ctx.ApiURL = "http://" + ContextLocal + ":8009"
-			ctx.GrpcURL = ContextLocal + ":8010"
+			ctx.GrpcURL = "127.0.0.1:8010"
 		case ContextHoop:
 			ctx.ApiURL = "https://" + ContextHoop
 			ctx.GrpcURL = ContextHoop + ":8443"
@@ -142,27 +144,20 @@ func main() {
 	// var accessToken string
 	// defer a.Quit()
 
-	settingsW := a.NewWindow("Hoop Settings")
-	settingsW.Resize(fyne.NewSize(560, 460))
+	// settingsW := a.NewWindow("Hoop Settings")
+	// settingsW.Resize(fyne.NewSize(560, 460))
 
-	settingsW.SetFixedSize(true)
+	// settingsW.SetFixedSize(true)
 	// settingsW.SetContent(content)
-	settingsW.SetCloseIntercept(func() {
-		settingsW.Hide()
-	})
+	// settingsW.SetCloseIntercept(func() {
+	// 	settingsW.Hide()
+	// })
 
 	// a.SetIcon(appIconBlackStatic)
 	// currentAppView := appInstance.View()
-	connectMenu := fyne.NewMenuItem("Connect ...", func() {
-		fmt.Println(appContext)
-		// fmt.Println("ACCESS-TOKEN", accessToken)
-		// settingsW.SetContent(currentAppView)
-		// settingsW.SetContent(makeBoxLayout(out))
-		// settingsW.Show()
-	})
-	// connectMenu.ChildMenu =
+	connectMenu := fyne.NewMenuItem("Connect ...", func() {})
 	connectMenu.Icon = iconCableStatic
-	connectMenu.Disabled = true
+	// connectMenu.Disabled = true
 	loginDisplayMsg := fyne.NewMenuItem("Login to connect on services", func() {})
 	loginDisplayMsg.Disabled = true
 
@@ -195,6 +190,29 @@ func main() {
 		eventCh <- Event{"login", ContextLocal}
 	})
 
+	menuHoop.Icon = theme.LoginIcon()
+	menuTryRunops.Icon = theme.LoginIcon()
+	menuLocalhost.Icon = theme.LoginIcon()
+	menuItemSaveConfig := fyne.NewMenuItem("Save Config", func() {
+		config, err := proxyconfig.Load()
+		if err != nil && err != proxyconfig.ErrEmpty {
+			appNotifyErr(a, "unable to save config, reason=%v", err.Error())
+			return
+		}
+		ctx := credentialsForContext(appContext)
+		config.ApiURL = ctx.ApiURL
+		config.GrpcURL = ctx.GrpcURL
+		config.Token = ctx.AccessToken
+		filepath, err := proxyconfig.NewConfigFile(config.ApiURL, config.GrpcURL, config.Token)
+		if err != nil {
+			appNotifyErr(a, "failed loading config, reason=%v", err)
+			return
+		}
+		if ctx.Name != "" {
+			appNotifyOk(a, "context %v saved at %v", ctx.Name, filepath)
+		}
+	})
+	menuItemSaveConfig.Icon = theme.DocumentSaveIcon()
 	trayMenu := fyne.NewMenu("Hoop Dev",
 		connectMenu,
 		fyne.NewMenuItemSeparator(),
@@ -204,25 +222,7 @@ func main() {
 		menuLocalhost,
 		menuTryRunops,
 		fyne.NewMenuItemSeparator(),
-		fyne.NewMenuItem("Save Config", func() {
-			config, err := proxyconfig.Load()
-			if err != nil && err != proxyconfig.ErrEmpty {
-				appNotifyErr(a, "unable to save config, reason=%v", err.Error())
-				return
-			}
-			ctx := credentialsForContext(appContext)
-			config.ApiURL = ctx.ApiURL
-			config.GrpcURL = ctx.GrpcURL
-			config.Token = ctx.AccessToken
-			filepath, err := proxyconfig.NewConfigFile(config.ApiURL, config.GrpcURL, config.Token)
-			if err != nil {
-				appNotifyErr(a, "failed loading config, reason=%v", err)
-				return
-			}
-			if ctx.Name != "" {
-				appNotifyOk(a, "context %v saved at %v", ctx.Name, filepath)
-			}
-		}),
+		menuItemSaveConfig,
 	)
 
 	go func() {
@@ -237,7 +237,7 @@ func main() {
 
 			var menuItems []*fyne.MenuItem
 			for _, conn := range connections {
-				menuItems = append(menuItems, fyne.NewMenuItem(conn.Name, func() {
+				menuItems = append(menuItems, fyne.NewMenuItem(fmt.Sprintf("%s", conn.Name), func() {
 					if currentCancelFn != nil {
 						currentCancelFn()
 					}
@@ -246,7 +246,7 @@ func main() {
 					defer cancelFn()
 					clientConfig := &proxyconfig.Config{Token: gwctx.AccessToken, ApiURL: gwctx.ApiURL, GrpcURL: gwctx.GrpcURL}
 					onSuccess := func() { appNotifyOk(a, "connected %v", conn.Name) }
-					if err := cmd.RunConnectV2(ctx, conn.Name, clientConfig, onSuccess); err != nil {
+					if err := connect.Run(ctx, conn.Name, clientConfig, onSuccess); err != nil {
 						appNotifyErr(a, "%s: failed with error: %v", conn.Name, err)
 					}
 				}))
@@ -259,6 +259,16 @@ func main() {
 			trayMenu.Refresh()
 		}
 	}()
+
+	connectMenu.Action = func() {
+		if desk, ok := a.(desktop.App); ok {
+			fmt.Println("SET SYSTEM TRAY MENU ...")
+			trayMenu.Refresh()
+			// desk.SetSystemTrayIcon(appIconBlackStatic)
+			desk.SetSystemTrayMenu(trayMenu)
+
+		}
+	}
 
 	if desk, ok := a.(desktop.App); ok {
 		desk.SetSystemTrayIcon(appIconBlackStatic)
