@@ -23,7 +23,7 @@ persistence:
   storageClassName: gp2
 
   # -- Size of persistent volume claim
-  size: 100Gi
+  size: 10Gi
 
 ingressApi:
   enabled: true
