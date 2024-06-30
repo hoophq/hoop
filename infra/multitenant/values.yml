@@ -64,7 +64,17 @@ resources:
   gw:
     limits:
       cpu: 2048m
-      memory: 2Gi
+      memory: 4Gi
     requests:
       cpu: 1024m
-      memory: 2Gi
+      memory: 4Gi
+
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: topology.kubernetes.io/zone
+          operator: In
+          values:
+          - us-east-1a
