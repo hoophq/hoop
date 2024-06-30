@@ -57,10 +57,10 @@ resources:
   gw:
     limits:
       cpu: 2048m
-      memory: 2Gi
+      memory: 4Gi
     requests:
       cpu: 512m
-      memory: 2Gi
+      memory: 4Gi
 
 affinity:
   nodeAffinity:
