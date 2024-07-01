@@ -111,6 +111,10 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error
 				dataMaskingInfo = &spectypes.DataMaskingInfo{}
 			}
 			for _, item := range dataMaskingInfo.Items {
+				// it could be decoded with nil items
+				if item == nil {
+					continue
+				}
 				metrics.DataMasking.TransformedBytes += item.TransformedBytes
 				if item.Err != nil {
 					metrics.DataMasking.ErrCount++
