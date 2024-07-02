@@ -38,6 +38,7 @@ RUN pip3 install -U \
     pep517==0.9.1 \
     progress==1.5 \
     psycopg2-binary==2.9.3 \
+    pymongo==4.8.0 \
     pymssql==2.2.3 \
     PyMySQL==1.0.2 \
     pyodbc==4.0.39 \
