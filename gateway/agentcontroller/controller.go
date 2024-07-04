@@ -16,6 +16,7 @@ import (
 	"github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/gateway/pgrest"
 	pgagents "github.com/runopsio/hoop/gateway/pgrest/agents"
+	pgorgs "github.com/runopsio/hoop/gateway/pgrest/orgs"
 	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
 	"golang.org/x/text/transform"
 	"golang.org/x/text/unicode/norm"
@@ -55,7 +56,7 @@ func Run(gatewayGrpcURL string) error {
 				log.Warnf("failed listing deployments, reason=%v", err)
 				continue
 			}
-			orgList, err := pgusers.New().FetchAllOrgs()
+			orgList, err := pgorgs.New().FetchAllOrgs()
 			if err != nil {
 				log.Warnf("failed listing organizations, reason=%v", err)
 				continue

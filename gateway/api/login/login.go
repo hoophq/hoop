@@ -16,6 +16,7 @@ import (
 	"github.com/runopsio/hoop/gateway/analytics"
 	"github.com/runopsio/hoop/gateway/pgrest"
 	pglogin "github.com/runopsio/hoop/gateway/pgrest/login"
+	pgorgs "github.com/runopsio/hoop/gateway/pgrest/orgs"
 	pguserauth "github.com/runopsio/hoop/gateway/pgrest/userauth"
 	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
 	"github.com/runopsio/hoop/gateway/security/idp"
@@ -217,7 +218,7 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 		})
 	}
 	// TODO: check if it's the first user to login and make it admin
-	org, totalUsers, err := pgusers.New().FetchOrgByName(proto.DefaultOrgName)
+	org, totalUsers, err := pgorgs.New().FetchOrgByName(proto.DefaultOrgName)
 	if err != nil || org == nil || totalUsers == -1 {
 		return false, fmt.Errorf("failed fetching default org, users=%v, err=%v", err, totalUsers)
 	}

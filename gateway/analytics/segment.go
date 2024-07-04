@@ -1,16 +1,13 @@
 package analytics
 
 import (
-	"net/url"
-	"os"
-	"strings"
-
 	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/runopsio/hoop/gateway/appconfig"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/segmentio/analytics-go/v3"
 )
 
-var envName = getEnvironment()
+var environmentName = appconfig.Get().ApiHostname()
 
 type Segment struct {
 	analytics.Client
@@ -19,7 +16,7 @@ type Segment struct {
 func New() *Segment { return &Segment{analytics.New("IuHRCK0Q9fdliDdgjQDddfrPFRG0X0RA")} }
 func (s *Segment) Identify(ctx *types.APIContext) {
 	if s.Client == nil || ctx == nil || ctx.UserEmail == "" || ctx.OrgID == "" ||
-		envName == "127.0.0.1" || envName == "localhost" {
+		environmentName == "127.0.0.1" || environmentName == "localhost" {
 		return
 	}
 
@@ -33,14 +30,14 @@ func (s *Segment) Identify(ctx *types.APIContext) {
 			SetEmail(ctx.UserEmail).
 			Set("groups", ctx.UserGroups).
 			Set("is-admin", ctx.IsAdminUser()).
-			Set("environment", envName).
+			Set("environment", environmentName).
 			Set("status", ctx.UserStatus),
 	})
 
 	orgName := ctx.OrgName
 	if orgName == pb.DefaultOrgName {
 		// use the name of the environment on self-hosted setups
-		orgName = envName
+		orgName = environmentName
 	}
 	_ = s.Client.Enqueue(analytics.Group{
 		GroupId: ctx.OrgID,
@@ -52,28 +49,17 @@ func (s *Segment) Identify(ctx *types.APIContext) {
 
 // Track generates an event to segment, if the context is not set, it will emit an anoynimous event
 func (s *Segment) Track(userEmail, eventName string, properties map[string]any) {
-	if s.Client == nil || envName == "127.0.0.1" || envName == "localhost" || userEmail == "" {
+	if s.Client == nil || environmentName == "127.0.0.1" || environmentName == "localhost" || userEmail == "" {
 		return
 	}
 	if properties == nil {
 		properties = map[string]any{}
 	}
-	properties["environment"] = envName
+	properties["environment"] = environmentName
 	properties["email"] = userEmail
 	_ = s.Client.Enqueue(analytics.Track{
 		UserId:     userEmail,
 		Event:      eventName,
 		Properties: properties,
 	})
-}
-
-// getEnvironment uses the API_URL as a unique identifier to track events
-// In practice this should be unique to multiple installations.
-func getEnvironment() string {
-	apiURL := os.Getenv("API_URL")
-	if u, _ := url.Parse(apiURL); u != nil {
-		return u.Hostname()
-	}
-	environment := strings.TrimPrefix(apiURL, "http://")
-	return strings.TrimPrefix(environment, "https://")
 }

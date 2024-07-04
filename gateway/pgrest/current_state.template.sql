@@ -8,7 +8,7 @@ SET search_path TO {{ .target_schema }};
 
 -- ORGS
 --
-CREATE VIEW orgs AS SELECT id, name, license, created_at FROM private.orgs;
+CREATE VIEW orgs AS SELECT id, name, license, license_data, created_at FROM private.orgs;
 
 CREATE VIEW audit AS
     SELECT id, org_id, event, metadata, created_by, created_at FROM private.audit;
@@ -310,7 +310,7 @@ CREATE ROLE {{ .pgrest_role }} LOGIN NOINHERIT NOCREATEDB NOCREATEROLE NOSUPERUS
 COMMENT ON ROLE {{ .pgrest_role }} IS 'Used to authenticate requests in postgrest';
 GRANT usage ON SCHEMA {{ .target_schema }} TO {{ .pgrest_role }};
 GRANT usage ON SCHEMA private TO {{ .pgrest_role }};
-GRANT SELECT, INSERT ON orgs TO {{ .pgrest_role }};
+GRANT SELECT, INSERT, UPDATE ON orgs TO {{ .pgrest_role }};
 GRANT INSERT, SELECT, UPDATE on login TO {{ .pgrest_role }};
 GRANT SELECT, INSERT, UPDATE, DELETE ON users TO {{ .pgrest_role }};
 GRANT SELECT, INSERT, UPDATE, DELETE ON user_groups TO {{ .pgrest_role }};

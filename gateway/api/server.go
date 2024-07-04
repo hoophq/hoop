@@ -244,6 +244,17 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		apiorgs.RevokeAgentKey)
 
+	route.PUT("/orgs/license",
+		AdminOnlyAccessRole,
+		api.Authenticate,
+		AuditApiChanges,
+		apiorgs.UpdateOrgLicense)
+	route.POST("/orgs/license/sign",
+		AdminOnlyAccessRole,
+		api.Authenticate,
+		AuditApiChanges,
+		apiorgs.SignLicense)
+
 	route.PUT("/orgs/features",
 		AdminOnlyAccessRole,
 		api.Authenticate,

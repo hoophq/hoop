@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -15,9 +14,9 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	commongrpc "github.com/runopsio/hoop/common/grpc"
+	"github.com/runopsio/hoop/common/license"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/notification"
 	"github.com/runopsio/hoop/gateway/pgrest"
 	"github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/security/idp"
@@ -40,15 +39,13 @@ import (
 type (
 	Server struct {
 		pb.UnimplementedTransportServer
-		ReviewService       review.Service
-		NotificationService notification.Service
+		ReviewService review.Service
 
-		IDProvider           *idp.Provider
-		GcpDLPRawCredentials string
-		PluginRegistryURL    string
-		PyroscopeIngestURL   string
-		PyroscopeAuthToken   string
-		AgentSentryDSN       string
+		IDProvider         *idp.Provider
+		ApiHostname        string
+		PyroscopeIngestURL string
+		PyroscopeAuthToken string
+		AgentSentryDSN     string
 	}
 )
 
@@ -98,11 +95,6 @@ func (s *Server) StartRPCServer() {
 		log.Fatal(err)
 	}
 
-	if err := s.ValidateConfiguration(); err != nil {
-		sentry.CaptureException(err)
-		log.Fatal(err)
-	}
-
 	tlsConfig, err := loadServerCertificates()
 	if err != nil {
 		sentry.CaptureException(err)
@@ -142,14 +134,14 @@ func (s *Server) StartRPCServer() {
 func (s *Server) PreConnect(ctx context.Context, req *pb.PreConnectRequest) (*pb.PreConnectResponse, error) {
 	var gwctx authinterceptor.GatewayContext
 	err := authinterceptor.ParseGatewayContextInto(ctx, &gwctx)
-	orgID, orgLicense, agentID, agentName := gwctx.Agent.OrgID, gwctx.Agent.Org.License, gwctx.Agent.ID, gwctx.Agent.Name
+	orgID, agentID, agentName := gwctx.Agent.OrgID, gwctx.Agent.ID, gwctx.Agent.Name
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	if orgID == "" || agentID == "" || agentName == "" {
 		return nil, status.Errorf(codes.Internal, "missing agent context")
 	}
-	orgCtx := pgrest.NewLicenseContext(orgID, orgLicense)
+	orgCtx := pgrest.NewOrgContext(orgID)
 	resp := connectionrequests.AgentPreConnect(orgCtx, agentID, req)
 	if resp.Message != "" {
 		err := fmt.Errorf("failed processing pre-connect, org=%v, agent=%v, reason=%v", orgID, agentName, err)
@@ -175,18 +167,27 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 		log.Error(err)
 		return err
 	}
+	if clientOrigin[0] == pb.ConnectionOriginAgent {
+		return s.subscribeAgent(streamclient.NewAgent(gwctx.Agent, stream))
+	}
+	l, err := license.Parse(gwctx.UserContext.OrgLicenseData, s.ApiHostname)
+	if err != nil {
+		log.Warnf("license is not valid, verify error: %v", err)
+		return status.Error(codes.FailedPrecondition, license.ErrNotValid.Error())
+	}
 
 	pluginCtx := &plugintypes.Context{
 		Context: context.Background(),
 		SID:     "",
 
-		OrgID:       gwctx.UserContext.OrgID,
-		OrgName:     gwctx.UserContext.OrgName, // TODO: it's not set when it's a service account
-		UserID:      gwctx.UserContext.UserID,
-		UserName:    gwctx.UserContext.UserName,
-		UserEmail:   gwctx.UserContext.UserEmail,
-		UserSlackID: gwctx.UserContext.SlackID,
-		UserGroups:  gwctx.UserContext.UserGroups,
+		OrgID:          gwctx.UserContext.OrgID,
+		OrgName:        gwctx.UserContext.OrgName, // TODO: it's not set when it's a service account
+		OrgLicenseType: l.Payload.Type,
+		UserID:         gwctx.UserContext.UserID,
+		UserName:       gwctx.UserContext.UserName,
+		UserEmail:      gwctx.UserContext.UserEmail,
+		UserSlackID:    gwctx.UserContext.SlackID,
+		UserGroups:     gwctx.UserContext.UserGroups,
 
 		ConnectionID:      gwctx.Connection.ID,
 		ConnectionName:    gwctx.Connection.Name,
@@ -213,25 +214,11 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 	}
 
 	switch clientOrigin[0] {
-	case pb.ConnectionOriginAgent:
-		return s.subscribeAgent(streamclient.NewAgent(gwctx.Agent, stream))
 	case pb.ConnectionOriginClientProxyManager:
 		return s.proxyManager(streamclient.NewProxy(pluginCtx, stream))
-		// return fmt.Errorf("unavailable implementation")
 	default:
 		return s.subscribeClient(streamclient.NewProxy(pluginCtx, stream))
 	}
-}
-
-func (s *Server) ValidateConfiguration() error {
-	var js json.RawMessage
-	if s.GcpDLPRawCredentials == "" {
-		return nil
-	}
-	if err := json.Unmarshal([]byte(s.GcpDLPRawCredentials), &js); err != nil {
-		return fmt.Errorf("failed to parse env GOOGLE_APPLICATION_CREDENTIALS_JSON, it should be a valid JSON")
-	}
-	return nil
 }
 
 func (s *Server) handleGracefulShutdown() {

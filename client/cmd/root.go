@@ -3,6 +3,8 @@ package cmd
 import (
 	"os"
 
+	"github.com/runopsio/hoop/client/cmd/admin"
+	"github.com/runopsio/hoop/client/cmd/config"
 	"github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/spf13/cobra"
@@ -42,4 +44,7 @@ func Execute() {
 func init() {
 	rootCmd.PersistentFlags().BoolVar(&debugGrpcFlag, "debug-grpc", grpc.ShouldDebugGrpc(), "Turn on debugging of gRPC (http2) if applicable")
 	rootCmd.PersistentFlags().BoolVar(&debugFlag, "debug", false, "Turn on debugging")
+
+	rootCmd.AddCommand(config.MainCmd)
+	rootCmd.AddCommand(admin.MainCmd)
 }

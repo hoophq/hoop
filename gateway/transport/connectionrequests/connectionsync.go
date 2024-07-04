@@ -56,7 +56,7 @@ func setChecksumCache(orgID string, req *proto.PreConnectRequest) {
 	connectionChecksumStore.Set(syncKey, checksum)
 }
 
-func upsertConnection(ctx pgrest.LicenseContext, agentID string, req *proto.PreConnectRequest, conn *pgrest.Connection) error {
+func upsertConnection(ctx pgrest.OrgContext, agentID string, req *proto.PreConnectRequest, conn *pgrest.Connection) error {
 	// TODO: implement logic based on license
 	if conn == nil {
 		conn = &pgrest.Connection{
@@ -97,7 +97,7 @@ func upsertConnection(ctx pgrest.LicenseContext, agentID string, req *proto.PreC
 	return nil
 }
 
-func connectionSync(ctx pgrest.LicenseContext, agentID string, req *proto.PreConnectRequest) error {
+func connectionSync(ctx pgrest.OrgContext, agentID string, req *proto.PreConnectRequest) error {
 	if checksumCacheMatches(ctx.GetOrgID(), req) {
 		return nil
 	}

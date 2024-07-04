@@ -15,9 +15,8 @@ import (
 )
 
 var startCmd = &cobra.Command{
-	Use:          "start",
-	Short:        "Start one of the Hoop component",
-	SilenceUsage: false,
+	Use:   "start",
+	Short: "Start one of the Hoop component",
 }
 
 var startAgentCmd = &cobra.Command{

@@ -119,13 +119,8 @@ func (p *Provider) userInfoEndpoint(accessToken string) (*ProviderUserInfo, erro
 	return &uinfo, nil
 }
 
-func NewProvider() *Provider {
+func NewProvider(apiURL string) *Provider {
 	ctx := context.Background()
-
-	apiURL := os.Getenv("API_URL")
-	if apiURL == "" {
-		log.Fatal("API_URL environment variable is required")
-	}
 	apiURL = strings.TrimSuffix(apiURL, "/")
 
 	provider := &Provider{

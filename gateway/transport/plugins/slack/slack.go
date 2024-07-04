@@ -9,9 +9,9 @@ import (
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	"github.com/runopsio/hoop/gateway/pgrest"
+	pgorgs "github.com/runopsio/hoop/gateway/pgrest/orgs"
 	pgplugins "github.com/runopsio/hoop/gateway/pgrest/plugins"
 	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
-	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
 	"github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/security/idp"
 	"github.com/runopsio/hoop/gateway/slack"
@@ -102,7 +102,7 @@ func (p *slackPlugin) startSlackServiceInstance(orgID string, slackConfig *slack
 }
 
 func (p *slackPlugin) OnStartup(_ plugintypes.Context) error {
-	orgList, err := pgusers.New().FetchAllOrgs()
+	orgList, err := pgorgs.New().FetchAllOrgs()
 	if err != nil {
 		return fmt.Errorf("failed listing organizations: %v", err)
 	}

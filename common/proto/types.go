@@ -1,16 +1,12 @@
 package proto
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/gob"
 	"fmt"
 	"io"
 	reflect "reflect"
-
-	"github.com/hoophq/pluginhooks"
-	"github.com/runopsio/hoop/common/proto/spectypes"
 )
 
 type (
@@ -25,16 +21,14 @@ type (
 		Close() (error, error)
 	}
 	PacketType        string
-	ProtocolType      string
 	ConnectionWrapper struct {
 		conn  io.WriteCloser
 		doneC chan struct{}
 	}
 	streamWriter struct {
-		client         ClientTransport
-		packetType     PacketType
-		packetSpec     map[string][]byte
-		pluginHookExec PluginHookExec
+		client     ClientTransport
+		packetType PacketType
+		packetSpec map[string][]byte
 	}
 	AgentConnectionParams struct {
 		ConnectionName string
@@ -47,17 +41,9 @@ type (
 		ClientVerb     string
 		ClientOrigin   string
 		DLPInfoTypes   []string
-		PluginHookList []map[string]any
-	}
-	PluginHookExec interface {
-		ExecRPCOnSend(*pluginhooks.Request) ([]byte, error)
-		ExecRPCOnRecv(*pluginhooks.Request) ([]byte, error)
 	}
 
-	WriterWithDataMaskingInfo interface {
-		WriterWithDataMaskingInfo(data []byte, info *spectypes.DataMaskingInfo) (int, error)
-	}
-
+	// TODO: remove it later, kept for compatibility issues
 	TransformationSummary struct {
 		Index int
 		Err   error
@@ -100,22 +86,6 @@ func NewStreamWriter(client ClientTransport, pktType PacketType, spec map[string
 	return &streamWriter{client: client, packetType: pktType, packetSpec: spec}
 }
 
-func NewStdoutStreamWriter(client ClientTransport, pktType PacketType, spec map[string][]byte) io.WriteCloser {
-	return &streamWriter{client: client, packetType: pktType, packetSpec: spec}
-}
-
-func NewStderrStreamWriter(client ClientTransport, pktType PacketType, spec map[string][]byte) io.WriteCloser {
-	return &streamWriter{client: client, packetType: pktType, packetSpec: spec}
-}
-
-func NewHookStreamWriter(
-	client ClientTransport,
-	pktType PacketType,
-	spec map[string][]byte,
-	hookExec PluginHookExec) io.WriteCloser {
-	return &streamWriter{client: client, packetType: pktType, packetSpec: spec, pluginHookExec: hookExec}
-}
-
 func (s *streamWriter) Write(data []byte) (int, error) {
 	if s.client == nil {
 		return 0, fmt.Errorf("stream writer client is empty")
@@ -125,36 +95,14 @@ func (s *streamWriter) Write(data []byte) (int, error) {
 	p.Type = packetType
 	p.Spec = s.packetSpec
 	p.Payload = data
-
-	if s.pluginHookExec != nil {
-		if p.Spec == nil {
-			return 0, fmt.Errorf("packet spec is empty")
-		}
-		mutateData, err := s.pluginHookExec.ExecRPCOnSend(&pluginhooks.Request{
-			SessionID:  string(p.Spec[SpecGatewaySessionID]),
-			PacketType: p.Type,
-			Payload:    data,
-		})
-		if err != nil {
-			return 0, err
-		}
-		// mutate if the hooks returns any payload
-		if len(mutateData) > 0 {
-			p.Payload = mutateData
-		}
-	}
 	return len(p.Payload), s.client.Send(p)
 }
 
-func (s *streamWriter) WriterWithDataMaskingInfo(data []byte, info *spectypes.DataMaskingInfo) (int, error) {
-	if s.client == nil {
-		return 0, fmt.Errorf("stream writer client is empty")
+func (s *streamWriter) AddSpecVal(key string, val []byte) {
+	if s.packetSpec == nil {
+		s.packetSpec = map[string][]byte{}
 	}
-	p := &Packet{Spec: s.packetSpec, Type: s.packetType.String(), Payload: data}
-	if infoEnc, _ := info.Encode(); infoEnc != nil {
-		p.Spec[spectypes.DataMaskingInfoKey] = infoEnc
-	}
-	return len(p.Payload), s.client.Send(p)
+	s.packetSpec[key] = val
 }
 
 func (s *streamWriter) Close() error {
@@ -180,10 +128,6 @@ func GobDecodeInto(data []byte, into any) error {
 	return gob.NewDecoder(bytes.NewBuffer(data)).Decode(into)
 }
 
-func BufferedPayload(payload []byte) *bufio.Reader {
-	return bufio.NewReaderSize(bytes.NewBuffer(payload), len(payload))
-}
-
 func IsInList(item string, items []string) bool {
 	for _, i := range items {
 		if i == item {
@@ -193,16 +137,16 @@ func IsInList(item string, items []string) bool {
 	return false
 }
 
-func (t *TransformationSummary) String() string {
-	if len(t.Summary) == 2 {
-		return fmt.Sprintf("chunk:%v, infotype:%v, transformedbytes:%v, result:%v",
-			t.Index, t.Summary[0], t.Summary[1], t.SummaryResult)
-	}
-	if t.Err != nil {
-		return fmt.Sprintf("chunk:%v, err:%v", t.Index, t.Err)
-	}
-	return ""
-}
+// func (t *TransformationSummary) String() string {
+// 	if len(t.Summary) == 2 {
+// 		return fmt.Sprintf("chunk:%v, infotype:%v, transformedbytes:%v, result:%v",
+// 			t.Index, t.Summary[0], t.Summary[1], t.SummaryResult)
+// 	}
+// 	if t.Err != nil {
+// 		return fmt.Sprintf("chunk:%v, err:%v", t.Index, t.Err)
+// 	}
+// 	return ""
+// }
 
 // ToProtoConnectionType parse the connection type and subtype into proto type.
 // These constants should be used by clients (proxy or agent)

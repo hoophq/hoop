@@ -3,10 +3,9 @@ package controller
 import (
 	"context"
 	"fmt"
+	"io"
+	"libhoop"
 
-	"github.com/hoophq/pluginhooks"
-	"github.com/runopsio/hoop/agent/mysql"
-	authmiddleware "github.com/runopsio/hoop/agent/mysql/middleware/auth"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
@@ -15,7 +14,7 @@ import (
 func (a *Agent) processMySQLProtocol(pkt *pb.Packet) {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 	streamClient := pb.NewStreamWriter(a.client, pbclient.MySQLConnectionWrite, pkt.Spec)
-	connParams, pluginHooks := a.connectionParams(sessionID)
+	connParams := a.connectionParams(sessionID)
 	if connParams == nil {
 		log.Errorf("session=%s - connection params not found", sessionID)
 		a.sendClientSessionClose(sessionID, "connection params not found, contact the administrator")
@@ -30,20 +29,7 @@ func (a *Agent) processMySQLProtocol(pkt *pb.Packet) {
 	}
 	clientConnectionIDKey := fmt.Sprintf("%s:%s", sessionID, string(clientConnectionID))
 	clientObj := a.connStore.Get(clientConnectionIDKey)
-	if proxyServerWriter, ok := clientObj.(mysql.Proxy); ok {
-		mutatePayload, err := pluginHooks.ExecRPCOnRecv(&pluginhooks.Request{
-			SessionID:  sessionID,
-			PacketType: pkt.Type,
-			Payload:    pkt.Payload,
-		})
-		if err != nil {
-			log.Errorf("failed processing plugin, err=%v", err)
-			a.sendClientSessionClose(sessionID, fmt.Sprintf("plugin error, err=%v", err))
-			return
-		}
-		if len(mutatePayload) > 0 {
-			pkt.Payload = mutatePayload
-		}
+	if proxyServerWriter, ok := clientObj.(io.WriteCloser); ok {
 		if _, err := proxyServerWriter.Write(pkt.Payload); err != nil {
 			log.Errorf("failed sending packet, err=%v", err)
 			a.sendClientSessionClose(sessionID, "fail to write packet")
@@ -60,18 +46,21 @@ func (a *Agent) processMySQLProtocol(pkt *pb.Packet) {
 	}
 
 	log.Infof("session=%v - starting mysql connection at %v:%v", sessionID, connenv.host, connenv.port)
-	mysqlServer, err := newTCPConn(connenv)
+	opts := map[string]string{
+		"hostname": connenv.host,
+		"port":     connenv.port,
+		"username": connenv.user,
+		"password": connenv.pass,
+	}
+	serverWriter, err := libhoop.NewDBCore(context.Background(), streamClient, opts).MySQL()
 	if err != nil {
 		errMsg := fmt.Sprintf("failed connecting with mysql server, err=%v", err)
 		log.Errorf(errMsg)
 		a.sendClientSessionClose(sessionID, errMsg)
 		return
 	}
-	proxyServerWriter := mysql.NewProxy(
-		context.Background(),
-		mysqlServer,
-		streamClient,
-		authmiddleware.New(connenv.user, connenv.pass).Handler,
-	).Run()
-	a.connStore.Set(clientConnectionIDKey, proxyServerWriter)
+	serverWriter.Run(func(_ int, errMsg string) {
+		a.sendClientSessionClose(sessionID, errMsg)
+	})
+	a.connStore.Set(clientConnectionIDKey, serverWriter)
 }

@@ -9,7 +9,7 @@ import (
 
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/memory"
-	mssqltypes "github.com/runopsio/hoop/common/mssql/types"
+	mssqltypes "github.com/runopsio/hoop/common/mssqltypes"
 	pgtypes "github.com/runopsio/hoop/common/pgtypes"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"

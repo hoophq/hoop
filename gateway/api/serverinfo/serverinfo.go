@@ -1,13 +1,18 @@
 package apiserverinfo
 
 import (
+	"fmt"
+	"libhoop/log"
 	"net/http"
 	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/runopsio/hoop/common/appruntime"
+	"github.com/runopsio/hoop/common/license"
 	"github.com/runopsio/hoop/common/version"
 	"github.com/runopsio/hoop/gateway/appconfig"
+	pgorgs "github.com/runopsio/hoop/gateway/pgrest/orgs"
+	"github.com/runopsio/hoop/gateway/storagev2"
 )
 
 var (
@@ -37,6 +42,20 @@ func New(grpcURL string) *handler {
 }
 
 func (h *handler) Get(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	org, err := pgorgs.New().FetchOrgByContext(ctx)
+	if err != nil || org == nil {
+		errMsg := fmt.Sprintf("failed obtaining organization license, reason=%v", err)
+		log.Error(errMsg)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+		return
+	}
+	apiHostname := appconfig.Get().ApiHostname()
+	l, err := license.Parse(org.LicenseData, apiHostname)
+	licenseVerifyErr := ""
+	if err != nil {
+		licenseVerifyErr = err.Error()
+	}
 	tenancyType := "selfhosted"
 	if isOrgMultiTenant {
 		tenancyType = "multitenant"
@@ -44,6 +63,19 @@ func (h *handler) Get(c *gin.Context) {
 	serverInfoData["tenancy_type"] = tenancyType
 	serverInfoData["grpc_url"] = h.grpcURL
 	serverInfoData["has_ask_ai_credentials"] = appconfig.Get().IsAskAIAvailable()
+	serverInfoData["license_info"] = nil
+	if l != nil {
+		serverInfoData["license_info"] = map[string]any{
+			"key_id":        l.KeyID,
+			"allowed_hosts": l.Payload.AllowedHosts,
+			"type":          l.Payload.Type,
+			"issued_at":     fmt.Sprintf("%v", l.Payload.IssuedAt),
+			"expire_at":     fmt.Sprintf("%v", l.Payload.ExpireAt),
+			"is_valid":      err == nil,
+			"verify_error":  licenseVerifyErr,
+			"verified_host": apiHostname,
+		}
+	}
 	c.JSON(http.StatusOK, serverInfoData)
 }
 

@@ -1,22 +1,24 @@
 package types
 
 import (
+	"encoding/json"
 	"time"
 
 	"olympos.io/encoding/edn"
 )
 
 type APIContext struct {
-	OrgID       string   `json:"org_id"`
-	OrgName     string   `json:"org_name"`
-	OrgLicense  string   `json:"org_license"`
-	UserID      string   `json:"user_id"`
-	UserName    string   `json:"user_name"`
-	UserEmail   string   `json:"user_email"`
-	UserGroups  []string `json:"user_groups"`
-	UserStatus  string   `json:"user_status"`
-	SlackID     string   `json:"slack_id"`
-	UserPicture string   `json:"picture"`
+	OrgID          string          `json:"org_id"`
+	OrgName        string          `json:"org_name"`
+	OrgLicense     string          `json:"org_license"`
+	OrgLicenseData json.RawMessage `json:"org_license_data"`
+	UserID         string          `json:"user_id"`
+	UserName       string          `json:"user_name"`
+	UserEmail      string          `json:"user_email"`
+	UserGroups     []string        `json:"user_groups"`
+	UserStatus     string          `json:"user_status"`
+	SlackID        string          `json:"slack_id"`
+	UserPicture    string          `json:"picture"`
 
 	UserAnonSubject       string
 	UserAnonEmail         string
@@ -87,24 +89,15 @@ type Connection struct {
 }
 
 type ConnectionInfo struct {
-	ID                   string         `json:"id"`
-	Name                 string         `json:"name"`
-	Type                 string         `json:"type"`
-	SubType              string         `json:"subtype"`
-	CmdEntrypoint        []string       `json:"cmd"`
-	Secrets              map[string]any `json:"secrets"`
-	AgentID              string         `json:"agent_id"`
-	AgentName            string         `json:"agent_name"`
-	AgentMode            string         `json:"agent_mode"`
-	PostSaveSessionToken string         `json:"post_save_session_token"`
-	Policies             []PolicyInfo   `json:"-"`
-}
-
-type PolicyInfo struct {
-	ID     string
-	Name   string
-	Type   string
-	Config []string
+	ID            string
+	Name          string
+	Type          string
+	SubType       string
+	CmdEntrypoint []string
+	Secrets       map[string]any
+	AgentID       string
+	AgentName     string
+	AgentMode     string
 }
 
 type ReviewOwner struct {

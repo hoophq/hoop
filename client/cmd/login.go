@@ -23,6 +23,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var noBrowser bool
+
 type login struct {
 	Url     string `json:"login_url"`
 	Message string `json:"message"`
@@ -79,6 +81,7 @@ var loginCmd = &cobra.Command{
 }
 
 func init() {
+	loginCmd.Flags().BoolVar(&noBrowser, "no-browser", false, "Print the login url to stdout instead of opening the browser")
 	rootCmd.AddCommand(loginCmd)
 }
 
@@ -132,9 +135,15 @@ func doLogin(apiURL string) (string, error) {
 		Addr: pb.ClientLoginCallbackAddress,
 	}
 	go callbackHttpServer.ListenAndServe()
-	log.Debugf("trying opening browser with url=%v", loginUrl)
-	if err := openBrowser(loginUrl); err != nil {
-		fmt.Printf("Browser failed to open. \nPlease click on the link below:\n\n%s\n\n", loginUrl)
+	if noBrowser {
+		fmt.Printf("\nOpen the URL below to authenticate on your Hoop instance\n")
+		fmt.Printf("---------------------------------------------------------\n")
+		fmt.Printf("• %s\n\n", loginUrl)
+	} else {
+		log.Debugf("trying opening browser with url=%v", loginUrl)
+		if err := openBrowser(loginUrl); err != nil {
+			fmt.Printf("Browser failed to open. \nPlease click on the link below:\n\n%s\n\n", loginUrl)
+		}
 	}
 	defer callbackHttpServer.Shutdown(context.Background())
 	select {

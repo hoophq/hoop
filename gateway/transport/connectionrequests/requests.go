@@ -62,7 +62,7 @@ var (
 // This function also release the proxy connections if there's an agent online or
 // if the synchronize process returns with an error. The error is sent to all clients
 // waiting for a response
-func AgentPreConnect(ctx pgrest.LicenseContext, agentID string, req *proto.PreConnectRequest) *proto.PreConnectResponse {
+func AgentPreConnect(ctx pgrest.OrgContext, agentID string, req *proto.PreConnectRequest) *proto.PreConnectResponse {
 	// sync the connection with the store
 	var syncErr error
 	if req.Name != "" {

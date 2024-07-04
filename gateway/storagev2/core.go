@@ -1,6 +1,7 @@
 package storagev2
 
 import (
+	"encoding/json"
 	"slices"
 
 	"github.com/gin-gonic/gin"
@@ -75,6 +76,11 @@ func (c *Context) WithOrgName(orgName string) *Context {
 
 func (c *Context) WithOrgLicense(orgLicense string) *Context {
 	c.OrgLicense = orgLicense
+	return c
+}
+
+func (c *Context) WithOrgLicenseData(licenseData json.RawMessage) *Context {
+	c.OrgLicenseData = licenseData
 	return c
 }
 

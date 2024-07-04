@@ -13,7 +13,7 @@ import (
 	pbclient "github.com/runopsio/hoop/common/proto/client"
 	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
 	"github.com/runopsio/hoop/gateway/analytics"
-	pgplugins "github.com/runopsio/hoop/gateway/pgrest/plugins"
+	"github.com/runopsio/hoop/gateway/appconfig"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
 	"github.com/runopsio/hoop/gateway/transport/connectionrequests"
 	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
@@ -186,8 +186,8 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			pb.SpecConnectionType:   pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType).Bytes(),
 		}
 
-		if s.GcpDLPRawCredentials != "" {
-			spec[pb.SpecAgentGCPRawCredentialsKey] = []byte(s.GcpDLPRawCredentials)
+		if jsonCred := appconfig.Get().GcpDLPJsonCredentials(); jsonCred != "" {
+			spec[pb.SpecAgentGCPRawCredentialsKey] = []byte(jsonCred)
 		}
 
 		if !stream.IsAgentOnline() {
@@ -199,9 +199,20 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			return pb.ErrAgentOffline
 		}
 		clientArgs := clientArgsDecode(pkt.Spec)
-		connParams, err := s.addConnectionParams(clientArgs, stream.GetRedactInfoTypes(), pctx)
+		connParams, err := pb.GobEncode(&pb.AgentConnectionParams{
+			ConnectionName: pctx.ConnectionName,
+			ConnectionType: pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType).String(),
+			UserID:         pctx.UserID,
+			UserEmail:      pctx.UserEmail,
+			EnvVars:        pctx.ConnectionSecret,
+			CmdList:        pctx.ConnectionCommand,
+			ClientArgs:     clientArgs,
+			ClientVerb:     pctx.ClientVerb,
+			ClientOrigin:   pctx.ClientOrigin,
+			DLPInfoTypes:   stream.GetRedactInfoTypes(),
+		})
 		if err != nil {
-			return err
+			return fmt.Errorf("failed encoding connection params err=%v", err)
 		}
 		spec[pb.SpecAgentConnectionParamsKey] = connParams
 		// Propagate client spec.
@@ -212,7 +223,10 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			}
 			spec[key] = val
 		}
-		return stream.SendToAgent(&pb.Packet{Type: pbagent.SessionOpen, Spec: spec})
+
+		err = stream.SendToAgent(&pb.Packet{Type: pbagent.SessionOpen, Spec: spec})
+		log.With("sid", pctx.SID, "agent-name", pctx.AgentName).Warnf("opening session with agent, sent=%v", err == nil)
+		return err
 	default:
 		return stream.SendToAgent(pkt)
 	}
@@ -229,73 +243,6 @@ func clientArgsDecode(spec map[string][]byte) []string {
 		}
 	}
 	return clientArgs
-}
-
-func (s *Server) addConnectionParams(clientArgs, infoTypes []string, pctx plugintypes.Context) ([]byte, error) {
-	plugins, err := pgplugins.New().FetchAll(pctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed loading plugin hooks, err=%v", err)
-	}
-	var pluginHookList []map[string]any
-	for _, pl := range plugins {
-		if pl.Source == nil {
-			continue
-		}
-		var pluginName string
-		for _, conn := range pl.Connections {
-			if pctx.ConnectionName == conn.Name {
-				pluginName = pl.Name
-				break
-			}
-		}
-		if pluginName == "" {
-			continue
-		}
-
-		for _, plConn := range pl.Connections {
-			if plConn.Name != pctx.ConnectionName {
-				continue
-			}
-			// TODO: connection config should change in the future to accept
-			// a map instead of a list. For now, the first record is used
-			// as the configuration encoded as base64 + json
-			var connectionConfigB64JSONEnc string
-			if len(plConn.Config) > 0 {
-				connectionConfigB64JSONEnc = plConn.Config[0]
-			}
-			var pluginEnvVars map[string]string
-			if pl.Config != nil {
-				pluginEnvVars = pl.Config.EnvVars
-			}
-			pluginHookList = append(pluginHookList, map[string]any{
-				"plugin_registry":   s.PluginRegistryURL,
-				"plugin_name":       pl.Name,
-				"plugin_source":     *pl.Source,
-				"plugin_envvars":    pluginEnvVars,
-				"connection_config": map[string]any{"jsonb64": connectionConfigB64JSONEnc},
-			})
-			// load the plugin once per connection
-			break
-		}
-	}
-	encConnectionParams, err := pb.GobEncode(&pb.AgentConnectionParams{
-		ConnectionName: pctx.ConnectionName,
-		ConnectionType: pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType).String(),
-		UserID:         pctx.UserID,
-		UserEmail:      pctx.UserEmail,
-		EnvVars:        pctx.ConnectionSecret,
-		CmdList:        pctx.ConnectionCommand,
-		ClientArgs:     clientArgs,
-		ClientVerb:     pctx.ClientVerb,
-		ClientOrigin:   pctx.ClientOrigin,
-		DLPInfoTypes:   infoTypes,
-		PluginHookList: pluginHookList,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed encoding connection params err=%v", err)
-	}
-
-	return encConnectionParams, nil
 }
 
 func (s *Server) ReviewStatusChange(rev *types.Review) {

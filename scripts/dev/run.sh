@@ -8,7 +8,7 @@ if ! [[ -f .env ]]; then
 fi
 
 while read -r LINE; do
-  if [[ $LINE == *'='* ]] && [[ $LINE != '#'* ]] && [[ $LINE == *"PG_"* ]]; then
+  if [[ $LINE == "LIBHOOP"* ]]; then
     ENV_VAR=$(echo $LINE | envsubst)
     eval export $(echo $ENV_VAR)
   fi
@@ -21,7 +21,22 @@ function ctrl_c() {
     exit 130
 }
 
+LIBHOOP="${LIBHOOP:-_libhoop}"
+
 mkdir -p $HOME/.hoop/dev
+
+# remove symbolic link
+rm libhoop || true 2>/dev/null
+if [[ $LIBHOOP == "git@"* ]]; then
+  rm -rf $HOME/.hoop/dev/libhoop
+  git clone $LIBHOOP $HOME/.hoop/dev/libhoop
+  rm -rf $HOME/.hoop/dev/libhoop/.git
+  ln -s $HOME/.hoop/dev/libhoop libhoop
+else
+  ln -s $LIBHOOP libhoop
+fi
+
+cd libhoop && go mod tidy && cd ../
 
 # Dockerfile with agent tools
 cp ./scripts/dev/Dockerfile $HOME/.hoop/dev/Dockerfile

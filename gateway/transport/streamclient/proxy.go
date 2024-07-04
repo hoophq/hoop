@@ -112,13 +112,14 @@ func (s *ProxyStream) SetPluginContext(fn func(pctx *plugintypes.Context)) { fn(
 func (s *ProxyStream) PluginContext() plugintypes.Context                  { return *s.pluginCtx }
 
 func (s *ProxyStream) String() string {
-	return fmt.Sprintf("user=%v,hostname=%v,origin=%v,verb=%v,platform=%v,version=%v",
+	return fmt.Sprintf("user=%v,hostname=%v,origin=%v,verb=%v,platform=%v,version=%v,license=%v",
 		s.pluginCtx.UserEmail,
 		s.GetMeta("hostname"),
 		s.GetMeta("origin"),
 		s.GetMeta("verb"),
 		s.GetMeta("platform"),
 		s.GetMeta("version"),
+		s.pluginCtx.OrgLicenseType,
 	)
 }
 func (s *ProxyStream) Save() (err error) {

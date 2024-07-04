@@ -6,11 +6,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/runopsio/hoop/common/license"
 	"github.com/runopsio/hoop/common/log"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
-	"github.com/runopsio/hoop/gateway/notification"
 	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
 	"github.com/runopsio/hoop/gateway/review"
 	"github.com/runopsio/hoop/gateway/storagev2/types"
@@ -18,27 +18,28 @@ import (
 )
 
 type reviewPlugin struct {
-	apiURL              string
-	reviewSvc           *review.Service
-	notificationService notification.Service
+	apiURL    string
+	reviewSvc *review.Service
 }
 
-func New(reviewSvc *review.Service, notificationSvc notification.Service, apiURL string) *reviewPlugin {
+func New(reviewSvc *review.Service, apiURL string) *reviewPlugin {
 	return &reviewPlugin{
-		apiURL:              apiURL,
-		reviewSvc:           reviewSvc,
-		notificationService: notificationSvc,
+		apiURL:    apiURL,
+		reviewSvc: reviewSvc,
 	}
 }
 
-func (r *reviewPlugin) Name() string                          { return plugintypes.PluginReviewName }
-func (r *reviewPlugin) OnStartup(_ plugintypes.Context) error { return nil }
+func (p *reviewPlugin) Name() string                          { return plugintypes.PluginReviewName }
+func (p *reviewPlugin) OnStartup(_ plugintypes.Context) error { return nil }
 func (p *reviewPlugin) OnUpdate(_, _ *types.Plugin) error     { return nil }
-func (r *reviewPlugin) OnConnect(_ plugintypes.Context) error { return nil }
+func (p *reviewPlugin) OnConnect(_ plugintypes.Context) error { return nil }
 
-func (r *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {
+func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {
 	if pkt.Type != pbagent.SessionOpen {
 		return nil, nil
+	}
+	if pctx.OrgLicenseType == license.OSSType {
+		return p.onReceiveOSS(pctx, pkt)
 	}
 
 	otrev, err := pgreview.New().FetchOneBySid(pctx, pctx.SID)
@@ -51,7 +52,7 @@ func (r *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 		log.With("id", otrev.Id, "session", pctx.SID, "user", otrev.ReviewOwner.Email, "org", pctx.OrgID,
 			"status", otrev.Status).Info("one time review")
 		if !(otrev.Status == types.ReviewStatusApproved || otrev.Status == types.ReviewStatusProcessing) {
-			reviewURL := fmt.Sprintf("%s/plugins/reviews/%s", r.apiURL, otrev.Id)
+			reviewURL := fmt.Sprintf("%s/plugins/reviews/%s", p.apiURL, otrev.Id)
 			return &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{
 				Type:    pbclient.SessionOpenWaitingApproval,
 				Payload: []byte(reviewURL),
@@ -61,7 +62,7 @@ func (r *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 
 		if otrev.Status == types.ReviewStatusApproved {
 			otrev.Status = types.ReviewStatusProcessing
-			if err := r.reviewSvc.Persist(pctx, otrev); err != nil {
+			if err := p.reviewSvc.Persist(pctx, otrev); err != nil {
 				return nil, plugintypes.InternalErr("failed saving approved review", err)
 			}
 		}
@@ -157,15 +158,15 @@ func (r *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 	log.With("session", pctx.SID, "id", newRev.Id, "user", pctx.UserID, "org", pctx.OrgID,
 		"type", reviewType, "duration", fmt.Sprintf("%vm", accessDuration.Minutes())).
 		Infof("creating review")
-	if err := r.reviewSvc.Persist(pctx, newRev); err != nil {
+	if err := p.reviewSvc.Persist(pctx, newRev); err != nil {
 		return nil, plugintypes.InternalErr("failed saving review", err)
 	}
 	return &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{
 		Type:    pbclient.SessionOpenWaitingApproval,
-		Payload: []byte(fmt.Sprintf("%s/plugins/reviews/%s", r.apiURL, newRev.Id)),
+		Payload: []byte(fmt.Sprintf("%s/plugins/reviews/%s", p.apiURL, newRev.Id)),
 		Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(pctx.SID)},
 	}}, nil
 }
 
-func (r *reviewPlugin) OnDisconnect(_ plugintypes.Context, errMsg error) error { return nil }
-func (r *reviewPlugin) OnShutdown()                                            {}
+func (p *reviewPlugin) OnDisconnect(_ plugintypes.Context, errMsg error) error { return nil }
+func (p *reviewPlugin) OnShutdown()                                            {}

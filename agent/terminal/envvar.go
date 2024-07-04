@@ -22,10 +22,6 @@ type (
 	}
 )
 
-func (e *EnvVar) GetKeyVal() string {
-	return fmt.Sprintf("%s=%s", e.Key, string(e.Val))
-}
-
 func (e *EnvVar) GetDecodedVal() ([]byte, error) {
 	return base64.StdEncoding.DecodeString(string(e.Val))
 }
@@ -38,14 +34,6 @@ func (s *EnvVarStore) Getenv(key string) string {
 	return string(env.Val)
 }
 
-func (s *EnvVarStore) ParseToKeyVal() []string {
-	var keyValList []string
-	for _, env := range s.store {
-		keyValList = append(keyValList, env.GetKeyVal())
-	}
-	return keyValList
-}
-
 func (s *EnvVarStore) Add(env *EnvVar) {
 	s.store[env.Key] = env
 }
@@ -53,9 +41,6 @@ func (s *EnvVarStore) Add(env *EnvVar) {
 func NewEnvVarStore(rawEnvVarList map[string]any) (*EnvVarStore, error) {
 	store := &EnvVarStore{store: make(map[string]*EnvVar)}
 	for key, objVal := range rawEnvVarList {
-		if key == "xt/id" {
-			continue
-		}
 		keyType := strings.Split(key, ":")
 		if len(keyType) != 2 {
 			return nil, fmt.Errorf("environment variable key type in unknown format, want=[keytype:key], got=%v", key)
@@ -97,29 +82,4 @@ func NewEnvVarStore(rawEnvVarList map[string]any) (*EnvVarStore, error) {
 		store.Add(env)
 	}
 	return store, nil
-}
-
-// expandEnvVarToCmd expand environment variables contained in the envStore
-// and return the list of expanded commands
-func expandEnvVarToCmd(envStore *EnvVarStore, cmdList []string) ([]string, error) {
-	if envStore == nil {
-		envStore = &EnvVarStore{}
-	}
-
-	var nonExpandedCmdList []string
-	var expandedCmdList []string
-	for _, cmd := range cmdList {
-		expandedCmd := os.Expand(cmd, envStore.Getenv)
-		emptyExpandedEnv := os.Expand(cmd, func(string) string { return "" })
-		if expandedCmd == emptyExpandedEnv && strings.Contains(cmd, "$") {
-			nonExpandedCmdList = append(nonExpandedCmdList, cmd)
-			continue
-		}
-		expandedCmdList = append(expandedCmdList, expandedCmd)
-	}
-	if len(nonExpandedCmdList) > 0 {
-		return nil, fmt.Errorf("could not find environment variable for commands [%v]",
-			strings.Join(nonExpandedCmdList, ","))
-	}
-	return expandedCmdList, nil
 }
