@@ -13,7 +13,13 @@ type Segment struct {
 	analytics.Client
 }
 
-func New() *Segment { return &Segment{analytics.New("IuHRCK0Q9fdliDdgjQDddfrPFRG0X0RA")} }
+func New() *Segment {
+	if segmentApiKey == "" {
+		return &Segment{}
+	}
+	return &Segment{analytics.New(segmentApiKey)}
+}
+
 func (s *Segment) Identify(ctx *types.APIContext) {
 	if s.Client == nil || ctx == nil || ctx.UserEmail == "" || ctx.OrgID == "" ||
 		environmentName == "127.0.0.1" || environmentName == "localhost" {

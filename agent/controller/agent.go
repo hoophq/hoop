@@ -104,7 +104,6 @@ func (a *Agent) Run() error {
 		switch pkt.Type {
 		case pbagent.GatewayConnectOK:
 			log.Infof("connected with success to %v", a.config.URL)
-			go a.startMonitoring(pkt)
 		case pbagent.SessionOpen:
 			a.processSessionOpen(pkt)
 

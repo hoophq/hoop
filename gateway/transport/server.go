@@ -39,13 +39,10 @@ import (
 type (
 	Server struct {
 		pb.UnimplementedTransportServer
-		ReviewService review.Service
 
-		IDProvider         *idp.Provider
-		ApiHostname        string
-		PyroscopeIngestURL string
-		PyroscopeAuthToken string
-		AgentSentryDSN     string
+		ReviewService review.Service
+		IDProvider    *idp.Provider
+		ApiHostname   string
 	}
 )
 

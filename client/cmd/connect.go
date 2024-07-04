@@ -18,7 +18,6 @@ import (
 	"github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/memory"
-	"github.com/runopsio/hoop/common/monitoring"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
@@ -49,7 +48,6 @@ var (
 			if dur.Seconds() < 60 {
 				return fmt.Errorf("the minimum duration is 60 seconds (60s)")
 			}
-			monitoring.SentryPreRun(cmd, args)
 			return nil
 		},
 		SilenceUsage: false,

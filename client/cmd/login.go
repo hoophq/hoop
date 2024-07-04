@@ -18,7 +18,6 @@ import (
 	proxyconfig "github.com/runopsio/hoop/client/config"
 	"github.com/runopsio/hoop/common/clientconfig"
 	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/monitoring"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/spf13/cobra"
 )
@@ -31,10 +30,9 @@ type login struct {
 }
 
 var loginCmd = &cobra.Command{
-	Use:    "login",
-	Short:  "Authenticate at Hoop",
-	Long:   `Login to gain access to hoop usage.`,
-	PreRun: monitoring.SentryPreRun,
+	Use:   "login",
+	Short: "Authenticate at Hoop",
+	Long:  `Login to gain access to hoop usage.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		conf, err := proxyconfig.Load()
 		switch err {

@@ -13,6 +13,7 @@ import (
 	"github.com/runopsio/hoop/common/grpc"
 	"github.com/runopsio/hoop/common/log"
 	"github.com/runopsio/hoop/common/memory"
+	"github.com/runopsio/hoop/common/monitoring"
 	pb "github.com/runopsio/hoop/common/proto"
 	"github.com/runopsio/hoop/common/version"
 	"google.golang.org/grpc/codes"
@@ -27,6 +28,7 @@ var (
 )
 
 func Run() {
+	_, _ = monitoring.StartSentry()
 	config, err := agentconfig.Load()
 	if err != nil {
 		log.With("version", vi.Version).Fatal(err)

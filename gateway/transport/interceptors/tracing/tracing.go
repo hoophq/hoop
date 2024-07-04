@@ -40,7 +40,7 @@ type interceptor struct {
 
 func New(apiURL string) grpc.StreamServerInterceptor {
 	// TODO: call this func when the gateway shutdowns
-	shutdownFn, err := monitoring.NewOpenTracing(apiURL, "f26akXhvu7OG1PKqTVoUZB")
+	shutdownFn, err := monitoring.NewOpenTracing(apiURL)
 	if err != nil {
 		log.Errorf("failed initializing open tracing client, err=%v", err)
 	}

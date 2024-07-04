@@ -47,7 +47,6 @@ func Run() {
 	if err := appconfig.Load(); err != nil {
 		log.Fatalf("failed loading gateway configuration, reason=%v", err)
 	}
-	// TODO: move to appconfig package
 	apiURL := appconfig.Get().ApiURL()
 	if err := changeWebappApiURL(apiURL); err != nil {
 		log.Fatal(err)
@@ -68,10 +67,7 @@ func Run() {
 		grpcURL = fmt.Sprintf("%s://%s:8443", scheme, appconfig.Get().ApiHostname())
 	}
 
-	// userService := user.Service{Storage: &user.Storage{}}
 	reviewService := review.Service{}
-	// notificationService := getNotification()
-
 	if !pgusers.IsOrgMultiTenant() {
 		log.Infof("provisioning default organization")
 		ctx, err := pgorgs.CreateDefaultOrganization(license.DefaultOSS)
@@ -93,12 +89,9 @@ func Run() {
 	}
 
 	g := &transport.Server{
-		ApiHostname:        appconfig.Get().ApiHostname(),
-		ReviewService:      reviewService,
-		IDProvider:         idProvider,
-		PyroscopeIngestURL: os.Getenv("PYROSCOPE_INGEST_URL"),
-		PyroscopeAuthToken: os.Getenv("PYROSCOPE_AUTH_TOKEN"),
-		AgentSentryDSN:     "https://a6ecaeba31684f02ab8606a59301cd15@o4504559799566336.ingest.sentry.io/4504571759230976",
+		ApiHostname:   appconfig.Get().ApiHostname(),
+		ReviewService: reviewService,
+		IDProvider:    idProvider,
 	}
 	// order matters
 	plugintypes.RegisteredPlugins = []plugintypes.Plugin{
@@ -123,14 +116,7 @@ func Run() {
 			log.Fatalf("failed initializing plugin %s, reason=%v", p.Name(), err)
 		}
 	}
-	sentryStarted, err := monitoring.StartSentry(nil, monitoring.SentryConfig{
-		DSN:         "https://7c3bcdf7772943b9b70bcf69b07408ae@o4504559799566336.ingest.sentry.io/4504559805923328",
-		Environment: g.IDProvider.ApiURL,
-	})
-	if err != nil {
-		log.Fatalf("failed starting sentry, err=%v", err)
-	}
-
+	sentryStarted, _ := monitoring.StartSentry()
 	if err := agentcontroller.Run(grpcURL); err != nil {
 		err := fmt.Errorf("failed to start agent controller, reason=%v", err)
 		log.Warn(err)

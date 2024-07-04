@@ -19,7 +19,6 @@ import (
 	"github.com/muesli/termenv"
 	"github.com/runopsio/hoop/client/cmd/styles"
 	clientconfig "github.com/runopsio/hoop/client/config"
-	"github.com/runopsio/hoop/common/monitoring"
 	pb "github.com/runopsio/hoop/common/proto"
 	pbagent "github.com/runopsio/hoop/common/proto/agent"
 	pbclient "github.com/runopsio/hoop/common/proto/client"
@@ -42,7 +41,6 @@ var execCmd = &cobra.Command{
 			cmd.Usage()
 			os.Exit(1)
 		}
-		monitoring.SentryPreRun(cmd, args)
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		clientEnvVars, err := parseClientEnvVars()

@@ -7,7 +7,6 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/honeycombio/honeycomb-opentelemetry-go v0.8.1
 	github.com/honeycombio/otel-config-go v1.12.1
-	github.com/spf13/cobra v1.6.1
 	github.com/stretchr/testify v1.8.4
 	github.com/vmihailenco/msgpack/v5 v5.3.5
 	go.mongodb.org/mongo-driver v1.15.0
@@ -19,11 +18,7 @@ require (
 	k8s.io/apimachinery v0.29.3
 )
 
-require (
-	github.com/inconshreveable/mousetrap v1.0.1 // indirect
-	github.com/spf13/pflag v1.0.5 // indirect
-	google.golang.org/appengine v1.6.7 // indirect
-)
+require google.golang.org/appengine v1.6.7 // indirect
 
 require (
 	cloud.google.com/go/compute v1.21.0 // indirect
