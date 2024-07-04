@@ -41,8 +41,7 @@ make run-dev
 If you want to run a development server with the webapp, run the command below before executing starting the dev server
 
 ```sh
-cd ../webapp
-npm install && npm run release:hoop-ui
+WEBAPP_BUILD=1 make run-dev
 ```
 
 ### Build Dev Client

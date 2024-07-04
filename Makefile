@@ -74,12 +74,6 @@ release-aws-cf-templates:
 	aws s3 cp --region ap-southeast-2 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-ap-southeast-2/${VERSION}/hoopdev-platform.template.yaml
 	aws s3 cp --region ap-southeast-2 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-ap-southeast-2/latest/hoopdev-platform.template.yaml
 
-deploy-by-app:
-	./scripts/deploy-by-app.sh
-
-deploy-all:
-	./scripts/deploy-all.sh
-
 download-artifacts:
 	mkdir -p ./dist
 	aws s3 cp s3://hoopartifacts/webapp/latest.tar.gz webapp-latest.tar.gz
@@ -88,9 +82,6 @@ download-artifacts:
 
 build-dev-client:
 	go build -ldflags "-s -w -X github.com/runopsio/hoop/common/version.strictTLS=false" -o ${HOME}/.hoop/bin/hoop github.com/runopsio/hoop/client
-
-build-dev-client-race:
-	go build -race -ldflags "-s -w -X github.com/runopsio/hoop/common/version.strictTLS=false" -o ${HOME}/.hoop/bin/hoop github.com/runopsio/hoop/client
 
 publish:
 	./scripts/publish-release.sh
@@ -104,10 +95,7 @@ run-dev:
 run-dev-postgres:
 	./scripts/dev/run-postgres.sh
 
-clean:
-	rm -rf ./rootfs/app/ui
-
 test:
 	env CGO_ENABLED=0 go test -v github.com/runopsio/hoop/...
 
-.PHONY: release publish publish-tools clean test build build-dev-client package-binaries package-helmchart publish-assets run-dev run-dev-postgres download-artifacts deploy-by-app package-gateway-bundle release-aws-cf-templates
+.PHONY: release publish publish-tools test build build-dev-client package-helmchart run-dev run-dev-postgres download-artifacts package-gateway-bundle release-aws-cf-templates
