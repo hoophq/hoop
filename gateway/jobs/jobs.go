@@ -4,9 +4,9 @@ import (
 	"time"
 
 	"github.com/go-co-op/gocron"
-	"github.com/runopsio/hoop/common/log"
-	jobsessions "github.com/runopsio/hoop/gateway/jobs/sessions"
-	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+	"github.com/hoophq/hoop/common/log"
+	jobsessions "github.com/hoophq/hoop/gateway/jobs/sessions"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
 func Run() {

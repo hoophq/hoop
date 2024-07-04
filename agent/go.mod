@@ -1,8 +1,8 @@
-module github.com/runopsio/hoop/agent
+module github.com/hoophq/hoop/agent
 
 go 1.22.4
 
-replace github.com/runopsio/hoop/common => ../common
+replace github.com/hoophq/hoop/common => ../common
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.26.0
@@ -10,7 +10,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.28.4
 	github.com/aws/smithy-go v1.20.1
 	github.com/getsentry/sentry-go v0.18.0
-	github.com/runopsio/hoop/common v0.0.0-00010101000000-000000000000
+	github.com/hoophq/hoop/common v0.0.0-00010101000000-000000000000
 	go.mongodb.org/mongo-driver v1.15.0
 	google.golang.org/grpc v1.63.2
 )

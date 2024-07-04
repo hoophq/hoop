@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/gateway/pgrest"
+	"github.com/hoophq/hoop/gateway/pgrest"
 )
 
 type userAuth struct{}

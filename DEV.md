@@ -8,7 +8,7 @@ To start a development server it requires the following local tools:
 - [git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git)
 - Postgres Server (remote or local)
 - [node / npm](https://nodejs.org/en/download) (optional)
- - Permission to clone `runopsio/webapp` repository
+ - Permission to clone `hoophq/webapp` repository
  - Permission to clone `hoophq/api` repository
 
 ### Start a postgres server

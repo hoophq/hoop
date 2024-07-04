@@ -4,9 +4,9 @@ import (
 	"context"
 
 	"github.com/google/uuid"
-	commongrpc "github.com/runopsio/hoop/common/grpc"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/proto"
+	commongrpc "github.com/hoophq/hoop/common/grpc"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )

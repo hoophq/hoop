@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/pgrest"
+	"github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/pgrest"
 )
 
 // CreateDefaultOrganization list all organizations and create a default

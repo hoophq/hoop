@@ -1,9 +1,9 @@
 package analytics
 
 import (
-	pb "github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/appconfig"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
+	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/segmentio/analytics-go/v3"
 )
 

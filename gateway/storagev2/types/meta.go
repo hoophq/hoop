@@ -3,7 +3,7 @@ package types
 import (
 	"fmt"
 
-	pb "github.com/runopsio/hoop/common/proto"
+	pb "github.com/hoophq/hoop/common/proto"
 )
 
 // Validate if the organization id and user id is set

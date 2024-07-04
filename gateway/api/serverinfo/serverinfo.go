@@ -7,12 +7,12 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
-	"github.com/runopsio/hoop/common/appruntime"
-	"github.com/runopsio/hoop/common/license"
-	"github.com/runopsio/hoop/common/version"
-	"github.com/runopsio/hoop/gateway/appconfig"
-	pgorgs "github.com/runopsio/hoop/gateway/pgrest/orgs"
-	"github.com/runopsio/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/common/appruntime"
+	"github.com/hoophq/hoop/common/license"
+	"github.com/hoophq/hoop/common/version"
+	"github.com/hoophq/hoop/gateway/appconfig"
+	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
+	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
 var (

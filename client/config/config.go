@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/runopsio/hoop/client/cmd/styles"
-	"github.com/runopsio/hoop/common/clientconfig"
-	"github.com/runopsio/hoop/common/grpc"
-	"github.com/runopsio/hoop/common/log"
+	"github.com/hoophq/hoop/client/cmd/styles"
+	"github.com/hoophq/hoop/common/clientconfig"
+	"github.com/hoophq/hoop/common/grpc"
+	"github.com/hoophq/hoop/common/log"
 )
 
 var ErrEmpty error = errors.New("unable to locate configuration file")

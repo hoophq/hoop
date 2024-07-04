@@ -1,6 +1,6 @@
 package eventlog
 
-import eventlogv0 "github.com/runopsio/hoop/gateway/session/eventlog/v0"
+import eventlogv0 "github.com/hoophq/hoop/gateway/session/eventlog/v0"
 
 type Encoder interface {
 	Encode() ([]byte, error)

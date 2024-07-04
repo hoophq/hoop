@@ -6,13 +6,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/common/log"
-	pb "github.com/runopsio/hoop/common/proto"
-	pbclient "github.com/runopsio/hoop/common/proto/client"
-	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
-	"github.com/runopsio/hoop/gateway/review"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
-	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+	"github.com/hoophq/hoop/common/log"
+	pb "github.com/hoophq/hoop/common/proto"
+	pbclient "github.com/hoophq/hoop/common/proto/client"
+	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
+	"github.com/hoophq/hoop/gateway/review"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
 func (r *reviewPlugin) onReceiveOSS(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {

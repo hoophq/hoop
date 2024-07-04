@@ -10,10 +10,10 @@ import (
 	"sort"
 
 	"github.com/blevesearch/bleve/v2"
-	"github.com/runopsio/hoop/client/cmd/styles"
-	clientconfig "github.com/runopsio/hoop/client/config"
-	"github.com/runopsio/hoop/gateway/indexer"
-	"github.com/runopsio/hoop/gateway/indexer/searchquery"
+	"github.com/hoophq/hoop/client/cmd/styles"
+	clientconfig "github.com/hoophq/hoop/client/config"
+	"github.com/hoophq/hoop/gateway/indexer"
+	"github.com/hoophq/hoop/gateway/indexer/searchquery"
 	"github.com/spf13/cobra"
 )
 

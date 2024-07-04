@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/runopsio/hoop/common/log"
-	pb "github.com/runopsio/hoop/common/proto"
-	pbclient "github.com/runopsio/hoop/common/proto/client"
+	"github.com/hoophq/hoop/common/log"
+	pb "github.com/hoophq/hoop/common/proto"
+	pbclient "github.com/hoophq/hoop/common/proto/client"
 )
 
 func (a *Agent) processTCPWriteServer(pkt *pb.Packet) {

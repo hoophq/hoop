@@ -4,11 +4,11 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/pgrest"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
-	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/pgrest"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
 var DefaultPluginNames = []string{

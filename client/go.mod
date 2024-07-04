@@ -1,4 +1,4 @@
-module github.com/runopsio/hoop/client
+module github.com/hoophq/hoop/client
 
 go 1.22.4
 
@@ -7,7 +7,7 @@ require (
 	// update to latest version after this https://github.com/briandowns/spinner/pull/136
 	github.com/briandowns/spinner v1.23.0
 	github.com/creack/pty v1.1.21
-	github.com/runopsio/hoop/common v0.0.0-00010101000000-000000000000
+	github.com/hoophq/hoop/common v0.0.0-00010101000000-000000000000
 	github.com/spf13/cobra v1.6.1
 	golang.org/x/term v0.21.0
 )
@@ -18,8 +18,8 @@ require (
 	github.com/getsentry/sentry-go v0.18.0
 	github.com/go-co-op/gocron v1.18.1
 	github.com/google/go-cmp v0.6.0
-	github.com/runopsio/hoop/agent v0.0.0-00010101000000-000000000000
-	github.com/runopsio/hoop/gateway v0.0.0-00010101000000-000000000000
+	github.com/hoophq/hoop/agent v0.0.0-00010101000000-000000000000
+	github.com/hoophq/hoop/gateway v0.0.0-00010101000000-000000000000
 	google.golang.org/grpc v1.63.2
 	mvdan.cc/sh/v3 v3.8.0
 )
@@ -200,8 +200,8 @@ require (
 	google.golang.org/protobuf v1.34.0 // indirect
 )
 
-replace github.com/runopsio/hoop/common => ../common
+replace github.com/hoophq/hoop/common => ../common
 
-replace github.com/runopsio/hoop/gateway => ../gateway
+replace github.com/hoophq/hoop/gateway => ../gateway
 
-replace github.com/runopsio/hoop/agent => ../agent
+replace github.com/hoophq/hoop/agent => ../agent

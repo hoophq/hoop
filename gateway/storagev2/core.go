@@ -5,9 +5,9 @@ import (
 	"slices"
 
 	"github.com/gin-gonic/gin"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/gateway/analytics"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/analytics"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
 const ContextKey string = "storagev2"

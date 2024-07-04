@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/runopsio/hoop/common/log"
-	pb "github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/common/log"
+	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
 var (

@@ -1,7 +1,7 @@
 package grpc
 
 import (
-	pb "github.com/runopsio/hoop/common/proto"
+	pb "github.com/hoophq/hoop/common/proto"
 )
 
 type DataStream struct {

@@ -11,9 +11,9 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/runopsio/hoop/client/cmd/styles"
-	clientconfig "github.com/runopsio/hoop/client/config"
-	"github.com/runopsio/hoop/common/log"
+	"github.com/hoophq/hoop/client/cmd/styles"
+	clientconfig "github.com/hoophq/hoop/client/config"
+	"github.com/hoophq/hoop/common/log"
 	"golang.org/x/text/runes"
 	"golang.org/x/text/transform"
 	"golang.org/x/text/unicode/norm"

@@ -8,13 +8,13 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/common/dsnkeys"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/proto"
-	apivalidation "github.com/runopsio/hoop/gateway/api/validation"
-	"github.com/runopsio/hoop/gateway/pgrest"
-	pgagents "github.com/runopsio/hoop/gateway/pgrest/agents"
-	"github.com/runopsio/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/common/dsnkeys"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/proto"
+	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
+	"github.com/hoophq/hoop/gateway/pgrest"
+	pgagents "github.com/hoophq/hoop/gateway/pgrest/agents"
+	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
 type AgentRequest struct {

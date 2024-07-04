@@ -6,12 +6,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/runopsio/hoop/common/log"
+	"github.com/hoophq/hoop/common/log"
 
 	"github.com/creack/pty"
 	"github.com/getsentry/sentry-go"
-	pb "github.com/runopsio/hoop/common/proto"
-	pbclient "github.com/runopsio/hoop/common/proto/client"
+	pb "github.com/hoophq/hoop/common/proto"
+	pbclient "github.com/hoophq/hoop/common/proto/client"
 )
 
 func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {

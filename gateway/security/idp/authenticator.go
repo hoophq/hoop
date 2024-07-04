@@ -12,8 +12,8 @@ import (
 	keyfunc "github.com/MicahParks/keyfunc/v2"
 	"github.com/coreos/go-oidc/v3/oidc"
 	jwt "github.com/golang-jwt/jwt/v5"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/proto"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/proto"
 	"golang.org/x/oauth2"
 )
 

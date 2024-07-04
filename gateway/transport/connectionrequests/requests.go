@@ -6,12 +6,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/memory"
-	"github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/pgrest"
-	"github.com/runopsio/hoop/gateway/transport/streamclient"
-	streamtypes "github.com/runopsio/hoop/gateway/transport/streamclient/types"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/memory"
+	"github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/pgrest"
+	"github.com/hoophq/hoop/gateway/transport/streamclient"
+	streamtypes "github.com/hoophq/hoop/gateway/transport/streamclient/types"
 )
 
 type Info struct {

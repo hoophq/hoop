@@ -1,8 +1,8 @@
-module github.com/runopsio/hoop/gateway
+module github.com/hoophq/hoop/gateway
 
 go 1.22.4
 
-replace github.com/runopsio/hoop/common => ../common
+replace github.com/hoophq/hoop/common => ../common
 
 require (
 	github.com/MicahParks/keyfunc/v2 v2.1.0
@@ -19,7 +19,7 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.16.2
 	github.com/google/uuid v1.6.0
 	github.com/lib/pq v1.10.7
-	github.com/runopsio/hoop/common v0.0.0-00010101000000-000000000000
+	github.com/hoophq/hoop/common v0.0.0-00010101000000-000000000000
 	github.com/segmentio/analytics-go/v3 v3.2.1
 	github.com/slack-go/slack v0.12.2
 	github.com/stretchr/testify v1.8.4

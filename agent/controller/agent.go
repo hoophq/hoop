@@ -12,14 +12,14 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/runopsio/hoop/agent/config"
-	"github.com/runopsio/hoop/agent/secretsmanager"
-	term "github.com/runopsio/hoop/agent/terminal"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/memory"
-	pb "github.com/runopsio/hoop/common/proto"
-	pbagent "github.com/runopsio/hoop/common/proto/agent"
-	pbclient "github.com/runopsio/hoop/common/proto/client"
+	"github.com/hoophq/hoop/agent/config"
+	"github.com/hoophq/hoop/agent/secretsmanager"
+	term "github.com/hoophq/hoop/agent/terminal"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/memory"
+	pb "github.com/hoophq/hoop/common/proto"
+	pbagent "github.com/hoophq/hoop/common/proto/agent"
+	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"go.mongodb.org/mongo-driver/x/mongo/driver/connstring"
 )
 

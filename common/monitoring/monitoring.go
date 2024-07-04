@@ -7,7 +7,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/honeycombio/honeycomb-opentelemetry-go"
 	"github.com/honeycombio/otel-config-go/otelconfig"
-	"github.com/runopsio/hoop/common/version"
+	"github.com/hoophq/hoop/common/version"
 )
 
 type TransportConfig struct {

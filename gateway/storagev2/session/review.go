@@ -2,9 +2,9 @@ package sessionstorage
 
 import (
 	"github.com/google/uuid"
-	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
-	"github.com/runopsio/hoop/gateway/storagev2"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
+	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
+	"github.com/hoophq/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
 func PutReview(ctx *storagev2.Context, review *types.Review) (int64, error) {

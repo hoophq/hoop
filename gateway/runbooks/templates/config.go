@@ -13,7 +13,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
-	"github.com/runopsio/hoop/common/log"
+	"github.com/hoophq/hoop/common/log"
 )
 
 type RunbookConfig struct {

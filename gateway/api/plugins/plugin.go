@@ -9,13 +9,13 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/proto"
-	pgconnections "github.com/runopsio/hoop/gateway/pgrest/connections"
-	pgplugins "github.com/runopsio/hoop/gateway/pgrest/plugins"
-	"github.com/runopsio/hoop/gateway/storagev2"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
-	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/proto"
+	pgconnections "github.com/hoophq/hoop/gateway/pgrest/connections"
+	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
+	"github.com/hoophq/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
 type PluginConnectionRequest struct {

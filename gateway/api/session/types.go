@@ -8,8 +8,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/runopsio/hoop/common/memory"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/common/memory"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
 const (

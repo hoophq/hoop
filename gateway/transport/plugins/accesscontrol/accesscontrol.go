@@ -1,9 +1,9 @@
 package accesscontrol
 
 import (
-	pb "github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
-	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
 const Name string = "access_control"

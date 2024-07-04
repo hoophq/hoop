@@ -8,16 +8,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/runopsio/hoop/common/log"
-	pb "github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/common/proto/spectypes"
-	pgsession "github.com/runopsio/hoop/gateway/pgrest/session"
-	eventlogv1 "github.com/runopsio/hoop/gateway/session/eventlog/v1"
-	sessionwal "github.com/runopsio/hoop/gateway/session/wal"
-	"github.com/runopsio/hoop/gateway/storagev2"
-	sessionstorage "github.com/runopsio/hoop/gateway/storagev2/session"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
-	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+	"github.com/hoophq/hoop/common/log"
+	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/common/proto/spectypes"
+	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
+	eventlogv1 "github.com/hoophq/hoop/gateway/session/eventlog/v1"
+	sessionwal "github.com/hoophq/hoop/gateway/session/wal"
+	"github.com/hoophq/hoop/gateway/storagev2"
+	sessionstorage "github.com/hoophq/hoop/gateway/storagev2/session"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
 // <audit-path>/<orgid>-<sessionid>-wal

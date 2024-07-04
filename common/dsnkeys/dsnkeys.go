@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"net/url"
 
-	pb "github.com/runopsio/hoop/common/proto"
+	pb "github.com/hoophq/hoop/common/proto"
 )
 
 var (

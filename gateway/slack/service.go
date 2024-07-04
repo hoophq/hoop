@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runopsio/hoop/common/log"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/socketmode"
 )

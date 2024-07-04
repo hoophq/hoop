@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"slices"
 
-	"github.com/runopsio/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
 type Context struct {

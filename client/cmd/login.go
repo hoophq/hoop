@@ -14,11 +14,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runopsio/hoop/client/cmd/static"
-	proxyconfig "github.com/runopsio/hoop/client/config"
-	"github.com/runopsio/hoop/common/clientconfig"
-	"github.com/runopsio/hoop/common/log"
-	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/hoophq/hoop/client/cmd/static"
+	proxyconfig "github.com/hoophq/hoop/client/config"
+	"github.com/hoophq/hoop/common/clientconfig"
+	"github.com/hoophq/hoop/common/log"
+	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/spf13/cobra"
 )
 

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/runopsio/hoop/gateway/session/eventlog"
+	"github.com/hoophq/hoop/gateway/session/eventlog"
 	"github.com/tidwall/wal"
 )
 

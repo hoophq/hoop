@@ -3,7 +3,7 @@ package authinterceptor
 import (
 	"context"
 
-	"github.com/runopsio/hoop/gateway/security/idp"
+	"github.com/hoophq/hoop/gateway/security/idp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"

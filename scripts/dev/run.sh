@@ -46,7 +46,7 @@ fi
 docker build -t hoopdev -f ./scripts/dev/Dockerfile .
 mkdir -p ./dist/dev/
 
-CGO_ENABLED=0 GOOS=linux go build -ldflags "-s -w -X github.com/runopsio/hoop/common/version.strictTLS=false" -o ./dist/dev/hooplinux github.com/runopsio/hoop/client
+CGO_ENABLED=0 GOOS=linux go build -ldflags "-s -w -X github.com/hoophq/hoop/common/version.strictTLS=false" -o ./dist/dev/hooplinux github.com/hoophq/hoop/client
 docker stop hoopdev &> /dev/null || true
 docker rm hoopdev &> /dev/null || true
 

@@ -12,14 +12,14 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
-	"github.com/runopsio/hoop/common/apiutils"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/version"
-	"github.com/runopsio/hoop/gateway/analytics"
-	pguserauth "github.com/runopsio/hoop/gateway/pgrest/userauth"
-	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
-	"github.com/runopsio/hoop/gateway/security/idp"
-	"github.com/runopsio/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/common/apiutils"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/version"
+	"github.com/hoophq/hoop/gateway/analytics"
+	pguserauth "github.com/hoophq/hoop/gateway/pgrest/userauth"
+	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
+	"github.com/hoophq/hoop/gateway/security/idp"
+	"github.com/hoophq/hoop/gateway/storagev2"
 	"go.uber.org/zap"
 )
 

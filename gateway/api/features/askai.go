@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/gateway/appconfig"
-	pgaudit "github.com/runopsio/hoop/gateway/pgrest/audit"
-	"github.com/runopsio/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/appconfig"
+	pgaudit "github.com/hoophq/hoop/gateway/pgrest/audit"
+	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
 const defaultReqTimeout = time.Second * 30

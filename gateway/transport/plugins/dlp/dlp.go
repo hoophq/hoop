@@ -1,11 +1,11 @@
 package dlp
 
 import (
-	"github.com/runopsio/hoop/common/license"
-	pb "github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/appconfig"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
-	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+	"github.com/hoophq/hoop/common/license"
+	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

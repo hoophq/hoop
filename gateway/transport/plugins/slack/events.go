@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/runopsio/hoop/common/log"
-	pb "github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/pgrest"
-	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
-	"github.com/runopsio/hoop/gateway/review"
-	slackservice "github.com/runopsio/hoop/gateway/slack"
-	"github.com/runopsio/hoop/gateway/storagev2"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/common/log"
+	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/pgrest"
+	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
+	"github.com/hoophq/hoop/gateway/review"
+	slackservice "github.com/hoophq/hoop/gateway/slack"
+	"github.com/hoophq/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
 type event struct {

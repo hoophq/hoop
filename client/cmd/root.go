@@ -3,10 +3,10 @@ package cmd
 import (
 	"os"
 
-	"github.com/runopsio/hoop/client/cmd/admin"
-	"github.com/runopsio/hoop/client/cmd/config"
-	"github.com/runopsio/hoop/common/grpc"
-	"github.com/runopsio/hoop/common/log"
+	"github.com/hoophq/hoop/client/cmd/admin"
+	"github.com/hoophq/hoop/client/cmd/config"
+	"github.com/hoophq/hoop/common/grpc"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/spf13/cobra"
 )
 

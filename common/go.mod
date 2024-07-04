@@ -1,4 +1,4 @@
-module github.com/runopsio/hoop/common
+module github.com/hoophq/hoop/common
 
 go 1.22.4
 

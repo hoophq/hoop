@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/runopsio/hoop/client/cmd/styles"
-	clientconfig "github.com/runopsio/hoop/client/config"
-	"github.com/runopsio/hoop/common/log"
-	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/hoophq/hoop/client/cmd/styles"
+	clientconfig "github.com/hoophq/hoop/client/config"
+	"github.com/hoophq/hoop/common/log"
+	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/spf13/cobra"
 )
 

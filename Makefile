@@ -12,9 +12,9 @@ OS := $(shell echo "$(GOOS)" | awk '{print toupper(substr($$0, 1, 1)) tolower(su
 SYMLINK_ARCH := $(if $(filter $(GOARCH),amd64),x86_64,$(if $(filter $(GOARCH),arm64),aarch64,$(ARCH)))
 
 LDFLAGS := "-s -w \
--X github.com/runopsio/hoop/common/version.version=${VERSION} \
--X github.com/runopsio/hoop/common/version.gitCommit=${GITCOMMIT} \
--X github.com/runopsio/hoop/common/version.buildDate=${DATE}"
+-X github.com/hoophq/hoop/common/version.version=${VERSION} \
+-X github.com/hoophq/hoop/common/version.gitCommit=${GITCOMMIT} \
+-X github.com/hoophq/hoop/common/version.buildDate=${DATE}"
 
 build:
 	rm -rf ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} && mkdir -p ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
@@ -81,7 +81,7 @@ download-artifacts:
 	mv ./resources ./dist/webapp-resources
 
 build-dev-client:
-	go build -ldflags "-s -w -X github.com/runopsio/hoop/common/version.strictTLS=false" -o ${HOME}/.hoop/bin/hoop github.com/runopsio/hoop/client
+	go build -ldflags "-s -w -X github.com/hoophq/hoop/common/version.strictTLS=false" -o ${HOME}/.hoop/bin/hoop github.com/hoophq/hoop/client
 
 publish:
 	./scripts/publish-release.sh
@@ -96,6 +96,6 @@ run-dev-postgres:
 	./scripts/dev/run-postgres.sh
 
 test:
-	env CGO_ENABLED=0 go test -v github.com/runopsio/hoop/...
+	env CGO_ENABLED=0 go test -v github.com/hoophq/hoop/...
 
 .PHONY: release publish publish-tools test build build-dev-client package-helmchart run-dev run-dev-postgres download-artifacts package-gateway-bundle release-aws-cf-templates

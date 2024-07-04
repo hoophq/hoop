@@ -6,15 +6,15 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/common/license"
-	"github.com/runopsio/hoop/common/log"
-	pb "github.com/runopsio/hoop/common/proto"
-	pbagent "github.com/runopsio/hoop/common/proto/agent"
-	pbclient "github.com/runopsio/hoop/common/proto/client"
-	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
-	"github.com/runopsio/hoop/gateway/review"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
-	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+	"github.com/hoophq/hoop/common/license"
+	"github.com/hoophq/hoop/common/log"
+	pb "github.com/hoophq/hoop/common/proto"
+	pbagent "github.com/hoophq/hoop/common/proto/agent"
+	pbclient "github.com/hoophq/hoop/common/proto/client"
+	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
+	"github.com/hoophq/hoop/gateway/review"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
 type reviewPlugin struct {

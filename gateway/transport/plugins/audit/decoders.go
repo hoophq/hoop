@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/runopsio/hoop/common/mongotypes"
+	"github.com/hoophq/hoop/common/mongotypes"
 )
 
 // decodeMySQLCommandQuery try to decode a packet to see if it's a COMM_QUERY type

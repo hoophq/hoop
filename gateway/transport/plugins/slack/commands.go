@@ -4,11 +4,11 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/common/log"
-	pglogin "github.com/runopsio/hoop/gateway/pgrest/login"
-	"github.com/runopsio/hoop/gateway/security/idp"
-	"github.com/runopsio/hoop/gateway/storagev2"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/common/log"
+	pglogin "github.com/hoophq/hoop/gateway/pgrest/login"
+	"github.com/hoophq/hoop/gateway/security/idp"
+	"github.com/hoophq/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"golang.org/x/oauth2"
 )
 

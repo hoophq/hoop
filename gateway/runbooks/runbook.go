@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/runopsio/hoop/gateway/runbooks/templates"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/gateway/runbooks/templates"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
 const maxTemplateSize = 1000000 // 1MB

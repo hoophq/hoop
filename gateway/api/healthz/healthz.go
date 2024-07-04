@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/runopsio/hoop/common/grpc"
-	"github.com/runopsio/hoop/gateway/pgrest"
+	"github.com/hoophq/hoop/common/grpc"
+	"github.com/hoophq/hoop/gateway/pgrest"
 )
 
 // Liveness validates if the gateway ports has connectivity

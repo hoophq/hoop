@@ -4,8 +4,8 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	pgreports "github.com/runopsio/hoop/gateway/pgrest/reports"
-	"github.com/runopsio/hoop/gateway/storagev2"
+	pgreports "github.com/hoophq/hoop/gateway/pgrest/reports"
+	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
 func SessionReport(c *gin.Context) {
