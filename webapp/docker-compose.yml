@@ -1,0 +1,7 @@
+version: "0.1"
+
+services:
+  ui:
+    build: .
+    ports:
+      - "8280:8280"

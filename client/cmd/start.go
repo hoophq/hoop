@@ -6,7 +6,6 @@ import (
 
 	"github.com/go-co-op/gocron"
 	"github.com/runopsio/hoop/agent"
-	"github.com/runopsio/hoop/client/agentcontroller"
 	"github.com/runopsio/hoop/gateway"
 	"github.com/runopsio/hoop/gateway/jobs"
 	jobsessions "github.com/runopsio/hoop/gateway/jobs/sessions"
@@ -25,16 +24,6 @@ var startAgentCmd = &cobra.Command{
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
 		agent.Run()
-	},
-}
-
-var startAgentControllerCmd = &cobra.Command{
-	Use:          "agentcontroller",
-	Short:        "Runs the agent controller component",
-	SilenceUsage: false,
-	Hidden:       true,
-	Run: func(cmd *cobra.Command, args []string) {
-		agentcontroller.RunServer()
 	},
 }
 
@@ -79,6 +68,5 @@ func init() {
 	startGatewayCmd.AddCommand(startGatewayJobsCmd)
 	startCmd.AddCommand(startAgentCmd)
 	startCmd.AddCommand(startGatewayCmd)
-	startCmd.AddCommand(startAgentControllerCmd)
 	rootCmd.AddCommand(startCmd)
 }

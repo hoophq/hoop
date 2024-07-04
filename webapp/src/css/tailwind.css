@@ -1,0 +1,6 @@
+@import "allotment/dist/style.css";
+@import "./highlight.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
