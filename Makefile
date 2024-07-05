@@ -17,6 +17,8 @@ LDFLAGS := "-s -w \
 -X github.com/hoophq/hoop/common/version.buildDate=${DATE}"
 
 build:
+	rm libhoop || true
+	ln -s ../libhoop libhoop
 	rm -rf ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} && mkdir -p ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
 	env CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags ${LDFLAGS} -o ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}/ client/hoop.go
 	tar -czvf ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}.tar.gz -C ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} .
@@ -24,6 +26,13 @@ build:
 	sha256sum ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}.tar.gz > ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}_checksum.txt
 	sha256sum ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${SYMLINK_ARCH}.tar.gz > ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${SYMLINK_ARCH}_checksum.txt
 	rm -rf ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
+
+build-webapp:
+	npm install && npm run release:hoop-ui
+	tar -czf ${DIST_FOLDER}/webapp.tar.gz -C ./resources .
+
+extract-webapp:
+ 	mkdir -p ./rootfs/app/ui && tar -xf ${DIST_FOLDER}/webapp.tar.gz -C rootfs/app/ui/
 
 package-helmchart:
 	mkdir -p ./dist
@@ -41,8 +50,7 @@ package-gateway-bundle:
 	chmod 0755 ${DIST_FOLDER}/hoopgateway/opt/hoop/bin/postgrest && \
 	tar -xf ${DIST_FOLDER}/binaries/hoop_${VERSION}_Linux_amd64.tar.gz -C ${DIST_FOLDER}/hoopgateway/opt/hoop/bin/ && \
 	cp rootfs/app/migrations/*.up.sql ${DIST_FOLDER}/hoopgateway/opt/hoop/migrations/ && \
-	curl -sL https://hoopartifacts.s3.amazonaws.com/webapp/latest.tar.gz -o webapp-latest.tar.gz && \
-	tar -xf webapp-latest.tar.gz -C ${DIST_FOLDER}/hoopgateway/opt/hoop/webapp --strip 2 && \
+	tar -xf ${DIST_FOLDER}/webapp.tar.gz -C ${DIST_FOLDER}/hoopgateway/opt/hoop/webapp --strip 1 && \
 	tar -czf ${DIST_FOLDER}/hoopgateway_${VERSION}-Linux_amd64.tar.gz -C ${DIST_FOLDER}/ hoopgateway
 
 release: release-aws-cf-templates
@@ -50,7 +58,7 @@ release: release-aws-cf-templates
 	find ${DIST_FOLDER}/binaries/ -name *_checksum.txt -exec cat '{}' \; > ${DIST_FOLDER}/checksums.txt
 	mv ${DIST_FOLDER}/binaries/*.tar.gz ${DIST_FOLDER}/
 	echo -n "${VERSION}" > ${DIST_FOLDER}/latest.txt
-	aws s3 cp ${DIST_FOLDER}/ s3://hoopartifacts/release/${VERSION}/ --exclude "*" --include "checksums.txt" --include "*.tgz" --include "*.tar.gz" --recursive
+	aws s3 cp ${DIST_FOLDER}/ s3://hoopartifacts/release/${VERSION}/ --exclude "*" --exclude webapp.tar.gz --include checksums.txt --include "*.tgz" --include "*.tar.gz" --recursive
 	aws s3 cp ${DIST_FOLDER}/latest.txt s3://hoopartifacts/release/latest.txt
 	aws s3 cp ./scripts/install-cli.sh s3://hoopartifacts/release/install-cli.sh
 	aws s3 cp ${DIST_FOLDER}/CHANGELOG.txt s3://hoopartifacts/release/${VERSION}/CHANGELOG.txt
@@ -107,4 +115,4 @@ test_enterprise:
 	ln -s ../libhoop libhoop
 	env CGO_ENABLED=0 go test -v github.com/hoophq/hoop/...
 
-.PHONY: release publish publish-tools test build build-dev-client package-helmchart run-dev run-dev-postgres download-artifacts package-gateway-bundle release-aws-cf-templates
+.PHONY: test_enterprise test_oss test build-webapp extract-webapp release publish publish-tools build build-dev-client package-helmchart run-dev run-dev-postgres download-artifacts package-gateway-bundle release-aws-cf-templates

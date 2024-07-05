@@ -93,7 +93,7 @@ ENV LANGUAGE en_US:en
 ENV LC_ALL en_US.UTF-8
 
 COPY rootfs /
-COPY dist/webapp-resources /app/ui/
+# COPY dist/webapp-resources /app/ui/
 COPY dist/binaries/ /tmp/
 RUN tar -xf /tmp/hoop_*_$(uname -s)_$(uname -m).tar.gz -C /app/ && \
     chown root:root /app/hoop && \

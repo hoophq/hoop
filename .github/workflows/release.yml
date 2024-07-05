@@ -1,9 +1,10 @@
 name: Hoop Release
 
-on:
-  push:
-    tags:
-    - '*.*.*'
+on: pull_request
+# on:
+#   push:
+#     tags:
+#     - '*.*.*'
 
 jobs:
   test:
@@ -15,12 +16,17 @@ jobs:
       - name: Checkout Hoop
         uses: actions/checkout@v3
 
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: './libhoop'
+          token: ${{ secrets.GH_TOKEN }}
       - name: Setup Go
         uses: actions/setup-go@v4
         with:
-          go-version: '>=1.22.1'
+          go-version: '>=1.22.4'
           cache-dependency-path: '**/go.sum'
-
       - name: Test
         run: make test
 
@@ -34,10 +40,17 @@ jobs:
       - name: Checkout Hoop
         uses: actions/checkout@v3
 
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: './libhoop'
+          token: ${{ secrets.GH_TOKEN }}
+
       - name: Setup Go
         uses: actions/setup-go@v3
         with:
-          go-version: '>=1.22.1'
+          go-version: '>=1.22.4'
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
@@ -62,10 +75,17 @@ jobs:
       - name: Checkout Hoop
         uses: actions/checkout@v3
 
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: './libhoop'
+          token: ${{ secrets.GH_TOKEN }}
+
       - name: Setup Go
         uses: actions/setup-go@v3
         with:
-          go-version: '>=1.22.1'
+          go-version: '>=1.22.4'
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
@@ -90,10 +110,17 @@ jobs:
       - name: Checkout Hoop
         uses: actions/checkout@v3
 
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: './libhoop'
+          token: ${{ secrets.GH_TOKEN }}
+
       - name: Setup Go
         uses: actions/setup-go@v3
         with:
-          go-version: '>=1.22.1'
+          go-version: '>=1.22.4'
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
@@ -118,10 +145,17 @@ jobs:
       - name: Checkout Hoop
         uses: actions/checkout@v3
 
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: './libhoop'
+          token: ${{ secrets.GH_TOKEN }}
+
       - name: Setup Go
         uses: actions/setup-go@v3
         with:
-          go-version: '>=1.22.1'
+          go-version: '>=1.22.4'
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
@@ -146,10 +180,17 @@ jobs:
       - name: Checkout Hoop
         uses: actions/checkout@v3
 
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: './libhoop'
+          token: ${{ secrets.GH_TOKEN }}
+
       - name: Setup Go
         uses: actions/setup-go@v3
         with:
-          go-version: '>=1.22.1'
+          go-version: '>=1.22.4'
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
@@ -174,10 +215,17 @@ jobs:
       - name: Checkout Hoop
         uses: actions/checkout@v3
 
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: './libhoop'
+          token: ${{ secrets.GH_TOKEN }}
+
       - name: Setup Go
         uses: actions/setup-go@v3
         with:
-          go-version: '>=1.22.1'
+          go-version: '>=1.22.4'
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
@@ -192,33 +240,60 @@ jobs:
           name: dist-artifacts
           path: dist/
 
-  build-helmchart:
+  build-webapp:
     runs-on: ubuntu-latest
-    name: Build Helm Chart
-    environment: production
-    needs: [test]
+    name: Build Webapp
     steps:
-      - name: Checkout Hoop
+      - name: Checkout
         uses: actions/checkout@v3
-      - name: Checkout Helm Chart
-        uses: actions/checkout@v3
+      - name: Setup Java
+        uses: actions/setup-java@v3
         with:
-          repository: hoophq/helm-chart
-          path: './build/helm-chart'
-      - name: Setup Helm3
-        uses: azure/setup-helm@v3
+          distribution: 'zulu'
+          java-version: '11'
+      - name: Install clojure tools
+        uses: DeLaGuardo/setup-clojure@3.5
         with:
-          token: ${{ secrets.GH_TOKEN }}
-      - name: Set Git Tag
-        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
-      - name: Package Helm Chart
-        env:
-          GIT_TAG: ${{ env.GIT_TAG }}
-        run: make package-helmchart
+          cli: 1.11.1.1347 # releases: https://clojure.org/releases/tools
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+      - name: Build
+        run: make build-webapp
       - uses: actions/upload-artifact@v3
         with:
           name: dist-artifacts
           path: dist/
+
+  # TODO: refactor-me
+  # build-helmchart:
+  #   runs-on: ubuntu-latest
+  #   name: Build Helm Chart
+  #   environment: production
+  #   needs: [test]
+  #   steps:
+  #     - name: Checkout Hoop
+  #       uses: actions/checkout@v3
+  #     - name: Checkout Helm Chart
+  #       uses: actions/checkout@v3
+  #       with:
+  #         repository: hoophq/helm-chart
+  #         path: './build/helm-chart'
+  #     - name: Setup Helm3
+  #       uses: azure/setup-helm@v3
+  #       with:
+  #         token: ${{ secrets.GH_TOKEN }}
+  #     - name: Set Git Tag
+  #       run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+  #     - name: Package Helm Chart
+  #       env:
+  #         GIT_TAG: ${{ env.GIT_TAG }}
+  #       run: make package-helmchart
+  #     - uses: actions/upload-artifact@v3
+  #       with:
+  #         name: dist-artifacts
+  #         path: dist/
 
   docker-publish:
     runs-on: ubuntu-latest
@@ -231,16 +306,15 @@ jobs:
       - windows-arm64
       - linux-amd64
       - linux-arm64
-      - build-helmchart
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-      - name: Publish
-        env:
-          AWS_REGION: us-east-1
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        run: make download-artifacts
+      # - name: Publish
+      #   env:
+      #     AWS_REGION: us-east-1
+      #     AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      #     AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      #   run: make download-artifacts
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v4
@@ -259,6 +333,8 @@ jobs:
         with:
           name: 'dist-artifacts'
           path: dist/
+      - name: Extract Webapp
+        run: make extract-webapp
       - name: Build and push
         uses: docker/build-push-action@v4
         with:
@@ -279,7 +355,6 @@ jobs:
       - windows-arm64
       - linux-amd64
       - linux-arm64
-      - build-helmchart
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -321,11 +396,11 @@ jobs:
       - name: Checkout Hoop
         uses: actions/checkout@v3
 
-      - name: Checkout Helm Chart
-        uses: actions/checkout@v3
-        with:
-          repository: hoophq/helm-chart
-          path: './build/helm-chart'
+      # - name: Checkout Helm Chart
+      #   uses: actions/checkout@v3
+      #   with:
+      #     repository: hoophq/helm-chart
+      #     path: './build/helm-chart'
 
       - uses: actions/download-artifact@v3
         id: download
@@ -349,9 +424,3 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: make release
-
-      - name: Dispatch Public Release
-        run: gh workflow run release.yml -f version=$GIT_TAG --repo hoophq/hoopcli
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-          GIT_TAG: ${{ env.GIT_TAG }}
