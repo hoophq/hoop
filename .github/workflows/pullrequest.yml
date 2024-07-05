@@ -15,6 +15,7 @@ jobs:
         with:
           repository: hoophq/libhoop
           path: './libhoop'
+          token: ${{ secrets.GH_TOKEN }}
       - name: Setup Go
         uses: actions/setup-go@v4
         with:
