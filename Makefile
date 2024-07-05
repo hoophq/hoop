@@ -27,7 +27,7 @@ build:
 
 build-webapp:
 	cd ./webapp && npm install && npm run release:hoop-ui && cd ../
-	tar -czf ${DIST_FOLDER}/webapp.tar.gz -C ./resources .
+	tar -czf ${DIST_FOLDER}/webapp.tar.gz -C ./webapp/resources .
 
 extract-webapp:
 	mkdir -p ./rootfs/app/ui && tar -xf ${DIST_FOLDER}/webapp.tar.gz -C rootfs/app/ui/

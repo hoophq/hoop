@@ -261,6 +261,8 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 18
+          cache: 'npm'
+          cache-dependency-path: webapp/package-lock.json
       - name: Build
         run: make build-webapp
       - uses: actions/upload-artifact@v3
