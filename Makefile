@@ -1,5 +1,6 @@
 PUBLIC_IMAGE := "hoophq/hoop"
-VERSION ?= $(or ${GIT_TAG},${GIT_TAG},v0)
+# TODO: change-me testting only
+VERSION ?= 1.23.0-rc.1
 GITCOMMIT ?= $(shell git rev-parse HEAD)
 DIST_FOLDER ?= ./dist
 
@@ -26,6 +27,7 @@ build:
 	rm -rf ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
 
 build-webapp:
+	mkdir -p ${DIST_FOLDER}
 	cd ./webapp && npm install && npm run release:hoop-ui && cd ../
 	tar -czf ${DIST_FOLDER}/webapp.tar.gz -C ./webapp/resources .
 
