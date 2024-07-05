@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hoopgateway
+spec:
+  selector:
+    matchLabels:
+      app: hoopgateway
+  {{- with .Values.deploymentStrategy }}
+  strategy: {{- toYaml . | trim | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/secret-configs.yaml") . | sha256sum }}
+      labels:
+        app: hoopgateway
+    spec:
+      containers:
+      - image: '{{ .Values.image.gw.repository | default "hoophq/hoop" }}:{{ .Values.image.gw.tag | default "latest" }}'
+        name: hoopgateway
+        imagePullPolicy: {{ .Values.image.gw.pullPolicy | default "Always" }}
+        args:
+        - hoop
+        - start
+        - gateway
+        envFrom:
+        - secretRef:
+            name: hoop-config
+        resources:
+          {{- toYaml .Values.resources.gw | nindent 10 }}
+        {{- if .Values.persistence.enabled }}
+        volumeMounts:
+        - mountPath: /opt/hoop/sessions
+          name: walsessions
+        {{- end }}
+        ports:
+        - containerPort: 8010
+          name: grpc
+        - containerPort: 8009
+          name: api
+      {{- with .Values.agentConfig }}
+      - image: '{{ .imageRepository |default "hoophq/hoopdev" }}:{{ .imageTag |default "latest" }}'
+        name: defaultagent
+        imagePullPolicy: {{ .imagePullPolicy | default "Always" }}
+        {{- if $.Values.persistence.enabled }}
+        volumeMounts:
+        - mountPath: /opt/hoop/sessions
+          name: walsessions
+        {{- end }}
+        envFrom:
+        - secretRef:
+            name: defaultagent-config
+      {{ end -}}
+      {{- if .Values.persistence.enabled }}
+      volumes:
+      - name: walsessions
+        persistentVolumeClaim:
+          claimName: {{ .Values.persistence.existingClaim | default "walsessions" }}
+      {{ end -}}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

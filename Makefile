@@ -1,6 +1,5 @@
 PUBLIC_IMAGE := "hoophq/hoop"
-# TODO: change-me testting only
-VERSION ?= 1.23.0-rc.1
+VERSION ?= $(or ${GIT_TAG},${GIT_TAG},v0)
 GITCOMMIT ?= $(shell git rev-parse HEAD)
 DIST_FOLDER ?= ./dist
 
@@ -16,6 +15,30 @@ LDFLAGS := "-s -w \
 -X github.com/hoophq/hoop/common/version.version=${VERSION} \
 -X github.com/hoophq/hoop/common/version.gitCommit=${GITCOMMIT} \
 -X github.com/hoophq/hoop/common/version.buildDate=${DATE}"
+
+run-dev:
+	./scripts/dev/run.sh
+
+run-dev-postgres:
+	./scripts/dev/run-postgres.sh
+
+build-dev-client:
+	go build -ldflags "-s -w -X github.com/hoophq/hoop/common/version.strictTLS=false" -o ${HOME}/.hoop/bin/hoop github.com/hoophq/hoop/client
+
+test: test_oss test_enterprise
+
+test_oss:
+	rm libhoop || true
+	ln -s _libhoop libhoop
+	env CGO_ENABLED=0 go test -v github.com/hoophq/hoop/...
+
+test_enterprise:
+	rm libhoop || true
+	ln -s ../libhoop libhoop
+	env CGO_ENABLED=0 go test -v github.com/hoophq/hoop/...
+
+publish:
+	./scripts/publish-release.sh
 
 build:
 	rm -rf ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} && mkdir -p ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
@@ -34,13 +57,13 @@ build-webapp:
 extract-webapp:
 	mkdir -p ./rootfs/app/ui && tar -xf ${DIST_FOLDER}/webapp.tar.gz -C rootfs/app/ui/
 
-package-helmchart:
-	mkdir -p ./dist
-	helm package ./build/helm-chart/chart/agent/ --app-version ${VERSION} --destination ${DIST_FOLDER}/ --version ${VERSION}
-	helm package ./build/helm-chart/chart/gateway/ --app-version ${VERSION} --destination ${DIST_FOLDER}/ --version ${VERSION}
+build-helm-chart:
+	mkdir -p ${DIST_FOLDER}
+	helm package ./deploy/helm-chart/chart/agent/ --app-version ${VERSION} --destination ${DIST_FOLDER}/ --version ${VERSION}
+	helm package ./deploy/helm-chart/chart/gateway/ --app-version ${VERSION} --destination ${DIST_FOLDER}/ --version ${VERSION}
 
 # only amd64 for now
-package-gateway-bundle:
+build-gateway-bundle:
 	rm -rf ${DIST_FOLDER}/hoopgateway
 	mkdir -p ${DIST_FOLDER}/hoopgateway/opt/hoop/bin
 	mkdir -p ${DIST_FOLDER}/hoopgateway/opt/hoop/migrations
@@ -64,7 +87,7 @@ release: release-aws-cf-templates
 	aws s3 cp ${DIST_FOLDER}/CHANGELOG.txt s3://hoopartifacts/release/${VERSION}/CHANGELOG.txt
 
 release-aws-cf-templates:
-	sed "s|LATEST_HOOP_VERSION|${VERSION}|g" setup/aws-cf-templates/hoopdev-platform.template.yaml > ${DIST_FOLDER}/hoopdev-platform.template.yaml
+	sed "s|LATEST_HOOP_VERSION|${VERSION}|g" deploy/aws/hoopdev-platform.template.yaml > ${DIST_FOLDER}/hoopdev-platform.template.yaml
 	aws s3 cp --region us-east-1 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-us-east-1/${VERSION}/hoopdev-platform.template.yaml
 	aws s3 cp --region us-east-1 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-us-east-1/latest/hoopdev-platform.template.yaml
 	aws s3 cp --region us-east-2 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-us-east-2/${VERSION}/hoopdev-platform.template.yaml
@@ -82,37 +105,4 @@ release-aws-cf-templates:
 	aws s3 cp --region ap-southeast-2 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-ap-southeast-2/${VERSION}/hoopdev-platform.template.yaml
 	aws s3 cp --region ap-southeast-2 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-ap-southeast-2/latest/hoopdev-platform.template.yaml
 
-download-artifacts:
-	mkdir -p ./dist
-	aws s3 cp s3://hoopartifacts/webapp/latest.tar.gz webapp-latest.tar.gz
-	tar -xf webapp-latest.tar.gz
-	mv ./resources ./dist/webapp-resources
-
-build-dev-client:
-	go build -ldflags "-s -w -X github.com/hoophq/hoop/common/version.strictTLS=false" -o ${HOME}/.hoop/bin/hoop github.com/hoophq/hoop/client
-
-publish:
-	./scripts/publish-release.sh
-
-publish-tools:
-	./scripts/publish-tools.sh
-
-run-dev:
-	./scripts/dev/run.sh
-
-run-dev-postgres:
-	./scripts/dev/run-postgres.sh
-
-test: test_oss test_enterprise
-
-test_oss:
-	rm libhoop || true
-	ln -s _libhoop libhoop
-	env CGO_ENABLED=0 go test -v github.com/hoophq/hoop/...
-
-test_enterprise:
-	rm libhoop || true
-	ln -s ../libhoop libhoop
-	env CGO_ENABLED=0 go test -v github.com/hoophq/hoop/...
-
-.PHONY: test_enterprise test_oss test build-webapp extract-webapp release publish publish-tools build build-dev-client package-helmchart run-dev run-dev-postgres download-artifacts package-gateway-bundle release-aws-cf-templates
+.PHONY: run-dev run-dev-postgres test_enterprise test_oss test build build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release release-aws-cf-templates

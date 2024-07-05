@@ -1,0 +1,8 @@
+Agent deployed
+
+The agent should be connected if the provided key is valid.
+Now you can create connections and associate with this instance
+Check it out https://hoop.dev/docs/connections/
+
+Documentation:
+https://hoop.dev/docs/setup

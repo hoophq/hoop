@@ -1,0 +1,34 @@
+{{- if .Values.ingressApi.enabled -}}
+{{- if semverCompare ">=1.19-0" .Capabilities.KubeVersion.GitVersion -}}
+apiVersion: networking.k8s.io/v1
+{{- else if semverCompare ">=1.14-0" .Capabilities.KubeVersion.GitVersion -}}
+apiVersion: networking.k8s.io/v1beta1
+{{- else -}}
+apiVersion: extensions/v1beta1
+{{- end }}
+kind: Ingress
+metadata:
+  {{- with .Values.ingressApi.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  labels:
+    app: hoopgateway-web
+  name: hoopgateway-web
+spec:
+  ingressClassName: {{ required "ingressApi.ingressClassName is required" .Values.ingressApi.ingressClassName | quote }}
+  rules:
+  - host: {{ .Values.ingressApi.host | quote }}
+    http:
+      paths:
+      - backend:
+          service:
+            name: hoopgateway
+            port:
+              number: 8009
+        pathType: ImplementationSpecific
+  {{- with .Values.ingressApi.tls }}
+  tls:
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
+{{- end }}

@@ -1,0 +1,46 @@
+## Default values for hoop.
+## This is a YAML-formatted file.
+## Declare variables to be passed into your templates.
+
+# Refer to this guide for more details: https://hoop.dev/docs/setup/kubernetes
+
+# -- Define a custom image configuration
+image: {}
+  # repository: hoophq/hoopdev
+  # pullPolicy: Always
+  # tag: latest
+
+
+# hoop agent configuration. Please refer to https://hoop.dev/docs/configuring/agent
+config: {}
+  # HOOP_KEY: '<AUTH_KEY>'
+  # LOG_ENCODING: 'console|json'
+  # LOG_LEVEL: 'debug|info|warn|error'
+  # LOG_GRPC: '0|1|2'
+
+# -- Define extra secret as environment variables
+extraSecret: {}
+# ENVSECRET1: RAWVALUE1
+# ENVSECRET2: RAWVALUE2
+
+# -- Deployment strategy
+deploymentStrategy:
+  type: Recreate
+
+# -- CPU/Memory resource requests/limits
+# resources:
+#   limits:
+#     cpu: 1024m
+#     memory: 1Gi
+#   requests:
+#     cpu: 1024m
+#     memory: 1Gi
+
+# -- Node labels for pod assignment
+nodeSelector: {}
+
+# -- Toleration labels for pod assignment
+tolerations: []
+
+# -- Affinity settings for pod assignment
+affinity: {}
