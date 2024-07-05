@@ -22,7 +22,6 @@ const (
 )
 
 func init() {
-	licenseInfoCmd.Flags().StringVar(&licenseFileFlag, "file", "", "The file containing the license data")
 	licenseInstallCmd.Flags().StringVar(&licenseFileFlag, "file", "", "The file containing the license data")
 
 	licenseSignCmd.Flags().StringSliceVar(&licenseSignAllowedHostsFlag, "allowed-hosts", nil, "The allowed hosts allowed to use this license. The value * allows all hosts")
@@ -30,7 +29,6 @@ func init() {
 	licenseSignCmd.Flags().StringVar(&licenseSignExpireAtFlag, "expire-at", "8640h", "The license expiration time")
 
 	licenseCmd.AddCommand(licenseSignCmd)
-	licenseCmd.AddCommand(licenseInfoCmd)
 	licenseCmd.AddCommand(licenseInstallCmd)
 }
 
@@ -70,22 +68,6 @@ var licenseSignCmd = &cobra.Command{
 			styles.PrintErrorAndExit("unable to coerce to []byte, got=%T", resp)
 		}
 		fmt.Println(string(licenseJsonBytes))
-	},
-}
-
-var licenseInfoCmd = &cobra.Command{
-	Use:   "info",
-	Short: "Obtain information about a local or remote license",
-	Run: func(cmd *cobra.Command, args []string) {
-		// licenseData, err := os.ReadFile(licenseFileFlag)
-		// if err != nil {
-		// 	styles.PrintErrorAndExit("failed loading license file: %v", err)
-		// }
-
-		// if err := license.Verify(licenseData); err != nil {
-		// 	styles.PrintErrorAndExit(err.Error())
-		// }
-		// fmt.Println("license is valid!")
 	},
 }
 

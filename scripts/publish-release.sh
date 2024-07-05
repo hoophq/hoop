@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-PUBLIC_REPO=hoophq/hoopcli
+PUBLIC_REPO=hoophq/hoop
 
 gh auth status
 

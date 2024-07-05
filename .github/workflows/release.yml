@@ -389,7 +389,7 @@ jobs:
       - name: Build Helm Chart
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
-        run: make build-helmchart
+        run: make build-helm-chart
 
       - name: Publish Release
         env:
