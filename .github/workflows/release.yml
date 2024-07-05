@@ -308,6 +308,7 @@ jobs:
       - windows-arm64
       - linux-amd64
       - linux-arm64
+      - build-webapp
     steps:
       - name: Checkout
         uses: actions/checkout@v3
