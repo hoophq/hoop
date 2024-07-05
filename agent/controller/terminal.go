@@ -42,7 +42,6 @@ func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {
 	}
 	args := append(connParams.CmdList, connParams.ClientArgs...)
 	cmd, err := libhoop.NewConsole(connParams.EnvVars, args, stdoutWriter, opts)
-	// cmd, err := term.NewCommand(connParams.EnvVars, append(connParams.CmdList, connParams.ClientArgs...)...)
 	if err != nil {
 		// should we propagate the error back to the client?
 		// In case of sensitive contents in the error this could be propagate back
