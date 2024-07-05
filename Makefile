@@ -96,6 +96,8 @@ run-dev-postgres:
 	./scripts/dev/run-postgres.sh
 
 test:
+	rm libhoop || true
+	ln -s _libhoop libhoop
 	env CGO_ENABLED=0 go test -v github.com/hoophq/hoop/...
 
 .PHONY: release publish publish-tools test build build-dev-client package-helmchart run-dev run-dev-postgres download-artifacts package-gateway-bundle release-aws-cf-templates

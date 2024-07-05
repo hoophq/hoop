@@ -30,10 +30,10 @@ func (c *core) MSSQL() (Proxy, error)    { return &noopProxy{connectionType: "ms
 func (c *core) MongoDB() (Proxy, error)  { return &noopProxy{connectionType: "mongodb"}, nil }
 func (c *core) Postgres() (Proxy, error) { return &noopProxy{connectionType: "postgres"}, nil }
 
-func NewAdHocExec(rawEnvVarList map[string]any, args []string, payload []byte, stdout, stderr io.WriteCloser) (Proxy, error) {
+func NewAdHocExec(rawEnvVarList map[string]any, args []string, payload []byte, stdout, stderr io.WriteCloser, opts map[string]string) (Proxy, error) {
 	return &noopProxy{connectionType: "terminal-exec"}, nil
 }
 
-func NewConsole(rawEnvVarList map[string]any, args []string, stdout io.WriteCloser) (Proxy, error) {
+func NewConsole(rawEnvVarList map[string]any, args []string, stdout io.WriteCloser, opts map[string]string) (Proxy, error) {
 	return &noopProxy{connectionType: "terminal-console"}, nil
 }

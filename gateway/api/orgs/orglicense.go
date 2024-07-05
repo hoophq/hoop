@@ -3,12 +3,12 @@ package apiorgs
 import (
 	"encoding/json"
 	"fmt"
-	"libhoop/log"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/license"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
 	"github.com/hoophq/hoop/gateway/storagev2"

@@ -2,13 +2,13 @@ package apiserverinfo
 
 import (
 	"fmt"
-	"libhoop/log"
 	"net/http"
 	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/appruntime"
 	"github.com/hoophq/hoop/common/license"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
@@ -37,9 +37,7 @@ type handler struct {
 	grpcURL string
 }
 
-func New(grpcURL string) *handler {
-	return &handler{grpcURL: grpcURL}
-}
+func New(grpcURL string) *handler { return &handler{grpcURL: grpcURL} }
 
 func (h *handler) Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
