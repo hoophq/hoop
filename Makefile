@@ -32,7 +32,7 @@ build-webapp:
 	tar -czf ${DIST_FOLDER}/webapp.tar.gz -C ./resources .
 
 extract-webapp:
- 	mkdir -p ./rootfs/app/ui && tar -xf ${DIST_FOLDER}/webapp.tar.gz -C rootfs/app/ui/
+	mkdir -p ./rootfs/app/ui && tar -xf ${DIST_FOLDER}/webapp.tar.gz -C rootfs/app/ui/
 
 package-helmchart:
 	mkdir -p ./dist
