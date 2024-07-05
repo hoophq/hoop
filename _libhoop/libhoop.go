@@ -1,5 +1,3 @@
-//go:build !libhoop
-
 package libhoop
 
 import (
