@@ -7,13 +7,13 @@ import (
 	"strings"
 	"time"
 
-	commongrpc "github.com/runopsio/hoop/common/grpc"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/memory"
-	"github.com/runopsio/hoop/common/monitoring"
-	pb "github.com/runopsio/hoop/common/proto"
-	pbagent "github.com/runopsio/hoop/common/proto/agent"
-	pbclient "github.com/runopsio/hoop/common/proto/client"
+	commongrpc "github.com/hoophq/hoop/common/grpc"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/memory"
+	"github.com/hoophq/hoop/common/monitoring"
+	pb "github.com/hoophq/hoop/common/proto"
+	pbagent "github.com/hoophq/hoop/common/proto/agent"
+	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
@@ -40,7 +40,7 @@ type interceptor struct {
 
 func New(apiURL string) grpc.StreamServerInterceptor {
 	// TODO: call this func when the gateway shutdowns
-	shutdownFn, err := monitoring.NewOpenTracing(apiURL, "f26akXhvu7OG1PKqTVoUZB")
+	shutdownFn, err := monitoring.NewOpenTracing(apiURL)
 	if err != nil {
 		log.Errorf("failed initializing open tracing client, err=%v", err)
 	}

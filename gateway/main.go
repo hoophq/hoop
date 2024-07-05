@@ -3,40 +3,39 @@ package gateway
 import (
 	"bytes"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/runopsio/hoop/common/grpc"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/monitoring"
-	"github.com/runopsio/hoop/common/version"
-	"github.com/runopsio/hoop/gateway/agentcontroller"
-	"github.com/runopsio/hoop/gateway/api"
-	apiorgs "github.com/runopsio/hoop/gateway/api/orgs"
-	"github.com/runopsio/hoop/gateway/appconfig"
-	"github.com/runopsio/hoop/gateway/indexer"
-	"github.com/runopsio/hoop/gateway/notification"
-	"github.com/runopsio/hoop/gateway/pgrest"
-	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
-	"github.com/runopsio/hoop/gateway/review"
-	"github.com/runopsio/hoop/gateway/runbooks"
-	"github.com/runopsio/hoop/gateway/security/idp"
-	"github.com/runopsio/hoop/gateway/transport"
+	"github.com/hoophq/hoop/common/grpc"
+	"github.com/hoophq/hoop/common/license"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/monitoring"
+	"github.com/hoophq/hoop/common/version"
+	"github.com/hoophq/hoop/gateway/agentcontroller"
+	"github.com/hoophq/hoop/gateway/api"
+	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
+	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/indexer"
+	"github.com/hoophq/hoop/gateway/pgrest"
+	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
+	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
+	"github.com/hoophq/hoop/gateway/review"
+	"github.com/hoophq/hoop/gateway/runbooks"
+	"github.com/hoophq/hoop/gateway/security/idp"
+	"github.com/hoophq/hoop/gateway/transport"
 
 	// plugins
-	"github.com/runopsio/hoop/gateway/transport/connectionstatus"
-	pluginsrbac "github.com/runopsio/hoop/gateway/transport/plugins/accesscontrol"
-	pluginsaudit "github.com/runopsio/hoop/gateway/transport/plugins/audit"
-	pluginsdcm "github.com/runopsio/hoop/gateway/transport/plugins/dcm"
-	pluginsdlp "github.com/runopsio/hoop/gateway/transport/plugins/dlp"
-	pluginsindex "github.com/runopsio/hoop/gateway/transport/plugins/index"
-	pluginsreview "github.com/runopsio/hoop/gateway/transport/plugins/review"
-	pluginsslack "github.com/runopsio/hoop/gateway/transport/plugins/slack"
-	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
-	pluginswebhooks "github.com/runopsio/hoop/gateway/transport/plugins/webhooks"
-	"github.com/runopsio/hoop/gateway/transport/streamclient"
+	"github.com/hoophq/hoop/gateway/transport/connectionstatus"
+	pluginsrbac "github.com/hoophq/hoop/gateway/transport/plugins/accesscontrol"
+	pluginsaudit "github.com/hoophq/hoop/gateway/transport/plugins/audit"
+	pluginsdlp "github.com/hoophq/hoop/gateway/transport/plugins/dlp"
+	pluginsindex "github.com/hoophq/hoop/gateway/transport/plugins/index"
+	pluginsreview "github.com/hoophq/hoop/gateway/transport/plugins/review"
+	pluginsslack "github.com/hoophq/hoop/gateway/transport/plugins/slack"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
+	pluginswebhooks "github.com/hoophq/hoop/gateway/transport/plugins/webhooks"
+	"github.com/hoophq/hoop/gateway/transport/streamclient"
 )
 
 func Run() {
@@ -44,14 +43,13 @@ func Run() {
 	log.Infof("version=%s, compiler=%s, go=%s, platform=%s, commit=%s, multitenant=%v, build-date=%s",
 		ver.Version, ver.Compiler, ver.GoVersion, ver.Platform, ver.GitCommit, pgusers.IsOrgMultiTenant(), ver.BuildDate)
 
-	apiURL := os.Getenv("API_URL")
-	if err := changeWebappApiURL(apiURL); err != nil {
-		log.Fatal(err)
-	}
-
 	// TODO: refactor to load all app gateway runtime configuration in this method
 	if err := appconfig.Load(); err != nil {
 		log.Fatalf("failed loading gateway configuration, reason=%v", err)
+	}
+	apiURL := appconfig.Get().ApiURL()
+	if err := changeWebappApiURL(apiURL); err != nil {
+		log.Fatal(err)
 	}
 
 	// by default start postgrest process
@@ -59,27 +57,20 @@ func Run() {
 		log.Fatal(err)
 	}
 
-	idProvider := idp.NewProvider()
+	idProvider := idp.NewProvider(apiURL)
 	grpcURL := os.Getenv("GRPC_URL")
 	if grpcURL == "" {
-		u, err := url.Parse(idProvider.ApiURL)
-		if err != nil {
-			log.Fatalf("failed parsing API_URL, reason=%v", err)
-		}
 		scheme := "grpcs"
-		if u.Scheme == "http" {
+		if appconfig.Get().ApiScheme() == "http" {
 			scheme = "grpc"
 		}
-		grpcURL = fmt.Sprintf("%s://%s:8443", scheme, u.Hostname())
+		grpcURL = fmt.Sprintf("%s://%s:8443", scheme, appconfig.Get().ApiHostname())
 	}
 
-	// userService := user.Service{Storage: &user.Storage{}}
 	reviewService := review.Service{}
-	notificationService := getNotification()
-
 	if !pgusers.IsOrgMultiTenant() {
 		log.Infof("provisioning default organization")
-		ctx, err := pgusers.CreateDefaultOrganization()
+		ctx, err := pgorgs.CreateDefaultOrganization(license.DefaultOSS)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -98,20 +89,14 @@ func Run() {
 	}
 
 	g := &transport.Server{
-		ReviewService:        reviewService,
-		NotificationService:  notificationService,
-		IDProvider:           idProvider,
-		GcpDLPRawCredentials: os.Getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"),
-		PluginRegistryURL:    os.Getenv("PLUGIN_REGISTRY_URL"),
-		PyroscopeIngestURL:   os.Getenv("PYROSCOPE_INGEST_URL"),
-		PyroscopeAuthToken:   os.Getenv("PYROSCOPE_AUTH_TOKEN"),
-		AgentSentryDSN:       "https://a6ecaeba31684f02ab8606a59301cd15@o4504559799566336.ingest.sentry.io/4504571759230976",
+		ApiHostname:   appconfig.Get().ApiHostname(),
+		ReviewService: reviewService,
+		IDProvider:    idProvider,
 	}
 	// order matters
 	plugintypes.RegisteredPlugins = []plugintypes.Plugin{
 		pluginsreview.New(
 			&review.Service{TransportService: g},
-			notificationService,
 			idProvider.ApiURL,
 		),
 		pluginsaudit.New(),
@@ -122,7 +107,6 @@ func Run() {
 		pluginsslack.New(
 			&review.Service{TransportService: g},
 			idProvider),
-		pluginsdcm.New(),
 	}
 	reviewService.TransportService = g
 
@@ -132,14 +116,7 @@ func Run() {
 			log.Fatalf("failed initializing plugin %s, reason=%v", p.Name(), err)
 		}
 	}
-	sentryStarted, err := monitoring.StartSentry(nil, monitoring.SentryConfig{
-		DSN:         "https://7c3bcdf7772943b9b70bcf69b07408ae@o4504559799566336.ingest.sentry.io/4504559805923328",
-		Environment: g.IDProvider.ApiURL,
-	})
-	if err != nil {
-		log.Fatalf("failed starting sentry, err=%v", err)
-	}
-
+	sentryStarted, _ := monitoring.StartSentry()
 	if err := agentcontroller.Run(grpcURL); err != nil {
 		err := fmt.Errorf("failed to start agent controller, reason=%v", err)
 		log.Warn(err)
@@ -164,12 +141,33 @@ func changeWebappApiURL(apiURL string) error {
 			staticUiPath = "/app/ui/public"
 		}
 		appJsFile := filepath.Join(staticUiPath, "js/app.js")
+		appJsFileOrigin := filepath.Join(staticUiPath, "js/app.origin.js")
+		if appBytes, err := os.ReadFile(appJsFileOrigin); err == nil {
+			if err := os.WriteFile(appJsFile, appBytes, 0644); err != nil {
+				return fmt.Errorf("failed saving app.js file, reason=%v", err)
+			}
+			log.Infof("replacing api url from origin at %v with %v", appJsFile, apiURL)
+			appBytes = bytes.ReplaceAll(appBytes, []byte(`http://localhost:8009`), []byte(apiURL))
+			if err := os.WriteFile(appJsFile, appBytes, 0644); err != nil {
+				return fmt.Errorf("failed saving app.js file, reason=%v", err)
+			}
+			appBytes = bytes.ReplaceAll(appBytes, []byte(`http://localhost:4001`), []byte(apiURL))
+			if err := os.WriteFile(appJsFile, appBytes, 0644); err != nil {
+				return fmt.Errorf("failed saving app.js file, reason=%v", err)
+			}
+			return nil
+		}
 		appBytes, err := os.ReadFile(appJsFile)
 		if err != nil {
 			log.Warnf("failed opening webapp js file %v, reason=%v", appJsFile, err)
 			return nil
 		}
-		log.Infof("replacing api url from %v with %v", appJsFile, apiURL)
+		// create a copy to allow overriding the api url
+		if err := os.WriteFile(appJsFileOrigin, appBytes, 0644); err != nil {
+			return fmt.Errorf("failed creating app.origin.js copy file at %v, reason=%v", appJsFileOrigin, err)
+		}
+
+		log.Infof("replacing api url at %v with %v", appJsFile, apiURL)
 		appBytes = bytes.ReplaceAll(appBytes, []byte(`http://localhost:8009`), []byte(apiURL))
 		if err := os.WriteFile(appJsFile, appBytes, 0644); err != nil {
 			return fmt.Errorf("failed saving app.js file, reason=%v", err)
@@ -180,13 +178,4 @@ func changeWebappApiURL(apiURL string) error {
 		}
 	}
 	return nil
-}
-
-func getNotification() notification.Service {
-	if os.Getenv("SMTP_HOST") != "" {
-		log.Infof("SMTP notifications selected")
-		return notification.NewSmtpSender()
-	}
-	log.Infof("MagicBell notifications selected")
-	return notification.NewMagicBell()
 }

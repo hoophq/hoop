@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/runopsio/hoop/common/clientconfig"
-	"github.com/runopsio/hoop/common/dsnkeys"
-	"github.com/runopsio/hoop/common/grpc"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/common/version"
+	"github.com/hoophq/hoop/common/clientconfig"
+	"github.com/hoophq/hoop/common/dsnkeys"
+	"github.com/hoophq/hoop/common/grpc"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/common/version"
 )
 
 type Config struct {

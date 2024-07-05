@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/runopsio/hoop/common/proto"
+	"github.com/hoophq/hoop/common/proto"
 )
 
 func TestDsnKeysMatch(t *testing.T) {

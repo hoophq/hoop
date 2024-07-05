@@ -3,8 +3,8 @@ package admin
 import (
 	"fmt"
 
-	"github.com/runopsio/hoop/client/cmd/styles"
-	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/hoophq/hoop/client/cmd/styles"
+	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/spf13/cobra"
 )
 

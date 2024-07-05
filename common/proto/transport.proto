@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package protobuf;
 
-option go_package="github.com/runopsio/hoop/common;proto";
+option go_package="github.com/hoophq/hoop/common;proto";
 
 service Transport {
   rpc PreConnect (PreConnectRequest) returns (PreConnectResponse);

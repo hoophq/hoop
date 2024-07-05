@@ -9,15 +9,15 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/runopsio/hoop/common/apiutils"
-	"github.com/runopsio/hoop/gateway/clientexec"
-	pgplugins "github.com/runopsio/hoop/gateway/pgrest/plugins"
-	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
-	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
-	"github.com/runopsio/hoop/gateway/storagev2"
-	sessionstorage "github.com/runopsio/hoop/gateway/storagev2/session"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
-	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+	"github.com/hoophq/hoop/common/apiutils"
+	"github.com/hoophq/hoop/gateway/clientexec"
+	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
+	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
+	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
+	"github.com/hoophq/hoop/gateway/storagev2"
+	sessionstorage "github.com/hoophq/hoop/gateway/storagev2/session"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
 type ExecRequest struct {

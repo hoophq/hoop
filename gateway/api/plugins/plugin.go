@@ -9,14 +9,13 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/pgrest"
-	pgconnections "github.com/runopsio/hoop/gateway/pgrest/connections"
-	pgplugins "github.com/runopsio/hoop/gateway/pgrest/plugins"
-	"github.com/runopsio/hoop/gateway/storagev2"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
-	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/proto"
+	pgconnections "github.com/hoophq/hoop/gateway/pgrest/connections"
+	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
+	"github.com/hoophq/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
 type PluginConnectionRequest struct {
@@ -38,11 +37,6 @@ func Post(c *gin.Context) {
 	var req PluginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
-		return
-	}
-
-	if !pgrest.IsValidLicense(ctx, req.Name) {
-		c.JSON(http.StatusForbidden, gin.H{"message": "unable to process request, plugin unavailable for this license"})
 		return
 	}
 
@@ -111,10 +105,6 @@ func Put(c *gin.Context) {
 		return
 	}
 
-	if !pgrest.IsValidLicense(ctx, req.Name) {
-		c.JSON(http.StatusForbidden, gin.H{"message": "unable to process request, plugin unavailable for this license"})
-		return
-	}
 	existingPlugin, err := pgplugins.New().FetchOne(ctx, req.Name)
 	if err != nil {
 		log.Errorf("failed retrieving existing plugin, err=%v", err)
@@ -157,11 +147,6 @@ func PutConfig(c *gin.Context) {
 	var envVars map[string]string
 	if err := c.ShouldBindJSON(&envVars); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
-		return
-	}
-
-	if !pgrest.IsValidLicense(ctx, pluginName) {
-		c.JSON(http.StatusForbidden, gin.H{"message": "unable to process request, plugin unavailable for this license"})
 		return
 	}
 

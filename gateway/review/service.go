@@ -6,12 +6,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	pb "github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/pgrest"
-	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
-	pgsession "github.com/runopsio/hoop/gateway/pgrest/session"
-	"github.com/runopsio/hoop/gateway/storagev2"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
+	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/pgrest"
+	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
+	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
+	"github.com/hoophq/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
 type (

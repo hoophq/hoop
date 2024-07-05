@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/runopsio/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
 func (a *Agent) GetMeta(key string) (v string) {

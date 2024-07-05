@@ -12,8 +12,8 @@ import (
 	keyfunc "github.com/MicahParks/keyfunc/v2"
 	"github.com/coreos/go-oidc/v3/oidc"
 	jwt "github.com/golang-jwt/jwt/v5"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/proto"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/proto"
 	"golang.org/x/oauth2"
 )
 
@@ -119,13 +119,8 @@ func (p *Provider) userInfoEndpoint(accessToken string) (*ProviderUserInfo, erro
 	return &uinfo, nil
 }
 
-func NewProvider() *Provider {
+func NewProvider(apiURL string) *Provider {
 	ctx := context.Background()
-
-	apiURL := os.Getenv("API_URL")
-	if apiURL == "" {
-		log.Fatal("API_URL environment variable is required")
-	}
 	apiURL = strings.TrimSuffix(apiURL, "/")
 
 	provider := &Provider{

@@ -8,9 +8,9 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/runopsio/hoop/gateway/pgrest"
-	"github.com/runopsio/hoop/gateway/storagev2"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/gateway/pgrest"
+	"github.com/hoophq/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
 type clientFunc func(req *http.Request) (*http.Response, error)

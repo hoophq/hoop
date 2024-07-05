@@ -6,12 +6,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/memory"
-	"github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/pgrest"
-	"github.com/runopsio/hoop/gateway/transport/streamclient"
-	streamtypes "github.com/runopsio/hoop/gateway/transport/streamclient/types"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/memory"
+	"github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/pgrest"
+	"github.com/hoophq/hoop/gateway/transport/streamclient"
+	streamtypes "github.com/hoophq/hoop/gateway/transport/streamclient/types"
 )
 
 type Info struct {
@@ -62,7 +62,7 @@ var (
 // This function also release the proxy connections if there's an agent online or
 // if the synchronize process returns with an error. The error is sent to all clients
 // waiting for a response
-func AgentPreConnect(ctx pgrest.LicenseContext, agentID string, req *proto.PreConnectRequest) *proto.PreConnectResponse {
+func AgentPreConnect(ctx pgrest.OrgContext, agentID string, req *proto.PreConnectRequest) *proto.PreConnectResponse {
 	// sync the connection with the store
 	var syncErr error
 	if req.Name != "" {

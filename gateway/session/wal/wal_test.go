@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/gateway/session/eventlog"
-	eventlogv0 "github.com/runopsio/hoop/gateway/session/eventlog/v0"
+	"github.com/hoophq/hoop/gateway/session/eventlog"
+	eventlogv0 "github.com/hoophq/hoop/gateway/session/eventlog/v0"
 )
 
 func newFakeHeader(orgID string) *Header {

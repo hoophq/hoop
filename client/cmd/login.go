@@ -14,14 +14,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runopsio/hoop/client/cmd/static"
-	proxyconfig "github.com/runopsio/hoop/client/config"
-	"github.com/runopsio/hoop/common/clientconfig"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/monitoring"
-	pb "github.com/runopsio/hoop/common/proto"
+	"github.com/hoophq/hoop/client/cmd/static"
+	proxyconfig "github.com/hoophq/hoop/client/config"
+	"github.com/hoophq/hoop/common/clientconfig"
+	"github.com/hoophq/hoop/common/log"
+	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/spf13/cobra"
 )
+
+var noBrowser bool
 
 type login struct {
 	Url     string `json:"login_url"`
@@ -29,10 +30,9 @@ type login struct {
 }
 
 var loginCmd = &cobra.Command{
-	Use:    "login",
-	Short:  "Authenticate at Hoop",
-	Long:   `Login to gain access to hoop usage.`,
-	PreRun: monitoring.SentryPreRun,
+	Use:   "login",
+	Short: "Authenticate at Hoop",
+	Long:  `Login to gain access to hoop usage.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		conf, err := proxyconfig.Load()
 		switch err {
@@ -79,6 +79,7 @@ var loginCmd = &cobra.Command{
 }
 
 func init() {
+	loginCmd.Flags().BoolVar(&noBrowser, "no-browser", false, "Print the login url to stdout instead of opening the browser")
 	rootCmd.AddCommand(loginCmd)
 }
 
@@ -132,9 +133,15 @@ func doLogin(apiURL string) (string, error) {
 		Addr: pb.ClientLoginCallbackAddress,
 	}
 	go callbackHttpServer.ListenAndServe()
-	log.Debugf("trying opening browser with url=%v", loginUrl)
-	if err := openBrowser(loginUrl); err != nil {
-		fmt.Printf("Browser failed to open. \nPlease click on the link below:\n\n%s\n\n", loginUrl)
+	if noBrowser {
+		fmt.Printf("\nOpen the URL below to authenticate on your Hoop instance\n")
+		fmt.Printf("---------------------------------------------------------\n")
+		fmt.Printf("• %s\n\n", loginUrl)
+	} else {
+		log.Debugf("trying opening browser with url=%v", loginUrl)
+		if err := openBrowser(loginUrl); err != nil {
+			fmt.Printf("Browser failed to open. \nPlease click on the link below:\n\n%s\n\n", loginUrl)
+		}
 	}
 	defer callbackHttpServer.Shutdown(context.Background())
 	select {

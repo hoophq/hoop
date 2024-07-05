@@ -6,12 +6,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/gateway/indexer"
-	"github.com/runopsio/hoop/gateway/session/eventlog"
-	eventlogv0 "github.com/runopsio/hoop/gateway/session/eventlog/v0"
-	sessionwal "github.com/runopsio/hoop/gateway/session/wal"
-	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/indexer"
+	"github.com/hoophq/hoop/gateway/session/eventlog"
+	eventlogv0 "github.com/hoophq/hoop/gateway/session/eventlog/v0"
+	sessionwal "github.com/hoophq/hoop/gateway/session/wal"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
 var walFolderTmpl string = `%s/%s-%s-wal`

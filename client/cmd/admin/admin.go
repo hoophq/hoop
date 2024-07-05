@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
+	"strconv"
+	"time"
 
-	"github.com/runopsio/hoop/client/cmd/styles"
-	clientconfig "github.com/runopsio/hoop/client/config"
-	"github.com/runopsio/hoop/common/version"
+	"github.com/hoophq/hoop/client/cmd/styles"
+	clientconfig "github.com/hoophq/hoop/client/config"
+	"github.com/hoophq/hoop/common/version"
 	"github.com/spf13/cobra"
 )
 
@@ -19,6 +21,7 @@ func init() {
 	MainCmd.AddCommand(createCmd)
 	MainCmd.AddCommand(serverInfoCmd)
 	MainCmd.AddCommand(openWebhooksDashboardCmd)
+	MainCmd.AddCommand(licenseCmd)
 
 	serverInfoCmd.Flags().StringVarP(&outputFlag, "output", "o", "", "Output format. One off: (json)")
 }
@@ -44,6 +47,15 @@ Configuration:
   IDP Audience:            %v
   IDP Custom Scopes:       %v
   Postgrest Role:          %v
+
+License:
+  Key ID:        %v
+  Type:          %v
+  Valid:         %v
+  Issued At:     %v
+  Expires At:    %v
+  Allowed Hosts: %v
+  Verify Error:  %v
 `
 
 var serverInfoCmd = &cobra.Command{
@@ -74,7 +86,15 @@ var serverInfoCmd = &cobra.Command{
 			}
 			return "not set"
 		}
+		timeFn := func(val any) string {
+			timestamp, _ := strconv.ParseInt(fmt.Sprintf("%v", val), 10, 64)
+			return time.Unix(timestamp, 0).In(time.UTC).Format(time.RFC3339)
+		}
 		if resp, _ := obj.(map[string]any); len(resp) > 0 {
+			licenseInfo, _ := resp["license_info"].(map[string]any)
+			if licenseInfo == nil {
+				licenseInfo = map[string]any{}
+			}
 			fmt.Printf(serverInfoOutput,
 				resp["tenancy_type"],
 				resp["grpc_url"],
@@ -90,6 +110,13 @@ var serverInfoCmd = &cobra.Command{
 				displayFn(resp["has_idp_audience"]),
 				displayFn(resp["has_idp_custom_scopes"]),
 				displayFn(resp["has_postgrest_role"]),
+				licenseInfo["key_id"],
+				licenseInfo["type"],
+				licenseInfo["is_valid"],
+				timeFn(licenseInfo["issued_at"]),
+				timeFn(licenseInfo["expire_at"]),
+				licenseInfo["allowed_hosts"],
+				licenseInfo["verify_error"],
 			)
 			return
 		}

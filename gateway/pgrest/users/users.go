@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/google/uuid"
-	"github.com/runopsio/hoop/gateway/pgrest"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/gateway/pgrest"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
 var ErrOrgAlreadyExists = fmt.Errorf("organization already exists")
@@ -139,73 +138,6 @@ func (u *user) FetchOneBySlackID(ctx pgrest.OrgContext, slackID string) (*types.
 		SlackID: usr.SlackID,
 		Groups:  usr.Groups,
 	}, nil
-}
-
-func (u *user) CreateOrg(id, name string) error {
-	return pgrest.New("/orgs").Create(map[string]any{"id": id, "name": name}).Error()
-}
-
-// CreateOrGetOrg creates an organization if it doesn't exist, otherwise
-// it returns if the organization does not contain any users
-func (u *user) CreateOrGetOrg(name string) (orgID string, err error) {
-	org, _, err := u.FetchOrgByName(name)
-	if err != nil {
-		return "", err
-	}
-	if org != nil {
-		var users []pgrest.User
-		err = pgrest.New("/users?select=*,groups,orgs(id,name)&org_id=eq.%v", org.ID).
-			List().
-			DecodeInto(&users)
-		if err != nil && err != pgrest.ErrNotFound {
-			return "", fmt.Errorf("failed veryfing if org %s is empty, err=%v", org.ID, err)
-		}
-		// organization already exists and it's being used
-		if len(users) > 0 {
-			return "", ErrOrgAlreadyExists
-		}
-		return org.ID, nil
-	}
-	orgID = uuid.NewString()
-	return orgID, pgrest.New("/orgs").Create(map[string]any{"id": orgID, "name": name}).Error()
-}
-
-// FetchOrgByName returns an organization and the total number of users
-func (u *user) FetchOrgByName(name string) (*pgrest.Org, int64, error) {
-	var org pgrest.Org
-	err := pgrest.New("/orgs?name=eq.%v", url.QueryEscape(name)).
-		FetchOne().
-		DecodeInto(&org)
-	if err != nil {
-		if err == pgrest.ErrNotFound {
-			return nil, 0, nil
-		}
-		return nil, 0, err
-	}
-	total := pgrest.New("/users?org_id=eq.%s", org.ID).ExactCount()
-	return &org, total, nil
-}
-
-func (u *user) FetchOrgByID(id string) (*pgrest.Org, error) {
-	var org pgrest.Org
-	err := pgrest.New("/orgs?id=eq.%v", id).
-		FetchOne().
-		DecodeInto(&org)
-	if err != nil {
-		if err == pgrest.ErrNotFound {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &org, nil
-}
-
-func (u *user) FetchAllOrgs() (items []pgrest.Org, err error) {
-	err = pgrest.New("/orgs").FetchAll().DecodeInto(&items)
-	if err != nil && err != pgrest.ErrNotFound {
-		return nil, err
-	}
-	return items, nil
 }
 
 func (u *user) Delete(ctx pgrest.OrgContext, subject string) error {

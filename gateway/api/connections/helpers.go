@@ -7,11 +7,11 @@ import (
 	"slices"
 	"strings"
 
-	pb "github.com/runopsio/hoop/common/proto"
-	apivalidation "github.com/runopsio/hoop/gateway/api/validation"
-	"github.com/runopsio/hoop/gateway/pgrest"
-	pgplugins "github.com/runopsio/hoop/gateway/pgrest/plugins"
-	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+	pb "github.com/hoophq/hoop/common/proto"
+	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
+	"github.com/hoophq/hoop/gateway/pgrest"
+	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
 var tagsValRe, _ = regexp.Compile(`^[a-zA-Z0-9_]+(?:[-\.]?[a-zA-Z0-9_]+){0,128}$`)

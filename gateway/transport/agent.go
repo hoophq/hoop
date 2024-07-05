@@ -4,15 +4,14 @@ import (
 	"fmt"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/monitoring"
-	pb "github.com/runopsio/hoop/common/proto"
-	pbagent "github.com/runopsio/hoop/common/proto/agent"
-	pbclient "github.com/runopsio/hoop/common/proto/client"
-	pbgateway "github.com/runopsio/hoop/common/proto/gateway"
-	"github.com/runopsio/hoop/gateway/transport/connectionrequests"
-	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
-	"github.com/runopsio/hoop/gateway/transport/streamclient"
+	"github.com/hoophq/hoop/common/log"
+	pb "github.com/hoophq/hoop/common/proto"
+	pbagent "github.com/hoophq/hoop/common/proto/agent"
+	pbclient "github.com/hoophq/hoop/common/proto/client"
+	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
+	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
+	"github.com/hoophq/hoop/gateway/transport/streamclient"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -37,7 +36,7 @@ func (s *Server) subscribeAgent(stream *streamclient.AgentStream) (err error) {
 	log.With("connection", stream.ConnectionName()).Infof("agent connected: %s", stream)
 	_ = stream.Send(&pb.Packet{
 		Type:    pbagent.GatewayConnectOK,
-		Payload: s.configurationData(stream.GetOrgName()),
+		Payload: nil,
 	})
 	return s.listenAgentMessages(&pluginContext, stream)
 }
@@ -96,23 +95,19 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 	}
 }
 
-func (s *Server) configurationData(orgName string) []byte {
-	var transportConfigBytes []byte
-	if s.PyroscopeIngestURL != "" {
-
-		transportConfigBytes, _ = pb.GobEncode(monitoring.TransportConfig{
-			Sentry: monitoring.SentryConfig{
-				DSN:         s.AgentSentryDSN,
-				OrgName:     orgName,
-				Environment: monitoring.NormalizeEnvironment(s.IDProvider.ApiURL),
-			},
-			Profiler: monitoring.ProfilerConfig{
-				PyroscopeServerAddress: s.PyroscopeIngestURL,
-				PyroscopeAuthToken:     s.PyroscopeAuthToken,
-				OrgName:                orgName,
-				Environment:            monitoring.NormalizeEnvironment(s.IDProvider.ApiURL),
-			},
-		})
-	}
-	return transportConfigBytes
-}
+// func (s *Server) configurationData(orgName string) []byte {
+// 	var transportConfigBytes []byte
+// 	transportConfigBytes, _ = pb.GobEncode(monitoring.TransportConfig{
+// 		Sentry: monitoring.SentryConfig{
+// 			OrgName:     orgName,
+// 			Environment: monitoring.NormalizeEnvironment(s.IDProvider.ApiURL),
+// 		},
+// 		Profiler: monitoring.ProfilerConfig{
+// 			PyroscopeServerAddress: s.PyroscopeIngestURL,
+// 			PyroscopeAuthToken:     s.PyroscopeAuthToken,
+// 			OrgName:                orgName,
+// 			Environment:            monitoring.NormalizeEnvironment(s.IDProvider.ApiURL),
+// 		},
+// 	})
+// 	return transportConfigBytes
+// }

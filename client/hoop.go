@@ -1,9 +1,5 @@
 package main
 
-import (
-	"github.com/runopsio/hoop/client/cmd"
-)
+import "github.com/hoophq/hoop/client/cmd"
 
-func main() {
-	cmd.Execute()
-}
+func main() { cmd.Execute() }

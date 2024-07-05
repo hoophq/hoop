@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/gateway/pgrest"
+	"github.com/hoophq/hoop/gateway/pgrest"
 )
 
 type userAuth struct{}
@@ -27,38 +27,40 @@ func (u *userAuth) FetchUserContext(subject string) (*Context, error) {
 			return &Context{}, nil
 		}
 		return &Context{
-			OrgID:       sa.OrgID,
-			OrgName:     sa.Org.Name, // TODO: propagate org name
-			OrgLicense:  sa.Org.License,
-			UserUUID:    sa.ID,
-			UserSubject: sa.Subject,
-			UserName:    sa.Name,
-			UserEmail:   sa.Subject,
-			UserStatus:  sa.Status,
-			UserPicture: "",
-			UserGroups:  sa.Groups,
+			OrgID:          sa.OrgID,
+			OrgName:        sa.Org.Name,    // TODO: propagate org name
+			OrgLicense:     sa.Org.License, // deprecated in flavor of OrgLicenseData
+			OrgLicenseData: sa.Org.LicenseData,
+			UserUUID:       sa.ID,
+			UserSubject:    sa.Subject,
+			UserName:       sa.Name,
+			UserEmail:      sa.Subject,
+			UserStatus:     sa.Status,
+			UserPicture:    "",
+			UserGroups:     sa.Groups,
 		}, nil
 	}
 	if usr.Status != "active" {
 		return &Context{}, fmt.Errorf("user %s is not active", usr.Email)
 	}
 	return &Context{
-		OrgID:       usr.OrgID,
-		OrgName:     usr.Org.Name,
-		OrgLicense:  usr.Org.License,
-		UserUUID:    usr.ID,
-		UserSubject: usr.Subject,
-		UserEmail:   usr.Email,
-		UserName:    usr.Name,
-		UserStatus:  usr.Status,
-		UserSlackID: usr.SlackID,
-		UserPicture: usr.Picture,
-		UserGroups:  usr.Groups,
+		OrgID:          usr.OrgID,
+		OrgName:        usr.Org.Name,
+		OrgLicense:     usr.Org.License, // deprecated in flavor of OrgLicenseData
+		OrgLicenseData: usr.Org.LicenseData,
+		UserUUID:       usr.ID,
+		UserSubject:    usr.Subject,
+		UserEmail:      usr.Email,
+		UserName:       usr.Name,
+		UserStatus:     usr.Status,
+		UserSlackID:    usr.SlackID,
+		UserPicture:    usr.Picture,
+		UserGroups:     usr.Groups,
 	}, nil
 }
 
 func fetchOneBySubject(subject string) (*pgrest.User, error) {
-	path := fmt.Sprintf("/users?select=*,groups,orgs(id,name,license)&subject=eq.%v&verified=is.true", subject)
+	path := fmt.Sprintf("/users?select=*,groups,orgs(id,name,license,license_data)&subject=eq.%v&verified=is.true", subject)
 	var usr pgrest.User
 	if err := pgrest.New(path).FetchOne().DecodeInto(&usr); err != nil {
 		if err == pgrest.ErrNotFound {
@@ -72,7 +74,7 @@ func fetchOneBySubject(subject string) (*pgrest.User, error) {
 func fetchServiceAccount(subject string) (*pgrest.ServiceAccount, error) {
 	saID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf("serviceaccount/%s", subject))).String()
 	var sa pgrest.ServiceAccount
-	err := pgrest.New("/serviceaccounts?select=*,groups,orgs(id,name,license)&id=eq.%s", saID).
+	err := pgrest.New("/serviceaccounts?select=*,groups,orgs(id,name,license,license_data)&id=eq.%s", saID).
 		FetchOne().
 		DecodeInto(&sa)
 	if err != nil {

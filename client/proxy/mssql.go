@@ -6,11 +6,11 @@ import (
 	"net"
 	"strconv"
 
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/memory"
-	mssqltypes "github.com/runopsio/hoop/common/mssql/types"
-	pb "github.com/runopsio/hoop/common/proto"
-	pbagent "github.com/runopsio/hoop/common/proto/agent"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/memory"
+	"github.com/hoophq/hoop/common/mssqltypes"
+	pb "github.com/hoophq/hoop/common/proto"
+	pbagent "github.com/hoophq/hoop/common/proto/agent"
 )
 
 const (

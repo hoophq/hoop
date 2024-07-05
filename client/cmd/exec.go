@@ -16,14 +16,13 @@ import (
 
 	"github.com/briandowns/spinner"
 	"github.com/getsentry/sentry-go"
+	"github.com/hoophq/hoop/client/cmd/styles"
+	clientconfig "github.com/hoophq/hoop/client/config"
+	pb "github.com/hoophq/hoop/common/proto"
+	pbagent "github.com/hoophq/hoop/common/proto/agent"
+	pbclient "github.com/hoophq/hoop/common/proto/client"
+	"github.com/hoophq/hoop/common/terminal"
 	"github.com/muesli/termenv"
-	"github.com/runopsio/hoop/client/cmd/styles"
-	clientconfig "github.com/runopsio/hoop/client/config"
-	"github.com/runopsio/hoop/common/monitoring"
-	pb "github.com/runopsio/hoop/common/proto"
-	pbagent "github.com/runopsio/hoop/common/proto/agent"
-	pbclient "github.com/runopsio/hoop/common/proto/client"
-	"github.com/runopsio/hoop/common/terminal"
 	"github.com/spf13/cobra"
 )
 
@@ -42,7 +41,6 @@ var execCmd = &cobra.Command{
 			cmd.Usage()
 			os.Exit(1)
 		}
-		monitoring.SentryPreRun(cmd, args)
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		clientEnvVars, err := parseClientEnvVars()

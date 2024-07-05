@@ -1,23 +1,25 @@
 package pguserauth
 
 import (
+	"encoding/json"
 	"slices"
 
-	"github.com/runopsio/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
 type Context struct {
-	OrgID       string
-	OrgName     string
-	OrgLicense  string
-	UserUUID    string
-	UserSubject string
-	UserEmail   string
-	UserName    string
-	UserStatus  string
-	UserSlackID string
-	UserPicture string
-	UserGroups  []string
+	OrgID          string
+	OrgName        string
+	OrgLicense     string
+	OrgLicenseData json.RawMessage
+	UserUUID       string
+	UserSubject    string
+	UserEmail      string
+	UserName       string
+	UserStatus     string
+	UserSlackID    string
+	UserPicture    string
+	UserGroups     []string
 
 	UserAnonSubject       string
 	UserAnonProfile       string
@@ -42,14 +44,15 @@ func (c *Context) IsAdmin() bool           { return slices.Contains(c.UserGroups
 
 func (c Context) ToAPIContext() *types.APIContext {
 	return &types.APIContext{
-		OrgID:      c.OrgID,
-		OrgName:    c.OrgName,
-		OrgLicense: c.OrgLicense,
-		UserID:     c.UserSubject,
-		UserName:   c.UserName,
-		UserEmail:  c.UserEmail,
-		UserGroups: c.UserGroups,
-		UserStatus: string(c.UserStatus),
-		SlackID:    c.UserSlackID,
+		OrgID:          c.OrgID,
+		OrgName:        c.OrgName,
+		OrgLicense:     c.OrgLicense,
+		OrgLicenseData: c.OrgLicenseData,
+		UserID:         c.UserSubject,
+		UserName:       c.UserName,
+		UserEmail:      c.UserEmail,
+		UserGroups:     c.UserGroups,
+		UserStatus:     string(c.UserStatus),
+		SlackID:        c.UserSlackID,
 	}
 }

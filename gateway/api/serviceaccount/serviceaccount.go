@@ -7,10 +7,10 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/common/log"
-	pgserviceaccounts "github.com/runopsio/hoop/gateway/pgrest/serviceaccounts"
-	"github.com/runopsio/hoop/gateway/storagev2"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/common/log"
+	pgserviceaccounts "github.com/hoophq/hoop/gateway/pgrest/serviceaccounts"
+	"github.com/hoophq/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
 type ServiceAccountRequest struct {

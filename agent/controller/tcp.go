@@ -4,11 +4,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/runopsio/hoop/common/log"
-
-	"github.com/hoophq/pluginhooks"
-	pb "github.com/runopsio/hoop/common/proto"
-	pbclient "github.com/runopsio/hoop/common/proto/client"
+	"github.com/hoophq/hoop/common/log"
+	pb "github.com/hoophq/hoop/common/proto"
+	pbclient "github.com/hoophq/hoop/common/proto/client"
 )
 
 func (a *Agent) processTCPWriteServer(pkt *pb.Packet) {
@@ -19,7 +17,7 @@ func (a *Agent) processTCPWriteServer(pkt *pb.Packet) {
 		a.sendClientSessionClose(sessionID, "tcp connection id not found")
 		return
 	}
-	connParams, pluginHooks := a.connectionParams(sessionID)
+	connParams := a.connectionParams(sessionID)
 	if connParams == nil {
 		log.Printf("session=%s - connection params not found", sessionID)
 		a.sendClientSessionClose(sessionID, "connection params not found, contact the administrator")
@@ -27,18 +25,6 @@ func (a *Agent) processTCPWriteServer(pkt *pb.Packet) {
 	}
 	clientConnectionIDKey := fmt.Sprintf("%s:%s", sessionID, string(clientConnectionID))
 	if tcpServer, ok := a.connStore.Get(clientConnectionIDKey).(io.WriteCloser); ok {
-		mutatePayload, err := pluginHooks.ExecRPCOnRecv(&pluginhooks.Request{
-			SessionID:  sessionID,
-			PacketType: pkt.Type,
-			Payload:    pkt.Payload,
-		})
-		if err != nil {
-			a.sendClientSessionClose(sessionID, fmt.Sprintf("failed executing plugin/onrecv phase, reason=%v", err))
-			return
-		}
-		if len(mutatePayload) > 0 {
-			pkt.Payload = mutatePayload
-		}
 		if _, err := tcpServer.Write(pkt.Payload); err != nil {
 			log.Printf("session=%v - failed writing first packet, err=%v", sessionID, err)
 			_ = tcpServer.Close()
@@ -46,10 +32,7 @@ func (a *Agent) processTCPWriteServer(pkt *pb.Packet) {
 		}
 		return
 	}
-	tcpClient := pb.NewHookStreamWriter(a.client, pbclient.TCPConnectionWrite, map[string][]byte{
-		pb.SpecGatewaySessionID:   []byte(sessionID),
-		pb.SpecClientConnectionID: []byte(clientConnectionID),
-	}, pluginHooks)
+	tcpClient := pb.NewStreamWriter(a.client, pbclient.TCPConnectionWrite, pkt.Spec)
 	connenv, err := parseConnectionEnvVars(connParams.EnvVars, pb.ConnectionTypeTCP)
 	if err != nil {
 		log.Printf("session=%s - missing connection credentials in memory, err=%v", sessionID, err)

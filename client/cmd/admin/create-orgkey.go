@@ -3,7 +3,7 @@ package admin
 import (
 	"fmt"
 
-	"github.com/runopsio/hoop/client/cmd/styles"
+	"github.com/hoophq/hoop/client/cmd/styles"
 	"github.com/spf13/cobra"
 )
 

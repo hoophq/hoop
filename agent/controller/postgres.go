@@ -4,18 +4,18 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"libhoop"
+	"strings"
 
-	"github.com/runopsio/hoop/agent/dlp"
-	"github.com/runopsio/hoop/agent/pgproxy"
-	"github.com/runopsio/hoop/common/log"
-	pb "github.com/runopsio/hoop/common/proto"
-	pbclient "github.com/runopsio/hoop/common/proto/client"
+	"github.com/hoophq/hoop/common/log"
+	pb "github.com/hoophq/hoop/common/proto"
+	pbclient "github.com/hoophq/hoop/common/proto/client"
 )
 
 func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 	streamClient := pb.NewStreamWriter(a.client, pbclient.PGConnectionWrite, pkt.Spec)
-	connParams, _ := a.connectionParams(sessionID)
+	connParams := a.connectionParams(sessionID)
 	if connParams == nil {
 		log.Errorf("session=%s - connection params not found", sessionID)
 		a.sendClientSessionClose(sessionID, "connection params not found, contact the administrator")
@@ -48,25 +48,24 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	}
 
 	log.Infof("session=%v - starting postgres connection at %v:%v", sessionID, connenv.host, connenv.port)
-	pgServer, err := newTCPConn(connenv)
+	opts := map[string]string{
+		"hostname":              connenv.host,
+		"port":                  connenv.port,
+		"username":              connenv.user,
+		"password":              connenv.pass,
+		"sslmode":               connenv.postgresSSLMode,
+		"dlp_gcp_credentials":   a.getGCPCredentials(),
+		"dlp_info_types":        strings.Join(connParams.DLPInfoTypes, ","),
+		"dlp_masking_character": "#",
+	}
+	serverWriter, err := libhoop.NewDBCore(context.Background(), streamClient, opts).Postgres()
 	if err != nil {
 		errMsg := fmt.Sprintf("failed connecting with postgres server, err=%v", err)
 		log.Errorf(errMsg)
 		a.sendClientSessionClose(sessionID, errMsg)
 		return
 	}
-	opts := pgproxy.Options{
-		Hostname: connenv.host,
-		Port:     connenv.port,
-		Username: connenv.user,
-		Password: connenv.pass,
-		SSLMode:  connenv.postgresSSLMode,
-	}
-	serverWriter := pgproxy.New(context.Background(), opts, pgServer, streamClient)
-	if dlpc, ok := a.connStore.Get(dlpClientKey).(dlp.Client); ok {
-		serverWriter.WithDataLossPrevention(dlpc, connParams.DLPInfoTypes)
-	}
-	serverWriter.Run(func(errMsg string) {
+	serverWriter.Run(func(_ int, errMsg string) {
 		a.sendClientSessionClose(sessionID, errMsg)
 	})
 	// write the first packet when establishing the connection

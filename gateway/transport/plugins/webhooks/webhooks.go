@@ -3,20 +3,23 @@ package webhooks
 import (
 	"context"
 	"fmt"
-	"os"
 	"strconv"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/memory"
-	pb "github.com/runopsio/hoop/common/proto"
-	pbagent "github.com/runopsio/hoop/common/proto/agent"
-	pbclient "github.com/runopsio/hoop/common/proto/client"
-	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
-	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+	"github.com/hoophq/hoop/common/license"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/memory"
+	pb "github.com/hoophq/hoop/common/proto"
+	pbagent "github.com/hoophq/hoop/common/proto/agent"
+	pbclient "github.com/hoophq/hoop/common/proto/client"
+	"github.com/hoophq/hoop/gateway/appconfig"
+	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	svix "github.com/svix/svix-webhooks/go"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type plugin struct {
@@ -25,7 +28,7 @@ type plugin struct {
 }
 
 func New() *plugin {
-	if webhookAppKey := os.Getenv("WEBHOOK_APPKEY"); webhookAppKey != "" {
+	if webhookAppKey := appconfig.Get().WebhookAppKey(); webhookAppKey != "" {
 		log.Infof("loaded webhook app key with success")
 		return &plugin{svix.New(webhookAppKey, nil), memory.New()}
 	}
@@ -75,13 +78,20 @@ func (p *plugin) OnUpdate(old, new *types.Plugin) error {
 	return nil
 }
 
-func (p *plugin) OnConnect(ctx plugintypes.Context) error { return nil }
+func (p *plugin) OnConnect(ctx plugintypes.Context) error {
+	isWebhookSet := appconfig.Get().WebhookAppKey() != ""
+	if ctx.OrgLicenseType == license.OSSType && isWebhookSet {
+		return status.Error(codes.FailedPrecondition, license.ErrWebhooksUnsupported.Error())
+	}
+	return nil
+}
+
 func (p *plugin) OnReceive(ctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {
 	if p.hasLoadedApp(ctx.OrgID) {
 		switch pkt.Type {
 		case pbagent.SessionOpen:
 			p.processSessionOpenEvent(ctx, pkt)
-			p.processReviewCreateEvent(ctx, pkt)
+			p.processReviewCreateEvent(ctx)
 		case pbclient.SessionClose:
 			p.processSessionCloseEvent(ctx, pkt)
 		}
@@ -89,7 +99,7 @@ func (p *plugin) OnReceive(ctx plugintypes.Context, pkt *pb.Packet) (*plugintype
 	return nil, nil
 }
 
-func (p *plugin) processReviewCreateEvent(ctx plugintypes.Context, pkt *pb.Packet) {
+func (p *plugin) processReviewCreateEvent(ctx plugintypes.Context) {
 	rev, err := pgreview.New().FetchOneBySid(ctx, ctx.SID)
 	if err != nil {
 		log.Warnf("failed obtaining review, err=%v", err)
@@ -112,7 +122,7 @@ func (p *plugin) processReviewCreateEvent(ctx plugintypes.Context, pkt *pb.Packe
 	if accessDuration == "0s" {
 		accessDuration = "```-```"
 	}
-	apiURL := os.Getenv("API_URL")
+	apiURL := appconfig.Get().ApiURL()
 	out, err := p.client.Message.Create(ctxtimeout, appID, &svix.MessageIn{
 		EventType: eventMSTeamsReviewCreateType,
 		EventId:   *svix.NullableString(func() *string { v := eventID; return &v }()),

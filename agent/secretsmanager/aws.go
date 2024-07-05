@@ -10,8 +10,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/smithy-go/logging"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/memory"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/memory"
 )
 
 type awsProvider struct {

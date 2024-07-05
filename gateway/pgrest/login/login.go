@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/runopsio/hoop/gateway/pgrest"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/gateway/pgrest"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
 type login struct{}

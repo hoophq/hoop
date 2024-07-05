@@ -6,14 +6,14 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/memory"
-	"github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/pgrest"
-	pgconnections "github.com/runopsio/hoop/gateway/pgrest/connections"
-	pgplugins "github.com/runopsio/hoop/gateway/pgrest/plugins"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
-	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/memory"
+	"github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/pgrest"
+	pgconnections "github.com/hoophq/hoop/gateway/pgrest/connections"
+	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
 var (
@@ -56,7 +56,7 @@ func setChecksumCache(orgID string, req *proto.PreConnectRequest) {
 	connectionChecksumStore.Set(syncKey, checksum)
 }
 
-func upsertConnection(ctx pgrest.LicenseContext, agentID string, req *proto.PreConnectRequest, conn *pgrest.Connection) error {
+func upsertConnection(ctx pgrest.OrgContext, agentID string, req *proto.PreConnectRequest, conn *pgrest.Connection) error {
 	// TODO: implement logic based on license
 	if conn == nil {
 		conn = &pgrest.Connection{
@@ -97,7 +97,7 @@ func upsertConnection(ctx pgrest.LicenseContext, agentID string, req *proto.PreC
 	return nil
 }
 
-func connectionSync(ctx pgrest.LicenseContext, agentID string, req *proto.PreConnectRequest) error {
+func connectionSync(ctx pgrest.OrgContext, agentID string, req *proto.PreConnectRequest) error {
 	if checksumCacheMatches(ctx.GetOrgID(), req) {
 		return nil
 	}

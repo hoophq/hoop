@@ -1,11 +1,11 @@
 package streamclient
 
 import (
-	"github.com/runopsio/hoop/common/log"
-	pb "github.com/runopsio/hoop/common/proto"
-	pgplugins "github.com/runopsio/hoop/gateway/pgrest/plugins"
-	pluginsslack "github.com/runopsio/hoop/gateway/transport/plugins/slack"
-	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+	"github.com/hoophq/hoop/common/log"
+	pb "github.com/hoophq/hoop/common/proto"
+	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
+	pluginsslack "github.com/hoophq/hoop/gateway/transport/plugins/slack"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

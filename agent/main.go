@@ -6,15 +6,16 @@ import (
 	"os/exec"
 	"time"
 
-	agentconfig "github.com/runopsio/hoop/agent/config"
-	"github.com/runopsio/hoop/agent/controller"
-	"github.com/runopsio/hoop/common/backoff"
-	"github.com/runopsio/hoop/common/clientconfig"
-	"github.com/runopsio/hoop/common/grpc"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/memory"
-	pb "github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/common/version"
+	agentconfig "github.com/hoophq/hoop/agent/config"
+	"github.com/hoophq/hoop/agent/controller"
+	"github.com/hoophq/hoop/common/backoff"
+	"github.com/hoophq/hoop/common/clientconfig"
+	"github.com/hoophq/hoop/common/grpc"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/memory"
+	"github.com/hoophq/hoop/common/monitoring"
+	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/common/version"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -27,6 +28,7 @@ var (
 )
 
 func Run() {
+	_, _ = monitoring.StartSentry()
 	config, err := agentconfig.Load()
 	if err != nil {
 		log.With("version", vi.Version).Fatal(err)

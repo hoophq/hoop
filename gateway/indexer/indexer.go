@@ -12,8 +12,8 @@ import (
 	"github.com/blevesearch/bleve/v2"
 	"github.com/blevesearch/bleve/v2/index/scorch"
 	"github.com/blevesearch/bleve/v2/mapping"
-	"github.com/runopsio/hoop/gateway/indexer/searchquery"
-	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+	"github.com/hoophq/hoop/gateway/indexer/searchquery"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 
 	// languages
 	_ "github.com/blevesearch/bleve/v2/analysis/lang/en"

@@ -10,9 +10,9 @@ import (
 
 	"github.com/blevesearch/bleve/v2"
 	"github.com/gin-gonic/gin"
-	"github.com/runopsio/hoop/gateway/indexer/searchquery"
-	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
-	"github.com/runopsio/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/gateway/indexer/searchquery"
+	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
+	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
 type Handler struct{}

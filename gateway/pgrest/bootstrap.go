@@ -16,10 +16,10 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/version"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	_ "github.com/lib/pq"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/version"
-	"github.com/runopsio/hoop/gateway/appconfig"
 )
 
 // CheckLiveness validates if the postgrest process is running

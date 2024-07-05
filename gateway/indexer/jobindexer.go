@@ -5,16 +5,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/runopsio/hoop/common/log"
+	"github.com/hoophq/hoop/common/log"
 
 	"github.com/blevesearch/bleve/v2"
-	"github.com/runopsio/hoop/gateway/pgrest"
-	pgplugins "github.com/runopsio/hoop/gateway/pgrest/plugins"
-	pgsession "github.com/runopsio/hoop/gateway/pgrest/session"
-	"github.com/runopsio/hoop/gateway/storagev2"
-	sessionstorage "github.com/runopsio/hoop/gateway/storagev2/session"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
-	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
+	"github.com/hoophq/hoop/gateway/pgrest"
+	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
+	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
+	"github.com/hoophq/hoop/gateway/storagev2"
+	sessionstorage "github.com/hoophq/hoop/gateway/storagev2/session"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
 var jobMutex = sync.RWMutex{}

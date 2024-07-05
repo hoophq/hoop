@@ -7,9 +7,9 @@ import (
 	"os/signal"
 
 	"github.com/creack/pty"
-	pb "github.com/runopsio/hoop/common/proto"
-	pbagent "github.com/runopsio/hoop/common/proto/agent"
-	pbterm "github.com/runopsio/hoop/common/terminal"
+	pb "github.com/hoophq/hoop/common/proto"
+	pbagent "github.com/hoophq/hoop/common/proto/agent"
+	pbterm "github.com/hoophq/hoop/common/terminal"
 	"golang.org/x/term"
 )
 

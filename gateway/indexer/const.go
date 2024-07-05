@@ -3,7 +3,7 @@ package indexer
 import (
 	"time"
 
-	"github.com/runopsio/hoop/gateway/indexer/searchquery"
+	"github.com/hoophq/hoop/gateway/indexer/searchquery"
 )
 
 const (

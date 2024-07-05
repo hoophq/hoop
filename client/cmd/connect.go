@@ -11,19 +11,18 @@ import (
 
 	"github.com/briandowns/spinner"
 	"github.com/getsentry/sentry-go"
+	"github.com/hoophq/hoop/client/cmd/styles"
+	clientconfig "github.com/hoophq/hoop/client/config"
+	"github.com/hoophq/hoop/client/proxy"
+	"github.com/hoophq/hoop/common/grpc"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/memory"
+	pb "github.com/hoophq/hoop/common/proto"
+	pbagent "github.com/hoophq/hoop/common/proto/agent"
+	pbclient "github.com/hoophq/hoop/common/proto/client"
+	pbterm "github.com/hoophq/hoop/common/terminal"
+	"github.com/hoophq/hoop/common/version"
 	"github.com/muesli/termenv"
-	"github.com/runopsio/hoop/client/cmd/styles"
-	clientconfig "github.com/runopsio/hoop/client/config"
-	"github.com/runopsio/hoop/client/proxy"
-	"github.com/runopsio/hoop/common/grpc"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/memory"
-	"github.com/runopsio/hoop/common/monitoring"
-	pb "github.com/runopsio/hoop/common/proto"
-	pbagent "github.com/runopsio/hoop/common/proto/agent"
-	pbclient "github.com/runopsio/hoop/common/proto/client"
-	pbterm "github.com/runopsio/hoop/common/terminal"
-	"github.com/runopsio/hoop/common/version"
 	"github.com/spf13/cobra"
 )
 
@@ -49,7 +48,6 @@ var (
 			if dur.Seconds() < 60 {
 				return fmt.Errorf("the minimum duration is 60 seconds (60s)")
 			}
-			monitoring.SentryPreRun(cmd, args)
 			return nil
 		},
 		SilenceUsage: false,
@@ -66,7 +64,6 @@ var (
 
 func init() {
 	connectCmd.Flags().StringVarP(&connectFlags.proxyPort, "port", "p", "", "The port to listen the proxy")
-	// TODO: temporary until we ship a agent as proxy mode
 	connectCmd.Flags().StringSliceVarP(&inputEnvVars, "env", "e", nil, "Input environment variables to send")
 	connectCmd.Flags().StringVarP(&connectFlags.duration, "duration", "d", "30m", "The amount of time that the session will last. Valid time units are 's', 'm', 'h'")
 	rootCmd.AddCommand(connectCmd)

@@ -3,7 +3,7 @@ package pgaudit
 import (
 	"fmt"
 
-	"github.com/runopsio/hoop/gateway/pgrest"
+	"github.com/hoophq/hoop/gateway/pgrest"
 )
 
 const (

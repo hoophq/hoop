@@ -1,5 +1,7 @@
 package pgrest
 
+import "encoding/json"
+
 type Context interface {
 	OrgContext
 	IsAdmin() bool
@@ -34,9 +36,10 @@ type Login struct {
 }
 
 type Org struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	License string `json:"license"`
+	ID          string          `json:"id"`
+	Name        string          `json:"name"`
+	License     string          `json:"license"`
+	LicenseData json.RawMessage `json:"license_data"`
 }
 
 type User struct {

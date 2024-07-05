@@ -1,0 +1,5 @@
+{
+  "calva.fmt.newIndentEngine": false,
+  "clojure.format.enable": true,
+  "calva.fmt.configPath": "~/.cljfmt.clj"
+}

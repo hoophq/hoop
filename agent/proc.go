@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/runopsio/hoop/agent/controller"
-	"github.com/runopsio/hoop/common/log"
+	"github.com/hoophq/hoop/agent/controller"
+	"github.com/hoophq/hoop/common/log"
 )
 
 func newCommand(envs map[string]string, args []string) *exec.Cmd {

@@ -1,19 +1,23 @@
 package signupapi
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/gateway/agentcontroller"
-	"github.com/runopsio/hoop/gateway/analytics"
-	"github.com/runopsio/hoop/gateway/pgrest"
-	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
-	"github.com/runopsio/hoop/gateway/storagev2"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/common/license"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/agentcontroller"
+	"github.com/hoophq/hoop/gateway/analytics"
+	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/pgrest"
+	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
+	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
+	"github.com/hoophq/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
 type SignupRequest struct {
@@ -33,7 +37,20 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	orgID, err := pgusers.New().CreateOrGetOrg(req.OrgName)
+	_, signingKey := appconfig.Get().LicenseSigningKey()
+	if signingKey == nil {
+		log.Errorf("unable to sign license: missing license private key")
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "unable to sign license"})
+		return
+	}
+	license.Sign(
+		signingKey,
+		license.EnterpriseType,
+		fmt.Sprintf("multi tenant customer: %v", req.OrgName),
+		[]string{"*.hoop.dev"},
+		(time.Hour*8760)*20, // 20 years
+	)
+	orgID, err := pgorgs.New().CreateOrGetOrg(req.OrgName, license.DefaultOSS)
 	switch err {
 	case pgusers.ErrOrgAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": "organization name is already claimed"})

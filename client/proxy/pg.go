@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/memory"
-	pgtypes "github.com/runopsio/hoop/common/pgtypes"
-	pb "github.com/runopsio/hoop/common/proto"
-	pbagent "github.com/runopsio/hoop/common/proto/agent"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/memory"
+	pgtypes "github.com/hoophq/hoop/common/pgtypes"
+	pb "github.com/hoophq/hoop/common/proto"
+	pbagent "github.com/hoophq/hoop/common/proto/agent"
 )
 
 const (

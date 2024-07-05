@@ -3,7 +3,7 @@ package transport
 import (
 	"testing"
 
-	"github.com/runopsio/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
 func TestDispatchOpenSession(t *testing.T) {

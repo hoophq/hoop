@@ -5,9 +5,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/gateway/pgrest"
-	pgproxymanager "github.com/runopsio/hoop/gateway/pgrest/proxymanager"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/gateway/pgrest"
+	pgproxymanager "github.com/hoophq/hoop/gateway/pgrest/proxymanager"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
 type option struct {

@@ -12,17 +12,14 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/runopsio/hoop/agent/config"
-	"github.com/runopsio/hoop/agent/dcm"
-	"github.com/runopsio/hoop/agent/dlp"
-	"github.com/runopsio/hoop/agent/hook"
-	"github.com/runopsio/hoop/agent/secretsmanager"
-	term "github.com/runopsio/hoop/agent/terminal"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/memory"
-	pb "github.com/runopsio/hoop/common/proto"
-	pbagent "github.com/runopsio/hoop/common/proto/agent"
-	pbclient "github.com/runopsio/hoop/common/proto/client"
+	"github.com/hoophq/hoop/agent/config"
+	"github.com/hoophq/hoop/agent/secretsmanager"
+	term "github.com/hoophq/hoop/agent/terminal"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/memory"
+	pb "github.com/hoophq/hoop/common/proto"
+	pbagent "github.com/hoophq/hoop/common/proto/agent"
+	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"go.mongodb.org/mongo-driver/x/mongo/driver/connstring"
 )
 
@@ -107,7 +104,6 @@ func (a *Agent) Run() error {
 		switch pkt.Type {
 		case pbagent.GatewayConnectOK:
 			log.Infof("connected with success to %v", a.config.URL)
-			go a.startMonitoring(pkt)
 		case pbagent.SessionOpen:
 			a.processSessionOpen(pkt)
 
@@ -191,27 +187,13 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 		}
 	}
 
-	if a.connStore.Get(dlpClientKey) == nil {
-		dlpClient := a.decodeDLPCredentials(sessionID, pkt)
-		if dlpClient != nil {
-			a.connStore.Set(dlpClientKey, dlpClient)
+	if a.connStore.Get(gcpJSONCredentialsKey) == nil {
+		if gcpRawCred, ok := pkt.Spec[pb.SpecAgentGCPRawCredentialsKey]; ok {
+			a.connStore.Set(gcpJSONCredentialsKey, gcpRawCred)
 		}
 	}
 
 	go func() {
-		if err := a.loadHooks(sessionIDKey, connParams); err != nil {
-			log.Error(err)
-			sentry.CaptureException(err)
-			_ = a.client.Send(&pb.Packet{
-				Type:    pbclient.SessionClose,
-				Payload: []byte(`failed loading plugin hooks for this connection`),
-				Spec: map[string][]byte{
-					pb.SpecClientExitCodeKey: []byte(`1`),
-					pb.SpecGatewaySessionID:  sessionID,
-				},
-			})
-			return
-		}
 		if err := a.checkTCPLiveness(pkt, connParams.EnvVars); err != nil {
 			_ = a.client.Send(&pb.Packet{
 				Type:    pbclient.SessionClose,
@@ -222,7 +204,8 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 				},
 			})
 		}
-		a.client.Send(&pb.Packet{
+		a.connStore.Set(string(sessionID), connParams)
+		_ = a.client.Send(&pb.Packet{
 			Type: pbclient.SessionOpenOK,
 			Spec: map[string][]byte{
 				pb.SpecGatewaySessionID:  sessionID,
@@ -264,16 +247,7 @@ func (a *Agent) sessionCleanup(sessionID string) {
 	log.Infof("session=%s - cleaning up session", sessionID)
 	filterFn := func(k string) bool { return strings.Contains(k, sessionID) }
 	for key, obj := range a.connStore.Filter(filterFn) {
-		switch v := obj.(type) {
-		case *hook.ClientList:
-			a.connStore.Del(key)
-			for _, hookClient := range v.Items() {
-				*hookClient.SessionCounter()--
-				if *hookClient.SessionCounter() <= 0 {
-					go hookClient.Kill()
-				}
-			}
-		case io.Closer:
+		if v, ok := obj.(io.Closer); ok {
 			go func() {
 				if err := v.Close(); err != nil {
 					log.Printf("failed closing connection, err=%v", err)
@@ -317,12 +291,11 @@ func (a *Agent) sendClientTCPConnectionClose(sessionID, connectionID string) {
 	})
 }
 
-func (a *Agent) connectionParams(sessionID string) (*pb.AgentConnectionParams, *hook.ClientList) {
-	storeKey := fmt.Sprintf(pluginHookSessionsKey, sessionID)
-	if hooks, ok := a.connStore.Get(storeKey).(*hook.ClientList); ok {
-		return hooks.ConnectionParams(), hooks
+func (a *Agent) connectionParams(sessionID string) *pb.AgentConnectionParams {
+	if params, ok := a.connStore.Get(sessionID).(*pb.AgentConnectionParams); ok {
+		return params
 	}
-	return nil, nil
+	return nil
 }
 
 func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams, error) {
@@ -340,10 +313,6 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 
 	log.Infof("session=%s - connection params decoded with success, dlp-info-types=%d",
 		sessionIDKey, len(connParams.DLPInfoTypes))
-
-	if err := a.setDatabaseCredentials(pkt, connParams); err != nil {
-		return nil, err
-	}
 
 	connType := pb.ConnectionType(pkt.Spec[pb.SpecConnectionType])
 	for key, b64EncVal := range connParams.EnvVars {
@@ -453,90 +422,10 @@ func (a *Agent) decodeConnectionParams(sessionID []byte, pkt *pb.Packet) *pb.Age
 	return &connParams
 }
 
-func (a *Agent) decodeDLPCredentials(sessionID []byte, pkt *pb.Packet) dlp.Client {
-	if gcpRawCred, ok := pkt.Spec[pb.SpecAgentGCPRawCredentialsKey]; ok {
-		if _, ok := a.connStore.Get(dlpClientKey).(dlp.Client); !ok {
-			dlpClient, err := dlp.NewDLPClient(context.Background(), gcpRawCred)
-			if err != nil {
-				log.Infof("failed creating dlp client, err=%v", err)
-				sentry.CaptureException(err)
-				_ = a.client.Send(&pb.Packet{
-					Type:    pbclient.SessionClose,
-					Payload: []byte(`failed creating dlp client`),
-					Spec: map[string][]byte{
-						pb.SpecClientExitCodeKey: []byte(`1`),
-						pb.SpecGatewaySessionID:  sessionID,
-					},
-				})
-				return nil
-			}
-			log.Infof("session=%v - created dlp client with success", string(sessionID))
-			return dlpClient
-		}
-	}
-	log.Infof("session=%v - dlp is unavailable for this connection, missing gcp credentials", string(sessionID))
-	return nil
-}
-
-func (a *Agent) setDatabaseCredentials(pkt *pb.Packet, params *pb.AgentConnectionParams) error {
-	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
-	storeKey := fmt.Sprintf("dcm:%v", params.ConnectionName)
-
-	var dcmData map[string]any
-	if dcmDataBytes := pkt.Spec[pb.SpecPluginDcmDataKey]; dcmDataBytes != nil {
-		// remove the master credentials for security sake
-		delete(pkt.Spec, pb.SpecPluginDcmDataKey)
-		if err := pb.GobDecodeInto(dcmDataBytes, &dcmData); err != nil {
-			log.Errorf("session=%v - failed decoding database credentials manager data, err=%v", sessionID, err)
-			sentry.CaptureException(err)
-			return fmt.Errorf(`failed decoding database credentials manager data`)
-		}
-	}
-	randomPassword, err := dcm.NewRandomPassword()
-	if err != nil {
-		return fmt.Errorf("failed generating random session user password, reason=%v", err)
-	}
-	if obj := a.connStore.Get(storeKey); obj != nil {
-		if cred := obj.(*dcm.Credentials); cred != nil {
-			if cred.Checksum() == fmt.Sprintf("%v", dcmData["checksum"]) && !cred.IsExpired() {
-				log.Infof("session=%v - found valid database credentials, user=%v",
-					sessionID, cred.Username)
-				// mutate connection env vars with credentials
-				params.EnvVars["envvar:HOST"] = b64Enc([]byte(cred.Host))
-				params.EnvVars["envvar:PORT"] = b64Enc([]byte(cred.Port))
-				params.EnvVars["envvar:USER"] = b64Enc([]byte(cred.Username))
-				params.EnvVars["envvar:PASS"] = b64Enc([]byte(cred.Password))
-				return nil
-			}
-			// maintain the same password
-			randomPassword = cred.Password
-			a.connStore.Del(storeKey)
-			log.Infof("database credentials is expired at %v", cred.RevokeAt.Format(time.RFC3339))
-		}
-	}
-	// get database credentials from map
-	// check expiration date, if it's expired remove it
-	// remove dcm key from pkt.Spec (security)
-	if len(dcmData) > 0 {
-		log.Info("found database credentials manager data, generating a session database user")
-		cred, err := dcm.ProvisionSessionUser(sessionID, dcmData, randomPassword)
-		if err != nil {
-			log.Errorf("session=%v - failed creating database credentials, err=%v", string(sessionID), err)
-			sentry.CaptureException(err)
-			return fmt.Errorf(`failed creating session database credentials`)
-		}
-		// wipe the master credentials for security sake
-		dcmData = nil
-		a.connStore.Set(storeKey, cred)
-		log.Infof("session=%v - created new database credentials, user=%v, revoket-at=%v",
-			string(sessionID), cred.Username, cred.RevokeAt.Format(time.RFC3339))
-		// mutate connection env vars with credentials
-		params.EnvVars["envvar:HOST"] = b64Enc([]byte(cred.Host))
-		params.EnvVars["envvar:PORT"] = b64Enc([]byte(cred.Port))
-		params.EnvVars["envvar:USER"] = b64Enc([]byte(cred.Username))
-		params.EnvVars["envvar:PASS"] = b64Enc([]byte(cred.Password))
-	}
-	return nil
+func (a *Agent) getGCPCredentials() string {
+	obj := a.connStore.Get(gcpJSONCredentialsKey)
+	v, _ := obj.([]byte)
+	return string(v)
 }
 
 func b64Enc(src []byte) string { return base64.StdEncoding.EncodeToString(src) }

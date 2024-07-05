@@ -5,10 +5,10 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/gateway/pgrest"
-	pgreview "github.com/runopsio/hoop/gateway/pgrest/review"
-	"github.com/runopsio/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/pgrest"
+	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
+	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
 func GetById(c *gin.Context) {

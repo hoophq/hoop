@@ -10,11 +10,11 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/runopsio/hoop/agent"
-	"github.com/runopsio/hoop/client/cmd/admin"
-	"github.com/runopsio/hoop/common/appruntime"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/proto"
+	"github.com/hoophq/hoop/agent"
+	"github.com/hoophq/hoop/client/cmd/admin"
+	"github.com/hoophq/hoop/common/appruntime"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/proto"
 	"github.com/spf13/cobra"
 	"mvdan.cc/sh/v3/syntax"
 )

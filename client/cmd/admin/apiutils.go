@@ -11,9 +11,9 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/runopsio/hoop/client/cmd/styles"
-	clientconfig "github.com/runopsio/hoop/client/config"
-	"github.com/runopsio/hoop/common/log"
+	"github.com/hoophq/hoop/client/cmd/styles"
+	clientconfig "github.com/hoophq/hoop/client/config"
+	"github.com/hoophq/hoop/common/log"
 	"golang.org/x/text/runes"
 	"golang.org/x/text/transform"
 	"golang.org/x/text/unicode/norm"
@@ -72,6 +72,15 @@ func parseResourceOrDie(args []string, method, outputFlag string) *apiResource {
 		if method == "POST" {
 			apir.suffixEndpoint = "/api/connections"
 		}
+	case "orglicense":
+		apir.resourceGet = true
+		apir.resourceCreate = true
+		apir.resourceUpdate = true
+		apir.suffixEndpoint = "/api/orgs/license"
+		if method == "POST" {
+			apir.suffixEndpoint = "/api/orgs/license/sign"
+		}
+		apir.name = "_"
 	case "orgkey", "orgkeys":
 		apir.resourceDelete = true
 		apir.resourceList = true
@@ -309,6 +318,9 @@ func httpBodyRequest(apir *apiResource, method string, bodyMap map[string]any) (
 		respBody, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("failed performing request, status=%v, body=%v",
 			resp.StatusCode, string(respBody))
+	}
+	if resp.StatusCode == 204 {
+		return nil, nil
 	}
 	if apir.decodeTo == "raw" {
 		respBody, err := io.ReadAll(resp.Body)

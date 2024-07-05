@@ -10,16 +10,17 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/common/apiutils"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/analytics"
-	"github.com/runopsio/hoop/gateway/pgrest"
-	pglogin "github.com/runopsio/hoop/gateway/pgrest/login"
-	pguserauth "github.com/runopsio/hoop/gateway/pgrest/userauth"
-	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
-	"github.com/runopsio/hoop/gateway/security/idp"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/common/apiutils"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/analytics"
+	"github.com/hoophq/hoop/gateway/pgrest"
+	pglogin "github.com/hoophq/hoop/gateway/pgrest/login"
+	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
+	pguserauth "github.com/hoophq/hoop/gateway/pgrest/userauth"
+	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
+	"github.com/hoophq/hoop/gateway/security/idp"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"golang.org/x/oauth2"
 )
 
@@ -217,7 +218,7 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 		})
 	}
 	// TODO: check if it's the first user to login and make it admin
-	org, totalUsers, err := pgusers.New().FetchOrgByName(proto.DefaultOrgName)
+	org, totalUsers, err := pgorgs.New().FetchOrgByName(proto.DefaultOrgName)
 	if err != nil || org == nil || totalUsers == -1 {
 		return false, fmt.Errorf("failed fetching default org, users=%v, err=%v", err, totalUsers)
 	}

@@ -10,13 +10,14 @@ import (
 	"unicode"
 
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/common/agentcontroller"
-	"github.com/runopsio/hoop/common/dsnkeys"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/pgrest"
-	pgagents "github.com/runopsio/hoop/gateway/pgrest/agents"
-	pgusers "github.com/runopsio/hoop/gateway/pgrest/users"
+	"github.com/hoophq/hoop/common/agentcontroller"
+	"github.com/hoophq/hoop/common/dsnkeys"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/pgrest"
+	pgagents "github.com/hoophq/hoop/gateway/pgrest/agents"
+	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
+	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
 	"golang.org/x/text/transform"
 	"golang.org/x/text/unicode/norm"
 )
@@ -55,7 +56,7 @@ func Run(gatewayGrpcURL string) error {
 				log.Warnf("failed listing deployments, reason=%v", err)
 				continue
 			}
-			orgList, err := pgusers.New().FetchAllOrgs()
+			orgList, err := pgorgs.New().FetchAllOrgs()
 			if err != nil {
 				log.Warnf("failed listing organizations, reason=%v", err)
 				continue

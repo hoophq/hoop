@@ -6,13 +6,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/memory"
-	pb "github.com/runopsio/hoop/common/proto"
-	pbagent "github.com/runopsio/hoop/common/proto/agent"
-	sessionstorage "github.com/runopsio/hoop/gateway/storagev2/session"
-	plugintypes "github.com/runopsio/hoop/gateway/transport/plugins/types"
-	streamtypes "github.com/runopsio/hoop/gateway/transport/streamclient/types"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/memory"
+	pb "github.com/hoophq/hoop/common/proto"
+	pbagent "github.com/hoophq/hoop/common/proto/agent"
+	sessionstorage "github.com/hoophq/hoop/gateway/storagev2/session"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
+	streamtypes "github.com/hoophq/hoop/gateway/transport/streamclient/types"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -112,13 +112,14 @@ func (s *ProxyStream) SetPluginContext(fn func(pctx *plugintypes.Context)) { fn(
 func (s *ProxyStream) PluginContext() plugintypes.Context                  { return *s.pluginCtx }
 
 func (s *ProxyStream) String() string {
-	return fmt.Sprintf("user=%v,hostname=%v,origin=%v,verb=%v,platform=%v,version=%v",
+	return fmt.Sprintf("user=%v,hostname=%v,origin=%v,verb=%v,platform=%v,version=%v,license=%v",
 		s.pluginCtx.UserEmail,
 		s.GetMeta("hostname"),
 		s.GetMeta("origin"),
 		s.GetMeta("verb"),
 		s.GetMeta("platform"),
 		s.GetMeta("version"),
+		s.pluginCtx.OrgLicenseType,
 	)
 }
 func (s *ProxyStream) Save() (err error) {

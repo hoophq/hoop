@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/runopsio/hoop/gateway/pgrest"
+	"github.com/hoophq/hoop/gateway/pgrest"
 )
 
 type OptionKey string

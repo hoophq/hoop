@@ -6,8 +6,8 @@ import (
 	"slices"
 	"time"
 
-	pb "github.com/runopsio/hoop/common/proto"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
+	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
 type GenericMap map[string]any
@@ -18,13 +18,14 @@ type Context struct {
 	SID string
 
 	// Use Attributes
-	OrgID       string
-	OrgName     string
-	UserID      string
-	UserName    string
-	UserEmail   string
-	UserSlackID string
-	UserGroups  []string
+	OrgID          string
+	OrgName        string
+	OrgLicenseType string
+	UserID         string
+	UserName       string
+	UserEmail      string
+	UserSlackID    string
+	UserGroups     []string
 
 	// Connection attributes
 	ConnectionID      string

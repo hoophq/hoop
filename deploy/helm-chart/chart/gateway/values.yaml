@@ -1,0 +1,109 @@
+## Default values for hoop.
+## This is a YAML-formatted file.
+## Declare variables to be passed into your templates.
+
+# Refer to this guide for more details: https://hoop.dev/docs/self-hosting/kubernetes
+
+# -- Define a custom image configuration
+image:
+  gw: {}
+  #   repository: hoophq/hoop
+  #   pullPolicy: Always
+  #   tag: latest
+
+# -- Enable an agent sidecar
+agentConfig: {}
+  # HOOP_KEY: '<AUTH_KEY>'
+  # LOG_ENCODING: 'console|json'
+  # LOG_LEVEL: 'debug|info|warn|error'
+  # LOG_GRPC: '0|1|2'
+  # imageRepository: 'hoophq/hoopdev'
+  # imageTag: latest
+  # imagePullPolicy: Always
+
+# hoop gateway configuration. Please refer to https://hoop.dev/docs/self-hosting
+config:
+  POSTGRES_DB_URI: ''
+  # API_URL: 'yourdomain.tld'
+  IDP_URI: null
+  IDP_AUDIENCE: null
+  IDP_ISSUER: null
+  IDP_CLIENT_ID: null
+  IDP_CLIENT_SECRET: null
+  IDP_CUSTOM_SCOPES: null
+  # LOG_ENCODING: 'console|json'
+  # LOG_LEVEL: 'debug|info|warn|error'
+  # LOG_GRPC: "0|1|2"
+  # ASK_AI_CREDENTIALS: ''
+  # GOOGLE_APPLICATION_CREDENTIALS_JSON: ''
+  # PLUGIN_AUDIT_PATH: ''
+  # PLUGIN_INDEX_PATH: ''
+  notification: {}
+  #   slackBotToken: ''
+  #   bridgeUrl: ''
+
+ingressApi:
+  # -- Enables Ingress
+  enabled: false
+  ingressClassName: ''
+  # -- Ingress annotations (values are templated)
+  annotations:
+    # kubernetes.io/tls-acme: "true"
+
+  # -- Ingress hostname for API
+  # host: hoop.yourdomain.tld
+  # -- TLS configuration
+  # tls:
+  # - hosts:
+  #   - api01.domain.tld
+  #   - api02.domain.tld
+
+
+ingressGrpc:
+  # -- Enables Ingress
+  enabled: false
+  ingressClassName: ''
+  # -- Ingress annotations (values are templated)
+  annotations:
+    # kubernetes.io/tls-acme: "true"
+
+  # -- Ingress hostname for gRPC
+  # host: hoop.yourdomain.tld
+  # -- TLS configuration
+  # tls:
+  # - hosts:
+  #   - grpc01.domain.tld
+  #   - grpc02.domain.tld
+
+# -- Define persistence to sessions
+persistence:
+  # -- Use persistent volume for write ahead log sessions
+  enabled: false
+  storageClassName: null
+
+  # -- Size of persistent volume claim
+  size: 10Gi
+  # annotations: {}
+
+# -- Deployment strategy
+deploymentStrategy:
+  type: Recreate
+
+# -- Node labels for pod assignment
+nodeSelector: {}
+
+# -- Toleration labels for pod assignment
+tolerations: []
+
+# -- Affinity settings for pod assignment
+affinity: {}
+
+# -- CPU/Memory resource requests/limits
+resources:
+  gw:
+    limits:
+      cpu: 2048m
+      memory: 1Gi
+    requests:
+      cpu: 512m
+      memory: 1Gi

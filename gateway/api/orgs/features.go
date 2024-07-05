@@ -6,12 +6,12 @@ import (
 	"slices"
 
 	"github.com/gin-gonic/gin"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/common/version"
-	"github.com/runopsio/hoop/gateway/appconfig"
-	"github.com/runopsio/hoop/gateway/pgrest"
-	pgaudit "github.com/runopsio/hoop/gateway/pgrest/audit"
-	"github.com/runopsio/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/version"
+	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/pgrest"
+	pgaudit "github.com/hoophq/hoop/gateway/pgrest/audit"
+	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
 var (

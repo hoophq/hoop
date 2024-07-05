@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/runopsio/hoop/gateway/pgrest"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/gateway/pgrest"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

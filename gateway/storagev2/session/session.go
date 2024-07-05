@@ -1,10 +1,10 @@
 package sessionstorage
 
 import (
-	"github.com/runopsio/hoop/gateway/pgrest"
-	pgsession "github.com/runopsio/hoop/gateway/pgrest/session"
-	"github.com/runopsio/hoop/gateway/storagev2"
-	"github.com/runopsio/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/gateway/pgrest"
+	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
+	"github.com/hoophq/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
 // FindOne doe not enforce fetching the session by its user.

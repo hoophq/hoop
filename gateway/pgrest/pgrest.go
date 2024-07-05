@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/runopsio/hoop/common/log"
+	"github.com/hoophq/hoop/common/log"
 )
 
 // HTTPClient is an interface for testing a request object.

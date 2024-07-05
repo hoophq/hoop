@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/runopsio/hoop/common/agentcontroller"
+	"github.com/hoophq/hoop/common/agentcontroller"
 )
 
 const defaultApiControllerURL = "https://agentcontroller.hoop.dev"

@@ -6,8 +6,8 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
-	"github.com/runopsio/hoop/common/log"
-	"github.com/runopsio/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/storagev2"
 	svix "github.com/svix/svix-webhooks/go"
 )
 
