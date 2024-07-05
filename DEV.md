@@ -2,14 +2,12 @@
 
 To start a development server it requires the following local tools:
 
-- [Golang 1.21+](https://go.dev/doc/install)
+- [Golang 1.22+](https://go.dev/doc/install)
 - [Docker](https://docs.docker.com/engine/install/)
 - [Clojure / Java](https://clojure.org/guides/install_clojure)
 - [git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git)
 - Postgres Server (remote or local)
-- [node / npm](https://nodejs.org/en/download) (optional)
- - Permission to clone `hoophq/webapp` repository
- - Permission to clone `hoophq/api` repository
+- [node / npm](https://nodejs.org/en/download)
 
 ### Start a postgres server
 
@@ -23,7 +21,7 @@ make run-dev-postgres
 
 ### Start the server
 
-The configuration file to run the development server is located at `.env`. It contains all the defaults to start it, make sure to add the `PG_HOST` and `IDP_CLIENT_SECRET` configuration.
+The configuration file to run the development server is located at `.env`.
 
 ```sh
 # edit .env file with your favorite editor
@@ -38,7 +36,7 @@ make run-dev
 
 #### Webapp Setup
 
-If you want to run a development server with the webapp, run the command below before executing starting the dev server
+To build the webapp into the gateway
 
 ```sh
 WEBAPP_BUILD=1 make run-dev
@@ -54,14 +52,6 @@ make build-dev-client
 ```
 
 > Append `$HOME/.hoop/bin` to your `$PATH` in your profile to find commands when typing in your shell
-
-### Clean Up
-
-To clean up all data and build scripts
-
-```sh
-rm -rf $HOME/.hoop/dev
-```
 
 ## Postgrest
 
@@ -95,9 +85,3 @@ migrate -database 'postgres://hoopdevuser:1a2b3c4d@127.0.0.1:5449/hoopdevdb?sslm
 ### Migration Best Practices
 
 - https://github.com/golang-migrate/migrate/blob/master/MIGRATIONS.md
-
-### Deployment
-
-The deployment is done with [github action self hosted](https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/about-self-hosted-runners). The production Kubernetes cluster has the namespaces `arc-system` and `arc-runners` which runs the deployment workflows.
-
-The command below will show an interactive prompt and show the releases and apps available to deploy. It's important to follow up the deploy until it finishes.
