@@ -28,31 +28,51 @@
               :placeholder "mongodb+srv://root:<password>@devcluster.mwb5sun.mongodb.net/"}]})
 
 (def connection-icons-name-dictionary
-  {:postgres "/images/connections-logos/postgres_logo.svg"
-   :postgres-csv "/images/connections-logos/postgres_logo.svg"
-   :command-line "/images/connections-logos/command-line.svg"
-   :custom "/images/connections-logos/command-line.svg"
-   :tcp "/images/connections-logos/tcp_logo.svg"
-   :mysql "/images/connections-logos/mysql_logo.png"
-   :mysql-csv "/images/connections-logos/mysql_logo.png"
-   :aws "/images/connections-logos/aws_logo.svg"
-   :bastion "/images/connections-logos/bastion_logo.svg"
-   :heroku "/images/connections-logos/heroku_logo.svg"
-   :nodejs "/images/connections-logos/node_logo.svg"
-   :python "/images/connections-logos/python_logo.svg"
-   :ruby-on-rails "/images/connections-logos/rails_logo.svg"
-   :clojure "/images/connections-logos/clojure_logo.svg"
-   :kubernetes "/images/connections-logos/k8s_logo.svg"
-   :sql-server-csv "/images/connections-logos/sql-server_logo.svg"
-   :sql-server "/images/connections-logos/sql-server_logo.svg"
-   :mssql "/images/connections-logos/sql-server_logo.svg"
-   :mongodb "/images/connections-logos/mongodb_logo.svg"})
+  {:dark {:postgres "/images/connections-logos/postgres_logo.svg"
+          :postgres-csv "/images/connections-logos/postgres_logo.svg"
+          :command-line "/images/connections-logos/dark/custom_dark.svg"
+          :custom "/images/connections-logos/dark/custom_dark.svg"
+          :tcp "/images/connections-logos/dark/tcp_dark.svg"
+          :mysql "/images/connections-logos/dark/mysql_dark.png"
+          :mysql-csv "/images/connections-logos/dark/mysql_dark.png"
+          :aws "/images/connections-logos/aws_logo.svg"
+          :bastion "/images/connections-logos/bastion_logo.svg"
+          :heroku "/images/connections-logos/heroku_logo.svg"
+          :nodejs "/images/connections-logos/node_logo.svg"
+          :python "/images/connections-logos/python_logo.svg"
+          :ruby-on-rails "/images/connections-logos/dark/rails_dark.svg"
+          :clojure "/images/connections-logos/clojure_logo.svg"
+          :kubernetes "/images/connections-logos/k8s_logo.svg"
+          :sql-server-csv "/images/connections-logos/sql-server_logo.svg"
+          :sql-server "/images/connections-logos/sql-server_logo.svg"
+          :mssql "/images/connections-logos/sql-server_logo.svg"
+          :mongodb "/images/connections-logos/mongodb_logo.svg"}
+   :light {:postgres "/images/connections-logos/postgres_logo.svg"
+           :postgres-csv "/images/connections-logos/postgres_logo.svg"
+           :command-line "/images/connections-logos/command-line.svg"
+           :custom "/images/connections-logos/command-line.svg"
+           :tcp "/images/connections-logos/tcp_logo.svg"
+           :mysql "/images/connections-logos/mysql_logo.png"
+           :mysql-csv "/images/connections-logos/mysql_logo.png"
+           :aws "/images/connections-logos/aws_logo.svg"
+           :bastion "/images/connections-logos/bastion_logo.svg"
+           :heroku "/images/connections-logos/heroku_logo.svg"
+           :nodejs "/images/connections-logos/node_logo.svg"
+           :python "/images/connections-logos/python_logo.svg"
+           :ruby-on-rails "/images/connections-logos/rails_logo.svg"
+           :clojure "/images/connections-logos/clojure_logo.svg"
+           :kubernetes "/images/connections-logos/k8s_logo.svg"
+           :sql-server-csv "/images/connections-logos/sql-server_logo.svg"
+           :sql-server "/images/connections-logos/sql-server_logo.svg"
+           :mssql "/images/connections-logos/sql-server_logo.svg"
+           :mongodb "/images/connections-logos/mongodb_logo.svg"}})
 
-(defn get-connection-icon [connection]
-  (cond
-    (not (cs/blank? (:subtype connection))) (get connection-icons-name-dictionary (keyword (:subtype connection)))
-    (not (cs/blank? (:icon_name connection))) (get connection-icons-name-dictionary (keyword (:icon_name connection)))
-    :else (get connection-icons-name-dictionary (keyword (:type connection)))))
+(defn get-connection-icon [connection & [theme]]
+  (let [connection-icons (get connection-icons-name-dictionary (or theme :light))]
+    (cond
+      (not (cs/blank? (:subtype connection))) (get connection-icons (keyword (:subtype connection)))
+      (not (cs/blank? (:icon_name connection))) (get connection-icons (keyword (:icon_name connection)))
+      :else (get connection-icons (keyword (:type connection))))))
 
 (def connection-commands
   {"nodejs" "node"

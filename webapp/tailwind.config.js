@@ -36,6 +36,7 @@ module.exports = {
       },
       width: {
         "side-menu": "296px",
+        "floating-search-webclient": "calc(100% - 50px)",
       },
       minWidth: {
         64: "16rem",
@@ -106,14 +107,16 @@ module.exports = {
   variants: {
     opacity: ({ after }) => after(["disabled"]),
     extend: {
-      padding: ["hover", "last", "first"],
+      padding: ["hover", "last", "first", "focus"],
       shadow: ["hover"],
       SVGFEDisplacementMapElementy: ["group-hover", "hover"],
       transform: ["group-hover", "hover"],
       translate: ["group-hover", "hover"],
       rotate: ["group-hover", "hover"],
-      borderWidth: ["last", "first", "group-hover", "hover"],
+      borderWidth: ["last", "first", "group-hover", "hover", "focus"],
       display: ["group-hover"],
+      width: ["focus"],
+      cursor: ["focus"],
     },
   },
   plugins: [

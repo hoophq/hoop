@@ -169,7 +169,7 @@
             :disabled disabled
             :class (str classes " "
                         (when full-width "w-full ")
-                        "rounded-md leading-6 text-xs px-2 py-1 text-white font-semibold bg-blue-500 hover:bg-blue-600 ")}
+                        "rounded-md leading-6 text-xs px-3.5 py-1.5 text-white font-semibold bg-blue-500 hover:bg-blue-600 ")}
    text])
 
 (defn tailwind-secondary [{:keys [text on-click type disabled full-width]}]

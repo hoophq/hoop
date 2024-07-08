@@ -28,7 +28,6 @@
             [webapp.webclient.quickstart :as quickstart]
             [webapp.webclient.exec-multiples-connections.exec-list :as multiple-connections-exec-list-component]
             [webapp.webclient.runbooks.form :as runbooks-form]
-            [webapp.webclient.exec-multiples-connections.select-list :as multiple-connections-select-list]
             [webapp.formatters :as formatters]
             [webapp.subs :as subs]))
 
@@ -169,17 +168,16 @@
                               (not (cs/blank? (:subtype current-connection))) (:subtype current-connection)
                               (not (cs/blank? (:icon_name current-connection))) (:icon_name current-connection)
                               :else (:type current-connection))
-            current-connection-details (first (filter #(= connection-name (:name %)) (:connections (get-plugin-by-name "editor"))))
-            schema-disabled? (= (first (:config current-connection-details)) "schema=disabled")
+            current-connection-details (fn [connection]
+                                         (first (filter #(= (:name connection) (:name %))
+                                                        (:connections (get-plugin-by-name "editor")))))
+            schema-disabled? (fn [connection]
+                               (= (first (:config (current-connection-details connection)))
+                                  "schema=disabled"))
             run-connections-list-selected (filterv #(and (:selected %)
                                                          (not= (:name %) connection-name))
                                                    (:data @run-connections-list))
-            run-connections-list-suggested (filterv #(and (= (:subtype %) connection-type)
-                                                          (not (:selected %))
-                                                          (not= (:name %) connection-name))
-                                                    @filtered-run-connections-list)
-            run-connections-list-rest (filterv #(and (not= (:subtype %) connection-type)
-                                                     (not (:selected %))
+            run-connections-list-rest (filterv #(and (not (:selected %))
                                                      (not= (:name %) connection-name))
                                                @filtered-run-connections-list)
             keymap [{:key "Mod-Enter"
@@ -266,15 +264,16 @@
                               "sublime" sublime
                               "" dracula
                               nil dracula}
-            show-tree? (and (or (= connection-type "mysql-csv")
-                                (= connection-type "postgres-csv")
-                                (= connection-type "mongodb")
-                                (= connection-type "postgres")
-                                (= connection-type "mysql")
-                                (= connection-type "sql-server-csv")
-                                (= connection-type "mssql")
-                                (= connection-type "database"))
-                            (not (some #(= connection-name %) review-plugin->connections)))]
+            show-tree? (fn [connection]
+                         (and (or (= (:type connection) "mysql-csv")
+                                  (= (:type connection) "postgres-csv")
+                                  (= (:type connection) "mongodb")
+                                  (= (:type connection) "postgres")
+                                  (= (:type connection) "mysql")
+                                  (= (:type connection) "sql-server-csv")
+                                  (= (:type connection) "mssql")
+                                  (= (:type connection) "database"))
+                              (not (some #(= (:name connection) %) review-plugin->connections))))]
         [:div {:class "h-full flex flex-col"}
          [:div {:class "h-16 border border-gray-600 flex justify-between items-center gap-small px-4"}
           [:div {:class "flex items-center gap-small"}
@@ -320,29 +319,17 @@
                                                   (reset! metadata [])
                                                   (reset! metadata-key "")
                                                   (reset! metadata-value ""))
-                                      :classes "rounded-r-none"
                                       :disabled script-output-loading?
-                                      :type "button"}]
-            [:div {:class (str "relative rounded-r-lg border-l border-blue-400 text-white "
-                               "rounded-md leading-6 text-xs font-semibold bg-blue-500 hover:bg-blue-600 ")}
-             [:div {:class "flex h-full w-full items-center justify-center cursor-pointer px-2 py-1"
-                    :on-click #(reset! multiple-connections-select-list/atom-run-popover-open?
-                                       (not @multiple-connections-select-list/atom-run-popover-open?))}
-              [:> hero-solid-icon/ChevronDownIcon {:class "h-5 w-5"}]]
-             (when @multiple-connections-select-list/atom-run-popover-open?
-               [multiple-connections-select-list/main
-                {:connection-name connection-name
-                 :run-connections-list-selected run-connections-list-selected
-                 :run-connections-list-suggested run-connections-list-suggested
-                 :run-connections-list-rest run-connections-list-rest
-                 :atom-run-connections-list run-connections-list
-                 :atom-filtered-run-connections-list filtered-run-connections-list}])]]]]
+                                      :type "button"}]]]]
          [:> Allotment {:defaultSizes vertical-pane-sizes
                         :onDragEnd #(.setItem js/localStorage "editor-vertical-pane-sizes" (str %))}
-          [:> (.-Pane Allotment)
+          [:> (.-Pane Allotment) {:minSize 250}
            [aside/main {:show-tree? show-tree?
-                        :connection-name connection-name
-                        :connection-type connection-type
+                        :current-connection current-connection
+                        :atom-run-connections-list run-connections-list
+                        :atom-filtered-run-connections-list filtered-run-connections-list
+                        :run-connections-list-selected run-connections-list-selected
+                        :run-connections-list-rest run-connections-list-rest
                         :metadata metadata
                         :metadata-key metadata-key
                         :metadata-value metadata-value
