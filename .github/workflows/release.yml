@@ -202,6 +202,9 @@ jobs:
       - name: Build
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
+          HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
         run: GOOS=linux GOARCH=amd64 make build
 
       - uses: actions/upload-artifact@v3
@@ -238,6 +241,9 @@ jobs:
       - name: Build
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
+          HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
         run: GOOS=linux GOARCH=arm64 make build
 
       - uses: actions/upload-artifact@v3
