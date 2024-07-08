@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
-	"strconv"
 	"time"
 
 	"github.com/hoophq/hoop/client/cmd/styles"
@@ -87,8 +86,8 @@ var serverInfoCmd = &cobra.Command{
 			return "not set"
 		}
 		timeFn := func(val any) string {
-			timestamp, _ := strconv.ParseInt(fmt.Sprintf("%v", val), 10, 64)
-			return time.Unix(timestamp, 0).In(time.UTC).Format(time.RFC3339)
+			timestamp, _ := val.(float64)
+			return time.Unix(int64(timestamp), 0).In(time.UTC).Format(time.RFC3339)
 		}
 		if resp, _ := obj.(map[string]any); len(resp) > 0 {
 			licenseInfo, _ := resp["license_info"].(map[string]any)
