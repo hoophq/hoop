@@ -50,8 +50,6 @@ $NOTE_CONTENT
 
 ## Helm Chart
 
-https://github.com/hoophq/helm-chart
-
 - [hoop-chart-${GIT_TAG}](https://releases.hoop.dev/release/${GIT_TAG}/hoop-chart-${GIT_TAG}.tgz)
 - [hoopagent-chart-${GIT_TAG}](https://releases.hoop.dev/release/${GIT_TAG}/hoopagent-chart-${GIT_TAG}.tgz)
 
