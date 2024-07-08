@@ -405,3 +405,9 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: make release
+
+      - name: Publish Brew Recipe
+        run: gh workflow run release.yml -f version=$GIT_TAG --repo hoophq/brew
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GIT_TAG: ${{ env.GIT_TAG }}
