@@ -1,16 +1,21 @@
 #!/bin/bash
-set -e
-
-PUBLIC_REPO=hoophq/hoop
+set -eo pipefail
 
 gh auth status
+
+# pull latest tags from remote
+LATEST_TAG=$(gh release list -L 1 |awk {'print $1'})
+
+echo "=> fetching latest tag ($LATEST_TAG) from remote ..."
+git fetch origin $LATEST_TAG
+echo ""
 
 echo "=> Here are the last 10 releases from github"
 gh release list -L 10
 
 read -rep $'\nWhich version do you like to release?\n=> ' GIT_TAG
 NOTE_FILE="$(mktemp).md"
-GIT_COMMIT=$(git log -1 --pretty=format:%B)
+GIT_COMMIT=$(git log $LATEST_TAG..HEAD --oneline)
 cat - >$NOTE_FILE <<EOF
 # Changelog
 
@@ -62,7 +67,6 @@ EOF
 
 ghRelease(){
   gh release create $GIT_TAG -F $NOTE_FILE --title $GIT_TAG
-  gh release create $GIT_TAG -F $NOTE_FILE --title $GIT_TAG --repo $PUBLIC_REPO
 }
 
 read -rep $'=> Do you with to create this release?\n(y/n) => ' choice
