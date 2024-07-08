@@ -2,7 +2,8 @@
   (:require
    [clojure.string :as string]
    [reagent.core :as r]
-   [webapp.components.icon :as icon]))
+   [webapp.components.icon :as icon]
+   ["@heroicons/react/16/solid" :as hero-micro-icon]))
 
 (defn- searchbox-icon []
   [:svg {:class "h-5 w-5 text-gray-400"
@@ -99,10 +100,15 @@
                             #"-|_" "")
             (string/replace pattern #" |-|_" "")) options))
 
+(defn- search-in-multiple-options [options pattern searchable-keys]
+  (reduce (fn [acc [list-key list-value]]
+            (assoc acc list-key (search-options list-value pattern searchable-keys))) {} options))
+
 (defn main
   " SEARCHBOX component searches for an item with by a set of values from a shallow object.
   EXAMPLE: given the map {:name :john :last-name :doe :nationality :brazilian}, every value (pointed by searchable-keys) is searchable and will point to its choosen key
   size -> a variation property for a regular sized or a small one. Valid option is :small, if anything else is passed, it will consider the regular
+  floating? -> a boolean to set the searchbox as a floating one;
   name -> form name property;
   label -> for adding a label to the combobox. If not provided, the <label> tag won't be rendered;
   list-classes -> to provide some specific stylezation to the list of options, it is expected to be passed CSS classes;
@@ -116,7 +122,8 @@
   hide-results-list -> a boolean used to do not show the results list. Usually useful with `on-change-results-cb` and the list is not necessary because the results are shown in the upperscope
   on-focus -> a function that will be executed on input focus
   on-blur -> a function that will be executed on input blur
-  options -> a list of hashmaps to be rendered searched. Example [{:name \"name\" :type \"type\" :review_type \"review_type\" :redact \"redact\"}]
+  options -> a list of hashmaps to be rendered searched. Example [{:name \"name\" :type \"type\" :review_type \"review_type\" :redact \"redact\"}] when multiple-options? is false and {:first-list [{:name \"name\" :type \"type\" :review_type \"review_type\" :redact \"redact\"}] :second-list [{:name \"name\" :type \"type\" :review_type \"review_type\" :redact \"redact\"}]} when multiple-options? is true
+  multiple-options? -> a boolean to set if the searchbox will search in multiple options or not
   display-key -> the key that will be used to display information in an user friendly way. This key must be from a valid key from options. Example :name
   meta-display-keys -> meta information keys from a option that you want to put to the side of display-key. Example: [:name :type]
   searchable-keys -> the keys from the options that you want to be searchable. Example: [:name :type :review_type :redact]
@@ -144,6 +151,8 @@
                  on-focus
                  on-blur
                  options
+                 multiple-options?
+                 floating?
                  display-key
                  meta-display-keys
                  searchable-keys]}]
@@ -156,18 +165,31 @@
                                  @searched-options)
             no-results? (and (empty? @searched-options)
                              (> (count @input-value) 0))]
-        [:div
+        [:<>
          (when label
            [:label {:for name
                     :class "block text-xs font-semibold text-gray-800 mb-x-small"}
             label])
-         [:div {:class "relative"}
-          [:input {:class (str (if dark
-                                 input-style-dark
-                                 input-style)
-                               (if (= size :small)
-                                 "py-1 h-8 "
-                                 "py-3 h-12 "))
+         [:div {:class (if floating?
+                         "relative flex justify-end rounded-full"
+                         "relative bg-white rounded-full")}
+          [:input {:class (if floating?
+                            (str "shadow-sm transition-all ease-in duration-500 "
+                                 "bg-white sm:text-sm "
+                                 "cursor-pointer z-10 relative h-8 w-8 "
+                                 "rounded-full bg-transparent pl-8 outline-none "
+
+                                 "focus:outline-none focus:transition-all "
+                                 "focus:ease-in focus:duration-1000 "
+                                 "focus:w-full focus:cursor-text "
+                                 "focus:pr-16 focus:pl-4")
+
+                            (str (if dark
+                                   input-style-dark
+                                   input-style)
+                                 (if (= size :small)
+                                   "py-1 h-8 "
+                                   "py-3 h-12 ")))
                    :placeholder placeholder
                    :id name
                    :name name
@@ -178,9 +200,14 @@
                                    (close-list)))
                    :on-change (fn [e]
                                 (let [value (-> e .-target .-value)
-                                      results (search-options options
-                                                              value
-                                                              searchable-keys)]
+                                      results (if multiple-options?
+                                                (search-in-multiple-options options
+                                                                            value
+                                                                            searchable-keys)
+
+                                                (search-options options
+                                                                value
+                                                                searchable-keys))]
                                   (reset! input-value value)
                                   (when on-change (on-change value))
                                   (when (not loading?)
@@ -197,17 +224,24 @@
                                (when on-focus (on-focus))
                                (open-list)
                                (reset! searched-options options))}]
+          (when floating?
+            [:> hero-micro-icon/MagnifyingGlassIcon
+             {:class "cursor-pointer transition-all duration-500 z-10 absolute top-0 right-0 text-gray-800 p-2 h-8 w-8"
+              :aria-hidden "true"
+              :on-click (fn []
+                          (.focus (. js/document (getElementById name))))}])
           (when loading?
             [:div {:class "absolute w-4 h-4 inset-y-4 right-10 opacity-50 animate-spin origin-center"}
              [icon/regular {:size 4
                             :icon-name "loader-circle"}]])
-          [:button {:type "button"
-                    :on-click (fn []
-                                (open-list)
-                                (.focus (. js/document (getElementById name))))
-                    :class (str "absolute flex items-center rounded-r-md "
-                                "inset-y-0 right-0 px-2 focus:outline-none ")}
-           [searchbox-icon]]
+          (when (not floating?)
+            [:button {:type "button"
+                      :on-click (fn []
+                                  (open-list)
+                                  (.focus (. js/document (getElementById name))))
+                      :class (str "absolute flex items-center rounded-r-md "
+                                  "inset-y-0 right-0 px-2 focus:outline-none ")}
+             [searchbox-icon]])
           (when (and
                  (= @list-status :open)
                  (not hide-results-list))

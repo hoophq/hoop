@@ -34,7 +34,6 @@
        [searchbox/main
         {:options (:data @atom-run-connections-list)
          :on-change-results-cb #(rf/dispatch [:editor-plugin->set-filtered-run-connection-list %])
-         :display-key :name
          :searchable-keys [:name]
          :hide-results-list true
          :placeholder "Search"

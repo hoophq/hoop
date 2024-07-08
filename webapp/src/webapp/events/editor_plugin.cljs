@@ -310,6 +310,7 @@
  (fn
    [{:keys [db]} [_ data]]
    {:db (assoc db :database-schema {:status :idle
+                                    :data {}
                                     :raw nil
                                     :schema-tree nil
                                     :indexes-tree nil})}))
@@ -324,6 +325,11 @@
                 :on-success #(rf/dispatch [:editor-plugin->get-mysql-indexes connection index-query %])}]
      {:fx [[:dispatch [:fetch fetch]]]
       :db (assoc-in db [:database-schema] {:status :loading
+                                           :data (assoc (-> db :database-schema :data)
+                                                        (:connection-name connection) {:status :loading
+                                                                                       :raw nil
+                                                                                       :schema-tree nil
+                                                                                       :indexes-tree nil})
                                            :raw nil
                                            :schema-tree nil
                                            :indexes-tree nil})})))
@@ -383,6 +389,15 @@
  (fn
    [{:keys [db]} [_ {:keys [schema-payload indexes-payload status connection]}]]
    (let [schema {:status status
+                 :data (assoc (-> db :database-schema :data)
+                              (:connection-name connection) {:status status
+                                                             :raw (:output schema-payload)
+                                                             :schema-tree (if-let [_ (empty? schema-payload)]
+                                                                            "Couldn't get database schema"
+                                                                            (:tree (parse-sql-to-tree (:output schema-payload)
+                                                                                                      (:connection-type connection))))
+                                                             :indexes-tree (:tree (parse-sql-to-tree (:output indexes-payload)
+                                                                                                     (:connection-type connection)))})
                  :raw (:output schema-payload)
                  :schema-tree (if-let [_ (empty? schema-payload)]
                                 "Couldn't get database schema"
@@ -409,21 +424,36 @@
                                               :success
                                               connection (:output res)])))}]
      {:fx [[:dispatch [:fetch fetch]]]
-      :db (assoc-in db [:database-schema :status] :loading)})))
+      :db (assoc-in db [:database-schema] {:status :loading
+                                           :data (assoc (-> db :database-schema :data)
+                                                        (:connection-name connection) {:status :loading
+                                                                                       :raw nil
+                                                                                       :schema-tree nil
+                                                                                       :indexes-tree nil})
+                                           :raw nil
+                                           :schema-tree nil
+                                           :indexes-tree nil})})))
 
 (rf/reg-event-fx
  :editor-plugin->parse-mongodb-schema
  (fn
-   [_ [_ status _ payload]]
-   {:fx [[:dispatch [:editor-plugin->set-mongodb-schema status payload]]]}))
+   [_ [_ status connection payload]]
+   {:fx [[:dispatch [:editor-plugin->set-mongodb-schema status connection payload]]]}))
 
 (rf/reg-event-fx
  :editor-plugin->set-mongodb-schema
  (fn
-   [{:keys [db]} [_ status payload]]
+   [{:keys [db]} [_ status connection payload]]
    (let [parse-payload (fn [p]
                          (js->clj (.parse js/JSON p) :keywordize-keys true))
          db-schema {:status status
+                    :data (assoc (-> db :database-schema :data)
+                                 (:connection-name connection) {:status status
+                                                                :raw payload
+                                                                :schema-tree (if-let [_ (or (empty? payload)
+                                                                                            (= status :failure))]
+                                                                               "Couldn't get database schema.\nPlease check your session list to see the possible issue."
+                                                                               (parse-payload payload))})
                     :raw payload
                     :schema-tree (if-let [_ (or (empty? payload)
                                                 (= status :failure))]

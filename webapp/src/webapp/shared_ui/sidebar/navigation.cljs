@@ -72,7 +72,7 @@
                                       (when (not admin?) " cursor-default"))}
                  [:div {:class "flex gap-3 justify-start items-center"}
                   [:figure {:class "w-5"}
-                   [:img {:src (connection-constants/get-connection-icon connection)
+                   [:img {:src (connection-constants/get-connection-icon connection :dark)
                           :class "w-9"}]]
                   [:span {:class "text-left truncate w-32"}
                    (:name connection)]]

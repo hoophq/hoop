@@ -329,8 +329,8 @@ JSON.stringify(db.getMongo().getDBNames().reduce((acc, current) => {
                                                       :connection-name connection-name})]))
       [:div {:class "text-gray-200"}
        [tree-view-status
-        (:status @database-schema)
-        (:schema-tree @database-schema)
-        (:indexes-tree @database-schema)
+        (:status (get (:data @database-schema) (:connection-name connection)))
+        (:schema-tree (get (:data @database-schema) (:connection-name connection)))
+        (:indexes-tree (get (:data @database-schema) (:connection-name connection)))
         connection]])))
 
