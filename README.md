@@ -29,7 +29,7 @@
 Hoop.dev is an access gateway for databases and servers with an API for packet manipulation. Because of the modern architecture powering Hoop, the open-source version includes advanced features like:
 
  * **Passwordless Auth, No Certificates**: older gateways require high-maintenance certificate authorities. Hoop uses OIDC and Oauth2 for authentication, letting your IDP handle everything behind the scenes. Forget about certificates!
- * **Open-source SSO: support for Okta**, Keycloak, Jumpcloud, and others. There is no need for Enterprise versions to integrate your own IDP. You're not limited to GitHub sign-in.
+ * **Open-source SSO**: support for Okta, Keycloak, Jumpcloud, and others. There is no need for Enterprise versions to integrate your own IDP. You're not limited to GitHub sign-in.
  * **Session recording**: Linux, Docker, Kubernetes, Mysql, Postgres, MongoDB, and many more.
  * **Just-in-time access**: grant time-bound sessions using groups synced from your IDP.
  * **Slack and Teams Access Requests**: Chatbot approval workflows can be done without leaving your chat app.
