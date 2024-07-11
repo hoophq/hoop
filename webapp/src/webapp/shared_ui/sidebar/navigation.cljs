@@ -22,11 +22,9 @@
     "hover:bg-gray-800 hover:text-white text-gray-300 "))
 
 (defn main [_ _]
-  (let [open-plugins-disclosure? (r/atom false)
-        open-profile-disclosure? (r/atom false)
+  (let [open-profile-disclosure? (r/atom false)
         gateway-info (rf/subscribe [:gateway->info])
         current-route (rf/subscribe [:routes->route])
-        hoop-app-running? (rf/subscribe [:hoop-app->running?])
         context-connection (rf/subscribe [:connections->context-connection])]
     (fn [user my-plugins]
       (let [gateway-version (:version (:data @gateway-info))
@@ -132,30 +130,39 @@
 
            (when (and admin? (seq my-plugins))
              [:li
-              [:div {:class "text-xs text-white mb-3 font-semibold"}
+              [:div {:class "py-0.5 text-xs text-white mb-3 font-semibold"}
                "Organization"]
+
+              (when (and user-management? admin?)
+                [:a {:href "#"
+                     :on-click #(rf/dispatch [:navigate :users])
+                     :class (str (hover-side-menu-link? "/organization/users" current-route)
+                                 (:enabled link-styles))}
+                 [:div {:class "flex gap-3 items-center"}
+                  [:> hero-outline-icon/UserGroupIcon {:class (str "h-6 w-6 shrink-0 text-white")
+                                                       :aria-hidden "true"}]
+                  "Users"]])
+
               [:> ui/Disclosure {:as "div"
                                  :class "text-xs font-semibold leading-6 text-gray-400"}
-               [:> (.-Button ui/Disclosure) {:class "w-full group flex items-center justify-between rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-gray-800 hover:text-white"
-                                             :onClick #(reset! open-plugins-disclosure? (not @open-plugins-disclosure?))}
+               [:> (.-Button ui/Disclosure) {:class "w-full group flex items-center justify-between rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-gray-800 hover:text-white"}
                 [:div {:class "flex gap-3 justify-start items-center"}
-                 [:> hero-outline-icon/PuzzlePieceIcon {:class "h-6 w-6 shrink-0 text-white"
-                                                        :aria-hidden "true"}]
-                 "Manage"]
+                 [:> hero-outline-icon/Cog8ToothIcon {:class "h-6 w-6 shrink-0 text-white"
+                                                      :aria-hidden "true"}]
+                 "Settings"]
                 [:> hero-solid-icon/ChevronDownIcon {:class "text-white h-5 w-5 shrink-0"
                                                      :aria-hidden "true"}]]
                [:> (.-Panel ui/Disclosure) {:as "ul"
                                             :class "mt-1 px-2"}
                 [:li
-                 [:> (.-Button ui/Disclosure)
-                  {:as "a"
-                   :onClick (fn []
-                              (if free-license?
-                                (js/window.Intercom
-                                 "showNewMessage"
-                                 "I want to upgrade my current plan")
+                 [:a
+                  {:on-click (fn []
+                               (if free-license?
+                                 (js/window.Intercom
+                                  "showNewMessage"
+                                  "I want to upgrade my current plan")
 
-                                (rf/dispatch [:navigate :manage-ask-ai])))
+                                 (rf/dispatch [:navigate :manage-ask-ai])))
                    :href "#"
                    :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-gray-800 "
                                "block rounded-md py-2 pr-2 pl-9 text-sm leading-6"
@@ -222,16 +229,16 @@
                                                    :aria-hidden "true"}]]
              [:> (.-Panel ui/Disclosure) {:as "ul"
                                           :class "mt-1 px-2"}
-              (when (or (and user-management? admin?)
-                        @hoop-app-running?)
-                [:li
-                 [:> (.-Button ui/Disclosure) {:as "a"
-                                               :onClick #(rf/dispatch [:navigate :settings])
-                                               :href "/settings"
-                                               :class "group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-gray-800 hover:text-white"}
-                  [:> hero-outline-icon/Cog8ToothIcon {:class "h-6 w-6 shrink-0 text-white"
-                                                       :aria-hidden "true"}]
-                  "Settings"]])
+
+              [:li
+               [:> (.-Button ui/Disclosure) {:as "a"
+                                             :href "#"
+                                             :on-click #(rf/dispatch [:navigate :hoop-app])
+                                             :class "group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-gray-800 hover:text-white"}
+                [:> hero-outline-icon/SignalIcon {:class "h-6 w-6 shrink-0 text-white"
+                                                  :aria-hidden "true"}]
+                "Hoop App"]]
+
               [:li
                [:> (.-Button ui/Disclosure) {:as "a"
                                              :target "_blank"

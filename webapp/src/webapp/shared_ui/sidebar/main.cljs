@@ -75,18 +75,21 @@
                     :class "overflow-ellipsis text-white bg-gray-800 hover:bg-blue-600 group items-center flex justify-between rounded-md p-2 text-sm leading-6 font-semibold"}
            [:div {:class "flex gap-3 justify-start items-center"}
             [:figure {:class "w-5"}
-             [:img {:src (connection-constants/get-connection-icon connection-data)
+             [:img {:src (connection-constants/get-connection-icon connection-data :dark)
                     :class "w-9"}]]
             [:span {:class "text-left truncate w-32"}
-             (:name connection-data)]]
-           (when admin?
-             [:> hero-outline-icon/Cog6ToothIcon {:class "text-white h-5 w-5 shrink-0"
-                                                  :aria-hidden "true"}])]]
+             (:name connection-data)]]]]
    ;; sidebar closed
          ]))))
 
+(defn hover-side-menu-link? [uri-item current-route]
+  (if (= uri-item current-route)
+    "bg-gray-800 text-white "
+    "hover:bg-gray-800 hover:text-white text-gray-300 "))
+
 (defn desktop-sidebar [_ _]
-  (let [sidebar-desktop (rf/subscribe [:sidebar-desktop])]
+  (let [sidebar-desktop (rf/subscribe [:sidebar-desktop])
+        current-route (rf/subscribe [:routes->route])]
     (fn [user my-plugins connection]
       (let [user-data (:data user)
             connection-data (:data connection)
@@ -95,7 +98,8 @@
             admin? (:admin? user-data)
             sidebar-open? (if (= :opened (:status @sidebar-desktop))
                             true
-                            false)]
+                            false)
+            current-route @current-route]
         [:<>
        ;; sidebar opened
          [:> ui/Transition {:show sidebar-open?
@@ -126,7 +130,7 @@
             [:figure {:class "w-5 cursor-pointer"}
              [:img {:src "/images/hoop-branding/PNG/hoop-symbol_white@4x.png"
                     :on-click #(rf/dispatch [:navigate :home])}]]]
-           [:nav {:class "flex flex-1 flex-col"}
+           [:nav {:class "mt-8 flex flex-1 flex-col"}
             [:ul {:role "list"
                   :class "flex flex-1 items-center flex-col gap-y-6"}
              [:li
@@ -138,7 +142,7 @@
                             :class "w-full overflow-ellipsis text-white bg-gray-800 group items-center flex justify-between rounded-md p-2 text-sm leading-6 font-semibold mb-6"}
                    [:div {:class "flex gap-3 justify-start items-center"}
                     [:figure {:class "w-5"}
-                     [:img {:src (connection-constants/get-connection-icon connection-data)
+                     [:img {:src (connection-constants/get-connection-icon connection-data :dark)
                             :class "w-9"}]]
                     [:span {:class "sr-only"}
                      (:name connection-data)]]]
@@ -158,7 +162,8 @@
                   [:a {:href (if (and (:need-connection? route) (not connection-data))
                                "#"
                                (:uri route))
-                       :class "text-gray-400 hover:text-white hover:bg-gray-800 group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
+                       :class (str (hover-side-menu-link? (:uri route) current-route)
+                                   "group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
                    [(:icon route) {:class (str "h-6 w-6 shrink-0 text-white"
                                                (when (and (:need-connection? route) (not connection-data))
                                                  " opacity-30"))
@@ -181,14 +186,22 @@
                     (:label plugin)]]])]]
 
              (when (and admin? (seq my-plugins))
-               [:li
-                [:a {:href "#"
-                     :onClick #(rf/dispatch [:sidebar-desktop->open])
-                     :class "text-gray-400 hover:text-white hover:bg-gray-800 group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
-                 [:> hero-outline-icon/PuzzlePieceIcon {:class "h-6 w-6 shrink-0 text-white"
-                                                        :aria-hidden "true"}]
+               [:li {:class "mt-8"}
+                [:a {:href "/organization/users"
+                     :class (str (hover-side-menu-link? "/organization/users" current-route)
+                                 "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
+                 [:> hero-outline-icon/UserGroupIcon {:class "h-6 w-6 shrink-0 text-white"
+                                                      :aria-hidden "true"}]
                  [:span {:class "sr-only"}
-                  "Manage plugins"]]])
+                  "Users"]]
+
+                [:a {:href "#"
+                     :on-click #(rf/dispatch [:sidebar-desktop->open])
+                     :class "text-gray-400 hover:text-white hover:bg-gray-800 group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
+                 [:> hero-outline-icon/Cog8ToothIcon {:class "h-6 w-6 shrink-0 text-white"
+                                                      :aria-hidden "true"}]
+                 [:span {:class "sr-only"}
+                  "Settings"]]])
 
              [:li {:class "mt-auto mb-3"}
               [:a {:href "#"
@@ -209,7 +222,6 @@
       (rf/dispatch [:connections->fullfill-context-connection]))
 
     (rf/dispatch [:plugins->get-my-plugins])
-    (rf/dispatch [:hoop-app->get-app-status])
     (rf/dispatch [:connections->get-connections])
     (js/Canny "identify"
               #js{:appID config/canny-id

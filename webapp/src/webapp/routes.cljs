@@ -10,29 +10,31 @@
 (def routes
   (atom
    ["/" {"" :home
+         "404" :404
+         "auth/callback" :auth-callback-hoop
          "connections" [["/details" :connection-details]
                         ["/new" :create-connection]
                         [["/connections/" :connection-type "/new"] :onboarding-create-connection]]
          "client" :editor-plugin
-         "reviews" :reviews-plugin
-         "runbooks" [["" :runbooks-plugin]
-                     [["/" :runbooks-file] :runbooks-plugin]]
-         "sessions" [["" :sessions]
-                     ["/filtered" :sessions-list-filtered-by-ids]
-                     [["/" :session-id] :session-details]]
+         "hoop-app" :hoop-app
+         "login" :login-hoop
+         "logout" :logout-hoop
+         "organization" [["/users" :users]]
          "plugins" [["/manage/ask-ai" :manage-ask-ai]
                     [["/reviews/" :review-id] :reviews-plugin-details]
                     [["/manage/" :plugin-name] :manage-plugin]]
-         "settings" :settings-hoop
+         "register" :register-hoop
+         "reviews" :reviews-plugin
+         "runbooks" [["" :runbooks-plugin]
+                     [["/" :runbooks-file] :runbooks-plugin]]
          "slack" [[["/user" "/new/" :slack-id] :slack-new-user]
                   [["/organization" "/new"] :slack-new-organization]]
-         "login" :login-hoop
+         "sessions" [["" :sessions]
+                     ["/filtered" :sessions-list-filtered-by-ids]
+                     [["/" :session-id] :session-details]]
+         "settings" :settings-hoop
          "signup" :signup-hoop
-         "register" :register-hoop
-         "logout" :logout-hoop
-         "auth/callback" :auth-callback-hoop
-         "signup/callback" :signup-callback-hoop
-         "404" :404}]))
+         "signup/callback" :signup-callback-hoop}]))
 
 (defn query-params-parser
   [queries]

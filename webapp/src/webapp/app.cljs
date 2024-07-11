@@ -19,7 +19,6 @@
             [webapp.connections.views.connection-connect :as connection-connect]
             [webapp.connections.views.connection-form-modal :as connection-form-modal]
             [webapp.connections.views.select-connection-use-cases :as select-connection-use-cases]
-            [webapp.webclient.panel :as webclient]
             [webapp.events]
             [webapp.events.agents]
             [webapp.events.ask-ai]
@@ -42,18 +41,21 @@
             [webapp.events.segment]
             [webapp.events.slack-plugin]
             [webapp.events.users]
+            [webapp.organization.users.main :as org-users]
             [webapp.plugins.views.manage-plugin :as manage-plugin]
             [webapp.plugins.views.plugins-configurations :as plugins-configurations]
             [webapp.reviews.panel :as reviews]
             [webapp.reviews.review-detail :as review-details]
             [webapp.routes :as routes]
             [webapp.runbooks.views.panel :as runbooks]
+            [webapp.hoop-app.main :as hoop-app]
             [webapp.settings.views.main :as settings]
             [webapp.shared-ui.sidebar.main :as sidebar]
             [webapp.slack.slack-new-organization :as slack-new-organization]
             [webapp.slack.slack-new-user :as slack-new-user]
             [webapp.subs :as subs]
-            [webapp.views.home :as home]))
+            [webapp.views.home :as home]
+            [webapp.webclient.panel :as webclient]))
 
 (when (= config/release-type "hoop-ui")
   (js/window.addEventListener "load" (rf/dispatch [:segment->load])))
@@ -106,7 +108,7 @@
       (if (empty? (:data @user))
         [loaders/over-page-loader]
         [:section
-         {:class "antialiased min-h-screen bg-gray-900"}
+         {:class "antialiased min-h-screen"}
          [modals/modal]
          [dialog/dialog]
          [dialog/new-dialog]
@@ -163,8 +165,18 @@
 (defmethod routes/panels :home-panel []
   [layout-application-hoop-connection-context home/home-panel-hoop])
 
+(defmethod routes/panels :hoop-app-panel []
+  [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full overflow-auto"}
+                             [h/h2 "Hoop App" {:class "mb-6"}]
+                             [hoop-app/main]]])
+
 (defmethod routes/panels :settings-hoop-panel []
   [layout :application-hoop [settings/main]])
+
+(defmethod routes/panels :users-panel []
+  [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full overflow-auto"}
+                             [h/h2 "Users" {:class "mb-6"}]
+                             [org-users/main]]])
 
 (defmethod routes/panels :connection-details-panel [_]
   [layout-application-hoop-connection-context connection-details/main])
