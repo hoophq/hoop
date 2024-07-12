@@ -28,17 +28,19 @@
 
 Hoop.dev is an access gateway for databases and servers with an API for packet manipulation. Because of the modern architecture powering Hoop, the open-source version includes advanced features like:
 
- * Passwordless Auth, No Certificates: older gateways require high-maintenance certificate authorities. Hoop uses OIDC and Oauth2 for authentication, letting your IDP handle everything behind the scenes. Forget about certificates!
- * Open-source SSO: support for Okta, Keycloak, Jumpcloud, and others. There is no need for Enterprise versions to integrate your own IDP. You're not limited to GitHub sign-in.
- * Session recording: Linux, Docker, Kubernetes, Mysql, Postgres, MongoDB, and many more.
- *	Just-in-time access: grant time-bound sessions using groups synced from your IDP.
- * Slack and Teams Access Requests: Chatbot approval workflows can be done without leaving your chat app.
+ * **Passwordless Auth, No Certificates**: older gateways require high-maintenance certificate authorities. Hoop uses OIDC and Oauth2 for authentication, letting your IDP handle everything behind the scenes. Forget about certificates!
+ * **Open-source SSO**: support for Okta, Keycloak, Jumpcloud, and others. There is no need for Enterprise versions to integrate your own IDP. You're not limited to GitHub sign-in.
+ * **Session recording**: Linux, Docker, Kubernetes, Mysql, Postgres, MongoDB, and many more.
+ * **Just-in-time access**: grant time-bound sessions using groups synced from your IDP.
+ * **Slack and Teams Access Requests**: Chatbot approval workflows can be done without leaving your chat app.
 
 Discover the unique capabilities that only Hoop can offer. From packet manipulation to web and proxy modes, Hoop is designed to meet your diverse needs.
 
-* Manipulate packets: Programmatically changes the gateway's environment and each connection's packets in real-time. Check out the [Secrets Manager integration example](https://hoop.dev/docs/learn/secrets-manager).
- * Web and proxy modes: Existing gateways lock you into either a web client interface or a proxy that requires desktop agents. Hoop gives you both options.
- * Custom connections: bring your own CLI or hide complex options from developers.
+* **Manipulate packets**: Programmatically changes the gateway's environment and each connection's packets in real-time. Check out the [Secrets Manager integration example](https://hoop.dev/docs/learn/secrets-manager).
+ * **Web and proxy modes**: Existing gateways lock you into either a web client interface or a proxy that requires desktop agents. Hoop gives you both options.
+ * **Custom connections**: bring your own CLI or hide complex options from developers.
+
+See the full list of features for the free open-source and the enterprise versions on [hoop.dev/features](https://hoop.dev/features).
 
 ## Installation
 
