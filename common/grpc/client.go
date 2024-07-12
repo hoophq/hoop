@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/url"
@@ -154,11 +155,14 @@ func Connect(clientConfig ClientConfig, opts ...*ClientOptions) (pb.ClientTransp
 func loadTLSCredentials(cc ClientConfig) (credentials.TransportCredentials, error) {
 	var certPool *x509.CertPool
 	if tlsCA := os.Getenv("TLS_CA"); tlsCA != "" {
-		pemServerCA, err := os.ReadFile(os.Getenv("TLS_CA"))
+		pemServerCA, err := base64.StdEncoding.DecodeString(tlsCA)
 		if err != nil {
-			return nil, err
+			pemServerCA, err = os.ReadFile(tlsCA)
+			if err != nil {
+				return nil, err
+			}
 		}
-		certPool := x509.NewCertPool()
+		certPool = x509.NewCertPool()
 		if !certPool.AppendCertsFromPEM(pemServerCA) {
 			return nil, fmt.Errorf("failed to add server CA's certificate")
 		}

@@ -9,7 +9,6 @@ import (
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
-	"github.com/hoophq/hoop/common/version"
 )
 
 type Config struct {
@@ -37,10 +36,7 @@ func Load() (*Config, error) {
 		}
 		// allow connecting insecure if a build disables this flag
 		// or the agent has local host connection with the gateway
-		isInsecure := !version.Get().StrictTLS && (dsn.Scheme == "http" || dsn.Scheme == "grpc")
-		if dsn.Address == grpc.LocalhostAddr && (dsn.Scheme == "grpc" || dsn.Scheme == "http") {
-			isInsecure = true
-		}
+		isInsecure := dsn.Scheme == "http" || dsn.Scheme == "grpc"
 		return &Config{
 			Name:      dsn.Name,
 			Type:      clientconfig.ModeDsn,

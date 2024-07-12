@@ -3,8 +3,6 @@ package transport
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
-	"encoding/base64"
 	"fmt"
 	"net"
 	"os"
@@ -40,6 +38,7 @@ type (
 	Server struct {
 		pb.UnimplementedTransportServer
 
+		TLSConfig     *tls.Config
 		ReviewService review.Service
 		IDProvider    *idp.Provider
 		ApiHostname   string
@@ -47,42 +46,6 @@ type (
 )
 
 const listenAddr = "0.0.0.0:8010"
-
-func loadServerCertificates() (*tls.Config, error) {
-	tlsKeyEnc := os.Getenv("TLS_KEY")
-	tlsCertEnc := os.Getenv("TLS_CERT")
-	tlsCAEnc := os.Getenv("TLS_CA")
-	if tlsKeyEnc == "" && tlsCertEnc == "" {
-		return nil, nil
-	}
-	pemPrivateKeyData, err := base64.StdEncoding.DecodeString(tlsKeyEnc)
-	if err != nil {
-		return nil, fmt.Errorf("failed decoding TLS_KEY, err=%v", err)
-	}
-	pemCertData, err := base64.StdEncoding.DecodeString(tlsCertEnc)
-	if err != nil {
-		return nil, fmt.Errorf("failed decoding TLS_CERT, err=%v", err)
-	}
-	cert, err := tls.X509KeyPair(pemCertData, pemPrivateKeyData)
-	if err != nil {
-		return nil, fmt.Errorf("failed parsing key pair, err=%v", err)
-	}
-	var certPool *x509.CertPool
-	if tlsCAEnc != "" {
-		tlsCAData, err := base64.StdEncoding.DecodeString(tlsCAEnc)
-		if err != nil {
-			return nil, fmt.Errorf("failed decoding TLS_CA, err=%v", err)
-		}
-		certPool = x509.NewCertPool()
-		if !certPool.AppendCertsFromPEM(tlsCAData) {
-			return nil, fmt.Errorf("failed creating cert pool for TLS_CA")
-		}
-	}
-	return &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		RootCAs:      certPool,
-	}, nil
-}
 
 func (s *Server) StartRPCServer() {
 	log.Printf("starting gateway at %v", listenAddr)
@@ -92,11 +55,11 @@ func (s *Server) StartRPCServer() {
 		log.Fatal(err)
 	}
 
-	tlsConfig, err := loadServerCertificates()
-	if err != nil {
-		sentry.CaptureException(err)
-		log.Fatal(err)
-	}
+	// tlsConfig, err := servertls.LoadServerCertificates()
+	// if err != nil {
+	// 	sentry.CaptureException(err)
+	// 	log.Fatal(err)
+	// }
 
 	grpcInterceptors := grpc.ChainStreamInterceptor(
 		sessionuuidinterceptor.New(),
@@ -104,10 +67,10 @@ func (s *Server) StartRPCServer() {
 		tracinginterceptor.New(s.IDProvider.ApiURL),
 	)
 	var grpcServer *grpc.Server
-	if tlsConfig != nil {
+	if s.TLSConfig != nil {
 		grpcServer = grpc.NewServer(
 			grpc.MaxRecvMsgSize(commongrpc.MaxRecvMsgSize),
-			grpc.Creds(credentials.NewTLS(tlsConfig)),
+			grpc.Creds(credentials.NewTLS(s.TLSConfig)),
 			grpcInterceptors,
 			authinterceptor.WithUnaryValidator(s.IDProvider),
 		)
@@ -121,7 +84,7 @@ func (s *Server) StartRPCServer() {
 	}
 	pb.RegisterTransportServer(grpcServer, s)
 	s.handleGracefulShutdown()
-	log.Infof("server transport created, tls=%v", tlsConfig != nil)
+	log.Infof("server transport created, tls=%v", s.TLSConfig != nil)
 	if err := grpcServer.Serve(listener); err != nil {
 		sentry.CaptureException(err)
 		log.Fatalf("failed to serve: %v", err)

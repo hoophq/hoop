@@ -160,8 +160,8 @@ func runDefaultMode(config *agentconfig.Config) error {
 		return err
 	}
 	clientConfig.UserAgent = defaultUserAgent
-	log.Infof("version=%v, platform=%v, type=%v, mode=%v, grpc_server=%v, tls=%v, strict-tls=%v - starting agent",
-		vi.Version, vi.Platform, config.Type, config.AgentMode, config.URL, !config.IsInsecure(), vi.StrictTLS)
+	log.Infof("version=%v, platform=%v, type=%v, mode=%v, grpc_server=%v, tls=%v - starting agent",
+		vi.Version, vi.Platform, config.Type, config.AgentMode, config.URL, !config.IsInsecure())
 
 	return backoff.Exponential2x(func(v time.Duration) error {
 		log.With("version", vi.Version, "backoff", v.String()).

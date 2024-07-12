@@ -2,6 +2,9 @@ package gateway
 
 import (
 	"bytes"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -52,6 +55,11 @@ func Run() {
 		log.Fatal(err)
 	}
 
+	tlsConfig, err := loadServerCertificates()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	// by default start postgrest process
 	if err := pgrest.Run(); err != nil {
 		log.Fatal(err)
@@ -86,9 +94,11 @@ func Run() {
 		RunbooksHandler: runbooks.Handler{},
 		IDProvider:      idProvider,
 		GrpcURL:         grpcURL,
+		TLSConfig:       tlsConfig,
 	}
 
 	g := &transport.Server{
+		TLSConfig:     tlsConfig,
 		ApiHostname:   appconfig.Get().ApiHostname(),
 		ReviewService: reviewService,
 		IDProvider:    idProvider,
@@ -178,4 +188,40 @@ func changeWebappApiURL(apiURL string) error {
 		}
 	}
 	return nil
+}
+
+func loadServerCertificates() (*tls.Config, error) {
+	tlsKeyEnc := os.Getenv("TLS_KEY")
+	tlsCertEnc := os.Getenv("TLS_CERT")
+	tlsCAEnc := os.Getenv("TLS_CA")
+	if tlsKeyEnc == "" && tlsCertEnc == "" {
+		return nil, nil
+	}
+	pemPrivateKeyData, err := base64.StdEncoding.DecodeString(tlsKeyEnc)
+	if err != nil {
+		return nil, fmt.Errorf("failed decoding TLS_KEY, err=%v", err)
+	}
+	pemCertData, err := base64.StdEncoding.DecodeString(tlsCertEnc)
+	if err != nil {
+		return nil, fmt.Errorf("failed decoding TLS_CERT, err=%v", err)
+	}
+	cert, err := tls.X509KeyPair(pemCertData, pemPrivateKeyData)
+	if err != nil {
+		return nil, fmt.Errorf("failed parsing key pair, err=%v", err)
+	}
+	var certPool *x509.CertPool
+	if tlsCAEnc != "" {
+		tlsCAData, err := base64.StdEncoding.DecodeString(tlsCAEnc)
+		if err != nil {
+			return nil, fmt.Errorf("failed decoding TLS_CA, err=%v", err)
+		}
+		certPool = x509.NewCertPool()
+		if !certPool.AppendCertsFromPEM(tlsCAData) {
+			return nil, fmt.Errorf("failed creating cert pool for TLS_CA")
+		}
+	}
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		RootCAs:      certPool,
+	}, nil
 }
