@@ -22,9 +22,9 @@
 (defn sessions-list []
   (let [user (rf/subscribe [:users->current-user])]
     (fn [sessions status]
-      [:div {:class "relative h-full overflow-auto"}
-       (when (and (= status :loading) (empty? (:data sessions)))
-         [loading-list-view])
+      [:div {:class "relative h-full overflow-y-auto"}
+      ;;  (when (and (= status :loading) (empty? (:data sessions)))
+      ;;    [loading-list-view])
        (when (and (empty? (:data sessions)) (not= status :loading))
          [empty-list-view])
        (doall

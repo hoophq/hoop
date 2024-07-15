@@ -1,11 +1,11 @@
 {
   "name": "webapp",
-  "version": "1.22.0",
+  "version": "1.22.2",
   "scripts": {
     "ancient": "clojure -Sdeps '{:deps {com.github.liquidz/antq {:mvn/version \"RELEASE\"}}}' -m antq.core",
     "genversion": "npx genversion src/webapp/version.js",
     "shadow:watch:hoop-ui": "npx shadow-cljs watch hoop-ui browser-test karma-test",
-    "postcss:watch": "cross-env TAILWIND_MODE=watch postcss src/css/tailwind.css -o ./resources/public/css/site.css --verbose -w",
+    "postcss:watch": "cross-env postcss src/css/tailwind.css -o ./resources/public/css/site.css --verbose -w",
     "dev:hoop-ui": "source .env && run-p -l genversion shadow:watch:hoop-ui postcss:watch",
     "shadow:release:hoop-ui": "npx shadow-cljs release hoop-ui",
     "postcss:build": "cross-env TAILWIND_MODE=build postcss src/css/tailwind.css -o ./resources/public/css/site.css --verbose",
@@ -27,7 +27,6 @@
     "@segment/analytics-next": "^1.64.0",
     "@sentry/browser": "7.12.0",
     "@sentry/tracing": "7.12.0",
-    "@tailwindcss/forms": "^0.3.4",
     "@uiw/codemirror-theme-dracula": "^4.21.21",
     "@uiw/codemirror-theme-github": "^4.21.21",
     "@uiw/codemirror-theme-nord": "^4.21.21",
@@ -47,21 +46,23 @@
     "react": "17.0.2",
     "react-dom": "17.0.2",
     "react-select": "^5.7.0",
+    "react-tailwindcss-datepicker": "^1.6.6",
     "unique-names-generator": "^4.7.1"
   },
   "devDependencies": {
+    "@tailwindcss/forms": "^0.5.7",
     "asciinema-player": "^3.0.1",
-    "autoprefixer": "^10.4.2",
+    "autoprefixer": "^10.4.19",
     "cssnano": "^5.0.15",
     "karma": "6.3.16",
     "karma-chrome-launcher": "3.1.0",
     "karma-cljs-test": "0.1.0",
     "karma-junit-reporter": "2.0.1",
     "npm-run-all": "^4.1.5",
-    "postcss": "^8.4.5",
+    "postcss": "^8.4.39",
     "postcss-cli": "^9.1.0",
     "postcss-import": "^15.1.0",
     "shadow-cljs": "2.16.12",
-    "tailwindcss": "^2.2.4"
+    "tailwindcss": "^3.4.4"
   }
 }
