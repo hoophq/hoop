@@ -1,10 +1,15 @@
 name: hoop
 
 services:
+  bootstrap:
+    image: nginx:1.27.0
+    volumes:
+    - ./hoopdata:/hoopdata
+    environment:
+    - HOOP_PUBLIC_HOSTNAME=${HOOP_PUBLIC_HOSTNAME}
+    command: /hoopdata/bootstrap.sh
   db:
     image: postgres:16
-    ports:
-    - 5432:5432
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -18,14 +23,13 @@ services:
       retries: 10
       start_period: '20s'
   idp:
-    image: 'ghcr.io/zitadel/zitadel:v2.56.0'
-    command: 'start-from-init --masterkey "MasterkeyNeedsToHave32Characters" --tlsMode external'
+    image: ghcr.io/zitadel/zitadel:v2.56.0
+    command: 'start-from-init --masterkeyFile /hoopdata/zitadel-master.key --tlsMode external'
     # TODO: add healthcheck
     ports:
     - 8080:8080
     volumes:
     - ./hoopdata:/hoopdata
-    env_file: '.env'
     environment:
       - ZITADEL_EXTERNALSECURE=true
       - ZITADEL_EXTERNALDOMAIN=auth.${HOOP_PUBLIC_HOSTNAME}
@@ -46,11 +50,12 @@ services:
     depends_on:
       db:
         condition: 'service_healthy'
+      bootstrap:
+        condition: service_completed_successfully
   nginx:
-    image: "nginx"
-    env_file: '.env'
+    image: nginx:1.27.0
     command:
-    - /bin/sh
+    - /bin/bash
     - -c
     - |
       until curl -k -s -f -o /dev/null "http://idp:8080/healthz"
@@ -58,25 +63,24 @@ services:
         echo "waiting idp service to be become ready ..."
         sleep 1
       done
-      sed "s|127.0.0.1.nip.io|$HOOP_PUBLIC_HOSTNAME|g" /tmp/nginx-default.conf > /etc/nginx/nginx.conf
+      mkdir -p /etc/certs
+      cp /hoopdata/tls/server.crt /etc/certs/server.crt
+      cp /hoopdata/tls/server.key /etc/certs/server.key
+      sed "s|HOOP_PUBLIC_HOSTNAME_PLACEHOLDER|${HOOP_PUBLIC_HOSTNAME}|g" /hoopdata/tls/nginx.conf > /etc/nginx/nginx.conf
       /docker-entrypoint.sh nginx -g "daemon off;"
     volumes:
-    - ./dist/dev/hooplinux:/app/hoop
-    - ./hoopdata/tls/nginx.conf:/tmp/nginx-default.conf:ro
-    - ./hoopdata/tls/server.crt:/etc/certs/server.crt:ro
-    - ./hoopdata/tls/server.key:/etc/certs/server.key:ro
+    - ./hoopdata/tls/:/hoopdata/tls/
     depends_on:
     - idp
     ports:
     - 443:443
-    - 80:80
     healthcheck:
       test: 'curl -f http://idp:8080/healthz'
       interval: '1s'
       timeout: '30s'
       retries: 15
       start_period: '20s'
-  idp_provisioner:
+  idp-provisioner:
     image: hashicorp/terraform:1.9.2
     environment:
     - TF_VAR_public_hostname=${HOOP_PUBLIC_HOSTNAME}
@@ -108,10 +112,9 @@ services:
     - PLUGIN_INDEX_PATH=/hoopdata/sessions/indexes
     - POSTGRES_DB_URI=postgres://postgres:postgres@db:5432/hoopdb?sslmode=disable
     - API_URL=https://${HOOP_PUBLIC_HOSTNAME}
-    - GRPC_URL=https://${HOOP_PUBLIC_HOSTNAME}:443
+    - GRPC_URL=grpcs://${HOOP_PUBLIC_HOSTNAME}:443
     env_file: '.env'
     volumes:
-    - ./dist/dev/hooplinux:/app/hoop
     - ./hoopdata:/hoopdata/
     - ./hoopdata/tls/ca.crt:/etc/ssl/certs/ca-certificates.crt:ro
     command:
@@ -121,12 +124,14 @@ services:
       export IDP_ISSUER=https://auth.${HOOP_PUBLIC_HOSTNAME}
       export IDP_CLIENT_ID=$(cat /hoopdata/terraform/outputs/default_client_id)
       export IDP_CLIENT_SECRET=$(cat /hoopdata/terraform/outputs/default_client_secret)
+      export IDP_AUDIENCE=
+      export IDP_URI=
       hoop start gateway
     ports:
     - 8009:8009
     - 8010:8010
     depends_on:
-      idp_provisioner:
+      idp-provisioner:
         condition: service_completed_successfully
   agent:
     image: hoophq/hoopdev

@@ -63,7 +63,7 @@ func (c *Config) GrpcClientConfig() (grpc.ClientConfig, error) {
 	srvAddr, err := grpc.ParseServerAddress(c.URL)
 	return grpc.ClientConfig{
 		ServerAddress: srvAddr,
-		TLSServerName: os.Getenv("TLS_SERVER_NAME"),
+		TLSServerName: os.Getenv("HOOP_TLSSERVERNAME"),
 		Token:         c.Token,
 		Insecure:      c.IsInsecure(),
 	}, err

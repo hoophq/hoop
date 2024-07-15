@@ -78,14 +78,14 @@ resource "zitadel_login_texts" "default" {
   language = "en"
 
   login_text = {
-    description                 = ""
+    description                 = " "
     description_linking_process = ""
     external_user_description   = ""
     login_name_label            = "Email"
     login_name_placeholder      = "user@domain.tld"
     next_button_text            = "Next"
     register_button_text        = "Register"
-    title                       = "Login with your Email"
+    title                       = "Login with your User or Email"
     title_linking_process       = ""
     user_must_be_member_of_org  = "The user must be member of the {{.OrgName}} organization."
     user_name_placeholder       = "username"

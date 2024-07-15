@@ -13,6 +13,7 @@ import (
 
 	"github.com/hoophq/hoop/client/cmd/styles"
 	clientconfig "github.com/hoophq/hoop/client/config"
+	"github.com/hoophq/hoop/common/httpclient"
 	"github.com/hoophq/hoop/common/log"
 	"golang.org/x/text/runes"
 	"golang.org/x/text/transform"
@@ -227,7 +228,7 @@ func httpRequest(apir *apiResource) (any, http.Header, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", apir.conf.Token))
 	req.Header.Set("User-Agent", fmt.Sprintf("hoopcli/%s", hoopVersionStr))
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpclient.DefaultClient.Do(req)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -276,7 +277,7 @@ func httpDeleteRequest(apir *apiResource) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", apir.conf.Token))
 	req.Header.Set("User-Agent", fmt.Sprintf("hoopcli/%s", hoopVersionStr))
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpclient.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -308,7 +309,7 @@ func httpBodyRequest(apir *apiResource, method string, bodyMap map[string]any) (
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", apir.conf.Token))
 	req.Header.Set("User-Agent", fmt.Sprintf("hoopcli/%s", hoopVersionStr))
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpclient.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

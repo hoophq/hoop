@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/base64"
 	"fmt"
 	"io"
 	"net/url"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/common/appruntime"
+	"github.com/hoophq/hoop/common/envloader"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
 	"github.com/hoophq/hoop/common/version"
@@ -100,9 +100,12 @@ func PreConnectRPC(cc ClientConfig, req *pb.PreConnectRequest) (*pb.PreConnectRe
 	}
 	// TODO: it's deprecated, use oauth.TokenSource
 	rpcCred := oauth.NewOauthAccess(&oauth2.Token{AccessToken: cc.Token})
-	tlsConfig := &tls.Config{ServerName: cc.TLSServerName}
+	tlsCred, err := loadTLSCredentials(cc)
+	if err != nil {
+		return nil, err
+	}
 	dialOptions := []grpc.DialOption{
-		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
+		grpc.WithTransportCredentials(tlsCred),
 		grpc.WithPerRPCCredentials(rpcCred),
 		grpc.WithUserAgent(cc.UserAgent),
 		grpc.WithDefaultCallOptions(
@@ -154,26 +157,21 @@ func Connect(clientConfig ClientConfig, opts ...*ClientOptions) (pb.ClientTransp
 
 func loadTLSCredentials(cc ClientConfig) (credentials.TransportCredentials, error) {
 	var certPool *x509.CertPool
-	if tlsCA := os.Getenv("TLS_CA"); tlsCA != "" {
-		pemServerCA, err := base64.StdEncoding.DecodeString(tlsCA)
-		if err != nil {
-			pemServerCA, err = os.ReadFile(tlsCA)
-			if err != nil {
-				return nil, err
-			}
-		}
+	tlsCA, err := envloader.GetEnv("HOOP_TLSCA")
+	if err != nil {
+		return nil, err
+	}
+	if tlsCA != "" {
 		certPool = x509.NewCertPool()
-		if !certPool.AppendCertsFromPEM(pemServerCA) {
-			return nil, fmt.Errorf("failed to add server CA's certificate")
+		if !certPool.AppendCertsFromPEM([]byte(tlsCA)) {
+			return nil, fmt.Errorf("unable to load HOOP_TLSCA: failed to append root CA into cert pool")
 		}
 	}
-
 	// Create the credentials and return it
 	config := &tls.Config{
 		RootCAs:    certPool,
 		ServerName: cc.TLSServerName,
 	}
-
 	return credentials.NewTLS(config), nil
 }
 

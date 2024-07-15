@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/getsentry/sentry-go"
+	"github.com/hoophq/hoop/common/envloader"
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
@@ -191,32 +191,29 @@ func changeWebappApiURL(apiURL string) error {
 }
 
 func loadServerCertificates() (*tls.Config, error) {
-	tlsKeyEnc := os.Getenv("TLS_KEY")
-	tlsCertEnc := os.Getenv("TLS_CERT")
-	tlsCAEnc := os.Getenv("TLS_CA")
-	if tlsKeyEnc == "" && tlsCertEnc == "" {
+	tlsCA, err := envloader.GetEnv("TLS_CA")
+	if err != nil {
+		return nil, fmt.Errorf("faile loading TLS_CA: %v", err)
+	}
+	tlsKey, err := envloader.GetEnv("TLS_KEY")
+	if err != nil {
+		return nil, fmt.Errorf("faile loading TLS_KEY: %v", err)
+	}
+	tlsCert, err := envloader.GetEnv("TLS_CERT")
+	if err != nil {
+		return nil, fmt.Errorf("faile loading TLS_CERT: %v", err)
+	}
+	if tlsKey == "" || tlsCert == "" {
 		return nil, nil
 	}
-	pemPrivateKeyData, err := base64.StdEncoding.DecodeString(tlsKeyEnc)
-	if err != nil {
-		return nil, fmt.Errorf("failed decoding TLS_KEY, err=%v", err)
-	}
-	pemCertData, err := base64.StdEncoding.DecodeString(tlsCertEnc)
-	if err != nil {
-		return nil, fmt.Errorf("failed decoding TLS_CERT, err=%v", err)
-	}
-	cert, err := tls.X509KeyPair(pemCertData, pemPrivateKeyData)
+	cert, err := tls.X509KeyPair([]byte(tlsCert), []byte(tlsKey))
 	if err != nil {
 		return nil, fmt.Errorf("failed parsing key pair, err=%v", err)
 	}
 	var certPool *x509.CertPool
-	if tlsCAEnc != "" {
-		tlsCAData, err := base64.StdEncoding.DecodeString(tlsCAEnc)
-		if err != nil {
-			return nil, fmt.Errorf("failed decoding TLS_CA, err=%v", err)
-		}
+	if tlsCA != "" {
 		certPool = x509.NewCertPool()
-		if !certPool.AppendCertsFromPEM(tlsCAData) {
+		if !certPool.AppendCertsFromPEM([]byte(tlsCA)) {
 			return nil, fmt.Errorf("failed creating cert pool for TLS_CA")
 		}
 	}

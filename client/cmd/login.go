@@ -17,6 +17,7 @@ import (
 	"github.com/hoophq/hoop/client/cmd/static"
 	proxyconfig "github.com/hoophq/hoop/client/config"
 	"github.com/hoophq/hoop/common/clientconfig"
+	"github.com/hoophq/hoop/common/httpclient"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/spf13/cobra"
@@ -156,7 +157,7 @@ func doLogin(apiURL string) (string, error) {
 }
 
 func requestForUrl(apiUrl string) (string, error) {
-	c := http.DefaultClient
+	c := httpclient.DefaultClient
 	url := fmt.Sprintf("%s/api/login", apiUrl)
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
@@ -186,7 +187,7 @@ func fetchGrpcURL(apiURL, bearerToken string) (string, error) {
 		return "", err
 	}
 	req.Header.Add("authorization", fmt.Sprintf("Bearer %s", bearerToken))
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpclient.DefaultClient.Do(req)
 	if err != nil {
 		return "", err
 	}

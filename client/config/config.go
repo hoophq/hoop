@@ -97,7 +97,7 @@ func (c *Config) GrpcClientConfig() (grpc.ClientConfig, error) {
 	srvAddr, err := grpc.ParseServerAddress(c.GrpcURL)
 	return grpc.ClientConfig{
 		ServerAddress: srvAddr,
-		TLSServerName: os.Getenv("TLS_SERVER_NAME"),
+		TLSServerName: os.Getenv("HOOP_TLSSERVERNAME"),
 		Token:         c.Token,
 		// connect without tls only on localhost
 		Insecure: c.IsInsecure(),
@@ -107,7 +107,6 @@ func (c *Config) GrpcClientConfig() (grpc.ClientConfig, error) {
 func (c *Config) isEmpty() bool { return c.GrpcURL == "" && c.ApiURL == "" }
 func (c *Config) IsInsecure() (insecure bool) {
 	switch {
-	case os.Getenv("TLS_SERVER_NAME") != "":
 	case c.Mode == clientconfig.ModeLocal,
 		c.GrpcURL == grpc.LocalhostAddr:
 		insecure = true
