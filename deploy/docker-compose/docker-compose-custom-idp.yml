@@ -53,7 +53,6 @@ services:
     - GRPC_URL=grpcs://${HOOP_PUBLIC_HOSTNAME}:443
     env_file: '.env'
     volumes:
-    - ./dist/dev/hooplinux:/app/hoop
     - ./hoopdata:/hoopdata/
     - ./hoopdata/tls/ca.crt:/etc/ssl/certs/ca-certificates.crt:ro
     command: hoop start gateway
@@ -67,7 +66,6 @@ services:
     image: hoophq/hoopdev
     platform: linux/amd64
     volumes:
-    - ./dist/dev/hooplinux:/app/hoop
     - ./hoopdata/tls/ca.crt:/etc/ssl/certs/ca-certificates.crt:ro
     environment:
     - LOG_LEVEL=info
