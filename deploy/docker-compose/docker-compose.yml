@@ -95,6 +95,7 @@ services:
       terraform output -raw default_client_id > /hoopdata/terraform/outputs/default_client_id
       terraform output -raw default_client_secret > /hoopdata/terraform/outputs/default_client_secret
     volumes:
+    - tfstate:/tmp/
     - ./hoopdata/zitadel-admin-sa.json:/hoopdata/zitadel-admin-sa.json:ro
     - ./hoopdata/tls/ca.crt:/etc/ssl/certs/ca-certificates.crt:ro
     - ./hoopdata/terraform:/hoopdata/terraform
@@ -111,10 +112,12 @@ services:
     - PLUGIN_AUDIT_PATH=/hoopdata/sessions
     - PLUGIN_INDEX_PATH=/hoopdata/sessions/indexes
     - POSTGRES_DB_URI=postgres://postgres:postgres@db:5432/hoopdb?sslmode=disable
-    - API_URL=https://${HOOP_PUBLIC_HOSTNAME}
-    - GRPC_URL=grpcs://${HOOP_PUBLIC_HOSTNAME}:443
+    - API_URL=https://app.${HOOP_PUBLIC_HOSTNAME}
+    - GRPC_URL=grpcs://app.${HOOP_PUBLIC_HOSTNAME}:443
     env_file: '.env'
     volumes:
+    # TODO: remove-me
+    - ./dist/dev/hooplinux:/app/hoop
     - ./hoopdata:/hoopdata/
     - ./hoopdata/tls/ca.crt:/etc/ssl/certs/ca-certificates.crt:ro
     command:
@@ -137,6 +140,8 @@ services:
     image: hoophq/hoopdev
     platform: linux/amd64
     volumes:
+    # TODO: remove-me
+    - ./dist/dev/hooplinux:/app/hoop
     - ./hoopdata/tls/ca.crt:/etc/ssl/certs/ca-certificates.crt:ro
     environment:
     - LOG_LEVEL=info
@@ -162,7 +167,7 @@ services:
           ON CONFLICT DO NOTHING;
       COMMIT;
       EOF
-      export HOOP_KEY=grpcs://system:$(printenv SECRET_KEY | tr -d '\n')@${HOOP_PUBLIC_HOSTNAME}:443?mode=standard
+      export HOOP_KEY=grpcs://system:$(printenv SECRET_KEY | tr -d '\n')@app.${HOOP_PUBLIC_HOSTNAME}:443?mode=standard
       hoop start agent
 
 volumes:

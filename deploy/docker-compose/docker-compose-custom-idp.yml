@@ -49,10 +49,11 @@ services:
     - PLUGIN_AUDIT_PATH=/hoopdata/sessions
     - PLUGIN_INDEX_PATH=/hoopdata/sessions/indexes
     - POSTGRES_DB_URI=postgres://postgres:postgres@db:5432/hoopdb?sslmode=disable
-    - API_URL=https://${HOOP_PUBLIC_HOSTNAME}
+    - API_URL=https://app.${HOOP_PUBLIC_HOSTNAME}
     - GRPC_URL=grpcs://${HOOP_PUBLIC_HOSTNAME}:443
     env_file: '.env'
     volumes:
+    - ./dist/dev/hooplinux:/app/hoop
     - ./hoopdata:/hoopdata/
     - ./hoopdata/tls/ca.crt:/etc/ssl/certs/ca-certificates.crt:ro
     command: hoop start gateway
@@ -66,6 +67,7 @@ services:
     image: hoophq/hoopdev
     platform: linux/amd64
     volumes:
+    - ./dist/dev/hooplinux:/app/hoop
     - ./hoopdata/tls/ca.crt:/etc/ssl/certs/ca-certificates.crt:ro
     environment:
     - LOG_LEVEL=info
@@ -91,6 +93,6 @@ services:
           ON CONFLICT DO NOTHING;
       COMMIT;
       EOF
-      export HOOP_KEY=grpcs://system:$(printenv SECRET_KEY | tr -d '\n')@${HOOP_PUBLIC_HOSTNAME}:443?mode=standard
+      export HOOP_KEY=grpcs://system:$(printenv SECRET_KEY | tr -d '\n')@app.${HOOP_PUBLIC_HOSTNAME}:443?mode=standard
       hoop start agent
 

@@ -59,7 +59,9 @@ func RunV2(req *pb.PreConnectRequest, runtimeEnvs map[string]string, commandArgs
 	if err != nil {
 		log.With("version", vi.Version).Fatal(err)
 	}
-	log.With("version", vi.Version).Infof("initializing agent, args=%v", len(commandArgs))
+	log.With("version", vi.Version).Infof("agent started, args=%v", len(commandArgs))
+	log.Debugf("version=%v, platform=%v, type=%v, mode=%v, grpc_server=%v, tls=%v, tlsca=%v - starting agent",
+		vi.Version, vi.Platform, c.Type, c.AgentMode, c.URL, !c.IsInsecure(), c.HasTlsCA())
 	clientConfig.UserAgent = defaultUserAgent
 	cmd := newCommand(runtimeEnvs, commandArgs)
 	handleOsInterrupt(func() {
@@ -160,8 +162,8 @@ func runDefaultMode(config *agentconfig.Config) error {
 		return err
 	}
 	clientConfig.UserAgent = defaultUserAgent
-	log.Infof("version=%v, platform=%v, type=%v, mode=%v, grpc_server=%v, tls=%v - starting agent",
-		vi.Version, vi.Platform, config.Type, config.AgentMode, config.URL, !config.IsInsecure())
+	log.Infof("version=%v, platform=%v, type=%v, mode=%v, grpc_server=%v, tls=%v, tlsca=%v - starting agent",
+		vi.Version, vi.Platform, config.Type, config.AgentMode, config.URL, !config.IsInsecure(), config.HasTlsCA())
 
 	return backoff.Exponential2x(func(v time.Duration) error {
 		log.With("version", vi.Version, "backoff", v.String()).

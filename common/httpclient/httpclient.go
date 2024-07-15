@@ -8,11 +8,7 @@ import (
 	"net"
 	"net/http"
 	"time"
-
-	"github.com/hoophq/hoop/common/envloader"
 )
-
-var DefaultClient = loadHttpClient()
 
 func defaultTransportDialContext(dialer *net.Dialer) func(context.Context, string, string) (net.Conn, error) {
 	return dialer.DialContext
@@ -34,18 +30,13 @@ func (c *httpClient) Do(req *http.Request) (*http.Response, error) {
 	return c.client.Do(req)
 }
 
-func loadHttpClient() HttpClient {
+func NewHttpClient(tlsCA string) HttpClient {
 	client := httpClient{http.DefaultClient, nil}
 	var certPool *x509.CertPool
-	tlsCa, err := envloader.GetEnv("HOOP_TLSCA")
-	if err != nil {
-		client.err = err
-		return &client
-	}
-	if tlsCa != "" {
+	if tlsCA != "" {
 		certPool = x509.NewCertPool()
-		if !certPool.AppendCertsFromPEM([]byte(tlsCa)) {
-			client.err = fmt.Errorf("unable to load HOOP_TLSCA: failed to append root CA into cert pool")
+		if !certPool.AppendCertsFromPEM([]byte(tlsCA)) {
+			client.err = fmt.Errorf("failed to append root CA into cert pool")
 			return &client
 		}
 		// from http.DefaultTransport

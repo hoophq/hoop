@@ -2,6 +2,11 @@
 
 set -e
 
+if [ -z "${HOOP_PUBLIC_HOSTNAME}" ]; then
+    echo "--> the env HOOP_PUBLIC_HOSTNAME is required on .env file!"
+    exit 1
+fi
+
 if [ ! -f /hoopdata/zitadel-master.key ]; then
     openssl rand -base64 22 | tr -d '\n' > /hoopdata/zitadel-master.key
     chmod 0400 /hoopdata/zitadel-master.key || true
@@ -30,7 +35,7 @@ keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
 subjectAltName = @alt_names
 [alt_names]
 DNS.1 = gateway
-DNS.2 = ${HOOP_PUBLIC_HOSTNAME}
+DNS.2 = app.${HOOP_PUBLIC_HOSTNAME}
 DNS.3 = auth.${HOOP_PUBLIC_HOSTNAME}
 IP.1 = 127.0.0.1
 EOF

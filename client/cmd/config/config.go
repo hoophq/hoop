@@ -14,12 +14,14 @@ import (
 var (
 	apiURLFlag  string
 	grpcURLFlag string
+	tlsCAFlag   string
 	viewRawFlag bool
 )
 
 func init() {
 	createCmd.Flags().StringVar(&apiURLFlag, "api-url", "", "The API URL to configure (required)")
 	createCmd.Flags().StringVar(&grpcURLFlag, "grpc-url", "", "The gRPC URL to configure (optional)")
+	createCmd.Flags().StringVar(&tlsCAFlag, "tls-ca", "", "The path to the TLS certificate authority to use (optional)")
 	viewCmd.Flags().BoolVar(&viewRawFlag, "raw", false, "Display sensitive credentials information")
 
 	_ = createCmd.MarkFlagRequired("api-url")
@@ -48,8 +50,15 @@ var createCmd = &cobra.Command{
 		if _, err := grpc.ParseServerAddress(apiURL); err != nil {
 			styles.PrintErrorAndExit("--api-url value is not an http address")
 		}
-
-		filepath, err := clientconfig.NewConfigFile(apiURL, grpcURLFlag, os.Getenv("HOOP_TOKEN"))
+		var tlsCA string
+		if tlsCAFlag != "" {
+			data, err := os.ReadFile(tlsCAFlag)
+			if err != nil {
+				styles.PrintErrorAndExit("failed reading --tls-ca file: %v", err)
+			}
+			tlsCA = string(data)
+		}
+		filepath, err := clientconfig.NewConfigFile(apiURL, grpcURLFlag, os.Getenv("HOOP_TOKEN"), tlsCA)
 		if err != nil {
 			styles.PrintErrorAndExit("failed creating configuration file, err=%v", err)
 		}
@@ -69,6 +78,9 @@ var viewCmd = &cobra.Command{
 			fmt.Printf("token=%s\n", c.Token)
 		} else {
 			fmt.Println("token=OMITTED")
+		}
+		if tlsCA := c.TlsCAB64Enc; tlsCA != "" {
+			fmt.Printf("tls_ca=%s\n", tlsCA)
 		}
 	},
 }

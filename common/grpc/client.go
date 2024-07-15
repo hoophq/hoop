@@ -14,7 +14,6 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/common/appruntime"
-	"github.com/hoophq/hoop/common/envloader"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
 	"github.com/hoophq/hoop/common/version"
@@ -42,13 +41,14 @@ type (
 		// The server address to connect to (HOST:PORT)
 		ServerAddress string
 		Token         string
-		// This is used to specify a different DNS name
-		// when connecting via TLS
-		TLSServerName string
 		UserAgent     string
 		// Insecure indicates if it will connect without TLS
 		// It should only be used in secure networks!
 		Insecure bool
+
+		TLSCA string
+		// This is used to specify a different DNS name when connecting via TLS
+		TLSServerName string
 	}
 )
 
@@ -157,14 +157,10 @@ func Connect(clientConfig ClientConfig, opts ...*ClientOptions) (pb.ClientTransp
 
 func loadTLSCredentials(cc ClientConfig) (credentials.TransportCredentials, error) {
 	var certPool *x509.CertPool
-	tlsCA, err := envloader.GetEnv("HOOP_TLSCA")
-	if err != nil {
-		return nil, err
-	}
-	if tlsCA != "" {
+	if cc.TLSCA != "" {
 		certPool = x509.NewCertPool()
-		if !certPool.AppendCertsFromPEM([]byte(tlsCA)) {
-			return nil, fmt.Errorf("unable to load HOOP_TLSCA: failed to append root CA into cert pool")
+		if !certPool.AppendCertsFromPEM([]byte(cc.TLSCA)) {
+			return nil, fmt.Errorf("failed to append root CA into cert pool")
 		}
 	}
 	// Create the credentials and return it
