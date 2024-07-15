@@ -22,14 +22,14 @@
                                   {:text "Database" :value "database"}
                                   {:text "Application" :value "application"}]
         searched-connections-types (r/atom nil)
-        searched-criteria-connections-type (r/atom "")
+        searched-criteria-connections-types (r/atom "")
 
         date (r/atom #js{"startDate" (if-let [date (get filters "start_date")]
                                        (subs date 0 10) "")
                          "endDate" (if-let [date (get filters "end_date")]
                                      (subs date 0 10) "")})
         users-options (fn [users]
-                        (map #(into {} {:value (:email %)
+                        (map #(into {} {:value (:id %)
                                         :text (:email %)}) users))
         dispatch-date (fn [date]
                         (let [iso-date (fn [filter-key date]
@@ -48,10 +48,9 @@
             users-search-results (if (empty? @searched-users)
                                    (users-options @users)
                                    @searched-users)
-            start-date (if-let [date (get filters "start_date")]
-                         (subs date 0 10) "")
-            end-date (if-let [date (get filters "end_date")]
-                       (subs date 0 10) "")]
+            connection-types-search-options (if (empty? @searched-connections-types)
+                                              connection-types-options
+                                              @searched-connections-types)]
         [:div {:class "flex gap-regular flex-wrap mb-4"}
          [:> ui/Popover {:class "relative"}
           (fn [params]
@@ -88,7 +87,7 @@
                    :hide-results-list true
                    :placeholder "Search"
                    :name "users-search"
-                   :on-change #(reset! searched-criteria-users user)
+                   :on-change #(reset! searched-criteria-users %)
                    :loading? (empty? (users-options @users))
                    :size :small}]]
 
@@ -104,15 +103,16 @@
                       [:li {:class (str "flex justify-between cursor-pointer items-center gap-small "
                                         "text-sm text-gray-700 hover:bg-gray-200 rounded-md px-3 py-2")
                             :on-click (fn []
-                                        (let [u (first (filter
-                                                        #(= (:text user) (:email %))
-                                                        @users))
-                                              user-id (:id u)]
-                                          (rf/dispatch [:audit->filter-sessions {"user" user-id}])
-                                          (.close params)))}
-                       [:div {:class "w-full flex items-center gap-regular"}
+                                        (rf/dispatch [:audit->filter-sessions
+                                                      {"user" (if (= (:value user) (get filters "user"))
+                                                                ""
+                                                                (:value user))}])
+                                        (.close params))}
+                       [:div {:class "w-full flex justify-between items-center gap-regular"}
                         [:span {:class "block truncate"}
-                         (:text user)]]])]])]]]))]
+                         (:text user)]
+                        (when (= (:value user) (get filters "user"))
+                          [:> hero-micro-icon/CheckIcon {:class "w-4 h-4 text-black"}])]])]])]]]))]
 
          [:> ui/Popover {:class "relative"}
           (fn [params]
@@ -141,7 +141,7 @@
                [:div
                 [:div {:class "mb-2"}
                  [searchbox/main
-                  {:options (:results connections)
+                  {:options (:results @connections)
                    :display-key :name
                    :variant :small
                    :searchable-keys [:name :type :tags]
@@ -165,14 +165,20 @@
                       [:li {:class (str "flex justify-between cursor-pointer items-center gap-small "
                                         "text-sm text-gray-700 hover:bg-gray-200 rounded-md px-3 py-2")
                             :on-click (fn []
-                                        (rf/dispatch [:audit->filter-sessions {"connection" (:name connection)}])
+                                        (rf/dispatch [:audit->filter-sessions
+                                                      {"connection" (if (= (:name connection) (get filters "connection"))
+                                                                      ""
+                                                                      (:name connection))}])
                                         (.close params))}
-                       [:div {:class "w-full flex items-center gap-regular"}
-                        [:figure {:class "w-5"}
-                         [:img {:src  (connection-constants/get-connection-icon connection)
-                                :class "w-9"}]]
-                        [:span {:class "block truncate"}
-                         (:name connection)]]])]])]]]))]
+                       [:div {:class "w-full flex justify-between items-center gap-regular"}
+                        [:div {:class "flex items-center gap-small"}
+                         [:figure {:class "w-5"}
+                          [:img {:src  (connection-constants/get-connection-icon connection)
+                                 :class "w-9"}]]
+                         [:span {:class "block truncate"}
+                          (:name connection)]]
+                        (when (= (:name connection) (get filters "connection"))
+                          [:> hero-micro-icon/CheckIcon {:class "w-4 h-4 text-black"}])]])]])]]]))]
 
          [:> ui/Popover {:class "relative"}
           (fn [params]
@@ -191,7 +197,7 @@
                  [:div {:class "flex items-center justify-center rounded-full h-4 w-4 bg-gray-800"}
                   [:span {:class "text-white text-xxs font-bold"}
                    "1"]])]
-              [:> ui/Popover.Panel {:class (str "absolute mt-2 z-10 w-96 max-h-96 "
+              [:> ui/Popover.Panel {:class (str "absolute mt-2 z-10 w-64 max-h-96 "
                                                 "overflow-y-auto bg-white border border-gray-300 "
                                                 "rounded-lg shadow-lg p-4")}
                [:div {:class (str "absolute w-2 h-2 "
@@ -204,31 +210,36 @@
                   {:options connection-types-options
                    :display-key :name
                    :variant :small
-                   :searchable-keys [:name :type :tags]
+                   :searchable-keys [:text :value]
                    :on-change-results-cb #(reset! searched-connections-types %)
                    :hide-results-list true
                    :placeholder "Search"
                    :name "connection-search"
-                   :on-change #(reset! searched-criteria-connections-type %)
+                   :on-change #(reset! searched-criteria-connections-types %)
                    :size :small}]]
 
                 (if (and (empty? @searched-connections-types)
-                         (> (count @searched-criteria-connections-type) 0))
+                         (> (count @searched-criteria-connections-types) 0))
                   [:div {:class "px-regular py-large text-xs text-gray-700 italic"}
-                   "No connections with this criteria"]
+                   "No connection type with this criteria"]
 
                   [:div {:class "relative"}
                    [:ul
-                    (for [type connection-types-options]
+                    (for [type connection-types-search-options]
                       ^{:key (:value type)}
                       [:li {:class (str "flex justify-between cursor-pointer items-center gap-small "
                                         "text-sm text-gray-700 hover:bg-gray-200 rounded-md px-3 py-2")
                             :on-click (fn []
-                                        (rf/dispatch [:audit->filter-sessions {"type" (:value type)}])
+                                        (rf/dispatch [:audit->filter-sessions
+                                                      {"type" (if (= (:value type) (get filters "type"))
+                                                                ""
+                                                                (:value type))}])
                                         (.close params))}
-                       [:div {:class "w-full flex items-center gap-regular"}
+                       [:div {:class "w-full flex justify-between items-center gap-regular"}
                         [:span {:class "block truncate"}
-                         (:text type)]]])]])]]]))]
+                         (:text type)]
+                        (when (= (:value type) (get filters "type"))
+                          [:> hero-micro-icon/CheckIcon {:class "w-4 h-4 text-black"}])]])]])]]]))]
 
          [:> Datepicker {:value @date
                          :placeholder "Period"
@@ -241,8 +252,8 @@
                                                "focus:outline-none disabled:opacity-40 "
                                                "disabled:cursor-not-allowed")
                          :inputClassName (str (if (or (.-startDate @date) (.-endDate @date))
-                                                "bg-gray-50 text-gray-600 border-gray-400 "
-                                                "border-gray-300 ")
+                                                "border-gray-300 "
+                                                "bg-gray-50 text-gray-600 border-gray-400 ")
                                               "pl-10 py-2 w-full rounded-md "
                                               "font-semibold text-sm focus:ring-0 "
                                               "hover:bg-gray-50 hover:text-gray-600 hover:border-gray-400 "
