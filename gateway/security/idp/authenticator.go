@@ -204,7 +204,7 @@ func setProviderConfFromEnvs(p *Provider) error {
 		// scheme://host:port/path?query#fragment
 		p.Issuer = fmt.Sprintf("%s://%s%s%s",
 			u.Scheme,
-			u.Hostname(),
+			u.Host,
 			u.Path,
 			encQueryStr,
 		)
@@ -234,7 +234,7 @@ func setProviderConfFromEnvs(p *Provider) error {
 	// scheme://host:port/path?query#fragment
 	p.Issuer = fmt.Sprintf("%s://%s%s%s",
 		issuerURL.Scheme,
-		issuerURL.Hostname(),
+		issuerURL.Host,
 		issuerURL.Path,
 		encQueryStr,
 	)

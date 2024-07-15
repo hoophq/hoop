@@ -26,7 +26,7 @@ run-dev-postgres:
 	./scripts/dev/run-postgres.sh
 
 build-dev-client:
-	go build -ldflags "-s -w -X github.com/hoophq/hoop/common/version.strictTLS=false" -o ${HOME}/.hoop/bin/hoop github.com/hoophq/hoop/client
+	go build -ldflags "-s -w" -o ${HOME}/.hoop/bin/hoop github.com/hoophq/hoop/client
 
 test: test_oss test_enterprise
 

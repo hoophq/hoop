@@ -32,3 +32,15 @@ go.work.sum
 
 .DS_Store
 libhoop
+.terraform*
+
+# certs
+*.v3.ext
+*.crt
+*.csr
+*.srl
+*.key
+
+deploy/docker-compose/hoopdata/terraform/outputs/
+deploy/docker-compose/hoopdata/sessions
+deploy/docker-compose/hoopdata/zitadel-admin-sa.json

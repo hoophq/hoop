@@ -17,6 +17,7 @@ import (
 	"github.com/hoophq/hoop/client/cmd/static"
 	proxyconfig "github.com/hoophq/hoop/client/config"
 	"github.com/hoophq/hoop/common/clientconfig"
+	"github.com/hoophq/hoop/common/httpclient"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/spf13/cobra"
@@ -47,17 +48,17 @@ var loginCmd = &cobra.Command{
 		default:
 			printErrorAndExit(err.Error())
 		}
-		log.Debugf("loaded configuration file, mode=%v, grpc_url=%v, api_url=%v, tokenlength=%v",
-			conf.Mode, conf.GrpcURL, conf.ApiURL, len(conf.Token))
+		log.Debugf("loaded configuration file, mode=%v, grpc_url=%v, api_url=%v, tlsca=%v, tokenlength=%v",
+			conf.Mode, conf.GrpcURL, conf.ApiURL, len(conf.TlsCAB64Enc) > 0, len(conf.Token))
 		// perform the login and save the token
-		conf.Token, err = doLogin(conf.ApiURL)
+		conf.Token, err = doLogin(conf.ApiURL, conf.TlsCA())
 		if err != nil {
 			printErrorAndExit(err.Error())
 		}
 		if conf.GrpcURL == "" {
 			// best-effort to obtain the obtain the grpc url
 			// if it's not set
-			conf.GrpcURL, err = fetchGrpcURL(conf.ApiURL, conf.Token)
+			conf.GrpcURL, err = fetchGrpcURL(conf.ApiURL, conf.Token, conf.TlsCA())
 			if err != nil {
 				printErrorAndExit(err.Error())
 			}
@@ -99,8 +100,8 @@ func configureHostsPrompt(conf *proxyconfig.Config) {
 	}
 }
 
-func doLogin(apiURL string) (string, error) {
-	loginUrl, err := requestForUrl(apiURL)
+func doLogin(apiURL, tlsCA string) (string, error) {
+	loginUrl, err := requestForUrl(apiURL, tlsCA)
 	if err != nil {
 		return "", err
 	}
@@ -155,8 +156,8 @@ func doLogin(apiURL string) (string, error) {
 	}
 }
 
-func requestForUrl(apiUrl string) (string, error) {
-	c := http.DefaultClient
+func requestForUrl(apiUrl, tlsCA string) (string, error) {
+	c := httpclient.NewHttpClient(tlsCA)
 	url := fmt.Sprintf("%s/api/login", apiUrl)
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
@@ -180,13 +181,13 @@ func requestForUrl(apiUrl string) (string, error) {
 	return "", fmt.Errorf("failed authenticating, status=%v, response=%v", resp.StatusCode, l.Message)
 }
 
-func fetchGrpcURL(apiURL, bearerToken string) (string, error) {
+func fetchGrpcURL(apiURL, bearerToken, tlsCA string) (string, error) {
 	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/api/serverinfo", apiURL), nil)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Add("authorization", fmt.Sprintf("Bearer %s", bearerToken))
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpclient.NewHttpClient(tlsCA).Do(req)
 	if err != nil {
 		return "", err
 	}

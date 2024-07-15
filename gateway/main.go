@@ -2,11 +2,14 @@ package gateway
 
 import (
 	"bytes"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/getsentry/sentry-go"
+	"github.com/hoophq/hoop/common/envloader"
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
@@ -52,6 +55,11 @@ func Run() {
 		log.Fatal(err)
 	}
 
+	tlsConfig, err := loadServerCertificates()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	// by default start postgrest process
 	if err := pgrest.Run(); err != nil {
 		log.Fatal(err)
@@ -86,9 +94,11 @@ func Run() {
 		RunbooksHandler: runbooks.Handler{},
 		IDProvider:      idProvider,
 		GrpcURL:         grpcURL,
+		TLSConfig:       tlsConfig,
 	}
 
 	g := &transport.Server{
+		TLSConfig:     tlsConfig,
 		ApiHostname:   appconfig.Get().ApiHostname(),
 		ReviewService: reviewService,
 		IDProvider:    idProvider,
@@ -178,4 +188,37 @@ func changeWebappApiURL(apiURL string) error {
 		}
 	}
 	return nil
+}
+
+func loadServerCertificates() (*tls.Config, error) {
+	tlsCA, err := envloader.GetEnv("TLS_CA")
+	if err != nil {
+		return nil, fmt.Errorf("faile loading TLS_CA: %v", err)
+	}
+	tlsKey, err := envloader.GetEnv("TLS_KEY")
+	if err != nil {
+		return nil, fmt.Errorf("faile loading TLS_KEY: %v", err)
+	}
+	tlsCert, err := envloader.GetEnv("TLS_CERT")
+	if err != nil {
+		return nil, fmt.Errorf("faile loading TLS_CERT: %v", err)
+	}
+	if tlsKey == "" || tlsCert == "" {
+		return nil, nil
+	}
+	cert, err := tls.X509KeyPair([]byte(tlsCert), []byte(tlsKey))
+	if err != nil {
+		return nil, fmt.Errorf("failed parsing key pair, err=%v", err)
+	}
+	var certPool *x509.CertPool
+	if tlsCA != "" {
+		certPool = x509.NewCertPool()
+		if !certPool.AppendCertsFromPEM([]byte(tlsCA)) {
+			return nil, fmt.Errorf("failed creating cert pool for TLS_CA")
+		}
+	}
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		RootCAs:      certPool,
+	}, nil
 }

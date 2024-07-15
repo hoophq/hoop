@@ -41,13 +41,14 @@ type (
 		// The server address to connect to (HOST:PORT)
 		ServerAddress string
 		Token         string
-		// This is used to specify a different DNS name
-		// when connecting via TLS
-		TLSServerName string
 		UserAgent     string
 		// Insecure indicates if it will connect without TLS
 		// It should only be used in secure networks!
 		Insecure bool
+
+		TLSCA string
+		// This is used to specify a different DNS name when connecting via TLS
+		TLSServerName string
 	}
 )
 
@@ -99,9 +100,12 @@ func PreConnectRPC(cc ClientConfig, req *pb.PreConnectRequest) (*pb.PreConnectRe
 	}
 	// TODO: it's deprecated, use oauth.TokenSource
 	rpcCred := oauth.NewOauthAccess(&oauth2.Token{AccessToken: cc.Token})
-	tlsConfig := &tls.Config{ServerName: cc.TLSServerName}
+	tlsCred, err := loadTLSCredentials(cc)
+	if err != nil {
+		return nil, err
+	}
 	dialOptions := []grpc.DialOption{
-		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
+		grpc.WithTransportCredentials(tlsCred),
 		grpc.WithPerRPCCredentials(rpcCred),
 		grpc.WithUserAgent(cc.UserAgent),
 		grpc.WithDefaultCallOptions(
@@ -153,23 +157,17 @@ func Connect(clientConfig ClientConfig, opts ...*ClientOptions) (pb.ClientTransp
 
 func loadTLSCredentials(cc ClientConfig) (credentials.TransportCredentials, error) {
 	var certPool *x509.CertPool
-	if tlsCA := os.Getenv("TLS_CA"); tlsCA != "" {
-		pemServerCA, err := os.ReadFile(os.Getenv("TLS_CA"))
-		if err != nil {
-			return nil, err
-		}
-		certPool := x509.NewCertPool()
-		if !certPool.AppendCertsFromPEM(pemServerCA) {
-			return nil, fmt.Errorf("failed to add server CA's certificate")
+	if cc.TLSCA != "" {
+		certPool = x509.NewCertPool()
+		if !certPool.AppendCertsFromPEM([]byte(cc.TLSCA)) {
+			return nil, fmt.Errorf("failed to append root CA into cert pool")
 		}
 	}
-
 	// Create the credentials and return it
 	config := &tls.Config{
 		RootCAs:    certPool,
 		ServerName: cc.TLSServerName,
 	}
-
 	return credentials.NewTLS(config), nil
 }
 

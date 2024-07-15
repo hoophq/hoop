@@ -1,7 +1,9 @@
 package api
 
 import (
+	"crypto/tls"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -42,11 +44,12 @@ type (
 		RunbooksHandler runbooks.Handler
 		IDProvider      *idp.Provider
 		GrpcURL         string
+		TLSConfig       *tls.Config
 		logger          *zap.Logger
 	}
 )
 
-func (api *Api) StartAPI(sentryInit bool) {
+func (a *Api) StartAPI(sentryInit bool) {
 	if os.Getenv("PORT") == "" {
 		os.Setenv("PORT", "8009")
 	}
@@ -57,7 +60,7 @@ func (api *Api) StartAPI(sentryInit bool) {
 	if os.Getenv("GIN_MODE") == "debug" {
 		route.Use(ginzap.Ginzap(zaplogger, time.RFC3339, true))
 	}
-	api.logger = zaplogger
+	a.logger = zaplogger
 	// https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies
 	route.SetTrustedProxies(nil)
 	route.Use(CORSMiddleware())
@@ -81,8 +84,18 @@ func (api *Api) StartAPI(sentryInit bool) {
 			Repanic: true,
 		}))
 	}
-
-	api.buildRoutes(rg)
+	a.buildRoutes(rg)
+	if a.TLSConfig != nil {
+		server := http.Server{
+			Addr:      "0.0.0.0:8009",
+			Handler:   route,
+			TLSConfig: a.TLSConfig,
+		}
+		if err := server.ListenAndServeTLS("", ""); err != nil {
+			log.Fatalf("Failed to start HTTPS server, err=%v", err)
+		}
+		return
+	}
 	if err := route.Run(); err != nil {
 		log.Fatalf("Failed to start HTTP server, err=%v", err)
 	}

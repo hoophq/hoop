@@ -13,6 +13,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/hoophq/hoop/client/cmd/styles"
 	"github.com/hoophq/hoop/common/clientconfig"
+	"github.com/hoophq/hoop/common/envloader"
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/log"
 )
@@ -22,20 +23,28 @@ var ErrEmpty error = errors.New("unable to locate configuration file")
 const apiLocalhostURL = "http://127.0.0.1:8009"
 
 type Config struct {
-	Token    string `toml:"token"`
-	ApiURL   string `toml:"api_url"`
-	GrpcURL  string `toml:"grpc_url"`
-	Mode     string `toml:"-"`
-	filepath string `toml:"-"`
+	Token       string `toml:"token"`
+	ApiURL      string `toml:"api_url"`
+	GrpcURL     string `toml:"grpc_url"`
+	TlsCAB64Enc string `toml:"tls_ca"`
+	Mode        string `toml:"-"`
+	filepath    string `toml:"-"`
 }
 
 // NewConfigFile creates a new configuration in the filesystem
-func NewConfigFile(apiURL, grpcURL, token string) (string, error) {
+func NewConfigFile(apiURL, grpcURL, token, tlsCA string) (string, error) {
 	filepath, err := clientconfig.NewPath(clientconfig.ClientFile)
 	if err != nil {
 		return "", err
 	}
-	_, err = (&Config{filepath: filepath, Token: token, ApiURL: apiURL, GrpcURL: grpcURL}).Save()
+	config := &Config{
+		filepath:    filepath,
+		Token:       token,
+		ApiURL:      apiURL,
+		GrpcURL:     grpcURL,
+		TlsCAB64Enc: base64.StdEncoding.EncodeToString([]byte(tlsCA)),
+	}
+	_, err = config.Save()
 	return filepath, err
 }
 
@@ -58,11 +67,16 @@ func Load() (*Config, error) {
 	apiServer := os.Getenv("HOOP_APIURL")
 	accessToken := os.Getenv("HOOP_TOKEN")
 	if grpcURL != "" && apiServer != "" && accessToken != "" {
+		tlsCA, err := envloader.GetEnv("HOOP_TLSCA")
+		if err != nil {
+			return nil, err
+		}
 		return &Config{
-			Token:   accessToken,
-			ApiURL:  apiServer,
-			GrpcURL: grpcURL,
-			Mode:    clientconfig.ModeEnv}, nil
+			Token:       accessToken,
+			ApiURL:      apiServer,
+			GrpcURL:     grpcURL,
+			TlsCAB64Enc: base64.StdEncoding.EncodeToString([]byte(tlsCA)),
+			Mode:        clientconfig.ModeEnv}, nil
 	}
 
 	// fallback to reading the configuration file
@@ -97,17 +111,18 @@ func (c *Config) GrpcClientConfig() (grpc.ClientConfig, error) {
 	srvAddr, err := grpc.ParseServerAddress(c.GrpcURL)
 	return grpc.ClientConfig{
 		ServerAddress: srvAddr,
-		TLSServerName: os.Getenv("TLS_SERVER_NAME"),
 		Token:         c.Token,
 		// connect without tls only on localhost
 		Insecure: c.IsInsecure(),
+
+		TLSServerName: os.Getenv("HOOP_TLSSERVERNAME"),
+		TLSCA:         c.TlsCA(),
 	}, err
 }
 
 func (c *Config) isEmpty() bool { return c.GrpcURL == "" && c.ApiURL == "" }
 func (c *Config) IsInsecure() (insecure bool) {
 	switch {
-	case os.Getenv("TLS_SERVER_NAME") != "":
 	case c.Mode == clientconfig.ModeLocal,
 		c.GrpcURL == grpc.LocalhostAddr:
 		insecure = true
@@ -116,6 +131,14 @@ func (c *Config) IsInsecure() (insecure bool) {
 }
 func (c *Config) IsValid() bool  { return c.ApiURL != "" }
 func (c *Config) HasToken() bool { return c.Mode == clientconfig.ModeLocal || c.Token != "" }
+func (c *Config) TlsCA() string {
+	if c.TlsCAB64Enc != "" {
+		tlsCA, _ := base64.StdEncoding.DecodeString(c.TlsCAB64Enc)
+		return string(tlsCA)
+	}
+	return ""
+}
+
 func (c *Config) Save() (bool, error) {
 	if c.filepath == "" {
 		return false, nil
@@ -152,14 +175,11 @@ func GetClientConfigOrDie() *Config {
 	config, err := Load()
 	switch err {
 	case ErrEmpty, nil:
-		if !config.IsValid() || !config.HasToken() {
-			styles.PrintErrorAndExit("unable to load credentials, run 'hoop login' to configure it")
-		}
 	default:
 		styles.PrintErrorAndExit(err.Error())
 	}
-	log.Debugf("loaded clientconfig, mode=%v, tls=%v, api_url=%v, grpc_url=%v, tokenlength=%v",
-		config.Mode, !config.IsInsecure(), config.ApiURL, config.GrpcURL, len(config.Token))
+	log.Debugf("loaded clientconfig, mode=%v, tls=%v, api_url=%v, grpc_url=%v, tokenlength=%v, tlsca=%v",
+		config.Mode, !config.IsInsecure(), config.ApiURL, config.GrpcURL, len(config.Token), config.TlsCAB64Enc != "")
 	return config
 }
 
@@ -173,7 +193,7 @@ func GetClientConfig() (*Config, error) {
 	default:
 		return nil, err
 	}
-	log.Infof("loaded clientconfig, mode=%v, tls=%v, api_url=%v, grpc_url=%v",
-		config.Mode, !config.IsInsecure(), config.ApiURL, config.GrpcURL)
+	log.Infof("loaded clientconfig, mode=%v, tls=%v, api_url=%v, grpc_url=%v, tlsca=%v",
+		config.Mode, !config.IsInsecure(), config.ApiURL, config.GrpcURL, config.TlsCAB64Enc != "")
 	return config, nil
 }

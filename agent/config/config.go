@@ -6,10 +6,10 @@ import (
 
 	"github.com/hoophq/hoop/common/clientconfig"
 	"github.com/hoophq/hoop/common/dsnkeys"
+	"github.com/hoophq/hoop/common/envloader"
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
-	"github.com/hoophq/hoop/common/version"
 )
 
 type Config struct {
@@ -19,6 +19,7 @@ type Config struct {
 	Type      string
 	AgentMode string
 	insecure  bool
+	tlsCA     string
 }
 
 // Load the configuration based on environment variable HOOP_KEY or HOOP_DSN (legacy).
@@ -35,19 +36,22 @@ func Load() (*Config, error) {
 		if isLegacy {
 			log.Warnf("HOOP_DSN environment variable is deprecated, use HOOP_KEY instead")
 		}
+		tlsCA, err := envloader.GetEnv("HOOP_TLSCA")
+		if err != nil {
+			return nil, err
+		}
 		// allow connecting insecure if a build disables this flag
 		// or the agent has local host connection with the gateway
-		isInsecure := !version.Get().StrictTLS && (dsn.Scheme == "http" || dsn.Scheme == "grpc")
-		if dsn.Address == grpc.LocalhostAddr && (dsn.Scheme == "grpc" || dsn.Scheme == "http") {
-			isInsecure = true
-		}
+		isInsecure := dsn.Scheme == "http" || dsn.Scheme == "grpc"
 		return &Config{
 			Name:      dsn.Name,
 			Type:      clientconfig.ModeDsn,
 			AgentMode: dsn.AgentMode,
 			Token:     dsn.Key(),
 			URL:       dsn.Address,
-			insecure:  isInsecure}, nil
+			insecure:  isInsecure,
+			tlsCA:     tlsCA,
+		}, nil
 	}
 	legacyToken := getLegacyHoopTokenCredentials()
 	grpcURL := os.Getenv("HOOP_GRPCURL")
@@ -67,12 +71,15 @@ func (c *Config) GrpcClientConfig() (grpc.ClientConfig, error) {
 	srvAddr, err := grpc.ParseServerAddress(c.URL)
 	return grpc.ClientConfig{
 		ServerAddress: srvAddr,
-		TLSServerName: os.Getenv("TLS_SERVER_NAME"),
 		Token:         c.Token,
 		Insecure:      c.IsInsecure(),
+
+		TLSServerName: os.Getenv("HOOP_TLSSERVERNAME"),
+		TLSCA:         c.tlsCA,
 	}, err
 }
 
+func (c *Config) HasTlsCA() bool   { return c.tlsCA != "" }
 func (c *Config) IsInsecure() bool { return c.insecure }
 func (c *Config) IsValid() bool    { return c.Token != "" && c.URL != "" }
 

@@ -14,7 +14,6 @@ type Info struct {
 	GoVersion string `json:"go_version"`
 	Compiler  string `json:"compiler"`
 	Platform  string `json:"platform"`
-	StrictTLS bool   `json:"strict_tls"`
 }
 
 var (
@@ -34,7 +33,6 @@ func Get() Info {
 		GoVersion: runtime.Version(),
 		Compiler:  runtime.Compiler,
 		Platform:  fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH),
-		StrictTLS: strictTLS == "true",
 	}
 	if i.Version == "" {
 		i.Version = "unknown"

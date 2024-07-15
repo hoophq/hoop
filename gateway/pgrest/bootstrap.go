@@ -140,8 +140,8 @@ func Run() (err error) {
 	}()
 
 	for i := 1; ; i++ {
-		if i > 15 {
-			return fmt.Errorf("max attempts (15) reached. failed to validate postgrest liveness at %v", baseURL.Host)
+		if i > 30 {
+			return fmt.Errorf("max attempts (30) reached. failed to validate postgrest liveness at %v", baseURL.Host)
 		}
 		if err := CheckLiveness(); err != nil {
 			time.Sleep(time.Second * 1)
