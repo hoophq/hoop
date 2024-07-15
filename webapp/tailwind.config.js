@@ -1,17 +1,32 @@
-const defaultTheme = require("tailwindcss/defaultTheme");
+/** @type {import('tailwindcss').Config} */
 const plugin = require("tailwindcss/plugin");
 
 module.exports = {
-  purge: {
-    content: ["./**/*.js", "./**/*.html"],
+  content: process.env.NODE_ENV == 'production' ? 
+  ["./resources/public/**/*.js", "./resources/public/**/*.html", "./node_modules/react-tailwindcss-datepicker/dist/index.esm.js"] : 
+  ["./src/webapp/**/*.cljs", "./resource/public/js/cljs-runtime/*.js", "./node_modules/react-tailwindcss-datepicker/dist/index.esm.js"],
+  darkMode: 'selector',
+  screens: {
+    'sm': '640px',
+    // => @media (min-width: 640px) { ... }
+
+    'md': '768px',
+    // => @media (min-width: 768px) { ... }
+
+    'lg': '1024px',
+    // => @media (min-width: 1024px) { ... }
+
+    'xl': '1280px',
+    // => @media (min-width: 1280px) { ... }
+
+    '2xl': '1536px',
+    // => @media (min-width: 1536px) { ... }
   },
-  darkMode: false,
   theme: {
-    ...defaultTheme,
     extend: {
       fontFamily: {
-        sans: ["Sora", "sans-serif", ...defaultTheme.fontFamily.sans],
-        mono: ["Inconsolata", ...defaultTheme.fontFamily.mono],
+        sans: ["Sora", "sans-serif"],
+        mono: ["Inconsolata"],
       },
       fontSize: {
         xxs: ["0.625rem", "0.85rem"],
@@ -65,10 +80,6 @@ module.exports = {
         md: "0.375rem",
         b: "0 0 2px 2px",
       },
-      borderColor: {
-        "t-gray-600": `${defaultTheme.colors.gray["600"]} currentColor currentColor`,
-        "t-gray-400": `${defaultTheme.colors.gray["400"]} currentColor currentColor`,
-      },
       boxShadow: {
         "red-button-hover": "4px 4px #ed5a5a",
         "black-button-hover": "4px 4px #777",
@@ -102,21 +113,6 @@ module.exports = {
         "ns-resize": "ns-resize",
         "ew-resize": "ew-resize",
       },
-    },
-  },
-  variants: {
-    opacity: ({ after }) => after(["disabled"]),
-    extend: {
-      padding: ["hover", "last", "first", "focus"],
-      shadow: ["hover"],
-      SVGFEDisplacementMapElementy: ["group-hover", "hover"],
-      transform: ["group-hover", "hover"],
-      translate: ["group-hover", "hover"],
-      rotate: ["group-hover", "hover"],
-      borderWidth: ["last", "first", "group-hover", "hover", "focus"],
-      display: ["group-hover"],
-      width: ["focus"],
-      cursor: ["focus"],
     },
   },
   plugins: [

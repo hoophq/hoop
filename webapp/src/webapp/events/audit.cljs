@@ -67,11 +67,11 @@
 (rf/reg-event-fx
  :audit->filter-sessions
  (fn
-   [{:keys [db]} [_ hashmap connection-id]]
+   [{:keys [db]} [_ hashmap]]
    (let [status-param (into {} (remove (comp string/blank? second) hashmap))
          filters (apply dissoc (:filters (:audit db)) (keys hashmap))
          query-params (merge status-param filters)]
-     {:fx [[:dispatch [:navigate :sessions query-params :connection-id connection-id]]
+     {:fx [[:dispatch [:navigate :sessions query-params]]
            [:dispatch [:audit->get-sessions]]]})))
 
 (rf/reg-event-fx

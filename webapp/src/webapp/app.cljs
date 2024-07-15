@@ -221,7 +221,9 @@
 
 (defmethod routes/panels :sessions-panel []
   (rf/dispatch [:destroy-page-loader])
-  [layout-application-hoop-connection-context audit/main])
+  [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full overflow-auto"}
+                             [h/h2 "Sessions" {:class "mb-6"}]
+                             [audit/panel]]])
 
 (defmethod routes/panels :session-details-panel []
   (let [pathname (.. js/window -location -pathname)
