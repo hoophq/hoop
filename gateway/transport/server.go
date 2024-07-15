@@ -55,12 +55,6 @@ func (s *Server) StartRPCServer() {
 		log.Fatal(err)
 	}
 
-	// tlsConfig, err := servertls.LoadServerCertificates()
-	// if err != nil {
-	// 	sentry.CaptureException(err)
-	// 	log.Fatal(err)
-	// }
-
 	grpcInterceptors := grpc.ChainStreamInterceptor(
 		sessionuuidinterceptor.New(),
 		authinterceptor.New(s.IDProvider),
