@@ -165,6 +165,18 @@ func TestTemplateParseHelperFuncs(t *testing.T) {
 			inputs:   map[string]string{"name": ""},
 		},
 		{
+			msg:      "options func should pass the input properly",
+			tmpl:     `plan = {{ .plan | default "pro" | options "basic" "pro" "enterprise" | type "select" }}`,
+			wantTmpl: "plan = basic",
+			inputs:   map[string]string{"plan": "basic"},
+		},
+		{
+			msg:      "options func should must receive the default value func",
+			tmpl:     `plan = {{ .plan | default "pro" | options "basic" "pro" "enterprise" | type "select" }}`,
+			wantTmpl: "plan = pro",
+			inputs:   map[string]string{},
+		},
+		{
 			msg:      "it should parse with a default value if the input is empty",
 			tmpl:     `name = {{ .name | default "Tony Stark" }}`,
 			wantTmpl: `name = Tony Stark`,
