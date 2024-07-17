@@ -168,15 +168,19 @@ func (i *interceptor) getConnection(name string, userCtx *pguserauth.Context) (*
 		return nil, nil
 	}
 	return &types.ConnectionInfo{
-		ID:            conn.ID,
-		Name:          conn.Name,
-		Type:          string(conn.Type),
-		SubType:       conn.SubType,
-		CmdEntrypoint: conn.Command,
-		Secrets:       conn.AsSecrets(),
-		AgentID:       conn.AgentID,
-		AgentMode:     conn.Agent.Mode,
-		AgentName:     conn.Agent.Name,
+		ID:                 conn.ID,
+		Name:               conn.Name,
+		Type:               string(conn.Type),
+		SubType:            conn.SubType,
+		CmdEntrypoint:      conn.Command,
+		Secrets:            conn.AsSecrets(),
+		AgentID:            conn.AgentID,
+		AgentMode:          conn.Agent.Mode,
+		AgentName:          conn.Agent.Name,
+		AccessModeRunbooks: string(conn.AccessModeRunbooks),
+		AccessModeExec:     string(conn.AccessModeExec),
+		AccessModeConnect:  string(conn.AccessModeConnect),
+		AccessSchema:       string(conn.AccessSchema),
 	}, nil
 }
 

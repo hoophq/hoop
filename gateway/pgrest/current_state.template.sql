@@ -134,7 +134,8 @@ CREATE VIEW env_vars AS SELECT id, org_id, envs FROM private.env_vars;
 CREATE VIEW connections AS
     SELECT id, org_id, agent_id, name, command, type, subtype,
         (SELECT envs FROM env_vars WHERE id = c.id) AS envs,
-        status, managed_by, _tags AS tags, created_at, updated_at
+        status, managed_by, _tags AS tags, access_mode_connect, access_mode_exec, 
+        access_mode_runbooks, access_schema, created_at, updated_at
     FROM private.connections c;
 
 CREATE FUNCTION agents(connections) RETURNS SETOF agents ROWS 1 AS $$
@@ -160,10 +161,14 @@ CREATE FUNCTION update_connection(params json) RETURNS SETOF connections ROWS 1 
             (
                 SELECT array_agg(v)::TEXT[]
                 FROM jsonb_array_elements_text((params->>'tags')::JSONB) AS v
-            ) AS tags
+            ) AS tags,
+            (params->>'access_mode_connect')::private.enum_access_status AS access_mode_connect,
+            (params->>'access_mode_exec')::private.enum_access_status AS access_mode_exec,
+            (params->>'access_mode_runbooks')::private.enum_access_status AS access_mode_runbooks,
+            (params->>'access_schema')::private.enum_access_status AS access_schema
     ), conn AS (
-        INSERT INTO connections (id, org_id, agent_id, name, command, type, subtype, status, managed_by, tags)
-            (SELECT id, org_id, agent_id, name, command, type, subtype, status, managed_by, tags FROM user_input)
+        INSERT INTO connections (id, org_id, agent_id, name, command, type, subtype, status, managed_by, tags, access_mode_runbooks, access_mode_connect, access_mode_exec, access_schema)
+            (SELECT id, org_id, agent_id, name, command, type, subtype, status, managed_by, tags, access_mode_runbooks, access_mode_connect, access_mode_exec, access_schema FROM user_input)
         ON CONFLICT (org_id, name)
             DO UPDATE SET
                 agent_id = (SELECT agent_id FROM user_input),
@@ -173,6 +178,10 @@ CREATE FUNCTION update_connection(params json) RETURNS SETOF connections ROWS 1 
                 status = (SELECT status FROM user_input),
                 managed_by = (SELECT managed_by FROM user_input),
                 tags = (SELECT tags FROM user_input),
+                access_mode_connect = (SELECT access_mode_connect FROM user_input),
+                access_mode_exec = (SELECT access_mode_exec FROM user_input),
+                access_mode_runbooks = (SELECT access_mode_runbooks FROM user_input),
+                access_schema = (SELECT access_schema FROM user_input),
                 updated_at = NOW()
         RETURNING *
     ), envs AS (
@@ -182,7 +191,7 @@ CREATE FUNCTION update_connection(params json) RETURNS SETOF connections ROWS 1 
                 DO UPDATE SET envs = (SELECT envs FROM user_input)
             RETURNING *
     )
-    SELECT c.id, c.org_id, c.agent_id, c.name, c.command, c.type, c.subtype, e.envs, c.status, c.managed_by, c.tags, c.created_at, c.updated_at
+    SELECT c.id, c.org_id, c.agent_id, c.name, c.command, c.type, c.subtype, e.envs, c.status, c.managed_by, c.tags, c.access_mode_runbooks, c.access_mode_connect, c.access_mode_exec, c.access_schema, c.created_at, c.updated_at
     FROM conn c
     INNER JOIN envs e
         ON e.id = c.id;

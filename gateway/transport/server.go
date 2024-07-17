@@ -106,9 +106,26 @@ func (s *Server) PreConnect(ctx context.Context, req *pb.PreConnectRequest) (*pb
 	return resp, nil
 }
 
+func GetAccessModesFromConnect(clientVerb string, clientOrigin string) string {
+	switch {
+	case clientVerb == "exec" && clientOrigin == "client":
+		return "exec"
+	case clientVerb == "exec" && clientOrigin == "client-api":
+		return "exec"
+	case clientVerb == "connect":
+		return "connect"
+	case clientVerb == "exec" && clientOrigin == "client-api-runbooks":
+		return "runbooks"
+	default:
+		return ""
+	}
+}
+
 func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 	md, _ := metadata.FromIncomingContext(stream.Context())
 	clientOrigin := md.Get("origin")
+	clientVerb := md.Get("verb")
+
 	if len(clientOrigin) == 0 {
 		md.Delete("authorization")
 		log.Debugf("client missing origin, client-metadata=%v", md)
@@ -166,6 +183,25 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 
 		ParamsData: map[string]any{},
 	}
+
+	// Verifying if the feature is enabled
+	currentAccessMode := GetAccessModesFromConnect(clientVerb[0], clientOrigin[0])
+
+	println("-------------------> currentAccessMode: ", currentAccessMode)
+	println("-------------------> clientVerb: ", clientVerb[0])
+	println("-------------------> clientOrigin: ", clientOrigin[0])
+
+	AccessModes := map[string]string{
+		"exec":     gwctx.Connection.AccessModeExec,
+		"connect":  gwctx.Connection.AccessModeConnect,
+		"runbooks": gwctx.Connection.AccessModeRunbooks}
+
+	switch {
+	case AccessModes[currentAccessMode] == "disabled":
+		return status.Error(codes.FailedPrecondition,
+			fmt.Sprintf("the %v connection has the %v feature disabled", gwctx.Connection.Name, currentAccessMode))
+	}
+	// End of verification of the feature enabled
 
 	switch clientOrigin[0] {
 	case pb.ConnectionOriginClientProxyManager:

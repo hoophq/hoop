@@ -28,13 +28,17 @@ func (c *connections) FetchByIDs(ctx pgrest.OrgContext, connectionIDs []string) 
 		for _, connID := range connectionIDs {
 			if conn.ID == connID {
 				itemMap[connID] = types.Connection{
-					Id:      conn.ID,
-					OrgId:   conn.OrgID,
-					Name:    conn.Name,
-					Command: conn.Command,
-					Type:    conn.Type,
-					SubType: conn.SubType,
-					AgentId: conn.AgentID,
+					Id:                 conn.ID,
+					OrgId:              conn.OrgID,
+					Name:               conn.Name,
+					Command:            conn.Command,
+					Type:               conn.Type,
+					SubType:            conn.SubType,
+					AgentId:            conn.AgentID,
+					AccessModeRunbooks: conn.AccessModeRunbooks,
+					AccessModeExec:     conn.AccessModeExec,
+					AccessModeConnect:  conn.AccessModeConnect,
+					AccessSchema:       conn.AccessSchema,
 				}
 				break
 			}
@@ -91,18 +95,31 @@ func (c *connections) Upsert(ctx pgrest.OrgContext, conn pgrest.Connection) erro
 	if conn.Status == "" {
 		conn.Status = pgrest.ConnectionStatusOffline
 	}
+
+	if conn.AccessSchema == "" {
+		if conn.Type == "database" {
+			conn.AccessSchema = "enabled"
+		} else {
+			conn.AccessSchema = "disabled"
+		}
+	}
+
 	return pgrest.New("/rpc/update_connection").RpcCreate(map[string]any{
-		"id":         conn.ID,
-		"org_id":     ctx.GetOrgID(),
-		"name":       conn.Name,
-		"agent_id":   toAgentID(conn.AgentID),
-		"type":       conn.Type,
-		"subtype":    subType,
-		"command":    conn.Command,
-		"envs":       conn.Envs,
-		"status":     conn.Status,
-		"managed_by": conn.ManagedBy,
-		"tags":       conn.Tags,
+		"id":                   conn.ID,
+		"org_id":               ctx.GetOrgID(),
+		"name":                 conn.Name,
+		"agent_id":             toAgentID(conn.AgentID),
+		"type":                 conn.Type,
+		"subtype":              subType,
+		"command":              conn.Command,
+		"envs":                 conn.Envs,
+		"status":               conn.Status,
+		"managed_by":           conn.ManagedBy,
+		"tags":                 conn.Tags,
+		"access_mode_runbooks": conn.AccessModeRunbooks,
+		"access_mode_exec":     conn.AccessModeExec,
+		"access_mode_connect":  conn.AccessModeConnect,
+		"access_schema":        conn.AccessSchema,
 	}).Error()
 }
 
