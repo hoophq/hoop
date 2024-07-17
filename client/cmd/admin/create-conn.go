@@ -13,15 +13,19 @@ import (
 )
 
 var (
-	connAgentFlag        string
-	connPuginFlag        []string
-	reviewersFlag        []string
-	connRedactTypesFlag  []string
-	connTypeFlag         string
-	connTagsFlag         []string
-	connSecretFlag       []string
-	skipStrictValidation bool
-	connOverwriteFlag    bool
+	connAgentFlag              string
+	connPuginFlag              []string
+	reviewersFlag              []string
+	connRedactTypesFlag        []string
+	connTypeFlag               string
+	connTagsFlag               []string
+	connSecretFlag             []string
+	connAccessModeRunbooksFlag string
+	connAccessModeExecFlag     string
+	connAccessModeConnectFlag  string
+	connSchemaFlag             string
+	skipStrictValidation       bool
+	connOverwriteFlag          bool
 )
 
 func init() {
@@ -34,6 +38,10 @@ func init() {
 	createConnectionCmd.Flags().BoolVar(&skipStrictValidation, "skip-validation", false, "It will skip any strict validation")
 	createConnectionCmd.Flags().StringSliceVarP(&connSecretFlag, "env", "e", nil, "The environment variables of the connection")
 	createConnectionCmd.Flags().StringSliceVar(&connTagsFlag, "tags", nil, "Tags to identify connections in a key=value format")
+	createConnectionCmd.Flags().StringVarP(&connAccessModeRunbooksFlag, "access-mode-runbooks", "", "enabled", "Enabled or disabled the access mode for runbooks (enabled/disabled)")
+	createConnectionCmd.Flags().StringVarP(&connAccessModeExecFlag, "access-mode-exec", "", "enabled", "Enabled or disabled the access mode for exec (enabled/disabled)")
+	createConnectionCmd.Flags().StringVarP(&connAccessModeConnectFlag, "access-mode-connect", "", "enabled", "Enabled or disabled the access mode for connect (enabled/disabled)")
+	createConnectionCmd.Flags().StringVarP(&connSchemaFlag, "schema", "", "", "Enabled or disabled the schema for this connection on the WebClient (enabled/disabled)")
 	createConnectionCmd.MarkFlagRequired("agent")
 }
 
@@ -118,17 +126,24 @@ var createConnectionCmd = &cobra.Command{
 		if len(connRedactTypesFlag) > 0 {
 			redactEnabled = true
 		}
+
+		connSchemaFlag = verifySchemaStatus(connSchemaFlag, connType)
+
 		connectionBody := map[string]any{
-			"name":           apir.name,
-			"type":           connType,
-			"subtype":        subType,
-			"command":        cmdList,
-			"secret":         envVar,
-			"agent_id":       agentID,
-			"reviewers":      reviewersFlag,
-			"redact_enabled": redactEnabled,
-			"redact_types":   connRedactTypesFlag,
-			"tags":           connTagsFlag,
+			"name":                 apir.name,
+			"type":                 connType,
+			"subtype":              subType,
+			"command":              cmdList,
+			"secret":               envVar,
+			"agent_id":             agentID,
+			"reviewers":            reviewersFlag,
+			"redact_enabled":       redactEnabled,
+			"redact_types":         connRedactTypesFlag,
+			"tags":                 connTagsFlag,
+			"access_mode_runbooks": connAccessModeRunbooksFlag,
+			"access_mode_exec":     connAccessModeExecFlag,
+			"access_mode_connect":  connAccessModeConnectFlag,
+			"access_schema":        connSchemaFlag,
 		}
 
 		resp, err := httpBodyRequest(apir, method, connectionBody)
@@ -177,6 +192,19 @@ var createConnectionCmd = &cobra.Command{
 			fmt.Printf("plugin(s) %v updated\n", plugins)
 		}
 	},
+}
+
+func verifySchemaStatus(schema string, connType string) string {
+	if schema == "" && connType == "database" {
+		return "enabled"
+	} else if schema == "" {
+		return "disabled"
+	} else if schema == "enabled" || schema == "disabled" {
+		return schema
+	}
+
+	styles.PrintErrorAndExit("invalid schema status: %q", schema)
+	return "disabled"
 }
 
 func parseEnvPerType() (map[string]string, error) {
