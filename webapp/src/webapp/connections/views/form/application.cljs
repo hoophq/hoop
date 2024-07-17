@@ -3,13 +3,14 @@
             ["unique-names-generator" :as ung]
             [re-frame.core :as rf]
             [reagent.core :as r]
+            [webapp.components.checkboxes :as checkboxes]
             [webapp.components.headings :as h]
+            [webapp.components.multiselect :as multi-select]
             [webapp.connections.constants :as constants]
             [webapp.connections.views.form.hoop-run-instructions :as instructions]
             [webapp.connections.views.form.toggle-data-masking :as toggle-data-masking]
             [webapp.connections.views.form.toggle-review :as toggle-review]
-            [webapp.shared-ui.sidebar.connection-overlay :as connection-overlay]
-            [webapp.components.multiselect :as multi-select]))
+            [webapp.shared-ui.sidebar.connection-overlay :as connection-overlay]))
 
 (defn random-connection-name []
   (let [numberDictionary (.generate ung/NumberDictionary #js{:length 4})
@@ -35,7 +36,10 @@
                  review-toggle-enabled?
                  approval-groups-value
                  data-masking-toggle-enabled?
-                 data-masking-groups-value]}]
+                 data-masking-groups-value
+                 access-mode-runbooks
+                 access-mode-connect
+                 access-mode-exec]}]
       [:<>
        [:section {:class "mb-large"}
         [:div {:class "mb-small"}
@@ -90,7 +94,7 @@
                                                                  "text-gray-700"))}
                    (:label application)]]]))])]]]
 
-       [:section {:class "mb-large"}
+       [:section {:class "space-y-8 mb-16"}
         [toggle-review/main {:free-license? (:free-license? (:data @user))
                              :user-groups user-groups
                              :review-toggle-enabled? review-toggle-enabled?
@@ -99,6 +103,28 @@
         [toggle-data-masking/main {:free-license? (:free-license? (:data @user))
                                    :data-masking-toggle-enabled? data-masking-toggle-enabled?
                                    :data-masking-groups-value data-masking-groups-value}]
+
+        [:div {:class " flex flex-col gap-4"}
+         [:div {:class "mr-24"}
+          [:div {:class "flex items-center gap-2"}
+           [h/h4-md "Enable custom access modes"]]
+          [:label {:class "text-xs text-gray-500"}
+           "Choose what users can run in this connection"]]
+
+         [checkboxes/group
+          [{:name "runbooks"
+            :label "Runbooks"
+            :description "Create templates to automate tasks in your organization"
+            :checked? access-mode-runbooks}
+           {:name "connect"
+            :label "Native"
+            :description "Access from your client of preference using hoop.dev to channel connections using our Desktop App or our Command Line Interface"
+            :checked? access-mode-connect}
+           {:name "exec"
+            :label "Web & One-Offs"
+            :description "Use hoop.dev's developer portal or our CLI's One-Offs commands directly in your terminal "
+            :checked? access-mode-exec}]]]
+
         [multi-select/text-input {:value tags-value
                                   :input-value tags-input-value
                                   :disabled? false

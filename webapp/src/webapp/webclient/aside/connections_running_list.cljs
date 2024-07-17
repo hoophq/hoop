@@ -33,7 +33,6 @@
                         (not (schema-disabled? connection))))
            [:> hero-solid-icon/EllipsisVerticalIcon {:class "text-white h-5 w-5 shrink-0"
                                                      :aria-hidden "true"}])]
-
         (when (or (not context-connection?)
                   (and (show-tree? connection)
                        (not (schema-disabled? connection))))

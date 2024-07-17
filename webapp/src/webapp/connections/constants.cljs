@@ -88,6 +88,10 @@
   {:name "postgres-demo"
    :type "database"
    :subtype "postgres"
+   :access_mode_runbooks "enabled"
+   :access_mode_exec "enabled"
+   :access_mode_connect "enabled"
+   :access_schema "enabled"
    :agent_id ""
    :reviewers []
    :redact_enabled true

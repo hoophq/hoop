@@ -24,11 +24,12 @@
  ::editor-plugin->set-run-connection-list
  (fn
    [{:keys [db]} [_ connections current-connection-name]]
-   (let [connections-parsed (mapv (fn [{:keys [name type subtype status]}]
+   (let [connections-parsed (mapv (fn [{:keys [name type subtype status access_schema]}]
                                     {:name name
                                      :type type
                                      :subtype subtype
                                      :status status
+                                     :access_schema access_schema
                                      :selected (if (= name current-connection-name)
                                                  true
                                                  false)})
@@ -39,11 +40,12 @@
  :editor-plugin->set-filtered-run-connection-list
  (fn
    [db [_ connections current-connection-name]]
-   (let [connections-parsed (mapv (fn [{:keys [name type subtype status selected]}]
+   (let [connections-parsed (mapv (fn [{:keys [name type subtype status selected access_schema]}]
                                     {:name name
                                      :type type
                                      :subtype subtype
                                      :status status
+                                     :access_schema access_schema
                                      :selected (if (= name current-connection-name)
                                                  true
                                                  selected)})
