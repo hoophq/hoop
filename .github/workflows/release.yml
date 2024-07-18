@@ -408,6 +408,8 @@ jobs:
           file: deploy/docker-compose/Dockerfile
           context: deploy/docker-compose
           platforms: linux/arm64
+          provenance: false
+          sbom: false
           push: true
           tags: |
             hoophq/hooplabs:${{ github.sha }}-arm64
@@ -458,6 +460,8 @@ jobs:
           file: deploy/docker-compose/Dockerfile
           context: deploy/docker-compose
           platforms: linux/amd64
+          provenance: false
+          sbom: false
           push: true
           tags: |
             hoophq/hooplabs:${{ github.sha }}-amd64
