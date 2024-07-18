@@ -10,6 +10,7 @@ GOARCH ?= amd64
 # compatible with uname -s
 OS := $(shell echo "$(GOOS)" | awk '{print toupper(substr($$0, 1, 1)) tolower(substr($$0, 2))}')
 SYMLINK_ARCH := $(if $(filter $(GOARCH),amd64),x86_64,$(if $(filter $(GOARCH),arm64),aarch64,$(ARCH)))
+POSTREST_ARCH_SUFFIX := $(if $(filter $(GOARCH),amd64),linux-static-x64.tar.xz,$(if $(filter $(GOARCH),arm64),ubuntu-aarch64.tar.xz,$(ARCH)))
 
 LDFLAGS := "-s -w \
 -X github.com/hoophq/hoop/common/version.version=${VERSION} \
@@ -18,6 +19,9 @@ LDFLAGS := "-s -w \
 -X github.com/hoophq/hoop/common/monitoring.honeycombApiKey=${HONEYCOMB_API_KEY} \
 -X github.com/hoophq/hoop/common/monitoring.sentryDSN=${SENTRY_DSN} \
 -X github.com/hoophq/hoop/gateway/analytics.segmentApiKey=${SEGMENT_API_KEY}"
+
+postgrest-link:
+	echo https://github.com/PostgREST/postgrest/releases/download/v11.2.2/postgrest-v11.2.2-${POSTREST_ARCH_SUFFIX}
 
 run-dev:
 	./scripts/dev/run.sh
@@ -65,19 +69,18 @@ build-helm-chart:
 	helm package ./deploy/helm-chart/chart/agent/ --app-version ${VERSION} --destination ${DIST_FOLDER}/ --version ${VERSION}
 	helm package ./deploy/helm-chart/chart/gateway/ --app-version ${VERSION} --destination ${DIST_FOLDER}/ --version ${VERSION}
 
-# only amd64 for now
 build-gateway-bundle:
 	rm -rf ${DIST_FOLDER}/hoopgateway
 	mkdir -p ${DIST_FOLDER}/hoopgateway/opt/hoop/bin
 	mkdir -p ${DIST_FOLDER}/hoopgateway/opt/hoop/migrations
 	mkdir -p ${DIST_FOLDER}/hoopgateway/opt/hoop/webapp
-	curl -sL https://github.com/PostgREST/postgrest/releases/download/v11.2.2/postgrest-v11.2.2-linux-static-x64.tar.xz -o postgrest.tar.xz && \
+	curl -sL https://github.com/PostgREST/postgrest/releases/download/v11.2.2/postgrest-v11.2.2-${POSTREST_ARCH_SUFFIX} -o postgrest.tar.xz && \
 	tar -xf postgrest.tar.xz -C ${DIST_FOLDER}/hoopgateway/opt/hoop/bin/ && rm -f postgrest.tar.xz && \
 	chmod 0755 ${DIST_FOLDER}/hoopgateway/opt/hoop/bin/postgrest && \
-	tar -xf ${DIST_FOLDER}/binaries/hoop_${VERSION}_Linux_amd64.tar.gz -C ${DIST_FOLDER}/hoopgateway/opt/hoop/bin/ && \
+	tar -xf ${DIST_FOLDER}/binaries/hoop_${VERSION}_Linux_${GOARCH}.tar.gz -C ${DIST_FOLDER}/hoopgateway/opt/hoop/bin/ && \
 	cp rootfs/app/migrations/*.up.sql ${DIST_FOLDER}/hoopgateway/opt/hoop/migrations/ && \
 	tar -xf ${DIST_FOLDER}/webapp.tar.gz -C ${DIST_FOLDER}/hoopgateway/opt/hoop/webapp --strip 1 && \
-	tar -czf ${DIST_FOLDER}/hoopgateway_${VERSION}-Linux_amd64.tar.gz -C ${DIST_FOLDER}/ hoopgateway
+	tar -czf ${DIST_FOLDER}/hoopgateway_${VERSION}-Linux_${GOARCH}.tar.gz -C ${DIST_FOLDER}/ hoopgateway
 
 release: release-aws-cf-templates
 	./scripts/generate-changelog.sh ${VERSION} > ${DIST_FOLDER}/CHANGELOG.txt
