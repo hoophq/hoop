@@ -60,7 +60,7 @@ var (
 						log.Infof("connection not found")
 						return nil
 					case codes.FailedPrecondition:
-						log.Info(pb.ErrAgentOffline)
+						log.Info(err)
 						return nil
 					}
 				}

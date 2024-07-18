@@ -108,13 +108,13 @@ func (s *Server) PreConnect(ctx context.Context, req *pb.PreConnectRequest) (*pb
 
 func GetAccessModesFromConnect(clientVerb string, clientOrigin string) string {
 	switch {
-	case clientVerb == "exec" && clientOrigin == "client":
+	case clientVerb == pb.ClientVerbExec && clientOrigin == pb.ConnectionOriginClient:
 		return "exec"
-	case clientVerb == "exec" && clientOrigin == "client-api":
+	case clientVerb == pb.ClientVerbExec && clientOrigin == pb.ConnectionOriginClientAPI:
 		return "exec"
-	case clientVerb == "connect":
+	case clientVerb == pb.ClientVerbConnect:
 		return "connect"
-	case clientVerb == "exec" && clientOrigin == "client-api-runbooks":
+	case clientVerb == pb.ClientVerbExec && clientOrigin == pb.ConnectionOriginClientAPIRunbooks:
 		return "runbooks"
 	default:
 		return ""
@@ -187,19 +187,14 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 	// Verifying if the feature is enabled
 	currentAccessMode := GetAccessModesFromConnect(clientVerb[0], clientOrigin[0])
 
-	println("-------------------> currentAccessMode: ", currentAccessMode)
-	println("-------------------> clientVerb: ", clientVerb[0])
-	println("-------------------> clientOrigin: ", clientOrigin[0])
-
 	AccessModes := map[string]string{
 		"exec":     gwctx.Connection.AccessModeExec,
 		"connect":  gwctx.Connection.AccessModeConnect,
 		"runbooks": gwctx.Connection.AccessModeRunbooks}
 
-	switch {
-	case AccessModes[currentAccessMode] == "disabled":
+	if AccessModes[currentAccessMode] == "disabled" {
 		return status.Error(codes.FailedPrecondition,
-			fmt.Sprintf("the %v connection has the %v feature disabled", gwctx.Connection.Name, currentAccessMode))
+			fmt.Sprintf("the %v access mode connection has the %v feature disabled", gwctx.Connection.Name, currentAccessMode))
 	}
 	// End of verification of the feature enabled
 
