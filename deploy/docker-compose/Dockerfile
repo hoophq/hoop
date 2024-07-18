@@ -76,6 +76,6 @@ ENV LC_ALL en_US.UTF-8
 
 COPY rootfs /
 COPY dist/hoopgateway_* /tmp/
-RUN tar --extract --file /tmp/hoopgateway_*-Linux_$(dpkg --print-architecture).tar.gz -C / --strip 1 && rm -rf /tmp/*.tar.gz
+RUN tar --extract --file /tmp/hoopgateway_*-Linux_$(dpkg --print-architecture).tar.gz -C / --strip 1 && rm -rf /tmp/*
 
 ENTRYPOINT ["tini", "--"]

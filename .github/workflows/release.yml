@@ -401,7 +401,7 @@ jobs:
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
           GOARCH: arm64
-        run: make build-gateway-bundle
+        run: make build-gateway-bundle && mv ./dist ./deploy/docker-compose/dist
       - name: Build and push
         uses: docker/build-push-action@v4
         with:
@@ -449,7 +449,7 @@ jobs:
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
           GOARCH: amd64
-        run: make build-gateway-bundle
+        run: make build-gateway-bundle && mv ./dist ./deploy/docker-compose/dist
       - name: Build and push
         uses: docker/build-push-action@v4
         with:
