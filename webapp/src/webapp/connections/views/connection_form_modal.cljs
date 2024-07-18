@@ -16,25 +16,8 @@
             [webapp.connections.views.form.custom :as custom]
             [webapp.connections.views.form.database :as database]
             [webapp.formatters :as f]
-            [webapp.subs :as subs]))
-
-(def info-types-options
-  ["PHONE_NUMBER",
-   "CREDIT_CARD_NUMBER",
-   "CREDIT_CARD_TRACK_NUMBER",
-   "EMAIL_ADDRESS",
-   "IBAN_CODE",
-   "HTTP_COOKIE",
-   "IMEI_HARDWARE_ID",
-   "IP_ADDRESS",
-   "STORAGE_SIGNED_URL",
-   "URL",
-   "VEHICLE_IDENTIFICATION_NUMBER",
-   "BRAZIL_CPF_NUMBER",
-   "AMERICAN_BANKERS_CUSIP_ID",
-   "FDA_CODE",
-   "US_PASSPORT",
-   "US_SOCIAL_SECURITY_NUMBER"])
+            [webapp.subs :as subs]
+            [webapp.plugins.views.plugin-configurations.dlp :as dlp-config]))
 
 (defn array->select-options [array]
   (mapv #(into {} {"value" % "label" (cs/lower-case (cs/replace % #"_" " "))}) array))
@@ -119,7 +102,7 @@
 
         data-masking-groups-value (r/atom
                                    (if (= form-type :create)
-                                     (array->select-options info-types-options)
+                                     (array->select-options dlp-config/dlp-info-types-options)
                                      (array->select-options
                                       (get-plugin-connection-config data-masking-plugin @connection-name))))
         approval-groups-value (r/atom
