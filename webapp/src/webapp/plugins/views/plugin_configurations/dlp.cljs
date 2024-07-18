@@ -6,7 +6,7 @@
             [webapp.components.multiselect :as multi-select]
             [webapp.plugins.views.plugin-configurations.container :as plugin-configuration-container]))
 
-(def info-types-options
+(def dlp-info-types-options
   ["PHONE_NUMBER",
    "CREDIT_CARD_NUMBER",
    "AUTH_TOKEN",
@@ -79,7 +79,7 @@
                  :href "https://cloud.google.com/dlp/docs/infotypes-reference"}
              "Click here to found more info types accepted."]]]
           [:div {:class "mb-4"}
-           [multi-select/main {:options (array->select-options info-types-options)
+           [multi-select/main {:options (array->select-options dlp-info-types-options)
                                :default-value info-types-groups-value
                                :on-change #(reset! info-types-groups-atom (js->clj %))}]]
 
