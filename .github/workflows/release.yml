@@ -489,17 +489,11 @@ jobs:
     - name: Create SHA manifest and push
       run: |
         docker manifest create \
-          my-registry/my-repo:${{ github.sha }} \
+          hoophq/hooplabs:${{ github.sha }} \
           --amend hoophq/hooplabs:${{ github.sha }}-amd64 \
           --amend hoophq/hooplabs:${{ github.sha }}-arm64
         docker manifest push hoophq/hooplabs:${{ github.sha }}
-    - name: Create latest manifest and push
-      run: |
-        docker manifest create \
-          hoophq/hooplabs:latest \
-          --amend hoophq/hooplabs:latest-amd64 \
-          --amend hoophq/hooplabs:latest-arm64
-        docker manifest push hoophq/hooplabs:latest
+
 
 
 
