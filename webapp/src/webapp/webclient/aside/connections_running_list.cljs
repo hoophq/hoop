@@ -11,9 +11,10 @@
                                        show-tree?
                                        schema-disabled?
                                        removed?
+                                       default-opened?
                                        context-connection?]}]
   [:div {:class "flex flex-col gap-0.5"}
-   [:> ui/Disclosure
+   [:> ui/Disclosure {:defaultOpen default-opened?}
     (fn [params]
       (r/as-element
        [:<>
@@ -40,7 +41,7 @@
            [:ul {:class "flex flex-col gap-2"}
             (when (and (show-tree? connection) (not (schema-disabled? connection)))
               [:li
-               [:> ui/Disclosure
+               [:> ui/Disclosure {:defaultOpen default-opened?}
                 (fn [params]
                   (r/as-element
                    [:<>
@@ -81,6 +82,7 @@
                               :metadata-key metadata-key
                               :metadata-value metadata-value
                               :removed? false
+                              :default-opened? true
                               :context-connection? true}]
     (doall
      (for [connection run-connections-list-selected]
@@ -91,4 +93,5 @@
                                  :metadata metadata
                                  :metadata-key metadata-key
                                  :metadata-value metadata-value
+                                 :default-opened? false
                                  :removed? true}]))]])

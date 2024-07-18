@@ -177,7 +177,7 @@
                             (str "shadow-sm transition-all ease-in duration-500 "
                                  "bg-white sm:text-sm "
                                  "cursor-pointer z-10 relative h-8 w-8 "
-                                 "rounded-full bg-transparent pl-8 outline-none "
+                                 "rounded-full bg-transparent pl-4 outline-none "
 
                                  "focus:outline-none focus:transition-all "
                                  "focus:ease-in focus:duration-1000 "
