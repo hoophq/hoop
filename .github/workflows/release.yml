@@ -369,6 +369,11 @@ jobs:
     name: Docker Publish hooplabs arm64
     environment: production
     needs:
+    - darwin-amd64
+    - darwin-arm64
+    - windows-amd64
+    - windows-arm64
+    - linux-amd64
     - linux-arm64
     - build-webapp
     steps:
@@ -400,7 +405,8 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v4
         with:
-          context: .
+          file: deploy/docker-compose/Dockerfile
+          context: deploy/docker-compose
           platforms: linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -411,7 +417,12 @@ jobs:
     name: Docker Publish hooplabs amd64
     environment: production
     needs:
+    - darwin-amd64
+    - darwin-arm64
+    - windows-amd64
+    - windows-arm64
     - linux-amd64
+    - linux-arm64
     - build-webapp
     steps:
       - name: Checkout
@@ -442,7 +453,8 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v4
         with:
-          context: .
+          file: deploy/docker-compose/Dockerfile
+          context: deploy/docker-compose
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
