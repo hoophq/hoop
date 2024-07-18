@@ -408,10 +408,11 @@ jobs:
           file: deploy/docker-compose/Dockerfile
           context: deploy/docker-compose
           platforms: linux/arm64
-          # push: true
-          outputs: type=image,push-by-digest=true,name-canonical=true,push=true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          push: true
+          tags: |
+            hoophq/hooplabs:${{ github.sha }}-arm64
+          # tags: ${{ steps.meta.outputs.tags }}
+          # labels: ${{ steps.meta.outputs.labels }}
 
   docker-publish-hooplabs-amd64:
     runs-on: ubuntu-latest
@@ -457,10 +458,49 @@ jobs:
           file: deploy/docker-compose/Dockerfile
           context: deploy/docker-compose
           platforms: linux/amd64
-          # push: true
-          outputs: type=image,push-by-digest=true,name-canonical=true,push=true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          push: true
+          tags: |
+            hoophq/hooplabs:${{ github.sha }}-amd64
+          # tags: ${{ steps.meta.outputs.tags }}
+          # labels: ${{ steps.meta.outputs.labels }}
+
+  create-manifests:
+    runs-on: ubuntu-latest
+    name: Create Docker Manifest
+    environment: production
+    needs:
+    - docker-publish-hooplabs-amd64
+    - docker-publish-hooplabs-arm64
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Docker meta
+      id: meta
+      uses: docker/metadata-action@v4
+      with:
+        images: hoophq/hooplabs
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    - name: Login to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_LOGIN }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+    - name: Create SHA manifest and push
+      run: |
+        docker manifest create \
+          my-registry/my-repo:${{ github.sha }} \
+          --amend hoophq/hooplabs:${{ github.sha }}-amd64 \
+          --amend hoophq/hooplabs:${{ github.sha }}-arm64
+        docker manifest push hoophq/hooplabs:${{ github.sha }}
+    - name: Create latest manifest and push
+      run: |
+        docker manifest create \
+          hoophq/hooplabs:latest \
+          --amend hoophq/hooplabs:latest-amd64 \
+          --amend hoophq/hooplabs:latest-arm64
+        docker manifest push hoophq/hooplabs:latest
+
 
 
   # publish-release:
