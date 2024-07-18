@@ -2,7 +2,7 @@ name: hoop
 
 services:
   bootstrap:
-    image: hoophq/utils
+    image: hoophq/hooplabs:enhanc-docker-compose
     volumes:
     - hoopdata:/hoopdata
     environment:
@@ -54,7 +54,7 @@ services:
       bootstrap:
         condition: service_completed_successfully
   nginx:
-    image: hoophq/utils
+    image: hoophq/hooplabs:enhanc-docker-compose
     command: run-nginx.sh
     environment:
     - HOOP_PUBLIC_HOSTNAME=${HOOP_PUBLIC_HOSTNAME}
@@ -71,7 +71,7 @@ services:
       retries: 15
       start_period: '20s'
   idp-provisioner:
-    image: hoophq/utils
+    image: hoophq/hooplabs:enhanc-docker-compose
     environment:
     - TF_VAR_public_hostname=${HOOP_PUBLIC_HOSTNAME}
     command: run-idp-provisioner.sh
@@ -81,14 +81,18 @@ services:
       nginx:
         condition: 'service_healthy'
   gateway:
-    image: hoophq/utils
+    image: hoophq/hooplabs:enhanc-docker-compose
     environment:
+    - PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/hoop/bin
     - LOG_LEVEL=info
     - LOG_ENCODING=console
     - GIN_MODE=release
     - PLUGIN_AUDIT_PATH=/hoopdata/sessions
     - PLUGIN_INDEX_PATH=/hoopdata/sessions/indexes
+    - STATIC_UI_PATH=/opt/hoop/webapp/public
+    - MIGRATION_PATH_FILES=/opt/hoop/migrations
     - POSTGRES_DB_URI=postgres://postgres:postgres@db:5432/hoopdb?sslmode=disable
+    - IDP_ISSUER=https://auth.${HOOP_PUBLIC_HOSTNAME}
     - API_URL=https://app.${HOOP_PUBLIC_HOSTNAME}
     - GRPC_URL=grpcs://app.${HOOP_PUBLIC_HOSTNAME}:443
     env_file: '.env'
@@ -101,17 +105,25 @@ services:
     depends_on:
       idp-provisioner:
         condition: service_completed_successfully
+    healthcheck:
+      test: 'curl http://127.0.0.1:8009/api/healthz'
+      interval: '2s'
+      timeout: '30s'
+      retries: 10
+      start_period: '20s'
   agent:
-    image: hoophq/utils
+    image: hoophq/hooplabs:enhanc-docker-compose
     volumes:
     - hoopdata:/hoopdata/
     environment:
+    - PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/hoop/bin
     - LOG_LEVEL=info
     - LOG_ENCODING=console
     - GRPC_URL=app.${HOOP_PUBLIC_HOSTNAME}:443
     - POSTGRES_DB_URI=postgres://postgres:postgres@db:5432/hoopdb?sslmode=disable
     depends_on:
-    - gateway
+      gateway:
+        condition: 'service_healthy'
     command: run-agent.sh
 
 volumes:
