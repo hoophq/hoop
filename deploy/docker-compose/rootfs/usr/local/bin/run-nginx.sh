@@ -13,6 +13,7 @@ reload-nginx() {
     nginx -s reload
 }
 
+echo "--> starting nginx ..."
 reload-nginx &
 
 mkdir -p /etc/certs

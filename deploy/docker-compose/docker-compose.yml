@@ -7,8 +7,7 @@ services:
     - hoopdev
     volumes:
     - hoopdata:/hoopdata
-    environment:
-    - HOOP_PUBLIC_HOSTNAME=${HOOP_PUBLIC_HOSTNAME}
+    env_file: '.env'
     command: bootstrap.sh
   db:
     image: postgres:16
@@ -30,9 +29,6 @@ services:
     image: ghcr.io/zitadel/zitadel:v2.56.0
     command: 'start-from-init --masterkeyFile /hoopdata/zitadel-master.key --tlsMode external'
     user: root
-    # TODO: add healthcheck
-    ports:
-    - 8080:8080
     networks:
     - hoopdev
     volumes:
@@ -110,9 +106,6 @@ services:
     volumes:
     - hoopdata:/hoopdata/
     command: run-gateway.sh
-    ports:
-    - 8009:8009
-    - 8010:8010
     networks:
     - hoopdev
     depends_on:
