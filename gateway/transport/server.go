@@ -18,6 +18,7 @@ import (
 	"github.com/hoophq/hoop/gateway/pgrest"
 	"github.com/hoophq/hoop/gateway/review"
 	"github.com/hoophq/hoop/gateway/security/idp"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	"github.com/hoophq/hoop/gateway/transport/connectionstatus"
 	authinterceptor "github.com/hoophq/hoop/gateway/transport/interceptors/auth"
@@ -106,19 +107,25 @@ func (s *Server) PreConnect(ctx context.Context, req *pb.PreConnectRequest) (*pb
 	return resp, nil
 }
 
-func GetAccessModesFromConnect(clientVerb string, clientOrigin string) string {
+func validateConnectionAccessMode(clientVerb, clientOrigin string, connInfo types.ConnectionInfo) error {
+	var currentAccessMode string
 	switch {
-	case clientVerb == pb.ClientVerbExec && clientOrigin == pb.ConnectionOriginClient:
-		return "exec"
-	case clientVerb == pb.ClientVerbExec && clientOrigin == pb.ConnectionOriginClientAPI:
-		return "exec"
+	case clientVerb == pb.ClientVerbExec && clientOrigin == pb.ConnectionOriginClient,
+		clientVerb == pb.ClientVerbExec && clientOrigin == pb.ConnectionOriginClientAPI:
+		currentAccessMode = "exec"
 	case clientVerb == pb.ClientVerbConnect:
-		return "connect"
+		currentAccessMode = "connect"
 	case clientVerb == pb.ClientVerbExec && clientOrigin == pb.ConnectionOriginClientAPIRunbooks:
-		return "runbooks"
-	default:
-		return ""
+		currentAccessMode = "runbooks"
 	}
+	accessModes := map[string]string{
+		"exec":     connInfo.AccessModeExec,
+		"connect":  connInfo.AccessModeConnect,
+		"runbooks": connInfo.AccessModeRunbooks}
+	if accessModes[currentAccessMode] == "disabled" {
+		return status.Error(codes.FailedPrecondition, fmt.Sprintf("%s is disabeld for this connection", currentAccessMode))
+	}
+	return nil
 }
 
 func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
@@ -184,19 +191,9 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 		ParamsData: map[string]any{},
 	}
 
-	// Verifying if the feature is enabled
-	currentAccessMode := GetAccessModesFromConnect(clientVerb[0], clientOrigin[0])
-
-	AccessModes := map[string]string{
-		"exec":     gwctx.Connection.AccessModeExec,
-		"connect":  gwctx.Connection.AccessModeConnect,
-		"runbooks": gwctx.Connection.AccessModeRunbooks}
-
-	if AccessModes[currentAccessMode] == "disabled" {
-		return status.Error(codes.FailedPrecondition,
-			fmt.Sprintf("the %v access mode connection has the %v feature disabled", gwctx.Connection.Name, currentAccessMode))
+	if err := validateConnectionAccessMode(clientVerb[0], clientOrigin[0], gwctx.Connection); err != nil {
+		return err
 	}
-	// End of verification of the feature enabled
 
 	switch clientOrigin[0] {
 	case pb.ConnectionOriginClientProxyManager:

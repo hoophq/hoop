@@ -97,10 +97,9 @@ func (c *connections) Upsert(ctx pgrest.OrgContext, conn pgrest.Connection) erro
 	}
 
 	if conn.AccessSchema == "" {
+		conn.AccessSchema = "disabled"
 		if conn.Type == "database" {
 			conn.AccessSchema = "enabled"
-		} else {
-			conn.AccessSchema = "disabled"
 		}
 	}
 

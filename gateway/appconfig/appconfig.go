@@ -35,6 +35,7 @@ type Config struct {
 	apiURL                string
 	apiHostname           string
 	apiScheme             string
+	webappUsersManagement string
 
 	isLoaded bool
 }
@@ -82,6 +83,10 @@ func Load() error {
 	if err != nil {
 		return err
 	}
+	webappUsersManagement := os.Getenv("WEBAPP_USERS_MANAGEMENT")
+	if webappUsersManagement == "" {
+		webappUsersManagement = "on"
+	}
 	runtimeConfig = Config{
 		apiURL:                fmt.Sprintf("%s://%s", apiRawURL.Scheme, apiRawURL.Host),
 		apiHostname:           apiRawURL.Hostname(),
@@ -93,6 +98,7 @@ func Load() error {
 		licenseSignerOrgID:    allowedOrgID,
 		gcpDLPJsonCredentials: gcpJsonCred,
 		webhookAppKey:         os.Getenv("WEBHOOK_APPKEY"),
+		webappUsersManagement: webappUsersManagement,
 		isLoaded:              true,
 	}
 	return nil
@@ -185,7 +191,8 @@ func (c Config) PostgRESTRole() string         { return c.pgCred.postgrestRole }
 
 func (c Config) MigrationPathFiles() string { return c.migrationPathFiles }
 
-func (c Config) IsAskAIAvailable() bool { return c.askAICredentials != nil }
+func (c Config) WebappUsersManagement() string { return c.webappUsersManagement }
+func (c Config) IsAskAIAvailable() bool        { return c.askAICredentials != nil }
 func (c Config) AskAIApiURL() (u string) {
 	if c.IsAskAIAvailable() {
 		return fmt.Sprintf("%s://%s", c.askAICredentials.Scheme, c.askAICredentials.Host)

@@ -85,10 +85,10 @@ func Post(c *gin.Context) {
 		Status:             req.Status,
 		ManagedBy:          nil,
 		Tags:               req.Tags,
-		AccessModeRunbooks: string(req.AccessModeRunbooks),
-		AccessModeExec:     string(req.AccessModeExec),
-		AccessModeConnect:  string(req.AccessModeConnect),
-		AccessSchema:       string(req.AccessSchema),
+		AccessModeRunbooks: req.AccessModeRunbooks,
+		AccessModeExec:     req.AccessModeExec,
+		AccessModeConnect:  req.AccessModeConnect,
+		AccessSchema:       req.AccessSchema,
 	})
 	if err != nil {
 		log.Errorf("failed creating connection, err=%v", err)

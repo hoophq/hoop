@@ -314,22 +314,23 @@ func GetUserInfo(c *gin.Context) {
 		roleName = RoleAdminType
 	}
 	userInfoData := map[string]any{
-		"id":             ctx.UserID,
-		"name":           ctx.UserName,
-		"email":          ctx.UserEmail,
-		"picture":        ctx.UserPicture,
-		"status":         ctx.UserStatus,
-		"verified":       true, // DEPRECATED in flavor of role (guest)
-		"slack_id":       ctx.SlackID,
-		"groups":         groupList,
-		"is_admin":       ctx.IsAdminUser(), // DEPRECATED in flavor of role (admin)
-		"is_multitenant": isOrgMultiTenant,  // DEPRECATED is flavor of tenancy_type
-		"tenancy_type":   tenancyType,
-		"role":           roleName,
-		"org_id":         ctx.OrgID,
-		"org_name":       ctx.OrgName,
-		"org_license":    ctx.OrgLicense,
-		"feature_ask_ai": askAIFeatureStatus,
+		"id":                      ctx.UserID,
+		"name":                    ctx.UserName,
+		"email":                   ctx.UserEmail,
+		"picture":                 ctx.UserPicture,
+		"status":                  ctx.UserStatus,
+		"verified":                true, // DEPRECATED in flavor of role (guest)
+		"slack_id":                ctx.SlackID,
+		"groups":                  groupList,
+		"is_admin":                ctx.IsAdminUser(), // DEPRECATED in flavor of role (admin)
+		"is_multitenant":          isOrgMultiTenant,  // DEPRECATED is flavor of tenancy_type
+		"tenancy_type":            tenancyType,
+		"role":                    roleName,
+		"org_id":                  ctx.OrgID,
+		"org_name":                ctx.OrgName,
+		"org_license":             ctx.OrgLicense,
+		"feature_ask_ai":          askAIFeatureStatus,
+		"webapp_users_management": appconfig.Get().WebappUsersManagement(),
 	}
 	if ctx.IsAnonymous() {
 		userInfoData["verified"] = false

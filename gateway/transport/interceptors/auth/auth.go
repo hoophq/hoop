@@ -177,10 +177,10 @@ func (i *interceptor) getConnection(name string, userCtx *pguserauth.Context) (*
 		AgentID:            conn.AgentID,
 		AgentMode:          conn.Agent.Mode,
 		AgentName:          conn.Agent.Name,
-		AccessModeRunbooks: string(conn.AccessModeRunbooks),
-		AccessModeExec:     string(conn.AccessModeExec),
-		AccessModeConnect:  string(conn.AccessModeConnect),
-		AccessSchema:       string(conn.AccessSchema),
+		AccessModeRunbooks: conn.AccessModeRunbooks,
+		AccessModeExec:     conn.AccessModeExec,
+		AccessModeConnect:  conn.AccessModeConnect,
+		AccessSchema:       conn.AccessSchema,
 	}, nil
 }
 

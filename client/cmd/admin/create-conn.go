@@ -25,6 +25,8 @@ var (
 	connSchemaFlag       string
 	skipStrictValidation bool
 	connOverwriteFlag    bool
+
+	defaultAccessModes = []string{"connect", "exec", "runbooks"}
 )
 
 func init() {
@@ -37,14 +39,14 @@ func init() {
 	createConnectionCmd.Flags().BoolVar(&skipStrictValidation, "skip-validation", false, "It will skip any strict validation")
 	createConnectionCmd.Flags().StringSliceVarP(&connSecretFlag, "env", "e", nil, "The environment variables of the connection")
 	createConnectionCmd.Flags().StringSliceVar(&connTagsFlag, "tags", nil, "Tags to identify connections in a key=value format")
-	createConnectionCmd.Flags().StringSliceVar(&connAccessModesFlag, "access-modes", nil, "Access modes enabled for this connection. Access modes are: runbooks, exec, connect")
-	createConnectionCmd.Flags().StringVarP(&connSchemaFlag, "schema", "", "", "Enabled or disabled the schema for this connection on the WebClient (enabled/disabled)")
+	createConnectionCmd.Flags().StringSliceVar(&connAccessModesFlag, "access-modes", defaultAccessModes, "Access modes enabled for this connection. Accepted values: [runbooks, exec, connect]")
+	createConnectionCmd.Flags().StringVar(&connSchemaFlag, "schema", "", "Enable or disable the schema for this connection on the WebClient. Accepted values: [disabled, enabled]")
 	createConnectionCmd.MarkFlagRequired("agent")
 }
 
 var createConnExamplesDesc = `
-hoop admin create connection hello-hoop -a test-agent -- bash -c 'echo hello hoop'
-hoop admin create connection tcpsvc -a test-agent -t tcp -e HOST=127.0.0.1 -e PORT=3000
+hoop admin create connection hello-hoop -a default -- bash -c 'echo hello hoop'
+hoop admin create connection tcpsvc -a default -t application/tcp -e HOST=127.0.0.1 -e PORT=3000
 `
 var createConnectionCmd = &cobra.Command{
 	Use:     "connection NAME [-- COMMAND]",
@@ -124,11 +126,6 @@ var createConnectionCmd = &cobra.Command{
 			redactEnabled = true
 		}
 
-		access_mode_runbooks := verifyAccessModeStatus("runbooks")
-		access_mode_exec := verifyAccessModeStatus("exec")
-		access_mode_connect := verifyAccessModeStatus("connect")
-		connSchemaFlag = verifySchemaStatus(connSchemaFlag, connType)
-
 		connectionBody := map[string]any{
 			"name":                 apir.name,
 			"type":                 connType,
@@ -140,10 +137,10 @@ var createConnectionCmd = &cobra.Command{
 			"redact_enabled":       redactEnabled,
 			"redact_types":         connRedactTypesFlag,
 			"tags":                 connTagsFlag,
-			"access_mode_runbooks": access_mode_runbooks,
-			"access_mode_exec":     access_mode_exec,
-			"access_mode_connect":  access_mode_connect,
-			"access_schema":        connSchemaFlag,
+			"access_mode_runbooks": verifyAccessModeStatus("runbooks"),
+			"access_mode_exec":     verifyAccessModeStatus("exec"),
+			"access_mode_connect":  verifyAccessModeStatus("connect"),
+			"access_schema":        verifySchemaStatus(connSchemaFlag, connType),
 		}
 
 		resp, err := httpBodyRequest(apir, method, connectionBody)
@@ -197,11 +194,7 @@ var createConnectionCmd = &cobra.Command{
 func verifyAccessModeStatus(mode string) string {
 	if slices.Contains(connAccessModesFlag, mode) {
 		return "enabled"
-	} else if !slices.Contains(connAccessModesFlag, mode) {
-		return "disabled"
 	}
-
-	styles.PrintErrorAndExit("invalid access mode: %q", mode)
 	return "disabled"
 }
 
@@ -214,8 +207,8 @@ func verifySchemaStatus(schema string, connType string) string {
 		return schema
 	}
 
-	styles.PrintErrorAndExit("invalid schema status: %q", schema)
-	return "disabled"
+	styles.PrintErrorAndExit("invalid value for schema status: %q, accepted values are: [enabled disabled]", schema)
+	return ""
 }
 
 func parseEnvPerType() (map[string]string, error) {
