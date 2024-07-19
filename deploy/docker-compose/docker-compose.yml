@@ -2,7 +2,7 @@ name: hoop
 
 services:
   bootstrap:
-    image: hoophq/hooplabs:enhanc-docker-compose
+    image: hoophq/hooplabs
     volumes:
     - hoopdata:/hoopdata
     environment:
@@ -33,7 +33,7 @@ services:
     - hoopdata:/hoopdata
     environment:
       - ZITADEL_EXTERNALSECURE=true
-      - ZITADEL_EXTERNALDOMAIN=auth.${HOOP_PUBLIC_HOSTNAME}
+      - ZITADEL_EXTERNALDOMAIN=${HOOP_PUBLIC_HOSTNAME}
       - ZITADEL_EXTERNALPORT=443
       - ZITADEL_DATABASE_POSTGRES_HOST=db
       - ZITADEL_DATABASE_POSTGRES_PORT=5432
@@ -45,6 +45,8 @@ services:
       - ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD=postgres
       - ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE=disable
       - ZITADEL_FIRSTINSTANCE_MACHINEKEYPATH=/hoopdata/zitadel-admin-sa.json
+      # - ZITADEL_FIRSTINSTANCE_PATPATH=/hoopdata/zitadel-admin-sa.pat
+      # - ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE=2038-12-12T00:00:00Z
       - ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME=zitadel-admin-sa
       - ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME=Admin
       - ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINEKEY_TYPE=1
@@ -54,7 +56,7 @@ services:
       bootstrap:
         condition: service_completed_successfully
   nginx:
-    image: hoophq/hooplabs:enhanc-docker-compose
+    image: hoophq/hooplabs
     command: run-nginx.sh
     environment:
     - HOOP_PUBLIC_HOSTNAME=${HOOP_PUBLIC_HOSTNAME}
@@ -71,7 +73,7 @@ services:
       retries: 15
       start_period: '20s'
   idp-provisioner:
-    image: hoophq/hooplabs:enhanc-docker-compose
+    image: hoophq/hooplabs
     environment:
     - TF_VAR_public_hostname=${HOOP_PUBLIC_HOSTNAME}
     command: run-idp-provisioner.sh
@@ -81,7 +83,7 @@ services:
       nginx:
         condition: 'service_healthy'
   gateway:
-    image: hoophq/hooplabs:enhanc-docker-compose
+    image: hoophq/hooplabs
     environment:
     - PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/hoop/bin
     - LOG_LEVEL=info
@@ -92,9 +94,8 @@ services:
     - STATIC_UI_PATH=/opt/hoop/webapp/public
     - MIGRATION_PATH_FILES=/opt/hoop/migrations
     - POSTGRES_DB_URI=postgres://postgres:postgres@db:5432/hoopdb?sslmode=disable
-    - IDP_ISSUER=https://auth.${HOOP_PUBLIC_HOSTNAME}
-    - API_URL=https://app.${HOOP_PUBLIC_HOSTNAME}
-    - GRPC_URL=grpcs://app.${HOOP_PUBLIC_HOSTNAME}:443
+    - API_URL=https://${HOOP_PUBLIC_HOSTNAME}
+    - GRPC_URL=grpcs://${HOOP_PUBLIC_HOSTNAME}:443
     env_file: '.env'
     volumes:
     - hoopdata:/hoopdata/
@@ -112,14 +113,14 @@ services:
       retries: 10
       start_period: '20s'
   agent:
-    image: hoophq/hooplabs:enhanc-docker-compose
+    image: hoophq/hooplabs
     volumes:
     - hoopdata:/hoopdata/
     environment:
     - PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/hoop/bin
     - LOG_LEVEL=info
     - LOG_ENCODING=console
-    - GRPC_URL=app.${HOOP_PUBLIC_HOSTNAME}:443
+    - GRPC_URL=${HOOP_PUBLIC_HOSTNAME}:443
     - POSTGRES_DB_URI=postgres://postgres:postgres@db:5432/hoopdb?sslmode=disable
     depends_on:
       gateway:

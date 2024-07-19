@@ -4,6 +4,16 @@
 
 set -e
 
+reload-nginx() {
+    until curl -k -s -f -o /dev/null "http://gateway:8009/api/healthz"; do
+      sleep 1
+    done
+    echo "gateway is alive, reloading nginx ..."
+    nginx -s reload
+}
+
+reload-nginx &
+
 mkdir -p /etc/certs
 cp /hoopdata/tls/server.crt /etc/certs/server.crt
 cp /hoopdata/tls/server.key /etc/certs/server.key

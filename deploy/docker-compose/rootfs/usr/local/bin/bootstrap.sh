@@ -42,8 +42,8 @@ keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
 subjectAltName = @alt_names
 [alt_names]
 DNS.1 = gateway
-DNS.2 = app.${HOOP_PUBLIC_HOSTNAME}
-DNS.3 = auth.${HOOP_PUBLIC_HOSTNAME}
+DNS.2 = idp
+DNS.3 = ${HOOP_PUBLIC_HOSTNAME}
 IP.1 = 127.0.0.1
 EOF
 openssl x509 -req \
