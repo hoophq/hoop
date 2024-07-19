@@ -397,6 +397,8 @@ jobs:
           path: dist/
       - name: Extract Webapp
         run: make extract-webapp
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
       - name: Build Gateway Bundle
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
@@ -447,6 +449,8 @@ jobs:
           path: dist/
       - name: Extract Webapp
         run: make extract-webapp
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
       - name: Build Gateway Bundle
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
@@ -486,15 +490,20 @@ jobs:
       with:
         username: ${{ secrets.DOCKER_LOGIN }}
         password: ${{ secrets.DOCKER_PASSWORD }}
+    - name: Set Git Tag
+      run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
     - name: Create SHA manifest and push
       env:
         GIT_TAG: ${{ env.GIT_TAG }}
       run: |
-        docker manifest create \
-          hoophq/hooplabs:${{ env.GIT_TAG }} \
+        docker manifest create hoophq/hooplabs:${{ env.GIT_TAG }} \
+          --amend hoophq/hooplabs:${{ github.sha }}-amd64 \
+          --amend hoophq/hooplabs:${{ github.sha }}-arm64
+        docker manifest create hoophq/hooplabs:latest \
           --amend hoophq/hooplabs:${{ github.sha }}-amd64 \
           --amend hoophq/hooplabs:${{ github.sha }}-arm64
         docker manifest push hoophq/hooplabs:${{ env.GIT_TAG }}
+        docker manifest push hoophq/hooplabs:latest
 
   publish-release:
     runs-on: ubuntu-latest
