@@ -11,7 +11,7 @@
                     user-groups
                     review-toggle-enabled?
                     approval-groups-value]}]
-  [:div {:class "mb-large"}
+  [:div {:class ""}
    [:div {:class "mb-regular flex justify-between items-center"}
     [:div {:class "mr-24"}
      [:div {:class "flex items-center gap-2"}

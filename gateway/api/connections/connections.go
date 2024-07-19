@@ -23,19 +23,23 @@ type Review struct {
 }
 
 type Connection struct {
-	ID            string         `json:"id"`
-	Name          string         `json:"name"`
-	Command       []string       `json:"command"`
-	Type          string         `json:"type"`
-	SubType       string         `json:"subtype"`
-	Secrets       map[string]any `json:"secret"`
-	AgentId       string         `json:"agent_id"`
-	Status        string         `json:"status"` // read only field
-	Reviewers     []string       `json:"reviewers"`
-	RedactEnabled bool           `json:"redact_enabled"`
-	RedactTypes   []string       `json:"redact_types"`
-	ManagedBy     *string        `json:"managed_by"`
-	Tags          []string       `json:"tags"`
+	ID                 string         `json:"id"`
+	Name               string         `json:"name"`
+	Command            []string       `json:"command"`
+	Type               string         `json:"type"`
+	SubType            string         `json:"subtype"`
+	Secrets            map[string]any `json:"secret"`
+	AgentId            string         `json:"agent_id"`
+	Status             string         `json:"status"` // read only field
+	Reviewers          []string       `json:"reviewers"`
+	RedactEnabled      bool           `json:"redact_enabled"`
+	RedactTypes        []string       `json:"redact_types"`
+	ManagedBy          *string        `json:"managed_by"`
+	Tags               []string       `json:"tags"`
+	AccessModeRunbooks string         `json:"access_mode_runbooks"`
+	AccessModeExec     string         `json:"access_mode_exec"`
+	AccessModeConnect  string         `json:"access_mode_connect"`
+	AccessSchema       string         `json:"access_schema"`
 }
 
 func Post(c *gin.Context) {
@@ -68,18 +72,23 @@ func Post(c *gin.Context) {
 	if streamclient.IsAgentOnline(streamtypes.NewStreamID(req.AgentId, "")) {
 		req.Status = pgrest.ConnectionStatusOnline
 	}
+
 	err = pgconnections.New().Upsert(ctx, pgrest.Connection{
-		ID:        req.ID,
-		OrgID:     ctx.OrgID,
-		AgentID:   req.AgentId,
-		Name:      req.Name,
-		Command:   req.Command,
-		Type:      string(req.Type),
-		SubType:   req.SubType,
-		Envs:      coerceToMapString(req.Secrets),
-		Status:    req.Status,
-		ManagedBy: nil,
-		Tags:      req.Tags,
+		ID:                 req.ID,
+		OrgID:              ctx.OrgID,
+		AgentID:            req.AgentId,
+		Name:               req.Name,
+		Command:            req.Command,
+		Type:               string(req.Type),
+		SubType:            req.SubType,
+		Envs:               coerceToMapString(req.Secrets),
+		Status:             req.Status,
+		ManagedBy:          nil,
+		Tags:               req.Tags,
+		AccessModeRunbooks: req.AccessModeRunbooks,
+		AccessModeExec:     req.AccessModeExec,
+		AccessModeConnect:  req.AccessModeConnect,
+		AccessSchema:       req.AccessSchema,
 	})
 	if err != nil {
 		log.Errorf("failed creating connection, err=%v", err)
@@ -145,17 +154,21 @@ func Put(c *gin.Context) {
 	req.Name = conn.Name
 	req.Status = conn.Status
 	err = pgconnections.New().Upsert(ctx, pgrest.Connection{
-		ID:        conn.ID,
-		OrgID:     conn.OrgID,
-		AgentID:   req.AgentId,
-		Name:      conn.Name,
-		Command:   req.Command,
-		Type:      req.Type,
-		SubType:   req.SubType,
-		Envs:      coerceToMapString(req.Secrets),
-		Status:    conn.Status,
-		ManagedBy: nil,
-		Tags:      req.Tags,
+		ID:                 conn.ID,
+		OrgID:              conn.OrgID,
+		AgentID:            req.AgentId,
+		Name:               conn.Name,
+		Command:            req.Command,
+		Type:               req.Type,
+		SubType:            req.SubType,
+		Envs:               coerceToMapString(req.Secrets),
+		Status:             conn.Status,
+		ManagedBy:          nil,
+		Tags:               req.Tags,
+		AccessModeRunbooks: req.AccessModeRunbooks,
+		AccessModeExec:     req.AccessModeExec,
+		AccessModeConnect:  req.AccessModeConnect,
+		AccessSchema:       req.AccessSchema,
 	})
 	if err != nil {
 		log.Errorf("failed updating connection, err=%v", err)
@@ -243,19 +256,23 @@ func List(c *gin.Context) {
 				}
 			}
 			responseConnList = append(responseConnList, Connection{
-				ID:            conn.ID,
-				Name:          conn.Name,
-				Command:       conn.Command,
-				Type:          conn.Type,
-				SubType:       conn.SubType,
-				Secrets:       coerceToAnyMap(conn.Envs),
-				AgentId:       conn.AgentID,
-				Status:        conn.Status,
-				Reviewers:     reviewers,
-				RedactEnabled: len(redactTypes) > 0,
-				RedactTypes:   redactTypes,
-				ManagedBy:     conn.ManagedBy,
-				Tags:          conn.Tags,
+				ID:                 conn.ID,
+				Name:               conn.Name,
+				Command:            conn.Command,
+				Type:               conn.Type,
+				SubType:            conn.SubType,
+				Secrets:            coerceToAnyMap(conn.Envs),
+				AgentId:            conn.AgentID,
+				Status:             conn.Status,
+				Reviewers:          reviewers,
+				RedactEnabled:      len(redactTypes) > 0,
+				RedactTypes:        redactTypes,
+				ManagedBy:          conn.ManagedBy,
+				Tags:               conn.Tags,
+				AccessModeRunbooks: conn.AccessModeRunbooks,
+				AccessModeExec:     conn.AccessModeExec,
+				AccessModeConnect:  conn.AccessModeConnect,
+				AccessSchema:       conn.AccessSchema,
 			})
 		}
 
@@ -294,19 +311,23 @@ func Get(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, Connection{
-		ID:            conn.ID,
-		Name:          conn.Name,
-		Command:       conn.Command,
-		Type:          conn.Type,
-		SubType:       conn.SubType,
-		Secrets:       coerceToAnyMap(conn.Envs),
-		AgentId:       conn.AgentID,
-		Status:        conn.Status,
-		Reviewers:     reviewers,
-		RedactEnabled: len(redactTypes) > 0,
-		RedactTypes:   redactTypes,
-		ManagedBy:     conn.ManagedBy,
-		Tags:          conn.Tags,
+		ID:                 conn.ID,
+		Name:               conn.Name,
+		Command:            conn.Command,
+		Type:               conn.Type,
+		SubType:            conn.SubType,
+		Secrets:            coerceToAnyMap(conn.Envs),
+		AgentId:            conn.AgentID,
+		Status:             conn.Status,
+		Reviewers:          reviewers,
+		RedactEnabled:      len(redactTypes) > 0,
+		RedactTypes:        redactTypes,
+		ManagedBy:          conn.ManagedBy,
+		Tags:               conn.Tags,
+		AccessModeRunbooks: conn.AccessModeRunbooks,
+		AccessModeExec:     conn.AccessModeExec,
+		AccessModeConnect:  conn.AccessModeConnect,
+		AccessSchema:       conn.AccessSchema,
 	})
 }
 

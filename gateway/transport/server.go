@@ -18,6 +18,7 @@ import (
 	"github.com/hoophq/hoop/gateway/pgrest"
 	"github.com/hoophq/hoop/gateway/review"
 	"github.com/hoophq/hoop/gateway/security/idp"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	"github.com/hoophq/hoop/gateway/transport/connectionstatus"
 	authinterceptor "github.com/hoophq/hoop/gateway/transport/interceptors/auth"
@@ -106,9 +107,32 @@ func (s *Server) PreConnect(ctx context.Context, req *pb.PreConnectRequest) (*pb
 	return resp, nil
 }
 
+func validateConnectionAccessMode(clientVerb, clientOrigin string, connInfo types.ConnectionInfo) error {
+	var currentAccessMode string
+	switch {
+	case clientVerb == pb.ClientVerbExec && clientOrigin == pb.ConnectionOriginClient,
+		clientVerb == pb.ClientVerbExec && clientOrigin == pb.ConnectionOriginClientAPI:
+		currentAccessMode = "exec"
+	case clientVerb == pb.ClientVerbConnect:
+		currentAccessMode = "connect"
+	case clientVerb == pb.ClientVerbExec && clientOrigin == pb.ConnectionOriginClientAPIRunbooks:
+		currentAccessMode = "runbooks"
+	}
+	accessModes := map[string]string{
+		"exec":     connInfo.AccessModeExec,
+		"connect":  connInfo.AccessModeConnect,
+		"runbooks": connInfo.AccessModeRunbooks}
+	if accessModes[currentAccessMode] == "disabled" {
+		return status.Error(codes.FailedPrecondition, fmt.Sprintf("%s is disabeld for this connection", currentAccessMode))
+	}
+	return nil
+}
+
 func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 	md, _ := metadata.FromIncomingContext(stream.Context())
 	clientOrigin := md.Get("origin")
+	clientVerb := md.Get("verb")
+
 	if len(clientOrigin) == 0 {
 		md.Delete("authorization")
 		log.Debugf("client missing origin, client-metadata=%v", md)
@@ -165,6 +189,10 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 		Metadata: nil,
 
 		ParamsData: map[string]any{},
+	}
+
+	if err := validateConnectionAccessMode(clientVerb[0], clientOrigin[0], gwctx.Connection); err != nil {
+		return err
 	}
 
 	switch clientOrigin[0] {

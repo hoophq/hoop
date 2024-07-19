@@ -77,27 +77,35 @@ type Client struct {
 }
 
 type Connection struct {
-	Id       string         `json:"id"`
-	OrgId    string         `json:"-"`
-	Name     string         `json:"name"`
-	IconName string         `json:"icon_name"`
-	Command  []string       `json:"command"`
-	Type     string         `json:"type"`
-	SubType  string         `json:"subtype"`
-	Secret   map[string]any `json:"secret"`
-	AgentId  string         `json:"agent_id"`
+	Id                 string         `json:"id"`
+	OrgId              string         `json:"-"`
+	Name               string         `json:"name"`
+	IconName           string         `json:"icon_name"`
+	Command            []string       `json:"command"`
+	Type               string         `json:"type"`
+	SubType            string         `json:"subtype"`
+	Secret             map[string]any `json:"secret"`
+	AgentId            string         `json:"agent_id"`
+	AccessModeRunbooks string         `json:"access_mode_runbooks"`
+	AccessModeExec     string         `json:"access_mode_exec"`
+	AccessModeConnect  string         `json:"access_mode_connect"`
+	AccessSchema       string         `json:"access_schema"`
 }
 
 type ConnectionInfo struct {
-	ID            string
-	Name          string
-	Type          string
-	SubType       string
-	CmdEntrypoint []string
-	Secrets       map[string]any
-	AgentID       string
-	AgentName     string
-	AgentMode     string
+	ID                 string
+	Name               string
+	Type               string
+	SubType            string
+	CmdEntrypoint      []string
+	Secrets            map[string]any
+	AgentID            string
+	AgentName          string
+	AgentMode          string
+	AccessModeRunbooks string
+	AccessModeExec     string
+	AccessModeConnect  string
+	AccessSchema       string
 }
 
 type ReviewOwner struct {

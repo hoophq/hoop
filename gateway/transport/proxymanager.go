@@ -165,6 +165,14 @@ func (s *Server) proccessConnectOKAck(stream *streamclient.ProxyStream) error {
 			disp.sendResponse(nil, ErrUnsupportedType)
 			return fmt.Errorf("connection type %s/%s not supported", conn.Type, conn.SubType)
 		}
+
+		if conn.AccessModeConnect == "disabled" {
+			errorMessage := fmt.Sprintf("the %v connection has the access mode connect (Native) feature disabled", conn.Name)
+
+			disp.sendResponse(nil, status.Error(codes.FailedPrecondition, errorMessage))
+			return status.Error(codes.FailedPrecondition, errorMessage)
+		}
+
 		clientOrigin := pb.ConnectionOriginClientProxyManager
 		stream.SetPluginContext(func(pluginCtx *plugintypes.Context) {
 			pluginCtx.ConnectionID = conn.ID

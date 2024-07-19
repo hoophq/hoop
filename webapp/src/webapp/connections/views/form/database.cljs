@@ -3,9 +3,11 @@
             ["unique-names-generator" :as ung]
             [re-frame.core :as rf]
             [reagent.core :as r]
+            [webapp.components.checkboxes :as checkboxes]
             [webapp.components.headings :as h]
             [webapp.components.multiselect :as multi-select]
             [webapp.components.tabs :as tabs]
+            [webapp.components.toggle :as toggle]
             [webapp.connections.constants :as constants]
             [webapp.connections.utilities :as utils]
             [webapp.connections.views.configuration-inputs :as config-inputs]
@@ -95,6 +97,10 @@
                          approval-groups-value
                          data-masking-toggle-enabled?
                          data-masking-groups-value
+                         access-schema-toggle-enabled?
+                         access-mode-runbooks
+                         access-mode-connect
+                         access-mode-exec
                          api-key
                          form-type]}]
       [:<>
@@ -152,7 +158,7 @@
                                                                  "text-gray-700"))}
                    (:label database)]]]))])]]]
 
-       [:section {:class "mb-large"}
+       [:section {:class "space-y-8 mb-16"}
         [toggle-review/main {:free-license? (:free-license? (:data @user))
                              :user-groups user-groups
                              :review-toggle-enabled? review-toggle-enabled?
@@ -161,6 +167,39 @@
         [toggle-data-masking/main {:free-license? (:free-license? (:data @user))
                                    :data-masking-toggle-enabled? data-masking-toggle-enabled?
                                    :data-masking-groups-value data-masking-groups-value}]
+
+        [:div {:class "flex justify-between items-center"}
+         [:div {:class "mr-24"}
+          [:div {:class "flex items-center gap-2"}
+           [h/h4-md "Enable schema in the Editor"]]
+          [:label {:class "text-xs text-gray-500"}
+           "Show database schemas in the connection details"]]
+         [toggle/main {:enabled? @access-schema-toggle-enabled?
+                       :on-click (fn []
+                                   (reset! access-schema-toggle-enabled?
+                                           (not @access-schema-toggle-enabled?)))}]]
+
+        [:div {:class " flex flex-col gap-4"}
+         [:div {:class "mr-24"}
+          [:div {:class "flex items-center gap-2"}
+           [h/h4-md "Enable custom access modes"]]
+          [:label {:class "text-xs text-gray-500"}
+           "Choose what users can run in this connection"]]
+
+         [checkboxes/group
+          [{:name "runbooks"
+            :label "Runbooks"
+            :description "Create templates to automate tasks in your organization"
+            :checked? access-mode-runbooks}
+           {:name "connect"
+            :label "Native"
+            :description "Access from your client of preference using hoop.dev to channel connections using our Desktop App or our Command Line Interface"
+            :checked? access-mode-connect}
+           {:name "exec"
+            :label "Web & One-Offs"
+            :description "Use hoop.dev's developer portal or our CLI's One-Offs commands directly in your terminal "
+            :checked? access-mode-exec}]]]
+
         [multi-select/text-input {:value tags-value
                                   :input-value tags-input-value
                                   :disabled? false
@@ -186,6 +225,8 @@
               :form-type form-type}]]
 
            [:section {:class "mb-large"}
+            [h/h4-md "Choose your setup method"
+             {:class "font-bold mb-4"}]
             [tabs/tabs {:default-value @selected-tab
                         :on-change #(reset! selected-tab %)
                         :tabs ["Command line" "Manually with credentials"]}]

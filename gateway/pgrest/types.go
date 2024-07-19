@@ -88,17 +88,21 @@ const (
 )
 
 type Connection struct {
-	ID        string            `json:"id"`
-	OrgID     string            `json:"org_id"`
-	AgentID   string            `json:"agent_id"`
-	Name      string            `json:"name"`
-	Command   []string          `json:"command"`
-	Type      string            `json:"type"`
-	SubType   string            `json:"subtype"`
-	Envs      map[string]string `json:"envs"`
-	Status    string            `json:"status"` // read only field
-	ManagedBy *string           `json:"managed_by"`
-	Tags      []string          `json:"tags"`
+	ID                 string            `json:"id"`
+	OrgID              string            `json:"org_id"`
+	AgentID            string            `json:"agent_id"`
+	Name               string            `json:"name"`
+	Command            []string          `json:"command"`
+	Type               string            `json:"type"`
+	SubType            string            `json:"subtype"`
+	Envs               map[string]string `json:"envs"`
+	Status             string            `json:"status"` // read only field
+	ManagedBy          *string           `json:"managed_by"`
+	Tags               []string          `json:"tags"`
+	AccessModeRunbooks string            `json:"access_mode_runbooks"`
+	AccessModeExec     string            `json:"access_mode_exec"`
+	AccessModeConnect  string            `json:"access_mode_connect"`
+	AccessSchema       string            `json:"access_schema"`
 
 	// read only attributes
 	Org              Org                `json:"orgs"`

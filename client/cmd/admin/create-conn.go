@@ -3,6 +3,7 @@ package admin
 import (
 	"encoding/base64"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/hoophq/hoop/client/cmd/styles"
@@ -20,8 +21,12 @@ var (
 	connTypeFlag         string
 	connTagsFlag         []string
 	connSecretFlag       []string
+	connAccessModesFlag  []string
+	connSchemaFlag       string
 	skipStrictValidation bool
 	connOverwriteFlag    bool
+
+	defaultAccessModes = []string{"connect", "exec", "runbooks"}
 )
 
 func init() {
@@ -34,12 +39,14 @@ func init() {
 	createConnectionCmd.Flags().BoolVar(&skipStrictValidation, "skip-validation", false, "It will skip any strict validation")
 	createConnectionCmd.Flags().StringSliceVarP(&connSecretFlag, "env", "e", nil, "The environment variables of the connection")
 	createConnectionCmd.Flags().StringSliceVar(&connTagsFlag, "tags", nil, "Tags to identify connections in a key=value format")
+	createConnectionCmd.Flags().StringSliceVar(&connAccessModesFlag, "access-modes", defaultAccessModes, "Access modes enabled for this connection. Accepted values: [runbooks, exec, connect]")
+	createConnectionCmd.Flags().StringVar(&connSchemaFlag, "schema", "", "Enable or disable the schema for this connection on the WebClient. Accepted values: [disabled, enabled]")
 	createConnectionCmd.MarkFlagRequired("agent")
 }
 
 var createConnExamplesDesc = `
-hoop admin create connection hello-hoop -a test-agent -- bash -c 'echo hello hoop'
-hoop admin create connection tcpsvc -a test-agent -t tcp -e HOST=127.0.0.1 -e PORT=3000
+hoop admin create connection hello-hoop -a default -- bash -c 'echo hello hoop'
+hoop admin create connection tcpsvc -a default -t application/tcp -e HOST=127.0.0.1 -e PORT=3000
 `
 var createConnectionCmd = &cobra.Command{
 	Use:     "connection NAME [-- COMMAND]",
@@ -118,17 +125,22 @@ var createConnectionCmd = &cobra.Command{
 		if len(connRedactTypesFlag) > 0 {
 			redactEnabled = true
 		}
+
 		connectionBody := map[string]any{
-			"name":           apir.name,
-			"type":           connType,
-			"subtype":        subType,
-			"command":        cmdList,
-			"secret":         envVar,
-			"agent_id":       agentID,
-			"reviewers":      reviewersFlag,
-			"redact_enabled": redactEnabled,
-			"redact_types":   connRedactTypesFlag,
-			"tags":           connTagsFlag,
+			"name":                 apir.name,
+			"type":                 connType,
+			"subtype":              subType,
+			"command":              cmdList,
+			"secret":               envVar,
+			"agent_id":             agentID,
+			"reviewers":            reviewersFlag,
+			"redact_enabled":       redactEnabled,
+			"redact_types":         connRedactTypesFlag,
+			"tags":                 connTagsFlag,
+			"access_mode_runbooks": verifyAccessModeStatus("runbooks"),
+			"access_mode_exec":     verifyAccessModeStatus("exec"),
+			"access_mode_connect":  verifyAccessModeStatus("connect"),
+			"access_schema":        verifySchemaStatus(connSchemaFlag, connType),
 		}
 
 		resp, err := httpBodyRequest(apir, method, connectionBody)
@@ -177,6 +189,26 @@ var createConnectionCmd = &cobra.Command{
 			fmt.Printf("plugin(s) %v updated\n", plugins)
 		}
 	},
+}
+
+func verifyAccessModeStatus(mode string) string {
+	if slices.Contains(connAccessModesFlag, mode) {
+		return "enabled"
+	}
+	return "disabled"
+}
+
+func verifySchemaStatus(schema string, connType string) string {
+	if schema == "" && connType == "database" {
+		return "enabled"
+	} else if schema == "" {
+		return "disabled"
+	} else if schema == "enabled" || schema == "disabled" {
+		return schema
+	}
+
+	styles.PrintErrorAndExit("invalid value for schema status: %q, accepted values are: [enabled disabled]", schema)
+	return ""
 }
 
 func parseEnvPerType() (map[string]string, error) {

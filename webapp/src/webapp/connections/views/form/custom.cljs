@@ -2,6 +2,7 @@
   (:require [re-frame.core :as rf]
             [reagent.core :as r]
             [webapp.components.button :as button]
+            [webapp.components.checkboxes :as checkboxes]
             [webapp.components.forms :as forms]
             [webapp.components.headings :as h]
             [webapp.components.multiselect :as multi-select]
@@ -144,6 +145,9 @@
                                       approval-groups-value
                                       data-masking-toggle-enabled?
                                       data-masking-groups-value
+                                      access-mode-runbooks
+                                      access-mode-connect
+                                      access-mode-exec
                                       connection-command
                                       config-file-name
                                       config-file-value
@@ -153,7 +157,7 @@
                                       on-click->add-more-file
                                       form-type]}]
       [:<>
-       [:section {:class "mb-large"}
+       [:section {:class "space-y-8 mb-16"}
         [toggle-review/main {:free-license? (:free-license? (:data @user))
                              :user-groups user-groups
                              :review-toggle-enabled? review-toggle-enabled?
@@ -162,6 +166,28 @@
         [toggle-data-masking/main {:free-license? (:free-license? (:data @user))
                                    :data-masking-toggle-enabled? data-masking-toggle-enabled?
                                    :data-masking-groups-value data-masking-groups-value}]
+
+        [:div {:class " flex flex-col gap-4"}
+         [:div {:class "mr-24"}
+          [:div {:class "flex items-center gap-2"}
+           [h/h4-md "Enable custom access modes"]]
+          [:label {:class "text-xs text-gray-500"}
+           "Choose what users can run in this connection"]]
+
+         [checkboxes/group
+          [{:name "runbooks"
+            :label "Runbooks"
+            :description "Create templates to automate tasks in your organization"
+            :checked? access-mode-runbooks}
+           {:name "connect"
+            :label "Native"
+            :description "Access from your client of preference using hoop.dev to channel connections using our Desktop App or our Command Line Interface"
+            :checked? access-mode-connect}
+           {:name "exec"
+            :label "Web & One-Offs"
+            :description "Use hoop.dev's developer portal or our CLI's One-Offs commands directly in your terminal "
+            :checked? access-mode-exec}]]]
+
         [multi-select/text-input {:value tags-value
                                   :input-value tags-input-value
                                   :disabled? false
@@ -177,6 +203,8 @@
 
        (if (= form-type :create)
          [:section {:class "mb-large"}
+          [h/h4-md "Choose your setup method"
+           {:class "font-bold mb-4"}]
           [tabs/tabs {:on-change #(reset! selected-tab %)
                       :tabs ["Command line" "Manually with credentials"]}]
           (case @selected-tab

@@ -172,8 +172,9 @@
                                          (first (filter #(= (:name connection) (:name %))
                                                         (:connections (get-plugin-by-name "editor")))))
             schema-disabled? (fn [connection]
-                               (= (first (:config (current-connection-details connection)))
-                                  "schema=disabled"))
+                               (or (= (first (:config (current-connection-details connection)))
+                                      "schema=disabled")
+                                   (= (:access_schema connection) "disabled")))
             run-connections-list-selected (filterv #(and (:selected %)
                                                          (not= (:name %) connection-name))
                                                    (:data @run-connections-list))

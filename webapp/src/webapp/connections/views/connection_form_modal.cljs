@@ -80,7 +80,12 @@
     (filter #(= (:name %) connection-name) (:connections plugin)))
    :config))
 
-(defn form [connection form-type connection-original-type toggle]
+(defn- convertStatusToBool [status]
+  (if (= status "enabled")
+    true
+    false))
+
+(defn form [connection form-type connection-original-type]
   (let [my-plugins (rf/subscribe [:plugins->my-plugins])
         api-key (rf/subscribe [:organization->api-key])
         connections (rf/subscribe [:connections])
@@ -113,12 +118,23 @@
 
         agents (rf/subscribe [:agents])
         user-groups (rf/subscribe [:user-groups])
-        review-toggle-enabled? (r/atom (if (or (and (seq @approval-groups-value) (= form-type :update))
-                                               (:review-toggle-enabled? toggle))
+        access-schema-toggle-enabled? (r/atom (or (= (:access_schema connection) "enabled") false))
+        access-mode-runbooks (r/atom (if (nil? (:access_mode_runbooks connection))
+                                       true
+                                       (convertStatusToBool (:access_mode_runbooks connection))))
+        access-mode-connect (r/atom (if (nil? (:access_mode_connect connection))
+                                      true
+                                      (convertStatusToBool (:access_mode_connect connection))))
+        access-mode-exec (r/atom (if (nil? (:access_mode_exec connection))
+                                   true
+                                   (convertStatusToBool (:access_mode_exec connection))))
+
+        review-toggle-enabled? (r/atom (if (and (seq @approval-groups-value)
+                                                (= form-type :update))
                                          true
                                          false))
-        data-masking-toggle-enabled? (r/atom (if (or (and (seq @data-masking-groups-value) (= form-type :update))
-                                                     (:data-masking-toggle-enabled? toggle))
+        data-masking-toggle-enabled? (r/atom (if (and (seq @data-masking-groups-value)
+                                                      (= form-type :update))
                                                true
                                                false))
         current-agent (first (filter (fn [{:keys [id]}] (= id (:agent_id connection))) @agents))
@@ -161,6 +177,18 @@
                          :redact_types (if @data-masking-toggle-enabled?
                                          (js-select-options->list @data-masking-groups-value)
                                          [])
+                        ;;  :access_schema (if @access-schema-toggle-enabled?
+                        ;;                   "enabled"
+                        ;;                   "disabled")
+                         :access_mode_runbooks (if @access-mode-runbooks
+                                                 "enabled"
+                                                 "disabled")
+                         :access_mode_exec (if @access-mode-exec
+                                             "enabled"
+                                             "disabled")
+                         :access_mode_connect (if @access-mode-connect
+                                                "enabled"
+                                                "disabled")
                          :tags (if (seq @tags-value)
                                  (js-select-options->list @tags-value)
                                  nil)
@@ -228,6 +256,7 @@
                     :on-click (fn []
                                 (reset! connection-type :database)
                                 (reset! connection-subtype "postgres")
+                                (reset! access-schema-toggle-enabled? true)
                                 (reset! configs (utils/get-config-keys (keyword "postgres")))
                                 (reset! connection-name (str "postgres" "-" (random-connection-name)))
                                 (reset! connection-command (get constants/connection-commands "postgres")))}
@@ -243,6 +272,7 @@
                     :on-click (fn []
                                 (reset! connection-subtype "ruby-on-rails")
                                 (reset! connection-type :application)
+                                (reset! access-schema-toggle-enabled? false)
                                 (reset! connection-name (str "ruby-on-rails" "-" (random-connection-name)))
                                 (reset! connection-command (get constants/connection-commands "ruby-on-rails"))
                                 (reset! configs []))}
@@ -258,6 +288,7 @@
                     :on-click (fn []
                                 (reset! connection-type :custom)
                                 (reset! connection-subtype "custom")
+                                (reset! access-schema-toggle-enabled? false)
                                 (reset! connection-name (str "custom" "-" (random-connection-name)))
                                 (reset! configs []))}
               [:span {:class "text-sm"}
@@ -300,7 +331,11 @@
                                                 :review-toggle-enabled? review-toggle-enabled?
                                                 :approval-groups-value approval-groups-value
                                                 :data-masking-toggle-enabled? data-masking-toggle-enabled?
-                                                :data-masking-groups-value data-masking-groups-value}]
+                                                :data-masking-groups-value data-masking-groups-value
+                                                :access-schema-toggle-enabled? access-schema-toggle-enabled?
+                                                :access-mode-runbooks access-mode-runbooks
+                                                :access-mode-connect access-mode-connect
+                                                :access-mode-exec access-mode-exec}]
               :application [application/main {:connection-name connection-name
                                               :connection-type connection-type
                                               :connection-subtype connection-subtype
@@ -315,7 +350,10 @@
                                               :review-toggle-enabled? review-toggle-enabled?
                                               :approval-groups-value approval-groups-value
                                               :data-masking-toggle-enabled? data-masking-toggle-enabled?
-                                              :data-masking-groups-value data-masking-groups-value}]
+                                              :data-masking-groups-value data-masking-groups-value
+                                              :access-mode-runbooks access-mode-runbooks
+                                              :access-mode-connect access-mode-connect
+                                              :access-mode-exec access-mode-exec}]
               :custom [custom/main configs configs-file {:connection-name connection-name
                                                          :connection-type connection-type
                                                          :connection-subtype connection-subtype
@@ -335,6 +373,9 @@
                                                          :approval-groups-value approval-groups-value
                                                          :data-masking-toggle-enabled? data-masking-toggle-enabled?
                                                          :data-masking-groups-value data-masking-groups-value
+                                                         :access-mode-runbooks access-mode-runbooks
+                                                         :access-mode-connect access-mode-connect
+                                                         :access-mode-exec access-mode-exec
                                                          :on-click->add-more #(do
                                                                                 (add-new-configs configs @config-key @config-value)
                                                                                 (reset! config-value "")
