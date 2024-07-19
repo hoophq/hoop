@@ -1,7 +1,8 @@
 #!/bin/bash
 
-set -e
+set -eo pipefail
 
+mkdir -p /hoopdata/tls
 if [ -z "${HOOP_PUBLIC_HOSTNAME}" ]; then
     echo "--> the env HOOP_PUBLIC_HOSTNAME is required on .env file!"
     exit 1
@@ -9,15 +10,21 @@ fi
 
 if [ ! -f /hoopdata/zitadel-master.key ]; then
     openssl rand -base64 22 | tr -d '\n' > /hoopdata/zitadel-master.key
-    chmod 0400 /hoopdata/zitadel-master.key || true
+    chmod 0444 /hoopdata/zitadel-master.key || true
+    chown root: /hoopdata/zitadel-master.key
+fi
+
+if [ -n "${NGINX_TLS_CA}" ]; then
+    : "${NGINX_TLS_KEY:? Required env NGINX_TLS_KEY}"
+    : "${NGINX_TLS_CERT:? Required env NGINX_TLS_CERT}"
+    echo -n ${NGINX_TLS_CA} |base64 -d > /hoopdata/tls/ca.crt
+    echo -n ${NGINX_TLS_KEY} | base64 -d > /hoopdata/tls/server.key
+    echo -n ${NGINX_TLS_CERT} | base64 -d  > /hoopdata/tls/server.crt
+    echo "--> skip tls provisioning, loaded certs from environment variables!"
+    exit 0
 fi
 
 if [ -f /hoopdata/tls/ca.crt ]; then
-    if [ ! -f /hoopdata/tls/server.crt ] || [ ! -f /hoopdata/tls/server.key ]; then
-        echo "--> ca.crt is present but server.crt or server.key are missing"
-        echo "move these files "
-        exit 1
-    fi
     echo "--> skip tls provisioning, certificate (ca.crt) already exists!"
     exit 0
 fi
@@ -35,8 +42,8 @@ keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
 subjectAltName = @alt_names
 [alt_names]
 DNS.1 = gateway
-DNS.2 = app.${HOOP_PUBLIC_HOSTNAME}
-DNS.3 = auth.${HOOP_PUBLIC_HOSTNAME}
+DNS.2 = idp
+DNS.3 = ${HOOP_PUBLIC_HOSTNAME}
 IP.1 = 127.0.0.1
 EOF
 openssl x509 -req \

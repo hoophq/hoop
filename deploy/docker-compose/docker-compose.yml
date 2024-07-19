@@ -2,14 +2,17 @@ name: hoop
 
 services:
   bootstrap:
-    image: nginx:1.27.0
+    image: hoophq/hooplabs
+    networks:
+    - hoopdev
     volumes:
-    - ./hoopdata:/hoopdata
-    environment:
-    - HOOP_PUBLIC_HOSTNAME=${HOOP_PUBLIC_HOSTNAME}
-    command: /hoopdata/bootstrap.sh
+    - hoopdata:/hoopdata
+    env_file: '.env'
+    command: bootstrap.sh
   db:
     image: postgres:16
+    networks:
+    - hoopdev
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -25,14 +28,14 @@ services:
   idp:
     image: ghcr.io/zitadel/zitadel:v2.56.0
     command: 'start-from-init --masterkeyFile /hoopdata/zitadel-master.key --tlsMode external'
-    # TODO: add healthcheck
-    ports:
-    - 8080:8080
+    user: root
+    networks:
+    - hoopdev
     volumes:
-    - ./hoopdata:/hoopdata
+    - hoopdata:/hoopdata
     environment:
       - ZITADEL_EXTERNALSECURE=true
-      - ZITADEL_EXTERNALDOMAIN=auth.${HOOP_PUBLIC_HOSTNAME}
+      - ZITADEL_EXTERNALDOMAIN=${HOOP_PUBLIC_HOSTNAME}
       - ZITADEL_EXTERNALPORT=443
       - ZITADEL_DATABASE_POSTGRES_HOST=db
       - ZITADEL_DATABASE_POSTGRES_PORT=5432
@@ -53,27 +56,18 @@ services:
       bootstrap:
         condition: service_completed_successfully
   nginx:
-    image: nginx:1.27.0
-    command:
-    - /bin/bash
-    - -c
-    - |
-      until curl -k -s -f -o /dev/null "http://idp:8080/healthz"
-      do
-        echo "waiting idp service to be become ready ..."
-        sleep 1
-      done
-      mkdir -p /etc/certs
-      cp /hoopdata/tls/server.crt /etc/certs/server.crt
-      cp /hoopdata/tls/server.key /etc/certs/server.key
-      sed "s|HOOP_PUBLIC_HOSTNAME_PLACEHOLDER|${HOOP_PUBLIC_HOSTNAME}|g" /hoopdata/tls/nginx.conf > /etc/nginx/nginx.conf
-      /docker-entrypoint.sh nginx -g "daemon off;"
+    image: hoophq/hooplabs
+    command: run-nginx.sh
+    environment:
+    - HOOP_PUBLIC_HOSTNAME=${HOOP_PUBLIC_HOSTNAME}
     volumes:
-    - ./hoopdata/tls/:/hoopdata/tls/
+    - hoopdata:/hoopdata
     depends_on:
     - idp
     ports:
     - 443:443
+    networks:
+    - hoopdev
     healthcheck:
       test: 'curl -f http://idp:8080/healthz'
       interval: '1s'
@@ -81,90 +75,65 @@ services:
       retries: 15
       start_period: '20s'
   idp-provisioner:
-    image: hashicorp/terraform:1.9.2
+    image: hoophq/hooplabs
     environment:
     - TF_VAR_public_hostname=${HOOP_PUBLIC_HOSTNAME}
-    entrypoint:
-    - /bin/sh
-    - -c
-    - |
-      set -e
-      cd /hoopdata/terraform/
-      terraform init
-      terraform apply -auto-approve
-      terraform output -raw default_client_id > /hoopdata/terraform/outputs/default_client_id
-      terraform output -raw default_client_secret > /hoopdata/terraform/outputs/default_client_secret
+    command: run-idp-provisioner.sh
+    networks:
+    - hoopdev
     volumes:
-    - tfstate:/tmp/
-    - ./hoopdata/zitadel-admin-sa.json:/hoopdata/zitadel-admin-sa.json:ro
-    - ./hoopdata/tls/ca.crt:/etc/ssl/certs/ca-certificates.crt:ro
-    - ./hoopdata/terraform:/hoopdata/terraform
+    - hoopdata:/hoopdata
     depends_on:
       nginx:
         condition: 'service_healthy'
   gateway:
-    image: hoophq/hoop
-    platform: linux/amd64
+    image: hoophq/hooplabs
     environment:
+    - PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/hoop/bin
     - LOG_LEVEL=info
     - LOG_ENCODING=console
     - GIN_MODE=release
     - PLUGIN_AUDIT_PATH=/hoopdata/sessions
     - PLUGIN_INDEX_PATH=/hoopdata/sessions/indexes
+    - STATIC_UI_PATH=/opt/hoop/webapp/public
+    - MIGRATION_PATH_FILES=/opt/hoop/migrations
     - POSTGRES_DB_URI=postgres://postgres:postgres@db:5432/hoopdb?sslmode=disable
-    - API_URL=https://app.${HOOP_PUBLIC_HOSTNAME}
-    - GRPC_URL=grpcs://app.${HOOP_PUBLIC_HOSTNAME}:443
+    - API_URL=https://${HOOP_PUBLIC_HOSTNAME}
+    - GRPC_URL=grpcs://${HOOP_PUBLIC_HOSTNAME}:443
     env_file: '.env'
     volumes:
-    - ./hoopdata:/hoopdata/
-    - ./hoopdata/tls/ca.crt:/etc/ssl/certs/ca-certificates.crt:ro
-    command:
-    - /bin/bash
-    - -c
-    - |
-      export IDP_ISSUER=https://auth.${HOOP_PUBLIC_HOSTNAME}
-      export IDP_CLIENT_ID=$(cat /hoopdata/terraform/outputs/default_client_id)
-      export IDP_CLIENT_SECRET=$(cat /hoopdata/terraform/outputs/default_client_secret)
-      export IDP_AUDIENCE=
-      export IDP_URI=
-      hoop start gateway
-    ports:
-    - 8009:8009
-    - 8010:8010
+    - hoopdata:/hoopdata/
+    command: run-gateway.sh
+    networks:
+    - hoopdev
     depends_on:
       idp-provisioner:
         condition: service_completed_successfully
+    healthcheck:
+      test: 'curl http://127.0.0.1:8009/api/healthz'
+      interval: '2s'
+      timeout: '30s'
+      retries: 10
+      start_period: '20s'
   agent:
-    image: hoophq/hoopdev
-    platform: linux/amd64
+    image: hoophq/hooplabs
     volumes:
-    - ./hoopdata/tls/ca.crt:/etc/ssl/certs/ca-certificates.crt:ro
+    - hoopdata:/hoopdata/
+    networks:
+    - hoopdev
     environment:
+    - PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/hoop/bin
     - LOG_LEVEL=info
     - LOG_ENCODING=console
+    - GRPC_URL=${HOOP_PUBLIC_HOSTNAME}:443
+    - POSTGRES_DB_URI=postgres://postgres:postgres@db:5432/hoopdb?sslmode=disable
     depends_on:
-    - gateway
-    command:
-    - /bin/bash
-    - -c
-    - |
-      until curl -k -s -f -o /dev/null "http://gateway:8009/api/healthz"
-      do
-        sleep 2
-      done
-      export SECRET_KEY=xagt-$(LC_ALL=C tr -dc A-Za-z0-9_ < /dev/urandom | head -c 43 | xargs)
-      set -eo pipefail
-      export SECRET_KEY_HASH=$(printenv SECRET_KEY | tr -d '\n' | sha256sum | awk {'print $1'})
-      psql -v ON_ERROR_STOP=1 "postgres://postgres:postgres@db:5432/hoopdb?sslmode=disable" <<EOF
-      BEGIN;
-      DELETE FROM agents WHERE name = 'system';
-      INSERT INTO agents (id, org_id, name, mode, key_hash, status)
-          VALUES ('CB2D463F-B2D2-4FE4-B612-76444C85166C', (SELECT id from private.orgs), 'system', 'standard', '$(printenv SECRET_KEY_HASH | tr -d "\n")', 'DISCONNECTED')
-          ON CONFLICT DO NOTHING;
-      COMMIT;
-      EOF
-      export HOOP_KEY=grpcs://system:$(printenv SECRET_KEY | tr -d '\n')@app.${HOOP_PUBLIC_HOSTNAME}:443?mode=standard
-      hoop start agent
+      gateway:
+        condition: 'service_healthy'
+    command: run-agent.sh
 
 volumes:
-  tfstate: null
+  hoopdata: null
+
+networks:
+  hoopdev:

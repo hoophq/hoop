@@ -6,8 +6,8 @@ gh auth status
 # pull latest tags from remote
 LATEST_TAG=$(gh release list -L 1 |awk {'print $1'})
 
-echo "=> fetching latest tag ($LATEST_TAG) from remote ..."
-git fetch origin $LATEST_TAG
+echo "=> fetching tags from remote ..."
+git fetch origin
 echo ""
 
 echo "=> Here are the last 10 releases from github"

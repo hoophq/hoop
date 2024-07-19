@@ -1,6 +1,6 @@
 terraform {
   backend "local" {
-    path = "/tmp/terraform.tfstate"
+    path = "/hoopdata/terraform.tfstate"
   }
   required_providers {
     zitadel = {
@@ -11,7 +11,7 @@ terraform {
 }
 
 provider "zitadel" {
-  domain           = "auth.${var.public_hostname}"
+  domain           = "${var.public_hostname}"
   insecure         = "false"
   port             = "443"
   jwt_profile_file = "/hoopdata/zitadel-admin-sa.json"
@@ -45,7 +45,7 @@ resource "zitadel_login_policy" "default" {
   mfa_init_skip_lifetime        = "720h0m0s"
   second_factor_check_lifetime  = "24h0m0s"
   ignore_unknown_usernames      = false
-  default_redirect_uri          = "https://app.${var.public_hostname}"
+  default_redirect_uri          = "https://${var.public_hostname}"
   second_factors                = ["SECOND_FACTOR_TYPE_OTP", "SECOND_FACTOR_TYPE_U2F"]
   multi_factors                 = ["MULTI_FACTOR_TYPE_U2F_WITH_VERIFICATION"]
   idps                          = []
@@ -118,8 +118,8 @@ resource "zitadel_application_oidc" "default" {
   redirect_uris               = [
     "http://127.0.0.1/api/callback",
     "https://127.0.0.1/api/callback",
-    "http://app.${var.public_hostname}/api/callback",
-    "https://app.${var.public_hostname}/api/callback"
+    "http://${var.public_hostname}/api/callback",
+    "https://${var.public_hostname}/api/callback"
   ]
   response_types              = ["OIDC_RESPONSE_TYPE_CODE"]
   grant_types                 = ["OIDC_GRANT_TYPE_AUTHORIZATION_CODE"]
