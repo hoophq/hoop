@@ -36,6 +36,7 @@
    [{:keys [db]} [_ user]]
    {:db (assoc db :users->current-user {:loading false
                                         :data (assoc user
+                                                     :user-management? (= (:webapp_users_management user) "on")
                                                      :free-license? (= (:org_license user) "free")
                                                      :admin? (:is_admin user))})
     :fx [[:dispatch [:initialize-intercom user]]

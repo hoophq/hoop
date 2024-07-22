@@ -35,6 +35,7 @@
    :page-loader-status :open
    :plugins->active-tab :plugins-store
    :plugins->plugin-details {:status :loading, :plugin {}}
+   :reports->session {:status :loading, :data nil}
    :routes->route (.-pathname (.-location js/window))
    :runbooks-plugin->selected-runbooks {:status :idle, :data nil}
    :runbooks-plugin->runbooks {:status :idle, :data nil}

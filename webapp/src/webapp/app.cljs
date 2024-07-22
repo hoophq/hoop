@@ -35,6 +35,7 @@
             [webapp.events.indexer-plugin]
             [webapp.events.organization]
             [webapp.events.plugins]
+            [webapp.events.reports]
             [webapp.events.reviews-plugin]
             [webapp.events.routes]
             [webapp.events.runbooks-plugin]

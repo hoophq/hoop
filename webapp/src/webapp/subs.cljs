@@ -353,3 +353,8 @@
  :new-dialog
  (fn [db _]
    (:dialog db)))
+
+(re-frame/reg-sub
+ :reports->session
+ (fn [db _]
+   (:reports->session db)))
