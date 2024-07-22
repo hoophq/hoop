@@ -10,6 +10,16 @@
         url-params-map (into (sorted-map) url-params-list)]
     url-params-map))
 
+(defn sanitize-string [s]
+  (let [special-words #{"of" "the" "and"}
+        capitalize (fn [word]
+                     (if (contains? special-words (clojure.string/lower-case word))
+                       (clojure.string/lower-case word)
+                       (str (clojure.string/capitalize word))))]
+    (->> (clojure.string/split s #"_|-")
+         (map capitalize)
+         (clojure.string/join " "))))
+
 (defn classes-of
   "Get the classes of an element as a Clojure keyword vector."
   [e]

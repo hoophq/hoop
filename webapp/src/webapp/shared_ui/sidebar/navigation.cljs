@@ -39,6 +39,7 @@
                                  (some #(= plugin-name (:name %)) my-plugins))
             admin? (:admin? user-data)
             free-license? (:free-license? user-data)
+            user-management? (:user-management? user-data)
             current-route @current-route]
         [:<>
          [:div {:class "flex h-16 shrink-0 items-center"}
@@ -221,7 +222,8 @@
                                                    :aria-hidden "true"}]]
              [:> (.-Panel ui/Disclosure) {:as "ul"
                                           :class "mt-1 px-2"}
-              (when (or admin? @hoop-app-running?)
+              (when (or (and user-management? admin?)
+                        @hoop-app-running?)
                 [:li
                  [:> (.-Button ui/Disclosure) {:as "a"
                                                :onClick #(rf/dispatch [:navigate :settings])

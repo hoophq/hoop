@@ -27,14 +27,15 @@
 (defn main []
   (let [user (rf/subscribe [:users->current-user])
         app-running? @(rf/subscribe [:hoop-app->running?])
-        admin? (-> @user :data :admin?)]
+        admin? (-> @user :data :admin?)
+        user-management? (-> @user :data :user-management?)]
     (rf/dispatch [:users->get-user-groups])
     (rf/dispatch [:users->get-users])
     (rf/dispatch [:hoop-app->get-app-status])
     (fn []
       (let [tabs (cond
-                   (and app-running? admin?) [:Users "Hoop App"]
-                   admin? [:Users]
+                   (and app-running? admin? user-management?) [:Users "Hoop App"]
+                   (and admin? user-management?) [:Users]
                    app-running? ["Hoop App"])]
         [:div {:class "bg-white h-full px-large py-regular"}
          [select-view-handler tabs admin? app-running?]]))))
