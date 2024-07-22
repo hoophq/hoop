@@ -48,7 +48,7 @@
          get-app-status [:fetch
                          {:method "POST"
                           :uri "/features/ask-ai/v1/chat/completions"
-                          :body {:model "gpt-4o"
+                          :body {:model "gpt-4o-mini"
                                  :messages (gpt-ai-message-model database-schema question database-type)
                                  :temperature 0
                                  :max_tokens 500
@@ -82,4 +82,3 @@
  (fn
    [{:keys [db]} [_]]
    {:db (assoc db :ask-ai->question-responses [])}))
-
