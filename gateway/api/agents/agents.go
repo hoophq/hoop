@@ -11,6 +11,7 @@ import (
 	"github.com/hoophq/hoop/common/dsnkeys"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgagents "github.com/hoophq/hoop/gateway/pgrest/agents"
@@ -22,10 +23,20 @@ type AgentRequest struct {
 	Mode string `json:"mode"`
 }
 
+// CreateAgent godoc
+//
+//	@Summary		Create an agent
+//	@Description	Createn an agent key
+//	@Tags			agents
+//	@Accept			json
+//	@Produce		json
+//	@Success		201	{object}	openapi.AgentCreateResponse
+//	@Router			/agents [post]
 func Post(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
-	req := AgentRequest{Mode: proto.AgentModeStandardType}
+	req := openapi.AgentRequest{Mode: proto.AgentModeStandardType}
+	// req := AgentRequest{Mode: proto.AgentModeStandardType}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		log.Infof("failed parsing request payload, err=%v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
@@ -83,7 +94,7 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, map[string]string{"token": dsn})
+	c.JSON(http.StatusCreated, openapi.AgentCreateResponse{Token: dsn})
 }
 
 func Delete(c *gin.Context) {
@@ -117,7 +128,7 @@ func List(c *gin.Context) {
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed listing agents"})
 	}
-	result := []map[string]any{}
+	result := []openapi.AgentListResponse{}
 	for _, a := range items {
 		switch a.Mode {
 		case proto.AgentModeMultiConnectionType:
@@ -129,21 +140,13 @@ func List(c *gin.Context) {
 			// set to default mode if the entity doesn't contain any value
 			a.Mode = proto.AgentModeStandardType
 		}
-		result = append(result, map[string]any{
-			"id":       a.ID,
-			"token":    "", // don't show the hashed token
-			"name":     a.Name,
-			"mode":     a.Mode,
-			"status":   a.Status,
-			"metadata": a.Metadata,
-			// DEPRECATE top level metadata keys
-			"hostname":       a.GetMeta("hostname"),
-			"machine_id":     a.GetMeta("machine_id"),
-			"kernel_version": a.GetMeta("kernel_version"),
-			"version":        a.GetMeta("version"),
-			"goversion":      a.GetMeta("goversion"),
-			"compiler":       a.GetMeta("compiler"),
-			"platform":       a.GetMeta("platform"),
+		result = append(result, openapi.AgentListResponse{
+			ID:       a.ID,
+			Token:    "", // don't show the hashed token
+			Name:     a.Name,
+			Mode:     a.Mode,
+			Status:   a.Status,
+			Metadata: a.Metadata,
 		})
 	}
 	c.JSON(http.StatusOK, result)

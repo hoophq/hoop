@@ -12,6 +12,8 @@ import (
 	"github.com/gin-contrib/static"
 	ginzap "github.com/gin-contrib/zap"
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
+
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/analytics"
 	apiagents "github.com/hoophq/hoop/gateway/api/agents"
@@ -19,6 +21,7 @@ import (
 	apifeatures "github.com/hoophq/hoop/gateway/api/features"
 	apihealthz "github.com/hoophq/hoop/gateway/api/healthz"
 	loginapi "github.com/hoophq/hoop/gateway/api/login"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
 	apiplugins "github.com/hoophq/hoop/gateway/api/plugins"
 	apiproxymanager "github.com/hoophq/hoop/gateway/api/proxymanager"
@@ -34,7 +37,6 @@ import (
 	"github.com/hoophq/hoop/gateway/review"
 	"github.com/hoophq/hoop/gateway/runbooks"
 	"github.com/hoophq/hoop/gateway/security/idp"
-	"go.uber.org/zap"
 )
 
 type (
@@ -48,6 +50,25 @@ type (
 		logger          *zap.Logger
 	}
 )
+
+// @title Hoop Api
+// @version 1.0
+// @description Hoop.dev is an access gateway for databases and servers with an API for packet manipulation
+// @termsOfService https://hoop.dev/docs/legal/tos
+// @schemes http https
+
+//	@contact.name	Help
+//	@contact.url	https://help.hoop.dev
+//	@contact.email	help@hoop.dev
+
+// @license.name	MIT
+// @license.url	https://opensource.org/license/mit
+
+// @securitydefinitions.oauth2.implicit	    OAuth2Implicit
+// @authorizationUrl						https://login.microsoftonline.com/d60ba6f0-ad5f-4917-aa19-f8d4241f8bc7/oauth2/v2.0/authorize
+// @scope.profile
+// @scope.email
+// @scope.openid
 
 func (a *Api) StartAPI(sentryInit bool) {
 	if os.Getenv("PORT") == "" {
@@ -106,6 +127,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.Use(StandardAccessRole)
 
 	loginHandler := loginapi.New(api.IDProvider)
+	route.GET("/openapiv2.json", openapi.Handler)
 	route.GET("/login", loginHandler.Login)
 	route.GET("/callback", loginHandler.LoginCallback)
 	route.GET("/healthz", apihealthz.LivenessHandler())
