@@ -1,4 +1,12 @@
-# Instructions to remove the current state of postgrest database
+-- this migration will fix broken state rollback instructions
+-- it add the function agents(connections) to the list and it's safe to update all previous
+-- record with these instructions
+
+-- if a particular function or view doesn't exist in the state it will
+-- be ignored
+SET search_path TO private;
+
+update appstate set state_rollback = '# Instructions to remove the current state of postgrest database
 # hash tags and spaces are ignored. Only accepts functions and views
 # <resource-type> <resource>
 
@@ -30,4 +38,4 @@ view if exists reviews
 view if exists serviceaccounts
 view if exists sessions
 view if exists user_groups
-view if exists users
+view if exists users'
