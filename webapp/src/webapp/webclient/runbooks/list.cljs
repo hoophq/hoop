@@ -1,18 +1,28 @@
 (ns webapp.webclient.runbooks.list
   (:require ["@heroicons/react/20/solid" :as hero-solid-icon]
             ["@heroicons/react/24/outline" :as hero-outline-icon]
-            ["unique-names-generator" :as ung]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
             [webapp.components.button :as button]))
+
+(defn sort-tree [data]
+  (let [non-empty-keys (->> data
+                            (filter (fn [[k v]] (seq v)))
+                            (sort-by first))
+        empty-keys (->> data
+                        (filter (fn [[k v]] (empty? v)))
+                        (sort-by first))]
+    (into {} (concat non-empty-keys empty-keys))))
 
 (defn split-path [path]
   (let [[folder & rest] (cs/split path #"/")]
     [folder (cs/join "/" rest)]))
 
 (defn insert-into-tree [tree [folder filename]]
-  (update tree folder (fnil conj []) (str folder "/" filename)))
+  (if (empty? filename)
+    (update tree folder (fnil conj []))
+    (update tree folder (fnil conj []) (str folder "/" filename))))
 
 (defn transform-payload [payload]
   (reduce
@@ -21,14 +31,6 @@
        (insert-into-tree tree [folder filename])))
    {}
    payload))
-
-
-(defn random-name []
-  (let [numberDictionary (.generate ung/NumberDictionary #js{:length 4})
-        characterName (ung/uniqueNamesGenerator #js{:dictionaries #js[ung/animals ung/starWars]
-                                                    :style "lowerCase"
-                                                    :length 1})]
-    (str characterName "-" numberDictionary)))
 
 (defn file [filename filter-template-selected]
   [:div {:class "flex items-center gap-2 pl-6 pb-4 cursor-pointer hover:text-blue-500 text-xs text-white whitespace-pre"
@@ -42,31 +44,40 @@
 (defn directory [_ _ _ filter-template-selected]
   (let [dropdown-status (r/atom {})]
     (fn [name items level]
-      [:div {:class (str "text-xs text-white "
-                         (when level
-                           (str "pl-" (* level 2))))}
-       [:div {:class "flex pb-4 items-center gap-small"}
-        (if (= (get @dropdown-status name) :open)
-          [:> hero-solid-icon/FolderOpenIcon {:class "h-3 w-3 shrink-0 text-white"
-                                              :aria-hidden "true"}]
-          [:> hero-solid-icon/FolderIcon {:class "h-3 w-3 shrink-0 text-white"
-                                          :aria-hidden "true"}])
-        [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
-                            "flex items-center")
-                :on-click #(swap! dropdown-status
-                                  assoc-in [name]
-                                  (if (= (get @dropdown-status name) :open) :closed :open))}
-         [:span name]
-         (if (= (get @dropdown-status name) :open)
-           [:> hero-solid-icon/ChevronUpIcon {:class "h-4 w-4 shrink-0 text-white"
-                                              :aria-hidden "true"}]
-           [:> hero-solid-icon/ChevronDownIcon {:class "h-4 w-4 shrink-0 text-white"
-                                                :aria-hidden "true"}])]]
-       [:div {:class (when (not= (get @dropdown-status name) :open)
-                       "h-0 overflow-hidden")}
-        (for [item items]
-          ^{:key item}
-          [file item filter-template-selected])]])))
+      (if (empty? items)
+        [:div {:class "flex items-center gap-2 pb-4 cursor-pointer hover:text-blue-500 text-xs text-white whitespace-pre"
+               :on-click #(rf/dispatch [:runbooks-plugin->set-active-runbook
+                                        (filter-template-selected name)])}
+         [:> hero-outline-icon/DocumentIcon
+          {:class "h-3 w-3 text-white" :aria-hidden "true"}]
+         [:span {:class "block truncate"}
+          name]]
+
+        [:div {:class (str "text-xs text-white "
+                           (when level
+                             (str "pl-" (* level 2))))}
+         [:div {:class "flex pb-4 items-center gap-small"}
+          (if (= (get @dropdown-status name) :open)
+            [:> hero-solid-icon/FolderOpenIcon {:class "h-3 w-3 shrink-0 text-white"
+                                                :aria-hidden "true"}]
+            [:> hero-solid-icon/FolderIcon {:class "h-3 w-3 shrink-0 text-white"
+                                            :aria-hidden "true"}])
+          [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
+                              "flex items-center")
+                  :on-click #(swap! dropdown-status
+                                    assoc-in [name]
+                                    (if (= (get @dropdown-status name) :open) :closed :open))}
+           [:span name]
+           (if (= (get @dropdown-status name) :open)
+             [:> hero-solid-icon/ChevronUpIcon {:class "h-4 w-4 shrink-0 text-white"
+                                                :aria-hidden "true"}]
+             [:> hero-solid-icon/ChevronDownIcon {:class "h-4 w-4 shrink-0 text-white"
+                                                  :aria-hidden "true"}])]]
+         [:div {:class (when (not= (get @dropdown-status name) :open)
+                         "h-0 overflow-hidden")}
+          (for [item items]
+            ^{:key item}
+            [file item filter-template-selected])]]))))
 
 (defn directory-tree [tree filter-template-selected]
   [:div
@@ -108,10 +119,9 @@
 
 (defn main []
   (fn [templates filtered-templates]
-    ;; (println "templates" @templates)
     (let [filter-template-selected (fn [template]
                                      (first (filter #(= (:name %) template) (:data @templates))))
-          transformed-payload (transform-payload @filtered-templates)]
+          transformed-payload (sort-tree (transform-payload @filtered-templates))]
       (cond
         (= :loading (:status @templates)) [loading-list-view]
         (= :error (:status @templates)) [no-integration-templates-view]
