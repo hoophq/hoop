@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # Color codes
 RED='\033[0;31m'
@@ -11,17 +11,18 @@ NC='\033[0m' # No Color
 
 # Function to print colored output
 print_color() {
-    printf "${!1}%s${NC}\n" "$2"
+    printf "%b%s%b\n" "${!1}" "$2" "$NC"
 }
 
 # Function to print section headers
 print_header() {
-    printf "\n${BLUE}==== %s ====${NC}\n" "$1"
+    printf "\n%b==== %s ====%b\n" "$BLUE" "$1" "$NC"
 }
 
 # ASCII Art Banner
 print_banner() {
-    echo "
+    cat << "EOF"
+
 ██╗  ██╗ ██████╗  ██████╗ ██████╗    ██████╗ ███████╗██╗   ██╗
 ██║  ██║██╔═══██╗██╔═══██╗██╔══██╗   ██╔══██╗██╔════╝██║   ██║
 ███████║██║   ██║██║   ██║██████╔╝   ██║  ██║█████╗  ██║   ██║
@@ -29,7 +30,7 @@ print_banner() {
 ██║  ██║╚██████╔╝╚██████╔╝██║     ██╗██████╔╝███████╗ ╚████╔╝ 
 ╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝     ╚═╝╚═════╝ ╚══════╝  ╚═══╝  
                                                               
-    "
+EOF
     echo "                   Welcome to HOOP.DEV Setup"
     echo "----------------------------------------------------------------"
 }
@@ -39,25 +40,29 @@ print_banner
 
 # Function to check if a command exists
 command_exists() {
-    command -v "$1" >/dev/null 2>&1
+    command -v "$1" > /dev/null 2>&1
 }
 
 # Function to handle existing installation
 handle_existing_installation() {
     if [ -f docker-compose.yml ] || [ -f .env ]; then
         print_color "YELLOW" "Existing Hoop installation detected."
-        read -p "Do you want to remove the existing installation and start fresh? (y/n): " -n 1 -r
+        printf "Do you want to remove the existing installation and start fresh? (y/n): "
+        read -r reply
         echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            print_color "YELLOW" "Removing existing installation..."
-            docker compose down -v 2>/dev/null
-            rm -f docker-compose.yml .env
-            print_color "GREEN" "✔ Cleanup completed"
-            return 0
-        else
-            print_color "GREEN" "✔ Keeping existing installation"
-            return 1
-        fi
+        case "$reply" in
+            [Yy]*)
+                print_color "YELLOW" "Removing existing installation..."
+                docker compose down -v 2>/dev/null
+                rm -f docker-compose.yml .env
+                print_color "GREEN" "✔ Cleanup completed"
+                return 0
+                ;;
+            *)
+                print_color "GREEN" "✔ Keeping existing installation"
+                return 1
+                ;;
+        esac
     fi
     return 0
 }
@@ -79,7 +84,7 @@ handle_existing_installation
 existing_install=$?
 
 # Step 1: Copy the compose file (if needed)
-if [ "$existing_install" -eq 0 ] || [ ! -f docker-compose.yml ]; then
+if [ "$existing_install" = "0" ] || [ ! -f docker-compose.yml ]; then
     print_header "Copying docker-compose.yml file"
     if curl -L https://raw.githubusercontent.com/hoophq/hoop/main/deploy/docker-compose/docker-compose.yml > ./docker-compose.yml 2>/dev/null; then
         print_color "GREEN" "✔ docker-compose.yml downloaded successfully"
@@ -103,9 +108,9 @@ fi
 print_color "GREEN" "✔ Local IP address: $LOCAL_IP"
 
 # Step 3: Set the .env file (if needed)
-if [ "$existing_install" -eq 0 ] || [ ! -f .env ]; then
+if [ "$existing_install" = "0" ] || [ ! -f .env ]; then
     print_header "Creating .env File"
-    cat > .env <<EOF
+    cat > .env << EOF
 HOOP_PUBLIC_HOSTNAME=$LOCAL_IP.nip.io
 EOF
     print_color "GREEN" "✔ Created .env file with HOOP_PUBLIC_HOSTNAME=$LOCAL_IP.nip.io"
@@ -137,16 +142,16 @@ echo
 
 print_color "YELLOW" "1. Access in the Browser:"
 echo "   Open your browser and go to:"
-printf "${BOLD}${CYAN}   https://$LOCAL_IP.nip.io${NC}\n"
+printf "%b   https://%s.nip.io%b\n" "$BOLD$CYAN" "$LOCAL_IP" "$NC"
 echo "   - If you see a warning about self-signed certificates, bypass it and proceed."
 echo "   - If redirected to '/logout', remove this suffix from the URL and press enter."
 echo
 
 print_color "YELLOW" "2. Sign In to the developer portal:"
 echo "   - Email:"
-printf "${BOLD}${CYAN}     admin${NC}\n"
+printf "%b     admin%b\n" "$BOLD$CYAN" "$NC"
 echo "   - Password:"
-printf "${BOLD}${CYAN}     Password1${NC}\n"
+printf "%b     Password1%b\n" "$BOLD$CYAN" "$NC"
 echo "     (if this is a fresh installation)"
 echo
 
