@@ -44,24 +44,20 @@ command_exists() {
 
 # Function to handle existing installation
 handle_existing_installation() {
-    local cleanup=false
     if [ -f docker-compose.yml ] || [ -f .env ]; then
         print_color "YELLOW" "Existing Hoop installation detected."
         read -p "Do you want to remove the existing installation and start fresh? (y/n): " -n 1 -r
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
-            cleanup=true
+            print_color "YELLOW" "Removing existing installation..."
+            docker compose down -v 2>/dev/null
+            rm -f docker-compose.yml .env
+            print_color "GREEN" "✔ Cleanup completed"
+            return 0
         else
             print_color "GREEN" "✔ Keeping existing installation"
             return 1
         fi
-    fi
-
-    if $cleanup; then
-        print_color "YELLOW" "Removing existing installation..."
-        docker compose down -v 2>/dev/null
-        rm -f docker-compose.yml .env
-        print_color "GREEN" "✔ Cleanup completed"
     fi
     return 0
 }
@@ -83,7 +79,7 @@ handle_existing_installation
 existing_install=$?
 
 # Step 1: Copy the compose file (if needed)
-if [ $existing_install -eq 0 ] || [ ! -f docker-compose.yml ]; then
+if [ "$existing_install" -eq 0 ] || [ ! -f docker-compose.yml ]; then
     print_header "Copying docker-compose.yml file"
     if curl -L https://raw.githubusercontent.com/hoophq/hoop/main/deploy/docker-compose/docker-compose.yml > ./docker-compose.yml 2>/dev/null; then
         print_color "GREEN" "✔ docker-compose.yml downloaded successfully"
@@ -107,7 +103,7 @@ fi
 print_color "GREEN" "✔ Local IP address: $LOCAL_IP"
 
 # Step 3: Set the .env file (if needed)
-if [ $existing_install -eq 0 ] || [ ! -f .env ]; then
+if [ "$existing_install" -eq 0 ] || [ ! -f .env ]; then
     print_header "Creating .env File"
     cat > .env <<EOF
 HOOP_PUBLIC_HOSTNAME=$LOCAL_IP.nip.io
