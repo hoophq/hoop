@@ -43,28 +43,41 @@ command_exists() {
     command -v "$1" > /dev/null 2>&1
 }
 
+# Function to check for running hoop.dev containers
+check_running_containers() {
+    docker ps --format '{{.Names}}' | grep -q '^hoop'
+}
+
 # Function to handle existing installation
 handle_existing_installation() {
-    if [ -f docker-compose.yml ] || [ -f .env ]; then
+    if [ -f docker-compose.yml ] || [ -f .env ] || check_running_containers; then
         print_color "YELLOW" "Existing Hoop installation detected."
-        printf "Do you want to remove the existing installation and start fresh? (y/n): "
-        read -r reply
-        echo
-        case "$reply" in
-            [Yy]*)
-                print_color "YELLOW" "Removing existing installation..."
-                docker compose down -v 2>/dev/null
-                rm -f docker-compose.yml .env
-                print_color "GREEN" "✔ Cleanup completed"
-                return 0
-                ;;
-            *)
-                print_color "GREEN" "✔ Keeping existing installation"
-                return 1
-                ;;
-        esac
+        print_color "YELLOW" "Do you want to remove the existing installation and start fresh? (y/n)"
+        
+        reply=""
+        while [ -z "$reply" ]; do
+            read -r reply </dev/tty
+            case "$reply" in
+                [Yy]*)
+                    print_color "YELLOW" "Removing existing installation..."
+                    docker compose down -v 2>/dev/null
+                    rm -f docker-compose.yml .env
+                    print_color "GREEN" "✔ Cleanup completed"
+                    return 0
+                    ;;
+                [Nn]*)
+                    print_color "GREEN" "✔ Keeping existing installation"
+                    return 1
+                    ;;
+                *)
+                    print_color "RED" "Invalid input. Please enter 'y' or 'n'."
+                    reply=""
+                    ;;
+            esac
+        done
+    else
+        return 0
     fi
-    return 0
 }
 
 # Check for required commands
