@@ -22,7 +22,7 @@
         request (clj->js {:method "POST"
                           :headers headers
                           :body (js/JSON.stringify (clj->js {:messages (messages language prefix suffix database-schema)
-                                                             :model "gpt-4o"}))})]
+                                                             :model "gpt-4o-mini"}))})]
     (-> (js/fetch (str config/api "/features/ask-ai/v1/chat/completions") request)
         (.then #(.json %))
         (.then #(js->clj % :keywordize-keys true))
