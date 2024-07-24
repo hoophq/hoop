@@ -7,7 +7,6 @@
    :audit->filtered-session-by-id {:status :loading, :data []}
    :connections {:loading true}
    :connections->connection-connected {:status :loading, :data nil}
-   :connections->context-connection {:loading true, :data nil}
    :connections->updating-connection {:loading true, :data []}
    :database-schema {:status :loading, :schema-tree nil, :indexes-tree nil}
    :dialog {:status :closed

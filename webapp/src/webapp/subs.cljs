@@ -200,11 +200,6 @@
    (:audit->session-details db)))
 
 (re-frame/reg-sub
- :connections->context-connection
- (fn [db _]
-   (:connections->context-connection db)))
-
-(re-frame/reg-sub
  ::connections->updating-connection
  (fn [db _]
    (:connections->updating-connection db)))

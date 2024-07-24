@@ -65,8 +65,7 @@
                                               :aria-hidden "true"}]
                "Remove selection"])]])]))]])
 
-(defn main [{:keys [current-connection
-                    run-connections-list-selected
+(defn main [{:keys [run-connections-list-selected
                     show-tree?
                     schema-disabled?
                     metadata
@@ -74,15 +73,6 @@
                     metadata-value]}]
   [:div {:class "relative"}
    [:div {:class "transition grid lg:grid-cols-1 gap-regular h-auto"}
-    [connection-running-item {:connection current-connection
-                              :show-tree? show-tree?
-                              :schema-disabled? schema-disabled?
-                              :metadata metadata
-                              :metadata-key metadata-key
-                              :metadata-value metadata-value
-                              :removed? false
-                              :default-opened? true
-                              :context-connection? true}]
     (doall
      (for [connection run-connections-list-selected]
        ^{:key (:name connection)}
@@ -92,5 +82,8 @@
                                  :metadata metadata
                                  :metadata-key metadata-key
                                  :metadata-value metadata-value
-                                 :default-opened? false
+                                 :default-opened? (when (and (= (:name connection)
+                                                                (:name (first run-connections-list-selected)))
+                                                             (= (:type connection) "database"))
+                                                    true)
                                  :removed? true}]))]])

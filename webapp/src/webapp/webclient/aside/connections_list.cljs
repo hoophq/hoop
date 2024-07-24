@@ -20,7 +20,8 @@
                               "text-gray-400"
                               "text-white cursor-pointer"))
                 :on-click (fn []
-                            (rf/dispatch [:editor-plugin->toggle-select-run-connection (:name connection)]))}
+                            (when (= "online" (:status connection))
+                              (rf/dispatch [:editor-plugin->toggle-select-run-connection (:name connection)])))}
           [:div {:class "flex items-center gap-regular"}
            [:figure {:class "w-4"}
             [:img {:src  (connection-constants/get-connection-icon connection :dark)

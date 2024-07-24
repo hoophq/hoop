@@ -12,7 +12,8 @@
    ["/" {"" :home
          "404" :404
          "auth/callback" :auth-callback-hoop
-         "connections" [["/details" :connection-details]
+         "connections" [["" :connections]
+                        ["/details" :connection-details]
                         ["/new" :create-connection]
                         [["/connections/" :connection-type "/new"] :onboarding-create-connection]]
          "client" :editor-plugin

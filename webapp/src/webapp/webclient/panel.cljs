@@ -63,18 +63,20 @@
       (reset! timer (js/setTimeout #(save-code-to-localstorage code-string) 1000))
       (reset! script code-string))))
 
-(defn- submit-task [e script selected-connections connection-name atom-exec-list-open? metadata]
+(defn- submit-task [e script selected-connections atom-exec-list-open? metadata]
   (when (.-preventDefault e) (.preventDefault e))
 
-  (if (seq selected-connections)
+  (if (and (seq selected-connections)
+           (> (count selected-connections) 1))
     (reset! atom-exec-list-open? true)
 
-    (if (= connection-name "")
-      (rf/dispatch [:show-snackbar {:level :info
-                                    :text "You must choose a connection"}])
+    (if (first selected-connections)
       (rf/dispatch [:editor-plugin->exec-script {:script script
-                                                 :connection-name connection-name
-                                                 :metadata (metadata->json-stringify metadata)}]))))
+                                                 :connection-name (:name (first selected-connections))
+                                                 :metadata (metadata->json-stringify metadata)}])
+
+      (rf/dispatch [:show-snackbar {:level :info
+                                    :text "You must choose a connection"}]))))
 
 (defmulti ^:private saved-status-el identity)
 (defmethod ^:private saved-status-el :saved [_]
@@ -134,8 +136,8 @@
         metadata (r/atom [])
         metadata-key (r/atom "")
         metadata-value (r/atom "")
-        languages-options [{:text "MySQL" :value "mysql"}
-                           {:text "Shell" :value "command-line"}
+        languages-options [{:text "Shell" :value "command-line"}
+                           {:text "MySQL" :value "mysql"}
                            {:text "Postgres" :value "postgres"}
                            {:text "SQL Server" :value "mssql"}
                            {:text "MongoDB" :value "mongodb"}
@@ -187,7 +189,6 @@
                              {}
                              @script
                              run-connections-list-selected
-                             connection-name
                              multiple-connections-exec-list-component/atom-exec-list-open?
                              (conj @metadata {:key @metadata-key :value @metadata-value}))
 
@@ -205,7 +206,6 @@
                                {}
                                (.sliceString ^cm-state/Text (.-doc (.-state config)) from to)
                                run-connections-list-selected
-                               connection-name
                                multiple-connections-exec-list-component/atom-exec-list-open?
                                (conj @metadata {:key @metadata-key :value @metadata-value}))
 
@@ -236,29 +236,28 @@
                     {:key "Shift-Mod-\\" :run cm-commands/cursorMatchingBracket}
                     {:key "Mod-/" :run cm-commands/toggleComment}
                     {:key "Alt-A" :run cm-commands/toggleBlockComment}]
-            language-parser-case (fn [language]
-                                   (let [databse-schema-sanitized (if (= (:status @database-schema) :success)
-                                                                    @database-schema
-                                                                    {:status :failure :raw "" :schema-tree []})]
-                                     (case language
-                                       "postgres" [(sql
-                                                    (.assign js/Object (.-dialect PostgreSQL)
-                                                             #js{:schema (clj->js (convert-tree databse-schema-sanitized))}))]
-                                       "mysql" [(sql
-                                                 (.assign js/Object (.-dialect MySQL)
-                                                          #js{:schema (clj->js (convert-tree databse-schema-sanitized))}))]
-                                       "mssql" [(sql
-                                                 (.assign js/Object (.-dialect MSSQL)
-                                                          #js{:schema (clj->js (convert-tree databse-schema-sanitized))}))]
-                                       "command-line" [(.define cm-language/StreamLanguage cm-shell/shell)]
-                                       "javascript" [(.define cm-language/StreamLanguage cm-javascript/javascript)]
-                                       "nodejs" [(.define cm-language/StreamLanguage cm-javascript/javascript)]
-                                       "mongodb" [(.define cm-language/StreamLanguage cm-javascript/javascript)]
-                                       "ruby-on-rails" [(.define cm-language/StreamLanguage cm-ruby/ruby)]
-                                       "python" [(.define cm-language/StreamLanguage cm-python/python)]
-                                       "clojure" [(.define cm-language/StreamLanguage cm-clojure/clojure)]
-                                       "" [(.define cm-language/StreamLanguage cm-shell/shell)]
-                                       [(.define cm-language/StreamLanguage cm-shell/shell)])))
+            language-parser-case (let [databse-schema-sanitized (if (= (:status @database-schema) :success)
+                                                                  @database-schema
+                                                                  {:status :failure :raw "" :schema-tree []})]
+                                   (case (:subtype (first run-connections-list-selected))
+                                     "postgres" [(sql
+                                                  (.assign js/Object (.-dialect PostgreSQL)
+                                                           #js{:schema (clj->js (convert-tree databse-schema-sanitized))}))]
+                                     "mysql" [(sql
+                                               (.assign js/Object (.-dialect MySQL)
+                                                        #js{:schema (clj->js (convert-tree databse-schema-sanitized))}))]
+                                     "mssql" [(sql
+                                               (.assign js/Object (.-dialect MSSQL)
+                                                        #js{:schema (clj->js (convert-tree databse-schema-sanitized))}))]
+                                     "command-line" [(.define cm-language/StreamLanguage cm-shell/shell)]
+                                     "javascript" [(.define cm-language/StreamLanguage cm-javascript/javascript)]
+                                     "nodejs" [(.define cm-language/StreamLanguage cm-javascript/javascript)]
+                                     "mongodb" [(.define cm-language/StreamLanguage cm-javascript/javascript)]
+                                     "ruby-on-rails" [(.define cm-language/StreamLanguage cm-ruby/ruby)]
+                                     "python" [(.define cm-language/StreamLanguage cm-python/python)]
+                                     "clojure" [(.define cm-language/StreamLanguage cm-clojure/clojure)]
+                                     "" [(.define cm-language/StreamLanguage cm-shell/shell)]
+                                     [(.define cm-language/StreamLanguage cm-shell/shell)]))
             theme-parser-map {"dracula" dracula
                               "nord" nord
                               "github-dark" githubDark
@@ -276,27 +275,7 @@
                                   (= (:type connection) "database"))
                               (not (some #(= (:name connection) %) review-plugin->connections))))]
         [:div {:class "h-full flex flex-col"}
-         [:div {:class "h-16 border border-gray-600 flex justify-between items-center gap-small px-4"}
-          [:div {:class "flex items-center gap-small"}
-           [:span {:class "text-gray-200 text-sm font-bold"}
-            connection-name]
-           (when (seq run-connections-list-selected)
-             [:div {:class (str "relative flex flex-col group")}
-              [:span {:class "text-gray-200 text-sm font-bold"}
-               "+ " (count run-connections-list-selected) " more"]
-              [:div {:class "absolute top-6 left-2 flex-col hidden mb-6 w-max group-hover:flex"}
-               [:div {:class "w-3 h-3 -mb-2 border-l border-t border-gray-300 bg-white transform rotate-45"}]
-               [:div {:class (str "relative border -left-3 border-gray-300 bg-white rounded-md z-50 "
-                                  "p-2 text-xs text-gray-700 leading-none whitespace-no-wrap shadow-lg")}
-                [:ul {:class "max-h-96 overflow-y-auto p-regular"}
-                 [:span {:class "text-xs text-gray-400 font-normal"}
-                  "Running in"]
-                 [:li {:class "font-bold text-sm text-gray-900 truncate py-small"}
-                  connection-name]
-                 (for [connection run-connections-list-selected]
-                   ^{:key (:name connection)}
-                   [:li {:class "font-bold text-sm text-gray-900 truncate py-small"}
-                    (:name connection)])]]]])]
+         [:div {:class "h-16 border border-gray-600 flex justify-end items-center gap-small px-4"}
           [:div {:class "flex items-center gap-small"}
            [:span {:class "text-xxs text-gray-500"}
             (str (if is-mac?
@@ -312,7 +291,6 @@
                                                    res
                                                    @script
                                                    run-connections-list-selected
-                                                   connection-name
                                                    multiple-connections-exec-list-component/atom-exec-list-open?
                                                    (conj @metadata {:key @metadata-key :value @metadata-value}))
 
@@ -359,12 +337,12 @@
                                                         [(inlineCopilot
                                                           (fn [prefix suffix]
                                                             (extensions/fetch-autocomplete
-                                                             @select-language
+                                                             language-parser-case
                                                              prefix
                                                              suffix
                                                              (:raw @database-schema))))])
                                                       [(.of cm-view/keymap (clj->js keymap))]
-                                                      (language-parser-case @select-language)
+                                                      language-parser-case
                                                       (when (= (:status @selected-template) :ready)
                                                         [(.of (.-editable cm-view/EditorView) false)
                                                          (.of (.-readOnly cm-state/EditorState) true)])))
@@ -387,7 +365,11 @@
                                   :options theme-options}]
             [forms/select-editor {:on-change #(rf/dispatch [:editor-plugin->set-select-language
                                                             (-> % .-target .-value)])
-                                  :selected (or @select-language "")
+                                  :selected (or (cond
+                                                  (not (cs/blank? (:subtype (first run-connections-list-selected)))) (:subtype (first run-connections-list-selected))
+                                                  (not (cs/blank? (:icon_name (first run-connections-list-selected)))) (:icon_name (first run-connections-list-selected))
+                                                  (= (:type (first run-connections-list-selected)) "custom") "command-line"
+                                                  :else (:type (first run-connections-list-selected))) "")
                                   :options languages-options}]]]]
 
          (when @multiple-connections-exec-list-component/atom-exec-list-open?

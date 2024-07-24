@@ -6,9 +6,6 @@
             [reagent.core :as r]
             [webapp.components.user-icon :as user-icon]
             [webapp.config :as config]
-            [webapp.connections.constants :as connection-constants]
-            [webapp.connections.views.connection-form-modal :as connection-form-modal]
-            [webapp.shared-ui.sidebar.connection-overlay :as connection-overlay]
             [webapp.shared-ui.sidebar.constants :as sidebar-constants]))
 
 (def link-styles
@@ -24,12 +21,10 @@
 (defn main [_ _]
   (let [open-profile-disclosure? (r/atom false)
         gateway-info (rf/subscribe [:gateway->info])
-        current-route (rf/subscribe [:routes->route])
-        context-connection (rf/subscribe [:connections->context-connection])]
+        current-route (rf/subscribe [:routes->route])]
     (fn [user my-plugins]
       (let [gateway-version (:version (:data @gateway-info))
             user-data (:data user)
-            connection (:data @context-connection)
             plugins-routes-enabled (filterv (fn [plugin]
                                               (some #(= (:name plugin) (:name %)) my-plugins))
                                             sidebar-constants/plugins-routes)
@@ -40,110 +35,88 @@
             user-management? (:user-management? user-data)
             current-route @current-route]
         [:<>
-         [:div {:class "flex h-16 shrink-0 items-center"}
-          [:figure {:class "w-28 my-6 cursor-pointer"}
+         [:div {:class "flex my-8 shrink-0 items-center"}
+          [:figure {:class "w-40 cursor-pointer"}
            [:img {:src "/images/hoop-branding/PNG/hoop-symbol+text_white@4x.png"
                   :on-click #(rf/dispatch [:navigate :home])}]]]
          [:nav {:class "flex flex-1 flex-col"}
           [:ul {:role "list"
                 :class "flex flex-1 flex-col gap-y-6"}
            [:li
-            (when connection
-              [:div {:class "flex items-center justify-between mb-3 text-xs text-white cursor-pointer"
-                     :on-click (fn []
-                                 (rf/dispatch [:connections->get-connections])
-                                 (reset! connection-overlay/overlay-open? true))}
-               [:span {:class "font-semibold"}
-                "Connections"]
-               [:span {:class "flex items-center gap-1"}
-                "See all"
-                [:> hero-outline-icon/ChevronRightIcon {:class "h-5 w-5 shrink-0 text-white"
-                                                        :aria-hidden "true"}]]])
             [:ul {:role "list" :class "space-y-1"}
-             [:li {:class "hidden lg:block"}
-              (if connection
-                [:button {:on-click (fn []
-                                      (when admin?
-                                        (rf/dispatch [:connections->get-connection {:connection-name (:name connection)}])
-                                        (rf/dispatch [:open-modal [connection-form-modal/main :update] :large])))
-                          :class (str "w-full overflow-ellipsis text-white bg-gray-800 group items-center "
-                                      "flex justify-between rounded-md p-2 text-sm leading-6 font-semibold mb-6"
-                                      (when (not admin?) " cursor-default"))}
-                 [:div {:class "flex gap-3 justify-start items-center"}
-                  [:figure {:class "w-5"}
-                   [:img {:src (connection-constants/get-connection-icon connection :dark)
-                          :class "w-9"}]]
-                  [:span {:class "text-left truncate w-32"}
-                   (:name connection)]]
-                 (when admin?
-                   [:> hero-solid-icon/AdjustmentsHorizontalIcon {:class "h-5 w-5 shrink-0 text-white"
-                                                                  :aria-hidden "true"}])]
-
-                [:button {:on-click #(rf/dispatch [:navigate :create-connection])
-                          :class "w-full overflow-ellipsis text-white bg-blue-500 hover:bg-blue-800 group rounded-md p-2 text-sm leading-6 font-semibold mb-6"}
-                 "Add connection"])]
              (for [route sidebar-constants/routes]
                ^{:key (:name route)}
-               [:li {:class (str (when (and (:need-connection? route) (not connection))
-                                   " cursor-not-allowed text-opacity-30"))}
-                [:a {:href (if (and (:need-connection? route) (not connection))
-                             "#"
-                             (:uri route))
+               [:li
+                [:a {:href (:uri route)
                      :class (str (hover-side-menu-link? (:uri route) current-route)
-                                 (if (and (:need-connection? route) (not connection))
-                                   (:disabled link-styles)
-                                   (:enabled link-styles)))}
+                                 (:enabled link-styles))}
                  [:div {:class "flex gap-3 items-center"}
-                  [(:icon route) {:class (str "h-6 w-6 shrink-0 text-white"
-                                              (when (and (:need-connection? route) (not connection))
-                                                " opacity-30"))
+                  [(:icon route) {:class (str "h-6 w-6 shrink-0 text-white")
                                   :aria-hidden "true"}]
                   (:name route)]]])
 
              (for [plugin plugins-routes-enabled]
                ^{:key (:name plugin)}
-               [:a {:href (if (or (and (:need-connection? plugin) (not connection))
-                                  free-license?)
-                            "#"
-                            (:uri plugin))
-                    :on-click (fn []
-                                (when (and free-license? (not (:free-feature? plugin)))
-                                  (js/window.Intercom
-                                   "showNewMessage"
-                                   "I want to upgrade my current plan")))
-                    :class (str (hover-side-menu-link? (:uri plugin) current-route)
-                                (if (and (:need-connection? plugin) (not connection))
-                                  (:disabled link-styles)
-                                  (:enabled link-styles))
-                                (when (and free-license? (not (:free-feature? plugin)))
-                                  " text-opacity-30"))}
-                [:div {:class "flex gap-3 items-center"}
-                 [(:icon plugin) {:class (str "h-6 w-6 shrink-0 text-white"
-                                              (when (or (and (:need-connection? plugin) (not connection))
-                                                        free-license?)
-                                                " opacity-30"))
-                                  :aria-hidden "true"}]
-                 (:label plugin)]
-                (when (and free-license? (not (:free-feature? plugin)))
-                  [:div {:class "text-xs text-gray-200 py-1 px-2 border border-gray-200 rounded-md"}
-                   "Upgrade"])])]]
+               [:li
+                [:a {:href (if free-license?
+                             "#"
+                             (:uri plugin))
+                     :on-click (fn []
+                                 (when (and free-license? (not (:free-feature? plugin)))
+                                   (js/window.Intercom
+                                    "showNewMessage"
+                                    "I want to upgrade my current plan")))
+                     :class (str (hover-side-menu-link? (:uri plugin) current-route)
+                                 (:enabled link-styles)
+                                 (when (and free-license? (not (:free-feature? plugin)))
+                                   " text-opacity-30"))}
+                 [:div {:class "flex gap-3 items-center"}
+                  [(:icon plugin) {:class (str "h-6 w-6 shrink-0 text-white"
+                                               (when free-license?
+                                                 " opacity-30"))
+                                   :aria-hidden "true"}]
+                  (:label plugin)]
+                 (when (and free-license? (not (:free-feature? plugin)))
+                   [:div {:class "text-xs text-gray-200 py-1 px-2 border border-gray-200 rounded-md"}
+                    "Upgrade"])]])]]
 
            (when (and admin? (seq my-plugins))
-             [:li
+             [:ul {:class "space-y-1"}
               [:div {:class "py-0.5 text-xs text-white mb-3 font-semibold"}
                "Organization"]
 
-              (when (and user-management? admin?)
-                [:a {:href "#"
-                     :on-click #(rf/dispatch [:navigate :users])
-                     :class (str (hover-side-menu-link? "/organization/users" current-route)
-                                 (:enabled link-styles))}
-                 [:div {:class "flex gap-3 items-center"}
-                  [:> hero-outline-icon/UserGroupIcon {:class (str "h-6 w-6 shrink-0 text-white")
-                                                       :aria-hidden "true"}]
-                  "Users"]])
+              [:li
+               [:a {:href "#"
+                    :on-click #(rf/dispatch [:navigate :connections])
+                    :class (str (hover-side-menu-link? "/connections" current-route)
+                                (:enabled link-styles))}
+                [:div {:class "flex gap-3 items-center"}
+                 [:> hero-outline-icon/ArrowsRightLeftIcon {:class "h-6 w-6 shrink-0 text-white"
+                                                            :aria-hidden "true"}]
+                 "Connections"]]]
 
-              [:> ui/Disclosure {:as "div"
+              (when (and user-management? admin?)
+                [:li
+                 [:a {:href "#"
+                      :on-click #(rf/dispatch [:navigate :users])
+                      :class (str (hover-side-menu-link? "/organization/users" current-route)
+                                  (:enabled link-styles))}
+                  [:div {:class "flex gap-3 items-center"}
+                   [:> hero-outline-icon/UserGroupIcon {:class (str "h-6 w-6 shrink-0 text-white")
+                                                        :aria-hidden "true"}]
+                   "Users"]]])
+
+              [:li
+               [:a {:href "#"
+                    :on-click #(rf/dispatch [:navigate :hoop-app])
+                    :class (str (hover-side-menu-link? "/hoop-app" current-route)
+                                (:enabled link-styles))}
+                [:div {:class "flex gap-3 items-center"}
+                 [:> hero-outline-icon/SignalIcon {:class "h-6 w-6 shrink-0 text-white"
+                                                   :aria-hidden "true"}]
+                 "Hoop App"]]]
+
+              [:> ui/Disclosure {:as "li"
                                  :class "text-xs font-semibold leading-6 text-gray-400"}
                [:> (.-Button ui/Disclosure) {:class "w-full group flex items-center justify-between rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-gray-800 hover:text-white"}
                 [:div {:class "flex gap-3 justify-start items-center"}
@@ -229,16 +202,6 @@
                                                    :aria-hidden "true"}]]
              [:> (.-Panel ui/Disclosure) {:as "ul"
                                           :class "mt-1 px-2"}
-
-              [:li
-               [:> (.-Button ui/Disclosure) {:as "a"
-                                             :href "#"
-                                             :on-click #(rf/dispatch [:navigate :hoop-app])
-                                             :class "group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-gray-800 hover:text-white"}
-                [:> hero-outline-icon/SignalIcon {:class "h-6 w-6 shrink-0 text-white"
-                                                  :aria-hidden "true"}]
-                "Hoop App"]]
-
               [:li
                [:> (.-Button ui/Disclosure) {:as "a"
                                              :target "_blank"

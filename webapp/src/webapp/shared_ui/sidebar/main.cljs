@@ -13,10 +13,9 @@
 
 (defn mobile-sidebar [_ _ _]
   (let [sidebar-mobile (rf/subscribe [:sidebar-mobile])]
-    (fn [user my-plugins connection]
+    (fn [user my-plugins]
       (let [user-data (:data user)
             admin? (:admin? user-data)
-            connection-data (:data connection)
             sidebar-open? (if (= :opened (:status @sidebar-mobile))
                             true
                             false)]
@@ -70,15 +69,7 @@
                     :onClick #(rf/dispatch [:sidebar-mobile->open])}
            [:span {:class "sr-only"} "Open sidebar"]
            [:> hero-outline-icon/Bars3Icon {:class "h-6 w-6 shrink-0 text-white"
-                                            :aria-hidden "true"}]]
-          [:button {:on-click #(reset! connection-overlay/overlay-open? true)
-                    :class "overflow-ellipsis text-white bg-gray-800 hover:bg-blue-600 group items-center flex justify-between rounded-md p-2 text-sm leading-6 font-semibold"}
-           [:div {:class "flex gap-3 justify-start items-center"}
-            [:figure {:class "w-5"}
-             [:img {:src (connection-constants/get-connection-icon connection-data :dark)
-                    :class "w-9"}]]
-            [:span {:class "text-left truncate w-32"}
-             (:name connection-data)]]]]
+                                            :aria-hidden "true"}]]]
    ;; sidebar closed
          ]))))
 
@@ -90,9 +81,8 @@
 (defn desktop-sidebar [_ _]
   (let [sidebar-desktop (rf/subscribe [:sidebar-desktop])
         current-route (rf/subscribe [:routes->route])]
-    (fn [user my-plugins connection]
+    (fn [user my-plugins]
       (let [user-data (:data user)
-            connection-data (:data connection)
             plugins-enabled (filterv (fn [plugin]
                                        (some #(= (:name plugin) (:name %)) my-plugins)) constants/plugins-routes)
             admin? (:admin? user-data)
@@ -136,37 +126,13 @@
              [:li
               [:ul {:role "list"
                     :class "flex flex-col items-center space-y-1"}
-               [:li
-                (if connection-data
-                  [:button {:on-click #(rf/dispatch [:sidebar-desktop->open])
-                            :class "w-full overflow-ellipsis text-white bg-gray-800 group items-center flex justify-between rounded-md p-2 text-sm leading-6 font-semibold mb-6"}
-                   [:div {:class "flex gap-3 justify-start items-center"}
-                    [:figure {:class "w-5"}
-                     [:img {:src (connection-constants/get-connection-icon connection-data :dark)
-                            :class "w-9"}]]
-                    [:span {:class "sr-only"}
-                     (:name connection-data)]]]
-
-                  [:button {:on-click #(rf/dispatch [:sidebar-desktop->open])
-                            :class "w-full overflow-ellipsis text-white bg-blue-500 hover:bg-blue-800 group items-center flex justify-between rounded-md p-2 text-sm leading-6 font-semibold mb-6"}
-                   [:div {:class "flex gap-3 justify-start items-center"}
-                    [:figure {:class "w-5"}
-                     [:> hero-solid-icon/PlusIcon {:class "h-5 w-5 text-white"
-                                                   :aria-hidden "true"}]]
-                    [:span {:class "sr-only"}
-                     "Add connection"]]])]
-
                (for [route constants/routes]
                  ^{:key (:name route)}
                  [:li
-                  [:a {:href (if (and (:need-connection? route) (not connection-data))
-                               "#"
-                               (:uri route))
+                  [:a {:href (:uri route)
                        :class (str (hover-side-menu-link? (:uri route) current-route)
                                    "group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
-                   [(:icon route) {:class (str "h-6 w-6 shrink-0 text-white"
-                                               (when (and (:need-connection? route) (not connection-data))
-                                                 " opacity-30"))
+                   [(:icon route) {:class (str "h-6 w-6 shrink-0 text-white")
                                    :aria-hidden "true"}]
                    [:span {:class "sr-only"}
                     (:name route)]]])
@@ -174,13 +140,9 @@
                (for [plugin plugins-enabled]
                  ^{:key (:name plugin)}
                  [:li
-                  [:a {:href (if (and (:need-connection? plugin) (not connection-data))
-                               "#"
-                               (:uri plugin))
+                  [:a {:href (:uri plugin)
                        :class "text-gray-400 hover:text-white hover:bg-gray-800 group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
-                   [(:icon plugin) {:class (str "h-6 w-6 shrink-0 text-white"
-                                                (when (and (:need-connection? plugin) (not connection-data))
-                                                  " opacity-30"))
+                   [(:icon plugin) {:class (str "h-6 w-6 shrink-0 text-white")
                                     :aria-hidden "true"}]
                    [:span {:class "sr-only"}
                     (:label plugin)]]])]]
@@ -213,13 +175,9 @@
 
 (defn container []
   (let [user (rf/subscribe [:users->current-user])
-        my-plugins (rf/subscribe [:plugins->my-plugins])
-        context-connection (rf/subscribe [:connections->context-connection])]
+        my-plugins (rf/subscribe [:plugins->my-plugins])]
     (when (empty? (:data @user))
       (rf/dispatch [:users->get-user]))
-
-    (when (empty? (:data @context-connection))
-      (rf/dispatch [:connections->fullfill-context-connection]))
 
     (rf/dispatch [:plugins->get-my-plugins])
     (rf/dispatch [:connections->get-connections])
@@ -230,9 +188,9 @@
                             :id (some-> @user :data :id)}})
     (fn []
       [:div
-       [connection-overlay/main @user @context-connection]
-       [mobile-sidebar @user @my-plugins @context-connection]
-       [desktop-sidebar @user @my-plugins @context-connection]])))
+       [connection-overlay/main @user]
+       [mobile-sidebar @user @my-plugins]
+       [desktop-sidebar @user @my-plugins]])))
 
 (defn main [_]
   (let [sidebar-desktop (rf/subscribe [:sidebar-desktop])]

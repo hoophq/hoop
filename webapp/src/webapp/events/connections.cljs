@@ -1,6 +1,5 @@
 (ns webapp.events.connections
-  (:require [clojure.string :as cs]
-            [re-frame.core :as rf]
+  (:require [re-frame.core :as rf]
             [webapp.connections.constants :as constants]))
 
 (rf/reg-event-fx
@@ -19,49 +18,6 @@
  (fn
    [{:keys [db]} [_ connection]]
    {:db (assoc db :connections->connection-details {:loading false :data connection})}))
-
-(rf/reg-event-fx
- :connections->fullfill-context-connection
- (fn
-   [{:keys [db]} [_ _]]
-   {:db (assoc-in db [:connections :loading] true)
-    :fx [[:dispatch [:fetch {:method "GET"
-                             :uri "/connections"
-                             :on-success (fn [conn]
-                                           (if (empty? conn)
-                                             (rf/dispatch [:connections->set-context-connection nil])
-                                             (if (.getItem js/localStorage "context_connection")
-                                               (rf/dispatch [:connections->get-context-connection (.-id (.parse js/JSON (.getItem js/localStorage "context_connection")))])
-                                               (rf/dispatch [:connections->get-context-connection (:id (first conn))]))))}]]]}))
-
-(rf/reg-event-fx
- :connections->get-context-connection
- (fn
-   [{:keys [db]} [_ connection-id]]
-   {:db (assoc db :connections->set-context-connection {:loading true :data {:id connection-id}})
-    :fx [[:dispatch
-          [:fetch {:method "GET"
-                   :uri (str "/connections/" connection-id)
-                   :on-success (fn [connection]
-                                 (.setItem js/localStorage "context_connection" (.stringify js/JSON (clj->js connection)))
-                                 (rf/dispatch [:connections->set-context-connection connection])
-                                 (rf/dispatch [:editor-plugin->set-select-language
-                                               (cond
-                                                 (not (cs/blank? (:subtype connection))) (:subtype connection)
-                                                 (not (cs/blank? (:icon_name connection))) (:icon_name connection)
-                                                 (= (:type connection) "custom") "command-line"
-                                                 :else (:type connection))])
-                                 (when (= "/connections/new/hoop-run" (.-pathname (.-location js/window)))
-                                   (rf/dispatch [:navigate :editor-plugin])))
-                   :on-failure (fn [_]
-                                 (.removeItem js/localStorage "context_connection")
-                                 (rf/dispatch [:connections->fullfill-context-connection]))}]]]}))
-
-(rf/reg-event-fx
- :connections->set-context-connection
- (fn
-   [{:keys [db]} [_ connection]]
-   {:db (assoc db :connections->context-connection {:loading false :data connection})}))
 
 (rf/reg-event-fx
  ::connections->set-updating-connection
@@ -113,9 +69,7 @@
                                       (rf/dispatch [:show-snackbar {:level :success
                                                                     :text "Connection created!"}])
 
-                                      (.setItem js/localStorage "context_connection" (.stringify js/JSON (clj->js connection)))
-                                      (rf/dispatch [:connections->set-context-connection connection])
-                                      (rf/dispatch [:navigate :home]))}]]]})))
+                                      (rf/dispatch [:navigate :connections]))}]]]})))
 
 
 (rf/reg-event-fx
@@ -198,15 +152,12 @@
              {:method "POST"
               :uri "/connections"
               :body body
-              :on-success (fn [connection]
+              :on-success (fn []
                             (rf/dispatch [:show-snackbar {:level :success
                                                           :text "Connection created!"}])
                             (rf/dispatch [:connections->get-connections])
                             (rf/dispatch [:plugins->get-my-plugins])
-
-                            (.setItem js/localStorage "context_connection" (.stringify js/JSON (clj->js connection)))
-                            (rf/dispatch [:connections->set-context-connection connection])
-                            (rf/dispatch [:navigate :editor-plugin]))}]]]})))
+                            (rf/dispatch [:navigate :home]))}]]]})))
 
 (rf/reg-event-fx
  :connections->quickstart-create-postgres-demo
@@ -227,6 +178,4 @@
    {:fx [[:dispatch
           [:fetch {:method "DELETE"
                    :uri (str "/connections/" connection-name)
-                   :on-success (fn []
-                                 (.removeItem js/localStorage "context_connection")
-                                 (rf/dispatch [:connections->fullfill-context-connection]))}]]]}))
+                   :on-success (fn [] (rf/dispatch [:navigate :connections]))}]]]}))

@@ -7,37 +7,20 @@
                       [:> hero-outline-icon/CodeBracketSquareIcon props])
               :uri "/client"
               :navigate :editor-plugin
-              :free-feature? true
-              :need-connection? false}
-             {:name "Dashboard"
-              :icon (fn [props]
-                      [:> hero-outline-icon/RectangleGroupIcon props])
-              :uri "/connections/details"
-              :free-feature? true
-              :need-connection? true}
+              :free-feature? true}
              {:name "Sessions"
               :icon (fn [props]
                       [:> hero-outline-icon/RectangleStackIcon props])
               :uri "/sessions"
-              :free-feature? true
-              :need-connection? true}])
+              :free-feature? true}])
 
-(def plugins-routes [{:name "runbooks"
-                      :label "Runbooks"
-                      :icon (fn [props]
-                              [:> hero-outline-icon/BookOpenIcon props])
-                      :uri "/runbooks"
-                      :free-feature? false
-                      :navigate :runbooks-plugin
-                      :need-connection? true}
-                     {:name "review"
+(def plugins-routes [{:name "review"
                       :label "Reviews"
                       :icon (fn [props]
                               [:> hero-outline-icon/InboxIcon props])
                       :uri "/reviews"
                       :free-feature? false
-                      :navigate :reviews-plugin
-                      :need-connection? true}])
+                      :navigate :reviews-plugin}])
 
 (def plugins-management [{:name "access_control"
                           :label "Access Control"
