@@ -30,7 +30,7 @@
     [loaders/simple-loader]]])
 
 (defn- tooltip [text position]
-  [:div {:class (str "absolute -bottom-10 left-1/2 flex-col hidden mt-6 w-max "
+  [:div {:class (str "absolute -bottom-10 flex-col hidden mt-6 w-max "
                      "group-hover:flex items-center -translate-x-1/2 z-50 "
                      (if (= position "left")
                        "-left-4"
@@ -133,7 +133,8 @@
                                                        [connection-connect/main]
                                                        :default
                                                        connection-connect/handle-close-modal]))}
-                       [tooltip "Hoop Access"]
+                       [tooltip "Hoop Access" (when (not (-> @user :data :admin?))
+                                                "left")]
                        [:> hero-micro-icon/SignalIcon {:class "w-6 h-6 text-gray-700"}]])
 
                     (when (and (-> @user :data :admin?)
