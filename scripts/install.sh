@@ -65,26 +65,20 @@ get_local_ip() {
 handle_existing_installation() {
     if [ -f docker-compose.yml ] || [ -f .env ] || check_running_containers; then
         print_color "$YELLOW" "Existing Hoop installation detected."
-        printf "${YELLOW}Remove existing installation and start fresh? (y/n): ${NC}"
         
-        # Create a temporary file for user input
-        tmp_file=$(mktemp)
-        
-        # Start background process to read input
-        (
+        if [ -t 0 ]; then
+            # Running interactively
+            printf "${YELLOW}Remove existing installation and start fresh? (y/n): ${NC}"
             read -r reply
-            echo "$reply" > "$tmp_file"
-        ) &
-        
-        # Wait for input (with timeout)
-        sleep 30
-        
-        # Kill the background process if it's still running
-        kill $! >/dev/null 2>&1
-        
-        # Read the reply from the temporary file
-        reply=$(cat "$tmp_file")
-        rm -f "$tmp_file"
+        else
+            # Non-interactive mode
+            if [ -n "$HOOP_CLEAN_INSTALL" ] && [ "$HOOP_CLEAN_INSTALL" = "yes" ]; then
+                reply="y"
+            else
+                reply="n"
+            fi
+            print_color "$YELLOW" "Non-interactive mode: $reply"
+        fi
         
         case "$reply" in
             [Yy]*)
@@ -98,12 +92,8 @@ handle_existing_installation() {
                 print_color "$GREEN" "✔ Cleanup completed"
                 return 0
                 ;;
-            [Nn]*)
-                print_color "$GREEN" "✔ Keeping existing installation"
-                return 1
-                ;;
             *)
-                print_color "$RED" "Invalid or no input received. Keeping existing installation."
+                print_color "$GREEN" "✔ Keeping existing installation"
                 return 1
                 ;;
         esac
