@@ -11,12 +11,12 @@ NC='\033[0m' # No Color
 
 # Function to print colored output
 print_color() {
-    echo -e "${1}${2}${NC}"
+    printf "%b%s%b\n" "$1" "$2" "$NC"
 }
 
 # Function to print section headers
 print_header() {
-    echo -e "\n${BLUE}==== ${1} ====${NC}"
+    printf "\n%b==== %s ====%b\n" "$BLUE" "$1" "$NC"
 }
 
 # ASCII Art Banner
@@ -65,21 +65,22 @@ get_local_ip() {
 handle_existing_installation() {
     if [ -f docker-compose.yml ] || [ -f .env ] || check_running_containers; then
         print_color "$YELLOW" "Existing Hoop installation detected."
-        print_color "$YELLOW" "Remove existing installation and start fresh? (y/n)"
+        printf "${YELLOW}Remove existing installation and start fresh? (y/n): ${NC}"
         
         # Create a temporary file for user input
         tmp_file=$(mktemp)
         
-        # Prompt for user input and save to temporary file
+        # Start background process to read input
         (
-            # Try to read from /dev/tty first
-            if [ -t 0 ]; then
-                read -p "Enter y or n: " reply < /dev/tty
-            else
-                read -p "Enter y or n: " reply
-            fi
+            read -r reply
             echo "$reply" > "$tmp_file"
-        )
+        ) &
+        
+        # Wait for input (with timeout)
+        sleep 30
+        
+        # Kill the background process if it's still running
+        kill $! >/dev/null 2>&1
         
         # Read the reply from the temporary file
         reply=$(cat "$tmp_file")
@@ -102,7 +103,7 @@ handle_existing_installation() {
                 return 1
                 ;;
             *)
-                print_color "$RED" "Invalid input. Keeping existing installation."
+                print_color "$RED" "Invalid or no input received. Keeping existing installation."
                 return 1
                 ;;
         esac
@@ -198,16 +199,16 @@ echo
 
 print_color "$YELLOW" "1. Access in the Browser:"
 echo "   Open your browser and go to:"
-echo -e "${BOLD}${CYAN}   https://${LOCAL_IP}.nip.io${NC}"
+printf "${BOLD}${CYAN}   https://%s.nip.io${NC}\n" "$LOCAL_IP"
 echo "   - If you see a warning about self-signed certificates, bypass it and proceed."
 echo "   - If redirected to '/logout', remove this suffix from the URL and press enter."
 echo
 
 print_color "$YELLOW" "2. Sign In to the developer portal:"
 echo "   - Email:"
-echo -e "${BOLD}${CYAN}     admin${NC}"
+printf "${BOLD}${CYAN}     admin${NC}\n"
 echo "   - Password:"
-echo -e "${BOLD}${CYAN}     Password1${NC}"
+printf "${BOLD}${CYAN}     Password1${NC}\n"
 echo "     (if this is a fresh installation)"
 echo
 
