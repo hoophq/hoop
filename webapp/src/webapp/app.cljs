@@ -15,11 +15,10 @@
             [webapp.components.modal :as modals]
             [webapp.components.snackbar :as snackbar]
             [webapp.config :as config]
-            [webapp.connection-details.views.panel :as connection-details]
+            [webapp.connections.views.connection-list :as connections]
             [webapp.connections.views.connection-connect :as connection-connect]
             [webapp.connections.views.connection-form-modal :as connection-form-modal]
             [webapp.connections.views.select-connection-use-cases :as select-connection-use-cases]
-            [webapp.webclient.panel :as webclient]
             [webapp.events]
             [webapp.events.agents]
             [webapp.events.ask-ai]
@@ -42,18 +41,19 @@
             [webapp.events.segment]
             [webapp.events.slack-plugin]
             [webapp.events.users]
+            [webapp.organization.users.main :as org-users]
             [webapp.plugins.views.manage-plugin :as manage-plugin]
             [webapp.plugins.views.plugins-configurations :as plugins-configurations]
             [webapp.reviews.panel :as reviews]
             [webapp.reviews.review-detail :as review-details]
             [webapp.routes :as routes]
-            [webapp.runbooks.views.panel :as runbooks]
-            [webapp.settings.views.main :as settings]
+            [webapp.hoop-app.main :as hoop-app]
             [webapp.shared-ui.sidebar.main :as sidebar]
             [webapp.slack.slack-new-organization :as slack-new-organization]
             [webapp.slack.slack-new-user :as slack-new-user]
             [webapp.subs :as subs]
-            [webapp.views.home :as home]))
+            [webapp.views.home :as home]
+            [webapp.webclient.panel :as webclient]))
 
 (when (= config/release-type "hoop-ui")
   (js/window.addEventListener "load" (rf/dispatch [:segment->load])))
@@ -106,7 +106,7 @@
       (if (empty? (:data @user))
         [loaders/over-page-loader]
         [:section
-         {:class "antialiased min-h-screen bg-gray-900"}
+         {:class "antialiased min-h-screen"}
          [modals/modal]
          [dialog/dialog]
          [dialog/new-dialog]
@@ -124,64 +124,40 @@
   (snackbar/snackbar)
   panels)
 
-(defn layout-application-hoop-connection-context [_ _]
-  (let [connection-context (rf/subscribe [:connections->context-connection])
-        user (rf/subscribe [:users->current-user])]
-    (rf/dispatch [:users->get-user])
-    (rf/dispatch [:connections->fullfill-context-connection])
-    (fn [panels dark-full?]
-      (let [admin? (or (:admin? (:data @user)) false)]
-        (cond
-          (and (empty? (:data @connection-context)) (:loading @connection-context) (:loading @user)) [loaders/over-page-loader]
-          (and (empty? (:data @connection-context)) (not (:loading @connection-context)) (not (:loading @user)) (not admin?))
-          [:section {:class "antialiased min-h-screen bg-gray-100"}
-           [:div {:class "px-x-large pb-x-large h-screen"}
-            [:div {:class "p-regular"}
-             [:figure {:class "w-36 px-small cursor-pointer"}
-              [:img {:src "/images/hoop-branding/PNG/hoop-symbol+text_black@4x.png"}]]]
-            [:div {:class "w-full h-full bg-white rounded-lg"}
-             [:div {:class "flex flex-col items-center"}
-              [:figure {:class "mt-x-large w-1/3 lg:w-1/12 p-regular"}
-               [:img {:src "/images/illustrations/telephone.svg"
-                      :class "w-full"}]]
-              [:div {:class "px-large text-center"}
-               [:div {:class "text-gray-700 text-sm font-bold"}
-                "There're no connections available!"]
-               [:div {:class "text-gray-500 text-xs"}
-                "Call up your company admin to help you."]]]]]]
-          :else [hoop-layout [:div {:class (str (if dark-full?
-                                                  "bg-gray-900 "
-                                                  "bg-gray-100 px-4 py-10 sm:px-6 lg:px-8 lg:py-6 ")
-                                                "h-full  overflow-auto")}
-                              [panels (:data @connection-context)]]])))))
-
 ;;;;;;;;;;;;;;;;;
 ;; HOOP PANELS ;;
 ;;;;;;;;;;;;;;;;;
 
 
 (defmethod routes/panels :home-panel []
-  [layout-application-hoop-connection-context home/home-panel-hoop])
+  [layout :application-hoop [home/home-panel-hoop]])
 
-(defmethod routes/panels :settings-hoop-panel []
-  [layout :application-hoop [settings/main]])
+(defmethod routes/panels :hoop-app-panel []
+  [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
+                             [h/h2 "Hoop App" {:class "mb-6"}]
+                             [hoop-app/main]]])
 
-(defmethod routes/panels :connection-details-panel [_]
-  [layout-application-hoop-connection-context connection-details/main])
+(defmethod routes/panels :users-panel []
+  [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
+                             [h/h2 "Users" {:class "mb-6"}]
+                             [org-users/main]]])
+
+(defmethod routes/panels :connections-panel []
+  [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
+                             [h/h2 "Connections" {:class "mb-6"}]
+                             [connections/panel]]])
 
 (defmethod routes/panels :editor-plugin-panel []
   (rf/dispatch [:destroy-page-loader])
   (rf/dispatch [:plugins->get-plugin-by-name "editor"])
-  [layout-application-hoop-connection-context webclient/main true])
-
-(defmethod routes/panels :runbooks-plugin-panel [] (rf/dispatch [:runbooks-plugin->clear-runbooks])
-  (rf/dispatch [:runbooks-plugin->clear-active-runbooks])
-  (rf/dispatch [:destroy-page-loader])
-  [layout-application-hoop-connection-context runbooks/panel])
+  [layout :application-hoop [:div {:class "bg-gray-900 h-full"}
+                             [webclient/main]]])
 
 (defmethod routes/panels :reviews-plugin-panel []
   (rf/dispatch [:destroy-page-loader])
-  [layout-application-hoop-connection-context reviews/panel])
+  [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
+                             [h/h2 "Reviews" {:class "mb-6"}]
+                             [reviews/panel]]])
 
 (defmethod routes/panels :select-connection-use-cases-panel []
   (rf/dispatch [:destroy-page-loader])
@@ -245,7 +221,7 @@
     (when (seq session-id-list)
       (rf/dispatch [:audit->get-filtered-sessions-by-id session-id-list]))
     (rf/dispatch [:destroy-page-loader])
-    [layout-application-hoop-connection-context session-filtered-by-id/main]))
+    [layout :application-hoop [session-filtered-by-id/main]]))
 
 (defmethod routes/panels :reviews-plugin-details-panel []
   (let [pathname (.. js/window -location -pathname)

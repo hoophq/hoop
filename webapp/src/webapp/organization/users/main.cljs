@@ -1,4 +1,4 @@
-(ns webapp.settings.views.users
+(ns webapp.organization.users.main
   (:require [re-frame.core :as rf]
             [reagent.core :as r]
             [webapp.components.button :as button]
@@ -6,7 +6,7 @@
             [webapp.components.table :as table]
             [webapp.components.user-icon :as user-icon]
             [webapp.formatters :as formatters]
-            [webapp.settings.views.user-form :as user-form]))
+            [webapp.organization.users.form :as user-form]))
 
 (defn list-item
   [item user-groups]
@@ -75,33 +75,37 @@
         users (rf/subscribe [:users])
         user-groups (rf/subscribe [:user-groups])
         alert-multitenant-active? (r/atom (-> @current-user :data :is_multitenant))]
+
+    (rf/dispatch [:users->get-user-groups])
+    (rf/dispatch [:users->get-users])
     (fn []
       (js/setTimeout #(reset! alert-multitenant-active? false) 7000)
-      [:section
-       [section-header @users @user-groups]
-       (when @alert-multitenant-active? [alert-multitenant-message])
-       [:div {:class "hidden lg:block"}
-        [users-list @users @user-groups]]
-       [:div {:class "block lg:hidden rounded-lg border"}
-        (for [user @users]
-          ^{:key (:id user)}
-          [:div
-           {:class (str "overflow-hidden border-b cursor-pointer hover:bg-gray-50"
-                        " p-regular text-sm grid grid-col-3 gap-regular")
-            :on-click #(rf/dispatch [:open-modal [user-form/main :update user @user-groups]])}
+      [:div {:class "bg-white rounded-lg h-full p-6 overflow-y-auto"}
+       [:section
+        [section-header @users @user-groups]
+        (when @alert-multitenant-active? [alert-multitenant-message])
+        [:div {:class "hidden lg:block"}
+         [users-list @users @user-groups]]
+        [:div {:class "block lg:hidden rounded-lg border"}
+         (for [user @users]
+           ^{:key (:id user)}
+           [:div
+            {:class (str "overflow-hidden border-b cursor-pointer hover:bg-gray-50"
+                         " p-regular text-sm grid grid-col-3 gap-regular")
+             :on-click #(rf/dispatch [:open-modal [user-form/main :update user @user-groups]])}
 
-           [:div {:id "user-info"
-                  :class "flex items-center justify-between"}
-            [:div {:class "flex gap-small items-center"}
-             [user-icon/initials-black (:name user)]
+            [:div {:id "user-info"
+                   :class "flex items-center justify-between"}
+             [:div {:class "flex gap-small items-center"}
+              [user-icon/initials-black (:name user)]
+              [:div
+               {:class "text-gray-800 text-xs"}
+               (:name user)]]
              [:div
-              {:class "text-gray-800 text-xs"}
-              (:name user)]]
-            [:div
-             {:class "text-xxs text-gray-800"}
-             [:span (:status user)]]]
-           [:div {:id "connection-info"
-                  :class "flex w-42 flex-col gap-small items-start"}
-            [:div
-             [:small {:class "text-xs text-gray-500"}
-              (formatters/list-to-comma-string (:groups user))]]]])]])))
+              {:class "text-xxs text-gray-800"}
+              [:span (:status user)]]]
+            [:div {:id "connection-info"
+                   :class "flex w-42 flex-col gap-small items-start"}
+             [:div
+              [:small {:class "text-xs text-gray-500"}
+               (formatters/list-to-comma-string (:groups user))]]]])]]])))

@@ -17,11 +17,6 @@
                :params params
                :query-params (or query-params {})}}))
 
-(rf/reg-event-fx
- :navigate-context-connection
- (fn [_ [_ connection]]
-   {:navigate-context-connection connection}))
-
 
 (rf/reg-event-fx
  ::set-active-panel

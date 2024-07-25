@@ -14,7 +14,6 @@
         filtered-templates (rf/subscribe [:runbooks-plugin->filtered-runbooks])]
     (rf/dispatch [:runbooks-plugin->get-runbooks])
     (fn [{:keys [show-tree?
-                 current-connection
                  atom-run-connections-list
                  run-connections-list-rest
                  run-connections-list-selected
@@ -24,38 +23,40 @@
                  metadata-value
                  schema-disabled?]}]
       [:aside {:class "h-full flex flex-col gap-8 p-regular border-l border-gray-600 overflow-auto pb-16"}
-       [:div
-        [:> ui/Disclosure {:defaultOpen true}
-         (fn [params]
-           (r/as-element
-            [:<>
-             [:> (.-Button ui/Disclosure)
-              {:as (if (empty? run-connections-list-selected)
-                     "div"
-                     "button")
-               :class (str "h-8 w-full flex justify-between items-center gap-small "
-                           "text-xs text-gray-400 focus:outline-none focus-visible:ring "
-                           "focus-visible:ring-gray-500 focus-visible:ring-opacity-75")}
+       (when (seq run-connections-list-selected)
+         [:div
+          [:> ui/Disclosure {:defaultOpen true}
+           (fn [params]
+             (r/as-element
+              [:<>
+               [:> (.-Button ui/Disclosure)
+                {:as (if (empty? run-connections-list-selected)
+                       "div"
+                       "button")
+                 :class (str "h-8 w-full flex justify-between items-center gap-small "
+                             "text-xs text-gray-400 focus:outline-none focus-visible:ring "
+                             "focus-visible:ring-gray-500 focus-visible:ring-opacity-75")}
 
-              [:div {:class "flex items-center gap-small"}
-               [:span "Running in"]
-               (when (> (count run-connections-list-selected) 0)
-                 [:div {:class "flex items-center justify-center rounded-full h-4 w-4 bg-blue-500"}
-                  [:span {:class "text-white text-xxs font-semibold"}
-                   (+ (count run-connections-list-selected) 1)]])]
-              (when-not (empty? run-connections-list-selected)
-                [:> hero-solid-icon/ChevronDownIcon {:class (str (when (.-open params) "rotate-180 transform ")
-                                                                 "text-white h-5 w-5 shrink-0")
-                                                     :aria-hidden "true"}])]
 
-             [:> (.-Panel ui/Disclosure) {:className "py-regular"
-                                          :static (if (empty? run-connections-list-selected)
-                                                    true
-                                                    false)}
-              [connections-running-list/main {:schema-disabled? schema-disabled?
-                                              :show-tree? show-tree?
-                                              :run-connections-list-selected run-connections-list-selected
-                                              :current-connection current-connection}]]]))]]
+                [:div {:class "flex items-center gap-small"}
+                 [:span "Running in"]
+                 (when (> (count run-connections-list-selected) 1)
+                   [:div {:class "flex items-center justify-center rounded-full h-4 w-4 bg-blue-500"}
+                    [:span {:class "text-white text-xxs font-semibold"}
+                     (count run-connections-list-selected)]])]
+
+                (when-not (empty? run-connections-list-selected)
+                  [:> hero-solid-icon/ChevronDownIcon {:class (str (when (.-open params) "rotate-180 transform ")
+                                                                   "text-white h-5 w-5 shrink-0")
+                                                       :aria-hidden "true"}])]
+
+               [:> (.-Panel ui/Disclosure) {:className "py-regular"
+                                            :static (if (empty? run-connections-list-selected)
+                                                      true
+                                                      false)}
+                [connections-running-list/main {:schema-disabled? schema-disabled?
+                                                :show-tree? show-tree?
+                                                :run-connections-list-selected run-connections-list-selected}]]]))]])
        [:div
         [:> ui/Disclosure {:defaultOpen true}
          (fn [params]

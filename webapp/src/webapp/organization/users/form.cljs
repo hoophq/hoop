@@ -1,4 +1,4 @@
-(ns webapp.settings.views.user-form
+(ns webapp.organization.users.form
   (:require [re-frame.core :as rf]
             [reagent.core :as r]
             [webapp.components.button :as button]

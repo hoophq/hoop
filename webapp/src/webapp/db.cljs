@@ -7,7 +7,6 @@
    :audit->filtered-session-by-id {:status :loading, :data []}
    :connections {:loading true}
    :connections->connection-connected {:status :loading, :data nil}
-   :connections->context-connection {:loading true, :data nil}
    :connections->updating-connection {:loading true, :data []}
    :database-schema {:status :loading, :schema-tree nil, :indexes-tree nil}
    :dialog {:status :closed
@@ -24,7 +23,9 @@
    :editor-plugin->connections-exec-list {:status :ready :data nil}
    :editor-plugin->connections-runbook-list {:status :ready :data nil}
    :editor-plugin->current-connection {:status :loading :data nil}
+   :editor-plugin->filtered-run-connection-list nil
    :editor-plugin->run-connection-list {:status :loading :data nil}
+   :editor-plugin->run-connection-list-selected nil
    :editor-plugin->select-language "shell"
    :editor-plugin->script []
    :gateway->info {:loading true, :data nil}

@@ -61,15 +61,11 @@
                       reviews
                       (filter #(= status (:status %)) reviews)))]
     (rf/dispatch [:reviews-plugin->get-reviews])
-    (fn [connection]
-      (let [review-filtered-by-connection (sort-by :created_at #(> %1 %2)
-                                                   (filter
-                                                    #(= (:name (:review_connection %)) (:name connection))
-                                                    (-> @reviews :results)))]
-        [:div {:class "lg:h-full grid grid-cols-1 lg:grid-cols-9 gap-regular overflow-hidden"}
-         [:div {:class "bg-white px-regular py-regular rounded-lg lg:col-span-3 overflow-auto max-h-screen"}
-          (if (= :loading (-> @reviews :status))
-            [loading-list-view]
-            [reviews-list (filtering review-filtered-by-connection @review-status) review-status])]
-         [:div {:class "bg-white px-regular py-regular rounded-lg lg:col-span-6 p-regular overflow-auto"}
-          [review-detail/review-detail]]]))))
+    (fn []
+      [:div {:class "lg:h-full grid grid-cols-1 lg:grid-cols-9 gap-regular overflow-hidden"}
+       [:div {:class "bg-white px-regular py-regular rounded-lg lg:col-span-3 overflow-auto max-h-screen"}
+        (if (= :loading (-> @reviews :status))
+          [loading-list-view]
+          [reviews-list (filtering @reviews @review-status) review-status])]
+       [:div {:class "bg-white px-regular py-regular rounded-lg lg:col-span-6 p-regular overflow-auto"}
+        [review-detail/review-detail]]])))
