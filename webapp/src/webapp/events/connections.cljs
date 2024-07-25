@@ -87,7 +87,7 @@
                                                     {:level :success
                                                      :text (str "Connection " (:name connection) " updated!")}])
                                       (rf/dispatch [:connections->get-connections])
-                                      (rf/dispatch [:navigate :home]))}]]]})))
+                                      (rf/dispatch [:navigate :connections]))}]]]})))
 
 (rf/reg-event-fx
  :connections->connection-connect

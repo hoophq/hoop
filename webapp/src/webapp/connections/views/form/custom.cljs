@@ -11,8 +11,7 @@
             [webapp.connections.views.form.hoop-run-instructions :as instructions]
             [webapp.connections.views.form.submit :as submit]
             [webapp.connections.views.form.toggle-data-masking :as toggle-data-masking]
-            [webapp.connections.views.form.toggle-review :as toggle-review]
-            [webapp.shared-ui.sidebar.connection-overlay :as connection-overlay]))
+            [webapp.connections.views.form.toggle-review :as toggle-review]))
 
 (defn js-select-options->list [options]
   (mapv #(get % "value") options))
@@ -126,7 +125,7 @@
     [:span {:class "text-blue-500 text-sm cursor-pointer"
             :on-click (fn []
                         (rf/dispatch [:connections->get-connections])
-                        (reset! connection-overlay/overlay-open? true))}
+                        (rf/dispatch [:navigate :connections]))}
      "check your connections."]]])
 
 (defn main []

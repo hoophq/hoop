@@ -26,7 +26,7 @@
      (str (cs/capitalize label))]
     (when description
       [:p {:id (str name "-description")
-           :class (str (if @checked? "text-gray-900 " "text-gray-500 ")
+           :class (str (if @checked? "text-gray-500 " "text-gray-400 ")
                        "text-xs")}
        description])]])
 
@@ -35,7 +35,6 @@
 ;; Parameters:
 ;; - checkboxes: A collection of maps, each representing a checkbox. Each map must contain keys for the `checkbox` function, such as `:name`, `:label`, `:description`, and `:checked?`.
 (defn group [checkboxes]
-  (println checkboxes)
   [:fieldset
    [:legend {:class "sr-only"}
     "Notifications"]

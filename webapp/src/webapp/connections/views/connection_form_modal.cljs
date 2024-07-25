@@ -177,9 +177,9 @@
                          :redact_types (if @data-masking-toggle-enabled?
                                          (js-select-options->list @data-masking-groups-value)
                                          [])
-                        ;;  :access_schema (if @access-schema-toggle-enabled?
-                        ;;                   "enabled"
-                        ;;                   "disabled")
+                         :access_schema (if @access-schema-toggle-enabled?
+                                          "enabled"
+                                          "disabled")
                          :access_mode_runbooks (if @access-mode-runbooks
                                                  "enabled"
                                                  "disabled")
@@ -232,7 +232,7 @@
             "Back"]]
 
           [:figure {:class "flex gap-2 items-center cursor-pointer"
-                    :on-click #(rf/dispatch [:navigate :editor-plugin])}
+                    :on-click #(rf/dispatch [:navigate :connections])}
            [:span {:class "text-black text-sm"}
             "Close"]
            [:> hero-micro-icon/XMarkIcon {:class "h-6 w-6 text-black"

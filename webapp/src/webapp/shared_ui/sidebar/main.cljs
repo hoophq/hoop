@@ -1,13 +1,10 @@
 (ns webapp.shared-ui.sidebar.main
   (:require ["@headlessui/react" :as ui]
             ["@heroicons/react/24/outline" :as hero-outline-icon]
-            ["@heroicons/react/20/solid" :as hero-solid-icon]
             ["react" :as react]
             [re-frame.core :as rf]
             [webapp.components.user-icon :as user-icon]
             [webapp.config :as config]
-            [webapp.connections.constants :as connection-constants]
-            [webapp.shared-ui.sidebar.connection-overlay :as connection-overlay]
             [webapp.shared-ui.sidebar.constants :as constants]
             [webapp.shared-ui.sidebar.navigation :as navigation]))
 
@@ -33,7 +30,7 @@
                                         :leave "transition-opacity ease-linear duration-400"
                                         :leaveFrom "opacity-100"
                                         :leaveTo "opacity-0"}
-            [:div {:class "fixed inset-0 bg-gray-900 bg-opacity-80"}]]
+            [:div {:class "fixed inset-0 bg-[#060E1D] bg-opacity-80"}]]
 
            [:div {:class "fixed inset-0 flex"}
             [:> (.-Child ui/Transition) {:as react/Fragment
@@ -58,12 +55,12 @@
                  [:span.sr-only "Close sidebar"]
                  [:> hero-outline-icon/XMarkIcon {:class "h-6 w-6 shrink-0 text-white"
                                                   :aria-hidden "true"}]]]]
-              [:div {:class "flex grow flex-col gap-y-5 overflow-y-auto bg-gray-900 px-6 pb-4 ring-1 ring-white ring-opacity-10"}
+              [:div {:class "flex grow flex-col gap-y-5 overflow-y-auto bg-[#060E1D] px-6 pb-4 ring-1 ring-white ring-opacity-10"}
                [navigation/main user my-plugins]]]]]]]
    ;; end sidebar opened
 
    ;; sidebar closed
-         [:div {:class "sticky top-0 z-30 flex items-center justify-between gap-x-6 bg-gray-900 px-4 py-3 shadow-sm sm:px-6 lg:hidden"}
+         [:div {:class "sticky top-0 z-30 flex items-center justify-between gap-x-6 bg-[#060E1D] px-4 py-3 shadow-sm sm:px-6 lg:hidden"}
           [:button {:type "button"
                     :class "-m-2.5 p-2.5 text-gray-700 lg:hidden"
                     :onClick #(rf/dispatch [:sidebar-mobile->open])}
@@ -86,6 +83,7 @@
             plugins-enabled (filterv (fn [plugin]
                                        (some #(= (:name plugin) (:name %)) my-plugins)) constants/plugins-routes)
             admin? (:admin? user-data)
+            user-management? (:user-management? user-data)
             sidebar-open? (if (= :opened (:status @sidebar-desktop))
                             true
                             false)
@@ -100,22 +98,22 @@
                             :leave "transition-opacity duration-100 ease-out"
                             :leaveFrom "opacity-100"
                             :leaveTo "opacity-0"}
-          [:div {:class "hidden lg:fixed lg:inset-y-0 lg:z-40 lg:flex lg:w-side-menu lg:flex-col lg:bg-gray-900"}
-           [:div {:class "border-t border-gray-800 w-full py-2 px-2 absolute bottom-0 bg-gray-900 hover:bg-gray-800 hover:text-white cursor-pointer flex justify-end"
+          [:div {:class "hidden lg:fixed lg:inset-y-0 lg:z-40 lg:flex lg:w-side-menu lg:flex-col lg:bg-[#060E1D]"}
+           [:div {:class "border-t border-gray-800 w-full py-2 px-2 absolute bottom-0 bg-[#060E1D] hover:bg-gray-800 hover:text-white cursor-pointer flex justify-end"
                   :onClick #(rf/dispatch [:sidebar-desktop->close])}
             [:> hero-outline-icon/ChevronDoubleLeftIcon {:class "h-6 w-6 shrink-0 text-white"
                                                          :aria-hidden "true"}]]
-           [:div {:class "h-full flex grow flex-col gap-y-2 overflow-y-auto bg-gray-900 px-4 pb-10"}
+           [:div {:class "h-full flex grow flex-col gap-y-2 overflow-y-auto bg-[#060E1D] px-4 pb-10"}
             [navigation/main user my-plugins]]]]
        ;; end sidebar opened
 
        ;; sidebar closed
-         [:div {:class "hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:block lg:w-14 lg:overflow-y-auto lg:bg-gray-900"}
-          [:div {:class "border-t bg-gray-900 border-gray-800 w-full py-2 px-2 absolute bottom-0 bg-gray-900 hover:bg-gray-800 hover:text-white cursor-pointer flex justify-center"
+         [:div {:class "hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:block lg:w-14 lg:overflow-y-auto lg:bg-[#060E1D]"}
+          [:div {:class "border-t bg-[#060E1D] border-gray-800 w-full py-2 px-2 absolute bottom-0 bg-[#060E1D] hover:bg-gray-800 hover:text-white cursor-pointer flex justify-center"
                  :onClick #(rf/dispatch [:sidebar-desktop->open])}
            [:> hero-outline-icon/ChevronDoubleRightIcon {:class "h-6 w-6 shrink-0 text-white"
                                                          :aria-hidden "true"}]]
-          [:div {:class "h-full flex grow flex-col gap-y-2 overflow-y-auto bg-gray-900 px-4 pb-10"}
+          [:div {:class "h-full flex grow flex-col gap-y-2 overflow-y-auto bg-[#060E1D] px-4 pb-10"}
            [:div {:class "flex h-16 shrink-0 items-center justify-center"}
             [:figure {:class "w-5 cursor-pointer"}
              [:img {:src "/images/hoop-branding/PNG/hoop-symbol_white@4x.png"
@@ -147,23 +145,46 @@
                    [:span {:class "sr-only"}
                     (:label plugin)]]])]]
 
-             (when (and admin? (seq my-plugins))
-               [:li {:class "mt-8"}
-                [:a {:href "/organization/users"
-                     :class (str (hover-side-menu-link? "/organization/users" current-route)
-                                 "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
-                 [:> hero-outline-icon/UserGroupIcon {:class "h-6 w-6 shrink-0 text-white"
-                                                      :aria-hidden "true"}]
+             [:ul {:class "space-y-1 mt-6"}
+              [:li
+               [:a {:href "/connections"
+                    :class (str (hover-side-menu-link? "/connections" current-route)
+                                "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
+                [:div {:class "flex gap-3 items-center"}
+                 [:> hero-outline-icon/ArrowsRightLeftIcon {:class "h-6 w-6 shrink-0 text-white"
+                                                            :aria-hidden "true"}]
                  [:span {:class "sr-only"}
-                  "Users"]]
+                  "Connections"]]]]
 
-                [:a {:href "#"
-                     :on-click #(rf/dispatch [:sidebar-desktop->open])
-                     :class "text-gray-400 hover:text-white hover:bg-gray-800 group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
-                 [:> hero-outline-icon/Cog8ToothIcon {:class "h-6 w-6 shrink-0 text-white"
-                                                      :aria-hidden "true"}]
+              (when (and user-management? admin?)
+                [:li
+                 [:a {:href "/organization/users"
+                      :class (str (hover-side-menu-link? "/organization/users" current-route)
+                                  "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
+                  [:> hero-outline-icon/UserGroupIcon {:class "h-6 w-6 shrink-0 text-white"
+                                                       :aria-hidden "true"}]
+                  [:span {:class "sr-only"}
+                   "Users"]]])
+
+              [:li
+               [:a {:href "/hoop-app"
+                    :class (str (hover-side-menu-link? "/hoop-app" current-route)
+                                "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
+                [:div {:class "flex gap-3 items-center"}
+                 [:> hero-outline-icon/SignalIcon {:class "h-6 w-6 shrink-0 text-white"
+                                                   :aria-hidden "true"}]
                  [:span {:class "sr-only"}
-                  "Settings"]]])
+                  "Hoop App"]]]]
+
+              (when admin?
+                [:li
+                 [:a {:href "#"
+                      :on-click #(rf/dispatch [:sidebar-desktop->open])
+                      :class "text-gray-400 hover:text-white hover:bg-gray-800 group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
+                  [:> hero-outline-icon/Cog8ToothIcon {:class "h-6 w-6 shrink-0 text-white"
+                                                       :aria-hidden "true"}]
+                  [:span {:class "sr-only"}
+                   "Settings"]]])]
 
              [:li {:class "mt-auto mb-3"}
               [:a {:href "#"
@@ -188,7 +209,6 @@
                             :id (some-> @user :data :id)}})
     (fn []
       [:div
-       [connection-overlay/main @user]
        [mobile-sidebar @user @my-plugins]
        [desktop-sidebar @user @my-plugins]])))
 

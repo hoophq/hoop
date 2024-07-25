@@ -48,7 +48,6 @@
             [webapp.reviews.review-detail :as review-details]
             [webapp.routes :as routes]
             [webapp.hoop-app.main :as hoop-app]
-            [webapp.settings.views.main :as settings]
             [webapp.shared-ui.sidebar.main :as sidebar]
             [webapp.slack.slack-new-organization :as slack-new-organization]
             [webapp.slack.slack-new-user :as slack-new-user]
@@ -131,23 +130,20 @@
 
 
 (defmethod routes/panels :home-panel []
-  [layout :application-hoop home/home-panel-hoop])
+  [layout :application-hoop [home/home-panel-hoop]])
 
 (defmethod routes/panels :hoop-app-panel []
-  [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full overflow-auto"}
+  [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
                              [h/h2 "Hoop App" {:class "mb-6"}]
                              [hoop-app/main]]])
 
-(defmethod routes/panels :settings-hoop-panel []
-  [layout :application-hoop [settings/main]])
-
 (defmethod routes/panels :users-panel []
-  [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full overflow-auto"}
+  [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
                              [h/h2 "Users" {:class "mb-6"}]
                              [org-users/main]]])
 
 (defmethod routes/panels :connections-panel []
-  [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full overflow-auto"}
+  [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
                              [h/h2 "Connections" {:class "mb-6"}]
                              [connections/panel]]])
 
@@ -159,7 +155,7 @@
 
 (defmethod routes/panels :reviews-plugin-panel []
   (rf/dispatch [:destroy-page-loader])
-  [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full overflow-auto"}
+  [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
                              [h/h2 "Reviews" {:class "mb-6"}]
                              [reviews/panel]]])
 

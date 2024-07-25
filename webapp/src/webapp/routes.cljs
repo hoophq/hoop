@@ -33,7 +33,6 @@
          "sessions" [["" :sessions]
                      ["/filtered" :sessions-list-filtered-by-ids]
                      [["/" :session-id] :session-details]]
-         "settings" :settings-hoop
          "signup" :signup-hoop
          "signup/callback" :signup-callback-hoop}]))
 

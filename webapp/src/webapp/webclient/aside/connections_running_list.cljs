@@ -11,8 +11,7 @@
                                        show-tree?
                                        schema-disabled?
                                        removed?
-                                       default-opened?
-                                       context-connection?]}]
+                                       default-opened?]}]
   [:div {:class "flex flex-col gap-0.5"}
    [:> ui/Disclosure {:defaultOpen default-opened?}
     (fn [params]
@@ -28,42 +27,37 @@
            [:img {:src  (connection-constants/get-connection-icon connection :dark)
                   :class "w-9"}]]
           [:span (:name connection)]]
-         (when (or (not context-connection?)
-                   (and (show-tree? connection)
-                        (not (schema-disabled? connection))))
-           [:> hero-solid-icon/EllipsisVerticalIcon {:class "text-white h-5 w-5 shrink-0"
-                                                     :aria-hidden "true"}])]
-        (when (or (not context-connection?)
-                  (and (show-tree? connection)
-                       (not (schema-disabled? connection))))
-          [:> (.-Panel ui/Disclosure) {:className "bg-gray-800 text-white p-2 rounded-b-md"}
-           [:ul {:class "flex flex-col gap-2"}
-            (when (and (show-tree? connection) (not (schema-disabled? connection)))
-              [:li
-               [:> ui/Disclosure {:defaultOpen default-opened?}
-                (fn [params]
-                  (r/as-element
-                   [:<>
-                    [:> (.-Button ui/Disclosure)
-                     {:class (str "flex items-center gap-2 text-xs text-white font-semibold")}
-                     [:> hero-solid-icon/CircleStackIcon {:class "text-white h-3 w-3 shrink-0"
-                                                          :aria-hidden "true"}]
-                     "Database schema"]
+         [:> hero-solid-icon/EllipsisVerticalIcon {:class "text-white h-5 w-5 shrink-0"
+                                                   :aria-hidden "true"}]]
+        [:> (.-Panel ui/Disclosure) {:className "bg-gray-800 text-white p-2 rounded-b-md"}
+         [:ul {:class "flex flex-col gap-2"}
+          (when (and (show-tree? connection)
+                     (not (schema-disabled? connection)))
+            [:li
+             [:> ui/Disclosure {:defaultOpen default-opened?}
+              (fn [params]
+                (r/as-element
+                 [:<>
+                  [:> (.-Button ui/Disclosure)
+                   {:class (str "flex items-center gap-2 text-xs text-white font-semibold")}
+                   [:> hero-solid-icon/CircleStackIcon {:class "text-white h-3 w-3 shrink-0"
+                                                        :aria-hidden "true"}]
+                   "Database schema"]
 
-                    [:> (.-Panel ui/Disclosure) {:className "bg-gray-800 text-white p-2 rounded-md"}
-                     [database-schema/main {:connection-name (:name connection)
-                                            :connection-type (cond
-                                                               (not (cs/blank? (:subtype connection))) (:subtype connection)
-                                                               (not (cs/blank? (:icon_name connection))) (:icon_name connection)
-                                                               :else (:type connection))}]]]))]])
+                  [:> (.-Panel ui/Disclosure) {:className "bg-gray-800 text-white p-2 rounded-md"}
+                   [database-schema/main {:connection-name (:name connection)
+                                          :connection-type (cond
+                                                             (not (cs/blank? (:subtype connection))) (:subtype connection)
+                                                             (not (cs/blank? (:icon_name connection))) (:icon_name connection)
+                                                             :else (:type connection))}]]]))]])
 
-            (when removed?
-              [:li {:class "flex items-center gap-2 text-xs text-white font-semibold cursor-pointer"
-                    :on-click (fn []
-                                (rf/dispatch [:editor-plugin->toggle-select-run-connection (:name connection)]))}
-               [:> hero-solid-icon/XMarkIcon {:class "text-white h-3 w-3 shrink-0"
-                                              :aria-hidden "true"}]
-               "Remove selection"])]])]))]])
+          (when removed?
+            [:li {:class "flex items-center gap-2 text-xs text-white font-semibold cursor-pointer"
+                  :on-click (fn []
+                              (rf/dispatch [:editor-plugin->toggle-select-run-connection (:name connection)]))}
+             [:> hero-solid-icon/XMarkIcon {:class "text-white h-3 w-3 shrink-0"
+                                            :aria-hidden "true"}]
+             "Remove selection"])]]]))]])
 
 (defn main [{:keys [run-connections-list-selected
                     show-tree?

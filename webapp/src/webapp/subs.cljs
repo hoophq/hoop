@@ -325,6 +325,11 @@
    (:editor-plugin->run-connection-list db)))
 
 (re-frame/reg-sub
+ :editor-plugin->run-connection-list-selected
+ (fn [db _]
+   (:editor-plugin->run-connection-list-selected db)))
+
+(re-frame/reg-sub
  :editor-plugin->filtered-run-connection-list
  (fn [db _]
    (:editor-plugin->filtered-run-connection-list db)))

@@ -77,21 +77,26 @@
        [:span {:class "absolute inset-y-0 right-0 flex items-center pr-4 text-indigo-600"}
         [searchbox-list-icon]])]))
 
-(def input-style
+(defn input-style [icon-position]
   (str "w-full rounded-md border shadow-sm "
        "border-gray-300 bg-white "
-       "pl-3 pr-12 "
        "focus:border-indigo-500 focus:outline-none "
        "focus:ring-1 focus:ring-indigo-500 "
-       "sm:text-sm"))
+       "sm:text-sm "
+       (if (= icon-position "right")
+         "pl-3 pr-12"
+         "pl-8 pr-3")))
 
-(def input-style-dark
+(defn input-style-dark [icon-position]
   (str "w-full rounded-md border shadow-sm "
        "border-gray-400 bg-transparent text-white "
        "pl-3 pr-12 "
        "focus:border-white focus:outline-none "
        "focus:ring-1 focus:ring-white "
-       "sm:text-sm"))
+       "sm:text-sm"
+       (if (= icon-position "right")
+         "pl-12 pr-3"
+         "pl-3 pr-12")))
 
 (defn- search-options [options pattern searchable-keys]
   (filter #(string/includes?
@@ -127,6 +132,7 @@
   display-key -> the key that will be used to display information in an user friendly way. This key must be from a valid key from options. Example :name
   meta-display-keys -> meta information keys from a option that you want to put to the side of display-key. Example: [:name :type]
   searchable-keys -> the keys from the options that you want to be searchable. Example: [:name :type :review_type :redact]
+  icon-position -> a string to set the icon position. Valid options are 'left' and 'right'. Default is 'right'
   "
   [{:keys [options]}]
 
@@ -139,6 +145,7 @@
                  dark
                  name
                  label
+                 icon-position
                  list-classes
                  placeholder
                  clear?
@@ -164,7 +171,8 @@
                                  options
                                  @searched-options)
             no-results? (and (empty? @searched-options)
-                             (> (count @input-value) 0))]
+                             (> (count @input-value) 0))
+            icon-position (or icon-position "right")]
         [:<>
          (when label
            [:label {:for name
@@ -174,19 +182,19 @@
                          "relative flex justify-end rounded-full"
                          "relative bg-white rounded-full")}
           [:input {:class (if floating?
-                            (str "shadow-sm transition-all ease-in duration-500 "
+                            (str "shadow-sm transition-all ease-in duration-150 "
                                  "bg-white sm:text-sm "
                                  "cursor-pointer z-10 relative h-8 w-8 "
                                  "rounded-full bg-transparent pl-4 outline-none "
 
                                  "focus:outline-none focus:transition-all "
-                                 "focus:ease-in focus:duration-1000 "
+                                 "focus:ease-in focus:duration-150 "
                                  "focus:w-full focus:cursor-text "
                                  "focus:pr-16 focus:pl-4")
 
                             (str (if dark
-                                   input-style-dark
-                                   input-style)
+                                   (input-style-dark icon-position)
+                                   (input-style icon-position))
                                  (if (= size :small)
                                    "py-1 h-8 "
                                    "py-3 h-12 ")))
@@ -226,7 +234,9 @@
                                (reset! searched-options options))}]
           (when floating?
             [:> hero-micro-icon/MagnifyingGlassIcon
-             {:class "cursor-pointer transition-all duration-500 z-10 absolute top-0 right-0 text-gray-800 p-2 h-8 w-8"
+             {:class (str "cursor-pointer transition-all duration-500 z-10 "
+                          "absolute top-0 text-gray-800 p-2 h-8 w-8 "
+                          (if (= icon-position "right") "right-0" "left-0"))
               :aria-hidden "true"
               :on-click (fn []
                           (.focus (. js/document (getElementById name))))}])
@@ -240,7 +250,8 @@
                                   (open-list)
                                   (.focus (. js/document (getElementById name))))
                       :class (str "absolute flex items-center rounded-r-md "
-                                  "inset-y-0 right-0 px-2 focus:outline-none ")}
+                                  "inset-y-0 px-2 focus:outline-none "
+                                  (if (= icon-position "right") "right-0" "left-0"))}
              [searchbox-icon]])
           (when (and
                  (= @list-status :open)

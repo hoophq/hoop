@@ -24,7 +24,7 @@
         database-schema (rf/subscribe [::subs/database-schema])
         input-question (r/atom "")]
     (reset! selected-tab "Terminal")
-    (fn [connection-type]
+    (fn [connection-type is-one-connection-selected?]
       (let [terminal-content (map #(into {} {:status (:status %)
                                              :response (:output (:data %))
                                              :response-status (:output_status (:data %))
@@ -51,7 +51,9 @@
             connection-type-database? (some (partial = connection-type) ["mysql" "postgres" "sql-server" "mssql" "database"])]
         [:div {:class "h-full flex flex-col"}
          ;; start ask-ai ui
-         (when (and (= feature-ai-ask "enabled") connection-type-database?)
+         (when (and (= feature-ai-ask "enabled")
+                    connection-type-database?
+                    is-one-connection-selected?)
            [:div {:class "flex rounded-md shadow-sm"}
             [:form {:class "relative flex flex-grow items-stretch focus-within:z-10 border-gray-600"
                     :on-submit (fn [e]
@@ -83,7 +85,9 @@
                               "h-full"))}
           [tabs {:on-click #(reset! selected-tab %2)
                  :tabs (merge
-                        (when (and (= feature-ai-ask "enabled") connection-type-database?)
+                        (when (and (= feature-ai-ask "enabled")
+                                   connection-type-database?
+                                   is-one-connection-selected?)
                           {:ai "AI"})
                         {:terminal "Terminal"}
                         (when connection-type-database?

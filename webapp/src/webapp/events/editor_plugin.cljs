@@ -7,7 +7,8 @@
  :editor-plugin->get-run-connection-list
  (fn
    [{:keys [db]} [_ current-connection-name]]
-   {:db (assoc db :editor-plugin->run-connection-list {:status :loading :data {}})
+   {:db (assoc db :editor-plugin->run-connection-list {:status :loading :data {}}
+               :editor-plugin->run-connection-list-selected nil)
     :fx [[:dispatch
           [:fetch {:method "GET"
                    :uri "/connections"
@@ -18,7 +19,6 @@
                                  (rf/dispatch [:editor-plugin->set-filtered-run-connection-list
                                                connections
                                                current-connection-name]))}]]]}))
-
 
 (rf/reg-event-fx
  ::editor-plugin->set-run-connection-list
@@ -55,19 +55,28 @@
 (rf/reg-event-fx
  :editor-plugin->toggle-select-run-connection
  (fn
-   [{:keys [db]} [_ connection-name]]
-   (let [new-connection-list (mapv (fn [connection]
-                                     (if (= (:name connection) connection-name)
+   [{:keys [db]} [_ current-connection-name]]
+   (let [connections (:data (:editor-plugin->run-connection-list db))
+         current-connection (first (filter #(= (:name %) current-connection-name) (:data (:editor-plugin->run-connection-list db))))
+         new-connection-list (mapv (fn [connection]
+                                     (if (= (:name connection) current-connection-name)
                                        (assoc connection :selected (not (:selected connection)))
                                        connection))
-                                   (:data (:editor-plugin->run-connection-list db)))
+                                   connections)
          new-filtered-connection-list (mapv (fn [connection]
-                                              (if (= (:name connection) connection-name)
+                                              (if (= (:name connection) current-connection-name)
                                                 (assoc connection :selected (not (:selected connection)))
                                                 connection))
-                                            (:editor-plugin->filtered-run-connection-list db))]
+                                            connections)
+         new-connection-list-selected (if (:selected current-connection)
+                                        (remove #(= (:name %) current-connection-name)
+                                                (:editor-plugin->run-connection-list-selected db))
+
+                                        (concat (:editor-plugin->run-connection-list-selected db)
+                                                [current-connection]))]
      {:db (assoc db :editor-plugin->run-connection-list {:data new-connection-list :status :ready}
-                 :editor-plugin->filtered-run-connection-list new-filtered-connection-list)})))
+                 :editor-plugin->filtered-run-connection-list new-filtered-connection-list
+                 :editor-plugin->run-connection-list-selected new-connection-list-selected)})))
 
 (rf/reg-event-fx
  :editor-plugin->run-runbook
@@ -313,6 +322,7 @@
    [{:keys [db]} [_ data]]
    {:db (assoc db :database-schema {:status :idle
                                     :data {}
+                                    :type nil
                                     :raw nil
                                     :schema-tree nil
                                     :indexes-tree nil})}))
@@ -329,9 +339,11 @@
       :db (assoc-in db [:database-schema] {:status :loading
                                            :data (assoc (-> db :database-schema :data)
                                                         (:connection-name connection) {:status :loading
+                                                                                       :type nil
                                                                                        :raw nil
                                                                                        :schema-tree nil
                                                                                        :indexes-tree nil})
+                                           :type nil
                                            :raw nil
                                            :schema-tree nil
                                            :indexes-tree nil})})))
@@ -393,6 +405,7 @@
    (let [schema {:status status
                  :data (assoc (-> db :database-schema :data)
                               (:connection-name connection) {:status status
+                                                             :type (:connection-type connection)
                                                              :raw (:output schema-payload)
                                                              :schema-tree (if-let [_ (empty? schema-payload)]
                                                                             "Couldn't get database schema"
@@ -400,6 +413,7 @@
                                                                                                       (:connection-type connection))))
                                                              :indexes-tree (:tree (parse-sql-to-tree (:output indexes-payload)
                                                                                                      (:connection-type connection)))})
+                 :type (:connection-type connection)
                  :raw (:output schema-payload)
                  :schema-tree (if-let [_ (empty? schema-payload)]
                                 "Couldn't get database schema"
@@ -430,9 +444,11 @@
                                            :data (assoc (-> db :database-schema :data)
                                                         (:connection-name connection) {:status :loading
                                                                                        :raw nil
+                                                                                       :type nil
                                                                                        :schema-tree nil
                                                                                        :indexes-tree nil})
                                            :raw nil
+                                           :type nil
                                            :schema-tree nil
                                            :indexes-tree nil})})))
 
@@ -456,6 +472,7 @@
                                                                                             (= status :failure))]
                                                                                "Couldn't get database schema.\nPlease check your session list to see the possible issue."
                                                                                (parse-payload payload))})
+                    :type "mongodb"
                     :raw payload
                     :schema-tree (if-let [_ (or (empty? payload)
                                                 (= status :failure))]
