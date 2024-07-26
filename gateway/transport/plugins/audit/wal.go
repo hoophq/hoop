@@ -72,6 +72,20 @@ func (p *auditPlugin) writeOnReceive(sessionID string, eventType eventlogv1.Even
 	return walogm.log.Write(eventlogv1.New(time.Now().UTC(), eventType, event, metadata))
 }
 
+func (p *auditPlugin) dropWalLog(sid string) {
+	walLogObj := p.walSessionStore.Pop(sid)
+	walogm, ok := walLogObj.(*walLogRWMutex)
+	if !ok {
+		return
+	}
+	walogm.mu.Lock()
+	_ = walogm.log.Close()
+	if err := os.RemoveAll(walogm.folderName); err != nil {
+		log.Errorf("failed removing wal file %q, err=%v", walogm.folderName, err)
+	}
+	walogm.mu.Unlock()
+}
+
 func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error {
 	walLogObj := p.walSessionStore.Pop(pctx.SID)
 	walogm, ok := walLogObj.(*walLogRWMutex)

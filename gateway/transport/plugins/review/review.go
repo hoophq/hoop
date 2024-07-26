@@ -53,6 +53,7 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 			"status", otrev.Status).Info("one time review")
 		if !(otrev.Status == types.ReviewStatusApproved || otrev.Status == types.ReviewStatusProcessing) {
 			reviewURL := fmt.Sprintf("%s/plugins/reviews/%s", p.apiURL, otrev.Id)
+			p.setSpecReview(pkt)
 			return &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{
 				Type:    pbclient.SessionOpenWaitingApproval,
 				Payload: []byte(reviewURL),
@@ -155,6 +156,7 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 		newRev.InputEnvVars = inputEnvVars
 	}
 
+	p.setSpecReview(pkt)
 	log.With("session", pctx.SID, "id", newRev.Id, "user", pctx.UserID, "org", pctx.OrgID,
 		"type", reviewType, "duration", fmt.Sprintf("%vm", accessDuration.Minutes())).
 		Infof("creating review")
@@ -170,3 +172,7 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 
 func (p *reviewPlugin) OnDisconnect(_ plugintypes.Context, errMsg error) error { return nil }
 func (p *reviewPlugin) OnShutdown()                                            {}
+
+// indicate to other plugins that this packet has the review enabled
+// it will allow applying special logic for these cases
+func (p *reviewPlugin) setSpecReview(pkt *pb.Packet) { pkt.Spec[pb.SpecHasReviewKey] = []byte("true") }

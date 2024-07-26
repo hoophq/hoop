@@ -11,6 +11,7 @@ const (
 	SpecGatewaySessionID          string = "gateway.session_id"
 	SpecConnectionName            string = "gateway.connection_name"
 	SpecConnectionType            string = "gateway.connection_type"
+	SpecHasReviewKey              string = "gateway.has_review"
 	SpecPluginDcmDataKey          string = "plugin.dcm_data"
 	SpecDLPTransformationSummary  string = "dlp.transformation_summary" // Deprecated: see spectypes.DataMaskingInfoKey
 	SpecClientConnectionID        string = "client.connection_id"
