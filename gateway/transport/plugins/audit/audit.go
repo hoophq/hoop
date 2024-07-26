@@ -87,6 +87,14 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {
 	eventMetadata := parseSpecAsEventMetadata(pkt)
 	switch pb.PacketType(pkt.GetType()) {
+	case pbagent.SessionOpen:
+		// the session is never cleaned properly when the connection has a review
+		// it's a workaround to remove the state
+		if _, ok := pkt.Spec[pb.SpecHasReviewKey]; ok {
+			log.With("sid", pctx.SID).Infof("this session is reviewed, cleaning up state")
+			p.dropWalLog(pctx.SID)
+			memorySessionStore.Del(pctx.SID)
+		}
 	case pbclient.PGConnectionWrite, pbclient.MySQLConnectionWrite:
 		if len(eventMetadata) > 0 {
 			return nil, p.writeOnReceive(pctx.SID, eventlogv1.OutputType, nil, eventMetadata)
