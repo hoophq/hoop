@@ -117,7 +117,7 @@
       (<= (count schema-keys) 1) (process-schema tree (first schema-keys) false)
       :else #js{})))
 
-(defn- editor [{:keys [connection]}]
+(defn- editor []
   (let [user (rf/subscribe [:users->current-user])
         db-connections (rf/subscribe [:connections])
         run-connections-list (rf/subscribe [:editor-plugin->run-connection-list])
@@ -150,14 +150,8 @@
                        {:text "Nord" :value "nord"}
                        {:text "Sublime" :value "sublime"}
                        {:text "Github dark" :value "github-dark"}]]
-    (rf/dispatch [:editor-plugin->set-select-language
-                  (cond
-                    (not (cs/blank? (:subtype connection))) (:subtype connection)
-                    (not (cs/blank? (:icon_name connection))) (:icon_name connection)
-                    (= (:type connection) "custom") "command-line"
-                    :else (:type connection))])
     (rf/dispatch [:runbooks-plugin->clear-active-runbooks])
-    (fn [{:keys [script-output connection]}]
+    (fn [{:keys [script-output]}]
       (let [is-mac? (>= (.indexOf (.toUpperCase (.-platform js/navigator)) "MAC") 0)
             is-one-connection-selected? (= 1 (count @run-connection-list-selected))
             last-connection-selected (last @run-connection-list-selected)
@@ -324,7 +318,7 @@
            (if (= (:status @selected-template) :ready)
              [:section {:class "relative h-full p-3"}
               [runbooks-form/main {:runbook @selected-template
-                                   :preselected-connection (:name connection)
+                                   :preselected-connection (:name current-connection)
                                    :selected-connections (filter #(:selected %) (:data @run-connections-list))}]]
 
              (if (empty? (:results @db-connections))
@@ -396,8 +390,7 @@
     (rf/dispatch [:connections->get-connections])
     (rf/dispatch [:audit->clear-session])
     (rf/dispatch [:plugins->get-my-plugins])
-    (fn [connection]
+    (fn []
       (clearLocalCache)
-      (rf/dispatch [:editor-plugin->get-run-connection-list (:name connection)])
-      [editor {:script-output script-response
-               :connection connection}])))
+      (rf/dispatch [:editor-plugin->get-run-connection-list])
+      [editor {:script-output script-response}])))
