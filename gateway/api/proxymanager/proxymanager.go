@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	pgproxymanager "github.com/hoophq/hoop/gateway/pgrest/proxymanager"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/clientstate"
@@ -18,34 +19,19 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type ProxyManagerRequest struct {
-	ConnectionName string        `json:"connection_name"`
-	Port           string        `json:"port"`
-	AccessDuration time.Duration `json:"access_duration"`
-}
-
-type ProxyManagerResponse struct {
-	ID                    string                 `json:"id"`
-	Status                types.ClientStatusType `json:"status"`
-	RequestConnectionName string                 `json:"connection_name"`
-	RequestPort           string                 `json:"port"`
-	RequestAccessDuration time.Duration          `json:"access_duration"`
-	ClientMetadata        map[string]string      `json:"metadata"`
-	ConnectedAt           string                 `json:"connected-at"`
-}
-
-// func getEntity(ctx *storagev2.Context) (*types.Client, error) {
-// 	obj, err := clientstate.GetEntity(ctx, clientstate.DeterministicClientUUID(ctx.UserID))
-// 	if err != nil {
-// 		return nil, fmt.Errorf("failed obtaining client state resource, err=%v", err)
-// 	}
-// 	return obj, nil
-// }
-
+// ProxyManagerStatus
+//
+//	@Summary		ProxyManager Status
+//	@Description	Get the current status of the client
+//	@Tags			Proxy Manager
+//	@Param			type	query	string	false	"Filter by type"	Format(string)
+//	@Produce		json
+//	@Success		200		{object}	openapi.ProxyManagerResponse
+//	@Failure		400,500	{object}	openapi.HTTPError
+//	@Router			/proxymanager/status [get]
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	obj, err := pgproxymanager.New().FetchOne(ctx, clientstate.DeterministicClientUUID(ctx.UserID))
-	// obj, err := getEntity(ctx)
 	if err != nil {
 		log.Error(err)
 		sentry.CaptureException(err)
@@ -56,9 +42,9 @@ func Get(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "entity not found"})
 		return
 	}
-	c.JSON(http.StatusOK, &ProxyManagerResponse{
+	c.JSON(http.StatusOK, &openapi.ProxyManagerResponse{
 		ID:                    obj.ID,
-		Status:                obj.Status,
+		Status:                openapi.ClientStatusType(obj.Status),
 		RequestConnectionName: obj.RequestConnectionName,
 		RequestPort:           obj.RequestPort,
 		RequestAccessDuration: obj.RequestAccessDuration,
@@ -67,9 +53,22 @@ func Get(c *gin.Context) {
 	})
 }
 
+// ProxyManagerConnect
+//
+//	@Summary		ProxyManager Connect
+//	@Description	Send a connect request to the client. A successful response indicates the client has stablished a connection.
+//	@Description	If the connection resource has the review enabled, it returns a successful response containing the link of the review in the `Localtion` header.
+//	@Tags			Proxy Manager
+//	@Accept			json
+//	@Produce		json
+//	@Param			request			body		openapi.ProxyManagerRequest	true	"The request body resource"
+//	@Success		200				{object}	openapi.ProxyManagerResponse
+//	@Header			200				{string}	Location	"It will contain the url of the review in case the connection resource has the review enabled"
+//	@Failure		400,404,422,500	{object}	openapi.HTTPError
+//	@Router			/proxymanager/connect [post]
 func Post(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	var req ProxyManagerRequest
+	var req openapi.ProxyManagerRequest
 	err := c.ShouldBindJSON(&req)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
@@ -123,9 +122,9 @@ func Post(c *gin.Context) {
 			// disconnect grpc-client
 			_ = transport.DispatchDisconnect(obj)
 			c.Header("Location", string(pkt.Payload))
-			c.JSON(http.StatusOK, &ProxyManagerResponse{
+			c.JSON(http.StatusOK, &openapi.ProxyManagerResponse{
 				ID:                    obj.ID,
-				Status:                obj.Status,
+				Status:                openapi.ClientStatusType(obj.Status),
 				RequestConnectionName: obj.RequestConnectionName,
 				RequestPort:           obj.RequestPort,
 				RequestAccessDuration: obj.RequestAccessDuration,
@@ -150,9 +149,9 @@ func Post(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, &ProxyManagerResponse{
+	c.JSON(http.StatusOK, &openapi.ProxyManagerResponse{
 		ID:                    obj.ID,
-		Status:                obj.Status,
+		Status:                openapi.ClientStatusType(obj.Status),
 		RequestConnectionName: obj.RequestConnectionName,
 		RequestPort:           obj.RequestPort,
 		RequestAccessDuration: obj.RequestAccessDuration,
@@ -161,6 +160,15 @@ func Post(c *gin.Context) {
 	})
 }
 
+// ProxyManagerDisconnect
+//
+//	@Summary		ProxyManager Disconnect
+//	@Description	Send a disconnect request. The transport layer will disconnect the connected client asynchronously
+//	@Tags			Proxy Manager
+//	@Produce		json
+//	@Success		202			{object}	openapi.ProxyManagerResponse
+//	@Failure		404,422,500	{object}	openapi.HTTPError
+//	@Router			/proxymanager/disconnect [post]
 func Disconnect(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	obj, err := pgproxymanager.New().FetchOne(ctx, clientstate.DeterministicClientUUID(ctx.GetUserID()))
@@ -184,9 +192,9 @@ func Disconnect(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "disconnected grpc client, but it fail to update the status"})
 		return
 	}
-	c.JSON(http.StatusAccepted, &ProxyManagerResponse{
+	c.JSON(http.StatusAccepted, &openapi.ProxyManagerResponse{
 		ID:                    obj.ID,
-		Status:                obj.Status,
+		Status:                openapi.ClientStatusType(obj.Status),
 		RequestConnectionName: obj.RequestConnectionName,
 		RequestPort:           obj.RequestPort,
 		RequestAccessDuration: obj.RequestAccessDuration,

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
@@ -40,7 +41,7 @@ func accessControlAllowed(ctx pgrest.Context) (func(connName string) bool, error
 	}, nil
 }
 
-func setConnectionDefaults(req *Connection) {
+func setConnectionDefaults(req *openapi.Connection) {
 	if req.Secrets == nil {
 		req.Secrets = map[string]any{}
 	}
@@ -93,7 +94,7 @@ func coerceToAnyMap(src map[string]string) map[string]any {
 	return dst
 }
 
-func validateConnectionRequest(req Connection) error {
+func validateConnectionRequest(req openapi.Connection) error {
 	errors := []string{}
 	if err := apivalidation.ValidateResourceName(req.Name); err != nil {
 		errors = append(errors, err.Error())

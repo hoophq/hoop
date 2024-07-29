@@ -14,6 +14,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/analytics"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pglogin "github.com/hoophq/hoop/gateway/pgrest/login"
 	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
@@ -32,6 +33,18 @@ type handler struct {
 
 func New(provider *idp.Provider) *handler { return &handler{idpProv: provider} }
 
+// Login
+//
+//	@Summary		Login
+//	@Description	Returns the login url to perform the signin on the identity provider
+//	@Tags			Authentication
+//	@Produce		json
+//	@Param			redirect		query		string	false	"The URL to redirect after the signin"	Format(string)
+//	@Param			screen_hint		query		string	false	"Auth0 specific parameter"				Format(string)
+//	@Param			prompt			query		string	false	"The prompt value (OIDC spec)"			Format(string)
+//	@Success		200				{object}	openapi.Login
+//	@Failure		400,409,422,500	{object}	openapi.HTTPError
+//	@Router			/login [get]
 func (h *handler) Login(c *gin.Context) {
 	redirectURL := c.Query("redirect")
 	if redirectURL == "" {
@@ -58,9 +71,20 @@ func (h *handler) Login(c *gin.Context) {
 		params = append(params, auth0Params...)
 	}
 	url := h.idpProv.AuthCodeURL(stateUID, params...)
-	c.JSON(http.StatusOK, map[string]string{"login_url": url})
+	c.JSON(http.StatusOK, openapi.Login{URL: url})
 }
 
+// LoginCallback
+//
+//	@Summary				Login Callback
+//	@Description.markdown	api-login-callback
+//	@Tags					Authentication
+//	@Param					error			query		string	false	"The error description in case of failure to authenticate"	Format(string)
+//	@Param					state			query		string	false	"The state value (Oauth2)"									Format(string)
+//	@Param					code			query		string	false	"The authorization code (Oauth2)"							Format(string)
+//	@Success				200				{object}	openapi.Login
+//	@Failure				400,409,422,500	{object}	openapi.HTTPError
+//	@Router					/callback [get]
 func (h *handler) LoginCallback(c *gin.Context) {
 	// https://www.oauth.com/oauth2-servers/authorization/the-authorization-response/
 	errorMsg := c.Query("error")

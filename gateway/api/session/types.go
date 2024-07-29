@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/hoophq/hoop/common/memory"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
@@ -30,8 +31,8 @@ type sessionParseOption struct {
 	events        []string
 }
 
-func WithOption(optKey types.SessionOptionKey, val any) *types.SessionOption {
-	return &types.SessionOption{OptionKey: optKey, OptionVal: val}
+func WithOption(optKey openapi.SessionOptionKey, val any) *openapi.SessionOption {
+	return &openapi.SessionOption{OptionKey: optKey, OptionVal: val}
 }
 
 func parseSessionToFile(s *types.Session, opts sessionParseOption) (output []byte) {

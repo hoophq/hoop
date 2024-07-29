@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgconnections "github.com/hoophq/hoop/gateway/pgrest/connections"
 	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
@@ -22,29 +23,20 @@ type Review struct {
 	ApprovalGroups []string `json:"groups"`
 }
 
-type Connection struct {
-	ID                 string         `json:"id"`
-	Name               string         `json:"name"`
-	Command            []string       `json:"command"`
-	Type               string         `json:"type"`
-	SubType            string         `json:"subtype"`
-	Secrets            map[string]any `json:"secret"`
-	AgentId            string         `json:"agent_id"`
-	Status             string         `json:"status"` // read only field
-	Reviewers          []string       `json:"reviewers"`
-	RedactEnabled      bool           `json:"redact_enabled"`
-	RedactTypes        []string       `json:"redact_types"`
-	ManagedBy          *string        `json:"managed_by"`
-	Tags               []string       `json:"tags"`
-	AccessModeRunbooks string         `json:"access_mode_runbooks"`
-	AccessModeExec     string         `json:"access_mode_exec"`
-	AccessModeConnect  string         `json:"access_mode_connect"`
-	AccessSchema       string         `json:"access_schema"`
-}
-
+// CreateConnection
+//
+//	@Summary				Create Connection
+//	@description.markdown	api-connection
+//	@Tags					Core
+//	@Accept					json
+//	@Produce				json
+//	@Param					request			body		openapi.Connection	true	"The request body resource"
+//	@Success				201				{object}	openapi.Connection
+//	@Failure				400,409,422,500	{object}	openapi.HTTPError
+//	@Router					/connections [post]
 func Post(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	var req Connection
+	var req openapi.Connection
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
@@ -118,6 +110,18 @@ func Post(c *gin.Context) {
 	c.JSON(http.StatusCreated, req)
 }
 
+// UpdateConnection
+//
+//	@Summary		Update Connection
+//	@Description	Update a connection resource.
+//	@Tags			Core
+//	@Accept			json
+//	@Produce		json
+//	@Param			nameOrID		path		string				true	"The name or ID of the resource"
+//	@Param			request			body		openapi.Connection	true	"The request body resource"
+//	@Success		200				{object}	openapi.Connection
+//	@Failure		400,404,422,500	{object}	openapi.HTTPError
+//	@Router			/connections/{nameOrID} [put]
 func Put(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	connNameOrID := c.Param("nameOrID")
@@ -138,7 +142,7 @@ func Put(c *gin.Context) {
 		return
 	}
 
-	var req Connection
+	var req openapi.Connection
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
@@ -198,6 +202,16 @@ func Put(c *gin.Context) {
 	c.JSON(http.StatusOK, req)
 }
 
+// DeleteConnection
+//
+//	@Summary		Delete Connection
+//	@Description	Delete a connection resource.
+//	@Tags			Core
+//	@Produce		json
+//	@Param			name	path	string	true	"The name of the resource"
+//	@Success		204
+//	@Failure		404,500	{object}	openapi.HTTPError
+//	@Router			/connections/{name} [delete]
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	connName := c.Param("name")
@@ -219,6 +233,20 @@ func Delete(c *gin.Context) {
 	}
 }
 
+// List Connections
+//
+//	@Summary		List Connections
+//	@Description	List all connections.
+//	@Tags			Core
+//	@Produce		json
+//	@Param			agent_id	query		string	false	"Filter by agent id"	Format(uuid)
+//	@Param			tags		query		array	false	"Filter by tags"		Format(array)
+//	@Param			type		query		string	false	"Filter by type"		Format(string)
+//	@Param			subtype		query		string	false	"Filter by subtype"		Format(string)
+//	@Param			managed_by	query		string	false	"Filter by managed by"	Format(string)
+//	@Success		200			{array}		openapi.Connection
+//	@Failure		422,500		{object}	openapi.HTTPError
+//	@Router			/connections [get]
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	var opts []*pgconnections.ConnectionOption
@@ -243,7 +271,7 @@ func List(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
-	responseConnList := []Connection{}
+	responseConnList := []openapi.Connection{}
 	for _, conn := range connList {
 		if allowedFn(conn.Name) {
 			reviewers, redactTypes := []string{}, []string{}
@@ -255,7 +283,7 @@ func List(c *gin.Context) {
 					redactTypes = pluginConn.ConnectionConfig
 				}
 			}
-			responseConnList = append(responseConnList, Connection{
+			responseConnList = append(responseConnList, openapi.Connection{
 				ID:                 conn.ID,
 				Name:               conn.Name,
 				Command:            conn.Command,
@@ -280,6 +308,16 @@ func List(c *gin.Context) {
 	c.JSON(http.StatusOK, responseConnList)
 }
 
+// Get Connection
+//
+//	@Summary		Get Connection
+//	@Description	Get resource by name or id
+//	@Tags			Core
+//	@Param			nameOrID	path	string	true	"Name or UUID of the connection"
+//	@Produce		json
+//	@Success		200		{object}	openapi.Connection
+//	@Failure		404,500	{object}	openapi.HTTPError
+//	@Router			/connections/{nameOrID} [get]
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	conn, err := pgconnections.New().FetchOneByNameOrID(ctx, c.Param("nameOrID"))
@@ -310,7 +348,7 @@ func Get(c *gin.Context) {
 			redactTypes = pluginConn.ConnectionConfig
 		}
 	}
-	c.JSON(http.StatusOK, Connection{
+	c.JSON(http.StatusOK, openapi.Connection{
 		ID:                 conn.ID,
 		Name:               conn.Name,
 		Command:            conn.Command,

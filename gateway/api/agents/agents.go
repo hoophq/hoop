@@ -23,14 +23,20 @@ type AgentRequest struct {
 	Mode string `json:"mode"`
 }
 
-// CreateAgent godoc
+// CreateAgent
 //
-//	@Summary		Create an agent
-//	@Description	Createn an agent key
-//	@Tags			agents
+//	@Summary		Create Agent Key
+//	@Description	Create an agent key in a DSN format: `grpc(s)://<name>:<key>@<grpc-host>:<grpc-port>?mode=standard|embedded`.
+//	@Description	This key is used to deploy agents and expose internal resources from your infra-structure
+//	@Tags			Core
 //	@Accept			json
 //	@Produce		json
-//	@Success		201	{object}	openapi.AgentCreateResponse
+//	@Param			request	body		openapi.AgentRequest	true	"The request body resource"
+//	@Success		201		{object}	openapi.AgentCreateResponse
+//	@Failure		400		{object}	openapi.HTTPError
+//	@Failure		409		{object}	openapi.HTTPError
+//	@Failure		422		{object}	openapi.HTTPError
+//	@Failure		500		{object}	openapi.HTTPError
 //	@Router			/agents [post]
 func Post(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -97,6 +103,17 @@ func Post(c *gin.Context) {
 	c.JSON(http.StatusCreated, openapi.AgentCreateResponse{Token: dsn})
 }
 
+// DeleteAgent
+//
+//	@Summary		Delete Agent Key
+//	@Description	Remove an agent key. It will invalidate a running agent
+//	@Tags			Core
+//	@Produce		json
+//	@Param			nameOrID	path	string	true	"The name or ID of the resource"
+//	@Success		204
+//	@Failure		404	{object}	openapi.HTTPError
+//	@Failure		500	{object}	openapi.HTTPError
+//	@Router			/agents/{nameOrID} [delete]
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
@@ -119,6 +136,15 @@ func Delete(c *gin.Context) {
 	c.Writer.WriteHeader(204)
 }
 
+// ListAgents
+//
+//	@Summary		List Agent Keys
+//	@Description	List all agent keys
+//	@Tags			Core
+//	@Produce		json
+//	@Success		200	{array}		openapi.AgentListResponse
+//	@Failure		500	{object}	openapi.HTTPError
+//	@Router			/agents [get]
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	// items, err := pgagents.New().FindAll(context, pgrest.WithEqFilter(c.Request.URL.Query()))

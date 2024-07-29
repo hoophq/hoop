@@ -1,4 +1,4 @@
-package runbooks
+package apirunbooks
 
 import (
 	"context"
@@ -15,48 +15,86 @@ import (
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/proto"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
+	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/api/runbooks/templates"
 	sessionapi "github.com/hoophq/hoop/gateway/api/session"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
 	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
 	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
-	"github.com/hoophq/hoop/gateway/runbooks/templates"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
-type Runbook struct {
-	Name           string            `json:"name"`
-	Metadata       map[string]any    `json:"metadata"`
-	ConnectionList []string          `json:"connections,omitempty"`
-	Error          *string           `json:"error"`
-	EnvVars        map[string]string `json:"-"`
-	InputFile      []byte            `json:"-"`
-	CommitHash     string            `json:"-"`
+var scanedKnownHosts bool
+
+// ListRunbooks
+//
+//	@Summary		List Runbooks
+//	@Description	List all Runbooks
+//	@Tags			Core
+//	@Produce		json
+//	@Success		200			{object}	openapi.RunbookList
+//	@Failure		404,422,500	{object}	openapi.HTTPError
+//	@Router			/plugins/runbooks/templates [get]
+func List(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	log := pgusers.ContextLogger(c)
+	if !scanedKnownHosts {
+		knownHostsFilePath, err := templates.SSHKeyScan()
+		if err != nil {
+			log.Errorf("failed scanning known_hosts file, reason=%v", err)
+			sentry.CaptureException(err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed scanning known_hosts file"})
+			return
+		}
+		os.Setenv("SSH_KNOWN_HOSTS", knownHostsFilePath)
+		scanedKnownHosts = true
+	}
+
+	p, err := pgplugins.New().FetchOne(ctx, plugintypes.PluginRunbooksName)
+	if err != nil {
+		log.Error(err)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError,
+			gin.H{"message": "failed retrieving runbook plugin"})
+		return
+	}
+	if p == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "plugin runbooks not found"})
+		return
+	}
+	var configEnvVars map[string]string
+	if p.Config != nil {
+		configEnvVars = p.Config.EnvVars
+	}
+	config, err := templates.NewRunbookConfig(configEnvVars)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+	runbookList, err := listRunbookFiles(p.Connections, config)
+	if err != nil {
+		log.Infof("failed listing runbooks, err=%v", err)
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("failed listing runbooks, reason=%v", err)})
+		return
+	}
+	c.PureJSON(http.StatusOK, runbookList)
 }
 
-type RunbookRequest struct {
-	FileName   string            `json:"file_name" binding:"required"`
-	RefHash    string            `json:"ref_hash"`
-	Parameters map[string]string `json:"parameters"`
-	ClientArgs []string          `json:"client_args"`
-	Metadata   map[string]any    `json:"metadata"`
-}
-
-type RunbookList struct {
-	Items         []*Runbook `json:"items"`
-	Commit        string     `json:"commit"`
-	CommitAuthor  string     `json:"commit_author"`
-	CommitMessage string     `json:"commit_message"`
-}
-
-type Handler struct {
-	scanedKnownHosts bool
-}
-
-func (h *Handler) ListByConnection(c *gin.Context) {
+// ListRunbooksByConnection
+//
+//	@Summary		List Runbooks By Connection
+//	@Description	List Runbooks templates by connection
+//	@Tags			Core
+//	@Produce		json
+//	@Param			name			path		string	true	"The name of the connection"
+//	@Success		200				{object}	openapi.RunbookList
+//	@Failure		400,404,422,500	{object}	openapi.HTTPError
+//	@Router			/plugins/runbooks/connections/{name}/templates [get]
+func ListByConnection(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	log := pgusers.ContextLogger(c)
 	connectionName := c.Param("name")
@@ -104,58 +142,25 @@ func (h *Handler) ListByConnection(c *gin.Context) {
 	c.JSON(http.StatusOK, runbookList)
 }
 
-func (h *Handler) List(c *gin.Context) {
-	ctx := storagev2.ParseContext(c)
-	log := pgusers.ContextLogger(c)
-	if !h.scanedKnownHosts {
-		knownHostsFilePath, err := templates.SSHKeyScan()
-		if err != nil {
-			log.Errorf("failed scanning known_hosts file, reason=%v", err)
-			sentry.CaptureException(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed scanning known_hosts file"})
-			return
-		}
-		os.Setenv("SSH_KNOWN_HOSTS", knownHostsFilePath)
-		h.scanedKnownHosts = true
-	}
-
-	p, err := pgplugins.New().FetchOne(ctx, plugintypes.PluginRunbooksName)
-	if err != nil {
-		log.Error(err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError,
-			gin.H{"message": "failed retrieving runbook plugin"})
-		return
-	}
-	if p == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "plugin runbooks not found"})
-		return
-	}
-	var configEnvVars map[string]string
-	if p.Config != nil {
-		configEnvVars = p.Config.EnvVars
-	}
-	config, err := templates.NewRunbookConfig(configEnvVars)
-	if err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
-		return
-	}
-	runbookList, err := listRunbookFiles(p.Connections, config)
-	if err != nil {
-		log.Infof("failed listing runbooks, err=%v", err)
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("failed listing runbooks, reason=%v", err)})
-		return
-	}
-	c.PureJSON(http.StatusOK, runbookList)
-}
-
-// TODO: Refactor to use sessionapi.RunExec
-func (h *Handler) RunExec(c *gin.Context) {
+// RunRunbookExec
+//
+//	@Summary		Runbook Exec
+//	@Description	Start a execution using a Runbook as input
+//	@Tags			Core
+//	@Accept			json
+//	@Produce		json
+//	@Param			name			path		string					true	"The name of the connection"
+//	@Param			request			body		openapi.RunbookRequest	true	"The request body resource"
+//	@Success		200				{object}	openapi.ExecResponse	"The execution has finished"
+//	@Success		202				{object}	openapi.ExecResponse	"The execution is still in progress"
+//	@Failure		400,404,422,500	{object}	openapi.HTTPError
+//	@Router			/plugins/runbooks/connections/{name}/exec [post]
+func RunExec(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	log := pgusers.ContextLogger(c)
 	storageCtx := storagev2.ParseContext(c)
 
-	var req RunbookRequest
+	var req openapi.RunbookRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
@@ -165,7 +170,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 		return
 	}
 	connectionName := c.Param("name")
-	config, pathPrefix, err := h.getRunbookConfig(ctx, c, connectionName)
+	config, pathPrefix, err := getRunbookConfig(ctx, c, connectionName)
 	if err != nil {
 		log.Error(err)
 		return
@@ -259,7 +264,7 @@ func (h *Handler) RunExec(c *gin.Context) {
 	}
 }
 
-func (h *Handler) getConnectionID(ctx pgrest.Context, c *gin.Context, connectionName string) (string, error) {
+func getConnectionID(ctx pgrest.Context, c *gin.Context, connectionName string) (string, error) {
 	conn, err := apiconnections.FetchByName(ctx, connectionName)
 	if err != nil {
 		sentry.CaptureException(err)
@@ -273,8 +278,8 @@ func (h *Handler) getConnectionID(ctx pgrest.Context, c *gin.Context, connection
 	return conn.ID, nil
 }
 
-func (h *Handler) getRunbookConfig(ctx pgrest.Context, c *gin.Context, connectionName string) (*templates.RunbookConfig, string, error) {
-	connectionID, err := h.getConnectionID(ctx, c, connectionName)
+func getRunbookConfig(ctx pgrest.Context, c *gin.Context, connectionName string) (*templates.RunbookConfig, string, error) {
+	connectionID, err := getConnectionID(ctx, c, connectionName)
 	if err != nil {
 		return nil, "", err
 	}

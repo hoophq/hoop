@@ -24,7 +24,6 @@ import (
 	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
 	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
 	"github.com/hoophq/hoop/gateway/review"
-	"github.com/hoophq/hoop/gateway/runbooks"
 	"github.com/hoophq/hoop/gateway/security/idp"
 	"github.com/hoophq/hoop/gateway/transport"
 
@@ -89,12 +88,11 @@ func Run() {
 	}
 
 	a := &api.Api{
-		IndexerHandler:  indexer.Handler{},
-		ReviewHandler:   review.Handler{Service: &reviewService},
-		RunbooksHandler: runbooks.Handler{},
-		IDProvider:      idProvider,
-		GrpcURL:         grpcURL,
-		TLSConfig:       tlsConfig,
+		IndexerHandler: indexer.Handler{},
+		ReviewHandler:  review.Handler{Service: &reviewService},
+		IDProvider:     idProvider,
+		GrpcURL:        grpcURL,
+		TLSConfig:      tlsConfig,
 	}
 
 	g := &transport.Server{

@@ -1,41 +1,28 @@
-package apiorgs
+package apifeatures
 
 import (
 	"fmt"
+	"libhoop/log"
 	"net/http"
 	"slices"
 
 	"github.com/gin-gonic/gin"
-	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/version"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgaudit "github.com/hoophq/hoop/gateway/pgrest/audit"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
-var (
-	featureList = []string{"ask-ai"}
-)
-
-const (
-	FeatureStatusEnabled  string = "enabled"
-	FeatureStatusDisabled string = "disabled"
-)
-
-type FeatureRequest struct {
-	Name   string `json:"name" binding:"required"`
-	Status string `json:"status" binding:"required"`
-}
-
-func (r FeatureRequest) isValid(c *gin.Context) (valid bool) {
-	if r.Status != FeatureStatusEnabled && r.Status != FeatureStatusDisabled {
+func isValid(r openapi.FeatureRequest, c *gin.Context) (valid bool) {
+	if r.Status != openapi.FeatureStatusEnabled && r.Status != openapi.FeatureStatusDisabled {
 		msgErr := fmt.Sprintf("status attribute invalid, accept only: [%s, %s]",
-			FeatureStatusEnabled, FeatureStatusDisabled)
+			openapi.FeatureStatusEnabled, openapi.FeatureStatusDisabled)
 		c.JSON(http.StatusBadRequest, gin.H{"message": msgErr})
 		return
 	}
-	if !slices.Contains(featureList, r.Name) {
+	if !slices.Contains(openapi.FeatureList, r.Name) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("feature %s is not implemented", r.Name)})
 		return
 	}
@@ -46,14 +33,24 @@ func (r FeatureRequest) isValid(c *gin.Context) (valid bool) {
 	return true
 }
 
+// FeatureUpdate
+//
+//	@Summary		Feature Update
+//	@Description	Updates a feature configuration. It will report if this feature is available in the user info endpoint.
+//	@Tags			Features
+//	@Produces		json
+//	@Param			request	body	openapi.FeatureRequest	true	"The request body resource"
+//	@Success		204
+//	@Failure		400,500	{object}	openapi.HTTPError
+//	@Router			/orgs/features [put]
 func FeatureUpdate(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	var req FeatureRequest
+	var req openapi.FeatureRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	if !req.isValid(c) {
+	if !isValid(req, c) {
 		return
 	}
 
@@ -63,7 +60,7 @@ func FeatureUpdate(c *gin.Context) {
 	}
 
 	eventName := pgaudit.FeatureAskAiDisabled
-	if req.Status == FeatureStatusEnabled {
+	if req.Status == openapi.FeatureStatusEnabled {
 		eventName = pgaudit.FeatureAskAiEnabled
 	}
 	auditCtx := pgrest.NewAuditContext(ctx.GetOrgID(), eventName, ctx.UserEmail).WithMetadata(metadata)
