@@ -8,7 +8,6 @@ import (
 	"github.com/honeycombio/honeycomb-opentelemetry-go"
 	"github.com/honeycombio/otel-config-go/otelconfig"
 	"github.com/hoophq/hoop/common/version"
-	"github.com/hoophq/hoop/gateway/appconfig"
 )
 
 type TransportConfig struct {
@@ -56,7 +55,7 @@ func StartSentry() (bool, error) {
 		// of transactions for performance monitoring.
 		// We recommend adjusting this value in production,
 		TracesSampleRate: 1.0,
-		Environment:      appconfig.Get().ApiHostname(),
+		Environment:      "", // TODO
 		Release:          version.Get().Version,
 		Transport:        nil,
 	})

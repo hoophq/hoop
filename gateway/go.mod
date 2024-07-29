@@ -24,8 +24,6 @@ require (
 	github.com/slack-go/slack v0.12.2
 	github.com/stretchr/testify v1.8.4
 	github.com/svix/svix-webhooks v1.13.0
-	github.com/swaggo/files v1.0.1
-	github.com/swaggo/gin-swagger v1.6.0
 	github.com/swaggo/swag v1.16.3
 	github.com/tidwall/wal v1.1.7
 	github.com/vmihailenco/msgpack/v5 v5.3.5
