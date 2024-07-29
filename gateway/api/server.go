@@ -12,6 +12,8 @@ import (
 	"github.com/gin-contrib/static"
 	ginzap "github.com/gin-contrib/zap"
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
+
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/analytics"
 	apiagents "github.com/hoophq/hoop/gateway/api/agents"
@@ -19,11 +21,13 @@ import (
 	apifeatures "github.com/hoophq/hoop/gateway/api/features"
 	apihealthz "github.com/hoophq/hoop/gateway/api/healthz"
 	loginapi "github.com/hoophq/hoop/gateway/api/login"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
 	apiplugins "github.com/hoophq/hoop/gateway/api/plugins"
 	apiproxymanager "github.com/hoophq/hoop/gateway/api/proxymanager"
 	apireports "github.com/hoophq/hoop/gateway/api/reports"
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
+	apirunbooks "github.com/hoophq/hoop/gateway/api/runbooks"
 	apiserverinfo "github.com/hoophq/hoop/gateway/api/serverinfo"
 	serviceaccountapi "github.com/hoophq/hoop/gateway/api/serviceaccount"
 	sessionapi "github.com/hoophq/hoop/gateway/api/session"
@@ -32,23 +36,55 @@ import (
 	webhooksapi "github.com/hoophq/hoop/gateway/api/webhooks"
 	"github.com/hoophq/hoop/gateway/indexer"
 	"github.com/hoophq/hoop/gateway/review"
-	"github.com/hoophq/hoop/gateway/runbooks"
 	"github.com/hoophq/hoop/gateway/security/idp"
-	"go.uber.org/zap"
 )
 
-type (
-	Api struct {
-		IndexerHandler  indexer.Handler
-		ReviewHandler   review.Handler
-		RunbooksHandler runbooks.Handler
-		IDProvider      *idp.Provider
-		GrpcURL         string
-		TLSConfig       *tls.Config
-		logger          *zap.Logger
-	}
-)
+type Api struct {
+	IndexerHandler indexer.Handler
+	ReviewHandler  review.Handler
+	IDProvider     *idp.Provider
+	GrpcURL        string
+	TLSConfig      *tls.Config
+	logger         *zap.Logger
+}
 
+//	@title			Hoop Api
+//	@version		1.0
+//	@description	Hoop.dev is an access gateway for databases and servers with an API for packet manipulation
+//	@termsOfService	https://hoop.dev/docs/legal/tos
+//	@schemes		https
+
+//	@contact.name	Help
+//	@contact.url	https://help.hoop.dev
+//	@contact.email	help@hoop.dev
+
+//	@license.name	MIT
+//	@license.url	https://opensource.org/license/mit
+
+//	@tag.name	Authentication
+//	@tag.description.markdown
+
+//	@tag.name	Core
+//	@tag.description.markdown
+
+//	@tag.name	User Management
+//	@tag.description.markdown
+
+//	@tag.name	Server Management
+//	@tag.description.markdown
+
+//	@tag.name	Features
+//	@tag.description.markdown
+
+//	@tag.name	Proxy Manager
+//	@tag.description.markdown
+
+// @securitydefinitions.oauth2.accessCode	OAuth2AccessCode
+// @tokenUrl								https://login.microsoftonline.com/d60ba6f0-ad5f-4917-aa19-f8d4241f8bc7/oauth2/v2.0/token
+// @authorizationUrl						https://login.microsoftonline.com/d60ba6f0-ad5f-4917-aa19-f8d4241f8bc7/oauth2/v2.0/authorize
+// @scope.profile
+// @scope.email
+// @scope.openid
 func (a *Api) StartAPI(sentryInit bool) {
 	if os.Getenv("PORT") == "" {
 		os.Setenv("PORT", "8009")
@@ -105,7 +141,9 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	// set standard role to all routes
 	route.Use(StandardAccessRole)
 
+	reviewHandler := reviewapi.NewHandler(&api.ReviewHandler)
 	loginHandler := loginapi.New(api.IDProvider)
+	route.GET("/openapiv2.json", openapi.Handler)
 	route.GET("/login", loginHandler.Login)
 	route.GET("/callback", loginHandler.LoginCallback)
 	route.GET("/healthz", apihealthz.LivenessHandler())
@@ -118,10 +156,10 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		AdminOnlyAccessRole,
 		api.Authenticate,
 		userapi.List)
-	route.GET("/users/:id",
+	route.GET("/users/:emailOrID",
 		AdminOnlyAccessRole,
 		api.Authenticate,
-		userapi.GetUserByID)
+		userapi.GetUserByEmailOrID)
 	route.GET("/userinfo",
 		AnonAccessRole,
 		api.Authenticate,
@@ -215,16 +253,16 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.GET("/reviews",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventFetchReviews),
-		api.ReviewHandler.FindAll)
+		reviewHandler.List)
 	route.GET("/reviews/:id",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventFetchReviews),
-		reviewapi.GetById)
+		reviewHandler.Get)
 	route.PUT("/reviews/:id",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventUpdateReview),
 		AuditApiChanges,
-		api.ReviewHandler.Put)
+		reviewHandler.Put)
 
 	route.POST("/agents",
 		AdminOnlyAccessRole,
@@ -273,7 +311,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest(analytics.EventOrgFeatureUpdate),
 		AuditApiChanges,
-		apiorgs.FeatureUpdate)
+		apifeatures.FeatureUpdate)
 
 	route.POST("/features/ask-ai/v1/chat/completions",
 		api.Authenticate,
@@ -344,18 +382,18 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 
 	route.GET("/plugins/runbooks/connections/:name/templates",
 		api.Authenticate,
-		api.RunbooksHandler.ListByConnection,
+		apirunbooks.ListByConnection,
 	)
 
 	route.GET("/plugins/runbooks/templates",
 		api.Authenticate,
-		api.RunbooksHandler.List,
+		apirunbooks.List,
 	)
 
 	route.POST("/plugins/runbooks/connections/:name/exec",
 		api.Authenticate,
 		api.TrackRequest(analytics.EventExecRunbook),
-		api.RunbooksHandler.RunExec)
+		apirunbooks.RunExec)
 
 	route.GET("/webhooks-dashboard",
 		AdminOnlyAccessRole,

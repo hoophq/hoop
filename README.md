@@ -16,7 +16,7 @@
 
 <p align="center">
     <a href="https://github.com/hoophq/hoop/actions/workflows/release.yml">
-        <img src="https://img.shields.io/github/v/release/hoophq/hoopcli.svg?style=flat" />
+        <img src="https://img.shields.io/github/v/release/hoophq/hoop.svg?style=flat" />
     </a>
     <a href="https://github.com/hoophq/hoop/actions/workflows/release.yml">
         <img src="https://github.com/hoophq/hoop/actions/workflows/release.yml/badge.svg" />

@@ -10,6 +10,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
 	apiagents "github.com/hoophq/hoop/gateway/api/agents"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgagents "github.com/hoophq/hoop/gateway/pgrest/agents"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -20,6 +21,15 @@ var (
 	ErrAlreadyExists    = errors.New("org key already exists")
 )
 
+// CreateOrgKey
+//
+//	@Summary		Create Org Key
+//	@Description	Create the organization key to run with `hoop run` command line.
+//	@Tags			Core
+//	@Produce		json
+//	@Success		201		{object}	openapi.OrgKeyResponse
+//	@Failure		409,500	{object}	openapi.HTTPError
+//	@Router			/orgs/keys [post]
 func CreateAgentKey(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	agentID, dsn, err := ProvisionOrgAgentKey(ctx, storagev2.ParseContext(c).GrpcURL)
@@ -34,12 +44,21 @@ func CreateAgentKey(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed generating dsn"})
 		return
 	}
-	c.JSON(http.StatusOK, map[string]any{
-		"id":  agentID,
-		"key": dsn,
+	c.JSON(http.StatusCreated, openapi.OrgKeyResponse{
+		ID:  agentID,
+		Key: dsn,
 	})
 }
 
+// GetOrgKey
+//
+//	@Summary		Get Org Key
+//	@Description	Get the organization key to run with `hoop run` command line
+//	@Tags			Core
+//	@Produce		json
+//	@Success		200		{object}	openapi.OrgKeyResponse
+//	@Failure		404,500	{object}	openapi.HTTPError
+//	@Router			/orgs/keys [get]
 func GetAgentKey(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	ag, err := pgagents.New().FetchOneByNameOrID(ctx, agentKeyDefaultName)
@@ -59,12 +78,21 @@ func GetAgentKey(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed generating dsn"})
 		return
 	}
-	c.JSON(http.StatusOK, map[string]any{
-		"id":  ag.ID,
-		"key": dsn,
+	c.JSON(http.StatusOK, openapi.OrgKeyResponse{
+		ID:  ag.ID,
+		Key: dsn,
 	})
 }
 
+// RevokeAgentKey
+//
+//	@Summary		Revoke Org Key
+//	@Description	Remove organization key
+//	@Tags			Core
+//	@Produce		json
+//	@Success		204
+//	@Failure		500	{object}	openapi.HTTPError
+//	@Router			/orgs/keys [delete]
 func RevokeAgentKey(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	ag, err := pgagents.New().FetchOneByNameOrID(ctx, agentKeyDefaultName)

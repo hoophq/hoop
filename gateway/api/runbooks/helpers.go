@@ -1,18 +1,20 @@
-package runbooks
+package apirunbooks
 
 import (
 	"bytes"
 	"fmt"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/hoophq/hoop/gateway/runbooks/templates"
+	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/api/runbooks/templates"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
 const maxTemplateSize = 1000000 // 1MB
 
-func fetchRunbookFile(config *templates.RunbookConfig, req RunbookRequest) (*Runbook, error) {
+func fetchRunbookFile(config *templates.RunbookConfig, req openapi.RunbookRequest) (*openapi.Runbook, error) {
 	c, err := templates.FetchRepo(config)
 	if err != nil {
 		return nil, err
@@ -41,7 +43,7 @@ func fetchRunbookFile(config *templates.RunbookConfig, req RunbookRequest) (*Run
 			if err := t.Execute(parsedTemplate, req.Parameters); err != nil {
 				return nil, err
 			}
-			return &Runbook{
+			return &openapi.Runbook{
 				Name:       f.Name,
 				InputFile:  parsedTemplate.Bytes(),
 				EnvVars:    t.EnvVars(),
@@ -51,16 +53,16 @@ func fetchRunbookFile(config *templates.RunbookConfig, req RunbookRequest) (*Run
 	return nil, fmt.Errorf("runbook %v not found for %v", req.FileName, c.Hash.String())
 }
 
-func listRunbookFiles(pluginConnectionList []*types.PluginConnection, config *templates.RunbookConfig) (*RunbookList, error) {
+func listRunbookFiles(pluginConnectionList []*types.PluginConnection, config *templates.RunbookConfig) (*openapi.RunbookList, error) {
 	commit, err := templates.FetchRepo(config)
 	if err != nil {
 		return nil, err
 	}
-	runbookList := &RunbookList{
+	runbookList := &openapi.RunbookList{
 		Commit:        commit.Hash.String(),
 		CommitAuthor:  commit.Author.String(),
 		CommitMessage: commit.Message,
-		Items:         []*Runbook{},
+		Items:         []*openapi.Runbook{},
 	}
 	ctree, _ := commit.Tree()
 	if ctree == nil {
@@ -70,7 +72,7 @@ func listRunbookFiles(pluginConnectionList []*types.PluginConnection, config *te
 		if !templates.IsRunbookFile(f.Name) {
 			return nil
 		}
-		runbook := &Runbook{
+		runbook := &openapi.Runbook{
 			Name:           f.Name,
 			Metadata:       map[string]any{},
 			ConnectionList: []string{},
@@ -112,16 +114,16 @@ func listRunbookFiles(pluginConnectionList []*types.PluginConnection, config *te
 	})
 }
 
-func listRunbookFilesByPathPrefix(pathPrefix string, config *templates.RunbookConfig) (*RunbookList, error) {
+func listRunbookFilesByPathPrefix(pathPrefix string, config *templates.RunbookConfig) (*openapi.RunbookList, error) {
 	commit, err := templates.FetchRepo(config)
 	if err != nil {
 		return nil, err
 	}
-	runbookList := &RunbookList{
+	runbookList := &openapi.RunbookList{
 		Commit:        commit.Hash.String(),
 		CommitAuthor:  commit.Author.String(),
 		CommitMessage: commit.Message,
-		Items:         []*Runbook{},
+		Items:         []*openapi.Runbook{},
 	}
 	ctree, _ := commit.Tree()
 	if ctree == nil {
@@ -134,7 +136,7 @@ func listRunbookFilesByPathPrefix(pathPrefix string, config *templates.RunbookCo
 		if pathPrefix != "" && !strings.HasPrefix(f.Name, pathPrefix) {
 			return nil
 		}
-		runbook := &Runbook{
+		runbook := &openapi.Runbook{
 			Name:           f.Name,
 			Metadata:       map[string]any{},
 			ConnectionList: nil,
@@ -170,4 +172,13 @@ func toPtrStr(v any) *string {
 	}
 	val := fmt.Sprintf("%v", v)
 	return &val
+}
+
+func getAccessToken(c *gin.Context) string {
+	tokenHeader := c.GetHeader("authorization")
+	tokenParts := strings.Split(tokenHeader, " ")
+	if len(tokenParts) > 1 {
+		return tokenParts[1]
+	}
+	return ""
 }

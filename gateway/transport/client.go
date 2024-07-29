@@ -225,7 +225,7 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 		}
 
 		err = stream.SendToAgent(&pb.Packet{Type: pbagent.SessionOpen, Spec: spec})
-		log.With("sid", pctx.SID, "agent-name", pctx.AgentName).Warnf("opening session with agent, sent=%v", err == nil)
+		log.With("sid", pctx.SID, "agent-name", pctx.AgentName).Infof("opening session with agent, sent=%v", err == nil)
 		return err
 	default:
 		return stream.SendToAgent(pkt)

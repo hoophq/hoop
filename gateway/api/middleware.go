@@ -16,6 +16,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/analytics"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	pguserauth "github.com/hoophq/hoop/gateway/pgrest/userauth"
 	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
 	"github.com/hoophq/hoop/gateway/security/idp"
@@ -50,9 +51,9 @@ func (a *Api) Authenticate(c *gin.Context) {
 		)
 		c.Set(pgusers.ContextLoggerKey, zaplogger.Sugar())
 	}
-	switch roleName {
-	case RoleStandardAccess: // noop
-	case RoleAnonAccess:
+	switch openapi.RoleType(roleName) {
+	case openapi.RoleStandardType: // noop
+	case openapi.RoleUnregisteredType:
 		if !ctx.IsEmpty() {
 			break
 		}
@@ -85,7 +86,7 @@ func (a *Api) Authenticate(c *gin.Context) {
 		)
 		c.Next()
 		return
-	case RoleAdminOnly:
+	case openapi.RoleAdminType:
 		if !ctx.IsAdmin() {
 			c.AbortWithStatus(http.StatusForbidden)
 			return

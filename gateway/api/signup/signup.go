@@ -1,6 +1,7 @@
 package signupapi
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/agentcontroller"
 	"github.com/hoophq/hoop/gateway/analytics"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
@@ -20,19 +22,24 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
-type SignupRequest struct {
-	OrgName        string `json:"org_name" binding:"required,min=2,max=100"`
-	ProfileName    string `json:"profile_name" binding:"max=255"`
-	ProfilePicture string `json:"profile_picture" binding:"max=2048"`
-}
-
+// Signup
+//
+//	@Summary		Signup
+//	@Description	Signup anonymous authenticated user. This endpoint is only used for multi tenant setups.
+//	@Tags			Authentication
+//	@Accept			json
+//	@Produce		json
+//	@Param			request			body		openapi.SignupRequest	true	"The request body resource"
+//	@Success		200				{object}	openapi.SignupRequest
+//	@Failure		400,409,422,500	{object}	openapi.HTTPError
+//	@Router			/signup [post]
 func Post(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	if !ctx.IsAnonymous() || !pgusers.IsOrgMultiTenant() {
 		c.JSON(http.StatusConflict, gin.H{"message": "user already signed up"})
 		return
 	}
-	var req SignupRequest
+	var req openapi.SignupRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
@@ -43,14 +50,25 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "unable to sign license"})
 		return
 	}
-	license.Sign(
+	lic, err := license.Sign(
 		signingKey,
 		license.EnterpriseType,
 		fmt.Sprintf("multi tenant customer: %v", req.OrgName),
 		[]string{"*.hoop.dev"},
 		(time.Hour*8760)*20, // 20 years
 	)
-	orgID, err := pgorgs.New().CreateOrGetOrg(req.OrgName, license.DefaultOSS)
+	if err != nil {
+		log.Errorf("unable to sign license: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "unable to sign license"})
+		return
+	}
+	licenseDataJSONBytes, err := json.Marshal(lic)
+	if err != nil {
+		log.Errorf("unable to encode license to json: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "unable to sign license (json encoding)"})
+		return
+	}
+	orgID, err := pgorgs.New().CreateOrGetOrg(req.OrgName, licenseDataJSONBytes)
 	switch err {
 	case pgusers.ErrOrgAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": "organization name is already claimed"})
@@ -84,11 +102,11 @@ func Post(c *gin.Context) {
 		}
 		log.With("org_name", req.OrgName, "org_id", orgID).Infof("user signup up with success")
 		identifySignup(user, req.OrgName, c.GetHeader("user-agent"), ctx.ApiURL)
-		c.JSON(http.StatusOK, gin.H{
-			"org_id":          orgID,
-			"org_name":        req.OrgName,
-			"profile_name":    profileName,
-			"profile_picture": profilePicture,
+		c.JSON(http.StatusOK, openapi.SignupRequest{
+			OrgID:          orgID,
+			OrgName:        req.OrgName,
+			ProfileName:    profileName,
+			ProfilePicture: profilePicture,
 		})
 	default:
 		log.Errorf("failed creating organization, err=%v", err)

@@ -14,6 +14,14 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
+// UpdateOrgLicense
+//
+//	@Summary		Update Org License
+//	@Description	Upload a new license into the system
+//	@Tags			Server Management
+//	@Success		204
+//	@Failure		400,500	{object}	openapi.HTTPError
+//	@Router			/orgs/license [put]
 func UpdateOrgLicense(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	var req license.License
@@ -49,6 +57,15 @@ type SignRequest struct {
 	ExpireAt     string   `json:"expire_at"`
 }
 
+// SignLicense
+//
+//	@Summary		Sign License
+//	@Description	Sign a new license for a customer. This route is for internal use only
+//	@Tags			Server Management
+//	@Produces		json
+//	@Success		200			{object}	openapi.License
+//	@Failure		400,403,500	{object}	openapi.HTTPError
+//	@Router			/orgs/license/sign [post]
 func SignLicense(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	signerOrgID, signingKey := appconfig.Get().LicenseSigningKey()
@@ -60,6 +77,7 @@ func SignLicense(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"message": "unable to sign license: organization not allowed to sign licenses"})
 		return
 	}
+	// TODO: refactor to use the openapi types
 	var req SignRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})

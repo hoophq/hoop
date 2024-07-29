@@ -6,10 +6,10 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
-	"github.com/hoophq/hoop/common/appruntime"
 	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/version"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -18,18 +18,17 @@ import (
 var (
 	isOrgMultiTenant = os.Getenv("ORG_MULTI_TENANT") == "true"
 	vinfo            = version.Get()
-	serverInfoData   = map[string]any{
-		"version":                vinfo.Version,
-		"gateway_commit":         vinfo.GitCommit,
-		"webapp_commit":          appruntime.WebAppCommit,
-		"log_level":              os.Getenv("LOG_LEVEL"),
-		"go_debug":               os.Getenv("GODEBUG"),
-		"admin_username":         os.Getenv("ADMIN_USERNAME"),
-		"has_redact_credentials": isEnvSet("GOOGLE_APPLICATION_CREDENTIALS_JSON"),
-		"has_webhook_app_key":    isEnvSet("WEBHOOK_APPKEY"),
-		"has_idp_audience":       isEnvSet("IDP_AUDIENCE"),
-		"has_idp_custom_scopes":  isEnvSet("IDP_CUSTOM_SCOPES"),
-		"has_postgrest_role":     isEnvSet("PGREST_ROLE"),
+	serverInfoData   = openapi.ServerInfo{
+		Version:              vinfo.Version,
+		Commit:               vinfo.GitCommit,
+		LogLevel:             os.Getenv("LOG_LEVEL"),
+		GoDebug:              os.Getenv("GODEBUG"),
+		AdminUsername:        os.Getenv("ADMIN_USERNAME"),
+		HasRedactCredentials: isEnvSet("GOOGLE_APPLICATION_CREDENTIALS_JSON"),
+		HasWebhookAppKey:     isEnvSet("WEBHOOK_APPKEY"),
+		HasIDPAudience:       isEnvSet("IDP_AUDIENCE"),
+		HasIDPCustomScopes:   isEnvSet("IDP_CUSTOM_SCOPES"),
+		HasPostgresRole:      isEnvSet("PGREST_ROLE"),
 	}
 )
 
@@ -39,6 +38,15 @@ type handler struct {
 
 func New(grpcURL string) *handler { return &handler{grpcURL: grpcURL} }
 
+// GetServerInfo
+//
+//	@Summary		Get Server Info
+//	@Description	Get server information
+//	@Tags			Server Management
+//	@Produce		json
+//	@Success		200	{object}	openapi.ServerInfo
+//	@Failure		500	{object}	openapi.HTTPError
+//	@Router			/serverinfo [get]
 func (h *handler) Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	org, err := pgorgs.New().FetchOrgByContext(ctx)
@@ -58,20 +66,19 @@ func (h *handler) Get(c *gin.Context) {
 	if isOrgMultiTenant {
 		tenancyType = "multitenant"
 	}
-	serverInfoData["tenancy_type"] = tenancyType
-	serverInfoData["grpc_url"] = h.grpcURL
-	serverInfoData["has_ask_ai_credentials"] = appconfig.Get().IsAskAIAvailable()
-	serverInfoData["license_info"] = nil
+	serverInfoData.TenancyType = tenancyType
+	serverInfoData.GrpcURL = h.grpcURL
+	serverInfoData.HasAskiAICredentials = appconfig.Get().IsAskAIAvailable()
 	if l != nil {
-		serverInfoData["license_info"] = map[string]any{
-			"key_id":        l.KeyID,
-			"allowed_hosts": l.Payload.AllowedHosts,
-			"type":          l.Payload.Type,
-			"issued_at":     l.Payload.IssuedAt,
-			"expire_at":     l.Payload.ExpireAt,
-			"is_valid":      err == nil,
-			"verify_error":  licenseVerifyErr,
-			"verified_host": apiHostname,
+		serverInfoData.LicenseInfo = &openapi.ServerLicenseInfo{
+			KeyID:        l.KeyID,
+			AllowedHosts: l.Payload.AllowedHosts,
+			Type:         l.Payload.Type,
+			IssuedAt:     l.Payload.IssuedAt,
+			ExpireAt:     l.Payload.ExpireAt,
+			IsValid:      err == nil,
+			VerifyError:  licenseVerifyErr,
+			VerifiedHost: apiHostname,
 		}
 	}
 	c.JSON(http.StatusOK, serverInfoData)

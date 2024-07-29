@@ -14,6 +14,7 @@ import (
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/analytics"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgaudit "github.com/hoophq/hoop/gateway/pgrest/audit"
@@ -22,36 +23,22 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
-type StatusType string
-
-const (
-	StatusActive    StatusType = "active"
-	StatusReviewing StatusType = "reviewing"
-	StatusInactive  StatusType = "inactive"
-
-	RoleAdminType        string = "admin"
-	RoleStandardType     string = "standard"
-	RoleUnregisteredType string = "unregistered"
-	RoleGuestType        string = "guest"
-)
-
-type User struct {
-	ID       string     `json:"id"`
-	Name     string     `json:"name"`
-	Email    string     `json:"email"`
-	Status   StatusType `json:"status"`
-	Verified bool       `json:"verified"` // DEPRECATED in flavor of role
-	Role     string     `json:"role"`
-	SlackID  string     `json:"slack_id"`
-	Picture  string     `json:"picture"`
-	Groups   []string   `json:"groups"`
-}
-
 var isOrgMultiTenant = os.Getenv("ORG_MULTI_TENANT") == "true"
 
+// InviteUser
+//
+//	@Summary		Invite User
+//	@Description	Inviting a user will pre configure user definitions like display name, profile picture, groups or his slack id
+//	@Tags			User Management
+//	@Accept			json
+//	@Produce		json
+//	@Param			request			body		openapi.User	true	"The request body resource"
+//	@Success		201				{object}	openapi.User
+//	@Failure		400,409,422,500	{object}	openapi.HTTPError
+//	@Router			/users [post]
 func Create(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	var newUser User
+	var newUser openapi.User
 	if err := c.ShouldBindJSON(&newUser); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
@@ -84,7 +71,7 @@ func Create(c *gin.Context) {
 		Picture:  newUser.Picture,
 		Email:    newUser.Email,
 		Verified: newUser.Verified, // DEPRECATED in flavor of role
-		Status:   string(StatusActive),
+		Status:   string(openapi.StatusActive),
 		SlackID:  newUser.SlackID,
 		Groups:   newUser.Groups,
 	}
@@ -119,6 +106,18 @@ func Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, newUser)
 }
 
+// UpdateUser
+//
+//	@Summary		Update User
+//	@Description	Updates an existing user
+//	@Tags			User Management
+//	@Accept			json
+//	@Produce		json
+//	@Param			id			path		string			true	"The subject identifier of the user"
+//	@Param			request		body		openapi.User	true	"The request body resource"
+//	@Success		200			{object}	openapi.User
+//	@Failure		400,422,500	{object}	openapi.HTTPError
+//	@Router			/users/{id} [put]
 func Update(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	userID := c.Param("id")
@@ -134,7 +133,7 @@ func Update(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 		return
 	}
-	var req User
+	var req openapi.User
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
@@ -144,7 +143,7 @@ func Update(c *gin.Context) {
 		if !slices.Contains(req.Groups, types.GroupAdmin) {
 			req.Groups = append(req.Groups, types.GroupAdmin)
 		}
-		if req.Status != StatusActive {
+		if req.Status != openapi.StatusActive {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "cannot deactivate yourself"})
 			return
 		}
@@ -176,11 +175,11 @@ func Update(c *gin.Context) {
 		GrpcURL:    ctx.GrpcURL,
 	})
 
-	c.JSON(http.StatusOK, User{
+	c.JSON(http.StatusOK, openapi.User{
 		ID:       existingUser.Subject,
 		Name:     existingUser.Name,
 		Email:    existingUser.Email,
-		Status:   StatusType(existingUser.Status),
+		Status:   openapi.StatusType(existingUser.Status),
 		Verified: existingUser.Verified, // DEPRECATED in flavor of role
 		Role:     toRole(*existingUser),
 		SlackID:  existingUser.SlackID,
@@ -189,6 +188,15 @@ func Update(c *gin.Context) {
 	})
 }
 
+// ListUsers
+//
+//	@Summary		List Users
+//	@Description	List all users
+//	@Tags			User Management
+//	@Produce		json
+//	@Success		200	{array}		openapi.User
+//	@Failure		500	{object}	openapi.HTTPError
+//	@Router			/users [get]
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	users, err := pgusers.New().FetchAll(ctx)
@@ -198,14 +206,14 @@ func List(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed listing users"})
 		return
 	}
-	userList := []User{}
+	userList := []openapi.User{}
 	for _, u := range users {
 		userList = append(userList,
-			User{
+			openapi.User{
 				ID:       u.Subject,
 				Name:     u.Name,
 				Email:    u.Email,
-				Status:   StatusType(u.Status),
+				Status:   openapi.StatusType(u.Status),
 				Verified: u.Verified,
 				Role:     toRole(u), // DEPRECATED in flavor of role
 				SlackID:  u.SlackID,
@@ -216,6 +224,16 @@ func List(c *gin.Context) {
 	c.JSON(http.StatusOK, userList)
 }
 
+// DeleteUser
+//
+//	@Summary		Delete User
+//	@Description	Delete a user.
+//	@Tags			User Management
+//	@Produce		json
+//	@Param			id	path	string	true	"The subject identifier of the user"
+//	@Success		204
+//	@Failure		404,422,500	{object}	openapi.HTTPError
+//	@Router			/users/{id} [delete]
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	subject := c.Param("id")
@@ -243,9 +261,19 @@ func Delete(c *gin.Context) {
 	c.Writer.WriteHeader(204)
 }
 
-func GetUserByID(c *gin.Context) {
+// GetUserByEmailOrID
+//
+//	@Summary		Get User
+//	@Description	Get user by email or subject id
+//	@Tags			User Management
+//	@Produce		json
+//	@Param			emailOrID	path		string	true	"The subject identifier or email of the user"
+//	@Success		200			{object}	openapi.User
+//	@Failure		404,500		{object}	openapi.HTTPError
+//	@Router			/users/{emailOrID} [get]
+func GetUserByEmailOrID(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	emailOrID := c.Param("id")
+	emailOrID := c.Param("emailOrID")
 	var user *pgrest.User
 	var err error
 	if isValidMailAddress(emailOrID) {
@@ -263,11 +291,11 @@ func GetUserByID(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 		return
 	}
-	c.JSON(http.StatusOK, User{
+	c.JSON(http.StatusOK, openapi.User{
 		ID:       user.Subject,
 		Name:     user.Name,
 		Email:    user.Email,
-		Status:   StatusType(user.Status),
+		Status:   openapi.StatusType(user.Status),
 		Verified: user.Verified, // DEPRECATED in flavor of role
 		Role:     toRole(*user),
 		SlackID:  user.SlackID,
@@ -290,6 +318,15 @@ func getAskAIFeatureStatus(ctx pgrest.OrgContext) (string, error) {
 	return "disabled", nil
 }
 
+// GetUserInfo
+//
+//	@Summary		Get UserInfo
+//	@Description	Get own user's information
+//	@Tags			User Management
+//	@Produce		json
+//	@Success		200	{object}	openapi.UserInfo
+//	@Failure		500	{object}	openapi.HTTPError
+//	@Router			/userinfo [get]
 func GetUserInfo(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	askAIFeatureStatus, err := getAskAIFeatureStatus(ctx)
@@ -306,42 +343,54 @@ func GetUserInfo(c *gin.Context) {
 	if isOrgMultiTenant {
 		tenancyType = "multitenant"
 	}
-	roleName := RoleStandardType
+	roleName := openapi.RoleStandardType
 	switch {
 	case ctx.IsAnonymous():
-		roleName = RoleUnregisteredType
+		roleName = openapi.RoleUnregisteredType
 	case ctx.IsAdminUser():
-		roleName = RoleAdminType
+		roleName = openapi.RoleAdminType
 	}
-	userInfoData := map[string]any{
-		"id":                      ctx.UserID,
-		"name":                    ctx.UserName,
-		"email":                   ctx.UserEmail,
-		"picture":                 ctx.UserPicture,
-		"status":                  ctx.UserStatus,
-		"verified":                true, // DEPRECATED in flavor of role (guest)
-		"slack_id":                ctx.SlackID,
-		"groups":                  groupList,
-		"is_admin":                ctx.IsAdminUser(), // DEPRECATED in flavor of role (admin)
-		"is_multitenant":          isOrgMultiTenant,  // DEPRECATED is flavor of tenancy_type
-		"tenancy_type":            tenancyType,
-		"role":                    roleName,
-		"org_id":                  ctx.OrgID,
-		"org_name":                ctx.OrgName,
-		"org_license":             ctx.OrgLicense,
-		"feature_ask_ai":          askAIFeatureStatus,
-		"webapp_users_management": appconfig.Get().WebappUsersManagement(),
+	userInfoData := openapi.UserInfo{
+		User: openapi.User{
+			ID:       ctx.UserID,
+			Name:     ctx.UserName,
+			Email:    ctx.UserEmail,
+			Picture:  ctx.UserPicture,
+			Status:   openapi.StatusType(ctx.UserStatus),
+			Role:     string(roleName),
+			Verified: true, // DEPRECATED in flavor of role (guest)
+			SlackID:  ctx.SlackID,
+			Groups:   groupList,
+		},
+		IsAdmin:               ctx.IsAdminUser(), // DEPRECATED in flavor of role (admin)
+		IsMultitenant:         isOrgMultiTenant,  // DEPRECATED is flavor of tenancy_type
+		TenancyType:           tenancyType,
+		OrgID:                 ctx.OrgID,
+		OrgName:               ctx.OrgName,
+		OrgLicense:            ctx.OrgLicense,
+		FeatureAskAI:          askAIFeatureStatus,
+		WebAppUsersManagement: appconfig.Get().WebappUsersManagement(),
 	}
 	if ctx.IsAnonymous() {
-		userInfoData["verified"] = false
-		userInfoData["email"] = ctx.UserAnonEmail
-		userInfoData["name"] = ctx.UserAnonProfile
-		userInfoData["picture"] = ctx.UserAnonPicture
-		userInfoData["id"] = ctx.UserAnonSubject
+		userInfoData.Verified = false
+		userInfoData.Email = ctx.UserAnonEmail
+		userInfoData.Name = ctx.UserAnonProfile
+		userInfoData.Picture = ctx.UserAnonPicture
+		userInfoData.ID = ctx.UserAnonSubject
 	}
 	c.JSON(http.StatusOK, userInfoData)
 }
 
+// PatchUserSlackID
+//
+//	@Summary		Patch User Slack ID
+//	@Description	Patch own user's slack id
+//	@Tags			User Management
+//	@Param			request	body	openapi.UserPatchSlackID	true	"The request body resource"
+//	@Produce		json
+//	@Success		200			{object}	openapi.User
+//	@Failure		400,422,500	{object}	openapi.HTTPError
+//	@Router			/users/self/slack [patch]
 func PatchSlackID(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	u, err := pgusers.New().FetchOneBySubject(ctx, ctx.UserID)
@@ -351,31 +400,27 @@ func PatchSlackID(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining user"})
 		return
 	}
-	var req map[string]any
+	var req openapi.UserPatchSlackID
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	var slackID string
-	if id, ok := req["slack_id"]; ok {
-		slackID = fmt.Sprintf("%v", id)
-	}
-	if slackID == "" {
+	if req.SlackID == "" {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "missing slack_id attribute"})
 		return
 	}
-	u.SlackID = slackID
+	u.SlackID = req.SlackID
 	if err := pgusers.New().Upsert(*u); err != nil {
 		log.Errorf("failed updating slack id of user, reason=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating slack id"})
 		return
 	}
-	c.JSON(http.StatusOK, User{
+	c.JSON(http.StatusOK, openapi.User{
 		ID:       u.Subject,
 		Name:     u.Name,
 		Email:    u.Email,
-		Status:   StatusType(u.Status),
+		Status:   openapi.StatusType(u.Status),
 		Verified: u.Verified,
 		SlackID:  u.SlackID,
 		Picture:  u.Picture,
@@ -383,6 +428,15 @@ func PatchSlackID(c *gin.Context) {
 	})
 }
 
+// ListUserGroups
+//
+//	@Summary		List User Groups
+//	@Description	List all groups from all users
+//	@Tags			User Management
+//	@Produce		json
+//	@Success		200	{array}		string
+//	@Failure		500	{object}	openapi.HTTPError
+//	@Router			/users/groups [get]
 func ListAllGroups(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	groups, err := pgusers.New().ListAllGroups(ctx)
@@ -401,11 +455,8 @@ func isValidMailAddress(email string) bool {
 }
 
 func toRole(user pgrest.User) string {
-	if !user.Verified {
-		return RoleGuestType
-	}
 	if slices.Contains(user.Groups, types.GroupAdmin) {
-		return RoleAdminType
+		return string(openapi.RoleAdminType)
 	}
-	return RoleStandardType
+	return string(openapi.RoleStandardType)
 }

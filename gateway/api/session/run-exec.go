@@ -20,12 +20,6 @@ import (
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
-type ExecRequest struct {
-	Script     string   `json:"script"`
-	ClientArgs []string `json:"client_args"`
-	Redirect   bool     `json:"redirect"`
-}
-
 func getAccessToken(c *gin.Context) string {
 	tokenHeader := c.GetHeader("authorization")
 	tokenParts := strings.Split(tokenHeader, " ")
@@ -35,19 +29,24 @@ func getAccessToken(c *gin.Context) string {
 	return ""
 }
 
+// RunReviewedExec
 // TODO: Refactor to use sessionapi.RunExec
+//
+//	@Summary		Reviewed Exec
+//	@Description	Run an execution in a reviewed session
+//	@Tags			Core
+//	@Accept			json
+//	@Produce		json
+//	@Param			session_id		path		string					true	"The id of the resource"
+//	@Success		200				{object}	openapi.ExecResponse	"The execution has finished"
+//	@Success		202				{object}	openapi.ExecResponse	"The execution is still in progress"
+//	@Failure		400,404,409,500	{object}	openapi.HTTPError
+//	@Router			/sessions/{session_id}/exec [post]
 func RunReviewedExec(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	log := pgusers.ContextLogger(c)
 
 	sessionId := c.Param("session_id")
-
-	var req ExecRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
-		return
-	}
-
 	review, err := pgreview.New().FetchOneBySid(ctx, sessionId)
 	if err != nil {
 		log.Errorf("failed retrieving review, err=%v", err)
@@ -127,6 +126,7 @@ func RunReviewedExec(c *gin.Context) {
 		userAgent = "webapp.review.exec"
 	}
 
+	// TODO: refactor to use response from openapi package
 	client, err := clientexec.New(&clientexec.Options{
 		OrgID:          ctx.GetOrgID(),
 		SessionID:      session.ID,

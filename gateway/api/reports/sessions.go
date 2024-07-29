@@ -8,6 +8,18 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
+// Session Reports
+// TODO: refactor to use types from openapi package
+//
+//	@Summary		Session Reports
+//	@Description	The report payload groups sessions by info types and by a custom field (`group_by`) provided by the client.
+//	@Description	The items returns data containing the sum of redact fields performed by a given info type aggregated by the `group_by` attribute.
+//	@Tags			Core
+//	@Produce		json
+//	@Param			params	query		openapi.SessionReportParams	false	"-"
+//	@Success		200		{object}	openapi.SessionReport
+//	@Failure		400,500	{object}	openapi.HTTPError
+//	@Router			/reports/sessions [get]
 func SessionReport(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	var opts []*pgreports.SessionOption

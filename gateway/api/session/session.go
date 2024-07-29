@@ -17,6 +17,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
 	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
@@ -34,6 +35,18 @@ type SessionPostBody struct {
 	ClientArgs []string            `json:"client_args"`
 }
 
+// RunExec
+//
+//	@Summary				Exec
+//	@Description.markdown	run-exec
+//	@Tags					Core
+//	@Accept					json
+//	@Produce				json
+//	@Param					request		body		openapi.ExecRequest		true	"The request body resource"
+//	@Success				200			{object}	openapi.ExecResponse	"The execution has finished"
+//	@Success				202			{object}	openapi.ExecResponse	"The execution is still in progress"
+//	@Failure				400,422,500	{object}	openapi.HTTPError
+//	@Router					/sessions [post]
 func Post(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	log := pgusers.ContextLogger(c)
@@ -71,6 +84,7 @@ func Post(c *gin.Context) {
 		userAgent = "webapp.editor.exec"
 	}
 
+	// TODO: refactor to use response from openapi package
 	client, err := clientexec.New(&clientexec.Options{
 		OrgID:          ctx.GetOrgID(),
 		SessionID:      sessionID,
@@ -142,16 +156,32 @@ func CoerceMetadataFields(metadata map[string]any) error {
 	return nil
 }
 
+// ListSessions
+//
+//	@Summary		List Sessions
+//	@Description	List session resources
+//	@Tags			Core
+//	@Produce		json
+//	@Param			user		query		string	false	"Filter by user's subject id"
+//	@Param			connection	query		string	false	"Filter by connection's name"
+//	@Param			type		query		string	false	"Filter by connection's type"
+//	@Param			start_date	query		string	false	"Filter starting on this date"	Format(RFC3339)
+//	@Param			end_date	query		string	false	"Filter ending on this date"	Format(RFC3339)
+//	@Param			limit		query		int		false	"Limit the amount of records to return (max: 100)"
+//	@Param			offset		query		int		false	"Offset to paginate through resources"
+//	@Success		200			{object}	openapi.SessionList
+//	@Failure		500			{object}	openapi.HTTPError
+//	@Router			/sessions [get]
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	log := pgusers.ContextLogger(c)
 
-	var options []*types.SessionOption
-	for _, optKey := range types.AvailableSessionOptions {
+	var options []*openapi.SessionOption
+	for _, optKey := range openapi.AvailableSessionOptions {
 		if queryOptVal, ok := c.GetQuery(string(optKey)); ok {
 			var optVal any
 			switch optKey {
-			case types.SessionOptionStartDate, types.SessionOptionEndDate:
+			case openapi.SessionOptionStartDate, openapi.SessionOptionEndDate:
 				optTimeVal, err := time.Parse(time.RFC3339, queryOptVal)
 				if err != nil {
 					log.Warnf("failed listing sessions, wrong start_date option value, err=%v", err)
@@ -159,11 +189,11 @@ func List(c *gin.Context) {
 					return
 				}
 				optVal = optTimeVal
-			case types.SessionOptionLimit, types.SessionOptionOffset:
+			case openapi.SessionOptionLimit, openapi.SessionOptionOffset:
 				if paginationOptVal, err := strconv.Atoi(queryOptVal); err == nil {
 					optVal = paginationOptVal
 				}
-			case types.SessionOptionUser:
+			case openapi.SessionOptionUser:
 				// don't let it use this filter if it's not an admin
 				if !ctx.IsAdminUser() {
 					continue
@@ -176,7 +206,7 @@ func List(c *gin.Context) {
 		}
 	}
 	if !ctx.IsAdminUser() {
-		options = append(options, WithOption(types.SessionOptionUser, ctx.UserID))
+		options = append(options, WithOption(openapi.SessionOptionUser, ctx.UserID))
 	}
 	sessionList, err := sessionstorage.List(ctx, options...)
 	if err != nil {
@@ -189,6 +219,17 @@ func List(c *gin.Context) {
 	c.PureJSON(http.StatusOK, sessionList)
 }
 
+// GetSessionByID
+//
+//	@Summary				Get Session
+//	@Description.markdown	get-session-by-id
+//	@Tags					Core
+//	@Param					extension	query	openapi.SessionGetByIDParams	false	"-"
+//	@Param					session_id	path	string							true	"The id of the resource"
+//	@Produce				json
+//	@Success				200		{object}	openapi.Session
+//	@Failure				404,500	{object}	openapi.HTTPError
+//	@Router					/sessions/{session_id} [get]
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	log := pgusers.ContextLogger(c)
@@ -290,6 +331,19 @@ func Get(c *gin.Context) {
 	})
 }
 
+// DownloadSession
+//
+//	@Summary		Download Session
+//	@Description	Download session by id
+//	@Tags			Core
+//	@Produce		octet-stream,json
+//	@Param			session_id	path		string	true	"The id of the resource"
+//	@Success		200			{string}	string
+//	@Header			200			{string}	Content-Type		"application/octet-stream"
+//	@Header			200			{string}	Content-Disposition	"application/octet-stream"
+//	@Header			200			{int}		Accept-Length		"size in bytes of the content"
+//	@Failure		404,500		{object}	openapi.HTTPError
+//	@Router			/sessions/{session_id}/download [get]
 func DownloadSession(c *gin.Context) {
 	// ctx := storagev2.ParseContext(c)
 	sid := c.Param("session_id")

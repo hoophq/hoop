@@ -34,6 +34,7 @@ type Config struct {
 	migrationPathFiles    string
 	apiURL                string
 	apiHostname           string
+	apiHost               string
 	apiScheme             string
 	webappUsersManagement string
 
@@ -91,6 +92,7 @@ func Load() error {
 		apiURL:                fmt.Sprintf("%s://%s", apiRawURL.Scheme, apiRawURL.Host),
 		apiHostname:           apiRawURL.Hostname(),
 		apiScheme:             apiRawURL.Scheme,
+		apiHost:               apiRawURL.Host,
 		askAICredentials:      askAICred,
 		pgCred:                pgCred,
 		migrationPathFiles:    migrationPathFiles,
@@ -180,8 +182,11 @@ func (c Config) LicenseSigningKey() (string, *rsa.PrivateKey) {
 	return c.licenseSignerOrgID, c.licenseSigningKey
 }
 
-func (c Config) ApiURL() string                { return c.apiURL }
-func (c Config) ApiHostname() string           { return c.apiHostname }
+func (c Config) ApiURL() string      { return c.apiURL }
+func (c Config) ApiHostname() string { return c.apiHostname }
+
+// ApiHost host or host:port
+func (c Config) ApiHost() string               { return c.apiHost }
 func (c Config) ApiScheme() string             { return c.apiScheme }
 func (c Config) WebhookAppKey() string         { return c.webhookAppKey }
 func (c Config) GcpDLPJsonCredentials() string { return c.gcpDLPJsonCredentials }

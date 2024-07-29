@@ -1,6 +1,7 @@
 package sessionstorage
 
 import (
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -27,7 +28,7 @@ func FindOne(ctx pgrest.OrgContext, sessionID string) (*types.Session, error) {
 	return sess, nil
 }
 
-func List(ctx *storagev2.Context, opts ...*types.SessionOption) (*types.SessionList, error) {
+func List(ctx *storagev2.Context, opts ...*openapi.SessionOption) (*openapi.SessionList, error) {
 	var options []*pgrest.SessionOption
 	for _, opt := range opts {
 		options = append(options, &pgrest.SessionOption{
@@ -42,29 +43,29 @@ func List(ctx *storagev2.Context, opts ...*types.SessionOption) (*types.SessionL
 		}
 		return nil, err
 	}
-	sessionList := &types.SessionList{
+	sessionList := &openapi.SessionList{
 		Total:       sl.Total,
 		HasNextPage: sl.HasNextPage,
 	}
 	for _, s := range sl.Items {
 		// _, eventSize := s.GetBlobStream()
-		sessionList.Items = append(sessionList.Items, types.Session{
-			ID:               s.ID,
-			OrgID:            s.OrgID,
-			Script:           types.SessionScript{"data": ""}, // do not show the script on listing
-			Labels:           s.Labels,
-			Metadata:         s.Metadata,
-			UserEmail:        s.UserEmail,
-			UserID:           s.UserID,
-			UserName:         s.UserName,
-			Type:             s.ConnectionType,
-			Connection:       s.Connection,
-			Verb:             s.Verb,
-			Status:           s.Status,
-			EventStream:      nil,
-			NonIndexedStream: nil,
-			StartSession:     s.GetCreatedAt(),
-			EndSession:       s.GetEndedAt(),
+		sessionList.Items = append(sessionList.Items, openapi.Session{
+			ID:          s.ID,
+			OrgID:       s.OrgID,
+			Script:      openapi.SessionScriptType{"data": ""}, // do not show the script on listing
+			Labels:      s.Labels,
+			Metadata:    s.Metadata,
+			UserEmail:   s.UserEmail,
+			UserID:      s.UserID,
+			UserName:    s.UserName,
+			Type:        s.ConnectionType,
+			Connection:  s.Connection,
+			Verb:        s.Verb,
+			Status:      s.Status,
+			EventStream: nil,
+			// NonIndexedStream: nil,
+			StartSession: s.GetCreatedAt(),
+			EndSession:   s.GetEndedAt(),
 		})
 	}
 	return sessionList, nil

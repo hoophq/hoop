@@ -32,8 +32,21 @@ type PluginRequest struct {
 	Priority    int                        `json:"priority"`
 }
 
+// CreatePlugin
+//
+//	@Summary		Create Plugin
+//	@Description	Create Plugin resource
+//	@Tags			Core
+//	@Accept			json
+//	@Produce		json
+//	@Param			request		body		openapi.Plugin	true	"The request body resource"
+//	@Success		201			{object}	openapi.Plugin
+//	@Failure		400,422,500	{object}	openapi.HTTPError
+//	@Router			/plugins [post]
 func Post(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
+
+	// TODO: refactor to use openapi.Plugin type
 	var req PluginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
@@ -94,9 +107,21 @@ func Post(c *gin.Context) {
 		return
 	}
 	redactPluginConfig(newPlugin.Config)
-	c.PureJSON(200, &newPlugin)
+	c.PureJSON(http.StatusCreated, &newPlugin)
 }
 
+// UpdatePlugin
+//
+//	@Summary		Update Plugin
+//	@Description	Update Plugin resource. The `config` and `name` attributes are immutable for this endpoint.
+//	@Tags			Core
+//	@Accept			json
+//	@Produce		json
+//	@Param			name		path		string			true	"The name of the resource"
+//	@Param			request		body		openapi.Plugin	true	"The request body resource"
+//	@Success		200			{object}	openapi.Plugin
+//	@Failure		400,404,500	{object}	openapi.HTTPError
+//	@Router			/plugins/{name} [put]
 func Put(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	var req PluginRequest
@@ -138,9 +163,21 @@ func Put(c *gin.Context) {
 		return
 	}
 	existingPlugin.Config = pluginConfig
-	c.PureJSON(200, existingPlugin)
+	c.PureJSON(http.StatusOK, existingPlugin)
 }
 
+// UpdatePluginConfig
+//
+//	@Summary		Update Plugin Config
+//	@Description	Update the Plugin resource top level configuration.
+//	@Tags			Core
+//	@Accept			json
+//	@Produce		json
+//	@Param			name			path		string					true	"The name of the plugin"
+//	@Param			request			body		openapi.PluginConfig	true	"The request body resource"
+//	@Success		200				{object}	openapi.Plugin
+//	@Failure		400,404,422,500	{object}	openapi.HTTPError
+//	@Router			/plugins/{name}/config [put]
 func PutConfig(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	pluginName := c.Param("name")
@@ -191,9 +228,19 @@ func PutConfig(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating plugin configuration"})
 		return
 	}
-	c.PureJSON(200, existingPlugin)
+	c.PureJSON(http.StatusOK, existingPlugin)
 }
 
+// GetPlugin
+//
+//	@Summary		Get Plugin
+//	@Description	Get a plugin resource by name
+//	@Tags			Core
+//	@Produce		json
+//	@Param			name	path		string	true	"The name of the plugin"
+//	@Success		200		{object}	openapi.Plugin
+//	@Failure		404,500	{object}	openapi.HTTPError
+//	@Router			/plugins/{name} [get]
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	name := c.Param("name")
@@ -209,9 +256,18 @@ func Get(c *gin.Context) {
 		return
 	}
 	redactPluginConfig(obj.Config)
-	c.PureJSON(200, obj)
+	c.PureJSON(http.StatusOK, obj)
 }
 
+// ListPlugins
+//
+//	@Summary		List Plugins
+//	@Description	List all Plugin resources
+//	@Tags			Core
+//	@Produce		json
+//	@Success		200	{array}		openapi.Plugin
+//	@Failure		500	{object}	openapi.HTTPError
+//	@Router			/plugins [get]
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	itemList, err := pgplugins.New().FetchAll(ctx)
@@ -224,7 +280,7 @@ func List(c *gin.Context) {
 	for _, p := range itemList {
 		redactPluginConfig(p.Config)
 	}
-	c.PureJSON(200, itemList)
+	c.PureJSON(http.StatusOK, itemList)
 }
 
 func parsePluginConnections(c *gin.Context, req PluginRequest) ([]*types.PluginConnection, []string, error) {

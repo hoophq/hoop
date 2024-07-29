@@ -16,18 +16,15 @@ type SessionOption struct {
 }
 
 const (
-	OptionGroupBy    OptionKey = "group_by"
-	OptionID         OptionKey = "id"
-	OptionConnection OptionKey = "connection"
-	OptionType       OptionKey = "type"
-	OptionVerb       OptionKey = "verb"
-	OptionUser       OptionKey = "user"
-	OptionStartDate  OptionKey = "start_date"
-	OptionEndDate    OptionKey = "end_date"
+	OptionGroupBy   OptionKey = "group_by"
+	OptionID        OptionKey = "id"
+	OptionVerb      OptionKey = "verb"
+	OptionStartDate OptionKey = "start_date"
+	OptionEndDate   OptionKey = "end_date"
 
-	GroupByConnection string = "connection_name"
 	GroupByID         string = "id"
 	GroupByUser       string = "user_email"
+	GroupByConnection string = "connection_name"
 	GroupByType       string = "connection_type"
 
 	maxDaysRange float64 = 120 * 24

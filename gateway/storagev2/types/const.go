@@ -3,9 +3,8 @@ package types
 import "os"
 
 type (
-	ClientStatusType         string
-	UserStatusType           string
-	ServiceAccountStatusType string
+	ClientStatusType string
+	UserStatusType   string
 )
 
 // GroupAdmin is the name of the admin user, defaults to "admin"
@@ -30,9 +29,6 @@ const (
 	UserStatusActive    UserStatusType = "active"
 	UserStatusReviewing UserStatusType = "reviewing"
 	UserStatusInactive  UserStatusType = "inactive"
-
-	ServiceAccountStatusActive   ServiceAccountStatusType = "active"
-	ServiceAccountStatusInactive ServiceAccountStatusType = "inactive"
 )
 
 type ReviewStatus string

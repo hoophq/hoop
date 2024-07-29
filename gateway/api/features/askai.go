@@ -16,6 +16,16 @@ import (
 
 const defaultReqTimeout = time.Second * 30
 
+// OpenAI Chat Completions
+//
+//	@Summary		OpenAI Chat Completions
+//	@Description	Proxy to OpenAI chat completions `/vi/chat/completions`
+//	@Tags			Features
+//	@Accepts		json
+//	@Produces		json
+//	@Success		200
+//	@Failure		400,500	{object}	openapi.HTTPError
+//	@Router			/features/ask-ai/v1/chat/completions [post]
 func PostChatCompletions(c *gin.Context) {
 	appConfig := appconfig.Get()
 	if !appConfig.IsAskAIAvailable() {
