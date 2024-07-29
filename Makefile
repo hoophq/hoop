@@ -32,9 +32,9 @@ run-dev-postgres:
 build-dev-client:
 	go build -ldflags "-s -w" -o ${HOME}/.hoop/bin/hoop github.com/hoophq/hoop/client
 
-test: test_oss test-enterprise
+test: test-oss test-enterprise
 
-test_oss:
+test-oss:
 	rm libhoop || true
 	ln -s _libhoop libhoop
 	env CGO_ENABLED=0 go test -v github.com/hoophq/hoop/...
@@ -45,8 +45,7 @@ test-enterprise:
 	env CGO_ENABLED=0 go test -v github.com/hoophq/hoop/...
 
 generate-openapi-docs:
-	cd ./gateway/
-	go run github.com/swaggo/swag/cmd/swag@v1.16.3 init -g api/server.go -o api/openapi/autogen --outputTypes go --markdownFiles api/openapi/docs/
+	cd ./gateway/ && go run github.com/swaggo/swag/cmd/swag@v1.16.3 init -g api/server.go -o api/openapi/autogen --outputTypes go --markdownFiles api/openapi/docs/
 
 publish:
 	./scripts/publish-release.sh
@@ -115,4 +114,4 @@ release-aws-cf-templates:
 	aws s3 cp --region ap-southeast-2 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-ap-southeast-2/${VERSION}/hoopdev-platform.template.yaml
 	aws s3 cp --region ap-southeast-2 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-ap-southeast-2/latest/hoopdev-platform.template.yaml
 
-.PHONY: run-dev run-dev-postgres test-enterprise test_oss test generate-openapi-docs build build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release release-aws-cf-templates
+.PHONY: run-dev run-dev-postgres test-enterprise test-oss test generate-openapi-docs build build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release release-aws-cf-templates
