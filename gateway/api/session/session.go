@@ -169,7 +169,7 @@ func CoerceMetadataFields(metadata map[string]any) error {
 //	@Param			end_date	query		string	false	"Filter ending on this date"	Format(RFC3339)
 //	@Param			limit		query		int		false	"Limit the amount of records to return (max: 100)"
 //	@Param			offset		query		int		false	"Offset to paginate through resources"
-//	@Success		200			{array}		openapi.Session
+//	@Success		200			{object}	openapi.SessionList
 //	@Failure		500			{object}	openapi.HTTPError
 //	@Router			/sessions [get]
 func List(c *gin.Context) {

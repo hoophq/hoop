@@ -17,7 +17,7 @@ import (
 //	@Tags			Core
 //	@Produce		json
 //	@Param			params	query		openapi.SessionReportParams	false	"-"
-//	@Success		200		{array}		openapi.SessionReport
+//	@Success		200		{object}	openapi.SessionReport
 //	@Failure		400,500	{object}	openapi.HTTPError
 //	@Router			/reports/sessions [get]
 func SessionReport(c *gin.Context) {

@@ -268,7 +268,7 @@ func Delete(c *gin.Context) {
 //	@Tags			User Management
 //	@Produce		json
 //	@Param			emailOrID	path		string	true	"The subject identifier or email of the user"
-//	@Success		200			{array}		openapi.User
+//	@Success		200			{object}	openapi.User
 //	@Failure		404,500		{object}	openapi.HTTPError
 //	@Router			/users/{emailOrID} [get]
 func GetUserByEmailOrID(c *gin.Context) {
@@ -324,7 +324,7 @@ func getAskAIFeatureStatus(ctx pgrest.OrgContext) (string, error) {
 //	@Description	Get own user's information
 //	@Tags			User Management
 //	@Produce		json
-//	@Success		200	{array}		openapi.UserInfo
+//	@Success		200	{object}		openapi.UserInfo
 //	@Failure		500	{object}	openapi.HTTPError
 //	@Router			/userinfo [get]
 func GetUserInfo(c *gin.Context) {
@@ -388,7 +388,7 @@ func GetUserInfo(c *gin.Context) {
 //	@Tags			User Management
 //	@Param			request	body	openapi.UserPatchSlackID	true	"The request body resource"
 //	@Produce		json
-//	@Success		200			{array}		openapi.User
+//	@Success		200			{object}		openapi.User
 //	@Failure		400,422,500	{object}	openapi.HTTPError
 //	@Router			/users/self/slack [patch]
 func PatchSlackID(c *gin.Context) {
