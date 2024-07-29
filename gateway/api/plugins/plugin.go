@@ -259,7 +259,7 @@ func Get(c *gin.Context) {
 	c.PureJSON(http.StatusOK, obj)
 }
 
-// GetPlugin
+// ListPlugins
 //
 //	@Summary		List Plugins
 //	@Description	List all Plugin resources

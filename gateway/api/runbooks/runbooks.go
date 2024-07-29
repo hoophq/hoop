@@ -56,7 +56,7 @@ func List(c *gin.Context) {
 
 	p, err := pgplugins.New().FetchOne(ctx, plugintypes.PluginRunbooksName)
 	if err != nil {
-		log.Error(err)
+		log.Errorf("failed retrieving runbook plugin, reason=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError,
 			gin.H{"message": "failed retrieving runbook plugin"})

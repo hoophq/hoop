@@ -2,11 +2,11 @@ package apifeatures
 
 import (
 	"fmt"
-	"libhoop/log"
 	"net/http"
 	"slices"
 
 	"github.com/gin-gonic/gin"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"

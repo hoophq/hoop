@@ -53,6 +53,19 @@ make build-dev-client
 
 > Append `$HOME/.hoop/bin` to your `$PATH` in your profile to find commands when typing in your shell
 
+## Swagger / OpenAPI
+
+This project uses [swag](https://github.com/swaggo/swag) to generate the api documentation. The CI will generate the files on runtime, to generate it local install the version `1.16.3+` and run the command below:
+
+```sh
+make generate-openapi-docs
+```
+
+The gateway will expose the swagger at `$API_URL/api/openapiv2.json`, use your favorite openapi ui to view the documentation:
+
+- https://swagger.io/tools/swagger-ui/
+- https://redocly.github.io/redoc/
+
 ## Postgrest
 
 This project uses [postgrest](https://postgrest.org/en/stable/) as an interface to Postgres, it allows creating api's based on tables schema and permissions.

@@ -32,7 +32,7 @@ run-dev-postgres:
 build-dev-client:
 	go build -ldflags "-s -w" -o ${HOME}/.hoop/bin/hoop github.com/hoophq/hoop/client
 
-test: test-oss test-enterprise
+test: generate-openapi-docs test-oss test-enterprise
 
 test-oss:
 	rm libhoop || true

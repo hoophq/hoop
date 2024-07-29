@@ -44,9 +44,9 @@ func CreateAgentKey(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed generating dsn"})
 		return
 	}
-	c.JSON(http.StatusCreated, map[string]any{
-		"id":  agentID,
-		"key": dsn,
+	c.JSON(http.StatusCreated, openapi.OrgKeyResponse{
+		ID:  agentID,
+		Key: dsn,
 	})
 }
 

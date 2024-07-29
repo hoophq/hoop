@@ -159,7 +159,15 @@ type AgentListResponse struct {
 	// * platform - The operating system architecture where the agent is running
 	// * machine-id - The machine id of server
 	// * kernel-version - The kernel version of the server
-	Metadata map[string]string `json:"metadata"`
+	Metadata map[string]string `json:"metadata" example:"hostname:johnwick.local,version:1.23.14,compiler:gcc,kernel-version:Linux 9acfe93d8195 5.15.49-linuxkit,platform:amd64,machine-id:id"`
+	// DEPRECATE top level metadata keys
+	Hostname      string `json:"hostname" example:"john.wick.local"`
+	MachineID     string `json:"machine_id" example:""`
+	KernelVersion string `json:"kernel_version" example:"Linux 9acfe93d8195 5.15.49-linuxkit"`
+	Version       string `json:"version" example:"1.23.10"`
+	GoVersion     string `json:"goversion" example:"1.22.4"`
+	Compiler      string `json:"compiler" example:"gcc"`
+	Platform      string `json:"platform" example:"amd64"`
 }
 
 type Connection struct {

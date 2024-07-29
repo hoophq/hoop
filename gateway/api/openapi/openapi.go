@@ -1,10 +1,10 @@
 package openapi
 
 import (
-	"libhoop/log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/version"
 	_ "github.com/hoophq/hoop/gateway/api/openapi/autogen"
 	"github.com/hoophq/hoop/gateway/appconfig"

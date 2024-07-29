@@ -173,6 +173,14 @@ func List(c *gin.Context) {
 			Mode:     a.Mode,
 			Status:   a.Status,
 			Metadata: a.Metadata,
+			// DEPRECATE top level metadata keys
+			Hostname:      a.GetMeta("hostname"),
+			MachineID:     a.GetMeta("machine_id"),
+			KernelVersion: a.GetMeta("kernel_version"),
+			Version:       a.GetMeta("version"),
+			GoVersion:     a.GetMeta("goversion"),
+			Compiler:      a.GetMeta("compiler"),
+			Platform:      a.GetMeta("platform"),
 		})
 	}
 	c.JSON(http.StatusOK, result)
