@@ -1973,7 +1973,7 @@ const docTemplate = `{
                         },
                         "headers": {
                             "Accept-Length": {
-                                "type": "int",
+                                "type": "integer",
                                 "description": "size in bytes of the content"
                             },
                             "Content-Disposition": {

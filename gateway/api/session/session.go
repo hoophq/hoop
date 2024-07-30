@@ -341,7 +341,7 @@ func Get(c *gin.Context) {
 //	@Success		200			{string}	string
 //	@Header			200			{string}	Content-Type		"application/octet-stream"
 //	@Header			200			{string}	Content-Disposition	"application/octet-stream"
-//	@Header			200			{int}		Accept-Length		"size in bytes of the content"
+//	@Header			200			{integer}	Accept-Length		"size in bytes of the content"
 //	@Failure		404,500		{object}	openapi.HTTPError
 //	@Router			/sessions/{session_id}/download [get]
 func DownloadSession(c *gin.Context) {

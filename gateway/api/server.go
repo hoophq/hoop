@@ -144,6 +144,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	reviewHandler := reviewapi.NewHandler(&api.ReviewHandler)
 	loginHandler := loginapi.New(api.IDProvider)
 	route.GET("/openapiv2.json", openapi.Handler)
+	route.GET("/openapiv3.json", openapi.HandlerV3)
 	route.GET("/login", loginHandler.Login)
 	route.GET("/callback", loginHandler.LoginCallback)
 	route.GET("/healthz", apihealthz.LivenessHandler())
