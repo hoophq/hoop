@@ -61,14 +61,15 @@
        list are not being used. Go to your IDP to setup groups and change groups statuses."]]]])
 
 (defn section-header
-  [users user-groups]
+  [current-user users user-groups]
   [:div {:class "grid grid-cols-1 lg:grid-cols-4 gap-small lg:gap-0 items-center mb-large"}
    [headings/h2 (str (count users) " Member" (if (< (count users) 2) "" "s"))]
    [:div {:class "search-bar lg:col-span-2"}]
-   [:div
-    [button/primary {:text "Create user"
-                     :full-width true
-                     :on-click #(rf/dispatch [:open-modal [user-form/main :create nil user-groups]])}]]])
+   (when (:user-management? current-user)
+     [:div
+      [button/primary {:text "Create user"
+                       :full-width true
+                       :on-click #(rf/dispatch [:open-modal [user-form/main :create nil user-groups]])}]])])
 
 (defn main []
   (let [current-user (rf/subscribe [:users->current-user])
@@ -82,7 +83,7 @@
       (js/setTimeout #(reset! alert-multitenant-active? false) 7000)
       [:div {:class "bg-white rounded-lg h-full p-6 overflow-y-auto"}
        [:section
-        [section-header @users @user-groups]
+        [section-header (:data @current-user) @users @user-groups]
         (when @alert-multitenant-active? [alert-multitenant-message])
         [:div {:class "hidden lg:block"}
          [users-list @users @user-groups]]

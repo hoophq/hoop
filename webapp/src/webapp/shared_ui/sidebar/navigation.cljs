@@ -32,7 +32,6 @@
                                  (some #(= plugin-name (:name %)) my-plugins))
             admin? (:admin? user-data)
             free-license? (:free-license? user-data)
-            user-management? (:user-management? user-data)
             current-route @current-route]
         [:<>
          [:div {:class "flex my-8 shrink-0 items-center"}
@@ -94,7 +93,7 @@
                                                           :aria-hidden "true"}]
                "Connections"]]]
 
-            (when (and user-management? admin?)
+            (when admin?
               [:li
                [:a {:href "#"
                     :on-click #(rf/dispatch [:navigate :users])

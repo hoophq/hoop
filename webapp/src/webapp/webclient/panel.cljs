@@ -380,7 +380,7 @@
                                                                           :subtype (:subtype %)
                                                                           :session-id nil
                                                                           :status :ready})
-                                                               (filter #(:selected %) (:data @run-connections-list)))])]))))
+                                                               run-connections-list-selected)])]))))
 
 (defn main []
   (let [script-response (rf/subscribe [:editor-plugin->script])]

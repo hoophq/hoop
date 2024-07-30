@@ -1,4 +1,5 @@
-(ns webapp.db)
+(ns webapp.db
+  (:require [clojure.edn :refer [read-string]]))
 
 (def default-db
   {:agents-embedded []
@@ -25,7 +26,7 @@
    :editor-plugin->current-connection {:status :loading :data nil}
    :editor-plugin->filtered-run-connection-list nil
    :editor-plugin->run-connection-list {:status :loading :data nil}
-   :editor-plugin->run-connection-list-selected nil
+   :editor-plugin->run-connection-list-selected (or (read-string (.getItem js/localStorage "run-connection-list-selected")) nil)
    :editor-plugin->select-language "shell"
    :editor-plugin->script []
    :gateway->info {:loading true, :data nil}
