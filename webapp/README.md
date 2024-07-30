@@ -1,9 +1,5 @@
 # Hoop Web App
 
-[![Hoop Release](https://img.shields.io/github/v/release/hoophq/hoopcli.svg?style=flat)](https://github.com/hoophq/hoop/actions/workflows/release.yml)
-[![Hoop Release](https://github.com/hoophq/hoop/actions/workflows/release.yml/badge.svg)](https://github.com/hoophq/hoop/actions/workflows/release.yml)
-[![Hoop Api and Webapp Release](https://github.com/hoophq/api/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/hoophq/api/actions/workflows/release.yml)
-
 This is the code for Hoop Web Application, designed to be a web portal for Hoop main users: DevOps and Software Developers.
 
 Application powered by [re-frame](https://github.com/day8/re-frame).

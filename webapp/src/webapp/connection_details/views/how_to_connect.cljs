@@ -77,7 +77,7 @@
              [logs/container
               {:status :success
                :id "install-step"
-               :logs (str "brew tap hoophq/hoopcli https://github.com/hoophq/hoopcli\nbrew install hoop")} ""]
+               :logs (str "brew tap hoophq/brew https://github.com/hoophq/brew\nbrew install hoop")} ""]
              [:div {:class "flex gap-small items-center"}
               [circle-text "2"]
               [:label {:class "text-xs text-gray-700"}

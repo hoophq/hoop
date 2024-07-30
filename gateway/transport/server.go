@@ -78,7 +78,7 @@ func (s *Server) StartRPCServer() {
 		)
 	}
 	pb.RegisterTransportServer(grpcServer, s)
-	s.handleGracefulShutdown()
+	handleGracefulShutdown()
 	log.Infof("server transport created, tls=%v", s.TLSConfig != nil)
 	if err := grpcServer.Serve(listener); err != nil {
 		sentry.CaptureException(err)
@@ -105,27 +105,6 @@ func (s *Server) PreConnect(ctx context.Context, req *pb.PreConnectRequest) (*pb
 	}
 	connectionstatus.SetOnlinePreConnect(pgrest.NewOrgContext(orgID), streamtypes.NewStreamID(agentID, req.Name))
 	return resp, nil
-}
-
-func validateConnectionAccessMode(clientVerb, clientOrigin string, connInfo types.ConnectionInfo) error {
-	var currentAccessMode string
-	switch {
-	case clientVerb == pb.ClientVerbExec && clientOrigin == pb.ConnectionOriginClient,
-		clientVerb == pb.ClientVerbExec && clientOrigin == pb.ConnectionOriginClientAPI:
-		currentAccessMode = "exec"
-	case clientVerb == pb.ClientVerbConnect:
-		currentAccessMode = "connect"
-	case clientVerb == pb.ClientVerbExec && clientOrigin == pb.ConnectionOriginClientAPIRunbooks:
-		currentAccessMode = "runbooks"
-	}
-	accessModes := map[string]string{
-		"exec":     connInfo.AccessModeExec,
-		"connect":  connInfo.AccessModeConnect,
-		"runbooks": connInfo.AccessModeRunbooks}
-	if accessModes[currentAccessMode] == "disabled" {
-		return status.Error(codes.FailedPrecondition, fmt.Sprintf("%s is disabeld for this connection", currentAccessMode))
-	}
-	return nil
 }
 
 func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
@@ -203,7 +182,28 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 	}
 }
 
-func (s *Server) handleGracefulShutdown() {
+func validateConnectionAccessMode(clientVerb, clientOrigin string, connInfo types.ConnectionInfo) error {
+	var currentAccessMode string
+	switch {
+	case clientVerb == pb.ClientVerbExec && clientOrigin == pb.ConnectionOriginClient,
+		clientVerb == pb.ClientVerbExec && clientOrigin == pb.ConnectionOriginClientAPI:
+		currentAccessMode = "exec"
+	case clientVerb == pb.ClientVerbConnect:
+		currentAccessMode = "connect"
+	case clientVerb == pb.ClientVerbExec && clientOrigin == pb.ConnectionOriginClientAPIRunbooks:
+		currentAccessMode = "runbooks"
+	}
+	accessModes := map[string]string{
+		"exec":     connInfo.AccessModeExec,
+		"connect":  connInfo.AccessModeConnect,
+		"runbooks": connInfo.AccessModeRunbooks}
+	if accessModes[currentAccessMode] == "disabled" {
+		return status.Error(codes.FailedPrecondition, fmt.Sprintf("%s is disabeld for this connection", currentAccessMode))
+	}
+	return nil
+}
+
+func handleGracefulShutdown() {
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc,
 		syscall.SIGHUP,

@@ -8,7 +8,7 @@ Please refer to Helm's [documentation](https://helm.sh/docs/) to get started.
 
 ## Installing Self Hosted
 
-Installing latest version of hoop. For different version check out the [releases page](https://github.com/hoophq/hoopcli/releases)
+Installing latest version of hoop. For different version check out the [releases page](https://github.com/hoophq/hoop/releases)
 
 > Please refer to [gateway configuration reference](https://hoop.dev/docs/configuring/gateway)
 > and [Kubernetes configuration](https://hoop.dev/docs/self-hosting/kubernetes) for more information.
