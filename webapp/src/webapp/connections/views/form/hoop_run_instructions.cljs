@@ -55,7 +55,7 @@
          {:id "install-hoop"
           :code (if (= @select-operation-system "macos")
                   (str
-                   "brew tap hoophq/hoopcli https://github.com/hoophq/hoopcli\n"
+                   "brew tap brew https://github.com/hoophq/brew\n"
                    "brew install hoop")
                   "curl -s -L https://releases.hoop.dev/release/install-cli.sh | sh")}]]])))
 
