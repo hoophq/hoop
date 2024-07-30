@@ -83,7 +83,6 @@
             plugins-enabled (filterv (fn [plugin]
                                        (some #(= (:name plugin) (:name %)) my-plugins)) constants/plugins-routes)
             admin? (:admin? user-data)
-            user-management? (:user-management? user-data)
             sidebar-open? (if (= :opened (:status @sidebar-desktop))
                             true
                             false)
@@ -156,7 +155,7 @@
                  [:span {:class "sr-only"}
                   "Connections"]]]]
 
-              (when (and user-management? admin?)
+              (when admin?
                 [:li
                  [:a {:href "/organization/users"
                       :class (str (hover-side-menu-link? "/organization/users" current-route)
