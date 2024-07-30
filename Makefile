@@ -32,7 +32,7 @@ run-dev-postgres:
 build-dev-client:
 	go build -ldflags "-s -w" -o ${HOME}/.hoop/bin/hoop github.com/hoophq/hoop/client
 
-test: generate-openapi-docs test-oss test-enterprise
+test: test-oss test-enterprise
 
 test-oss:
 	rm libhoop || true
@@ -45,12 +45,12 @@ test-enterprise:
 	env CGO_ENABLED=0 go test -v github.com/hoophq/hoop/...
 
 generate-openapi-docs:
-	cd ./gateway/ && env CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go run github.com/swaggo/swag/cmd/swag@v1.16.3 init -g api/server.go -o api/openapi/autogen --outputTypes go --markdownFiles api/openapi/docs/
+	cd ./gateway/ && go run github.com/swaggo/swag/cmd/swag@v1.16.3 init -g api/server.go -o api/openapi/autogen --outputTypes go --markdownFiles api/openapi/docs/
 
 publish:
 	./scripts/publish-release.sh
 
-build: generate-openapi-docs
+build:
 	rm -rf ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} && mkdir -p ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
 	env CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags ${LDFLAGS} -o ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}/ client/hoop.go
 	tar -czvf ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}.tar.gz -C ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} .

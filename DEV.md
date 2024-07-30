@@ -55,7 +55,7 @@ make build-dev-client
 
 ## Swagger / OpenAPI
 
-This project uses [swag](https://github.com/swaggo/swag) to generate the api documentation. The CI will generate the files on runtime, to generate it local install the version `1.16.3+` and run the command below:
+This project uses [swag](https://github.com/swaggo/swag) to generate the api documentation. Make sure to generate it every time a change is made in the API:
 
 ```sh
 make generate-openapi-docs
