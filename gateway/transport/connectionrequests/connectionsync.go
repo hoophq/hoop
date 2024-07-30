@@ -25,7 +25,6 @@ var (
 		plugintypes.PluginEditorName,
 		plugintypes.PluginSlackName,
 		plugintypes.PluginRunbooksName,
-		plugintypes.PluginWebhookName,
 	}
 )
 
@@ -74,6 +73,10 @@ func upsertConnection(ctx pgrest.OrgContext, agentID string, req *proto.PreConne
 	conn.Type = req.Type
 	conn.SubType = req.Subtype
 	conn.Status = pgrest.ConnectionStatusOnline
+	conn.AccessModeConnect = "enabled"
+	conn.AccessModeExec = "enabled"
+	conn.AccessModeRunbooks = "enabled"
+	conn.AccessSchema = "enabled"
 	for key, val := range req.Envs {
 		conn.Envs[key] = val
 	}
