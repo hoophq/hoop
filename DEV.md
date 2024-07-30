@@ -61,7 +61,7 @@ This project uses [swag](https://github.com/swaggo/swag) to generate the api doc
 make generate-openapi-docs
 ```
 
-The gateway will expose the swagger at `$API_URL/api/openapiv2.json`, use your favorite openapi ui to view the documentation:
+The gateway will expose the the openapi spec at `/api/openapiv2.json` and `/api/openapiv3.json`. Use your favorite openapi ui to view the documentation:
 
 - https://swagger.io/tools/swagger-ui/
 - https://redocly.github.io/redoc/
