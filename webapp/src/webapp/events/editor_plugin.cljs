@@ -1,52 +1,60 @@
 (ns webapp.events.editor-plugin
   (:require [clojure.core.reducers :as reducers]
+            [clojure.edn :refer [read-string]]
             [clojure.string :as string]
             [re-frame.core :as rf]))
 
 (rf/reg-event-fx
  :editor-plugin->get-run-connection-list
  (fn
-   [{:keys [db]} [_ current-connection-name]]
+   [{:keys [db]} [_]]
    {:db (assoc db :editor-plugin->run-connection-list {:status :loading :data {}}
-               :editor-plugin->run-connection-list-selected nil)
+               :editor-plugin->run-connection-list-selected
+               (or (read-string
+                    (.getItem js/localStorage "run-connection-list-selected")) nil))
     :fx [[:dispatch
           [:fetch {:method "GET"
                    :uri "/connections"
                    :on-success (fn [connections]
                                  (rf/dispatch [::editor-plugin->set-run-connection-list
-                                               connections
-                                               current-connection-name])
+                                               connections])
                                  (rf/dispatch [:editor-plugin->set-filtered-run-connection-list
-                                               connections
-                                               current-connection-name]))}]]]}))
+                                               connections]))}]]]}))
 
 (rf/reg-event-fx
  ::editor-plugin->set-run-connection-list
  (fn
-   [{:keys [db]} [_ connections current-connection-name]]
-   (let [connections-parsed (mapv (fn [{:keys [name type subtype status access_schema]}]
+   [{:keys [db]} [_ connections]]
+   (let [connection-list-cached (read-string (.getItem js/localStorage "run-connection-list-selected"))
+         is-cached? (fn [current-connection-name]
+                      (not-empty (filter #(= (:name %) current-connection-name) connection-list-cached)))
+         connections-parsed (mapv (fn [{:keys [name type subtype status access_schema]}]
                                     {:name name
                                      :type type
                                      :subtype subtype
                                      :status status
                                      :access_schema access_schema
-                                     :selected (if (= name current-connection-name)
+                                     :selected (if (is-cached? name)
                                                  true
                                                  false)})
                                   connections)]
-     {:db (assoc db :editor-plugin->run-connection-list {:data connections-parsed :status :ready})})))
+     {:db (assoc db :editor-plugin->run-connection-list {:data connections-parsed :status :ready}
+                 :editor-plugin->filtered-run-connection-list connections-parsed)})))
 
 (rf/reg-event-db
  :editor-plugin->set-filtered-run-connection-list
  (fn
-   [db [_ connections current-connection-name]]
-   (let [connections-parsed (mapv (fn [{:keys [name type subtype status selected access_schema]}]
+   [db [_ connections]]
+   (let [connection-list-cached (read-string (.getItem js/localStorage "run-connection-list-selected"))
+         is-cached? (fn [current-connection-name]
+                      (not-empty (filter #(= (:name %) current-connection-name) connection-list-cached)))
+         connections-parsed (mapv (fn [{:keys [name type subtype status selected access_schema]}]
                                     {:name name
                                      :type type
                                      :subtype subtype
                                      :status status
                                      :access_schema access_schema
-                                     :selected (if (= name current-connection-name)
+                                     :selected (if (is-cached? name)
                                                  true
                                                  selected)})
                                   connections)]
@@ -56,26 +64,28 @@
  :editor-plugin->toggle-select-run-connection
  (fn
    [{:keys [db]} [_ current-connection-name]]
-   (let [connections (:data (:editor-plugin->run-connection-list db))
+   (let [connection-list-cached (read-string (.getItem js/localStorage "run-connection-list-selected"))
+         connections (:data (:editor-plugin->run-connection-list db))
          current-connection (first (filter #(= (:name %) current-connection-name) (:data (:editor-plugin->run-connection-list db))))
+         is-cached? (not-empty (filter #(= (:name %) current-connection-name) connection-list-cached))
          new-connection-list (mapv (fn [connection]
                                      (if (= (:name connection) current-connection-name)
-                                       (assoc connection :selected (not (:selected connection)))
+                                       (assoc connection :selected (if is-cached?
+                                                                     false
+                                                                     (not (:selected connection))))
                                        connection))
                                    connections)
-         new-filtered-connection-list (mapv (fn [connection]
-                                              (if (= (:name connection) current-connection-name)
-                                                (assoc connection :selected (not (:selected connection)))
-                                                connection))
-                                            connections)
-         new-connection-list-selected (if (:selected current-connection)
+         new-connection-list-selected (if (or (:selected current-connection)
+                                              is-cached?)
                                         (remove #(= (:name %) current-connection-name)
                                                 (:editor-plugin->run-connection-list-selected db))
 
                                         (concat (:editor-plugin->run-connection-list-selected db)
                                                 [current-connection]))]
+     (.setItem js/localStorage "run-connection-list-selected"
+               (pr-str new-connection-list-selected))
      {:db (assoc db :editor-plugin->run-connection-list {:data new-connection-list :status :ready}
-                 :editor-plugin->filtered-run-connection-list new-filtered-connection-list
+                 :editor-plugin->filtered-run-connection-list new-connection-list
                  :editor-plugin->run-connection-list-selected new-connection-list-selected)})))
 
 (rf/reg-event-fx
