@@ -176,7 +176,6 @@
             run-connections-list-rest (filterv #(and (not (:selected %))
                                                      (not= (:name %) connection-name))
                                                @filtered-run-connections-list)
-            _ (println "run-connections-list-selected ->" run-connections-list-selected)
             keymap [{:key "Mod-Enter"
                      :run (fn [_]
                             (submit-task
