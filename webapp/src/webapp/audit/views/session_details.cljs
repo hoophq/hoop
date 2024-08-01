@@ -127,10 +127,11 @@
               [:span {:class "font-normal"}
                (str (count redacted-types)
                     " (" (first redacted-types)
-                    (when (>= count-less-1 1)
+                    (if (>= count-less-1 1)
                       (str  " + "
                             count-less-1
-                            " more)")))]])
+                            " more)")
+                      ")"))]])
            (when-not (.-open params)
              [:div
               [:span
@@ -163,7 +164,8 @@
              [:span
               "Total Redacted Data"]
              [:span {:class "font-semibold"}
-              (str total-redact " items")]]]]]]))]))
+              (str total-redact " "
+                   (if (<= total-redact 1) "item" "items"))]]]]]]))]))
 
 (defn- tooltip [text]
   [:div {:class "absolute -bottom-10 left-1/2 flex-col hidden mt-6 w-max group-hover:flex items-center -translate-x-1/2"}
