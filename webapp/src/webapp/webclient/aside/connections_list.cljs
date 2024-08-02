@@ -23,9 +23,10 @@
                             (when (= "online" (:status connection))
                               (rf/dispatch [:editor-plugin->toggle-select-run-connection (:name connection)])))}
           [:div {:class "flex items-center gap-regular"}
-           [:figure {:class "w-4"}
-            [:img {:src  (connection-constants/get-connection-icon connection :dark)
-                   :class "w-4"}]]
+           [:div
+            [:figure {:class "w-4"}
+             [:img {:src  (connection-constants/get-connection-icon connection :dark)
+                    :class "w-4"}]]]
            [:div {:class (str "flex flex-col justify-center")}
             [:span (:name connection)]
             (when (= "offline" (:status connection))

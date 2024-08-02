@@ -18,17 +18,20 @@
       (r/as-element
        [:<>
         [:> (.-Button ui/Disclosure)
-         {:class (str "h-8 p-2 w-full flex justify-between items-center gap-small "
+         {:class (str "p-2 w-full flex justify-between items-center gap-small "
                       "text-sm text-white bg-gray-800 "
                       (if (.-open params) "rounded-t-md" "rounded-md"))}
 
          [:div {:class "flex items-center gap-regular"}
-          [:figure {:class "w-5"}
-           [:img {:src  (connection-constants/get-connection-icon connection :dark)
-                  :class "w-9"}]]
-          [:span (:name connection)]]
-         [:> hero-solid-icon/EllipsisVerticalIcon {:class "text-white h-5 w-5 shrink-0"
-                                                   :aria-hidden "true"}]]
+          [:div
+           [:figure {:class "w-5"}
+            [:img {:src  (connection-constants/get-connection-icon connection :dark)
+                   :class "w-9"}]]]
+          [:span {:class "text-left"}
+           (:name connection)]]
+         [:div
+          [:> hero-solid-icon/EllipsisVerticalIcon {:class "text-white h-5 w-5 shrink-0"
+                                                    :aria-hidden "true"}]]]
         [:> (.-Panel ui/Disclosure) {:className "bg-gray-800 text-white p-2 rounded-b-md"}
          [:ul {:class "flex flex-col gap-2"}
           (when (and (show-tree? connection)
