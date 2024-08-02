@@ -1,16 +1,17 @@
 (ns webapp.events.reports
-  (:require
-   [re-frame.core :as rf]))
+  (:require [clojure.string :as cs]
+            [re-frame.core :as rf]))
 
 (rf/reg-event-fx
  :reports->get-report-by-session-id
  (fn
-   [{:keys [db]} [_ session-id]]
+   [{:keys [db]} [_ session]]
    {:db (assoc db :reports->session {:status :loading
                                      :data nil})
     :fx [[:dispatch [:fetch
                      {:method "GET"
-                      :uri (str "/reports/sessions?id=" session-id)
+                      :uri (str "/reports/sessions?id=" (:id session) "&start_date="
+                                (first (cs/split (:start_date session) #"T")))
                       :on-success #(rf/dispatch [::reports->set-session %])}]]]}))
 
 

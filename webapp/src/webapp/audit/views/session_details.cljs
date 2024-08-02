@@ -183,7 +183,7 @@
         clipboard-url (new clipboardjs ".copy-to-clipboard-url")]
     (when session
       (rf/dispatch [:audit->get-session-by-id session])
-      (rf/dispatch [:reports->get-report-by-session-id (:id session)]))
+      (rf/dispatch [:reports->get-report-by-session-id session]))
     (fn []
       (let [session (:session @session-details)
             user-name (:user_name session)
