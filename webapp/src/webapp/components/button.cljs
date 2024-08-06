@@ -174,10 +174,23 @@
                         (when disabled "cursor-not-allowed opacity-70"))}
    text])
 
-(defn tailwind-secondary [{:keys [text on-click type disabled full-width]}]
+(defn tailwind-secondary [{:keys [text on-click type disabled full-width outlined? dark?]}]
   [:button {:on-click on-click
             :type (or type "button")
             :disabled disabled
             :class (str (when full-width "w-full ")
-                        "rounded-md l p-2 text-xs font-semibold text-white shadow-sm hover:bg-white hover:bg-opacity-20")}
+                        "rounded-md leading-6 px-3.5 py-1.5 text-xs font-semibold "
+                        "shadow-sm hover:bg-white hover:bg-opacity-20"
+                        (when outlined? " border border-gray-300 text-gray-800")
+                        (when dark? " text-white "))}
+   text])
+
+
+(defn tailwind-tertiary [{:keys [text on-click type disabled full-width]}]
+  [:button {:on-click on-click
+            :type (or type "button")
+            :disabled disabled
+            :class (str (when full-width "w-full ")
+                        "rounded-md leading-6 px-3.5 py-1.5 text-xs font-semibold "
+                        "shadow-sm text-gray-800 bg-gray-100 hover:bg-opacity-20")}
    text])

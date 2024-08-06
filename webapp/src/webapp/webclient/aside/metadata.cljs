@@ -59,4 +59,5 @@
       (button/tailwind-secondary {:text "+ new metadata"
                                   :full-width true
                                   :on-click onclick
+                                  :dark? true
                                   :variant :small})]]))

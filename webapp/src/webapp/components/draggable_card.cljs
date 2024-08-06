@@ -1,5 +1,6 @@
 (ns webapp.components.draggable-card
-  (:require ["gsap/all" :refer [Draggable]]
+  (:require ["@heroicons/react/20/solid" :as hero-solid-icon]
+            ["gsap/all" :refer [Draggable]]
             [re-frame.core :as rf]
             [reagent.core :as r]
             [webapp.components.icon :as icon]))
@@ -10,14 +11,13 @@
                    :reagent-render (fn [status {:keys [component on-click-close on-click-expand]}]
                                      (if (= status :open)
                                        [:div {:class "draggable bg-white shadow-lg absolute bottom-10 left-10 z-50 rounded-lg border border-gray-200 overflow-auto pt-small pb-regular"}
-                                        [:div {:class "flex justify-end items-center gap-small px-small"}
+                                        [:div {:class "flex items-center gap-small px-small pb-3"}
                                          (when on-click-expand
                                            [:div {:class (str "rounded-full bg-gray-100"
                                                               " hover:bg-gray-200 transition cursor-pointer")
                                                   :on-click on-click-expand}
-                                            [:div {:class "p-0.5"}
-                                             [icon/regular {:size "4"
-                                                            :icon-name "arrows-pointing-out"}]]])
+                                            [:div {:class "p-2"}
+                                             [:> hero-solid-icon/ArrowsPointingOutIcon {:class "h-5 w-5"}]]])
                                          (when on-click-close
                                            [:div {:class (str "rounded-full bg-gray-100"
                                                               " hover:bg-gray-200 transition cursor-pointer")
@@ -41,7 +41,7 @@
                              #(rf/dispatch [:close-modal])
                              #(on-click-out))
         modal-size (if (= size :large)
-                     "w-full max-w-4xl" "max-w-lg w-full")]
+                     "w-full max-w-4xl" "max-w-xl w-full")]
     [:div {:id "modal-draggable-card"
            :class "fixed z-20 inset-0 overflow-y-auto"
            "aria-modal" true}

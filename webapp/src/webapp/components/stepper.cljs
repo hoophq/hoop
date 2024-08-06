@@ -1,69 +1,123 @@
 (ns webapp.components.stepper)
 
-(defn- complete-circle
-  []
-  [:span {:class "relative z-10 w-8 h-8 flex items-center justify-center bg-indigo-600 rounded-full group-hover:bg-indigo-800"}
-   [:svg {:class "w-5 h-5 text-white"
-          :xmlns "http://www.w3.org/2000/svg"
-          :viewBox "0 0 20 20"
-          :fill "currentColor"}
-    [:path {:fill-rule "evenodd"
-            :d "M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-            :clip-rule "evenodd"}]]])
+(defn- complete-circle []
+  [:span {:class "relative z-10 w-3 flex my-2 justify-center bg-white"}
+   [:span {:class "h-2 w-2 rounded-full bg-gray-300"}]])
 
-(defn- current-circle
-  []
-  [:span {:class "relative z-10 w-8 h-8 flex items-center justify-center bg-white border-2 border-indigo-600 rounded-full"}
-   [:span {:class "h-2.5 w-2.5 bg-indigo-600 rounded-full"}]])
+(defn- current-circle [extra-step]
+  (println "last-step? ")
+  [:span {:class "relative z-10 w-3 flex my-2 justify-center bg-white"}
+   [:span {:class (str "bg-gray-800 rounded-full "
+                       (if extra-step
+                         "h-2 w-2"
+                         "h-3 w-3"))}]])
 
-(defn- upcoming-circle
-  []
-  [:span {:class "relative z-10 w-8 h-8 flex items-center justify-center bg-white border-2 border-gray-300 rounded-full group-hover:border-gray-400"}
-   [:span {:class "h-2.5 w-2.5 bg-transparent rounded-full bg-gray-300 group-hover:bg-gray-400"}]])
+(defn- upcoming-circle []
+  [:span {:class "relative z-10 w-3 flex my-2 justify-center bg-white"}
+   [:span {:class "h-2 w-2 rounded-full bg-gray-300"}]])
 
 (defn step
   "Element from: https://tailwindui.com/components/application-ui/navigation/steps#component-fe94b9131ea11970b4653b2f0d0c83cd
   step -> {}, the couple of data which will determine the step.
   hash-last-step -> string, it is a hash compounding by title and status string together.
-  
+
   step is compounding by:
    status -> enum string (:current :complete :upcoming), the status of the step.
    title -> string, the title showed in front of step
    text -> string, the text showed below the title"
-  [{:keys [status title text]} hash-last-step]
+  [{:keys [status title text component extra-step]} hash-last-step]
   (let [last-step? (= hash-last-step (str title status))
-        active-step? (not (= status "upcoming"))]
-    ^{:key title} [:ol {:role "list"
-                        :class "overflow-hidden border-none"}
-                   [:li {:class "relative pb-10"}
-                    (when (not last-step?)
-                      [:div {:class (str "-ml-px absolute mt-0.5 top-4 left-4 w-0.5 h-full " (if active-step? "bg-indigo-600" "bg-gray-300"))
-                             :aria-hidden "true"}])
-                    [:a {:href "#"
-                         :class "relative flex items-start group"}
-                     [:span {:class "h-9 flex items-center"}
-                      (case status
-                        "complete" [complete-circle]
-                        "current" [current-circle]
-                        "upcoming" [upcoming-circle])]
-                     [:span {:class "ml-4 min-w-0 flex flex-col"}
-                      [:span {:class "text-xs font-semibold tracking-wide uppercase"}
-                       title]
-                      [:span {:class "text-sm text-gray-500"}
-                       text]]]]]))
+        current-step? (= status "current")
+        complete-step? (= status "complete")
+        upcoming-step? (= status "upcoming")]
+    [:<>
+     [:li {:class "relative pb-6"}
+      (when-not (and last-step? (not extra-step))
+        [:div {:class (str "-ml-px absolute left-1.5 w-0.5 bg-gray-300 "
+                           (case status
+                             "complete" "top-4 h-[calc(100%-8px)]"
+                             "current" "top-5 h-[calc(100%-12px)]"
+                             "upcoming" "top-4 h-[calc(100%-8px)]"))
+               :aria-hidden "true"}])
+
+      [:div {:class "relative flex items-start"}
+       [:span {:class "flex items-center"}
+        (case status
+          "complete" [complete-circle]
+          "current" [current-circle]
+          "upcoming" [upcoming-circle])]
+       [:div {:class "w-full ml-2 flex flex-col"}
+
+        [:span {:class (str "text-base font-semibold "
+                            (case status
+                              "complete" " text-gray-500"
+                              "current" "text-gray-800"
+                              "upcoming" "text-gray-500"))}
+         title]
+        (when-not upcoming-step?
+          [:span {:class (str "text-sm text-gray-500 "
+                              (case status
+                                "complete" " text-gray-400"
+                                "current" "text-gray-600"
+                                "upcoming" "text-gray-400"))}
+           text])
+        (when (and component
+                   (or (not upcoming-step?)
+                       (not extra-step)))
+          [:div {:class "mt-4"}
+           component])]]]
+
+     (when extra-step
+       [:li {:class "relative pb-6"}
+        (when-not last-step?
+          [:div {:class (str "-ml-px absolute z-30 left-1.5 w-0.5 bg-gray-300 "
+                             (case status
+                               "complete" "top-4 h-[calc(100%-10px)]"
+                               "current" "top-4 h-[calc(100%-8px)]"
+                               "upcoming" "top-4 h-[calc(100%-8px)]"))
+                 :aria-hidden "true"}])
+
+        [:div {:class "relative flex items-start group"}
+         [:span {:class "flex items-center"}
+          (case status
+            "complete" [complete-circle]
+            "current" [current-circle extra-step]
+            "upcoming" [upcoming-circle])]
+         [:div {:class "w-full ml-2 flex flex-col"}
+
+          [:span {:class (str "text-base font-semibold "
+                              (case status
+                                "complete" " text-gray-500"
+                                "current" "text-gray-800"
+                                "upcoming" "text-gray-500"))}
+           (:title extra-step)]
+          (when-not upcoming-step?
+            [:span {:class (str "text-sm text-gray-500 "
+                                (case status
+                                  "complete" " text-gray-400"
+                                  "current" "text-gray-600"
+                                  "upcoming" "text-gray-400"))}
+             (:text extra-step)])
+          (when (and (:component extra-step) (not upcoming-step?))
+            [:div {:class "mt-4"}
+             (:component extra-step)])]]])]))
 
 (defn main
   "This function crafts the stepper with steps.
   stepper -> {(keyword step-name) {:status enum :title string :text string }}, the stepper is the dictionary of steps.
-  
+
   Each step inside of steppers is compounding by:
    status -> enum string (:current :complete :upcoming), the status of the step.
    title -> string, the title showed in front of step
    text -> string, the text showed below the title
-   
+
   e.g {:agent {:status :complete :title 'your agent' :text 'setup your agent'}}"
   [stepper]
   (let [steps (vals stepper)
         last-step (last steps)
         hash-last-step (str (:title last-step) (:status last-step))]
-    (map #(step % hash-last-step) steps)))
+    [:ol {:role "list"
+          :class "border-none"}
+     (for [s steps]
+       ^{:key (:title s)}
+       [step s hash-last-step])]))

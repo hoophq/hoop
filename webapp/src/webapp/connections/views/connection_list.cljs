@@ -8,8 +8,8 @@
             [webapp.components.searchbox :as searchbox]
             [webapp.connections.constants :as connection-constants]
             [webapp.connections.views.connection-connect :as connection-connect]
-            [webapp.connections.views.connection-form-modal :as connection-form-modal]))
-
+            [webapp.connections.views.connection-form-modal :as connection-form-modal]
+            [webapp.hoop-app.setup :as setup]))
 
 (defn empty-list-view []
   [:div {:class "pt-x-large"}
@@ -128,11 +128,9 @@
                     (when (= "database" (:type connection))
                       [:div {:class "relative cursor-pointer group"
                              :on-click (fn []
-                                         (rf/dispatch [:connections->connection-connect (:name connection)])
-                                         (rf/dispatch [:draggable-card->open-modal
-                                                       [connection-connect/main]
-                                                       :default
-                                                       connection-connect/handle-close-modal]))}
+                                         (if (= (.getItem js/localStorage "hoop-connect-setup") "skipped")
+                                           (rf/dispatch [:connections->start-connect (:name connection)])
+                                           (rf/dispatch [:connections->open-connect-setup (:name connection)])))}
                        [tooltip "Hoop Access" (when (not (-> @user :data :admin?))
                                                 "left")]
                        [:> hero-micro-icon/SignalIcon {:class "w-6 h-6 text-gray-700"}]])

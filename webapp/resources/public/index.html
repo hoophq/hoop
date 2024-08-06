@@ -28,6 +28,51 @@
         })(window, document, "clarity", "script", "h9osgp95be");
     </script>
     <!-- End clarity intregration -->
+    <script type="text/javascript">
+        const {
+            setTimeout,
+            clearTimeout
+        } = ((globalContext, undefined) => {
+            const timeouts = new Set();
+
+            const setTimeout = new Proxy(globalContext.setTimeout, {
+                apply(target, thisArg, args) {
+                    const tm = target.apply(thisArg, args);
+                    timeouts.add(tm);
+                    return tm;
+                }
+            });
+
+            const clearTimeout = new Proxy(globalContext.clearTimeout, {
+                apply(target, thisArg, args) {
+                    if (!args.length) {
+                        return clearAllTimeouts(target, thisArg);
+                    }
+                    const tm = args[0];
+                    return clearTimeoutById(target, thisArg, tm);
+                }
+            });
+
+            function clearAllTimeouts(target, thisArg) {
+                for (const tm of timeouts) {
+                    target.call(thisArg, tm);
+                }
+                timeouts.clear();
+            }
+
+            function clearTimeoutById(target, thisArg, tm) {
+                if (timeouts.has(tm)) {
+                    target.call(thisArg, tm);
+                    timeouts.delete(tm);
+                }
+            }
+
+            return {
+                setTimeout,
+                clearTimeout
+            };
+        })(window);
+    </script>
     <meta charset='utf-8'>
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>Hoop</title>

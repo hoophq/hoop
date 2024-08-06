@@ -57,7 +57,7 @@
 (defn- error-view [error]
   [:div {:class "pt-large flex flex-col gap-regular items-center"}
    [:div {:class "flex flex-col items-center text-center"}
-    [:div {:class "text-white text-md font-bold"}
+    [:div {:class "text-white text-base font-bold"}
      "Error found."]
     [:div {:class "text-white text-sm mb-large"}
      error]]])
@@ -95,7 +95,7 @@
             [:div {:class "flex items-center gap-small mb-small"}
              [:> hero-solid-icon/DocumentIcon
               {:class "h-4 w-4 text-white" :aria-hidden "true"}]
-             [:span {:class "text-md font-semibold break-words text-white"}
+             [:span {:class "text-base font-semibold break-words text-white"}
               (-> template :data :name)]]
 
             [:span {:class "text-white text-xs"}
