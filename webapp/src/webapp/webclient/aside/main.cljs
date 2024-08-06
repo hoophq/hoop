@@ -64,7 +64,7 @@
             [:<>
              [:> (.-Button ui/Disclosure)
               {:class (str "h-8 w-full flex justify-between items-center gap-small "
-                           "text-md text-white font-semibold focus:outline-none focus-visible:ring "
+                           "text-base text-white font-semibold focus:outline-none focus-visible:ring "
                            "focus-visible:ring-gray-500 focus-visible:ring-opacity-75")}
 
               "Connections"
@@ -83,7 +83,7 @@
             [:<>
              [:> (.-Button ui/Disclosure)
               {:class (str "h-8 w-full flex justify-between items-center gap-small "
-                           "text-md text-white font-semibold focus:outline-none focus-visible:ring "
+                           "text-base text-white font-semibold focus:outline-none focus-visible:ring "
                            "focus-visible:ring-gray-500 focus-visible:ring-opacity-75")}
 
               "Runbooks"
@@ -101,7 +101,7 @@
             [:<>
              [:> (.-Button ui/Disclosure)
               {:class (str "h-8 w-full flex justify-between items-center gap-small "
-                           "text-md text-white font-semibold focus:outline-none focus-visible:ring "
+                           "text-base text-white font-semibold focus:outline-none focus-visible:ring "
                            "focus-visible:ring-gray-500 focus-visible:ring-opacity-75")}
 
               "Metadata"

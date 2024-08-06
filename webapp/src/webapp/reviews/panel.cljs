@@ -66,6 +66,6 @@
        [:div {:class "bg-white px-regular py-regular rounded-lg lg:col-span-3 overflow-auto max-h-screen"}
         (if (= :loading (-> @reviews :status))
           [loading-list-view]
-          [reviews-list (filtering @reviews @review-status) review-status])]
+          [reviews-list (filtering (:results @reviews) @review-status) review-status])]
        [:div {:class "bg-white px-regular py-regular rounded-lg lg:col-span-6 p-regular overflow-auto"}
         [review-detail/review-detail]]])))

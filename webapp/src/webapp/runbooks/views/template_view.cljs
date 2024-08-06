@@ -10,7 +10,7 @@
 (defn- no-connections-enabled-view []
   [:div {:class "pt-large flex flex-col gap-regular items-center"}
    [:div {:class "flex flex-col items-center text-center"}
-    [:div {:class "text-gray-700 text-md font-bold"}
+    [:div {:class "text-gray-700 text-base font-bold"}
      "No connections enabled."]
     [:div {:class "text-gray-500 text-sm mb-large"}
      "If you don't have connections to be selected, ask for the admin to enable it on the manage runbooks page."]]])

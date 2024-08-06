@@ -10,7 +10,7 @@
     [:div {:class "flex flex-col items-center gap-2 py-6"}
      [:> hero-outline-icon/ArrowRightEndOnRectangleIcon {:class "h-12 w-12 shrink-0 text-gray-300"
                                                          :aria-hidden "true"}]
-     [:span {:class "text-md text-gray-50 font-semibold"}
+     [:span {:class "text-base text-gray-50 font-semibold"}
       "Connect your database"]
      [:span {:class "text-xs text-gray-50 leading-6"}
       "Get started by creating a new connection"]]
@@ -23,7 +23,7 @@
     [:div {:class "flex flex-col items-center gap-2 py-6"}
      [:> hero-outline-icon/SquaresPlusIcon {:class "h-12 w-12 shrink-0 text-gray-300"
                                             :aria-hidden "true"}]
-     [:span {:class "text-md text-gray-50 font-semibold"}
+     [:span {:class "text-base text-gray-50 font-semibold"}
       "Connect your service"]
      [:span {:class "text-xs text-gray-50 text-center leading-6"}
       "Add a remote server, rails app, nodejs"
@@ -38,7 +38,7 @@
     [:div {:class "flex flex-col items-center gap-2 py-6"}
      [:> hero-outline-icon/CircleStackIcon {:class "h-12 w-12 shrink-0 text-gray-300"
                                             :aria-hidden "true"}]
-     [:span {:class "text-md text-gray-50 font-semibold"}
+     [:span {:class "text-base text-gray-50 font-semibold"}
       "Start with a Demo setup"]
      [:span {:class "text-xs text-gray-50 text-center leading-6"}
       "Quickly add a demo PostgreSQL database"

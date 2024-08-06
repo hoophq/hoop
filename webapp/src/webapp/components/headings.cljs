@@ -28,6 +28,6 @@
 
 (defn h4-md
   [text attrs]
-  [:h4.text-md.text-gray-900
+  [:h4.text-base.text-gray-900
    attrs
    text])

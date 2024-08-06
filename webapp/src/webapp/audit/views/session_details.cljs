@@ -112,7 +112,7 @@
         [:<>
          [:> (.-Button ui/Disclosure)
           {:class (str "w-full flex justify-between items-center gap-small bg-purple-50 p-3 rounded-t-md "
-                       "text-md font-semibold focus:outline-none focus-visible:ring text-sm "
+                       "text-base font-semibold focus:outline-none focus-visible:ring text-sm "
                        "focus-visible:ring-gray-500 focus-visible:ring-opacity-75")}
           [:div {:class "flex items-center gap-small"}
            [:> hero-solid-icon/SparklesIcon {:class "text-purple-500 h-5 w-5 shrink-0"

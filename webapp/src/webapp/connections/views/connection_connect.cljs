@@ -1,5 +1,7 @@
 (ns webapp.connections.views.connection-connect
-  (:require [re-frame.core :as rf]
+  (:require ["@heroicons/react/24/outline" :as hero-outline-icon]
+            ["@heroicons/react/16/solid" :as hero-micro-icon]
+            [re-frame.core :as rf]
             [reagent.core :as r]
             [webapp.components.button :as button]
             [webapp.components.divider :as divider]
@@ -65,89 +67,84 @@
    [:small {:class "font-bold text-gray-700"}
     (:connection_name connection)]
    [:div {:class "flex items-center gap-small my-small"}
-    [icon/regular {:icon-name "watch-black"
-                   :size 6}]
-    [:small {:class "font-bold text-gray-700"}
+    [:> hero-outline-icon/ClockIcon {:class "h-4 w-4 text-gray-600"}]
+    [:small {:class "text-gray-700"}
      [timer/main
       (.getTime (new js/Date (:connected-at connection)))
       (quot (:access_duration connection) 1000000)
       #(rf/dispatch [:open-modal [disconnect-end-time] :default])]]]
-   [:div {:class "mt-2 grid grid-cols-1 gap-small"}
+   [:div {:class "mt-6 grid grid-cols-1 gap-small"}
     [:div {:class "sm:col-span-1"}
-     [:span {:class "text-sm font-medium text-gray-500"}
+     [:span {:class "text-sm font-medium text-gray-700"}
       "Port: "]
-     [:span {:class "mt-1 text-sm text-gray-900"}
+     [:span {:class "mt-1 text-sm text-gray-700 font-bold"}
       (:port connection)]]
     [:div {:class "sm:col-span-1"}
-     [:span {:class "text-sm font-medium text-gray-500"}
+     [:span {:class "text-sm font-medium text-gray-700"}
       "HostName: "]
-     [:span {:class "mt-1 text-sm text-gray-900"}
+     [:span {:class "mt-1 text-sm text-gray-700 font-bold"}
       "localhost"]]
     [:div {:class "sm:col-span-1"}
-     [:span {:class "text-sm font-medium text-gray-500"}
+     [:span {:class "text-sm font-medium text-gray-700"}
       "User: "]
-     [:span {:class "mt-1 text-sm text-gray-900"}
+     [:span {:class "mt-1 text-sm text-gray-700 font-bold"}
       "(none)"]]
     [:div {:class "sm:col-span-1"}
-     [:span {:class "text-sm font-medium text-gray-500"}
+     [:span {:class "text-sm font-medium text-gray-700"}
       "Password: "]
-     [:span {:class "mt-1 text-sm text-gray-900"}
+     [:span {:class "mt-1 text-sm text-gray-700 font-bold"}
       "(none)"]]]])
 
 (defn- connect-informations [connection]
-  [:section
-   [:div {:class "max-w-7xl px-4"}
-    [:main {:class "mt-large"}
-     [:div {:class "flex items-center gap-small my-small"}
-      [icon/regular {:icon-name "check-green"
-                     :size 6}]
-      [:span {:class "text-xs text-gray-600"}
-       "Connection established with:"]
-      [:span {:class "font-bold text-xs text-gray-600"}
-       (:connection_name connection)]]
-     [:div {:class "flex items-center gap-small my-small"}
-      [icon/regular {:icon-name "watch-black"
-                     :size 6}]
-      [:span {:class "font-bold text-xs text-gray-600"}
-       [timer/main
-        (.getTime (new js/Date (:connected-at connection)))
-        (quot (:access_duration connection) 1000000)
-        #(rf/dispatch [:draggable-card->open-modal [disconnect-end-time] :default])]]]
-     [divider/main]
-     [h/h3 "Informations"]
-     [:div {:class "my-regular"}
-      [:span {:class "font-bold text-sm"}
-       "Hostname:"]
-      [logs/container
-       {:status :success
-        :id "hostname"
-        :logs "localhost"} ""]
-      [:span {:class "font-bold text-sm"}
-       "Port:"]
-      [logs/container
-       {:status :success
-        :id "port"
-        :logs (:port connection)} ""]
-      [:span {:class "font-bold text-sm"}
-       "Username:"]
-      [logs/container
-       {:status :success
-        :id "username"
-        :logs "(none)"} ""]
-      [:span {:class "font-bold text-sm"}
-       "Password:"]
-      [logs/container
-       {:status :success
-        :id "password"
-        :logs "(none)"} ""]]
-     [:div {:class "grid grid-cols-2 gap-regular"}
-      [button/red-new {:text "Close"
-                       :full-width true
-                       :on-click #(close-connect-dialog)}]
-      [button/secondary {:text "Minimize"
-                         :outlined true
-                         :full-width true
-                         :on-click #(minimize-modal draggable-card-content)}]]]]])
+  [:section {:class "p-2"}
+   [:header {:class "mb-2"}
+    [h/h3 "Hoop access details"]]
+   [:main
+    [:div {:class "flex items-center gap-small py-3"}
+     [:> hero-micro-icon/CheckIcon {:class "h-4 w-4 text-green-500"}]
+     [:span {:class "text-xs text-gray-700"}
+      "Connection established with:"]
+     [:span {:class "font-bold text-xs text-gray-700"}
+      (:connection_name connection)]]
+    [:div {:class "flex items-center gap-small"}
+     [:> hero-outline-icon/ClockIcon {:class "h-4 w-4 text-gray-600"}]
+     [:span {:class "text-xs text-gray-600"}
+      [timer/main
+       (.getTime (new js/Date (:connected-at connection)))
+       (quot (:access_duration connection) 1000000)
+       #(rf/dispatch [:draggable-card->open-modal [disconnect-end-time] :default])]]]
+
+    [:div {:class "my-regular"}
+     [:div {:class "font-bold text-xs pb-2"}
+      "Hostname"]
+     [logs/container
+      {:status :success
+       :id "hostname"
+       :logs "localhost"}]
+     [:div {:class "font-bold text-xs pb-2"}
+      "Port"]
+     [logs/container
+      {:status :success
+       :id "port"
+       :logs (:port connection)}]
+     [:div {:class "font-bold text-xs pb-2"}
+      "Username"]
+     [logs/container
+      {:status :success
+       :id "username"
+       :logs "(none)"}]
+     [:div {:class "font-bold text-xs pb-2"}
+      "Password"]
+     [logs/container
+      {:status :success
+       :id "password"
+       :logs "(none)"}]]
+    [:div {:class "flex justify-end gap-3"}
+     [button/secondary {:text "Minimize"
+                        :outlined true
+                        :on-click #(minimize-modal draggable-card-content)}]
+     [button/red-new {:text "Disconnect"
+                      :on-click #(close-connect-dialog)}]]]])
 
 (defn- loading [connection]
   [:section
@@ -160,49 +157,45 @@
      [:span {:class "font-bold text-gray-600"}
       (:name (:data connection))]]]])
 
-(defn- failure [error]
-  [:section
-   [:main {:class "max-w-7xl px-4 mt-large"}
-    [:section {:class "flex gap-small"}
-     [:div {:class " flex items-center gap-small my-small"}
-      [icon/regular {:icon-name "close-red"
-                     :size 6}]
-      [:span {:class "text-xs text-gray-700"}
-       "Failed attempt to connect to:"]
-      [:span {:class "font-bold text-xs text-gray-600"}
-       (:connection_name (:data error))]]]
-    [divider/main]
-    [:section {:class "my-regular"}
-     [:div
-      [h/h4
-       "How to connect in your connection:"]
-      [:div {:class "mt-small"}
-       [:<>
-        [:div {:class "flex gap-small items-center"}
-         [circle-text "1"]
-         [:label {:class "text-xs text-gray-700"}
-          "Login to Hoop."]]
-        [logs/container
-         {:status :success
-          :id "login-step"
-          :logs "hoop login"} ""]
-        [:div {:class "flex gap-small items-center"}
-         [circle-text "2"]
-         [:label {:class "text-xs text-gray-700"}
-          "Execute proxy manager."]]
-        [logs/container
-         {:status :success
-          :id "install-step"
-          :logs "hoop proxy-manager"} ""]]]]]
-    [:span {:class "font-bold text-gray-600"}
-     error.message]]])
+(defn- failure [error connection-name]
+  [:main {:class "p-2"}
+   [:header {:class "mb-2"}
+    [h/h3 "Hoop access details"]]
 
-(defn main []
+   [:section {:class "flex gap-small"}
+    [:div {:class "flex items-center gap-small my-small"}
+     [:> hero-micro-icon/XMarkIcon {:class "h-4 w-4 text-red-500"}]
+     [:span {:class "text-xs text-gray-700"}
+      "Failed attempt to connect to:"]
+     [:span {:class "font-bold text-xs text-gray-600"}
+      (:connection_name (:data error))]]]
+
+   [:section {:class "my-regular"}
+    [:span {:class "text-sm text-gray-800"}
+     "Make sure hoop app is open and running with a valid account logged in."]
+    [:span {:class "block text-nowrap text-sm text-gray-800"}
+     "You can also download hoop.dev desktop app and setup your hoop access."]]
+
+   [:section {:class "flex justify-end gap-3"}
+    [button/tailwind-secondary {:text "Setup hoop access"
+                                :outlined? true
+                                :on-click (fn []
+                                            (js/clearTimeout)
+                                            (rf/dispatch [:connections->open-connect-setup connection-name]))}]
+
+    [button/tailwind-primary {:text [:div {:class "flex gap-2"}
+                                     [:> hero-outline-icon/SignalIcon {:class "h-5 w-5"}]
+                                     "Try again"]
+                              :outlined? true
+                              :on-click (fn []
+                                          (rf/dispatch [:connections->connection-connect connection-name]))}]]])
+
+(defn main [connection-name]
   (let [connection @(rf/subscribe [:connections->connection-connected])]
     (case (:status connection)
       :ready [connect-informations (:data connection)]
       :loading [loading connection]
-      :failure [failure connection])))
+      :failure [failure connection connection-name])))
 
 (defn handle-close-modal []
   (let [connection @(rf/subscribe [:connections->connection-connected])]

@@ -1,6 +1,8 @@
 (ns webapp.events.connections
   (:require [re-frame.core :as rf]
-            [webapp.connections.constants :as constants]))
+            [webapp.connections.constants :as constants]
+            [webapp.connections.views.connection-connect :as connection-connect]
+            [webapp.hoop-app.setup :as setup]))
 
 (rf/reg-event-fx
  :connections->get-connection-details
@@ -179,3 +181,23 @@
           [:fetch {:method "DELETE"
                    :uri (str "/connections/" connection-name)
                    :on-success (fn [] (rf/dispatch [:navigate :connections]))}]]]}))
+
+(rf/reg-event-fx
+ :connections->open-connect-setup
+ (fn [_ [_ connection-name]]
+   {:fx [[:dispatch [:draggable-card->close-modal]]
+         [:dispatch [:open-modal [setup/main connection-name]
+                     :large
+                     (fn []
+                       (js/clearTimeout)
+                       (rf/dispatch [:close-modal]))]]]}))
+
+(rf/reg-event-fx
+ :connections->start-connect
+ (fn [_ [_ connection-name]]
+   {:fx [[:dispatch [:close-modal]]
+         [:dispatch [:connections->connection-connect connection-name]]
+         [:dispatch [:draggable-card->open-modal
+                     [connection-connect/main]
+                     :default
+                     connection-connect/handle-close-modal]]]}))
