@@ -2,7 +2,7 @@
 
 <h1 align="center"><b>hoop.dev</b></h1>
 <p align="center">
-    Access databases and servers with zero security compromises
+    🔒 Secure, seamless access to databases and servers. No compromises.
     <br />
     <br />
     <a target="_blank" href="https://hoop.dev">Website</a>
@@ -23,26 +23,74 @@
     </a>
 </p>
 
+## Why Hoop?
+
+- 🔐 **Zero Trust Access**: Passwordless auth and SSO integration without the need for certificates
+- 🚀 **Advanced Features Out-of-the-Box**: Session recording, just-in-time access, and chatbot approval workflows
+- 🛠 **Unparalleled Flexibility**: Manipulate packets in real-time, choose between web and proxy modes
+- 🌐 **Universal Compatibility**: Support for databases, servers, cloud platforms, and development environments
+
+
+## 🚀 Quick Start
+
+Get up and running in minutes:
+
+```bash
+curl -sL https://hoop.dev/install.sh | sh
+```
+[View full installation options](#installation)
+
+## 📚 Popular Guides
+
+- [Secure MySQL Access](https://hoop.dev/docs/quickstarts/mysql)
+- [Kubernetes Integration](https://hoop.dev/docs/quickstarts/kubernetes)
+- [AI-Powered Data Masking](https://hoop.dev/docs/learn/ai-data-masking)
+- [Implement Just-in-Time Reviews](https://hoop.dev/docs/learn/jit-reviews)
+
+[Explore all guides](#guides)
+
+## 🌟 Key Features
+
+- [AI Data Masking](https://hoop.dev/docs/learn/ai-data-masking)
+- [Granular Access Control](https://hoop.dev/docs/learn/access-control)
+- [Just-in-Time Reviews](https://hoop.dev/docs/learn/jit-reviews)
+- [Automated Runbooks](https://hoop.dev/docs/learn/runbooks)
+- [Secrets Manager Integration](https://hoop.dev/docs/learn/secrets-manager)
+- [Comprehensive Session Recording](https://hoop.dev/docs/learn/session-recording)
+- [Webhooks/SIEM Support](https://hoop.dev/docs/learn/webhooks-siem)
+- [AI Query Builder](https://hoop.dev/docs/learn/ai-query-builder)
+
+[Explore features](#features)
+
 
 ## About hoop.dev
 
-Hoop.dev is an access gateway for databases and servers with an API for packet manipulation. Because of the modern architecture powering Hoop, the open-source version includes advanced features like:
+Hoop.dev is an access gateway for databases and servers with an API for packet manipulation. Because of the modern architecture powering Hoop, the open-source version includes advanced features like:
 
- * **Passwordless Auth, No Certificates**: older gateways require high-maintenance certificate authorities. Hoop uses OIDC and Oauth2 for authentication, letting your IDP handle everything behind the scenes. Forget about certificates!
+ * **Passwordless Auth, No Certificates**: older gateways require high-maintenance certificate authorities. Hoop uses OIDC and Oauth2 for authentication, letting your IDP handle everything behind the scenes. Forget about certificates!
  * **Open-source SSO**: support for Okta, Keycloak, Jumpcloud, and others. There is no need for Enterprise versions to integrate your own IDP. You're not limited to GitHub sign-in.
- * **Session recording**: Linux, Docker, Kubernetes, Mysql, Postgres, MongoDB, and many more.
- * **Just-in-time access**: grant time-bound sessions using groups synced from your IDP.
- * **Slack and Teams Access Requests**: Chatbot approval workflows can be done without leaving your chat app.
+ * **Session recording**: Linux, Docker, Kubernetes, Mysql, Postgres, MongoDB, and many more.
+ * **Just-in-time access**: grant time-bound sessions using groups synced from your IDP.
+ * **Slack and Teams Access Requests**: Chatbot approval workflows can be done without leaving your chat app.
 
 Discover the unique capabilities that only Hoop can offer. From packet manipulation to web and proxy modes, Hoop is designed to meet your diverse needs.
 
-* **Manipulate packets**: Programmatically changes the gateway's environment and each connection's packets in real-time. Check out the [Secrets Manager integration example](https://hoop.dev/docs/learn/secrets-manager).
- * **Web and proxy modes**: Existing gateways lock you into either a web client interface or a proxy that requires desktop agents. Hoop gives you both options.
- * **Custom connections**: bring your own CLI or hide complex options from developers.
+* **Manipulate packets**: Programmatically changes the gateway's environment and each connection's packets in real-time. Check out the [Secrets Manager integration example](https://hoop.dev/docs/learn/secrets-manager).
+ * **Web and proxy modes**: Existing gateways lock you into either a web client interface or a proxy that requires desktop agents. Hoop gives you both options.
+ * **Custom connections**: bring your own CLI or hide complex options from developers.
 
 See the full list of features for the free open-source and the enterprise versions on [hoop.dev/features](https://hoop.dev/features).
 
 ## Installation
+
+### Docker
+
+```bash
+# one-line setup with docker-compose
+curl -sL https://hoop.dev/install.sh | sh
+```
+
+> We encourage you to inspect the script before running it. You can view the contents of the installation script by visiting [https://hoop.dev/install.sh](https://hoop.dev/install.sh) or by running `curl -sL https://hoop.dev/install.sh` without piping to `sh`.
 
 ### Kubernetes
 
@@ -63,9 +111,62 @@ See the full list of features for the free open-source and the enterprise versio
 | Frankfurt (eu-central-1) | [![Launch Stack](https://cdn.rawgit.com/buildkite/cloudformation-launch-stack-button-svg/master/launch-stack.svg)](https://eu-central-1.console.aws.amazon.com/cloudformation/home?region=eu-central-1#/stacks/quickcreate?templateURL=https%3A%2F%2Fhoopdev-platform-cf-eu-central-1.s3.eu-central-1.amazonaws.com%2Flatest%2Fhoopdev-platform.template.yaml) |
 | Sydney (ap-southeast-2) | [![Launch Stack](https://cdn.rawgit.com/buildkite/cloudformation-launch-stack-button-svg/master/launch-stack.svg)](https://ap-southeast-2.console.aws.amazon.com/cloudformation/home?region=ap-southeast-2#/stacks/quickcreate?templateURL=https%3A%2F%2Fhoopdev-platform-cf-ap-southeast-2.s3.ap-southeast-2.amazonaws.com%2Flatest%2Fhoopdev-platform.template.yaml) |
 
-## Development
+## 🚀 Quick Start
 
-Check out our [Development Documentation](/DEV.md)
+Get up and running in minutes:
+
+```bash
+curl -sL https://hoop.dev/install.sh | sh
+```
+
+[View full installation options](#installation)
+
+## Guides
+
+### Databases
+- [MySQL](https://hoop.dev/docs/quickstarts/mysql)
+- [PostgreSQL](https://hoop.dev/docs/quickstarts/postgres)
+- [MongoDB](https://hoop.dev/docs/quickstarts/mongodb)
+- [MSSQL](https://hoop.dev/docs/quickstarts/mssql)
+- [Oracle](https://hoop.dev/docs/quickstarts/oracle)
+- [Apache Cassandra](https://hoop.dev/docs/quickstarts/apache-cassandra)
+
+### Cloud & Infrastructure
+- [Kubernetes](https://hoop.dev/docs/quickstarts/kubernetes)
+- [AWS](https://hoop.dev/docs/quickstarts/aws)
+- [SSH Jump Hosts](https://hoop.dev/docs/quickstarts/ssh-jump-hosts)
+
+### Application Consoles
+- [Ruby on Rails Console](https://hoop.dev/docs/quickstarts/ruby-on-rails)
+- [Elixir IEx](https://hoop.dev/docs/quickstarts/elixir-IEx)
+- [PHP Artisan](https://hoop.dev/docs/quickstarts/php-artisan)
+- [Python Environments](https://hoop.dev/docs/quickstarts/python)
+
+### Web & APIs
+- [Web Apps & APIs](https://hoop.dev/docs/quickstarts/webapps-and-apis)
+
+[Explore all guides](https://hoop.dev/docs/quickstarts)
+
+## Features
+
+- [AI Data Masking](https://hoop.dev/docs/learn/ai-data-masking)
+- [Access Control](https://hoop.dev/docs/learn/access-control)
+- [Just-in-Time Reviews](https://hoop.dev/docs/learn/jit-reviews)
+- [Runbooks](https://hoop.dev/docs/learn/runbooks)
+- [Secrets Manager](https://hoop.dev/docs/learn/secrets-manager)
+- [Session Recording](https://hoop.dev/docs/learn/session-recording)
+- [Webhooks/SIEM](https://hoop.dev/docs/learn/webhooks-siem)
+- [AI Query Builder](https://hoop.dev/docs/learn/ai-query-builder)
+
+[See all features](https://hoop.dev/features)
+
+## 🤝 Contributing
+
+We welcome contributions! Check out our [Development Documentation](/DEV.md) to get started.
+
+## 📣 Community
+
+Join our [Discussions](https://github.com/hoophq/hoop/discussions) to ask questions, share ideas, and connect with other users.
 
 ## Backed by
 
