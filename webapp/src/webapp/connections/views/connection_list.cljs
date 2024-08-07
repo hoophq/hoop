@@ -139,6 +139,7 @@
                                (not (= (:managed_by connection) "hoopagent")))
                       [:div {:class "relative cursor-pointer group"
                              :on-click (fn []
+                                         (rf/dispatch [:plugins->get-my-plugins])
                                          (rf/dispatch [:connections->get-connection {:connection-name (:name connection)}])
                                          (rf/dispatch [:open-modal [connection-form-modal/main :update]
                                                        :large]))}
