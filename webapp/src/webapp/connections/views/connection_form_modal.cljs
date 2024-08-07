@@ -211,6 +211,7 @@
                                     (or (re-seq #"'.*?'|\".*?\"|\S+|\t" @connection-command) []))})]
     (rf/dispatch [:users->get-user-groups])
     (rf/dispatch [:users->get-user])
+    (rf/dispatch [:plugins->get-my-plugins])
     (rf/dispatch [:organization->get-api-key])
     (fn [_ form-type]
       [:section {:class (str "relative h-full flex flex-col items-center"

@@ -55,8 +55,8 @@
                             payload (merge
                                      {:name @name
                                       :groups (concat new-groups-list (js-select-options->list @groups))
-                                      :slack_id @slack-id}
-                                     (when (= form-type :create) {:email @email})
+                                      :slack_id @slack-id
+                                      :email @email}
                                      (when (= form-type :update) {:id (:id user)
                                                                   :status @status}))]
                         (dispatch-form form-type payload)))}
