@@ -109,12 +109,12 @@
                                    (if (= form-type :create)
                                      (array->select-options dlp-config/dlp-info-types-options)
                                      (array->select-options
-                                      (get-plugin-connection-config data-masking-plugin @connection-name))))
+                                      (:redact_types connection))))
         approval-groups-value (r/atom
                                (if (= form-type :create)
                                  [{"value" "admin" "label" "admin"}]
                                  (array->select-options
-                                  (get-plugin-connection-config review-plugin @connection-name))))
+                                  (:reviewers connection))))
 
         agents (rf/subscribe [:agents])
         user-groups (rf/subscribe [:user-groups])
@@ -210,7 +210,6 @@
                          :command (when @connection-command
                                     (or (re-seq #"'.*?'|\".*?\"|\S+|\t" @connection-command) []))})]
     (rf/dispatch [:users->get-user-groups])
-    (rf/dispatch [:plugins->get-my-plugins])
     (rf/dispatch [:users->get-user])
     (rf/dispatch [:organization->get-api-key])
     (fn [_ form-type]
@@ -416,17 +415,15 @@
         agents (rf/subscribe [:agents])]
     (rf/dispatch [:agents->get-agents])
     (rf/dispatch [:connections->get-connections])
-    (r/create-class
-     {:display-name "connection-form"
-      :reagent-render (fn []
-                        (case form-type
-                          :create (if (empty? @agents)
-                                    [loading-list-view]
-                                    [form data :create (keyword connection-original-type)])
+    (fn []
+      (case form-type
+        :create (if (empty? @agents)
+                  [loading-list-view]
+                  [form data :create (keyword connection-original-type)])
 
-                          :update (if (or (empty? @agents) (true? (:loading @connection)))
-                                    [loading-list-view]
-                                    [form (:data @connection) :update (case (:type (:data @connection))
-                                                                        ("command-line" "custom") :custom
-                                                                        ("ruby-on-rails" "application" "nodejs" "clojure" "python") :application
-                                                                        ("mysql" "mssql" "postgres" "mongodb" "database") :database)])))})))
+        :update (if (or (empty? @agents) (true? (:loading @connection)))
+                  [loading-list-view]
+                  [form (:data @connection) :update (case (:type (:data @connection))
+                                                      ("command-line" "custom") :custom
+                                                      ("ruby-on-rails" "application" "nodejs" "clojure" "python") :application
+                                                      ("mysql" "mssql" "postgres" "mongodb" "database") :database)])))))
