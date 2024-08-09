@@ -35,6 +35,7 @@ const (
 	ConnectionTypeMySQL       ConnectionType = "mysql"
 	ConnectionTypeMSSQL       ConnectionType = "mssql"
 	ConnectionTypeMongoDB     ConnectionType = "mongodb"
+	ConnectionTypeOracleDB    ConnectionType = "oracledb"
 	ConnectionTypeTCP         ConnectionType = "tcp"
 
 	ConnectionOriginAgent              = "agent"
