@@ -88,10 +88,12 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 	eventMetadata := parseSpecAsEventMetadata(pkt)
 	switch pb.PacketType(pkt.GetType()) {
 	case pbagent.SessionOpen:
-		// the session is never cleaned properly when the connection has a review
-		// it's a workaround to remove the state
-		if _, ok := pkt.Spec[pb.SpecHasReviewKey]; ok {
-			log.With("sid", pctx.SID).Infof("this session is reviewed, cleaning up state")
+		// The session is never cleaned properly when the connection has a review
+		// and the origin is the api. This is a workaround to remove the state.
+		// In the future, we could fix it refactoring the way the api manages the session
+		if _, ok := pkt.Spec[pb.SpecHasReviewKey]; ok && pctx.ClientOrigin != pb.ConnectionOriginClient {
+			log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
+				Infof("this session is reviewed, cleaning up state")
 			p.dropWalLog(pctx.SID)
 			memorySessionStore.Del(pctx.SID)
 		}
