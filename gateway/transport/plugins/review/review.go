@@ -44,12 +44,12 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 
 	otrev, err := pgreview.New().FetchOneBySid(pctx, pctx.SID)
 	if err != nil {
-		log.With("session", pctx.SID).Error("failed fetching session, err=%v", err)
+		log.With("sid", pctx.SID).Error("failed fetching session, err=%v", err)
 		return nil, plugintypes.InternalErr("failed fetching review", err)
 	}
 
 	if otrev != nil && otrev.Type == review.ReviewTypeOneTime {
-		log.With("id", otrev.Id, "session", pctx.SID, "user", otrev.ReviewOwner.Email, "org", pctx.OrgID,
+		log.With("id", otrev.Id, "sid", pctx.SID, "user", otrev.ReviewOwner.Email, "org", pctx.OrgID,
 			"status", otrev.Status).Info("one time review")
 		if !(otrev.Status == types.ReviewStatusApproved || otrev.Status == types.ReviewStatusProcessing) {
 			reviewURL := fmt.Sprintf("%s/plugins/reviews/%s", p.apiURL, otrev.Id)
@@ -75,12 +75,13 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 		return nil, plugintypes.InternalErr("failed listing time based reviews", err)
 	}
 	if jitr != nil {
-		log.With("session", pctx.SID, "id", jitr.Id, "user", jitr.CreatedBy, "org", pctx.OrgID,
+		log.With("sid", pctx.SID, "id", jitr.Id, "user", jitr.CreatedBy, "org", pctx.OrgID,
 			"revoke-at", jitr.RevokeAt.Format(time.RFC3339),
 			"duration", fmt.Sprintf("%vm", jitr.AccessDuration.Minutes())).Infof("jit access granted")
 		newCtx, _ := context.WithTimeout(pctx.Context, jitr.AccessDuration)
 		return &plugintypes.ConnectResponse{Context: newCtx, ClientPacket: nil}, nil
 	}
+	log.With("sid", pctx.SID, "orgid", pctx.GetOrgID()).Infof("jit review not found for connection id %v", pctx.ConnectionID)
 
 	var accessDuration time.Duration
 	reviewType := review.ReviewTypeOneTime
@@ -89,7 +90,7 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 		reviewType = review.ReviewTypeJit
 		accessDuration, err = time.ParseDuration(string(durationStr))
 		if err != nil {
-			return nil, plugintypes.InvalidArgument("invalid access time duration, got=%#v", string(durationStr))
+			return nil, plugintypes.InvalidArgument("invalid access time duration, got=%v", string(durationStr))
 		}
 		if accessDuration.Hours() > 48 {
 			return nil, plugintypes.InvalidArgument("jit access input must not be greater than 48 hours")
@@ -157,7 +158,7 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 	}
 
 	p.setSpecReview(pkt)
-	log.With("session", pctx.SID, "id", newRev.Id, "user", pctx.UserID, "org", pctx.OrgID,
+	log.With("sid", pctx.SID, "id", newRev.Id, "user", pctx.UserID, "org", pctx.OrgID,
 		"type", reviewType, "duration", fmt.Sprintf("%vm", accessDuration.Minutes())).
 		Infof("creating review")
 	if err := p.reviewSvc.Persist(pctx, newRev); err != nil {
