@@ -92,16 +92,38 @@ RUN apt-get update -y && \
   postgresql-client-15 \
   mongodb-mongosh mongodb-org-tools mongodb-org-shell mongocli
 
+# https://download.oracle.com/otn_software/linux/instantclient/1924000/instantclient-basic-linux.x64-19.24.0.0.0dbru.zip
+# https://download.oracle.com/otn_software/linux/instantclient/1924000/instantclient-sqlplus-linux.x64-19.24.0.0.0dbru.zip - x86-64
+
+# https://download.oracle.com/otn_software/linux/instantclient/1924000/instantclient-basic-linux-19.24.0.0.0dbru.zip
+# https://download.oracle.com/otn_software/linux/instantclient/1924000/instantclient-sqlplus-linux-19.24.0.0.0dbru.zip - x86
+
+
 # Baixar e instalar o Oracle Instant Client e SQL*Plus
-RUN mkdir -p /opt/oracle && \
+RUN URL_ORACLE_BASIC= && URL_ORACLE_SQLPLUS= && dpkgArch="$(dpkg --print-architecture)" \
+  && case "${dpkgArch##*-}" in \
+  amd64) URL_ORACLE_BASIC='https://download.oracle.com/otn_software/linux/instantclient/1924000/instantclient-basic-linux.x64-19.24.0.0.0dbru.zip';; \
+  arm64) URL_ORACLE_BASIC='https://download.oracle.com/otn_software/linux/instantclient/instantclient-basic-linux-arm64.zip';; \
+  i386) URL_ORACLE_BASIC='https://download.oracle.com/otn_software/linux/instantclient/1924000/instantclient-basic-linux-19.24.0.0.0dbru.zip';; \
+  *) echo "unsupported architecture"; exit 1 ;; \
+  esac \
+  && case "${dpkgArch##*-}" in \
+  amd64) URL_ORACLE_SQLPLUS='https://download.oracle.com/otn_software/linux/instantclient/1924000/instantclient-sqlplus-linux.x64-19.24.0.0.0dbru.zip';; \
+  arm64) URL_ORACLE_SQLPLUS='https://download.oracle.com/otn_software/linux/instantclient/instantclient-sqlplus-linux-arm64.zip';; \
+  i386) URL_ORACLE_SQLPLUS='https://download.oracle.com/otn_software/linux/instantclient/1924000/instantclient-sqlplus-linux-19.24.0.0.0dbru.zip';; \
+  *) echo "unsupported architecture"; exit 1 ;; \
+  esac \
+  && mkdir -p /opt/oracle && \
   cd /opt/oracle && \
-  wget https://download.oracle.com/otn_software/linux/instantclient/instantclient-basic-linux-arm64.zip && \
-  wget https://download.oracle.com/otn_software/linux/instantclient/instantclient-sqlplus-linux-arm64.zip && \
-  unzip instantclient-basic-linux-arm64.zip && \
+  wget -O instantclient-basic-linux.zip $URL_ORACLE_BASIC && \
+  wget -O instantclient-sqlplus-linux.zip $URL_ORACLE_SQLPLUS && \
+  unzip instantclient-basic-linux.zip && \
   rm -rf META-INF && \
-  unzip instantclient-sqlplus-linux-arm64.zip && \
-  rm instantclient-basic-linux-arm64.zip && \
-  rm instantclient-sqlplus-linux-arm64.zip
+  unzip instantclient-sqlplus-linux.zip && \
+  rm instantclient-basic-linux.zip && \
+  rm instantclient-sqlplus-linux.zip && \
+  echo 'set markup csv on delimiter "\t" quote off\nset heading on echo off termout off\nset feedback off trimspool on' >> instantclient_19_24/glogin.sql && \
+  cd /
 
 # Configurar variáveis de ambiente
 ENV PATH="/opt/oracle/instantclient_19_24:$PATH"

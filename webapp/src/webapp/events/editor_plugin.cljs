@@ -396,6 +396,7 @@
         outer-trimmed (cond
                         (= db-type "sql-server-csv") (drop-last 2 (drop 2 (string/split raw-sanitized #"\n")))
                         (= db-type "mssql") (drop-last 2 (drop 2 (string/split raw-sanitized #"\n")))
+                        (= db-type "oracledb") (drop 2 (string/split raw-sanitized #"\n"))
                         :else (drop 1 (string/split raw-sanitized #"\n")))
         inner-split #(string/split % #"\t")
         tree-atom (atom {})

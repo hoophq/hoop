@@ -79,24 +79,20 @@ RUN apt-get update -y && \
     google-cloud-sdk-gke-gcloud-auth-plugin=441.0.0-0 && \
     rm -rf /var/lib/apt/lists/*
 
-# Instalação do Oracle Database
-RUN mkdir -p /oracle && \
-    cd /oracle && \
-    curl -sL "https://download.oracle.com/otn/linux/oracle19c/1919000/LINUX.ARM64_1919000_db_home.zip" -o LINUX.X64_193000_db_home.zip && \
-    unzip LINUX.X64_193000_db_home.zip && \
-    alien -d --scripts oracle-database-ee-19c-1.0-1.x86_64.rpm && \
-    dpkg -i oracle-database-ee-19c_1.0-1_amd64.deb && \
-    rm -rf /oracle/*
+# Baixar e instalar o Oracle Instant Client e SQL*Plus
+RUN mkdir -p /opt/oracle && \
+    cd /opt/oracle && \
+    wget https://download.oracle.com/otn_software/linux/instantclient/instantclient-basic-linux-arm64.zip && \
+    wget https://download.oracle.com/otn_software/linux/instantclient/instantclient-sqlplus-linux-arm64.zip && \
+    unzip instantclient-basic-linux-arm64.zip && \
+    rm -rf META-INF && \
+    unzip instantclient-sqlplus-linux-arm64.zip && \
+    rm instantclient-basic-linux-arm64.zip && \
+    rm instantclient-sqlplus-linux-arm64.zip
 
-# Configura o Oracle Database
-RUN /etc/init.d/oracledb_ORCLCDB-19c configure && \
-    sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
-    locale-gen
-
-# Configura variáveis de ambiente para Oracle
-ENV ORACLE_HOME=/opt/oracle/product/19c/dbhome_1
-ENV PATH="${PATH}:${ORACLE_HOME}/bin"
-ENV ORACLE_SID=ORCLCDB        
+# Configurar variáveis de ambiente
+ENV PATH="/opt/oracle/instantclient_19_24:$PATH"
+ENV LD_LIBRARY_PATH="/opt/oracle/instantclient_19_24:$LD_LIBRARY_PATH"       
 
 # clojure
 RUN curl -sL https://download.clojure.org/install/linux-install-$CLOJURE_VERSION.sh -o clojure-install.sh && \

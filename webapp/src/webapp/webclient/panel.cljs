@@ -1,6 +1,6 @@
 (ns webapp.webclient.panel
   (:require ["@codemirror/commands" :as cm-commands]
-            ["@codemirror/lang-sql" :refer [MSSQL MySQL PostgreSQL sql]]
+            ["@codemirror/lang-sql" :refer [MSSQL MySQL PostgreSQL PLSQL sql]]
             ["@codemirror/language" :as cm-language]
             ["@codemirror/legacy-modes/mode/clojure" :as cm-clojure]
             ["@codemirror/legacy-modes/mode/javascript" :as cm-javascript]
@@ -247,6 +247,9 @@
                                      "mssql" [(sql
                                                (.assign js/Object (.-dialect MSSQL)
                                                         schema))]
+                                     "oracledb" [(sql
+                                                  (.assign js/Object (.-dialect PLSQL)
+                                                           schema))]
                                      "command-line" [(.define cm-language/StreamLanguage cm-shell/shell)]
                                      "javascript" [(.define cm-language/StreamLanguage cm-javascript/javascript)]
                                      "nodejs" [(.define cm-language/StreamLanguage cm-javascript/javascript)]
@@ -270,6 +273,7 @@
                                   (= (:type connection) "mysql")
                                   (= (:type connection) "sql-server-csv")
                                   (= (:type connection) "mssql")
+                                  (= (:type connection) "oracledb")
                                   (= (:type connection) "database"))
                               (not (some #(= (:name connection) %) review-plugin->connections))))]
         [:div {:class "h-full flex flex-col"}

@@ -378,10 +378,10 @@
             [:div {:class "h-full px-small"}
              (if (= (:verb session) "exec")
                [results-container/main
+                connection-name
                 {:results (first (:event_stream session))
                  :results-status (:status @session-details)
                  :fixed-height? true
-                 :results-id (:id session)
-                 :connection-type (:type session)}]
+                 :results-id (:id session)}]
                [session-event-stream (:type session) session])])]]))))
 
