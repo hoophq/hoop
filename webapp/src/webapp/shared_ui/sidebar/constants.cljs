@@ -25,12 +25,6 @@
 (def plugins-management [{:name "access_control"
                           :label "Access Control"
                           :free-feature? false}
-                         {:name "dlp"
-                          :label "AI Data Masking"
-                          :free-feature? false}
-                         {:name "review"
-                          :label "Reviews"
-                          :free-feature? false}
                          {:name "runbooks"
                           :label "Runbooks"
                           :free-feature? false}
