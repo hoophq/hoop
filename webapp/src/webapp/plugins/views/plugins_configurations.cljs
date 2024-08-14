@@ -12,10 +12,6 @@
 (defmulti config identity)
 (defmethod config "audit" []
   [audit-config/main])
-;; (defmethod config "review" []
-;;   [review-config/main])
-;; (defmethod config "dlp" []
-;;   [dlp-config/main])
 (defmethod config "access_control" []
   [access-control-config/main true])
 (defmethod config "access_control-not-installed" []
