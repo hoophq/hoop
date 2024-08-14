@@ -16,41 +16,9 @@
             [webapp.connections.views.form.custom :as custom]
             [webapp.connections.views.form.database :as database]
             [webapp.formatters :as f]
-            [webapp.subs :as subs]))
+            [webapp.subs :as subs]
+            [webapp.connections.dlp-info-types :as dlp-info-types]))
 
-(def dlp-info-types-options
-  ["PHONE_NUMBER",
-   "CREDIT_CARD_NUMBER",
-   "AUTH_TOKEN",
-   "AWS_CREDENTIALS",
-   "AZURE_AUTH_TOKEN",
-   "BASIC_AUTH_HEADER",
-   "ENCRYPTION_KEY",
-   "GCP_API_KEY",
-   "GCP_CREDENTIALS",
-   "JSON_WEB_TOKEN",
-   "HTTP_COOKIE",
-   "OAUTH_CLIENT_SECRET",
-   "PASSWORD",
-   "SSL_CERTIFICATE",
-   "STORAGE_SIGNED_POLICY_DOCUMENT",
-   "STORAGE_SIGNED_URL",
-   "WEAK_PASSWORD_HASH",
-   "XSRF_TOKEN",
-   "CREDIT_CARD_TRACK_NUMBER",
-   "EMAIL_ADDRESS",
-   "IBAN_CODE",
-   "HTTP_COOKIE",
-   "IMEI_HARDWARE_ID",
-   "IP_ADDRESS",
-   "STORAGE_SIGNED_URL",
-   "URL",
-   "VEHICLE_IDENTIFICATION_NUMBER",
-   "BRAZIL_CPF_NUMBER",
-   "AMERICAN_BANKERS_CUSIP_ID",
-   "FDA_CODE",
-   "US_PASSPORT",
-   "US_SOCIAL_SECURITY_NUMBER"])
 
 (defn array->select-options [array]
   (mapv #(into {} {"value" % "label" (cs/lower-case (cs/replace % #"_" " "))}) array))
@@ -140,7 +108,7 @@
 
         data-masking-groups-value (r/atom
                                    (if (= form-type :create)
-                                     (array->select-options dlp-info-types-options)
+                                     (array->select-options dlp-info-types/options)
                                      (array->select-options
                                       (:redact_types connection))))
         approval-groups-value (r/atom
