@@ -17,7 +17,8 @@
             [webapp.connections.views.form.database :as database]
             [webapp.formatters :as f]
             [webapp.subs :as subs]
-            [webapp.plugins.views.plugin-configurations.dlp :as dlp-config]))
+            [webapp.connections.dlp-info-types :as dlp-info-types]))
+
 
 (defn array->select-options [array]
   (mapv #(into {} {"value" % "label" (cs/lower-case (cs/replace % #"_" " "))}) array))
@@ -107,7 +108,7 @@
 
         data-masking-groups-value (r/atom
                                    (if (= form-type :create)
-                                     (array->select-options dlp-config/dlp-info-types-options)
+                                     (array->select-options dlp-info-types/options)
                                      (array->select-options
                                       (:redact_types connection))))
         approval-groups-value (r/atom

@@ -3,8 +3,6 @@
    [webapp.plugins.views.plugin-configurations.container :as plugin-configuration-container]
    [webapp.plugins.views.plugin-configurations.access-control :as access-control-config]
    [webapp.plugins.views.plugin-configurations.audit :as audit-config]
-   [webapp.plugins.views.plugin-configurations.dlp :as dlp-config]
-   [webapp.plugins.views.plugin-configurations.review :as review-config]
    [webapp.plugins.views.plugin-configurations.runbooks :as runbooks-config]
    [webapp.plugins.views.plugin-configurations.editor :as editor-config]
    [webapp.plugins.views.plugin-configurations.indexer :as indexer-config]
@@ -14,10 +12,6 @@
 (defmulti config identity)
 (defmethod config "audit" []
   [audit-config/main])
-(defmethod config "review" []
-  [review-config/main])
-(defmethod config "dlp" []
-  [dlp-config/main])
 (defmethod config "access_control" []
   [access-control-config/main true])
 (defmethod config "access_control-not-installed" []

@@ -4,7 +4,7 @@
             [webapp.components.headings :as h]
             [webapp.components.multiselect :as multi-select]
             [webapp.components.toggle :as toggle]
-            [webapp.plugins.views.plugin-configurations.dlp :as dlp-config]))
+            [webapp.connections.dlp-info-types :as dlp-info-types]))
 
 (defn array->select-options [array]
   (mapv #(into {} {"value" % "label" (cs/lower-case (cs/replace % #"_" " "))}) array))
@@ -36,7 +36,7 @@
                               (reset! data-masking-toggle-enabled?
                                       (not @data-masking-toggle-enabled?)))}]]
    (when @data-masking-toggle-enabled?
-     [multi-select/main {:options (array->select-options dlp-config/dlp-info-types-options)
+     [multi-select/main {:options (array->select-options dlp-info-types/options)
                          :id "data-masking-groups-input"
                          :name "data-masking-groups-input"
                          :disabled? (or (not @data-masking-toggle-enabled?) free-license?)
