@@ -16,6 +16,7 @@
              val2 (:value (get map2 k))
              required (:required (get map1 k))
              placeholder (:placeholder (get map1 k))
+             hidden (:hidden (get map1 k))
              selected (cond
                         (and (not (empty? val1)) (empty? val2)) (get map1 k)
                         (and (empty? val1) (not (empty? val2))) (assoc (get map2 k)

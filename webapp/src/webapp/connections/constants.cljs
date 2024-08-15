@@ -22,6 +22,12 @@
            {:key "port" :value "" :required true}
            {:key "db" :value "" :required true}
            {:key "insecure" :value "false" :required false}]
+   :oracledb [{:key "host" :value "" :required true}
+              {:key "user" :value "" :required true}
+              {:key "pass" :value "" :required true}
+              {:key "port" :value "" :required true}
+              {:key "ld_library_path" :value "/opt/oracle/instantclient_19_24" :hidden true :required true}
+              {:key "sid" :placeholder "SID or Service name" :value "" :required true}]
    :mongodb [{:key "connection_string"
               :value ""
               :required true
@@ -45,6 +51,7 @@
           :kubernetes "/images/connections-logos/k8s_logo.svg"
           :sql-server-csv "/images/connections-logos/sql-server_logo.svg"
           :sql-server "/images/connections-logos/sql-server_logo.svg"
+          :oracledb "/images/connections-logos/oracle_logo.svg"
           :mssql "/images/connections-logos/sql-server_logo.svg"
           :mongodb "/images/connections-logos/mongodb_logo.svg"}
    :light {:postgres "/images/connections-logos/postgres_logo.svg"
@@ -64,6 +71,7 @@
            :kubernetes "/images/connections-logos/k8s_logo.svg"
            :sql-server-csv "/images/connections-logos/sql-server_logo.svg"
            :sql-server "/images/connections-logos/sql-server_logo.svg"
+           :oracledb "/images/connections-logos/oracle_logo.svg"
            :mssql "/images/connections-logos/sql-server_logo.svg"
            :mongodb "/images/connections-logos/mongodb_logo.svg"}})
 

@@ -119,14 +119,18 @@
                                        (reset! connection-subtype type)
                                        (reset! configs (utils/get-config-keys (keyword type)))
                                        (reset! connection-name (str type "-" (random-connection-name)))
-                                       (reset! connection-command (get constants/connection-commands type)))}
+                                       (reset! connection-command (get constants/connection-commands type))
+                                       (if (= type "oracledb")
+                                         (reset! access-mode-connect false)
+                                         (reset! access-mode-connect true)))}
          [:> (.-Label ui/RadioGroup) {:className "sr-only"}
           "Database connections"]
          [:div {:class "space-y-2"}
           (for [database [{:type "postgres" :label "PostgreSQL"}
                           {:type "mysql" :label "MySQL"}
                           {:type "mssql" :label "Microsoft SQL"}
-                          {:type "mongodb" :label "MongoDB"}]]
+                          {:type "mongodb" :label "MongoDB"}
+                          {:type "oracledb" :label "OracleDB"}]]
             ^{:key (:type database)}
             [:> (.-Option ui/RadioGroup)
              {:value (:type database)
@@ -192,6 +196,7 @@
             :checked? access-mode-runbooks}
            {:name "connect"
             :label "Native"
+            :disabled? (= @connection-subtype "oracledb")
             :description "Access from your client of preference using hoop.dev to channel connections using our Desktop App or our Command Line Interface"
             :checked? access-mode-connect}
            {:name "exec"

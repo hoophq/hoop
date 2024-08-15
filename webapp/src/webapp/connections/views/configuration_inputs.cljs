@@ -5,7 +5,7 @@
 
 
 (defn- config->inputs-labeled
-  [{:keys [key value required placeholder]} index config]
+  [{:keys [key value required placeholder hidden]} index config]
   (let [key-val (r/atom key)
         value-val (r/atom value)
         save (fn [k v] (swap! config assoc-in [index k] v))]
@@ -18,6 +18,7 @@
                      :required required
                      :placeholder (or placeholder key)
                      :type "password"
+                     :hidden hidden
                      :value @value-val}]])))
 
 (defn- config->inputs-files
