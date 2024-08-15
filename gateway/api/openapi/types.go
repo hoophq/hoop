@@ -733,8 +733,6 @@ type ServerLicenseInfo struct {
 type ServerInfo struct {
 	// Version of the server
 	Version string `json:"version" example:"1.23.15"`
-	// Version of the webapp
-	WebAppVersion string `json:"webapp_version" example:"1.23.15"`
 	// Commit SHA of the version
 	Commit string `json:"commit_sha" example:"e6b94e86352e934b66d9c7ab2821a267dc18dfee"`
 	// Log level of the server

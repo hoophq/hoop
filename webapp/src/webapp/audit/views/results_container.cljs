@@ -12,7 +12,6 @@
 
 (defn- transform-results->matrix
   [results connection-type]
-  (println connection-type)
   (let [res (if (= connection-type "oracledb")
               (string/join "\n" (drop 1 (string/split results #"\n")))
               results)]
