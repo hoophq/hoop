@@ -92,14 +92,7 @@ RUN apt-get update -y && \
   postgresql-client-15 \
   mongodb-mongosh mongodb-org-tools mongodb-org-shell mongocli
 
-# https://download.oracle.com/otn_software/linux/instantclient/1924000/instantclient-basic-linux.x64-19.24.0.0.0dbru.zip
-# https://download.oracle.com/otn_software/linux/instantclient/1924000/instantclient-sqlplus-linux.x64-19.24.0.0.0dbru.zip - x86-64
-
-# https://download.oracle.com/otn_software/linux/instantclient/1924000/instantclient-basic-linux-19.24.0.0.0dbru.zip
-# https://download.oracle.com/otn_software/linux/instantclient/1924000/instantclient-sqlplus-linux-19.24.0.0.0dbru.zip - x86
-
-
-# Baixar e instalar o Oracle Instant Client e SQL*Plus
+# Download and install Oracle Instant Client and SQL*Plus
 RUN URL_ORACLE_BASIC= && URL_ORACLE_SQLPLUS= && dpkgArch="$(dpkg --print-architecture)" \
   && case "${dpkgArch##*-}" in \
   amd64) URL_ORACLE_BASIC='https://download.oracle.com/otn_software/linux/instantclient/1924000/instantclient-basic-linux.x64-19.24.0.0.0dbru.zip';; \
@@ -125,7 +118,7 @@ RUN URL_ORACLE_BASIC= && URL_ORACLE_SQLPLUS= && dpkgArch="$(dpkg --print-archite
   echo 'set markup csv on delimiter "\t" quote off\nset heading on echo off termout off\nset feedback off trimspool on' >> instantclient_19_24/glogin.sql && \
   cd /
 
-# Configurar variáveis de ambiente
+# Configure environment variables
 ENV PATH="/opt/oracle/instantclient_19_24:$PATH"
 ENV LD_LIBRARY_PATH="/opt/oracle/instantclient_19_24:$LD_LIBRARY_PATH"  
 
