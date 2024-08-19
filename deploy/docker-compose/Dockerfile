@@ -63,8 +63,8 @@ RUN apt-get update -y && \
         postgresql-client \
         sqlcmd \
         unixodbc-dev \
-        google-cloud-cli=441.0.0-0 \
-        google-cloud-sdk-gke-gcloud-auth-plugin=441.0.0-0 && \
+        google-cloud-cli=488.0.0-0 \
+        google-cloud-sdk-gke-gcloud-auth-plugin=467.0.0-0 && \
         rm -rf /var/lib/apt/lists/* && \
         ln -s /usr/bin/mongosh /usr/bin/mongo
 
