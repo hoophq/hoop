@@ -195,7 +195,7 @@
             :description "Create templates to automate tasks in your organization"
             :checked? access-mode-runbooks}
            {:name "connect"
-            :label "Native"
+            :label (str "Native" (when (= @connection-subtype "oracledb") " (Coming soon)"))
             :disabled? (= @connection-subtype "oracledb")
             :description "Access from your client of preference using hoop.dev to channel connections using our Desktop App or our Command Line Interface"
             :checked? access-mode-connect}

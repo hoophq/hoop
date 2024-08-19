@@ -44,6 +44,3 @@ libhoop
 deploy/docker-compose/hoopdata/terraform/outputs/
 deploy/docker-compose/hoopdata/sessions
 deploy/docker-compose/hoopdata/zitadel-admin-sa.json
-
-# License
-license.json
