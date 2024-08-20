@@ -1,6 +1,5 @@
 (ns webapp.components.data-grid-table
-  (:require ["@datagridxl/datagridxl2" :as DataGrid]
-            [reagent.core :as r]))
+  (:require [reagent.core :as r]))
 
 (def dark-theme
   {"component"                  "#15202b"
@@ -104,15 +103,15 @@
        {:display-name "data-grid-table"
         :component-did-mount
         (fn []
-          (swap! !ref assoc :current (new DataGrid (:current @!ref) (clj->js {:data body
-                                                                              :columns head-formatted
-                                                                              :fontFamily "Sora"
-                                                                              :theme (clj->js (if dark-theme?
-                                                                                                dark-theme
-                                                                                                {}))
-                                                                              :allowEditCells false
-                                                                              :instantActivate false
-                                                                              :bottomBar []}))))
+          (swap! !ref assoc :current (new js/DataGridXL (:current @!ref) (clj->js {:data body
+                                                                                   :columns head-formatted
+                                                                                   :fontFamily "Sora"
+                                                                                   :theme (clj->js (if dark-theme?
+                                                                                                     dark-theme
+                                                                                                     {}))
+                                                                                   :allowEditCells false
+                                                                                   :instantActivate false
+                                                                                   :bottomBar []}))))
         :reagent-render
         (fn []
           [:div {:class "w-full h-full"
