@@ -15,11 +15,12 @@
 
 (rf/reg-event-fx
  :segment->identify
- (fn [{:keys [db]} [_ user]]
-   (let [user-id (:id user)
+ (fn [{:keys [db]} _]
+   (let [user (-> db :users->current-user :data)
+         user-id (:id user)
          analytics (-> db :segment->analytics)]
      (if (nil? analytics)
-       {:fx [[:dispatch [:segment->load [:segment->identify user]]]]}
+       {:fx [[:dispatch [:segment->load [:segment->identify]]]]}
        (do
          (.identify analytics user-id (clj->js user))
          {})))))
