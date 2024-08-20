@@ -9,24 +9,27 @@
 ;;   - :label (String): The text displayed next to the checkbox. This text is capitalized and displayed as the content of the label.
 ;;   - :description (String, optional): Additional description for the checkbox. If provided, displayed below the label in smaller text.
 ;;   - :checked? (Atom, Boolean): An atom that indicates whether the checkbox is checked (`true`) or not (`false`).
-(defn item [{:keys [name label description checked?]}]
-  [:div {:class "relative flex items-center"}
+(defn item [{:keys [name label description disabled? checked?]}]
+  [:div {:class (str "relative flex items-center"
+                     (when disabled? " cursor-not-allowed"))}
    [:div {:class "flex h-6 items-center"}
     [:input {:id name
              :name name
              :type "checkbox"
+             :disabled disabled?
              :aria-describedby (str name "-description")
              :checked @checked?
              :on-change #(swap! checked? not)
-             :class "h-4 w-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"}]]
+             :class (str "h-4 w-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+                         (when disabled? " cursor-not-allowed opacity-50"))}]]
    [:div {:class "ml-3 text-sm leading-6"}
     [:label {:for name
-             :class (str (if @checked? "text-gray-900 " "text-gray-500 ")
+             :class (str (if (or (not @checked?) disabled?) "text-gray-500 " "text-gray-900 ")
                          "font-semibold font-medium")}
      (str (cs/capitalize label))]
     (when description
       [:p {:id (str name "-description")
-           :class (str (if @checked? "text-gray-500 " "text-gray-400 ")
+           :class (str (if (or (not @checked?) disabled?) "text-gray-400 " "text-gray-500 ")
                        "text-xs")}
        description])]])
 

@@ -6,14 +6,17 @@
             [re-frame.core :as rf]
             [reagent.core :as r]
             [webapp.components.data-grid-table :as data-grid-table]
+            [webapp.subs :as subs]
             [webapp.webclient.log-area.output-tabs :refer [tabs]]
-            [webapp.webclient.log-area.terminal :as terminal]
-            [webapp.subs :as subs]))
+            [webapp.webclient.log-area.terminal :as terminal]))
 
 (defn- transform-results->matrix
-  [results]
-  (when-not (nil? results)
-    (get (js->clj (papa/parse results (clj->js {"delimiter" "\t"}))) "data")))
+  [results connection-type]
+  (let [res (if (= connection-type "oracledb")
+              (cs/join "\n" (drop 1 (cs/split results #"\n")))
+              results)]
+    (when-not (nil? results)
+      (get (js->clj (papa/parse res (clj->js {"delimiter" "\t"}))) "data"))))
 
 (def selected-tab (r/atom "Terminal"))
 
@@ -45,10 +48,10 @@
             tabular-loading? (= tabular-status :loading)
             sanitize-results (when-not (nil? (:output tabular-data))
                                (cs/replace (:output tabular-data) #"∞" "\t"))
-            results-transformed (transform-results->matrix sanitize-results)
+            results-transformed (transform-results->matrix sanitize-results connection-type)
             results-heads (first results-transformed)
             results-body (next results-transformed)
-            connection-type-database? (some (partial = connection-type) ["mysql" "postgres" "sql-server" "mssql" "database"])]
+            connection-type-database? (some (partial = connection-type) ["mysql" "postgres" "sql-server" "oracledb" "mssql" "database"])]
         [:div {:class "h-full flex flex-col"}
          ;; start ask-ai ui
          (when (and (= feature-ai-ask "enabled")

@@ -57,6 +57,9 @@ func setConnectionDefaults(req *openapi.Connection) {
 		defaultCommand = []string{
 			"sqlcmd", "--exit-on-error", "--trim-spaces", "-r",
 			"-S$HOST:$PORT", "-U$USER", "-d$DB", "-i/dev/stdin"}
+	case pb.ConnectionTypeOracleDB:
+		defaultEnvVars["envvar:LD_LIBRARY_PATH"] = base64.StdEncoding.EncodeToString([]byte(`/opt/oracle/instantclient_19_24`))
+		defaultCommand = []string{"sqlplus", "-s", "$USER/$PASS@$HOST:$PORT/$SID"}
 	case pb.ConnectionTypeMongoDB:
 		defaultEnvVars["envvar:OPTIONS"] = base64.StdEncoding.EncodeToString([]byte(`tls=true`))
 		defaultEnvVars["envvar:PORT"] = base64.StdEncoding.EncodeToString([]byte(`27017`))

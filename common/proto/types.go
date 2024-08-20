@@ -173,6 +173,8 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 			return ConnectionType(ConnectionTypeMongoDB)
 		case "mssql":
 			return ConnectionType(ConnectionTypeMSSQL)
+		case "oracledb":
+			return ConnectionType(ConnectionTypeOracleDB)
 		}
 	}
 	return ConnectionType(connectionType)

@@ -1,6 +1,6 @@
 {
   "name": "webapp",
-  "version": "1.24.2",
+  "version": "1.25.0",
   "scripts": {
     "ancient": "clojure -Sdeps '{:deps {com.github.liquidz/antq {:mvn/version \"RELEASE\"}}}' -m antq.core",
     "genversion": "npx genversion src/webapp/version.js",
@@ -62,7 +62,7 @@
     "postcss": "^8.4.39",
     "postcss-cli": "^9.1.0",
     "postcss-import": "^15.1.0",
-    "shadow-cljs": "2.16.12",
+    "shadow-cljs": "^2.28.11",
     "tailwindcss": "^3.4.4"
   }
 }

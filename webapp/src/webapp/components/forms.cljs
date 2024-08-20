@@ -78,8 +78,9 @@
                    maxlength
                    min
                    max
-                   step]}]
-        [:div {:class (str "mb-regular text-sm" (when full-width? " w-full"))}
+                   step
+                   hidden]}]
+        [:div {:class (str "mb-regular text-sm" (when full-width? " w-full") (when hidden " hidden"))}
          [:div {:class "flex items-center gap-2 mb-1"}
           (when label
             (if dark
