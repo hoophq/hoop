@@ -20,6 +20,7 @@ const (
 	SpecClientExecArgsKey         string = "terminal.args"
 	SpecClientExecEnvVar          string = "terminal.envvars"
 	SpecAgentConnectionParamsKey  string = "agent.connection_params"
+	SpecAgentDlpProvider          string = "agent.dlp_provider"
 	SpecAgentGCPRawCredentialsKey string = "agent.gcp_credentials"
 	SpecTCPServerConnectKey       string = "tcp.server_connect"
 	SpecReviewDataKey             string = "review.data"

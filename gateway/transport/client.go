@@ -190,6 +190,12 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			spec[pb.SpecAgentGCPRawCredentialsKey] = []byte(jsonCred)
 		}
 
+		if dlpProvider := appconfig.Get().DlpProvider(); dlpProvider != "" {
+			fmt.Printf("\n\n>>>>>>> here")
+			fmt.Printf("dlpProvider: %+v\n", dlpProvider)
+			spec[pb.SpecAgentDlpProvider] = []byte(dlpProvider)
+		}
+
 		if !stream.IsAgentOnline() {
 			spec[pb.SpecClientExecArgsKey] = pkt.Spec[pb.SpecClientExecArgsKey]
 			_ = stream.Send(&pb.Packet{

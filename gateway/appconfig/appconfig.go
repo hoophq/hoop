@@ -28,6 +28,7 @@ type Config struct {
 	askAICredentials      *url.URL
 	pgCred                *pgCredentials
 	gcpDLPJsonCredentials string
+	dlpProvider           string
 	webhookAppKey         string
 	licenseSigningKey     *rsa.PrivateKey
 	licenseSignerOrgID    string
@@ -80,6 +81,10 @@ func Load() error {
 	if err != nil {
 		return err
 	}
+	dlpProvider, err := loadDlpProvider()
+	if err != nil {
+		return err
+	}
 	gcpJsonCred, err := loadGcpDLPCredentials()
 	if err != nil {
 		return err
@@ -99,6 +104,7 @@ func Load() error {
 		licenseSigningKey:     licensePrivKey,
 		licenseSignerOrgID:    allowedOrgID,
 		gcpDLPJsonCredentials: gcpJsonCred,
+		dlpProvider:           dlpProvider,
 		webhookAppKey:         os.Getenv("WEBHOOK_APPKEY"),
 		webappUsersManagement: webappUsersManagement,
 		isLoaded:              true,
@@ -123,6 +129,14 @@ func loadPostgresCredentials() (*pgCredentials, error) {
 		return nil, fmt.Errorf("missing user or password in POSTGRES_DB_URI env")
 	}
 	return &pgCredentials{connectionString: pgConnectionURI, username: pgUser}, nil
+}
+
+func loadDlpProvider() (string, error) {
+	dlpProvider := os.Getenv("DLP_PROVIDER")
+	if dlpProvider == "" {
+		return "", nil
+	}
+	return dlpProvider, nil
 }
 
 func loadAskAICredentials() (*url.URL, error) {
@@ -190,6 +204,7 @@ func (c Config) ApiHost() string               { return c.apiHost }
 func (c Config) ApiScheme() string             { return c.apiScheme }
 func (c Config) WebhookAppKey() string         { return c.webhookAppKey }
 func (c Config) GcpDLPJsonCredentials() string { return c.gcpDLPJsonCredentials }
+func (c Config) DlpProvider() string           { return c.dlpProvider }
 func (c Config) PgUsername() string            { return c.pgCred.username }
 func (c Config) PgURI() string                 { return c.pgCred.connectionString }
 func (c Config) PostgRESTRole() string         { return c.pgCred.postgrestRole }
