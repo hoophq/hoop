@@ -165,16 +165,6 @@
                   [:span {:class "sr-only"}
                    "Users"]]])
 
-              [:li
-               [:a {:href "/hoop-app"
-                    :class (str (hover-side-menu-link? "/hoop-app" current-route)
-                                "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
-                [:div {:class "flex gap-3 items-center"}
-                 [:> hero-outline-icon/SignalIcon {:class "h-6 w-6 shrink-0 text-white"
-                                                   :aria-hidden "true"}]
-                 [:span {:class "sr-only"}
-                  "Hoop App"]]]]
-
               (when admin?
                 [:li
                  [:a {:href "#"

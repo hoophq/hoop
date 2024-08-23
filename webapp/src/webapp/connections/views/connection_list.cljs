@@ -7,9 +7,7 @@
             [webapp.components.loaders :as loaders]
             [webapp.components.searchbox :as searchbox]
             [webapp.connections.constants :as connection-constants]
-            [webapp.connections.views.connection-connect :as connection-connect]
-            [webapp.connections.views.connection-form-modal :as connection-form-modal]
-            [webapp.hoop-app.setup :as setup]))
+            [webapp.connections.views.connection-form-modal :as connection-form-modal]))
 
 (defn empty-list-view []
   [:div {:class "pt-x-large"}

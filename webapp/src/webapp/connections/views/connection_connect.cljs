@@ -4,21 +4,12 @@
             [re-frame.core :as rf]
             [reagent.core :as r]
             [webapp.components.button :as button]
-            [webapp.components.divider :as divider]
             [webapp.components.headings :as h]
-            [webapp.components.icon :as icon]
             [webapp.components.loaders :as loaders]
             [webapp.components.logs-container :as logs]
             [webapp.components.timer :as timer]
             [webapp.http.api :as api]
             [webapp.utilities :as utilities]))
-
-(defn- circle-text
-  [text]
-  [:div {:class (str "flex items-center justify-center "
-                     "rounded-full overflow-hidden w-5 h-5 "
-                     "text-xs font-bold text-white bg-gray-800")}
-   [:span text]])
 
 (defn- close-all-events []
   (rf/dispatch [:connections->connection-disconnect])
