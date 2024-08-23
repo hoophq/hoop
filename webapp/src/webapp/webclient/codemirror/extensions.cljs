@@ -10,7 +10,9 @@
                     (str "When the language is a query language, use this schema to help you: "
                          database-schema)))}
    {:role "user"
-    :content (str prefix "<FILL_ME>" suffix)}])
+    :content (if (and (empty? prefix) (empty? suffix))
+               "select <FILL_ME>"
+               (str prefix "<FILL_ME>" suffix))}])
 
 (defn fetch-autocomplete [language prefix suffix database-schema]
   (let [token (.getItem js/localStorage "jwt-token")
