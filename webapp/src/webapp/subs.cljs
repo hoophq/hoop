@@ -360,6 +360,6 @@
    (:reports->session db)))
 
 (rf/reg-sub
- ::selected-tab
+ ::selected-output-tab
  (fn [db]
-   (get db :output->selected-output-tab "Terminal")))
+   (get db :selected-output-tab "Terminal")))
