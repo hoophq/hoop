@@ -24,12 +24,12 @@
       [forms/input {:label "API URL"
                     :on-change #(reset! api-url (-> % .-target .-value))
                     :classes "whitespace-pre overflow-x"
-                    :placeholder "https://app.hoop.dev"
+                    :placeholder "https://use.hoop.dev"
                     :value @api-url}]
       [forms/input {:label "gRPC URL"
                     :on-change #(reset! grpc-url (-> % .-target .-value))
                     :classes "whitespace-pre overflow-x"
-                    :placeholder "app.hoop.dev:8443"
+                    :placeholder "use.hoop.dev:8443"
                     :value @grpc-url}]]
      [:div {:class "grid grid-cols-3 justify-items-end"}
       [:div {:class "col-end-4 w-full"}

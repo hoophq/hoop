@@ -5,8 +5,7 @@
             [webapp.components.button :as button]
             [webapp.components.forms :as forms]
             [webapp.components.headings :as h]
-            [webapp.components.stepper :as stepper]
-            [webapp.connections.views.connection-connect :as connection-connect]))
+            [webapp.components.stepper :as stepper]))
 
 (def pooling-get-app-status
   (fn [set-timeout]
@@ -78,13 +77,13 @@
                                               [:div {:class "grid grid-cols-2 gap-4"}
                                                [forms/input {:label "API URL"
                                                              :on-change #(reset! api-url (-> % .-target .-value))
-                                                             :placeholder "https://app.hoop.dev"
+                                                             :placeholder "https://use.hoop.dev"
                                                              :disabled (not @app-running?)
                                                              :full-width true
                                                              :value @api-url}]
                                                [forms/input {:label "Agent URL"
                                                              :on-change #(reset! grpc-url (-> % .-target .-value))
-                                                             :placeholder "app.hoop.dev:8443"
+                                                             :placeholder "use.hoop.dev:8443"
                                                              :disabled (not @app-running?)
                                                              :full-width true
                                                              :value @grpc-url}]]

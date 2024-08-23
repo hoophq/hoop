@@ -104,16 +104,6 @@
                                                       :aria-hidden "true"}]
                  "Users"]]])
 
-            [:li
-             [:a {:href "#"
-                  :on-click #(rf/dispatch [:navigate :hoop-app])
-                  :class (str (hover-side-menu-link? "/hoop-app" current-route)
-                              (:enabled link-styles))}
-              [:div {:class "flex gap-3 items-center"}
-               [:> hero-outline-icon/SignalIcon {:class "h-6 w-6 shrink-0 text-white"
-                                                 :aria-hidden "true"}]
-               "Hoop App"]]]
-
             (when admin?
               [:> ui/Disclosure {:as "li"
                                  :class "text-xs font-semibold leading-6 text-gray-400"}
