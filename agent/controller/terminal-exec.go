@@ -23,10 +23,11 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 	}
 
 	spec := map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)}
+	dlpProvider := pkt.Spec[pb.SpecAgentDlpProvider]
 	stdoutw := pb.NewStreamWriter(a.client, pbclient.WriteStdout, spec)
 	stderrw := pb.NewStreamWriter(a.client, pbclient.WriteStderr, spec)
 	opts := map[string]string{
-		"dlp_provider":        "mspresidio",
+		"dlp_provider":        string(dlpProvider),
 		"dlp_gcp_credentials": a.getGCPCredentials(),
 		"dlp_info_types":      strings.Join(connParams.DLPInfoTypes, ","),
 	}

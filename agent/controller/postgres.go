@@ -47,6 +47,7 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 		return
 	}
 
+	dlpProvider := pkt.Spec[pb.SpecAgentDlpProvider]
 	log.Infof("session=%v - starting postgres connection at %v:%v", sessionID, connenv.host, connenv.port)
 	opts := map[string]string{
 		"hostname":              connenv.host,
@@ -54,6 +55,7 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 		"username":              connenv.user,
 		"password":              connenv.pass,
 		"sslmode":               connenv.postgresSSLMode,
+		"dlp_provider":          string(dlpProvider),
 		"dlp_gcp_credentials":   a.getGCPCredentials(),
 		"dlp_info_types":        strings.Join(connParams.DLPInfoTypes, ","),
 		"dlp_masking_character": "#",

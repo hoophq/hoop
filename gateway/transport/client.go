@@ -191,8 +191,7 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 		}
 
 		if dlpProvider := appconfig.Get().DlpProvider(); dlpProvider != "" {
-			fmt.Printf("\n\n>>>>>>> here")
-			fmt.Printf("dlpProvider: %+v\n", dlpProvider)
+			log.Infof("DLP Provider: %s", dlpProvider)
 			spec[pb.SpecAgentDlpProvider] = []byte(dlpProvider)
 		}
 
