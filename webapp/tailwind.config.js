@@ -68,6 +68,18 @@ module.exports = {
             opacity: 100,
           },
         },
+        "accordion-down": {
+            from: { height: "0" },
+            to: { height: "var(--radix-accordion-content-height)" },
+          },
+          "accordion-up": {
+           from: { height: "var(--radix-accordion-content-height)" },
+            to: { height: "0" },
+          },
+      },
+      animation: {
+        "accordion-down": "accordion-down 0.2s ease-out",
+        "accordion-up": "accordion-up 0.2s ease-out",
       },
       borderRadius: {
         DEFAULT: "2px",
@@ -117,6 +129,7 @@ module.exports = {
   },
   plugins: [
     require("@tailwindcss/forms"),
+    require("tailwindcss-animate"),
     plugin(function ({ addUtilities }) {
       const rotateY = {
         ".rotate-y-180": {

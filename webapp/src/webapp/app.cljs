@@ -1,5 +1,6 @@
 (ns webapp.app
   (:require ["gsap/all" :refer [Draggable gsap]]
+            ["@radix-ui/themes" :refer [Theme]]
             [bidi.bidi :as bidi]
             [clojure.string :as cs]
             [re-frame.core :as rf]
@@ -19,6 +20,7 @@
             [webapp.connections.views.connection-connect :as connection-connect]
             [webapp.connections.views.connection-form-modal :as connection-form-modal]
             [webapp.connections.views.select-connection-use-cases :as select-connection-use-cases]
+            [webapp.dashboard.main :as dashboard]
             [webapp.events]
             [webapp.events.agents]
             [webapp.events.ask-ai]
@@ -146,6 +148,11 @@
   [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
                              [h/h2 "Connections" {:class "mb-6"}]
                              [connections/panel]]])
+
+(defmethod routes/panels :dashboard-panel []
+  [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
+                             [h/h2 "Dashboard" {:class "mb-6"}]
+                             [dashboard/main]]])
 
 (defmethod routes/panels :editor-plugin-panel []
   (rf/dispatch [:destroy-page-loader])
@@ -278,5 +285,6 @@
 (defn main-panel []
   (let [active-panel (rf/subscribe [::subs/active-panel])]
     (.registerPlugin gsap Draggable)
-    [routes/panels @active-panel]))
+    [:> Theme
+     [routes/panels @active-panel]]))
 

@@ -1,5 +1,7 @@
 (ns webapp.utilities
-  (:require [clojure.string :as string]))
+  (:require [clojure.string :as string]
+            ["clsx" :refer [clsx]]
+            ["tailwind-merge" :refer [twMerge]]))
 
 (defn get-url-params
   "Gets the URL params in the URL and format in a hashmap {\"key\" \"value\"}"
@@ -51,3 +53,6 @@
   "Remove a class from an element."
   [e class]
   (class-swap! e (fn [current] (remove #(= % (keyword class)) current))))
+
+(defn cn [& inputs]
+  (twMerge (apply clsx inputs)))

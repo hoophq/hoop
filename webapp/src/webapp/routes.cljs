@@ -17,6 +17,7 @@
                         ["/new" :create-connection]
                         [["/connections/" :connection-type "/new"] :onboarding-create-connection]]
          "client" :editor-plugin
+         "dashboard" :dashboard
          "hoop-app" :hoop-app
          "login" :login-hoop
          "logout" :logout-hoop
