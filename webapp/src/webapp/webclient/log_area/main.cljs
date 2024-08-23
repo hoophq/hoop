@@ -18,15 +18,18 @@
     (when-not (nil? results)
       (get (js->clj (papa/parse res (clj->js {"delimiter" "\t"}))) "data"))))
 
-(def selected-tab (r/atom "Terminal"))
+(rf/reg-event-db
+ ::output->set-selected-tab
+ (fn [db [_ tab]]
+   (assoc db :selected-output-tab tab)))
 
 (defn main [_]
   (let [user (rf/subscribe [:users->current-user])
         script-response (rf/subscribe [:editor-plugin->script])
         question-responses (rf/subscribe [:ask-ai->question-responses])
         database-schema (rf/subscribe [::subs/database-schema])
-        input-question (r/atom "")]
-    (reset! selected-tab "Terminal")
+        input-question (r/atom "")
+        selected-tab (rf/subscribe [::subs/selected-output-tab])]
     (fn [connection-type is-one-connection-selected?]
       (let [terminal-content (map #(into {} {:status (:status %)
                                              :response (:output (:data %))
@@ -62,7 +65,7 @@
                     :on-submit (fn [e]
                                  (.preventDefault e)
                                  (rf/dispatch [:ask-ai->ask-sql-question (:raw @database-schema) @input-question])
-                                 (reset! selected-tab "AI")
+                                 (rf/dispatch [::output->set-selected-tab "AI"])
                                  (reset! input-question ""))}
              [:div {:class "pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"}
               [:> hero-micro-icon/SparklesIcon {:class "h-5 w-5 text-purple-400" :aria-hidden "true"}]]
@@ -86,7 +89,7 @@
          [:div {:class (str (if (= feature-ai-ask "enabled")
                               "h-terminal-container"
                               "h-full"))}
-          [tabs {:on-click #(reset! selected-tab %2)
+          [tabs {:on-click #(rf/dispatch [::output->set-selected-tab %2])
                  :tabs (merge
                         (when (and (= feature-ai-ask "enabled")
                                    connection-type-database?
@@ -100,4 +103,4 @@
             "AI" [terminal/main :ai ai-content]
             "Tabular" [data-grid-table/main results-heads results-body true tabular-loading?]
             "Terminal" [terminal/main :terminal terminal-content]
-            :else [terminal/main terminal-content])]]))))
+            :else [terminal/main terminal-content])]])))

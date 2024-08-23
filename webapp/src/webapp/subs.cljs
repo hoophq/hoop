@@ -358,3 +358,8 @@
  :reports->session
  (fn [db _]
    (:reports->session db)))
+
+(rf/reg-sub
+ ::selected-tab
+ (fn [db]
+   (get db :output->selected-output-tab "Terminal")))
