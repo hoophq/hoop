@@ -29,8 +29,7 @@
             [webapp.webclient.exec-multiples-connections.exec-list :as multiple-connections-exec-list-component]
             [webapp.webclient.runbooks.form :as runbooks-form]
             [webapp.formatters :as formatters]
-            [webapp.subs :as subs]
-            [webapp.connections.views.form.database :as database]))
+            [webapp.subs :as subs]))
 
 (defn metadata->json-stringify
   [metadata]
@@ -341,7 +340,7 @@
                                                         [(inlineCopilot
                                                           (fn [prefix suffix]
                                                             (extensions/fetch-autocomplete
-                                                             language-parser-case
+                                                             (:subtype (last run-connections-list-selected))
                                                              prefix
                                                              suffix
                                                              (:raw @database-schema))))])

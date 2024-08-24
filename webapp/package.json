@@ -69,7 +69,7 @@
     "postcss": "^8.4.39",
     "postcss-cli": "^9.1.0",
     "postcss-import": "^15.1.0",
-    "shadow-cljs": "^2.28.11",
+    "shadow-cljs": "2.25.10",
     "tailwindcss": "^3.4.4"
   }
 }
