@@ -23,11 +23,12 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 	}
 
 	spec := map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)}
-	dlpProvider := pkt.Spec[pb.SpecAgentDlpProvider]
+	fmt.Printf("pkt.Spec terminal-exec.go=%v : %v\n", pkt.Spec, pkt.Type)
 	stdoutw := pb.NewStreamWriter(a.client, pbclient.WriteStdout, spec)
 	stderrw := pb.NewStreamWriter(a.client, pbclient.WriteStderr, spec)
+	fmt.Printf("dlpProvider terminal-exec.go=%q\n", a.getDlpProvider())
 	opts := map[string]string{
-		"dlp_provider":        string(dlpProvider),
+		"dlp_provider":        a.getDlpProvider(),
 		"dlp_gcp_credentials": a.getGCPCredentials(),
 		"dlp_info_types":      strings.Join(connParams.DLPInfoTypes, ","),
 	}
