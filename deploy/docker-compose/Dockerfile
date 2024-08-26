@@ -2,48 +2,49 @@ FROM nginx:1.27.0
 
 ARG AWS_CLI_VERSION=2.9.6
 ARG AWS_SM_VERSION=1.2.398.0
+ARG GCLOUD_VERSION=488.0.0-0
 
 RUN apt-get update -y && \
     apt-get install -y \
-        python3-dev \
-        python3-pip \
-        locales \
-        tini \
-        apt-utils \
-        curl \
-        gnupg \
-        gnupg2 \
-        net-tools \
-        groff \
-        jq \
-        openssh-client \
-        unzip \
-        expect \
-        less \
-        gettext-base \
-        lsb-release && \
-        ln -s /usr/bin/python3 /usr/bin/python
+    python3-dev \
+    python3-pip \
+    locales \
+    tini \
+    apt-utils \
+    curl \
+    gnupg \
+    gnupg2 \
+    net-tools \
+    groff \
+    jq \
+    openssh-client \
+    unzip \
+    expect \
+    less \
+    gettext-base \
+    lsb-release && \
+    ln -s /usr/bin/python3 /usr/bin/python
 
 # kubectl / aws-cli / aws-session-manager
 RUN curl -sL "https://dl.k8s.io/release/v1.22.1/bin/linux/$(dpkg --print-architecture)/kubectl" -o kubectl && \
-        chmod 755 kubectl && \
-        mv kubectl /usr/local/bin/kubectl
+    chmod 755 kubectl && \
+    mv kubectl /usr/local/bin/kubectl
 
 RUN curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m)-$AWS_CLI_VERSION.zip" -o awscli-exe-linux-$(uname -m)-$AWS_CLI_VERSION.zip && \
-        unzip -q awscli-exe-linux-$(uname -m)-$AWS_CLI_VERSION.zip && \
-        aws/install && \
-        aws --version && \
-        rm -rf aws
+    unzip -q awscli-exe-linux-$(uname -m)-$AWS_CLI_VERSION.zip && \
+    aws/install && \
+    aws --version && \
+    rm -rf aws
 
 RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
     && case "${dpkgArch##*-}" in \
-        amd64) ARCH='64bit';; \
-        arm64) ARCH='arm64';; \
-        *) echo "unsupported architecture"; exit 1 ;; \
+    amd64) ARCH='64bit';; \
+    arm64) ARCH='arm64';; \
+    *) echo "unsupported architecture"; exit 1 ;; \
     esac && \
     curl -sL "https://s3.amazonaws.com/session-manager-downloads/plugin/$AWS_SM_VERSION/ubuntu_$ARCH/session-manager-plugin.deb" -o session-manager-plugin.deb && \
-        dpkg -i session-manager-plugin.deb && \
-        rm -rf /tmp/* session-manager-plugin.deb
+    dpkg -i session-manager-plugin.deb && \
+    rm -rf /tmp/* session-manager-plugin.deb
 
 RUN curl https://apt.releases.hashicorp.com/gpg -o - | gpg --dearmor | tee /usr/share/keyrings/hashicorp-archive-keyring.gpg > /dev/null && \
     gpg --no-default-keyring --keyring /usr/share/keyrings/hashicorp-archive-keyring.gpg --fingerprint && \
@@ -57,16 +58,16 @@ RUN curl https://apt.releases.hashicorp.com/gpg -o - | gpg --dearmor | tee /usr/
 
 RUN apt-get update -y && \
     apt-get install -y \
-        terraform \
-        mongodb-mongosh mongodb-org-tools \
-        default-mysql-client \
-        postgresql-client \
-        sqlcmd \
-        unixodbc-dev \
-        google-cloud-cli=441.0.0-0 \
-        google-cloud-sdk-gke-gcloud-auth-plugin=441.0.0-0 && \
-        rm -rf /var/lib/apt/lists/* && \
-        ln -s /usr/bin/mongosh /usr/bin/mongo
+    terraform \
+    mongodb-mongosh mongodb-org-tools \
+    default-mysql-client \
+    postgresql-client \
+    sqlcmd \
+    unixodbc-dev \
+    google-cloud-cli=$GCLOUD_VERSION \
+    google-cloud-sdk-gke-gcloud-auth-plugin=$GCLOUD_VERSION && \
+    rm -rf /var/lib/apt/lists/* && \
+    ln -s /usr/bin/mongosh /usr/bin/mongo
 
 RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
     locale-gen
