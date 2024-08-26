@@ -3,6 +3,7 @@ FROM nginx:1.27.0
 ARG AWS_CLI_VERSION=2.9.6
 ARG AWS_SM_VERSION=1.2.398.0
 ARG GCLOUD_VERSION=488.0.0-0
+ARG GCLOUD_GKE_AUTH_PLUGIN=467.0.0-0
 
 RUN apt-get update -y && \
     apt-get install -y \
@@ -65,7 +66,7 @@ RUN apt-get update -y && \
     sqlcmd \
     unixodbc-dev \
     google-cloud-cli=$GCLOUD_VERSION \
-    google-cloud-sdk-gke-gcloud-auth-plugin=$GCLOUD_VERSION && \
+    google-cloud-sdk-gke-gcloud-auth-plugin=$GCLOUD_GKE_AUTH_PLUGIN && \
     rm -rf /var/lib/apt/lists/* && \
     ln -s /usr/bin/mongosh /usr/bin/mongo
 
