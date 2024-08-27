@@ -37,7 +37,8 @@ const (
 	EventKindOneTime     = "onetime"
 	EventKindJit         = "jit"
 	// it's usually 2000, keep a more safe number
-	maxLabelSize = 1800
+	maxLabelSize  = 1800
+	maxGroupsSize = 50
 )
 
 func New(slackBotToken, slackAppToken, slackChannel, instanceID, apiURL string, callback EventCallback) (*SlackService, error) {
@@ -121,8 +122,8 @@ func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) error {
 	})
 
 	groupList := strings.Join(msg.UserGroups, ", ")
-	if len(groupList) > maxLabelSize {
-		groupList = groupList[:maxLabelSize] + " ..."
+	if len(groupList) > maxGroupsSize {
+		groupList = groupList[:maxGroupsSize] + " ..."
 	}
 	// name and groups metadata
 	metaSection1 := slack.NewSectionBlock(nil, []*slack.TextBlockObject{
