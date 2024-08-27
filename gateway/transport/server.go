@@ -119,7 +119,6 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 	}
 
 	var gwctx authinterceptor.GatewayContext
-	// parse the gateway context from the stream context
 	err = authinterceptor.ParseGatewayContextInto(stream.Context(), &gwctx)
 	if err != nil {
 		log.Error(err)
