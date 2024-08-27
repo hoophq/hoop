@@ -36,7 +36,9 @@ import (
 	webhooksapi "github.com/hoophq/hoop/gateway/api/webhooks"
 	"github.com/hoophq/hoop/gateway/indexer"
 	"github.com/hoophq/hoop/gateway/review"
+	"github.com/hoophq/hoop/gateway/security/apikey"
 	"github.com/hoophq/hoop/gateway/security/idp"
+	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
 type Api struct {
@@ -207,9 +209,12 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		AuditApiChanges,
 		serviceaccountapi.Update)
 
+	apiKeyAuth := api.ApiKeyAuthMiddleware()
+
 	route.POST("/connections",
 		AdminOnlyAccessRole,
 		api.Authenticate,
+		apiKeyAuth,
 		api.TrackRequest(analytics.EventCreateConnection),
 		AuditApiChanges,
 		apiconnections.Post)
@@ -233,6 +238,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.DELETE("/connections/:name",
 		AdminOnlyAccessRole,
 		api.Authenticate,
+		apiKeyAuth,
 		api.TrackRequest(analytics.EventDeleteConnection),
 		AuditApiChanges,
 		apiconnections.Delete)
@@ -406,4 +412,33 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.GET("/serverinfo",
 		api.Authenticate,
 		apiserverinfo.New(api.GrpcURL).Get)
+}
+
+func (api *Api) ApiKeyAuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx := storagev2.ParseContext(c)
+		apiKey := c.GetHeader("X-API-Key")
+
+		if apiKey == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "API key is missing"})
+			c.Abort()
+			return
+		}
+
+		// Validate the API key for the current organization
+		isValid, err := apikey.ValidateOrgApiKey(ctx.OrgID, apiKey)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error validating API key"})
+			c.Abort()
+			return
+		}
+
+		if !isValid {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid API key"})
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
 }
