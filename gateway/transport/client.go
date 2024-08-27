@@ -191,8 +191,15 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 		}
 
 		if dlpProvider := appconfig.Get().DlpProvider(); dlpProvider != "" {
-			log.Infof("DLP Provider: %s", dlpProvider)
 			spec[pb.SpecAgentDlpProvider] = []byte(dlpProvider)
+		}
+
+		if msPresidioAnalyzerURL := appconfig.Get().MSPresidioAnalyzerURL(); msPresidioAnalyzerURL != "" {
+			spec[pb.SpecAgentMSPresidioAnalyzerURL] = []byte(msPresidioAnalyzerURL)
+		}
+
+		if msPresidioAnonymizerURL := appconfig.Get().MSPresidioAnomymizerURL(); msPresidioAnonymizerURL != "" {
+			spec[pb.SpecAgentMSPresidioAnonymizerURL] = []byte(msPresidioAnonymizerURL)
 		}
 
 		if !stream.IsAgentOnline() {

@@ -199,6 +199,18 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 		}
 	}
 
+	if a.connStore.Get(msPresidioAnonymizerURLKey) == nil {
+		if anonymizerURL, ok := pkt.Spec[pb.SpecAgentMSPresidioAnonymizerURL]; ok {
+			a.connStore.Set(msPresidioAnonymizerURLKey, anonymizerURL)
+		}
+	}
+
+	if a.connStore.Get(msPresidioAnalyzerURLKey) == nil {
+		if analyzerURL, ok := pkt.Spec[pb.SpecAgentMSPresidioAnalyzerURL]; ok {
+			a.connStore.Set(msPresidioAnalyzerURLKey, analyzerURL)
+		}
+	}
+
 	go func() {
 		if err := a.checkTCPLiveness(pkt, connParams.EnvVars); err != nil {
 			_ = a.client.Send(&pb.Packet{
@@ -436,6 +448,18 @@ func (a *Agent) getGCPCredentials() string {
 
 func (a *Agent) getDlpProvider() string {
 	obj := a.connStore.Get(dlpProviderKey)
+	v, _ := obj.([]byte)
+	return string(v)
+}
+
+func (a *Agent) getMSPresidioAnalyzerURL() string {
+	obj := a.connStore.Get(msPresidioAnalyzerURLKey)
+	v, _ := obj.([]byte)
+	return string(v)
+}
+
+func (a *Agent) getMSPresidioAnonymizerURL() string {
+	obj := a.connStore.Get(msPresidioAnonymizerURLKey)
 	v, _ := obj.([]byte)
 	return string(v)
 }
