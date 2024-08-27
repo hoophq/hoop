@@ -2,6 +2,7 @@ package api
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -221,6 +222,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.PUT("/connections/:nameOrID",
 		AdminOnlyAccessRole,
 		api.Authenticate,
+		apiKeyAuth,
 		api.TrackRequest(analytics.EventUpdateConnection),
 		AuditApiChanges,
 		apiconnections.Put)
@@ -428,7 +430,11 @@ func (api *Api) ApiKeyAuthMiddleware() gin.HandlerFunc {
 		// Validate the API key for the current organization
 		isValid, err := apikey.ValidateOrgApiKey(ctx.OrgID, apiKey)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error validating API key"})
+			if errors.Is(err, apikey.ErrAPIKeyNotConfigured) {
+				c.JSON(http.StatusNotImplemented, gin.H{"error": err.Error()})
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Error validating API key"})
+			}
 			c.Abort()
 			return
 		}
