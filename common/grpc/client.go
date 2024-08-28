@@ -5,14 +5,12 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/common/appruntime"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
@@ -211,11 +209,7 @@ func connectRPC(serverAddress string, dialOptions []grpc.DialOption, opts ...*Cl
 func (c *mutexClient) Send(pkt *pb.Packet) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	err := c.stream.Send(pkt)
-	if err != nil && err != io.EOF {
-		sentry.CaptureException(fmt.Errorf("failed sending msg, type=%v, err=%v", pkt.Type, err))
-	}
-	return err
+	return c.stream.Send(pkt)
 }
 
 func (c *mutexClient) Recv() (*pb.Packet, error) {
