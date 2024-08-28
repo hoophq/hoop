@@ -19,13 +19,13 @@ func FetchRepo(rbConfig *RunbookConfig) (*object.Commit, error) {
 
 	_, err = r.CreateRemote(&config.RemoteConfig{
 		Name: "origin",
-		URLs: []string{rbConfig.URL},
+		URLs: []string{rbConfig.GitURL},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed creating remote, err=%v", err)
 	}
 	err = r.Fetch(&git.FetchOptions{
-		RemoteURL:  rbConfig.URL,
+		RemoteURL:  rbConfig.GitURL,
 		Auth:       rbConfig.Auth,
 		RemoteName: "origin",
 		Tags:       git.NoTags,
@@ -33,7 +33,7 @@ func FetchRepo(rbConfig *RunbookConfig) (*object.Commit, error) {
 		// RefSpecs:   []config.RefSpec{"refs/heads/main:refs/heads/main"},
 	})
 	if err != nil && err != git.NoErrAlreadyUpToDate {
-		return nil, fmt.Errorf("failed pulling repo %v, err=%v", rbConfig.URL, err)
+		return nil, fmt.Errorf("failed pulling repo %v, err=%v", rbConfig.GitURL, err)
 	}
 	refs, err := r.References()
 	if err != nil {

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -28,8 +27,6 @@ import (
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
-var scanedKnownHosts bool
-
 // ListRunbooks
 //
 //	@Summary		List Runbooks
@@ -42,17 +39,6 @@ var scanedKnownHosts bool
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	log := pgusers.ContextLogger(c)
-	if !scanedKnownHosts {
-		knownHostsFilePath, err := templates.SSHKeyScan()
-		if err != nil {
-			log.Errorf("failed scanning known_hosts file, reason=%v", err)
-			sentry.CaptureException(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed scanning known_hosts file"})
-			return
-		}
-		os.Setenv("SSH_KNOWN_HOSTS", knownHostsFilePath)
-		scanedKnownHosts = true
-	}
 
 	p, err := pgplugins.New().FetchOne(ctx, plugintypes.PluginRunbooksName)
 	if err != nil {
