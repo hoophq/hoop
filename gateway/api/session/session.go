@@ -242,7 +242,8 @@ func Get(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching session"})
 		return
 	}
-	if session == nil {
+
+	if (session == nil || session.UserID != ctx.UserID) && !ctx.IsAdminUser() {
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 		return
 	}
