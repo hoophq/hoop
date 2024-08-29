@@ -186,6 +186,29 @@ const (
 	SessionOptionLimit      SessionOptionKey = "limit"
 )
 
+type FavoriteSession struct {
+	ID           string        `json:"id"`
+	SessionID    string        `json:"session_id"`
+	OrgID        string        `json:"org_id"`
+	Script       SessionScript `json:"script"`
+	Labels       SessionLabels `json:"labels"`
+	UserEmail    string        `json:"user"`
+	UserID       string        `json:"user_id"`
+	UserName     string        `json:"user_name"`
+	Type         string        `json:"type"`
+	Connection   string        `json:"connection"`
+	Verb         string        `json:"verb"`
+	EventSize    int64         `json:"event_size"`
+	StartSession time.Time     `json:"start_date"`
+	EndSession   *time.Time    `json:"end_date"`
+}
+
+type FavoriteSessionList struct {
+	Items       []FavoriteSession `json:"data"`
+	Total       int64             `json:"total"`
+	HasNextPage bool              `json:"has_next_page"`
+}
+
 type SessionList struct {
 	Items       []Session `json:"data"`
 	Total       int64     `json:"total"`
