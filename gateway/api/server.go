@@ -369,9 +369,9 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest(analytics.EventApiExecReview),
 		sessionapi.RunReviewedExec)
 	
-	route.GET("/sessions/favorites",
+	route.POST("/sessions/:session_id/favorite",
 		api.Authenticate,
-		sessionapi.ListFavorites)
+		sessionapi.AddFavorite)
 
 	route.GET("/reports/sessions",
 		AdminOnlyAccessRole,
