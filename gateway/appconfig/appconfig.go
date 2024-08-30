@@ -83,12 +83,6 @@ func Load() error {
 	if err != nil {
 		return err
 	}
-	dlpProvider, err := loadDlpProvider()
-	if err != nil {
-		return err
-	}
-	msPresidioAnalyzerURL, _ := loadMsPresidioAnalyzerURL()
-	msPresidioAnonymizerURL, _ := loadMsPresidioAnonymizerURL()
 	gcpJsonCred, err := loadGcpDLPCredentials()
 	if err != nil {
 		return err
@@ -108,9 +102,9 @@ func Load() error {
 		licenseSigningKey:       licensePrivKey,
 		licenseSignerOrgID:      allowedOrgID,
 		gcpDLPJsonCredentials:   gcpJsonCred,
-		dlpProvider:             dlpProvider,
-		msPresidioAnalyzerURL:   msPresidioAnalyzerURL,
-		msPresidioAnonymizerURL: msPresidioAnonymizerURL,
+		dlpProvider:             os.Getenv("DLP_PROVIDER"),
+		msPresidioAnalyzerURL:   os.Getenv("MSPRESIDIO_ANALYZER_URL"),
+		msPresidioAnonymizerURL: os.Getenv("MSPRESIDIO_ANONYMIZER_URL"),
 		webhookAppKey:           os.Getenv("WEBHOOK_APPKEY"),
 		webappUsersManagement:   webappUsersManagement,
 		isLoaded:                true,
@@ -135,30 +129,6 @@ func loadPostgresCredentials() (*pgCredentials, error) {
 		return nil, fmt.Errorf("missing user or password in POSTGRES_DB_URI env")
 	}
 	return &pgCredentials{connectionString: pgConnectionURI, username: pgUser}, nil
-}
-
-func loadDlpProvider() (string, error) {
-	dlpProvider := os.Getenv("DLP_PROVIDER")
-	if dlpProvider == "" {
-		return "", nil
-	}
-	return dlpProvider, nil
-}
-
-func loadMsPresidioAnalyzerURL() (string, error) {
-	analyzerURL := os.Getenv("MSPRESIDIO_ANALYZER_URL")
-	if analyzerURL == "" {
-		return "", nil
-	}
-	return analyzerURL, nil
-}
-
-func loadMsPresidioAnonymizerURL() (string, error) {
-	anonymizerURL := os.Getenv("MSPRESIDIO_ANONYMIZER_URL")
-	if anonymizerURL == "" {
-		return "", nil
-	}
-	return anonymizerURL, nil
 }
 
 func loadAskAICredentials() (*url.URL, error) {
