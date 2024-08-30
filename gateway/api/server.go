@@ -368,16 +368,6 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest(analytics.EventApiExecReview),
 		sessionapi.RunReviewedExec)
-
-	route.POST("/sessions/:session_id/favorite",
-		api.Authenticate,
-		api.TrackRequest(analytics.EventFavoriteSession),
-		sessionapi.AddFavorite)
-
-	route.DELETE("/sessions/:session_id/favorite",
-		api.Authenticate,
-		api.TrackRequest(analytics.EventUnfavoriteSession),
-		sessionapi.RemoveFavorite)
 	
 	route.GET("/sessions/favorites",
 		api.Authenticate,
