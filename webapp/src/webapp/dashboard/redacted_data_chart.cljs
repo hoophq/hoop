@@ -30,32 +30,32 @@
     "3m"]])
 
 (defn main [redacted-data]
-  (let [redact-data-items (-> @redacted-data :data :items)
-        redata-items-map (reduce (fn [acc {:keys [info_type redact_total]}]
-                                   (let [formatted-info-type (formatted info_type)
-                                         existing (some #(when (= (:info_type %) formatted-info-type) %) acc)]
-                                     (if existing
-                                       (mapv (fn [m]
-                                               (if (= (:info_type m) formatted-info-type)
-                                                 (update m :redact_total + redact_total)
-                                                 m))
-                                             acc)
-                                       (conj acc {:info_type formatted-info-type
-                                                  :redact_total redact_total
-                                                  :fill (str "var(--color-" (cs/replace
-                                                                             formatted-info-type
-                                                                             " " "-") ")")}))))
-                                 []
-                                 redact-data-items)
-        config-redact-data (merge
-                            (reduce (fn [acc {:keys [info_type _]}]
-                                      (let [idx (count acc)]
-                                        (assoc acc
-                                               (keyword (cs/replace (cs/lower-case info_type) " " "-"))
-                                               {:label info_type
-                                                :color (color-fn idx)})))
-                                    {}
-                                    redata-items-map))]
+  (let [redacted-data-items (-> @redacted-data :data :items)
+        redacted-items-map (reduce (fn [acc {:keys [info_type redact_total]}]
+                                     (let [formatted-info-type (formatted info_type)
+                                           existing (some #(when (= (:info_type %) formatted-info-type) %) acc)]
+                                       (if existing
+                                         (mapv (fn [m]
+                                                 (if (= (:info_type m) formatted-info-type)
+                                                   (update m :redact_total + redact_total)
+                                                   m))
+                                               acc)
+                                         (conj acc {:info_type formatted-info-type
+                                                    :redact_total redact_total
+                                                    :fill (str "var(--color-" (cs/replace
+                                                                               formatted-info-type
+                                                                               " " "-") ")")}))))
+                                   []
+                                   redacted-data-items)
+        config-redacted-data (merge
+                              (reduce (fn [acc {:keys [info_type _]}]
+                                        (let [idx (count acc)]
+                                          (assoc acc
+                                                 (keyword (cs/replace (cs/lower-case info_type) " " "-"))
+                                                 {:label info_type
+                                                  :color (color-fn idx)})))
+                                      {}
+                                      redacted-items-map))]
     [:> Section {:size "1"}
      [:> Box {:p "5" :class "bg-white rounded-md"}
       [:> Flex {:flexGrow "1" :direction "column" :align "center" :justify "center"}
@@ -67,18 +67,18 @@
           (-> @redacted-data :data :range-date)]]
 
         [button->filter-data-by-day (fn [days]
-                                      (rf/dispatch [:reports->get-redact-data-by-date days]))]]
+                                      (rf/dispatch [:reports->get-redacted-data-by-date days]))]]
 
-       (if (empty? redata-items-map)
-         [:> Box {:minHeight "246px" :class "content-center"}
+       (if (empty? redacted-items-map)
+         [:> Box {:minHeight "400px" :class "content-center"}
           [:> Text {:as "label" :color "gray" :weight "light" :size "1"}
            "No data found for the selected period"]]
          [charts/chart-container
-          {:config config-redact-data
-           :class-name "max-h-[400px] w-full"
+          {:config config-redacted-data
+           :class-name "h-[400px] w-full"
            :chartid :redact-chart
            :children [:> recharts/BarChart {:accessibilityLayer true
-                                            :data (clj->js redata-items-map)}
+                                            :data (clj->js redacted-items-map)}
                       [:> recharts/Tooltip {:content (fn [props]
                                                        (r/as-element
                                                         [charts/chart-tooltip-content

@@ -50,13 +50,13 @@
          "Connections"]]]
 
       (if (empty? connection-items-map)
-        [:> Box {:minHeight "246px" :class "content-center"}
+        [:> Box {:minHeight "300px" :class "content-center"}
          [:> Text {:as "label" :color "gray" :weight "light" :size "1"}
           "No data found for the selected period"]]
 
         [charts/chart-container
          {:config connection-items-config
-          :class-name "mx-auto w-full aspect-square max-h-[400px]"
+          :class-name "mx-auto w-full aspect-square h-[300px]"
           :chartid :connections-chart
           :children [:> recharts/PieChart
                      [:> recharts/Tooltip {:content (fn [props]

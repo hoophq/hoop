@@ -45,7 +45,8 @@
             [:ul {:role "list" :class "space-y-1"}
              (for [route sidebar-constants/routes]
                ^{:key (:name route)}
-               [:li
+               [:li {:class (str (when
+                                  (and (:admin-only? route) (not admin?)) "hidden"))}
                 [:a {:href (:uri route)
                      :class (str (hover-side-menu-link? (:uri route) current-route)
                                  (:enabled link-styles))}

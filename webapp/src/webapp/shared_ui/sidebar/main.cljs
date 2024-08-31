@@ -125,7 +125,8 @@
                     :class "flex flex-col items-center space-y-1"}
                (for [route constants/routes]
                  ^{:key (:name route)}
-                 [:li
+                 [:li {:class (str (when
+                                    (and (:admin-only? route) (not admin?)) "hidden"))}
                   [:a {:href (:uri route)
                        :class (str (hover-side-menu-link? (:uri route) current-route)
                                    "group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}

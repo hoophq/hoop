@@ -361,9 +361,9 @@
    (:reports->session db)))
 
 (re-frame/reg-sub
- :reports->redact-data-by-date
+ :reports->redacted-data-by-date
  (fn [db _]
-   (:reports->redact-data-by-date db)))
+   (:reports->redacted-data-by-date db)))
 
 (re-frame/reg-sub
  :reports->review-data-by-date
@@ -371,9 +371,9 @@
    (:reports->review-data-by-date db)))
 
 (re-frame/reg-sub
- :reports->today-redact-data
+ :reports->today-redacted-data
  (fn [db _]
-   (:reports->today-redact-data db)))
+   (:reports->today-redacted-data db)))
 
 (re-frame/reg-sub
  :reports->today-review-data

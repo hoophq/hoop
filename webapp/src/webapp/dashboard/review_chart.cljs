@@ -75,12 +75,12 @@
                                      (rf/dispatch [:reports->get-review-data-by-date days]))]]
 
       (if (empty? reviews-items-map)
-        [:> Box {:minHeight "246px" :class "content-center"}
+        [:> Box {:minHeight "300px" :class "content-center"}
          [:> Text {:as "label" :color "gray" :weight "light" :size "1"}
           "No data found for the selected period"]]
         [charts/chart-container
          {:config reviews-config
-          :class-name "max-h-[400px] w-full"
+          :class-name "h-[300px] w-full"
           :chartid :reviews-chart
           :children
           [:> recharts/BarChart {:accessibilityLayer true

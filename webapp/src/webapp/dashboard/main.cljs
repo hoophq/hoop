@@ -8,17 +8,17 @@
             [webapp.dashboard.review-chart :as review-chart]))
 
 (defn main []
-  (let [reports->today-redact-data (rf/subscribe [:reports->today-redact-data])
+  (let [reports->today-redacted-data (rf/subscribe [:reports->today-redacted-data])
         reports->today-review-data (rf/subscribe [:reports->today-review-data])
         reports->today-session-data (rf/subscribe [:reports->today-session-data])
-        redacted-data (rf/subscribe [:reports->redact-data-by-date])
+        redacted-data (rf/subscribe [:reports->redacted-data-by-date])
         reviews (rf/subscribe [:reports->review-data-by-date])
         connections (rf/subscribe [:connections])]
     (rf/dispatch [:connections->get-connections])
-    (rf/dispatch [:reports->get-today-redact-data])
+    (rf/dispatch [:reports->get-today-redacted-data])
     (rf/dispatch [:reports->get-today-review-data])
     (rf/dispatch [:reports->get-today-session-data])
-    (rf/dispatch [:reports->get-redact-data-by-date 7])
+    (rf/dispatch [:reports->get-redacted-data-by-date 7])
     (rf/dispatch [:reports->get-review-data-by-date 7])
     (fn []
       [:<>
@@ -52,7 +52,7 @@
            "protected with AI Data Masking"]
           [:> Text {:as "p" :size "8"}
            [:> Strong
-            (-> @reports->today-redact-data :data :total_redact_count)]]]]]
+            (-> @reports->today-redacted-data :data :total_redact_count)]]]]]
 
        [:> Grid {:gap "5" :columns "2"}
         [:> Section {:size "1" :p "5" :class "bg-white rounded-md"}

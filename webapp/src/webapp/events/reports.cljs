@@ -39,7 +39,7 @@
                                      :data report})}))
 
 (rf/reg-event-fx
- :reports->get-redact-data-by-date
+ :reports->get-redacted-data-by-date
  (fn
    [{:keys [db]} [_ days]]
    (let [end-date (time/today)
@@ -49,44 +49,44 @@
                         (str "start_date=" (fmt/unparse date-format (time/today)))
                         (str "start_date=" (fmt/unparse date-format start-date)
                              "&end_date=" (fmt/unparse date-format end-date)))]
-     {:db (assoc db :reports->redact-data-by-date {:status :loading
-                                                   :data nil})
+     {:db (assoc db :reports->redacted-data-by-date {:status :loading
+                                                     :data nil})
       :fx [[:dispatch [:fetch
                        {:method "GET"
                         :uri (str "/reports/sessions?" query-params)
-                        :on-success #(rf/dispatch [::reports->set-redact-data % days])}]]]})))
+                        :on-success #(rf/dispatch [::reports->set-redacted-data % days])}]]]})))
 
 (rf/reg-event-fx
- ::reports->set-redact-data
+ ::reports->set-redacted-data
  (fn
    [{:keys [db]} [_ report days]]
-   {:db (assoc db :reports->redact-data-by-date {:status :ready
-                                                 :data (merge report
-                                                              {:range-date
-                                                               (str (format-date-with-suffix (time/minus (time/today) (time/days days)))
-                                                                    " - "
-                                                                    (format-date-with-suffix (time/today)))})})}))
+   {:db (assoc db :reports->redacted-data-by-date {:status :ready
+                                                   :data (merge report
+                                                                {:range-date
+                                                                 (str (format-date-with-suffix (time/minus (time/today) (time/days days)))
+                                                                      " - "
+                                                                      (format-date-with-suffix (time/today)))})})}))
 
 (rf/reg-event-fx
- :reports->get-today-redact-data
+ :reports->get-today-redacted-data
  (fn
    [{:keys [db]} [_]]
    (let [start-date (time/today)
          date-format (fmt/formatter "yyyy-MM-dd")
          query-params (str "start_date=" (fmt/unparse date-format start-date))]
-     {:db (assoc db :reports->today-redact-data {:status :loading
-                                                 :data nil})
+     {:db (assoc db :reports->today-redacted-data {:status :loading
+                                                   :data nil})
       :fx [[:dispatch [:fetch
                        {:method "GET"
                         :uri (str "/reports/sessions?" query-params)
-                        :on-success #(rf/dispatch [::reports->set-today-redact-data %])}]]]})))
+                        :on-success #(rf/dispatch [::reports->set-today-redacted-data %])}]]]})))
 
 (rf/reg-event-fx
- ::reports->set-today-redact-data
+ ::reports->set-today-redacted-data
  (fn
    [{:keys [db]} [_ report]]
-   {:db (assoc db :reports->today-redact-data {:status :ready
-                                               :data report})}))
+   {:db (assoc db :reports->today-redacted-data {:status :ready
+                                                 :data report})}))
 
 (rf/reg-event-fx
  :reports->get-review-data-by-date
