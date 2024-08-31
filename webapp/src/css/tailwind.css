@@ -76,11 +76,17 @@
 
 @layer base {
   :root {
-    --chart-1: 12 76% 61%;
-    --chart-2: 173 58% 39%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
+    --chart-1: 243.8 47.1% 20%;
+    --chart-2: 242.2 47.4% 34.3%;
+    --chart-3: 243.7 54.5% 41.4%;
+    --chart-4: 244.5 57.9% 50.6%;
+    --chart-5: 243.4 75.4% 58.6%;
+    --chart-6: 238.7 83.5% 66.7%;
+    --chart-7: 234.5 89.5% 73.9%;
+    --chart-8: 229.7 93.5% 81.8%;
+    --chart-9: 228 96.5% 88.8%;
+    --chart-10: 226.5 100% 93.9%;
+    --chart-11: 225.9 100% 96.7%;
   }
 
   .dark {
@@ -89,5 +95,22 @@
     --chart-3: 30 80% 55%;
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
+    --chart-6: 220 70% 50%;
+    --chart-7: 160 60% 45%;
+    --chart-8: 30 80% 55%;
+    --chart-9: 280 65% 60%;
+    --chart-10: 340 75% 55%;
+    --chart-11: 340 75% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
   }
 }

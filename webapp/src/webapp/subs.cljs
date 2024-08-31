@@ -1,6 +1,7 @@
 (ns webapp.subs
   (:require
-   [re-frame.core :as re-frame]))
+   [re-frame.core :as re-frame]
+   [webapp.formatters :as f]))
 
 (re-frame/reg-sub
  :user
@@ -358,3 +359,28 @@
  :reports->session
  (fn [db _]
    (:reports->session db)))
+
+(re-frame/reg-sub
+ :reports->redact-data-by-date
+ (fn [db _]
+   (:reports->redact-data-by-date db)))
+
+(re-frame/reg-sub
+ :reports->review-data-by-date
+ (fn [db _]
+   (:reports->review-data-by-date db)))
+
+(re-frame/reg-sub
+ :reports->today-redact-data
+ (fn [db _]
+   (:reports->today-redact-data db)))
+
+(re-frame/reg-sub
+ :reports->today-review-data
+ (fn [db _]
+   (:reports->today-review-data db)))
+
+(re-frame/reg-sub
+ :reports->today-session-data
+ (fn [db _]
+   (:reports->today-session-data db)))

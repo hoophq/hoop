@@ -8,6 +8,13 @@
               :uri "/client"
               :navigate :editor-plugin
               :free-feature? true}
+             {:name "Dashboard"
+              :label "Dashboard"
+              :icon (fn [props]
+                      [:> hero-outline-icon/RectangleGroupIcon props])
+              :uri "/dashboard"
+              :navigate :dashboard
+              :free-feature? true}
              {:name "Sessions"
               :icon (fn [props]
                       [:> hero-outline-icon/RectangleStackIcon props])

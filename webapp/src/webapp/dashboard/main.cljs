@@ -1,46 +1,79 @@
 (ns webapp.dashboard.main
-  (:require [webapp.components.charts :as charts]
-            ["@radix-ui/themes" :refer [Button]]
-            ["lucide-react" :refer [Camera]]
-            ["recharts" :as recharts]))
-
-(def chartData
-  (clj->js
-   [{:month "January", :desktop 186, :mobile 80},
-    {:month "February", :desktop 305, :mobile 200},
-    {:month "March", :desktop 237, :mobile 120},
-    {:month "April", :desktop 73, :mobile 190},
-    {:month "May", :desktop 209, :mobile 130},
-    {:month "June", :desktop 214, :mobile 140}]))
-
-(def chartConfig
-  {:desktop {:label "Desktop"
-             :color "#2563eb"}
-   :mobile {:label "Mobile"
-            :color "#60a5fa"}})
+  (:require ["@radix-ui/themes" :refer [Box Flex Grid Heading Section Strong
+                                        Text]]
+            [re-frame.core :as rf]
+            [webapp.dashboard.coming-soon :as coming-soon]
+            [webapp.dashboard.connection-chart :as connection-chart]
+            [webapp.dashboard.redacted-data-chart :as redacted-data-chart]
+            [webapp.dashboard.review-chart :as review-chart]))
 
 (defn main []
-  [:div
-   [:h1 "Dashboard"]
-   [:> Button {:variant "classic"}
-    "Edit profile"]
-   [:> Camera {:size 32 :fill "black" :stroke "white"}]
-   [charts/chart-container
-    {:config chartConfig
-     :class-name "min-h-[200px] w-full"
-     :children [:> recharts/BarChart {:accessibilityLayer true
-                                      :data chartData}
-                [:> recharts/CartesianGrid {:vertical false}]
-                [:> recharts/XAxis {:dataKey "month"
-                                    :tickLine false
-                                    :tickMargin 10
-                                    :axisLine false
-                                    :tickFormatter (fn [value] (str (subs value 0 3) "."))}]
-                [:> recharts/Tooltip {:content [charts/chart-tooltip-content]}]
-                [:> recharts/Legend {:content [charts/chart-legend-content]}]
-                [:> recharts/Bar {:dataKey "desktop"
-                                  :fill "var(--color-desktop)"
-                                  :radius 4}]
-                [:> recharts/Bar {:dataKey "mobile"
-                                  :fill "var(--color-mobile"
-                                  :radius 4}]]}]])
+  (let [reports->today-redact-data (rf/subscribe [:reports->today-redact-data])
+        reports->today-review-data (rf/subscribe [:reports->today-review-data])
+        reports->today-session-data (rf/subscribe [:reports->today-session-data])
+        redacted-data (rf/subscribe [:reports->redact-data-by-date])
+        reviews (rf/subscribe [:reports->review-data-by-date])
+        connections (rf/subscribe [:connections])]
+    (rf/dispatch [:connections->get-connections])
+    (rf/dispatch [:reports->get-today-redact-data])
+    (rf/dispatch [:reports->get-today-review-data])
+    (rf/dispatch [:reports->get-today-session-data])
+    (rf/dispatch [:reports->get-redact-data-by-date 7])
+    (rf/dispatch [:reports->get-review-data-by-date 7])
+    (fn []
+      [:<>
+       [:> Section {:size "1"}
+        [:> Box {:p "5" :class "bg-white rounded-t-md border border-gray-100"}
+         [:> Heading {:as "h2" :size "3"}
+          "Today's overview"]]
+        [:> Flex {:gap "1" :p "5" :justify "between" :class "bg-white rounded-b-md border border-gray-100"}
+         [:> Box {:minWidth "300px"}
+          [:> Heading {:as "h3" :size "2"}
+           "Sessions"]
+          [:> Text {:as "label" :color "gray" :weight "light" :size "1"}
+           "reviewed and safely executed"]
+          [:> Text {:as "p" :size "8"}
+           [:> Strong
+            (-> @reports->today-session-data
+                :data
+                :total)]]]
+         [:> Box {:minWidth "300px"}
+          [:> Heading {:as "h3" :size "2"}
+           "Reviews"]
+          [:> Text {:as "label" :color "gray" :weight "light" :size "1"}
+           "sent via safe channels"]
+          [:> Text {:as "p" :size "8"}
+           [:> Strong
+            (count (:data @reports->today-review-data))]]]
+         [:> Box {:minWidth "300px"}
+          [:> Heading {:as "h3" :size "2"}
+           "Redacted Data"]
+          [:> Text {:as "label" :color "gray" :weight "light" :size "1"}
+           "protected with AI Data Masking"]
+          [:> Text {:as "p" :size "8"}
+           [:> Strong
+            (-> @reports->today-redact-data :data :total_redact_count)]]]]]
+
+       [:> Grid {:gap "5" :columns "2"}
+        [:> Section {:size "1" :p "5" :class "bg-white rounded-md"}
+         [:> Flex {:direction "column" :height "100%"}
+          [:> Box
+           [:> Heading {:as "h3" :size "2"}
+            "Sessions"]]
+
+          [coming-soon/main]]]
+
+        [review-chart/main reviews]]
+
+       [redacted-data-chart/main redacted-data]
+
+       [:> Grid {:gap "5" :columns "2"}
+        [:> Section {:size "1" :p "5" :class "bg-white rounded-md"}
+         [:> Flex {:direction "column" :height "100%"}
+          [:> Box
+           [:> Heading {:as "h3" :size "2"}
+            "Runbooks"]]
+
+          [coming-soon/main]]]
+
+        [connection-chart/main connections]]])))
