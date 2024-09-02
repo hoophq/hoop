@@ -20,14 +20,17 @@ func decodeLicenseToMap(licenseDataJSON []byte) (map[string]any, error) {
 	return out, json.Unmarshal(licenseDataJSON, &out)
 }
 
+// CreateOrg creates an organization and store the license data if it's provided
 func (o *org) CreateOrg(id, name string, licenseDataJSON []byte) error {
-	licenseData, err := decodeLicenseToMap(licenseDataJSON)
-	if err != nil {
-		return fmt.Errorf("unable to encode license data properly: %v", err)
+	requestPayload := map[string]any{"id": id, "name": name}
+	if len(licenseDataJSON) > 0 {
+		licenseData, err := decodeLicenseToMap(licenseDataJSON)
+		if err != nil {
+			return fmt.Errorf("unable to encode license data properly: %v", err)
+		}
+		requestPayload["license_data"] = licenseData
 	}
-	return pgrest.New("/orgs").
-		Create(map[string]any{"id": id, "name": name, "license_data": licenseData}).
-		Error()
+	return pgrest.New("/orgs").Create(requestPayload).Error()
 }
 
 // CreateOrGetOrg creates an organization if it doesn't exist, otherwise

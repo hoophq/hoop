@@ -127,10 +127,16 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 	if clientOrigin[0] == pb.ConnectionOriginAgent {
 		return s.subscribeAgent(streamclient.NewAgent(gwctx.Agent, stream))
 	}
-	l, err := license.Parse(gwctx.UserContext.OrgLicenseData, s.ApiHostname)
-	if err != nil {
-		log.Warnf("license is not valid, verify error: %v", err)
-		return status.Error(codes.FailedPrecondition, license.ErrNotValid.Error())
+	// if the license information is not present in the database
+	// consider the type of license as open source.
+	licenseType := license.OSSType
+	if gwctx.UserContext.OrgLicenseData != nil {
+		l, err := license.Parse(*gwctx.UserContext.OrgLicenseData, s.ApiHostname)
+		if err != nil {
+			log.Warnf("license is not valid, verify error: %v", err)
+			return status.Error(codes.FailedPrecondition, license.ErrNotValid.Error())
+		}
+		licenseType = l.Payload.Type
 	}
 
 	pluginCtx := &plugintypes.Context{
@@ -139,7 +145,7 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 
 		OrgID:          gwctx.UserContext.OrgID,
 		OrgName:        gwctx.UserContext.OrgName, // TODO: it's not set when it's a service account
-		OrgLicenseType: l.Payload.Type,
+		OrgLicenseType: licenseType,
 		UserID:         gwctx.UserContext.UserID,
 		UserName:       gwctx.UserContext.UserName,
 		UserEmail:      gwctx.UserContext.UserEmail,

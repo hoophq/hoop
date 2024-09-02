@@ -36,10 +36,10 @@ type Login struct {
 }
 
 type Org struct {
-	ID          string          `json:"id"`
-	Name        string          `json:"name"`
-	License     string          `json:"license"`
-	LicenseData json.RawMessage `json:"license_data"`
+	ID          string           `json:"id"`
+	Name        string           `json:"name"`
+	License     string           `json:"license"`
+	LicenseData *json.RawMessage `json:"license_data"`
 }
 
 type User struct {
