@@ -7,12 +7,22 @@
                       [:> hero-outline-icon/CodeBracketSquareIcon props])
               :uri "/client"
               :navigate :editor-plugin
-              :free-feature? true}
+              :free-feature? true
+              :admin-only? false}
+             {:name "Dashboard"
+              :label "Dashboard"
+              :icon (fn [props]
+                      [:> hero-outline-icon/RectangleGroupIcon props])
+              :uri "/dashboard"
+              :navigate :dashboard
+              :free-feature? true
+              :admin-only? true}
              {:name "Sessions"
               :icon (fn [props]
                       [:> hero-outline-icon/RectangleStackIcon props])
               :uri "/sessions"
-              :free-feature? true}])
+              :free-feature? true
+              :admin-only? false}])
 
 (def plugins-routes [{:name "review"
                       :label "Reviews"
@@ -20,7 +30,8 @@
                               [:> hero-outline-icon/InboxIcon props])
                       :uri "/reviews"
                       :free-feature? false
-                      :navigate :reviews-plugin}])
+                      :navigate :reviews-plugin
+                      :admin-only? false}])
 
 (def plugins-management [{:name "access_control"
                           :label "Access Control"

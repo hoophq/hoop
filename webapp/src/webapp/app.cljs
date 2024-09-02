@@ -150,7 +150,7 @@
                              [connections/panel]]])
 
 (defmethod routes/panels :dashboard-panel []
-  [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
+  [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-12 lg:pt-16 lg:pb-10 h-full overflow-auto"}
                              [h/h2 "Dashboard" {:class "mb-6"}]
                              [dashboard/main]]])
 

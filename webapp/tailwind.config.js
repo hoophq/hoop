@@ -1,11 +1,12 @@
 /** @type {import('tailwindcss').Config} */
 const plugin = require("tailwindcss/plugin");
+const { fontFamily } = require("tailwindcss/defaultTheme")
 
 module.exports = {
   content: process.env.NODE_ENV == 'production' ? 
   ["./resources/public/**/*.js", "./resources/public/**/*.html", "./node_modules/react-tailwindcss-datepicker/dist/index.esm.js"] : 
   ["./src/webapp/**/*.cljs", "./resource/public/js/cljs-runtime/*.js", "./node_modules/react-tailwindcss-datepicker/dist/index.esm.js"],
-  darkMode: 'selector',
+  darkMode: ["class"],
   screens: {
     'sm': '640px',
     // => @media (min-width: 640px) { ... }
@@ -25,8 +26,7 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["Sora", "sans-serif"],
-        mono: ["Inconsolata"],
+        sans: ["var(--font-sans)", ...fontFamily.sans]
       },
       fontSize: {
         xxs: ["0.625rem", "0.85rem"],
@@ -34,6 +34,41 @@ module.exports = {
       transitionProperty: {
         height: "height",
         spacing: "margin, padding",
+      },
+      colors: {
+        border: "hsl(var(--border))",
+        input: "hsl(var(--input))",
+        ring: "hsl(var(--ring))",
+        background: "hsl(var(--background))",
+        foreground: "hsl(var(--foreground))",
+        primary: {
+          DEFAULT: "hsl(var(--primary))",
+          foreground: "hsl(var(--primary-foreground))",
+        },
+        secondary: {
+          DEFAULT: "hsl(var(--secondary))",
+          foreground: "hsl(var(--secondary-foreground))",
+        },
+        destructive: {
+          DEFAULT: "hsl(var(--destructive))",
+          foreground: "hsl(var(--destructive-foreground))",
+        },
+        muted: {
+          DEFAULT: "hsl(var(--muted))",
+          foreground: "hsl(var(--muted-foreground))",
+        },
+        accent: {
+          DEFAULT: "hsl(var(--accent))",
+          foreground: "hsl(var(--accent-foreground))",
+        },
+        popover: {
+          DEFAULT: "hsl(var(--popover))",
+          foreground: "hsl(var(--popover-foreground))",
+        },
+        card: {
+          DEFAULT: "hsl(var(--card))",
+          foreground: "hsl(var(--card-foreground))",
+        },
       },
       height: {
         "sessions-list": "calc(100vh - 160px)",
@@ -83,14 +118,15 @@ module.exports = {
       },
       borderRadius: {
         DEFAULT: "2px",
-        lg: "8px",
         t: "2px 2px 0 0",
         "t-lg": "4px 4px 0 0",
         "l-lg": "4px 0 0 4px",
         "r-lg": "0 4px 4px 0",
         full: "9999px",
-        md: "0.375rem",
         b: "0 0 2px 2px",
+        lg: `var(--radius)`,
+        md: `calc(var(--radius) - 2px)`,
+        sm: "calc(var(--radius) - 4px)",
       },
       boxShadow: {
         "red-button-hover": "4px 4px #ed5a5a",
