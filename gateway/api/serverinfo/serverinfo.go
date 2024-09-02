@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/license"
@@ -57,10 +58,12 @@ func (h *handler) Get(c *gin.Context) {
 		return
 	}
 	apiHostname := appconfig.Get().ApiHostname()
-	l, err := license.Parse(org.LicenseData, apiHostname)
-	licenseVerifyErr := ""
-	if err != nil {
-		licenseVerifyErr = err.Error()
+	l, licenseVerifyErr := defaultOSSLicense(), ""
+	if org.LicenseData != nil {
+		l, err = license.Parse(*org.LicenseData, apiHostname)
+		if err != nil {
+			licenseVerifyErr = err.Error()
+		}
 	}
 	tenancyType := "selfhosted"
 	if isOrgMultiTenant {
@@ -69,19 +72,31 @@ func (h *handler) Get(c *gin.Context) {
 	serverInfoData.TenancyType = tenancyType
 	serverInfoData.GrpcURL = h.grpcURL
 	serverInfoData.HasAskiAICredentials = appconfig.Get().IsAskAIAvailable()
+	serverInfoData.LicenseInfo = &openapi.ServerLicenseInfo{
+		IsValid:      err == nil,
+		VerifyError:  licenseVerifyErr,
+		VerifiedHost: apiHostname,
+	}
 	if l != nil {
-		serverInfoData.LicenseInfo = &openapi.ServerLicenseInfo{
-			KeyID:        l.KeyID,
-			AllowedHosts: l.Payload.AllowedHosts,
-			Type:         l.Payload.Type,
-			IssuedAt:     l.Payload.IssuedAt,
-			ExpireAt:     l.Payload.ExpireAt,
-			IsValid:      err == nil,
-			VerifyError:  licenseVerifyErr,
-			VerifiedHost: apiHostname,
-		}
+		serverInfoData.LicenseInfo.KeyID = l.KeyID
+		serverInfoData.LicenseInfo.AllowedHosts = l.Payload.AllowedHosts
+		serverInfoData.LicenseInfo.Type = l.Payload.Type
+		serverInfoData.LicenseInfo.IssuedAt = l.Payload.IssuedAt
+		serverInfoData.LicenseInfo.ExpireAt = l.Payload.ExpireAt
 	}
 	c.JSON(http.StatusOK, serverInfoData)
+}
+
+func defaultOSSLicense() *license.License {
+	return &license.License{
+		KeyID: "",
+		Payload: license.Payload{
+			Type:         license.OSSType,
+			IssuedAt:     time.Now().UTC().Unix(),
+			ExpireAt:     time.Now().UTC().AddDate(10, 0, 0).Unix(),
+			AllowedHosts: []string{"*"},
+		},
+	}
 }
 
 func isEnvSet(key string) bool {

@@ -8,17 +8,17 @@ import (
 )
 
 type APIContext struct {
-	OrgID          string          `json:"org_id"`
-	OrgName        string          `json:"org_name"`
-	OrgLicense     string          `json:"org_license"`
-	OrgLicenseData json.RawMessage `json:"org_license_data"`
-	UserID         string          `json:"user_id"`
-	UserName       string          `json:"user_name"`
-	UserEmail      string          `json:"user_email"`
-	UserGroups     []string        `json:"user_groups"`
-	UserStatus     string          `json:"user_status"`
-	SlackID        string          `json:"slack_id"`
-	UserPicture    string          `json:"picture"`
+	OrgID          string           `json:"org_id"`
+	OrgName        string           `json:"org_name"`
+	OrgLicense     string           `json:"org_license"`
+	OrgLicenseData *json.RawMessage `json:"org_license_data"`
+	UserID         string           `json:"user_id"`
+	UserName       string           `json:"user_name"`
+	UserEmail      string           `json:"user_email"`
+	UserGroups     []string         `json:"user_groups"`
+	UserStatus     string           `json:"user_status"`
+	SlackID        string           `json:"slack_id"`
+	UserPicture    string           `json:"picture"`
 
 	UserAnonSubject       string
 	UserAnonEmail         string

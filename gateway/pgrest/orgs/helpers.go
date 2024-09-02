@@ -11,7 +11,7 @@ import (
 // CreateDefaultOrganization list all organizations and create a default
 // if there is not any. Otherwise returns the ID of the first organization.
 // In case there are more than one organization, returns an error.
-func CreateDefaultOrganization(licenseDataJSON []byte) (pgrest.OrgContext, error) {
+func CreateDefaultOrganization() (pgrest.OrgContext, error) {
 	orgList, err := New().FetchAllOrgs()
 	if err != nil {
 		return nil, fmt.Errorf("failed listing orgs, err=%v", err)
@@ -19,7 +19,7 @@ func CreateDefaultOrganization(licenseDataJSON []byte) (pgrest.OrgContext, error
 	switch {
 	case len(orgList) == 0:
 		orgID := uuid.NewString()
-		if err := New().CreateOrg(orgID, proto.DefaultOrgName, licenseDataJSON); err != nil {
+		if err := New().CreateOrg(orgID, proto.DefaultOrgName, nil); err != nil {
 			return nil, fmt.Errorf("failed creating the default organization, err=%v", err)
 		}
 		return pgrest.NewOrgContext(orgID), nil

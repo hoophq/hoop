@@ -11,7 +11,7 @@ type Context struct {
 	OrgID          string
 	OrgName        string
 	OrgLicense     string
-	OrgLicenseData json.RawMessage
+	OrgLicenseData *json.RawMessage
 	UserUUID       string
 	UserSubject    string
 	UserEmail      string

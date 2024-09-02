@@ -11,7 +11,6 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/common/envloader"
 	"github.com/hoophq/hoop/common/grpc"
-	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/monitoring"
 	"github.com/hoophq/hoop/common/version"
@@ -77,7 +76,7 @@ func Run() {
 	reviewService := review.Service{}
 	if !pgusers.IsOrgMultiTenant() {
 		log.Infof("provisioning default organization")
-		ctx, err := pgorgs.CreateDefaultOrganization(license.DefaultOSS)
+		ctx, err := pgorgs.CreateDefaultOrganization()
 		if err != nil {
 			log.Fatal(err)
 		}
