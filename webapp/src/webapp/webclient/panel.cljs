@@ -31,6 +31,12 @@
             [webapp.formatters :as formatters]
             [webapp.subs :as subs]))
 
+(defn discorver-connection-type [connection]
+  (cond
+    (not (cs/blank? (:subtype connection))) (:subtype connection)
+    (not (cs/blank? (:icon_name connection))) (:icon_name connection)
+    :else (:type connection)))
+
 (defn metadata->json-stringify
   [metadata]
   (->> metadata
@@ -63,20 +69,27 @@
       (reset! timer (js/setTimeout #(save-code-to-localstorage code-string) 1000))
       (reset! script code-string))))
 
-(defn- submit-task [e script selected-connections atom-exec-list-open? metadata]
-  (when (.-preventDefault e) (.preventDefault e))
+(defn- submit-task [e script selected-connections atom-exec-list-open? metadata script-response]
+  (println @script-response)
+  (let [connection-type (discorver-connection-type (first selected-connections))
+        change-to-tabular? (and (some (partial = connection-type) ["mysql" "postgres" "sql-server" "oracledb" "mssql" "database"])
+                                (< (count @script-response) 1))]
+    (when (.-preventDefault e) (.preventDefault e))
 
-  (if (and (seq selected-connections)
-           (> (count selected-connections) 1))
-    (reset! atom-exec-list-open? true)
+    (if (and (seq selected-connections)
+             (> (count selected-connections) 1))
+      (reset! atom-exec-list-open? true)
 
-    (if (first selected-connections)
-      (rf/dispatch [:editor-plugin->exec-script {:script script
-                                                 :connection-name (:name (first selected-connections))
-                                                 :metadata (metadata->json-stringify metadata)}])
+      (if (first selected-connections)
+        (do
+          (when change-to-tabular?
+            (reset! log-area/selected-tab "Tabular"))
+          (rf/dispatch [:editor-plugin->exec-script {:script script
+                                                     :connection-name (:name (first selected-connections))
+                                                     :metadata (metadata->json-stringify metadata)}]))
 
-      (rf/dispatch [:show-snackbar {:level :info
-                                    :text "You must choose a connection"}]))))
+        (rf/dispatch [:show-snackbar {:level :info
+                                      :text "You must choose a connection"}])))))
 
 (defmulti ^:private saved-status-el identity)
 (defmethod ^:private saved-status-el :saved [_]
@@ -125,6 +138,7 @@
         database-schema (rf/subscribe [::subs/database-schema])
         plugins (rf/subscribe [:plugins->my-plugins])
         selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])
+        script-response (rf/subscribe [:editor-plugin->script])
         vertical-pane-sizes (mapv js/parseInt
                                   (cs/split
                                    (or (.getItem js/localStorage "editor-vertical-pane-sizes") "250,950") ","))
@@ -160,10 +174,7 @@
             review-plugin->connections (map #(:name %) (:connections (get-plugin-by-name "review")))
             current-connection last-connection-selected
             connection-name (:name current-connection)
-            connection-type (cond
-                              (not (cs/blank? (:subtype current-connection))) (:subtype current-connection)
-                              (not (cs/blank? (:icon_name current-connection))) (:icon_name current-connection)
-                              :else (:type current-connection))
+            connection-type (discorver-connection-type current-connection)
             current-connection-details (fn [connection]
                                          (first (filter #(= (:name connection) (:name %))
                                                         (:connections (get-plugin-by-name "editor")))))
@@ -182,9 +193,9 @@
                              @script
                              run-connections-list-selected
                              multiple-connections-exec-list-component/atom-exec-list-open?
-                             (conj @metadata {:key @metadata-key :value @metadata-value}))
+                             (conj @metadata {:key @metadata-key :value @metadata-value})
+                             script-response)
 
-                            (reset! log-area/selected-tab "Logs")
                             (reset! metadata [])
                             (reset! metadata-key "")
                             (reset! metadata-value ""))
@@ -199,9 +210,9 @@
                                (.sliceString ^cm-state/Text (.-doc (.-state config)) from to)
                                run-connections-list-selected
                                multiple-connections-exec-list-component/atom-exec-list-open?
-                               (conj @metadata {:key @metadata-key :value @metadata-value}))
+                               (conj @metadata {:key @metadata-key :value @metadata-value})
+                               script-response)
 
-                              (reset! log-area/selected-tab "Logs")
                               (reset! metadata [])
                               (reset! metadata-key "")
                               (reset! metadata-value "")))
@@ -293,9 +304,9 @@
                                                    @script
                                                    run-connections-list-selected
                                                    multiple-connections-exec-list-component/atom-exec-list-open?
-                                                   (conj @metadata {:key @metadata-key :value @metadata-value}))
+                                                   (conj @metadata {:key @metadata-key :value @metadata-value})
+                                                   script-response)
 
-                                                  (reset! log-area/selected-tab "Logs")
                                                   (reset! metadata [])
                                                   (reset! metadata-key "")
                                                   (reset! metadata-value ""))
@@ -330,7 +341,7 @@
                [:<>
                 [:> CodeMirror/default {:value @script
                                         :height "100%"
-                                        :className "h-full"
+                                        :className "h-full text-sm"
                                         :theme (get theme-parser-map @select-theme)
                                         :basicSetup #js{:defaultKeymap false}
                                         :extensions (clj->js
@@ -351,7 +362,7 @@
                                                          (.of (.-readOnly cm-state/EditorState) true)])))
                                         :onUpdate #(auto-save % script)}]]))
 
-           [log-area/main connection-type is-one-connection-selected?]]]
+           [log-area/main connection-type is-one-connection-selected? (show-tree? current-connection)]]]
          [:div {:class "border border-gray-600"}
           [:footer {:class "flex justify-between items-center p-small gap-small"}
            [:div {:class "flex items-center gap-small"}

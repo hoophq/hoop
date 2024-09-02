@@ -18,7 +18,8 @@
     (when-not (nil? results)
       (get (js->clj (papa/parse res (clj->js {"delimiter" "\t"}))) "data"))))
 
-(def selected-tab (r/atom "Logs"))
+(def selected-tab (r/atom (or (.getItem js/localStorage "webclient-selected-tab")
+                              "Logs")))
 
 (defn main [_]
   (let [user (rf/subscribe [:users->current-user])
@@ -26,8 +27,7 @@
         question-responses (rf/subscribe [:ask-ai->question-responses])
         database-schema (rf/subscribe [::subs/database-schema])
         input-question (r/atom "")]
-    (reset! selected-tab "Logs")
-    (fn [connection-type is-one-connection-selected?]
+    (fn [connection-type is-one-connection-selected? show-tabular?]
       (let [terminal-content (map #(into {} {:status (:status %)
                                              :response (:output (:data %))
                                              :response-status (:output_status (:data %))
@@ -51,7 +51,23 @@
             results-transformed (transform-results->matrix sanitize-results connection-type)
             results-heads (first results-transformed)
             results-body (next results-transformed)
-            connection-type-database? (some (partial = connection-type) ["mysql" "postgres" "sql-server" "oracledb" "mssql" "database"])]
+            connection-type-database? (some (partial = connection-type)
+                                            ["mysql" "postgres" "sql-server" "oracledb" "mssql" "database"])
+            available-tabs (merge
+                            {:terminal "Logs"}
+                            (when (and connection-type-database?
+                                       is-one-connection-selected?
+                                       show-tabular?)
+                              {:tabular "Tabular"})
+                            (when (and (= feature-ai-ask "enabled")
+                                       connection-type-database?
+                                       is-one-connection-selected?)
+                              {:ai "AI"}))]
+
+        (when-not (some #(= @selected-tab %) (vals available-tabs))
+          (.setItem js/localStorage "webclient-selected-tab" (first (vals available-tabs)))
+          (reset! selected-tab (first (vals available-tabs))))
+
         [:div {:class "h-full flex flex-col"}
          ;; start ask-ai ui
          (when (and (= feature-ai-ask "enabled")
@@ -86,15 +102,10 @@
          [:div {:class (str (if (= feature-ai-ask "enabled")
                               "h-terminal-container"
                               "h-full"))}
-          [tabs {:on-click #(reset! selected-tab %2)
-                 :tabs (merge
-                        (when (and (= feature-ai-ask "enabled")
-                                   connection-type-database?
-                                   is-one-connection-selected?)
-                          {:ai "AI"})
-                        {:terminal "Logs"}
-                        (when connection-type-database?
-                          {:tabular "Tabular"}))
+          [tabs {:on-click (fn [_ value]
+                             (.setItem js/localStorage "webclient-selected-tab" value)
+                             (reset! selected-tab value))
+                 :tabs available-tabs
                  :selected-tab @selected-tab}]
           (case @selected-tab
             "AI" [terminal/main :ai ai-content]

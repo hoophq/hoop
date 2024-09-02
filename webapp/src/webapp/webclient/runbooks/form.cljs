@@ -85,12 +85,10 @@
                          (if (> (count selected-connections) 1)
                            (reset! exec-multiples-runbooks-list/atom-exec-runbooks-list-open? true)
 
-                           (do
-                             (reset! log-area/selected-tab "Logs")
-                             (rf/dispatch [:editor-plugin->run-runbook
-                                           {:file-name (-> template :data :name)
-                                            :params @state
-                                            :connection-name connection-name}]))))}
+                           (rf/dispatch [:editor-plugin->run-runbook
+                                         {:file-name (-> template :data :name)
+                                          :params @state
+                                          :connection-name connection-name}])))}
            [:header {:class "mb-regular"}
             [:div {:class "flex items-center gap-small mb-small"}
              [:> hero-solid-icon/DocumentIcon
