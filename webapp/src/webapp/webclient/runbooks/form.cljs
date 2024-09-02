@@ -86,7 +86,7 @@
                            (reset! exec-multiples-runbooks-list/atom-exec-runbooks-list-open? true)
 
                            (do
-                             (reset! log-area/selected-tab "Terminal")
+                             (reset! log-area/selected-tab "Logs")
                              (rf/dispatch [:editor-plugin->run-runbook
                                            {:file-name (-> template :data :name)
                                             :params @state

@@ -184,7 +184,7 @@
                              multiple-connections-exec-list-component/atom-exec-list-open?
                              (conj @metadata {:key @metadata-key :value @metadata-value}))
 
-                            (reset! log-area/selected-tab "Terminal")
+                            (reset! log-area/selected-tab "Logs")
                             (reset! metadata [])
                             (reset! metadata-key "")
                             (reset! metadata-value ""))
@@ -201,7 +201,7 @@
                                multiple-connections-exec-list-component/atom-exec-list-open?
                                (conj @metadata {:key @metadata-key :value @metadata-value}))
 
-                              (reset! log-area/selected-tab "Terminal")
+                              (reset! log-area/selected-tab "Logs")
                               (reset! metadata [])
                               (reset! metadata-key "")
                               (reset! metadata-value "")))
@@ -295,7 +295,7 @@
                                                    multiple-connections-exec-list-component/atom-exec-list-open?
                                                    (conj @metadata {:key @metadata-key :value @metadata-value}))
 
-                                                  (reset! log-area/selected-tab "Terminal")
+                                                  (reset! log-area/selected-tab "Logs")
                                                   (reset! metadata [])
                                                   (reset! metadata-key "")
                                                   (reset! metadata-value ""))

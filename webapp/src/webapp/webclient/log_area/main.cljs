@@ -18,7 +18,7 @@
     (when-not (nil? results)
       (get (js->clj (papa/parse res (clj->js {"delimiter" "\t"}))) "data"))))
 
-(def selected-tab (r/atom "Terminal"))
+(def selected-tab (r/atom "Logs"))
 
 (defn main [_]
   (let [user (rf/subscribe [:users->current-user])
@@ -26,7 +26,7 @@
         question-responses (rf/subscribe [:ask-ai->question-responses])
         database-schema (rf/subscribe [::subs/database-schema])
         input-question (r/atom "")]
-    (reset! selected-tab "Terminal")
+    (reset! selected-tab "Logs")
     (fn [connection-type is-one-connection-selected?]
       (let [terminal-content (map #(into {} {:status (:status %)
                                              :response (:output (:data %))
@@ -92,12 +92,12 @@
                                    connection-type-database?
                                    is-one-connection-selected?)
                           {:ai "AI"})
-                        {:terminal "Terminal"}
+                        {:terminal "Logs"}
                         (when connection-type-database?
                           {:tabular "Tabular"}))
                  :selected-tab @selected-tab}]
           (case @selected-tab
             "AI" [terminal/main :ai ai-content]
             "Tabular" [data-grid-table/main results-heads results-body true tabular-loading?]
-            "Terminal" [terminal/main :terminal terminal-content]
+            "Logs" [terminal/main :terminal terminal-content]
             :else [terminal/main terminal-content])]]))))
