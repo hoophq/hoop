@@ -99,7 +99,9 @@
       :fx [[:dispatch [:fetch
                        {:method "GET"
                         :uri (str "/sessions/" (:id session) event-stream)
-                        :on-success #(rf/dispatch [:audit->set-session %])}]]]})))
+                        :on-success (fn [session-data]
+                                      (rf/dispatch [:audit->set-session session-data])
+                                      (rf/dispatch [:reports->get-report-by-session-id session-data]))}]]]})))
 
 (rf/reg-event-db
  :audit->clear-session-details-state

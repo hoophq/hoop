@@ -181,9 +181,9 @@
         executing-status (r/atom :ready)
         add-review-popover-open? (r/atom false)
         clipboard-url (new clipboardjs ".copy-to-clipboard-url")]
+    (rf/dispatch [:reports->clear-session-report-by-id])
     (when session
-      (rf/dispatch [:audit->get-session-by-id session])
-      (rf/dispatch [:reports->get-report-by-session-id session]))
+      (rf/dispatch [:audit->get-session-by-id session]))
     (fn []
       (let [session (:session @session-details)
             user-name (:user_name session)
