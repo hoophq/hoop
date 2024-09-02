@@ -25,18 +25,21 @@ type pgCredentials struct {
 	postgrestRole string
 }
 type Config struct {
-	askAICredentials      *url.URL
-	pgCred                *pgCredentials
-	gcpDLPJsonCredentials string
-	webhookAppKey         string
-	licenseSigningKey     *rsa.PrivateKey
-	licenseSignerOrgID    string
-	migrationPathFiles    string
-	apiURL                string
-	apiHostname           string
-	apiHost               string
-	apiScheme             string
-	webappUsersManagement string
+	askAICredentials        *url.URL
+	pgCred                  *pgCredentials
+	gcpDLPJsonCredentials   string
+	dlpProvider             string
+	msPresidioAnalyzerURL   string
+	msPresidioAnonymizerURL string
+	webhookAppKey           string
+	licenseSigningKey       *rsa.PrivateKey
+	licenseSignerOrgID      string
+	migrationPathFiles      string
+	apiURL                  string
+	apiHostname             string
+	apiHost                 string
+	apiScheme               string
+	webappUsersManagement   string
 
 	isLoaded bool
 }
@@ -89,19 +92,22 @@ func Load() error {
 		webappUsersManagement = "on"
 	}
 	runtimeConfig = Config{
-		apiURL:                fmt.Sprintf("%s://%s", apiRawURL.Scheme, apiRawURL.Host),
-		apiHostname:           apiRawURL.Hostname(),
-		apiScheme:             apiRawURL.Scheme,
-		apiHost:               apiRawURL.Host,
-		askAICredentials:      askAICred,
-		pgCred:                pgCred,
-		migrationPathFiles:    migrationPathFiles,
-		licenseSigningKey:     licensePrivKey,
-		licenseSignerOrgID:    allowedOrgID,
-		gcpDLPJsonCredentials: gcpJsonCred,
-		webhookAppKey:         os.Getenv("WEBHOOK_APPKEY"),
-		webappUsersManagement: webappUsersManagement,
-		isLoaded:              true,
+		apiURL:                  fmt.Sprintf("%s://%s", apiRawURL.Scheme, apiRawURL.Host),
+		apiHostname:             apiRawURL.Hostname(),
+		apiScheme:               apiRawURL.Scheme,
+		apiHost:                 apiRawURL.Host,
+		askAICredentials:        askAICred,
+		pgCred:                  pgCred,
+		migrationPathFiles:      migrationPathFiles,
+		licenseSigningKey:       licensePrivKey,
+		licenseSignerOrgID:      allowedOrgID,
+		gcpDLPJsonCredentials:   gcpJsonCred,
+		dlpProvider:             os.Getenv("DLP_PROVIDER"),
+		msPresidioAnalyzerURL:   os.Getenv("MSPRESIDIO_ANALYZER_URL"),
+		msPresidioAnonymizerURL: os.Getenv("MSPRESIDIO_ANONYMIZER_URL"),
+		webhookAppKey:           os.Getenv("WEBHOOK_APPKEY"),
+		webappUsersManagement:   webappUsersManagement,
+		isLoaded:                true,
 	}
 	return nil
 }
@@ -186,13 +192,16 @@ func (c Config) ApiURL() string      { return c.apiURL }
 func (c Config) ApiHostname() string { return c.apiHostname }
 
 // ApiHost host or host:port
-func (c Config) ApiHost() string               { return c.apiHost }
-func (c Config) ApiScheme() string             { return c.apiScheme }
-func (c Config) WebhookAppKey() string         { return c.webhookAppKey }
-func (c Config) GcpDLPJsonCredentials() string { return c.gcpDLPJsonCredentials }
-func (c Config) PgUsername() string            { return c.pgCred.username }
-func (c Config) PgURI() string                 { return c.pgCred.connectionString }
-func (c Config) PostgRESTRole() string         { return c.pgCred.postgrestRole }
+func (c Config) ApiHost() string                 { return c.apiHost }
+func (c Config) ApiScheme() string               { return c.apiScheme }
+func (c Config) WebhookAppKey() string           { return c.webhookAppKey }
+func (c Config) GcpDLPJsonCredentials() string   { return c.gcpDLPJsonCredentials }
+func (c Config) DlpProvider() string             { return c.dlpProvider }
+func (c Config) MSPresidioAnalyzerURL() string   { return c.msPresidioAnalyzerURL }
+func (c Config) MSPresidioAnomymizerURL() string { return c.msPresidioAnonymizerURL }
+func (c Config) PgUsername() string              { return c.pgCred.username }
+func (c Config) PgURI() string                   { return c.pgCred.connectionString }
+func (c Config) PostgRESTRole() string           { return c.pgCred.postgrestRole }
 
 func (c Config) MigrationPathFiles() string { return c.migrationPathFiles }
 

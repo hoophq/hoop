@@ -190,6 +190,18 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			spec[pb.SpecAgentGCPRawCredentialsKey] = []byte(jsonCred)
 		}
 
+		if dlpProvider := appconfig.Get().DlpProvider(); dlpProvider != "" {
+			spec[pb.SpecAgentDlpProvider] = []byte(dlpProvider)
+		}
+
+		if msPresidioAnalyzerURL := appconfig.Get().MSPresidioAnalyzerURL(); msPresidioAnalyzerURL != "" {
+			spec[pb.SpecAgentMSPresidioAnalyzerURL] = []byte(msPresidioAnalyzerURL)
+		}
+
+		if msPresidioAnonymizerURL := appconfig.Get().MSPresidioAnomymizerURL(); msPresidioAnonymizerURL != "" {
+			spec[pb.SpecAgentMSPresidioAnonymizerURL] = []byte(msPresidioAnonymizerURL)
+		}
+
 		if !stream.IsAgentOnline() {
 			spec[pb.SpecClientExecArgsKey] = pkt.Spec[pb.SpecClientExecArgsKey]
 			_ = stream.Send(&pb.Packet{
