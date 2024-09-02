@@ -102,23 +102,8 @@
    :access_schema "enabled"
    :agent_id ""
    :reviewers []
-   :redact_enabled true
-   :redact_types ["PHONE_NUMBER",
-                  "CREDIT_CARD_NUMBER",
-                  "CREDIT_CARD_TRACK_NUMBER",
-                  "EMAIL_ADDRESS",
-                  "IBAN_CODE",
-                  "HTTP_COOKIE",
-                  "IMEI_HARDWARE_ID",
-                  "IP_ADDRESS",
-                  "STORAGE_SIGNED_URL",
-                  "URL",
-                  "VEHICLE_IDENTIFICATION_NUMBER",
-                  "BRAZIL_CPF_NUMBER",
-                  "AMERICAN_BANKERS_CUSIP_ID",
-                  "FDA_CODE",
-                  "US_PASSPORT",
-                  "US_SOCIAL_SECURITY_NUMBER"]
+   :redact_enabled false
+   :redact_types []
    :secret {:envvar:DB "ZGVsbHN0b3Jl"
             :envvar:DBNAME "ZGVsbHN0b3Jl"
             :envvar:HOST "ZGVtby1wZy1kYi5jaDcwN3JuYWl6amcudXMtZWFzdC0xLnJkcy5hbWF6b25hd3MuY29t"
