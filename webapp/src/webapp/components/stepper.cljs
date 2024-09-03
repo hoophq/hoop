@@ -5,7 +5,6 @@
    [:span {:class "h-2 w-2 rounded-full bg-gray-300"}]])
 
 (defn- current-circle [extra-step]
-  (println "last-step? ")
   [:span {:class "relative z-10 w-3 flex my-2 justify-center bg-white"}
    [:span {:class (str "bg-gray-800 rounded-full "
                        (if extra-step

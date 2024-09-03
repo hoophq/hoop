@@ -70,7 +70,6 @@
       (reset! script code-string))))
 
 (defn- submit-task [e script selected-connections atom-exec-list-open? metadata script-response]
-  (println @script-response)
   (let [connection-type (discorver-connection-type (first selected-connections))
         change-to-tabular? (and (some (partial = connection-type) ["mysql" "postgres" "sql-server" "oracledb" "mssql" "database"])
                                 (< (count @script-response) 1))]

@@ -1,5 +1,6 @@
 (ns webapp.events.connections
   (:require [re-frame.core :as rf]
+            [clojure.edn :refer [read-string]]
             [webapp.connections.constants :as constants]
             [webapp.connections.views.connection-connect :as connection-connect]
             [webapp.hoop-app.setup :as setup]))
@@ -195,7 +196,16 @@ ORDER BY total_amount DESC;")
    {:fx [[:dispatch
           [:fetch {:method "DELETE"
                    :uri (str "/connections/" connection-name)
-                   :on-success (fn [] (rf/dispatch [:navigate :connections]))}]]]}))
+                   :on-success (fn []
+                                 (let [localstorage-connection
+                                       (first
+                                        (read-string (.getItem js/localStorage "run-connection-list-selected")))]
+
+                                   (when (= connection-name (:name localstorage-connection))
+                                     (.removeItem js/localStorage "run-connection-list-selected"))
+
+                                   (rf/dispatch [:connections->get-connections])
+                                   (rf/dispatch [:navigate :connections])))}]]]}))
 
 (rf/reg-event-fx
  :connections->open-connect-setup

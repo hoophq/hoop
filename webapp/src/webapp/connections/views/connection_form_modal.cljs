@@ -74,21 +74,13 @@
                   :required true
                   :value @connection-name}]]])
 
-(defn- get-plugin-connection-config
-  [plugin connection-name]
-  (get
-   (first
-    (filter #(= (:name %) connection-name) (:connections plugin)))
-   :config))
-
 (defn- convertStatusToBool [status]
   (if (= status "enabled")
     true
     false))
 
 (defn form [connection form-type connection-original-type]
-  (let [my-plugins (rf/subscribe [:plugins->my-plugins])
-        api-key (rf/subscribe [:organization->api-key])
+  (let [api-key (rf/subscribe [:organization->api-key])
         connections (rf/subscribe [:connections])
         connection-type (r/atom connection-original-type)
         connection-subtype (r/atom (if (empty? (:subtype connection))
@@ -102,8 +94,6 @@
         connection-name (r/atom (or (:name connection) (str (if @connection-subtype
                                                               @connection-subtype
                                                               "custom") "-" (random-connection-name))))
-        review-plugin (first (filter #(= (:name %) "review") @my-plugins))
-        data-masking-plugin (first (filter #(= (:name %) "dlp") @my-plugins))
         more-options? (r/atom false)
 
         data-masking-groups-value (r/atom

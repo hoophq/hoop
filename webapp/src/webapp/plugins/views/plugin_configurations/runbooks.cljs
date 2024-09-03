@@ -110,7 +110,6 @@
         url-params-list (js->clj (for [q url-search-params] q))
         url-params-map (into (sorted-map) url-params-list)
         tab (get url-params-map "tab")
-        _ (println tab)
         plugin-details (rf/subscribe [:plugins->plugin-details])
         selected-tab (r/atom (if (= tab "configurations")
                                :Configurations
