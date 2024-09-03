@@ -19,7 +19,11 @@
                                  (rf/dispatch [::editor-plugin->set-run-connection-list
                                                connections])
                                  (rf/dispatch [:editor-plugin->set-filtered-run-connection-list
-                                               connections]))}]]]}))
+                                               connections])
+                                 (when (and (= (count connections) 1)
+                                            (empty? (read-string
+                                                     (.getItem js/localStorage "run-connection-list-selected"))))
+                                   (rf/dispatch [:editor-plugin->toggle-select-run-connection (:name (first connections))])))}]]]}))
 
 (rf/reg-event-fx
  ::editor-plugin->set-run-connection-list
