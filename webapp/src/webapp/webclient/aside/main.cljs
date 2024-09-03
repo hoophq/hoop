@@ -69,11 +69,11 @@
          [:div
           [:> ui/Disclosure {:defaultOpen is-connection-section-open?}
            (fn [params]
-             (println (.-open params))
              (r/as-element
               [:<>
                [:> (.-Button ui/Disclosure)
-                {:class (str "h-8 w-full flex justify-between items-center gap-small "
+                {:id "disclosure-connection"
+                 :class (str "h-8 w-full flex justify-between items-center gap-small "
                              "text-base text-white font-semibold focus:outline-none focus-visible:ring "
                              "focus-visible:ring-gray-500 focus-visible:ring-opacity-75")
                  :on-click #(.setItem js/localStorage "webclient-connections-section"
@@ -94,7 +94,8 @@
              (r/as-element
               [:<>
                [:> (.-Button ui/Disclosure)
-                {:class (str "h-8 w-full flex justify-between items-center gap-small "
+                {:id "disclosure-runbooks"
+                 :class (str "h-8 w-full flex justify-between items-center gap-small "
                              "text-base text-white font-semibold focus:outline-none focus-visible:ring "
                              "focus-visible:ring-gray-500 focus-visible:ring-opacity-75")
                  :on-click #(.setItem js/localStorage "webclient-runbooks-section"
@@ -135,9 +136,14 @@
            {:options {:connections (:data @atom-run-connections-list)
                       :runbooks (map #(into {} {:name (:name %)}) (:data @templates))}
             :multiple-options? true
-            :on-change-results-cb (fn [option]
-                                    (rf/dispatch [:editor-plugin->set-filtered-run-connection-list (:connections option)])
-                                    (rf/dispatch [:runbooks-plugin->set-filtered-runbooks (:runbooks option)]))
+            :on-change-results-cb
+            (fn [option]
+              (rf/dispatch [:editor-plugin->set-filtered-run-connection-list (:connections option)])
+              (rf/dispatch [:runbooks-plugin->set-filtered-runbooks (:runbooks option)])
+              (when-not (.querySelector js/document "[data-headlessui-state=\"open\"]#disclosure-connection")
+                (.click (.getElementById js/document "disclosure-connection")))
+              (when-not (.querySelector js/document "[data-headlessui-state=\"open\"]#disclosure-runbooks")
+                (.click (.getElementById js/document "disclosure-runbooks"))))
             :floating? true
             :display-key :name
             :searchable-keys [:name :type :subtype :status]
