@@ -1,5 +1,6 @@
 (ns webapp.plugins.views.plugin-configurations.runbooks
-  (:require [re-frame.core :as rf]
+  (:require [clojure.string :as cs]
+            [re-frame.core :as rf]
             [reagent.core :as r]
             [webapp.components.button :as button]
             [webapp.components.forms :as forms]
@@ -104,12 +105,21 @@
   [configurations-view plugin-details])
 
 (defn main []
-  (let [plugin-details (rf/subscribe [:plugins->plugin-details])
-        selected-tab (r/atom :Connections)]
+  (let [search (.. js/window -location -search)
+        url-search-params (new js/URLSearchParams search)
+        url-params-list (js->clj (for [q url-search-params] q))
+        url-params-map (into (sorted-map) url-params-list)
+        tab (get url-params-map "tab")
+        _ (println tab)
+        plugin-details (rf/subscribe [:plugins->plugin-details])
+        selected-tab (r/atom (if (= tab "configurations")
+                               :Configurations
+                               :Connections))]
     (fn []
       (let [tabs [:Connections :Configurations]]
         [:div
          [tabs/tabs {:on-change #(reset! selected-tab %)
+                     :default-value @selected-tab
                      :tabs tabs}]
          [selected-view @selected-tab plugin-details]]))))
 

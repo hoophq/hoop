@@ -114,7 +114,7 @@
     [button/primary
      {:text "Go to Configurations"
       :outlined true
-      :on-click #(rf/dispatch [:navigate :manage-plugin {} :plugin-name "runbooks"])}]]])
+      :on-click #(rf/dispatch [:navigate :manage-plugin {:tab "configurations"} :plugin-name "runbooks"])}]]])
 
 (defn main []
   (fn [templates filtered-templates]
