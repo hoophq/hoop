@@ -48,6 +48,7 @@
                    "Database schema"]
 
                   [:> (.-Panel ui/Disclosure) {:className "bg-gray-800 text-white p-2 rounded-md"}
+                   (println "aAAAAAAAA")
                    [database-schema/main {:connection-name (:name connection)
                                           :connection-type (cond
                                                              (not (cs/blank? (:subtype connection))) (:subtype connection)

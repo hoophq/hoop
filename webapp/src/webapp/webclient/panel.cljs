@@ -285,7 +285,9 @@
                                   (= (:type connection) "mssql")
                                   (= (:type connection) "oracledb")
                                   (= (:type connection) "database"))
-                              (not (some #(= (:name connection) %) review-plugin->connections))))]
+                              (empty? (:reviewers
+                                       (first
+                                        (filter #(= (:name connection) (:name %)) (:results @db-connections)))))))]
         (if (and (empty? (:results @db-connections))
                  (not (:loading @db-connections)))
           [quickstart/main]
