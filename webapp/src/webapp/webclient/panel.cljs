@@ -326,7 +326,10 @@
                         :metadata-key metadata-key
                         :metadata-value metadata-value
                         :schema-disabled? schema-disabled?}]]
-          [:> Allotment {:defaultSizes horizontal-pane-sizes
+          [:> Allotment {:defaultSizes (if (and (empty? (:results @db-connections))
+                                                (not (:loading @db-connections)))
+                                         [640 260]
+                                         horizontal-pane-sizes)
                          :onDragEnd #(.setItem js/localStorage "editor-horizontal-pane-sizes" (str %))
                          :vertical true}
            (if (= (:status @selected-template) :ready)
@@ -335,7 +338,8 @@
                                    :preselected-connection (:name current-connection)
                                    :selected-connections (filter #(:selected %) (:data @run-connections-list))}]]
 
-             (if (empty? (:results @db-connections))
+             (if (and (empty? (:results @db-connections))
+                      (not (:loading @db-connections)))
                [quickstart/main]
 
                [:<>
