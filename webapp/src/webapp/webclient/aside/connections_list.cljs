@@ -1,7 +1,9 @@
 (ns webapp.webclient.aside.connections-list
-  (:require [re-frame.core :as rf]
+  (:require ["@heroicons/react/16/solid" :as hero-micro-icon]
+            [clojure.string :as cs]
+            [re-frame.core :as rf]
             [webapp.connections.constants :as connection-constants]
-            ["@heroicons/react/16/solid" :as hero-micro-icon]))
+            [webapp.webclient.log-area.main :refer [selected-tab]]))
 
 (defn main [{:keys [run-connections-list-rest
                     atom-filtered-run-connections-list]}]
@@ -20,8 +22,7 @@
                               "text-gray-400"
                               "text-white cursor-pointer"))
                 :on-click (fn []
-                            (when (= "online" (:status connection))
-                              (rf/dispatch [:editor-plugin->toggle-select-run-connection (:name connection)])))}
+                            (rf/dispatch [:editor-plugin->toggle-select-run-connection (:name connection)]))}
           [:div {:class "flex items-center gap-regular"}
            [:div
             [:figure {:class "w-4"}

@@ -1,6 +1,7 @@
 (ns webapp.webclient.runbooks.list
   (:require ["@heroicons/react/20/solid" :as hero-solid-icon]
             ["@heroicons/react/24/outline" :as hero-outline-icon]
+            ["@radix-ui/themes" :refer [Button]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
@@ -108,14 +109,12 @@
 (defn- no-integration-templates-view []
   [:div {:class "pt-large"}
    [:div {:class "flex flex-col items-center text-center"}
-    [:div {:class "text-white text-sm font-bold"}
-     "No Git repository connected."]
-    [:div {:class "text-white text-xs mb-large"}
-     "It's time to stop rewriting everything again!"]
+    [:div {:class "text-gray-400 text-xs mb-large"}
+     "Configure your Git repository to enable your Runbooks."]
     [button/primary
-     {:text "Configure your git repository"
+     {:text "Go to Configurations"
       :outlined true
-      :on-click #(rf/dispatch [:navigate :manage-plugin {} :plugin-name "runbooks"])}]]])
+      :on-click #(rf/dispatch [:navigate :manage-plugin {:tab "configurations"} :plugin-name "runbooks"])}]]])
 
 (defn main []
   (fn [templates filtered-templates]

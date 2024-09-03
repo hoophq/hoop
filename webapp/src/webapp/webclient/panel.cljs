@@ -31,6 +31,12 @@
             [webapp.formatters :as formatters]
             [webapp.subs :as subs]))
 
+(defn discover-connection-type [connection]
+  (cond
+    (not (cs/blank? (:subtype connection))) (:subtype connection)
+    (not (cs/blank? (:icon_name connection))) (:icon_name connection)
+    :else (:type connection)))
+
 (defn metadata->json-stringify
   [metadata]
   (->> metadata
@@ -63,20 +69,26 @@
       (reset! timer (js/setTimeout #(save-code-to-localstorage code-string) 1000))
       (reset! script code-string))))
 
-(defn- submit-task [e script selected-connections atom-exec-list-open? metadata]
-  (when (.-preventDefault e) (.preventDefault e))
+(defn- submit-task [e script selected-connections atom-exec-list-open? metadata script-response]
+  (let [connection-type (discover-connection-type (first selected-connections))
+        change-to-tabular? (and (some (partial = connection-type) ["mysql" "postgres" "sql-server" "oracledb" "mssql" "database"])
+                                (< (count @script-response) 1))]
+    (when (.-preventDefault e) (.preventDefault e))
 
-  (if (and (seq selected-connections)
-           (> (count selected-connections) 1))
-    (reset! atom-exec-list-open? true)
+    (if (and (seq selected-connections)
+             (> (count selected-connections) 1))
+      (reset! atom-exec-list-open? true)
 
-    (if (first selected-connections)
-      (rf/dispatch [:editor-plugin->exec-script {:script script
-                                                 :connection-name (:name (first selected-connections))
-                                                 :metadata (metadata->json-stringify metadata)}])
+      (if (first selected-connections)
+        (do
+          (when change-to-tabular?
+            (reset! log-area/selected-tab "Tabular"))
+          (rf/dispatch [:editor-plugin->exec-script {:script script
+                                                     :connection-name (:name (first selected-connections))
+                                                     :metadata (metadata->json-stringify metadata)}]))
 
-      (rf/dispatch [:show-snackbar {:level :info
-                                    :text "You must choose a connection"}]))))
+        (rf/dispatch [:show-snackbar {:level :info
+                                      :text "You must choose a connection"}])))))
 
 (defmulti ^:private saved-status-el identity)
 (defmethod ^:private saved-status-el :saved [_]
@@ -125,6 +137,7 @@
         database-schema (rf/subscribe [::subs/database-schema])
         plugins (rf/subscribe [:plugins->my-plugins])
         selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])
+        script-response (rf/subscribe [:editor-plugin->script])
         vertical-pane-sizes (mapv js/parseInt
                                   (cs/split
                                    (or (.getItem js/localStorage "editor-vertical-pane-sizes") "250,950") ","))
@@ -157,13 +170,9 @@
             feature-ai-ask (or (get-in @user [:data :feature_ask_ai]) "disabled")
             script-output-loading? (= (:status @script-output) :loading)
             get-plugin-by-name (fn [name] (first (filter #(= (:name %) name) @plugins)))
-            review-plugin->connections (map #(:name %) (:connections (get-plugin-by-name "review")))
             current-connection last-connection-selected
             connection-name (:name current-connection)
-            connection-type (cond
-                              (not (cs/blank? (:subtype current-connection))) (:subtype current-connection)
-                              (not (cs/blank? (:icon_name current-connection))) (:icon_name current-connection)
-                              :else (:type current-connection))
+            connection-type (discover-connection-type current-connection)
             current-connection-details (fn [connection]
                                          (first (filter #(= (:name connection) (:name %))
                                                         (:connections (get-plugin-by-name "editor")))))
@@ -182,9 +191,9 @@
                              @script
                              run-connections-list-selected
                              multiple-connections-exec-list-component/atom-exec-list-open?
-                             (conj @metadata {:key @metadata-key :value @metadata-value}))
+                             (conj @metadata {:key @metadata-key :value @metadata-value})
+                             script-response)
 
-                            (reset! log-area/selected-tab "Terminal")
                             (reset! metadata [])
                             (reset! metadata-key "")
                             (reset! metadata-value ""))
@@ -199,9 +208,9 @@
                                (.sliceString ^cm-state/Text (.-doc (.-state config)) from to)
                                run-connections-list-selected
                                multiple-connections-exec-list-component/atom-exec-list-open?
-                               (conj @metadata {:key @metadata-key :value @metadata-value}))
+                               (conj @metadata {:key @metadata-key :value @metadata-value})
+                               script-response)
 
-                              (reset! log-area/selected-tab "Terminal")
                               (reset! metadata [])
                               (reset! metadata-key "")
                               (reset! metadata-value "")))
@@ -274,116 +283,120 @@
                                   (= (:type connection) "mssql")
                                   (= (:type connection) "oracledb")
                                   (= (:type connection) "database"))
-                              (not (some #(= (:name connection) %) review-plugin->connections))))]
-        [:div {:class "h-full flex flex-col"}
-         [:div {:class "h-16 border border-gray-600 flex justify-end items-center gap-small px-4"}
-          [:div {:class "flex items-center gap-small"}
-           [:span {:class "text-xxs text-gray-500"}
-            (str (if is-mac?
-                   "(Cmd+Enter)"
-                   "(Ctrl+Enter)"))]
-           [:div {:class "flex"}
-            [button/tailwind-primary {:text [:div {:class "flex items-center gap-small"}
-                                             [:> hero-solid-icon/PlayIcon {:class "h-3 w-3 shrink-0 text-white"
-                                                                           :aria-hidden "true"}]
-                                             [:span "Run"]]
-                                      :on-click (fn [res]
-                                                  (submit-task
-                                                   res
-                                                   @script
-                                                   run-connections-list-selected
-                                                   multiple-connections-exec-list-component/atom-exec-list-open?
-                                                   (conj @metadata {:key @metadata-key :value @metadata-value}))
+                              (empty? (:reviewers
+                                       (first
+                                        (filter #(= (:name connection) (:name %)) (:results @db-connections)))))))]
+        (if (and (empty? (:results @db-connections))
+                 (not (:loading @db-connections)))
+          [quickstart/main]
 
-                                                  (reset! log-area/selected-tab "Terminal")
-                                                  (reset! metadata [])
-                                                  (reset! metadata-key "")
-                                                  (reset! metadata-value ""))
-                                      :disabled (or script-output-loading?
-                                                    (empty? run-connections-list-selected))
-                                      :type "button"}]]]]
-         [:> Allotment {:defaultSizes vertical-pane-sizes
-                        :onDragEnd #(.setItem js/localStorage "editor-vertical-pane-sizes" (str %))}
-          [:> (.-Pane Allotment) {:minSize 250}
-           [aside/main {:show-tree? show-tree?
-                        :current-connection current-connection
-                        :atom-run-connections-list run-connections-list
-                        :atom-filtered-run-connections-list filtered-run-connections-list
-                        :run-connections-list-selected run-connections-list-selected
-                        :run-connections-list-rest run-connections-list-rest
-                        :metadata metadata
-                        :metadata-key metadata-key
-                        :metadata-value metadata-value
-                        :schema-disabled? schema-disabled?}]]
-          [:> Allotment {:defaultSizes horizontal-pane-sizes
-                         :onDragEnd #(.setItem js/localStorage "editor-horizontal-pane-sizes" (str %))
-                         :vertical true}
-           (if (= (:status @selected-template) :ready)
-             [:section {:class "relative h-full p-3"}
-              [runbooks-form/main {:runbook @selected-template
-                                   :preselected-connection (:name current-connection)
-                                   :selected-connections (filter #(:selected %) (:data @run-connections-list))}]]
+          [:div {:class "h-full flex flex-col"}
+           [:div {:class "h-16 border border-gray-600 flex justify-end items-center gap-small px-4"}
+            [:div {:class "flex items-center gap-small"}
+             [:span {:class "text-xxs text-gray-500"}
+              (str (if is-mac?
+                     "(Cmd+Enter)"
+                     "(Ctrl+Enter)"))]
+             [:div {:class "flex"}
+              [button/tailwind-primary {:text [:div {:class "flex items-center gap-small"}
+                                               [:> hero-solid-icon/PlayIcon {:class "h-3 w-3 shrink-0 text-white"
+                                                                             :aria-hidden "true"}]
+                                               [:span "Run"]]
+                                        :on-click (fn [res]
+                                                    (submit-task
+                                                     res
+                                                     @script
+                                                     run-connections-list-selected
+                                                     multiple-connections-exec-list-component/atom-exec-list-open?
+                                                     (conj @metadata {:key @metadata-key :value @metadata-value})
+                                                     script-response)
 
-             (if (empty? (:results @db-connections))
-               [quickstart/main]
+                                                    (reset! metadata [])
+                                                    (reset! metadata-key "")
+                                                    (reset! metadata-value ""))
+                                        :disabled (or script-output-loading?
+                                                      (empty? run-connections-list-selected))
+                                        :type "button"}]]]]
+           [:> Allotment {:defaultSizes vertical-pane-sizes
+                          :onDragEnd #(.setItem js/localStorage "editor-vertical-pane-sizes" (str %))}
+            [:> (.-Pane Allotment) {:minSize 250}
+             [aside/main {:show-tree? show-tree?
+                          :current-connection current-connection
+                          :atom-run-connections-list run-connections-list
+                          :atom-filtered-run-connections-list filtered-run-connections-list
+                          :run-connections-list-selected run-connections-list-selected
+                          :run-connections-list-rest run-connections-list-rest
+                          :metadata metadata
+                          :metadata-key metadata-key
+                          :metadata-value metadata-value
+                          :schema-disabled? schema-disabled?}]]
+            [:> Allotment {:defaultSizes horizontal-pane-sizes
+                           :onDragEnd #(.setItem js/localStorage "editor-horizontal-pane-sizes" (str %))
+                           :vertical true}
+             (if (= (:status @selected-template) :ready)
+               [:section {:class "relative h-full p-3"}
+                [runbooks-form/main {:runbook @selected-template
+                                     :preselected-connection (:name current-connection)
+                                     :selected-connections (filter #(:selected %) (:data @run-connections-list))}]]
 
-               [:<>
-                [:> CodeMirror/default {:value @script
-                                        :height "100%"
-                                        :className "h-full"
-                                        :theme (get theme-parser-map @select-theme)
-                                        :basicSetup #js{:defaultKeymap false}
-                                        :extensions (clj->js
-                                                     (concat
-                                                      (when (and (= feature-ai-ask "enabled")
-                                                                 is-one-connection-selected?)
-                                                        [(inlineCopilot
-                                                          (fn [prefix suffix]
-                                                            (extensions/fetch-autocomplete
-                                                             (:subtype (last run-connections-list-selected))
-                                                             prefix
-                                                             suffix
-                                                             (:raw @database-schema))))])
-                                                      [(.of cm-view/keymap (clj->js keymap))]
-                                                      language-parser-case
-                                                      (when (= (:status @selected-template) :ready)
-                                                        [(.of (.-editable cm-view/EditorView) false)
-                                                         (.of (.-readOnly cm-state/EditorState) true)])))
-                                        :onUpdate #(auto-save % script)}]]))
 
-           [log-area/main connection-type is-one-connection-selected?]]]
-         [:div {:class "border border-gray-600"}
-          [:footer {:class "flex justify-between items-center p-small gap-small"}
-           [:div {:class "flex items-center gap-small"}
-            [saved-status-el @code-saved-status]
-            (when (:execution_time (:data @script-output))
-              [:div {:class "flex items-center gap-small"}
-               [:> hero-solid-icon/ClockIcon {:class "h-4 w-4 shrink-0 text-white"
-                                              :aria-hidden "true"}]
-               [:span {:class "text-xs text-gray-300"}
-                (str "Last execution time " (formatters/time-elapsed (:execution_time (:data @script-output))))]])]
-           [:div {:class "flex items-center gap-regular"}
-            [forms/select-editor {:on-change #(reset! select-theme (-> % .-target .-value))
-                                  :selected (or @select-theme "")
-                                  :options theme-options}]
-            [forms/select-editor {:on-change #(rf/dispatch [:editor-plugin->set-select-language
-                                                            (-> % .-target .-value)])
-                                  :selected (or (cond
-                                                  (not (cs/blank? (:subtype (last run-connections-list-selected)))) (:subtype (last run-connections-list-selected))
-                                                  (not (cs/blank? (:icon_name (last run-connections-list-selected)))) (:icon_name (last run-connections-list-selected))
-                                                  (= (:type (last run-connections-list-selected)) "custom") "command-line"
-                                                  :else (:type (last run-connections-list-selected))) "")
-                                  :options languages-options}]]]]
 
-         (when @multiple-connections-exec-list-component/atom-exec-list-open?
-           [multiple-connections-exec-list-component/main (map #(into {} {:connection-name (:name %)
-                                                                          :script @script
-                                                                          :metadata (metadata->json-stringify @metadata)
-                                                                          :type (:type %)
-                                                                          :subtype (:subtype %)
-                                                                          :session-id nil
-                                                                          :status :ready})
-                                                               run-connections-list-selected)])]))))
+               [:> CodeMirror/default {:value @script
+                                       :height "100%"
+                                       :className "h-full text-sm"
+                                       :theme (get theme-parser-map @select-theme)
+                                       :basicSetup #js{:defaultKeymap false}
+                                       :extensions (clj->js
+                                                    (concat
+                                                     (when (and (= feature-ai-ask "enabled")
+                                                                is-one-connection-selected?)
+                                                       [(inlineCopilot
+                                                         (fn [prefix suffix]
+                                                           (extensions/fetch-autocomplete
+                                                            (:subtype (last run-connections-list-selected))
+                                                            prefix
+                                                            suffix
+                                                            (:raw @database-schema))))])
+                                                     [(.of cm-view/keymap (clj->js keymap))]
+                                                     language-parser-case
+                                                     (when (= (:status @selected-template) :ready)
+                                                       [(.of (.-editable cm-view/EditorView) false)
+                                                        (.of (.-readOnly cm-state/EditorState) true)])))
+                                       :onUpdate #(auto-save % script)}])
+
+             [log-area/main connection-type is-one-connection-selected? (show-tree? current-connection)]]]
+           [:div {:class "border border-gray-600"}
+            [:footer {:class "flex justify-between items-center p-small gap-small"}
+             [:div {:class "flex items-center gap-small"}
+              [saved-status-el @code-saved-status]
+              (when (:execution_time (:data @script-output))
+                [:div {:class "flex items-center gap-small"}
+                 [:> hero-solid-icon/ClockIcon {:class "h-4 w-4 shrink-0 text-white"
+                                                :aria-hidden "true"}]
+                 [:span {:class "text-xs text-gray-300"}
+                  (str "Last execution time " (formatters/time-elapsed (:execution_time (:data @script-output))))]])]
+             [:div {:class "flex items-center gap-regular"}
+              [forms/select-editor {:on-change #(reset! select-theme (-> % .-target .-value))
+                                    :selected (or @select-theme "")
+                                    :options theme-options}]
+              [forms/select-editor {:on-change #(rf/dispatch [:editor-plugin->set-select-language
+                                                              (-> % .-target .-value)])
+                                    :selected (or (cond
+                                                    (not (cs/blank? (:subtype (last run-connections-list-selected)))) (:subtype (last run-connections-list-selected))
+                                                    (not (cs/blank? (:icon_name (last run-connections-list-selected)))) (:icon_name (last run-connections-list-selected))
+                                                    (= (:type (last run-connections-list-selected)) "custom") "command-line"
+                                                    :else (:type (last run-connections-list-selected))) "")
+                                    :options languages-options}]]]]
+
+           (when @multiple-connections-exec-list-component/atom-exec-list-open?
+             [multiple-connections-exec-list-component/main (map #(into {} {:connection-name (:name %)
+                                                                            :script @script
+                                                                            :metadata (metadata->json-stringify @metadata)
+                                                                            :type (:type %)
+                                                                            :subtype (:subtype %)
+                                                                            :session-id nil
+                                                                            :status :ready})
+                                                                 run-connections-list-selected)])])))))
 
 (defn main []
   (let [script-response (rf/subscribe [:editor-plugin->script])]

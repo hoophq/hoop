@@ -30,6 +30,12 @@
                                 (first (cs/split (:start_date session) #"T")))
                       :on-success #(rf/dispatch [::reports->set-report-by-session-id %])}]]]}))
 
+(rf/reg-event-fx
+ :reports->clear-session-report-by-id
+ (fn [{:keys [db]} [_]]
+   {:db (assoc db :reports->session {:status :loading
+                                     :data nil})}))
+
 
 (rf/reg-event-fx
  ::reports->set-report-by-session-id
@@ -37,6 +43,8 @@
    [{:keys [db]} [_ report]]
    {:db (assoc db :reports->session {:status :ready
                                      :data report})}))
+
+
 
 (rf/reg-event-fx
  :reports->get-redacted-data-by-date

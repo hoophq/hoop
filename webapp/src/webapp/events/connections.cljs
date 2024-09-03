@@ -1,5 +1,6 @@
 (ns webapp.events.connections
   (:require [re-frame.core :as rf]
+            [clojure.edn :refer [read-string]]
             [webapp.connections.constants :as constants]
             [webapp.connections.views.connection-connect :as connection-connect]
             [webapp.hoop-app.setup :as setup]))
@@ -161,6 +162,16 @@
                             (rf/dispatch [:plugins->get-my-plugins])
                             (rf/dispatch [:navigate :home]))}]]]})))
 
+(def quickstart-query
+  "SELECT c.firstname, c.lastname, o.orderid, o.orderdate, SUM(ol.quantity) AS total_quantity, SUM(ol.quantity * p.price) AS total_amount
+FROM customers c
+JOIN orders o ON c.customerid = o.customerid
+JOIN orderlines ol ON o.orderid = ol.orderid
+JOIN products p ON ol.prod_id = p.prod_id
+WHERE c.country = 'US'
+GROUP BY c.firstname, c.lastname, o.orderid, o.orderdate
+ORDER BY total_amount DESC;")
+
 (rf/reg-event-fx
  :connections->quickstart-create-postgres-demo
  (fn [{:keys [db]} [_]]
@@ -170,7 +181,12 @@
                       :on-success (fn [agents]
                                     (let [agent (first agents)
                                           connection (merge constants/connection-postgres-demo
-                                                            {:agent_id (:id agent)})]
+                                                            {:agent_id (:id agent)})
+                                          code-tmp-db {:date (.now js/Date)
+                                                       :code quickstart-query}
+                                          code-tmp-db-json (.stringify js/JSON (clj->js code-tmp-db))]
+
+                                      (.setItem js/localStorage :code-tmp-db code-tmp-db-json)
                                       (rf/dispatch [::connections->quickstart-create-connection connection])))}]]]}))
 
 (rf/reg-event-fx
@@ -180,7 +196,16 @@
    {:fx [[:dispatch
           [:fetch {:method "DELETE"
                    :uri (str "/connections/" connection-name)
-                   :on-success (fn [] (rf/dispatch [:navigate :connections]))}]]]}))
+                   :on-success (fn []
+                                 (let [localstorage-connection
+                                       (first
+                                        (read-string (.getItem js/localStorage "run-connection-list-selected")))]
+
+                                   (when (= connection-name (:name localstorage-connection))
+                                     (.removeItem js/localStorage "run-connection-list-selected"))
+
+                                   (rf/dispatch [:connections->get-connections])
+                                   (rf/dispatch [:navigate :connections])))}]]]}))
 
 (rf/reg-event-fx
  :connections->open-connect-setup
