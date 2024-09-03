@@ -31,7 +31,7 @@
             [webapp.formatters :as formatters]
             [webapp.subs :as subs]))
 
-(defn discorver-connection-type [connection]
+(defn discover-connection-type [connection]
   (cond
     (not (cs/blank? (:subtype connection))) (:subtype connection)
     (not (cs/blank? (:icon_name connection))) (:icon_name connection)
@@ -70,7 +70,7 @@
       (reset! script code-string))))
 
 (defn- submit-task [e script selected-connections atom-exec-list-open? metadata script-response]
-  (let [connection-type (discorver-connection-type (first selected-connections))
+  (let [connection-type (discover-connection-type (first selected-connections))
         change-to-tabular? (and (some (partial = connection-type) ["mysql" "postgres" "sql-server" "oracledb" "mssql" "database"])
                                 (< (count @script-response) 1))]
     (when (.-preventDefault e) (.preventDefault e))
@@ -170,10 +170,9 @@
             feature-ai-ask (or (get-in @user [:data :feature_ask_ai]) "disabled")
             script-output-loading? (= (:status @script-output) :loading)
             get-plugin-by-name (fn [name] (first (filter #(= (:name %) name) @plugins)))
-            review-plugin->connections (map #(:name %) (:connections (get-plugin-by-name "review")))
             current-connection last-connection-selected
             connection-name (:name current-connection)
-            connection-type (discorver-connection-type current-connection)
+            connection-type (discover-connection-type current-connection)
             current-connection-details (fn [connection]
                                          (first (filter #(= (:name connection) (:name %))
                                                         (:connections (get-plugin-by-name "editor")))))

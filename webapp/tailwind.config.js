@@ -81,7 +81,7 @@ module.exports = {
         "reviews-plugin__screen-container": "calc(100vh - 140px)",
         "new-task__tree-container": "calc(100vh - 140px)",
         "screen-90vh": "90vh",
-        "terminal-container": "calc(100% - 38px)",
+        "logs-container": "calc(100% - 38px)",
         "connection-selector": "calc(100vh - 56px)",
       },
       width: {

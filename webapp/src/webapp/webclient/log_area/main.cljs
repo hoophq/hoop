@@ -8,7 +8,7 @@
             [webapp.components.data-grid-table :as data-grid-table]
             [webapp.subs :as subs]
             [webapp.webclient.log-area.output-tabs :refer [tabs]]
-            [webapp.webclient.log-area.terminal :as terminal]))
+            [webapp.webclient.log-area.logs :as logs]))
 
 (defn- transform-results->matrix
   [results connection-type]
@@ -28,14 +28,14 @@
         database-schema (rf/subscribe [::subs/database-schema])
         input-question (r/atom "")]
     (fn [connection-type is-one-connection-selected? show-tabular?]
-      (let [terminal-content (map #(into {} {:status (:status %)
-                                             :response (:output (:data %))
-                                             :response-status (:output_status (:data %))
-                                             :script (:script (:data %))
-                                             :response-id (:session_id (:data %))
-                                             :has-review (:has_review (:data %))
-                                             :execution-time (:execution_time (:data %))
-                                             :classes "h-full"}) @script-response)
+      (let [logs-content (map #(into {} {:status (:status %)
+                                         :response (:output (:data %))
+                                         :response-status (:output_status (:data %))
+                                         :script (:script (:data %))
+                                         :response-id (:session_id (:data %))
+                                         :has-review (:has_review (:data %))
+                                         :execution-time (:execution_time (:data %))
+                                         :classes "h-full"}) @script-response)
             feature-ai-ask (or (get-in @user [:data :feature_ask_ai]) "disabled")
             ai-content (map #(into {} {:status (:status %)
                                        :script (:question (:data %))
@@ -54,7 +54,7 @@
             connection-type-database? (some (partial = connection-type)
                                             ["mysql" "postgres" "sql-server" "oracledb" "mssql" "database"])
             available-tabs (merge
-                            {:terminal "Logs"}
+                            {:logs "Logs"}
                             (when (and connection-type-database?
                                        is-one-connection-selected?
                                        show-tabular?)
@@ -100,7 +100,7 @@
          ;;end ask-ai ui
 
          [:div {:class (str (if (= feature-ai-ask "enabled")
-                              "h-terminal-container"
+                              "h-logs-container"
                               "h-full"))}
           [tabs {:on-click (fn [_ value]
                              (.setItem js/localStorage "webclient-selected-tab" value)
@@ -108,7 +108,7 @@
                  :tabs available-tabs
                  :selected-tab @selected-tab}]
           (case @selected-tab
-            "AI" [terminal/main :ai ai-content]
+            "AI" [logs/main :ai ai-content]
             "Tabular" [data-grid-table/main results-heads results-body true tabular-loading?]
-            "Logs" [terminal/main :terminal terminal-content]
-            :else [terminal/main terminal-content])]]))))
+            "Logs" [logs/main :logs logs-content]
+            :else [logs/main logs-content])]]))))

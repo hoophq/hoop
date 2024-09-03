@@ -1,4 +1,4 @@
-(ns webapp.webclient.log-area.terminal
+(ns webapp.webclient.log-area.logs
   (:require ["@heroicons/react/20/solid" :as hero-solid-icon]
             ["@heroicons/react/24/outline" :as hero-outline-icon]
             ["clipboard" :as clipboardjs]
@@ -137,7 +137,7 @@
     :style {:overflow-anchor "none"}}
    (for [data config]
      (case type
-       :terminal
+       :logs
        ^{:key (str (:status data) "-" (:response-id data))}
        [logs-area-list (:status data)
         {:logs (:response data)
