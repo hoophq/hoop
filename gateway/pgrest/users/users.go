@@ -19,6 +19,22 @@ type UserGroups struct {
 
 type user struct{}
 
+func GetOneByEmail(email string) (*pgrest.User, error) {
+	var usr pgrest.User
+	err := pgrest.New("/users?email=eq.%v", url.QueryEscape(email)).
+		FetchOne().
+		DecodeInto(&usr)
+	if err != nil {
+		if err == pgrest.ErrNotFound {
+			fmt.Printf("user not found")
+			return nil, nil
+		}
+		return nil, err
+	}
+	fmt.Printf("\n\n>>>>user: %+v\n\n\n", usr)
+	return &usr, nil
+}
+
 func New() *user { return &user{} }
 
 func (u *user) Upsert(v pgrest.User) (err error) {

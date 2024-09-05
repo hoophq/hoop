@@ -9,15 +9,19 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/analytics"
+	localauthapi "github.com/hoophq/hoop/gateway/api/localauth"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	pglocalauthsession "github.com/hoophq/hoop/gateway/pgrest/localauthsession"
 	pguserauth "github.com/hoophq/hoop/gateway/pgrest/userauth"
 	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
 	"github.com/hoophq/hoop/gateway/security/idp"
@@ -27,8 +31,40 @@ import (
 
 var errInvalidAuthHeaderErr = errors.New("invalid authorization header")
 
-func localAuthMiddleware(ginCtx *gin.Context) {
-	ginCtx.Next()
+func localAuthMiddleware(c *gin.Context) {
+	tokenString := c.GetHeader("Authorization")
+	if tokenString == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing authorization token"})
+		c.Abort()
+		return
+	}
+
+	jwtKey := appconfig.Get().JWTSecretKey()
+	claims := &localauthapi.Claims{}
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		return jwtKey, nil
+	})
+
+	if err != nil || !token.Valid {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
+		c.Abort()
+		return
+	}
+
+	sessionByToken, err := pglocalauthsession.GetSessionByToken("")
+	fmt.Printf("sessionByToken: %+v\n", sessionByToken)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired session"})
+	}
+
+	if err != nil || time.Now().After(sessionByToken.ExpiresAt) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired session"})
+		c.Abort()
+		return
+	}
+
+	c.Set("user_id", claims.UserID)
+	c.Next()
 }
 
 func (a *Api) Authenticate(c *gin.Context) {

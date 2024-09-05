@@ -41,6 +41,7 @@ type Config struct {
 	apiHost                 string
 	apiScheme               string
 	webappUsersManagement   string
+	jwtSecretKey            []byte
 
 	isLoaded bool
 }
@@ -109,6 +110,7 @@ func Load() error {
 		msPresidioAnonymizerURL: os.Getenv("MSPRESIDIO_ANONYMIZER_URL"),
 		webhookAppKey:           os.Getenv("WEBHOOK_APPKEY"),
 		webappUsersManagement:   webappUsersManagement,
+		jwtSecretKey:            []byte(os.Getenv("JWT_SECRET")),
 		isLoaded:                true,
 	}
 	return nil
@@ -231,6 +233,7 @@ func (c Config) MigrationPathFiles() string { return c.migrationPathFiles }
 
 func (c Config) WebappUsersManagement() string { return c.webappUsersManagement }
 func (c Config) IsAskAIAvailable() bool        { return c.askAICredentials != nil }
+func (c Config) JWTSecretKey() []byte          { return c.jwtSecretKey }
 func (c Config) AskAIApiURL() (u string) {
 	if c.IsAskAIAvailable() {
 		return fmt.Sprintf("%s://%s", c.askAICredentials.Scheme, c.askAICredentials.Host)

@@ -21,7 +21,7 @@ CREATE VIEW login AS
 -- USERS
 --
 CREATE VIEW users AS
-    SELECT id, org_id, subject, email, name, picture, verified, status, slack_id, created_at, updated_at
+    SELECT id, org_id, subject, email, name, picture, verified, status, slack_id, created_at, updated_at, password
     FROM private.users;
 
 CREATE VIEW user_groups AS SELECT org_id, user_id, service_account_id, name FROM private.user_groups;
@@ -41,14 +41,15 @@ CREATE FUNCTION update_users(params json) RETURNS SETOF users AS $$
             (params->>'org_id')::UUID AS org_id,
             params->>'subject' AS subject,
             params->>'email' AS email,
+            params->>'password' AS password,
             params->>'name' AS name,
             params->>'picture' AS picture,
             (params->>'verified')::BOOL AS verified,
             (params->>'status')::private.enum_user_status AS status,
             params->>'slack_id' AS slack_id
     ), upsert_users AS (
-        INSERT INTO users (id, org_id, subject, email, name, picture, verified, status, slack_id)
-            (SELECT id, org_id, subject, email, name, picture, verified, status, slack_id FROM user_input)
+        INSERT INTO users (id, org_id, subject, email, name, picture, verified, status, slack_id, password)
+            (SELECT id, org_id, subject, email, name, picture, verified, status, slack_id, password FROM user_input)
         ON CONFLICT (id)
             DO UPDATE SET
                 subject = (SELECT subject FROM user_input),
@@ -57,6 +58,7 @@ CREATE FUNCTION update_users(params json) RETURNS SETOF users AS $$
                 verified = (SELECT verified FROM user_input),
                 slack_id = (SELECT slack_id FROM user_input),
                 picture = (SELECT picture FROM user_input),
+                password = (SELECT password FROM user_input),
                 updated_at = NOW()
         RETURNING *
     ), grps AS (
@@ -79,6 +81,9 @@ $$ LANGUAGE SQL;
 
 CREATE VIEW serviceaccounts AS
     SELECT id, org_id, subject, name, status, created_at, updated_at FROM private.service_accounts;
+
+CREATE VIEW local_auth_sessions AS
+    SELECT id, token, user_id, expires_at FROM private.local_auth_sessions;
 
 CREATE FUNCTION groups(serviceaccounts) RETURNS TEXT[] AS $$
     SELECT ARRAY(

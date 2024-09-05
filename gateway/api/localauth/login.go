@@ -5,13 +5,28 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
+	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/pgrest"
+	pglocalauthsession "github.com/hoophq/hoop/gateway/pgrest/localauthsession"
+	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
 	"golang.org/x/crypto/bcrypt"
 )
 
+type Claims struct {
+	UserID string `json:"user_id"`
+	jwt.RegisteredClaims
+}
+
 func Login(c *gin.Context) {
-	var dbUser User
-	err := db.QueryRow("SELECT id, password FROM users WHERE email = $1", user.Email).Scan(&dbUser.ID, &dbUser.Password)
+	var user pgrest.User
+	if err := c.BindJSON(&user); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	dbUser, err := pgusers.GetOneByEmail(user.Email)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
 		return
@@ -23,7 +38,7 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	expirationTime := time.Now().Add(24 * time.Hour)
+	expirationTime := time.Now().Add(168 * time.Hour) // 7 days
 	claims := &Claims{
 		UserID: dbUser.ID,
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -32,17 +47,25 @@ func Login(c *gin.Context) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString(jwtKey)
+	tokenString, err := token.SignedString(appconfig.Get().JWTSecretKey())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
 		return
 	}
 
-	_, err = db.Exec("INSERT INTO sessions (user_id, token, expires_at) VALUES ($1, $2, $3)", dbUser.ID, tokenString, expirationTime)
+	newLocalAuthSession := pgrest.LocalAuthSession{
+		ID:        uuid.New().String(),
+		UserID:    dbUser.ID,
+		Token:     tokenString,
+		ExpiresAt: expirationTime,
+	}
+	_, err = pglocalauthsession.CreateSession(newLocalAuthSession)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store session"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"token": tokenString})
+	c.Header("token", tokenString)
+
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }

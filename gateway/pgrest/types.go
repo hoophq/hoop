@@ -1,6 +1,9 @@
 package pgrest
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"time"
+)
 
 type Context interface {
 	OrgContext
@@ -56,6 +59,13 @@ type User struct {
 	Org      *Org     `json:"orgs"`
 	// used for local auth only
 	Password string `json:"password"`
+}
+
+type LocalAuthSession struct {
+	ID        string    `json:"id"`
+	UserID    string    `json:"user_id"`
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 type EnvVar struct {

@@ -16,7 +16,7 @@ require (
 	github.com/go-co-op/gocron v1.18.1
 	github.com/go-git/go-billy/v5 v5.5.0
 	github.com/go-git/go-git/v5 v5.11.0
-	github.com/golang-jwt/jwt/v5 v5.0.0
+	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/golang-migrate/migrate/v4 v4.16.2
 	github.com/google/uuid v1.6.0
 	github.com/hoophq/hoop/common v0.0.0-00010101000000-000000000000
@@ -30,9 +30,9 @@ require (
 	github.com/vmihailenco/msgpack/v5 v5.3.5
 	go.opentelemetry.io/otel v1.22.0
 	go.uber.org/zap v1.25.0
-	golang.org/x/crypto v0.24.0
+	golang.org/x/crypto v0.27.0
 	golang.org/x/oauth2 v0.17.0
-	golang.org/x/text v0.16.0
+	golang.org/x/text v0.18.0
 	google.golang.org/grpc v1.63.2
 	olympos.io/encoding/edn v0.0.0-20201019073823-d3554ca0b0a3
 )
@@ -157,8 +157,8 @@ require (
 	golang.org/x/arch v0.5.0 // indirect
 	golang.org/x/mod v0.17.0 // indirect
 	golang.org/x/net v0.26.0 // indirect
-	golang.org/x/sync v0.7.0 // indirect
-	golang.org/x/sys v0.21.0 // indirect
+	golang.org/x/sync v0.8.0 // indirect
+	golang.org/x/sys v0.25.0 // indirect
 	golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240227224415-6ceb2ff114de // indirect
