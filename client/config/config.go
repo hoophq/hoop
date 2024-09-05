@@ -23,12 +23,13 @@ var ErrEmpty error = errors.New("unable to locate configuration file")
 const apiLocalhostURL = "http://127.0.0.1:8009"
 
 type Config struct {
-	Token       string `toml:"token"`
-	ApiURL      string `toml:"api_url"`
-	GrpcURL     string `toml:"grpc_url"`
-	TlsCAB64Enc string `toml:"tls_ca"`
-	Mode        string `toml:"-"`
-	filepath    string `toml:"-"`
+	Token        string `toml:"token"`
+	ApiURL       string `toml:"api_url"`
+	GrpcURL      string `toml:"grpc_url"`
+	TlsCAB64Enc  string `toml:"tls_ca"`
+	Mode         string `toml:"-"`
+	InsecureGRPC bool   `tom:"-"`
+	filepath     string `toml:"-"`
 }
 
 // NewConfigFile creates a new configuration in the filesystem
@@ -72,11 +73,12 @@ func Load() (*Config, error) {
 			return nil, err
 		}
 		return &Config{
-			Token:       accessToken,
-			ApiURL:      apiServer,
-			GrpcURL:     grpcURL,
-			TlsCAB64Enc: base64.StdEncoding.EncodeToString([]byte(tlsCA)),
-			Mode:        clientconfig.ModeEnv}, nil
+			Token:        accessToken,
+			ApiURL:       apiServer,
+			GrpcURL:      grpcURL,
+			TlsCAB64Enc:  base64.StdEncoding.EncodeToString([]byte(tlsCA)),
+			Mode:         clientconfig.ModeEnv,
+			InsecureGRPC: hasInsecureScheme(grpcURL)}, nil
 	}
 
 	// fallback to reading the configuration file
@@ -92,6 +94,7 @@ func Load() (*Config, error) {
 	if !conf.isEmpty() {
 		conf.Mode = clientconfig.ModeConfigFile
 		conf.filepath = filepath
+		conf.InsecureGRPC = hasInsecureScheme(conf.GrpcURL)
 		return &conf, nil
 	}
 
@@ -101,7 +104,13 @@ func Load() (*Config, error) {
 	conn, err := net.DialTimeout("tcp", grpc.LocalhostAddr, timeout)
 	if err == nil {
 		conn.Close()
-		return &Config{ApiURL: apiLocalhostURL, GrpcURL: grpc.LocalhostAddr, Mode: clientconfig.ModeLocal, Token: accessToken}, nil
+		return &Config{
+			ApiURL:       apiLocalhostURL,
+			GrpcURL:      grpc.LocalhostAddr,
+			Mode:         clientconfig.ModeLocal,
+			Token:        accessToken,
+			InsecureGRPC: true,
+		}, nil
 	}
 	return &Config{filepath: filepath}, ErrEmpty
 }
@@ -112,23 +121,13 @@ func (c *Config) GrpcClientConfig() (grpc.ClientConfig, error) {
 	return grpc.ClientConfig{
 		ServerAddress: srvAddr,
 		Token:         c.Token,
-		// connect without tls only on localhost
-		Insecure: c.IsInsecure(),
-
+		Insecure:      hasInsecureScheme(c.GrpcURL),
 		TLSServerName: os.Getenv("HOOP_TLSSERVERNAME"),
 		TLSCA:         c.TlsCA(),
 	}, err
 }
 
-func (c *Config) isEmpty() bool { return c.GrpcURL == "" && c.ApiURL == "" }
-func (c *Config) IsInsecure() (insecure bool) {
-	switch {
-	case c.Mode == clientconfig.ModeLocal,
-		c.GrpcURL == grpc.LocalhostAddr:
-		insecure = true
-	}
-	return
-}
+func (c *Config) isEmpty() bool  { return c.GrpcURL == "" && c.ApiURL == "" }
 func (c *Config) IsValid() bool  { return c.ApiURL != "" }
 func (c *Config) HasToken() bool { return c.Mode == clientconfig.ModeLocal || c.Token != "" }
 func (c *Config) TlsCA() string {
@@ -178,8 +177,8 @@ func GetClientConfigOrDie() *Config {
 	default:
 		styles.PrintErrorAndExit(err.Error())
 	}
-	log.Debugf("loaded clientconfig, mode=%v, tls=%v, api_url=%v, grpc_url=%v, tokenlength=%v, tlsca=%v",
-		config.Mode, !config.IsInsecure(), config.ApiURL, config.GrpcURL, len(config.Token), config.TlsCAB64Enc != "")
+	log.Debugf("loaded clientconfig, mode=%v, grpc-tls=%v, api_url=%v, grpc_url=%v, tokenlength=%v, tlsca=%v",
+		config.Mode, !config.InsecureGRPC, config.ApiURL, config.GrpcURL, len(config.Token), config.TlsCAB64Enc != "")
 	return config
 }
 
@@ -193,7 +192,13 @@ func GetClientConfig() (*Config, error) {
 	default:
 		return nil, err
 	}
-	log.Infof("loaded clientconfig, mode=%v, tls=%v, api_url=%v, grpc_url=%v, tlsca=%v",
-		config.Mode, !config.IsInsecure(), config.ApiURL, config.GrpcURL, config.TlsCAB64Enc != "")
+	log.Infof("loaded clientconfig, mode=%v, grpc-tls=%v, api_url=%v, grpc_url=%v, tlsca=%v",
+		config.Mode, !config.InsecureGRPC, config.ApiURL, config.GrpcURL, config.TlsCAB64Enc != "")
 	return config, nil
+}
+
+// hasInsecureScheme returns true if the address has an insecure scheme (grpc:// or http://)
+func hasInsecureScheme(srvAddr string) bool {
+	return strings.HasPrefix(srvAddr, "grpc://") ||
+		strings.HasPrefix(srvAddr, "http://")
 }

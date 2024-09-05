@@ -1,10 +1,11 @@
 #!/bin/bash
-
 set -eo pipefail
+
+: "${HOOP_PUBLIC_HOSTNAME:? Required env HOOP_PUBLIC_HOSTNAME}"
 
 mkdir -p /hoopdata/tls
 if [ -z "${HOOP_PUBLIC_HOSTNAME}" ]; then
-    echo "--> the env HOOP_PUBLIC_HOSTNAME is required on .env file!"
+    echo "--> the env HOOP_PUBLIC_URL is required on .env file!"
     exit 1
 fi
 
@@ -43,8 +44,8 @@ subjectAltName = @alt_names
 [alt_names]
 DNS.1 = gateway
 DNS.2 = idp
-DNS.3 = ${HOOP_PUBLIC_HOSTNAME}
 IP.1 = 127.0.0.1
+IP.2 = ${HOOP_PUBLIC_HOSTNAME}
 EOF
 openssl x509 -req \
     -in /hoopdata/tls/server.csr \

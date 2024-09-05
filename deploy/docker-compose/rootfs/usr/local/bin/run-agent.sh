@@ -1,6 +1,7 @@
 #!/bin/bash
 
-: "${GRPC_URL:? Required env GRPC_URL}"
+: "${HOOP_PUBLIC_HOSTNAME:? Required env HOOP_PUBLIC_HOSTNAME}"
+: "${HOOP_TLS_MODE:? Required env HOOP_TLS_MODE}"
 : "${POSTGRES_DB_URI:? Required env POSTGRES_DB_URI}"
 
 set -e
@@ -19,5 +20,13 @@ INSERT INTO agents (id, org_id, name, mode, key_hash, status)
     ON CONFLICT DO NOTHING;
 COMMIT;
 EOF
-export HOOP_KEY=grpcs://system:$(printenv SECRET_KEY | tr -d '\n')@${GRPC_URL}?mode=standard
+
+export GRPC_URL=${HOOP_PUBLIC_HOSTNAME}:80
+SCHEME=grpc
+if [[ "$HOOP_TLS_MODE" == "enabled" ]]; then
+    export GRPC_URL=${HOOP_PUBLIC_HOSTNAME}:443
+    SCHEME=grpcs
+fi
+
+export HOOP_KEY=${SCHEME}://system:$(printenv SECRET_KEY | tr -d '\n')@${GRPC_URL}?mode=standard
 hoop start agent

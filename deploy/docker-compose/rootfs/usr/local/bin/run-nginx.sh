@@ -1,8 +1,16 @@
 #!/bin/bash
 
 : "${HOOP_PUBLIC_HOSTNAME:? Required env HOOP_PUBLIC_HOSTNAME}"
+: "${HOOP_TLS_MODE:? Required env HOOP_TLS_MODE}"
 
-set -e
+set -eo pipefail
+
+rm -f /etc/nginx/nginx.conf
+ln -s /etc/nginx/nginx-default.conf /etc/nginx/nginx.conf
+if [[ "$HOOP_TLS_MODE" == "enabled" ]]; then
+    rm -f /etc/nginx/nginx.conf
+    ln -s /etc/nginx/nginx-tls.conf /etc/nginx/nginx.conf
+fi
 
 reload-nginx() {
     until curl -k -s -f -o /dev/null "http://gateway:8009/api/healthz"; do
