@@ -741,6 +741,8 @@ type ServerInfo struct {
 	GoDebug string `json:"go_debug" example:"http2debug=2"`
 	// The role name of the admin group
 	AdminUsername string `json:"admin_username" example:"admin"`
+	// Auth method used by the server
+	AuthMethod string `json:"auth_method" enums:"oidc,local" example:"local"`
 	// Report if GOOGLE_APPLICATION_CREDENTIALS_JSON is set
 	HasRedactCredentials bool `json:"has_redact_credentials"`
 	// Report if WEBHOOK_APPKEY is set

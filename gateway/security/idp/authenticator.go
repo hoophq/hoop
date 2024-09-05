@@ -14,6 +14,7 @@ import (
 	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"golang.org/x/oauth2"
 )
 
@@ -120,6 +121,9 @@ func (p *Provider) userInfoEndpoint(accessToken string) (*ProviderUserInfo, erro
 }
 
 func NewProvider(apiURL string) *Provider {
+	if appconfig.Get().AuthMethod() == "local" {
+		return &Provider{Context: context.Background()}
+	}
 	ctx := context.Background()
 	apiURL = strings.TrimSuffix(apiURL, "/")
 
@@ -223,7 +227,9 @@ func setProviderConfFromEnvs(p *Provider) error {
 	}
 	p.authWithUserInfo = issuerURL.Query().Get("_userinfo") == "1"
 	if p.ClientSecret == "" || p.ClientID == "" {
-		return fmt.Errorf("missing IDP credentials: IDP_CLIENT_ID, IDP_CLIENT_SECRET")
+		// defaults to local auth
+		return nil
+		// return fmt.Errorf("missing IDP credentials: IDP_CLIENT_ID, IDP_CLIENT_SECRET")
 	}
 	qs := issuerURL.Query()
 	qs.Del("_userinfo")

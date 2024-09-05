@@ -53,8 +53,9 @@ type User struct {
 	Status   string   `json:"status"`
 	SlackID  string   `json:"slack_id"`
 	Groups   []string `json:"groups"`
-
-	Org *Org `json:"orgs"`
+	Org      *Org     `json:"orgs"`
+	// used for local auth only
+	Password string `json:"password"`
 }
 
 type EnvVar struct {

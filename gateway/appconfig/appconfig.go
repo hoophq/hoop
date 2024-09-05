@@ -26,6 +26,7 @@ type pgCredentials struct {
 }
 type Config struct {
 	askAICredentials        *url.URL
+	authMethod              string
 	pgCred                  *pgCredentials
 	gcpDLPJsonCredentials   string
 	dlpProvider             string
@@ -96,6 +97,7 @@ func Load() error {
 		apiHostname:             apiRawURL.Hostname(),
 		apiScheme:               apiRawURL.Scheme,
 		apiHost:                 apiRawURL.Host,
+		authMethod:              loadAuthMethod(),
 		askAICredentials:        askAICred,
 		pgCred:                  pgCred,
 		migrationPathFiles:      migrationPathFiles,
@@ -113,6 +115,27 @@ func Load() error {
 }
 
 func Get() Config { return runtimeConfig }
+
+// loadAuthMethod() returns the auth method to use
+// the possible values are: "local" and "idp".
+// If not set, it defaults to "local"
+// it also cross check the IDP_ISSUER, IDP_CLIENT_ID
+// and IDP_CLIENT_SECRET envs to determine if it should
+// the IDP configuration already set even without setting
+// AUTH_METHOD to "idp".
+// This last behavior ensures compatibility with the previous version
+func loadAuthMethod() string {
+	authMethod := os.Getenv("AUTH_METHOD")
+	if authMethod == "" && (os.Getenv("IDP_ISSUER") == "" || os.Getenv("IDP_CLIENT_ID") == "" || os.Getenv("IDP_CLIENT_SECRET") == "") {
+		return "local"
+	}
+
+	if authMethod == "" && (os.Getenv("IDP_ISSUER") != "" || os.Getenv("IDP_CLIENT_ID") != "" || os.Getenv("IDP_CLIENT_SECRET") != "") {
+		return "idp"
+	}
+	return authMethod
+}
+
 func loadPostgresCredentials() (*pgCredentials, error) {
 	pgConnectionURI := os.Getenv("POSTGRES_DB_URI")
 	pgURL, err := url.Parse(pgConnectionURI)
@@ -194,6 +217,7 @@ func (c Config) ApiHostname() string { return c.apiHostname }
 // ApiHost host or host:port
 func (c Config) ApiHost() string                 { return c.apiHost }
 func (c Config) ApiScheme() string               { return c.apiScheme }
+func (c Config) AuthMethod() string              { return c.authMethod }
 func (c Config) WebhookAppKey() string           { return c.webhookAppKey }
 func (c Config) GcpDLPJsonCredentials() string   { return c.gcpDLPJsonCredentials }
 func (c Config) DlpProvider() string             { return c.dlpProvider }

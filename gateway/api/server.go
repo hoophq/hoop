@@ -20,6 +20,7 @@ import (
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	apifeatures "github.com/hoophq/hoop/gateway/api/features"
 	apihealthz "github.com/hoophq/hoop/gateway/api/healthz"
+	localauthapi "github.com/hoophq/hoop/gateway/api/localauth"
 	loginapi "github.com/hoophq/hoop/gateway/api/login"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
@@ -148,6 +149,14 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.GET("/login", loginHandler.Login)
 	route.GET("/callback", loginHandler.LoginCallback)
 	route.GET("/healthz", apihealthz.LivenessHandler())
+	///////////////////////
+	// local auth routes //
+	///////////////////////
+	route.POST("/localauth/register", localauthapi.Register)
+	route.POST("/localauth/login", localauthapi.Login)
+	///////////////////////////
+	// end local auth routes //
+	///////////////////////////
 	route.POST("/signup",
 		AnonAccessRole,
 		api.Authenticate,

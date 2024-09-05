@@ -17,6 +17,7 @@ import (
 	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	pguserauth "github.com/hoophq/hoop/gateway/pgrest/userauth"
 	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
 	"github.com/hoophq/hoop/gateway/security/idp"
@@ -26,95 +27,109 @@ import (
 
 var errInvalidAuthHeaderErr = errors.New("invalid authorization header")
 
-func (a *Api) Authenticate(c *gin.Context) {
-	roleName := RoleFromContext(c)
-	subject, err := a.validateAccessToken(c)
-	if err != nil {
-		tokenHeader := c.GetHeader("authorization")
-		log.Infof("failed authenticating, %v, length=%v, reason=%v",
-			parseHeaderForDebug(tokenHeader), len(tokenHeader), err)
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
+func localAuthMiddleware(ginCtx *gin.Context) {
+	ginCtx.Next()
+}
 
-	ctx, err := pguserauth.New().FetchUserContext(subject)
-	if err != nil {
-		log.Errorf("failed fetching user, subject=%v, err=%v", subject, err)
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
-	if a.logger != nil && !ctx.IsEmpty() {
-		zaplogger := a.logger.With(
-			zap.String("org", ctx.OrgName),
-			zap.String("user", ctx.UserEmail),
-			zap.Bool("isadm", ctx.IsAdmin()),
-		)
-		c.Set(pgusers.ContextLoggerKey, zaplogger.Sugar())
-	}
-	switch openapi.RoleType(roleName) {
-	case openapi.RoleStandardType: // noop
-	case openapi.RoleUnregisteredType:
-		if !ctx.IsEmpty() {
-			break
-		}
-		// Obtain the profile of an anonymous user via the userinfo endpoint
-		// this is useful for not having to create a user in the database.
-		uinfo, err := a.validateTokenWithUserInfo(c)
+func (a *Api) Authenticate(c *gin.Context) {
+	authMethod := appconfig.Get().AuthMethod()
+	switch authMethod {
+	case "local":
+		fmt.Println("local")
+		localAuthMiddleware(c)
+	default:
+		roleName := RoleFromContext(c)
+		fmt.Printf("roleName: %v\n", roleName)
+		subject, err := a.validateAccessToken(c)
+		fmt.Printf("subject: %v\n", subject)
 		if err != nil {
-			log.Warnf("failed authenticating anonymous user via userinfo endpoint, subject=%v, err=%v", subject, err)
+			tokenHeader := c.GetHeader("authorization")
+			log.Infof("failed authenticating, %v, length=%v, reason=%v",
+				parseHeaderForDebug(tokenHeader), len(tokenHeader), err)
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
-		ctx.UserAnonEmail = uinfo.Email
-		ctx.UserAnonProfile = uinfo.Profile
-		ctx.UserAnonEmailVerified = uinfo.EmailVerified
-		ctx.UserAnonSubject = uinfo.Subject
-		ctx.UserAnonPicture = uinfo.Picture
-		if ctx.UserAnonEmail == "" || ctx.UserAnonSubject == "" {
-			log.Warnf("failed authenticating anonymous user via userinfo endpoint, email=(set=%v), subject=(set=%v)",
-				ctx.UserAnonEmail != "", ctx.UserAnonSubject != "")
+
+		ctx, err := pguserauth.New().FetchUserContext(subject)
+		fmt.Printf("ctx: %+v\n", ctx)
+		if err != nil {
+			log.Errorf("failed fetching user, subject=%v, err=%v", subject, err)
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
+		if a.logger != nil && !ctx.IsEmpty() {
+			zaplogger := a.logger.With(
+				zap.String("org", ctx.OrgName),
+				zap.String("user", ctx.UserEmail),
+				zap.Bool("isadm", ctx.IsAdmin()),
+			)
+			c.Set(pgusers.ContextLoggerKey, zaplogger.Sugar())
+		}
+		switch openapi.RoleType(roleName) {
+		case openapi.RoleStandardType: // noop
+		case openapi.RoleUnregisteredType:
+			if !ctx.IsEmpty() {
+				break
+			}
+			// Obtain the profile of an anonymous user via the userinfo endpoint
+			// this is useful for not having to create a user in the database.
+			uinfo, err := a.validateTokenWithUserInfo(c)
+			if err != nil {
+				log.Warnf("failed authenticating anonymous user via userinfo endpoint, subject=%v, err=%v", subject, err)
+				c.AbortWithStatus(http.StatusUnauthorized)
+				return
+			}
+			ctx.UserAnonEmail = uinfo.Email
+			ctx.UserAnonProfile = uinfo.Profile
+			ctx.UserAnonEmailVerified = uinfo.EmailVerified
+			ctx.UserAnonSubject = uinfo.Subject
+			ctx.UserAnonPicture = uinfo.Picture
+			if ctx.UserAnonEmail == "" || ctx.UserAnonSubject == "" {
+				log.Warnf("failed authenticating anonymous user via userinfo endpoint, email=(set=%v), subject=(set=%v)",
+					ctx.UserAnonEmail != "", ctx.UserAnonSubject != "")
+				c.AbortWithStatus(http.StatusUnauthorized)
+				return
+			}
+			c.Set(storagev2.ContextKey,
+				storagev2.NewContext("", "").
+					WithAnonymousInfo(
+						ctx.UserAnonProfile, ctx.UserAnonEmail, ctx.UserAnonSubject,
+						ctx.UserAnonPicture, ctx.UserAnonEmailVerified).
+					WithApiURL(a.IDProvider.ApiURL).
+					WithGrpcURL(a.GrpcURL),
+			)
+			c.Next()
+			return
+		case openapi.RoleAdminType:
+			if !ctx.IsAdmin() {
+				c.AbortWithStatus(http.StatusForbidden)
+				return
+			}
+		default:
+			errMsg := fmt.Errorf("failed authenticating, missing role context (%v) for route %v", roleName, c.Request.URL.Path)
+			log.Error(errMsg)
+			sentry.CaptureException(errMsg)
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+
+		// from this point forward, the user must exists and be verified in the database.
+		if ctx.IsEmpty() {
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+		log.Debugf("user authenticated, role=%s, org=%s, subject=%s, isadmin=%v", roleName, ctx.OrgName, subject, ctx.IsAdmin())
 		c.Set(storagev2.ContextKey,
-			storagev2.NewContext("", "").
-				WithAnonymousInfo(
-					ctx.UserAnonProfile, ctx.UserAnonEmail, ctx.UserAnonSubject,
-					ctx.UserAnonPicture, ctx.UserAnonEmailVerified).
+			storagev2.NewContext(ctx.UserSubject, ctx.OrgID).
+				WithUserInfo(ctx.UserName, ctx.UserEmail, string(ctx.UserStatus), ctx.UserPicture, ctx.UserGroups).
+				WithSlackID(ctx.UserSlackID).
+				WithOrgName(ctx.OrgName).
+				WithOrgLicense(ctx.OrgLicense).
 				WithApiURL(a.IDProvider.ApiURL).
 				WithGrpcURL(a.GrpcURL),
 		)
 		c.Next()
-		return
-	case openapi.RoleAdminType:
-		if !ctx.IsAdmin() {
-			c.AbortWithStatus(http.StatusForbidden)
-			return
-		}
-	default:
-		errMsg := fmt.Errorf("failed authenticating, missing role context (%v) for route %v", roleName, c.Request.URL.Path)
-		log.Error(errMsg)
-		sentry.CaptureException(errMsg)
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
 	}
-
-	// from this point forward, the user must exists and be verified in the database.
-	if ctx.IsEmpty() {
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
-	log.Debugf("user authenticated, role=%s, org=%s, subject=%s, isadmin=%v", roleName, ctx.OrgName, subject, ctx.IsAdmin())
-	c.Set(storagev2.ContextKey,
-		storagev2.NewContext(ctx.UserSubject, ctx.OrgID).
-			WithUserInfo(ctx.UserName, ctx.UserEmail, string(ctx.UserStatus), ctx.UserPicture, ctx.UserGroups).
-			WithSlackID(ctx.UserSlackID).
-			WithOrgName(ctx.OrgName).
-			WithOrgLicense(ctx.OrgLicense).
-			WithApiURL(a.IDProvider.ApiURL).
-			WithGrpcURL(a.GrpcURL),
-	)
-	c.Next()
 }
 
 func parseToken(c *gin.Context) (string, error) {
