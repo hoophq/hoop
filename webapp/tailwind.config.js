@@ -25,9 +25,6 @@ module.exports = {
   },
   theme: {
     extend: {
-      fontFamily: {
-        sans: ["var(--font-sans)", ...fontFamily.sans]
-      },
       fontSize: {
         xxs: ["0.625rem", "0.85rem"],
       },
