@@ -36,8 +36,8 @@
   [:div {:class "flex items-center gap-2 pl-6 pb-4 cursor-pointer hover:text-blue-500 text-xs text-white whitespace-pre"
          :on-click #(rf/dispatch [:runbooks-plugin->set-active-runbook
                                   (filter-template-selected filename)])}
-   [:> hero-outline-icon/DocumentIcon
-    {:class "h-3 w-3 text-white" :aria-hidden "true"}]
+   [:div
+    [:> hero-outline-icon/DocumentIcon {:class "h-3 w-3 text-white" :aria-hidden "true"}]]
    [:span {:class "block truncate"}
     filename]])
 
@@ -48,8 +48,8 @@
         [:div {:class "flex items-center gap-2 pb-4 cursor-pointer hover:text-blue-500 text-xs text-white whitespace-pre"
                :on-click #(rf/dispatch [:runbooks-plugin->set-active-runbook
                                         (filter-template-selected name)])}
-         [:> hero-outline-icon/DocumentIcon
-          {:class "h-3 w-3 text-white" :aria-hidden "true"}]
+         [:div
+          [:> hero-outline-icon/DocumentIcon {:class "h-3 w-3 text-white" :aria-hidden "true"}]]
          [:span {:class "block truncate"}
           name]]
 
@@ -58,10 +58,12 @@
                              (str "pl-" (* level 2))))}
          [:div {:class "flex pb-4 items-center gap-small"}
           (if (= (get @dropdown-status name) :open)
-            [:> hero-solid-icon/FolderOpenIcon {:class "h-3 w-3 shrink-0 text-white"
-                                                :aria-hidden "true"}]
-            [:> hero-solid-icon/FolderIcon {:class "h-3 w-3 shrink-0 text-white"
-                                            :aria-hidden "true"}])
+            [:div
+             [:> hero-solid-icon/FolderOpenIcon {:class "h-3 w-3 shrink-0 text-white"
+                                                 :aria-hidden "true"}]]
+            [:div
+             [:> hero-solid-icon/FolderIcon {:class "h-3 w-3 shrink-0 text-white"
+                                             :aria-hidden "true"}]])
           [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
                               "flex items-center")
                   :on-click #(swap! dropdown-status

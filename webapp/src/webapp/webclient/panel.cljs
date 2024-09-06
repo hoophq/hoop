@@ -144,7 +144,7 @@
                                    (or (.getItem js/localStorage "editor-vertical-pane-sizes") "250,950") ","))
         horizontal-pane-sizes (mapv js/parseInt
                                     (cs/split
-                                     (or (.getItem js/localStorage "editor-horizontal-pane-sizes") "650,490") ","))
+                                     (or (.getItem js/localStorage "editor-horizontal-pane-sizes") "650,210") ","))
         script (r/atom (get-code-from-localstorage))
         select-theme (r/atom "dracula")
         metadata (r/atom [])
