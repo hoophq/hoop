@@ -4,8 +4,7 @@
             ["@radix-ui/themes" :refer [Button]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
-            [reagent.core :as r]
-            [webapp.components.button :as button]))
+            [reagent.core :as r]))
 
 (defn sort-tree [data]
   (let [non-empty-keys (->> data
@@ -111,10 +110,13 @@
    [:div {:class "flex flex-col items-center text-center"}
     [:div {:class "text-gray-400 text-xs mb-large"}
      "Configure your Git repository to enable your Runbooks."]
-    [button/primary
-     {:text "Go to Configurations"
-      :outlined true
-      :on-click #(rf/dispatch [:navigate :manage-plugin {:tab "configurations"} :plugin-name "runbooks"])}]]])
+    [:> Button {:color "indigo"
+                :size "3"
+                :variant "ghost"
+                :class-name "dark"
+                :radius "medium"
+                :on-click #(rf/dispatch [:navigate :manage-plugin {:tab "configurations"} :plugin-name "runbooks"])}
+     "Go to Configurations"]]])
 
 (defn main []
   (fn [templates filtered-templates]

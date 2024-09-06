@@ -6,6 +6,18 @@
 @tailwind components;
 @tailwind utilities;
 
+.radix-themes {
+  --cursor-button: pointer;
+  --cursor-checkbox: default;
+  --cursor-disabled: not-allowed;
+  --cursor-link: pointer;
+  --cursor-menu-item: default;
+  --cursor-radio: default;
+  --cursor-slider-thumb: default;
+  --cursor-slider-thumb-active: default;
+  --cursor-switch: default;
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

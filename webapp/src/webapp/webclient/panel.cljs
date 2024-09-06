@@ -17,6 +17,7 @@
             ["@uiw/react-codemirror" :as CodeMirror]
             ["allotment" :refer [Allotment]]
             ["codemirror-copilot" :refer [clearLocalCache inlineCopilot]]
+            ["@radix-ui/themes" :refer [Button]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
@@ -298,25 +299,29 @@
                      "(Cmd+Enter)"
                      "(Ctrl+Enter)"))]
              [:div {:class "flex"}
-              [button/tailwind-primary {:text [:div {:class "flex items-center gap-small"}
-                                               [:> hero-solid-icon/PlayIcon {:class "h-3 w-3 shrink-0 text-white"
-                                                                             :aria-hidden "true"}]
-                                               [:span "Run"]]
-                                        :on-click (fn [res]
-                                                    (submit-task
-                                                     res
-                                                     @script
-                                                     run-connections-list-selected
-                                                     multiple-connections-exec-list-component/atom-exec-list-open?
-                                                     (conj @metadata {:key @metadata-key :value @metadata-value})
-                                                     script-response)
+              [:> Button {:color "indigo"
+                          :variant "solid"
+                          :radius "medium"
+                          :size "2"
+                          :class-name "dark"
+                          :disabled (or script-output-loading?
+                                        (empty? run-connections-list-selected))
+                          :on-click (fn [res]
+                                      (submit-task
+                                       res
+                                       @script
+                                       run-connections-list-selected
+                                       multiple-connections-exec-list-component/atom-exec-list-open?
+                                       (conj @metadata {:key @metadata-key :value @metadata-value})
+                                       script-response)
 
-                                                    (reset! metadata [])
-                                                    (reset! metadata-key "")
-                                                    (reset! metadata-value ""))
-                                        :disabled (or script-output-loading?
-                                                      (empty? run-connections-list-selected))
-                                        :type "button"}]]]]
+                                      (reset! metadata [])
+                                      (reset! metadata-key "")
+                                      (reset! metadata-value ""))}
+               [:div {:class "flex items-center gap-small"}
+                [:> hero-solid-icon/PlayIcon {:class "h-3 w-3 text-inherit"
+                                              :aria-hidden "true"}]
+                [:span "Run"]]]]]]
            [:> Allotment {:defaultSizes vertical-pane-sizes
                           :onDragEnd #(.setItem js/localStorage "editor-vertical-pane-sizes" (str %))}
             [:> (.-Pane Allotment) {:minSize 250}
