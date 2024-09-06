@@ -24,28 +24,28 @@
                          :class "relative z-40 lg:hidden"
                          :onClose #(rf/dispatch [:sidebar-mobile->close])}
            [:> (.-Child ui/Transition) {:as react/Fragment
-                                        :enter "transition-opacity ease-linear duration-400"
+                                        :enter "transition-opacity ease-linear duration-500"
                                         :enterFrom "opacity-0"
                                         :enterTo "opacity-100"
-                                        :leave "transition-opacity ease-linear duration-400"
+                                        :leave "transition-opacity ease-linear duration-500"
                                         :leaveFrom "opacity-100"
                                         :leaveTo "opacity-0"}
             [:div {:class "fixed inset-0 bg-[#060E1D] bg-opacity-80"}]]
 
            [:div {:class "fixed inset-0 flex"}
             [:> (.-Child ui/Transition) {:as react/Fragment
-                                         :enter "transition ease-in-out duration-400 transform"
+                                         :enter "transition ease-in-out duration-700 transform"
                                          :enterFrom "-translate-x-full"
                                          :enterTo "translate-x-0"
-                                         :leave "transition ease-in-out duration-400 transform"
+                                         :leave "transition ease-in-out duration-700 transform"
                                          :leaveFrom "translate-x-0"
                                          :leaveTo "-translate-x-full"}
              [:> (.-Panel ui/Dialog) {:class "relative mr-16 flex w-full max-w-xs flex-1"}
               [:> (.-Child ui/Transition) {:as react/Fragment
-                                           :enter "ease-in-out duration-400"
+                                           :enter "transition ease-in-out duration-700 transform"
                                            :enterFrom "opacity-0"
                                            :enterTo "opacity-100"
-                                           :leave "ease-in-out duration-400"
+                                           :leave "transition ease-in-out duration-700 transform"
                                            :leaveFrom "opacity-100"
                                            :leaveTo "opacity-0"}
                [:div {:class "absolute left-full top-0 flex w-16 justify-center pt-5"}
@@ -91,10 +91,10 @@
        ;; sidebar opened
          [:> ui/Transition {:show sidebar-open?
                             :as react/Fragment
-                            :enter "transition-opacity duration-75 ease-out"
+                            :enter "transition-opacity duration-400 ease-in-out transform"
                             :enterFrom "opacity-0"
                             :enterTo "opacity-100"
-                            :leave "transition-opacity duration-100 ease-out"
+                            :leave "transition-opacity duration-400 ease-in-out transform"
                             :leaveFrom "opacity-100"
                             :leaveTo "opacity-0"}
           [:div {:class "hidden lg:fixed lg:inset-y-0 lg:z-40 lg:flex lg:w-side-menu lg:flex-col lg:bg-[#060E1D]"}
@@ -107,17 +107,17 @@
        ;; end sidebar opened
 
        ;; sidebar closed
-         [:div {:class "hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:block lg:w-14 lg:overflow-y-auto lg:bg-[#060E1D]"}
+         [:div {:class "hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:block lg:w-[72px] lg:overflow-y-auto lg:bg-[#060E1D]"}
           [:div {:class "border-t bg-[#060E1D] border-gray-800 w-full py-2 px-2 absolute bottom-0 bg-[#060E1D] hover:bg-gray-800 hover:text-white cursor-pointer flex justify-center"
                  :onClick #(rf/dispatch [:sidebar-desktop->open])}
            [:> hero-outline-icon/ChevronDoubleRightIcon {:class "h-6 w-6 shrink-0 text-white"
                                                          :aria-hidden "true"}]]
           [:div {:class "h-full flex grow flex-col gap-y-2 overflow-y-auto bg-[#060E1D] px-4 pb-10"}
-           [:div {:class "flex h-16 shrink-0 items-center justify-center"}
-            [:figure {:class "w-5 cursor-pointer"}
-             [:img {:src "/images/hoop-branding/PNG/hoop-symbol_white@4x.png"
+           [:div {:class "flex my-8 shrink-0 items-center justify-center"}
+            [:figure {:class "cursor-pointer"}
+             [:img {:src "/images/hoop-branding/SVG/hoop-symbol+text_white.svg"
                     :on-click #(rf/dispatch [:navigate :home])}]]]
-           [:nav {:class "mt-8 flex flex-1 flex-col"}
+           [:nav {:class "flex flex-1 flex-col"}
             [:ul {:role "list"
                   :class "flex flex-1 items-center flex-col gap-y-6"}
              [:li
@@ -208,6 +208,6 @@
       [:div
        [container]
        [:main {:class (if (= :opened (:status @sidebar-desktop))
-                        "h-screen w-full absolute lg:pl-side-menu-width"
-                        "h-screen w-full absolute lg:pl-14")}
+                        "h-screen bg-[#060E1D] w-full absolute lg:pl-side-menu-width"
+                        "h-screen bg-[#060E1D] w-full absolute lg:pl-[72px]")}
         panels]])))
