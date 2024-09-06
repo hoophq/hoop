@@ -40,8 +40,6 @@ func Load() (*Config, error) {
 		if err != nil {
 			return nil, err
 		}
-		// allow connecting insecure if a build disables this flag
-		// or the agent has local host connection with the gateway
 		isInsecure := dsn.Scheme == "http" || dsn.Scheme == "grpc"
 		return &Config{
 			Name:      dsn.Name,
@@ -73,7 +71,6 @@ func (c *Config) GrpcClientConfig() (grpc.ClientConfig, error) {
 		ServerAddress: srvAddr,
 		Token:         c.Token,
 		Insecure:      c.IsInsecure(),
-
 		TLSServerName: os.Getenv("HOOP_TLSSERVERNAME"),
 		TLSCA:         c.tlsCA,
 	}, err

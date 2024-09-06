@@ -1,3 +1,9 @@
+locals {
+  provider_insecure = var.tls_mode == "enabled" ? "false" : "true"
+  provider_port     = var.tls_mode == "enabled" ? "443" : "80"
+  public_url        = var.tls_mode == "enabled" ? "https://${var.public_hostname}" : "http://${var.public_hostname}"
+}
+
 terraform {
   backend "local" {
     path = "/hoopdata/terraform.tfstate"
@@ -11,15 +17,15 @@ terraform {
 }
 
 provider "zitadel" {
-  domain           = "${var.public_hostname}"
-  insecure         = "false"
-  port             = "443"
+  domain           = var.public_hostname
+  insecure         = local.provider_insecure
+  port             = local.provider_port
   jwt_profile_file = "/hoopdata/zitadel-admin-sa.json"
 }
 
 resource "zitadel_org" "default" {
   name       = "hoophq"
-  is_default =  true
+  is_default = true
 }
 
 resource "zitadel_privacy_policy" "default" {
@@ -45,7 +51,7 @@ resource "zitadel_login_policy" "default" {
   mfa_init_skip_lifetime        = "720h0m0s"
   second_factor_check_lifetime  = "24h0m0s"
   ignore_unknown_usernames      = false
-  default_redirect_uri          = "https://${var.public_hostname}"
+  default_redirect_uri          = local.public_url
   second_factors                = ["SECOND_FACTOR_TYPE_OTP", "SECOND_FACTOR_TYPE_U2F"]
   multi_factors                 = ["MULTI_FACTOR_TYPE_U2F_WITH_VERIFICATION"]
   idps                          = []
@@ -114,15 +120,14 @@ resource "zitadel_application_oidc" "default" {
   project_id = zitadel_project.default.id
   org_id     = zitadel_org.default.id
 
-  name                        = "hoopdev-default-app"
-  redirect_uris               = [
+  name = "hoopdev-default-app"
+  redirect_uris = [
     "http://127.0.0.1/api/callback",
     "https://127.0.0.1/api/callback",
-    "http://${var.public_hostname}/api/callback",
-    "https://${var.public_hostname}/api/callback"
+    "${local.public_url}/api/callback",
   ]
-  response_types              = ["OIDC_RESPONSE_TYPE_CODE"]
-  grant_types                 = ["OIDC_GRANT_TYPE_AUTHORIZATION_CODE"]
+  response_types = ["OIDC_RESPONSE_TYPE_CODE"]
+  grant_types    = ["OIDC_GRANT_TYPE_AUTHORIZATION_CODE"]
 
   app_type                    = "OIDC_APP_TYPE_WEB"
   auth_method_type            = "OIDC_AUTH_METHOD_TYPE_BASIC"
@@ -156,7 +161,7 @@ resource "zitadel_human_user" "default" {
   is_email_verified  = true
   initial_password   = "Password1"
 
-  depends_on = [ zitadel_password_complexity_policy.default ]
+  depends_on = [zitadel_password_complexity_policy.default]
 }
 
 resource "zitadel_project_role" "default" {
