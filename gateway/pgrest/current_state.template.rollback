@@ -31,3 +31,4 @@ view if exists serviceaccounts
 view if exists sessions
 view if exists user_groups
 view if exists users
+view if exists local_auth_sessions

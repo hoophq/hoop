@@ -340,6 +340,7 @@ GRANT SELECT, INSERT, UPDATE ON reviews TO {{ .pgrest_role }};
 GRANT SELECT, INSERT, UPDATE ON review_groups TO {{ .pgrest_role }};
 GRANT SELECT, INSERT, UPDATE, DELETE ON proxymanager_state TO {{ .pgrest_role }};
 GRANT SELECT, INSERT, UPDATE ON audit TO {{ .pgrest_role }};
+GRANT SELECT, INSERT, UPDATE, DELETE ON local_auth_sessions TO {{ .pgrest_role }};
 
 -- allow the main role to impersonate the apiuser role
 GRANT {{ .pgrest_role }} TO {{ .pg_app_user }};
