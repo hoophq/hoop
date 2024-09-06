@@ -43,7 +43,7 @@
    :runbooks-plugin->runbooks {:status :idle, :data nil}
    :runbooks-plugin->runbooks-by-connection {:status :loading, :data nil, :message ""}
    :segment->analytics nil
-   :sidebar-desktop {:status (or (keyword (.getItem js/localStorage "sidebar")) :opened)}
+   :sidebar-desktop {:status (or (keyword (.getItem js/localStorage "sidebar")) :closed)}
    :sidebar-mobile {:status :closed}
    :snackbar-level :error
    :snackbar-text "Default text"
