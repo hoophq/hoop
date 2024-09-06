@@ -1,7 +1,6 @@
 #!/bin/bash
 
 : "${HOOP_PUBLIC_HOSTNAME:? Required env HOOP_PUBLIC_HOSTNAME}"
-: "${HOOP_TLS_MODE:? Required env HOOP_TLS_MODE}"
 
 set -e
 

@@ -67,11 +67,11 @@ func Load() (*Config, error) {
 	grpcURL := os.Getenv("HOOP_GRPCURL")
 	apiServer := os.Getenv("HOOP_APIURL")
 	accessToken := os.Getenv("HOOP_TOKEN")
+	tlsCA, err := envloader.GetEnv("HOOP_TLSCA")
+	if err != nil {
+		return nil, err
+	}
 	if grpcURL != "" && apiServer != "" && accessToken != "" {
-		tlsCA, err := envloader.GetEnv("HOOP_TLSCA")
-		if err != nil {
-			return nil, err
-		}
 		return &Config{
 			Token:        accessToken,
 			ApiURL:       apiServer,
@@ -92,6 +92,9 @@ func Load() (*Config, error) {
 	}
 
 	if !conf.isEmpty() {
+		if conf.TlsCAB64Enc == "" {
+			conf.TlsCAB64Enc = base64.StdEncoding.EncodeToString([]byte(tlsCA))
+		}
 		conf.Mode = clientconfig.ModeConfigFile
 		conf.filepath = filepath
 		conf.InsecureGRPC = hasInsecureScheme(conf.GrpcURL)
