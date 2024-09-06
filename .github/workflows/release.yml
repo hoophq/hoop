@@ -2,8 +2,8 @@ name: Hoop Release
 
 on:
   push:
-    branches:
-      - ci/webapp-tool-versions
+    tags:
+      - "*.*.*"
 
 jobs:
   test:

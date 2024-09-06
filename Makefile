@@ -1,6 +1,5 @@
 PUBLIC_IMAGE := "hoophq/hoop"
 VERSION ?= $(or ${GIT_TAG},${GIT_TAG},v0)
-VERSION = 1.24.4-test
 GITCOMMIT ?= $(shell git rev-parse HEAD)
 DIST_FOLDER ?= ./dist
 
