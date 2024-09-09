@@ -19,10 +19,11 @@
 
      [:div {:id "user-info"
             :class "flex items-center"}
-      [:div {:class "flex gap-small items-center"}
-       [user-icon/initials-black user-name]
+      [:div {:class "truncate flex gap-small items-center"}
        [:div
-        {:class "text-gray-800 text-xs"}
+        [user-icon/initials-black user-name]]
+       [:div
+        {:class "truncate text-gray-800 text-xs"}
         user-name]]]
      [:div {:id "connection-info"
             :class "flex w-42 flex-col gap-small items-end lg:items-start"}

@@ -17,10 +17,10 @@
             ["@uiw/react-codemirror" :as CodeMirror]
             ["allotment" :refer [Allotment]]
             ["codemirror-copilot" :refer [clearLocalCache inlineCopilot]]
+            ["@radix-ui/themes" :refer [Button]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
-            [webapp.components.button :as button]
             [webapp.components.forms :as forms]
             [webapp.webclient.aside.main :as aside]
             [webapp.webclient.codemirror.extensions :as extensions]
@@ -143,7 +143,7 @@
                                    (or (.getItem js/localStorage "editor-vertical-pane-sizes") "250,950") ","))
         horizontal-pane-sizes (mapv js/parseInt
                                     (cs/split
-                                     (or (.getItem js/localStorage "editor-horizontal-pane-sizes") "650,490") ","))
+                                     (or (.getItem js/localStorage "editor-horizontal-pane-sizes") "650,210") ","))
         script (r/atom (get-code-from-localstorage))
         select-theme (r/atom "dracula")
         metadata (r/atom [])
@@ -274,18 +274,22 @@
                               "" dracula
                               nil dracula}
             show-tree? (fn [connection]
-                         (and (or (= (:type connection) "mysql-csv")
-                                  (= (:type connection) "postgres-csv")
-                                  (= (:type connection) "mongodb")
-                                  (= (:type connection) "postgres")
-                                  (= (:type connection) "mysql")
-                                  (= (:type connection) "sql-server-csv")
-                                  (= (:type connection) "mssql")
-                                  (= (:type connection) "oracledb")
-                                  (= (:type connection) "database"))
-                              (empty? (:reviewers
-                                       (first
-                                        (filter #(= (:name connection) (:name %)) (:results @db-connections)))))))]
+                         (let [reviewers? (if (:loading @db-connections)
+                                            false
+                                            (empty?
+                                             (:reviewers
+                                              (first
+                                               (filter #(= (:name connection) (:name %)) (:results @db-connections))))))]
+                           (and (or (= (:type connection) "mysql-csv")
+                                    (= (:type connection) "postgres-csv")
+                                    (= (:type connection) "mongodb")
+                                    (= (:type connection) "postgres")
+                                    (= (:type connection) "mysql")
+                                    (= (:type connection) "sql-server-csv")
+                                    (= (:type connection) "mssql")
+                                    (= (:type connection) "oracledb")
+                                    (= (:type connection) "database"))
+                                reviewers?)))]
         (if (and (empty? (:results @db-connections))
                  (not (:loading @db-connections)))
           [quickstart/main]
@@ -298,25 +302,29 @@
                      "(Cmd+Enter)"
                      "(Ctrl+Enter)"))]
              [:div {:class "flex"}
-              [button/tailwind-primary {:text [:div {:class "flex items-center gap-small"}
-                                               [:> hero-solid-icon/PlayIcon {:class "h-3 w-3 shrink-0 text-white"
-                                                                             :aria-hidden "true"}]
-                                               [:span "Run"]]
-                                        :on-click (fn [res]
-                                                    (submit-task
-                                                     res
-                                                     @script
-                                                     run-connections-list-selected
-                                                     multiple-connections-exec-list-component/atom-exec-list-open?
-                                                     (conj @metadata {:key @metadata-key :value @metadata-value})
-                                                     script-response)
+              [:> Button {:color "indigo"
+                          :variant "solid"
+                          :radius "medium"
+                          :size "2"
+                          :class-name "dark"
+                          :disabled (or script-output-loading?
+                                        (empty? run-connections-list-selected))
+                          :on-click (fn [res]
+                                      (submit-task
+                                       res
+                                       @script
+                                       run-connections-list-selected
+                                       multiple-connections-exec-list-component/atom-exec-list-open?
+                                       (conj @metadata {:key @metadata-key :value @metadata-value})
+                                       script-response)
 
-                                                    (reset! metadata [])
-                                                    (reset! metadata-key "")
-                                                    (reset! metadata-value ""))
-                                        :disabled (or script-output-loading?
-                                                      (empty? run-connections-list-selected))
-                                        :type "button"}]]]]
+                                      (reset! metadata [])
+                                      (reset! metadata-key "")
+                                      (reset! metadata-value ""))}
+               [:div {:class "flex items-center gap-small"}
+                [:> hero-solid-icon/PlayIcon {:class "h-3 w-3 text-inherit"
+                                              :aria-hidden "true"}]
+                [:span "Run"]]]]]]
            [:> Allotment {:defaultSizes vertical-pane-sizes
                           :onDragEnd #(.setItem js/localStorage "editor-vertical-pane-sizes" (str %))}
             [:> (.-Pane Allotment) {:minSize 250}

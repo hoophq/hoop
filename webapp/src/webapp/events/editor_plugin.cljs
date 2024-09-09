@@ -88,7 +88,8 @@
                                                 [current-connection]))]
      (.setItem js/localStorage "run-connection-list-selected"
                (pr-str new-connection-list-selected))
-     {:db (assoc db :editor-plugin->run-connection-list {:data new-connection-list :status :ready}
+     {:fx [[:dispatch [:runbooks-plugin->get-runbooks (mapv #(:name %) new-connection-list-selected)]]]
+      :db (assoc db :editor-plugin->run-connection-list {:data new-connection-list :status :ready}
                  :editor-plugin->filtered-run-connection-list new-connection-list
                  :editor-plugin->run-connection-list-selected new-connection-list-selected)})))
 

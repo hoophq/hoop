@@ -46,10 +46,10 @@
    {:db (assoc-in db [:connections :loading] true)
     :fx [[:dispatch [:fetch {:method "GET"
                              :uri "/connections"
-                             :on-success #(rf/dispatch [::connections->set-connections %])}]]]}))
+                             :on-success #(rf/dispatch [:connections->set-connections %])}]]]}))
 
 (rf/reg-event-fx
- ::connections->set-connections
+ :connections->set-connections
  (fn
    [{:keys [db]} [_ connections]]
    {:db (assoc db :connections {:results connections :loading false})}))

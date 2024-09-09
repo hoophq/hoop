@@ -1,11 +1,10 @@
 (ns webapp.webclient.runbooks.list
   (:require ["@heroicons/react/20/solid" :as hero-solid-icon]
-            ["@heroicons/react/24/outline" :as hero-outline-icon]
+            ["lucide-react" :refer [FolderClosed FolderOpen File]]
             ["@radix-ui/themes" :refer [Button]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
-            [reagent.core :as r]
-            [webapp.components.button :as button]))
+            [reagent.core :as r]))
 
 (defn sort-tree [data]
   (let [non-empty-keys (->> data
@@ -34,11 +33,12 @@
    payload))
 
 (defn file [filename filter-template-selected]
-  [:div {:class "flex items-center gap-2 pl-6 pb-4 cursor-pointer hover:text-blue-500 text-xs text-white whitespace-pre"
+  [:div {:class "flex items-center gap-2 pl-6 pb-4 hover:underline cursor-pointer text-xs text-white whitespace-pre"
          :on-click #(rf/dispatch [:runbooks-plugin->set-active-runbook
                                   (filter-template-selected filename)])}
-   [:> hero-outline-icon/DocumentIcon
-    {:class "h-3 w-3 text-white" :aria-hidden "true"}]
+   [:div
+    [:> File {:size 14
+              :color "white"}]]
    [:span {:class "block truncate"}
     filename]])
 
@@ -46,11 +46,12 @@
   (let [dropdown-status (r/atom {})]
     (fn [name items level]
       (if (empty? items)
-        [:div {:class "flex items-center gap-2 pb-4 cursor-pointer hover:text-blue-500 text-xs text-white whitespace-pre"
+        [:div {:class "flex items-center gap-2 pb-4 hover:underline cursor-pointer text-xs text-white whitespace-pre"
                :on-click #(rf/dispatch [:runbooks-plugin->set-active-runbook
                                         (filter-template-selected name)])}
-         [:> hero-outline-icon/DocumentIcon
-          {:class "h-3 w-3 text-white" :aria-hidden "true"}]
+         [:div
+          [:> File {:size 14
+                    :color "white"}]]
          [:span {:class "block truncate"}
           name]]
 
@@ -59,11 +60,13 @@
                              (str "pl-" (* level 2))))}
          [:div {:class "flex pb-4 items-center gap-small"}
           (if (= (get @dropdown-status name) :open)
-            [:> hero-solid-icon/FolderOpenIcon {:class "h-3 w-3 shrink-0 text-white"
-                                                :aria-hidden "true"}]
-            [:> hero-solid-icon/FolderIcon {:class "h-3 w-3 shrink-0 text-white"
-                                            :aria-hidden "true"}])
-          [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
+            [:div
+             [:> FolderOpen {:size 14
+                             :color "white"}]]
+            [:div
+             [:> FolderClosed {:size 14
+                               :color "white"}]])
+          [:span {:class (str "hover:underline cursor-pointer "
                               "flex items-center")
                   :on-click #(swap! dropdown-status
                                     assoc-in [name]
@@ -87,34 +90,29 @@
      [directory name items 0 filter-template-selected])])
 
 (defn- loading-list-view []
-  [:div
-   {:class "flex gap-small items-center py-regular text-xs text-white"}
+  [:div {:class "flex gap-small items-center py-regular text-xs text-white"}
    [:span {:class "italic"}
     "Loading runbooks"]
    [:figure {:class "w-3 flex-shrink-0 animate-spin opacity-60"}
     [:img {:src "/icons/icon-loader-circle-white.svg"}]]])
 
 (defn- empty-templates-view []
-  [:div {:class "pt-large"}
-   [:div {:class "px-large text-center"}
-    [:div {:class "text-white text-sm font-bold mb-small"}
-     "No runbooks available in your repository!"]
-    [:div {:class "text-white text-xs"}
-     (str "Trouble creating a runbook file? ")
-     [:a {:href "https://hoop.dev/docs/plugins/runbooks/configuring"
-          :target "_blank"
-          :class "underline text-blue-500"}
-      "Get to know how to use our runbooks plugin."]]]])
+  [:div {:class "text-center"}
+   [:div {:class "text-gray-400 text-xs"}
+    "There are no Runbooks available for this connection."]])
 
 (defn- no-integration-templates-view []
   [:div {:class "pt-large"}
    [:div {:class "flex flex-col items-center text-center"}
     [:div {:class "text-gray-400 text-xs mb-large"}
      "Configure your Git repository to enable your Runbooks."]
-    [button/primary
-     {:text "Go to Configurations"
-      :outlined true
-      :on-click #(rf/dispatch [:navigate :manage-plugin {:tab "configurations"} :plugin-name "runbooks"])}]]])
+    [:> Button {:color "indigo"
+                :size "3"
+                :variant "ghost"
+                :class-name "dark"
+                :radius "medium"
+                :on-click #(rf/dispatch [:navigate :manage-plugin {:tab "configurations"} :plugin-name "runbooks"])}
+     "Go to Configurations"]]])
 
 (defn main []
   (fn [templates filtered-templates]
@@ -125,6 +123,6 @@
         (= :loading (:status @templates)) [loading-list-view]
         (= :error (:status @templates)) [no-integration-templates-view]
         (and (empty? (:data @templates)) (= :ready (:status @templates))) [empty-templates-view]
-        (empty? @filtered-templates) [:span {:class "pl-2 text-xs text-gray-400 font-normal"}
+        (empty? @filtered-templates) [:div {:class "text-center text-xs text-gray-400 font-normal"}
                                       "There's no runbook matching your search."]
         :else [directory-tree transformed-payload filter-template-selected]))))

@@ -5,7 +5,6 @@
             [reagent.core :as r]
             [webapp.components.button :as button]
             [webapp.components.forms :as forms]
-            [webapp.webclient.log-area.main :as log-area]
             [webapp.webclient.runbooks.exec-multiples-runbook-list :as exec-multiples-runbooks-list]))
 
 (defn dynamic-form

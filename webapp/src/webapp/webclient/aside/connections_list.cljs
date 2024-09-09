@@ -1,16 +1,14 @@
 (ns webapp.webclient.aside.connections-list
   (:require ["@heroicons/react/16/solid" :as hero-micro-icon]
-            [clojure.string :as cs]
             [re-frame.core :as rf]
-            [webapp.connections.constants :as connection-constants]
-            [webapp.webclient.log-area.main :refer [selected-tab]]))
+            [webapp.connections.constants :as connection-constants]))
 
 (defn main [{:keys [run-connections-list-rest
                     atom-filtered-run-connections-list]}]
   [:div {:class "relative"}
    [:div {:class "transition grid lg:grid-cols-1 gap-regular h-auto"}
     (if (empty? (filterv #(not (:selected %)) @atom-filtered-run-connections-list))
-      [:span {:class "pl-2 text-xs text-gray-400 font-normal"}
+      [:div {:class "text-center text-xs text-gray-400 font-normal"}
        "There's no connection matching your search."]
 
       (doall

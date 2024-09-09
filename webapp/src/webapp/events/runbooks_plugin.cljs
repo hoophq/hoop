@@ -5,16 +5,32 @@
 (rf/reg-event-fx
  :runbooks-plugin->get-runbooks
  (fn
-   [{:keys [db]} [_]]
-   {:fx [[:dispatch [:fetch {:method "GET"
-                             :uri (str "/plugins/runbooks/templates")
-                             :on-success (fn [runbooks]
-                                           (rf/dispatch [:runbooks-plugin->set-runbooks runbooks])
-                                           (rf/dispatch [:runbooks-plugin->set-filtered-runbooks
-                                                         (map #(into {} {:name (:name %)})
-                                                              (:items runbooks))]))
-                             :on-failure (fn []
-                                           (rf/dispatch [:runbooks-plugin->error-runbooks]))}]]]
+   [{:keys [db]} [_ connections-selected]]
+   {:fx [[:dispatch
+          [:fetch
+           {:method "GET"
+            :uri "/connections"
+            :on-success (fn [connections]
+                          (let [connections-names-map (if (empty? connections-selected)
+                                                        (mapv #(:name %) connections)
+                                                        connections-selected)]
+                            (rf/dispatch [:connections->set-connections connections])
+
+                            (rf/dispatch [:fetch {:method "GET"
+                                                  :uri (str "/plugins/runbooks/templates")
+                                                  :on-success (fn [runbooks]
+                                                                (let [runbooks-filtered-by-connections
+                                                                      (filterv
+                                                                       (fn [runb]
+                                                                         (some #(contains? (set connections-names-map) %) (:connections runb)))
+                                                                       (:items runbooks))]
+
+                                                                  (rf/dispatch [:runbooks-plugin->set-runbooks runbooks-filtered-by-connections])
+                                                                  (rf/dispatch [:runbooks-plugin->set-filtered-runbooks
+                                                                                (map #(into {} {:name (:name %)})
+                                                                                     runbooks-filtered-by-connections)])))
+                                                  :on-failure (fn []
+                                                                (rf/dispatch [:runbooks-plugin->error-runbooks]))}])))}]]]
     :db (assoc db :runbooks-plugin->runbooks {:status :loading :data nil})}))
 
 (rf/reg-event-db
@@ -22,7 +38,7 @@
  (fn
    [db [_ runbooks]]
    (assoc db :runbooks-plugin->runbooks {:status :ready
-                                         :data (:items runbooks)})))
+                                         :data runbooks})))
 
 (rf/reg-event-fx
  :runbooks-plugin->get-runbooks-by-connection
