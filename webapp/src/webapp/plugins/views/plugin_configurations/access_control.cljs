@@ -37,12 +37,11 @@
                                                                         connection))]
                         (rf/dispatch [:plugins->update-plugin new-plugin-data])))}
         [:header
-         [:div {:class "font-bold text-xs"}
-          "Approval groups"]
-         [:footer
-          {:class "text-xs text-gray-600 pb-1"}
-          (str "User groups that have the ability to view and interact with this connection. "
-               "* An empty field designates the admin as the selected group.")]]
+         [:div {:class "font-bold text-xs pb-1"}
+          "Access user groups"]
+         [:footer {:class "text-xs text-gray-600 pb-4"}
+          (str "Selected user groups are able to view and interact with this connection. "
+               "Admin is set by default if no user group is selected.")]]
         [multi-select/creatable-select {:options (array->select-options user-groups)
                                         :id "approval-groups-input"
                                         :name "approval-groups-input"
