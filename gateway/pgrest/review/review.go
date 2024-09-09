@@ -133,12 +133,13 @@ func (r *review) FetchOneBySid(ctx pgrest.OrgContext, sid string) (*types.Review
 	return parseReview(rev), nil
 }
 
-func (r *review) FetchJit(ctx pgrest.OrgContext, connectionID string) (*types.Review, error) {
+func (r *review) FetchJit(ctx pgrest.OrgContext, ownerUserID, connectionID string) (*types.Review, error) {
 	var rev Review
-	err := pgrest.New("/reviews?org_id=eq.%s&connection_id=eq.%s&type=eq.jit&status=eq.APPROVED&revoked_at=gt.now&select=*,review_groups(*)",
-		ctx.GetOrgID(), url.QueryEscape(connectionID)).
-		FetchOne().
-		DecodeInto(&rev)
+	err := pgrest.New("/reviews?org_id=eq.%s&type=eq.jit&status=eq.APPROVED&owner_id=eq.%s&connection_id=eq.%s&select=*,review_groups(*)&order=created_at.desc&limit=1",
+		ctx.GetOrgID(),
+		url.QueryEscape(ownerUserID),
+		url.QueryEscape(connectionID),
+	).FetchOne().DecodeInto(&rev)
 	if err != nil {
 		if err == pgrest.ErrNotFound {
 			return nil, nil

@@ -82,11 +82,6 @@ func (s *Service) Persist(ctx pgrest.OrgContext, review *types.Review) error {
 	return nil
 }
 
-// FindApprovedJitReviews returns jit reviews that are active based on the access duration
-func (s *Service) FindApprovedJitReviews(ctx pgrest.OrgContext, connID string) (*types.Review, error) {
-	return pgreview.New().FetchJit(ctx, connID)
-}
-
 func (s *Service) Revoke(ctx pgrest.OrgContext, reviewID string) (*types.Review, error) {
 	rev, err := s.FindOne(ctx, reviewID)
 	if err != nil {
