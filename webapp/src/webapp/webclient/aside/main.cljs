@@ -9,10 +9,10 @@
             [webapp.webclient.aside.metadata :as metadata]
             [webapp.webclient.runbooks.list :as runbooks-list]))
 
-(defn main []
+(defn main [{:keys [run-connections-list-selected]}]
   (let [templates (rf/subscribe [:runbooks-plugin->runbooks])
         filtered-templates (rf/subscribe [:runbooks-plugin->filtered-runbooks])]
-    (rf/dispatch [:runbooks-plugin->get-runbooks])
+    (rf/dispatch [:runbooks-plugin->get-runbooks (mapv #(:name %) run-connections-list-selected)])
     (fn [{:keys [show-tree?
                  atom-run-connections-list
                  run-connections-list-rest

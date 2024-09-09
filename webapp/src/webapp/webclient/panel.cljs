@@ -21,7 +21,6 @@
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
-            [webapp.components.button :as button]
             [webapp.components.forms :as forms]
             [webapp.webclient.aside.main :as aside]
             [webapp.webclient.codemirror.extensions :as extensions]
@@ -275,18 +274,22 @@
                               "" dracula
                               nil dracula}
             show-tree? (fn [connection]
-                         (and (or (= (:type connection) "mysql-csv")
-                                  (= (:type connection) "postgres-csv")
-                                  (= (:type connection) "mongodb")
-                                  (= (:type connection) "postgres")
-                                  (= (:type connection) "mysql")
-                                  (= (:type connection) "sql-server-csv")
-                                  (= (:type connection) "mssql")
-                                  (= (:type connection) "oracledb")
-                                  (= (:type connection) "database"))
-                              (empty? (:reviewers
-                                       (first
-                                        (filter #(= (:name connection) (:name %)) (:results @db-connections)))))))]
+                         (let [reviewers? (if (:loading @db-connections)
+                                            false
+                                            (empty?
+                                             (:reviewers
+                                              (first
+                                               (filter #(= (:name connection) (:name %)) (:results @db-connections))))))]
+                           (and (or (= (:type connection) "mysql-csv")
+                                    (= (:type connection) "postgres-csv")
+                                    (= (:type connection) "mongodb")
+                                    (= (:type connection) "postgres")
+                                    (= (:type connection) "mysql")
+                                    (= (:type connection) "sql-server-csv")
+                                    (= (:type connection) "mssql")
+                                    (= (:type connection) "oracledb")
+                                    (= (:type connection) "database"))
+                                reviewers?)))]
         (if (and (empty? (:results @db-connections))
                  (not (:loading @db-connections)))
           [quickstart/main]

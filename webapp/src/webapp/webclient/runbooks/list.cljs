@@ -88,24 +88,16 @@
      [directory name items 0 filter-template-selected])])
 
 (defn- loading-list-view []
-  [:div
-   {:class "flex gap-small items-center py-regular text-xs text-white"}
+  [:div {:class "flex gap-small items-center py-regular text-xs text-white"}
    [:span {:class "italic"}
     "Loading runbooks"]
    [:figure {:class "w-3 flex-shrink-0 animate-spin opacity-60"}
     [:img {:src "/icons/icon-loader-circle-white.svg"}]]])
 
 (defn- empty-templates-view []
-  [:div {:class "pt-large"}
-   [:div {:class "px-large text-center"}
-    [:div {:class "text-white text-sm font-bold mb-small"}
-     "No runbooks available in your repository!"]
-    [:div {:class "text-white text-xs"}
-     (str "Trouble creating a runbook file? ")
-     [:a {:href "https://hoop.dev/docs/plugins/runbooks/configuring"
-          :target "_blank"
-          :class "underline text-blue-500"}
-      "Get to know how to use our runbooks plugin."]]]])
+  [:div {:class "text-center"}
+   [:div {:class "text-gray-400 text-xs"}
+    "There are no Runbooks available for this connection."]])
 
 (defn- no-integration-templates-view []
   [:div {:class "pt-large"}
@@ -129,6 +121,6 @@
         (= :loading (:status @templates)) [loading-list-view]
         (= :error (:status @templates)) [no-integration-templates-view]
         (and (empty? (:data @templates)) (= :ready (:status @templates))) [empty-templates-view]
-        (empty? @filtered-templates) [:span {:class "pl-2 text-xs text-gray-400 font-normal"}
+        (empty? @filtered-templates) [:div {:class "text-center text-xs text-gray-400 font-normal"}
                                       "There's no runbook matching your search."]
         :else [directory-tree transformed-payload filter-template-selected]))))
