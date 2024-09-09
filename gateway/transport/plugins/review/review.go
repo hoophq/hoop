@@ -2,6 +2,7 @@ package review
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -70,18 +71,26 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 		return nil, nil
 	}
 
-	jitr, err := pgreview.New().FetchJit(pctx, pctx.ConnectionID)
+	jitr, err := pgreview.New().FetchJit(pctx, pctx.UserID, pctx.ConnectionID)
 	if err != nil {
 		return nil, plugintypes.InternalErr("failed listing time based reviews", err)
 	}
 	if jitr != nil {
-		log.With("sid", pctx.SID, "id", jitr.Id, "user", jitr.CreatedBy, "org", pctx.OrgID,
-			"revoke-at", jitr.RevokeAt.Format(time.RFC3339),
-			"duration", fmt.Sprintf("%vm", jitr.AccessDuration.Minutes())).Infof("jit access granted")
-		newCtx, _ := context.WithTimeout(pctx.Context, jitr.AccessDuration)
-		return &plugintypes.ConnectResponse{Context: newCtx, ClientPacket: nil}, nil
+		err = validateJit(jitr, time.Now().UTC())
+		switch err {
+		case errJitExpired: // it's expired, must not proceed without creating a jit record
+		case nil: // jit is valid
+			log.With("sid", pctx.SID, "id", jitr.Id, "user", jitr.CreatedBy, "org", pctx.OrgID,
+				"revoke-at", jitr.RevokeAt.Format(time.RFC3339),
+				"duration", fmt.Sprintf("%vm", jitr.AccessDuration.Minutes())).Infof("jit access granted")
+			newCtx, _ := context.WithTimeout(pctx.Context, jitr.AccessDuration)
+			return &plugintypes.ConnectResponse{Context: newCtx, ClientPacket: nil}, nil
+		default:
+			return nil, err
+		}
 	}
-	log.With("sid", pctx.SID, "orgid", pctx.GetOrgID()).Infof("jit review not found for connection id %v", pctx.ConnectionID)
+	log.With("sid", pctx.SID, "orgid", pctx.GetOrgID(), "user-id", pctx.UserID, "connection-id", pctx.ConnectionID).
+		Infof("jit review not found")
 
 	var accessDuration time.Duration
 	reviewType := review.ReviewTypeOneTime
@@ -177,3 +186,21 @@ func (p *reviewPlugin) OnShutdown()                                            {
 // indicate to other plugins that this packet has the review enabled
 // it will allow applying special logic for these cases
 func (p *reviewPlugin) setSpecReview(pkt *pb.Packet) { pkt.Spec[pb.SpecHasReviewKey] = []byte("true") }
+
+var errJitExpired = errors.New("jit expired")
+
+func validateJit(jit *types.Review, t time.Time) error {
+	if jit.RevokeAt == nil || jit.RevokeAt.IsZero() {
+		return plugintypes.InternalErr("found inconsistent jit record",
+			fmt.Errorf("revoked_at attribute is empty for %s", jit.Id))
+	}
+	revokedAt := jit.RevokeAt.Format(time.RFC3339Nano)
+	isJitExpired := jit.RevokeAt.Before(t)
+	log.With("id", jit.Id, "created-at", jit.CreatedAt.Format(time.RFC3339Nano), "expired", isJitExpired).
+		Infof("validating jit, now=%v, revoked-at=%v",
+			t.Format(time.RFC3339Nano), revokedAt)
+	if isJitExpired {
+		return errJitExpired
+	}
+	return nil
+}

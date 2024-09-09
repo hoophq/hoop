@@ -19,17 +19,27 @@ func (r *reviewPlugin) onReceiveOSS(pctx plugintypes.Context, pkt *pb.Packet) (*
 	if pctx.ClientVerb != pb.ClientVerbConnect {
 		return nil, fmt.Errorf(`review is enabled for this connection, it allows only interacting via "hoop connect"`)
 	}
-	jitr, err := pgreview.New().FetchJit(pctx, pctx.ConnectionID)
+	jitr, err := pgreview.New().FetchJit(pctx, pctx.UserID, pctx.ConnectionID)
 	if err != nil {
 		return nil, plugintypes.InternalErr("failed listing time based reviews", err)
 	}
 	if jitr != nil {
-		log.With("session", pctx.SID, "id", jitr.Id, "user", jitr.CreatedBy, "org", pctx.OrgID,
-			"revoke-at", jitr.RevokeAt.Format(time.RFC3339),
-			"duration", fmt.Sprintf("%vm", jitr.AccessDuration.Minutes())).Infof("jit access granted")
-		newCtx, _ := context.WithTimeout(pctx.Context, jitr.AccessDuration)
-		return &plugintypes.ConnectResponse{Context: newCtx, ClientPacket: nil}, nil
+		err = validateJit(jitr, time.Now().UTC())
+		switch err {
+		case errJitExpired: // it's expired, must not proceed without creating a jit record
+		case nil: // jit is valid, grant access
+			log.With("sid", pctx.SID, "id", jitr.Id, "user", jitr.CreatedBy, "org", pctx.OrgID,
+				"revoke-at", jitr.RevokeAt.Format(time.RFC3339),
+				"duration", fmt.Sprintf("%vm", jitr.AccessDuration.Minutes())).Infof("jit access granted")
+			newCtx, _ := context.WithTimeout(pctx.Context, jitr.AccessDuration)
+			return &plugintypes.ConnectResponse{Context: newCtx, ClientPacket: nil}, nil
+		default:
+			return nil, err
+		}
 	}
+	log.With("sid", pctx.SID, "orgid", pctx.GetOrgID(), "user-id", pctx.UserID, "connection-id", pctx.ConnectionID).
+		Infof("jit review not found")
+
 	// reviewType := review.ReviewTypeOneTime
 	accessDuration := time.Duration(time.Minute * 30)
 	if durationStr, ok := pkt.Spec[pb.SpecJitTimeout]; ok {
