@@ -1,6 +1,6 @@
 (ns webapp.webclient.runbooks.list
   (:require ["@heroicons/react/20/solid" :as hero-solid-icon]
-            ["@heroicons/react/24/outline" :as hero-outline-icon]
+            ["lucide-react" :refer [FolderClosed FolderOpen File]]
             ["@radix-ui/themes" :refer [Button]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
@@ -33,11 +33,12 @@
    payload))
 
 (defn file [filename filter-template-selected]
-  [:div {:class "flex items-center gap-2 pl-6 pb-4 cursor-pointer hover:text-blue-500 text-xs text-white whitespace-pre"
+  [:div {:class "flex items-center gap-2 pl-6 pb-4 hover:underline cursor-pointer text-xs text-white whitespace-pre"
          :on-click #(rf/dispatch [:runbooks-plugin->set-active-runbook
                                   (filter-template-selected filename)])}
    [:div
-    [:> hero-outline-icon/DocumentIcon {:class "h-3 w-3 text-white" :aria-hidden "true"}]]
+    [:> File {:size 14
+              :color "white"}]]
    [:span {:class "block truncate"}
     filename]])
 
@@ -45,11 +46,12 @@
   (let [dropdown-status (r/atom {})]
     (fn [name items level]
       (if (empty? items)
-        [:div {:class "flex items-center gap-2 pb-4 cursor-pointer hover:text-blue-500 text-xs text-white whitespace-pre"
+        [:div {:class "flex items-center gap-2 pb-4 hover:underline cursor-pointer text-xs text-white whitespace-pre"
                :on-click #(rf/dispatch [:runbooks-plugin->set-active-runbook
                                         (filter-template-selected name)])}
          [:div
-          [:> hero-outline-icon/DocumentIcon {:class "h-3 w-3 text-white" :aria-hidden "true"}]]
+          [:> File {:size 14
+                    :color "white"}]]
          [:span {:class "block truncate"}
           name]]
 
@@ -59,12 +61,12 @@
          [:div {:class "flex pb-4 items-center gap-small"}
           (if (= (get @dropdown-status name) :open)
             [:div
-             [:> hero-solid-icon/FolderOpenIcon {:class "h-3 w-3 shrink-0 text-white"
-                                                 :aria-hidden "true"}]]
+             [:> FolderOpen {:size 14
+                             :color "white"}]]
             [:div
-             [:> hero-solid-icon/FolderIcon {:class "h-3 w-3 shrink-0 text-white"
-                                             :aria-hidden "true"}]])
-          [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
+             [:> FolderClosed {:size 14
+                               :color "white"}]])
+          [:span {:class (str "hover:underline cursor-pointer "
                               "flex items-center")
                   :on-click #(swap! dropdown-status
                                     assoc-in [name]
