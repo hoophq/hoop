@@ -730,6 +730,11 @@ type ServerLicenseInfo struct {
 	VerifiedHost string `json:"verified_host" example:"homolog.johnwick.org"`
 }
 
+type PublicServerInfo struct {
+	// Auth method used by the server
+	AuthMethod string `json:"auth_method" enums:"oidc,local" example:"local"`
+}
+
 type ServerInfo struct {
 	// Version of the server
 	Version string `json:"version" example:"1.23.15"`

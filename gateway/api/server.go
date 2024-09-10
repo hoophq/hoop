@@ -26,6 +26,7 @@ import (
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
 	apiplugins "github.com/hoophq/hoop/gateway/api/plugins"
 	apiproxymanager "github.com/hoophq/hoop/gateway/api/proxymanager"
+	apipublicserverinfo "github.com/hoophq/hoop/gateway/api/publicserverinfo"
 	apireports "github.com/hoophq/hoop/gateway/api/reports"
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
 	apirunbooks "github.com/hoophq/hoop/gateway/api/runbooks"
@@ -411,6 +412,8 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest(analytics.EventOpenWebhooksDashboard),
 		AuditApiChanges,
 		webhooksapi.Get)
+
+	route.GET("/publicserverinfo", apipublicserverinfo.Get)
 
 	route.GET("/serverinfo",
 		api.Authenticate,

@@ -321,6 +321,11 @@
    (:gateway->info db)))
 
 (re-frame/reg-sub
+ :gateway->public-info
+ (fn [db _]
+   (:gateway->public-info db)))
+
+(re-frame/reg-sub
  :editor-plugin->run-connection-list
  (fn [db _]
    (:editor-plugin->run-connection-list db)))
@@ -384,3 +389,9 @@
  :reports->today-session-data
  (fn [db _]
    (:reports->today-session-data db)))
+
+(re-frame/reg-sub
+ :auth->auth-method
+ (fn [db _]
+   (:auth->auth-method db)))
+

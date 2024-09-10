@@ -2,6 +2,7 @@ package localauthapi
 
 import (
 	"fmt"
+	"libhoop/log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -15,12 +16,14 @@ import (
 
 // body: {"email": "some@example.com", "password": "password"}
 func Register(c *gin.Context) {
+	fmt.Printf("Register\n")
 	var user pgrest.User
 	if err := c.BindJSON(&user); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
+	log.Debugf("looking for existing user %v", user.Email)
 	// fetch user by email
 	existingUser, err := pgusers.GetOneByEmail(user.Email)
 	if existingUser != nil {
@@ -31,9 +34,12 @@ func Register(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user"})
 		return
 	}
+	log.Debug("Creating new organization")
 	newOrgID, err := pgorgs.New().CreateOrGetOrg(fmt.Sprintf("%q Orgnization", user.Email), nil)
 	if err != nil {
+		log.Debugf("failed creating organization, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create organization"})
+		return
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
