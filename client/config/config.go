@@ -124,7 +124,7 @@ func (c *Config) GrpcClientConfig() (grpc.ClientConfig, error) {
 	return grpc.ClientConfig{
 		ServerAddress: srvAddr,
 		Token:         c.Token,
-		Insecure:      hasInsecureScheme(c.GrpcURL),
+		Insecure:      c.InsecureGRPC,
 		TLSServerName: os.Getenv("HOOP_TLSSERVERNAME"),
 		TLSCA:         c.TlsCA(),
 	}, err

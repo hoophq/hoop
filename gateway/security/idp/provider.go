@@ -42,9 +42,9 @@ func unmarshalResp(r *http.Response, body []byte, v interface{}) error {
 
 // newProvider fix non standard identity providers which uses
 // custom open id suffixes. It has the same logic of oidc.NewProvider(...)
-func newProviderConfig(ctx context.Context, issuer string) (*oidc.ProviderConfig, error) {
+func newProviderConfig(ctx context.Context, issuerURL string) (*oidc.ProviderConfig, error) {
 	openidConfigSuffix := "/.well-known/openid-configuration"
-	wellKnown := strings.TrimSuffix(issuer, "/") + openidConfigSuffix
+	wellKnown := strings.TrimSuffix(issuerURL, "/") + openidConfigSuffix
 	req, err := http.NewRequest("GET", wellKnown, nil)
 	if err != nil {
 		return nil, err
@@ -73,12 +73,9 @@ func newProviderConfig(ctx context.Context, issuer string) (*oidc.ProviderConfig
 		return nil, fmt.Errorf("oidc: failed to decode provider discovery object: %v", err)
 	}
 
-	issuerURL, skipIssuerValidation := ctx.Value(issuerURLKey).(string)
-	if !skipIssuerValidation {
-		issuerURL = issuer
-	}
-	if p.Issuer != issuerURL && !skipIssuerValidation {
-		return nil, fmt.Errorf("oidc: issuer did not match the issuer returned by provider, expected %q got %q", issuer, p.Issuer)
+	// don't be to strict when validating local idp setups
+	if !isLocalIPIdpSetup(p.Issuer) && p.Issuer != issuerURL {
+		return nil, fmt.Errorf("oidc: issuer did not match the issuer returned by provider, expected %q got %q", issuerURL, p.Issuer)
 	}
 	return &oidc.ProviderConfig{
 		IssuerURL:   issuerURL,
@@ -88,4 +85,9 @@ func newProviderConfig(ctx context.Context, issuer string) (*oidc.ProviderConfig
 		Algorithms:  p.Algorithms,
 		JWKSURL:     p.JWKSURL,
 	}, nil
+}
+
+func isLocalIPIdpSetup(issuerURL string) bool {
+	return strings.HasPrefix(issuerURL, "http://127.0.0.1") ||
+		strings.HasPrefix(issuerURL, "https://127.0.0.1")
 }
