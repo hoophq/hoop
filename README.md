@@ -30,7 +30,7 @@
 - 🛠 **Unparalleled Flexibility**: Manipulate packets in real-time, choose between web and proxy modes
 - 🌐 **Universal Compatibility**: Support for databases, servers, cloud platforms, and development environments
 
-
+<!--
 ## 🚀 Quick Start
 
 Get up and running in minutes:
@@ -39,7 +39,7 @@ Get up and running in minutes:
 curl -sL https://hoop.dev/install.sh | sh
 ```
 [View full installation options](#installation)
-
+-->
 ## 📚 Popular Guides
 
 - [Secure MySQL Access](https://hoop.dev/docs/quickstarts/mysql)
@@ -85,13 +85,15 @@ See the full list of features for the free open-source and the enterprise versio
 
 ### Docker
 
+[See Docker Compose installation documentation](https://hoop.dev/docs/getting-started/installation/docker-compose)
+<!--
 ```bash
 # one-line setup with docker-compose
 curl -sL https://hoop.dev/install.sh | sh
 ```
 
 > We encourage you to inspect the script before running it. You can view the contents of the installation script by visiting [https://hoop.dev/install.sh](https://hoop.dev/install.sh) or by running `curl -sL https://hoop.dev/install.sh` without piping to `sh`.
-
+-->
 ### Kubernetes
 
 [See Kubernetes Deployment Documentation](https://hoop.dev/docs/deploy/kubernetes)
@@ -111,6 +113,7 @@ curl -sL https://hoop.dev/install.sh | sh
 | Frankfurt (eu-central-1) | [![Launch Stack](https://cdn.rawgit.com/buildkite/cloudformation-launch-stack-button-svg/master/launch-stack.svg)](https://eu-central-1.console.aws.amazon.com/cloudformation/home?region=eu-central-1#/stacks/quickcreate?templateURL=https%3A%2F%2Fhoopdev-platform-cf-eu-central-1.s3.eu-central-1.amazonaws.com%2Flatest%2Fhoopdev-platform.template.yaml) |
 | Sydney (ap-southeast-2) | [![Launch Stack](https://cdn.rawgit.com/buildkite/cloudformation-launch-stack-button-svg/master/launch-stack.svg)](https://ap-southeast-2.console.aws.amazon.com/cloudformation/home?region=ap-southeast-2#/stacks/quickcreate?templateURL=https%3A%2F%2Fhoopdev-platform-cf-ap-southeast-2.s3.ap-southeast-2.amazonaws.com%2Flatest%2Fhoopdev-platform.template.yaml) |
 
+<!--
 ## 🚀 Quick Start
 
 Get up and running in minutes:
@@ -120,7 +123,7 @@ curl -sL https://hoop.dev/install.sh | sh
 ```
 
 [View full installation options](#installation)
-
+-->
 ## Guides
 
 ### Databases
