@@ -130,26 +130,47 @@
             :value value}]])
 
 (defn textarea
-  [config]
+  [{:keys [label
+           placeholder
+           name
+           dark
+           id
+           helper-text
+           classes
+           value
+           defaultValue
+           on-change
+           on-keyDown
+           required
+           on-blur
+           rows
+           autoFocus
+           disabled]}]
   [:div.mb-regular
    [:div {:class "flex items-center gap-2 mb-1"}
-    [form-label (:label config)]
-    (when (not (cs/blank? (:helper-text config)))
-      [form-helper-text (:helper-text config)])]
+    (if dark
+      [form-label-dark label]
+      [form-label label])
+    (when (not (cs/blank? helper-text))
+      [form-helper-text helper-text dark])]
    [:textarea
-    {:class (str common-styles " " (or (:classes config) ""))
-     :id (or (:id config) "")
-     :rows (or (:rows config) 5)
-     :name (or (:name config) "")
-     :value (:value config)
-     :defaultValue (:defaultValue config)
-     :autoFocus (:autoFocus config)
-     :placeholder (:placeholder config)
-     :on-change (:on-change config)
-     :on-blur (:on-blur config)
-     :on-keyDown (:on-keyDown config)
-     :disabled (or (:disabled config) false)
-     :required (or (:required config) false)}]])
+    {:class (str (if dark
+                   common-styles-dark
+                   common-styles)
+                 " "
+                 (or classes ""))
+     :id (or id "")
+     :rows (or rows 5)
+     :name (or name "")
+     :value value
+     :defaultValue defaultValue
+     :autoFocus autoFocus
+     :placeholder placeholder
+     :on-change on-change
+     :on-blur on-blur
+     :on-keyDown on-keyDown
+     :disabled (or disabled false)
+     :required (or required false)}]])
 
 (defn- option
   [item selected]
