@@ -119,11 +119,46 @@ func (a *Api) localAuthMiddleware(c *gin.Context) {
 	c.Next()
 }
 
+// AllowApiKey is a middleware that allows the request to proceed if the request has an api key.
+// It sets the "allow-api-key" key in the context to true so the Auth Middleware can authorize it
+func (a *Api) AllowApiKey(c *gin.Context) {
+	c.Set("allow-api-key", true)
+	c.Next()
+}
+
+func (a *Api) ApiKeyMiddleware(c *gin.Context) {
+	apiToken := c.GetHeader("Api-Key")
+	if apiToken == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing API key"})
+		c.Abort()
+		return
+	}
+}
+
 func (a *Api) Authenticate(c *gin.Context) {
 	authMethod := appconfig.Get().AuthMethod()
+	apiToken := c.GetHeader("Api-Key")
+	// overwrites authMethod if apiToken is set
+	if apiToken != "" {
+		authMethod = "api-key"
+	}
 	switch authMethod {
 	case "local":
 		a.localAuthMiddleware(c)
+	case "api-key":
+		allowed, err := c.Get("allow-api-token")
+		fmt.Printf("allow: %v\n", allowed)
+		fmt.Printf("err: %v\n", err)
+		if err {
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+		if allowed != nil && allowed.(bool) {
+			// TODO build context
+			c.Next()
+			return
+		}
+		c.AbortWithStatus(http.StatusUnauthorized)
 	default:
 		roleName := RoleFromContext(c)
 		fmt.Printf("roleName: %v\n", roleName)
