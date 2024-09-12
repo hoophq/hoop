@@ -51,9 +51,10 @@ func New(grpcURL string) *handler { return &handler{grpcURL: grpcURL} }
 //	@Router			/serverinfo [get]
 func (h *handler) Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
+	fmt.Printf("ctx: %+v\n", ctx)
 	org, err := pgorgs.New().FetchOrgByContext(ctx)
 	if err != nil || org == nil {
-		errMsg := fmt.Sprintf("failed obtaining organization license, reason=%v", err)
+		errMsg := fmt.Sprintf("failed obtaining organization, reason=%v", err)
 		log.Error(errMsg)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
 		return

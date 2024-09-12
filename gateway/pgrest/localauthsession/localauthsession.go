@@ -1,7 +1,6 @@
 package pglocalauthsession
 
 import (
-	"fmt"
 	"net/url"
 
 	"github.com/google/uuid"
@@ -17,7 +16,6 @@ func CreateSession(authSession pgrest.LocalAuthSession) (string, error) {
 
 func GetSessionByToken(sessionToken string) (*pgrest.LocalAuthSession, error) {
 	var sess pgrest.LocalAuthSession
-	fmt.Printf("GetSessionByToken sessionToken: %v\n", sessionToken)
 	err := pgrest.New("/local_auth_sessions?token=eq.%v", url.QueryEscape(sessionToken)).
 		FetchOne().
 		DecodeInto(&sess)

@@ -48,7 +48,6 @@ func Register(c *gin.Context) {
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
-	log.Debugf("hashed password %v", string(hashedPassword))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
 		return
@@ -67,7 +66,7 @@ func Register(c *gin.Context) {
 	})
 
 	if err != nil {
-		fmt.Printf("failed creating user, err=%v", err)
+		log.Debugf("failed creating user, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
 		return
 	}
@@ -82,7 +81,6 @@ func Register(c *gin.Context) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	fmt.Printf("token %+v", token)
 	tokenString, err := token.SignedString(appconfig.Get().JWTSecretKey())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
