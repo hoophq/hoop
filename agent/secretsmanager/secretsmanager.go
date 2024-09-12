@@ -14,9 +14,13 @@ type secretProviderType string
 
 const (
 	// fetch secrets from aws secrets manager
-	secretProviderAWSSecretsManager secretProviderType = "_aws"
+	secretProviderAWSSecretsManagerType secretProviderType = "_aws"
 	// fetches secrets from environment variables mapped as json in unix environments
-	secretProviderEnvJSON secretProviderType = "_envjson"
+	secretProviderEnvJSONType secretProviderType = "_envjson"
+	// fetches secrets from vault k/v store version 1
+	secretProviderVaultKv1Type secretProviderType = "_vaultkv1"
+	// fetches secrets from vault k/v store version 2
+	secretProviderVaultKv2Type secretProviderType = "_vaultkv2"
 )
 
 // Decode environment variables based on the provider of a certain env.
@@ -25,8 +29,10 @@ const (
 // it will be a noop.
 func Decode(envVars map[string]any) (map[string]any, error) {
 	providerSingleton := map[secretProviderType]secretsGetter{
-		secretProviderAWSSecretsManager: nil,
-		secretProviderEnvJSON:           nil,
+		secretProviderAWSSecretsManagerType: nil,
+		secretProviderEnvJSONType:           nil,
+		secretProviderVaultKv1Type:          nil,
+		secretProviderVaultKv2Type:          nil,
 	}
 	decodedEnvVars := map[string]any{}
 	var errors []string
@@ -43,22 +49,32 @@ func Decode(envVars map[string]any) (map[string]any, error) {
 		}
 		var provider secretsGetter
 		switch attr.provider {
-		case secretProviderAWSSecretsManager:
-			provider = providerSingleton[secretProviderAWSSecretsManager]
+		case secretProviderAWSSecretsManagerType:
+			provider = providerSingleton[secretProviderAWSSecretsManagerType]
 			if provider == nil {
 				awsProv, err := newAwsProvider()
 				if err != nil {
 					return nil, fmt.Errorf("failed initializing aws provider, err=%v", err)
 				}
-				providerSingleton[secretProviderAWSSecretsManager] = awsProv
+				providerSingleton[secretProviderAWSSecretsManagerType] = awsProv
 				provider = awsProv
 			}
-		case secretProviderEnvJSON:
-			provider = providerSingleton[secretProviderEnvJSON]
+		case secretProviderEnvJSONType:
+			provider = providerSingleton[secretProviderEnvJSONType]
 			if provider == nil {
 				envJsonProv := &envJsonProvider{}
-				providerSingleton[secretProviderEnvJSON] = envJsonProv
+				providerSingleton[secretProviderEnvJSONType] = envJsonProv
 				provider = envJsonProv
+			}
+		case secretProviderVaultKv1Type, secretProviderVaultKv2Type:
+			provider = providerSingleton[attr.provider]
+			if provider == nil {
+				vaultProvider, err := newVaultKeyValProvider(attr.provider, nil)
+				if err != nil {
+					return nil, fmt.Errorf("failed initializing vault provider, err=%v", err)
+				}
+				providerSingleton[attr.provider] = vaultProvider
+				provider = vaultProvider
 			}
 		default:
 			// it's not an secrets manager env definition
