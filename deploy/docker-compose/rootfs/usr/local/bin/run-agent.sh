@@ -25,8 +25,6 @@ SCHEME=grpc
 if [[ "$HOOP_TLS_MODE" == "enabled" ]]; then
     export GRPC_URL=${HOOP_PUBLIC_HOSTNAME}:443
     SCHEME=grpcs
-elif [[ "$HOOP_PUBLIC_HOSTNAME" == "127.0.0.1" ]]; then
-    export GRPC_URL=nginx:80
 fi
 
 export HOOP_KEY=${SCHEME}://system:$(printenv SECRET_KEY | tr -d '\n')@${GRPC_URL}?mode=standard
