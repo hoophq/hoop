@@ -69,7 +69,7 @@ func Decode(envVars map[string]any) (map[string]any, error) {
 		case secretProviderVaultKv1Type, secretProviderVaultKv2Type:
 			provider = providerSingleton[attr.provider]
 			if provider == nil {
-				vaultProvider, err := newVaultKeyValProvider(attr.provider)
+				vaultProvider, err := newVaultKeyValProvider(attr.provider, nil)
 				if err != nil {
 					return nil, fmt.Errorf("failed initializing vault provider, err=%v", err)
 				}

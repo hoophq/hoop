@@ -1,29 +1,7 @@
 #!/bin/bash
+set -eo pipefail
 
 : "${HOOP_PUBLIC_HOSTNAME:? Required env HOOP_PUBLIC_HOSTNAME}"
-
-function print_and_exit() {
-  echo "error: $1"
-  exit 1
-}
-
-# pre-flight checks
-if [[ $HOOP_PUBLIC_HOSTNAME == "127.0.0.1" ]] && [[ $HOOP_TLS_MODE == "enabled" ]]; then
-    print_and_exit "use your local machine host for tls setup"
-fi
-
-HOSTNAME_IP_ADDR=0
-if [[ $HOOP_PUBLIC_HOSTNAME =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    HOSTNAME_IP_ADDR=1
-else
-    nslookup $HOOP_PUBLIC_HOSTNAME > /dev/null || \
-        print_and_exit "not able to resolve address $HOOP_PUBLIC_HOSTNAME. Check if the HOOP_PUBLIC_HOSTNAME is a valid DNS name."
-fi
-
-nc -z $HOOP_PUBLIC_HOSTNAME 80 && print_and_exit "Port 80 is being used by another process."
-nc -z $HOOP_PUBLIC_HOSTNAME 443 && print_and_exit "Port 443 is being used by another process."
-
-set -eo pipefail
 
 mkdir -p /hoopdata/tls
 if [ -z "${HOOP_PUBLIC_HOSTNAME}" ]; then
@@ -66,12 +44,11 @@ subjectAltName = @alt_names
 [alt_names]
 DNS.1 = gateway
 DNS.2 = idp
-DNS.3 = nginx
-DNS.4 = ${HOOP_PUBLIC_HOSTNAME}
+DNS.3 = ${HOOP_PUBLIC_HOSTNAME}
 IP.1 = 127.0.0.1
 EOF
 
-if [[ $HOSTNAME_IP_ADDR == "1" ]]; then
+if [[ $HOOP_PUBLIC_HOSTNAME =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     echo "IP.2 = $HOOP_PUBLIC_HOSTNAME" >> /hoopdata/tls/server.v3.ext
 fi
 

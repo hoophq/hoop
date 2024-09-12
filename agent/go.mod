@@ -11,6 +11,7 @@ require (
 	github.com/aws/smithy-go v1.20.1
 	github.com/getsentry/sentry-go v0.18.0
 	github.com/hoophq/hoop/common v0.0.0-00010101000000-000000000000
+	github.com/stretchr/testify v1.8.4
 	go.mongodb.org/mongo-driver v1.15.0
 	google.golang.org/grpc v1.63.2
 )
@@ -29,6 +30,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.23.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.28.5 // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-logr/logr v1.4.1 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
@@ -36,6 +38,7 @@ require (
 	github.com/honeycombio/honeycomb-opentelemetry-go v0.8.1 // indirect
 	github.com/honeycombio/otel-config-go v1.12.1 // indirect
 	github.com/lufia/plan9stats v0.0.0-20230326075908-cb1d2100619a // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20221212215047-62379fc7944b // indirect
 	github.com/sethvargo/go-envconfig v0.9.0 // indirect
 	github.com/shirou/gopsutil/v3 v3.23.8 // indirect
@@ -67,6 +70,7 @@ require (
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240227224415-6ceb2ff114de // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240429193739-8cf5692501f6 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 require (

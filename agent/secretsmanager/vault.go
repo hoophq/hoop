@@ -16,12 +16,13 @@ import (
 	"github.com/hoophq/hoop/common/memory"
 )
 
-const defaultKV2Path string = "/secret/data/"
+const defaultKV2Path string = "secret/data/"
 
 type vaultProvider struct {
-	config *vaultConfig
-	cache  memory.Store
-	kvType secretProviderType
+	config     *vaultConfig
+	cache      memory.Store
+	kvType     secretProviderType
+	httpClient httpclient.HttpClient
 }
 
 type vaultConfig struct {
@@ -57,12 +58,15 @@ type KVGetter interface {
 	GetData() map[string]string
 }
 
-func newVaultKeyValProvider(kvType secretProviderType) (*vaultProvider, error) {
+func newVaultKeyValProvider(kvType secretProviderType, httpClient httpclient.HttpClient) (*vaultProvider, error) {
 	config, err := loadDefaultVaultConfig()
 	if err != nil {
 		return nil, err
 	}
-	return &vaultProvider{config: config, cache: memory.New(), kvType: kvType}, nil
+	if httpClient == nil {
+		httpClient = httpclient.NewHttpClient(config.tlsCA)
+	}
+	return &vaultProvider{config: config, cache: memory.New(), kvType: kvType, httpClient: httpClient}, nil
 }
 
 func loadDefaultVaultConfig() (*vaultConfig, error) {
@@ -71,12 +75,12 @@ func loadDefaultVaultConfig() (*vaultConfig, error) {
 		return nil, fmt.Errorf("unable to load VAULT_CACERT env, reason=%v", err)
 	}
 	srvAddr := os.Getenv("VAULT_ADDR")
-	if srvAddr == "" {
-		srvAddr = "http://127.0.0.1:8200/"
-	}
 	token, err := envloader.GetEnv("VAULT_TOKEN")
 	if err != nil {
 		return nil, fmt.Errorf("unable to load VAULT_TOKEN env, reason=%v", err)
+	}
+	if token == "" || srvAddr == "" {
+		return nil, fmt.Errorf("VAULT_TOKEN and/or VAULT_ADDR env not set")
 	}
 	return &vaultConfig{serverAddr: srvAddr, tlsCA: tlsCA, token: token}, nil
 }
@@ -90,7 +94,7 @@ func (p *vaultProvider) GetKey(secretID, secretKey string) (string, error) {
 			return "", fmt.Errorf("secret key not found. secret=%v, key=%v", secretID, secretKey)
 		}
 	}
-	kv, err := keyValGetRequest(p.config, p.kvType, secretID)
+	kv, err := p.keyValGetRequest(secretID)
 	if err != nil {
 		return "", fmt.Errorf("(%v) %v", secretID, err)
 	}
@@ -104,37 +108,25 @@ func (p *vaultProvider) GetKey(secretID, secretKey string) (string, error) {
 	return "", fmt.Errorf("secret id %s found, but key %s was not", secretID, secretKey)
 }
 
-func (k *KeyValV1) GetData() map[string]string { return k.Data }
-func (k *KeyValV1) String() string {
-	return fmt.Sprintf("request_id=%v, lease_id=%v, lease_duration=%v, mount_type=%v, keys=%v",
-		k.RequestID, k.LeaseID, k.LeaseDuration, k.MountType, getDataKeys(k.Data))
-}
-
-func (k *KeyValV2) GetData() map[string]string { return k.Data.Data }
-func (k *KeyValV2) String() string {
-	m := k.Data.Metadata
-	return fmt.Sprintf("request_id=%v, lease_id=%v, lease_duration=%v, mount_type=%v, created_at=%v, destroyed=%v, version=%v, keys=%v",
-		k.RequestID, k.LeaseID, k.LeaseDuration, k.MountType,
-		m["created_at"], m["destroyed"], m["version"], getDataKeys(k.Data.Data))
-}
-
 // keyValGetRequest performs a get request to Vault Key Value store.
 // It decodes the response based on which type of key value provider is used (v1 or v2)
 // This function is analog to the cli request below
 //
 // vault kv get -mount=secret -output-curl-string <key> | sh | jq .
-func keyValGetRequest(conf *vaultConfig, kvProvider secretProviderType, secretID string) (KVGetter, error) {
-	apiURL := urlPathForProvider(kvProvider, conf.serverAddr, secretID)
+func (p *vaultProvider) keyValGetRequest(secretID string) (KVGetter, error) {
+	apiURL := urlPathForProvider(p.kvType, p.config.serverAddr, secretID)
 	log.Infof("fetching key value secret at %v", apiURL)
 	ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancelFn()
+
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed creating http request, err=%v", err)
 	}
-	req.Header.Set("X-Vault-Token", conf.token)
+	req.Header.Set("X-Vault-Token", p.config.token)
 	req.Header.Set("X-Vault-Request", "true")
-	resp, err := httpclient.NewHttpClient(conf.tlsCA).Do(req)
+
+	resp, err := p.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +148,7 @@ func keyValGetRequest(conf *vaultConfig, kvProvider secretProviderType, secretID
 		return nil, fmt.Errorf("failed performing request, status=%v, body=%v",
 			resp.StatusCode, string(respBody))
 	}
-	switch kvProvider {
+	switch p.kvType {
 	case secretProviderVaultKv1Type:
 		obj := KeyValV1{Data: map[string]string{}}
 		if err := json.NewDecoder(resp.Body).Decode(&obj); err != nil {
@@ -172,7 +164,21 @@ func keyValGetRequest(conf *vaultConfig, kvProvider secretProviderType, secretID
 		}
 		return &obj, nil
 	}
-	return nil, fmt.Errorf("unknown secret provider %v", kvProvider)
+	return nil, fmt.Errorf("unknown secret provider %v", p.kvType)
+}
+
+func (k *KeyValV1) GetData() map[string]string { return k.Data }
+func (k *KeyValV1) String() string {
+	return fmt.Sprintf("request_id=%v, lease_id=%v, lease_duration=%v, mount_type=%v, keys=%v",
+		k.RequestID, k.LeaseID, k.LeaseDuration, k.MountType, getDataKeys(k.Data))
+}
+
+func (k *KeyValV2) GetData() map[string]string { return k.Data.Data }
+func (k *KeyValV2) String() string {
+	m := k.Data.Metadata
+	return fmt.Sprintf("request_id=%v, lease_id=%v, lease_duration=%v, mount_type=%v, created_at=%v, destroyed=%v, version=%v, keys=%v",
+		k.RequestID, k.LeaseID, k.LeaseDuration, k.MountType,
+		m["created_at"], m["destroyed"], m["version"], getDataKeys(k.Data.Data))
 }
 
 func urlPathForProvider(kvProvider secretProviderType, serverAddr, secretID string) (apiURL string) {
