@@ -34,6 +34,19 @@
                                     (not= required "false")
                                     (or required (nil? required)))
                                {:required true}))]
+     "textarea" [forms/textarea (merge
+                                 {:label label
+                                  :dark true
+                                  :placeholder (or placeholder (str "Define a value for " label))
+                                  :value value
+                                  :on-change on-change
+                                  :minLength minlength
+                                  :maxLength maxlength
+                                  :helper-text helper-text}
+                                 (when (and
+                                        (not= required "false")
+                                        (or required (nil? required)))
+                                   {:required true}))]
      [forms/input (merge
                    {:label label
                     :dark true

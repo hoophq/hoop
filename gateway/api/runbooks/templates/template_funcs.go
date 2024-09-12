@@ -7,7 +7,7 @@ import (
 	ttemplate "text/template"
 )
 
-var defaultInputTypes = []string{"text", "number", "tel", "time", "date", "url", "email", "select"}
+var defaultInputTypes = []string{"text", "number", "tel", "time", "date", "url", "email", "select", "textarea", "password"}
 
 type templateFnHandler struct {
 	items map[string]string
