@@ -16,7 +16,7 @@
 
   it returns a promise with the response in a clojure map and executes a on-sucess callback"
   [{:keys [method uri query-params body on-success on-failure headers]}]
-  (let [token (.getItem js/localStorage "jwt-token")
+  (let [token (.getItem js/sessionStorage "jwt-token")
         common-headers {:headers {:accept "application/json"
                                   "Content-Type" "application/json"
                                   "Authorization" (str "Bearer " token)

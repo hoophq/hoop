@@ -23,8 +23,7 @@ func CreateDefaultOrganization() (pgrest.OrgContext, error) {
 			return nil, fmt.Errorf("failed creating the default organization, err=%v", err)
 		}
 		return pgrest.NewOrgContext(orgID), nil
-	case len(orgList) == 1:
+	default:
 		return pgrest.NewOrgContext(orgList[0].ID), nil
 	}
-	return nil, fmt.Errorf("multiple organizations were found")
 }

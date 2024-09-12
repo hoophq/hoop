@@ -74,7 +74,7 @@
         destiny (if error :login-hoop :home)]
     (.removeItem js/localStorage "login_error")
     (when error (.setItem js/localStorage "login_error" error))
-    (.setItem js/localStorage "jwt-token" token)
+    (.setItem js/sessionStorage "jwt-token" token)
     (if (nil? redirect-after-auth)
       (rf/dispatch [:navigate destiny])
       (let [_ (.replace (. js/window -location) redirect-after-auth)
@@ -94,7 +94,7 @@
         destiny (if error :login-hoop :signup-hoop)]
     (.removeItem js/localStorage "login_error")
     (when error (.setItem js/localStorage "login_error" error))
-    (.setItem js/localStorage "jwt-token" token)
+    (.setItem js/sessionStorage "jwt-token" token)
     (rf/dispatch [:navigate destiny])
 
     [:div "Verifying authentication"

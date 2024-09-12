@@ -54,6 +54,6 @@
          {:db {}})
 
        (do
-         (.removeItem js/localStorage "jwt-token")
+         (.removeItem js/sessionStorage "jwt-token")
          {:fx [[:dispatch [:navigate :logout-hoop]]]
           :db {}})))))

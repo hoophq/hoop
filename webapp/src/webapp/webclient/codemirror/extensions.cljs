@@ -33,7 +33,7 @@
                (str prefix "<FILL_ME>" suffix))}])
 
 (defn fetch-autocomplete [language prefix suffix database-schema]
-  (let [token (.getItem js/localStorage "jwt-token")
+  (let [token (.getItem js/sessionStorage "jwt-token")
         common-headers {:headers {:accept "application/json"
                                   "Content-Type" "application/json"
                                   "Authorization" (str "Bearer " token)

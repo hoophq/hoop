@@ -15,7 +15,8 @@ import (
 )
 
 type Claims struct {
-	UserID string `json:"user_id"`
+	UserID    string `json:"user_id"`
+	UserEmail string `json:"user_email"`
 	jwt.RegisteredClaims
 }
 
@@ -40,7 +41,8 @@ func Login(c *gin.Context) {
 
 	expirationTime := time.Now().Add(168 * time.Hour) // 7 days
 	claims := &Claims{
-		UserID: dbUser.ID,
+		UserID:    dbUser.ID,
+		UserEmail: dbUser.Email,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 		},
@@ -56,8 +58,9 @@ func Login(c *gin.Context) {
 	newLocalAuthSession := pgrest.LocalAuthSession{
 		ID:        uuid.New().String(),
 		UserID:    dbUser.ID,
+		UserEmail: dbUser.Email,
 		Token:     tokenString,
-		ExpiresAt: expirationTime,
+		ExpiresAt: expirationTime.Format(time.RFC3339),
 	}
 	_, err = pglocalauthsession.CreateSession(newLocalAuthSession)
 	if err != nil {
@@ -65,7 +68,8 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	c.Header("token", tokenString)
+	c.Header("Access-Control-Expose-Headers", "Token")
+	c.Header("Token", tokenString)
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }

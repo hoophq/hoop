@@ -83,7 +83,7 @@ CREATE VIEW serviceaccounts AS
     SELECT id, org_id, subject, name, status, created_at, updated_at FROM private.service_accounts;
 
 CREATE VIEW local_auth_sessions AS
-    SELECT id, token, user_id, expires_at FROM private.local_auth_sessions;
+    SELECT id, token, user_id, user_email, expires_at FROM private.local_auth_sessions;
 
 CREATE FUNCTION groups(serviceaccounts) RETURNS TEXT[] AS $$
     SELECT ARRAY(

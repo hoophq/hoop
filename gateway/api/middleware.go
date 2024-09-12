@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -31,14 +32,18 @@ import (
 
 var errInvalidAuthHeaderErr = errors.New("invalid authorization header")
 
-func localAuthMiddleware(c *gin.Context) {
+func (a *Api) localAuthMiddleware(c *gin.Context) {
 	tokenString := c.GetHeader("Authorization")
+	fmt.Printf("tokenString: %v\n", tokenString)
+	// remove bearer from token
+	tokenString = strings.Replace(tokenString, "Bearer ", "", 1)
 	if tokenString == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing authorization token"})
 		c.Abort()
 		return
 	}
 
+	fmt.Printf("tokenString 2: %v\n", tokenString)
 	jwtKey := appconfig.Get().JWTSecretKey()
 	claims := &localauthapi.Claims{}
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
@@ -51,19 +56,71 @@ func localAuthMiddleware(c *gin.Context) {
 		return
 	}
 
-	sessionByToken, err := pglocalauthsession.GetSessionByToken("")
-	fmt.Printf("sessionByToken: %+v\n", sessionByToken)
+	sessionByToken, err := pglocalauthsession.GetSessionByToken(tokenString)
+	fmt.Printf("sessionByToken: %+v %v\n", sessionByToken, err)
 	if err != nil {
+		fmt.Printf("err: %v\n", err)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired session"})
+		return
 	}
 
-	if err != nil || time.Now().After(sessionByToken.ExpiresAt) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired session"})
+	// TODO change ExpiresAt at the database for date with timezone
+	sessionExpiresAt, err := time.Parse("2006-01-02T15:04:05", sessionByToken.ExpiresAt)
+
+	if err != nil {
+		fmt.Printf("Error parsing expiration time: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error processing session"})
+		c.Abort()
+		return
+	}
+	if time.Now().After(sessionExpiresAt) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Session has expired"})
 		c.Abort()
 		return
 	}
 
-	c.Set("user_id", claims.UserID)
+	user, err := pgusers.GetOneByEmail(sessionByToken.UserID)
+	if err != nil {
+		log.Errorf("failed fetching user, subject=%v, err=%v", user.Subject, err)
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+	ctx, err := pguserauth.New().FetchUserContext(user.Subject)
+	if err != nil {
+		log.Errorf("failed building context, subject=%v, err=%v", user.Subject, err)
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+
+	if a.logger != nil && !ctx.IsEmpty() {
+		zaplogger := a.logger.With(
+			zap.String("org", ctx.OrgName),
+			zap.String("user", ctx.UserEmail),
+			zap.Bool("isadm", ctx.IsAdmin()),
+		)
+		c.Set(pgusers.ContextLoggerKey, zaplogger.Sugar())
+	}
+
+	grpcURL := os.Getenv("GRPC_URL")
+	if grpcURL == "" {
+		scheme := "grpcs"
+		if appconfig.Get().ApiScheme() == "http" {
+			scheme = "grpc"
+		}
+		grpcURL = fmt.Sprintf("%s://%s:8443", scheme, appconfig.Get().ApiHostname())
+	}
+
+	c.Set(storagev2.ContextKey,
+		storagev2.NewContext(ctx.UserSubject, ctx.OrgID).
+			WithUserInfo(ctx.UserName, ctx.UserEmail, string(ctx.UserStatus), ctx.UserPicture, ctx.UserGroups).
+			WithSlackID(ctx.UserSlackID).
+			WithOrgName(ctx.OrgName).
+			WithOrgLicense(ctx.OrgLicense).
+			// WithApiURL(a.IDProvider.ApiURL).
+			WithGrpcURL(grpcURL),
+	)
+	fmt.Printf("end of localAuthMiddleware\n")
+	// c.Set("user_id", claims.UserID)
 	c.Next()
 }
 
@@ -72,7 +129,7 @@ func (a *Api) Authenticate(c *gin.Context) {
 	switch authMethod {
 	case "local":
 		fmt.Println("local")
-		localAuthMiddleware(c)
+		a.localAuthMiddleware(c)
 	default:
 		roleName := RoleFromContext(c)
 		fmt.Printf("roleName: %v\n", roleName)

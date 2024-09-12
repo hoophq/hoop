@@ -2,7 +2,6 @@ package pgrest
 
 import (
 	"encoding/json"
-	"time"
 )
 
 type Context interface {
@@ -62,10 +61,11 @@ type User struct {
 }
 
 type LocalAuthSession struct {
-	ID        string    `json:"id"`
-	UserID    string    `json:"user_id"`
-	Token     string    `json:"token"`
-	ExpiresAt time.Time `json:"expires_at"`
+	ID        string `json:"id"`
+	UserID    string `json:"user_id"`
+	UserEmail string `json:"user_email"`
+	Token     string `json:"token"`
+	ExpiresAt string `json:"expires_at"`
 }
 
 type EnvVar struct {
