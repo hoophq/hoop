@@ -22,6 +22,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	pglocalauthsession "github.com/hoophq/hoop/gateway/pgrest/localauthsession"
+	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
 	pguserauth "github.com/hoophq/hoop/gateway/pgrest/userauth"
 	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
 	"github.com/hoophq/hoop/gateway/security/idp"
@@ -97,15 +98,6 @@ func (a *Api) localAuthMiddleware(c *gin.Context) {
 		c.Set(pgusers.ContextLoggerKey, zaplogger.Sugar())
 	}
 
-	// grpcURL := os.Getenv("GRPC_URL")
-	// if grpcURL == "" {
-	// 	scheme := "grpcs"
-	// 	if appconfig.Get().ApiScheme() == "http" {
-	// 		scheme = "grpc"
-	// 	}
-	// 	grpcURL = fmt.Sprintf("%s://%s:8443", scheme, appconfig.Get().ApiHostname())
-	// }
-
 	c.Set(storagev2.ContextKey,
 		storagev2.NewContext(ctx.UserSubject, ctx.OrgID).
 			WithUserInfo(ctx.UserName, ctx.UserEmail, string(ctx.UserStatus), ctx.UserPicture, ctx.UserGroups).
@@ -126,13 +118,54 @@ func (a *Api) AllowApiKey(c *gin.Context) {
 	c.Next()
 }
 
-func (a *Api) ApiKeyMiddleware(c *gin.Context) {
-	apiToken := c.GetHeader("Api-Key")
-	if apiToken == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing API key"})
-		c.Abort()
+func (a *Api) apiKeyMiddleware(c *gin.Context) {
+	configuredApiKey := appconfig.Get().ApiKey()
+	apiKeyReq := c.GetHeader("Api-Key")
+	// split apiKey by | getting the first and the second part
+	// the first part is the orgID and the second part is the apiKey
+	orgID := strings.Split(apiKeyReq, "|")[0]
+	// apiKey := strings.Split(apiKeyReq, "|")[1]
+	org, err := pgorgs.New().FetchOrgByID(orgID)
+	if err != nil || org == nil {
+		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
+
+	if apiKeyReq == configuredApiKey {
+		ctx := &pguserauth.Context{
+			OrgID:       orgID, // "400342d2-fa79-4a05-aa8a-b4d4d1989acb",
+			OrgName:     org.Name,
+			OrgLicense:  org.License,
+			UserUUID:    "API_KEY",
+			UserSubject: "API_KEY",
+			UserName:    "API_KEY",
+			UserEmail:   "API_KEY",
+			UserStatus:  "active",
+			UserGroups:  []string{"admin"},
+		}
+
+		if a.logger != nil && !ctx.IsEmpty() {
+			zaplogger := a.logger.With(
+				zap.String("org", ctx.OrgName),
+				zap.String("user", ctx.UserEmail),
+				zap.Bool("isadm", ctx.IsAdmin()),
+			)
+			c.Set(pgusers.ContextLoggerKey, zaplogger.Sugar())
+		}
+
+		c.Set(storagev2.ContextKey,
+			storagev2.NewContext(ctx.UserSubject, ctx.OrgID).
+				WithUserInfo(ctx.UserName, ctx.UserEmail, string(ctx.UserStatus), ctx.UserPicture, ctx.UserGroups).
+				WithSlackID(ctx.UserSlackID).
+				WithOrgName(ctx.OrgName).
+				WithOrgLicense(ctx.OrgLicense).
+				WithApiURL(a.IDProvider.ApiURL).
+				WithGrpcURL(a.GrpcURL),
+		)
+		c.Next()
+		return
+	}
+	c.AbortWithStatus(http.StatusUnauthorized)
 }
 
 func (a *Api) Authenticate(c *gin.Context) {
@@ -146,16 +179,10 @@ func (a *Api) Authenticate(c *gin.Context) {
 	case "local":
 		a.localAuthMiddleware(c)
 	case "api-key":
-		allowed, err := c.Get("allow-api-token")
-		fmt.Printf("allow: %v\n", allowed)
-		fmt.Printf("err: %v\n", err)
-		if err {
-			c.AbortWithStatus(http.StatusUnauthorized)
-			return
-		}
+		allowed, _ := c.Get("allow-api-key")
+		fmt.Printf("allowed: %v\n", allowed)
 		if allowed != nil && allowed.(bool) {
-			// TODO build context
-			c.Next()
+			a.apiKeyMiddleware(c)
 			return
 		}
 		c.AbortWithStatus(http.StatusUnauthorized)

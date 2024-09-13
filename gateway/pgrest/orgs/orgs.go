@@ -3,10 +3,10 @@ package pgorgs
 import (
 	"encoding/json"
 	"fmt"
-	"libhoop/log"
 	"net/url"
 
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/pgrest"
 )
 
@@ -93,6 +93,19 @@ func (o *org) FetchOrgByName(name string) (*pgrest.Org, int64, error) {
 	}
 	total := pgrest.New("/users?org_id=eq.%s", org.ID).ExactCount()
 	return &org, total, nil
+}
+
+// FetchOrgByID returns an organization
+func (o *org) FetchOrgByID(id string) (*pgrest.Org, error) {
+	var org pgrest.Org
+	err := pgrest.New("/orgs?id=eq.%v", id).FetchOne().DecodeInto(&org)
+	if err != nil {
+		if err == pgrest.ErrNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &org, nil
 }
 
 func (o *org) FetchOrgByContext(ctx pgrest.OrgContext) (*pgrest.Org, error) {

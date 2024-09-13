@@ -25,6 +25,7 @@ type pgCredentials struct {
 	postgrestRole string
 }
 type Config struct {
+	apiKey                  string
 	askAICredentials        *url.URL
 	authMethod              string
 	pgCred                  *pgCredentials
@@ -94,6 +95,7 @@ func Load() error {
 		webappUsersManagement = "on"
 	}
 	runtimeConfig = Config{
+		apiKey:                  os.Getenv("API_KEY"),
 		apiURL:                  fmt.Sprintf("%s://%s", apiRawURL.Scheme, apiRawURL.Host),
 		apiHostname:             apiRawURL.Hostname(),
 		apiScheme:               apiRawURL.Scheme,
@@ -217,6 +219,7 @@ func (c Config) ApiURL() string      { return c.apiURL }
 func (c Config) ApiHostname() string { return c.apiHostname }
 
 // ApiHost host or host:port
+func (c Config) ApiKey() string                  { return c.apiKey }
 func (c Config) ApiHost() string                 { return c.apiHost }
 func (c Config) ApiScheme() string               { return c.apiScheme }
 func (c Config) AuthMethod() string              { return c.authMethod }
