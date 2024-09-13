@@ -2,6 +2,7 @@ package authinterceptor
 
 import (
 	"context"
+	"os"
 	"strings"
 
 	"github.com/getsentry/sentry-go"
@@ -12,6 +13,7 @@ import (
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgagents "github.com/hoophq/hoop/gateway/pgrest/agents"
+	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
 	pguserauth "github.com/hoophq/hoop/gateway/pgrest/userauth"
 	"github.com/hoophq/hoop/gateway/security/idp"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
@@ -94,8 +96,8 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 	}
 
 	var ctxVal any
-	switch {
-	case clientOrigin[0] == pb.ConnectionOriginAgent:
+	switch clientOrigin[0] {
+	case pb.ConnectionOriginAgent:
 		// fallback to dsn agent authentication
 		ag, err := i.authenticateAgent(bearerToken, md)
 		if err != nil {
@@ -106,7 +108,7 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			BearerToken: bearerToken,
 		}
 	// client proxy manager authentication (access token)
-	case clientOrigin[0] == pb.ConnectionOriginClientProxyManager:
+	case pb.ConnectionOriginClientProxyManager:
 		sub, err := i.idp.VerifyAccessToken(bearerToken)
 		if err != nil {
 			log.Debugf("failed verifying access token, reason=%v", err)
@@ -125,33 +127,75 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 		}
 	// client proxy authentication (access token)
 	default:
-		sub, err := i.idp.VerifyAccessToken(bearerToken)
-		if err != nil {
-			log.Debugf("failed verifying access token, reason=%v", err)
-			return status.Errorf(codes.Unauthenticated, "invalid authentication")
-		}
-		userCtx, err := pguserauth.New().FetchUserContext(sub)
-		if userCtx.IsEmpty() {
-			if err != nil {
-				log.Error(err)
+		apiKeyEnv := os.Getenv("API_KEY")
+		// this is a not so optimal solution, but due to the overall
+		// complexity of the authentication system, we decided to make this
+		// simple comparison on a optimistic way and if it fails, we fallback
+		// to the regular authentication flow with the IDP (see else stetament)
+		if apiKeyEnv != "" && apiKeyEnv == bearerToken {
+			log.Debug("Authenticating with API key")
+			orgID := strings.Split(bearerToken, "|")[0]
+			org, err := pgorgs.New().FetchOrgByID(orgID)
+			if err != nil || org == nil {
+				return status.Errorf(codes.Unauthenticated, "invalid authentication")
 			}
-			return status.Errorf(codes.Unauthenticated, "invalid authentication")
+			ctx := &pguserauth.Context{
+				OrgID:       orgID,
+				OrgName:     org.Name,
+				OrgLicense:  org.License,
+				UserUUID:    "API_KEY",
+				UserSubject: "API_KEY",
+				UserName:    "API_KEY",
+				UserEmail:   "API_KEY",
+				UserStatus:  "active",
+				UserGroups:  []string{"admin"},
+			}
+
+			gwctx := &GatewayContext{
+				UserContext: *ctx.ToAPIContext(),
+				BearerToken: bearerToken,
+			}
+
+			gwctx.UserContext.ApiURL = os.Getenv("API_URL")
+			connectionName := commongrpc.MetaGet(md, "connection-name")
+			conn, err := i.getConnection(connectionName, ctx)
+			if err != nil {
+				return err
+			}
+			if conn == nil {
+				return status.Errorf(codes.NotFound, "connection not found")
+			}
+			gwctx.Connection = *conn
+			ctxVal = gwctx
+		} else {
+			sub, err := i.idp.VerifyAccessToken(bearerToken)
+			if err != nil {
+				log.Debugf("failed verifying access token, reason=%v", err)
+				return status.Errorf(codes.Unauthenticated, "invalid authentication")
+			}
+			userCtx, err := pguserauth.New().FetchUserContext(sub)
+			if userCtx.IsEmpty() {
+				if err != nil {
+					log.Error(err)
+				}
+				return status.Errorf(codes.Unauthenticated, "invalid authentication")
+			}
+			gwctx := &GatewayContext{
+				UserContext: *userCtx.ToAPIContext(),
+				BearerToken: bearerToken,
+			}
+			gwctx.UserContext.ApiURL = i.idp.ApiURL
+			connectionName := commongrpc.MetaGet(md, "connection-name")
+			conn, err := i.getConnection(connectionName, userCtx)
+			if err != nil {
+				return err
+			}
+			if conn == nil {
+				return status.Errorf(codes.NotFound, "connection not found")
+			}
+			gwctx.Connection = *conn
+			ctxVal = gwctx
 		}
-		gwctx := &GatewayContext{
-			UserContext: *userCtx.ToAPIContext(),
-			BearerToken: bearerToken,
-		}
-		gwctx.UserContext.ApiURL = i.idp.ApiURL
-		connectionName := commongrpc.MetaGet(md, "connection-name")
-		conn, err := i.getConnection(connectionName, userCtx)
-		if err != nil {
-			return err
-		}
-		if conn == nil {
-			return status.Errorf(codes.NotFound, "connection not found")
-		}
-		gwctx.Connection = *conn
-		ctxVal = gwctx
 	}
 
 	return handler(srv, &serverStreamWrapper{ss, nil, ctxVal})
