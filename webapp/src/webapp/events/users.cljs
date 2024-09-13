@@ -22,7 +22,12 @@
     :fx [[:dispatch [:fetch
                      {:method "GET"
                       :uri "/userinfo"
-                      :on-success #(rf/dispatch [::users->set-current-user %])}]]]}))
+                      :on-success (fn [user]
+                                    (rf/dispatch
+                                     [:fetch
+                                      {:method "GET"
+                                       :uri "/serverinfo"
+                                       :on-success #(rf/dispatch [::users->set-current-user user %])}]))}]]]}))
 
 (rf/reg-event-fx
  ::users->set-users
@@ -33,14 +38,17 @@
 (rf/reg-event-fx
  ::users->set-current-user
  (fn
-   [{:keys [db]} [_ user]]
-   {:db (assoc db :users->current-user {:loading false
-                                        :data (assoc user
-                                                     :user-management? (= (:webapp_users_management user) "on")
-                                                     :free-license? (= (:org_license user) "free")
-                                                     :admin? (:is_admin user))})
-    :fx [[:dispatch [:initialize-intercom user]]
-         [:dispatch [:close-page-loader]]]}))
+   [{:keys [db]} [_ user server-info]]
+   (let [license-info (:license_info server-info)]
+
+     {:db (assoc db :users->current-user {:loading false
+                                          :data (assoc user
+                                                       :user-management? (= (:webapp_users_management user) "on")
+                                                       :free-license? (not (and (:is_valid license-info)
+                                                                                (= (:type license-info) "enterprise")))
+                                                       :admin? (:is_admin user))})
+      :fx [[:dispatch [:initialize-intercom user]]
+           [:dispatch [:close-page-loader]]]})))
 
 (rf/reg-event-fx
  :users->create-new-user
