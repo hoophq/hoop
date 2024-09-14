@@ -18,7 +18,42 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// body: {"email": "some@example.com", "password": "password"}
+// If the system is set as single tenant,
+// we default the new user to the default organization.
+// Otherwise, a new organization is created for the user.
+func manageOrgCreation(user pgrest.User) (string, error) {
+	var tenancy string
+	if pgusers.IsOrgMultiTenant() {
+		tenancy = "multi-tenant"
+	} else {
+		tenancy = "single-tenant"
+	}
+	switch tenancy {
+	case "multi-tenant":
+		log.Debug("Creating new organization")
+		newOrgID, err := pgorgs.New().CreateOrGetOrg(fmt.Sprintf("%q Orgnization", user.Email), nil)
+		if err != nil {
+			log.Debugf("failed creating organization, err=%v", err)
+			return "", fmt.Errorf("Failed to create organization")
+		}
+		return newOrgID, nil
+	default:
+		// fetch default organization
+		org, totalUsers, err := pgorgs.New().FetchOrgByName("default")
+		if err != nil {
+			return "", fmt.Errorf("Failed to fetch default organization")
+		}
+		// if there is one user already, do not allow new users to be created
+		// it avoids a security issue of anyone being able to add themselves to
+		// the default organization. Instead, they should get an invitation
+		if totalUsers > 0 {
+			return "", fmt.Errorf("You can not access this instance. Please contact your administrator")
+		}
+
+		return org.ID, nil
+	}
+}
+
 func Register(c *gin.Context) {
 	fmt.Printf("Register\n")
 	var user pgrest.User
@@ -39,8 +74,7 @@ func Register(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user"})
 		return
 	}
-	log.Debug("Creating new organization")
-	newOrgID, err := pgorgs.New().CreateOrGetOrg(fmt.Sprintf("%q Orgnization", user.Email), nil)
+	newOrgID, err := manageOrgCreation(user)
 	if err != nil {
 		log.Debugf("failed creating organization, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create organization"})

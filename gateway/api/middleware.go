@@ -65,7 +65,6 @@ func (a *Api) localAuthMiddleware(c *gin.Context) {
 	sessionExpiresAt, err := time.Parse("2006-01-02T15:04:05+00:00", sessionByToken.ExpiresAt)
 
 	if err != nil {
-		fmt.Printf("Error parsing expiration time: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error processing session"})
 		c.Abort()
 		return

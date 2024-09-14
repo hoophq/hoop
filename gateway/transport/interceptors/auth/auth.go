@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/common/dsnkeys"
@@ -11,10 +12,13 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgagents "github.com/hoophq/hoop/gateway/pgrest/agents"
+	pglocalauthsession "github.com/hoophq/hoop/gateway/pgrest/localauthsession"
 	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
 	pguserauth "github.com/hoophq/hoop/gateway/pgrest/userauth"
+	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
 	"github.com/hoophq/hoop/gateway/security/idp"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"google.golang.org/grpc"
@@ -168,7 +172,41 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			gwctx.Connection = *conn
 			ctxVal = gwctx
 		} else {
-			sub, err := i.idp.VerifyAccessToken(bearerToken)
+			// first we check if the auth method is local, if so, we authenticate the user
+			// using the local auth method, otherwise we use the i.idp.VerifyAccessToken
+			authMethod := appconfig.Get().AuthMethod()
+			var sub string
+			if authMethod == "local" {
+				sessionByToken, err := pglocalauthsession.GetSessionByToken(bearerToken)
+				if err != nil {
+					log.Debugf("failed verifying access token, reason=%v", err)
+					return status.Errorf(codes.Unauthenticated, "invalid authentication")
+				}
+				// TODO change ExpiresAt at the database for date with timezone
+				sessionExpiresAt, err := time.Parse("2006-01-02T15:04:05+00:00", sessionByToken.ExpiresAt)
+
+				if err != nil {
+					log.Debugf("failed verifying access token, reason=%v", err)
+					return status.Errorf(codes.Unauthenticated, "invalid authentication")
+				}
+				if time.Now().After(sessionExpiresAt) {
+					log.Debugf("failed verifying access token, reason=%v", err)
+					return status.Errorf(codes.Unauthenticated, "invalid authentication")
+				}
+
+				user, err := pgusers.GetOneByEmail(sessionByToken.UserEmail)
+				if err != nil {
+					log.Debugf("failed verifying access token, reason=%v", err)
+					return status.Errorf(codes.Unauthenticated, "invalid authentication")
+				}
+				sub = user.Subject
+			} else {
+				sub, err = i.idp.VerifyAccessToken(bearerToken)
+				if err != nil {
+					log.Debugf("failed verifying access token, reason=%v", err)
+					return status.Errorf(codes.Unauthenticated, "invalid authentication")
+				}
+			}
 			if err != nil {
 				log.Debugf("failed verifying access token, reason=%v", err)
 				return status.Errorf(codes.Unauthenticated, "invalid authentication")
