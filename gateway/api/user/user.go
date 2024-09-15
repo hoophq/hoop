@@ -21,6 +21,7 @@ import (
 	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var isOrgMultiTenant = os.Getenv("ORG_MULTI_TENANT") == "true"
@@ -61,13 +62,29 @@ func Create(c *gin.Context) {
 		return
 	}
 
+	// user.Subject for local auth is altered in this flow, that's
+	// why we create this separated variable so we can modify it
+	// accordingly to the auth method
+	userSubject := newUser.Email
+	if appconfig.Get().AuthMethod() == "local" {
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newUser.Password), bcrypt.DefaultCost)
+		newUser.Password = string(hashedPassword)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+			return
+		}
+		newUser.ID = uuid.New().String()
+		userSubject = fmt.Sprintf("local|%v", newUser.ID)
+	}
+
 	newUser.ID = uuid.NewString()
 	newUser.Verified = false
 	pguser := pgrest.User{
 		ID:       newUser.ID,
-		Subject:  newUser.Email,
+		Subject:  userSubject,
 		OrgID:    ctx.OrgID,
 		Name:     newUser.Name,
+		Password: newUser.Password,
 		Picture:  newUser.Picture,
 		Email:    newUser.Email,
 		Verified: newUser.Verified, // DEPRECATED in flavor of role

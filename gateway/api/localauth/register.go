@@ -94,6 +94,7 @@ func Register(c *gin.Context) {
 		Subject:  fmt.Sprintf("local|%v", userID),
 		OrgID:    newOrgID,
 		Email:    user.Email,
+		Name:     user.Name,
 		Status:   "active",
 		Password: string(hashedPassword),
 		Groups:   []string{adminGroupName},

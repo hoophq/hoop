@@ -67,6 +67,8 @@ type User struct {
 	Picture string `json:"picture" example:""`
 	// Groups registered for this user
 	Groups []string `json:"groups" example:"sre"`
+	// Local auth cases have a password
+	Password string `json:"password" example:"password"`
 }
 
 type UserPatchSlackID struct {
