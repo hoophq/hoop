@@ -62,6 +62,7 @@ func Create(c *gin.Context) {
 		return
 	}
 
+	newUser.ID = uuid.NewString()
 	// user.Subject for local auth is altered in this flow, that's
 	// why we create this separated variable so we can modify it
 	// accordingly to the auth method
@@ -73,11 +74,9 @@ func Create(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
 			return
 		}
-		newUser.ID = uuid.New().String()
 		userSubject = fmt.Sprintf("local|%v", newUser.ID)
 	}
 
-	newUser.ID = uuid.NewString()
 	newUser.Verified = false
 	pguser := pgrest.User{
 		ID:       newUser.ID,
