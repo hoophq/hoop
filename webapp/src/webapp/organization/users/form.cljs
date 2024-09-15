@@ -53,8 +53,6 @@
                                                        :separator "-"
                                                        :length 3}))
         gateway-public-info (rf/subscribe [:gateway->public-info])]
-    (println :gateway->public-info gateway-public-info)
-    (println :formtype form-type)
     (fn [_ user]
       [:div
        [header form-type (:name user)]
@@ -148,3 +146,4 @@
          [button/primary {:text [btn-submit-label form-type]
                           :full-width true
                           :type "submit"}]]]])))
+
