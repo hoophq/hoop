@@ -130,7 +130,7 @@ func Get() Config { return runtimeConfig }
 // This last behavior ensures compatibility with the previous version
 func loadAuthMethod() string {
 	authMethod := os.Getenv("AUTH_METHOD")
-	if authMethod == "" && (os.Getenv("IDP_ISSUER") == "" || os.Getenv("IDP_CLIENT_ID") == "" || os.Getenv("IDP_CLIENT_SECRET") == "") {
+	if authMethod == "" && os.Getenv("IDP_ISSUER") == "" && os.Getenv("IDP_CLIENT_ID") == "" && os.Getenv("IDP_CLIENT_SECRET") == "" {
 		return "local"
 	}
 
