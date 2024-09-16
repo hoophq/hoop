@@ -152,7 +152,7 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 				UserName:    "API_KEY",
 				UserEmail:   "API_KEY",
 				UserStatus:  "active",
-				UserGroups:  []string{"admin"},
+				UserGroups:  []string{types.GroupAdmin},
 			}
 
 			gwctx := &GatewayContext{

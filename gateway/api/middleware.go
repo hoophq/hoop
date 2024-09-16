@@ -38,7 +38,6 @@ func (a *Api) localAuthMiddleware(c *gin.Context) {
 	tokenString = strings.Replace(tokenString, "Bearer ", "", 1)
 	if tokenString == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing authorization token"})
-		c.Abort()
 		return
 	}
 
@@ -49,7 +48,6 @@ func (a *Api) localAuthMiddleware(c *gin.Context) {
 	})
 	if err != nil || !token.Valid {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
-		c.Abort()
 		return
 	}
 
