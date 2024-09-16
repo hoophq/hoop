@@ -14,12 +14,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-type Claims struct {
-	UserID    string `json:"user_id"`
-	UserEmail string `json:"user_email"`
-	jwt.RegisteredClaims
-}
-
 func Login(c *gin.Context) {
 	var user pgrest.User
 	if err := c.BindJSON(&user); err != nil {

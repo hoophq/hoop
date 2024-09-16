@@ -112,7 +112,7 @@ func Load() error {
 		msPresidioAnonymizerURL: os.Getenv("MSPRESIDIO_ANONYMIZER_URL"),
 		webhookAppKey:           os.Getenv("WEBHOOK_APPKEY"),
 		webappUsersManagement:   webappUsersManagement,
-		jwtSecretKey:            []byte(os.Getenv("JWT_SECRET")),
+		jwtSecretKey:            []byte(os.Getenv("JWT_SECRET_KEY")),
 		isLoaded:                true,
 	}
 	return nil

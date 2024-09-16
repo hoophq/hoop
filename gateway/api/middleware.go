@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
@@ -58,20 +57,6 @@ func (a *Api) localAuthMiddleware(c *gin.Context) {
 	if err != nil {
 		fmt.Printf("err: %v\n", err)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired session"})
-		return
-	}
-
-	// TODO change ExpiresAt at the database for date with timezone
-	sessionExpiresAt, err := time.Parse("2006-01-02T15:04:05+00:00", sessionByToken.ExpiresAt)
-
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error processing session"})
-		c.Abort()
-		return
-	}
-	if time.Now().After(sessionExpiresAt) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Session has expired"})
-		c.Abort()
 		return
 	}
 
@@ -132,7 +117,7 @@ func (a *Api) apiKeyMiddleware(c *gin.Context) {
 
 	if apiKeyReq == configuredApiKey {
 		ctx := &pguserauth.Context{
-			OrgID:       orgID, // "400342d2-fa79-4a05-aa8a-b4d4d1989acb",
+			OrgID:       orgID,
 			OrgName:     org.Name,
 			OrgLicense:  org.License,
 			UserUUID:    "API_KEY",
@@ -179,7 +164,6 @@ func (a *Api) Authenticate(c *gin.Context) {
 		a.localAuthMiddleware(c)
 	case "api-key":
 		allowed, _ := c.Get("allow-api-key")
-		fmt.Printf("allowed: %v\n", allowed)
 		if allowed != nil && allowed.(bool) {
 			a.apiKeyMiddleware(c)
 			return

@@ -390,8 +390,3 @@
  (fn [db _]
    (:reports->today-session-data db)))
 
-(re-frame/reg-sub
- :auth->auth-method
- (fn [db _]
-   (:auth->auth-method db)))
-

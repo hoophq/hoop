@@ -55,13 +55,11 @@ func manageOrgCreation(user pgrest.User) (string, error) {
 }
 
 func Register(c *gin.Context) {
-	fmt.Printf("Register\n")
 	var user pgrest.User
 	if err := c.BindJSON(&user); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	fmt.Printf("Registering user %+v", user)
 
 	log.Debugf("looking for existing user %v", user.Email)
 	// fetch user by email
@@ -135,8 +133,8 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	// TODO: generate token and return it
-	c.Header("token", tokenString)
+	c.Header("Access-Control-Expose-Headers", "Token")
+	c.Header("Token", tokenString)
 
 	c.JSON(http.StatusCreated, gin.H{"message": "User created successfully"})
 }

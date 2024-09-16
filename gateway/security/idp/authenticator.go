@@ -227,9 +227,7 @@ func setProviderConfFromEnvs(p *Provider) error {
 	}
 	p.authWithUserInfo = issuerURL.Query().Get("_userinfo") == "1"
 	if p.ClientSecret == "" || p.ClientID == "" {
-		// defaults to local auth
 		return nil
-		// return fmt.Errorf("missing IDP credentials: IDP_CLIENT_ID, IDP_CLIENT_SECRET")
 	}
 	qs := issuerURL.Query()
 	qs.Del("_userinfo")
