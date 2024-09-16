@@ -55,7 +55,6 @@ func (a *Api) localAuthMiddleware(c *gin.Context) {
 
 	sessionByToken, err := pglocalauthsession.GetSessionByToken(tokenString)
 	if err != nil {
-		fmt.Printf("err: %v\n", err)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired session"})
 		return
 	}
@@ -171,9 +170,7 @@ func (a *Api) Authenticate(c *gin.Context) {
 		c.AbortWithStatus(http.StatusUnauthorized)
 	default:
 		roleName := RoleFromContext(c)
-		fmt.Printf("roleName: %v\n", roleName)
 		subject, err := a.validateAccessToken(c)
-		fmt.Printf("subject: %v\n", subject)
 		if err != nil {
 			tokenHeader := c.GetHeader("authorization")
 			log.Infof("failed authenticating, %v, length=%v, reason=%v",
@@ -183,7 +180,6 @@ func (a *Api) Authenticate(c *gin.Context) {
 		}
 
 		ctx, err := pguserauth.New().FetchUserContext(subject)
-		fmt.Printf("ctx: %+v\n", ctx)
 		if err != nil {
 			log.Errorf("failed fetching user, subject=%v, err=%v", subject, err)
 			c.AbortWithStatus(http.StatusUnauthorized)
