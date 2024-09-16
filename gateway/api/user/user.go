@@ -67,9 +67,11 @@ func Create(c *gin.Context) {
 	// why we create this separated variable so we can modify it
 	// accordingly to the auth method
 	userSubject := newUser.Email
+	newUser.Verified = false
 	if appconfig.Get().AuthMethod() == "local" {
-		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newUser.Password), bcrypt.DefaultCost)
-		newUser.Password = string(hashedPassword)
+		newUser.Verified = true
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newUser.HashedPassword), bcrypt.DefaultCost)
+		newUser.HashedPassword = string(hashedPassword)
 		if err != nil {
 			log.Errorf("failed hashing password, err=%v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
@@ -78,19 +80,18 @@ func Create(c *gin.Context) {
 		userSubject = fmt.Sprintf("local|%v", newUser.ID)
 	}
 
-	newUser.Verified = false
 	pguser := pgrest.User{
-		ID:       newUser.ID,
-		Subject:  userSubject,
-		OrgID:    ctx.OrgID,
-		Name:     newUser.Name,
-		Password: newUser.Password,
-		Picture:  newUser.Picture,
-		Email:    newUser.Email,
-		Verified: newUser.Verified, // DEPRECATED in flavor of role
-		Status:   string(openapi.StatusActive),
-		SlackID:  newUser.SlackID,
-		Groups:   newUser.Groups,
+		ID:             newUser.ID,
+		Subject:        userSubject,
+		OrgID:          ctx.OrgID,
+		Name:           newUser.Name,
+		HashedPassword: newUser.HashedPassword,
+		Picture:        newUser.Picture,
+		Email:          newUser.Email,
+		Verified:       newUser.Verified, // DEPRECATED in flavor of role
+		Status:         string(openapi.StatusActive),
+		SlackID:        newUser.SlackID,
+		Groups:         newUser.Groups,
 	}
 	newUser.Role = toRole(pguser)
 	if err := pgusers.New().Upsert(pguser); err != nil {

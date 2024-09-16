@@ -21,7 +21,7 @@ CREATE VIEW login AS
 -- USERS
 --
 CREATE VIEW users AS
-    SELECT id, org_id, subject, email, name, picture, verified, status, slack_id, created_at, updated_at, password
+    SELECT id, org_id, subject, email, name, picture, verified, status, slack_id, created_at, updated_at, hashed_password
     FROM private.users;
 
 CREATE VIEW user_groups AS SELECT org_id, user_id, service_account_id, name FROM private.user_groups;
@@ -41,15 +41,15 @@ CREATE FUNCTION update_users(params json) RETURNS SETOF users AS $$
             (params->>'org_id')::UUID AS org_id,
             params->>'subject' AS subject,
             params->>'email' AS email,
-            params->>'password' AS password,
+            params->>'hashed_password' AS hashed_password,
             params->>'name' AS name,
             params->>'picture' AS picture,
             (params->>'verified')::BOOL AS verified,
             (params->>'status')::private.enum_user_status AS status,
             params->>'slack_id' AS slack_id
     ), upsert_users AS (
-        INSERT INTO users (id, org_id, subject, email, name, picture, verified, status, slack_id, password)
-            (SELECT id, org_id, subject, email, name, picture, verified, status, slack_id, password FROM user_input)
+        INSERT INTO users (id, org_id, subject, email, name, picture, verified, status, slack_id, hashed_password)
+            (SELECT id, org_id, subject, email, name, picture, verified, status, slack_id, hashed_password FROM user_input)
         ON CONFLICT (id)
             DO UPDATE SET
                 subject = (SELECT subject FROM user_input),
@@ -58,7 +58,7 @@ CREATE FUNCTION update_users(params json) RETURNS SETOF users AS $$
                 verified = (SELECT verified FROM user_input),
                 slack_id = (SELECT slack_id FROM user_input),
                 picture = (SELECT picture FROM user_input),
-                password = (SELECT password FROM user_input),
+                hashed_password = (SELECT hashed_password FROM user_input),
                 updated_at = NOW()
         RETURNING *
     ), grps AS (
@@ -81,9 +81,6 @@ $$ LANGUAGE SQL;
 
 CREATE VIEW serviceaccounts AS
     SELECT id, org_id, subject, name, status, created_at, updated_at FROM private.service_accounts;
-
-CREATE VIEW local_auth_sessions AS
-    SELECT id, token, user_id, user_email, expires_at FROM private.local_auth_sessions;
 
 CREATE FUNCTION groups(serviceaccounts) RETURNS TEXT[] AS $$
     SELECT ARRAY(
@@ -340,7 +337,6 @@ GRANT SELECT, INSERT, UPDATE ON reviews TO {{ .pgrest_role }};
 GRANT SELECT, INSERT, UPDATE ON review_groups TO {{ .pgrest_role }};
 GRANT SELECT, INSERT, UPDATE, DELETE ON proxymanager_state TO {{ .pgrest_role }};
 GRANT SELECT, INSERT, UPDATE ON audit TO {{ .pgrest_role }};
-GRANT SELECT, INSERT, UPDATE, DELETE ON local_auth_sessions TO {{ .pgrest_role }};
 
 -- allow the main role to impersonate the apiuser role
 GRANT {{ .pgrest_role }} TO {{ .pg_app_user }};

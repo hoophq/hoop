@@ -6,16 +6,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
-	"github.com/hoophq/hoop/gateway/pgrest"
-	pglocalauthsession "github.com/hoophq/hoop/gateway/pgrest/localauthsession"
 	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
 	"golang.org/x/crypto/bcrypt"
 )
 
 func Login(c *gin.Context) {
-	var user pgrest.User
+	var user openapi.User
 	if err := c.BindJSON(&user); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -23,20 +22,22 @@ func Login(c *gin.Context) {
 
 	dbUser, err := pgusers.GetOneByEmail(user.Email)
 	if err != nil {
+		log.Debugf("failed fetching user by email %s, %v", user.Email, err)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
 		return
 	}
 
-	err = bcrypt.CompareHashAndPassword([]byte(dbUser.Password), []byte(user.Password))
+	err = bcrypt.CompareHashAndPassword([]byte(dbUser.HashedPassword), []byte(user.HashedPassword))
 	if err != nil {
+		log.Debugf("failed comparing password for user %s, %v", user.Email, err)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
 		return
 	}
 
 	expirationTime := time.Now().Add(168 * time.Hour) // 7 days
 	claims := &Claims{
-		UserID:        dbUser.ID,
-		UserEmail:     dbUser.Email,
+		UserID:      dbUser.ID,
+		UserEmail:   dbUser.Email,
 		UserSubject: dbUser.Subject,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
@@ -47,19 +48,6 @@ func Login(c *gin.Context) {
 	tokenString, err := token.SignedString(appconfig.Get().JWTSecretKey())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
-		return
-	}
-
-	newLocalAuthSession := pgrest.LocalAuthSession{
-		ID:        uuid.New().String(),
-		UserID:    dbUser.ID,
-		UserEmail: dbUser.Email,
-		Token:     tokenString,
-		ExpiresAt: expirationTime.Format(time.RFC3339),
-	}
-	_, err = pglocalauthsession.CreateSession(newLocalAuthSession)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store session"})
 		return
 	}
 

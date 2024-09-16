@@ -10,9 +10,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/pgrest"
-	pglocalauthsession "github.com/hoophq/hoop/gateway/pgrest/localauthsession"
 	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
 	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
@@ -22,7 +22,7 @@ import (
 // If the system is set as single tenant,
 // we default the new user to the default organization.
 // Otherwise, a new organization is created for the user.
-func manageOrgCreation(user pgrest.User) (string, error) {
+func manageOrgCreation(user openapi.User) (string, error) {
 	var tenancy string
 	if pgusers.IsOrgMultiTenant() {
 		tenancy = "multi-tenant"
@@ -56,7 +56,7 @@ func manageOrgCreation(user pgrest.User) (string, error) {
 }
 
 func Register(c *gin.Context) {
-	var user pgrest.User
+	var user openapi.User
 	if err := c.BindJSON(&user); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -80,7 +80,7 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.HashedPassword), bcrypt.DefaultCost)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
 		return
@@ -89,15 +89,15 @@ func Register(c *gin.Context) {
 	adminGroupName := types.GroupAdmin
 	userID := uuid.New().String()
 	err = pgusers.New().Upsert(pgrest.User{
-		ID:       userID,
-		Subject:  fmt.Sprintf("local|%v", userID),
-		OrgID:    newOrgID,
-		Email:    user.Email,
-		Name:     user.Name,
-		Status:   "active",
-		Verified: true,
-		Password: string(hashedPassword),
-		Groups:   []string{adminGroupName},
+		ID:             userID,
+		Subject:        fmt.Sprintf("local|%v", userID),
+		OrgID:          newOrgID,
+		Email:          user.Email,
+		Name:           user.Name,
+		Status:         "active",
+		Verified:       true,
+		HashedPassword: string(hashedPassword),
+		Groups:         []string{adminGroupName},
 	})
 
 	if err != nil {
@@ -120,19 +120,6 @@ func Register(c *gin.Context) {
 	tokenString, err := token.SignedString(appconfig.Get().JWTSecretKey())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
-		return
-	}
-
-	newLocalAuthSession := pgrest.LocalAuthSession{
-		ID:        uuid.New().String(),
-		UserID:    userID,
-		UserEmail: user.Email,
-		Token:     tokenString,
-		ExpiresAt: expirationTime.Format(time.RFC3339),
-	}
-	_, err = pglocalauthsession.CreateSession(newLocalAuthSession)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store session"})
 		return
 	}
 

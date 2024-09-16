@@ -1,3 +1,1 @@
-DROP TABLE local_auth_session;
-
-ALTER TABLE users DROP COLUMN password;
+ALTER TABLE users DROP COLUMN hashed_password;

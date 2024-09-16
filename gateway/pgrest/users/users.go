@@ -38,19 +38,19 @@ func GetOneByEmail(email string) (*pgrest.User, error) {
 func New() *user { return &user{} }
 
 func (u *user) Upsert(v pgrest.User) (err error) {
-	return pgrest.New("/rpc/update_users?select=id,org_id,subject,email,password,name,picture,verified,status,slack_id,created_at,updated_at,groups").
+	return pgrest.New("/rpc/update_users?select=id,org_id,subject,email,hashed_password,name,picture,verified,status,slack_id,created_at,updated_at,groups").
 		RpcCreate(map[string]any{
-			"id":       v.ID,
-			"subject":  v.Subject,
-			"org_id":   v.OrgID,
-			"name":     v.Name,
-			"picture":  v.Picture,
-			"email":    v.Email,
-			"password": v.Password,
-			"verified": v.Verified,
-			"status":   v.Status,
-			"slack_id": v.SlackID,
-			"groups":   v.Groups,
+			"id":              v.ID,
+			"subject":         v.Subject,
+			"org_id":          v.OrgID,
+			"name":            v.Name,
+			"picture":         v.Picture,
+			"email":           v.Email,
+			"hashed_password": v.HashedPassword,
+			"verified":        v.Verified,
+			"status":          v.Status,
+			"slack_id":        v.SlackID,
+			"groups":          v.Groups,
 		}).Error()
 }
 

@@ -57,15 +57,7 @@ type User struct {
 	Groups   []string `json:"groups"`
 	Org      *Org     `json:"orgs"`
 	// used for local auth only
-	Password string `json:"password"`
-}
-
-type LocalAuthSession struct {
-	ID        string `json:"id"`
-	UserID    string `json:"user_id"`
-	UserEmail string `json:"user_email"`
-	Token     string `json:"token"`
-	ExpiresAt string `json:"expires_at"`
+	HashedPassword string `json:"hashed_password"`
 }
 
 type EnvVar struct {
