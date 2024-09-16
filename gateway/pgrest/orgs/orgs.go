@@ -58,9 +58,6 @@ func (o *org) CreateOrGetOrg(name string, licenseDataJSON []byte) (orgID string,
 	orgID = uuid.NewString()
 	licenseData, _ := decodeLicenseToMap(licenseDataJSON)
 	log.Debugf("licenseData: %v", licenseData)
-	// if err != nil {
-	// 	return "", fmt.Errorf("unable to encode license data properly: %v", err)
-	// }
 	return orgID, pgrest.New("/orgs").
 		Create(map[string]any{"id": orgID, "name": name, "license_data": licenseData}).
 		Error()
