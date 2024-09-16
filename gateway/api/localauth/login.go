@@ -35,8 +35,9 @@ func Login(c *gin.Context) {
 
 	expirationTime := time.Now().Add(168 * time.Hour) // 7 days
 	claims := &Claims{
-		UserID:    dbUser.ID,
-		UserEmail: dbUser.Email,
+		UserID:        dbUser.ID,
+		UserEmail:     dbUser.Email,
+		UserSubject: dbUser.Subject,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 		},

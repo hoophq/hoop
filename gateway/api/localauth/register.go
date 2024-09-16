@@ -2,9 +2,10 @@ package localauthapi
 
 import (
 	"fmt"
-	"libhoop/log"
 	"net/http"
 	"time"
+
+	"github.com/hoophq/hoop/common/log"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -31,7 +32,7 @@ func manageOrgCreation(user pgrest.User) (string, error) {
 	switch tenancy {
 	case "multi-tenant":
 		log.Debug("Creating new organization")
-		newOrgID, err := pgorgs.New().CreateOrGetOrg(fmt.Sprintf("%q Orgnization", user.Email), nil)
+		newOrgID, err := pgorgs.New().CreateOrGetOrg(fmt.Sprintf("%v Organization", user.Email), nil)
 		if err != nil {
 			log.Debugf("failed creating organization, err=%v", err)
 			return "", fmt.Errorf("Failed to create organization")
@@ -64,12 +65,12 @@ func Register(c *gin.Context) {
 	log.Debugf("looking for existing user %v", user.Email)
 	// fetch user by email
 	existingUser, err := pgusers.GetOneByEmail(user.Email)
-	if existingUser != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "User already exists"})
-		return
-	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user"})
+		return
+	}
+	if existingUser != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "User already exists"})
 		return
 	}
 	newOrgID, err := manageOrgCreation(user)
@@ -94,6 +95,7 @@ func Register(c *gin.Context) {
 		Email:    user.Email,
 		Name:     user.Name,
 		Status:   "active",
+		Verified: true,
 		Password: string(hashedPassword),
 		Groups:   []string{adminGroupName},
 	})
@@ -106,8 +108,9 @@ func Register(c *gin.Context) {
 
 	expirationTime := time.Now().Add(168 * time.Hour) // 7 days
 	claims := &Claims{
-		UserID:    userID,
-		UserEmail: user.Email,
+		UserID:      userID,
+		UserEmail:   user.Email,
+		UserSubject: fmt.Sprintf("local|%v", userID),
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 		},

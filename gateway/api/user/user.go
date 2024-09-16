@@ -71,6 +71,7 @@ func Create(c *gin.Context) {
 		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newUser.Password), bcrypt.DefaultCost)
 		newUser.Password = string(hashedPassword)
 		if err != nil {
+			log.Errorf("failed hashing password, err=%v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
 			return
 		}

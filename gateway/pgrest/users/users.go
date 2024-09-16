@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
@@ -26,7 +27,7 @@ func GetOneByEmail(email string) (*pgrest.User, error) {
 		DecodeInto(&usr)
 	if err != nil {
 		if err == pgrest.ErrNotFound {
-			fmt.Printf("user not found")
+			log.Debugf("user not found")
 			return nil, nil
 		}
 		return nil, err

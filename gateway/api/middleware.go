@@ -13,6 +13,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/version"
@@ -20,12 +21,12 @@ import (
 	localauthapi "github.com/hoophq/hoop/gateway/api/localauth"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
-	pglocalauthsession "github.com/hoophq/hoop/gateway/pgrest/localauthsession"
 	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
 	pguserauth "github.com/hoophq/hoop/gateway/pgrest/userauth"
 	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
 	"github.com/hoophq/hoop/gateway/security/idp"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"go.uber.org/zap"
 )
 
@@ -46,28 +47,15 @@ func (a *Api) localAuthMiddleware(c *gin.Context) {
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 		return jwtKey, nil
 	})
-
 	if err != nil || !token.Valid {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
 		c.Abort()
 		return
 	}
 
-	sessionByToken, err := pglocalauthsession.GetSessionByToken(tokenString)
+	ctx, err := pguserauth.New().FetchUserContext(claims.UserSubject)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired session"})
-		return
-	}
-
-	user, err := pgusers.GetOneByEmail(sessionByToken.UserEmail)
-	if err != nil {
-		log.Errorf("failed fetching user, subject=%v, err=%v", user.Subject, err)
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
-	ctx, err := pguserauth.New().FetchUserContext(user.Subject)
-	if err != nil {
-		log.Errorf("failed building context, subject=%v, err=%v", user.Subject, err)
+		log.Errorf("failed building context, subject=%v, err=%v", claims.UserSubject, err)
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
@@ -87,7 +75,7 @@ func (a *Api) localAuthMiddleware(c *gin.Context) {
 			WithSlackID(ctx.UserSlackID).
 			WithOrgName(ctx.OrgName).
 			WithOrgLicense(ctx.OrgLicense).
-			// WithApiURL(a.IDProvider.ApiURL).
+			WithApiURL(appconfig.Get().ApiURL()).
 			WithGrpcURL(a.GrpcURL),
 	)
 
@@ -114,17 +102,18 @@ func (a *Api) apiKeyMiddleware(c *gin.Context) {
 		return
 	}
 
+	deterministicUuid := uuid.NewSHA1(uuid.NameSpaceURL, []byte(`API_KEY`))
 	if apiKeyReq == configuredApiKey {
 		ctx := &pguserauth.Context{
 			OrgID:       orgID,
 			OrgName:     org.Name,
 			OrgLicense:  org.License,
-			UserUUID:    "API_KEY",
+			UserUUID:    deterministicUuid.String(),
 			UserSubject: "API_KEY",
 			UserName:    "API_KEY",
 			UserEmail:   "API_KEY",
 			UserStatus:  "active",
-			UserGroups:  []string{"admin"},
+			UserGroups:  []string{types.GroupAdmin},
 		}
 
 		if a.logger != nil && !ctx.IsEmpty() {
@@ -162,8 +151,7 @@ func (a *Api) Authenticate(c *gin.Context) {
 	case "local":
 		a.localAuthMiddleware(c)
 	case "api-key":
-		allowed, _ := c.Get("allow-api-key")
-		if allowed != nil && allowed.(bool) {
+		if _, ok := c.Get("allow-api-key"); ok {
 			a.apiKeyMiddleware(c)
 			return
 		}

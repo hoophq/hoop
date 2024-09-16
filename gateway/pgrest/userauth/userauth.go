@@ -60,7 +60,7 @@ func (u *userAuth) FetchUserContext(subject string) (*Context, error) {
 }
 
 func fetchOneBySubject(subject string) (*pgrest.User, error) {
-	path := fmt.Sprintf("/users?select=*,groups,orgs(id,name,license,license_data)&subject=eq.%v", subject)
+	path := fmt.Sprintf("/users?select=*,groups,orgs(id,name,license,license_data)&subject=eq.%v&verified=is.true", subject)
 	var usr pgrest.User
 	if err := pgrest.New(path).FetchOne().DecodeInto(&usr); err != nil {
 		if err == pgrest.ErrNotFound {
