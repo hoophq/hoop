@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
@@ -12,7 +13,13 @@ import (
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 )
 
-const defaultMySQLPort = "3307"
+const (
+	defaultMySQLPort  = "3307"
+	defaultBufferSize = 32 * 1024
+
+	// it must not exceed 3 bytes which is the max size for a single packet
+	maxPacketSize = 1000 * 1000 * 16 // 16MB
+)
 
 type MySQLServer struct {
 	listenPort      string
@@ -80,8 +87,8 @@ func (s *MySQLServer) serveConn(sessionID, connectionID string, mysqlClient net.
 	})
 	// it will make the mysql proxy to initialize
 	w.Write(nil)
-	if _, err := io.CopyBuffer(w, mysqlClient, nil); err != nil {
-		log.Infof("failed copying buffer, err=%v", err)
+	if err := copyMySQLLBuffer(w, mysqlClient); err != nil {
+		log.Warnf("failed copying buffer, err=%v", err)
 		connWrapper.Close()
 	}
 }
@@ -113,4 +120,51 @@ func (s *MySQLServer) getConnection(connectionID string) (io.WriteCloser, error)
 
 func (s *MySQLServer) ListenPort() string {
 	return s.listenPort
+}
+
+func copyMySQLLBuffer(dst io.Writer, src io.Reader) (err error) {
+	for {
+		var header [4]byte
+		_, err = io.ReadFull(src, header[:3])
+		if err != nil {
+			return err
+		}
+		var sequenceID [1]byte
+		if _, err := src.Read(sequenceID[:]); err != nil {
+			return err
+		}
+		pktLen := int(binary.LittleEndian.Uint32(header[:]))
+		if pktLen >= maxPacketSize {
+			return fmt.Errorf("max packet size reached (max:%v, pkt:%v)", maxPacketSize, pktLen)
+		}
+		frame := make([]byte, pktLen)
+		log.Debugf("pktlen=%v, header=% X", pktLen, header[:3])
+		copied := 0
+		for {
+			buf := make([]byte, defaultBufferSize)
+			nr, er := src.Read(buf)
+			if er != nil {
+				return
+			}
+
+			copied += copy(frame[copied:], buf[0:nr])
+			log.Debugf("pktlen=%v, connread=%v, copied=%v", pktLen, nr, copied)
+			if pktLen > nr {
+				pktLen -= nr
+				continue
+			}
+
+			_, err = dst.Write(encodeMySQLPacket(header, sequenceID[0], frame))
+			if err != nil {
+				return
+			}
+			break
+		}
+	}
+}
+
+func encodeMySQLPacket(header [4]byte, sequenceID byte, frame []byte) []byte {
+	return append(
+		append(header[:3], sequenceID),
+		frame...)
 }
