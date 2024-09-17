@@ -7,6 +7,7 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/dsnkeys"
 	commongrpc "github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/log"
@@ -132,22 +133,25 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 	// client proxy authentication (access token)
 	default:
 		apiKeyEnv := os.Getenv("API_KEY")
+		isOrgMultitenant := appconfig.Get().OrgMultitenant()
 		// this is a not so optimal solution, but due to the overall
 		// complexity of the authentication system, we decided to make this
 		// simple comparison on a optimistic way and if it fails, we fallback
 		// to the regular authentication flow with the IDP (see else stetament)
-		if apiKeyEnv != "" && apiKeyEnv == bearerToken {
+		if apiKeyEnv != "" && apiKeyEnv == bearerToken && !isOrgMultitenant {
 			log.Debug("Authenticating with API key")
 			orgID := strings.Split(bearerToken, "|")[0]
-			org, err := pgorgs.New().FetchOrgByID(orgID)
+			newOrgCtx := pgrest.NewOrgContext(orgID)
+			org, err := pgorgs.New().FetchOrgByContext(newOrgCtx)
 			if err != nil || org == nil {
 				return status.Errorf(codes.Unauthenticated, "invalid authentication")
 			}
+			deterministicUuid := uuid.NewSHA1(uuid.NameSpaceURL, []byte(`API_KEY`))
 			ctx := &pguserauth.Context{
 				OrgID:       orgID,
 				OrgName:     org.Name,
 				OrgLicense:  org.License,
-				UserUUID:    "API_KEY",
+				UserUUID:    deterministicUuid.String(),
 				UserSubject: "API_KEY",
 				UserName:    "API_KEY",
 				UserEmail:   "API_KEY",

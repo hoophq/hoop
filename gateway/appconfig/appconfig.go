@@ -37,6 +37,7 @@ type Config struct {
 	licenseSigningKey       *rsa.PrivateKey
 	licenseSignerOrgID      string
 	migrationPathFiles      string
+	orgMultitenant          bool
 	apiURL                  string
 	apiHostname             string
 	apiHost                 string
@@ -111,6 +112,7 @@ func Load() error {
 		licenseSigningKey:       licensePrivKey,
 		licenseSignerOrgID:      allowedOrgID,
 		gcpDLPJsonCredentials:   gcpJsonCred,
+		orgMultitenant:          os.Getenv("ORG_MULTI_TENANT") == "true",
 		dlpProvider:             os.Getenv("DLP_PROVIDER"),
 		msPresidioAnalyzerURL:   os.Getenv("MSPRESIDIO_ANALYZER_URL"),
 		msPresidioAnonymizerURL: os.Getenv("MSPRESIDIO_ANONYMIZER_URL"),
@@ -241,6 +243,7 @@ func (c Config) PgURI() string                   { return c.pgCred.connectionStr
 func (c Config) PostgRESTRole() string           { return c.pgCred.postgrestRole }
 
 func (c Config) MigrationPathFiles() string { return c.migrationPathFiles }
+func (c Config) OrgMultitenant() bool       { return c.orgMultitenant }
 
 func (c Config) WebappUsersManagement() string { return c.webappUsersManagement }
 func (c Config) IsAskAIAvailable() bool        { return c.askAICredentials != nil }

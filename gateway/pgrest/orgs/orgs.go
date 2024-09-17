@@ -99,19 +99,6 @@ func (o *org) FetchOrgByName(name string) (*pgrest.Org, int64, error) {
 	return &org, total, nil
 }
 
-// FetchOrgByID returns an organization
-func (o *org) FetchOrgByID(id string) (*pgrest.Org, error) {
-	var org pgrest.Org
-	err := pgrest.New("/orgs?id=eq.%v", id).FetchOne().DecodeInto(&org)
-	if err != nil {
-		if err == pgrest.ErrNotFound {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &org, nil
-}
-
 func (o *org) FetchOrgByContext(ctx pgrest.OrgContext) (*pgrest.Org, error) {
 	var org pgrest.Org
 	err := pgrest.New("/orgs?id=eq.%v", ctx.GetOrgID()).

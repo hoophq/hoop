@@ -21,6 +21,7 @@ import (
 	localauthapi "github.com/hoophq/hoop/gateway/api/localauth"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/pgrest"
 	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
 	pguserauth "github.com/hoophq/hoop/gateway/pgrest/userauth"
 	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
@@ -96,6 +97,11 @@ func (a *Api) localAuthMiddleware(c *gin.Context) {
 // AllowApiKey is a middleware that allows the request to proceed if the request has an api key.
 // It sets the "allow-api-key" key in the context to true so the Auth Middleware can authorize it
 func (a *Api) AllowApiKey(c *gin.Context) {
+	isOrgMultitenant := appconfig.Get().OrgMultitenant()
+	if isOrgMultitenant {
+		c.AbortWithStatus(http.StatusForbidden)
+		return
+	}
 	c.Set(allowApiKeyContextKey, true)
 	c.Next()
 }
@@ -109,7 +115,8 @@ func (a *Api) apiKeyMiddleware(c *gin.Context) {
 		// the first part is the orgID and the second part is the apiKey
 		orgID := strings.Split(apiKeyReq, "|")[0]
 		// apiKey := strings.Split(apiKeyReq, "|")[1]
-		org, err := pgorgs.New().FetchOrgByID(orgID)
+		newOrgCtx := pgrest.NewOrgContext(orgID)
+		org, err := pgorgs.New().FetchOrgByContext(newOrgCtx)
 		if err != nil || org == nil {
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
