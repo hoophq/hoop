@@ -153,9 +153,12 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	///////////////////////
 	// local auth routes //
 	///////////////////////
-	// TODO do not allow these routes be called if auth is not set as local
-	route.POST("/localauth/register", localauthapi.Register)
-	route.POST("/localauth/login", localauthapi.Login)
+	route.POST("/localauth/register",
+		api.LocalAuthOnly,
+		localauthapi.Register)
+	route.POST("/localauth/login",
+		api.LocalAuthOnly,
+		localauthapi.Login)
 	///////////////////////////
 	// end local auth routes //
 	///////////////////////////

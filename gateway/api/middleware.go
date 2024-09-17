@@ -36,6 +36,15 @@ const (
 
 var errInvalidAuthHeaderErr = errors.New("invalid authorization header")
 
+func (a *Api) LocalAuthOnly(c *gin.Context) {
+	authMethod := appconfig.Get().AuthMethod()
+	if authMethod != "local" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Not Found"})
+		return
+	}
+	c.Next()
+}
+
 func (a *Api) localAuthMiddleware(c *gin.Context) {
 	tokenString := c.GetHeader("Authorization")
 	// remove bearer from token
