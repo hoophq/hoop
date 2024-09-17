@@ -20,11 +20,13 @@ import (
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	apifeatures "github.com/hoophq/hoop/gateway/api/features"
 	apihealthz "github.com/hoophq/hoop/gateway/api/healthz"
+	localauthapi "github.com/hoophq/hoop/gateway/api/localauth"
 	loginapi "github.com/hoophq/hoop/gateway/api/login"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
 	apiplugins "github.com/hoophq/hoop/gateway/api/plugins"
 	apiproxymanager "github.com/hoophq/hoop/gateway/api/proxymanager"
+	apipublicserverinfo "github.com/hoophq/hoop/gateway/api/publicserverinfo"
 	apireports "github.com/hoophq/hoop/gateway/api/reports"
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
 	apirunbooks "github.com/hoophq/hoop/gateway/api/runbooks"
@@ -148,6 +150,18 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.GET("/login", loginHandler.Login)
 	route.GET("/callback", loginHandler.LoginCallback)
 	route.GET("/healthz", apihealthz.LivenessHandler())
+	///////////////////////
+	// local auth routes //
+	///////////////////////
+	route.POST("/localauth/register",
+		api.LocalAuthOnly,
+		localauthapi.Register)
+	route.POST("/localauth/login",
+		api.LocalAuthOnly,
+		localauthapi.Login)
+	///////////////////////////
+	// end local auth routes //
+	///////////////////////////
 	route.POST("/signup",
 		AnonAccessRole,
 		api.Authenticate,
@@ -171,6 +185,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		AuditApiChanges,
 		userapi.PatchSlackID)
 	route.GET("/users/groups",
+		api.AllowApiKey,
 		api.Authenticate,
 		userapi.ListAllGroups)
 	route.PUT("/users/:id",
@@ -208,12 +223,14 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		serviceaccountapi.Update)
 
 	route.POST("/connections",
+		api.AllowApiKey,
 		AdminOnlyAccessRole,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventCreateConnection),
 		AuditApiChanges,
 		apiconnections.Post)
 	route.PUT("/connections/:nameOrID",
+		api.AllowApiKey,
 		AdminOnlyAccessRole,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventUpdateConnection),
@@ -225,12 +242,15 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest(analytics.EventApiExecConnection),
 		sessionapi.Post)
 	route.GET("/connections",
+		api.AllowApiKey,
 		api.Authenticate,
 		apiconnections.List)
 	route.GET("/connections/:nameOrID",
+		api.AllowApiKey,
 		api.Authenticate,
 		apiconnections.Get)
 	route.DELETE("/connections/:name",
+		api.AllowApiKey,
 		AdminOnlyAccessRole,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventDeleteConnection),
@@ -252,10 +272,12 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	)
 
 	route.GET("/reviews",
+		api.AllowApiKey,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventFetchReviews),
 		reviewHandler.List)
 	route.GET("/reviews/:id",
+		api.AllowApiKey,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventFetchReviews),
 		reviewHandler.Get)
@@ -272,6 +294,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		AuditApiChanges,
 		apiagents.Post)
 	route.GET("/agents",
+		api.AllowApiKey,
 		AdminOnlyAccessRole,
 		api.Authenticate,
 		apiagents.List)
@@ -308,6 +331,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		apiorgs.SignLicense)
 
 	route.PUT("/orgs/features",
+		api.AllowApiKey,
 		AdminOnlyAccessRole,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventOrgFeatureUpdate),
@@ -321,24 +345,29 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		apifeatures.PostChatCompletions)
 
 	route.POST("/plugins",
+		api.AllowApiKey,
 		AdminOnlyAccessRole,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventCreatePlugin),
 		AuditApiChanges,
 		apiplugins.Post)
 	route.PUT("/plugins/:name",
+		api.AllowApiKey,
 		AdminOnlyAccessRole,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventUpdatePlugin),
 		AuditApiChanges,
 		apiplugins.Put)
 	route.GET("/plugins",
+		api.AllowApiKey,
 		api.Authenticate,
 		apiplugins.List)
 	route.GET("/plugins/:name",
+		api.AllowApiKey,
 		api.Authenticate,
 		apiplugins.Get)
 	route.PUT("/plugins/:name/config",
+		api.AllowApiKey,
 		AdminOnlyAccessRole,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventUpdatePluginConfig),
@@ -358,6 +387,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		sessionapi.Get)
 	route.GET("/sessions/:session_id/download", sessionapi.DownloadSession)
 	route.GET("/sessions",
+		api.AllowApiKey,
 		api.Authenticate,
 		sessionapi.List)
 	route.POST("/sessions",
@@ -370,6 +400,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		sessionapi.RunReviewedExec)
 
 	route.GET("/reports/sessions",
+		api.AllowApiKey,
 		AdminOnlyAccessRole,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventApiExecReview),
@@ -382,16 +413,19 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	)
 
 	route.GET("/plugins/runbooks/connections/:name/templates",
+		api.AllowApiKey,
 		api.Authenticate,
 		apirunbooks.ListByConnection,
 	)
 
 	route.GET("/plugins/runbooks/templates",
+		api.AllowApiKey,
 		api.Authenticate,
 		apirunbooks.List,
 	)
 
 	route.POST("/plugins/runbooks/connections/:name/exec",
+		api.AllowApiKey,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventExecRunbook),
 		apirunbooks.RunExec)
@@ -403,7 +437,10 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		AuditApiChanges,
 		webhooksapi.Get)
 
+	route.GET("/publicserverinfo", apipublicserverinfo.Get)
+
 	route.GET("/serverinfo",
+		api.AllowApiKey,
 		api.Authenticate,
 		apiserverinfo.New(api.GrpcURL).Get)
 }

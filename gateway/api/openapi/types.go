@@ -67,6 +67,8 @@ type User struct {
 	Picture string `json:"picture" example:""`
 	// Groups registered for this user
 	Groups []string `json:"groups" example:"sre"`
+	// Local auth cases have a password
+	HashedPassword string `json:"password" example:"password"`
 }
 
 type UserPatchSlackID struct {
@@ -730,6 +732,11 @@ type ServerLicenseInfo struct {
 	VerifiedHost string `json:"verified_host" example:"homolog.johnwick.org"`
 }
 
+type PublicServerInfo struct {
+	// Auth method used by the server
+	AuthMethod string `json:"auth_method" enums:"oidc,local" example:"local"`
+}
+
 type ServerInfo struct {
 	// Version of the server
 	Version string `json:"version" example:"1.23.15"`
@@ -741,6 +748,8 @@ type ServerInfo struct {
 	GoDebug string `json:"go_debug" example:"http2debug=2"`
 	// The role name of the admin group
 	AdminUsername string `json:"admin_username" example:"admin"`
+	// Auth method used by the server
+	AuthMethod string `json:"auth_method" enums:"oidc,local" example:"local"`
 	// Report if GOOGLE_APPLICATION_CREDENTIALS_JSON is set
 	HasRedactCredentials bool `json:"has_redact_credentials"`
 	// Report if WEBHOOK_APPKEY is set

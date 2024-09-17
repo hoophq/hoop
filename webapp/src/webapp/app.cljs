@@ -9,6 +9,8 @@
             [webapp.audit.views.sessions-filtered-by-id :as session-filtered-by-id]
             [webapp.auth.views.logout :as logout]
             [webapp.auth.views.signup :as signup]
+            [webapp.auth.local.login :as local-auth-login]
+            [webapp.auth.local.register :as local-auth-register]
             [webapp.components.dialog :as dialog]
             [webapp.components.draggable-card :as draggable-card]
             [webapp.components.headings :as h]
@@ -26,6 +28,7 @@
             [webapp.events.ask-ai]
             [webapp.events.audit]
             [webapp.events.clarity]
+            [webapp.events.localauth]
             [webapp.events.components.dialog]
             [webapp.events.components.draggable-card]
             [webapp.events.components.sidebar]
@@ -71,7 +74,7 @@
         destiny (if error :login-hoop :home)]
     (.removeItem js/localStorage "login_error")
     (when error (.setItem js/localStorage "login_error" error))
-    (.setItem js/localStorage "jwt-token" token)
+    (.setItem js/sessionStorage "jwt-token" token)
     (if (nil? redirect-after-auth)
       (rf/dispatch [:navigate destiny])
       (let [_ (.replace (. js/window -location) redirect-after-auth)
@@ -91,7 +94,7 @@
         destiny (if error :login-hoop :signup-hoop)]
     (.removeItem js/localStorage "login_error")
     (when error (.setItem js/localStorage "login_error" error))
-    (.setItem js/localStorage "jwt-token" token)
+    (.setItem js/sessionStorage "jwt-token" token)
     (rf/dispatch [:navigate destiny])
 
     [:div "Verifying authentication"
@@ -252,13 +255,17 @@
 (defmethod routes/panels :signup-callback-hoop-panel []
   [signup-callback-panel-hoop])
 
-(defmethod routes/panels :login-hoop-panel []
-  [layout :auth (rf/dispatch [:auth->get-auth-link])])
+(defmethod routes/panels :login-hoop-panel [_ gateway-info]
+  (if (= (-> gateway-info :data :auth_method) "local")
+    [layout :auth [local-auth-login/panel]]
+    [layout :auth (rf/dispatch [:auth->get-auth-link])]))
 
-(defmethod routes/panels :register-hoop-panel []
-  [layout :auth (fn []
+(defmethod routes/panels :register-hoop-panel [_ gateway-info]
+  (if (= (-> gateway-info :data :auth_method) "local")
+    [layout :auth [local-auth-register/panel]]
+    [layout :auth (fn []
                   (rf/dispatch [:segment->track "SignUp - start signup"])
-                  (rf/dispatch [:auth->get-signup-link]))])
+                  (rf/dispatch [:auth->get-signup-link]))]))
 
 (defmethod routes/panels :signup-hoop-panel []
   [layout :auth [signup/panel]])
@@ -283,8 +290,12 @@
      "Go to homepage"]]])
 
 (defn main-panel []
-  (let [active-panel (rf/subscribe [::subs/active-panel])]
+  (let [active-panel (rf/subscribe [::subs/active-panel])
+        gateway-public-info (rf/subscribe [:gateway->public-info])]
+    (rf/dispatch [:gateway->get-public-info])
     (.registerPlugin gsap Draggable)
-    [:> Theme
-     [routes/panels @active-panel]]))
+    (fn []
+      (when (not (-> @gateway-public-info :loading))
+        [:> Theme
+         [routes/panels @active-panel @gateway-public-info]]))))
 

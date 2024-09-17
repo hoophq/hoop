@@ -21,6 +21,7 @@ import (
 	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var isOrgMultiTenant = os.Getenv("ORG_MULTI_TENANT") == "true"
@@ -62,18 +63,35 @@ func Create(c *gin.Context) {
 	}
 
 	newUser.ID = uuid.NewString()
+	// user.Subject for local auth is altered in this flow, that's
+	// why we create this separated variable so we can modify it
+	// accordingly to the auth method
+	userSubject := newUser.Email
 	newUser.Verified = false
+	if appconfig.Get().AuthMethod() == "local" {
+		newUser.Verified = true
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newUser.HashedPassword), bcrypt.DefaultCost)
+		newUser.HashedPassword = string(hashedPassword)
+		if err != nil {
+			log.Errorf("failed hashing password, err=%v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+			return
+		}
+		userSubject = fmt.Sprintf("local|%v", newUser.ID)
+	}
+
 	pguser := pgrest.User{
-		ID:       newUser.ID,
-		Subject:  newUser.Email,
-		OrgID:    ctx.OrgID,
-		Name:     newUser.Name,
-		Picture:  newUser.Picture,
-		Email:    newUser.Email,
-		Verified: newUser.Verified, // DEPRECATED in flavor of role
-		Status:   string(openapi.StatusActive),
-		SlackID:  newUser.SlackID,
-		Groups:   newUser.Groups,
+		ID:             newUser.ID,
+		Subject:        userSubject,
+		OrgID:          ctx.OrgID,
+		Name:           newUser.Name,
+		HashedPassword: newUser.HashedPassword,
+		Picture:        newUser.Picture,
+		Email:          newUser.Email,
+		Verified:       newUser.Verified, // DEPRECATED in flavor of role
+		Status:         string(openapi.StatusActive),
+		SlackID:        newUser.SlackID,
+		Groups:         newUser.Groups,
 	}
 	newUser.Role = toRole(pguser)
 	if err := pgusers.New().Upsert(pguser); err != nil {

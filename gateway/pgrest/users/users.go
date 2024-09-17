@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
@@ -19,21 +20,37 @@ type UserGroups struct {
 
 type user struct{}
 
+func GetOneByEmail(email string) (*pgrest.User, error) {
+	var usr pgrest.User
+	err := pgrest.New("/users?email=eq.%v", url.QueryEscape(email)).
+		FetchOne().
+		DecodeInto(&usr)
+	if err != nil {
+		if err == pgrest.ErrNotFound {
+			log.Debugf("user not found")
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &usr, nil
+}
+
 func New() *user { return &user{} }
 
 func (u *user) Upsert(v pgrest.User) (err error) {
-	return pgrest.New("/rpc/update_users?select=id,org_id,subject,email,name,picture,verified,status,slack_id,created_at,updated_at,groups").
+	return pgrest.New("/rpc/update_users?select=id,org_id,subject,email,hashed_password,name,picture,verified,status,slack_id,created_at,updated_at,groups").
 		RpcCreate(map[string]any{
-			"id":       v.ID,
-			"subject":  v.Subject,
-			"org_id":   v.OrgID,
-			"name":     v.Name,
-			"picture":  v.Picture,
-			"email":    v.Email,
-			"verified": v.Verified,
-			"status":   v.Status,
-			"slack_id": v.SlackID,
-			"groups":   v.Groups,
+			"id":              v.ID,
+			"subject":         v.Subject,
+			"org_id":          v.OrgID,
+			"name":            v.Name,
+			"picture":         v.Picture,
+			"email":           v.Email,
+			"hashed_password": v.HashedPassword,
+			"verified":        v.Verified,
+			"status":          v.Status,
+			"slack_id":        v.SlackID,
+			"groups":          v.Groups,
 		}).Error()
 }
 

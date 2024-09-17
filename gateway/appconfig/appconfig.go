@@ -25,7 +25,9 @@ type pgCredentials struct {
 	postgrestRole string
 }
 type Config struct {
+	apiKey                  string
 	askAICredentials        *url.URL
+	authMethod              string
 	pgCred                  *pgCredentials
 	gcpDLPJsonCredentials   string
 	dlpProvider             string
@@ -35,11 +37,13 @@ type Config struct {
 	licenseSigningKey       *rsa.PrivateKey
 	licenseSignerOrgID      string
 	migrationPathFiles      string
+	orgMultitenant          bool
 	apiURL                  string
 	apiHostname             string
 	apiHost                 string
 	apiScheme               string
 	webappUsersManagement   string
+	jwtSecretKey            []byte
 
 	isLoaded bool
 }
@@ -91,28 +95,76 @@ func Load() error {
 	if webappUsersManagement == "" {
 		webappUsersManagement = "on"
 	}
+	authMethod, err := loadAuthMethod()
+	if err != nil {
+		return err
+	}
 	runtimeConfig = Config{
+		apiKey:                  os.Getenv("API_KEY"),
 		apiURL:                  fmt.Sprintf("%s://%s", apiRawURL.Scheme, apiRawURL.Host),
 		apiHostname:             apiRawURL.Hostname(),
 		apiScheme:               apiRawURL.Scheme,
 		apiHost:                 apiRawURL.Host,
+		authMethod:              authMethod,
 		askAICredentials:        askAICred,
 		pgCred:                  pgCred,
 		migrationPathFiles:      migrationPathFiles,
 		licenseSigningKey:       licensePrivKey,
 		licenseSignerOrgID:      allowedOrgID,
 		gcpDLPJsonCredentials:   gcpJsonCred,
+		orgMultitenant:          os.Getenv("ORG_MULTI_TENANT") == "true",
 		dlpProvider:             os.Getenv("DLP_PROVIDER"),
 		msPresidioAnalyzerURL:   os.Getenv("MSPRESIDIO_ANALYZER_URL"),
 		msPresidioAnonymizerURL: os.Getenv("MSPRESIDIO_ANONYMIZER_URL"),
 		webhookAppKey:           os.Getenv("WEBHOOK_APPKEY"),
 		webappUsersManagement:   webappUsersManagement,
+		jwtSecretKey:            []byte(os.Getenv("JWT_SECRET_KEY")),
 		isLoaded:                true,
 	}
 	return nil
 }
 
 func Get() Config { return runtimeConfig }
+
+// loadAuthMethod() returns the auth method to use
+// the possible values are: "local" and "idp".
+// If not set, it defaults to "local"
+// it also cross check the IDP_ISSUER, IDP_CLIENT_ID
+// and IDP_CLIENT_SECRET envs to determine if it should
+// the IDP configuration already set even without setting
+// AUTH_METHOD to "idp".
+// This last behavior ensures compatibility with the previous version
+func loadAuthMethod() (authMethod string, err error) {
+	authMethod = os.Getenv("AUTH_METHOD")
+	switch authMethod {
+	case "local":
+		err = validateLocalAuthJwtKey()
+	case "idp":
+	default:
+		if !hasIdpEnvs() {
+			// default to local auth method
+			return "local", validateLocalAuthJwtKey()
+
+		}
+		return "idp", nil
+	}
+	return
+}
+
+func validateLocalAuthJwtKey() error {
+	if jwtSecretKey := os.Getenv("JWT_SECRET_KEY"); jwtSecretKey == "" {
+		return fmt.Errorf("When AUTH_METHOD is set as `local`, you must configure a random string value at the JWT_SECRET_KEY environment variable")
+	}
+	return nil
+}
+
+func hasIdpEnvs() bool {
+	return os.Getenv("IDP_ISSUER") != "" ||
+		os.Getenv("IDP_CLIENT_ID") != "" ||
+		os.Getenv("IDP_CLIENT_SECRET") != "" ||
+		os.Getenv("IDP_URI") != ""
+}
+
 func loadPostgresCredentials() (*pgCredentials, error) {
 	pgConnectionURI := os.Getenv("POSTGRES_DB_URI")
 	pgURL, err := url.Parse(pgConnectionURI)
@@ -192,8 +244,10 @@ func (c Config) ApiURL() string      { return c.apiURL }
 func (c Config) ApiHostname() string { return c.apiHostname }
 
 // ApiHost host or host:port
+func (c Config) ApiKey() string                  { return c.apiKey }
 func (c Config) ApiHost() string                 { return c.apiHost }
 func (c Config) ApiScheme() string               { return c.apiScheme }
+func (c Config) AuthMethod() string              { return c.authMethod }
 func (c Config) WebhookAppKey() string           { return c.webhookAppKey }
 func (c Config) GcpDLPJsonCredentials() string   { return c.gcpDLPJsonCredentials }
 func (c Config) DlpProvider() string             { return c.dlpProvider }
@@ -204,9 +258,11 @@ func (c Config) PgURI() string                   { return c.pgCred.connectionStr
 func (c Config) PostgRESTRole() string           { return c.pgCred.postgrestRole }
 
 func (c Config) MigrationPathFiles() string { return c.migrationPathFiles }
+func (c Config) OrgMultitenant() bool       { return c.orgMultitenant }
 
 func (c Config) WebappUsersManagement() string { return c.webappUsersManagement }
 func (c Config) IsAskAIAvailable() bool        { return c.askAICredentials != nil }
+func (c Config) JWTSecretKey() []byte          { return c.jwtSecretKey }
 func (c Config) AskAIApiURL() (u string) {
 	if c.IsAskAIAvailable() {
 		return fmt.Sprintf("%s://%s", c.askAICredentials.Scheme, c.askAICredentials.Host)

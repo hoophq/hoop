@@ -176,6 +176,10 @@ func toPtrStr(v any) *string {
 
 func getAccessToken(c *gin.Context) string {
 	tokenHeader := c.GetHeader("authorization")
+	apiKey := c.GetHeader("Api-Key")
+	if apiKey != "" {
+		return apiKey
+	}
 	tokenParts := strings.Split(tokenHeader, " ")
 	if len(tokenParts) > 1 {
 		return tokenParts[1]

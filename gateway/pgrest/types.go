@@ -1,6 +1,8 @@
 package pgrest
 
-import "encoding/json"
+import (
+	"encoding/json"
+)
 
 type Context interface {
 	OrgContext
@@ -53,8 +55,9 @@ type User struct {
 	Status   string   `json:"status"`
 	SlackID  string   `json:"slack_id"`
 	Groups   []string `json:"groups"`
-
-	Org *Org `json:"orgs"`
+	Org      *Org     `json:"orgs"`
+	// used for local auth only
+	HashedPassword string `json:"hashed_password"`
 }
 
 type EnvVar struct {

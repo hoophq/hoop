@@ -25,6 +25,7 @@ var (
 		LogLevel:             os.Getenv("LOG_LEVEL"),
 		GoDebug:              os.Getenv("GODEBUG"),
 		AdminUsername:        os.Getenv("ADMIN_USERNAME"),
+		AuthMethod:           appconfig.Get().AuthMethod(),
 		HasRedactCredentials: isEnvSet("GOOGLE_APPLICATION_CREDENTIALS_JSON"),
 		HasWebhookAppKey:     isEnvSet("WEBHOOK_APPKEY"),
 		HasIDPAudience:       isEnvSet("IDP_AUDIENCE"),
@@ -52,7 +53,7 @@ func (h *handler) Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	org, err := pgorgs.New().FetchOrgByContext(ctx)
 	if err != nil || org == nil {
-		errMsg := fmt.Sprintf("failed obtaining organization license, reason=%v", err)
+		errMsg := fmt.Sprintf("failed obtaining organization, reason=%v", err)
 		log.Error(errMsg)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
 		return

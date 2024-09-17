@@ -2,17 +2,24 @@ package authinterceptor
 
 import (
 	"context"
+	"os"
 	"strings"
 
 	"github.com/getsentry/sentry-go"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/dsnkeys"
 	commongrpc "github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
+	localauthapi "github.com/hoophq/hoop/gateway/api/localauth"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgagents "github.com/hoophq/hoop/gateway/pgrest/agents"
+	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
 	pguserauth "github.com/hoophq/hoop/gateway/pgrest/userauth"
+	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
 	"github.com/hoophq/hoop/gateway/security/idp"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"google.golang.org/grpc"
@@ -94,8 +101,8 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 	}
 
 	var ctxVal any
-	switch {
-	case clientOrigin[0] == pb.ConnectionOriginAgent:
+	switch clientOrigin[0] {
+	case pb.ConnectionOriginAgent:
 		// fallback to dsn agent authentication
 		ag, err := i.authenticateAgent(bearerToken, md)
 		if err != nil {
@@ -106,7 +113,7 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			BearerToken: bearerToken,
 		}
 	// client proxy manager authentication (access token)
-	case clientOrigin[0] == pb.ConnectionOriginClientProxyManager:
+	case pb.ConnectionOriginClientProxyManager:
 		sub, err := i.idp.VerifyAccessToken(bearerToken)
 		if err != nil {
 			log.Debugf("failed verifying access token, reason=%v", err)
@@ -125,7 +132,79 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 		}
 	// client proxy authentication (access token)
 	default:
-		sub, err := i.idp.VerifyAccessToken(bearerToken)
+		apiKeyEnv := os.Getenv("API_KEY")
+		isOrgMultitenant := appconfig.Get().OrgMultitenant()
+		// this is a not so optimal solution, but due to the overall
+		// complexity of the authentication system, we decided to make this
+		// simple comparison on a optimistic way and if it fails, we fallback
+		// to the regular authentication flow with the IDP (see else stetament)
+		if apiKeyEnv != "" && apiKeyEnv == bearerToken && !isOrgMultitenant {
+			log.Debug("Authenticating with API key")
+			orgID := strings.Split(bearerToken, "|")[0]
+			newOrgCtx := pgrest.NewOrgContext(orgID)
+			org, err := pgorgs.New().FetchOrgByContext(newOrgCtx)
+			if err != nil || org == nil {
+				return status.Errorf(codes.Unauthenticated, "invalid authentication")
+			}
+			deterministicUuid := uuid.NewSHA1(uuid.NameSpaceURL, []byte(`API_KEY`))
+			ctx := &pguserauth.Context{
+				OrgID:       orgID,
+				OrgName:     org.Name,
+				OrgLicense:  org.License,
+				UserUUID:    deterministicUuid.String(),
+				UserSubject: "API_KEY",
+				UserName:    "API_KEY",
+				UserEmail:   "API_KEY",
+				UserStatus:  "active",
+				UserGroups:  []string{types.GroupAdmin},
+			}
+
+			gwctx := &GatewayContext{
+				UserContext: *ctx.ToAPIContext(),
+				BearerToken: bearerToken,
+			}
+
+			gwctx.UserContext.ApiURL = os.Getenv("API_URL")
+			connectionName := commongrpc.MetaGet(md, "connection-name")
+			conn, err := i.getConnection(connectionName, ctx)
+			if err != nil {
+				return err
+			}
+			if conn == nil {
+				return status.Errorf(codes.NotFound, "connection not found")
+			}
+			gwctx.Connection = *conn
+			ctxVal = gwctx
+			break
+		}
+		// first we check if the auth method is local, if so, we authenticate the user
+		// using the local auth method, otherwise we use the i.idp.VerifyAccessToken
+		authMethod := appconfig.Get().AuthMethod()
+		var sub string
+		if authMethod == "local" {
+			jwtKey := appconfig.Get().JWTSecretKey()
+			claims := &localauthapi.Claims{}
+			token, err := jwt.ParseWithClaims(bearerToken, claims, func(token *jwt.Token) (interface{}, error) {
+				return jwtKey, nil
+			})
+			if err != nil || !token.Valid {
+				log.Debugf("failed verifying access token, reason=%v", err)
+				return status.Errorf(codes.Unauthenticated, "invalid authentication")
+			}
+
+			user, err := pgusers.GetOneByEmail(claims.UserEmail)
+			if err != nil {
+				log.Debugf("failed verifying access token, reason=%v", err)
+				return status.Errorf(codes.Unauthenticated, "invalid authentication")
+			}
+			sub = user.Subject
+		} else {
+			sub, err = i.idp.VerifyAccessToken(bearerToken)
+			if err != nil {
+				log.Debugf("failed verifying access token, reason=%v", err)
+				return status.Errorf(codes.Unauthenticated, "invalid authentication")
+			}
+		}
 		if err != nil {
 			log.Debugf("failed verifying access token, reason=%v", err)
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")

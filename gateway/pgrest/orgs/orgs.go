@@ -6,6 +6,7 @@ import (
 	"net/url"
 
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/pgrest"
 )
 
@@ -55,10 +56,15 @@ func (o *org) CreateOrGetOrg(name string, licenseDataJSON []byte) (orgID string,
 		return org.ID, nil
 	}
 	orgID = uuid.NewString()
-	licenseData, err := decodeLicenseToMap(licenseDataJSON)
-	if err != nil {
-		return "", fmt.Errorf("unable to encode license data properly: %v", err)
+
+	var licenseData map[string]any
+	if len(licenseDataJSON) > 0 {
+		licenseData, err = decodeLicenseToMap(licenseDataJSON)
+		if err != nil {
+			return "", fmt.Errorf("unable to encode license data properly: %v", err)
+		}
 	}
+	log.Debugf("licenseData: %v", licenseData)
 	return orgID, pgrest.New("/orgs").
 		Create(map[string]any{"id": orgID, "name": name, "license_data": licenseData}).
 		Error()
