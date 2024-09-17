@@ -1,8 +1,7 @@
 (ns webapp.auth.local.login
   (:require
     ["@radix-ui/themes" :refer [Flex Card Heading
-                                Link Box Text]]
-    [webapp.components.button :as button]
+                                Link Box Text Button]]
     [webapp.components.forms :as forms]
     [reagent.core :as r]
     [re-frame.core :as re-frame]))
@@ -22,11 +21,14 @@
                       :value @password
                       :type "password"
                       :on-change #(reset! password (-> % .-target .-value))}]
-        [button/tailwind-primary
-         {:text "Login"
-          :disabled @loading
-          :on-click #(re-frame/dispatch [:localauth->login {:email @email
-                                                            :password @password}])}]
+        [:> Button {:color "indigo"
+                    :size "2"
+                    :disabled @loading
+                    :onClick #(re-frame/dispatch [:localauth->login {:email @email
+                                                                     :password @password}])
+                    :variant "solid"
+                    :radius "medium"}
+         "Login"]
         [:> Flex {:align "center" :justify "center" :class "mt-4"}
          [:> Text {:as "div" :size "2" :color "gray-500"}
           "Don't have an account?"
