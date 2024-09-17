@@ -171,62 +171,62 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			}
 			gwctx.Connection = *conn
 			ctxVal = gwctx
-		} else {
-			// first we check if the auth method is local, if so, we authenticate the user
-			// using the local auth method, otherwise we use the i.idp.VerifyAccessToken
-			authMethod := appconfig.Get().AuthMethod()
-			var sub string
-			if authMethod == "local" {
-				jwtKey := appconfig.Get().JWTSecretKey()
-				claims := &localauthapi.Claims{}
-				token, err := jwt.ParseWithClaims(bearerToken, claims, func(token *jwt.Token) (interface{}, error) {
-					return jwtKey, nil
-				})
-				if err != nil || !token.Valid {
-					log.Debugf("failed verifying access token, reason=%v", err)
-					return status.Errorf(codes.Unauthenticated, "invalid authentication")
-				}
-
-				user, err := pgusers.GetOneByEmail(claims.UserEmail)
-				if err != nil {
-					log.Debugf("failed verifying access token, reason=%v", err)
-					return status.Errorf(codes.Unauthenticated, "invalid authentication")
-				}
-				sub = user.Subject
-			} else {
-				sub, err = i.idp.VerifyAccessToken(bearerToken)
-				if err != nil {
-					log.Debugf("failed verifying access token, reason=%v", err)
-					return status.Errorf(codes.Unauthenticated, "invalid authentication")
-				}
+			break
+		}
+		// first we check if the auth method is local, if so, we authenticate the user
+		// using the local auth method, otherwise we use the i.idp.VerifyAccessToken
+		authMethod := appconfig.Get().AuthMethod()
+		var sub string
+		if authMethod == "local" {
+			jwtKey := appconfig.Get().JWTSecretKey()
+			claims := &localauthapi.Claims{}
+			token, err := jwt.ParseWithClaims(bearerToken, claims, func(token *jwt.Token) (interface{}, error) {
+				return jwtKey, nil
+			})
+			if err != nil || !token.Valid {
+				log.Debugf("failed verifying access token, reason=%v", err)
+				return status.Errorf(codes.Unauthenticated, "invalid authentication")
 			}
+
+			user, err := pgusers.GetOneByEmail(claims.UserEmail)
 			if err != nil {
 				log.Debugf("failed verifying access token, reason=%v", err)
 				return status.Errorf(codes.Unauthenticated, "invalid authentication")
 			}
-			userCtx, err := pguserauth.New().FetchUserContext(sub)
-			if userCtx.IsEmpty() {
-				if err != nil {
-					log.Error(err)
-				}
+			sub = user.Subject
+		} else {
+			sub, err = i.idp.VerifyAccessToken(bearerToken)
+			if err != nil {
+				log.Debugf("failed verifying access token, reason=%v", err)
 				return status.Errorf(codes.Unauthenticated, "invalid authentication")
 			}
-			gwctx := &GatewayContext{
-				UserContext: *userCtx.ToAPIContext(),
-				BearerToken: bearerToken,
-			}
-			gwctx.UserContext.ApiURL = i.idp.ApiURL
-			connectionName := commongrpc.MetaGet(md, "connection-name")
-			conn, err := i.getConnection(connectionName, userCtx)
-			if err != nil {
-				return err
-			}
-			if conn == nil {
-				return status.Errorf(codes.NotFound, "connection not found")
-			}
-			gwctx.Connection = *conn
-			ctxVal = gwctx
 		}
+		if err != nil {
+			log.Debugf("failed verifying access token, reason=%v", err)
+			return status.Errorf(codes.Unauthenticated, "invalid authentication")
+		}
+		userCtx, err := pguserauth.New().FetchUserContext(sub)
+		if userCtx.IsEmpty() {
+			if err != nil {
+				log.Error(err)
+			}
+			return status.Errorf(codes.Unauthenticated, "invalid authentication")
+		}
+		gwctx := &GatewayContext{
+			UserContext: *userCtx.ToAPIContext(),
+			BearerToken: bearerToken,
+		}
+		gwctx.UserContext.ApiURL = i.idp.ApiURL
+		connectionName := commongrpc.MetaGet(md, "connection-name")
+		conn, err := i.getConnection(connectionName, userCtx)
+		if err != nil {
+			return err
+		}
+		if conn == nil {
+			return status.Errorf(codes.NotFound, "connection not found")
+		}
+		gwctx.Connection = *conn
+		ctxVal = gwctx
 	}
 
 	return handler(srv, &serverStreamWrapper{ss, nil, ctxVal})
