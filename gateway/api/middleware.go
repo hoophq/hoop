@@ -90,18 +90,19 @@ func (a *Api) AllowApiKey(c *gin.Context) {
 func (a *Api) apiKeyMiddleware(c *gin.Context) {
 	configuredApiKey := appconfig.Get().ApiKey()
 	apiKeyReq := c.GetHeader("Api-Key")
-	// split apiKey by | getting the first and the second part
-	// the first part is the orgID and the second part is the apiKey
-	orgID := strings.Split(apiKeyReq, "|")[0]
-	// apiKey := strings.Split(apiKeyReq, "|")[1]
-	org, err := pgorgs.New().FetchOrgByID(orgID)
-	if err != nil || org == nil {
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
 
-	deterministicUuid := uuid.NewSHA1(uuid.NameSpaceURL, []byte(`API_KEY`))
 	if apiKeyReq == configuredApiKey {
+		// split apiKey by | getting the first and the second part
+		// the first part is the orgID and the second part is the apiKey
+		orgID := strings.Split(apiKeyReq, "|")[0]
+		// apiKey := strings.Split(apiKeyReq, "|")[1]
+		org, err := pgorgs.New().FetchOrgByID(orgID)
+		if err != nil || org == nil {
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+
+		deterministicUuid := uuid.NewSHA1(uuid.NameSpaceURL, []byte(`API_KEY`))
 		ctx := &pguserauth.Context{
 			OrgID:       orgID,
 			OrgName:     org.Name,
