@@ -30,6 +30,10 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	allowApiKeyContextKey = "allow-api-key"
+)
+
 var errInvalidAuthHeaderErr = errors.New("invalid authorization header")
 
 func (a *Api) localAuthMiddleware(c *gin.Context) {
@@ -83,7 +87,7 @@ func (a *Api) localAuthMiddleware(c *gin.Context) {
 // AllowApiKey is a middleware that allows the request to proceed if the request has an api key.
 // It sets the "allow-api-key" key in the context to true so the Auth Middleware can authorize it
 func (a *Api) AllowApiKey(c *gin.Context) {
-	c.Set("allow-api-key", true)
+	c.Set(allowApiKeyContextKey, true)
 	c.Next()
 }
 
@@ -150,7 +154,7 @@ func (a *Api) Authenticate(c *gin.Context) {
 	case "local":
 		a.localAuthMiddleware(c)
 	case "api-key":
-		if _, ok := c.Get("allow-api-key"); ok {
+		if _, ok := c.Get(allowApiKeyContextKey); ok {
 			a.apiKeyMiddleware(c)
 			return
 		}
