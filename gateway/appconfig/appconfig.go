@@ -94,13 +94,17 @@ func Load() error {
 	if webappUsersManagement == "" {
 		webappUsersManagement = "on"
 	}
+	authMethod, err := loadAuthMethod()
+	if err != nil {
+		return err
+	}
 	runtimeConfig = Config{
 		apiKey:                  os.Getenv("API_KEY"),
 		apiURL:                  fmt.Sprintf("%s://%s", apiRawURL.Scheme, apiRawURL.Host),
 		apiHostname:             apiRawURL.Hostname(),
 		apiScheme:               apiRawURL.Scheme,
 		apiHost:                 apiRawURL.Host,
-		authMethod:              loadAuthMethod(),
+		authMethod:              authMethod,
 		askAICredentials:        askAICred,
 		pgCred:                  pgCred,
 		migrationPathFiles:      migrationPathFiles,
@@ -128,16 +132,20 @@ func Get() Config { return runtimeConfig }
 // the IDP configuration already set even without setting
 // AUTH_METHOD to "idp".
 // This last behavior ensures compatibility with the previous version
-func loadAuthMethod() string {
+func loadAuthMethod() (string, error) {
 	authMethod := os.Getenv("AUTH_METHOD")
 	if authMethod == "" && os.Getenv("IDP_ISSUER") == "" && os.Getenv("IDP_CLIENT_ID") == "" && os.Getenv("IDP_CLIENT_SECRET") == "" {
-		return "local"
+		jwtSecretKey := os.Getenv("JWT_SECRET_KEY")
+		if jwtSecretKey == "" {
+			return "", fmt.Errorf("When AUTH_METHOD is set as `local`, you must configure a random string value at the JWT_SECRET_KEY environment variable")
+		}
+		return "local", nil
 	}
 
 	if authMethod == "" && (os.Getenv("IDP_ISSUER") != "" || os.Getenv("IDP_CLIENT_ID") != "" || os.Getenv("IDP_CLIENT_SECRET") != "") {
-		return "idp"
+		return "idp", nil
 	}
-	return authMethod
+	return authMethod, nil
 }
 
 func loadPostgresCredentials() (*pgCredentials, error) {
