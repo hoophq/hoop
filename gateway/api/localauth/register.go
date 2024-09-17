@@ -19,42 +19,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// If the system is set as single tenant,
-// we default the new user to the default organization.
-// Otherwise, a new organization is created for the user.
-func manageOrgCreation(user openapi.User) (string, error) {
-	var tenancy string
-	if pgusers.IsOrgMultiTenant() {
-		tenancy = "multi-tenant"
-	} else {
-		tenancy = "single-tenant"
-	}
-	switch tenancy {
-	case "multi-tenant":
-		log.Debug("Creating new organization")
-		newOrgID, err := pgorgs.New().CreateOrGetOrg(fmt.Sprintf("%v Organization", user.Email), nil)
-		if err != nil {
-			log.Debugf("failed creating organization, err=%v", err)
-			return "", fmt.Errorf("Failed to create organization")
-		}
-		return newOrgID, nil
-	default:
-		// fetch default organization
-		org, totalUsers, err := pgorgs.New().FetchOrgByName("default")
-		if err != nil {
-			return "", fmt.Errorf("Failed to fetch default organization")
-		}
-		// if there is one user already, do not allow new users to be created
-		// it avoids a security issue of anyone being able to add themselves to
-		// the default organization. Instead, they should get an invitation
-		if totalUsers > 0 {
-			return "", fmt.Errorf("You can not access this instance. Please contact your administrator")
-		}
-
-		return org.ID, nil
-	}
-}
-
 func Register(c *gin.Context) {
 	var user openapi.User
 	if err := c.BindJSON(&user); err != nil {
@@ -73,10 +37,22 @@ func Register(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "User already exists"})
 		return
 	}
-	newOrgID, err := manageOrgCreation(user)
+
+	// local auth creates the user at the default organization for now.
+	// we plan to make it much more permissive, but at this moment this
+	// limitation comes to make sure things are working as expected.
+	org, totalUsers, err := pgorgs.New().FetchOrgByName("default")
 	if err != nil {
-		log.Debugf("failed creating organization, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create organization"})
+		log.Debugf("failed fetching default organization, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch default organization"})
+		return
+	}
+	// if there is one user already, do not allow new users to be created
+	// it avoids a security issue of anyone being able to add themselves to
+	// the default organization. Instead, they should get an invitation
+	if totalUsers > 0 {
+		log.Debugf("default organization already has users")
+		c.AbortWithStatus(http.StatusForbidden)
 		return
 	}
 
@@ -91,7 +67,7 @@ func Register(c *gin.Context) {
 	err = pgusers.New().Upsert(pgrest.User{
 		ID:             userID,
 		Subject:        fmt.Sprintf("local|%v", userID),
-		OrgID:          newOrgID,
+		OrgID:          org.ID,
 		Email:          user.Email,
 		Name:           user.Name,
 		Status:         "active",
