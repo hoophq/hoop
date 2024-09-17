@@ -136,7 +136,7 @@ func Run() {
 		log.SetGrpcLogger()
 	}
 
-	log.Infof("starting servers")
+	log.Infof("starting servers, authmethod=%v", appconfig.Get().AuthMethod())
 	go g.StartRPCServer()
 	a.StartAPI(sentryStarted)
 }

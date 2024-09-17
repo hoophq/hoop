@@ -40,7 +40,7 @@ var errInvalidAuthHeaderErr = errors.New("invalid authorization header")
 func (a *Api) LocalAuthOnly(c *gin.Context) {
 	authMethod := appconfig.Get().AuthMethod()
 	if authMethod != "local" {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Not Found"})
+		c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"message": "not found"})
 		return
 	}
 	c.Next()
@@ -51,7 +51,7 @@ func (a *Api) localAuthMiddleware(c *gin.Context) {
 	// remove bearer from token
 	tokenString = strings.Replace(tokenString, "Bearer ", "", 1)
 	if tokenString == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing authorization token"})
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "missing authorization token"})
 		return
 	}
 
@@ -61,14 +61,14 @@ func (a *Api) localAuthMiddleware(c *gin.Context) {
 		return jwtKey, nil
 	})
 	if err != nil || !token.Valid {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "invalid or expired token"})
 		return
 	}
 
 	ctx, err := pguserauth.New().FetchUserContext(claims.UserSubject)
 	if err != nil {
 		log.Errorf("failed building context, subject=%v, err=%v", claims.UserSubject, err)
-		c.AbortWithStatus(http.StatusUnauthorized)
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "unable to fetch user"})
 		return
 	}
 

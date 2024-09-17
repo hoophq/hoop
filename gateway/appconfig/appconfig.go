@@ -134,20 +134,35 @@ func Get() Config { return runtimeConfig }
 // the IDP configuration already set even without setting
 // AUTH_METHOD to "idp".
 // This last behavior ensures compatibility with the previous version
-func loadAuthMethod() (string, error) {
-	authMethod := os.Getenv("AUTH_METHOD")
-	if authMethod == "" && os.Getenv("IDP_ISSUER") == "" && os.Getenv("IDP_CLIENT_ID") == "" && os.Getenv("IDP_CLIENT_SECRET") == "" {
-		jwtSecretKey := os.Getenv("JWT_SECRET_KEY")
-		if jwtSecretKey == "" {
-			return "", fmt.Errorf("When AUTH_METHOD is set as `local`, you must configure a random string value at the JWT_SECRET_KEY environment variable")
-		}
-		return "local", nil
-	}
+func loadAuthMethod() (authMethod string, err error) {
+	authMethod = os.Getenv("AUTH_METHOD")
+	switch authMethod {
+	case "local":
+		err = validateLocalAuthJwtKey()
+	case "idp":
+	default:
+		if !hasIdpEnvs() {
+			// default to local auth method
+			return "local", validateLocalAuthJwtKey()
 
-	if authMethod == "" && (os.Getenv("IDP_ISSUER") != "" || os.Getenv("IDP_CLIENT_ID") != "" || os.Getenv("IDP_CLIENT_SECRET") != "") {
+		}
 		return "idp", nil
 	}
-	return authMethod, nil
+	return
+}
+
+func validateLocalAuthJwtKey() error {
+	if jwtSecretKey := os.Getenv("JWT_SECRET_KEY"); jwtSecretKey == "" {
+		return fmt.Errorf("When AUTH_METHOD is set as `local`, you must configure a random string value at the JWT_SECRET_KEY environment variable")
+	}
+	return nil
+}
+
+func hasIdpEnvs() bool {
+	return os.Getenv("IDP_ISSUER") != "" ||
+		os.Getenv("IDP_CLIENT_ID") != "" ||
+		os.Getenv("IDP_CLIENT_SECRET") != "" ||
+		os.Getenv("IDP_URI") != ""
 }
 
 func loadPostgresCredentials() (*pgCredentials, error) {
