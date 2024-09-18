@@ -80,5 +80,5 @@ COPY dist/hoopgateway_* /tmp/
 RUN tar --extract --file /tmp/hoopgateway_*-Linux_$(dpkg --print-architecture).tar.gz -C / --strip 1 && rm -rf /tmp/*
 COPY rootfs /
 
-
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/hoop/bin
 ENTRYPOINT ["tini", "--"]
