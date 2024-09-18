@@ -1,12 +1,12 @@
 #!/bin/bash
 
-: "${HOOP_PUBLIC_HOSTNAME:? Required env HOOP_PUBLIC_HOSTNAME}"
-: "${POSTGRES_DB_URI:? Required env POSTGRES_DB_URI}"
+# : "${HOOP_PUBLIC_HOSTNAME:? Required env HOOP_PUBLIC_HOSTNAME}"
+# : "${POSTGRES_DB_URI:? Required env POSTGRES_DB_URI}"
 
 set -e
 
 mkdir -p /etc/ssl/certs
-cp /hoopdata/tls/ca.crt /etc/ssl/certs/ca-certificates.crt
+# cp /hoopdata/tls/ca.crt /etc/ssl/certs/ca-certificates.crt
 
 export SECRET_KEY=xagt-$(LC_ALL=C tr -dc A-Za-z0-9_ < /dev/urandom | head -c 43 | xargs)
 set -eo pipefail

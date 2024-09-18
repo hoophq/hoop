@@ -1,6 +1,7 @@
 #!/bin/bash
 set -eo pipefail
 
+export HOOP_PUBLIC_HOSTNAME=127.0.0.1
 : "${HOOP_PUBLIC_HOSTNAME:? Required env HOOP_PUBLIC_HOSTNAME}"
 
 mkdir -p /hoopdata/tls

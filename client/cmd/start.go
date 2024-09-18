@@ -6,7 +6,7 @@ import (
 
 	"github.com/go-co-op/gocron"
 	"github.com/hoophq/hoop/agent"
-	"github.com/hoophq/hoop/gateway"
+	"github.com/hoophq/hoop/gateway/gateway"
 	"github.com/hoophq/hoop/gateway/jobs"
 	jobsessions "github.com/hoophq/hoop/gateway/jobs/sessions"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
