@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
 	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
@@ -79,6 +80,10 @@ func (s *Service) Persist(ctx pgrest.OrgContext, review *types.Review) error {
 	if err := pgreview.New().Upsert(parsedReview); err != nil {
 		return err
 	}
+
+	// Craete JIRA issue
+	jira.CreateIssueSimple(ctx, "Teste do hoop", "Task", fmt.Sprintf("Esse card foi criado por: %v, na conexão: %v", review.ReviewOwner.Id, review.Connection.Name), review.Session)
+
 	return nil
 }
 
@@ -96,7 +101,21 @@ func (s *Service) Revoke(ctx pgrest.OrgContext, reviewID string) (*types.Review,
 		return nil, ErrWrongState
 	}
 	rev.Status = types.ReviewStatusRevoked
-	return rev, s.Persist(ctx, rev)
+
+	if err := s.Persist(ctx, rev); err != nil {
+		return nil, fmt.Errorf("saving review error: %v", err)
+	}
+
+	// Fetch the session information
+	session, err := pgsession.New().FetchOne(ctx, rev.Session)
+	if err != nil {
+		return nil, fmt.Errorf("fetch session error: %v", err)
+	}
+
+	// Update JIRA issue description
+	jira.UpdateJiraIssueDescription(ctx, session.JiraIssue, "The review was revoked")
+
+	return rev, nil
 }
 
 // called by slack plugin and webapp
@@ -158,12 +177,22 @@ func (s *Service) Review(ctx *storagev2.Context, reviewID string, status types.R
 		return nil, fmt.Errorf("saving review error: %v", err)
 	}
 
+	// Fetch the session information
+	session, err := pgsession.New().FetchOne(ctx, rev.Session)
+	if err != nil {
+		return nil, fmt.Errorf("fetch session error: %v", err)
+	}
+
 	if rev.Status == types.ReviewStatusApproved || rev.Status == types.ReviewStatusRejected {
 		if err := pgsession.New().UpdateStatus(ctx, rev.Session, types.SessionStatusReady); err != nil {
 			return nil, fmt.Errorf("save sesession as ready error: %v", err)
 		}
 		// release the connection if there's a client waiting
 		s.TransportService.ReviewStatusChange(rev)
+
+		// Update JIRA issue description
+		jira.UpdateJiraIssueDescription(ctx, session.JiraIssue, fmt.Sprintf("The user %s has %s the review", rev.ReviewOwner.Name, rev.Status))
+
 	}
 	return rev, nil
 }

@@ -98,6 +98,7 @@
    "mongodb" ""
    "custom" ""
    "ssh" "ssh $SSH_URI -i $SSH_PRIVATE_KEY"
+   "oracledb" ""
    "" ""})
 
 (def connection-postgres-demo

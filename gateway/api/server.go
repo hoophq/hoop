@@ -20,6 +20,7 @@ import (
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	apifeatures "github.com/hoophq/hoop/gateway/api/features"
 	apihealthz "github.com/hoophq/hoop/gateway/api/healthz"
+	apijiraintegration "github.com/hoophq/hoop/gateway/api/integrations"
 	localauthapi "github.com/hoophq/hoop/gateway/api/localauth"
 	loginapi "github.com/hoophq/hoop/gateway/api/login"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -447,4 +448,20 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.AllowApiKey,
 		api.Authenticate,
 		apiserverinfo.New(api.GrpcURL).Get)
+
+	// Jira Integration routes
+	route.GET("/jira-integration",
+		AdminOnlyAccessRole,
+		api.Authenticate,
+		apijiraintegration.Get)
+
+	route.POST("/jira-integration",
+		AdminOnlyAccessRole,
+		api.Authenticate,
+		apijiraintegration.Post)
+
+	route.PUT("/jira-integration",
+		AdminOnlyAccessRole,
+		api.Authenticate,
+		apijiraintegration.Put)
 }
