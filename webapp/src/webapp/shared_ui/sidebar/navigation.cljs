@@ -47,18 +47,32 @@
                ^{:key (:name route)}
                [:li {:class (str (when
                                   (and (:admin-only? route) (not admin?)) "hidden"))}
-                [:a {:href (:uri route)
+                [:a {:href (if (and free-license? (not (:free-feature? route)))
+                             "#"
+                             (:uri route))
+                     :on-click (fn []
+                                 (when (and free-license? (not (:free-feature? route)))
+                                   (js/window.Intercom
+                                    "showNewMessage"
+                                    "I want to upgrade my current plan")))
                      :class (str (hover-side-menu-link? (:uri route) current-route)
-                                 (:enabled link-styles))}
+                                 (:enabled link-styles)
+                                 (when (and free-license? (not (:free-feature? route)))
+                                   " text-opacity-30"))}
                  [:div {:class "flex gap-3 items-center"}
-                  [(:icon route) {:class (str "h-6 w-6 shrink-0 text-white")
+                  [(:icon route) {:class (str "h-6 w-6 shrink-0 text-white"
+                                              (when (and free-license? (not (:free-feature? route)))
+                                                " opacity-30"))
                                   :aria-hidden "true"}]
-                  (:name route)]]])
+                  (:name route)]
+                 (when (and free-license? (not (:free-feature? route)))
+                   [:div {:class "text-xs text-gray-200 py-1 px-2 border border-gray-200 rounded-md"}
+                    "Upgrade"])]])
 
              (for [plugin plugins-routes-enabled]
                ^{:key (:name plugin)}
                [:li
-                [:a {:href (if free-license?
+                [:a {:href (if (and free-license? (not (:free-feature? plugin)))
                              "#"
                              (:uri plugin))
                      :on-click (fn []
@@ -72,7 +86,7 @@
                                    " text-opacity-30"))}
                  [:div {:class "flex gap-3 items-center"}
                   [(:icon plugin) {:class (str "h-6 w-6 shrink-0 text-white"
-                                               (when free-license?
+                                               (when (and free-license? (not (:free-feature? plugin)))
                                                  " opacity-30"))
                                    :aria-hidden "true"}]
                   (:label plugin)]
@@ -135,27 +149,6 @@
                   (when free-license?
                     [:div {:class "text-xs text-gray-200 py-1 px-2 border border-gray-200 rounded-md"}
                      "Upgrade"])]]
-
-                (when-not (is-plugin-enabled? "access_control")
-                  [:li
-                   [:> (.-Button ui/Disclosure)
-                    {:as "a"
-                     :onClick (fn []
-                                (if free-license?
-                                  (js/window.Intercom
-                                   "showNewMessage"
-                                   "I want to upgrade my current plan")
-
-                                  (rf/dispatch [:plugins->navigate->manage-plugin "access_control"])))
-                     :href "#"
-                     :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-gray-800 "
-                                 "block rounded-md py-2 pr-2 pl-9 text-sm leading-6"
-                                 (when free-license?
-                                   " text-opacity-30"))}
-                    "Access Control"
-                    (when free-license?
-                      [:div {:class "text-xs text-gray-200 py-1 px-2 border border-gray-200 rounded-md"}
-                       "Upgrade"])]])
 
                 (for [plugin sidebar-constants/plugins-management]
                   (when (or free-license? (is-plugin-enabled? (:name plugin)))

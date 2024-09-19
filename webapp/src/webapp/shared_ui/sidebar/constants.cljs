@@ -15,7 +15,7 @@
                       [:> hero-outline-icon/RectangleGroupIcon props])
               :uri "/dashboard"
               :navigate :dashboard
-              :free-feature? true
+              :free-feature? false
               :admin-only? true}
              {:name "Sessions"
               :icon (fn [props]
@@ -29,25 +29,22 @@
                       :icon (fn [props]
                               [:> hero-outline-icon/InboxIcon props])
                       :uri "/reviews"
-                      :free-feature? false
+                      :free-feature? true
                       :navigate :reviews-plugin
                       :admin-only? false}])
 
-(def plugins-management [{:name "access_control"
-                          :label "Access Control"
+(def plugins-management [{:name "webhooks"
+                          :label "Webhooks"
                           :free-feature? false}
+                         {:name "access_control"
+                          :label "Access Control"
+                          :free-feature? true}
                          {:name "runbooks"
                           :label "Runbooks"
-                          :free-feature? false}
+                          :free-feature? true}
                          {:name "audit"
                           :label "Audit"
                           :free-feature? true}
                          {:name "slack"
                           :label "Slack"
-                          :free-feature? true}
-                         {:name "webhooks"
-                          :label "Webhooks"
-                          :free-feature? true}
-                         {:name "indexer"
-                          :label "Indexer"
                           :free-feature? true}])

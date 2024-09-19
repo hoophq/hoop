@@ -89,6 +89,7 @@
                                       (rf/dispatch [:show-snackbar
                                                     {:level :success
                                                      :text (str "Connection " (:name connection) " updated!")}])
+                                      (rf/dispatch [:plugins->get-my-plugins])
                                       (rf/dispatch [:connections->get-connections])
                                       (rf/dispatch [:navigate :connections]))}]]]})))
 
