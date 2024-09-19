@@ -177,7 +177,7 @@ echo
 
 print_color "$YELLOW" "1. Access in the Browser:"
 echo "   Open your browser and go to:"
-printf "${BOLD}${CYAN}   https://localhost:8009${NC} or, if you are on a VM, access your VM public IP at port 8009 (or any port you bind to the internal 8009\n"
+printf "${BOLD}${CYAN}   http://localhost:8009${NC} or, if you are on a VM, access your VM public IP at port 8009 (or any port you bind to the internal 8009\n"
 echo "   - If redirected to '/logout', remove this suffix from the URL and press enter."
 echo
 
