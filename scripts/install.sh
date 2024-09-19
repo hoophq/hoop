@@ -49,23 +49,11 @@ check_running_containers() {
     docker-compose ps --services 2>/dev/null | grep -q '^hoop'
 }
 
-# Function to get local IP address
-get_local_ip() {
-    if command_exists ifconfig; then
-        ifconfig | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1' | head -n 1
-    elif command_exists ip; then
-        ip addr show | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1' | head -n 1
-    else
-        print_color "$RED" "Unable to determine IP address. Please manually set HOOP_PUBLIC_HOSTNAME in .env file."
-        return 1
-    fi
-}
-
 # Function to handle existing installation
 handle_existing_installation() {
     if [ -f docker-compose.yml ] || [ -f .env ] || check_running_containers; then
         print_color "$YELLOW" "Existing Hoop installation detected."
-        
+
         if [ -t 0 ]; then
             # Running interactively
             printf "${YELLOW}Remove existing installation and start fresh? (y/n): ${NC}"
@@ -79,7 +67,7 @@ handle_existing_installation() {
             fi
             print_color "$YELLOW" "Non-interactive mode: $reply"
         fi
-        
+
         case "$reply" in
             [Yy]*)
                 print_color "$YELLOW" "Removing existing installation..."
@@ -143,29 +131,29 @@ else
     print_color "$YELLOW" "Using existing docker-compose.yml file"
 fi
 
-# Step 2: Find local IP
-print_header "Finding Local IP Address"
-LOCAL_IP=$(get_local_ip)
-
-if [ -z "$LOCAL_IP" ]; then
-    print_color "$RED" "✘ Could not determine local IP address"
-    exit 1
-fi
-
-print_color "$GREEN" "✔ Local IP address: $LOCAL_IP"
-
 # Step 3: Set the .env file (if needed)
 if [ "$existing_install" = "0" ] || [ ! -f .env ]; then
     print_header "Creating .env File"
     cat > .env << EOF
-HOOP_PUBLIC_HOSTNAME=$LOCAL_IP.nip.io
+JWT_SECRET_KEY=$(LC_ALL=C tr -dc A-Za-z0-9_ < /dev/urandom | head -c 43 | xargs)
 EOF
-    print_color "$GREEN" "✔ Created .env file with HOOP_PUBLIC_HOSTNAME=$LOCAL_IP.nip.io"
+
+    print_color "$GREEN" "✔ Created .env file with randomly generated JWT_SECRET_KEY. Access the .env file to change it if you want."
 else
-    print_color "$YELLOW" "Using existing .env file"
-    # Update HOOP_PUBLIC_HOSTNAME in existing .env file
-    sed -i.bak "s/^HOOP_PUBLIC_HOSTNAME=.*/HOOP_PUBLIC_HOSTNAME=$LOCAL_IP.nip.io/" .env && rm -f .env.bak
-    print_color "$GREEN" "✔ Updated HOOP_PUBLIC_HOSTNAME in existing .env file"
+  print_color "$YELLOW" "Using existing .env file"
+  # Check if JWT_SECRET_KEY exists and is not empty in the .env file and generate one if not
+  if grep -q "^JWT_SECRET_KEY=" .env; then
+    JWT_VALUE=$(grep "^JWT_SECRET_KEY=" .env | cut -d '=' -f2)
+    if [ -z "$JWT_VALUE" ]; then
+      print_color "$YELLOW" "JWT_SECRET_KEY is empty. Generating new value..."
+      sed -i 's/^JWT_SECRET_KEY=.*/JWT_SECRET_KEY='$(LC_ALL=C tr -dc A-Za-z0-9_ < /dev/urandom | head -c 43 | xargs)'/' .env
+      print_color "$GREEN" "✔ New JWT_SECRET_KEY generated"
+    fi
+  else
+    print_color "$YELLOW" "Generating JWT_SECRET_KEY..."
+    echo "JWT_SECRET_KEY=$(LC_ALL=C tr -dc A-Za-z0-9_ < /dev/urandom | head -c 43 | xargs)" >> .env
+    print_color "$GREEN" "✔ JWT_SECRET_KEY generated"
+  fi
 fi
 
 # Step 4: Run docker compose
@@ -184,40 +172,24 @@ print_color "$YELLOW" "To view container logs, run: $DOCKER_COMPOSE_CMD logs -f"
 print_color "$YELLOW" "To stop the containers, run: $DOCKER_COMPOSE_CMD down"
 
 print_header "Access and Get Started with hoop.dev"
-echo "Follow these steps to access and set up your hoop.dev instance:"
+echo "Follow these steps to access your hoop.dev instance:"
 echo
 
 print_color "$YELLOW" "1. Access in the Browser:"
 echo "   Open your browser and go to:"
-printf "${BOLD}${CYAN}   https://%s.nip.io${NC}\n" "$LOCAL_IP"
-echo "   - If you see a warning about self-signed certificates, bypass it and proceed."
+printf "${BOLD}${CYAN}   https://localhost:8009${NC} or, if you are on a VM, access your VM public IP at port 8009 (or any port you bind to the internal 8009\n"
 echo "   - If redirected to '/logout', remove this suffix from the URL and press enter."
 echo
 
-print_color "$YELLOW" "2. Sign In to the developer portal:"
-echo "   - Email:"
-printf "${BOLD}${CYAN}     admin${NC}\n"
-echo "   - Password:"
-printf "${BOLD}${CYAN}     Password1${NC}\n"
-echo "     (if this is a fresh installation)"
-echo
+print_color "$YELLOW" "2. At the login page, click at \"Create a an account\" and create an new account with your email and password"
 
 print_color "$YELLOW" "3. Initial Setup:"
-echo "   - Skip the 2-factor authentication information (for fresh installations)."
-echo "   - Change the default password when prompted (for fresh installations)."
-echo
-
-print_color "$YELLOW" "4. After setup:"
-echo "   You'll be redirected to the main page of the developer portal."
-echo
-
-print_color "$YELLOW" "5. Next steps:"
-echo "   - Set up your first user (if not already done)"
-echo "   - Configure your first demo PostgreSQL connection (if not already configured)"
-echo "   - Learn how to access it from the interface and a database client of your choice"
+echo "   - Click at the Quick Start button to set up a test PostgreSQL connection."
+echo "   - Run some queries and have some fun."
 echo
 
 echo "For more detailed instructions, refer to the hoop.dev documentation."
 echo
 
 print_color "$GREEN" "Enjoy using hoop.dev!"
+

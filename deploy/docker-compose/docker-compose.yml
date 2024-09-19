@@ -32,7 +32,6 @@ services:
       - STATIC_UI_PATH=/opt/hoop/webapp/public
       - MIGRATION_PATH_FILES=/opt/hoop/migrations
       - POSTGRES_DB_URI=postgres://postgres:postgres@db:5432/hoopdb?sslmode=disable
-      - JWT_SECRET_KEY=HUE
     env_file: ".env"
     command: ["hoop", "start", "gateway"]
     ports:
@@ -60,8 +59,6 @@ services:
       - POSTGRES_DB_URI=postgres://postgres:postgres@db:5432/hoopdb?sslmode=disable
       - LOG_LEVEL=info
       - LOG_ENCODING=console
-      - HOOP_PUBLIC_HOSTNAME=127.0.0.1
-      - HOOP_TLS_MODE=${HOOP_TLS_MODE}
     depends_on:
       gateway:
         condition: "service_healthy"
