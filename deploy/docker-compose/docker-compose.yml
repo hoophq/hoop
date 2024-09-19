@@ -5,8 +5,6 @@ services:
     image: postgres:16
     networks:
       - hoopdev
-    volumes:
-      - hoopdata:/hoopdata
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -63,9 +61,6 @@ services:
       gateway:
         condition: "service_healthy"
     command: run-agent.sh
-
-volumes:
-  hoopdata: null
 
 networks:
   hoopdev:
