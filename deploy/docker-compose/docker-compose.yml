@@ -1,14 +1,6 @@
 name: hoop
 
 services:
-  bootstrap:
-    image: hoophq/hooplabs
-    networks:
-      - hoopdev
-    volumes:
-      - hoopdata:/hoopdata
-    env_file: ".env"
-    command: bootstrap.sh
   db:
     image: postgres:16
     networks:
@@ -25,93 +17,29 @@ services:
       timeout: "30s"
       retries: 10
       start_period: "20s"
-  idp:
-    image: ghcr.io/zitadel/zitadel:v2.56.0
-    command: "start-from-init --masterkeyFile /hoopdata/zitadel-master.key --tlsMode disabled"
-    user: root
-    networks:
-      - hoopdev
-    volumes:
-      - hoopdata:/hoopdata
-    environment:
-      - ZITADEL_EXTERNALSECURE=false
-      - ZITADEL_EXTERNALPORT=80
-      - ZITADEL_EXTERNALDOMAIN=${HOOP_PUBLIC_HOSTNAME}
-      - ZITADEL_DATABASE_POSTGRES_HOST=db
-      - ZITADEL_DATABASE_POSTGRES_PORT=5432
-      - ZITADEL_DATABASE_POSTGRES_DATABASE=zitadel
-      - ZITADEL_DATABASE_POSTGRES_USER_USERNAME=zitadel
-      - ZITADEL_DATABASE_POSTGRES_USER_PASSWORD=zitadel
-      - ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE=disable
-      - ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME=postgres
-      - ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD=postgres
-      - ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE=disable
-      - ZITADEL_FIRSTINSTANCE_MACHINEKEYPATH=/hoopdata/zitadel-admin-sa.json
-      - ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME=zitadel-admin-sa
-      - ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME=Admin
-      - ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINEKEY_TYPE=1
-    depends_on:
-      db:
-        condition: "service_healthy"
-      bootstrap:
-        condition: service_completed_successfully
-  nginx:
-    image: hoophq/hooplabs
-    command: run-nginx.sh
-    environment:
-      - HOOP_PUBLIC_HOSTNAME=${HOOP_PUBLIC_HOSTNAME}
-      - HOOP_TLS_MODE=${HOOP_TLS_MODE}
-    volumes:
-      - hoopdata:/hoopdata
-    depends_on:
-      - idp
-    ports:
-      - 80:80
-      - 443:443
-    networks:
-      - hoopdev
-    healthcheck:
-      test: "curl -f http://idp:8080/healthz"
-      interval: "1s"
-      timeout: "30s"
-      retries: 15
-      start_period: "20s"
-  idp-provisioner:
-    image: hoophq/hooplabs
-    environment:
-      - TF_VAR_public_hostname=${HOOP_PUBLIC_HOSTNAME}
-      - TF_VAR_tls_mode=${HOOP_TLS_MODE}
-    command: run-idp-provisioner.sh
-    networks:
-      - hoopdev
-    volumes:
-      - hoopdata:/hoopdata
-    depends_on:
-      nginx:
-        condition: "service_healthy"
   gateway:
     image: hoophq/hooplabs
     environment:
-      - PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/hoop/bin
+      - API_URL=http://127.0.0.1:8009
+      - GRPC_URL=http://127.0.0.1:8010
       - LOG_LEVEL=info
       - LOG_ENCODING=console
       - GIN_MODE=release
-      - PLUGIN_AUDIT_PATH=/hoopdata/sessions
-      - PLUGIN_INDEX_PATH=/hoopdata/sessions/indexes
+      - PLUGIN_AUDIT_PATH=/opt/hoop/sessions
+      - PLUGIN_INDEX_PATH=/opt/hoop/sessions/indexes
       - STATIC_UI_PATH=/opt/hoop/webapp/public
       - MIGRATION_PATH_FILES=/opt/hoop/migrations
       - POSTGRES_DB_URI=postgres://postgres:postgres@db:5432/hoopdb?sslmode=disable
-      - HOOP_PUBLIC_HOSTNAME=${HOOP_PUBLIC_HOSTNAME}
-      - HOOP_TLS_MODE=${HOOP_TLS_MODE}
     env_file: ".env"
-    volumes:
-      - hoopdata:/hoopdata/
-    command: run-gateway.sh
+    command: ["hoop", "start", "gateway"]
+    ports:
+      - "8009:8009"
+      - "8010:8010"
     networks:
       - hoopdev
     depends_on:
-      idp-provisioner:
-        condition: service_completed_successfully
+      db:
+        condition: "service_healthy"
     healthcheck:
       test: "curl http://127.0.0.1:8009/api/healthz"
       interval: "2s"
@@ -120,24 +48,20 @@ services:
       start_period: "20s"
   agent:
     image: hoophq/hooplabs
-    volumes:
-      - hoopdata:/hoopdata/
+    # uncomment the following lines to test the local script
+    # volumes:
+    #   - ./rootfs/usr/local/bin/run-agent.sh:/usr/local/bin/run-agent.sh
     networks:
       - hoopdev
     environment:
-      - PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/hoop/bin
       - POSTGRES_DB_URI=postgres://postgres:postgres@db:5432/hoopdb?sslmode=disable
       - LOG_LEVEL=info
       - LOG_ENCODING=console
-      - HOOP_PUBLIC_HOSTNAME=${HOOP_PUBLIC_HOSTNAME}
-      - HOOP_TLS_MODE=${HOOP_TLS_MODE}
     depends_on:
       gateway:
         condition: "service_healthy"
     command: run-agent.sh
 
-volumes:
-  hoopdata: null
-
 networks:
   hoopdev:
+

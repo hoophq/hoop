@@ -1,12 +1,6 @@
 #!/bin/bash
 
-: "${HOOP_PUBLIC_HOSTNAME:? Required env HOOP_PUBLIC_HOSTNAME}"
-: "${POSTGRES_DB_URI:? Required env POSTGRES_DB_URI}"
-
 set -e
-
-mkdir -p /etc/ssl/certs
-cp /hoopdata/tls/ca.crt /etc/ssl/certs/ca-certificates.crt
 
 export SECRET_KEY=xagt-$(LC_ALL=C tr -dc A-Za-z0-9_ < /dev/urandom | head -c 43 | xargs)
 set -eo pipefail
@@ -20,12 +14,8 @@ INSERT INTO agents (id, org_id, name, mode, key_hash, status)
 COMMIT;
 EOF
 
-export GRPC_URL=${HOOP_PUBLIC_HOSTNAME}:80
 SCHEME=grpc
-if [[ "$HOOP_TLS_MODE" == "enabled" ]]; then
-    export GRPC_URL=${HOOP_PUBLIC_HOSTNAME}:443
-    SCHEME=grpcs
-fi
+export GRPC_URL=gateway:8010
 
 export HOOP_KEY=${SCHEME}://system:$(printenv SECRET_KEY | tr -d '\n')@${GRPC_URL}?mode=standard
 hoop start agent
