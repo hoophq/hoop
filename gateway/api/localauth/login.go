@@ -16,21 +16,25 @@ import (
 func Login(c *gin.Context) {
 	var user openapi.User
 	if err := c.BindJSON(&user); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 
 	dbUser, err := pgusers.GetOneByEmail(user.Email)
 	if err != nil {
-		log.Debugf("failed fetching user by email %s, %v", user.Email, err)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		log.Errorf("failed fetching user by email %s, reason=%v", user.Email, err)
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "invalid credentials"})
 		return
 	}
 
+	if dbUser == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "user not found"})
+		return
+	}
 	err = bcrypt.CompareHashAndPassword([]byte(dbUser.HashedPassword), []byte(user.HashedPassword))
 	if err != nil {
-		log.Debugf("failed comparing password for user %s, %v", user.Email, err)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		log.Debugf("failed comparing password for user %s, reason=%v", user.Email, err)
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "invalid credentials"})
 		return
 	}
 
@@ -47,7 +51,8 @@ func Login(c *gin.Context) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, err := token.SignedString(appconfig.Get().JWTSecretKey())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		log.Errorf("failed signing token for %s, reason=%v", user.Email, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to generate token"})
 		return
 	}
 
