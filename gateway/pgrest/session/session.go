@@ -23,8 +23,8 @@ func (s *session) UpdateStatus(ctx pgrest.OrgContext, sessionID, status string) 
 		Error()
 }
 
-func (s *session) UpdateJiraIssue(ctx pgrest.OrgContext, sessionID, jiraIssue string) error {
-	return pgrest.New("/sessions?org_id=eq.%s&id=eq.%s", ctx.GetOrgID(), sessionID).
+func (s *session) UpdateJiraIssue(orgId, sessionID, jiraIssue string) error {
+	return pgrest.New("/sessions?org_id=eq.%s&id=eq.%s", orgId, sessionID).
 		Patch(map[string]any{"jira_issue": jiraIssue}).
 		Error()
 }

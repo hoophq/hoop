@@ -4,6 +4,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 	pluginsslack "github.com/hoophq/hoop/gateway/transport/plugins/slack"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"google.golang.org/grpc/codes"
@@ -25,8 +26,20 @@ func loadRuntimePlugins(ctx plugintypes.Context) ([]runtimePlugin, error) {
 			return nil, status.Errorf(codes.Internal, "failed registering plugins")
 		}
 		if p1 == nil {
-			nonRegisteredPlugins = append(nonRegisteredPlugins, p.Name())
-			continue
+			switch p.Name() {
+			case plugintypes.PluginJiraName:
+				p1 = &types.Plugin{
+					OrgID: ctx.OrgID,
+					Name:  p.Name(),
+					Connections: []*types.PluginConnection{{
+						Name:   ctx.ConnectionName,
+						Config: []string{},
+					}},
+				}
+			default:
+				nonRegisteredPlugins = append(nonRegisteredPlugins, p.Name())
+				continue
+			}
 		}
 
 		if p.Name() == plugintypes.PluginSlackName {
