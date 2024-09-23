@@ -22,7 +22,7 @@ import (
 //	@Router			/jira-integration [get]
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	integration, err := jiraintegration.NewJiraIntegrations().GetJiraIntegration(ctx)
+	integration, err := jiraintegration.NewJiraIntegrations().GetJiraIntegration(ctx.OrgID)
 	if err != nil {
 		log.Errorf("failed fetching Jira integration, err=%v", err)
 		sentry.CaptureException(err)
@@ -65,7 +65,7 @@ func Post(c *gin.Context) {
 		return
 	}
 
-	existingIntegration, err := jiraintegration.NewJiraIntegrations().GetJiraIntegration(ctx)
+	existingIntegration, err := jiraintegration.NewJiraIntegrations().GetJiraIntegration(ctx.OrgID)
 	if err != nil {
 		log.Errorf("failed checking existing Jira integration, err=%v", err)
 		sentry.CaptureException(err)
@@ -86,7 +86,7 @@ func Post(c *gin.Context) {
 		Status:         jiraintegration.JiraIntegrationStatus(req.Status),
 	}
 
-	createdIntegration, err := jiraintegration.NewJiraIntegrations().CreateJiraIntegration(ctx, newIntegration)
+	createdIntegration, err := jiraintegration.NewJiraIntegrations().CreateJiraIntegration(ctx.OrgID, newIntegration)
 	if err != nil {
 		log.Errorf("failed creating Jira integration, err=%v", err)
 		sentry.CaptureException(err)
@@ -116,7 +116,7 @@ func Put(c *gin.Context) {
 		return
 	}
 
-	existingIntegration, err := jiraintegration.NewJiraIntegrations().GetJiraIntegration(ctx)
+	existingIntegration, err := jiraintegration.NewJiraIntegrations().GetJiraIntegration(ctx.OrgID)
 	if err != nil {
 		log.Errorf("failed fetching existing Jira integration, err=%v", err)
 		sentry.CaptureException(err)
@@ -128,7 +128,7 @@ func Put(c *gin.Context) {
 		return
 	}
 
-	updatedIntegration, err := jiraintegration.NewJiraIntegrations().UpdateJiraIntegration(ctx, jiraintegration.JiraIntegration{
+	updatedIntegration, err := jiraintegration.NewJiraIntegrations().UpdateJiraIntegration(ctx.OrgID, jiraintegration.JiraIntegration{
 		JiraURL:        req.JiraURL,
 		JiraUser:       req.JiraUser,
 		JiraAPIToken:   req.JiraAPIToken,

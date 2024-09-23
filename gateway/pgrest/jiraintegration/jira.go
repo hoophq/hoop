@@ -33,9 +33,9 @@ func NewJiraIntegrations() *JiraIntegrations {
 }
 
 // GetJiraIntegration obtém a integração Jira pelo org_id
-func (j *JiraIntegrations) GetJiraIntegration(ctx pgrest.OrgContext) (*JiraIntegration, error) {
+func (j *JiraIntegrations) GetJiraIntegration(orgId string) (*JiraIntegration, error) {
 	var integration JiraIntegration
-	err := pgrest.New("/jira_integration?org_id=eq.%s", ctx.GetOrgID()).
+	err := pgrest.New("/jira_integration?org_id=eq.%s", orgId).
 		FetchOne().
 		DecodeInto(&integration)
 	if err != nil {
@@ -48,9 +48,9 @@ func (j *JiraIntegrations) GetJiraIntegration(ctx pgrest.OrgContext) (*JiraInteg
 }
 
 // UpdateJiraIntegration atualiza a integração Jira pelo org_id
-func (j *JiraIntegrations) UpdateJiraIntegration(ctx pgrest.OrgContext, integration JiraIntegration) (*JiraIntegration, error) {
+func (j *JiraIntegrations) UpdateJiraIntegration(orgId string, integration JiraIntegration) (*JiraIntegration, error) {
 	var existingIntegration JiraIntegration
-	err := pgrest.New("/jira_integration?org_id=eq.%s", ctx.GetOrgID()).
+	err := pgrest.New("/jira_integration?org_id=eq.%s", orgId).
 		FetchOne().
 		DecodeInto(&existingIntegration)
 	if err != nil {
@@ -81,11 +81,11 @@ func (j *JiraIntegrations) UpdateJiraIntegration(ctx pgrest.OrgContext, integrat
 }
 
 // CreateJiraIntegration cria uma nova integração Jira
-func (j *JiraIntegrations) CreateJiraIntegration(ctx pgrest.OrgContext, integration JiraIntegration) (*JiraIntegration, error) {
+func (j *JiraIntegrations) CreateJiraIntegration(orgId string, integration JiraIntegration) (*JiraIntegration, error) {
 	var createdIntegration JiraIntegration
 	err := pgrest.New("/jira_integration").
 		Create(map[string]interface{}{
-			"org_id":           ctx.GetOrgID(),
+			"org_id":           orgId,
 			"jira_url":         integration.JiraURL,
 			"jira_user":        integration.JiraUser,
 			"jira_api_token":   integration.JiraAPIToken,

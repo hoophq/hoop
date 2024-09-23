@@ -40,6 +40,7 @@ type clientExec struct {
 	ctx        context.Context
 	cancelFn   context.CancelFunc
 	sessionID  string
+	orgID      string
 }
 
 type Options struct {
@@ -122,7 +123,8 @@ func New(opts *Options) (*clientExec, error) {
 		client:     client,
 		ctx:        ctx,
 		cancelFn:   cancelFn,
-		sessionID:  opts.SessionID}, nil
+		sessionID:  opts.SessionID,
+		orgID:      opts.OrgID}, nil
 }
 
 func (c *clientExec) Run(inputPayload []byte, clientEnvVars map[string]string, clientArgs ...string) *Response {
@@ -223,6 +225,7 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 				return newErr("failed reading output response, reason=%v", err).
 					setExitCode(exitCode)
 			}
+
 			return &Response{
 				Output:    string(output),
 				ExitCode:  exitCode,

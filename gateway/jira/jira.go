@@ -7,13 +7,94 @@ import (
 	"libhoop/log"
 	"net/http"
 
-	"github.com/hoophq/hoop/gateway/pgrest"
 	jiraintegration "github.com/hoophq/hoop/gateway/pgrest/jiraintegration"
 	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
 )
 
+// func printJSON(data interface{}) {
+// 	// Converte a estrutura em JSON com indentação
+// 	jsonData, err := json.MarshalIndent(data, "", "  ")
+// 	if err != nil {
+// 		log.Fatalf("Error marshalling to JSON: %v", err)
+// 	}
+
+// 	// Imprime no console
+// 	fmt.Println(string(jsonData))
+// }
+
+func TextBlock(text string) map[string]interface{} {
+	return map[string]interface{}{
+		"type": "text",
+		"text": text,
+	}
+}
+
+func StrongTextBlock(text string) map[string]interface{} {
+	return map[string]interface{}{
+		"type": "text",
+		"text": text,
+		"marks": []interface{}{
+			map[string]interface{}{
+				"type": "strong",
+			},
+		},
+	}
+}
+
+func CodeTextBlock(text string) map[string]interface{} {
+	return map[string]interface{}{
+		"type": "text",
+		"text": text,
+		"marks": []interface{}{
+			map[string]interface{}{
+				"type": "code",
+			},
+		},
+	}
+}
+
+func CodeSnippetBlock(code string) map[string]interface{} {
+	return map[string]interface{}{
+		"type": "codeBlock",
+		"content": []interface{}{
+			map[string]interface{}{
+				"type": "text",
+				"text": code,
+			},
+		},
+	}
+}
+
+func LinkBlock(text, url string) map[string]interface{} {
+	return map[string]interface{}{
+		"type": "text",
+		"text": text,
+		"marks": []map[string]interface{}{
+			{
+				"type": "link",
+				"attrs": map[string]interface{}{
+					"href": url,
+				},
+			},
+		},
+	}
+}
+
+func DividerBlock() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "rule",
+	}
+}
+
+func ParagraphBlock(content ...map[string]interface{}) map[string]interface{} {
+	return map[string]interface{}{
+		"type":    "paragraph",
+		"content": content,
+	}
+}
+
 // Function to build the issue structure
-func BuildIssue(projectKey, summary, issueType, description string) Issue {
+func BuildIssue(projectKey, summary, issueType string, description []interface{}) Issue {
 	return Issue{
 		Fields: IssueFields{
 			Project:   Project{Key: projectKey},
@@ -22,38 +103,28 @@ func BuildIssue(projectKey, summary, issueType, description string) Issue {
 			Description: map[string]interface{}{
 				"type":    "doc",
 				"version": 1,
-				"content": []interface{}{
-					map[string]interface{}{
-						"type": "paragraph",
-						"content": []interface{}{
-							map[string]interface{}{
-								"type": "text",
-								"text": description,
-							},
-						},
-					},
-				},
+				"content": description,
 			},
 		},
 	}
 }
 
 // Simplified function to create an issue in JIRA
-func CreateIssueSimple(ctx pgrest.OrgContext, summary, issueType, description, sessionID string) error {
+func CreateIssueSimple(orgId, summary, issueType, sessionID string, description []interface{}) error {
 	jiraIntegrations := jiraintegration.NewJiraIntegrations()
-	integration, err := jiraIntegrations.GetJiraIntegration(ctx)
+	integration, err := jiraIntegrations.GetJiraIntegration(orgId)
 
 	if err != nil {
-		log.Errorf("Failed to get Jira integration: %v", err)
+		log.Warnf("Failed to get Jira integration: %v", err)
 		return fmt.Errorf("failed to get Jira integration: %w", err)
 	}
 	if integration == nil {
-		log.Errorf("No Jira integration found for org_id: %s", ctx.GetOrgID())
+		log.Warnf("No Jira integration found for org_id: %s", orgId)
 		return fmt.Errorf("no Jira integration found")
 	}
 
 	if integration.Status != jiraintegration.JiraIntegrationStatusActive {
-		log.Errorf("Jira integration is not active for org_id: %s", ctx.GetOrgID())
+		log.Warnf("Jira integration is not active for org_id: %s", orgId)
 		return fmt.Errorf("jira integration is not enabled")
 	}
 
@@ -68,7 +139,7 @@ func CreateIssueSimple(ctx pgrest.OrgContext, summary, issueType, description, s
 	}
 
 	// Create the request to JIRA
-	req, err := createJiraRequest(ctx, "POST", "/rest/api/3/issue", body)
+	req, err := createJiraRequest(orgId, "POST", "/rest/api/3/issue", body)
 	if err != nil {
 		return err
 	}
@@ -102,7 +173,7 @@ func CreateIssueSimple(ctx pgrest.OrgContext, summary, issueType, description, s
 	}
 
 	s := pgsession.New()
-	if err := s.UpdateJiraIssue(ctx, sessionID, issueResponse.Key); err != nil {
+	if err := s.UpdateJiraIssue(orgId, sessionID, issueResponse.Key); err != nil {
 		log.Errorf("Error updating session with Jira issue: %v", err)
 		return err
 	}
@@ -112,11 +183,11 @@ func CreateIssueSimple(ctx pgrest.OrgContext, summary, issueType, description, s
 }
 
 // Function to get the current issue description
-func GetIssueDescription(ctx pgrest.OrgContext, issueKey string) (map[string]interface{}, error) {
+func GetIssueDescription(orgId, issueKey string) (map[string]interface{}, error) {
 	// Create a request to get the issue from JIRA
-	req, err := createJiraRequest(ctx, "GET", fmt.Sprintf("/rest/api/3/issue/%s", issueKey), nil)
+	req, err := createJiraRequest(orgId, "GET", fmt.Sprintf("/rest/api/3/issue/%s", issueKey), nil)
 	if err != nil {
-		log.Errorf("Error creating request to get issue: %v", err)
+		log.Warnf("Error creating request to get issue: %v", err)
 		return nil, err
 	}
 
@@ -164,29 +235,20 @@ func GetIssueDescription(ctx pgrest.OrgContext, issueKey string) (map[string]int
 }
 
 // UpdateJiraIssueDescription updates the description of an existing JIRA issue.
-func UpdateJiraIssueDescription(ctx pgrest.OrgContext, issueKey, newInfo string) error {
+func UpdateJiraIssueDescription(orgId, issueKey string, newInfo []interface{}) error {
 	// Step 1: Get the current issue description
-	currentDescription, err := GetIssueDescription(ctx, issueKey)
+	currentDescription, err := GetIssueDescription(orgId, issueKey)
 	if err != nil {
 		log.Errorf("Failed to fetch current issue description: %v", err)
 		return err
 	}
 
 	// Append new content below a divider
-	newContent := []interface{}{
+	newContent := append([]interface{}{
 		map[string]interface{}{
 			"type": "rule", // Divider
 		},
-		map[string]interface{}{
-			"type": "paragraph",
-			"content": []interface{}{
-				map[string]interface{}{
-					"type": "text",
-					"text": newInfo, // New text to append
-				},
-			},
-		},
-	}
+	}, newInfo...)
 
 	// Append the new content to the existing description
 	content := currentDescription["content"].([]interface{})
@@ -213,9 +275,9 @@ func UpdateJiraIssueDescription(ctx pgrest.OrgContext, issueKey, newInfo string)
 		return err
 	}
 
-	req, err := createJiraRequest(ctx, "PUT", fmt.Sprintf("/rest/api/3/issue/%s", issueKey), payloadBytes)
+	req, err := createJiraRequest(orgId, "PUT", fmt.Sprintf("/rest/api/3/issue/%s", issueKey), payloadBytes)
 	if err != nil {
-		log.Errorf("Failed to create request for updating issue: %v", err)
+		log.Warnf("Failed to create request for updating issue: %v", err)
 		return err
 	}
 
