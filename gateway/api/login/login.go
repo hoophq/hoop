@@ -388,6 +388,7 @@ func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *pguserau
 		// wait some time until the identify call get times to reach to intercom
 		time.Sleep(time.Second * 10)
 		client.Track(ctx.UserEmail, analytics.EventSignup, map[string]any{
+			"org-id":       ctx.OrgID,
 			"auth-method":  appconfig.Get().AuthMethod(),
 			"user-agent":   userAgent,
 			"license-type": licenseType,

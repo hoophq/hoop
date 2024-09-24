@@ -1,6 +1,10 @@
 package analytics
 
 const (
+	// default org
+	EventDefaultOrgCreated = "hoop-default-org-created"
+
+	// auth
 	EventLogin  = "hoop-login"
 	EventSignup = "hoop-signup"
 
