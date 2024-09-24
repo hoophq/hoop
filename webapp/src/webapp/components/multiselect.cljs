@@ -97,11 +97,11 @@
                         (if @input-value
                           (case (.-key event)
                             "Enter" (do
-                                      (reset! value (conj @value {"label" @input-value "value" @input-value}))
+                                      (reset! value (conj (js->clj @value) {"label" @input-value "value" @input-value}))
                                       (reset! input-value "")
                                       (.preventDefault event))
                             "Tab" (do
-                                    (reset! value (conj @value {"label" @input-value "value" @input-value}))
+                                    (reset! value (conj (js->clj @value) {"label" @input-value "value" @input-value}))
                                     (reset! input-value "")
                                     (.preventDefault event))
                             nil)
