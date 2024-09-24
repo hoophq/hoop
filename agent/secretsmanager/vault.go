@@ -176,7 +176,7 @@ func (p *vaultProvider) GetVaultToken() (string, error) {
 			return "", fmt.Errorf("failed decoding app role login response, status=%v, length=%v, reason=%v",
 				resp.StatusCode, resp.ContentLength, err)
 		}
-		log.Infof("app role login decoded with success: %s", login)
+		log.Infof("app role login decoded with success: %s", login.String())
 		clientToken := login.getClientToken()
 		return clientToken, nil
 	}
