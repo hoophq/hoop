@@ -20,10 +20,13 @@
         current-name (if (= :create-onboarding form-type)
                        (:text (first agent-options))
                        @current-agent-name)]
+
+    (println current-agent-id)
     [:<>
      [:div {:class "flex justify-end gap-regular"}
-      (if (= (count agent-options) 1)
+      (if (<= (count agent-options) 1)
         [button/primary {:text "Save"
+                         :disabled (< (count agent-options) 1)
                          :type "submit"}]
         [button/primary {:text [btn-submit-label form-type current-name]
                          :more-options (map #(:text %) agent-options)
@@ -38,4 +41,16 @@
         [:> hero-solid-icon/ExclamationTriangleIcon {:class "h-6 w-6 shrink-0 text-red-300"
                                                      :aria-hidden "true"}]
         [:small {:class "text-red-300"}
-         "The hoop selected is not connected."]])]))
+         "The hoop selected is not connected."]])
+
+     (when (< (count agent-options) 1)
+       [:div {:class "mt-6 py-3 px-4 rounded-md flex items-center justify-center bg-gray-100 border border-gray-300"}
+        [:span {:class "text-sm text-gray-500"}
+         "No Agents found. "
+         [:a {:class "text-blue-600 underline"
+              :href "https://hoop.dev/docs/concepts/agent"
+              :target "_blank"}
+          "Click here"]
+
+         " to learn how to setup one before creating a connection."]
+        [:> hero-solid-icon/ArrowUpRightIcon {:class "h-4 w-4 text-gray-600 ml-3"}]])]))

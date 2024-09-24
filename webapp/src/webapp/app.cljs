@@ -21,7 +21,6 @@
             [webapp.connections.views.connection-list :as connections]
             [webapp.connections.views.connection-connect :as connection-connect]
             [webapp.connections.views.connection-form-modal :as connection-form-modal]
-            [webapp.connections.views.select-connection-use-cases :as select-connection-use-cases]
             [webapp.dashboard.main :as dashboard]
             [webapp.events]
             [webapp.events.agents]
@@ -169,10 +168,6 @@
                              [h/h2 "Reviews" {:class "mb-6"}]
                              [reviews/panel]]])
 
-(defmethod routes/panels :select-connection-use-cases-panel []
-  (rf/dispatch [:destroy-page-loader])
-  [layout :application-hoop [select-connection-use-cases/main]])
-
 (defmethod routes/panels :create-connection-panel []
   (let [search (.. js/window -location -search)
         url-search-params (new js/URLSearchParams search)
@@ -264,8 +259,8 @@
   (if (= (-> gateway-info :data :auth_method) "local")
     [layout :auth [local-auth-register/panel]]
     [layout :auth (fn []
-                  (rf/dispatch [:segment->track "SignUp - start signup"])
-                  (rf/dispatch [:auth->get-signup-link]))]))
+                    (rf/dispatch [:segment->track "SignUp - start signup"])
+                    (rf/dispatch [:auth->get-signup-link]))]))
 
 (defmethod routes/panels :signup-hoop-panel []
   [layout :auth [signup/panel]])
