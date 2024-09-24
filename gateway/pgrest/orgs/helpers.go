@@ -5,6 +5,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/analytics"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/pgrest"
 )
 
@@ -22,6 +24,12 @@ func CreateDefaultOrganization() (pgrest.OrgContext, error) {
 		if err := New().CreateOrg(orgID, proto.DefaultOrgName, nil); err != nil {
 			return nil, fmt.Errorf("failed creating the default organization, err=%v", err)
 		}
+		client := analytics.New()
+		client.Track("", analytics.EventDefaultOrgCreated, map[string]any{
+			"org-id":      orgID,
+			"auth-method": appconfig.Get().AuthMethod(),
+			"api-url":     appconfig.Get().ApiURL(),
+		})
 		return pgrest.NewOrgContext(orgID), nil
 	case len(orgList) == 1:
 		return pgrest.NewOrgContext(orgList[0].ID), nil

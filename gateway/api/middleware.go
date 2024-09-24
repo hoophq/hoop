@@ -15,6 +15,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/apiutils"
+	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/analytics"
@@ -86,7 +87,7 @@ func (a *Api) localAuthMiddleware(c *gin.Context) {
 			WithUserInfo(ctx.UserName, ctx.UserEmail, string(ctx.UserStatus), ctx.UserPicture, ctx.UserGroups).
 			WithSlackID(ctx.UserSlackID).
 			WithOrgName(ctx.OrgName).
-			WithOrgLicense(ctx.OrgLicense).
+			WithOrgLicenseData(ctx.OrgLicenseData).
 			WithApiURL(appconfig.Get().ApiURL()).
 			WithGrpcURL(a.GrpcURL),
 	)
@@ -149,7 +150,7 @@ func (a *Api) apiKeyMiddleware(c *gin.Context) {
 				WithUserInfo(ctx.UserName, ctx.UserEmail, string(ctx.UserStatus), ctx.UserPicture, ctx.UserGroups).
 				WithSlackID(ctx.UserSlackID).
 				WithOrgName(ctx.OrgName).
-				WithOrgLicense(ctx.OrgLicense).
+				WithOrgLicenseData(ctx.OrgLicenseData).
 				WithApiURL(a.IDProvider.ApiURL).
 				WithGrpcURL(a.GrpcURL),
 		)
@@ -259,7 +260,7 @@ func (a *Api) Authenticate(c *gin.Context) {
 				WithUserInfo(ctx.UserName, ctx.UserEmail, string(ctx.UserStatus), ctx.UserPicture, ctx.UserGroups).
 				WithSlackID(ctx.UserSlackID).
 				WithOrgName(ctx.OrgName).
-				WithOrgLicense(ctx.OrgLicense).
+				WithOrgLicenseData(ctx.OrgLicenseData).
 				WithApiURL(a.IDProvider.ApiURL).
 				WithGrpcURL(a.GrpcURL),
 		)
@@ -316,9 +317,21 @@ func (a *Api) TrackRequest(eventName string) func(c *gin.Context) {
 			return
 		}
 
+		licenseType := license.OSSType
+		if ctx.OrgLicenseData != nil && len(*ctx.OrgLicenseData) > 0 {
+			var l license.License
+			err := json.Unmarshal(*ctx.OrgLicenseData, &l)
+			if err == nil {
+				licenseType = l.Payload.Type
+			}
+		}
+
 		properties := map[string]any{
 			"host":           c.Request.Host,
+			"auth-method":    appconfig.Get().AuthMethod(),
+			"license-type":   licenseType,
 			"content-length": c.Request.ContentLength,
+			"api-url":        appconfig.Get().ApiURL(),
 			"user-agent":     apiutils.NormalizeUserAgent(c.Request.Header.Values),
 		}
 		switch eventName {
