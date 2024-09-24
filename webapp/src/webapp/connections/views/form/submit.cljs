@@ -12,11 +12,11 @@
   (str "Update for " agent))
 
 (defn main [form-type current-agent-name current-agent-id agents]
-  (let [current-agent (first (filter (fn [{:keys [id]}] (= id @current-agent-id)) agents))
+  (let [current-agent (first (filter (fn [{:keys [id]}] (= id @current-agent-id)) (:data agents)))
         agent-options (map (fn [{:keys [id name status]}] {:value id
                                                            :text (if (= (cs/upper-case status) "DISCONNECTED")
                                                                    (str name " (" status ")")
-                                                                   name)}) agents)
+                                                                   name)}) (:data agents))
         current-name (if (= :create-onboarding form-type)
                        (:text (first agent-options))
                        @current-agent-name)]

@@ -2,7 +2,8 @@
   (:require [clojure.edn :refer [read-string]]))
 
 (def default-db
-  {:agents-embedded []
+  {:agents {:status :loading, :data []}
+   :agents-embedded []
    :ask-ai->question-responses []
    :audit->session-details {:status :loading, :session nil, :session-logs {:status :loading}}
    :audit->filtered-session-by-id {:status :loading, :data []}

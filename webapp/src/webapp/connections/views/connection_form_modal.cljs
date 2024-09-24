@@ -132,8 +132,8 @@
                                                true
                                                false))
         current-agent (if (empty? (:agent_id connection))
-                        (first @agents)
-                        (first (filter (fn [{:keys [id]}] (= id (:agent_id connection))) @agents)))
+                        (first (:data @agents))
+                        (first (filter (fn [{:keys [id]}] (= id (:agent_id connection))) (:data @agents))))
 
         current-agent-id (r/atom (if (empty? current-agent)
                                    ""
@@ -143,6 +143,7 @@
                                      (if (= (cs/upper-case (:status current-agent)) "DISCONNECTED")
                                        (str (:name current-agent) " (" (:status current-agent) ")")
                                        (:name current-agent))))
+
         connection-command (r/atom (if (empty? (:command connection))
                                      (get constants/connection-commands @connection-subtype)
                                      (cs/join " " (:command connection))))
@@ -503,14 +504,17 @@
    [loaders/simple-loader]])
 
 (defn main [form-type data connection-original-type]
-  (let [connection (rf/subscribe [::subs/connections->updating-connection])]
+  (let [connection (rf/subscribe [::subs/connections->updating-connection])
+        agents (rf/subscribe [:agents])]
     (rf/dispatch [:agents->get-agents])
     (rf/dispatch [:connections->get-connections])
     (fn []
       (case form-type
-        :create [form data :create (keyword connection-original-type)]
+        :create (if (= :ready (:status @agents))
+                  [form data :create connection-original-type]
+                  [loading-list-view])
 
-        :update (if (true? (:loading @connection))
+        :update (if (or (= :loading (:status @agents)) (true? (:loading @connection)))
                   [loading-list-view]
                   [form (:data @connection) :update (case (:type (:data @connection))
                                                       ("command-line" "custom") :custom
