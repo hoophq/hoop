@@ -2,6 +2,7 @@ package loginapi
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -11,10 +12,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/apiutils"
+	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pglogin "github.com/hoophq/hoop/gateway/pgrest/login"
 	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
@@ -353,9 +356,29 @@ func debugClaims(subject string, claims map[string]any, accessToken *oauth2.Toke
 
 // analyticsTrack tracks the user signup/login event
 func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *pguserauth.Context) {
+	org, err := pgorgs.New().FetchOrgByContext(ctx)
+	if err != nil {
+		log.Errorf("failed fetching org, reason=%v", err)
+	}
+	licenseType := license.OSSType
+	var l license.License
+	if org.LicenseData != nil {
+		err := json.Unmarshal(*org.LicenseData, &l)
+		if err != nil {
+			log.Errorf("failed decoding license data, reason=%v", err)
+		}
+		licenseType = l.Payload.Type
+	}
+
 	client := analytics.New()
 	if !isNewUser {
-		client.Track(ctx.UserEmail, analytics.EventLogin, map[string]any{"user-agent": userAgent})
+		client.Track(ctx.UserEmail, analytics.EventLogin, map[string]any{
+			"auth-method":  appconfig.Get().AuthMethod(),
+			"user-agent":   userAgent,
+			"license-type": licenseType,
+			"name":         ctx.UserName,
+			"api-url":      h.idpProv.ApiURL,
+		})
 		return
 	}
 	client.Identify(&types.APIContext{
@@ -371,9 +394,11 @@ func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *pguserau
 		// wait some time until the identify call get times to reach to intercom
 		time.Sleep(time.Second * 10)
 		client.Track(ctx.UserEmail, analytics.EventSignup, map[string]any{
-			"user-agent": userAgent,
-			"name":       ctx.UserName,
-			"api-url":    h.idpProv.ApiURL,
+			"auth-method":  appconfig.Get().AuthMethod(),
+			"user-agent":   userAgent,
+			"license-type": licenseType,
+			"name":         ctx.UserName,
+			"api-url":      h.idpProv.ApiURL,
 		})
 	}()
 }

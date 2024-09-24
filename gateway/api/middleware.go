@@ -15,6 +15,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/apiutils"
+	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/analytics"
@@ -315,10 +316,26 @@ func (a *Api) TrackRequest(eventName string) func(c *gin.Context) {
 			c.Next()
 			return
 		}
+		org, err := pgorgs.New().FetchOrgByContext(ctx)
+		if err != nil {
+			log.Errorf("failed fetching org, reason=%v", err)
+		}
+		licenseType := license.OSSType
+		var l license.License
+		if org.LicenseData != nil {
+			err := json.Unmarshal(*org.LicenseData, &l)
+			if err != nil {
+				log.Errorf("failed decoding license data, reason=%v", err)
+			}
+			licenseType = l.Payload.Type
+		}
 
 		properties := map[string]any{
 			"host":           c.Request.Host,
+			"auth-method":    appconfig.Get().AuthMethod(),
+			"license-type":   licenseType,
 			"content-length": c.Request.ContentLength,
+			"api-url":        appconfig.Get().ApiURL(),
 			"user-agent":     apiutils.NormalizeUserAgent(c.Request.Header.Values),
 		}
 		switch eventName {
