@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -147,18 +146,6 @@ func (p *vaultProvider) GetKey(secretID, secretKey string) (string, error) {
 
 func (p *vaultProvider) GetVaultToken() (string, error) {
 	if p.config.appRoleID != "" {
-		if v := p.cache.Get("__app_role_client_token"); v != nil {
-			parts := strings.Split(fmt.Sprintf("%v", v), ":")
-			if t, _ := time.Parse(parts[0], time.RFC3339Nano); !t.IsZero() {
-				log.Infof("vault client token expired: %v", t.Format(time.RFC3339Nano))
-				if t.After(time.Now().UTC()) {
-					log.Infof("lease duration still valid, returning cached app role client token")
-					return fmt.Sprintf("%v", parts[1]), nil
-				}
-				log.Infof("vault client token expired: %v", t.Format(time.RFC3339Nano))
-				p.cache.Del("__app_role_client_token")
-			}
-		}
 		ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*5)
 		defer cancelFn()
 
@@ -181,25 +168,16 @@ func (p *vaultProvider) GetVaultToken() (string, error) {
 			return "", err
 		}
 		defer resp.Body.Close()
-		statusCode, err := decodeVaultHttpErrorResponseBody(resp)
-		if err != nil {
+		if err := decodeVaultHttpErrorResponseBody(resp); err != nil {
 			return "", err
-		}
-		// remove from cache if it's unathorized or permission denied error
-		if statusCode == 401 || statusCode == 403 {
-			log.Infof("clearing vault token cache")
-			p.cache.Del("__app_role_client_token")
 		}
 		var login AppRoleLoginResponse
 		if err := json.NewDecoder(resp.Body).Decode(&login); err != nil {
 			return "", fmt.Errorf("failed decoding app role login response, status=%v, length=%v, reason=%v",
 				resp.StatusCode, resp.ContentLength, err)
 		}
-		expireAt, clientToken := login.getClientToken()
-		log.Infof("app role login decoded with success, expires=%v: %s",
-			expireAt.Format(time.RFC3339Nano), login)
-		cacheKey := fmt.Sprintf("%v:%v", expireAt.Format(time.RFC3339Nano), clientToken)
-		p.cache.Set("__app_role_client_token", cacheKey)
+		log.Infof("app role login decoded with success: %s", login)
+		clientToken := login.getClientToken()
 		return clientToken, nil
 	}
 	return p.config.vaultToken, nil
@@ -232,7 +210,7 @@ func (p *vaultProvider) keyValGetRequest(secretID string) (KVGetter, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	if _, err := decodeVaultHttpErrorResponseBody(resp); err != nil {
+	if err := decodeVaultHttpErrorResponseBody(resp); err != nil {
 		return nil, err
 	}
 	switch p.kvType {
@@ -279,37 +257,33 @@ func (r *AppRoleLoginResponse) String() string {
 		auth["lease_duration"], auth["renewable"])
 }
 
-func (r *AppRoleLoginResponse) getClientToken() (expireAt time.Time, clientToken string) {
+func (r *AppRoleLoginResponse) getClientToken() string {
 	if len(r.Auth) > 0 {
-		leaseDuration, _ := strconv.Atoi(fmt.Sprintf("%v", r.Auth["lease_duration"]))
-		if leaseDuration > 0 {
-			expireAt = time.Now().UTC().Add(time.Second * time.Duration(leaseDuration))
-		}
-		clientToken = fmt.Sprintf("%v", r.Auth["client_token"])
+		return fmt.Sprintf("%v", r.Auth["client_token"])
 	}
-	return
+	return ""
 }
 
 // return the status code and the decoded error in case of a bad status http code
 // https://developer.hashicorp.com/vault/api-docs#error-response
-func decodeVaultHttpErrorResponseBody(resp *http.Response) (int, error) {
+func decodeVaultHttpErrorResponseBody(resp *http.Response) error {
 	if resp.StatusCode >= 400 && resp.StatusCode <= 499 {
 		var obj struct {
 			Errs []string `json:"errors"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&obj); err != nil {
-			return resp.StatusCode, fmt.Errorf("failed decoding error response, status=%v, length=%v, reason=%v",
+			return fmt.Errorf("failed decoding error response, status=%v, length=%v, reason=%v",
 				resp.StatusCode, resp.ContentLength, err)
 		}
-		return resp.StatusCode, fmt.Errorf("vault error response, status=%v, errs=%v",
+		return fmt.Errorf("vault error response, status=%v, errs=%v",
 			resp.StatusCode, strings.Join(obj.Errs, "; "))
 	}
 	if resp.StatusCode != 200 && resp.StatusCode != 204 {
 		respBody, _ := io.ReadAll(resp.Body)
-		return resp.StatusCode, fmt.Errorf("failed performing request, status=%v, body=%v",
+		return fmt.Errorf("failed performing request, status=%v, body=%v",
 			resp.StatusCode, string(respBody))
 	}
-	return resp.StatusCode, nil
+	return nil
 }
 
 func urlPathForProvider(kvProvider secretProviderType, serverAddr, secretID string) (apiURL string) {
