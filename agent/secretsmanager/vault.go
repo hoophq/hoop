@@ -1,6 +1,7 @@
 package secretsmanager
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -26,9 +27,17 @@ type vaultProvider struct {
 }
 
 type vaultConfig struct {
-	serverAddr string
-	tlsCA      string
-	token      string
+	serverAddr      string
+	tlsCA           string
+	vaultToken      string
+	appRoleID       string
+	appRoleSecretID string
+}
+
+// https://developer.hashicorp.com/vault/api-docs/auth/approle#create-update-approle
+type AppRoleLoginResponse struct {
+	RequestID string         `json:"request_id"`
+	Auth      map[string]any `json:"auth"`
 }
 
 type KeyValData struct {
@@ -69,6 +78,21 @@ func newVaultKeyValProvider(kvType secretProviderType, httpClient httpclient.Htt
 	return &vaultProvider{config: config, cache: memory.New(), kvType: kvType, httpClient: httpClient}, nil
 }
 
+func loadAppRoleCredentials() (string, string, error) {
+	appRoleID := os.Getenv("VAULT_APP_ROLE_ID")
+	appRoleSecretID := os.Getenv("VAULT_APP_ROLE_SECRET_ID")
+	if appRoleID != "" && appRoleSecretID == "" {
+		return "", "", fmt.Errorf("VAULT_APP_ROLE_ID env is set but VAULT_APP_ROLE_SECRET_ID env is empty")
+	}
+	if appRoleSecretID != "" && appRoleID == "" {
+		return "", "", fmt.Errorf("VAULT_APP_ROLE_SECRET_ID env is set but VAULT_APP_ROLE_ID env is empty")
+	}
+	if appRoleID != "" && appRoleSecretID != "" {
+		return appRoleID, appRoleSecretID, nil
+	}
+	return "", "", nil
+}
+
 func loadDefaultVaultConfig() (*vaultConfig, error) {
 	tlsCA, err := envloader.GetEnv("VAULT_CACERT")
 	if err != nil {
@@ -79,10 +103,22 @@ func loadDefaultVaultConfig() (*vaultConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to load VAULT_TOKEN env, reason=%v", err)
 	}
+	appRoleID, appRoleSecretID, err := loadAppRoleCredentials()
+	if err != nil {
+		return nil, err
+	}
+	config := &vaultConfig{serverAddr: srvAddr, tlsCA: tlsCA}
+	if appRoleID != "" {
+		config.appRoleID = appRoleID
+		config.appRoleSecretID = appRoleSecretID
+		return config, nil
+	}
+
 	if token == "" || srvAddr == "" {
 		return nil, fmt.Errorf("VAULT_TOKEN and/or VAULT_ADDR env not set")
 	}
-	return &vaultConfig{serverAddr: srvAddr, tlsCA: tlsCA, token: token}, nil
+	config.vaultToken = token
+	return config, nil
 }
 
 func (p *vaultProvider) GetKey(secretID, secretKey string) (string, error) {
@@ -108,6 +144,45 @@ func (p *vaultProvider) GetKey(secretID, secretKey string) (string, error) {
 	return "", fmt.Errorf("secret id %s found, but key %s was not", secretID, secretKey)
 }
 
+func (p *vaultProvider) GetVaultToken() (string, error) {
+	if p.config.appRoleID != "" {
+		ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*5)
+		defer cancelFn()
+
+		appRoleLoginURI := strings.TrimSuffix(p.config.serverAddr, "/") + "/v1/auth/approle/login"
+		payload, err := json.Marshal(map[string]string{
+			"role_id":   p.config.appRoleID,
+			"secret_id": p.config.appRoleSecretID,
+		})
+		if err != nil {
+			return "", fmt.Errorf("unable to encode /auth/approle/login payload, reason=%v", err)
+		}
+		req, err := http.NewRequestWithContext(ctx, "POST", appRoleLoginURI, bytes.NewBuffer(payload))
+		if err != nil {
+			return "", fmt.Errorf("failed creating http request to obtain vault token, err=%v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Vault-Request", "true")
+		resp, err := p.httpClient.Do(req)
+		if err != nil {
+			return "", err
+		}
+		defer resp.Body.Close()
+		if err := decodeVaultHttpErrorResponseBody(resp); err != nil {
+			return "", err
+		}
+		var login AppRoleLoginResponse
+		if err := json.NewDecoder(resp.Body).Decode(&login); err != nil {
+			return "", fmt.Errorf("failed decoding app role login response, status=%v, length=%v, reason=%v",
+				resp.StatusCode, resp.ContentLength, err)
+		}
+		log.Infof("app role login decoded with success: %s", login.String())
+		clientToken := login.getClientToken()
+		return clientToken, nil
+	}
+	return p.config.vaultToken, nil
+}
+
 // keyValGetRequest performs a get request to Vault Key Value store.
 // It decodes the response based on which type of key value provider is used (v1 or v2)
 // This function is analog to the cli request below
@@ -123,7 +198,11 @@ func (p *vaultProvider) keyValGetRequest(secretID string) (KVGetter, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed creating http request, err=%v", err)
 	}
-	req.Header.Set("X-Vault-Token", p.config.token)
+	vaultToken, err := p.GetVaultToken()
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-Vault-Token", vaultToken)
 	req.Header.Set("X-Vault-Request", "true")
 
 	resp, err := p.httpClient.Do(req)
@@ -131,22 +210,8 @@ func (p *vaultProvider) keyValGetRequest(secretID string) (KVGetter, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	// https://developer.hashicorp.com/vault/api-docs#error-response
-	if resp.StatusCode >= 400 && resp.StatusCode <= 499 {
-		var obj struct {
-			Errs []string `json:"errors"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&obj); err != nil {
-			return nil, fmt.Errorf("failed decoding error response, status=%v, length=%v, reason=%v",
-				resp.StatusCode, resp.ContentLength, err)
-		}
-		return nil, fmt.Errorf("vault error response, status=%v, errs=%v",
-			resp.StatusCode, strings.Join(obj.Errs, "; "))
-	}
-	if resp.StatusCode != 200 && resp.StatusCode != 204 {
-		respBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("failed performing request, status=%v, body=%v",
-			resp.StatusCode, string(respBody))
+	if err := decodeVaultHttpErrorResponseBody(resp); err != nil {
+		return nil, err
 	}
 	switch p.kvType {
 	case secretProviderVaultKv1Type:
@@ -179,6 +244,46 @@ func (k *KeyValV2) String() string {
 	return fmt.Sprintf("request_id=%v, lease_id=%v, lease_duration=%v, mount_type=%v, created_at=%v, destroyed=%v, version=%v, keys=%v",
 		k.RequestID, k.LeaseID, k.LeaseDuration, k.MountType,
 		m["created_at"], m["destroyed"], m["version"], getDataKeys(k.Data.Data))
+}
+
+func (r *AppRoleLoginResponse) String() string {
+	auth := map[string]any{}
+	if len(r.Auth) > 0 {
+		auth = r.Auth
+	}
+	clientToken := fmt.Sprintf("%v", auth["client_token"])
+	return fmt.Sprintf("requestid=%v, token_length=%v, token_policies=%v, orphan=%v, lease_duration=%v, renewable=%v",
+		r.RequestID, len(clientToken), auth["token_policies"], auth["orphan"],
+		auth["lease_duration"], auth["renewable"])
+}
+
+func (r *AppRoleLoginResponse) getClientToken() string {
+	if len(r.Auth) > 0 {
+		return fmt.Sprintf("%v", r.Auth["client_token"])
+	}
+	return ""
+}
+
+// return the status code and the decoded error in case of a bad status http code
+// https://developer.hashicorp.com/vault/api-docs#error-response
+func decodeVaultHttpErrorResponseBody(resp *http.Response) error {
+	if resp.StatusCode >= 400 && resp.StatusCode <= 499 {
+		var obj struct {
+			Errs []string `json:"errors"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&obj); err != nil {
+			return fmt.Errorf("failed decoding error response, status=%v, length=%v, reason=%v",
+				resp.StatusCode, resp.ContentLength, err)
+		}
+		return fmt.Errorf("vault error response, status=%v, errs=%v",
+			resp.StatusCode, strings.Join(obj.Errs, "; "))
+	}
+	if resp.StatusCode != 200 && resp.StatusCode != 204 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed performing request, status=%v, body=%v",
+			resp.StatusCode, string(respBody))
+	}
+	return nil
 }
 
 func urlPathForProvider(kvProvider secretProviderType, serverAddr, secretID string) (apiURL string) {
