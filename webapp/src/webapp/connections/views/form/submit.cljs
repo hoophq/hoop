@@ -20,8 +20,6 @@
         current-name (if (= :create-onboarding form-type)
                        (:text (first agent-options))
                        @current-agent-name)]
-
-    (println current-agent-id)
     [:<>
      [:div {:class "flex justify-end gap-regular"}
       (if (<= (count agent-options) 1)

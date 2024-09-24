@@ -39,14 +39,12 @@
 (defmulti dispatch-form identity)
 (defmethod dispatch-form :create
   [_ form-fields]
-  (println "create" form-fields)
   (if (empty? (:agent_id form-fields))
     (rf/dispatch [:show-snackbar {:level :error
                                   :text "You cannot create without selecting an agent"}])
     (rf/dispatch [:connections->create-connection form-fields])))
 (defmethod dispatch-form :update
   [_ form-fields]
-  (println "update" form-fields)
   (if (empty? (:agent_id form-fields))
     (rf/dispatch [:show-snackbar {:level :error
                                   :text "You cannot create without selecting an agent."}])
@@ -137,10 +135,6 @@
                         (first @agents)
                         (first (filter (fn [{:keys [id]}] (= id (:agent_id connection))) @agents)))
 
-        _ (println "connection" connection)
-        _ (println "agents" @agents)
-        _ (println "current" current-agent)
-
         current-agent-id (r/atom (if (empty? current-agent)
                                    ""
                                    (:id current-agent)))
@@ -171,51 +165,50 @@
                              (mapv #(into {} {"value" % "label" %}) (:tags connection))))
         tags-input-value (r/atom "")
         create-connection-request
-        #(dispatch-form
-          form-type
-          {:name @connection-name
-           :type (name @connection-type)
-           :subtype @connection-subtype
-           :agent_id @current-agent-id
-           :reviewers (if @review-toggle-enabled?
-                        (js-select-options->list @approval-groups-value)
-                        [])
-           :redact_enabled true
-           :redact_types (if @data-masking-toggle-enabled?
-                           (js-select-options->list @data-masking-groups-value)
-                           [])
-           :access_schema (if @access-schema-toggle-enabled?
-                            "enabled"
-                            "disabled")
-           :access_mode_runbooks (if @access-mode-runbooks
-                                   "enabled"
-                                   "disabled")
-           :access_mode_exec (if @access-mode-exec
-                               "enabled"
-                               "disabled")
-           :access_mode_connect (if @access-mode-connect
-                                  "enabled"
-                                  "disabled")
-           :tags (if (seq @tags-value)
-                   (js-select-options->list @tags-value)
-                   nil)
-           :secret (clj->js
-                    (merge
-                     (utils/config->json (conj
-                                          @configs
-                                          {:key @config-key
-                                           :value @config-value})
-                                         "envvar:")
-                     (when (and @config-file-value @config-file-name)
-                       (utils/config->json
-                        (conj
-                         @configs-file
-                         {:key @config-file-name
-                          :value @config-file-value})
-                        "filesystem:"))))
+        #(dispatch-form form-type
+                        {:name @connection-name
+                         :type (name @connection-type)
+                         :subtype @connection-subtype
+                         :agent_id @current-agent-id
+                         :reviewers (if @review-toggle-enabled?
+                                      (js-select-options->list @approval-groups-value)
+                                      [])
+                         :redact_enabled true
+                         :redact_types (if @data-masking-toggle-enabled?
+                                         (js-select-options->list @data-masking-groups-value)
+                                         [])
+                         :access_schema (if @access-schema-toggle-enabled?
+                                          "enabled"
+                                          "disabled")
+                         :access_mode_runbooks (if @access-mode-runbooks
+                                                 "enabled"
+                                                 "disabled")
+                         :access_mode_exec (if @access-mode-exec
+                                             "enabled"
+                                             "disabled")
+                         :access_mode_connect (if @access-mode-connect
+                                                "enabled"
+                                                "disabled")
+                         :tags (if (seq @tags-value)
+                                 (js-select-options->list @tags-value)
+                                 nil)
+                         :secret (clj->js
+                                  (merge
+                                   (utils/config->json (conj
+                                                        @configs
+                                                        {:key @config-key
+                                                         :value @config-value})
+                                                       "envvar:")
+                                   (when (and @config-file-value @config-file-name)
+                                     (utils/config->json
+                                      (conj
+                                       @configs-file
+                                       {:key @config-file-name
+                                        :value @config-file-value})
+                                      "filesystem:"))))
 
-           :command (when @connection-command
-                      (or (re-seq #"'.*?'|\".*?\"|\S+|\t" @connection-command) []))})]
+                         :command (when @connection-command
+                                    (or (re-seq #"'.*?'|\".*?\"|\S+|\t" @connection-command) []))})]
     (rf/dispatch [:users->get-user-groups])
     (rf/dispatch [:users->get-user])
     (rf/dispatch [:plugins->get-my-plugins])
@@ -361,8 +354,6 @@
                  [:span {:class "mt-2 text-sm text-center text-gray-500"}
                   "Start with a complete database setup to test all features"]]]])
 
-            (println  @current-agent-id)
-
             (when (and (empty? @current-agent-id)
                        (not @connection-type))
               [:div {:class "mt-52 py-3 px-4 rounded-md flex items-center justify-center bg-gray-100 border border-gray-300"}
@@ -423,11 +414,7 @@
                                  :access-mode-exec access-mode-exec}]
               (and (= @connection-type :application)
                    (= @connection-subtype "tcp"))
-              [tcp/main configs {:connection-name connection-name
-                                 :connection-type connection-type
-                                 :connection-subtype connection-subtype
-                                 :connection-command connection-command
-                                 :user-groups user-groups
+              [tcp/main configs {:user-groups user-groups
                                  :current-agent-name current-agent-name
                                  :current-agent-id current-agent-id
                                  :tags-value tags-value
@@ -437,7 +424,6 @@
                                  :approval-groups-value approval-groups-value
                                  :data-masking-toggle-enabled? data-masking-toggle-enabled?
                                  :data-masking-groups-value data-masking-groups-value
-                                 :access-schema-toggle-enabled? access-schema-toggle-enabled?
                                  :access-mode-runbooks access-mode-runbooks
                                  :access-mode-connect access-mode-connect
                                  :access-mode-exec access-mode-exec}]
@@ -475,36 +461,20 @@
                                                                              (reset! config-file-value ""))}]
               (and (= @connection-type :custom)
                    (= @connection-subtype "ssh"))
-              [ssh/main configs configs-file {:connection-name connection-name
-                                              :connection-type connection-type
-                                              :connection-subtype connection-subtype
-                                              :connection-command connection-command
-                                              :tags-value tags-value
+              [ssh/main configs configs-file {:tags-value tags-value
                                               :tags-input-value tags-input-value
                                               :user-groups user-groups
                                               :current-agent-name current-agent-name
                                               :current-agent-id current-agent-id
-                                              :config-file-name config-file-name
                                               :config-file-value config-file-value
-                                              :config-key config-key
-                                              :config-value config-value
                                               :form-type form-type
-                                              :api-key api-key
                                               :review-toggle-enabled? review-toggle-enabled?
                                               :approval-groups-value approval-groups-value
                                               :data-masking-toggle-enabled? data-masking-toggle-enabled?
                                               :data-masking-groups-value data-masking-groups-value
                                               :access-mode-runbooks access-mode-runbooks
                                               :access-mode-connect access-mode-connect
-                                              :access-mode-exec access-mode-exec
-                                              :on-click->add-more #(do
-                                                                     (add-new-configs configs @config-key @config-value)
-                                                                     (reset! config-value "")
-                                                                     (reset! config-key ""))
-                                              :on-click->add-more-file #(do
-                                                                          (add-new-configs configs-file @config-file-name @config-file-value)
-                                                                          (reset! config-file-name "")
-                                                                          (reset! config-file-value ""))}])])
+                                              :access-mode-exec access-mode-exec}])])
          (when (= form-type :update)
            [:section
             [divider/main]

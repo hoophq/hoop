@@ -32,9 +32,7 @@
 (defn main []
   (let [user (rf/subscribe [:users->current-user])
         agents (rf/subscribe [:agents])]
-    (fn [configs {:keys [connection-type
-                         connection-subtype
-                         tags-value
+    (fn [configs {:keys [tags-value
                          tags-input-value
                          user-groups
                          current-agent-name
@@ -99,8 +97,7 @@
           [manual-credentials-view
            configs
            agents
-           {:connection-type connection-type
-            :current-agent-name current-agent-name
+           {:current-agent-name current-agent-name
             :current-agent-id current-agent-id
             :form-type form-type}]]
 
@@ -108,7 +105,6 @@
           [manual-credentials-view
            configs
            agents
-           {:connection-type connection-type
-            :current-agent-name current-agent-name
+           {:current-agent-name current-agent-name
             :current-agent-id current-agent-id
             :form-type form-type}]])])))

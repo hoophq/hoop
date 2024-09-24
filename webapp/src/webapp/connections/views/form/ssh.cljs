@@ -58,13 +58,7 @@
                                       access-mode-runbooks
                                       access-mode-connect
                                       access-mode-exec
-                                      connection-command
-                                      config-file-name
                                       config-file-value
-                                      config-key
-                                      config-value
-                                      on-click->add-more
-                                      on-click->add-more-file
                                       form-type]}]
       [:<>
        [:section {:class "space-y-8 mb-16"}
@@ -121,13 +115,7 @@
            agents
            {:current-agent-name current-agent-name
             :current-agent-id  current-agent-id
-            :connection-command connection-command
-            :config-file-name config-file-name
             :config-file-value config-file-value
-            :config-key config-key
-            :config-value config-value
-            :on-click->add-more on-click->add-more
-            :on-click->add-more-file on-click->add-more-file
             :form-type form-type}]]
 
          [:section {:class "mb-large"}
@@ -137,11 +125,5 @@
            agents
            {:current-agent-name current-agent-name
             :current-agent-id  current-agent-id
-            :connection-command connection-command
-            :config-file-name config-file-name
             :config-file-value config-file-value
-            :config-key config-key
-            :config-value config-value
-            :on-click->add-more on-click->add-more
-            :on-click->add-more-file on-click->add-more-file
             :form-type form-type}]])])))
