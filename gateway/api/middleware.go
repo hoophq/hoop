@@ -98,11 +98,6 @@ func (a *Api) localAuthMiddleware(c *gin.Context) {
 // AllowApiKey is a middleware that allows the request to proceed if the request has an api key.
 // It sets the "allow-api-key" key in the context to true so the Auth Middleware can authorize it
 func (a *Api) AllowApiKey(c *gin.Context) {
-	isOrgMultitenant := appconfig.Get().OrgMultitenant()
-	if isOrgMultitenant {
-		c.AbortWithStatus(http.StatusForbidden)
-		return
-	}
 	c.Set(allowApiKeyContextKey, true)
 	c.Next()
 }
@@ -171,11 +166,12 @@ func (a *Api) Authenticate(c *gin.Context) {
 	case "local":
 		a.localAuthMiddleware(c)
 	case "api-key":
-		if _, ok := c.Get(allowApiKeyContextKey); ok {
+		isOrgMultitenant := appconfig.Get().OrgMultitenant()
+		if _, ok := c.Get(allowApiKeyContextKey); ok && !isOrgMultitenant {
 			a.apiKeyMiddleware(c)
 			return
 		}
-		c.AbortWithStatus(http.StatusUnauthorized)
+		c.AbortWithStatus(http.StatusForbidden)
 	default:
 		roleName := RoleFromContext(c)
 		subject, err := a.validateAccessToken(c)
