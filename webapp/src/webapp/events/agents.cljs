@@ -23,7 +23,7 @@
  ::set-agents
  (fn
    [{:keys [db]} [_ agents]]
-   {:db (assoc db :agents {:status :ready :data agents})}))
+   {:db (assoc db :agents {:status :ready :data []})}))
 
 (rf/reg-event-fx
  :agents->get-embedded-agents-connected

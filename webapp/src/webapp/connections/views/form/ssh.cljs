@@ -80,7 +80,7 @@
 
          [checkboxes/group
           [{:name "runbooks"
-            :label "Runbooks (It's not available for tcp connections)"
+            :label "Runbooks (It's not available for ssh connections)"
             :description "Create templates to automate tasks in your organization"
             :disabled? true
             :checked? access-mode-runbooks}
@@ -89,7 +89,7 @@
             :description "Access from your client of preference using hoop.dev to channel connections using our Desktop App or our Command Line Interface"
             :checked? access-mode-connect}
            {:name "exec"
-            :label "Web & One-Offs (It's not available for tcp connections)"
+            :label "Web & One-Offs (It's not available for ssh connections)"
             :disabled? true
             :description "Use hoop.dev's developer portal or our CLI's One-Offs commands directly in your terminal "
             :checked? access-mode-exec}]]]
