@@ -356,20 +356,14 @@ func debugClaims(subject string, claims map[string]any, accessToken *oauth2.Toke
 
 // analyticsTrack tracks the user signup/login event
 func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *pguserauth.Context) {
-	org, err := pgorgs.New().FetchOrgByContext(ctx)
-	if err != nil {
-		log.Errorf("failed fetching org, reason=%v", err)
-	}
 	licenseType := license.OSSType
-	var l license.License
-	if org.LicenseData != nil {
-		err := json.Unmarshal(*org.LicenseData, &l)
-		if err != nil {
-			log.Errorf("failed decoding license data, reason=%v", err)
+	if ctx.OrgLicenseData != nil && len(*ctx.OrgLicenseData) > 0 {
+		var l license.License
+		err := json.Unmarshal(*ctx.OrgLicenseData, &l)
+		if err == nil {
+			licenseType = l.Payload.Type
 		}
-		licenseType = l.Payload.Type
 	}
-
 	client := analytics.New()
 	if !isNewUser {
 		client.Track(ctx.UserEmail, analytics.EventLogin, map[string]any{

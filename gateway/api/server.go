@@ -154,12 +154,12 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	// local auth routes //
 	///////////////////////
 	route.POST("/localauth/register",
-		api.TrackRequest(analytics.EventSignup),
 		api.LocalAuthOnly,
+		api.TrackRequest(analytics.EventSignup),
 		localauthapi.Register)
 	route.POST("/localauth/login",
-		api.TrackRequest(analytics.EventLogin),
 		api.LocalAuthOnly,
+		api.TrackRequest(analytics.EventLogin),
 		localauthapi.Login)
 	///////////////////////////
 	// end local auth routes //

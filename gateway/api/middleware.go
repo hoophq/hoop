@@ -87,7 +87,7 @@ func (a *Api) localAuthMiddleware(c *gin.Context) {
 			WithUserInfo(ctx.UserName, ctx.UserEmail, string(ctx.UserStatus), ctx.UserPicture, ctx.UserGroups).
 			WithSlackID(ctx.UserSlackID).
 			WithOrgName(ctx.OrgName).
-			WithOrgLicense(ctx.OrgLicense).
+			WithOrgLicenseData(ctx.OrgLicenseData).
 			WithApiURL(appconfig.Get().ApiURL()).
 			WithGrpcURL(a.GrpcURL),
 	)
@@ -150,7 +150,7 @@ func (a *Api) apiKeyMiddleware(c *gin.Context) {
 				WithUserInfo(ctx.UserName, ctx.UserEmail, string(ctx.UserStatus), ctx.UserPicture, ctx.UserGroups).
 				WithSlackID(ctx.UserSlackID).
 				WithOrgName(ctx.OrgName).
-				WithOrgLicense(ctx.OrgLicense).
+				WithOrgLicenseData(ctx.OrgLicenseData).
 				WithApiURL(a.IDProvider.ApiURL).
 				WithGrpcURL(a.GrpcURL),
 		)
@@ -260,7 +260,7 @@ func (a *Api) Authenticate(c *gin.Context) {
 				WithUserInfo(ctx.UserName, ctx.UserEmail, string(ctx.UserStatus), ctx.UserPicture, ctx.UserGroups).
 				WithSlackID(ctx.UserSlackID).
 				WithOrgName(ctx.OrgName).
-				WithOrgLicense(ctx.OrgLicense).
+				WithOrgLicenseData(ctx.OrgLicenseData).
 				WithApiURL(a.IDProvider.ApiURL).
 				WithGrpcURL(a.GrpcURL),
 		)
@@ -316,18 +316,14 @@ func (a *Api) TrackRequest(eventName string) func(c *gin.Context) {
 			c.Next()
 			return
 		}
-		org, err := pgorgs.New().FetchOrgByContext(ctx)
-		if err != nil {
-			log.Errorf("failed fetching org, reason=%v", err)
-		}
+
 		licenseType := license.OSSType
-		var l license.License
-		if org.LicenseData != nil {
-			err := json.Unmarshal(*org.LicenseData, &l)
-			if err != nil {
-				log.Errorf("failed decoding license data, reason=%v", err)
+		if ctx.OrgLicenseData != nil && len(*ctx.OrgLicenseData) > 0 {
+			var l license.License
+			err := json.Unmarshal(*ctx.OrgLicenseData, &l)
+			if err == nil {
+				licenseType = l.Payload.Type
 			}
-			licenseType = l.Payload.Type
 		}
 
 		properties := map[string]any{
