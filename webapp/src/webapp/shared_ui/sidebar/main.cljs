@@ -115,7 +115,8 @@
           [:div {:class "h-full flex grow flex-col gap-y-2 overflow-y-auto bg-[#060E1D] px-4 pb-10"}
            [:div {:class "flex my-8 shrink-0 items-center justify-center"}
             [:figure {:class "cursor-pointer"}
-             [:img {:src "/images/hoop-branding/SVG/hoop-symbol+text_white.svg"
+             [:img {:src (str config/webapp-url
+                              "/images/hoop-branding/SVG/hoop-symbol+text_white.svg")
                     :on-click #(rf/dispatch [:navigate :home])}]]]
            [:nav {:class "flex flex-1 flex-col"}
             [:ul {:role "list"

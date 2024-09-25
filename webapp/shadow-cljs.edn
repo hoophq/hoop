@@ -40,7 +40,9 @@
                              webapp.env/hoop-app-url #shadow/env ["HOOP_APP_URL"
                                                                   "http://localhost:8270"]
                              webapp.env/api-url #shadow/env ["API_URL"
-                                                             "http://localhost:8009/api"]}}}
+                                                             "http://localhost:8009/api"]
+                             webapp.env/webapp-url #shadow/env ["WEBAPP_URL"
+                                                               "http://localhost:8280"]}}
    :release {:compiler-options {:output-to "resources/public/js"
                                 :output-dir "resources/public/js"
                                 :source-map true
@@ -60,7 +62,9 @@
                                  webapp.env/hoop-app-url #shadow/env ["HOOP_APP_URL"
                                                                       "http://localhost:8270"]
                                  webapp.env/api-url #shadow/env ["API_URL"
-                                                                 "http://localhost:4001/api"]}}
+                                                                 "http://localhost:4001/api"]
+                                 webapp.env/webapp-url #shadow/env ["WEBAPP_URL"
+                                                                   "http://localhost:8280"]}}}
              :build-options
              {:ns-aliases
               {day8.re-frame.tracing day8.re-frame.tracing-stubs}}}}

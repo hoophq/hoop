@@ -36,7 +36,8 @@
         [:<>
          [:div {:class "flex my-8 shrink-0 items-center"}
           [:figure {:class "w-40 cursor-pointer"}
-           [:img {:src "/images/hoop-branding/PNG/hoop-symbol+text_white@4x.png"
+           [:img {:src (str config/webapp-url
+                            "/images/hoop-branding/PNG/hoop-symbol+text_white@4x.png")
                   :on-click #(rf/dispatch [:navigate :home])}]]]
          [:nav {:class "flex flex-1 flex-col"}
           [:ul {:role "list"
