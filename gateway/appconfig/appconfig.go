@@ -65,7 +65,6 @@ func Load() error {
 		grpcURL = "http://127.0.0.1:8010"
 	}
 	apiRawURL, err := url.Parse(apiURL)
-	fmt.Printf("apiRawURL: %+v\n", apiRawURL.Host)
 	if err != nil {
 		return fmt.Errorf("failed parsing API_URL env, reason=%v", err)
 	}
