@@ -71,7 +71,6 @@ func (r *plugin) OnConnect(ctx plugintypes.Context) error {
 
 		if session.JiraIssue == "" {
 			log.Info("there's no jira issue for this session, creating one")
-			// Create JIRA issue
 			reviewGroups := make([]string, 0)
 			if review != nil && len(review.ReviewGroupsData) > 0 {
 				reviewGroups = make([]string, len(review.ReviewGroupsData))
@@ -100,12 +99,12 @@ func (r *plugin) OnConnect(ctx plugintypes.Context) error {
 				)
 			}
 
-			if ctx.ClientVerb == "exec" {
+			if ctx.ClientVerb == pb.ClientVerbExec && ctx.ClientOrigin == pb.ConnectionOriginClientAPI {
 				descriptionContent = append(descriptionContent,
 					jira.ParagraphBlock(
 						jira.StrongTextBlock("script: "),
 					),
-					jira.CodeSnippetBlock(ctx.Script),
+					jira.CodeSnippetBlock(session.Script["data"]),
 				)
 			}
 
@@ -141,13 +140,18 @@ func (r *plugin) OnDisconnect(ctx plugintypes.Context, _ error) error {
 		}
 
 		events := []string{"o", "e"}
-		if ctx.ClientVerb == "connect" && ctx.ConnectionType == "database" {
+		if ctx.ClientVerb == pb.ClientVerbConnect && ctx.ConnectionType == "database" {
 			events = []string{"i"}
-		} else if ctx.ClientVerb == "connect" && ctx.ConnectionType == "custom" {
+		} else if ctx.ClientVerb == pb.ClientVerbConnect && ctx.ConnectionType == "custom" {
 			events = []string{"i", "o", "e"}
 		}
 
 		payload := parseSessionToFile(session, sessionParseOption{withLineBreak: true, events: events})
+		if ctx.ClientOrigin == pb.ConnectionOriginClient &&
+			ctx.ClientVerb == pb.ClientVerbExec &&
+			ctx.ConnectionType == "custom" {
+			payload = parseSessionToFile(session, sessionParseOption{withLineBreak: false, events: events})
+		}
 
 		payloadLength := len(payload)
 		if payloadLength > 5000 {
