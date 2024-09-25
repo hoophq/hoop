@@ -39,6 +39,7 @@ type Config struct {
 	migrationPathFiles      string
 	orgMultitenant          bool
 	apiURL                  string
+	grpcURL                 string
 	apiHostname             string
 	apiHost                 string
 	apiScheme               string
@@ -57,9 +58,14 @@ func Load() error {
 	}
 	apiURL := os.Getenv("API_URL")
 	if apiURL == "" {
-		return fmt.Errorf("API_URL is required but is empty")
+		apiURL = "http://127.0.0.1:8009"
+	}
+	grpcURL := os.Getenv("GRPC_URL")
+	if grpcURL == "" {
+		grpcURL = "http://127.0.0.1:8010"
 	}
 	apiRawURL, err := url.Parse(apiURL)
+	fmt.Printf("apiRawURL: %+v\n", apiRawURL.Host)
 	if err != nil {
 		return fmt.Errorf("failed parsing API_URL env, reason=%v", err)
 	}
@@ -102,6 +108,7 @@ func Load() error {
 	runtimeConfig = Config{
 		apiKey:                  os.Getenv("API_KEY"),
 		apiURL:                  fmt.Sprintf("%s://%s", apiRawURL.Scheme, apiRawURL.Host),
+		grpcURL:                 grpcURL,
 		apiHostname:             apiRawURL.Hostname(),
 		apiScheme:               apiRawURL.Scheme,
 		apiHost:                 apiRawURL.Host,
@@ -241,6 +248,7 @@ func (c Config) LicenseSigningKey() (string, *rsa.PrivateKey) {
 }
 
 func (c Config) ApiURL() string      { return c.apiURL }
+func (c Config) GrpcURL() string     { return c.grpcURL }
 func (c Config) ApiHostname() string { return c.apiHostname }
 
 // ApiHost host or host:port

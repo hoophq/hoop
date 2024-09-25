@@ -20,8 +20,6 @@ services:
   gateway:
     image: hoophq/hooplabs
     environment:
-      - API_URL=http://127.0.0.1:8009
-      - GRPC_URL=http://127.0.0.1:8010
       - LOG_LEVEL=info
       - LOG_ENCODING=console
       - GIN_MODE=release

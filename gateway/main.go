@@ -64,7 +64,7 @@ func Run() {
 	}
 
 	idProvider := idp.NewProvider(apiURL)
-	grpcURL := os.Getenv("GRPC_URL")
+	grpcURL := appconfig.Get().GrpcURL()
 	if grpcURL == "" {
 		scheme := "grpcs"
 		if appconfig.Get().ApiScheme() == "http" {
