@@ -249,7 +249,7 @@
            [:div {:class "mb-large"}
             [h/h4 "What do you want to connect to?"
              {:class "text-center mb-large"}]
-            [:section {:class "flex  gap-regular justify-center"}
+            [:section {:class "flex gap-regular justify-center"}
              [:div {:class (str "flex flex-col w-44 items-center gap-small rounded-lg bg-gray-50 hover:shadow "
                                 "border border-gray-100 px-1 pt-3 pb-5 cursor-pointer hover:bg-gray-100"
                                 (when (= @connection-type :database)
