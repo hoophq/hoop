@@ -14,7 +14,8 @@
  :agents->get-agents
  (fn
    [{:keys [db]} [_]]
-   {:fx [[:dispatch [:fetch
+   {:db (assoc db :agents {:status :loading :data []})
+    :fx [[:dispatch [:fetch
                      {:method "GET"
                       :uri "/agents"
                       :on-success #(rf/dispatch [::set-agents %])}]]]}))
@@ -22,7 +23,7 @@
  ::set-agents
  (fn
    [{:keys [db]} [_ agents]]
-   {:db (assoc db :agents agents)}))
+   {:db (assoc db :agents {:status :ready :data agents})}))
 
 (rf/reg-event-fx
  :agents->get-embedded-agents-connected

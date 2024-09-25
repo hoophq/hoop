@@ -3,8 +3,8 @@
 
 (def connection-configs-required
   {:command-line []
-   :tcp [{:key "host" :value ""}
-         {:key "port" :value ""}]
+   :tcp [{:key "host" :value "" :required true}
+         {:key "port" :value "" :required true}]
    :mysql [{:key "host" :value "" :required true}
            {:key "user" :value "" :required true}
            {:key "pass" :value "" :required true}
@@ -31,12 +31,14 @@
    :mongodb [{:key "connection_string"
               :value ""
               :required true
-              :placeholder "mongodb+srv://root:<password>@devcluster.mwb5sun.mongodb.net/"}]})
+              :placeholder "mongodb+srv://root:<password>@devcluster.mwb5sun.mongodb.net/"}]
+   :ssh [{:key "ssh_uri" :value "" :required true :placeholder "ssh://user@host"}]})
 
 (def connection-icons-name-dictionary
   {:dark {:postgres "/images/connections-logos/postgres_logo.svg"
           :postgres-csv "/images/connections-logos/postgres_logo.svg"
           :command-line "/images/connections-logos/dark/custom_dark.svg"
+          :ssh "/images/connections-logos/dark/custom_dark.svg"
           :custom "/images/connections-logos/dark/custom_dark.svg"
           :tcp "/images/connections-logos/dark/tcp_dark.svg"
           :mysql "/images/connections-logos/dark/mysql_dark.png"
@@ -57,6 +59,7 @@
    :light {:postgres "/images/connections-logos/postgres_logo.svg"
            :postgres-csv "/images/connections-logos/postgres_logo.svg"
            :command-line "/images/connections-logos/command-line.svg"
+           :ssh "/images/connections-logos/command-line.svg"
            :custom "/images/connections-logos/command-line.svg"
            :tcp "/images/connections-logos/tcp_logo.svg"
            :mysql "/images/connections-logos/mysql_logo.png"
@@ -90,7 +93,8 @@
    "postgres" ""
    "mysql" ""
    "mssql" ""
-   "mongodb" ""})
+   "mongodb" ""
+   "ssh" "ssh $SSH_URI -i $SSH_PRIVATE_KEY"})
 
 (def connection-postgres-demo
   {:name "postgres-demo"

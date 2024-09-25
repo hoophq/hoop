@@ -11,13 +11,16 @@
             [webapp.components.headings :as h]
             [webapp.components.loaders :as loaders]
             [webapp.connections.constants :as constants]
+            [webapp.connections.dlp-info-types :as dlp-info-types]
             [webapp.connections.utilities :as utils]
             [webapp.connections.views.form.application :as application]
             [webapp.connections.views.form.custom :as custom]
             [webapp.connections.views.form.database :as database]
+            [webapp.connections.views.form.ssh :as ssh]
+            [webapp.connections.views.form.tcp :as tcp]
             [webapp.formatters :as f]
             [webapp.subs :as subs]
-            [webapp.connections.dlp-info-types :as dlp-info-types]))
+            ["@heroicons/react/24/solid" :as hero-solid-icon]))
 
 
 (defn array->select-options [array]
@@ -38,13 +41,13 @@
   [_ form-fields]
   (if (empty? (:agent_id form-fields))
     (rf/dispatch [:show-snackbar {:level :error
-                                  :text "You cannot create without selecting a hoop."}])
+                                  :text "You cannot create without selecting an agent"}])
     (rf/dispatch [:connections->create-connection form-fields])))
 (defmethod dispatch-form :update
   [_ form-fields]
   (if (empty? (:agent_id form-fields))
     (rf/dispatch [:show-snackbar {:level :error
-                                  :text "You cannot create without selecting a hoop."}])
+                                  :text "You cannot create without selecting an agent."}])
     (rf/dispatch [:connections->update-connection form-fields])))
 
 (defn add-new-configs
@@ -128,12 +131,19 @@
                                                       (= form-type :update))
                                                true
                                                false))
-        current-agent (first (filter (fn [{:keys [id]}] (= id (:agent_id connection))) @agents))
-        current-agent-id (r/atom (or (:id current-agent) (:id (first @agents))))
-        current-agent-name (r/atom (or (:name current-agent)
-                                       (if (= (cs/upper-case (:status (first @agents))) "DISCONNECTED")
-                                         (str (:name (first @agents)) " (" (:status (first @agents)) ")")
-                                         (:name (first @agents)))))
+        current-agent (if (empty? (:agent_id connection))
+                        (first (:data @agents))
+                        (first (filter (fn [{:keys [id]}] (= id (:agent_id connection))) (:data @agents))))
+
+        current-agent-id (r/atom (if (empty? current-agent)
+                                   ""
+                                   (:id current-agent)))
+        current-agent-name (r/atom (if (empty? current-agent)
+                                     ""
+                                     (if (= (cs/upper-case (:status current-agent)) "DISCONNECTED")
+                                       (str (:name current-agent) " (" (:status current-agent) ")")
+                                       (:name current-agent))))
+
         connection-command (r/atom (if (empty? (:command connection))
                                      (get constants/connection-commands @connection-subtype)
                                      (cs/join " " (:command connection))))
@@ -228,7 +238,7 @@
             "Close"]
            [:> hero-micro-icon/XMarkIcon {:class "h-6 w-6 text-black"
                                           :aria-hidden "true"}]]])
-       [:form {:class (str "max-w-xl"
+       [:form {:class (str "max-w-3xl"
                            (when @connection-type " mt-12"))
                :on-submit (fn [e]
                             (.preventDefault e)
@@ -258,7 +268,64 @@
                       :src "/images/database-connections-small.svg"}]]]
              [:div {:class (str "flex flex-col w-44 items-center gap-small rounded-lg bg-gray-50 hover:shadow "
                                 "border border-gray-100 px-1 pt-3 pb-5 cursor-pointer hover:bg-gray-100"
-                                (when (= @connection-type :application)
+                                (when (and (= @connection-type :custom)
+                                           (not= @connection-subtype "ssh"))
+                                  " bg-gray-800 text-white hover:bg-gray-800"))
+                    :on-click (fn []
+                                (reset! connection-type :custom)
+                                (reset! connection-subtype "custom")
+                                (reset! access-schema-toggle-enabled? false)
+                                (reset! config-file-name "")
+                                (reset! connection-name (str "custom" "-" (random-connection-name)))
+                                (reset! connection-command "")
+                                (reset! configs []))}
+              [:span {:class "text-sm"}
+               "Shell"]
+              [:figure
+               [:img {:class "w-full p-3"
+                      :src "/images/custom-connections-small.svg"}]]]
+             [:div {:class (str "flex flex-col w-44 items-center gap-small rounded-lg bg-gray-50 hover:shadow "
+                                "border border-gray-100 px-1 pt-3 pb-5 cursor-pointer hover:bg-gray-100"
+                                (when (and (= @connection-type :custom)
+                                           (= @connection-subtype "ssh"))
+                                  " bg-gray-800 text-white hover:bg-gray-800"))
+                    :on-click (fn []
+                                (reset! connection-type :custom)
+                                (reset! connection-subtype "ssh")
+                                (reset! access-schema-toggle-enabled? false)
+                                (reset! access-mode-exec false)
+                                (reset! access-mode-runbooks false)
+                                (reset! config-file-name "SSH_PRIVATE_KEY")
+                                (reset! connection-name (str "ssh" "-" (random-connection-name)))
+                                (reset! connection-command (get constants/connection-commands "ssh"))
+                                (reset! configs (utils/get-config-keys (keyword "ssh"))))}
+              [:span {:class "text-sm"}
+               "SSH"]
+              [:figure
+               [:img {:class "w-full p-3"
+                      :src "/images/custom-connections-small.svg"}]]]
+             [:div {:class (str "flex flex-col w-44 items-center gap-small rounded-lg bg-gray-50 hover:shadow "
+                                "border border-gray-100 px-1 pt-3 pb-5 cursor-pointer hover:bg-gray-100"
+                                (when (and (= @connection-type :application)
+                                           (= @connection-subtype "tcp"))
+                                  " bg-gray-800 text-white hover:bg-gray-800"))
+                    :on-click (fn []
+                                (reset! connection-type :application)
+                                (reset! connection-subtype "tcp")
+                                (reset! access-schema-toggle-enabled? false)
+                                (reset! access-mode-exec false)
+                                (reset! access-mode-runbooks false)
+                                (reset! connection-name (str "tcp" "-" (random-connection-name)))
+                                (reset! configs (utils/get-config-keys (keyword "tcp"))))}
+              [:span {:class "text-sm"}
+               "TCP"]
+              [:figure
+               [:img {:class "w-full p-3"
+                      :src "/images/tcp-connections-small.svg"}]]]
+             [:div {:class (str "flex flex-col w-44 items-center gap-small rounded-lg bg-gray-50 hover:shadow "
+                                "border border-gray-100 px-1 pt-3 pb-5 cursor-pointer hover:bg-gray-100"
+                                (when (and (= @connection-type :application)
+                                           (not= @connection-subtype "tcp"))
                                   " bg-gray-800 text-white hover:bg-gray-800"))
                     :on-click (fn []
                                 (reset! connection-subtype "ruby-on-rails")
@@ -271,26 +338,11 @@
                "Application"]
               [:figure
                [:img {:class "w-full p-3"
-                      :src "/images/application-connections-small.svg"}]]]
-             [:div {:class (str "flex flex-col w-44 items-center gap-small rounded-lg bg-gray-50 hover:shadow "
-                                "border border-gray-100 px-1 pt-3 pb-5 cursor-pointer hover:bg-gray-100"
-                                (when (= @connection-type :custom)
-                                  " bg-gray-800 text-white hover:bg-gray-800"))
-                    :on-click (fn []
-                                (reset! connection-type :custom)
-                                (reset! connection-subtype "custom")
-                                (reset! access-schema-toggle-enabled? false)
-                                (reset! connection-name (str "custom" "-" (random-connection-name)))
-                                (reset! configs []))}
-              [:span {:class "text-sm"}
-               "Shell"]
-              [:figure
-               [:img {:class "w-full p-3"
-                      :src "/images/custom-connections-small.svg"}]]]]
+                      :src "/images/application-connections-small.svg"}]]]]
 
             (when (and (not (seq (:results @connections)))
                        (not @connection-type))
-              [:div {:class "mt-14 col-span-2 flex flex-col items-center"}
+              [:div {:class "mt-14 flex flex-col items-center"}
                [:span {:class "text-gray-500 text-sm mb-4"}
                 "Not sure yet? Try this suggestion"]
                [:div {:class "flex items-center gap-regular border border-gray-100 bg-gray-50 rounded-lg p-4 hover:shadow cursor-pointer"
@@ -301,80 +353,129 @@
                 [:div {:class "flex flex-col justify-center"}
                  [h/h4-md "Quickstart with a Demo PostgreSQL"]
                  [:span {:class "mt-2 text-sm text-center text-gray-500"}
-                  "Start with a complete database setup to test all features"]]]])])
+                  "Start with a complete database setup to test all features"]]]])
+
+            (when (and (empty? @current-agent-id)
+                       (not @connection-type))
+              [:div {:class "mt-52 py-3 px-4 rounded-md flex items-center justify-center bg-gray-100 border border-gray-300"}
+               [:span {:class "text-sm text-gray-500"}
+                "No Agents found. "
+                [:a {:class "text-blue-600 underline"
+                     :href "https://hoop.dev/docs/concepts/agent"
+                     :target "_blank"}
+                 "Click here"]
+
+                " to learn how to setup one before creating a connection."]
+               [:> hero-solid-icon/ArrowUpRightIcon {:class "h-4 w-4 text-gray-600 ml-3"}]])])
 
          (when @connection-type
            [:div
             [nickname-input connection-name connection-type form-type]
 
-            (case @connection-type
-              :database [database/main configs {:connection-name connection-name
-                                                :connection-type connection-type
-                                                :connection-subtype connection-subtype
-                                                :connection-command connection-command
-                                                :user-groups user-groups
-                                                :current-agent-name current-agent-name
-                                                :current-agent-id current-agent-id
-                                                :tags-value tags-value
-                                                :tags-input-value tags-input-value
-                                                :form-type form-type
-                                                :api-key api-key
-                                                :review-toggle-enabled? review-toggle-enabled?
-                                                :approval-groups-value approval-groups-value
-                                                :data-masking-toggle-enabled? data-masking-toggle-enabled?
-                                                :data-masking-groups-value data-masking-groups-value
-                                                :access-schema-toggle-enabled? access-schema-toggle-enabled?
-                                                :access-mode-runbooks access-mode-runbooks
-                                                :access-mode-connect access-mode-connect
-                                                :access-mode-exec access-mode-exec}]
-              :application [application/main {:connection-name connection-name
-                                              :connection-type connection-type
-                                              :connection-subtype connection-subtype
-                                              :connection-command connection-command
-                                              :tags-value tags-value
+            (cond
+              (= @connection-type :database)
+              [database/main configs {:connection-name connection-name
+                                      :connection-type connection-type
+                                      :connection-subtype connection-subtype
+                                      :connection-command connection-command
+                                      :user-groups user-groups
+                                      :current-agent-name current-agent-name
+                                      :current-agent-id current-agent-id
+                                      :tags-value tags-value
+                                      :tags-input-value tags-input-value
+                                      :form-type form-type
+                                      :api-key api-key
+                                      :review-toggle-enabled? review-toggle-enabled?
+                                      :approval-groups-value approval-groups-value
+                                      :data-masking-toggle-enabled? data-masking-toggle-enabled?
+                                      :data-masking-groups-value data-masking-groups-value
+                                      :access-schema-toggle-enabled? access-schema-toggle-enabled?
+                                      :access-mode-runbooks access-mode-runbooks
+                                      :access-mode-connect access-mode-connect
+                                      :access-mode-exec access-mode-exec}]
+              (and (= @connection-type :application)
+                   (not= @connection-subtype "tcp"))
+              [application/main {:connection-name connection-name
+                                 :connection-type connection-type
+                                 :connection-subtype connection-subtype
+                                 :connection-command connection-command
+                                 :tags-value tags-value
+                                 :tags-input-value tags-input-value
+                                 :user-groups user-groups
+                                 :current-agent-name current-agent-name
+                                 :current-agent-id current-agent-id
+                                 :form-type form-type
+                                 :api-key api-key
+                                 :review-toggle-enabled? review-toggle-enabled?
+                                 :approval-groups-value approval-groups-value
+                                 :data-masking-toggle-enabled? data-masking-toggle-enabled?
+                                 :data-masking-groups-value data-masking-groups-value
+                                 :access-mode-runbooks access-mode-runbooks
+                                 :access-mode-connect access-mode-connect
+                                 :access-mode-exec access-mode-exec}]
+              (and (= @connection-type :application)
+                   (= @connection-subtype "tcp"))
+              [tcp/main configs {:user-groups user-groups
+                                 :current-agent-name current-agent-name
+                                 :current-agent-id current-agent-id
+                                 :tags-value tags-value
+                                 :tags-input-value tags-input-value
+                                 :form-type form-type
+                                 :review-toggle-enabled? review-toggle-enabled?
+                                 :approval-groups-value approval-groups-value
+                                 :data-masking-toggle-enabled? data-masking-toggle-enabled?
+                                 :data-masking-groups-value data-masking-groups-value
+                                 :access-mode-runbooks access-mode-runbooks
+                                 :access-mode-connect access-mode-connect
+                                 :access-mode-exec access-mode-exec}]
+              (and (= @connection-type :custom)
+                   (not= @connection-subtype "ssh"))
+              [custom/main configs configs-file {:connection-name connection-name
+                                                 :connection-type connection-type
+                                                 :connection-subtype connection-subtype
+                                                 :connection-command connection-command
+                                                 :tags-value tags-value
+                                                 :tags-input-value tags-input-value
+                                                 :user-groups user-groups
+                                                 :current-agent-name current-agent-name
+                                                 :current-agent-id current-agent-id
+                                                 :config-file-name config-file-name
+                                                 :config-file-value config-file-value
+                                                 :config-key config-key
+                                                 :config-value config-value
+                                                 :form-type form-type
+                                                 :api-key api-key
+                                                 :review-toggle-enabled? review-toggle-enabled?
+                                                 :approval-groups-value approval-groups-value
+                                                 :data-masking-toggle-enabled? data-masking-toggle-enabled?
+                                                 :data-masking-groups-value data-masking-groups-value
+                                                 :access-mode-runbooks access-mode-runbooks
+                                                 :access-mode-connect access-mode-connect
+                                                 :access-mode-exec access-mode-exec
+                                                 :on-click->add-more #(do
+                                                                        (add-new-configs configs @config-key @config-value)
+                                                                        (reset! config-value "")
+                                                                        (reset! config-key ""))
+                                                 :on-click->add-more-file #(do
+                                                                             (add-new-configs configs-file @config-file-name @config-file-value)
+                                                                             (reset! config-file-name "")
+                                                                             (reset! config-file-value ""))}]
+              (and (= @connection-type :custom)
+                   (= @connection-subtype "ssh"))
+              [ssh/main configs configs-file {:tags-value tags-value
                                               :tags-input-value tags-input-value
                                               :user-groups user-groups
                                               :current-agent-name current-agent-name
                                               :current-agent-id current-agent-id
+                                              :config-file-value config-file-value
                                               :form-type form-type
-                                              :api-key api-key
                                               :review-toggle-enabled? review-toggle-enabled?
                                               :approval-groups-value approval-groups-value
                                               :data-masking-toggle-enabled? data-masking-toggle-enabled?
                                               :data-masking-groups-value data-masking-groups-value
                                               :access-mode-runbooks access-mode-runbooks
                                               :access-mode-connect access-mode-connect
-                                              :access-mode-exec access-mode-exec}]
-              :custom [custom/main configs configs-file {:connection-name connection-name
-                                                         :connection-type connection-type
-                                                         :connection-subtype connection-subtype
-                                                         :connection-command connection-command
-                                                         :tags-value tags-value
-                                                         :tags-input-value tags-input-value
-                                                         :user-groups user-groups
-                                                         :current-agent-name current-agent-name
-                                                         :current-agent-id current-agent-id
-                                                         :config-file-name config-file-name
-                                                         :config-file-value config-file-value
-                                                         :config-key config-key
-                                                         :config-value config-value
-                                                         :form-type form-type
-                                                         :api-key api-key
-                                                         :review-toggle-enabled? review-toggle-enabled?
-                                                         :approval-groups-value approval-groups-value
-                                                         :data-masking-toggle-enabled? data-masking-toggle-enabled?
-                                                         :data-masking-groups-value data-masking-groups-value
-                                                         :access-mode-runbooks access-mode-runbooks
-                                                         :access-mode-connect access-mode-connect
-                                                         :access-mode-exec access-mode-exec
-                                                         :on-click->add-more #(do
-                                                                                (add-new-configs configs @config-key @config-value)
-                                                                                (reset! config-value "")
-                                                                                (reset! config-key ""))
-                                                         :on-click->add-more-file #(do
-                                                                                     (add-new-configs configs-file @config-file-name @config-file-value)
-                                                                                     (reset! config-file-name "")
-                                                                                     (reset! config-file-value ""))}])])
+                                              :access-mode-exec access-mode-exec}])])
          (when (= form-type :update)
            [:section
             [divider/main]
@@ -409,11 +510,11 @@
     (rf/dispatch [:connections->get-connections])
     (fn []
       (case form-type
-        :create (if (empty? @agents)
-                  [loading-list-view]
-                  [form data :create (keyword connection-original-type)])
+        :create (if (= :ready (:status @agents))
+                  [form data :create connection-original-type]
+                  [loading-list-view])
 
-        :update (if (or (empty? @agents) (true? (:loading @connection)))
+        :update (if (or (= :loading (:status @agents)) (true? (:loading @connection)))
                   [loading-list-view]
                   [form (:data @connection) :update (case (:type (:data @connection))
                                                       ("command-line" "custom") :custom
