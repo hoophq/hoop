@@ -64,14 +64,7 @@ func Run() {
 	}
 
 	idProvider := idp.NewProvider(apiURL)
-	grpcURL := os.Getenv("GRPC_URL")
-	if grpcURL == "" {
-		scheme := "grpcs"
-		if appconfig.Get().ApiScheme() == "http" {
-			scheme = "grpc"
-		}
-		grpcURL = fmt.Sprintf("%s://%s:8443", scheme, appconfig.Get().ApiHostname())
-	}
+	grpcURL := appconfig.Get().GrpcURL()
 
 	reviewService := review.Service{}
 	if !pgusers.IsOrgMultiTenant() {
