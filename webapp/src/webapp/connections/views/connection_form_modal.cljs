@@ -7,7 +7,6 @@
             [reagent.core :as r]
             [webapp.components.button :as button]
             [webapp.components.divider :as divider]
-            [webapp.components.forms :as forms]
             [webapp.components.headings :as h]
             [webapp.components.loaders :as loaders]
             [webapp.connections.constants :as constants]
@@ -18,7 +17,6 @@
             [webapp.connections.views.form.database :as database]
             [webapp.connections.views.form.ssh :as ssh]
             [webapp.connections.views.form.tcp :as tcp]
-            [webapp.formatters :as f]
             [webapp.subs :as subs]
             ["@heroicons/react/24/solid" :as hero-solid-icon]))
 
@@ -56,26 +54,6 @@
   (if-not (or (empty? config-key) (empty? config-value))
     (swap! config-map conj {:key config-key :value config-value})
     nil))
-
-(def setup-type-dictionary
-  {:database "Database"
-   :application "Application"
-   :custom "Shell"})
-
-(defn nickname-input [connection-name connection-type form-type]
-  [:section {:class "mb-large"}
-   [:div {:class "grid grid-cols-1"}
-    [h/h4-md
-     (str "Setup your " (get setup-type-dictionary @connection-type))]
-    [:label {:class "text-xs text-gray-500 my-small"}
-     "This name identifies your connection and should be unique"]
-    [forms/input {:label "Name"
-                  :placeholder (str "my-" @connection-type "-test")
-                  :disabled (= form-type :update)
-                  :on-change (fn [v]
-                               (reset! connection-name (f/replace-empty-space->dash (-> v .-target .-value))))
-                  :required true
-                  :value @connection-name}]]])
 
 (defn- convertStatusToBool [status]
   (if (= status "enabled")
@@ -258,6 +236,9 @@
                                 (reset! connection-type :database)
                                 (reset! connection-subtype "postgres")
                                 (reset! access-schema-toggle-enabled? true)
+                                (reset! access-mode-exec true)
+                                (reset! access-mode-runbooks true)
+                                (reset! access-mode-connect true)
                                 (reset! configs (utils/get-config-keys (keyword "postgres")))
                                 (reset! connection-name (str "postgres" "-" (random-connection-name)))
                                 (reset! connection-command (get constants/connection-commands "postgres")))}
@@ -275,6 +256,9 @@
                                 (reset! connection-type :custom)
                                 (reset! connection-subtype "custom")
                                 (reset! access-schema-toggle-enabled? false)
+                                (reset! access-mode-exec true)
+                                (reset! access-mode-runbooks true)
+                                (reset! access-mode-connect true)
                                 (reset! config-file-name "")
                                 (reset! connection-name (str "custom" "-" (random-connection-name)))
                                 (reset! connection-command "")
@@ -295,6 +279,7 @@
                                 (reset! access-schema-toggle-enabled? false)
                                 (reset! access-mode-exec false)
                                 (reset! access-mode-runbooks false)
+                                (reset! access-mode-connect true)
                                 (reset! config-file-name "SSH_PRIVATE_KEY")
                                 (reset! connection-name (str "ssh" "-" (random-connection-name)))
                                 (reset! connection-command (get constants/connection-commands "ssh"))
@@ -315,6 +300,7 @@
                                 (reset! access-schema-toggle-enabled? false)
                                 (reset! access-mode-exec false)
                                 (reset! access-mode-runbooks false)
+                                (reset! access-mode-connect true)
                                 (reset! connection-name (str "tcp" "-" (random-connection-name)))
                                 (reset! configs (utils/get-config-keys (keyword "tcp"))))}
               [:span {:class "text-sm"}
@@ -331,6 +317,9 @@
                                 (reset! connection-subtype "ruby-on-rails")
                                 (reset! connection-type :application)
                                 (reset! access-schema-toggle-enabled? false)
+                                (reset! access-mode-exec true)
+                                (reset! access-mode-runbooks true)
+                                (reset! access-mode-connect true)
                                 (reset! connection-name (str "ruby-on-rails" "-" (random-connection-name)))
                                 (reset! connection-command (get constants/connection-commands "ruby-on-rails"))
                                 (reset! configs []))}
@@ -370,8 +359,6 @@
 
          (when @connection-type
            [:div
-            [nickname-input connection-name connection-type form-type]
-
             (cond
               (= @connection-type :database)
               [database/main configs {:connection-name connection-name
@@ -415,7 +402,9 @@
                                  :access-mode-exec access-mode-exec}]
               (and (= @connection-type :application)
                    (= @connection-subtype "tcp"))
-              [tcp/main configs {:user-groups user-groups
+              [tcp/main configs {:connection-name connection-name
+                                 :connection-type connection-type
+                                 :user-groups user-groups
                                  :current-agent-name current-agent-name
                                  :current-agent-id current-agent-id
                                  :tags-value tags-value
@@ -462,7 +451,9 @@
                                                                              (reset! config-file-value ""))}]
               (and (= @connection-type :custom)
                    (= @connection-subtype "ssh"))
-              [ssh/main configs configs-file {:tags-value tags-value
+              [ssh/main configs configs-file {:connection-name connection-name
+                                              :connection-type connection-type
+                                              :tags-value tags-value
                                               :tags-input-value tags-input-value
                                               :user-groups user-groups
                                               :current-agent-name current-agent-name

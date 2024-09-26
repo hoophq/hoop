@@ -7,7 +7,8 @@
             [webapp.connections.views.configuration-inputs :as config-inputs]
             [webapp.connections.views.form.submit :as submit]
             [webapp.connections.views.form.toggle-data-masking :as toggle-data-masking]
-            [webapp.connections.views.form.toggle-review :as toggle-review]))
+            [webapp.connections.views.form.toggle-review :as toggle-review]
+            [webapp.formatters :as f]))
 
 (defn manual-credentials-view
   [configs
@@ -33,7 +34,7 @@
 
       (if (empty? @configs-file)
         [:<>
-         [forms/textarea {:label "ssh private key file content"
+         [forms/textarea {:label "SSH private key file content"
                           :required true
                           :placeholder "Paste your file content here"
                           :on-change #(reset! config-file-value (-> % .-target .-value))
@@ -43,10 +44,24 @@
 
    [submit/main form-type current-agent-name current-agent-id @agents]])
 
+(defn nickname-input [connection-name connection-type form-type]
+  [:<>
+   [:label {:class "text-xs text-gray-500 my-small"}
+    "This name identifies your connection and should be unique"]
+   [forms/input {:label "Name"
+                 :placeholder (str "my-" @connection-type "-test")
+                 :disabled (= form-type :update)
+                 :on-change (fn [v]
+                              (reset! connection-name (f/replace-empty-space->dash (-> v .-target .-value))))
+                 :required true
+                 :value @connection-name}]])
+
 (defn main []
   (let [user (rf/subscribe [:users->current-user])
         agents (rf/subscribe [:agents])]
-    (fn [configs configs-file {:keys [current-agent-name
+    (fn [configs configs-file {:keys [connection-name
+                                      connection-type
+                                      current-agent-name
                                       current-agent-id
                                       tags-value
                                       tags-input-value
@@ -61,6 +76,11 @@
                                       config-file-value
                                       form-type]}]
       [:<>
+       [:section {:class "mb-large"}
+        [:div {:class "grid grid-cols-1"}
+         [h/h4-md
+          (str "Setup your SSH")]
+         [nickname-input connection-name connection-type form-type]]]
        [:section {:class "space-y-8 mb-16"}
         [toggle-review/main {:free-license? (:free-license? (:data @user))
                              :user-groups user-groups
@@ -80,8 +100,10 @@
 
          [checkboxes/group
           [{:name "runbooks"
-            :label "Runbooks (It's not available for ssh connections)"
-            :description "Create templates to automate tasks in your organization"
+            :label "Runbooks"
+            :description [:<>
+                          [:p "Create templates to automate tasks in your organization"]
+                          [:p "*Not available for SSH connections"]]
             :disabled? true
             :checked? access-mode-runbooks}
            {:name "connect"
@@ -89,9 +111,11 @@
             :description "Access from your client of preference using hoop.dev to channel connections using our Desktop App or our Command Line Interface"
             :checked? access-mode-connect}
            {:name "exec"
-            :label "Web & One-Offs (It's not available for ssh connections)"
+            :label "Web & One-Offs"
             :disabled? true
-            :description "Use hoop.dev's developer portal or our CLI's One-Offs commands directly in your terminal "
+            :description [:<>
+                          [:p "Use hoop.dev's developer portal or our CLI's One-Offs commands directly in your terminal"]
+                          [:p "*Not available for SSH connections"]]
             :checked? access-mode-exec}]]]
 
         [multi-select/text-input {:value tags-value

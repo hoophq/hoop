@@ -4,6 +4,7 @@
             [re-frame.core :as rf]
             [reagent.core :as r]
             [webapp.components.checkboxes :as checkboxes]
+            [webapp.components.forms :as forms]
             [webapp.components.headings :as h]
             [webapp.components.multiselect :as multi-select]
             [webapp.components.tabs :as tabs]
@@ -14,7 +15,8 @@
             [webapp.connections.views.form.hoop-run-instructions :as instructions]
             [webapp.connections.views.form.submit :as submit]
             [webapp.connections.views.form.toggle-data-masking :as toggle-data-masking]
-            [webapp.connections.views.form.toggle-review :as toggle-review]))
+            [webapp.connections.views.form.toggle-review :as toggle-review]
+            [webapp.formatters :as f]))
 
 (defn random-connection-name []
   (let [numberDictionary (.generate ung/NumberDictionary #js{:length 4})
@@ -79,6 +81,18 @@
                         (rf/dispatch [:navigate :connections]))}
      "check your connections."]]])
 
+(defn nickname-input [connection-name connection-type form-type]
+  [:<>
+   [:label {:class "text-xs text-gray-500 my-small"}
+    "This name identifies your connection and should be unique"]
+   [forms/input {:label "Name"
+                 :placeholder (str "my-" @connection-type "-test")
+                 :disabled (= form-type :update)
+                 :on-change (fn [v]
+                              (reset! connection-name (f/replace-empty-space->dash (-> v .-target .-value))))
+                 :required true
+                 :value @connection-name}]])
+
 (defn main []
   (let [user (rf/subscribe [:users->current-user])
         agents (rf/subscribe [:agents])
@@ -103,6 +117,11 @@
                          api-key
                          form-type]}]
       [:<>
+       [:section {:class "mb-large"}
+        [:div {:class "grid grid-cols-1"}
+         [h/h4-md
+          (str "Setup your Database")]
+         [nickname-input connection-name connection-type form-type]]]
        [:section {:class "mb-large"}
         [:div {:class "mb-small"}
          [h/h4-md "Choose your Database type"]

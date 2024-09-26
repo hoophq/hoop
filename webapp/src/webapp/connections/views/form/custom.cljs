@@ -11,10 +11,23 @@
             [webapp.connections.views.form.hoop-run-instructions :as instructions]
             [webapp.connections.views.form.submit :as submit]
             [webapp.connections.views.form.toggle-data-masking :as toggle-data-masking]
-            [webapp.connections.views.form.toggle-review :as toggle-review]))
+            [webapp.connections.views.form.toggle-review :as toggle-review]
+            [webapp.formatters :as f]))
 
 (defn js-select-options->list [options]
   (mapv #(get % "value") options))
+
+(defn nickname-input [connection-name connection-type form-type]
+  [:<>
+   [:label {:class "text-xs text-gray-500 my-small"}
+    "This name identifies your connection and should be unique"]
+   [forms/input {:label "Name"
+                 :placeholder (str "my-" @connection-type "-test")
+                 :disabled (= form-type :update)
+                 :on-change (fn [v]
+                              (reset! connection-name (f/replace-empty-space->dash (-> v .-target .-value))))
+                 :required true
+                 :value @connection-name}]])
 
 (defn manual-credentials-view
   [configs
@@ -133,6 +146,7 @@
         agents (rf/subscribe [:agents])
         selected-tab (r/atom "Command line")]
     (fn [configs configs-file {:keys [connection-name
+                                      connection-type
                                       connection-subtype
                                       current-agent-name
                                       current-agent-id
@@ -156,6 +170,10 @@
                                       on-click->add-more-file
                                       form-type]}]
       [:<>
+       [:section {:class "mb-large"}
+        [:div {:class "grid grid-cols-1"}
+         [h/h4-md (str "Setup your Shell")]
+         [nickname-input connection-name connection-type form-type]]]
        [:section {:class "space-y-8 mb-16"}
         [toggle-review/main {:free-license? (:free-license? (:data @user))
                              :user-groups user-groups

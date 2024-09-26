@@ -1,12 +1,14 @@
 (ns webapp.connections.views.form.tcp
   (:require [re-frame.core :as rf]
             [webapp.components.checkboxes :as checkboxes]
+            [webapp.components.forms :as forms]
             [webapp.components.headings :as h]
             [webapp.components.multiselect :as multi-select]
             [webapp.connections.views.configuration-inputs :as config-inputs]
             [webapp.connections.views.form.submit :as submit]
             [webapp.connections.views.form.toggle-data-masking :as toggle-data-masking]
-            [webapp.connections.views.form.toggle-review :as toggle-review]))
+            [webapp.connections.views.form.toggle-review :as toggle-review]
+            [webapp.formatters :as f]))
 
 (defn manual-credentials-view
   [configs
@@ -17,7 +19,7 @@
   [:<>
    [:section {:class "mt-8"}
     [:div {:class "mb-small"}
-     [h/h4-md "Your tcp credentials"]
+     [h/h4-md "Your TCP credentials"]
      [:label {:class "text-xs text-gray-500"}
       "Check how we store this information "
       [:a {:class "text-blue-500"
@@ -29,10 +31,24 @@
 
    [submit/main form-type current-agent-name current-agent-id @agents]])
 
+(defn nickname-input [connection-name connection-type form-type]
+  [:<>
+   [:label {:class "text-xs text-gray-500 my-small"}
+    "This name identifies your connection and should be unique"]
+   [forms/input {:label "Name"
+                 :placeholder (str "my-" @connection-type "-test")
+                 :disabled (= form-type :update)
+                 :on-change (fn [v]
+                              (reset! connection-name (f/replace-empty-space->dash (-> v .-target .-value))))
+                 :required true
+                 :value @connection-name}]])
+
 (defn main []
   (let [user (rf/subscribe [:users->current-user])
         agents (rf/subscribe [:agents])]
-    (fn [configs {:keys [tags-value
+    (fn [configs {:keys [connection-name
+                         connection-type
+                         tags-value
                          tags-input-value
                          user-groups
                          current-agent-name
@@ -46,6 +62,11 @@
                          access-mode-exec
                          form-type]}]
       [:<>
+       [:section {:class "mb-large"}
+        [:div {:class "grid grid-cols-1"}
+         [h/h4-md
+          (str "Setup your TCP")]
+         [nickname-input connection-name connection-type form-type]]]
        [:section {:class "space-y-8 mb-16"}
         [toggle-review/main {:free-license? (:free-license? (:data @user))
                              :user-groups user-groups
@@ -65,8 +86,10 @@
 
          [checkboxes/group
           [{:name "runbooks"
-            :label "Runbooks (It's not available for tcp connections)"
-            :description "Create templates to automate tasks in your organization"
+            :label "Runbooks"
+            :description [:<>
+                          [:p "Create templates to automate tasks in your organization"]
+                          [:p "*Not available for TCP connections"]]
             :disabled? true
             :checked? access-mode-runbooks}
            {:name "connect"
@@ -74,9 +97,11 @@
             :description "Access from your client of preference using hoop.dev to channel connections using our Desktop App or our Command Line Interface"
             :checked? access-mode-connect}
            {:name "exec"
-            :label "Web & One-Offs (It's not available for tcp connections)"
+            :label "Web & One-Offs"
             :disabled? true
-            :description "Use hoop.dev's developer portal or our CLI's One-Offs commands directly in your terminal "
+            :description [:<>
+                          [:p "Use hoop.dev's developer portal or our CLI's One-Offs commands directly in your terminal"]
+                          [:p "*Not available for SSH connections"]]
             :checked? access-mode-exec}]]]
 
         [multi-select/text-input {:value tags-value
