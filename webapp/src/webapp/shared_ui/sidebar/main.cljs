@@ -83,6 +83,7 @@
             plugins-enabled (filterv (fn [plugin]
                                        (some #(= (:name plugin) (:name %)) my-plugins)) constants/plugins-routes)
             admin? (:admin? user-data)
+            free-license? (:free-license? user-data)
             sidebar-open? (if (= :opened (:status @sidebar-desktop))
                             true
                             false)
@@ -127,10 +128,21 @@
                  ^{:key (:name route)}
                  [:li {:class (str (when
                                     (and (:admin-only? route) (not admin?)) "hidden"))}
-                  [:a {:href (:uri route)
+                  [:a {:href (if (and free-license? (not (:free-feature? route)))
+                               "#"
+                               (:uri route))
+                       :on-click (fn []
+                                   (when (and free-license? (not (:free-feature? route)))
+                                     (js/window.Intercom
+                                      "showNewMessage"
+                                      "I want to upgrade my current plan")))
                        :class (str (hover-side-menu-link? (:uri route) current-route)
-                                   "group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
-                   [(:icon route) {:class (str "h-6 w-6 shrink-0 text-white")
+                                   "group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"
+                                   (when (and free-license? (not (:free-feature? route)))
+                                     " text-opacity-30"))}
+                   [(:icon route) {:class (str "h-6 w-6 shrink-0 text-white"
+                                               (when (and free-license? (not (:free-feature? route)))
+                                                 " opacity-30"))
                                    :aria-hidden "true"}]
                    [:span {:class "sr-only"}
                     (:name route)]]])
