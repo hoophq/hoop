@@ -202,8 +202,29 @@ func registerMultiTenantUser(uinfo idp.ProviderUserInfo, slackID string) (isNewU
 	if err != nil {
 		return false, fmt.Errorf("failed fetching unverified user, reason=%v", err)
 	}
+	// in case the user doesn't exist, we create a new organization
+	// and add that user to the new organization
 	if iuser == nil {
-		return false, nil
+		newOrgId := uuid.NewString()
+		newOrgName := fmt.Sprintf("%s-%s", uinfo.Email, "Organization")
+		if err := pgorgs.New().CreateOrg(newOrgId, newOrgName, nil); err != nil {
+			return false, fmt.Errorf("failed setting new org, reason=%v", err)
+		}
+		newUser := pgrest.User{
+			ID:       uuid.NewString(),
+			OrgID:    newOrgId,
+			Subject:  uinfo.Subject,
+			Name:     uinfo.Profile,
+			Email:    uinfo.Email,
+			Verified: true,
+			Status:   string(types.UserStatusActive),
+			SlackID:  slackID,
+			Groups:   []string{types.GroupAdmin},
+		}
+		if err := pgusers.New().Upsert(newUser); err != nil {
+			return false, fmt.Errorf("failed saving new user %s/%s, err=%v", newUser.Subject, newUser.Email, err)
+		}
+		return true, nil
 	}
 	if iuser.Status != string(types.UserStatusActive) {
 		log.With("multitenant", true).Warnf("invited user %s is not active", iuser.Email)
