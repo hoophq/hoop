@@ -88,10 +88,11 @@ func Create(c *gin.Context) {
 		HashedPassword: newUser.HashedPassword,
 		Picture:        newUser.Picture,
 		Email:          newUser.Email,
-		Verified:       newUser.Verified, // DEPRECATED in flavor of role
-		Status:         string(openapi.StatusActive),
-		SlackID:        newUser.SlackID,
-		Groups:         newUser.Groups,
+		Verified:       newUser.Verified,
+		// TODO: maybe change the DB to accept a "invited" status?
+		Status:  string(openapi.StatusReviewing),
+		SlackID: newUser.SlackID,
+		Groups:  newUser.Groups,
 	}
 	newUser.Role = toRole(pguser)
 	if err := pgusers.New().Upsert(pguser); err != nil {

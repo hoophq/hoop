@@ -120,6 +120,9 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
 		userCtx, err := pguserauth.New().FetchUserContext(sub)
+		if userCtx.UserStatus != string(types.UserStatusActive) {
+			return status.Errorf(codes.Unauthenticated, "user is not active")
+		}
 		if userCtx.IsEmpty() {
 			if err != nil {
 				log.Error(err)
@@ -210,6 +213,9 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
 		userCtx, err := pguserauth.New().FetchUserContext(sub)
+		if userCtx.UserStatus != string(types.UserStatusActive) {
+			return status.Errorf(codes.Unauthenticated, "user is not active")
+		}
 		if userCtx.IsEmpty() {
 			if err != nil {
 				log.Error(err)

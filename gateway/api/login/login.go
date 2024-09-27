@@ -134,6 +134,7 @@ func (h *handler) LoginCallback(c *gin.Context) {
 	}
 	uinfo.Subject = subject
 	ctx, err := pguserauth.New().FetchUserContext(subject)
+
 	if err != nil {
 		login.Outcome = fmt.Sprintf("failed fetching user subject=%s, email=%s, reason=%v", uinfo.Subject, uinfo.Email, err)
 		log.Error(login.Outcome)
@@ -143,13 +144,6 @@ func (h *handler) LoginCallback(c *gin.Context) {
 	}
 	redirectSuccessURL := login.Redirect + "?token=" + token.AccessToken
 
-	if !ctx.IsEmpty() && ctx.UserStatus != string(types.UserStatusActive) {
-		login.Outcome = fmt.Sprintf("user is not active subject=%s, email=%s", uinfo.Subject, uinfo.Email)
-		log.With("org", ctx.OrgID).Warn(login.Outcome)
-		c.Redirect(http.StatusTemporaryRedirect, redirectErrorURL)
-		return
-	}
-
 	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
 	log.With("sub", uinfo.Subject, "email", uinfo.Email, "profile", uinfo.Profile,
 		"multitenant", pgusers.IsOrgMultiTenant(), "ua", userAgent).
@@ -157,22 +151,34 @@ func (h *handler) LoginCallback(c *gin.Context) {
 
 	// multi tenant won't sync users
 	if pgusers.IsOrgMultiTenant() {
-		isNewUser, err := registerMultiTenantUser(uinfo, login.SlackID)
-		if err != nil {
-			login.Outcome = fmt.Sprintf("failed registering multi tenant user subject=%s, email=%s, reason=%v",
-				uinfo.Subject, uinfo.Email, err)
-			log.With("multitenant", true).Error(login.Outcome)
-			sentry.CaptureException(err)
+		isNewUser := false
+		if ctx.UserStatus == string(types.UserStatusInactive) {
+			log.With("multitenant", true).Warnf("user %s is inactive. They need to be edited to active before trying to signin", uinfo.Email)
 			c.Redirect(http.StatusTemporaryRedirect, redirectErrorURL)
 			return
 		}
-		// the signup process is performed by /api/signup when the gateway is running multi tenant mode
-		// track as a login event
-		if isNewUser {
-			h.analyticsTrack(false, userAgent, ctx)
+		if ctx.UserStatus != string(types.UserStatusActive) {
+			isNewUser, err = registerMultiTenantUser(uinfo, login.SlackID)
+			if err != nil {
+				login.Outcome = fmt.Sprintf("failed registering multi tenant user subject=%s, email=%s, reason=%v",
+					uinfo.Subject, uinfo.Email, err)
+				log.With("multitenant", true).Error(login.Outcome)
+				sentry.CaptureException(err)
+				c.Redirect(http.StatusTemporaryRedirect, redirectErrorURL)
+				return
+			}
 		}
+
+		h.analyticsTrack(isNewUser, userAgent, ctx)
 		login.Outcome = "success"
 		c.Redirect(http.StatusTemporaryRedirect, redirectSuccessURL)
+		return
+	}
+
+	if !ctx.IsEmpty() && ctx.UserStatus != string(types.UserStatusActive) {
+		login.Outcome = fmt.Sprintf("user is not active subject=%s, email=%s", uinfo.Subject, uinfo.Email)
+		log.With("org", ctx.OrgID).Warn(login.Outcome)
+		c.Redirect(http.StatusTemporaryRedirect, redirectErrorURL)
 		return
 	}
 
@@ -198,15 +204,17 @@ func (h *handler) LoginCallback(c *gin.Context) {
 }
 
 func registerMultiTenantUser(uinfo idp.ProviderUserInfo, slackID string) (isNewUser bool, err error) {
-	iuser, err := pgusers.New().FetchUnverifiedUser(&pguserauth.Context{}, uinfo.Email)
+	fmt.Printf("uinfo: %+v\n", uinfo)
+	iuser, err := pgusers.New().FetchInvitedUser(&pguserauth.Context{}, uinfo.Email)
+	fmt.Printf("iuser: %+v\n", iuser)
 	if err != nil {
-		return false, fmt.Errorf("failed fetching unverified user, reason=%v", err)
+		return false, fmt.Errorf("failed fetching invited user, reason=%v", err)
 	}
 	// in case the user doesn't exist, we create a new organization
 	// and add that user to the new organization
 	if iuser == nil {
 		newOrgId := uuid.NewString()
-		newOrgName := fmt.Sprintf("%s-%s", uinfo.Email, "Organization")
+		newOrgName := fmt.Sprintf("%s %s", uinfo.Email, "Organization")
 		if err := pgorgs.New().CreateOrg(newOrgId, newOrgName, nil); err != nil {
 			return false, fmt.Errorf("failed setting new org, reason=%v", err)
 		}
@@ -216,7 +224,7 @@ func registerMultiTenantUser(uinfo idp.ProviderUserInfo, slackID string) (isNewU
 			Subject:  uinfo.Subject,
 			Name:     uinfo.Profile,
 			Email:    uinfo.Email,
-			Verified: true,
+			Verified: *uinfo.EmailVerified,
 			Status:   string(types.UserStatusActive),
 			SlackID:  slackID,
 			Groups:   []string{types.GroupAdmin},
@@ -226,22 +234,29 @@ func registerMultiTenantUser(uinfo idp.ProviderUserInfo, slackID string) (isNewU
 		}
 		return true, nil
 	}
-	if iuser.Status != string(types.UserStatusActive) {
-		log.With("multitenant", true).Warnf("invited user %s is not active", iuser.Email)
+	// This part checks if the user was invited by someone
+	// and adds the user to the organization
+	// TODO: change the conditional to status invited
+	if iuser.Status == string(types.UserStatusReviewing) {
+		iuser.Subject = uinfo.Subject
+		iuser.Verified = true
+		iuser.Status = string(types.UserStatusActive)
+		if len(uinfo.Profile) > 0 {
+			iuser.Name = uinfo.Profile
+		}
+		if len(slackID) > 0 {
+			iuser.SlackID = slackID
+		}
+		if err := pgusers.New().Upsert(*iuser); err != nil {
+			return false, fmt.Errorf("failed updating invited user %s/%s, err=%v", uinfo.Subject, iuser.Email, err)
+		}
+		return true, nil
+	}
+	// If the user is inactive, they can not login in the system
+	// until an admin changes their status to active
+	if iuser.Status != string(types.UserStatusInactive) {
+		log.With("multitenant", true).Warnf("invited user %s is inactive. They need to be edited to active before trying to signin", iuser.Email)
 		return false, nil
-	}
-	log.With("multitenant", true).Infof("registering invited user subject=%s, email=%s", uinfo.Subject, iuser.Email)
-
-	iuser.Subject = uinfo.Subject
-	iuser.Verified = true
-	if len(uinfo.Profile) > 0 {
-		iuser.Name = uinfo.Profile
-	}
-	if len(slackID) > 0 {
-		iuser.SlackID = slackID
-	}
-	if err := pgusers.New().Upsert(*iuser); err != nil {
-		return false, fmt.Errorf("failed updating unverified user %s/%s, err=%v", uinfo.Subject, iuser.Email, err)
 	}
 	return true, nil
 }
