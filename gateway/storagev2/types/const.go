@@ -29,6 +29,7 @@ const (
 	UserStatusActive    UserStatusType = "active"
 	UserStatusReviewing UserStatusType = "reviewing"
 	UserStatusInactive  UserStatusType = "inactive"
+	UserStatusInvited   UserStatusType = "invited"
 )
 
 type ReviewStatus string

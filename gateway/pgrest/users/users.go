@@ -103,12 +103,11 @@ func (u *user) FetchAll(ctx pgrest.OrgContext) ([]pgrest.User, error) {
 	return users, nil
 }
 
-// TODO: Invite User is an actual "reviewing" statused user, we need to change that
 func (u *user) FetchInvitedUser(ctx pgrest.OrgContext, email string) (*pgrest.User, error) {
-	path := fmt.Sprintf("/users?select=*,groups,orgs(id,name)&email=eq.%s&status=eq.reviewing", email)
+	path := fmt.Sprintf("/users?select=*,groups,orgs(id,name)&email=eq.%s&status=eq.invited", email)
 	orgID := ctx.GetOrgID()
 	if orgID != "" {
-		path = fmt.Sprintf("/users?select=*,groups,orgs(id,name)&org_id=eq.%s&email=eq.%s&status=eq.reviewing",
+		path = fmt.Sprintf("/users?select=*,groups,orgs(id,name)&org_id=eq.%s&email=eq.%s&status=eq.invited",
 			orgID, email)
 	}
 	var usr pgrest.User

@@ -204,9 +204,7 @@ func (h *handler) LoginCallback(c *gin.Context) {
 }
 
 func registerMultiTenantUser(uinfo idp.ProviderUserInfo, slackID string) (isNewUser bool, err error) {
-	fmt.Printf("uinfo: %+v\n", uinfo)
 	iuser, err := pgusers.New().FetchInvitedUser(&pguserauth.Context{}, uinfo.Email)
-	fmt.Printf("iuser: %+v\n", iuser)
 	if err != nil {
 		return false, fmt.Errorf("failed fetching invited user, reason=%v", err)
 	}
@@ -236,8 +234,7 @@ func registerMultiTenantUser(uinfo idp.ProviderUserInfo, slackID string) (isNewU
 	}
 	// This part checks if the user was invited by someone
 	// and adds the user to the organization
-	// TODO: change the conditional to status invited
-	if iuser.Status == string(types.UserStatusReviewing) {
+	if iuser.Status == string(types.UserStatusInvited) {
 		iuser.Subject = uinfo.Subject
 		iuser.Verified = true
 		iuser.Status = string(types.UserStatusActive)

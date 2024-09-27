@@ -40,9 +40,7 @@ func (u *userAuth) FetchUserContext(subject string) (*Context, error) {
 			UserGroups:     sa.Groups,
 		}, nil
 	}
-	// if usr.Status != "active" {
-	// 	return &Context{}, fmt.Errorf("user %s is not active", usr.Email)
-	// }
+
 	return &Context{
 		OrgID:          usr.OrgID,
 		OrgName:        usr.Org.Name,

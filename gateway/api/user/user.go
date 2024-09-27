@@ -89,10 +89,9 @@ func Create(c *gin.Context) {
 		Picture:        newUser.Picture,
 		Email:          newUser.Email,
 		Verified:       newUser.Verified,
-		// TODO: maybe change the DB to accept a "invited" status?
-		Status:  string(openapi.StatusReviewing),
-		SlackID: newUser.SlackID,
-		Groups:  newUser.Groups,
+		Status:         string(openapi.StatusInvited),
+		SlackID:        newUser.SlackID,
+		Groups:         newUser.Groups,
 	}
 	newUser.Role = toRole(pguser)
 	if err := pgusers.New().Upsert(pguser); err != nil {
