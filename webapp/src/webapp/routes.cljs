@@ -15,39 +15,34 @@
 (def routes
   (atom
    [base-route
-    ;; this condition is required to render home properly when acessing prefix based routes
-    ;; /prefix and /prefix/ will send the user to :home
-    ;; However when there's no prefix, having both :home routes doesn't redirect the
-    ;; user properly to the /client route when creating the quick start Demo Postgres
-    (merge
-     (if (= base-route "") nil {"" :home})
-     {"/" :home
-      "/404" :404
-      "/auth/callback" :auth-callback-hoop
-      "/connections" [["" :connections]
-                      ["/details" :connection-details]
-                      ["/new" :create-connection]
-                      [["/connections/" :connection-type "/new"] :onboarding-create-connection]]
-      "/client" :editor-plugin
-      "/dashboard" :dashboard
-      "/hoop-app" :hoop-app
-      "/login" :login-hoop
-      "/logout" :logout-hoop
-      "/organization" [["/users" :users]]
-      "/plugins" [["/manage/ask-ai" :manage-ask-ai]
-                  [["/reviews/" :review-id] :reviews-plugin-details]
-                  [["/manage/" :plugin-name] :manage-plugin]]
-      "/register" :register-hoop
-      "/reviews" :reviews-plugin
-      "/runbooks" [["" :runbooks-plugin]
-                   [["/" :runbooks-file] :runbooks-plugin]]
-      "/slack" [[["/user" "/new/" :slack-id] :slack-new-user]
-                [["/organization" "/new"] :slack-new-organization]]
-      "/sessions" [["" :sessions]
-                   ["/filtered" :sessions-list-filtered-by-ids]
-                   [["/" :session-id] :session-details]]
-      "/signup" :signup-hoop
-      "/signup/callback" :signup-callback-hoop})]))
+    {"" :home-redirect
+     "/" :home
+     "/404" :404
+     "/auth/callback" :auth-callback-hoop
+     "/connections" [["" :connections]
+                     ["/details" :connection-details]
+                     ["/new" :create-connection]
+                     [["/connections/" :connection-type "/new"] :onboarding-create-connection]]
+     "/client" :editor-plugin
+     "/dashboard" :dashboard
+     "/hoop-app" :hoop-app
+     "/login" :login-hoop
+     "/logout" :logout-hoop
+     "/organization" [["/users" :users]]
+     "/plugins" [["/manage/ask-ai" :manage-ask-ai]
+                 [["/reviews/" :review-id] :reviews-plugin-details]
+                 [["/manage/" :plugin-name] :manage-plugin]]
+     "/register" :register-hoop
+     "/reviews" :reviews-plugin
+     "/runbooks" [["" :runbooks-plugin]
+                  [["/" :runbooks-file] :runbooks-plugin]]
+     "/slack" [[["/user" "/new/" :slack-id] :slack-new-user]
+               [["/organization" "/new"] :slack-new-organization]]
+     "/sessions" [["" :sessions]
+                  ["/filtered" :sessions-list-filtered-by-ids]
+                  [["/" :session-id] :session-details]]
+     "/signup" :signup-hoop
+     "/signup/callback" :signup-callback-hoop}]))
 
 (defn query-params-parser
   [queries]

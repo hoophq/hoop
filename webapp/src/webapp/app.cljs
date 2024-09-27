@@ -136,6 +136,9 @@
 (defmethod routes/panels :home-panel []
   [layout :application-hoop [home/home-panel-hoop]])
 
+(defmethod routes/panels :home-redirect-panel []
+  [layout :application-hoop [home/home-panel-hoop]])
+
 (defmethod routes/panels :hoop-app-panel []
   [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
                              [h/h2 "Hoop App" {:class "mb-6"}]
