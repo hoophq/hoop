@@ -1,12 +1,13 @@
 (ns webapp.components.snackbar
   (:require
-   [re-frame.core :as rf]))
+   [re-frame.core :as rf]
+   [webapp.config :as config]))
 
 (defmulti level-icon identity)
-(defmethod level-icon :error [_] "/icons/icon-important-red.svg")
-(defmethod level-icon :success [_] "/icons/icon-check-green.svg")
-(defmethod level-icon :info [_] "/icons/icon-information-white.svg")
-(defmethod level-icon :default [_] "/icons/icon-information-white.svg")
+(defmethod level-icon :error [_] (str config/webapp-url "/icons/icon-important-red.svg"))
+(defmethod level-icon :success [_] (str config/webapp-url "/icons/icon-check-green.svg"))
+(defmethod level-icon :info [_] (str config/webapp-url "/icons/icon-information-white.svg"))
+(defmethod level-icon :default [_] (str config/webapp-url "/icons/icon-information-white.svg"))
 
 (defmulti markup identity)
 (defmethod markup :shown [_ state]
@@ -20,7 +21,7 @@
      (:text state)]]
    [:figure.flex-shrink-0.w-6.ml-regular.cursor-pointer
     {:on-click #(rf/dispatch [:hide-snackbar])}
-    [:img {:src "/icons/icon-close-white.svg"}]]])
+    [:img {:src (str config/webapp-url "/icons/icon-close-white.svg")}]]])
 
 (defmethod markup :default [_] nil)
 

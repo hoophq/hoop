@@ -20,7 +20,8 @@
             [webapp.connections.views.form.tcp :as tcp]
             [webapp.formatters :as f]
             [webapp.subs :as subs]
-            ["@heroicons/react/24/solid" :as hero-solid-icon]))
+            ["@heroicons/react/24/solid" :as hero-solid-icon]
+            [webapp.config :as config]))
 
 
 (defn array->select-options [array]
@@ -265,7 +266,7 @@
                "Database"]
               [:figure
                [:img {:class "w-full p-3"
-                      :src "/images/database-connections-small.svg"}]]]
+                      :src (str config/webapp-url "/images/database-connections-small.svg")}]]]
              [:div {:class (str "flex flex-col w-44 items-center gap-small rounded-lg bg-gray-50 hover:shadow "
                                 "border border-gray-100 px-1 pt-3 pb-5 cursor-pointer hover:bg-gray-100"
                                 (when (and (= @connection-type :custom)
@@ -283,7 +284,7 @@
                "Shell"]
               [:figure
                [:img {:class "w-full p-3"
-                      :src "/images/custom-connections-small.svg"}]]]
+                      :src (str config/webapp-url "/images/custom-connections-small.svg")}]]]
              [:div {:class (str "flex flex-col w-44 items-center gap-small rounded-lg bg-gray-50 hover:shadow "
                                 "border border-gray-100 px-1 pt-3 pb-5 cursor-pointer hover:bg-gray-100"
                                 (when (and (= @connection-type :custom)
@@ -303,7 +304,7 @@
                "SSH"]
               [:figure
                [:img {:class "w-full p-3"
-                      :src "/images/custom-connections-small.svg"}]]]
+                      :src (str config/webapp-url "/images/custom-connections-small.svg")}]]]
              [:div {:class (str "flex flex-col w-44 items-center gap-small rounded-lg bg-gray-50 hover:shadow "
                                 "border border-gray-100 px-1 pt-3 pb-5 cursor-pointer hover:bg-gray-100"
                                 (when (and (= @connection-type :application)
@@ -321,7 +322,7 @@
                "TCP"]
               [:figure
                [:img {:class "w-full p-3"
-                      :src "/images/tcp-connections-small.svg"}]]]
+                      :src (str config/webapp-url "/images/tcp-connections-small.svg")}]]]
              [:div {:class (str "flex flex-col w-44 items-center gap-small rounded-lg bg-gray-50 hover:shadow "
                                 "border border-gray-100 px-1 pt-3 pb-5 cursor-pointer hover:bg-gray-100"
                                 (when (and (= @connection-type :application)
@@ -338,7 +339,7 @@
                "Application"]
               [:figure
                [:img {:class "w-full p-3"
-                      :src "/images/application-connections-small.svg"}]]]]
+                      :src (str config/webapp-url "/images/application-connections-small.svg")}]]]]
 
             (when (and (not (seq (:results @connections)))
                        (not @connection-type))
@@ -349,7 +350,7 @@
                       :on-click (fn [] (rf/dispatch [:connections->quickstart-create-postgres-demo]))}
                 [:figure
                  [:img {:class "w-16 m-auto"
-                        :src "/images/quickstart-connections.svg"}]]
+                        :src (str config/webapp-url "/images/quickstart-connections.svg")}]]
                 [:div {:class "flex flex-col justify-center"}
                  [h/h4-md "Quickstart with a Demo PostgreSQL"]
                  [:span {:class "mt-2 text-sm text-center text-gray-500"}

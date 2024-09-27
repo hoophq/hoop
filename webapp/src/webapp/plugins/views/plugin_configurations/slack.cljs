@@ -58,7 +58,7 @@
          [h/h3 "Slack App Configurations" {:class "text-gray-800"}]
          [:span {:class "text-sm text-gray-600"}
           "Here you will integrate with your Slack App. Please visit our doc to "]
-         [:a {:href "https://hoop.dev/docs/features/slack-app"
+         [:a {:href "https://hoop.dev/docs/integrations/slack"
               :target "_blank"
               :class "font-semibold text-sm text-gray-700 underline"}
           [:span "learn how to create a Slack App."]]]

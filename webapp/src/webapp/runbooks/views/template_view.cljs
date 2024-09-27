@@ -5,7 +5,8 @@
             [webapp.components.button :as button]
             [webapp.components.icon :as icon]
             [webapp.components.headings :as h]
-            [webapp.runbooks.views.template-dynamic-form :as template]))
+            [webapp.runbooks.views.template-dynamic-form :as template]
+            [webapp.config :as config]))
 
 (defn- no-connections-enabled-view []
   [:div {:class "pt-large flex flex-col gap-regular items-center"}
@@ -72,7 +73,7 @@
                                         (if (= (-> template :form-status) :loading)
                                           [:figure {:class "w-4"}
                                            [:img {:class "animate-spin"
-                                                  :src "/icons/icon-loader-circle-white.svg"}]]
+                                                  :src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]
                                           [icon/hero-icon {:size 6
                                                            :icon "play-circle-white"}])]
                                  :disabled (or (= (-> template :status) :loading)
@@ -85,7 +86,7 @@
   [:div {:class "flex items-center justify-center h-full"}
    [:figure {:class "w-8"}
     [:img {:class "animate-spin"
-           :src "/icons/icon-loader-circle.svg"}]]])
+           :src (str config/webapp-url "/icons/icon-loader-circle.svg")}]]])
 
 (defmethod template-view :default []
   [:div {:class "flex items-center justify-center h-full"}

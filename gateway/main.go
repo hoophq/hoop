@@ -1,12 +1,9 @@
 package gateway
 
 import (
-	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/common/envloader"
@@ -25,6 +22,7 @@ import (
 	"github.com/hoophq/hoop/gateway/review"
 	"github.com/hoophq/hoop/gateway/security/idp"
 	"github.com/hoophq/hoop/gateway/transport"
+	"github.com/hoophq/hoop/gateway/webappjs"
 
 	// plugins
 	"github.com/hoophq/hoop/gateway/transport/connectionstatus"
@@ -48,8 +46,7 @@ func Run() {
 	if err := appconfig.Load(); err != nil {
 		log.Fatalf("failed loading gateway configuration, reason=%v", err)
 	}
-	apiURL := appconfig.Get().ApiURL()
-	if err := changeWebappApiURL(apiURL); err != nil {
+	if err := webappjs.ConfigureServerURL(); err != nil {
 		log.Fatal(err)
 	}
 
@@ -63,6 +60,7 @@ func Run() {
 		log.Fatal(err)
 	}
 
+	apiURL := appconfig.Get().FullApiURL()
 	idProvider := idp.NewProvider(apiURL)
 	grpcURL := appconfig.Get().GrpcURL()
 
@@ -97,7 +95,7 @@ func Run() {
 	plugintypes.RegisteredPlugins = []plugintypes.Plugin{
 		pluginsreview.New(
 			&review.Service{TransportService: g},
-			idProvider.ApiURL,
+			apiURL,
 		),
 		pluginsaudit.New(),
 		pluginsindex.New(),
@@ -132,52 +130,6 @@ func Run() {
 	log.Infof("starting servers, authmethod=%v", appconfig.Get().AuthMethod())
 	go g.StartRPCServer()
 	a.StartAPI(sentryStarted)
-}
-
-func changeWebappApiURL(apiURL string) error {
-	if apiURL != "" {
-		staticUiPath := os.Getenv("STATIC_UI_PATH")
-		if staticUiPath == "" {
-			staticUiPath = "/app/ui/public"
-		}
-		appJsFile := filepath.Join(staticUiPath, "js/app.js")
-		appJsFileOrigin := filepath.Join(staticUiPath, "js/app.origin.js")
-		if appBytes, err := os.ReadFile(appJsFileOrigin); err == nil {
-			if err := os.WriteFile(appJsFile, appBytes, 0644); err != nil {
-				return fmt.Errorf("failed saving app.js file, reason=%v", err)
-			}
-			log.Infof("replacing api url from origin at %v with %v", appJsFile, apiURL)
-			appBytes = bytes.ReplaceAll(appBytes, []byte(`http://localhost:8009`), []byte(apiURL))
-			if err := os.WriteFile(appJsFile, appBytes, 0644); err != nil {
-				return fmt.Errorf("failed saving app.js file, reason=%v", err)
-			}
-			appBytes = bytes.ReplaceAll(appBytes, []byte(`http://localhost:4001`), []byte(apiURL))
-			if err := os.WriteFile(appJsFile, appBytes, 0644); err != nil {
-				return fmt.Errorf("failed saving app.js file, reason=%v", err)
-			}
-			return nil
-		}
-		appBytes, err := os.ReadFile(appJsFile)
-		if err != nil {
-			log.Warnf("failed opening webapp js file %v, reason=%v", appJsFile, err)
-			return nil
-		}
-		// create a copy to allow overriding the api url
-		if err := os.WriteFile(appJsFileOrigin, appBytes, 0644); err != nil {
-			return fmt.Errorf("failed creating app.origin.js copy file at %v, reason=%v", appJsFileOrigin, err)
-		}
-
-		log.Infof("replacing api url at %v with %v", appJsFile, apiURL)
-		appBytes = bytes.ReplaceAll(appBytes, []byte(`http://localhost:8009`), []byte(apiURL))
-		if err := os.WriteFile(appJsFile, appBytes, 0644); err != nil {
-			return fmt.Errorf("failed saving app.js file, reason=%v", err)
-		}
-		appBytes = bytes.ReplaceAll(appBytes, []byte(`http://localhost:4001`), []byte(apiURL))
-		if err := os.WriteFile(appJsFile, appBytes, 0644); err != nil {
-			return fmt.Errorf("failed saving app.js file, reason=%v", err)
-		}
-	}
-	return nil
 }
 
 func loadServerCertificates() (*tls.Config, error) {

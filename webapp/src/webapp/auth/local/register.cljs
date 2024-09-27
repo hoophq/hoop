@@ -4,7 +4,9 @@
                                 Link Box Text Button]]
     [webapp.components.forms :as forms]
     [reagent.core :as r]
-    [re-frame.core :as re-frame]))
+    [re-frame.core :as re-frame]
+    [webapp.config :as config]
+    [webapp.routes :as routes]))
 
 (defn- form []
   (let [email (r/atom "")
@@ -14,7 +16,6 @@
         loading (r/atom false)
         password-error (r/atom nil)
         submit-form (fn []
-                      (println @email @fullname @password @confirm-password)
                       (reset! password-error nil)
                       (if (not= @password @confirm-password)
                         (reset! password-error "Passwords do not match")
@@ -65,7 +66,7 @@
        [:> Flex {:align "center" :justify "center" :class "mt-4"}
         [:> Text {:as "div" :size "2" :color "gray-500"}
          "Already have an account?"
-         [:> Link {:href "/login" :class "text-blue-500 ml-1"}
+         [:> Link {:href (routes/url-for :login-hoop) :class "text-blue-500 ml-1"}
           "Login"]]]])))
 
 (defn panel []
@@ -77,7 +78,7 @@
                :class "bg-gray-100"}
       [:> Box {:width "90%" :maxWidth "380px"}
        [:> Card {:size "4" :variant "surface" :class "bg-white"}
-        [:img {:src "/images/hoop-branding/SVG/hoop-symbol_black.svg"
+        [:img {:src (str config/webapp-url "/images/hoop-branding/SVG/hoop-symbol_black.svg")
                :class "w-12 mx-auto mb-6 mt-4"}]
         [:> Heading {:size "5" :align "center" :mb "5"}
          "Create an account"]

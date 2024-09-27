@@ -1,9 +1,10 @@
-(ns webapp.slack.slack-new-organization)
+(ns webapp.slack.slack-new-organization
+  (:require [webapp.config :as config]))
 
 (defn main []
   [:div {:class "bg-white h-full pt-x-large"}
    [:figure {:class "w-1/3 mx-auto p-regular"}
-    [:img {:src "/images/illustrations/keyboard.svg"
+    [:img {:src (str config/webapp-url "/images/illustrations/keyboard.svg")
            :class "w-full"}]]
    [:div {:class "px-large py-large text-center"}
     [:div {:class "text-gray-700 text-sm font-bold"}

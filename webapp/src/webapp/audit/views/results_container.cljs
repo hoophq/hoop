@@ -1,7 +1,6 @@
 (ns webapp.audit.views.results-container
   (:require ["papaparse" :as papa]
             [clojure.string :as string]
-            [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
             [webapp.components.data-grid-table :as data-grid-table]
@@ -48,8 +47,8 @@
     (fn [_ {:keys [results results-status fixed-height? classes]}]
       (let [current-connection (:data @connection)
             connection-type (cond
-                              (not (cs/blank? (:subtype current-connection))) (:subtype current-connection)
-                              (not (cs/blank? (:icon_name current-connection))) (:icon_name current-connection)
+                              (not (string/blank? (:subtype current-connection))) (:subtype current-connection)
+                              (not (string/blank? (:icon_name current-connection))) (:icon_name current-connection)
                               :else (:type current-connection))
             sanitize-results (when-not (nil? results)
                                (string/replace results #"∞" "\t"))

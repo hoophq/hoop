@@ -5,7 +5,8 @@
             [webapp.components.combobox :as combobox]
             [webapp.components.loaders :as loaders]
             [webapp.reviews.review-detail :as review-detail]
-            [webapp.reviews.review-item :as review-item]))
+            [webapp.reviews.review-item :as review-item]
+            [webapp.config :as config]))
 
 (defn- list-item [_]
   (let [active-review (rf/subscribe [:reviews-plugin->review-details])]
@@ -19,7 +20,7 @@
   [:div {:class "pt-x-large"}
    [:figure
     {:class "w-3/4 mx-auto p-regular"}
-    [:img {:src "/images/illustrations/gameboy.svg"
+    [:img {:src (str config/webapp-url "/images/illustrations/gameboy.svg")
            :class "w-full"}]]
    [:div {:class "px-large text-center"}
     [:div {:class "text-gray-700 text-sm font-bold"}

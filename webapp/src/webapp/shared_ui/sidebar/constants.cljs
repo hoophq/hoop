@@ -1,11 +1,12 @@
 (ns webapp.shared-ui.sidebar.constants
-  (:require ["@heroicons/react/24/outline" :as hero-outline-icon]))
+  (:require ["@heroicons/react/24/outline" :as hero-outline-icon]
+            [webapp.routes :as routes]))
 
 (def routes [{:name "Home"
               :label "Home"
               :icon (fn [props]
                       [:> hero-outline-icon/CodeBracketSquareIcon props])
-              :uri "/client"
+              :uri (routes/url-for :editor-plugin)
               :navigate :editor-plugin
               :free-feature? true
               :admin-only? false}
@@ -13,14 +14,14 @@
               :label "Dashboard"
               :icon (fn [props]
                       [:> hero-outline-icon/RectangleGroupIcon props])
-              :uri "/dashboard"
+              :uri (routes/url-for :dashboard)
               :navigate :dashboard
               :free-feature? false
               :admin-only? true}
              {:name "Sessions"
               :icon (fn [props]
                       [:> hero-outline-icon/RectangleStackIcon props])
-              :uri "/sessions"
+              :uri (routes/url-for :sessions)
               :free-feature? true
               :admin-only? false}])
 
@@ -28,7 +29,7 @@
                       :label "Reviews"
                       :icon (fn [props]
                               [:> hero-outline-icon/InboxIcon props])
-                      :uri "/reviews"
+                      :uri (routes/url-for :reviews-plugin)
                       :free-feature? true
                       :navigate :reviews-plugin
                       :admin-only? false}])

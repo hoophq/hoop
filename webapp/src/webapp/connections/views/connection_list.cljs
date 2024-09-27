@@ -7,13 +7,14 @@
             [webapp.components.loaders :as loaders]
             [webapp.components.searchbox :as searchbox]
             [webapp.connections.constants :as connection-constants]
-            [webapp.connections.views.connection-form-modal :as connection-form-modal]))
+            [webapp.connections.views.connection-form-modal :as connection-form-modal]
+            [webapp.config :as config]))
 
 (defn empty-list-view []
   [:div {:class "pt-x-large"}
    [:figure
     {:class "w-1/6 mx-auto p-regular"}
-    [:img {:src "/images/illustrations/pc.svg"
+    [:img {:src (str config/webapp-url "/images/illustrations/pc.svg")
            :class "w-full"}]]
    [:div {:class "px-large text-center"}
     [:div {:class "text-gray-700 text-sm font-bold"}

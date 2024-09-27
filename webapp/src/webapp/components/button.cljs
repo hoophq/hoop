@@ -2,7 +2,8 @@
   (:require
    [reagent.core :as r]
    [webapp.components.icon :as icon]
-   [webapp.components.popover :as popover]))
+   [webapp.components.popover :as popover]
+   [webapp.config :as config]))
 
 (def common-classes
   "disabled:opacity-50 disabled:cursor-not-allowed
@@ -57,7 +58,7 @@
 (defmulti btn-status identity)
 (defmethod btn-status :loading [_ _]
   [:figure.block.flex.place-content-center.justify-center
-   [:img.w-4.animate-spin {:src "/icons/icon-loader-circle-white.svg"}]])
+   [:img.w-4.animate-spin {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]])
 (defmethod btn-status :default [_ text] text)
 
 (defn- dropdown-more-options [options cb]
@@ -98,7 +99,7 @@
                          " px-small rounded-r-lg border-l border-blue-400 "
                          classes)
              :on-click #(reset! more-options-open? (not @more-options-open?))}
-            [:img.inline.w-5 {:src "/icons/icon-cheveron-down-white.svg"}]
+            [:img.inline.w-5 {:src (str config/webapp-url "/icons/icon-cheveron-down-white.svg")}]
             [popover/top {:open @more-options-open?
                           :component [dropdown-more-options more-options on-click-option]}]])]))))
 

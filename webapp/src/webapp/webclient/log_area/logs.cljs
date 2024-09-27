@@ -9,7 +9,8 @@
             [re-frame.core :as rf]
             [reagent.dom.server :as rdom]
             [webapp.audit.views.session-details :as session-details]
-            [webapp.formatters :as formatters]))
+            [webapp.formatters :as formatters]
+            [webapp.config :as config]))
 
 (defn trunc
   [string]
@@ -69,7 +70,7 @@
                 [:span "loading"]
                 [:figure {:class "w-4"}
                  [:img {:class "animate-spin"
-                        :src "/icons/icon-loader-circle-white.svg"}]]]
+                        :src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]]
       :failure [:div {:class " group relative py-large px-regular border-t border-gray-700 whitespace-pre-wrap"}
                 [:div {:class "font-bold text-sm mb-1"}
                  script]
@@ -113,7 +114,7 @@
               [:span "loading"]
               [:figure {:class "w-4"}
                [:img {:class "animate-spin"
-                      :src "/icons/icon-loader-circle-white.svg"}]]]
+                      :src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]]
     :failure [:div {:class " group relative py-large px-regular border-t border-gray-700 whitespace-pre-wrap"}
               [action-buttons-container session-id]
               [:div {:class "font-bold text-sm mb-1"}

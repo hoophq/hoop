@@ -17,7 +17,8 @@
             [webapp.components.popover :as popover]
             [webapp.components.user-icon :as user-icon]
             [webapp.formatters :as formatters]
-            [webapp.utilities :as utilities]))
+            [webapp.utilities :as utilities]
+            [webapp.routes :as routes]))
 
 (def ^:private export-dictionary
   {:postgres "csv"
@@ -252,7 +253,9 @@
             [:div {:class "relative group"}
              [tooltip "Copy link"]
              [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer copy-to-clipboard-url"
-                    :data-clipboard-text (str (-> js/document .-location .-origin) "/sessions/" (:id session))}
+                    :data-clipboard-text (str (-> js/document .-location .-origin)
+                                              (routes/url-for :sessions)
+                                              "/" (:id session))}
               [:> hero-outline-icon/ClipboardDocumentIcon {:class "h-5 w-5 text-gray-600"}]]]
 
             (when (and (= (:verb session) "exec") (or (:output session) (:event_stream session)))

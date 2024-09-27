@@ -1,6 +1,7 @@
 (ns webapp.events.auth
   (:require
-   [re-frame.core :as rf]))
+   [re-frame.core :as rf]
+   [webapp.routes :as routes]))
 
 (rf/reg-event-fx
  :auth->get-auth-link
@@ -8,7 +9,8 @@
    (let [on-success #(.replace js/window.location (:login_url %))
          get-email [:fetch {:method "GET"
                             :uri (str "/login?prompt=login&redirect="
-                                      (str (. (. js/window -location) -origin) "/auth/callback"))
+                                      (str (. (. js/window -location) -origin)
+                                           (routes/url-for :auth-callback-hoop)))
                             :on-success on-success}]]
      {:fx [[:dispatch get-email]]})))
 
@@ -18,7 +20,8 @@
    (let [on-success #(.replace js/window.location (:login_url %))
          get-email [:fetch {:method "GET"
                             :uri (str "/login?prompt=login&screen_hint=signup&redirect="
-                                      (str (. (. js/window -location) -origin) "/signup/callback"))
+                                      (str (. (. js/window -location) -origin)
+                                           (routes/url-for :signup-callback-hoop)))
                             :on-success on-success}]]
      {:fx [[:dispatch get-email]]})))
 
@@ -45,7 +48,7 @@
                                "client_id=DatIOCxntNv8AZrQLVnLb3tr1Y3oVwGW"
                                "&returnTo=" (js/encodeURIComponent
                                              (str (. (. js/window -location) -origin)
-                                                  "/login"))
+                                                  (routes/url-for :login-hoop)))
                                "&federated")]
 
      (if (= (get-in db [:users->current-user :data :tenancy_type]) "multitenant")

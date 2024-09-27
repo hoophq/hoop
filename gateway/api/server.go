@@ -36,6 +36,7 @@ import (
 	signupapi "github.com/hoophq/hoop/gateway/api/signup"
 	userapi "github.com/hoophq/hoop/gateway/api/user"
 	webhooksapi "github.com/hoophq/hoop/gateway/api/webhooks"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/indexer"
 	"github.com/hoophq/hoop/gateway/review"
 	"github.com/hoophq/hoop/gateway/security/idp"
@@ -102,21 +103,19 @@ func (a *Api) StartAPI(sentryInit bool) {
 	// https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies
 	route.SetTrustedProxies(nil)
 	route.Use(CORSMiddleware())
-	// route.Use(api.proxyNodeAPIMiddleware())
+	baseURL := appconfig.Get().ApiURLPath()
+
 	// UI
-	staticUiPath := os.Getenv("STATIC_UI_PATH")
-	if staticUiPath == "" {
-		staticUiPath = "/app/ui/public"
-	}
-	route.Use(static.Serve("/", static.LocalFile(staticUiPath, false)))
+	webappStaticUiPath := appconfig.Get().WebappStaticUiPath()
+	route.Use(static.Serve(baseURL+"/", static.LocalFile(webappStaticUiPath, false)))
 	route.NoRoute(func(c *gin.Context) {
-		if !strings.HasPrefix(c.Request.RequestURI, "/api") {
-			c.File(fmt.Sprintf("%s/index.html", staticUiPath))
+		if !strings.HasPrefix(c.Request.RequestURI, baseURL+"/api") {
+			c.File(fmt.Sprintf("%s/index.html", webappStaticUiPath))
 			return
 		}
 	})
 
-	rg := route.Group("/api")
+	rg := route.Group(baseURL + "/api")
 	if sentryInit {
 		rg.Use(sentrygin.New(sentrygin.Options{
 			Repanic: true,

@@ -4,4 +4,5 @@
 (goog-define api-url "")
 (goog-define segment-write-key "")
 (goog-define hoop-app-url "")
+(goog-define webapp-url "")
 (goog-define canny-id "")

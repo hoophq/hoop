@@ -8,6 +8,7 @@
    (let [hostname (.-hostname js/window.location)]
      (cond
        (= hostname "localhost") (.clarity js/window "stop")
+       (= hostname "127.0.0.1") (.clarity js/window "stop")
        (= hostname "appdemo.hoop.dev") (.clarity js/window "stop")
        (= hostname "tryrunops.hoop.dev") (.clarity js/window "stop")
        (= (:org_name user) "hoopdev") (.clarity js/window "stop")

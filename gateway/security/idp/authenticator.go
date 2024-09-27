@@ -122,11 +122,9 @@ func (p *Provider) userInfoEndpoint(accessToken string) (*ProviderUserInfo, erro
 
 func NewProvider(apiURL string) *Provider {
 	if appconfig.Get().AuthMethod() == "local" {
-		return &Provider{Context: context.Background()}
+		return &Provider{Context: context.Background(), ApiURL: apiURL}
 	}
 	ctx := context.Background()
-	apiURL = strings.TrimSuffix(apiURL, "/")
-
 	provider := &Provider{
 		Context: ctx,
 		ApiURL:  apiURL,
@@ -147,7 +145,9 @@ func NewProvider(apiURL string) *Provider {
 	if provider.CustomScopes != "" {
 		scopes = addCustomScopes(scopes, provider.CustomScopes)
 	}
-	log.Infof("loaded oidc provider configuration, with-user-info=%v, auth=%v, token=%v, userinfo=%v, jwks=%v, algorithms=%v, groupsclaim=%v, scopes=%v",
+	redirectURL := apiURL + "/api/callback"
+	log.Infof("loaded oidc provider configuration, redirect-url=%v, with-user-info=%v, auth=%v, token=%v, userinfo=%v, jwks=%v, algorithms=%v, groupsclaim=%v, scopes=%v",
+		redirectURL,
 		provider.authWithUserInfo,
 		oidcProviderConfig.AuthURL,
 		oidcProviderConfig.TokenURL,
@@ -160,7 +160,7 @@ func NewProvider(apiURL string) *Provider {
 	conf := oauth2.Config{
 		ClientID:     provider.ClientID,
 		ClientSecret: provider.ClientSecret,
-		RedirectURL:  apiURL + "/api/callback",
+		RedirectURL:  redirectURL,
 		Endpoint:     oidcProvider.Endpoint(),
 		Scopes:       scopes,
 	}

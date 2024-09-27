@@ -4,7 +4,8 @@
             ["@radix-ui/themes" :refer [Button]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
-            [reagent.core :as r]))
+            [reagent.core :as r]
+            [webapp.config :as config]))
 
 (defn sort-tree [data]
   (let [non-empty-keys (->> data
@@ -94,7 +95,7 @@
    [:span {:class "italic"}
     "Loading runbooks"]
    [:figure {:class "w-3 flex-shrink-0 animate-spin opacity-60"}
-    [:img {:src "/icons/icon-loader-circle-white.svg"}]]])
+    [:img {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]])
 
 (defn- empty-templates-view []
   [:div {:class "text-center"}

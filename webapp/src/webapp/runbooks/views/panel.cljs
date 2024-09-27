@@ -5,7 +5,8 @@
             [webapp.components.loaders :as loaders]
             [webapp.components.searchbox :as searchbox]
             [webapp.events.connections]
-            [webapp.runbooks.views.template-view :as template-view]))
+            [webapp.runbooks.views.template-view :as template-view]
+            [webapp.config :as config]))
 
 (defn- loading-list-view []
   [:div {:class "flex items-center justify-center h-full"}
@@ -15,14 +16,14 @@
   [:div {:class "pt-large"}
    [:figure
     {:class "w-3/4 mx-auto p-regular"}
-    [:img {:src "/images/illustrations/disk.svg"
+    [:img {:src (str config/webapp-url "/images/illustrations/disk.svg")
            :class "w-full"}]]
    [:div {:class "px-large text-center"}
     [:div {:class "text-gray-700 text-sm font-bold mb-small"}
      "No runbooks available in your repository!"]
     [:div {:class "text-gray-500 text-xs"}
      (str "Trouble creating a runbook file? ")
-     [:a {:href "https://hoop.dev/docs/plugins/runbooks/configuring"
+     [:a {:href "https://hoop.dev/docs/learn/runbooks/configuration"
           :target "_blank"
           :class "underline text-blue-500"}
       "Get to know how to use our runbooks plugin."]]]])
@@ -30,7 +31,7 @@
 (defn- no-integration-templates-view []
   [:div {:class "pt-large flex flex-col gap-regular items-center"}
    [:figure {:class "w-3/4"}
-    [:img {:src "/images/illustrations/typingmachine.svg"
+    [:img {:src (str config/webapp-url "/images/illustrations/typingmachine.svg")
            :class "w-full"}]]
    [:div {:class "flex flex-col items-center text-center"}
     [:div {:class "text-gray-700 text-sm font-bold"}
@@ -85,13 +86,13 @@
                                       " text-blue-500"))}
                        [:figure {:class "w-3 flex-shrink-0"}
                         [:img {:src (if selected?
-                                      "/icons/icon-document-blue.svg"
-                                      "/icons/icon-document-black.svg")}]]
+                                      (str config/webapp-url "/icons/icon-document-blue.svg")
+                                      (str config/webapp-url "/icons/icon-document-black.svg"))}]]
                        [:span
                         (:name template)]
                        (when (= (:name template) (-> @selected-template :data :name))
                          [:figure {:class "w-6 flex-shrink-0"}
-                          [:img {:src "/icons/icon-check-blue.svg"}]])]])))])])))
+                          [:img {:src (str config/webapp-url "/icons/icon-check-blue.svg")}]])]])))])])))
 
 (defn panel [_]
   (let [templates (rf/subscribe [:runbooks-plugin->runbooks])
