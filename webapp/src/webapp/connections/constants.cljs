@@ -1,5 +1,6 @@
 (ns webapp.connections.constants
-  (:require [clojure.string :as cs]))
+  (:require [clojure.string :as cs]
+            [webapp.config :as config]))
 
 (def connection-configs-required
   {:command-line []
@@ -35,48 +36,48 @@
    :ssh [{:key "ssh_uri" :value "" :required true :placeholder "ssh://user@host"}]})
 
 (def connection-icons-name-dictionary
-  {:dark {:postgres "/images/connections-logos/postgres_logo.svg"
-          :postgres-csv "/images/connections-logos/postgres_logo.svg"
-          :command-line "/images/connections-logos/dark/custom_dark.svg"
-          :ssh "/images/connections-logos/dark/custom_dark.svg"
-          :custom "/images/connections-logos/dark/custom_dark.svg"
-          :tcp "/images/connections-logos/dark/tcp_dark.svg"
-          :mysql "/images/connections-logos/dark/mysql_dark.png"
-          :mysql-csv "/images/connections-logos/dark/mysql_dark.png"
-          :aws "/images/connections-logos/aws_logo.svg"
-          :bastion "/images/connections-logos/bastion_logo.svg"
-          :heroku "/images/connections-logos/heroku_logo.svg"
-          :nodejs "/images/connections-logos/node_logo.svg"
-          :python "/images/connections-logos/python_logo.svg"
-          :ruby-on-rails "/images/connections-logos/dark/rails_dark.svg"
-          :clojure "/images/connections-logos/clojure_logo.svg"
-          :kubernetes "/images/connections-logos/k8s_logo.svg"
-          :sql-server-csv "/images/connections-logos/sql-server_logo.svg"
-          :sql-server "/images/connections-logos/sql-server_logo.svg"
-          :oracledb "/images/connections-logos/oracle_logo.svg"
-          :mssql "/images/connections-logos/sql-server_logo.svg"
-          :mongodb "/images/connections-logos/mongodb_logo.svg"}
-   :light {:postgres "/images/connections-logos/postgres_logo.svg"
-           :postgres-csv "/images/connections-logos/postgres_logo.svg"
-           :command-line "/images/connections-logos/command-line.svg"
-           :ssh "/images/connections-logos/command-line.svg"
-           :custom "/images/connections-logos/command-line.svg"
-           :tcp "/images/connections-logos/tcp_logo.svg"
-           :mysql "/images/connections-logos/mysql_logo.png"
-           :mysql-csv "/images/connections-logos/mysql_logo.png"
-           :aws "/images/connections-logos/aws_logo.svg"
-           :bastion "/images/connections-logos/bastion_logo.svg"
-           :heroku "/images/connections-logos/heroku_logo.svg"
-           :nodejs "/images/connections-logos/node_logo.svg"
-           :python "/images/connections-logos/python_logo.svg"
-           :ruby-on-rails "/images/connections-logos/rails_logo.svg"
-           :clojure "/images/connections-logos/clojure_logo.svg"
-           :kubernetes "/images/connections-logos/k8s_logo.svg"
-           :sql-server-csv "/images/connections-logos/sql-server_logo.svg"
-           :sql-server "/images/connections-logos/sql-server_logo.svg"
-           :oracledb "/images/connections-logos/oracle_logo.svg"
-           :mssql "/images/connections-logos/sql-server_logo.svg"
-           :mongodb "/images/connections-logos/mongodb_logo.svg"}})
+  {:dark {:postgres (str config/webapp-url "/images/connections-logos/postgres_logo.svg")
+          :postgres-csv (str config/webapp-url "/images/connections-logos/postgres_logo.svg")
+          :command-line (str config/webapp-url "/images/connections-logos/dark/custom_dark.svg")
+          :ssh (str config/webapp-url "/images/connections-logos/dark/custom_dark.svg")
+          :custom (str config/webapp-url "/images/connections-logos/dark/custom_dark.svg")
+          :tcp (str config/webapp-url "/images/connections-logos/dark/tcp_dark.svg")
+          :mysql (str config/webapp-url "/images/connections-logos/dark/mysql_dark.png")
+          :mysql-csv (str config/webapp-url "/images/connections-logos/dark/mysql_dark.png")
+          :aws (str config/webapp-url "/images/connections-logos/aws_logo.svg")
+          :bastion (str config/webapp-url "/images/connections-logos/bastion_logo.svg")
+          :heroku (str config/webapp-url "/images/connections-logos/heroku_logo.svg")
+          :nodejs (str config/webapp-url "/images/connections-logos/node_logo.svg")
+          :python (str config/webapp-url "/images/connections-logos/python_logo.svg")
+          :ruby-on-rails (str config/webapp-url "/images/connections-logos/dark/rails_dark.svg")
+          :clojure (str config/webapp-url "/images/connections-logos/clojure_logo.svg")
+          :kubernetes (str config/webapp-url "/images/connections-logos/k8s_logo.svg")
+          :sql-server-csv (str config/webapp-url "/images/connections-logos/sql-server_logo.svg")
+          :sql-server (str config/webapp-url "/images/connections-logos/sql-server_logo.svg")
+          :oracledb (str config/webapp-url "/images/connections-logos/oracle_logo.svg")
+          :mssql (str config/webapp-url "/images/connections-logos/sql-server_logo.svg")
+          :mongodb (str config/webapp-url "/images/connections-logos/mongodb_logo.svg")}
+   :light {:postgres (str config/webapp-url "/images/connections-logos/postgres_logo.svg")
+           :postgres-csv (str config/webapp-url "/images/connections-logos/postgres_logo.svg")
+           :command-line (str config/webapp-url "/images/connections-logos/command-line.svg")
+           :ssh (str config/webapp-url "/images/connections-logos/command-line.svg")
+           :custom (str config/webapp-url "/images/connections-logos/command-line.svg")
+           :tcp (str config/webapp-url "/images/connections-logos/tcp_logo.svg")
+           :mysql (str config/webapp-url "/images/connections-logos/mysql_logo.png")
+           :mysql-csv (str config/webapp-url "/images/connections-logos/mysql_logo.png")
+           :aws (str config/webapp-url "/images/connections-logos/aws_logo.svg")
+           :bastion (str config/webapp-url "/images/connections-logos/bastion_logo.svg")
+           :heroku (str config/webapp-url "/images/connections-logos/heroku_logo.svg")
+           :nodejs (str config/webapp-url "/images/connections-logos/node_logo.svg")
+           :python (str config/webapp-url "/images/connections-logos/python_logo.svg")
+           :ruby-on-rails (str config/webapp-url "/images/connections-logos/rails_logo.svg")
+           :clojure (str config/webapp-url "/images/connections-logos/clojure_logo.svg")
+           :kubernetes (str config/webapp-url "/images/connections-logos/k8s_logo.svg")
+           :sql-server-csv (str config/webapp-url "/images/connections-logos/sql-server_logo.svg")
+           :sql-server (str config/webapp-url "/images/connections-logos/sql-server_logo.svg")
+           :oracledb (str config/webapp-url "/images/connections-logos/oracle_logo.svg")
+           :mssql (str config/webapp-url "/images/connections-logos/sql-server_logo.svg")
+           :mongodb (str config/webapp-url "/images/connections-logos/mongodb_logo.svg")}})
 
 (defn get-connection-icon [connection & [theme]]
   (let [connection-icons (get connection-icons-name-dictionary (or theme :light))]

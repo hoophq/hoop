@@ -8,7 +8,8 @@
    [webapp.components.headings :as h]
    [webapp.components.button :as button]
    [webapp.components.forms :as forms]
-   [webapp.audit.views.session-details :as session-details]))
+   [webapp.audit.views.session-details :as session-details]
+   [webapp.config :as config]))
 
 (def search-fields
   [{:field "session" :action "session: "}
@@ -100,7 +101,7 @@
   [:div {:class "py-x-large"}
    [:figure
     {:class "w-1/6 mx-auto p-regular"}
-    [:img {:src "/images/illustrations/pc.svg"
+    [:img {:src (str config/webapp-url "/images/illustrations/pc.svg")
            :class "w-full"}]]
    [:div {:class "px-large text-center"}
     [:div {:class "text-gray-700 text-sm font-bold"}

@@ -11,6 +11,8 @@
 (def release-type env/release-type)
 (def api env/api-url)
 
+(def webapp-url env/webapp-url)
+
 (def hoop-app-url env/hoop-app-url)
 
 ; TODO remove all these values from and use dotenv (or smt similar)

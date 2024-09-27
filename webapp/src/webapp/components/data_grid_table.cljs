@@ -1,5 +1,6 @@
 (ns webapp.components.data-grid-table
-  (:require [reagent.core :as r]))
+  (:require [reagent.core :as r]
+            [webapp.config :as config]))
 
 (def dark-theme
   {"component"                  "#15202b"
@@ -122,5 +123,5 @@
   (if loading?
     [:div {:class "flex justify-center items-center h-full"}
      [:figure.w-4
-      [:img.animate-spin {:src "/icons/icon-loader-circle-white.svg"}]]]
+      [:img.animate-spin {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]]
     [data-grid head body dark-theme?]))

@@ -72,7 +72,7 @@ func (p *plugin) OnUpdate(old, new *types.Plugin) error {
 			return fmt.Errorf("fail creating webhook plugin application, reason=%v", err)
 		}
 		p.appStore.Set(new.OrgID, nil)
-		log.Infof("application created with success for organization %s, id=%s, uid=%s",
+		log.Infof("application created with success for organization %s, id=%s, uid=%v",
 			new.OrgID, out.Id, out.Uid)
 	}
 	return nil
@@ -122,7 +122,7 @@ func (p *plugin) processReviewCreateEvent(ctx plugintypes.Context) {
 	if accessDuration == "0s" {
 		accessDuration = "```-```"
 	}
-	apiURL := appconfig.Get().ApiURL()
+	apiURL := appconfig.Get().FullApiURL()
 	out, err := p.client.Message.Create(ctxtimeout, appID, &svix.MessageIn{
 		EventType: eventMSTeamsReviewCreateType,
 		EventId:   *svix.NullableString(func() *string { v := eventID; return &v }()),

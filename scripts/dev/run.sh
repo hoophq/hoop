@@ -40,13 +40,16 @@ cd libhoop && go mod tidy && cd ../
 
 WEBAPP_BUILD="${WEBAPP_BUILD:-0}"
 if [[ $WEBAPP_BUILD == "1" ]]; then
+  rm -rf ./dist/dev/resources
   cd webapp && npm install && npm run release:hoop-ui && cd ../
+  cp -a webapp/resources/ ./dist/dev/resources
 fi
 
 docker build -t hoopdev -f ./scripts/dev/Dockerfile .
 mkdir -p ./dist/dev/
 
-CGO_ENABLED=0 GOOS=linux go build -ldflags "-s -w -X github.com/hoophq/hoop/common/version.strictTLS=false" -o ./dist/dev/hooplinux github.com/hoophq/hoop/client
+VERSION="${VERSION:-unknown}"
+CGO_ENABLED=0 GOOS=linux go build -ldflags "-s -w -X github.com/hoophq/hoop/common/version.version=${VERSION}" -o ./dist/dev/hooplinux github.com/hoophq/hoop/client
 docker stop hoopdev &> /dev/null || true
 docker rm hoopdev &> /dev/null || true
 
@@ -59,5 +62,5 @@ docker run --rm --name hoopdev \
   -v ./scripts/dev/entrypoint.sh:/app/entrypoint.sh \
   -v ./dist/dev/hooplinux:/app/hooplinux \
   -v ./rootfs/app/migrations/:/app/migrations/ \
-  -v ./webapp/resources/:/app/ui/ \
+  -v ./dist/dev/resources/:/app/ui/ \
   -it hoopdev /app/entrypoint.sh

@@ -1,5 +1,6 @@
 (ns webapp.slack.slack-new-user
-  (:require [re-frame.core :as rf]))
+  (:require [re-frame.core :as rf]
+            [webapp.config :as config]))
 
 (defn main [_]
   (let [user (rf/subscribe [:users->current-user])]
@@ -11,7 +12,7 @@
         [:div {:class "bg-white h-full pt-x-large"}
          [:figure
           {:class "w-1/3 mx-auto p-regular"}
-          [:img {:src "/images/illustrations/videogame.svg"
+          [:img {:src (str config/webapp-url "/images/illustrations/videogame.svg")
                  :class "w-full"}]]
          [:div {:class "px-large py-large text-center"}
           [:div {:class "text-gray-700 text-sm font-bold"}

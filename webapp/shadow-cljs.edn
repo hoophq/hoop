@@ -29,7 +29,7 @@
                             :closure-defines
                             {re-frame.trace.trace-enabled? false
                              day8.re-frame.tracing.trace-enabled? false
-                             webapp.env/release-type "hoop-ui"
+                             webapp.env/release-type "development"
                              webapp.env/segment-write-key #shadow/env ["SEGMENT_WRITE_KEY" "043Lv52mAcoGOHWVq7n3bxZAVvocyqx0"]
                              webapp.env/canny-id #shadow/env ["CANNY_ID" "650f50a3e71cb50a018f6e7b"]
                              webapp.env/sentry-sample-rate #shadow/env ["SENTRY_SAMPLE_RATE" "1.0"]
@@ -39,6 +39,8 @@
                                                                   "http://localhost:8009/api"]
                              webapp.env/hoop-app-url #shadow/env ["HOOP_APP_URL"
                                                                   "http://localhost:8270"]
+                             webapp.env/webapp-url #shadow/env ["ASSETS_URL"
+                                                                "http://localhost:8280"]
                              webapp.env/api-url #shadow/env ["API_URL"
                                                              "http://localhost:8009/api"]}}}
    :release {:compiler-options {:output-to "resources/public/js"
@@ -59,8 +61,10 @@
                                                                       "http://localhost:8009/api"]
                                  webapp.env/hoop-app-url #shadow/env ["HOOP_APP_URL"
                                                                       "http://localhost:8270"]
+                                 webapp.env/webapp-url #shadow/env ["ASSETS_URL"
+                                                                 "http://localhost:8280"]
                                  webapp.env/api-url #shadow/env ["API_URL"
-                                                                 "http://localhost:4001/api"]}}
+                                                                 "http://localhost:8009/api"]}}
              :build-options
              {:ns-aliases
               {day8.re-frame.tracing day8.re-frame.tracing-stubs}}}}

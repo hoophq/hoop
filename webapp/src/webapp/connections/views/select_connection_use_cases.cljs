@@ -1,6 +1,7 @@
 (ns webapp.connections.views.select-connection-use-cases
   (:require [re-frame.core :as rf]
-            [webapp.components.headings :as h]))
+            [webapp.components.headings :as h]
+            [webapp.config :as config]))
 
 (defn main []
   (rf/dispatch [:agents->get-agents])
@@ -18,7 +19,7 @@
                           :type "database"])}
        [:figure {:class "w-full rounded-lg border mb-2"}
         [:img {:class "w-full h-28 p-3"
-               :src "/images/database-connections.svg"}]]
+               :src (str config/webapp-url "/images/database-connections.svg")}]]
        [:div {:class "flex flex-col justify-center items-center"}
         [h/h4-md "Database"]]]
       [:div {:class "col-span-2 flex items-center border rounded-lg cursor-pointer hover:shadow p-4"
@@ -29,7 +30,7 @@
                           :type "custom"])}
        [:figure {:class "rounded-lg border"}
         [:img {:class "w-full p-3"
-               :src "/images/custom-connections-small.svg"}]]
+               :src (str config/webapp-url "/images/custom-connections-small.svg")}]]
        [:div {:class "flex flex-col pl-3 justify-center"}
         [h/h4-md "Custom"]
         [:span {:class "mt-2 text-sm text-center text-gray-500"}
@@ -42,7 +43,7 @@
                           :type "custom"])}
        [:figure {:class "rounded-lg border"}
         [:img {:class "w-full p-3"
-               :src "/images/custom-connections-small.svg"}]]
+               :src (str config/webapp-url "/images/custom-connections-small.svg")}]]
        [:div {:class "flex flex-col pl-3 justify-center"}
         [h/h4-md "Shell"]
         [:span {:class "mt-2 text-sm text-center text-gray-500"}
@@ -55,7 +56,7 @@
                           :type "custom"])}
        [:figure {:class "rounded-lg border"}
         [:img {:class "w-full p-3"
-               :src "/images/custom-connections-small.svg"}]]
+               :src (str config/webapp-url "/images/custom-connections-small.svg")}]]
        [:div {:class "flex flex-col pl-3 justify-center"}
         [h/h4-md "TCP"]
         [:span {:class "mt-2 text-sm text-center text-gray-500"}
@@ -68,7 +69,7 @@
                           :type "application"])}
        [:figure {:class "w-full rounded-lg border mb-2"}
         [:img {:class "w-full h-28 p-3"
-               :src "/images/application-connections.svg"}]]
+               :src (str config/webapp-url "/images/application-connections.svg")}]]
        [:div {:class "flex flex-col justify-center items-center"}
         [h/h4-md "Application"]]]]]))
 

@@ -128,7 +128,7 @@
          [:label {:class "text-xs text-gray-500"}
           "Check our supported database "
           [:a {:class "text-blue-500"
-               :href (str "https://hoop.dev/docs/connections")
+               :href (str "https://hoop.dev/docs/concepts/connections")
                :target "_blank"}
            "here"]]]
         [:> ui/RadioGroup {:value @connection-subtype

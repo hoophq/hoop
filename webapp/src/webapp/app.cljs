@@ -81,7 +81,7 @@
 
     [:div "Verifying authentication"
      [:span.w-16
-      [:img.inline.animate-spin {:src "/icons/icon-refresh.svg"}]]]))
+      [:img.inline.animate-spin {:src (str config/webapp-url "/icons/icon-refresh.svg")}]]]))
 
 (defn signup-callback-panel-hoop
   "This panel works for receiving the token and storing in the session for later requests"
@@ -98,7 +98,7 @@
 
     [:div "Verifying authentication"
      [:span.w-16
-      [:img.inline.animate-spin {:src "/icons/icon-refresh.svg"}]]]))
+      [:img.inline.animate-spin {:src (str config/webapp-url "/icons/icon-refresh.svg")}]]]))
 
 (defn- hoop-layout [_]
   (let [user (rf/subscribe [:users->current-user])]
@@ -134,6 +134,9 @@
 
 
 (defmethod routes/panels :home-panel []
+  [layout :application-hoop [home/home-panel-hoop]])
+
+(defmethod routes/panels :home-redirect-panel []
   [layout :application-hoop [home/home-panel-hoop]])
 
 (defmethod routes/panels :hoop-app-panel []

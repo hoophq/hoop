@@ -21,6 +21,7 @@ common/.idea/*
 .fleet/*
 .clj-kondo/*
 .lsp/*
+.calva
 # Dependency directories (remove the comment below to include it)
 # vendor/
 

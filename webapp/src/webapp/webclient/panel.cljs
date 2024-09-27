@@ -29,7 +29,8 @@
             [webapp.webclient.exec-multiples-connections.exec-list :as multiple-connections-exec-list-component]
             [webapp.webclient.runbooks.form :as runbooks-form]
             [webapp.formatters :as formatters]
-            [webapp.subs :as subs]))
+            [webapp.subs :as subs]
+            [webapp.config :as config]))
 
 (defn discover-connection-type [connection]
   (cond
@@ -102,7 +103,7 @@
   [:div {:class "flex flex-row-reverse"}
    [:div {:class "flex items-center gap-small"}
     [:figure {:class "w-3"}
-     [:img {:src "/icons/icon-loader-circle-white.svg"
+     [:img {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")
             :class "animate-spin"}]]
     [:span {:class "text-xs text-gray-300 italic"}
      "Edited"]]])

@@ -3,7 +3,8 @@
    [clojure.string :as string]
    [reagent.core :as r]
    [webapp.components.icon :as icon]
-   ["@heroicons/react/16/solid" :as hero-micro-icon]))
+   ["@heroicons/react/16/solid" :as hero-micro-icon]
+   [webapp.config :as config]))
 
 (defn- searchbox-icon []
   [:svg {:class "h-5 w-5 text-gray-400"
@@ -28,7 +29,7 @@
   [:div {:class "flex gap-regular items-center"}
    [:figure
     {:class "flex-shrink w-32 mx-auto p-regular"}
-    [:img {:src "/images/illustrations/pc+monitor.svg"
+    [:img {:src (str config/webapp-url "/images/illustrations/pc+monitor.svg")
            :class "w-full"}]]
    [:div {:class "flex-grow"}
     [:div {:class "text-gray-700 text-sm font-bold"}

@@ -6,7 +6,8 @@
             [webapp.components.user-icon :as user-icon]
             [webapp.config :as config]
             [webapp.shared-ui.sidebar.constants :as constants]
-            [webapp.shared-ui.sidebar.navigation :as navigation]))
+            [webapp.shared-ui.sidebar.navigation :as navigation]
+            [webapp.routes :as routes]))
 
 (defn mobile-sidebar [_ _ _]
   (let [sidebar-mobile (rf/subscribe [:sidebar-mobile])]
@@ -116,7 +117,8 @@
           [:div {:class "h-full flex grow flex-col gap-y-2 overflow-y-auto bg-[#060E1D] px-4 pb-10"}
            [:div {:class "flex my-8 shrink-0 items-center justify-center"}
             [:figure {:class "cursor-pointer"}
-             [:img {:src "/images/hoop-branding/SVG/hoop-symbol+text_white.svg"
+             [:img {:src (str config/webapp-url
+                              "/images/hoop-branding/SVG/hoop-symbol+text_white.svg")
                     :on-click #(rf/dispatch [:navigate :home])}]]]
            [:nav {:class "flex flex-1 flex-col"}
             [:ul {:role "list"
@@ -159,7 +161,7 @@
 
              [:ul {:class "space-y-1 mt-6"}
               [:li
-               [:a {:href "/connections"
+               [:a {:href (routes/url-for :connections)
                     :class (str (hover-side-menu-link? "/connections" current-route)
                                 "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
                 [:div {:class "flex gap-3 items-center"}
@@ -170,7 +172,7 @@
 
               (when admin?
                 [:li
-                 [:a {:href "/organization/users"
+                 [:a {:href (routes/url-for :users)
                       :class (str (hover-side-menu-link? "/organization/users" current-route)
                                   "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
                   [:> hero-outline-icon/UserGroupIcon {:class "h-6 w-6 shrink-0 text-white"

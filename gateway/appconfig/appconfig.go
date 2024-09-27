@@ -15,7 +15,8 @@ import (
 // TODO: it should include all runtime configuration
 
 const (
-	defaultPostgRESTRole = "hoop_apiuser"
+	defaultPostgRESTRole             = "hoop_apiuser"
+	defaultWebappStaticUiPath string = "/app/ui/public"
 )
 
 type pgCredentials struct {
@@ -43,8 +44,10 @@ type Config struct {
 	apiHostname             string
 	apiHost                 string
 	apiScheme               string
+	apiURLPath              string
 	webappUsersManagement   string
 	jwtSecretKey            []byte
+	webappStaticUIPath      string
 
 	isLoaded bool
 }
@@ -104,6 +107,16 @@ func Load() error {
 	if err != nil {
 		return err
 	}
+	webappStaticUiPath := os.Getenv("STATIC_UI_PATH")
+	if webappStaticUiPath == "" {
+		webappStaticUiPath = defaultWebappStaticUiPath
+	}
+	// it's important to coerce to empty string when the path is just a /
+	// in most cases this is a typo provided by the user that will affect
+	// every part of the application using the api url to construct links
+	if apiRawURL.Path == "/" {
+		apiRawURL.Path = ""
+	}
 	runtimeConfig = Config{
 		apiKey:                  os.Getenv("API_KEY"),
 		apiURL:                  fmt.Sprintf("%s://%s", apiRawURL.Scheme, apiRawURL.Host),
@@ -111,6 +124,7 @@ func Load() error {
 		apiHostname:             apiRawURL.Hostname(),
 		apiScheme:               apiRawURL.Scheme,
 		apiHost:                 apiRawURL.Host,
+		apiURLPath:              apiRawURL.Path,
 		authMethod:              authMethod,
 		askAICredentials:        askAICred,
 		pgCred:                  pgCred,
@@ -125,6 +139,7 @@ func Load() error {
 		webhookAppKey:           os.Getenv("WEBHOOK_APPKEY"),
 		webappUsersManagement:   webappUsersManagement,
 		jwtSecretKey:            []byte(os.Getenv("JWT_SECRET_KEY")),
+		webappStaticUIPath:      webappStaticUiPath,
 		isLoaded:                true,
 	}
 	return nil
@@ -159,7 +174,7 @@ func loadAuthMethod() (authMethod string, err error) {
 
 func validateLocalAuthJwtKey() error {
 	if jwtSecretKey := os.Getenv("JWT_SECRET_KEY"); jwtSecretKey == "" {
-		return fmt.Errorf("When AUTH_METHOD is set as `local`, you must configure a random string value at the JWT_SECRET_KEY environment variable")
+		return fmt.Errorf("when AUTH_METHOD is set as `local`, you must configure a random string value at the JWT_SECRET_KEY environment variable")
 	}
 	return nil
 }
@@ -246,14 +261,19 @@ func (c Config) LicenseSigningKey() (string, *rsa.PrivateKey) {
 	return c.licenseSignerOrgID, c.licenseSigningKey
 }
 
-func (c Config) ApiURL() string      { return c.apiURL }
-func (c Config) GrpcURL() string     { return c.grpcURL }
-func (c Config) ApiHostname() string { return c.apiHostname }
+// FullApiURL returns the full url which contains the path of the URL
+func (c Config) FullApiURL() string { return c.apiURL + c.apiURLPath }
 
-// ApiHost host or host:port
+// ApiURL is the base URL without any path segment or query strings (scheme://host:port)
+func (c Config) ApiURL() string             { return c.apiURL }
+func (c Config) GrpcURL() string            { return c.grpcURL }
+func (c Config) WebappStaticUiPath() string { return c.webappStaticUIPath }
+func (c Config) ApiHostname() string        { return c.apiHostname }
+func (c Config) ApiHost() string            { return c.apiHost } // ApiHost host or host:port
+func (c Config) ApiScheme() string          { return c.apiScheme }
+func (c Config) ApiURLPath() string         { return c.apiURLPath }
+
 func (c Config) ApiKey() string                  { return c.apiKey }
-func (c Config) ApiHost() string                 { return c.apiHost }
-func (c Config) ApiScheme() string               { return c.apiScheme }
 func (c Config) AuthMethod() string              { return c.authMethod }
 func (c Config) WebhookAppKey() string           { return c.webhookAppKey }
 func (c Config) GcpDLPJsonCredentials() string   { return c.gcpDLPJsonCredentials }

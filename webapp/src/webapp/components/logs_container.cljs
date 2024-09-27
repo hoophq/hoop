@@ -2,7 +2,8 @@
   (:require ["@heroicons/react/24/outline" :as hero-outline-icon]
             ["clipboard" :as clipboardjs]
             [re-frame.core :as rf]
-            [webapp.components.headings :as h]))
+            [webapp.components.headings :as h]
+            [webapp.config :as config]))
 
 ;; TODO: move it to another component
 (defn copy-clipboard [data-clipboard-target]
@@ -19,7 +20,7 @@
   [:div.flex.gap-small
    [:span "loading"]
    [:figure.w-4
-    [:img.animate-spin {:src "/icons/icon-loader-circle-white.svg"}]]])
+    [:img.animate-spin {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]])
 (defmethod logs-area :failure [_ _] "There was an error to get the logs for this task")
 (defmethod logs-area :default [_ _] "No logs to show")
 

@@ -5,7 +5,8 @@
             [reagent.core :as r]
             [webapp.components.button :as button]
             [webapp.components.forms :as forms]
-            [webapp.webclient.runbooks.exec-multiples-runbook-list :as exec-multiples-runbooks-list]))
+            [webapp.webclient.runbooks.exec-multiples-runbook-list :as exec-multiples-runbooks-list]
+            [webapp.config :as config]))
 
 (defn dynamic-form
   [type {:keys [label
@@ -146,7 +147,7 @@
   [:div {:class "flex items-center justify-center h-full"}
    [:figure {:class "w-8"}
     [:img {:class "animate-spin"
-           :src "/icons/icon-loader-circle.svg"}]]])
+           :src (str config/webapp-url "/icons/icon-loader-circle.svg")}]]])
 
 (defmethod template-view :default []
   [:div {:class "flex items-center justify-center h-full"}

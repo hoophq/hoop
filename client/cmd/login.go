@@ -169,11 +169,17 @@ func requestForUrl(apiUrl, tlsCA string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	log.Debugf("GET %s/api/login status=%v", apiUrl, resp.StatusCode)
+	contentType := resp.Header.Get("Content-Type")
+	log.Debugf("GET %s/api/login status=%v, content-type=%s", apiUrl, resp.StatusCode, contentType)
 	defer resp.Body.Close()
 	var l login
 	if err := json.NewDecoder(resp.Body).Decode(&l); err != nil {
-		return "", fmt.Errorf("failed decoding response body, err=%v", err)
+		if contentType != "application/json" {
+			return "", fmt.Errorf("the api url config may be incorrect due to a failure when decoding the response body (%v), status=%v, err=%v",
+				contentType, resp.StatusCode, err)
+		}
+		return "", fmt.Errorf("failed decoding response body (%v), status=%v, err=%v",
+			contentType, resp.StatusCode, err)
 	}
 	if resp.StatusCode == http.StatusOK {
 		return l.Url, nil
