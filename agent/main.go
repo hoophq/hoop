@@ -21,10 +21,11 @@ import (
 )
 
 var (
-	defaultUserAgent = fmt.Sprintf("hoopagent/%v", version.Get().Version)
-	vi               = version.Get()
-	agentStore       = memory.New()
-	agentInstanceKey = "instance"
+	defaultUserAgent       = fmt.Sprintf("hoopagent/%v", version.Get().Version)
+	vi                     = version.Get()
+	agentStore             = memory.New()
+	agentInstanceKey       = "instance"
+	defaultBackoffResetSec = 60 // 1min
 )
 
 func Run() {
@@ -177,22 +178,29 @@ func runDefaultMode(config *agentconfig.Config) error {
 		ctrl := controller.New(client, config, nil)
 		agentStore.Set(agentInstanceKey, ctrl)
 		defer func() { agentStore.Del(agentInstanceKey); ctrl.Close(nil) }()
+		connectStart := time.Now().UTC()
 		err = ctrl.Run()
+		// reset backoff if it has been connected for more than the specified time
+		backoffErr, elapsed := backoff.Error(), int(time.Now().UTC().Sub(connectStart).Seconds())
+		if elapsed > defaultBackoffResetSec {
+			log.With("version", vi.Version, "current-backoff", v.String(), "connect-time-in-sec", elapsed).Infof("reseting backoff")
+			backoffErr = nil
+		}
 		var grpcStatusCode = codes.Code(99)
 		if status, ok := status.FromError(err); ok {
 			grpcStatusCode = status.Code()
 		}
 		switch grpcStatusCode {
 		case codes.Canceled:
-			// reset backoff
+			// always reset on this status
 			log.With("version", vi.Version, "backoff", v.String()).Infof("context canceled")
 			return nil
 		case codes.Unauthenticated:
 			log.With("version", vi.Version, "backoff", v.String()).Infof("unauthenticated")
-			return backoff.Error()
+			return backoffErr
 		}
 		log.With("version", vi.Version, "backoff", v.String(), "status", grpcStatusCode).
 			Infof("disconnected from %v, reason=%v", config.URL, err)
-		return backoff.Error()
+		return backoffErr
 	})
 }
