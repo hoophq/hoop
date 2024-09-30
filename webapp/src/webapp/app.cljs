@@ -21,6 +21,7 @@
             [webapp.connections.views.connection-list :as connections]
             [webapp.connections.views.connection-connect :as connection-connect]
             [webapp.connections.views.connection-form-modal :as connection-form-modal]
+            [webapp.connections.views.create-update-connection.main :as create-update-connection]
             [webapp.dashboard.main :as dashboard]
             [webapp.events]
             [webapp.events.agents]
@@ -178,8 +179,8 @@
         url-params-map (into (sorted-map) url-params-list)
         connection-type (get url-params-map "type")]
     (rf/dispatch [:destroy-page-loader])
-    [layout :application-hoop [:div {:class "px-regular bg-white h-full"}
-                               [connection-form-modal/main :create {} connection-type]]]))
+    [layout :application-hoop [:div {:class "bg-gray-1 px-radix-7 h-full"}
+                               [create-update-connection/main]]]))
 
 (defmethod routes/panels :manage-plugin-panel []
   (let [pathname (.. js/window -location -pathname)
@@ -291,6 +292,6 @@
     (.registerPlugin gsap Draggable)
     (fn []
       (when (not (-> @gateway-public-info :loading))
-        [:> Theme
+        [:> Theme {:radius "large"}
          [routes/panels @active-panel @gateway-public-info]]))))
 

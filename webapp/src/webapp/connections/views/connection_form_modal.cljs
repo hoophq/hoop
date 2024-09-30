@@ -1,6 +1,7 @@
 (ns webapp.connections.views.connection-form-modal
 
   (:require ["@heroicons/react/16/solid" :as hero-micro-icon]
+            ["@heroicons/react/24/solid" :as hero-solid-icon]
             ["unique-names-generator" :as ung]
             [clojure.string :as cs]
             [re-frame.core :as rf]
@@ -17,9 +18,8 @@
             [webapp.connections.views.form.database :as database]
             [webapp.connections.views.form.ssh :as ssh]
             [webapp.connections.views.form.tcp :as tcp]
-            [webapp.subs :as subs]
-            ["@heroicons/react/24/solid" :as hero-solid-icon]
-            [webapp.config :as config]))
+            [webapp.formatters :as f]
+            [webapp.subs :as subs]))
 
 
 (defn array->select-options [array]
@@ -223,7 +223,6 @@
                             (.preventDefault e)
                             (create-connection-request))}
         [:main {:class "my-large"}
-
          (when (= form-type :create)
            [:div {:class "mb-large"}
             [h/h4 "What do you want to connect to?"

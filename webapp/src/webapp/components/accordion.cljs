@@ -2,7 +2,7 @@
   (:require
    ["@radix-ui/react-accordion" :as Accordion]
    ["@radix-ui/themes" :refer [Box Flex Text Avatar Checkbox Button Badge]]
-   ["lucide-react" :refer [Check ChevronRight]]
+   ["lucide-react" :refer [Check User ChevronRight]]
    [reagent.core :as r]))
 
 (defn badge [text]
@@ -23,10 +23,10 @@
                          [:> Check {:size 16
                                     :color "green"}])}])
 
-(defn accordion-item [{:keys [title subtitle content value status show-checkbox? show-badge? show-configure? show-icon? total-items]}]
+(defn accordion-item [{:keys [title subtitle content value status avatar-icon show-checkbox? show-badge? show-configure? show-icon? total-items]}]
   [:> (.-Item Accordion)
    {:value value
-    :className (str "first:rounded-t-lg last:rounded-b-lg bg-[--accent-2] border-[--gray-a6] "
+    :className (str "first:rounded-t-lg last:rounded-b-lg data-[state=open]:bg-[--accent-2] border-[--gray-a6] "
                     (when (> total-items 1) "border first:border-b-0 last:border-t-0")
                     (when (= total-items 1) "border"))}
    [:> (.-Header Accordion) {:className "group flex justify-between items-center w-full p-5"}
@@ -36,11 +36,10 @@
 
      [:> Avatar {:size "5"
                  :variant "soft"
-                 :radius "medium"
                  :color "gray"
-                 :fallback (r/as-element
-                            [:> Check {:size 20
-                                       :color "gray"}])}]
+                 :fallback (r/as-element (if avatar-icon
+                                           avatar-icon
+                                           [:> User {:size 16}]))}]
 
      [:div {:className "flex flex-col"}
       [:> Text {:size "5" :weight "bold" :className "text-[--gray-12]"} title]
@@ -67,6 +66,7 @@
       :subtitle     - Subtitle of the item (optional)
       :content      - Content to be displayed when the item is expanded (required)
       :status       - Status of the item, affects the displayed icon (optional)
+      :avatar-icon  - Icon to be displayed in the avatar (optional)
       :show-checkbox? - Boolean, if true, displays a checkbox (optional, default false)
       :show-badge?    - Boolean, if true, displays a badge (optional, default false)
       :show-configure? - Boolean, if true, displays a configure button (optional, default false)
@@ -88,7 +88,6 @@
   [:> (.-Root Accordion)
    {:className "w-full"
     :type "single"
-    :defaultValue (:value (first items))
     :collapsible true}
    (for [{:keys [value] :as item} items]
      ^{:key value} [accordion-item (merge item {:total-items (count items)})])])
