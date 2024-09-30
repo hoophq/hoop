@@ -216,13 +216,19 @@ func registerMultiTenantUser(uinfo idp.ProviderUserInfo, slackID string) (isNewU
 		if err := pgorgs.New().CreateOrg(newOrgId, newOrgName, nil); err != nil {
 			return false, fmt.Errorf("failed setting new org, reason=%v", err)
 		}
+
+		emailVerified := false
+		if uinfo.EmailVerified != nil {
+			emailVerified = *uinfo.EmailVerified
+		}
+
 		newUser := pgrest.User{
 			ID:       uuid.NewString(),
 			OrgID:    newOrgId,
 			Subject:  uinfo.Subject,
 			Name:     uinfo.Profile,
 			Email:    uinfo.Email,
-			Verified: *uinfo.EmailVerified,
+			Verified: emailVerified,
 			Status:   string(types.UserStatusActive),
 			SlackID:  slackID,
 			Groups:   []string{types.GroupAdmin},
