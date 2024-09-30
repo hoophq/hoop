@@ -67,13 +67,14 @@ func (a *Api) localAuthMiddleware(c *gin.Context) {
 	}
 
 	ctx, err := pguserauth.New().FetchUserContext(claims.UserSubject)
-	if ctx.UserStatus != string(types.UserStatusActive) {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "user is not active"})
-		return
-	}
 	if err != nil {
 		log.Errorf("failed building context, subject=%v, err=%v", claims.UserSubject, err)
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "unable to fetch user"})
+		return
+	}
+
+	if ctx.UserStatus != string(types.UserStatusActive) {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "user is not active"})
 		return
 	}
 
@@ -188,12 +189,12 @@ func (a *Api) Authenticate(c *gin.Context) {
 		}
 
 		ctx, err := pguserauth.New().FetchUserContext(subject)
-		if ctx.UserStatus != string(types.UserStatusActive) {
+		if err != nil {
+			log.Errorf("failed fetching user, subject=%v, err=%v", subject, err)
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
-		if err != nil {
-			log.Errorf("failed fetching user, subject=%v, err=%v", subject, err)
+		if ctx.UserStatus != string(types.UserStatusActive) {
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}

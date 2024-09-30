@@ -120,14 +120,12 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
 		userCtx, err := pguserauth.New().FetchUserContext(sub)
+		if err != nil || userCtx.IsEmpty() {
+			log.Errorf("failed fetching user context, reason=%v", err)
+			return status.Errorf(codes.Unauthenticated, "invalid authentication")
+		}
 		if userCtx.UserStatus != string(types.UserStatusActive) {
 			return status.Errorf(codes.Unauthenticated, "user is not active")
-		}
-		if userCtx.IsEmpty() {
-			if err != nil {
-				log.Error(err)
-			}
-			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
 		ctxVal = &GatewayContext{
 			UserContext: *userCtx.ToAPIContext(),
@@ -213,14 +211,12 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
 		userCtx, err := pguserauth.New().FetchUserContext(sub)
+		if err != nil || userCtx.IsEmpty() {
+			return status.Errorf(codes.Unauthenticated, "invalid authentication")
+		}
+
 		if userCtx.UserStatus != string(types.UserStatusActive) {
 			return status.Errorf(codes.Unauthenticated, "user is not active")
-		}
-		if userCtx.IsEmpty() {
-			if err != nil {
-				log.Error(err)
-			}
-			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
 		gwctx := &GatewayContext{
 			UserContext: *userCtx.ToAPIContext(),

@@ -234,7 +234,7 @@ func registerMultiTenantUser(uinfo idp.ProviderUserInfo, slackID string) (isNewU
 	}
 	// This part checks if the user was invited by someone
 	// and adds the user to the organization
-	if iuser.Status == string(types.UserStatusInvited) {
+	if iuser.Status == string(openapi.StatusInvited) {
 		iuser.Subject = uinfo.Subject
 		iuser.Verified = true
 		iuser.Status = string(types.UserStatusActive)
