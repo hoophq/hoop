@@ -157,7 +157,7 @@ func (h *handler) LoginCallback(c *gin.Context) {
 			c.Redirect(http.StatusTemporaryRedirect, redirectErrorURL)
 			return
 		}
-		if ctx.UserStatus != string(types.UserStatusActive) {
+		if !ctx.IsEmpty() && ctx.UserStatus != string(types.UserStatusActive) {
 			isNewUser, err = registerMultiTenantUser(uinfo, login.SlackID)
 			if err != nil {
 				login.Outcome = fmt.Sprintf("failed registering multi tenant user subject=%s, email=%s, reason=%v",
