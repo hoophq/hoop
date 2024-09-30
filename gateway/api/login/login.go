@@ -157,7 +157,7 @@ func (h *handler) LoginCallback(c *gin.Context) {
 			c.Redirect(http.StatusTemporaryRedirect, redirectErrorURL)
 			return
 		}
-		if !ctx.IsEmpty() && ctx.UserStatus != string(types.UserStatusActive) {
+		if ctx.UserStatus != string(types.UserStatusActive) {
 			isNewUser, err = registerMultiTenantUser(uinfo, login.SlackID)
 			if err != nil {
 				login.Outcome = fmt.Sprintf("failed registering multi tenant user subject=%s, email=%s, reason=%v",
@@ -293,16 +293,14 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 		userGroups = append(userGroups, types.GroupAdmin)
 	}
 
-	iuser, err := pgusers.New().FetchUnverifiedUser(&pguserauth.Context{}, uinfo.Email)
+	iuser, err := pgusers.New().FetchInvitedUser(&pguserauth.Context{}, uinfo.Email)
 	if err != nil {
-		return false, fmt.Errorf("failed fetching unverified user, reason=%v", err)
+		return false, fmt.Errorf("failed fetching invited user, reason=%v", err)
 	}
 	// validate if an invited user exists and is active and
 	// persists as a verified user
 	if iuser != nil {
-		if iuser.Status != string(types.UserStatusActive) {
-			return false, errUserInactive
-		}
+		iuser.Status = string(types.UserStatusActive)
 		log.With("multitenant", false).Infof("registering invited user %s/%s", iuser.Subject, iuser.Email)
 		iuser.Subject = uinfo.Subject
 		iuser.Verified = true
