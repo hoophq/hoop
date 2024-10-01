@@ -1,6 +1,7 @@
 (ns webapp.app
   (:require ["gsap/all" :refer [Draggable gsap]]
             ["@radix-ui/themes" :refer [Theme]]
+            ["next-themes" :refer [ThemeProvider]]
             [bidi.bidi :as bidi]
             [clojure.string :as cs]
             [re-frame.core :as rf]
@@ -292,6 +293,6 @@
     (.registerPlugin gsap Draggable)
     (fn []
       (when (not (-> @gateway-public-info :loading))
-        [:> Theme {:radius "large"}
-         [routes/panels @active-panel @gateway-public-info]]))))
-
+        [:> ThemeProvider {:attribute "class"}
+         [:> Theme {:radius "large" :panelBackground "solid"}
+          [routes/panels @active-panel @gateway-public-info]]]))))

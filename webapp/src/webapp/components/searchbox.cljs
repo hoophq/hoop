@@ -7,7 +7,7 @@
    [webapp.config :as config]))
 
 (defn- searchbox-icon []
-  [:svg {:class "h-5 w-5 text-gray-400"
+  [:svg {:class "h-5 w-5 text-gray-400 bg-white rounded-full"
          :xmlns "http://www.w3.org/2000/svg"
          :viewBox "0 0 20 20"
          :fill "none"
@@ -236,7 +236,7 @@
           (when floating?
             [:> hero-micro-icon/MagnifyingGlassIcon
              {:class (str "cursor-pointer transition-all duration-500 z-10 "
-                          "absolute top-0 text-gray-800 p-2 h-8 w-8 "
+                          "absolute top-0 text-gray-800 p-2 h-8 w-8 rounded-full bg-white "
                           (if (= icon-position "right") "right-0" "left-0"))
               :aria-hidden "true"
               :on-click (fn []

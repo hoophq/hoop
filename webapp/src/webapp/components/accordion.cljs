@@ -26,7 +26,7 @@
 (defn accordion-item [{:keys [title subtitle content value status avatar-icon show-checkbox? show-badge? show-configure? show-icon? total-items]}]
   [:> (.-Item Accordion)
    {:value value
-    :className (str "first:rounded-t-lg last:rounded-b-lg data-[state=open]:bg-[--accent-2] border-[--gray-a6] "
+    :className (str "first:rounded-t-6 last:rounded-b-6 data-[state=open]:bg-[--accent-2] border-[--gray-a6] "
                     (when (> total-items 1) "border first:border-b-0 last:border-t-0")
                     (when (= total-items 1) "border"))}
    [:> (.-Header Accordion) {:className "group flex justify-between items-center w-full p-5"}

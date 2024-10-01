@@ -1,6 +1,5 @@
 (ns webapp.connections.views.create-update-connection.connection-environment-form
-  (:require ["@radix-ui/themes" :refer [Box Callout Flex Grid Select Text
-                                        TextField]]
+  (:require ["@radix-ui/themes" :refer [Box Callout Flex Grid Select Text]]
             ["lucide-react" :refer [ArrowUpRight]]
             [reagent.core :as r]
             [webapp.connections.utilities :as utils]

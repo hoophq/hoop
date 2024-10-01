@@ -384,12 +384,11 @@
                                                 :aria-hidden "true"}]
                  [:span {:class "text-xs text-gray-300"}
                   (str "Last execution time " (formatters/time-elapsed (:execution_time (:data @script-output))))]])]
-             [:div {:class "flex items-center gap-regular"}
-              [forms/select-editor {:on-change #(reset! select-theme (-> % .-target .-value))
+             [:div {:class "flex items-center gap-regular mr-16"}
+              [forms/select-editor {:on-change #(reset! select-theme %)
                                     :selected (or @select-theme "")
                                     :options theme-options}]
-              [forms/select-editor {:on-change #(rf/dispatch [:editor-plugin->set-select-language
-                                                              (-> % .-target .-value)])
+              [forms/select-editor {:on-change #(rf/dispatch [:editor-plugin->set-select-language %])
                                     :selected (or (cond
                                                     (not (cs/blank? (:subtype (last run-connections-list-selected)))) (:subtype (last run-connections-list-selected))
                                                     (not (cs/blank? (:icon_name (last run-connections-list-selected)))) (:icon_name (last run-connections-list-selected))

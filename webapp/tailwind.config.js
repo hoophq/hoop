@@ -103,7 +103,14 @@ module.exports = {
           11: 'var(--red-11)',
           12: 'var(--red-12)',
         },
+        border: "hsl(var(--border))",
+        input: "hsl(var(--input))",
+        ring: "hsl(var(--ring))",
+        background: "hsl(var(--background))",
+        foreground: "hsl(var(--foreground))",
         primary: {
+          DEFAULT: "hsl(var(--primary))",
+          foreground: "hsl(var(--primary-foreground))",
           1: 'var(--indigo-1)',
           2: 'var(--indigo-2)',
           3: 'var(--indigo-3)',
@@ -116,15 +123,6 @@ module.exports = {
           10: 'var(--indigo-10)',
           11: 'var(--indigo-11)',
           12: 'var(--indigo-12)',
-        },
-        border: "hsl(var(--border))",
-        input: "hsl(var(--input))",
-        ring: "hsl(var(--ring))",
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
-        primary: {
-          DEFAULT: "hsl(var(--primary))",
-          foreground: "hsl(var(--primary-foreground))",
         },
         secondary: {
           DEFAULT: "hsl(var(--secondary))",
@@ -208,6 +206,12 @@ module.exports = {
         lg: `var(--radius)`,
         md: `calc(var(--radius) - 2px)`,
         sm: "calc(var(--radius) - 4px)",
+        1: "4.5px",
+        2: "6px",
+        3: "9px",
+        4: "12px",
+        5: "18px",
+        6: "24px",
       },
       boxShadow: {
         "red-button-hover": "4px 4px #ed5a5a",
@@ -254,7 +258,6 @@ module.exports = {
     },
   },
   plugins: [
-    require("@tailwindcss/forms"),
     require("tailwindcss-animate"),
     plugin(function ({ addUtilities }) {
       const rotateY = {

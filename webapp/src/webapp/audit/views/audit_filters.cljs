@@ -254,10 +254,12 @@
                                                "focus:outline-none disabled:opacity-40 "
                                                "disabled:cursor-not-allowed")
                          :inputClassName (str (if (or (.-startDate @date) (.-endDate @date))
-                                                "border-gray-300 "
-                                                "bg-gray-50 text-gray-600 border-gray-400 ")
-                                              "pl-10 py-2 w-full rounded-md "
+                                                " border-gray-300 "
+                                                " border-gray-400 ")
+                                              "pl-10 py-2 w-full rounded-md text-gray-600 "
                                               "font-semibold text-sm focus:ring-0 "
+                                              "border "
+                                              "placeholder:text-gray-500 "
                                               "hover:bg-gray-50 hover:text-gray-600 hover:border-gray-400 "
                                               "focus:bg-gray-50 focus:text-gray-600 focus:border-gray-400")
                          :useRange false

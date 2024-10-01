@@ -63,16 +63,16 @@
                       (let [new-groups-list (when @new-group?
                                               (formatters/comma-string-to-list @new-groups-value))
                             payload (merge
-                                      {:name @name
-                                       :groups (concat new-groups-list (js-select-options->list @groups))
-                                       :slack_id @slack-id
-                                       :email @email}
-                                      (when (= form-type :update) {:id (:id user)
-                                                                   :status @status})
-                                      (when (and (= (-> @gateway-public-info :data :auth_method)
-                                                    "local")
-                                                 (= form-type :create))
-                                        {:password @password}))]
+                                     {:name @name
+                                      :groups (concat new-groups-list (js-select-options->list @groups))
+                                      :slack_id @slack-id
+                                      :email @email}
+                                     (when (= form-type :update) {:id (:id user)
+                                                                  :status @status})
+                                     (when (and (= (-> @gateway-public-info :data :auth_method)
+                                                   "local")
+                                                (= form-type :create))
+                                       {:password @password}))]
                         (dispatch-form form-type payload)))}
         [forms/input {:label "Name"
                       :on-change #(reset! name (-> % .-target .-value))
@@ -101,8 +101,10 @@
 
         (when (= form-type :update)
           [forms/select {:label "Status"
-                         :on-change #(reset! status (-> % .-target .-value))
+                         :name "user-status"
+                         :on-change #(reset! status %)
                          :selected @status
+                         :full-width? true
                          :options [{:value "active" :text "active"}
                                    {:value "inactive" :text "inactive"}
                                    {:value "reviewing" :text "reviewing"}]
