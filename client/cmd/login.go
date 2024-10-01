@@ -255,7 +255,7 @@ func authenticateWithUserAndPassword(apiURL, tlsCA, username, password string) (
 	}
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != 200 {
+	if resp.StatusCode > 299 {
 		return "", fmt.Errorf("failed performing request, status=%v, body=%v",
 			resp.StatusCode, string(respBody))
 	}
