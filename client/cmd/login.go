@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -21,6 +22,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 var noBrowser bool
@@ -101,6 +103,13 @@ func configureHostsPrompt(conf *proxyconfig.Config) {
 }
 
 func doLogin(apiURL, tlsCA string) (string, error) {
+	accessToken, err := performLoginWithBasicAuth(apiURL, tlsCA)
+	if err != nil {
+		return "", err
+	}
+	if accessToken != "" {
+		return accessToken, nil
+	}
 	loginUrl, err := requestForUrl(apiURL, tlsCA)
 	if err != nil {
 		return "", err
@@ -156,9 +165,9 @@ func doLogin(apiURL, tlsCA string) (string, error) {
 	}
 }
 
-func requestForUrl(apiUrl, tlsCA string) (string, error) {
+func requestForUrl(apiURL, tlsCA string) (string, error) {
 	c := httpclient.NewHttpClient(tlsCA)
-	url := fmt.Sprintf("%s/api/login", apiUrl)
+	url := fmt.Sprintf("%s/api/login", apiURL)
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -170,7 +179,7 @@ func requestForUrl(apiUrl, tlsCA string) (string, error) {
 		return "", err
 	}
 	contentType := resp.Header.Get("Content-Type")
-	log.Debugf("GET %s/api/login status=%v, content-type=%s", apiUrl, resp.StatusCode, contentType)
+	log.Debugf("GET %s status=%v, content-type=%s", url, resp.StatusCode, contentType)
 	defer resp.Body.Close()
 	var l login
 	if err := json.NewDecoder(resp.Body).Decode(&l); err != nil {
@@ -185,6 +194,76 @@ func requestForUrl(apiUrl, tlsCA string) (string, error) {
 		return l.Url, nil
 	}
 	return "", fmt.Errorf("failed authenticating, status=%v, response=%v", resp.StatusCode, l.Message)
+}
+
+// performLoginWithBasicAuth prompt for username and password if the gateway authentication method is local
+func performLoginWithBasicAuth(apiURL, tlsCA string) (string, error) {
+	c := httpclient.NewHttpClient(tlsCA)
+	url := fmt.Sprintf("%s/api/publicserverinfo", apiURL)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed creating request to publicserverinfo endpoint, reason=%v", err)
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed performing request to publicserverinfo endpoint, reason=%v", err)
+	}
+	contentType := resp.Header.Get("Content-Type")
+	log.Debugf("GET %s status=%v, content-type=%s", url, resp.StatusCode, contentType)
+	defer resp.Body.Close()
+	var publicInfo map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&publicInfo); err != nil {
+		return "", fmt.Errorf("unable to obtain auth method from public server info endpoint due to failure on decoding the response body (%v), status=%v, err=%v",
+			contentType, resp.StatusCode, err)
+	}
+	log.Debugf("public server info endpoint response: %v", publicInfo)
+	authMethod := fmt.Sprintf("%v", publicInfo["auth_method"])
+	if authMethod != "local" {
+		return "", nil
+	}
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Fprintf(os.Stderr, "Enter Email: ")
+	username, err := reader.ReadString('\n')
+	if err != nil {
+		return "", err
+	}
+	username = strings.TrimSuffix(username, "\n")
+	fmt.Fprintf(os.Stderr, "Enter Password: ")
+	bytePassword, err := term.ReadPassword(int(os.Stdin.Fd()))
+	if err != nil {
+		return "", err
+	}
+	password := string(bytePassword)
+	fmt.Println()
+	log.With("username", username, "is-password-set", len(password) > 0).Debugf("prompt credentials result")
+	return authenticateWithUserAndPassword(apiURL, tlsCA, username, password)
+}
+
+func authenticateWithUserAndPassword(apiURL, tlsCA, username, password string) (string, error) {
+	c := httpclient.NewHttpClient(tlsCA)
+	url := fmt.Sprintf("%s/api/localauth/login", apiURL)
+	payload := map[string]any{"email": username, "password": password}
+	reqBody, _ := json.Marshal(payload)
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
+	if err != nil {
+		return "", fmt.Errorf("failed creating request to publicserverinfo endpoint, reason=%v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed performing request to publicserverinfo endpoint, reason=%v", err)
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("failed performing request, status=%v, body=%v",
+			resp.StatusCode, string(respBody))
+	}
+	accessToken := resp.Header.Get("Token")
+	if accessToken != "" {
+		return accessToken, nil
+	}
+	return "", fmt.Errorf("unable to obtain access token from header (empty)")
 }
 
 func fetchGrpcURL(apiURL, bearerToken, tlsCA string) (string, error) {
