@@ -40,9 +40,7 @@ func (u *userAuth) FetchUserContext(subject string) (*Context, error) {
 			UserGroups:     sa.Groups,
 		}, nil
 	}
-	if usr.Status != "active" {
-		return &Context{}, fmt.Errorf("user %s is not active", usr.Email)
-	}
+
 	return &Context{
 		OrgID:          usr.OrgID,
 		OrgName:        usr.Org.Name,
@@ -60,7 +58,7 @@ func (u *userAuth) FetchUserContext(subject string) (*Context, error) {
 }
 
 func fetchOneBySubject(subject string) (*pgrest.User, error) {
-	path := fmt.Sprintf("/users?select=*,groups,orgs(id,name,license,license_data)&subject=eq.%v&verified=is.true", subject)
+	path := fmt.Sprintf("/users?select=*,groups,orgs(id,name,license,license_data)&subject=eq.%v", subject)
 	var usr pgrest.User
 	if err := pgrest.New(path).FetchOne().DecodeInto(&usr); err != nil {
 		if err == pgrest.ErrNotFound {

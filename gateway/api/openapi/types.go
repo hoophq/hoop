@@ -30,8 +30,10 @@ type (
 )
 
 const (
-	StatusActive   StatusType = "active"
-	StatusInactive StatusType = "inactive"
+	StatusActive    StatusType = "active"
+	StatusInactive  StatusType = "inactive"
+	StatusReviewing StatusType = "reviewing"
+	StatusInvited   StatusType = "invited"
 
 	// RoleAdminType will grant access to all routes.
 	// All authenticated, registered and users that belong to an admin group represents this role

@@ -88,8 +88,8 @@ func Create(c *gin.Context) {
 		HashedPassword: newUser.HashedPassword,
 		Picture:        newUser.Picture,
 		Email:          newUser.Email,
-		Verified:       newUser.Verified, // DEPRECATED in flavor of role
-		Status:         string(openapi.StatusActive),
+		Verified:       newUser.Verified,
+		Status:         string(openapi.StatusInvited),
 		SlackID:        newUser.SlackID,
 		Groups:         newUser.Groups,
 	}

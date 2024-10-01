@@ -73,6 +73,11 @@ func (a *Api) localAuthMiddleware(c *gin.Context) {
 		return
 	}
 
+	if ctx.UserStatus != string(types.UserStatusActive) {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "user is not active"})
+		return
+	}
+
 	if a.logger != nil && !ctx.IsEmpty() {
 		zaplogger := a.logger.With(
 			zap.String("org", ctx.OrgName),
@@ -186,6 +191,10 @@ func (a *Api) Authenticate(c *gin.Context) {
 		ctx, err := pguserauth.New().FetchUserContext(subject)
 		if err != nil {
 			log.Errorf("failed fetching user, subject=%v, err=%v", subject, err)
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+		if ctx.UserStatus != string(types.UserStatusActive) {
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}

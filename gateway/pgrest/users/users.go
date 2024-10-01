@@ -103,6 +103,23 @@ func (u *user) FetchAll(ctx pgrest.OrgContext) ([]pgrest.User, error) {
 	return users, nil
 }
 
+func (u *user) FetchInvitedUser(ctx pgrest.OrgContext, email string) (*pgrest.User, error) {
+	path := fmt.Sprintf("/users?select=*,groups,orgs(id,name)&email=eq.%s&status=eq.invited", email)
+	orgID := ctx.GetOrgID()
+	if orgID != "" {
+		path = fmt.Sprintf("/users?select=*,groups,orgs(id,name)&org_id=eq.%s&email=eq.%s&status=eq.invited",
+			orgID, email)
+	}
+	var usr pgrest.User
+	if err := pgrest.New(path).FetchOne().DecodeInto(&usr); err != nil {
+		if err == pgrest.ErrNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &usr, nil
+}
+
 func (u *user) FetchUnverifiedUser(ctx pgrest.OrgContext, email string) (*pgrest.User, error) {
 	path := fmt.Sprintf("/users?select=*,groups,orgs(id,name)&subject=eq.%s&verified=is.false", email)
 	orgID := ctx.GetOrgID()
