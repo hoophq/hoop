@@ -7,14 +7,19 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/hoophq/hoop/common/log"
-	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
 	"golang.org/x/crypto/bcrypt"
 )
 
+type User struct {
+	Email    string `json:"email" binding:"required"`
+	Password string `json:"password" binding:"required"`
+	Name     string `json:"name"`
+}
+
 func Login(c *gin.Context) {
-	var user openapi.User
+	var user User
 	if err := c.BindJSON(&user); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
@@ -31,7 +36,7 @@ func Login(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "user not found"})
 		return
 	}
-	err = bcrypt.CompareHashAndPassword([]byte(dbUser.HashedPassword), []byte(user.HashedPassword))
+	err = bcrypt.CompareHashAndPassword([]byte(dbUser.HashedPassword), []byte(user.Password))
 	if err != nil {
 		log.Debugf("failed comparing password for user %s, reason=%v", user.Email, err)
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "invalid credentials"})

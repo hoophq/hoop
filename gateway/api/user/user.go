@@ -63,6 +63,7 @@ func Create(c *gin.Context) {
 	}
 
 	newUser.ID = uuid.NewString()
+	var hashedPassword string
 	// user.Subject for local auth is altered in this flow, that's
 	// why we create this separated variable so we can modify it
 	// accordingly to the auth method
@@ -70,13 +71,13 @@ func Create(c *gin.Context) {
 	newUser.Verified = false
 	if appconfig.Get().AuthMethod() == "local" {
 		newUser.Verified = true
-		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newUser.HashedPassword), bcrypt.DefaultCost)
-		newUser.HashedPassword = string(hashedPassword)
+		hashedPwdBytes, err := bcrypt.GenerateFromPassword([]byte(newUser.Password), bcrypt.DefaultCost)
 		if err != nil {
 			log.Errorf("failed hashing password, err=%v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
 			return
 		}
+		hashedPassword = string(hashedPwdBytes)
 		userSubject = fmt.Sprintf("local|%v", newUser.ID)
 	}
 
@@ -85,7 +86,7 @@ func Create(c *gin.Context) {
 		Subject:        userSubject,
 		OrgID:          ctx.OrgID,
 		Name:           newUser.Name,
-		HashedPassword: newUser.HashedPassword,
+		HashedPassword: hashedPassword,
 		Picture:        newUser.Picture,
 		Email:          newUser.Email,
 		Verified:       newUser.Verified,
