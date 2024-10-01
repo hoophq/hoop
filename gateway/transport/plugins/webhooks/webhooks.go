@@ -30,7 +30,8 @@ type plugin struct {
 func New() *plugin {
 	if webhookAppKey := appconfig.Get().WebhookAppKey(); webhookAppKey != "" {
 		log.Infof("loaded webhook app key with success")
-		return &plugin{svix.New(webhookAppKey, nil), memory.New()}
+		webhookAppUrl := appconfig.Get().WebhookAppURL()
+		return &plugin{svix.New(webhookAppKey, &svix.SvixOptions{ServerUrl: webhookAppUrl}), memory.New()}
 	}
 	return &plugin{}
 }
@@ -226,7 +227,7 @@ func (p *plugin) processSessionOpenEvent(ctx plugintypes.Context, pkt *pb.Packet
 		},
 	})
 	if err != nil {
-		log.With("appid", appID).Warnf("failed sending webhook event to remote sourcev, err=%v", err)
+		log.With("appid", appID).Warnf("failed sending webhook event to remote source, err=%v", err)
 		return
 	}
 	if out != nil {

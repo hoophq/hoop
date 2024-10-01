@@ -3,11 +3,11 @@ package webhooks
 import (
 	"context"
 	"net/http"
-	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	svix "github.com/svix/svix-webhooks/go"
 )
@@ -23,9 +23,13 @@ import (
 //	@Router			/webhooks-dashboard [get]
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	appKey := os.Getenv("WEBHOOK_APPKEY")
+	appKey := appconfig.Get().WebhookAppKey()
 	if appKey == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "webhook app key is not configured"})
+		return
+	}
+	if webhookAppURL := appconfig.Get().WebhookAppURL(); webhookAppURL != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "dashboard is not available using self hosted Svix (webhook provider)"})
 		return
 	}
 	svixClient := svix.New(appKey, nil)
