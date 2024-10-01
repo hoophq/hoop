@@ -86,13 +86,6 @@ func (p *Provider) VerifyAccessToken(accessToken string) (string, error) {
 		if !ok || subject == "" {
 			return "", fmt.Errorf("'sub' not found or has an empty value")
 		}
-		// https://openid.net/specs/openid-connect-core-1_0.html
-		// If an azp (authorized party) Claim is present, the Client SHOULD verify that its client_id is the Claim Value.
-		if authorizedParty, ok := claims["azp"].(string); ok {
-			if authorizedParty != p.ClientID {
-				return "", fmt.Errorf("it's not an authorized party")
-			}
-		}
 		return subject, nil
 	}
 	return "", fmt.Errorf("failed type casting token.Claims (%T) to jwt.MapClaims", token.Claims)
