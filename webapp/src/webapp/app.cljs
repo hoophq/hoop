@@ -73,7 +73,7 @@
         destiny (if error :login-hoop :home)]
     (.removeItem js/localStorage "login_error")
     (when error (.setItem js/localStorage "login_error" error))
-    (.setItem js/sessionStorage "jwt-token" token)
+    (.setItem js/localStorage "jwt-token" token)
     (if (nil? redirect-after-auth)
       (rf/dispatch [:navigate destiny])
       (let [_ (.replace (. js/window -location) redirect-after-auth)
@@ -93,7 +93,7 @@
         destiny (if error :login-hoop :signup-hoop)]
     (.removeItem js/localStorage "login_error")
     (when error (.setItem js/localStorage "login_error" error))
-    (.setItem js/sessionStorage "jwt-token" token)
+    (.setItem js/localStorage "jwt-token" token)
     (rf/dispatch [:navigate destiny])
 
     [:div "Verifying authentication"
@@ -279,9 +279,6 @@
   [:div {:class "rounded-lg p-large bg-white"}
    [:header {:class "text-center"}
     [h/h1 "Page not found"]]
-   [:section {:class "flex justify-center items-center p-large"}
-    [:figure {:class "overflow-hidden rounded-lg"}
-     [:img {:src "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExbHIwd2QwY3o4M3A5bnk4MWx1dXd6OXc4bzlidnR5N2VrbzJ4YnlxZiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/hEc4k5pN17GZq/giphy.gif"}]]]
    [:footer {:class "text-center"}
     [:a {:href "/"
          :class "text-xs text-blue-500"}

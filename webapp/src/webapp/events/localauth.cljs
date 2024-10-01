@@ -16,7 +16,7 @@
   ::localauth->set-token
   (fn
     [{:keys [db]} [_ _ headers]]
-    (.setItem js/sessionStorage "jwt-token" (.get headers "Token"))
+    (.setItem js/localStorage "jwt-token" (.get headers "Token"))
     {:fx [[:dispatch [:navigate :home]]]}))
 
 (rf/reg-event-fx
