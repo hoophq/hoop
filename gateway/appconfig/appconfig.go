@@ -35,6 +35,7 @@ type Config struct {
 	msPresidioAnalyzerURL   string
 	msPresidioAnonymizerURL string
 	webhookAppKey           string
+	webhookAppURL           *url.URL
 	licenseSigningKey       *rsa.PrivateKey
 	licenseSignerOrgID      string
 	migrationPathFiles      string
@@ -117,6 +118,13 @@ func Load() error {
 	if apiRawURL.Path == "/" {
 		apiRawURL.Path = ""
 	}
+	var webhookAppURL *url.URL
+	if svixAppURL := os.Getenv("WEBHOOK_APPURL"); svixAppURL != "" {
+		webhookAppURL, err = url.Parse(svixAppURL)
+		if err != nil {
+			return fmt.Errorf("failed parsing WEBHOOK_APPURL, reason=%v", err)
+		}
+	}
 	runtimeConfig = Config{
 		apiKey:                  os.Getenv("API_KEY"),
 		apiURL:                  fmt.Sprintf("%s://%s", apiRawURL.Scheme, apiRawURL.Host),
@@ -137,6 +145,7 @@ func Load() error {
 		msPresidioAnalyzerURL:   os.Getenv("MSPRESIDIO_ANALYZER_URL"),
 		msPresidioAnonymizerURL: os.Getenv("MSPRESIDIO_ANONYMIZER_URL"),
 		webhookAppKey:           os.Getenv("WEBHOOK_APPKEY"),
+		webhookAppURL:           webhookAppURL,
 		webappUsersManagement:   webappUsersManagement,
 		jwtSecretKey:            []byte(os.Getenv("JWT_SECRET_KEY")),
 		webappStaticUIPath:      webappStaticUiPath,
@@ -276,6 +285,7 @@ func (c Config) ApiURLPath() string         { return c.apiURLPath }
 func (c Config) ApiKey() string                  { return c.apiKey }
 func (c Config) AuthMethod() string              { return c.authMethod }
 func (c Config) WebhookAppKey() string           { return c.webhookAppKey }
+func (c Config) WebhookAppURL() *url.URL         { return c.webhookAppURL }
 func (c Config) GcpDLPJsonCredentials() string   { return c.gcpDLPJsonCredentials }
 func (c Config) DlpProvider() string             { return c.dlpProvider }
 func (c Config) MSPresidioAnalyzerURL() string   { return c.msPresidioAnalyzerURL }
