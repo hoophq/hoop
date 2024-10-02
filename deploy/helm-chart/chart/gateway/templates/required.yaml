@@ -1,3 +1,3 @@
-{{- if and (not .Values.config.IDP_URI) (not .Values.config.IDP_ISSUER) -}}
-{{- $_ := required "config.IDP_URI or config.IDP_ISSUER are required" .Values.config.IDP_URI}}
+{{- if and (not .Values.config.IDP_URI) (not .Values.config.IDP_ISSUER) (not .Values.config.JWT_SECRET_KEY) -}}
+{{- $_ := required "config.JWT_SECRET_KEY, config.IDP_URI or config.IDP_ISSUER are required" .Values.config.JWT_SECRET_KEY}}
 {{- end -}}
