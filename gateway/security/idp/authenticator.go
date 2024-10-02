@@ -59,10 +59,21 @@ func (p *Provider) VerifyIDToken(token *oauth2.Token) (*oidc.IDToken, error) {
 	return p.Verify(p.Context, rawIDToken)
 }
 
+// VerifyAccessTokenWithUserInfo verify the access token by querying the OIDC user info endpoint
 func (p *Provider) VerifyAccessTokenWithUserInfo(accessToken string) (*ProviderUserInfo, error) {
 	return p.userInfoEndpoint(accessToken)
 }
 
+// VerifyAccessToken validate the access token against the user info endpoint (OIDC) if it's an opaque token.
+// Otherwise validate the JWT token following RFC9068 standard.
+//
+// When a JWT access token are present, this method also validates the validity of the authorized party by checking
+// the "azp" and "client_id" claim against the client_id. It prevents access tokens from distinct applications from acessing the system.
+// It's usually the case of Auth0 provider but it may be true to other providers as well.
+//
+// When the "gty" claim is present and set to "client-credentials" it will accept the token as valid.
+// Such claim is not part of any specification and it's present when using Auth0.
+// In cases of access tokens obtained through grants where no resource owner is involved, such as the client credentials grant,
 func (p *Provider) VerifyAccessToken(accessToken string) (string, error) {
 	if len(strings.Split(accessToken, ".")) != 3 || p.authWithUserInfo {
 		uinfo, err := p.userInfoEndpoint(accessToken)
@@ -86,16 +97,31 @@ func (p *Provider) VerifyAccessToken(accessToken string) (string, error) {
 		if !ok || subject == "" {
 			return "", fmt.Errorf("'sub' not found or has an empty value")
 		}
-		// https://openid.net/specs/openid-connect-core-1_0.html
-		// If an azp (authorized party) Claim is present, the Client SHOULD verify that its client_id is the Claim Value.
-		if authorizedParty, ok := claims["azp"].(string); ok {
-			if authorizedParty != p.ClientID {
-				return "", fmt.Errorf("it's not an authorized party")
-			}
+		if err := p.validateAuthorizedParty(claims); err != nil {
+			return "", err
 		}
 		return subject, nil
 	}
 	return "", fmt.Errorf("failed type casting token.Claims (%T) to jwt.MapClaims", token.Claims)
+}
+
+func (p *Provider) validateAuthorizedParty(claims jwt.MapClaims) error {
+	// Auth0 specific claim, not part of the spec
+	// do not check the authorized party in this case
+	gty := fmt.Sprintf("%v", claims["gty"])
+	if gty == "client-credentials" {
+		return nil
+	}
+
+	authorizedParty, hasField := claims["azp"].(string)
+	if !hasField {
+		authorizedParty, hasField = claims["client_id"].(string)
+	}
+
+	if hasField && authorizedParty != p.ClientID {
+		return fmt.Errorf("it's not an authorized party: %v", authorizedParty)
+	}
+	return nil
 }
 
 func (p *Provider) userInfoEndpoint(accessToken string) (*ProviderUserInfo, error) {
