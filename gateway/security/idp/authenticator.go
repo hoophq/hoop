@@ -113,14 +113,13 @@ func (p *Provider) validateAuthorizedParty(claims jwt.MapClaims) error {
 		return nil
 	}
 
-	authorizedParty, ok := claims["azp"].(string)
-	if !ok {
-		if val, ok := claims["client_id"].(string); ok {
-			authorizedParty = val
-		}
+	authorizedParty, hasField := claims["azp"].(string)
+	if !hasField {
+		authorizedParty, hasField = claims["client_id"].(string)
 	}
-	if authorizedParty != p.ClientID {
-		return fmt.Errorf("it's not an authorized party")
+
+	if hasField && authorizedParty != p.ClientID {
+		return fmt.Errorf("it's not an authorized party: %v", authorizedParty)
 	}
 	return nil
 }
