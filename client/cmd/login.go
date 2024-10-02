@@ -228,6 +228,7 @@ func performLoginWithBasicAuth(apiURL, tlsCA string) (string, error) {
 		return "", err
 	}
 	username = strings.TrimSuffix(username, "\n")
+	username = strings.TrimSuffix(username, "\r")
 	fmt.Fprintf(os.Stderr, "Enter Password: ")
 	bytePassword, err := term.ReadPassword(int(os.Stdin.Fd()))
 	if err != nil {
