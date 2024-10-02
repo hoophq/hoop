@@ -106,8 +106,8 @@ func (p *Provider) VerifyAccessToken(accessToken string) (string, error) {
 }
 
 func (p *Provider) validateAuthorizedParty(claims jwt.MapClaims) error {
-	// auth0 specific claim, not part of the spec
-	// allow client credentials clients as authorized party
+	// Auth0 specific claim, not part of the spec
+	// do not check the authorized party in this case
 	gty := fmt.Sprintf("%v", claims["gty"])
 	if gty == "client-credentials" {
 		return nil
