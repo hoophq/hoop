@@ -41,7 +41,7 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 		return
 	}
 	log.Printf("session=%v, tty=false, stdinsize=%v - executing command:%v",
-		string(sessionID), len(pkt.Payload), cmd)
+		string(sessionID), len(pkt.Payload), args)
 	sessionIDKey := fmt.Sprintf(execStoreKey, sessionID)
 	a.connStore.Set(sessionIDKey, cmd)
 

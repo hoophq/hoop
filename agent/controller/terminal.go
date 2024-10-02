@@ -51,7 +51,7 @@ func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {
 		a.sendCloseTerm(sessionID, errMsg, "1")
 		return
 	}
-	log.Infof("session=%s, tty=true - executing command:%v", sessionID, cmd)
+	log.Infof("session=%s, tty=true - executing command:%v", sessionID, args)
 	cmd.Run(func(exitCode int, msg string) {
 		if msg != "" {
 			log.Infof("session=%s, tty=true, exitcode=%v - err=%v", string(sessionID), exitCode, msg)
