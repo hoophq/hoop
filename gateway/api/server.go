@@ -169,6 +169,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest(analytics.EventSignup),
 		signupapi.Post)
 	route.GET("/users",
+		api.AllowApiKey,
 		AdminOnlyAccessRole,
 		api.Authenticate,
 		userapi.List)
@@ -312,6 +313,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		AuditApiChanges,
 		apiorgs.CreateAgentKey)
 	route.GET("/orgs/keys",
+		api.AllowApiKey,
 		AdminOnlyAccessRole,
 		api.Authenticate,
 		apiorgs.GetAgentKey)
@@ -384,6 +386,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		sessionapi.List)
 
 	route.GET("/sessions/:session_id",
+		api.AllowApiKey,
 		api.Authenticate,
 		sessionapi.Get)
 	route.GET("/sessions/:session_id/download", sessionapi.DownloadSession)
