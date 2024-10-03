@@ -1,6 +1,7 @@
 package userapi
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/mail"
@@ -23,6 +24,7 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 var isOrgMultiTenant = os.Getenv("ORG_MULTI_TENANT") == "true"
@@ -51,14 +53,14 @@ func Create(c *gin.Context) {
 		return
 	}
 
-	existingUser, err := pgusers.New().FetchOneByEmail(ctx, newUser.Email)
+	existingUser, err := models.GetUserByEmail(ctx.OrgID, newUser.Email)
 	if err != nil {
 		log.Errorf("failed fetching existing invited user, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching existing invited user"})
 		return
 	}
-	if existingUser != nil {
+	if existingUser.Email == newUser.Email {
 		c.JSON(http.StatusConflict, gin.H{"message": fmt.Sprintf("user already exists with email %s", newUser.Email)})
 		return
 	}
@@ -82,7 +84,7 @@ func Create(c *gin.Context) {
 		userSubject = fmt.Sprintf("local|%v", newUser.ID)
 	}
 
-	pguser := pgrest.User{
+	modelsUser := models.User{
 		ID:             newUser.ID,
 		Subject:        userSubject,
 		OrgID:          ctx.OrgID,
@@ -93,14 +95,29 @@ func Create(c *gin.Context) {
 		Verified:       newUser.Verified,
 		Status:         string(openapi.StatusInvited),
 		SlackID:        newUser.SlackID,
-		Groups:         newUser.Groups,
 	}
-	newUser.Role = toRoleLegacy(pguser)
-	if err := pgusers.New().Upsert(pguser); err != nil {
+	if err := models.CreateUser(modelsUser); err != nil {
 		log.Errorf("failed persisting invited user, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
+	}
+
+	if newUser.Groups != nil && len(newUser.Groups) > 0 {
+		var userGroups []models.UserGroup
+		for i := range newUser.Groups {
+			userGroups = append(userGroups, models.UserGroup{
+				OrgID:  ctx.OrgID,
+				UserID: newUser.ID,
+				Name:   newUser.Groups[i],
+			})
+		}
+		if err := models.InsertUserGroups(userGroups); err != nil {
+			log.Errorf("failed persisting user groups, err=%v", err)
+			sentry.CaptureException(err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			return
+		}
 	}
 
 	ctx.Analytics().Identify(&types.APIContext{
@@ -227,22 +244,33 @@ func List(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed listing users"})
 		return
 	}
-	userList := []openapi.User{}
-	for _, u := range users {
-		userList = append(userList,
+
+	usersList := []openapi.User{}
+	for i, u := range users {
+		userGroups, err := models.GetUserGroupsByUserID(ctx.OrgID, users[i].ID)
+		if err != nil {
+			log.Errorf("failed getting user groups for user %s, err=%v", users[i].ID, err)
+			sentry.CaptureException(err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed getting user groups"})
+			return
+		}
+		usersList = append(usersList,
 			openapi.User{
 				ID:       u.Subject,
 				Name:     u.Name,
 				Email:    u.Email,
 				Status:   openapi.StatusType(u.Status),
 				Verified: u.Verified,
-				Role:     toRole(u), // DEPRECATED in flavor of role
 				SlackID:  u.SlackID,
 				Picture:  u.Picture,
-				Groups:   u.Groups,
 			})
+		usersList[i].Groups = []string{}
+		for ug := range userGroups {
+			usersList[i].Groups = append(usersList[i].Groups, userGroups[ug].Name)
+		}
+		usersList[i].Role = toRole(usersList[i])
 	}
-	c.JSON(http.StatusOK, userList)
+	c.JSON(http.StatusOK, usersList)
 }
 
 // DeleteUser
@@ -258,22 +286,22 @@ func List(c *gin.Context) {
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	subject := c.Param("id")
-	user, err := pgusers.New().FetchOneBySubject(ctx, subject)
+	user, err := models.GetUserBySubject(ctx.OrgID, subject)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+		return
+	}
 	if err != nil {
 		log.Errorf("failed getting user %s, err=%v", subject, err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed getting user"})
 		return
 	}
-	if user == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
-		return
-	}
 	if user.Subject == ctx.UserID {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "cannot delete yourself"})
 		return
 	}
-	if err := pgusers.New().Delete(ctx, subject); err != nil {
+	if err := models.DeleteUser(ctx.OrgID, subject); err != nil {
 		log.Errorf("failed removing user %s, err=%v", subject, err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed deleting user"})
@@ -295,12 +323,16 @@ func Delete(c *gin.Context) {
 func GetUserByEmailOrID(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	emailOrID := c.Param("emailOrID")
-	var user *pgrest.User
+	var user models.User
 	var err error
 	if isValidMailAddress(emailOrID) {
-		user, err = pgusers.New().FetchOneByEmail(ctx, emailOrID)
+		user, err = models.GetUserByEmail(ctx.OrgID, emailOrID)
 	} else {
-		user, err = pgusers.New().FetchOneBySubject(ctx, emailOrID)
+		user, err = models.GetUserBySubject(ctx.OrgID, emailOrID)
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+		return
 	}
 	if err != nil {
 		log.Errorf("failed getting user %s, err=%v", emailOrID, err)
@@ -308,21 +340,31 @@ func GetUserByEmailOrID(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed getting user"})
 		return
 	}
-	if user == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+
+	userGroups, err := models.GetUserGroupsByUserID(ctx.OrgID, user.ID)
+	if err != nil {
+		log.Errorf("failed getting user groups for user %s, err=%v", user.ID, err)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed getting user groups"})
 		return
 	}
-	c.JSON(http.StatusOK, openapi.User{
+
+	userResponse := openapi.User{
 		ID:       user.Subject,
 		Name:     user.Name,
 		Email:    user.Email,
 		Status:   openapi.StatusType(user.Status),
 		Verified: user.Verified, // DEPRECATED in flavor of role
-		Role:     toRoleLegacy(*user),
 		SlackID:  user.SlackID,
 		Picture:  user.Picture,
-		Groups:   user.Groups,
-	})
+	}
+	userResponse.Groups = []string{}
+	for ug := range userGroups {
+		userResponse.Groups = append(userResponse.Groups, userGroups[ug].Name)
+	}
+	userResponse.Role = toRole(userResponse)
+
+	c.JSON(http.StatusOK, userResponse)
 }
 
 func getAskAIFeatureStatus(ctx pgrest.OrgContext) (string, error) {
@@ -475,7 +517,7 @@ func isValidMailAddress(email string) bool {
 	return err == nil
 }
 
-func toRole(user models.User) string {
+func toRole(user openapi.User) string {
 	if slices.Contains(user.Groups, types.GroupAdmin) {
 		return string(openapi.RoleAdminType)
 	}

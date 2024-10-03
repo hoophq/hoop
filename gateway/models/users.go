@@ -4,27 +4,16 @@ import (
 	"github.com/hoophq/hoop/common/log"
 )
 
-type UserGroup struct {
-	OrgID            string
-	UserID           string
-	ServiceAccountId string
-	Name             string
-}
-
 type User struct {
-	ID       string
-	OrgID    string
-	Subject  string
-	Name     string
-	Picture  string
-	Email    string
-	Verified bool
-	Status   string
-	SlackID  string
-	Groups   []string `gorm:"-"`
-	// Groups   []string `json:"groups"`
-	//Org      *Org     `json:"orgs"`
-	// used for local auth only
+	ID             string
+	OrgID          string
+	Subject        string
+	Name           string
+	Picture        string
+	Email          string
+	Verified       bool
+	Status         string
+	SlackID        string
 	HashedPassword string
 }
 
@@ -36,19 +25,29 @@ func ListUsers(orgID string) ([]User, error) {
 		return nil, err
 	}
 
-	for i := range users {
-		var userGroups []UserGroup
-		if err := DB.Where("org_id = ? AND user_id = ?", orgID, users[i].ID).Find(&userGroups).Error; err != nil {
-			log.Errorf("failed to list user groups, reason=%v", err)
-			return nil, err
-		}
+	return users, nil
+}
 
-		for j := range userGroups {
-			users[i].Groups = append(users[i].Groups, userGroups[j].Name)
-		}
+func GetUserBySubject(orgID, subject string) (User, error) {
+	log.Infof("getting user=%s for org=%s", subject, orgID)
+	var user User
+	if err := DB.Where("org_id = ? AND subject = ?", orgID, subject).First(&user).Error; err != nil {
+		log.Errorf("failed to get user, reason=%v", err)
+		return User{}, err
 	}
 
-	return users, nil
+	return user, nil
+}
+
+func GetUserByEmail(orgID, email string) (User, error) {
+	log.Infof("getting user=%s for org=%s", email, orgID)
+	var user User
+	if err := DB.Where("org_id = ? AND email = ?", orgID, email).First(&user).Error; err != nil {
+		log.Errorf("failed to get user, reason=%v", err)
+		return User{}, err
+	}
+
+	return user, nil
 }
 
 func GetUser(orgID, userID string) (User, error) {
@@ -59,15 +58,25 @@ func GetUser(orgID, userID string) (User, error) {
 		return User{}, err
 	}
 
-	var userGroups []UserGroup
-	if err := DB.Where("org_id = ? AND user_id = ?", orgID, user.ID).Find(&userGroups).Error; err != nil {
-		log.Errorf("failed to list user groups, reason=%v", err)
-		return User{}, err
-	}
-
-	for j := range userGroups {
-		user.Groups = append(user.Groups, userGroups[j].Name)
-	}
-
 	return user, nil
+}
+
+func CreateUser(user User) error {
+	log.Infof("creating user=%s for org=%s", user.ID, user.OrgID)
+	if err := DB.Create(&user).Error; err != nil {
+		log.Errorf("failed to create user, reason=%v", err)
+		return err
+	}
+
+	return nil
+}
+
+func DeleteUser(orgID, subject string) error {
+	log.Infof("deleting user=%s for org=%s", subject, orgID)
+	if err := DB.Where("org_id = ? AND subject = ?", orgID, subject).Delete(&User{}).Error; err != nil {
+		log.Errorf("failed to delete user, reason=%v", err)
+		return err
+	}
+
+	return nil
 }
