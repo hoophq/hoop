@@ -16,6 +16,7 @@ import (
 	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgaudit "github.com/hoophq/hoop/gateway/pgrest/audit"
 	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
@@ -94,7 +95,7 @@ func Create(c *gin.Context) {
 		SlackID:        newUser.SlackID,
 		Groups:         newUser.Groups,
 	}
-	newUser.Role = toRole(pguser)
+	newUser.Role = toRoleLegacy(pguser)
 	if err := pgusers.New().Upsert(pguser); err != nil {
 		log.Errorf("failed persisting invited user, err=%v", err)
 		sentry.CaptureException(err)
@@ -200,7 +201,7 @@ func Update(c *gin.Context) {
 		Email:    existingUser.Email,
 		Status:   openapi.StatusType(existingUser.Status),
 		Verified: existingUser.Verified, // DEPRECATED in flavor of role
-		Role:     toRole(*existingUser),
+		Role:     toRoleLegacy(*existingUser),
 		SlackID:  existingUser.SlackID,
 		Picture:  existingUser.Picture,
 		Groups:   existingUser.Groups,
@@ -218,7 +219,8 @@ func Update(c *gin.Context) {
 //	@Router			/users [get]
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	users, err := pgusers.New().FetchAll(ctx)
+	users, err := models.ListUsers(ctx.OrgID)
+	// users, err := pgusers.New().FetchAll(ctx)
 	if err != nil {
 		log.Errorf("failed listing users, err=%v", err)
 		sentry.CaptureException(err)
@@ -316,7 +318,7 @@ func GetUserByEmailOrID(c *gin.Context) {
 		Email:    user.Email,
 		Status:   openapi.StatusType(user.Status),
 		Verified: user.Verified, // DEPRECATED in flavor of role
-		Role:     toRole(*user),
+		Role:     toRoleLegacy(*user),
 		SlackID:  user.SlackID,
 		Picture:  user.Picture,
 		Groups:   user.Groups,
@@ -473,7 +475,14 @@ func isValidMailAddress(email string) bool {
 	return err == nil
 }
 
-func toRole(user pgrest.User) string {
+func toRole(user models.User) string {
+	if slices.Contains(user.Groups, types.GroupAdmin) {
+		return string(openapi.RoleAdminType)
+	}
+	return string(openapi.RoleStandardType)
+}
+
+func toRoleLegacy(user pgrest.User) string {
 	if slices.Contains(user.Groups, types.GroupAdmin) {
 		return string(openapi.RoleAdminType)
 	}

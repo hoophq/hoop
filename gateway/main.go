@@ -16,6 +16,7 @@ import (
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/indexer"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
 	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
@@ -63,6 +64,8 @@ func Run() {
 	apiURL := appconfig.Get().FullApiURL()
 	idProvider := idp.NewProvider(apiURL)
 	grpcURL := appconfig.Get().GrpcURL()
+
+	models.InitDatabase()
 
 	reviewService := review.Service{}
 	if !pgusers.IsOrgMultiTenant() {
