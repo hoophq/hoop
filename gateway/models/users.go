@@ -32,7 +32,6 @@ func GetUserBySubject(orgID, subject string) (User, error) {
 	log.Infof("getting user=%s for org=%s", subject, orgID)
 	var user User
 	if err := DB.Where("org_id = ? AND subject = ?", orgID, subject).First(&user).Error; err != nil {
-		log.Errorf("failed to get user, reason=%v", err)
 		return User{}, err
 	}
 
@@ -43,7 +42,6 @@ func GetUserByEmail(orgID, email string) (User, error) {
 	log.Infof("getting user=%s for org=%s", email, orgID)
 	var user User
 	if err := DB.Where("org_id = ? AND email = ?", orgID, email).First(&user).Error; err != nil {
-		log.Errorf("failed to get user, reason=%v", err)
 		return User{}, err
 	}
 
@@ -54,7 +52,6 @@ func GetUser(orgID, userID string) (User, error) {
 	log.Infof("getting user=%s for org=%s", userID, orgID)
 	var user User
 	if err := DB.Where("org_id = ? AND id = ?", orgID, userID).First(&user).Error; err != nil {
-		log.Errorf("failed to get user, reason=%v", err)
 		return User{}, err
 	}
 
@@ -65,6 +62,16 @@ func CreateUser(user User) error {
 	log.Infof("creating user=%s for org=%s", user.ID, user.OrgID)
 	if err := DB.Create(&user).Error; err != nil {
 		log.Errorf("failed to create user, reason=%v", err)
+		return err
+	}
+
+	return nil
+}
+
+func UpdateUser(user User) error {
+	log.Infof("updating user=%s for org=%s", user.ID, user.OrgID)
+	if err := DB.Save(&user).Error; err != nil {
+		log.Errorf("failed to update user, reason=%v", err)
 		return err
 	}
 

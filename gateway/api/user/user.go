@@ -20,7 +20,6 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgaudit "github.com/hoophq/hoop/gateway/pgrest/audit"
-	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"golang.org/x/crypto/bcrypt"
@@ -54,7 +53,7 @@ func Create(c *gin.Context) {
 	}
 
 	existingUser, err := models.GetUserByEmail(ctx.OrgID, newUser.Email)
-	if err != nil {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		log.Errorf("failed fetching existing invited user, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching existing invited user"})
@@ -159,24 +158,40 @@ func Update(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	userID := c.Param("id")
 
-	existingUser, err := pgusers.New().FetchOneBySubject(ctx, userID)
+	existingUser, err := models.GetUserBySubject(ctx.OrgID, userID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+		return
+	}
 	if err != nil {
 		log.Errorf("failed getting user %s, err=%v", userID, err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed getting user"})
 		return
 	}
-	if existingUser == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
-		return
-	}
+
 	var req openapi.User
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
+
+	userGroups, err := models.GetUserGroupsByUserID(ctx.OrgID, existingUser.ID)
+	fmt.Printf("userGroups: %+v\n", userGroups)
+	if err != nil {
+		log.Errorf("failed getting user groups for user %s, err=%v", existingUser.ID, err)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed getting user groups"})
+		return
+	}
+	var userGroupsList []string
+	for ug := range userGroups {
+		userGroupsList = append(userGroupsList, userGroups[ug].Name)
+	}
+
 	// don't let admin users to remove admin group from themselves
 	if existingUser.Subject == ctx.UserID {
+		// TODO: maybe refactor this to get from userGroups directly
 		if !slices.Contains(req.Groups, types.GroupAdmin) {
 			req.Groups = append(req.Groups, types.GroupAdmin)
 		}
@@ -190,13 +205,38 @@ func Update(c *gin.Context) {
 	existingUser.Picture = req.Picture
 	existingUser.Status = string(req.Status)
 	existingUser.SlackID = req.SlackID
-	existingUser.Groups = req.Groups
 
-	if err := pgusers.New().Upsert(*existingUser); err != nil {
+	log.Debugf("updating user %s", userID)
+	if err := models.UpdateUser(existingUser); err != nil {
 		log.Errorf("failed updating user %s, err=%v", userID, err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
+	}
+
+	log.Debugf("updating user groups for user %s", userID)
+	if err := models.DeleteUserGroupsByUserID(existingUser.ID); err != nil {
+		log.Errorf("failed removing user groups for user %s, err=%v", userID, err)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed removing user groups"})
+		return
+	}
+
+	if len(req.Groups) > 0 {
+		newUserGroups := []models.UserGroup{}
+		for i := range req.Groups {
+			newUserGroups = append(newUserGroups, models.UserGroup{
+				OrgID:  ctx.OrgID,
+				UserID: existingUser.ID,
+				Name:   req.Groups[i],
+			})
+		}
+		if err := models.InsertUserGroups(newUserGroups); err != nil {
+			log.Errorf("failed persisting user groups, err=%v", err)
+			sentry.CaptureException(err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed persisting user groups"})
+			return
+		}
 	}
 
 	analytics.New().Identify(&types.APIContext{
@@ -205,7 +245,7 @@ func Update(c *gin.Context) {
 		UserID:     existingUser.Email,
 		UserName:   existingUser.Name,
 		UserEmail:  existingUser.Email,
-		UserGroups: existingUser.Groups,
+		UserGroups: req.Groups,
 		UserStatus: existingUser.Status,
 		SlackID:    existingUser.SlackID,
 		ApiURL:     ctx.ApiURL,
@@ -218,10 +258,10 @@ func Update(c *gin.Context) {
 		Email:    existingUser.Email,
 		Status:   openapi.StatusType(existingUser.Status),
 		Verified: existingUser.Verified, // DEPRECATED in flavor of role
-		Role:     toRoleLegacy(*existingUser),
+		Role:     toRole(req),
 		SlackID:  existingUser.SlackID,
 		Picture:  existingUser.Picture,
-		Groups:   existingUser.Groups,
+		Groups:   req.Groups,
 	})
 }
 
@@ -237,7 +277,6 @@ func Update(c *gin.Context) {
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	users, err := models.ListUsers(ctx.OrgID)
-	// users, err := pgusers.New().FetchAll(ctx)
 	if err != nil {
 		log.Errorf("failed listing users, err=%v", err)
 		sentry.CaptureException(err)
@@ -456,9 +495,10 @@ func GetUserInfo(c *gin.Context) {
 //	@Router			/users/self/slack [patch]
 func PatchSlackID(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	u, err := pgusers.New().FetchOneBySubject(ctx, ctx.UserID)
-	if err != nil || u == nil {
-		errMsg := fmt.Errorf("failed obtaining user from store, notfound=%v, err=%v", u == nil, err)
+	u, err := models.GetUserBySubject(ctx.OrgID, ctx.UserID)
+
+	if err != nil || errors.Is(err, gorm.ErrRecordNotFound) {
+		errMsg := fmt.Errorf("failed obtaining user from store, notfound=%v, err=%v", errors.Is(err, gorm.ErrRecordNotFound), err)
 		sentry.CaptureException(errMsg)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining user"})
 		return
@@ -473,12 +513,25 @@ func PatchSlackID(c *gin.Context) {
 		return
 	}
 	u.SlackID = req.SlackID
-	if err := pgusers.New().Upsert(*u); err != nil {
+	if err := models.UpdateUser(u); err != nil {
 		log.Errorf("failed updating slack id of user, reason=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating slack id"})
 		return
 	}
+
+	userGroups, err := models.GetUserGroupsByUserID(ctx.OrgID, u.ID)
+	if err != nil {
+		log.Errorf("failed getting user groups for user %s, err=%v", u.ID, err)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed getting user groups"})
+		return
+	}
+	var userGroupsList []string
+	for ug := range userGroups {
+		userGroupsList = append(userGroupsList, userGroups[ug].Name)
+	}
+
 	c.JSON(http.StatusOK, openapi.User{
 		ID:       u.Subject,
 		Name:     u.Name,
@@ -487,7 +540,7 @@ func PatchSlackID(c *gin.Context) {
 		Verified: u.Verified,
 		SlackID:  u.SlackID,
 		Picture:  u.Picture,
-		Groups:   u.Groups,
+		Groups:   userGroupsList,
 	})
 }
 
@@ -502,7 +555,11 @@ func PatchSlackID(c *gin.Context) {
 //	@Router			/users/groups [get]
 func ListAllGroups(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	groups, err := pgusers.New().ListAllGroups(ctx)
+	userGroups, err := models.GetUserGroupsByOrgID(ctx.OrgID)
+	var groups []string
+	for ug := range userGroups {
+		groups = append(groups, userGroups[ug].Name)
+	}
 	if err != nil {
 		log.Errorf("failed listing groups, err=%v", err)
 		sentry.CaptureException(err)
