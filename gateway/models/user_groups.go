@@ -14,7 +14,7 @@ type UserGroup struct {
 }
 
 func GetUserGroupsByOrgID(orgID string) ([]UserGroup, error) {
-	log.Infof("listing user groups for org=%s", orgID)
+	log.Debugf("listing user groups for org=%s", orgID)
 	var userGroups []UserGroup
 	if err := DB.Where("org_id = ?", orgID).Find(&userGroups).Error; err != nil {
 		log.Errorf("failed to list user groups, reason=%v", err)
@@ -25,10 +25,9 @@ func GetUserGroupsByOrgID(orgID string) ([]UserGroup, error) {
 }
 
 func GetUserGroupsByUserID(orgID, userID string) ([]UserGroup, error) {
-	log.Infof("listing user groups for org=%s, user=%s", orgID, userID)
+	log.Debugf("listing user groups for org=%s, user=%s", orgID, userID)
 	var userGroups []UserGroup
 	if err := DB.Where("org_id = ? AND user_id = ?", orgID, userID).Find(&userGroups).Error; err != nil {
-		log.Errorf("failed to list user groups, reason=%v", err)
 		return nil, err
 	}
 
@@ -36,7 +35,7 @@ func GetUserGroupsByUserID(orgID, userID string) ([]UserGroup, error) {
 }
 
 func InsertUserGroups(userGroups []UserGroup) error {
-	log.Infof("inserting user groups")
+	log.Debugf("inserting user groups")
 	if len(userGroups) == 0 {
 		return nil
 	}
@@ -49,7 +48,7 @@ func InsertUserGroups(userGroups []UserGroup) error {
 }
 
 func DeleteUserGroupsByUserID(userID string) error {
-	log.Infof("deleting user groups for user=%s", userID)
+	log.Debugf("deleting user groups for user=%s", userID)
 	if err := DB.Where("user_id = ?", userID).Delete(&UserGroup{}).Error; err != nil {
 		log.Errorf("failed to delete user groups, reason=%v", err)
 		return err

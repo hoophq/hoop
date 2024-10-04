@@ -18,7 +18,7 @@ type User struct {
 }
 
 func ListUsers(orgID string) ([]User, error) {
-	log.Infof("listing users for org=%s", orgID)
+	log.Debugf("listing users for org=%s", orgID)
 	var users []User
 	if err := DB.Where("org_id = ?", orgID).Find(&users).Error; err != nil {
 		log.Errorf("failed to list users, reason=%v", err)
@@ -29,7 +29,7 @@ func ListUsers(orgID string) ([]User, error) {
 }
 
 func GetUserBySubject(orgID, subject string) (User, error) {
-	log.Infof("getting user=%s for org=%s", subject, orgID)
+	log.Debugf("getting user=%s for org=%s", subject, orgID)
 	var user User
 	if err := DB.Where("org_id = ? AND subject = ?", orgID, subject).First(&user).Error; err != nil {
 		return User{}, err
@@ -39,7 +39,7 @@ func GetUserBySubject(orgID, subject string) (User, error) {
 }
 
 func GetUserByEmail(orgID, email string) (User, error) {
-	log.Infof("getting user=%s for org=%s", email, orgID)
+	log.Debugf("getting user=%s for org=%s", email, orgID)
 	var user User
 	if err := DB.Where("org_id = ? AND email = ?", orgID, email).First(&user).Error; err != nil {
 		return User{}, err
@@ -49,7 +49,7 @@ func GetUserByEmail(orgID, email string) (User, error) {
 }
 
 func GetUser(orgID, userID string) (User, error) {
-	log.Infof("getting user=%s for org=%s", userID, orgID)
+	log.Debugf("getting user=%s for org=%s", userID, orgID)
 	var user User
 	if err := DB.Where("org_id = ? AND id = ?", orgID, userID).First(&user).Error; err != nil {
 		return User{}, err
@@ -59,7 +59,7 @@ func GetUser(orgID, userID string) (User, error) {
 }
 
 func CreateUser(user User) error {
-	log.Infof("creating user=%s for org=%s", user.ID, user.OrgID)
+	log.Debugf("creating user=%s for org=%s", user.ID, user.OrgID)
 	if err := DB.Create(&user).Error; err != nil {
 		log.Errorf("failed to create user, reason=%v", err)
 		return err
@@ -69,7 +69,7 @@ func CreateUser(user User) error {
 }
 
 func UpdateUser(user User) error {
-	log.Infof("updating user=%s for org=%s", user.ID, user.OrgID)
+	log.Debugf("updating user=%s for org=%s", user.ID, user.OrgID)
 	if err := DB.Save(&user).Error; err != nil {
 		log.Errorf("failed to update user, reason=%v", err)
 		return err
@@ -79,7 +79,7 @@ func UpdateUser(user User) error {
 }
 
 func DeleteUser(orgID, subject string) error {
-	log.Infof("deleting user=%s for org=%s", subject, orgID)
+	log.Debugf("deleting user=%s for org=%s", subject, orgID)
 	if err := DB.Where("org_id = ? AND subject = ?", orgID, subject).Delete(&User{}).Error; err != nil {
 		log.Errorf("failed to delete user, reason=%v", err)
 		return err
