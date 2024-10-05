@@ -19,7 +19,6 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
-	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
 	"github.com/hoophq/hoop/gateway/review"
 	"github.com/hoophq/hoop/gateway/security/idp"
 	"github.com/hoophq/hoop/gateway/transport"
@@ -41,7 +40,7 @@ import (
 func Run() {
 	ver := version.Get()
 	log.Infof("version=%s, compiler=%s, go=%s, platform=%s, commit=%s, multitenant=%v, build-date=%s",
-		ver.Version, ver.Compiler, ver.GoVersion, ver.Platform, ver.GitCommit, pgusers.IsOrgMultiTenant(), ver.BuildDate)
+		ver.Version, ver.Compiler, ver.GoVersion, ver.Platform, ver.GitCommit, appconfig.Get().OrgMultitenant(), ver.BuildDate)
 
 	// TODO: refactor to load all app gateway runtime configuration in this method
 	if err := appconfig.Load(); err != nil {
@@ -69,7 +68,7 @@ func Run() {
 	models.InitDatabase()
 
 	reviewService := review.Service{}
-	if !pgusers.IsOrgMultiTenant() {
+	if !appconfig.Get().OrgMultitenant() {
 		log.Infof("provisioning default organization")
 		ctx, err := pgorgs.CreateDefaultOrganization()
 		if err != nil {

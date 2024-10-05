@@ -14,10 +14,10 @@ import (
 	"github.com/hoophq/hoop/common/dsnkeys"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgagents "github.com/hoophq/hoop/gateway/pgrest/agents"
 	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
-	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
 	"golang.org/x/text/transform"
 	"golang.org/x/text/unicode/norm"
 )
@@ -33,7 +33,7 @@ var (
 )
 
 func Run(gatewayGrpcURL string) error {
-	if !pgusers.IsOrgMultiTenant() {
+	if !appconfig.Get().OrgMultitenant() {
 		return nil
 	}
 	client, err := NewApiClient()

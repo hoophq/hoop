@@ -52,7 +52,7 @@ func Create(c *gin.Context) {
 		return
 	}
 
-	existingUser, err := models.GetUserByEmail(ctx.OrgID, newUser.Email)
+	existingUser, err := models.GetUserByOrgAndEmail(ctx.OrgID, newUser.Email)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		log.Errorf("failed fetching existing invited user, err=%v", err)
 		sentry.CaptureException(err)
@@ -362,10 +362,10 @@ func Delete(c *gin.Context) {
 func GetUserByEmailOrID(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	emailOrID := c.Param("emailOrID")
-	var user models.User
+	var user *models.User
 	var err error
 	if isValidMailAddress(emailOrID) {
-		user, err = models.GetUserByEmail(ctx.OrgID, emailOrID)
+		user, err = models.GetUserByOrgAndEmail(ctx.OrgID, emailOrID)
 	} else {
 		user, err = models.GetUserBySubject(ctx.OrgID, emailOrID)
 	}

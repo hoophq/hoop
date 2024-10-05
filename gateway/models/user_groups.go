@@ -40,7 +40,6 @@ func InsertUserGroups(userGroups []UserGroup) error {
 		return nil
 	}
 	if err := DB.Create(&userGroups).Error; err != nil {
-		log.Errorf("failed to insert user groups, reason=%v", err)
 		return err
 	}
 

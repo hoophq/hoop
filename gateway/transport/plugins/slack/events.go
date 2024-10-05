@@ -6,8 +6,7 @@ import (
 
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
-	"github.com/hoophq/hoop/gateway/pgrest"
-	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/review"
 	slackservice "github.com/hoophq/hoop/gateway/slack"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -26,8 +25,12 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 		ev.msg.ID, ev.msg.Status)
 
 	// validate if the slack user is able to review it
-	orgCtx := pgrest.NewOrgContext(ev.orgID)
-	slackApprover, err := pgusers.New().FetchOneBySlackID(orgCtx, ev.msg.SlackID)
+	slackApprover, err := models.GetUserByOrgIDAndSlackID(ev.orgID, ev.msg.SlackID)
+	slackApproverGroups, err := models.GetUserGroupsByUserID(ev.orgID, slackApprover.ID)
+	var slackApproverGroupsList []string
+	for _, group := range slackApproverGroups {
+		slackApproverGroupsList = append(slackApproverGroupsList, group.Name)
+	}
 	if err != nil {
 		log.With("session", sid).Errorf("failed obtaning approver information, err=%v", err)
 		_ = ev.ss.PostEphemeralMessage(ev.msg, "failed obtaining approver's information")
@@ -40,7 +43,7 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 			"%s/slack/user/new/%s", p.idpProvider.ApiURL, ev.msg.SlackID))
 		return
 	}
-	if !pb.IsInList(ev.msg.GroupName, slackApprover.Groups) {
+	if !pb.IsInList(ev.msg.GroupName, slackApproverGroupsList) {
 		log.With("session", sid).Infof("approver not allowed, it does not belong to %s", ev.msg.GroupName)
 		_ = ev.ss.PostEphemeralMessage(ev.msg, fmt.Sprintf("You can't review this session for group %s"+
 			" because you do not belong to this group", ev.msg.GroupName))
@@ -48,8 +51,8 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 	}
 	log.With("session", sid).Infof("found a valid approver user=%s, slackid=%s",
 		slackApprover.Email, ev.msg.SlackID)
-	userContext := storagev2.NewContext(slackApprover.Id, ev.orgID)
-	userContext.UserGroups = slackApprover.Groups
+	userContext := storagev2.NewContext(slackApprover.ID, ev.orgID)
+	userContext.UserGroups = slackApproverGroupsList
 
 	// perform the review in the system
 	log.With("session", sid).Infof("performing review, kind=%v, id=%v, status=%s, group=%v",
