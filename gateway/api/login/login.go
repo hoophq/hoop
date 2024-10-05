@@ -311,7 +311,7 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 
 		return false, nil
 	}
-	// TODO: check if it's the first user to login and make it admin
+
 	org, totalUsers, err := pgorgs.New().FetchOrgByName(proto.DefaultOrgName)
 	if err != nil || org == nil || totalUsers == -1 {
 		return false, fmt.Errorf("failed fetching default org, users=%v, err=%v", err, totalUsers)
@@ -322,7 +322,6 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 	}
 
 	iuser, err := models.GetInvitedUserByEmail(uinfo.Email)
-	fmt.Printf("iuser: %+v\n", iuser)
 
 	if err != nil {
 		return false, fmt.Errorf("failed fetching invited user, reason=%v", err)
@@ -337,9 +336,6 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 		if len(ctx.UserName) > 0 {
 			iuser.Name = ctx.UserName
 		}
-		// if len(ctx.UserGroups) > 0 {
-		// 	iuser.Groups = ctx.UserGroups
-		// }
 		// update it if the login has provided a slack id (slack subscribe flow)
 		if len(ctx.UserSlackID) > 0 && len(iuser.SlackID) == 0 {
 			iuser.SlackID = ctx.UserSlackID
@@ -356,9 +352,11 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 					Name:   ctx.UserGroups[i],
 				})
 			}
-			if err := models.InsertUserGroups(invitedUserGroups); err != nil {
-				return false, fmt.Errorf("failed saving new user group %s/%s, err=%v", uinfo.Subject, iuser.Email, err)
-			}
+			// update the user groups if it fails, we don't return an error
+			// because it's only a sync and the database won't allow to save
+			// a duplicated user group due to the unique constraint for
+			// user_id and name in user_groups table
+			_ = models.InsertUserGroups(invitedUserGroups)
 		}
 		return false, nil
 	}
