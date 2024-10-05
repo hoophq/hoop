@@ -52,7 +52,7 @@ func Create(c *gin.Context) {
 		return
 	}
 
-	existingUser, err := models.GetUserByOrgAndEmail(ctx.OrgID, newUser.Email)
+	existingUser, err := models.GetUserByEmailAndOrg(newUser.Email, ctx.OrgID)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		log.Errorf("failed fetching existing invited user, err=%v", err)
 		sentry.CaptureException(err)
@@ -158,7 +158,7 @@ func Update(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	userID := c.Param("id")
 
-	existingUser, err := models.GetUserBySubject(ctx.OrgID, userID)
+	existingUser, err := models.GetUserBySubjectAndOrg(userID, ctx.OrgID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 		return
@@ -176,7 +176,7 @@ func Update(c *gin.Context) {
 		return
 	}
 
-	userGroups, err := models.GetUserGroupsByUserID(ctx.OrgID, existingUser.ID)
+	userGroups, err := models.GetUserGroupsByUserID(existingUser.ID)
 	fmt.Printf("userGroups: %+v\n", userGroups)
 	if err != nil {
 		log.Errorf("failed getting user groups for user %s, err=%v", existingUser.ID, err)
@@ -286,7 +286,7 @@ func List(c *gin.Context) {
 
 	usersList := []openapi.User{}
 	for i, u := range users {
-		userGroups, err := models.GetUserGroupsByUserID(ctx.OrgID, users[i].ID)
+		userGroups, err := models.GetUserGroupsByUserID(users[i].ID)
 		if err != nil {
 			log.Errorf("failed getting user groups for user %s, err=%v", users[i].ID, err)
 			sentry.CaptureException(err)
@@ -325,7 +325,7 @@ func List(c *gin.Context) {
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	subject := c.Param("id")
-	user, err := models.GetUserBySubject(ctx.OrgID, subject)
+	user, err := models.GetUserBySubjectAndOrg(subject, ctx.OrgID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 		return
@@ -365,9 +365,9 @@ func GetUserByEmailOrID(c *gin.Context) {
 	var user *models.User
 	var err error
 	if isValidMailAddress(emailOrID) {
-		user, err = models.GetUserByOrgAndEmail(ctx.OrgID, emailOrID)
+		user, err = models.GetUserByEmailAndOrg(emailOrID, ctx.OrgID)
 	} else {
-		user, err = models.GetUserBySubject(ctx.OrgID, emailOrID)
+		user, err = models.GetUserBySubjectAndOrg(emailOrID, ctx.OrgID)
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
@@ -380,7 +380,7 @@ func GetUserByEmailOrID(c *gin.Context) {
 		return
 	}
 
-	userGroups, err := models.GetUserGroupsByUserID(ctx.OrgID, user.ID)
+	userGroups, err := models.GetUserGroupsByUserID(user.ID)
 	if err != nil {
 		log.Errorf("failed getting user groups for user %s, err=%v", user.ID, err)
 		sentry.CaptureException(err)
@@ -495,7 +495,7 @@ func GetUserInfo(c *gin.Context) {
 //	@Router			/users/self/slack [patch]
 func PatchSlackID(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	u, err := models.GetUserBySubject(ctx.OrgID, ctx.UserID)
+	u, err := models.GetUserBySubjectAndOrg(ctx.UserID, ctx.OrgID)
 
 	if err != nil || errors.Is(err, gorm.ErrRecordNotFound) {
 		errMsg := fmt.Errorf("failed obtaining user from store, notfound=%v, err=%v", errors.Is(err, gorm.ErrRecordNotFound), err)
@@ -520,7 +520,7 @@ func PatchSlackID(c *gin.Context) {
 		return
 	}
 
-	userGroups, err := models.GetUserGroupsByUserID(ctx.OrgID, u.ID)
+	userGroups, err := models.GetUserGroupsByUserID(u.ID)
 	if err != nil {
 		log.Errorf("failed getting user groups for user %s, err=%v", u.ID, err)
 		sentry.CaptureException(err)

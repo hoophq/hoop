@@ -24,10 +24,10 @@ func GetUserGroupsByOrgID(orgID string) ([]UserGroup, error) {
 	return userGroups, nil
 }
 
-func GetUserGroupsByUserID(orgID, userID string) ([]UserGroup, error) {
-	log.Debugf("listing user groups for org=%s, user=%s", orgID, userID)
+func GetUserGroupsByUserID(userID string) ([]UserGroup, error) {
+	log.Debugf("listing user groups for org=%s, user=%s", userID)
 	var userGroups []UserGroup
-	if err := DB.Where("org_id = ? AND user_id = ?", orgID, userID).Find(&userGroups).Error; err != nil {
+	if err := DB.Where("user_id = ?", userID).Find(&userGroups).Error; err != nil {
 		return nil, err
 	}
 

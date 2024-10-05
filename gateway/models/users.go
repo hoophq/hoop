@@ -47,27 +47,36 @@ func GetInvitedUserByEmail(email string) (*User, error) {
 func GetUserByOrgIDAndSlackID(orgID, slackID string) (*User, error) {
 	log.Debugf("getting user=%s for org=%s", slackID, orgID)
 	var user *User
-	if err := DB.Where("org_id = ? AND slack_id = ?", orgID, slackID).Limit(1).Find(&user).Error; err != nil {
+	if err := DB.Where("org_id = ? AND slack_id = ?", orgID, slackID).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
 		return nil, err
 	}
 
 	return user, nil
 }
 
-func GetUserBySubject(orgID, subject string) (*User, error) {
+func GetUserBySubjectAndOrg(subject, orgID string) (*User, error) {
 	log.Debugf("getting user=%s for org=%s", subject, orgID)
 	var user *User
-	if err := DB.Where("org_id = ? AND subject = ?", orgID, subject).Limit(1).Find(&user).Error; err != nil {
+	if err := DB.Where("org_id = ? AND subject = ?", orgID, subject).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
 		return nil, err
 	}
 
 	return user, nil
 }
 
-func GetUserByOrgAndEmail(orgID, email string) (*User, error) {
+func GetUserByEmailAndOrg(email, orgID string) (*User, error) {
 	log.Debugf("getting user=%s for org=%s", email, orgID)
 	var user *User
-	if err := DB.Where("org_id = ? AND email = ?", orgID, email).Limit(1).Find(&user).Error; err != nil {
+	if err := DB.Where("org_id = ? AND email = ?", orgID, email).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
 		return nil, err
 	}
 
@@ -77,7 +86,10 @@ func GetUserByOrgAndEmail(orgID, email string) (*User, error) {
 func GetUserByEmail(email string) (*User, error) {
 	log.Debugf("getting user=%s", email)
 	var user *User
-	if err := DB.Where("email = ?", email).Limit(1).Find(&user).Error; err != nil {
+	if err := DB.Where("email = ?", email).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
 		return nil, err
 	}
 

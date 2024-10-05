@@ -26,7 +26,7 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 
 	// validate if the slack user is able to review it
 	slackApprover, err := models.GetUserByOrgIDAndSlackID(ev.orgID, ev.msg.SlackID)
-	slackApproverGroups, err := models.GetUserGroupsByUserID(ev.orgID, slackApprover.ID)
+	slackApproverGroups, err := models.GetUserGroupsByUserID(slackApprover.ID)
 	var slackApproverGroupsList []string
 	for _, group := range slackApproverGroups {
 		slackApproverGroupsList = append(slackApproverGroupsList, group.Name)
