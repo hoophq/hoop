@@ -326,10 +326,6 @@ func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	subject := c.Param("id")
 	user, err := models.GetUserBySubjectAndOrg(subject, ctx.OrgID)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
-		return
-	}
 	if err != nil {
 		log.Errorf("failed getting user %s, err=%v", subject, err)
 		sentry.CaptureException(err)
@@ -368,10 +364,6 @@ func GetUserByEmailOrID(c *gin.Context) {
 		user, err = models.GetUserByEmailAndOrg(emailOrID, ctx.OrgID)
 	} else {
 		user, err = models.GetUserBySubjectAndOrg(emailOrID, ctx.OrgID)
-	}
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
-		return
 	}
 	if err != nil {
 		log.Errorf("failed getting user %s, err=%v", emailOrID, err)
@@ -566,7 +558,15 @@ func ListAllGroups(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed listing groups"})
 		return
 	}
-	c.JSON(http.StatusOK, groups)
+	dedupeGroups := map[string]string{}
+	for _, ug := range userGroups {
+		dedupeGroups[ug.Name] = ug.Name
+	}
+	var groupsList []string
+	for groupName := range dedupeGroups {
+		groupsList = append(groupsList, groupName)
+	}
+	c.JSON(http.StatusOK, groupsList)
 }
 
 func isValidMailAddress(email string) bool {
