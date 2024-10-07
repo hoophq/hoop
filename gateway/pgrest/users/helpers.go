@@ -12,8 +12,6 @@ const (
 	LicenseFreeType  = "free"
 )
 
-// func IsOrgMultiTenant() bool { return os.Getenv("ORG_MULTI_TENANT") == "true" }
-
 var ErrOrgAlreadyExists = fmt.Errorf("organization already exists")
 
 func ContextLogger(c *gin.Context) *zap.SugaredLogger {
