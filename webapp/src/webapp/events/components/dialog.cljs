@@ -13,6 +13,13 @@
                                 :title ""})}))
 
 (rf/reg-event-fx
+ :dialog->set-status
+ (fn [{:keys [db]} [_ status]]
+   {:db (assoc-in db [:dialog :status] (if (= status :open)
+                                         true
+                                         false))}))
+
+(rf/reg-event-fx
  :dialog->close
  (fn [{:keys [db]} [_ _]]
    (js/setTimeout #(rf/dispatch [:dialog->clear]) 500)

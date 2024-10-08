@@ -390,3 +390,7 @@
  (fn [db _]
    (:reports->today-session-data db)))
 
+(re-frame/reg-sub
+ :modal-radix
+ (fn [db _]
+   (:modal-radix db)))

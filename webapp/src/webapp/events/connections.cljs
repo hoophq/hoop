@@ -85,7 +85,7 @@
                         :uri (str "/connections/" (:name connection))
                         :body body
                         :on-success (fn []
-                                      (rf/dispatch [:close-modal])
+                                      (rf/dispatch [:modal->close])
                                       (rf/dispatch [:show-snackbar
                                                     {:level :success
                                                      :text (str "Connection " (:name connection) " updated!")}])
@@ -205,6 +205,8 @@ ORDER BY total_amount DESC;")
                                    (when (= connection-name (:name localstorage-connection))
                                      (.removeItem js/localStorage "run-connection-list-selected"))
 
+                                   (rf/dispatch [:show-snackbar {:level :success
+                                                                 :text "Connection deleted!"}])
                                    (rf/dispatch [:connections->get-connections])
                                    (rf/dispatch [:navigate :connections])))}]]]}))
 

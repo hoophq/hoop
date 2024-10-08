@@ -1,73 +1,55 @@
 (ns webapp.connections.views.form.hoop-run-instructions
-  (:require ["@headlessui/react" :as ui]
+  (:require ["@radix-ui/themes" :refer [Box Grid RadioGroup Text]]
             [clojure.string :as cs]
             [reagent.core :as r]
-            [webapp.components.code-snippet :as code-snippet]
-            [webapp.components.headings :as h]))
+            [webapp.components.code-snippet :as code-snippet]))
 
 (defn install-hoop []
   (let [select-operation-system (r/atom "macos")]
     (fn []
-      [:<>
-       [:div {:class "mb-small"}
-        [h/h4-md "Install hoop CLI"]
-        [:label {:class "text-xs text-gray-500"}
-         "Choose the operating system you will connect to"]]
-       [:> ui/RadioGroup {:value @select-operation-system
-                          :onChange (fn [type]
-                                      (reset! select-operation-system type))}
-        [:> (.-Label ui/RadioGroup) {:className "sr-only"}
-         "Operation systems"]
-        [:div {:class "space-y-2"}
-         (for [operation-system [{:type "macos" :label "MacOS"}
-                                 {:type "linux" :label "Linux"}]]
-           ^{:key (:type operation-system)}
-           [:> (.-Option ui/RadioGroup)
-            {:value (:type operation-system)
-             :className (fn [params]
-                          (str "relative flex cursor-pointer flex-col rounded-lg border p-4 focus:outline-none md:grid md:grid-cols-3 md:pl-4 md:pr-6 "
-                               (if (.-checked params)
-                                 "z-10 bg-gray-900"
-                                 "border-gray-200")))}
-            (fn [params]
-              (r/as-element
-               [:<>
-                [:span {:class "flex items-center text-sm"}
-                 [:span {:aria-hidden "true"
-                         :class (str "h-4 w-4 rounded-full border bg-white flex items-center justify-center "
-                                     (if (.-checked params)
-                                       "border-transparent"
-                                       "border-gray-300")
-                                     (when (.-active params)
-                                       "ring-2 ring-offset-2 ring-indigo-600 "))}
-                  [:span {:class (str "rounded-full w-1.5 h-1.5 "
-                                      (if (.-checked params)
-                                        "bg-gray-900"
-                                        "bg-white"))}]]
-                 [:> (.-Label ui/RadioGroup) {:as "span"
-                                              :className (str "ml-3 font-medium "
-                                                              (if (.-checked params)
-                                                                "text-white"
-                                                                "text-gray-700"))}
-                  (:label operation-system)]]]))])]]
-       [:div {:class "mt-regular"}
-        [code-snippet/main
-         {:id "install-hoop"
-          :code (if (= @select-operation-system "macos")
-                  (str
-                   "brew tap brew https://github.com/hoophq/brew\n"
-                   "brew install hoop")
-                  "curl -s -L https://releases.hoop.dev/release/install-cli.sh | sh")}]]])))
+      [:> Grid {:columns "5" :gap "7"}
+       [:> Box {:grid-column "span 2 / span 2"}
+        [:> Text {:size "4"
+                  :weight "bold"
+                  :class "text-[--gray-12]"}
+         "Install hoop.dev CLI"]
+        [:> Text {:size "3"
+                  :as "p"
+                  :class "text-[--gray-11]"}
+         "Choosing the operating system to connect."]]
+       [:> Box {:grid-column "span 3 / span 3" :class "mb-small"}
+        [:> RadioGroup.Root {:name (str (name @select-operation-system) "-type")
+                             :class "space-y-radix-4"
+                             :value @select-operation-system
+                             :on-value-change #(reset! select-operation-system %)}
+         [:> RadioGroup.Item {:value "macos"} "MacOS"]
+         [:> RadioGroup.Item {:value "linux"} "Linux"]]
+        [:> Box {:mt "7"}
+         [code-snippet/main
+          {:id "install-hoop"
+           :code (if (= @select-operation-system "macos")
+                   (str
+                    "brew tap brew https://github.com/hoophq/brew\n"
+                    "brew install hoop")
+                   "curl -s -L https://releases.hoop.dev/release/install-cli.sh | sh")}]]]])))
 
 (defn setup-token [api-key]
-  [:<>
-   [:div {:class "mb-small"}
-    [h/h4-md "Setup the token"]
-    [:label {:class "text-xs text-gray-500"}
-     "Do not share this token with anyone outside your organization"]]
-   [code-snippet/main
-    {:id "setup-token"
-     :code (str "export HOOP_KEY=" (:key (:data api-key)))}]])
+  [:> Grid {:columns "5" :gap "7"}
+   [:> Box {:grid-column "span 2 / span 2"}
+    [:> Text {:size "4"
+              :weight "bold"
+              :class "text-[--gray-12]"}
+     "Setup token"]
+    [:> Text {:size "3"
+              :as "p"
+              :class "text-[--gray-11]"}
+     "Export your token to provide a secure connection."]]
+   [:> Box {:grid-column "span 3 / span 3" :class "space-y-radix-4"}
+    [code-snippet/main
+     {:id "setup-token"
+      :code (str "export HOOP_KEY=" (:key (:data api-key)))}]
+    [:> Text {:size "2" :as "p" :class "text-[--gray-9]"}
+     "Do not share this token with anyone outside your organization."]]])
 
 (def hoop-run-commands-dictionary
   {"postgres" "--postgres 'postgres://<user>:<pass>@<host>:<port>/<dbname>'"
@@ -91,12 +73,18 @@
         data-masking-command (if data-masking?
                                (str " --data-masking " (cs/join "," data-masking-fields))
                                "")]
-    [:<>
-     [:div {:class "mb-small"}
-      [h/h4-md "Run your hoop connection"]
-      [:label {:class "text-xs text-gray-500"}
-       "One command away to a life without access headaches"]]
-     [code-snippet/main
-      {:id "run-hoop-connection"
-       :code (str "hoop run --name " connection-name " " review-command " "
-                  data-masking-command " " (get hoop-run-commands-dictionary connection-subtype))}]]))
+    [:> Grid {:columns "5" :gap "7"}
+     [:> Box {:grid-column "span 2/ span 2" :class "mb-small"}
+      [:> Text {:size "4"
+                :weight "bold"
+                :class "text-[--gray-12]"}
+       "Run your hoop connection"]
+      [:> Text {:size "3"
+                :as "p"
+                :class "text-[--gray-11]"}
+       "If you have completed all setup steps, you are ready to run and save your connection."]]
+     [:> Box {:grid-column "span 3 / span 3"}
+      [code-snippet/main
+       {:id "run-hoop-connection"
+        :code (str "hoop run --name " connection-name " " review-command " "
+                   data-masking-command " " (get hoop-run-commands-dictionary connection-subtype))}]]]))

@@ -1,7 +1,6 @@
 (ns webapp.app
   (:require ["gsap/all" :refer [Draggable gsap]]
             ["@radix-ui/themes" :refer [Theme]]
-            ["next-themes" :refer [ThemeProvider]]
             [bidi.bidi :as bidi]
             [clojure.string :as cs]
             [re-frame.core :as rf]
@@ -32,6 +31,7 @@
             [webapp.events.localauth]
             [webapp.events.components.dialog]
             [webapp.events.components.draggable-card]
+            [webapp.events.components.modal]
             [webapp.events.components.sidebar]
             [webapp.events.connections]
             [webapp.events.editor-plugin]
@@ -114,6 +114,7 @@
         [:section
          {:class "antialiased min-h-screen"}
          [modals/modal]
+         [modals/modal-radix]
          [dialog/dialog]
          [dialog/new-dialog]
          [snackbar/snackbar]
@@ -180,8 +181,8 @@
         url-params-map (into (sorted-map) url-params-list)
         connection-type (get url-params-map "type")]
     (rf/dispatch [:destroy-page-loader])
-    [layout :application-hoop [:div {:class "bg-gray-1 px-radix-7 h-full"}
-                               [create-update-connection/main]]]))
+    [layout :application-hoop [:div {:class "bg-gray-1 p-radix-7 min-h-full h-max"}
+                               [create-update-connection/main :create]]]))
 
 (defmethod routes/panels :manage-plugin-panel []
   (let [pathname (.. js/window -location -pathname)
@@ -293,6 +294,5 @@
     (.registerPlugin gsap Draggable)
     (fn []
       (when (not (-> @gateway-public-info :loading))
-        [:> ThemeProvider {:attribute "class"}
-         [:> Theme {:radius "large" :panelBackground "solid"}
-          [routes/panels @active-panel @gateway-public-info]]]))))
+        [:> Theme {:radius "large" :panelBackground "solid"}
+         [routes/panels @active-panel @gateway-public-info]]))))

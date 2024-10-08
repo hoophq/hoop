@@ -28,14 +28,14 @@
         save (fn [k v] (swap! config assoc-in [index k] v))]
     (fn []
       [:<>
-       [forms/input {:label "File name"
+       [forms/input {:label "Name"
                      :id (str "file-name" @key-val)
                      :classes "whitespace-pre overflow-x"
                      :placeholder "kubeconfig"
                      :on-change #(reset! key-val (-> % .-target .-value))
                      :on-blur #(save :key @key-val)
                      :value @key-val}]
-       [forms/textarea {:label "File content"
+       [forms/textarea {:label "Content"
                         :id (str "file-content" @value-val)
                         :placeholder "Paste your file content here"
                         :on-change #(reset! value-val (-> % .-target .-value))
@@ -70,19 +70,19 @@
   [config attr]
   (doall
    (for [index (range (count @config))]
-     ^{:key (str (get @config index) index)}
+     ^{:key (str (get @config index) "labeled")}
      [config->inputs-labeled (get @config index) index config attr])))
 
 (defn config-inputs-files
   [config attr]
   (doall
    (for [index (range (count @config))]
-     ^{:key (get @config index)}
+     ^{:key (str (get @config index) "-file")}
      [config->inputs-files (get @config index) index config attr])))
 
 (defn config-inputs
   [config attr]
   (doall
    (for [index (range (count @config))]
-     ^{:key (get @config index)}
+     ^{:key (str (get @config index) "-config")}
      [config->inputs (get @config index) index config attr])))

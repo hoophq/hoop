@@ -8,7 +8,8 @@
             [webapp.components.searchbox :as searchbox]
             [webapp.connections.constants :as connection-constants]
             [webapp.connections.views.connection-form-modal :as connection-form-modal]
-            [webapp.config :as config]))
+            [webapp.config :as config]
+            [webapp.connections.views.create-update-connection.main :as create-update-connection]))
 
 (defn empty-list-view []
   [:div {:class "pt-x-large"}
@@ -140,7 +141,6 @@
                              :on-click (fn []
                                          (rf/dispatch [:plugins->get-my-plugins])
                                          (rf/dispatch [:connections->get-connection {:connection-name (:name connection)}])
-                                         (rf/dispatch [:open-modal [connection-form-modal/main :update]
-                                                       :large]))}
+                                         (rf/dispatch [:modal->open {:content [create-update-connection/main :update connection]}]))}
                        [tooltip "Configure" "left"]
                        [:> hero-micro-icon/AdjustmentsHorizontalIcon {:class "w-6 h-6 text-gray-700"}]])]])))]])]))))

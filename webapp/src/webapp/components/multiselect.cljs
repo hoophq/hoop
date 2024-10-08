@@ -1,52 +1,69 @@
 (ns webapp.components.multiselect
-  (:require [reagent.core :as r]
-            ["react-select" :default Select]
-            ["react-select/creatable" :default CreatableSelect]))
+  (:require ["react-select" :default Select]
+            ["react-select/creatable" :default CreatableSelect]
+            [reagent.core :as r]))
 
 (def styles
   #js {"multiValue" (fn [style]
                       (clj->js (into (js->clj style)
                                      {"padding" "4px"
                                       "borderRadius" "6px"
+                                      "fontSize" "16px"
                                       "backgroundColor" "#D1D5DB"})))
        "option" (fn [style]
                   (clj->js (into (js->clj style)
-                                 {"fontSize" "0.75rem"})))
+                                 {"fontSize" "16px"})))
        "menuPortal" (fn [style]
                       (clj->js (into (js->clj style)
                                      {"z-index" "60"})))
        "control" (fn [style]
                    (clj->js (into (js->clj style)
                                   {"borderRadius" "6px"})))
+       "valueContainer" (fn [style]
+                          (clj->js (into (js->clj style)
+                                         {"maxHeight" "200px"
+                                          "overflow" "auto"})))
        "input" (fn [style]
                  (clj->js (into (js->clj style)
                                 {"& > input"
                                  #js {":focus"
                                       #js {"--tw-ring-shadow" "none"}}})))})
 
+(defn- scroll-to-bottom [ref]
+  (when (some? ref)
+    (let [container (.-offsetParent (.-inputRef ref))]
+      (when (some? container)
+        (set! (.-scrollTop container) (.-scrollHeight container))))))
+
 (defn- form-label
   [text]
   [:label {:class "mb-1 block text-xs font-semibold text-gray-800"} text])
 
-(defn main [{:keys [default-value disabled? required? on-change options label id name]}]
-  [:div {:class "mb-regular text-sm"}
-   [:div {:class "flex items-center gap-2"}
-    (when label
-      [form-label label])]
-   [:> Select
-    {:value default-value
-     :id id
-     :name name
-     :isMulti true
-     :isDisabled disabled?
-     :required required?
-     :onChange on-change
-     :options options
-     :isClearable false
-     :menuPortalTarget (.-body js/document)
-     :className "react-select-container"
-     :classNamePrefix "react-select"
-     :styles styles}]])
+(defn main []
+  (let [container-ref (r/atom nil)]
+    (fn [{:keys [default-value disabled? required? on-change options label id name]}]
+      [:div {:class "mb-regular text-sm"}
+       [:div {:class "flex items-center gap-2"}
+        (when label
+          [form-label label])]
+       [:> Select
+        {:value default-value
+         :id id
+         :name name
+         :isMulti true
+         :isDisabled disabled?
+         :required required?
+         :onChange (fn [value]
+                     (scroll-to-bottom @container-ref)
+                     (on-change value))
+         :options options
+         :isClearable false
+         :onFocus #(scroll-to-bottom @container-ref)
+         :menuPortalTarget (.-body js/document)
+         :className "react-select-container"
+         :classNamePrefix "react-select"
+         :ref #(reset! container-ref %)
+         :styles styles}]])))
 
 (defn creatable-select [{:keys [default-value disabled? required? on-change options label id name]}]
   [:div {:class "mb-regular text-sm"}

@@ -46,6 +46,7 @@
       (fn [{:keys [label
                    placeholder
                    name
+                   size
                    dark
                    id
                    helper-text
@@ -72,25 +73,28 @@
           (when (not (cs/blank? helper-text))
             [form-helper-text helper-text dark])]
          [:> TextField.Root
-          {:type (if (= "string" @local-type) "text" @local-type)
-           :id id
-           :class (when dark "dark")
-           :placeholder (or placeholder label)
-           :name name
-           :pattern pattern
-           :minLength minlength
-           :maxLength maxlength
-           :min min
-           :max max
-           :step step
-           :value value
-           :defaultValue defaultValue
-           :on-change on-change
-           :on-keyDown on-keyDown
-           :on-blur on-blur-cb
-           :on-focus on-focus-cb
-           :disabled (or disabled false)
-           :required (or required false)}]]))))
+          (merge
+           {:type (if (= "string" @local-type) "text" @local-type)
+            :id id
+            :size (or size "3")
+            :class (when dark "dark")
+            :placeholder (or placeholder label)
+            :name name
+            :pattern pattern
+            :minLength minlength
+            :maxLength maxlength
+            :min min
+            :max max
+            :step step
+            :value value
+            :on-change on-change
+            :on-keyDown on-keyDown
+            :on-blur on-blur-cb
+            :on-focus on-focus-cb
+            :disabled (or disabled false)
+            :required (or required false)}
+           (when defaultValue
+             {:defaultValue defaultValue}))]]))))
 
 (defn input-metadata [{:keys [label name id placeholder disabled required value on-change]}]
   [:div {:class "relative"}
@@ -132,19 +136,21 @@
     (when (not (cs/blank? helper-text))
       [form-helper-text helper-text dark])]
    [:> TextArea
-    {:class (when dark "dark")
-     :id (or id "")
-     :rows (or rows 5)
-     :name (or name "")
-     :value value
-     :defaultValue defaultValue
-     :autoFocus autoFocus
-     :placeholder placeholder
-     :on-change on-change
-     :on-blur on-blur
-     :on-keyDown on-keyDown
-     :disabled (or disabled false)
-     :required (or required false)}]])
+    (merge
+     {:class (when dark "dark")
+      :id (or id "")
+      :rows (or rows 5)
+      :name (or name "")
+      :value value
+      :autoFocus autoFocus
+      :placeholder placeholder
+      :on-change on-change
+      :on-blur on-blur
+      :on-keyDown on-keyDown
+      :disabled (or disabled false)
+      :required (or required false)}
+     (when defaultValue
+       {:defaultValue defaultValue}))]])
 
 (defn- option
   [item _]
@@ -159,7 +165,7 @@
   active -> the option value of an already active item;
   on-change -> function to be executed on change;
   required -> HTML required attribute;"
-  [{:keys [label helper-text name size options placeholder selected on-change required disabled full-width? dark]}]
+  [{:keys [label helper-text name size options placeholder selected default-value on-change required disabled full-width? dark]}]
   [:div {:class "mb-regular text-sm w-full"}
    [:div {:class "flex items-center gap-2 mb-1"}
     (if dark
@@ -167,9 +173,10 @@
       [form-label label])
     (when (not (cs/blank? helper-text))
       [form-helper-text helper-text dark])]
-   [:> Select.Root {:size (or size "2")
+   [:> Select.Root {:size (or size "3")
                     :name name
                     :value selected
+                    :default-value default-value
                     :on-value-change on-change
                     :required (or required false)
                     :disabled (or disabled false)}

@@ -23,37 +23,52 @@
                          [:> Check {:size 16
                                     :color "green"}])}])
 
-(defn accordion-item [{:keys [title subtitle content value status avatar-icon show-checkbox? show-badge? show-configure? show-icon? total-items]}]
+(defn accordion-item
+  [{:keys [title
+           subtitle
+           content
+           disabled
+           value
+           status
+           avatar-icon
+           show-checkbox?
+           show-badge?
+           show-configure?
+           show-icon?
+           total-items]}]
   [:> (.-Item Accordion)
    {:value value
-    :className (str "first:rounded-t-6 last:rounded-b-6 data-[state=open]:bg-[--accent-2] border-[--gray-a6] "
+    :disabled disabled
+    :className (str "first:rounded-t-6 last:rounded-b-6 data-[state=open]:bg-[--accent-2] "
+                    "border-[--gray-a6] data-[disabled]:opacity-70 data-[disabled]:cursor-not-allowed "
                     (when (> total-items 1) "border first:border-b-0 last:border-t-0")
                     (when (= total-items 1) "border"))}
-   [:> (.-Header Accordion) {:className "group flex justify-between items-center w-full p-5"}
-    [:> Flex {:align "center" :gap "5"}
-     (when show-checkbox?
-       [checkbox])
+   [:> (.-Header Accordion)
+    [:> (.-Trigger Accordion) {:className "group flex justify-between items-center w-full p-5"}
+     [:> Flex {:align "center" :gap "5"}
+      (when show-checkbox?
+        [checkbox])
 
-     [:> Avatar {:size "5"
-                 :variant "soft"
-                 :color "gray"
-                 :fallback (r/as-element (if avatar-icon
-                                           avatar-icon
-                                           [:> User {:size 16}]))}]
+      [:> Avatar {:size "5"
+                  :variant "soft"
+                  :color "gray"
+                  :fallback (r/as-element (if avatar-icon
+                                            avatar-icon
+                                            [:> User {:size 16}]))}]
 
-     [:div {:className "flex flex-col"}
-      [:> Text {:size "5" :weight "bold" :className "text-[--gray-12]"} title]
-      [:> Text {:size "3" :className "text-[--gray-11]"} subtitle]]]
+      [:div {:className "flex flex-col items-start"}
+       [:> Text {:size "5" :weight "bold" :className "text-[--gray-12]"} title]
+       [:> Text {:size "3" :className "text-[--gray-11]"} subtitle]]]
 
-    [:div {:className "flex space-x-3 items-center"}
-     (when show-badge? [badge "Badge"])
-     (when show-configure? [configure-button])
-     (when show-icon? [status-icon status])
-     [:> (.-Trigger Accordion)
+     [:div {:className "flex space-x-3 items-center"}
+      (when show-badge? [badge "Badge"])
+      (when show-configure? [configure-button])
+      (when show-icon? [status-icon status])
+
       [:> ChevronRight {:size 16 :className "text-[--gray-12] transition-transform duration-300 group-data-[state=open]:rotate-90"}]]]]
 
    [:> (.-Content Accordion)
-    [:> Box {:px "5" :py "7" :className "bg-white border-t border-[--gray-a6] rounded-b-lg"}
+    [:> Box {:px "5" :py "7" :className "bg-white border-t border-[--gray-a6] rounded-b-6"}
      content]]])
 
 (defn main
@@ -84,9 +99,10 @@
                       :content \"Content of item 2\"
                       :show-configure? true
                       :show-icon? true}]]"
-  [items]
+  [items id]
   [:> (.-Root Accordion)
    {:className "w-full"
+    :id id
     :type "single"
     :collapsible true}
    (for [{:keys [value] :as item} items]

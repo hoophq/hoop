@@ -1,5 +1,6 @@
 (ns webapp.components.modal
   (:require ["@heroicons/react/24/outline" :as hero-outline-icon]
+            ["@radix-ui/themes" :refer [Dialog VisuallyHidden]]
             [re-frame.core :as rf]))
 
 (defmulti markup identity)
@@ -37,3 +38,21 @@
   []
   (let [modal-status @(rf/subscribe [:modal])]
     [markup (:status modal-status) modal-status]))
+
+(defn modal-radix []
+  (let [modal (rf/subscribe [:modal-radix])]
+    (fn []
+      (if (:open? @modal)
+        [:> Dialog.Root {:open (:open? @modal)
+                         :on-open-change #(rf/dispatch [:modal->set-status %])}
+
+         [:> Dialog.Content {:maxWidth "916px"
+                             :maxHeight "calc(100vh - 96px)"
+                             :on-escape-key-down #(rf/dispatch [:modal->close])
+                             :on-pointer-down-outside #(rf/dispatch [:modal->close])}
+          [:> VisuallyHidden :as-child true
+           [:> Dialog.Title "Modal title"]]
+          [:> VisuallyHidden :as-child true
+           [:> Dialog.Description "Modal description"]]
+          (:content @modal)]]
+        nil))))

@@ -4,6 +4,7 @@
 
 (def connection-configs-required
   {:command-line []
+   :custom []
    :tcp [{:key "host" :value "" :required true}
          {:key "port" :value "" :required true}]
    :mysql [{:key "host" :value "" :required true}
@@ -95,7 +96,9 @@
    "mysql" ""
    "mssql" ""
    "mongodb" ""
-   "ssh" "ssh $SSH_URI -i $SSH_PRIVATE_KEY"})
+   "custom" ""
+   "ssh" "ssh $SSH_URI -i $SSH_PRIVATE_KEY"
+   "" ""})
 
 (def connection-postgres-demo
   {:name "postgres-demo"
@@ -110,7 +113,6 @@
    :redact_enabled false
    :redact_types []
    :secret {:envvar:DB "ZGVsbHN0b3Jl"
-            :envvar:DBNAME "ZGVsbHN0b3Jl"
             :envvar:HOST "ZGVtby1wZy1kYi5jaDcwN3JuYWl6amcudXMtZWFzdC0xLnJkcy5hbWF6b25hd3MuY29t"
             :envvar:INSECURE "ZmFsc2U="
             :envvar:PASS "ZG9sbGFyLW1hbmdlci1jYXJvdXNlLUhFQVJURUQ="
