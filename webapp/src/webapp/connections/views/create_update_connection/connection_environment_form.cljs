@@ -39,7 +39,8 @@
           [:> Flex {:direction "column" :grid-column "span 2 / span 2"}
            [:> Text {:size "4" :weight "bold"} "Set an agent"]
            [:> Text {:size "3"} "Select an agent to provide a secure interaction with your connection."]
-           [:> Link {:href "https://hoop.dev/docs/concepts/agent"}
+           [:> Link {:href "https://hoop.dev/docs/concepts/agent"
+                     :target "_blank"}
             [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
              [:> Callout.Icon
               [:> ArrowUpRight {:size 16}]]

@@ -183,7 +183,7 @@
                                           (or (re-seq #"'.*?'|\".*?\"|\S+|\t" @connection-command) []))}))}
 
          [:> Flex {:direction "column" :gap "5"}
-          [:> Flex {:justify "between" :py "5" :mb "7" :class "sticky top-0 bg-white z-10"}
+          [:> Flex {:justify "between" :py "5" :mb "7" :class "sticky top-0 bg-gray-1 z-10"}
            [select-header-by-form-type form-type {:name @connection-name
                                                   :type @connection-type
                                                   :subtype @connection-subtype
@@ -213,6 +213,7 @@
             (when-not (and (= "application" @connection-type)
                            (not= "tcp" @connection-subtype))
               [:> Button {:size "4"
+                          :disabled (not first-step-finished)
                           :on-click (fn []
                                       (let [form (.getElementById (-> js/window .-document) "connection-form")]
                                         (verify-form-accordion (conj @configs {:value @agent-id

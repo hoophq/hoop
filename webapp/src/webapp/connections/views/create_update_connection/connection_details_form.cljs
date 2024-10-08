@@ -73,14 +73,16 @@
     [:> Flex {:direction "column" :grid-column "span 2 / span 2"}
      [:> Text {:size "4" :weight "bold"} "Configuration parameters"]
      [:> Text {:size "3"} "Setup how users interact with this connection."]
-     [:> Link {:href "https://hoop.dev/docs/learn/jit-reviews"}
+     [:> Link {:href "https://hoop.dev/docs/learn/jit-reviews"
+               :target "_blank"}
       [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
        [:> Callout.Icon
         [:> ArrowUpRight {:size 16}]]
        [:> Callout.Text
         "Learn more about Reviews"]]]
 
-     [:> Link {:href "https://hoop.dev/docs/learn/ai-data-masking"}
+     [:> Link {:href "https://hoop.dev/docs/learn/ai-data-masking"
+               :target "_blank"}
       [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
        [:> Callout.Icon
         [:> ArrowUpRight {:size 16}]]

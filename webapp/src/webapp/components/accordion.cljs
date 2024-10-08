@@ -103,6 +103,7 @@
   [:> (.-Root Accordion)
    {:className "w-full"
     :id id
+    :defaultValue (first (:value items))
     :type "single"
     :collapsible true}
    (for [{:keys [value] :as item} items]

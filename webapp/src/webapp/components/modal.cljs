@@ -1,6 +1,6 @@
 (ns webapp.components.modal
   (:require ["@heroicons/react/24/outline" :as hero-outline-icon]
-            ["@radix-ui/themes" :refer [Dialog VisuallyHidden]]
+            ["@radix-ui/themes" :refer [Box Dialog VisuallyHidden]]
             [re-frame.core :as rf]))
 
 (defmulti markup identity)
@@ -49,10 +49,12 @@
          [:> Dialog.Content {:maxWidth "916px"
                              :maxHeight "calc(100vh - 96px)"
                              :on-escape-key-down #(rf/dispatch [:modal->close])
-                             :on-pointer-down-outside #(rf/dispatch [:modal->close])}
+                             :on-pointer-down-outside #(rf/dispatch [:modal->close])
+                             :class "p-0"}
           [:> VisuallyHidden :as-child true
            [:> Dialog.Title "Modal title"]]
           [:> VisuallyHidden :as-child true
            [:> Dialog.Description "Modal description"]]
-          (:content @modal)]]
+          [:> Box {:p "6"}
+           (:content @modal)]]]
         nil))))
