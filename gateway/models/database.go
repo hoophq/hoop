@@ -10,6 +10,7 @@ import (
 )
 
 // This makes the DB generally available to the application
+// This is safe to access from multiple goroutines
 var DB *gorm.DB
 
 func InitDatabase() {
