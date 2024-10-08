@@ -31,6 +31,10 @@ func Login(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "invalid credentials"})
 		return
 	}
+	if dbUser == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "user not found"})
+		return
+	}
 	err = bcrypt.CompareHashAndPassword([]byte(dbUser.HashedPassword), []byte(user.Password))
 	if err != nil {
 		log.Debugf("failed comparing password for user %s, reason=%v", user.Email, err)
