@@ -7,7 +7,6 @@
             [webapp.components.loaders :as loaders]
             [webapp.components.searchbox :as searchbox]
             [webapp.connections.constants :as connection-constants]
-            [webapp.connections.views.connection-form-modal :as connection-form-modal]
             [webapp.config :as config]
             [webapp.connections.views.create-update-connection.main :as create-update-connection]))
 

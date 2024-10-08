@@ -1,4 +1,4 @@
-(ns webapp.connections.views.form.hoop-run-instructions
+(ns webapp.connections.views.create-update-connection.hoop-run-instructions
   (:require ["@radix-ui/themes" :refer [Box Grid RadioGroup Text]]
             [clojure.string :as cs]
             [reagent.core :as r]

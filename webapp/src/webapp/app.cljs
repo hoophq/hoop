@@ -20,7 +20,6 @@
             [webapp.config :as config]
             [webapp.connections.views.connection-list :as connections]
             [webapp.connections.views.connection-connect :as connection-connect]
-            [webapp.connections.views.connection-form-modal :as connection-form-modal]
             [webapp.connections.views.create-update-connection.main :as create-update-connection]
             [webapp.dashboard.main :as dashboard]
             [webapp.events]
@@ -175,14 +174,9 @@
                              [reviews/panel]]])
 
 (defmethod routes/panels :create-connection-panel []
-  (let [search (.. js/window -location -search)
-        url-search-params (new js/URLSearchParams search)
-        url-params-list (js->clj (for [q url-search-params] q))
-        url-params-map (into (sorted-map) url-params-list)
-        connection-type (get url-params-map "type")]
-    (rf/dispatch [:destroy-page-loader])
-    [layout :application-hoop [:div {:class "bg-gray-1 p-radix-7 min-h-full h-max"}
-                               [create-update-connection/main :create]]]))
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop [:div {:class "bg-gray-1 p-radix-7 min-h-full h-max"}
+                             [create-update-connection/main :create]]])
 
 (defmethod routes/panels :manage-plugin-panel []
   (let [pathname (.. js/window -location -pathname)

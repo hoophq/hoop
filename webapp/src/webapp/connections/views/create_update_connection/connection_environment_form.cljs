@@ -5,7 +5,7 @@
             [reagent.core :as r]
             [webapp.components.forms :as forms]
             [webapp.connections.views.configuration-inputs :as config-inputs]
-            [webapp.connections.views.form.hoop-run-instructions :as instructions]))
+            [webapp.connections.views.create-update-connection.hoop-run-instructions :as instructions]))
 
 (defn js-select-options->list [options]
   (mapv #(get % "value") options))
