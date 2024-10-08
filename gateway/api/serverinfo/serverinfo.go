@@ -31,6 +31,8 @@ var (
 		HasIDPAudience:       isEnvSet("IDP_AUDIENCE"),
 		HasIDPCustomScopes:   isEnvSet("IDP_CUSTOM_SCOPES"),
 		HasPostgresRole:      isEnvSet("PGREST_ROLE"),
+		ApiURL:               appconfig.Get().ApiURL(),
+		GrpcURL:              appconfig.Get().GrpcURL(),
 	}
 )
 
@@ -72,6 +74,7 @@ func (h *handler) Get(c *gin.Context) {
 	}
 	serverInfoData.TenancyType = tenancyType
 	serverInfoData.GrpcURL = h.grpcURL
+	serverInfoData.ApiURL = appconfig.Get().ApiURL()
 	serverInfoData.HasAskiAICredentials = appconfig.Get().IsAskAIAvailable()
 	serverInfoData.LicenseInfo = &openapi.ServerLicenseInfo{
 		IsValid:      err == nil,

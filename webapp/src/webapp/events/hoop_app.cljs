@@ -44,8 +44,6 @@
  :hoop-app->update-my-configs
  (fn [_ [_ configs]]
    (let [on-success (fn []
-                      (rf/dispatch [:show-snackbar {:level :success
-                                                    :text "Hoop app configuration updated"}])
                       (rf/dispatch [:hoop-app->get-my-configs]))
          on-failure (fn []
                       (rf/dispatch [:show-snackbar {:level :error
