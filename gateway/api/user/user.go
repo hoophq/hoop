@@ -160,14 +160,16 @@ func Update(c *gin.Context) {
 	userID := c.Param("id")
 
 	existingUser, err := models.GetUserBySubjectAndOrg(userID, ctx.OrgID)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
-		return
-	}
+
 	if err != nil {
 		log.Errorf("failed getting user %s, err=%v", userID, err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed getting user"})
+		return
+	}
+
+	if existingUser == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": fmt.Sprintf("user %s not found", userID)})
 		return
 	}
 
