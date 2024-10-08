@@ -23,7 +23,7 @@ type User struct {
 func ListUsers(orgID string) ([]User, error) {
 	log.Debugf("listing users for org=%s", orgID)
 	var users []User
-	if err := DB.Where("org_id = ?", orgID).Find(&users).Error; err != nil {
+	if err := DB.Where("org_id = ?", orgID).Order("email desc").Find(&users).Error; err != nil {
 		log.Errorf("failed to list users, reason=%v", err)
 		return nil, err
 	}

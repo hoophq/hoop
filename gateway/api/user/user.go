@@ -271,15 +271,17 @@ func List(c *gin.Context) {
 		return
 	}
 
+	orgsGroups, err := models.GetUserGroupsByOrgID(ctx.OrgID)
+	if err != nil {
+		log.Errorf("failed getting org groups, err=%v", err)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed getting org groups"})
+		return
+	}
+
+	// map users from db to openapi.User
 	usersList := []openapi.User{}
 	for i, u := range users {
-		userGroups, err := models.GetUserGroupsByUserID(users[i].ID)
-		if err != nil {
-			log.Errorf("failed getting user groups for user %s, err=%v", users[i].ID, err)
-			sentry.CaptureException(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed getting user groups"})
-			return
-		}
 		usersList = append(usersList,
 			openapi.User{
 				ID:       u.Subject,
@@ -291,11 +293,14 @@ func List(c *gin.Context) {
 				Picture:  u.Picture,
 			})
 		usersList[i].Groups = []string{}
-		for ug := range userGroups {
-			usersList[i].Groups = append(usersList[i].Groups, userGroups[ug].Name)
+		for _, ug := range orgsGroups {
+			if ug.UserID == u.ID {
+				usersList[i].Groups = append(usersList[i].Groups, ug.Name)
+			}
 		}
 		usersList[i].Role = toRole(usersList[i])
 	}
+
 	c.JSON(http.StatusOK, usersList)
 }
 
