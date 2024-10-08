@@ -204,7 +204,7 @@ func (h *handler) LoginCallback(c *gin.Context) {
 }
 
 func registerMultiTenantUser(uinfo idp.ProviderUserInfo, slackID string) (isNewUser bool, err error) {
-	iuser, err := models.GetUserByEmail(uinfo.Email)
+	iuser, err := models.GetInvitedUserByEmail(uinfo.Email)
 	if err != nil {
 		return false, fmt.Errorf("failed fetching invited user, reason=%v", err)
 	}
