@@ -87,7 +87,7 @@ func Register(c *gin.Context) {
 
 	err = models.InsertUserGroups([]models.UserGroup{adminUserGroup})
 	if err != nil {
-		log.Debugf("failed creating user group, err=%v", err)
+		log.Errorf("failed creating user group, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user group"})
 		return
 	}
