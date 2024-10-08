@@ -26,15 +26,21 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 
 	// validate if the slack user is able to review it
 	slackApprover, err := models.GetUserByOrgIDAndSlackID(ev.orgID, ev.msg.SlackID)
+	if err != nil {
+		log.With("session", sid).Errorf("failed obtaining approver information, err=%v", err)
+		_ = ev.ss.PostEphemeralMessage(ev.msg, "failed obtaining approver's information")
+		return
+	}
+
 	slackApproverGroups, err := models.GetUserGroupsByUserID(slackApprover.ID)
+	if err != nil {
+		log.With("session", sid).Errorf("failed obtaining approver's groups, err=%v", err)
+		_ = ev.ss.PostEphemeralMessage(ev.msg, "failed obtaining approver's groups")
+		return
+	}
 	var slackApproverGroupsList []string
 	for _, group := range slackApproverGroups {
 		slackApproverGroupsList = append(slackApproverGroupsList, group.Name)
-	}
-	if err != nil {
-		log.With("session", sid).Errorf("failed obtaning approver information, err=%v", err)
-		_ = ev.ss.PostEphemeralMessage(ev.msg, "failed obtaining approver's information")
-		return
 	}
 	if slackApprover == nil {
 		log.With("session", sid).Infof("approver is not allowed")
