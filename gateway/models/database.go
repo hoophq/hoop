@@ -7,6 +7,7 @@ import (
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 // This makes the DB generally available to the application
@@ -21,7 +22,9 @@ func InitDatabase() {
 	sqlDB, err := sql.Open("pgx", dsn)
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		Conn: sqlDB,
-	}), &gorm.Config{})
+	}), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
