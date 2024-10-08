@@ -39,11 +39,8 @@ func InsertUserGroups(userGroups []UserGroup) error {
 	if len(userGroups) == 0 {
 		return nil
 	}
-	if err := DB.Create(&userGroups).Error; err != nil {
-		return err
-	}
 
-	return nil
+	return DB.Create(&userGroups).Error
 }
 
 func DeleteUserGroupsByUserID(userID string) error {
