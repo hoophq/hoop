@@ -45,10 +45,5 @@ func InsertUserGroups(userGroups []UserGroup) error {
 
 func DeleteUserGroupsByUserID(userID string) error {
 	log.Debugf("deleting user groups for user=%s", userID)
-	if err := DB.Where("user_id = ?", userID).Delete(&UserGroup{}).Error; err != nil {
-		log.Errorf("failed to delete user groups, reason=%v", err)
-		return err
-	}
-
-	return nil
+	return DB.Where("user_id = ?", userID).Delete(&UserGroup{}).Error
 }
