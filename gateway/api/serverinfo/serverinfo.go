@@ -31,8 +31,6 @@ var (
 		HasIDPAudience:       isEnvSet("IDP_AUDIENCE"),
 		HasIDPCustomScopes:   isEnvSet("IDP_CUSTOM_SCOPES"),
 		HasPostgresRole:      isEnvSet("PGREST_ROLE"),
-		ApiURL:               appconfig.Get().ApiURL(),
-		GrpcURL:              appconfig.Get().GrpcURL(),
 	}
 )
 
