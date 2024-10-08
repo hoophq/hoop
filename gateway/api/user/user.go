@@ -390,8 +390,8 @@ func GetUserByEmailOrID(c *gin.Context) {
 		Picture:  user.Picture,
 	}
 	userResponse.Groups = []string{}
-	for ug := range userGroups {
-		userResponse.Groups = append(userResponse.Groups, userGroups[ug].Name)
+	for _, ug := range userGroups {
+		userResponse.Groups = append(userResponse.Groups, ug.Name)
 	}
 	userResponse.Role = toRole(userResponse)
 
@@ -489,7 +489,7 @@ func PatchSlackID(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	u, err := models.GetUserBySubjectAndOrg(ctx.UserID, ctx.OrgID)
 
-	if err != nil || errors.Is(err, gorm.ErrRecordNotFound) {
+	if err != nil || u == nil {
 		errMsg := fmt.Errorf("failed obtaining user from store, notfound=%v, err=%v", errors.Is(err, gorm.ErrRecordNotFound), err)
 		sentry.CaptureException(errMsg)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining user"})
