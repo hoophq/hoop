@@ -131,14 +131,12 @@ func UpdateUserAndUserGroups(user *User, userGroups []UserGroup) error {
 	tx := DB.Begin()
 	if err := tx.Save(&user).Error; err != nil {
 		tx.Rollback()
-		log.Errorf("failed to update user, reason=%v", err)
 		return err
 	}
 
 	// delete old user groups
 	if err := tx.Where("user_id = ?", user.ID).Delete(&UserGroup{}).Error; err != nil {
 		tx.Rollback()
-		log.Errorf("failed to delete user groups, reason=%v", err)
 		return err
 	}
 
@@ -146,11 +144,9 @@ func UpdateUserAndUserGroups(user *User, userGroups []UserGroup) error {
 	if len(userGroups) > 0 {
 		if err := tx.Create(&userGroups).Error; err != nil {
 			tx.Rollback()
-			log.Errorf("failed to create user groups, reason=%v", err)
 			return err
 		}
 	}
 
-	tx.Commit()
-	return nil
+	return tx.Commit().Error
 }
