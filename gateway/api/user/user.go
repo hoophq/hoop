@@ -53,7 +53,7 @@ func Create(c *gin.Context) {
 	}
 
 	existingUser, err := models.GetUserByEmailAndOrg(newUser.Email, ctx.OrgID)
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err != nil {
 		log.Errorf("failed fetching existing invited user, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching existing invited user"})
