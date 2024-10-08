@@ -367,6 +367,10 @@ func GetUserByEmailOrID(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed getting user"})
 		return
 	}
+	if user == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": fmt.Sprintf("user %s not found", emailOrID)})
+		return
+	}
 
 	userGroups, err := models.GetUserGroupsByUserID(user.ID)
 	if err != nil {
