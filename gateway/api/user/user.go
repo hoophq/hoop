@@ -59,7 +59,8 @@ func Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching existing invited user"})
 		return
 	}
-	if existingUser.Email == newUser.Email {
+
+	if existingUser != nil {
 		c.JSON(http.StatusConflict, gin.H{"message": fmt.Sprintf("user already exists with email %s", newUser.Email)})
 		return
 	}
@@ -177,7 +178,6 @@ func Update(c *gin.Context) {
 	}
 
 	userGroups, err := models.GetUserGroupsByUserID(existingUser.ID)
-	fmt.Printf("userGroups: %+v\n", userGroups)
 	if err != nil {
 		log.Errorf("failed getting user groups for user %s, err=%v", existingUser.ID, err)
 		sentry.CaptureException(err)
@@ -206,37 +206,22 @@ func Update(c *gin.Context) {
 	existingUser.Status = string(req.Status)
 	existingUser.SlackID = req.SlackID
 
-	log.Debugf("updating user %s", userID)
-	if err := models.UpdateUser(existingUser); err != nil {
-		log.Errorf("failed updating user %s, err=%v", userID, err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
-	}
+	log.Debugf("updating user %s and its user groups", userID)
 
-	log.Debugf("updating user groups for user %s", userID)
-	if err := models.DeleteUserGroupsByUserID(existingUser.ID); err != nil {
-		log.Errorf("failed removing user groups for user %s, err=%v", userID, err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed removing user groups"})
-		return
+	newUserGroups := []models.UserGroup{}
+	for i := range req.Groups {
+		newUserGroups = append(newUserGroups, models.UserGroup{
+			OrgID:  ctx.OrgID,
+			UserID: existingUser.ID,
+			Name:   req.Groups[i],
+		})
 	}
-
-	if len(req.Groups) > 0 {
-		newUserGroups := []models.UserGroup{}
-		for i := range req.Groups {
-			newUserGroups = append(newUserGroups, models.UserGroup{
-				OrgID:  ctx.OrgID,
-				UserID: existingUser.ID,
-				Name:   req.Groups[i],
-			})
-		}
-		if err := models.InsertUserGroups(newUserGroups); err != nil {
-			log.Errorf("failed persisting user groups, err=%v", err)
-			sentry.CaptureException(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed persisting user groups"})
-			return
-		}
+	// update user and user groups
+	if err := models.UpdateUserAndUserGroups(existingUser, newUserGroups); err != nil {
+		log.Errorf("failed updating user and user groups, err=%v", err)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating user and user groups"})
+		return
 	}
 
 	analytics.New().Identify(&types.APIContext{

@@ -281,7 +281,7 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 		userGroups = uinfo.Groups
 	}
 	if !ctx.IsEmpty() {
-		err := models.UpdateUser(&models.User{
+		user := models.User{
 			ID:       ctx.UserUUID,
 			OrgID:    ctx.OrgID,
 			Subject:  ctx.UserSubject,
@@ -290,9 +290,6 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 			Verified: true,
 			Status:   ctx.UserStatus,
 			SlackID:  ctx.UserSlackID,
-		})
-		if err != nil {
-			return false, fmt.Errorf("failed updating user %s/%s, err=%v", ctx.UserSubject, ctx.UserEmail, err)
 		}
 
 		newUserGroups := []models.UserGroup{}
@@ -303,11 +300,9 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 				Name:   userGroups[i],
 			})
 		}
-		// update the user groups if it fails, we don't return an error
-		// because it's only a sync and the database won't allow to save
-		// a duplicated user group due to the unique constraint for
-		// user_id and name in user_groups table
-		_ = models.InsertUserGroups(newUserGroups)
+		if err := models.UpdateUserAndUserGroups(&user, newUserGroups); err != nil {
+			return false, fmt.Errorf("failed updating user and user groups %s/%s, err=%v", ctx.UserSubject, ctx.UserEmail, err)
+		}
 
 		return false, nil
 	}
@@ -340,24 +335,20 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 		if len(ctx.UserSlackID) > 0 && len(iuser.SlackID) == 0 {
 			iuser.SlackID = ctx.UserSlackID
 		}
-		if err := models.UpdateUser(iuser); err != nil {
-			return false, fmt.Errorf("failed updating unverified user %s/%s, err=%v", uinfo.Subject, iuser.Email, err)
+
+		invitedUserGroups := []models.UserGroup{}
+		for i := range ctx.UserGroups {
+			invitedUserGroups = append(invitedUserGroups, models.UserGroup{
+				OrgID:  org.ID,
+				UserID: iuser.ID,
+				Name:   ctx.UserGroups[i],
+			})
 		}
-		if len(ctx.UserGroups) > 0 {
-			invitedUserGroups := []models.UserGroup{}
-			for i := range ctx.UserGroups {
-				invitedUserGroups = append(invitedUserGroups, models.UserGroup{
-					OrgID:  org.ID,
-					UserID: iuser.ID,
-					Name:   ctx.UserGroups[i],
-				})
-			}
-			// update the user groups if it fails, we don't return an error
-			// because it's only a sync and the database won't allow to save
-			// a duplicated user group due to the unique constraint for
-			// user_id and name in user_groups table
-			_ = models.InsertUserGroups(invitedUserGroups)
+
+		if err := models.UpdateUserAndUserGroups(iuser, invitedUserGroups); err != nil {
+			return false, fmt.Errorf("failed updating user and user groups %s/%s, err=%v", ctx.UserSubject, ctx.UserEmail, err)
 		}
+
 		return false, nil
 	}
 
