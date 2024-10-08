@@ -324,6 +324,10 @@ func Delete(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed getting user"})
 		return
 	}
+	if user == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": fmt.Sprintf("user %s not found", subject)})
+		return
+	}
 	if user.Subject == ctx.UserID {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "cannot delete yourself"})
 		return
