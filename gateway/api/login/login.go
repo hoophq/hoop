@@ -18,11 +18,11 @@ import (
 	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pglogin "github.com/hoophq/hoop/gateway/pgrest/login"
 	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
 	pguserauth "github.com/hoophq/hoop/gateway/pgrest/userauth"
-	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
 	"github.com/hoophq/hoop/gateway/security/idp"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"golang.org/x/oauth2"
@@ -146,11 +146,11 @@ func (h *handler) LoginCallback(c *gin.Context) {
 
 	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
 	log.With("sub", uinfo.Subject, "email", uinfo.Email, "profile", uinfo.Profile,
-		"multitenant", pgusers.IsOrgMultiTenant(), "ua", userAgent).
+		"multitenant", appconfig.Get().OrgMultitenant(), "ua", userAgent).
 		Infof("success login on identity provider")
 
 	// multi tenant won't sync users
-	if pgusers.IsOrgMultiTenant() {
+	if appconfig.Get().OrgMultitenant() {
 		isNewUser := false
 		if ctx.UserStatus == string(types.UserStatusInactive) {
 			log.With("multitenant", true).Warnf("user %s is inactive. They need to be edited to active before trying to signin", uinfo.Email)
@@ -204,7 +204,7 @@ func (h *handler) LoginCallback(c *gin.Context) {
 }
 
 func registerMultiTenantUser(uinfo idp.ProviderUserInfo, slackID string) (isNewUser bool, err error) {
-	iuser, err := pgusers.New().FetchInvitedUser(&pguserauth.Context{}, uinfo.Email)
+	iuser, err := models.GetInvitedUserByEmail(uinfo.Email)
 	if err != nil {
 		return false, fmt.Errorf("failed fetching invited user, reason=%v", err)
 	}
@@ -222,8 +222,9 @@ func registerMultiTenantUser(uinfo idp.ProviderUserInfo, slackID string) (isNewU
 			emailVerified = *uinfo.EmailVerified
 		}
 
-		newUser := pgrest.User{
-			ID:       uuid.NewString(),
+		userID := uuid.NewString()
+		newUser := models.User{
+			ID:       userID,
 			OrgID:    newOrgId,
 			Subject:  uinfo.Subject,
 			Name:     uinfo.Profile,
@@ -231,11 +232,20 @@ func registerMultiTenantUser(uinfo idp.ProviderUserInfo, slackID string) (isNewU
 			Verified: emailVerified,
 			Status:   string(types.UserStatusActive),
 			SlackID:  slackID,
-			Groups:   []string{types.GroupAdmin},
 		}
-		if err := pgusers.New().Upsert(newUser); err != nil {
+		if err := models.CreateUser(newUser); err != nil {
 			return false, fmt.Errorf("failed saving new user %s/%s, err=%v", newUser.Subject, newUser.Email, err)
 		}
+		adminUserGroup := models.UserGroup{
+			OrgID:  newOrgId,
+			UserID: userID,
+			Name:   types.GroupAdmin,
+		}
+		err = models.InsertUserGroups([]models.UserGroup{adminUserGroup})
+		if err != nil {
+			return false, fmt.Errorf("failed saving new user group %s/%s, err=%v", newUser.Subject, newUser.Email, err)
+		}
+
 		return true, nil
 	}
 	// This part checks if the user was invited by someone
@@ -250,7 +260,7 @@ func registerMultiTenantUser(uinfo idp.ProviderUserInfo, slackID string) (isNewU
 		if len(slackID) > 0 {
 			iuser.SlackID = slackID
 		}
-		if err := pgusers.New().Upsert(*iuser); err != nil {
+		if err := models.UpdateUser(iuser); err != nil {
 			return false, fmt.Errorf("failed updating invited user %s/%s, err=%v", uinfo.Subject, iuser.Email, err)
 		}
 		return true, nil
@@ -271,7 +281,7 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 		userGroups = uinfo.Groups
 	}
 	if !ctx.IsEmpty() {
-		return false, pgusers.New().Upsert(pgrest.User{
+		user := models.User{
 			ID:       ctx.UserUUID,
 			OrgID:    ctx.OrgID,
 			Subject:  ctx.UserSubject,
@@ -280,10 +290,23 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 			Verified: true,
 			Status:   ctx.UserStatus,
 			SlackID:  ctx.UserSlackID,
-			Groups:   userGroups,
-		})
+		}
+
+		newUserGroups := []models.UserGroup{}
+		for i := range userGroups {
+			newUserGroups = append(newUserGroups, models.UserGroup{
+				OrgID:  ctx.OrgID,
+				UserID: ctx.UserUUID,
+				Name:   userGroups[i],
+			})
+		}
+		if err := models.UpdateUserAndUserGroups(&user, newUserGroups); err != nil {
+			return false, fmt.Errorf("failed updating user and user groups %s/%s, err=%v", ctx.UserSubject, ctx.UserEmail, err)
+		}
+
+		return false, nil
 	}
-	// TODO: check if it's the first user to login and make it admin
+
 	org, totalUsers, err := pgorgs.New().FetchOrgByName(proto.DefaultOrgName)
 	if err != nil || org == nil || totalUsers == -1 {
 		return false, fmt.Errorf("failed fetching default org, users=%v, err=%v", err, totalUsers)
@@ -293,7 +316,8 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 		userGroups = append(userGroups, types.GroupAdmin)
 	}
 
-	iuser, err := pgusers.New().FetchInvitedUser(&pguserauth.Context{}, uinfo.Email)
+	iuser, err := models.GetInvitedUserByEmail(uinfo.Email)
+
 	if err != nil {
 		return false, fmt.Errorf("failed fetching invited user, reason=%v", err)
 	}
@@ -307,16 +331,24 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 		if len(ctx.UserName) > 0 {
 			iuser.Name = ctx.UserName
 		}
-		if len(ctx.UserGroups) > 0 {
-			iuser.Groups = ctx.UserGroups
-		}
 		// update it if the login has provided a slack id (slack subscribe flow)
 		if len(ctx.UserSlackID) > 0 && len(iuser.SlackID) == 0 {
 			iuser.SlackID = ctx.UserSlackID
 		}
-		if err := pgusers.New().Upsert(*iuser); err != nil {
-			return false, fmt.Errorf("failed updating unverified user %s/%s, err=%v", uinfo.Subject, iuser.Email, err)
+
+		invitedUserGroups := []models.UserGroup{}
+		for i := range ctx.UserGroups {
+			invitedUserGroups = append(invitedUserGroups, models.UserGroup{
+				OrgID:  org.ID,
+				UserID: iuser.ID,
+				Name:   ctx.UserGroups[i],
+			})
 		}
+
+		if err := models.UpdateUserAndUserGroups(iuser, invitedUserGroups); err != nil {
+			return false, fmt.Errorf("failed updating user and user groups %s/%s, err=%v", ctx.UserSubject, ctx.UserEmail, err)
+		}
+
 		return false, nil
 	}
 
@@ -327,7 +359,7 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 	ctx.UserEmail = uinfo.Email
 	ctx.UserGroups = userGroups
 	// create a new user in the store
-	return true, pgusers.New().Upsert(pgrest.User{
+	newUser := models.User{
 		ID:       uuid.NewString(),
 		OrgID:    org.ID,
 		Subject:  uinfo.Subject,
@@ -336,8 +368,24 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 		Verified: true,
 		Status:   string(types.UserStatusActive),
 		SlackID:  ctx.UserSlackID,
-		Groups:   userGroups,
-	})
+	}
+	if err := models.CreateUser(newUser); err != nil {
+		return false, fmt.Errorf("failed saving new user %s/%s, err=%v", uinfo.Subject, uinfo.Email, err)
+	}
+	// add the user to the default group
+	newUserGroups := []models.UserGroup{}
+	for i := range userGroups {
+		newUserGroups = append(newUserGroups, models.UserGroup{
+			OrgID:  org.ID,
+			UserID: newUser.ID,
+			Name:   userGroups[i],
+		})
+	}
+	if err := models.InsertUserGroups(newUserGroups); err != nil {
+		return false, fmt.Errorf("failed saving new user group %s/%s, err=%v", uinfo.Subject, uinfo.Email, err)
+	}
+
+	return true, nil
 }
 
 func (h *handler) verifyIDToken(code string) (token *oauth2.Token, uinfo idp.ProviderUserInfo, err error) {

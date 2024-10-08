@@ -11,9 +11,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/appconfig"
-	"github.com/hoophq/hoop/gateway/pgrest"
+	"github.com/hoophq/hoop/gateway/models"
 	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
-	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -27,7 +26,7 @@ func Register(c *gin.Context) {
 
 	log.Debugf("looking for existing user %v", user.Email)
 	// fetch user by email
-	existingUser, err := pgusers.GetOneByEmail(user.Email)
+	existingUser, err := models.GetUserByEmail(user.Email)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user"})
 		return
@@ -63,7 +62,7 @@ func Register(c *gin.Context) {
 
 	adminGroupName := types.GroupAdmin
 	userID := uuid.New().String()
-	err = pgusers.New().Upsert(pgrest.User{
+	err = models.CreateUser(models.User{
 		ID:             userID,
 		Subject:        fmt.Sprintf("local|%v", userID),
 		OrgID:          org.ID,
@@ -72,12 +71,24 @@ func Register(c *gin.Context) {
 		Status:         "active",
 		Verified:       true,
 		HashedPassword: string(hashedPassword),
-		Groups:         []string{adminGroupName},
 	})
 
 	if err != nil {
 		log.Debugf("failed creating user, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
+		return
+	}
+
+	adminUserGroup := models.UserGroup{
+		OrgID:  org.ID,
+		UserID: userID,
+		Name:   adminGroupName,
+	}
+
+	err = models.InsertUserGroups([]models.UserGroup{adminUserGroup})
+	if err != nil {
+		log.Errorf("failed creating user group, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user group"})
 		return
 	}
 

@@ -8,7 +8,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/appconfig"
-	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
+	"github.com/hoophq/hoop/gateway/models"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -25,13 +25,12 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	dbUser, err := pgusers.GetOneByEmail(user.Email)
+	dbUser, err := models.GetUserByEmail(user.Email)
 	if err != nil {
 		log.Errorf("failed fetching user by email %s, reason=%v", user.Email, err)
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "invalid credentials"})
 		return
 	}
-
 	if dbUser == nil {
 		c.JSON(http.StatusNotFound, gin.H{"message": "user not found"})
 		return

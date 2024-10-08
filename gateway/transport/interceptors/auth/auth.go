@@ -15,11 +15,11 @@ import (
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	localauthapi "github.com/hoophq/hoop/gateway/api/localauth"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgagents "github.com/hoophq/hoop/gateway/pgrest/agents"
 	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
 	pguserauth "github.com/hoophq/hoop/gateway/pgrest/userauth"
-	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
 	"github.com/hoophq/hoop/gateway/security/idp"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"google.golang.org/grpc"
@@ -193,7 +193,7 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 				return status.Errorf(codes.Unauthenticated, "invalid authentication")
 			}
 
-			user, err := pgusers.GetOneByEmail(claims.UserEmail)
+			user, err := models.GetUserByEmail(claims.UserEmail)
 			if err != nil {
 				log.Debugf("failed verifying access token, reason=%v", err)
 				return status.Errorf(codes.Unauthenticated, "invalid authentication")
