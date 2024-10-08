@@ -3,7 +3,6 @@
             [re-frame.core :as rf]
             [reagent.core :as r]
             [webapp.components.button :as button]
-            [webapp.components.forms :as forms]
             [webapp.components.headings :as h]
             [webapp.components.stepper :as stepper]))
 
@@ -17,15 +16,15 @@
   (js/setTimeout #(pooling-get-app-status set-timeout-def) 5000))
 
 (defn main [_]
-  (let [hoop-configs (rf/subscribe [:hoop-app->my-configs])
-        app-running? (rf/subscribe [:hoop-app->running?])
-        api-url (r/atom (or (:apiUrl @hoop-configs) ""))
-        grpc-url (r/atom (or (:grpcUrl @hoop-configs) ""))
+  (let [gateway-info (rf/subscribe [:gateway->info])
+        grpc-url-parsed (.parse js/URL (-> @gateway-info :data :grpc_url))
+
         steps (r/atom {:download {:status "current"}
-                       :setup {:status "upcoming"}
                        :connect {:status "upcoming"}})]
     (rf/dispatch [:hoop-app->get-my-configs])
     (pooling-get-app-status set-timeout-def)
+    (rf/dispatch [:hoop-app->update-my-configs {:apiUrl (-> @gateway-info :data :api_url)
+                                                :grpcUrl (.-host grpc-url-parsed)}])
     (fn [connection-name]
       (let [change-step (fn [step status]
                           (reset! steps (update @steps step #(assoc % :status status))))]
@@ -60,56 +59,14 @@
                                                                        "Download"]
                                                                 :on-click (fn []
                                                                             (change-step :download "complete")
-                                                                            (change-step :setup "current")
+                                                                            (change-step :connect "current")
                                                                             (js/window.open "https://install.hoop.dev"))}])
                                     (when-not  (= (:status (@steps :download)) "complete")
                                       [button/tailwind-secondary {:text "Already downloaded"
                                                                   :outlined? true
                                                                   :on-click (fn []
                                                                               (change-step :download "complete")
-                                                                              (change-step :setup "current"))}])]}
-             :setup {:status (:status (@steps :setup))
-                     :title "Open and install"
-                     :text "Run downloaded file and follow installation instructions."
-                     :extra-step {:title "Setup API and agent information"
-                                  :text "Provide your URLs for hoop access."
-                                  :component [:section
-                                              [:div {:class "grid grid-cols-2 gap-4"}
-                                               [forms/input {:label "API URL"
-                                                             :on-change #(reset! api-url (-> % .-target .-value))
-                                                             :placeholder "https://use.hoop.dev"
-                                                             :disabled (not @app-running?)
-                                                             :full-width true
-                                                             :value @api-url}]
-                                               [forms/input {:label "Agent URL"
-                                                             :on-change #(reset! grpc-url (-> % .-target .-value))
-                                                             :placeholder "use.hoop.dev:8443"
-                                                             :disabled (not @app-running?)
-                                                             :full-width true
-                                                             :value @grpc-url}]]
-                                              [:div {:class "flex items-center gap-3"}
-                                               (if (= (:status (@steps :setup)) "complete")
-                                                 [button/tailwind-secondary {:text "Save and continue"
-                                                                             :disabled (not @app-running?)
-                                                                             :type "button"
-                                                                             :outlined? true
-                                                                             :on-click (fn []
-                                                                                         (rf/dispatch [:hoop-app->update-my-configs {:apiUrl @api-url
-                                                                                                                                     :grpcUrl @grpc-url}])
-                                                                                         (change-step :setup "complete")
-                                                                                         (change-step :connect "current"))}]
-
-                                                 [button/tailwind-primary {:text "Save and continue"
-                                                                           :type "button"
-                                                                           :disabled (not @app-running?)
-                                                                           :on-click (fn []
-                                                                                       (rf/dispatch [:hoop-app->update-my-configs {:apiUrl @api-url
-                                                                                                                                   :grpcUrl @grpc-url}])
-                                                                                       (change-step :setup "complete")
-                                                                                       (change-step :connect "current"))}])
-                                               (when (not @app-running?)
-                                                 [:span {:class "text-gray-800 text-xs"}
-                                                  "Your app is not running, please start it to continue."])]]}}
+                                                                              (change-step :connect "current"))}])]}
              :connect {:status (:status (@steps :connect))
                        :title "Login and Start"
                        :text "Access your app options to sign in to your hoop account and start a hoop access."
@@ -125,4 +82,5 @@
                                                                                  "Connect"]
                                                                           :on-click (fn []
                                                                                       (js/clearTimeout)
+                                                                                      (.setItem js/localStorage "hoop-connect-setup" "skipped")
                                                                                       (rf/dispatch [:connections->start-connect connection-name]))}]]}}}]]]]))))

@@ -764,6 +764,8 @@ type ServerInfo struct {
 	HasPostgresRole bool `json:"has_postgrest_role"`
 	// Report if ASK_AI_CREDENTIALS is set (openapi credentials)
 	HasAskiAICredentials bool `json:"has_ask_ai_credentials"`
+	// API URL advertise to clients
+	ApiURL string `json:"api_url" example:"https://api.johnwick.org"`
 	// The GRPC_URL advertise to clients
 	GrpcURL string `json:"grpc_url" example:"127.0.0.1:8009"`
 	// The tenancy type

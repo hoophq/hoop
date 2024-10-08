@@ -66,7 +66,7 @@ func Load() error {
 	}
 	grpcURL := os.Getenv("GRPC_URL")
 	if grpcURL == "" {
-		grpcURL = "http://127.0.0.1:8010"
+		grpcURL = "grpc://127.0.0.1:8010"
 	}
 	apiRawURL, err := url.Parse(apiURL)
 	if err != nil {

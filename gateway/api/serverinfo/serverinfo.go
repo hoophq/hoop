@@ -72,6 +72,7 @@ func (h *handler) Get(c *gin.Context) {
 	}
 	serverInfoData.TenancyType = tenancyType
 	serverInfoData.GrpcURL = h.grpcURL
+	serverInfoData.ApiURL = appconfig.Get().ApiURL()
 	serverInfoData.HasAskiAICredentials = appconfig.Get().IsAskAIAvailable()
 	serverInfoData.LicenseInfo = &openapi.ServerLicenseInfo{
 		IsValid:      err == nil,

@@ -148,7 +148,7 @@
      [:span {:class "font-bold text-gray-600"}
       (:name (:data connection))]]]])
 
-(defn- failure [error connection-name]
+(defn- failure [connection]
   [:main {:class "p-2"}
    [:header {:class "mb-2"}
     [h/h3 "Hoop access details"]]
@@ -159,7 +159,7 @@
      [:span {:class "text-xs text-gray-700"}
       "Failed attempt to connect to:"]
      [:span {:class "font-bold text-xs text-gray-600"}
-      (:connection_name (:data error))]]]
+      (:connection_name (:data connection))]]]
 
    [:section {:class "my-regular"}
     [:span {:class "text-sm text-gray-800"}
@@ -172,14 +172,14 @@
                                 :outlined? true
                                 :on-click (fn []
                                             (js/clearTimeout)
-                                            (rf/dispatch [:connections->open-connect-setup connection-name]))}]
+                                            (rf/dispatch [:connections->open-connect-setup (-> connection :data :connection_name)]))}]
 
     [button/tailwind-primary {:text [:div {:class "flex gap-2"}
                                      [:> hero-outline-icon/SignalIcon {:class "h-5 w-5"}]
                                      "Try again"]
                               :outlined? true
                               :on-click (fn []
-                                          (rf/dispatch [:connections->connection-connect connection-name]))}]]])
+                                          (rf/dispatch [:connections->connection-connect (-> connection :data :connection_name)]))}]]])
 
 (defn main [connection-name]
   (let [connection @(rf/subscribe [:connections->connection-connected])]
