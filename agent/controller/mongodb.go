@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"libhoop"
+	"strings"
 
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
@@ -49,8 +50,11 @@ func (a *Agent) processMongoDBProtocol(pkt *pb.Packet) {
 		Infof("starting mongodb connection at %v", connenv.Address())
 
 	opts := map[string]string{
-		"connection_string": connenv.connectionString,
-		"connection_id":     clientConnectionID,
+		"connection_string":     connenv.connectionString,
+		"connection_id":         clientConnectionID,
+		"dlp_gcp_credentials":   a.getGCPCredentials(),
+		"dlp_info_types":        strings.Join(connParams.DLPInfoTypes, ","),
+		"dlp_masking_character": "#",
 	}
 	serverWriter, err := libhoop.NewDBCore(context.Background(), streamClient, opts).MongoDB()
 	if err != nil {
