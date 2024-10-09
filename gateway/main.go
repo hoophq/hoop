@@ -64,8 +64,9 @@ func Run() {
 	idProvider := idp.NewProvider(apiURL)
 	grpcURL := appconfig.Get().GrpcURL()
 
-	// init database connection. If it fails, the app will exit
-	models.InitDatabase()
+	if err := models.InitDatabaseConnection(); err != nil {
+		log.Fatal(err)
+	}
 
 	reviewService := review.Service{}
 	if !appconfig.Get().OrgMultitenant() {

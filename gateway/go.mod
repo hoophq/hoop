@@ -34,6 +34,8 @@ require (
 	golang.org/x/oauth2 v0.17.0
 	golang.org/x/text v0.18.0
 	google.golang.org/grpc v1.63.2
+	gorm.io/driver/postgres v1.5.9
+	gorm.io/gorm v1.25.12
 	olympos.io/encoding/edn v0.0.0-20201019073823-d3554ca0b0a3
 )
 
@@ -174,8 +176,6 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	gorm.io/driver/postgres v1.5.9 // indirect
-	gorm.io/gorm v1.25.12 // indirect
 	k8s.io/api v0.29.3 // indirect
 	k8s.io/apimachinery v0.29.3 // indirect
 	k8s.io/klog/v2 v2.110.1 // indirect
