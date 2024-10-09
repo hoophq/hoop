@@ -97,7 +97,9 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 			p.dropWalLog(pctx.SID)
 			memorySessionStore.Del(pctx.SID)
 		}
-	case pbclient.PGConnectionWrite, pbclient.MySQLConnectionWrite:
+	case pbclient.PGConnectionWrite,
+		pbclient.MySQLConnectionWrite,
+		pbclient.MongoDBConnectionWrite:
 		if len(eventMetadata) > 0 {
 			return nil, p.writeOnReceive(pctx.SID, eventlogv1.OutputType, nil, eventMetadata)
 		}
