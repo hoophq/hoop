@@ -34,7 +34,7 @@
               :value ""
               :required true
               :placeholder "mongodb+srv://root:<password>@devcluster.mwb5sun.mongodb.net/"}]
-   :ssh [{:key "ssh_uri" :value "" :required true :placeholder "ssh://user@host"}]})
+   :ssh [{:key "ssh_uri" :value "" :required true :placeholder "ssh://uri"}]})
 
 (def connection-icons-name-dictionary
   {:dark {:postgres (str config/webapp-url "/images/connections-logos/postgres_logo.svg")

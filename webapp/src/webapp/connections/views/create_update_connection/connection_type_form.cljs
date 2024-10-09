@@ -40,10 +40,16 @@
                   {:value :nodejs :title "Node JS"}
                   {:value :clojure :title "Clojure"}]})
 
-(defn set-connection-type-context [value connection-type connection-subtype config-file-name]
+(defn set-connection-type-context
+  [value
+   connection-type
+   connection-subtype
+   config-file-name
+   database-schema?]
   (cond
     (= value "database") (do (reset! connection-type "database")
-                             (reset! connection-subtype nil))
+                             (reset! connection-subtype nil)
+                             (reset! database-schema? true))
 
     (= value "custom") (do (reset! connection-type "custom")
                            (reset! connection-subtype nil))
@@ -74,12 +80,12 @@
     (= value "application") (and (= value connection-type)
                                  (not= connection-subtype "tcp"))))
 
-(defn main [connection-type connection-subtype configs config-file-name]
+(defn main [{:keys [connection-type connection-subtype configs config-file-name database-schema?]}]
   [:> Flex {:direction "column" :gap "9" :class "px-20"}
    [:> Grid {:columns "5" :gap "7"}
     [:> Flex {:direction "column" :grid-column "span 2 / span 2"}
-     [:> Text {:size "4" :weight "bold"} "Connection type"]
-     [:> Text {:size "3"} "Select the type of connection for your service."]]
+     [:> Text {:size "4" :weight "bold" :class "text-gray-12"} "Connection type"]
+     [:> Text {:size "3" :class "text-gray-11"} "Select the type of connection for your service."]]
     [:> Box {:class "space-y-radix-5" :grid-column "span 3 / span 3"}
      (doall
       (for [{:keys [icon title subtitle value]} connections-type]
@@ -89,7 +95,12 @@
                     :variant "surface"
                     :class (str "w-full cursor-pointer " (when is-selected "before:bg-primary-12"))
                     :on-click (fn [_]
-                                (set-connection-type-context value connection-type connection-subtype config-file-name)
+                                (set-connection-type-context
+                                 value
+                                 connection-type
+                                 connection-subtype
+                                 config-file-name
+                                 database-schema?)
                                 (reset! configs (utils/get-config-keys (keyword value))))}
            [:> Flex {:align "center" :gap "3"}
             [:> Avatar {:size "4"
@@ -105,8 +116,8 @@
               (not= @connection-subtype "tcp"))
      [:> Grid {:columns "5" :gap "7"}
       [:> Flex {:direction "column" :grid-column "span 2 / span 2"}
-       [:> Text {:size "4" :weight "bold"} (str (str/capitalize (name @connection-type))) " type"]
-       [:> Text {:size "3"} (str "Select the type of " (name @connection-type) " for your connection.")]]
+       [:> Text {:size "4" :weight "bold" :class "text-gray-12"} (str (str/capitalize (name @connection-type))) " type"]
+       [:> Text {:size "3" :class "text-gray-11"} (str "Select the type of " (name @connection-type) " for your connection.")]]
       [:> Box {:class "space-y-radix-5" :grid-column "span 3 / span 3"}
        [:> RadioGroup.Root {:name (str (name @connection-type) "-type")
                             :class "space-y-radix-4"

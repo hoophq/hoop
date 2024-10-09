@@ -51,8 +51,8 @@
   [:> Flex {:direction "column" :gap "9" :class "px-20"}
    [:> Grid {:columns "5" :gap "7"}
     [:> Flex {:direction "column" :grid-column "span 2 / span 2"}
-     [:> Text {:size "4" :weight "bold"} "Connection information"]
-     [:> Text {:size "3"} "Names are used to identify your connection and can't be changed."]]
+     [:> Text {:size "4" :weight "bold" :class "text-gray-12"} "Connection information"]
+     [:> Text {:size "3" :class "text-gray-11"} "Names are used to identify your connection and can't be changed."]]
     [:> Box {:class "space-y-radix-5" :grid-column "span 3 / span 3"}
      [forms/input {:placeholder "mssql-armadillo-9696"
                    :label "Name"
@@ -71,8 +71,8 @@
                                :name "tags-multi-select-text-input"}]]]
    [:> Grid {:columns "5" :gap "7"}
     [:> Flex {:direction "column" :grid-column "span 2 / span 2"}
-     [:> Text {:size "4" :weight "bold"} "Configuration parameters"]
-     [:> Text {:size "3"} "Setup how users interact with this connection."]
+     [:> Text {:size "4" :weight "bold" :class "text-gray-12"} "Configuration parameters"]
+     [:> Text {:size "3" :class "text-gray-11"} "Setup how users interact with this connection."]
      [:> Link {:href "https://hoop.dev/docs/learn/jit-reviews"
                :target "_blank"}
       [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
@@ -158,20 +158,21 @@
      (when (= "database" @connection-type)
        [:> Box {:class "space-y-radix-5"}
         [:> Flex {:align "center" :gap "5"}
-         [:> Switch {:defaultChecked false :size "3" :onCheckedChange #(reset! enable-database-schema %)}]
+         [:> Switch {:checked @enable-database-schema
+                     :size "3"
+                     :onCheckedChange #(reset! enable-database-schema %)}]
          [:> Box
           [:> Text {:as "h4" :size "3" :weight "medium"} "Database schema"]
           [:> Text {:as "p" :size "2"} "Show database schema in the Editor section."]]]])]]
 
    [:> Grid {:columns "5" :gap "7"}
     [:> Flex {:direction "column" :grid-column "span 2 / span 2"}
-     [:> Text {:size "4" :weight "bold"} "Access modes"]
-     [:> Text {:size "3"} "Setup how users interact with this connection."]]
+     [:> Text {:size "4" :weight "bold" :class "text-gray-12"} "Access modes"]
+     [:> Text {:size "3" :class "text-gray-11"} "Setup how users interact with this connection."]]
     [:> Flex {:direction "column" :gap "7" :grid-column "span 3 / span 3"}
      [:> Box {:class "space-y-radix-5"}
       [:> Flex {:align "center" :gap "5"}
-       [:> Switch {:defaultChecked (not (access-mode-runbooks-disabled? @connection-type @connection-subtype))
-                   :value @access-mode-runbooks
+       [:> Switch {:checked @access-mode-runbooks
                    :size "3"
                    :disabled (access-mode-runbooks-disabled? @connection-type @connection-subtype)
                    :onCheckedChange #(reset! access-mode-runbooks %)}]
@@ -180,8 +181,7 @@
         [:> Text {:as "p" :size "2"} "Create templates to automate tasks in your organization. "]]]]
      [:> Box {:class "space-y-radix-5"}
       [:> Flex {:align "center" :gap "5"}
-       [:> Switch {:defaultChecked (not (access-mode-connect-disabled? @connection-type @connection-subtype))
-                   :value @access-mode-connect
+       [:> Switch {:checked @access-mode-connect
                    :size "3"
                    :disabled (access-mode-connect-disabled? @connection-type @connection-subtype)
                    :onCheckedChange #(reset! access-mode-connect %)}]
@@ -191,8 +191,7 @@
                                           "connections using our Desktop App or our Command Line Interface.")]]]]
      [:> Box {:class "space-y-radix-5"}
       [:> Flex {:align "center" :gap "5"}
-       [:> Switch {:defaultChecked (not (access-mode-exec-disabled? @connection-type @connection-subtype))
-                   :value @access-mode-exec
+       [:> Switch {:checked @access-mode-exec
                    :size "3"
                    :disabled (access-mode-exec-disabled? @connection-type @connection-subtype)
                    :onCheckedChange #(reset! access-mode-exec %)}]

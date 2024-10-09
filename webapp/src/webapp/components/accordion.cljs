@@ -54,33 +54,39 @@
     [:> Box {:px "5" :py "7" :className "bg-white border-t border-[--gray-a6] rounded-b-6"}
      content]]])
 
-(defn main
+(defn root
   "Main component for the Accordion that renders a list of expandable items.
 
     Parameters:
     - items: A vector of maps, where each map represents an accordion item and should contain the following keys:
-      :value        - Unique string to identify the item (required)
-      :title        - Title of the item (required)
-      :subtitle     - Subtitle of the item (optional)
-      :content      - Content to be displayed when the item is expanded (required)
-      :status       - Status of the item, affects the displayed icon (optional)
-      :avatar-icon  - Icon to be displayed in the avatar (optional)
-      :show-icon?     - Boolean, if true, displays a status icon (optional, default false)
+      :value           - Unique string to identify the item (required)
+      :title           - Title of the item (required)
+      :subtitle        - Subtitle of the item (optional)
+      :content         - Content to be displayed when the item is expanded (required)
+      :status          - Status of the item, affects the displayed icon (optional)
+      :avatar-icon     - Icon to be displayed in the avatar (optional)
+      :show-icon?      - Boolean, if true, displays a status icon (optional, default false)
+
+    - id: A unique identifier for the accordion (optional)
+    - first-open?: Boolean, if true, the first item will be expanded by default (optional, default false)
 
     Usage example:
-    [accordion-root [{:value \"item1\"
-                      :title \"Title 1\"
-                      :subtitle \"Subtitle 1\"
-                      :content \"Content of item 1\"}
-                     {:value \"item2\"
-                      :title \"Title 2\"
-                      :content \"Content of item 2\"
-                      :show-icon? true}]]"
-  [items id]
+    [accordion-root {:items [{:value \"item1\"
+                              :title \"Title 1\"
+                              :subtitle \"Subtitle 1\"
+                              :content \"Content of item 1\"}
+                             {:value \"item2\"
+                              :title \"Title 2\"
+                              :content \"Content of item 2\"
+                              :show-icon? true}]
+                     :id \"my-accordion\"
+                     :first-open? true}]"
+  [{:keys [items id first-open?]}]
   [:> (.-Root Accordion)
    {:className "w-full"
     :id id
-    :defaultValue (first (:value items))
+    :defaultValue (when first-open?
+                    (:value (first items)))
     :type "single"
     :collapsible true}
    (for [{:keys [value] :as item} items]

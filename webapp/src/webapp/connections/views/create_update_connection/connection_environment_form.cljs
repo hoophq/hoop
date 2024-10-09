@@ -37,8 +37,8 @@
                        (not= @connection-subtype "tcp"))
          [:> Grid {:columns "5" :gap "7"}
           [:> Flex {:direction "column" :grid-column "span 2 / span 2"}
-           [:> Text {:size "4" :weight "bold"} "Set an agent"]
-           [:> Text {:size "3"} "Select an agent to provide a secure interaction with your connection."]
+           [:> Text {:size "4" :weight "bold" :class "text-gray-12"} "Set an agent"]
+           [:> Text {:size "3" :class "text-gray-11"} "Select an agent to provide a secure interaction with your connection."]
            [:> Link {:href "https://hoop.dev/docs/concepts/agent"
                      :target "_blank"}
             [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
@@ -62,8 +62,8 @@
          (= @connection-type "database")
          [:> Grid {:columns "5" :gap "7"}
           [:> Flex {:direction "column" :grid-column "span 2 / span 2"}
-           [:> Text {:size "4" :weight "bold"} "Database credentials"]
-           [:> Text {:size "3"} "Provide your database access information."]]
+           [:> Text {:size "4" :weight "bold" :class "text-gray-12"} "Database credentials"]
+           [:> Text {:size "3" :class "text-gray-11"} "Provide your database access information."]]
           [:> Grid {:gap-x "7" :grid-column "span 3 / span 3"}
            (config-inputs/config-inputs-labeled configs {})]]
 
@@ -71,12 +71,12 @@
               (= @connection-subtype "ssh"))
          [:> Grid {:columns "5" :gap "7"}
           [:> Flex {:direction "column" :grid-column "span 2 / span 2"}
-           [:> Text {:size "4" :weight "bold"} "Custom credentials"]
-           [:> Text {:size "3"} "Provide your custom access information."]]
+           [:> Text {:size "4" :weight "bold" :class "text-gray-12"} "SSH Credentials"]
+           [:> Text {:size "3" :class "text-gray-11"} "Provide SSH information to setup your connection."]]
           [:> Grid {:gap-x "6" :grid-column "span 3 / span 3"}
            (if (empty? @configs-file)
              [:<>
-              [forms/textarea {:label "private key"
+              [forms/textarea {:label "Private Key"
                                :required true
                                :placeholder "Paste your file content here"
                                :on-change #(reset! config-file-value (-> % .-target .-value))
@@ -91,8 +91,8 @@
          [:<>
           [:> Grid {:columns "5" :gap "7"}
            [:> Flex {:direction "column" :grid-column "span 2 / span 2"}
-            [:> Text {:size "4" :weight "bold"} "Load environment variables"]
-            [:> Text {:size "3"} "Add variables values to use in your connection."]]
+            [:> Text {:size "4" :weight "bold" :class "text-gray-12"} "Load environment variables"]
+            [:> Text {:size "3" :class "text-gray-11"} "Add variables values to use in your connection."]]
            [:> Grid {:columns "2" :gap "2" :grid-column "span 3 / span 3"}
             (config-inputs/config-inputs configs {})
             [:<>
@@ -120,8 +120,8 @@
               "Add more"]]]]
           [:> Grid {:columns "5" :gap "7"}
            [:> Flex {:direction "column" :grid-column "span 2 / span 2"}
-            [:> Text {:size "4" :weight "bold"} "Load configuration files"]
-            [:> Text {:size "3"} "Add values from your configuration file and use them as an environment variable in your connection."]]
+            [:> Text {:size "4" :weight "bold" :class "text-gray-12"} "Load configuration files"]
+            [:> Text {:size "3" :class "text-gray-11"} "Add values from your configuration file and use them as an environment variable in your connection."]]
            [:> Grid {:gap-x "7" :grid-column "span 3 / span 3"}
             (config-inputs/config-inputs-files configs-file {})
 
@@ -145,9 +145,9 @@
               "Add more"]]]]
           [:> Grid {:columns "5" :gap "7"}
            [:> Flex {:direction "column" :grid-column "span 2 / span 2"}
-            [:> Text {:size "4" :weight "bold"} "Additional command"]
-            [:> Text {:size "3"} (str "Add an additional command that will run on your connection.\n\n"
-                                      "Environment variables loaded above can also be used here.")]]
+            [:> Text {:size "4" :weight "bold" :class "text-gray-12"} "Additional command"]
+            [:> Text {:size "3" :class "text-gray-11"} (str "Add an additional command that will run on your connection.\n\n"
+                                                            "Environment variables loaded above can also be used here.")]]
            [:> Flex {:direction "column" :class "space-y-radix-7" :grid-column "span 3 / span 3"}
             [forms/textarea {:label "Command"
                              :on-change #(reset! connection-command (-> % .-target .-value))
@@ -160,8 +160,8 @@
               (= @connection-subtype "tcp"))
          [:> Grid {:columns "5" :gap "7"}
           [:> Flex {:direction "column" :grid-column "span 2 / span 2"}
-           [:> Text {:size "4" :weight "bold"} "TCP credentials"]
-           [:> Text {:size "3"} "Provide your TCP access information."]]
+           [:> Text {:size "4" :weight "bold" :class "text-gray-12"} "TCP credentials"]
+           [:> Text {:size "3" :class "text-gray-11"} "Provide your TCP access information."]]
           [:> Grid {:gap-x "7" :grid-column "span 3 / span 3"}
            (config-inputs/config-inputs-labeled configs {})]]
 
