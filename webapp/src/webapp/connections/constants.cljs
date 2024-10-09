@@ -95,7 +95,8 @@
    "mysql" ""
    "mssql" ""
    "mongodb" ""
-   "ssh" "ssh $SSH_URI -i $SSH_PRIVATE_KEY"})
+   "ssh" "ssh $SSH_URI -i $SSH_PRIVATE_KEY"
+   "oracledb" ""})
 
 (def connection-postgres-demo
   {:name "postgres-demo"

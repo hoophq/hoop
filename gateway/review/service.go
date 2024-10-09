@@ -3,10 +3,12 @@ package review
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
 	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
@@ -96,7 +98,27 @@ func (s *Service) Revoke(ctx pgrest.OrgContext, reviewID string) (*types.Review,
 		return nil, ErrWrongState
 	}
 	rev.Status = types.ReviewStatusRevoked
-	return rev, s.Persist(ctx, rev)
+
+	if err := s.Persist(ctx, rev); err != nil {
+		return nil, fmt.Errorf("saving review error: %v", err)
+	}
+
+	// Fetch the session information
+	session, err := pgsession.New().FetchOne(ctx, rev.Session)
+	if err != nil {
+		return nil, fmt.Errorf("fetch session error: %v", err)
+	}
+
+	descriptionContent := []interface{}{
+		jira.ParagraphBlock(
+			jira.TextBlock("The session was rejected"),
+		),
+	}
+
+	// Update JIRA issue description
+	jira.UpdateJiraIssueDescription(ctx.GetOrgID(), session.JiraIssue, descriptionContent)
+
+	return rev, nil
 }
 
 // called by slack plugin and webapp
@@ -128,6 +150,7 @@ func (s *Service) Review(ctx *storagev2.Context, reviewID string, status types.R
 
 	reviewsCount := len(rev.ReviewGroupsData)
 	approvedCount := 0
+	var approvedGroups []string
 
 	if status == types.ReviewStatusRejected {
 		rev.Status = status
@@ -147,6 +170,8 @@ func (s *Service) Review(ctx *storagev2.Context, reviewID string, status types.R
 		if rev.ReviewGroupsData[i].Status == types.ReviewStatusApproved {
 			approvedCount++
 		}
+
+		approvedGroups = append(approvedGroups, rev.ReviewGroupsData[i].Group)
 	}
 
 	if reviewsCount == approvedCount {
@@ -158,12 +183,58 @@ func (s *Service) Review(ctx *storagev2.Context, reviewID string, status types.R
 		return nil, fmt.Errorf("saving review error: %v", err)
 	}
 
-	if rev.Status == types.ReviewStatusApproved || rev.Status == types.ReviewStatusRejected {
+	// Fetch the session information
+	session, err := pgsession.New().FetchOne(ctx, rev.Session)
+	if err != nil {
+		return nil, fmt.Errorf("fetch session error: %v", err)
+	}
+
+	descriptionContent := []interface{}{
+		jira.ParagraphBlock(
+			jira.TextBlock(rev.ReviewOwner.Name),
+			jira.TextBlock(" from "),
+			jira.StrongTextBlock(strings.Join(approvedGroups, ", ")),
+			jira.TextBlock(" has "),
+			jira.StrongTextBlock(string(rev.Status)),
+			jira.TextBlock(" the session"),
+		),
+	}
+
+	jira.UpdateJiraIssueDescription(ctx.OrgID, session.JiraIssue, descriptionContent)
+
+	switch rev.Status {
+	case types.ReviewStatusApproved:
 		if err := pgsession.New().UpdateStatus(ctx, rev.Session, types.SessionStatusReady); err != nil {
 			return nil, fmt.Errorf("save sesession as ready error: %v", err)
 		}
 		// release the connection if there's a client waiting
 		s.TransportService.ReviewStatusChange(rev)
+
+		descriptionContent := []interface{}{
+			jira.ParagraphBlock(
+				jira.TextBlock("The session is ready to be executed by the link:"),
+			),
+			jira.ParagraphBlock(
+				jira.LinkBlock(
+					fmt.Sprintf("%v/sessions/%v", ctx.ApiURL, session.ID),
+					fmt.Sprintf("%v/sessions/%v", ctx.ApiURL, session.ID),
+				)),
+		}
+
+		// Update JIRA issue description
+		jira.UpdateJiraIssueDescription(ctx.OrgID, session.JiraIssue, descriptionContent)
+	case types.ReviewStatusRejected:
+		// release the connection if there's a client waiting
+		s.TransportService.ReviewStatusChange(rev)
+
+		descriptionContent := []interface{}{
+			jira.ParagraphBlock(
+				jira.TextBlock("The session was rejected"),
+			),
+		}
+		// Update JIRA issue description
+		jira.UpdateJiraIssueDescription(ctx.OrgID, session.JiraIssue, descriptionContent)
 	}
+
 	return rev, nil
 }

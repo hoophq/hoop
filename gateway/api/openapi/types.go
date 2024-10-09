@@ -421,6 +421,9 @@ type Session struct {
 	// * open - the session started and it's running
 	// * done - the session has finished
 	Status string `json:"status" enums:"open,ready,done"`
+
+	JiraIssue string `json:"jira_issue"`
+
 	// The stream containing the output of the execution in the following format
 	//
 	// `[[0.268589438, "i", "ZW52"], ...]`
@@ -775,4 +778,40 @@ type ServerInfo struct {
 
 type LivenessCheck struct {
 	Liveness string `json:"liveness" enums:"ERR,OK" example:"OK"`
+}
+
+type JiraIntegrationStatus string
+
+const (
+	JiraIntegrationStatusActive   JiraIntegrationStatus = "enabled"
+	JiraIntegrationStatusInactive JiraIntegrationStatus = "disabled"
+)
+
+// JiraIntegration represents the Jira integration for an organization
+type JiraIntegration struct {
+	// The unique identifier of the integration
+	ID string `json:"id,omitempty"`
+
+	// The organization identifier
+	OrgID string `json:"org_id,omitempty"`
+
+	// The URL of the Jira instance
+	JiraURL string `json:"jira_url" binding:"required"`
+
+	// The username for Jira authentication
+	JiraUser string `json:"jira_user" binding:"required"`
+
+	// The API token for Jira authentication
+	JiraAPIToken string `json:"jira_api_token" binding:"required"`
+
+	// The default Jira project key
+	JiraProjectKey string `json:"jira_project_key" binding:"required"`
+
+	Status JiraIntegrationStatus `json:"status"`
+
+	// The creation date and time of the integration
+	CreatedAt time.Time `json:"created_at,omitempty"`
+
+	// The last update date and time of the integration
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
 }

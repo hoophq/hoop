@@ -23,6 +23,12 @@ func (s *session) UpdateStatus(ctx pgrest.OrgContext, sessionID, status string) 
 		Error()
 }
 
+func (s *session) UpdateJiraIssue(orgId, sessionID, jiraIssue string) error {
+	return pgrest.New("/sessions?org_id=eq.%s&id=eq.%s", orgId, sessionID).
+		Patch(map[string]any{"jira_issue": jiraIssue}).
+		Error()
+}
+
 func (s *session) Upsert(ctx pgrest.OrgContext, sess types.Session) (err error) {
 	switch sess.Status {
 	// this will be executed in distinct flows
@@ -135,6 +141,7 @@ func (s *session) FetchOne(ctx pgrest.OrgContext, sessionID string) (*types.Sess
 		Connection:       sess.Connection,
 		Verb:             sess.Verb,
 		Status:           sess.Status,
+		JiraIssue:        sess.JiraIssue,
 		EventStream:      nil,
 		NonIndexedStream: types.SessionNonIndexedEventStreamList{"stream": blobStream},
 		EventSize:        blobStreamSize,

@@ -62,6 +62,7 @@ func List(ctx *storagev2.Context, opts ...*openapi.SessionOption) (*openapi.Sess
 			Connection:  s.Connection,
 			Verb:        s.Verb,
 			Status:      s.Status,
+			JiraIssue:   s.JiraIssue,
 			EventStream: nil,
 			// NonIndexedStream: nil,
 			StartSession: s.GetCreatedAt(),
