@@ -94,7 +94,6 @@
             [:> Text {:size "4" :weight "bold"} "Load environment variables"]
             [:> Text {:size "3"} "Add variables values to use in your connection."]]
            [:> Grid {:columns "2" :gap "2" :grid-column "span 3 / span 3"}
-            (println @configs)
             (config-inputs/config-inputs configs {})
             [:<>
              [forms/input {:label "Key"

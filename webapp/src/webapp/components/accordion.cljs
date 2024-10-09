@@ -1,18 +1,9 @@
 (ns webapp.components.accordion
   (:require
    ["@radix-ui/react-accordion" :as Accordion]
-   ["@radix-ui/themes" :refer [Box Flex Text Avatar Checkbox Button Badge]]
+   ["@radix-ui/themes" :refer [Box Flex Text Avatar]]
    ["lucide-react" :refer [Check User ChevronRight]]
    [reagent.core :as r]))
-
-(defn badge [text]
-  [:> Badge {:color "red" :variant "soft" :size "2"} text])
-
-(defn configure-button []
-  [:> Button {:variant "soft" :size "3"} "Configure"])
-
-(defn checkbox []
-  [:> Checkbox])
 
 (defn status-icon []
   [:> Avatar {:size "1"
@@ -31,9 +22,6 @@
            value
            status
            avatar-icon
-           show-checkbox?
-           show-badge?
-           show-configure?
            show-icon?
            total-items]}]
   [:> (.-Item Accordion)
@@ -46,9 +34,6 @@
    [:> (.-Header Accordion)
     [:> (.-Trigger Accordion) {:className "group flex justify-between items-center w-full p-5"}
      [:> Flex {:align "center" :gap "5"}
-      (when show-checkbox?
-        [checkbox])
-
       [:> Avatar {:size "5"
                   :variant "soft"
                   :color "gray"
@@ -61,8 +46,6 @@
        [:> Text {:size "3" :className "text-[--gray-11]"} subtitle]]]
 
      [:div {:className "flex space-x-3 items-center"}
-      (when show-badge? [badge "Badge"])
-      (when show-configure? [configure-button])
       (when show-icon? [status-icon status])
 
       [:> ChevronRight {:size 16 :className "text-[--gray-12] transition-transform duration-300 group-data-[state=open]:rotate-90"}]]]]
@@ -82,22 +65,16 @@
       :content      - Content to be displayed when the item is expanded (required)
       :status       - Status of the item, affects the displayed icon (optional)
       :avatar-icon  - Icon to be displayed in the avatar (optional)
-      :show-checkbox? - Boolean, if true, displays a checkbox (optional, default false)
-      :show-badge?    - Boolean, if true, displays a badge (optional, default false)
-      :show-configure? - Boolean, if true, displays a configure button (optional, default false)
       :show-icon?     - Boolean, if true, displays a status icon (optional, default false)
 
     Usage example:
     [accordion-root [{:value \"item1\"
                       :title \"Title 1\"
                       :subtitle \"Subtitle 1\"
-                      :content \"Content of item 1\"
-                      :show-checkbox? true
-                      :show-badge? true}
+                      :content \"Content of item 1\"}
                      {:value \"item2\"
                       :title \"Title 2\"
                       :content \"Content of item 2\"
-                      :show-configure? true
                       :show-icon? true}]]"
   [items id]
   [:> (.-Root Accordion)

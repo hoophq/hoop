@@ -26,8 +26,6 @@
 (defn add-new-configs
   [config-map config-key config-value]
 
-  (println "config-map" config-map)
-
   (if-not (or (empty? config-key) (empty? config-value))
     (swap! config-map conj {:key config-key :value config-value})
     nil))
