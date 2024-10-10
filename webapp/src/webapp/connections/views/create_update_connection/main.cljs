@@ -1,6 +1,7 @@
 (ns webapp.connections.views.create-update-connection.main
-  (:require ["@radix-ui/themes" :refer [Box Button Flex Heading Strong Text]]
+  (:require ["@radix-ui/themes" :refer [Box Button Flex Heading Strong Text Link]]
             ["lucide-react" :refer [BadgeInfo GlobeLock SquareStack]]
+            ["react" :as react]
             [clojure.string :as s]
             [re-frame.core :as rf]
             [reagent.core :as r]
@@ -50,15 +51,15 @@
 (defn select-header-by-form-type [form-type connection]
   (case form-type
     :create [:> Box
-             [:> Heading {:size "8" :as "h1"} "Create Connection"]
-             [:> Text {:size "5"} "Setup a secure access to your resources."]]
+             [:> Heading {:size "8" :as "h1" :class "text-gray-12"} "Create Connection"]
+             [:> Text {:size "5" :class "text-gray-11"} "Setup a secure access to your resources."]]
     :update [:> Box {:class "space-y-radix-2"}
-             [:> Heading {:size "8" :as "h1"} "Configure"]
+             [:> Heading {:size "8" :as "h1" :class "text-gray-12"} "Configure"]
              [:> Flex {:gap "3" :align "center"}
               [:> Box
                [:figure {:class "w-6"}
                 [:img {:src (constants/get-connection-icon connection)}]]]
-              [:> Text {:size "5"}
+              [:> Text {:size "5" :class "text-gray-11"}
                (:name connection)]]]))
 
 (defn main [form-type connection]
@@ -66,6 +67,8 @@
         api-key (rf/subscribe [:organization->api-key])
         user (rf/subscribe [:users->current-user])
         user-groups (rf/subscribe [:user-groups])
+
+        scroll-pos (r/atom 0)
 
         agent-id (r/atom (or (:agent_id connection) ""))
         connection-type (r/atom (or (:type connection) nil))
@@ -130,6 +133,15 @@
             third-step-finished (boolean (and second-step-finished
                                               (not (s/blank? @connection-command))))
             free-license? (-> @user :data :free-license?)]
+        (react/useEffect
+         (fn []
+           (let [on-scroll (fn []
+                             (println (.-scrollY js/window))
+                             (reset! scroll-pos (.-scrollY js/window)))]
+             (.addEventListener js/window "scroll" on-scroll)
+             (fn []
+               (.removeEventListener js/window "scroll" on-scroll)))))
+
         [:form {:id "connection-form"
                 :on-submit (fn [e]
                              (.preventDefault e)
@@ -180,8 +192,15 @@
                                :command (when @connection-command
                                           (or (re-seq #"'.*?'|\".*?\"|\S+|\t" @connection-command) []))}))}
 
+         (println @scroll-pos)
          [:> Flex {:direction "column" :gap "5"}
-          [:> Flex {:justify "between" :py "5" :mb "7" :class "sticky top-0 bg-gray-1 z-10"}
+          [:> Flex {:justify "between" :py "5" :mb "7" :class (str "sticky top-0 z-10 -m-10 mb-0 p-10 "
+                                                                   (if (= form-type :create)
+                                                                     " bg-gray-1 "
+                                                                     " bg-white border-b border-[--gray-a6] ")
+                                                                   (if (>= @scroll-pos 30)
+                                                                     " border-b border-[--gray-a6]"
+                                                                     " "))}
            [select-header-by-form-type form-type {:name @connection-name
                                                   :type @connection-type
                                                   :subtype @connection-subtype
@@ -208,8 +227,18 @@
                                                                   (rf/dispatch [:connections->delete-connection @connection-name])
                                                                   (rf/dispatch [:modal->close]))}])}
                "Delete"])
-            (when-not (and (= "application" @connection-type)
-                           (not= "tcp" @connection-subtype))
+            (if (and (= "application" @connection-type)
+                     (not= "tcp" @connection-subtype))
+              [:> Text {:size "3" :align "right" :class "text-gray-11"}
+               "If you have finished the setup"
+               [:br]
+               [:> Link {:size "3"
+                         :href "#"
+                         :on-click (fn []
+                                     (rf/dispatch [:connections->get-connections])
+                                     (rf/dispatch [:navigate :connections]))}
+                "check your connections."]]
+
               [:> Button {:size "4"
                           :disabled (not first-step-finished)
                           :on-click (fn []

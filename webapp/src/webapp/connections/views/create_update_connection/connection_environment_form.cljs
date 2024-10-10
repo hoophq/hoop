@@ -180,14 +180,4 @@
                                               :review? @reviews
                                               :review-groups (js-select-options->list @review-groups)
                                               :data-masking? @ai-data-masking
-                                              :data-masking-fields (js-select-options->list @ai-data-masking-info-types)}]]
-
-          [:div {:class "flex justify-end items-center"}
-           [:> Text {:size "1" :weight "light"}
-            "If you have finished the setup, you can "
-            [:> Link {:size "1"
-                      :href "#"
-                      :on-click (fn []
-                                  (rf/dispatch [:connections->get-connections])
-                                  (rf/dispatch [:navigate :connections]))}
-             "check your connections."]]]])])))
+                                              :data-masking-fields (js-select-options->list @ai-data-masking-info-types)}]]])])))

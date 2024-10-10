@@ -140,6 +140,6 @@
                              :on-click (fn []
                                          (rf/dispatch [:plugins->get-my-plugins])
                                          (rf/dispatch [:connections->get-connection {:connection-name (:name connection)}])
-                                         (rf/dispatch [:modal->open {:content [create-update-connection/main :update connection]}]))}
+                                         (rf/dispatch [:modal->open {:content [:f> create-update-connection/main :update connection]}]))}
                        [tooltip "Configure" "left"]
                        [:> hero-micro-icon/AdjustmentsHorizontalIcon {:class "w-6 h-6 text-gray-700"}]])]])))]])]))))

@@ -1,6 +1,6 @@
 (ns webapp.components.modal
   (:require ["@heroicons/react/24/outline" :as hero-outline-icon]
-            ["@radix-ui/themes" :refer [Box Dialog VisuallyHidden]]
+            ["@radix-ui/themes" :refer [Box Dialog VisuallyHidden ScrollArea]]
             [re-frame.core :as rf]))
 
 (defmulti markup identity)
@@ -43,6 +43,7 @@
   (let [modal (rf/subscribe [:modal-radix])]
     (fn []
       (if (:open? @modal)
+
         [:> Dialog.Root {:open (:open? @modal)
                          :on-open-change #(rf/dispatch [:modal->set-status %])}
 
