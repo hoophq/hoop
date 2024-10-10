@@ -21,16 +21,16 @@
   (let [clipboard (new clipboardjs ".copy-to-clipboard")
         container-id (or (:id config) "code-snippet")]
     (.on clipboard "success" #(rf/dispatch [:show-snackbar {:level :success :text "Text copied to clipboard"}]))
-    [:div {:class "h-full overflow-auto"}
+    [:div {:class "overflow-auto"}
      (when title [h/h3 title {:class "mb-regular"}])
      [:section
-      {:class (str "relative bg-gray-900 font-mono overflow-auto h-full"
+      {:class (str "relative bg-gray-900 font-mono overflow-auto "
                    " whitespace-pre text-white text-sm rounded-lg"
                    " p-regular group")}
       (when-not (:not-clipboard? config) (copy-clipboard (str "#" container-id)))
       [:div
        {:id container-id
         :class (str (when (:classes config) (:classes config))
-                    " overflow-auto whitespace-pre-line h-full"
+                    " overflow-auto whitespace-pre-line "
                     (when-not (:fixed-height? config) " max-h-80"))}
        (:code config)]]]))

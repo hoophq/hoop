@@ -1,5 +1,6 @@
 (ns webapp.components.forms
   (:require ["@heroicons/react/24/outline" :as hero-outline-icon]
+            ["@radix-ui/themes" :refer [TextField TextArea Select]]
             [reagent.core :as r]
             [clojure.string :as cs]))
 
@@ -24,24 +25,6 @@
      text]
     [:div {:class "w-3 h-3 -mt-2 border-r border-b border-gray-300 bg-white transform rotate-45"}]]])
 
-(defonce common-styles
-  "relative block w-full
-   py-3 px-2
-   border border-gray-300 rounded-md
-   focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm disabled:opacity-50")
-
-(defonce common-styles-dark
-  "relative block w-full bg-transparent
-   py-3 px-2 text-white
-   border border-gray-400 rounded-md
-   focus:ring-white focus:border-white sm:text-sm disabled:opacity-50")
-
-(defonce input-styles
-  (str common-styles " h-12"))
-
-(defonce input-styles-dark
-  (str common-styles-dark " h-12"))
-
 (defn input
   "Multi purpose HTML input component.
   Props signature:
@@ -63,6 +46,7 @@
       (fn [{:keys [label
                    placeholder
                    name
+                   size
                    dark
                    id
                    helper-text
@@ -88,46 +72,45 @@
               [form-label label]))
           (when (not (cs/blank? helper-text))
             [form-helper-text helper-text dark])]
-         [:input
-          {:type (if (= "string" @local-type) "text" @local-type)
-           :class (if dark
-                    input-styles-dark
-                    input-styles)
-           :id id
-           :placeholder (or placeholder label)
-           :name name
-           :pattern pattern
-           :minLength minlength
-           :maxLength maxlength
-           :min min
-           :max max
-           :step step
-           :value value
-           :defaultValue defaultValue
-           :on-change on-change
-           :on-keyDown on-keyDown
-           :on-blur on-blur-cb
-           :on-focus on-focus-cb
-           :disabled (or disabled false)
-           :required (or required false)}]]))))
+         [:> TextField.Root
+          (merge
+           {:type (if (= "string" @local-type) "text" @local-type)
+            :id id
+            :size (or size "3")
+            :class (when dark "dark")
+            :placeholder (or placeholder label)
+            :name name
+            :pattern pattern
+            :minLength minlength
+            :maxLength maxlength
+            :min min
+            :max max
+            :step step
+            :value value
+            :on-change on-change
+            :on-keyDown on-keyDown
+            :on-blur on-blur-cb
+            :on-focus on-focus-cb
+            :disabled (or disabled false)
+            :required (or required false)}
+           (when defaultValue
+             {:defaultValue defaultValue}))]]))))
 
 (defn input-metadata [{:keys [label name id placeholder disabled required value on-change]}]
   [:div {:class "relative"}
    [:label {:htmlFor label
             :class "absolute -top-2 left-2 inline-block bg-white px-1 text-xs font-medium text-gray-900"}
     label]
-   [:input {:type "text"
-            :name name
-            :id id
-            :class (str "block w-full rounded-sm bg-gray-800 border-0 py-0 "
-                        "text-white shadow-sm ring-1 ring-inset ring-gray-700 "
-                        "placeholder-gray-100 placeholder-opacity-40 focus:ring-1 "
-                        "focus:ring-inset focus:ring-gray-200 sm:text-xs sm:leading-6")
-            :placeholder placeholder
-            :disabled (or disabled false)
-            :required (or required false)
-            :on-change on-change
-            :value value}]])
+   [:> TextField.Root {:type "text"
+                       :size "1"
+                       :name name
+                       :id id
+                       :class "dark"
+                       :placeholder placeholder
+                       :disabled (or disabled false)
+                       :required (or required false)
+                       :on-change on-change
+                       :value value}]])
 
 (defn textarea
   [{:keys [label
@@ -136,7 +119,6 @@
            dark
            id
            helper-text
-           classes
            value
            defaultValue
            on-change
@@ -153,30 +135,27 @@
       [form-label label])
     (when (not (cs/blank? helper-text))
       [form-helper-text helper-text dark])]
-   [:textarea
-    {:class (str (if dark
-                   common-styles-dark
-                   common-styles)
-                 " "
-                 (or classes ""))
-     :id (or id "")
-     :rows (or rows 5)
-     :name (or name "")
-     :value value
-     :defaultValue defaultValue
-     :autoFocus autoFocus
-     :placeholder placeholder
-     :on-change on-change
-     :on-blur on-blur
-     :on-keyDown on-keyDown
-     :disabled (or disabled false)
-     :required (or required false)}]])
+   [:> TextArea
+    (merge
+     {:class (when dark "dark")
+      :id (or id "")
+      :rows (or rows 5)
+      :name (or name "")
+      :value value
+      :autoFocus autoFocus
+      :placeholder placeholder
+      :on-change on-change
+      :on-blur on-blur
+      :on-keyDown on-keyDown
+      :disabled (or disabled false)
+      :required (or required false)}
+     (when defaultValue
+       {:defaultValue defaultValue}))]])
 
 (defn- option
-  [item selected]
-  (let [attrs {:key (:value item)
-               :value (:value item)}]
-    [:option attrs (:text item)]))
+  [item _]
+  ^{:key (:value item)}
+  [:> Select.Item {:value (:value item)} (:text item)])
 
 (defn select
   "HTML select.
@@ -186,7 +165,7 @@
   active -> the option value of an already active item;
   on-change -> function to be executed on change;
   required -> HTML required attribute;"
-  [{:keys [label helper-text id name options selected on-change required disabled dark]}]
+  [{:keys [label helper-text name size options placeholder selected default-value on-change required disabled full-width? dark]}]
   [:div {:class "mb-regular text-sm w-full"}
    [:div {:class "flex items-center gap-2 mb-1"}
     (if dark
@@ -194,20 +173,18 @@
       [form-label label])
     (when (not (cs/blank? helper-text))
       [form-helper-text helper-text dark])]
-   [:select
-    {:class (if dark
-              input-styles-dark
-              input-styles)
-     :name (or name "")
-     :id (or id "")
-     :on-change on-change
-     :value selected
-     :required (or required false)
-     :disabled (or disabled false)}
-    [:option {:value ""
-              :disabled true
-              :label "Select one"}]
-    (map #(option % selected) options)]])
+   [:> Select.Root {:size (or size "3")
+                    :name name
+                    :value selected
+                    :default-value default-value
+                    :on-value-change on-change
+                    :required (or required false)
+                    :disabled (or disabled false)}
+    [:> Select.Trigger {:placeholder (or placeholder "Select one")
+                        :class (str (when full-width? "w-full ")
+                                    (when dark "dark"))}]
+    [:> Select.Content {:position "popper"}
+     (map #(option % selected) options)]]])
 
 (defn select-editor
   "HTML select.
@@ -217,19 +194,16 @@
   active -> the option value of an already active item;
   on-change -> function to be executed on change;
   required -> HTML required attribute;"
-  [{:keys [id name options selected on-change required disabled]}]
-  [:div {:class "text-xs w-24 h-4"}
-   [:select
-    {:class (str "relative block w-full bg-transparent cursor-pointer "
-                 "text-gray-300 border-0 p-0 "
-                 "focus:ring-indigo-500 focus:border-indigo-500 text-xs disabled:opacity-50")
-     :name (or name "")
-     :id (or id "")
-     :on-change on-change
-     :value selected
-     :required (or required false)
-     :disabled (or disabled false)}
-    [:option {:value ""
-              :disabled true
-              :label "Select one"}]
-    (map #(option % selected) options)]])
+  [{:keys [name size options selected on-change full-width? required disabled]}]
+  [:div {:class "text-xs"}
+   [:> Select.Root {:size (or size "1")
+                    :name name
+                    :value selected
+                    :on-value-change on-change
+                    :required (or required false)
+                    :disabled (or disabled false)}
+    [:> Select.Trigger {:class (str "dark"
+                                    (when full-width? "w-full"))
+                        :placeholder "Select one"}]
+    [:> Select.Content {:position "popper"}
+     (map #(option % selected) options)]]])
