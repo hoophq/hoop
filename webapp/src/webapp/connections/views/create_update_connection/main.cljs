@@ -133,14 +133,12 @@
             third-step-finished (boolean (and second-step-finished
                                               (not (s/blank? @connection-command))))
             free-license? (-> @user :data :free-license?)]
-        (react/useEffect
-         (fn []
-           (let [on-scroll (fn []
-                             (println (.-scrollY js/window))
-                             (reset! scroll-pos (.-scrollY js/window)))]
-             (.addEventListener js/window "scroll" on-scroll)
-             (fn []
-               (.removeEventListener js/window "scroll" on-scroll)))))
+
+        (r/with-let [handle-scroll (fn []
+                                     (reset! scroll-pos (.-scrollY js/window)))]
+          (.addEventListener js/window "scroll" handle-scroll)
+          (finally
+            (.removeEventListener js/window "scroll" handle-scroll)))
 
         [:form {:id "connection-form"
                 :on-submit (fn [e]
@@ -191,8 +189,6 @@
 
                                :command (when @connection-command
                                           (or (re-seq #"'.*?'|\".*?\"|\S+|\t" @connection-command) []))}))}
-
-         (println @scroll-pos)
          [:> Flex {:direction "column" :gap "5"}
           [:> Flex {:justify "between" :py "5" :mb "7" :class (str "sticky top-0 z-10 -m-10 mb-0 p-10 "
                                                                    (if (= form-type :create)
@@ -297,7 +293,9 @@
                                  :access-mode-runbooks access-mode-runbooks?
                                  :access-mode-exec access-mode-exec?
                                  :access-mode-connect access-mode-connect?}]}]
-             :id "connection-details"}]
+             :id "connection-details"
+             :first-open? (when (= form-type :update)
+                            true)}]
 
            [accordion/root
             {:items [{:title "Environment setup"
