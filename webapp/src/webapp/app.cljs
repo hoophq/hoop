@@ -176,7 +176,7 @@
 (defmethod routes/panels :create-connection-panel []
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop [:div {:class "bg-gray-1 p-radix-7 min-h-full h-max"}
-                             [:f> create-update-connection/main :create]]])
+                             [create-update-connection/main :create]]])
 
 (defmethod routes/panels :manage-plugin-panel []
   (let [pathname (.. js/window -location -pathname)
