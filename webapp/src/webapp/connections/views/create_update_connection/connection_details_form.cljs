@@ -102,7 +102,7 @@
                                           "Enable Just-in-Time access for 30-minute sessions or Command reviews "
                                           "for individual query approvals.")]
         (when free-license?
-          [:> Callout.Root {:size "2" :mt "4" :mb "4"}
+          [:> Callout.Root {:size "2" :mt "4"}
            [:> Callout.Icon
             [:> Star {:size 16}]]
            [:> Callout.Text {:class "text-gray-12"}
@@ -114,15 +114,16 @@
                                   "I want to upgrade my current plan")}
              "upgrading your plan."]]])
         (when @reviews
-          [multi-select/main {:options (array->select-options @user-groups)
-                              :id "approval-groups-input"
-                              :name "approval-groups-input"
-                              :disabled? (or (not @reviews) free-license?)
-                              :required? @reviews
-                              :default-value (if @reviews
-                                               @review-groups
-                                               nil)
-                              :on-change #(reset! review-groups (js->clj %))}])]]]
+          [:> Box {:mt "4"}
+           [multi-select/main {:options (array->select-options @user-groups)
+                               :id "approval-groups-input"
+                               :name "approval-groups-input"
+                               :disabled? (or (not @reviews) free-license?)
+                               :required? @reviews
+                               :default-value (if @reviews
+                                                @review-groups
+                                                nil)
+                               :on-change #(reset! review-groups (js->clj %))}]])]]]
      [:> Box {:class "space-y-radix-5"}
       [:> Flex {:align "center" :gap "5"}
        [:> Switch {:checked @ai-data-masking
@@ -146,15 +147,16 @@
                                   "I want to upgrade my current plan")}
              "upgrading your plan."]]])
         (when @ai-data-masking
-          [multi-select/main {:options (array->select-options dlp-info-types/options)
-                              :id "data-masking-groups-input"
-                              :name "data-masking-groups-input"
-                              :disabled? (or (not @ai-data-masking) free-license?)
-                              :required? @ai-data-masking
-                              :default-value (if @ai-data-masking
-                                               @ai-data-masking-info-types
-                                               nil)
-                              :on-change #(reset! ai-data-masking-info-types (js->clj %))}])]]]
+          [:> Box {:mt "4"}
+           [multi-select/main {:options (array->select-options dlp-info-types/options)
+                               :id "data-masking-groups-input"
+                               :name "data-masking-groups-input"
+                               :disabled? (or (not @ai-data-masking) free-license?)
+                               :required? @ai-data-masking
+                               :default-value (if @ai-data-masking
+                                                @ai-data-masking-info-types
+                                                nil)
+                               :on-change #(reset! ai-data-masking-info-types (js->clj %))}]])]]]
      (when (= "database" @connection-type)
        [:> Box {:class "space-y-radix-5"}
         [:> Flex {:align "center" :gap "5"}

@@ -3,9 +3,7 @@ const plugin = require("tailwindcss/plugin");
 const { fontFamily } = require("tailwindcss/defaultTheme")
 
 module.exports = {
-  content: process.env.NODE_ENV == 'production' ? 
-  ["./resources/public/**/*.js", "./resources/public/**/*.html", "./node_modules/react-tailwindcss-datepicker/dist/index.esm.js"] : 
-  ["./src/webapp/**/*.cljs", "./resource/public/js/cljs-runtime/*.js", "./node_modules/react-tailwindcss-datepicker/dist/index.esm.js"],
+  content: ["./src/webapp/**/*.cljs", "./resource/public/js/cljs-runtime/*.js", "./node_modules/react-tailwindcss-datepicker/dist/index.esm.js"],
   darkMode: ["class"],
   screens: {
     'sm': '640px',

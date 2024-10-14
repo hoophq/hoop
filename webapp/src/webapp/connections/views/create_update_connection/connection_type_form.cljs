@@ -122,6 +122,7 @@
        [:> RadioGroup.Root {:name (str (name @connection-type) "-type")
                             :class "space-y-radix-4"
                             :value @connection-subtype
+                            :required true
                             :on-value-change (fn [value]
                                                (reset! connection-subtype value)
                                                (reset! configs (utils/get-config-keys (keyword value))))}

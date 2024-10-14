@@ -139,7 +139,8 @@
        :menuIsOpen false
        :isDisabled disabled?
        :required required?
-       :onChange on-change
+       :onChange (fn [value]
+                   (on-change (js->clj value)))
        :onInputChange on-input-change
        :onKeyDown handleKeyDown
        :isClearable true
