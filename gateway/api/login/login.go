@@ -133,7 +133,19 @@ func (h *handler) LoginCallback(c *gin.Context) {
 		return
 	}
 	uinfo.Subject = subject
-	ctx, err := pguserauth.New().FetchUserContext(subject)
+	// get the user by its email to get the actual subject of that user. This is necessary
+	// due to the user subject when it's created inside hoop is changed after that user
+	// logs in with the IDP. The email should always come from the IDP as a design of how
+	// we handle users in hoop.
+	dbUser, err := models.GetUserByEmail(uinfo.Email)
+	if err != nil {
+		login.Outcome = fmt.Sprintf("failed fetching user by email=%s, reason=%v", uinfo.Email, err)
+		log.Error(login.Outcome)
+		sentry.CaptureException(err)
+		c.Redirect(http.StatusTemporaryRedirect, redirectErrorURL)
+		return
+	}
+	ctx, err := pguserauth.New().FetchUserContext(dbUser.Subject)
 
 	if err != nil {
 		login.Outcome = fmt.Sprintf("failed fetching user subject=%s, email=%s, reason=%v", uinfo.Subject, uinfo.Email, err)
@@ -175,8 +187,8 @@ func (h *handler) LoginCallback(c *gin.Context) {
 		return
 	}
 
-	if !ctx.IsEmpty() && ctx.UserStatus != string(types.UserStatusActive) {
-		login.Outcome = fmt.Sprintf("user is not active subject=%s, email=%s", uinfo.Subject, uinfo.Email)
+	if !ctx.IsEmpty() && ctx.UserStatus == string(types.UserStatusInactive) {
+		login.Outcome = fmt.Sprintf("user is inactive subject=%s, email=%s", uinfo.Subject, uinfo.Email)
 		log.With("org", ctx.OrgID).Warn(login.Outcome)
 		c.Redirect(http.StatusTemporaryRedirect, redirectErrorURL)
 		return
@@ -282,14 +294,18 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 	}
 	if !ctx.IsEmpty() {
 		user := models.User{
-			ID:       ctx.UserUUID,
-			OrgID:    ctx.OrgID,
-			Subject:  ctx.UserSubject,
+			ID:    ctx.UserUUID,
+			OrgID: ctx.OrgID,
+			// always get the subject from the IDP
+			Subject:  uinfo.Subject,
 			Name:     ctx.UserName,
 			Email:    ctx.UserEmail,
-			Verified: true,
-			Status:   ctx.UserStatus,
-			SlackID:  ctx.UserSlackID,
+			Verified: *uinfo.EmailVerified,
+			// inactive status verification happens in the upper scope
+			// here we change the user status to active in case it's "invited"
+			// otherwise, it stays as it is
+			Status:  string(types.UserStatusActive),
+			SlackID: ctx.UserSlackID,
 		}
 
 		newUserGroups := []models.UserGroup{}
@@ -337,11 +353,11 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 		}
 
 		invitedUserGroups := []models.UserGroup{}
-		for i := range ctx.UserGroups {
+		for i := range userGroups {
 			invitedUserGroups = append(invitedUserGroups, models.UserGroup{
 				OrgID:  org.ID,
 				UserID: iuser.ID,
-				Name:   ctx.UserGroups[i],
+				Name:   userGroups[i],
 			})
 		}
 
