@@ -65,7 +65,7 @@ func CreateIssue(orgId, summary, issueType string, content CreateSessionJiraIssu
 }
 
 // Function to get the current issue description
-func GetIssueDescription(orgId, issueKey string) (map[string]interface{}, error) {
+func getIssueDescription(orgId, issueKey string) (map[string]interface{}, error) {
 	req, err := createJiraRequest(orgId, "GET", fmt.Sprintf("/rest/api/3/issue/%s", issueKey), nil)
 	if err != nil {
 		log.Warnf("Error creating request to get issue: %v", err)
@@ -140,7 +140,7 @@ func updateJiraIssue(orgID, issueKey string, issue map[string]interface{}) error
 }
 
 func AddReviewCreatedJiraIssue(orgId, issueKey string, newInfo UpdateReviewJiraIssueTemplate) error {
-	currentDescription, err := GetIssueDescription(orgId, issueKey)
+	currentDescription, err := getIssueDescription(orgId, issueKey)
 	if err != nil {
 		return fmt.Errorf("failed to fetch current issue description: %v", err)
 	}
@@ -150,7 +150,7 @@ func AddReviewCreatedJiraIssue(orgId, issueKey string, newInfo UpdateReviewJiraI
 }
 
 func AddReviewByUserJiraIssue(orgId, issueKey string, newInfo AddNewReviewByUserIssueTemplate) error {
-	currentDescription, err := GetIssueDescription(orgId, issueKey)
+	currentDescription, err := getIssueDescription(orgId, issueKey)
 	if err != nil {
 		return fmt.Errorf("failed to fetch current issue description: %v", err)
 	}
@@ -160,7 +160,7 @@ func AddReviewByUserJiraIssue(orgId, issueKey string, newInfo AddNewReviewByUser
 }
 
 func AddReviewRejectedJiraIssue(orgId, issueKey string) error {
-	currentDescription, err := GetIssueDescription(orgId, issueKey)
+	currentDescription, err := getIssueDescription(orgId, issueKey)
 	if err != nil {
 		return fmt.Errorf("failed to fetch current issue description: %v", err)
 	}
@@ -170,7 +170,7 @@ func AddReviewRejectedJiraIssue(orgId, issueKey string) error {
 }
 
 func AddReviewRevokedJiraIssue(orgId, issueKey string) error {
-	currentDescription, err := GetIssueDescription(orgId, issueKey)
+	currentDescription, err := getIssueDescription(orgId, issueKey)
 	if err != nil {
 		return fmt.Errorf("failed to fetch current issue description: %v", err)
 	}
@@ -180,7 +180,7 @@ func AddReviewRevokedJiraIssue(orgId, issueKey string) error {
 }
 
 func AddReviewReadyJiraIssue(orgId, issueKey string, newInfos AddReviewReadyIssueTemplate) error {
-	currentDescription, err := GetIssueDescription(orgId, issueKey)
+	currentDescription, err := getIssueDescription(orgId, issueKey)
 	if err != nil {
 		return fmt.Errorf("failed to fetch current issue description: %v", err)
 	}
@@ -190,7 +190,7 @@ func AddReviewReadyJiraIssue(orgId, issueKey string, newInfos AddReviewReadyIssu
 }
 
 func AddSessionExecutedJiraIssue(orgId, issueKey string, newInfo AddSessionExecutedIssueTemplate) error {
-	currentDescription, err := GetIssueDescription(orgId, issueKey)
+	currentDescription, err := getIssueDescription(orgId, issueKey)
 	if err != nil {
 		return fmt.Errorf("failed to fetch current issue description: %v", err)
 	}
