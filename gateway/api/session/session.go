@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -120,52 +119,14 @@ func Post(c *gin.Context) {
 		return
 	}
 
-	// reviewGroups := make([]string, 0)
-	// if review != nil && len(review.ReviewGroupsData) > 0 {
-	// 	reviewGroups = make([]string, len(review.ReviewGroupsData))
-	// 	for i, r := range review.ReviewGroupsData {
-	// 		reviewGroups[i] = r.Group
-	// 	}
-	// }
-
-	descriptionContent := []interface{}{
-		jira.ParagraphBlock(
-			jira.StrongTextBlock("user: "),
-			jira.TextBlock(ctx.UserName),
-		),
-		jira.ParagraphBlock(
-			jira.StrongTextBlock("connection: "),
-			jira.TextBlock(conn.Name),
-		),
+	jiraIssueContent := jira.CreateSessionJiraIssueTemplate{
+		UserName:       ctx.UserName,
+		ConnectionName: conn.Name,
+		SessionID:      sessionID,
+		SessionScript:  body.Script,
 	}
 
-	// if len(reviewGroups) > 0 {
-	// 	descriptionContent = append(descriptionContent,
-	// 		jira.ParagraphBlock(
-	// 			jira.StrongTextBlock("reviewers groups: "),
-	// 			jira.TextBlock(strings.Join(reviewGroups, ", ")),
-	// 		),
-	// 	)
-	// }
-
-	descriptionContent = append(descriptionContent,
-		jira.ParagraphBlock(
-			jira.StrongTextBlock("script: "),
-		),
-		jira.CodeSnippetBlock(body.Script),
-	)
-
-	descriptionContent = append(descriptionContent,
-		jira.ParagraphBlock(
-			jira.StrongTextBlock("session link: "),
-			jira.LinkBlock(
-				fmt.Sprintf("%v/sessions/%v", os.Getenv("API_URL"), sessionID),
-				fmt.Sprintf("%v/sessions/%v", os.Getenv("API_URL"), sessionID),
-			),
-		),
-	)
-
-	if err := jira.CreateIssueSimple(ctx.OrgID, "Hoop session", "Task", sessionID, descriptionContent); err != nil {
+	if err := jira.CreateIssue(ctx.OrgID, "Hoop session", "Task", jiraIssueContent); err != nil {
 		log.Warnf("failed creating jira issue, err=%v", err)
 	}
 

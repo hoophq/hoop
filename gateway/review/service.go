@@ -109,14 +109,8 @@ func (s *Service) Revoke(ctx pgrest.OrgContext, reviewID string) (*types.Review,
 		return nil, fmt.Errorf("fetch session error: %v", err)
 	}
 
-	descriptionContent := []interface{}{
-		jira.ParagraphBlock(
-			jira.TextBlock("The session was rejected"),
-		),
-	}
-
 	// Update JIRA issue description
-	jira.UpdateJiraIssueDescription(ctx.GetOrgID(), session.JiraIssue, descriptionContent)
+	jira.AddReviewRevokedJiraIssue(ctx.GetOrgID(), session.JiraIssue)
 
 	return rev, nil
 }
@@ -189,18 +183,13 @@ func (s *Service) Review(ctx *storagev2.Context, reviewID string, status types.R
 		return nil, fmt.Errorf("fetch session error: %v", err)
 	}
 
-	descriptionContent := []interface{}{
-		jira.ParagraphBlock(
-			jira.TextBlock(rev.ReviewOwner.Name),
-			jira.TextBlock(" from "),
-			jira.StrongTextBlock(strings.Join(approvedGroups, ", ")),
-			jira.TextBlock(" has "),
-			jira.StrongTextBlock(string(rev.Status)),
-			jira.TextBlock(" the session"),
-		),
+	issueInfos := jira.AddNewReviewByUserIssueTemplate{
+		ReviewerName:         rev.ReviewOwner.Name,
+		ReviewApprovedGroups: strings.Join(approvedGroups, ", "),
+		ReviewStatus:         string(rev.Status),
 	}
 
-	jira.UpdateJiraIssueDescription(ctx.OrgID, session.JiraIssue, descriptionContent)
+	jira.AddReviewByUserJiraIssue(ctx.OrgID, session.JiraIssue, issueInfos)
 
 	switch rev.Status {
 	case types.ReviewStatusApproved:
@@ -210,30 +199,18 @@ func (s *Service) Review(ctx *storagev2.Context, reviewID string, status types.R
 		// release the connection if there's a client waiting
 		s.TransportService.ReviewStatusChange(rev)
 
-		descriptionContent := []interface{}{
-			jira.ParagraphBlock(
-				jira.TextBlock("The session is ready to be executed by the link:"),
-			),
-			jira.ParagraphBlock(
-				jira.LinkBlock(
-					fmt.Sprintf("%v/sessions/%v", ctx.ApiURL, session.ID),
-					fmt.Sprintf("%v/sessions/%v", ctx.ApiURL, session.ID),
-				)),
-		}
-
 		// Update JIRA issue description
-		jira.UpdateJiraIssueDescription(ctx.OrgID, session.JiraIssue, descriptionContent)
+		issueInfos := jira.AddReviewReadyIssueTemplate{
+			ApiURL:    ctx.ApiURL,
+			SessionID: session.ID,
+		}
+		jira.AddReviewReadyJiraIssue(ctx.OrgID, session.JiraIssue, issueInfos)
 	case types.ReviewStatusRejected:
 		// release the connection if there's a client waiting
 		s.TransportService.ReviewStatusChange(rev)
 
-		descriptionContent := []interface{}{
-			jira.ParagraphBlock(
-				jira.TextBlock("The session was rejected"),
-			),
-		}
 		// Update JIRA issue description
-		jira.UpdateJiraIssueDescription(ctx.OrgID, session.JiraIssue, descriptionContent)
+		jira.AddReviewRejectedJiraIssue(ctx.OrgID, session.JiraIssue)
 	}
 
 	return rev, nil

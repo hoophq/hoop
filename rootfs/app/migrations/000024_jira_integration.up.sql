@@ -4,7 +4,7 @@ SET search_path TO private;
 
 CREATE TYPE jira_integration_status AS ENUM ('enabled', 'disabled');
 
-CREATE TABLE private.jira_integration (
+CREATE TABLE jira_integrations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     org_id UUID NOT NULL,
     jira_url TEXT NOT NULL,

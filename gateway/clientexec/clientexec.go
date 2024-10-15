@@ -196,22 +196,13 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 		}
 		switch pkt.Type {
 		case pbclient.SessionOpenWaitingApproval:
-			descriptionContent := []interface{}{
-				jira.ParagraphBlock(
-					jira.TextBlock("This session requires review, access the following link to see it: \n"),
-				),
-				jira.LinkBlock(
-					fmt.Sprintf("%v/sessions/%v", os.Getenv("API_URL"), c.sessionID),
-					fmt.Sprintf("%v/sessions/%v", os.Getenv("API_URL"), c.sessionID),
-				),
-			}
-
 			session, err := sessionstorage.FindOne(c, c.sessionID)
 			if err != nil {
 				log.Error("failed obtaining session, err=%v", err)
 			}
 
-			jira.UpdateJiraIssueDescription(c.orgID, session.JiraIssue, descriptionContent)
+			issueInfo := jira.UpdateReviewJiraIssueTemplate{SessionID: c.sessionID}
+			jira.AddReviewCreatedJiraIssue(c.orgID, session.JiraIssue, issueInfo)
 
 			return newReviewedResponse(string(pkt.Payload))
 		case pbclient.SessionOpenApproveOK:
@@ -229,12 +220,10 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 				},
 			}
 
-			fmt.Printf(">>>>>>>>>>>>>>>> SessionOpenOK: \n %v \n %v \n", inputPayload, stdinPkt)
 			if err := c.client.Send(stdinPkt); err != nil {
 				return newErr("failed executing command, reason=%v", err)
 			}
 		case pbclient.WriteStdout, pbclient.WriteStderr:
-			fmt.Printf(">>>>>>>>>>>>>>>> WriteStdout or WriteStderr: \n %v \n ", pkt.Payload)
 			if err := c.write(pkt.Payload); err != nil {
 				return newErr("failed writing payload to log, reason=%v", err)
 			}
@@ -249,7 +238,6 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 					setExitCode(exitCode)
 			}
 			output, isTrunc, err := c.readAll()
-			fmt.Printf(">>>>>>>>>>>>>>>> WriteStdout or WriteStderr: \n %v \n ", string(output))
 			if err != nil {
 				return newErr("failed reading output response, reason=%v", err).
 					setExitCode(exitCode)

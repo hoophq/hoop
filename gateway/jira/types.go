@@ -1,6 +1,5 @@
 package jira
 
-// Estrutura para a criação de uma issue
 type Issue struct {
 	Fields IssueFields `json:"fields"`
 }

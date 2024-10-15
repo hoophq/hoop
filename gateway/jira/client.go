@@ -7,32 +7,29 @@ import (
 	"libhoop/log"
 	"net/http"
 
-	jiraintegration "github.com/hoophq/hoop/gateway/pgrest/jiraintegration"
+	"github.com/hoophq/hoop/gateway/models"
 )
 
-// Function to build the request to JIRA
 func createJiraRequest(orgId, method, endpoint string, body []byte) (*http.Request, error) {
-
-	jiraIntegrations := jiraintegration.NewJiraIntegrations()
-	integration, err := jiraIntegrations.GetJiraIntegration(orgId)
+	dbJiraIntegration, err := models.GetJiraIntegration(orgId)
 
 	if err != nil {
 		log.Warnf("Failed to get Jira integration: %v", err)
 		return nil, fmt.Errorf("failed to get Jira integration: %w", err)
 	}
-	if integration == nil {
+	if dbJiraIntegration == nil {
 		log.Warnf("No Jira integration found for org_id: %s", orgId)
 		return nil, fmt.Errorf("no Jira integration found")
 	}
 
-	if integration.Status != jiraintegration.JiraIntegrationStatusActive {
+	if dbJiraIntegration.Status != models.JiraIntegrationStatusActive {
 		log.Warnf("Jira integration is not active for org_id: %s", orgId)
 		return nil, fmt.Errorf("jira integration is not enabled")
 	}
 
-	baseURL := integration.JiraURL
-	apiToken := integration.JiraAPIToken
-	userEmail := integration.JiraUser
+	baseURL := dbJiraIntegration.JiraURL
+	apiToken := dbJiraIntegration.JiraAPIToken
+	userEmail := dbJiraIntegration.JiraUser
 
 	if userEmail == "" {
 		log.Warnf("The variable JIRA_USER_EMAIL is not set")
@@ -49,10 +46,8 @@ func createJiraRequest(orgId, method, endpoint string, body []byte) (*http.Reque
 		return nil, fmt.Errorf("token not found")
 	}
 
-	// Create the full URL
 	url := baseURL + endpoint
 
-	// Create encoded auth string
 	authString := userEmail + ":" + apiToken
 	encodedAuth := base64.StdEncoding.EncodeToString([]byte(authString))
 

@@ -234,14 +234,10 @@ func (p *auditPlugin) closeSession(pctx plugintypes.Context, errMsg error) {
 			payloadLength = 5000
 		}
 
-		descriptionContent := []interface{}{
-			jira.ParagraphBlock(
-				jira.TextBlock("The session was executed with the response: \n"),
-			),
-			jira.CodeSnippetBlock(string(payload[0:payloadLength])),
+		issueInfo := jira.AddSessionExecutedIssueTemplate{
+			Payload: string(payload[0:payloadLength]),
 		}
-
-		jira.UpdateJiraIssueDescription(pctx.OrgID, session.JiraIssue, descriptionContent)
+		jira.AddSessionExecutedJiraIssue(pctx.OrgID, session.JiraIssue, issueInfo)
 
 		memorySessionStore.Del(pctx.SID)
 	}()

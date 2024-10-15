@@ -296,9 +296,9 @@ CREATE VIEW proxymanager_state AS
 
 -- JIRA
 --
-CREATE VIEW jira_integration AS
+CREATE VIEW jira_integrations AS
     SELECT id, org_id, jira_url, jira_user, jira_api_token, jira_project_key, status, created_at, updated_at
-    FROM private.jira_integration;    
+    FROM private.jira_integrations;    
 
 -- -----------------
 -- ROLE PERMISSIONS
@@ -343,7 +343,7 @@ GRANT SELECT, INSERT, UPDATE ON reviews TO {{ .pgrest_role }};
 GRANT SELECT, INSERT, UPDATE ON review_groups TO {{ .pgrest_role }};
 GRANT SELECT, INSERT, UPDATE, DELETE ON proxymanager_state TO {{ .pgrest_role }};
 GRANT SELECT, INSERT, UPDATE ON audit TO {{ .pgrest_role }};
-GRANT SELECT, INSERT, UPDATE, DELETE ON jira_integration TO {{ .pgrest_role }};
+GRANT SELECT, INSERT, UPDATE, DELETE ON jira_integrations TO {{ .pgrest_role }};
 
 -- allow the main role to impersonate the apiuser role
 GRANT {{ .pgrest_role }} TO {{ .pg_app_user }};
