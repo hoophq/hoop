@@ -5,14 +5,14 @@ import (
 	"os"
 )
 
-func TextBlock(text string) map[string]interface{} {
+func textBlock(text string) map[string]interface{} {
 	return map[string]interface{}{
 		"type": "text",
 		"text": text,
 	}
 }
 
-func StrongTextBlock(text string) map[string]interface{} {
+func strongTextBlock(text string) map[string]interface{} {
 	return map[string]interface{}{
 		"type": "text",
 		"text": text,
@@ -24,19 +24,7 @@ func StrongTextBlock(text string) map[string]interface{} {
 	}
 }
 
-func CodeTextBlock(text string) map[string]interface{} {
-	return map[string]interface{}{
-		"type": "text",
-		"text": text,
-		"marks": []interface{}{
-			map[string]interface{}{
-				"type": "code",
-			},
-		},
-	}
-}
-
-func CodeSnippetBlock(code string) map[string]interface{} {
+func codeSnippetBlock(code string) map[string]interface{} {
 	return map[string]interface{}{
 		"type": "codeBlock",
 		"content": []interface{}{
@@ -48,7 +36,7 @@ func CodeSnippetBlock(code string) map[string]interface{} {
 	}
 }
 
-func LinkBlock(text, url string) map[string]interface{} {
+func linkBlock(text, url string) map[string]interface{} {
 	return map[string]interface{}{
 		"type": "text",
 		"text": text,
@@ -63,20 +51,20 @@ func LinkBlock(text, url string) map[string]interface{} {
 	}
 }
 
-func DividerBlock() map[string]interface{} {
+func dividerBlock() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "rule",
 	}
 }
 
-func ParagraphBlock(content ...map[string]interface{}) map[string]interface{} {
+func paragraphBlock(content ...map[string]interface{}) map[string]interface{} {
 	return map[string]interface{}{
 		"type":    "paragraph",
 		"content": content,
 	}
 }
 
-func BuildIssue(projectKey, summary, issueType string, content []interface{}) Issue {
+func buildIssue(projectKey, summary, issueType string, content []interface{}) Issue {
 	return Issue{
 		Fields: IssueFields{
 			Project:   Project{Key: projectKey},
@@ -91,7 +79,7 @@ func BuildIssue(projectKey, summary, issueType string, content []interface{}) Is
 	}
 }
 
-func BuildUpdateIssue(currentIssueContent, newIssueContent []interface{}) map[string]interface{} {
+func buildUpdateIssue(currentIssueContent, newIssueContent []interface{}) map[string]interface{} {
 	content := append(currentIssueContent, newIssueContent...)
 
 	return map[string]interface{}{
@@ -109,14 +97,9 @@ func BuildUpdateIssue(currentIssueContent, newIssueContent []interface{}) map[st
 	}
 }
 
-func AppendWithDivider(currentIssueContent, newIssueContent []interface{}) map[string]interface{} {
-	newContent := append([]interface{}{
-		map[string]interface{}{
-			"type": "rule", // Divider
-		},
-	}, newIssueContent...)
-
-	content := BuildUpdateIssue(currentIssueContent, newContent)
+func appendWithDivider(currentIssueContent, newIssueContent []interface{}) map[string]interface{} {
+	newContent := append([]interface{}{dividerBlock}, newIssueContent...)
+	content := buildUpdateIssue(currentIssueContent, newContent)
 
 	return content
 }
@@ -135,34 +118,34 @@ func createSessionJiraIssueTemplate(
 	contentInfos CreateSessionJiraIssueTemplate,
 ) Issue {
 	descriptionContent := []interface{}{
-		ParagraphBlock(
-			StrongTextBlock("user: "),
-			TextBlock(contentInfos.UserName),
+		paragraphBlock(
+			strongTextBlock("user: "),
+			textBlock(contentInfos.UserName),
 		),
-		ParagraphBlock(
-			StrongTextBlock("connection: "),
-			TextBlock(contentInfos.ConnectionName),
+		paragraphBlock(
+			strongTextBlock("connection: "),
+			textBlock(contentInfos.ConnectionName),
 		),
 	}
 
 	descriptionContent = append(descriptionContent,
-		ParagraphBlock(
-			StrongTextBlock("script: "),
+		paragraphBlock(
+			strongTextBlock("script: "),
 		),
-		CodeSnippetBlock(contentInfos.SessionScript),
+		codeSnippetBlock(contentInfos.SessionScript),
 	)
 
 	descriptionContent = append(descriptionContent,
-		ParagraphBlock(
-			StrongTextBlock("session link: "),
-			LinkBlock(
+		paragraphBlock(
+			strongTextBlock("session link: "),
+			linkBlock(
 				fmt.Sprintf("%v/sessions/%v", os.Getenv("API_URL"), contentInfos.SessionID),
 				fmt.Sprintf("%v/sessions/%v", os.Getenv("API_URL"), contentInfos.SessionID),
 			),
 		),
 	)
 
-	return BuildIssue(
+	return buildIssue(
 		projectKey,
 		summary,
 		issueType,
@@ -172,6 +155,7 @@ func createSessionJiraIssueTemplate(
 
 type UpdateReviewJiraIssueTemplate struct {
 	SessionID string
+	ApiURL    string
 }
 
 func updateReviewJiraIssueTemplate(
@@ -179,18 +163,17 @@ func updateReviewJiraIssueTemplate(
 	newContentInfos UpdateReviewJiraIssueTemplate,
 ) map[string]interface{} {
 	descriptionContent := []interface{}{
-		ParagraphBlock(
-			TextBlock("This session requires review, access the following link to see it: \n"),
+		paragraphBlock(
+			textBlock("This session requires review, access the following link to see it: \n"),
 		),
-		ParagraphBlock(
-			LinkBlock(
-				fmt.Sprintf("%v/sessions/%v", os.Getenv("API_URL"), newContentInfos.SessionID),
-				fmt.Sprintf("%v/sessions/%v", os.Getenv("API_URL"), newContentInfos.SessionID),
+		paragraphBlock(
+			linkBlock(
+				fmt.Sprintf("%v/sessions/%v", newContentInfos.ApiURL, newContentInfos.SessionID),
+				fmt.Sprintf("%v/sessions/%v", newContentInfos.ApiURL, newContentInfos.SessionID),
 			)),
 	}
 
-	// Append new content below a divider
-	return AppendWithDivider(currentIssueContent, descriptionContent)
+	return appendWithDivider(currentIssueContent, descriptionContent)
 }
 
 type AddNewReviewByUserIssueTemplate struct {
@@ -204,18 +187,17 @@ func addNewReviewByUserIssueTemplate(
 	newContentInfos AddNewReviewByUserIssueTemplate,
 ) map[string]interface{} {
 	descriptionContent := []interface{}{
-		ParagraphBlock(
-			TextBlock(newContentInfos.ReviewerName),
-			TextBlock(" from "),
-			StrongTextBlock(newContentInfos.ReviewApprovedGroups),
-			TextBlock(" has "),
-			StrongTextBlock(newContentInfos.ReviewStatus),
-			TextBlock(" the session"),
+		paragraphBlock(
+			textBlock(newContentInfos.ReviewerName),
+			textBlock(" from "),
+			strongTextBlock(newContentInfos.ReviewApprovedGroups),
+			textBlock(" has "),
+			strongTextBlock(newContentInfos.ReviewStatus),
+			textBlock(" the session"),
 		),
 	}
 
-	// Append new content below a divider
-	return AppendWithDivider(currentIssueContent, descriptionContent)
+	return appendWithDivider(currentIssueContent, descriptionContent)
 }
 
 type AddReviewReadyIssueTemplate struct {
@@ -228,18 +210,17 @@ func addReviewReadyIssueTemplate(
 	newContentInfos AddReviewReadyIssueTemplate,
 ) map[string]interface{} {
 	descriptionContent := []interface{}{
-		ParagraphBlock(
-			TextBlock("The session is ready to be executed by the link:"),
+		paragraphBlock(
+			textBlock("The session is ready to be executed by the link:"),
 		),
-		ParagraphBlock(
-			LinkBlock(
+		paragraphBlock(
+			linkBlock(
 				fmt.Sprintf("%v/sessions/%v", newContentInfos.ApiURL, newContentInfos.SessionID),
 				fmt.Sprintf("%v/sessions/%v", newContentInfos.ApiURL, newContentInfos.SessionID),
 			)),
 	}
 
-	// Append new content below a divider
-	return AppendWithDivider(currentIssueContent, descriptionContent)
+	return appendWithDivider(currentIssueContent, descriptionContent)
 }
 
 func addReviewRejectedOrRevokedIssueTemplate(
@@ -247,13 +228,12 @@ func addReviewRejectedOrRevokedIssueTemplate(
 	status string,
 ) map[string]interface{} {
 	descriptionContent := []interface{}{
-		ParagraphBlock(
-			TextBlock(fmt.Sprintf("The session was %v", status)),
+		paragraphBlock(
+			textBlock(fmt.Sprintf("The session was %v", status)),
 		),
 	}
 
-	// Append new content below a divider
-	return AppendWithDivider(currentIssueContent, descriptionContent)
+	return appendWithDivider(currentIssueContent, descriptionContent)
 }
 
 type AddSessionExecutedIssueTemplate struct {
@@ -265,12 +245,11 @@ func addSessionExecutedIssueTemplate(
 	newContentInfo AddSessionExecutedIssueTemplate,
 ) map[string]interface{} {
 	descriptionContent := []interface{}{
-		ParagraphBlock(
-			TextBlock("The session was executed with the response: \n"),
+		paragraphBlock(
+			textBlock("The session was executed with the response: \n"),
 		),
-		CodeSnippetBlock(newContentInfo.Payload),
+		codeSnippetBlock(newContentInfo.Payload),
 	}
 
-	// Append new content below a divider
-	return AppendWithDivider(currentIssueContent, descriptionContent)
+	return appendWithDivider(currentIssueContent, descriptionContent)
 }

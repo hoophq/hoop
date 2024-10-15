@@ -3,7 +3,6 @@ package clientexec
 import (
 	"context"
 	"fmt"
-	"libhoop/log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/grpc"
+	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
@@ -201,7 +201,10 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 				log.Error("failed obtaining session, err=%v", err)
 			}
 
-			issueInfo := jira.UpdateReviewJiraIssueTemplate{SessionID: c.sessionID}
+			issueInfo := jira.UpdateReviewJiraIssueTemplate{
+				ApiURL:    os.Getenv("API_URL"),
+				SessionID: c.sessionID,
+			}
 			jira.AddReviewCreatedJiraIssue(c.orgID, session.JiraIssue, issueInfo)
 
 			return newReviewedResponse(string(pkt.Payload))
