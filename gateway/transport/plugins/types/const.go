@@ -16,7 +16,6 @@ const (
 	PluginDLPName                        = "dlp"
 	PluginDatabaseCredentialsManagerName = "database-credentials-manager"
 	PluginWebhookName                    = "webhooks"
-	PluginJiraName                       = "jira"
 )
 
 var (

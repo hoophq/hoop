@@ -30,7 +30,6 @@ import (
 	pluginsaudit "github.com/hoophq/hoop/gateway/transport/plugins/audit"
 	pluginsdlp "github.com/hoophq/hoop/gateway/transport/plugins/dlp"
 	pluginsindex "github.com/hoophq/hoop/gateway/transport/plugins/index"
-	pluginjira "github.com/hoophq/hoop/gateway/transport/plugins/jira"
 	pluginsreview "github.com/hoophq/hoop/gateway/transport/plugins/review"
 	pluginsslack "github.com/hoophq/hoop/gateway/transport/plugins/slack"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
@@ -110,7 +109,6 @@ func Run() {
 		pluginsslack.New(
 			&review.Service{TransportService: g},
 			idProvider),
-		pluginjira.New(),
 	}
 	reviewService.TransportService = g
 

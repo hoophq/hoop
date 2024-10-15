@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/clientexec"
+	"github.com/hoophq/hoop/gateway/jira"
 	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
 	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
 	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
@@ -118,6 +120,55 @@ func Post(c *gin.Context) {
 		return
 	}
 
+	// reviewGroups := make([]string, 0)
+	// if review != nil && len(review.ReviewGroupsData) > 0 {
+	// 	reviewGroups = make([]string, len(review.ReviewGroupsData))
+	// 	for i, r := range review.ReviewGroupsData {
+	// 		reviewGroups[i] = r.Group
+	// 	}
+	// }
+
+	descriptionContent := []interface{}{
+		jira.ParagraphBlock(
+			jira.StrongTextBlock("user: "),
+			jira.TextBlock(ctx.UserName),
+		),
+		jira.ParagraphBlock(
+			jira.StrongTextBlock("connection: "),
+			jira.TextBlock(conn.Name),
+		),
+	}
+
+	// if len(reviewGroups) > 0 {
+	// 	descriptionContent = append(descriptionContent,
+	// 		jira.ParagraphBlock(
+	// 			jira.StrongTextBlock("reviewers groups: "),
+	// 			jira.TextBlock(strings.Join(reviewGroups, ", ")),
+	// 		),
+	// 	)
+	// }
+
+	descriptionContent = append(descriptionContent,
+		jira.ParagraphBlock(
+			jira.StrongTextBlock("script: "),
+		),
+		jira.CodeSnippetBlock(body.Script),
+	)
+
+	descriptionContent = append(descriptionContent,
+		jira.ParagraphBlock(
+			jira.StrongTextBlock("session link: "),
+			jira.LinkBlock(
+				fmt.Sprintf("%v/sessions/%v", os.Getenv("API_URL"), sessionID),
+				fmt.Sprintf("%v/sessions/%v", os.Getenv("API_URL"), sessionID),
+			),
+		),
+	)
+
+	if err := jira.CreateIssueSimple(ctx.OrgID, "Hoop session", "Task", sessionID, descriptionContent); err != nil {
+		log.Warnf("failed creating jira issue, err=%v", err)
+	}
+
 	log = log.With("sid", sessionID)
 	log.Infof("started runexec method for connection %v", conn.Name)
 	respCh := make(chan *clientexec.Response)
@@ -128,7 +179,7 @@ func Post(c *gin.Context) {
 		default:
 		}
 	}()
-	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*50)
+	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancelFn()
 	select {
 	case outcome := <-respCh:

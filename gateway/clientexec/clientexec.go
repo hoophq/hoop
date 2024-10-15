@@ -3,6 +3,7 @@ package clientexec
 import (
 	"context"
 	"fmt"
+	"libhoop/log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,7 +15,9 @@ import (
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/common/version"
+	"github.com/hoophq/hoop/gateway/jira"
 	sessionwal "github.com/hoophq/hoop/gateway/session/wal"
+	sessionstorage "github.com/hoophq/hoop/gateway/storagev2/session"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/tidwall/wal"
 )
@@ -62,6 +65,10 @@ type Response struct {
 	ExitCode          int    `json:"exit_code"`
 
 	err error
+}
+
+func (c *clientExec) GetOrgID() string {
+	return c.orgID
 }
 
 func (r *Response) String() string {
@@ -189,6 +196,23 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 		}
 		switch pkt.Type {
 		case pbclient.SessionOpenWaitingApproval:
+			descriptionContent := []interface{}{
+				jira.ParagraphBlock(
+					jira.TextBlock("This session requires review, access the following link to see it: \n"),
+				),
+				jira.LinkBlock(
+					fmt.Sprintf("%v/sessions/%v", os.Getenv("API_URL"), c.sessionID),
+					fmt.Sprintf("%v/sessions/%v", os.Getenv("API_URL"), c.sessionID),
+				),
+			}
+
+			session, err := sessionstorage.FindOne(c, c.sessionID)
+			if err != nil {
+				log.Error("failed obtaining session, err=%v", err)
+			}
+
+			jira.UpdateJiraIssueDescription(c.orgID, session.JiraIssue, descriptionContent)
+
 			return newReviewedResponse(string(pkt.Payload))
 		case pbclient.SessionOpenApproveOK:
 			if err := sendOpenSessionPktFn(); err != nil {
@@ -204,10 +228,13 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 					pb.SpecGatewaySessionID: pkt.Spec[pb.SpecGatewaySessionID],
 				},
 			}
+
+			fmt.Printf(">>>>>>>>>>>>>>>> SessionOpenOK: \n %v \n %v \n", inputPayload, stdinPkt)
 			if err := c.client.Send(stdinPkt); err != nil {
 				return newErr("failed executing command, reason=%v", err)
 			}
 		case pbclient.WriteStdout, pbclient.WriteStderr:
+			fmt.Printf(">>>>>>>>>>>>>>>> WriteStdout or WriteStderr: \n %v \n ", pkt.Payload)
 			if err := c.write(pkt.Payload); err != nil {
 				return newErr("failed writing payload to log, reason=%v", err)
 			}
@@ -216,11 +243,13 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 			if err != nil {
 				exitCode = nilExitCode
 			}
+
 			if err := c.write(pkt.Payload); err != nil {
 				return newErr("failed writing last payload to log, reason=%v", err).
 					setExitCode(exitCode)
 			}
 			output, isTrunc, err := c.readAll()
+			fmt.Printf(">>>>>>>>>>>>>>>> WriteStdout or WriteStderr: \n %v \n ", string(output))
 			if err != nil {
 				return newErr("failed reading output response, reason=%v", err).
 					setExitCode(exitCode)
