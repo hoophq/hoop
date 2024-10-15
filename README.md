@@ -23,12 +23,21 @@
     </a>
 </p>
 
-## Why Hoop?
+## Features
 
-- 🔐 **Zero Trust Access**: Passwordless auth and SSO integration without the need for certificates
-- 🚀 **Advanced Features Out-of-the-Box**: Session recording, just-in-time access, and chatbot approval workflows
-- 🛠 **Unparalleled Flexibility**: Manipulate packets in real-time, choose between web and proxy modes
-- 🌐 **Universal Compatibility**: Support for databases, servers, cloud platforms, and development environments
+- 🔐 **Zero Trust Access**: Connect securely without VPNs or exposed credentials
+- 🛡️ **Real-time Data Masking**: Automatically hide sensitive data in transit
+- 🛠 **Granular Access Control**: Just-in-Time, least-privilege access to resources
+- 🌐 **Audit Logging**: Comprehensive logs of all actions and queries
+- 🤖 **ChatOps Integration**: Approve access requests via Slack or MS Teams
+- ☁️ **Multi-Cloud Support**: Works with AWS, GCP, Azure, and on-premises setups
+
+## 🌟 Why Hoop?
+
+- **Simplified Access Management**: No more VPN or SSH key nightmares
+- **Enhanced Security**: Reduce attack surface and prevent credential leaks
+- **Compliance Made Easy**: Meet SOC2, HIPAA, and GDPR requirements out of the box
+- **Developer Productivity**: Faster, safer access to the resources devs need
 
 <!--
 ## 🚀 Quick Start
@@ -36,7 +45,12 @@
 Get up and running in minutes:
 
 ```bash
-curl -sL https://hoop.dev/install.sh | sh
+# create a jwt secret for auth
+echo "JWT_SECRET_KEY=$(openssl rand -hex 32)" >> .env
+
+# download and run
+curl -sL https://hoop.dev/docker-compose.yml > docker-compose.yml | docker compose -f - up
+
 ```
 [View full installation options](#installation)
 -->
@@ -88,11 +102,12 @@ See the full list of features for the free open-source and the enterprise versio
 [See Docker Compose installation documentation](https://hoop.dev/docs/getting-started/installation/docker-compose)
 <!--
 ```bash
-# one-line setup with docker-compose
-curl -sL https://hoop.dev/install.sh | sh
-```
+# create a jwt secret for auth
+echo "JWT_SECRET_KEY=$(openssl rand -hex 32)" >> .env
 
-> We encourage you to inspect the script before running it. You can view the contents of the installation script by visiting [https://hoop.dev/install.sh](https://hoop.dev/install.sh) or by running `curl -sL https://hoop.dev/install.sh` without piping to `sh`.
+# download and run
+curl -sL https://hoop.dev/docker-compose.yml > docker-compose.yml | docker compose -f - up
+
 -->
 ### Kubernetes
 
