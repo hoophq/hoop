@@ -2,6 +2,7 @@ package models
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/hoophq/hoop/common/log"
@@ -36,8 +37,7 @@ func GetJiraIntegration(orgID string) (*JiraIntegration, error) {
 			log.Debugf("jira integration with org_id=%s not found", orgID)
 			return nil, nil
 		}
-		log.Errorf("failed to get jira integration, reason=%v", err)
-		return nil, err
+		return nil, fmt.Errorf("failed to get jira integration, reason=%v", err)
 	}
 
 	return jiraIntegration, nil
@@ -46,8 +46,7 @@ func GetJiraIntegration(orgID string) (*JiraIntegration, error) {
 func CreateJiraIntegration(orgID string, jiraIntegration *JiraIntegration) (*JiraIntegration, error) {
 	log.Debugf("creating jira integration for org=%s", orgID)
 	if err := DB.Create(&jiraIntegration).Error; err != nil {
-		log.Errorf("failed to create jira integration, reason=%v", err)
-		return nil, err
+		return nil, fmt.Errorf("failed to create jira integration, reason=%v", err)
 	}
 
 	return jiraIntegration, nil
@@ -59,17 +58,14 @@ func UpdateJiraIntegration(orgID string, jiraIntegration *JiraIntegration) (*Jir
 	var existingIntegration JiraIntegration
 	if err := DB.Where("org_id = ?", orgID).First(&existingIntegration).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			log.Errorf("jira integration with org_id=%s not found", orgID)
-			return nil, err
+			return nil, fmt.Errorf("jira integration with org_id=%s not found", orgID)
 		}
-		log.Errorf("failed to check if jira integration exists, reason=%v", err)
-		return nil, err
+		return nil, fmt.Errorf("failed to check if jira integration exists, reason=%v", err)
 	}
 
-	jiraIntegration.UpdatedAt = time.Now()
+	jiraIntegration.UpdatedAt = time.Now().UTC()
 	if err := DB.Model(&existingIntegration).Where("org_id = ?", orgID).Updates(jiraIntegration).Error; err != nil {
-		log.Errorf("failed to update jira integration, reason=%v", err)
-		return nil, err
+		return nil, fmt.Errorf("failed to update jira integration, reason=%v", err)
 	}
 
 	return jiraIntegration, nil

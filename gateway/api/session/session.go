@@ -140,7 +140,7 @@ func Post(c *gin.Context) {
 		default:
 		}
 	}()
-	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*10)
+	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*50)
 	defer cancelFn()
 	select {
 	case outcome := <-respCh:

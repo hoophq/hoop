@@ -450,17 +450,17 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		apiserverinfo.New(api.GrpcURL).Get)
 
 	// Jira Integration routes
-	route.GET("/jira-integration",
+	route.GET("/integration/jira",
 		AdminOnlyAccessRole,
 		api.Authenticate,
 		apijiraintegration.Get)
 
-	route.POST("/jira-integration",
+	route.POST("/integration/jira",
 		AdminOnlyAccessRole,
 		api.Authenticate,
 		apijiraintegration.Post)
 
-	route.PUT("/jira-integration",
+	route.PUT("/integration/jira",
 		AdminOnlyAccessRole,
 		api.Authenticate,
 		apijiraintegration.Put)
