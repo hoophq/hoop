@@ -145,7 +145,16 @@ func (h *handler) LoginCallback(c *gin.Context) {
 		c.Redirect(http.StatusTemporaryRedirect, redirectErrorURL)
 		return
 	}
-	ctx, err := pguserauth.New().FetchUserContext(dbUser.Subject)
+
+	// if the user doesn't exist in the database, we should use the subject from the IDP
+	// to allow the user to login. This user will be a new user and will be created at
+	// the end of this method.
+	if dbUser == nil {
+		subject = uinfo.Subject
+	} else {
+		subject = dbUser.Subject
+	}
+	ctx, err := pguserauth.New().FetchUserContext(subject)
 
 	if err != nil {
 		login.Outcome = fmt.Sprintf("failed fetching user subject=%s, email=%s, reason=%v", uinfo.Subject, uinfo.Email, err)
