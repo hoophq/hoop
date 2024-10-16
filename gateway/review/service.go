@@ -103,14 +103,8 @@ func (s *Service) Revoke(ctx pgrest.OrgContext, reviewID string) (*types.Review,
 		return nil, fmt.Errorf("saving review error: %v", err)
 	}
 
-	// Fetch the session information
-	session, err := pgsession.New().FetchOne(ctx, rev.Session)
-	if err != nil {
-		return nil, fmt.Errorf("fetch session error: %v", err)
-	}
-
 	// Update JIRA issue description
-	jira.AddReviewRevokedJiraIssue(ctx.GetOrgID(), session.JiraIssue)
+	jira.UpdateJiraIssueContent("add-review-revoked", ctx.GetOrgID(), rev.Session)
 
 	return rev, nil
 }
@@ -177,19 +171,13 @@ func (s *Service) Review(ctx *storagev2.Context, reviewID string, status types.R
 		return nil, fmt.Errorf("saving review error: %v", err)
 	}
 
-	// Fetch the session information
-	session, err := pgsession.New().FetchOne(ctx, rev.Session)
-	if err != nil {
-		return nil, fmt.Errorf("fetch session error: %v", err)
-	}
-
 	issueInfos := jira.AddNewReviewByUserIssueTemplate{
 		ReviewerName:         rev.ReviewOwner.Name,
 		ReviewApprovedGroups: strings.Join(approvedGroups, ", "),
 		ReviewStatus:         string(rev.Status),
 	}
 
-	jira.AddReviewByUserJiraIssue(ctx.OrgID, session.JiraIssue, issueInfos)
+	jira.UpdateJiraIssueContent("add-review-status", ctx.OrgID, rev.Session, issueInfos)
 
 	switch rev.Status {
 	case types.ReviewStatusApproved:
@@ -199,18 +187,13 @@ func (s *Service) Review(ctx *storagev2.Context, reviewID string, status types.R
 		// release the connection if there's a client waiting
 		s.TransportService.ReviewStatusChange(rev)
 
-		// Update JIRA issue description
-		issueInfos := jira.AddReviewReadyIssueTemplate{
-			ApiURL:    ctx.ApiURL,
-			SessionID: session.ID,
-		}
-		jira.AddReviewReadyJiraIssue(ctx.OrgID, session.JiraIssue, issueInfos)
+		jira.UpdateJiraIssueContent("add-review-ready", ctx.OrgID, rev.Session)
 	case types.ReviewStatusRejected:
 		// release the connection if there's a client waiting
 		s.TransportService.ReviewStatusChange(rev)
 
 		// Update JIRA issue description
-		jira.AddReviewRejectedJiraIssue(ctx.OrgID, session.JiraIssue)
+		jira.UpdateJiraIssueContent("add-review-rejected", ctx.OrgID, rev.Session)
 	}
 
 	return rev, nil

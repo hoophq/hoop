@@ -1,21 +1,67 @@
 package jira
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
+	sessionstorage "github.com/hoophq/hoop/gateway/storagev2/session"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
+
+type orgContext struct {
+	orgID string
+}
+
+func (oc orgContext) GetOrgID() string {
+	return oc.orgID
+}
+
+type sessionParseOption struct {
+	withLineBreak bool
+	events        []string
+}
+
+func parseSessionToFile(s *types.Session, opts sessionParseOption) []byte {
+	output := []byte{}
+	for _, eventList := range s.EventStream {
+		event := eventList.(types.SessionEventStream)
+		eventType, _ := event[1].(string)
+		eventData, _ := base64.StdEncoding.DecodeString(event[2].(string))
+
+		if !slices.Contains(opts.events, eventType) {
+			continue
+		}
+
+		switch eventType {
+		case "i":
+			output = append(output, eventData...)
+		case "o", "e":
+			output = append(output, eventData...)
+		}
+		if opts.withLineBreak {
+			output = append(output, '\n')
+		}
+	}
+	return output
+}
 
 func CreateIssue(orgId, summary, issueType string, content CreateSessionJiraIssueTemplate) error {
 	dbJiraIntegration, err := models.GetJiraIntegration(orgId)
 	if err != nil {
-		log.Warnf("failed to get Jira integration: %v", err)
+		log.Warnf("Failed to get Jira integration: %v", err)
 		return fmt.Errorf("failed to get Jira integration: %w", err)
+	}
+	if dbJiraIntegration == nil {
+		log.Warnf("No Jira integration found for org_id: %s", orgId)
+		return fmt.Errorf("no Jira integration found")
 	}
 
 	issue := createSessionJiraIssueTemplate(dbJiraIntegration.JiraProjectKey, summary, issueType, content)
@@ -111,7 +157,7 @@ func GetIssueDescription(orgId, issueKey string) (map[string]interface{}, error)
 	return description, nil
 }
 
-func updateJiraIssue(orgID, issueKey string, issue map[string]interface{}) error {
+func sendJiraIssueUpdate(orgID, issueKey string, issue map[string]interface{}) error {
 	payloadBytes, err := json.Marshal(issue)
 	if err != nil {
 		return fmt.Errorf("failed to serialize update payload: %v", err)
@@ -139,92 +185,72 @@ func updateJiraIssue(orgID, issueKey string, issue map[string]interface{}) error
 	return nil
 }
 
-func AddReviewCreatedJiraIssue(orgId, issueKey string, newInfo UpdateReviewJiraIssueTemplate) error {
-	currentDescription, err := GetIssueDescription(orgId, issueKey)
+func UpdateJiraIssueContent(actionType, orgId, sessionID string, newInfo ...interface{}) error {
+	err := hasJiraIntegrationEnabled(orgId)
+	if err != nil {
+		return fmt.Errorf("jira integration is not enabled, reason: %v", err)
+	}
+
+	jiraCtx := orgContext{orgID: orgId}
+	session, err := sessionstorage.FindOne(jiraCtx, sessionID)
+	if err != nil {
+		return fmt.Errorf("fetch session error: %v", err)
+	}
+
+	currentDescription, err := GetIssueDescription(orgId, session.JiraIssue)
 	if err != nil {
 		return fmt.Errorf("failed to fetch current issue description: %v", err)
 	}
 
-	content, ok := currentDescription["content"].([]interface{})
+	contentList, ok := currentDescription["content"].([]interface{})
 	if !ok {
 		return fmt.Errorf("failed to assert content as []interface{}")
 	}
 
-	issue := updateReviewJiraIssueTemplate(content, newInfo)
-	return updateJiraIssue(orgId, issueKey, issue)
-}
+	var issue map[string]interface{}
 
-func AddReviewByUserJiraIssue(orgId, issueKey string, newInfo AddNewReviewByUserIssueTemplate) error {
-	currentDescription, err := GetIssueDescription(orgId, issueKey)
-	if err != nil {
-		return fmt.Errorf("failed to fetch current issue description: %v", err)
+	switch actionType {
+	case "add-create-review":
+		newInfo := AddCreateReviewIssueTemplate{
+			ApiURL:    appconfig.Get().ApiURL(),
+			SessionID: sessionID,
+		}
+
+		issue = updateReviewJiraIssueTemplate(contentList, newInfo)
+	case "add-review-status":
+		issue = addNewReviewByUserIssueTemplate(contentList, newInfo[0].(AddNewReviewByUserIssueTemplate))
+	case "add-review-rejected", "add-review-revoked":
+		newInfo := "rejected"
+		if actionType != "add-review-rejected" {
+			newInfo = "revoked"
+		}
+
+		issue = addReviewRejectedOrRevokedIssueTemplate(contentList, newInfo)
+	case "add-review-ready":
+		newInfo := AddReviewReadyIssueTemplate{
+			ApiURL:    appconfig.Get().ApiURL(),
+			SessionID: sessionID,
+		}
+
+		issue = addReviewReadyIssueTemplate(contentList, newInfo)
+	case "add-session-executed":
+		events := []string{"o", "e"}
+		payload := parseSessionToFile(session, sessionParseOption{withLineBreak: true, events: events})
+
+		payloadLength := len(payload)
+		if payloadLength > 5000 {
+			payloadLength = 5000
+		}
+
+		newInfo := AddSessionExecutedIssueTemplate{
+			Payload: string(payload[0:payloadLength]),
+		}
+
+		issue = addSessionExecutedIssueTemplate(contentList, newInfo)
+	default:
+		return fmt.Errorf("unknown actionType: %s", actionType)
 	}
 
-	content, ok := currentDescription["content"].([]interface{})
-	if !ok {
-		return fmt.Errorf("failed to assert content as []interface{}")
-	}
-
-	issue := addNewReviewByUserIssueTemplate(content, newInfo)
-	return updateJiraIssue(orgId, issueKey, issue)
-}
-
-func AddReviewRejectedJiraIssue(orgId, issueKey string) error {
-	currentDescription, err := GetIssueDescription(orgId, issueKey)
-	if err != nil {
-		return fmt.Errorf("failed to fetch current issue description: %v", err)
-	}
-
-	content, ok := currentDescription["content"].([]interface{})
-	if !ok {
-		return fmt.Errorf("failed to assert content as []interface{}")
-	}
-
-	issue := addReviewRejectedOrRevokedIssueTemplate(content, "rejected")
-	return updateJiraIssue(orgId, issueKey, issue)
-}
-
-func AddReviewRevokedJiraIssue(orgId, issueKey string) error {
-	currentDescription, err := GetIssueDescription(orgId, issueKey)
-	if err != nil {
-		return fmt.Errorf("failed to fetch current issue description: %v", err)
-	}
-
-	content, ok := currentDescription["content"].([]interface{})
-	if !ok {
-		return fmt.Errorf("failed to assert content as []interface{}")
-	}
-
-	issue := addReviewRejectedOrRevokedIssueTemplate(content, "revoked")
-	return updateJiraIssue(orgId, issueKey, issue)
-}
-
-func AddReviewReadyJiraIssue(orgId, issueKey string, newInfos AddReviewReadyIssueTemplate) error {
-	currentDescription, err := GetIssueDescription(orgId, issueKey)
-	if err != nil {
-		return fmt.Errorf("failed to fetch current issue description: %v", err)
-	}
-
-	content, ok := currentDescription["content"].([]interface{})
-	if !ok {
-		return fmt.Errorf("failed to assert content as []interface{}")
-	}
-
-	issue := addReviewReadyIssueTemplate(content, newInfos)
-	return updateJiraIssue(orgId, issueKey, issue)
-}
-
-func AddSessionExecutedJiraIssue(orgId, issueKey string, newInfo AddSessionExecutedIssueTemplate) error {
-	currentDescription, err := GetIssueDescription(orgId, issueKey)
-	if err != nil {
-		return fmt.Errorf("failed to fetch current issue description: %v", err)
-	}
-
-	content, ok := currentDescription["content"].([]interface{})
-	if !ok {
-		return fmt.Errorf("failed to assert content as []interface{}")
-	}
-
-	issue := addSessionExecutedIssueTemplate(content, newInfo)
-	return updateJiraIssue(orgId, issueKey, issue)
+	sendJiraIssueUpdate(orgId, session.JiraIssue, issue)
+	return nil
 }

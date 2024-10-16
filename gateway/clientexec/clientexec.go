@@ -10,14 +10,12 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/grpc"
-	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/jira"
 	sessionwal "github.com/hoophq/hoop/gateway/session/wal"
-	sessionstorage "github.com/hoophq/hoop/gateway/storagev2/session"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/tidwall/wal"
 )
@@ -196,16 +194,7 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 		}
 		switch pkt.Type {
 		case pbclient.SessionOpenWaitingApproval:
-			session, err := sessionstorage.FindOne(c, c.sessionID)
-			if err != nil {
-				log.Error("failed obtaining session, err=%v", err)
-			}
-
-			issueInfo := jira.UpdateReviewJiraIssueTemplate{
-				ApiURL:    os.Getenv("API_URL"),
-				SessionID: c.sessionID,
-			}
-			jira.AddReviewCreatedJiraIssue(c.orgID, session.JiraIssue, issueInfo)
+			jira.UpdateJiraIssueContent("add-create-review", c.orgID, c.sessionID)
 
 			return newReviewedResponse(string(pkt.Payload))
 		case pbclient.SessionOpenApproveOK:

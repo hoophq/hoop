@@ -1,10 +1,8 @@
 package audit
 
 import (
-	"encoding/base64"
 	"fmt"
 	"os"
-	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -21,7 +19,6 @@ import (
 	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
 	eventlogv1 "github.com/hoophq/hoop/gateway/session/eventlog/v1"
 	"github.com/hoophq/hoop/gateway/storagev2"
-	sessionstorage "github.com/hoophq/hoop/gateway/storagev2/session"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
@@ -35,11 +32,6 @@ type (
 		mu              sync.RWMutex
 	}
 )
-
-type sessionParseOption struct {
-	withLineBreak bool
-	events        []string
-}
 
 func New() *auditPlugin             { return &auditPlugin{walSessionStore: memory.New()} }
 func (p *auditPlugin) Name() string { return plugintypes.PluginAuditName }
@@ -189,30 +181,6 @@ func (p *auditPlugin) OnDisconnect(pctx plugintypes.Context, errMsg error) error
 	return nil
 }
 
-func parseSessionToFile(s *types.Session, opts sessionParseOption) []byte {
-	output := []byte{}
-	for _, eventList := range s.EventStream {
-		event := eventList.(types.SessionEventStream)
-		eventType, _ := event[1].(string)
-		eventData, _ := base64.StdEncoding.DecodeString(event[2].(string))
-
-		if !slices.Contains(opts.events, eventType) {
-			continue
-		}
-
-		switch eventType {
-		case "i":
-			output = append(output, eventData...)
-		case "o", "e":
-			output = append(output, eventData...)
-		}
-		if opts.withLineBreak {
-			output = append(output, '\n')
-		}
-	}
-	return output
-}
-
 func (p *auditPlugin) closeSession(pctx plugintypes.Context, errMsg error) {
 	log.With("sid", pctx.SID).Infof("closing session, reason=%v", errMsg)
 	go func() {
@@ -221,24 +189,7 @@ func (p *auditPlugin) closeSession(pctx plugintypes.Context, errMsg error) {
 			return
 		}
 
-		session, err := sessionstorage.FindOne(pctx, pctx.SID)
-		if err != nil {
-			log.Error("failed obtaining session, err=%v", err)
-		}
-
-		events := []string{"o", "e"}
-		payload := parseSessionToFile(session, sessionParseOption{withLineBreak: true, events: events})
-
-		payloadLength := len(payload)
-		if payloadLength > 5000 {
-			payloadLength = 5000
-		}
-
-		issueInfo := jira.AddSessionExecutedIssueTemplate{
-			Payload: string(payload[0:payloadLength]),
-		}
-		jira.AddSessionExecutedJiraIssue(pctx.OrgID, session.JiraIssue, issueInfo)
-
+		jira.UpdateJiraIssueContent("add-session-executed", pctx.OrgID, pctx.SID)
 		memorySessionStore.Del(pctx.SID)
 	}()
 }

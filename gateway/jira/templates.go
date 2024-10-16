@@ -98,7 +98,7 @@ func buildUpdateIssue(currentIssueContent, newIssueContent []interface{}) map[st
 }
 
 func appendWithDivider(currentIssueContent, newIssueContent []interface{}) map[string]interface{} {
-	newContent := append([]interface{}{dividerBlock}, newIssueContent...)
+	newContent := append([]interface{}{dividerBlock()}, newIssueContent...)
 	content := buildUpdateIssue(currentIssueContent, newContent)
 
 	return content
@@ -153,14 +153,14 @@ func createSessionJiraIssueTemplate(
 	)
 }
 
-type UpdateReviewJiraIssueTemplate struct {
+type AddCreateReviewIssueTemplate struct {
 	SessionID string
 	ApiURL    string
 }
 
 func updateReviewJiraIssueTemplate(
 	currentIssueContent []interface{},
-	newContentInfos UpdateReviewJiraIssueTemplate,
+	newContentInfos AddCreateReviewIssueTemplate,
 ) map[string]interface{} {
 	descriptionContent := []interface{}{
 		paragraphBlock(
