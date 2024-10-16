@@ -27,6 +27,7 @@
      "select" [forms/select (merge
                              {:label label
                               :dark true
+                              :full-width? true
                               :on-change on-change
                               :selected (or value "")
                               :options (map #(into {} {:value % :text %}) options)
@@ -39,7 +40,7 @@
                                  {:label label
                                   :dark true
                                   :placeholder (or placeholder (str "Define a value for " label))
-                                  :value value
+                                  :value (or value "")
                                   :on-change on-change
                                   :minLength minlength
                                   :maxLength maxlength
@@ -52,7 +53,7 @@
                    {:label label
                     :dark true
                     :placeholder (or placeholder (str "Define a value for " label))
-                    :value value
+                    :value (or value "")
                     :type type
                     :pattern pattern
                     :on-change on-change
@@ -120,7 +121,9 @@
                                        :value (get @state param)
                                        :type (:type metadata)
                                        :required (:required metadata)
-                                       :on-change #(update-state param (-> % .-target .-value))
+                                       :on-change (if (= "select" (:type metadata))
+                                                    #(update-state param %)
+                                                    #(update-state param (-> % .-target .-value)))
                                        :helper-text (:description metadata)
                                        :options (:options metadata)}]))
 
