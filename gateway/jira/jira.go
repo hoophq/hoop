@@ -111,11 +111,10 @@ func CreateIssue(orgId, summary, issueType string, content CreateSessionJiraIssu
 }
 
 // Function to get the current issue description
-func GetIssueDescription(orgId, issueKey string) (map[string]interface{}, error) {
+func getIssueDescription(orgId, issueKey string) (map[string]interface{}, error) {
 	req, err := createJiraRequest(orgId, "GET", fmt.Sprintf("/rest/api/3/issue/%s", issueKey), nil)
 	if err != nil {
-		log.Warnf("Error creating request to get issue: %v", err)
-		return nil, err
+		return nil, fmt.Errorf("error creating request to get issue: %v", err)
 	}
 
 	// Send the request
@@ -165,8 +164,7 @@ func sendJiraIssueUpdate(orgID, issueKey string, issue map[string]interface{}) e
 
 	req, err := createJiraRequest(orgID, "PUT", fmt.Sprintf("/rest/api/3/issue/%s", issueKey), payloadBytes)
 	if err != nil {
-		log.Warnf("failed to create request for updating issue: %v", err)
-		return err
+		return fmt.Errorf("failed to create request for updating issue: %v", err)
 	}
 
 	client := &http.Client{}
@@ -197,7 +195,7 @@ func UpdateJiraIssueContent(actionType, orgId, sessionID string, newInfo ...inte
 		return fmt.Errorf("fetch session error: %v", err)
 	}
 
-	currentDescription, err := GetIssueDescription(orgId, session.JiraIssue)
+	currentDescription, err := getIssueDescription(orgId, session.JiraIssue)
 	if err != nil {
 		return fmt.Errorf("failed to fetch current issue description: %v", err)
 	}

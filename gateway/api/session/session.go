@@ -119,11 +119,16 @@ func Post(c *gin.Context) {
 		return
 	}
 
+	sessionScriptLength := len(body.Script)
+	if sessionScriptLength > 1000 {
+		sessionScriptLength = 1000
+	}
+
 	jiraIssueContent := jira.CreateSessionJiraIssueTemplate{
 		UserName:       ctx.UserName,
 		ConnectionName: conn.Name,
 		SessionID:      sessionID,
-		SessionScript:  body.Script,
+		SessionScript:  body.Script[0:sessionScriptLength],
 	}
 
 	if err := jira.CreateIssue(ctx.OrgID, "Hoop session", "Task", jiraIssueContent); err != nil {
