@@ -173,6 +173,7 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 	if err := p.reviewSvc.Persist(pctx, newRev); err != nil {
 		return nil, plugintypes.InternalErr("failed saving review", err)
 	}
+
 	return &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{
 		Type:    pbclient.SessionOpenWaitingApproval,
 		Payload: []byte(fmt.Sprintf("%s/plugins/reviews/%s", p.apiURL, newRev.Id)),

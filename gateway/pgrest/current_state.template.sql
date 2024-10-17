@@ -218,7 +218,7 @@ $$ stable language sql;
 --
 CREATE VIEW sessions AS
     SELECT
-        id, org_id, labels, connection, connection_type, verb, user_id, user_name, user_email, status,
+        id, org_id, labels, connection, connection_type, verb, user_id, user_name, user_email, status, jira_issue,
         blob_input_id, blob_stream_id, metadata, metrics, created_at, ended_at
     FROM private.sessions;
 

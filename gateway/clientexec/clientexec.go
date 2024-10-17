@@ -10,10 +10,12 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/grpc"
+	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/common/version"
+	"github.com/hoophq/hoop/gateway/jira"
 	sessionwal "github.com/hoophq/hoop/gateway/session/wal"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/tidwall/wal"
@@ -40,6 +42,7 @@ type clientExec struct {
 	ctx        context.Context
 	cancelFn   context.CancelFunc
 	sessionID  string
+	orgID      string
 }
 
 type Options struct {
@@ -61,6 +64,10 @@ type Response struct {
 	ExitCode          int    `json:"exit_code"`
 
 	err error
+}
+
+func (c *clientExec) GetOrgID() string {
+	return c.orgID
 }
 
 func (r *Response) String() string {
@@ -122,7 +129,8 @@ func New(opts *Options) (*clientExec, error) {
 		client:     client,
 		ctx:        ctx,
 		cancelFn:   cancelFn,
-		sessionID:  opts.SessionID}, nil
+		sessionID:  opts.SessionID,
+		orgID:      opts.OrgID}, nil
 }
 
 func (c *clientExec) Run(inputPayload []byte, clientEnvVars map[string]string, clientArgs ...string) *Response {
@@ -187,6 +195,11 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 		}
 		switch pkt.Type {
 		case pbclient.SessionOpenWaitingApproval:
+			err := jira.UpdateJiraIssueContent("add-create-review", c.orgID, c.sessionID)
+			if err != nil {
+				log.Warnf("fail to update jira issue content, reason: %v", err)
+			}
+
 			return newReviewedResponse(string(pkt.Payload))
 		case pbclient.SessionOpenApproveOK:
 			if err := sendOpenSessionPktFn(); err != nil {
@@ -202,6 +215,7 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 					pb.SpecGatewaySessionID: pkt.Spec[pb.SpecGatewaySessionID],
 				},
 			}
+
 			if err := c.client.Send(stdinPkt); err != nil {
 				return newErr("failed executing command, reason=%v", err)
 			}
@@ -214,6 +228,7 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 			if err != nil {
 				exitCode = nilExitCode
 			}
+
 			if err := c.write(pkt.Payload); err != nil {
 				return newErr("failed writing last payload to log, reason=%v", err).
 					setExitCode(exitCode)
@@ -223,6 +238,7 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 				return newErr("failed reading output response, reason=%v", err).
 					setExitCode(exitCode)
 			}
+
 			return &Response{
 				Output:    string(output),
 				ExitCode:  exitCode,

@@ -205,6 +205,7 @@ type Session struct {
 	Type        string             `json:"type"`
 	Connection  string             `json:"connection"`
 	Review      *ReviewJSON        `json:"review"`
+	JiraIssue   string             `json:"jira_issue"`
 	Verb        string             `json:"verb"`
 	Status      string             `json:"status"`
 	EventStream SessionEventStream `json:"event_stream"`

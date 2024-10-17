@@ -19,6 +19,7 @@ import (
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/clientexec"
+	"github.com/hoophq/hoop/gateway/jira"
 	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
 	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
 	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
@@ -116,6 +117,24 @@ func Post(c *gin.Context) {
 		log.Errorf("failed creating session, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating session"})
 		return
+	}
+
+	// TODO: Move to inside the jira integration
+	sessionScriptLength := len(body.Script)
+	if sessionScriptLength > 1000 {
+		sessionScriptLength = 1000
+	}
+
+	jiraIssueContent := jira.CreateSessionJiraIssueTemplate{
+		UserName:       ctx.UserName,
+		ConnectionName: conn.Name,
+		SessionID:      sessionID,
+		SessionScript:  body.Script[0:sessionScriptLength],
+	}
+	// TODO: Move to inside the jira integration
+
+	if err := jira.CreateIssue(ctx.OrgID, "Hoop session", "Task", jiraIssueContent); err != nil {
+		log.Warnf("failed creating jira issue, err=%v", err)
 	}
 
 	log = log.With("sid", sessionID)

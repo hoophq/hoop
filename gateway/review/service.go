@@ -3,10 +3,13 @@ package review
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
 	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
@@ -96,7 +99,18 @@ func (s *Service) Revoke(ctx pgrest.OrgContext, reviewID string) (*types.Review,
 		return nil, ErrWrongState
 	}
 	rev.Status = types.ReviewStatusRevoked
-	return rev, s.Persist(ctx, rev)
+
+	if err := s.Persist(ctx, rev); err != nil {
+		return nil, fmt.Errorf("saving review error: %v", err)
+	}
+
+	// Update JIRA issue description
+	err = jira.UpdateJiraIssueContent("add-review-revoked", ctx.GetOrgID(), rev.Session)
+	if err != nil {
+		log.Warnf("fail to update jira issue content, reason: %v", err)
+	}
+
+	return rev, nil
 }
 
 // called by slack plugin and webapp
@@ -128,6 +142,7 @@ func (s *Service) Review(ctx *storagev2.Context, reviewID string, status types.R
 
 	reviewsCount := len(rev.ReviewGroupsData)
 	approvedCount := 0
+	var approvedGroups []string
 
 	if status == types.ReviewStatusRejected {
 		rev.Status = status
@@ -147,6 +162,8 @@ func (s *Service) Review(ctx *storagev2.Context, reviewID string, status types.R
 		if rev.ReviewGroupsData[i].Status == types.ReviewStatusApproved {
 			approvedCount++
 		}
+
+		approvedGroups = append(approvedGroups, rev.ReviewGroupsData[i].Group)
 	}
 
 	if reviewsCount == approvedCount {
@@ -158,12 +175,39 @@ func (s *Service) Review(ctx *storagev2.Context, reviewID string, status types.R
 		return nil, fmt.Errorf("saving review error: %v", err)
 	}
 
-	if rev.Status == types.ReviewStatusApproved || rev.Status == types.ReviewStatusRejected {
+	issueInfos := jira.AddNewReviewByUserIssueTemplate{
+		ReviewerName:         rev.ReviewOwner.Name,
+		ReviewApprovedGroups: strings.Join(approvedGroups, ", "),
+		ReviewStatus:         string(rev.Status),
+	}
+
+	err = jira.UpdateJiraIssueContent("add-review-status", ctx.OrgID, rev.Session, issueInfos)
+	if err != nil {
+		log.Warnf("fail to update jira issue content, reason: %v", err)
+	}
+
+	switch rev.Status {
+	case types.ReviewStatusApproved:
 		if err := pgsession.New().UpdateStatus(ctx, rev.Session, types.SessionStatusReady); err != nil {
 			return nil, fmt.Errorf("save sesession as ready error: %v", err)
 		}
 		// release the connection if there's a client waiting
 		s.TransportService.ReviewStatusChange(rev)
+
+		err = jira.UpdateJiraIssueContent("add-review-ready", ctx.OrgID, rev.Session)
+		if err != nil {
+			log.Warnf("fail to update jira issue content, reason: %v", err)
+		}
+	case types.ReviewStatusRejected:
+		// release the connection if there's a client waiting
+		s.TransportService.ReviewStatusChange(rev)
+
+		// Update JIRA issue description
+		err := jira.UpdateJiraIssueContent("add-review-rejected", ctx.OrgID, rev.Session)
+		if err != nil {
+			log.Warnf("fail to update jira issue content, reason: %v", err)
+		}
 	}
+
 	return rev, nil
 }
