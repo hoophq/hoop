@@ -301,7 +301,12 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 	if uinfo.MustSyncGroups {
 		userGroups = uinfo.Groups
 	}
+
 	if !ctx.IsEmpty() {
+		verified := false
+		if uinfo.EmailVerified != nil {
+			verified = *uinfo.EmailVerified
+		}
 		user := models.User{
 			ID:    ctx.UserUUID,
 			OrgID: ctx.OrgID,
@@ -309,7 +314,7 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 			Subject:  uinfo.Subject,
 			Name:     ctx.UserName,
 			Email:    ctx.UserEmail,
-			Verified: *uinfo.EmailVerified,
+			Verified: verified,
 			// inactive status verification happens in the upper scope
 			// here we change the user status to active in case it's "invited"
 			// otherwise, it stays as it is
