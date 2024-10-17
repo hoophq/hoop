@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/pgrest"
@@ -104,7 +105,10 @@ func (s *Service) Revoke(ctx pgrest.OrgContext, reviewID string) (*types.Review,
 	}
 
 	// Update JIRA issue description
-	jira.UpdateJiraIssueContent("add-review-revoked", ctx.GetOrgID(), rev.Session)
+	err = jira.UpdateJiraIssueContent("add-review-revoked", ctx.GetOrgID(), rev.Session)
+	if err != nil {
+		log.Warnf("fail to update jira issue content, reason: %v", err)
+	}
 
 	return rev, nil
 }
@@ -177,7 +181,10 @@ func (s *Service) Review(ctx *storagev2.Context, reviewID string, status types.R
 		ReviewStatus:         string(rev.Status),
 	}
 
-	jira.UpdateJiraIssueContent("add-review-status", ctx.OrgID, rev.Session, issueInfos)
+	err = jira.UpdateJiraIssueContent("add-review-status", ctx.OrgID, rev.Session, issueInfos)
+	if err != nil {
+		log.Warnf("fail to update jira issue content, reason: %v", err)
+	}
 
 	switch rev.Status {
 	case types.ReviewStatusApproved:
@@ -187,13 +194,19 @@ func (s *Service) Review(ctx *storagev2.Context, reviewID string, status types.R
 		// release the connection if there's a client waiting
 		s.TransportService.ReviewStatusChange(rev)
 
-		jira.UpdateJiraIssueContent("add-review-ready", ctx.OrgID, rev.Session)
+		err = jira.UpdateJiraIssueContent("add-review-ready", ctx.OrgID, rev.Session)
+		if err != nil {
+			log.Warnf("fail to update jira issue content, reason: %v", err)
+		}
 	case types.ReviewStatusRejected:
 		// release the connection if there's a client waiting
 		s.TransportService.ReviewStatusChange(rev)
 
 		// Update JIRA issue description
-		jira.UpdateJiraIssueContent("add-review-rejected", ctx.OrgID, rev.Session)
+		err := jira.UpdateJiraIssueContent("add-review-rejected", ctx.OrgID, rev.Session)
+		if err != nil {
+			log.Warnf("fail to update jira issue content, reason: %v", err)
+		}
 	}
 
 	return rev, nil

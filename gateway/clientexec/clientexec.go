@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/grpc"
+	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
@@ -194,7 +195,10 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 		}
 		switch pkt.Type {
 		case pbclient.SessionOpenWaitingApproval:
-			jira.UpdateJiraIssueContent("add-create-review", c.orgID, c.sessionID)
+			err := jira.UpdateJiraIssueContent("add-create-review", c.orgID, c.sessionID)
+			if err != nil {
+				log.Warnf("fail to update jira issue content, reason: %v", err)
+			}
 
 			return newReviewedResponse(string(pkt.Payload))
 		case pbclient.SessionOpenApproveOK:

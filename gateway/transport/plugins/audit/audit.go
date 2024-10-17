@@ -189,7 +189,11 @@ func (p *auditPlugin) closeSession(pctx plugintypes.Context, errMsg error) {
 			return
 		}
 
-		jira.UpdateJiraIssueContent("add-session-executed", pctx.OrgID, pctx.SID)
+		err := jira.UpdateJiraIssueContent("add-session-executed", pctx.OrgID, pctx.SID)
+		if err != nil {
+			log.Warnf("fail to update jira issue content, reason: %v", err)
+		}
+
 		memorySessionStore.Del(pctx.SID)
 	}()
 }

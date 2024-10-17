@@ -796,16 +796,16 @@ type JiraIntegration struct {
 	OrgID string `json:"org_id,omitempty"`
 
 	// The URL of the Jira instance
-	JiraURL string `json:"jira_url" binding:"required"`
+	URL string `json:"url" binding:"required"`
 
 	// The username for Jira authentication
-	JiraUser string `json:"jira_user" binding:"required"`
+	User string `json:"user" binding:"required"`
 
 	// The API token for Jira authentication
-	JiraAPIToken string `json:"jira_api_token" binding:"required"`
+	APIToken string `json:"api_token" binding:"required"`
 
 	// The default Jira project key
-	JiraProjectKey string `json:"jira_project_key" binding:"required"`
+	ProjectKey string `json:"project_key" binding:"required"`
 
 	Status JiraIntegrationStatus `json:"status"`
 

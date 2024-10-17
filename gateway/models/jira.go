@@ -17,15 +17,15 @@ const (
 )
 
 type JiraIntegration struct {
-	ID             string                `json:"id"`
-	OrgID          string                `json:"org_id"`
-	JiraURL        string                `json:"jira_url"`
-	JiraUser       string                `json:"jira_user"`
-	JiraAPIToken   string                `json:"jira_api_token"`
-	JiraProjectKey string                `json:"jira_project_key"`
-	Status         JiraIntegrationStatus `json:"status"`
-	CreatedAt      time.Time             `json:"created_at"`
-	UpdatedAt      time.Time             `json:"updated_at"`
+	ID         string                `json:"id"`
+	OrgID      string                `json:"org_id"`
+	URL        string                `json:"url"`
+	User       string                `json:"user"`
+	APIToken   string                `json:"api_token"`
+	ProjectKey string                `json:"project_key"`
+	Status     JiraIntegrationStatus `json:"status"`
+	CreatedAt  time.Time             `json:"created_at"`
+	UpdatedAt  time.Time             `json:"updated_at"`
 }
 
 func GetJiraIntegration(orgID string) (*JiraIntegration, error) {

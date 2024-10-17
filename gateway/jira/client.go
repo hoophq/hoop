@@ -14,17 +14,14 @@ func hasJiraIntegrationEnabled(orgID string) error {
 	dbJiraIntegration, err := models.GetJiraIntegration(orgID)
 
 	if err != nil {
-		log.Warnf("Failed to get Jira integration: %v", err)
-		return fmt.Errorf("failed to get Jira integration: %w", err)
+		return fmt.Errorf("failed to get Jira integration: %v", err)
 	}
 	if dbJiraIntegration == nil {
-		log.Warnf("No Jira integration found for org_id: %s", orgID)
-		return fmt.Errorf("no Jira integration found")
+		return fmt.Errorf("no Jira integration found for org_id: %s", orgID)
 	}
 
 	if dbJiraIntegration.Status != models.JiraIntegrationStatusActive {
-		log.Warnf("Jira integration is not active for org_id: %s", orgID)
-		return fmt.Errorf("jira integration is not enabled")
+		return fmt.Errorf("jira integration is not active for org_id: %s", orgID)
 	}
 
 	return nil
@@ -34,17 +31,15 @@ func createJiraRequest(orgId, method, endpoint string, body []byte) (*http.Reque
 	dbJiraIntegration, err := models.GetJiraIntegration(orgId)
 
 	if err != nil {
-		log.Warnf("Failed to get Jira integration: %v", err)
-		return nil, fmt.Errorf("failed to get Jira integration: %w", err)
+		return nil, fmt.Errorf("failed to get Jira integration: %s", err)
 	}
 	if dbJiraIntegration == nil {
-		log.Warnf("No Jira integration found for org_id: %s", orgId)
-		return nil, fmt.Errorf("no Jira integration found")
+		return nil, fmt.Errorf("no Jira integration found for org_id: %s", orgId)
 	}
 
-	baseURL := dbJiraIntegration.JiraURL
-	apiToken := dbJiraIntegration.JiraAPIToken
-	userEmail := dbJiraIntegration.JiraUser
+	baseURL := dbJiraIntegration.URL
+	apiToken := dbJiraIntegration.APIToken
+	userEmail := dbJiraIntegration.User
 
 	url := baseURL + endpoint
 
@@ -53,8 +48,7 @@ func createJiraRequest(orgId, method, endpoint string, body []byte) (*http.Reque
 
 	req, err := http.NewRequest(method, url, bytes.NewBuffer(body))
 	if err != nil {
-		log.Errorf("Error creating request: %v", err)
-		return nil, err
+		return nil, fmt.Errorf("error creating request: %v", err)
 	}
 
 	req.Header.Set("Authorization", "Basic "+encodedAuth)

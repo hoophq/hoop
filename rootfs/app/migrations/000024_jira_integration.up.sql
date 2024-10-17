@@ -7,10 +7,10 @@ CREATE TYPE jira_integration_status AS ENUM ('enabled', 'disabled');
 CREATE TABLE jira_integrations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     org_id UUID NOT NULL,
-    jira_url TEXT NOT NULL,
-    jira_user TEXT NOT NULL,
-    jira_api_token TEXT NOT NULL,
-    jira_project_key TEXT NOT NULL,
+    url TEXT NOT NULL,
+    "user" TEXT NOT NULL,
+    api_token TEXT NOT NULL,
+    project_key TEXT NOT NULL,
     status jira_integration_status NOT NULL DEFAULT 'enabled',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP

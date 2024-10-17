@@ -50,6 +50,7 @@ func parseSessionToFile(s *types.Session, opts sessionParseOption) []byte {
 			output = append(output, '\n')
 		}
 	}
+
 	return output
 }
 
@@ -64,7 +65,11 @@ func CreateIssue(orgId, summary, issueType string, content CreateSessionJiraIssu
 		return fmt.Errorf("no Jira integration found")
 	}
 
-	issue := createSessionJiraIssueTemplate(dbJiraIntegration.JiraProjectKey, summary, issueType, content)
+	if dbJiraIntegration.Status != models.JiraIntegrationStatusActive {
+		return fmt.Errorf("jira integration is not active for org_id: %s", orgId)
+	}
+
+	issue := createSessionJiraIssueTemplate(dbJiraIntegration.ProjectKey, summary, issueType, content)
 	body, err := json.Marshal(issue)
 	if err != nil {
 		return fmt.Errorf("error serializing issue: %v", err)
@@ -97,6 +102,7 @@ func CreateIssue(orgId, summary, issueType string, content CreateSessionJiraIssu
 	var issueResponse struct {
 		Key string `json:"key"`
 	}
+
 	if err := json.Unmarshal(respBody, &issueResponse); err != nil {
 		return fmt.Errorf("error parsing issue response: %v", err)
 	}
@@ -244,7 +250,9 @@ func UpdateJiraIssueContent(actionType, orgId, sessionID string, newInfo ...inte
 			Payload: string(payload[0:payloadLength]),
 		}
 
-		issue = addSessionExecutedIssueTemplate(contentList, newInfo)
+		if payloadLength > 0 {
+			issue = addSessionExecutedIssueTemplate(contentList, newInfo)
+		}
 	default:
 		return fmt.Errorf("unknown actionType: %s", actionType)
 	}
