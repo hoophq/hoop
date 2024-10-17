@@ -119,6 +119,7 @@ func Post(c *gin.Context) {
 		return
 	}
 
+	// TODO: Move to inside the jira integration
 	sessionScriptLength := len(body.Script)
 	if sessionScriptLength > 1000 {
 		sessionScriptLength = 1000
@@ -130,6 +131,7 @@ func Post(c *gin.Context) {
 		SessionID:      sessionID,
 		SessionScript:  body.Script[0:sessionScriptLength],
 	}
+	// TODO: Move to inside the jira integration
 
 	if err := jira.CreateIssue(ctx.OrgID, "Hoop session", "Task", jiraIssueContent); err != nil {
 		log.Warnf("failed creating jira issue, err=%v", err)
