@@ -1,23 +1,20 @@
 (ns webapp.plugins.views.manage-plugin
-  (:require
-   [clojure.string :as string]
-   [re-frame.core :as rf]
-   [webapp.plugins.views.plugins-configurations :as plugins-configurations]))
+  (:require ["@radix-ui/themes" :refer [Box]]
+            [clojure.string :as string]
+            [re-frame.core :as rf]
+            [webapp.components.headings :as h]
+            [webapp.plugins.views.plugins-configurations :as plugins-configurations]))
 
 (defn main []
   (let [plugin-details (rf/subscribe [:plugins->plugin-details])]
     (fn []
       (let [installed? (or (-> @plugin-details :plugin :installed?) false)
             plugin-name (or (-> @plugin-details :plugin :name) "")]
-        [:div
-         {:class (str "h-full flex flex-col gap-small"
-                      " px-large py-regular bg-white")}
-         [:header {:class "flex mb-regular"}
-          [:div {:class "bg-gray-700 px-3 py-2 text-white rounded-lg"}
-           [:h1 {:class "text-2xl"}
-            (->> (string/split (str plugin-name) #"_")
-                 (map string/capitalize)
-                 (string/join " "))]]]
-         [plugins-configurations/config (if installed?
-                                          plugin-name
-                                          (str plugin-name "-not-installed"))]]))))
+        [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
+         [h/h2 (->> (string/split (str plugin-name) #"_")
+                    (map string/capitalize)
+                    (string/join " ")) {:class "mb-6"}]
+         [:> Box {:p "5" :minHeight "800px" :class "bg-white border border-gray-100"}
+          [plugins-configurations/config (if installed?
+                                           plugin-name
+                                           (str plugin-name "-not-installed"))]]]))))

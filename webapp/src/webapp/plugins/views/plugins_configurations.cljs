@@ -7,6 +7,7 @@
    [webapp.plugins.views.plugin-configurations.editor :as editor-config]
    [webapp.plugins.views.plugin-configurations.indexer :as indexer-config]
    [webapp.plugins.views.plugin-configurations.slack :as slack-config]
+   [webapp.plugins.views.plugin-configurations.jira :as jira-config]
    [webapp.plugins.views.plugin-configurations.ask-ai :as ask-ai-config]))
 
 (defmulti config identity)
@@ -24,6 +25,8 @@
   [indexer-config/main])
 (defmethod config "slack" []
   [slack-config/main])
+(defmethod config "jira" []
+  [jira-config/main])
 (defmethod config "ask_ai" []
   [ask-ai-config/main])
 (defmethod config :default []

@@ -34,18 +34,22 @@
                       :navigate :reviews-plugin
                       :admin-only? false}])
 
-(def plugins-management [{:name "webhooks"
-                          :label "Webhooks"
-                          :free-feature? false}
-                         {:name "access_control"
+(def plugins-management [{:name "access_control"
                           :label "Access Control"
-                          :free-feature? true}
-                         {:name "runbooks"
-                          :label "Runbooks"
                           :free-feature? true}
                          {:name "audit"
                           :label "Audit"
                           :free-feature? true}
-                         {:name "slack"
-                          :label "Slack"
+                         {:name "runbooks"
+                          :label "Runbooks"
                           :free-feature? true}])
+
+(def integrations-management [{:name "jira"
+                               :label "Jira"
+                               :free-feature? false}
+                              {:name "webhooks"
+                               :label "Webhooks"
+                               :free-feature? false}
+                              {:name "slack"
+                               :label "Slack"
+                               :free-feature? true}])

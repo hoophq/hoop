@@ -1,5 +1,6 @@
 (ns webapp.plugins.views.plugin-configurations.ask-ai
-  (:require [re-frame.core :as rf]
+  (:require ["@radix-ui/themes" :refer [Box]]
+            [re-frame.core :as rf]
             [reagent.core :as r]
             [webapp.components.headings :as h]
             [webapp.components.toggle :as toggle]))
@@ -11,10 +12,10 @@
                            false))]
     (fn []
       (let [feature-ai-ask (get-in @user [:data :feature_ask_ai] "disabled")]
-        [:<>
+        [:> Box {:p "5" :minHeight "800px" :class "bg-white border border-gray-100"}
          [:section {:class (when (= feature-ai-ask "unavailable")
                              "opacity-50 pointer-events-none")}
-          [:div {:class "grid grid-cols-2 items-center gap-large mt-large"}
+          [:div {:class "grid grid-cols-2 items-center gap-large"}
            [:div
             [h/h3 "Enable AI Query Builder" {:class "text-gray-800"}]
             [:span {:class "block text-sm mb-regular text-gray-600"}

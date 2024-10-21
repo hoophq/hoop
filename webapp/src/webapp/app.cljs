@@ -1,16 +1,17 @@
 (ns webapp.app
-  (:require ["gsap/all" :refer [Draggable gsap]]
-            ["@radix-ui/themes" :refer [Theme]]
+  (:require ["@radix-ui/themes" :refer [Theme]]
+            ["gsap/all" :refer [Draggable gsap]]
             [bidi.bidi :as bidi]
             [clojure.string :as cs]
+            [clojure.string :as string]
             [re-frame.core :as rf]
             [webapp.audit.views.main :as audit]
             [webapp.audit.views.session-details :as session-details]
             [webapp.audit.views.sessions-filtered-by-id :as session-filtered-by-id]
-            [webapp.auth.views.logout :as logout]
-            [webapp.auth.views.signup :as signup]
             [webapp.auth.local.login :as local-auth-login]
             [webapp.auth.local.register :as local-auth-register]
+            [webapp.auth.views.logout :as logout]
+            [webapp.auth.views.signup :as signup]
             [webapp.components.dialog :as dialog]
             [webapp.components.draggable-card :as draggable-card]
             [webapp.components.headings :as h]
@@ -18,8 +19,8 @@
             [webapp.components.modal :as modals]
             [webapp.components.snackbar :as snackbar]
             [webapp.config :as config]
-            [webapp.connections.views.connection-list :as connections]
             [webapp.connections.views.connection-connect :as connection-connect]
+            [webapp.connections.views.connection-list :as connections]
             [webapp.connections.views.create-update-connection.main :as create-update-connection]
             [webapp.dashboard.main :as dashboard]
             [webapp.events]
@@ -27,7 +28,6 @@
             [webapp.events.ask-ai]
             [webapp.events.audit]
             [webapp.events.clarity]
-            [webapp.events.localauth]
             [webapp.events.components.dialog]
             [webapp.events.components.draggable-card]
             [webapp.events.components.modal]
@@ -37,6 +37,8 @@
             [webapp.events.gateway-info]
             [webapp.events.hoop-app]
             [webapp.events.indexer-plugin]
+            [webapp.events.jira-integration]
+            [webapp.events.localauth]
             [webapp.events.organization]
             [webapp.events.plugins]
             [webapp.events.reports]
@@ -46,13 +48,13 @@
             [webapp.events.segment]
             [webapp.events.slack-plugin]
             [webapp.events.users]
+            [webapp.hoop-app.main :as hoop-app]
             [webapp.organization.users.main :as org-users]
             [webapp.plugins.views.manage-plugin :as manage-plugin]
             [webapp.plugins.views.plugins-configurations :as plugins-configurations]
             [webapp.reviews.panel :as reviews]
             [webapp.reviews.review-detail :as review-details]
             [webapp.routes :as routes]
-            [webapp.hoop-app.main :as hoop-app]
             [webapp.shared-ui.sidebar.main :as sidebar]
             [webapp.slack.slack-new-organization :as slack-new-organization]
             [webapp.slack.slack-new-user :as slack-new-user]
@@ -184,17 +186,20 @@
         plugin-name (:plugin-name (:route-params current-route))]
     (rf/dispatch [:destroy-page-loader])
     (rf/dispatch [:plugins->get-plugin-by-name plugin-name])
+    (println plugin-name)
     [layout :application-hoop [manage-plugin/main plugin-name]]))
 
 (defmethod routes/panels :manage-ask-ai-panel []
   (rf/dispatch [:destroy-page-loader])
-  (layout :application-hoop [:div {:class (str "h-full flex flex-col gap-small"
-                                               " px-large py-regular bg-white")}
-                             [:header {:class "flex mb-regular"}
-                              [:div {:class "bg-gray-700 px-3 py-2 text-white rounded-lg"}
-                               [:h1 {:class "text-2xl"}
-                                "AI Query Builder"]]]
+  (layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
+                             [h/h2 "AI Query Builder" {:class "mb-6"}]
                              [plugins-configurations/config "ask_ai"]]))
+
+(defmethod routes/panels :manage-jira-panel []
+  (rf/dispatch [:destroy-page-loader])
+  (layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
+                             [h/h2 "Jira" {:class "mb-6"}]
+                             [plugins-configurations/config "jira"]]))
 
 (defmethod routes/panels :audit-plugin-panel []
   ;; this performs a redirect while we're migrating

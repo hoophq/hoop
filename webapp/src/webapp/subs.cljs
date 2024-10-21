@@ -394,3 +394,8 @@
  :modal-radix
  (fn [db _]
    (:modal-radix db)))
+
+(re-frame/reg-sub
+ :jira-integration->details
+ (fn [db _]
+   (:jira-integration->details db)))
