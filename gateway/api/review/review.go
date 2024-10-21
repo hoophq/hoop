@@ -40,10 +40,14 @@ func (h *handler) Get(c *gin.Context) {
 		}
 		log.Errorf("failed fetching review %v, err=%v", id, err)
 		sentry.CaptureException(err)
-		c.AbortWithStatus(http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
-	c.PureJSON(http.StatusOK, pgreview.ToJson(*review))
+	if review == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "review not found"})
+		return
+	}
+	c.JSON(http.StatusOK, pgreview.ToJson(*review))
 }
 
 // ListReviews
