@@ -10,7 +10,6 @@
   (if (= status "enabled") true false))
 
 (defn- configurations-view [integration-details]
-  (println (empty? (-> integration-details :data)))
   (let [is-create-or-update (if (empty? (-> integration-details :data)) :create :update)
         jira-enabled? (r/atom (or (convert-status-to-boolean
                                    (-> integration-details :data :status)) false))

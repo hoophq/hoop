@@ -458,10 +458,12 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	route.POST("/integrations/jira",
 		AdminOnlyAccessRole,
 		api.Authenticate,
+		api.TrackRequest(analytics.EventCreateJiraIntegration),
 		apijiraintegration.Post)
 
 	route.PUT("/integrations/jira",
 		AdminOnlyAccessRole,
 		api.Authenticate,
+		api.TrackRequest(analytics.EventUpdateJiraIntegration),
 		apijiraintegration.Put)
 }

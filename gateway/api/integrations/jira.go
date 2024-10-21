@@ -31,7 +31,7 @@ func Get(c *gin.Context) {
 		return
 	}
 	if dbJiraIntegration == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "Jira integration not found"})
+		c.JSON(http.StatusOK, nil)
 		return
 	}
 	c.JSON(http.StatusOK, openapi.JiraIntegration{

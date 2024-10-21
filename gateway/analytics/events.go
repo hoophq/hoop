@@ -35,6 +35,10 @@ const (
 	EventUpdatePluginConfig    = "hoop-update-plugin-config"
 	EventOpenWebhooksDashboard = "hoop-open-webhooks-dashboard"
 
+	//Jira
+	EventCreateJiraIntegration = "hoop-create-jira-integration"
+	EventUpdateJiraIntegration = "hoop-update-jira-integration"
+
 	// features
 	EventOrgFeatureUpdate            = "hoop-org-feature-update"
 	EventFeatureAskAIChatCompletions = "hoop-feature-askai-chat-completions"

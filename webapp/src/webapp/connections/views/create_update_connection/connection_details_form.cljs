@@ -94,31 +94,17 @@
       [:> Flex {:align "center" :gap "5"}
        [:> Switch {:checked @reviews
                    :size "3"
-                   :onCheckedChange #(reset! reviews %)
-                   :disabled free-license?}]
+                   :onCheckedChange #(reset! reviews %)}]
        [:> Box
         [:> Text {:as "h4" :size "3" :weight "medium"} "Reviews"]
         [:> Text {:as "p" :size "2"} (str "Require approval prior to connection execution. "
                                           "Enable Just-in-Time access for 30-minute sessions or Command reviews "
                                           "for individual query approvals.")]
-        (when free-license?
-          [:> Callout.Root {:size "2" :mt "4"}
-           [:> Callout.Icon
-            [:> Star {:size 16}]]
-           [:> Callout.Text {:class "text-gray-12"}
-            "Enable Command reviews by "
-            [:> Link {:href "#"
-                      :class "text-primary-10"
-                      :on-click #(js/window.Intercom
-                                  "showNewMessage"
-                                  "I want to upgrade my current plan")}
-             "upgrading your plan."]]])
         (when @reviews
           [:> Box {:mt "4"}
            [multi-select/main {:options (array->select-options @user-groups)
                                :id "approval-groups-input"
                                :name "approval-groups-input"
-                               :disabled? (or (not @reviews) free-license?)
                                :required? @reviews
                                :default-value (if @reviews
                                                 @review-groups

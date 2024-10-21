@@ -186,7 +186,6 @@
         plugin-name (:plugin-name (:route-params current-route))]
     (rf/dispatch [:destroy-page-loader])
     (rf/dispatch [:plugins->get-plugin-by-name plugin-name])
-    (println plugin-name)
     [layout :application-hoop [manage-plugin/main plugin-name]]))
 
 (defmethod routes/panels :manage-ask-ai-panel []
