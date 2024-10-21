@@ -1,12 +1,14 @@
 package cmd
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/briandowns/spinner"
@@ -32,6 +34,7 @@ type ConnectFlags struct {
 }
 
 var connectFlags = ConnectFlags{}
+var inputEnvVars []string
 
 var (
 	connectCmd = &cobra.Command{
@@ -425,4 +428,22 @@ func newClientArgsSpec(clientArgs []string, clientEnvVars map[string]string) map
 		spec[pb.SpecClientExecEnvVar] = encEnvVars
 	}
 	return spec
+}
+
+func parseClientEnvVars() (map[string]string, error) {
+	envVar := map[string]string{}
+	var invalidEnvs []string
+	for _, envvarStr := range inputEnvVars {
+		key, val, found := strings.Cut(envvarStr, "=")
+		if !found {
+			invalidEnvs = append(invalidEnvs, envvarStr)
+			continue
+		}
+		envKey := fmt.Sprintf("envvar:%s", key)
+		envVar[envKey] = base64.StdEncoding.EncodeToString([]byte(val))
+	}
+	if len(invalidEnvs) > 0 {
+		return nil, fmt.Errorf("invalid client env vars, expected env=var. found=%v", invalidEnvs)
+	}
+	return envVar, nil
 }
