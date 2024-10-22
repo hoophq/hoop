@@ -43,10 +43,8 @@
   (let [modal (rf/subscribe [:modal-radix])]
     (fn []
       (if (:open? @modal)
-
         [:> Dialog.Root {:open (:open? @modal)
                          :on-open-change #(rf/dispatch [:modal->set-status %])}
-
          [:> Dialog.Content {:maxWidth "916px"
                              :maxHeight "calc(100vh - 96px)"
                              :on-escape-key-down #(rf/dispatch [:modal->close])
