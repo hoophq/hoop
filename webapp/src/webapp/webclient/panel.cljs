@@ -343,7 +343,7 @@
                            :onDragEnd #(.setItem js/localStorage "editor-horizontal-pane-sizes" (str %))
                            :vertical true}
              (if (= (:status @selected-template) :ready)
-               [:section {:class "relative h-full p-3"}
+               [:section {:class "relative h-full p-3 overflow-auto"}
                 [runbooks-form/main {:runbook @selected-template
                                      :preselected-connection (:name current-connection)
                                      :selected-connections (filter #(:selected %) (:data @run-connections-list))}]]
