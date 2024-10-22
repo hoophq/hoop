@@ -63,8 +63,12 @@
                    min
                    max
                    step
+                   not-margin-bottom? ;; TODO: Remove this prop when remove margin-bottom from all inputs
                    hidden]}]
-        [:div {:class (str "mb-regular text-sm" (when full-width? " w-full") (when hidden " hidden"))}
+        [:div {:class (str "text-sm"
+                           (when-not not-margin-bottom? " mb-regular")
+                           (when full-width? " w-full")
+                           (when hidden " hidden"))}
          [:div {:class "flex items-center gap-2 mb-1"}
           (when label
             (if dark
@@ -127,8 +131,9 @@
            on-blur
            rows
            autoFocus
+           not-margin-bottom? ;; TODO: Remove this prop when remove margin-bottom from all inputs
            disabled]}]
-  [:div.mb-regular
+  [:div {:class (when-not not-margin-bottom? "mb-regular")}
    [:div {:class "flex items-center gap-2 mb-1"}
     (if dark
       [form-label-dark label]

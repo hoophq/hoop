@@ -22,7 +22,7 @@
                                (or (array->select-options
                                     (:config current-connection-config)) [{"value" "admin" "label" "admin"}]))]
     (fn [{:keys [plugin user-groups]}]
-      [:section {:class "flex flex-col px-small pt-regular"}
+      [:section {:class "flex flex-col px-small"}
        [:form
         {:on-submit (fn [e]
                       (.preventDefault e)
@@ -56,7 +56,7 @@
 
 (defn plugin-configuration-container-not-installed []
   [:section
-   [:div {:class "grid grid-cols-2 items-center gap-large mt-large"}
+   [:div {:class "grid grid-cols-2 items-center gap-large"}
     [:div
      [h/h3 "Enable Access Control" {:class "text-gray-800"}]
      [:span {:class "block text-sm mb-regular text-gray-600"}

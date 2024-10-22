@@ -152,27 +152,60 @@
                      "Upgrade"])]]
 
                 (for [plugin sidebar-constants/plugins-management]
-                  (when (or free-license? (is-plugin-enabled? (:name plugin)))
-                    ^{:key (:name plugin)}
-                    [:li
-                     [:> (.-Button ui/Disclosure)
-                      {:as "a"
-                       :onClick (fn []
-                                  (if (and free-license? (not (:free-feature? plugin)))
-                                    (js/window.Intercom
-                                     "showNewMessage"
-                                     "I want to upgrade my current plan")
+                  ^{:key (:name plugin)}
+                  [:li
+                   [:> (.-Button ui/Disclosure)
+                    {:as "a"
+                     :onClick (fn []
+                                (if (and free-license? (not (:free-feature? plugin)))
+                                  (js/window.Intercom
+                                   "showNewMessage"
+                                   "I want to upgrade my current plan")
 
-                                    (rf/dispatch [:plugins->navigate->manage-plugin (:name plugin)])))
-                       :href "#"
-                       :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-gray-800 "
-                                   "block rounded-md py-2 pr-2 pl-9 text-sm leading-6"
-                                   (when (and free-license? (not (:free-feature? plugin)))
-                                     " text-opacity-30"))}
-                      (:label plugin)
-                      (when (and free-license? (not (:free-feature? plugin)))
-                        [:div {:class "text-xs text-gray-200 py-1 px-2 border border-gray-200 rounded-md"}
-                         "Upgrade"])]]))]])]
+                                  (rf/dispatch [:plugins->navigate->manage-plugin (:name plugin)])))
+                     :href "#"
+                     :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-gray-800 "
+                                 "block rounded-md py-2 pr-2 pl-9 text-sm leading-6"
+                                 (when (and free-license? (not (:free-feature? plugin)))
+                                   " text-opacity-30"))}
+                    (:label plugin)
+                    (when (and free-license? (not (:free-feature? plugin)))
+                      [:div {:class "text-xs text-gray-200 py-1 px-2 border border-gray-200 rounded-md"}
+                       "Upgrade"])]])]])
+
+            (when admin?
+              [:> ui/Disclosure {:as "li"
+                                 :class "text-xs font-semibold leading-6 text-gray-400"}
+               [:> (.-Button ui/Disclosure) {:class "w-full group flex items-center justify-between rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-gray-800 hover:text-white"}
+                [:div {:class "flex gap-3 justify-start items-center"}
+                 [:> hero-outline-icon/PuzzlePieceIcon {:class "h-6 w-6 shrink-0 text-white"
+                                                        :aria-hidden "true"}]
+                 "Integrations"]
+                [:> hero-solid-icon/ChevronDownIcon {:class "text-white h-5 w-5 shrink-0"
+                                                     :aria-hidden "true"}]]
+               [:> (.-Panel ui/Disclosure) {:as "ul"
+                                            :class "mt-1 px-2"}
+                (for [plugin sidebar-constants/integrations-management]
+                  ^{:key (:name plugin)}
+                  [:li
+                   [:> (.-Button ui/Disclosure)
+                    {:as "a"
+                     :onClick (fn []
+                                (if (and free-license? (not (:free-feature? plugin)))
+                                  (js/window.Intercom
+                                   "showNewMessage"
+                                   "I want to upgrade my current plan")
+
+                                  (rf/dispatch [:plugins->navigate->manage-plugin (:name plugin)])))
+                     :href "#"
+                     :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-gray-800 "
+                                 "block rounded-md py-2 pr-2 pl-9 text-sm leading-6"
+                                 (when (and free-license? (not (:free-feature? plugin)))
+                                   " text-opacity-30"))}
+                    (:label plugin)
+                    (when (and free-license? (not (:free-feature? plugin)))
+                      [:div {:class "text-xs text-gray-200 py-1 px-2 border border-gray-200 rounded-md"}
+                       "Upgrade"])]])]])]
 
            [:li {:class "mt-auto mb-3"}
             [:> ui/Disclosure {:as "div"

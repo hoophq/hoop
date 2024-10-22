@@ -31,6 +31,7 @@
    :editor-plugin->select-language "shell"
    :editor-plugin->script []
    :gateway->info {:loading true, :data nil}
+   :jira-integration->details {:loading true, :data {}}
    :modal-radix {:open? false, :content nil}
    :modal-status :closed
    :new-task->selected-connection nil

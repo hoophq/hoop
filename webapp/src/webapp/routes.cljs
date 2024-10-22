@@ -30,6 +30,7 @@
      "/logout" :logout-hoop
      "/organization" [["/users" :users]]
      "/plugins" [["/manage/ask-ai" :manage-ask-ai]
+                 ["/manage/jira" :manage-jira]
                  [["/reviews/" :review-id] :reviews-plugin-details]
                  [["/manage/" :plugin-name] :manage-plugin]]
      "/register" :register-hoop

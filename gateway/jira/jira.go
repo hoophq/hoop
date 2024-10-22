@@ -54,7 +54,7 @@ func parseSessionToFile(s *types.Session, opts sessionParseOption) []byte {
 	return output
 }
 
-func CreateIssue(orgId, summary, issueType string, content CreateSessionJiraIssueTemplate) error {
+func CreateIssue(orgId, summary, issueType, sessionID string) error {
 	dbJiraIntegration, err := models.GetJiraIntegration(orgId)
 	if err != nil {
 		log.Warnf("Failed to get Jira integration: %v", err)
@@ -67,6 +67,26 @@ func CreateIssue(orgId, summary, issueType string, content CreateSessionJiraIssu
 
 	if dbJiraIntegration.Status != models.JiraIntegrationStatusActive {
 		return fmt.Errorf("jira integration is not active for org_id: %s", orgId)
+	}
+
+	jiraCtx := orgContext{orgID: orgId}
+	sessiondb := pgsession.New()
+
+	session, err := sessiondb.FetchOne(jiraCtx, sessionID)
+	if err != nil {
+		return fmt.Errorf("fetch session error: %v", err)
+	}
+
+	sessionScriptLength := len(session.Script["data"])
+	if sessionScriptLength > 1000 {
+		sessionScriptLength = 1000
+	}
+
+	content := CreateSessionJiraIssueTemplate{
+		UserName:       session.UserName,
+		ConnectionName: session.Connection,
+		SessionID:      sessionID,
+		SessionScript:  session.Script["data"][0:sessionScriptLength],
 	}
 
 	issue := createSessionJiraIssueTemplate(dbJiraIntegration.ProjectKey, summary, issueType, content)
@@ -107,8 +127,7 @@ func CreateIssue(orgId, summary, issueType string, content CreateSessionJiraIssu
 		return fmt.Errorf("error parsing issue response: %v", err)
 	}
 
-	session := pgsession.New()
-	if err := session.UpdateJiraIssue(orgId, content.SessionID, issueResponse.Key); err != nil {
+	if err := sessiondb.UpdateJiraIssue(orgId, content.SessionID, issueResponse.Key); err != nil {
 		return fmt.Errorf("error updating session with Jira issue: %v", err)
 	}
 
