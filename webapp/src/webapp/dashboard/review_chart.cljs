@@ -24,7 +24,9 @@
            status (:status review)
            update-fn (fnil inc 0)]
        (update acc date (fnil (fn [m]
-                                (update m (if (= status "APPROVED") :approved :rejected) update-fn))
+                                (update m (cond
+                                            (= status "APPROVED") :approved
+                                            (= status "REJECTED") :rejected) update-fn))
                               {:approved 0 :rejected 0}))))
    {}
    reviews))
