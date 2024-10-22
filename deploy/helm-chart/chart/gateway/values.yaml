@@ -11,15 +11,12 @@ image:
   #   pullPolicy: Always
   #   tag: latest
 
-# -- Enable an agent sidecar
-agentConfig: {}
-  # HOOP_KEY: '<AUTH_KEY>'
-  # LOG_ENCODING: 'console|json'
-  # LOG_LEVEL: 'debug|info|warn|error'
-  # LOG_GRPC: '0|1|2'
-  # imageRepository: 'hoophq/hoopdev'
-  # imageTag: latest
-  # imagePullPolicy: Always
+# -- Enable the default agent
+defaultAgent:
+  enabled: false
+  imageRepository: 'hoophq/hoopdev'
+  imageTag: latest
+  imagePullPolicy: Always
 
 # hoop gateway configuration. Please refer to https://hoop.dev/docs/self-hosting
 config:

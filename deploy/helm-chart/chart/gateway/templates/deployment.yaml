@@ -39,10 +39,11 @@ spec:
           name: grpc
         - containerPort: 8009
           name: api
-      {{- with .Values.agentConfig }}
-      - image: '{{ .imageRepository |default "hoophq/hoopdev" }}:{{ .imageTag |default "latest" }}'
+      {{- if .Values.defaultAgent.enabled }}
+      - image: '{{ .Values.defaultAgent.imageRepository | default "hoophq/hoopdev" }}:{{ .Values.defaultAgent.imageTag | default "latest" }}'
         name: defaultagent
-        imagePullPolicy: {{ .imagePullPolicy | default "Always" }}
+        command: hoop-default-agent.sh
+        imagePullPolicy: {{ .Values.defaultAgent.imagePullPolicy | default "Always" }}
         {{- if $.Values.persistence.enabled }}
         volumeMounts:
         - mountPath: /opt/hoop/sessions
@@ -50,7 +51,7 @@ spec:
         {{- end }}
         envFrom:
         - secretRef:
-            name: defaultagent-config
+            name: hoop-config
       {{ end -}}
       {{- if .Values.persistence.enabled }}
       volumes:
