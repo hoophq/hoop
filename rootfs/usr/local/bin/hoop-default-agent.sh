@@ -4,6 +4,14 @@
 SECRET_KEY=xagt-$(LC_ALL=C tr -dc A-Za-z0-9_ < /dev/urandom | head -c 43 | xargs)
 set -eo pipefail
 SECRET_KEY_HASH=$(echo -n $SECRET_KEY | sha256sum |awk {'print $1'})
+
+echo "--> wait until gateway is ready ..."
+until curl -s -f -o /dev/null "http://127.0.0.1:8009/api/healthz"
+do
+  sleep 1
+done
+echo "--> gateway is ready, starting default agent ..."
+
 psql -v ON_ERROR_STOP=1 "$POSTGRES_DB_URI" <<EOF
 BEGIN;
 DELETE FROM agents WHERE name = 'default';
