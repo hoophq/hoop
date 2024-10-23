@@ -56,7 +56,8 @@
     "recharts": "2.12.0",
     "tailwind-merge": "^2.5.2",
     "tailwindcss-animate": "^1.0.7",
-    "unique-names-generator": "^4.7.1"
+    "unique-names-generator": "^4.7.1",
+    "url-parse": "^1.5.10"
   },
   "devDependencies": {
     "@tailwindcss/forms": "^0.5.7",

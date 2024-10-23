@@ -1,30 +1,21 @@
 (ns webapp.hoop-app.setup
-  (:require ["@heroicons/react/24/outline" :as hero-outline-icon]
+  (:require ["url-parse" :as url-parse]
+            ["@heroicons/react/24/outline" :as hero-outline-icon]
             [re-frame.core :as rf]
             [reagent.core :as r]
             [webapp.components.button :as button]
             [webapp.components.headings :as h]
             [webapp.components.stepper :as stepper]))
 
-(def pooling-get-app-status
-  (fn [set-timeout]
-    (rf/dispatch [:hoop-app->get-app-status])
-    (rf/dispatch [:hoop-app->get-my-configs])
-    (set-timeout)))
-
-(defn set-timeout-def []
-  (js/setTimeout #(pooling-get-app-status set-timeout-def) 5000))
-
 (defn main [_]
   (let [gateway-info (rf/subscribe [:gateway->info])
-        grpc-url-parsed (.parse js/URL (-> @gateway-info :data :grpc_url))
-
+        grpc-url (url-parse (-> @gateway-info :data :grpc_url))
         steps (r/atom {:download {:status "current"}
                        :connect {:status "upcoming"}})]
     (rf/dispatch [:hoop-app->get-my-configs])
-    (pooling-get-app-status set-timeout-def)
     (rf/dispatch [:hoop-app->update-my-configs {:apiUrl (-> @gateway-info :data :api_url)
-                                                :grpcUrl (.-host grpc-url-parsed)}])
+                                                :grpcUrl (.-host grpc-url)
+                                                :token (.getItem js/localStorage "jwt-token")}])
     (fn [connection-name]
       (let [change-step (fn [step status]
                           (reset! steps (update @steps step #(assoc % :status status))))]
@@ -68,8 +59,8 @@
                                                                               (change-step :download "complete")
                                                                               (change-step :connect "current"))}])]}
              :connect {:status (:status (@steps :connect))
-                       :title "Login and Start"
-                       :text "Access your app options to sign in to your hoop account and start a hoop access."
+                       :title "Start hoop.dev app"
+                       :text "Access your app options to start a hoop access."
                        :component [:div
                                    [:figure {:class "flex"}
                                     [:img {:src "/images/hoop-app-tray.png"

@@ -3,7 +3,6 @@
             ["gsap/all" :refer [Draggable gsap]]
             [bidi.bidi :as bidi]
             [clojure.string :as cs]
-            [clojure.string :as string]
             [re-frame.core :as rf]
             [webapp.audit.views.main :as audit]
             [webapp.audit.views.session-details :as session-details]
@@ -48,7 +47,6 @@
             [webapp.events.segment]
             [webapp.events.slack-plugin]
             [webapp.events.users]
-            [webapp.hoop-app.main :as hoop-app]
             [webapp.organization.users.main :as org-users]
             [webapp.plugins.views.manage-plugin :as manage-plugin]
             [webapp.plugins.views.plugins-configurations :as plugins-configurations]
@@ -142,11 +140,6 @@
 
 (defmethod routes/panels :home-redirect-panel []
   [layout :application-hoop [home/home-panel-hoop]])
-
-(defmethod routes/panels :hoop-app-panel []
-  [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
-                             [h/h2 "Hoop App" {:class "mb-6"}]
-                             [hoop-app/main]]])
 
 (defmethod routes/panels :users-panel []
   [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
