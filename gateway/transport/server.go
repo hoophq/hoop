@@ -204,7 +204,7 @@ func validateConnectionAccessMode(clientVerb, clientOrigin string, connInfo type
 		"connect":  connInfo.AccessModeConnect,
 		"runbooks": connInfo.AccessModeRunbooks}
 	if accessModes[currentAccessMode] == "disabled" {
-		return status.Error(codes.FailedPrecondition, fmt.Sprintf("%s is disabeld for this connection", currentAccessMode))
+		return status.Error(codes.FailedPrecondition, fmt.Sprintf("%s is disabled for this connection", currentAccessMode))
 	}
 	return nil
 }
