@@ -11,8 +11,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
-var regexpMatchInputKey = regexp.MustCompile(`\.[a-zA-Z0-9_]+`)
-
 type template struct {
 	textTmpl   *ttemplate.Template
 	attributes map[string]any
@@ -73,6 +71,8 @@ func Parse(tmpl string) (*template, error) {
 	return t, nil
 }
 
+var regexpMatchInputKey = regexp.MustCompile(`^{{\.[a-zA-Z0-9_]+`)
+
 func parseSpecFromTemplate(node parse.Node, into map[string]any) error {
 	if node.Type() == parse.NodeAction {
 		findings := regexpMatchInputKey.FindAllString(node.String(), -1)
@@ -80,7 +80,7 @@ func parseSpecFromTemplate(node parse.Node, into map[string]any) error {
 			return fmt.Errorf("inconsistent findings, findings=%v, val=%v", len(findings), findings)
 		}
 		inputKey := strings.TrimSpace(findings[0])
-		inputKey = inputKey[1:] // remove dot
+		inputKey = inputKey[3:] // remove prefix {{.
 		into[inputKey] = parseNode(node.String())
 	}
 	if ln, ok := node.(*parse.ListNode); ok {
