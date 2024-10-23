@@ -22,7 +22,7 @@ func New() *Segment {
 
 func (s *Segment) Identify(ctx *types.APIContext) {
 	if s.Client == nil || ctx == nil || ctx.UserEmail == "" || ctx.OrgID == "" ||
-		environmentName == "127.0.0.1" || environmentName == "localhost" {
+		appconfig.Get().DoNotTrack() {
 		return
 	}
 
@@ -55,7 +55,7 @@ func (s *Segment) Identify(ctx *types.APIContext) {
 
 // Track generates an event to segment, if the context is not set, it will emit an anoynimous event
 func (s *Segment) Track(userEmail, eventName string, properties map[string]any) {
-	if s.Client == nil || environmentName == "127.0.0.1" || environmentName == "localhost" {
+	if s.Client == nil || appconfig.Get().DoNotTrack() {
 		return
 	}
 	if properties == nil {
