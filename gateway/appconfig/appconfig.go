@@ -40,6 +40,7 @@ type Config struct {
 	licenseSignerOrgID      string
 	migrationPathFiles      string
 	orgMultitenant          bool
+	doNotTrack              bool
 	apiURL                  string
 	grpcURL                 string
 	apiHostname             string
@@ -141,6 +142,7 @@ func Load() error {
 		licenseSignerOrgID:      allowedOrgID,
 		gcpDLPJsonCredentials:   gcpJsonCred,
 		orgMultitenant:          os.Getenv("ORG_MULTI_TENANT") == "true",
+		doNotTrack:              os.Getenv("DO_NOT_TRACK") == "true",
 		dlpProvider:             os.Getenv("DLP_PROVIDER"),
 		msPresidioAnalyzerURL:   os.Getenv("MSPRESIDIO_ANALYZER_URL"),
 		msPresidioAnonymizerURL: os.Getenv("MSPRESIDIO_ANONYMIZER_URL"),
@@ -293,6 +295,7 @@ func (c Config) MSPresidioAnomymizerURL() string { return c.msPresidioAnonymizer
 func (c Config) PgUsername() string              { return c.pgCred.username }
 func (c Config) PgURI() string                   { return c.pgCred.connectionString }
 func (c Config) PostgRESTRole() string           { return c.pgCred.postgrestRole }
+func (c Config) DoNotTrack() bool                { return c.doNotTrack }
 
 func (c Config) MigrationPathFiles() string { return c.migrationPathFiles }
 func (c Config) OrgMultitenant() bool       { return c.orgMultitenant }
