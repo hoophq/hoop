@@ -179,10 +179,12 @@
   (let [user (rf/subscribe [:users->current-user])
         session-details (rf/subscribe [:audit->session-details])
         session-report (rf/subscribe [:reports->session])
+        gateway-info (rf/subscribe [:gateway->info])
         executing-status (r/atom :ready)
         add-review-popover-open? (r/atom false)
         clipboard-url (new clipboardjs ".copy-to-clipboard-url")]
     (rf/dispatch [:reports->clear-session-report-by-id])
+    (rf/dispatch [:gateway->get-info])
     (when session
       (rf/dispatch [:audit->get-session-by-id session]))
     (fn []
@@ -191,6 +193,7 @@
             connection-name (:connection session)
             start-date (:start_date session)
             end-date (:end_date session)
+            disabled-download (-> @gateway-info :data :disable_sessions_download)
             review-groups (-> session :review :review_groups_data)
             in-progress? (or (= end-date nil)
                              (= end-date ""))
@@ -258,7 +261,9 @@
                                               "/" (:id session))}
               [:> hero-outline-icon/ClipboardDocumentIcon {:class "h-5 w-5 text-gray-600"}]]]
 
-            (when (and (= (:verb session) "exec") (or (:output session) (:event_stream session)))
+            (when (and (= (:verb session) "exec")
+                       (or (:output session) (:event_stream session))
+                       (not disabled-download))
               [:div {:class "relative"}
                [:div {:class "relative rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer group"
                       :on-click #(rf/dispatch [:audit->session-file-generate

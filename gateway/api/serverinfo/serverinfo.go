@@ -20,17 +20,18 @@ var (
 	isOrgMultiTenant = os.Getenv("ORG_MULTI_TENANT") == "true"
 	vinfo            = version.Get()
 	serverInfoData   = openapi.ServerInfo{
-		Version:              vinfo.Version,
-		Commit:               vinfo.GitCommit,
-		LogLevel:             os.Getenv("LOG_LEVEL"),
-		GoDebug:              os.Getenv("GODEBUG"),
-		AdminUsername:        os.Getenv("ADMIN_USERNAME"),
-		AuthMethod:           appconfig.Get().AuthMethod(),
-		HasRedactCredentials: isEnvSet("GOOGLE_APPLICATION_CREDENTIALS_JSON"),
-		HasWebhookAppKey:     isEnvSet("WEBHOOK_APPKEY"),
-		HasIDPAudience:       isEnvSet("IDP_AUDIENCE"),
-		HasIDPCustomScopes:   isEnvSet("IDP_CUSTOM_SCOPES"),
-		HasPostgresRole:      isEnvSet("PGREST_ROLE"),
+		Version:                 vinfo.Version,
+		Commit:                  vinfo.GitCommit,
+		LogLevel:                os.Getenv("LOG_LEVEL"),
+		GoDebug:                 os.Getenv("GODEBUG"),
+		AdminUsername:           os.Getenv("ADMIN_USERNAME"),
+		AuthMethod:              appconfig.Get().AuthMethod(),
+		HasRedactCredentials:    isEnvSet("GOOGLE_APPLICATION_CREDENTIALS_JSON"),
+		HasWebhookAppKey:        isEnvSet("WEBHOOK_APPKEY"),
+		HasIDPAudience:          isEnvSet("IDP_AUDIENCE"),
+		HasIDPCustomScopes:      isEnvSet("IDP_CUSTOM_SCOPES"),
+		HasPostgresRole:         isEnvSet("PGREST_ROLE"),
+		DisableSessionsDownload: os.Getenv("DISABLE_SESSIONS_DOWNLOAD") == "true",
 	}
 )
 
