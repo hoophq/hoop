@@ -151,13 +151,14 @@ func (r *review) FetchJit(ctx pgrest.OrgContext, ownerUserID, connectionID strin
 
 func ToJson(rev types.Review) *types.ReviewJSON {
 	return &types.ReviewJSON{
-		Id:               rev.Id,
-		OrgId:            rev.OrgId,
-		CreatedAt:        rev.CreatedAt,
-		Type:             rev.Type,
-		Session:          rev.Session,
-		Input:            rev.Input,
-		InputEnvVars:     rev.InputEnvVars,
+		Id:        rev.Id,
+		OrgId:     rev.OrgId,
+		CreatedAt: rev.CreatedAt,
+		Type:      rev.Type,
+		Session:   rev.Session,
+		Input:     rev.Input,
+		// Redacted for now
+		// InputEnvVars:     rev.InputEnvVars,
 		InputClientArgs:  rev.InputClientArgs,
 		AccessDuration:   rev.AccessDuration,
 		Status:           rev.Status,

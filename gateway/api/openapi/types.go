@@ -523,8 +523,6 @@ type Review struct {
 	Session string `json:"session" format:"uuid" readonly:"true" example:"35DB0A2F-E5CE-4AD8-A308-55C3108956E5"`
 	// The input that was issued when the resource was created
 	Input string `json:"input" readonly:"true" example:"SELECT NOW()"`
-	// The environment variables when the resource was created
-	InputEnvVars map[string]string `json:"input_envvars" readonly:"true"`
 	// The client arguments when the resource was created
 	InputClientArgs []string `json:"input_clientargs" readonly:"true" example:"-x"`
 	// The amount of time (nanoseconds) to allow access to the connection. It's valid only for `jit` type reviews`

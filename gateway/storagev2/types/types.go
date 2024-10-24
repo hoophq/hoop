@@ -149,20 +149,21 @@ type Review struct {
 }
 
 type ReviewJSON struct {
-	Id               string            `json:"id"`
-	OrgId            string            `json:"org"`
-	CreatedAt        time.Time         `json:"created_at"`
-	Type             string            `json:"type"`
-	Session          string            `json:"session"`
-	Input            string            `json:"input"`
-	InputEnvVars     map[string]string `json:"input_envvars"`
-	InputClientArgs  []string          `json:"input_clientargs"`
-	AccessDuration   time.Duration     `json:"access_duration"`
-	Status           ReviewStatus      `json:"status"`
-	RevokeAt         *time.Time        `json:"revoke_at"`
-	ReviewOwner      ReviewOwner       `json:"review_owner"`
-	Connection       ReviewConnection  `json:"review_connection"`
-	ReviewGroupsData []ReviewGroup     `json:"review_groups_data"`
+	Id        string    `json:"id"`
+	OrgId     string    `json:"org"`
+	CreatedAt time.Time `json:"created_at"`
+	Type      string    `json:"type"`
+	Session   string    `json:"session"`
+	Input     string    `json:"input"`
+	// Redacted for now
+	// InputEnvVars     map[string]string `json:"input_envvars"`
+	InputClientArgs  []string         `json:"input_clientargs"`
+	AccessDuration   time.Duration    `json:"access_duration"`
+	Status           ReviewStatus     `json:"status"`
+	RevokeAt         *time.Time       `json:"revoke_at"`
+	ReviewOwner      ReviewOwner      `json:"review_owner"`
+	Connection       ReviewConnection `json:"review_connection"`
+	ReviewGroupsData []ReviewGroup    `json:"review_groups_data"`
 }
 
 type SessionEventStream []any

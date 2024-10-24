@@ -112,13 +112,14 @@ func sanitizeReview(review *types.Review) types.ReviewJSON {
 	}
 
 	return types.ReviewJSON{
-		Id:              review.Id,
-		OrgId:           review.OrgId,
-		CreatedAt:       review.CreatedAt,
-		Type:            review.Type,
-		Session:         review.Session,
-		Input:           review.Input,
-		InputEnvVars:    review.InputEnvVars,
+		Id:        review.Id,
+		OrgId:     review.OrgId,
+		CreatedAt: review.CreatedAt,
+		Type:      review.Type,
+		Session:   review.Session,
+		Input:     review.Input,
+		// Redacted for now
+		// InputEnvVars:    review.InputEnvVars,
 		InputClientArgs: review.InputClientArgs,
 		AccessDuration:  review.AccessDuration,
 		Status:          review.Status,
