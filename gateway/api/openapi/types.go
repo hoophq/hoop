@@ -776,6 +776,10 @@ type ServerInfo struct {
 	// The tenancy type
 	TenancyType string             `json:"tenancy_type" enums:"selfhosted,multitenant"`
 	LicenseInfo *ServerLicenseInfo `json:"license_info"`
+	// Indicates if session download functionality is disabled
+	// * true - Session download is disabled and not available to users
+	// * false - Session download is enabled and available to users
+	DisableSessionsDownload bool `json:"disable_sessions_download"`
 }
 
 type LivenessCheck struct {

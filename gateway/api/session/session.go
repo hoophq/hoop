@@ -18,6 +18,7 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/jira"
 	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
@@ -255,6 +256,13 @@ func Get(c *gin.Context) {
 
 	fileExt := c.Query("extension")
 	if fileExt != "" {
+		if appconfig.Get().DisableSessionsDownload() {
+			c.JSON(http.StatusForbidden, gin.H{
+				"status":  http.StatusForbidden,
+				"message": "session download is not allowed."})
+			return
+		}
+
 		if ctx.ApiURL == "" {
 			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed generating download link, missing api url"})
 			return
@@ -353,6 +361,7 @@ func Get(c *gin.Context) {
 //	@Router			/sessions/{session_id}/download [get]
 func DownloadSession(c *gin.Context) {
 	// ctx := storagev2.ParseContext(c)
+
 	sid := c.Param("session_id")
 	requestToken := c.Query("token")
 	fileExt := c.Query("extension")

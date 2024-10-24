@@ -50,6 +50,7 @@ type Config struct {
 	webappUsersManagement   string
 	jwtSecretKey            []byte
 	webappStaticUIPath      string
+	disableSessionsDownload bool
 
 	isLoaded bool
 }
@@ -152,6 +153,7 @@ func Load() error {
 		jwtSecretKey:            []byte(os.Getenv("JWT_SECRET_KEY")),
 		webappStaticUIPath:      webappStaticUiPath,
 		isLoaded:                true,
+		disableSessionsDownload: os.Getenv("DISABLE_SESSIONS_DOWNLOAD") == "true",
 	}
 	return nil
 }
@@ -296,6 +298,7 @@ func (c Config) PgUsername() string              { return c.pgCred.username }
 func (c Config) PgURI() string                   { return c.pgCred.connectionString }
 func (c Config) PostgRESTRole() string           { return c.pgCred.postgrestRole }
 func (c Config) DoNotTrack() bool                { return c.doNotTrack }
+func (c Config) DisableSessionsDownload() bool   { return c.disableSessionsDownload }
 
 func (c Config) MigrationPathFiles() string { return c.migrationPathFiles }
 func (c Config) OrgMultitenant() bool       { return c.orgMultitenant }
