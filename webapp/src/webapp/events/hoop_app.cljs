@@ -3,24 +3,7 @@
    [re-frame.core :as rf]
    [webapp.config :as config]))
 
-(rf/reg-event-fx
- :hoop-app->get-app-status
- (fn []
-   (let [on-success #(rf/dispatch [::hoop-app->set-app-status true])
-         on-failure #(rf/dispatch [::hoop-app->set-app-status false])
-         get-app-status [:http-request
-                         {:method "GET"
-                          :options {:headers {:accept "application/json"
-                                              "Content-Type" "application/json"}}
-                          :url (str config/hoop-app-url "/ping")
-                          :on-success on-success
-                          :on-failure on-failure}]]
-     {:fx [[:dispatch get-app-status]]})))
 
-(rf/reg-event-fx
- ::hoop-app->set-app-status
- (fn [{:keys [db]} [_ response]]
-   {:db (assoc-in db [:hoop-app->running?] response)}))
 
 (rf/reg-event-fx
  :hoop-app->get-my-configs
