@@ -282,6 +282,10 @@ type RunbookRequest struct {
 	RefHash string `json:"ref_hash" example:"20320ebbf9fc612256b67dc9e899bbd6e4745c77"`
 	// The parameters of the runbook. It must match with the declared attributes
 	Parameters map[string]string `json:"parameters" example:"amount:10,wallet_id:6736"`
+	// Environment Variables that will be included in the runtime
+	// * { envvar:[env-key]: [base64-val] } - Expose the value as environment variable
+	// * { filesystem:[env-key]: [base64-val] } - Expose the value as a temporary file path creating the value in the filesystem
+	EnvVars map[string]string `json:"env_vars" example:"envvar:PASSWORD:MTIz,filesystem:SECRET_FILE:bXlzZWNyZXQ="`
 	// Additional arguments to pass down to the connection
 	ClientArgs []string `json:"client_args" example:"--verbose"`
 	// Metadata attributes to add in the session

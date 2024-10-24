@@ -171,6 +171,14 @@ func RunExec(c *gin.Context) {
 		return
 	}
 
+	for key, val := range req.EnvVars {
+		// don't replace environment variables from runbook
+		if _, ok := runbook.EnvVars[key]; ok {
+			continue
+		}
+		runbook.EnvVars[key] = val
+	}
+
 	runbookParamsJson, _ := json.Marshal(req.Parameters)
 	sessionLabels := types.SessionLabels{
 		"runbookFile":       req.FileName,
