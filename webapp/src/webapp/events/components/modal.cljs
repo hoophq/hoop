@@ -16,11 +16,18 @@
 (rf/reg-event-fx
  :modal->close
  (fn [{:keys [db]} [_ _]]
-   (js/setTimeout #(rf/dispatch [:modal->clear]) 500)
    {:db (assoc-in db [:modal-radix :open?] false)}))
+
+(rf/reg-event-fx
+ :modal->re-open
+ (fn [{:keys [db]} [_]]
+   {:db (assoc-in db [:modal-radix :open?] true)}))
 
 (rf/reg-event-fx
  :modal->open
  (fn [{:keys [db]} [_ data]]
    {:db (assoc-in db [:modal-radix] {:open? true
+                                     :id (:id data)
+                                     :maxWidth (:maxWidth data)
+                                     :custom-on-click-out (:custom-on-click-out data)
                                      :content (:content data)})}))

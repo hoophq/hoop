@@ -1,9 +1,9 @@
 (ns webapp.events.connections
-  (:require [re-frame.core :as rf]
+  (:require ["url-parse" :as url-parse]
+            [re-frame.core :as rf]
             [clojure.edn :refer [read-string]]
             [webapp.connections.constants :as constants]
-            [webapp.connections.views.connection-connect :as connection-connect]
-            [webapp.hoop-app.setup :as setup]))
+            [webapp.connections.views.connection-connect :as connection-connect]))
 
 (rf/reg-event-fx
  :connections->get-connection-details
@@ -106,9 +106,16 @@
                         :on-failure (fn [err]
                                       (rf/dispatch [::connections->connection-connected-error (merge body {:error-message err})]))
                         :on-success (fn [res]
-                                      (rf/dispatch [:show-snackbar {:level :success
-                                                                    :text (str "The connection " connection-name " is connected!")}])
-                                      (rf/dispatch [::connections->connection-connected-success res]))}]]]})))
+                                      (if (= (:status res) "disconnected")
+                                        (do
+                                          (rf/dispatch [:show-snackbar {:level :error
+                                                                        :text (str "The connection " connection-name " is not able "
+                                                                                   "to be connected, please contact your admin.")}])
+                                          (rf/dispatch [:modal->close]))
+                                        (do
+                                          (rf/dispatch [:show-snackbar {:level :success
+                                                                        :text (str "The connection " connection-name " is connected!")}])
+                                          (rf/dispatch [::connections->connection-connected-success res]))))}]]]})))
 
 (rf/reg-event-fx
  :connections->connection-disconnect
@@ -132,7 +139,11 @@
                      {:method "GET"
                       :uri "/proxymanager/status"
                       :on-success (fn [res]
-                                    (rf/dispatch [::connections->connection-connected-success res]))
+                                    (rf/dispatch [::connections->connection-connected-success res])
+                                    (when (= (:status res) "connected")
+                                      (rf/dispatch [:modal->open {:content  [connection-connect/main]
+                                                                  :maxWidth "446px"
+                                                                  :custom-on-click-out connection-connect/minimize-modal}])))
                       :on-failure #(println :failure :connections->connection-get-status %)}]]]}))
 
 (rf/reg-event-fx
@@ -211,21 +222,17 @@ ORDER BY total_amount DESC;")
                                    (rf/dispatch [:navigate :connections])))}]]]}))
 
 (rf/reg-event-fx
- :connections->open-connect-setup
- (fn [_ [_ connection-name]]
-   {:fx [[:dispatch [:draggable-card->close-modal]]
-         [:dispatch [:open-modal [setup/main connection-name]
-                     :large
-                     (fn []
-                       (js/clearTimeout)
-                       (rf/dispatch [:close-modal]))]]]}))
-
-(rf/reg-event-fx
  :connections->start-connect
- (fn [_ [_ connection-name]]
-   {:fx [[:dispatch [:close-modal]]
-         [:dispatch [:connections->connection-connect connection-name]]
-         [:dispatch [:draggable-card->open-modal
-                     [connection-connect/main]
-                     :default
-                     connection-connect/handle-close-modal]]]}))
+ (fn [{:keys [db]} [_ connection-name]]
+   (let [gateway-info (-> db :gateway->info)
+         grpc-url (url-parse (-> gateway-info :data :grpc_url))]
+     {:db (assoc-in db [:connections->connection-connected] {:data {} :status :loading})
+      :fx [[:dispatch [:hoop-app->update-my-configs {:apiUrl (-> gateway-info :data :api_url)
+                                                     :grpcUrl (.-host grpc-url)
+                                                     :token (.getItem js/localStorage "jwt-token")}]]
+           [:dispatch [:modal->close]]
+           [:dispatch [:hoop-app->restart]]
+           [:dispatch-later {:ms 2000 :dispatch [:connections->connection-connect connection-name]}]
+           [:dispatch [:modal->open {:content [connection-connect/main]
+                                     :maxWidth "446px"
+                                     :custom-on-click-out connection-connect/minimize-modal}]]]})))

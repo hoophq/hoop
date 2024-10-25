@@ -18,7 +18,6 @@
             [webapp.components.modal :as modals]
             [webapp.components.snackbar :as snackbar]
             [webapp.config :as config]
-            [webapp.connections.views.connection-connect :as connection-connect]
             [webapp.connections.views.connection-list :as connections]
             [webapp.connections.views.create-update-connection.main :as create-update-connection]
             [webapp.dashboard.main :as dashboard]
@@ -108,6 +107,7 @@
     (fn [panels]
       (rf/dispatch [:routes->get-route])
       (rf/dispatch [:clarity->verify-environment (:data @user)])
+      (rf/dispatch [:connections->connection-get-status])
       (if (empty? (:data @user))
         [loaders/over-page-loader]
         [:section
@@ -118,8 +118,6 @@
          [dialog/new-dialog]
          [snackbar/snackbar]
          [draggable-card/main]
-         [draggable-card/modal]
-         [connection-connect/verify-connection-status]
          [sidebar/main panels]]))))
 
 (defmulti layout identity)
