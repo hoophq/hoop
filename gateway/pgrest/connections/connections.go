@@ -87,40 +87,40 @@ func (c *connections) Delete(ctx pgrest.OrgContext, name string) error {
 		Error()
 }
 
-func (c *connections) Upsert(ctx pgrest.OrgContext, conn pgrest.Connection) error {
-	var subType *string
-	if conn.SubType != "" {
-		subType = &conn.SubType
-	}
-	if conn.Status == "" {
-		conn.Status = pgrest.ConnectionStatusOffline
-	}
+// func (c *connections) Upsert(ctx pgrest.OrgContext, conn pgrest.Connection) error {
+// 	var subType *string
+// 	if conn.SubType != "" {
+// 		subType = &conn.SubType
+// 	}
+// 	if conn.Status == "" {
+// 		conn.Status = pgrest.ConnectionStatusOffline
+// 	}
 
-	if conn.AccessSchema == "" {
-		conn.AccessSchema = "disabled"
-		if conn.Type == "database" {
-			conn.AccessSchema = "enabled"
-		}
-	}
+// 	if conn.AccessSchema == "" {
+// 		conn.AccessSchema = "disabled"
+// 		if conn.Type == "database" {
+// 			conn.AccessSchema = "enabled"
+// 		}
+// 	}
 
-	return pgrest.New("/rpc/update_connection").RpcCreate(map[string]any{
-		"id":                   conn.ID,
-		"org_id":               ctx.GetOrgID(),
-		"name":                 conn.Name,
-		"agent_id":             toAgentID(conn.AgentID),
-		"type":                 conn.Type,
-		"subtype":              subType,
-		"command":              conn.Command,
-		"envs":                 conn.Envs,
-		"status":               conn.Status,
-		"managed_by":           conn.ManagedBy,
-		"tags":                 conn.Tags,
-		"access_mode_runbooks": conn.AccessModeRunbooks,
-		"access_mode_exec":     conn.AccessModeExec,
-		"access_mode_connect":  conn.AccessModeConnect,
-		"access_schema":        conn.AccessSchema,
-	}).Error()
-}
+// 	return pgrest.New("/rpc/update_connection").RpcCreate(map[string]any{
+// 		"id":                   conn.ID,
+// 		"org_id":               ctx.GetOrgID(),
+// 		"name":                 conn.Name,
+// 		"agent_id":             toAgentID(conn.AgentID),
+// 		"type":                 conn.Type,
+// 		"subtype":              subType,
+// 		"command":              conn.Command,
+// 		"envs":                 conn.Envs,
+// 		"status":               conn.Status,
+// 		"managed_by":           conn.ManagedBy,
+// 		"tags":                 conn.Tags,
+// 		"access_mode_runbooks": conn.AccessModeRunbooks,
+// 		"access_mode_exec":     conn.AccessModeExec,
+// 		"access_mode_connect":  conn.AccessModeConnect,
+// 		"access_schema":        conn.AccessSchema,
+// 	}).Error()
+// }
 
 func toAgentID(agentID string) (v *string) {
 	if _, err := uuid.Parse(agentID); err == nil {

@@ -19,6 +19,7 @@ import (
 	apiagents "github.com/hoophq/hoop/gateway/api/agents"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	apifeatures "github.com/hoophq/hoop/gateway/api/features"
+	apiguardrails "github.com/hoophq/hoop/gateway/api/guardrails"
 	apihealthz "github.com/hoophq/hoop/gateway/api/healthz"
 	apijiraintegration "github.com/hoophq/hoop/gateway/api/integrations"
 	localauthapi "github.com/hoophq/hoop/gateway/api/localauth"
@@ -466,4 +467,28 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.Authenticate,
 		api.TrackRequest(analytics.EventUpdateJiraIntegration),
 		apijiraintegration.Put)
+
+	route.POST("/guardrail-rules",
+		api.AllowApiKey,
+		AdminOnlyAccessRole,
+		api.Authenticate,
+		api.TrackRequest(analytics.EventCreateGuardRailRules),
+		apiguardrails.Post)
+
+	route.PUT("/guardrail-rules/:id",
+		api.AllowApiKey,
+		AdminOnlyAccessRole,
+		api.Authenticate,
+		api.TrackRequest(analytics.EventUpdateGuardRailRules),
+		apiguardrails.Put)
+
+	route.GET("/guardrail-rules",
+		api.AllowApiKey,
+		api.Authenticate,
+		apiguardrails.List)
+
+	route.GET("/guardrail-rules/:id",
+		api.AllowApiKey,
+		api.Authenticate,
+		apiguardrails.Get)
 }

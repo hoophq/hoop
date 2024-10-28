@@ -1,6 +1,7 @@
 package apiconnections
 
 import (
+	"database/sql"
 	"net/http"
 
 	"github.com/getsentry/sentry-go"
@@ -8,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgconnections "github.com/hoophq/hoop/gateway/pgrest/connections"
 	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
@@ -65,23 +67,42 @@ func Post(c *gin.Context) {
 		req.Status = pgrest.ConnectionStatusOnline
 	}
 
-	err = pgconnections.New().Upsert(ctx, pgrest.Connection{
-		ID:                 req.ID,
-		OrgID:              ctx.OrgID,
-		AgentID:            req.AgentId,
-		Name:               req.Name,
-		Command:            req.Command,
-		Type:               string(req.Type),
-		SubType:            req.SubType,
-		Envs:               coerceToMapString(req.Secrets),
+	err = models.UpsertConnection(&models.Connection{
+		ID:      req.ID,
+		OrgID:   ctx.OrgID,
+		AgentID: sql.NullString{String: req.AgentId},
+		Name:    req.Name,
+		Command: req.Command,
+		Type:    string(req.Type),
+		SubType: sql.NullString{String: req.SubType},
+		// Envs:               coerceToMapString(req.Secrets),
+		Envs:               models.EnvVars{ID: req.ID, OrgID: ctx.OrgID, Envs: coerceToMapString(req.Secrets)},
 		Status:             req.Status,
-		ManagedBy:          nil,
+		ManagedBy:          sql.NullString{String: ""},
 		Tags:               req.Tags,
 		AccessModeRunbooks: req.AccessModeRunbooks,
 		AccessModeExec:     req.AccessModeExec,
 		AccessModeConnect:  req.AccessModeConnect,
 		AccessSchema:       req.AccessSchema,
+		GuardRailRules:     req.GuardRailRules,
 	})
+	// err = pgconnections.New().Upsert(ctx, pgrest.Connection{
+	// 	ID:                 req.ID,
+	// 	OrgID:              ctx.OrgID,
+	// 	AgentID:            req.AgentId,
+	// 	Name:               req.Name,
+	// 	Command:            req.Command,
+	// 	Type:               string(req.Type),
+	// 	SubType:            req.SubType,
+	// 	Envs:               coerceToMapString(req.Secrets),
+	// 	Status:             req.Status,
+	// 	ManagedBy:          nil,
+	// 	Tags:               req.Tags,
+	// 	AccessModeRunbooks: req.AccessModeRunbooks,
+	// 	AccessModeExec:     req.AccessModeExec,
+	// 	AccessModeConnect:  req.AccessModeConnect,
+	// 	AccessSchema:       req.AccessSchema,
+	// })
 	if err != nil {
 		log.Errorf("failed creating connection, err=%v", err)
 		sentry.CaptureException(err)
@@ -157,23 +178,42 @@ func Put(c *gin.Context) {
 	req.ID = conn.ID
 	req.Name = conn.Name
 	req.Status = conn.Status
-	err = pgconnections.New().Upsert(ctx, pgrest.Connection{
-		ID:                 conn.ID,
-		OrgID:              conn.OrgID,
-		AgentID:            req.AgentId,
-		Name:               conn.Name,
-		Command:            req.Command,
-		Type:               req.Type,
-		SubType:            req.SubType,
-		Envs:               coerceToMapString(req.Secrets),
+	err = models.UpsertConnection(&models.Connection{
+		ID:      conn.ID,
+		OrgID:   conn.OrgID,
+		AgentID: sql.NullString{String: req.AgentId},
+		Name:    conn.Name,
+		Command: req.Command,
+		Type:    req.Type,
+		SubType: sql.NullString{String: req.SubType},
+		// Envs:               coerceToMapString(req.Secrets),
+		Envs:               models.EnvVars{ID: conn.ID, OrgID: conn.OrgID, Envs: coerceToMapString(req.Secrets)},
 		Status:             conn.Status,
-		ManagedBy:          nil,
+		ManagedBy:          sql.NullString{String: ""},
 		Tags:               req.Tags,
 		AccessModeRunbooks: req.AccessModeRunbooks,
 		AccessModeExec:     req.AccessModeExec,
 		AccessModeConnect:  req.AccessModeConnect,
 		AccessSchema:       req.AccessSchema,
+		GuardRailRules:     req.GuardRailRules,
 	})
+	// err = pgconnections.New().Upsert(ctx, pgrest.Connection{
+	// 	ID:                 conn.ID,
+	// 	OrgID:              conn.OrgID,
+	// 	AgentID:            req.AgentId,
+	// 	Name:               conn.Name,
+	// 	Command:            req.Command,
+	// 	Type:               req.Type,
+	// 	SubType:            req.SubType,
+	// 	Envs:               coerceToMapString(req.Secrets),
+	// 	Status:             conn.Status,
+	// 	ManagedBy:          nil,
+	// 	Tags:               req.Tags,
+	// 	AccessModeRunbooks: req.AccessModeRunbooks,
+	// 	AccessModeExec:     req.AccessModeExec,
+	// 	AccessModeConnect:  req.AccessModeConnect,
+	// 	AccessSchema:       req.AccessSchema,
+	// })
 	if err != nil {
 		log.Errorf("failed updating connection, err=%v", err)
 		sentry.CaptureException(err)
@@ -320,6 +360,7 @@ func List(c *gin.Context) {
 //	@Router			/connections/{nameOrID} [get]
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
+	_, _ = models.GetConnectionByNameOrID(ctx.OrgID, c.Param("nameOrID"))
 	conn, err := pgconnections.New().FetchOneByNameOrID(ctx, c.Param("nameOrID"))
 	if err != nil {
 		log.Errorf("failed fetching connection, err=%v", err)

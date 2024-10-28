@@ -35,9 +35,13 @@ const (
 	EventUpdatePluginConfig    = "hoop-update-plugin-config"
 	EventOpenWebhooksDashboard = "hoop-open-webhooks-dashboard"
 
-	//Jira
+	// Jira
 	EventCreateJiraIntegration = "hoop-create-jira-integration"
 	EventUpdateJiraIntegration = "hoop-update-jira-integration"
+
+	// Guard Rail Rules
+	EventCreateGuardRailRules = "hoop-create-guardrail-rules"
+	EventUpdateGuardRailRules = "hoop-update-guardrail-rules"
 
 	// features
 	EventOrgFeatureUpdate            = "hoop-org-feature-update"

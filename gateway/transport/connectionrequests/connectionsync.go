@@ -2,6 +2,7 @@ package connectionrequests
 
 import (
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"fmt"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
 	"github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgconnections "github.com/hoophq/hoop/gateway/pgrest/connections"
 	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
@@ -80,7 +82,26 @@ func upsertConnection(ctx pgrest.OrgContext, agentID string, req *proto.PreConne
 	for key, val := range req.Envs {
 		conn.Envs[key] = val
 	}
-	err := pgconnections.New().Upsert(ctx, *conn)
+
+	// TODO: test-me
+	err := models.UpsertConnection(&models.Connection{
+		ID:      conn.ID,
+		OrgID:   conn.OrgID,
+		AgentID: sql.NullString{String: conn.AgentID},
+		Name:    conn.Name,
+		Command: req.Command,
+		Type:    req.Type,
+		SubType: sql.NullString{String: req.Subtype},
+		// Envs:               conn.Envs,
+		Status:             pgrest.ConnectionStatusOnline,
+		ManagedBy:          sql.NullString{String: *conn.ManagedBy}, // TODO: fix-me managed by pointer
+		Tags:               conn.Tags,
+		AccessModeRunbooks: "enabled",
+		AccessModeExec:     "enabled",
+		AccessModeConnect:  "enabled",
+		AccessSchema:       "enabled",
+	})
+	// err := pgconnections.New().Upsert(ctx, *conn)
 	if err != nil {
 		return err
 	}

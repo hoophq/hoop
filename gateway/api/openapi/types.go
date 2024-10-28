@@ -237,6 +237,8 @@ type Connection struct {
 	// * enabled - Enable the instrospection schema in the webapp
 	// * disabled - Disable the instrospection schema in the webapp
 	AccessSchema string `json:"access_schema" binding:"required" enums:"enabled,disabled"`
+	// The guard rail association named rules
+	GuardRailRules []string `json:"guardrail_rules" example:"deny-exec,deny-select"`
 }
 
 type ExecRequest struct {
@@ -816,4 +818,27 @@ type JiraIntegration struct {
 
 	// The last update date and time of the integration
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
+}
+
+type GuardRailRuleRequest struct {
+	// Unique name for the rule
+	Name string `json:"name" binding:"required" example:"my-strict-rule"`
+
+	Input  map[string]any `json:"input"`
+	Output map[string]any `json:"output"`
+}
+
+type GuardRailRuleResponse struct {
+	// The resource identifier
+	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// Unique name for the rule
+	Name string `json:"name" example:"my-strict-rule"`
+
+	Input  map[string]any `json:"input"`
+	Output map[string]any `json:"output"`
+
+	// The time the resource was created
+	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	// The time the resource was updated
+	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 }
