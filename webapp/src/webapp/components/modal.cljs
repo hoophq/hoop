@@ -42,18 +42,23 @@
 (defn modal-radix []
   (let [modal (rf/subscribe [:modal-radix])]
     (fn []
-      (if (:open? @modal)
-        [:> Dialog.Root {:open (:open? @modal)
-                         :on-open-change #(rf/dispatch [:modal->set-status %])}
-         [:> Dialog.Content {:maxWidth "916px"
-                             :maxHeight "calc(100vh - 96px)"
-                             :on-escape-key-down #(rf/dispatch [:modal->close])
-                             :on-pointer-down-outside #(rf/dispatch [:modal->close])
-                             :class "p-0"}
-          [:> VisuallyHidden :as-child true
-           [:> Dialog.Title "Modal title"]]
-          [:> VisuallyHidden :as-child true
-           [:> Dialog.Description "Modal description"]]
-          [:> Box {:p "6"}
-           (:content @modal)]]]
-        nil))))
+      (let [on-click-out (if (:custom-on-click-out @modal)
+                           #((:custom-on-click-out @modal))
+                           #(rf/dispatch [:modal->close]))]
+        (if (:open? @modal)
+          [:> Box {:id (:id @modal)}
+           [:> Dialog.Root {:open (:open? @modal)
+
+                            :on-open-change #(rf/dispatch [:modal->set-status %])}
+            [:> Dialog.Content {:maxWidth (or (:maxWidth @modal) "916px")
+                                :maxHeight "calc(100vh - 96px)"
+                                :on-escape-key-down on-click-out
+                                :on-pointer-down-outside on-click-out
+                                :class "p-0"}
+             [:> VisuallyHidden :as-child true
+              [:> Dialog.Title "Modal title"]]
+             [:> VisuallyHidden :as-child true
+              [:> Dialog.Description "Modal description"]]
+             [:> Box {:p "5"}
+              (:content @modal)]]]]
+          nil)))))

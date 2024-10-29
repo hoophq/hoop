@@ -1,6 +1,6 @@
 {
   "name": "webapp",
-  "version": "1.31.1",
+  "version": "1.31.2",
   "scripts": {
     "ancient": "clojure -Sdeps '{:deps {com.github.liquidz/antq {:mvn/version \"RELEASE\"}}}' -m antq.core",
     "genversion": "npx genversion src/webapp/version.js",
@@ -56,7 +56,8 @@
     "recharts": "2.12.0",
     "tailwind-merge": "^2.5.2",
     "tailwindcss-animate": "^1.0.7",
-    "unique-names-generator": "^4.7.1"
+    "unique-names-generator": "^4.7.1",
+    "url-parse": "^1.5.10"
   },
   "devDependencies": {
     "@tailwindcss/forms": "^0.5.7",

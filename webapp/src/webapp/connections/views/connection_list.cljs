@@ -126,10 +126,7 @@
 
                     (when (= "database" (:type connection))
                       [:div {:class "relative cursor-pointer group"
-                             :on-click (fn []
-                                         (if (= (.getItem js/localStorage "hoop-connect-setup") "skipped")
-                                           (rf/dispatch [:connections->start-connect (:name connection)])
-                                           (rf/dispatch [:connections->open-connect-setup (:name connection)])))}
+                             :on-click #(rf/dispatch [:connections->start-connect (:name connection)])}
                        [tooltip "Hoop Access" (when (not (-> @user :data :admin?))
                                                 "left")]
                        [:> hero-micro-icon/SignalIcon {:class "w-6 h-6 text-gray-700"}]])
