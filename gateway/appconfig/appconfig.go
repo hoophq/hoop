@@ -338,7 +338,7 @@ func loadApiKey() (ApiKey, error) {
 	var apiKey ApiKey
 	err = json.Unmarshal(jsonData, &apiKey)
 	if err != nil {
-		return ApiKey{}, fmt.Errorf("unable to unmarshal env API KEY, reason=%v", err)
+		return ApiKey{}, fmt.Errorf("unable to unmarshal env API_KEY, reason=%v", err)
 	}
 	return apiKey, nil
 }
