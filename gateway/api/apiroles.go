@@ -5,7 +5,10 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 )
 
-var roleContextKey = "ginrole"
+const (
+	roleContextKey  = "ginrole"
+	resourceNameKey = "resourceName"
+)
 
 // AdminOnlyAccessPermission is a middleware that checks if the user has admin access.
 func AdminOnlyAccessRole(c *gin.Context) {
@@ -23,6 +26,19 @@ func AnonAccessRole(c *gin.Context) {
 func StandardAccessRole(c *gin.Context) {
 	c.Set(roleContextKey, openapi.RoleStandardType)
 	c.Next()
+}
+
+func ResourceName(name string) func(c *gin.Context) {
+	return func(c *gin.Context) {
+		c.Set(resourceNameKey, name)
+		c.Next()
+	}
+}
+
+func ResourceFromContext(c *gin.Context) string {
+	obj, _ := c.Get(resourceNameKey)
+	resourceName, _ := obj.(string)
+	return resourceName
 }
 
 // RoleFromContext returns the role from the given context.

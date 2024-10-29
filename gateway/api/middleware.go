@@ -109,55 +109,79 @@ func (a *Api) AllowApiKey(c *gin.Context) {
 
 func (a *Api) apiKeyMiddleware(c *gin.Context) {
 	configuredApiKey := appconfig.Get().ApiKey()
-	apiKeyReq := c.GetHeader("Api-Key")
+	if configuredApiKey.IsEmpty() {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "unauthorized"})
+		return
+	}
 
-	if apiKeyReq == configuredApiKey {
+	apiKeyReq := c.GetHeader("Api-Key")
+	resourceName := ResourceFromContext(c)
+	isValid := configuredApiKey.IsValid(apiKeyReq, resourceName)
+	log.Debugf("validating api key against resource %q, legacy=%v, valid=%v",
+		resourceName, configuredApiKey.IsLegacy(), isValid)
+
+	if !isValid {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "unauthorized"})
+		return
+	}
+
+	var org *pgrest.Org
+	if configuredApiKey.IsLegacy() {
 		// split apiKey by | getting the first and the second part
 		// the first part is the orgID and the second part is the apiKey
 		orgID := strings.Split(apiKeyReq, "|")[0]
 		// apiKey := strings.Split(apiKeyReq, "|")[1]
-		newOrgCtx := pgrest.NewOrgContext(orgID)
-		org, err := pgorgs.New().FetchOrgByContext(newOrgCtx)
+		var err error
+		org, err = pgorgs.New().FetchOrgByContext(pgrest.NewOrgContext(orgID))
 		if err != nil || org == nil {
-			c.AbortWithStatus(http.StatusUnauthorized)
+			log.Errorf("unable to obtain organization (%v) from api key, reason=%v", orgID, err)
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "unauthorized"})
 			return
 		}
-
-		deterministicUuid := uuid.NewSHA1(uuid.NameSpaceURL, []byte(`API_KEY`))
-		ctx := &pguserauth.Context{
-			OrgID:       orgID,
-			OrgName:     org.Name,
-			OrgLicense:  org.License,
-			UserUUID:    deterministicUuid.String(),
-			UserSubject: "API_KEY",
-			UserName:    "API_KEY",
-			UserEmail:   "API_KEY",
-			UserStatus:  "active",
-			UserGroups:  []string{types.GroupAdmin},
+	} else {
+		orgs, err := pgorgs.New().FetchAllOrgs()
+		if err != nil || len(orgs) == 0 {
+			log.Errorf("unable to obtain organization context for api key, reason=%v", err)
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "unauthorized"})
+			return
 		}
-
-		if a.logger != nil && !ctx.IsEmpty() {
-			zaplogger := a.logger.With(
-				zap.String("org", ctx.OrgName),
-				zap.String("user", ctx.UserEmail),
-				zap.Bool("isadm", ctx.IsAdmin()),
-			)
-			c.Set(pgusers.ContextLoggerKey, zaplogger.Sugar())
-		}
-
-		c.Set(storagev2.ContextKey,
-			storagev2.NewContext(ctx.UserSubject, ctx.OrgID).
-				WithUserInfo(ctx.UserName, ctx.UserEmail, string(ctx.UserStatus), ctx.UserPicture, ctx.UserGroups).
-				WithSlackID(ctx.UserSlackID).
-				WithOrgName(ctx.OrgName).
-				WithOrgLicenseData(ctx.OrgLicenseData).
-				WithApiURL(a.IDProvider.ApiURL).
-				WithGrpcURL(a.GrpcURL),
-		)
-		c.Next()
-		return
+		// it's safe for single tenant installations
+		// that must contain only a single organization per installation
+		org = &orgs[0]
 	}
-	c.AbortWithStatus(http.StatusUnauthorized)
+
+	deterministicUuid := uuid.NewSHA1(uuid.NameSpaceURL, []byte(`API_KEY`))
+	ctx := &pguserauth.Context{
+		OrgID:       org.ID,
+		OrgName:     org.Name,
+		OrgLicense:  org.License,
+		UserUUID:    deterministicUuid.String(),
+		UserSubject: "API_KEY",
+		UserName:    "API_KEY",
+		UserEmail:   "API_KEY",
+		UserStatus:  "active",
+		UserGroups:  []string{types.GroupAdmin},
+	}
+
+	if a.logger != nil && !ctx.IsEmpty() {
+		zaplogger := a.logger.With(
+			zap.String("org", ctx.OrgName),
+			zap.String("user", ctx.UserEmail),
+			zap.Bool("isadm", ctx.IsAdmin()),
+		)
+		c.Set(pgusers.ContextLoggerKey, zaplogger.Sugar())
+	}
+
+	c.Set(storagev2.ContextKey,
+		storagev2.NewContext(ctx.UserSubject, ctx.OrgID).
+			WithUserInfo(ctx.UserName, ctx.UserEmail, string(ctx.UserStatus), ctx.UserPicture, ctx.UserGroups).
+			WithSlackID(ctx.UserSlackID).
+			WithOrgName(ctx.OrgName).
+			WithOrgLicenseData(ctx.OrgLicenseData).
+			WithApiURL(a.IDProvider.ApiURL).
+			WithGrpcURL(a.GrpcURL),
+	)
+	c.Next()
 }
 
 func (a *Api) Authenticate(c *gin.Context) {
@@ -176,7 +200,7 @@ func (a *Api) Authenticate(c *gin.Context) {
 			a.apiKeyMiddleware(c)
 			return
 		}
-		c.AbortWithStatus(http.StatusForbidden)
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"message": "unauthorized"})
 	default:
 		roleName := RoleFromContext(c)
 		subject, err := a.validateAccessToken(c)

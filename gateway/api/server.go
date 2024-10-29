@@ -430,6 +430,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 	)
 
 	route.POST("/plugins/runbooks/connections/:name/exec",
+		ResourceName("exec-runbook"),
 		api.AllowApiKey,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventExecRunbook),

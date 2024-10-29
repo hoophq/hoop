@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -25,8 +26,51 @@ type pgCredentials struct {
 	// Postgrest Role Name
 	postgrestRole string
 }
+
+type ApiKey struct {
+	// Legacy Api Key with organization ID
+	OrgID string `json:"-"`
+
+	Key   string   `json:"key"`
+	Roles []string `json:"roles"`
+}
+
+func (k *ApiKey) IsEmpty() bool  { return k.Key == "" }
+func (k *ApiKey) IsLegacy() bool { return k.OrgID != "" }
+
+// IsValid validates if the key is valid and if the roles contained in the key
+// matches the current resource (route)
+//
+// If the api key contains an organization, it performs a simple check against
+// the provided key
+func (k *ApiKey) IsValid(key, resourceName string) bool {
+	// it must not match against an empty keys
+	if key == "" {
+		return false
+	}
+
+	// legacy api key
+	if k.IsLegacy() {
+		return key == fmt.Sprintf("%s|%s", k.OrgID, k.Key)
+	}
+
+	// it must provide a resource name
+	if resourceName == "" {
+		return false
+	}
+
+	var roles string
+	for _, role := range k.Roles {
+		roles += fmt.Sprintf("%q,", role)
+	}
+	roles = strings.TrimSuffix(roles, ",")
+	apiKeyData := fmt.Sprintf(`{"roles":[%s],"key":"%s"}`, roles, k.Key)
+	return base64.StdEncoding.EncodeToString([]byte(apiKeyData)) == key &&
+		slices.Contains(k.Roles, resourceName)
+}
+
 type Config struct {
-	apiKey                  string
+	apiKey                  ApiKey
 	askAICredentials        *url.URL
 	authMethod              string
 	pgCred                  *pgCredentials
@@ -127,8 +171,12 @@ func Load() error {
 			return fmt.Errorf("failed parsing WEBHOOK_APPURL, reason=%v", err)
 		}
 	}
+	apiKey, err := loadApiKey()
+	if err != nil {
+		return err
+	}
 	runtimeConfig = Config{
-		apiKey:                  os.Getenv("API_KEY"),
+		apiKey:                  apiKey,
 		apiURL:                  fmt.Sprintf("%s://%s", apiRawURL.Scheme, apiRawURL.Host),
 		grpcURL:                 grpcURL,
 		apiHostname:             apiRawURL.Hostname(),
@@ -274,6 +322,27 @@ func (c Config) LicenseSigningKey() (string, *rsa.PrivateKey) {
 	return c.licenseSignerOrgID, c.licenseSigningKey
 }
 
+func loadApiKey() (ApiKey, error) {
+	encodedApiKey := os.Getenv("API_KEY")
+	if encodedApiKey == "" {
+		return ApiKey{}, nil
+	}
+	if strings.Contains(encodedApiKey, "|") {
+		orgID, apiKeyStr, _ := strings.Cut(encodedApiKey, "|")
+		return ApiKey{OrgID: orgID, Key: apiKeyStr}, nil
+	}
+	jsonData, err := base64.StdEncoding.DecodeString(encodedApiKey)
+	if err != nil {
+		return ApiKey{}, fmt.Errorf("unable to decode base64 env API_KEY, reason=%v", err)
+	}
+	var apiKey ApiKey
+	err = json.Unmarshal(jsonData, &apiKey)
+	if err != nil {
+		return ApiKey{}, fmt.Errorf("unable to unmarshal env API KEY, reason=%v", err)
+	}
+	return apiKey, nil
+}
+
 // FullApiURL returns the full url which contains the path of the URL
 func (c Config) FullApiURL() string { return c.apiURL + c.apiURLPath }
 
@@ -286,7 +355,7 @@ func (c Config) ApiHost() string            { return c.apiHost } // ApiHost host
 func (c Config) ApiScheme() string          { return c.apiScheme }
 func (c Config) ApiURLPath() string         { return c.apiURLPath }
 
-func (c Config) ApiKey() string                  { return c.apiKey }
+func (c Config) ApiKey() ApiKey                  { return c.apiKey }
 func (c Config) AuthMethod() string              { return c.authMethod }
 func (c Config) WebhookAppKey() string           { return c.webhookAppKey }
 func (c Config) WebhookAppURL() *url.URL         { return c.webhookAppURL }
