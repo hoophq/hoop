@@ -29,6 +29,9 @@
      "/login" :login-hoop
      "/logout" :logout-hoop
      "/organization" [["/users" :users]]
+     "/guardrails" [["" :guardrails]
+                    ["/new" :create-guardrail]
+                    [["/" :guardrail-id] :guardrail-details]]
      "/plugins" [["/manage/ask-ai" :manage-ask-ai]
                  ["/manage/jira" :manage-jira]
                  [["/reviews/" :review-id] :reviews-plugin-details]
