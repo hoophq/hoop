@@ -14,7 +14,7 @@
    [:div {:class "flex flex-col items-center gap-regular justify-center h-full my-x-large"}
     [:div {:class "flex gap-small"}
      [:span {:class "text-gray-700"}
-      "Your time with this connection has ended, please connect to a new connection."]]]])
+      "The connection time ended. Please, try to connect again."]]]])
 
 (defn- draggable-card-content [connection]
   [:<>
@@ -155,7 +155,7 @@
 
    [:section {:class "my-regular"}
     [:span {:class "text-sm text-gray-800"}
-     "Download and open Hoop Desktop App to enable a direct access to this connection."]]
+     "Download and open Hoop Desktop App to have direct access to this connection."]]
 
    [:section {:class "flex justify-end gap-3"}
     [:> Button {:size "2"
