@@ -10,15 +10,6 @@ import (
 
 const tableGuardRails = "private.guardrail_rules"
 
-// TODO: list all guardrails from a connection (grpc gateway rules)
-
-// TODO: create guardrail rule association (connection create/update)
-// TODO: list all associations in the connection (connection get/list)
-
-// TODO: create / update guarrail rules (api rest) - OK
-// TODO: list all guardrails from org (api rest) - OK
-// TODO: get single rule (api rest) - OK
-
 type GuardRailRules struct {
 	OrgID     string         `gorm:"column:org_id"`
 	ID        string         `gorm:"column:id"`

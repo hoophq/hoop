@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/lib/pq"
 	"gorm.io/gorm"
@@ -19,9 +18,6 @@ const (
 	ConnectionStatusOffline = "offline"
 )
 
-// TODO: maintain null string rules
-// TODO: add redact_enabled condition
-// TODO: add org id context when fetching reviewers and redact types
 type Connection struct {
 	OrgID              string         `gorm:"column:org_id"`
 	ID                 string         `gorm:"column:id"`
@@ -38,28 +34,11 @@ type Connection struct {
 	AccessModeConnect  string         `gorm:"column:access_mode_connect"`
 	AccessSchema       string         `gorm:"column:access_schema"`
 
-	// TODO: add created at
-	// TODO: add updated at
-
 	Envs           map[string]string `gorm:"column:envs;serializer:json;->"`
 	GuardRailRules pq.StringArray    `gorm:"column:guardrail_rules;type:text[];->"`
 	RedactTypes    pq.StringArray    `gorm:"column:redact_types;type:text[];->"`
 	RedactEnabled  bool              `gorm:"column:redact_enabled;->"`
 	Reviewers      pq.StringArray    `gorm:"column:reviewers;type:text[];->"`
-	// GuardRailRulesConnections []GuardRailRulesConnection `gorm:"many2many:guardrail_rules_connections;"`
-
-	// read only attributes
-	// Org              Org                `json:"orgs"`
-	// PluginConnection []PluginConnection `json:"plugin_connections"`
-	// Agent            Agent              `json:"agents"`
-}
-
-type GuardRailRulesConnection struct {
-	OrgID        string    `gorm:"column:org_id"`
-	ID           string    `gorm:"column:id"`
-	RuleID       string    `gorm:"column:rule_id"`
-	ConnectionID string    `gorm:"column:connection_id"`
-	CreatedAt    time.Time `gorm:"column:created_at"`
 }
 
 type EnvVars struct {
@@ -130,35 +109,36 @@ func DeleteConnection(orgID, name string) error {
 }
 
 func GetConnectionByNameOrID(orgID, nameOrID string) (*Connection, error) {
-	var c Connection
+	var conn Connection
 	err := DB.Model(&Connection{}).Raw(`
 	SELECT
-		c.id, c.org_id, c.agent_id, c.name, c.command, c.status, c.type, c.subtype, c._tags, c.managed_by,
+		c.id, c.org_id, c.agent_id, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
+		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
 		( SELECT envs FROM public.env_vars WHERE id = c.id ) AS envs,
-		dlpc.config AS redact_types,
-		reviewc.config AS reviewers,
+		COALESCE(dlpc.config, ARRAY[]::TEXT[]) AS redact_types,
+		COALESCE(reviewc.config, ARRAY[]::TEXT[]) AS reviewers,
 		(SELECT array_length(dlpc.config, 1) > 0) AS redact_enabled,
-		(
+		COALESCE((
 			SELECT array_agg(r.name) FROM private.guardrail_rules r
 			INNER JOIN private.guardrail_rules_connections rc ON rc.connection_id = c.id AND rc.rule_id = r.id
 			GROUP BY rc.connection_id
-		) AS guardrail_rules
+		), ARRAY[]::TEXT[]) AS guardrail_rules
 	FROM private.connections c
-	INNER JOIN private.plugins review ON review.name = 'review'
-	INNER JOIN private.plugin_connections reviewc ON reviewc.connection_id = c.id AND reviewc.plugin_id = review.id
-	INNER JOIN private.plugins dlp ON dlp.name = 'dlp'
-	INNER JOIN private.plugin_connections dlpc ON dlpc.connection_id = c.id AND dlpc.plugin_id = dlp.id
+	LEFT JOIN private.plugins review ON review.name = 'review'
+	LEFT JOIN private.plugin_connections reviewc ON reviewc.connection_id = c.id AND reviewc.plugin_id = review.id
+	LEFT JOIN private.plugins dlp ON dlp.name = 'dlp'
+	LEFT JOIN private.plugin_connections dlpc ON dlpc.connection_id = c.id AND dlpc.plugin_id = dlp.id
 	WHERE c.org_id = ? AND (c.name = ? OR c.id::text = ?)`,
 		orgID, nameOrID, nameOrID).
-		First(&c).Error
+		First(&conn).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
 		return nil, err
 	}
-	return &c, nil
+	return &conn, nil
 }
 
 // ConnectionOption each attribute set applies an AND operator logic
@@ -184,24 +164,25 @@ func (o ConnectionFilterOption) GetTagsAsArray() any {
 func ListConnections(orgID string, opts ConnectionFilterOption) ([]Connection, error) {
 	setConnectionOptionDefaults(&opts)
 	var items []Connection
-	err := DB.Raw(`
+	err := DB.Debug().Raw(`
 	SELECT
-		c.id, c.org_id, c.agent_id, c.name, c.command, c.status, c.type, c.subtype, c._tags, c.managed_by,
+		c.id, c.org_id, c.agent_id, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
+		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
 		( SELECT envs FROM public.env_vars WHERE id = c.id ) AS envs,
-		dlpc.config AS redact_types,
-		reviewc.config AS reviewers,
+		COALESCE(dlpc.config, ARRAY[]::TEXT[]) AS redact_types,
+		COALESCE(reviewc.config, ARRAY[]::TEXT[]) AS reviewers,
 		(SELECT array_length(dlpc.config, 1) > 0) AS redact_enabled,
-		(
+		COALESCE((
 			SELECT array_agg(r.name) FROM private.guardrail_rules r
 			INNER JOIN private.guardrail_rules_connections rc ON rc.connection_id = c.id AND rc.rule_id = r.id
 			GROUP BY rc.connection_id
-		) AS guardrail_rules
+		), ARRAY[]::TEXT[]) AS guardrail_rules
 	FROM private.connections c
-	INNER JOIN private.plugins review ON review.name = 'review'
-	INNER JOIN private.plugin_connections reviewc ON reviewc.connection_id = c.id AND reviewc.plugin_id = review.id
-	INNER JOIN private.plugins dlp ON dlp.name = 'dlp'
-	INNER JOIN private.plugin_connections dlpc ON dlpc.connection_id = c.id AND dlpc.plugin_id = dlp.id
+	LEFT JOIN private.plugins review ON review.name = 'review'
+	LEFT JOIN private.plugin_connections reviewc ON reviewc.connection_id = c.id AND reviewc.plugin_id = review.id
+	LEFT JOIN private.plugins dlp ON dlp.name = 'dlp'
+	LEFT JOIN private.plugin_connections dlpc ON dlpc.connection_id = c.id AND dlpc.plugin_id = dlp.id
 	WHERE c.org_id = @org_id AND
 	(
 		COALESCE(c.type::text, '') LIKE @type AND
