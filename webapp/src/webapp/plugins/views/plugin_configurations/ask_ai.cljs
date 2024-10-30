@@ -12,7 +12,7 @@
                            false))]
     (fn []
       (let [feature-ai-ask (get-in @user [:data :feature_ask_ai] "disabled")]
-        [:> Box {:p "5" :minHeight "800px" :class "bg-white border border-gray-100"}
+        [:> Box {:p "5" :minHeight "800px" :class "bg-white rounded-md border border-gray-100"}
          [:section {:class (when (= feature-ai-ask "unavailable")
                              "opacity-50 pointer-events-none")}
           [:div {:class "grid grid-cols-2 items-center gap-large"}
