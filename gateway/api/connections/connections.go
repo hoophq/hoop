@@ -68,17 +68,16 @@ func Post(c *gin.Context) {
 	}
 
 	err = models.UpsertConnection(&models.Connection{
-		ID:      req.ID,
-		OrgID:   ctx.OrgID,
-		AgentID: sql.NullString{String: req.AgentId},
-		Name:    req.Name,
-		Command: req.Command,
-		Type:    string(req.Type),
-		SubType: sql.NullString{String: req.SubType},
-		// Envs:               coerceToMapString(req.Secrets),
-		Envs:               models.EnvVars{ID: req.ID, OrgID: ctx.OrgID, Envs: coerceToMapString(req.Secrets)},
+		ID:                 req.ID,
+		OrgID:              ctx.OrgID,
+		AgentID:            sql.NullString{String: req.AgentId, Valid: true},
+		Name:               req.Name,
+		Command:            req.Command,
+		Type:               string(req.Type),
+		SubType:            sql.NullString{String: req.SubType, Valid: true},
+		Envs:               coerceToMapString(req.Secrets),
 		Status:             req.Status,
-		ManagedBy:          sql.NullString{String: ""},
+		ManagedBy:          sql.NullString{},
 		Tags:               req.Tags,
 		AccessModeRunbooks: req.AccessModeRunbooks,
 		AccessModeExec:     req.AccessModeExec,
@@ -86,23 +85,6 @@ func Post(c *gin.Context) {
 		AccessSchema:       req.AccessSchema,
 		GuardRailRules:     req.GuardRailRules,
 	})
-	// err = pgconnections.New().Upsert(ctx, pgrest.Connection{
-	// 	ID:                 req.ID,
-	// 	OrgID:              ctx.OrgID,
-	// 	AgentID:            req.AgentId,
-	// 	Name:               req.Name,
-	// 	Command:            req.Command,
-	// 	Type:               string(req.Type),
-	// 	SubType:            req.SubType,
-	// 	Envs:               coerceToMapString(req.Secrets),
-	// 	Status:             req.Status,
-	// 	ManagedBy:          nil,
-	// 	Tags:               req.Tags,
-	// 	AccessModeRunbooks: req.AccessModeRunbooks,
-	// 	AccessModeExec:     req.AccessModeExec,
-	// 	AccessModeConnect:  req.AccessModeConnect,
-	// 	AccessSchema:       req.AccessSchema,
-	// })
 	if err != nil {
 		log.Errorf("failed creating connection, err=%v", err)
 		sentry.CaptureException(err)
@@ -179,17 +161,16 @@ func Put(c *gin.Context) {
 	req.Name = conn.Name
 	req.Status = conn.Status
 	err = models.UpsertConnection(&models.Connection{
-		ID:      conn.ID,
-		OrgID:   conn.OrgID,
-		AgentID: sql.NullString{String: req.AgentId},
-		Name:    conn.Name,
-		Command: req.Command,
-		Type:    req.Type,
-		SubType: sql.NullString{String: req.SubType},
-		// Envs:               coerceToMapString(req.Secrets),
-		Envs:               models.EnvVars{ID: conn.ID, OrgID: conn.OrgID, Envs: coerceToMapString(req.Secrets)},
+		ID:                 conn.ID,
+		OrgID:              conn.OrgID,
+		AgentID:            sql.NullString{String: req.AgentId, Valid: true},
+		Name:               conn.Name,
+		Command:            req.Command,
+		Type:               req.Type,
+		SubType:            sql.NullString{String: req.SubType, Valid: true},
+		Envs:               coerceToMapString(req.Secrets),
 		Status:             conn.Status,
-		ManagedBy:          sql.NullString{String: ""},
+		ManagedBy:          sql.NullString{},
 		Tags:               req.Tags,
 		AccessModeRunbooks: req.AccessModeRunbooks,
 		AccessModeExec:     req.AccessModeExec,
@@ -197,23 +178,6 @@ func Put(c *gin.Context) {
 		AccessSchema:       req.AccessSchema,
 		GuardRailRules:     req.GuardRailRules,
 	})
-	// err = pgconnections.New().Upsert(ctx, pgrest.Connection{
-	// 	ID:                 conn.ID,
-	// 	OrgID:              conn.OrgID,
-	// 	AgentID:            req.AgentId,
-	// 	Name:               conn.Name,
-	// 	Command:            req.Command,
-	// 	Type:               req.Type,
-	// 	SubType:            req.SubType,
-	// 	Envs:               coerceToMapString(req.Secrets),
-	// 	Status:             conn.Status,
-	// 	ManagedBy:          nil,
-	// 	Tags:               req.Tags,
-	// 	AccessModeRunbooks: req.AccessModeRunbooks,
-	// 	AccessModeExec:     req.AccessModeExec,
-	// 	AccessModeConnect:  req.AccessModeConnect,
-	// 	AccessSchema:       req.AccessSchema,
-	// })
 	if err != nil {
 		log.Errorf("failed updating connection, err=%v", err)
 		sentry.CaptureException(err)
@@ -289,17 +253,13 @@ func Delete(c *gin.Context) {
 //	@Router			/connections [get]
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	var opts []*pgconnections.ConnectionOption
-	for key, values := range c.Request.URL.Query() {
-		opts = append(opts, pgconnections.WithOption(key, values[0]))
-	}
-	connList, err := pgconnections.New().FetchAll(ctx, opts...)
-	switch err {
-	case pgconnections.ErrInvalidOptionVal:
+	filterOpts, err := validateListOptions(c)
+	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
-	case nil:
-	default:
+	}
+	connList, err := models.ListConnections(ctx.OrgID, filterOpts)
+	if err != nil {
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
@@ -314,33 +274,29 @@ func List(c *gin.Context) {
 	responseConnList := []openapi.Connection{}
 	for _, conn := range connList {
 		if allowedFn(conn.Name) {
-			reviewers, redactTypes := []string{}, []string{}
-			for _, pluginConn := range conn.PluginConnection {
-				switch pluginConn.Plugin.Name {
-				case plugintypes.PluginReviewName:
-					reviewers = pluginConn.ConnectionConfig
-				case plugintypes.PluginDLPName:
-					redactTypes = pluginConn.ConnectionConfig
-				}
+			var managedBy *string
+			if conn.ManagedBy.Valid {
+				managedBy = &conn.ManagedBy.String
 			}
 			responseConnList = append(responseConnList, openapi.Connection{
 				ID:                 conn.ID,
 				Name:               conn.Name,
 				Command:            conn.Command,
 				Type:               conn.Type,
-				SubType:            conn.SubType,
+				SubType:            conn.SubType.String,
 				Secrets:            coerceToAnyMap(conn.Envs),
-				AgentId:            conn.AgentID,
+				AgentId:            conn.AgentID.String,
 				Status:             conn.Status,
-				Reviewers:          reviewers,
-				RedactEnabled:      len(redactTypes) > 0,
-				RedactTypes:        redactTypes,
-				ManagedBy:          conn.ManagedBy,
+				Reviewers:          conn.Reviewers,
+				RedactEnabled:      conn.RedactEnabled,
+				RedactTypes:        conn.RedactTypes,
+				ManagedBy:          managedBy,
 				Tags:               conn.Tags,
 				AccessModeRunbooks: conn.AccessModeRunbooks,
 				AccessModeExec:     conn.AccessModeExec,
 				AccessModeConnect:  conn.AccessModeConnect,
 				AccessSchema:       conn.AccessSchema,
+				GuardRailRules:     conn.GuardRailRules,
 			})
 		}
 
@@ -360,8 +316,8 @@ func List(c *gin.Context) {
 //	@Router			/connections/{nameOrID} [get]
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	_, _ = models.GetConnectionByNameOrID(ctx.OrgID, c.Param("nameOrID"))
-	conn, err := pgconnections.New().FetchOneByNameOrID(ctx, c.Param("nameOrID"))
+	conn, err := models.GetConnectionByNameOrID(ctx.OrgID, c.Param("nameOrID"))
+	// conn, err := pgconnections.New().FetchOneByNameOrID(ctx, c.Param("nameOrID"))
 	if err != nil {
 		log.Errorf("failed fetching connection, err=%v", err)
 		sentry.CaptureException(err)
@@ -379,34 +335,30 @@ func Get(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 		return
 	}
-	reviewers, redactTypes := []string{}, []string{}
-	// var redactTypes []string
-	for _, pluginConn := range conn.PluginConnection {
-		switch pluginConn.Plugin.Name {
-		case plugintypes.PluginReviewName:
-			reviewers = pluginConn.ConnectionConfig
-		case plugintypes.PluginDLPName:
-			redactTypes = pluginConn.ConnectionConfig
-		}
+
+	var managedBy *string
+	if conn.ManagedBy.Valid {
+		managedBy = &conn.ManagedBy.String
 	}
 	c.JSON(http.StatusOK, openapi.Connection{
 		ID:                 conn.ID,
 		Name:               conn.Name,
 		Command:            conn.Command,
 		Type:               conn.Type,
-		SubType:            conn.SubType,
+		SubType:            conn.SubType.String,
 		Secrets:            coerceToAnyMap(conn.Envs),
-		AgentId:            conn.AgentID,
+		AgentId:            conn.AgentID.String,
 		Status:             conn.Status,
-		Reviewers:          reviewers,
-		RedactEnabled:      len(redactTypes) > 0,
-		RedactTypes:        redactTypes,
-		ManagedBy:          conn.ManagedBy,
+		Reviewers:          conn.Reviewers,
+		RedactEnabled:      conn.RedactEnabled,
+		RedactTypes:        conn.RedactTypes,
+		ManagedBy:          managedBy,
 		Tags:               conn.Tags,
 		AccessModeRunbooks: conn.AccessModeRunbooks,
 		AccessModeExec:     conn.AccessModeExec,
 		AccessModeConnect:  conn.AccessModeConnect,
 		AccessSchema:       conn.AccessSchema,
+		GuardRailRules:     conn.GuardRailRules,
 	})
 }
 

@@ -2,6 +2,7 @@ package models
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -18,6 +19,9 @@ const (
 	ConnectionStatusOffline = "offline"
 )
 
+// TODO: maintain null string rules
+// TODO: add redact_enabled condition
+// TODO: add org id context when fetching reviewers and redact types
 type Connection struct {
 	OrgID              string         `gorm:"column:org_id"`
 	ID                 string         `gorm:"column:id"`
@@ -37,9 +41,12 @@ type Connection struct {
 	// TODO: add created at
 	// TODO: add updated at
 
-	Envs            EnvVars          `gorm:"foreignKey:id;joinForeignKey:id"`
-	GuardRailRules  []string         `gorm:"-"`
-	GuardRailRules2 []GuardRailRules `gorm:"many2many:guardrail_rules"`
+	Envs           map[string]string `gorm:"column:envs;serializer:json;->"`
+	GuardRailRules pq.StringArray    `gorm:"column:guardrail_rules;type:text[];->"`
+	RedactTypes    pq.StringArray    `gorm:"column:redact_types;type:text[];->"`
+	RedactEnabled  bool              `gorm:"column:redact_enabled;->"`
+	Reviewers      pq.StringArray    `gorm:"column:reviewers;type:text[];->"`
+	// GuardRailRulesConnections []GuardRailRulesConnection `gorm:"many2many:guardrail_rules_connections;"`
 
 	// read only attributes
 	// Org              Org                `json:"orgs"`
@@ -79,9 +86,8 @@ func UpsertConnection(c *Connection) error {
 	}
 
 	rulesAssocList := dedupeGuardRailRules(c.GuardRailRules)
-	_ = rulesAssocList
 	sess := &gorm.Session{FullSaveAssociations: true}
-	return DB.Debug().Session(sess).Transaction(func(tx *gorm.DB) error {
+	return DB.Session(sess).Transaction(func(tx *gorm.DB) error {
 		err := tx.Table(tableConnections).
 			Save(c).
 			Error
@@ -89,8 +95,13 @@ func UpsertConnection(c *Connection) error {
 			return fmt.Errorf("failed saving connections, reason=%v", err)
 		}
 
+		err = tx.Table(tableEnvVars).Save(EnvVars{OrgID: c.OrgID, ID: c.ID, Envs: c.Envs}).Error
+		if err != nil {
+			return fmt.Errorf("failed updating env vars from connection, reason=%v", err)
+		}
+
 		// remove all rules association
-		err = tx.Exec(`DELETE FROM private.guardrail_rules_connections WHERE org_id = ? and connection_id = ?`,
+		err = tx.Exec(`DELETE FROM private.guardrail_rules_connections WHERE org_id = ? AND connection_id = ?`,
 			c.OrgID, c.ID).Error
 		if err != nil {
 			return fmt.Errorf("failed cleaning guard rail rules connections, reason=%v", err)
@@ -120,42 +131,117 @@ func DeleteConnection(orgID, name string) error {
 
 func GetConnectionByNameOrID(orgID, nameOrID string) (*Connection, error) {
 	var c Connection
-	err := DB.Table(tableConnections).Debug().
-		Model(&Connection{}).
-		Joins("Envs").
-		Where("connections.org_id = ? and connections.name = ?", orgID, nameOrID).
-		Find(&c).Error
+	err := DB.Model(&Connection{}).Raw(`
+	SELECT
+		c.id, c.org_id, c.agent_id, c.name, c.command, c.status, c.type, c.subtype, c._tags, c.managed_by,
+		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
+		( SELECT envs FROM public.env_vars WHERE id = c.id ) AS envs,
+		dlpc.config AS redact_types,
+		reviewc.config AS reviewers,
+		(SELECT array_length(dlpc.config, 1) > 0) AS redact_enabled,
+		(
+			SELECT array_agg(r.name) FROM private.guardrail_rules r
+			INNER JOIN private.guardrail_rules_connections rc ON rc.connection_id = c.id AND rc.rule_id = r.id
+			GROUP BY rc.connection_id
+		) AS guardrail_rules
+	FROM private.connections c
+	INNER JOIN private.plugins review ON review.name = 'review'
+	INNER JOIN private.plugin_connections reviewc ON reviewc.connection_id = c.id AND reviewc.plugin_id = review.id
+	INNER JOIN private.plugins dlp ON dlp.name = 'dlp'
+	INNER JOIN private.plugin_connections dlpc ON dlpc.connection_id = c.id AND dlpc.plugin_id = dlp.id
+	WHERE c.org_id = ? AND (c.name = ? OR c.id::text = ?)`,
+		orgID, nameOrID, nameOrID).
+		First(&c).Error
 	if err != nil {
-		fmt.Printf("failed obtaining connection: %v\n", err)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
 		return nil, err
 	}
-	fmt.Printf("connection--->>> %#v\n", c)
 	return &c, nil
 }
 
-type ConnectionOption struct {
-	key string
-	val string
+// ConnectionOption each attribute set applies an AND operator logic
+type ConnectionFilterOption struct {
+	Type      string
+	SubType   string
+	ManagedBy string
+	AgentID   string
+	Tags      []string
 }
 
-var availableOptions = map[string]string{
-	"type":       "string",
-	"subtype":    "string",
-	"managed_by": "string",
-	"agent_id":   "string",
-	"tags":       "array",
+func (o ConnectionFilterOption) GetTagsAsArray() any {
+	if len(o.Tags) == 0 {
+		return nil
+	}
+	var v pq.StringArray
+	for _, val := range o.Tags {
+		v = append(v, val)
+	}
+	return v
 }
 
-func ListConnections(orgID string, opts ...*ConnectionOption) {
-
+func ListConnections(orgID string, opts ConnectionFilterOption) ([]Connection, error) {
+	setConnectionOptionDefaults(&opts)
+	var items []Connection
+	err := DB.Raw(`
+	SELECT
+		c.id, c.org_id, c.agent_id, c.name, c.command, c.status, c.type, c.subtype, c._tags, c.managed_by,
+		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
+		( SELECT envs FROM public.env_vars WHERE id = c.id ) AS envs,
+		dlpc.config AS redact_types,
+		reviewc.config AS reviewers,
+		(SELECT array_length(dlpc.config, 1) > 0) AS redact_enabled,
+		(
+			SELECT array_agg(r.name) FROM private.guardrail_rules r
+			INNER JOIN private.guardrail_rules_connections rc ON rc.connection_id = c.id AND rc.rule_id = r.id
+			GROUP BY rc.connection_id
+		) AS guardrail_rules
+	FROM private.connections c
+	INNER JOIN private.plugins review ON review.name = 'review'
+	INNER JOIN private.plugin_connections reviewc ON reviewc.connection_id = c.id AND reviewc.plugin_id = review.id
+	INNER JOIN private.plugins dlp ON dlp.name = 'dlp'
+	INNER JOIN private.plugin_connections dlpc ON dlpc.connection_id = c.id AND dlpc.plugin_id = dlp.id
+	WHERE c.org_id = @org_id AND
+	(
+		COALESCE(c.type::text, '') LIKE @type AND
+		COALESCE(c.subtype, '') LIKE @subtype AND
+		COALESCE(c.agent_id::text, '') LIKE @agent_id AND
+		COALESCE(c.managed_by, '') LIKE @managed_by AND
+		CASE WHEN (@tags)::text[] IS NOT NULL
+			THEN c._tags @> (@tags)::text[]
+			ELSE true
+		END
+	) ORDER BY c.name ASC`,
+		map[string]any{
+			"org_id":     orgID,
+			"type":       opts.Type,
+			"subtype":    opts.SubType,
+			"agent_id":   opts.AgentID,
+			"managed_by": opts.ManagedBy,
+			"tags":       opts.GetTagsAsArray(),
+		},
+	).Find(&items).Error
+	if err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
-// func toAgentID(agentID string) (v *string) {
-// 	if _, err := uuid.Parse(agentID); err == nil {
-// 		return &agentID
-// 	}
-// 	return
-// }
+func setConnectionOptionDefaults(opts *ConnectionFilterOption) {
+	if opts.AgentID == "" {
+		opts.AgentID = "%"
+	}
+	if opts.Type == "" {
+		opts.Type = "%"
+	}
+	if opts.SubType == "" {
+		opts.SubType = "%"
+	}
+	if opts.ManagedBy == "" {
+		opts.ManagedBy = "%"
+	}
+}
 
 func dedupeGuardRailRules(resourceNames []string) (v []string) {
 	m := map[string]any{}

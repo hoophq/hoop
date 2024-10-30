@@ -64,21 +64,21 @@ func (a *connections) FetchOneByNameOrID(ctx pgrest.OrgContext, nameOrID string)
 	return &conn, nil
 }
 
-func (c *connections) FetchAll(ctx pgrest.OrgContext, opts ...*ConnectionOption) ([]pgrest.Connection, error) {
-	safeEncodedOpts, err := urlEncodeOptions(opts)
-	if err != nil {
-		return nil, err
-	}
-	var items []pgrest.Connection
-	err = pgrest.New("/connections?select=*,orgs(id,name),plugin_connections(config,plugins(name))&org_id=eq.%s&order=name.asc%s",
-		ctx.GetOrgID(), safeEncodedOpts).
-		List().
-		DecodeInto(&items)
-	if err != nil && err != pgrest.ErrNotFound {
-		return nil, err
-	}
-	return items, nil
-}
+// func (c *connections) FetchAll(ctx pgrest.OrgContext, opts ...*ConnectionOption) ([]pgrest.Connection, error) {
+// 	safeEncodedOpts, err := urlEncodeOptions(opts)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	var items []pgrest.Connection
+// 	err = pgrest.New("/connections?select=*,orgs(id,name),plugin_connections(config,plugins(name))&org_id=eq.%s&order=name.asc%s",
+// 		ctx.GetOrgID(), safeEncodedOpts).
+// 		List().
+// 		DecodeInto(&items)
+// 	if err != nil && err != pgrest.ErrNotFound {
+// 		return nil, err
+// 	}
+// 	return items, nil
+// }
 
 func (c *connections) Delete(ctx pgrest.OrgContext, name string) error {
 	return pgrest.New("/connections?org_id=eq.%v&name=eq.%v", ctx.GetOrgID(),
@@ -122,12 +122,12 @@ func (c *connections) Delete(ctx pgrest.OrgContext, name string) error {
 // 	}).Error()
 // }
 
-func toAgentID(agentID string) (v *string) {
-	if _, err := uuid.Parse(agentID); err == nil {
-		return &agentID
-	}
-	return
-}
+// func toAgentID(agentID string) (v *string) {
+// 	if _, err := uuid.Parse(agentID); err == nil {
+// 		return &agentID
+// 	}
+// 	return
+// }
 
 func (c *connections) UpdateStatusByName(ctx pgrest.OrgContext, connectionName, status string) error {
 	err := pgrest.New("/connections?org_id=eq.%v&name=eq.%v", ctx.GetOrgID(), connectionName).
