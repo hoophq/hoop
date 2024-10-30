@@ -120,6 +120,15 @@
                                                       :aria-hidden "true"}]
                  "Users"]]])
 
+            [:li
+             [:a {:href "#"
+                  :on-click #(rf/dispatch [:navigate :guardrails])
+                  :class (str (hover-side-menu-link? "/guardrails" current-route)
+                              (:enabled link-styles))}
+              [:div {:class "flex gap-3 items-center"}
+               [:> hero-outline-icon/ShieldCheckIcon {:class (str "h-6 w-6 shrink-0 text-white")
+                                                    :aria-hidden "true"}]
+               "Guardrails"]]]
             (when admin?
               [:> ui/Disclosure {:as "li"
                                  :class "text-xs font-semibold leading-6 text-gray-400"}

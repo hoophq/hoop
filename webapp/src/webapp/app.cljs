@@ -21,6 +21,7 @@
             [webapp.connections.views.connection-list :as connections]
             [webapp.connections.views.create-update-connection.main :as create-update-connection]
             [webapp.dashboard.main :as dashboard]
+            [webapp.guardrails.main :as guardrails]
             [webapp.events]
             [webapp.events.agents]
             [webapp.events.ask-ai]
@@ -46,6 +47,7 @@
             [webapp.events.segment]
             [webapp.events.slack-plugin]
             [webapp.events.users]
+            [webapp.events.guardrails]
             [webapp.organization.users.main :as org-users]
             [webapp.plugins.views.manage-plugin :as manage-plugin]
             [webapp.plugins.views.plugins-configurations :as plugins-configurations]
@@ -153,6 +155,11 @@
   [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-12 lg:pt-16 lg:pb-10 h-full overflow-auto"}
                              [h/h2 "Dashboard" {:class "mb-6"}]
                              [dashboard/main]]])
+
+(defmethod routes/panels :guardrails-panel []
+  [layout :application-hoop
+   [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-12 lg:pt-16 lg:pb-10 h-full overflow-auto"}
+    [guardrails/panel]]])
 
 (defmethod routes/panels :editor-plugin-panel []
   (rf/dispatch [:destroy-page-loader])
