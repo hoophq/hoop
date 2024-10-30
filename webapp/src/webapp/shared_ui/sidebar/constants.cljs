@@ -37,9 +37,6 @@
 (def plugins-management [{:name "access_control"
                           :label "Access Control"
                           :free-feature? true}
-                         {:name "audit"
-                          :label "Audit"
-                          :free-feature? true}
                          {:name "runbooks"
                           :label "Runbooks"
                           :free-feature? true}])
