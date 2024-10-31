@@ -301,6 +301,18 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 	if uinfo.MustSyncGroups {
 		userGroups = uinfo.Groups
 	}
+	// dedupe duplicates from userGroups
+	encountered := make(map[string]bool)
+	var dedupedUserGroups []string
+	for _, ug := range userGroups {
+		if !encountered[ug] {
+			encountered[ug] = true
+			dedupedUserGroups = append(dedupedUserGroups, ug)
+		}
+	}
+
+	// reassigned the deduped user groups to the user groups to keep compatibility
+	userGroups = dedupedUserGroups
 
 	if !ctx.IsEmpty() {
 		verified := false
@@ -402,6 +414,7 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 	if err := models.CreateUser(newUser); err != nil {
 		return false, fmt.Errorf("failed saving new user %s/%s, err=%v", uinfo.Subject, uinfo.Email, err)
 	}
+
 	// add the user to the default group
 	newUserGroups := []models.UserGroup{}
 	for i := range userGroups {
