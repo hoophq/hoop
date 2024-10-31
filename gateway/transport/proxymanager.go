@@ -161,9 +161,9 @@ func (s *Server) proccessConnectOKAck(stream *streamclient.ProxyStream) error {
 			return status.Errorf(codes.NotFound, fmt.Sprintf("connection '%v' not found", req.RequestConnectionName))
 		}
 
-		if conn.Type != "database" && conn.SubType != "tcp" {
+		if conn.Type != "database" && conn.SubType.String != "tcp" {
 			disp.sendResponse(nil, ErrUnsupportedType)
-			return fmt.Errorf("connection type %s/%s not supported", conn.Type, conn.SubType)
+			return fmt.Errorf("connection type %s/%s not supported", conn.Type, conn.SubType.String)
 		}
 
 		if conn.AccessModeConnect == "disabled" {
@@ -178,13 +178,13 @@ func (s *Server) proccessConnectOKAck(stream *streamclient.ProxyStream) error {
 			pluginCtx.ConnectionID = conn.ID
 			pluginCtx.ConnectionName = conn.Name
 			pluginCtx.ConnectionType = conn.Type
-			pluginCtx.ConnectionSubType = conn.SubType
+			pluginCtx.ConnectionSubType = conn.SubType.String
 			pluginCtx.ConnectionCommand = conn.Command
 			pluginCtx.ConnectionSecret = conn.AsSecrets()
 
-			pluginCtx.AgentID = conn.AgentID
-			pluginCtx.AgentMode = conn.Agent.Mode
-			pluginCtx.AgentName = conn.Agent.Name
+			pluginCtx.AgentID = conn.AgentID.String
+			pluginCtx.AgentMode = conn.AgentMode
+			pluginCtx.AgentName = conn.AgentName
 		})
 		pctx = stream.PluginContext()
 		if err := requestProxyConnection(stream); err != nil {

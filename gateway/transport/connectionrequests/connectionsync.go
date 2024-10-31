@@ -12,7 +12,6 @@ import (
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pgrest"
-	pgconnections "github.com/hoophq/hoop/gateway/pgrest/connections"
 	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
@@ -57,14 +56,14 @@ func setChecksumCache(orgID string, req *proto.PreConnectRequest) {
 	connectionChecksumStore.Set(syncKey, checksum)
 }
 
-func upsertConnection(ctx pgrest.OrgContext, agentID string, req *proto.PreConnectRequest, conn *pgrest.Connection) error {
+func upsertConnection(ctx pgrest.OrgContext, agentID string, req *proto.PreConnectRequest, conn *models.Connection) error {
 	// TODO: implement logic based on license
 	if conn == nil {
-		conn = &pgrest.Connection{
+		conn = &models.Connection{
 			ID:        uuid.NewString(),
 			OrgID:     ctx.GetOrgID(),
-			AgentID:   agentID,
-			ManagedBy: &managedByAgent,
+			AgentID:   sql.NullString{String: agentID, Valid: true},
+			ManagedBy: sql.NullString{String: managedByAgent, Valid: true},
 		}
 	}
 	if len(conn.Envs) == 0 {
@@ -73,7 +72,7 @@ func upsertConnection(ctx pgrest.OrgContext, agentID string, req *proto.PreConne
 	conn.Command = req.Command
 	conn.Name = req.Name
 	conn.Type = req.Type
-	conn.SubType = req.Subtype
+	conn.SubType = sql.NullString{String: req.Subtype, Valid: true}
 	conn.Status = pgrest.ConnectionStatusOnline
 	conn.AccessModeConnect = "enabled"
 	conn.AccessModeExec = "enabled"
@@ -85,16 +84,16 @@ func upsertConnection(ctx pgrest.OrgContext, agentID string, req *proto.PreConne
 
 	// TODO: test-me
 	err := models.UpsertConnection(&models.Connection{
-		ID:      conn.ID,
-		OrgID:   conn.OrgID,
-		AgentID: sql.NullString{String: conn.AgentID},
-		Name:    conn.Name,
-		Command: req.Command,
-		Type:    req.Type,
-		SubType: sql.NullString{String: req.Subtype},
-		// Envs:               conn.Envs,
+		ID:                 conn.ID,
+		OrgID:              conn.OrgID,
+		AgentID:            conn.AgentID,
+		Name:               conn.Name,
+		Command:            req.Command,
+		Type:               req.Type,
+		SubType:            sql.NullString{String: req.Subtype, Valid: true},
+		Envs:               conn.Envs,
 		Status:             pgrest.ConnectionStatusOnline,
-		ManagedBy:          sql.NullString{String: *conn.ManagedBy}, // TODO: fix-me managed by pointer
+		ManagedBy:          conn.ManagedBy, // TODO: fix-me managed by pointer
 		Tags:               conn.Tags,
 		AccessModeRunbooks: "enabled",
 		AccessModeExec:     "enabled",
@@ -125,21 +124,20 @@ func connectionSync(ctx pgrest.OrgContext, agentID string, req *proto.PreConnect
 	if checksumCacheMatches(ctx.GetOrgID(), req) {
 		return nil
 	}
-	// ctx := pgrest.NewOrgContext(orgID)
-	conn, err := pgconnections.New().FetchOneByNameOrID(ctx, req.Name)
+	conn, err := models.GetConnectionByNameOrID(ctx.GetOrgID(), req.Name)
 	if err != nil {
 		return err
 	}
 	// It will only sync connections that are managed by this process/agent.
 	// A user could change the state of the connection and make it unmanageable
 	if conn != nil {
-		var managedBy string
-		if conn.ManagedBy != nil {
-			managedBy = *conn.ManagedBy
-		}
-		if managedBy != managedByAgent || conn.AgentID != agentID {
+		// var managedBy string
+		// if conn.ManagedBy != nil {
+		// 	managedBy = *conn.ManagedBy
+		// }
+		if conn.ManagedBy.String != managedByAgent || conn.AgentID.String != agentID {
 			log.Warnf("unable to sync connection, managed-by=%v, connection-agentid=%q, requested-agentid=%q",
-				managedBy, conn.AgentID, agentID)
+				conn.ManagedBy.String, conn.AgentID, agentID)
 			return fmt.Errorf("connection %s is not being managed by this process, choose another name", conn.Name)
 		}
 	}

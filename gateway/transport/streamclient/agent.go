@@ -6,8 +6,8 @@ import (
 
 	"github.com/hoophq/hoop/common/memory"
 	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pgrest"
-	pgconnections "github.com/hoophq/hoop/gateway/pgrest/connections"
 	"github.com/hoophq/hoop/gateway/transport/connectionstatus"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	streamtypes "github.com/hoophq/hoop/gateway/transport/streamclient/types"
@@ -81,11 +81,11 @@ func (s *AgentStream) validate() error {
 		if s.connectionName == "" {
 			return status.Error(codes.FailedPrecondition, "missing connection-name attribute")
 		}
-		conn, err := pgconnections.New().FetchOneByNameOrID(s, s.connectionName)
+		conn, err := models.GetConnectionByNameOrID(s.GetOrgID(), s.connectionName)
 		if err != nil || conn == nil {
 			return status.Error(codes.Internal, fmt.Sprintf("failed validating connection, reason=%v", err))
 		}
-		if s.agent.ID != conn.AgentID || conn.ManagedBy == nil {
+		if s.agent.ID != conn.AgentID.String || conn.ManagedBy.String == "" {
 			return status.Error(codes.InvalidArgument,
 				fmt.Sprintf("connection %v is not managed by agent %v", s.connectionName, s.agent.Name))
 		}

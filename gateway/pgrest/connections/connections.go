@@ -3,7 +3,6 @@ package pgconnections
 import (
 	"net/url"
 
-	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
@@ -47,22 +46,22 @@ func (c *connections) FetchByIDs(ctx pgrest.OrgContext, connectionIDs []string) 
 	return itemMap, nil
 }
 
-func (a *connections) FetchOneByNameOrID(ctx pgrest.OrgContext, nameOrID string) (*pgrest.Connection, error) {
-	client := pgrest.New("/connections?select=*,orgs(id,name),agents(id,name,mode),plugin_connections(config,plugins(name))&org_id=eq.%s&name=eq.%s",
-		ctx.GetOrgID(), url.QueryEscape(nameOrID))
-	if _, err := uuid.Parse(nameOrID); err == nil {
-		client = pgrest.New("/connections?select=*,orgs(id,name),agents(id,name,mode),plugin_connections(config,plugins(name))&org_id=eq.%s&id=eq.%s",
-			ctx.GetOrgID(), nameOrID)
-	}
-	var conn pgrest.Connection
-	if err := client.FetchOne().DecodeInto(&conn); err != nil {
-		if err == pgrest.ErrNotFound {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &conn, nil
-}
+// func (a *connections) FetchOneByNameOrID(ctx pgrest.OrgContext, nameOrID string) (*pgrest.Connection, error) {
+// 	client := pgrest.New("/connections?select=*,orgs(id,name),agents(id,name,mode),plugin_connections(config,plugins(name))&org_id=eq.%s&name=eq.%s",
+// 		ctx.GetOrgID(), url.QueryEscape(nameOrID))
+// 	if _, err := uuid.Parse(nameOrID); err == nil {
+// 		client = pgrest.New("/connections?select=*,orgs(id,name),agents(id,name,mode),plugin_connections(config,plugins(name))&org_id=eq.%s&id=eq.%s",
+// 			ctx.GetOrgID(), nameOrID)
+// 	}
+// 	var conn pgrest.Connection
+// 	if err := client.FetchOne().DecodeInto(&conn); err != nil {
+// 		if err == pgrest.ErrNotFound {
+// 			return nil, nil
+// 		}
+// 		return nil, err
+// 	}
+// 	return &conn, nil
+// }
 
 // func (c *connections) FetchAll(ctx pgrest.OrgContext, opts ...*ConnectionOption) ([]pgrest.Connection, error) {
 // 	safeEncodedOpts, err := urlEncodeOptions(opts)

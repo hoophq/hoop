@@ -11,7 +11,6 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pgrest"
-	pgconnections "github.com/hoophq/hoop/gateway/pgrest/connections"
 	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
@@ -47,7 +46,7 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
-	existingConn, err := pgconnections.New().FetchOneByNameOrID(ctx, req.Name)
+	existingConn, err := models.GetConnectionByNameOrID(ctx.OrgID, req.Name)
 	if err != nil {
 		log.Errorf("failed fetching existing connection, err=%v", err)
 		sentry.CaptureException(err)
@@ -128,7 +127,7 @@ func Post(c *gin.Context) {
 func Put(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	connNameOrID := c.Param("nameOrID")
-	conn, err := pgconnections.New().FetchOneByNameOrID(ctx, connNameOrID)
+	conn, err := models.GetConnectionByNameOrID(ctx.OrgID, connNameOrID)
 	if err != nil {
 		log.Errorf("failed fetching connection, err=%v", err)
 		sentry.CaptureException(err)
@@ -179,9 +178,14 @@ func Put(c *gin.Context) {
 		GuardRailRules:     req.GuardRailRules,
 	})
 	if err != nil {
-		log.Errorf("failed updating connection, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		switch err.(type) {
+		case *models.ErrNotFoundGuardRailRules:
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		default:
+			log.Errorf("failed updating connection, err=%v", err)
+			sentry.CaptureException(err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		}
 		return
 	}
 	connectionrequests.InvalidateSyncCache(ctx.OrgID, conn.Name)
@@ -223,7 +227,7 @@ func Delete(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "missing connection name"})
 		return
 	}
-	err := pgconnections.New().Delete(ctx, connName)
+	err := models.DeleteConnection(ctx.OrgID, connName)
 	switch err {
 	case pgrest.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
@@ -253,7 +257,7 @@ func Delete(c *gin.Context) {
 //	@Router			/connections [get]
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	filterOpts, err := validateListOptions(c)
+	filterOpts, err := validateListOptions(c.Request.URL.Query())
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
@@ -363,8 +367,9 @@ func Get(c *gin.Context) {
 }
 
 // FetchByName fetches a connection based in access control rules
-func FetchByName(ctx pgrest.Context, connectionName string) (*pgrest.Connection, error) {
-	conn, err := pgconnections.New().FetchOneByNameOrID(ctx, connectionName)
+func FetchByName(ctx pgrest.Context, connectionName string) (*models.Connection, error) {
+	// conn, err := pgconnections.New().FetchOneByNameOrID(ctx, connectionName)
+	conn, err := models.GetConnectionByNameOrID(ctx.GetOrgID(), connectionName)
 	if err != nil {
 		return nil, err
 	}

@@ -28,12 +28,14 @@ type Context struct {
 	UserGroups     []string
 
 	// Connection attributes
-	ConnectionID      string
-	ConnectionName    string
-	ConnectionType    string
-	ConnectionSubType string
-	ConnectionCommand []string
-	ConnectionSecret  map[string]any
+	ConnectionID          string
+	ConnectionName        string
+	ConnectionType        string
+	ConnectionSubType     string
+	ConnectionCommand     []string
+	ConnectionSecret      map[string]any
+	ConnectionInputRules  []byte
+	ConnectionOutputRules []byte
 
 	// Agent attributes
 	AgentID   string

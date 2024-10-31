@@ -31,16 +31,18 @@ type (
 		packetSpec map[string][]byte
 	}
 	AgentConnectionParams struct {
-		ConnectionName string
-		ConnectionType string
-		UserID         string
-		UserEmail      string
-		EnvVars        map[string]any
-		CmdList        []string
-		ClientArgs     []string
-		ClientVerb     string
-		ClientOrigin   string
-		DLPInfoTypes   []string
+		ConnectionName       string
+		ConnectionType       string
+		UserID               string
+		UserEmail            string
+		EnvVars              map[string]any
+		CmdList              []string
+		ClientArgs           []string
+		ClientVerb           string
+		ClientOrigin         string
+		DLPInfoTypes         []string
+		GuardRailInputRules  []byte
+		GuardRailOutputRules []byte
 	}
 
 	// TODO: remove it later, kept for compatibility issues

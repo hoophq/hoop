@@ -30,6 +30,7 @@ rootfs/app/ui
 build
 go.work.sum
 .env
+client/cmd/exec.go
 
 .DS_Store
 libhoop

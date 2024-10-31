@@ -4,11 +4,11 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/url"
 	"regexp"
 	"slices"
 	"strings"
 
-	"github.com/gin-gonic/gin"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
@@ -119,11 +119,11 @@ func validateConnectionRequest(req openapi.Connection) error {
 var reSanitize, _ = regexp.Compile(`^[a-zA-Z0-9_]+(?:[-\.]?[a-zA-Z0-9_]+){1,128}$`)
 var errInvalidOptionVal = errors.New("option values must contain between 1 and 127 alphanumeric characters, it may include (-), (_) or (.) characters")
 
-func validateListOptions(c *gin.Context) (o models.ConnectionFilterOption, err error) {
+func validateListOptions(urlValues url.Values) (o models.ConnectionFilterOption, err error) {
 	if reSanitize == nil {
 		return o, fmt.Errorf("failed compiling sanitize regex on listing connections")
 	}
-	for key, values := range c.Request.URL.Query() {
+	for key, values := range urlValues {
 		switch key {
 		case "agent_id":
 			o.AgentID = values[0]

@@ -19,7 +19,7 @@ CREATE TABLE guardrail_rules(
 CREATE TABLE guardrail_rules_connections(
     id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
     org_id UUID NULL REFERENCES orgs (id),
-    -- TODO: check delete cascade!
+
     rule_id UUID NOT NULL REFERENCES guardrail_rules (id) ON DELETE CASCADE,
     connection_id UUID NOT NULL REFERENCES connections (id) ON DELETE CASCADE,
 
