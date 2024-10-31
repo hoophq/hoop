@@ -249,7 +249,14 @@ func Get(c *gin.Context) {
 		return
 	}
 
-	if (session == nil || session.UserID != ctx.UserID) && !ctx.IsAdminUser() {
+	// if not found, return 404
+	if session == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+		return
+	}
+
+	// if user is not admin and session is not owned by user, return 404
+	if session.UserID != ctx.UserID && !ctx.IsAdminUser() {
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 		return
 	}
