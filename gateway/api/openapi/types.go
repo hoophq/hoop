@@ -237,8 +237,8 @@ type Connection struct {
 	// * enabled - Enable the instrospection schema in the webapp
 	// * disabled - Disable the instrospection schema in the webapp
 	AccessSchema string `json:"access_schema" binding:"required" enums:"enabled,disabled"`
-	// The guard rail association named rules
-	GuardRailRules []string `json:"guardrail_rules" example:"deny-exec,deny-select"`
+	// The guard rail association id rules
+	GuardRailRules []string `json:"guardrail_rules" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54,B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
 }
 
 type ExecRequest struct {

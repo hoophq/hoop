@@ -105,20 +105,18 @@ func UpsertConnection(c *Connection) error {
 
 		// add new rule associations only if the rule exists
 		var notFoundRules []string
-		for _, ruleName := range rulesAssocList {
+		for _, ruleID := range rulesAssocList {
 			var result map[string]any
 			err = tx.Raw(`
-			WITH rules AS ( SELECT id FROM private.guardrail_rules WHERE name = ? )
 			INSERT INTO private.guardrail_rules_connections (org_id, connection_id, rule_id)
-			SELECT ?, ?, ( SELECT id FROM rules )
-			WHERE EXISTS ( SELECT id FROM rules )
-			RETURNING *`,
-				ruleName, c.OrgID, c.ID).Scan(&result).Error
+			VALUES (?, ?, ?)
+			RETURNING *`, c.OrgID, c.ID, ruleID).
+				Scan(&result).Error
 			if err != nil {
 				return fmt.Errorf("failed creating guard rail association, reason=%v", err)
 			}
 			if len(result) == 0 {
-				notFoundRules = append(notFoundRules, ruleName)
+				notFoundRules = append(notFoundRules, ruleID)
 			}
 		}
 		if len(notFoundRules) > 0 {
@@ -147,9 +145,7 @@ func GetConnectionByNameOrID(orgID, nameOrID string) (*Connection, error) {
 		COALESCE(reviewc.config, ARRAY[]::TEXT[]) AS reviewers,
 		(SELECT array_length(dlpc.config, 1) > 0) AS redact_enabled,
 		COALESCE((
-			SELECT array_agg(r.name) FROM private.guardrail_rules r
-			INNER JOIN private.guardrail_rules_connections rc ON rc.connection_id = c.id AND rc.rule_id = r.id
-			GROUP BY rc.connection_id
+			SELECT array_agg(id::TEXT) FROM private.guardrail_rules_connections
 		), ARRAY[]::TEXT[]) AS guardrail_rules,
 		(
 			SELECT json_agg(r.input) FROM private.guardrail_rules r
@@ -210,9 +206,7 @@ func ListConnections(orgID string, opts ConnectionFilterOption) ([]Connection, e
 		COALESCE(reviewc.config, ARRAY[]::TEXT[]) AS reviewers,
 		(SELECT array_length(dlpc.config, 1) > 0) AS redact_enabled,
 		COALESCE((
-			SELECT array_agg(r.name) FROM private.guardrail_rules r
-			INNER JOIN private.guardrail_rules_connections rc ON rc.connection_id = c.id AND rc.rule_id = r.id
-			GROUP BY rc.connection_id
+			SELECT array_agg(id::TEXT) FROM private.guardrail_rules_connections
 		), ARRAY[]::TEXT[]) AS guardrail_rules
 	FROM private.connections c
 	LEFT JOIN private.plugins review ON review.name = 'review'
