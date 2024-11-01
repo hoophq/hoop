@@ -491,4 +491,9 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.AllowApiKey,
 		api.Authenticate,
 		apiguardrails.Get)
+
+	route.DELETE("/guardrail-rules/:id",
+		api.AllowApiKey,
+		api.Authenticate,
+		apiguardrails.Delete)
 }

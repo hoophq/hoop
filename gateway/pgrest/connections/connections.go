@@ -1,8 +1,6 @@
 package pgconnections
 
 import (
-	"net/url"
-
 	"github.com/hoophq/hoop/gateway/pgrest"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
@@ -79,12 +77,12 @@ func (c *connections) FetchByIDs(ctx pgrest.OrgContext, connectionIDs []string) 
 // 	return items, nil
 // }
 
-func (c *connections) Delete(ctx pgrest.OrgContext, name string) error {
-	return pgrest.New("/connections?org_id=eq.%v&name=eq.%v", ctx.GetOrgID(),
-		url.QueryEscape(name)).
-		Delete().
-		Error()
-}
+// func (c *connections) Delete(ctx pgrest.OrgContext, name string) error {
+// 	return pgrest.New("/connections?org_id=eq.%v&name=eq.%v", ctx.GetOrgID(),
+// 		url.QueryEscape(name)).
+// 		Delete().
+// 		Error()
+// }
 
 // func (c *connections) Upsert(ctx pgrest.OrgContext, conn pgrest.Connection) error {
 // 	var subType *string

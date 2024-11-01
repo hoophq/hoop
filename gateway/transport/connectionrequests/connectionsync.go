@@ -82,26 +82,7 @@ func upsertConnection(ctx pgrest.OrgContext, agentID string, req *proto.PreConne
 		conn.Envs[key] = val
 	}
 
-	// TODO: test-me
-	err := models.UpsertConnection(&models.Connection{
-		ID:                 conn.ID,
-		OrgID:              conn.OrgID,
-		AgentID:            conn.AgentID,
-		Name:               conn.Name,
-		Command:            req.Command,
-		Type:               req.Type,
-		SubType:            sql.NullString{String: req.Subtype, Valid: true},
-		Envs:               conn.Envs,
-		Status:             pgrest.ConnectionStatusOnline,
-		ManagedBy:          conn.ManagedBy, // TODO: fix-me managed by pointer
-		Tags:               conn.Tags,
-		AccessModeRunbooks: "enabled",
-		AccessModeExec:     "enabled",
-		AccessModeConnect:  "enabled",
-		AccessSchema:       "enabled",
-	})
-	// err := pgconnections.New().Upsert(ctx, *conn)
-	if err != nil {
+	if err := models.UpsertConnection(conn); err != nil {
 		return err
 	}
 	pgplugins.EnableDefaultPlugins(ctx, conn.ID, req.Name, defaultPlugins)
@@ -131,10 +112,6 @@ func connectionSync(ctx pgrest.OrgContext, agentID string, req *proto.PreConnect
 	// It will only sync connections that are managed by this process/agent.
 	// A user could change the state of the connection and make it unmanageable
 	if conn != nil {
-		// var managedBy string
-		// if conn.ManagedBy != nil {
-		// 	managedBy = *conn.ManagedBy
-		// }
 		if conn.ManagedBy.String != managedByAgent || conn.AgentID.String != agentID {
 			log.Warnf("unable to sync connection, managed-by=%v, connection-agentid=%q, requested-agentid=%q",
 				conn.ManagedBy.String, conn.AgentID, agentID)

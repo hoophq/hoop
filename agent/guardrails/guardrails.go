@@ -27,6 +27,10 @@ func (e ErrRuleMatch) Error() string {
 	return fmt.Sprintf("validation error, match guard rails %v rule", e.streamDirection)
 }
 
+type DataRules struct {
+	Items []Rule `json:"rules"`
+}
+
 type streamWriter struct {
 	client          proto.ClientTransport
 	packetType      proto.PacketType
@@ -63,10 +67,6 @@ func (r *Rule) validate(streamDirection string, data []byte) error {
 		return fmt.Errorf("unknown rule type %q", r.Type)
 	}
 	return nil
-}
-
-type DataRules struct {
-	Items []Rule `json:"rules"`
 }
 
 func Decode(data []byte) ([]DataRules, error) {

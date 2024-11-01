@@ -59,3 +59,13 @@ func UpsertGuardRailRules(r *GuardRailRules) error {
 	}
 	return res.Error
 }
+
+func DeleteGuardRailRules(orgID, ruleID string) error {
+	// TODO: change it to perform it in a single transaction
+	if _, err := GetGuardRailRules(orgID, ruleID); err != nil {
+		return err
+	}
+	return DB.Table(tableGuardRails).
+		Where(`org_id = ? and id = ?`, orgID, ruleID).
+		Delete(&GuardRailRules{}).Error
+}
