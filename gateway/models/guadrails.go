@@ -40,10 +40,14 @@ func GetGuardRailRules(orgID, ruleID string) (*GuardRailRules, error) {
 }
 
 func CreateGuardRailRules(rule *GuardRailRules) error {
-	return DB.Table(tableGuardRails).Model(rule).Create(rule).Error
+	err := DB.Table(tableGuardRails).Model(rule).Create(rule).Error
+	if err == gorm.ErrDuplicatedKey {
+		return ErrAlreadyExists
+	}
+	return err
 }
 
-func UpsertGuardRailRules(r *GuardRailRules) error {
+func UpdateGuardRailRules(r *GuardRailRules) error {
 	res := DB.Table(tableGuardRails).
 		Model(r).
 		Clauses(clause.Returning{}).

@@ -20,9 +20,9 @@ import (
 //	@Tags			Core
 //	@Accept			json
 //	@Produce		json
-//	@Param			request			body		openapi.GuardRailRule	true	"The request body resource"
-//	@Success		201				{object}	openapi.GuardRailRule
-//	@Failure		400,409,422,500	{object}	openapi.HTTPError
+//	@Param			request		body		openapi.GuardRailRule	true	"The request body resource"
+//	@Success		201			{object}	openapi.GuardRailRule
+//	@Failure		400,409,500	{object}	openapi.HTTPError
 //	@Router			/guardrail-rules [post]
 func Post(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -41,12 +41,15 @@ func Post(c *gin.Context) {
 		UpdatedAt: time.Now().UTC(),
 	}
 	err := models.CreateGuardRailRules(rule)
-	if err != nil {
-		log.Errorf("failed creting guard rail rule, reason=%v", err)
+	switch err {
+	case models.ErrAlreadyExists:
+		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
+	case nil:
+		toJSON(c, http.StatusCreated, rule)
+	default:
+		log.Errorf("failed creting guard rail rule, reason=%v, err=%T", err, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
 	}
-	toJSON(c, http.StatusCreated, rule)
 }
 
 // UpdateGuardRailRules
@@ -58,7 +61,7 @@ func Post(c *gin.Context) {
 //	@Produce		json
 //	@Param			request	body		openapi.GuardRailRule	true	"The request body resource"
 //	@Success		200		{object}	openapi.GuardRailRule
-//	@Failure		409,500	{object}	openapi.HTTPError
+//	@Failure		400,500	{object}	openapi.HTTPError
 //	@Router			/guardrail-rules/{id} [put]
 func Put(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -74,7 +77,7 @@ func Put(c *gin.Context) {
 		Output:    req.Output,
 		UpdatedAt: time.Now().UTC(),
 	}
-	err := models.UpsertGuardRailRules(rule)
+	err := models.UpdateGuardRailRules(rule)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
@@ -94,9 +97,9 @@ func Put(c *gin.Context) {
 //	@Tags			Core
 //	@Accept			json
 //	@Produce		json
-//	@Param			request			body		openapi.GuardRailRule	true	"The request body resource"
-//	@Success		200				{array}		openapi.GuardRailRule
-//	@Failure		400,409,422,500	{object}	openapi.HTTPError
+//	@Param			request	body		openapi.GuardRailRule	true	"The request body resource"
+//	@Success		200		{array}		openapi.GuardRailRule
+//	@Failure		500		{object}	openapi.HTTPError
 //	@Router			/guardrail-rules [get]
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -116,10 +119,10 @@ func List(c *gin.Context) {
 //	@Tags			Core
 //	@Accept			json
 //	@Produce		json
-//	@Param			id				path		string					true	"The unique identifier of the resource"
-//	@Param			request			body		openapi.GuardRailRule	true	"The request body resource"
-//	@Success		200				{object}	openapi.GuardRailRule
-//	@Failure		400,409,422,500	{object}	openapi.HTTPError
+//	@Param			id			path		string					true	"The unique identifier of the resource"
+//	@Param			request		body		openapi.GuardRailRule	true	"The request body resource"
+//	@Success		200			{object}	openapi.GuardRailRule
+//	@Failure		400,404,500	{object}	openapi.HTTPError
 //	@Router			/guardrail-rules/{id} [get]
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)

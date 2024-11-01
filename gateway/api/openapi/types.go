@@ -834,7 +834,39 @@ type GuardRailRuleResponse struct {
 	// Unique name for the rule
 	Name string `json:"name" example:"my-strict-rule"`
 
-	Input  map[string]any `json:"input"`
+	// The input rule
+	/*
+		{
+			"name": "deny-select",
+			"input": {
+				"rules": [
+					{"type": "deny_words_list", "words": ["SELECT"], "pattern_regex": ""}
+				]
+			},
+			"output": {
+				"rules": [
+					{"type": "pattern_match", "words": [], "pattern_regex": "[A-Z0-9]+"}
+				]
+			}
+		}
+	*/
+	Input map[string]any `json:"input"`
+	// The output rule
+	/*
+		{
+			"name": "deny-select",
+			"input": {
+				"rules": [
+					{"type": "deny_words_list", "words": ["SELECT"], "pattern_regex": ""}
+				]
+			},
+			"output": {
+				"rules": [
+					{"type": "pattern_match", "words": [], "pattern_regex": "[A-Z0-9]+"}
+				]
+			}
+		}
+	*/
 	Output map[string]any `json:"output"`
 
 	// The time the resource was created
