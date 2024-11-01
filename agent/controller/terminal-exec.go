@@ -73,20 +73,28 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 	})
 }
 
-func (a *Agent) loadDefaultWriter(sessionID string, connParams *pb.AgentConnectionParams, pkt *pb.Packet) (stdout, stderr io.WriteCloser, err error) {
+func (a *Agent) loadDefaultWriter(sessionID string, connParams *pb.AgentConnectionParams, pkt *pb.Packet) (stdout, stderr io.WriteCloser, _ error) {
 	hasInputRules, hasOutputRules := len(connParams.GuardRailInputRules) > 0, len(connParams.GuardRailOutputRules) > 0
 	log.Infof("output rules=%v, input rules=%v", string(connParams.GuardRailInputRules), string(connParams.GuardRailOutputRules))
 	log.With("sid", sessionID).Infof("loading default writer, input-rules=%v, output-rules=%v", hasInputRules, hasOutputRules)
 	if hasInputRules {
-		err := guardrails.Validate(connParams.GuardRailInputRules, pkt.Payload)
-		if err != nil {
-			return nil, nil, fmt.Errorf("internal error, unable to decode guard rail inputs data, reason=%v", err)
+		err := guardrails.Validate("input", connParams.GuardRailInputRules, pkt.Payload)
+		switch err.(type) {
+		case *guardrails.ErrRuleMatch:
+			return nil, nil, err
+		case nil:
+		default:
+			return nil, nil, fmt.Errorf("internal error, failed validating guard rails input rules: %v", err)
 		}
 	}
 
 	if hasOutputRules {
-		stdout = guardrails.NewWriter(sessionID, a.client, pbclient.WriteStdout, connParams.GuardRailOutputRules)
-		stderr = guardrails.NewWriter(sessionID, a.client, pbclient.WriteStderr, connParams.GuardRailOutputRules)
+		dataRules, err := guardrails.Decode(connParams.GuardRailOutputRules)
+		if err != nil {
+			return nil, nil, fmt.Errorf("internal error, failed decoding guard rails output rules: %v", err)
+		}
+		stdout = guardrails.NewWriter(sessionID, a.client, pbclient.WriteStdout, dataRules, "output")
+		stderr = guardrails.NewWriter(sessionID, a.client, pbclient.WriteStderr, dataRules, "output")
 		return
 	}
 	spec := map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)}

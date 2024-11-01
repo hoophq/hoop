@@ -139,7 +139,7 @@ func Put(c *gin.Context) {
 		return
 	}
 	// when the connection is managed by the agent, make sure to deny any change
-	if conn.ManagedBy != nil {
+	if conn.ManagedBy.String != "" {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "unable to update a connection managed by its agent"})
 		return
 	}
