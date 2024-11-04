@@ -7,6 +7,7 @@ import (
 	"github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
+	"github.com/hoophq/hoop/gateway/guardrails"
 	"github.com/hoophq/hoop/gateway/models"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -34,9 +35,9 @@ func OnReceive(ctx Context, pkt *proto.Packet) error {
 		if !ok {
 			return nil
 		}
-		err := Validate("output", outputRules, pkt.Payload)
+		err := guardrails.Validate("output", outputRules, pkt.Payload)
 		switch err.(type) {
-		case *ErrRuleMatch:
+		case *guardrails.ErrRuleMatch:
 			return status.Errorf(codes.FailedPrecondition, err.Error())
 		case nil:
 		default:

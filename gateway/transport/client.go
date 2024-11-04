@@ -224,18 +224,16 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 		}
 		clientArgs := clientArgsDecode(pkt.Spec)
 		connParams, err := pb.GobEncode(&pb.AgentConnectionParams{
-			ConnectionName:       pctx.ConnectionName,
-			ConnectionType:       pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType).String(),
-			UserID:               pctx.UserID,
-			UserEmail:            pctx.UserEmail,
-			EnvVars:              pctx.ConnectionSecret,
-			CmdList:              pctx.ConnectionCommand,
-			ClientArgs:           clientArgs,
-			ClientVerb:           pctx.ClientVerb,
-			ClientOrigin:         pctx.ClientOrigin,
-			DLPInfoTypes:         stream.GetRedactInfoTypes(),
-			GuardRailInputRules:  pctx.ConnectionInputRules,
-			GuardRailOutputRules: pctx.ConnectionOutputRules,
+			ConnectionName: pctx.ConnectionName,
+			ConnectionType: pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType).String(),
+			UserID:         pctx.UserID,
+			UserEmail:      pctx.UserEmail,
+			EnvVars:        pctx.ConnectionSecret,
+			CmdList:        pctx.ConnectionCommand,
+			ClientArgs:     clientArgs,
+			ClientVerb:     pctx.ClientVerb,
+			ClientOrigin:   pctx.ClientOrigin,
+			DLPInfoTypes:   stream.GetRedactInfoTypes(),
 		})
 		if err != nil {
 			return fmt.Errorf("failed encoding connection params err=%v", err)

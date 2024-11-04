@@ -19,6 +19,7 @@ import (
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/clientexec"
+	"github.com/hoophq/hoop/gateway/guardrails"
 	"github.com/hoophq/hoop/gateway/jira"
 	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
 	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
@@ -26,7 +27,6 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2"
 	sessionstorage "github.com/hoophq/hoop/gateway/storagev2/session"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
-	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
 )
 
 type SessionPostBody struct {
@@ -120,9 +120,9 @@ func Post(c *gin.Context) {
 		return
 	}
 
-	err = transportext.Validate("input", conn.GuardRailInputRules, []byte(body.Script))
+	err = guardrails.Validate("input", conn.GuardRailInputRules, []byte(body.Script))
 	switch err.(type) {
-	case *transportext.ErrRuleMatch:
+	case *guardrails.ErrRuleMatch:
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	case nil:

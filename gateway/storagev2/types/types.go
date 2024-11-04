@@ -93,21 +93,19 @@ type Connection struct {
 }
 
 type ConnectionInfo struct {
-	ID                   string
-	Name                 string
-	Type                 string
-	SubType              string
-	CmdEntrypoint        []string
-	Secrets              map[string]any
-	AgentID              string
-	AgentName            string
-	AgentMode            string
-	AccessModeRunbooks   string
-	AccessModeExec       string
-	AccessModeConnect    string
-	AccessSchema         string
-	GuardRailInputRules  []byte
-	GuardRailOutputRules []byte
+	ID                 string
+	Name               string
+	Type               string
+	SubType            string
+	CmdEntrypoint      []string
+	Secrets            map[string]any
+	AgentID            string
+	AgentName          string
+	AgentMode          string
+	AccessModeRunbooks string
+	AccessModeExec     string
+	AccessModeConnect  string
+	AccessSchema       string
 }
 
 type ReviewOwner struct {
