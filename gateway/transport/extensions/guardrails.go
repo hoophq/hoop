@@ -3,11 +3,8 @@ package transportext
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"regexp"
 	"strings"
-
-	"github.com/hoophq/hoop/common/proto"
 )
 
 const (
@@ -29,14 +26,6 @@ func (e ErrRuleMatch) Error() string {
 
 type DataRules struct {
 	Items []Rule `json:"rules"`
-}
-
-type streamWriter struct {
-	client          proto.ClientTransport
-	packetType      proto.PacketType
-	packetSpec      map[string][]byte
-	dataRules       []DataRules
-	streamDirection string
 }
 
 type Rule struct {
@@ -91,48 +80,6 @@ func Validate(streamDirection string, ruleData, data []byte) error {
 				return err
 			}
 		}
-	}
-	return nil
-}
-
-func NewWriter(sid string, client proto.ClientTransport, pktType proto.PacketType, dataRules []DataRules, streamDirection string) io.WriteCloser {
-	return &streamWriter{
-		client:          client,
-		packetSpec:      map[string][]byte{proto.SpecGatewaySessionID: []byte(sid)},
-		packetType:      pktType,
-		dataRules:       dataRules,
-		streamDirection: streamDirection,
-	}
-}
-
-func (w *streamWriter) Write(data []byte) (int, error) {
-	if w.client == nil {
-		return 0, fmt.Errorf("stream writer client is empty")
-	}
-	for _, dataRule := range w.dataRules {
-		for _, rule := range dataRule.Items {
-			if err := rule.validate(w.streamDirection, data); err != nil {
-				return 0, err
-			}
-		}
-	}
-	return len(data), w.client.Send(&proto.Packet{
-		Payload: data,
-		Type:    w.packetType.String(),
-		Spec:    w.packetSpec,
-	})
-}
-
-func (s *streamWriter) AddSpecVal(key string, val []byte) {
-	if s.packetSpec == nil {
-		s.packetSpec = map[string][]byte{}
-	}
-	s.packetSpec[key] = val
-}
-
-func (s *streamWriter) Close() error {
-	if s.client != nil {
-		_, _ = s.client.Close()
 	}
 	return nil
 }

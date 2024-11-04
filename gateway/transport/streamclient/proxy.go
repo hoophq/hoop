@@ -11,6 +11,7 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	sessionstorage "github.com/hoophq/hoop/gateway/storagev2/session"
+	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	streamtypes "github.com/hoophq/hoop/gateway/transport/streamclient/types"
 	"google.golang.org/grpc/codes"
@@ -168,6 +169,8 @@ func (s *ProxyStream) Close(errMsg error) error {
 			pb.SpecGatewaySessionID: []byte(s.pluginCtx.SID),
 		},
 	})
+
+	transportext.OnDisconnect(s.pluginCtx.SID)
 	_ = s.PluginExecOnDisconnect(*s.pluginCtx, errMsg)
 	s.cancelFn(errMsg)
 	proxyStore.Del(s.pluginCtx.SID)

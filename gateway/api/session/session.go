@@ -26,6 +26,7 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2"
 	sessionstorage "github.com/hoophq/hoop/gateway/storagev2/session"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
+	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
 )
 
 type SessionPostBody struct {
@@ -116,6 +117,19 @@ func Post(c *gin.Context) {
 	if err := pgsession.New().Upsert(ctx, newSession); err != nil {
 		log.Errorf("failed creating session, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating session"})
+		return
+	}
+
+	err = transportext.Validate("input", conn.GuardRailInputRules, []byte(body.Script))
+	switch err.(type) {
+	case *transportext.ErrRuleMatch:
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	case nil:
+	default:
+		errMsg := fmt.Sprintf("internal error, failed validating guard rails input rules: %v", err)
+		log.Error(errMsg)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
 		return
 	}
 

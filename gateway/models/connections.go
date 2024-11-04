@@ -145,7 +145,7 @@ func GetConnectionByNameOrID(orgID, nameOrID string) (*Connection, error) {
 		COALESCE(reviewc.config, ARRAY[]::TEXT[]) AS reviewers,
 		(SELECT array_length(dlpc.config, 1) > 0) AS redact_enabled,
 		COALESCE((
-			SELECT array_agg(id::TEXT) FROM private.guardrail_rules_connections
+			SELECT array_agg(rule_id::TEXT) FROM private.guardrail_rules_connections
 		), ARRAY[]::TEXT[]) AS guardrail_rules,
 		(
 			SELECT json_agg(r.input) FROM private.guardrail_rules r

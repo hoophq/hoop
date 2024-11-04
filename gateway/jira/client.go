@@ -10,6 +10,8 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 )
 
+var errJiraIntegrationDisabled = fmt.Errorf("jira integration is disabled")
+
 func hasJiraIntegrationEnabled(orgID string) error {
 	dbJiraIntegration, err := models.GetJiraIntegration(orgID)
 
@@ -17,7 +19,7 @@ func hasJiraIntegrationEnabled(orgID string) error {
 		return fmt.Errorf("failed to get Jira integration: %v", err)
 	}
 	if dbJiraIntegration == nil {
-		return fmt.Errorf("no Jira integration found for org_id: %s", orgID)
+		return errJiraIntegrationDisabled
 	}
 
 	if dbJiraIntegration.Status != models.JiraIntegrationStatusActive {
