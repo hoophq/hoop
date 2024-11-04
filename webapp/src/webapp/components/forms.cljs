@@ -170,9 +170,24 @@
   active -> the option value of an already active item;
   on-change -> function to be executed on change;
   required -> HTML required attribute;"
-  [{:keys [label helper-text name size options placeholder selected default-value on-change required disabled full-width? dark]}]
-  [:div {:class "mb-regular text-sm w-full"}
-   [:div {:class "flex items-center gap-2 mb-1"}
+  [{:keys [label
+           not-margin-bottom?
+           variant
+           helper-text
+           name
+           size
+           options
+           placeholder
+           selected
+           default-value
+           on-change
+           required
+           disabled
+           full-width?
+           dark]}]
+  [:div {:class (str " text-sm w-full"
+                     (when-not not-margin-bottom? "mb-regular"))}
+   [:div {:class "flex items-center gap-2"}
     (if dark
       [form-label-dark label]
       [form-label label])
@@ -186,6 +201,7 @@
                     :required (or required false)
                     :disabled (or disabled false)}
     [:> Select.Trigger {:placeholder (or placeholder "Select one")
+                        :variant variant
                         :class (str (when full-width? "w-full ")
                                     (when dark "dark"))}]
     [:> Select.Content {:position "popper"}

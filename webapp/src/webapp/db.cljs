@@ -27,10 +27,17 @@
    :editor-plugin->current-connection {:status :loading :data nil}
    :editor-plugin->filtered-run-connection-list nil
    :editor-plugin->run-connection-list {:status :loading :data nil}
-   :editor-plugin->run-connection-list-selected (or (read-string (.getItem js/localStorage "run-connection-list-selected")) nil)
+   :editor-plugin->run-connection-list-selected (or (read-string
+                                                     (.getItem js/localStorage "run-connection-list-selected"))
+                                                    nil)
    :editor-plugin->select-language "shell"
    :editor-plugin->script []
    :gateway->info {:loading true, :data nil}
+   :guardrails->active-guardrail {:action nil
+                                  :name ""
+                                  :description ""
+                                  :input [{:type "" :rule "" :details ""}]
+                                  :output [{:type "" :rule "" :details ""}]}
    :jira-integration->details {:loading true, :data {}}
    :modal-radix {:open? false, :content nil}
    :modal-status :closed
