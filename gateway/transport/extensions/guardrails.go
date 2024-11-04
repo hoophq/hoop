@@ -39,12 +39,20 @@ func (r *Rule) validate(streamDirection string, data []byte) error {
 	switch r.Type {
 	case denyWordListType:
 		for _, word := range r.Words {
+			// skip empty rules
+			if word == "" {
+				continue
+			}
 			if !strings.Contains(string(data), word) {
 				continue
 			}
 			return &ErrRuleMatch{name: r.Name, streamDirection: streamDirection}
 		}
 	case patternMatchRegexType:
+		// skip empty regex
+		if r.PatternRegex == "" {
+			return nil
+		}
 		regex, err := regexp.Compile(r.PatternRegex)
 		if err != nil {
 			return fmt.Errorf("failed parsing regex, reason=%v", err)
@@ -59,11 +67,11 @@ func (r *Rule) validate(streamDirection string, data []byte) error {
 }
 
 func Decode(data []byte) ([]DataRules, error) {
-	var root []DataRules
-	if err := json.Unmarshal(data, &root); err != nil {
-		return root, fmt.Errorf("unable to decode rules, reason=%v", err)
+	var dataRules []DataRules
+	if err := json.Unmarshal(data, &dataRules); err != nil {
+		return dataRules, fmt.Errorf("unable to decode rules, reason=%v", err)
 	}
-	return root, nil
+	return dataRules, nil
 }
 
 func Validate(streamDirection string, ruleData, data []byte) error {
