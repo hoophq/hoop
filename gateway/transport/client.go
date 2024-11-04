@@ -16,6 +16,7 @@ import (
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
+	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
 	"google.golang.org/grpc/codes"
@@ -179,6 +180,17 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 }
 
 func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.Packet, pctx plugintypes.Context) error {
+	extContext := transportext.Context{
+		OrgID:          pctx.OrgID,
+		SID:            pctx.SID,
+		ConnectionName: pctx.ConnectionName,
+	}
+
+	if err := transportext.OnReceive(extContext, pkt); err != nil {
+		log.With("sid", pctx.SID).Error(err)
+		return err
+	}
+
 	switch pb.PacketType(pkt.Type) {
 	case pbagent.SessionOpen:
 		spec := map[string][]byte{

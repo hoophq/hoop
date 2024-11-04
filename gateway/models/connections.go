@@ -134,7 +134,7 @@ func DeleteConnection(orgID, name string) error {
 
 func GetConnectionByNameOrID(orgID, nameOrID string) (*Connection, error) {
 	var conn Connection
-	err := DB.Debug().Model(&Connection{}).Raw(`
+	err := DB.Model(&Connection{}).Raw(`
 	SELECT
 		c.id, c.org_id, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,

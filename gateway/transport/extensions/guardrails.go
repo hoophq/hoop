@@ -1,4 +1,4 @@
-package guardrails
+package transportext
 
 import (
 	"encoding/json"
@@ -78,6 +78,9 @@ func Decode(data []byte) ([]DataRules, error) {
 }
 
 func Validate(streamDirection string, ruleData, data []byte) error {
+	if len(ruleData) == 0 {
+		return nil
+	}
 	dataRules, err := Decode(ruleData)
 	if err != nil {
 		return err
