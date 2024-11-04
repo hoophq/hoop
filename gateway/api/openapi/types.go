@@ -840,7 +840,7 @@ type GuardRailRuleResponse struct {
 			"name": "deny-select",
 			"input": {
 				"rules": [
-					{"type": "deny_words_list", "words": ["SELECT"], "pattern_regex": ""}
+					{"type": "deny_words_list", "words": ["SELECT"], "pattern_regex": "", "name": "<optional-name>"}
 				]
 			},
 			"output": {
@@ -857,7 +857,7 @@ type GuardRailRuleResponse struct {
 			"name": "deny-select",
 			"input": {
 				"rules": [
-					{"type": "deny_words_list", "words": ["SELECT"], "pattern_regex": ""}
+					{"type": "deny_words_list", "words": ["SELECT"], "pattern_regex": "", "name": "<optional-name>"}
 				]
 			},
 			"output": {

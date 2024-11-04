@@ -42,6 +42,7 @@ const (
 	// Guard Rail Rules
 	EventCreateGuardRailRules = "hoop-create-guardrail-rules"
 	EventUpdateGuardRailRules = "hoop-update-guardrail-rules"
+	EventDeleteGuardRailRules = "hoop-delete-guardrail-rules"
 
 	// features
 	EventOrgFeatureUpdate            = "hoop-org-feature-update"
