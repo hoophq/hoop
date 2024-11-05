@@ -46,13 +46,11 @@ type Connection struct {
 	GuardRailRules     pq.StringArray    `gorm:"column:guardrail_rules;type:text[];->"`
 
 	// Read Only fields
-	GuardRailInputRules  []byte         `gorm:"column:guardrail_input_rules;->"`
-	GuardRailOutputRules []byte         `gorm:"column:guardrail_output_rules;->"`
-	RedactEnabled        bool           `gorm:"column:redact_enabled;->"`
-	Reviewers            pq.StringArray `gorm:"column:reviewers;type:text[];->"`
-	RedactTypes          pq.StringArray `gorm:"column:redact_types;type:text[];->"`
-	AgentMode            string         `gorm:"column:agent_mode;->"`
-	AgentName            string         `gorm:"column:agent_name;->"`
+	RedactEnabled bool           `gorm:"column:redact_enabled;->"`
+	Reviewers     pq.StringArray `gorm:"column:reviewers;type:text[];->"`
+	RedactTypes   pq.StringArray `gorm:"column:redact_types;type:text[];->"`
+	AgentMode     string         `gorm:"column:agent_mode;->"`
+	AgentName     string         `gorm:"column:agent_name;->"`
 }
 
 func (c Connection) AsSecrets() map[string]any {
@@ -67,6 +65,16 @@ type EnvVars struct {
 	ID    string            `gorm:"column:id"`
 	OrgID string            `gorm:"column:org_id"`
 	Envs  map[string]string `gorm:"column:envs;serializer:json"`
+}
+
+type ConnectionGuardRailRules struct {
+	OrgID string `gorm:"column:org_id"`
+	ID    string `gorm:"column:id"`
+	Name  string `gorm:"column:name"`
+
+	// Read Only Fields
+	GuardRailInputRules  []byte `gorm:"column:guardrail_input_rules;->"`
+	GuardRailOutputRules []byte `gorm:"column:guardrail_output_rules;->"`
 }
 
 func UpsertConnection(c *Connection) error {
@@ -130,6 +138,31 @@ func DeleteConnection(orgID, name string) error {
 	return DB.Table(tableConnections).
 		Where(`org_id = ? and name = ?`, orgID, name).
 		Delete(&Connection{}).Error
+}
+
+func GetConnectionGuardRailRules(orgID, name string) (*ConnectionGuardRailRules, error) {
+	var conn ConnectionGuardRailRules
+	err := DB.Model(&ConnectionGuardRailRules{}).Raw(`
+	SELECT
+		c.id, c.org_id, c.name,
+		(
+			SELECT json_agg(r.input) FROM private.guardrail_rules r
+			INNER JOIN private.guardrail_rules_connections rc ON rc.connection_id = c.id AND rc.rule_id = r.id
+		) AS guardrail_input_rules,
+		(
+			SELECT json_agg(r.output) FROM private.guardrail_rules r
+			INNER JOIN private.guardrail_rules_connections rc ON rc.connection_id = c.id AND rc.rule_id = r.id
+		) AS guardrail_output_rules
+	FROM private.connections c
+	WHERE c.org_id = ? AND c.name = ?
+	`, orgID, name).First(&conn).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &conn, nil
 }
 
 func GetConnectionByNameOrID(orgID, nameOrID string) (*Connection, error) {

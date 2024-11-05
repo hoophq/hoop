@@ -1,7 +1,6 @@
 package apiguardrails
 
 import (
-	"fmt"
 	"net/http"
 	"time"
 
@@ -45,7 +44,14 @@ func Post(c *gin.Context) {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
 	case nil:
-		toJSON(c, http.StatusCreated, rule)
+		c.JSON(http.StatusOK, &openapi.GuardRailRuleResponse{
+			ID:        rule.ID,
+			Name:      rule.Name,
+			Input:     rule.Input,
+			Output:    rule.Output,
+			CreatedAt: rule.CreatedAt,
+			UpdatedAt: rule.UpdatedAt,
+		})
 	default:
 		log.Errorf("failed creting guard rail rule, reason=%v, err=%T", err, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -83,7 +89,14 @@ func Put(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
 		return
 	case nil:
-		toJSON(c, http.StatusOK, rule)
+		c.JSON(http.StatusOK, &openapi.GuardRailRuleResponse{
+			ID:        rule.ID,
+			Name:      rule.Name,
+			Input:     rule.Input,
+			Output:    rule.Output,
+			CreatedAt: rule.CreatedAt,
+			UpdatedAt: rule.UpdatedAt,
+		})
 	default:
 		log.Errorf("failed updating guard rail rule, reason=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -109,7 +122,18 @@ func List(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
-	toJSON(c, http.StatusOK, ruleList)
+	var rules []openapi.GuardRailRuleResponse
+	for _, rule := range ruleList {
+		rules = append(rules, openapi.GuardRailRuleResponse{
+			ID:        rule.ID,
+			Name:      rule.Name,
+			Input:     rule.Input,
+			Output:    rule.Output,
+			CreatedAt: rule.CreatedAt,
+			UpdatedAt: rule.UpdatedAt,
+		})
+	}
+	c.JSON(http.StatusOK, rules)
 }
 
 // GetGuardRailRules
@@ -131,7 +155,14 @@ func Get(c *gin.Context) {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
 	case nil:
-		toJSON(c, http.StatusOK, rule)
+		c.JSON(http.StatusOK, &openapi.GuardRailRuleResponse{
+			ID:        rule.ID,
+			Name:      rule.Name,
+			Input:     rule.Input,
+			Output:    rule.Output,
+			CreatedAt: rule.CreatedAt,
+			UpdatedAt: rule.UpdatedAt,
+		})
 	default:
 		log.Errorf("failed listing guard rail rules, reason=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -170,35 +201,4 @@ func parseRequestPayload(c *gin.Context) *openapi.GuardRailRuleRequest {
 		return nil
 	}
 	return &req
-}
-
-func toJSON(c *gin.Context, statusCode int, obj any) {
-	switch r := obj.(type) {
-	case *models.GuardRailRules:
-		c.JSON(statusCode, &openapi.GuardRailRuleResponse{
-			ID:        r.ID,
-			Name:      r.Name,
-			Input:     r.Input,
-			Output:    r.Output,
-			CreatedAt: r.CreatedAt,
-			UpdatedAt: r.UpdatedAt,
-		})
-	case []*models.GuardRailRules:
-		var rules []openapi.GuardRailRuleResponse
-		for _, rule := range r {
-			rules = append(rules, openapi.GuardRailRuleResponse{
-				ID:        rule.ID,
-				Name:      rule.Name,
-				Input:     rule.Input,
-				Output:    rule.Output,
-				CreatedAt: rule.CreatedAt,
-				UpdatedAt: rule.UpdatedAt,
-			})
-		}
-		c.JSON(statusCode, rules)
-	default:
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"message": fmt.Sprintf("unable to parse response obj %T", obj)})
-
-	}
 }

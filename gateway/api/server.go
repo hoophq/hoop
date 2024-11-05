@@ -468,31 +468,31 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest(analytics.EventUpdateJiraIntegration),
 		apijiraintegration.Put)
 
-	route.POST("/guardrail-rules",
+	route.POST("/guardrails",
 		api.AllowApiKey,
 		AdminOnlyAccessRole,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventCreateGuardRailRules),
 		apiguardrails.Post)
 
-	route.PUT("/guardrail-rules/:id",
+	route.PUT("/guardrails/:id",
 		api.AllowApiKey,
 		AdminOnlyAccessRole,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventUpdateGuardRailRules),
 		apiguardrails.Put)
 
-	route.GET("/guardrail-rules",
+	route.GET("/guardrails",
 		api.AllowApiKey,
 		api.Authenticate,
 		apiguardrails.List)
 
-	route.GET("/guardrail-rules/:id",
+	route.GET("/guardrails/:id",
 		api.AllowApiKey,
 		api.Authenticate,
 		apiguardrails.Get)
 
-	route.DELETE("/guardrail-rules/:id",
+	route.DELETE("/guardrails/:id",
 		api.AllowApiKey,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventDeleteGuardRailRules),

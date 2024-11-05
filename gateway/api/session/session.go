@@ -3,6 +3,7 @@ package sessionapi
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"net/http"
@@ -21,6 +22,7 @@ import (
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/guardrails"
 	"github.com/hoophq/hoop/gateway/jira"
+	"github.com/hoophq/hoop/gateway/models"
 	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
 	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
 	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
@@ -120,17 +122,42 @@ func Post(c *gin.Context) {
 		return
 	}
 
-	err = guardrails.Validate("input", conn.GuardRailInputRules, []byte(body.Script))
-	switch err.(type) {
-	case *guardrails.ErrRuleMatch:
-		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+	connRules, err := models.GetConnectionGuardRailRules(ctx.OrgID, conn.Name)
+	if err != nil {
+		log.Errorf("failed obtaining guard rail rules from connection , err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining guard rail rules"})
 		return
-	case nil:
-	default:
-		errMsg := fmt.Sprintf("internal error, failed validating guard rails input rules: %v", err)
-		log.Error(errMsg)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
-		return
+	}
+
+	if connRules != nil {
+		err = guardrails.Validate("input", connRules.GuardRailInputRules, []byte(body.Script))
+		switch err.(type) {
+		case *guardrails.ErrRuleMatch:
+			newSession.Status = "done"
+			newSession.EndSession = func() *time.Time { t := time.Now().UTC(); return &t }()
+			newSession.NonIndexedStream = types.SessionNonIndexedEventStreamList{
+				"stream": []types.SessionEventStream{
+					{0, "e", base64.StdEncoding.EncodeToString([]byte(err.Error()))},
+				},
+			}
+			if err = pgsession.New().Upsert(ctx, newSession); err != nil {
+				log.Errorf("unable to update session, err=%v", err)
+			}
+			c.JSON(http.StatusOK, clientexec.Response{
+				SessionID:         sessionID,
+				Output:            err.Error(),
+				OutputStatus:      "failed",
+				ExitCode:          -1,
+				ExecutionTimeMili: 10,
+			})
+			return
+		case nil:
+		default:
+			errMsg := fmt.Sprintf("internal error, failed validating guard rails input rules: %v", err)
+			log.Error(errMsg)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+			return
+		}
 	}
 
 	if err := jira.CreateIssue(ctx.OrgID, "Hoop session", "Task", sessionID); err != nil {

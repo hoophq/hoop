@@ -24,7 +24,7 @@ type Context struct {
 func OnReceive(ctx Context, pkt *proto.Packet) error {
 	switch pkt.Type {
 	case pbagent.SessionOpen:
-		conn, err := models.GetConnectionByNameOrID(ctx.OrgID, ctx.ConnectionName)
+		conn, err := models.GetConnectionGuardRailRules(ctx.OrgID, ctx.ConnectionName)
 		if err != nil || conn == nil {
 			return fmt.Errorf("unable to obtain connection (empty: %v, name=%v): %v",
 				conn == nil, ctx.ConnectionName, err)
