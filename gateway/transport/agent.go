@@ -10,6 +10,7 @@ import (
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
+	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
 	"google.golang.org/grpc/codes"
@@ -75,6 +76,17 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 		if proxyStream == nil {
 			continue
 		}
+		extContext := transportext.Context{
+			OrgID:          pctx.OrgID,
+			SID:            pctx.SID,
+			ConnectionName: proxyStream.PluginContext().ConnectionName,
+		}
+
+		if err := transportext.OnReceive(extContext, pkt); err != nil {
+			log.With("sid", pctx.SID).Warnf("extension reject packet, err=%v", err)
+			return err
+		}
+
 		if _, err := proxyStream.PluginExecOnReceive(*pctx, pkt); err != nil {
 			log.Warnf("plugin reject packet, err=%v", err)
 			sentry.CaptureException(err)

@@ -8,9 +8,11 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
+	"github.com/stretchr/testify/assert"
 )
 
 type clientFunc func(req *http.Request) (*http.Response, error)
@@ -19,7 +21,7 @@ func (f clientFunc) Do(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 
-func createTestServer(t *testing.T, plConn []*pgrest.PluginConnection) clientFunc {
+func createTestServer(plConn []*pgrest.PluginConnection) clientFunc {
 	return clientFunc(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/plugins":
@@ -60,13 +62,13 @@ func TestAccessControlAllowed(t *testing.T) {
 			msg:        "it should allow access to admin users",
 			allow:      true,
 			groups:     []string{types.GroupAdmin},
-			fakeClient: createTestServer(t, []*pgrest.PluginConnection{}),
+			fakeClient: createTestServer([]*pgrest.PluginConnection{}),
 		},
 		{
 			msg:                "it should allow access to users in the allowed groups and with the allowed connection",
 			allow:              true,
 			wantConnectionName: "bash",
-			fakeClient: createTestServer(t, []*pgrest.PluginConnection{
+			fakeClient: createTestServer([]*pgrest.PluginConnection{
 				{ConnectionConfig: []string{"sre"}, Connection: pgrest.Connection{Name: "bash"}},
 			}),
 			groups: []string{"sre"},
@@ -75,7 +77,7 @@ func TestAccessControlAllowed(t *testing.T) {
 			msg:                "it should allow access when the user has multiple groups and one of them is allowed",
 			allow:              true,
 			wantConnectionName: "bash",
-			fakeClient: createTestServer(t, []*pgrest.PluginConnection{
+			fakeClient: createTestServer([]*pgrest.PluginConnection{
 				{ConnectionConfig: []string{"support"}, Connection: pgrest.Connection{Name: "bash"}},
 			}),
 			groups: []string{"sre", "support", "devops"},
@@ -84,7 +86,7 @@ func TestAccessControlAllowed(t *testing.T) {
 			msg:                "it should deny access if the connection is not found",
 			allow:              false,
 			wantConnectionName: "bash-not-found",
-			fakeClient: createTestServer(t, []*pgrest.PluginConnection{
+			fakeClient: createTestServer([]*pgrest.PluginConnection{
 				{ConnectionConfig: []string{"sre"}, Connection: pgrest.Connection{Name: "bash"}},
 			}),
 			groups: []string{"sre"},
@@ -93,7 +95,7 @@ func TestAccessControlAllowed(t *testing.T) {
 			msg:                "it should deny access if the groups does not match",
 			allow:              false,
 			wantConnectionName: "bash",
-			fakeClient: createTestServer(t, []*pgrest.PluginConnection{
+			fakeClient: createTestServer([]*pgrest.PluginConnection{
 				{ConnectionConfig: []string{"sre"}, Connection: pgrest.Connection{Name: "bash"}},
 			}),
 			groups: []string{""},
@@ -110,6 +112,59 @@ func TestAccessControlAllowed(t *testing.T) {
 			if got != tt.allow {
 				t.Errorf("expected %v, got %v", tt.allow, got)
 			}
+		})
+	}
+}
+
+func TestConnectionFilterOptions(t *testing.T) {
+	for _, tt := range []struct {
+		msg     string
+		opts    map[string]string
+		want    models.ConnectionFilterOption
+		wantErr string
+	}{
+		{
+			msg:  "it must be able to accept all options",
+			opts: map[string]string{"type": "database", "subtype": "postgres", "managed_by": "hoopagent", "tags": "prod,devops"},
+			want: models.ConnectionFilterOption{Type: "database", SubType: "postgres", ManagedBy: "hoopagent", Tags: []string{"prod", "devops"}},
+		},
+		{
+			msg:  "it must ignore unknown options",
+			opts: map[string]string{"unknown_option": "val", "tags.foo.bar": "val"},
+			want: models.ConnectionFilterOption{},
+		},
+		{
+			msg:     "it must error with invalid option values",
+			opts:    map[string]string{"subtype": "value with space"},
+			wantErr: errInvalidOptionVal.Error(),
+		},
+		{
+			msg:     "it must error with invalid option values, special characteres",
+			opts:    map[string]string{"subtype": "value&^%$#@"},
+			wantErr: errInvalidOptionVal.Error(),
+		},
+		{
+			msg:     "it must error when tag values has invalid option values",
+			opts:    map[string]string{"tags": "foo,tag with space"},
+			wantErr: errInvalidOptionVal.Error(),
+		},
+		{
+			msg:     "it must error when tag values are empty",
+			opts:    map[string]string{"tags": "foo,,,,"},
+			wantErr: errInvalidOptionVal.Error(),
+		},
+	} {
+		t.Run(tt.msg, func(t *testing.T) {
+			urlValues := url.Values{}
+			for key, val := range tt.opts {
+				urlValues[key] = []string{val}
+			}
+			got, err := validateListOptions(urlValues)
+			if err != nil {
+				assert.EqualError(t, err, tt.wantErr)
+				return
+			}
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }

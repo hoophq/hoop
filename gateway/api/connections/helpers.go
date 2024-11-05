@@ -2,7 +2,9 @@ package apiconnections
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"net/url"
 	"regexp"
 	"slices"
 	"strings"
@@ -10,6 +12,7 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
@@ -111,4 +114,41 @@ func validateConnectionRequest(req openapi.Connection) error {
 		return fmt.Errorf(strings.Join(errors, "; "))
 	}
 	return nil
+}
+
+var reSanitize, _ = regexp.Compile(`^[a-zA-Z0-9_]+(?:[-\.]?[a-zA-Z0-9_]+){1,128}$`)
+var errInvalidOptionVal = errors.New("option values must contain between 1 and 127 alphanumeric characters, it may include (-), (_) or (.) characters")
+
+func validateListOptions(urlValues url.Values) (o models.ConnectionFilterOption, err error) {
+	if reSanitize == nil {
+		return o, fmt.Errorf("failed compiling sanitize regex on listing connections")
+	}
+	for key, values := range urlValues {
+		switch key {
+		case "agent_id":
+			o.AgentID = values[0]
+		case "type":
+			o.Type = values[0]
+		case "subtype":
+			o.SubType = values[0]
+		case "managed_by":
+			o.ManagedBy = values[0]
+		case "tags":
+			if len(values[0]) > 0 {
+				for _, tagVal := range strings.Split(values[0], ",") {
+					if !reSanitize.MatchString(tagVal) {
+						return o, errInvalidOptionVal
+					}
+					o.Tags = append(o.Tags, tagVal)
+				}
+			}
+			continue
+		default:
+			continue
+		}
+		if !reSanitize.MatchString(values[0]) {
+			return o, errInvalidOptionVal
+		}
+	}
+	return
 }

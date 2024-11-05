@@ -18,7 +18,7 @@ import (
 //	@Description	Get Jira integration for the organization
 //	@Tags			Jira
 //	@Produce		json
-//	@Success		200	{object}	openapi.JiraIntegration
+//	@Success		200		{object}	openapi.JiraIntegration
 //	@Failure		404,500	{object}	openapi.HTTPError
 //	@Router			/jira-integration [get]
 func Get(c *gin.Context) {
@@ -54,8 +54,8 @@ func Get(c *gin.Context) {
 //	@Tags			Jira
 //	@Accept			json
 //	@Produce		json
-//	@Param			request	body		openapi.JiraIntegration	true	"The request body resource"
-//	@Success		201		{object}	openapi.JiraIntegration
+//	@Param			request		body		openapi.JiraIntegration	true	"The request body resource"
+//	@Success		201			{object}	openapi.JiraIntegration
 //	@Failure		400,409,500	{object}	openapi.HTTPError
 //	@Router			/jira-integration [post]
 func Post(c *gin.Context) {
@@ -106,8 +106,8 @@ func Post(c *gin.Context) {
 //	@Tags			Jira
 //	@Accept			json
 //	@Produce		json
-//	@Param			request	body		openapi.JiraIntegration	true	"The request body resource"
-//	@Success		200		{object}	openapi.JiraIntegration
+//	@Param			request		body		openapi.JiraIntegration	true	"The request body resource"
+//	@Success		200			{object}	openapi.JiraIntegration
 //	@Failure		400,404,500	{object}	openapi.HTTPError
 //	@Router			/jira-integration [put]
 func Put(c *gin.Context) {

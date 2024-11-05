@@ -1,6 +1,7 @@
 package apiconnections
 
 import (
+	"database/sql"
 	"net/http"
 
 	"github.com/getsentry/sentry-go"
@@ -8,8 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pgrest"
-	pgconnections "github.com/hoophq/hoop/gateway/pgrest/connections"
 	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
@@ -45,7 +46,7 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
-	existingConn, err := pgconnections.New().FetchOneByNameOrID(ctx, req.Name)
+	existingConn, err := models.GetConnectionByNameOrID(ctx.OrgID, req.Name)
 	if err != nil {
 		log.Errorf("failed fetching existing connection, err=%v", err)
 		sentry.CaptureException(err)
@@ -65,22 +66,23 @@ func Post(c *gin.Context) {
 		req.Status = pgrest.ConnectionStatusOnline
 	}
 
-	err = pgconnections.New().Upsert(ctx, pgrest.Connection{
+	err = models.UpsertConnection(&models.Connection{
 		ID:                 req.ID,
 		OrgID:              ctx.OrgID,
-		AgentID:            req.AgentId,
+		AgentID:            sql.NullString{String: req.AgentId, Valid: true},
 		Name:               req.Name,
 		Command:            req.Command,
 		Type:               string(req.Type),
-		SubType:            req.SubType,
+		SubType:            sql.NullString{String: req.SubType, Valid: true},
 		Envs:               coerceToMapString(req.Secrets),
 		Status:             req.Status,
-		ManagedBy:          nil,
+		ManagedBy:          sql.NullString{},
 		Tags:               req.Tags,
 		AccessModeRunbooks: req.AccessModeRunbooks,
 		AccessModeExec:     req.AccessModeExec,
 		AccessModeConnect:  req.AccessModeConnect,
 		AccessSchema:       req.AccessSchema,
+		GuardRailRules:     req.GuardRailRules,
 	})
 	if err != nil {
 		log.Errorf("failed creating connection, err=%v", err)
@@ -125,7 +127,7 @@ func Post(c *gin.Context) {
 func Put(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	connNameOrID := c.Param("nameOrID")
-	conn, err := pgconnections.New().FetchOneByNameOrID(ctx, connNameOrID)
+	conn, err := models.GetConnectionByNameOrID(ctx.OrgID, connNameOrID)
 	if err != nil {
 		log.Errorf("failed fetching connection, err=%v", err)
 		sentry.CaptureException(err)
@@ -137,7 +139,7 @@ func Put(c *gin.Context) {
 		return
 	}
 	// when the connection is managed by the agent, make sure to deny any change
-	if conn.ManagedBy != nil {
+	if conn.ManagedBy.String != "" {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "unable to update a connection managed by its agent"})
 		return
 	}
@@ -157,27 +159,33 @@ func Put(c *gin.Context) {
 	req.ID = conn.ID
 	req.Name = conn.Name
 	req.Status = conn.Status
-	err = pgconnections.New().Upsert(ctx, pgrest.Connection{
+	err = models.UpsertConnection(&models.Connection{
 		ID:                 conn.ID,
 		OrgID:              conn.OrgID,
-		AgentID:            req.AgentId,
+		AgentID:            sql.NullString{String: req.AgentId, Valid: true},
 		Name:               conn.Name,
 		Command:            req.Command,
 		Type:               req.Type,
-		SubType:            req.SubType,
+		SubType:            sql.NullString{String: req.SubType, Valid: true},
 		Envs:               coerceToMapString(req.Secrets),
 		Status:             conn.Status,
-		ManagedBy:          nil,
+		ManagedBy:          sql.NullString{},
 		Tags:               req.Tags,
 		AccessModeRunbooks: req.AccessModeRunbooks,
 		AccessModeExec:     req.AccessModeExec,
 		AccessModeConnect:  req.AccessModeConnect,
 		AccessSchema:       req.AccessSchema,
+		GuardRailRules:     req.GuardRailRules,
 	})
 	if err != nil {
-		log.Errorf("failed updating connection, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		switch err.(type) {
+		case *models.ErrNotFoundGuardRailRules:
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		default:
+			log.Errorf("failed updating connection, err=%v", err)
+			sentry.CaptureException(err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		}
 		return
 	}
 	connectionrequests.InvalidateSyncCache(ctx.OrgID, conn.Name)
@@ -219,7 +227,7 @@ func Delete(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "missing connection name"})
 		return
 	}
-	err := pgconnections.New().Delete(ctx, connName)
+	err := models.DeleteConnection(ctx.OrgID, connName)
 	switch err {
 	case pgrest.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
@@ -249,17 +257,13 @@ func Delete(c *gin.Context) {
 //	@Router			/connections [get]
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	var opts []*pgconnections.ConnectionOption
-	for key, values := range c.Request.URL.Query() {
-		opts = append(opts, pgconnections.WithOption(key, values[0]))
-	}
-	connList, err := pgconnections.New().FetchAll(ctx, opts...)
-	switch err {
-	case pgconnections.ErrInvalidOptionVal:
+	filterOpts, err := validateListOptions(c.Request.URL.Query())
+	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
-	case nil:
-	default:
+	}
+	connList, err := models.ListConnections(ctx.OrgID, filterOpts)
+	if err != nil {
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
@@ -274,33 +278,29 @@ func List(c *gin.Context) {
 	responseConnList := []openapi.Connection{}
 	for _, conn := range connList {
 		if allowedFn(conn.Name) {
-			reviewers, redactTypes := []string{}, []string{}
-			for _, pluginConn := range conn.PluginConnection {
-				switch pluginConn.Plugin.Name {
-				case plugintypes.PluginReviewName:
-					reviewers = pluginConn.ConnectionConfig
-				case plugintypes.PluginDLPName:
-					redactTypes = pluginConn.ConnectionConfig
-				}
+			var managedBy *string
+			if conn.ManagedBy.Valid {
+				managedBy = &conn.ManagedBy.String
 			}
 			responseConnList = append(responseConnList, openapi.Connection{
 				ID:                 conn.ID,
 				Name:               conn.Name,
 				Command:            conn.Command,
 				Type:               conn.Type,
-				SubType:            conn.SubType,
+				SubType:            conn.SubType.String,
 				Secrets:            coerceToAnyMap(conn.Envs),
-				AgentId:            conn.AgentID,
+				AgentId:            conn.AgentID.String,
 				Status:             conn.Status,
-				Reviewers:          reviewers,
-				RedactEnabled:      len(redactTypes) > 0,
-				RedactTypes:        redactTypes,
-				ManagedBy:          conn.ManagedBy,
+				Reviewers:          conn.Reviewers,
+				RedactEnabled:      conn.RedactEnabled,
+				RedactTypes:        conn.RedactTypes,
+				ManagedBy:          managedBy,
 				Tags:               conn.Tags,
 				AccessModeRunbooks: conn.AccessModeRunbooks,
 				AccessModeExec:     conn.AccessModeExec,
 				AccessModeConnect:  conn.AccessModeConnect,
 				AccessSchema:       conn.AccessSchema,
+				GuardRailRules:     conn.GuardRailRules,
 			})
 		}
 
@@ -320,7 +320,8 @@ func List(c *gin.Context) {
 //	@Router			/connections/{nameOrID} [get]
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	conn, err := pgconnections.New().FetchOneByNameOrID(ctx, c.Param("nameOrID"))
+	conn, err := models.GetConnectionByNameOrID(ctx.OrgID, c.Param("nameOrID"))
+	// conn, err := pgconnections.New().FetchOneByNameOrID(ctx, c.Param("nameOrID"))
 	if err != nil {
 		log.Errorf("failed fetching connection, err=%v", err)
 		sentry.CaptureException(err)
@@ -338,40 +339,37 @@ func Get(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 		return
 	}
-	reviewers, redactTypes := []string{}, []string{}
-	// var redactTypes []string
-	for _, pluginConn := range conn.PluginConnection {
-		switch pluginConn.Plugin.Name {
-		case plugintypes.PluginReviewName:
-			reviewers = pluginConn.ConnectionConfig
-		case plugintypes.PluginDLPName:
-			redactTypes = pluginConn.ConnectionConfig
-		}
+
+	var managedBy *string
+	if conn.ManagedBy.Valid {
+		managedBy = &conn.ManagedBy.String
 	}
 	c.JSON(http.StatusOK, openapi.Connection{
 		ID:                 conn.ID,
 		Name:               conn.Name,
 		Command:            conn.Command,
 		Type:               conn.Type,
-		SubType:            conn.SubType,
+		SubType:            conn.SubType.String,
 		Secrets:            coerceToAnyMap(conn.Envs),
-		AgentId:            conn.AgentID,
+		AgentId:            conn.AgentID.String,
 		Status:             conn.Status,
-		Reviewers:          reviewers,
-		RedactEnabled:      len(redactTypes) > 0,
-		RedactTypes:        redactTypes,
-		ManagedBy:          conn.ManagedBy,
+		Reviewers:          conn.Reviewers,
+		RedactEnabled:      conn.RedactEnabled,
+		RedactTypes:        conn.RedactTypes,
+		ManagedBy:          managedBy,
 		Tags:               conn.Tags,
 		AccessModeRunbooks: conn.AccessModeRunbooks,
 		AccessModeExec:     conn.AccessModeExec,
 		AccessModeConnect:  conn.AccessModeConnect,
 		AccessSchema:       conn.AccessSchema,
+		GuardRailRules:     conn.GuardRailRules,
 	})
 }
 
 // FetchByName fetches a connection based in access control rules
-func FetchByName(ctx pgrest.Context, connectionName string) (*pgrest.Connection, error) {
-	conn, err := pgconnections.New().FetchOneByNameOrID(ctx, connectionName)
+func FetchByName(ctx pgrest.Context, connectionName string) (*models.Connection, error) {
+	// conn, err := pgconnections.New().FetchOneByNameOrID(ctx, connectionName)
+	conn, err := models.GetConnectionByNameOrID(ctx.GetOrgID(), connectionName)
 	if err != nil {
 		return nil, err
 	}

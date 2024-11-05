@@ -23,6 +23,7 @@ var (
 	connSecretFlag       []string
 	connAccessModesFlag  []string
 	connSchemaFlag       string
+	connGuardRailRules   []string
 	skipStrictValidation bool
 	connOverwriteFlag    bool
 
@@ -41,6 +42,7 @@ func init() {
 	createConnectionCmd.Flags().StringSliceVar(&connTagsFlag, "tags", nil, "Tags to identify connections in a key=value format")
 	createConnectionCmd.Flags().StringSliceVar(&connAccessModesFlag, "access-modes", defaultAccessModes, "Access modes enabled for this connection. Accepted values: [runbooks, exec, connect]")
 	createConnectionCmd.Flags().StringVar(&connSchemaFlag, "schema", "", "Enable or disable the schema for this connection on the WebClient. Accepted values: [disabled, enabled]")
+	createConnectionCmd.Flags().StringSliceVar(&connGuardRailRules, "guardrail-rules", nil, "The id of the guard rail rules for this connection")
 	createConnectionCmd.MarkFlagRequired("agent")
 }
 
@@ -137,6 +139,7 @@ var createConnectionCmd = &cobra.Command{
 			"redact_enabled":       redactEnabled,
 			"redact_types":         connRedactTypesFlag,
 			"tags":                 connTagsFlag,
+			"guardrail_rules":      connGuardRailRules,
 			"access_mode_runbooks": verifyAccessModeStatus("runbooks"),
 			"access_mode_exec":     verifyAccessModeStatus("exec"),
 			"access_mode_connect":  verifyAccessModeStatus("connect"),

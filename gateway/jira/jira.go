@@ -210,8 +210,12 @@ func sendJiraIssueUpdate(orgID, issueKey string, issue map[string]interface{}) e
 
 func UpdateJiraIssueContent(actionType, orgId, sessionID string, newInfo ...interface{}) error {
 	err := hasJiraIntegrationEnabled(orgId)
-	if err != nil {
-		return fmt.Errorf("jira integration is not enabled, reason: %v", err)
+	switch err {
+	case errJiraIntegrationDisabled:
+		return nil
+	case nil:
+	default:
+		return err
 	}
 
 	jiraCtx := orgContext{orgID: orgId}

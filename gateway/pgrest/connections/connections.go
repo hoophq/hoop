@@ -1,9 +1,6 @@
 package pgconnections
 
 import (
-	"net/url"
-
-	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
@@ -47,87 +44,87 @@ func (c *connections) FetchByIDs(ctx pgrest.OrgContext, connectionIDs []string) 
 	return itemMap, nil
 }
 
-func (a *connections) FetchOneByNameOrID(ctx pgrest.OrgContext, nameOrID string) (*pgrest.Connection, error) {
-	client := pgrest.New("/connections?select=*,orgs(id,name),agents(id,name,mode),plugin_connections(config,plugins(name))&org_id=eq.%s&name=eq.%s",
-		ctx.GetOrgID(), url.QueryEscape(nameOrID))
-	if _, err := uuid.Parse(nameOrID); err == nil {
-		client = pgrest.New("/connections?select=*,orgs(id,name),agents(id,name,mode),plugin_connections(config,plugins(name))&org_id=eq.%s&id=eq.%s",
-			ctx.GetOrgID(), nameOrID)
-	}
-	var conn pgrest.Connection
-	if err := client.FetchOne().DecodeInto(&conn); err != nil {
-		if err == pgrest.ErrNotFound {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &conn, nil
-}
+// func (a *connections) FetchOneByNameOrID(ctx pgrest.OrgContext, nameOrID string) (*pgrest.Connection, error) {
+// 	client := pgrest.New("/connections?select=*,orgs(id,name),agents(id,name,mode),plugin_connections(config,plugins(name))&org_id=eq.%s&name=eq.%s",
+// 		ctx.GetOrgID(), url.QueryEscape(nameOrID))
+// 	if _, err := uuid.Parse(nameOrID); err == nil {
+// 		client = pgrest.New("/connections?select=*,orgs(id,name),agents(id,name,mode),plugin_connections(config,plugins(name))&org_id=eq.%s&id=eq.%s",
+// 			ctx.GetOrgID(), nameOrID)
+// 	}
+// 	var conn pgrest.Connection
+// 	if err := client.FetchOne().DecodeInto(&conn); err != nil {
+// 		if err == pgrest.ErrNotFound {
+// 			return nil, nil
+// 		}
+// 		return nil, err
+// 	}
+// 	return &conn, nil
+// }
 
-func (c *connections) FetchAll(ctx pgrest.OrgContext, opts ...*ConnectionOption) ([]pgrest.Connection, error) {
-	safeEncodedOpts, err := urlEncodeOptions(opts)
-	if err != nil {
-		return nil, err
-	}
-	var items []pgrest.Connection
-	err = pgrest.New("/connections?select=*,orgs(id,name),plugin_connections(config,plugins(name))&org_id=eq.%s&order=name.asc%s",
-		ctx.GetOrgID(), safeEncodedOpts).
-		List().
-		DecodeInto(&items)
-	if err != nil && err != pgrest.ErrNotFound {
-		return nil, err
-	}
-	return items, nil
-}
+// func (c *connections) FetchAll(ctx pgrest.OrgContext, opts ...*ConnectionOption) ([]pgrest.Connection, error) {
+// 	safeEncodedOpts, err := urlEncodeOptions(opts)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	var items []pgrest.Connection
+// 	err = pgrest.New("/connections?select=*,orgs(id,name),plugin_connections(config,plugins(name))&org_id=eq.%s&order=name.asc%s",
+// 		ctx.GetOrgID(), safeEncodedOpts).
+// 		List().
+// 		DecodeInto(&items)
+// 	if err != nil && err != pgrest.ErrNotFound {
+// 		return nil, err
+// 	}
+// 	return items, nil
+// }
 
-func (c *connections) Delete(ctx pgrest.OrgContext, name string) error {
-	return pgrest.New("/connections?org_id=eq.%v&name=eq.%v", ctx.GetOrgID(),
-		url.QueryEscape(name)).
-		Delete().
-		Error()
-}
+// func (c *connections) Delete(ctx pgrest.OrgContext, name string) error {
+// 	return pgrest.New("/connections?org_id=eq.%v&name=eq.%v", ctx.GetOrgID(),
+// 		url.QueryEscape(name)).
+// 		Delete().
+// 		Error()
+// }
 
-func (c *connections) Upsert(ctx pgrest.OrgContext, conn pgrest.Connection) error {
-	var subType *string
-	if conn.SubType != "" {
-		subType = &conn.SubType
-	}
-	if conn.Status == "" {
-		conn.Status = pgrest.ConnectionStatusOffline
-	}
+// func (c *connections) Upsert(ctx pgrest.OrgContext, conn pgrest.Connection) error {
+// 	var subType *string
+// 	if conn.SubType != "" {
+// 		subType = &conn.SubType
+// 	}
+// 	if conn.Status == "" {
+// 		conn.Status = pgrest.ConnectionStatusOffline
+// 	}
 
-	if conn.AccessSchema == "" {
-		conn.AccessSchema = "disabled"
-		if conn.Type == "database" {
-			conn.AccessSchema = "enabled"
-		}
-	}
+// 	if conn.AccessSchema == "" {
+// 		conn.AccessSchema = "disabled"
+// 		if conn.Type == "database" {
+// 			conn.AccessSchema = "enabled"
+// 		}
+// 	}
 
-	return pgrest.New("/rpc/update_connection").RpcCreate(map[string]any{
-		"id":                   conn.ID,
-		"org_id":               ctx.GetOrgID(),
-		"name":                 conn.Name,
-		"agent_id":             toAgentID(conn.AgentID),
-		"type":                 conn.Type,
-		"subtype":              subType,
-		"command":              conn.Command,
-		"envs":                 conn.Envs,
-		"status":               conn.Status,
-		"managed_by":           conn.ManagedBy,
-		"tags":                 conn.Tags,
-		"access_mode_runbooks": conn.AccessModeRunbooks,
-		"access_mode_exec":     conn.AccessModeExec,
-		"access_mode_connect":  conn.AccessModeConnect,
-		"access_schema":        conn.AccessSchema,
-	}).Error()
-}
+// 	return pgrest.New("/rpc/update_connection").RpcCreate(map[string]any{
+// 		"id":                   conn.ID,
+// 		"org_id":               ctx.GetOrgID(),
+// 		"name":                 conn.Name,
+// 		"agent_id":             toAgentID(conn.AgentID),
+// 		"type":                 conn.Type,
+// 		"subtype":              subType,
+// 		"command":              conn.Command,
+// 		"envs":                 conn.Envs,
+// 		"status":               conn.Status,
+// 		"managed_by":           conn.ManagedBy,
+// 		"tags":                 conn.Tags,
+// 		"access_mode_runbooks": conn.AccessModeRunbooks,
+// 		"access_mode_exec":     conn.AccessModeExec,
+// 		"access_mode_connect":  conn.AccessModeConnect,
+// 		"access_schema":        conn.AccessSchema,
+// 	}).Error()
+// }
 
-func toAgentID(agentID string) (v *string) {
-	if _, err := uuid.Parse(agentID); err == nil {
-		return &agentID
-	}
-	return
-}
+// func toAgentID(agentID string) (v *string) {
+// 	if _, err := uuid.Parse(agentID); err == nil {
+// 		return &agentID
+// 	}
+// 	return
+// }
 
 func (c *connections) UpdateStatusByName(ctx pgrest.OrgContext, connectionName, status string) error {
 	err := pgrest.New("/connections?org_id=eq.%v&name=eq.%v", ctx.GetOrgID(), connectionName).
