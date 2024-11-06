@@ -286,6 +286,7 @@ func (api *Api) buildRoutes(route *gin.RouterGroup) {
 		api.TrackRequest(analytics.EventFetchReviews),
 		reviewHandler.Get)
 	route.PUT("/reviews/:id",
+		api.AllowApiKey,
 		api.Authenticate,
 		api.TrackRequest(analytics.EventUpdateReview),
 		AuditApiChanges,
