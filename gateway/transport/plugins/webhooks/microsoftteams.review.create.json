@@ -1,69 +1,66 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "http://json-schema.org/draft-07/schema#",
-  "type": "object",
-  "title": "",
-  "description": "This event is triggered when a review is created. Refer to this documentation: https://hoop.dev/docs/features/microsoft-teams",
-  "properties": {
-    "@context": {
-      "type": "string"
-    },
-    "@type": {
-      "type": "string"
-    },
-    "sections": {
-      "type": "array"
-    },
-    "summary": {
-      "type": "string"
-    },
-    "themeColor": {
-      "type": "string"
-    }
-  },
-  "required": [],
-  "additionalProperties": false,
-  "examples": [
+  "type": "message",
+  "attachments": [
     {
-      "@context": "http://schema.org/extensions",
-      "@type": "MessageCard",
-      "sections": [
-        {
-          "facts": [
-            {
-              "name": "Created By:",
-              "value": "John Doe | jonhdoe@unknown.corp"
-            },
-            {
-              "name": "Approval Groups:",
-              "value": "[\"admin\"]"
-            },
-            {
-              "name": "Session Time:",
-              "value": "```-```"
-            }
-          ],
-          "startGroup": true,
-          "title": "• Session Created [6819488c-4cb6-49f4-be19-4f66ccbd919d](http://localhost:8009/sessions/6819488c-4cb6-49f4-be19-4f66ccbd919d)"
-        },
-        {
-          "facts": [
-            {
-              "name": "Connection:",
-              "value": "bash"
-            },
-            {
-              "name": "Script:",
-              "value": "```env```"
-            }
-          ],
-          "title": "Session Details"
-        }
-      ],
-      "summary": "Review Created",
-      "themeColor": "0076D7"
+      "contentType": "application/vnd.microsoft.card.adaptive",
+      "content": {
+        "body": [
+          {
+            "type": "TextBlock",
+            "text": "Session Created",
+            "size": "Large",
+            "separator": true,
+            "weight": "Bolder"
+          },
+          {
+            "type": "TextBlock",
+            "text": "[D47B2778-90CF-487A-BEBF-678A0D9A5003](https://google.com)",
+            "separator": false
+          },
+          {
+            "spacing": "ExtraLarge",
+            "separator": true,
+            "type": "FactSet",
+            "facts": [
+              {
+                "title": "Created By",
+                "value": "Sandro Mello | sandro@hoop.dev"
+              },
+              {
+                "title": "Approval Groups",
+                "value": "admin, foo, zika, virus, sre, devops, macacada, zoreia, john doe, billy joe, hey ho"
+              },
+              {
+                "title": "Session Time",
+                "value": "`-`"
+              },
+              {
+                "title": "Connection",
+                "value": "bash"
+              }
+            ]
+          },
+          {
+            "type": "Container",
+            "separator": false,
+            "style": "emphasis",
+            "height": "stretch",
+            "items": [
+              {
+                "separator": true,
+                "type": "FactSet",
+                "facts": [
+                  {
+                    "title": "Input",
+                    "value": "Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum"
+                  }
+                ]
+              }
+            ],
+            "bleed": true
+          }
+        ]
+      }
     }
   ]
 }
-
-
