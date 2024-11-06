@@ -13,15 +13,22 @@ const (
 )
 
 type ErrRuleMatch struct {
-	name            string
 	streamDirection string
+	ruleType        string
+	words           []string
+	patternRegex    string
 }
 
 func (e ErrRuleMatch) Error() string {
-	if e.name != "" {
-		return fmt.Sprintf("validation error, match guard rails %v rule, name=%v", e.streamDirection, e.name)
+	switch e.ruleType {
+	case denyWordListType:
+		return fmt.Sprintf("validation error, match guard rails %v rule, type=%v, words=%v",
+			e.streamDirection, e.ruleType, e.words)
+	case patternMatchRegexType:
+		return fmt.Sprintf("validation error, match guard rails %v rule, type=%v, pattern=%v",
+			e.streamDirection, e.ruleType, e.patternRegex)
 	}
-	return fmt.Sprintf("validation error, match guard rails %v rule", e.streamDirection)
+	return fmt.Sprintf("validation error, match guard rails %v rule, type=%v", e.streamDirection, e.ruleType)
 }
 
 type DataRules struct {
@@ -32,7 +39,6 @@ type Rule struct {
 	Type         string   `json:"type"`
 	Words        []string `json:"words"`
 	PatternRegex string   `json:"pattern_regex"`
-	Name         string   `json:"name"`
 }
 
 func (r *Rule) validate(streamDirection string, data []byte) error {
@@ -46,7 +52,7 @@ func (r *Rule) validate(streamDirection string, data []byte) error {
 			if !strings.Contains(string(data), word) {
 				continue
 			}
-			return &ErrRuleMatch{name: r.Name, streamDirection: streamDirection}
+			return &ErrRuleMatch{streamDirection: streamDirection, ruleType: r.Type, words: r.Words}
 		}
 	case patternMatchRegexType:
 		// skip empty regex
@@ -58,7 +64,7 @@ func (r *Rule) validate(streamDirection string, data []byte) error {
 			return fmt.Errorf("failed parsing regex, reason=%v", err)
 		}
 		if regex.Match(data) {
-			return &ErrRuleMatch{name: r.Name, streamDirection: streamDirection}
+			return &ErrRuleMatch{streamDirection: streamDirection, ruleType: r.Type, patternRegex: r.PatternRegex}
 		}
 	default:
 		return fmt.Errorf("unknown rule type %q", r.Type)

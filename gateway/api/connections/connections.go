@@ -247,11 +247,11 @@ func Delete(c *gin.Context) {
 //	@Description	List all connections.
 //	@Tags			Core
 //	@Produce		json
-//	@Param			agent_id	query		string	false	"Filter by agent id"	Format(uuid)
-//	@Param			tags		query		array	false	"Filter by tags"		Format(array)
-//	@Param			type		query		string	false	"Filter by type"		Format(string)
-//	@Param			subtype		query		string	false	"Filter by subtype"		Format(string)
-//	@Param			managed_by	query		string	false	"Filter by managed by"	Format(string)
+//	@Param			agent_id	query		string	false	"Filter by agent id"					Format(uuid)
+//	@Param			tags		query		string	false	"Filter by tags, separated by comma"	Format(string)
+//	@Param			type		query		string	false	"Filter by type"						Format(string)
+//	@Param			subtype		query		string	false	"Filter by subtype"						Format(string)
+//	@Param			managed_by	query		string	false	"Filter by managed by"					Format(string)
 //	@Success		200			{array}		openapi.Connection
 //	@Failure		422,500		{object}	openapi.HTTPError
 //	@Router			/connections [get]

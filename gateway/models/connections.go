@@ -189,13 +189,16 @@ func GetConnectionByNameOrID(orgID, nameOrID string) (*Connection, error) {
 			INNER JOIN private.guardrail_rules_connections rc ON rc.connection_id = c.id AND rc.rule_id = r.id
 		) AS guardrail_output_rules
 	FROM private.connections c
-	LEFT JOIN private.plugins review ON review.name = 'review'
+	LEFT JOIN private.plugins review ON review.name = 'review' AND review.org_id = @org_id
 	LEFT JOIN private.plugin_connections reviewc ON reviewc.connection_id = c.id AND reviewc.plugin_id = review.id
-	LEFT JOIN private.plugins dlp ON dlp.name = 'dlp'
+	LEFT JOIN private.plugins dlp ON dlp.name = 'dlp' AND dlp.org_id = @org_id
 	LEFT JOIN private.plugin_connections dlpc ON dlpc.connection_id = c.id AND dlpc.plugin_id = dlp.id
-	LEFT JOIN private.agents a ON a.id = c.agent_id
-	WHERE c.org_id = ? AND (c.name = ? OR c.id::text = ?)`,
-		orgID, nameOrID, nameOrID).
+	LEFT JOIN private.agents a ON a.id = c.agent_id AND a.org_id = @org_id
+	WHERE c.org_id = @org_id AND (c.name = @nameOrID OR c.id::text = @nameOrID)`,
+		map[string]any{
+			"org_id":   orgID,
+			"nameOrID": nameOrID,
+		}).
 		First(&conn).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -242,9 +245,9 @@ func ListConnections(orgID string, opts ConnectionFilterOption) ([]Connection, e
 			SELECT array_agg(id::TEXT) FROM private.guardrail_rules_connections
 		), ARRAY[]::TEXT[]) AS guardrail_rules
 	FROM private.connections c
-	LEFT JOIN private.plugins review ON review.name = 'review'
+	LEFT JOIN private.plugins review ON review.name = 'review' AND review.org_id = @org_id
 	LEFT JOIN private.plugin_connections reviewc ON reviewc.connection_id = c.id AND reviewc.plugin_id = review.id
-	LEFT JOIN private.plugins dlp ON dlp.name = 'dlp'
+	LEFT JOIN private.plugins dlp ON dlp.name = 'dlp' AND dlp.org_id = @org_id
 	LEFT JOIN private.plugin_connections dlpc ON dlpc.connection_id = c.id AND dlpc.plugin_id = dlp.id
 	WHERE c.org_id = @org_id AND
 	(

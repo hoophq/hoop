@@ -19,10 +19,10 @@ import (
 //	@Tags			Core
 //	@Accept			json
 //	@Produce		json
-//	@Param			request		body		openapi.GuardRailRule	true	"The request body resource"
-//	@Success		201			{object}	openapi.GuardRailRule
+//	@Param			request		body		openapi.GuardRailRuleRequest	true	"The request body resource"
+//	@Success		201			{object}	openapi.GuardRailRuleResponse
 //	@Failure		400,409,500	{object}	openapi.HTTPError
-//	@Router			/guardrail-rules [post]
+//	@Router			/guardrails [post]
 func Post(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	req := parseRequestPayload(c)
@@ -31,13 +31,14 @@ func Post(c *gin.Context) {
 	}
 
 	rule := &models.GuardRailRules{
-		ID:        uuid.NewString(),
-		OrgID:     ctx.GetOrgID(),
-		Name:      req.Name,
-		Input:     req.Input,
-		Output:    req.Output,
-		CreatedAt: time.Now().UTC(),
-		UpdatedAt: time.Now().UTC(),
+		ID:          uuid.NewString(),
+		OrgID:       ctx.GetOrgID(),
+		Name:        req.Name,
+		Description: req.Description,
+		Input:       req.Input,
+		Output:      req.Output,
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
 	}
 	err := models.CreateGuardRailRules(rule)
 	switch err {
@@ -45,12 +46,13 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
 	case nil:
 		c.JSON(http.StatusOK, &openapi.GuardRailRuleResponse{
-			ID:        rule.ID,
-			Name:      rule.Name,
-			Input:     rule.Input,
-			Output:    rule.Output,
-			CreatedAt: rule.CreatedAt,
-			UpdatedAt: rule.UpdatedAt,
+			ID:          rule.ID,
+			Name:        rule.Name,
+			Description: rule.Description,
+			Input:       rule.Input,
+			Output:      rule.Output,
+			CreatedAt:   rule.CreatedAt,
+			UpdatedAt:   rule.UpdatedAt,
 		})
 	default:
 		log.Errorf("failed creting guard rail rule, reason=%v, err=%T", err, err)
@@ -65,10 +67,10 @@ func Post(c *gin.Context) {
 //	@Tags			Core
 //	@Accept			json
 //	@Produce		json
-//	@Param			request	body		openapi.GuardRailRule	true	"The request body resource"
-//	@Success		200		{object}	openapi.GuardRailRule
+//	@Param			request	body		openapi.GuardRailRuleRequest	true	"The request body resource"
+//	@Success		200		{object}	openapi.GuardRailRuleResponse
 //	@Failure		400,500	{object}	openapi.HTTPError
-//	@Router			/guardrail-rules/{id} [put]
+//	@Router			/guardrails/{id} [put]
 func Put(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	req := parseRequestPayload(c)
@@ -76,12 +78,13 @@ func Put(c *gin.Context) {
 		return
 	}
 	rule := &models.GuardRailRules{
-		OrgID:     ctx.GetOrgID(),
-		ID:        c.Param("id"),
-		Name:      req.Name,
-		Input:     req.Input,
-		Output:    req.Output,
-		UpdatedAt: time.Now().UTC(),
+		OrgID:       ctx.GetOrgID(),
+		ID:          c.Param("id"),
+		Name:        req.Name,
+		Description: req.Description,
+		Input:       req.Input,
+		Output:      req.Output,
+		UpdatedAt:   time.Now().UTC(),
 	}
 	err := models.UpdateGuardRailRules(rule)
 	switch err {
@@ -90,12 +93,13 @@ func Put(c *gin.Context) {
 		return
 	case nil:
 		c.JSON(http.StatusOK, &openapi.GuardRailRuleResponse{
-			ID:        rule.ID,
-			Name:      rule.Name,
-			Input:     rule.Input,
-			Output:    rule.Output,
-			CreatedAt: rule.CreatedAt,
-			UpdatedAt: rule.UpdatedAt,
+			ID:          rule.ID,
+			Name:        rule.Name,
+			Description: rule.Description,
+			Input:       rule.Input,
+			Output:      rule.Output,
+			CreatedAt:   rule.CreatedAt,
+			UpdatedAt:   rule.UpdatedAt,
 		})
 	default:
 		log.Errorf("failed updating guard rail rule, reason=%v", err)
@@ -110,10 +114,9 @@ func Put(c *gin.Context) {
 //	@Tags			Core
 //	@Accept			json
 //	@Produce		json
-//	@Param			request	body		openapi.GuardRailRule	true	"The request body resource"
-//	@Success		200		{array}		openapi.GuardRailRule
-//	@Failure		500		{object}	openapi.HTTPError
-//	@Router			/guardrail-rules [get]
+//	@Success		200	{array}		openapi.GuardRailRuleResponse
+//	@Failure		500	{object}	openapi.HTTPError
+//	@Router			/guardrails [get]
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	ruleList, err := models.ListGuardRailRules(ctx.GetOrgID())
@@ -122,15 +125,16 @@ func List(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
-	var rules []openapi.GuardRailRuleResponse
+	rules := []openapi.GuardRailRuleResponse{}
 	for _, rule := range ruleList {
 		rules = append(rules, openapi.GuardRailRuleResponse{
-			ID:        rule.ID,
-			Name:      rule.Name,
-			Input:     rule.Input,
-			Output:    rule.Output,
-			CreatedAt: rule.CreatedAt,
-			UpdatedAt: rule.UpdatedAt,
+			ID:          rule.ID,
+			Name:        rule.Name,
+			Description: rule.Description,
+			Input:       rule.Input,
+			Output:      rule.Output,
+			CreatedAt:   rule.CreatedAt,
+			UpdatedAt:   rule.UpdatedAt,
 		})
 	}
 	c.JSON(http.StatusOK, rules)
@@ -143,11 +147,10 @@ func List(c *gin.Context) {
 //	@Tags			Core
 //	@Accept			json
 //	@Produce		json
-//	@Param			id			path		string					true	"The unique identifier of the resource"
-//	@Param			request		body		openapi.GuardRailRule	true	"The request body resource"
-//	@Success		200			{object}	openapi.GuardRailRule
+//	@Param			id			path		string	true	"The unique identifier of the resource"
+//	@Success		200			{object}	openapi.GuardRailRuleResponse
 //	@Failure		400,404,500	{object}	openapi.HTTPError
-//	@Router			/guardrail-rules/{id} [get]
+//	@Router			/guardrails/{id} [get]
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	rule, err := models.GetGuardRailRules(ctx.GetOrgID(), c.Param("id"))
@@ -156,12 +159,13 @@ func Get(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
 	case nil:
 		c.JSON(http.StatusOK, &openapi.GuardRailRuleResponse{
-			ID:        rule.ID,
-			Name:      rule.Name,
-			Input:     rule.Input,
-			Output:    rule.Output,
-			CreatedAt: rule.CreatedAt,
-			UpdatedAt: rule.UpdatedAt,
+			ID:          rule.ID,
+			Name:        rule.Name,
+			Description: rule.Description,
+			Input:       rule.Input,
+			Output:      rule.Output,
+			CreatedAt:   rule.CreatedAt,
+			UpdatedAt:   rule.UpdatedAt,
 		})
 	default:
 		log.Errorf("failed listing guard rail rules, reason=%v", err)
@@ -178,7 +182,7 @@ func Get(c *gin.Context) {
 //	@Param			id	path	string	true	"The unique identifier of the resource"
 //	@Success		204
 //	@Failure		404,500	{object}	openapi.HTTPError
-//	@Router			/guardrail-rules/{id} [delete]
+//	@Router			/guardrails/{id} [delete]
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	err := models.DeleteGuardRailRules(ctx.GetOrgID(), c.Param("id"))
