@@ -20,7 +20,7 @@ import (
 //	@Produce		json
 //	@Success		200		{object}	openapi.JiraIntegration
 //	@Failure		404,500	{object}	openapi.HTTPError
-//	@Router			/jira-integration [get]
+//	@Router			/integrations/jira [get]
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	dbJiraIntegration, err := models.GetJiraIntegration(ctx.OrgID)
@@ -57,7 +57,7 @@ func Get(c *gin.Context) {
 //	@Param			request		body		openapi.JiraIntegration	true	"The request body resource"
 //	@Success		201			{object}	openapi.JiraIntegration
 //	@Failure		400,409,500	{object}	openapi.HTTPError
-//	@Router			/jira-integration [post]
+//	@Router			/integrations/jira [post]
 func Post(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	var req openapi.JiraIntegration
@@ -109,7 +109,7 @@ func Post(c *gin.Context) {
 //	@Param			request		body		openapi.JiraIntegration	true	"The request body resource"
 //	@Success		200			{object}	openapi.JiraIntegration
 //	@Failure		400,404,500	{object}	openapi.HTTPError
-//	@Router			/jira-integration [put]
+//	@Router			/integrations/jira [put]
 func Put(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	var req openapi.JiraIntegration

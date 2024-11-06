@@ -230,9 +230,9 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
-                        "type": "array",
-                        "format": "array",
-                        "description": "Filter by tags",
+                        "type": "string",
+                        "format": "string",
+                        "description": "Filter by tags, separated by comma",
                         "name": "tags",
                         "in": "query"
                     },
@@ -507,6 +507,218 @@ const docTemplate = `{
                 }
             }
         },
+        "/guardrails": {
+            "get": {
+                "description": "List Guard Rail Rules",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Core"
+                ],
+                "summary": "List Guard Rail Rules",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.GuardRailRuleResponse"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create Guard Rail Rules",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Core"
+                ],
+                "summary": "Create Guard Rail Rules",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.GuardRailRuleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.GuardRailRuleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/guardrails/{id}": {
+            "get": {
+                "description": "Get Guard Rail Rules",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Core"
+                ],
+                "summary": "Get Guard Rail Rules",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The unique identifier of the resource",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.GuardRailRuleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update Guard Rail Rules",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Core"
+                ],
+                "summary": "Update Guard Rail Rules",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.GuardRailRuleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.GuardRailRuleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a Guard Rail Rule resource.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Core"
+                ],
+                "summary": "Delete a Rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The unique identifier of the resource",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/healthz": {
             "get": {
                 "description": "Reports if the service is working properly",
@@ -528,6 +740,138 @@ const docTemplate = `{
                         "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/openapi.LivenessCheck"
+                        }
+                    }
+                }
+            }
+        },
+        "/integrations/jira": {
+            "get": {
+                "description": "Get Jira integration for the organization",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Jira"
+                ],
+                "summary": "Get Jira Integration",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.JiraIntegration"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update the Jira integration for the organization",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Jira"
+                ],
+                "summary": "Update Jira Integration",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.JiraIntegration"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.JiraIntegration"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new Jira integration for the organization",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Jira"
+                ],
+                "summary": "Create Jira Integration",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.JiraIntegration"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.JiraIntegration"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
                         }
                     }
                 }
@@ -1317,6 +1661,32 @@ const docTemplate = `{
                         "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/publicserverinfo": {
+            "get": {
+                "description": "Get public server information",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Get Public Server Info",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.PublicServerInfo"
                         }
                     },
                     "500": {
@@ -2667,6 +3037,17 @@ const docTemplate = `{
                         "/bin/bash"
                     ]
                 },
+                "guardrail_rules": {
+                    "description": "The guard rail association id rules",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "5701046A-7B7A-4A78-ABB0-A24C95E6FE54",
+                        "B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"
+                    ]
+                },
                 "id": {
                     "description": "Unique ID of the resource",
                     "type": "string",
@@ -2867,6 +3248,78 @@ const docTemplate = `{
                 "FeatureStatusDisabled"
             ]
         },
+        "openapi.GuardRailRuleRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "description": {
+                    "description": "The rule description",
+                    "type": "string",
+                    "example": "description about this rule"
+                },
+                "input": {
+                    "description": "The input rule\n\n\t\t{\n\t\t\t\"name\": \"deny-select\",\n\t\t\t\"description\": \"\u003coptional-description\u003e\",\n\t\t\t\"input\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"deny_words_list\", \"words\": [\"SELECT\"], \"pattern_regex\": \"\"}\n\t\t\t\t]\n\t\t\t},\n\t\t\t\"output\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"pattern_match\", \"words\": [], \"pattern_regex\": \"[A-Z0-9]+\"}\n\t\t\t\t]\n\t\t\t}\n\t\t}",
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "name": {
+                    "description": "Unique name for the rule",
+                    "type": "string",
+                    "example": "my-strict-rule"
+                },
+                "output": {
+                    "description": "The output rule\n\n\t\t{\n\t\t\t\"name\": \"deny-select\",\n\t\t\t\"description\": \"\u003coptional-description\u003e\",\n\t\t\t\"input\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"deny_words_list\", \"words\": [\"SELECT\"], \"pattern_regex\": \"\"}\n\t\t\t\t]\n\t\t\t},\n\t\t\t\"output\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"pattern_match\", \"words\": [], \"pattern_regex\": \"[A-Z0-9]+\"}\n\t\t\t\t]\n\t\t\t}\n\t\t}",
+                    "type": "object",
+                    "additionalProperties": {}
+                }
+            }
+        },
+        "openapi.GuardRailRuleResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "description": "The time the resource was created",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "description": {
+                    "description": "The rule description",
+                    "type": "string",
+                    "example": "description about this rule"
+                },
+                "id": {
+                    "description": "The resource identifier",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "input": {
+                    "description": "The input rule\n\n\t\t{\n\t\t\t\"name\": \"deny-select\",\n\t\t\t\"description\": \"\u003coptional-description\u003e\",\n\t\t\t\"input\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"deny_words_list\", \"words\": [\"SELECT\"], \"pattern_regex\": \"\", \"name\": \"\u003coptional-name\u003e\"}\n\t\t\t\t]\n\t\t\t},\n\t\t\t\"output\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"pattern_match\", \"words\": [], \"pattern_regex\": \"[A-Z0-9]+\"}\n\t\t\t\t]\n\t\t\t}\n\t\t}",
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "name": {
+                    "description": "Unique name for the rule",
+                    "type": "string",
+                    "example": "my-strict-rule"
+                },
+                "output": {
+                    "description": "The output rule\n\n\t\t{\n\t\t\t\"name\": \"deny-select\",\n\t\t\t\"description\": \"\u003coptional-description\u003e\",\n\t\t\t\"input\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"deny_words_list\", \"words\": [\"SELECT\"], \"pattern_regex\": \"\", \"name\": \"\u003coptional-name\u003e\"}\n\t\t\t\t]\n\t\t\t},\n\t\t\t\"output\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"pattern_match\", \"words\": [], \"pattern_regex\": \"[A-Z0-9]+\"}\n\t\t\t\t]\n\t\t\t}\n\t\t}",
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "updated_at": {
+                    "description": "The time the resource was updated",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                }
+            }
+        },
         "openapi.HTTPError": {
             "type": "object",
             "properties": {
@@ -2875,6 +3328,63 @@ const docTemplate = `{
                     "example": "the error description"
                 }
             }
+        },
+        "openapi.JiraIntegration": {
+            "type": "object",
+            "required": [
+                "api_token",
+                "project_key",
+                "url",
+                "user"
+            ],
+            "properties": {
+                "api_token": {
+                    "description": "The API token for Jira authentication",
+                    "type": "string"
+                },
+                "created_at": {
+                    "description": "The creation date and time of the integration",
+                    "type": "string"
+                },
+                "id": {
+                    "description": "The unique identifier of the integration",
+                    "type": "string"
+                },
+                "org_id": {
+                    "description": "The organization identifier",
+                    "type": "string"
+                },
+                "project_key": {
+                    "description": "The default Jira project key",
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/openapi.JiraIntegrationStatus"
+                },
+                "updated_at": {
+                    "description": "The last update date and time of the integration",
+                    "type": "string"
+                },
+                "url": {
+                    "description": "The URL of the Jira instance",
+                    "type": "string"
+                },
+                "user": {
+                    "description": "The username for Jira authentication",
+                    "type": "string"
+                }
+            }
+        },
+        "openapi.JiraIntegrationStatus": {
+            "type": "string",
+            "enum": [
+                "enabled",
+                "disabled"
+            ],
+            "x-enum-varnames": [
+                "JiraIntegrationStatusActive",
+                "JiraIntegrationStatusInactive"
+            ]
         },
         "openapi.License": {
             "type": "object",
@@ -3162,6 +3672,20 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.PublicServerInfo": {
+            "type": "object",
+            "properties": {
+                "auth_method": {
+                    "description": "Auth method used by the server",
+                    "type": "string",
+                    "enum": [
+                        "oidc",
+                        "local"
+                    ],
+                    "example": "local"
+                }
+            }
+        },
         "openapi.Review": {
             "type": "object",
             "properties": {
@@ -3201,14 +3725,6 @@ const docTemplate = `{
                     "example": [
                         "-x"
                     ]
-                },
-                "input_envvars": {
-                    "description": "The environment variables when the resource was created",
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    },
-                    "readOnly": true
                 },
                 "org": {
                     "description": "Organization identifier",
@@ -3487,6 +4003,17 @@ const docTemplate = `{
                         "--verbose"
                     ]
                 },
+                "env_vars": {
+                    "description": "Environment Variables that will be included in the runtime\n* { envvar:[env-key]: [base64-val] } - Expose the value as environment variable\n* { filesystem:[env-key]: [base64-val] } - Expose the value as a temporary file path creating the value in the filesystem",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "envvar": "PASSWORD:MTIz",
+                        "filesystem": "SECRET_FILE:bXlzZWNyZXQ="
+                    }
+                },
                 "file_name": {
                     "description": "The relative path name of the runbook file from the git source",
                     "type": "string",
@@ -3523,10 +4050,28 @@ const docTemplate = `{
                     "type": "string",
                     "example": "admin"
                 },
+                "api_url": {
+                    "description": "API URL advertise to clients",
+                    "type": "string",
+                    "example": "https://api.johnwick.org"
+                },
+                "auth_method": {
+                    "description": "Auth method used by the server",
+                    "type": "string",
+                    "enum": [
+                        "oidc",
+                        "local"
+                    ],
+                    "example": "local"
+                },
                 "commit_sha": {
                     "description": "Commit SHA of the version",
                     "type": "string",
                     "example": "e6b94e86352e934b66d9c7ab2821a267dc18dfee"
+                },
+                "disable_sessions_download": {
+                    "description": "Indicates if session download functionality is disabled\n* true - Session download is disabled and not available to users\n* false - Session download is enabled and available to users",
+                    "type": "boolean"
                 },
                 "go_debug": {
                     "description": "Expose ` + "`" + `GODEBUG` + "`" + ` flags enabled",
@@ -3734,6 +4279,9 @@ const docTemplate = `{
                     "format": "uuid",
                     "example": "1CBC8DB5-FBF8-4293-8E35-59A6EEA40207"
                 },
+                "jira_issue": {
+                    "type": "string"
+                },
                 "labels": {
                     "description": "DEPRECATED in flavor of metrics and metadata",
                     "allOf": [
@@ -3929,11 +4477,15 @@ const docTemplate = `{
             "type": "string",
             "enum": [
                 "active",
-                "inactive"
+                "inactive",
+                "reviewing",
+                "invited"
             ],
             "x-enum-varnames": [
                 "StatusActive",
-                "StatusInactive"
+                "StatusInactive",
+                "StatusReviewing",
+                "StatusInvited"
             ]
         },
         "openapi.User": {
@@ -3967,6 +4519,11 @@ const docTemplate = `{
                     "description": "Display name",
                     "type": "string",
                     "example": "John Wick"
+                },
+                "password": {
+                    "description": "Local auth cases have a password",
+                    "type": "string",
+                    "example": "password"
                 },
                 "picture": {
                     "description": "The profile picture url to display",
@@ -4069,6 +4626,11 @@ const docTemplate = `{
                     "type": "string",
                     "default": "JohnWickCorp"
                 },
+                "password": {
+                    "description": "Local auth cases have a password",
+                    "type": "string",
+                    "example": "password"
+                },
                 "picture": {
                     "description": "The profile picture url to display",
                     "type": "string",
@@ -4160,7 +4722,7 @@ const docTemplate = `{
     },
     "tags": [
         {
-            "description": "Hoop implements Oauth2 and OIDC protocol to authenticate users in the system. To obtain a valid access token users need to authenticate in their own identity provider which is generated as a JSON response to the endpoint ` + "`" + `http(s)://{{ .Host }}{{ .BasePath }}/login` + "`" + `. The identity provider them redirects the user to the callback endpoint containing the access token.\n\nThe recommended approach of obtaining an access token is by visiting the Webapp main's page (https://{{ .Host }}) or using the **Hoop command line**. Example:\n\n` + "`" + `` + "`" + `` + "`" + `sh\nhoop config create --api-url https://{{ .Host }}\n# save the token after authenticating at $HOME/.hoop/config.toml\nhoop login\n# show token information\nhoop config view --raw\n` + "`" + `` + "`" + `` + "`" + `\n\nWith an access token you could use any HTTP client to interact with the documented endpoints.\nThe token must be sent through the ` + "`" + `Authorization` + "`" + ` header.\n\nExample:\n\n` + "`" + `` + "`" + `` + "`" + `sh\n# obtain the current configuration of the server\ncurl https://{{ .Host }}{{ .BasePath }}/serverinfo -H \"Authorization: Bearer $ACCESS_TOKEN\"\n` + "`" + `` + "`" + `` + "`" + `\n",
+            "description": "Hoop implements Oauth2 and OIDC protocol to authenticate users in the system. To obtain a valid access token users need to authenticate in their own identity provider which is generated as a JSON response to the endpoint ` + "`" + `http(s)://{{ .Host }}{{ .BasePath }}/login` + "`" + `. The identity provider them redirects the user to the callback endpoint containing the access token.\n\nThe recommended approach of obtaining an access token is by visiting the Webapp main's page or using the **Hoop command line**. Example:\n\n` + "`" + `` + "`" + `` + "`" + `sh\nhoop config create --api-url https://{{ .Host }}\n# save the token after authenticating at $HOME/.hoop/config.toml\nhoop login\n# show token information\nhoop config view --raw\n` + "`" + `` + "`" + `` + "`" + `\n\nWith an access token you could use any HTTP client to interact with the documented endpoints.\nThe token must be sent through the ` + "`" + `Authorization` + "`" + ` header.\n\nExample:\n\n` + "`" + `` + "`" + `` + "`" + `sh\n# obtain the current configuration of the server\ncurl https://{{ .Host }}{{ .BasePath }}/serverinfo -H \"Authorization: Bearer $ACCESS_TOKEN\"\n` + "`" + `` + "`" + `` + "`" + `\n",
             "name": "Authentication"
         },
         {

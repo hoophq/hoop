@@ -11,13 +11,14 @@ import (
 const tableGuardRails = "private.guardrail_rules"
 
 type GuardRailRules struct {
-	OrgID     string         `gorm:"column:org_id"`
-	ID        string         `gorm:"column:id"`
-	Name      string         `gorm:"column:name"`
-	Input     map[string]any `gorm:"column:input;serializer:json"`
-	Output    map[string]any `gorm:"column:output;serializer:json"`
-	CreatedAt time.Time      `gorm:"column:created_at"`
-	UpdatedAt time.Time      `gorm:"column:updated_at"`
+	OrgID       string         `gorm:"column:org_id"`
+	ID          string         `gorm:"column:id"`
+	Name        string         `gorm:"column:name"`
+	Description string         `gorm:"column:description"`
+	Input       map[string]any `gorm:"column:input;serializer:json"`
+	Output      map[string]any `gorm:"column:output;serializer:json"`
+	CreatedAt   time.Time      `gorm:"column:created_at"`
+	UpdatedAt   time.Time      `gorm:"column:updated_at"`
 }
 
 func ListGuardRailRules(orgID string) ([]*GuardRailRules, error) {
@@ -52,10 +53,11 @@ func UpdateGuardRailRules(r *GuardRailRules) error {
 		Model(r).
 		Clauses(clause.Returning{}).
 		Updates(GuardRailRules{
-			Name:      r.Name,
-			Input:     r.Input,
-			Output:    r.Output,
-			UpdatedAt: r.UpdatedAt,
+			Name:        r.Name,
+			Description: r.Description,
+			Input:       r.Input,
+			Output:      r.Output,
+			UpdatedAt:   r.UpdatedAt,
 		}).
 		Where("org_id = ? AND id = ?", r.OrgID, r.ID)
 	if res.Error == nil && res.RowsAffected == 0 {

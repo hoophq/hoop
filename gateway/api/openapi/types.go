@@ -827,8 +827,44 @@ type JiraIntegration struct {
 type GuardRailRuleRequest struct {
 	// Unique name for the rule
 	Name string `json:"name" binding:"required" example:"my-strict-rule"`
+	// The rule description
+	Description string `json:"description" example:"description about this rule"`
 
-	Input  map[string]any `json:"input"`
+	// The input rule
+	/*
+		{
+			"name": "deny-select",
+			"description": "<optional-description>",
+			"input": {
+				"rules": [
+					{"type": "deny_words_list", "words": ["SELECT"], "pattern_regex": ""}
+				]
+			},
+			"output": {
+				"rules": [
+					{"type": "pattern_match", "words": [], "pattern_regex": "[A-Z0-9]+"}
+				]
+			}
+		}
+	*/
+	Input map[string]any `json:"input"`
+	// The output rule
+	/*
+		{
+			"name": "deny-select",
+			"description": "<optional-description>",
+			"input": {
+				"rules": [
+					{"type": "deny_words_list", "words": ["SELECT"], "pattern_regex": ""}
+				]
+			},
+			"output": {
+				"rules": [
+					{"type": "pattern_match", "words": [], "pattern_regex": "[A-Z0-9]+"}
+				]
+			}
+		}
+	*/
 	Output map[string]any `json:"output"`
 }
 
@@ -837,11 +873,14 @@ type GuardRailRuleResponse struct {
 	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
 	// Unique name for the rule
 	Name string `json:"name" example:"my-strict-rule"`
+	// The rule description
+	Description string `json:"description" example:"description about this rule"`
 
 	// The input rule
 	/*
 		{
 			"name": "deny-select",
+			"description": "<optional-description>",
 			"input": {
 				"rules": [
 					{"type": "deny_words_list", "words": ["SELECT"], "pattern_regex": "", "name": "<optional-name>"}
@@ -859,6 +898,7 @@ type GuardRailRuleResponse struct {
 	/*
 		{
 			"name": "deny-select",
+			"description": "<optional-description>",
 			"input": {
 				"rules": [
 					{"type": "deny_words_list", "words": ["SELECT"], "pattern_regex": "", "name": "<optional-name>"}
