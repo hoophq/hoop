@@ -1,66 +1,82 @@
 {
-  "type": "message",
-  "attachments": [
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "title": "",
+  "description": "This event is triggered when a review is created. Refer to this documentation: https://hoop.dev/docs/features/microsoft-teams",
+  "properties": {
+    "type": {
+      "type": "string"
+    },
+    "attachments": {
+      "type": "array"
+    }
+  },
+  "required": [],
+  "additionalProperties": false,
+  "examples": [
     {
-      "contentType": "application/vnd.microsoft.card.adaptive",
-      "content": {
-        "body": [
-          {
-            "type": "TextBlock",
-            "text": "Session Created",
-            "size": "Large",
-            "separator": true,
-            "weight": "Bolder"
-          },
-          {
-            "type": "TextBlock",
-            "text": "[D47B2778-90CF-487A-BEBF-678A0D9A5003](https://google.com)",
-            "separator": false
-          },
-          {
-            "spacing": "ExtraLarge",
-            "separator": true,
-            "type": "FactSet",
-            "facts": [
-              {
-                "title": "Created By",
-                "value": "Sandro Mello | sandro@hoop.dev"
-              },
-              {
-                "title": "Approval Groups",
-                "value": "admin, foo, zika, virus, sre, devops, macacada, zoreia, john doe, billy joe, hey ho"
-              },
-              {
-                "title": "Session Time",
-                "value": "`-`"
-              },
-              {
-                "title": "Connection",
-                "value": "bash"
-              }
-            ]
-          },
-          {
-            "type": "Container",
-            "separator": false,
-            "style": "emphasis",
-            "height": "stretch",
-            "items": [
+      "type": "message",
+      "attachments": [
+        {
+          "content": {
+            "body": [
               {
                 "separator": true,
-                "type": "FactSet",
+                "size": "Large",
+                "text": "Session Created",
+                "type": "TextBlock",
+                "weight": "Bolder"
+              },
+              {
+                "separator": false,
+                "text": "[6bb1f879-f994-4ade-9d69-121676c03a59](http://localhost:8009/sessions/6bb1f879-f994-4ade-9d69-121676c03a59)",
+                "type": "TextBlock"
+              },
+              {
                 "facts": [
                   {
-                    "title": "Input",
-                    "value": "Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum"
+                    "title": "Created By",
+                    "value": "Sandro Mello | sandro@hoop.dev"
+                  },
+                  {
+                    "title": "Approval Groups",
+                    "value": "[\"admin\"]"
+                  },
+                  {
+                    "title": "Session Time",
+                    "value": "`-`"
+                  },
+                  {
+                    "title": "Connection",
+                    "value": "postgres-demo"
                   }
-                ]
+                ],
+                "separator": true,
+                "spacing": "ExtraLarge",
+                "type": "FactSet"
+              },
+              {
+                "bleed": false,
+                "items": [
+                  {
+                    "codeSnippet": "SELECT c.firstname, c.lastname, o.orderid, o.orderdate, SUM(ol.quantity) AS total_quantity, SUM(ol.quantity * p.price) AS total_amount\nFROM customers c\nJOIN orders o ON c.customerid = o.customerid\nJOIN orderlines ol ON o.orderid = ol.orderid\nJOIN products p ON ol.prod_id = p.prod_id\nWHERE c.country = 'US'\nGROUP BY c.firstname, c.lastname, o.orderid, o.orderdate\nORDER BY total_amount DESC;",
+                    "language": "SQL",
+                    "type": "CodeBlock"
+                  }
+                ],
+                "separator": false,
+                "style": "default",
+                "type": "Container"
               }
             ],
-            "bleed": true
-          }
-        ]
-      }
+            "msteams": {
+              "width": "full"
+            }
+          },
+          "contentType": "application/vnd.microsoft.card.adaptive"
+        }
+      ]
     }
   ]
 }

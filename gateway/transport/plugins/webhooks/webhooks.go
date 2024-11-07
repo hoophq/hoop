@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -100,6 +101,32 @@ func (p *plugin) OnReceive(ctx plugintypes.Context, pkt *pb.Packet) (*plugintype
 	return nil, nil
 }
 
+// https://learn.microsoft.com/en-us/microsoftteams/platform/task-modules-and-cards/cards/cards-format?tabs=adaptive-md%2Cdesktop%2Cdesktop1%2Cdesktop2%2Cconnector-html#codeblock-in-adaptive-cards
+func parseLangCodeBlock(connType, connSubtype string) string {
+	switch connType {
+	case "database":
+		return "SQL"
+	case "application":
+		switch connSubtype {
+		case "go", "java", "perl":
+			return strings.ToTitle(connSubtype)
+		case "json":
+			return "JSON"
+		case "xml":
+			return "XML"
+		case "powershell":
+			return "PowerShell"
+		case "php":
+			return "PHP"
+		default:
+			return "Bash"
+		}
+	case "custom":
+		return "Bash"
+	}
+	return "PlainText"
+}
+
 func (p *plugin) processReviewCreateEvent(ctx plugintypes.Context) {
 	rev, err := pgreview.New().FetchOneBySid(ctx, ctx.SID)
 	if err != nil {
@@ -129,6 +156,7 @@ func (p *plugin) processReviewCreateEvent(ctx plugintypes.Context) {
 		"attachments": []map[string]any{{
 			"contentType": "application/vnd.microsoft.card.adaptive",
 			"content": map[string]any{
+				"msteams": map[string]any{"width": "full"},
 				"body": []map[string]any{
 					{
 						"type":      "TextBlock",
@@ -168,16 +196,12 @@ func (p *plugin) processReviewCreateEvent(ctx plugintypes.Context) {
 					{
 						"type":      "Container",
 						"separator": false,
-						"style":     "emphasis",
-						"height":    "stretch",
-						"bleed":     true,
+						"style":     "default",
+						"bleed":     false,
 						"items": []map[string]any{{
-							"separator": true,
-							"type":      "FactSet",
-							"facts": []map[string]any{{
-								"title": "Script",
-								"value": rev.Input,
-							}},
+							"type":        "CodeBlock",
+							"codeSnippet": rev.Input,
+							"language":    parseLangCodeBlock(ctx.ConnectionType, ctx.ConnectionSubType),
 						}},
 					},
 				},
