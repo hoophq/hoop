@@ -5,65 +5,78 @@
   "title": "",
   "description": "This event is triggered when a review is created. Refer to this documentation: https://hoop.dev/docs/features/microsoft-teams",
   "properties": {
-    "@context": {
+    "type": {
       "type": "string"
     },
-    "@type": {
-      "type": "string"
-    },
-    "sections": {
+    "attachments": {
       "type": "array"
-    },
-    "summary": {
-      "type": "string"
-    },
-    "themeColor": {
-      "type": "string"
     }
   },
   "required": [],
   "additionalProperties": false,
   "examples": [
     {
-      "@context": "http://schema.org/extensions",
-      "@type": "MessageCard",
-      "sections": [
+      "type": "message",
+      "attachments": [
         {
-          "facts": [
-            {
-              "name": "Created By:",
-              "value": "John Doe | jonhdoe@unknown.corp"
-            },
-            {
-              "name": "Approval Groups:",
-              "value": "[\"admin\"]"
-            },
-            {
-              "name": "Session Time:",
-              "value": "```-```"
+          "content": {
+            "body": [
+              {
+                "separator": true,
+                "size": "Large",
+                "text": "Session Created",
+                "type": "TextBlock",
+                "weight": "Bolder"
+              },
+              {
+                "separator": false,
+                "text": "[6bb1f879-f994-4ade-9d69-121676c03a59](http://localhost:8009/sessions/6bb1f879-f994-4ade-9d69-121676c03a59)",
+                "type": "TextBlock"
+              },
+              {
+                "facts": [
+                  {
+                    "title": "Created By",
+                    "value": "Sandro Mello | sandro@hoop.dev"
+                  },
+                  {
+                    "title": "Approval Groups",
+                    "value": "[\"admin\"]"
+                  },
+                  {
+                    "title": "Session Time",
+                    "value": "`-`"
+                  },
+                  {
+                    "title": "Connection",
+                    "value": "postgres-demo"
+                  }
+                ],
+                "separator": true,
+                "spacing": "ExtraLarge",
+                "type": "FactSet"
+              },
+              {
+                "bleed": false,
+                "items": [
+                  {
+                    "codeSnippet": "SELECT c.firstname, c.lastname, o.orderid, o.orderdate, SUM(ol.quantity) AS total_quantity, SUM(ol.quantity * p.price) AS total_amount\nFROM customers c\nJOIN orders o ON c.customerid = o.customerid\nJOIN orderlines ol ON o.orderid = ol.orderid\nJOIN products p ON ol.prod_id = p.prod_id\nWHERE c.country = 'US'\nGROUP BY c.firstname, c.lastname, o.orderid, o.orderdate\nORDER BY total_amount DESC;",
+                    "language": "SQL",
+                    "type": "CodeBlock"
+                  }
+                ],
+                "separator": false,
+                "style": "default",
+                "type": "Container"
+              }
+            ],
+            "msteams": {
+              "width": "full"
             }
-          ],
-          "startGroup": true,
-          "title": "• Session Created [6819488c-4cb6-49f4-be19-4f66ccbd919d](http://localhost:8009/sessions/6819488c-4cb6-49f4-be19-4f66ccbd919d)"
-        },
-        {
-          "facts": [
-            {
-              "name": "Connection:",
-              "value": "bash"
-            },
-            {
-              "name": "Script:",
-              "value": "```env```"
-            }
-          ],
-          "title": "Session Details"
+          },
+          "contentType": "application/vnd.microsoft.card.adaptive"
         }
-      ],
-      "summary": "Review Created",
-      "themeColor": "0076D7"
+      ]
     }
   ]
 }
-
-

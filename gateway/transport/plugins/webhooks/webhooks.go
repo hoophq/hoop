@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -100,13 +101,39 @@ func (p *plugin) OnReceive(ctx plugintypes.Context, pkt *pb.Packet) (*plugintype
 	return nil, nil
 }
 
+// https://learn.microsoft.com/en-us/microsoftteams/platform/task-modules-and-cards/cards/cards-format?tabs=adaptive-md%2Cdesktop%2Cdesktop1%2Cdesktop2%2Cconnector-html#codeblock-in-adaptive-cards
+func parseLangCodeBlock(connType, connSubtype string) string {
+	switch connType {
+	case "database":
+		return "SQL"
+	case "application":
+		switch connSubtype {
+		case "go", "java", "perl":
+			return strings.ToTitle(connSubtype)
+		case "json":
+			return "JSON"
+		case "xml":
+			return "XML"
+		case "powershell":
+			return "PowerShell"
+		case "php":
+			return "PHP"
+		default:
+			return "Bash"
+		}
+	case "custom":
+		return "Bash"
+	}
+	return "PlainText"
+}
+
 func (p *plugin) processReviewCreateEvent(ctx plugintypes.Context) {
 	rev, err := pgreview.New().FetchOneBySid(ctx, ctx.SID)
 	if err != nil {
 		log.Warnf("failed obtaining review, err=%v", err)
 		return
 	}
-	if rev == nil {
+	if rev == nil || rev.Status != types.ReviewStatusPending {
 		return
 	}
 	// it's recommended to sent events up to 20KB (Microsoft Teams)
@@ -121,51 +148,70 @@ func (p *plugin) processReviewCreateEvent(ctx plugintypes.Context) {
 	eventID := uuid.NewString()
 	accessDuration := rev.AccessDuration.String()
 	if accessDuration == "0s" {
-		accessDuration = "```-```"
+		accessDuration = "`-`"
 	}
 	apiURL := appconfig.Get().FullApiURL()
-	out, err := p.client.Message.Create(ctxtimeout, appID, &svix.MessageIn{
-		EventType: eventMSTeamsReviewCreateType,
-		EventId:   *svix.NullableString(func() *string { v := eventID; return &v }()),
-		Payload: map[string]any{
-			"@type":      "MessageCard",
-			"@context":   "http://schema.org/extensions",
-			"themeColor": "0076D7",
-			"summary":    "Review Created",
-			"sections": []map[string]any{
-				{
-					"startGroup": true,
-					"title":      fmt.Sprintf("• Session Created [%s](%s/sessions/%s)", rev.Session, apiURL, rev.Session),
-					"facts": []map[string]string{
-						{
-							"name":  "Created By:",
-							"value": fmt.Sprintf("%s | %s", rev.ReviewOwner.Name, rev.ReviewOwner.Email),
-						},
-						{
-							"name":  "Approval Groups:",
-							"value": fmt.Sprintf("%q", parseGroups(rev.ReviewGroupsData)),
-						},
-						{
-							"name":  "Session Time:",
-							"value": accessDuration,
+	svixPayload := map[string]any{
+		"type": "message",
+		"attachments": []map[string]any{{
+			"contentType": "application/vnd.microsoft.card.adaptive",
+			"content": map[string]any{
+				"msteams": map[string]any{"width": "full"},
+				"body": []map[string]any{
+					{
+						"type":      "TextBlock",
+						"text":      "Session Created",
+						"size":      "Large",
+						"separator": true,
+						"weight":    "Bolder",
+					},
+					{
+						"type":      "TextBlock",
+						"text":      fmt.Sprintf("[%s](%s/sessions/%s)", rev.Session, apiURL, rev.Session),
+						"separator": false,
+					},
+					{
+						"spacing":   "ExtraLarge",
+						"separator": true,
+						"type":      "FactSet",
+						"facts": []map[string]any{
+							{
+								"title": "Created By",
+								"value": fmt.Sprintf("%s | %s", rev.ReviewOwner.Name, rev.ReviewOwner.Email),
+							},
+							{
+								"title": "Approval Groups",
+								"value": fmt.Sprintf("%q", parseGroups(rev.ReviewGroupsData)),
+							},
+							{
+								"title": "Session Time",
+								"value": accessDuration,
+							},
+							{
+								"title": "Connection",
+								"value": rev.Connection.Name,
+							},
 						},
 					},
-				},
-				{
-					"title": "Session Details",
-					"facts": []map[string]string{
-						{
-							"name":  "Connection:",
-							"value": rev.Connection.Name,
-						},
-						{
-							"name":  "Script:",
-							"value": fmt.Sprintf("```%s```", rev.Input),
-						},
+					{
+						"type":      "Container",
+						"separator": true,
+						"style":     "default",
+						"bleed":     false,
+						"items": []map[string]any{{
+							"type":        "CodeBlock",
+							"codeSnippet": rev.Input,
+							"language":    parseLangCodeBlock(ctx.ConnectionType, ctx.ConnectionSubType),
+						}},
 					},
 				},
 			},
-		},
+		}},
+	}
+	out, err := p.client.Message.Create(ctxtimeout, appID, &svix.MessageIn{
+		EventType: eventMSTeamsReviewCreateType,
+		EventId:   *svix.NullableString(func() *string { v := eventID; return &v }()),
+		Payload:   svixPayload,
 	})
 	if err != nil {
 		log.With("appid", appID).Warnf("failed sending webhook event to remote source, err=%v", err)
