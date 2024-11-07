@@ -22,7 +22,7 @@
             [webapp.connections.views.create-update-connection.main :as create-update-connection]
             [webapp.dashboard.main :as dashboard]
             [webapp.guardrails.main :as guardrails]
-            [webapp.guardrails.create-update :as guardrail-create-update]
+            [webapp.guardrails.create-update-main :as guardrail-create-update]
             [webapp.events]
             [webapp.events.agents]
             [webapp.events.ask-ai]
@@ -163,9 +163,19 @@
     [guardrails/panel]]])
 
 (defmethod routes/panels :create-guardrail-panel []
+  (rf/dispatch [:guardrails->set-active-guardrail])
   [layout :application-hoop
    [:div {:class "bg-gray-1 min-h-full h-max relative"}
-    [guardrail-create-update/main]]])
+    [guardrail-create-update/main :create]]])
+
+(defmethod routes/panels :edit-guardrail-panel []
+  (let [pathname (.. js/window -location -pathname)
+        current-route (bidi/match-route @routes/routes pathname)
+        guardrail-id (:guardrail-id (:route-params current-route))]
+    (rf/dispatch [:guardrails->get-by-id guardrail-id])
+    [layout :application-hoop
+     [:div {:class "bg-gray-1 min-h-full h-max relative"}
+      [guardrail-create-update/main :edit]]]))
 
 (defmethod routes/panels :editor-plugin-panel []
   (rf/dispatch [:destroy-page-loader])

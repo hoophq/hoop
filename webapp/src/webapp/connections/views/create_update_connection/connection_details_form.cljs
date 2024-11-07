@@ -60,8 +60,8 @@
                    :disabled (= form-type :update)
                    :value @connection-name
                    :on-change #(reset! connection-name (-> % .-target .-value))}]
-     [multi-select/text-input {:value connection-tags-value
-                               :input-value connection-tags-input-value
+     [multi-select/text-input {:value @connection-tags-value
+                               :input-value @connection-tags-input-value
                                :on-change (fn [value]
                                             (reset! connection-tags-value value))
                                :on-input-change (fn [value]
