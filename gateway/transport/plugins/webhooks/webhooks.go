@@ -133,7 +133,7 @@ func (p *plugin) processReviewCreateEvent(ctx plugintypes.Context) {
 		log.Warnf("failed obtaining review, err=%v", err)
 		return
 	}
-	if rev == nil {
+	if rev == nil || rev.Status != types.ReviewStatusPending {
 		return
 	}
 	// it's recommended to sent events up to 20KB (Microsoft Teams)
