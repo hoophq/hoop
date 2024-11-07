@@ -195,7 +195,7 @@ func (p *plugin) processReviewCreateEvent(ctx plugintypes.Context) {
 					},
 					{
 						"type":      "Container",
-						"separator": false,
+						"separator": true,
 						"style":     "default",
 						"bleed":     false,
 						"items": []map[string]any{{
