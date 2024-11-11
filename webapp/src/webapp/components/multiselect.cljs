@@ -19,7 +19,8 @@
                                       "z-index" "60"})))
        "control" (fn [style]
                    (clj->js (into (js->clj style)
-                                  {"borderRadius" "6px"})))
+                                  {"borderRadius" "9px"
+                                   "fontSize" "16px"})))
        "valueContainer" (fn [style]
                           (clj->js (into (js->clj style)
                                          {"maxHeight" "200px"
@@ -124,7 +125,7 @@
                                     (.preventDefault event))
                             nil)
                           nil))]
-    [:div {:class "mb-regular text-sm"}
+    [:div {:class "text-md"}
      [:div {:class "flex flex-col justify-center mb-1"}
       (when label
         [form-label label])

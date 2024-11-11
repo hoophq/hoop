@@ -5,7 +5,7 @@
    [re-frame.core :as rf]))
 
 (defn main [{:keys [form-type id scroll-pos on-save]}]
-  [:> Box
+  [:<>
    [:> Flex {:p "5" :gap "2"}
     [:> Button {:variant "ghost"
                 :size "2"
@@ -13,17 +13,17 @@
                 :on-click #(js/history.back)}
      [:> ArrowLeft {:size 16}]
      "Back"]]
-   [:> Box {:p "7"}
+   [:> Box {:class (str "sticky top-0 z-50 bg-gray-1 px-7 py-7 "
+                        (when (>= @scroll-pos 30)
+                          "border-b border-[--gray-a6]"))}
     [:> Flex {:justify "between"
-              :align "center"
-              :pb "7"
-              :class (str "sticky top-0 z-10 -m-10 mb-0 p-10 bg-gray-1 "
-                          (when (>= @scroll-pos 30)
-                            "border-b border-[--gray-a6]"))}
+              :align "center"}
      [:> Heading {:as "h2" :size "8"}
-      "Create a new Guardrail"]
+      (if (= :edit form-type)
+        "Configure Guardrail"
+        "Create a new Guardrail")]
      [:> Flex {:gap "5" :align "center"}
-      (when (= :editor-plugin form-type)
+      (when (= :edit form-type)
         [:> Button {:size "4"
                     :variant "ghost"
                     :color "red"

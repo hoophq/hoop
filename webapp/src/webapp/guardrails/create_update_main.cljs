@@ -13,10 +13,10 @@
   (let [state (helpers/create-form-state guardrails)
         handlers (helpers/create-form-handlers state)]
     (fn []
-      [:> Box
+      [:> Box {:class "min-h-screen bg-gray-1"}
        [form-header/main
         {:form-type form-type
-         :id (:id state)
+         :id @(:id state)
          :scroll-pos scroll-pos
          :on-save #(let [data {:id @(:id state)
                                :name @(:name state)

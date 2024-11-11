@@ -2,10 +2,6 @@
   (:require
    [re-frame.core :as rf]))
 
-(def preset-rules
-  {"require-where" {:pattern "(?i)(?:DELETE\\s+FROM\\s+(?:\\w+\\.)*\\w+(?!\\s+WHERE))|(?:UPDATE\\s+(?:\\w+\\.)*\\w+\\s+SET(?!\\s+.*\\s+WHERE))"}
-   "block-password" {:words ["password"]}})
-
 (rf/reg-event-fx
  :guardrails->get-all
  (fn [{:keys [db]} [_ _]]
@@ -34,19 +30,15 @@
 
 (rf/reg-event-db
  :guardrails->set-all
- (fn [db [_ guardrails error]]
-   (println :guardrails->set-all guardrails error)
+ (fn [db [_ guardrails]]
    (assoc db :guardrails->list {:status :ready :data guardrails})))
 
 ;; Sanitize guardrail rules before sending to the server
 (defn convert-preset-rules [rules]
-  (mapv (fn [{:keys [type rule words pattern]}]
-          (merge
-           {:type type
-            :words words
-            :pattern pattern}
-           (when rule
-             (get preset-rules rule))))
+  (mapv (fn [{:keys [type words pattern]}]
+          {:type type
+           :words words
+           :pattern pattern})
         rules))
 
 (defn remove-empty-rules [rules]
@@ -132,65 +124,6 @@
                         {:output [{:type "" :rule "" :details ""}]}))]
      {:db (assoc db :guardrails->active-guardrail {:status :ready
                                                    :data rule-schema})})))
-
-;; this pushes a rule to the active guardrail
-;; rule-type must be :input or :output
-;; make sure `rule` is a vector [] and not a list '()
-(rf/reg-event-db
- :guardrails->push-rule
- (fn
-   [db [_ source rule-type rule idx]]
-   (update-in db [:guardrails->active-guardrail :data source idx rule-type] (constantly rule))))
-
-;; removes rules from list by its internal use :_id
-;; rule-type must be :input or :output
-;; ids is a vector of :_id's to remove
-(rf/reg-event-db
- :guardrails->remove-rules
- (fn [db [_ rule-type]]
-   (let [current-rules (get-in db [:guardrails->active-guardrail :data rule-type])
-         filtered-rules (remove :selected current-rules)]
-     (assoc-in db [:guardrails->active-guardrail :data rule-type]
-               (if (empty? filtered-rules)
-                 [{:type "" :rule "" :details ""}]
-                 (vec filtered-rules))))))
-
-(rf/reg-event-db
- :guardrails->set-name
- (fn
-   [db [_ name]]
-   (assoc-in db [:guardrails->active-guardrail :data :name] name)))
-
-(rf/reg-event-db
- :guardrails->set-description
- (fn
-   [db [_ description]]
-   (assoc-in db [:guardrails->active-guardrail :data :description] description)))
-
-(rf/reg-event-db
- :guardrails->add-new-rule-line
- (fn [db [_ rule-type]]
-   (let [current-rules (get-in db [:guardrails->active-guardrail :data rule-type])]
-     (println current-rules)
-     (assoc-in db [:guardrails->active-guardrail :data rule-type]
-               (conj current-rules {:type "" :rule "" :details ""})))))
-
-(rf/reg-event-db
- :guardrails->toggle-select-row
- (fn [db [_ rule-type idx]]
-   (update-in db [:guardrails->active-guardrail :data rule-type idx :selected] not)))
-
-(rf/reg-event-db
- :guardrails->select-all-rows
- (fn [db [_ rule-type]]
-   (update-in db [:guardrails->active-guardrail :data rule-type]
-              (fn [rules] (mapv #(assoc % :selected true) rules)))))
-
-(rf/reg-event-db
- :guardrails->deselect-all-rows
- (fn [db [_ rule-type]]
-   (update-in db [:guardrails->active-guardrail :data rule-type]
-              (fn [rules] (mapv #(assoc % :selected false) rules)))))
 
 ;; SUBSCRIPTIONS
 (rf/reg-sub
