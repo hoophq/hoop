@@ -92,8 +92,13 @@ func (p *plugin) OnReceive(ctx plugintypes.Context, pkt *pb.Packet) (*plugintype
 	if p.hasLoadedApp(ctx.OrgID) {
 		switch pkt.Type {
 		case pbagent.SessionOpen:
-			p.processSessionOpenEvent(ctx, pkt)
-			p.processReviewCreateEvent(ctx)
+			rev, err := pgreview.New().FetchOneBySid(ctx, ctx.SID)
+			if err != nil {
+				log.With("sid", ctx.SID).Warnf("failed obtaining review from current session, err=%v", err)
+				return nil, nil
+			}
+			p.processSessionOpenEvent(ctx, pkt, rev)
+			p.processReviewCreateEvent(ctx, rev)
 		case pbclient.SessionClose:
 			p.processSessionCloseEvent(ctx, pkt)
 		}
@@ -127,12 +132,8 @@ func parseLangCodeBlock(connType, connSubtype string) string {
 	return "PlainText"
 }
 
-func (p *plugin) processReviewCreateEvent(ctx plugintypes.Context) {
-	rev, err := pgreview.New().FetchOneBySid(ctx, ctx.SID)
-	if err != nil {
-		log.Warnf("failed obtaining review, err=%v", err)
-		return
-	}
+func (p *plugin) processReviewCreateEvent(ctx plugintypes.Context, rev *types.Review) {
+	// process only reviewed sessions that are in the pending state
 	if rev == nil || rev.Status != types.ReviewStatusPending {
 		return
 	}
@@ -156,6 +157,7 @@ func (p *plugin) processReviewCreateEvent(ctx plugintypes.Context) {
 		"attachments": []map[string]any{{
 			"contentType": "application/vnd.microsoft.card.adaptive",
 			"content": map[string]any{
+				"type":    "AdaptiveCard",
 				"msteams": map[string]any{"width": "full"},
 				"body": []map[string]any{
 					{
@@ -224,53 +226,16 @@ func (p *plugin) processReviewCreateEvent(ctx plugintypes.Context) {
 
 }
 
-func (p *plugin) processSessionOpenEvent(ctx plugintypes.Context, pkt *pb.Packet) {
+func (p *plugin) processSessionOpenEvent(ctx plugintypes.Context, pkt *pb.Packet, rev *types.Review) {
 	appID := ctx.OrgID
 	ctxtimeout, cancelFn := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancelFn()
-
-	clientArgs := decodeClientArgs(pkt)
-	clientEnvVars := decodeClientEnvVars(pkt)
-
-	// it's recommended to sent events up to 40KB
-	// that's why we truncated the input payload
-	isInputTruncated := len(pkt.Payload) > maxInputSize
-	truncatedStdinInput := make([]byte, len(pkt.Payload))
-	_ = copy(truncatedStdinInput, pkt.Payload)
-	if len(truncatedStdinInput) > maxInputSize {
-		truncatedStdinInput = truncatedStdinInput[0:maxInputSize]
-	}
-	var connectionEnvs []string
-	for key := range ctx.ConnectionSecret {
-		connectionEnvs = append(connectionEnvs, key)
-	}
-	var inputEventEnvs []string
-	for key := range clientEnvVars {
-		inputEventEnvs = append(inputEventEnvs, key)
-	}
-	fullCommand := append(ctx.ConnectionCommand, clientArgs...)
 	eventID := uuid.NewString()
 	out, err := p.client.Message.Create(ctxtimeout, appID, &svix.MessageIn{
 		EventType: eventSessionOpenType,
 		EventId:   *svix.NullableString(func() *string { v := eventID; return &v }()),
 		// TODO: use openapi schema
-		Payload: map[string]any{
-			"event_type":      eventSessionOpenType,
-			"id":              ctx.SID,
-			"user_id":         ctx.UserID,
-			"user_email":      ctx.UserEmail,
-			"connection":      ctx.ConnectionName,
-			"connection_type": ctx.ConnectionType,
-			"connection_envs": connectionEnvs,
-			// it will be encoded to base64 automatically
-			"input":              truncatedStdinInput,
-			"is_input_truncated": isInputTruncated,
-			"input_size":         len(pkt.Payload),
-			"input_envs":         inputEventEnvs,
-			"has_input_args":     len(clientArgs) > 0,
-			"command":            fullCommand,
-			"verb":               ctx.ClientVerb,
-		},
+		Payload: svixSessionOpenPayload(ctx, pkt, rev),
 	})
 	if err != nil {
 		log.With("appid", appID).Warnf("failed sending webhook event to remote source, err=%v", err)
@@ -362,4 +327,68 @@ func parseGroups(reviewGroups []types.ReviewGroup) []string {
 		groups = append(groups, g.Group)
 	}
 	return groups
+}
+
+func svixSessionOpenPayload(ctx plugintypes.Context, pkt *pb.Packet, rev *types.Review) map[string]any {
+	clientArgs := decodeClientArgs(pkt)
+	clientEnvVars := decodeClientEnvVars(pkt)
+
+	// it's recommended to sent events up to 40KB
+	// that's why we truncated the input payload
+	isInputTruncated := len(pkt.Payload) > maxInputSize
+	truncatedStdinInput := make([]byte, len(pkt.Payload))
+	_ = copy(truncatedStdinInput, pkt.Payload)
+	if len(truncatedStdinInput) > maxInputSize {
+		truncatedStdinInput = truncatedStdinInput[0:maxInputSize]
+	}
+	var connectionEnvs []string
+	for key := range ctx.ConnectionSecret {
+		connectionEnvs = append(connectionEnvs, key)
+	}
+	var inputEventEnvs []string
+	for key := range clientEnvVars {
+		inputEventEnvs = append(inputEventEnvs, key)
+	}
+	inputSize := len(pkt.Payload)
+	fullCommand := append(ctx.ConnectionCommand, clientArgs...)
+	hasReview := rev != nil
+	hasInputArgs := len(clientArgs) > 0
+	var reviewPayload map[string]any
+	if hasReview {
+		inputSize = len(rev.Input)
+		isInputTruncated = len(rev.Input) > maxInputSize
+		truncatedStdinInput = make([]byte, len(rev.Input))
+		_ = copy(truncatedStdinInput, []byte(rev.Input))
+		if len(truncatedStdinInput) > maxInputSize {
+			truncatedStdinInput = truncatedStdinInput[0:maxInputSize]
+		}
+		inputEventEnvs = []string{}
+		for key := range rev.InputEnvVars {
+			inputEventEnvs = append(inputEventEnvs, key)
+		}
+		fullCommand = append(ctx.ConnectionCommand, rev.InputClientArgs...)
+		hasInputArgs = len(rev.InputClientArgs) > 0
+		reviewPayload = map[string]any{
+			"type":        rev.Type,
+			"status":      rev.Status,
+			"owner_email": rev.ReviewOwner.Email,
+		}
+	}
+	return map[string]any{
+		"event_type":         eventSessionOpenType,
+		"id":                 ctx.SID,
+		"user_id":            ctx.UserID,
+		"user_email":         ctx.UserEmail,
+		"connection":         ctx.ConnectionName,
+		"connection_type":    ctx.ConnectionType,
+		"connection_envs":    connectionEnvs,
+		"input":              truncatedStdinInput, // it will be encoded to base64 automatically
+		"is_input_truncated": isInputTruncated,
+		"input_size":         inputSize,
+		"input_envs":         inputEventEnvs,
+		"has_input_args":     hasInputArgs,
+		"review":             reviewPayload,
+		"command":            fullCommand,
+		"verb":               ctx.ClientVerb,
+	}
 }
