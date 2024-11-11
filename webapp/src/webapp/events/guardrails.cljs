@@ -12,8 +12,8 @@
                                  (rf/dispatch [:guardrails->set-all guardrails]))
                    :on-failure (fn [error]
                                  (rf/dispatch [:guardrails->set-all nil error]))}]]]
-    :db (assoc db :guardrails->active-guardrail {:status :loading
-                                                 :data []})}))
+    :db (assoc db :guardrails->list {:status :loading
+                                     :data []})}))
 
 (rf/reg-event-fx
  :guardrails->get-by-id
@@ -25,8 +25,8 @@
                                  (rf/dispatch [:guardrails->set-active-guardrail guardrails]))
                    :on-failure (fn [error]
                                  (rf/dispatch [:guardrails->set-all nil error]))}]]]
-    :db (assoc db :guardrails->all {:status :loading
-                                    :data {}})}))
+    :db (assoc db :guardrails->active-guardrail {:status :loading
+                                                 :data {}})}))
 
 (rf/reg-event-db
  :guardrails->set-all
@@ -35,16 +35,17 @@
 
 ;; Sanitize guardrail rules before sending to the server
 (defn convert-preset-rules [rules]
-  (mapv (fn [{:keys [type words pattern]}]
+  (mapv (fn [{:keys [type words pattern_regex]}]
           {:type type
            :words words
-           :pattern pattern})
+           :pattern_regex pattern_regex})
         rules))
 
 (defn remove-empty-rules [rules]
   (remove (fn [rule]
+            (println "remove" rule)
             (or (and (empty? (:words rule))
-                     (empty? (:pattern rule)))
+                     (empty? (:pattern_regex rule)))
                 (empty? (:type rule))))
           rules))
 
@@ -109,9 +110,9 @@
                  input output]} rule
          rule-builder (fn [rule]
                         {:_id (or (:_id rule) random-uuid) ;; internal use
-                         :type (:type rule) ; :deny-words or :pattern
+                         :type (:type rule) ; :deny_words_list or :pattern
                          :words (:words rule)
-                         :pattern (:pattern rule)})
+                         :pattern_regex (:pattern_regex rule)})
          rule-schema (merge
                       {:id (or id "")
                        :name (or name "")
@@ -125,11 +126,24 @@
      {:db (assoc db :guardrails->active-guardrail {:status :ready
                                                    :data rule-schema})})))
 
+(rf/reg-event-fx
+ :guardrails->clear-active-guardrail
+ (fn
+   [{:keys [db]} [_]]
+   {:db (assoc db :guardrails->active-guardrail {:status :loading
+                                                 :data {}})
+    :fx [[:dispatch
+          [:guardrails->set-active-guardrail {:id ""
+                                              :name ""
+                                              :description ""
+                                              :input [{:type "" :rule "" :details ""}]
+                                              :output [{:type "" :rule "" :details ""}]}]]]}))
+
 ;; SUBSCRIPTIONS
 (rf/reg-sub
  :guardrails->list
  (fn [db _]
-   (get-in db [:guardrails->list :data])))
+   (get-in db [:guardrails->list])))
 
 (rf/reg-sub
  :guardrails->active-guardrail

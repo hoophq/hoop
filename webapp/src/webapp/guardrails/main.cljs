@@ -16,12 +16,12 @@
           [:> Text {:size "5" :class "text-[--gray-11]"}
            "Create custom rules to guide and protect usage within your connections"]]
 
-         (when (seq @guardrails-rules-list)
+         (when (seq (:data @guardrails-rules-list))
            [:> Button {:size "3"
                        :variant "solid"
                        :on-click #(rf/dispatch [:navigate :create-guardrail])}
             "Create a new Guardrail"])]]
-       (if (empty? @guardrails-rules-list)
+       (if (empty? (:data @guardrails-rules-list))
          [:> Flex {:height "400px" :direction "column" :gap "5" :class "p-[--space-5]" :align "center" :justify "center"}
           [:> Construction {:size 48}]
           [:> Text {:size "3" :class "text-[--gray-11]"}
@@ -34,7 +34,7 @@
            "Need more information? Check out our Guardrails documentation."]]
 
          [:> Box
-          (for [rules @guardrails-rules-list]
+          (for [rules (:data @guardrails-rules-list)]
             ^{:key (:id rules)}
             [:> Box {:class (str "first:rounded-t-lg border-x border-t "
                                  "last:rounded-b-lg bg-white last:border-b border-gray-200 "

@@ -51,6 +51,7 @@
         connections-search-status (r/atom nil)]
     (rf/dispatch [:connections->get-connections])
     (rf/dispatch [:users->get-user])
+    (rf/dispatch [:guardrails->get-all])
     (fn []
       (let [connections-search-results (if (empty? @searched-connections)
                                          (:results @connections)

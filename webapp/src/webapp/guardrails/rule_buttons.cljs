@@ -7,11 +7,13 @@
    [:> Button
     {:variant "soft"
      :size "2"
+     :type "button"
      :on-click on-rule-add}
     "+ New"]
    [:> Button
     {:variant "soft"
      :size "2"
+     :type "button"
      :color "gray"
      :on-click on-toggle-select}
     (if @select-state "Cancel" "Select")]
@@ -21,12 +23,14 @@
       [:> Button
        {:variant "outline"
         :size "2"
+        :type "button"
         :color "gray"
         :on-click on-toggle-all}
        (if selected? "Deselect all" "Select all")]
       [:> Button
        {:variant "outline"
         :size "2"
+        :type "button"
         :color "red"
         :on-click on-rules-delete}
        "Delete"]])])

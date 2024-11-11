@@ -4,12 +4,13 @@
    ["lucide-react" :refer [ArrowLeft]]
    [re-frame.core :as rf]))
 
-(defn main [{:keys [form-type id scroll-pos on-save]}]
+(defn main [{:keys [form-type id scroll-pos]}]
   [:<>
    [:> Flex {:p "5" :gap "2"}
     [:> Button {:variant "ghost"
                 :size "2"
                 :color "gray"
+                :type "button"
                 :on-click #(js/history.back)}
      [:> ArrowLeft {:size 16}]
      "Back"]]
@@ -27,8 +28,9 @@
         [:> Button {:size "4"
                     :variant "ghost"
                     :color "red"
+                    :type "button"
                     :on-click #(rf/dispatch [:guardrails->delete-by-id id])}
          "Delete"])
       [:> Button {:size "4"
-                  :on-click on-save}
+                  :type "submit"}
        "Save"]]]]])

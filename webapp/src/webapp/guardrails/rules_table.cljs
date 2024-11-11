@@ -6,30 +6,25 @@
    [webapp.guardrails.rule-buttons :as rule-buttons]))
 
 (def rule-type-options
-  [{:value "deny-word" :text "Deny Word"}
-   {:value "pattern-match" :text "Pattern Match"}])
+  [{:value "deny_words_list" :text "Deny Word"}
+   {:value "pattern_match" :text "Pattern Match"}])
 
 (def preset-values
-  {"require-where"
-   {:type "pattern-match"
-    :pattern "(?i)\\bSELECT\\b(?!.*\\bWHERE\\b).*"}
-
-   "require-where-delete-update"
-   {:type "pattern-match"
-    :pattern "(?i)(?:DELETE\\s+FROM\\s+(?:\\w+\\.)*\\w+(?!\\s+WHERE))|(?:UPDATE\\s+(?:\\w+\\.)*\\w+\\s+SET(?!\\s+.*\\s+WHERE))"}
+  {"require-where-delete"
+   {:type "pattern_match"
+    :pattern_regex "(?i)DELETE\\s+FROM\\s+(\\w+\\.)*\\w+[^WHERE]*$"}
 
    "block-password"
-   {:type "deny-word"
+   {:type "deny_words_list"
     :words ["password" "senha" "pass" "pwd"]}})
 
 (defn- get-rule-options [type]
   (case type
-    "pattern-match"
+    "pattern_match"
     [:<>
-     [:> Select.Item {:value "require-where"} "Require WHERE clause (SELECT)"]
-     [:> Select.Item {:value "require-where-delete-update"} "Require WHERE clause (DELETE/UPDATE)"]]
+     [:> Select.Item {:value "require-where-delete"} "Require WHERE clause (DELETE)"]]
 
-    "deny-word"
+    "deny_words_list"
     [:> Select.Item {:value "block-password"} "Block Passwords"]
 
     [:<>]))
@@ -38,7 +33,7 @@
   ;; When the type changes, we need to clear the rule field and other related fields
   (on-rule-field-change state idx :type value)
   (on-rule-field-change state idx :rule "")
-  (on-rule-field-change state idx :pattern "")
+  (on-rule-field-change state idx :pattern_regex "")
   (on-rule-field-change state idx :words []))
 
 (defn- handle-preset-change [state idx value on-rule-field-change pattern-state words-state]
@@ -50,12 +45,12 @@
       (when preset
         (on-rule-field-change state idx :rule value)
         (case (:type preset)
-          "pattern-match"
+          "pattern_match"
           (do
-            (swap! pattern-state assoc idx (:pattern preset))
-            (on-rule-field-change state idx :pattern (:pattern preset)))
+            (swap! pattern-state assoc idx (:pattern_regex preset))
+            (on-rule-field-change state idx :pattern_regex (:pattern_regex preset)))
 
-          "deny-word"
+          "deny_words_list"
           (do
             (on-rule-field-change state idx :words (:words preset))
             (swap! words-state assoc idx ""))
@@ -64,17 +59,17 @@
 
 (defn- rule-details [rule state idx on-rule-field-change words-state on-word-change pattern-state on-pattern-change]
   (cond
-    (= "pattern-match" (:type rule))
+    (= "pattern_match" (:type rule))
     [forms/input
      {:placeholder "Describe how this is used in your connections"
       :class "w-full"
       :size "3"
       :not-margin-bottom? true
       :on-change #(on-pattern-change pattern-state idx (-> % .-target .-value))
-      :on-blur #(on-rule-field-change state idx :pattern (get @pattern-state idx ""))
+      :on-blur #(on-rule-field-change state idx :pattern_regex (get @pattern-state idx ""))
       :value (get @pattern-state idx "")}]
 
-    (= "deny-word" (:type rule))
+    (= "deny_words_list" (:type rule))
     [multi-select/text-input
      {:value (if (empty? (:words rule))
                []
@@ -87,8 +82,8 @@
                     :words
                     (mapv #(get % "value") value)))
       :on-input-change #(on-word-change words-state idx %)
-      :id (str "deny-words-" idx)
-      :name (str "deny-words-" idx)}]))
+      :id (str "deny_words_list-" idx)
+      :name (str "deny_words_list-" idx)}]))
 
 (defn main [{:keys [title
                     state

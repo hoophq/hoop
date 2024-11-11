@@ -187,7 +187,7 @@
            dark]}]
   [:div {:class (str " text-sm w-full"
                      (when-not not-margin-bottom? "mb-regular"))}
-   [:div {:class "flex items-center gap-2"}
+   [:div {:class "flex items-center gap-2 mb-1"}
     (if dark
       [form-label-dark label]
       [form-label label])
@@ -201,7 +201,7 @@
                     :required (or required false)
                     :disabled (or disabled false)}
     [:> Select.Trigger {:placeholder (or placeholder "Select one")
-                        :variant variant
+                        :variant (or variant "surface")
                         :class (str (when full-width? "w-full ")
                                     (when dark "dark"))}]
     [:> Select.Content {:position "popper"}

@@ -2,8 +2,7 @@
   (:require [reagent.core :as r]))
 
 (def preset-patterns
-  {"(?i)\\bSELECT\\b(?!.*\\bWHERE\\b).*" "require-where"
-   "(?i)(?:DELETE[[:space:]]+FROM[[:space:]]+(?:\\w+\\.)*\\w+(?![[:space:]]+WHERE))|(?:UPDATE[[:space:]]+(?:\\w+\\.)*\\w+[[:space:]]+SET(?![[:space:]]+.*[[:space:]]+WHERE))" "require-where-delete-update"})
+  {"(?i)DELETE\\s+FROM\\s+(\\w+\\.)*\\w+[^WHERE]*$" "require-where-delete"})
 
 (def preset-words
   {(str ["password"]) "block-password"})
@@ -11,19 +10,19 @@
 (defn create-empty-rule []
   {:type ""
    :rule ""
-   :pattern ""
+   :pattern_regex ""
    :words []
    :selected false})
 
-(defn- identify-preset [type pattern words]
+(defn- identify-preset [type pattern_regex words]
   (cond
     ;; Para pattern match, verifica se é um preset conhecido
-    (and (= type "pattern-match")
-         (not (empty? pattern)))
-    (get preset-patterns pattern "custom-rule")
+    (and (= type "pattern_match")
+         (not (empty? pattern_regex)))
+    (get preset-patterns pattern_regex "custom-rule")
 
     ;; Para deny word, verifica se é um preset conhecido
-    (and (= type "deny-word")
+    (and (= type "deny_words_list")
          (not (empty? words)))
     (get preset-words (str words) "custom-rule")
 
@@ -39,12 +38,12 @@
   (if (empty? (:type rule))
     (create-empty-rule)
     (let [type (:type rule)
-          pattern (:pattern rule)
+          pattern_regex (:pattern_regex rule)
           words (:words rule)
-          preset-rule (identify-preset type pattern words)]
+          preset-rule (identify-preset type pattern_regex words)]
       {:type type
        :rule preset-rule
-       :pattern (or pattern "")
+       :pattern_regex (or pattern_regex "")
        :words (or words [])
        :selected false})))
 
@@ -55,7 +54,7 @@
 
 (defn- create-pattern-state [rules]
   (into {} (map-indexed (fn [idx rule]
-                          [idx (:pattern rule)])
+                          [idx (:pattern_regex rule)])
                         rules)))
 
 (defn- create-words-state [rules]

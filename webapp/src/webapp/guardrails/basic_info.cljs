@@ -19,6 +19,6 @@
     [forms/input
      {:label "Description (Optional)"
       :placeholder "Describe how this is used in your connections"
-      :required true
+      :required false
       :value @description
       :on-change #(on-description-change (-> % .-target .-value))}]]])

@@ -22,7 +22,7 @@
             [webapp.connections.views.create-update-connection.main :as create-update-connection]
             [webapp.dashboard.main :as dashboard]
             [webapp.guardrails.main :as guardrails]
-            [webapp.guardrails.create-update-main :as guardrail-create-update]
+            [webapp.guardrails.create-update-form :as guardrail-create-update]
             [webapp.events]
             [webapp.events.agents]
             [webapp.events.ask-ai]
@@ -163,7 +163,7 @@
     [guardrails/panel]]])
 
 (defmethod routes/panels :create-guardrail-panel []
-  (rf/dispatch [:guardrails->set-active-guardrail])
+  (rf/dispatch [:guardrails->clear-active-guardrail])
   [layout :application-hoop
    [:div {:class "bg-gray-1 min-h-full h-max relative"}
     [guardrail-create-update/main :create]]])
@@ -191,7 +191,7 @@
 
 (defmethod routes/panels :create-connection-panel []
   (rf/dispatch [:destroy-page-loader])
-  [layout :application-hoop [:div {:class "bg-gray-1 p-radix-7 min-h-full h-max"}
+  [layout :application-hoop [:div {:class "bg-gray-1 min-h-full h-max"}
                              [create-update-connection/main :create]]])
 
 (defmethod routes/panels :manage-plugin-panel []
