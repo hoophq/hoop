@@ -180,6 +180,14 @@
                   [:span {:class "sr-only"}
                    "Users"]]])
 
+              [:li
+               [:a {:href (routes/url-for :guardrails)
+                    :class (str (hover-side-menu-link? "/guardrails" current-route)
+                                "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
+                [:> hero-outline-icon/ShieldCheckIcon {:class "h-6 w-6 shrink-0 text-white"
+                                                     :aria-hidden "true"}]
+                [:span {:class "sr-only"}
+                 "Guardrails"]]]
               (when admin?
                 [:li
                  [:a {:href "#"

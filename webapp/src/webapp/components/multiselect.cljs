@@ -19,7 +19,8 @@
                                       "z-index" "60"})))
        "control" (fn [style]
                    (clj->js (into (js->clj style)
-                                  {"borderRadius" "6px"})))
+                                  {"borderRadius" "9px"
+                                   "fontSize" "16px"})))
        "valueContainer" (fn [style]
                           (clj->js (into (js->clj style)
                                          {"maxHeight" "200px"
@@ -112,19 +113,19 @@
 
   [{:keys [value input-value disabled? required? on-change on-input-change label label-description id name]}]
   (let [handleKeyDown (fn [event]
-                        (if @input-value
+                        (if input-value
                           (case (.-key event)
                             "Enter" (do
-                                      (reset! value (conj (js->clj @value) {"label" @input-value "value" @input-value}))
-                                      (reset! input-value "")
+                                      (on-change (conj (js->clj value) {"label" input-value "value" input-value}))
+                                      (on-input-change "")
                                       (.preventDefault event))
                             "Tab" (do
-                                    (reset! value (conj (js->clj @value) {"label" @input-value "value" @input-value}))
-                                    (reset! input-value "")
+                                    (on-change (conj (js->clj value) {"label" input-value "value" input-value}))
+                                    (on-input-change "")
                                     (.preventDefault event))
                             nil)
                           nil))]
-    [:div {:class "mb-regular text-sm"}
+    [:div {:class "text-md"}
      [:div {:class "flex flex-col justify-center mb-1"}
       (when label
         [form-label label])
@@ -132,8 +133,8 @@
         [:span {:class "text-xs text-gray-500"} label-description])]
      [:> CreatableSelect
       {:components #js{:DropdownIndicator nil}
-       :value @value
-       :inputValue @input-value
+       :value value
+       :inputValue input-value
        :id id
        :name name
        :isMulti true

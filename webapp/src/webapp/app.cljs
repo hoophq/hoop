@@ -21,6 +21,8 @@
             [webapp.connections.views.connection-list :as connections]
             [webapp.connections.views.create-update-connection.main :as create-update-connection]
             [webapp.dashboard.main :as dashboard]
+            [webapp.guardrails.main :as guardrails]
+            [webapp.guardrails.create-update-form :as guardrail-create-update]
             [webapp.events]
             [webapp.events.agents]
             [webapp.events.ask-ai]
@@ -46,6 +48,7 @@
             [webapp.events.segment]
             [webapp.events.slack-plugin]
             [webapp.events.users]
+            [webapp.events.guardrails]
             [webapp.organization.users.main :as org-users]
             [webapp.plugins.views.manage-plugin :as manage-plugin]
             [webapp.plugins.views.plugins-configurations :as plugins-configurations]
@@ -154,6 +157,26 @@
                              [h/h2 "Dashboard" {:class "mb-6"}]
                              [dashboard/main]]])
 
+(defmethod routes/panels :guardrails-panel []
+  [layout :application-hoop
+   [:div {:class "bg-gray-1 p-radix-7 min-h-full h-max"}
+    [guardrails/panel]]])
+
+(defmethod routes/panels :create-guardrail-panel []
+  (rf/dispatch [:guardrails->clear-active-guardrail])
+  [layout :application-hoop
+   [:div {:class "bg-gray-1 min-h-full h-max relative"}
+    [guardrail-create-update/main :create]]])
+
+(defmethod routes/panels :edit-guardrail-panel []
+  (let [pathname (.. js/window -location -pathname)
+        current-route (bidi/match-route @routes/routes pathname)
+        guardrail-id (:guardrail-id (:route-params current-route))]
+    (rf/dispatch [:guardrails->get-by-id guardrail-id])
+    [layout :application-hoop
+     [:div {:class "bg-gray-1 min-h-full h-max relative"}
+      [guardrail-create-update/main :edit]]]))
+
 (defmethod routes/panels :editor-plugin-panel []
   (rf/dispatch [:destroy-page-loader])
   (rf/dispatch [:plugins->get-plugin-by-name "editor"])
@@ -168,7 +191,7 @@
 
 (defmethod routes/panels :create-connection-panel []
   (rf/dispatch [:destroy-page-loader])
-  [layout :application-hoop [:div {:class "bg-gray-1 p-radix-7 min-h-full h-max"}
+  [layout :application-hoop [:div {:class "bg-gray-1 min-h-full h-max"}
                              [create-update-connection/main :create]]])
 
 (defmethod routes/panels :manage-plugin-panel []

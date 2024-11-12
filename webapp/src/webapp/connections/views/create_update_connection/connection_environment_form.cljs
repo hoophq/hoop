@@ -30,7 +30,7 @@
                ai-data-masking-info-types
                on-click->add-more-key-value
                on-click->add-more-file-content]}]
-    (let [agent-options (map (fn [agent] {:text (:name agent) :value (:id agent)}) (:data agents))]
+    (let [agent-options (mapv (fn [agent] {:text (:name agent) :value (:id agent)}) (:data agents))]
       [:> Flex {:direction "column" :gap "9" :class "px-20"}
 
        (when-not  (and (= @connection-type "application")
@@ -53,7 +53,7 @@
                            :placeholder "Select one"
                            :full-width? true
                            :class "w-full"
-                           :selected @agent-id
+                           :selected (or @agent-id "")
                            :required true
                            :on-change #(reset! agent-id %)
                            :options agent-options}]]]])
