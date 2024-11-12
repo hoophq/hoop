@@ -43,7 +43,6 @@
 
 (defn remove-empty-rules [rules]
   (remove (fn [rule]
-            (println "remove" rule)
             (or (and (empty? (:words rule))
                      (empty? (:pattern_regex rule)))
                 (empty? (:type rule))))
