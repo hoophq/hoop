@@ -18,7 +18,7 @@
         user-email (r/atom (or (-> integration-details :data :user) ""))
         project-key (r/atom (or (-> integration-details :data :project_key) ""))]
     (fn []
-      [:> Box {:p "5" :class "bg-white rounded-t-md border border-gray-100"}
+      [:> Box {:p "5" :class "bg-white rounded-md border border-gray-100"}
        [:> Grid {:columns "3" :gap "7"}
         [:> Box {:grid-column "span 1 /span 1"}
          [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-gray-12"}
@@ -104,7 +104,7 @@
     (fn []
       [:div
        (if (-> @integration-details :loading)
-         [:> Box {:p "5" :minHeight "800px" :class "bg-white border border-gray-100"}
+         [:> Box {:p "5" :minHeight "800px" :class "bg-white rounded-md border border-gray-100"}
           [:> Flex {:justify "center" :align "center" :gap "3"}
            [loaders/simple-loader]]]
          [configurations-view @integration-details])])))

@@ -1,5 +1,6 @@
 (ns webapp.components.logs-container
   (:require ["@heroicons/react/24/outline" :as hero-outline-icon]
+            ["lucide-react" :refer [Clipboard]]
             ["clipboard" :as clipboardjs]
             [re-frame.core :as rf]
             [webapp.components.headings :as h]
@@ -39,7 +40,12 @@
       {:class (str "relative rounded-lg bg-gray-100 h-full"
                    " font-mono p-regular text-xs mb-regular"
                    " whitespace-pre group")}
-      (when-not (:not-clipboard? config) (copy-clipboard (str "#" container-id)))
+      (when-not (:not-clipboard? config)
+        [:div {:class (str "copy-to-clipboard absolute rounded-lg p-x-small "
+                           "top-2 right-2 cursor-pointer box-border text-[--gray-10] "
+                           "opacity-0 group-hover:opacity-100 transition z-20")
+               :data-clipboard-target (str "#" container-id)}
+         [:> Clipboard {:size 16}]])
       [:div
        {:id container-id
         :class (str (when (:classe config) (:classes config))
