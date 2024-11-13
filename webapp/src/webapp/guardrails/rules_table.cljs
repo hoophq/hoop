@@ -1,6 +1,7 @@
 (ns webapp.guardrails.rules-table
   (:require
-   ["@radix-ui/themes" :refer [Box Select Table Text]]
+   ["@radix-ui/themes" :refer [Box Flex Select Table Text Tooltip]]
+   ["lucide-react" :refer [CircleHelp]]
    [webapp.components.forms :as forms]
    [webapp.components.multiselect :as multi-select]
    [webapp.guardrails.rule-buttons :as rule-buttons]))
@@ -60,14 +61,17 @@
 (defn- rule-details [rule state idx on-rule-field-change words-state on-word-change pattern-state on-pattern-change]
   (cond
     (= "pattern_match" (:type rule))
-    [forms/input
-     {:placeholder "Describe how this is used in your connections"
-      :class "w-full"
-      :size "3"
-      :not-margin-bottom? true
-      :on-change #(on-pattern-change pattern-state idx (-> % .-target .-value))
-      :on-blur #(on-rule-field-change state idx :pattern_regex (get @pattern-state idx ""))
-      :value (get @pattern-state idx "")}]
+    [:> Flex {:align "center" :gap "2"}
+     [forms/input
+      {:placeholder "Describe how this is used in your connections"
+       :full-width? true
+       :size "3"
+       :not-margin-bottom? true
+       :on-change #(on-pattern-change pattern-state idx (-> % .-target .-value))
+       :on-blur #(on-rule-field-change state idx :pattern_regex (get @pattern-state idx ""))
+       :value (get @pattern-state idx "")}]
+     [:> Tooltip {:content "Use Go regex syntax."}
+      [:> CircleHelp {:size 16}]]]
 
     (= "deny_words_list" (:type rule))
     [multi-select/text-input

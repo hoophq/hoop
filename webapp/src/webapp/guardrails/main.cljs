@@ -30,7 +30,7 @@
                       :variant "solid"
                       :on-click #(rf/dispatch [:navigate :create-guardrail])}
            "Create a new Guardrail"]
-          [:> Text {:size "2" :pt "5" :class "text-[--gray-11]" :ml "auto"}
+          [:> Text {:size "2" :pt "5" :class "text-[--gray-11]"}
            "Need more information? Check out our Guardrails documentation."]]
 
          [:> Box
@@ -40,7 +40,7 @@
                                  "last:rounded-b-lg bg-white last:border-b border-gray-200 "
                                  "p-[--space-5]")}
              [:> Flex {:justify "between"}
-              [:> Box
+              [:> Flex {:align "center"}
                [:> Text {:size "4" :weight "bold"} (:name rules)]
                [:> Text {:as "p" :size "3" :class "text-[--gray-11]"} (:description rules)]]
               [:> Button {:variant "soft"

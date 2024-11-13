@@ -2,7 +2,7 @@
   (:require
    [re-frame.core :as rf]
    [reagent.core :as r]
-   ["@radix-ui/themes" :refer [Box Grid]]
+   ["@radix-ui/themes" :refer [Badge Box Heading Flex Grid]]
    [webapp.components.loaders :as loaders]
    [webapp.guardrails.helpers :as helpers]
    [webapp.guardrails.form-header :as form-header]
@@ -40,7 +40,10 @@
         ;; Rules section
          [:> Grid {:columns "7" :gap "7"}
           [:> Box {:grid-column "span 2 / span 2"}
-           [:h3.text-lg.font-semibold.mt-8 "Configure rules"]
+           [:> Flex {:align "center" :gap "2"}
+            [:> Heading {:as "h3" :size "4" :weight "medium"} "Configure rules"]
+            [:> Badge {:variant "solid" :color "green" :size "1"}
+             "Beta"]]
            [:p.text-sm.text-gray-500.mb-4
             "Setup rules with Presets or Custom regular expression scripts."]]
 
