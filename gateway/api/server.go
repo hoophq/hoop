@@ -170,7 +170,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.POST("/signup",
 		api.TrackRequest(analytics.EventSignup),
 		signupapi.Post)
-	// TODO: check-me / must access via anonymous and authenticated user!
+
 	r.GET("/userinfo",
 		apiroutes.UserInfoRouteType,
 		apiroutes.ReadOnlyAccessRole,
