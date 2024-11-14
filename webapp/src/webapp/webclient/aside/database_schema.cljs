@@ -1,11 +1,10 @@
 (ns webapp.webclient.aside.database-schema
-  (:require ["@radix-ui/themes" :refer [Text]]
+  (:require ["@radix-ui/themes" :refer [Em Text]]
             ["lucide-react" :refer [ChevronDown ChevronRight Hash Database File FolderClosed FolderOpen Table]]
             [reagent.core :as r]
             [re-frame.core :as rf]
             [webapp.subs :as subs]
             [webapp.webclient.aside.mongodb-schema :as mongodb-schema]
-            ["@heroicons/react/20/solid" :as hero-solid-icon]
             [webapp.config :as config]))
 
 (def ^:private get-postgres-databases-query
@@ -151,6 +150,59 @@ JSON.stringify(db.getMongo().getDBNames().reduce((acc, current) => {
   return acc;
 }, {}));")
 
+(defmulti get-database-schema identity)
+(defmethod get-database-schema "oracledb" [_ connection]
+  (rf/dispatch [:editor-plugin->get-mysql-schema
+                connection
+                get-oracledb-schema-query
+                get-oracledb-schema-with-index-query]))
+(defmethod get-database-schema "sql-server-csv" [_ connection]
+  (rf/dispatch [:editor-plugin->get-mysql-schema
+                connection
+                get-sql-server-schema-query
+                get-sql-server-schema-with-index-query]))
+(defmethod get-database-schema "mssql" [_ connection]
+  (rf/dispatch [:editor-plugin->get-mysql-schema
+                connection
+                get-sql-server-schema-query
+                get-sql-server-schema-with-index-query]))
+(defmethod get-database-schema "postgres-csv" [_ connection]
+  (let [selected-db (.getItem js/localStorage "selected-database")
+        base-switch (when selected-db
+                      (str "\\set QUIET on\n\\c " selected-db "\n\\set QUIET off\n"))
+        schema-script (str base-switch get-postgres-schema-query)
+        index-script (str base-switch get-postgres-schema-with-index-query)]
+    (rf/dispatch [:editor-plugin->get-postgres-schema
+                  connection
+                  get-postgres-databases-query
+                  schema-script
+                  index-script])))
+(defmethod get-database-schema "postgres" [_ connection]
+  (let [selected-db (.getItem js/localStorage "selected-database")
+        base-switch (when selected-db
+                      (str "\\set QUIET on\n\\c " selected-db "\n\\set QUIET off\n"))
+        schema-script (str base-switch get-postgres-schema-query)
+        index-script (str base-switch get-postgres-schema-with-index-query)]
+    (rf/dispatch [:editor-plugin->get-postgres-schema
+                  connection
+                  get-postgres-databases-query
+                  schema-script
+                  index-script])))
+(defmethod get-database-schema "mysql-csv" [_ connection]
+  (rf/dispatch [:editor-plugin->get-mysql-schema
+                connection
+                get-mysql-schema-query
+                get-mysql-schema-with-index-query]))
+(defmethod get-database-schema "mysql" [_ connection]
+  (rf/dispatch [:editor-plugin->get-mysql-schema
+                connection
+                get-mysql-schema-query
+                get-mysql-schema-with-index-query]))
+(defmethod get-database-schema "mongodb" [_ connection]
+  (rf/dispatch [:editor-plugin->get-mongodb-schema
+                connection
+                get-mongodb-schema-query]))
+
 (defn- field-type-tree [type]
   [:div {:class "pl-regular italic"}
    (str "(" type ")")])
@@ -248,7 +300,6 @@ JSON.stringify(db.getMongo().getDBNames().reduce((acc, current) => {
         (for [[table fields] tables]
           ^{:key table}
           [:div
-           ;; TODO replace this icon with a table icon
            [:div {:class "flex items-center gap-small mb-2"}
             [:> Table {:size 12}]
             [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
@@ -291,11 +342,10 @@ JSON.stringify(db.getMongo().getDBNames().reduce((acc, current) => {
 
 (defn- databases-tree []
   (let [open-database (r/atom nil)]
-    (fn [databases schema indexes initial-database]
+    (fn [databases schema indexes initial-database connection-name database-schema-status]
       (when (and initial-database (nil? @open-database))
         (reset! open-database initial-database)
         (.setItem js/localStorage "selected-database" initial-database))
-
       (let [selected-db (.getItem js/localStorage "selected-database")]
         [:div.text-xs
          (doall
@@ -308,110 +358,101 @@ JSON.stringify(db.getMongo().getDBNames().reduce((acc, current) => {
                                   (when (= db selected-db) "text-blue-500"))
                       :on-click (fn []
                                   (.setItem js/localStorage "selected-database" db)
-                                  (reset! open-database (when (not= @open-database db) db)))}
+                                  (reset! open-database (when (not= @open-database db) db))
+                                  (get-database-schema
+                                   "postgres" {:connection-type "postgres"
+                                               :connection-name connection-name}))}
                [:> Text {:size "1" :weight "bold"} db]
                (if (= @open-database db)
                  [:> ChevronDown {:size 12}]
                  [:> ChevronRight {:size 12}])]]
              [:div {:class (when (not= @open-database db)
                              "h-0 overflow-hidden")}
-              [sql-databases-tree schema indexes true]]]))]))))
+              (if (= :loading database-schema-status)
+                [:div
+                 {:class "flex gap-small items-center pb-small ml-small text-xs"}
+                 [:span {:class "italic"}
+                  "Loading tables and indexes"]
+                 [:figure {:class "w-3 flex-shrink-0 animate-spin opacity-60"}
+                  [:img {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]]
+                (if (empty? schema)
+                  [:> Text {:as "p" :size "1" :mb "2" :ml "2"}
+                   "Couldn't load tables for this database"]
+                  [sql-databases-tree schema indexes true]))]]))]))))
 
-(defmulti ^:private db-view identity)
-(defmethod ^:private db-view :default []
-  [:div {:class "text-xs"}
-   "Couldn't load the schema"])
-(defmethod ^:private db-view "oracledb" [_ schema indexes]
-  [sql-databases-tree (into (sorted-map) schema) (into (sorted-map) indexes) false])
-(defmethod ^:private db-view "sql-server-csv" [_ schema indexes]
-  [sql-databases-tree (into (sorted-map) schema) (into (sorted-map) indexes) false])
-(defmethod ^:private db-view "mssql" [_ schema indexes]
-  [sql-databases-tree (into (sorted-map) schema) (into (sorted-map) indexes) false])
-(defmethod ^:private db-view "postgres-csv" [_ schema indexes databases initial-database]
-  [databases-tree databases (into (sorted-map) schema) (into (sorted-map) indexes) initial-database])
-(defmethod ^:private db-view "postgres" [_ schema indexes databases initial-database]
-  [databases-tree databases (into (sorted-map) schema) (into (sorted-map) indexes) initial-database])
-(defmethod ^:private db-view "mysql-csv" [_ schema indexes]
-  [sql-databases-tree (into (sorted-map) schema) (into (sorted-map) indexes) false])
-(defmethod ^:private db-view "mysql" [_ schema indexes]
-  [sql-databases-tree (into (sorted-map) schema) (into (sorted-map) indexes) false])
-(defmethod ^:private db-view "mongodb" [_ schema]
-  [mongodb-schema/main schema])
+(defn db-view [{:keys [type
+                       schema
+                       indexes
+                       databases
+                       initial-database
+                       connection-name
+                       database-schema-status]}]
+  (case type
+    "oracledb" [sql-databases-tree (into (sorted-map) schema) (into (sorted-map) indexes) false]
+    "sql-server-csv" [sql-databases-tree (into (sorted-map) schema) (into (sorted-map) indexes) false]
+    "mssql" [sql-databases-tree (into (sorted-map) schema) (into (sorted-map) indexes) false]
+    "postgres-csv" [databases-tree databases (into (sorted-map) schema) (into (sorted-map) indexes) initial-database connection-name database-schema-status]
+    "postgres" [databases-tree databases (into (sorted-map) schema) (into (sorted-map) indexes) initial-database connection-name database-schema-status]
+    "mysql-csv" [sql-databases-tree (into (sorted-map) schema) (into (sorted-map) indexes) false]
+    "mysql" [sql-databases-tree (into (sorted-map) schema) (into (sorted-map) indexes) false]
+    "mongodb" [mongodb-schema/main schema]
+    [:> Text {:size "1"}
+     "Couldn't load the schema"]))
 
-(defmulti ^:private tree-view-status identity)
-(defmethod ^:private tree-view-status :loading [_]
-  [:div
-   {:class "flex gap-small items-center py-regular text-xs"}
-   [:span {:class "italic"}
-    "Loading schema"]
-   [:figure {:class "w-3 flex-shrink-0 animate-spin opacity-60"}
-    [:img {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]])
-(defmethod ^:private tree-view-status :failure [_ log]
-  [:div
-   {:class "flex gap-small items-center py-regular text-xs"}
-   [:span
-    log]])
-(defmethod ^:private tree-view-status :default [_ databases schema indexes connection initial-database]
-  [db-view (:connection-type connection) schema indexes databases initial-database])
-
-(defmulti get-database-schema identity)
-(defmethod get-database-schema "oracledb" [_ connection]
-  (rf/dispatch [:editor-plugin->get-mysql-schema
-                connection
-                get-oracledb-schema-query
-                get-oracledb-schema-with-index-query]))
-(defmethod get-database-schema "sql-server-csv" [_ connection]
-  (rf/dispatch [:editor-plugin->get-mysql-schema
-                connection
-                get-sql-server-schema-query
-                get-sql-server-schema-with-index-query]))
-(defmethod get-database-schema "mssql" [_ connection]
-  (rf/dispatch [:editor-plugin->get-mysql-schema
-                connection
-                get-sql-server-schema-query
-                get-sql-server-schema-with-index-query]))
-(defmethod get-database-schema "postgres-csv" [_ connection]
-  (rf/dispatch [:editor-plugin->get-postgres-schema
-                connection
-                get-postgres-databases-query
-                get-postgres-schema-query
-                get-postgres-schema-with-index-query]))
-(defmethod get-database-schema "postgres" [_ connection]
-  (rf/dispatch [:editor-plugin->get-postgres-schema
-                connection
-                get-postgres-databases-query
-                get-postgres-schema-query
-                get-postgres-schema-with-index-query]))
-(defmethod get-database-schema "mysql-csv" [_ connection]
-  (rf/dispatch [:editor-plugin->get-mysql-schema
-                connection
-                get-mysql-schema-query
-                get-mysql-schema-with-index-query]))
-(defmethod get-database-schema "mysql" [_ connection]
-  (rf/dispatch [:editor-plugin->get-mysql-schema
-                connection
-                get-mysql-schema-query
-                get-mysql-schema-with-index-query]))
-(defmethod get-database-schema "mongodb" [_ connection]
-  (rf/dispatch [:editor-plugin->get-mongodb-schema
-                connection
-                get-mongodb-schema-query]))
+(defn tree-view-status [{:keys [status
+                                databases
+                                schema
+                                indexes
+                                connection
+                                initial-database
+                                database-schema-status]}]
+  (case status
+    :loading [:div
+              {:class "flex gap-small items-center py-regular text-xs"}
+              [:span {:class "italic"}
+               "Loading schema"]
+              [:figure {:class "w-3 flex-shrink-0 animate-spin opacity-60"}
+               [:img {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]]
+    :failure [:div
+              {:class "flex gap-small items-center py-regular text-xs"}
+              [:span
+               "Couldn't load the schema"]]
+    :success [db-view {:type (:connection-type connection)
+                       :schema schema
+                       :indexes indexes
+                       :databases databases
+                       :initial-database initial-database
+                       :connection-name (:connection-name connection)
+                       :database-schema-status database-schema-status}]
+    [:div
+     {:class "flex gap-small items-center py-regular text-xs"}
+     [:span {:class "italic"}
+      "Loading schema"]
+     [:figure {:class "w-3 flex-shrink-0 animate-spin opacity-60"}
+      [:img {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]]))
 
 (defn main [connection]
   (let [database-schema (rf/subscribe [::subs/database-schema])
-        local-connection (r/atom (:connection-name connection))
-        _ (get-database-schema (:connection-type connection) connection)]
+        local-connection (r/atom (:connection-name connection))]
+
+    (when (and connection (:connection-name connection))
+      (get-database-schema (:connection-type connection) connection))
+
     (fn [{:keys [connection-type connection-name]}]
       (when (not= @local-connection connection-name)
-        (let [_ (reset! local-connection connection-name)
-              _ (get-database-schema connection-type {:connection-type connection-type
-                                                      :connection-name connection-name})]))
-      [:div {:class "text-gray-200"}
-       [tree-view-status
-        (:status (get (:data @database-schema) (:connection-name connection)))
-        (:databases (get (:data @database-schema) (:connection-name connection)))
-        (:schema-tree (get (:data @database-schema) (:connection-name connection)))
-        (:indexes-tree (get (:data @database-schema) (:connection-name connection)))
-        connection
-        (:connection-database-selected connection)]])))
+        (reset! local-connection connection-name)
+        ;; Removemos o clear do schema aqui também
+        (get-database-schema connection-type {:connection-type connection-type
+                                              :connection-name connection-name}))
+
+      (let [current-schema (get-in @database-schema [:data connection-name])]
+        [:div {:class "text-gray-200"}
+         [tree-view-status
+          {:status (:status current-schema)
+           :databases (:databases current-schema)
+           :schema (:schema-tree current-schema)
+           :indexes (:indexes-tree current-schema)
+           :connection connection
+           :initial-database (:connection-database-selected connection)
+           :database-schema-status (:database-schema-status current-schema)}]]))))
 

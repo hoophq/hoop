@@ -384,8 +384,10 @@
                                                          :connection connection}])}]]]}))
 
 (defn- parse-databases-list [raw]
-  (let [lines (drop 1 (string/split raw #"\n"))]
-    (vec (remove empty? lines))))
+  (if (vector? raw)
+    raw
+    (let [lines (drop 1 (string/split (str raw) #"\n"))]
+      (vec (remove empty? lines)))))
 
 (defn- parse-sql-to-tree
   "This functions gets a TAB separated DB response string and convert to a hashmap
@@ -429,24 +431,32 @@
  :editor-plugin->get-postgres-schema
  (fn
    [{:keys [db]} [_ connection get-postgres-databases-query get-postgres-schema-query get-postgres-schema-with-index-query]]
-   {:db (assoc-in db [:database-schema]
-                  {:status :loading
-                   :data (assoc (-> db :database-schema :data)
-                                (:connection-name connection)
-                                {:status :loading
-                                 :type nil
-                                 :raw nil
-                                 :schema-tree nil
-                                 :indexes-tree nil
-                                 :databases nil})})
-    :fx [[:dispatch [:fetch {:method "POST"
-                             :uri (str "/connections/" (:connection-name connection) "/exec")
-                             :body {:script get-postgres-databases-query}
-                             :on-success #(rf/dispatch [:editor-plugin->get-postgres-schema-details
-                                                        connection
-                                                        %
-                                                        get-postgres-schema-query
-                                                        get-postgres-schema-with-index-query])}]]]}))
+   (let [current-connection-data (get-in db [:database-schema :data (:connection-name connection)])
+         has-databases? (not-empty (:databases current-connection-data))]
+     (if has-databases?
+       {:db (-> db
+                (assoc-in [:database-schema :current-connection] (:connection-name connection))
+                (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :loading))
+        :fx [[:dispatch [:fetch {:method "POST"
+                                 :uri (str "/connections/" (:connection-name connection) "/exec")
+                                 :body {:script get-postgres-schema-query}
+                                 :on-success #(rf/dispatch [:editor-plugin->get-postgres-indexes
+                                                            connection
+                                                            get-postgres-schema-with-index-query
+                                                            %
+                                                            {:output (:databases current-connection-data)}])}]]]}
+       {:db (-> db
+                (assoc-in [:database-schema :current-connection] (:connection-name connection))
+                (assoc-in [:database-schema :data (:connection-name connection) :status] :loading)
+                (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :loading))
+        :fx [[:dispatch [:fetch {:method "POST"
+                                 :uri (str "/connections/" (:connection-name connection) "/exec")
+                                 :body {:script get-postgres-databases-query}
+                                 :on-success #(rf/dispatch [:editor-plugin->get-postgres-schema-details
+                                                            connection
+                                                            %
+                                                            get-postgres-schema-query
+                                                            get-postgres-schema-with-index-query])}]]]}))))
 
 (rf/reg-event-fx
  :editor-plugin->get-postgres-schema-details
@@ -465,6 +475,7 @@
  :editor-plugin->get-postgres-indexes
  (fn
    [{:keys [db]} [_ connection index-query schema-payload databases-payload]]
+   (println databases-payload)
    {:fx [[:dispatch [:fetch {:method "POST"
                              :uri (str "/connections/" (:connection-name connection) "/exec")
                              :body {:script index-query}
@@ -473,16 +484,19 @@
                                                          :indexes-payload %
                                                          :databases-payload databases-payload
                                                          :status :success
+                                                         :database-schema-status :success
                                                          :connection connection}])}]]]}))
 
 (rf/reg-event-fx
  :editor-plugin->set-postgres-schema
  (fn
-   [{:keys [db]} [_ {:keys [schema-payload indexes-payload databases-payload status connection]}]]
+   [{:keys [db]} [_ {:keys [schema-payload indexes-payload databases-payload status database-schema-status connection]}]]
+   (println "set-postgres-schema" (parse-databases-list (:output databases-payload)))
    (let [schema {:status status
                  :data (assoc (-> db :database-schema :data)
                               (:connection-name connection)
                               {:status status
+                               :database-schema-status database-schema-status
                                :type (:connection-type connection)
                                :raw (:output schema-payload)
                                :schema-tree (if-let [_ (empty? schema-payload)]
