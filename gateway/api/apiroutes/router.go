@@ -38,7 +38,10 @@ func New(route *gin.RouterGroup, provider *idp.Provider, grpcURL, registeredApiK
 	if route == nil {
 		log.Fatalf("route is nil")
 	}
-
-	r := &Router{RouterGroup: route, provider: provider, registeredApiKey: registeredApiKey}
-	return r
+	return &Router{
+		RouterGroup:      route,
+		provider:         provider,
+		registeredApiKey: registeredApiKey,
+		grpcURL:          grpcURL,
+	}
 }
