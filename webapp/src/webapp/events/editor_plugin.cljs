@@ -475,7 +475,6 @@
  :editor-plugin->get-postgres-indexes
  (fn
    [{:keys [db]} [_ connection index-query schema-payload databases-payload]]
-   (println databases-payload)
    {:fx [[:dispatch [:fetch {:method "POST"
                              :uri (str "/connections/" (:connection-name connection) "/exec")
                              :body {:script index-query}
@@ -491,7 +490,6 @@
  :editor-plugin->set-postgres-schema
  (fn
    [{:keys [db]} [_ {:keys [schema-payload indexes-payload databases-payload status database-schema-status connection]}]]
-   (println "set-postgres-schema" (parse-databases-list (:output databases-payload)))
    (let [schema {:status status
                  :data (assoc (-> db :database-schema :data)
                               (:connection-name connection)
