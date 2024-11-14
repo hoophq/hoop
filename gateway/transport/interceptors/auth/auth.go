@@ -15,7 +15,6 @@ import (
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	localauthapi "github.com/hoophq/hoop/gateway/api/localauth"
 	"github.com/hoophq/hoop/gateway/appconfig"
-	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgagents "github.com/hoophq/hoop/gateway/pgrest/agents"
 	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
@@ -192,13 +191,7 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 				log.Debugf("failed verifying access token, reason=%v", err)
 				return status.Errorf(codes.Unauthenticated, "invalid authentication")
 			}
-
-			user, err := models.GetUserByEmail(claims.UserEmail)
-			if err != nil {
-				log.Debugf("failed verifying access token, reason=%v", err)
-				return status.Errorf(codes.Unauthenticated, "invalid authentication")
-			}
-			sub = user.Subject
+			sub = claims.Subject
 		} else {
 			sub, err = i.idp.VerifyAccessToken(bearerToken)
 			if err != nil {

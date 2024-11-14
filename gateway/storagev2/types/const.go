@@ -9,13 +9,23 @@ type (
 
 // GroupAdmin is the name of the admin user, defaults to "admin"
 // if the env ADMIN_USERNAME is not set
-var GroupAdmin = func() string {
-	username := os.Getenv("ADMIN_USERNAME")
-	if username == "" {
-		username = "admin"
-	}
-	return username
-}()
+var (
+	GroupAdmin = func() string {
+		username := os.Getenv("ADMIN_USERNAME")
+		if username == "" {
+			username = "admin"
+		}
+		return username
+	}()
+
+	GroupAuditor = func() string {
+		auditor := os.Getenv("AUDITOR_USERNAME")
+		if auditor == "" {
+			return "auditor"
+		}
+		return auditor
+	}()
+)
 
 const (
 	// ClientStatusReady indicates the grpc client is ready to
@@ -44,26 +54,7 @@ const (
 )
 
 const (
-	GroupSecurity    string = "security"
-	GroupSRE         string = "sre"
-	GroupDBA         string = "dba"
-	GroupDevops      string = "devops"
-	GroupSupport     string = "support"
-	GroupEngineering string = "engineering"
-)
-
-const (
 	SessionStatusOpen  = "open"
 	SessionStatusReady = "ready"
 	SessionStatusDone  = "done"
 )
-
-var AvailableSessionOptions = []SessionOptionKey{
-	SessionOptionUser,
-	SessionOptionType,
-	SessionOptionConnection,
-	SessionOptionStartDate,
-	SessionOptionEndDate,
-	SessionOptionLimit,
-	SessionOptionOffset,
-}

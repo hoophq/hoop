@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
-	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"olympos.io/encoding/edn"
@@ -27,7 +27,6 @@ type (
 
 func (h *Handler) Put(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	log := pgusers.ContextLogger(c)
 
 	id := c.Param("id")
 	var req map[string]string
@@ -68,7 +67,6 @@ func (h *Handler) Put(c *gin.Context) {
 
 func (h *Handler) FindAll(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	log := pgusers.ContextLogger(c)
 	reviews, err := pgreview.New().FetchAll(ctx)
 	if err != nil && err != pgrest.ErrNotFound {
 		log.Errorf("failed listing reviews, err=%v", err)

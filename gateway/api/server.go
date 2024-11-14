@@ -17,6 +17,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/analytics"
 	apiagents "github.com/hoophq/hoop/gateway/api/agents"
+	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	apifeatures "github.com/hoophq/hoop/gateway/api/features"
 	apiguardrails "github.com/hoophq/hoop/gateway/api/guardrails"
@@ -123,7 +124,9 @@ func (a *Api) StartAPI(sentryInit bool) {
 			Repanic: true,
 		}))
 	}
-	a.buildRoutes(rg)
+	router := apiroutes.New(rg, a.IDProvider, appconfig.Get().GrpcURL(), appconfig.Get().ApiKey())
+	a.buildRoutes(router)
+
 	if a.TLSConfig != nil {
 		server := http.Server{
 			Addr:      "0.0.0.0:8009",
@@ -140,362 +143,307 @@ func (a *Api) StartAPI(sentryInit bool) {
 	}
 }
 
-func (api *Api) buildRoutes(route *gin.RouterGroup) {
-	// set standard role to all routes
-	route.Use(StandardAccessRole)
-
+func (api *Api) buildRoutes(r *apiroutes.Router) {
 	reviewHandler := reviewapi.NewHandler(&api.ReviewHandler)
 	loginHandler := loginapi.New(api.IDProvider)
-	route.GET("/openapiv2.json", openapi.Handler)
-	route.GET("/openapiv3.json", openapi.HandlerV3)
-	route.GET("/login", loginHandler.Login)
-	route.GET("/callback", loginHandler.LoginCallback)
-	route.GET("/healthz", apihealthz.LivenessHandler())
-	///////////////////////
-	// local auth routes //
-	///////////////////////
-	route.POST("/localauth/register",
-		api.LocalAuthOnly,
+
+	r.GET("/healthz", apihealthz.LivenessHandler())
+	r.GET("/openapiv2.json", openapi.Handler)
+	r.GET("/openapiv3.json", openapi.HandlerV3)
+
+	r.GET("/publicserverinfo", apipublicserverinfo.Get)
+	r.GET("/serverinfo",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apiserverinfo.New(api.GrpcURL).Get)
+
+	r.GET("/login", loginHandler.Login)
+	r.GET("/callback", loginHandler.LoginCallback)
+
+	r.POST("/localauth/register",
 		api.TrackRequest(analytics.EventSignup),
 		localauthapi.Register)
-	route.POST("/localauth/login",
-		api.LocalAuthOnly,
+	r.POST("/localauth/login",
 		api.TrackRequest(analytics.EventLogin),
 		localauthapi.Login)
-	///////////////////////////
-	// end local auth routes //
-	///////////////////////////
-	route.POST("/signup",
-		AnonAccessRole,
-		api.Authenticate,
+
+	r.POST("/signup",
 		api.TrackRequest(analytics.EventSignup),
 		signupapi.Post)
-	route.GET("/users",
-		api.AllowApiKey,
-		AdminOnlyAccessRole,
-		api.Authenticate,
-		userapi.List)
-	route.GET("/users/:emailOrID",
-		AdminOnlyAccessRole,
-		api.Authenticate,
-		userapi.GetUserByEmailOrID)
-	route.GET("/userinfo",
-		AnonAccessRole,
-		api.Authenticate,
+	// TODO: check-me / must access via anonymous and authenticated user!
+	r.GET("/userinfo",
+		apiroutes.UserInfoRouteType,
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
 		userapi.GetUserInfo)
-	route.PATCH("/users/self/slack",
-		api.Authenticate,
+	r.GET("/users",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		userapi.List)
+	r.GET("/users/:emailOrID",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		userapi.GetUserByEmailOrID)
+	r.PATCH("/users/self/slack",
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventUpdateUser),
-		AuditApiChanges,
 		userapi.PatchSlackID)
-	route.GET("/users/groups",
-		api.AllowApiKey,
-		api.Authenticate,
+	r.GET("/users/groups",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
 		userapi.ListAllGroups)
-	route.PUT("/users/:id",
-		AdminOnlyAccessRole,
-		api.Authenticate,
-		api.TrackRequest(analytics.EventUpdateUser),
-		AuditApiChanges,
-		userapi.Update)
-	route.POST("/users",
-		AdminOnlyAccessRole,
-		api.Authenticate,
-		AuditApiChanges,
+	r.POST("/users",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
 		userapi.Create)
-	route.DELETE("/users/:id",
-		AdminOnlyAccessRole,
-		api.Authenticate,
-		AuditApiChanges,
+	r.DELETE("/users/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
 		userapi.Delete)
+	r.PUT("/users/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.TrackRequest(analytics.EventUpdateUser),
+		userapi.Update)
 
-	route.GET("/serviceaccounts",
-		AdminOnlyAccessRole,
-		api.Authenticate,
+	r.GET("/serviceaccounts",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
 		serviceaccountapi.List)
-	route.POST("/serviceaccounts",
-		AdminOnlyAccessRole,
-		api.Authenticate,
+	r.POST("/serviceaccounts",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventCreateServiceAccount),
-		AuditApiChanges,
 		serviceaccountapi.Create)
-	route.PUT("/serviceaccounts/:subject",
-		AdminOnlyAccessRole,
-		api.Authenticate,
+	r.PUT("/serviceaccounts/:subject",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventCreateServiceAccount),
-		AuditApiChanges,
 		serviceaccountapi.Update)
 
-	route.POST("/connections",
-		api.AllowApiKey,
-		AdminOnlyAccessRole,
-		api.Authenticate,
+	r.POST("/connections",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventCreateConnection),
-		AuditApiChanges,
 		apiconnections.Post)
-	route.PUT("/connections/:nameOrID",
-		api.AllowApiKey,
-		AdminOnlyAccessRole,
-		api.Authenticate,
+	r.PUT("/connections/:nameOrID",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventUpdateConnection),
-		AuditApiChanges,
 		apiconnections.Put)
 	// DEPRECATED in flavor of POST /sessions
-	route.POST("/connections/:name/exec",
-		api.Authenticate,
+	r.POST("/connections/:name/exec",
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventApiExecConnection),
-		sessionapi.Post)
-	route.GET("/connections",
-		api.AllowApiKey,
-		api.Authenticate,
+		sessionapi.Post,
+	)
+	r.GET("/connections",
+		r.AuthMiddleware,
 		apiconnections.List)
-	route.GET("/connections/:nameOrID",
-		api.AllowApiKey,
-		api.Authenticate,
+	r.GET("/connections/:nameOrID",
+		r.AuthMiddleware,
 		apiconnections.Get)
-	route.DELETE("/connections/:name",
-		api.AllowApiKey,
-		AdminOnlyAccessRole,
-		api.Authenticate,
+	r.DELETE("/connections/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventDeleteConnection),
-		AuditApiChanges,
 		apiconnections.Delete)
 
-	route.POST("/proxymanager/connect",
-		api.Authenticate,
+	r.POST("/proxymanager/connect",
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventApiProxymanagerConnect),
-		apiproxymanager.Post,
-	)
-	route.POST("/proxymanager/disconnect",
-		api.Authenticate,
-		apiproxymanager.Disconnect,
-	)
-	route.GET("/proxymanager/status",
-		api.Authenticate,
-		apiproxymanager.Get,
-	)
+		apiproxymanager.Post)
+	r.POST("/proxymanager/disconnect",
+		r.AuthMiddleware,
+		apiproxymanager.Disconnect)
+	r.GET("/proxymanager/status",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apiproxymanager.Get)
 
-	route.GET("/reviews",
-		api.AllowApiKey,
-		api.Authenticate,
+	r.GET("/reviews",
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventFetchReviews),
 		reviewHandler.List)
-	route.GET("/reviews/:id",
-		api.AllowApiKey,
-		api.Authenticate,
+	r.GET("/reviews/:id",
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventFetchReviews),
 		reviewHandler.Get)
-	route.PUT("/reviews/:id",
-		api.AllowApiKey,
-		api.Authenticate,
+	r.PUT("/reviews/:id",
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventUpdateReview),
-		AuditApiChanges,
 		reviewHandler.Put)
 
-	route.POST("/agents",
-		AdminOnlyAccessRole,
-		api.Authenticate,
+	r.POST("/agents",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventCreateAgent),
-		AuditApiChanges,
 		apiagents.Post)
-	route.GET("/agents",
-		api.AllowApiKey,
-		AdminOnlyAccessRole,
-		api.Authenticate,
+	r.GET("/agents",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
 		apiagents.List)
-	route.DELETE("/agents/:nameOrID",
-		AdminOnlyAccessRole,
-		api.Authenticate,
+	r.DELETE("/agents/:nameOrID",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventDeleteAgent),
-		AuditApiChanges,
 		apiagents.Delete)
 
-	route.POST("/orgs/keys",
-		AdminOnlyAccessRole,
-		api.Authenticate,
-		AuditApiChanges,
+	r.POST("/orgs/keys",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
 		apiorgs.CreateAgentKey)
-	route.GET("/orgs/keys",
-		api.AllowApiKey,
-		AdminOnlyAccessRole,
-		api.Authenticate,
+	r.GET("/orgs/keys",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
 		apiorgs.GetAgentKey)
-	route.DELETE("/orgs/keys",
-		AdminOnlyAccessRole,
-		api.Authenticate,
+	r.DELETE("/orgs/keys",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
 		apiorgs.RevokeAgentKey)
 
-	route.PUT("/orgs/license",
-		AdminOnlyAccessRole,
-		api.Authenticate,
-		AuditApiChanges,
+	r.PUT("/orgs/license",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
 		apiorgs.UpdateOrgLicense)
-	route.POST("/orgs/license/sign",
-		AdminOnlyAccessRole,
-		api.Authenticate,
-		AuditApiChanges,
+	r.POST("/orgs/license/sign",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
 		apiorgs.SignLicense)
 
-	route.PUT("/orgs/features",
-		api.AllowApiKey,
-		AdminOnlyAccessRole,
-		api.Authenticate,
+	r.PUT("/orgs/features",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventOrgFeatureUpdate),
-		AuditApiChanges,
 		apifeatures.FeatureUpdate)
 
-	route.POST("/features/ask-ai/v1/chat/completions",
-		api.Authenticate,
+	r.POST("/features/ask-ai/v1/chat/completions",
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventFeatureAskAIChatCompletions),
-		AuditApiChanges,
 		apifeatures.PostChatCompletions)
 
-	route.POST("/plugins",
-		api.AllowApiKey,
-		AdminOnlyAccessRole,
-		api.Authenticate,
+	r.POST("/plugins",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventCreatePlugin),
-		AuditApiChanges,
 		apiplugins.Post)
-	route.PUT("/plugins/:name",
-		api.AllowApiKey,
-		AdminOnlyAccessRole,
-		api.Authenticate,
+	r.PUT("/plugins/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventUpdatePlugin),
-		AuditApiChanges,
 		apiplugins.Put)
-	route.GET("/plugins",
-		api.AllowApiKey,
-		api.Authenticate,
-		apiplugins.List)
-	route.GET("/plugins/:name",
-		api.AllowApiKey,
-		api.Authenticate,
-		apiplugins.Get)
-	route.PUT("/plugins/:name/config",
-		api.AllowApiKey,
-		AdminOnlyAccessRole,
-		api.Authenticate,
+	r.PUT("/plugins/:name/config",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventUpdatePluginConfig),
-		AuditApiChanges,
 		apiplugins.PutConfig)
+	r.GET("/plugins",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apiplugins.List)
+	r.GET("/plugins/:name",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apiplugins.Get)
 
 	// alias routes
-	route.GET("/plugins/audit/sessions/:session_id",
-		api.Authenticate,
+	r.GET("/plugins/audit/sessions/:session_id",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
 		sessionapi.Get)
-	route.GET("/plugins/audit/sessions",
-		api.Authenticate,
+	r.GET("/plugins/audit/sessions",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
 		sessionapi.List)
 
-	route.GET("/sessions/:session_id",
-		api.AllowApiKey,
-		api.Authenticate,
+	r.GET("/sessions/:session_id",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
 		sessionapi.Get)
-	route.GET("/sessions/:session_id/download", sessionapi.DownloadSession)
-	route.GET("/sessions",
-		api.AllowApiKey,
-		api.Authenticate,
+	r.GET("/sessions/:session_id/download",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		sessionapi.DownloadSession)
+	r.GET("/sessions",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
 		sessionapi.List)
-	route.POST("/sessions",
-		api.Authenticate,
+	r.POST("/sessions",
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventApiExecSession),
 		sessionapi.Post)
-	route.POST("/sessions/:session_id/exec",
-		api.Authenticate,
+	r.POST("/sessions/:session_id/exec",
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventApiExecReview),
 		sessionapi.RunReviewedExec)
 
-	route.GET("/reports/sessions",
-		api.AllowApiKey,
-		AdminOnlyAccessRole,
-		api.Authenticate,
+	r.GET("/reports/sessions",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventApiExecReview),
 		apireports.SessionReport)
 
-	route.POST("/plugins/indexer/sessions/search",
-		api.Authenticate,
+	r.POST("/plugins/indexer/sessions/search",
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventSearch),
 		api.IndexerHandler.Search,
 	)
 
-	route.GET("/plugins/runbooks/connections/:name/templates",
-		api.AllowApiKey,
-		api.Authenticate,
-		apirunbooks.ListByConnection,
-	)
+	r.GET("/plugins/runbooks/connections/:name/templates",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apirunbooks.ListByConnection)
+	r.GET("/plugins/runbooks/templates",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apirunbooks.List)
 
-	route.GET("/plugins/runbooks/templates",
-		api.AllowApiKey,
-		api.Authenticate,
-		apirunbooks.List,
-	)
-
-	route.POST("/plugins/runbooks/connections/:name/exec",
-		api.AllowApiKey,
-		api.Authenticate,
+	r.POST("/plugins/runbooks/connections/:name/exec",
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventExecRunbook),
 		apirunbooks.RunExec)
 
-	route.GET("/webhooks-dashboard",
-		AdminOnlyAccessRole,
-		api.Authenticate,
+	r.GET("/webhooks-dashboard",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventOpenWebhooksDashboard),
-		AuditApiChanges,
 		webhooksapi.Get)
 
-	route.GET("/publicserverinfo", apipublicserverinfo.Get)
-
-	route.GET("/serverinfo",
-		api.AllowApiKey,
-		api.Authenticate,
-		apiserverinfo.New(api.GrpcURL).Get)
-
 	// Jira Integration routes
-	route.GET("/integrations/jira",
-		AdminOnlyAccessRole,
-		api.Authenticate,
+	r.GET("/integrations/jira",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
 		apijiraintegration.Get)
-
-	route.POST("/integrations/jira",
-		AdminOnlyAccessRole,
-		api.Authenticate,
+	r.POST("/integrations/jira",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventCreateJiraIntegration),
 		apijiraintegration.Post)
-
-	route.PUT("/integrations/jira",
-		AdminOnlyAccessRole,
-		api.Authenticate,
+	r.PUT("/integrations/jira",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventUpdateJiraIntegration),
 		apijiraintegration.Put)
 
-	route.POST("/guardrails",
-		api.AllowApiKey,
-		AdminOnlyAccessRole,
-		api.Authenticate,
+	r.POST("/guardrails",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventCreateGuardRailRules),
 		apiguardrails.Post)
-
-	route.PUT("/guardrails/:id",
-		api.AllowApiKey,
-		AdminOnlyAccessRole,
-		api.Authenticate,
+	r.PUT("/guardrails/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventUpdateGuardRailRules),
 		apiguardrails.Put)
-
-	route.GET("/guardrails",
-		api.AllowApiKey,
-		api.Authenticate,
+	r.GET("/guardrails",
+		r.AuthMiddleware,
 		apiguardrails.List)
-
-	route.GET("/guardrails/:id",
-		api.AllowApiKey,
-		api.Authenticate,
+	r.GET("/guardrails/:id",
+		r.AuthMiddleware,
 		apiguardrails.Get)
-
-	route.DELETE("/guardrails/:id",
-		api.AllowApiKey,
-		api.Authenticate,
+	r.DELETE("/guardrails/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventDeleteGuardRailRules),
 		apiguardrails.Delete)
 }

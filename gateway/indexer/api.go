@@ -10,8 +10,8 @@ import (
 
 	"github.com/blevesearch/bleve/v2"
 	"github.com/gin-gonic/gin"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/indexer/searchquery"
-	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
@@ -28,7 +28,6 @@ type SearchRequest struct {
 
 func (a *Handler) Search(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	log := pgusers.ContextLogger(c)
 	if ctx.UserEmail == "" || ctx.GetOrgID() == "" {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "missing org or user identifier"})
 		return

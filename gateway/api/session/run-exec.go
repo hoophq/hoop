@@ -10,10 +10,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/apiutils"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
 	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
-	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	sessionstorage "github.com/hoophq/hoop/gateway/storagev2/session"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
@@ -44,7 +44,6 @@ func getAccessToken(c *gin.Context) string {
 //	@Router			/sessions/{session_id}/exec [post]
 func RunReviewedExec(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	log := pgusers.ContextLogger(c)
 
 	sessionId := c.Param("session_id")
 	review, err := pgreview.New().FetchOneBySid(ctx, sessionId)
@@ -148,7 +147,7 @@ func RunReviewedExec(c *gin.Context) {
 		default:
 		}
 	}()
-	log = log.With("sid", session.ID)
+	log := log.With("sid", session.ID)
 	log.Infof("review apiexec, reviewid=%v, connection=%v, owner=%v, input-lenght=%v",
 		review.Id, review.Connection.Name, review.CreatedBy, len(review.Input))
 

@@ -61,7 +61,7 @@ func Run() {
 	}
 
 	apiURL := appconfig.Get().FullApiURL()
-	idProvider := idp.NewProvider(apiURL)
+	idProvider := idp.NewProvider(apiURL, string(appconfig.Get().JWTSecretKey()))
 	grpcURL := appconfig.Get().GrpcURL()
 
 	if err := models.InitDatabaseConnection(); err != nil {
