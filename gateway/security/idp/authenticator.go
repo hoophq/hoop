@@ -20,6 +20,7 @@ import (
 
 type (
 	Provider struct {
+		SecretKey        string
 		Issuer           string
 		Audience         string
 		ClientID         string
@@ -62,6 +63,32 @@ func (p *Provider) VerifyIDToken(token *oauth2.Token) (*oidc.IDToken, error) {
 // VerifyAccessTokenWithUserInfo verify the access token by querying the OIDC user info endpoint
 func (p *Provider) VerifyAccessTokenWithUserInfo(accessToken string) (*ProviderUserInfo, error) {
 	return p.userInfoEndpoint(accessToken)
+}
+
+func (p *Provider) HasSecretKey() bool { return p.SecretKey != "" }
+
+// VerifyAccessTokenHS256Alg verify the access token using a symmetric secret (HS256)
+func (p *Provider) VerifyAccessTokenHS256Alg(accessToken string) (string, error) {
+	if p.SecretKey == "" {
+		return "", fmt.Errorf("jwt secret token is not set")
+	}
+	token, err := jwt.Parse(accessToken, func(token *jwt.Token) (interface{}, error) {
+		return []byte(p.SecretKey), nil
+	})
+	if err != nil {
+		return "", err
+	}
+	if !token.Valid {
+		return "", fmt.Errorf("parse error, token invalid")
+	}
+	if claims, ok := token.Claims.(jwt.MapClaims); ok {
+		subject, ok := claims["sub"].(string)
+		if !ok || subject == "" {
+			return "", fmt.Errorf("'sub' not found or has an empty value")
+		}
+		return subject, nil
+	}
+	return "", fmt.Errorf("failed type casting token.Claims (%T) to jwt.MapClaims", token.Claims)
 }
 
 // VerifyAccessToken validate the access token against the user info endpoint (OIDC) if it's an opaque token.
@@ -146,9 +173,9 @@ func (p *Provider) userInfoEndpoint(accessToken string) (*ProviderUserInfo, erro
 	return &uinfo, nil
 }
 
-func NewProvider(apiURL string) *Provider {
+func NewProvider(apiURL, secretKey string) *Provider {
 	if appconfig.Get().AuthMethod() == "local" {
-		return &Provider{Context: context.Background(), ApiURL: apiURL}
+		return &Provider{Context: context.Background(), ApiURL: apiURL, SecretKey: secretKey}
 	}
 	ctx := context.Background()
 	provider := &Provider{

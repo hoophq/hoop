@@ -11,6 +11,7 @@ import (
 	"github.com/hoophq/hoop/common/proto"
 	apiagents "github.com/hoophq/hoop/gateway/api/agents"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgagents "github.com/hoophq/hoop/gateway/pgrest/agents"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -71,8 +72,7 @@ func GetAgentKey(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "organization token not found"})
 		return
 	}
-	grpcURL := storagev2.ParseContext(c).GrpcURL
-	dsn, err := dsnkeys.New(grpcURL, agentKeyDefaultName, ag.Key)
+	dsn, err := dsnkeys.New(appconfig.Get().GrpcURL(), agentKeyDefaultName, ag.Key)
 	if err != nil {
 		log.Errorf("failed generating agent key, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed generating dsn"})

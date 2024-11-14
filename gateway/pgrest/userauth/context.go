@@ -41,6 +41,7 @@ func (c *Context) GetSubject() string      { return c.UserSubject }
 func (c *Context) GetOrgID() string        { return c.OrgID }
 func (c *Context) GetUserGroups() []string { return c.UserGroups }
 func (c *Context) IsAdmin() bool           { return slices.Contains(c.UserGroups, types.GroupAdmin) }
+func (c *Context) IsAuditor() bool         { return slices.Contains(c.UserGroups, types.GroupAuditor) }
 
 func (c Context) ToAPIContext() *types.APIContext {
 	return &types.APIContext{

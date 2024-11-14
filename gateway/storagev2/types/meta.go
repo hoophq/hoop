@@ -22,7 +22,8 @@ func (c *ConnectionInfo) Validate() error {
 	return nil
 }
 
-func (c *APIContext) IsAdminUser() bool { return pb.IsInList(GroupAdmin, c.UserGroups) }
+func (c *APIContext) IsAdminUser() bool   { return pb.IsInList(GroupAdmin, c.UserGroups) }
+func (c *APIContext) IsAuditorUser() bool { return pb.IsInList(GroupAuditor, c.UserGroups) }
 
 // SetName set the attribute name using from the Connection structure
 func (p *PluginConnection) SetName() {

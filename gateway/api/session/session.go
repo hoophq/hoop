@@ -26,7 +26,6 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
 	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
-	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	sessionstorage "github.com/hoophq/hoop/gateway/storagev2/session"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
@@ -54,7 +53,6 @@ type SessionPostBody struct {
 //	@Router					/sessions [post]
 func Post(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	log := pgusers.ContextLogger(c)
 	var body SessionPostBody
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
@@ -165,7 +163,7 @@ func Post(c *gin.Context) {
 		log.Warnf("failed creating jira issue, err=%v", err)
 	}
 
-	log = log.With("sid", sessionID)
+	log := log.With("sid", sessionID)
 	log.Infof("started runexec method for connection %v", conn.Name)
 	respCh := make(chan *clientexec.Response)
 	go func() {
@@ -221,7 +219,6 @@ func CoerceMetadataFields(metadata map[string]any) error {
 //	@Router			/sessions [get]
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	log := pgusers.ContextLogger(c)
 
 	var options []*openapi.SessionOption
 	for _, optKey := range openapi.AvailableSessionOptions {
@@ -279,7 +276,6 @@ func List(c *gin.Context) {
 //	@Router					/sessions/{session_id} [get]
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	log := pgusers.ContextLogger(c)
 
 	sessionID := c.Param("session_id")
 	session, err := sessionstorage.FindOne(ctx, sessionID)

@@ -3,14 +3,10 @@ package localauthapi
 import (
 	"fmt"
 	"net/http"
-	"time"
-
-	"github.com/hoophq/hoop/common/log"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/models"
 	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
@@ -92,20 +88,10 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	expirationTime := time.Now().Add(168 * time.Hour) // 7 days
-	claims := &Claims{
-		UserID:      userID,
-		UserEmail:   user.Email,
-		UserSubject: fmt.Sprintf("local|%v", userID),
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(expirationTime),
-		},
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString(appconfig.Get().JWTSecretKey())
+	tokenString, err := generateNewAccessToken(userID, user.Email)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		log.Errorf("failed generating access token, reason=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed generating token"})
 		return
 	}
 

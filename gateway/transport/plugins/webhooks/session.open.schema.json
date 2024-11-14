@@ -67,6 +67,29 @@
       "verb": {
         "type": "string",
         "description": "The type of interaction with the connection (exec or connect)"
+      },
+      "review": {
+        "type": "object",
+        "description": "When this attribute is set, indicates the session has a review",
+        "properties": {
+          "owner_email": {
+            "description": "The user email that created the session",
+            "type": "string"
+          },
+          "status": {
+            "description": "The status of the review",
+            "type": "string"
+          },
+          "type": {
+            "description": "The type of the review (onetime, jit)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "type",
+          "owner_email"
+        ]
       }
     },
     "required": [
@@ -77,5 +100,30 @@
       "command",
       "verb"
     ],
-    "additionalProperties": false
+    "additionalProperties": false,
+    "examples": [
+      {
+        "command": [
+          "bash"
+        ],
+        "connection": "bash",
+        "connection_envs": null,
+        "connection_type": "custom",
+        "event_type": "session.open",
+        "has_input_args": false,
+        "id": "8bfc995b-4f15-483b-8423-33f634865f14",
+        "input": "ZWNobyBmb29iYXI=",
+        "input_envs": [],
+        "input_size": 11,
+        "is_input_truncated": false,
+        "review": {
+          "owner_email": "john.doe@hoop.dev",
+          "status": "PROCESSING",
+          "type": "onetime"
+        },
+        "user_email": "john.doe@hoop.dev",
+        "user_id": "google-oauth2|224363319008942157048",
+        "verb": "exec"
+      }
+    ]
   }

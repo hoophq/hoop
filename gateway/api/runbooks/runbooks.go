@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/apiutils"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -21,7 +22,6 @@ import (
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
 	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
-	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
@@ -38,7 +38,6 @@ import (
 //	@Router			/plugins/runbooks/templates [get]
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	log := pgusers.ContextLogger(c)
 
 	p, err := pgplugins.New().FetchOne(ctx, plugintypes.PluginRunbooksName)
 	if err != nil {
@@ -82,7 +81,6 @@ func List(c *gin.Context) {
 //	@Router			/plugins/runbooks/connections/{name}/templates [get]
 func ListByConnection(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	log := pgusers.ContextLogger(c)
 	connectionName := c.Param("name")
 	p, err := pgplugins.New().FetchOne(ctx, plugintypes.PluginRunbooksName)
 	if err != nil {
@@ -143,7 +141,6 @@ func ListByConnection(c *gin.Context) {
 //	@Router			/plugins/runbooks/connections/{name}/exec [post]
 func RunExec(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	log := pgusers.ContextLogger(c)
 	storageCtx := storagev2.ParseContext(c)
 
 	var req openapi.RunbookRequest
@@ -232,7 +229,7 @@ func RunExec(c *gin.Context) {
 	for key, val := range req.Parameters {
 		params += fmt.Sprintf("%s:len[%v],", key, len(val))
 	}
-	log = log.With("sid", sessionID)
+	log := log.With("sid", sessionID)
 	log.Infof("runbook exec, commit=%s, name=%s, connection=%s, parameters=%v",
 		runbook.CommitHash[:8], req.FileName, connectionName, strings.TrimSpace(params))
 

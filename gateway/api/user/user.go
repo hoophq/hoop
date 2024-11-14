@@ -443,6 +443,8 @@ func GetUserInfo(c *gin.Context) {
 		roleName = openapi.RoleUnregisteredType
 	case ctx.IsAdminUser():
 		roleName = openapi.RoleAdminType
+	case ctx.IsAuditorUser():
+		roleName = openapi.RoleAuditorType
 	}
 	userInfoData := openapi.UserInfo{
 		User: openapi.User{

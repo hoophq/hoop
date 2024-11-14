@@ -36,10 +36,10 @@ const (
 	StatusInvited   StatusType = "invited"
 
 	// RoleAdminType will grant access to all routes.
-	// All authenticated, registered and users that belong to an admin group represents this role
 	RoleAdminType RoleType = "admin"
-	// RoleStandardType will grant access to standard and unregistered routes
-	// All authenticated and registered users represent this role
+	// RoleAuditorType grants read only access to session related routes
+	RoleAuditorType RoleType = "auditor"
+	// RoleStandardType will grant access to standard routes
 	RoleStandardType RoleType = "standard"
 	// RoleUnregisteredType will grant access to unregistered routes only
 	// All authenticated and non registered users represents this role

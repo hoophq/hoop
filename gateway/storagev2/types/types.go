@@ -171,28 +171,6 @@ type SessionNonIndexedEventStreamList map[edn.Keyword][]SessionEventStream
 type SessionScript map[edn.Keyword]string
 type SessionLabels map[string]string
 
-type SessionOptionKey string
-type SessionOption struct {
-	OptionKey SessionOptionKey
-	OptionVal any
-}
-
-const (
-	SessionOptionUser       SessionOptionKey = "user"
-	SessionOptionType       SessionOptionKey = "type"
-	SessionOptionConnection SessionOptionKey = "connection"
-	SessionOptionStartDate  SessionOptionKey = "start_date"
-	SessionOptionEndDate    SessionOptionKey = "end_date"
-	SessionOptionOffset     SessionOptionKey = "offset"
-	SessionOptionLimit      SessionOptionKey = "limit"
-)
-
-type SessionList struct {
-	Items       []Session `json:"data"`
-	Total       int64     `json:"total"`
-	HasNextPage bool      `json:"has_next_page"`
-}
-
 type Session struct {
 	ID          string             `json:"id"`
 	OrgID       string             `json:"org_id"`
@@ -215,29 +193,4 @@ type Session struct {
 	EventSize        int64                            `json:"event_size"`
 	StartSession     time.Time                        `json:"start_date"`
 	EndSession       *time.Time                       `json:"end_date"`
-}
-
-type User struct {
-	Id      string         `json:"id"       edn:"xt/id"`
-	Org     string         `json:"-"        edn:"user/org"`
-	Name    string         `json:"name"     edn:"user/name"`
-	Email   string         `json:"email"    edn:"user/email"`
-	Status  UserStatusType `json:"status"   edn:"user/status"`
-	SlackID string         `json:"slack_id" edn:"user/slack-id"`
-	Groups  []string       `json:"groups"   edn:"user/groups"`
-}
-
-type InvitedUser struct {
-	ID      string   `json:"id"       edn:"xt/id"`
-	OrgID   string   `json:"-"        edn:"invited-user/org"`
-	Email   string   `json:"email"    edn:"invited-user/email"`
-	Name    string   `json:"name"     end:"invited-user/name"`
-	SlackID string   `json:"slack_id" edn:"invited-user/slack-id"`
-	Groups  []string `json:"groups"   edn:"invited-user/groups"`
-}
-
-type Org struct {
-	ID      string `edn:"xt/id"`
-	Name    string `edn:"org/name"`
-	IsApiV2 bool   `edn:"org/api-v2"`
 }

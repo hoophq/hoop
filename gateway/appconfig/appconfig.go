@@ -278,14 +278,13 @@ func (c Config) LicenseSigningKey() (string, *rsa.PrivateKey) {
 func (c Config) FullApiURL() string { return c.apiURL + c.apiURLPath }
 
 // ApiURL is the base URL without any path segment or query strings (scheme://host:port)
-func (c Config) ApiURL() string             { return c.apiURL }
-func (c Config) GrpcURL() string            { return c.grpcURL }
-func (c Config) WebappStaticUiPath() string { return c.webappStaticUIPath }
-func (c Config) ApiHostname() string        { return c.apiHostname }
-func (c Config) ApiHost() string            { return c.apiHost } // ApiHost host or host:port
-func (c Config) ApiScheme() string          { return c.apiScheme }
-func (c Config) ApiURLPath() string         { return c.apiURLPath }
-
+func (c Config) ApiURL() string                  { return c.apiURL }
+func (c Config) GrpcURL() string                 { return c.grpcURL }
+func (c Config) WebappStaticUiPath() string      { return c.webappStaticUIPath }
+func (c Config) ApiHostname() string             { return c.apiHostname }
+func (c Config) ApiHost() string                 { return c.apiHost } // ApiHost host or host:port
+func (c Config) ApiScheme() string               { return c.apiScheme }
+func (c Config) ApiURLPath() string              { return c.apiURLPath }
 func (c Config) ApiKey() string                  { return c.apiKey }
 func (c Config) AuthMethod() string              { return c.authMethod }
 func (c Config) WebhookAppKey() string           { return c.webhookAppKey }
