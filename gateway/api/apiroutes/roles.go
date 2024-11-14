@@ -55,7 +55,6 @@ func ReadOnlyAccessRole(c *gin.Context) {
 	c.Set(roleContextKey, []openapi.RoleType{
 		openapi.RoleStandardType,
 		openapi.RoleAuditorType,
-		openapi.RoleAdminType,
 	})
 	c.Next()
 }
