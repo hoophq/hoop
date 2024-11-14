@@ -136,12 +136,9 @@ func (r *Router) setUserContext(ctx *pguserauth.Context, c *gin.Context) {
 // validateToken validates the access token by the user info if it's an opaque token
 // or by parsing and validating the token if it's a JWT token
 func (r *Router) validateAccessToken(c *gin.Context) (string, error) {
-	token, isApiKey, err := parseToken(c)
+	token, err := parseToken(c)
 	if err != nil {
 		return "", err
-	}
-	if isApiKey && r.registeredApiKey != "" && r.registeredApiKey != token {
-		return "", fmt.Errorf("api key does not match")
 	}
 
 	if r.provider.HasSecretKey() {
@@ -152,23 +149,20 @@ func (r *Router) validateAccessToken(c *gin.Context) (string, error) {
 
 // validateTokenWithUserInfo validates the access token by the user info endpoint
 func (r *Router) validateTokenWithUserInfo(c *gin.Context) (*idp.ProviderUserInfo, error) {
-	accessToken, isApiKey, err := parseToken(c)
-	if err != nil || isApiKey {
+	accessToken, err := parseToken(c)
+	if err != nil {
 		return nil, err
 	}
 	return r.provider.VerifyAccessTokenWithUserInfo(accessToken)
 }
 
-func parseToken(c *gin.Context) (string, bool, error) {
-	if apiKey := c.GetHeader("Api-Key"); apiKey != "" {
-		return apiKey, true, nil
-	}
+func parseToken(c *gin.Context) (string, error) {
 	tokenHeader := c.GetHeader("authorization")
 	tokenParts := strings.Split(tokenHeader, " ")
 	if len(tokenParts) != 2 || tokenParts[0] != "Bearer" || tokenParts[1] == "" {
-		return "", false, errors.New("invalid authorization header")
+		return "", errors.New("invalid authorization header")
 	}
-	return tokenParts[1], false, nil
+	return tokenParts[1], nil
 }
 
 func parseHeaderForDebug(authTokenHeader string) string {
