@@ -73,16 +73,7 @@
 (defn- submit-task [e script selected-connections atom-exec-list-open? metadata script-response]
   (let [connection-type (discover-connection-type (first selected-connections))
         change-to-tabular? (and (some (partial = connection-type) ["mysql" "postgres" "sql-server" "oracledb" "mssql" "database"])
-                                (< (count @script-response) 1))
-        selected-db (.getItem js/localStorage "selected-database")
-        final-script (if (and selected-db
-                              (or (= connection-type "postgres")
-                                  (= connection-type "postgres-csv")))
-                       (str "\\set QUIET on\n"
-                            "\\c " selected-db "\n"
-                            "\\set QUIET off\n"
-                            script)
-                       script)]
+                                (< (count @script-response) 1))]
     (when (.-preventDefault e) (.preventDefault e))
 
     (if (and (seq selected-connections)
@@ -93,7 +84,7 @@
         (do
           (when change-to-tabular?
             (reset! log-area/selected-tab "Tabular"))
-          (rf/dispatch [:editor-plugin->exec-script {:script final-script
+          (rf/dispatch [:editor-plugin->exec-script {:script script
                                                      :connection-name (:name (first selected-connections))
                                                      :metadata (metadata->json-stringify metadata)}]))
 
@@ -148,7 +139,6 @@
         plugins (rf/subscribe [:plugins->my-plugins])
         selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])
         script-response (rf/subscribe [:editor-plugin->script])
-
         vertical-pane-sizes (mapv js/parseInt
                                   (cs/split
                                    (or (.getItem js/localStorage "editor-vertical-pane-sizes") "250,950") ","))
