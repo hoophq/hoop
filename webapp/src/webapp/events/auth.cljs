@@ -44,9 +44,9 @@
 (rf/reg-event-fx
  :auth->logout
  (fn [{:keys [db]} [_ {:keys [idp?]}]]
-   (let [auth0-logout-url (str "https://auth-testing.hoop.dev"
+   (let [auth0-logout-url (str "https://hoophq.us.auth0.com"
                                "/v2/logout?"
-                               "client_id=Th53Ge2qcL0qm3z8QD6RvzEjIWfIckid"
+                               "client_id=DatIOCxntNv8AZrQLVnLb3tr1Y3oVwGW"
                                "&returnTo=" (js/encodeURIComponent
                                              (str (. (. js/window -location) -origin)
                                                   (routes/url-for :login-hoop)))
