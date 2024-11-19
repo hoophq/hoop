@@ -24,12 +24,11 @@
         current-route (rf/subscribe [:routes->route])]
     (fn [user my-plugins]
       (let [gateway-version (:version (:data @gateway-info))
+            auth-method (:auth_method (:data @gateway-info))
             user-data (:data user)
             plugins-routes-enabled (filterv (fn [plugin]
                                               (some #(= (:name plugin) (:name %)) my-plugins))
                                             sidebar-constants/plugins-routes)
-            is-plugin-enabled? (fn [plugin-name]
-                                 (some #(= plugin-name (:name %)) my-plugins))
             admin? (:admin? user-data)
             free-license? (:free-license? user-data)
             current-route @current-route]
@@ -246,7 +245,7 @@
                 "Contact support"]]
               [:li
                [:> (.-Button ui/Disclosure) {:as "a"
-                                             :onClick #(rf/dispatch [:auth->logout])
+                                             :onClick #(rf/dispatch [:auth->logout {:idp? (= auth-method "idp")}])
                                              :href "#"
                                              :class "group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-gray-800 hover:text-white"}
                 [:> hero-outline-icon/ArrowLeftOnRectangleIcon {:class "h-6 w-6 shrink-0 text-white"
