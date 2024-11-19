@@ -273,6 +273,9 @@
     [layout :auth [local-auth-login/panel]]
     [layout :auth (rf/dispatch [:auth->get-auth-link])]))
 
+(defmethod routes/panels :idplogin-hoop-panel []
+  [layout :auth (rf/dispatch [:auth->get-auth-link {:prompt-login? true}])])
+
 (defmethod routes/panels :register-hoop-panel [_ gateway-info]
   (if (= (-> gateway-info :data :auth_method) "local")
     [layout :auth [local-auth-register/panel]]

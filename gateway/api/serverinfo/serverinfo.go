@@ -25,7 +25,6 @@ var (
 		LogLevel:                os.Getenv("LOG_LEVEL"),
 		GoDebug:                 os.Getenv("GODEBUG"),
 		AdminUsername:           os.Getenv("ADMIN_USERNAME"),
-		AuthMethod:              appconfig.Get().AuthMethod(),
 		HasRedactCredentials:    isEnvSet("GOOGLE_APPLICATION_CREDENTIALS_JSON"),
 		HasWebhookAppKey:        isEnvSet("WEBHOOK_APPKEY"),
 		HasIDPAudience:          isEnvSet("IDP_AUDIENCE"),
@@ -71,6 +70,7 @@ func (h *handler) Get(c *gin.Context) {
 	if isOrgMultiTenant {
 		tenancyType = "multitenant"
 	}
+	serverInfoData.AuthMethod = appconfig.Get().AuthMethod()
 	serverInfoData.TenancyType = tenancyType
 	serverInfoData.GrpcURL = h.grpcURL
 	serverInfoData.ApiURL = appconfig.Get().ApiURL()

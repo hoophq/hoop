@@ -27,6 +27,7 @@
      "/dashboard" :dashboard
      "/hoop-app" :hoop-app
      "/login" :login-hoop
+     "/idplogin" :idplogin-hoop
      "/logout" :logout-hoop
      "/organization" [["/users" :users]]
      "/guardrails" [["" :guardrails]

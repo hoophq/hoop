@@ -5,10 +5,11 @@
 
 (rf/reg-event-fx
  :auth->get-auth-link
- (fn []
+ (fn [_ [_ {:keys [prompt-login?]}]]
    (let [on-success #(.replace js/window.location (:login_url %))
+         base-uri (if prompt-login? "/login?prompt=login&redirect=" "/login?redirect=")
          get-email [:fetch {:method "GET"
-                            :uri (str "/login?prompt=login&redirect="
+                            :uri (str base-uri
                                       (str (. (. js/window -location) -origin)
                                            (routes/url-for :auth-callback-hoop)))
                             :on-success on-success}]]
@@ -42,10 +43,10 @@
 
 (rf/reg-event-fx
  :auth->logout
- (fn [{:keys [db]}]
-   (let [auth0-logout-url (str "https://hoophq.us.auth0.com"
+ (fn [{:keys [db]} [_ {:keys [idp?]}]]
+   (let [auth0-logout-url (str "https://auth-testing.hoop.dev"
                                "/v2/logout?"
-                               "client_id=DatIOCxntNv8AZrQLVnLb3tr1Y3oVwGW"
+                               "client_id=Th53Ge2qcL0qm3z8QD6RvzEjIWfIckid"
                                "&returnTo=" (js/encodeURIComponent
                                              (str (. (. js/window -location) -origin)
                                                   (routes/url-for :login-hoop)))
@@ -58,5 +59,7 @@
 
        (do
          (.removeItem js/localStorage "jwt-token")
-         {:fx [[:dispatch [:navigate :logout-hoop]]]
-          :db {}})))))
+         (set! (.. js/window -location -href) (routes/url-for (if idp?
+                                                                :idplogin-hoop
+                                                                :login-hoop)))
+         {:db {}})))))
