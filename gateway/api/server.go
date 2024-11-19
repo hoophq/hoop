@@ -360,10 +360,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		sessionapi.Get)
-	r.GET("/sessions/:session_id/download",
-		apiroutes.ReadOnlyAccessRole,
-		r.AuthMiddleware,
-		sessionapi.DownloadSession)
+	r.GET("/sessions/:session_id/download", sessionapi.DownloadSession)
 	r.GET("/sessions",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
