@@ -4,6 +4,8 @@
             [bidi.bidi :as bidi]
             [clojure.string :as cs]
             [re-frame.core :as rf]
+            [webapp.agents.panel :as agents]
+            [webapp.agents.new :as create-agent]
             [webapp.audit.views.main :as audit]
             [webapp.audit.views.session-details :as session-details]
             [webapp.audit.views.sessions-filtered-by-id :as session-filtered-by-id]
@@ -135,6 +137,15 @@
 ;; HOOP PANELS ;;
 ;;;;;;;;;;;;;;;;;
 
+(defmethod routes/panels :agents-panel []
+  [layout :application-hoop
+   [:div {:class "bg-gray-1 p-radix-7 min-h-full h-max"}
+    [agents/main]]])
+
+(defmethod routes/panels :new-agent-panel []
+  [layout :application-hoop
+   [:div {:class "bg-gray-1 p-radix-7 min-h-full h-max"}
+    [create-agent/main]]])
 
 (defmethod routes/panels :home-panel []
   [layout :application-hoop [home/home-panel-hoop]])

@@ -29,6 +29,8 @@
      "/login" :login-hoop
      "/idplogin" :idplogin-hoop
      "/logout" :logout-hoop
+     "/agents" [["" :agents]
+                ["/new" :new-agent]]
      "/organization" [["/users" :users]]
      "/guardrails" [["" :guardrails]
                     ["/new" :create-guardrail]

@@ -1,9 +1,21 @@
 (ns webapp.components.button
   (:require
    [reagent.core :as r]
+   ["@radix-ui/themes" :refer [Button Link Callout]]
+   ["lucide-react" :refer [ArrowUpRight]]
    [webapp.components.icon :as icon]
    [webapp.components.popover :as popover]
    [webapp.config :as config]))
+
+(defn DocsBtnCallOut
+  "Radix Button for the Docs Callout"
+  [{:keys [text href]}]
+  [:> Link {:href href
+            :target "_blank"}
+   [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
+    [:> Callout.Icon
+     [:> ArrowUpRight {:size 16}]]
+    [:> Callout.Text text]]])
 
 (def common-classes
   "disabled:opacity-50 disabled:cursor-not-allowed
@@ -185,7 +197,6 @@
                         (when outlined? " border border-gray-300 text-gray-800")
                         (when dark? " text-white "))}
    text])
-
 
 (defn tailwind-tertiary [{:keys [text on-click type disabled full-width]}]
   [:button {:on-click on-click
