@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/envloader"
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
@@ -110,9 +111,18 @@ func New(opts *Options) (*clientExec, error) {
 	if opts.UserAgent != "" {
 		userAgent = opts.UserAgent
 	}
-	client, err := grpc.ConnectLocalhost(
-		opts.BearerToken,
-		userAgent,
+
+	tlsCA, err := envloader.GetEnv("TLS_CA")
+	if err != nil {
+		return nil, fmt.Errorf("failed loading TLS_CA: %v", err)
+	}
+	client, err := grpc.Connect(grpc.ClientConfig{
+		ServerAddress: grpc.LocalhostAddr,
+		Token:         opts.BearerToken,
+		UserAgent:     userAgent,
+		Insecure:      tlsCA == "",
+		TLSCA:         tlsCA,
+	},
 		grpc.WithOption(grpc.OptionConnectionName, opts.ConnectionName),
 		grpc.WithOption("origin", opts.Origin),
 		grpc.WithOption("verb", pb.ClientVerbExec),

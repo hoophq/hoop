@@ -140,15 +140,15 @@ func Run() {
 func loadServerCertificates() (*tls.Config, error) {
 	tlsCA, err := envloader.GetEnv("TLS_CA")
 	if err != nil {
-		return nil, fmt.Errorf("faile loading TLS_CA: %v", err)
+		return nil, fmt.Errorf("failed loading TLS_CA: %v", err)
 	}
 	tlsKey, err := envloader.GetEnv("TLS_KEY")
 	if err != nil {
-		return nil, fmt.Errorf("faile loading TLS_KEY: %v", err)
+		return nil, fmt.Errorf("failed loading TLS_KEY: %v", err)
 	}
 	tlsCert, err := envloader.GetEnv("TLS_CERT")
 	if err != nil {
-		return nil, fmt.Errorf("faile loading TLS_CERT: %v", err)
+		return nil, fmt.Errorf("failed loading TLS_CERT: %v", err)
 	}
 	if tlsKey == "" || tlsCert == "" {
 		return nil, nil
