@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/hoophq/hoop/common/envloader"
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/monitoring"
@@ -138,18 +137,8 @@ func Run() {
 }
 
 func loadServerCertificates() (*tls.Config, error) {
-	tlsCA, err := envloader.GetEnv("TLS_CA")
-	if err != nil {
-		return nil, fmt.Errorf("faile loading TLS_CA: %v", err)
-	}
-	tlsKey, err := envloader.GetEnv("TLS_KEY")
-	if err != nil {
-		return nil, fmt.Errorf("faile loading TLS_KEY: %v", err)
-	}
-	tlsCert, err := envloader.GetEnv("TLS_CERT")
-	if err != nil {
-		return nil, fmt.Errorf("faile loading TLS_CERT: %v", err)
-	}
+	conf := appconfig.Get()
+	tlsCA, tlsKey, tlsCert := conf.GatewayTLSCa(), conf.GatewayTLSKey(), conf.GatewayTLSCert()
 	if tlsKey == "" || tlsCert == "" {
 		return nil, nil
 	}

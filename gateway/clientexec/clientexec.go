@@ -15,6 +15,7 @@ import (
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/common/version"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/jira"
 	sessionwal "github.com/hoophq/hoop/gateway/session/wal"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
@@ -110,9 +111,15 @@ func New(opts *Options) (*clientExec, error) {
 	if opts.UserAgent != "" {
 		userAgent = opts.UserAgent
 	}
-	client, err := grpc.ConnectLocalhost(
-		opts.BearerToken,
-		userAgent,
+
+	tlsCA := appconfig.Get().GatewayTLSCa()
+	client, err := grpc.Connect(grpc.ClientConfig{
+		ServerAddress: grpc.LocalhostAddr,
+		Token:         opts.BearerToken,
+		UserAgent:     userAgent,
+		Insecure:      tlsCA == "",
+		TLSCA:         tlsCA,
+	},
 		grpc.WithOption(grpc.OptionConnectionName, opts.ConnectionName),
 		grpc.WithOption("origin", opts.Origin),
 		grpc.WithOption("verb", pb.ClientVerbExec),
