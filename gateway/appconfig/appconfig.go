@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/hoophq/hoop/common/envloader"
 )
 
 // TODO: it should include all runtime configuration
@@ -51,6 +53,9 @@ type Config struct {
 	jwtSecretKey            []byte
 	webappStaticUIPath      string
 	disableSessionsDownload bool
+	gatewayTLSCa            string
+	gatewayTLSKey           string
+	gatewayTLSCert          string
 
 	isLoaded bool
 }
@@ -127,6 +132,20 @@ func Load() error {
 			return fmt.Errorf("failed parsing WEBHOOK_APPURL, reason=%v", err)
 		}
 	}
+
+	gatewayTLSCa, err := envloader.GetEnv("TLS_CA")
+	if err != nil {
+		return fmt.Errorf("failed loading env TLS_CA, reason=%v", err)
+	}
+	gatewayTLSKey, err := envloader.GetEnv("TLS_KEY")
+	if err != nil {
+		return fmt.Errorf("failed loading env TLS_KEY, reason=%v", err)
+	}
+	gatewayTLSCert, err := envloader.GetEnv("TLS_CERT")
+	if err != nil {
+		return fmt.Errorf("failed loading env TLS_CERT, reason=%v", err)
+	}
+
 	runtimeConfig = Config{
 		apiKey:                  os.Getenv("API_KEY"),
 		apiURL:                  fmt.Sprintf("%s://%s", apiRawURL.Scheme, apiRawURL.Host),
@@ -154,6 +173,9 @@ func Load() error {
 		webappStaticUIPath:      webappStaticUiPath,
 		isLoaded:                true,
 		disableSessionsDownload: os.Getenv("DISABLE_SESSIONS_DOWNLOAD") == "true",
+		gatewayTLSCa:            gatewayTLSCa,
+		gatewayTLSKey:           gatewayTLSKey,
+		gatewayTLSCert:          gatewayTLSCert,
 	}
 	return nil
 }
@@ -298,13 +320,14 @@ func (c Config) PgURI() string                   { return c.pgCred.connectionStr
 func (c Config) PostgRESTRole() string           { return c.pgCred.postgrestRole }
 func (c Config) DoNotTrack() bool                { return c.doNotTrack }
 func (c Config) DisableSessionsDownload() bool   { return c.disableSessionsDownload }
-
-func (c Config) MigrationPathFiles() string { return c.migrationPathFiles }
-func (c Config) OrgMultitenant() bool       { return c.orgMultitenant }
-
-func (c Config) WebappUsersManagement() string { return c.webappUsersManagement }
-func (c Config) IsAskAIAvailable() bool        { return c.askAICredentials != nil }
-func (c Config) JWTSecretKey() []byte          { return c.jwtSecretKey }
+func (c Config) MigrationPathFiles() string      { return c.migrationPathFiles }
+func (c Config) OrgMultitenant() bool            { return c.orgMultitenant }
+func (c Config) WebappUsersManagement() string   { return c.webappUsersManagement }
+func (c Config) IsAskAIAvailable() bool          { return c.askAICredentials != nil }
+func (c Config) JWTSecretKey() []byte            { return c.jwtSecretKey }
+func (c Config) GatewayTLSCa() string            { return c.gatewayTLSCa }
+func (c Config) GatewayTLSKey() string           { return c.gatewayTLSKey }
+func (c Config) GatewayTLSCert() string          { return c.gatewayTLSCert }
 func (c Config) AskAIApiURL() (u string) {
 	if c.IsAskAIAvailable() {
 		return fmt.Sprintf("%s://%s", c.askAICredentials.Scheme, c.askAICredentials.Host)
