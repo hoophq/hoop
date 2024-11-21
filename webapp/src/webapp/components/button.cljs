@@ -2,7 +2,7 @@
   (:require
    [reagent.core :as r]
    ["@radix-ui/themes" :refer [Button Link Callout]]
-   ["lucide-react" :refer [ArrowUpRight]]
+   ["lucide-react" :refer [ArrowUpRight ArrowLeft]]
    [webapp.components.icon :as icon]
    [webapp.components.popover :as popover]
    [webapp.config :as config]))
@@ -16,6 +16,17 @@
     [:> Callout.Icon
      [:> ArrowUpRight {:size 16}]]
     [:> Callout.Text text]]])
+
+(defn HeaderBack
+  "Radix Button for the Header Back Button"
+  [{:keys [on-click text]}]
+  [:> Button {:variant "ghost"
+              :size "2"
+              :color "gray"
+              :type "button"
+              :on-click (or on-click #(js/history.back))}
+   [:> ArrowLeft {:size 16}]
+   (or text "Back")])
 
 (def common-classes
   "disabled:opacity-50 disabled:cursor-not-allowed

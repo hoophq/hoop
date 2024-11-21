@@ -9,8 +9,20 @@
   :options - Radix UI options for the Heading component"
   [{:keys [text options]}]
   [:> Heading
-   (merge {:size "8" :weight "bold" :as "h1"}
-          options)
+   (merge
+     options
+     {:size "8" :weight "bold" :as "h1"})
+   text])
+
+(defn H3
+  "Radix UI component for <h3> html tag
+  :text - text to be displayed
+  :options - Radix UI options for the Heading component"
+  [{:keys [text options]}]
+  [:> Heading
+   (merge
+     options
+     {:size "4" :weight "medium" :as "h3"})
    text])
 
 ;; TODO: see how it would seamsly adapt

@@ -33,9 +33,6 @@
        [:> Flex {:direction "column"}
         (for [agent (:data @agents)]
           ^{:key (:id agent)}
-          [agent-item agent])
-        (for [agent (:data @agents)]
-          ^{:key (:id agent)}
           [agent-item agent])]])))
 
 (defn main []
