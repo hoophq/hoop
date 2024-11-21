@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -18,17 +19,23 @@ import (
 	"golang.org/x/oauth2"
 )
 
+const (
+	googleIssuerURL   = "https://accounts.google.com"
+	gsuiteGroupsScope = "https://www.googleapis.com/auth/admin.directory.group.readonly"
+)
+
 type (
 	Provider struct {
-		SecretKey        string
-		Issuer           string
-		Audience         string
-		ClientID         string
-		ClientSecret     string
-		CustomScopes     string
-		GroupsClaim      string
-		ApiURL           string
-		authWithUserInfo bool
+		SecretKey             string
+		Issuer                string
+		Audience              string
+		ClientID              string
+		ClientSecret          string
+		CustomScopes          string
+		GroupsClaim           string
+		ApiURL                string
+		authWithUserInfo      bool
+		mustFetchGsuiteGroups bool
 
 		*oidc.Provider
 		oauth2.Config
@@ -50,6 +57,159 @@ type (
 		MustSyncGroups bool
 	}
 )
+
+func NewProvider(apiURL, secretKey string) *Provider {
+	if appconfig.Get().AuthMethod() == "local" {
+		return &Provider{Context: context.Background(), ApiURL: apiURL, SecretKey: secretKey}
+	}
+	ctx := context.Background()
+	provider := &Provider{
+		Context: ctx,
+		ApiURL:  apiURL,
+	}
+
+	if err := setProviderConfFromEnvs(provider); err != nil {
+		log.Fatal(err)
+	}
+
+	log.Infof("issuer-url=%s, audience=%v, custom-scopes=%v, idp-uri-set=%v",
+		provider.Issuer, provider.Audience, provider.CustomScopes, os.Getenv("IDP_URI") != "")
+	oidcProviderConfig, err := newProviderConfig(provider.Context, provider.Issuer)
+	if err != nil {
+		log.Fatal(err)
+	}
+	oidcProvider := oidcProviderConfig.NewProvider(ctx)
+	scopes := []string{oidc.ScopeOpenID, "profile", "email"}
+	if provider.CustomScopes != "" {
+		scopes = addCustomScopes(scopes, provider.CustomScopes)
+	}
+	redirectURL := apiURL + "/api/callback"
+	log.Infof("loaded oidc provider configuration, redirect-url=%v, with-user-info=%v, auth=%v, token=%v, userinfo=%v, jwks=%v, algorithms=%v, groupsclaim=%v, scopes=%v",
+		redirectURL,
+		provider.authWithUserInfo,
+		oidcProviderConfig.AuthURL,
+		oidcProviderConfig.TokenURL,
+		oidcProviderConfig.UserInfoURL,
+		oidcProviderConfig.JWKSURL,
+		oidcProviderConfig.Algorithms,
+		provider.GroupsClaim,
+		scopes)
+
+	conf := oauth2.Config{
+		ClientID:     provider.ClientID,
+		ClientSecret: provider.ClientSecret,
+		RedirectURL:  redirectURL,
+		Endpoint:     oidcProvider.Endpoint(),
+		Scopes:       scopes,
+	}
+
+	oidcConfig := &oidc.Config{
+		ClientID:             provider.ClientID,
+		SupportedSigningAlgs: oidcProviderConfig.Algorithms,
+	}
+	provider.Config = conf
+	provider.Provider = oidcProvider
+	provider.IDTokenVerifier = provider.Verifier(oidcConfig)
+	provider.JWKS = downloadJWKS(oidcProviderConfig.JWKSURL)
+	provider.mustFetchGsuiteGroups = provider.Issuer == googleIssuerURL && slices.Contains(scopes, gsuiteGroupsScope)
+	return provider
+}
+
+func setProviderConfFromEnvs(p *Provider) error {
+	if idpURI := os.Getenv("IDP_URI"); idpURI != "" {
+		u, err := url.Parse(idpURI)
+		if err != nil {
+			return fmt.Errorf("failed parsing IDP_URI env, reason=%v. Valid format is: <scheme>://<client-id>:<client-secret>@<issuer-host>?<options>=", err)
+		}
+		if u.User != nil {
+			p.ClientID = u.User.Username()
+			p.ClientSecret, _ = u.User.Password()
+		}
+		if p.ClientID == "" || p.ClientSecret == "" {
+			return fmt.Errorf("missing credentials for IDP_URI env. Valid format is: <scheme>://<client-id>:<client-secret>@<issuer-host>?<options>=")
+		}
+		p.Audience = os.Getenv("IDP_AUDIENCE")
+		p.GroupsClaim = u.Query().Get("groupsclaim")
+		if p.GroupsClaim == "" {
+			// keep default value
+			p.GroupsClaim = proto.CustomClaimGroups
+		}
+		p.CustomScopes = u.Query().Get("scopes")
+		p.authWithUserInfo = u.Query().Get("_userinfo") == "1"
+		qs := u.Query()
+		qs.Del("scopes")
+		qs.Del("_userinfo")
+		qs.Del("groupsclaim")
+		encQueryStr := qs.Encode()
+		if encQueryStr != "" {
+			encQueryStr = "?" + encQueryStr
+		}
+		// scheme://host:port/path?query#fragment
+		p.Issuer = fmt.Sprintf("%s://%s%s%s",
+			u.Scheme,
+			u.Host,
+			u.Path,
+			encQueryStr,
+		)
+		return nil
+	}
+	p.Issuer = os.Getenv("IDP_ISSUER")
+	p.ClientID = os.Getenv("IDP_CLIENT_ID")
+	p.ClientSecret = os.Getenv("IDP_CLIENT_SECRET")
+	p.Audience = os.Getenv("IDP_AUDIENCE")
+	p.CustomScopes = os.Getenv("IDP_CUSTOM_SCOPES")
+	p.GroupsClaim = proto.CustomClaimGroups
+
+	issuerURL, err := url.Parse(p.Issuer)
+	if err != nil {
+		return fmt.Errorf("failed parsing IDP_ISSUER env, reason=%v", err)
+	}
+	p.authWithUserInfo = issuerURL.Query().Get("_userinfo") == "1"
+	if p.ClientSecret == "" || p.ClientID == "" {
+		return nil
+	}
+	qs := issuerURL.Query()
+	qs.Del("_userinfo")
+	encQueryStr := qs.Encode()
+	if encQueryStr != "" {
+		encQueryStr = "?" + encQueryStr
+	}
+	// scheme://host:port/path?query#fragment
+	p.Issuer = fmt.Sprintf("%s://%s%s%s",
+		issuerURL.Scheme,
+		issuerURL.Host,
+		issuerURL.Path,
+		encQueryStr,
+	)
+	return nil
+}
+
+func addCustomScopes(scopes []string, customScope string) []string {
+	custom := strings.Split(customScope, ",")
+	for _, c := range custom {
+		scopes = append(scopes, strings.Trim(c, " "))
+	}
+	return scopes
+}
+
+func downloadJWKS(jwksURL string) *keyfunc.JWKS {
+	log.Infof("downloading provider public key from=%v", jwksURL)
+	options := keyfunc.Options{
+		Ctx:                 context.Background(),
+		RefreshErrorHandler: func(err error) { log.Errorf("error while refreshing public key, reason=%v", err) },
+		RefreshInterval:     time.Hour,
+		RefreshRateLimit:    time.Minute * 5,
+		RefreshTimeout:      time.Second * 10,
+		RefreshUnknownKID:   true,
+	}
+
+	var err error
+	jwks, err := keyfunc.Get(jwksURL, options)
+	if err != nil {
+		log.Fatalf("failed loading jwks url, reason=%v", err)
+	}
+	return jwks
+}
 
 func (p *Provider) VerifyIDToken(token *oauth2.Token) (*oidc.IDToken, error) {
 	rawIDToken, ok := token.Extra("id_token").(string)
@@ -163,7 +323,10 @@ func (p *Provider) userInfoEndpoint(accessToken string) (*ProviderUserInfo, erro
 	if err = user.Claims(&claims); err != nil {
 		return nil, fmt.Errorf("failed verifying user info claims, err=%v", err)
 	}
-	uinfo := ParseIDTokenClaims(claims, p.GroupsClaim)
+	uinfo := p.ParseUserInfo(claims, accessToken, p.GroupsClaim)
+	if err != nil {
+		return nil, err
+	}
 	uinfo.Email = user.Email
 	uinfo.Subject = user.Subject
 	uinfo.EmailVerified = &user.EmailVerified
@@ -173,159 +336,9 @@ func (p *Provider) userInfoEndpoint(accessToken string) (*ProviderUserInfo, erro
 	return &uinfo, nil
 }
 
-func NewProvider(apiURL, secretKey string) *Provider {
-	if appconfig.Get().AuthMethod() == "local" {
-		return &Provider{Context: context.Background(), ApiURL: apiURL, SecretKey: secretKey}
-	}
-	ctx := context.Background()
-	provider := &Provider{
-		Context: ctx,
-		ApiURL:  apiURL,
-	}
-
-	if err := setProviderConfFromEnvs(provider); err != nil {
-		log.Fatal(err)
-	}
-
-	log.Infof("issuer-url=%s, audience=%v, custom-scopes=%v, idp-uri-set=%v",
-		provider.Issuer, provider.Audience, provider.CustomScopes, os.Getenv("IDP_URI") != "")
-	oidcProviderConfig, err := newProviderConfig(provider.Context, provider.Issuer)
-	if err != nil {
-		log.Fatal(err)
-	}
-	oidcProvider := oidcProviderConfig.NewProvider(ctx)
-	scopes := []string{oidc.ScopeOpenID, "profile", "email"}
-	if provider.CustomScopes != "" {
-		scopes = addCustomScopes(scopes, provider.CustomScopes)
-	}
-	redirectURL := apiURL + "/api/callback"
-	log.Infof("loaded oidc provider configuration, redirect-url=%v, with-user-info=%v, auth=%v, token=%v, userinfo=%v, jwks=%v, algorithms=%v, groupsclaim=%v, scopes=%v",
-		redirectURL,
-		provider.authWithUserInfo,
-		oidcProviderConfig.AuthURL,
-		oidcProviderConfig.TokenURL,
-		oidcProviderConfig.UserInfoURL,
-		oidcProviderConfig.JWKSURL,
-		oidcProviderConfig.Algorithms,
-		provider.GroupsClaim,
-		scopes)
-
-	conf := oauth2.Config{
-		ClientID:     provider.ClientID,
-		ClientSecret: provider.ClientSecret,
-		RedirectURL:  redirectURL,
-		Endpoint:     oidcProvider.Endpoint(),
-		Scopes:       scopes,
-	}
-
-	oidcConfig := &oidc.Config{
-		ClientID:             provider.ClientID,
-		SupportedSigningAlgs: oidcProviderConfig.Algorithms,
-	}
-	provider.Config = conf
-	provider.Provider = oidcProvider
-	provider.IDTokenVerifier = provider.Verifier(oidcConfig)
-	provider.JWKS = downloadJWKS(oidcProviderConfig.JWKSURL)
-	return provider
-}
-
-func setProviderConfFromEnvs(p *Provider) error {
-	if idpURI := os.Getenv("IDP_URI"); idpURI != "" {
-		u, err := url.Parse(idpURI)
-		if err != nil {
-			return fmt.Errorf("failed parsing IDP_URI env, reason=%v. Valid format is: <scheme>://<client-id>:<client-secret>@<issuer-host>?<options>=", err)
-		}
-		if u.User != nil {
-			p.ClientID = u.User.Username()
-			p.ClientSecret, _ = u.User.Password()
-		}
-		if p.ClientID == "" || p.ClientSecret == "" {
-			return fmt.Errorf("missing credentials for IDP_URI env. Valid format is: <scheme>://<client-id>:<client-secret>@<issuer-host>?<options>=")
-		}
-		p.Audience = os.Getenv("IDP_AUDIENCE")
-		p.GroupsClaim = u.Query().Get("groupsclaim")
-		if p.GroupsClaim == "" {
-			// keep default value
-			p.GroupsClaim = proto.CustomClaimGroups
-		}
-		p.CustomScopes = u.Query().Get("scopes")
-		p.authWithUserInfo = u.Query().Get("_userinfo") == "1"
-		qs := u.Query()
-		qs.Del("scopes")
-		qs.Del("_userinfo")
-		qs.Del("groupsclaim")
-		encQueryStr := qs.Encode()
-		if encQueryStr != "" {
-			encQueryStr = "?" + encQueryStr
-		}
-		// scheme://host:port/path?query#fragment
-		p.Issuer = fmt.Sprintf("%s://%s%s%s",
-			u.Scheme,
-			u.Host,
-			u.Path,
-			encQueryStr,
-		)
-		return nil
-	}
-	p.Issuer = os.Getenv("IDP_ISSUER")
-	p.ClientID = os.Getenv("IDP_CLIENT_ID")
-	p.ClientSecret = os.Getenv("IDP_CLIENT_SECRET")
-	p.Audience = os.Getenv("IDP_AUDIENCE")
-	p.CustomScopes = os.Getenv("IDP_CUSTOM_SCOPES")
-	p.GroupsClaim = proto.CustomClaimGroups
-
-	issuerURL, err := url.Parse(p.Issuer)
-	if err != nil {
-		return fmt.Errorf("failed parsing IDP_ISSUER env, reason=%v", err)
-	}
-	p.authWithUserInfo = issuerURL.Query().Get("_userinfo") == "1"
-	if p.ClientSecret == "" || p.ClientID == "" {
-		return nil
-	}
-	qs := issuerURL.Query()
-	qs.Del("_userinfo")
-	encQueryStr := qs.Encode()
-	if encQueryStr != "" {
-		encQueryStr = "?" + encQueryStr
-	}
-	// scheme://host:port/path?query#fragment
-	p.Issuer = fmt.Sprintf("%s://%s%s%s",
-		issuerURL.Scheme,
-		issuerURL.Host,
-		issuerURL.Path,
-		encQueryStr,
-	)
-	return nil
-}
-
-func addCustomScopes(scopes []string, customScope string) []string {
-	custom := strings.Split(customScope, ",")
-	for _, c := range custom {
-		scopes = append(scopes, strings.Trim(c, " "))
-	}
-	return scopes
-}
-
-func downloadJWKS(jwksURL string) *keyfunc.JWKS {
-	log.Infof("downloading provider public key from=%v", jwksURL)
-	options := keyfunc.Options{
-		Ctx:                 context.Background(),
-		RefreshErrorHandler: func(err error) { log.Errorf("error while refreshing public key, reason=%v", err) },
-		RefreshInterval:     time.Hour,
-		RefreshRateLimit:    time.Minute * 5,
-		RefreshTimeout:      time.Second * 10,
-		RefreshUnknownKID:   true,
-	}
-
-	var err error
-	jwks, err := keyfunc.Get(jwksURL, options)
-	if err != nil {
-		log.Fatalf("failed loading jwks url, reason=%v", err)
-	}
-	return jwks
-}
-
-func ParseIDTokenClaims(idTokenClaims map[string]any, groupsClaimName string) (u ProviderUserInfo) {
+// FetchGroups parses user information from the provided token claims.
+// In case the provider is Google, fetch the user groups from the Gsuite API
+func (p *Provider) ParseUserInfo(idTokenClaims map[string]any, accessToken, groupsClaimName string) (u ProviderUserInfo) {
 	email, _ := idTokenClaims["email"].(string)
 	if profile, ok := idTokenClaims["name"].(string); ok {
 		u.Profile = profile
@@ -336,6 +349,18 @@ func ParseIDTokenClaims(idTokenClaims map[string]any, groupsClaimName string) (u
 	}
 	u.Picture = profilePicture
 	u.Email = email
+
+	if p.mustFetchGsuiteGroups {
+		// It's a best effort to sync groups, in case it fails print the error
+		groups, err := p.fetchGsuiteGroups(accessToken, email)
+		if err != nil {
+			log.Error(err)
+			return
+		}
+		u.MustSyncGroups = true
+		u.Groups = groups
+		return
+	}
 	switch groupsClaim := idTokenClaims[groupsClaimName].(type) {
 	case string:
 		u.MustSyncGroups = true
