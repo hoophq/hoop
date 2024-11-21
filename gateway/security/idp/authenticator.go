@@ -323,7 +323,10 @@ func (p *Provider) userInfoEndpoint(accessToken string) (*ProviderUserInfo, erro
 	if err = user.Claims(&claims); err != nil {
 		return nil, fmt.Errorf("failed verifying user info claims, err=%v", err)
 	}
-	uinfo := p.ParseUserInfo(claims, accessToken, p.GroupsClaim)
+	uinfo, err := p.ParseUserInfo(claims, accessToken, p.GroupsClaim)
+	if err != nil {
+		return nil, err
+	}
 	uinfo.Email = user.Email
 	uinfo.Subject = user.Subject
 	uinfo.EmailVerified = &user.EmailVerified
@@ -335,7 +338,7 @@ func (p *Provider) userInfoEndpoint(accessToken string) (*ProviderUserInfo, erro
 
 // FetchGroups parses user information from the provided token claims.
 // In case the provider is Google, fetch the user groups from the Gsuite API
-func (p *Provider) ParseUserInfo(idTokenClaims map[string]any, accessToken, groupsClaimName string) (u ProviderUserInfo) {
+func (p *Provider) ParseUserInfo(idTokenClaims map[string]any, accessToken, groupsClaimName string) (u ProviderUserInfo, _ error) {
 	email, _ := idTokenClaims["email"].(string)
 	if profile, ok := idTokenClaims["name"].(string); ok {
 		u.Profile = profile
@@ -350,12 +353,11 @@ func (p *Provider) ParseUserInfo(idTokenClaims map[string]any, accessToken, grou
 	if p.mustFetchGsuiteGroups {
 		groups, err := p.fetchGsuiteGroups(accessToken, email)
 		if err != nil {
-			log.Errorf("failed fetching gsuite groups, reason=%v", err)
-			return
+			return u, err
 		}
 		u.MustSyncGroups = true
 		u.Groups = groups
-		return
+		return u, nil
 	}
 	switch groupsClaim := idTokenClaims[groupsClaimName].(type) {
 	case string:
@@ -376,7 +378,7 @@ func (p *Provider) ParseUserInfo(idTokenClaims map[string]any, accessToken, grou
 	default:
 		log.Errorf("failed syncing group claims, reason=unknown type:%T", groupsClaim)
 	}
-	return
+	return u, nil
 }
 
 func (u *UserInfoToken) Token() (*oauth2.Token, error) { return u.token, nil }

@@ -450,7 +450,7 @@ func (h *handler) verifyIDToken(code string) (token *oauth2.Token, uinfo idp.Pro
 		return nil, uinfo, fmt.Errorf("failed extracting id token claims, reason=%v", err)
 	}
 	debugClaims(idToken.Subject, idTokenClaims, token)
-	uinfo = h.idpProv.ParseUserInfo(idTokenClaims, token.AccessToken, h.idpProv.GroupsClaim)
+	uinfo, err = h.idpProv.ParseUserInfo(idTokenClaims, token.AccessToken, h.idpProv.GroupsClaim)
 	return
 }
 
