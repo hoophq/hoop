@@ -7,7 +7,12 @@ import (
 	"net/http"
 )
 
-const gSuiteGroupsURL = "https://www.googleapis.com/admin/directory/v1/groups"
+const (
+	// https://developers.google.com/admin-sdk/directory/reference/rest/v1/groups/list
+	gSuiteGroupsURL   = "https://www.googleapis.com/admin/directory/v1/groups"
+	defaultMaxPages   = 3
+	defaultMaxResults = 200
+)
 
 type gsuiteGroups struct {
 	NextPageToken string             `json:"nextPageToken"`
@@ -19,7 +24,32 @@ type gsuiteGroupEntry struct {
 }
 
 func (p *Provider) fetchGsuiteGroups(accessToken, email string) ([]string, error) {
-	apiURL := fmt.Sprintf("%s?userKey=%s", gSuiteGroupsURL, email)
+	var groups []string
+	var nextPageToken string
+
+	for count := 0; ; count++ {
+		if count > defaultMaxPages {
+			return nil, fmt.Errorf("reached max pagination (%v) fetching Gsuite Groups", defaultMaxPages)
+		}
+		response, err := p.fetchGroupsPage(accessToken, email, nextPageToken)
+		if err != nil {
+			return nil, fmt.Errorf("page=%v, %v", count, err)
+		}
+		for _, entry := range response.Groups {
+			groups = append(groups, entry.Email)
+		}
+		if response.NextPageToken != "" {
+			nextPageToken = response.NextPageToken
+			continue
+		}
+		break
+	}
+	return groups, nil
+}
+
+func (p *Provider) fetchGroupsPage(accessToken, email, pageToken string) (*gsuiteGroups, error) {
+	apiURL := fmt.Sprintf("%s?userKey=%s&pageToken=%s&maxResults=%v",
+		gSuiteGroupsURL, email, pageToken, defaultMaxResults)
 	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed creating request to gsuite, reason=%v", err)
@@ -39,9 +69,5 @@ func (p *Provider) fetchGsuiteGroups(accessToken, email string) ([]string, error
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return nil, fmt.Errorf("failed decoding gsuite response, reason=%v", err)
 	}
-	var groups []string
-	for _, group := range response.Groups {
-		groups = append(groups, group.Email)
-	}
-	return groups, nil
+	return &response, nil
 }
