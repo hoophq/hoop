@@ -2,9 +2,8 @@
   (:require
     ["@radix-ui/themes" :refer [Heading]]))
 
-;; radix components for headings
 (defn H1
-  "Radix UI component for <h1> html tag
+  "Radix UI component for <h1> html tag for page headers
   :text - text to be displayed
   :options - Radix UI options for the Heading component"
   [{:keys [text options]}]
@@ -12,17 +11,6 @@
    (merge
      options
      {:size "8" :weight "bold" :as "h1"})
-   text])
-
-(defn H3
-  "Radix UI component for <h3> html tag
-  :text - text to be displayed
-  :options - Radix UI options for the Heading component"
-  [{:keys [text options]}]
-  [:> Heading
-   (merge
-     options
-     {:size "4" :weight "medium" :as "h3"})
    text])
 
 ;; TODO: see how it would seamsly adapt
