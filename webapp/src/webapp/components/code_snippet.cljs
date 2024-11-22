@@ -1,6 +1,7 @@
 (ns webapp.components.code-snippet
   (:require ["@heroicons/react/20/solid" :as hero-outline-icon]
             ["clipboard" :as clipboardjs]
+            ["lucide-react" :refer [Copy]]
             [re-frame.core :as rf]
             [webapp.components.headings :as h]))
 
@@ -10,8 +11,7 @@
                      "top-2 right-2 cursor-pointer box-border "
                      "opacity-0 group-hover:opacity-100 transition z-20")
          :data-clipboard-target data-clipboard-target}
-   [:> hero-outline-icon/DocumentDuplicateIcon {:class "h-6 w-6 shrink-0 text-white"
-                                                :aria-hidden "true"}]])
+   [:> Copy {:size 14 :color "white"}]])
 
 (defn main
   "config is a map with the following fields:
@@ -25,7 +25,7 @@
      (when title [h/h3 title {:class "mb-regular"}])
      [:section
       {:class (str "relative bg-gray-900 font-mono overflow-auto "
-                   " whitespace-pre text-white text-sm rounded-lg"
+                   " whitespace-pre text-white text-sm rounded-xl"
                    " p-regular group")}
       (when-not (:not-clipboard? config) (copy-clipboard (str "#" container-id)))
       [:div

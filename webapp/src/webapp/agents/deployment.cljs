@@ -5,7 +5,8 @@
                                 Table Heading Code]]
     ["lucide-react" :refer [Copy]]
     [webapp.config :as config]
-    [webapp.components.button :as button]))
+    [webapp.components.button :as button]
+    [webapp.components.code-snippet :as code-snippet]))
 
 (defmulti installation identity)
 (defmethod installation "Kubernetes" [_]
@@ -73,8 +74,9 @@
        "Manually running in a Docker container"]
       [:> Text {:size "1" :color "gray"}
        "If preferred, it is also possible to configure it manually with the following command."]]
-     [:> Box
-       [:> Code "docker container run hoophq/hoopdev:latest \\"]]]]])
+     [code-snippet/main
+      {:code (str "docker container run hoophq/hoopdev:latest "
+                  "--env HOOP_KEY={your-keyasiudhfisaduhfishafiuhasifuhausi}")}]]]])
 
 (defn main
   "function that render the instructions for each deployment method
@@ -91,5 +93,7 @@
      [button/DocsBtnCallOut
       {:text "Learn more about Agents"
        :href "https://hoop.dev/docs/concepts/agent"}]]
-    [:> Box {:class "space-y-radix-7" :gridColumn "span 5 / span 5"}
+    [:> Box {:class "space-y-radix-7"
+             :mb "8"
+             :gridColumn "span 5 / span 5"}
      [installation installation-method]]]])
