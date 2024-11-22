@@ -13,7 +13,6 @@ import (
 
 var DefaultPluginNames = []string{
 	plugintypes.PluginAuditName,
-	plugintypes.PluginIndexName,
 	plugintypes.PluginEditorName,
 	plugintypes.PluginSlackName,
 	plugintypes.PluginRunbooksName,
