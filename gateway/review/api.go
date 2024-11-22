@@ -7,7 +7,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/pgrest"
-	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"olympos.io/encoding/edn"
@@ -63,21 +62,6 @@ func (h *Handler) Put(c *gin.Context) {
 		log.Errorf("failed processing review, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 	}
-}
-
-func (h *Handler) FindAll(c *gin.Context) {
-	ctx := storagev2.ParseContext(c)
-	reviews, err := pgreview.New().FetchAll(ctx)
-	if err != nil && err != pgrest.ErrNotFound {
-		log.Errorf("failed listing reviews, err=%v", err)
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-	var reviewList []types.ReviewJSON
-	for _, obj := range reviews {
-		reviewList = append(reviewList, *pgreview.ToJson(obj))
-	}
-	c.JSON(http.StatusOK, reviewList)
 }
 
 func sanitizeReview(review *types.Review) types.ReviewJSON {

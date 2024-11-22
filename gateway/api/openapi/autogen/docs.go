@@ -1531,7 +1531,7 @@ const docTemplate = `{
         },
         "/proxymanager/connect": {
             "post": {
-                "description": "Send a connect request to the client. A successful response indicates the client has stablished a connection.\nIf the connection resource has the review enabled, it returns a successful response containing the link of the review in the ` + "`" + `Localtion` + "`" + ` header.",
+                "description": "Send a connect request to the client. A successful response indicates the client has stablished a connection.\nIf the connection resource has the review enabled, it returns a successful response containing the link of the review in the ` + "`" + `Location` + "`" + ` header.",
                 "consumes": [
                     "application/json"
                 ],

@@ -10,6 +10,7 @@ import (
 	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
 	"github.com/hoophq/hoop/gateway/review"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
 type handler struct {
@@ -59,7 +60,21 @@ func (h *handler) Get(c *gin.Context) {
 //	@Success		200	{array}		openapi.Review
 //	@Failure		500	{object}	openapi.HTTPError
 //	@Router			/reviews [get]
-func (h *handler) List(c *gin.Context) { h.legacy.FindAll(c) }
+func (h *handler) List(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	reviews, err := pgreview.New().FetchAll(ctx)
+	if err != nil && err != pgrest.ErrNotFound {
+		log.Errorf("failed listing reviews, err=%v", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	var reviewList []types.ReviewJSON
+	for _, obj := range reviews {
+		reviewList = append(reviewList, *pgreview.ToJson(obj))
+	}
+	c.JSON(http.StatusOK, reviewList)
+
+}
 
 // UpdateReview
 //
