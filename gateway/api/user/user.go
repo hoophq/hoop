@@ -463,16 +463,14 @@ func GetUserInfo(c *gin.Context) {
 			SlackID:  ctx.SlackID,
 			Groups:   groupList,
 		},
-		IsAdmin:               ctx.IsAdminUser(), // DEPRECATED in flavor of role (admin)
-		IsMultitenant:         isOrgMultiTenant,  // DEPRECATED is flavor of tenancy_type
-		TenancyType:           tenancyType,
-		OrgID:                 ctx.OrgID,
-		OrgName:               ctx.OrgName,
-		OrgLicense:            ctx.OrgLicense,
-		FeatureAskAI:          askAIFeatureStatus,
-		WebAppUsersManagement: appconfig.Get().WebappUsersManagement(),
-		// TODO: change to use hmac digest from user email
-		// IntercomUserHmacDigest: "a682351b1946a315d77ac06715fb5e3fd788c395c51b448817bc3c296cd8a492",
+		IsAdmin:                ctx.IsAdminUser(), // DEPRECATED in flavor of role (admin)
+		IsMultitenant:          isOrgMultiTenant,  // DEPRECATED is flavor of tenancy_type
+		TenancyType:            tenancyType,
+		OrgID:                  ctx.OrgID,
+		OrgName:                ctx.OrgName,
+		OrgLicense:             ctx.OrgLicense,
+		FeatureAskAI:           askAIFeatureStatus,
+		WebAppUsersManagement:  appconfig.Get().WebappUsersManagement(),
 		IntercomUserHmacDigest: intercomUserHash,
 	}
 	if ctx.IsAnonymous() {
