@@ -48,7 +48,6 @@
     [:> Flex {:justify "end"
               :flexGrow "1"}
      [:> Button {:size "3"
-                 :variant "solid"
                  :on-click #(rf/dispatch [:navigate :new-agent])}
       "Setup new Agent"]]]
    [agents-list]])

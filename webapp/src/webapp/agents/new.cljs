@@ -81,6 +81,9 @@
        [deployment/main {:installation-method @selected-installation-method}]])))
 
 (defn main []
+  ;; this is dispatched here to avoid refetching when the form receives
+  ;; updates from user interaction with it
+  ;(rf/dispatch [:agents->generate-agent-key])
   [:div
    [:> Box {:mb "6"}
     [button/HeaderBack]]

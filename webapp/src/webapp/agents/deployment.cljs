@@ -2,24 +2,86 @@
   (:require
     [re-frame.core :as rf]
     ["@radix-ui/themes" :refer [Grid Flex Box Text
-                                Table Heading Code]]
+                                Table Heading Link]]
     ["lucide-react" :refer [Copy]]
     [webapp.config :as config]
     [webapp.components.button :as button]
     [webapp.components.code-snippet :as code-snippet]))
 
+(defn values-yml [hoop-key]
+  (str "config:\n"
+       "  HOOP_KEY: " hoop-key "\n"
+       "image:\n"
+       "  repository: hoophq/hoopdev\n"
+       "  tag: latest\n"))
+
+(defn installing-helm [hoop-key]
+  (str "VERSION=$(curl -s https://releases.hoop.dev/release/latest.txt)\n"
+"helm template hoopagent \\\n"
+  "https://releases.hoop.dev/release/$VERSION/hoopagent-chart-$VERSION.tgz \\\n"
+  "--set 'config.HOOP_KEY=" hoop-key "' \\\n"
+  "--set 'image.tag=1.25.2' \\\n"
+  "--set 'extraSecret=AWS_REGION=us-east-1' \\\n"))
+
+(defn deployment-yml [hoop-key]
+  (str "apiVersion: apps/v1\n"
+"kind: Deployment\n"
+"metadata:\n"
+"  name: hoopagent\n"
+"spec:\n"
+"  replicas: 1\n"
+"  selector:\n"
+"    matchLabels:\n"
+"      app: hoopagent\n"
+"  template:\n"
+"    metadata:\n"
+"      labels:\n"
+"        app: hoopagent\n"
+"    spec:\n"
+"      containers:\n"
+"      - name: hoopagent\n"
+"        image: hoophq/hoopdev\n"
+"        env:\n"
+"        - name: HOOP_KEY\n"
+"          value: '" hoop-key "'\n"))
+
 (defmulti installation identity)
 (defmethod installation "Kubernetes" [_]
-  [:> Flex {:direction "column" :gap "4"}
-   [:> Box "Minimal configuration"
-    [:div "values.yml"]]
-   [:> Box "standalone deployment"
-    [:div "Helm"]
-    [:div "deployment.yml"]]])
+  [:> Flex {:direction "column" :gap "6"}
+   [:> Box
+    [:> Flex {:direction "column" :gap "4"}
+
+     [:> Flex {:direction "column" :gap "2"}
+      [:> Text {:size "2" :weight "bold"}
+       "Minimal configuration"]
+      [:> Text {:size "1" :color "gray"}
+       "Include the following parameters for standard installation."]]
+     [:> Box
+      [:> Text {:size "1"}
+       "values.yml"]
+      [code-snippet/main
+       {:code (values-yml "test")}]
+      ]]]
+   [:> Flex {:direction "column" :gap "4"}
+    [:> Text {:size "2" :weight "bold"}
+     "Standalone deployment"]
+    [:> Text {:size "2" :weight "bold"}
+     "Helm"]
+    [:> Text {:size "1" :color "gray"}
+     "Make sure you have Helm installed. Check the "
+     [:> Link {:href "https://helm.sh/docs/intro/install/"
+               :target "_blank"}
+      "Helm installation guide"]]
+    [code-snippet/main
+     {:code (installing-helm "test")}]]
+   [:> Box
+    [:> Text {:size "1"}
+     "deployment.yml"]
+    [code-snippet/main
+     {:code (deployment-yml "test")}]]])
 
 (defmethod installation "Docker Hub" [_]
   [:> Flex {:direction "column" :gap "6"}
-   ; docker image repository
    [:> Box
     [:> Flex {:direction "column" :gap "4"}
      [:> Text {:size "2" :weight "bold"}
@@ -75,7 +137,7 @@
       [:> Text {:size "1" :color "gray"}
        "If preferred, it is also possible to configure it manually with the following command."]]
      [code-snippet/main
-      {:code (str "docker container run hoophq/hoopdev:latest "
+      {:code (str "docker container run hoophq/hoopdev:latest \\\n"
                   "--env HOOP_KEY={your-keyasiudhfisaduhfishafiuhasifuhausi}")}]]]])
 
 (defn main

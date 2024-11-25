@@ -42,3 +42,22 @@
    [{:keys [db]} [_ agents]]
    {:db (assoc db :agents-embedded agents)}))
 
+(rf/reg-event-fx
+  :agents->generate-agent-key
+  (fn [{:keys [db]} [_]]
+    {:fx [[:dispatch
+           [:fetch
+            {:method "POST"
+             :uri "/agents"
+             :body {:name "abcde"}
+             :on-success #(rf/dispatch [:agents->set-agent-key %])}]]]}))
+
+(rf/reg-event-fx
+  :agents->set-agent-key
+  (fn [{:keys [db]} [_ agent]]
+    {:db (assoc db :agents->agent-key agent)}))
+
+(rf/reg-sub
+  :agents->agent-key
+  (fn [db _]
+    (:agents->agent-key db)))
