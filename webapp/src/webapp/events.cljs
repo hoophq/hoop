@@ -114,8 +114,6 @@
  :initialize-intercom
  (fn
    [{:keys [db]} [_ user]]
-   (js/console.log "DB -->>", (clj->js db))
-   (js/console.log "USER -->>", (clj->js user))
    (js/window.Intercom
     "boot"
     (clj->js {:api_base "https://api-iam.intercom.io"
