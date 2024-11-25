@@ -2,6 +2,9 @@ package clientexec
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,6 +29,9 @@ var (
 	walLogPath       = filepath.Join(plugintypes.AuditPath, "clientexec")
 	walFolderTmpl    = `%s/%s-%s-wal`
 	maxResponseBytes = sessionwal.DefaultMaxRead
+
+	// PlainExecSecretKey is a key to execute plain executions in the gateway securely by this package
+	PlainExecSecretKey string = generateSecureRandomKeyOrDie()
 )
 
 func init() { _ = os.MkdirAll(walLogPath, 0755) }
@@ -52,6 +58,7 @@ type Options struct {
 	ConnectionName string
 	BearerToken    string
 	Origin         string
+	Verb           string
 	UserAgent      string
 }
 
@@ -97,8 +104,13 @@ func New(opts *Options) (*clientExec, error) {
 	if opts.SessionID == "" {
 		opts.SessionID = uuid.NewString()
 	}
+
 	if opts.Origin == "" {
 		opts.Origin = pb.ConnectionOriginClientAPI
+	}
+
+	if opts.Verb == "" {
+		opts.Verb = pb.ClientVerbExec
 	}
 
 	folderName := fmt.Sprintf(walFolderTmpl, walLogPath, opts.OrgID, opts.SessionID)
@@ -122,8 +134,9 @@ func New(opts *Options) (*clientExec, error) {
 	},
 		grpc.WithOption(grpc.OptionConnectionName, opts.ConnectionName),
 		grpc.WithOption("origin", opts.Origin),
-		grpc.WithOption("verb", pb.ClientVerbExec),
+		grpc.WithOption("verb", opts.Verb),
 		grpc.WithOption("session-id", opts.SessionID),
+		grpc.WithOption("plain-exec-key", PlainExecSecretKey),
 	)
 	if err != nil {
 		_ = wlog.Close()
@@ -289,4 +302,17 @@ func (c *clientExec) readAll() ([]byte, bool, error) {
 	}
 
 	return stdoutData, isTruncated, nil
+}
+
+func generateSecureRandomKeyOrDie() string {
+	secretRandomBytes := make([]byte, 32)
+	if _, err := rand.Read(secretRandomBytes); err != nil {
+		log.Fatalf("failed generating entropy, err=%v", err)
+	}
+	secretKey := base64.RawURLEncoding.EncodeToString(secretRandomBytes)
+	h := sha256.New()
+	if _, err := h.Write([]byte(secretKey)); err != nil {
+		log.Fatalf("failed hashing secret key, err=%v", err)
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))
 }

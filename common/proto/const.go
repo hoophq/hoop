@@ -51,8 +51,9 @@ const (
 
 	ClientLoginCallbackAddress string = "127.0.0.1:3587"
 
-	ClientVerbConnect = "connect"
-	ClientVerbExec    = "exec"
+	ClientVerbConnect   = "connect"
+	ClientVerbExec      = "exec"
+	ClientVerbPlainExec = "plain-exec"
 
 	SessionPhaseClientConnect       = "client-connect"
 	SessionPhaseClientConnected     = "client-connected"

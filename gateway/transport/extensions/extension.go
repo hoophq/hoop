@@ -19,9 +19,14 @@ type Context struct {
 	SID            string
 	OrgID          string
 	ConnectionName string
+	Verb           string
 }
 
 func OnReceive(ctx Context, pkt *proto.Packet) error {
+	if ctx.Verb == proto.ClientVerbPlainExec {
+		return nil
+	}
+
 	switch pkt.Type {
 	case pbagent.SessionOpen:
 		conn, err := models.GetConnectionGuardRailRules(ctx.OrgID, ctx.ConnectionName)
