@@ -205,6 +205,7 @@ jobs:
           HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
+          INTERCOM_HMAC_KEY: ${{ secrets.INTERCOM_HMAC_KEY }}
         run: GOOS=linux GOARCH=amd64 make build
 
       - uses: actions/upload-artifact@v3
@@ -244,6 +245,7 @@ jobs:
           HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
+          INTERCOM_HMAC_KEY: ${{ secrets.INTERCOM_HMAC_KEY }}
         run: GOOS=linux GOARCH=arm64 make build
 
       - uses: actions/upload-artifact@v3

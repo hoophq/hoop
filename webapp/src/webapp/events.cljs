@@ -116,7 +116,10 @@
    [{:keys [db]} [_ user]]
    (js/window.Intercom
     "boot"
-    (clj->js {:app_id "ryuapdmp"
+    (clj->js {:api_base "https://api-iam.intercom.io"
+              :app_id "ryuapdmp"
               :name (:name user)
-              :email (:email user)}))
+              :email (:email user)
+              :user_id (:email user)
+              :user_hash (:intercom_hmac_digest user)}))
    {}))

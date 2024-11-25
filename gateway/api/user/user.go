@@ -446,6 +446,11 @@ func GetUserInfo(c *gin.Context) {
 	case ctx.IsAuditorUser():
 		roleName = openapi.RoleAuditorType
 	}
+
+	intercomUserHash, err := analytics.GenerateIntercomHmacDigest(ctx.UserEmail)
+	if err != nil {
+		log.Warn(err)
+	}
 	userInfoData := openapi.UserInfo{
 		User: openapi.User{
 			ID:       ctx.UserID,
@@ -458,16 +463,19 @@ func GetUserInfo(c *gin.Context) {
 			SlackID:  ctx.SlackID,
 			Groups:   groupList,
 		},
-		IsAdmin:               ctx.IsAdminUser(), // DEPRECATED in flavor of role (admin)
-		IsMultitenant:         isOrgMultiTenant,  // DEPRECATED is flavor of tenancy_type
-		TenancyType:           tenancyType,
-		OrgID:                 ctx.OrgID,
-		OrgName:               ctx.OrgName,
-		OrgLicense:            ctx.OrgLicense,
-		FeatureAskAI:          askAIFeatureStatus,
-		WebAppUsersManagement: appconfig.Get().WebappUsersManagement(),
+		IsAdmin:                ctx.IsAdminUser(), // DEPRECATED in flavor of role (admin)
+		IsMultitenant:          isOrgMultiTenant,  // DEPRECATED is flavor of tenancy_type
+		TenancyType:            tenancyType,
+		OrgID:                  ctx.OrgID,
+		OrgName:                ctx.OrgName,
+		OrgLicense:             ctx.OrgLicense,
+		FeatureAskAI:           askAIFeatureStatus,
+		WebAppUsersManagement:  appconfig.Get().WebappUsersManagement(),
+		IntercomUserHmacDigest: intercomUserHash,
 	}
 	if ctx.IsAnonymous() {
+		intercomUserHash, _ := analytics.GenerateIntercomHmacDigest(ctx.UserAnonEmail)
+		userInfoData.IntercomUserHmacDigest = intercomUserHash
 		userInfoData.Verified = false
 		userInfoData.Email = ctx.UserAnonEmail
 		userInfoData.Name = ctx.UserAnonProfile
