@@ -1,3 +1,6 @@
 package analytics
 
-var segmentApiKey string
+var (
+	segmentApiKey   string
+	intercomHmacKey string
+)

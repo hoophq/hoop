@@ -446,6 +446,11 @@ func GetUserInfo(c *gin.Context) {
 	case ctx.IsAuditorUser():
 		roleName = openapi.RoleAuditorType
 	}
+
+	intercomUserHash, err := analytics.GenerateIntercomHmacDigest(ctx.UserEmail)
+	if err != nil {
+		log.Warn(err)
+	}
 	userInfoData := openapi.UserInfo{
 		User: openapi.User{
 			ID:       ctx.UserID,
@@ -466,8 +471,13 @@ func GetUserInfo(c *gin.Context) {
 		OrgLicense:            ctx.OrgLicense,
 		FeatureAskAI:          askAIFeatureStatus,
 		WebAppUsersManagement: appconfig.Get().WebappUsersManagement(),
+		// TODO: change to use hmac digest from user email
+		// IntercomUserHmacDigest: "a682351b1946a315d77ac06715fb5e3fd788c395c51b448817bc3c296cd8a492",
+		IntercomUserHmacDigest: intercomUserHash,
 	}
 	if ctx.IsAnonymous() {
+		intercomUserHash, _ := analytics.GenerateIntercomHmacDigest(ctx.UserAnonEmail)
+		userInfoData.IntercomUserHmacDigest = intercomUserHash
 		userInfoData.Verified = false
 		userInfoData.Email = ctx.UserAnonEmail
 		userInfoData.Name = ctx.UserAnonProfile

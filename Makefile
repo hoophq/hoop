@@ -18,7 +18,8 @@ LDFLAGS := "-s -w \
 -X github.com/hoophq/hoop/common/version.buildDate=${DATE} \
 -X github.com/hoophq/hoop/common/monitoring.honeycombApiKey=${HONEYCOMB_API_KEY} \
 -X github.com/hoophq/hoop/common/monitoring.sentryDSN=${SENTRY_DSN} \
--X github.com/hoophq/hoop/gateway/analytics.segmentApiKey=${SEGMENT_API_KEY}"
+-X github.com/hoophq/hoop/gateway/analytics.segmentApiKey=${SEGMENT_API_KEY} \
+-X github.com/hoophq/hoop/gateway/analytics.intercomHmacKey=${INTERCOM_HMAC_KEY}"
 
 postgrest-link:
 	echo https://github.com/PostgREST/postgrest/releases/download/v11.2.2/postgrest-v11.2.2-${POSTREST_ARCH_SUFFIX}

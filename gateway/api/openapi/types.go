@@ -101,7 +101,8 @@ type UserInfo struct {
 	// Enable or disable Webapp users management
 	// * on - Enable the users management view on Webapp
 	// * on - Disable the users management view on Webapp
-	WebAppUsersManagement string `json:"webapp_users_management" enums:"on,off" default:"on"`
+	WebAppUsersManagement  string `json:"webapp_users_management" enums:"on,off" default:"on"`
+	IntercomUserHmacDigest string `json:"intercom_hmac_digest"`
 }
 
 type ServiceAccountStatusType string
