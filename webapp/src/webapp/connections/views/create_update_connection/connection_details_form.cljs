@@ -1,18 +1,17 @@
 (ns webapp.connections.views.create-update-connection.connection-details-form
-  (:require ["@radix-ui/themes" :refer [Box Callout Flex Grid Link Switch Text]]
-            ["lucide-react" :refer [ArrowUpRight Star]]
-            [clojure.string :as s]
-            [webapp.components.forms :as forms]
-            [webapp.components.multiselect :as multi-select]
-            [webapp.connections.dlp-info-types :as dlp-info-types]))
-
-(defn array->select-options [array]
-  (mapv #(into {} {"value" % "label" (s/lower-case (s/replace % #"_" " "))}) array))
+  (:require
+   ["@radix-ui/themes" :refer [Box Callout Flex Grid Link Switch Text]]
+   ["lucide-react" :refer [ArrowUpRight Star]]
+   [webapp.components.forms :as forms]
+   [webapp.components.multiselect :as multi-select]
+   [webapp.connections.dlp-info-types :as dlp-info-types]
+   [webapp.connections.helpers :as helpers]))
 
 (defn main
   [{:keys [user-groups
            free-license?
            connection-name
+           connection-subtype
            form-type
            reviews
            review-groups
@@ -24,7 +23,9 @@
      [:> Text {:size "4" :weight "bold" :class "text-gray-12"} "Connection information"]
      [:> Text {:size "3" :class "text-gray-11"} "Names are used to identify your connection and can't be changed."]]
     [:> Box {:class "space-y-radix-5" :grid-column "span 3 / span 3"}
-     [forms/input {:placeholder "mssql-armadillo-9696"
+     [forms/input {:placeholder (str (when @connection-subtype
+                                       (str @connection-subtype "-"))
+                                     (helpers/random-connection-name))
                    :label "Name"
                    :required true
                    :disabled (= form-type :update)
@@ -63,7 +64,7 @@
                                           "for individual query approvals.")]
         (when @reviews
           [:> Box {:mt "4"}
-           [multi-select/main {:options (array->select-options @user-groups)
+           [multi-select/main {:options (helpers/array->select-options @user-groups)
                                :id "approval-groups-input"
                                :name "approval-groups-input"
                                :required? @reviews
@@ -95,7 +96,7 @@
              "upgrading your plan."]]])
         (when @ai-data-masking
           [:> Box {:mt "4"}
-           [multi-select/main {:options (array->select-options dlp-info-types/options)
+           [multi-select/main {:options (helpers/array->select-options dlp-info-types/options)
                                :id "data-masking-groups-input"
                                :name "data-masking-groups-input"
                                :disabled? (or (not @ai-data-masking) free-license?)

@@ -47,8 +47,8 @@
 
      [:div {:className "flex space-x-3 items-center"}
       (when show-icon? [status-icon status])
-
-      [:> ChevronRight {:size 16 :className "text-[--gray-12] transition-transform duration-300 group-data-[state=open]:rotate-90"}]]]]
+      [:> ChevronRight {:size 16
+                        :className "text-[--gray-12] transition-transform duration-300 group-data-[state=open]:rotate-90"}]]]]
 
    [:> (.-Content Accordion)
     [:> Box {:px "5" :py "7" :className "bg-white border-t border-[--gray-a6] rounded-b-6"}
@@ -68,26 +68,36 @@
       :show-icon?      - Boolean, if true, displays a status icon (optional, default false)
 
     - id: A unique identifier for the accordion (optional)
-    - first-open?: Boolean, if true, the first item will be expanded by default (optional, default false)
+    - initial-open?: Boolean, if true, the first item will be expanded by default (optional)
+    - trigger-value: Value to trigger opening/closing of a specific accordion item (optional)
 
     Usage example:
     [accordion-root {:items [{:value \"item1\"
-                              :title \"Title 1\"
-                              :subtitle \"Subtitle 1\"
-                              :content \"Content of item 1\"}
-                             {:value \"item2\"
-                              :title \"Title 2\"
-                              :content \"Content of item 2\"
-                              :show-icon? true}]
+                             :title \"Title 1\"
+                             :subtitle \"Subtitle 1\"
+                             :content \"Content of item 1\"}
+                            {:value \"item2\"
+                             :title \"Title 2\"
+                             :content \"Content of item 2\"
+                             :show-icon? true}]
                      :id \"my-accordion\"
-                     :first-open? true}]"
-  [{:keys [items id first-open?]}]
-  [:> (.-Root Accordion)
-   {:className "w-full"
-    :id id
-    :defaultValue (when first-open?
-                    (:value (first items)))
-    :type "single"
-    :collapsible true}
-   (for [{:keys [value] :as item} items]
-     ^{:key value} [accordion-item (merge item {:total-items (count items)})])])
+                     :initial-open? true
+                     :trigger-value \"item2\"}]"
+  [{:keys [items initial-open?]}]
+  (let [current-value (r/atom nil)]
+    (when (and initial-open? (seq items) (nil? @current-value))
+      (reset! current-value (-> items first :value)))
+
+    (fn [{:keys [items id trigger-value]}]
+      (when (and trigger-value (not= trigger-value @current-value))
+        (reset! current-value trigger-value))
+
+      [:> (.-Root Accordion)
+       {:className "w-full"
+        :id id
+        :value @current-value
+        :onValueChange #(reset! current-value %)
+        :type "single"
+        :collapsible true}
+       (for [{:keys [value] :as item} items]
+         ^{:key value} [accordion-item (merge item {:total-items (count items)})])])))

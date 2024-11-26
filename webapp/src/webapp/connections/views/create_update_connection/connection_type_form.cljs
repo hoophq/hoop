@@ -1,10 +1,11 @@
 (ns webapp.connections.views.create-update-connection.connection-type-form
-  (:require ["@radix-ui/themes" :refer [Avatar Box Card Flex Grid RadioGroup
-                                        Text]]
-            ["lucide-react" :refer [AppWindow Database SquareTerminal Workflow]]
-            [clojure.string :as str]
-            [reagent.core :as r]
-            [webapp.connections.utilities :as utils]))
+  (:require
+   ["@radix-ui/themes" :refer [Avatar Box Card Flex Grid RadioGroup Text]]
+   ["lucide-react" :refer [AppWindow Database SquareTerminal Workflow]]
+   [clojure.string :as str]
+   [reagent.core :as r]
+   [webapp.connections.constants :as constants]
+   [webapp.connections.helpers :as helpers]))
 
 (def connections-type
   [{:icon (r/as-element [:> Database {:size 16}])
@@ -45,24 +46,30 @@
    connection-type
    connection-subtype
    config-file-name
-   database-schema?]
+   database-schema?
+   connection-command]
   (cond
     (= value "database") (do (reset! connection-type "database")
                              (reset! connection-subtype nil)
-                             (reset! database-schema? true))
+                             (reset! database-schema? true)
+                             (reset! connection-command nil))
 
     (= value "custom") (do (reset! connection-type "custom")
-                           (reset! connection-subtype nil))
+                           (reset! connection-subtype nil)
+                           (reset! connection-command nil))
 
     (= value "ssh") (do (reset! connection-type "custom")
                         (reset! connection-subtype "ssh")
-                        (reset! config-file-name "SSH_PRIVATE_KEY"))
+                        (reset! config-file-name "SSH_PRIVATE_KEY")
+                        (reset! connection-command (get constants/connection-commands "ssh")))
 
     (= value "tcp") (do (reset! connection-type "application")
-                        (reset! connection-subtype "tcp"))
+                        (reset! connection-subtype "tcp")
+                        (reset! connection-command nil))
 
     (= value "application") (do (reset! connection-type "application")
-                                (reset! connection-subtype nil))))
+                                (reset! connection-subtype nil)
+                                (reset! connection-command nil))))
 
 (defn is-connection-type-selected [value connection-type connection-subtype]
   (cond
@@ -80,7 +87,13 @@
     (= value "application") (and (= value connection-type)
                                  (not= connection-subtype "tcp"))))
 
-(defn main [{:keys [connection-type connection-subtype configs config-file-name database-schema?]}]
+(defn main [{:keys [connection-type
+                    connection-subtype
+                    connection-name
+                    configs
+                    config-file-name
+                    database-schema?
+                    connection-command]}]
   [:> Flex {:direction "column" :gap "9" :class "px-20"}
    [:> Grid {:columns "5" :gap "7"}
     [:> Flex {:direction "column" :grid-column "span 2 / span 2"}
@@ -100,8 +113,12 @@
                                  connection-type
                                  connection-subtype
                                  config-file-name
-                                 database-schema?)
-                                (reset! configs (utils/get-config-keys (keyword value))))}
+                                 database-schema?
+                                 connection-command)
+                                (reset! configs (helpers/get-config-keys (keyword value)))
+                                (reset! connection-name (str (when @connection-subtype
+                                                               (str @connection-subtype "-"))
+                                                             (helpers/random-connection-name))))}
            [:> Flex {:align "center" :gap "3"}
             [:> Avatar {:size "4"
                         :class (when is-selected "dark")
@@ -125,7 +142,10 @@
                             :required true
                             :on-value-change (fn [value]
                                                (reset! connection-subtype value)
-                                               (reset! configs (utils/get-config-keys (keyword value))))}
+                                               (reset! configs (helpers/get-config-keys (keyword value)))
+                                               (reset! connection-name (str (when @connection-subtype
+                                                                              (str @connection-subtype "-"))
+                                                                            (helpers/random-connection-name))))}
         (doall
          (for [{:keys [value title]} (get connections-subtypes @connection-type)]
            ^{:key title}

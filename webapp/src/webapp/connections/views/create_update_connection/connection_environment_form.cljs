@@ -1,14 +1,11 @@
 (ns webapp.connections.views.create-update-connection.connection-environment-form
-  (:require ["@radix-ui/themes" :refer [Box Button Callout Flex Grid Link Text]]
-            ["lucide-react" :refer [ArrowUpRight Plus]]
-            [re-frame.core :as rf]
-            [reagent.core :as r]
-            [webapp.components.forms :as forms]
-            [webapp.connections.views.configuration-inputs :as config-inputs]
-            [webapp.connections.views.create-update-connection.hoop-run-instructions :as instructions]))
-
-(defn js-select-options->list [options]
-  (mapv #(get % "value") options))
+  (:require
+   ["@radix-ui/themes" :refer [Box Button Callout Flex Grid Link Text]]
+   ["lucide-react" :refer [ArrowUpRight Plus]]
+   [webapp.components.forms :as forms]
+   [webapp.connections.helpers :as helpers]
+   [webapp.connections.views.configuration-inputs :as config-inputs]
+   [webapp.connections.views.create-update-connection.hoop-run-instructions :as instructions]))
 
 (defn main []
   (fn [{:keys [agents
@@ -178,6 +175,6 @@
            [instructions/run-hoop-connection {:connection-name @connection-name
                                               :connection-subtype @connection-subtype
                                               :review? @reviews
-                                              :review-groups (js-select-options->list @review-groups)
+                                              :review-groups (helpers/js-select-options->list @review-groups)
                                               :data-masking? @ai-data-masking
-                                              :data-masking-fields (js-select-options->list @ai-data-masking-info-types)}]]])])))
+                                              :data-masking-fields (helpers/js-select-options->list @ai-data-masking-info-types)}]]])])))
