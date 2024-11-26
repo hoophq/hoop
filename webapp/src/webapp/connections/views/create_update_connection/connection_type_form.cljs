@@ -51,10 +51,12 @@
   (cond
     (= value "database") (do (reset! connection-type "database")
                              (reset! connection-subtype nil)
-                             (reset! database-schema? true))
+                             (reset! database-schema? true)
+                             (reset! connection-command nil))
 
     (= value "custom") (do (reset! connection-type "custom")
-                           (reset! connection-subtype nil))
+                           (reset! connection-subtype nil)
+                           (reset! connection-command nil))
 
     (= value "ssh") (do (reset! connection-type "custom")
                         (reset! connection-subtype "ssh")
@@ -62,10 +64,12 @@
                         (reset! connection-command (get constants/connection-commands "ssh")))
 
     (= value "tcp") (do (reset! connection-type "application")
-                        (reset! connection-subtype "tcp"))
+                        (reset! connection-subtype "tcp")
+                        (reset! connection-command nil))
 
     (= value "application") (do (reset! connection-type "application")
-                                (reset! connection-subtype nil))))
+                                (reset! connection-subtype nil)
+                                (reset! connection-command nil))))
 
 (defn is-connection-type-selected [value connection-type connection-subtype]
   (cond
