@@ -1,10 +1,10 @@
 (ns webapp.connections.views.create-update-connection.connection-type-form
-  (:require ["@radix-ui/themes" :refer [Avatar Box Card Flex Grid RadioGroup
-                                        Text]]
-            ["lucide-react" :refer [AppWindow Database SquareTerminal Workflow]]
-            [clojure.string :as str]
-            [reagent.core :as r]
-            [webapp.connections.utilities :as utils]))
+  (:require
+   ["@radix-ui/themes" :refer [Avatar Box Card Flex Grid RadioGroup Text]]
+   ["lucide-react" :refer [AppWindow Database SquareTerminal Workflow]]
+   [clojure.string :as str]
+   [reagent.core :as r]
+   [webapp.connections.helpers :as helpers]))
 
 (def connections-type
   [{:icon (r/as-element [:> Database {:size 16}])
@@ -80,7 +80,12 @@
     (= value "application") (and (= value connection-type)
                                  (not= connection-subtype "tcp"))))
 
-(defn main [{:keys [connection-type connection-subtype configs config-file-name database-schema?]}]
+(defn main [{:keys [connection-type
+                    connection-subtype
+                    connection-name
+                    configs
+                    config-file-name
+                    database-schema?]}]
   [:> Flex {:direction "column" :gap "9" :class "px-20"}
    [:> Grid {:columns "5" :gap "7"}
     [:> Flex {:direction "column" :grid-column "span 2 / span 2"}
@@ -101,7 +106,10 @@
                                  connection-subtype
                                  config-file-name
                                  database-schema?)
-                                (reset! configs (utils/get-config-keys (keyword value))))}
+                                (reset! configs (helpers/get-config-keys (keyword value)))
+                                (reset! connection-name (str (when @connection-subtype
+                                                               (str @connection-subtype "-"))
+                                                             (helpers/random-connection-name))))}
            [:> Flex {:align "center" :gap "3"}
             [:> Avatar {:size "4"
                         :class (when is-selected "dark")
@@ -125,7 +133,10 @@
                             :required true
                             :on-value-change (fn [value]
                                                (reset! connection-subtype value)
-                                               (reset! configs (utils/get-config-keys (keyword value))))}
+                                               (reset! configs (helpers/get-config-keys (keyword value)))
+                                               (reset! connection-name (str (when @connection-subtype
+                                                                              (str @connection-subtype "-"))
+                                                                            (helpers/random-connection-name))))}
         (doall
          (for [{:keys [value title]} (get connections-subtypes @connection-type)]
            ^{:key title}

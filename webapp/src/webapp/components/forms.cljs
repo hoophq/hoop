@@ -146,7 +146,7 @@
       :id (or id "")
       :rows (or rows 5)
       :name (or name "")
-      :value value
+      :value (or value "")
       :autoFocus autoFocus
       :placeholder placeholder
       :on-change on-change

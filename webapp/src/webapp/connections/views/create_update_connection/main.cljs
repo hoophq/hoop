@@ -1,23 +1,19 @@
 (ns webapp.connections.views.create-update-connection.main
-  (:require ["@radix-ui/themes" :refer [Box Button Flex Heading Strong Text Link]]
-            ["lucide-react" :refer [ArrowLeft BadgeInfo GlobeLock SquareStack ShieldEllipsis]]
-            [clojure.string :as s]
-            [re-frame.core :as rf]
-            [reagent.core :as r]
-            [webapp.components.accordion :as accordion]
-            [webapp.connections.constants :as constants]
-            [webapp.connections.dlp-info-types :as ai-data-masking-info-types]
-            [webapp.connections.utilities :as utils]
-            [webapp.connections.views.create-update-connection.connection-details-form :as connection-details-form]
-            [webapp.connections.views.create-update-connection.connection-environment-form :as connection-environment-form]
-            [webapp.connections.views.create-update-connection.connection-advance-settings-form :as connection-advance-settings-form]
-            [webapp.connections.views.create-update-connection.connection-type-form :as connection-type-form]))
-
-(defn js-select-options->list [options]
-  (mapv #(get % "value") options))
-
-(defn array->select-options [array]
-  (mapv #(into {} {"value" % "label" (s/lower-case (s/replace % #"_" " "))}) array))
+  (:require
+   ["@radix-ui/themes" :refer [Box Button Flex Heading Link Strong Text]]
+   ["lucide-react" :refer [ArrowLeft BadgeInfo GlobeLock ShieldEllipsis
+                           SquareStack]]
+   [clojure.string :as s]
+   [re-frame.core :as rf]
+   [reagent.core :as r]
+   [webapp.components.accordion :as accordion]
+   [webapp.connections.constants :as constants]
+   [webapp.connections.dlp-info-types :as ai-data-masking-info-types]
+   [webapp.connections.helpers :as helpers]
+   [webapp.connections.views.create-update-connection.connection-advance-settings-form :as connection-advance-settings-form]
+   [webapp.connections.views.create-update-connection.connection-details-form :as connection-details-form]
+   [webapp.connections.views.create-update-connection.connection-environment-form :as connection-environment-form]
+   [webapp.connections.views.create-update-connection.connection-type-form :as connection-type-form]))
 
 (defn- convertStatusToBool [status]
   (if (= status "enabled")
@@ -88,7 +84,7 @@
         connection-tags-input-value (r/atom "")
         review-groups (r/atom (if (= form-type :create)
                                 [{"value" "admin" "label" "admin"}]
-                                (array->select-options
+                                (helpers/array->select-options
                                  (:reviewers connection))))
         enable-review? (r/atom (if (and (seq @review-groups)
                                         (= form-type :update))
@@ -96,8 +92,8 @@
                                  false))
         ai-data-masking-info-types (r/atom
                                     (if (= form-type :create)
-                                      (array->select-options ai-data-masking-info-types/options)
-                                      (array->select-options
+                                      (helpers/array->select-options ai-data-masking-info-types/options)
+                                      (helpers/array->select-options
                                        (:redact_types connection))))
         ai-data-masking (r/atom (if (and (:redact_enabled connection)
                                          (= form-type :update))
@@ -117,15 +113,15 @@
                                        true
                                        (convertStatusToBool (:access_mode_connect connection))))
         configs (r/atom (if (empty? (:secret connection))
-                          (utils/get-config-keys (keyword @connection-subtype))
-                          (utils/merge-by-key
-                           (utils/get-config-keys (keyword @connection-subtype))
-                           (utils/json->config
-                            (utils/separate-values-from-config-by-prefix (:secret connection) "envvar")))))
+                          (helpers/get-config-keys (keyword @connection-subtype))
+                          (helpers/merge-by-key
+                           (helpers/get-config-keys (keyword @connection-subtype))
+                           (helpers/json->config
+                            (helpers/separate-values-from-config-by-prefix (:secret connection) "envvar")))))
         config-key (r/atom "")
         config-value (r/atom "")
-        configs-file (r/atom (or (utils/json->config
-                                  (utils/separate-values-from-config-by-prefix
+        configs-file (r/atom (or (helpers/json->config
+                                  (helpers/separate-values-from-config-by-prefix
                                    (:secret connection) "filesystem")) []))
         config-file-name (r/atom "")
         config-file-value (r/atom "")
@@ -164,11 +160,11 @@
                                 :subtype @connection-subtype
                                 :agent_id @agent-id
                                 :reviewers (if @enable-review?
-                                             (js-select-options->list @review-groups)
+                                             (helpers/js-select-options->list @review-groups)
                                              [])
                                 :redact_enabled true
                                 :redact_types (if @ai-data-masking
-                                                (js-select-options->list @ai-data-masking-info-types)
+                                                (helpers/js-select-options->list @ai-data-masking-info-types)
                                                 [])
                                 :access_schema (if @database-schema?
                                                  "enabled"
@@ -183,20 +179,20 @@
                                                        "enabled"
                                                        "disabled")
                                 :guardrail_rules (if (seq @guardrails)
-                                                   (js-select-options->list @guardrails)
+                                                   (helpers/js-select-options->list @guardrails)
                                                    [])
                                 :tags (if (seq @connection-tags-value)
-                                        (js-select-options->list @connection-tags-value)
+                                        (helpers/js-select-options->list @connection-tags-value)
                                         nil)
                                 :secret (clj->js
                                          (merge
-                                          (utils/config->json (conj
-                                                               @configs
-                                                               {:key @config-key
-                                                                :value @config-value})
-                                                              "envvar:")
+                                          (helpers/config->json (conj
+                                                                 @configs
+                                                                 {:key @config-key
+                                                                  :value @config-value})
+                                                                "envvar:")
                                           (when (and @config-file-value @config-file-name)
-                                            (utils/config->json
+                                            (helpers/config->json
                                              (conj
                                               @configs-file
                                               {:key @config-file-name
@@ -293,11 +289,12 @@
                         :content [connection-type-form/main
                                   {:connection-type connection-type
                                    :connection-subtype connection-subtype
+                                   :connection-name connection-name
                                    :configs configs
                                    :config-file-name config-file-name
                                    :database-schema? database-schema?}]}]
                :id "resource-type"
-               :first-open? true}])
+               :initial-open? true}])
 
            [accordion/root
             {:items [{:title "Define connection details"
@@ -309,6 +306,7 @@
                       :content [connection-details-form/main
                                 {:user-groups user-groups
                                  :free-license? free-license?
+                                 :connection-subtype connection-subtype
                                  :connection-name connection-name
                                  :form-type form-type
                                  :reviews enable-review?
@@ -316,8 +314,9 @@
                                  :ai-data-masking ai-data-masking
                                  :ai-data-masking-info-types ai-data-masking-info-types}]}]
              :id "connection-details"
-             :first-open? (when (= form-type :update)
-                            true)}]
+             :initial-open? (when (= form-type :update) true)
+             :trigger-value (when first-step-finished
+                              "connection-details")}]
 
            [accordion/root
             {:items [{:title "Environment setup"
@@ -352,7 +351,10 @@
                                                                      (add-new-configs configs-file @config-file-name @config-file-value)
                                                                      (reset! config-file-name "")
                                                                      (reset! config-file-value ""))}]}]
-             :id "environment-setup"}]
+             :id "environment-setup"
+             :initial-open? second-step-finished
+             :trigger-value (when second-step-finished
+                              "environment-setup")}]
            [accordion/root
             {:items [{:title "Advanced settings"
                       :subtitle "Include additional configuration parameters."
