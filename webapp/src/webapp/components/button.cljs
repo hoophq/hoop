@@ -1,7 +1,7 @@
 (ns webapp.components.button
   (:require
    [reagent.core :as r]
-   ["@radix-ui/themes" :refer [Button Link Callout]]
+   ["@radix-ui/themes" :refer [Flex Box Button Link Text]]
    ["lucide-react" :refer [ArrowUpRight ArrowLeft]]
    [webapp.components.icon :as icon]
    [webapp.components.popover :as popover]
@@ -10,12 +10,18 @@
 (defn DocsBtnCallOut
   "Radix Button for the Docs Callout"
   [{:keys [text href]}]
-  [:> Link {:href href
-            :target "_blank"}
-   [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
-    [:> Callout.Icon
-     [:> ArrowUpRight {:size 16}]]
-    [:> Callout.Text text]]])
+  [:> Box {:p "3"
+           :mt "4"
+           :style {:border-color "var(--gray-8)"}
+           :class "w-fit rounded-xl border"}
+   [:> Link {:href href
+             :target "_blank"}
+    [:> Flex {:gap "2" :align "center"}
+     [:> ArrowUpRight {:size 16
+                       :style {:color "var(--gray-8)"}}]
+     [:> Text {:size "2"
+               :style {:color "var(--gray-11)"}}
+      text]]]])
 
 (defn HeaderBack
   "Radix Button for the Header Back Button"

@@ -49,33 +49,34 @@
 (defmethod installation "Kubernetes" [_]
   [:> Flex {:direction "column" :gap "6"}
    [:> Box
-    [:> Flex {:direction "column" :gap "4"}
+    [:> Flex {:direction "column" :gap "5"}
 
      [:> Flex {:direction "column" :gap "2"}
       [:> Text {:size "2" :weight "bold"}
        "Minimal configuration"]
       [:> Text {:size "1" :color "gray"}
        "Include the following parameters for standard installation."]]
-     [:> Box
-      [:> Text {:size "1"}
+     [:> Flex {:direction "column" :gap "5"}
+      [:> Text {:size "2" :weight "bold"}
        "values.yml"]
       [code-snippet/main
        {:code (values-yml "test")}]
       ]]]
-   [:> Flex {:direction "column" :gap "4"}
+   [:> Flex {:direction "column" :gap "5"}
     [:> Text {:size "2" :weight "bold"}
      "Standalone deployment"]
-    [:> Text {:size "2" :weight "bold"}
-     "Helm"]
-    [:> Text {:size "1" :color "gray"}
-     "Make sure you have Helm installed. Check the "
-     [:> Link {:href "https://helm.sh/docs/intro/install/"
-               :target "_blank"}
-      "Helm installation guide"]]
+    [:> Flex {:direction "column" :gap "2"}
+     [:> Text {:size "2" :weight "bold"}
+      "Helm"]
+     [:> Text {:size "1" :color "gray"}
+      "Make sure you have Helm installed. Check the "
+      [:> Link {:href "https://helm.sh/docs/intro/install/"
+                :target "_blank"}
+       "Helm installation guide"]]]
     [code-snippet/main
      {:code (installing-helm "test")}]]
-   [:> Box
-    [:> Text {:size "1"}
+   [:> Flex {:direction "column" :gap "5"}
+    [:> Text {:size "2" :weight "bold"}
      "deployment.yml"]
     [code-snippet/main
      {:code (deployment-yml "test")}]]])

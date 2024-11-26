@@ -2,7 +2,7 @@
   (:require
     ["@radix-ui/themes" :refer [Heading]]))
 
-(defn H1
+(defn PageHeader
   "Radix UI component for <h1> html tag for page headers
   :text - text to be displayed
   :options - Radix UI options for the Heading component"

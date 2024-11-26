@@ -45,7 +45,7 @@
                                :icon-light-path "/images/kubernetes-light.svg"
                                :title "Kubernetes"
                                :description "Setup a new Agent with a Helm chart."}]
-        selected-installation-method (r/atom "Docker Hub")
+        selected-installation-method (r/atom "Kubernetes")
         agent-name (r/atom "")]
     (fn []
       [:> Flex {:direction "column" :gap "8"}
@@ -88,7 +88,7 @@
    [:> Box {:mb "6"}
     [button/HeaderBack]]
    [:> Box {:class "mb-10", :as "header"}
-    [h/H1 {:text "Setup new Agent"
+    [h/PageHeader {:text "Setup new Agent"
            :options {:class "mb-2"}}]
     [:> Text {:size "5" :class "text-[--gray-11]" :as "p"}
      "Follow the steps below to setup a new Agent in your environment"]]
