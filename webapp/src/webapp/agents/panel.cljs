@@ -62,11 +62,13 @@
     [empty-state]))
 
 (defn main []
-  (let [agents (rf/subscribe [:agents])]
+  (let [agents (rf/subscribe [:agents])
+        user (rf/subscribe [:users->current-user])]
     (rf/dispatch [:agents->get-agents])
     (fn []
       (let [agents? (and (seq (:data @agents))
-                         (not= (:status @agents) :loading))]
+                         (not= (:status @agents) :loading))
+            admin? (-> @user :data :is_admin)]
       [:div
        [:> Flex {:class "mb-10", :as "header"}
         [:> Box {:flexGrow "1"}
@@ -78,7 +80,7 @@
              :href "https://hoop.dev/docs/concepts/agent"}]]
         [:> Flex {:justify "end"
                   :flexGrow "1"}
-         (when agents?
+         (when (and agents? admin?)
            [:> Button {:size "3"
                        :on-click #(rf/dispatch [:navigate :new-agent])}
             "Setup new Agent"])]]
