@@ -18,7 +18,7 @@
              :target "_blank"}
     [:> Flex {:gap "2" :align "center"}
      [:> ArrowUpRight {:size 16
-                       :style {:color "var(--gray-8)"}}]
+                       :style {:color "var(--gray-10)"}}]
      [:> Text {:size "2"
                :style {:color "var(--gray-11)"}}
       text]]]])

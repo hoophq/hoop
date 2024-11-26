@@ -32,14 +32,16 @@
    {:fx [[:dispatch [:fetch
                      {:method "GET"
                       :uri "/agents"
-                      :on-success #(rf/dispatch [::agents->set-embedded-agents-connected
-                                                 (filter (fn [agent]
-                                                           (and (= "embedded" (:mode agent))
-                                                                (= "CONNECTED" (:status agent)))) %)])}]]]}))
+                      :on-success #(rf/dispatch
+                                     [::agents->set-embedded-agents-connected
+                                      (filter
+                                        (fn [agent]
+                                          (and (= "embedded" (:mode agent))
+                                               (= "CONNECTED" (:status agent)))) %)])}]]]}))
 (rf/reg-event-fx
- ::agents->set-embedded-agents-connected
- (fn
-   [{:keys [db]} [_ agents]]
+  ::agents->set-embedded-agents-connected
+  (fn
+    [{:keys [db]} [_ agents]]
    {:db (assoc db :agents-embedded agents)}))
 
 (rf/reg-event-fx
