@@ -4,6 +4,7 @@
    ["lucide-react" :refer [AppWindow Database SquareTerminal Workflow]]
    [clojure.string :as str]
    [reagent.core :as r]
+   [webapp.connections.constants :as constants]
    [webapp.connections.helpers :as helpers]))
 
 (def connections-type
@@ -45,7 +46,8 @@
    connection-type
    connection-subtype
    config-file-name
-   database-schema?]
+   database-schema?
+   connection-command]
   (cond
     (= value "database") (do (reset! connection-type "database")
                              (reset! connection-subtype nil)
@@ -56,7 +58,8 @@
 
     (= value "ssh") (do (reset! connection-type "custom")
                         (reset! connection-subtype "ssh")
-                        (reset! config-file-name "SSH_PRIVATE_KEY"))
+                        (reset! config-file-name "SSH_PRIVATE_KEY")
+                        (reset! connection-command (get constants/connection-commands "ssh")))
 
     (= value "tcp") (do (reset! connection-type "application")
                         (reset! connection-subtype "tcp"))
@@ -85,7 +88,8 @@
                     connection-name
                     configs
                     config-file-name
-                    database-schema?]}]
+                    database-schema?
+                    connection-command]}]
   [:> Flex {:direction "column" :gap "9" :class "px-20"}
    [:> Grid {:columns "5" :gap "7"}
     [:> Flex {:direction "column" :grid-column "span 2 / span 2"}
@@ -105,7 +109,8 @@
                                  connection-type
                                  connection-subtype
                                  config-file-name
-                                 database-schema?)
+                                 database-schema?
+                                 connection-command)
                                 (reset! configs (helpers/get-config-keys (keyword value)))
                                 (reset! connection-name (str (when @connection-subtype
                                                                (str @connection-subtype "-"))

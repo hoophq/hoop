@@ -292,7 +292,8 @@
                                    :connection-name connection-name
                                    :configs configs
                                    :config-file-name config-file-name
-                                   :database-schema? database-schema?}]}]
+                                   :database-schema? database-schema?
+                                   :connection-command connection-command}]}]
                :id "resource-type"
                :initial-open? true}])
 
