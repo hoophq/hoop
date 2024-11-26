@@ -32,6 +32,14 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 		return
 	}
 
+	if slackApprover == nil {
+		log.With("session", sid).Infof("approver is not allowed")
+		_ = ev.ss.PostEphemeralMessage(ev.msg, fmt.Sprintf("You are not registered. "+
+			"Please click on this link to integrate your slack user with your user hoop.\n"+
+			"%s/slack/user/new/%s", p.idpProvider.ApiURL, ev.msg.SlackID))
+		return
+	}
+
 	slackApproverGroups, err := models.GetUserGroupsByUserID(slackApprover.ID)
 	if err != nil {
 		log.With("session", sid).Errorf("failed obtaining approver's groups, err=%v", err)
@@ -41,13 +49,6 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 	var slackApproverGroupsList []string
 	for _, group := range slackApproverGroups {
 		slackApproverGroupsList = append(slackApproverGroupsList, group.Name)
-	}
-	if slackApprover == nil {
-		log.With("session", sid).Infof("approver is not allowed")
-		_ = ev.ss.PostEphemeralMessage(ev.msg, fmt.Sprintf("You are not registered. "+
-			"Please click on this link to integrate your slack user with your user hoop.\n"+
-			"%s/slack/user/new/%s", p.idpProvider.ApiURL, ev.msg.SlackID))
-		return
 	}
 	if !pb.IsInList(ev.msg.GroupName, slackApproverGroupsList) {
 		log.With("session", sid).Infof("approver not allowed, it does not belong to %s", ev.msg.GroupName)
