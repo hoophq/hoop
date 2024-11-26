@@ -17,6 +17,9 @@ type runtimePlugin struct {
 
 func loadRuntimePlugins(ctx plugintypes.Context) ([]runtimePlugin, error) {
 	pluginsConfig := make([]runtimePlugin, 0)
+	if ctx.ClientVerb == pb.ClientVerbPlainExec {
+		return pluginsConfig, nil
+	}
 	var nonRegisteredPlugins []string
 	for _, p := range plugintypes.RegisteredPlugins {
 		p1, err := pgplugins.New().FetchOne(ctx, p.Name())

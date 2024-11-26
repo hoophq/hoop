@@ -99,7 +99,7 @@ func NewDefaultLogger(additionalWriterLogger io.Writer) *zap.Logger {
 		}),
 		zap.ErrorOutput(stderrSink),
 		zap.AddCaller(),
-		zap.AddStacktrace(zapcore.DPanicLevel),
+		zap.AddStacktrace(zapcore.ErrorLevel),
 	)
 	zap.ReplaceGlobals(logger)
 	return logger

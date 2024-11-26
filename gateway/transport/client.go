@@ -184,6 +184,7 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 		OrgID:          pctx.OrgID,
 		SID:            pctx.SID,
 		ConnectionName: pctx.ConnectionName,
+		Verb:           pctx.ClientVerb,
 	}
 
 	if err := transportext.OnReceive(extContext, pkt); err != nil {

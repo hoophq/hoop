@@ -139,7 +139,7 @@ func Post(c *gin.Context) {
 					{0, "e", base64.StdEncoding.EncodeToString([]byte(err.Error()))},
 				},
 			}
-			if err = pgsession.New().Upsert(ctx, newSession); err != nil {
+			if err := pgsession.New().Upsert(ctx, newSession); err != nil {
 				log.Errorf("unable to update session, err=%v", err)
 			}
 			c.JSON(http.StatusOK, clientexec.Response{

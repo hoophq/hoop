@@ -2,6 +2,7 @@ package authinterceptor
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 
@@ -15,6 +16,7 @@ import (
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	localauthapi "github.com/hoophq/hoop/gateway/api/localauth"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgagents "github.com/hoophq/hoop/gateway/pgrest/agents"
 	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
@@ -87,11 +89,21 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 	if !ok {
 		return status.Error(codes.InvalidArgument, "missing context metadata")
 	}
-	clientOrigin := md.Get("origin")
+	clientOrigin, clientVerb := md.Get("origin"), md.Get("verb")
 	if len(clientOrigin) == 0 {
 		md.Delete("authorization")
 		log.Debugf("client missing origin, client-metadata=%v", md)
 		return status.Error(codes.InvalidArgument, "missing client origin")
+	}
+
+	if len(clientVerb) > 0 && clientVerb[0] == pb.ClientVerbPlainExec {
+		plainExecKey := md.Get("plain-exec-key")
+		if len(plainExecKey) == 0 || plainExecKey[0] != clientexec.PlainExecSecretKey {
+			errMsg := "failed validating plain execution, plain-exec-key attribute is missing or does not match"
+			log.Error(errMsg)
+			sentry.CaptureException(errors.New(errMsg))
+			return status.Errorf(codes.Unauthenticated, "invalid authentication")
+		}
 	}
 
 	bearerToken, err := parseBearerToken(md)
