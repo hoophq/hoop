@@ -28,7 +28,7 @@
         [searchbox/main {:options @all-connections
                          :meta-display-keys [:type]
                          :display-key :name
-                         :searchable-keys [:name :review_type :redact :type :tags]
+                         :searchable-keys [:name :review_type :redact :type :tags :subtype]
                          :on-change-results-cb #(reset! searched-connections-atom %)
                          :hide-results-list true
                          :placeholder "Search and go to your connection"

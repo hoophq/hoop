@@ -67,7 +67,7 @@
            [searchbox/main
             {:options (:results @connections)
              :display-key :name
-             :searchable-keys [:name :type :tags :status]
+             :searchable-keys [:name :type :subtype :tags :status]
              :on-change-results-cb #(reset! searched-connections %)
              :hide-results-list true
              :placeholder "Search by connection name, type, status or anything"
