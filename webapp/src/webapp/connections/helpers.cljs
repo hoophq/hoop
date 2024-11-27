@@ -94,6 +94,9 @@
    Takes a vector of config maps with :key and :value and a prefix string.
    Returns a map with prefixed keys and base64 encoded values.
 
+   For filesystem:SSH_PRIVATE_KEY specifically, adds a newline character at the end
+   before base64 encoding, as SSH private keys require a trailing newline.
+
    Example:
    (config->json [{:key \"foo\" :value \"bar\"}] \"envvar:\")
    ;=> {\"envvar:FOO\" \"<base64 of bar>\"}"
@@ -101,7 +104,12 @@
   (->> configs
        (filter (fn [{:keys [key value]}]
                  (not (or (s/blank? key) (s/blank? value)))))
-       (map (fn [{:keys [key value]}] {(str prefix (s/upper-case key)) (js/btoa value)}))
+       (map (fn [{:keys [key value]}]
+              (let [prefixed-key (str prefix (s/upper-case key))
+                    final-value (if (= prefixed-key "filesystem:SSH_PRIVATE_KEY")
+                                  (str value "\n")
+                                  value)]
+                {prefixed-key (js/btoa final-value)})))
        (reduce into {})))
 
 (defn json->config
