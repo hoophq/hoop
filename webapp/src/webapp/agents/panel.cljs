@@ -66,7 +66,7 @@
         user (rf/subscribe [:users->current-user])]
     (rf/dispatch [:agents->get-agents])
     (fn []
-      (let [agents? (and (seq (:data @agents))
+      (let [agents? (or (seq (:data @agents))
                          (not= (:status @agents) :loading))
             admin? (-> @user :data :is_admin)]
       [:div

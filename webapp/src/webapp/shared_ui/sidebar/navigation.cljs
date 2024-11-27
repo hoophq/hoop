@@ -4,6 +4,7 @@
             ["@heroicons/react/24/outline" :as hero-outline-icon]
             [re-frame.core :as rf]
             [reagent.core :as r]
+            [webapp.routes :as routes]
             [webapp.components.user-icon :as user-icon]
             [webapp.config :as config]
             [webapp.shared-ui.sidebar.constants :as sidebar-constants]))
@@ -129,8 +130,7 @@
                                                     :aria-hidden "true"}]
                "Guardrails"]]]
             [:li
-             [:a {:href "#"
-                  :on-click #(rf/dispatch [:navigate :agents])
+             [:a {:href (routes/url-for :agents)
                   :class (str (hover-side-menu-link? "/agents" current-route)
                               (:enabled link-styles))}
               [:div {:class "flex gap-3 items-center"}

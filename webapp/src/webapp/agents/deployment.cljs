@@ -128,7 +128,7 @@
          [:> Flex {:gap "4" :align "center"}
           [:> Text hoop-key]
           [:> Box {:on-click (fn []
-                               (js/navigator.clipboard.writeText "agent key")
+                               (js/navigator.clipboard.writeText hoop-key)
                                (rf/dispatch [:show-snackbar {:level :success
                                                              :text "Copied to clipboard"}]))
                    :class "cursor-pointer"}
@@ -147,7 +147,8 @@
 
 (defn main
   "function that render the instructions for each deployment method
-  installation-method -> 'Docker Hub' | 'Kubernetes'"
+  installation-method -> 'Docker Hub' | 'Kubernetes'
+  hoop-key -> the key for the agent. A.K.A: HOOP_KEY"
   [{:keys [installation-method hoop-key]}]
   [:div
    [:> Grid {:columns "7" :gap "7"}

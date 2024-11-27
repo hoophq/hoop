@@ -14,7 +14,7 @@
  :agents->get-agents
  (fn
    [{:keys [db]} [_]]
-   {:db (assoc db :agents {:status :loading :data []})
+   {:db (assoc-in db [:agents :status] :loading)
     :fx [[:dispatch [:fetch
                      {:method "GET"
                       :uri "/agents"

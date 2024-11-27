@@ -3,7 +3,7 @@
     [re-frame.core :as rf]
     [reagent.core :as r]
     ["@radix-ui/themes" :refer [Grid Flex Box Text
-                                Button Card Avatar Heading]]
+                                Button Avatar Heading]]
     ["lucide-react" :refer [Info ListOrdered]]
     [webapp.config :as config]
     [webapp.components.button :as button]
@@ -103,10 +103,8 @@
                   :value "installation-method"
                   :avatar-icon [:> ListOrdered {:size 16}]
                   :disabled (not (= (:status @agent-key) :ready))
-                  ;:show-icon? true
                   :subtitle "Get Agent deployment details for your preferred method."
                   :content [:> Flex {:direction "column" :gap "8"}
-                            ;[:> InformationCircle {:size 16}]
                             [:> Grid {:columns "7" :gap "7"}
                              [:> Box {:gridColumn "span 2 / span 2"}
                               [:> Heading {:size "4" :weight "medium" :as "h3"}

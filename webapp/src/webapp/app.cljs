@@ -320,5 +320,5 @@
     (.registerPlugin gsap Draggable)
     (fn []
       (when (not (-> @gateway-public-info :loading))
-        [:> Theme {:radius "large" :panelBackground "solid" :appearance "light"}
+        [:> Theme {:radius "large" :panelBackground "solid"}
          [routes/panels @active-panel @gateway-public-info]]))))
