@@ -74,6 +74,7 @@ func NewOpenTracing(apiURL string) (ShutdownFn, error) {
 
 	hcApiKey := honeycombApiKey
 	if hcApiKey == "" {
+		// used only for development purposes
 		hcApiKey = os.Getenv("HONEYCOMB_API_KEY")
 	}
 	// Use the Honeycomb distro to set up the OpenTelemetry SDK
