@@ -41,6 +41,7 @@ cd libhoop && go mod tidy && cd ../
 WEBAPP_BUILD="${WEBAPP_BUILD:-0}"
 if [[ $WEBAPP_BUILD == "1" ]]; then
   rm -rf ./dist/dev/resources
+  rm -f ./webapp/resources/public/js/app.origin.js
   cd webapp && npm install && npm run release:hoop-ui && cd ../
   cp -a webapp/resources/ ./dist/dev/resources
 fi

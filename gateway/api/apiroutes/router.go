@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/security/idp"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 )
 
 const (
@@ -38,6 +39,8 @@ func New(route *gin.RouterGroup, provider *idp.Provider, grpcURL, registeredApiK
 	if route == nil {
 		log.Fatalf("route is nil")
 	}
+
+	route.Use(otelgin.Middleware("hoopgateway"))
 	return &Router{
 		RouterGroup:      route,
 		provider:         provider,

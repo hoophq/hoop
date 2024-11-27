@@ -2,6 +2,7 @@ package monitoring
 
 import (
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/getsentry/sentry-go"
@@ -71,13 +72,20 @@ func NewOpenTracing(apiURL string) (ShutdownFn, error) {
 	// Enable multi-span attributes
 	bsp := honeycomb.NewBaggageSpanProcessor()
 
+	hcApiKey := honeycombApiKey
+	if hcApiKey == "" {
+		// used only for development purposes
+		hcApiKey = os.Getenv("HONEYCOMB_API_KEY")
+	}
 	// Use the Honeycomb distro to set up the OpenTelemetry SDK
 	return otelconfig.ConfigureOpenTelemetry(
 		otelconfig.WithSpanProcessor(bsp),
 		otelconfig.WithServiceName("hoopdev"),
+		otelconfig.WithServiceVersion(version.Get().Version),
 		otelconfig.WithExporterEndpoint("https://api.honeycomb.io:443"),
+		// otelconfig.WithLogLevel("debug"),
 		otelconfig.WithHeaders(map[string]string{
-			"x-honeycomb-team": honeycombApiKey,
+			"x-honeycomb-team": hcApiKey,
 		}),
 	)
 }
