@@ -46,18 +46,20 @@
 
 (rf/reg-event-fx
   :agents->generate-agent-key
-  (fn [{:keys [db]} [_]]
+  (fn [{:keys [db]} [_ agent-name]]
     {:fx [[:dispatch
            [:fetch
             {:method "POST"
              :uri "/agents"
-             :body {:name "abcde"}
-             :on-success #(rf/dispatch [:agents->set-agent-key %])}]]]}))
+             :body {:name agent-name}
+             :on-success #(rf/dispatch [:agents->set-agent-key % :ready])}]]]
+     :db (assoc db :agents->agent-key {:status :loading :data {}})}))
 
 (rf/reg-event-fx
   :agents->set-agent-key
-  (fn [{:keys [db]} [_ agent]]
-    {:db (assoc db :agents->agent-key agent)}))
+  (fn [{:keys [db]} [_ agent status]]
+    {:db (assoc db :agents->agent-key {:status status
+                                       :data agent})}))
 
 (rf/reg-sub
   :agents->agent-key

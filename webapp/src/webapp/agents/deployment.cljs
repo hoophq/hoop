@@ -46,7 +46,7 @@
 "          value: '" hoop-key "'\n"))
 
 (defmulti installation identity)
-(defmethod installation "Kubernetes" [_]
+(defmethod installation "Kubernetes" [_ hoop-key]
   [:> Flex {:direction "column" :gap "6"}
    [:> Box
     [:> Flex {:direction "column" :gap "5"}
@@ -60,7 +60,7 @@
       [:> Text {:size "2" :weight "bold"}
        "values.yml"]
       [code-snippet/main
-       {:code (values-yml "test")}]
+       {:code (values-yml hoop-key)}]
       ]]]
    [:> Flex {:direction "column" :gap "5"}
     [:> Text {:size "2" :weight "bold"}
@@ -74,14 +74,14 @@
                 :target "_blank"}
        "Helm installation guide"]]]
     [code-snippet/main
-     {:code (installing-helm "test")}]]
+     {:code (installing-helm hoop-key)}]]
    [:> Flex {:direction "column" :gap "5"}
     [:> Text {:size "2" :weight "bold"}
      "deployment.yml"]
     [code-snippet/main
-     {:code (deployment-yml "test")}]]])
+     {:code (deployment-yml hoop-key)}]]])
 
-(defmethod installation "Docker Hub" [_]
+(defmethod installation "Docker Hub" [_ hoop-key]
   [:> Flex {:direction "column" :gap "6"}
    [:> Box
     [:> Flex {:direction "column" :gap "4"}
@@ -113,7 +113,10 @@
       [:> Table.Body
        [:> Table.Row
         [:> Table.RowHeaderCell
-         [:> Flex {:gap "4" :align "center"}
+         [:> Flex {:gap "4"
+                   :align "center"
+                   :justify "center"
+                   :height "100%"}
           [:> Text "HOOP_KEY"]
           [:> Box {:on-click (fn []
                                (js/navigator.clipboard.writeText "HOOP_KEY")
@@ -123,7 +126,7 @@
            [:> Copy {:size 14 :color "gray"}]]]]
         [:> Table.Cell
          [:> Flex {:gap "4" :align "center"}
-          [:> Text "your-keyaaisudhfiaushdfisahd-asdfasdfsa-d-fasdasdfasf-asdfasfasf-asfsafd-as-f-asf-as-fsdfa"]
+          [:> Text hoop-key]
           [:> Box {:on-click (fn []
                                (js/navigator.clipboard.writeText "agent key")
                                (rf/dispatch [:show-snackbar {:level :success
@@ -138,13 +141,14 @@
       [:> Text {:size "1" :color "gray"}
        "If preferred, it is also possible to configure it manually with the following command."]]
      [code-snippet/main
-      {:code (str "docker container run hoophq/hoopdev:latest \\\n"
-                  "--env HOOP_KEY={your-keyasiudhfisaduhfishafiuhasifuhausi}")}]]]])
+      {:code (str "docker container run \\\n"
+                  "-e HOOP_KEY='" hoop-key "' \\\n"
+                  "--rm -d hoophq/hoopdev")}]]]])
 
 (defn main
   "function that render the instructions for each deployment method
   installation-method -> 'Docker Hub' | 'Kubernetes'"
-  [{:keys [installation-method]}]
+  [{:keys [installation-method hoop-key]}]
   [:div
    [:> Grid {:columns "7" :gap "7"}
     [:> Box {:gridColumn "span 2 / span 2"}
@@ -159,4 +163,4 @@
     [:> Box {:class "space-y-radix-7"
              :mb "8"
              :gridColumn "span 5 / span 5"}
-     [installation installation-method]]]])
+     [installation installation-method hoop-key]]]])
