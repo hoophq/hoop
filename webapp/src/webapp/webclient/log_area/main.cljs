@@ -21,6 +21,13 @@
 (def selected-tab (r/atom (or (.getItem js/localStorage "webclient-selected-tab")
                               "Logs")))
 
+(defn- clean-postgres-script [script]
+  (let [lines (cs/split script #"\n")]
+    (if (and (> (count lines) 3)
+             (= (first lines) "\\set QUIET on"))
+      (cs/join "\n" (drop 3 lines))  ;; Pula as 3 primeiras linhas
+      script)))
+
 (defn main [_]
   (let [user (rf/subscribe [:users->current-user])
         script-response (rf/subscribe [:editor-plugin->script])
@@ -28,14 +35,16 @@
         database-schema (rf/subscribe [::subs/database-schema])
         input-question (r/atom "")]
     (fn [connection-type is-one-connection-selected? show-tabular?]
-      (let [logs-content (map #(into {} {:status (:status %)
-                                         :response (:output (:data %))
-                                         :response-status (:output_status (:data %))
-                                         :script (:script (:data %))
-                                         :response-id (:session_id (:data %))
-                                         :has-review (:has_review (:data %))
-                                         :execution-time (:execution_time (:data %))
-                                         :classes "h-full"}) @script-response)
+      (let [logs-content (mapv #(into {} {:status (:status %)
+                                          :response (:output (:data %))
+                                          :response-status (:output_status (:data %))
+                                          :script (if (= connection-type "postgres")
+                                                    (clean-postgres-script (:script (:data %)))
+                                                    (:script (:data %)))
+                                          :response-id (:session_id (:data %))
+                                          :has-review (:has_review (:data %))
+                                          :execution-time (:execution_time (:data %))
+                                          :classes "h-full"}) @script-response)
             feature-ai-ask (or (get-in @user [:data :feature_ask_ai]) "disabled")
             ai-content (map #(into {} {:status (:status %)
                                        :script (:question (:data %))

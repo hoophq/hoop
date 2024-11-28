@@ -32,12 +32,15 @@
    (let [connection-list-cached (read-string (.getItem js/localStorage "run-connection-list-selected"))
          is-cached? (fn [current-connection-name]
                       (not-empty (filter #(= (:name %) current-connection-name) connection-list-cached)))
-         connections-parsed (mapv (fn [{:keys [name type subtype status access_schema]}]
+         connections-parsed (mapv (fn [{:keys [name type subtype status access_schema secret]}]
                                     {:name name
                                      :type type
                                      :subtype subtype
                                      :status status
                                      :access_schema access_schema
+                                     :database_name (when (and (= type "database")
+                                                               (= subtype "postgres"))
+                                                      (js/atob (:envvar:DB secret)))
                                      :selected (if (is-cached? name)
                                                  true
                                                  false)})
@@ -52,12 +55,15 @@
    (let [connection-list-cached (read-string (.getItem js/localStorage "run-connection-list-selected"))
          is-cached? (fn [current-connection-name]
                       (not-empty (filter #(= (:name %) current-connection-name) connection-list-cached)))
-         connections-parsed (mapv (fn [{:keys [name type subtype status selected access_schema]}]
+         connections-parsed (mapv (fn [{:keys [name type subtype status selected access_schema secret]}]
                                     {:name name
                                      :type type
                                      :subtype subtype
                                      :status status
                                      :access_schema access_schema
+                                     :database_name (when (and (= type "database")
+                                                               (= subtype "postgres"))
+                                                      (js/atob (:envvar:DB secret)))
                                      :selected (if (is-cached? name)
                                                  true
                                                  selected)})
@@ -298,7 +304,8 @@
    [{:keys [db]} [_ data script]]
    {:db (assoc db :editor-plugin->script (take 10
                                                (assoc (:editor-plugin->script db) 0
-                                                      {:status :success :data (merge data {:script script})})))}))
+                                                      {:status :success :data (merge data
+                                                                                     {:script script})})))}))
 
 (rf/reg-event-fx
  ::editor-plugin->set-script-failure
@@ -342,26 +349,26 @@
                                     :schema-tree nil
                                     :indexes-tree nil})}))
 
-(rf/reg-event-fx
- :editor-plugin->get-mysql-schema
- (fn
-   [{:keys [db]} [_ connection schema-query index-query]]
-   (let [fetch {:method "POST"
-                :uri (str "/connections/" (:connection-name connection) "/exec")
-                :body {:script schema-query}
-                :on-success #(rf/dispatch [:editor-plugin->get-mysql-indexes connection index-query %])}]
-     {:fx [[:dispatch [:fetch fetch]]]
-      :db (assoc-in db [:database-schema] {:status :loading
-                                           :data (assoc (-> db :database-schema :data)
-                                                        (:connection-name connection) {:status :loading
-                                                                                       :type nil
-                                                                                       :raw nil
-                                                                                       :schema-tree nil
-                                                                                       :indexes-tree nil})
-                                           :type nil
-                                           :raw nil
-                                           :schema-tree nil
-                                           :indexes-tree nil})})))
+;; (rf/reg-event-fx
+;;  :editor-plugin->get-mysql-schema
+;;  (fn
+;;    [{:keys [db]} [_ connection schema-query index-query]]
+;;    (let [fetch {:method "POST"
+;;                 :uri (str "/connections/" (:connection-name connection) "/exec")
+;;                 :body {:script schema-query}
+;;                 :on-success #(rf/dispatch [:editor-plugin->get-mysql-indexes connection index-query %])}]
+;;      {:fx [[:dispatch [:fetch fetch]]]
+;;       :db (assoc-in db [:database-schema] {:status :loading
+;;                                            :data (assoc (-> db :database-schema :data)
+;;                                                         (:connection-name connection) {:status :loading
+;;                                                                                        :type nil
+;;                                                                                        :raw nil
+;;                                                                                        :schema-tree nil
+;;                                                                                        :indexes-tree nil})
+;;                                            :type nil
+;;                                            :raw nil
+;;                                            :schema-tree nil
+;;                                            :indexes-tree nil})})))
 
 (rf/reg-event-fx
  :editor-plugin->get-mysql-indexes
@@ -414,21 +421,82 @@
         _ (mapv #(reducers/fold mount-tree (inner-split %)) outer-trimmed)]
     @tree-atom))
 
+;; (rf/reg-event-fx
+;;  :editor-plugin->get-postgres-schema
+;;  (fn
+;;    [{:keys [db]} [_ connection get-postgres-schema-query get-postgres-schema-with-index-query]]
+;;    (let [current-connection-data (get-in db [:database-schema :data (:connection-name connection)])
+;;          has-databases? (not-empty (:databases current-connection-data))]
+;;      (if has-databases?
+;;        {:db (-> db
+;;                 (assoc-in [:database-schema :current-connection] (:connection-name connection))
+;;                 (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :loading))
+;;         :fx [[:dispatch [:fetch {:method "POST"
+;;                                  :uri (str "/connections/" (:connection-name connection) "/exec")
+;;                                  :body {:script get-postgres-schema-query}
+;;                                  :on-success #(rf/dispatch [:editor-plugin->get-postgres-indexes
+;;                                                             connection
+;;                                                             get-postgres-schema-with-index-query
+;;                                                             %
+;;                                                             (:databases current-connection-data)])}]]]}
+;;        {:db (-> db
+;;                 (assoc-in [:database-schema :current-connection] (:connection-name connection))
+;;                 (assoc-in [:database-schema :data (:connection-name connection) :status] :loading)
+;;                 (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :loading))
+;;         :fx [[:dispatch [:fetch {:method "GET"
+;;                                  :uri (str "/connections/" (:connection-name connection) "/databases")
+;;                                  :on-success #(rf/dispatch [:editor-plugin->get-postgres-schema-details
+;;                                                             connection
+;;                                                             (:databases %)
+;;                                                             get-postgres-schema-query
+;;                                                             get-postgres-schema-with-index-query])}]]]}))))
+
 (rf/reg-event-fx
- :editor-plugin->set-mysql-schema
+ :editor-plugin->get-postgres-schema-details
  (fn
-   [{:keys [db]} [_ {:keys [schema-payload indexes-payload status connection]}]]
+   [{:keys [db]} [_ connection databases-payload get-postgres-schema-query get-postgres-schema-with-index-query]]
+   {:fx [[:dispatch [:fetch {:method "POST"
+                             :uri (str "/connections/" (:connection-name connection) "/exec")
+                             :body {:script get-postgres-schema-query}
+                             :on-success #(rf/dispatch [:editor-plugin->get-postgres-indexes
+                                                        connection
+                                                        get-postgres-schema-with-index-query
+                                                        %
+                                                        databases-payload])}]]]}))
+
+(rf/reg-event-fx
+ :editor-plugin->get-postgres-indexes
+ (fn
+   [{:keys [db]} [_ connection index-query schema-payload databases-payload]]
+   {:fx [[:dispatch [:fetch {:method "POST"
+                             :uri (str "/connections/" (:connection-name connection) "/exec")
+                             :body {:script index-query}
+                             :on-success #(rf/dispatch [:editor-plugin->set-postgres-schema
+                                                        {:schema-payload schema-payload
+                                                         :indexes-payload %
+                                                         :databases-payload databases-payload
+                                                         :status :success
+                                                         :database-schema-status :success
+                                                         :connection connection}])}]]]}))
+
+(rf/reg-event-fx
+ :editor-plugin->set-postgres-schema
+ (fn
+   [{:keys [db]} [_ {:keys [schema-payload indexes-payload databases-payload status database-schema-status connection]}]]
    (let [schema {:status status
                  :data (assoc (-> db :database-schema :data)
-                              (:connection-name connection) {:status status
-                                                             :type (:connection-type connection)
-                                                             :raw (:output schema-payload)
-                                                             :schema-tree (if-let [_ (empty? schema-payload)]
-                                                                            "Couldn't get database schema"
-                                                                            (:tree (parse-sql-to-tree (:output schema-payload)
-                                                                                                      (:connection-type connection))))
-                                                             :indexes-tree (:tree (parse-sql-to-tree (:output indexes-payload)
-                                                                                                     (:connection-type connection)))})
+                              (:connection-name connection)
+                              {:status status
+                               :database-schema-status database-schema-status
+                               :type (:connection-type connection)
+                               :raw (:output schema-payload)
+                               :schema-tree (if-let [_ (empty? schema-payload)]
+                                              "Couldn't get database schema"
+                                              (:tree (parse-sql-to-tree (:output schema-payload)
+                                                                        (:connection-type connection))))
+                               :indexes-tree (:tree (parse-sql-to-tree (:output indexes-payload)
+                                                                       (:connection-type connection)))
+                               :databases databases-payload})
                  :type (:connection-type connection)
                  :raw (:output schema-payload)
                  :schema-tree (if-let [_ (empty? schema-payload)]
@@ -436,67 +504,277 @@
                                 (:tree (parse-sql-to-tree (:output schema-payload)
                                                           (:connection-type connection))))
                  :indexes-tree (:tree (parse-sql-to-tree (:output indexes-payload)
-                                                         (:connection-type connection)))}]
+                                                         (:connection-type connection)))
+                 :databases databases-payload}]
      {:db (assoc-in db [:database-schema] schema)})))
 
-(rf/reg-event-fx
- :editor-plugin->get-mongodb-schema
- (fn
-   [{:keys [db]} [_ connection schema-query]]
-   (let [fetch {:method "POST"
-                :uri (str "/connections/" (:connection-name connection) "/exec")
-                :body {:script schema-query}
-                :on-success (fn [res]
-                              (if (= (:output_status res) "failed")
-                                (rf/dispatch [:editor-plugin->parse-mongodb-schema
-                                              :failure
-                                              connection (:output res)])
+;; (rf/reg-event-fx
+;;  :editor-plugin->set-mysql-schema
+;;  (fn
+;;    [{:keys [db]} [_ {:keys [schema-payload indexes-payload status connection]}]]
+;;    (let [schema {:status status
+;;                  :data (assoc (-> db :database-schema :data)
+;;                               (:connection-name connection) {:status status
+;;                                                              :type (:connection-type connection)
+;;                                                              :raw (:output schema-payload)
+;;                                                              :schema-tree (if-let [_ (empty? schema-payload)]
+;;                                                                             "Couldn't get database schema"
+;;                                                                             (:tree (parse-sql-to-tree (:output schema-payload)
+;;                                                                                                       (:connection-type connection))))
+;;                                                              :indexes-tree (:tree (parse-sql-to-tree (:output indexes-payload)
+;;                                                                                                      (:connection-type connection)))})
+;;                  :type (:connection-type connection)
+;;                  :raw (:output schema-payload)
+;;                  :schema-tree (if-let [_ (empty? schema-payload)]
+;;                                 "Couldn't get database schema"
+;;                                 (:tree (parse-sql-to-tree (:output schema-payload)
+;;                                                           (:connection-type connection))))
+;;                  :indexes-tree (:tree (parse-sql-to-tree (:output indexes-payload)
+;;                                                          (:connection-type connection)))}]
+;;      {:db (assoc-in db [:database-schema] schema)})))
 
-                                (rf/dispatch [:editor-plugin->parse-mongodb-schema
-                                              :success
-                                              connection (:output res)])))}]
-     {:fx [[:dispatch [:fetch fetch]]]
-      :db (assoc-in db [:database-schema] {:status :loading
-                                           :data (assoc (-> db :database-schema :data)
-                                                        (:connection-name connection) {:status :loading
-                                                                                       :raw nil
-                                                                                       :type nil
-                                                                                       :schema-tree nil
-                                                                                       :indexes-tree nil})
-                                           :raw nil
-                                           :type nil
-                                           :schema-tree nil
-                                           :indexes-tree nil})})))
+;; (rf/reg-event-fx
+;;  :editor-plugin->get-mongodb-schema
+;;  (fn
+;;    [{:keys [db]} [_ connection schema-query]]
+;;    (let [fetch {:method "POST"
+;;                 :uri (str "/connections/" (:connection-name connection) "/exec")
+;;                 :body {:script schema-query}
+;;                 :on-success (fn [res]
+;;                               (if (= (:output_status res) "failed")
+;;                                 (rf/dispatch [:editor-plugin->parse-mongodb-schema
+;;                                               :failure
+;;                                               connection (:output res)])
 
-(rf/reg-event-fx
- :editor-plugin->parse-mongodb-schema
- (fn
-   [_ [_ status connection payload]]
-   {:fx [[:dispatch [:editor-plugin->set-mongodb-schema status connection payload]]]}))
+;;                                 (rf/dispatch [:editor-plugin->parse-mongodb-schema
+;;                                               :success
+;;                                               connection (:output res)])))}]
+;;      {:fx [[:dispatch [:fetch fetch]]]
+;;       :db (assoc-in db [:database-schema] {:status :loading
+;;                                            :data (assoc (-> db :database-schema :data)
+;;                                                         (:connection-name connection) {:status :loading
+;;                                                                                        :raw nil
+;;                                                                                        :type nil
+;;                                                                                        :schema-tree nil
+;;                                                                                        :indexes-tree nil})
+;;                                            :raw nil
+;;                                            :type nil
+;;                                            :schema-tree nil
+;;                                            :indexes-tree nil})})))
 
-(rf/reg-event-fx
- :editor-plugin->set-mongodb-schema
- (fn
-   [{:keys [db]} [_ status connection payload]]
-   (let [parse-payload (fn [p]
-                         (js->clj (.parse js/JSON p) :keywordize-keys true))
-         db-schema {:status status
-                    :data (assoc (-> db :database-schema :data)
-                                 (:connection-name connection) {:status status
-                                                                :raw payload
-                                                                :schema-tree (if-let [_ (or (empty? payload)
-                                                                                            (= status :failure))]
-                                                                               "Couldn't get database schema.\nPlease check your session list to see the possible issue."
-                                                                               (parse-payload payload))})
-                    :type "mongodb"
-                    :raw payload
-                    :schema-tree (if-let [_ (or (empty? payload)
-                                                (= status :failure))]
-                                   "Couldn't get database schema.\nPlease check your session list to see the possible issue."
-                                   (parse-payload payload))}]
-     {:db (assoc-in db [:database-schema] db-schema)})))
+;; (rf/reg-event-fx
+;;  :editor-plugin->parse-mongodb-schema
+;;  (fn
+;;    [_ [_ status connection payload]]
+;;    {:fx [[:dispatch [:editor-plugin->set-mongodb-schema status connection payload]]]}))
+
+;; (rf/reg-event-fx
+;;  :editor-plugin->set-mongodb-schema
+;;  (fn
+;;    [{:keys [db]} [_ status connection payload]]
+;;    (let [parse-payload (fn [p]
+;;                          (js->clj (.parse js/JSON p) :keywordize-keys true))
+;;          db-schema {:status status
+;;                     :data (assoc (-> db :database-schema :data)
+;;                                  (:connection-name connection) {:status status
+;;                                                                 :raw payload
+;;                                                                 :schema-tree (if-let [_ (or (empty? payload)
+;;                                                                                             (= status :failure))]
+;;                                                                                "Couldn't get database schema.\nPlease check your session list to see the possible issue."
+;;                                                                                (parse-payload payload))})
+;;                     :type "mongodb"
+;;                     :raw payload
+;;                     :schema-tree (if-let [_ (or (empty? payload)
+;;                                                 (= status :failure))]
+;;                                    "Couldn't get database schema.\nPlease check your session list to see the possible issue."
+;;                                    (parse-payload payload))}]
+;;      {:db (assoc-in db [:database-schema] db-schema)})))
 
 (rf/reg-event-fx
  :editor-plugin->set-select-language
  (fn [{:keys [db]} [_ language]]
    {:db (assoc-in db [:editor-plugin->select-language] language)}))
+
+;; ___________________________________________________________________________________
+
+;; Função auxiliar para processar o schema retornado pela API
+(defn- process-schema [schema-data]
+  (let [schemas (:schemas schema-data)]
+    (reduce (fn [acc schema]
+              (let [schema-name (:name schema)
+                    tables (reduce (fn [table-acc table]
+                                     (assoc table-acc (:name table)
+                                            (reduce (fn [col-acc column]
+                                                      (assoc col-acc (:name column)
+                                                             {(:type column)
+                                                              {"nullable" (:nullable column)
+                                                               "is_primary_key" (:is_primary_key column)
+                                                               "is_foreign_key" (:is_foreign_key column)}}))
+                                                    {}
+                                                    (:columns table))))
+                                   {}
+                                   (:tables schema))]
+                (assoc acc schema-name tables)))
+            {}
+            schemas)))
+
+;; Função auxiliar para processar os índices
+(defn- process-indexes [schema-data]
+  (let [schemas (:schemas schema-data)]
+    (reduce (fn [acc schema]
+              (let [schema-name (:name schema)
+                    tables (reduce (fn [table-acc table]
+                                     (assoc table-acc (:name table)
+                                            (reduce (fn [idx-acc index]
+                                                      (assoc idx-acc (:name index)
+                                                             (reduce (fn [col-acc column]
+                                                                       (assoc col-acc column
+                                                                              {"is_unique" (:is_unique index)
+                                                                               "is_primary" (:is_primary index)}))
+                                                                     {}
+                                                                     (:columns index))))
+                                                    {}
+                                                    (:indexes table))))
+                                   {}
+                                   (:tables schema))]
+                (assoc acc schema-name tables)))
+            {}
+            schemas)))
+
+(rf/reg-event-fx
+ :editor-plugin->handle-database-schema
+ (fn [{:keys [db]} [_ connection]]
+   (let [current-connection-data (get-in db [:database-schema :data (:connection-name connection)])
+         selected-db (.getItem js/localStorage "selected-database")]
+     (if (and selected-db (:databases current-connection-data))
+       ;; Se temos database selecionada e lista de databases, buscar o schema
+       {:fx [[:dispatch [:editor-plugin->get-database-schema
+                         connection
+                         selected-db
+                         (:databases current-connection-data)]]]}
+       ;; Se não, buscar primeiro a lista de databases
+       {:fx [[:dispatch [:editor-plugin->get-databases connection]]]}))))
+
+;; Evento unificado para buscar a lista de databases
+(rf/reg-event-fx
+ :editor-plugin->get-databases
+ (fn [{:keys [db]} [_ connection]]
+   {:db (-> db
+            (assoc-in [:database-schema :current-connection] (:connection-name connection))
+            (assoc-in [:database-schema :data (:connection-name connection) :status] :loading))
+    :fx [[:dispatch [:fetch {:method "GET"
+                             :uri (str "/connections/" (:connection-name connection) "/databases")
+                             :on-success (fn [response]
+                                           (let [selected-db (.getItem js/localStorage "selected-database")]
+                                          ;; Se tiver uma database selecionada, já busca seu schema
+                                             (when selected-db
+                                               (rf/dispatch [:editor-plugin->get-database-schema
+                                                             connection
+                                                             selected-db
+                                                             (:databases response)]))
+                                          ;; Sempre atualiza a lista de databases
+                                             (rf/dispatch [:editor-plugin->set-databases
+                                                           connection
+                                                           (:databases response)])))}]]]}))
+
+;; Evento unificado para armazenar as databases
+(rf/reg-event-db
+ :editor-plugin->set-databases
+ (fn [db [_ connection databases]]
+   (assoc-in db [:database-schema :data (:connection-name connection) :databases] databases)))
+
+;; Evento unificado para buscar o schema de uma database específica
+(rf/reg-event-fx
+ :editor-plugin->get-database-schema
+ (fn [{:keys [db]} [_ connection database databases]]
+   {:db (-> db
+            (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :loading)
+            (assoc-in [:database-schema :data (:connection-name connection) :databases] databases))
+    :fx [[:dispatch [:fetch {:method "GET"
+                             :uri (str "/connections/" (:connection-name connection) "/schema?database=" database)
+                             :on-success #(rf/dispatch [:editor-plugin->set-database-schema
+                                                        {:schema-payload %
+                                                         :database database
+                                                         :databases databases
+                                                         :status :success
+                                                         :database-schema-status :success
+                                                         :connection connection}])}]]]}))
+
+;; Evento unificado para processar e armazenar o schema
+(rf/reg-event-fx
+ :editor-plugin->set-database-schema
+ (fn [{:keys [db]} [_ {:keys [schema-payload database databases status database-schema-status connection]}]]
+   (let [is-mongodb? (= (:type connection) "mongodb")
+         schema {:status status
+                 :data (assoc (-> db :database-schema :data)
+                              (:connection-name connection)
+                              {:status status
+                               :database-schema-status database-schema-status
+                               :type (:type connection)
+                               :raw schema-payload
+                               :schema-tree (process-schema schema-payload)
+                             ;; Só processa índices se não for MongoDB
+                               :indexes-tree (when-not is-mongodb?
+                                               (process-indexes schema-payload))
+                               :current-database database
+                               :databases databases})
+                 :type (:type connection)
+                 :raw schema-payload
+                 :schema-tree (process-schema schema-payload)
+                 :indexes-tree (when-not is-mongodb?
+                                 (process-indexes schema-payload))
+                 :current-database database
+                 :databases databases}]
+     {:db (assoc-in db [:database-schema] schema)})))
+
+;; Evento unificado para quando o usuário troca de database
+(rf/reg-event-fx
+ :editor-plugin->change-database
+ (fn [{:keys [db]} [_ connection database]]
+   (.setItem js/localStorage "selected-database" database)
+   {:fx [[:dispatch [:editor-plugin->get-database-schema
+                     connection
+                     database
+                     (get-in db [:database-schema :data (:connection-name connection) :databases])]]]}))
+
+
+;; Handler para MySQL - Chama direto o schema sem databases
+(rf/reg-event-fx
+ :editor-plugin->handle-mysql-schema
+ (fn [{:keys [db]} [_ connection]]
+   {:db (-> db
+            (assoc-in [:database-schema :current-connection] (:connection-name connection))
+            (assoc-in [:database-schema :data (:connection-name connection) :status] :loading))
+    :fx [[:dispatch [:editor-plugin->get-mysql-schema connection]]]}))
+
+;; Evento para buscar o schema do MySQL diretamente
+(rf/reg-event-fx
+ :editor-plugin->get-mysql-schema
+ (fn [{:keys [db]} [_ connection]]
+   {:db (assoc-in db [:database-schema :data (:connection-name connection) :database-schema-status] :loading)
+    :fx [[:dispatch [:fetch {:method "GET"
+                             :uri (str "/connections/" (:connection-name connection) "/schema")
+                             :on-success #(rf/dispatch [:editor-plugin->set-mysql-schema
+                                                        {:schema-payload %
+                                                         :status :success
+                                                         :database-schema-status :success
+                                                         :connection connection}])}]]]}))
+
+;; Evento para processar e armazenar o schema do MySQL
+(rf/reg-event-fx
+ :editor-plugin->set-mysql-schema
+ (fn [{:keys [db]} [_ {:keys [schema-payload status database-schema-status connection]}]]
+   (let [schema {:status status
+                 :data (assoc (-> db :database-schema :data)
+                              (:connection-name connection)
+                              {:status status
+                               :database-schema-status database-schema-status
+                               :type (:type connection)
+                               :raw schema-payload
+                               :schema-tree (process-schema schema-payload)
+                               :indexes-tree (process-indexes schema-payload)})
+                 :type (:type connection)
+                 :raw schema-payload
+                 :schema-tree (process-schema schema-payload)
+                 :indexes-tree (process-indexes schema-payload)}]
+     {:db (assoc-in db [:database-schema] schema)})))
