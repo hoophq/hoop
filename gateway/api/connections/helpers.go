@@ -166,3 +166,68 @@ func getAccessToken(c *gin.Context) string {
 	}
 	return ""
 }
+
+func getString(m map[string]interface{}, key string) string {
+	if val, ok := m[key].(string); ok {
+		return val
+	}
+	return ""
+}
+
+// getBool retorna um booleano do map
+func getBool(m map[string]interface{}, key string) bool {
+	switch v := m[key].(type) {
+	case bool:
+		return v
+	case string:
+		return v == "YES" || v == "true" || v == "t" || v == "1"
+	case int:
+		return v != 0
+	case int64:
+		return v != 0
+	case float64:
+		return v != 0
+	default:
+		return false
+	}
+}
+
+func getEnvValue(envs map[string]string, key string) string {
+	if val, exists := envs[key]; exists {
+		decoded, err := base64.StdEncoding.DecodeString(val)
+		if err != nil {
+			return ""
+		}
+		return string(decoded)
+	}
+	return ""
+}
+
+func getMongoDBFromConnectionString(connStr string) string {
+	// Decodifica a connection string que está em base64
+	decoded, err := base64.StdEncoding.DecodeString(connStr)
+	if err != nil {
+		return ""
+	}
+	mongoURL := string(decoded)
+
+	// Se a URL não começa com mongodb://, não é uma connection string válida
+	if !strings.HasPrefix(mongoURL, "mongodb://") {
+		return ""
+	}
+
+	// Parse da URL para extrair o database
+	u, err := url.Parse(mongoURL)
+	if err != nil {
+		return ""
+	}
+
+	// O database vem depois da última barra e antes da query string
+	path := u.Path
+	if path == "" || path == "/" {
+		return ""
+	}
+
+	// Remove a barra inicial se existir
+	return strings.TrimPrefix(path, "/")
+}

@@ -252,7 +252,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		apiconnections.ListDatabases)
-	r.GET("/connections/:nameOrID/databases/:database/schema",
+	r.GET("/connections/:nameOrID/schema",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		apiconnections.GetDatabaseSchema)

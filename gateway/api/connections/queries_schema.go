@@ -15,6 +15,10 @@ func getSchemaQuery(connType pb.ConnectionType, dbName string) string {
 		return getMSSQLSchemaQuery(dbName)
 	case pb.ConnectionTypeMySQL:
 		return getMySQLSchemaQuery(dbName)
+	case pb.ConnectionTypeOracleDB:
+		return getOracleDBSchemaQuery(dbName)
+	case pb.ConnectionTypeMongoDB:
+		return getMongoDBSchemaQuery(dbName)
 	default:
 		return ""
 	}
@@ -121,26 +125,159 @@ ORDER BY schema_name, object_name, column_name;`, dbName)
 
 func getMySQLSchemaQuery(dbName string) string {
 	return fmt.Sprintf(`
+	SELECT 
+			c.TABLE_SCHEMA as schema_name,
+			CASE WHEN t.TABLE_TYPE = 'BASE TABLE' THEN 'table' ELSE 'view' END as object_type,
+			c.TABLE_NAME as object_name,
+			c.COLUMN_NAME as column_name,
+			c.DATA_TYPE as column_type,
+			c.IS_NULLABLE = 'YES' as not_null,
+			c.COLUMN_DEFAULT as column_default,
+			CASE WHEN c.COLUMN_KEY = 'PRI' THEN 1 ELSE 0 END as is_primary_key,
+			CASE WHEN c.COLUMN_KEY = 'MUL' THEN 1 ELSE 0 END as is_foreign_key,
+			s.INDEX_NAME as index_name,
+			GROUP_CONCAT(s.COLUMN_NAME ORDER BY s.SEQ_IN_INDEX) as index_columns,
+			s.NON_UNIQUE = 0 as index_is_unique,
+			s.INDEX_NAME = 'PRIMARY' as index_is_primary
+	FROM INFORMATION_SCHEMA.COLUMNS c
+	JOIN INFORMATION_SCHEMA.TABLES t 
+			ON c.TABLE_SCHEMA = t.TABLE_SCHEMA 
+			AND c.TABLE_NAME = t.TABLE_NAME
+	LEFT JOIN INFORMATION_SCHEMA.STATISTICS s 
+			ON c.TABLE_SCHEMA = s.TABLE_SCHEMA 
+			AND c.TABLE_NAME = s.TABLE_NAME 
+			AND c.COLUMN_NAME = s.COLUMN_NAME
+	WHERE c.TABLE_SCHEMA = '%s'
+			AND c.TABLE_SCHEMA NOT IN ('information_schema', 'performance_schema', 'mysql', 'pg_catalog', 'sys')
+	GROUP BY 
+			c.TABLE_SCHEMA,
+			t.TABLE_TYPE,
+			c.TABLE_NAME,
+			c.COLUMN_NAME,
+			c.DATA_TYPE,
+			c.IS_NULLABLE,
+			c.COLUMN_DEFAULT,
+			c.COLUMN_KEY,
+			s.INDEX_NAME,
+			s.NON_UNIQUE,
+			c.ORDINAL_POSITION
+	ORDER BY c.TABLE_NAME, c.ORDINAL_POSITION;`, dbName)
+}
+
+func getOracleDBSchemaQuery(dbName string) string {
+	return fmt.Sprintf(`
 SELECT 
-    TABLE_SCHEMA as schema_name,
-    CASE WHEN TABLE_TYPE = 'BASE TABLE' THEN 'table' ELSE 'view' END as object_type,
-    TABLE_NAME as object_name,
-    COLUMN_NAME as column_name,
-    COLUMN_TYPE as column_type,
-    IS_NULLABLE = 'YES' as not_null,
-    COLUMN_DEFAULT as column_default,
-    CASE WHEN COLUMN_KEY = 'PRI' THEN 1 ELSE 0 END as is_primary_key,
-    CASE WHEN COLUMN_KEY = 'MUL' THEN 1 ELSE 0 END as is_foreign_key,
-    INDEX_NAME as index_name,
-    GROUP_CONCAT(INDEX_COLUMN_NAME) as index_columns,
-    NON_UNIQUE = 0 as index_is_unique,
-    INDEX_NAME = 'PRIMARY' as index_is_primary
-FROM information_schema.COLUMNS c
-LEFT JOIN information_schema.STATISTICS s 
-    ON c.TABLE_SCHEMA = s.TABLE_SCHEMA 
-    AND c.TABLE_NAME = s.TABLE_NAME 
-    AND c.COLUMN_NAME = s.COLUMN_NAME
-WHERE c.TABLE_SCHEMA = '%s'
-GROUP BY schema_name, object_type, object_name, column_name, index_name
-ORDER BY TABLE_NAME, ORDINAL_POSITION;`, dbName)
+    owner as schema_name,
+    CASE WHEN object_type = 'TABLE' THEN 'table' ELSE 'view' END as object_type,
+    object_name as object_name,
+    column_name,
+    data_type as column_type,
+    CASE WHEN nullable = 'N' THEN 1 ELSE 0 END as not_null,
+    data_default as column_default,
+    CASE WHEN constraint_type = 'P' THEN 1 ELSE 0 END as is_primary_key,
+    CASE WHEN constraint_type = 'R' THEN 1 ELSE 0 END as is_foreign_key,
+    index_name,
+    column_position as index_columns,
+    CASE WHEN uniqueness = 'UNIQUE' THEN 1 ELSE 0 END as index_is_unique,
+    CASE WHEN constraint_type = 'P' THEN 1 ELSE 0 END as index_is_primary
+FROM (
+    SELECT 
+        c.owner,
+        o.object_type,
+        c.table_name as object_name,
+        c.column_name,
+        c.data_type,
+        c.nullable,
+        c.data_default,
+        cc.constraint_type,
+        i.index_name,
+        ic.column_position,
+        i.uniqueness
+    FROM all_tab_columns c
+    JOIN all_objects o ON c.owner = o.owner 
+        AND c.table_name = o.object_name
+    LEFT JOIN all_constraints cc ON c.owner = cc.owner 
+        AND c.table_name = cc.table_name 
+        AND c.column_name = cc.column_name
+    LEFT JOIN all_indexes i ON c.owner = i.owner 
+        AND c.table_name = i.table_name
+    LEFT JOIN all_ind_columns ic ON i.owner = ic.index_owner 
+        AND i.index_name = ic.index_name 
+        AND c.column_name = ic.column_name
+    WHERE c.owner = UPPER('%s')
+    AND o.object_type IN ('TABLE', 'VIEW')
+)
+ORDER BY 
+    schema_name,
+    object_type,
+    object_name,
+    column_name;`, dbName)
+}
+
+func getMongoDBSchemaQuery(dbName string) string {
+	return fmt.Sprintf(`
+var result = [];
+var dbName = '%s';
+
+db.getSiblingDB(dbName).getCollectionNames().forEach(function(collName) {
+    var coll = db.getSiblingDB(dbName).getCollection(collName);
+    var sample = coll.findOne();
+    var indexes = coll.getIndexes();
+    
+    function getSchemaFromDoc(doc, prefix = '') {
+        var schema = {};
+        Object.keys(doc || {}).forEach(function(key) {
+            var fullKey = prefix ? prefix + '.' + key : key;
+            var value = doc[key];
+            
+            if (value === null) {
+                schema[fullKey] = { type: 'null', nullable: true };
+            } else if (Array.isArray(value)) {
+                schema[fullKey] = { type: 'array', nullable: false };
+                if (value.length > 0) {
+                    schema[fullKey].items = getSchemaFromDoc(value[0]);
+                }
+            } else if (typeof value === 'object' && !(value instanceof ObjectId) && !(value instanceof Date)) {
+                Object.assign(schema, getSchemaFromDoc(value, fullKey));
+            } else {
+                schema[fullKey] = {
+                    type: value instanceof ObjectId ? 'objectId' :
+                          value instanceof Date ? 'date' :
+                          typeof value,
+                    nullable: false
+                };
+            }
+        });
+        return schema;
+    }
+    
+    var collSchema = getSchemaFromDoc(sample);
+    
+    // Format as SQL-like schema for consistency
+    Object.keys(collSchema).forEach(function(field) {
+        result.push({
+            schema_name: dbName,
+            object_type: 'table',
+            object_name: collName,
+            column_name: field,
+            column_type: collSchema[field].type,
+            not_null: !collSchema[field].nullable ? 1 : 0,
+            column_default: null,
+            is_primary_key: field === '_id' ? 1 : 0,
+            is_foreign_key: 0
+        });
+        
+        // Add index information
+        indexes.forEach(function(idx) {
+            if (idx.key.hasOwnProperty(field)) {
+                result[result.length - 1].index_name = idx.name;
+                result[result.length - 1].index_columns = Object.keys(idx.key).join(',');
+                result[result.length - 1].index_is_unique = idx.unique ? 1 : 0;
+                result[result.length - 1].index_is_primary = idx.name === '_id_' ? 1 : 0;
+            }
+        });
+    });
+});
+
+printjson(result);`, dbName)
 }

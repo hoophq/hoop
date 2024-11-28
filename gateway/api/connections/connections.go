@@ -3,6 +3,7 @@ package apiconnections
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -469,6 +470,19 @@ FROM sys.databases
 WHERE name NOT IN ('master', 'tempdb', 'model', 'msdb')
 ORDER BY name;`
 
+	case pb.ConnectionTypeMongoDB:
+		script = `
+var dbs = db.adminCommand('listDatabases');
+var result = [];
+dbs.databases.forEach(function(database) {
+	if (!['admin', 'local', 'config'].includes(database.name)) {
+			result.push({
+					"database_name": database.name
+			});
+	}
+});
+printjson(result);`
+
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"message": "unsupported database type"})
 		return
@@ -506,10 +520,26 @@ ORDER BY name;`
 			return
 		}
 
-		databases, err := parseCommandOutput(outcome.Output)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse output: %v", err)})
-			return
+		var databases []string
+		var err error
+
+		if pb.ToConnectionType(conn.Type, conn.SubType.String) == pb.ConnectionTypeMongoDB {
+			var result []map[string]interface{}
+			if err := json.Unmarshal([]byte(outcome.Output), &result); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse MongoDB response: %v", err)})
+				return
+			}
+			for _, db := range result {
+				if dbName, ok := db["database_name"].(string); ok {
+					databases = append(databases, dbName)
+				}
+			}
+		} else {
+			databases, err = parseCommandOutput(outcome.Output)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse response: %v", err)})
+				return
+			}
 		}
 
 		c.JSON(http.StatusOK, DatabaseListResponse{
@@ -573,12 +603,7 @@ type Index struct {
 func GetDatabaseSchema(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	connNameOrID := c.Param("nameOrID")
-	dbName := c.Param("database")
-
-	if dbName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "database name is required"})
-		return
-	}
+	dbName := c.Query("database")
 
 	conn, err := FetchByName(ctx, connNameOrID)
 	if err != nil {
@@ -595,6 +620,27 @@ func GetDatabaseSchema(c *gin.Context) {
 	if conn.Type != "database" {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "connection is not a database type"})
 		return
+	}
+
+	if dbName == "" {
+		connEnvs := conn.Envs
+		switch pb.ToConnectionType(conn.Type, conn.SubType.String) {
+		case pb.ConnectionTypePostgres:
+			dbName = getEnvValue(connEnvs, "envvar:DB")
+		case pb.ConnectionTypeMSSQL:
+			dbName = getEnvValue(connEnvs, "envvar:DB")
+		case pb.ConnectionTypeMySQL:
+			dbName = getEnvValue(connEnvs, "envvar:DB")
+		case pb.ConnectionTypeMongoDB:
+			if connStr := connEnvs["envvar:CONNECTION_STRING"]; connStr != "" {
+				dbName = getMongoDBFromConnectionString(connStr)
+			}
+		}
+
+		if dbName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "database name is required but not found in connection or query parameter"})
+			return
+		}
 	}
 
 	script := getSchemaQuery(pb.ToConnectionType(conn.Type, conn.SubType.String), dbName)
@@ -637,7 +683,16 @@ func GetDatabaseSchema(c *gin.Context) {
 			return
 		}
 
-		schema, err := parseSchemaOutput(outcome.Output)
+		var schema SchemaResponse
+		var err error
+
+		connType := pb.ToConnectionType(conn.Type, conn.SubType.String)
+		if connType == pb.ConnectionTypeMongoDB {
+			schema, err = parseMongoDBSchema(outcome.Output)
+		} else {
+			schema, err = parseSQLSchema(outcome.Output)
+		}
+
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse schema: %v", err)})
 			return
@@ -651,8 +706,85 @@ func GetDatabaseSchema(c *gin.Context) {
 	}
 }
 
+// parseMongoDBSchema processa a saída específica do MongoDB
+func parseMongoDBSchema(output string) (SchemaResponse, error) {
+	// MongoDB retorna um JSON direto
+	var mongoResult []map[string]interface{}
+	if err := json.Unmarshal([]byte(output), &mongoResult); err != nil {
+		return SchemaResponse{}, fmt.Errorf("failed to parse MongoDB output: %v", err)
+	}
+
+	response := SchemaResponse{}
+	schemaMap := make(map[string]*Schema)
+
+	for _, row := range mongoResult {
+		schemaName := getString(row, "schema_name")
+		objectName := getString(row, "object_name")
+
+		// Get or create schema
+		schema, exists := schemaMap[schemaName]
+		if !exists {
+			schema = &Schema{Name: schemaName}
+			schemaMap[schemaName] = schema
+		}
+
+		// Find or create table
+		var table *Table
+		for i := range schema.Tables {
+			if schema.Tables[i].Name == objectName {
+				table = &schema.Tables[i]
+				break
+			}
+		}
+		if table == nil {
+			schema.Tables = append(schema.Tables, Table{Name: objectName})
+			table = &schema.Tables[len(schema.Tables)-1]
+		}
+
+		// Add column
+		column := Column{
+			Name:         getString(row, "column_name"),
+			Type:         getString(row, "column_type"),
+			Nullable:     !getBool(row, "not_null"),
+			DefaultValue: getString(row, "column_default"),
+			IsPrimaryKey: getBool(row, "is_primary_key"),
+			IsForeignKey: getBool(row, "is_foreign_key"),
+		}
+		table.Columns = append(table.Columns, column)
+
+		// Add index if present
+		if indexName := getString(row, "index_name"); indexName != "" {
+			found := false
+			for _, idx := range table.Indexes {
+				if idx.Name == indexName {
+					found = true
+					break
+				}
+			}
+			if !found {
+				index := Index{
+					Name:      indexName,
+					IsUnique:  getBool(row, "index_is_unique"),
+					IsPrimary: getBool(row, "index_is_primary"),
+				}
+				if cols := getString(row, "index_columns"); cols != "" {
+					index.Columns = strings.Split(cols, ",")
+				}
+				table.Indexes = append(table.Indexes, index)
+			}
+		}
+	}
+
+	// Convert map to slice
+	for _, schema := range schemaMap {
+		response.Schemas = append(response.Schemas, *schema)
+	}
+
+	return response, nil
+}
+
 // parseSchemaOutput processa a saída bruta do comando e organiza em uma estrutura SchemaResponse
-func parseSchemaOutput(output string) (SchemaResponse, error) {
+func parseSQLSchema(output string) (SchemaResponse, error) {
 	lines := strings.Split(output, "\n")
 	var result []map[string]interface{}
 
@@ -778,11 +910,4 @@ func organizeSchemaResponse(rows []map[string]interface{}) SchemaResponse {
 	}
 
 	return response
-}
-
-func getString(m map[string]interface{}, key string) string {
-	if val, ok := m[key].(string); ok {
-		return val
-	}
-	return ""
 }
