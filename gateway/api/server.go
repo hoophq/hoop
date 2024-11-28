@@ -248,6 +248,14 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventDeleteConnection),
 		apiconnections.Delete)
+	r.GET("/connections/:nameOrID/databases",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apiconnections.ListDatabases)
+	r.GET("/connections/:nameOrID/databases/:database/schema",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apiconnections.GetDatabaseSchema)
 
 	r.POST("/proxymanager/connect",
 		r.AuthMiddleware,
