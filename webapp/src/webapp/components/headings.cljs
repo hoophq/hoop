@@ -1,5 +1,20 @@
-(ns webapp.components.headings)
+(ns webapp.components.headings
+  (:require
+    ["@radix-ui/themes" :refer [Heading]]))
 
+(defn PageHeader
+  "Radix UI component for <h1> html tag for page headers
+  :text - text to be displayed
+  :options - Radix UI options for the Heading component"
+  [{:keys [text options]}]
+  [:> Heading
+   (merge
+     options
+     {:size "8" :weight "bold" :as "h1"})
+   text])
+
+;; TODO: see how it would seamsly adapt
+;; or consider deprecating these components
 (defn h1
   "<h1> html tag"
   [text attrs]

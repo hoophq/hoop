@@ -188,6 +188,14 @@
                                                      :aria-hidden "true"}]
                 [:span {:class "sr-only"}
                  "Guardrails"]]]
+              [:li
+               [:a {:href (routes/url-for :agents)
+                    :class (str (hover-side-menu-link? "/agents" current-route)
+                                "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
+                [:> hero-outline-icon/ServerStackIcon {:class "h-6 w-6 shrink-0 text-white"
+                                                       :aria-hidden "true"}]
+                [:span {:class "sr-only"}
+                 "Agents"]]]
               (when admin?
                 [:li
                  [:a {:href "#"

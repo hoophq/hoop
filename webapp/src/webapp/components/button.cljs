@@ -1,9 +1,38 @@
 (ns webapp.components.button
   (:require
    [reagent.core :as r]
+   ["@radix-ui/themes" :refer [Flex Box Button Link Text]]
+   ["lucide-react" :refer [ArrowUpRight ArrowLeft]]
    [webapp.components.icon :as icon]
    [webapp.components.popover :as popover]
    [webapp.config :as config]))
+
+(defn DocsBtnCallOut
+  "Radix Button for the Docs Callout"
+  [{:keys [text href]}]
+  [:> Box {:p "3"
+           :mt "4"
+           :style {:border-color "var(--gray-8)"}
+           :class "w-fit rounded-xl border"}
+   [:> Link {:href href
+             :target "_blank"}
+    [:> Flex {:gap "2" :align "center"}
+     [:> ArrowUpRight {:size 16
+                       :style {:color "var(--gray-10)"}}]
+     [:> Text {:size "2"
+               :style {:color "var(--gray-11)"}}
+      text]]]])
+
+(defn HeaderBack
+  "Radix Button for the Header Back Button"
+  [{:keys [on-click text]}]
+  [:> Button {:variant "ghost"
+              :size "2"
+              :color "gray"
+              :type "button"
+              :on-click (or on-click #(js/history.back))}
+   [:> ArrowLeft {:size 16}]
+   (or text "Back")])
 
 (def common-classes
   "disabled:opacity-50 disabled:cursor-not-allowed
@@ -185,7 +214,6 @@
                         (when outlined? " border border-gray-300 text-gray-800")
                         (when dark? " text-white "))}
    text])
-
 
 (defn tailwind-tertiary [{:keys [text on-click type disabled full-width]}]
   [:button {:on-click on-click
