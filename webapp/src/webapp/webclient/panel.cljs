@@ -75,14 +75,15 @@
         change-to-tabular? (and (some (partial = connection-type) ["mysql" "postgres" "sql-server" "oracledb" "mssql" "database"])
                                 (< (count @script-response) 1))
         selected-db (.getItem js/localStorage "selected-database")
-        final-script (if (and selected-db
-                              (or (= connection-type "postgres")
-                                  (= connection-type "postgres-csv")))
-                       (str "\\set QUIET on\n"
-                            "\\c " selected-db "\n"
-                            "\\set QUIET off\n"
-                            script)
-                       script)]
+        final-script (cond
+                       (and selected-db
+                            (= connection-type "postgres")) (str "\\set QUIET on\n"
+                                                                 "\\c " selected-db "\n"
+                                                                 "\\set QUIET off\n"
+                                                                 script)
+                       (and selected-db
+                            (= connection-type "mongodb")) (str "use " selected-db ";\n" script)
+                       :else script)]
     (when (.-preventDefault e) (.preventDefault e))
 
     (if (and (seq selected-connections)

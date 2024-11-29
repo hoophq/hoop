@@ -199,8 +199,10 @@
                                                :value @config-file-value})
                                              "filesystem:"))))
 
-                                :command (when @connection-command
-                                           (or (re-seq #"'.*?'|\".*?\"|\S+|\t" @connection-command) []))}))}
+                                :command (if (= @connection-type "database")
+                                           []
+                                           [(when @connection-command
+                                              (or (re-seq #"'.*?'|\".*?\"|\S+|\t" @connection-command) []))])}))}
 
           [:<>
            (when (= form-type :create)
