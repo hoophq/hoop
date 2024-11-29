@@ -20,3 +20,6 @@
 
 (def segment-write-key env/segment-write-key)
 (def canny-id env/canny-id)
+
+(def sentry-sample-rate env/sentry-sample-rate)
+(def sentry-dsn env/sentry-dsn)

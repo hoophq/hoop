@@ -31,7 +31,7 @@
                              webapp.env/canny-id #shadow/env ["CANNY_ID" "650f50a3e71cb50a018f6e7b"]
                              webapp.env/sentry-sample-rate #shadow/env ["SENTRY_SAMPLE_RATE" "1.0"]
                              webapp.env/sentry-dsn #shadow/env ["SENTRY_DSN"
-                                                                "https://b2bf390e5cd94bfc83c0005312d796fd@o919346.ingest.sentry.io/6707471"]
+                                                                "https://38e03773be6b0d77219d6678a90ed6a5@o4504559799566336.ingest.us.sentry.io/4508377639092224"]
                              webapp.env/api-endpoint #shadow/env ["GATEWAY_URL"
                                                                   "http://localhost:8009/api"]
                              webapp.env/hoop-app-url #shadow/env ["HOOP_APP_URL"
