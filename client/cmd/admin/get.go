@@ -234,6 +234,34 @@ var getCmd = &cobra.Command{
 	},
 }
 
+func GetConnections(toComplete string) []string {
+	conntype := []string{"conn"}
+	apir := parseResourceOrDie(conntype, "GET", outputFlag)
+	obj, _, err := httpRequest(apir)
+	if err != nil {
+		styles.PrintErrorAndExit(err.Error())
+	}
+	conns := []string{}
+	switch contents := obj.(type) {
+	case map[string]any:
+		m := contents
+		secrets, _ := m["secret"].(map[string]any)
+		if secrets == nil {
+			secrets, _ = m["secrets"].(map[string]any)
+		}
+		conns = append(conns, fmt.Sprintf("%s", m["name"]))
+	case []map[string]any:
+		for _, m := range contents {
+			secrets, _ := m["secret"].(map[string]any)
+			if secrets == nil {
+				secrets, _ = m["secrets"].(map[string]any)
+			}
+			conns = append(conns, fmt.Sprintf("%s", m["name"]))
+		}
+	}
+	return conns
+}
+
 func mapGetter(key string, obj any) string {
 	objMap, ok := obj.(map[string]any)
 	if !ok {
