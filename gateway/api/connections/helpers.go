@@ -59,7 +59,7 @@ func setConnectionDefaults(req *openapi.Connection) {
 	case pb.ConnectionTypeMSSQL:
 		defaultEnvVars["envvar:INSECURE"] = base64.StdEncoding.EncodeToString([]byte(`false`))
 		defaultCommand = []string{
-			"sqlcmd", "--exit-on-error", "--trim-spaces", "-r",
+			"sqlcmd", "--exit-on-error", "--trim-spaces", "-s\t", "-r",
 			"-S$HOST:$PORT", "-U$USER", "-d$DB", "-i/dev/stdin"}
 	case pb.ConnectionTypeOracleDB:
 		defaultEnvVars["envvar:LD_LIBRARY_PATH"] = base64.StdEncoding.EncodeToString([]byte(`/opt/oracle/instantclient_19_24`))

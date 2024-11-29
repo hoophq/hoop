@@ -635,6 +635,8 @@ func GetDatabaseSchema(c *gin.Context) {
 			if connStr := connEnvs["envvar:CONNECTION_STRING"]; connStr != "" {
 				dbName = getMongoDBFromConnectionString(connStr)
 			}
+		case pb.ConnectionTypeOracleDB:
+			dbName = getEnvValue(connEnvs, "envvar:SID")
 		}
 
 		if dbName == "" {
@@ -690,7 +692,7 @@ func GetDatabaseSchema(c *gin.Context) {
 		if connType == pb.ConnectionTypeMongoDB {
 			schema, err = parseMongoDBSchema(outcome.Output)
 		} else {
-			schema, err = parseSQLSchema(outcome.Output)
+			schema, err = parseSQLSchema(outcome.Output, connType)
 		}
 
 		if err != nil {
@@ -784,14 +786,19 @@ func parseMongoDBSchema(output string) (SchemaResponse, error) {
 }
 
 // parseSchemaOutput processa a saída bruta do comando e organiza em uma estrutura SchemaResponse
-func parseSQLSchema(output string) (SchemaResponse, error) {
+func parseSQLSchema(output string, connType pb.ConnectionType) (SchemaResponse, error) {
 	lines := strings.Split(output, "\n")
 	var result []map[string]interface{}
 
-	// Remove header e footer, processa linhas
+	// MSSQL has a different output format
+	startLine := 0
+	if connType == pb.ConnectionTypeMSSQL {
+		startLine = 2 // Skip header and dashes for MSSQL
+	}
+
 	for i, line := range lines {
 		line = strings.TrimSpace(line)
-		if i == 0 || line == "" || strings.HasPrefix(line, "(") {
+		if i <= startLine || line == "" || strings.HasPrefix(line, "(") {
 			continue
 		}
 

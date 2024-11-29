@@ -16,7 +16,7 @@ func getSchemaQuery(connType pb.ConnectionType, dbName string) string {
 	case pb.ConnectionTypeMySQL:
 		return getMySQLSchemaQuery(dbName)
 	case pb.ConnectionTypeOracleDB:
-		return getOracleDBSchemaQuery(dbName)
+		return getOracleDBSchemaQuery()
 	case pb.ConnectionTypeMongoDB:
 		return getMongoDBSchemaQuery(dbName)
 	default:
@@ -91,36 +91,77 @@ ORDER BY schema_name, object_type, object_name, a.attnum;`, dbName)
 
 func getMSSQLSchemaQuery(dbName string) string {
 	return fmt.Sprintf(`
-SELECT 
-    s.name as schema_name,
-    CASE WHEN o.type IN ('U') THEN 'table' ELSE 'view' END as object_type,
-    o.name as object_name,
-    c.name as column_name,
-    t.name as column_type,
-    c.is_nullable as not_null,
-    object_definition(c.default_object_id) as column_default,
-    CASE WHEN pk.column_id IS NOT NULL THEN 1 ELSE 0 END as is_primary_key,
-    CASE WHEN fk.parent_column_id IS NOT NULL THEN 1 ELSE 0 END as is_foreign_key,
-    i.name as index_name,
-    STRING_AGG(ic.column_name, ',') WITHIN GROUP (ORDER BY ic.key_ordinal) as index_columns,
-    i.is_unique as index_is_unique,
-    CASE WHEN i.is_primary_key = 1 THEN 1 ELSE 0 END as index_is_primary
-FROM sys.schemas s
-JOIN sys.objects o ON o.schema_id = s.schema_id
-JOIN sys.columns c ON o.object_id = c.object_id
-JOIN sys.types t ON c.user_type_id = t.user_type_id
-LEFT JOIN sys.index_columns pk ON pk.object_id = o.object_id 
-    AND pk.column_id = c.column_id 
-    AND pk.index_id = 1
-LEFT JOIN sys.foreign_key_columns fk ON fk.parent_object_id = o.object_id 
-    AND fk.parent_column_id = c.column_id
-LEFT JOIN sys.indexes i ON o.object_id = i.object_id
-LEFT JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
-WHERE o.type IN ('U', 'V')
-    AND DB_NAME() = '%s'
-GROUP BY s.name, o.type, o.name, c.name, t.name, c.is_nullable, c.default_object_id,
-    pk.column_id, fk.parent_column_id, i.name, i.is_unique, i.is_primary_key
-ORDER BY schema_name, object_name, column_name;`, dbName)
+SET NOCOUNT ON;
+WITH object_info AS (
+    SELECT DISTINCT
+        s.name as schema_name,
+        o.type as object_type,
+        o.name as object_name,
+        c.name as column_name,
+        t.name as column_type,
+        c.is_nullable,
+        OBJECT_DEFINITION(c.default_object_id) as column_default,
+        CASE WHEN pk.column_id IS NOT NULL THEN 1 ELSE 0 END as is_primary_key,
+        CASE WHEN fk.parent_column_id IS NOT NULL THEN 1 ELSE 0 END as is_foreign_key
+    FROM sys.schemas s
+    JOIN sys.objects o ON o.schema_id = s.schema_id
+    JOIN sys.columns c ON o.object_id = c.object_id
+    JOIN sys.types t ON c.user_type_id = t.user_type_id
+    LEFT JOIN (
+        SELECT i.object_id, ic.column_id 
+        FROM sys.indexes i 
+        JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+        WHERE i.is_primary_key = 1
+    ) pk ON pk.object_id = o.object_id AND pk.column_id = c.column_id
+    LEFT JOIN sys.foreign_key_columns fk ON fk.parent_object_id = o.object_id AND fk.parent_column_id = c.column_id
+    WHERE o.type IN ('U', 'V')
+        AND DB_NAME() = '%s'
+),
+index_list AS (
+    SELECT 
+        OBJECT_SCHEMA_NAME(i.object_id) as schema_name,
+        OBJECT_NAME(i.object_id) as object_name,
+        c.name as column_name,
+        i.name as index_name,
+        STRING_AGG(col.name, ',') WITHIN GROUP (ORDER BY ic.key_ordinal) as index_columns,
+        i.is_unique,
+        i.is_primary_key
+    FROM sys.indexes i
+    JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+    JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+    JOIN sys.columns col ON ic.object_id = col.object_id AND ic.column_id = col.column_id
+    WHERE OBJECT_SCHEMA_NAME(i.object_id) IS NOT NULL
+        AND DB_NAME() = '%s'
+    GROUP BY 
+        OBJECT_SCHEMA_NAME(i.object_id),
+        OBJECT_NAME(i.object_id),
+        c.name,
+        i.name,
+        i.is_unique,
+        i.is_primary_key
+)
+SELECT DISTINCT
+    o.schema_name,
+    CASE WHEN o.object_type = 'U' THEN 'table' ELSE 'view' END,
+    o.object_name,
+    o.column_name,
+    o.column_type,
+    o.is_nullable,
+    COALESCE(o.column_default, 'NULL'),
+    o.is_primary_key,
+    o.is_foreign_key,
+    COALESCE(i.index_name, 'NULL'),
+    COALESCE(i.index_columns, 'NULL'),
+    COALESCE(i.is_unique, 0),
+    COALESCE(i.is_primary_key, 0)
+FROM object_info o
+LEFT JOIN index_list i ON o.schema_name = i.schema_name 
+    AND o.object_name = i.object_name 
+    AND o.column_name = i.column_name
+ORDER BY 
+    o.schema_name,
+    o.object_name,
+    o.column_name;`, dbName, dbName)
 }
 
 func getMySQLSchemaQuery(dbName string) string {
@@ -164,54 +205,54 @@ func getMySQLSchemaQuery(dbName string) string {
 	ORDER BY c.TABLE_NAME, c.ORDINAL_POSITION;`, dbName)
 }
 
-func getOracleDBSchemaQuery(dbName string) string {
-	return fmt.Sprintf(`
+func getOracleDBSchemaQuery() string {
+	return `
 SELECT 
-    owner as schema_name,
-    CASE WHEN object_type = 'TABLE' THEN 'table' ELSE 'view' END as object_type,
-    object_name as object_name,
-    column_name,
-    data_type as column_type,
-    CASE WHEN nullable = 'N' THEN 1 ELSE 0 END as not_null,
-    data_default as column_default,
-    CASE WHEN constraint_type = 'P' THEN 1 ELSE 0 END as is_primary_key,
-    CASE WHEN constraint_type = 'R' THEN 1 ELSE 0 END as is_foreign_key,
-    index_name,
-    column_position as index_columns,
-    CASE WHEN uniqueness = 'UNIQUE' THEN 1 ELSE 0 END as index_is_unique,
-    CASE WHEN constraint_type = 'P' THEN 1 ELSE 0 END as index_is_primary
-FROM (
-    SELECT 
-        c.owner,
-        o.object_type,
-        c.table_name as object_name,
-        c.column_name,
-        c.data_type,
-        c.nullable,
-        c.data_default,
-        cc.constraint_type,
-        i.index_name,
-        ic.column_position,
-        i.uniqueness
-    FROM all_tab_columns c
-    JOIN all_objects o ON c.owner = o.owner 
-        AND c.table_name = o.object_name
-    LEFT JOIN all_constraints cc ON c.owner = cc.owner 
-        AND c.table_name = cc.table_name 
-        AND c.column_name = cc.column_name
-    LEFT JOIN all_indexes i ON c.owner = i.owner 
-        AND c.table_name = i.table_name
-    LEFT JOIN all_ind_columns ic ON i.owner = ic.index_owner 
-        AND i.index_name = ic.index_name 
-        AND c.column_name = ic.column_name
-    WHERE c.owner = UPPER('%s')
-    AND o.object_type IN ('TABLE', 'VIEW')
+    t.owner as schema_name,
+    CASE WHEN o.object_type = 'TABLE' THEN 'table' ELSE 'view' END as object_type,
+    t.table_name as object_name,
+    c.column_name,
+    c.data_type as column_type,
+    CASE WHEN c.nullable = 'Y' THEN '0' ELSE '1' END as not_null,
+    CAST(null as VARCHAR2(4000)) as column_default,
+    CASE WHEN i.uniqueness = 'UNIQUE' THEN '1' ELSE '0' END as is_primary_key,
+    CASE WHEN i.uniqueness = 'NONUNIQUE' THEN '1' ELSE '0' END as is_foreign_key,
+    NVL(i.index_name, '') as index_name,
+    NVL(LISTAGG(ic.column_name, ',') WITHIN GROUP (ORDER BY ic.column_position), '') as index_columns,
+    CASE WHEN i.uniqueness = 'UNIQUE' THEN '1' ELSE '0' END as index_is_unique,
+    CASE WHEN i.uniqueness = 'UNIQUE' THEN '1' ELSE '0' END as index_is_primary
+FROM all_tables t
+JOIN all_tab_columns c 
+    ON t.table_name = c.table_name 
+    AND t.owner = c.owner
+JOIN all_objects o
+    ON t.owner = o.owner
+    AND t.table_name = o.object_name
+LEFT JOIN all_indexes i
+    ON t.table_name = i.table_name 
+    AND t.owner = i.table_owner
+LEFT JOIN all_ind_columns ic
+    ON i.index_name = ic.index_name 
+    AND i.table_owner = ic.table_owner 
+    AND i.table_name = ic.table_name
+WHERE t.owner NOT IN (
+    'SYS', 'SYSTEM', 'OUTLN', 'DBSNMP', 'XDB', 
+    'APEX_040000', 'WMSYS', 'ORDDATA', 'CTXSYS', 'MGMT_VIEW'
 )
+AND o.object_type IN ('TABLE', 'VIEW')
+GROUP BY 
+    t.owner,
+    o.object_type,
+    t.table_name,
+    c.column_name,
+    c.data_type,
+    c.nullable,
+    i.index_name,
+    i.uniqueness
 ORDER BY 
-    schema_name,
-    object_type,
-    object_name,
-    column_name;`, dbName)
+    t.owner,
+    t.table_name,
+    c.column_name;`
 }
 
 func getMongoDBSchemaQuery(dbName string) string {

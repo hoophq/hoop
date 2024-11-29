@@ -99,13 +99,13 @@ RUN apt-get update -y && \
 RUN URL_ORACLE_BASIC= && URL_ORACLE_SQLPLUS= && dpkgArch="$(dpkg --print-architecture)" \
   && case "${dpkgArch##*-}" in \
   amd64) URL_ORACLE_BASIC='https://download.oracle.com/otn_software/linux/instantclient/1924000/instantclient-basic-linux.x64-19.24.0.0.0dbru.zip';; \
-  arm64) URL_ORACLE_BASIC='https://download.oracle.com/otn_software/linux/instantclient/instantclient-basic-linux-arm64.zip';; \
+  arm64) URL_ORACLE_BASIC='https://download.oracle.com/otn_software/linux/instantclient/1924000/instantclient-basic-linux.arm64-19.24.0.0.0dbru.zip';; \
   i386) URL_ORACLE_BASIC='https://download.oracle.com/otn_software/linux/instantclient/1924000/instantclient-basic-linux-19.24.0.0.0dbru.zip';; \
   *) echo "unsupported architecture"; exit 1 ;; \
   esac \
   && case "${dpkgArch##*-}" in \
   amd64) URL_ORACLE_SQLPLUS='https://download.oracle.com/otn_software/linux/instantclient/1924000/instantclient-sqlplus-linux.x64-19.24.0.0.0dbru.zip';; \
-  arm64) URL_ORACLE_SQLPLUS='https://download.oracle.com/otn_software/linux/instantclient/instantclient-sqlplus-linux-arm64.zip';; \
+  arm64) URL_ORACLE_SQLPLUS='https://download.oracle.com/otn_software/linux/instantclient/1924000/instantclient-sqlplus-linux.arm64-19.24.0.0.0dbru.zip';; \
   i386) URL_ORACLE_SQLPLUS='https://download.oracle.com/otn_software/linux/instantclient/1924000/instantclient-sqlplus-linux-19.24.0.0.0dbru.zip';; \
   *) echo "unsupported architecture"; exit 1 ;; \
   esac \
