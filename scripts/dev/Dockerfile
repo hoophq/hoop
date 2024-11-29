@@ -109,7 +109,7 @@ RUN URL_ORACLE_BASIC= && URL_ORACLE_SQLPLUS= && dpkgArch="$(dpkg --print-archite
   i386) URL_ORACLE_SQLPLUS='https://download.oracle.com/otn_software/linux/instantclient/1924000/instantclient-sqlplus-linux-19.24.0.0.0dbru.zip';; \
   *) echo "unsupported architecture"; exit 1 ;; \
   esac \
-  && mkdir -p /opt/oracle && \
+  && mkdir -p /opt/oracle/instantclient_19_24 && \
   cd /opt/oracle && \
   wget -O instantclient-basic-linux.zip $URL_ORACLE_BASIC && \
   wget -O instantclient-sqlplus-linux.zip $URL_ORACLE_SQLPLUS && \
@@ -123,7 +123,7 @@ RUN URL_ORACLE_BASIC= && URL_ORACLE_SQLPLUS= && dpkgArch="$(dpkg --print-archite
 
 # Configure environment variables
 ENV PATH="/opt/oracle/instantclient_19_24:$PATH"
-ENV LD_LIBRARY_PATH="/opt/oracle/instantclient_19_24:$LD_LIBRARY_PATH"  
+ENV LD_LIBRARY_PATH="/opt/oracle/instantclient_19_24:$LD_LIBRARY_PATH"
 
 RUN curl -sL "https://dl.k8s.io/release/v1.22.1/bin/linux/amd64/kubectl" -o kubectl && \
   echo '78178a8337fc6c76780f60541fca7199f0f1a2e9c41806bded280a4a5ef665c9  kubectl' | sha256sum -c --ignore-missing --strict - && \
