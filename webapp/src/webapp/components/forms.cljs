@@ -8,7 +8,6 @@
   [text]
   [:label {:class "block text-xs font-semibold text-gray-800"} text])
 
-
 (defn- form-label-dark
   [text]
   [:label {:class "text-white block text-xs font-semibold"} text])
@@ -32,73 +31,66 @@
   :placeholder -> html prop placeholder for input;
   :value -> a reagent atom piece of state."
   [_]
-  (fn
-    [{:keys [type on-blur on-focus]}]
-    (let [local-type (r/atom (or type "text"))
-          on-blur-cb (fn []
-                       (when (= type "password")
-                         (reset! local-type "password"))
-                       (when on-blur (on-blur)))
-          on-focus-cb (fn []
-                        (when (= type "password")
-                          (reset! local-type "text"))
-                        (when on-focus (on-focus)))]
-      (fn [{:keys [label
-                   placeholder
-                   name
-                   size
-                   dark
-                   id
-                   helper-text
-                   value
-                   defaultValue
-                   on-change
-                   on-keyDown
-                   required
-                   full-width?
-                   pattern
-                   disabled
-                   minlength
-                   maxlength
-                   min
-                   max
-                   step
-                   not-margin-bottom? ;; TODO: Remove this prop when remove margin-bottom from all inputs
-                   hidden]}]
-        [:div {:class (str "text-sm"
-                           (when-not not-margin-bottom? " mb-regular")
-                           (when full-width? " w-full")
-                           (when hidden " hidden"))}
-         [:div {:class "flex items-center gap-2 mb-1"}
-          (when label
-            (if dark
-              [form-label-dark label]
-              [form-label label]))
-          (when (not (cs/blank? helper-text))
-            [form-helper-text helper-text dark])]
-         [:> TextField.Root
-          (merge
-           {:type (if (= "string" @local-type) "text" @local-type)
-            :id id
-            :size (or size "3")
-            :class (when dark "dark")
-            :placeholder (or placeholder label)
-            :name name
-            :pattern pattern
-            :minLength minlength
-            :maxLength maxlength
-            :min min
-            :max max
-            :step step
-            :value value
-            :on-change on-change
-            :on-keyDown on-keyDown
-            :on-blur on-blur-cb
-            :on-focus on-focus-cb
-            :disabled (or disabled false)
-            :required (or required false)}
-           (when defaultValue
-             {:defaultValue defaultValue}))]]))))
+  (fn []
+    (fn [{:keys [label
+                 placeholder
+                 name
+                 size
+                 dark
+                 id
+                 helper-text
+                 value
+                 defaultValue
+                 on-change
+                 on-keyDown
+                 on-focus
+                 on-blur
+                 required
+                 full-width?
+                 pattern
+                 disabled
+                 minlength
+                 maxlength
+                 type
+                 min
+                 max
+                 step
+                 not-margin-bottom? ;; TODO: Remove this prop when remove margin-bottom from all inputs
+                 hidden]}]
+      [:div {:class (str "text-sm"
+                         (when-not not-margin-bottom? " mb-regular")
+                         (when full-width? " w-full")
+                         (when hidden " hidden"))}
+       [:div {:class "flex items-center gap-2 mb-1"}
+        (when label
+          (if dark
+            [form-label-dark label]
+            [form-label label]))
+        (when (not (cs/blank? helper-text))
+          [form-helper-text helper-text dark])]
+       [:> TextField.Root
+        (merge
+          {:type (or type "text")
+           :id id
+           :size (or size "3")
+           :class (when dark "dark")
+           :placeholder (or placeholder label)
+           :name name
+           :pattern pattern
+           :minLength minlength
+           :maxLength maxlength
+           :min min
+           :max max
+           :step step
+           :value value
+           :on-change on-change
+           :on-keyDown on-keyDown
+           :on-blur on-blur
+           :on-focus on-focus
+           :disabled (or disabled false)
+           :required (or required false)}
+          (when defaultValue
+            {:defaultValue defaultValue}))]])))
 
 (defn input-metadata [{:keys [label name id placeholder disabled required value on-change]}]
   [:div {:class "relative"}
