@@ -238,8 +238,7 @@ func List(c *gin.Context) {
 					optVal = paginationOptVal
 				}
 			case openapi.SessionOptionUser:
-				// don't let it use this filter if it's not an admin
-				if !ctx.IsAdminUser() {
+				if !ctx.IsAuditorOrAdminUser() {
 					continue
 				}
 				optVal = queryOptVal
@@ -249,7 +248,7 @@ func List(c *gin.Context) {
 			options = append(options, WithOption(optKey, optVal))
 		}
 	}
-	if !ctx.IsAdminUser() {
+	if !ctx.IsAuditorOrAdminUser() {
 		options = append(options, WithOption(openapi.SessionOptionUser, ctx.UserID))
 	}
 	sessionList, err := sessionstorage.List(ctx, options...)
@@ -292,8 +291,8 @@ func Get(c *gin.Context) {
 		return
 	}
 
-	// if user is not admin and session is not owned by user, return 404
-	if session.UserID != ctx.UserID && !ctx.IsAdminUser() {
+	// if user is not admin or auditor and session is not owned by user, return 404
+	if session.UserID != ctx.UserID && !ctx.IsAuditorOrAdminUser() {
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 		return
 	}
