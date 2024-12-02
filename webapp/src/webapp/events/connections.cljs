@@ -224,11 +224,10 @@ ORDER BY total_amount DESC;")
 (rf/reg-event-fx
  :connections->start-connect
  (fn [{:keys [db]} [_ connection-name]]
-   (let [gateway-info (-> db :gateway->info)
-         grpc-url (url-parse (-> gateway-info :data :grpc_url))]
+   (let [gateway-info (-> db :gateway->info)]
      {:db (assoc-in db [:connections->connection-connected] {:data {} :status :loading})
       :fx [[:dispatch [:hoop-app->update-my-configs {:apiUrl (-> gateway-info :data :api_url)
-                                                     :grpcUrl (.-host grpc-url)
+                                                     :grpcUrl (-> gateway-info :data :grpc_url)
                                                      :token (.getItem js/localStorage "jwt-token")}]]
            [:dispatch [:modal->close]]
            [:dispatch [:hoop-app->restart]]
