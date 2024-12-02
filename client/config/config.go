@@ -28,7 +28,7 @@ type Config struct {
 	GrpcURL      string `toml:"grpc_url"`
 	TlsCAB64Enc  string `toml:"tls_ca"`
 	Mode         string `toml:"-"`
-	InsecureGRPC bool   `tom:"-"`
+	InsecureGRPC bool   `toml:"-"`
 	filepath     string `toml:"-"`
 }
 
