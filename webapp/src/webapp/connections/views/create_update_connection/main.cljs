@@ -73,6 +73,10 @@
         guardrails-list (rf/subscribe [:guardrails->list])
 
         scroll-pos (r/atom 0)
+        accordion-resource-type (r/atom true)
+        accordion-connection-details (r/atom false)
+        accordion-environment-setup (r/atom false)
+        accordion-advanced-settings (r/atom false)
 
         agent-id (r/atom (or (:agent_id connection) ""))
         connection-type (r/atom (or (:type connection) nil))
@@ -143,9 +147,15 @@
             free-license? (-> @user :data :free-license?)]
 
         (r/with-let [handle-scroll (fn []
-                                     (reset! scroll-pos (.-scrollY js/window)))]
+                                     (reset! scroll-pos (.-scrollY js/window)))
+                     _ (add-watch connection-type :first-step-watcher
+                                  (fn [_ _ old-val new-val]
+                                    (when (and new-val (not old-val))
+                                      (reset! accordion-connection-details true)
+                                      (reset! accordion-environment-setup true))))]
           (.addEventListener js/window "scroll" handle-scroll)
           (finally
+            (remove-watch connection-type :first-step-watcher)
             (.removeEventListener js/window "scroll" handle-scroll)))
 
         [:> Box {:class "min-h-screen bg-gray-1"}
@@ -283,98 +293,99 @@
           [:> Box {:p "7" :class "space-y-radix-5"}
            (when (= form-type :create)
              [accordion/root
-              {:items [{:title "Set your resource type"
-                        :subtitle "Connections can be created for databases, applications and more."
-                        :value "resource-type"
-                        :show-icon? first-step-finished
-                        :avatar-icon [:> SquareStack {:size 16}]
-                        :content [connection-type-form/main
-                                  {:connection-type connection-type
-                                   :connection-subtype connection-subtype
-                                   :connection-name connection-name
-                                   :configs configs
-                                   :config-file-name config-file-name
-                                   :database-schema? database-schema?
-                                   :connection-command connection-command}]}]
-               :id "resource-type"
-               :initial-open? true}])
-
-           [accordion/root
-            {:items [{:title "Define connection details"
-                      :subtitle "Setup how do you want to identify the connection and core configuration parameters."
-                      :value "connection-details"
-                      :show-icon? second-step-finished
-                      :disabled (not first-step-finished)
-                      :avatar-icon [:> BadgeInfo {:size 16}]
-                      :content [connection-details-form/main
-                                {:user-groups user-groups
-                                 :free-license? free-license?
-                                 :connection-subtype connection-subtype
-                                 :connection-name connection-name
-                                 :form-type form-type
-                                 :reviews enable-review?
-                                 :review-groups review-groups
-                                 :ai-data-masking ai-data-masking
-                                 :ai-data-masking-info-types ai-data-masking-info-types}]}]
-             :id "connection-details"
-             :initial-open? (when (= form-type :update) true)
-             :trigger-value (when first-step-finished
-                              "connection-details")}]
-
-           [accordion/root
-            {:items [{:title "Environment setup"
-                      :subtitle "Setup your environment information to establish a secure connection."
-                      :value "environment-setup"
-                      :avatar-icon [:> GlobeLock {:size 16}]
-                      :show-icon? third-step-finished
-                      :disabled (not second-step-finished)
-                      :content [connection-environment-form/main
-                                {:agents @agents
-                                 :agent-id agent-id
-                                 :api-key api-key
-                                 :connection-name connection-name
-                                 :connection-type connection-type
-                                 :connection-subtype connection-subtype
-                                 :configs configs
-                                 :config-key config-key
-                                 :config-value config-value
-                                 :configs-file configs-file
-                                 :config-file-name config-file-name
-                                 :config-file-value config-file-value
-                                 :connection-command connection-command
-                                 :reviews enable-review?
-                                 :review-groups review-groups
-                                 :ai-data-masking ai-data-masking
-                                 :ai-data-masking-info-types ai-data-masking-info-types
-                                 :on-click->add-more-key-value #(do
-                                                                  (add-new-configs configs @config-key @config-value)
-                                                                  (reset! config-value "")
-                                                                  (reset! config-key ""))
-                                 :on-click->add-more-file-content #(do
-                                                                     (add-new-configs configs-file @config-file-name @config-file-value)
-                                                                     (reset! config-file-name "")
-                                                                     (reset! config-file-value ""))}]}]
-             :id "environment-setup"
-             :initial-open? second-step-finished
-             :trigger-value (when second-step-finished
-                              "environment-setup")}]
-           [accordion/root
-            {:items [{:title "Advanced settings"
-                      :subtitle "Include additional configuration parameters."
-                      :value "advanced-settings"
-                      :avatar-icon [:> ShieldEllipsis {:size 16}]
-                      :show-icon? third-step-finished
-                      :disabled (not second-step-finished)
-                      :content [connection-advance-settings-form/main
+              {:item {:title "Set your resource type"
+                      :subtitle "Connections can be created for databases, applications and more."
+                      :value "resource-type"
+                      :show-icon? first-step-finished
+                      :avatar-icon [:> SquareStack {:size 16}]
+                      :content [connection-type-form/main
                                 {:connection-type connection-type
                                  :connection-subtype connection-subtype
-                                 :connection-tags-value connection-tags-value
-                                 :connection-tags-input-value connection-tags-input-value
-                                 :enable-database-schema database-schema?
-                                 :access-mode-runbooks access-mode-runbooks?
-                                 :access-mode-exec access-mode-exec?
-                                 :access-mode-connect access-mode-connect?
-                                 :guardrails-options (or (mapv #(into {} {"value" (:id %) "label" (:name %)})
-                                                               (-> @guardrails-list :data)) [])
-                                 :guardrails guardrails}]}]
-             :id "advanced-settings"}]]]]))))
+                                 :connection-name connection-name
+                                 :configs configs
+                                 :config-file-name config-file-name
+                                 :database-schema? database-schema?
+                                 :connection-command connection-command}]}
+               :id "resource-type"
+               :open? @accordion-resource-type
+               :on-change #(reset! accordion-resource-type %)}])
+
+           [accordion/root
+            {:item {:title "Define connection details"
+                    :subtitle "Setup how do you want to identify the connection and core configuration parameters."
+                    :value "connection-details"
+                    :show-icon? second-step-finished
+                    :disabled (not first-step-finished)
+                    :avatar-icon [:> BadgeInfo {:size 16}]
+                    :content [connection-details-form/main
+                              {:user-groups user-groups
+                               :free-license? free-license?
+                               :connection-subtype connection-subtype
+                               :connection-name connection-name
+                               :form-type form-type
+                               :reviews enable-review?
+                               :review-groups review-groups
+                               :ai-data-masking ai-data-masking
+                               :ai-data-masking-info-types ai-data-masking-info-types}]}
+             :id "connection-details"
+             :on-change #(reset! accordion-connection-details %)
+             :open? @accordion-connection-details}]
+
+           [accordion/root
+            {:item {:title "Environment setup"
+                    :subtitle "Setup your environment information to establish a secure connection."
+                    :value "environment-setup"
+                    :avatar-icon [:> GlobeLock {:size 16}]
+                    :show-icon? third-step-finished
+                    :disabled (not second-step-finished)
+                    :content [connection-environment-form/main
+                              {:agents @agents
+                               :agent-id agent-id
+                               :api-key api-key
+                               :connection-name connection-name
+                               :connection-type connection-type
+                               :connection-subtype connection-subtype
+                               :configs configs
+                               :config-key config-key
+                               :config-value config-value
+                               :configs-file configs-file
+                               :config-file-name config-file-name
+                               :config-file-value config-file-value
+                               :connection-command connection-command
+                               :reviews enable-review?
+                               :review-groups review-groups
+                               :ai-data-masking ai-data-masking
+                               :ai-data-masking-info-types ai-data-masking-info-types
+                               :on-click->add-more-key-value #(do
+                                                                (add-new-configs configs @config-key @config-value)
+                                                                (reset! config-value "")
+                                                                (reset! config-key ""))
+                               :on-click->add-more-file-content #(do
+                                                                   (add-new-configs configs-file @config-file-name @config-file-value)
+                                                                   (reset! config-file-name "")
+                                                                   (reset! config-file-value ""))}]}
+             :id "environment-setup"
+             :on-change #(reset! accordion-environment-setup %)
+             :open? @accordion-environment-setup}]
+           [accordion/root
+            {:item {:title "Advanced settings"
+                    :subtitle "Include additional configuration parameters."
+                    :value "advanced-settings"
+                    :avatar-icon [:> ShieldEllipsis {:size 16}]
+                    :show-icon? third-step-finished
+                    :disabled (not second-step-finished)
+                    :content [connection-advance-settings-form/main
+                              {:connection-type connection-type
+                               :connection-subtype connection-subtype
+                               :connection-tags-value connection-tags-value
+                               :connection-tags-input-value connection-tags-input-value
+                               :enable-database-schema database-schema?
+                               :access-mode-runbooks access-mode-runbooks?
+                               :access-mode-exec access-mode-exec?
+                               :access-mode-connect access-mode-connect?
+                               :guardrails-options (or (mapv #(into {} {"value" (:id %) "label" (:name %)})
+                                                             (-> @guardrails-list :data)) [])
+                               :guardrails guardrails}]}
+             :id "advanced-settings"
+             :open? @accordion-advanced-settings
+             :on-change #(reset! accordion-advanced-settings %)}]]]]))))

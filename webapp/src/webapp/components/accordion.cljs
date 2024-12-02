@@ -22,15 +22,12 @@
            value
            status
            avatar-icon
-           show-icon?
-           total-items]}]
+           show-icon?]}]
   [:> (.-Item Accordion)
    {:value value
     :disabled disabled
     :className (str "first:rounded-t-6 last:rounded-b-6 data-[state=open]:bg-[--accent-2] "
-                    "border-[--gray-a6] data-[disabled]:opacity-70 data-[disabled]:cursor-not-allowed "
-                    (when (> total-items 1) "border first:border-b-0 last:border-t-0")
-                    (when (= total-items 1) "border"))}
+                    "border-[--gray-a6] data-[disabled]:opacity-70 data-[disabled]:cursor-not-allowed border ")}
    [:> (.-Header Accordion)
     [:> (.-Trigger Accordion) {:className "group flex justify-between items-center w-full p-5"}
      [:> Flex {:align "center" :gap "5"}
@@ -58,7 +55,7 @@
   "Main component for the Accordion that renders a list of expandable items.
 
     Parameters:
-    - items: A vector of maps, where each map represents an accordion item and should contain the following keys:
+    - items: A map containing:
       :value           - Unique string to identify the item (required)
       :title           - Title of the item (required)
       :subtitle        - Subtitle of the item (optional)
@@ -69,35 +66,24 @@
 
     - id: A unique identifier for the accordion (optional)
     - initial-open?: Boolean, if true, the first item will be expanded by default (optional)
-    - trigger-value: Value to trigger opening/closing of a specific accordion item (optional)
+    - open?: Value to trigger opening/closing of a specific accordion item
+    - on-change: Callback function to be called when an item is opened/closed
 
     Usage example:
-    [accordion-root {:items [{:value \"item1\"
-                             :title \"Title 1\"
-                             :subtitle \"Subtitle 1\"
-                             :content \"Content of item 1\"}
-                            {:value \"item2\"
-                             :title \"Title 2\"
-                             :content \"Content of item 2\"
-                             :show-icon? true}]
-                     :id \"my-accordion\"
-                     :initial-open? true
-                     :trigger-value \"item2\"}]"
-  [{:keys [items initial-open?]}]
-  (let [current-value (r/atom nil)]
-    (when (and initial-open? (seq items) (nil? @current-value))
-      (reset! current-value (-> items first :value)))
+   [accordion/root
+    {:item {:value \"item1\"
+            :title \"Title 1\"
+            :subtitle \"Subtitle 1\"
+            :content \"Content\"}
+     :id \"my-accordion\"
+     :first-open? true}]"
 
-    (fn [{:keys [items id trigger-value]}]
-      (when (and trigger-value (not= trigger-value @current-value))
-        (reset! current-value trigger-value))
-
-      [:> (.-Root Accordion)
-       {:className "w-full"
-        :id id
-        :value @current-value
-        :onValueChange #(reset! current-value %)
-        :type "single"
-        :collapsible true}
-       (for [{:keys [value] :as item} items]
-         ^{:key value} [accordion-item (merge item {:total-items (count items)})])])))
+  [{:keys [item id open? on-change]}]
+  [:> (.-Root Accordion)
+   {:className "w-full"
+    :id id
+    :value (when open? (:value item))
+    :onValueChange #(on-change (not= % ""))
+    :type "single"
+    :collapsible true}
+   [accordion-item item]])
