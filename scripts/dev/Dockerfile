@@ -82,15 +82,18 @@ RUN mkdir -p /app && \
 
 RUN echo "deb http://apt.postgresql.org/pub/repos/apt/ focal-pgdg main" | tee /etc/apt/sources.list.d/pgdg.list && \
   echo "deb [arch=amd64,arm64] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/5.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-5.0.list && \
+  curl -sL https://packages.microsoft.com/config/ubuntu/20.04/prod.list | tee /etc/apt/sources.list.d/msprod.list && \
   curl -sL https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add - && \
-  curl -sL https://www.mongodb.org/static/pgp/server-5.0.asc | apt-key add -
+  curl -sL https://www.mongodb.org/static/pgp/server-5.0.asc | apt-key add - && \
+  curl -sL https://packages.microsoft.com/keys/microsoft.asc | apt-key add -
 
 RUN apt-get update -y && \
   apt-get install -y \
   openjdk-11-jre \
   default-mysql-client \
   postgresql-client-15 \
-  mongodb-mongosh mongodb-org-tools mongodb-org-shell mongocli
+  mongodb-mongosh mongodb-org-tools mongodb-org-shell mongocli \
+  sqlcmd unixodbc-dev
 
 # Download and install Oracle Instant Client and SQL*Plus
 RUN URL_ORACLE_BASIC= && URL_ORACLE_SQLPLUS= && dpkgArch="$(dpkg --print-architecture)" \
@@ -106,7 +109,7 @@ RUN URL_ORACLE_BASIC= && URL_ORACLE_SQLPLUS= && dpkgArch="$(dpkg --print-archite
   i386) URL_ORACLE_SQLPLUS='https://download.oracle.com/otn_software/linux/instantclient/1924000/instantclient-sqlplus-linux-19.24.0.0.0dbru.zip';; \
   *) echo "unsupported architecture"; exit 1 ;; \
   esac \
-  && mkdir -p /opt/oracle && \
+  && mkdir -p /opt/oracle/instantclient_19_24 && \
   cd /opt/oracle && \
   wget -O instantclient-basic-linux.zip $URL_ORACLE_BASIC && \
   wget -O instantclient-sqlplus-linux.zip $URL_ORACLE_SQLPLUS && \
@@ -120,7 +123,7 @@ RUN URL_ORACLE_BASIC= && URL_ORACLE_SQLPLUS= && dpkgArch="$(dpkg --print-archite
 
 # Configure environment variables
 ENV PATH="/opt/oracle/instantclient_19_24:$PATH"
-ENV LD_LIBRARY_PATH="/opt/oracle/instantclient_19_24:$LD_LIBRARY_PATH"  
+ENV LD_LIBRARY_PATH="/opt/oracle/instantclient_19_24:$LD_LIBRARY_PATH"
 
 RUN curl -sL "https://dl.k8s.io/release/v1.22.1/bin/linux/amd64/kubectl" -o kubectl && \
   echo '78178a8337fc6c76780f60541fca7199f0f1a2e9c41806bded280a4a5ef665c9  kubectl' | sha256sum -c --ignore-missing --strict - && \
