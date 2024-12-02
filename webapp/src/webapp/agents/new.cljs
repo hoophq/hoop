@@ -1,16 +1,16 @@
 (ns webapp.agents.new
   (:require
-    [re-frame.core :as rf]
-    [reagent.core :as r]
-    ["@radix-ui/themes" :refer [Grid Flex Box Text
-                                Button Avatar Heading]]
-    ["lucide-react" :refer [Info ListOrdered]]
-    [webapp.config :as config]
-    [webapp.components.button :as button]
-    [webapp.components.accordion :as accordion]
-    [webapp.components.forms :as forms]
-    [webapp.components.headings :as h]
-    [webapp.agents.deployment :as deployment]))
+   [re-frame.core :as rf]
+   [reagent.core :as r]
+   ["@radix-ui/themes" :refer [Grid Flex Box Text
+                               Button Avatar Heading]]
+   ["lucide-react" :refer [Info ListOrdered]]
+   [webapp.config :as config]
+   [webapp.components.button :as button]
+   [webapp.components.accordion :as accordion]
+   [webapp.components.forms :as forms]
+   [webapp.components.headings :as h]
+   [webapp.agents.deployment :as deployment]))
 
 (defn- installation-method-item [{:keys [icon-dark-path icon-light-path
                                          title description selected?]}]
@@ -26,11 +26,11 @@
                  :variant "soft"
                  :color (if selected? "blue" "gray")
                  :fallback (r/as-element
-                             [:img {:src (str config/webapp-url
-                                              (if selected?
-                                                icon-light-path
-                                                icon-dark-path))
-                                    :alt "Docker"}])}]]
+                            [:img {:src (str config/webapp-url
+                                             (if selected?
+                                               icon-light-path
+                                               icon-dark-path))
+                                   :alt "Docker"}])}]]
     [:> Box
      [:> Flex {:direction "column"}
       [:> Text {:size "2" :weight "medium"}
@@ -52,13 +52,23 @@
         ;; see webapp/agents/deployment.cljs for more details
         ;; of the multimethod implementation
         selected-installation-method (r/atom "Docker Hub")
-        agent-name (r/atom "")]
+        agent-name (r/atom "")
+
+        accordion-agent-information (r/atom true)
+        accordion-installation-method (r/atom (= (:status @agent-key) :ready))]
     (fn []
-      [:> Flex {:direction "column" :gap "4"}
-       [accordion/root
-        {:initial-open? true
-         :id "agent-information"
-         :items [{:title "Agent information"
+      (r/with-let [_ (add-watch agent-key :agent-key-watcher
+                                (fn [_ _ old-val new-val]
+                                  (when (and (not= (:status old-val) :ready)
+                                             (= (:status new-val) :ready))
+                                    (reset! accordion-installation-method true))))]
+
+        [:> Flex {:direction "column" :gap "4"}
+         [accordion/root
+          {:id "agent-information"
+           :open? @accordion-agent-information
+           :on-change #(reset! accordion-agent-information %)
+           :item {:title "Agent information"
                   :subtitle "Define basic identification properties to create your new Agent."
                   :value "agent-information"
                   :disabled false
@@ -74,32 +84,33 @@
                              [:form {:on-submit #(do
                                                    (js/event.preventDefault)
                                                    (rf/dispatch
-                                                     [:agents->generate-agent-key
-                                                      @agent-name]))}
+                                                    [:agents->generate-agent-key
+                                                     @agent-name]))}
                               [forms/input {:label "Name"
                                             :placeholder "Enter the name of the Agent"
                                             :disabled (or
-                                                        (= (:status @agent-key) :ready)
-                                                        (= (:status @agent-key) :loading))
+                                                       (= (:status @agent-key) :ready)
+                                                       (= (:status @agent-key) :loading))
                                             :value @agent-name
                                             :on-change #(reset! agent-name (-> % .-target .-value))
                                             :required true}]
                               [:> Button {:size "3"
                                           :name "agent-name"
                                           :disabled (or
-                                                      (= (:status @agent-key) :ready)
-                                                      (= (:status @agent-key) :loading))
+                                                     (= (:status @agent-key) :ready)
+                                                     (= (:status @agent-key) :loading))
                                           :type "submit"
                                           :style {:margin-top "0"}}
                                (if (= (:status @agent-key) :ready)
                                  "Agent created"
-                                 "Create Agent")]]]]}]}]
+                                 "Create Agent")]]]]}}]
 
-       [accordion/root
-        {:id "installation-method"
-         :initial-open? (= (:status @agent-key) :ready)
-         :trigger-value (when (= (:status @agent-key) :ready) "installation-method")
-         :items [{:title "Installation Method"
+         [accordion/root
+          {:id "installation-method"
+           :open? @accordion-installation-method
+           :on-change #(reset! accordion-installation-method %)
+           :trigger-value (when (= (:status @agent-key) :ready) "installation-method")
+           :item {:title "Installation Method"
                   :value "installation-method"
                   :avatar-icon [:> ListOrdered {:size 16}]
                   :disabled (not (= (:status @agent-key) :ready))
@@ -114,17 +125,20 @@
                              [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
                               [:> Flex {:direction "column" :gap "3"}
                                (doall
-                                 (for [method installation-methods]
-                                   [:div {:key (:title method)
-                                          :on-click #(reset! selected-installation-method
-                                                             (:title method))}
-                                    [installation-method-item
-                                     (merge method
-                                            {:selected? (= (:title method)
-                                                           @selected-installation-method)})]]))]]]
+                                (for [method installation-methods]
+                                  [:div {:key (:title method)
+                                         :on-click #(reset! selected-installation-method
+                                                            (:title method))}
+                                   [installation-method-item
+                                    (merge method
+                                           {:selected? (= (:title method)
+                                                          @selected-installation-method)})]]))]]]
                             [deployment/main
                              {:installation-method @selected-installation-method
-                              :hoop-key (-> @agent-key :data :token)}]]}]}]])))
+                              :hoop-key (-> @agent-key :data :token)}]]}}]]
+
+        (finally
+          (remove-watch agent-key :agent-key-watcher))))))
 
 (defn main []
   ; Reset agent key on mount to avoid cached values
@@ -134,7 +148,7 @@
     [button/HeaderBack]]
    [:> Box {:class "mb-10", :as "header"}
     [h/PageHeader {:text "Setup new Agent"
-           :options {:class "mb-2"}}]
+                   :options {:class "mb-2"}}]
     [:> Text {:size "5" :class "text-[--gray-11]" :as "p"}
      "Follow the steps below to setup a new Agent in your environment"]]
    [form]])
