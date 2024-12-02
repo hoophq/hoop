@@ -158,7 +158,10 @@ func Put(c *gin.Context) {
 	// immutable fields
 	req.ID = conn.ID
 	req.Name = conn.Name
-	req.Status = conn.Status
+	req.Status = pgrest.ConnectionStatusOffline
+	if streamclient.IsAgentOnline(streamtypes.NewStreamID(req.AgentId, "")) {
+		req.Status = pgrest.ConnectionStatusOnline
+	}
 	err = models.UpsertConnection(&models.Connection{
 		ID:                 conn.ID,
 		OrgID:              conn.OrgID,
@@ -168,7 +171,7 @@ func Put(c *gin.Context) {
 		Type:               req.Type,
 		SubType:            sql.NullString{String: req.SubType, Valid: true},
 		Envs:               coerceToMapString(req.Secrets),
-		Status:             conn.Status,
+		Status:             req.Status,
 		ManagedBy:          sql.NullString{},
 		Tags:               req.Tags,
 		AccessModeRunbooks: req.AccessModeRunbooks,
