@@ -24,6 +24,12 @@ func (c *ConnectionInfo) Validate() error {
 
 func (c *APIContext) IsAdminUser() bool   { return pb.IsInList(GroupAdmin, c.UserGroups) }
 func (c *APIContext) IsAuditorUser() bool { return pb.IsInList(GroupAuditor, c.UserGroups) }
+func (c *APIContext) IsAuditorOrAdminUser() bool {
+	if c.IsAdminUser() || c.IsAuditorUser() {
+		return true
+	}
+	return false
+}
 
 // SetName set the attribute name using from the Connection structure
 func (p *PluginConnection) SetName() {
