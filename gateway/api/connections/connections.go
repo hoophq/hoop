@@ -499,7 +499,9 @@ printjson(result);`
 		Verb: proto.ClientVerbPlainExec,
 	})
 	if err != nil {
-		panic(err)
+		log.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
 	}
 
 	respCh := make(chan *clientexec.Response)
@@ -547,7 +549,8 @@ printjson(result);`
 		})
 	case <-timeoutCtx.Done():
 		client.Close()
-		panic("plain exec has timed out (50s)")
+		log.Infof("runexec timeout (50s), it will return async")
+		c.JSON(http.StatusRequestTimeout, gin.H{"message": "Request timed out"})
 	}
 }
 
@@ -589,7 +592,7 @@ type Index struct {
 	IsPrimary bool     `json:"is_primary"`
 }
 
-// GetDatabaseSchema retorna o schema detalhado do banco de dados
+// GetDatabaseSchema return detailed schema information including tables, views, columns and indexes
 //
 //	@Summary		Get Database Schema
 //	@Description	Get detailed schema information including tables, views, columns and indexes
@@ -664,7 +667,9 @@ func GetDatabaseSchema(c *gin.Context) {
 		Verb:           pb.ClientVerbPlainExec,
 	})
 	if err != nil {
-		panic(err)
+		log.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
 	}
 
 	respCh := make(chan *clientexec.Response)
@@ -704,13 +709,13 @@ func GetDatabaseSchema(c *gin.Context) {
 
 	case <-timeoutCtx.Done():
 		client.Close()
-		panic("plain exec has timed out (50s)")
+		log.Infof("runexec timeout (50s), it will return async")
+		c.JSON(http.StatusRequestTimeout, gin.H{"message": "Request timed out"})
 	}
 }
 
-// parseMongoDBSchema processa a saída específica do MongoDB
+// parseMongoDBSchema process the raw output from the command and organize it into a SchemaResponse structure
 func parseMongoDBSchema(output string) (SchemaResponse, error) {
-	// MongoDB retorna um JSON direto
 	var mongoResult []map[string]interface{}
 	if err := json.Unmarshal([]byte(output), &mongoResult); err != nil {
 		return SchemaResponse{}, fmt.Errorf("failed to parse MongoDB output: %v", err)
@@ -785,7 +790,7 @@ func parseMongoDBSchema(output string) (SchemaResponse, error) {
 	return response, nil
 }
 
-// parseSchemaOutput processa a saída bruta do comando e organiza em uma estrutura SchemaResponse
+// parseSchemaOutput process the raw output from the command and organize it into a SchemaResponse structure
 func parseSQLSchema(output string, connType pb.ConnectionType) (SchemaResponse, error) {
 	lines := strings.Split(output, "\n")
 	var result []map[string]interface{}
@@ -832,7 +837,7 @@ func parseSQLSchema(output string, connType pb.ConnectionType) (SchemaResponse, 
 	return organizeSchemaResponse(result), nil
 }
 
-// organizeSchemaResponse organiza os dados em uma estrutura hierárquica
+// organizeSchemaResponse organizes the raw output into a SchemaResponse structure
 func organizeSchemaResponse(rows []map[string]interface{}) SchemaResponse {
 	response := SchemaResponse{Schemas: []Schema{}}
 	schemaMap := make(map[string]*Schema)

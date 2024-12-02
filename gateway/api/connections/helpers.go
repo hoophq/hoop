@@ -174,7 +174,7 @@ func getString(m map[string]interface{}, key string) string {
 	return ""
 }
 
-// getBool retorna um booleano do map
+// getBool returns a boolean value from a map, converting it from a string if necessary
 func getBool(m map[string]interface{}, key string) bool {
 	switch v := m[key].(type) {
 	case bool:
@@ -204,30 +204,30 @@ func getEnvValue(envs map[string]string, key string) string {
 }
 
 func getMongoDBFromConnectionString(connStr string) string {
-	// Decodifica a connection string que está em base64
+	// Decode the base64-encoded connection string
 	decoded, err := base64.StdEncoding.DecodeString(connStr)
 	if err != nil {
 		return ""
 	}
 	mongoURL := string(decoded)
 
-	// Se a URL não começa com mongodb://, não é uma connection string válida
+	// If the URL doesn't start with "mongodb://", it's not a valid MongoDB URL
 	if !strings.HasPrefix(mongoURL, "mongodb://") {
 		return ""
 	}
 
-	// Parse da URL para extrair o database
+	// Parse the URL to extract the database name
 	u, err := url.Parse(mongoURL)
 	if err != nil {
 		return ""
 	}
 
-	// O database vem depois da última barra e antes da query string
+	// The database comes after the first slash in the path
 	path := u.Path
 	if path == "" || path == "/" {
 		return ""
 	}
 
-	// Remove a barra inicial se existir
+	// Remove the leading slash
 	return strings.TrimPrefix(path, "/")
 }

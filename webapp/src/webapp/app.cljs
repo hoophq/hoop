@@ -35,6 +35,7 @@
             [webapp.events.components.modal]
             [webapp.events.components.sidebar]
             [webapp.events.connections]
+            [webapp.events.database-schema]
             [webapp.events.editor-plugin]
             [webapp.events.gateway-info]
             [webapp.events.hoop-app]

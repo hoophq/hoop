@@ -8,15 +8,15 @@
 
 (defmulti get-database-schema identity)
 (defmethod get-database-schema "oracledb" [_ connection]
-  (rf/dispatch [:editor-plugin->handle-database-schema connection]))
+  (rf/dispatch [:database-schema->handle-database-schema connection]))
 (defmethod get-database-schema "mssql" [_ connection]
-  (rf/dispatch [:editor-plugin->handle-database-schema connection]))
+  (rf/dispatch [:database-schema->handle-database-schema connection]))
 (defmethod get-database-schema "postgres" [_ connection]
-  (rf/dispatch [:editor-plugin->handle-multi-database-schema connection]))
+  (rf/dispatch [:database-schema->handle-multi-database-schema connection]))
 (defmethod get-database-schema "mysql" [_ connection]
-  (rf/dispatch [:editor-plugin->handle-database-schema connection]))
+  (rf/dispatch [:database-schema->handle-database-schema connection]))
 (defmethod get-database-schema "mongodb" [_ connection]
-  (rf/dispatch [:editor-plugin->handle-multi-database-schema connection]))
+  (rf/dispatch [:database-schema->handle-multi-database-schema connection]))
 
 (defn- field-type-tree [type]
   [:div {:class "text-xs pl-regular italic"}
@@ -174,7 +174,7 @@
                       :on-click (fn []
                                   (.setItem js/localStorage "selected-database" db)
                                   (reset! open-database (when (not= @open-database db) db))
-                                  (rf/dispatch [:editor-plugin->change-database
+                                  (rf/dispatch [:database-schema->change-database
                                                 {:connection-name connection-name}
                                                 db]))}
                [:> Text {:size "1" :weight "bold"} db]

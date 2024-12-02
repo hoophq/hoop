@@ -6,7 +6,6 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 )
 
-// getSchemaQuery retorna a query apropriada para cada tipo de banco de dados
 func getSchemaQuery(connType pb.ConnectionType, dbName string) string {
 	switch connType {
 	case pb.ConnectionTypePostgres:
