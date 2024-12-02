@@ -252,10 +252,10 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		apiconnections.ListDatabases)
-	r.GET("/connections/:nameOrID/schema",
+	r.GET("/connections/:nameOrID/schemas",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
-		apiconnections.GetDatabaseSchema)
+		apiconnections.GetDatabaseSchemas)
 
 	r.POST("/proxymanager/connect",
 		r.AuthMiddleware,

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -395,34 +394,7 @@ func FetchByName(ctx pgrest.Context, connectionName string) (*models.Connection,
 	return conn, nil
 }
 
-// DatabaseListResponse representa a lista de bancos de dados
-type DatabaseListResponse struct {
-	Databases []string `json:"databases"`
-}
-
-func parseCommandOutput(output string) ([]string, error) {
-	// Remove linhas vazias e linhas de rodapé (ex: "(5 rows)")
-	lines := strings.Split(output, "\n")
-	var cleanLines []string
-
-	// Pula a primeira linha (cabeçalho) e processa as demais
-	for i, line := range lines {
-		line = strings.TrimSpace(line)
-		// Pula a primeira linha (cabeçalho) e linhas vazias
-		if i == 0 || line == "" {
-			continue
-		}
-		// Para quando encontrar linha com parênteses (indica rodapé)
-		if strings.HasPrefix(line, "(") {
-			break
-		}
-		cleanLines = append(cleanLines, line)
-	}
-
-	return cleanLines, nil
-}
-
-// ListDatabases retorna a lista de bancos de dados disponíveis
+// ListDatabases return a list of databases for a given connection
 //
 //	@Summary		List Databases
 //	@Description	List all available databases for a database connection
@@ -453,8 +425,9 @@ func ListDatabases(c *gin.Context) {
 		return
 	}
 
+	currentConnectionType := pb.ToConnectionType(conn.Type, conn.SubType.String)
 	var script string
-	switch pb.ToConnectionType(conn.Type, conn.SubType.String) {
+	switch currentConnectionType {
 	case pb.ConnectionTypePostgres:
 		script = `
 SELECT datname as database_name
@@ -462,13 +435,6 @@ FROM pg_database
 WHERE datistemplate = false
   AND datname != 'postgres'
 ORDER BY datname;`
-
-	case pb.ConnectionTypeMSSQL:
-		script = `
-SELECT name as database_name
-FROM sys.databases
-WHERE name NOT IN ('master', 'tempdb', 'model', 'msdb')
-ORDER BY name;`
 
 	case pb.ConnectionTypeMongoDB:
 		script = `
@@ -489,7 +455,6 @@ printjson(result);`
 	}
 
 	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
-
 	client, err := clientexec.New(&clientexec.Options{
 		OrgID:          ctx.GetOrgID(),
 		ConnectionName: conn.Name,
@@ -525,7 +490,7 @@ printjson(result);`
 		var databases []string
 		var err error
 
-		if pb.ToConnectionType(conn.Type, conn.SubType.String) == pb.ConnectionTypeMongoDB {
+		if currentConnectionType == pb.ConnectionTypeMongoDB {
 			var result []map[string]interface{}
 			if err := json.Unmarshal([]byte(outcome.Output), &result); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse MongoDB response: %v", err)})
@@ -537,59 +502,21 @@ printjson(result);`
 				}
 			}
 		} else {
-			databases, err = parseCommandOutput(outcome.Output)
+			databases, err = parseDatabaseCommandOutput(outcome.Output)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse response: %v", err)})
 				return
 			}
 		}
 
-		c.JSON(http.StatusOK, DatabaseListResponse{
+		c.JSON(http.StatusOK, openapi.ConnectionDatabaseListResponse{
 			Databases: databases,
 		})
 	case <-timeoutCtx.Done():
 		client.Close()
 		log.Infof("runexec timeout (50s), it will return async")
-		c.JSON(http.StatusRequestTimeout, gin.H{"message": "Request timed out"})
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Request timed out"})
 	}
-}
-
-// SchemaResponse representa a estrutura completa do schema
-type SchemaResponse struct {
-	Schemas []Schema `json:"schemas"`
-}
-
-type Schema struct {
-	Name   string  `json:"name"`
-	Tables []Table `json:"tables"`
-	Views  []View  `json:"views"`
-}
-
-type Table struct {
-	Name    string   `json:"name"`
-	Columns []Column `json:"columns"`
-	Indexes []Index  `json:"indexes"`
-}
-
-type View struct {
-	Name    string   `json:"name"`
-	Columns []Column `json:"columns"`
-}
-
-type Column struct {
-	Name         string `json:"name"`
-	Type         string `json:"type"`
-	Nullable     bool   `json:"nullable"`
-	DefaultValue string `json:"default_value,omitempty"`
-	IsPrimaryKey bool   `json:"is_primary_key"`
-	IsForeignKey bool   `json:"is_foreign_key"`
-}
-
-type Index struct {
-	Name      string   `json:"name"`
-	Columns   []string `json:"columns"`
-	IsUnique  bool     `json:"is_unique"`
-	IsPrimary bool     `json:"is_primary"`
 }
 
 // GetDatabaseSchema return detailed schema information including tables, views, columns and indexes
@@ -602,8 +529,8 @@ type Index struct {
 //	@Param			database	path	string	true	"Name of the database"
 //	@Success		200			{object}	SchemaResponse
 //	@Failure		400,404,500	{object}	openapi.HTTPError
-//	@Router			/connections/{nameOrID}/databases/{database}/schema [get]
-func GetDatabaseSchema(c *gin.Context) {
+//	@Router			/connections/{nameOrID}/schemas [get]
+func GetDatabaseSchemas(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	connNameOrID := c.Param("nameOrID")
 	dbName := c.Query("database")
@@ -625,14 +552,14 @@ func GetDatabaseSchema(c *gin.Context) {
 		return
 	}
 
+	currentConnectionType := pb.ToConnectionType(conn.Type, conn.SubType.String)
+
 	if dbName == "" {
 		connEnvs := conn.Envs
-		switch pb.ToConnectionType(conn.Type, conn.SubType.String) {
-		case pb.ConnectionTypePostgres:
-			dbName = getEnvValue(connEnvs, "envvar:DB")
-		case pb.ConnectionTypeMSSQL:
-			dbName = getEnvValue(connEnvs, "envvar:DB")
-		case pb.ConnectionTypeMySQL:
+		switch currentConnectionType {
+		case pb.ConnectionTypePostgres,
+			pb.ConnectionTypeMSSQL,
+			pb.ConnectionTypeMySQL:
 			dbName = getEnvValue(connEnvs, "envvar:DB")
 		case pb.ConnectionTypeMongoDB:
 			if connStr := connEnvs["envvar:CONNECTION_STRING"]; connStr != "" {
@@ -648,17 +575,13 @@ func GetDatabaseSchema(c *gin.Context) {
 		}
 	}
 
-	script := getSchemaQuery(pb.ToConnectionType(conn.Type, conn.SubType.String), dbName)
+	script := getSchemaQuery(currentConnectionType, dbName)
 	if script == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "unsupported database type"})
 		return
 	}
 
 	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
-	if userAgent == "webapp.core" {
-		userAgent = "webapp.schema"
-	}
-
 	client, err := clientexec.New(&clientexec.Options{
 		OrgID:          ctx.GetOrgID(),
 		ConnectionName: conn.Name,
@@ -690,14 +613,13 @@ func GetDatabaseSchema(c *gin.Context) {
 			return
 		}
 
-		var schema SchemaResponse
+		var schema openapi.ConnectionSchemaResponse
 		var err error
 
-		connType := pb.ToConnectionType(conn.Type, conn.SubType.String)
-		if connType == pb.ConnectionTypeMongoDB {
+		if currentConnectionType == pb.ConnectionTypeMongoDB {
 			schema, err = parseMongoDBSchema(outcome.Output)
 		} else {
-			schema, err = parseSQLSchema(outcome.Output, connType)
+			schema, err = parseSQLSchema(outcome.Output, currentConnectionType)
 		}
 
 		if err != nil {
@@ -710,216 +632,6 @@ func GetDatabaseSchema(c *gin.Context) {
 	case <-timeoutCtx.Done():
 		client.Close()
 		log.Infof("runexec timeout (50s), it will return async")
-		c.JSON(http.StatusRequestTimeout, gin.H{"message": "Request timed out"})
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Request timed out"})
 	}
-}
-
-// parseMongoDBSchema process the raw output from the command and organize it into a SchemaResponse structure
-func parseMongoDBSchema(output string) (SchemaResponse, error) {
-	var mongoResult []map[string]interface{}
-	if err := json.Unmarshal([]byte(output), &mongoResult); err != nil {
-		return SchemaResponse{}, fmt.Errorf("failed to parse MongoDB output: %v", err)
-	}
-
-	response := SchemaResponse{}
-	schemaMap := make(map[string]*Schema)
-
-	for _, row := range mongoResult {
-		schemaName := getString(row, "schema_name")
-		objectName := getString(row, "object_name")
-
-		// Get or create schema
-		schema, exists := schemaMap[schemaName]
-		if !exists {
-			schema = &Schema{Name: schemaName}
-			schemaMap[schemaName] = schema
-		}
-
-		// Find or create table
-		var table *Table
-		for i := range schema.Tables {
-			if schema.Tables[i].Name == objectName {
-				table = &schema.Tables[i]
-				break
-			}
-		}
-		if table == nil {
-			schema.Tables = append(schema.Tables, Table{Name: objectName})
-			table = &schema.Tables[len(schema.Tables)-1]
-		}
-
-		// Add column
-		column := Column{
-			Name:         getString(row, "column_name"),
-			Type:         getString(row, "column_type"),
-			Nullable:     !getBool(row, "not_null"),
-			DefaultValue: getString(row, "column_default"),
-			IsPrimaryKey: getBool(row, "is_primary_key"),
-			IsForeignKey: getBool(row, "is_foreign_key"),
-		}
-		table.Columns = append(table.Columns, column)
-
-		// Add index if present
-		if indexName := getString(row, "index_name"); indexName != "" {
-			found := false
-			for _, idx := range table.Indexes {
-				if idx.Name == indexName {
-					found = true
-					break
-				}
-			}
-			if !found {
-				index := Index{
-					Name:      indexName,
-					IsUnique:  getBool(row, "index_is_unique"),
-					IsPrimary: getBool(row, "index_is_primary"),
-				}
-				if cols := getString(row, "index_columns"); cols != "" {
-					index.Columns = strings.Split(cols, ",")
-				}
-				table.Indexes = append(table.Indexes, index)
-			}
-		}
-	}
-
-	// Convert map to slice
-	for _, schema := range schemaMap {
-		response.Schemas = append(response.Schemas, *schema)
-	}
-
-	return response, nil
-}
-
-// parseSchemaOutput process the raw output from the command and organize it into a SchemaResponse structure
-func parseSQLSchema(output string, connType pb.ConnectionType) (SchemaResponse, error) {
-	lines := strings.Split(output, "\n")
-	var result []map[string]interface{}
-
-	// MSSQL has a different output format
-	startLine := 0
-	if connType == pb.ConnectionTypeMSSQL {
-		startLine = 2 // Skip header and dashes for MSSQL
-	}
-
-	for i, line := range lines {
-		line = strings.TrimSpace(line)
-		if i <= startLine || line == "" || strings.HasPrefix(line, "(") {
-			continue
-		}
-
-		fields := strings.Split(line, "\t")
-		if len(fields) < 12 {
-			continue
-		}
-
-		row := map[string]interface{}{
-			"schema_name":    fields[0],
-			"object_type":    fields[1],
-			"object_name":    fields[2],
-			"column_name":    fields[3],
-			"column_type":    fields[4],
-			"not_null":       fields[5] == "t" || fields[5] == "1",
-			"column_default": fields[6],
-			"is_primary_key": fields[7] == "t" || fields[7] == "1",
-			"is_foreign_key": fields[8] == "t" || fields[8] == "1",
-		}
-
-		if len(fields) > 9 && fields[9] != "" {
-			row["index_name"] = fields[9]
-			row["index_columns"] = strings.Split(fields[10], ",")
-			row["index_is_unique"] = fields[11] == "t" || fields[11] == "1"
-			row["index_is_primary"] = len(fields) > 12 && (fields[12] == "t" || fields[12] == "1")
-		}
-
-		result = append(result, row)
-	}
-
-	return organizeSchemaResponse(result), nil
-}
-
-// organizeSchemaResponse organizes the raw output into a SchemaResponse structure
-func organizeSchemaResponse(rows []map[string]interface{}) SchemaResponse {
-	response := SchemaResponse{Schemas: []Schema{}}
-	schemaMap := make(map[string]*Schema)
-
-	for _, row := range rows {
-		schemaName := row["schema_name"].(string)
-		objectType := row["object_type"].(string)
-		objectName := row["object_name"].(string)
-
-		// Get or create schema
-		schema, exists := schemaMap[schemaName]
-		if !exists {
-			schema = &Schema{Name: schemaName}
-			schemaMap[schemaName] = schema
-		}
-
-		column := Column{
-			Name:         row["column_name"].(string),
-			Type:         row["column_type"].(string),
-			Nullable:     !row["not_null"].(bool),
-			DefaultValue: getString(row, "column_default"),
-			IsPrimaryKey: row["is_primary_key"].(bool),
-			IsForeignKey: row["is_foreign_key"].(bool),
-		}
-
-		if objectType == "table" {
-			// Find or create table
-			var table *Table
-			for i := range schema.Tables {
-				if schema.Tables[i].Name == objectName {
-					table = &schema.Tables[i]
-					break
-				}
-			}
-			if table == nil {
-				schema.Tables = append(schema.Tables, Table{Name: objectName})
-				table = &schema.Tables[len(schema.Tables)-1]
-			}
-
-			// Add column
-			table.Columns = append(table.Columns, column)
-
-			// Add index if present
-			if indexName, ok := row["index_name"].(string); ok && indexName != "" {
-				found := false
-				for _, idx := range table.Indexes {
-					if idx.Name == indexName {
-						found = true
-						break
-					}
-				}
-				if !found {
-					table.Indexes = append(table.Indexes, Index{
-						Name:      indexName,
-						Columns:   row["index_columns"].([]string),
-						IsUnique:  row["index_is_unique"].(bool),
-						IsPrimary: row["index_is_primary"].(bool),
-					})
-				}
-			}
-		} else {
-			// Find or create view
-			var view *View
-			for i := range schema.Views {
-				if schema.Views[i].Name == objectName {
-					view = &schema.Views[i]
-					break
-				}
-			}
-			if view == nil {
-				schema.Views = append(schema.Views, View{Name: objectName})
-				view = &schema.Views[len(schema.Views)-1]
-			}
-
-			view.Columns = append(view.Columns, column)
-		}
-	}
-
-	// Convert map to slice
-	for _, schema := range schemaMap {
-		response.Schemas = append(response.Schemas, *schema)
-	}
-
-	return response
 }

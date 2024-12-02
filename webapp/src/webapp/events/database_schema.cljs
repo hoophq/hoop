@@ -90,7 +90,7 @@
             (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :loading)
             (assoc-in [:database-schema :data (:connection-name connection) :databases] databases))
     :fx [[:dispatch [:fetch {:method "GET"
-                             :uri (str "/connections/" (:connection-name connection) "/schema?database=" database)
+                             :uri (str "/connections/" (:connection-name connection) "/schemas?database=" database)
                              :on-success #(rf/dispatch [:database-schema->set-multi-database-schema
                                                         {:schema-payload %
                                                          :database database
@@ -138,7 +138,7 @@
  (fn [{:keys [db]} [_ connection]]
    {:db (assoc-in db [:database-schema :data (:connection-name connection) :database-schema-status] :loading)
     :fx [[:dispatch [:fetch {:method "GET"
-                             :uri (str "/connections/" (:connection-name connection) "/schema")
+                             :uri (str "/connections/" (:connection-name connection) "/schemas")
                              :on-success #(rf/dispatch [:database-schema->set-database-schema
                                                         {:schema-payload %
                                                          :status :success

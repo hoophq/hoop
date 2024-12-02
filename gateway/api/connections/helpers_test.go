@@ -6,8 +6,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"reflect"
 	"testing"
 
+	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -166,5 +169,533 @@ func TestConnectionFilterOptions(t *testing.T) {
 			}
 			assert.Equal(t, tt.want, got)
 		})
+	}
+}
+
+func TestParseMongoDBSchema(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    openapi.ConnectionSchemaResponse
+		wantErr bool
+	}{
+		{
+			name: "basic schema with single table and column",
+			input: `[{
+							"schema_name": "testdb",
+							"object_name": "users",
+							"column_name": "id",
+							"column_type": "objectId",
+							"not_null": true,
+							"column_default": null,
+							"is_primary_key": true,
+							"is_foreign_key": false
+					}]`,
+			want: openapi.ConnectionSchemaResponse{
+				Schemas: []openapi.ConnectionSchema{
+					{
+						Name: "testdb",
+						Tables: []openapi.ConnectionTable{
+							{
+								Name: "users",
+								Columns: []openapi.ConnectionColumn{
+									{
+										Name:         "id",
+										Type:         "objectId",
+										Nullable:     false,
+										DefaultValue: "",
+										IsPrimaryKey: true,
+										IsForeignKey: false,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "schema with table containing indexes",
+			input: `[{
+							"schema_name": "testdb",
+							"object_name": "users",
+							"column_name": "email",
+							"column_type": "string",
+							"not_null": true,
+							"column_default": null,
+							"is_primary_key": false,
+							"is_foreign_key": false,
+							"index_name": "email_idx",
+							"index_columns": "email",
+							"index_is_unique": true,
+							"index_is_primary": false
+					}]`,
+			want: openapi.ConnectionSchemaResponse{
+				Schemas: []openapi.ConnectionSchema{
+					{
+						Name: "testdb",
+						Tables: []openapi.ConnectionTable{
+							{
+								Name: "users",
+								Columns: []openapi.ConnectionColumn{
+									{
+										Name:         "email",
+										Type:         "string",
+										Nullable:     false,
+										DefaultValue: "",
+										IsPrimaryKey: false,
+										IsForeignKey: false,
+									},
+								},
+								Indexes: []openapi.ConnectionIndex{
+									{
+										Name:      "email_idx",
+										Columns:   []string{"email"},
+										IsUnique:  true,
+										IsPrimary: false,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "schema with multiple tables and columns",
+			input: `[
+							{
+									"schema_name": "testdb",
+									"object_name": "users",
+									"column_name": "id",
+									"column_type": "objectId",
+									"not_null": true,
+									"is_primary_key": true,
+									"is_foreign_key": false
+							},
+							{
+									"schema_name": "testdb",
+									"object_name": "users",
+									"column_name": "name",
+									"column_type": "string",
+									"not_null": false,
+									"is_primary_key": false,
+									"is_foreign_key": false
+							},
+							{
+									"schema_name": "testdb",
+									"object_name": "posts",
+									"column_name": "id",
+									"column_type": "objectId",
+									"not_null": true,
+									"is_primary_key": true,
+									"is_foreign_key": false
+							}
+					]`,
+			want: openapi.ConnectionSchemaResponse{
+				Schemas: []openapi.ConnectionSchema{
+					{
+						Name: "testdb",
+						Tables: []openapi.ConnectionTable{
+							{
+								Name: "users",
+								Columns: []openapi.ConnectionColumn{
+									{
+										Name:         "id",
+										Type:         "objectId",
+										Nullable:     false,
+										IsPrimaryKey: true,
+										IsForeignKey: false,
+									},
+									{
+										Name:         "name",
+										Type:         "string",
+										Nullable:     true,
+										IsPrimaryKey: false,
+										IsForeignKey: false,
+									},
+								},
+							},
+							{
+								Name: "posts",
+								Columns: []openapi.ConnectionColumn{
+									{
+										Name:         "id",
+										Type:         "objectId",
+										Nullable:     false,
+										IsPrimaryKey: true,
+										IsForeignKey: false,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:    "invalid json input",
+			input:   `{invalid json`,
+			want:    openapi.ConnectionSchemaResponse{},
+			wantErr: true,
+		},
+		{
+			name:    "empty array input",
+			input:   `[]`,
+			want:    openapi.ConnectionSchemaResponse{},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseMongoDBSchema(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseMongoDBSchema() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("parseMongoDBSchema() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestParseMongoDBSchemaWithComplexIndexes tests the handling of complex indexes
+func TestParseMongoDBSchemaWithComplexIndexes(t *testing.T) {
+	input := `[
+			{
+					"schema_name": "testdb",
+					"object_name": "users",
+					"column_name": "email",
+					"column_type": "string",
+					"not_null": true,
+					"index_name": "compound_idx",
+					"index_columns": "email,age,name",
+					"index_is_unique": true,
+					"index_is_primary": false
+			},
+			{
+					"schema_name": "testdb",
+					"object_name": "users",
+					"column_name": "age",
+					"column_type": "int",
+					"not_null": false,
+					"index_name": "compound_idx",
+					"index_columns": "email,age,name",
+					"index_is_unique": true,
+					"index_is_primary": false
+			}
+	]`
+
+	want := openapi.ConnectionSchemaResponse{
+		Schemas: []openapi.ConnectionSchema{
+			{
+				Name: "testdb",
+				Tables: []openapi.ConnectionTable{
+					{
+						Name: "users",
+						Columns: []openapi.ConnectionColumn{
+							{
+								Name:     "email",
+								Type:     "string",
+								Nullable: false,
+							},
+							{
+								Name:     "age",
+								Type:     "int",
+								Nullable: true,
+							},
+						},
+						Indexes: []openapi.ConnectionIndex{
+							{
+								Name:      "compound_idx",
+								Columns:   []string{"email", "age", "name"},
+								IsUnique:  true,
+								IsPrimary: false,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := parseMongoDBSchema(input)
+	if err != nil {
+		t.Errorf("parseMongoDBSchema() error = %v", err)
+		return
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("parseMongoDBSchema() = %v, want %v", got, want)
+	}
+}
+
+func TestParseSQLSchema(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		connType pb.ConnectionType
+		want     openapi.ConnectionSchemaResponse
+		wantErr  bool
+	}{
+		{
+			name: "postgres schema",
+			input: `public	table	users	id	integer	0	NULL	1	0	pk_users	id	1	1
+public	table	users	name	varchar	0	NULL	0	0	NULL	NULL	0	0
+public	table	users	email	varchar	0	NULL	0	0	idx_email	email	1	0`,
+			connType: pb.ConnectionTypePostgres,
+			want: openapi.ConnectionSchemaResponse{
+				Schemas: []openapi.ConnectionSchema{
+					{
+						Name: "public",
+						Tables: []openapi.ConnectionTable{
+							{
+								Name: "users",
+								Columns: []openapi.ConnectionColumn{
+									{
+										Name:         "id",
+										Type:         "integer",
+										Nullable:     true,
+										DefaultValue: "NULL",
+										IsPrimaryKey: true,
+										IsForeignKey: false,
+									},
+									{
+										Name:         "name",
+										Type:         "varchar",
+										Nullable:     true,
+										DefaultValue: "NULL",
+										IsPrimaryKey: false,
+										IsForeignKey: false,
+									},
+									{
+										Name:         "email",
+										Type:         "varchar",
+										Nullable:     true,
+										DefaultValue: "NULL",
+										IsPrimaryKey: false,
+										IsForeignKey: false,
+									},
+								},
+								Indexes: []openapi.ConnectionIndex{
+									{
+										Name:      "pk_users",
+										Columns:   []string{"id"},
+										IsUnique:  true,
+										IsPrimary: true,
+									},
+									{
+										Name:      "idx_email",
+										Columns:   []string{"email"},
+										IsUnique:  true,
+										IsPrimary: false,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "mssql schema with header",
+			input: `schema_name	object_type	object_name	column_name	column_type	not_null	column_default	is_primary_key	is_foreign_key	index_name	index_columns	index_is_unique	index_is_primary
+-----------	-----------	-----------	-----------	-----------	--------	-------------	--------------	--------------	----------	-------------	---------------	----------------
+dbo	table	customers	id	int	0	NULL	1	0	PK_customers	id	1	1
+dbo	table	customers	name	nvarchar	0	NULL	0	0	NULL	NULL	0	0`,
+			connType: pb.ConnectionTypeMSSQL,
+			want: openapi.ConnectionSchemaResponse{
+				Schemas: []openapi.ConnectionSchema{
+					{
+						Name: "dbo",
+						Tables: []openapi.ConnectionTable{
+							{
+								Name: "customers",
+								Columns: []openapi.ConnectionColumn{
+									{
+										Name:         "id",
+										Type:         "int",
+										Nullable:     true,
+										DefaultValue: "NULL",
+										IsPrimaryKey: true,
+										IsForeignKey: false,
+									},
+									{
+										Name:         "name",
+										Type:         "nvarchar",
+										Nullable:     true,
+										DefaultValue: "NULL",
+										IsPrimaryKey: false,
+										IsForeignKey: false,
+									},
+								},
+								Indexes: []openapi.ConnectionIndex{
+									{
+										Name:      "PK_customers",
+										Columns:   []string{"id"},
+										IsUnique:  true,
+										IsPrimary: true,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "mysql schema with foreign key",
+			input: `test	table	orders	user_id	int	0	NULL	0	1	fk_user	user_id	0	0
+test	table	orders	order_id	int	0	NULL	1	0	pk_orders	order_id	1	1`,
+			connType: pb.ConnectionTypeMySQL,
+			want: openapi.ConnectionSchemaResponse{
+				Schemas: []openapi.ConnectionSchema{
+					{
+						Name: "test",
+						Tables: []openapi.ConnectionTable{
+							{
+								Name: "orders",
+								Columns: []openapi.ConnectionColumn{
+									{
+										Name:         "user_id",
+										Type:         "int",
+										Nullable:     true,
+										DefaultValue: "NULL",
+										IsPrimaryKey: false,
+										IsForeignKey: true,
+									},
+									{
+										Name:         "order_id",
+										Type:         "int",
+										Nullable:     true,
+										DefaultValue: "NULL",
+										IsPrimaryKey: true,
+										IsForeignKey: false,
+									},
+								},
+								Indexes: []openapi.ConnectionIndex{
+									{
+										Name:      "fk_user",
+										Columns:   []string{"user_id"},
+										IsUnique:  false,
+										IsPrimary: false,
+									},
+									{
+										Name:      "pk_orders",
+										Columns:   []string{"order_id"},
+										IsUnique:  true,
+										IsPrimary: true,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:     "empty input",
+			input:    "",
+			connType: pb.ConnectionTypePostgres,
+			want:     openapi.ConnectionSchemaResponse{},
+		},
+		{
+			name:     "invalid format",
+			input:    "invalid\tformat",
+			connType: pb.ConnectionTypePostgres,
+			want:     openapi.ConnectionSchemaResponse{},
+		},
+		{
+			name:     "only footer",
+			input:    "(3 rows affected)",
+			connType: pb.ConnectionTypePostgres,
+			want:     openapi.ConnectionSchemaResponse{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseSQLSchema(tt.input, tt.connType)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseSQLSchema() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("parseSQLSchema() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestParseSQLSchemaCompoundIndexes tests handling of compound indexes
+func TestParseSQLSchemaCompoundIndexes(t *testing.T) {
+	input := `public	table	users	id	integer	0	NULL	1	0	pk_users	id	1	1
+public	table	users	email	varchar	0	NULL	0	0	idx_email_name	email,name	1	0
+public	table	users	name	varchar	0	NULL	0	0	idx_email_name	email,name	1	0`
+
+	want := openapi.ConnectionSchemaResponse{
+		Schemas: []openapi.ConnectionSchema{
+			{
+				Name: "public",
+				Tables: []openapi.ConnectionTable{
+					{
+						Name: "users",
+						Columns: []openapi.ConnectionColumn{
+							{
+								Name:         "id",
+								Type:         "integer",
+								Nullable:     true,
+								DefaultValue: "NULL",
+								IsPrimaryKey: true,
+								IsForeignKey: false,
+							},
+							{
+								Name:         "email",
+								Type:         "varchar",
+								Nullable:     true,
+								DefaultValue: "NULL",
+								IsPrimaryKey: false,
+								IsForeignKey: false,
+							},
+							{
+								Name:         "name",
+								Type:         "varchar",
+								Nullable:     true,
+								DefaultValue: "NULL",
+								IsPrimaryKey: false,
+								IsForeignKey: false,
+							},
+						},
+						Indexes: []openapi.ConnectionIndex{
+							{
+								Name:      "pk_users",
+								Columns:   []string{"id"},
+								IsUnique:  true,
+								IsPrimary: true,
+							},
+							{
+								Name:      "idx_email_name",
+								Columns:   []string{"email", "name"},
+								IsUnique:  true,
+								IsPrimary: false,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := parseSQLSchema(input, pb.ConnectionTypePostgres)
+	if err != nil {
+		t.Errorf("parseSQLSchema() error = %v", err)
+		return
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("parseSQLSchema() = %v, want %v", got, want)
 	}
 }
