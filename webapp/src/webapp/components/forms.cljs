@@ -1,8 +1,10 @@
 (ns webapp.components.forms
-  (:require ["@heroicons/react/24/outline" :as hero-outline-icon]
-            ["@radix-ui/themes" :refer [TextField TextArea Select]]
-            [reagent.core :as r]
-            [clojure.string :as cs]))
+  (:require
+   ["@heroicons/react/24/outline" :as hero-outline-icon]
+   ["@radix-ui/themes" :refer [IconButton Select TextArea TextField]]
+   ["lucide-react" :refer [Eye EyeOff]]
+   [clojure.string :as cs]
+   [reagent.core :as r]))
 
 (defn- form-label
   [text]
@@ -32,65 +34,80 @@
   :value -> a reagent atom piece of state."
   [_]
   (fn []
-    (fn [{:keys [label
-                 placeholder
-                 name
-                 size
-                 dark
-                 id
-                 helper-text
-                 value
-                 defaultValue
-                 on-change
-                 on-keyDown
-                 on-focus
-                 on-blur
-                 required
-                 full-width?
-                 pattern
-                 disabled
-                 minlength
-                 maxlength
-                 type
-                 min
-                 max
-                 step
-                 not-margin-bottom? ;; TODO: Remove this prop when remove margin-bottom from all inputs
-                 hidden]}]
-      [:div {:class (str "text-sm"
-                         (when-not not-margin-bottom? " mb-regular")
-                         (when full-width? " w-full")
-                         (when hidden " hidden"))}
-       [:div {:class "flex items-center gap-2 mb-1"}
-        (when label
-          (if dark
-            [form-label-dark label]
-            [form-label label]))
-        (when (not (cs/blank? helper-text))
-          [form-helper-text helper-text dark])]
-       [:> TextField.Root
-        (merge
-          {:type (or type "text")
-           :id id
-           :size (or size "3")
-           :class (when dark "dark")
-           :placeholder (or placeholder label)
-           :name name
-           :pattern pattern
-           :minLength minlength
-           :maxLength maxlength
-           :min min
-           :max max
-           :step step
-           :value value
-           :on-change on-change
-           :on-keyDown on-keyDown
-           :on-blur on-blur
-           :on-focus on-focus
-           :disabled (or disabled false)
-           :required (or required false)}
-          (when defaultValue
-            {:defaultValue defaultValue}))]])))
+    (let [eyeOpen? (r/atom true)]
+      (fn [{:keys [label
+                   placeholder
+                   name
+                   size
+                   dark
+                   id
+                   helper-text
+                   value
+                   defaultValue
+                   on-change
+                   on-keyDown
+                   on-focus
+                   on-blur
+                   required
+                   full-width?
+                   pattern
+                   disabled
+                   minlength
+                   maxlength
+                   type
+                   min
+                   max
+                   step
+                   not-margin-bottom? ;; TODO: Remove this prop when remove margin-bottom from all inputs
+                   hidden]}]
+        [:div {:class (str "text-sm"
+                           (when-not not-margin-bottom? " mb-regular")
+                           (when full-width? " w-full")
+                           (when hidden " hidden"))}
+         [:div {:class "flex items-center gap-2 mb-1"}
+          (when label
+            (if dark
+              [form-label-dark label]
+              [form-label label]))
+          (when (not (cs/blank? helper-text))
+            [form-helper-text helper-text dark])]
+         [:> TextField.Root
+          (merge
+           {:type (if (= type "password")
+                    (if @eyeOpen? "password" "text")
+                    (or type "text"))
+            :id id
+            :size (or size "3")
+            :class (when dark "dark")
+            :placeholder (or placeholder label)
+            :name name
+            :pattern pattern
+            :minLength minlength
+            :maxLength maxlength
+            :min min
+            :max max
+            :step step
+            :value value
+            :on-change on-change
+            :on-keyDown on-keyDown
+            :on-blur on-blur
+            :on-focus on-focus
+            :disabled (or disabled false)
+            :required (or required false)}
+           (when defaultValue
+             {:defaultValue defaultValue}))
+          (when (= type "password")
+            [:> TextField.Slot {:side "right"}
+             [:> IconButton {:type "button"
+                             :variant "ghost"
+                             :size (case size
+                                     "3" "2"
+                                     "2" "1"
+                                     "2")
+                             :on-click #(reset! eyeOpen? (not @eyeOpen?))}
+              (if @eyeOpen?
+                [:> Eye {:size 16}]
+                [:> EyeOff {:size 16}])]])]]))))
 
 (defn input-metadata [{:keys [label name id placeholder disabled required value on-change]}]
   [:div {:class "relative"}

@@ -39,8 +39,8 @@
             [:> Box {:class (str "first:rounded-t-lg border-x border-t "
                                  "last:rounded-b-lg bg-white last:border-b border-gray-200 "
                                  "p-[--space-5]")}
-             [:> Flex {:justify "between"}
-              [:> Flex {:align "center"}
+             [:> Flex {:justify "between" :align "center"}
+              [:> Box
                [:> Text {:size "4" :weight "bold"} (:name rules)]
                [:> Text {:as "p" :size "3" :class "text-[--gray-11]"} (:description rules)]]
               [:> Button {:variant "soft"
