@@ -73,6 +73,10 @@
         guardrails-list (rf/subscribe [:guardrails->list])
 
         scroll-pos (r/atom 0)
+        accordion-resource-type (r/atom true)
+        accordion-connection-details (r/atom false)
+        accordion-environment-setup (r/atom false)
+        accordion-advanced-settings (r/atom false)
 
         agent-id (r/atom (or (:agent_id connection) ""))
         connection-type (r/atom (or (:type connection) nil))
@@ -143,145 +147,150 @@
             free-license? (-> @user :data :free-license?)]
 
         (r/with-let [handle-scroll (fn []
-                                     (reset! scroll-pos (.-scrollY js/window)))]
+                                     (reset! scroll-pos (.-scrollY js/window)))
+                     _ (add-watch connection-type :first-step-watcher
+                                  (fn [_ _ old-val new-val]
+                                    (when (and new-val (not old-val))
+                                      (reset! accordion-connection-details true)
+                                      (reset! accordion-environment-setup true))))]
           (.addEventListener js/window "scroll" handle-scroll)
-          (finally
-            (.removeEventListener js/window "scroll" handle-scroll)))
 
-        [:> Box {:class "min-h-screen bg-gray-1"}
-         [:form {:id "connection-form"
-                 :on-submit (fn [e]
-                              (.preventDefault e)
-                              (dispatch-form
-                               form-type
-                               {:name @connection-name
-                                :type (when @connection-type
-                                        @connection-type)
-                                :subtype @connection-subtype
-                                :agent_id @agent-id
-                                :reviewers (if @enable-review?
-                                             (helpers/js-select-options->list @review-groups)
-                                             [])
-                                :redact_enabled true
-                                :redact_types (if @ai-data-masking
-                                                (helpers/js-select-options->list @ai-data-masking-info-types)
-                                                [])
-                                :access_schema (if @database-schema?
-                                                 "enabled"
-                                                 "disabled")
-                                :access_mode_runbooks (if @access-mode-runbooks?
-                                                        "enabled"
-                                                        "disabled")
-                                :access_mode_exec (if @access-mode-exec?
-                                                    "enabled"
-                                                    "disabled")
-                                :access_mode_connect (if @access-mode-connect?
-                                                       "enabled"
-                                                       "disabled")
-                                :guardrail_rules (if (seq @guardrails)
-                                                   (helpers/js-select-options->list @guardrails)
-                                                   [])
-                                :tags (if (seq @connection-tags-value)
-                                        (helpers/js-select-options->list @connection-tags-value)
-                                        nil)
-                                :secret (clj->js
-                                         (merge
-                                          (helpers/config->json (conj
-                                                                 @configs
-                                                                 {:key @config-key
-                                                                  :value @config-value})
-                                                                "envvar:")
-                                          (when (and @config-file-value @config-file-name)
-                                            (helpers/config->json
-                                             (conj
-                                              @configs-file
-                                              {:key @config-file-name
-                                               :value @config-file-value})
-                                             "filesystem:"))))
+          [:> Box {:class "min-h-screen bg-gray-1"}
+           [:form {:id "connection-form"
+                   :on-submit (fn [e]
+                                (.preventDefault e)
+                                (dispatch-form
+                                 form-type
+                                 {:name @connection-name
+                                  :type (when @connection-type
+                                          @connection-type)
+                                  :subtype @connection-subtype
+                                  :agent_id @agent-id
+                                  :reviewers (if @enable-review?
+                                               (helpers/js-select-options->list @review-groups)
+                                               [])
+                                  :redact_enabled true
+                                  :redact_types (if @ai-data-masking
+                                                  (helpers/js-select-options->list @ai-data-masking-info-types)
+                                                  [])
+                                  :access_schema (if @database-schema?
+                                                   "enabled"
+                                                   "disabled")
+                                  :access_mode_runbooks (if @access-mode-runbooks?
+                                                          "enabled"
+                                                          "disabled")
+                                  :access_mode_exec (if @access-mode-exec?
+                                                      "enabled"
+                                                      "disabled")
+                                  :access_mode_connect (if @access-mode-connect?
+                                                         "enabled"
+                                                         "disabled")
+                                  :guardrail_rules (if (seq @guardrails)
+                                                     (helpers/js-select-options->list @guardrails)
+                                                     [])
+                                  :tags (if (seq @connection-tags-value)
+                                          (helpers/js-select-options->list @connection-tags-value)
+                                          nil)
+                                  :secret (clj->js
+                                           (merge
+                                            (helpers/config->json (conj
+                                                                   @configs
+                                                                   {:key @config-key
+                                                                    :value @config-value})
+                                                                  "envvar:")
+                                            (when (and @config-file-value @config-file-name)
+                                              (helpers/config->json
+                                               (conj
+                                                @configs-file
+                                                {:key @config-file-name
+                                                 :value @config-file-value})
+                                               "filesystem:"))))
 
-                                :command (when @connection-command
-                                           (or (re-seq #"'.*?'|\".*?\"|\S+|\t" @connection-command) []))}))}
+                                  :command (if (= @connection-type "database")
+                                             []
+                                             [(when @connection-command
+                                                (or (re-seq #"'.*?'|\".*?\"|\S+|\t" @connection-command) []))])}))}
 
-          [:<>
-           (when (= form-type :create)
-             [:> Flex {:p "5" :gap "2"}
-              [:> Button {:variant "ghost"
-                          :size "2"
-                          :color "gray"
-                          :type "button"
-                          :on-click #(js/history.back)}
-               [:> ArrowLeft {:size 16}]
-               "Back"]])
-           [:> Box {:pt "5"
-                    :px "7"
-                    :class (str "sticky top-0 z-50 bg-gray-1 "
-                                (if (= form-type :create)
-                                  " bg-gray-1 "
-                                  " bg-white border-b border-[--gray-a6] pb-[--space-5] top-0 z-50 -m-10 mb-0 p-10 ")
-                                (if (>= @scroll-pos 30)
-                                  " border-b border-[--gray-a6] pb-[--space-5]"
-                                  " "))}
-            [:> Flex {:justify "between"
-                      :align "center"}
-             [select-header-by-form-type form-type {:name @connection-name
-                                                    :type @connection-type
-                                                    :subtype @connection-subtype
-                                                    :icon_name ""}]
-             [:> Flex {:gap "5" :align "center"}
-              (when (= form-type :update)
-                [:> Button {:size "4"
-                            :variant "ghost"
-                            :color "red"
+            [:<>
+             (when (= form-type :create)
+               [:> Flex {:p "5" :gap "2"}
+                [:> Button {:variant "ghost"
+                            :size "2"
+                            :color "gray"
                             :type "button"
-                            :on-click #(rf/dispatch [:dialog->open
-                                                     {:title "Delete connection?"
-                                                      :type :danger
-                                                      :text-action-button "Confirm and delete"
-                                                      :text [:> Box {:class "space-y-radix-4"}
-                                                             [:> Text {:as "p"}
-                                                              "This action will instantly remove your access to "
-                                                              [:> Strong
-                                                               @connection-name]
-                                                              " and can not be undone."]
-                                                             [:> Text {:as "p"}
-                                                              "Are you sure you want to delete this connection?"]]
-                                                      :on-success (fn []
-                                                                    (rf/dispatch [:connections->delete-connection @connection-name])
-                                                                    (rf/dispatch [:modal->close]))}])}
-                 "Delete"])
-              (if (and (= "application" @connection-type)
-                       (not= "tcp" @connection-subtype))
-                [:> Text {:size "3" :align "right" :class "text-gray-11"}
-                 "If you have finished the setup"
-                 [:br]
-                 [:> Link {:size "3"
-                           :href "#"
-                           :on-click (fn []
-                                       (rf/dispatch [:connections->get-connections])
-                                       (rf/dispatch [:navigate :connections]))}
-                  "check your connections."]]
+                            :on-click #(js/history.back)}
+                 [:> ArrowLeft {:size 16}]
+                 "Back"]])
+             [:> Box {:pt "5"
+                      :px "7"
+                      :class (str "sticky top-0 z-50 bg-gray-1 "
+                                  (if (= form-type :create)
+                                    " bg-gray-1 "
+                                    " bg-white border-b border-[--gray-a6] pb-[--space-5] top-0 z-50 -m-10 mb-0 p-10 ")
+                                  (if (>= @scroll-pos 30)
+                                    " border-b border-[--gray-a6] pb-[--space-5]"
+                                    " "))}
+              [:> Flex {:justify "between"
+                        :align "center"}
+               [select-header-by-form-type form-type {:name @connection-name
+                                                      :type @connection-type
+                                                      :subtype @connection-subtype
+                                                      :icon_name ""}]
+               [:> Flex {:gap "5" :align "center"}
+                (when (= form-type :update)
+                  [:> Button {:size "4"
+                              :variant "ghost"
+                              :color "red"
+                              :type "button"
+                              :on-click #(rf/dispatch [:dialog->open
+                                                       {:title "Delete connection?"
+                                                        :type :danger
+                                                        :text-action-button "Confirm and delete"
+                                                        :text [:> Box {:class "space-y-radix-4"}
+                                                               [:> Text {:as "p"}
+                                                                "This action will instantly remove your access to "
+                                                                [:> Strong
+                                                                 @connection-name]
+                                                                " and can not be undone."]
+                                                               [:> Text {:as "p"}
+                                                                "Are you sure you want to delete this connection?"]]
+                                                        :on-success (fn []
+                                                                      (rf/dispatch [:connections->delete-connection @connection-name])
+                                                                      (rf/dispatch [:modal->close]))}])}
+                   "Delete"])
+                (if (and (= "application" @connection-type)
+                         (not= "tcp" @connection-subtype))
+                  [:> Text {:size "3" :align "right" :class "text-gray-11"}
+                   "If you have finished the setup"
+                   [:br]
+                   [:> Link {:size "3"
+                             :href "#"
+                             :on-click (fn []
+                                         (rf/dispatch [:connections->get-connections])
+                                         (rf/dispatch [:navigate :connections]))}
+                    "check your connections."]]
 
-                [:> Button {:size "4"
-                            :disabled (not first-step-finished)
-                            :on-click (fn []
-                                        (let [form (.getElementById (-> js/window .-document) "connection-form")]
-                                          (verify-form-accordion (conj @configs {:value @agent-id
-                                                                                 :required true}) "environment-setup")
-                                          (verify-form-accordion [{:value @connection-name
-                                                                   :required true}] "connection-details")
+                  [:> Button {:size "4"
+                              :disabled (not first-step-finished)
+                              :on-click (fn []
+                                          (let [form (.getElementById (-> js/window .-document) "connection-form")]
+                                            (verify-form-accordion (conj @configs {:value @agent-id
+                                                                                   :required true}) "environment-setup")
+                                            (verify-form-accordion [{:value @connection-name
+                                                                     :required true}] "connection-details")
 
-                                          (when (or (not (.checkValidity form))
-                                                    (not @agent-id))
-                                            (.reportValidity form)
-                                            false)))}
-                 (if (= form-type :create)
-                   "Save and Confirm"
-                   "Save")])]]]]
+                                            (when (or (not (.checkValidity form))
+                                                      (not @agent-id))
+                                              (.reportValidity form)
+                                              false)))}
+                   (if (= form-type :create)
+                     "Save and Confirm"
+                     "Save")])]]]]
 
-          [:> Box {:p "7" :class "space-y-radix-5"}
-           (when (= form-type :create)
-             [accordion/root
-              {:items [{:title "Set your resource type"
+            [:> Box {:p "7" :class "space-y-radix-5"}
+             (when (= form-type :create)
+               [accordion/root
+                {:item {:title "Set your resource type"
                         :subtitle "Connections can be created for databases, applications and more."
                         :value "resource-type"
                         :show-icon? first-step-finished
@@ -293,12 +302,13 @@
                                    :configs configs
                                    :config-file-name config-file-name
                                    :database-schema? database-schema?
-                                   :connection-command connection-command}]}]
-               :id "resource-type"
-               :initial-open? true}])
+                                   :connection-command connection-command}]}
+                 :id "resource-type"
+                 :open? @accordion-resource-type
+                 :on-change #(reset! accordion-resource-type %)}])
 
-           [accordion/root
-            {:items [{:title "Define connection details"
+             [accordion/root
+              {:item {:title "Define connection details"
                       :subtitle "Setup how do you want to identify the connection and core configuration parameters."
                       :value "connection-details"
                       :show-icon? second-step-finished
@@ -313,14 +323,13 @@
                                  :reviews enable-review?
                                  :review-groups review-groups
                                  :ai-data-masking ai-data-masking
-                                 :ai-data-masking-info-types ai-data-masking-info-types}]}]
-             :id "connection-details"
-             :initial-open? (when (= form-type :update) true)
-             :trigger-value (when first-step-finished
-                              "connection-details")}]
+                                 :ai-data-masking-info-types ai-data-masking-info-types}]}
+               :id "connection-details"
+               :on-change #(reset! accordion-connection-details %)
+               :open? @accordion-connection-details}]
 
-           [accordion/root
-            {:items [{:title "Environment setup"
+             [accordion/root
+              {:item {:title "Environment setup"
                       :subtitle "Setup your environment information to establish a secure connection."
                       :value "environment-setup"
                       :avatar-icon [:> GlobeLock {:size 16}]
@@ -351,13 +360,12 @@
                                  :on-click->add-more-file-content #(do
                                                                      (add-new-configs configs-file @config-file-name @config-file-value)
                                                                      (reset! config-file-name "")
-                                                                     (reset! config-file-value ""))}]}]
-             :id "environment-setup"
-             :initial-open? second-step-finished
-             :trigger-value (when second-step-finished
-                              "environment-setup")}]
-           [accordion/root
-            {:items [{:title "Advanced settings"
+                                                                     (reset! config-file-value ""))}]}
+               :id "environment-setup"
+               :on-change #(reset! accordion-environment-setup %)
+               :open? @accordion-environment-setup}]
+             [accordion/root
+              {:item {:title "Advanced settings"
                       :subtitle "Include additional configuration parameters."
                       :value "advanced-settings"
                       :avatar-icon [:> ShieldEllipsis {:size 16}]
@@ -374,5 +382,11 @@
                                  :access-mode-connect access-mode-connect?
                                  :guardrails-options (or (mapv #(into {} {"value" (:id %) "label" (:name %)})
                                                                (-> @guardrails-list :data)) [])
-                                 :guardrails guardrails}]}]
-             :id "advanced-settings"}]]]]))))
+                                 :guardrails guardrails}]}
+               :id "advanced-settings"
+               :open? @accordion-advanced-settings
+               :on-change #(reset! accordion-advanced-settings %)}]]]]
+
+          (finally
+            (remove-watch connection-type :first-step-watcher)
+            (.removeEventListener js/window "scroll" handle-scroll)))))))

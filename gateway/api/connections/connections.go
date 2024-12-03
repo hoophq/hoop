@@ -1,14 +1,22 @@
 package apiconnections
 
 import (
+	"context"
 	"database/sql"
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/proto"
+	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
@@ -384,4 +392,254 @@ func FetchByName(ctx pgrest.Context, connectionName string) (*models.Connection,
 		return nil, nil
 	}
 	return conn, nil
+}
+
+// ListDatabases return a list of databases for a given connection
+//
+//	@Summary		List Databases
+//	@Description	List all available databases for a database connection
+//	@Tags			Core
+//	@Produce		json
+//	@Param			nameOrID	path	string	true	"Name or UUID of the connection"
+//	@Success		200			{object}	openapi.ConnectionDatabaseListResponse
+//	@Failure		400,404,500	{object}	openapi.HTTPError
+//	@Router			/connections/{nameOrID}/databases [get]
+func ListDatabases(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	connNameOrID := c.Param("nameOrID")
+
+	conn, err := FetchByName(ctx, connNameOrID)
+	if err != nil {
+		log.Errorf("failed fetching connection, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
+	if conn == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "connection not found"})
+		return
+	}
+
+	if conn.Type != "database" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "connection is not a database type"})
+		return
+	}
+
+	currentConnectionType := pb.ToConnectionType(conn.Type, conn.SubType.String)
+	var script string
+	switch currentConnectionType {
+	case pb.ConnectionTypePostgres:
+		script = `
+SELECT datname as database_name
+FROM pg_database
+WHERE datistemplate = false
+  AND datname != 'postgres'
+ORDER BY datname;`
+
+	case pb.ConnectionTypeMongoDB:
+		script = `
+var dbs = db.adminCommand('listDatabases');
+var result = [];
+dbs.databases.forEach(function(database) {
+	if (!['admin', 'local', 'config'].includes(database.name)) {
+			result.push({
+					"database_name": database.name
+			});
+	}
+});
+printjson(result);`
+
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"message": "unsupported database type"})
+		return
+	}
+
+	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
+	client, err := clientexec.New(&clientexec.Options{
+		OrgID:          ctx.GetOrgID(),
+		ConnectionName: conn.Name,
+		BearerToken:    getAccessToken(c),
+		UserAgent:      userAgent,
+		// it sets the execution to perform plain executions
+		Verb: proto.ClientVerbPlainExec,
+	})
+	if err != nil {
+		log.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
+	respCh := make(chan *clientexec.Response)
+	go func() {
+		defer func() { close(respCh); client.Close() }()
+		select {
+		case respCh <- client.Run([]byte(script), nil):
+		default:
+		}
+	}()
+
+	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*50)
+	defer cancelFn()
+	select {
+	case outcome := <-respCh:
+		if outcome.ExitCode != 0 {
+			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("command failed: %s", outcome.Output)})
+			return
+		}
+
+		var databases []string
+		var err error
+
+		if currentConnectionType == pb.ConnectionTypeMongoDB {
+			var result []map[string]interface{}
+			if err := json.Unmarshal([]byte(outcome.Output), &result); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse MongoDB response: %v", err)})
+				return
+			}
+			for _, db := range result {
+				if dbName, ok := db["database_name"].(string); ok {
+					databases = append(databases, dbName)
+				}
+			}
+		} else {
+			databases, err = parseDatabaseCommandOutput(outcome.Output)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse response: %v", err)})
+				return
+			}
+		}
+
+		c.JSON(http.StatusOK, openapi.ConnectionDatabaseListResponse{
+			Databases: databases,
+		})
+	case <-timeoutCtx.Done():
+		client.Close()
+		log.Infof("runexec timeout (50s), it will return async")
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Request timed out"})
+	}
+}
+
+// GetDatabaseSchema return detailed schema information including tables, views, columns and indexes
+//
+//	@Summary		Get Database Schema
+//	@Description	Get detailed schema information including tables, views, columns and indexes
+//	@Tags			Core
+//	@Produce		json
+//	@Param			nameOrID	path	string	true	"Name or UUID of the connection"
+//	@Param			database	path	string	true	"Name of the database"
+//	@Success		200			{object}	openapi.ConnectionSchemaResponse
+//	@Failure		400,404,500	{object}	openapi.HTTPError
+//	@Router			/connections/{nameOrID}/schemas [get]
+func GetDatabaseSchemas(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	connNameOrID := c.Param("nameOrID")
+	dbName := c.Query("database") // Criar uma regex para validar o nome do banco de dados e remover sql injectionn 422
+
+	// Validate database name to prevent SQL injection
+	if dbName != "" {
+		if err := validateDatabaseName(dbName); err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+			return
+		}
+	}
+
+	conn, err := FetchByName(ctx, connNameOrID)
+	if err != nil {
+		log.Errorf("failed fetching connection, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
+	if conn == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "connection not found"})
+		return
+	}
+
+	if conn.Type != "database" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "connection is not a database type"})
+		return
+	}
+
+	currentConnectionType := pb.ToConnectionType(conn.Type, conn.SubType.String)
+
+	if dbName == "" {
+		connEnvs := conn.Envs
+		switch currentConnectionType {
+		case pb.ConnectionTypePostgres,
+			pb.ConnectionTypeMSSQL,
+			pb.ConnectionTypeMySQL:
+			dbName = getEnvValue(connEnvs, "envvar:DB")
+		case pb.ConnectionTypeMongoDB:
+			if connStr := connEnvs["envvar:CONNECTION_STRING"]; connStr != "" {
+				dbName = getMongoDBFromConnectionString(connStr)
+			}
+		case pb.ConnectionTypeOracleDB:
+			dbName = getEnvValue(connEnvs, "envvar:SID")
+		}
+
+		if dbName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "database name is required but not found in connection or query parameter"})
+			return
+		}
+	}
+
+	script := getSchemaQuery(currentConnectionType, dbName)
+	if script == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "unsupported database type"})
+		return
+	}
+
+	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
+	client, err := clientexec.New(&clientexec.Options{
+		OrgID:          ctx.GetOrgID(),
+		ConnectionName: conn.Name,
+		BearerToken:    getAccessToken(c),
+		UserAgent:      userAgent,
+		Verb:           pb.ClientVerbPlainExec,
+	})
+	if err != nil {
+		log.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
+	respCh := make(chan *clientexec.Response)
+	go func() {
+		defer func() { close(respCh); client.Close() }()
+		select {
+		case respCh <- client.Run([]byte(script), nil):
+		default:
+		}
+	}()
+
+	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*50)
+	defer cancelFn()
+	select {
+	case outcome := <-respCh:
+		if outcome.ExitCode != 0 {
+			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to get schema: %s", outcome.Output)})
+			return
+		}
+
+		var schema openapi.ConnectionSchemaResponse
+		var err error
+
+		if currentConnectionType == pb.ConnectionTypeMongoDB {
+			schema, err = parseMongoDBSchema(outcome.Output)
+		} else {
+			schema, err = parseSQLSchema(outcome.Output, currentConnectionType)
+		}
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse schema: %v", err)})
+			return
+		}
+
+		c.JSON(http.StatusOK, schema)
+
+	case <-timeoutCtx.Done():
+		client.Close()
+		log.Infof("runexec timeout (50s), it will return async")
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Request timed out"})
+	}
 }

@@ -37,22 +37,12 @@
           (when (and (show-tree? connection)
                      (not (schema-disabled? connection)))
             [:li
-             [:> ui/Disclosure {:defaultOpen default-opened?}
-              (fn [params]
-                (r/as-element
-                 [:<>
-                  [:> (.-Button ui/Disclosure)
-                   {:class (str "flex items-center gap-2 text-xs text-white font-semibold")}
-                   [:> hero-solid-icon/CircleStackIcon {:class "text-white h-3 w-3 shrink-0"
-                                                        :aria-hidden "true"}]
-                   "Database schema"]
-
-                  [:> (.-Panel ui/Disclosure) {:className "bg-gray-800 text-white p-2 rounded-md"}
-                   [database-schema/main {:connection-name (:name connection)
-                                          :connection-type (cond
-                                                             (not (cs/blank? (:subtype connection))) (:subtype connection)
-                                                             (not (cs/blank? (:icon_name connection))) (:icon_name connection)
-                                                             :else (:type connection))}]]]))]])
+             [database-schema/main {:connection-database-selected (:database_name connection)
+                                    :connection-name (:name connection)
+                                    :connection-type (cond
+                                                       (not (cs/blank? (:subtype connection))) (:subtype connection)
+                                                       (not (cs/blank? (:icon_name connection))) (:icon_name connection)
+                                                       :else (:type connection))}]])
 
           (when removed?
             [:li {:class "flex items-center gap-2 text-xs text-white font-semibold cursor-pointer"

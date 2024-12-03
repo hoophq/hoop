@@ -443,6 +443,107 @@ const docTemplate = `{
                 }
             }
         },
+        "/connections/{nameOrID}/databases": {
+            "get": {
+                "description": "List all available databases for a database connection",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Core"
+                ],
+                "summary": "List Databases",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ConnectionDatabaseListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/connections/{nameOrID}/schemas": {
+            "get": {
+                "description": "Get detailed schema information including tables, views, columns and indexes",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Core"
+                ],
+                "summary": "Get Database Schema",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Name of the database",
+                        "name": "database",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ConnectionSchemaResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/connections/{name}": {
             "delete": {
                 "description": "Delete a connection resource.",
@@ -3131,6 +3232,142 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.ConnectionColumn": {
+            "type": "object",
+            "properties": {
+                "default_value": {
+                    "description": "The default value of the column",
+                    "type": "string"
+                },
+                "is_foreign_key": {
+                    "description": "The foreign key of the column",
+                    "type": "boolean"
+                },
+                "is_primary_key": {
+                    "description": "The primary key of the column",
+                    "type": "boolean"
+                },
+                "name": {
+                    "description": "The name of the column",
+                    "type": "string"
+                },
+                "nullable": {
+                    "description": "The nullable of the column",
+                    "type": "boolean"
+                },
+                "type": {
+                    "description": "The type of the column",
+                    "type": "string"
+                }
+            }
+        },
+        "openapi.ConnectionDatabaseListResponse": {
+            "type": "object",
+            "properties": {
+                "databases": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "openapi.ConnectionIndex": {
+            "type": "object",
+            "properties": {
+                "columns": {
+                    "description": "The columns of the index",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "is_primary": {
+                    "description": "The primary of the index",
+                    "type": "boolean"
+                },
+                "is_unique": {
+                    "description": "The unique of the index",
+                    "type": "boolean"
+                },
+                "name": {
+                    "description": "The name of the index",
+                    "type": "string"
+                }
+            }
+        },
+        "openapi.ConnectionSchema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "tables": {
+                    "description": "The tables of the schema",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ConnectionTable"
+                    }
+                },
+                "views": {
+                    "description": "The views of the schema",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ConnectionView"
+                    }
+                }
+            }
+        },
+        "openapi.ConnectionSchemaResponse": {
+            "type": "object",
+            "properties": {
+                "schemas": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ConnectionSchema"
+                    }
+                }
+            }
+        },
+        "openapi.ConnectionTable": {
+            "type": "object",
+            "properties": {
+                "columns": {
+                    "description": "The columns of the table",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ConnectionColumn"
+                    }
+                },
+                "indexes": {
+                    "description": "The indexes of the table",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ConnectionIndex"
+                    }
+                },
+                "name": {
+                    "description": "The name of the table",
+                    "type": "string"
+                }
+            }
+        },
+        "openapi.ConnectionView": {
+            "type": "object",
+            "properties": {
+                "columns": {
+                    "description": "The columns of the view",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ConnectionColumn"
+                    }
+                },
+                "name": {
+                    "description": "The name of the view",
+                    "type": "string"
+                }
+            }
+        },
         "openapi.ExecRequest": {
             "type": "object",
             "properties": {
@@ -4597,6 +4834,9 @@ const docTemplate = `{
                     "type": "string",
                     "format": "uuid",
                     "readOnly": true
+                },
+                "intercom_hmac_digest": {
+                    "type": "string"
                 },
                 "is_admin": {
                     "description": "DEPRECATED in flavor of role",
