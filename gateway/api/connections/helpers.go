@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/gin-gonic/gin"
 	pb "github.com/hoophq/hoop/common/proto"
@@ -327,6 +328,7 @@ func parseMongoDBSchema(output string) (openapi.ConnectionSchemaResponse, error)
 		response.Schemas = append(response.Schemas, *schema)
 	}
 
+	// fmt.Printf("response parseMongoDBSchema", response)
 	return response, nil
 }
 
@@ -462,4 +464,41 @@ func organizeSchemaResponse(rows []map[string]interface{}) openapi.ConnectionSch
 	}
 
 	return response
+}
+
+// validateDatabaseName returns an error if the database name contains invalid characters
+func validateDatabaseName(dbName string) error {
+	// Regular expression that allows only:
+	// - Letters (a-z, A-Z)
+	// - Numbers (0-9)
+	// - Underscores (_)
+	// - Hyphens (-)
+	// - Dots (.)
+	// With length between 1 and 128 characters
+	re := regexp.MustCompile(`^[a-zA-Z0-9_\-\.]{1,128}$`)
+
+	if !re.MatchString(dbName) {
+		return fmt.Errorf("invalid database name. Only alphanumeric characters, underscore, hyphen and dot are allowed with length between 1 and 128 characters")
+	}
+
+	// Some databases don't allow names starting with numbers
+	if unicode.IsDigit(rune(dbName[0])) {
+		return fmt.Errorf("database name cannot start with a number")
+	}
+
+	// Check common reserved words
+	reservedWords := []string{
+		"master", "tempdb", "model", "msdb", // SQL Server
+		"postgres", "template0", "template1", // PostgreSQL
+		"mysql", "information_schema", "performance_schema", // MySQL
+	}
+
+	dbNameLower := strings.ToLower(dbName)
+	for _, word := range reservedWords {
+		if dbNameLower == word {
+			return fmt.Errorf("database name cannot be a reserved word: %s", word)
+		}
+	}
+
+	return nil
 }
