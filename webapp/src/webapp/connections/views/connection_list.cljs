@@ -125,7 +125,10 @@
                                           "bg-red-500"))}]
                      (cs/capitalize (:status connection))]
 
-                    (when (= "database" (:type connection))
+                    (when (or
+                           (= "database" (:type connection))
+                           (and (= "application" (:type connection))
+                                (= "tcp" (:subtype connection))))
                       [:div {:class "relative cursor-pointer group"
                              :on-click #(rf/dispatch [:connections->start-connect (:name connection)])}
                        [tooltip "Hoop Access" (when (not (-> @user :data :admin?))
