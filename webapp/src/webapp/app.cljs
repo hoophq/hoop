@@ -4,6 +4,7 @@
             [bidi.bidi :as bidi]
             [clojure.string :as cs]
             [re-frame.core :as rf]
+            [webapp.settings.license.panel :as license-management]
             [webapp.agents.panel :as agents]
             [webapp.agents.new :as create-agent]
             [webapp.audit.views.main :as audit]
@@ -137,6 +138,11 @@
 ;;;;;;;;;;;;;;;;;
 ;; HOOP PANELS ;;
 ;;;;;;;;;;;;;;;;;
+
+(defmethod routes/panels :license-management-panel []
+  [layout :application-hoop
+   [:div {:class "bg-gray-1 p-radix-7 min-h-full h-max"}
+   [license-management/main]]])
 
 (defmethod routes/panels :agents-panel []
   [layout :application-hoop
