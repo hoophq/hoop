@@ -536,9 +536,11 @@ func GetDatabaseSchemas(c *gin.Context) {
 	dbName := c.Query("database") // Criar uma regex para validar o nome do banco de dados e remover sql injectionn 422
 
 	// Validate database name to prevent SQL injection
-	if err := validateDatabaseName(dbName); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
-		return
+	if dbName != "" {
+		if err := validateDatabaseName(dbName); err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+			return
+		}
 	}
 
 	conn, err := FetchByName(ctx, connNameOrID)
