@@ -67,6 +67,7 @@ build-webapp:
 	mkdir -p ${DIST_FOLDER}
 	cd ./webapp && npm install && npm run release:hoop-ui && cd ../
 	tar -czf ${DIST_FOLDER}/webapp.tar.gz -C ./webapp/resources .
+	awk -F"'" '{printf "%s", $2}' ./webapp/src/webapp/version.js > ${DIST_FOLDER}/webapp_version.txt
 
 extract-webapp:
 	mkdir -p ./rootfs/app/ui && tar -xf ${DIST_FOLDER}/webapp.tar.gz -C rootfs/app/ui/
@@ -117,5 +118,9 @@ release-aws-cf-templates:
 	aws s3 cp --region eu-central-1 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-eu-central-1/latest/hoopdev-platform.template.yaml
 	aws s3 cp --region ap-southeast-2 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-ap-southeast-2/${VERSION}/hoopdev-platform.template.yaml
 	aws s3 cp --region ap-southeast-2 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-ap-southeast-2/latest/hoopdev-platform.template.yaml
+
+publish-sentry-sourcemaps:
+	tar -xf ${DIST_FOLDER}/webapp.tar.gz
+	sentry-cli sourcemaps upload --release=$$(cat ${DIST_FOLDER}/webapp_version.txt) ./public/js/app.js.map
 
 .PHONY: run-dev run-dev-postgres test-enterprise test-oss test generate-openapi-docs build build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release release-aws-cf-templates swag-fmt

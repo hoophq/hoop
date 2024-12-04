@@ -1,6 +1,7 @@
 (ns webapp.app
   (:require ["@radix-ui/themes" :refer [Theme]]
             ["gsap/all" :refer [Draggable gsap]]
+            ["@sentry/browser" :as Sentry]
             [bidi.bidi :as bidi]
             [clojure.string :as cs]
             [re-frame.core :as rf]
@@ -314,11 +315,21 @@
          :class "text-xs text-blue-500"}
      "Go to homepage"]]])
 
+(defn sentry-monitor []
+  (let [sentry-dsn config/sentry-dsn
+        sentry-sample-rate config/sentry-sample-rate]
+    (when (and sentry-dsn sentry-sample-rate)
+      (.init Sentry #js {:dsn sentry-dsn
+                         :release config/app-version
+                         :sampleRate sentry-sample-rate
+                         :integrations #js [(.browserTracingIntegration Sentry)]}))))
+
 (defn main-panel []
   (let [active-panel (rf/subscribe [::subs/active-panel])
         gateway-public-info (rf/subscribe [:gateway->public-info])]
     (rf/dispatch [:gateway->get-public-info])
     (.registerPlugin gsap Draggable)
+    (sentry-monitor)
     (fn []
       (when (not (-> @gateway-public-info :loading))
         [:> Theme {:radius "large" :panelBackground "solid"}

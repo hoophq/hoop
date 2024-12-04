@@ -560,3 +560,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           GIT_TAG: ${{ env.GIT_TAG }}
+
+      - name: Publish Sentry Sourcemaps
+        uses: matbour/setup-sentry-cli@v2
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: make publish-sentry-sourcemaps

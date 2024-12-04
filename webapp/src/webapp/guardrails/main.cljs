@@ -48,4 +48,3 @@
                           :size "3"
                           :on-click #(rf/dispatch [:navigate :edit-guardrail {} :guardrail-id (:id rules)])}
                "Configure"]]])])])))
-
