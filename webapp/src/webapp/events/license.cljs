@@ -9,10 +9,4 @@
            [:fetch {:method "PUT"
                     :uri "/orgs/license"
                     :body license-obj
-                    :on-success #(rf/dispatch [:license->set-new-license %])}]]]})))
-
-(rf/reg-event-fx
-  :license->set-new-license
-  (fn [_ [_ license-response]]
-    (println :license-response license-response)
-    {:fx [[:dispatch [:gateway->get-info]]]}))
+                    :on-success #(rf/dispatch [:gateway->get-info %])}]]]})))

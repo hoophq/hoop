@@ -114,7 +114,6 @@
            [:> Button {:size "3"
                        :disabled (or disable-license-input?
                                      (strings/blank? @license-value))
-                       :required true
                        :on-click #(rf/dispatch [:license->update-license-key @license-value])}
             "Save license"]]]
          [:> Flex {:direction :column
