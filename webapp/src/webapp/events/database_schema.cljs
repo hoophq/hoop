@@ -43,27 +43,31 @@
             {}
             schemas)))
 
-(rf/reg-event-db
+(defn- clear-selected-database [db connection-name]
+  (let [stored-db (.getItem js/localStorage "selected-database")
+        current-connection (get-in db [:database-schema :data connection-name])]
+    (when (and stored-db
+               (some #(= stored-db %) (:databases current-connection)))
+      (.removeItem js/localStorage "selected-database"))))
+
+(rf/reg-event-fx
+ :database-schema->clear-selected-database
+ (fn [{:keys [db]} [_ connection-name]]
+   (clear-selected-database db connection-name)
+   {}))
+
+(rf/reg-event-fx
  :database-schema->clear-schema
- (fn [db [_ connection-name]]
-   (-> db
-       (update-in [:database-schema :data] dissoc connection-name)
-       (assoc-in [:database-schema :current-connection] nil))))
+ (fn [{:keys [db]} [_ connection-name]]
+   (clear-selected-database db connection-name)
+   {:db (-> db
+            (update-in [:database-schema :data] dissoc connection-name)
+            (assoc-in [:database-schema :current-connection] nil))}))
 
 (rf/reg-event-fx
  :database-schema->handle-multi-database-schema
  (fn [{:keys [db]} [_ connection]]
-   (let [current-connection-data (get-in db [:database-schema :data (:connection-name connection)])
-         selected-db (or (.getItem js/localStorage "selected-database")
-                         (first (:databases current-connection-data)))]
-     (if (and selected-db (:databases current-connection-data))
-       ;; if there is a selected database, fetch its schema
-       {:fx [[:dispatch [:database-schema->get-multi-database-schema
-                         connection
-                         selected-db
-                         (:databases current-connection-data)]]]}
-       ;; if not, just fetch the databases
-       {:fx [[:dispatch [:database-schema->get-multi-databases connection]]]}))))
+   {:fx [[:dispatch [:database-schema->get-multi-databases connection]]]}))
 
 (rf/reg-event-fx
  :database-schema->get-multi-databases

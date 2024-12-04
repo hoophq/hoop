@@ -157,57 +157,53 @@
 
 (defn- databases-tree []
   (let [open-database (r/atom nil)]
-    (fn [databases schema indexes initial-database connection-name database-schema-status]
-      (when (and initial-database (nil? @open-database))
-        (reset! open-database initial-database)
-        (.setItem js/localStorage "selected-database" initial-database))
-      (let [selected-db (.getItem js/localStorage "selected-database")]
-        [:div.text-xs
-         (doall
-          (for [db databases]
-            ^{:key db}
-            [:div
-             [:div {:class "flex items-center gap-smal mb-2"}
-              [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
-                                  "flex items-center "
-                                  (when (= db selected-db) "text-blue-500"))
-                      :on-click (fn []
-                                  (.setItem js/localStorage "selected-database" db)
-                                  (reset! open-database (when (not= @open-database db) db))
+    (fn [databases schema indexes connection-name database-schema-status]
+      [:div.text-xs
+       (doall
+        (for [db databases]
+          ^{:key db}
+          [:div
+           [:div {:class "flex items-center gap-smal mb-2"}
+            [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
+                                "flex items-center ")
+                    :on-click (fn []
+                                (reset! open-database (when (not= @open-database db) db))
+                                (if @open-database
                                   (rf/dispatch [:database-schema->change-database
                                                 {:connection-name connection-name}
-                                                db]))}
-               [:> Text {:size "1" :weight "bold"} db]
-               (if (= @open-database db)
-                 [:> ChevronDown {:size 12}]
-                 [:> ChevronRight {:size 12}])]]
-             [:div {:class (when (not= @open-database db)
-                             "h-0 overflow-hidden")}
-              (if (= :loading database-schema-status)
-                [:div
-                 {:class "flex gap-small items-center pb-small ml-small text-xs"}
-                 [:span {:class "italic"}
-                  "Loading tables and indexes"]
-                 [:figure {:class "w-3 flex-shrink-0 animate-spin opacity-60"}
-                  [:img {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]]
-                (if (empty? schema)
-                  [:> Text {:as "p" :size "1" :mb "2" :ml "2"}
-                   "Couldn't load tables for this database"]
-                  [sql-databases-tree schema indexes true]))]]))]))))
+                                                db])
+
+                                  (rf/dispatch [:database-schema->clear-selected-database connection-name])))}
+             [:> Text {:size "1" :weight "bold"} db]
+             (if (= @open-database db)
+               [:> ChevronDown {:size 12}]
+               [:> ChevronRight {:size 12}])]]
+           [:div {:class (when (not= @open-database db)
+                           "h-0 overflow-hidden")}
+            (if (= :loading database-schema-status)
+              [:div
+               {:class "flex gap-small items-center pb-small ml-small text-xs"}
+               [:span {:class "italic"}
+                "Loading tables and indexes"]
+               [:figure {:class "w-3 flex-shrink-0 animate-spin opacity-60"}
+                [:img {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]]
+              (if (empty? schema)
+                [:> Text {:as "p" :size "1" :mb "2" :ml "2"}
+                 "Couldn't load tables for this database"]
+                [sql-databases-tree schema indexes true]))]]))])))
 
 (defn db-view [{:keys [type
                        schema
                        indexes
                        databases
-                       initial-database
                        connection-name
                        database-schema-status]}]
   (case type
     "oracledb" [sql-databases-tree (into (sorted-map) schema) (into (sorted-map) indexes) false]
     "mssql" [sql-databases-tree (into (sorted-map) schema) (into (sorted-map) indexes) false]
-    "postgres" [databases-tree databases (into (sorted-map) schema) (into (sorted-map) indexes) initial-database connection-name database-schema-status]
+    "postgres" [databases-tree databases (into (sorted-map) schema) (into (sorted-map) indexes) connection-name database-schema-status]
     "mysql" [sql-databases-tree (into (sorted-map) schema) (into (sorted-map) indexes) false]
-    "mongodb" [databases-tree databases (into (sorted-map) schema) (into (sorted-map) indexes) initial-database connection-name database-schema-status]
+    "mongodb" [databases-tree databases (into (sorted-map) schema) (into (sorted-map) indexes) connection-name database-schema-status]
     [:> Text {:size "1"}
      "Couldn't load the schema"]))
 
@@ -216,7 +212,6 @@
                                 schema
                                 indexes
                                 connection
-                                initial-database
                                 database-schema-status]}]
   (case status
     :loading [:div
@@ -233,7 +228,6 @@
                        :schema schema
                        :indexes indexes
                        :databases databases
-                       :initial-database initial-database
                        :connection-name (:connection-name connection)
                        :database-schema-status database-schema-status}]
     [:div
@@ -264,5 +258,4 @@
            :schema (:schema-tree current-schema)
            :indexes (:indexes-tree current-schema)
            :connection connection
-           :initial-database (:connection-database-selected connection)
            :database-schema-status (:database-schema-status current-schema)}]]))))
