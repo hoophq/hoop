@@ -120,7 +120,7 @@ release-aws-cf-templates:
 	aws s3 cp --region ap-southeast-2 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-ap-southeast-2/latest/hoopdev-platform.template.yaml
 
 publish-sentry-sourcemaps:
-	tar -xvf ${DIST_FOLDER}/webapp.tar.gz
-	sentry-cli sourcemaps upload --release=$$(cat ./webapp_version.txt) ./public/js/app.js.map
+	tar -xf ${DIST_FOLDER}/webapp.tar.gz
+	sentry-cli sourcemaps upload --release=$$(cat ./version.txt) ./public/js/app.js.map
 
 .PHONY: run-dev run-dev-postgres test-enterprise test-oss test generate-openapi-docs build build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release release-aws-cf-templates swag-fmt
