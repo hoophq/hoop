@@ -526,6 +526,9 @@ jobs:
           name: "dist-artifacts"
           path: dist/
 
+      - uses: matbour/setup-sentry-cli@v2
+        id: sentry-cli
+
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
 
@@ -562,7 +565,6 @@ jobs:
           GIT_TAG: ${{ env.GIT_TAG }}
 
       - name: Publish Sentry Sourcemaps
-        uses: matbour/setup-sentry-cli@v2
+        run: make publish-sentry-sourcemaps
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-        run: make publish-sentry-sourcemaps
