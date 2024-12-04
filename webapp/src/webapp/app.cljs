@@ -27,6 +27,7 @@
             [webapp.guardrails.main :as guardrails]
             [webapp.guardrails.create-update-form :as guardrail-create-update]
             [webapp.events]
+            [webapp.events.license]
             [webapp.events.agents]
             [webapp.events.ask-ai]
             [webapp.events.audit]

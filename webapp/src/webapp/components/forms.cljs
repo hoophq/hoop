@@ -60,7 +60,7 @@
                    step
                    not-margin-bottom? ;; TODO: Remove this prop when remove margin-bottom from all inputs
                    hidden]}]
-        [:div {:class (str "text-sm"
+        [:div {:class (str
                            (when-not not-margin-bottom? " mb-regular")
                            (when full-width? " w-full")
                            (when hidden " hidden"))}
