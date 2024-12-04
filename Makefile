@@ -67,7 +67,7 @@ build-webapp:
 	mkdir -p ${DIST_FOLDER}
 	cd ./webapp && npm install && npm run release:hoop-ui && cd ../
 	tar -czf ${DIST_FOLDER}/webapp.tar.gz -C ./webapp/resources .
-	awk -F"'" '{printf "%s", $2}' ./webapp/src/webapp/version.js > ${DIST_FOLDER}/webapp_version.txt
+	$(shell cat ./webapp/src/webapp/version.js | awk -F"'" '{printf "%s", $$2}' > ${DIST_FOLDER}/webapp_version.txt)
 
 extract-webapp:
 	mkdir -p ./rootfs/app/ui && tar -xf ${DIST_FOLDER}/webapp.tar.gz -C rootfs/app/ui/
