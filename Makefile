@@ -121,6 +121,6 @@ release-aws-cf-templates:
 
 publish-sentry-sourcemaps:
 	tar -xf ${DIST_FOLDER}/webapp.tar.gz
-	sentry-cli sourcemaps upload --release=$(cat ${DIST_FOLDER}/webapp_version.txt) ./public/js/app.js.map
+	sentry-cli sourcemaps upload --release=$$(cat ${DIST_FOLDER}/webapp_version.txt) ./public/js/app.js.map
 
 .PHONY: run-dev run-dev-postgres test-enterprise test-oss test generate-openapi-docs build build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release release-aws-cf-templates swag-fmt
