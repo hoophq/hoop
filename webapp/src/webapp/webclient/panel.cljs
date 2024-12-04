@@ -287,22 +287,15 @@
                               "" dracula
                               nil dracula}
             show-tree? (fn [connection]
-                         (let [reviewers? (if (:loading @db-connections)
-                                            false
-                                            (empty?
-                                             (:reviewers
-                                              (first
-                                               (filter #(= (:name connection) (:name %)) (:results @db-connections))))))]
-                           (and (or (= (:type connection) "mysql-csv")
-                                    (= (:type connection) "postgres-csv")
-                                    (= (:type connection) "mongodb")
-                                    (= (:type connection) "postgres")
-                                    (= (:type connection) "mysql")
-                                    (= (:type connection) "sql-server-csv")
-                                    (= (:type connection) "mssql")
-                                    (= (:type connection) "oracledb")
-                                    (= (:type connection) "database"))
-                                reviewers?)))]
+                         (or (= (:type connection) "mysql-csv")
+                             (= (:type connection) "postgres-csv")
+                             (= (:type connection) "mongodb")
+                             (= (:type connection) "postgres")
+                             (= (:type connection) "mysql")
+                             (= (:type connection) "sql-server-csv")
+                             (= (:type connection) "mssql")
+                             (= (:type connection) "oracledb")
+                             (= (:type connection) "database")))]
         (if (and (empty? (:results @db-connections))
                  (not (:loading @db-connections)))
           [quickstart/main]
