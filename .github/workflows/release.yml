@@ -55,11 +55,6 @@ jobs:
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
 
-      - name: Set webapp version
-        run: |
-          export WEBAPP_VERSION=$(awk -F"'" '{printf "%s", $2}' webapp/src/webapp/version.js)
-          echo "WEBAPP_VERSION=$WEBAPP_VERSION" >> $GITHUB_ENV
-
       - name: amd64
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
@@ -95,11 +90,6 @@ jobs:
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
-
-      - name: Set webapp version
-        run: |
-          export WEBAPP_VERSION=$(awk -F"'" '{printf "%s", $2}' webapp/src/webapp/version.js)
-          echo "WEBAPP_VERSION=$WEBAPP_VERSION" >> $GITHUB_ENV
 
       - name: Build
         env:
@@ -137,11 +127,6 @@ jobs:
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
 
-      - name: Set webapp version
-        run: |
-          export WEBAPP_VERSION=$(awk -F"'" '{printf "%s", $2}' webapp/src/webapp/version.js)
-          echo "WEBAPP_VERSION=$WEBAPP_VERSION" >> $GITHUB_ENV
-
       - name: Build
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
@@ -178,11 +163,6 @@ jobs:
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
 
-      - name: Set webapp version
-        run: |
-          export WEBAPP_VERSION=$(awk -F"'" '{printf "%s", $2}' webapp/src/webapp/version.js)
-          echo "WEBAPP_VERSION=$WEBAPP_VERSION" >> $GITHUB_ENV
-
       - name: Build
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
@@ -218,11 +198,6 @@ jobs:
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
-
-      - name: Set webapp version
-        run: |
-          export WEBAPP_VERSION=$(awk -F"'" '{printf "%s", $2}' webapp/src/webapp/version.js)
-          echo "WEBAPP_VERSION=$WEBAPP_VERSION" >> $GITHUB_ENV
 
       - name: Build
         env:
@@ -263,11 +238,6 @@ jobs:
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
-
-      - name: Set webapp version
-        run: |
-          export WEBAPP_VERSION=$(awk -F"'" '{printf "%s", $2}' webapp/src/webapp/version.js)
-          echo "WEBAPP_VERSION=$WEBAPP_VERSION" >> $GITHUB_ENV
 
       - name: Build
         env:
@@ -594,6 +564,5 @@ jobs:
       - name: Publish Sentry Sourcemaps
         uses: matbour/setup-sentry-cli@v2
         env:
-          WEBAPP_VERSION: ${{ env.WEBAPP_VERSION }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: make publish-sentry-sourcemaps
