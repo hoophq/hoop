@@ -34,8 +34,9 @@
         question-responses (rf/subscribe [:ask-ai->question-responses])
         database-schema (rf/subscribe [::subs/database-schema])
         input-question (r/atom "")]
-    (fn [connection-type is-one-connection-selected? show-tabular?]
-      (let [logs-content (mapv #(into {} {:status (:status %)
+    (fn [connection-type connection-name is-one-connection-selected? show-tabular?]
+      (let [current-schema (get-in @database-schema [:data connection-name])
+            logs-content (mapv #(into {} {:status (:status %)
                                           :response (:output (:data %))
                                           :response-status (:output_status (:data %))
                                           :script (if (= connection-type "postgres")
@@ -86,7 +87,7 @@
             [:form {:class "relative flex flex-grow items-stretch focus-within:z-10 border-gray-600"
                     :on-submit (fn [e]
                                  (.preventDefault e)
-                                 (rf/dispatch [:ask-ai->ask-sql-question (:raw @database-schema) @input-question])
+                                 (rf/dispatch [:ask-ai->ask-sql-question (:raw current-schema) @input-question])
                                  (reset! selected-tab "AI")
                                  (reset! input-question ""))}
              [:div {:class "pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"}

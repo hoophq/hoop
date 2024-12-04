@@ -43,11 +43,19 @@
             {}
             schemas)))
 
+(rf/reg-event-db
+ :database-schema->clear-schema
+ (fn [db [_ connection-name]]
+   (-> db
+       (update-in [:database-schema :data] dissoc connection-name)
+       (assoc-in [:database-schema :current-connection] nil))))
+
 (rf/reg-event-fx
  :database-schema->handle-multi-database-schema
  (fn [{:keys [db]} [_ connection]]
    (let [current-connection-data (get-in db [:database-schema :data (:connection-name connection)])
-         selected-db (.getItem js/localStorage "selected-database")]
+         selected-db (or (.getItem js/localStorage "selected-database")
+                         (first (:databases current-connection-data)))]
      (if (and selected-db (:databases current-connection-data))
        ;; if there is a selected database, fetch its schema
        {:fx [[:dispatch [:database-schema->get-multi-database-schema
@@ -66,14 +74,13 @@
     :fx [[:dispatch [:fetch {:method "GET"
                              :uri (str "/connections/" (:connection-name connection) "/databases")
                              :on-success (fn [response]
-                                           (let [selected-db (.getItem js/localStorage "selected-database")]
-                                          ;; Se tiver uma database selecionada, já busca seu schema
-                                             (when selected-db
-                                               (rf/dispatch [:database-schema->get-multi-database-schema
-                                                             connection
-                                                             selected-db
-                                                             (:databases response)]))
-                                          ;; Sempre atualiza a lista de databases
+                                           (let [selected-db (or (.getItem js/localStorage "selected-database")
+                                                                 (first (:databases response)))]
+                                             (rf/dispatch [:database-schema->get-multi-database-schema
+                                                           connection
+                                                           selected-db
+                                                           (:databases response)])
+
                                              (rf/dispatch [:database-schema->set-multi-databases
                                                            connection
                                                            (:databases response)])))}]]]}))
@@ -108,21 +115,14 @@
                               (:connection-name connection)
                               {:status status
                                :database-schema-status database-schema-status
-                               :type (:type connection)
+                               :type (:connection-type connection)
                                :raw schema-payload
                                :schema-tree (process-schema schema-payload)
                              ;; only process indexes if it's not a mongodb connection
                                :indexes-tree (when-not is-mongodb?
                                                (process-indexes schema-payload))
                                :current-database database
-                               :databases databases})
-                 :type (:type connection)
-                 :raw schema-payload
-                 :schema-tree (process-schema schema-payload)
-                 :indexes-tree (when-not is-mongodb?
-                                 (process-indexes schema-payload))
-                 :current-database database
-                 :databases databases}]
+                               :databases databases})}]
      {:db (assoc-in db [:database-schema] schema)})))
 
 (rf/reg-event-fx
@@ -153,14 +153,10 @@
                               (:connection-name connection)
                               {:status status
                                :database-schema-status database-schema-status
-                               :type (:type connection)
+                               :type (:connection-type connection)
                                :raw schema-payload
                                :schema-tree (process-schema schema-payload)
-                               :indexes-tree (process-indexes schema-payload)})
-                 :type (:type connection)
-                 :raw schema-payload
-                 :schema-tree (process-schema schema-payload)
-                 :indexes-tree (process-indexes schema-payload)}]
+                               :indexes-tree (process-indexes schema-payload)})}]
      {:db (assoc-in db [:database-schema] schema)})))
 
 ;; Event unified to handle schema for all databases

@@ -249,12 +249,13 @@
                     {:key "Shift-Mod-\\" :run cm-commands/cursorMatchingBracket}
                     {:key "Mod-/" :run cm-commands/toggleComment}
                     {:key "Alt-A" :run cm-commands/toggleBlockComment}]
+            current-schema (get-in @database-schema [:data connection-name])
             language-parser-case (let [subtype (:subtype (last run-connections-list-selected))
-                                       databse-schema-sanitized (if (= (:status @database-schema) :success)
-                                                                  @database-schema
+                                       databse-schema-sanitized (if (= (:status current-schema) :success)
+                                                                  current-schema
                                                                   {:status :failure :raw "" :schema-tree []})
                                        schema (if (and is-one-connection-selected?
-                                                       (= subtype (:type @database-schema)))
+                                                       (= subtype (:type current-schema)))
                                                 #js{:schema (clj->js (convert-tree databse-schema-sanitized))}
                                                 #js{})]
                                    (case subtype
@@ -376,7 +377,7 @@
                                                             (:subtype (last run-connections-list-selected))
                                                             prefix
                                                             suffix
-                                                            (:raw @database-schema))))])
+                                                            (:raw current-schema))))])
                                                      [(.of cm-view/keymap (clj->js keymap))]
                                                      language-parser-case
                                                      (when (= (:status @selected-template) :ready)
@@ -384,7 +385,7 @@
                                                         (.of (.-readOnly cm-state/EditorState) true)])))
                                        :onUpdate #(auto-save % script)}])
 
-             [log-area/main connection-type is-one-connection-selected? (show-tree? current-connection)]]]
+             [log-area/main connection-type connection-name is-one-connection-selected? (show-tree? current-connection)]]]
            [:div {:class "border border-gray-600"}
             [:footer {:class "flex justify-between items-center p-small gap-small"}
              [:div {:class "flex items-center gap-small"}

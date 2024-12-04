@@ -20,7 +20,13 @@
         [:> (.-Button ui/Disclosure)
          {:class (str "p-2 w-full flex justify-between items-center gap-small "
                       "text-sm text-white bg-gray-800 "
-                      (if (.-open params) "rounded-t-md" "rounded-md"))}
+                      (if (.-open params) "rounded-t-md" "rounded-md"))
+          :on-click (fn []
+                      ;; Clear the database schema data
+                      (when (and (.-open params)
+                                 (show-tree? connection)
+                                 (not (schema-disabled? connection)))
+                        (rf/dispatch [:database-schema->clear-schema (:name connection)])))}
 
          [:div {:class "flex items-center gap-regular"}
           [:div
@@ -47,7 +53,9 @@
           (when removed?
             [:li {:class "flex items-center gap-2 text-xs text-white font-semibold cursor-pointer"
                   :on-click (fn []
-                              (rf/dispatch [:editor-plugin->toggle-select-run-connection (:name connection)]))}
+                              (rf/dispatch [:editor-plugin->toggle-select-run-connection (:name connection)])
+                              ;; Clear the database schema data
+                              (rf/dispatch [:database-schema->clear-schema (:name connection)]))}
              [:> hero-solid-icon/XMarkIcon {:class "text-white h-3 w-3 shrink-0"
                                             :aria-hidden "true"}]
              "Remove selection"])]]]))]])
