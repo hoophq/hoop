@@ -21,9 +21,6 @@ LDFLAGS := "-s -w \
 -X github.com/hoophq/hoop/gateway/analytics.segmentApiKey=${SEGMENT_API_KEY} \
 -X github.com/hoophq/hoop/gateway/analytics.intercomHmacKey=${INTERCOM_HMAC_KEY}"
 
-postgrest-link:
-	echo https://github.com/PostgREST/postgrest/releases/download/v11.2.2/postgrest-v11.2.2-${POSTREST_ARCH_SUFFIX}
-
 run-dev:
 	./scripts/dev/run.sh
 
@@ -120,7 +117,7 @@ release-aws-cf-templates:
 	aws s3 cp --region ap-southeast-2 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-ap-southeast-2/latest/hoopdev-platform.template.yaml
 
 publish-sentry-sourcemaps:
-	tar -xvf ${DIST_FOLDER}/webapp.tar.gz
-	sentry-cli sourcemaps upload --release=$$(cat ./version.txt) ./public/js/app.js.map
+	tar -xvf ${DIST_FOLDER}/webapp.tar.gz version.txt
+	sentry-cli sourcemaps upload --release=$$(cat ./version.txt) ./public/js/app.js.map --org hoopdev --project webapp
 
 .PHONY: run-dev run-dev-postgres test-enterprise test-oss test generate-openapi-docs build build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release release-aws-cf-templates swag-fmt
