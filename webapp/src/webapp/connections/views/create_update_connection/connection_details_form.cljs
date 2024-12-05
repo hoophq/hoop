@@ -2,6 +2,7 @@
   (:require
    ["@radix-ui/themes" :refer [Box Callout Flex Grid Link Switch Text]]
    ["lucide-react" :refer [ArrowUpRight Star]]
+   [re-frame.core :as rf]
    [webapp.components.forms :as forms]
    [webapp.components.multiselect :as multi-select]
    [webapp.connections.dlp-info-types :as dlp-info-types]
@@ -90,9 +91,7 @@
             "Enable AI Data Masking by "
             [:> Link {:href "#"
                       :class "text-primary-10"
-                      :on-click #(js/window.Intercom
-                                  "showNewMessage"
-                                  "I want to upgrade my current plan")}
+                      :on-click #(rf/dispatch [:navigate :upgrade-plan])}
              "upgrading your plan."]]])
         (when @ai-data-masking
           [:> Box {:mt "4"}
