@@ -1,5 +1,6 @@
 (ns webapp.connections.views.connection-list
-  (:require ["@heroicons/react/16/solid" :as hero-micro-icon]
+  (:require ["lucide-react" :refer [Wifi Tags EllipsisVertical]]
+            ["@radix-ui/themes" :refer [IconButton DropdownMenu Tooltip]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
@@ -112,7 +113,7 @@
                     (when (seq (:tags connection))
                       [:div {:class "relative group flex items-center gap-2 text-xs text-gray-700"}
                        [:div
-                        [:> hero-micro-icon/TagIcon {:class "w-4 h-4"}]]
+                        [:> Tags {:size 16}]]
                        [:span {:class "text-nowrap font-semibold"}
                         (str (first (:tags connection))
                              (when (> (count (:tags connection)) 1)
@@ -131,16 +132,23 @@
                                 (= "tcp" (:subtype connection))))
                       [:div {:class "relative cursor-pointer group"
                              :on-click #(rf/dispatch [:connections->start-connect (:name connection)])}
-                       [tooltip "Hoop Access" (when (not (-> @user :data :admin?))
-                                                "left")]
-                       [:> hero-micro-icon/SignalIcon {:class "w-6 h-6 text-gray-700"}]])
+                       [:> Tooltip {:content "Hoop Access"}
+                        [:> IconButton {:size 1 :variant "ghost" :color "gray"}
+                         [:> Wifi {:size 16}]]]])
 
-                    (when (and (-> @user :data :admin?)
-                               (not (= (:managed_by connection) "hoopagent")))
-                      [:div {:class "relative cursor-pointer group"
-                             :on-click (fn []
-                                         (rf/dispatch [:plugins->get-my-plugins])
-                                         (rf/dispatch [:connections->get-connection {:connection-name (:name connection)}])
-                                         (rf/dispatch [:modal->open {:content [create-update-connection/main :update connection]}]))}
-                       [tooltip "Configure" "left"]
-                       [:> hero-micro-icon/AdjustmentsHorizontalIcon {:class "w-6 h-6 text-gray-700"}]])]])))]])]))))
+                    [:> DropdownMenu.Root {:dir "rtl"}
+                     [:> DropdownMenu.Trigger
+                      [:> IconButton {:size 1 :variant "ghost" :color "gray"}
+                       [:> EllipsisVertical {:size 16}]]]
+                     [:> DropdownMenu.Content
+                      (when (and (-> @user :data :admin?)
+                                 (not (= (:managed_by connection) "hoopagent")))
+                        [:> DropdownMenu.Item {:on-click (fn []
+                                                           (rf/dispatch [:plugins->get-my-plugins])
+                                                           (rf/dispatch [:connections->get-connection {:connection-name (:name connection)}])
+                                                           (rf/dispatch [:modal->open {:content [create-update-connection/main :update connection]}]))}
+                         "Configure"])
+                      [:> DropdownMenu.Item {:color "red"
+                                             :on-click (fn []
+                                                         (rf/dispatch [:connections->delete-connection (:name connection)]))}
+                       "Delete"]]]]])))]])]))))

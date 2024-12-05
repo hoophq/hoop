@@ -4,6 +4,7 @@
             ["@heroicons/react/24/outline" :as hero-outline-icon]
             ["clipboard" :as clipboardjs]
             ["react" :as react]
+            ["@radix-ui/themes" :refer [Tooltip]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
@@ -168,13 +169,6 @@
               (str total-redact " "
                    (if (<= total-redact 1) "item" "items"))]]]]]]))]))
 
-(defn- tooltip [text]
-  [:div {:class "absolute -bottom-10 left-1/2 flex-col hidden mt-6 w-max group-hover:flex items-center -translate-x-1/2"}
-   [:div {:class "w-3 h-3 -mb-2 bg-gray-900 transform rotate-45"}]
-   [:span {:class (str "relative bg-gray-900 rounded-md z-50 "
-                       "py-1.5 px-3.5 text-xs text-white leading-none whitespace-no-wrap shadow-lg")}
-    text]])
-
 (defn main [session]
   (let [user (rf/subscribe [:users->current-user])
         session-details (rf/subscribe [:audit->session-details])
@@ -248,30 +242,31 @@
 
            [:div {:class "relative flex gap-2.5 items-start pr-3"}
             [:div {:class "relative group"}
-             [tooltip "Re-run"]
-             [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer"
-                    :on-click #(re-run-session session)}
-              [:> hero-outline-icon/PlayIcon {:class "h-5 w-5 text-gray-600"}]]]
+             [:> Tooltip {:content "Re-run session"}
+              [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer"
+                     :on-click #(re-run-session session)}
+               [:> hero-outline-icon/PlayIcon {:class "h-5 w-5 text-gray-600"}]]]]
 
             [:div {:class "relative group"}
-             [tooltip "Copy link"]
-             [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer copy-to-clipboard-url"
-                    :data-clipboard-text (str (-> js/document .-location .-origin)
-                                              (routes/url-for :sessions)
-                                              "/" (:id session))}
-              [:> hero-outline-icon/ClipboardDocumentIcon {:class "h-5 w-5 text-gray-600"}]]]
+             [:> Tooltip {:content "Copy link"}
+              [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer copy-to-clipboard-url"
+                     :data-clipboard-text (str (-> js/document .-location .-origin)
+                                               (routes/url-for :sessions)
+                                               "/" (:id session))}
+               [:> hero-outline-icon/ClipboardDocumentIcon {:class "h-5 w-5 text-gray-600"}]]]]
 
             (when (and (= (:verb session) "exec")
                        (or (:output session) (:event_stream session))
                        (not disabled-download))
               [:div {:class "relative"}
-               [:div {:class "relative rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer group"
-                      :on-click #(rf/dispatch [:audit->session-file-generate
-                                               (:id session)
-                                               (get export-dictionary (keyword (:type session)) "txt")])}
-                [tooltip (str "Download " (cs/upper-case
-                                           (get export-dictionary (keyword (:type session)) "txt")))]
-                [:> hero-outline-icon/ArrowDownTrayIcon {:class "h-5 w-5 text-gray-600"}]]])]]
+               [:> Tooltip {:content (str "Download "
+                                          (cs/upper-case
+                                           (get export-dictionary (keyword (:type session)) "txt")))}
+                [:div {:class "relative rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer group"
+                       :on-click #(rf/dispatch [:audit->session-file-generate
+                                                (:id session)
+                                                (get export-dictionary (keyword (:type session)) "txt")])}
+                 [:> hero-outline-icon/ArrowDownTrayIcon {:class "h-5 w-5 text-gray-600"}]]]])]]
 
           (when (-> session :labels :runbookFile)
             [:div {:class "text-xs text-gray-500"}
