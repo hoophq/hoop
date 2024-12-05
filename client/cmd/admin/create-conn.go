@@ -111,6 +111,10 @@ var createConnectionCmd = &cobra.Command{
 				if envVar["envvar:CONNECTION_STRING"] == "" {
 					styles.PrintErrorAndExit("missing required CONNECTION_STRING env for %v", pb.ConnectionTypeMongoDB)
 				}
+			case pb.ConnectionTypeHttpProxy:
+				if envVar["envvar:REMOTE_URL"] == "" {
+					styles.PrintErrorAndExit("missing required REMOTE_URL env for %v", pb.ConnectionTypeHttpProxy)
+				}
 			default:
 				styles.PrintErrorAndExit("invalid connection type %q", connType)
 			}
