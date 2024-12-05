@@ -32,6 +32,7 @@
      "/agents" [["" :agents]
                 ["/new" :new-agent]]
      "/organization" [["/users" :users]]
+     "/settings" [["/license" :license-management]]
      "/guardrails" [["" :guardrails]
                     ["/new" :create-guardrail]
                     [["/edit/" :guardrail-id] :edit-guardrail]]

@@ -188,7 +188,13 @@
                     (:label plugin)
                     (when (and free-license? (not (:free-feature? plugin)))
                       [:div {:class "text-xs text-gray-200 py-1 px-2 border border-gray-200 rounded-md"}
-                       "Upgrade"])]])]])
+                       "Upgrade"])]])
+                [:li
+                 [:a
+                  {:href (routes/url-for :license-management)
+                   :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-gray-800 "
+                               "block rounded-md py-2 pr-2 pl-9 text-sm leading-6")}
+                  "License"]]]])
 
             (when admin?
               [:> ui/Disclosure {:as "li"
