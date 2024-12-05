@@ -53,9 +53,7 @@
                              (:uri route))
                      :on-click (fn []
                                  (when (and free-license? (not (:free-feature? route)))
-                                   (js/window.Intercom
-                                    "showNewMessage"
-                                    "I want to upgrade my current plan")))
+                                   (rf/dispatch [:navigate :upgrade-plan])))
                      :class (str (hover-side-menu-link? (:uri route) current-route)
                                  (:enabled link-styles)
                                  (when (and free-license? (not (:free-feature? route)))
@@ -78,9 +76,7 @@
                              (:uri plugin))
                      :on-click (fn []
                                  (when (and free-license? (not (:free-feature? plugin)))
-                                   (js/window.Intercom
-                                    "showNewMessage"
-                                    "I want to upgrade my current plan")))
+                                   (rf/dispatch [:navigate :upgrade-plan])))
                      :class (str (hover-side-menu-link? (:uri plugin) current-route)
                                  (:enabled link-styles)
                                  (when (and free-license? (not (:free-feature? plugin)))
@@ -127,7 +123,7 @@
                               (:enabled link-styles))}
               [:div {:class "flex gap-3 items-center"}
                [:> hero-outline-icon/ShieldCheckIcon {:class (str "h-6 w-6 shrink-0 text-white")
-                                                    :aria-hidden "true"}]
+                                                      :aria-hidden "true"}]
                "Guardrails"]]]
             [:li
              [:a {:href (routes/url-for :agents)
@@ -153,9 +149,7 @@
                  [:a
                   {:on-click (fn []
                                (if free-license?
-                                 (js/window.Intercom
-                                  "showNewMessage"
-                                  "I want to upgrade my current plan")
+                                 (rf/dispatch [:navigate :upgrade-plan])
 
                                  (rf/dispatch [:navigate :manage-ask-ai])))
                    :href "#"
@@ -175,9 +169,7 @@
                     {:as "a"
                      :onClick (fn []
                                 (if (and free-license? (not (:free-feature? plugin)))
-                                  (js/window.Intercom
-                                   "showNewMessage"
-                                   "I want to upgrade my current plan")
+                                  (rf/dispatch [:navigate :upgrade-plan])
 
                                   (rf/dispatch [:plugins->navigate->manage-plugin (:name plugin)])))
                      :href "#"
@@ -209,9 +201,7 @@
                     {:as "a"
                      :onClick (fn []
                                 (if (and free-license? (not (:free-feature? plugin)))
-                                  (js/window.Intercom
-                                   "showNewMessage"
-                                   "I want to upgrade my current plan")
+                                  (rf/dispatch [:navigate :upgrade-plan])
 
                                   (rf/dispatch [:plugins->navigate->manage-plugin (:name plugin)])))
                      :href "#"

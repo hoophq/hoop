@@ -64,6 +64,7 @@
             [webapp.slack.slack-new-user :as slack-new-user]
             [webapp.subs :as subs]
             [webapp.views.home :as home]
+            [webapp.upgrade-plan.main :as upgrade-plan]
             [webapp.webclient.panel :as webclient]))
 
 (when (= config/release-type "hoop-ui")
@@ -154,6 +155,11 @@
 
 (defmethod routes/panels :home-redirect-panel []
   [layout :application-hoop [home/home-panel-hoop]])
+
+(defmethod routes/panels :upgrade-plan-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop [:div {:class "bg-gray-1 min-h-full h-max"}
+                             [upgrade-plan/main]]])
 
 (defmethod routes/panels :users-panel []
   [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}

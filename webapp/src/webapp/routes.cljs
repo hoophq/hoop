@@ -49,7 +49,8 @@
                   ["/filtered" :sessions-list-filtered-by-ids]
                   [["/" :session-id] :session-details]]
      "/signup" :signup-hoop
-     "/signup/callback" :signup-callback-hoop}]))
+     "/signup/callback" :signup-callback-hoop
+     "/upgrade-plan" :upgrade-plan}]))
 
 (defn query-params-parser
   [queries]
