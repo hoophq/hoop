@@ -1,6 +1,6 @@
 (ns webapp.components.modal
   (:require ["@heroicons/react/24/outline" :as hero-outline-icon]
-            ["@radix-ui/themes" :refer [Box Dialog VisuallyHidden ScrollArea]]
+            ["@radix-ui/themes" :refer [Box Dialog VisuallyHidden Tooltip]]
             [re-frame.core :as rf]))
 
 (defmulti markup identity)
@@ -22,15 +22,11 @@
                    "bg-white shadow-sm rounded-lg "
                    "mx-auto mt-16 lg:mt-large p-regular overflow-auto "
                    modal-size)}
-      [:div {:class (str "absolute right-4 top-4 p-2 rounded-full bg-gray-100"
-                         " hover:bg-gray-200 transition cursor-pointer z-10 group")
-             :on-click modal-on-click-out}
-       [:div {:class "absolute -bottom-10 left-1/2 flex-col hidden mt-6 w-max group-hover:flex items-center -translate-x-1/2"}
-        [:div {:class "w-3 h-3 -mb-2 bg-gray-900 transform rotate-45"}]
-        [:span {:class (str "relative bg-gray-900 rounded-md z-50 "
-                            "py-1.5 px-3.5 text-xs text-white leading-none whitespace-no-wrap shadow-lg")}
-         "Close"]]
-       [:> hero-outline-icon/XMarkIcon {:class "h-5 w-5 text-gray-600"}]]
+      [:> Tooltip {:content "Close"}
+       [:div {:class (str "absolute right-4 top-4 p-2 rounded-full bg-gray-100"
+                          " hover:bg-gray-200 transition cursor-pointer z-10 group")
+              :on-click modal-on-click-out}
+        [:> hero-outline-icon/XMarkIcon {:class "h-5 w-5 text-gray-600"}]]]
       component]]))
 (defmethod markup :default [_] nil)
 

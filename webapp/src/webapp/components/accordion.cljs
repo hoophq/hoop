@@ -40,7 +40,7 @@
 
       [:div {:className "flex flex-col items-start"}
        [:> Text {:size "5" :weight "bold" :className "text-[--gray-12]"} title]
-       [:> Text {:size "3" :className "text-[--gray-11]"} subtitle]]]
+       [:> Text {:size "3" :className "text-[--gray-11] text-left"} subtitle]]]
 
      [:div {:className "flex space-x-3 items-center"}
       (when show-icon? [status-icon status])
