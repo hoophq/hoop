@@ -12,10 +12,11 @@ const (
 	TerminalResizeTTY  = "AgentTerminalResizeTTY"
 	TerminalClose      = "AgentTerminalClose"
 
-	TCPConnectionClose     = "AgentCloseTCPConnection"
-	TCPConnectionWrite     = "AgentTCPConnectionWrite"
-	PGConnectionWrite      = "AgentPGConnectionWrite"
-	MySQLConnectionWrite   = "AgentMySQLConnectionWrite"
-	MSSQLConnectionWrite   = "AgentMSSQLConnectionWrite"
-	MongoDBConnectionWrite = "AgentMongoDBConnectionWrite"
+	HttpProxyConnectionWrite = "AgentHttpProxyConnectionWrite"
+	TCPConnectionClose       = "AgentCloseTCPConnection"
+	TCPConnectionWrite       = "AgentTCPConnectionWrite"
+	PGConnectionWrite        = "AgentPGConnectionWrite"
+	MySQLConnectionWrite     = "AgentMySQLConnectionWrite"
+	MSSQLConnectionWrite     = "AgentMSSQLConnectionWrite"
+	MongoDBConnectionWrite   = "AgentMongoDBConnectionWrite"
 )
