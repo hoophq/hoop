@@ -97,7 +97,7 @@
    "mssql" ""
    "mongodb" ""
    "custom" ""
-   "ssh" "ssh $SSH_URI -i $SSH_PRIVATE_KEY"
+   "ssh" "ssh -t -o StrictHostKeyChecking=accept-new $SSH_URI -i $SSH_PRIVATE_KEY bash"
    "oracledb" ""
    "" ""})
 
