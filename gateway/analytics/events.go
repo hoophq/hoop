@@ -14,6 +14,7 @@ const (
 	EventDeleteConnection = "hoop-delete-connection"
 
 	// users
+	EventSingleTenantFirstUserCreated     = "hoop-single-tenant-first-user-created"
 	EventUpdateUser           = "hoop-update-user"
 	EventCreateInvitedUser    = "hoop-create-invited-user"
 	EventCreateServiceAccount = "hoop-create-serviceaccount"

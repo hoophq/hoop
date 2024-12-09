@@ -8,6 +8,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/analytics"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"golang.org/x/crypto/bcrypt"
@@ -80,6 +82,17 @@ func Register(c *gin.Context) {
 		UserID: userID,
 		Name:   adminGroupName,
 	}
+	trackClient := analytics.New()
+	trackClient.MergeIdentifiedUserTrack(org.ID, user.Email, analytics.EventSingleTenantFirstUserCreated, nil)
+	trackClient.Identify(&types.APIContext{
+		OrgID: org.ID,
+		OrgName: org.Name,
+		UserName: user.Name,
+		UserID: user.Email,
+		UserEmail: user.Email,
+		UserGroups: []string{adminGroupName},
+		ApiURL: appconfig.Get().ApiURL(),
+	})
 
 	err = models.InsertUserGroups([]models.UserGroup{adminUserGroup})
 	if err != nil {
