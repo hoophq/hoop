@@ -18,6 +18,8 @@
     {"" :home-redirect
      "/" :home
      "/404" :404
+     "/agents" [["" :agents]
+                ["/new" :new-agent]]
      "/auth/callback" :auth-callback-hoop
      "/connections" [["" :connections]
                      ["/details" :connection-details]
@@ -25,21 +27,21 @@
                      [["/connections/" :connection-type "/new"] :onboarding-create-connection]]
      "/client" :editor-plugin
      "/dashboard" :dashboard
-     "/hoop-app" :hoop-app
-     "/login" :login-hoop
-     "/idplogin" :idplogin-hoop
-     "/logout" :logout-hoop
-     "/agents" [["" :agents]
-                ["/new" :new-agent]]
-     "/organization" [["/users" :users]]
-     "/settings" [["/license" :license-management]]
      "/guardrails" [["" :guardrails]
                     ["/new" :create-guardrail]
                     [["/edit/" :guardrail-id] :edit-guardrail]]
+     "/hoop-app" :hoop-app
+     "/idplogin" :idplogin-hoop
+     "/jira-templates" [["" :jira-templates]
+                        ["/new" :create-jira-template]
+                        [["/edit/" :jira-template-id] :edit-jira-template]]
+     "/login" :login-hoop
+     "/logout" :logout-hoop
      "/plugins" [["/manage/ask-ai" :manage-ask-ai]
                  ["/manage/jira" :manage-jira]
                  [["/reviews/" :review-id] :reviews-plugin-details]
                  [["/manage/" :plugin-name] :manage-plugin]]
+     "/organization" [["/users" :users]]
      "/register" :register-hoop
      "/reviews" :reviews-plugin
      "/runbooks" [["" :runbooks-plugin]
@@ -49,6 +51,7 @@
      "/sessions" [["" :sessions]
                   ["/filtered" :sessions-list-filtered-by-ids]
                   [["/" :session-id] :session-details]]
+     "/settings" [["/license" :license-management]]
      "/signup" :signup-hoop
      "/signup/callback" :signup-callback-hoop
      "/upgrade-plan" :upgrade-plan}]))
