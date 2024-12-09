@@ -1,8 +1,6 @@
 package analytics
 
 import (
-	"fmt"
-
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
