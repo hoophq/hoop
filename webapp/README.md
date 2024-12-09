@@ -171,6 +171,8 @@ Run a shadow-cljs action on this project's build id (without the colon, just `ap
 npx shadow-cljs <action> app
 ```
 
+> Make sure to bump the `package.json` version when making new Pull Requests running `npm version <new-sem-version>`
+
 ## Production
 
 Build the app with the `prod` profile:
