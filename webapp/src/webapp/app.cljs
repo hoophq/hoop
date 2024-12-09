@@ -27,6 +27,8 @@
             [webapp.dashboard.main :as dashboard]
             [webapp.guardrails.main :as guardrails]
             [webapp.guardrails.create-update-form :as guardrail-create-update]
+            [webapp.jira-templates.main :as jira-templates]
+            [webapp.jira-templates.create-update-form :as jira-templates-create-update]
             [webapp.events]
             [webapp.events.license]
             [webapp.events.agents]
@@ -55,6 +57,7 @@
             [webapp.events.slack-plugin]
             [webapp.events.users]
             [webapp.events.guardrails]
+            [webapp.events.jira-templates]
             [webapp.organization.users.main :as org-users]
             [webapp.plugins.views.manage-plugin :as manage-plugin]
             [webapp.plugins.views.plugins-configurations :as plugins-configurations]
@@ -145,7 +148,7 @@
 (defmethod routes/panels :license-management-panel []
   [layout :application-hoop
    [:div {:class "bg-gray-1 p-radix-7 min-h-full h-max"}
-   [license-management/main]]])
+    [license-management/main]]])
 
 (defmethod routes/panels :agents-panel []
   [layout :application-hoop
@@ -202,6 +205,26 @@
     [layout :application-hoop
      [:div {:class "bg-gray-1 min-h-full h-max relative"}
       [guardrail-create-update/main :edit]]]))
+
+(defmethod routes/panels :jira-templates-panel []
+  [layout :application-hoop
+   [:div {:class "bg-gray-1 p-radix-7 min-h-full h-max"}
+    [jira-templates/panel]]])
+
+(defmethod routes/panels :create-jira-template-panel []
+  (rf/dispatch [:jira-templates->clear-active-template])
+  [layout :application-hoop
+   [:div {:class "bg-gray-1 min-h-full h-max relative"}
+    [jira-templates-create-update/main :create]]])
+
+(defmethod routes/panels :edit-jira-template-panel []
+  (let [pathname (.. js/window -location -pathname)
+        current-route (bidi/match-route @routes/routes pathname)
+        guardrail-id (:jira-template-id (:route-params current-route))]
+    (rf/dispatch [:jira-templates->get-by-id guardrail-id])
+    [layout :application-hoop
+     [:div {:class "bg-gray-1 min-h-full h-max relative"}
+      [jira-templates-create-update/main :edit]]]))
 
 (defmethod routes/panels :editor-plugin-panel []
   (rf/dispatch [:destroy-page-loader])
