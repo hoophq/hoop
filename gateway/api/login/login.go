@@ -356,6 +356,11 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 	// first user is admin
 	if totalUsers == 0 {
 		userGroups = append(userGroups, types.GroupAdmin)
+		trackClient := analytics.New()
+		// When the first user is created, there's already an
+		// anonymous event tracked with his org id. We need to
+		// merge this anonymous event with the identified user
+		trackClient.MergeIdentifiedUserTrack(org.ID, uinfo.Email, analytics.EventSingleTenantFirstUserCreated, nil)
 	}
 
 	iuser, err := models.GetInvitedUserByEmail(uinfo.Email)

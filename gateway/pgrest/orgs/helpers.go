@@ -25,7 +25,7 @@ func CreateDefaultOrganization() (pgrest.OrgContext, error) {
 			return nil, fmt.Errorf("failed creating the default organization, err=%v", err)
 		}
 		client := analytics.New()
-		client.Track("", analytics.EventDefaultOrgCreated, map[string]any{
+		client.AnonymousTrack(orgID, analytics.EventDefaultOrgCreated, map[string]any{
 			"org-id":      orgID,
 			"auth-method": appconfig.Get().AuthMethod(),
 			"api-url":     appconfig.Get().ApiURL(),

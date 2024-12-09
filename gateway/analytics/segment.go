@@ -1,6 +1,8 @@
 package analytics
 
 import (
+	"fmt"
+
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
@@ -53,7 +55,55 @@ func (s *Segment) Identify(ctx *types.APIContext) {
 	})
 }
 
-// Track generates an event to segment, if the context is not set, it will emit an anoynimous event
+// AnonymousTrack generates an event to segment using
+// an anonymous id that then can be used to identify
+// the user with the function MergeIdentifiedUserTrack
+// references:
+// - https://segment.com/docs/connections/spec/best-practices-identify/#anonymousid-generation
+// - https://segment.com/docs/connections/spec/best-practices-identify/#merging-identified-and-anonymous-user-profiles
+func (s *Segment) AnonymousTrack(anonymousId, eventName string, properties map[string]any) {
+	if s.Client == nil || appconfig.Get().DoNotTrack() {
+		return
+	}
+	if properties == nil {
+		properties = map[string]any{}
+	}
+	properties["environment"] = environmentName
+	properties["auth-method"] = appconfig.Get().AuthMethod()
+	properties["api-url"] = appconfig.Get().ApiURL()
+
+	_ = s.Enqueue(analytics.Track{
+		AnonymousId: anonymousId,
+		Event:      eventName,
+		Properties: properties,
+	})
+}
+
+// MergeIdentifiedUserTrack generates an event that
+// merges the anonymous id with the identified user id.
+func (s *Segment) MergeIdentifiedUserTrack(anonymousId, userEmail, eventName string, properties map[string]any) {
+	if s.Client == nil || appconfig.Get().DoNotTrack() {
+		return
+	}
+
+	if properties == nil {
+		properties = map[string]any{}
+	}
+
+	properties["environment"] = environmentName
+	properties["email"] = userEmail
+	properties["auth-method"] = appconfig.Get().AuthMethod()
+	properties["api-url"] = appconfig.Get().ApiURL()
+
+	_ = s.Enqueue(analytics.Track{
+		AnonymousId: anonymousId,
+		UserId:      userEmail,
+		Event:       eventName,
+		Properties:  properties,
+	})
+}
+
+// Track generates an event to segment
 func (s *Segment) Track(userEmail, eventName string, properties map[string]any) {
 	if s.Client == nil || appconfig.Get().DoNotTrack() {
 		return
@@ -63,6 +113,8 @@ func (s *Segment) Track(userEmail, eventName string, properties map[string]any) 
 	}
 	properties["environment"] = environmentName
 	properties["email"] = userEmail
+	properties["auth-method"] = appconfig.Get().AuthMethod()
+	properties["api-url"] = appconfig.Get().ApiURL()
 	_ = s.Client.Enqueue(analytics.Track{
 		UserId:     userEmail,
 		Event:      eventName,
