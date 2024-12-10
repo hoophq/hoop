@@ -31,6 +31,7 @@ func (s *Segment) Identify(ctx *types.APIContext) {
 		// However we use the e-mail to avoid having to associate the
 		// user id with the e-mail.
 		UserId: ctx.UserEmail,
+		AnonymousId: ctx.UserAnonSubject,
 		Traits: analytics.NewTraits().
 			SetName(ctx.UserName).
 			SetEmail(ctx.UserEmail).
@@ -74,30 +75,6 @@ func (s *Segment) AnonymousTrack(anonymousId, eventName string, properties map[s
 		AnonymousId: anonymousId,
 		Event:      eventName,
 		Properties: properties,
-	})
-}
-
-// MergeIdentifiedUserTrack generates an event that
-// merges the anonymous id with the identified user id.
-func (s *Segment) MergeIdentifiedUserTrack(anonymousId, userEmail, eventName string, properties map[string]any) {
-	if s.Client == nil || appconfig.Get().DoNotTrack() {
-		return
-	}
-
-	if properties == nil {
-		properties = map[string]any{}
-	}
-
-	properties["environment"] = environmentName
-	properties["email"] = userEmail
-	properties["auth-method"] = appconfig.Get().AuthMethod()
-	properties["api-url"] = appconfig.Get().ApiURL()
-
-	_ = s.Enqueue(analytics.Track{
-		AnonymousId: anonymousId,
-		UserId:      userEmail,
-		Event:       eventName,
-		Properties:  properties,
 	})
 }
 
