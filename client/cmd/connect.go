@@ -13,6 +13,7 @@ import (
 
 	"github.com/briandowns/spinner"
 	"github.com/getsentry/sentry-go"
+	clientadmin "github.com/hoophq/hoop/client/cmd/admin"
 	"github.com/hoophq/hoop/client/cmd/styles"
 	clientconfig "github.com/hoophq/hoop/client/config"
 	"github.com/hoophq/hoop/client/proxy"
@@ -61,6 +62,13 @@ var (
 				os.Exit(1)
 			}
 			runConnect(args, clientEnvVars)
+		},
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) != 0 {
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
+			return clientadmin.GetConnections(toComplete), cobra.ShellCompDirectiveNoFileComp
+
 		},
 	}
 )
