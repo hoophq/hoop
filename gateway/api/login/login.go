@@ -360,7 +360,17 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 		// When the first user is created, there's already an
 		// anonymous event tracked with his org id. We need to
 		// merge this anonymous event with the identified user
-		trackClient.MergeIdentifiedUserTrack(org.ID, uinfo.Email, analytics.EventSingleTenantFirstUserCreated, nil)
+		trackClient.Identify(&types.APIContext{
+			OrgID:      org.ID,
+			OrgName: org.Name,
+			UserName: uinfo.Profile,
+			UserID: uinfo.Email,
+			UserAnonSubject: org.ID,
+			UserEmail: uinfo.Email,
+			UserGroups: userGroups,
+			ApiURL: appconfig.Get().ApiURL(),
+		})
+		trackClient.Track(uinfo.Email, analytics.EventSingleTenantFirstUserCreated, nil)
 	}
 
 	iuser, err := models.GetInvitedUserByEmail(uinfo.Email)

@@ -83,16 +83,17 @@ func Register(c *gin.Context) {
 		Name:   adminGroupName,
 	}
 	trackClient := analytics.New()
-	trackClient.MergeIdentifiedUserTrack(org.ID, user.Email, analytics.EventSingleTenantFirstUserCreated, nil)
 	trackClient.Identify(&types.APIContext{
 		OrgID: org.ID,
 		OrgName: org.Name,
 		UserName: user.Name,
 		UserID: user.Email,
+		UserAnonSubject: org.ID,
 		UserEmail: user.Email,
 		UserGroups: []string{adminGroupName},
 		ApiURL: appconfig.Get().ApiURL(),
 	})
+	trackClient.Track(user.Email, analytics.EventSingleTenantFirstUserCreated, nil)
 
 	err = models.InsertUserGroups([]models.UserGroup{adminUserGroup})
 	if err != nil {
