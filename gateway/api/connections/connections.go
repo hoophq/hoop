@@ -484,7 +484,7 @@ printjson(result);`
 	select {
 	case outcome := <-respCh:
 		if outcome.ExitCode != 0 {
-			log.Errorf("failed issuing plain exec: %v", err)
+			log.Errorf("failed issuing plain exec: %s, output=%v", outcome.String(), outcome.Output)
 			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("command failed: %s", outcome.Output)})
 			return
 		}
