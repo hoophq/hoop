@@ -450,6 +450,7 @@ dbs.databases.forEach(function(database) {
 printjson(result);`
 
 	default:
+		log.Warnf("unsupported database type: %v", currentConnectionType)
 		c.JSON(http.StatusBadRequest, gin.H{"message": "unsupported database type"})
 		return
 	}
@@ -483,6 +484,7 @@ printjson(result);`
 	select {
 	case outcome := <-respCh:
 		if outcome.ExitCode != 0 {
+			log.Errorf("failed issuing plain exec: %s, output=%v", outcome.String(), outcome.Output)
 			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("command failed: %s", outcome.Output)})
 			return
 		}
@@ -493,6 +495,7 @@ printjson(result);`
 		if currentConnectionType == pb.ConnectionTypeMongoDB {
 			var result []map[string]interface{}
 			if err := json.Unmarshal([]byte(outcome.Output), &result); err != nil {
+				log.Errorf("failed parsing mongo response: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse MongoDB response: %v", err)})
 				return
 			}
@@ -504,6 +507,7 @@ printjson(result);`
 		} else {
 			databases, err = parseDatabaseCommandOutput(outcome.Output)
 			if err != nil {
+				log.Errorf("failed parsing command output response: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse response: %v", err)})
 				return
 			}
