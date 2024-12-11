@@ -1,6 +1,6 @@
 (ns webapp.jira-templates.rules-table
   (:require
-   ["@radix-ui/themes" :refer [Box Flex Table Text Link]]
+   ["@radix-ui/themes" :refer [Box Flex Table Text Strong]]
    [webapp.components.forms :as forms]
    [webapp.jira-templates.rule-buttons :as rule-buttons]))
 
@@ -53,65 +53,72 @@
 
 (defn main [{:keys [state
                     select-state
-                    on-rule-field-change
-                    on-rule-select
-                    on-toggle-select
-                    on-toggle-all
-                    on-rules-delete
-                    on-rule-add]}]
+                    on-mapping-field-change
+                    on-mapping-select
+                    on-toggle-mapping-select
+                    on-toggle-all-mapping
+                    on-mapping-delete
+                    on-mapping-add]}]
   [:> Box {:class "space-y-radix-5"}
-   [:> Text {:size "3" :weight "bold" :class "text-[--gray-12]"}
-    "Integration details"]
-   [:> Table.Root {:size "2" :variant "surface"}
-    [:> Table.Header
-     [:> Table.Row {:align "center"}
-      (when @select-state
-        [:> Table.ColumnHeaderCell ""])
-      [:> Table.ColumnHeaderCell "Type"]
-      [:> Table.ColumnHeaderCell "Value"]
-      [:> Table.ColumnHeaderCell "Jira Field"]
-      [:> Table.ColumnHeaderCell "Details (Optional)"]]]
+   [:> Box
+    [:> Table.Root {:size "2" :variant "surface"}
+     [:> Table.Header
+      [:> Table.Row {:align "center"}
+       (when @select-state
+         [:> Table.ColumnHeaderCell ""])
+       [:> Table.ColumnHeaderCell "Type"]
+       [:> Table.ColumnHeaderCell "Value"]
+       [:> Table.ColumnHeaderCell "Jira Field"]
+       [:> Table.ColumnHeaderCell "Details (Optional)"]]]
 
-    [:> Table.Body
-     (doall
-      (for [[idx rule] (map-indexed vector @state)]
-        ^{:key idx}
-        [:> Table.Row {:align "center"}
-         (when @select-state
-           [:> Table.RowHeaderCell {:p "2" :width "20px"}
-            [:input {:type "checkbox"
-                     :checked (:selected rule)
-                     :on-change #(on-rule-select state idx)}]])
+     [:> Table.Body
+      (doall
+       (for [[idx rule] (map-indexed vector @state)]
+         ^{:key idx}
+         [:> Table.Row {:align "center"}
+          (when @select-state
+            [:> Table.RowHeaderCell {:p "2" :width "20px"}
+             [:input {:type "checkbox"
+                      :checked (:selected rule)
+                      :on-change #(on-mapping-select state idx)}]])
 
-         [:> Table.RowHeaderCell {:p "4" :width "160px"}
-          [forms/select
-           {:size "2"
-            :name "type"
-            :variant "ghost"
-            :not-margin-bottom? true
-            :on-change (fn [value]
+          [:> Table.RowHeaderCell {:p "4" :width "160px"}
+           [forms/select
+            {:size "2"
+             :name "type"
+             :variant "ghost"
+             :not-margin-bottom? true
+             :on-change (fn [value]
                         ;; Limpa os outros campos quando muda o type
-                         (on-rule-field-change state idx :type value)
-                         (on-rule-field-change state idx :value "")
-                         (on-rule-field-change state idx :jira_field "")
-                         (on-rule-field-change state idx :description ""))
-            :selected (:type rule)
-            :full-width? true
-            :options type-options}]]
+                          (on-mapping-field-change state idx :type value)
+                          (on-mapping-field-change state idx :value "")
+                          (on-mapping-field-change state idx :jira_field "")
+                          (on-mapping-field-change state idx :description ""))
+             :selected (:type rule)
+             :full-width? true
+             :options type-options}]]
 
-         [:> Table.Cell {:p "4"}
-          [rule-details rule state idx on-rule-field-change]]
+          [:> Table.Cell {:p "4"}
+           [rule-details rule state idx on-mapping-field-change]]
 
-         [:> Table.Cell {:p "4"}
-          [jira-field-input rule state idx on-rule-field-change]]
+          [:> Table.Cell {:p "4"}
+           [jira-field-input rule state idx on-mapping-field-change]]
 
-         [:> Table.Cell {:p "4"}
-          [details-input rule state idx on-rule-field-change]]]))]]
+          [:> Table.Cell {:p "4"}
+           [details-input rule state idx on-mapping-field-change]]]))]]
+
+    [:> Text {:as "p" :size "2" :mt "1" :class "text-[--gray-10]"}
+     [:> Strong
+      "Preset: "]
+     "Relates hoop.dev fields to Jira. "
+     [:> Strong
+      "Custom: "]
+     "Append a custom key-value re"]]
 
    [rule-buttons/main
-    {:on-rule-add #(on-rule-add state)
-     :on-toggle-select #(on-toggle-select select-state)
+    {:on-rule-add #(on-mapping-add state)
+     :on-toggle-select #(on-toggle-mapping-select select-state)
      :select-state select-state
      :selected? (every? :selected @state)
-     :on-toggle-all #(on-toggle-all state)
-     :on-rules-delete #(on-rules-delete state)}]])
+     :on-toggle-all #(on-toggle-all-mapping state)
+     :on-rules-delete #(on-mapping-delete state)}]])

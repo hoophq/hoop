@@ -1,7 +1,9 @@
 (ns webapp.jira-templates.main
-  (:require [re-frame.core :as rf]
-            ["lucide-react" :refer [Construction]]
-            ["@radix-ui/themes" :refer [Box Button Flex Text Heading]]))
+  (:require
+   ["@radix-ui/themes" :refer [Box Button Flex Heading Text]]
+   ["lucide-react" :refer [Construction]]
+   [re-frame.core :as rf]
+   [webapp.jira-templates.template-list :as template-list]))
 
 (defn panel []
   (let [jira-templates-rules-list (rf/subscribe [:jira-templates->list])]
@@ -33,18 +35,6 @@
           [:> Text {:size "2" :pt "5" :class "text-[--gray-11]"}
            "Need more information? Check out our JIRA templates documentation."]]
 
-         [:> Box
-          (for [rules (:data @jira-templates-rules-list)]
-            ^{:key (:id rules)}
-            [:> Box {:class (str "first:rounded-t-lg border-x border-t "
-                                 "last:rounded-b-lg bg-white last:border-b border-gray-200 "
-                                 "p-[--space-5]")}
-             [:> Flex {:justify "between" :align "center"}
-              [:> Box
-               [:> Text {:size "4" :weight "bold"} (:name rules)]
-               [:> Text {:as "p" :size "3" :class "text-[--gray-11]"} (:description rules)]]
-              [:> Button {:variant "soft"
-                          :color "gray"
-                          :size "3"
-                          :on-click #(rf/dispatch [:navigate :edit-jira-template {} :jira-template-id (:id rules)])}
-               "Configure"]]])])])))
+         [template-list/main
+          {:templates (:data @jira-templates-rules-list)
+           :on-configure #(rf/dispatch [:navigate :edit-jira-template {} :jira-template-id %])}])])))

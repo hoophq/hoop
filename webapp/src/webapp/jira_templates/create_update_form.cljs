@@ -1,12 +1,13 @@
 (ns webapp.jira-templates.create-update-form
   (:require
+   ["@radix-ui/themes" :refer [Box Flex Grid Heading Text]]
    [re-frame.core :as rf]
    [reagent.core :as r]
-   ["@radix-ui/themes" :refer [Box Grid Flex Heading Badge]]
    [webapp.components.loaders :as loaders]
-   [webapp.jira-templates.helpers :as helpers]
-   [webapp.jira-templates.form-header :as form-header]
    [webapp.jira-templates.basic-info :as basic-info]
+   [webapp.jira-templates.form-header :as form-header]
+   [webapp.jira-templates.helpers :as helpers]
+   [webapp.jira-templates.prompts-table :as prompts-table]
    [webapp.jira-templates.rules-table :as rules-table]))
 
 (defn jira-form [form-type template scroll-pos]
@@ -17,10 +18,7 @@
        [:form {:id "jira-form"
                :on-submit (fn [e]
                             (.preventDefault e)
-                            (let [data {:id @(:id state)
-                                        :name @(:name state)
-                                        :description @(:description state)
-                                        :jira_template @(:jira_template state)}]
+                            (let [data (helpers/prepare-payload state)]
                               (if (= :edit form-type)
                                 (rf/dispatch [:jira-templates->update-by-id data])
                                 (rf/dispatch [:jira-templates->create data]))))}
@@ -34,23 +32,55 @@
          [basic-info/main
           {:name (:name state)
            :description (:description state)
+           :project-key (:project_key state)
+           :issue-type (:issue_type_name state)
            :on-name-change #(reset! (:name state) %)
-           :on-description-change #(reset! (:description state) %)}]
+           :on-description-change #(reset! (:description state) %)
+           :on-project-key-change #(reset! (:project_key state) %)
+           :on-issue-type-change #(reset! (:issue_type_name state) %)}]
 
          [:> Grid {:columns "7" :gap "7"}
           [:> Box {:grid-column "span 2 / span 2"}
            [:> Flex {:align "center" :gap "2"}
-            [:> Heading {:as "h3" :size "4" :weight "medium"} "Configure rules"]]
-           [:p.text-sm.text-gray-500.mb-4
-            "Gorem ipsum dolor sit amet, consectetur adipiscing elit."]]
+            [:> Heading {:as "h3" :size "4" :weight "medium" :class "text-[--gray-12]"}
+             "Configure automated mapping"]]
+           [:> Text {:size "3" :class "text-[--gray-11]"}
+            "Append additional information to your Jira cards when executing a command in your connections."]]
 
           [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
            [rules-table/main
             (merge
-             {:title "Integration details"
-              :state (:jira_template state)
-              :select-state (:select-state state)}
-             handlers)]]]]]])))
+             {:state (:mapping state)
+              :select-state (:mapping-select-state state)}
+             (select-keys handlers
+                          [:on-mapping-field-change
+                           :on-mapping-select
+                           :on-toggle-mapping-select
+                           :on-toggle-all-mapping
+                           :on-mapping-delete
+                           :on-mapping-add]))]]]
+
+
+         [:> Grid {:columns "7" :gap "7"}
+          [:> Box {:grid-column "span 2 / span 2"}
+           [:> Flex {:align "center" :gap "2"}
+            [:> Heading {:as "h3" :size "4" :weight "medium" :class "text-[--gray-12]"}
+             "Configure manual prompt"]]
+           [:> Text {:size "3" :class "text-[--gray-11]"}
+            "Request additional information from executed commands."]]
+
+          [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
+           [prompts-table/main
+            (merge
+             {:state (:prompts state)
+              :select-state (:prompts-select-state state)}
+             (select-keys handlers
+                          [:on-prompt-field-change
+                           :on-prompt-select
+                           :on-toggle-prompt-select
+                           :on-toggle-all-prompts
+                           :on-prompt-delete
+                           :on-prompt-add]))]]]]]])))
 
 (defn- loading []
   [:div {:class "flex items-center justify-center rounded-lg border bg-white h-full"}

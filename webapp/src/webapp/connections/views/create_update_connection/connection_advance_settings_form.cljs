@@ -71,6 +71,24 @@
                          :default-value (or @guardrails [])
                          :on-change #(reset! guardrails (js->clj %))}]]]
 
+   [:> Grid {:columns "5" :gap "7"}
+    [:> Flex {:direction "column" :grid-column "span 2 / span 2"}
+     [:> Text {:size "4" :weight "bold" :class "text-gray-12"} "JIRA Integration"]
+     [:> Text {:size "3" :class "text-gray-11"} "Configure custom integration to JIRA services."]
+     [:> Link {:href "https://hoop.dev/docs/learn/jit-reviews"
+               :target "_blank"}
+      [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
+       [:> Callout.Icon
+        [:> ArrowUpRight {:size 16}]]
+       [:> Callout.Text
+        "Go to JIRA Integration"]]]]
+    [:> Box {:class "space-y-radix-5" :grid-column "span 3 / span 3"}
+     [multi-select/main {:options guardrails-options
+                         :id "guardrails-input"
+                         :name "guardrails-input"
+                         :default-value (or @guardrails [])
+                         :on-change #(reset! guardrails (js->clj %))}]]]
+
    (when (= "database" @connection-type)
      [:> Grid {:columns "5" :gap "7"}
       [:> Flex {:direction "column" :grid-column "span 2 / span 2"}
