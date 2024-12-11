@@ -14,18 +14,19 @@ import (
 )
 
 var (
-	connAgentFlag        string
-	connPuginFlag        []string
-	reviewersFlag        []string
-	connRedactTypesFlag  []string
-	connTypeFlag         string
-	connTagsFlag         []string
-	connSecretFlag       []string
-	connAccessModesFlag  []string
-	connSchemaFlag       string
-	connGuardRailRules   []string
-	skipStrictValidation bool
-	connOverwriteFlag    bool
+	connAgentFlag          string
+	connPuginFlag          []string
+	reviewersFlag          []string
+	connRedactTypesFlag    []string
+	connTypeFlag           string
+	connTagsFlag           []string
+	connSecretFlag         []string
+	connAccessModesFlag    []string
+	connSchemaFlag         string
+	connGuardRailRules     []string
+	connJiraIssueTemplates []string
+	skipStrictValidation   bool
+	connOverwriteFlag      bool
 
 	defaultAccessModes = []string{"connect", "exec", "runbooks"}
 )
@@ -43,6 +44,7 @@ func init() {
 	createConnectionCmd.Flags().StringSliceVar(&connAccessModesFlag, "access-modes", defaultAccessModes, "Access modes enabled for this connection. Accepted values: [runbooks, exec, connect]")
 	createConnectionCmd.Flags().StringVar(&connSchemaFlag, "schema", "", "Enable or disable the schema for this connection on the WebClient. Accepted values: [disabled, enabled]")
 	createConnectionCmd.Flags().StringSliceVar(&connGuardRailRules, "guardrail-rules", nil, "The id of the guard rail rules for this connection")
+	createConnectionCmd.Flags().StringSliceVar(&connJiraIssueTemplates, "jira-issue-templates", nil, "The id of the jira issue templates to associate with this connection")
 	createConnectionCmd.MarkFlagRequired("agent")
 }
 
@@ -140,6 +142,7 @@ var createConnectionCmd = &cobra.Command{
 			"redact_types":         connRedactTypesFlag,
 			"tags":                 connTagsFlag,
 			"guardrail_rules":      connGuardRailRules,
+			"jira_issue_templates": connJiraIssueTemplates,
 			"access_mode_runbooks": verifyAccessModeStatus("runbooks"),
 			"access_mode_exec":     verifyAccessModeStatus("exec"),
 			"access_mode_connect":  verifyAccessModeStatus("connect"),

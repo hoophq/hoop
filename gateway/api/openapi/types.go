@@ -240,6 +240,8 @@ type Connection struct {
 	AccessSchema string `json:"access_schema" binding:"required" enums:"enabled,disabled"`
 	// The guard rail association id rules
 	GuardRailRules []string `json:"guardrail_rules" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54,B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
+	// The jira issue templates ids associated to the connection
+	JiraIssueTemplates []string `json:"jira_issue_templates" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54,B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
 }
 
 type ExecRequest struct {
@@ -813,9 +815,6 @@ type JiraIntegration struct {
 	// The API token for Jira authentication
 	APIToken string `json:"api_token" binding:"required"`
 
-	// The default Jira project key
-	ProjectKey string `json:"project_key" binding:"required"`
-
 	Status JiraIntegrationStatus `json:"status"`
 
 	// The creation date and time of the integration
@@ -823,6 +822,27 @@ type JiraIntegration struct {
 
 	// The last update date and time of the integration
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
+}
+
+type JiraIssueTemplate struct {
+	ID            string         `json:"id"`
+	Name          string         `json:"name"`
+	Description   string         `json:"description"`
+	ProjectKey    string         `json:"project_key"`
+	IssueTypeName string         `json:"issue_type_name"`
+	MappingTypes  map[string]any `json:"mapping_types"`
+	PromptTypes   map[string]any `json:"prompt_types"`
+	CreatedAt     time.Time      `json:"created_at"`
+	UpdatedAt     time.Time      `json:"updated_at"`
+}
+
+type JiraIssueTemplateRequest struct {
+	Name          string         `json:"name"`
+	Description   string         `json:"description"`
+	ProjectKey    string         `json:"project_key"`
+	IssueTypeName string         `json:"issue_type_name"`
+	MappingTypes  map[string]any `json:"mapping_types"`
+	PromptTypes   map[string]any `json:"prompt_types"`
 }
 
 type GuardRailRuleRequest struct {

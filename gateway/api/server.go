@@ -430,6 +430,31 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		api.TrackRequest(analytics.EventUpdateJiraIntegration),
 		apijiraintegration.Put)
 
+	// Jira Integration Issue Templates routes
+	r.POST("/integrations/jira/issuetemplates",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apijiraintegration.CreateIssueTemplates,
+	)
+	r.PUT("/integrations/jira/issuetemplates/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apijiraintegration.UpdateIssueTemplates,
+	)
+	r.GET("/integrations/jira/issuetemplates",
+		r.AuthMiddleware,
+		apijiraintegration.ListIssueTemplates,
+	)
+	r.GET("/integrations/jira/issuetemplates/:id",
+		r.AuthMiddleware,
+		apijiraintegration.GetIssueTemplatesByID,
+	)
+	r.DELETE("/integrations/jira/issuetemplates/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apijiraintegration.DeleteIssueTemplates,
+	)
+
 	r.POST("/guardrails",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,

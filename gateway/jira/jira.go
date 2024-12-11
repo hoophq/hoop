@@ -89,7 +89,7 @@ func CreateIssue(orgId, summary, issueType, sessionID string) error {
 		SessionScript:  session.Script["data"][0:sessionScriptLength],
 	}
 
-	issue := createSessionJiraIssueTemplate(dbJiraIntegration.ProjectKey, summary, issueType, content)
+	issue := createSessionJiraIssueTemplate("", summary, issueType, content)
 	body, err := json.Marshal(issue)
 	if err != nil {
 		return fmt.Errorf("error serializing issue: %v", err)

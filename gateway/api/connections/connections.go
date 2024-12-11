@@ -91,6 +91,7 @@ func Post(c *gin.Context) {
 		AccessModeConnect:  req.AccessModeConnect,
 		AccessSchema:       req.AccessSchema,
 		GuardRailRules:     req.GuardRailRules,
+		JiraIssueTemplates: req.JiraIssueTemplates,
 	})
 	if err != nil {
 		log.Errorf("failed creating connection, err=%v", err)
@@ -187,6 +188,7 @@ func Put(c *gin.Context) {
 		AccessModeConnect:  req.AccessModeConnect,
 		AccessSchema:       req.AccessSchema,
 		GuardRailRules:     req.GuardRailRules,
+		JiraIssueTemplates: req.JiraIssueTemplates,
 	})
 	if err != nil {
 		switch err.(type) {
@@ -312,6 +314,7 @@ func List(c *gin.Context) {
 				AccessModeConnect:  conn.AccessModeConnect,
 				AccessSchema:       conn.AccessSchema,
 				GuardRailRules:     conn.GuardRailRules,
+				JiraIssueTemplates: conn.JiraIssueTemplates,
 			})
 		}
 
@@ -374,6 +377,7 @@ func Get(c *gin.Context) {
 		AccessModeConnect:  conn.AccessModeConnect,
 		AccessSchema:       conn.AccessSchema,
 		GuardRailRules:     conn.GuardRailRules,
+		JiraIssueTemplates: conn.JiraIssueTemplates,
 	})
 }
 
