@@ -48,6 +48,7 @@ func (s *Segment) Identify(ctx *types.APIContext) {
 	}
 	_ = s.Client.Enqueue(analytics.Group{
 		GroupId: ctx.OrgID,
+		AnonymousId: ctx.UserAnonSubject,
 		UserId:  ctx.UserID,
 		Traits: analytics.NewTraits().
 			SetName(orgName),
