@@ -9,15 +9,6 @@ import (
 	"gorm.io/gorm"
 )
 
-type ErrNotFoundJiraIssueTemplates struct {
-	ids []string
-}
-
-func (e *ErrNotFoundJiraIssueTemplates) Error() string {
-	return fmt.Sprintf("unable to create jira issue templates connection association, the following issue templates were not found: %q",
-		e.ids)
-}
-
 type ErrNotFoundGuardRailRules struct {
 	rules []string
 }
@@ -37,23 +28,23 @@ const (
 )
 
 type Connection struct {
-	OrgID              string            `gorm:"column:org_id"`
-	ID                 string            `gorm:"column:id"`
-	AgentID            sql.NullString    `gorm:"column:agent_id"`
-	Name               string            `gorm:"column:name"`
-	Command            pq.StringArray    `gorm:"column:command;type:text[]"`
-	Type               string            `gorm:"column:type"`
-	SubType            sql.NullString    `gorm:"column:subtype"`
-	Status             string            `gorm:"column:status"`
-	ManagedBy          sql.NullString    `gorm:"column:managed_by"`
-	Tags               pq.StringArray    `gorm:"column:_tags;type:text[]"`
-	AccessModeRunbooks string            `gorm:"column:access_mode_runbooks"`
-	AccessModeExec     string            `gorm:"column:access_mode_exec"`
-	AccessModeConnect  string            `gorm:"column:access_mode_connect"`
-	AccessSchema       string            `gorm:"column:access_schema"`
-	Envs               map[string]string `gorm:"column:envs;serializer:json;->"`
-	GuardRailRules     pq.StringArray    `gorm:"column:guardrail_rules;type:text[];->"`
-	JiraIssueTemplates pq.StringArray    `gorm:"column:jira_issue_templates;type:text[];->"`
+	OrgID               string            `gorm:"column:org_id"`
+	ID                  string            `gorm:"column:id"`
+	AgentID             sql.NullString    `gorm:"column:agent_id"`
+	Name                string            `gorm:"column:name"`
+	Command             pq.StringArray    `gorm:"column:command;type:text[]"`
+	Type                string            `gorm:"column:type"`
+	SubType             sql.NullString    `gorm:"column:subtype"`
+	Status              string            `gorm:"column:status"`
+	ManagedBy           sql.NullString    `gorm:"column:managed_by"`
+	Tags                pq.StringArray    `gorm:"column:_tags;type:text[]"`
+	AccessModeRunbooks  string            `gorm:"column:access_mode_runbooks"`
+	AccessModeExec      string            `gorm:"column:access_mode_exec"`
+	AccessModeConnect   string            `gorm:"column:access_mode_connect"`
+	AccessSchema        string            `gorm:"column:access_schema"`
+	Envs                map[string]string `gorm:"column:envs;serializer:json;->"`
+	GuardRailRules      pq.StringArray    `gorm:"column:guardrail_rules;type:text[];->"`
+	JiraIssueTemplateID sql.NullString    `gorm:"column:jira_issue_template_id"`
 
 	// Read Only fields
 	RedactEnabled bool           `gorm:"column:redact_enabled;->"`
@@ -98,6 +89,9 @@ type ConnectionJiraIssueTemplateTypes struct {
 }
 
 func UpsertConnection(c *Connection) error {
+	if c.JiraIssueTemplateID.String == "" {
+		c.JiraIssueTemplateID.Valid = false
+	}
 	if c.Status == "" {
 		c.Status = ConnectionStatusOffline
 	}
@@ -123,10 +117,7 @@ func UpsertConnection(c *Connection) error {
 			return fmt.Errorf("failed updating env vars from connection, reason=%v", err)
 		}
 
-		if err := updateGuardRailRules(tx, c); err != nil {
-			return err
-		}
-		return updateJiraIssueTemplates(tx, c)
+		return updateGuardRailRules(tx, c)
 	})
 }
 
@@ -157,37 +148,6 @@ func updateGuardRailRules(tx *gorm.DB, c *Connection) error {
 	}
 	if len(notFoundRules) > 0 {
 		return &ErrNotFoundGuardRailRules{rules: notFoundRules}
-	}
-	return nil
-}
-
-func updateJiraIssueTemplates(tx *gorm.DB, c *Connection) error {
-	issueTemplatesAssocList := dedupeResourceNames(c.JiraIssueTemplates)
-	// remove all associations
-	err := tx.Exec(`DELETE FROM private.jira_issue_templates_connections WHERE org_id = ? AND connection_id = ?`,
-		c.OrgID, c.ID).Error
-	if err != nil {
-		return fmt.Errorf("failed cleaning jira issue templates connections, reason=%v", err)
-	}
-
-	// add new rule associations only if the issue template exists
-	var notFoundTemplates []string
-	for _, issueTemplateID := range issueTemplatesAssocList {
-		var result map[string]any
-		err = tx.Raw(`
-			INSERT INTO private.jira_issue_templates_connections (org_id, connection_id, jira_issue_template_id)
-			VALUES (?, ?, ?)
-			RETURNING *`, c.OrgID, c.ID, issueTemplateID).
-			Scan(&result).Error
-		if err != nil {
-			return fmt.Errorf("failed creating jira issue templates connections association, reason=%v", err)
-		}
-		if len(result) == 0 {
-			notFoundTemplates = append(notFoundTemplates, issueTemplateID)
-		}
-	}
-	if len(notFoundTemplates) > 0 {
-		return &ErrNotFoundJiraIssueTemplates{ids: notFoundTemplates}
 	}
 	return nil
 }
@@ -223,32 +183,6 @@ func GetConnectionGuardRailRules(orgID, name string) (*ConnectionGuardRailRules,
 	return &conn, nil
 }
 
-func GetConnectionJiraIssueTemplateTypes(orgID, name string) (*ConnectionJiraIssueTemplateTypes, error) {
-	return nil, nil
-	// var conn ConnectionGuardRailRules
-	// err := DB.Model(&ConnectionGuardRailRules{}).Raw(`
-	// SELECT
-	// 	c.id, c.org_id, c.name,
-	// 	(
-	// 		SELECT json_agg(t.input) FROM private.jira_issue_templates t
-	// 		INNER JOIN private.jira_issue_templates_connections tc ON tc.connection_id = c.id AND tc.rule_id = t.id
-	// 	) AS mapping_types,
-	// 	(
-	// 		SELECT json_agg(t.output) FROM private.jira_issue_templates t
-	// 		INNER JOIN private.jira_issue_templates_connections tc ON tc.connection_id = c.id AND tc.rule_id = t.id
-	// 	) AS guardrail_output_rules
-	// FROM private.connections c
-	// WHERE c.org_id = ? AND c.name = ?
-	// `, orgID, name).First(&conn).Error
-	// if err != nil {
-	// 	if errors.Is(err, gorm.ErrRecordNotFound) {
-	// 		return nil, nil
-	// 	}
-	// 	return nil, err
-	// }
-	// return &conn, nil
-}
-
 func GetConnectionByNameOrID(orgID, nameOrID string) (*Connection, error) {
 	var conn Connection
 	err := DB.Model(&Connection{}).Raw(`
@@ -256,6 +190,7 @@ func GetConnectionByNameOrID(orgID, nameOrID string) (*Connection, error) {
 		c.id, c.org_id, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
 		c.agent_id, a.name AS agent_name, a.mode AS agent_mode,
+		c.jira_issue_template_id,
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
 		( SELECT envs FROM public.env_vars WHERE id = c.id ) AS envs,
 		COALESCE(dlpc.config, ARRAY[]::TEXT[]) AS redact_types,
@@ -264,12 +199,7 @@ func GetConnectionByNameOrID(orgID, nameOrID string) (*Connection, error) {
 		COALESCE((
 			SELECT array_agg(rule_id::TEXT) FROM private.guardrail_rules_connections
 			WHERE private.guardrail_rules_connections.connection_id = c.id
-		), ARRAY[]::TEXT[]) AS guardrail_rules,
-		COALESCE((
-			SELECT array_agg(id::TEXT) FROM private.jira_issue_templates_connections
-			WHERE private.jira_issue_templates_connections.connection_id = c.id
-			GROUP BY private.jira_issue_templates_connections.connection_id
-		), ARRAY[]::TEXT[]) AS jira_issue_templates
+		), ARRAY[]::TEXT[]) AS guardrail_rules
 	FROM private.connections c
 	LEFT JOIN private.plugins review ON review.name = 'review' AND review.org_id = @org_id
 	LEFT JOIN private.plugin_connections reviewc ON reviewc.connection_id = c.id AND reviewc.plugin_id = review.id
@@ -318,6 +248,7 @@ func ListConnections(orgID string, opts ConnectionFilterOption) ([]Connection, e
 	SELECT
 		c.id, c.org_id, c.agent_id, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
+		c.jira_issue_template_id,
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
 		( SELECT envs FROM public.env_vars WHERE id = c.id ) AS envs,
 		COALESCE(dlpc.config, ARRAY[]::TEXT[]) AS redact_types,
@@ -326,12 +257,7 @@ func ListConnections(orgID string, opts ConnectionFilterOption) ([]Connection, e
 		COALESCE((
 			SELECT array_agg(rule_id::TEXT) FROM private.guardrail_rules_connections
 			WHERE private.guardrail_rules_connections.connection_id = c.id
-		), ARRAY[]::TEXT[]) AS guardrail_rules,
-		COALESCE((
-			SELECT array_agg(id::TEXT) FROM private.jira_issue_templates_connections
-			WHERE private.jira_issue_templates_connections.connection_id = c.id
-			GROUP BY private.jira_issue_templates_connections.connection_id
-		), ARRAY[]::TEXT[]) AS jira_issue_templates
+		), ARRAY[]::TEXT[]) AS guardrail_rules
 	FROM private.connections c
 	LEFT JOIN private.plugins review ON review.name = 'review' AND review.org_id = @org_id
 	LEFT JOIN private.plugin_connections reviewc ON reviewc.connection_id = c.id AND reviewc.plugin_id = review.id

@@ -2,6 +2,7 @@ package models
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"gorm.io/gorm"
@@ -22,6 +23,73 @@ type JiraIssueTemplate struct {
 	PromptTypes       map[string]any `gorm:"column:prompt_types;serializer:json"`
 	CreatedAt         time.Time      `gorm:"column:created_at"`
 	UpdatedAt         time.Time      `gorm:"column:updated_at"`
+}
+
+type MappingType struct {
+	Description string `json:"description"`
+	Type        string `json:"type"`
+	Value       string `json:"value"`
+	JiraField   string `json:"jira_field"`
+}
+
+type PromptType struct {
+	Description string `json:"description"`
+	Label       string `json:"label"`
+	Required    bool   `json:"required"`
+	JiraField   string `json:"jira_field"`
+}
+
+func (t *JiraIssueTemplate) DecodeMappingTypes() (map[string]MappingType, map[string]PromptType, error) {
+	mappingTypes := map[string]MappingType{}
+	items, err := decodeTypesToMapList(t.MappingTypes)
+	if err != nil {
+		return nil, nil, fmt.Errorf("unable to decode mapping_types: %v", err)
+	}
+	for _, obj := range items {
+		jiraField := fmt.Sprintf("%v", obj["jira_field"])
+		mappingTypes[jiraField] = MappingType{
+			Description: fmt.Sprintf("%v", obj["description"]),
+			Type:        fmt.Sprintf("%v", obj["type"]),
+			Value:       fmt.Sprintf("%v", obj["value"]),
+			JiraField:   jiraField,
+		}
+	}
+
+	promptTypes := map[string]PromptType{}
+	items, err = decodeTypesToMapList(t.PromptTypes)
+	if err != nil {
+		return nil, nil, fmt.Errorf("unable to decode prompt_types: %v", err)
+	}
+	for _, obj := range items {
+		jiraField := fmt.Sprintf("%v", obj["jira_field"])
+		promptTypes[jiraField] = PromptType{
+			Description: fmt.Sprintf("%v", obj["description"]),
+			Label:       fmt.Sprintf("%v", obj["label"]),
+			Required:    fmt.Sprintf("%v", obj["required"]) == "true",
+			JiraField:   jiraField,
+		}
+	}
+	return mappingTypes, promptTypes, nil
+}
+
+func decodeTypesToMapList(templateTypes map[string]any) ([]map[string]any, error) {
+	obj, ok := templateTypes["items"]
+	if !ok || obj == nil {
+		return nil, fmt.Errorf(`missing "items" attribute`)
+	}
+	items, ok := obj.([]any)
+	if !ok {
+		return nil, fmt.Errorf(`unable to parse "items" attribute, type=%T`, obj)
+	}
+	res := []map[string]any{}
+	for i, entry := range items {
+		data, ok := entry.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("unable to parse item (%v), type=%T", i, entry)
+		}
+		res = append(res, data)
+	}
+	return res, nil
 }
 
 func CreateJiraIssueTemplates(issue *JiraIssueTemplate) error {
@@ -59,16 +127,20 @@ func UpdateJiraIssueTemplates(issue *JiraIssueTemplate) error {
 	return res.Error
 }
 
-func GetJiraIssueTemplatesByID(orgID, id string) (*JiraIssueTemplate, error) {
+func GetJiraIssueTemplatesByID(orgID, id string) (*JiraIssueTemplate, *JiraIntegration, error) {
+	config, err := GetJiraIntegration(orgID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("unable to verify jira integration: %v", err)
+	}
 	var issue JiraIssueTemplate
 	if err := DB.Table(tableJiraIssueTemplates).Where("org_id = ? AND id = ?", orgID, id).
 		First(&issue).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrNotFound
+			return nil, config, ErrNotFound
 		}
-		return nil, err
+		return nil, config, err
 	}
-	return &issue, nil
+	return &issue, config, nil
 }
 
 func ListJiraIssueTemplates(orgID string) ([]*JiraIssueTemplate, error) {
@@ -80,7 +152,7 @@ func ListJiraIssueTemplates(orgID string) ([]*JiraIssueTemplate, error) {
 }
 
 func DeleteJiraIssueTemplates(orgID, id string) error {
-	if _, err := GetJiraIssueTemplatesByID(orgID, id); err != nil {
+	if _, _, err := GetJiraIssueTemplatesByID(orgID, id); err != nil {
 		return err
 	}
 	return DB.Table(tableJiraIssueTemplates).

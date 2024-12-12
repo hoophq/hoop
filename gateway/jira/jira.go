@@ -1,285 +1,187 @@
 package jira
 
 import (
-	"encoding/base64"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"slices"
+	"strings"
 
 	"github.com/hoophq/hoop/common/log"
-	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
-	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
-	sessionstorage "github.com/hoophq/hoop/gateway/storagev2/session"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
-type orgContext struct {
-	orgID string
+type ErrInvalidIssueFields struct {
+	isRequiredErr bool
+	resources     []string
 }
 
-func (oc orgContext) GetOrgID() string {
-	return oc.orgID
+func (e *ErrInvalidIssueFields) Error() string {
+	if e.isRequiredErr {
+		return fmt.Sprintf("unable to parse fields, missing required fields: %v", e.resources)
+	}
+	return fmt.Sprintf("unable to parse fields, invalid preset mapping types values: %v", e.resources)
+
 }
 
-type sessionParseOption struct {
-	withLineBreak bool
-	events        []string
+func TransitionIssue(config *models.JiraIntegration, issueKey, name string) error {
+	if config == nil {
+		return nil
+	}
+	issueTransitions, err := listIssueTransitions(config, issueKey)
+	if err != nil {
+		return err
+	}
+	var availableNames []string
+	var issueTransitionID string
+	for _, item := range issueTransitions.Items {
+		availableNames = append(availableNames, strings.ToLower(item.Name))
+		if strings.EqualFold(name, item.Name) && item.IsAvailable {
+			issueTransitionID = item.ID
+			break
+		}
+	}
+	if issueTransitionID == "" {
+		return fmt.Errorf("unable to find a issue transition matching %v, issue=%v, transition-names=%v",
+			name, issueKey, availableNames)
+	}
+	issueTransition := map[string]any{
+		"transition": map[string]string{
+			"id": issueTransitionID,
+		},
+	}
+	jsonPayload, _ := json.Marshal(issueTransition)
+	apiURL := fmt.Sprintf("%s/rest/api/3/issue/%s/transitions", config.URL, issueKey)
+	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		return fmt.Errorf("failed creating request, reason=%v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.SetBasicAuth(config.User, config.APIToken)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed transitioning jira issue %s, reason=%v", issueKey, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 204 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("unable to transition jira issue, status=%v, body=%v",
+			resp.StatusCode, string(body))
+	}
+	return nil
 }
 
-func parseSessionToFile(s *types.Session, opts sessionParseOption) []byte {
-	output := []byte{}
-	for _, eventList := range s.EventStream {
-		event := eventList.(types.SessionEventStream)
-		eventType, _ := event[1].(string)
-		eventData, _ := base64.StdEncoding.DecodeString(event[2].(string))
+func listIssueTransitions(config *models.JiraIntegration, issueKey string) (*IssueTransition, error) {
+	apiURL := fmt.Sprintf("%s/rest/api/3/issue/%s/transitions", config.URL, issueKey)
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed creating issue transition request, reason=%v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.SetBasicAuth(config.User, config.APIToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed listing issue transitions for %s, reason=%v", issueKey, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unable to list transitions, api-url=%v, key=%v, status=%v, body=%v",
+			apiURL, issueKey, resp.StatusCode, string(body))
+	}
+	var obj IssueTransition
+	if err := json.NewDecoder(resp.Body).Decode(&obj); err != nil {
+		return nil, fmt.Errorf("failed decoding issue transitions, key=%s, reason=%v", issueKey, err)
+	}
+	return &obj, nil
+}
 
-		if !slices.Contains(opts.events, eventType) {
+func CreateIssue(issueTemplate *models.JiraIssueTemplate, config *models.JiraIntegration, customFields CustomFields) (*IssueResponse, error) {
+	if customFields == nil {
+		return nil, fmt.Errorf("custom fields map is empty")
+	}
+	log.Infof("creating jira issue with fields: %v", customFields)
+	issueFields := IssueFields[CustomFields]{
+		Project:      Project{Key: issueTemplate.ProjectKey},
+		Summary:      "Hoop Session",
+		Issuetype:    Issuetype{Name: issueTemplate.IssueTypeName},
+		CustomFields: customFields,
+	}
+	issuePayload, err := json.Marshal(map[string]any{"fields": issueFields})
+	if err != nil {
+		return nil, fmt.Errorf("failed encoding issue payload, reason=%v", err)
+	}
+	apiURL := fmt.Sprintf("%s/rest/api/3/issue", config.URL)
+	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(issuePayload))
+	if err != nil {
+		return nil, fmt.Errorf("failed creating request, reason=%v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.SetBasicAuth(config.User, config.APIToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed creating jira issue, reason=%v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 201 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unable to create jira issue, status=%v, body=%v",
+			resp.StatusCode, string(body))
+	}
+	var response IssueResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return nil, fmt.Errorf("failed decoding jira issue response, reason=%v", err)
+	}
+	return &response, nil
+}
+
+func ParseIssueFields(tmpl *models.JiraIssueTemplate, customFields CustomFields, session types.Session) (CustomFields, error) {
+	if customFields == nil {
+		customFields = CustomFields{}
+	}
+	newCustomFields := CustomFields{}
+	mappingTypes, promptTypes, err := tmpl.DecodeMappingTypes()
+	if err != nil {
+		return nil, err
+	}
+	invalidPresetFields, missingRequiredFields := []string{}, []string{}
+	for jiraField, promptType := range promptTypes {
+		val, ok := customFields[jiraField]
+		if !ok {
+			if promptType.Required {
+				missingRequiredFields = append(missingRequiredFields, fmt.Sprintf("%q", jiraField))
+			}
 			continue
 		}
-
-		switch eventType {
-		case "i":
-			output = append(output, eventData...)
-		case "o", "e":
-			output = append(output, eventData...)
+		newCustomFields[jiraField] = val
+	}
+	if len(missingRequiredFields) > 0 {
+		return nil, &ErrInvalidIssueFields{isRequiredErr: true, resources: missingRequiredFields}
+	}
+	presetFields := loadDefaultPresetFields(session)
+	for jiraField, mappingType := range mappingTypes {
+		switch mappingType.Type {
+		case "preset":
+			presetVal, ok := presetFields[mappingType.Value]
+			if !ok {
+				invalidPresetFields = append(invalidPresetFields, fmt.Sprintf("%q", mappingType.Value))
+				continue
+			}
+			newCustomFields[jiraField] = presetVal
+		case "custom":
+			newCustomFields[jiraField] = mappingType.Value
+		default:
+			log.Warnf("mapping type (%v) not found", mappingType.Type)
 		}
-		if opts.withLineBreak {
-			output = append(output, '\n')
-		}
 	}
-
-	return output
-}
-
-func CreateIssue(orgId, summary, issueType, sessionID string) error {
-	dbJiraIntegration, err := models.GetJiraIntegration(orgId)
-	if err != nil {
-		log.Warnf("Failed to get Jira integration: %v", err)
-		return fmt.Errorf("failed to get Jira integration: %w", err)
+	if len(invalidPresetFields) > 0 {
+		return nil, &ErrInvalidIssueFields{resources: invalidPresetFields}
 	}
-	if dbJiraIntegration == nil {
-		log.Warnf("No Jira integration found for org_id: %s", orgId)
-		return fmt.Errorf("no Jira integration found")
-	}
-
-	if dbJiraIntegration.Status != models.JiraIntegrationStatusActive {
-		return fmt.Errorf("jira integration is not active for org_id: %s", orgId)
-	}
-
-	jiraCtx := orgContext{orgID: orgId}
-	sessiondb := pgsession.New()
-
-	session, err := sessiondb.FetchOne(jiraCtx, sessionID)
-	if err != nil {
-		return fmt.Errorf("fetch session error: %v", err)
-	}
-
-	sessionScriptLength := len(session.Script["data"])
-	if sessionScriptLength > 1000 {
-		sessionScriptLength = 1000
-	}
-
-	content := CreateSessionJiraIssueTemplate{
-		UserName:       session.UserName,
-		ConnectionName: session.Connection,
-		SessionID:      sessionID,
-		SessionScript:  session.Script["data"][0:sessionScriptLength],
-	}
-
-	issue := createSessionJiraIssueTemplate("", summary, issueType, content)
-	body, err := json.Marshal(issue)
-	if err != nil {
-		return fmt.Errorf("error serializing issue: %v", err)
-	}
-
-	// Create the request to JIRA
-	req, err := createJiraRequest(orgId, "POST", "/rest/api/3/issue", body)
-	if err != nil {
-		return err
-	}
-
-	// Send the request
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("error sending request: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// Read the response
-	respBody, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("failed to create issue: %s", string(respBody))
-	}
-
-	log.Infof("Issue created successfully!")
-	log.Infof("Updating session")
-
-	// Parse the response to get the issue key
-	var issueResponse struct {
-		Key string `json:"key"`
-	}
-
-	if err := json.Unmarshal(respBody, &issueResponse); err != nil {
-		return fmt.Errorf("error parsing issue response: %v", err)
-	}
-
-	if err := sessiondb.UpdateJiraIssue(orgId, content.SessionID, issueResponse.Key); err != nil {
-		return fmt.Errorf("error updating session with Jira issue: %v", err)
-	}
-
-	log.Infof("Session updated with Jira issue key: %s", issueResponse.Key)
-	return nil
-}
-
-// Function to get the current issue description
-func getIssueDescription(orgId, issueKey string) (map[string]interface{}, error) {
-	req, err := createJiraRequest(orgId, "GET", fmt.Sprintf("/rest/api/3/issue/%s", issueKey), nil)
-	if err != nil {
-		return nil, fmt.Errorf("error creating request to get issue: %v", err)
-	}
-
-	// Send the request
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("error sending request: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// Check if the response was successful
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch issue description, status: %d", resp.StatusCode)
-	}
-
-	// Read the response
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("error reading response: %v", err)
-	}
-
-	// Parse the JSON response to get the description
-	var issueData map[string]interface{}
-	if err := json.Unmarshal(body, &issueData); err != nil {
-		return nil, fmt.Errorf("error parsing JSON: %v", err)
-	}
-
-	// Access the issue fields and description
-	fields, ok := issueData["fields"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("unable to access issue fields")
-	}
-
-	description, ok := fields["description"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("unable to access issue description")
-	}
-
-	return description, nil
-}
-
-func sendJiraIssueUpdate(orgID, issueKey string, issue map[string]interface{}) error {
-	payloadBytes, err := json.Marshal(issue)
-	if err != nil {
-		return fmt.Errorf("failed to serialize update payload: %v", err)
-	}
-
-	req, err := createJiraRequest(orgID, "PUT", fmt.Sprintf("/rest/api/3/issue/%s", issueKey), payloadBytes)
-	if err != nil {
-		return fmt.Errorf("failed to create request for updating issue: %v", err)
-	}
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send update request: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusNoContent {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("failed to update issue description. Status: %s, Body: %s", resp.Status, string(respBody))
-	}
-
-	log.Infof("Issue description updated successfully!")
-	return nil
-}
-
-func UpdateJiraIssueContent(actionType, orgId, sessionID string, newInfo ...interface{}) error {
-	err := hasJiraIntegrationEnabled(orgId)
-	switch err {
-	case errJiraIntegrationDisabled:
-		return nil
-	case nil:
-	default:
-		return err
-	}
-
-	jiraCtx := orgContext{orgID: orgId}
-	session, err := sessionstorage.FindOne(jiraCtx, sessionID)
-	if err != nil {
-		return fmt.Errorf("fetch session error: %v", err)
-	}
-
-	currentDescription, err := getIssueDescription(orgId, session.JiraIssue)
-	if err != nil {
-		return fmt.Errorf("failed to fetch current issue description: %v", err)
-	}
-
-	contentList, ok := currentDescription["content"].([]interface{})
-	if !ok {
-		return fmt.Errorf("failed to assert content as []interface{}")
-	}
-
-	var issue map[string]interface{}
-
-	switch actionType {
-	case "add-create-review":
-		newInfo := AddCreateReviewIssueTemplate{
-			ApiURL:    appconfig.Get().ApiURL(),
-			SessionID: sessionID,
-		}
-
-		issue = updateReviewJiraIssueTemplate(contentList, newInfo)
-	case "add-review-status":
-		issue = addNewReviewByUserIssueTemplate(contentList, newInfo[0].(AddNewReviewByUserIssueTemplate))
-	case "add-review-rejected", "add-review-revoked":
-		newInfo := "rejected"
-		if actionType != "add-review-rejected" {
-			newInfo = "revoked"
-		}
-
-		issue = addReviewRejectedOrRevokedIssueTemplate(contentList, newInfo)
-	case "add-review-ready":
-		newInfo := AddReviewReadyIssueTemplate{
-			ApiURL:    appconfig.Get().ApiURL(),
-			SessionID: sessionID,
-		}
-
-		issue = addReviewReadyIssueTemplate(contentList, newInfo)
-	case "add-session-executed":
-		events := []string{"o", "e"}
-		payload := parseSessionToFile(session, sessionParseOption{withLineBreak: true, events: events})
-
-		payloadLength := len(payload)
-		if payloadLength > 5000 {
-			payloadLength = 5000
-		}
-
-		newInfo := AddSessionExecutedIssueTemplate{
-			Payload: string(payload[0:payloadLength]),
-		}
-
-		if payloadLength > 0 {
-			issue = addSessionExecutedIssueTemplate(contentList, newInfo)
-		}
-	default:
-		return fmt.Errorf("unknown actionType: %s", actionType)
-	}
-
-	sendJiraIssueUpdate(orgId, session.JiraIssue, issue)
-	return nil
+	return newCustomFields, nil
 }

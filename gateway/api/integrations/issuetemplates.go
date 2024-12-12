@@ -59,7 +59,7 @@ func ListIssueTemplates(c *gin.Context) {
 //	@Router			/integrations/jira/issuetemplates/{id} [get]
 func GetIssueTemplatesByID(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	issue, err := models.GetJiraIssueTemplatesByID(ctx.GetOrgID(), c.Param("id"))
+	issue, _, err := models.GetJiraIssueTemplatesByID(ctx.GetOrgID(), c.Param("id"))
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})

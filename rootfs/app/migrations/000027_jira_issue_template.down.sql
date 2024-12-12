@@ -1,6 +1,6 @@
 BEGIN;
 
 DROP TABLE private.jira_issue_templates;
-DROP TABLE private.jira_issue_templates_connections;
+ALTER TABLE private.connections DROP COLUMN jira_issue_template_id;
 
 COMMIT;
