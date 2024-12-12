@@ -1,36 +1,38 @@
 (ns webapp.webclient.panel
-  (:require ["@codemirror/commands" :as cm-commands]
-            ["@codemirror/lang-sql" :refer [MSSQL MySQL PostgreSQL PLSQL sql]]
-            ["@codemirror/language" :as cm-language]
-            ["@codemirror/legacy-modes/mode/clojure" :as cm-clojure]
-            ["@codemirror/legacy-modes/mode/javascript" :as cm-javascript]
-            ["@codemirror/legacy-modes/mode/python" :as cm-python]
-            ["@codemirror/legacy-modes/mode/ruby" :as cm-ruby]
-            ["@codemirror/legacy-modes/mode/shell" :as cm-shell]
-            ["@codemirror/state" :as cm-state]
-            ["@codemirror/view" :as cm-view]
-            ["@heroicons/react/20/solid" :as hero-solid-icon]
-            ["@uiw/codemirror-theme-dracula" :refer [dracula]]
-            ["@uiw/codemirror-theme-github" :refer [githubDark]]
-            ["@uiw/codemirror-theme-nord" :refer [nord]]
-            ["@uiw/codemirror-theme-sublime" :refer [sublime]]
-            ["@uiw/react-codemirror" :as CodeMirror]
-            ["allotment" :refer [Allotment]]
-            ["codemirror-copilot" :refer [clearLocalCache inlineCopilot]]
-            ["@radix-ui/themes" :refer [Button]]
-            [clojure.string :as cs]
-            [re-frame.core :as rf]
-            [reagent.core :as r]
-            [webapp.components.forms :as forms]
-            [webapp.webclient.aside.main :as aside]
-            [webapp.webclient.codemirror.extensions :as extensions]
-            [webapp.webclient.log-area.main :as log-area]
-            [webapp.webclient.quickstart :as quickstart]
-            [webapp.webclient.exec-multiples-connections.exec-list :as multiple-connections-exec-list-component]
-            [webapp.webclient.runbooks.form :as runbooks-form]
-            [webapp.formatters :as formatters]
-            [webapp.subs :as subs]
-            [webapp.config :as config]))
+  (:require
+   ["@codemirror/commands" :as cm-commands]
+   ["@codemirror/lang-sql" :refer [MSSQL MySQL PLSQL PostgreSQL sql]]
+   ["@codemirror/language" :as cm-language]
+   ["@codemirror/legacy-modes/mode/clojure" :as cm-clojure]
+   ["@codemirror/legacy-modes/mode/javascript" :as cm-javascript]
+   ["@codemirror/legacy-modes/mode/python" :as cm-python]
+   ["@codemirror/legacy-modes/mode/ruby" :as cm-ruby]
+   ["@codemirror/legacy-modes/mode/shell" :as cm-shell]
+   ["@codemirror/state" :as cm-state]
+   ["@codemirror/view" :as cm-view]
+   ["@heroicons/react/20/solid" :as hero-solid-icon]
+   ["@radix-ui/themes" :refer [Button]]
+   ["@uiw/codemirror-theme-dracula" :refer [dracula]]
+   ["@uiw/codemirror-theme-github" :refer [githubDark]]
+   ["@uiw/codemirror-theme-nord" :refer [nord]]
+   ["@uiw/codemirror-theme-sublime" :refer [sublime]]
+   ["@uiw/react-codemirror" :as CodeMirror]
+   ["allotment" :refer [Allotment]]
+   ["codemirror-copilot" :refer [clearLocalCache inlineCopilot]]
+   [clojure.string :as cs]
+   [re-frame.core :as rf]
+   [reagent.core :as r]
+   [webapp.components.forms :as forms]
+   [webapp.config :as config]
+   [webapp.formatters :as formatters]
+   [webapp.jira-templates.prompt-form :as prompt-form]
+   [webapp.subs :as subs]
+   [webapp.webclient.aside.main :as aside]
+   [webapp.webclient.codemirror.extensions :as extensions]
+   [webapp.webclient.exec-multiples-connections.exec-list :as multiple-connections-exec-list-component]
+   [webapp.webclient.log-area.main :as log-area]
+   [webapp.webclient.quickstart :as quickstart]
+   [webapp.webclient.runbooks.form :as runbooks-form]))
 
 (defn discover-connection-type [connection]
   (cond
@@ -70,8 +72,18 @@
       (reset! timer (js/setTimeout #(save-code-to-localstorage code-string) 1000))
       (reset! script code-string))))
 
+(defn- get-template-from-connection [connection]
+  (when-let [template-id  "template_1"
+            ;;  (:jira_template connection)
+             ]
+    (let [template @(rf/subscribe [:jira-templates->template-by-id template-id])]
+      template)))
+
 (defn- submit-task [e script selected-connections atom-exec-list-open? metadata script-response]
-  (let [connection-type (discover-connection-type (first selected-connections))
+  (let [connection (first selected-connections)
+        connection-type (discover-connection-type connection)
+        jira-template (get-template-from-connection connection)
+        prompts (get-in jira-template [:prompt_types :items])
         change-to-tabular? (and (some (partial = connection-type) ["mysql" "postgres" "sql-server" "oracledb" "mssql" "database"])
                                 (< (count @script-response) 1))
         selected-db (.getItem js/localStorage "selected-database")
@@ -91,12 +103,26 @@
       (reset! atom-exec-list-open? true)
 
       (if (first selected-connections)
-        (do
-          (when change-to-tabular?
-            (reset! log-area/selected-tab "Tabular"))
-          (rf/dispatch [:editor-plugin->exec-script {:script final-script
-                                                     :connection-name (:name (first selected-connections))
-                                                     :metadata (metadata->json-stringify metadata)}]))
+        (if (seq prompts)
+                  ;; Se houver prompts, mostra o modal de formulário
+          (rf/dispatch [:modal->open
+                        {:content [prompt-form/main
+                                   {:prompts prompts
+                                    :on-submit (fn [prompt-data]
+                                                 (rf/dispatch [:modal->close])
+                                                 (rf/dispatch [:editor-plugin->exec-script
+                                                               {:script script
+                                                                :connection-name (:name connection)
+                                                                :metadata (merge metadata
+                                                                                 {:jira_template_id (:jira_template connection)
+                                                                                  :prompts prompt-data})}]))}]}])
+
+          (do
+            (when change-to-tabular?
+              (reset! log-area/selected-tab "Tabular"))
+            (rf/dispatch [:editor-plugin->exec-script {:script final-script
+                                                       :connection-name (:name connection)
+                                                       :metadata (metadata->json-stringify metadata)}])))
 
         (rf/dispatch [:show-snackbar {:level :info
                                       :text "You must choose a connection"}])))))
@@ -419,6 +445,7 @@
     (rf/dispatch [:connections->get-connections])
     (rf/dispatch [:audit->clear-session])
     (rf/dispatch [:plugins->get-my-plugins])
+    (rf/dispatch [:jira-templates->get-all])
     (fn []
       (clearLocalCache)
       (rf/dispatch [:editor-plugin->get-run-connection-list])

@@ -122,3 +122,10 @@
  :jira-templates->active-template
  (fn [db _]
    (:jira-templates->active-template db)))
+
+(rf/reg-sub
+ :jira-templates->template-by-id
+ :<- [:jira-templates->list]
+ (fn [templates [_ id]]
+   (when-let [template-list (:data templates)]
+     (first (filter #(= (:id %) id) template-list)))))
