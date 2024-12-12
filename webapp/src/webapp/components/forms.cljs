@@ -87,13 +87,14 @@
             :min min
             :max max
             :step step
-            :value value
             :on-change on-change
             :on-keyDown on-keyDown
             :on-blur on-blur
             :on-focus on-focus
             :disabled (or disabled false)
             :required (or required false)}
+           (when value
+             {:value value})
            (when defaultValue
              {:defaultValue defaultValue}))
           (when (= type "password")
@@ -155,7 +156,6 @@
       :id (or id "")
       :rows (or rows 5)
       :name (or name "")
-      :value (or value "")
       :autoFocus autoFocus
       :placeholder placeholder
       :on-change on-change
@@ -164,7 +164,9 @@
       :disabled (or disabled false)
       :required (or required false)}
      (when defaultValue
-       {:defaultValue defaultValue}))]])
+       {:defaultValue defaultValue})
+     (when value
+       {:value value}))]])
 
 (defn- option
   [item _]

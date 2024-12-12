@@ -149,9 +149,9 @@
             [forms/textarea {:label "Command"
                              :on-change #(reset! connection-command (-> % .-target .-value))
                              :placeholder "$ your command"
+                             :defaultValue @connection-command
                              :id "command-line"
-                             :rows 2
-                             :value @connection-command}]]]]
+                             :rows 2}]]]]
 
          (and (= @connection-type "application")
               (= @connection-subtype "tcp"))
