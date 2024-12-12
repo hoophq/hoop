@@ -11,9 +11,9 @@ func getSchemaQuery(connType pb.ConnectionType, dbName string) string {
 	case pb.ConnectionTypePostgres:
 		return getPostgresSchemaQuery(dbName)
 	case pb.ConnectionTypeMSSQL:
-		return getMSSQLSchemaQuery(dbName)
+		return getMSSQLSchemaQuery()
 	case pb.ConnectionTypeMySQL:
-		return getMySQLSchemaQuery(dbName)
+		return getMySQLSchemaQuery()
 	case pb.ConnectionTypeOracleDB:
 		return getOracleDBSchemaQuery()
 	case pb.ConnectionTypeMongoDB:
@@ -88,8 +88,8 @@ WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
 ORDER BY schema_name, object_type, object_name, a.attnum;`, dbName)
 }
 
-func getMSSQLSchemaQuery(dbName string) string {
-	return fmt.Sprintf(`
+func getMSSQLSchemaQuery() string {
+	return `
 SET NOCOUNT ON;
 WITH object_info AS (
     SELECT DISTINCT
@@ -114,7 +114,6 @@ WITH object_info AS (
     ) pk ON pk.object_id = o.object_id AND pk.column_id = c.column_id
     LEFT JOIN sys.foreign_key_columns fk ON fk.parent_object_id = o.object_id AND fk.parent_column_id = c.column_id
     WHERE o.type IN ('U', 'V')
-        AND DB_NAME() = '%s'
 ),
 index_list AS (
     SELECT 
@@ -130,7 +129,6 @@ index_list AS (
     JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
     JOIN sys.columns col ON ic.object_id = col.object_id AND ic.column_id = col.column_id
     WHERE OBJECT_SCHEMA_NAME(i.object_id) IS NOT NULL
-        AND DB_NAME() = '%s'
     GROUP BY 
         OBJECT_SCHEMA_NAME(i.object_id),
         OBJECT_NAME(i.object_id),
@@ -160,48 +158,47 @@ LEFT JOIN index_list i ON o.schema_name = i.schema_name
 ORDER BY 
     o.schema_name,
     o.object_name,
-    o.column_name;`, dbName, dbName)
+    o.column_name;`
 }
 
-func getMySQLSchemaQuery(dbName string) string {
-	return fmt.Sprintf(`
+func getMySQLSchemaQuery() string {
+	return `
 	SELECT 
-			c.TABLE_SCHEMA as schema_name,
-			CASE WHEN t.TABLE_TYPE = 'BASE TABLE' THEN 'table' ELSE 'view' END as object_type,
-			c.TABLE_NAME as object_name,
-			c.COLUMN_NAME as column_name,
-			c.DATA_TYPE as column_type,
-			c.IS_NULLABLE = 'YES' as not_null,
-			c.COLUMN_DEFAULT as column_default,
-			CASE WHEN c.COLUMN_KEY = 'PRI' THEN 1 ELSE 0 END as is_primary_key,
-			CASE WHEN c.COLUMN_KEY = 'MUL' THEN 1 ELSE 0 END as is_foreign_key,
-			s.INDEX_NAME as index_name,
-			GROUP_CONCAT(s.COLUMN_NAME ORDER BY s.SEQ_IN_INDEX) as index_columns,
-			s.NON_UNIQUE = 0 as index_is_unique,
-			s.INDEX_NAME = 'PRIMARY' as index_is_primary
+		c.TABLE_SCHEMA as schema_name,
+		CASE WHEN t.TABLE_TYPE = 'BASE TABLE' THEN 'table' ELSE 'view' END as object_type,
+		c.TABLE_NAME as object_name,
+		c.COLUMN_NAME as column_name,
+		c.DATA_TYPE as column_type,
+		c.IS_NULLABLE = 'YES' as not_null,
+		c.COLUMN_DEFAULT as column_default,
+		CASE WHEN c.COLUMN_KEY = 'PRI' THEN 1 ELSE 0 END as is_primary_key,
+		CASE WHEN c.COLUMN_KEY = 'MUL' THEN 1 ELSE 0 END as is_foreign_key,
+		s.INDEX_NAME as index_name,
+		GROUP_CONCAT(s.COLUMN_NAME ORDER BY s.SEQ_IN_INDEX) as index_columns,
+		s.NON_UNIQUE = 0 as index_is_unique,
+		s.INDEX_NAME = 'PRIMARY' as index_is_primary
 	FROM INFORMATION_SCHEMA.COLUMNS c
 	JOIN INFORMATION_SCHEMA.TABLES t 
-			ON c.TABLE_SCHEMA = t.TABLE_SCHEMA 
-			AND c.TABLE_NAME = t.TABLE_NAME
+		ON c.TABLE_SCHEMA = t.TABLE_SCHEMA 
+		AND c.TABLE_NAME = t.TABLE_NAME
 	LEFT JOIN INFORMATION_SCHEMA.STATISTICS s 
-			ON c.TABLE_SCHEMA = s.TABLE_SCHEMA 
-			AND c.TABLE_NAME = s.TABLE_NAME 
-			AND c.COLUMN_NAME = s.COLUMN_NAME
-	WHERE c.TABLE_SCHEMA = '%s'
-			AND c.TABLE_SCHEMA NOT IN ('information_schema', 'performance_schema', 'mysql', 'pg_catalog', 'sys')
+		ON c.TABLE_SCHEMA = s.TABLE_SCHEMA 
+		AND c.TABLE_NAME = s.TABLE_NAME 
+		AND c.COLUMN_NAME = s.COLUMN_NAME
+	WHERE c.TABLE_SCHEMA NOT IN ('information_schema', 'performance_schema', 'mysql', 'pg_catalog', 'sys')
 	GROUP BY 
-			c.TABLE_SCHEMA,
-			t.TABLE_TYPE,
-			c.TABLE_NAME,
-			c.COLUMN_NAME,
-			c.DATA_TYPE,
-			c.IS_NULLABLE,
-			c.COLUMN_DEFAULT,
-			c.COLUMN_KEY,
-			s.INDEX_NAME,
-			s.NON_UNIQUE,
-			c.ORDINAL_POSITION
-	ORDER BY c.TABLE_NAME, c.ORDINAL_POSITION;`, dbName)
+		c.TABLE_SCHEMA,
+		t.TABLE_TYPE,
+		c.TABLE_NAME,
+		c.COLUMN_NAME,
+		c.DATA_TYPE,
+		c.IS_NULLABLE,
+		c.COLUMN_DEFAULT,
+		c.COLUMN_KEY,
+		s.INDEX_NAME,
+		s.NON_UNIQUE,
+		c.ORDINAL_POSITION
+	ORDER BY c.TABLE_NAME, c.ORDINAL_POSITION;`
 }
 
 func getOracleDBSchemaQuery() string {
