@@ -68,9 +68,9 @@
           [forms/input
            {:size "2"
             :placeholder "Adicional information"
-            :value (:details prompt)
+            :value (:description prompt)
             :not-margin-bottom? true
-            :on-change #(on-prompt-field-change state idx :details (-> % .-target .-value))}]]]))]]
+            :on-change #(on-prompt-field-change state idx :description (-> % .-target .-value))}]]]))]]
 
    [rule-buttons/main
     {:on-rule-add #(on-prompt-add state)

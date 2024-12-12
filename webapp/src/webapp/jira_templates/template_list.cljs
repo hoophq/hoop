@@ -1,9 +1,10 @@
 (ns webapp.jira-templates.template-list
   (:require
-   ["@radix-ui/themes" :refer [Box Button Flex Text]]
+   ["@radix-ui/themes" :refer [Box Button Grid Heading Text]]
    ["lucide-react" :refer [ChevronDown ChevronUp Circle]]
    [re-frame.core :as rf]
-   [reagent.core :as r]))
+   [reagent.core :as r]
+   [webapp.connections.views.create-update-connection.main :as create-update-connection]))
 
 ;; Mock data
 (def mock-connections
@@ -34,46 +35,56 @@
   (filter #(= (:jira_template %) template-id) mock-connections))
 
 (defn- connections-panel [{:keys [name connections]}]
-  [:div {:class "px-6 py-4 bg-gray-50 border-t"}
-   [:div {:class "mb-2 text-sm font-medium"}
-    "Connections List"]
-   [:div {:class "text-xs text-gray-500 mb-4"}
-    "Check what connections are using this template in their setup."]
-   [:div {:class "space-y-1"}
-    (for [connection connections]
-      ^{:key (:name connection)}
-      [:div {:class "flex items-center justify-between py-2"}
-       [:div {:class "flex items-center gap-2"}
-        [:> Circle {:size 14 :class "text-gray-400"}]
-        [:span {:class "text-sm"} (:name connection)]]
-       [:> Button {:size "1"
-                   :variant "soft"
-                   :class "text-xs"}
-        "Configure"]])]])
+  [:> Box {:px "7" :py "5" :class "border-t rounded-b-6 bg-white"}
+   [:> Grid {:columns "7" :gap "7"}
+    [:> Box {:grid-column "span 2 / span 2"}
+     [:> Heading {:as "h4" :size "4" :weight "medium" :class "text-[--gray-12]"}
+      "Connections List"]
+     [:> Text {:size "3" :class "text-[--gray-11]"}
+      "Check what connections are using this template in their setup."]]
+
+    [:> Box {:class "h-fit border border-[--gray-a6] rounded-md" :grid-column "span 5 / span 5"}
+     (for [connection connections]
+       ^{:key (:name connection)}
+       [:> Box {:p "2" :class "flex items-center justify-between last:border-b-0 border-b border-[--gray-a6]"}
+        [:div {:class "flex items-center gap-2"}
+         [:> Circle {:size 14 :class "text-gray-400"}]
+         [:span {:class "text-sm"} (:name connection)]]
+        [:> Button {:size "1"
+                    :variant "soft"
+                    :color "gray"
+                    :on-click (fn []
+                                (rf/dispatch [:plugins->get-my-plugins])
+                                (rf/dispatch [:connections->get-connection {:connection-name (:name connection)}])
+                                (rf/dispatch [:modal->open {:content [create-update-connection/main :update connection]}]))}
+         "Configure"]])]]])
 
 (defn template-item [{:keys [id name description connections on-configure]}]
   (let [show-connections? (r/atom false)]
     (fn []
       [:div {:class (str "first:rounded-t-6 last:rounded-b-6 data-[state=open]:bg-[--accent-2] "
-                         "border-[--gray-a6] data-[disabled]:opacity-70 data-[disabled]:cursor-not-allowed border "
-                         (when @show-connections? " bg-gray-50"))}
-       [:div {:class "px-6 py-4 flex justify-between items-center"}
+                         "border-[--gray-a6] border first:border-b-0"
+                         (when @show-connections? " bg-[--accent-2]"))}
+       [:> Box {:p "5" :class "flex justify-between items-center"}
         [:div {:class "flex flex-col"}
-         [:span {:class "text-sm font-medium"} name]
-         [:span {:class "text-sm text-gray-500"} description]]
-        [:div {:class "flex items-center gap-2"}
-         [:> Button {:size "1"
+         [:> Heading {:as "h3" :size "5" :weight "medium" :class "text-[--gray-12]"}
+          name]
+         [:> Text {:size "3" :class "text-[--gray-11]"} description]]
+        [:div {:class "flex items-center gap-4"}
+         [:> Button {:size "3"
                      :variant "soft"
                      :color "gray"
-                     :class "text-xs"
                      :on-click #(on-configure id)}
           "Configure"]
-         [:button {:class "text-xs text-gray-700 hover:text-gray-900 flex items-center gap-1"
-                   :on-click #(swap! show-connections? not)}
-          "Connections"
-          (if @show-connections?
-            [:> ChevronUp {:size 14}]
-            [:> ChevronDown {:size 14}])]]]
+         (when-not (empty? connections)
+           [:> Button {:size "1"
+                       :variant "ghost"
+                       :color "gray"
+                       :on-click #(swap! show-connections? not)}
+            "Connections"
+            (if @show-connections?
+              [:> ChevronUp {:size 14}]
+              [:> ChevronDown {:size 14}])])]]
        (when @show-connections?
          [connections-panel {:name name :connections connections}])])))
 

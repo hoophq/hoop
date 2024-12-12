@@ -8,7 +8,7 @@
    [webapp.jira-templates.form-header :as form-header]
    [webapp.jira-templates.helpers :as helpers]
    [webapp.jira-templates.prompts-table :as prompts-table]
-   [webapp.jira-templates.rules-table :as rules-table]))
+   [webapp.jira-templates.mapping-table :as mapping-table]))
 
 (defn jira-form [form-type template scroll-pos]
   (let [state (helpers/create-form-state template)
@@ -48,7 +48,7 @@
             "Append additional information to your Jira cards when executing a command in your connections."]]
 
           [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
-           [rules-table/main
+           [mapping-table/main
             (merge
              {:state (:mapping state)
               :select-state (:mapping-select-state state)}

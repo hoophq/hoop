@@ -5,14 +5,14 @@
   {:type ""
    :value ""
    :jira_field ""
-   :details ""
+   :description ""  ;; mudou de details para description na nova estrutura
    :selected false})
 
 (defn create-empty-prompt []
   {:label ""
    :jira_field ""
    :required true
-   :details ""
+   :description ""  ;; mudou de details para description na nova estrutura
    :selected false})
 
 (defn- format-mapping-rule [rule]
@@ -21,7 +21,7 @@
     {:type (:type rule)
      :value (:value rule)
      :jira_field (:jira_field rule)
-     :details (:details rule)
+     :description (:description rule)
      :selected false}))
 
 (defn- format-prompt [prompt]
@@ -30,7 +30,7 @@
     {:label (:label prompt)
      :jira_field (:jira_field prompt)
      :required (:required prompt)
-     :details (:details prompt)
+     :description (:description prompt)
      :selected false}))
 
 (defn- format-mapping-rules [rules]
@@ -49,11 +49,12 @@
    :description (r/atom (or (:description initial-data) ""))
    :project_key (r/atom (or (:project_key initial-data) ""))
    :issue_type_name (r/atom (or (:issue_type_name initial-data) ""))
-   :mapping (r/atom (format-mapping-rules (:mapping initial-data)))
-   :prompts (r/atom (format-prompts (:prompts initial-data)))
+   :mapping (r/atom (format-mapping-rules (get-in initial-data [:mapping_types :items])))
+   :prompts (r/atom (format-prompts (get-in initial-data [:prompt_types :items])))
    :mapping-select-state (r/atom false)
    :prompts-select-state (r/atom false)})
 
+;; Mantido exatamente igual, apenas mudando o nome do campo de details para description nos comentários
 (defn create-form-handlers [state]
   {:on-mapping-field-change (fn [rules-atom idx field value]
                               (swap! rules-atom assoc-in [idx field] value))
@@ -107,7 +108,6 @@
    :on-prompt-add (fn [prompts-atom]
                     (swap! prompts-atom conj (create-empty-prompt)))})
 
-;; Remove campos vazios antes de enviar ao servidor
 (defn remove-empty-mapping [mappings]
   (remove (fn [rule]
             (or (empty? (:type rule))
@@ -121,11 +121,11 @@
                 (empty? (:jira_field prompt))))
           prompts))
 
-;; Prepara o payload final para envio
 (defn prepare-payload [state]
-  {:name @(:name state)
+  {:id @(:id state)
+   :name @(:name state)
    :description @(:description state)
    :project_key @(:project_key state)
    :issue_type_name @(:issue_type_name state)
-   :mapping (vec (remove-empty-mapping @(:mapping state)))
-   :prompts (vec (remove-empty-prompts @(:prompts state)))})
+   :mapping_types {:items (vec (remove-empty-mapping @(:mapping state)))}
+   :prompt_types {:items (vec (remove-empty-prompts @(:prompts state)))}})

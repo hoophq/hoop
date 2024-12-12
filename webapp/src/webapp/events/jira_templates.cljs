@@ -2,26 +2,34 @@
   (:require
    [re-frame.core :as rf]))
 
-;; Mock data for testing
 (def mock-templates
-  [{:id "1"
+  [{:id "template_1"
+    :name "template_1"
+    :description "Description with dummy data as reference."
+    :project_key "HT"
+    :issue_type_name "Hoop Task"
+    :mapping_types {:items [{:description "Hoop Connection Name"
+                             :type "preset"
+                             :value "session.connection"
+                             :jira_field "customfield_10050"}
+                            {:description "Hoop Session ID"
+                             :type "preset"
+                             :value "session.id"
+                             :jira_field "customfield_10051"}]}
+    :prompt_types {:items [{:description "Squad"
+                            :required true
+                            :label "Squad Name"
+                            :jira_field "customfield_10059"}]}}
+   {:id "banking+prod_mongodb"
     :name "banking+prod_mongodb"
     :description "Default rules for Banking squad's production mongodb databases."
-    :jira_template [{:type "hoop.dev"
-                     :value "session_id"
-                     :jira_field "ID da Sessão"
-                     :description "Relaciona Session ID do hoop.dev no campo ID da Sessão no Jira"}
-                    {:type "custom"
-                     :value "Banking"
-                     :jira_field "custom_0072"
-                     :description "Adiciona o valor 'Banking' no campo Squad nos cards do Jira"}]}
-   {:id "2"
-    :name "payments+postgres"
-    :description "Template for payments team postgres access"
-    :jira_template [{:type "hoop.dev"
-                     :value "database_name"
-                     :jira_field "Database"
-                     :description "Maps database name to Jira field"}]}])
+    :project_key "HT"
+    :issue_type_name "Hoop Task"
+    :mapping_types {:items [{:description "Hoop Review ID"
+                             :type "custom"
+                             :value "review-id-test-it hey ho"
+                             :jira_field "customfield_10052"}]}
+    :prompt_types {:items []}}])
 
 (rf/reg-event-fx
  :jira-templates->get-all
@@ -30,140 +38,87 @@
    #_{:fx [[:dispatch
             [:fetch {:method "GET"
                      :uri "/jira-templates"
-                     :on-success (fn [templates]
-                                   (rf/dispatch [:jira-templates->set-all templates]))
-                     :on-failure (fn [error]
-                                   (rf/dispatch [:jira-templates->set-all nil error]))}]]]
-      :db (assoc db :jira-templates->list {:status :loading
-                                           :data []})}
+                     :on-success #(rf/dispatch [:jira-templates->set-all %])
+                     :on-failure #(rf/dispatch [:jira-templates->set-all nil])}]]]
+      :db (assoc db :jira-templates->list {:status :loading :data []})}
 
-   ;; Using mock data
-   {:db (assoc db :jira-templates->list {:status :ready
-                                         :data mock-templates})}))
+   ;; Mock response
+   {:db (assoc db :jira-templates->list
+               {:status :ready
+                :data mock-templates})}))
 
 (rf/reg-event-fx
  :jira-templates->get-by-id
  (fn [{:keys [db]} [_ id]]
-   ;; TODO: Uncomment when API is ready
-   #_{:fx [[:dispatch
+   ;; TODO: Uncomment quando API estiver pronta
+   #_{:db (assoc db :jira-templates->active-template {:status :loading
+                                                      :data {}})
+      :fx [[:dispatch
             [:fetch {:method "GET"
                      :uri (str "/jira-templates/" id)
-                     :on-success (fn [template]
-                                   (rf/dispatch [:jira-templates->set-active-template template]))
-                     :on-failure (fn [error]
-                                   (rf/dispatch [:jira-templates->set-all nil error]))}]]]
-      :db (assoc db :jira-templates->active-template {:status :loading
-                                                      :data {}})}
+                     :on-success #(rf/dispatch [:jira-templates->set-active-template %])
+                     :on-failure #(rf/dispatch [:jira-templates->set-active-template nil])}]]]}
 
-   ;; Using mock data
-   {:db (assoc db :jira-templates->active-template
-               {:status :ready
-                :data (first (filter #(= (:id %) id) mock-templates))})}))
+   ;; Mock: procura o template nos dados mock
+   (let [template (first (filter #(= (:id %) id) mock-templates))]
+     {:db (assoc db :jira-templates->active-template
+                 {:status :ready
+                  :data template})})))
 
 (rf/reg-event-db
  :jira-templates->set-all
  (fn [db [_ templates]]
    (assoc db :jira-templates->list {:status :ready :data templates})))
 
-(defn remove-empty-rules [rules]
-  (remove (fn [rule]
-            (or (empty? (:type rule))
-                (empty? (:value rule))
-                (empty? (:jira_field rule))))
-          rules))
-
-(defn sanitize-template [template]
-  (update template :jira_template remove-empty-rules))
+(rf/reg-event-db
+ :jira-templates->set-active-template
+ (fn [db [_ template]]
+   (assoc db :jira-templates->active-template {:status :ready :data template})))
 
 (rf/reg-event-fx
  :jira-templates->create
  (fn [_ [_ template]]
-   ;; TODO: Uncomment when API is ready
-   #_{:fx [[:dispatch
-            [:fetch {:method "POST"
-                     :uri "/jira-templates"
-                     :body (sanitize-template template)
-                     :on-success (fn []
-                                   (rf/dispatch [:jira-templates->get-all])
-                                   (rf/dispatch [:navigate :jira-templates]))
-                     :on-failure (fn [error]
-                                   (println :jira-templates->create template error))}]]]}
-
-   ;; Mock success response
-   {:fx [[:dispatch [:jira-templates->get-all]]
-         [:dispatch [:navigate :jira-templates]]]}))
+   (js/console.log "Create Template Payload:" (clj->js template))  ;; Log do payload
+   {:fx [[:dispatch
+          [:fetch {:method "POST"
+                   :uri "/jira-templates"
+                   :body template
+                   :on-success (fn []
+                                 (rf/dispatch [:jira-templates->get-all])
+                                 (rf/dispatch [:navigate :jira-templates]))
+                   :on-failure #(println :jira-templates->create template %)}]]]}))
 
 (rf/reg-event-fx
  :jira-templates->update-by-id
  (fn [_ [_ template]]
-   ;; TODO: Uncomment when API is ready
-   #_{:fx [[:dispatch
-            [:fetch {:method "PUT"
-                     :uri (str "/jira-templates/" (:id template))
-                     :body (sanitize-template template)
-                     :on-success (fn []
-                                   (rf/dispatch [:jira-templates->get-all])
-                                   (rf/dispatch [:navigate :jira-templates]))
-                     :on-failure (fn [error]
-                                   (println :jira-templates->update-by-id template error))}]]]}
-
-   ;; Mock success response
-   {:fx [[:dispatch [:jira-templates->get-all]]
-         [:dispatch [:navigate :jira-templates]]]}))
+   (js/console.log "Update Template Payload:" (clj->js template))  ;; Log do payload
+   {:fx [[:dispatch
+          [:fetch {:method "PUT"
+                   :uri (str "/jira-templates/" (:id template))
+                   :body template
+                   :on-success (fn []
+                                 (rf/dispatch [:jira-templates->get-all])
+                                 (rf/dispatch [:navigate :jira-templates]))
+                   :on-failure #(println :jira-templates->update-by-id template %)}]]]}))
 
 (rf/reg-event-fx
  :jira-templates->delete-by-id
  (fn [_ [_ id]]
-   ;; TODO: Uncomment when API is ready
-   #_{:fx [[:dispatch
-            [:fetch {:method "DELETE"
-                     :uri (str "/jira-templates/" id)
-                     :on-success (fn []
-                                   (rf/dispatch [:jira-templates->get-all])
-                                   (rf/dispatch [:navigate :jira-templates]))
-                     :on-failure (fn [error]
-                                   (println :jira-templates->delete-by-id id error))}]]]}
+   {:fx [[:dispatch
+          [:fetch {:method "DELETE"
+                   :uri (str "/jira-templates/" id)
+                   :on-success (fn []
+                                 (rf/dispatch [:jira-templates->get-all])
+                                 (rf/dispatch [:navigate :jira-templates]))
+                   :on-failure #(println :jira-templates->delete-by-id id %)}]]]}))
 
-   ;; Mock success response
-   {:fx [[:dispatch [:jira-templates->get-all]]
-         [:dispatch [:navigate :jira-templates]]]}))
-
-;; Rest of the events remain the same as they handle local state
-(rf/reg-event-fx
- :jira-templates->set-active-template
- (fn [{:keys [db]} [_ template]]
-   (let [{:keys [id name description jira_template]} template
-         template-schema {:id (or id "")
-                          :name (or name "")
-                          :description (or description "")
-                          :jira_template (if (seq jira_template)
-                                           (mapv #(assoc % :selected false) jira_template)
-                                           [{:type "" :value "" :jira_field "" :description "" :selected false}])}]
-     {:db (assoc db :jira-templates->active-template {:status :ready
-                                                      :data template-schema})})))
-
-(rf/reg-event-fx
- :jira-templates->clear-active-template
- (fn [{:keys [db]} [_]]
-   {:db (assoc db :jira-templates->active-template {:status :loading
-                                                    :data {}})
-    :fx [[:dispatch
-          [:jira-templates->set-active-template {:id ""
-                                                 :name ""
-                                                 :description ""
-                                                 :jira_template [{:type ""
-                                                                  :value ""
-                                                                  :jira_field ""
-                                                                  :description ""
-                                                                  :selected false}]}]]]}))
-
-;; Subscriptions
+;; Subs
 (rf/reg-sub
  :jira-templates->list
  (fn [db _]
-   (get-in db [:jira-templates->list])))
+   (:jira-templates->list db)))
 
 (rf/reg-sub
  :jira-templates->active-template
  (fn [db _]
-   (get-in db [:jira-templates->active-template])))
+   (:jira-templates->active-template db)))

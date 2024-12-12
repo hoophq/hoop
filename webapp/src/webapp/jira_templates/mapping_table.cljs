@@ -1,22 +1,27 @@
-(ns webapp.jira-templates.rules-table
+(ns webapp.jira-templates.mapping-table
   (:require
    ["@radix-ui/themes" :refer [Box Flex Table Text Strong]]
    [webapp.components.forms :as forms]
    [webapp.jira-templates.rule-buttons :as rule-buttons]))
 
 (def type-options
-  [{:value "hoop.dev" :text "hoop.dev"}
-   {:value "custom" :text "custom"}])
+  [{:value "preset" :text "Preset"}
+   {:value "custom" :text "Custom"}])
 
 (def hoop-value-options
-  [{:value "session_id" :text "Session ID"}
-   {:value "database_name" :text "Database name"}
-   {:value "timestamp" :text "Timestamp"}
-   {:value "user" :text "User"}])
+  [{:value "session.id" :text "Session ID"}
+   {:value "session.user_email" :text "User email"}
+   {:value "session.user_id" :text "User ID"}
+   {:value "session.user_name" :text "User name"}
+   {:value "session.type" :text "Connection type"}
+   {:value "session.connection" :text "Connection name"}
+   {:value "session.status" :text "Session status"}
+   {:value "session.start_date" :text "Session start date"}
+   {:value "session.verb" :text "Session type"}])
 
-(defn- rule-details [rule state idx on-rule-field-change]
+(defn- value-field [rule state idx on-rule-field-change]
   (when-not (empty? (:type rule))  ; Só mostra se type estiver selecionado
-    (if (= "hoop.dev" (:type rule))
+    (if (= "preset" (:type rule))
       [forms/select
        {:size "2"
         :variant "ghost"
@@ -99,7 +104,7 @@
              :options type-options}]]
 
           [:> Table.Cell {:p "4"}
-           [rule-details rule state idx on-mapping-field-change]]
+           [value-field rule state idx on-mapping-field-change]]
 
           [:> Table.Cell {:p "4"}
            [jira-field-input rule state idx on-mapping-field-change]]
