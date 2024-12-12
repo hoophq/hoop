@@ -523,21 +523,6 @@ printjson(result);`
 	}
 }
 
-func debugGetDatabaseSchemas(response *clientexec.Response, schema openapi.ConnectionSchemaResponse) {
-	if !log.IsDebugLevel {
-		return
-	}
-
-	payloadLength := len(response.Output)
-	if payloadLength > 5000 {
-		payloadLength = 5000
-	}
-
-	log.With("sid", response.SessionID).Debugf("database schema plain exec output: %s", response.Output[0:payloadLength])
-	log.With("sid", response.SessionID).Debugf("database schema plain exec response: %s", response.String())
-	log.With("sid", response.SessionID).Debugf("database schema object response: %#v", schema)
-}
-
 // GetDatabaseSchema return detailed schema information including tables, views, columns and indexes
 //
 //	@Summary		Get Database Schema
@@ -655,8 +640,6 @@ func GetDatabaseSchemas(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse schema: %v", err)})
 			return
 		}
-
-		debugGetDatabaseSchemas(outcome, schema)
 
 		c.JSON(http.StatusOK, schema)
 
