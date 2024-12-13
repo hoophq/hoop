@@ -169,40 +169,42 @@
                   "Connections"]]]]
 
               (when admin?
-                [:li
-                 [:a {:href (routes/url-for :users)
-                      :class (str (hover-side-menu-link? "/organization/users" current-route)
-                                  "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
-                  [:> hero-outline-icon/UserGroupIcon {:class "h-6 w-6 shrink-0 text-white"
-                                                       :aria-hidden "true"}]
-                  [:span {:class "sr-only"}
-                   "Users"]]])
+                [:<>
+                 [:li
+                  [:a {:href (routes/url-for :users)
+                       :class (str (hover-side-menu-link? "/organization/users" current-route)
+                                   "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
+                   [:> hero-outline-icon/UserGroupIcon {:class "h-6 w-6 shrink-0 text-white"
+                                                        :aria-hidden "true"}]
+                   [:span {:class "sr-only"}
+                    "Users"]]]
 
-              [:li
-               [:a {:href (routes/url-for :guardrails)
-                    :class (str (hover-side-menu-link? "/guardrails" current-route)
-                                "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
-                [:> hero-outline-icon/ShieldCheckIcon {:class "h-6 w-6 shrink-0 text-white"
-                                                       :aria-hidden "true"}]
-                [:span {:class "sr-only"}
-                 "Guardrails"]]]
-              [:li
-               [:a {:href (routes/url-for :agents)
-                    :class (str (hover-side-menu-link? "/agents" current-route)
-                                "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
-                [:> hero-outline-icon/ServerStackIcon {:class "h-6 w-6 shrink-0 text-white"
-                                                       :aria-hidden "true"}]
-                [:span {:class "sr-only"}
-                 "Agents"]]]
+                 [:li
+                  [:a {:href (routes/url-for :guardrails)
+                       :class (str (hover-side-menu-link? "/guardrails" current-route)
+                                   "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
+                   [:> hero-outline-icon/ShieldCheckIcon {:class "h-6 w-6 shrink-0 text-white"
+                                                          :aria-hidden "true"}]
+                   [:span {:class "sr-only"}
+                    "Guardrails"]]]
+                 [:li
+                  [:a {:href (routes/url-for :agents)
+                       :class (str (hover-side-menu-link? "/agents" current-route)
+                                   "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
+                   [:> hero-outline-icon/ServerStackIcon {:class "h-6 w-6 shrink-0 text-white"
+                                                          :aria-hidden "true"}]
+                   [:span {:class "sr-only"}
+                    "Agents"]]]
 
-              [:li
-               [:a {:href (routes/url-for :jira-templates)
-                    :class (str (hover-side-menu-link? "/jira-templates" current-route)
-                                "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
-                [:> hero-outline-icon/ServerStackIcon {:class "h-6 w-6 shrink-0 text-white"
-                                                       :aria-hidden "true"}]
-                [:span {:class "sr-only"}
-                 "Jira templates"]]]
+                 [:li
+                  [:a {:href (routes/url-for :jira-templates)
+                       :class (str (hover-side-menu-link? "/jira-templates" current-route)
+                                   "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
+                   [:div
+                    [:figure {:class "flex-shrink-0 w-6 mr-regular"}
+                     [:img {:src (str config/webapp-url "/icons/icon-jira.svg")}]]]
+                   [:span {:class "sr-only"}
+                    "Jira templates"]]]])
 
               (when admin?
                 [:<>

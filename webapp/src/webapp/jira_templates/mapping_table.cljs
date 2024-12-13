@@ -114,10 +114,10 @@
     [:> Text {:as "p" :size "2" :mt "1" :class "text-[--gray-10]"}
      [:> Strong
       "Preset: "]
-     "Relates hoop.dev fields to Jira. "
+     "Relates hoop.dev fields with Jira fields. "
      [:> Strong
       "Custom: "]
-     "Append a custom key-value re"]]
+     "Append a custom key-value relation to Jira cards."]]
 
    [rule-buttons/main
     {:on-rule-add #(on-mapping-add state)

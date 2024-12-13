@@ -8,7 +8,6 @@
 (defn main [{:keys [prompts on-submit]}]
   (let [form-data (r/atom {})]
     (fn []
-      (println prompts)
       [:> Box {:class "p-6"}
        [:> Text {:as "h3" :size "5" :weight "bold" :mb "4"}
         "Required information"]
