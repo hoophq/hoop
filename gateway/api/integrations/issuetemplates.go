@@ -100,9 +100,8 @@ func CreateIssueTemplates(c *gin.Context) {
 	}
 
 	issue := &models.JiraIssueTemplate{
-		ID:    uuid.NewString(),
-		OrgID: ctx.GetOrgID(),
-		// JiraIntegrationID: ,
+		ID:            uuid.NewString(),
+		OrgID:         ctx.GetOrgID(),
 		Name:          req.Name,
 		Description:   req.Description,
 		ProjectKey:    req.ProjectKey,
