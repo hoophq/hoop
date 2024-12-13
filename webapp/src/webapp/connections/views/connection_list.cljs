@@ -29,20 +29,6 @@
    [:div {:class "flex items-center justify-center h-full"}
     [loaders/simple-loader]]])
 
-(defn- tooltip [text position]
-  [:div {:class (str "absolute -bottom-10 flex-col hidden mt-6 w-max "
-                     "group-hover:flex items-center -translate-x-1/2 z-50 "
-                     (if (= position "left")
-                       "-left-4"
-                       "left-1/2"))}
-   [:div {:class (str "relative w-3 h-3 -mb-2 bg-gray-900 transform rotate-45 z-50 "
-                      (if (= position "left")
-                        "left-[30px]"
-                        ""))}]
-   [:span {:class (str "relative bg-gray-900 rounded-md z-50 "
-                       "py-1.5 px-3.5 text-xs text-white leading-none whitespace-no-wrap shadow-lg")}
-    text]])
-
 (defn panel [_]
   (let [connections (rf/subscribe [:connections])
         user (rf/subscribe [:users->current-user])
