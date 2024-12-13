@@ -2,8 +2,8 @@ package transportext
 
 import (
 	"fmt"
-	"libhoop/log"
 
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
 	"github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"

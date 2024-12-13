@@ -86,7 +86,7 @@ func UpdateSessionIntegrationMetadata(orgID, sid string, metadata map[string]any
 func GetSessionJiraIssueByID(orgID, sid string) (string, error) {
 	var jiraIssueKey string
 	err := DB.Raw(`
-	SELECT integrations_metadata->>'jira.issue_key' FROM private.sessions s
+	SELECT COALESCE(integrations_metadata->>'jira_issue_key', '')::TEXT FROM private.sessions s
 	WHERE s.org_id = ? AND s.id = ?`, orgID, sid).
 		First(&jiraIssueKey).Error
 	if err != nil {

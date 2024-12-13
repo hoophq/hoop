@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hoophq/hoop/common/log"
 	"gorm.io/gorm"
 )
 
@@ -28,12 +27,9 @@ type JiraIntegration struct {
 }
 
 func GetJiraIntegration(orgID string) (*JiraIntegration, error) {
-	log.Debugf("getting jira integration for org=%s", orgID)
-
 	var jiraIntegration *JiraIntegration
 	if err := DB.Where("org_id = ?", orgID).First(&jiraIntegration).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			log.Debugf("jira integration with org_id=%s not found", orgID)
 			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to get jira integration, reason=%v", err)
@@ -43,7 +39,6 @@ func GetJiraIntegration(orgID string) (*JiraIntegration, error) {
 }
 
 func CreateJiraIntegration(orgID string, jiraIntegration *JiraIntegration) (*JiraIntegration, error) {
-	log.Debugf("creating jira integration for org=%s", orgID)
 	if err := DB.Create(&jiraIntegration).Error; err != nil {
 		return nil, fmt.Errorf("failed to create jira integration, reason=%v", err)
 	}
@@ -52,8 +47,6 @@ func CreateJiraIntegration(orgID string, jiraIntegration *JiraIntegration) (*Jir
 }
 
 func UpdateJiraIntegration(orgID string, jiraIntegration *JiraIntegration) (*JiraIntegration, error) {
-	log.Debugf("updating jira integration for org=%s", orgID)
-
 	var existingIntegration JiraIntegration
 	if err := DB.Where("org_id = ?", orgID).First(&existingIntegration).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
