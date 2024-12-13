@@ -197,7 +197,7 @@
            full-width?
            dark]}]
   [:div {:class (str " text-sm w-full"
-                     (when-not not-margin-bottom? "mb-regular"))}
+                     (when-not not-margin-bottom? " mb-regular"))}
    [:div {:class "flex items-center gap-2 mb-1"}
     (if dark
       [form-label-dark label]

@@ -1,6 +1,7 @@
 (ns webapp.connections.views.connection-list
   (:require ["lucide-react" :refer [Wifi Tags EllipsisVertical]]
-            ["@radix-ui/themes" :refer [IconButton DropdownMenu Tooltip]]
+            ["@radix-ui/themes" :refer [IconButton DropdownMenu Tooltip
+                                        Flex Text Badge]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
@@ -30,8 +31,15 @@
     [loaders/simple-loader]]])
 
 (defn panel [_]
-  (let [connections (rf/subscribe [:connections])
+  (let [search-string (.. js/window -location -search)
+        url-params (new js/URLSearchParams search-string)
+        tags (.get url-params "tags")
+        connections (rf/subscribe [:connections])
         user (rf/subscribe [:users->current-user])
+        query (r/atom {:tags (if (and tags
+                                      (not (cs/blank? tags)))
+                               (cs/split tags #",")
+                               [])})
         search-focused (r/atom false)
         searched-connections (r/atom nil)
         searched-criteria-connections (r/atom "")
@@ -40,31 +48,68 @@
     (rf/dispatch [:users->get-user])
     (rf/dispatch [:guardrails->get-all])
     (fn []
-      (let [connections-search-results (if (empty? @searched-connections)
-                                         (:results @connections)
-                                         @searched-connections)]
+      (let [connections-search-results (cond->> (if (empty? @searched-connections)
+                                                  (:results @connections)
+                                                  @searched-connections)
+                                         (seq (:tags @query))
+                                         (filter (fn [connection]
+                                                   (some (set (:tags @query))
+                                                         (:tags connection)))))
+            connections-tags (doall (->> (:results @connections)
+                                         (map :tags)
+                                         (apply concat)
+                                 (distinct)))]
         [:div {:class "flex flex-col bg-white rounded-lg h-full p-6 overflow-y-auto"}
          (when (-> @user :data :admin?)
            [:div {:class "absolute top-10 right-4 sm:right-6 lg:top-16 lg:right-20"}
             [button/tailwind-primary {:text "Add connection"
                                       :on-click (fn []
                                                   (rf/dispatch [:navigate :create-connection]))}]])
-         [:header
-          [:div {:class "mb-6"}
-           [searchbox/main
-            {:options (:results @connections)
-             :display-key :name
-             :searchable-keys [:name :type :subtype :tags :status]
-             :on-change-results-cb #(reset! searched-connections %)
-             :hide-results-list true
-             :placeholder "Search by connection name, type, status or anything"
-             :on-focus #(reset! search-focused true)
-             :on-blur #(reset! search-focused false)
-             :name "connection-search"
-             :on-change #(reset! searched-criteria-connections %)
-             :loading? (= @connections-search-status :loading)
-             :size :small
-             :icon-position "left"}]]]
+         [:> Flex {:as "header"
+                   :direction "column"
+                   :gap "3"
+                   :class "mb-4"}
+          [searchbox/main
+           {:options (:results @connections)
+            :display-key :name
+            :searchable-keys [:name :type :subtype :tags :status]
+            :on-change-results-cb #(reset! searched-connections %)
+            :hide-results-list true
+            :placeholder "Search by connection name, type, status or anything"
+            :on-focus #(reset! search-focused true)
+            :on-blur #(reset! search-focused false)
+            :name "connection-search"
+            :on-change #(reset! searched-criteria-connections %)
+            :loading? (= @connections-search-status :loading)
+            :size :small
+            :icon-position "left"}]
+          (when (not-empty connections-tags)
+             [:> Flex {:gap "4"
+                       :align "center"}
+              [:> Text {:size "1"
+                        :color :gray
+                        :weight "bold"}
+               "Tags"]
+              [:> Flex {:gap "2"
+                        :wrap "wrap"
+                        :justify "between"
+                        :position "relative"}
+               (doall
+                 (for [tag connections-tags]
+                   [:> Badge {:variant (if (some #{tag} (get @query :tags)) "solid" "soft")
+                              :as "div"
+                              :on-click #(do
+                                           (if (not (some #{tag} (get @query :tags)))
+                                             (reset! query
+                                                     {:tags (concat (get @query :tags)
+                                                                    [tag])})
+                                             (reset! query
+                                                     {:tags (remove #{tag} (get @query :tags))}))
+                                           (rf/dispatch [:connections->filter-connections @query]))
+                              :key tag
+                              :radius "full"
+                              :class "cursor-pointer"}
+                    tag]))]])]
 
          (if (and (= :loading (:status @connections)) (empty? (:results @connections)))
            [loading-list-view]
