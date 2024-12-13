@@ -1,6 +1,6 @@
 (ns webapp.jira-templates.mapping-table
   (:require
-   ["@radix-ui/themes" :refer [Box Flex Table Text Strong]]
+   ["@radix-ui/themes" :refer [Box Table Text Strong]]
    [webapp.components.forms :as forms]
    [webapp.jira-templates.rule-buttons :as rule-buttons]))
 
@@ -20,7 +20,7 @@
    {:value "session.verb" :text "Session type"}])
 
 (defn- value-field [rule state idx on-rule-field-change]
-  (when-not (empty? (:type rule))  ; Só mostra se type estiver selecionado
+  (when-not (empty? (:type rule))
     (if (= "preset" (:type rule))
       [forms/select
        {:size "2"
@@ -39,7 +39,7 @@
         :on-change #(on-rule-field-change state idx :value (-> % .-target .-value))}])))
 
 (defn- jira-field-input [rule state idx on-rule-field-change]
-  (when-not (empty? (:type rule))  ; Só mostra se type estiver selecionado
+  (when-not (empty? (:type rule))
     [forms/input
      {:size "2"
       :placeholder "Issue field"
@@ -48,7 +48,7 @@
       :on-change #(on-rule-field-change state idx :jira_field (-> % .-target .-value))}]))
 
 (defn- details-input [rule state idx on-rule-field-change]
-  (when-not (empty? (:type rule))  ; Só mostra se type estiver selecionado
+  (when-not (empty? (:type rule))
     [forms/input
      {:size "2"
       :placeholder "Field description"
@@ -94,7 +94,6 @@
              :variant "ghost"
              :not-margin-bottom? true
              :on-change (fn [value]
-                        ;; Limpa os outros campos quando muda o type
                           (on-mapping-field-change state idx :type value)
                           (on-mapping-field-change state idx :value "")
                           (on-mapping-field-change state idx :jira_field "")

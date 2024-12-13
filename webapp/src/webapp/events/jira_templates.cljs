@@ -36,7 +36,6 @@
 (rf/reg-event-fx
  :jira-templates->create
  (fn [_ [_ template]]
-   (js/console.log "Create Template Payload:" (clj->js template))  ;; Log do payload
    {:fx [[:dispatch
           [:fetch {:method "POST"
                    :uri "/integrations/jira/issuetemplates"
@@ -49,7 +48,6 @@
 (rf/reg-event-fx
  :jira-templates->update-by-id
  (fn [_ [_ template]]
-   (js/console.log "Update Template Payload:" (clj->js template))  ;; Log do payload
    {:fx [[:dispatch
           [:fetch {:method "PUT"
                    :uri (str "/integrations/jira/issuetemplates/" (:id template))

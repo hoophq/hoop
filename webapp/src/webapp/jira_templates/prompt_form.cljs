@@ -1,13 +1,12 @@
 (ns webapp.jira-templates.prompt-form
   (:require
-   ["@radix-ui/themes" :refer [Button Dialog Flex Box Text]]
+   ["@radix-ui/themes" :refer [Button Flex Box Text]]
    [reagent.core :as r]
    [re-frame.core :as rf]
    [webapp.components.forms :as forms]))
 
 (defn main [{:keys [prompts on-submit]}]
-  (let [teste (r/atom "")
-        form-data (r/atom {})]
+  (let [form-data (r/atom {})]
     (fn []
       (println prompts)
       [:> Box {:class "p-6"}
@@ -18,9 +17,6 @@
 
        [:form {:on-submit (fn [e]
                             (.preventDefault e)
-
-                            (println "form-data" @form-data)
-
                             (on-submit @form-data))}
 
         [:> Flex {:direction "column" :gap "4"}
@@ -30,11 +26,9 @@
             {:label label
              :required required
              :placeholder label
-            ;; :value (or (get @form-data jira_field) "")
              :on-change (fn [e]
                           (.log js/console e)
                           (let [value (-> e .-target .-value)]
-                            (println value)
                             (swap! form-data assoc jira_field value)))}])]
 
         [:> Flex {:justify "end" :gap "3" :mt "6"}
