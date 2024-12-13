@@ -26,6 +26,7 @@ type JiraIntegration struct {
 	UpdatedAt time.Time             `json:"updated_at"`
 }
 
+func (j JiraIntegration) IsActive() bool { return j.Status == JiraIntegrationStatusActive }
 func GetJiraIntegration(orgID string) (*JiraIntegration, error) {
 	var jiraIntegration *JiraIntegration
 	if err := DB.Where("org_id = ?", orgID).First(&jiraIntegration).Error; err != nil {

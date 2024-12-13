@@ -55,7 +55,7 @@ func OnReceive(ctx Context, pkt *proto.Packet) error {
 			log.With("sid", ctx.SID).Errorf("unable to obtain jira integration configuration, reason=%v", err)
 			return status.Errorf(codes.Internal, "unable to get jira integration configuration")
 		}
-		if jiraConf == nil {
+		if jiraConf == nil || !jiraConf.IsActive() {
 			break
 		}
 		jiraIssueKey, err := models.GetSessionJiraIssueByID(ctx.OrgID, ctx.SID)

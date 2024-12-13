@@ -155,7 +155,7 @@ func Post(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed obtaining jira issue template: %v", err)})
 			return
 		}
-		if jiraConfig != nil {
+		if jiraConfig != nil && jiraConfig.IsActive() {
 			if req.JiraFields == nil {
 				req.JiraFields = map[string]string{}
 			}
