@@ -3,11 +3,13 @@ package transportext
 import (
 	"fmt"
 
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
 	"github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/gateway/guardrails"
+	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/models"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -26,7 +28,6 @@ func OnReceive(ctx Context, pkt *proto.Packet) error {
 	if ctx.Verb == proto.ClientVerbPlainExec {
 		return nil
 	}
-
 	switch pkt.Type {
 	case pbagent.SessionOpen:
 		conn, err := models.GetConnectionGuardRailRules(ctx.OrgID, ctx.ConnectionName)
@@ -48,6 +49,29 @@ func OnReceive(ctx Context, pkt *proto.Packet) error {
 		default:
 			return fmt.Errorf("internal error, failed validating guard rails output rules: %v", err)
 		}
+	case pbclient.SessionClose:
+		jiraConf, err := models.GetJiraIntegration(ctx.OrgID)
+		if err != nil {
+			log.With("sid", ctx.SID).Errorf("unable to obtain jira integration configuration, reason=%v", err)
+			return status.Errorf(codes.Internal, "unable to get jira integration configuration")
+		}
+		if jiraConf == nil || !jiraConf.IsActive() {
+			break
+		}
+		jiraIssueKey, err := models.GetSessionJiraIssueByID(ctx.OrgID, ctx.SID)
+		if err != nil && err != models.ErrNotFound {
+			log.With("sid", ctx.SID).Errorf("unable to obtain jira issue key from session, reason=%v", err)
+			return status.Errorf(codes.Internal, "unable to obtain jira issue key from session")
+		}
+		if jiraIssueKey == "" {
+			break
+		}
+		err = jira.TransitionIssue(jiraConf, jiraIssueKey, "done")
+		if err != nil {
+			log.With("sid", ctx.SID).Error(err)
+		}
+		log.With("sid", ctx.SID).Debugf("jira transitioned status to done, key=%v, success=%v",
+			jiraIssueKey, err == nil)
 	}
 	return nil
 }

@@ -37,6 +37,7 @@ type SessionPostBody struct {
 	Labels     types.SessionLabels `json:"labels"`
 	Metadata   map[string]any      `json:"metadata"`
 	ClientArgs []string            `json:"client_args"`
+	JiraFields map[string]string   `json:"jira_fields"`
 }
 
 // RunExec
@@ -53,31 +54,31 @@ type SessionPostBody struct {
 //	@Router					/sessions [post]
 func Post(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	var body SessionPostBody
-	if err := c.ShouldBindJSON(&body); err != nil {
+	var req SessionPostBody
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 
 	// Accept request body and url params as connection name
 	// Maintained for compatibility with legacy endpoint /api/connections/:name/exec
-	if body.Connection == "" {
-		body.Connection = c.Param("name")
+	if req.Connection == "" {
+		req.Connection = c.Param("name")
 	}
-	if err := CoerceMetadataFields(body.Metadata); err != nil {
+	if err := CoerceMetadataFields(req.Metadata); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
 
-	conn, err := apiconnections.FetchByName(ctx, body.Connection)
+	conn, err := apiconnections.FetchByName(ctx, req.Connection)
 	if err != nil {
-		log.Errorf("failed fetch connection %v for exec, err=%v", body.Connection, err)
+		log.Errorf("failed fetch connection %v for exec, err=%v", req.Connection, err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
 	if conn == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("connection %v not found", body.Connection)})
+		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("connection %v not found", req.Connection)})
 		return
 	}
 
@@ -86,26 +87,14 @@ func Post(c *gin.Context) {
 	if userAgent == "webapp.core" {
 		userAgent = "webapp.editor.exec"
 	}
+	log := log.With("sid", sessionID, "user", ctx.UserEmail)
 
-	// TODO: refactor to use response from openapi package
-	client, err := clientexec.New(&clientexec.Options{
-		OrgID:          ctx.GetOrgID(),
-		SessionID:      sessionID,
-		ConnectionName: conn.Name,
-		BearerToken:    getAccessToken(c),
-		UserAgent:      userAgent,
-	})
-	if err != nil {
-		log.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
-	}
 	newSession := types.Session{
 		ID:           sessionID,
 		OrgID:        ctx.OrgID,
-		Labels:       body.Labels,
-		Metadata:     body.Metadata,
-		Script:       types.SessionScript{"data": body.Script},
+		Labels:       req.Labels,
+		Metadata:     req.Metadata,
+		Script:       types.SessionScript{"data": req.Script},
 		UserEmail:    ctx.UserEmail,
 		UserID:       ctx.UserID,
 		UserName:     ctx.UserName,
@@ -129,7 +118,7 @@ func Post(c *gin.Context) {
 	}
 
 	if connRules != nil {
-		err = guardrails.Validate("input", connRules.GuardRailInputRules, []byte(body.Script))
+		err = guardrails.Validate("input", connRules.GuardRailInputRules, []byte(req.Script))
 		switch err.(type) {
 		case *guardrails.ErrRuleMatch:
 			newSession.Status = "done"
@@ -159,17 +148,66 @@ func Post(c *gin.Context) {
 		}
 	}
 
-	if err := jira.CreateIssue(ctx.OrgID, "Hoop session", "Task", sessionID); err != nil {
-		log.Warnf("failed creating jira issue, err=%v", err)
+	if conn.JiraIssueTemplateID.String != "" {
+		issueTemplate, jiraConfig, err := models.GetJiraIssueTemplatesByID(conn.OrgID, conn.JiraIssueTemplateID.String)
+		if err != nil {
+			log.Errorf("failed obtaining jira issue template for %v, reason=%v", conn.Name, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed obtaining jira issue template: %v", err)})
+			return
+		}
+		if jiraConfig != nil && jiraConfig.IsActive() {
+			if req.JiraFields == nil {
+				req.JiraFields = map[string]string{}
+			}
+			jiraFields, err := jira.ParseIssueFields(issueTemplate, req.JiraFields, newSession)
+			switch err.(type) {
+			case *jira.ErrInvalidIssueFields:
+				c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+				return
+			case nil:
+			default:
+				log.Error(err)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+				return
+			}
+			resp, err := jira.CreateIssue(issueTemplate, jiraConfig, jiraFields)
+			if err != nil {
+				log.Error("failed creating jira issue, reason=%v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+				return
+			}
+			err = models.UpdateSessionIntegrationMetadata(ctx.OrgID, sessionID, map[string]any{
+				"jira_issue_key": resp.Key,
+				"jira_issue_url": fmt.Sprintf("%s/browse/%s", jiraConfig.URL, resp.Key),
+			})
+			if err != nil {
+				log.Errorf("failed updating session with jira issue (%s), reason=%v", resp.Key, err)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed updating session with jira issue %s", resp.Key)})
+				return
+			}
+		}
 	}
 
-	log := log.With("sid", sessionID)
+	// TODO: refactor to use response from openapi package
+	client, err := clientexec.New(&clientexec.Options{
+		OrgID:          ctx.GetOrgID(),
+		SessionID:      sessionID,
+		ConnectionName: conn.Name,
+		BearerToken:    getAccessToken(c),
+		UserAgent:      userAgent,
+	})
+	if err != nil {
+		log.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
 	log.Infof("started runexec method for connection %v", conn.Name)
 	respCh := make(chan *clientexec.Response)
 	go func() {
 		defer func() { close(respCh); client.Close() }()
 		select {
-		case respCh <- client.Run([]byte(body.Script), nil, body.ClientArgs...):
+		case respCh <- client.Run([]byte(req.Script), nil, req.ClientArgs...):
 		default:
 		}
 	}()
@@ -368,24 +406,25 @@ func Get(c *gin.Context) {
 		session.EventStream = []any{string(output)}
 	}
 	c.PureJSON(http.StatusOK, map[string]any{
-		"id":           session.ID,
-		"org_id":       session.OrgID,
-		"script":       session.Script,
-		"labels":       session.Labels,
-		"metadata":     session.Metadata,
-		"metrics":      session.Metrics,
-		"user":         session.UserEmail,
-		"user_id":      session.UserID,
-		"user_name":    session.UserName,
-		"type":         session.Type,
-		"connection":   session.Connection,
-		"review":       session.Review,
-		"verb":         session.Verb,
-		"status":       session.Status,
-		"event_stream": session.EventStream,
-		"event_size":   session.EventSize,
-		"start_date":   session.StartSession,
-		"end_date":     session.EndSession,
+		"id":                    session.ID,
+		"org_id":                session.OrgID,
+		"script":                session.Script,
+		"labels":                session.Labels,
+		"integrations_metadata": session.IntegrationsMetadata,
+		"metadata":              session.Metadata,
+		"metrics":               session.Metrics,
+		"user":                  session.UserEmail,
+		"user_id":               session.UserID,
+		"user_name":             session.UserName,
+		"type":                  session.Type,
+		"connection":            session.Connection,
+		"review":                session.Review,
+		"verb":                  session.Verb,
+		"status":                session.Status,
+		"event_stream":          session.EventStream,
+		"event_size":            session.EventSize,
+		"start_date":            session.StartSession,
+		"end_date":              session.EndSession,
 	})
 }
 

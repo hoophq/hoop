@@ -15,7 +15,6 @@ import (
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/common/proto/spectypes"
-	"github.com/hoophq/hoop/gateway/jira"
 	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
 	eventlogv1 "github.com/hoophq/hoop/gateway/session/eventlog/v1"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -188,12 +187,6 @@ func (p *auditPlugin) closeSession(pctx plugintypes.Context, errMsg error) {
 			log.Warnf("session=%v - failed closing session: %v", pctx.SID, err)
 			return
 		}
-
-		err := jira.UpdateJiraIssueContent("add-session-executed", pctx.OrgID, pctx.SID)
-		if err != nil {
-			log.Warnf("fail to update jira issue content, reason: %v", err)
-		}
-
 		memorySessionStore.Del(pctx.SID)
 	}()
 }

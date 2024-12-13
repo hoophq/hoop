@@ -13,7 +13,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
-	"github.com/hoophq/hoop/common/proto"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/clientexec"
@@ -75,22 +74,23 @@ func Post(c *gin.Context) {
 	}
 
 	err = models.UpsertConnection(&models.Connection{
-		ID:                 req.ID,
-		OrgID:              ctx.OrgID,
-		AgentID:            sql.NullString{String: req.AgentId, Valid: true},
-		Name:               req.Name,
-		Command:            req.Command,
-		Type:               string(req.Type),
-		SubType:            sql.NullString{String: req.SubType, Valid: true},
-		Envs:               coerceToMapString(req.Secrets),
-		Status:             req.Status,
-		ManagedBy:          sql.NullString{},
-		Tags:               req.Tags,
-		AccessModeRunbooks: req.AccessModeRunbooks,
-		AccessModeExec:     req.AccessModeExec,
-		AccessModeConnect:  req.AccessModeConnect,
-		AccessSchema:       req.AccessSchema,
-		GuardRailRules:     req.GuardRailRules,
+		ID:                  req.ID,
+		OrgID:               ctx.OrgID,
+		AgentID:             sql.NullString{String: req.AgentId, Valid: true},
+		Name:                req.Name,
+		Command:             req.Command,
+		Type:                string(req.Type),
+		SubType:             sql.NullString{String: req.SubType, Valid: true},
+		Envs:                coerceToMapString(req.Secrets),
+		Status:              req.Status,
+		ManagedBy:           sql.NullString{},
+		Tags:                req.Tags,
+		AccessModeRunbooks:  req.AccessModeRunbooks,
+		AccessModeExec:      req.AccessModeExec,
+		AccessModeConnect:   req.AccessModeConnect,
+		AccessSchema:        req.AccessSchema,
+		GuardRailRules:      req.GuardRailRules,
+		JiraIssueTemplateID: sql.NullString{String: req.JiraIssueTemplateID, Valid: true},
 	})
 	if err != nil {
 		log.Errorf("failed creating connection, err=%v", err)
@@ -171,22 +171,23 @@ func Put(c *gin.Context) {
 		req.Status = pgrest.ConnectionStatusOnline
 	}
 	err = models.UpsertConnection(&models.Connection{
-		ID:                 conn.ID,
-		OrgID:              conn.OrgID,
-		AgentID:            sql.NullString{String: req.AgentId, Valid: true},
-		Name:               conn.Name,
-		Command:            req.Command,
-		Type:               req.Type,
-		SubType:            sql.NullString{String: req.SubType, Valid: true},
-		Envs:               coerceToMapString(req.Secrets),
-		Status:             req.Status,
-		ManagedBy:          sql.NullString{},
-		Tags:               req.Tags,
-		AccessModeRunbooks: req.AccessModeRunbooks,
-		AccessModeExec:     req.AccessModeExec,
-		AccessModeConnect:  req.AccessModeConnect,
-		AccessSchema:       req.AccessSchema,
-		GuardRailRules:     req.GuardRailRules,
+		ID:                  conn.ID,
+		OrgID:               conn.OrgID,
+		AgentID:             sql.NullString{String: req.AgentId, Valid: true},
+		Name:                conn.Name,
+		Command:             req.Command,
+		Type:                req.Type,
+		SubType:             sql.NullString{String: req.SubType, Valid: true},
+		Envs:                coerceToMapString(req.Secrets),
+		Status:              req.Status,
+		ManagedBy:           sql.NullString{},
+		Tags:                req.Tags,
+		AccessModeRunbooks:  req.AccessModeRunbooks,
+		AccessModeExec:      req.AccessModeExec,
+		AccessModeConnect:   req.AccessModeConnect,
+		AccessSchema:        req.AccessSchema,
+		GuardRailRules:      req.GuardRailRules,
+		JiraIssueTemplateID: sql.NullString{String: req.JiraIssueTemplateID, Valid: true},
 	})
 	if err != nil {
 		switch err.(type) {
@@ -294,24 +295,25 @@ func List(c *gin.Context) {
 				managedBy = &conn.ManagedBy.String
 			}
 			responseConnList = append(responseConnList, openapi.Connection{
-				ID:                 conn.ID,
-				Name:               conn.Name,
-				Command:            conn.Command,
-				Type:               conn.Type,
-				SubType:            conn.SubType.String,
-				Secrets:            coerceToAnyMap(conn.Envs),
-				AgentId:            conn.AgentID.String,
-				Status:             conn.Status,
-				Reviewers:          conn.Reviewers,
-				RedactEnabled:      conn.RedactEnabled,
-				RedactTypes:        conn.RedactTypes,
-				ManagedBy:          managedBy,
-				Tags:               conn.Tags,
-				AccessModeRunbooks: conn.AccessModeRunbooks,
-				AccessModeExec:     conn.AccessModeExec,
-				AccessModeConnect:  conn.AccessModeConnect,
-				AccessSchema:       conn.AccessSchema,
-				GuardRailRules:     conn.GuardRailRules,
+				ID:                  conn.ID,
+				Name:                conn.Name,
+				Command:             conn.Command,
+				Type:                conn.Type,
+				SubType:             conn.SubType.String,
+				Secrets:             coerceToAnyMap(conn.Envs),
+				AgentId:             conn.AgentID.String,
+				Status:              conn.Status,
+				Reviewers:           conn.Reviewers,
+				RedactEnabled:       conn.RedactEnabled,
+				RedactTypes:         conn.RedactTypes,
+				ManagedBy:           managedBy,
+				Tags:                conn.Tags,
+				AccessModeRunbooks:  conn.AccessModeRunbooks,
+				AccessModeExec:      conn.AccessModeExec,
+				AccessModeConnect:   conn.AccessModeConnect,
+				AccessSchema:        conn.AccessSchema,
+				GuardRailRules:      conn.GuardRailRules,
+				JiraIssueTemplateID: conn.JiraIssueTemplateID.String,
 			})
 		}
 
@@ -356,24 +358,25 @@ func Get(c *gin.Context) {
 		managedBy = &conn.ManagedBy.String
 	}
 	c.JSON(http.StatusOK, openapi.Connection{
-		ID:                 conn.ID,
-		Name:               conn.Name,
-		Command:            conn.Command,
-		Type:               conn.Type,
-		SubType:            conn.SubType.String,
-		Secrets:            coerceToAnyMap(conn.Envs),
-		AgentId:            conn.AgentID.String,
-		Status:             conn.Status,
-		Reviewers:          conn.Reviewers,
-		RedactEnabled:      conn.RedactEnabled,
-		RedactTypes:        conn.RedactTypes,
-		ManagedBy:          managedBy,
-		Tags:               conn.Tags,
-		AccessModeRunbooks: conn.AccessModeRunbooks,
-		AccessModeExec:     conn.AccessModeExec,
-		AccessModeConnect:  conn.AccessModeConnect,
-		AccessSchema:       conn.AccessSchema,
-		GuardRailRules:     conn.GuardRailRules,
+		ID:                  conn.ID,
+		Name:                conn.Name,
+		Command:             conn.Command,
+		Type:                conn.Type,
+		SubType:             conn.SubType.String,
+		Secrets:             coerceToAnyMap(conn.Envs),
+		AgentId:             conn.AgentID.String,
+		Status:              conn.Status,
+		Reviewers:           conn.Reviewers,
+		RedactEnabled:       conn.RedactEnabled,
+		RedactTypes:         conn.RedactTypes,
+		ManagedBy:           managedBy,
+		Tags:                conn.Tags,
+		AccessModeRunbooks:  conn.AccessModeRunbooks,
+		AccessModeExec:      conn.AccessModeExec,
+		AccessModeConnect:   conn.AccessModeConnect,
+		AccessSchema:        conn.AccessSchema,
+		GuardRailRules:      conn.GuardRailRules,
+		JiraIssueTemplateID: conn.JiraIssueTemplateID.String,
 	})
 }
 
@@ -400,7 +403,7 @@ func FetchByName(ctx pgrest.Context, connectionName string) (*models.Connection,
 //	@Description	List all available databases for a database connection
 //	@Tags			Core
 //	@Produce		json
-//	@Param			nameOrID	path	string	true	"Name or UUID of the connection"
+//	@Param			nameOrID	path		string	true	"Name or UUID of the connection"
 //	@Success		200			{object}	openapi.ConnectionDatabaseListResponse
 //	@Failure		400,404,500	{object}	openapi.HTTPError
 //	@Router			/connections/{nameOrID}/databases [get]
@@ -462,7 +465,7 @@ printjson(result);`
 		BearerToken:    getAccessToken(c),
 		UserAgent:      userAgent,
 		// it sets the execution to perform plain executions
-		Verb: proto.ClientVerbPlainExec,
+		Verb: pb.ClientVerbPlainExec,
 	})
 	if err != nil {
 		log.Error(err)
@@ -529,8 +532,8 @@ printjson(result);`
 //	@Description	Get detailed schema information including tables, views, columns and indexes
 //	@Tags			Core
 //	@Produce		json
-//	@Param			nameOrID	path	string	true	"Name or UUID of the connection"
-//	@Param			database	path	string	true	"Name of the database"
+//	@Param			nameOrID	path		string	true	"Name or UUID of the connection"
+//	@Param			database	path		string	true	"Name of the database"
 //	@Success		200			{object}	openapi.ConnectionSchemaResponse
 //	@Failure		400,404,500	{object}	openapi.HTTPError
 //	@Router			/connections/{nameOrID}/schemas [get]

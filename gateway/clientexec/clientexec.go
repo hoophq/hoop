@@ -19,7 +19,6 @@ import (
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/appconfig"
-	"github.com/hoophq/hoop/gateway/jira"
 	sessionwal "github.com/hoophq/hoop/gateway/session/wal"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/tidwall/wal"
@@ -215,11 +214,6 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 		}
 		switch pkt.Type {
 		case pbclient.SessionOpenWaitingApproval:
-			err := jira.UpdateJiraIssueContent("add-create-review", c.orgID, c.sessionID)
-			if err != nil {
-				log.Warnf("fail to update jira issue content, reason: %v", err)
-			}
-
 			return newReviewedResponse(string(pkt.Payload))
 		case pbclient.SessionOpenApproveOK:
 			if err := sendOpenSessionPktFn(); err != nil {

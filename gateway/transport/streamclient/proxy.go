@@ -10,7 +10,7 @@ import (
 	"github.com/hoophq/hoop/common/memory"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
-	sessionstorage "github.com/hoophq/hoop/gateway/storagev2/session"
+	"github.com/hoophq/hoop/gateway/models"
 	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	streamtypes "github.com/hoophq/hoop/gateway/transport/streamclient/types"
@@ -98,8 +98,9 @@ func NewProxy(pluginCtx *plugintypes.Context, s pb.Transport_ConnectServer) *Pro
 }
 
 // Override context from transport stream
-func (s *ProxyStream) Context() context.Context { return s.context }
-func (s *ProxyStream) ContextCauseError() error { return context.Cause(s.context) }
+func (s *ProxyStream) Context() context.Context      { return s.context }
+func (s *ProxyStream) ContextCauseError() error      { return context.Cause(s.context) }
+func (s *ProxyStream) GetParamsValue(key string) any { return s.pluginCtx.ParamsData[key] }
 func (s *ProxyStream) GetMeta(key string) string {
 	v := s.metadata.Get(key)
 	if len(v) > 0 {
@@ -130,25 +131,20 @@ func (s *ProxyStream) Save() (err error) {
 	// the client-api has additional logic when managing session
 	// this behavior should be removed and api layer must act a read only
 	// client when interacting with sessions
-	sessionScript := ""
-	sessionLabels := map[string]string{}
-	var sessionMetadata map[string]any
 	if s.pluginCtx.ClientOrigin == pb.ConnectionOriginClientAPI ||
 		s.pluginCtx.ClientOrigin == pb.ConnectionOriginClientAPIRunbooks {
-		// TODO: refactor to use pgrest functions
-		session, err := sessionstorage.FindOne(s.pluginCtx, s.pluginCtx.SID)
-		if err != nil {
-			return status.Errorf(codes.Internal, "fail obtaining existent session")
+		session, err := models.GetSessionByID(s.pluginCtx.OrgID, s.pluginCtx.SID)
+		if err != nil && err != models.ErrNotFound {
+			log.With("sid", s.pluginCtx.SID, "org", s.pluginCtx.OrgID).
+				Errorf("failed obtaining existent session, reason=%v", err)
+			return status.Errorf(codes.Internal, "failed obtaining existent session")
 		}
 		if session != nil {
-			sessionScript = session.Script["data"]
-			sessionLabels = session.Labels
-			sessionMetadata = session.Metadata
+			s.pluginCtx.Script = string(session.BlobInput)
+			s.pluginCtx.Labels = session.Labels
+			s.pluginCtx.Metadata = session.Metadata
 		}
 	}
-	s.pluginCtx.Script = sessionScript
-	s.pluginCtx.Labels = sessionLabels
-	s.pluginCtx.Metadata = sessionMetadata
 	s.runtimePlugins, err = loadRuntimePlugins(*s.pluginCtx)
 	if err != nil {
 		return

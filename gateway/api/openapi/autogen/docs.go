@@ -978,6 +978,225 @@ const docTemplate = `{
                 }
             }
         },
+        "/integrations/jira/issuetemplates": {
+            "get": {
+                "description": "List Issue Templates",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Jira"
+                ],
+                "summary": "List Issue Templates",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.JiraIssueTemplate"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create Issue Templates",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Jira"
+                ],
+                "summary": "Create Issue Templates",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.JiraIssueTemplateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.JiraIssueTemplate"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/integrations/jira/issuetemplates/{id}": {
+            "get": {
+                "description": "Get Issue Templates",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Jira"
+                ],
+                "summary": "Get Issue Templates",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The id of the resource",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.JiraIssueTemplate"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update Issue Templates",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Jira"
+                ],
+                "summary": "Update Issue Templates",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The id of the resource",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.JiraIssueTemplateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.JiraIssueTemplate"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete Issue Templates",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Jira"
+                ],
+                "summary": "Delete Issue Templates",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The id of the resource",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/login": {
             "get": {
                 "description": "Returns the login url to perform the signin on the identity provider",
@@ -3156,6 +3375,11 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": "5364ec99-653b-41ba-8165-67236e894990"
                 },
+                "jira_issue_template_id": {
+                    "description": "The jira issue templates ids associated to the connection",
+                    "type": "string",
+                    "example": "B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"
+                },
                 "managed_by": {
                     "description": "Managed By is a read only field that indicates who is managing this resource.\nWhen this attribute is set, this resource is considered immutable",
                     "type": "string",
@@ -3570,7 +3794,6 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "api_token",
-                "project_key",
                 "url",
                 "user"
             ],
@@ -3589,10 +3812,6 @@ const docTemplate = `{
                 },
                 "org_id": {
                     "description": "The organization identifier",
-                    "type": "string"
-                },
-                "project_key": {
-                    "description": "The default Jira project key",
                     "type": "string"
                 },
                 "status": {
@@ -3622,6 +3841,65 @@ const docTemplate = `{
                 "JiraIntegrationStatusActive",
                 "JiraIntegrationStatusInactive"
             ]
+        },
+        "openapi.JiraIssueTemplate": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "issue_type_name": {
+                    "type": "string"
+                },
+                "mapping_types": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "name": {
+                    "type": "string"
+                },
+                "project_key": {
+                    "type": "string"
+                },
+                "prompt_types": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "openapi.JiraIssueTemplateRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "issue_type_name": {
+                    "type": "string"
+                },
+                "mapping_types": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "name": {
+                    "type": "string"
+                },
+                "project_key": {
+                    "type": "string"
+                },
+                "prompt_types": {
+                    "type": "object",
+                    "additionalProperties": {}
+                }
+            }
         },
         "openapi.License": {
             "type": "object",
@@ -4516,8 +4794,10 @@ const docTemplate = `{
                     "format": "uuid",
                     "example": "1CBC8DB5-FBF8-4293-8E35-59A6EEA40207"
                 },
-                "jira_issue": {
-                    "type": "string"
+                "integrations_metadata": {
+                    "description": "Metadata attributes related to integrations with third party services",
+                    "type": "object",
+                    "additionalProperties": {}
                 },
                 "labels": {
                     "description": "DEPRECATED in flavor of metrics and metadata",

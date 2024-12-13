@@ -50,20 +50,20 @@ func List(ctx *storagev2.Context, opts ...*openapi.SessionOption) (*openapi.Sess
 	for _, s := range sl.Items {
 		// _, eventSize := s.GetBlobStream()
 		sessionList.Items = append(sessionList.Items, openapi.Session{
-			ID:          s.ID,
-			OrgID:       s.OrgID,
-			Script:      openapi.SessionScriptType{"data": ""}, // do not show the script on listing
-			Labels:      s.Labels,
-			Metadata:    s.Metadata,
-			UserEmail:   s.UserEmail,
-			UserID:      s.UserID,
-			UserName:    s.UserName,
-			Type:        s.ConnectionType,
-			Connection:  s.Connection,
-			Verb:        s.Verb,
-			Status:      s.Status,
-			JiraIssue:   s.JiraIssue,
-			EventStream: nil,
+			ID:                   s.ID,
+			OrgID:                s.OrgID,
+			Script:               openapi.SessionScriptType{"data": ""}, // do not show the script on listing
+			Labels:               s.Labels,
+			IntegrationsMetadata: map[string]any{}, // TODO: implement-me
+			Metadata:             s.Metadata,
+			UserEmail:            s.UserEmail,
+			UserID:               s.UserID,
+			UserName:             s.UserName,
+			Type:                 s.ConnectionType,
+			Connection:           s.Connection,
+			Verb:                 s.Verb,
+			Status:               s.Status,
+			EventStream:          nil,
 			// NonIndexedStream: nil,
 			StartSession: s.GetCreatedAt(),
 			EndSession:   s.GetEndedAt(),
