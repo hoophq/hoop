@@ -30,11 +30,12 @@
    (let [connection-list-cached (read-string (.getItem js/localStorage "run-connection-list-selected"))
          is-cached? (fn [current-connection-name]
                       (not-empty (filter #(= (:name %) current-connection-name) connection-list-cached)))
-         connections-parsed (mapv (fn [{:keys [name type subtype status access_schema secret]}]
+         connections-parsed (mapv (fn [{:keys [name type subtype status access_schema secret jira_issue_template_id]}]
                                     {:name name
                                      :type type
                                      :subtype subtype
                                      :status status
+                                     :jira_issue_template_id jira_issue_template_id
                                      :access_schema access_schema
                                      :database_name (when (and (= type "database")
                                                                (= subtype "postgres"))
@@ -53,11 +54,12 @@
    (let [connection-list-cached (read-string (.getItem js/localStorage "run-connection-list-selected"))
          is-cached? (fn [current-connection-name]
                       (not-empty (filter #(= (:name %) current-connection-name) connection-list-cached)))
-         connections-parsed (mapv (fn [{:keys [name type subtype status selected access_schema secret]}]
+         connections-parsed (mapv (fn [{:keys [name type subtype status selected access_schema secret jira_issue_template_id]}]
                                     {:name name
                                      :type type
                                      :subtype subtype
                                      :status status
+                                     :jira_issue_template_id jira_issue_template_id
                                      :access_schema access_schema
                                      :database_name (when (and (= type "database")
                                                                (= subtype "postgres"))
@@ -199,10 +201,11 @@
 (rf/reg-event-fx
  :editor-plugin->exec-script
  (fn
-   [{:keys [db]} [_ {:keys [script connection-name metadata]}]]
+   [{:keys [db]} [_ {:keys [script connection-name metadata jira_fields]}]]
    (let [payload {:script script
                   :connection connection-name
-                  :metadata metadata}
+                  :metadata metadata
+                  :jira_fields jira_fields}
          on-failure (fn [error]
                       (rf/dispatch [:show-snackbar {:text error :level :error}])
                       (rf/dispatch [::editor-plugin->set-script-failure error]))

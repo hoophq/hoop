@@ -42,7 +42,6 @@
       [:> AlertDialog.Root {:open (= (:status @dialog-state) :open)
                             :on-open-change #(rf/dispatch [:dialog->set-status %])}
        [:> AlertDialog.Content {:size "3"
-                                :width "400px"
                                 :max-width "600px"
                                 :max-height "690px"}
         [:> AlertDialog.Title
@@ -54,9 +53,10 @@
           [:> Button {:color "gray"
                       :variant "soft"}
            "Cancel"]]
-         [:> AlertDialog.Action
-          [:> Button {:on-click #((:on-success @dialog-state))
-                      :color "red"}
-           (if (:text-action-button @dialog-state)
-             (:text-action-button @dialog-state)
-             "Delete")]]]]])))
+         (when (:action-button? @dialog-state)
+           [:> AlertDialog.Action
+            [:> Button {:on-click #((:on-success @dialog-state))
+                        :color "red"}
+             (if (:text-action-button @dialog-state)
+               (:text-action-button @dialog-state)
+               "Delete")]])]]])))

@@ -45,3 +45,9 @@
                                                   {:level :success
                                                    :text "Jira integration updated!"}])
                                     (rf/dispatch [:jira-integration->get]))}]]]}))
+
+(rf/reg-sub
+ :jira-integration->integration-enabled?
+ :<- [:jira-integration->details]
+ (fn [integration [_]]
+   (= (-> integration :data :status) "enabled")))

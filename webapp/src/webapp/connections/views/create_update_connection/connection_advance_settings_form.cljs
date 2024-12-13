@@ -1,7 +1,11 @@
 (ns webapp.connections.views.create-update-connection.connection-advance-settings-form
-  (:require ["@radix-ui/themes" :refer [Box Callout Flex Grid Link Switch Text]]
-            ["lucide-react" :refer [ArrowUpRight]]
-            [webapp.components.multiselect :as multi-select]))
+  (:require
+   ["@radix-ui/themes" :refer [Box Callout Flex Grid Link Switch Text]]
+   ["lucide-react" :refer [ArrowUpRight]]
+   [re-frame.core :as rf]
+   [webapp.components.forms :as forms]
+   [webapp.components.multiselect :as multi-select]
+   [webapp.routes :as routes]))
 
 
 (defn access-mode-exec-disabled? [connection-type connection-subtype]
@@ -36,7 +40,9 @@
            access-mode-exec
            access-mode-connect
            guardrails-options
-           guardrails]}]
+           guardrails
+           jira-templates-options
+           jira-template-id]}]
   [:> Flex {:direction "column" :gap "9" :class "px-20"}
    [:> Grid {:columns "5" :gap "7"}
     [:> Flex {:direction "column" :grid-column "span 2 / span 2"}
@@ -57,8 +63,8 @@
     [:> Flex {:direction "column" :grid-column "span 2 / span 2"}
      [:> Text {:size "4" :weight "bold" :class "text-gray-12"} "Guardrails"]
      [:> Text {:size "3" :class "text-gray-11"} "Create custom rules to guide and protect usage within your connections."]
-     [:> Link {:href "https://hoop.dev/docs/learn/jit-reviews"
-               :target "_blank"}
+     [:> Link {:href (routes/url-for :guardrails)
+               :on-click #(rf/dispatch [:modal->close])}
       [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
        [:> Callout.Icon
         [:> ArrowUpRight {:size 16}]]
@@ -73,21 +79,24 @@
 
    [:> Grid {:columns "5" :gap "7"}
     [:> Flex {:direction "column" :grid-column "span 2 / span 2"}
-     [:> Text {:size "4" :weight "bold" :class "text-gray-12"} "JIRA Integration"]
-     [:> Text {:size "3" :class "text-gray-11"} "Configure custom integration to JIRA services."]
-     [:> Link {:href "https://hoop.dev/docs/learn/jit-reviews"
-               :target "_blank"}
+     [:> Text {:size "4" :weight "bold" :class "text-gray-12"} "Jira templates"]
+     [:> Text {:size "3" :class "text-gray-11"} "Optimize and automate workflows with Jira Integration."]
+     [:> Link {:href (routes/url-for :jira-templates)
+               :on-click #(rf/dispatch [:modal->close])}
       [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
        [:> Callout.Icon
         [:> ArrowUpRight {:size 16}]]
        [:> Callout.Text
         "Go to JIRA Integration"]]]]
     [:> Box {:class "space-y-radix-5" :grid-column "span 3 / span 3"}
-     [multi-select/main {:options guardrails-options
-                         :id "guardrails-input"
-                         :name "guardrails-input"
-                         :default-value (or @guardrails [])
-                         :on-change #(reset! guardrails (js->clj %))}]]]
+     [forms/select {:placeholder "Select one"
+                    :full-width? true
+                    :class "w-full"
+                    :options jira-templates-options
+                    :id "jira-template-select"
+                    :name "jira-template-select"
+                    :selected @jira-template-id
+                    :on-change #(reset! jira-template-id (js->clj %))}]]]
 
    (when (= "database" @connection-type)
      [:> Grid {:columns "5" :gap "7"}

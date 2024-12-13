@@ -194,15 +194,35 @@
                                                        :aria-hidden "true"}]
                 [:span {:class "sr-only"}
                  "Agents"]]]
-              (when admin?
-                [:li
-                 [:a {:href "#"
-                      :on-click #(rf/dispatch [:sidebar-desktop->open])
-                      :class "text-gray-400 hover:text-white hover:bg-gray-800 group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
-                  [:> hero-outline-icon/Cog8ToothIcon {:class "h-6 w-6 shrink-0 text-white"
+
+              [:li
+               [:a {:href (routes/url-for :jira-templates)
+                    :class (str (hover-side-menu-link? "/jira-templates" current-route)
+                                "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
+                [:> hero-outline-icon/ServerStackIcon {:class "h-6 w-6 shrink-0 text-white"
                                                        :aria-hidden "true"}]
-                  [:span {:class "sr-only"}
-                   "Settings"]]])]
+                [:span {:class "sr-only"}
+                 "Jira templates"]]]
+
+              (when admin?
+                [:<>
+                 [:li
+                  [:a {:href "#"
+                       :on-click #(rf/dispatch [:sidebar-desktop->open])
+                       :class "text-gray-400 hover:text-white hover:bg-gray-800 group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
+                   [:> hero-outline-icon/Cog8ToothIcon {:class "h-6 w-6 shrink-0 text-white"
+                                                        :aria-hidden "true"}]
+                   [:span {:class "sr-only"}
+                    "Settings"]]]
+
+                 [:li
+                  [:a {:href "#"
+                       :on-click #(rf/dispatch [:sidebar-desktop->open])
+                       :class "text-gray-400 hover:text-white hover:bg-gray-800 group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
+                   [:> hero-outline-icon/PuzzlePieceIcon {:class "h-6 w-6 shrink-0 text-white"
+                                                          :aria-hidden "true"}]
+                   [:span {:class "sr-only"}
+                    "Integrations"]]]])]
 
              [:li {:class "mt-auto mb-3"}
               [:a {:href "#"

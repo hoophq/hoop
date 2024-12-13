@@ -1,40 +1,17 @@
 (ns webapp.jira-templates.template-list
   (:require
-   ["@radix-ui/themes" :refer [Box Button Grid Heading Text]]
-   ["lucide-react" :refer [ChevronDown ChevronUp Circle]]
+   ["@radix-ui/themes" :refer [Box Button Flex Grid Heading Text]]
+   ["lucide-react" :refer [ChevronDown ChevronUp]]
    [re-frame.core :as rf]
    [reagent.core :as r]
+   [webapp.connections.constants :as connection-constants]
    [webapp.connections.views.create-update-connection.main :as create-update-connection]))
-
-;; Mock data
-(def mock-connections
-  [{:id "1"
-    :name "pg-demo"
-    :type "PostgreSQL"
-    :jira_template "template_1"}
-   {:id "2"
-    :name "mongodb-test"
-    :type "MongoDB"
-    :jira_template "template_1"}
-   {:id "3"
-    :name "oracle-prod"
-    :type "Oracle"
-    :jira_template "banking+prod_mongodb"}
-   {:id "4"
-    :name "mysql-dev"
-    :type "MySQL"
-    :jira_template nil}  ;; Exemplo sem template
-   {:id "5"
-    :name "redis-cache"
-    :type "Redis"
-    :jira_template "template_1"}])
 
 (defn- get-template-connections
   [connections template-id]
-  ;; (filter #(= (:jira_template %) template-id) connections)
-  (filter #(= (:jira_template %) template-id) mock-connections))
+  (filter #(= (:jira_issue_template_id %) template-id) connections))
 
-(defn- connections-panel [{:keys [name connections]}]
+(defn- connections-panel [{:keys [connections]}]
   [:> Box {:px "7" :py "5" :class "border-t rounded-b-6 bg-white"}
    [:> Grid {:columns "7" :gap "7"}
     [:> Box {:grid-column "span 2 / span 2"}
@@ -46,9 +23,12 @@
     [:> Box {:class "h-fit border border-[--gray-a6] rounded-md" :grid-column "span 5 / span 5"}
      (for [connection connections]
        ^{:key (:name connection)}
-       [:> Box {:p "2" :class "flex items-center justify-between last:border-b-0 border-b border-[--gray-a6]"}
-        [:div {:class "flex items-center gap-2"}
-         [:> Circle {:size 14 :class "text-gray-400"}]
+       [:> Flex {:p "2" :align "center" :justify "between" :class "last:border-b-0 border-b border-[--gray-a6]"}
+        [:> Flex {:gap "2" :align "center"}
+         [:> Box
+          [:figure {:class "w-4"}
+           [:img {:src  (connection-constants/get-connection-icon connection)
+                  :class "w-9"}]]]
          [:span {:class "text-sm"} (:name connection)]]
         [:> Button {:size "1"
                     :variant "soft"
@@ -59,18 +39,19 @@
                                 (rf/dispatch [:modal->open {:content [create-update-connection/main :update connection]}]))}
          "Configure"]])]]])
 
-(defn template-item [{:keys [id name description connections on-configure]}]
+(defn template-item [{:keys [id name description connections on-configure total-items]}]
   (let [show-connections? (r/atom false)]
     (fn []
-      [:div {:class (str "first:rounded-t-6 last:rounded-b-6 data-[state=open]:bg-[--accent-2] "
-                         "border-[--gray-a6] border first:border-b-0"
-                         (when @show-connections? " bg-[--accent-2]"))}
+      [:> Box {:class (str "first:rounded-t-6 last:rounded-b-6 data-[state=open]:bg-[--accent-2] "
+                           "border-[--gray-a6] border "
+                           (when (> total-items 1) " first:border-b-0")
+                           (when @show-connections? " bg-[--accent-2]"))}
        [:> Box {:p "5" :class "flex justify-between items-center"}
-        [:div {:class "flex flex-col"}
+        [:> Flex {:direction "column"}
          [:> Heading {:as "h3" :size "5" :weight "medium" :class "text-[--gray-12]"}
           name]
          [:> Text {:size "3" :class "text-[--gray-11]"} description]]
-        [:div {:class "flex items-center gap-4"}
+        [:> Flex {:align "center" :gap "4"}
          [:> Button {:size "3"
                      :variant "soft"
                      :color "gray"
@@ -86,19 +67,18 @@
               [:> ChevronUp {:size 14}]
               [:> ChevronDown {:size 14}])])]]
        (when @show-connections?
-         [connections-panel {:name name :connections connections}])])))
+         [connections-panel {:connections connections}])])))
 
 (defn main [{:keys [templates on-configure]}]
   (let [connections (rf/subscribe [:connections])]
-    (rf/dispatch [:connections->get-connections])
     (fn []
-      [:div
+      [:> Box
        (for [template templates]
          ^{:key (:id template)}
          [template-item
           (assoc template
+                 :total-items (count templates)
                  :on-configure on-configure
                  :connections (get-template-connections
-                              ;;  (:results @connections)
-                               []
-                               (:name template)))])])))
+                               (:results @connections)
+                               (:id template)))])])))

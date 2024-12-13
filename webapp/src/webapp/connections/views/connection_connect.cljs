@@ -68,6 +68,7 @@
         dialog-text (str "Are you sure you want to disconnect this connection?")
         open-dialog #(rf/dispatch [:dialog->open {:text dialog-text
                                                   :type :danger
+                                                  :action-button? true
                                                   :on-success (fn []
                                                                 (rf/dispatch [:connections->connection-disconnect])
                                                                 (rf/dispatch [:draggable-card->close])

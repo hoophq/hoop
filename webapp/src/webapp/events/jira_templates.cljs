@@ -2,68 +2,26 @@
   (:require
    [re-frame.core :as rf]))
 
-(def mock-templates
-  [{:id "template_1"
-    :name "template_1"
-    :description "Description with dummy data as reference."
-    :project_key "HT"
-    :issue_type_name "Hoop Task"
-    :mapping_types {:items [{:description "Hoop Connection Name"
-                             :type "preset"
-                             :value "session.connection"
-                             :jira_field "customfield_10050"}
-                            {:description "Hoop Session ID"
-                             :type "preset"
-                             :value "session.id"
-                             :jira_field "customfield_10051"}]}
-    :prompt_types {:items [{:description "Squad"
-                            :required true
-                            :label "Squad Name"
-                            :jira_field "customfield_10059"}]}}
-   {:id "banking+prod_mongodb"
-    :name "banking+prod_mongodb"
-    :description "Default rules for Banking squad's production mongodb databases."
-    :project_key "HT"
-    :issue_type_name "Hoop Task"
-    :mapping_types {:items [{:description "Hoop Review ID"
-                             :type "custom"
-                             :value "review-id-test-it hey ho"
-                             :jira_field "customfield_10052"}]}
-    :prompt_types {:items []}}])
-
 (rf/reg-event-fx
  :jira-templates->get-all
  (fn [{:keys [db]} [_ _]]
-   ;; TODO: Uncomment when API is ready
-   #_{:fx [[:dispatch
-            [:fetch {:method "GET"
-                     :uri "/jira-templates"
-                     :on-success #(rf/dispatch [:jira-templates->set-all %])
-                     :on-failure #(rf/dispatch [:jira-templates->set-all nil])}]]]
-      :db (assoc db :jira-templates->list {:status :loading :data []})}
-
-   ;; Mock response
-   {:db (assoc db :jira-templates->list
-               {:status :ready
-                :data mock-templates})}))
+   {:fx [[:dispatch
+          [:fetch {:method "GET"
+                   :uri "/integrations/jira/issuetemplates"
+                   :on-success #(rf/dispatch [:jira-templates->set-all %])
+                   :on-failure #(rf/dispatch [:jira-templates->set-all nil])}]]]
+    :db (assoc db :jira-templates->list {:status :loading :data []})}))
 
 (rf/reg-event-fx
  :jira-templates->get-by-id
  (fn [{:keys [db]} [_ id]]
-   ;; TODO: Uncomment quando API estiver pronta
-   #_{:db (assoc db :jira-templates->active-template {:status :loading
-                                                      :data {}})
-      :fx [[:dispatch
-            [:fetch {:method "GET"
-                     :uri (str "/jira-templates/" id)
-                     :on-success #(rf/dispatch [:jira-templates->set-active-template %])
-                     :on-failure #(rf/dispatch [:jira-templates->set-active-template nil])}]]]}
-
-   ;; Mock: procura o template nos dados mock
-   (let [template (first (filter #(= (:id %) id) mock-templates))]
-     {:db (assoc db :jira-templates->active-template
-                 {:status :ready
-                  :data template})})))
+   {:db (assoc db :jira-templates->active-template {:status :loading
+                                                    :data {}})
+    :fx [[:dispatch
+          [:fetch {:method "GET"
+                   :uri (str "/integrations/jira/issuetemplates/" id)
+                   :on-success #(rf/dispatch [:jira-templates->set-active-template %])
+                   :on-failure #(rf/dispatch [:jira-templates->set-active-template nil])}]]]}))
 
 (rf/reg-event-db
  :jira-templates->set-all
@@ -81,7 +39,7 @@
    (js/console.log "Create Template Payload:" (clj->js template))  ;; Log do payload
    {:fx [[:dispatch
           [:fetch {:method "POST"
-                   :uri "/jira-templates"
+                   :uri "/integrations/jira/issuetemplates"
                    :body template
                    :on-success (fn []
                                  (rf/dispatch [:jira-templates->get-all])
@@ -94,7 +52,7 @@
    (js/console.log "Update Template Payload:" (clj->js template))  ;; Log do payload
    {:fx [[:dispatch
           [:fetch {:method "PUT"
-                   :uri (str "/jira-templates/" (:id template))
+                   :uri (str "/integrations/jira/issuetemplates/" (:id template))
                    :body template
                    :on-success (fn []
                                  (rf/dispatch [:jira-templates->get-all])
@@ -106,7 +64,7 @@
  (fn [_ [_ id]]
    {:fx [[:dispatch
           [:fetch {:method "DELETE"
-                   :uri (str "/jira-templates/" id)
+                   :uri (str "/integrations/jira/issuetemplates/" id)
                    :on-success (fn []
                                  (rf/dispatch [:jira-templates->get-all])
                                  (rf/dispatch [:navigate :jira-templates]))

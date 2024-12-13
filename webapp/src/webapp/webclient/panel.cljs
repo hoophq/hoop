@@ -11,7 +11,7 @@
    ["@codemirror/state" :as cm-state]
    ["@codemirror/view" :as cm-view]
    ["@heroicons/react/20/solid" :as hero-solid-icon]
-   ["@radix-ui/themes" :refer [Button]]
+   ["@radix-ui/themes" :refer [Button Text]]
    ["@uiw/codemirror-theme-dracula" :refer [dracula]]
    ["@uiw/codemirror-theme-github" :refer [githubDark]]
    ["@uiw/codemirror-theme-nord" :refer [nord]]
@@ -73,16 +73,17 @@
       (reset! script code-string))))
 
 (defn- get-template-from-connection [connection]
-  (when-let [template-id  "template_1"
-            ;;  (:jira_template connection)
-             ]
+  (when-let [template-id (:jira_issue_template_id connection)]
     (let [template @(rf/subscribe [:jira-templates->template-by-id template-id])]
       template)))
 
 (defn- submit-task [e script selected-connections atom-exec-list-open? metadata script-response]
   (let [connection (first selected-connections)
         connection-type (discover-connection-type connection)
+        multiple-connections? (> (count selected-connections) 1)
         jira-template (get-template-from-connection connection)
+        has-jira-template? (some #(:jira_issue_template_id %) selected-connections)
+        jira-integration-enabled? @(rf/subscribe [:jira-integration->integration-enabled?])
         prompts (get-in jira-template [:prompt_types :items])
         change-to-tabular? (and (some (partial = connection-type) ["mysql" "postgres" "sql-server" "oracledb" "mssql" "database"])
                                 (< (count @script-response) 1))
@@ -98,34 +99,45 @@
                        :else script)]
     (when (.-preventDefault e) (.preventDefault e))
 
-    (if (and (seq selected-connections)
-             (> (count selected-connections) 1))
+    (cond
+      ;; Verify if there are multiple connections and some have Jira template
+      (and multiple-connections? has-jira-template? jira-integration-enabled?)
+      (rf/dispatch [:dialog->open
+                    {:title "Running in multiple connections not allowed"
+                     :action-button? false
+                     :text [:> Text {:size "3" :class "text-[--gray-11]"}
+                            (str "For now, it's not possible to run commands in multiple "
+                                 "connections with Jira Templates activated. Please select "
+                                 "just one connection before running your command.")]}])
+
+      ;; Case for multiple connections without Jira template
+      (and (seq selected-connections) multiple-connections?)
       (reset! atom-exec-list-open? true)
 
-      (if (first selected-connections)
-        (if (seq prompts)
-                  ;; Se houver prompts, mostra o modal de formulário
-          (rf/dispatch [:modal->open
-                        {:content [prompt-form/main
-                                   {:prompts prompts
-                                    :on-submit (fn [prompt-data]
-                                                 (rf/dispatch [:modal->close])
-                                                 (rf/dispatch [:editor-plugin->exec-script
-                                                               {:script script
-                                                                :connection-name (:name connection)
-                                                                :metadata (merge metadata
-                                                                                 {:jira_template_id (:jira_template connection)
-                                                                                  :prompts prompt-data})}]))}]}])
+      ;; Case for single connection
+      (first selected-connections)
+      (if (and (seq prompts)
+               jira-integration-enabled?)
+        (rf/dispatch [:modal->open
+                      {:content [prompt-form/main
+                                 {:prompts (get-in (get-template-from-connection connection) [:prompt_types :items])
+                                  :on-submit (fn [prompt-data]
+                                               (rf/dispatch [:modal->close])
+                                               (rf/dispatch [:editor-plugin->exec-script
+                                                             {:script script
+                                                              :connection-name (:name connection)
+                                                              :jira_fields prompt-data
+                                                              :metadata (metadata->json-stringify metadata)}]))}]}])
+        (do
+          (when change-to-tabular?
+            (reset! log-area/selected-tab "Tabular"))
+          (rf/dispatch [:editor-plugin->exec-script {:script final-script
+                                                     :connection-name (:name connection)
+                                                     :metadata (metadata->json-stringify metadata)}])))
 
-          (do
-            (when change-to-tabular?
-              (reset! log-area/selected-tab "Tabular"))
-            (rf/dispatch [:editor-plugin->exec-script {:script final-script
-                                                       :connection-name (:name connection)
-                                                       :metadata (metadata->json-stringify metadata)}])))
-
-        (rf/dispatch [:show-snackbar {:level :info
-                                      :text "You must choose a connection"}])))))
+      :else
+      (rf/dispatch [:show-snackbar {:level :info
+                                    :text "You must choose a connection"}]))))
 
 (defmulti ^:private saved-status-el identity)
 (defmethod ^:private saved-status-el :saved [_]
@@ -446,6 +458,7 @@
     (rf/dispatch [:audit->clear-session])
     (rf/dispatch [:plugins->get-my-plugins])
     (rf/dispatch [:jira-templates->get-all])
+    (rf/dispatch [:jira-integration->get])
     (fn []
       (clearLocalCache)
       (rf/dispatch [:editor-plugin->get-run-connection-list])

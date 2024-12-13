@@ -31,7 +31,6 @@
                         (let [payload {:url @url
                                        :user @user-email
                                        :api_token @api-token
-                                       :project_key @project-key
                                        :status (if @jira-enabled? "enabled" "disabled")}]
 
                           (.preventDefault e)
@@ -75,22 +74,6 @@
              [:> Text {:size "2" :class "text-gray-11"}
               "For more information about how to find your User API token, "
               [:> Link {:href "https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/"
-                        :target "_blank"}
-               "click here."]]]]
-           [:> Box {:class "space-y-radix-2 first:mb-0"}
-            [forms/input {:label "Project Key"
-                          :placeholder "PKEY"
-                          :on-change #(reset! project-key (-> % .-target .-value))
-                          :classes "whitespace-pre overflow-x"
-                          :disabled (not @jira-enabled?)
-                          :required true
-                          :not-margin-bottom? true
-                          :value @project-key}]
-            [:> Flex {:gap "2" :align "center"}
-             [:> Info {:size 16 :class "text-gray-11"}]
-             [:> Text {:size "2" :class "text-gray-11"}
-              "For more information about how to find your Project Key, "
-              [:> Link {:href "https://support.atlassian.com/jira-software-cloud/docs/edit-a-projects-details/"
                         :target "_blank"}
                "click here."]]]]]
           [:> Box {:mt "8"}

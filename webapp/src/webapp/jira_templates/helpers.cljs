@@ -5,14 +5,14 @@
   {:type ""
    :value ""
    :jira_field ""
-   :description ""  ;; mudou de details para description na nova estrutura
+   :description ""
    :selected false})
 
 (defn create-empty-prompt []
   {:label ""
    :jira_field ""
    :required true
-   :description ""  ;; mudou de details para description na nova estrutura
+   :description ""
    :selected false})
 
 (defn- format-mapping-rule [rule]
@@ -54,7 +54,6 @@
    :mapping-select-state (r/atom false)
    :prompts-select-state (r/atom false)})
 
-;; Mantido exatamente igual, apenas mudando o nome do campo de details para description nos comentários
 (defn create-form-handlers [state]
   {:on-mapping-field-change (fn [rules-atom idx field value]
                               (swap! rules-atom assoc-in [idx field] value))

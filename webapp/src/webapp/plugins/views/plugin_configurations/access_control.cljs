@@ -72,6 +72,7 @@
                     :text (str "By activating this feature users will have"
                                " their accesses blocked until a connection permission is set.")
                     :text-action-button "Confirm"
+                    :action-button? true
                     :type :info
                     :on-success (fn []
                                   (rf/dispatch [:plugins->create-plugin {:name "access_control"
