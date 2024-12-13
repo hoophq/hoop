@@ -44,7 +44,7 @@
            "No Jira Integration configured in your Organization yet."]
           [:> Button {:size "3"
                       :variant "solid"
-                      :on-click #(rf/dispatch [:navigate :jira-integration])}
+                      :on-click #(rf/dispatch [:navigate :manage-plugin {} :plugin-name :jira])}
            "Go to Jira Integration"]
           [:> Text {:size "2" :pt "5" :class "text-[--gray-11]"}
            "Need more information? Check out our "
