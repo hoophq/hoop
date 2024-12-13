@@ -18,7 +18,7 @@ import (
 //	@Description	List Issue Templates
 //	@Tags			Jira
 //	@Produce		json
-//	@Success		200		{array} 	openapi.JiraIssueTemplate
+//	@Success		200		{array}		openapi.JiraIssueTemplate
 //	@Failure		404,500	{object}	openapi.HTTPError
 //	@Router			/integrations/jira/issuetemplates [get]
 func ListIssueTemplates(c *gin.Context) {
@@ -53,7 +53,7 @@ func ListIssueTemplates(c *gin.Context) {
 //	@Description	Get Issue Templates
 //	@Tags			Jira
 //	@Produce		json
-//	@Param			id	path	string	true	"The id of the resource"
+//	@Param			id		path		string	true	"The id of the resource"
 //	@Success		200		{object}	openapi.JiraIssueTemplate
 //	@Failure		404,500	{object}	openapi.HTTPError
 //	@Router			/integrations/jira/issuetemplates/{id} [get]
@@ -143,7 +143,7 @@ func CreateIssueTemplates(c *gin.Context) {
 //	@Tags			Jira
 //	@Accept			json
 //	@Produce		json
-//	@Param			id	path	string	true	"The id of the resource"
+//	@Param			id			path		string								true	"The id of the resource"
 //	@Param			request		body		openapi.JiraIssueTemplateRequest	true	"The request body resource"
 //	@Success		201			{object}	openapi.JiraIssueTemplate
 //	@Failure		400,409,500	{object}	openapi.HTTPError
@@ -163,6 +163,7 @@ func UpdateIssueTemplates(c *gin.Context) {
 		IssueTypeName: req.IssueTypeName,
 		MappingTypes:  req.MappingTypes,
 		PromptTypes:   req.PromptTypes,
+		UpdatedAt:     time.Now().UTC(),
 	}
 	err := models.UpdateJiraIssueTemplates(issue)
 	switch err {

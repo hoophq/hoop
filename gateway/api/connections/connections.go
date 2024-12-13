@@ -403,7 +403,7 @@ func FetchByName(ctx pgrest.Context, connectionName string) (*models.Connection,
 //	@Description	List all available databases for a database connection
 //	@Tags			Core
 //	@Produce		json
-//	@Param			nameOrID	path	string	true	"Name or UUID of the connection"
+//	@Param			nameOrID	path		string	true	"Name or UUID of the connection"
 //	@Success		200			{object}	openapi.ConnectionDatabaseListResponse
 //	@Failure		400,404,500	{object}	openapi.HTTPError
 //	@Router			/connections/{nameOrID}/databases [get]
@@ -532,8 +532,8 @@ printjson(result);`
 //	@Description	Get detailed schema information including tables, views, columns and indexes
 //	@Tags			Core
 //	@Produce		json
-//	@Param			nameOrID	path	string	true	"Name or UUID of the connection"
-//	@Param			database	path	string	true	"Name of the database"
+//	@Param			nameOrID	path		string	true	"Name or UUID of the connection"
+//	@Param			database	path		string	true	"Name of the database"
 //	@Success		200			{object}	openapi.ConnectionSchemaResponse
 //	@Failure		400,404,500	{object}	openapi.HTTPError
 //	@Router			/connections/{nameOrID}/schemas [get]
