@@ -16,6 +16,7 @@
             :on-success nil
             :text ""
             :text-action-button ""
+            :action-button? true
             :title ""}
    :dialog-on-success nil
    :dialog-status :closed

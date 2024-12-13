@@ -106,33 +106,46 @@
                "Connections"]]]
 
             (when admin?
-              [:li
-               [:a {:href "#"
-                    :on-click #(rf/dispatch [:navigate :users])
-                    :class (str (hover-side-menu-link? "/organization/users" current-route)
-                                (:enabled link-styles))}
-                [:div {:class "flex gap-3 items-center"}
-                 [:> hero-outline-icon/UserGroupIcon {:class (str "h-6 w-6 shrink-0 text-white")
-                                                      :aria-hidden "true"}]
-                 "Users"]]])
+              [:<>
+               [:li
+                [:a {:href "#"
+                     :on-click #(rf/dispatch [:navigate :users])
+                     :class (str (hover-side-menu-link? "/organization/users" current-route)
+                                 (:enabled link-styles))}
+                 [:div {:class "flex gap-3 items-center"}
+                  [:> hero-outline-icon/UserGroupIcon {:class (str "h-6 w-6 shrink-0 text-white")
+                                                       :aria-hidden "true"}]
+                  "Users"]]]
 
-            [:li
-             [:a {:href "#"
-                  :on-click #(rf/dispatch [:navigate :guardrails])
-                  :class (str (hover-side-menu-link? "/guardrails" current-route)
-                              (:enabled link-styles))}
-              [:div {:class "flex gap-3 items-center"}
-               [:> hero-outline-icon/ShieldCheckIcon {:class (str "h-6 w-6 shrink-0 text-white")
-                                                      :aria-hidden "true"}]
-               "Guardrails"]]]
-            [:li
-             [:a {:href (routes/url-for :agents)
-                  :class (str (hover-side-menu-link? "/agents" current-route)
-                              (:enabled link-styles))}
-              [:div {:class "flex gap-3 items-center"}
-               [:> hero-outline-icon/ServerStackIcon {:class (str "h-6 w-6 shrink-0 text-white")
-                                                      :aria-hidden "true"}]
-               "Agents"]]]
+               [:li
+                [:a {:href "#"
+                     :on-click #(rf/dispatch [:navigate :guardrails])
+                     :class (str (hover-side-menu-link? "/guardrails" current-route)
+                                 (:enabled link-styles))}
+                 [:div {:class "flex gap-3 items-center"}
+                  [:> hero-outline-icon/ShieldCheckIcon {:class (str "h-6 w-6 shrink-0 text-white")
+                                                         :aria-hidden "true"}]
+                  "Guardrails"]]]
+               [:li
+                [:a {:href (routes/url-for :agents)
+                     :class (str (hover-side-menu-link? "/agents" current-route)
+                                 (:enabled link-styles))}
+                 [:div {:class "flex gap-3 items-center"}
+                  [:> hero-outline-icon/ServerStackIcon {:class (str "h-6 w-6 shrink-0 text-white")
+                                                         :aria-hidden "true"}]
+                  "Agents"]]]
+
+               [:li
+                [:a {:href "#"
+                     :on-click #(rf/dispatch [:navigate :jira-templates])
+                     :class (str (hover-side-menu-link? "/jira-templates" current-route)
+                                 (:enabled link-styles))}
+                 [:div {:class "flex gap-3 items-center"}
+                  [:div
+                   [:figure {:class "flex-shrink-0 w-6"}
+                    [:img {:src (str config/webapp-url "/icons/icon-jira.svg")}]]]
+                  "Jira Templates"]]]])
+
             (when admin?
               [:> ui/Disclosure {:as "li"
                                  :class "text-xs font-semibold leading-6 text-gray-400"}

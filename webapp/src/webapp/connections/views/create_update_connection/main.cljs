@@ -71,6 +71,7 @@
         user (rf/subscribe [:users->current-user])
         user-groups (rf/subscribe [:user-groups])
         guardrails-list (rf/subscribe [:guardrails->list])
+        jira-templates-list (rf/subscribe [:jira-templates->list])
 
         scroll-pos (r/atom 0)
         accordion-resource-type (r/atom true)
@@ -105,7 +106,11 @@
                                   false))
         guardrails (r/atom (if (empty? (:guardrail_rules connection))
                              []
-                             (transform-filtered-guardrails-selected (:data @guardrails-list) (:guardrail_rules connection))))
+                             (transform-filtered-guardrails-selected
+                              (:data @guardrails-list)
+                              (:guardrail_rules connection))))
+        jira-template-id (r/atom (or (:jira_issue_template_id connection) ""))
+
         database-schema? (r/atom (or (convertStatusToBool (:access_schema connection)) false))
         access-mode-runbooks? (r/atom (if (nil? (:access_mode_runbooks connection))
                                         true
@@ -137,6 +142,7 @@
     (rf/dispatch [:users->get-user])
     (rf/dispatch [:organization->get-api-key])
     (rf/dispatch [:guardrails->get-all])
+    (rf/dispatch [:jira-templates->get-all])
     (fn []
       (let [first-step-finished (boolean (or @connection-type
                                              (= form-type :update)))
@@ -188,6 +194,7 @@
                                   :guardrail_rules (if (seq @guardrails)
                                                      (helpers/js-select-options->list @guardrails)
                                                      [])
+                                  :jira_issue_template_id @jira-template-id
                                   :tags (if (seq @connection-tags-value)
                                           (helpers/js-select-options->list @connection-tags-value)
                                           nil)
@@ -246,6 +253,7 @@
                                                        {:title "Delete connection?"
                                                         :type :danger
                                                         :text-action-button "Confirm and delete"
+                                                        :action-button? true
                                                         :text [:> Box {:class "space-y-radix-4"}
                                                                [:> Text {:as "p"}
                                                                 "This action will instantly remove your access to "
@@ -382,7 +390,10 @@
                                  :access-mode-connect access-mode-connect?
                                  :guardrails-options (or (mapv #(into {} {"value" (:id %) "label" (:name %)})
                                                                (-> @guardrails-list :data)) [])
-                                 :guardrails guardrails}]}
+                                 :guardrails guardrails
+                                 :jira-templates-options (or (mapv #(into {} {:value (:id %) :text (:name %)})
+                                                                   (-> @jira-templates-list :data)) [])
+                                 :jira-template-id jira-template-id}]}
                :id "advanced-settings"
                :open? @accordion-advanced-settings
                :on-change #(reset! accordion-advanced-settings %)}]]]]
