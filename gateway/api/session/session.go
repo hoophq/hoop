@@ -3,8 +3,10 @@ package sessionapi
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -16,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/memory"
 	pb "github.com/hoophq/hoop/common/proto"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -27,8 +30,12 @@ import (
 	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
 	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
 	"github.com/hoophq/hoop/gateway/storagev2"
-	sessionstorage "github.com/hoophq/hoop/gateway/storagev2/session"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
+)
+
+var (
+	downloadTokenStore        = memory.New()
+	defaultDownloadExpireTime = time.Minute * 5
 )
 
 type SessionPostBody struct {
@@ -257,47 +264,72 @@ func CoerceMetadataFields(metadata map[string]any) error {
 //	@Router			/sessions [get]
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-
-	var options []*openapi.SessionOption
+	var option models.SessionOption
 	for _, optKey := range openapi.AvailableSessionOptions {
 		if queryOptVal, ok := c.GetQuery(string(optKey)); ok {
-			var optVal any
 			switch optKey {
-			case openapi.SessionOptionStartDate, openapi.SessionOptionEndDate:
-				optTimeVal, err := time.Parse(time.RFC3339, queryOptVal)
-				if err != nil {
-					log.Warnf("failed listing sessions, wrong start_date option value, err=%v", err)
-					c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "failed listing sessions, start_date in wrong format"})
-					return
-				}
-				optVal = optTimeVal
-			case openapi.SessionOptionLimit, openapi.SessionOptionOffset:
-				if paginationOptVal, err := strconv.Atoi(queryOptVal); err == nil {
-					optVal = paginationOptVal
-				}
 			case openapi.SessionOptionUser:
 				if !ctx.IsAuditorOrAdminUser() {
 					continue
 				}
-				optVal = queryOptVal
-			default:
-				optVal = queryOptVal
+				option.User = queryOptVal
+			case openapi.SessionOptionConnection:
+				option.ConnectionName = queryOptVal
+			case openapi.SessionOptionType:
+				option.ConnectionType = queryOptVal
+			case openapi.SessionOptionStartDate:
+				optTimeVal, err := time.Parse(time.RFC3339, queryOptVal)
+				if err != nil {
+					log.Warnf("failed listing sessions, wrong start_date option value, err=%v", err)
+					c.JSON(http.StatusUnprocessableEntity, gin.H{
+						"message": "failed listing sessions, start_date or end_date in wrong format"})
+					return
+				}
+				option.StartDate = sql.NullString{
+					String: optTimeVal.Format(time.RFC3339),
+					Valid:  true,
+				}
+			case openapi.SessionOptionEndDate:
+				optTimeVal, err := time.Parse(time.RFC3339, queryOptVal)
+				if err != nil {
+					log.Warnf("failed listing sessions, wrong end_date option value, err=%v", err)
+					c.JSON(http.StatusUnprocessableEntity, gin.H{
+						"message": "failed listing sessions, start_date or end_date in wrong format"})
+					return
+				}
+				option.EndDate = sql.NullString{
+					String: optTimeVal.Format(time.RFC3339),
+					Valid:  true,
+				}
+			case openapi.SessionOptionLimit:
+				option.Limit, _ = strconv.Atoi(queryOptVal)
+			case openapi.SessionOptionOffset:
+				option.Offset, _ = strconv.Atoi(queryOptVal)
 			}
-			options = append(options, WithOption(optKey, optVal))
 		}
 	}
+
+	// scope listing to the authenticated user
 	if !ctx.IsAuditorOrAdminUser() {
-		options = append(options, WithOption(openapi.SessionOptionUser, ctx.UserID))
+		option.User = ctx.UserID
 	}
-	sessionList, err := sessionstorage.List(ctx, options...)
+
+	if option.StartDate.Valid && !option.EndDate.Valid {
+		option.EndDate = sql.NullString{
+			String: time.Now().UTC().Format(time.RFC3339),
+			Valid:  true,
+		}
+	}
+
+	sessionList, err := models.ListSessions(ctx.OrgID, option)
 	if err != nil {
-		log.Errorf("failed listing sessions, err=%v", err)
+		log.Errorf("failed listing sessions (v2), err=%v", err)
 		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed listing sessions"})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed listing sessions (v2)"})
 		return
 	}
 
-	c.PureJSON(http.StatusOK, sessionList)
+	c.PureJSON(http.StatusOK, toOpenApiSessionList(sessionList))
 }
 
 // GetSessionByID
@@ -315,7 +347,7 @@ func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
 	sessionID := c.Param("session_id")
-	session, err := sessionstorage.FindOne(ctx, sessionID)
+	session, err := models.GetSessionByID(ctx.OrgID, sessionID)
 	if err != nil {
 		log.Errorf("failed fetching session, err=%v", err)
 		sentry.CaptureException(err)
@@ -372,6 +404,7 @@ func Get(c *gin.Context) {
 		return
 	}
 
+	// TODO: refactor to perform a left join query to obtain the review
 	review, err := pgreview.New().FetchOneBySid(ctx, sessionID)
 	if err != nil {
 		log.Errorf("failed fetching review, err=%v", err)
@@ -380,52 +413,19 @@ func Get(c *gin.Context) {
 		return
 	}
 
-	// TODO: refactor to use the postgrest direct function
-	if review != nil {
-		session.Review = &types.ReviewJSON{
-			Id:        review.Id,
-			OrgId:     review.OrgId,
-			CreatedAt: review.CreatedAt,
-			Type:      review.Type,
-			Session:   review.Session,
-			Input:     review.Input,
-			// Redacted for now
-			// InputEnvVars:     review.InputEnvVars,
-			InputClientArgs:  review.InputClientArgs,
-			AccessDuration:   review.AccessDuration,
-			Status:           review.Status,
-			RevokeAt:         review.RevokeAt,
-			ReviewOwner:      review.ReviewOwner,
-			Connection:       review.Connection,
-			ReviewGroupsData: review.ReviewGroupsData,
+	if c.Query("event_stream") == "utf8" {
+		output, err := parseBlobStream(session, sessionParseOption{events: []string{"o", "e"}})
+		if err != nil {
+			log.With("sid", sessionID).Error(err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed parsing blob stream"})
+			return
 		}
+		session.BlobStream = json.RawMessage(fmt.Sprintf(`[%q]`, string(output)))
 	}
 
-	if c.Query("event_stream") == "utf8" {
-		output := parseSessionToFile(session, sessionParseOption{events: []string{"o", "e"}})
-		session.EventStream = []any{string(output)}
-	}
-	c.PureJSON(http.StatusOK, map[string]any{
-		"id":                    session.ID,
-		"org_id":                session.OrgID,
-		"script":                session.Script,
-		"labels":                session.Labels,
-		"integrations_metadata": session.IntegrationsMetadata,
-		"metadata":              session.Metadata,
-		"metrics":               session.Metrics,
-		"user":                  session.UserEmail,
-		"user_id":               session.UserID,
-		"user_name":             session.UserName,
-		"type":                  session.Type,
-		"connection":            session.Connection,
-		"review":                session.Review,
-		"verb":                  session.Verb,
-		"status":                session.Status,
-		"event_stream":          session.EventStream,
-		"event_size":            session.EventSize,
-		"start_date":            session.StartSession,
-		"end_date":              session.EndSession,
-	})
+	obj := toOpenApiSession(session)
+	obj.Review = toOpenApiReview(review)
+	c.PureJSON(http.StatusOK, obj)
 }
 
 // DownloadSession
@@ -510,7 +510,8 @@ func DownloadSession(c *gin.Context) {
 			"message": "unauthorized"})
 		return
 	}
-	session, err := sessionstorage.FindOne(ctx, sid)
+	session, err := models.GetSessionByID(ctx.OrgID, sid)
+	// session, err := sessionstorage.FindOne(ctx, sid)
 	if err != nil || session == nil {
 		log.Errorf("failed fetching session, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -519,8 +520,21 @@ func DownloadSession(c *gin.Context) {
 		return
 	}
 
-	opts := sessionParseOption{withLineBreak, withEventTime, jsonFmt, csvFmt, eventTypes}
-	output := parseSessionToFile(session, opts)
+	// opts := sessionParseOption{withLineBreak, withEventTime, jsonFmt, csvFmt, eventTypes}
+	output, err := parseBlobStream(session, sessionParseOption{
+		withLineBreak: withLineBreak,
+		withEventTime: withEventTime,
+		withJsonFmt:   jsonFmt,
+		withCsvFmt:    csvFmt,
+		events:        eventTypes,
+	})
+	if err != nil {
+		log.Errorf("failed parsing blob stream, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  http.StatusInternalServerError,
+			"message": "failed parsing blob stream"})
+		return
+	}
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s.%s", sid, fileExt))
 	c.Header("Content-Type", "application/octet-stream")
 	c.Header("Accept-Length", fmt.Sprintf("%d", len(output)))

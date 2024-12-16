@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
 	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
@@ -71,7 +72,7 @@ func RunReviewedExec(c *gin.Context) {
 	lockExec(sessionId)
 	defer unlockExec(sessionId)
 
-	if review.Type != ReviewTypeOneTime {
+	if review.Type != string(openapi.ReviewTypeOneTime) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "session not found"})
 		return
 	}

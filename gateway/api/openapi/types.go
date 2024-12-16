@@ -1,6 +1,7 @@
 package openapi
 
 import (
+	"encoding/json"
 	"time"
 )
 
@@ -439,8 +440,7 @@ type Session struct {
 	// * `<event-time>` - relative time in miliseconds to start_date
 	// * `<event-type>` - the event type as string (i: input, o: output e: output-error)
 	// * `<base64-content>` - the content of the session encoded as base64 string
-	EventStream      SessionEventStream                   `json:"event_stream"`
-	NonIndexedStream SessionNonIndexedEventStreamListType `json:"-"`
+	EventStream json.RawMessage `json:"event_stream"`
 	// The stored resource size in bytes
 	EventSize int64 `json:"event_size" example:"569"`
 	// When the execution started
@@ -488,6 +488,7 @@ type SessionReportItem struct {
 type (
 	ReviewStatusType        string
 	ReviewRequestStatusType string
+	ReviewType              string
 )
 
 const (
@@ -502,6 +503,9 @@ const (
 	ReviewStatusRequestApprovedType ReviewRequestStatusType = ReviewRequestStatusType(ReviewStatusApproved)
 	ReviewStatusRequestRejectedType ReviewRequestStatusType = ReviewRequestStatusType(ReviewStatusRejected)
 	ReviewStatusRequestRevokedType  ReviewRequestStatusType = ReviewRequestStatusType(ReviewStatusRevoked)
+
+	ReviewTypeJit     ReviewType = "jit"
+	ReviewTypeOneTime ReviewType = "onetime"
 )
 
 type ReviewRequest struct {
@@ -522,7 +526,7 @@ type Review struct {
 	// The type of this review
 	// * onetime - Represents a one time execution
 	// * jit - Represents a time based review
-	Type string `json:"type" enums:"onetime,jit" readonly:"true"`
+	Type ReviewType `json:"type" enums:"onetime,jit" readonly:"true"`
 	// The id of session
 	Session string `json:"session" format:"uuid" readonly:"true" example:"35DB0A2F-E5CE-4AD8-A308-55C3108956E5"`
 	// The input that was issued when the resource was created

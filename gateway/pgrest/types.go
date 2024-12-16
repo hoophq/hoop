@@ -174,12 +174,6 @@ type Session struct {
 	EndedAt   *string `json:"ended_at"`
 }
 
-type SessionList struct {
-	Total       int64     `json:"total"`
-	HasNextPage bool      `json:"has_next_page"`
-	Items       []Session `json:"data"`
-}
-
 type SessionReport struct {
 	Items                 []SessionReportItem `json:"items"`
 	TotalRedactCount      int64               `json:"total_redact_count"`
@@ -216,24 +210,3 @@ type ProxyManagerState struct {
 	ClientMetadata map[string]string `json:"metadata"`
 	ConnectedAt    string            `json:"connected_at"`
 }
-
-type SessionOptionKey string
-type SessionOption struct {
-	OptionKey SessionOptionKey
-	OptionVal any
-}
-
-const (
-	OptionUser       SessionOptionKey = "user"
-	OptionType       SessionOptionKey = "type"
-	OptionConnection SessionOptionKey = "connection"
-	OptionStartDate  SessionOptionKey = "start_date"
-	OptionEndDate    SessionOptionKey = "end_date"
-	OptionOffset     SessionOptionKey = "offset"
-	OptionLimit      SessionOptionKey = "limit"
-)
-
-const (
-	DefaultLimit  int = 100
-	DefaultOffset int = 0
-)
