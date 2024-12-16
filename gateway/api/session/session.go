@@ -264,7 +264,7 @@ func CoerceMetadataFields(metadata map[string]any) error {
 //	@Router			/sessions [get]
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	var option models.SessionOption
+	option := models.NewSessionOption()
 	for _, optKey := range openapi.AvailableSessionOptions {
 		if queryOptVal, ok := c.GetQuery(string(optKey)); ok {
 			switch optKey {

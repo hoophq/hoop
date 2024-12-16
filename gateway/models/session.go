@@ -41,6 +41,16 @@ type SessionOption struct {
 	Limit          int
 }
 
+func NewSessionOption() SessionOption {
+	return SessionOption{
+		User:           "%",
+		ConnectionType: "%",
+		ConnectionName: "%",
+		Limit:          20,
+		Offset:         0,
+	}
+}
+
 type Session struct {
 	ID                   string            `gorm:"column:id"`
 	OrgID                string            `gorm:"column:org_id"`
