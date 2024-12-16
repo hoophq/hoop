@@ -3,9 +3,6 @@ package pgsession
 import (
 	"fmt"
 	"net/url"
-	"sort"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -86,26 +83,26 @@ func (s *session) Upsert(ctx pgrest.OrgContext, sess types.Session) (err error) 
 	return
 }
 
-func (s *session) FetchAll(ctx pgrest.OrgContext, opts ...*pgrest.SessionOption) (*pgrest.SessionList, error) {
-	var items []pgrest.Session
-	qs, limit := toQueryParams(ctx.GetOrgID(), opts...)
-	err := pgrest.New("/sessions?%s", qs).List().DecodeInto(&items)
-	if err != nil {
-		if err == pgrest.ErrNotFound {
-			return &pgrest.SessionList{}, nil
-		}
-		return nil, err
-	}
-	total := pgrest.New("/sessions?%s", qs).ExactCount()
-	if total == -1 {
-		return nil, fmt.Errorf("failed performing counting session items")
-	}
-	return &pgrest.SessionList{
-		Total:       total,
-		HasNextPage: len(items) == limit,
-		Items:       items,
-	}, nil
-}
+// func (s *session) FetchAll(ctx pgrest.OrgContext, opts ...*pgrest.SessionOption) (*pgrest.SessionList, error) {
+// 	var items []pgrest.Session
+// 	qs, limit := toQueryParams(ctx.GetOrgID(), opts...)
+// 	err := pgrest.New("/sessions?%s", qs).List().DecodeInto(&items)
+// 	if err != nil {
+// 		if err == pgrest.ErrNotFound {
+// 			return &pgrest.SessionList{}, nil
+// 		}
+// 		return nil, err
+// 	}
+// 	total := pgrest.New("/sessions?%s", qs).ExactCount()
+// 	if total == -1 {
+// 		return nil, fmt.Errorf("failed performing counting session items")
+// 	}
+// 	return &pgrest.SessionList{
+// 		Total:       total,
+// 		HasNextPage: len(items) == limit,
+// 		Items:       items,
+// 	}, nil
+// }
 
 func (s *session) FetchOne(ctx pgrest.OrgContext, sessionID string) (*types.Session, error) {
 	var sess pgrest.Session
@@ -152,70 +149,70 @@ func (s *session) FetchAllFromDate(fromDate time.Time) ([]*types.Session, error)
 	return sessionList, nil
 }
 
-func toQueryParams(orgID string, opts ...*pgrest.SessionOption) (string, int) {
-	vals := url.Values{}
-	limit := pgrest.DefaultLimit
-	vals.Set("org_id", fmt.Sprintf("eq.%s", orgID))
-	vals.Set("limit", fmt.Sprintf("%v", limit))
-	vals.Set("offset", fmt.Sprintf("%v", pgrest.DefaultOffset))
-	vals.Set("order", "created_at.desc")
-	for _, opt := range opts {
-		val := fmt.Sprintf("%v", opt.OptionVal)
-		switch opt.OptionKey {
-		case pgrest.OptionUser:
-			vals.Set("user_id", fmt.Sprintf("eq.%s", val))
-		case pgrest.OptionType:
-			vals.Set("connection_type", fmt.Sprintf("eq.%s", val))
-		case pgrest.OptionConnection:
-			vals.Set("connection", fmt.Sprintf("eq.%s", val))
-		case pgrest.OptionStartDate:
-			if t, ok := opt.OptionVal.(time.Time); ok {
-				vals.Add("created_at", fmt.Sprintf("gt.%s", t.Format(time.RFC3339)))
-			}
-		case pgrest.OptionEndDate:
-			if t, ok := opt.OptionVal.(time.Time); ok {
-				vals.Add("created_at", fmt.Sprintf("lt.%s", t.Format(time.RFC3339)))
-			}
-		case pgrest.OptionLimit:
-			optLimit, _ := strconv.Atoi(val)
-			if optLimit > pgrest.DefaultLimit {
-				vals.Set("limit", fmt.Sprintf("%v", pgrest.DefaultLimit))
-				break
-			}
-			limit = optLimit
-			vals.Set(string(opt.OptionKey), val)
-		case pgrest.OptionOffset:
-			vals.Set(string(opt.OptionKey), val)
-		}
-	}
+// func toQueryParams(orgID string, opts ...*pgrest.SessionOption) (string, int) {
+// 	vals := url.Values{}
+// 	limit := pgrest.DefaultLimit
+// 	vals.Set("org_id", fmt.Sprintf("eq.%s", orgID))
+// 	vals.Set("limit", fmt.Sprintf("%v", limit))
+// 	vals.Set("offset", fmt.Sprintf("%v", pgrest.DefaultOffset))
+// 	vals.Set("order", "created_at.desc")
+// 	for _, opt := range opts {
+// 		val := fmt.Sprintf("%v", opt.OptionVal)
+// 		switch opt.OptionKey {
+// 		case pgrest.OptionUser:
+// 			vals.Set("user_id", fmt.Sprintf("eq.%s", val))
+// 		case pgrest.OptionType:
+// 			vals.Set("connection_type", fmt.Sprintf("eq.%s", val))
+// 		case pgrest.OptionConnection:
+// 			vals.Set("connection", fmt.Sprintf("eq.%s", val))
+// 		case pgrest.OptionStartDate:
+// 			if t, ok := opt.OptionVal.(time.Time); ok {
+// 				vals.Add("created_at", fmt.Sprintf("gt.%s", t.Format(time.RFC3339)))
+// 			}
+// 		case pgrest.OptionEndDate:
+// 			if t, ok := opt.OptionVal.(time.Time); ok {
+// 				vals.Add("created_at", fmt.Sprintf("lt.%s", t.Format(time.RFC3339)))
+// 			}
+// 		case pgrest.OptionLimit:
+// 			optLimit, _ := strconv.Atoi(val)
+// 			if optLimit > pgrest.DefaultLimit {
+// 				vals.Set("limit", fmt.Sprintf("%v", pgrest.DefaultLimit))
+// 				break
+// 			}
+// 			limit = optLimit
+// 			vals.Set(string(opt.OptionKey), val)
+// 		case pgrest.OptionOffset:
+// 			vals.Set(string(opt.OptionKey), val)
+// 		}
+// 	}
 
-	return encodeUrlVals(vals, map[string]any{"created_at": nil}), limit
-}
+// 	return encodeUrlVals(vals, map[string]any{"created_at": nil}), limit
+// }
 
-func encodeUrlVals(v url.Values, skipEscape map[string]any) string {
-	if v == nil {
-		return ""
-	}
-	var buf strings.Builder
-	keys := make([]string, 0, len(v))
-	for k := range v {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		vs := v[k]
-		keyEscaped := url.QueryEscape(k)
-		for _, v := range vs {
-			if buf.Len() > 0 {
-				buf.WriteByte('&')
-			}
-			buf.WriteString(keyEscaped)
-			buf.WriteByte('=')
-			if _, ok := skipEscape[k]; !ok {
-				v = url.QueryEscape(v)
-			}
-			buf.WriteString(v)
-		}
-	}
-	return buf.String()
-}
+// func encodeUrlVals(v url.Values, skipEscape map[string]any) string {
+// 	if v == nil {
+// 		return ""
+// 	}
+// 	var buf strings.Builder
+// 	keys := make([]string, 0, len(v))
+// 	for k := range v {
+// 		keys = append(keys, k)
+// 	}
+// 	sort.Strings(keys)
+// 	for _, k := range keys {
+// 		vs := v[k]
+// 		keyEscaped := url.QueryEscape(k)
+// 		for _, v := range vs {
+// 			if buf.Len() > 0 {
+// 				buf.WriteByte('&')
+// 			}
+// 			buf.WriteString(keyEscaped)
+// 			buf.WriteByte('=')
+// 			if _, ok := skipEscape[k]; !ok {
+// 				v = url.QueryEscape(v)
+// 			}
+// 			buf.WriteString(v)
+// 		}
+// 	}
+// 	return buf.String()
+// }
