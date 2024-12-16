@@ -55,6 +55,11 @@
    {:db (assoc db :connections {:results connections :loading false})}))
 
 (rf/reg-event-fx
+  :connections->filter-connections
+  (fn [_ [_ query-params]]
+    {:fx [[:dispatch [:navigate :connections query-params]]]}))
+
+(rf/reg-event-fx
  :connections->create-connection
  (fn
    [{:keys [db]} [_ connection]]
