@@ -444,11 +444,9 @@ ORDER BY datname;`
 var dbs = db.adminCommand('listDatabases');
 var result = [];
 dbs.databases.forEach(function(database) {
-	if (!['admin', 'local', 'config'].includes(database.name)) {
-			result.push({
+	result.push({
 					"database_name": database.name
-			});
-	}
+	});
 });
 printjson(result);`
 
