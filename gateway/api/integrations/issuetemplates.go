@@ -1,6 +1,7 @@
 package apijiraintegration
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
@@ -40,6 +42,7 @@ func ListIssueTemplates(c *gin.Context) {
 			IssueTypeName: issue.IssueTypeName,
 			MappingTypes:  issue.MappingTypes,
 			PromptTypes:   issue.PromptTypes,
+			CmdbTypes:     issue.CmdbTypes,
 			CreatedAt:     issue.CreatedAt,
 			UpdatedAt:     issue.UpdatedAt,
 		})
@@ -59,11 +62,17 @@ func ListIssueTemplates(c *gin.Context) {
 //	@Router			/integrations/jira/issuetemplates/{id} [get]
 func GetIssueTemplatesByID(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	issue, _, err := models.GetJiraIssueTemplatesByID(ctx.GetOrgID(), c.Param("id"))
+	issue, config, err := models.GetJiraIssueTemplatesByID(ctx.GetOrgID(), c.Param("id"))
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
 	case nil:
+		cmdbTypes, err := cmdbTypesWithExternalObjects(c, config, issue.CmdbTypes)
+		if err != nil {
+			log.Errorf("failed listing objects from Jira assets api, reason=%v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed listing objects from Jira assets api"})
+			return
+		}
 		c.JSON(http.StatusOK, &openapi.JiraIssueTemplate{
 			ID:            issue.ID,
 			Name:          issue.Name,
@@ -72,6 +81,7 @@ func GetIssueTemplatesByID(c *gin.Context) {
 			IssueTypeName: issue.IssueTypeName,
 			MappingTypes:  issue.MappingTypes,
 			PromptTypes:   issue.PromptTypes,
+			CmdbTypes:     cmdbTypes,
 			CreatedAt:     issue.CreatedAt,
 			UpdatedAt:     issue.UpdatedAt,
 		})
@@ -108,6 +118,7 @@ func CreateIssueTemplates(c *gin.Context) {
 		IssueTypeName: req.IssueTypeName,
 		MappingTypes:  req.MappingTypes,
 		PromptTypes:   req.PromptTypes,
+		CmdbTypes:     req.CmdbTypes,
 		CreatedAt:     time.Now().UTC(),
 		UpdatedAt:     time.Now().UTC(),
 	}
@@ -126,6 +137,7 @@ func CreateIssueTemplates(c *gin.Context) {
 			IssueTypeName: issue.IssueTypeName,
 			MappingTypes:  issue.MappingTypes,
 			PromptTypes:   issue.PromptTypes,
+			CmdbTypes:     req.CmdbTypes,
 			CreatedAt:     issue.CreatedAt,
 			UpdatedAt:     issue.UpdatedAt,
 		})
@@ -163,6 +175,7 @@ func UpdateIssueTemplates(c *gin.Context) {
 		IssueTypeName: req.IssueTypeName,
 		MappingTypes:  req.MappingTypes,
 		PromptTypes:   req.PromptTypes,
+		CmdbTypes:     req.CmdbTypes,
 		UpdatedAt:     time.Now().UTC(),
 	}
 	err := models.UpdateJiraIssueTemplates(issue)
@@ -179,6 +192,7 @@ func UpdateIssueTemplates(c *gin.Context) {
 			IssueTypeName: issue.IssueTypeName,
 			MappingTypes:  issue.MappingTypes,
 			PromptTypes:   issue.PromptTypes,
+			CmdbTypes:     issue.CmdbTypes,
 			CreatedAt:     issue.CreatedAt,
 			UpdatedAt:     issue.UpdatedAt,
 		})
@@ -221,4 +235,41 @@ func parseRequestPayload(c *gin.Context) *openapi.JiraIssueTemplateRequest {
 		return nil
 	}
 	return &req
+}
+
+func cmdbTypesWithExternalObjects(ctx *gin.Context, config *models.JiraIntegration, cmdbTypes map[string]any) (map[string]any, error) {
+	if len(cmdbTypes) == 0 || config == nil || !config.IsActive() || ctx.Query("expand") != "cmdbtype-values" {
+		return cmdbTypes, nil
+	}
+
+	itemList, ok := cmdbTypes["items"].([]any)
+	if !ok {
+		return nil, fmt.Errorf("unable to decode cmdb items attribute, type=%T", cmdbTypes["items"])
+	}
+	// fmt.Printf("AQL QUERY RESPONSE: %#v\n", response)
+	for i, obj := range itemList {
+		item, ok := obj.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("unable to decode cmdb item, type=%T", item)
+		}
+		if item["jira_object_type"] == nil {
+			return nil, fmt.Errorf("jira_object_type is missing, record=%v, item=%#v", i, item)
+		}
+		objectType := fmt.Sprintf("%v", item["jira_object_type"])
+		responseItems, err := jira.FetchObjectsByAQL(config, `objectType = %q`, objectType)
+		if err != nil {
+			return nil, fmt.Errorf("record=%v, %v", i, err)
+		}
+		log.Infof("jira assets api response, object-type=%v, total-requests=%v",
+			objectType, len(responseItems))
+
+		jiraValues := []map[string]any{}
+		for _, response := range responseItems {
+			for _, val := range response.Values {
+				jiraValues = append(jiraValues, map[string]any{"id": val.GlobalID, "name": val.Name})
+			}
+		}
+		item["jira_values"] = jiraValues
+	}
+	return cmdbTypes, nil
 }

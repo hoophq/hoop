@@ -835,6 +835,7 @@ type JiraIssueTemplate struct {
 	IssueTypeName string         `json:"issue_type_name"`
 	MappingTypes  map[string]any `json:"mapping_types"`
 	PromptTypes   map[string]any `json:"prompt_types"`
+	CmdbTypes     map[string]any `json:"cmdb_types"`
 	CreatedAt     time.Time      `json:"created_at"`
 	UpdatedAt     time.Time      `json:"updated_at"`
 }
@@ -846,6 +847,7 @@ type JiraIssueTemplateRequest struct {
 	IssueTypeName string         `json:"issue_type_name"`
 	MappingTypes  map[string]any `json:"mapping_types"`
 	PromptTypes   map[string]any `json:"prompt_types"`
+	CmdbTypes     map[string]any `json:"cmdb_types"`
 }
 
 type GuardRailRuleRequest struct {
