@@ -11,9 +11,9 @@
                     on-description-change
                     on-project-key-change
                     on-issue-type-change]}]
-  [:> Grid {:columns "7" :gap "7"}
+  [:> Flex {:direction "column" :gap "5"}
    [:> Box {:grid-column "span 2 / span 2"}
-    [:> Heading {:as "h3" :size "4" :weight "medium" :class "text-[--gray-12]"}
+    [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
      "Integration details"]
     [:> Text {:size "3" :class "text-[--gray-11]"}
      "Used to identify your Jira configuration in your connections."]]

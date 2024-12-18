@@ -24,8 +24,8 @@
         [:> Table.ColumnHeaderCell ""])
       [:> Table.ColumnHeaderCell "Label"]
       [:> Table.ColumnHeaderCell "Jira Field"]
-      [:> Table.ColumnHeaderCell "Required"]
-      [:> Table.ColumnHeaderCell "Details (Optional)"]]]
+      [:> Table.ColumnHeaderCell "Description (Optional)"]
+      [:> Table.ColumnHeaderCell "Required"]]]
 
     [:> Table.Body
      (doall
@@ -41,7 +41,7 @@
          [:> Table.Cell {:p "4"}
           [forms/input
            {:size "2"
-            :placeholder "Label"
+            :placeholder "e.g. Employee ID"
             :value (:label prompt)
             :not-margin-bottom? true
             :on-change #(on-prompt-field-change state idx :label (-> % .-target .-value))}]]
@@ -49,10 +49,18 @@
          [:> Table.Cell {:p "4"}
           [forms/input
            {:size "2"
-            :placeholder "custom_0026"
+            :placeholder "e.g. customfield_0410"
             :value (:jira_field prompt)
             :not-margin-bottom? true
             :on-change #(on-prompt-field-change state idx :jira_field (-> % .-target .-value))}]]
+
+         [:> Table.Cell {:p "4"}
+          [forms/input
+           {:size "2"
+            :placeholder "e.g. customfield_0410"
+            :value (:description prompt)
+            :not-margin-bottom? true
+            :on-change #(on-prompt-field-change state idx :description (-> % .-target .-value))}]]
 
          [:> Table.Cell {:p "4" :align "center"}
           [forms/select
@@ -62,15 +70,7 @@
             :on-change #(on-prompt-field-change state idx :required (= "true" %))
             :selected (str (:required prompt))
             :full-width? true
-            :options required-options}]]
-
-         [:> Table.Cell {:p "4"}
-          [forms/input
-           {:size "2"
-            :placeholder "Adicional information"
-            :value (:description prompt)
-            :not-margin-bottom? true
-            :on-change #(on-prompt-field-change state idx :description (-> % .-target .-value))}]]]))]]
+            :options required-options}]]]))]]
 
    [rule-buttons/main
     {:on-rule-add #(on-prompt-add state)
