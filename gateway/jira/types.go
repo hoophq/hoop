@@ -36,7 +36,7 @@ type Issuetype struct {
 	Name string `json:"name"`
 }
 
-type CustomFields map[string]string
+type CustomFields map[string]any
 
 type IssueFields[T any] struct {
 	Project   Project   `json:"project"`

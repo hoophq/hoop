@@ -3815,7 +3815,12 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "status": {
-                    "$ref": "#/definitions/openapi.JiraIntegrationStatus"
+                    "description": "Report if the integration is enabled or disabled",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.JiraIntegrationStatus"
+                        }
+                    ]
                 },
                 "updated_at": {
                     "description": "The last update date and time of the integration",
@@ -3845,16 +3850,24 @@ const docTemplate = `{
         "openapi.JiraIssueTemplate": {
             "type": "object",
             "properties": {
+                "cmdb_types": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
                 "created_at": {
+                    "description": "The time when the template was created",
                     "type": "string"
                 },
                 "description": {
+                    "description": "The description of the template",
                     "type": "string"
                 },
                 "id": {
+                    "description": "The unique identifier of the integration",
                     "type": "string"
                 },
                 "issue_type_name": {
+                    "description": "The issue type name (request type) that will be associated to the issue",
                     "type": "string"
                 },
                 "mapping_types": {
@@ -3862,9 +3875,11 @@ const docTemplate = `{
                     "additionalProperties": {}
                 },
                 "name": {
+                    "description": "The name of the template",
                     "type": "string"
                 },
                 "project_key": {
+                    "description": "The project key which is the shortand version of the project's name",
                     "type": "string"
                 },
                 "prompt_types": {
@@ -3872,6 +3887,7 @@ const docTemplate = `{
                     "additionalProperties": {}
                 },
                 "updated_at": {
+                    "description": "The time when the template was updated",
                     "type": "string"
                 }
             }
@@ -3879,23 +3895,34 @@ const docTemplate = `{
         "openapi.JiraIssueTemplateRequest": {
             "type": "object",
             "properties": {
+                "cmdb_types": {
+                    "description": "Cmdb Types are custom fields integrated with the Jira Assets API\n\n\t\t{\n\t\t  \"items\": [\n\t\t    {\n\t\t      \"description\": \"Service Field\",\n\t\t      \"jira_field\": \"customfield_10110\",\n\t\t      \"jira_object_type\": \"Service\",\n\t\t      \"required\": true,\n\t\t      \"value\": \"mydb-prod\"\n\t\t    }\n\t\t  ]\n\t\t}",
+                    "type": "object",
+                    "additionalProperties": {}
+                },
                 "description": {
+                    "description": "The description of the template",
                     "type": "string"
                 },
                 "issue_type_name": {
+                    "description": "The issue type name (request type) that will be associated to the issue",
                     "type": "string"
                 },
                 "mapping_types": {
+                    "description": "The automated fields that will be sent when creating the issue.\nThere're two types\n- preset: obtain the value from a list of available fields that could be propagated\nThe list of available preset values are:\n\n\t\t- session.id\n\t\t- session.user_email\n\t\t- session.user_id\n\t\t- session.user_name\n\t\t- session.type\n\t\t- session.connection\n\t\t- session.status\n\t\t- session.verb\n\t\t- session.start_date\n\n- custom: use a custom static value\n\n\t\t{\n\t\t  \"items\": [\n\t\t    {\n\t\t      \"description\": \"Hoop Connection Name\",\n\t\t      \"jira_field\": \"customfield_10050\",\n\t\t      \"type\": \"preset\",\n\t\t      \"value\": \"session.connection\"\n\t\t    }\n\t\t  ]\n\t\t}",
                     "type": "object",
                     "additionalProperties": {}
                 },
                 "name": {
+                    "description": "The name of the template",
                     "type": "string"
                 },
                 "project_key": {
+                    "description": "The project key which is the shortand version of the project's name",
                     "type": "string"
                 },
                 "prompt_types": {
+                    "description": "The prompt fields that will be show to user before executing a session\n\n\t\t{\n\t\t  \"items\": [\n\t\t    {\n\t\t      \"description\": \"Squad Name\",\n\t\t      \"jira_field\": \"customfield_10052\",\n\t\t      \"label\": \"Squad Name\",\n\t\t      \"required\": true\n\t\t    }\n\t\t  ]\n\t\t}",
                     "type": "object",
                     "additionalProperties": {}
                 }
@@ -4297,10 +4324,14 @@ const docTemplate = `{
                 },
                 "type": {
                     "description": "The type of this review\n* onetime - Represents a one time execution\n* jit - Represents a time based review",
-                    "type": "string",
                     "enum": [
                         "onetime",
                         "jit"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ReviewType"
+                        }
                     ],
                     "readOnly": true
                 }
@@ -4444,6 +4475,17 @@ const docTemplate = `{
                 "ReviewStatusProcessing",
                 "ReviewStatusExecuted",
                 "ReviewStatusUnknown"
+            ]
+        },
+        "openapi.ReviewType": {
+            "type": "string",
+            "enum": [
+                "jit",
+                "onetime"
+            ],
+            "x-enum-varnames": [
+                "ReviewTypeJit",
+                "ReviewTypeOneTime"
             ]
         },
         "openapi.Runbook": {
@@ -4786,7 +4828,9 @@ const docTemplate = `{
                 "event_stream": {
                     "description": "The stream containing the output of the execution in the following format\n\n` + "`" + `[[0.268589438, \"i\", \"ZW52\"], ...]` + "`" + `\n\n* ` + "`" + `\u003cevent-time\u003e` + "`" + ` - relative time in miliseconds to start_date\n* ` + "`" + `\u003cevent-type\u003e` + "`" + ` - the event type as string (i: input, o: output e: output-error)\n* ` + "`" + `\u003cbase64-content\u003e` + "`" + ` - the content of the session encoded as base64 string",
                     "type": "array",
-                    "items": {}
+                    "items": {
+                        "type": "integer"
+                    }
                 },
                 "id": {
                     "description": "The resource unique identifier",

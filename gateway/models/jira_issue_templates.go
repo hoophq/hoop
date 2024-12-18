@@ -21,6 +21,7 @@ type JiraIssueTemplate struct {
 	IssueTypeName     string         `gorm:"column:issue_type_name"`
 	MappingTypes      map[string]any `gorm:"column:mapping_types;serializer:json"`
 	PromptTypes       map[string]any `gorm:"column:prompt_types;serializer:json"`
+	CmdbTypes         map[string]any `gorm:"column:cmdb_types;serializer:json"`
 	CreatedAt         time.Time      `gorm:"column:created_at"`
 	UpdatedAt         time.Time      `gorm:"column:updated_at"`
 }
@@ -39,11 +40,19 @@ type PromptType struct {
 	JiraField   string `json:"jira_field"`
 }
 
-func (t *JiraIssueTemplate) DecodeMappingTypes() (map[string]MappingType, map[string]PromptType, error) {
+type CmdbType struct {
+	JiraObjectType string `json:"jira_object_type"`
+	JiraField      string `json:"jira_field"`
+	Required       bool   `json:"required"`
+	Description    string `json:"description"`
+	Value          string `json:"value"`
+}
+
+func (t *JiraIssueTemplate) DecodeMappingTypes() (map[string]MappingType, map[string]PromptType, map[string]CmdbType, error) {
 	mappingTypes := map[string]MappingType{}
 	items, err := decodeTypesToMapList(t.MappingTypes)
 	if err != nil {
-		return nil, nil, fmt.Errorf("unable to decode mapping_types: %v", err)
+		return nil, nil, nil, fmt.Errorf("unable to decode mapping_types: %v", err)
 	}
 	for _, obj := range items {
 		jiraField := fmt.Sprintf("%v", obj["jira_field"])
@@ -58,7 +67,7 @@ func (t *JiraIssueTemplate) DecodeMappingTypes() (map[string]MappingType, map[st
 	promptTypes := map[string]PromptType{}
 	items, err = decodeTypesToMapList(t.PromptTypes)
 	if err != nil {
-		return nil, nil, fmt.Errorf("unable to decode prompt_types: %v", err)
+		return nil, nil, nil, fmt.Errorf("unable to decode prompt_types: %v", err)
 	}
 	for _, obj := range items {
 		jiraField := fmt.Sprintf("%v", obj["jira_field"])
@@ -69,19 +78,35 @@ func (t *JiraIssueTemplate) DecodeMappingTypes() (map[string]MappingType, map[st
 			JiraField:   jiraField,
 		}
 	}
-	return mappingTypes, promptTypes, nil
+
+	cmdbTypes := map[string]CmdbType{}
+	items, err = decodeTypesToMapList(t.CmdbTypes)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("unable to decode cmd_types: %v", err)
+	}
+	for _, obj := range items {
+		jiraField := fmt.Sprintf("%v", obj["jira_field"])
+		cmdbTypes[jiraField] = CmdbType{
+			JiraObjectType: fmt.Sprintf("%v", obj["jira_object_type"]),
+			JiraField:      jiraField,
+			Required:       fmt.Sprintf("%v", obj["required"]) == "true",
+			Description:    fmt.Sprintf("%v", obj["description"]),
+			Value:          fmt.Sprintf("%v", obj["value"]),
+		}
+	}
+	return mappingTypes, promptTypes, cmdbTypes, nil
 }
 
 func decodeTypesToMapList(templateTypes map[string]any) ([]map[string]any, error) {
+	res := []map[string]any{}
 	obj, ok := templateTypes["items"]
 	if !ok || obj == nil {
-		return nil, fmt.Errorf(`missing "items" attribute`)
+		return res, nil
 	}
 	items, ok := obj.([]any)
 	if !ok {
 		return nil, fmt.Errorf(`unable to parse "items" attribute, type=%T`, obj)
 	}
-	res := []map[string]any{}
 	for i, entry := range items {
 		data, ok := entry.(map[string]any)
 		if !ok {

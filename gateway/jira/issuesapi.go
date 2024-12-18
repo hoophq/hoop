@@ -105,7 +105,7 @@ func CreateIssue(issueTemplate *models.JiraIssueTemplate, config *models.JiraInt
 	if customFields == nil {
 		return nil, fmt.Errorf("custom fields map is empty")
 	}
-	log.Infof("creating jira issue with fields: %v", customFields)
+
 	issueFields := IssueFields[CustomFields]{
 		Project:      Project{Key: issueTemplate.ProjectKey},
 		Summary:      "Hoop Session",
@@ -116,6 +116,7 @@ func CreateIssue(issueTemplate *models.JiraIssueTemplate, config *models.JiraInt
 	if err != nil {
 		return nil, fmt.Errorf("failed encoding issue payload, reason=%v", err)
 	}
+	log.Infof("creating jira issue with issue fields payload: %v", string(issuePayload))
 	apiURL := fmt.Sprintf("%s/rest/api/3/issue", config.URL)
 	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(issuePayload))
 	if err != nil {
@@ -141,29 +142,33 @@ func CreateIssue(issueTemplate *models.JiraIssueTemplate, config *models.JiraInt
 	return &response, nil
 }
 
-func ParseIssueFields(tmpl *models.JiraIssueTemplate, customFields CustomFields, session types.Session) (CustomFields, error) {
-	if customFields == nil {
-		customFields = CustomFields{}
+func ParseIssueFields(tmpl *models.JiraIssueTemplate, input map[string]string, session types.Session) (CustomFields, error) {
+	if input == nil {
+		input = map[string]string{}
 	}
-	newCustomFields := CustomFields{}
-	mappingTypes, promptTypes, err := tmpl.DecodeMappingTypes()
+	output := CustomFields{}
+	mappingTypes, promptTypes, cmdbTypes, err := tmpl.DecodeMappingTypes()
 	if err != nil {
 		return nil, err
 	}
+
+	// handle prompt types
 	invalidPresetFields, missingRequiredFields := []string{}, []string{}
 	for jiraField, promptType := range promptTypes {
-		val, ok := customFields[jiraField]
+		val, ok := input[jiraField]
 		if !ok {
 			if promptType.Required {
 				missingRequiredFields = append(missingRequiredFields, fmt.Sprintf("%q", jiraField))
 			}
 			continue
 		}
-		newCustomFields[jiraField] = val
+		output[jiraField] = val
 	}
 	if len(missingRequiredFields) > 0 {
 		return nil, &ErrInvalidIssueFields{isRequiredErr: true, resources: missingRequiredFields}
 	}
+
+	// handle mapping type fields
 	presetFields := loadDefaultPresetFields(session)
 	for jiraField, mappingType := range mappingTypes {
 		switch mappingType.Type {
@@ -173,9 +178,9 @@ func ParseIssueFields(tmpl *models.JiraIssueTemplate, customFields CustomFields,
 				invalidPresetFields = append(invalidPresetFields, fmt.Sprintf("%q", mappingType.Value))
 				continue
 			}
-			newCustomFields[jiraField] = presetVal
+			output[jiraField] = presetVal
 		case "custom":
-			newCustomFields[jiraField] = mappingType.Value
+			output[jiraField] = mappingType.Value
 		default:
 			log.Warnf("mapping type (%v) not found", mappingType.Type)
 		}
@@ -183,5 +188,21 @@ func ParseIssueFields(tmpl *models.JiraIssueTemplate, customFields CustomFields,
 	if len(invalidPresetFields) > 0 {
 		return nil, &ErrInvalidIssueFields{resources: invalidPresetFields}
 	}
-	return newCustomFields, nil
+
+	for jiraField, cmdbType := range cmdbTypes {
+		val, ok := input[jiraField]
+		if !ok {
+			if cmdbType.Required {
+				missingRequiredFields = append(missingRequiredFields, fmt.Sprintf("%q", jiraField))
+			}
+			continue
+		}
+
+		output[jiraField] = []map[string]string{{"id": val}}
+	}
+	if len(missingRequiredFields) > 0 {
+		return nil, &ErrInvalidIssueFields{isRequiredErr: true, resources: missingRequiredFields}
+	}
+
+	return output, nil
 }
