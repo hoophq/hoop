@@ -189,12 +189,6 @@ func ParseIssueFields(tmpl *models.JiraIssueTemplate, input map[string]string, s
 		return nil, &ErrInvalidIssueFields{resources: invalidPresetFields}
 	}
 
-	// handle cmdb type fields
-	// 1. ignore value field because it doesn't contain the global id field
-	// 1. check if the field is required and return error if
-	//   * the input doesn't have the attribute
-	// 2. change custom field to map[string]any
-	// 3.
 	for jiraField, cmdbType := range cmdbTypes {
 		val, ok := input[jiraField]
 		if !ok {
