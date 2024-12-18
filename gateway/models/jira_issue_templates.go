@@ -143,6 +143,7 @@ func UpdateJiraIssueTemplates(issue *JiraIssueTemplate) error {
 			IssueTypeName: issue.IssueTypeName,
 			MappingTypes:  issue.MappingTypes,
 			PromptTypes:   issue.PromptTypes,
+			CmdbTypes:     issue.CmdbTypes,
 			UpdatedAt:     issue.UpdatedAt,
 		}).
 		Where("org_id = ? AND id = ?", issue.OrgID, issue.ID)

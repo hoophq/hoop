@@ -25,6 +25,6 @@
                     :type "button"
                     :on-click #(rf/dispatch [:jira-templates->delete-by-id id])}
          "Delete"])
-      [:> Button {:size "4"
+      [:> Button {:size "3"
                   :type "submit"}
        "Save"]]]]])

@@ -1,12 +1,29 @@
 (ns webapp.jira-templates.prompt-form
   (:require
    ["@radix-ui/themes" :refer [Button Flex Box Text]]
-   [reagent.core :as r]
    [re-frame.core :as rf]
+   [reagent.core :as r]
    [webapp.components.forms :as forms]))
 
-(defn main [{:keys [prompts on-submit]}]
-  (let [form-data (r/atom {})]
+(defn- create-cmdb-select-options [jira-values]
+  (mapv (fn [{:keys [id name]}]
+          {:value id :text name})
+        jira-values))
+
+(defn- get-value-id [jira_values value]
+  (when-let [value-match (first (filter #(= (:name %) value) jira_values))]
+    (:id value-match)))
+
+(defn- init-form-data [cmdb-items]
+  (reduce (fn [acc {:keys [jira_field jira_values value]}]
+            (if-let [id (get-value-id jira_values value)]
+              (assoc-in acc [:jira_fields jira_field] id)
+              acc))
+          {}
+          cmdb-items))
+
+(defn main [{:keys [prompts cmdb-items on-submit]}]
+  (let [form-data (r/atom (init-form-data cmdb-items))]
     (fn []
       [:> Box {:class "p-6"}
        [:> Text {:as "h3" :size "5" :weight "bold" :mb "4"}
@@ -19,16 +36,35 @@
                             (on-submit @form-data))}
 
         [:> Flex {:direction "column" :gap "4"}
-         (for [{:keys [label required jira_field]} prompts]
-           ^{:key jira_field}
-           [forms/input
-            {:label label
-             :required required
-             :placeholder label
-             :on-change (fn [e]
-                          (.log js/console e)
-                          (let [value (-> e .-target .-value)]
-                            (swap! form-data assoc jira_field value)))}])]
+         ;; Prompt Fields
+         (when (seq prompts)
+           [:> Box {:class "space-y-4"}
+            [:> Text {:as "h4" :size "3" :weight "medium" :mb "2"} "Command Information"]
+            (for [{:keys [label required jira_field]} prompts]
+              ^{:key jira_field}
+              [forms/input
+               {:label label
+                :required required
+                :placeholder label
+                :on-change #(swap! form-data assoc-in [:jira_fields jira_field] (.. % -target -value))}])])
+
+         ;; CMDB Fields - Apenas mostrar campos que precisam de seleção
+         (when-let [cmdb-fields-to-show (seq (filter (fn [{:keys [value jira_values]}]
+                                                       (and jira_values
+                                                            (not (some #(= (:name %) value) jira_values))))
+                                                     cmdb-items))]
+           [:> Box {:class "space-y-4"}
+            [:> Text {:as "h4" :size "3" :weight "medium" :mb "2"} "CMDB Information"]
+            (doall
+             (for [{:keys [label jira_field jira_values required]} cmdb-fields-to-show]
+               ^{:key jira_field}
+               [forms/select
+                {:label label
+                 :required required
+                 :full-width? true
+                 :selected (get-in @form-data [:jira_fields jira_field])
+                 :on-change #(swap! form-data assoc-in [:jira_fields jira_field] %)
+                 :options (create-cmdb-select-options jira_values)}]))])]
 
         [:> Flex {:justify "end" :gap "3" :mt "6"}
          [:> Button {:variant "soft"

@@ -23,6 +23,17 @@
                    :on-success #(rf/dispatch [:jira-templates->set-active-template %])
                    :on-failure #(rf/dispatch [:jira-templates->set-active-template nil])}]]]}))
 
+(rf/reg-event-fx
+ :jira-templates->get-submit-template
+ (fn [{:keys [db]} [_ id]]
+   {:db (assoc db :jira-templates->submit-template {:status :loading
+                                                    :data {}})
+    :fx [[:dispatch
+          [:fetch {:method "GET"
+                   :uri (str "/integrations/jira/issuetemplates/" id "?expand=cmdbtype-values")
+                   :on-success #(rf/dispatch [:jira-templates->set-submit-template %])
+                   :on-failure #(rf/dispatch [:jira-templates->set-submit-template nil])}]]]}))
+
 (rf/reg-event-db
  :jira-templates->set-all
  (fn [db [_ templates]]
@@ -32,6 +43,16 @@
  :jira-templates->set-active-template
  (fn [db [_ template]]
    (assoc db :jira-templates->active-template {:status :ready :data template})))
+
+(rf/reg-event-db
+ :jira-templates->set-submit-template
+ (fn [db [_ template]]
+   (assoc db :jira-templates->submit-template {:status :ready :data template})))
+
+(rf/reg-event-db
+ :jira-templates->clear-submit-template
+ (fn [db _]
+   (assoc db :jira-templates->submit-template {:status :loading :data nil})))
 
 (rf/reg-event-fx
  :jira-templates->create
@@ -80,8 +101,6 @@
    (:jira-templates->active-template db)))
 
 (rf/reg-sub
- :jira-templates->template-by-id
- :<- [:jira-templates->list]
- (fn [templates [_ id]]
-   (when-let [template-list (:data templates)]
-     (first (filter #(= (:id %) id) template-list)))))
+ :jira-templates->submit-template
+ (fn [db _]
+   (:jira-templates->submit-template db)))

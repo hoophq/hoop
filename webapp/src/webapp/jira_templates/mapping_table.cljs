@@ -32,7 +32,7 @@
         :options hoop-value-options}]
       [forms/input
        {:size "2"
-        :placeholder "Custom value"
+        :placeholder "e.g. product"
         :name "value"
         :not-margin-bottom? true
         :value (:value rule)
@@ -42,7 +42,7 @@
   (when-not (empty? (:type rule))
     [forms/input
      {:size "2"
-      :placeholder "Issue field"
+      :placeholder "e.g. customfield_0410"
       :value (:jira_field rule)
       :not-margin-bottom? true
       :on-change #(on-rule-field-change state idx :jira_field (-> % .-target .-value))}]))
@@ -51,7 +51,7 @@
   (when-not (empty? (:type rule))
     [forms/input
      {:size "2"
-      :placeholder "Field description"
+      :placeholder "e.g. customfield_0410"
       :value (:description rule)
       :not-margin-bottom? true
       :on-change #(on-rule-field-change state idx :description (-> % .-target .-value))}]))
@@ -72,9 +72,9 @@
        (when @select-state
          [:> Table.ColumnHeaderCell ""])
        [:> Table.ColumnHeaderCell "Type"]
-       [:> Table.ColumnHeaderCell "Value"]
        [:> Table.ColumnHeaderCell "Jira Field"]
-       [:> Table.ColumnHeaderCell "Details (Optional)"]]]
+       [:> Table.ColumnHeaderCell "Value"]
+       [:> Table.ColumnHeaderCell "Description (Optional)"]]]
 
      [:> Table.Body
       (doall
@@ -103,10 +103,10 @@
              :options type-options}]]
 
           [:> Table.Cell {:p "4"}
-           [value-field rule state idx on-mapping-field-change]]
+           [jira-field-input rule state idx on-mapping-field-change]]
 
           [:> Table.Cell {:p "4"}
-           [jira-field-input rule state idx on-mapping-field-change]]
+           [value-field rule state idx on-mapping-field-change]]
 
           [:> Table.Cell {:p "4"}
            [details-input rule state idx on-mapping-field-change]]]))]]

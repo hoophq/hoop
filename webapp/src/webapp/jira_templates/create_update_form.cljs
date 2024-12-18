@@ -5,10 +5,11 @@
    [reagent.core :as r]
    [webapp.components.loaders :as loaders]
    [webapp.jira-templates.basic-info :as basic-info]
+   [webapp.jira-templates.cmdb-table :as cmdb-table]
    [webapp.jira-templates.form-header :as form-header]
    [webapp.jira-templates.helpers :as helpers]
-   [webapp.jira-templates.prompts-table :as prompts-table]
-   [webapp.jira-templates.mapping-table :as mapping-table]))
+   [webapp.jira-templates.mapping-table :as mapping-table]
+   [webapp.jira-templates.prompts-table :as prompts-table]))
 
 (defn jira-form [form-type template scroll-pos]
   (let [state (helpers/create-form-state template)
@@ -39,10 +40,10 @@
            :on-project-key-change #(reset! (:project_key state) %)
            :on-issue-type-change #(reset! (:issue_type_name state) %)}]
 
-         [:> Grid {:columns "7" :gap "7"}
+         [:> Flex {:direction "column" :gap "5"}
           [:> Box {:grid-column "span 2 / span 2"}
            [:> Flex {:align "center" :gap "2"}
-            [:> Heading {:as "h3" :size "4" :weight "medium" :class "text-[--gray-12]"}
+            [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
              "Configure automated mapping"]]
            [:> Text {:size "3" :class "text-[--gray-11]"}
             "Append additional information to your Jira cards when executing a command in your connections."]]
@@ -61,10 +62,10 @@
                            :on-mapping-add]))]]]
 
 
-         [:> Grid {:columns "7" :gap "7"}
+         [:> Flex {:direction "column" :gap "5"}
           [:> Box {:grid-column "span 2 / span 2"}
            [:> Flex {:align "center" :gap "2"}
-            [:> Heading {:as "h3" :size "4" :weight "medium" :class "text-[--gray-12]"}
+            [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
              "Configure manual prompt"]]
            [:> Text {:size "3" :class "text-[--gray-11]"}
             "Request additional information from executed commands."]]
@@ -80,7 +81,27 @@
                            :on-toggle-prompt-select
                            :on-toggle-all-prompts
                            :on-prompt-delete
-                           :on-prompt-add]))]]]]]])))
+                           :on-prompt-add]))]]]
+
+         [:> Flex {:direction "column" :gap "5"}
+          [:> Box {:grid-column "span 2 / span 2"}
+           [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+            "Configure CMDB"]
+           [:> Text {:size "3" :class "text-[--gray-11]"}
+            "Set up configuration management database relationships."]]
+
+          [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
+           [cmdb-table/main
+            (merge
+             {:state (:cmdb state)
+              :select-state (:cmdb-select-state state)}
+             (select-keys handlers
+                          [:on-cmdb-field-change
+                           :on-cmdb-select
+                           :on-toggle-cmdb-select
+                           :on-toggle-all-cmdb
+                           :on-cmdb-delete
+                           :on-cmdb-add]))]]]]]])))
 
 (defn- loading []
   [:div {:class "flex items-center justify-center rounded-lg border bg-white h-full"}
