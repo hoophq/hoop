@@ -440,7 +440,7 @@ type Session struct {
 	// * `<event-time>` - relative time in miliseconds to start_date
 	// * `<event-type>` - the event type as string (i: input, o: output e: output-error)
 	// * `<base64-content>` - the content of the session encoded as base64 string
-	EventStream json.RawMessage `json:"event_stream"`
+	EventStream json.RawMessage `json:"event_stream" swagger:"type:string"`
 	// The stored resource size in bytes
 	EventSize int64 `json:"event_size" example:"569"`
 	// When the execution started
@@ -818,6 +818,7 @@ type JiraIntegration struct {
 	// The API token for Jira authentication
 	APIToken string `json:"api_token" binding:"required"`
 
+	// Report if the integration is enabled or disabled
 	Status JiraIntegrationStatus `json:"status"`
 
 	// The creation date and time of the integration
@@ -828,26 +829,92 @@ type JiraIntegration struct {
 }
 
 type JiraIssueTemplate struct {
-	ID            string         `json:"id"`
-	Name          string         `json:"name"`
-	Description   string         `json:"description"`
-	ProjectKey    string         `json:"project_key"`
+	// The unique identifier of the integration
+	ID string `json:"id"`
+	// The name of the template
+	Name string `json:"name"`
+	// The description of the template
+	Description string `json:"description"`
+	// The project key which is the shortand version of the project's name
+	ProjectKey string `json:"project_key"`
+	// The issue type name (request type) that will be associated to the issue
 	IssueTypeName string         `json:"issue_type_name"`
 	MappingTypes  map[string]any `json:"mapping_types"`
 	PromptTypes   map[string]any `json:"prompt_types"`
 	CmdbTypes     map[string]any `json:"cmdb_types"`
-	CreatedAt     time.Time      `json:"created_at"`
-	UpdatedAt     time.Time      `json:"updated_at"`
+	// The time when the template was created
+	CreatedAt time.Time `json:"created_at"`
+	// The time when the template was updated
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type JiraIssueTemplateRequest struct {
-	Name          string         `json:"name"`
-	Description   string         `json:"description"`
-	ProjectKey    string         `json:"project_key"`
-	IssueTypeName string         `json:"issue_type_name"`
-	MappingTypes  map[string]any `json:"mapping_types"`
-	PromptTypes   map[string]any `json:"prompt_types"`
-	CmdbTypes     map[string]any `json:"cmdb_types"`
+	// The name of the template
+	Name string `json:"name"`
+	// The description of the template
+	Description string `json:"description"`
+	// The project key which is the shortand version of the project's name
+	ProjectKey string `json:"project_key"`
+	// The issue type name (request type) that will be associated to the issue
+	IssueTypeName string `json:"issue_type_name"`
+	// The automated fields that will be sent when creating the issue.
+	// There're two types
+	// - preset: obtain the value from a list of available fields that could be propagated
+	// The list of available preset values are:
+	/*
+		- session.id
+		- session.user_email
+		- session.user_id
+		- session.user_name
+		- session.type
+		- session.connection
+		- session.status
+		- session.verb
+		- session.start_date
+	*/
+	// - custom: use a custom static value
+	/*
+		{
+		  "items": [
+		    {
+		      "description": "Hoop Connection Name",
+		      "jira_field": "customfield_10050",
+		      "type": "preset",
+		      "value": "session.connection"
+		    }
+		  ]
+		}
+	*/
+	MappingTypes map[string]any `json:"mapping_types"`
+	// The prompt fields that will be show to user before executing a session
+	/*
+		{
+		  "items": [
+		    {
+		      "description": "Squad Name",
+		      "jira_field": "customfield_10052",
+		      "label": "Squad Name",
+		      "required": true
+		    }
+		  ]
+		}
+	*/
+	PromptTypes map[string]any `json:"prompt_types"`
+	// Cmdb Types are custom fields integrated with the Jira Assets API
+	/*
+		{
+		  "items": [
+		    {
+		      "description": "Service Field",
+		      "jira_field": "customfield_10110",
+		      "jira_object_type": "Service",
+		      "required": true,
+		      "value": "mydb-prod"
+		    }
+		  ]
+		}
+	*/
+	CmdbTypes map[string]any `json:"cmdb_types"`
 }
 
 type GuardRailRuleRequest struct {

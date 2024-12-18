@@ -43,7 +43,7 @@ test-enterprise:
 	env CGO_ENABLED=0 go test -v github.com/hoophq/hoop/...
 
 generate-openapi-docs:
-	cd ./gateway/ && go run github.com/swaggo/swag/cmd/swag@v1.16.3 init -g api/server.go -o api/openapi/autogen --outputTypes go --markdownFiles api/openapi/docs/
+	cd ./gateway/ && go run github.com/swaggo/swag/cmd/swag@v1.16.3 init -g api/server.go -o api/openapi/autogen --outputTypes go --markdownFiles api/openapi/docs/ --parseDependency
 
 swag-fmt:
 	swag fmt
