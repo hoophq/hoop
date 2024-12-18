@@ -68,9 +68,9 @@
           [forms/input
            {:size "2"
             :placeholder "e.g. product"
-            :value (:object_type cmdb)
+            :value (:jira_object_type cmdb)
             :not-margin-bottom? true
-            :on-change #(on-cmdb-field-change state idx :object_type (-> % .-target .-value))}]]
+            :on-change #(on-cmdb-field-change state idx :jira_object_type (-> % .-target .-value))}]]
 
          [:> Table.Cell {:p "4"}
           [forms/input

@@ -72,8 +72,8 @@
        (when @select-state
          [:> Table.ColumnHeaderCell ""])
        [:> Table.ColumnHeaderCell "Type"]
-       [:> Table.ColumnHeaderCell "Value"]
        [:> Table.ColumnHeaderCell "Jira Field"]
+       [:> Table.ColumnHeaderCell "Value"]
        [:> Table.ColumnHeaderCell "Description (Optional)"]]]
 
      [:> Table.Body
@@ -103,10 +103,10 @@
              :options type-options}]]
 
           [:> Table.Cell {:p "4"}
-           [value-field rule state idx on-mapping-field-change]]
+           [jira-field-input rule state idx on-mapping-field-change]]
 
           [:> Table.Cell {:p "4"}
-           [jira-field-input rule state idx on-mapping-field-change]]
+           [value-field rule state idx on-mapping-field-change]]
 
           [:> Table.Cell {:p "4"}
            [details-input rule state idx on-mapping-field-change]]]))]]

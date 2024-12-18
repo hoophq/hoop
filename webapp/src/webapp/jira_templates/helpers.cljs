@@ -21,7 +21,7 @@
    :jira_field ""
    :required true
    :description ""
-   :object_type ""
+   :jira_object_type ""
    :selected false})
 
 (defn- format-mapping-rule [rule]
@@ -50,7 +50,7 @@
      :jira_field (:jira_field cmdb)
      :required (:required cmdb)
      :description (:description cmdb)
-     :object_type (:object_type cmdb)
+     :jira_object_type (:jira_object_type cmdb)
      :selected false}))
 
 (defn- format-mapping-rules [rules]
@@ -76,7 +76,7 @@
    :issue_type_name (r/atom (or (:issue_type_name initial-data) ""))
    :mapping (r/atom (format-mapping-rules (get-in initial-data [:mapping_types :items])))
    :prompts (r/atom (format-prompts (get-in initial-data [:prompt_types :items])))
-   :cmdb (r/atom (format-cmdbs (get-in initial-data [:cmdb :items])))
+   :cmdb (r/atom (format-cmdbs (get-in initial-data [:cmdb_types :items])))
    :mapping-select-state (r/atom false)
    :prompts-select-state (r/atom false)
    :cmdb-select-state (r/atom false)})
@@ -178,7 +178,7 @@
             (or (empty? (:label cmdb))
                 (empty? (:value cmdb))
                 (empty? (:jira_field cmdb))
-                (empty? (:object_type cmdb))))
+                (empty? (:jira_object_type cmdb))))
           cmdbs))
 
 (defn prepare-payload [state]
@@ -189,4 +189,4 @@
    :issue_type_name @(:issue_type_name state)
    :mapping_types {:items (vec (remove-empty-mapping @(:mapping state)))}
    :prompt_types {:items (vec (remove-empty-prompts @(:prompts state)))}
-   :cmdb {:items (vec (remove-empty-cmdb @(:cmdb state)))}})
+   :cmdb_types {:items (vec (remove-empty-cmdb @(:cmdb state)))}})

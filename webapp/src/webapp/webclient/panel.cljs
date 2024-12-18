@@ -72,11 +72,6 @@
       (reset! timer (js/setTimeout #(save-code-to-localstorage code-string) 1000))
       (reset! script code-string))))
 
-(defn- get-template-from-connection [connection]
-  (when-let [template-id (:jira_issue_template_id connection)]
-    (rf/dispatch [:jira-templates->get-submit-template "123"])
-    @(rf/subscribe [:jira-templates->submit-template])))
-
 (defn- needs-form? [template]
   (let [has-prompts? (seq (get-in template [:data :prompt_types :items]))
         has-cmdb? (when-let [cmdb-items (get-in template [:data :cmdb_types :items])]
@@ -88,12 +83,14 @@
 
 (defn- submit-task [e script selected-connections atom-exec-list-open? metadata script-response]
   (let [connection (first selected-connections)
-        needs-template? true #_(boolean (and connection (:jira_issue_template_id connection)))
+        needs-template? (boolean (and connection
+                                      (not (cs/blank? (:jira_issue_template_id connection)))))
+
         connection-type (discover-connection-type connection)
         multiple-connections? (> (count selected-connections) 1)
-        jira-template (when connection (get-template-from-connection connection))
-        has-jira-template? true #_(some #(:jira_issue_template_id %) selected-connections)
-        jira-integration-enabled? true #_@(rf/subscribe [:jira-integration->integration-enabled?])
+        jira-template @(rf/subscribe [:jira-templates->submit-template])
+        has-jira-template-multiple-connections? (some #(:jira_issue_template_id %) selected-connections)
+        jira-integration-enabled? @(rf/subscribe [:jira-integration->integration-enabled?])
         change-to-tabular? (and (some (partial = connection-type) ["mysql" "postgres" "sql-server" "oracledb" "mssql" "database"])
                                 (< (count @script-response) 1))
         selected-db (.getItem js/localStorage "selected-database")
@@ -116,21 +113,19 @@
                     exec-data-with-fields (cond-> exec-data
                                             (:jira_fields form-data) (assoc :jira_fields (:jira_fields form-data))
                                             (:cmdb_fields form-data) (assoc :cmdb_fields (:cmdb_fields form-data)))]
-                (println exec-data-with-fields)
-                #_(rf/dispatch [:editor-plugin->exec-script exec-data-with-fields])))]
+                (rf/dispatch [:editor-plugin->exec-script exec-data-with-fields])))]
 
       (when (.-preventDefault e) (.preventDefault e))
 
-      (println jira-template)
-
       (cond
-        (and needs-template? (or (nil? jira-template) (= :loading (:status jira-template))))
+        (and needs-template? (or (nil? (:data jira-template))
+                                 (= :loading (:status jira-template))))
         (rf/dispatch [:show-snackbar {:level :info
                                       :text (str "Loading data. "
                                                  "Try again in few seconds.")}])
 
               ;; Multiple connections check
-        (and multiple-connections? has-jira-template? jira-integration-enabled?)
+        (and multiple-connections? has-jira-template-multiple-connections? jira-integration-enabled?)
         (rf/dispatch [:dialog->open
                       {:title "Running in multiple connections not allowed"
                        :action-button? false
@@ -144,7 +139,7 @@
         (reset! atom-exec-list-open? true)
 
               ;; Single connection
-        (first selected-connections)
+        (= (count selected-connections) 1)
         (if (and (needs-form? jira-template) jira-integration-enabled?)
           (if (= :loading (:status jira-template))
             (rf/dispatch [:show-snackbar {:level :info
@@ -154,13 +149,16 @@
                                      {:prompts (get-in jira-template [:data :prompt_types :items])
                                       :cmdb-items (get-in jira-template [:data :cmdb_types :items])
                                       :on-submit handle-submit}]}]))
+
           (do
             (when change-to-tabular?
               (reset! log-area/selected-tab "Tabular"))
             (rf/dispatch [:editor-plugin->exec-script
                           {:script final-script
                            :connection-name (:name connection)
-                           :metadata (metadata->json-stringify metadata)}])))
+                           :metadata (metadata->json-stringify metadata)}])
+
+            (rf/dispatch [:jira-templates->clear-submit-template])))
 
         :else
         (rf/dispatch [:show-snackbar {:level :info
@@ -214,6 +212,7 @@
         plugins (rf/subscribe [:plugins->my-plugins])
         selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])
         script-response (rf/subscribe [:editor-plugin->script])
+        previous-selected-connections (r/atom nil)
 
         vertical-pane-sizes (mapv js/parseInt
                                   (cs/split
@@ -240,6 +239,7 @@
                        {:text "Sublime" :value "sublime"}
                        {:text "Github dark" :value "github-dark"}]]
     (rf/dispatch [:runbooks-plugin->clear-active-runbooks])
+
     (fn [{:keys [script-output]}]
       (let [is-mac? (>= (.indexOf (.toUpperCase (.-platform js/navigator)) "MAC") 0)
             is-one-connection-selected? (= 1 (count @run-connection-list-selected))
@@ -361,6 +361,13 @@
                              (= (:type connection) "mssql")
                              (= (:type connection) "oracledb")
                              (= (:type connection) "database")))]
+
+        (when (and is-one-connection-selected?
+                   (not= @run-connection-list-selected @previous-selected-connections))
+          (rf/dispatch [:jira-templates->get-submit-template
+                        (:jira_issue_template_id last-connection-selected)])
+          (reset! previous-selected-connections @run-connection-list-selected))
+
         (if (and (empty? (:results @db-connections))
                  (not (:loading @db-connections)))
           [quickstart/main]

@@ -56,10 +56,10 @@
            [:> Box {:class "space-y-4"}
             [:> Text {:as "h4" :size "3" :weight "medium" :mb "2"} "CMDB Information"]
             (doall
-             (for [{:keys [description jira_field jira_values required]} cmdb-fields-to-show]
+             (for [{:keys [label jira_field jira_values required]} cmdb-fields-to-show]
                ^{:key jira_field}
                [forms/select
-                {:label description
+                {:label label
                  :required required
                  :full-width? true
                  :selected (get-in @form-data [:jira_fields jira_field])
