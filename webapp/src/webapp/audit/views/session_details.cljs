@@ -272,16 +272,18 @@
             [:div {:class "text-xs text-gray-500"}
              "Runbook: " (-> session :labels :runbookFile)])]
 
-         [:section {:class "grid grid-cols-1 lg:grid-cols-3 gap-regular pb-regular"}
+         [:section {:class (str "grid grid-cols-1 gap-regular pb-regular "
+                                (if (-> session :integrations_metadata :jira_issue_url)
+                                  "lg:grid-cols-4"
+                                  "lg:grid-cols-3"))}
           [:div {:class "col-span-1 flex gap-large items-center"}
            [:div {:class "flex flex-grow gap-regular items-center"}
             [user-icon/initials-black user-name]
             [:span
              {:class "text-gray-800 text-sm"}
              user-name]]]
-          [:div
-           {:class (str "flex flex-col gap-small justify-center"
-                        " rounded-lg bg-gray-100 p-regular")}
+          [:div {:class (str "flex flex-col gap-small self-center justify-center"
+                             " rounded-lg bg-gray-100 p-3")}
            [:div
             {:class "flex items-center gap-regular text-xs"}
             [:span
@@ -297,7 +299,7 @@
                "end:"]
               [:span
                (formatters/time-parsed->full-date end-date)]])]
-          [:div {:id "session-reviews"}
+          [:div {:id "session-reviews" :class "self-center"}
            [:header {:class "relative flex text-xs text-gray-800 mb-small"}
             [:span {:class "flex-grow font-bold"} "Reviewers"]
             [:<>
@@ -322,7 +324,18 @@
             (doall
              (for [group review-groups]
                ^{:key (:id group)}
-               [review-group-item group session @user]))]]]
+               [review-group-item group session @user]))]]
+
+          (when (-> session :integrations_metadata :jira_issue_url)
+            [:div {:class "self-center"}
+             [:header {:class "relative flex text-xs text-gray-800 mb-small"}
+              [:span {:class "flex-grow font-bold"} "Integrations"]]
+             [:a {:class "text-xs underline text-blue-600 flex items-center"
+                  :href (-> session :integrations_metadata :jira_issue_url)
+                  :target "_blank"}
+              "Open in Jira "
+              [:> hero-solid-icon/ArrowUpRightIcon {:class "h-4 w-4 shrink-0"
+                                                    :aria-hidden "true"}]]])]
 
          ;; runbook params
          (when (and runbook-params
