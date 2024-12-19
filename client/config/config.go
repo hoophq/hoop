@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/client/cmd/styles"
 	"github.com/hoophq/hoop/common/clientconfig"
 	"github.com/hoophq/hoop/common/envloader"
@@ -133,6 +134,13 @@ func (c *Config) GrpcClientConfig() (grpc.ClientConfig, error) {
 func (c *Config) isEmpty() bool  { return c.GrpcURL == "" && c.ApiURL == "" }
 func (c *Config) IsValid() bool  { return c.ApiURL != "" }
 func (c *Config) HasToken() bool { return c.Mode == clientconfig.ModeLocal || c.Token != "" }
+func (c *Config) IsApiKey() bool {
+	parts := strings.Split(c.Token, "|")
+	if _, err := uuid.Parse(parts[0]); err == nil {
+		return true
+	}
+	return false
+}
 func (c *Config) TlsCA() string {
 	if c.TlsCAB64Enc != "" {
 		tlsCA, _ := base64.StdEncoding.DecodeString(c.TlsCAB64Enc)
