@@ -227,6 +227,9 @@ func httpRequest(apir *apiResource) (any, http.Header, error) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", apir.conf.Token))
+	if apir.conf.IsApiKey() {
+		req.Header.Set("Api-Key", apir.conf.Token)
+	}
 	req.Header.Set("User-Agent", fmt.Sprintf("hoopcli/%s", hoopVersionStr))
 	resp, err := httpclient.NewHttpClient(apir.conf.TlsCA()).Do(req)
 	if err != nil {
@@ -276,6 +279,9 @@ func httpDeleteRequest(apir *apiResource) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", apir.conf.Token))
+	if apir.conf.IsApiKey() {
+		req.Header.Set("Api-Key", apir.conf.Token)
+	}
 	req.Header.Set("User-Agent", fmt.Sprintf("hoopcli/%s", hoopVersionStr))
 	resp, err := httpclient.NewHttpClient(apir.conf.TlsCA()).Do(req)
 	if err != nil {
@@ -308,6 +314,9 @@ func httpBodyRequest(apir *apiResource, method string, bodyMap map[string]any) (
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", apir.conf.Token))
+	if apir.conf.IsApiKey() {
+		req.Header.Set("Api-Key", apir.conf.Token)
+	}
 	req.Header.Set("User-Agent", fmt.Sprintf("hoopcli/%s", hoopVersionStr))
 	resp, err := httpclient.NewHttpClient(apir.conf.TlsCA()).Do(req)
 	if err != nil {
