@@ -72,8 +72,10 @@ func Create(c *gin.Context) {
 	// accordingly to the auth method
 	userSubject := newUser.Email
 	newUser.Verified = false
+	newUser.Status = openapi.StatusInvited
 	if appconfig.Get().AuthMethod() == "local" {
 		newUser.Verified = true
+		newUser.Status = openapi.StatusActive
 		hashedPwdBytes, err := bcrypt.GenerateFromPassword([]byte(newUser.Password), bcrypt.DefaultCost)
 		if err != nil {
 			log.Errorf("failed hashing password, err=%v", err)
@@ -93,7 +95,7 @@ func Create(c *gin.Context) {
 		Picture:        newUser.Picture,
 		Email:          newUser.Email,
 		Verified:       newUser.Verified,
-		Status:         string(openapi.StatusInvited),
+		Status:         string(newUser.Status),
 		SlackID:        newUser.SlackID,
 	}
 	if err := models.CreateUser(modelsUser); err != nil {
