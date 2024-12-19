@@ -330,7 +330,7 @@
             [:div {:class "self-center"}
              [:header {:class "relative flex text-xs text-gray-800 mb-small"}
               [:span {:class "flex-grow font-bold"} "Integrations"]]
-             [:a {:class "text-xs underline text-blue-600 flex items-center"
+             [:a {:class "text-xs underline text-blue-600 flex items-center py-small"
                   :href (-> session :integrations_metadata :jira_issue_url)
                   :target "_blank"}
               "Open in Jira "
