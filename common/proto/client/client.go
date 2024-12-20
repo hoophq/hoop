@@ -11,12 +11,13 @@ const (
 
 	ProxyManagerConnectOK = "ClientProxyManagerConnectOK"
 
-	TCPConnectionClose     = "ClientTCPConnectionClose"
-	TCPConnectionWrite     = "ClientTCPConnectionWrite"
-	PGConnectionWrite      = "ClientPGConnectionWrite"
-	MySQLConnectionWrite   = "ClientMySQLConnectionWrite"
-	MSSQLConnectionWrite   = "ClientMSSQLConnectionWrite"
-	MongoDBConnectionWrite = "ClientMongoDBConnectionWrite"
-	WriteStdout            = "ClientWriteStdout"
-	WriteStderr            = "ClientWriteStderr"
+	HttpProxyConnectionWrite = "ClientHttpProxyConnectionWrite"
+	TCPConnectionClose       = "ClientTCPConnectionClose"
+	TCPConnectionWrite       = "ClientTCPConnectionWrite"
+	PGConnectionWrite        = "ClientPGConnectionWrite"
+	MySQLConnectionWrite     = "ClientMySQLConnectionWrite"
+	MSSQLConnectionWrite     = "ClientMSSQLConnectionWrite"
+	MongoDBConnectionWrite   = "ClientMongoDBConnectionWrite"
+	WriteStdout              = "ClientWriteStdout"
+	WriteStderr              = "ClientWriteStderr"
 )
