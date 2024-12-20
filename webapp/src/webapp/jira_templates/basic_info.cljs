@@ -21,29 +21,29 @@
    [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
     [forms/input
      {:label "Name"
-      :placeholder "banking+prod_mongpdb"
+      :placeholder "e.g. squad-postgresql"
       :required true
       :value @name
       :on-change #(on-name-change (-> % .-target .-value))}]
 
     [forms/input
      {:label "Description (Optional)"
-      :placeholder "Describe how this is used in your connections"
+      :placeholder "Describe how this templated will be used."
       :required false
       :value @description
       :on-change #(on-description-change (-> % .-target .-value))}]
 
     [forms/input
      {:label "Project Key"
-      :placeholder "PKEY"
+      :placeholder "e.g. PKEY"
       :required true
       :value @project-key
       :on-change #(on-project-key-change (-> % .-target .-value))}]
 
     [:div
      [forms/input
-      {:label "Request Type"
-       :placeholder "Name"
+      {:label "Request Type ID"
+       :placeholder "e.g. 10005"
        :required true
        :value @issue-type
        :not-margin-bottom? true

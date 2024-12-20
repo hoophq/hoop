@@ -4,7 +4,7 @@
    [webapp.components.button :as button]
    [re-frame.core :as rf]))
 
-(defn main [{:keys [form-type id scroll-pos]}]
+(defn main [{:keys [form-type loading? id scroll-pos]}]
   [:<>
    [:> Flex {:p "5" :gap "2"}
     [button/HeaderBack]]
@@ -22,9 +22,12 @@
         [:> Button {:size "4"
                     :variant "ghost"
                     :color "red"
+                    :disabled loading?
                     :type "button"
                     :on-click #(rf/dispatch [:jira-templates->delete-by-id id])}
          "Delete"])
       [:> Button {:size "3"
+                  :loading loading?
+                  :disabled loading?
                   :type "submit"}
        "Save"]]]]])
