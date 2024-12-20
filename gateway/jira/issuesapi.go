@@ -7,8 +7,10 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
@@ -163,4 +165,24 @@ func ParseIssueFields(tmpl *models.JiraIssueTemplate, input map[string]string, s
 	}
 
 	return output, nil
+}
+
+func loadDefaultPresetFields(s types.Session) map[string]string {
+	script := s.Script["data"]
+	if len(s.Script) > 5000 {
+		script = script[0:5000] + fmt.Sprintf(" ...[TRUNCATED %v]", len(script[5000:]))
+	}
+	return map[string]string{
+		"session.id":         s.ID,
+		"session.user_email": s.UserEmail,
+		"session.user_id":    s.UserID,
+		"session.user_name":  s.UserName,
+		"session.type":       s.Type,
+		// "session.subtype":    "",
+		"session.connection":  s.Connection,
+		"session.status":      s.Status,
+		"session.script":      "{code:shell}" + script + "{code}",
+		"session.start_date":  s.StartSession.Format(time.RFC3339),
+		"session.webapp_link": appconfig.Get().ApiURL() + "/sessions/" + s.ID,
+	}
 }

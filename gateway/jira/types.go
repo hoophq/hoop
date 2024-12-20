@@ -3,12 +3,9 @@ package jira
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"go/types"
 	"slices"
 	"time"
-
-	storagev2types "github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
 type IssueTransitionItem struct {
@@ -57,52 +54,13 @@ type ServiceDesk struct {
 	Values     []ServiceDeskValue `json:"values"`
 }
 
-type Project struct {
-	Key string `json:"key"`
-}
-
-type Issuetype struct {
-	Name string `json:"name"`
-}
-
 type CustomFields map[string]any
-
-type IssueFields[T any] struct {
-	Project   Project   `json:"project"`
-	Summary   string    `json:"summary"`
-	Issuetype Issuetype `json:"issuetype"`
-
-	CustomFields T `json:"-"`
-}
-
-func (A IssueFields[T]) MarshalJSON() ([]byte, error) {
-	type ResponseAlias IssueFields[types.Nil]
-	resp, err := json.Marshal(ResponseAlias{
-		Project:   A.Project,
-		Summary:   A.Summary,
-		Issuetype: A.Issuetype,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	data, err := json.Marshal(A.CustomFields)
-	if err != nil {
-		return nil, err
-	}
-	if bytes.Equal(data, []byte(`{}`)) {
-		return resp, nil
-	}
-	v := append(resp[1:len(resp)-1], byte(','))
-	resp = slices.Insert(data, 1, v...)
-	return resp, nil
-}
 
 type IssueFieldValues[T any] struct {
 	CustomFields T `json:"requestFieldValues"`
 }
 
-type IssueFieldsV2[T any] struct {
+type IssueFields[T any] struct {
 	ServiceDeskID string `json:"serviceDeskId"`
 	RequestTypeID string `json:"requestTypeId"`
 	IsAdfRequest  bool   `json:"isAdfRequest"`
@@ -110,8 +68,8 @@ type IssueFieldsV2[T any] struct {
 	IssueFieldValues IssueFieldValues[T] `json:"-"`
 }
 
-func (A IssueFieldsV2[T]) MarshalJSON() ([]byte, error) {
-	type ResponseAlias IssueFieldsV2[types.Nil]
+func (A IssueFields[T]) MarshalJSON() ([]byte, error) {
+	type ResponseAlias IssueFields[types.Nil]
 	resp, err := json.Marshal(ResponseAlias{
 		ServiceDeskID: A.ServiceDeskID,
 		RequestTypeID: A.RequestTypeID,
@@ -133,21 +91,31 @@ func (A IssueFieldsV2[T]) MarshalJSON() ([]byte, error) {
 	return resp, nil
 }
 
-func loadDefaultPresetFields(s storagev2types.Session) map[string]string {
-	script := s.Script["data"]
-	if len(s.Script) > 5000 {
-		script = script[0:5000] + fmt.Sprintf(" ...[TRUNCATED %v]", len(script[5000:]))
-	}
-	return map[string]string{
-		"session.id":         s.ID,
-		"session.user_email": s.UserEmail,
-		"session.user_id":    s.UserID,
-		"session.user_name":  s.UserName,
-		"session.type":       s.Type,
-		// "session.subtype":    "",
-		"session.connection": s.Connection,
-		"session.status":     s.Status,
-		"session.script":     "{code:shell}" + script + "{code}",
-		"session.start_date": s.StartSession.Format(time.RFC3339),
-	}
+type AqlResponse struct {
+	StartAt        int  `json:"startAt"`
+	MaxResults     int  `json:"maxResults"`
+	Total          int  `json:"total"`
+	Last           bool `json:"last"`
+	HasMoreResults bool `json:"hasMoreResults"`
+
+	Values []AqlResponseValue `json:"values"`
+}
+
+type AqlResponseValue struct {
+	Name       string     `json:"name"`
+	GlobalID   string     `json:"globalId"`
+	ID         string     `json:"id"`
+	Label      string     `json:"label"`
+	ObjectKey  string     `json:"objectKey"`
+	ObjectType ObjectType `json:"objectType"`
+	UpdatedAt  time.Time  `json:"updated"`
+	CreatedAt  time.Time  `json:"created"`
+}
+
+type ObjectType struct {
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Type           int    `json:"type"`
+	Description    string `json:"description"`
+	ObjectSchemaID string `json:"objectSchemaId"`
 }

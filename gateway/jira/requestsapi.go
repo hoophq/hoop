@@ -20,7 +20,7 @@ func CreateCustomerRequest(tmpl *models.JiraIssueTemplate, config *models.JiraIn
 	if _, hasSummary := fields["summary"]; !hasSummary {
 		fields["summary"] = "Hoop Session"
 	}
-	issue := IssueFieldsV2[CustomFields]{
+	issue := IssueFields[CustomFields]{
 		ServiceDeskID:    serviceDeskID,
 		RequestTypeID:    tmpl.RequestTypeID,
 		IsAdfRequest:     false,
