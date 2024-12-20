@@ -52,7 +52,7 @@
 (rf/reg-event-db
  :jira-templates->clear-active-template
  (fn [db _]
-   (assoc db :jira-templates->active-template {:status :loading :data nil})))
+   (assoc db :jira-templates->active-template {:status :ready :data nil})))
 
 (rf/reg-event-db
  :jira-templates->clear-submit-template
@@ -62,26 +62,36 @@
 (rf/reg-event-fx
  :jira-templates->create
  (fn [_ [_ template]]
-   {:fx [[:dispatch
+   {:fx [[:dispatch [:jira-templates->set-submitting true]]
+         [:dispatch
           [:fetch {:method "POST"
                    :uri "/integrations/jira/issuetemplates"
                    :body template
                    :on-success (fn []
+                                 (rf/dispatch [:jira-templates->set-submitting false])
                                  (rf/dispatch [:jira-templates->get-all])
                                  (rf/dispatch [:navigate :jira-templates])
-                                 (rf/dispatch [:jira-templates->clear-active-template]))}]]]}))
+                                 (rf/dispatch [:jira-templates->clear-active-template]))
+                   :on-failure (fn [error]
+                                 (rf/dispatch [:show-snackbar {:text error :level :error}])
+                                 (rf/dispatch [:jira-templates->set-submitting false]))}]]]}))
 
 (rf/reg-event-fx
  :jira-templates->update-by-id
  (fn [_ [_ template]]
-   {:fx [[:dispatch
+   {:fx [[:dispatch [:jira-templates->set-submitting true]]
+         [:dispatch
           [:fetch {:method "PUT"
                    :uri (str "/integrations/jira/issuetemplates/" (:id template))
                    :body template
                    :on-success (fn []
+                                 (rf/dispatch [:jira-templates->set-submitting false])
                                  (rf/dispatch [:jira-templates->get-all])
                                  (rf/dispatch [:navigate :jira-templates])
-                                 (rf/dispatch [:jira-templates->clear-active-template]))}]]]}))
+                                 (rf/dispatch [:jira-templates->clear-active-template]))
+                   :on-failure (fn [error]
+                                 (rf/dispatch [:show-snackbar {:text error :level :error}])
+                                 (rf/dispatch [:jira-templates->set-submitting false]))}]]]}))
 
 (rf/reg-event-fx
  :jira-templates->delete-by-id
@@ -92,6 +102,11 @@
                    :on-success (fn []
                                  (rf/dispatch [:jira-templates->get-all])
                                  (rf/dispatch [:navigate :jira-templates]))}]]]}))
+
+(rf/reg-event-db
+ :jira-templates->set-submitting
+ (fn [db [_ value]]
+   (assoc-in db [:jira-templates :submitting?] value)))
 
 ;; Subs
 (rf/reg-sub
@@ -108,3 +123,8 @@
  :jira-templates->submit-template
  (fn [db _]
    (:jira-templates->submit-template db)))
+
+(rf/reg-sub
+ :jira-templates->submitting?
+ (fn [db]
+   (get-in db [:jira-templates :submitting?])))
