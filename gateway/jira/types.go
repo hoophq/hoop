@@ -28,6 +28,34 @@ type IssueResponse struct {
 	Self string `json:"self"`
 }
 
+type RequestLinks struct {
+	JiraRest string `json:"jiraRest"`
+	Web      string `json:"web"`
+	Agent    string `json:"agent"`
+	Self     string `json:"self"`
+}
+
+type RequestResponse struct {
+	IssueID  string       `json:"issueId"`
+	IssueKey string       `json:"issueKey"`
+	Links    RequestLinks `json:"_links"`
+}
+
+type ServiceDeskValue struct {
+	ID          string `json:"id"`
+	ProjectID   string `json:"projectId"`
+	ProjectName string `json:"projectName"`
+	ProjectKey  string `json:"projectKey"`
+}
+
+type ServiceDesk struct {
+	Start      int                `json:"start"`
+	Size       int                `json:"size"`
+	Limit      int                `json:"limit"`
+	IsLastPage bool               `json:"isLastPage"`
+	Values     []ServiceDeskValue `json:"values"`
+}
+
 type Project struct {
 	Key string `json:"key"`
 }
@@ -58,6 +86,41 @@ func (A IssueFields[T]) MarshalJSON() ([]byte, error) {
 	}
 
 	data, err := json.Marshal(A.CustomFields)
+	if err != nil {
+		return nil, err
+	}
+	if bytes.Equal(data, []byte(`{}`)) {
+		return resp, nil
+	}
+	v := append(resp[1:len(resp)-1], byte(','))
+	resp = slices.Insert(data, 1, v...)
+	return resp, nil
+}
+
+type IssueFieldValues[T any] struct {
+	CustomFields T `json:"requestFieldValues"`
+}
+
+type IssueFieldsV2[T any] struct {
+	ServiceDeskID string `json:"serviceDeskId"`
+	RequestTypeID string `json:"requestTypeId"`
+	IsAdfRequest  bool   `json:"isAdfRequest"`
+
+	IssueFieldValues IssueFieldValues[T] `json:"-"`
+}
+
+func (A IssueFieldsV2[T]) MarshalJSON() ([]byte, error) {
+	type ResponseAlias IssueFieldsV2[types.Nil]
+	resp, err := json.Marshal(ResponseAlias{
+		ServiceDeskID: A.ServiceDeskID,
+		RequestTypeID: A.RequestTypeID,
+		IsAdfRequest:  A.IsAdfRequest,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := json.Marshal(A.IssueFieldValues)
 	if err != nil {
 		return nil, err
 	}

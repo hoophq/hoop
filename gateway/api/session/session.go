@@ -177,19 +177,21 @@ func Post(c *gin.Context) {
 				c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 				return
 			}
-			resp, err := jira.CreateIssue(issueTemplate, jiraConfig, jiraFields)
+			resp, err := jira.CreateCustomerRequest(issueTemplate, jiraConfig, jiraFields)
+			// resp, err := jira.CreateIssue(issueTemplate, jiraConfig, jiraFields)
 			if err != nil {
 				log.Error(err)
 				c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 				return
 			}
 			err = models.UpdateSessionIntegrationMetadata(ctx.OrgID, sessionID, map[string]any{
-				"jira_issue_key": resp.Key,
-				"jira_issue_url": fmt.Sprintf("%s/browse/%s", jiraConfig.URL, resp.Key),
+				"jira_issue_key": resp.IssueKey,
+				"jira_issue_url": resp.Links.Agent,
 			})
 			if err != nil {
-				log.Errorf("failed updating session with jira issue (%s), reason=%v", resp.Key, err)
-				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed updating session with jira issue %s", resp.Key)})
+				log.Errorf("failed updating session with jira issue (%s), reason=%v", resp.IssueKey, err)
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"message": fmt.Sprintf("failed updating session with jira issue %s", resp.IssueKey)})
 				return
 			}
 		}
