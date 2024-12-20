@@ -117,7 +117,7 @@
      "Relates hoop.dev fields with Jira fields. "
      [:> Strong
       "Custom: "]
-     "Append a custom key-value relation to Jira cards."]]
+     "Appends a custom key-value relation to Jira cards."]]
 
    [rule-buttons/main
     {:on-rule-add #(on-mapping-add state)

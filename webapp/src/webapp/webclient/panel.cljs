@@ -106,7 +106,6 @@
 
     (letfn [(handle-submit [form-data]
               (rf/dispatch [:modal->close])
-              (rf/dispatch [:jira-templates->clear-submit-template])
               (let [exec-data {:script final-script
                                :connection-name (:name connection)
                                :metadata (metadata->json-stringify metadata)}

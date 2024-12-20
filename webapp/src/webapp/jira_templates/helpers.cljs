@@ -176,7 +176,6 @@
 (defn remove-empty-cmdb [cmdbs]
   (remove (fn [cmdb]
             (or (empty? (:label cmdb))
-                (empty? (:value cmdb))
                 (empty? (:jira_field cmdb))
                 (empty? (:jira_object_type cmdb))))
           cmdbs))
