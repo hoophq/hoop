@@ -74,3 +74,17 @@ func (h *handler) List(c *gin.Context) { h.legacy.FindAll(c) }
 //	@Failure		404,500	{object}	openapi.HTTPError
 //	@Router			/reviews/{id} [put]
 func (h *handler) Put(c *gin.Context) { h.legacy.Put(c) }
+
+// UpdateReviewBySid
+//
+//	@Summary		Update Review Status By Sid
+//	@Description	Update the status of a review resource by the session id
+//	@Tags			Core
+//	@Param			session_id	path	string	true	"Resource identifier of the session"
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		openapi.ReviewRequest	true	"The request body resource"
+//	@Success		200		{object}	openapi.Review
+//	@Failure		404,500	{object}	openapi.HTTPError
+//	@Router			/sessions/{session_id}/review [put]
+func (h *handler) ReviewBySession(c *gin.Context) { h.legacy.Put(c) }

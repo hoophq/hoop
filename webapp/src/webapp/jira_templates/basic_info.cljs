@@ -6,11 +6,11 @@
 (defn main [{:keys [name
                     description
                     project-key
-                    issue-type
+                    request-type-id
                     on-name-change
                     on-description-change
                     on-project-key-change
-                    on-issue-type-change]}]
+                    on-request-type-id-change]}]
   [:> Flex {:direction "column" :gap "5"}
    [:> Box {:grid-column "span 2 / span 2"}
     [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
@@ -45,8 +45,8 @@
       {:label "Request Type ID"
        :placeholder "e.g. 10005"
        :required true
-       :value @issue-type
+       :value @request-type-id
        :not-margin-bottom? true
-       :on-change #(on-issue-type-change (-> % .-target .-value))}]
+       :on-change #(on-request-type-id-change (-> % .-target .-value))}]
      [:> Text {:as "p" :size "2" :mt "1" :class "text-[--gray-10]"}
       "You can find the name under your Project Settings."]]]])

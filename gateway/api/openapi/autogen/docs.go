@@ -2753,6 +2753,59 @@ const docTemplate = `{
                 }
             }
         },
+        "/sessions/{session_id}/review": {
+            "put": {
+                "description": "Update the status of a review resource by the session id",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Core"
+                ],
+                "summary": "Update Review Status By Sid",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Resource identifier of the session",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ReviewRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.Review"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/signup": {
             "post": {
                 "description": "Signup anonymous authenticated user. This endpoint is only used for multi tenant setups.",
@@ -3866,10 +3919,6 @@ const docTemplate = `{
                     "description": "The unique identifier of the integration",
                     "type": "string"
                 },
-                "issue_type_name": {
-                    "description": "The issue type name (request type) that will be associated to the issue",
-                    "type": "string"
-                },
                 "mapping_types": {
                     "type": "object",
                     "additionalProperties": {}
@@ -3886,6 +3935,10 @@ const docTemplate = `{
                     "type": "object",
                     "additionalProperties": {}
                 },
+                "request_type_id": {
+                    "description": "The request type id that will be associated to the issue",
+                    "type": "string"
+                },
                 "updated_at": {
                     "description": "The time when the template was updated",
                     "type": "string"
@@ -3894,6 +3947,11 @@ const docTemplate = `{
         },
         "openapi.JiraIssueTemplateRequest": {
             "type": "object",
+            "required": [
+                "name",
+                "project_key",
+                "request_type_id"
+            ],
             "properties": {
                 "cmdb_types": {
                     "description": "Cmdb Types are custom fields integrated with the Jira Assets API\n\n\t\t{\n\t\t  \"items\": [\n\t\t    {\n\t\t      \"description\": \"Service Field\",\n\t\t      \"jira_field\": \"customfield_10110\",\n\t\t      \"jira_object_type\": \"Service\",\n\t\t      \"required\": true,\n\t\t      \"value\": \"mydb-prod\"\n\t\t    }\n\t\t  ]\n\t\t}",
@@ -3902,10 +3960,6 @@ const docTemplate = `{
                 },
                 "description": {
                     "description": "The description of the template",
-                    "type": "string"
-                },
-                "issue_type_name": {
-                    "description": "The issue type name (request type) that will be associated to the issue",
                     "type": "string"
                 },
                 "mapping_types": {
@@ -3925,6 +3979,10 @@ const docTemplate = `{
                     "description": "The prompt fields that will be show to user before executing a session\n\n\t\t{\n\t\t  \"items\": [\n\t\t    {\n\t\t      \"description\": \"Squad Name\",\n\t\t      \"jira_field\": \"customfield_10052\",\n\t\t      \"label\": \"Squad Name\",\n\t\t      \"required\": true\n\t\t    }\n\t\t  ]\n\t\t}",
                     "type": "object",
                     "additionalProperties": {}
+                },
+                "request_type_id": {
+                    "description": "The request type that will be associated to the issue",
+                    "type": "string"
                 }
             }
         },

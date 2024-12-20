@@ -178,7 +178,6 @@ func Post(c *gin.Context) {
 				return
 			}
 			resp, err := jira.CreateCustomerRequest(issueTemplate, jiraConfig, jiraFields)
-			// resp, err := jira.CreateIssue(issueTemplate, jiraConfig, jiraFields)
 			if err != nil {
 				log.Error(err)
 				c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})

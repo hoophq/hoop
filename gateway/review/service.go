@@ -41,7 +41,7 @@ func (s *Service) FindOne(ctx pgrest.OrgContext, id string) (*types.Review, erro
 }
 
 // FindOneTimeReview returns an one time review by session id
-func (s *Service) FindBySessionID(ctx pgrest.Context, sessionID string) (*types.Review, error) {
+func (s *Service) FindBySessionID(ctx pgrest.OrgContext, sessionID string) (*types.Review, error) {
 	return pgreview.New().FetchOneBySid(ctx, sessionID)
 }
 
@@ -82,6 +82,28 @@ func (s *Service) Persist(ctx pgrest.OrgContext, review *types.Review) error {
 	return nil
 }
 
+func (s *Service) RevokeBySid(ctx pgrest.OrgContext, sid string) (*types.Review, error) {
+	rev, err := s.FindBySessionID(ctx, sid)
+	if err != nil {
+		return nil, err
+	}
+	// non-jit type reviews cannot be revoked
+	if rev == nil || rev.Type != ReviewTypeJit {
+		return nil, ErrNotFound
+	}
+	// only approved reviews could be revoked
+	if rev.Status != types.ReviewStatusApproved {
+		return nil, ErrWrongState
+	}
+	rev.Status = types.ReviewStatusRevoked
+
+	if err := s.Persist(ctx, rev); err != nil {
+		return nil, fmt.Errorf("saving review error: %v", err)
+	}
+
+	return rev, nil
+}
+
 func (s *Service) Revoke(ctx pgrest.OrgContext, reviewID string) (*types.Review, error) {
 	rev, err := s.FindOne(ctx, reviewID)
 	if err != nil {
@@ -102,6 +124,18 @@ func (s *Service) Revoke(ctx pgrest.OrgContext, reviewID string) (*types.Review,
 	}
 
 	return rev, nil
+}
+
+// ReviewBySid perform review using the session id
+func (s *Service) ReviewBySid(ctx *storagev2.Context, sid string, status types.ReviewStatus) (*types.Review, error) {
+	rev, err := s.FindBySessionID(ctx, sid)
+	if err != nil {
+		return nil, fmt.Errorf("fetch review error: %v", err)
+	}
+	if rev == nil {
+		return nil, ErrNotFound
+	}
+	return s.Review(ctx, rev.Id, status)
 }
 
 // called by slack plugin and webapp

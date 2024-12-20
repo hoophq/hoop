@@ -369,6 +369,9 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		sessionapi.Get)
 	r.GET("/sessions/:session_id/download", sessionapi.DownloadSession)
+	r.PUT("/sessions/:session_id/review",
+		r.AuthMiddleware,
+		reviewHandler.ReviewBySession)
 	r.GET("/sessions",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,

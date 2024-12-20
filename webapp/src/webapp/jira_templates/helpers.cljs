@@ -73,7 +73,7 @@
    :name (r/atom (or (:name initial-data) ""))
    :description (r/atom (or (:description initial-data) ""))
    :project_key (r/atom (or (:project_key initial-data) ""))
-   :issue_type_name (r/atom (or (:issue_type_name initial-data) ""))
+   :request_type_id (r/atom (or (:request_type_id initial-data) ""))
    :mapping (r/atom (format-mapping-rules (get-in initial-data [:mapping_types :items])))
    :prompts (r/atom (format-prompts (get-in initial-data [:prompt_types :items])))
    :cmdb (r/atom (format-cmdbs (get-in initial-data [:cmdb_types :items])))
@@ -185,7 +185,7 @@
    :name @(:name state)
    :description @(:description state)
    :project_key @(:project_key state)
-   :issue_type_name @(:issue_type_name state)
+   :request_type_id @(:request_type_id state)
    :mapping_types {:items (vec (remove-empty-mapping @(:mapping state)))}
    :prompt_types {:items (vec (remove-empty-prompts @(:prompts state)))}
    :cmdb_types {:items (vec (remove-empty-cmdb @(:cmdb state)))}})

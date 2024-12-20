@@ -36,11 +36,11 @@
           {:name (:name state)
            :description (:description state)
            :project-key (:project_key state)
-           :issue-type (:issue_type_name state)
+           :request-type-id (:request_type_id state)
            :on-name-change #(reset! (:name state) %)
            :on-description-change #(reset! (:description state) %)
            :on-project-key-change #(reset! (:project_key state) %)
-           :on-issue-type-change #(reset! (:issue_type_name state) %)}]
+           :on-request-type-id-change #(reset! (:request_type_id state) %)}]
 
          [:> Flex {:direction "column" :gap "5"}
           [:> Box {:grid-column "span 2 / span 2"}

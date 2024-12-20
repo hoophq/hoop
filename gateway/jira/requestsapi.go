@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/models"
@@ -21,9 +20,9 @@ func CreateCustomerRequest(tmpl *models.JiraIssueTemplate, config *models.JiraIn
 	if _, hasSummary := fields["summary"]; !hasSummary {
 		fields["summary"] = "Hoop Session"
 	}
-	issue := IssueFieldsV2[CustomFields]{
+	issue := IssueFields[CustomFields]{
 		ServiceDeskID:    serviceDeskID,
-		RequestTypeID:    tmpl.IssueTypeName,
+		RequestTypeID:    tmpl.RequestTypeID,
 		IsAdfRequest:     false,
 		IssueFieldValues: IssueFieldValues[CustomFields]{fields},
 	}
@@ -58,10 +57,6 @@ func CreateCustomerRequest(tmpl *models.JiraIssueTemplate, config *models.JiraIn
 }
 
 func fetchServiceDeskID(config *models.JiraIntegration, projectKey string) (string, error) {
-	// temporary to avoid having to paginate
-	if val := os.Getenv("JIRA_SERVICE_DESK_ID"); val != "" {
-		return val, nil
-	}
 	apiURL := fmt.Sprintf("%s/rest/servicedeskapi/servicedesk?limit=100", config.URL)
 	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
