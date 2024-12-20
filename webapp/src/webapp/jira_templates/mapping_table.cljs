@@ -18,8 +18,7 @@
    {:value "session.status" :text "Session status"}
    {:value "session.start_date" :text "Session start date"}
    {:value "session.verb" :text "Session type"}
-   {:value "session.script" :text "Session Script"}
-   {:value "review.id" :text "Review ID"}])
+   {:value "session.script" :text "Session Script"}])
 
 (defn- value-field [rule state idx on-rule-field-change]
   (when-not (empty? (:type rule))
