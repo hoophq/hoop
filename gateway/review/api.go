@@ -20,7 +20,9 @@ type (
 
 	service interface {
 		Review(ctx *storagev2.Context, id string, status types.ReviewStatus) (*types.Review, error)
+		ReviewBySid(ctx *storagev2.Context, sid string, status types.ReviewStatus) (*types.Review, error)
 		Revoke(ctx pgrest.OrgContext, id string) (*types.Review, error)
+		RevokeBySid(ctx pgrest.OrgContext, sid string) (*types.Review, error)
 		Persist(ctx pgrest.OrgContext, review *types.Review) error
 	}
 )
@@ -28,7 +30,11 @@ type (
 func (h *Handler) Put(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
-	id := c.Param("id")
+	id, isReviewBySid := c.Param("id"), false
+	if sid := c.Param("session_id"); sid != "" {
+		id = sid
+		isReviewBySid = true
+	}
 	var req map[string]string
 	err := c.ShouldBindJSON(&req)
 	if err != nil {
@@ -40,11 +46,19 @@ func (h *Handler) Put(c *gin.Context) {
 	status := types.ReviewStatus(strings.ToUpper(string(req["status"])))
 	switch status {
 	case types.ReviewStatusApproved, types.ReviewStatusRejected:
+		if isReviewBySid {
+			review, err = h.Service.ReviewBySid(ctx, id, status)
+			break
+		}
 		review, err = h.Service.Review(ctx, id, status)
 	case types.ReviewStatusRevoked:
 		if !ctx.IsAdmin() {
 			c.AbortWithStatus(http.StatusForbidden)
 			return
+		}
+		if isReviewBySid {
+			review, err = h.Service.RevokeBySid(ctx, id)
+			break
 		}
 		review, err = h.Service.Revoke(ctx, id)
 	default:

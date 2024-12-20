@@ -837,8 +837,8 @@ type JiraIssueTemplate struct {
 	Description string `json:"description"`
 	// The project key which is the shortand version of the project's name
 	ProjectKey string `json:"project_key"`
-	// The issue type name (request type) that will be associated to the issue
-	IssueTypeName string         `json:"issue_type_name"`
+	// The request type id that will be associated to the issue
+	RequestTypeID string         `json:"request_type_id"`
 	MappingTypes  map[string]any `json:"mapping_types"`
 	PromptTypes   map[string]any `json:"prompt_types"`
 	CmdbTypes     map[string]any `json:"cmdb_types"`
@@ -855,8 +855,8 @@ type JiraIssueTemplateRequest struct {
 	Description string `json:"description"`
 	// The project key which is the shortand version of the project's name
 	ProjectKey string `json:"project_key"`
-	// The issue type name (request type) that will be associated to the issue
-	IssueTypeName string `json:"issue_type_name"`
+	// The request type that will be associated to the issue
+	RequestTypeID string `json:"request_type_id"`
 	// The automated fields that will be sent when creating the issue.
 	// There're two types
 	// - preset: obtain the value from a list of available fields that could be propagated

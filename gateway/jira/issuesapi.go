@@ -23,7 +23,6 @@ func (e *ErrInvalidIssueFields) Error() string {
 		return fmt.Sprintf("unable to parse fields, missing required fields: %v", e.resources)
 	}
 	return fmt.Sprintf("unable to parse fields, invalid preset mapping types values: %v", e.resources)
-
 }
 
 func TransitionIssue(config *models.JiraIntegration, issueKey, name string) error {
@@ -99,47 +98,6 @@ func listIssueTransitions(config *models.JiraIntegration, issueKey string) (*Iss
 		return nil, fmt.Errorf("failed decoding issue transitions, key=%s, reason=%v", issueKey, err)
 	}
 	return &obj, nil
-}
-
-func CreateIssue(issueTemplate *models.JiraIssueTemplate, config *models.JiraIntegration, customFields CustomFields) (*IssueResponse, error) {
-	if customFields == nil {
-		return nil, fmt.Errorf("custom fields map is empty")
-	}
-
-	issueFields := IssueFields[CustomFields]{
-		Project:      Project{Key: issueTemplate.ProjectKey},
-		Summary:      "Hoop Session",
-		Issuetype:    Issuetype{Name: issueTemplate.IssueTypeName},
-		CustomFields: customFields,
-	}
-	issuePayload, err := json.Marshal(map[string]any{"fields": issueFields})
-	if err != nil {
-		return nil, fmt.Errorf("failed encoding issue payload, reason=%v", err)
-	}
-	log.Infof("creating jira issue with issue fields payload: %v", string(issuePayload))
-	apiURL := fmt.Sprintf("%s/rest/api/3/issue", config.URL)
-	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(issuePayload))
-	if err != nil {
-		return nil, fmt.Errorf("failed creating request, reason=%v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.SetBasicAuth(config.User, config.APIToken)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed creating jira issue, reason=%v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 201 {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("unable to create jira issue, status=%v, body=%v",
-			resp.StatusCode, string(body))
-	}
-	var response IssueResponse
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return nil, fmt.Errorf("failed decoding jira issue response, reason=%v", err)
-	}
-	return &response, nil
 }
 
 func ParseIssueFields(tmpl *models.JiraIssueTemplate, input map[string]string, session types.Session) (CustomFields, error) {

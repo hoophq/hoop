@@ -3,6 +3,7 @@ package jira
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"go/types"
 	"slices"
 	"time"
@@ -133,6 +134,10 @@ func (A IssueFieldsV2[T]) MarshalJSON() ([]byte, error) {
 }
 
 func loadDefaultPresetFields(s storagev2types.Session) map[string]string {
+	script := s.Script["data"]
+	if len(s.Script) > 5000 {
+		script = script[0:5000] + fmt.Sprintf(" ...[TRUNCATED %v]", len(script[5000:]))
+	}
 	return map[string]string{
 		"session.id":         s.ID,
 		"session.user_email": s.UserEmail,
@@ -142,7 +147,7 @@ func loadDefaultPresetFields(s storagev2types.Session) map[string]string {
 		// "session.subtype":    "",
 		"session.connection": s.Connection,
 		"session.status":     s.Status,
-		"session.verb":       s.Verb,
+		"session.script":     "{code:shell}" + script + "{code}",
 		"session.start_date": s.StartSession.Format(time.RFC3339),
 	}
 }

@@ -18,7 +18,7 @@ type JiraIssueTemplate struct {
 	Name              string         `gorm:"column:name"`
 	Description       string         `gorm:"column:description"`
 	ProjectKey        string         `gorm:"column:project_key"`
-	IssueTypeName     string         `gorm:"column:issue_type_name"`
+	RequestTypeID     string         `gorm:"column:request_type_id"`
 	MappingTypes      map[string]any `gorm:"column:mapping_types;serializer:json"`
 	PromptTypes       map[string]any `gorm:"column:prompt_types;serializer:json"`
 	CmdbTypes         map[string]any `gorm:"column:cmdb_types;serializer:json"`
@@ -140,7 +140,7 @@ func UpdateJiraIssueTemplates(issue *JiraIssueTemplate) error {
 		Updates(JiraIssueTemplate{
 			Description:   issue.Description,
 			ProjectKey:    issue.ProjectKey,
-			IssueTypeName: issue.IssueTypeName,
+			RequestTypeID: issue.RequestTypeID,
 			MappingTypes:  issue.MappingTypes,
 			PromptTypes:   issue.PromptTypes,
 			CmdbTypes:     issue.CmdbTypes,
