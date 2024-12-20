@@ -50,6 +50,11 @@
    (assoc db :jira-templates->submit-template {:status :ready :data template})))
 
 (rf/reg-event-db
+ :jira-templates->clear-active-template
+ (fn [db _]
+   (assoc db :jira-templates->active-template {:status :loading :data nil})))
+
+(rf/reg-event-db
  :jira-templates->clear-submit-template
  (fn [db _]
    (assoc db :jira-templates->submit-template {:status :loading :data nil})))
@@ -63,8 +68,8 @@
                    :body template
                    :on-success (fn []
                                  (rf/dispatch [:jira-templates->get-all])
-                                 (rf/dispatch [:navigate :jira-templates]))
-                   :on-failure #(println :jira-templates->create template %)}]]]}))
+                                 (rf/dispatch [:navigate :jira-templates])
+                                 (rf/dispatch [:jira-templates->clear-active-template]))}]]]}))
 
 (rf/reg-event-fx
  :jira-templates->update-by-id
@@ -75,8 +80,8 @@
                    :body template
                    :on-success (fn []
                                  (rf/dispatch [:jira-templates->get-all])
-                                 (rf/dispatch [:navigate :jira-templates]))
-                   :on-failure #(println :jira-templates->update-by-id template %)}]]]}))
+                                 (rf/dispatch [:navigate :jira-templates])
+                                 (rf/dispatch [:jira-templates->clear-active-template]))}]]]}))
 
 (rf/reg-event-fx
  :jira-templates->delete-by-id
@@ -86,8 +91,7 @@
                    :uri (str "/integrations/jira/issuetemplates/" id)
                    :on-success (fn []
                                  (rf/dispatch [:jira-templates->get-all])
-                                 (rf/dispatch [:navigate :jira-templates]))
-                   :on-failure #(println :jira-templates->delete-by-id id %)}]]]}))
+                                 (rf/dispatch [:navigate :jira-templates]))}]]]}))
 
 ;; Subs
 (rf/reg-sub
