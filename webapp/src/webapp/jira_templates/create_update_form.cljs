@@ -13,7 +13,8 @@
 
 (defn jira-form [form-type template scroll-pos]
   (let [state (helpers/create-form-state template)
-        handlers (helpers/create-form-handlers state)]
+        handlers (helpers/create-form-handlers state)
+        submitting? (rf/subscribe [:jira-templates->submitting?])]
     (fn []
       [:> Box {:class "min-h-screen bg-gray-1"}
        [:form {:id "jira-form"
@@ -27,7 +28,8 @@
         [form-header/main
          {:form-type form-type
           :id @(:id state)
-          :scroll-pos scroll-pos}]
+          :scroll-pos scroll-pos
+          :loading? @submitting?}]
 
         [:> Box {:p "7" :class "space-y-radix-9"}
          [basic-info/main
@@ -117,6 +119,9 @@
         (finally
           (.removeEventListener js/window "scroll" handle-scroll)))
 
-      (if (= :loading (:status @jira-template))
-        [loading]
-        [jira-form form-type (:data @jira-template) scroll-pos]))))
+      (r/with-let [_ nil]
+        (if (= :loading (:status @jira-template))
+          [loading]
+          [jira-form form-type (:data @jira-template) scroll-pos])
+        (finally
+          (rf/dispatch [:jira-templates->clear-active-template]))))))

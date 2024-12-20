@@ -39,7 +39,6 @@
          ;; Prompt Fields
          (when (seq prompts)
            [:> Box {:class "space-y-4"}
-            [:> Text {:as "h4" :size "3" :weight "medium" :mb "2"} "Command Information"]
             (for [{:keys [label required jira_field]} prompts]
               ^{:key jira_field}
               [forms/input
@@ -54,7 +53,6 @@
                                                             (not (some #(= (:name %) value) jira_values))))
                                                      cmdb-items))]
            [:> Box {:class "space-y-4"}
-            [:> Text {:as "h4" :size "3" :weight "medium" :mb "2"} "CMDB Information"]
             (doall
              (for [{:keys [label jira_field jira_values required]} cmdb-fields-to-show]
                ^{:key jira_field}

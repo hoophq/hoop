@@ -1,6 +1,6 @@
 (ns webapp.jira-templates.prompts-table
   (:require
-   ["@radix-ui/themes" :refer [Box Table Text]]
+   ["@radix-ui/themes" :refer [Box Table]]
    [webapp.components.forms :as forms]
    [webapp.jira-templates.rule-buttons :as rule-buttons]))
 
