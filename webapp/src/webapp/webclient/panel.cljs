@@ -155,9 +155,7 @@
             (rf/dispatch [:editor-plugin->exec-script
                           {:script final-script
                            :connection-name (:name connection)
-                           :metadata (metadata->json-stringify metadata)}])
-
-            (rf/dispatch [:jira-templates->clear-submit-template])))
+                           :metadata (metadata->json-stringify metadata)}])))
 
         :else
         (rf/dispatch [:show-snackbar {:level :info
