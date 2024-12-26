@@ -25,6 +25,9 @@ func getSchemaQuery(connType pb.ConnectionType, dbName string) string {
 
 func getPostgresSchemaQuery(dbName string) string {
 	return fmt.Sprintf(`
+    \set QUIET on
+    \c %s
+    \set QUIET off
 WITH pk_info AS (
   SELECT
     c.table_schema,
@@ -85,7 +88,7 @@ WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
   AND NOT a.attisdropped
   AND c.relkind IN ('r', 'v')
   AND current_database() = '%s'
-ORDER BY schema_name, object_type, object_name, a.attnum;`, dbName)
+ORDER BY schema_name, object_type, object_name, a.attnum;`, dbName, dbName)
 }
 
 func getMSSQLSchemaQuery() string {

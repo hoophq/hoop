@@ -3,7 +3,6 @@
    ["@radix-ui/themes" :refer [Box Callout Flex Grid Link Switch Text]]
    ["lucide-react" :refer [ArrowUpRight]]
    [re-frame.core :as rf]
-   [webapp.components.forms :as forms]
    [webapp.components.multiselect :as multi-select]
    [webapp.routes :as routes]))
 
@@ -89,14 +88,13 @@
        [:> Callout.Text
         "Go to JIRA Integration"]]]]
     [:> Box {:class "space-y-radix-5" :grid-column "span 3 / span 3"}
-     [forms/select {:placeholder "Select one"
-                    :full-width? true
-                    :class "w-full"
-                    :options jira-templates-options
-                    :id "jira-template-select"
-                    :name "jira-template-select"
-                    :selected @jira-template-id
-                    :on-change #(reset! jira-template-id (js->clj %))}]]]
+     [multi-select/single {:placeholder "Select one"
+                           :options jira-templates-options
+                           :id "jira-template-select"
+                           :name "jira-template-select"
+                           :default-value (or @jira-template-id nil)
+                           :clearable? true
+                           :on-change #(reset! jira-template-id (js->clj %))}]]]
 
    (when (= "database" @connection-type)
      [:> Grid {:columns "5" :gap "7"}

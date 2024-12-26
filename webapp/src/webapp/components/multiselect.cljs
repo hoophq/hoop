@@ -149,3 +149,31 @@
        :className "react-select-container"
        :classNamePrefix "react-select"
        :styles styles}]]))
+
+(defn single []
+  (fn [{:keys [default-value disabled? required? clearable? searchble? on-change options label id name]}]
+    [:div {:class "mb-regular text-sm"}
+     [:div {:class "flex items-center gap-2"}
+      (when label
+        [form-label label])]
+     [:> Select
+      {:value default-value
+       :id id
+       :name name
+       :isDisabled disabled?
+       :required required?
+       :onChange (fn [value]
+                   (on-change value))
+       :options options
+       :theme (fn [theme]
+                (clj->js
+                 (-> (js->clj theme :keywordize-keys true)
+                     (update :colors merge {:primary "#3358d4"
+                                            :primary25 "#d2deff"
+                                            :primary50 "#abbdf9"
+                                            :primary75 "#3e63dd"}))))
+       :isClearable clearable?
+       :isSearchable searchble?
+       :className "basic-single"
+       :classNamePrefix "select"
+       :styles styles}]]))

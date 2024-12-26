@@ -78,21 +78,16 @@
     :fx [[:dispatch [:fetch {:method "GET"
                              :uri (str "/connections/" (:connection-name connection) "/databases")
                              :on-success (fn [response]
-                                           (let [selected-db (or (.getItem js/localStorage "selected-database")
-                                                                 (first (:databases response)))]
-                                             (rf/dispatch [:database-schema->get-multi-database-schema
-                                                           connection
-                                                           selected-db
-                                                           (:databases response)])
-
-                                             (rf/dispatch [:database-schema->set-multi-databases
-                                                           connection
-                                                           (:databases response)])))}]]]}))
+                                           (rf/dispatch [:database-schema->set-multi-databases
+                                                         connection
+                                                         (:databases response)]))}]]]}))
 
 (rf/reg-event-db
  :database-schema->set-multi-databases
  (fn [db [_ connection databases]]
-   (assoc-in db [:database-schema :data (:connection-name connection) :databases] databases)))
+   (-> db
+       (assoc-in [:database-schema :data (:connection-name connection) :databases] databases)
+       (assoc-in [:database-schema :data (:connection-name connection) :status] :success))))
 
 (rf/reg-event-fx
  :database-schema->get-multi-database-schema
@@ -168,7 +163,8 @@
  :database-schema->change-database
  (fn [{:keys [db]} [_ connection database]]
    (.setItem js/localStorage "selected-database" database)
-   {:fx [[:dispatch [:database-schema->get-multi-database-schema
+   {:db (assoc-in db [:database-schema :data (:connection-name connection) :database-schema-status] :loading)
+    :fx [[:dispatch [:database-schema->get-multi-database-schema
                      connection
                      database
                      (get-in db [:database-schema :data (:connection-name connection) :databases])]]]}))

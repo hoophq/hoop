@@ -34,6 +34,14 @@
                {:value id
                 :label name}))))
 
+(defn transform-filtered-jira-template-selected [jira-templates jira-template-id]
+  (first
+   (->> jira-templates
+        (filter #(= (:id %) jira-template-id))
+        (mapv (fn [{:keys [id name]}]
+                {"value" id
+                 "label" name})))))
+
 (defmulti dispatch-form identity)
 (defmethod dispatch-form :create
   [_ form-fields]
@@ -109,7 +117,12 @@
                              (transform-filtered-guardrails-selected
                               (:data @guardrails-list)
                               (:guardrail_rules connection))))
-        jira-template-id (r/atom (or (:jira_issue_template_id connection) ""))
+
+        jira-template-id (r/atom (if (:jira_issue_template_id connection)
+                                   (transform-filtered-jira-template-selected
+                                    (:data @jira-templates-list)
+                                    (:jira_issue_template_id connection))
+                                   ""))
 
         database-schema? (r/atom (or (convertStatusToBool (:access_schema connection)) false))
         access-mode-runbooks? (r/atom (if (nil? (:access_mode_runbooks connection))
@@ -158,7 +171,15 @@
                                   (fn [_ _ old-val new-val]
                                     (when (and new-val (not old-val))
                                       (reset! accordion-connection-details true)
-                                      (reset! accordion-environment-setup true))))]
+                                      (reset! accordion-environment-setup true))))
+                     _ (add-watch jira-templates-list :jira-template-watcher
+                                  (fn [_ _ old-val new-val]
+                                    (when (and (= :ready (:status new-val))
+                                               (:jira_issue_template_id connection))
+                                      (reset! jira-template-id
+                                              (transform-filtered-jira-template-selected
+                                               (:data new-val)
+                                               (:jira_issue_template_id connection))))))]
           (.addEventListener js/window "scroll" handle-scroll)
 
           [:> Box {:class "min-h-screen bg-gray-1"}
@@ -194,7 +215,7 @@
                                   :guardrail_rules (if (seq @guardrails)
                                                      (helpers/js-select-options->list @guardrails)
                                                      [])
-                                  :jira_issue_template_id @jira-template-id
+                                  :jira_issue_template_id (get @jira-template-id "value")
                                   :tags (if (seq @connection-tags-value)
                                           (helpers/js-select-options->list @connection-tags-value)
                                           nil)
@@ -391,7 +412,7 @@
                                  :guardrails-options (or (mapv #(into {} {"value" (:id %) "label" (:name %)})
                                                                (-> @guardrails-list :data)) [])
                                  :guardrails guardrails
-                                 :jira-templates-options (or (mapv #(into {} {:value (:id %) :text (:name %)})
+                                 :jira-templates-options (or (mapv #(into {} {"value" (:id %) "label" (:name %)})
                                                                    (-> @jira-templates-list :data)) [])
                                  :jira-template-id jira-template-id}]}
                :id "advanced-settings"
@@ -400,4 +421,5 @@
 
           (finally
             (remove-watch connection-type :first-step-watcher)
-            (.removeEventListener js/window "scroll" handle-scroll)))))))
+            (.removeEventListener js/window "scroll" handle-scroll)
+            (remove-watch jira-templates-list :jira-template-watcher)))))))

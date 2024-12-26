@@ -47,6 +47,4 @@
        :required true
        :value @request-type-id
        :not-margin-bottom? true
-       :on-change #(on-request-type-id-change (-> % .-target .-value))}]
-     [:> Text {:as "p" :size "2" :mt "1" :class "text-[--gray-10]"}
-      "You can find the name under your Project Settings."]]]])
+       :on-change #(on-request-type-id-change (-> % .-target .-value))}]]]])
