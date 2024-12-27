@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
@@ -423,6 +424,8 @@ func Get(c *gin.Context) {
 			return
 		}
 		session.BlobStream = json.RawMessage(fmt.Sprintf(`[%q]`, string(output)))
+		// override to give the parsed size
+		session.BlobStreamSize = int64(utf8.RuneCountInString(string(output)))
 	}
 
 	obj := toOpenApiSession(session)

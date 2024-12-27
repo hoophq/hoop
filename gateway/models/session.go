@@ -85,7 +85,7 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 	SELECT
 		s.id, s.org_id, s.connection, s.connection_type, s.verb, s.labels,
 		s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics,
-		bi.blob_stream AS blob_input, bs.blob_stream AS blob_stream, pg_column_size(bs.blob_stream) AS blob_stream_size,
+		bi.blob_stream AS blob_input, bs.blob_stream AS blob_stream, pg_column_size(bs.blob_stream::TEXT) AS blob_stream_size,
 		s.created_at, s.ended_at
 	FROM private.sessions s
 	LEFT JOIN private.blobs AS bi ON bi.type = 'session-input' AND  bi.id = s.blob_input_id
@@ -132,7 +132,7 @@ func ListSessions(orgID string, opt SessionOption) (*SessionList, error) {
 		SELECT
 			s.id, s.org_id, s.connection, s.connection_type, s.verb, s.labels,
 			s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics,
-			pg_column_size(bs.blob_stream) AS blob_stream_size,
+			pg_column_size(bs.blob_stream::TEXT) AS blob_stream_size,
 			s.created_at, s.ended_at
 		FROM private.sessions s
 		LEFT JOIN private.blobs AS bs ON bs.type = 'session-stream' AND  bs.id = s.blob_stream_id

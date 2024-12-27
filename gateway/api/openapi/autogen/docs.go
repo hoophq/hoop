@@ -2587,6 +2587,16 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            "event_stream"
+                        ],
+                        "type": "string",
+                        "example": "event_stream",
+                        "description": "Expand the given attributes",
+                        "name": "expand",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "example": "csv",
                         "description": "The file extension to donwload the session as a file content.\n* ` + "`" + `csv` + "`" + ` - it will parse the content to format in csv format\n* ` + "`" + `json` + "`" + ` - it will parse the content as a json stream.\n* ` + "`" + `\u003cany-format\u003e` + "`" + ` - No special parsing is applied",
