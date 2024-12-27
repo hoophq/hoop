@@ -31,8 +31,8 @@
   (->> guardrails
        (filter #(some #{(:id %)} connection-guardrail-ids))
        (mapv (fn [{:keys [id name]}]
-               {:value id
-                :label name}))))
+               {"value" id
+                "label" name}))))
 
 (defn transform-filtered-jira-template-selected [jira-templates jira-template-id]
   (first
