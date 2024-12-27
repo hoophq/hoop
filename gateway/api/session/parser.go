@@ -35,7 +35,7 @@ func toOpenApiSession(s *models.Session) *openapi.Session {
 		UserName:             s.UserName,
 		Type:                 s.ConnectionType,
 		Connection:           s.Connection,
-		Review:               nil, // TODO
+		Review:               nil,
 		Verb:                 s.Verb,
 		Status:               s.Status,
 		EventStream:          s.BlobStream,

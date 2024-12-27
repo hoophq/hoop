@@ -246,7 +246,6 @@ func cmdbTypesWithExternalObjects(ctx *gin.Context, config *models.JiraIntegrati
 	if !ok {
 		return nil, fmt.Errorf("unable to decode cmdb items attribute, type=%T", cmdbTypes["items"])
 	}
-	// fmt.Printf("AQL QUERY RESPONSE: %#v\n", response)
 	for i, obj := range itemList {
 		item, ok := obj.(map[string]any)
 		if !ok {

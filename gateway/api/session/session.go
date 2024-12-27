@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -426,6 +427,11 @@ func Get(c *gin.Context) {
 
 	obj := toOpenApiSession(session)
 	obj.Review = toOpenApiReview(review)
+
+	expandedFieldParts := strings.Split(c.Query("expand"), ",")
+	if !slices.Contains(expandedFieldParts, "event_stream") {
+		obj.EventStream = nil
+	}
 	c.PureJSON(http.StatusOK, obj)
 }
 

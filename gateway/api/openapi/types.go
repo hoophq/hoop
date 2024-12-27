@@ -440,7 +440,7 @@ type Session struct {
 	// * `<event-time>` - relative time in miliseconds to start_date
 	// * `<event-type>` - the event type as string (i: input, o: output e: output-error)
 	// * `<base64-content>` - the content of the session encoded as base64 string
-	EventStream json.RawMessage `json:"event_stream" swagger:"type:string"`
+	EventStream json.RawMessage `json:"event_stream,omitempty" swagger:"type:string"`
 	// The stored resource size in bytes
 	EventSize int64 `json:"event_size" example:"569"`
 	// When the execution started
@@ -869,7 +869,7 @@ type JiraIssueTemplateRequest struct {
 		- session.type
 		- session.connection
 		- session.status
-		- session.verb
+		- session.script
 		- session.start_date
 	*/
 	// - custom: use a custom static value
