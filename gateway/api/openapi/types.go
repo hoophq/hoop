@@ -371,6 +371,8 @@ type SessionGetByIDParams struct {
 	EventTime string `json:"event-time" enums:"0,1" example:"1" default:"0"`
 	// This option will parse the session output (o) and error (e) events as an utf-8 content in the session payload
 	EventStream string `json:"event_stream" enums:"utf8" default:""`
+	// Expand the given attributes
+	Expand string `json:"expand" enums:"event_stream" example:"event_stream" default:""`
 }
 
 type SessionOption struct {
