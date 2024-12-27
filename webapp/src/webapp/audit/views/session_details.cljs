@@ -4,7 +4,8 @@
             ["@heroicons/react/24/outline" :as hero-outline-icon]
             ["clipboard" :as clipboardjs]
             ["react" :as react]
-            ["@radix-ui/themes" :refer [Tooltip]]
+            ["@radix-ui/themes" :refer [Button Flex Text Tooltip]]
+            ["lucide-react" :refer [FileDown Download]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
@@ -33,6 +34,26 @@
    [:span {:class "italic text-xs text-gray-600"}
     "Loading data for this session"]
    [loaders/simple-loader {:size 4}]])
+
+(defn large-payload-warning [{:keys [session]}]
+  [:> Flex {:height "400px"
+            :direction "column"
+            :gap "5"
+            :class "p-[--space-5] bg-[--gray-2] rounded-[9px]"
+            :align "center"
+            :justify "center"}
+   [:> FileDown {:size 48 :color "gray"}]
+   [:> Text {:size "3" :class "text-[--gray-11]"}
+    "This result is not currently supported to view in browser."]
+   [:> Button {:size "3"
+               :variant "solid"
+               :on-click #(rf/dispatch [:audit->session-file-generate
+                                        (:id session)
+                                        (get export-dictionary
+                                             (keyword (:type session))
+                                             "txt")])}
+    "Download file"
+    [:> Download {:size 18}]]])
 
 (defmulti ^:private session-event-stream identity)
 (defmethod ^:private session-event-stream "command-line"
@@ -177,7 +198,6 @@
         executing-status (r/atom :ready)
         add-review-popover-open? (r/atom false)
         clipboard-url (new clipboardjs ".copy-to-clipboard-url")]
-    (rf/dispatch [:reports->clear-session-report-by-id])
     (rf/dispatch [:gateway->get-info])
     (when session
       (rf/dispatch [:audit->get-session-by-id session]))
@@ -187,6 +207,7 @@
             connection-name (:connection session)
             start-date (:start_date session)
             end-date (:end_date session)
+            has-large-payload? (:has-large-payload? @session-details)
             disabled-download (-> @gateway-info :data :disable_sessions_download)
             review-groups (-> session :review :review_groups_data)
             in-progress? (or (= end-date nil)
@@ -212,192 +233,203 @@
                             (js/JSON.parse (-> session :labels :runbookParameters))
                             :keywordize-keys true)
             _ (.on clipboard-url "success" #(rf/dispatch [:show-snackbar {:level :success :text "URL copied to clipboard"}]))]
-        [:div
-         [:header {:class "mb-regular mr-large"}
-          [:div {:class "flex"}
-           [:div {:class "flex flex-col lg:flex-row flex-grow gap-small lg:items-baseline"}
-            [:div {:class "flex flex-col"}
-             [h/h2 connection-name]
-             [:div {:class "text-sm flex flex-grow gap-regular"}
-              [:span {:class "text-gray-500"}
-               "type:"]
-              [:span {:class "font-bold"}
-               (:type session)]]]
+        (r/with-let []
+          [:div
+           [:header {:class "mb-regular mr-large"}
+            [:div {:class "flex"}
+             [:div {:class "flex flex-col lg:flex-row flex-grow gap-small lg:items-baseline"}
+              [:div {:class "flex flex-col"}
+               [h/h2 connection-name]
+               [:div {:class "text-sm flex flex-grow gap-regular"}
+                [:span {:class "text-gray-500"}
+                 "type:"]
+                [:span {:class "font-bold"}
+                 (:type session)]]]
 
-            (when (and in-progress? (not ready?))
-              [:div {:class "flex gap-small lg:justify-end items-center h-full lg:ml-large"}
-               [:div {:class (str "rounded-full w-1.5 h-1.5 bg-green-500")}]
-               [:span {:class "text-xs text-gray-500"}
-                "This session has pending items"]])
-            (when ready?
-              [:div {:class "flex gap-regular justify-end items-center mx-large"}
-               [:span {:class "text-xs text-gray-500"}
-                "This session is ready to be executed"]
-               [button/primary {:text "Execute"
-                                :status @executing-status
-                                :on-click (fn []
-                                            (reset! executing-status :loading)
-                                            (rf/dispatch [:audit->execute-session session]))
-                                :variant :small}]])]
+              (when (and in-progress? (not ready?))
+                [:div {:class "flex gap-small lg:justify-end items-center h-full lg:ml-large"}
+                 [:div {:class (str "rounded-full w-1.5 h-1.5 bg-green-500")}]
+                 [:span {:class "text-xs text-gray-500"}
+                  "This session has pending items"]])
+              (when ready?
+                [:div {:class "flex gap-regular justify-end items-center mx-large"}
+                 [:span {:class "text-xs text-gray-500"}
+                  "This session is ready to be executed"]
+                 [button/primary {:text "Execute"
+                                  :status @executing-status
+                                  :on-click (fn []
+                                              (reset! executing-status :loading)
+                                              (rf/dispatch [:audit->execute-session session]))
+                                  :variant :small}]])]
 
-           [:div {:class "relative flex gap-2.5 items-start pr-3"}
-            [:div {:class "relative group"}
-             [:> Tooltip {:content "Re-run session"}
-              [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer"
-                     :on-click #(re-run-session session)}
-               [:> hero-outline-icon/PlayIcon {:class "h-5 w-5 text-gray-600"}]]]]
+             [:div {:class "relative flex gap-2.5 items-start pr-3"}
+              [:div {:class "relative group"}
+               [:> Tooltip {:content "Re-run session"}
+                [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer"
+                       :on-click #(re-run-session session)}
+                 [:> hero-outline-icon/PlayIcon {:class "h-5 w-5 text-gray-600"}]]]]
 
-            [:div {:class "relative group"}
-             [:> Tooltip {:content "Copy link"}
-              [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer copy-to-clipboard-url"
-                     :data-clipboard-text (str (-> js/document .-location .-origin)
-                                               (routes/url-for :sessions)
-                                               "/" (:id session))}
-               [:> hero-outline-icon/ClipboardDocumentIcon {:class "h-5 w-5 text-gray-600"}]]]]
+              [:div {:class "relative group"}
+               [:> Tooltip {:content "Copy link"}
+                [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer copy-to-clipboard-url"
+                       :data-clipboard-text (str (-> js/document .-location .-origin)
+                                                 (routes/url-for :sessions)
+                                                 "/" (:id session))}
+                 [:> hero-outline-icon/ClipboardDocumentIcon {:class "h-5 w-5 text-gray-600"}]]]]
 
-            (when (and (= (:verb session) "exec")
-                       (or (:output session) (:event_stream session))
-                       (not disabled-download))
-              [:div {:class "relative"}
-               [:> Tooltip {:content (str "Download "
-                                          (cs/upper-case
-                                           (get export-dictionary (keyword (:type session)) "txt")))}
-                [:div {:class "relative rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer group"
-                       :on-click #(rf/dispatch [:audit->session-file-generate
-                                                (:id session)
-                                                (get export-dictionary (keyword (:type session)) "txt")])}
-                 [:> hero-outline-icon/ArrowDownTrayIcon {:class "h-5 w-5 text-gray-600"}]]]])]]
+              (when (and (= (:verb session) "exec")
+                         (or (:output session) (:event_stream session))
+                         (not disabled-download))
+                [:div {:class "relative"}
+                 [:> Tooltip {:content (str "Download "
+                                            (cs/upper-case
+                                             (get export-dictionary (keyword (:type session)) "txt")))}
+                  [:div {:class "relative rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer group"
+                         :on-click #(rf/dispatch [:audit->session-file-generate
+                                                  (:id session)
+                                                  (get export-dictionary (keyword (:type session)) "txt")])}
+                   [:> hero-outline-icon/ArrowDownTrayIcon {:class "h-5 w-5 text-gray-600"}]]]])]]
 
-          (when (-> session :labels :runbookFile)
-            [:div {:class "text-xs text-gray-500"}
-             "Runbook: " (-> session :labels :runbookFile)])]
+            (when (-> session :labels :runbookFile)
+              [:div {:class "text-xs text-gray-500"}
+               "Runbook: " (-> session :labels :runbookFile)])]
 
-         [:section {:class (str "grid grid-cols-1 gap-regular pb-regular "
-                                (if (-> session :integrations_metadata :jira_issue_url)
-                                  "lg:grid-cols-4"
-                                  "lg:grid-cols-3"))}
-          [:div {:class "col-span-1 flex gap-large items-center"}
-           [:div {:class "flex flex-grow gap-regular items-center"}
-            [user-icon/initials-black user-name]
-            [:span
-             {:class "text-gray-800 text-sm"}
-             user-name]]]
-          [:div {:class (str "flex flex-col gap-small self-center justify-center"
-                             " rounded-lg bg-gray-100 p-3")}
-           [:div
-            {:class "flex items-center gap-regular text-xs"}
-            [:span
-             {:class "flex-grow text-gray-500"}
-             "start:"]
-            [:span
-             (formatters/time-parsed->full-date start-date)]]
-           (when-not in-progress?
+           [:section {:class (str "grid grid-cols-1 gap-regular pb-regular "
+                                  (if (-> session :integrations_metadata :jira_issue_url)
+                                    "lg:grid-cols-4"
+                                    "lg:grid-cols-3"))}
+            [:div {:class "col-span-1 flex gap-large items-center"}
+             [:div {:class "flex flex-grow gap-regular items-center"}
+              [user-icon/initials-black user-name]
+              [:span
+               {:class "text-gray-800 text-sm"}
+               user-name]]]
+            [:div {:class (str "flex flex-col gap-small self-center justify-center"
+                               " rounded-lg bg-gray-100 p-3")}
              [:div
-              {:class "flex items-center justify-end gap-regular text-xs"}
+              {:class "flex items-center gap-regular text-xs"}
               [:span
                {:class "flex-grow text-gray-500"}
-               "end:"]
+               "start:"]
               [:span
-               (formatters/time-parsed->full-date end-date)]])]
-          [:div {:id "session-reviews" :class "self-center"}
-           [:header {:class "relative flex text-xs text-gray-800 mb-small"}
-            [:span {:class "flex-grow font-bold"} "Reviewers"]
-            [:<>
-             (when can-review?
-               [:span {:class (str "flex items-center cursor-pointer "
-                                   "text-xxs text-blue-500 font-semibold")
-                       :on-click #(reset! add-review-popover-open? true)}
-                [:span "Add your review"]
-                [icon/regular {:size 5
-                               :icon-name "cheveron-down-blue"}]])
-
-             [popover/right {:open @add-review-popover-open?
-                             :component [add-review-popover add-review-cb]
-                             :on-click-outside #(reset! add-review-popover-open? false)}]]]
-
-           (when (nil? (-> session :review))
-             [:div
-              {:class "py-small text-xs italic text-gray-500 text-left"}
-              "No review info"])
-           [:div {:class (str "rounded-lg "
-                              "flex flex-col")}
-            (doall
-             (for [group review-groups]
-               ^{:key (:id group)}
-               [review-group-item group session @user]))]]
-
-          (when (-> session :integrations_metadata :jira_issue_url)
-            [:div {:class "self-center"}
+               (formatters/time-parsed->full-date start-date)]]
+             (when-not in-progress?
+               [:div
+                {:class "flex items-center justify-end gap-regular text-xs"}
+                [:span
+                 {:class "flex-grow text-gray-500"}
+                 "end:"]
+                [:span
+                 (formatters/time-parsed->full-date end-date)]])]
+            [:div {:id "session-reviews" :class "self-center"}
              [:header {:class "relative flex text-xs text-gray-800 mb-small"}
-              [:span {:class "flex-grow font-bold"} "Integrations"]]
-             [:a {:class "text-xs underline text-blue-600 flex items-center py-small"
-                  :href (-> session :integrations_metadata :jira_issue_url)
-                  :target "_blank"}
-              "Open in Jira "
-              [:> hero-solid-icon/ArrowUpRightIcon {:class "h-4 w-4 shrink-0"
-                                                    :aria-hidden "true"}]]])]
+              [:span {:class "flex-grow font-bold"} "Reviewers"]
+              [:<>
+               (when can-review?
+                 [:span {:class (str "flex items-center cursor-pointer "
+                                     "text-xxs text-blue-500 font-semibold")
+                         :on-click #(reset! add-review-popover-open? true)}
+                  [:span "Add your review"]
+                  [icon/regular {:size 5
+                                 :icon-name "cheveron-down-blue"}]])
+
+               [popover/right {:open @add-review-popover-open?
+                               :component [add-review-popover add-review-cb]
+                               :on-click-outside #(reset! add-review-popover-open? false)}]]]
+
+             (when (nil? (-> session :review))
+               [:div
+                {:class "py-small text-xs italic text-gray-500 text-left"}
+                "No review info"])
+             [:div {:class (str "rounded-lg "
+                                "flex flex-col")}
+              (doall
+               (for [group review-groups]
+                 ^{:key (:id group)}
+                 [review-group-item group session @user]))]]
+
+            (when (-> session :integrations_metadata :jira_issue_url)
+              [:div {:class "self-center"}
+               [:header {:class "relative flex text-xs text-gray-800 mb-small"}
+                [:span {:class "flex-grow font-bold"} "Integrations"]]
+               [:a {:class "text-xs underline text-blue-600 flex items-center py-small"
+                    :href (-> session :integrations_metadata :jira_issue_url)
+                    :target "_blank"}
+                "Open in Jira "
+                [:> hero-solid-icon/ArrowUpRightIcon {:class "h-4 w-4 shrink-0"
+                                                      :aria-hidden "true"}]]])]
 
          ;; runbook params
-         (when (and runbook-params
-                    (seq runbook-params))
-           [:div {:class "flex gap-regular items-center mb-regular py-small border-b border-t"}
-            [:header {:class "px-small text-sm font-bold"}
-             "Parameters"]
-            [:section {:class "flex items-center gap-regular flex-grow text-xs border-l p-regular"}
-             (doall
-              (for [[param-key param-value] runbook-params]
-                ^{:key param-key}
-                [:div
-                 [:span {:class "font-bold text-gray-500"}
-                  param-key ": "]
-                 [:span param-value]]))]])
+           (when (and runbook-params
+                      (seq runbook-params))
+             [:div {:class "flex gap-regular items-center mb-regular py-small border-b border-t"}
+              [:header {:class "px-small text-sm font-bold"}
+               "Parameters"]
+              [:section {:class "flex items-center gap-regular flex-grow text-xs border-l p-regular"}
+               (doall
+                (for [[param-key param-value] runbook-params]
+                  ^{:key param-key}
+                  [:div
+                   [:span {:class "font-bold text-gray-500"}
+                    param-key ": "]
+                   [:span param-value]]))]])
          ;; end runbook params
 
          ;; metadata
-         (when (and metadata
-                    (seq metadata))
-           [:div {:class " mb-regular"}
-            (doall
-             (for [[metadata-key metadata-value] metadata]
-               ^{:key metadata-key}
-               [:div {:class "flex gap-small items-center py-small border-t last:border-b"}
-                [:header {:class "w-32 px-small text-sm font-bold"}
-                 metadata-key]
-                [:section {:class "w-full text-xs border-l p-small"}
-                 [:span metadata-value]]]))])
+           (when (and metadata
+                      (seq metadata))
+             [:div {:class " mb-regular"}
+              (doall
+               (for [[metadata-key metadata-value] metadata]
+                 ^{:key metadata-key}
+                 [:div {:class "flex gap-small items-center py-small border-t last:border-b"}
+                  [:header {:class "w-32 px-small text-sm font-bold"}
+                   metadata-key]
+                  [:section {:class "w-full text-xs border-l p-small"}
+                   [:span metadata-value]]]))])
          ;; end metadata
 
          ;; script area
-         (when (and script-data
-                    (> (count script-data) 0))
-           [:section {:id "session-script"}
-            [:div
-             {:class (str "w-full max-h-40 overflow-auto p-regular whitespace-pre "
-                          "rounded-lg bg-gray-100 "
-                          "text-xs text-gray-800 font-mono")}
-             [:article script-data]]])
+           (when (and script-data
+                      (> (count script-data) 0))
+             [:section {:id "session-script"}
+              [:div
+               {:class (str "w-full max-h-40 overflow-auto p-regular whitespace-pre "
+                            "rounded-lg bg-gray-100 "
+                            "text-xs text-gray-800 font-mono")}
+               [:article script-data]]])
          ;; end script area
 
          ;; data masking analytics
-         (when-not (or has-review?
-                       (= :loading (:status @session-report))
-                       (not has-session-report?))
-           [:div {:class "mt-6"}
-            [data-masking-analytics @session-report]])
+           (when-not (or has-review?
+                         (= :loading (:status @session-report))
+                         (not has-session-report?))
+             [:div {:class "mt-6"}
+              [data-masking-analytics @session-report]])
          ;; end data masking analytics
 
-         [:section {:id "session-event-stream"
-                    :class "pt-regular"}
-          (if (= (:status @session-details) :loading)
-            [loading-player]
+           [:section {:id "session-event-stream"
+                      :class "pt-regular"}
+            (if (= (:status @session-details) :loading)
+              [loading-player]
 
-            [:div {:class "h-full px-small"}
-             (if (= (:verb session) "exec")
-               [results-container/main
-                connection-name
-                {:results (first (:event_stream session))
-                 :results-status (:status @session-details)
-                 :fixed-height? true
-                 :results-id (:id session)}]
-               [session-event-stream (:type session) session])])]]))))
+              [:section {:id "session-event-stream"
+                         :class "pt-regular"}
+               (if has-large-payload?
+                 [large-payload-warning
+                  {:session session}]
+
+                 [:div {:class "h-full px-small"}
+                  (if (= (:verb session) "exec")
+                    [results-container/main
+                     connection-name
+                     {:results (first (:event_stream session))
+                      :results-status (:status @session-details)
+                      :fixed-height? true
+                      :results-id (:id session)}]
+                    [session-event-stream (:type session) session])])])]]
+
+          (finally
+            (rf/dispatch [:audit->clear-session])
+            (rf/dispatch [:reports->clear-session-report-by-id])))))))
 

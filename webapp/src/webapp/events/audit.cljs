@@ -93,15 +93,32 @@
    [{:keys [db]} [_ session]]
    (let [state {:status :loading
                 :session session
-                :session-logs {:status :loading}}
-         event-stream (if (= "exec" (:verb session)) "?event_stream=utf8" "")]
+                :session-logs {:status :loading}}]
      {:db (assoc db :audit->session-details state)
       :fx [[:dispatch [:fetch
                        {:method "GET"
-                        :uri (str "/sessions/" (:id session) event-stream)
-                        :on-success (fn [session-data]
-                                      (rf/dispatch [:audit->set-session session-data])
-                                      (rf/dispatch [:reports->get-report-by-session-id session-data]))}]]]})))
+                        :uri (str "/sessions/" (:id session) "?event_stream=utf8")
+                        :on-success #(rf/dispatch [:audit->check-session-size %])}]]]})))
+
+(def size-threshold (* 4 1024 1024)) ; 1MB threshold
+
+(rf/reg-event-fx
+ :audit->check-session-size
+ (fn
+   [{:keys [db]} [_ session]]
+   (let [event-size (:event_size session)]
+     (if (and event-size (> event-size size-threshold))
+       {:db (assoc db
+                   :audit->session-details
+                   {:session session
+                    :status :success
+                    :has-large-payload? true})}
+       {:fx [[:dispatch [:fetch
+                         {:method "GET"
+                          :uri (str "/sessions/" (:id session) "?event_stream=utf8&expand=event_stream")
+                          :on-success (fn [session-data]
+                                        (rf/dispatch [:audit->set-session session-data])
+                                        (rf/dispatch [:reports->get-report-by-session-id session-data]))}]]]}))))
 
 (rf/reg-event-db
  :audit->clear-session-details-state
@@ -122,6 +139,7 @@
                  :audit->session-details
                  {:session updated-session
                   :status :success
+                  :has-large-payload? false
                   :session-logs (:session-logs (:audit->session-details db))})})))
 
 (rf/reg-event-fx
@@ -226,4 +244,3 @@
                                          extension)
                                :on-success success
                                :on-failure failure}]]]})))
-
