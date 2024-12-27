@@ -64,6 +64,7 @@ func (s *serverStreamWrapper) Context() context.Context {
 		case *GatewayContext:
 			if v.Connection.Type != "" {
 				mdCopy.Set("connection-type", v.Connection.Type)
+				mdCopy.Set("connection-subtype", v.Connection.SubType)
 				mdCopy.Set("connection-agent", v.Connection.AgentName)
 				mdCopy.Set("connection-agent-mode", v.Connection.AgentMode)
 			}

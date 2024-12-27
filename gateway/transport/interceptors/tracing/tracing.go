@@ -14,6 +14,7 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
+	"github.com/hoophq/hoop/common/version"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
@@ -22,6 +23,7 @@ import (
 )
 
 var tracingConnectionStore = memory.New()
+var ver = version.Get()
 
 // serverStreamWrapper could override methods from the grpc.StreamServer interface.
 // using this wrapper it's possible to intercept calls from a grpc server
@@ -92,14 +94,16 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 	clientOrigin := commongrpc.MetaGet(md, "origin")
 	if clientOrigin == pb.ConnectionOriginAgent {
 		spanCtx, err := newBaggageMembers(context.Background(), map[string]string{
-			"hoop.gateway.environment": monitoring.NormalizeEnvironment(os.Getenv("API_URL")),
-			"hoop.gateway.org-id":      commongrpc.MetaGet(md, "org-id"),
-			"hoop.gateway.agent-name":  commongrpc.MetaGet(md, "agent-name"),
-			"hoop.gateway.agent-mode":  commongrpc.MetaGet(md, "agent-mode"),
-			"hoop.gateway.hostname":    commongrpc.MetaGet(md, "hostname"),
-			"hoop.gateway.platform":    commongrpc.MetaGet(md, "platform"),
-			"hoop.gateway.version":     commongrpc.MetaGet(md, "version"),
-			"hoop.gateway.origin":      clientOrigin,
+			"hoop.gateway.environment":     monitoring.NormalizeEnvironment(os.Getenv("API_URL")),
+			"hoop.gateway.org-id":          commongrpc.MetaGet(md, "org-id"),
+			"hoop.gateway.agent-name":      commongrpc.MetaGet(md, "agent-name"),
+			"hoop.gateway.agent-mode":      commongrpc.MetaGet(md, "agent-mode"),
+			"hoop.gateway.client-hostname": commongrpc.MetaGet(md, "hostname"),
+			"hoop.gateway.client-platform": commongrpc.MetaGet(md, "platform"),
+			"hoop.gateway.client-version":  commongrpc.MetaGet(md, "version"),
+			"hoop.gateway.client-origin":   clientOrigin,
+			"hoop.gateway.version":         ver.Version,
+			"hoop.gateway.platform":        ver.Platform,
 		})
 		if err != nil {
 			log.Error(err)
@@ -124,13 +128,16 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 		"hoop.gateway.user-email":            commongrpc.MetaGet(md, "user-email"),
 		"hoop.gateway.connection":            commongrpc.MetaGet(md, "connection-name"),
 		"hoop.gateway.connection-type":       commongrpc.MetaGet(md, "connection-type"),
+		"hoop.gateway.connection-subtype":    commongrpc.MetaGet(md, "connection-subtype"),
 		"hoop.gateway.connection-agent":      commongrpc.MetaGet(md, "connection-agent"),
 		"hoop.gateway.connection-agent-mode": commongrpc.MetaGet(md, "connection-agent-mode"),
-		"hoop.gateway.hostname":              commongrpc.MetaGet(md, "hostname"),
-		"hoop.gateway.platform":              commongrpc.MetaGet(md, "platform"),
-		"hoop.gateway.version":               commongrpc.MetaGet(md, "version"),
-		"hoop.gateway.origin":                clientOrigin,
-		"hoop.gateway.verb":                  commongrpc.MetaGet(md, "verb"),
+		"hoop.gateway.client-hostname":       commongrpc.MetaGet(md, "hostname"),
+		"hoop.gateway.client-platform":       commongrpc.MetaGet(md, "platform"),
+		"hoop.gateway.client-version":        commongrpc.MetaGet(md, "version"),
+		"hoop.gateway.client-origin":         clientOrigin,
+		"hoop.gateway.client-verb":           commongrpc.MetaGet(md, "verb"),
+		"hoop.gateway.version":               ver.Version,
+		"hoop.gateway.platform":              ver.Platform,
 	})
 	if err != nil {
 		log.Error(err)

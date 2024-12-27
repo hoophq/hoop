@@ -22,6 +22,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
 	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
@@ -97,6 +98,7 @@ func Post(c *gin.Context) {
 		userAgent = "webapp.editor.exec"
 	}
 	log := log.With("sid", sessionID, "user", ctx.UserEmail)
+	apiroutes.SetSidSpanAttr(c, sessionID)
 
 	newSession := types.Session{
 		ID:           sessionID,
@@ -350,6 +352,7 @@ func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
 	sessionID := c.Param("session_id")
+	apiroutes.SetSidSpanAttr(c, sessionID)
 	session, err := models.GetSessionByID(ctx.OrgID, sessionID)
 	switch err {
 	case models.ErrNotFound:
@@ -451,9 +454,8 @@ func Get(c *gin.Context) {
 //	@Failure		404,500		{object}	openapi.HTTPError
 //	@Router			/sessions/{session_id}/download [get]
 func DownloadSession(c *gin.Context) {
-	// ctx := storagev2.ParseContext(c)
-
 	sid := c.Param("session_id")
+	apiroutes.SetSidSpanAttr(c, sid)
 	requestToken := c.Query("token")
 	fileExt := c.Query("extension")
 	withLineBreak := c.Query("newline") == "1"

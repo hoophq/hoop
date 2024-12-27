@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
@@ -47,6 +48,7 @@ func RunReviewedExec(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
 	sessionId := c.Param("session_id")
+	apiroutes.SetSidSpanAttr(c, sessionId)
 	review, err := pgreview.New().FetchOneBySid(ctx, sessionId)
 	if err != nil {
 		log.Errorf("failed retrieving review, err=%v", err)
