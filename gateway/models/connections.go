@@ -310,6 +310,9 @@ func dedupeResourceNames(resourceNames []string) (v []string) {
 		m[name] = nil
 	}
 	for name := range m {
+		if name == "" {
+			continue
+		}
 		v = append(v, name)
 	}
 	return v
