@@ -14,6 +14,7 @@ import (
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/api/runbooks/templates"
@@ -183,6 +184,7 @@ func RunExec(c *gin.Context) {
 	}
 
 	sessionID := uuid.NewString()
+	apiroutes.SetSidSpanAttr(c, sessionID)
 	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
 	if userAgent == "webapp.core" {
 		userAgent = "webapp.runbook.exec"

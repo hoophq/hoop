@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -34,6 +35,7 @@ func (h *Handler) Put(c *gin.Context) {
 	if sid := c.Param("session_id"); sid != "" {
 		id = sid
 		isReviewBySid = true
+		apiroutes.SetSidSpanAttr(c, sid)
 	}
 	var req map[string]string
 	err := c.ShouldBindJSON(&req)

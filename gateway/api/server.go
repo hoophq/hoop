@@ -388,7 +388,6 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.GET("/reports/sessions",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
-		api.TrackRequest(analytics.EventApiExecReview),
 		apireports.SessionReport)
 
 	r.POST("/plugins/indexer/sessions/search",

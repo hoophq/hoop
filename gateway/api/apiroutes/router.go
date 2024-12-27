@@ -1,6 +1,8 @@
 package apiroutes
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/security/idp"
@@ -40,7 +42,12 @@ func New(route *gin.RouterGroup, provider *idp.Provider, grpcURL, registeredApiK
 		log.Fatalf("route is nil")
 	}
 
-	route.Use(otelgin.Middleware("hoopgateway"))
+	route.Use(otelgin.Middleware("hoopgateway",
+		otelgin.WithFilter(func(r *http.Request) bool {
+			return r.RequestURI != "/api/healthz"
+		}),
+	))
+	route.Use(contextTracerMiddleware())
 	return &Router{
 		RouterGroup:      route,
 		provider:         provider,
