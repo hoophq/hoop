@@ -351,16 +351,15 @@ func Get(c *gin.Context) {
 
 	sessionID := c.Param("session_id")
 	session, err := models.GetSessionByID(ctx.OrgID, sessionID)
-	if err != nil {
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+		return
+	case nil:
+	default:
 		log.Errorf("failed fetching session, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching session"})
-		return
-	}
-
-	// if not found, return 404
-	if session == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 		return
 	}
 
