@@ -21,7 +21,7 @@ func contextTracerMiddleware() gin.HandlerFunc {
 	}
 	authMethod := conf.AuthMethod()
 	return func(c *gin.Context) {
-
+		defer c.Next()
 		if span := trace.SpanFromContext(c.Request.Context()); span != nil {
 			span.SetAttributes(
 				attribute.String("hoop.gateway.environment", environment),

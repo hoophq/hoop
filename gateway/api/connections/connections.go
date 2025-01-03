@@ -538,7 +538,7 @@ printjson(result);`
 func GetDatabaseSchemas(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	connNameOrID := c.Param("nameOrID")
-	dbName := c.Query("database") // Criar uma regex para validar o nome do banco de dados e remover sql injectionn 422
+	dbName := c.Query("database")
 
 	// Validate database name to prevent SQL injection
 	if dbName != "" {
@@ -642,6 +642,14 @@ func GetDatabaseSchemas(c *gin.Context) {
 			return
 		}
 
+		if c.Request.Method == "HEAD" {
+			contentLength := -1
+			if jsonBody, err := json.Marshal(schema); err == nil {
+				contentLength = len(jsonBody)
+			}
+			c.Writer.Header().Set("Content-Length", fmt.Sprintf("%v", contentLength))
+			return
+		}
 		c.JSON(http.StatusOK, schema)
 
 	case <-timeoutCtx.Done():
