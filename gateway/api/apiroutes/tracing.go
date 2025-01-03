@@ -31,7 +31,11 @@ func contextTracerMiddleware() gin.HandlerFunc {
 				attribute.String("hoop.gateway.platform", vs.Platform),
 				attribute.String("hoop.gateway.version", vs.Version),
 			)
-			if ctx := storagev2.ParseContext(c); ctx != nil {
+			obj, ok := c.Get(storagev2.ContextKey)
+			if !ok {
+				return
+			}
+			if ctx, ok := obj.(*storagev2.Context); ok {
 				span.SetAttributes(
 					attribute.String("hoop.gateway.org-id", ctx.OrgID),
 					attribute.String("hoop.gateway.user-email", ctx.UserEmail),

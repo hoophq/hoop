@@ -437,7 +437,15 @@ func Get(c *gin.Context) {
 	if !slices.Contains(expandedFieldParts, "event_stream") {
 		obj.EventStream = nil
 	}
-	c.PureJSON(http.StatusOK, obj)
+	// encode the object manually to obtain any encoding errors.
+	c.Writer.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(c.Writer).Encode(obj); err != nil {
+		errMsg := fmt.Sprintf("failed encoding session, reason=%v", err)
+		log.With("sid", sessionID).Error(errMsg)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+		return
+	}
+	c.Writer.WriteHeader(http.StatusOK)
 }
 
 // DownloadSession

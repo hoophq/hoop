@@ -39,7 +39,7 @@ services:
       db:
         condition: "service_healthy"
     healthcheck:
-      test: "curl http://127.0.0.1:8009/api/healthz"
+      test: "gateway-healthcheck.sh"
       interval: "2s"
       timeout: "30s"
       retries: 10
@@ -51,6 +51,7 @@ services:
     #   - ./rootfs/usr/local/bin/run-agent.sh:/usr/local/bin/run-agent.sh
     networks:
       - hoopdev
+    env_file: ".env"
     environment:
       - POSTGRES_DB_URI=postgres://postgres:postgres@db:5432/hoopdb?sslmode=disable
       - LOG_LEVEL=info
