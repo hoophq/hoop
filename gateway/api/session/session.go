@@ -440,10 +440,9 @@ func Get(c *gin.Context) {
 	// encode the object manually to obtain any encoding errors.
 	c.Writer.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(c.Writer).Encode(obj); err != nil {
-		errMsg := fmt.Sprintf("failed encoding session, reason=%v", err)
-		log.With("sid", sessionID).Error(errMsg)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
-		return
+		log.With("sid", sessionID).Errorf("failed encoding session, removing event stream, reason=%v", err)
+		obj.EventStream = []byte(`["An internal error occurred: unable to decode the event stream due to invalid characters.\nPlease download the session as an alternative."]`)
+		_ = json.NewEncoder(c.Writer).Encode(obj)
 	}
 	c.Writer.WriteHeader(http.StatusOK)
 }
