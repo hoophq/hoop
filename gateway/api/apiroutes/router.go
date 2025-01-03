@@ -55,3 +55,8 @@ func New(route *gin.RouterGroup, provider *idp.Provider, grpcURL, registeredApiK
 		grpcURL:          grpcURL,
 	}
 }
+
+func (r Router) GET(relativePath string, handlers ...gin.HandlerFunc) gin.IRoutes {
+	return r.RouterGroup.GET(relativePath, handlers...).
+		HEAD(relativePath, handlers...)
+}
