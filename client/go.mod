@@ -18,6 +18,7 @@ require (
 	github.com/getsentry/sentry-go v0.18.0
 	github.com/go-co-op/gocron v1.18.1
 	github.com/google/go-cmp v0.6.0
+	github.com/google/uuid v1.6.0
 	github.com/hoophq/hoop/agent v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/gateway v0.0.0-00010101000000-000000000000
 	google.golang.org/grpc v1.63.2
@@ -100,7 +101,6 @@ require (
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.16.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect

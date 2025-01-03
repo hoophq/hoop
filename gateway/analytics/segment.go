@@ -7,17 +7,19 @@ import (
 	"github.com/segmentio/analytics-go/v3"
 )
 
-var environmentName = appconfig.Get().ApiHostname()
-
 type Segment struct {
 	analytics.Client
+	environmentName string
 }
 
 func New() *Segment {
 	if segmentApiKey == "" {
 		return &Segment{}
 	}
-	return &Segment{analytics.New(segmentApiKey)}
+	return &Segment{
+		Client:          analytics.New(segmentApiKey),
+		environmentName: appconfig.Get().ApiHostname(),
+	}
 }
 
 func (s *Segment) Identify(ctx *types.APIContext) {
@@ -30,26 +32,26 @@ func (s *Segment) Identify(ctx *types.APIContext) {
 		// Segment recommends using an unique id for user id
 		// However we use the e-mail to avoid having to associate the
 		// user id with the e-mail.
-		UserId: ctx.UserEmail,
+		UserId:      ctx.UserEmail,
 		AnonymousId: ctx.UserAnonSubject,
 		Traits: analytics.NewTraits().
 			SetName(ctx.UserName).
 			SetEmail(ctx.UserEmail).
 			Set("groups", ctx.UserGroups).
 			Set("is-admin", ctx.IsAdminUser()).
-			Set("environment", environmentName).
+			Set("environment", s.environmentName).
 			Set("status", ctx.UserStatus),
 	})
 
 	orgName := ctx.OrgName
 	if orgName == pb.DefaultOrgName {
 		// use the name of the environment on self-hosted setups
-		orgName = environmentName
+		orgName = s.environmentName
 	}
 	_ = s.Client.Enqueue(analytics.Group{
-		GroupId: ctx.OrgID,
+		GroupId:     ctx.OrgID,
 		AnonymousId: ctx.UserAnonSubject,
-		UserId:  ctx.UserID,
+		UserId:      ctx.UserID,
 		Traits: analytics.NewTraits().
 			SetName(orgName),
 	})
@@ -68,14 +70,14 @@ func (s *Segment) AnonymousTrack(anonymousId, eventName string, properties map[s
 	if properties == nil {
 		properties = map[string]any{}
 	}
-	properties["environment"] = environmentName
+	properties["environment"] = s.environmentName
 	properties["auth-method"] = appconfig.Get().AuthMethod()
 	properties["api-url"] = appconfig.Get().ApiURL()
 
 	_ = s.Enqueue(analytics.Track{
 		AnonymousId: anonymousId,
-		Event:      eventName,
-		Properties: properties,
+		Event:       eventName,
+		Properties:  properties,
 	})
 }
 
@@ -87,7 +89,7 @@ func (s *Segment) Track(userEmail, eventName string, properties map[string]any) 
 	if properties == nil {
 		properties = map[string]any{}
 	}
-	properties["environment"] = environmentName
+	properties["environment"] = s.environmentName
 	properties["email"] = userEmail
 	properties["auth-method"] = appconfig.Get().AuthMethod()
 	properties["api-url"] = appconfig.Get().ApiURL()
