@@ -33,17 +33,18 @@ type (
 		shutdownCancelFn context.CancelCauseFunc
 	}
 	connEnv struct {
-		scheme           string
-		host             string
-		address          string
-		user             string
-		pass             string
-		port             string
-		dbname           string
-		insecure         bool
-		options          string
-		postgresSSLMode  string
-		connectionString string
+		scheme             string
+		host               string
+		address            string
+		user               string
+		pass               string
+		port               string
+		dbname             string
+		insecure           bool
+		options            string
+		postgresSSLMode    string
+		connectionString   string
+		httpProxyRemoteURL string
 	}
 )
 
@@ -130,6 +131,10 @@ func (a *Agent) Run() error {
 		// raw tcp
 		case pbagent.TCPConnectionWrite:
 			a.processTCPWriteServer(pkt)
+
+		// http proxy
+		case pbagent.HttpProxyConnectionWrite:
+			a.processHttpProxyWriteServer(pkt)
 
 		// terminal
 		case pbagent.TerminalWriteStdin:
@@ -506,8 +511,9 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		insecure:        envVarS.Getenv("INSECURE") == "true",
 		postgresSSLMode: envVarS.Getenv("SSLMODE"),
 		options:         envVarS.Getenv("OPTIONS"),
-		// this option is only used by mongodb at the momento
-		connectionString: envVarS.Getenv("CONNECTION_STRING"),
+		// this option is only used by mongodb at the moment
+		connectionString:   envVarS.Getenv("CONNECTION_STRING"),
+		httpProxyRemoteURL: envVarS.Getenv("REMOTE_URL"),
 	}
 	switch connType {
 	case pb.ConnectionTypePostgres:
@@ -568,6 +574,13 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 	case pb.ConnectionTypeTCP:
 		if env.host == "" || env.port == "" {
 			return nil, fmt.Errorf("missing required environment for connection [HOST, PORT]")
+		}
+	case pb.ConnectionTypeHttpProxy:
+		if env.httpProxyRemoteURL == "" {
+			return nil, fmt.Errorf("missing required environment for connection [REMOTE_URL]")
+		}
+		if _, err := url.Parse(env.httpProxyRemoteURL); err != nil {
+			return nil, fmt.Errorf("failed parsing REMOTE_URL env, reason=%v", err)
 		}
 	}
 	return env, nil
