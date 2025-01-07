@@ -11,7 +11,7 @@
    ["@codemirror/state" :as cm-state]
    ["@codemirror/view" :as cm-view]
    ["@heroicons/react/20/solid" :as hero-solid-icon]
-   ["@radix-ui/themes" :refer [Button Text]]
+   ["@radix-ui/themes" :refer [Box Button Heading Spinner Text]]
    ["@uiw/codemirror-theme-dracula" :refer [dracula]]
    ["@uiw/codemirror-theme-github" :refer [githubDark]]
    ["@uiw/codemirror-theme-nord" :refer [nord]]
@@ -88,7 +88,6 @@
 
         connection-type (discover-connection-type connection)
         multiple-connections? (> (count selected-connections) 1)
-        jira-template @(rf/subscribe [:jira-templates->submit-template])
         has-jira-template-multiple-connections? (some #(:jira_issue_template_id %) selected-connections)
         jira-integration-enabled? @(rf/subscribe [:jira-integration->integration-enabled?])
         change-to-tabular? (and (some (partial = connection-type) ["mysql" "postgres" "sql-server" "oracledb" "mssql" "database"])
@@ -112,19 +111,44 @@
                     exec-data-with-fields (cond-> exec-data
                                             (:jira_fields form-data) (assoc :jira_fields (:jira_fields form-data))
                                             (:cmdb_fields form-data) (assoc :cmdb_fields (:cmdb_fields form-data)))]
-                (rf/dispatch [:editor-plugin->exec-script exec-data-with-fields])))]
+                (rf/dispatch [:editor-plugin->exec-script exec-data-with-fields])))
+            (check-template-and-show-form []
+              (let [template @(rf/subscribe [:jira-templates->submit-template])]
+                (if (or (nil? (:data template))
+                        (= :loading (:status template)))
+                  (js/setTimeout check-template-and-show-form 500)
+                  (if (needs-form? template)
+                    (rf/dispatch [:modal->open
+                                  {:content [prompt-form/main
+                                             {:prompts (get-in template [:data :prompt_types :items])
+                                              :cmdb-items (get-in template [:data :cmdb_types :items])
+                                              :on-submit handle-submit}]}])
+                    (handle-submit nil)))))
+
+            (handle-jira-template []
+              (rf/dispatch [:modal->open
+                            {:maxWidth "540px"
+                             :custom-on-click-out (fn [event] (.preventDefault event))
+                             :content [:> Box
+                                       [:> Heading {:size "6" :mb "2" :class "text-[--gray-12]"}
+                                        "Verifying Jira Templates"]
+                                       [:> Text {:as "p" :size "3" :mb "7" :class "text-[--gray-11]"}
+                                        (str "This connection has additional verification for Jira Templates "
+                                             "and might take a few seconds before proceeding. Please wait until "
+                                             "the verification is processed without closing this tab.")]
+                                       [:> Spinner {:size "3" :class "justify-self-end"}]]}])
+              (rf/dispatch [:jira-templates->get-submit-template
+                            (:jira_issue_template_id connection)])
+
+              (js/setTimeout check-template-and-show-form) 1000)]
 
       (when (.-preventDefault e) (.preventDefault e))
 
       (cond
-        (and needs-template? (or (nil? (:data jira-template))
-                                 (= :loading (:status jira-template))))
-        (rf/dispatch [:show-snackbar {:level :info
-                                      :text (str "Loading data. "
-                                                 "Try again in few seconds.")}])
-
-              ;; Multiple connections check
-        (and multiple-connections? has-jira-template-multiple-connections? jira-integration-enabled?)
+        ;; Multiple connections check
+        (and multiple-connections?
+             has-jira-template-multiple-connections?
+             jira-integration-enabled?)
         (rf/dispatch [:dialog->open
                       {:title "Running in multiple connections not allowed"
                        :action-button? false
@@ -133,21 +157,14 @@
                                    "connections with Jira Templates activated. Please select "
                                    "just one connection before running your command.")]}])
 
-              ;; Multiple connections without template
+        ;; Multiple connections without template
         (and (seq selected-connections) multiple-connections?)
         (reset! atom-exec-list-open? true)
 
-              ;; Single connection
+        ;; Single connection
         (= (count selected-connections) 1)
-        (if (and (needs-form? jira-template) jira-integration-enabled?)
-          (if (= :loading (:status jira-template))
-            (rf/dispatch [:show-snackbar {:level :info
-                                          :text "Loading template data..."}])
-            (rf/dispatch [:modal->open
-                          {:content [prompt-form/main
-                                     {:prompts (get-in jira-template [:data :prompt_types :items])
-                                      :cmdb-items (get-in jira-template [:data :cmdb_types :items])
-                                      :on-submit handle-submit}]}]))
+        (if (and needs-template? jira-integration-enabled?)
+          (handle-jira-template)
 
           (do
             (when change-to-tabular?
@@ -158,8 +175,9 @@
                            :metadata (metadata->json-stringify metadata)}])))
 
         :else
-        (rf/dispatch [:show-snackbar {:level :info
-                                      :text "You must choose a connection"}])))))
+        (rf/dispatch [:show-snackbar
+                      {:level :info
+                       :text "You must choose a connection"}])))))
 
 (defmulti ^:private saved-status-el identity)
 (defmethod ^:private saved-status-el :saved [_]
@@ -209,7 +227,6 @@
         plugins (rf/subscribe [:plugins->my-plugins])
         selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])
         script-response (rf/subscribe [:editor-plugin->script])
-        previous-selected-connections (r/atom nil)
 
         vertical-pane-sizes (mapv js/parseInt
                                   (cs/split
@@ -358,12 +375,6 @@
                              (= (:type connection) "mssql")
                              (= (:type connection) "oracledb")
                              (= (:type connection) "database")))]
-
-        (when (and is-one-connection-selected?
-                   (not= @run-connection-list-selected @previous-selected-connections))
-          (rf/dispatch [:jira-templates->get-submit-template
-                        (:jira_issue_template_id last-connection-selected)])
-          (reset! previous-selected-connections @run-connection-list-selected))
 
         (if (and (empty? (:results @db-connections))
                  (not (:loading @db-connections)))

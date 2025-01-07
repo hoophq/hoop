@@ -448,7 +448,7 @@ dbs.databases.forEach(function(database) {
 					"database_name": database.name
 	});
 });
-printjson(result);`
+JSON.stringify(result);`
 
 	default:
 		log.Warnf("unsupported database type: %v", currentConnectionType)

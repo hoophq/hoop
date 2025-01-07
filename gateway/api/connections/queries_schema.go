@@ -319,5 +319,5 @@ db.getSiblingDB(dbName).getCollectionNames().forEach(function(collName) {
     });
 });
 
-printjson(result);`, dbName)
+JSON.stringify(result);`, dbName)
 }
