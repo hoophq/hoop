@@ -1,6 +1,11 @@
 (ns webapp.events.database-schema
   (:require [re-frame.core :as rf]))
 
+(defn- check-schema-size [response]
+  (let [content-length (js/parseInt (.. response -headers (get "content-length")))
+        max-size (* 4 1024 1024)] ; 4MB in bytes
+    (<= content-length max-size)))
+
 (defn- process-schema [schema-data]
   (let [schemas (:schemas schema-data)]
     (reduce (fn [acc schema]
@@ -83,27 +88,65 @@
                                                          (:databases response)]))}]]]}))
 
 (rf/reg-event-db
- :database-schema->set-multi-databases
- (fn [db [_ connection databases]]
-   (-> db
-       (assoc-in [:database-schema :data (:connection-name connection) :databases] databases)
-       (assoc-in [:database-schema :data (:connection-name connection) :status] :success))))
+ :database-schema->set-schema-error-size-exceeded
+ (fn [{:keys [db]} [_ connection error]]
+   {:db (-> db
+            ;; Mark the general status as error
+            (assoc-in [:database-schema :data (:connection-name connection) :status] :error)
+            ;; Mark the schema status as error
+            (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :error)
+            ;; Define the error message
+            (assoc-in [:database-schema :data (:connection-name connection) :error]
+                      (or error "Schema size too large to display.")))}))
+
+(rf/reg-event-fx
+ :database-schema->check-schema-size
+ (fn [{:keys [db]} [_ connection url success-event]]
+   {:db (assoc-in db [:database-schema :data (:connection-name connection) :database-schema-status] :loading)
+    :fx [[:dispatch [:fetch {:method "HEAD"
+                             :uri url
+                             :on-success (fn [response]
+                                           (if (check-schema-size response)
+                                             (rf/dispatch [success-event connection url])
+                                             (rf/dispatch [:database-schema->set-schema-error-size-exceeded connection])))
+                             :on-failure (fn [error]
+                                           (rf/dispatch [:database-schema->set-schema-error-size-exceeded connection error]))}]]]}))
+
+(rf/reg-event-fx
+ :database-schema->set-schema-error-size-exceeded
+ (fn [{:keys [db]} [_ connection error]]
+   {:db (-> db
+             ;; Marca só o schema como error
+            (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :error)
+             ;; Define a mensagem de erro
+            (assoc-in [:database-schema :data (:connection-name connection) :error]
+                      (or error "Schema size too large to display.")))}))
 
 (rf/reg-event-fx
  :database-schema->get-multi-database-schema
  (fn [{:keys [db]} [_ connection database databases]]
-   {:db (-> db
-            (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :loading)
-            (assoc-in [:database-schema :data (:connection-name connection) :databases] databases))
-    :fx [[:dispatch [:fetch {:method "GET"
-                             :uri (str "/connections/" (:connection-name connection) "/schemas?database=" database)
+   (let [schema-url (str "/connections/" (:connection-name connection) "/schemas?database=" database)]
+     {:db (-> db
+              (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :loading)
+              (assoc-in [:database-schema :data (:connection-name connection) :databases] databases))
+      :fx [[:dispatch [:database-schema->check-schema-size
+                       connection
+                       schema-url
+                       :database-schema->fetch-multi-database-schema]]]})))
+
+(rf/reg-event-fx
+ :database-schema->fetch-multi-database-schema
+ (fn [{:keys [db]} [_ connection url]]
+   {:fx [[:dispatch [:fetch {:method "GET"
+                             :uri url
                              :on-success #(rf/dispatch [:database-schema->set-multi-database-schema
                                                         {:schema-payload %
-                                                         :database database
-                                                         :databases databases
+                                                         :database (get-in db [:database-schema :data (:connection-name connection) :current-database])
+                                                         :databases (get-in db [:database-schema :data (:connection-name connection) :databases])
                                                          :status :success
                                                          :database-schema-status :success
-                                                         :connection connection}])}]]]}))
+                                                         :connection connection}])
+                             :on-failure #(rf/dispatch [:database-schema->set-schema-error-size-exceeded connection %])}]]]}))
 
 (rf/reg-event-fx
  :database-schema->set-multi-database-schema
@@ -127,22 +170,26 @@
 (rf/reg-event-fx
  :database-schema->handle-database-schema
  (fn [{:keys [db]} [_ connection]]
-   {:db (-> db
-            (assoc-in [:database-schema :current-connection] (:connection-name connection))
-            (assoc-in [:database-schema :data (:connection-name connection) :status] :loading))
-    :fx [[:dispatch [:database-schema->get-database-schema connection]]]}))
+   (let [schema-url (str "/connections/" (:connection-name connection) "/schemas")]
+     {:db (-> db
+              (assoc-in [:database-schema :current-connection] (:connection-name connection))
+              (assoc-in [:database-schema :data (:connection-name connection) :status] :loading))
+      :fx [[:dispatch [:database-schema->check-schema-size
+                       connection
+                       schema-url
+                       :database-schema->fetch-database-schema]]]})))
 
 (rf/reg-event-fx
- :database-schema->get-database-schema
+ :database-schema->fetch-database-schema
  (fn [{:keys [db]} [_ connection]]
-   {:db (assoc-in db [:database-schema :data (:connection-name connection) :database-schema-status] :loading)
-    :fx [[:dispatch [:fetch {:method "GET"
+   {:fx [[:dispatch [:fetch {:method "GET"
                              :uri (str "/connections/" (:connection-name connection) "/schemas")
                              :on-success #(rf/dispatch [:database-schema->set-database-schema
                                                         {:schema-payload %
                                                          :status :success
                                                          :database-schema-status :success
-                                                         :connection connection}])}]]]}))
+                                                         :connection connection}])
+                             :on-failure #(rf/dispatch [:database-schema->set-schema-error-size-exceeded connection %])}]]]}))
 
 (rf/reg-event-fx
  :database-schema->set-database-schema
