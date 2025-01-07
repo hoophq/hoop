@@ -13,7 +13,7 @@ import (
 
 const (
 	baseAssetsAPI         string = "https://api.atlassian.com/jsm/assets/workspace"
-	defaultMaxResults     int    = 10
+	defaultMaxResults     int    = 50
 	maxPaginationRequests int    = 50
 )
 

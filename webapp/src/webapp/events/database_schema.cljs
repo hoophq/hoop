@@ -88,11 +88,18 @@
                                                          (:databases response)]))}]]]}))
 
 (rf/reg-event-db
+ :database-schema->set-multi-databases
+ (fn [db [_ connection databases]]
+   (-> db
+       (assoc-in [:database-schema :data (:connection-name connection) :databases] databases)
+       (assoc-in [:database-schema :data (:connection-name connection) :status] :success))))
+
+(rf/reg-event-fx
  :database-schema->set-schema-error-size-exceeded
  (fn [{:keys [db]} [_ connection error]]
    {:db (-> db
             ;; Mark the general status as error
-            (assoc-in [:database-schema :data (:connection-name connection) :status] :error)
+            (assoc-in [:database-schema :data (:connection-name connection) :status] :success)
             ;; Mark the schema status as error
             (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :error)
             ;; Define the error message
@@ -111,16 +118,6 @@
                                              (rf/dispatch [:database-schema->set-schema-error-size-exceeded connection])))
                              :on-failure (fn [error]
                                            (rf/dispatch [:database-schema->set-schema-error-size-exceeded connection error]))}]]]}))
-
-(rf/reg-event-fx
- :database-schema->set-schema-error-size-exceeded
- (fn [{:keys [db]} [_ connection error]]
-   {:db (-> db
-             ;; Marca só o schema como error
-            (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :error)
-             ;; Define a mensagem de erro
-            (assoc-in [:database-schema :data (:connection-name connection) :error]
-                      (or error "Schema size too large to display.")))}))
 
 (rf/reg-event-fx
  :database-schema->get-multi-database-schema

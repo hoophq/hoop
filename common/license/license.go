@@ -38,7 +38,7 @@ const (
 var (
 	allowedLicenseTypes = []string{OSSType, EnterpriseType}
 
-	ErrNotValid               = errors.New("license is not valid, contact your administrator our or support at https://help.hoop.dev")
+	ErrNotValid               = errors.New("license is not valid, contact your administrator or our support at https://help.hoop.dev")
 	ErrDataMaskingUnsupported = errors.New("data masking is enabled for this connection but is not supported with the open source license, disable it or contact our support at https://help.hoop.dev")
 	ErrWebhooksUnsupported    = errors.New("webhooks is enabled for this connection but is not supported with the open source license, disable it or contact our support at https://help.hoop.dev")
 	ErrUsedBeforeIssued       = errors.New("license used before issued")

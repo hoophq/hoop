@@ -26,13 +26,14 @@
 (rf/reg-event-fx
  :jira-templates->get-submit-template
  (fn [{:keys [db]} [_ id]]
-   {:db (assoc db :jira-templates->submit-template {:status :loading
-                                                    :data {}})
-    :fx [[:dispatch
-          [:fetch {:method "GET"
-                   :uri (str "/integrations/jira/issuetemplates/" id "?expand=cmdbtype-values")
-                   :on-success #(rf/dispatch [:jira-templates->set-submit-template %])
-                   :on-failure #(rf/dispatch [:jira-templates->set-submit-template nil])}]]]}))
+   {:db (assoc db :jira-templates->submit-template {:status :loading :data {}})
+    :fx [[:dispatch [:jira-templates->clear-submit-template]]
+         [:dispatch-later
+          {:ms 1000
+           :dispatch [:fetch {:method "GET"
+                              :uri (str "/integrations/jira/issuetemplates/" id "?expand=cmdbtype-values")
+                              :on-success #(rf/dispatch [:jira-templates->set-submit-template %])
+                              :on-failure #(rf/dispatch [:jira-templates->set-submit-template nil])}]}]]}))
 
 (rf/reg-event-db
  :jira-templates->set-all

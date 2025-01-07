@@ -255,7 +255,7 @@ func cmdbTypesWithExternalObjects(ctx *gin.Context, config *models.JiraIntegrati
 			return nil, fmt.Errorf("jira_object_type is missing, record=%v, item=%#v", i, item)
 		}
 		objectType := fmt.Sprintf("%v", item["jira_object_type"])
-		responseItems, err := jira.FetchObjectsByAQL(config, `objectType = %q`, objectType)
+		responseItems, err := jira.FetchObjectsByAQL(config, `objectTypeId = %q`, objectType)
 		if err != nil {
 			return nil, fmt.Errorf("record=%v, %v", i, err)
 		}

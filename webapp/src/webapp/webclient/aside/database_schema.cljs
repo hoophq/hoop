@@ -133,27 +133,34 @@
 
 (defn- sql-databases-tree [_]
   (let [dropdown-status (r/atom {})]
-    (fn [schema indexes has-database?]
+    (fn [schema indexes has-database? current-schema database-schema-status]
       [:div {:class (when has-database?
                       "pl-small")}
-       (doall
-        (for [[db tables] schema]
-          ^{:key db}
-          [:div
-           [:div {:class "flex items-center gap-small mb-2"}
-            [:> Database {:size 12}]
-            [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
-                                "flex items-center")
-                    :on-click #(swap! dropdown-status
-                                      assoc-in [db]
-                                      (if (= (get @dropdown-status db) :closed) :open :closed))}
-             [:> Text {:size "1"} db]
-             (if (not= (get @dropdown-status db) :closed)
-               [:> ChevronDown {:size 12}]
-               [:> ChevronRight {:size 12}])]]
-           [:div {:class (when (= (get @dropdown-status db) :closed)
-                           "h-0 overflow-hidden")}
-            [tables-tree (into (sorted-map) tables) (into (sorted-map) (get indexes db))]]]))])))
+       (cond
+          ;; Caso de erro com mensagem específica
+         (and (= :error database-schema-status) (:error current-schema))
+         [:> Text {:as "p" :size "1" :mb "2" :ml "2"}
+          (:error current-schema)]
+
+         :else
+         (doall
+          (for [[db tables] schema]
+            ^{:key db}
+            [:div
+             [:div {:class "flex items-center gap-small mb-2"}
+              [:> Database {:size 12}]
+              [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
+                                  "flex items-center")
+                      :on-click #(swap! dropdown-status
+                                        assoc-in [db]
+                                        (if (= (get @dropdown-status db) :closed) :open :closed))}
+               [:> Text {:size "1"} db]
+               (if (not= (get @dropdown-status db) :closed)
+                 [:> ChevronDown {:size 12}]
+                 [:> ChevronRight {:size 12}])]]
+             [:div {:class (when (= (get @dropdown-status db) :closed)
+                             "h-0 overflow-hidden")}
+              [tables-tree (into (sorted-map) tables) (into (sorted-map) (get indexes db))]]])))])))
 
 (defn- databases-tree []
   (let [open-database (r/atom nil)]
@@ -209,10 +216,10 @@
                        current-schema
                        database-schema-status]}]
   (case type
-    "oracledb" [sql-databases-tree (into (sorted-map) schema) (into (sorted-map) indexes) false]
-    "mssql" [sql-databases-tree (into (sorted-map) schema) (into (sorted-map) indexes) false]
+    "oracledb" [sql-databases-tree (into (sorted-map) schema) (into (sorted-map) indexes) false current-schema database-schema-status]
+    "mssql" [sql-databases-tree (into (sorted-map) schema) (into (sorted-map) indexes) false current-schema database-schema-status]
     "postgres" [databases-tree databases (into (sorted-map) schema) (into (sorted-map) indexes) connection-name database-schema-status current-schema]
-    "mysql" [sql-databases-tree (into (sorted-map) schema) (into (sorted-map) indexes) false]
+    "mysql" [sql-databases-tree (into (sorted-map) schema) (into (sorted-map) indexes) false current-schema database-schema-status]
     "mongodb" [databases-tree databases (into (sorted-map) schema) (into (sorted-map) indexes) connection-name database-schema-status current-schema]
     [:> Text {:size "1"}
      "Couldn't load the schema"]))
@@ -225,10 +232,6 @@
                                 current-schema
                                 database-schema-status]}]
   (cond
-    (and (= :error database-schema-status) (:error current-schema))
-    [:> Text {:as "p" :size "1" :my "4"}
-     (:error current-schema)]
-
     (= status :loading)
     [:div
      {:class "flex gap-small items-center py-regular text-xs"}

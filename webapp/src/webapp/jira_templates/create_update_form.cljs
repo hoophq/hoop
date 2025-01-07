@@ -88,9 +88,9 @@
          [:> Flex {:direction "column" :gap "5"}
           [:> Box {:grid-column "span 2 / span 2"}
            [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-            "Configure CMDB"]
+            "Set a configuration management database (CMDB)"]
            [:> Text {:size "3" :class "text-[--gray-11]"}
-            "Set up configuration management database relationships."]]
+            "Create an additional layer of relation between CMDBs and hoop services."]]
 
           [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
            [cmdb-table/main

@@ -1,6 +1,6 @@
 (ns webapp.jira-templates.cmdb-table
   (:require
-   ["@radix-ui/themes" :refer [Box Table Text]]
+   ["@radix-ui/themes" :refer [Box Table]]
    [webapp.components.forms :as forms]
    [webapp.jira-templates.rule-buttons :as rule-buttons]))
 
@@ -25,7 +25,7 @@
       [:> Table.ColumnHeaderCell "Label"]
       [:> Table.ColumnHeaderCell "Jira Field"]
       [:> Table.ColumnHeaderCell "Value"]
-      [:> Table.ColumnHeaderCell "Object Type"]
+      [:> Table.ColumnHeaderCell "Object Type ID"]
       [:> Table.ColumnHeaderCell "Description (Optional)"]
       [:> Table.ColumnHeaderCell "Required"]]]
 

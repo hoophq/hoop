@@ -3,11 +3,12 @@
    ["@radix-ui/themes" :refer [Button Flex Box Text]]
    [re-frame.core :as rf]
    [reagent.core :as r]
-   [webapp.components.forms :as forms]))
+   [webapp.components.forms :as forms]
+   [webapp.components.multiselect :as multi-select]))
 
 (defn- create-cmdb-select-options [jira-values]
   (mapv (fn [{:keys [id name]}]
-          {:value id :text name})
+          {"value" id "label" name})
         jira-values))
 
 (defn- get-value-id [jira_values value]
@@ -56,12 +57,16 @@
             (doall
              (for [{:keys [label jira_field jira_values required]} cmdb-fields-to-show]
                ^{:key jira_field}
-               [forms/select
+               [multi-select/single
                 {:label label
                  :required required
-                 :full-width? true
-                 :selected (get-in @form-data [:jira_fields jira_field])
-                 :on-change #(swap! form-data assoc-in [:jira_fields jira_field] %)
+                 :placeholder "Select one"
+                 :id (str "cmdb-select-" label)
+                 :name (str "cmdb-select-" label)
+                 :clearable? true
+                 :searchble? true
+                 :default-value (or (get-in @form-data [:jira_fields jira_field]) nil)
+                 :on-change #(swap! form-data assoc-in [:jira_fields jira_field] (js->clj %))
                  :options (create-cmdb-select-options jira_values)}]))])]
 
         [:> Flex {:justify "end" :gap "3" :mt "6"}
