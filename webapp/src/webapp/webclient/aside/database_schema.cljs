@@ -181,8 +181,6 @@
            [:div {:class (when (not= @open-database db)
                            "h-0 overflow-hidden")}
 
-            (println current-schema database-schema-status)
-
             (cond
               (= :loading database-schema-status)
               [:div
