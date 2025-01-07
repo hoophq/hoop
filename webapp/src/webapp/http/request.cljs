@@ -58,6 +58,20 @@
       (str "?" (.toString url-search-params))
       "")))
 
+(defmulti response-by-method (fn [method _response _on-success _on-failure] method))
+
+(defmethod response-by-method "HEAD" [_ response on-success _]
+  ;; HEAD requests only need headers, no body parsing
+  (when (.-ok response)
+    (on-success response (.-headers response)))
+  response)
+
+(defmethod response-by-method :default [_ response on-success on-failure]
+  (let [content-type (.. response -headers (get "content-type"))]
+    (if (and content-type (re-find #"application/json" content-type))
+      (response-parser "application/json" response on-success on-failure)
+      (response-parser :default response on-success on-failure))))
+
 (defn request
   "request abstraction for making a http request
 
@@ -81,7 +95,7 @@
                                                   (not= method "HEAD"))]
                                   {:body json-body}))))
       (fn [response]
-        (response-parser (:accept (:headers options)) response on-success on-failure)))
+        (response-by-method method response on-success on-failure)))
      (fn [error]
        (if (= (.-message error) "Failed to fetch")
          (if (= on-failure nil)

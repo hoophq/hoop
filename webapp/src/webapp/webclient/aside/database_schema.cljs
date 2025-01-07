@@ -157,7 +157,7 @@
 
 (defn- databases-tree []
   (let [open-database (r/atom nil)]
-    (fn [databases schema indexes connection-name database-schema-status]
+    (fn [databases schema indexes connection-name database-schema-status current-schema]
       [:div.text-xs
        (doall
         (for [db databases]
@@ -180,30 +180,40 @@
                [:> ChevronRight {:size 12}])]]
            [:div {:class (when (not= @open-database db)
                            "h-0 overflow-hidden")}
-            (if (= :loading database-schema-status)
+
+            (cond
+              (= :loading database-schema-status)
               [:div
                {:class "flex gap-small items-center pb-small ml-small text-xs"}
                [:span {:class "italic"}
                 "Loading tables and indexes"]
                [:figure {:class "w-3 flex-shrink-0 animate-spin opacity-60"}
                 [:img {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]]
-              (if (empty? schema)
-                [:> Text {:as "p" :size "1" :mb "2" :ml "2"}
-                 "Couldn't load tables for this database"]
-                [sql-databases-tree schema indexes true]))]]))])))
+
+              (and (= :error database-schema-status) (:error current-schema))
+              [:> Text {:as "p" :size "1" :mb "2" :ml "2"}
+               (:error current-schema)]
+
+              (empty? schema)
+              [:> Text {:as "p" :size "1" :mb "2" :ml "2"}
+               "Couldn't load tables for this database"]
+
+              :else
+              [sql-databases-tree schema indexes true])]]))])))
 
 (defn db-view [{:keys [type
                        schema
                        indexes
                        databases
                        connection-name
+                       current-schema
                        database-schema-status]}]
   (case type
     "oracledb" [sql-databases-tree (into (sorted-map) schema) (into (sorted-map) indexes) false]
     "mssql" [sql-databases-tree (into (sorted-map) schema) (into (sorted-map) indexes) false]
-    "postgres" [databases-tree databases (into (sorted-map) schema) (into (sorted-map) indexes) connection-name database-schema-status]
+    "postgres" [databases-tree databases (into (sorted-map) schema) (into (sorted-map) indexes) connection-name database-schema-status current-schema]
     "mysql" [sql-databases-tree (into (sorted-map) schema) (into (sorted-map) indexes) false]
-    "mongodb" [databases-tree databases (into (sorted-map) schema) (into (sorted-map) indexes) connection-name database-schema-status]
+    "mongodb" [databases-tree databases (into (sorted-map) schema) (into (sorted-map) indexes) connection-name database-schema-status current-schema]
     [:> Text {:size "1"}
      "Couldn't load the schema"]))
 
@@ -212,24 +222,37 @@
                                 schema
                                 indexes
                                 connection
+                                current-schema
                                 database-schema-status]}]
-  (case status
-    :loading [:div
-              {:class "flex gap-small items-center py-regular text-xs"}
-              [:span {:class "italic"}
-               "Loading schema"]
-              [:figure {:class "w-3 flex-shrink-0 animate-spin opacity-60"}
-               [:img {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]]
-    :failure [:div
-              {:class "flex gap-small items-center py-regular text-xs"}
-              [:span
-               "Couldn't load the schema"]]
-    :success [db-view {:type (:connection-type connection)
-                       :schema schema
-                       :indexes indexes
-                       :databases databases
-                       :connection-name (:connection-name connection)
-                       :database-schema-status database-schema-status}]
+  (cond
+    (and (= :error database-schema-status) (:error current-schema))
+    [:> Text {:as "p" :size "1" :my "4"}
+     (:error current-schema)]
+
+    (= status :loading)
+    [:div
+     {:class "flex gap-small items-center py-regular text-xs"}
+     [:span {:class "italic"}
+      "Loading schema"]
+     [:figure {:class "w-3 flex-shrink-0 animate-spin opacity-60"}
+      [:img {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]]
+
+    (= status :failure)
+    [:div
+     {:class "flex gap-small items-center py-regular text-xs"}
+     [:span
+      "Couldn't load the schema"]]
+
+    (= status :success)
+    [db-view {:type (:connection-type connection)
+              :schema schema
+              :indexes indexes
+              :databases databases
+              :connection-name (:connection-name connection)
+              :database-schema-status database-schema-status
+              :current-schema current-schema}]
+
+    :else
     [:div
      {:class "flex gap-small items-center py-regular text-xs"}
      [:span {:class "italic"}
@@ -251,6 +274,7 @@
                                               :connection-name connection-name}))
 
       (let [current-schema (get-in @database-schema [:data connection-name])]
+
         [:div {:class "text-gray-200"}
          [tree-view-status
           {:status (:status current-schema)
@@ -258,4 +282,5 @@
            :schema (:schema-tree current-schema)
            :indexes (:indexes-tree current-schema)
            :connection connection
-           :database-schema-status (:database-schema-status current-schema)}]]))))
+           :database-schema-status (:database-schema-status current-schema)
+           :current-schema current-schema}]]))))
