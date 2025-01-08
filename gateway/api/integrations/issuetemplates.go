@@ -91,6 +91,113 @@ func GetIssueTemplatesByID(c *gin.Context) {
 	}
 }
 
+// GetIssueTemplateObjectTypeValues
+//
+//	@Summary		Get Object Type Values for Issue Template
+//	@Description	Get values for a specific Jira object type in an Issue Template
+//	@Tags			Jira
+//	@Produce		json
+//	@Param			id			path		string	true	"The id of the template"
+//	@Param			object_type	query		string	true	"The Jira object type to fetch values for"
+//	@Success		200			{object}	map[string]interface{}
+//	@Failure		400,404,500	{object}	openapi.HTTPError
+//	@Router			/integrations/jira/issuetemplates/{id}/objects [get]
+func GetIssueTemplateObjectTypeValues(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	objectType := c.Query("object_type")
+	if objectType == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "object_type query parameter is required"})
+		return
+	}
+
+	issue, config, err := models.GetJiraIssueTemplatesByID(ctx.GetOrgID(), c.Param("id"))
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
+		return
+	case nil:
+		// Continue processing
+	default:
+		log.Errorf("failed fetching issue template, reason=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
+	if config == nil || !config.IsActive() {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "jira integration is not active"})
+		return
+	}
+
+	// Get items from the template
+	items, ok := issue.CmdbTypes["items"].([]any)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "invalid items format in template"})
+		return
+	}
+
+	// Find the requested object type
+	var targetItem map[string]any
+	for _, item := range items {
+		itemMap, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if typeVal, exists := itemMap["jira_object_type"]; exists && fmt.Sprintf("%v", typeVal) == objectType {
+			targetItem = itemMap
+			break
+		}
+	}
+
+	if targetItem == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "specified object type not found in template"})
+		return
+	}
+
+	objectTypeId := fmt.Sprintf("%v", targetItem["jira_object_type"])
+	objectSchemaId := fmt.Sprintf("%v", targetItem["jira_object_schema_id"])
+
+	var query string
+	var queryParams []interface{}
+
+	if objectSchemaId == "" {
+		query = `objectTypeId = %q`
+		queryParams = []interface{}{objectTypeId}
+	} else {
+		query = `objectSchemaId = %q AND objectTypeId = %q`
+		queryParams = []interface{}{objectSchemaId, objectTypeId}
+	}
+
+	responseItems, err := jira.FetchObjectsByAQL(config, query, queryParams...)
+	if err != nil {
+		log.Errorf("failed fetching object type values from Jira, reason=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching object type values from Jira"})
+		return
+	}
+
+	jiraValues := []map[string]any{}
+	for _, response := range responseItems {
+		for _, val := range response.Values {
+			jiraValues = append(jiraValues, map[string]any{
+				"id":   val.GlobalID,
+				"name": val.Name,
+			})
+		}
+	}
+
+	result := map[string]any{
+		"description":           targetItem["description"],
+		"label":                 targetItem["label"],
+		"required":              targetItem["required"],
+		"value":                 targetItem["value"],
+		"jira_field":            targetItem["jira_field"],
+		"jira_object_type":      targetItem["jira_object_type"],
+		"jira_object_schema_id": targetItem["jira_object_schema_id"],
+		"jira_values":           jiraValues,
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
 // CreateIssueTemplates
 //
 //	@Summary		Create Issue Templates

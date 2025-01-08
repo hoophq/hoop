@@ -2,6 +2,38 @@
   (:require
    [re-frame.core :as rf]))
 
+;; CMDB
+
+(rf/reg-event-fx
+ :jira-templates->get-cmdb-values
+ (fn [{:keys [db]} [_ template-id cmdb-item]]
+   {:fx [[:dispatch
+          [:fetch {:method "GET"
+                   :uri (str "/integrations/jira/issuetemplates/"
+                             template-id
+                             "/objecttype-values?object_type="
+                             (:jira_object_type cmdb-item))
+                   :on-success #(rf/dispatch [:jira-templates->merge-cmdb-values cmdb-item %])
+                   :on-failure #(rf/dispatch [:jira-templates->merge-cmdb-values cmdb-item nil])}]]]}))
+
+(rf/reg-event-fx
+ :jira-templates->merge-cmdb-values
+ (fn [{:keys [db]} [_ cmdb-item value]]
+   (let [current-template (get-in db [:jira-templates->submit-template :data])
+         updated-cmdb-items (map (fn [item]
+                                   (if (= (:jira_object_type item) (:jira_object_type cmdb-item))
+                                     (merge item value)
+                                     item))
+                                 (get-in current-template [:cmdb_types :items]))
+         updated-template (assoc-in current-template [:cmdb_types :items] updated-cmdb-items)
+         all-values-loaded? (every? #(contains? % :jira_values)
+                                    (get-in updated-template [:cmdb_types :items]))]
+     {:db (-> db
+              (assoc-in [:jira-templates->submit-template :data] updated-template)
+              (assoc-in [:jira-templates->submit-template :status] (if all-values-loaded? :ready :loading)))})))
+
+;; JIRA
+
 (rf/reg-event-fx
  :jira-templates->get-all
  (fn [{:keys [db]} [_ _]]
@@ -31,8 +63,12 @@
          [:dispatch-later
           {:ms 1000
            :dispatch [:fetch {:method "GET"
-                              :uri (str "/integrations/jira/issuetemplates/" id "?expand=cmdbtype-values")
-                              :on-success #(rf/dispatch [:jira-templates->set-submit-template %])
+                              :uri (str "/integrations/jira/issuetemplates/" id)
+                              :on-success (fn [template]
+                                            (rf/dispatch [:jira-templates->set-submit-template template])
+                                         ;; Dispara requests para cada item CMDB
+                                            (doseq [cmdb-item (get-in template [:cmdb_types :items])]
+                                              (rf/dispatch [:jira-templates->get-cmdb-values id cmdb-item])))
                               :on-failure #(rf/dispatch [:jira-templates->set-submit-template nil])}]}]]}))
 
 (rf/reg-event-db
@@ -45,10 +81,13 @@
  (fn [db [_ template]]
    (assoc db :jira-templates->active-template {:status :ready :data template})))
 
+
 (rf/reg-event-db
  :jira-templates->set-submit-template
  (fn [db [_ template]]
-   (assoc db :jira-templates->submit-template {:status :ready :data template})))
+   (if (empty? (get-in template [:cmdb_types :items]))
+     (assoc db :jira-templates->submit-template {:status :ready :data template})
+     (assoc db :jira-templates->submit-template {:status :loading :data template}))))
 
 (rf/reg-event-db
  :jira-templates->clear-active-template
