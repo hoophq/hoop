@@ -13,7 +13,7 @@
 
 (defn- get-value-id [jira_values value]
   (when-let [value-match (first (filter #(= (:name %) value) jira_values))]
-    (:id value-match)))
+    {"value" (:id value-match) "label" (:name value-match)}))
 
 (defn- init-form-data [cmdb-items]
   (reduce (fn [acc {:keys [jira_field jira_values value]}]
@@ -34,7 +34,18 @@
 
        [:form {:on-submit (fn [e]
                             (.preventDefault e)
-                            (on-submit @form-data))}
+                            (let [processed-data
+                                  (update @form-data :jira_fields
+                                          (fn [fields]
+                                            (reduce-kv
+                                             (fn [m k v]
+                                               (assoc m k
+                                                      (if (map? v)
+                                                        (get v "value")
+                                                        v)))
+                                             {}
+                                             fields)))]
+                              (on-submit processed-data)))}
 
         [:> Flex {:direction "column" :gap "4"}
          ;; Prompt Fields
