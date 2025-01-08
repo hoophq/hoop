@@ -451,6 +451,10 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apijiraintegration.GetIssueTemplatesByID,
 	)
+	r.GET("/integrations/jira/issuetemplates/:id/objecttype-values",
+		r.AuthMiddleware,
+		apijiraintegration.GetIssueTemplateObjectTypeValues)
+
 	r.DELETE("/integrations/jira/issuetemplates/:id",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
