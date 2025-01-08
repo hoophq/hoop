@@ -47,6 +47,9 @@ func fetchObjectsByAQL(config *models.JiraIntegration, queryVals url.Values, que
 	if err != nil {
 		return nil, err
 	}
+
+	fmt.Printf("TESTE >>>>>> %v", query)
+
 	queryPayload := map[string]any{"qlQuery": query}
 	requestBody, _ := json.Marshal(queryPayload)
 	apiURL := fmt.Sprintf("%s/%s/v1/object/aql?maxResults=%v", baseAssetsAPI, workspaceID, defaultMaxResults)

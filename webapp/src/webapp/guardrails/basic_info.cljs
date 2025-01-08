@@ -14,11 +14,11 @@
      {:label "Name"
       :placeholder "Sensitive Data"
       :required true
-      :value @name
+      :defaultValue @name
       :on-change #(on-name-change (-> % .-target .-value))}]
     [forms/input
      {:label "Description (Optional)"
       :placeholder "Describe how this is used in your connections"
       :required false
-      :value @description
+      :defaultValue @description
       :on-change #(on-description-change (-> % .-target .-value))}]]])

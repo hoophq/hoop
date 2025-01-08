@@ -1,12 +1,12 @@
 (ns webapp.auth.local.register
   (:require
-    ["@radix-ui/themes" :refer [Flex Card Heading
-                                Link Box Text Button]]
-    [webapp.components.forms :as forms]
-    [reagent.core :as r]
-    [re-frame.core :as re-frame]
-    [webapp.config :as config]
-    [webapp.routes :as routes]))
+   ["@radix-ui/themes" :refer [Flex Card Heading
+                               Link Box Text Button]]
+   [webapp.components.forms :as forms]
+   [reagent.core :as r]
+   [re-frame.core :as re-frame]
+   [webapp.config :as config]
+   [webapp.routes :as routes]))
 
 (defn- form []
   (let [email (r/atom "")
@@ -30,23 +30,23 @@
                             (submit-form))}
         [:> Flex {:direction "column"}
          [forms/input {:label "Full name"
-                       :value @fullname
+                       :defaultValue @fullname
                        :required true
                        :type "text"
                        :on-change #(reset! fullname (-> % .-target .-value))}]
          [forms/input {:label "Email"
-                       :value @email
+                       :defaultValue @email
                        :required true
                        :type "email"
                        :on-change #(reset! email (-> % .-target .-value))}]
          [forms/input {:label "Password"
                        :required true
-                       :value @password
+                       :defaultValue @password
                        :type "password"
                        :on-change #(reset! password (-> % .-target .-value))}]
          [forms/input {:label "Confirm Password"
                        :required true
-                       :value @confirm-password
+                       :defaultValue @confirm-password
                        :type "password"
                        :on-blur #(if (not= @password @confirm-password)
                                    (reset! password-error "Passwords do not match")

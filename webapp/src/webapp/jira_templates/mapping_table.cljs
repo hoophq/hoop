@@ -36,7 +36,7 @@
         :placeholder "e.g. product"
         :name "value"
         :not-margin-bottom? true
-        :value (:value rule)
+        :defaultValue (:value rule)
         :on-change #(on-rule-field-change state idx :value (-> % .-target .-value))}])))
 
 (defn- jira-field-input [rule state idx on-rule-field-change]
@@ -44,7 +44,7 @@
     [forms/input
      {:size "2"
       :placeholder "e.g. customfield_0410"
-      :value (:jira_field rule)
+      :defaultValue (:jira_field rule)
       :not-margin-bottom? true
       :on-change #(on-rule-field-change state idx :jira_field (-> % .-target .-value))}]))
 
@@ -53,7 +53,7 @@
     [forms/input
      {:size "2"
       :placeholder "e.g. customfield_0410"
-      :value (:description rule)
+      :defaultValue (:description rule)
       :not-margin-bottom? true
       :on-change #(on-rule-field-change state idx :description (-> % .-target .-value))}]))
 

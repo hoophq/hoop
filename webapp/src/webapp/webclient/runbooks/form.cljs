@@ -40,7 +40,7 @@
                                  {:label label
                                   :dark true
                                   :placeholder (or placeholder (str "Define a value for " label))
-                                  :value (or value "")
+                                  :defaultValue (or value "")
                                   :on-change on-change
                                   :minLength minlength
                                   :maxLength maxlength
@@ -53,7 +53,7 @@
                    {:label label
                     :dark true
                     :placeholder (or placeholder (str "Define a value for " label))
-                    :value (or value "")
+                    :defaultValue (or value "")
                     :type type
                     :pattern pattern
                     :on-change on-change
