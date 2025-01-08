@@ -23,21 +23,21 @@
      {:label "Name"
       :placeholder "e.g. squad-postgresql"
       :required true
-      :value @name
+      :defaultValue @name
       :on-change #(on-name-change (-> % .-target .-value))}]
 
     [forms/input
      {:label "Description (Optional)"
       :placeholder "Describe how this templated will be used."
       :required false
-      :value @description
+      :defaultValue @description
       :on-change #(on-description-change (-> % .-target .-value))}]
 
     [forms/input
      {:label "Project Key"
       :placeholder "e.g. PKEY"
       :required true
-      :value @project-key
+      :defaultValue @project-key
       :on-change #(on-project-key-change (-> % .-target .-value))}]
 
     [:div
@@ -45,6 +45,6 @@
       {:label "Request Type ID"
        :placeholder "e.g. 10005"
        :required true
-       :value @request-type-id
+       :defaultValue @request-type-id
        :not-margin-bottom? true
        :on-change #(on-request-type-id-change (-> % .-target .-value))}]]]])

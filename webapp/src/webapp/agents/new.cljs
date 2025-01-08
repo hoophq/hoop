@@ -91,7 +91,7 @@
                                             :disabled (or
                                                        (= (:status @agent-key) :ready)
                                                        (= (:status @agent-key) :loading))
-                                            :value @agent-name
+                                            :defaultValue @agent-name
                                             :on-change #(reset! agent-name (-> % .-target .-value))
                                             :required true}]
                               [:> Button {:size "3"

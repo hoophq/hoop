@@ -35,7 +35,7 @@
           {:class "text-xs text-gray-600 pb-1"}
           (str "Provide a path for this connection be able to access in the git repository. "
                "No path added is the same of root path.")]]
-        [forms/input {:value @repository-path-value
+        [forms/input {:defaultValue @repository-path-value
                       :id "repository-path-value"
                       :name "repository-path-value"
                       :on-change #(reset! repository-path-value (-> % .-target .-value))
@@ -74,13 +74,13 @@
                          :placeholder "git@github.com:company/repository.git"
                          :disabled @edit?
                          :type "password"
-                         :value @git-url}]
+                         :defaultValue @git-url}]
            [forms/textarea {:label "Deploy ssh key"
                             :on-change #(reset! git-ssh-key (-> % .-target .-value))
                             :classes "whitespace-pre overflow-x"
                             :placeholder "Deploy ssh key"
                             :disabled @edit?
-                            :value @git-ssh-key}]]
+                            :defaultValue @git-ssh-key}]]
           [:div {:class "grid grid-cols-3 justify-items-end"}
            (if @edit?
              [:div {:class "col-end-4 w-full"}

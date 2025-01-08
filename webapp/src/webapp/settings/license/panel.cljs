@@ -1,11 +1,11 @@
 (ns webapp.settings.license.panel
   (:require
-    [clojure.string :as strings]
-    [re-frame.core :as rf]
-    [reagent.core :as r]
-    ["@radix-ui/themes" :refer [Table Flex Box Text Heading Button]]
-    [webapp.components.headings :as h]
-    [webapp.components.forms :as forms]))
+   [clojure.string :as strings]
+   [re-frame.core :as rf]
+   [reagent.core :as r]
+   ["@radix-ui/themes" :refer [Table Flex Box Text Heading Button]]
+   [webapp.components.headings :as h]
+   [webapp.components.forms :as forms]))
 
 (defmulti license-status-text identity)
 (defmethod license-status-text "oss" [_]
@@ -41,8 +41,7 @@
         [:> Table.Row
          [:> Table.ColumnHeaderCell "Type"]
          [:> Table.ColumnHeaderCell "Issued"]
-         [:> Table.ColumnHeaderCell "Expiration"]
-         ]]
+         [:> Table.ColumnHeaderCell "Expiration"]]]
        [:> Table.Body
         [:> Table.Row
          [:> Table.Cell
@@ -85,9 +84,9 @@
            [:> Table.ColumnHeaderCell
             [:> Text {:size "1" :as :div} "License Key"]]
            [:> Table.Cell {:align "right"}
-            [forms/input {:value (if disable-input?
-                                   "•••••••••••••••••"
-                                   @license-value)
+            [forms/input {:defaultValue (if disable-input?
+                                          "•••••••••••••••••"
+                                          @license-value)
                           :on-change #(reset! license-value (-> % .-target .-value))
                           :disabled disable-input?
                           :placeholder "Enter your license key"
@@ -102,7 +101,7 @@
       (let [license-info (-> @gateway-info :data :license_info)
             is-valid? (:is_valid license-info)
             license-type (:type license-info)
-            disable-license-input? (and is-valid? (= license-type "enterprise")) ]
+            disable-license-input? (and is-valid? (= license-type "enterprise"))]
         [:div
          [:> Flex {:class "mb-10"
                    :as "header"}

@@ -131,7 +131,7 @@
                               (.preventDefault e)
                               (rf/dispatch [:indexer-plugin->search {:query @search-value
                                                                      :fields search-fields}]))}
-          [forms/input {:value @search-value
+          [forms/input {:defaultValue @search-value
                         :on-change #(reset! search-value (-> % .-target .-value))}]]
          [button/black {:text "Search"
                         :on-click #(rf/dispatch [:indexer-plugin->search {:query @search-value

@@ -98,14 +98,14 @@
                            :on-change #(reset! config-key (-> % .-target .-value))
                            :classes "whitespace-pre overflow-x"
                            :placeholder "API_KEY"
-                           :value @config-key}]
+                           :defaultValue @config-key}]
              [forms/input {:label "Value"
                            :full-width? true
                            :on-change #(reset! config-value (-> % .-target .-value))
                            :classes "whitespace-pre overflow-x"
                            :placeholder "* * * *"
                            :type "password"
-                           :value @config-value}]]
+                           :defaultValue @config-value}]]
             [:> Box {:grid-column "span 2 / span 2" :class "justify-self-center"}
              [:> Button {:size "2"
                          :variant "ghost"
@@ -126,11 +126,11 @@
                           :classes "whitespace-pre overflow-x"
                           :placeholder "kubeconfig"
                           :on-change #(reset! config-file-name (-> % .-target .-value))
-                          :value @config-file-name}]
+                          :defaultValue @config-file-name}]
             [forms/textarea {:label "Content"
                              :placeholder "Paste your file content here"
                              :on-change #(reset! config-file-value (-> % .-target .-value))
-                             :value @config-file-value}]
+                             :defaultValue @config-file-value}]
             [:> Box {:class "justify-self-center"}
              [:> Button {:size "2"
                          :variant "ghost"

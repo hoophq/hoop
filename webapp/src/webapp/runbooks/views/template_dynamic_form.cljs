@@ -30,7 +30,7 @@
      [forms/input (merge
                    {:label label
                     :placeholder (or placeholder (str "Define a value for " label))
-                    :value value
+                    :defaultValue value
                     :type type
                     :pattern pattern
                     :on-change on-change

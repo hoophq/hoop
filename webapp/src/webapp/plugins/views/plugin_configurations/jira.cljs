@@ -50,7 +50,7 @@
                          :disabled (not @jira-enabled?)
                          :required true
                          :not-margin-bottom? true
-                         :value @url}]
+                         :defaultValue @url}]
            [forms/input {:label "User Email"
                          :placeholder "name@company.com"
                          :on-change #(reset! user-email (-> % .-target .-value))
@@ -58,7 +58,7 @@
                          :disabled (not @jira-enabled?)
                          :required true
                          :not-margin-bottom? true
-                         :value @user-email}]
+                         :defaultValue @user-email}]
            [:> Box {:class "space-y-radix-2 first:mb-0"}
             [forms/textarea {:label "User API token"
                              :placeholder "lXtpBPQvBvSycVYDGo7S8k2N12KE1dMcdyastG"

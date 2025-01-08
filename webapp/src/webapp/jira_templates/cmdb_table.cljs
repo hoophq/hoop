@@ -25,6 +25,7 @@
       [:> Table.ColumnHeaderCell "Label"]
       [:> Table.ColumnHeaderCell "Jira Field"]
       [:> Table.ColumnHeaderCell "Value"]
+      [:> Table.ColumnHeaderCell "Object Schema ID (Optional)"]
       [:> Table.ColumnHeaderCell "Object Type ID"]
       [:> Table.ColumnHeaderCell "Description (Optional)"]
       [:> Table.ColumnHeaderCell "Required"]]]
@@ -44,7 +45,7 @@
           [forms/input
            {:size "2"
             :placeholder "e.g. Employee ID"
-            :value (:label cmdb)
+            :defaultValue (:label cmdb)
             :not-margin-bottom? true
             :on-change #(on-cmdb-field-change state idx :label (-> % .-target .-value))}]]
 
@@ -52,7 +53,7 @@
           [forms/input
            {:size "2"
             :placeholder "e.g. customfield_0410"
-            :value (:jira_field cmdb)
+            :defaultValue (:jira_field cmdb)
             :not-margin-bottom? true
             :on-change #(on-cmdb-field-change state idx :jira_field (-> % .-target .-value))}]]
 
@@ -60,15 +61,23 @@
           [forms/input
            {:size "2"
             :placeholder "e.g. value_123"
-            :value (:value cmdb)
+            :defaultValue (:value cmdb)
             :not-margin-bottom? true
             :on-change #(on-cmdb-field-change state idx :value (-> % .-target .-value))}]]
 
          [:> Table.Cell {:p "4"}
           [forms/input
            {:size "2"
-            :placeholder "e.g. product"
-            :value (:jira_object_type cmdb)
+            :placeholder "e.g. 9"
+            :defaultValue (:jira_object_schema_id cmdb)
+            :not-margin-bottom? true
+            :on-change #(on-cmdb-field-change state idx :jira_object_schema_id (-> % .-target .-value))}]]
+
+         [:> Table.Cell {:p "4"}
+          [forms/input
+           {:size "2"
+            :placeholder "e.g. 13"
+            :defaultValue (:jira_object_type cmdb)
             :not-margin-bottom? true
             :on-change #(on-cmdb-field-change state idx :jira_object_type (-> % .-target .-value))}]]
 
@@ -76,7 +85,7 @@
           [forms/input
            {:size "2"
             :placeholder "e.g. customfield_0410"
-            :value (:description cmdb)
+            :defaultValue (:description cmdb)
             :not-margin-bottom? true
             :on-change #(on-cmdb-field-change state idx :description (-> % .-target .-value))}]]
 

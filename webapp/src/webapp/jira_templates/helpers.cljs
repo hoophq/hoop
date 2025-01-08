@@ -22,6 +22,7 @@
    :required true
    :description ""
    :jira_object_type ""
+   :jira_object_schema_id ""
    :selected false})
 
 (defn- format-mapping-rule [rule]
@@ -51,6 +52,7 @@
      :required (:required cmdb)
      :description (:description cmdb)
      :jira_object_type (:jira_object_type cmdb)
+     :jira_object_schema_id (:jira_object_schema_id cmdb)
      :selected false}))
 
 (defn- format-mapping-rules [rules]

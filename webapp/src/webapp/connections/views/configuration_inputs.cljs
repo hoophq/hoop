@@ -19,7 +19,7 @@
                      :placeholder (or placeholder key)
                      :type "password"
                      :hidden hidden
-                     :value @value-val}]])))
+                     :defaultValue @value-val}]])))
 
 (defn- config->inputs-files
   [{:keys [key value]} index config]
@@ -34,13 +34,13 @@
                      :placeholder "kubeconfig"
                      :on-change #(reset! key-val (-> % .-target .-value))
                      :on-blur #(save :key @key-val)
-                     :value @key-val}]
+                     :defaultValue @key-val}]
        [forms/textarea {:label "Content"
                         :id (str "file-content" @value-val)
                         :placeholder "Paste your file content here"
                         :on-change #(reset! value-val (-> % .-target .-value))
                         :on-blur #(save :value @value-val)
-                        :value @value-val}]])))
+                        :defaultValue @value-val}]])))
 
 (defn- config->inputs
   [{:keys [key value]} index config {:keys [is-disabled? is-required?]}]
@@ -55,7 +55,7 @@
                      :on-blur #(save :key @key-val)
                      :disabled is-disabled?
                      :required is-required?
-                     :value @key-val
+                     :defaultValue @key-val
                      :placeholder "API_KEY"}]
        [forms/input {:label "Value"
                      :classes "whitespace-pre overflow-x"
@@ -63,7 +63,7 @@
                      :on-blur #(save :value @value-val)
                      :type "password"
                      :required is-required?
-                     :value @value-val
+                     :defaultValue @value-val
                      :placeholder "* * * *"}]])))
 
 (defn config-inputs-labeled
