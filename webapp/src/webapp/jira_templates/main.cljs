@@ -13,6 +13,7 @@
     (rf/dispatch [:jira-templates->get-all])
     (rf/dispatch [:connections->get-connections])
     (rf/dispatch [:jira-integration->get])
+    (rf/dispatch [:sidebar-desktop->close])
     (fn []
       [:> Box
        [:header {:class "mb-7"}

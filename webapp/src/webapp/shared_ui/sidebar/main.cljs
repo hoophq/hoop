@@ -157,7 +157,7 @@
                    [:span {:class "sr-only"}
                     (:label plugin)]]])]]
 
-             [:ul {:class "space-y-1 mt-6"}
+             [:ul {:class "flex flex-col items-center space-y-1 mt-6"}
               [:li
                [:a {:href (routes/url-for :connections)
                     :class (str (hover-side-menu-link? "/connections" current-route)
@@ -201,7 +201,7 @@
                        :class (str (hover-side-menu-link? "/jira-templates" current-route)
                                    "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
                    [:div
-                    [:figure {:class "flex-shrink-0 w-6 mr-regular"}
+                    [:figure {:class "flex-shrink-0 w-6"}
                      [:img {:src (str config/webapp-url "/icons/icon-jira.svg")}]]]
                    [:span {:class "sr-only"}
                     "Jira templates"]]]])

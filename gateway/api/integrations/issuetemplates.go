@@ -255,7 +255,20 @@ func cmdbTypesWithExternalObjects(ctx *gin.Context, config *models.JiraIntegrati
 			return nil, fmt.Errorf("jira_object_type is missing, record=%v, item=%#v", i, item)
 		}
 		objectType := fmt.Sprintf("%v", item["jira_object_type"])
-		responseItems, err := jira.FetchObjectsByAQL(config, `objectTypeId = %q`, objectType)
+		objectSchemaId := fmt.Sprintf("%v", item["jira_object_schema_id"])
+
+		var query string
+		var queryParams []interface{}
+
+		if objectSchemaId == "" {
+			query = `objectTypeId = %q`
+			queryParams = []interface{}{objectType}
+		} else {
+			query = `objectSchemaId = %q AND objectTypeId = %q`
+			queryParams = []interface{}{objectSchemaId, objectType}
+		}
+
+		responseItems, err := jira.FetchObjectsByAQL(config, query, queryParams...)
 		if err != nil {
 			return nil, fmt.Errorf("record=%v, %v", i, err)
 		}

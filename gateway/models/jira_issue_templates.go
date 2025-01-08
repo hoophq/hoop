@@ -41,11 +41,12 @@ type PromptType struct {
 }
 
 type CmdbType struct {
-	JiraObjectType string `json:"jira_object_type"`
-	JiraField      string `json:"jira_field"`
-	Required       bool   `json:"required"`
-	Description    string `json:"description"`
-	Value          string `json:"value"`
+	JiraObjectType     string `json:"jira_object_type"`
+	JiraObjectSchemaId string `json:"jira_object_schema_id"`
+	JiraField          string `json:"jira_field"`
+	Required           bool   `json:"required"`
+	Description        string `json:"description"`
+	Value              string `json:"value"`
 }
 
 func (t *JiraIssueTemplate) DecodeMappingTypes() (map[string]MappingType, map[string]PromptType, map[string]CmdbType, error) {
@@ -87,11 +88,12 @@ func (t *JiraIssueTemplate) DecodeMappingTypes() (map[string]MappingType, map[st
 	for _, obj := range items {
 		jiraField := fmt.Sprintf("%v", obj["jira_field"])
 		cmdbTypes[jiraField] = CmdbType{
-			JiraObjectType: fmt.Sprintf("%v", obj["jira_object_type"]),
-			JiraField:      jiraField,
-			Required:       fmt.Sprintf("%v", obj["required"]) == "true",
-			Description:    fmt.Sprintf("%v", obj["description"]),
-			Value:          fmt.Sprintf("%v", obj["value"]),
+			JiraObjectType:     fmt.Sprintf("%v", obj["jira_object_type"]),
+			JiraObjectSchemaId: fmt.Sprintf("%v", obj["jira_object_schema_id"]),
+			JiraField:          jiraField,
+			Required:           fmt.Sprintf("%v", obj["required"]) == "true",
+			Description:        fmt.Sprintf("%v", obj["description"]),
+			Value:              fmt.Sprintf("%v", obj["value"]),
 		}
 	}
 	return mappingTypes, promptTypes, cmdbTypes, nil

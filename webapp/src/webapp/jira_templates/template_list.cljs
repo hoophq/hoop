@@ -73,12 +73,13 @@
   (let [connections (rf/subscribe [:connections])]
     (fn []
       [:> Box
-       (for [template templates]
-         ^{:key (:id template)}
-         [template-item
-          (assoc template
-                 :total-items (count templates)
-                 :on-configure on-configure
-                 :connections (get-template-connections
-                               (:results @connections)
-                               (:id template)))])])))
+       (doall
+        (for [template templates]
+          ^{:key (:id template)}
+          [template-item
+           (assoc template
+                  :total-items (count templates)
+                  :on-configure on-configure
+                  :connections (get-template-connections
+                                (:results @connections)
+                                (:id template)))]))])))
