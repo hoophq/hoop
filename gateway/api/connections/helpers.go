@@ -69,10 +69,10 @@ func setConnectionDefaults(req *openapi.Connection) {
 	case pb.ConnectionTypeMongoDB:
 		defaultEnvVars["envvar:OPTIONS"] = base64.StdEncoding.EncodeToString([]byte(`tls=true`))
 		defaultEnvVars["envvar:PORT"] = base64.StdEncoding.EncodeToString([]byte(`27017`))
-		defaultCommand = []string{"mongo", "--quiet", "mongodb://$USER:$PASS@$HOST:$PORT/?$OPTIONS"}
+		defaultCommand = []string{"mongo", "mongodb://$USER:$PASS@$HOST:$PORT/?$OPTIONS", "--quiet"}
 		if connStr, ok := req.Secrets["envvar:CONNECTION_STRING"]; ok && connStr != nil {
 			defaultEnvVars = nil
-			defaultCommand = []string{"mongo", "--quiet", "$CONNECTION_STRING"}
+			defaultCommand = []string{"mongo", "$CONNECTION_STRING", "--quiet"}
 		}
 	}
 
@@ -501,4 +501,38 @@ func validateDatabaseName(dbName string) error {
 	}
 
 	return nil
+}
+
+func cleanMongoOutput(output string) string {
+	// If the string is empty,
+	if len(output) == 0 {
+		return ""
+	}
+
+	output = strings.TrimSpace(output)
+	startJSON := -1
+
+	// Addicional protection after TrimSpace
+	if len(output) == 0 {
+		return ""
+	}
+
+	for i, char := range output {
+		if char == '[' || char == '{' {
+			startJSON = i
+			break
+		}
+	}
+
+	// If don't find the start of JSON, return empty string
+	if startJSON < 0 {
+		return ""
+	}
+
+	// Ensure we don't have a panic with the slice
+	if startJSON >= len(output) {
+		return ""
+	}
+
+	return output[startJSON:]
 }

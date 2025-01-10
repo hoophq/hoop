@@ -256,6 +256,10 @@ ORDER BY
 
 func getMongoDBSchemaQuery(dbName string) string {
 	return fmt.Sprintf(`
+// Ensure verbosity is off
+if (typeof noVerbose === 'function') noVerbose();
+if (typeof config !== 'undefined') config.verbosity = 0;
+
 var result = [];
 var dbName = '%s';
 
