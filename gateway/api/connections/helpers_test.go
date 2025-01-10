@@ -833,3 +833,110 @@ func TestValidateDatabaseName(t *testing.T) {
 		})
 	}
 }
+
+func TestCleanMongoOutput(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "already valid JSON array",
+			input:    `[{"test": "value"}]`,
+			expected: `[{"test": "value"}]`,
+		},
+		{
+			name:     "already valid JSON object",
+			input:    `{"test": "value"}`,
+			expected: `{"test": "value"}`,
+		},
+		{
+			name:     "WriteResult at beginning",
+			input:    `WriteResult[{"test": "value"}]`,
+			expected: `[{"test": "value"}]`,
+		},
+		{
+			name:     "whitespace at beginning",
+			input:    `    [{"test": "value"}]`,
+			expected: `[{"test": "value"}]`,
+		},
+		{
+			name:     "WriteResult with spaces",
+			input:    `   WriteResult   [{"test": "value"}]`,
+			expected: `[{"test": "value"}]`,
+		},
+		{
+			name:     "random text before JSON",
+			input:    `some random text here {"test": "value"}`,
+			expected: `{"test": "value"}`,
+		},
+		{
+			name:     "WriteResult before object",
+			input:    `WriteResult{"test": "value"}`,
+			expected: `{"test": "value"}`,
+		},
+		{
+			name:     "empty string",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "text without JSON",
+			input:    "WriteResult",
+			expected: "",
+		},
+		{
+			name: "multiline JSON with text before",
+			input: `WriteResult
+					[{
+							"test": "value",
+							"other": "value2"
+					}]`,
+			expected: `[{
+							"test": "value",
+							"other": "value2"
+					}]`,
+		},
+		{
+			name:     "only whitespace",
+			input:    "   \t\n   ",
+			expected: "",
+		},
+		{
+			name:     "special characters",
+			input:    "⌘⌥∑œ∑´®†¥¨ˆøπ'",
+			expected: "",
+		},
+		{
+			name:     "very long string without JSON",
+			input:    strings.Repeat("a", 1000000),
+			expected: "",
+		},
+		{
+			name:     "control characters before JSON",
+			input:    string([]byte{0x00, 0x01, 0x02}) + `{"test": "value"}`,
+			expected: `{"test": "value"}`,
+		},
+		{
+			name:     "unicode string",
+			input:    "你好世界[1,2,3]",
+			expected: "[1,2,3]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test that the function doesn't panic
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("function caused panic with input: %q, panic: %v", tt.input, r)
+				}
+			}()
+
+			result := cleanMongoOutput(tt.input)
+			if result != tt.expected {
+				t.Errorf("\ncleanMongoOutput(%q) =\n%v\nwant:\n%v", tt.input, result, tt.expected)
+			}
+		})
+	}
+}

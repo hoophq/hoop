@@ -441,6 +441,9 @@ ORDER BY datname;`
 
 	case pb.ConnectionTypeMongoDB:
 		script = `
+// if (typeof noVerbose === 'function') noVerbose();
+// if (typeof config !== 'undefined') config.verbosity = 0;
+
 var dbs = db.adminCommand('listDatabases');
 var result = [];
 dbs.databases.forEach(function(database) {
@@ -495,7 +498,8 @@ JSON.stringify(result);`
 
 		if currentConnectionType == pb.ConnectionTypeMongoDB {
 			var result []map[string]interface{}
-			if err := json.Unmarshal([]byte(outcome.Output), &result); err != nil {
+			output := cleanMongoOutput(outcome.Output)
+			if err := json.Unmarshal([]byte(output), &result); err != nil {
 				log.Errorf("failed parsing mongo response: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse MongoDB response: %v", err)})
 				return
@@ -631,7 +635,8 @@ func GetDatabaseSchemas(c *gin.Context) {
 		var err error
 
 		if currentConnectionType == pb.ConnectionTypeMongoDB {
-			schema, err = parseMongoDBSchema(outcome.Output)
+			output := cleanMongoOutput(outcome.Output)
+			schema, err = parseMongoDBSchema(output)
 		} else {
 			schema, err = parseSQLSchema(outcome.Output, currentConnectionType)
 		}
