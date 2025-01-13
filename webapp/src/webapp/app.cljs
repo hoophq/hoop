@@ -24,6 +24,7 @@
             [webapp.config :as config]
             [webapp.connections.views.connection-list :as connections]
             [webapp.connections.views.create-update-connection.main :as create-update-connection]
+            [webapp.connections.views.setup.main :as connection-setup]
             [webapp.dashboard.main :as dashboard]
             [webapp.guardrails.main :as guardrails]
             [webapp.guardrails.create-update-form :as guardrail-create-update]
@@ -58,6 +59,7 @@
             [webapp.events.users]
             [webapp.events.guardrails]
             [webapp.events.jira-templates]
+            [webapp.connections.views.setup.events]
             [webapp.organization.users.main :as org-users]
             [webapp.plugins.views.manage-plugin :as manage-plugin]
             [webapp.plugins.views.plugins-configurations :as plugins-configurations]
@@ -165,6 +167,11 @@
 
 (defmethod routes/panels :home-redirect-panel []
   [layout :application-hoop [home/home-panel-hoop]])
+
+(defmethod routes/panels :onboarding-panel []
+  [layout :application-hoop
+   [:div {:class "bg-gray-1 p-radix-7 min-h-full h-max"}
+    [connection-setup/main :create {}]]])
 
 (defmethod routes/panels :upgrade-plan-panel []
   (rf/dispatch [:destroy-page-loader])
