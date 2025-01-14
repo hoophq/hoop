@@ -4,6 +4,7 @@
    ["lucide-react" :refer [Database Network Server]]
    [re-frame.core :as rf]
    [reagent.core :as r]
+   [webapp.connections.views.setup.headers :as headers]
    [webapp.connections.views.setup.state :as state]))
 
 (def connection-type-avatars
@@ -33,10 +34,7 @@
 (defn main []
   (let [selected-type @(rf/subscribe [:connection-setup/connection-type])]
     [:> Box {:class "max-w-2xl mx-auto p-6"}
-     [:> Box {:class "mb-8"}
-      [:> Heading {:as "h1" :align "center" :size "6" :mb "2" :weight "bold" :class "text-[--gray-12]"} "Setup a new connection"]
-      [:> Text {:as "p" :size "3" :align "center" :class "text-[--gray-12]"}
-       "Follow the steps to setup a connection to your resources."]]
+     [headers/setup-header]
 
      [:> Box
       [:> Text {:as "p" :size "2" :mb "5" :class "text-[--gray-11]"}

@@ -1,9 +1,11 @@
 (ns webapp.connections.views.setup.database
-  (:require ["@radix-ui/themes" :refer [Box Flex Grid Heading RadioGroup Text]]
-            ["lucide-react" :refer [Database]]
-            [re-frame.core :as rf]
-            [webapp.components.forms :as forms]
-            [webapp.connections.views.setup.state :as state]))
+  (:require
+   ["@radix-ui/themes" :refer [Box Flex Grid RadioGroup Text]]
+   ["lucide-react" :refer [Database]]
+   [re-frame.core :as rf]
+   [webapp.components.forms :as forms]
+   [webapp.connections.views.setup.headers :as headers]
+   [webapp.connections.views.setup.state :as state]))
 
 (defn database-type-selector []
   [:> Box {:class "space-y-5"}
@@ -80,10 +82,7 @@
 (defn main []
   (let [current-step @(rf/subscribe [:connection-setup/current-step])]
     [:> Box {:class "max-w-2xl mx-auto p-6"}
-     [:> Box {:class "mb-8"}
-      [:> Heading {:size "6" :mb "2"} "Setup database connection"]
-      [:> Text {:size "3" :color "gray"}
-       "Configure access to your database"]]
+     [headers/setup-header]
 
      (case current-step
        :database-type [database-type-selector]
