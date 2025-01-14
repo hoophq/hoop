@@ -41,7 +41,7 @@
                      :checked (:selected cmdb)
                      :on-change #(on-cmdb-select state idx)}]])
 
-         [:> Table.Cell {:p "4"}
+         [:> Table.Cell {:key (str idx "-label-" (:timestamp cmdb)) :p "4"}
           [forms/input
            {:size "2"
             :placeholder "e.g. Employee ID"
@@ -49,7 +49,7 @@
             :not-margin-bottom? true
             :on-change #(on-cmdb-field-change state idx :label (-> % .-target .-value))}]]
 
-         [:> Table.Cell {:p "4"}
+         [:> Table.Cell {:key (str idx "-jira_field-" (:timestamp cmdb)) :p "4"}
           [forms/input
            {:size "2"
             :placeholder "e.g. customfield_0410"
@@ -57,7 +57,7 @@
             :not-margin-bottom? true
             :on-change #(on-cmdb-field-change state idx :jira_field (-> % .-target .-value))}]]
 
-         [:> Table.Cell {:p "4"}
+         [:> Table.Cell {:key (str idx "-value-" (:timestamp cmdb)) :p "4"}
           [forms/input
            {:size "2"
             :placeholder "e.g. value_123"
@@ -65,7 +65,7 @@
             :not-margin-bottom? true
             :on-change #(on-cmdb-field-change state idx :value (-> % .-target .-value))}]]
 
-         [:> Table.Cell {:p "4"}
+         [:> Table.Cell {:key (str idx "-jira_object_schema_id-" (:timestamp cmdb)) :p "4"}
           [forms/input
            {:size "2"
             :placeholder "e.g. 9"
@@ -73,7 +73,7 @@
             :not-margin-bottom? true
             :on-change #(on-cmdb-field-change state idx :jira_object_schema_id (-> % .-target .-value))}]]
 
-         [:> Table.Cell {:p "4"}
+         [:> Table.Cell {:key (str idx "-jira_object_type-" (:timestamp cmdb)) :p "4"}
           [forms/input
            {:size "2"
             :placeholder "e.g. 13"
@@ -81,7 +81,7 @@
             :not-margin-bottom? true
             :on-change #(on-cmdb-field-change state idx :jira_object_type (-> % .-target .-value))}]]
 
-         [:> Table.Cell {:p "4"}
+         [:> Table.Cell {:key (str idx "-description-" (:timestamp cmdb)) :p "4"}
           [forms/input
            {:size "2"
             :placeholder "e.g. customfield_0410"

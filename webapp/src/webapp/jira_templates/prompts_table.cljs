@@ -8,6 +8,10 @@
   [{:value "true" :text "Yes"}
    {:value "false" :text "No"}])
 
+(def field-type-options
+  [{:value "text" :text "Text"}
+   {:value "datetime-local" :text "Date"}])
+
 (defn main [{:keys [state
                     select-state
                     on-prompt-field-change
@@ -24,6 +28,7 @@
         [:> Table.ColumnHeaderCell ""])
       [:> Table.ColumnHeaderCell "Label"]
       [:> Table.ColumnHeaderCell "Jira Field"]
+      [:> Table.ColumnHeaderCell "Type"]
       [:> Table.ColumnHeaderCell "Description (Optional)"]
       [:> Table.ColumnHeaderCell "Required"]]]
 
@@ -38,7 +43,7 @@
                      :checked (:selected prompt)
                      :on-change #(on-prompt-select state idx)}]])
 
-         [:> Table.Cell {:p "4"}
+         [:> Table.Cell {:key (str idx "-label-" (:timestamp prompt)) :p "4"}
           [forms/input
            {:size "2"
             :placeholder "e.g. Employee ID"
@@ -46,7 +51,7 @@
             :not-margin-bottom? true
             :on-change #(on-prompt-field-change state idx :label (-> % .-target .-value))}]]
 
-         [:> Table.Cell {:p "4"}
+         [:> Table.Cell {:key (str idx "-jira-field-" (:timestamp prompt)) :p "4"}
           [forms/input
            {:size "2"
             :placeholder "e.g. customfield_0410"
@@ -54,7 +59,17 @@
             :not-margin-bottom? true
             :on-change #(on-prompt-field-change state idx :jira_field (-> % .-target .-value))}]]
 
-         [:> Table.Cell {:p "4"}
+         [:> Table.Cell {:p "4" :align "center"}
+          [forms/select
+           {:size "2"
+            :variant "ghost"
+            :not-margin-bottom? true
+            :on-change #(on-prompt-field-change state idx :field_type %)
+            :selected (str (:field_type prompt))
+            :full-width? true
+            :options field-type-options}]]
+
+         [:> Table.Cell {:key (str idx "-description-" (:timestamp prompt)) :p "4"}
           [forms/input
            {:size "2"
             :placeholder "e.g. customfield_0410"

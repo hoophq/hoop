@@ -51,11 +51,12 @@
          ;; Prompt Fields
          (when (seq prompts)
            [:> Box {:class "space-y-4"}
-            (for [{:keys [label required jira_field]} prompts]
+            (for [{:keys [label required jira_field field_type]} prompts]
               ^{:key jira_field}
               [forms/input
                {:label label
                 :required required
+                :type field_type
                 :placeholder label
                 :on-change #(swap! form-data assoc-in [:jira_fields jira_field] (.. % -target -value))}])])
 
