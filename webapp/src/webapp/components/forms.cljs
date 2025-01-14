@@ -78,7 +78,8 @@
                     (or type "text"))
             :id id
             :size (or size "3")
-            :class (when dark "dark")
+            :class (str (when dark "dark")
+                        (when (= type "datetime-local") "*:block"))
             :placeholder (or placeholder label)
             :name name
             :pattern pattern
