@@ -1,7 +1,9 @@
 (ns webapp.connections.views.setup.server
-  (:require ["@radix-ui/themes" :refer [Box Button Flex Grid RadioGroup Text]]
-            ["lucide-react" :refer [Server Terminal]]
-            [re-frame.core :as rf]))
+  (:require
+   ["@radix-ui/themes" :refer [Box Button Flex Grid Heading RadioGroup Text]]
+   ["lucide-react" :refer [Server Terminal]]
+   [re-frame.core :as rf]
+   [webapp.connections.views.setup.headers :as headers]))
 
 (def application-types
   [{:id "ruby-on-rails" :title "Ruby on Rails"}
@@ -11,10 +13,7 @@
 
 (defn type-selection-view []
   [:> Box {:class "max-w-2xl mx-auto p-6"}
-   [:> Box {:class "mb-8"}
-    [:> Text {:size "4" :weight "bold"} "Setup server connection"]
-    [:> Text {:size "2" :color "gray"}
-     "Configure access to your server or application"]]
+   [headers/setup-header]
 
    [:> Box {:class "space-y-5"}
     ;; Connection Type Selection
@@ -68,31 +67,31 @@
   (let [;;connection-name @(rf/subscribe [:connection-setup/connection-name])
         app-type @(rf/subscribe [:connection-setup/app-type])]
     [:> Box {:class "max-w-2xl mx-auto p-6"}
-     [:> Box {:class "mb-8"}
-      [:> Text {:size "6" :weight "bold"} "All done, just one more step"]
-      [:> Text {:size "3" :color "gray"}
-       "Follow the instructions to install and run hoop.dev in your application."]]
+     [headers/console-all-done-header]
 
-     [:> Box {:class "space-y-8"}
+     [:> Box {:class "space-y-7"}
       ;; Install CLI
-      [:> Box {:class "space-y-2"}
-       [:> Text {:size "4" :weight "bold"} "Install hoop.dev CLI"]
+      [:> Box
+       [:> Heading {:size "4" :weight "bold" :mb "4"} "Install hoop.dev CLI"]
        [:> Box {:class "bg-gray-900 text-white p-4 rounded-lg font-mono text-sm"}
         "brew tap brew/https://github.com/hoophq/brew"
         [:br]
         "brew install hoop"]]
 
       ;; Setup Token
-      [:> Box {:class "space-y-2"}
-       [:> Text {:size "4" :weight "bold"} "Setup token"]
-       [:> Text {:size "2" :color "gray"} "Export your token to provide a secure connection."]
+      [:> Box
+       [:> Heading {:size "4" :weight "bold"} "Setup token"]
+       [:> Text {:as "p" :size "3" :mb "4" :class "text-[--gray-11]"}
+        "Export your token to provide a secure connection."]
        [:> Box {:class "bg-gray-900 text-white p-4 rounded-lg font-mono text-sm"}
-        "export HOOP_KEY=rtk/f1_defaultkey..."]]
+        "export HOOP_KEY=rtk/f1_defaultkey..."]
+       [:> Text {:size "2" :class "text-[--gray-9]"}
+        "Do not share this token with anyone outside your organization."]]
 
       ;; Run Connection
-      [:> Box {:class "space-y-2"}
-       [:> Text {:size "4" :weight "bold"} "Run your connection"]
-       [:> Text {:size "2" :color "gray"}
+      [:> Box
+       [:> Heading {:size "4" :weight "bold"} "Run your connection"]
+       [:> Text {:as "p" :size "3" :mb "4" :class "text-[--gray-11]"}
         "If you have completed all setup steps, you are ready to run and save your connection."]
        [:> Box {:class "bg-gray-900 text-white p-4 rounded-lg font-mono text-sm"}
         (str "hoop run --name " "aaaa" " --command "
