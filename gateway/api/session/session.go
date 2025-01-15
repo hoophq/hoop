@@ -557,6 +557,6 @@ func DownloadSession(c *gin.Context) {
 	c.Header("Content-Type", "application/octet-stream")
 	c.Header("Accept-Length", fmt.Sprintf("%d", len(output)))
 	wrote, err := c.Writer.Write(output)
-	log.With("sid", sid).Infof("session downloaded, extension=.%v, wrote=%v, success=%v, err=%v",
-		fileExt, wrote, err == nil, err)
+	log.With("sid", sid).Infof("session downloaded, extension=.%v, output-size=%v, wrote=%v, success=%v, err=%v",
+		fileExt, len(output), wrote, err == nil, err)
 }
