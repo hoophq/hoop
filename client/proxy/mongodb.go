@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
@@ -80,8 +81,8 @@ func (s *MongoDBServer) serveConn(sessionID, connectionID string, conn net.Conn)
 		string(pb.SpecClientConnectionID): []byte(connectionID),
 		string(pb.SpecGatewaySessionID):   []byte(sessionID),
 	})
-	if written, err := io.Copy(stream, conn); err != nil {
-		log.Warnf("failed copying buffer, written=%v, err=%v", written, err)
+	if err := copyMongoDBBuffer(stream, conn); err != nil && err != io.EOF {
+		log.Warnf("failed copying buffer, err=%v", err)
 	}
 }
 
@@ -117,4 +118,51 @@ func (s *MongoDBServer) ListenPort() string {
 		return parts[1]
 	}
 	return ""
+}
+
+func copyMongoDBBuffer(dst io.Writer, src io.Reader) (err error) {
+	for {
+		var header [16]byte
+		_, err = io.ReadFull(src, header[:])
+		if err != nil {
+			return err
+		}
+		pktLen := int(binary.LittleEndian.Uint32(header[0:4])) - binary.Size(header)
+		if pktLen >= maxPacketSize {
+			return fmt.Errorf("max packet size reached (max:%v, pkt:%v)", maxPacketSize, pktLen)
+		}
+		frame := make([]byte, pktLen)
+		opCode := binary.LittleEndian.Uint32(header[12:16])
+		log.Debugf("pktlen=%v, opcode=%v, header=% X", pktLen, opCode, header[:])
+		copied := 0
+
+		for i := 0; ; i++ {
+			buf := make([]byte, defaultBufferSize)
+			nr, er := src.Read(buf)
+			if er != nil {
+				return
+			}
+
+			copied += copy(frame[copied:], buf[0:nr])
+			log.Debugf("pktlen=%v, opcode=%v, connread=%v, copied=%v",
+				pktLen, opCode, nr, copied)
+			if pktLen > nr {
+				pktLen -= nr
+				continue
+			}
+			encPkt := encodeMongoDbPacket(header, frame)
+			_, err = dst.Write(encPkt)
+			if err != nil {
+				return
+			}
+			break
+		}
+	}
+}
+
+func encodeMongoDbPacket(header [16]byte, frame []byte) []byte {
+	pktBytes := make([]byte, len(frame)+16)
+	_ = copy(pktBytes[:16], header[:])
+	_ = copy(pktBytes[16:], frame)
+	return pktBytes
 }

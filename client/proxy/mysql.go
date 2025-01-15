@@ -14,11 +14,12 @@ import (
 )
 
 const (
-	defaultMySQLPort  = "3307"
-	defaultBufferSize = 32 * 1024
+	defaultMySQLPort = "3307"
 
-	// it must not exceed 3 bytes which is the max size for a single packet
-	maxPacketSize = 1000 * 1000 * 16 // 16MB
+	// keep it the same value for Linux MTU loopback interfaces
+	defaultBufferSize = 16 * 1024 // 16k
+
+	maxPacketSize = 1024 * 1024 * 16 // 16MB
 )
 
 type MySQLServer struct {

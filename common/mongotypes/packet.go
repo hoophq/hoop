@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/hoophq/hoop/common/log"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/x/bsonx/bsoncore"
+	"go.mongodb.org/mongo-driver/x/mongo/driver/wiremessage"
 )
 
 type PacketHeader struct {
@@ -69,15 +72,60 @@ func Decode(r io.Reader) (*Packet, error) {
 	return &p, nil
 }
 
-func DecodeOpMsgToJSON(pkt *Packet) (data []byte, err error) {
+// DecodeOpMsgToJSON with return json content separated by break line for
+// each document parsed in the packet
+func DecodeOpMsgToJSON(pkt *Packet) ([]byte, error) {
 	if pkt.OpCode != OpMsgType {
-		return
+		return nil, nil
 	}
-	var decDoc bson.D
-	// skip message flags (4) and document kind body (1)
-	err = bson.Unmarshal(pkt.Frame[5:], &decDoc)
-	if err != nil {
-		return nil, fmt.Errorf("failed decoding OP_MSG document: %v", err)
+
+	log.Debugf("decoding op msg to json, reqid=%v, respto=%v, msglength=%v, frame=%v",
+		pkt.RequestID, pkt.ResponseTo, pkt.MessageLength, len(pkt.Frame))
+
+	wm := make([]byte, len(pkt.Frame[4:]))
+	_ = copy(wm, pkt.Frame[4:])
+	var resultDocs []bsoncore.Document
+	for i := 0; ; i++ {
+		var stype wiremessage.SectionType
+		var ok bool
+
+		// stop processing when there's no more data
+		if len(wm) == 0 {
+			break
+		}
+		stype, wm, ok = wiremessage.ReadMsgSectionType(wm)
+		if !ok {
+			return nil, fmt.Errorf("failed decoding OP_MSG: unable to read section type")
+		}
+		switch stype {
+		case wiremessage.DocumentSequence:
+			var docs []bsoncore.Document
+			_, docs, wm, ok = wiremessage.ReadMsgSectionDocumentSequence(wm)
+			if !ok {
+				return nil, fmt.Errorf("failed decoding OP_MSG: wiremessage is too short to unmarshal")
+			}
+			resultDocs = append(resultDocs, docs...)
+		case wiremessage.SingleDocument:
+			var doc bsoncore.Document
+			doc, wm, ok = wiremessage.ReadMsgSectionSingleDocument(wm)
+			if !ok {
+				return nil, fmt.Errorf("failed decoding OP_MSG: wiremessage is too short to unmarshal")
+			}
+			resultDocs = append(resultDocs, doc)
+		default:
+			return nil, fmt.Errorf("failed decoding OP_MSG: found unknown section type (%v)", stype)
+		}
 	}
-	return bson.MarshalExtJSON(decDoc, false, false)
+
+	var result []byte
+	for _, doc := range resultDocs {
+		data, err := bson.MarshalExtJSON(doc, false, false)
+		if err != nil {
+			return nil, fmt.Errorf("failed decoding OP_MSG: unable to re-encode document to json")
+		}
+		result = append(result, data...)
+		result = append(result, '\n')
+	}
+
+	return result, nil
 }
