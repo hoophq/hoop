@@ -128,7 +128,7 @@ func copyMongoDBBuffer(dst io.Writer, src io.Reader) (err error) {
 			return err
 		}
 		pktLen := int(binary.LittleEndian.Uint32(header[0:4])) - binary.Size(header)
-		if pktLen >= maxPacketSize {
+		if pktLen > maxPacketSize {
 			return fmt.Errorf("max packet size reached (max:%v, pkt:%v)", maxPacketSize, pktLen)
 		}
 		frame := make([]byte, pktLen)
