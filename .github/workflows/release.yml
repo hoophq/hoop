@@ -60,7 +60,7 @@ jobs:
           GIT_TAG: ${{ env.GIT_TAG }}
         run: GOOS=darwin GOARCH=amd64 make build
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts
           path: dist/
@@ -96,7 +96,7 @@ jobs:
           GIT_TAG: ${{ env.GIT_TAG }}
         run: GOOS=darwin GOARCH=arm64 make build
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts
           path: dist/
@@ -132,7 +132,7 @@ jobs:
           GIT_TAG: ${{ env.GIT_TAG }}
         run: GOOS=windows GOARCH=amd64 make build
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts
           path: dist/
@@ -168,7 +168,7 @@ jobs:
           GIT_TAG: ${{ env.GIT_TAG }}
         run: GOOS=windows GOARCH=arm64 make build
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts
           path: dist/
@@ -208,7 +208,7 @@ jobs:
           INTERCOM_HMAC_KEY: ${{ secrets.INTERCOM_HMAC_KEY }}
         run: GOOS=linux GOARCH=amd64 make build
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts
           path: dist/
@@ -248,7 +248,7 @@ jobs:
           INTERCOM_HMAC_KEY: ${{ secrets.INTERCOM_HMAC_KEY }}
         run: GOOS=linux GOARCH=arm64 make build
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts
           path: dist/
@@ -278,7 +278,7 @@ jobs:
           cache-dependency-path: webapp/package-lock.json
       - name: Build
         run: make build-webapp
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts
           path: dist/
@@ -310,7 +310,7 @@ jobs:
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
           name: "dist-artifacts"
           path: dist/
@@ -352,7 +352,7 @@ jobs:
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
           name: "dist-artifacts"
           path: dist/
@@ -393,7 +393,7 @@ jobs:
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
           name: "dist-artifacts"
           path: dist/
@@ -445,7 +445,7 @@ jobs:
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
           name: "dist-artifacts"
           path: dist/
@@ -520,7 +520,7 @@ jobs:
       - name: Checkout Hoop
         uses: actions/checkout@v3
 
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         id: download
         with:
           name: "dist-artifacts"

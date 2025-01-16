@@ -18,10 +18,11 @@ import (
 var mem = memory.New()
 
 type Context struct {
-	SID            string
-	OrgID          string
-	ConnectionName string
-	Verb           string
+	SID                                 string
+	OrgID                               string
+	ConnectionName                      string
+	ConnectionJiraTransitionNameOnClose string
+	Verb                                string
 }
 
 func OnReceive(ctx Context, pkt *proto.Packet) error {
@@ -66,7 +67,7 @@ func OnReceive(ctx Context, pkt *proto.Packet) error {
 		if jiraIssueKey == "" {
 			break
 		}
-		err = jira.TransitionIssue(jiraConf, jiraIssueKey, "done")
+		err = jira.TransitionIssue(jiraConf, jiraIssueKey, ctx.ConnectionJiraTransitionNameOnClose)
 		if err != nil {
 			log.With("sid", ctx.SID).Error(err)
 		}

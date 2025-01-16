@@ -12,18 +12,19 @@ import (
 const tableJiraIssueTemplates = "private.jira_issue_templates"
 
 type JiraIssueTemplate struct {
-	OrgID             string         `gorm:"column:org_id"`
-	ID                string         `gorm:"column:id"`
-	JiraIntegrationID string         `gorm:"column:jira_integration_id"`
-	Name              string         `gorm:"column:name"`
-	Description       string         `gorm:"column:description"`
-	ProjectKey        string         `gorm:"column:project_key"`
-	RequestTypeID     string         `gorm:"column:request_type_id"`
-	MappingTypes      map[string]any `gorm:"column:mapping_types;serializer:json"`
-	PromptTypes       map[string]any `gorm:"column:prompt_types;serializer:json"`
-	CmdbTypes         map[string]any `gorm:"column:cmdb_types;serializer:json"`
-	CreatedAt         time.Time      `gorm:"column:created_at"`
-	UpdatedAt         time.Time      `gorm:"column:updated_at"`
+	OrgID                      string         `gorm:"column:org_id"`
+	ID                         string         `gorm:"column:id"`
+	JiraIntegrationID          string         `gorm:"column:jira_integration_id"`
+	Name                       string         `gorm:"column:name"`
+	Description                string         `gorm:"column:description"`
+	ProjectKey                 string         `gorm:"column:project_key"`
+	RequestTypeID              string         `gorm:"column:request_type_id"`
+	IssueTransitionNameOnClose string         `gorm:"column:issue_transition_name_on_close"`
+	MappingTypes               map[string]any `gorm:"column:mapping_types;serializer:json"`
+	PromptTypes                map[string]any `gorm:"column:prompt_types;serializer:json"`
+	CmdbTypes                  map[string]any `gorm:"column:cmdb_types;serializer:json"`
+	CreatedAt                  time.Time      `gorm:"column:created_at"`
+	UpdatedAt                  time.Time      `gorm:"column:updated_at"`
 }
 
 type MappingType struct {
@@ -140,13 +141,14 @@ func UpdateJiraIssueTemplates(issue *JiraIssueTemplate) error {
 		Model(issue).
 		Clauses(clause.Returning{}).
 		Updates(JiraIssueTemplate{
-			Description:   issue.Description,
-			ProjectKey:    issue.ProjectKey,
-			RequestTypeID: issue.RequestTypeID,
-			MappingTypes:  issue.MappingTypes,
-			PromptTypes:   issue.PromptTypes,
-			CmdbTypes:     issue.CmdbTypes,
-			UpdatedAt:     issue.UpdatedAt,
+			Description:                issue.Description,
+			ProjectKey:                 issue.ProjectKey,
+			RequestTypeID:              issue.RequestTypeID,
+			IssueTransitionNameOnClose: issue.IssueTransitionNameOnClose,
+			MappingTypes:               issue.MappingTypes,
+			PromptTypes:                issue.PromptTypes,
+			CmdbTypes:                  issue.CmdbTypes,
+			UpdatedAt:                  issue.UpdatedAt,
 		}).
 		Where("org_id = ? AND id = ?", issue.OrgID, issue.ID)
 	if res.Error == nil && res.RowsAffected == 0 {
