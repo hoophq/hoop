@@ -23,6 +23,14 @@
           {}
           cmdb-items))
 
+(defn- process-datetime-field [prompts field-key field-value]
+  (let [prompt (first (filter #(= (:jira_field %) field-key) prompts))]
+    (if (and (= (:field_type prompt) "datetime-local")
+             (not (empty? field-value)))
+      (-> (js/Date. field-value)
+          .toISOString)
+      field-value)))
+
 (defn main [{:keys [prompts cmdb-items on-submit]}]
   (let [form-data (r/atom (init-form-data cmdb-items))]
     (fn []
@@ -40,9 +48,9 @@
                                             (reduce-kv
                                              (fn [m k v]
                                                (assoc m k
-                                                      (if (map? v)
-                                                        (get v "value")
-                                                        v)))
+                                                      (cond
+                                                        (map? v) (get v "value")
+                                                        :else (process-datetime-field prompts k v))))
                                              {}
                                              fields)))]
                               (on-submit processed-data)))}

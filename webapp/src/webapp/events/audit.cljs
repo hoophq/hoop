@@ -1,7 +1,8 @@
 (ns webapp.events.audit
   (:require
+   [clojure.string :as string]
    [re-frame.core :as rf]
-   [clojure.string :as string]))
+   [webapp.jira-templates.loading-jira-templates :as loading-jira-templates]))
 
 (rf/reg-event-fx
  :audit->get-sessions
@@ -182,34 +183,113 @@
 
 (rf/reg-event-fx
  :audit->re-run-session
- (fn
-   [{:keys [db]} [_ session]]
+ (fn [{:keys [db]} [_ session]]
+   ;; First fetch the connection details
+   {:db (assoc-in db [:audit->rerun :session] session)
+    :fx [[:dispatch [:fetch {:method "GET"
+                             :uri (str "/connections/" (:connection session))
+                             :on-success #(rf/dispatch [:audit->handle-rerun-with-connection % session])
+                             :on-failure (fn [error]
+                                           (rf/dispatch [:show-snackbar
+                                                         {:text "Failed to fetch connection details"
+                                                          :level :error}]))}]]]}))
+
+(rf/reg-event-fx
+ :audit->handle-rerun-with-connection
+ (fn [{:keys [db]} [_ connection session]]
    (let [payload {:script (-> session :script :data)
                   :labels {:re-run-from (:id session)}
                   :connection (:connection session)}
-         success (fn [res]
-                   (js/setTimeout
-                    (fn []
-                      (rf/dispatch
-                       [:show-snackbar {:level :success
-                                        :text "The session was re-ran"}])
-                      (rf/dispatch [:audit->get-sessions])
-                      (rf/dispatch [:audit->get-session-by-id {:id (:session_id res) :verb "exec"}]))
-                    800))
-        ;; The failure function can call the success due to an API behaviour
-        ;; when a session is badly executed, it doesn't mean it wasn't executed
-        ;; so the API may respond a bad request because of the execution error
-        ;; in the agent, but a session was generated with a log.
-         failure (fn [error res]
-                   (let [session-id (:session_id res)]
-                     (if (and session-id (> (count session-id) 0))
-                       (success res)
-                       (rf/dispatch [:show-snackbar {:text error :level :error}]))))]
-     {:fx [[:dispatch [:fetch {:method "POST"
-                               :uri "/sessions"
-                               :on-success success
-                               :on-failure failure
-                               :body payload}]]]})))
+
+         jira-integration-enabled? (= "enabled" (-> db :jira-integration->details :data :status))
+         needs-template? (boolean (and connection
+                                       (not (string/blank? (:jira_issue_template_id connection)))
+                                       jira-integration-enabled?))
+
+         handle-submit (fn [form-data]
+                         (let [exec-data (cond-> payload
+                                           (:jira_fields form-data)
+                                           (assoc :jira_fields (:jira_fields form-data))
+
+                                           (:cmdb_fields form-data)
+                                           (assoc :cmdb_fields (:cmdb_fields form-data)))]
+                           (rf/dispatch [:fetch
+                                         {:method "POST"
+                                          :uri "/sessions"
+                                          :body exec-data
+                                          :on-success (fn [res]
+                                                        (js/setTimeout
+                                                         (fn []
+                                                           (rf/dispatch
+                                                            [:show-snackbar
+                                                             {:level :success
+                                                              :text "The session was re-ran"}])
+                                                           (rf/dispatch [:audit->get-sessions])
+                                                           (rf/dispatch
+                                                            [:audit->get-session-by-id
+                                                             {:id (:session_id res)
+                                                              :verb "exec"}]))
+                                                         800))
+                                          :on-failure (fn [error res]
+                                                        (let [session-id (:session_id res)]
+                                                          (if (and session-id
+                                                                   (> (count session-id) 0))
+                                                            (js/setTimeout
+                                                             (fn []
+                                                               (rf/dispatch
+                                                                [:show-snackbar
+                                                                 {:level :success
+                                                                  :text "The session was re-ran"}])
+                                                               (rf/dispatch [:audit->get-sessions])
+                                                               (rf/dispatch
+                                                                [:audit->get-session-by-id
+                                                                 {:id session-id
+                                                                  :verb "exec"}]))
+                                                             800)
+                                                            (rf/dispatch
+                                                             [:show-snackbar
+                                                              {:text error
+                                                               :level :error}]))))}])
+                           (rf/dispatch [:modal->close])))]
+
+     (if needs-template?
+       ;; Handle JIRA template flow
+       {:fx [[:dispatch [:modal->open
+                         {:maxWidth "540px"
+                          :custom-on-click-out (fn [event]
+                                                 (.preventDefault event))
+                          :content [loading-jira-templates/main]}]]
+             [:dispatch [:jira-templates->get-submit-template-re-run
+                         (:jira_issue_template_id connection)]]]
+        :db (assoc db :on-template-verified handle-submit)}
+
+       ;; Original flow without JIRA
+       {:fx [[:dispatch [:fetch
+                         {:method "POST"
+                          :uri "/sessions"
+                          :body payload
+                          :on-success (fn [res]
+                                        (js/setTimeout
+                                         (fn []
+                                           (rf/dispatch
+                                            [:show-snackbar
+                                             {:level :success
+                                              :text "The session was re-ran"}])
+                                           (rf/dispatch [:audit->get-sessions])
+                                           (rf/dispatch
+                                            [:audit->get-session-by-id
+                                             {:id (:session_id res)
+                                              :verb "exec"}]))
+                                         800))
+                          :on-failure (fn [error res]
+                                        (let [session-id (:session_id res)]
+                                          (if (and session-id
+                                                   (> (count session-id) 0))
+                                            (handle-submit nil)
+                                            (rf/dispatch
+                                             [:show-snackbar
+                                              {:text error
+                                               :level :error}]))))}]]]}))))
 
 (rf/reg-event-fx
  :audit->add-review
@@ -223,7 +303,7 @@
                    (fn []
                      (rf/dispatch [:show-snackbar
                                    {:level :success
-                                    :text (str "Your review was added")}])
+                                    :text "Your review was added"}])
                      (js/setTimeout
                       (fn []
                         (rf/dispatch [:audit->get-sessions])

@@ -11,7 +11,7 @@
    ["@codemirror/state" :as cm-state]
    ["@codemirror/view" :as cm-view]
    ["@heroicons/react/20/solid" :as hero-solid-icon]
-   ["@radix-ui/themes" :refer [Box Button Heading Spinner Text]]
+   ["@radix-ui/themes" :refer [Button Text]]
    ["@uiw/codemirror-theme-dracula" :refer [dracula]]
    ["@uiw/codemirror-theme-github" :refer [githubDark]]
    ["@uiw/codemirror-theme-nord" :refer [nord]]
@@ -25,6 +25,7 @@
    [webapp.components.forms :as forms]
    [webapp.config :as config]
    [webapp.formatters :as formatters]
+   [webapp.jira-templates.loading-jira-templates :as loading-jira-templates]
    [webapp.jira-templates.prompt-form :as prompt-form]
    [webapp.subs :as subs]
    [webapp.webclient.aside.main :as aside]
@@ -129,14 +130,7 @@
               (rf/dispatch [:modal->open
                             {:maxWidth "540px"
                              :custom-on-click-out (fn [event] (.preventDefault event))
-                             :content [:> Box
-                                       [:> Heading {:size "6" :mb "2" :class "text-[--gray-12]"}
-                                        "Verifying Jira Templates"]
-                                       [:> Text {:as "p" :size "3" :mb "7" :class "text-[--gray-11]"}
-                                        (str "This connection has additional verification for Jira Templates "
-                                             "and might take a few seconds before proceeding. Please wait until "
-                                             "the verification is processed without closing this tab.")]
-                                       [:> Spinner {:size "3" :class "justify-self-end"}]]}])
+                             :content [loading-jira-templates/main]}])
               (rf/dispatch [:jira-templates->get-submit-template
                             (:jira_issue_template_id connection)])
 

@@ -1,6 +1,7 @@
 (ns webapp.events.jira-templates
   (:require
-   [re-frame.core :as rf]))
+   [re-frame.core :as rf]
+   [webapp.jira-templates.prompt-form :as prompt-form]))
 
 ;; CMDB
 
@@ -71,6 +72,22 @@
                                               (rf/dispatch [:jira-templates->get-cmdb-values id cmdb-item])))
                               :on-failure #(rf/dispatch [:jira-templates->set-submit-template nil])}]}]]}))
 
+(rf/reg-event-fx
+ :jira-templates->get-submit-template-re-run
+ (fn [{:keys [db]} [_ id]]
+   {:db (assoc db :jira-templates->submit-template {:status :loading :data {}})
+    :fx [[:dispatch [:jira-templates->clear-submit-template]]
+         [:dispatch-later
+          {:ms 1000
+           :dispatch [:fetch {:method "GET"
+                              :uri (str "/integrations/jira/issuetemplates/" id)
+                              :on-success (fn [template]
+                                            (rf/dispatch [:jira-templates->set-submit-template-re-run template])
+                                         ;; Dispara requests para cada item CMDB
+                                            (doseq [cmdb-item (get-in template [:cmdb_types :items])]
+                                              (rf/dispatch [:jira-templates->get-cmdb-values id cmdb-item])))
+                              :on-failure #(rf/dispatch [:jira-templates->set-submit-template-re-run nil])}]}]]}))
+
 (rf/reg-event-db
  :jira-templates->set-all
  (fn [db [_ templates]]
@@ -88,6 +105,34 @@
    (if (empty? (get-in template [:cmdb_types :items]))
      (assoc db :jira-templates->submit-template {:status :ready :data template})
      (assoc db :jira-templates->submit-template {:status :loading :data template}))))
+
+(rf/reg-event-fx
+ :jira-templates->set-submit-template-re-run
+ (fn [{:keys [db]} [_ template]]
+   (let [on-template-verified (:on-template-verified db)
+         has-prompts? (seq (get-in template [:prompt_types :items]))
+         has-cmdb? (when-let [cmdb-items (get-in template [:cmdb_types :items])]
+                     (some (fn [{:keys [value jira_values]}]
+                             (when (and value jira_values)
+                               (not-any? #(= value (:name %)) jira_values)))
+                           cmdb-items))
+         needs-form? (or has-prompts? has-cmdb?)]
+     (if (empty? (get-in template [:cmdb_types :items]))
+       (do
+         (when on-template-verified
+           (if needs-form?
+             (rf/dispatch [:modal->open
+                           {:content [prompt-form/main
+                                      {:prompts (get-in template [:prompt_types :items])
+                                       :cmdb-items (get-in template [:cmdb_types :items])
+                                       :on-submit on-template-verified}]}])
+             (on-template-verified nil)))
+         {:db (-> db
+                  (dissoc :on-template-verified)
+                  (assoc :jira-templates->submit-template
+                         {:status :ready :data template}))})
+       {:db (assoc db :jira-templates->submit-template
+                   {:status :loading :data template})}))))
 
 (rf/reg-event-db
  :jira-templates->clear-active-template

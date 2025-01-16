@@ -81,7 +81,9 @@
                      :params (js/JSON.parse (-> session :labels :runbookParameters))
                      :connection-name (:connection session)}])
       (rf/dispatch [:audit->clear-session-details-state {:status :loading}]))
-    (rf/dispatch [:audit->re-run-session session])))
+    (do
+      (rf/dispatch [:jira-integration->get])
+      (rf/dispatch [:audit->re-run-session session]))))
 
 (defmulti ^:private review-status-icon identity)
 (defmethod ^:private review-status-icon "PENDING" [] "waiting-circle-yellow")
