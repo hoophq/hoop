@@ -12,13 +12,13 @@
                     on-project-key-change
                     on-request-type-id-change]}]
   [:> Flex {:direction "column" :gap "5"}
-   [:> Box {:grid-column "span 2 / span 2"}
+   [:> Box
     [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
      "Integration details"]
     [:> Text {:size "3" :class "text-[--gray-11]"}
      "Used to identify your Jira configuration in your connections."]]
 
-   [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
+   [:> Box {:class "space-y-radix-7"}
     [forms/input
      {:label "Name"
       :placeholder "e.g. squad-postgresql"

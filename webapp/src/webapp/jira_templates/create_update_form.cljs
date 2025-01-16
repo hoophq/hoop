@@ -1,6 +1,6 @@
 (ns webapp.jira-templates.create-update-form
   (:require
-   ["@radix-ui/themes" :refer [Box Flex Grid Heading Text]]
+   ["@radix-ui/themes" :refer [Box Flex Heading Text]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.loaders :as loaders]
@@ -9,7 +9,8 @@
    [webapp.jira-templates.form-header :as form-header]
    [webapp.jira-templates.helpers :as helpers]
    [webapp.jira-templates.mapping-table :as mapping-table]
-   [webapp.jira-templates.prompts-table :as prompts-table]))
+   [webapp.jira-templates.prompts-table :as prompts-table]
+   [webapp.jira-templates.workflow-info :as workflow-info]))
 
 (defn jira-form [form-type template scroll-pos]
   (let [state (helpers/create-form-state template)
@@ -42,15 +43,19 @@
            :on-project-key-change #(reset! (:project_key state) %)
            :on-request-type-id-change #(reset! (:request_type_id state) %)}]
 
+         [workflow-info/main
+          {:status (:issue_transition_name_on_close state)
+           :on-status-change #(reset! (:issue_transition_name_on_close state) %)}]
+
          [:> Flex {:direction "column" :gap "5"}
-          [:> Box {:grid-column "span 2 / span 2"}
+          [:> Box
            [:> Flex {:align "center" :gap "2"}
             [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
              "Configure automated mapping"]]
            [:> Text {:size "3" :class "text-[--gray-11]"}
             "Append additional information to your Jira cards when executing a command in your connections."]]
 
-          [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
+          [:> Box {:class "space-y-radix-7"}
            [mapping-table/main
             (merge
              {:state (:mapping state)
@@ -65,14 +70,14 @@
 
 
          [:> Flex {:direction "column" :gap "5"}
-          [:> Box {:grid-column "span 2 / span 2"}
+          [:> Box
            [:> Flex {:align "center" :gap "2"}
             [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
              "Configure manual prompt"]]
            [:> Text {:size "3" :class "text-[--gray-11]"}
             "Request additional information from executed commands."]]
 
-          [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
+          [:> Box {:class "space-y-radix-7"}
            [prompts-table/main
             (merge
              {:state (:prompts state)
@@ -86,13 +91,13 @@
                            :on-prompt-add]))]]]
 
          [:> Flex {:direction "column" :gap "5"}
-          [:> Box {:grid-column "span 2 / span 2"}
+          [:> Box
            [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
             "Set a configuration management database (CMDB)"]
            [:> Text {:size "3" :class "text-[--gray-11]"}
             "Create an additional layer of relation between CMDBs and hoop services."]]
 
-          [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
+          [:> Box {:class "space-y-radix-7"}
            [cmdb-table/main
             (merge
              {:state (:cmdb state)
