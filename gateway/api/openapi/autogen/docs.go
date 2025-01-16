@@ -1197,6 +1197,61 @@ const docTemplate = `{
                 }
             }
         },
+        "/integrations/jira/issuetemplates/{id}/objects": {
+            "get": {
+                "description": "Get values for a specific Jira object type in an Issue Template",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Jira"
+                ],
+                "summary": "Get Object Type Values for Issue Template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The id of the template",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "The Jira object type to fetch values for",
+                        "name": "object_type",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/login": {
             "get": {
                 "description": "Returns the login url to perform the signin on the identity provider",
@@ -3929,6 +3984,11 @@ const docTemplate = `{
                     "description": "The unique identifier of the integration",
                     "type": "string"
                 },
+                "issue_transition_name_on_close": {
+                    "description": "The name of the issue transition to change the state of the issue\nwhen the session closes",
+                    "type": "string",
+                    "example": "done"
+                },
                 "mapping_types": {
                     "type": "object",
                     "additionalProperties": {}
@@ -3971,6 +4031,11 @@ const docTemplate = `{
                 "description": {
                     "description": "The description of the template",
                     "type": "string"
+                },
+                "issue_transition_name_on_close": {
+                    "description": "The name of the issue transition to change the state of the issue\nwhen the session closes",
+                    "type": "string",
+                    "default": "done"
                 },
                 "mapping_types": {
                     "description": "The automated fields that will be sent when creating the issue.\nThere're two types\n- preset: obtain the value from a list of available fields that could be propagated\nThe list of available preset values are:\n\n\t\t- session.id\n\t\t- session.user_email\n\t\t- session.user_id\n\t\t- session.user_name\n\t\t- session.type\n\t\t- session.connection\n\t\t- session.status\n\t\t- session.script\n\t\t- session.start_date\n\n- custom: use a custom static value\n\n\t\t{\n\t\t  \"items\": [\n\t\t    {\n\t\t      \"description\": \"Hoop Connection Name\",\n\t\t      \"jira_field\": \"customfield_10050\",\n\t\t      \"type\": \"preset\",\n\t\t      \"value\": \"session.connection\"\n\t\t    }\n\t\t  ]\n\t\t}",

@@ -181,10 +181,11 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 
 func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.Packet, pctx plugintypes.Context) error {
 	extContext := transportext.Context{
-		OrgID:          pctx.OrgID,
-		SID:            pctx.SID,
-		ConnectionName: pctx.ConnectionName,
-		Verb:           pctx.ClientVerb,
+		OrgID:                               pctx.OrgID,
+		SID:                                 pctx.SID,
+		ConnectionName:                      pctx.ConnectionName,
+		ConnectionJiraTransitionNameOnClose: pctx.ConnectionJiraTransitionNameOnClose,
+		Verb:                                pctx.ClientVerb,
 	}
 
 	if err := transportext.OnReceive(extContext, pkt); err != nil {

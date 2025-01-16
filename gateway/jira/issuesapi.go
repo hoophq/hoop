@@ -45,7 +45,7 @@ func TransitionIssue(config *models.JiraIntegration, issueKey, name string) erro
 		}
 	}
 	if issueTransitionID == "" {
-		return fmt.Errorf("unable to find a issue transition matching %v, issue=%v, transition-names=%v",
+		return fmt.Errorf("unable to find a issue transition matching %q, issue=%v, transition-names=%v",
 			name, issueKey, availableNames)
 	}
 	issueTransition := map[string]any{

@@ -839,6 +839,9 @@ type JiraIssueTemplate struct {
 	Description string `json:"description"`
 	// The project key which is the shortand version of the project's name
 	ProjectKey string `json:"project_key"`
+	// The name of the issue transition to change the state of the issue
+	// when the session closes
+	IssueTransitionNameOnClose string `json:"issue_transition_name_on_close" example:"done"`
 	// The request type id that will be associated to the issue
 	RequestTypeID string         `json:"request_type_id"`
 	MappingTypes  map[string]any `json:"mapping_types"`
@@ -859,6 +862,9 @@ type JiraIssueTemplateRequest struct {
 	ProjectKey string `json:"project_key" binding:"required"`
 	// The request type that will be associated to the issue
 	RequestTypeID string `json:"request_type_id" binding:"required"`
+	// The name of the issue transition to change the state of the issue
+	// when the session closes
+	IssueTransitionNameOnClose string `json:"issue_transition_name_on_close" default:"done"`
 	// The automated fields that will be sent when creating the issue.
 	// There're two types
 	// - preset: obtain the value from a list of available fields that could be propagated

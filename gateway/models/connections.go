@@ -47,11 +47,12 @@ type Connection struct {
 	JiraIssueTemplateID sql.NullString    `gorm:"column:jira_issue_template_id"`
 
 	// Read Only fields
-	RedactEnabled bool           `gorm:"column:redact_enabled;->"`
-	Reviewers     pq.StringArray `gorm:"column:reviewers;type:text[];->"`
-	RedactTypes   pq.StringArray `gorm:"column:redact_types;type:text[];->"`
-	AgentMode     string         `gorm:"column:agent_mode;->"`
-	AgentName     string         `gorm:"column:agent_name;->"`
+	RedactEnabled             bool           `gorm:"column:redact_enabled;->"`
+	Reviewers                 pq.StringArray `gorm:"column:reviewers;type:text[];->"`
+	RedactTypes               pq.StringArray `gorm:"column:redact_types;type:text[];->"`
+	AgentMode                 string         `gorm:"column:agent_mode;->"`
+	AgentName                 string         `gorm:"column:agent_name;->"`
+	JiraTransitionNameOnClose sql.NullString `gorm:"column:issue_transition_name_on_close;->"`
 }
 
 func (c Connection) AsSecrets() map[string]any {
@@ -190,7 +191,7 @@ func GetConnectionByNameOrID(orgID, nameOrID string) (*Connection, error) {
 		c.id, c.org_id, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
 		c.agent_id, a.name AS agent_name, a.mode AS agent_mode,
-		c.jira_issue_template_id,
+		c.jira_issue_template_id, it.issue_transition_name_on_close,
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
 		( SELECT envs FROM public.env_vars WHERE id = c.id ) AS envs,
 		COALESCE(dlpc.config, ARRAY[]::TEXT[]) AS redact_types,
@@ -206,6 +207,7 @@ func GetConnectionByNameOrID(orgID, nameOrID string) (*Connection, error) {
 	LEFT JOIN private.plugins dlp ON dlp.name = 'dlp' AND dlp.org_id = @org_id
 	LEFT JOIN private.plugin_connections dlpc ON dlpc.connection_id = c.id AND dlpc.plugin_id = dlp.id
 	LEFT JOIN private.agents a ON a.id = c.agent_id AND a.org_id = @org_id
+	LEFT JOIN private.jira_issue_templates it ON it.id = c.jira_issue_template_id AND it.org_id = @org_id
 	WHERE c.org_id = @org_id AND (c.name = @nameOrID OR c.id::text = @nameOrID)`,
 		map[string]any{
 			"org_id":   orgID,

@@ -77,10 +77,11 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 			continue
 		}
 		extContext := transportext.Context{
-			OrgID:          pctx.OrgID,
-			SID:            pctx.SID,
-			ConnectionName: proxyStream.PluginContext().ConnectionName,
-			Verb:           proxyStream.PluginContext().ClientVerb,
+			OrgID:                               pctx.OrgID,
+			SID:                                 pctx.SID,
+			ConnectionName:                      proxyStream.PluginContext().ConnectionName,
+			ConnectionJiraTransitionNameOnClose: proxyStream.PluginContext().ConnectionJiraTransitionNameOnClose,
+			Verb:                                proxyStream.PluginContext().ClientVerb,
 		}
 
 		if err := transportext.OnReceive(extContext, pkt); err != nil {
