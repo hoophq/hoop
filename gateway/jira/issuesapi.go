@@ -31,6 +31,7 @@ func TransitionIssue(config *models.JiraIntegration, issueKey, name string) erro
 	if config == nil {
 		return nil
 	}
+	name = strings.ToLower(name)
 	issueTransitions, err := listIssueTransitions(config, issueKey)
 	if err != nil {
 		return err
@@ -38,14 +39,16 @@ func TransitionIssue(config *models.JiraIntegration, issueKey, name string) erro
 	var availableNames []string
 	var issueTransitionID string
 	for _, item := range issueTransitions.Items {
-		availableNames = append(availableNames, strings.ToLower(item.Name))
-		if strings.EqualFold(name, item.Name) && item.IsAvailable {
+		availableNames = append(availableNames,
+			fmt.Sprintf("name=%v, isAvailable=%v, to=%s",
+				strings.ToLower(item.Name), item.IsAvailable, item.To.String()))
+		if strings.EqualFold(name, item.To.Name) && item.IsAvailable {
 			issueTransitionID = item.ID
 			break
 		}
 	}
 	if issueTransitionID == "" {
-		return fmt.Errorf("unable to find a issue transition matching %q, issue=%v, transition-names=%v",
+		return fmt.Errorf("unable to find a issue transition matching %q, issue=%v, transition-names=%q",
 			name, issueKey, availableNames)
 	}
 	issueTransition := map[string]any{
