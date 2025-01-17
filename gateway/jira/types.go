@@ -24,7 +24,7 @@ type IssueTransitionItemTo struct {
 }
 
 func (s IssueTransitionItemTo) String() string {
-	return fmt.Sprintf("self:%s,id:%s,name:%q,description:%s", s.Self, s.ID, s.Name, s.Description)
+	return fmt.Sprintf("self:%s,id:%s,name:%s,description:%s", s.Self, s.ID, s.Name, s.Description)
 }
 
 type IssueTransition struct {
