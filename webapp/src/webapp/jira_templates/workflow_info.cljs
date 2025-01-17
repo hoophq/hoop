@@ -20,4 +20,4 @@
       :not-margin-bottom? true
       :on-change #(on-status-change (-> % .-target .-value))}]
     [:> Text {:as "p" :mt "1" :size "2" :class "text-[--gray-10]"}
-     "This field is optional and uses Done status as default."]]])
+     "This field is case insensitive and uses 'done' status as default."]]])

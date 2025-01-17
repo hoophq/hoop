@@ -69,10 +69,10 @@ func OnReceive(ctx Context, pkt *proto.Packet) error {
 		}
 		err = jira.TransitionIssue(jiraConf, jiraIssueKey, ctx.ConnectionJiraTransitionNameOnClose)
 		if err != nil {
-			log.With("sid", ctx.SID).Error(err)
+			log.With("sid", ctx.SID).Warn(err)
 		}
-		log.With("sid", ctx.SID).Debugf("jira transitioned status to done, key=%v, success=%v",
-			jiraIssueKey, err == nil)
+		log.With("sid", ctx.SID).Debugf("jira transitioned status to %s, key=%v, success=%v",
+			ctx.ConnectionJiraTransitionNameOnClose, jiraIssueKey, err == nil)
 	}
 	return nil
 }

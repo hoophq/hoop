@@ -3,15 +3,28 @@ package jira
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"go/types"
 	"slices"
 	"time"
 )
 
 type IssueTransitionItem struct {
+	ID          string                `json:"id"`
+	Name        string                `json:"name"`
+	IsAvailable bool                  `json:"isAvailable"`
+	To          IssueTransitionItemTo `json:"to"`
+}
+
+type IssueTransitionItemTo struct {
+	Self        string `json:"self"`
 	ID          string `json:"id"`
 	Name        string `json:"name"`
-	IsAvailable bool   `json:"isAvailable"`
+	Description string `json:"description"`
+}
+
+func (s IssueTransitionItemTo) String() string {
+	return fmt.Sprintf("self=%s,id=%s,name=%s,description=%s", s.Self, s.ID, s.Name, s.Description)
 }
 
 type IssueTransition struct {
