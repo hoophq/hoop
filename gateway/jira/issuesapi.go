@@ -40,7 +40,7 @@ func TransitionIssue(config *models.JiraIntegration, issueKey, name string) erro
 	var issueTransitionID string
 	for _, item := range issueTransitions.Items {
 		availableNames = append(availableNames,
-			fmt.Sprintf("name=%v, isAvailable=%v, to=%s",
+			fmt.Sprintf("name=%v, isAvailable=%v, %s",
 				strings.ToLower(item.Name), item.IsAvailable, item.To.String()))
 		if strings.EqualFold(name, item.To.Name) && item.IsAvailable {
 			issueTransitionID = item.ID
