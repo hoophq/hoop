@@ -1,14 +1,9 @@
 name: Hoop Release
 
-# on:
-#   push:
-#     tags:
-#       - "*.*.*"
-
 on:
   push:
-    branches:
-      - 'fix/ci-artifacts'
+    tags:
+      - "*.*.*"
 
 jobs:
   test:
@@ -502,8 +497,6 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
-      - name: Set Git Tag2
-        run: echo "GIT_TAG=1.31.27-fixci.1" >> $GITHUB_ENV
       - name: Create SHA manifest and push
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
@@ -543,9 +536,6 @@ jobs:
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
 
-      - name: Set Git Tag2
-        run: echo "GIT_TAG=1.31.27-fixci.1" >> $GITHUB_ENV
-
       - name: Build Gateway Bundle (amd64)
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
@@ -572,13 +562,13 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: make release
 
-      # - name: Publish Brew Recipe
-      #   run: gh workflow run release.yml -f version=$GIT_TAG --repo hoophq/brew
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-      #     GIT_TAG: ${{ env.GIT_TAG }}
+      - name: Publish Brew Recipe
+        run: gh workflow run release.yml -f version=$GIT_TAG --repo hoophq/brew
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GIT_TAG: ${{ env.GIT_TAG }}
 
-      # - name: Publish Sentry Sourcemaps
-      #   run: make publish-sentry-sourcemaps
-      #   env:
-      #     SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      - name: Publish Sentry Sourcemaps
+        run: make publish-sentry-sourcemaps
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
