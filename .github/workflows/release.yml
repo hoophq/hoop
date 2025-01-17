@@ -25,7 +25,6 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: ">=1.22.4"
-          cache-dependency-path: "**/go.sum"
       - name: Test
         run: make test
 
@@ -62,7 +61,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: dist-artifacts
+          name: dist-artifacts-${{ github.job }}
           path: dist/
 
   darwin-arm64:
@@ -98,7 +97,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: dist-artifacts
+          name: dist-artifacts-${{ github.job }}
           path: dist/
 
   windows-amd64:
@@ -134,7 +133,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: dist-artifacts
+          name: dist-artifacts-${{ github.job }}
           path: dist/
 
   windows-arm64:
@@ -170,7 +169,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: dist-artifacts
+          name: dist-artifacts-${{ github.job }}
           path: dist/
 
   linux-amd64:
@@ -210,7 +209,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: dist-artifacts
+          name: dist-artifacts-${{ github.job }}
           path: dist/
 
   linux-arm64:
@@ -250,7 +249,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: dist-artifacts
+          name: dist-artifacts-${{ github.job }}
           path: dist/
 
   build-webapp:
@@ -280,7 +279,7 @@ jobs:
         run: make build-webapp
       - uses: actions/upload-artifact@v4
         with:
-          name: dist-artifacts
+          name: dist-artifacts-${{ github.job }}
           path: dist/
 
   docker-publish:
@@ -312,7 +311,8 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
       - uses: actions/download-artifact@v4
         with:
-          name: "dist-artifacts"
+          pattern: dist-artifacts-*
+          merge-multiple: true
           path: dist/
       - name: Extract Webapp
         run: make extract-webapp
@@ -354,7 +354,8 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
       - uses: actions/download-artifact@v4
         with:
-          name: "dist-artifacts"
+          pattern: dist-artifacts-*
+          merge-multiple: true
           path: dist/
       - name: Build and Push
         uses: docker/build-push-action@v4
@@ -395,7 +396,8 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
       - uses: actions/download-artifact@v4
         with:
-          name: "dist-artifacts"
+          pattern: dist-artifacts-*
+          merge-multiple: true
           path: dist/
       - name: Extract Webapp
         run: make extract-webapp
@@ -447,7 +449,8 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
       - uses: actions/download-artifact@v4
         with:
-          name: "dist-artifacts"
+          pattern: dist-artifacts-*
+          merge-multiple: true
           path: dist/
       - name: Extract Webapp
         run: make extract-webapp
@@ -523,7 +526,8 @@ jobs:
       - uses: actions/download-artifact@v4
         id: download
         with:
-          name: "dist-artifacts"
+          pattern: dist-artifacts-*
+          merge-multiple: true
           path: dist/
 
       - uses: matbour/setup-sentry-cli@v2
