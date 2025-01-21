@@ -425,7 +425,7 @@
                   (if (= (:verb session) "exec")
                     [results-container/main
                      connection-name
-                     {:results (first (:event_stream session))
+                     {:results (utilities/decode-b64 (or (first (:event_stream session)) ""))
                       :results-status (:status @session-details)
                       :fixed-height? true
                       :results-id (:id session)}]

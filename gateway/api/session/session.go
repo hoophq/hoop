@@ -418,16 +418,22 @@ func Get(c *gin.Context) {
 		return
 	}
 
-	if c.Query("event_stream") == "utf8" {
+	if option := c.Query("event_stream"); option != "" {
 		output, err := parseBlobStream(session, sessionParseOption{events: []string{"o", "e"}})
 		if err != nil {
 			log.With("sid", sessionID).Error(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed parsing blob stream"})
 			return
 		}
-		session.BlobStream = json.RawMessage(fmt.Sprintf(`[%q]`, string(output)))
-		// override to give the parsed size
-		session.BlobStreamSize = int64(utf8.RuneCountInString(string(output)))
+		switch option {
+		case "utf8":
+			session.BlobStream = json.RawMessage(fmt.Sprintf(`[%q]`, string(output)))
+			session.BlobStreamSize = int64(int64(utf8.RuneCountInString(string(output))))
+		case "base64":
+			encOutput := base64.StdEncoding.EncodeToString(output)
+			session.BlobStream = json.RawMessage(fmt.Sprintf(`[%q]`, encOutput))
+			session.BlobStreamSize = int64(len(encOutput))
+		}
 	}
 
 	obj := toOpenApiSession(session)

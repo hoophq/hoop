@@ -39,7 +39,7 @@
                            [:dispatch-later
                             {:ms 1000
                              :dispatch [:fetch {:method "GET"
-                                                :uri (str "/sessions/" session-id "?event_stream=utf8")
+                                                :uri (str "/sessions/" session-id "?event_stream=base64")
                                                 :on-success on-success
                                                 :on-failure on-failure}]}])
                          session-id-list)]
@@ -95,7 +95,7 @@
    (let [state {:status :loading
                 :session session
                 :session-logs {:status :loading}}
-         event-stream (if (= "exec" (:verb session)) "?event_stream=utf8" "")]
+         event-stream (if (= "exec" (:verb session)) "?event_stream=base64" "")]
      {:db (assoc db :audit->session-details state)
       :fx [[:dispatch [:fetch
                        {:method "GET"
@@ -109,7 +109,7 @@
  (fn
    [{:keys [db]} [_ session]]
    (let [event-size (:event_size session)
-         event-stream (if (= "exec" (:verb session)) "event_stream=utf8" "")]
+         event-stream (if (= "exec" (:verb session)) "event_stream=base64" "")]
      (if (and event-size (> event-size size-threshold))
        {:db (assoc db
                    :audit->session-details

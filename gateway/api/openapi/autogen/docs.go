@@ -2619,7 +2619,8 @@ const docTemplate = `{
                     },
                     {
                         "enum": [
-                            "utf8"
+                            "utf8",
+                            "base64"
                         ],
                         "type": "string",
                         "description": "This option will parse the session output (o) and error (e) events as an utf-8 content in the session payload",
