@@ -4,12 +4,8 @@
             [webapp.audit.views.empty-event-stream :as empty-event-stream]
             [webapp.components.icon :as icon]
             [webapp.components.searchbox :as searchbox]
-            [webapp.formatters :as formatters]))
-
-(defn- decode-b64 [data]
-  (try
-    (string/replace (js/decodeURIComponent (js/escape (js/atob data))) #"∞" "\t")
-    (catch js/Error _ (str ""))))
+            [webapp.formatters :as formatters]
+            [webapp.utilities :as utilities]))
 
 (defn- event-item []
   (let [is-open? (r/atom false)]
@@ -51,7 +47,7 @@
                                                   parsed-new-date (new js/Date sum)]
                                               (formatters/time-parsed->full-date parsed-new-date))))
                             :event-type event-type
-                            :event-data (decode-b64 event-data)})
+                            :event-data (utilities/decode-b64 event-data)})
         searched-events-atom (r/atom event-stream-map)
         search-focused? (r/atom false)]
     (fn []
