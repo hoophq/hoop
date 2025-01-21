@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
@@ -425,9 +424,10 @@ func Get(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed parsing blob stream"})
 			return
 		}
-		session.BlobStream = json.RawMessage(fmt.Sprintf(`[%q]`, string(output)))
+		encOutput := base64.StdEncoding.EncodeToString(output)
+		session.BlobStream = json.RawMessage(fmt.Sprintf(`[%q]`, encOutput))
 		// override to give the parsed size
-		session.BlobStreamSize = int64(utf8.RuneCountInString(string(output)))
+		session.BlobStreamSize = int64(len(encOutput))
 	}
 
 	obj := toOpenApiSession(session)
