@@ -370,7 +370,7 @@ type SessionGetByIDParams struct {
 	// Construct the file content adding the event time as prefix when parsing each event
 	EventTime string `json:"event-time" enums:"0,1" example:"1" default:"0"`
 	// This option will parse the session output (o) and error (e) events as an utf-8 content in the session payload
-	EventStream string `json:"event_stream" enums:"utf8" default:""`
+	EventStream string `json:"event_stream" enums:"utf8,base64" default:""`
 	// Expand the given attributes
 	Expand string `json:"expand" enums:"event_stream" example:"event_stream" default:""`
 }
