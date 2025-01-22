@@ -83,11 +83,11 @@ func (p *indexPlugin) OnReceive(c plugintypes.Context, pkt *pb.Packet) (*plugint
 	switch pb.PacketType(pkt.GetType()) {
 	case pbagent.PGConnectionWrite:
 		isSimpleQuery, queryBytes, err := pgtypes.SimpleQueryContent(pkt.Payload)
-		if !isSimpleQuery {
-			break
-		}
 		if err != nil {
 			return nil, fmt.Errorf("session=%v - failed obtaining simple query data, err=%v", c.SID, err)
+		}
+		if !isSimpleQuery {
+			break
 		}
 		return nil, p.writeOnReceive(c.SID, eventlogv0.InputType, queryBytes)
 	case pbagent.MSSQLConnectionWrite:

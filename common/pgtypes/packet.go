@@ -96,21 +96,26 @@ func SimpleQueryContent(payload []byte) (bool, []byte, error) {
 	if err != nil {
 		return false, nil, fmt.Errorf("failed reading first byte: %v", err)
 	}
-	if PacketType(typ) != ClientSimpleQuery {
+	switch PacketType(typ) {
+	case ClientSimpleQuery:
+		break
+	case ClientParse:
+		return false, nil, fmt.Errorf("extended query protocol is not supported")
+	default:
 		return false, nil, nil
 	}
 
 	header := [4]byte{}
 	if _, err := io.ReadFull(r, header[:]); err != nil {
-		return true, nil, fmt.Errorf("failed reading header, err=%v", err)
+		return false, nil, fmt.Errorf("failed reading packet header, err=%v", err)
 	}
 	pktLen := binary.BigEndian.Uint32(header[:]) - 4 // don't include header size (4)
 	if uint32(len(payload[5:])) != pktLen {
-		return true, nil, fmt.Errorf("unexpected packet payload, received %v/%v", len(payload[5:]), pktLen)
+		return false, nil, fmt.Errorf("unexpected packet payload, received %v/%v", len(payload[5:]), pktLen)
 	}
 	queryFrame := make([]byte, pktLen)
 	if _, err := io.ReadFull(r, queryFrame); err != nil {
-		return true, nil, fmt.Errorf("failed reading query, err=%v", err)
+		return false, nil, fmt.Errorf("failed reading simple query, err=%v", err)
 	}
 	return true, queryFrame, nil
 }
