@@ -51,7 +51,7 @@
                     :type "button"
                     :on-click (fn [] false)}]])
 
-(defn button-group-ready [exec-list-cold]
+(defn button-group-ready [exec-list-cold reset-metadata]
   [:div {:class "mt-6 flex items-center justify-end gap-small"}
    [button/secondary {:text "Close"
                       :type "button"
@@ -64,7 +64,8 @@
                     :type "button"
                     :on-click (fn []
                                 (rf/dispatch [:editor-plugin->multiple-connections-exec-script
-                                              (map #(assoc % :status :running) exec-list-cold)]))}]])
+                                              (map #(assoc % :status :running) exec-list-cold)])
+                                (reset-metadata))}]])
 
 (defn button-group-completed [exec-list]
   [:div {:class "mt-6 flex items-center justify-end gap-small"}
@@ -81,10 +82,11 @@
                      :type "button"
                      :on-click (fn [] false)}]]])
 
-(defn main [_]
+(defn main [_ reset-metadata]
   (let [exec-list (rf/subscribe [:editor-plugin->connections-exec-list])]
     (rf/dispatch [:editor-plugin->clear-connection-script])
     (fn [exec-list-cold]
+      (println exec-list-cold)
       (let [current-exec-list (if (= (:status @exec-list) :ready)
                                 exec-list-cold
                                 (:data @exec-list))]
@@ -130,6 +132,6 @@
                    :error [error-bar]
                    :waiting-review [waiting-review-bar])]]))]
            (case (:status @exec-list)
-             :ready [button-group-ready exec-list-cold]
+             :ready [button-group-ready exec-list-cold reset-metadata]
              :running [button-group-running exec-list-cold]
              :completed [button-group-completed (:data @exec-list)])]]]))))

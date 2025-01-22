@@ -82,7 +82,7 @@
                           cmdb-items))]
     (or has-prompts? has-cmdb?)))
 
-(defn- submit-task [e script selected-connections atom-exec-list-open? metadata script-response]
+(defn- submit-task [e script selected-connections atom-exec-list-open? metadata reset-metadata script-response]
   (let [connection (first selected-connections)
         needs-template? (boolean (and connection
                                       (not (cs/blank? (:jira_issue_template_id connection)))))
@@ -114,7 +114,8 @@
                     exec-data-with-fields (cond-> exec-data
                                             (:jira_fields form-data) (assoc :jira_fields (:jira_fields form-data))
                                             (:cmdb_fields form-data) (assoc :cmdb_fields (:cmdb_fields form-data)))]
-                (rf/dispatch [:editor-plugin->exec-script exec-data-with-fields])))
+                (rf/dispatch [:editor-plugin->exec-script exec-data-with-fields])
+                (reset-metadata)))
             (check-template-and-show-form []
               (let [template @(rf/subscribe [:jira-templates->submit-template])]
                 (if (or (nil? (:data template))
@@ -168,7 +169,8 @@
             (rf/dispatch [:editor-plugin->exec-script
                           {:script final-script
                            :connection-name (:name connection)
-                           :metadata (metadata->json-stringify metadata)}])))
+                           :metadata (metadata->json-stringify metadata)}])
+            (reset-metadata)))
 
         :else
         (rf/dispatch [:show-snackbar
@@ -271,6 +273,10 @@
             run-connections-list-rest (filterv #(and (not (:selected %))
                                                      (not= (:name %) connection-name))
                                                @filtered-run-connections-list)
+            reset-metadata (fn []
+                             (reset! metadata [])
+                             (reset! metadata-key "")
+                             (reset! metadata-value ""))
             keymap [{:key "Mod-Enter"
                      :run (fn [_]
                             (submit-task
@@ -279,11 +285,8 @@
                              run-connections-list-selected
                              multiple-connections-exec-list-component/atom-exec-list-open?
                              (conj @metadata {:key @metadata-key :value @metadata-value})
-                             script-response)
-
-                            (reset! metadata [])
-                            (reset! metadata-key "")
-                            (reset! metadata-value ""))
+                             reset-metadata
+                             script-response))
                      :preventDefault true}
                     {:key "Mod-Shift-Enter"
                      :run (fn [^cm-state/StateCommand config]
@@ -296,11 +299,8 @@
                                run-connections-list-selected
                                multiple-connections-exec-list-component/atom-exec-list-open?
                                (conj @metadata {:key @metadata-key :value @metadata-value})
-                               script-response)
-
-                              (reset! metadata [])
-                              (reset! metadata-key "")
-                              (reset! metadata-value "")))
+                               reset-metadata
+                               script-response)))
                      :preventDefault true}
                     {:key "Alt-ArrowLeft"
                      :mac "Ctrl-ArrowLeft"
@@ -398,11 +398,8 @@
                                        run-connections-list-selected
                                        multiple-connections-exec-list-component/atom-exec-list-open?
                                        (conj @metadata {:key @metadata-key :value @metadata-value})
-                                       script-response)
-
-                                      (reset! metadata [])
-                                      (reset! metadata-key "")
-                                      (reset! metadata-value ""))}
+                                       reset-metadata
+                                       script-response))}
                [:div {:class "flex items-center gap-small"}
                 [:> hero-solid-icon/PlayIcon {:class "h-3 w-3 text-inherit"
                                               :aria-hidden "true"}]
@@ -478,14 +475,17 @@
                                     :options languages-options}]]]]
 
            (when @multiple-connections-exec-list-component/atom-exec-list-open?
-             [multiple-connections-exec-list-component/main (map #(into {} {:connection-name (:name %)
-                                                                            :script @script
-                                                                            :metadata (metadata->json-stringify @metadata)
-                                                                            :type (:type %)
-                                                                            :subtype (:subtype %)
-                                                                            :session-id nil
-                                                                            :status :ready})
-                                                                 run-connections-list-selected)])])))))
+             [multiple-connections-exec-list-component/main
+              (map #(into {} {:connection-name (:name %)
+                              :script @script
+                              :metadata (metadata->json-stringify
+                                         (conj @metadata {:key @metadata-key :value @metadata-value}))
+                              :type (:type %)
+                              :subtype (:subtype %)
+                              :session-id nil
+                              :status :ready})
+                   run-connections-list-selected)
+              reset-metadata])])))))
 
 (defn main []
   (let [script-response (rf/subscribe [:editor-plugin->script])]
