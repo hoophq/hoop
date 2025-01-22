@@ -1,115 +1,145 @@
+;; server.cljs
 (ns webapp.connections.views.setup.server
   (:require
-   ["@radix-ui/themes" :refer [Box Button Flex Grid Heading RadioGroup Text]]
-   ["lucide-react" :refer [Server Terminal]]
+   ["@radix-ui/themes" :refer [Avatar Box Button Card Flex Grid Heading RadioGroup Text]]
+   ["lucide-react" :refer [Blocks SquareTerminal]]
    [re-frame.core :as rf]
-   [webapp.connections.views.setup.headers :as headers]))
+   [reagent.core :as r]
+   [webapp.components.forms :as forms]
+   [webapp.connections.views.setup.headers :as headers]
+   [webapp.connections.views.setup.state :refer [application-types operation-systems]]))
 
-(def application-types
-  [{:id "ruby-on-rails" :title "Ruby on Rails"}
-   {:id "python" :title "Python"}
-   {:id "nodejs" :title "Node.js"}
-   {:id "clojure" :title "Clojure"}])
+(def connections-subtypes-cards
+  {"ssh" {:icon (r/as-element [:> SquareTerminal {:size 18}])
+          :title "Linux VM or Container"
+          :subtitle "Secure shell protocol (SSH) for remote access."}
+   "console" {:icon (r/as-element [:> Blocks {:size 18}])
+              :title "Console"
+              :subtitle "For Ruby on Rails, Python, Node JS and more."}})
 
-(defn type-selection-view []
-  [:> Box {:class "max-w-2xl mx-auto p-6"}
-   [headers/setup-header]
+(defn environment-variables-section []
+  (let [env-vars (rf/subscribe [:connection-setup/environment-variables])
+        current-key (r/atom "")
+        current-value (r/atom "")]
+    (fn []
+    [:> Box {:class "space-y-4"}
+     [:> Heading {:size "3"} "Environment variables"]
+     [:> Text {:size "2" :color "gray"}
+      "Add variable values to use in your connection."]
 
-   [:> Box {:class "space-y-5"}
-    ;; Connection Type Selection
-    [:> Box
-     [:> Text {:size "4" :weight "bold" :mb "2"} "Connection type"]
-     [:> RadioGroup.Root {:name "server-type"
-                          :value @(rf/subscribe [:connection-setup/connection-subtype])
-                          :on-value-change #(rf/dispatch [:connection-setup/select-subtype %])}
-      [:> Flex {:direction "column" :gap "3"}
-       [:> RadioGroup.Item {:value "linux-vm" :class "p-4"}
-        [:> Flex {:gap "3" :align "center"}
-         [:> Server {:size 16}]
-         [:> Box
-          [:> Text {:size "3" :weight "bold"} "Linux VM or Container"]
-          [:> Text {:size "2" :color "gray"} "Secure shell protocol (SSH) for remote access."]]]]
+     ;; Lista de variáveis existentes
+     (for [{:keys [key value]} @env-vars]
+       ^{:key key}
+       [:> Flex {:gap "2" :my "2"}
+        [:> Text {:size "2"} key ": " value]])
 
-       [:> RadioGroup.Item {:value "console" :class "p-4"}
-        [:> Flex {:gap "3" :align "center"}
-         [:> Terminal {:size 16}]
-         [:> Box
-          [:> Text {:size "3" :weight "bold"} "Console"]
-          [:> Text {:size "2" :color "gray"} "For Ruby on Rails, Python, Node JS and more."]]]]]]]
+     ;; Campos para nova variável
+     [:> Grid {:columns "2" :gap "2"}
+      [forms/input
+       {:label "Key"
+        :value @current-key
+        :on-change #(reset! current-key (-> % .-target .-value))}]
+      [forms/input
+       {:label "Value"
+        :value @current-value
+        :type "password"
+        :on-change #(reset! current-value (-> % .-target .-value))}]]
 
-    ;; Application Type (quando console selecionado)
-    (when (= @(rf/subscribe [:connection-setup/connection-subtype]) "console")
-      [:> Box
-       [:> Text {:size "4" :weight "bold" :mb "2"} "Application type"]
-       [:> Text {:size "2" :color "gray" :mb "4"}
-        "Select stack type for your application connection."]
-       [:> RadioGroup.Root {:name "application-type"
-                            :value @(rf/subscribe [:connection-setup/app-type])
-                            :on-value-change #(rf/dispatch [:connection-setup/select-app-type %])}
-        [:> Grid {:columns "2" :gap "3"}
-         (for [{:keys [id title]} application-types]
-           ^{:key id}
-           [:> RadioGroup.Item {:value id :class "p-4"}
-            title])]]])
+     [:> Button
+      {:size "2"
+       :variant "soft"
+       :on-click #(when (and @current-key @current-value)
+                    (rf/dispatch [:connection-setup/add-environment-variable
+                                  @current-key @current-value])
+                    (reset! current-key "")
+                    (reset! current-value ""))}
+      "Add"]])))
 
-    ;; Operating System Selection (quando app-type selecionado)
-    (when @(rf/subscribe [:connection-setup/app-type])
-      [:> Box
-       [:> Text {:size "4" :weight "bold" :mb "2"} "Operating system"]
-       [:> RadioGroup.Root {:name "os-type"
-                            :value @(rf/subscribe [:connection-setup/os-type])
-                            :on-value-change #(rf/dispatch [:connection-setup/select-os-type %])}
-        [:> Grid {:columns "2" :gap "3"}
-         [:> RadioGroup.Item {:value "macos" :class "p-4"} "MacOS"]
-         [:> RadioGroup.Item {:value "linux" :class "p-4"} "Linux"]]]])]])
+(defn configuration-files-section []
+  (let [current-file (r/atom {:name "" :content ""})]
+    (fn []
+    [:> Box {:class "space-y-4"}
+     [:> Heading {:size "3"} "Configuration files"]
 
-(defn installation-view []
-  (let [;;connection-name @(rf/subscribe [:connection-setup/connection-name])
-        app-type @(rf/subscribe [:connection-setup/app-type])]
-    [:> Box {:class "max-w-2xl mx-auto p-6"}
-     [headers/console-all-done-header]
+     [forms/input
+      {:label "Name"
+       :placeholder "e.g. kube_config"
+       :value (:name @current-file)
+       :on-change #(swap! current-file assoc :name (-> % .-target .-value))}]
 
-     [:> Box {:class "space-y-7"}
-      ;; Install CLI
-      [:> Box
-       [:> Heading {:size "4" :weight "bold" :mb "4"} "Install hoop.dev CLI"]
-       [:> Box {:class "bg-gray-900 text-white p-4 rounded-lg font-mono text-sm"}
-        "brew tap brew/https://github.com/hoophq/brew"
-        [:br]
-        "brew install hoop"]]
+     [forms/textarea
+      {:label "Content"
+       :placeholder "Paste your file content here"
+       :value (:content @current-file)
+       :on-change #(swap! current-file assoc :content (-> % .-target .-value))}]
 
-      ;; Setup Token
-      [:> Box
-       [:> Heading {:size "4" :weight "bold"} "Setup token"]
-       [:> Text {:as "p" :size "3" :mb "4" :class "text-[--gray-11]"}
-        "Export your token to provide a secure connection."]
-       [:> Box {:class "bg-gray-900 text-white p-4 rounded-lg font-mono text-sm"}
-        "export HOOP_KEY=rtk/f1_defaultkey..."]
-       [:> Text {:size "2" :class "text-[--gray-9]"}
-        "Do not share this token with anyone outside your organization."]]
-
-      ;; Run Connection
-      [:> Box
-       [:> Heading {:size "4" :weight "bold"} "Run your connection"]
-       [:> Text {:as "p" :size "3" :mb "4" :class "text-[--gray-11]"}
-        "If you have completed all setup steps, you are ready to run and save your connection."]
-       [:> Box {:class "bg-gray-900 text-white p-4 rounded-lg font-mono text-sm"}
-        (str "hoop run --name " "aaaa" " --command "
-             (case app-type
-               "ruby-on-rails" "'rails console'"
-               "python" "python3"
-               "nodejs" "node"
-               "clojure" "clj"
-               ""))]]]
-
-     [:> Flex {:justify "end" :mt "6"}
-      [:> Button {:size "3"}
-       "Done"]]]))
+     [:> Button
+      {:size "2"
+       :variant "soft"
+       :on-click #(when (and (:name @current-file) (:content @current-file))
+                    (rf/dispatch [:connection-setup/add-configuration-file @current-file])
+                    (reset! current-file {:name "" :content ""}))}
+      "Add"]])))
 
 (defn main []
-  (let [current-step @(rf/subscribe [:connection-setup/current-step])]
-    (if (and (= @(rf/subscribe [:connection-setup/connection-subtype]) "console")
-             @(rf/subscribe [:connection-setup/app-type])
-             @(rf/subscribe [:connection-setup/os-type]))
-      [installation-view]
-      [type-selection-view])))
+  (let [connection-subtype @(rf/subscribe [:connection-setup/connection-subtype])
+        app-type @(rf/subscribe [:connection-setup/app-type])
+        os-type @(rf/subscribe [:connection-setup/os-type])]
+    [:> Box {:class "max-w-2xl mx-auto p-6"}
+     [headers/setup-header]
+     [:> Box {:class "space-y-8"}
+      [:> Box {:class "space-y-4"}
+       [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+        "Connection type"]
+       (for [[subtype {:keys [icon title subtitle]}] connections-subtypes-cards]
+         (let [is-selected (= subtype connection-subtype)]
+           ^{:key subtype}
+           [:> Card {:size "1"
+                     :variant "surface"
+                     :class (str "w-full cursor-pointer " (when is-selected "before:bg-primary-12"))
+                     :on-click #(rf/dispatch [:connection-setup/select-subtype subtype])}
+            [:> Flex {:align "center" :gap "3"}
+             [:> Avatar {:size "4"
+                         :class (when is-selected "dark")
+                         :variant "soft"
+                         :color "gray"
+                         :fallback icon}]
+             [:> Flex {:direction "column" :class (str "" (when is-selected "text-gray-4"))}
+              [:> Text {:size "3" :weight "medium" :color "gray-12"} title]
+              [:> Text {:size "2" :color "gray-11"} subtitle]]]]))]
+
+     ;; Conteúdo específico baseado na seleção
+      (case connection-subtype
+        "ssh" [:<>
+               [environment-variables-section]
+               [configuration-files-section]]
+
+        "console" [:<>
+                   [:> Box
+                    [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+                     "Application type"]
+                    [:> Text {:as "p" :size "3" :class "text-[--gray-11]" :mb "5"}
+                     "Select stack type for your application connection."]
+
+                    [:> RadioGroup.Root
+                     {:value app-type
+                      :on-value-change #(rf/dispatch [:connection-setup/select-app-type %])}
+                     [:> Flex {:direction "column" :gap "4"}
+                      (for [{:keys [id title]} application-types]
+                        ^{:key id}
+                        [:> RadioGroup.Item {:value id}
+                         title])]]]
+
+                   (when app-type
+                     [:> Box
+                      [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]" :mb "5"}
+                       "Operating system"]
+
+                      [:> RadioGroup.Root
+                       {:value os-type
+                        :on-value-change #(rf/dispatch [:connection-setup/select-os-type %])}
+                       [:> Flex {:direction "column" :gap "4"}
+                        (for [{:keys [id title]} operation-systems]
+                          ^{:key id}
+                          [:> RadioGroup.Item {:value id}
+                           title])]]])])]]))
