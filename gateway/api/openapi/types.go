@@ -451,6 +451,11 @@ type Session struct {
 	EndSession *time.Time `json:"end_date" example:"2024-07-25T15:56:35.361101Z"`
 }
 
+type SessionUpdateMetadataRequest struct {
+	// The metadata field
+	Metadata map[string]any `json:"metadata" example:"reason:fix-issue"`
+}
+
 type SessionReportParams struct {
 	// Group by this field
 	GroupBy string `json:"group_by" enums:"connection,connection_type,id,user_email" default:"connection" example:"connection_type"`

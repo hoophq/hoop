@@ -566,3 +566,36 @@ func DownloadSession(c *gin.Context) {
 	log.With("sid", sid).Infof("session downloaded, extension=.%v, output-size=%v, wrote=%v, success=%v, err=%v",
 		fileExt, len(output), wrote, err == nil, err)
 }
+
+// PatchMetadata
+//
+//	@Summary	Update Session Metadata
+//	@Tags		Core
+//	@Accept		json
+//	@Produce	json
+//	@Param		request	body	openapi.SessionUpdateMetadataRequest	true	"The request body resource"
+//	@Success	204
+//	@Failure	400,404,500	{object}	openapi.HTTPError
+//	@Router		/sessions/{session_id}/metadata [patch]
+func PatchMetadata(c *gin.Context) {
+	ctx, sessionID := storagev2.ParseContext(c), c.Param("session_id")
+	apiroutes.SetSidSpanAttr(c, sessionID)
+	var req openapi.SessionUpdateMetadataRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	err := models.UpdateSessionMetadata(ctx.OrgID, ctx.UserEmail, sessionID, req.Metadata)
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+		return
+	case nil:
+	default:
+		msgErr := fmt.Sprintf("failed to update session metadata, reason=%v", err)
+		log.Error(msgErr)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": msgErr})
+		return
+	}
+	c.Writer.WriteHeader(http.StatusNoContent)
+}
