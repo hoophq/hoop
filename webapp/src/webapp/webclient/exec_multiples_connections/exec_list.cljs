@@ -68,6 +68,7 @@
                                 (reset-metadata))}]])
 
 (defn button-group-completed [exec-list]
+  (rf/dispatch [:editor-plugin->multiple-connections-update-metadata exec-list])
   [:div {:class "mt-6 flex items-center justify-end gap-small"}
    [button/secondary {:text "Close"
                       :type "button"
