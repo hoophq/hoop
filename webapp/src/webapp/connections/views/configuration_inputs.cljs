@@ -1,7 +1,8 @@
 (ns webapp.connections.views.configuration-inputs
   (:require [clojure.string :as cs]
             [reagent.core :as r]
-            [webapp.components.forms :as forms]))
+            [webapp.components.forms :as forms]
+            [webapp.connections.helpers :as helpers]))
 
 
 (defn- config->inputs-labeled
@@ -32,7 +33,7 @@
                      :id (str "file-name" @key-val)
                      :classes "whitespace-pre overflow-x"
                      :placeholder "kubeconfig"
-                     :on-change #(reset! key-val (-> % .-target .-value))
+                     :on-change #(helpers/parse->posix-format % key-val)
                      :on-blur #(save :key @key-val)
                      :value @key-val}]
        [forms/textarea {:label "Content"
@@ -51,7 +52,7 @@
       [:<>
        [forms/input {:label "Key"
                      :classes "whitespace-pre overflow-x"
-                     :on-change #(reset! key-val (-> % .-target .-value))
+                     :on-change #(helpers/parse->posix-format % key-val)
                      :on-blur #(save :key @key-val)
                      :disabled is-disabled?
                      :required is-required?

@@ -95,7 +95,7 @@
             [:<>
              [forms/input {:label "Key"
                            :full-width? true
-                           :on-change #(reset! config-key (-> % .-target .-value))
+                           :on-change #(helpers/parse->posix-format % config-key)
                            :classes "whitespace-pre overflow-x"
                            :placeholder "API_KEY"
                            :value @config-key}]
@@ -125,7 +125,7 @@
             [forms/input {:label "Name"
                           :classes "whitespace-pre overflow-x"
                           :placeholder "kubeconfig"
-                          :on-change #(reset! config-file-name (-> % .-target .-value))
+                          :on-change #(helpers/parse->posix-format % config-file-name)
                           :value @config-file-name}]
             [forms/textarea {:label "Content"
                              :placeholder "Paste your file content here"
