@@ -66,6 +66,7 @@
                 :required required
                 :type field_type
                 :placeholder label
+                :value (get-in @form-data [:jira_fields jira_field])
                 :on-change #(swap! form-data assoc-in [:jira_fields jira_field] (.. % -target -value))}])])
 
          ;; CMDB Fields - Apenas mostrar campos que precisam de seleção

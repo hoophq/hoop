@@ -33,7 +33,7 @@
           "Slack channels"]
          [:footer {:class "text-xs text-gray-600 pb-1"}
           "Provide slack channels to receive connection reviews."]]
-        [forms/input {:defaultValue @slack-channels-value
+        [forms/input {:value @slack-channels-value
                       :id "slack-channels"
                       :name "slack-channels"
                       :required true
@@ -76,13 +76,13 @@
                          :classes "whitespace-pre overflow-x"
                          :disabled @edit?
                          :type "password"
-                         :defaultValue @slack-bot-token}]
+                         :value @slack-bot-token}]
            [forms/input {:label "Slack app token"
                          :on-change #(reset! slack-app-token (-> % .-target .-value))
                          :classes "whitespace-pre overflow-x"
                          :disabled @edit?
                          :type "password"
-                         :defaultValue @slack-app-token}]]
+                         :value @slack-app-token}]]
           [:div {:class "grid grid-cols-3 justify-items-end"}
            (if @edit?
              [:div {:class "col-end-4 w-full"}

@@ -45,7 +45,7 @@
           [forms/input
            {:size "2"
             :placeholder "e.g. Employee ID"
-            :defaultValue (:label cmdb)
+            :value (:label cmdb)
             :not-margin-bottom? true
             :on-change #(on-cmdb-field-change state idx :label (-> % .-target .-value))}]]
 
@@ -53,7 +53,7 @@
           [forms/input
            {:size "2"
             :placeholder "e.g. customfield_0410"
-            :defaultValue (:jira_field cmdb)
+            :value (:jira_field cmdb)
             :not-margin-bottom? true
             :on-change #(on-cmdb-field-change state idx :jira_field (-> % .-target .-value))}]]
 
@@ -61,7 +61,7 @@
           [forms/input
            {:size "2"
             :placeholder "e.g. value_123"
-            :defaultValue (:value cmdb)
+            :value (:value cmdb)
             :not-margin-bottom? true
             :on-change #(on-cmdb-field-change state idx :value (-> % .-target .-value))}]]
 
@@ -69,7 +69,7 @@
           [forms/input
            {:size "2"
             :placeholder "e.g. 9"
-            :defaultValue (:jira_object_schema_id cmdb)
+            :value (:jira_object_schema_id cmdb)
             :not-margin-bottom? true
             :on-change #(on-cmdb-field-change state idx :jira_object_schema_id (-> % .-target .-value))}]]
 
@@ -77,7 +77,7 @@
           [forms/input
            {:size "2"
             :placeholder "e.g. 13"
-            :defaultValue (:jira_object_type cmdb)
+            :value (:jira_object_type cmdb)
             :not-margin-bottom? true
             :on-change #(on-cmdb-field-change state idx :jira_object_type (-> % .-target .-value))}]]
 
@@ -85,7 +85,7 @@
           [forms/input
            {:size "2"
             :placeholder "e.g. customfield_0410"
-            :defaultValue (:description cmdb)
+            :value (:description cmdb)
             :not-margin-bottom? true
             :on-change #(on-cmdb-field-change state idx :description (-> % .-target .-value))}]]
 

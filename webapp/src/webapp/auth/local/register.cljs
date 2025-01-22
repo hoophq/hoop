@@ -30,23 +30,23 @@
                             (submit-form))}
         [:> Flex {:direction "column"}
          [forms/input {:label "Full name"
-                       :defaultValue @fullname
+                       :value @fullname
                        :required true
                        :type "text"
                        :on-change #(reset! fullname (-> % .-target .-value))}]
          [forms/input {:label "Email"
-                       :defaultValue @email
+                       :value @email
                        :required true
                        :type "email"
                        :on-change #(reset! email (-> % .-target .-value))}]
          [forms/input {:label "Password"
                        :required true
-                       :defaultValue @password
+                       :value @password
                        :type "password"
                        :on-change #(reset! password (-> % .-target .-value))}]
          [forms/input {:label "Confirm Password"
                        :required true
-                       :defaultValue @confirm-password
+                       :value @confirm-password
                        :type "password"
                        :on-blur #(if (not= @password @confirm-password)
                                    (reset! password-error "Passwords do not match")

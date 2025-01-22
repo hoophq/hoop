@@ -89,7 +89,9 @@
 
         connection-type (discover-connection-type connection)
         multiple-connections? (> (count selected-connections) 1)
-        has-jira-template-multiple-connections? (some #(:jira_issue_template_id %) selected-connections)
+        has-jira-template-multiple-connections? (some
+                                                 #(not (cs/blank? (:jira_issue_template_id %)))
+                                                 selected-connections)
         jira-integration-enabled? @(rf/subscribe [:jira-integration->integration-enabled?])
         change-to-tabular? (and (some (partial = connection-type) ["mysql" "postgres" "sql-server" "oracledb" "mssql" "database"])
                                 (< (count @script-response) 1))

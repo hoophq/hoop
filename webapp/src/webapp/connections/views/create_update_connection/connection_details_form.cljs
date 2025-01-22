@@ -30,7 +30,7 @@
                    :label "Name"
                    :required true
                    :disabled (= form-type :update)
-                   :defaultValue @connection-name
+                   :value @connection-name
                    :on-change #(reset! connection-name (-> % .-target .-value))}]]]
    [:> Grid {:columns "5" :gap "7"}
     [:> Flex {:direction "column" :grid-column "span 2 / span 2"}

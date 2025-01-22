@@ -69,7 +69,7 @@
                             :disabled (or (= "admin" (:role current-user))
                                           (= "standard" (:role current-user)))
                             :on-change #(reset! organization-name (-> % .-target .-value))
-                            :defaultValue @organization-name}]
+                            :value @organization-name}]
               (when (empty? (:name current-user))
                 [forms/input {:label "Your name"
                               :classes "whitespace-pre overflow-x"
@@ -78,7 +78,7 @@
                               :disabled (or (= "admin" (:role current-user))
                                             (= "standard" (:role current-user)))
                               :on-change #(reset! user-name (-> % .-target .-value))
-                              :defaultValue @user-name}])
+                              :value @user-name}])
               [:div {:class "flex justify-end"}
                [button/primary {:text "Get started"
                                 :status (when @loading :loading)

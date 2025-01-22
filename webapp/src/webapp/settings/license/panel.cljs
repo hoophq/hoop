@@ -84,9 +84,9 @@
            [:> Table.ColumnHeaderCell
             [:> Text {:size "1" :as :div} "License Key"]]
            [:> Table.Cell {:align "right"}
-            [forms/input {:defaultValue (if disable-input?
-                                          "•••••••••••••••••"
-                                          @license-value)
+            [forms/input {:value (if disable-input?
+                                   "•••••••••••••••••"
+                                   @license-value)
                           :on-change #(reset! license-value (-> % .-target .-value))
                           :disabled disable-input?
                           :placeholder "Enter your license key"

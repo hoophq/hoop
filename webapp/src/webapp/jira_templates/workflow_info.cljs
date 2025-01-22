@@ -16,7 +16,7 @@
      {:label "Status (Optional)"
       :placeholder "e.g. qa"
       :required false
-      :defaultValue @status
+      :value @status
       :not-margin-bottom? true
       :on-change #(on-status-change (-> % .-target .-value))}]
     [:> Text {:as "p" :mt "1" :size "2" :class "text-[--gray-10]"}
