@@ -176,6 +176,16 @@ func UpdateSessionIntegrationMetadata(orgID, sid string, metadata map[string]any
 	return res.Error
 }
 
+func UpdateSessionMetadata(orgID, userEmail, sid string, metadata map[string]any) error {
+	res := DB.Table(tableSessions).
+		Where("org_id = ? AND id = ? AND user_email = ?", orgID, sid, userEmail).
+		Updates(Session{Metadata: metadata})
+	if res.Error == nil && res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return res.Error
+}
+
 func GetSessionJiraIssueByID(orgID, sid string) (string, error) {
 	var jiraIssueKey string
 	err := DB.Raw(`

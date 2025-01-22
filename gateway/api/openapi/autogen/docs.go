@@ -2819,6 +2819,54 @@ const docTemplate = `{
                 }
             }
         },
+        "/sessions/{session_id}/metadata": {
+            "patch": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Core"
+                ],
+                "summary": "Update Session Metadata",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SessionUpdateMetadataRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/sessions/{session_id}/review": {
             "put": {
                 "description": "Update the status of a review resource by the session id",
@@ -5137,6 +5185,9 @@ const docTemplate = `{
             "additionalProperties": {
                 "type": "string"
             }
+        },
+        "openapi.SessionUpdateMetadataRequest": {
+            "type": "object"
         },
         "openapi.SignupRequest": {
             "type": "object",

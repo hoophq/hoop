@@ -372,6 +372,9 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.PUT("/sessions/:session_id/review",
 		r.AuthMiddleware,
 		reviewHandler.ReviewBySession)
+	r.PATCH("/sessions/:session_id/metadata",
+		r.AuthMiddleware,
+		sessionapi.PatchMetadata)
 	r.GET("/sessions",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
