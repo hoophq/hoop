@@ -125,7 +125,12 @@ func ParseIssueFields(tmpl *models.JiraIssueTemplate, input map[string]string, s
 			}
 			continue
 		}
-		output[jiraField] = val
+		switch promptType.FieldType {
+		case "select":
+			output[jiraField] = map[string]string{"value": val}
+		default:
+			output[jiraField] = val
+		}
 	}
 	if len(missingRequiredFields) > 0 {
 		return nil, &ErrInvalidIssueFields{isRequiredErr: true, resources: missingRequiredFields}

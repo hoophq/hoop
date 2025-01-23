@@ -39,6 +39,7 @@ type PromptType struct {
 	Label       string `json:"label"`
 	Required    bool   `json:"required"`
 	JiraField   string `json:"jira_field"`
+	FieldType   string `json:"field_type"`
 }
 
 type CmdbType struct {
@@ -77,6 +78,7 @@ func (t *JiraIssueTemplate) DecodeMappingTypes() (map[string]MappingType, map[st
 			Description: fmt.Sprintf("%v", obj["description"]),
 			Label:       fmt.Sprintf("%v", obj["label"]),
 			Required:    fmt.Sprintf("%v", obj["required"]) == "true",
+			FieldType:   fmt.Sprintf("%v", obj["field_type"]),
 			JiraField:   jiraField,
 		}
 	}
