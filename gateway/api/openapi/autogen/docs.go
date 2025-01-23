@@ -4052,7 +4052,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "prompt_types": {
-                    "description": "The prompt fields that will be show to user before executing a session\n\n\t\t{\n\t\t  \"items\": [\n\t\t    {\n\t\t      \"description\": \"Squad Name\",\n\t\t      \"jira_field\": \"customfield_10052\",\n\t\t      \"label\": \"Squad Name\",\n\t\t      \"required\": true\n\t\t    }\n\t\t  ]\n\t\t}",
+                    "description": "The prompt fields that will be show to user before executing a session\n\n\t\t{\n\t\t  \"items\": [\n\t\t    {\n\t\t      \"description\": \"Squad Name\",\n\t\t      \"jira_field\": \"customfield_10052\",\n\t\t\t  \"field_type\": \"text|select|datetime-local\",\n\t\t      \"label\": \"Squad Name\",\n\t\t      \"required\": true\n\t\t    }\n\t\t  ]\n\t\t}",
                     "type": "object",
                     "additionalProperties": {}
                 },

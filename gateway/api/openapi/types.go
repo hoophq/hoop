@@ -901,6 +901,7 @@ type JiraIssueTemplateRequest struct {
 		    {
 		      "description": "Squad Name",
 		      "jira_field": "customfield_10052",
+			  "field_type": "text|select|datetime-local",
 		      "label": "Squad Name",
 		      "required": true
 		    }
