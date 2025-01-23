@@ -69,7 +69,7 @@
        :not-margin-bottom? true
        :on-change #(on-pattern-change pattern-state idx (-> % .-target .-value))
        :on-blur #(on-rule-field-change state idx :pattern_regex (get @pattern-state idx ""))
-       :defaultValue (get @pattern-state idx "")}]
+       :value (get @pattern-state idx "")}]
      [:> Tooltip {:content "Use Go regex syntax."}
       [:> CircleHelp {:size 16}]]]
 

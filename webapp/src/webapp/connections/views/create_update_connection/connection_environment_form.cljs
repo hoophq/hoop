@@ -95,17 +95,17 @@
             [:<>
              [forms/input {:label "Key"
                            :full-width? true
-                           :on-change #(reset! config-key (-> % .-target .-value))
+                           :on-change #(helpers/parse->posix-format % config-key)
                            :classes "whitespace-pre overflow-x"
                            :placeholder "API_KEY"
-                           :defaultValue @config-key}]
+                           :value @config-key}]
              [forms/input {:label "Value"
                            :full-width? true
                            :on-change #(reset! config-value (-> % .-target .-value))
                            :classes "whitespace-pre overflow-x"
                            :placeholder "* * * *"
                            :type "password"
-                           :defaultValue @config-value}]]
+                           :value @config-value}]]
             [:> Box {:grid-column "span 2 / span 2" :class "justify-self-center"}
              [:> Button {:size "2"
                          :variant "ghost"
@@ -125,12 +125,12 @@
             [forms/input {:label "Name"
                           :classes "whitespace-pre overflow-x"
                           :placeholder "kubeconfig"
-                          :on-change #(reset! config-file-name (-> % .-target .-value))
-                          :defaultValue @config-file-name}]
+                          :on-change #(helpers/parse->posix-format % config-file-name)
+                          :value @config-file-name}]
             [forms/textarea {:label "Content"
                              :placeholder "Paste your file content here"
                              :on-change #(reset! config-file-value (-> % .-target .-value))
-                             :defaultValue @config-file-value}]
+                             :value @config-file-value}]
             [:> Box {:class "justify-self-center"}
              [:> Button {:size "2"
                          :variant "ghost"
@@ -149,7 +149,7 @@
             [forms/textarea {:label "Command"
                              :on-change #(reset! connection-command (-> % .-target .-value))
                              :placeholder "$ your command"
-                             :defaultValue @connection-command
+                             :value @connection-command
                              :id "command-line"
                              :rows 2}]]]]
 

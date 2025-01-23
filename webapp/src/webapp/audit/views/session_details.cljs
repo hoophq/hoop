@@ -6,6 +6,7 @@
             ["react" :as react]
             ["@radix-ui/themes" :refer [Button Flex Text Tooltip]]
             ["lucide-react" :refer [FileDown Download]]
+            ["is-url-http" :as is-url-http?]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
@@ -388,7 +389,12 @@
                   [:header {:class "w-32 px-small text-sm font-bold"}
                    metadata-key]
                   [:section {:class "w-full text-xs border-l p-small"}
-                   [:span metadata-value]]]))])
+                   (if (is-url-http? metadata-value)
+                     [:a {:href metadata-value
+                          :target "_blank"
+                          :class "text-blue-600 underline"}
+                      metadata-value]
+                     [:span metadata-value])]]))])
          ;; end metadata
 
          ;; script area

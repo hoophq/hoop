@@ -1,6 +1,6 @@
 {
   "name": "webapp",
-  "version": "1.35.9",
+  "version": "1.35.10",
   "scripts": {
     "ancient": "clojure -Sdeps '{:deps {com.github.liquidz/antq {:mvn/version \"RELEASE\"}}}' -m antq.core",
     "genversion": "npx genversion src/webapp/version.js",
@@ -43,6 +43,7 @@
     "genversion": "^3.1.1",
     "gsap": "^3.11.5",
     "highlight.js": "^11.1.0",
+    "is-url-http": "^2.3.9",
     "launchdarkly-js-client-sdk": "^2.20.0",
     "lucide-react": "^0.429.0",
     "markdown-it": "^14.1.0",

@@ -16,11 +16,11 @@
       [:> Box
        [:> Flex {:direction "column"}
         [forms/input {:label "Email"
-                      :defaultValue @email
+                      :value @email
                       :type "email"
                       :on-change #(reset! email (-> % .-target .-value))}]
         [forms/input {:label "Password"
-                      :defaultValue @password
+                      :value @password
                       :type "password"
                       :on-change #(reset! password (-> % .-target .-value))}]
         [:> Button {:color "indigo"

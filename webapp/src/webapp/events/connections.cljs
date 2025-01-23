@@ -1,6 +1,5 @@
 (ns webapp.events.connections
-  (:require ["url-parse" :as url-parse]
-            [re-frame.core :as rf]
+  (:require [re-frame.core :as rf]
             [clojure.edn :refer [read-string]]
             [webapp.connections.constants :as constants]
             [webapp.connections.views.connection-connect :as connection-connect]))
@@ -55,9 +54,9 @@
    {:db (assoc db :connections {:results connections :loading false})}))
 
 (rf/reg-event-fx
-  :connections->filter-connections
-  (fn [_ [_ query-params]]
-    {:fx [[:dispatch [:navigate :connections query-params]]]}))
+ :connections->filter-connections
+ (fn [_ [_ query-params]]
+   {:fx [[:dispatch [:navigate :connections query-params]]]}))
 
 (rf/reg-event-fx
  :connections->create-connection

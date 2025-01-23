@@ -141,3 +141,24 @@
          (map (fn [[k v]]
                 {(keyword (s/replace (name k) regex "")) (js/atob v)}))
          (reduce into {}))))
+
+
+(defn valid-first-char? [value]
+  (boolean (re-matches #"[A-Za-z]" value)))
+
+(defn valid-posix? [value]
+  (boolean (re-matches #"[A-Za-z][A-Za-z0-9_]*" value)))
+
+(defn parse->posix-format [e input-state]
+  (let [new-value (-> e .-target .-value)
+        upper-value (s/upper-case new-value)]
+    (cond
+      (empty? new-value)
+      (reset! input-state "")
+
+      (empty? @input-state)
+      (when (valid-first-char? new-value)
+        (reset! input-state upper-value))
+
+      (valid-posix? new-value)
+      (reset! input-state upper-value))))

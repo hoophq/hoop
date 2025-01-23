@@ -77,7 +77,7 @@
         [forms/input {:label "Name"
                       :on-change #(reset! name (-> % .-target .-value))
                       :placeholder "Your name"
-                      :defaultValue @name}]
+                      :value @name}]
         [multi-select/main {:label "Groups"
                             :options (array->select-options user-groups)
                             :default-value @groups
@@ -90,13 +90,13 @@
           [forms/input {:label "Add new groups"
                         :on-change #(reset! new-groups-value (-> % .-target .-value))
                         :placeholder "Comma separated values"
-                        :defaultValue @new-groups-value}])
+                        :value @new-groups-value}])
         (when (= form-type :create)
           [forms/input {:label "Email"
                         :type "email"
                         :on-change #(reset! email (-> % .-target .-value))
                         :placeholder "user@yourcompany.com"
-                        :defaultValue @email
+                        :value @email
                         :required true}])
 
         (when (= form-type :update)
@@ -111,7 +111,7 @@
                          :required true}])
         [forms/input {:label "Slack ID"
                       :on-change #(reset! slack-id (-> % .-target .-value))
-                      :defaultValue @slack-id}]
+                      :value @slack-id}]
 
         (when (and (= (-> @gateway-public-info :data :auth_method) "local")
                    (= form-type :create))

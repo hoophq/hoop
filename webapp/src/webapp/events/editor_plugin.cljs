@@ -1,6 +1,8 @@
 (ns webapp.events.editor-plugin
-  (:require [clojure.edn :refer [read-string]]
-            [re-frame.core :as rf]))
+  (:require
+   [clojure.edn :refer [read-string]]
+   [clojure.string :as cs]
+   [re-frame.core :as rf]))
 
 (rf/reg-event-fx
  :editor-plugin->get-run-connection-list
@@ -244,6 +246,26 @@
                          exec-list)]
      {:db (assoc db :editor-plugin->connections-exec-list {:data exec-list :status :running})
       :fx dispatchs})))
+
+(rf/reg-event-fx
+ :editor-plugin->multiple-connections-update-metadata
+ (fn
+   [{:keys [db]} [_ exec-list]]
+   (let [dispatchs (mapv (fn [exec]
+                           [:dispatch-later {:ms 1000
+                                             :dispatch [:fetch
+                                                        {:method "PATCH"
+                                                         :uri (str "/sessions/" (:session-id exec) "/metadata")
+                                                         :on-success (fn [] false)
+                                                         :on-failure (fn [error]
+                                                                       (println exec error))
+                                                         :body {:metadata
+                                                                {"View related sessions"
+                                                                 (str (. (. js/window -location) -origin)
+                                                                      "/sessions/filtered?id="
+                                                                      (cs/join "," (mapv :session-id exec-list)))}}}]}])
+                         exec-list)]
+     {:fx dispatchs})))
 
 (rf/reg-event-fx
  ::editor-plugin->set-connection-script-success

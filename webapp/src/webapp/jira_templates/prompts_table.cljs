@@ -47,7 +47,7 @@
           [forms/input
            {:size "2"
             :placeholder "e.g. Employee ID"
-            :defaultValue (:label prompt)
+            :value (:label prompt)
             :not-margin-bottom? true
             :on-change #(on-prompt-field-change state idx :label (-> % .-target .-value))}]]
 
@@ -55,7 +55,7 @@
           [forms/input
            {:size "2"
             :placeholder "e.g. customfield_0410"
-            :defaultValue (:jira_field prompt)
+            :value (:jira_field prompt)
             :not-margin-bottom? true
             :on-change #(on-prompt-field-change state idx :jira_field (-> % .-target .-value))}]]
 
@@ -73,7 +73,7 @@
           [forms/input
            {:size "2"
             :placeholder "e.g. customfield_0410"
-            :defaultValue (:description prompt)
+            :value (:description prompt)
             :not-margin-bottom? true
             :on-change #(on-prompt-field-change state idx :description (-> % .-target .-value))}]]
 

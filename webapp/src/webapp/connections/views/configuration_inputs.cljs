@@ -1,7 +1,8 @@
 (ns webapp.connections.views.configuration-inputs
   (:require [clojure.string :as cs]
             [reagent.core :as r]
-            [webapp.components.forms :as forms]))
+            [webapp.components.forms :as forms]
+            [webapp.connections.helpers :as helpers]))
 
 
 (defn- config->inputs-labeled
@@ -19,7 +20,7 @@
                      :placeholder (or placeholder key)
                      :type "password"
                      :hidden hidden
-                     :defaultValue @value-val}]])))
+                     :value @value-val}]])))
 
 (defn- config->inputs-files
   [{:keys [key value]} index config]
@@ -32,15 +33,15 @@
                      :id (str "file-name" @key-val)
                      :classes "whitespace-pre overflow-x"
                      :placeholder "kubeconfig"
-                     :on-change #(reset! key-val (-> % .-target .-value))
+                     :on-change #(helpers/parse->posix-format % key-val)
                      :on-blur #(save :key @key-val)
-                     :defaultValue @key-val}]
+                     :value @key-val}]
        [forms/textarea {:label "Content"
                         :id (str "file-content" @value-val)
                         :placeholder "Paste your file content here"
                         :on-change #(reset! value-val (-> % .-target .-value))
                         :on-blur #(save :value @value-val)
-                        :defaultValue @value-val}]])))
+                        :value @value-val}]])))
 
 (defn- config->inputs
   [{:keys [key value]} index config {:keys [is-disabled? is-required?]}]
@@ -51,11 +52,11 @@
       [:<>
        [forms/input {:label "Key"
                      :classes "whitespace-pre overflow-x"
-                     :on-change #(reset! key-val (-> % .-target .-value))
+                     :on-change #(helpers/parse->posix-format % key-val)
                      :on-blur #(save :key @key-val)
                      :disabled is-disabled?
                      :required is-required?
-                     :defaultValue @key-val
+                     :value @key-val
                      :placeholder "API_KEY"}]
        [forms/input {:label "Value"
                      :classes "whitespace-pre overflow-x"
@@ -63,7 +64,7 @@
                      :on-blur #(save :value @value-val)
                      :type "password"
                      :required is-required?
-                     :defaultValue @value-val
+                     :value @value-val
                      :placeholder "* * * *"}]])))
 
 (defn config-inputs-labeled
