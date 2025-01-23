@@ -1,13 +1,16 @@
 ;; server.cljs
 (ns webapp.connections.views.setup.server
   (:require
-   ["@radix-ui/themes" :refer [Avatar Box Button Card Flex Grid Heading RadioGroup Text]]
+   ["@radix-ui/themes" :refer [Avatar Box Button Card Flex Grid Heading
+                               RadioGroup Text]]
    ["lucide-react" :refer [Blocks SquareTerminal]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.forms :as forms]
    [webapp.connections.views.setup.headers :as headers]
-   [webapp.connections.views.setup.state :refer [application-types operation-systems]]))
+   [webapp.connections.views.setup.page-wrapper :as page-wrapper]
+   [webapp.connections.views.setup.state :refer [application-types
+                                                 operation-systems]]))
 
 (def connections-subtypes-cards
   {"ssh" {:icon (r/as-element [:> SquareTerminal {:size 18}])
@@ -85,61 +88,79 @@
   (let [connection-subtype @(rf/subscribe [:connection-setup/connection-subtype])
         app-type @(rf/subscribe [:connection-setup/app-type])
         os-type @(rf/subscribe [:connection-setup/os-type])]
-    [:> Box {:class "max-w-2xl mx-auto p-6"}
-     [headers/setup-header]
-     [:> Box {:class "space-y-8"}
-      [:> Box {:class "space-y-4"}
-       [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-        "Connection type"]
-       (for [[subtype {:keys [icon title subtitle]}] connections-subtypes-cards]
-         (let [is-selected (= subtype connection-subtype)]
-           ^{:key subtype}
-           [:> Card {:size "1"
-                     :variant "surface"
-                     :class (str "w-full cursor-pointer " (when is-selected "before:bg-primary-12"))
-                     :on-click #(rf/dispatch [:connection-setup/select-subtype subtype])}
-            [:> Flex {:align "center" :gap "3"}
-             [:> Avatar {:size "4"
-                         :class (when is-selected "dark")
-                         :variant "soft"
-                         :color "gray"
-                         :fallback icon}]
-             [:> Flex {:direction "column" :class (str "" (when is-selected "text-gray-4"))}
-              [:> Text {:size "3" :weight "medium" :color "gray-12"} title]
-              [:> Text {:size "2" :color "gray-11"} subtitle]]]]))]
+    [page-wrapper/main
+     {:children
+      [:> Box {:class "max-w-2xl mx-auto p-6"}
+       [headers/setup-header]
+       [:> Box {:class "space-y-8"}
+        [:> Box {:class "space-y-4"}
+         [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+          "Connection type"]
+         (for [[subtype {:keys [icon title subtitle]}] connections-subtypes-cards]
+           (let [is-selected (= subtype connection-subtype)]
+             ^{:key subtype}
+             [:> Card {:size "1"
+                       :variant "surface"
+                       :class (str "w-full cursor-pointer " (when is-selected "before:bg-primary-12"))
+                       :on-click #(rf/dispatch [:connection-setup/select-subtype subtype])}
+              [:> Flex {:align "center" :gap "3"}
+               [:> Avatar {:size "4"
+                           :class (when is-selected "dark")
+                           :variant "soft"
+                           :color "gray"
+                           :fallback icon}]
+               [:> Flex {:direction "column" :class (str "" (when is-selected "text-gray-4"))}
+                [:> Text {:size "3" :weight "medium" :color "gray-12"} title]
+                [:> Text {:size "2" :color "gray-11"} subtitle]]]]))]
 
-     ;; Conteúdo específico baseado na seleção
-      (case connection-subtype
-        "ssh" [:<>
-               [environment-variables-section]
-               [configuration-files-section]]
+           ;; Conteúdo específico baseado na seleção
+        (case connection-subtype
+          "ssh" [:<>
+                 [environment-variables-section]
+                 [configuration-files-section]]
 
-        "console" [:<>
-                   [:> Box
-                    [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-                     "Application type"]
-                    [:> Text {:as "p" :size "3" :class "text-[--gray-11]" :mb "5"}
-                     "Select stack type for your application connection."]
-
-                    [:> RadioGroup.Root
-                     {:value app-type
-                      :on-value-change #(rf/dispatch [:connection-setup/select-app-type %])}
-                     [:> Flex {:direction "column" :gap "4"}
-                      (for [{:keys [id title]} application-types]
-                        ^{:key id}
-                        [:> RadioGroup.Item {:value id}
-                         title])]]]
-
-                   (when app-type
+          "console" [:<>
                      [:> Box
-                      [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]" :mb "5"}
-                       "Operating system"]
+                      [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+                       "Application type"]
+                      [:> Text {:as "p" :size "3" :class "text-[--gray-11]" :mb "5"}
+                       "Select stack type for your application connection."]
 
                       [:> RadioGroup.Root
-                       {:value os-type
-                        :on-value-change #(rf/dispatch [:connection-setup/select-os-type %])}
+                       {:value app-type
+                        :on-value-change #(rf/dispatch [:connection-setup/select-app-type %])}
                        [:> Flex {:direction "column" :gap "4"}
-                        (for [{:keys [id title]} operation-systems]
+                        (for [{:keys [id title]} application-types]
                           ^{:key id}
                           [:> RadioGroup.Item {:value id}
-                           title])]]])])]]))
+                           title])]]]
+
+                     (when app-type
+                       [:> Box
+                        [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]" :mb "5"}
+                         "Operating system"]
+
+                        [:> RadioGroup.Root
+                         {:value os-type
+                          :on-value-change #(rf/dispatch [:connection-setup/select-os-type %])}
+                         [:> Flex {:direction "column" :gap "4"}
+                          (for [{:keys [id title]} operation-systems]
+                            ^{:key id}
+                            [:> RadioGroup.Item {:value id}
+                             title])]]])]
+          [:<>])]]
+
+      :footer-props {:next-text "Next: Configuration"
+                    ;;  (if (= current-step :additional-config)
+                    ;;    "Confirm"
+                    ;;    "Next: Configuration")
+                     :next-disabled? (or (not connection-subtype)
+                                         (and (= connection-subtype "console")
+                                              (not app-type)))
+                     :on-next #(rf/dispatch [:connection-setup/next-step])
+                    ;;  (if (= current-step :additional-config)
+                    ;;    #(rf/dispatch [:connection-setup/submit])
+                    ;;    #(rf/dispatch [:connection-setup/next-step]))
+                     }}]))
+
+

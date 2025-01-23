@@ -184,21 +184,25 @@
    (assoc-in db [:connection-setup :config :data-masking-types] types)))
 
 (rf/reg-event-db
- :connection-setup/add-environment-variable
- (fn [db [_ key value]]
-   (update-in db [:connection-setup :environment-variables]
-              conj {:key key :value value})))
-
-(rf/reg-event-db
  :connection-setup/add-configuration-file
  (fn [db [_ file]]
    (update-in db [:connection-setup :configuration-files]
               conj file)))
 
 (rf/reg-event-db
- :connection-setup/select-app-type
- (fn [db [_ app-type]]
-   (assoc-in db [:connection-setup :app-type] app-type)))
+ :connection-setup/select-network-type
+ (fn [db [_ network-type]]
+   (assoc-in db [:connection-setup :network-type] network-type)))
+
+(rf/reg-event-db
+ :connection-setup/update-network-credentials
+ (fn [db [_ field value]]
+   (assoc-in db [:connection-setup :network-credentials field] value)))
+
+(rf/reg-event-db
+ :connection-setup/set-agent-id
+ (fn [db [_ agent-id]]
+   (assoc-in db [:connection-setup :agent-id] agent-id)))
 
 ;; Subscriptions
 (rf/reg-sub
@@ -308,6 +312,16 @@
    (get-in db [:connection-setup :configuration-files] [])))
 
 (rf/reg-sub
- :connection-setup/app-type
+ :connection-setup/network-type
  (fn [db]
-   (get-in db [:connection-setup :app-type])))
+   (get-in db [:connection-setup :network-type])))
+
+(rf/reg-sub
+ :connection-setup/network-credentials
+ (fn [db]
+   (get-in db [:connection-setup :network-credentials] {})))
+
+(rf/reg-sub
+ :connection-setup/agent-id
+ (fn [db]
+   (get-in db [:connection-setup :agent-id])))

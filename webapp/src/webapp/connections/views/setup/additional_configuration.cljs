@@ -40,7 +40,7 @@
                                         (helpers/random-connection-name))
                       :label "Name"
                       :required true
-                      :defaultValue @connection-name
+                      :value @connection-name
                       :on-change #(rf/dispatch [:connection-setup/set-name
                                                 (-> % .-target .-value)])}]
 

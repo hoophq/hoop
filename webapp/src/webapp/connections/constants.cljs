@@ -5,36 +5,37 @@
 (def connection-configs-required
   {:command-line []
    :custom []
-   :tcp [{:key "host" :value "" :required true}
-         {:key "port" :value "" :required true}]
-   :mysql [{:key "host" :value "" :required true}
-           {:key "user" :value "" :required true}
-           {:key "pass" :value "" :required true}
-           {:key "port" :value "" :required true}
-           {:key "db" :value "" :required true}]
-   :postgres [{:key "host" :value "" :required true}
-              {:key "user" :value "" :required true}
-              {:key "pass" :value "" :required true}
-              {:key "port" :value "" :required true}
-              {:key "db" :value "" :required true}
-              {:key "sslmode" :value "" :required false}]
-   :mssql [{:key "host" :value "" :required true}
-           {:key "user" :value "" :required true}
-           {:key "pass" :value "" :required true}
-           {:key "port" :value "" :required true}
-           {:key "db" :value "" :required true}
-           {:key "insecure" :value "false" :required false}]
-   :oracledb [{:key "host" :value "" :required true}
-              {:key "user" :value "" :required true}
-              {:key "pass" :value "" :required true}
-              {:key "port" :value "" :required true}
-              {:key "ld_library_path" :value "/opt/oracle/instantclient_19_24" :hidden true :required true}
-              {:key "sid" :placeholder "SID or Service name" :value "" :required true}]
+   :tcp [{:key "host" :label "Host" :value "" :required true}
+         {:key "port" :label "Port" :value "" :required true}]
+   :mysql [{:key "host" :label "Host" :value "" :required true}
+           {:key "user" :label "User" :value "" :required true}
+           {:key "pass" :label "Pass" :value "" :required true}
+           {:key "port" :label "Port" :value "" :required true}
+           {:key "db" :label "Db" :value "" :required true}]
+   :postgres [{:key "host" :label "Host" :value "" :required true}
+              {:key "user" :label "User" :value "" :required true}
+              {:key "pass" :label "Pass" :value "" :required true}
+              {:key "port" :label "Port" :value "" :required true}
+              {:key "db" :label "Db" :value "" :required true}
+              {:key "sslmode" :label "Sslmode (Optional)" :value "" :required false}]
+   :mssql [{:key "host" :label "Host" :value "" :required true}
+           {:key "user" :label "User" :value "" :required true}
+           {:key "pass" :label "Pass" :value "" :required true}
+           {:key "port" :label "Port" :value "" :required true}
+           {:key "db" :label "Db" :value "" :required true}
+           {:key "insecure" :label "Insecure (Optional)" :value "false" :required false}]
+   :oracledb [{:key "host" :label "Host" :value "" :required true}
+              {:key "user" :label "User" :value "" :required true}
+              {:key "pass" :label "Pass" :value "" :required true}
+              {:key "port" :label "Port" :value "" :required true}
+              {:key "ld_library_path" :label "" :value "/opt/oracle/instantclient_19_24" :hidden true :required true}
+              {:key "sid" :placeholder "SID or Service name" :label "SID" :value "" :required true}]
    :mongodb [{:key "connection_string"
+              :label "Connection string"
               :value ""
               :required true
               :placeholder "mongodb+srv://root:<password>@devcluster.mwb5sun.mongodb.net/"}]
-   :ssh [{:key "ssh_uri" :value "" :required true :placeholder "ssh://uri"}]})
+   :ssh [{:key "ssh_uri" :label "SSH URI" :value "" :required true :placeholder "ssh://uri"}]})
 
 (def connection-icons-name-dictionary
   {:dark {:postgres (str config/webapp-url "/images/connections-logos/postgres_logo.svg")
