@@ -260,7 +260,7 @@
                                                          :on-failure (fn [error]
                                                                        (println exec error))
                                                          :body {:metadata
-                                                                {"Multiple sessions link"
+                                                                {"View related sessions"
                                                                  (str (. (. js/window -location) -origin)
                                                                       "/sessions/filtered?id="
                                                                       (cs/join "," (mapv :session-id exec-list)))}}}]}])
