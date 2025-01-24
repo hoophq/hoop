@@ -11,8 +11,8 @@
                     next-disabled?
                     next-hidden?]}]
   (when-not hide-footer?
-    [:> Box {:class "fixed bottom-0 left-0 right-0 bg-white border-t border-[--gray-a6] px-7 py-4"}
-     [:> Flex {:justify "between" :align "center"}
+    [:> Flex {:justify "center" :class "fixed bottom-0 left-0 right-0 bg-white border-t border-[--gray-a6] px-7 py-4"}
+     [:> Flex {:justify "between" :align "center" :class "w-[600px] px-6"}
       [:> Button {:size "2"
                   :variant "soft"
                   :color "gray"

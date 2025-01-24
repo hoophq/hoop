@@ -75,7 +75,7 @@
         ;;all-valid? @(rf/subscribe [:connection-setup/database-credentials-valid?])
         ]
     [page-wrapper/main
-     {:children [:> Box {:class "max-w-2xl mx-auto p-6"}
+     {:children [:> Box {:class "max-w-[600px] mx-auto p-6 space-y-7"}
                  [headers/setup-header]
 
                  (case current-step

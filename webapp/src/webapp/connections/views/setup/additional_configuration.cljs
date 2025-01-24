@@ -1,20 +1,28 @@
 (ns webapp.connections.views.setup.additional-configuration
   (:require
-   ["@radix-ui/themes" :refer [Box Flex Heading Switch Text]]
+   ["@radix-ui/themes" :refer [Box Callout Link Flex Heading Switch Text]]
+   ["lucide-react" :refer [Star]]
    [re-frame.core :as rf]
    [webapp.components.forms :as forms]
    [webapp.components.multiselect :as multi-select]
    [webapp.connections.dlp-info-types :as dlp-info-types]
    [webapp.connections.helpers :as helpers]))
 
-(defn toggle-section [{:keys [title description checked on-change]}]
+(defn toggle-section [{:keys [title description checked disabled? on-change complement-component upgrade-plan-component]}]
   [:> Flex {:align "center" :gap "5"}
    [:> Switch {:checked checked
                :size "3"
+               :disabled disabled?
                :onCheckedChange on-change}]
    [:> Box
     [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"} title]
-    [:> Text {:as "p" :size "2" :class "text-[--gray-11]"} description]]])
+    [:> Text {:as "p" :size "2" :class "text-[--gray-11]"} description]
+
+    (when complement-component
+      complement-component)
+
+    (when upgrade-plan-component
+      upgrade-plan-component)]])
 
 (defn main [{:keys [show-database-schema? selected-type]}]
   (let [user-groups (rf/subscribe [:user-groups])
@@ -64,35 +72,50 @@
            {:title "Reviews"
             :description "Require approval prior to connection execution. Enable Just-in-Time access for 30-minute sessions or Command reviews for individual query approvals."
             :checked @review?
-            :on-change #(rf/dispatch [:connection-setup/toggle-review])}]
+            :on-change #(rf/dispatch [:connection-setup/toggle-review])
+            :complement-component
+            (when @review?
+              [:> Box {:mt "4"}
+               [multi-select/main
+                {:options (helpers/array->select-options @user-groups)
+                 :id "approval-groups-input"
+                 :name "approval-groups-input"
+                 :required? @review?
+                 :default-value @review-groups
+                 :on-change #(rf/dispatch [:connection-setup/set-review-groups (js->clj %)])}]])}]]
 
-          (when @review?
-            [:> Box {:mt "4"}
-             [multi-select/main
-              {:options (helpers/array->select-options @user-groups)
-               :id "approval-groups-input"
-               :name "approval-groups-input"
-               :required? @review?
-               :default-value @review-groups
-               :on-change #(rf/dispatch [:connection-setup/set-review-groups (js->clj %)])}]])]
-
-                                                                 ;; AI Data Masking
+          ;; AI Data Masking
          [:> Box {:class "space-y-2"}
           [toggle-section
            {:title "AI Data Masking"
             :description "Provide an additional layer of security by ensuring sensitive data is masked in query results with AI-powered data masking."
             :checked @data-masking?
-            :on-change #(rf/dispatch [:connection-setup/toggle-data-masking])}]
+            :disabled? true
+            :on-change #(rf/dispatch [:connection-setup/toggle-data-masking])
 
-          (when @data-masking?
-            [:> Box {:mt "4"}
-             [multi-select/main
-              {:options (helpers/array->select-options dlp-info-types/options)
-               :id "data-masking-groups-input"
-               :name "data-masking-groups-input"
-               :required? @data-masking?
-               :default-value @data-masking-types
-               :on-change #(rf/dispatch [:connection-setup/set-data-masking-types (js->clj %)])}]])]
+            :complement-component
+            (when @data-masking?
+              [:> Box {:mt "4"}
+               [multi-select/main
+                {:options (helpers/array->select-options dlp-info-types/options)
+                 :id "data-masking-groups-input"
+                 :name "data-masking-groups-input"
+                 :required? @data-masking?
+                 :default-value @data-masking-types
+                 :disabled? true
+                 :on-change #(rf/dispatch [:connection-setup/set-data-masking-types (js->clj %)])}]])
+
+            :upgrade-plan-component
+            (when true
+              [:> Callout.Root {:size "2" :mt "4" :mb "4"}
+               [:> Callout.Icon
+                [:> Star {:size 16}]]
+               [:> Callout.Text {:class "text-gray-12"}
+                "Enable AI Data Masking by "
+                [:> Link {:href "#"
+                          :class "text-primary-10"
+                          :on-click #(rf/dispatch [:navigate :upgrade-plan])}
+                 "upgrading your plan."]]])}]]
 
                                                                  ;; Database schema (condicionalmente renderizado)
          (when show-database-schema?

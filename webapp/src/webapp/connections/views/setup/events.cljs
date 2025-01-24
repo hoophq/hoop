@@ -97,6 +97,16 @@
                                        :text "Connection created successfully!"}]]]})))
 
 (rf/reg-event-db
+ :connection-setup/next-step
+ (fn [db [_]]
+   (let [current-step (get-in db [:connection-setup :current-step])]
+     (assoc-in db [:connection-setup :current-step]
+               (case current-step
+                 :resource :additional-config
+                 :additional-config :resource  ;; fallback
+                 :resource)))))
+
+(rf/reg-event-db
  :connection-setup/go-back
  (fn [db [_]]
    (let [current-subtype (get-in db [:connection-setup :subtype])

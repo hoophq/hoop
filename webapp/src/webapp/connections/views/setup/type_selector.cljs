@@ -33,7 +33,7 @@
 
 (defn main []
   (let [selected-type @(rf/subscribe [:connection-setup/connection-type])]
-    [:> Box {:class "max-w-2xl mx-auto p-6"}
+    [:> Box {:class "max-w-[600px] mx-auto p-6 space-y-7"}
      [headers/setup-header]
 
      [:> Box

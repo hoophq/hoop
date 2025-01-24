@@ -118,7 +118,7 @@
      {:children [:> Box {:class "min-h-screen bg-gray-1"}
                      ;; Main content with padding to account for fixed footer
                  [:> Box {:class "pb-24"}
-                  [:> Box {:class "max-w-2xl mx-auto p-6"}
+                  [:> Box {:class "max-w-[600px] mx-auto p-6 space-y-7"}
                    [headers/setup-header]
 
                    (case current-step

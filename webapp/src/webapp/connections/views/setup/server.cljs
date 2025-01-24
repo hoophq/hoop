@@ -90,7 +90,7 @@
         os-type @(rf/subscribe [:connection-setup/os-type])]
     [page-wrapper/main
      {:children
-      [:> Box {:class "max-w-2xl mx-auto p-6"}
+      [:> Box {:class "max-w-[600px] mx-auto p-6 space-y-7"}
        [headers/setup-header]
        [:> Box {:class "space-y-8"}
         [:> Box {:class "space-y-4"}
