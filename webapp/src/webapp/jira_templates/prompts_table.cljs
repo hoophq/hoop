@@ -2,6 +2,7 @@
   (:require
    ["@radix-ui/themes" :refer [Box Table]]
    [webapp.components.forms :as forms]
+   [webapp.components.multiselect :as multi-select]
    [webapp.jira-templates.rule-buttons :as rule-buttons]))
 
 (def required-options
@@ -10,7 +11,8 @@
 
 (def field-type-options
   [{:value "text" :text "Text"}
-   {:value "datetime-local" :text "Date"}])
+   {:value "datetime-local" :text "Date"}
+   {:value "select" :text "Select"}])
 
 (defn main [{:keys [state
                     select-state
@@ -59,15 +61,31 @@
             :not-margin-bottom? true
             :on-change #(on-prompt-field-change state idx :jira_field (-> % .-target .-value))}]]
 
-         [:> Table.Cell {:p "4" :align "center"}
-          [forms/select
-           {:size "2"
-            :variant "ghost"
-            :not-margin-bottom? true
-            :on-change #(on-prompt-field-change state idx :field_type %)
-            :selected (str (:field_type prompt))
-            :full-width? true
-            :options field-type-options}]]
+         [:> Table.Cell (merge
+                         {:p "4"
+                          :align "center"}
+                         (when (= (:field_type prompt) "select")
+                           {:width "256px"}))
+
+          [:> Box {:class "space-y-radix-2"}
+           [forms/select
+            {:size "2"
+             :variant "ghost"
+             :not-margin-bottom? true
+             :on-change #(on-prompt-field-change state idx :field_type %)
+             :selected (str (:field_type prompt))
+             :full-width? true
+             :options field-type-options}]
+           (when (= (:field_type prompt) "select")
+             [multi-select/text-input
+              {:value (:field_options prompt)
+               :input-value (:select-input-value prompt)
+               :on-change (fn [value]
+                            (on-prompt-field-change state idx :field_options value))
+               :on-input-change (fn [value]
+                                  (on-prompt-field-change state idx :select-input-value value))
+               :id (str "jira-prompt-select-" idx)
+               :name (str "jira-prompt-select-" idx)}])]]
 
          [:> Table.Cell {:key (str idx "-description-" (:timestamp prompt)) :p "4"}
           [forms/input
