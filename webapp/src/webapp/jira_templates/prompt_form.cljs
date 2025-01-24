@@ -31,6 +31,28 @@
           .toISOString)
       field-value)))
 
+(defn- render-field [{:keys [label required jira_field field_type field_options form-data on-change]}]
+  (case field_type
+    "select" [forms/select {:label label
+                            :required required
+                            :full-width? true
+                            :options (mapv #(hash-map :value % :text %) field_options)
+                            :selected (get-in @form-data [:jira_fields jira_field] "")
+                            :on-change #(swap! form-data assoc-in [:jira_fields jira_field] %)}]
+
+    "datetime-local" [forms/input {:label label
+                                   :required required
+                                   :type "datetime-local"
+                                   :value (get-in @form-data [:jira_fields jira_field] "")
+                                   :on-change on-change}]
+
+    ;; default text input
+    [forms/input {:label label
+                  :required required
+                  :placeholder label
+                  :value (get-in @form-data [:jira_fields jira_field] "")
+                  :on-change on-change}]))
+
 (defn main [{:keys [prompts cmdb-items on-submit]}]
   (let [form-data (r/atom (init-form-data cmdb-items))]
     (fn []
@@ -59,14 +81,15 @@
          ;; Prompt Fields
          (when (seq prompts)
            [:> Box {:class "space-y-4"}
-            (for [{:keys [label required jira_field field_type]} prompts]
+            (for [{:keys [label required jira_field field_type field_options]} prompts]
               ^{:key jira_field}
-              [forms/input
+              [render-field
                {:label label
                 :required required
-                :type field_type
-                :placeholder label
-                :value (get-in @form-data [:jira_fields jira_field])
+                :jira_field jira_field
+                :field_type field_type
+                :field_options field_options
+                :form-data form-data
                 :on-change #(swap! form-data assoc-in [:jira_fields jira_field] (.. % -target -value))}])])
 
          ;; CMDB Fields - Apenas mostrar campos que precisam de seleção

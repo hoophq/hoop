@@ -13,6 +13,8 @@
    :jira_field ""
    :required true
    :field_type ""
+   :field_options []
+   :select-input-value ""
    :description ""
    :timestamp (.now js/Date)
    :selected false})
@@ -43,6 +45,8 @@
     {:label (:label prompt)
      :jira_field (:jira_field prompt)
      :field_type (:field_type prompt)
+     :field_options (mapv #(into {} {"value" % "label" %}) (:field_options prompt))
+     :select-input-value ""
      :required (:required prompt)
      :timestamp (:timestamp prompt)
      :description (:description prompt)
@@ -177,11 +181,17 @@
           mappings))
 
 (defn remove-empty-prompts [prompts]
-  (remove (fn [prompt]
-            (or (empty? (:label prompt))
-                (empty? (:field_type prompt))
-                (empty? (:jira_field prompt))))
-          prompts))
+  (map (fn [prompt]
+         (if (= "select" (:field_type prompt))
+           (update prompt :field_options #(mapv (fn [option] (get option "value")) %))
+           prompt))
+       (remove (fn [prompt]
+                 (or (empty? (:label prompt))
+                     (empty? (:field_type prompt))
+                     (empty? (:jira_field prompt))
+                     (when (= "select" (:field_type prompt))
+                       (empty? (:field_options prompt)))))
+               prompts)))
 
 (defn remove-empty-cmdb [cmdbs]
   (remove (fn [cmdb]

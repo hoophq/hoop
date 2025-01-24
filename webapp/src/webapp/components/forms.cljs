@@ -75,7 +75,7 @@
                  size
                  not-margin-bottom? ;; TODO: Remove this prop when remove margin-bottom from all inputs
                  hidden]}]
-      [:div {:class (str "mb-regular text-sm"
+      [:div {:class (str "text-sm"
                          (when-not not-margin-bottom? " mb-regular")
                          (when full-width? " w-full")
                          (when hidden " hidden"))}
@@ -89,18 +89,17 @@
 
        [:div {:class (str "rt-TextFieldRoot rt-variant-surface "
                           (case size
-                            "3" "rt-r-size-3"
-                            "2" "rt-r-size-2"
-                            "1" "rt-r-size-1"
-                            "rt-r-size-3"))}
+                            "3" "rt-r-size-3 "
+                            "2" "rt-r-size-2 "
+                            "1" "rt-r-size-1 "
+                            "rt-r-size-3 ")
+                          (when (= type "datetime-local") "*:block")
+                          (when dark "dark"))}
         [:input
          {:type (if (= type "password")
                   (if @eye-open? "password" "text")
                   (or type "text"))
-          :class (str
-                  "rt-reset rt-TextFieldInput "
-                  (when dark "dark")
-                  (when (= type "datetime-local") "*:block"))
+          :class "rt-reset rt-TextFieldInput"
           :id id
           :placeholder (or placeholder label)
           :name name
