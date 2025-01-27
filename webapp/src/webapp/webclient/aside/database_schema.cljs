@@ -22,51 +22,6 @@
   [:div {:class "text-xs pl-regular italic"}
    (str "(" type ")")])
 
-(defn- indexes-columns-tree []
-  (fn [columns]
-    [:div {:class "pl-small"}
-     (doall
-      (for [[number column] (into (sorted-map) columns)]
-        ^{:key (str number column)}
-        [:div {:class "flex items-center gap-small mb-2"}
-         [:> Hash {:size 14}]
-         [:> Text {:size "1" :class "px-1"}
-          (str number " -")]
-         (doall
-          (for [[column-name _] column]
-            ^{:key column-name}
-            [:> Text {:size "1"} column-name]))]))]))
-
-(defn- indexes-tree [_]
-  (let [dropdown-status (r/atom :closed)]
-    (fn [indexes]
-      [:div {:class "pl-small"}
-       [:div
-        [:div {:class "flex items-center gap-small mb-2"}
-         (if (= @dropdown-status :closed)
-           [:> FolderClosed {:size 12}]
-           [:> FolderOpen {:size 12}])
-         [:> Text {:size "1"
-                   :class (str "hover:underline cursor-pointer "
-                               "flex items-center")
-                   :on-click #(reset! dropdown-status
-                                      (if (= @dropdown-status :open) :closed :open))}
-          "Indexes"
-          (if (= @dropdown-status :open)
-            [:> ChevronDown {:size 12}]
-            [:> ChevronRight {:size 12}])]]]
-       [:div {:class (when (not= @dropdown-status :open)
-                       "h-0 overflow-hidden")}
-        (doall
-         (for [[index columns-names] indexes]
-           ^{:key index}
-           [:div {:class "pl-small"}
-            [:div {:class "flex items-center gap-small mb-2"}
-             [:> Hash {:size 14}]
-             [:> Text {:size "1" :class "flex items-center"}
-              index]]
-            [indexes-columns-tree columns-names]]))]])))
-
 (defn- fields-tree [fields]
   (let [dropdown-status (r/atom {})
         dropdown-columns-status (r/atom :closed)]
@@ -109,7 +64,7 @@
 
 (defn- tables-tree []
   (let [dropdown-status (r/atom {})]
-    (fn [tables indexes]
+    (fn [tables]
       [:div {:class "pl-small"}
        (doall
         (for [[table fields] tables]
@@ -128,12 +83,11 @@
                [:> ChevronRight {:size 12}])]]
            [:div {:class (when (not= (get @dropdown-status table) :open)
                            "h-0 overflow-hidden")}
-            [fields-tree (into (sorted-map) fields)]
-            [indexes-tree (into (sorted-map) (get indexes table))]]]))])))
+            [fields-tree (into (sorted-map) fields)]]]))])))
 
 (defn- sql-databases-tree [_]
   (let [dropdown-status (r/atom {})]
-    (fn [schema indexes has-database? current-schema database-schema-status]
+    (fn [schema has-database? current-schema database-schema-status]
       [:div {:class (when has-database?
                       "pl-small")}
        (cond
@@ -160,11 +114,11 @@
                  [:> ChevronRight {:size 12}])]]
              [:div {:class (when (= (get @dropdown-status db) :closed)
                              "h-0 overflow-hidden")}
-              [tables-tree (into (sorted-map) tables) (into (sorted-map) (get indexes db))]]])))])))
+              [tables-tree (into (sorted-map) tables)]]])))])))
 
 (defn- databases-tree []
   (let [open-database (r/atom nil)]
-    (fn [databases schema indexes connection-name database-schema-status current-schema]
+    (fn [databases schema connection-name database-schema-status current-schema]
       [:div.text-xs
        (doall
         (for [db databases]
@@ -206,28 +160,26 @@
                "Couldn't load tables for this database"]
 
               :else
-              [sql-databases-tree schema indexes true])]]))])))
+              [sql-databases-tree schema true])]]))])))
 
 (defn db-view [{:keys [type
                        schema
-                       indexes
                        databases
                        connection-name
                        current-schema
                        database-schema-status]}]
   (case type
-    "oracledb" [sql-databases-tree (into (sorted-map) schema) (into (sorted-map) indexes) false current-schema database-schema-status]
-    "mssql" [sql-databases-tree (into (sorted-map) schema) (into (sorted-map) indexes) false current-schema database-schema-status]
-    "postgres" [databases-tree databases (into (sorted-map) schema) (into (sorted-map) indexes) connection-name database-schema-status current-schema]
-    "mysql" [sql-databases-tree (into (sorted-map) schema) (into (sorted-map) indexes) false current-schema database-schema-status]
-    "mongodb" [databases-tree databases (into (sorted-map) schema) (into (sorted-map) indexes) connection-name database-schema-status current-schema]
+    "oracledb" [sql-databases-tree (into (sorted-map) schema) false current-schema database-schema-status]
+    "mssql" [sql-databases-tree (into (sorted-map) schema) false current-schema database-schema-status]
+    "postgres" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema]
+    "mysql" [sql-databases-tree (into (sorted-map) schema) false current-schema database-schema-status]
+    "mongodb" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema]
     [:> Text {:size "1"}
      "Couldn't load the schema"]))
 
 (defn tree-view-status [{:keys [status
                                 databases
                                 schema
-                                indexes
                                 connection
                                 current-schema
                                 database-schema-status]}]
@@ -249,7 +201,6 @@
     (= status :success)
     [db-view {:type (:connection-type connection)
               :schema schema
-              :indexes indexes
               :databases databases
               :connection-name (:connection-name connection)
               :database-schema-status database-schema-status
@@ -283,7 +234,6 @@
           {:status (:status current-schema)
            :databases (:databases current-schema)
            :schema (:schema-tree current-schema)
-           :indexes (:indexes-tree current-schema)
            :connection connection
            :database-schema-status (:database-schema-status current-schema)
            :current-schema current-schema}]]))))

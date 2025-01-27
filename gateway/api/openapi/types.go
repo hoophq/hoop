@@ -1043,18 +1043,7 @@ type ConnectionSchemaResponse struct {
 									"name": "id",
 									"type": "integer",
 									"nullable": false,
-									"default_value": "",
-									"is_primary_key": true,
-									"is_foreign_key": false
 								},
-							],
-							"indexes": [
-								{
-									"name": "users_pkey",
-									"columns": ["id"],
-									"is_unique": true,
-									"is_primary": true
-								}
 							],
 	          }
 	        ]
@@ -1070,32 +1059,15 @@ type ConnectionDatabaseListResponse struct {
 type ConnectionSchema struct {
 	Name   string            `json:"name"`
 	Tables []ConnectionTable `json:"tables"` // The tables of the schema
-	Views  []ConnectionView  `json:"views"`  // The views of the schema
 }
 
 type ConnectionTable struct {
 	Name    string             `json:"name"`    // The name of the table
 	Columns []ConnectionColumn `json:"columns"` // The columns of the table
-	Indexes []ConnectionIndex  `json:"indexes"` // The indexes of the table
-}
-
-type ConnectionView struct {
-	Name    string             `json:"name"`    // The name of the view
-	Columns []ConnectionColumn `json:"columns"` // The columns of the view
 }
 
 type ConnectionColumn struct {
-	Name         string `json:"name"`                    // The name of the column
-	Type         string `json:"type"`                    // The type of the column
-	Nullable     bool   `json:"nullable"`                // The nullable of the column
-	DefaultValue string `json:"default_value,omitempty"` // The default value of the column
-	IsPrimaryKey bool   `json:"is_primary_key"`          // The primary key of the column
-	IsForeignKey bool   `json:"is_foreign_key"`          // The foreign key of the column
-}
-
-type ConnectionIndex struct {
-	Name      string   `json:"name"`       // The name of the index
-	Columns   []string `json:"columns"`    // The columns of the index
-	IsUnique  bool     `json:"is_unique"`  // The unique of the index
-	IsPrimary bool     `json:"is_primary"` // The primary of the index
+	Name     string `json:"name"`     // The name of the column
+	Type     string `json:"type"`     // The type of the column
+	Nullable bool   `json:"nullable"` // The nullable of the column
 }

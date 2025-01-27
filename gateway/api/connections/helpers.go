@@ -291,36 +291,11 @@ func parseMongoDBSchema(output string) (openapi.ConnectionSchemaResponse, error)
 
 		// Add column
 		column := openapi.ConnectionColumn{
-			Name:         getString(row, "column_name"),
-			Type:         getString(row, "column_type"),
-			Nullable:     !getBool(row, "not_null"),
-			DefaultValue: getString(row, "column_default"),
-			IsPrimaryKey: getBool(row, "is_primary_key"),
-			IsForeignKey: getBool(row, "is_foreign_key"),
+			Name:     getString(row, "column_name"),
+			Type:     getString(row, "column_type"),
+			Nullable: !getBool(row, "not_null"),
 		}
 		table.Columns = append(table.Columns, column)
-
-		// Add index if present
-		if indexName := getString(row, "index_name"); indexName != "" {
-			found := false
-			for _, idx := range table.Indexes {
-				if idx.Name == indexName {
-					found = true
-					break
-				}
-			}
-			if !found {
-				index := openapi.ConnectionIndex{
-					Name:      indexName,
-					IsUnique:  getBool(row, "index_is_unique"),
-					IsPrimary: getBool(row, "index_is_primary"),
-				}
-				if cols := getString(row, "index_columns"); cols != "" {
-					index.Columns = strings.Split(cols, ",")
-				}
-				table.Indexes = append(table.Indexes, index)
-			}
-		}
 	}
 
 	// Convert map to slice
@@ -337,10 +312,16 @@ func parseSQLSchema(output string, connType pb.ConnectionType) (openapi.Connecti
 	lines := strings.Split(output, "\n")
 	var result []map[string]interface{}
 
-	// MSSQL has a different output format
+	// MSSQL has a different output format with header and dashes
 	startLine := 0
 	if connType == pb.ConnectionTypeMSSQL {
-		startLine = 2 // Skip header and dashes for MSSQL
+		for i, line := range lines {
+			// Skip until we find the line with dashes
+			if strings.Contains(line, "----") {
+				startLine = i // Start at the next line after dashes
+				break
+			}
+		}
 	}
 
 	for i, line := range lines {
@@ -350,27 +331,23 @@ func parseSQLSchema(output string, connType pb.ConnectionType) (openapi.Connecti
 		}
 
 		fields := strings.Split(line, "\t")
-		if len(fields) < 12 {
+		if len(fields) < 6 {
 			continue
 		}
 
-		row := map[string]interface{}{
-			"schema_name":    fields[0],
-			"object_type":    fields[1],
-			"object_name":    fields[2],
-			"column_name":    fields[3],
-			"column_type":    fields[4],
-			"not_null":       fields[5] == "t" || fields[5] == "1",
-			"column_default": fields[6],
-			"is_primary_key": fields[7] == "t" || fields[7] == "1",
-			"is_foreign_key": fields[8] == "t" || fields[8] == "1",
+		// MSSQL uses 1/0 for boolean values
+		notNull := fields[5] == "t" || fields[5] == "1"
+		if connType == pb.ConnectionTypeMSSQL {
+			notNull = fields[5] == "1"
 		}
 
-		if len(fields) > 9 && fields[9] != "" {
-			row["index_name"] = fields[9]
-			row["index_columns"] = strings.Split(fields[10], ",")
-			row["index_is_unique"] = fields[11] == "t" || fields[11] == "1"
-			row["index_is_primary"] = len(fields) > 12 && (fields[12] == "t" || fields[12] == "1")
+		row := map[string]interface{}{
+			"schema_name": fields[0],
+			"object_type": fields[1],
+			"object_name": fields[2],
+			"column_name": fields[3],
+			"column_type": fields[4],
+			"not_null":    notNull,
 		}
 
 		result = append(result, row)
@@ -386,7 +363,6 @@ func organizeSchemaResponse(rows []map[string]interface{}) openapi.ConnectionSch
 
 	for _, row := range rows {
 		schemaName := row["schema_name"].(string)
-		objectType := row["object_type"].(string)
 		objectName := row["object_name"].(string)
 
 		// Get or create schema
@@ -397,65 +373,25 @@ func organizeSchemaResponse(rows []map[string]interface{}) openapi.ConnectionSch
 		}
 
 		column := openapi.ConnectionColumn{
-			Name:         row["column_name"].(string),
-			Type:         row["column_type"].(string),
-			Nullable:     !row["not_null"].(bool),
-			DefaultValue: getString(row, "column_default"),
-			IsPrimaryKey: row["is_primary_key"].(bool),
-			IsForeignKey: row["is_foreign_key"].(bool),
+			Name:     row["column_name"].(string),
+			Type:     row["column_type"].(string),
+			Nullable: !row["not_null"].(bool),
 		}
 
-		if objectType == "table" {
-			// Find or create table
-			var table *openapi.ConnectionTable
-			for i := range schema.Tables {
-				if schema.Tables[i].Name == objectName {
-					table = &schema.Tables[i]
-					break
-				}
+		// Find or create table
+		var table *openapi.ConnectionTable
+		for i := range schema.Tables {
+			if schema.Tables[i].Name == objectName {
+				table = &schema.Tables[i]
+				break
 			}
-			if table == nil {
-				schema.Tables = append(schema.Tables, openapi.ConnectionTable{Name: objectName})
-				table = &schema.Tables[len(schema.Tables)-1]
-			}
-
-			// Add column
-			table.Columns = append(table.Columns, column)
-
-			// Add index if present
-			if indexName, ok := row["index_name"].(string); ok && indexName != "" {
-				found := false
-				for _, idx := range table.Indexes {
-					if idx.Name == indexName {
-						found = true
-						break
-					}
-				}
-				if !found {
-					table.Indexes = append(table.Indexes, openapi.ConnectionIndex{
-						Name:      indexName,
-						Columns:   row["index_columns"].([]string),
-						IsUnique:  row["index_is_unique"].(bool),
-						IsPrimary: row["index_is_primary"].(bool),
-					})
-				}
-			}
-		} else {
-			// Find or create view
-			var view *openapi.ConnectionView
-			for i := range schema.Views {
-				if schema.Views[i].Name == objectName {
-					view = &schema.Views[i]
-					break
-				}
-			}
-			if view == nil {
-				schema.Views = append(schema.Views, openapi.ConnectionView{Name: objectName})
-				view = &schema.Views[len(schema.Views)-1]
-			}
-
-			view.Columns = append(view.Columns, column)
 		}
+		if table == nil {
+			schema.Tables = append(schema.Tables, openapi.ConnectionTable{Name: objectName})
+			table = &schema.Tables[len(schema.Tables)-1]
+		}
+
+		table.Columns = append(table.Columns, column)
 	}
 
 	// Convert map to slice

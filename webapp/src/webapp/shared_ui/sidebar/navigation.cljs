@@ -178,14 +178,13 @@
                 (for [plugin sidebar-constants/plugins-management]
                   ^{:key (:name plugin)}
                   [:li
-                   [:> (.-Button ui/Disclosure)
-                    {:as "a"
-                     :onClick (fn []
-                                (if (and free-license? (not (:free-feature? plugin)))
-                                  (rf/dispatch [:navigate :upgrade-plan])
+                   [:a
+                    {:on-click (fn []
+                                 (if (and free-license? (not (:free-feature? plugin)))
+                                   (rf/dispatch [:navigate :upgrade-plan])
 
-                                  (rf/dispatch [:plugins->navigate->manage-plugin (:name plugin)])))
-                     :href "#"
+                                   (rf/dispatch [:plugins->navigate->manage-plugin (:name plugin)])))
+                     :href  "#" #_(routes/url-for :manage-plugin {:plugin-name (:name plugin)})
                      :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-gray-800 "
                                  "block rounded-md py-2 pr-2 pl-9 text-sm leading-6"
                                  (when (and free-license? (not (:free-feature? plugin)))
@@ -216,18 +215,16 @@
                 (for [plugin sidebar-constants/integrations-management]
                   ^{:key (:name plugin)}
                   [:li
-                   [:> (.-Button ui/Disclosure)
-                    {:as "a"
-                     :onClick (fn []
-                                (if (and free-license? (not (:free-feature? plugin)))
-                                  (rf/dispatch [:navigate :upgrade-plan])
+                   [:a {:on-click (fn []
+                                    (if (and free-license? (not (:free-feature? plugin)))
+                                      (rf/dispatch [:navigate :upgrade-plan])
 
-                                  (rf/dispatch [:plugins->navigate->manage-plugin (:name plugin)])))
-                     :href "#"
-                     :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-gray-800 "
-                                 "block rounded-md py-2 pr-2 pl-9 text-sm leading-6"
-                                 (when (and free-license? (not (:free-feature? plugin)))
-                                   " text-opacity-30"))}
+                                      (rf/dispatch [:plugins->navigate->manage-plugin (:name plugin)])))
+                        :href "#"
+                        :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-gray-800 "
+                                    "block rounded-md py-2 pr-2 pl-9 text-sm leading-6"
+                                    (when (and free-license? (not (:free-feature? plugin)))
+                                      " text-opacity-30"))}
                     (:label plugin)
                     (when (and free-license? (not (:free-feature? plugin)))
                       [:div {:class "text-xs text-gray-200 py-1 px-2 border border-gray-200 rounded-md"}
@@ -246,26 +243,23 @@
              [:> (.-Panel ui/Disclosure) {:as "ul"
                                           :class "mt-1 px-2"}
               [:li
-               [:> (.-Button ui/Disclosure) {:as "a"
-                                             :target "_blank"
-                                             :href "https://hoop.canny.io/"
-                                             :class "group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-gray-800 hover:text-white"}
+               [:a {:target "_blank"
+                    :href "https://hoop.canny.io/"
+                    :class "group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-gray-800 hover:text-white"}
                 [:> hero-outline-icon/SparklesIcon {:class "h-6 w-6 shrink-0 text-white"
                                                     :aria-hidden "true"}]
                 "Feature request"]]
               [:li
-               [:> (.-Button ui/Disclosure) {:as "a"
-                                             :target "_blank"
-                                             :href "https://help.hoop.dev"
-                                             :class "group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-gray-800 hover:text-white"}
+               [:a {:target "_blank"
+                    :href "https://help.hoop.dev"
+                    :class "group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-gray-800 hover:text-white"}
                 [:> hero-outline-icon/ChatBubbleLeftEllipsisIcon {:class "h-6 w-6 shrink-0 text-white"
                                                                   :aria-hidden "true"}]
                 "Contact support"]]
               [:li
-               [:> (.-Button ui/Disclosure) {:as "a"
-                                             :onClick #(rf/dispatch [:auth->logout {:idp? (= auth-method "idp")}])
-                                             :href "#"
-                                             :class "group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-gray-800 hover:text-white"}
+               [:a {:onClick #(rf/dispatch [:auth->logout {:idp? (= auth-method "idp")}])
+                    :href "#"
+                    :class "group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-gray-800 hover:text-white"}
                 [:> hero-outline-icon/ArrowLeftOnRectangleIcon {:class "h-6 w-6 shrink-0 text-white"
                                                                 :aria-hidden "true"}]
                 "Log out"]]
