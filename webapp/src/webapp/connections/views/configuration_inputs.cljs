@@ -9,8 +9,11 @@
   [{:keys [key value required placeholder hidden]} index config]
   (let [key-val (r/atom key)
         value-val (r/atom value)
-        save (fn [k v] (swap! config assoc-in [index k] v))]
+        save (fn [k v]
+               (println k v)
+               (swap! config assoc-in [index k] v))]
     (fn []
+      (println @value-val)
       [:<>
        [forms/input {:classes "whitespace-pre overflow-x"
                      :on-change #(reset! value-val (-> % .-target .-value))
