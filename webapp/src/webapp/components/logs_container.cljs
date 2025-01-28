@@ -39,7 +39,7 @@
      [:section
       {:class (str "relative rounded-lg bg-gray-100 h-full"
                    " font-mono p-regular text-xs mb-regular"
-                   " whitespace-pre group")}
+                   " group")}
       (when-not (:not-clipboard? config)
         [:div {:class (str "copy-to-clipboard absolute rounded-lg p-x-small "
                            "top-2 right-2 cursor-pointer box-border text-[--gray-10] "
@@ -49,7 +49,7 @@
       [:div
        {:id container-id
         :class (str (when (:classe config) (:classes config))
-                    " overflow-auto whitespace-pre h-full"
+                    " overflow-auto h-full"
                     (when-not (:fixed-height? config) " max-h-80"))}
        (logs-area (:status config) (:logs config))]]]))
 
