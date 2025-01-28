@@ -43,13 +43,15 @@ func Get(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, &openapi.ProxyManagerResponse{
-		ID:                    obj.ID,
-		Status:                openapi.ClientStatusType(obj.Status),
-		RequestConnectionName: obj.RequestConnectionName,
-		RequestPort:           obj.RequestPort,
-		RequestAccessDuration: obj.RequestAccessDuration,
-		ClientMetadata:        obj.ClientMetadata,
-		ConnectedAt:           obj.ConnectedAt.Format(time.RFC3339),
+		ID:                       obj.ID,
+		Status:                   openapi.ClientStatusType(obj.Status),
+		RequestConnectionName:    obj.RequestConnectionName,
+		RequestConnectionType:    obj.RequestConnectionType,
+		RequestConnectionSubType: obj.RequestConnectionSubType,
+		RequestPort:              obj.RequestPort,
+		RequestAccessDuration:    obj.RequestAccessDuration,
+		ClientMetadata:           obj.ClientMetadata,
+		ConnectedAt:              obj.ConnectedAt.Format(time.RFC3339),
 	})
 }
 
@@ -87,10 +89,12 @@ func Post(c *gin.Context) {
 	for i := 1; i <= 10; i++ {
 		log.Debugf("attempt=%v - dispatching open session", i)
 		pkt, err := transport.DispatchOpenSession(&types.Client{
-			ID:                    clientstate.DeterministicClientUUID(ctx.UserID),
-			RequestConnectionName: req.ConnectionName,
-			RequestPort:           req.Port,
-			RequestAccessDuration: req.AccessDuration,
+			ID:                       clientstate.DeterministicClientUUID(ctx.UserID),
+			RequestConnectionName:    req.ConnectionName,
+			RequestConnectionType:    req.ConnectionType,
+			RequestConnectionSubType: req.ConnectionSubType,
+			RequestPort:              req.Port,
+			RequestAccessDuration:    req.AccessDuration,
 		})
 		if status, ok := status.FromError(err); ok {
 			switch status.Code() {
@@ -123,13 +127,15 @@ func Post(c *gin.Context) {
 			_ = transport.DispatchDisconnect(obj)
 			c.Header("Location", string(pkt.Payload))
 			c.JSON(http.StatusOK, &openapi.ProxyManagerResponse{
-				ID:                    obj.ID,
-				Status:                openapi.ClientStatusType(obj.Status),
-				RequestConnectionName: obj.RequestConnectionName,
-				RequestPort:           obj.RequestPort,
-				RequestAccessDuration: obj.RequestAccessDuration,
-				ClientMetadata:        obj.ClientMetadata,
-				ConnectedAt:           obj.ConnectedAt.Format(time.RFC3339),
+				ID:                       obj.ID,
+				Status:                   openapi.ClientStatusType(obj.Status),
+				RequestConnectionName:    obj.RequestConnectionName,
+				RequestConnectionType:    obj.RequestConnectionType,
+				RequestConnectionSubType: obj.RequestConnectionSubType,
+				RequestPort:              obj.RequestPort,
+				RequestAccessDuration:    obj.RequestAccessDuration,
+				ClientMetadata:           obj.ClientMetadata,
+				ConnectedAt:              obj.ConnectedAt.Format(time.RFC3339),
 			})
 		default:
 			errMsg := fmt.Sprintf("internal error, packet %v condition not implemented", pkt.Type)
@@ -142,7 +148,7 @@ func Post(c *gin.Context) {
 		return
 	}
 	obj, err := clientstate.Update(ctx, types.ClientStatusConnected,
-		clientstate.WithRequestAttributes(req.ConnectionName, req.Port, req.AccessDuration.String())...)
+		clientstate.WithRequestAttributes(req.ConnectionName, req.ConnectionType, req.ConnectionSubType, req.Port, req.AccessDuration.String())...)
 	if err != nil {
 		log.Errorf("fail to update status, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "connected but it fail to update the status"})
@@ -150,13 +156,15 @@ func Post(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, &openapi.ProxyManagerResponse{
-		ID:                    obj.ID,
-		Status:                openapi.ClientStatusType(obj.Status),
-		RequestConnectionName: obj.RequestConnectionName,
-		RequestPort:           obj.RequestPort,
-		RequestAccessDuration: obj.RequestAccessDuration,
-		ClientMetadata:        obj.ClientMetadata,
-		ConnectedAt:           obj.ConnectedAt.Format(time.RFC3339),
+		ID:                       obj.ID,
+		Status:                   openapi.ClientStatusType(obj.Status),
+		RequestConnectionName:    obj.RequestConnectionName,
+		RequestConnectionType:    obj.RequestConnectionType,
+		RequestConnectionSubType: obj.RequestConnectionSubType,
+		RequestPort:              obj.RequestPort,
+		RequestAccessDuration:    obj.RequestAccessDuration,
+		ClientMetadata:           obj.ClientMetadata,
+		ConnectedAt:              obj.ConnectedAt.Format(time.RFC3339),
 	})
 }
 

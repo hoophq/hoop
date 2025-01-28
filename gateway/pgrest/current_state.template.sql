@@ -291,7 +291,7 @@ $$ stable language sql;
 -- PROXYMANAGER
 --
 CREATE VIEW proxymanager_state AS
-    SELECT id, org_id, status, connection, port, access_duration, metadata, connected_at
+    SELECT id, org_id, status, connection, connection_type, connection_subtype, port, access_duration, metadata, connected_at
     FROM private.proxymanager_state;
 
 -- -----------------

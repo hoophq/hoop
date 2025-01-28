@@ -201,12 +201,14 @@ type ServiceAccount struct {
 }
 
 type ProxyManagerState struct {
-	ID             string            `json:"id"`
-	OrgID          string            `json:"org_id"`
-	Status         string            `json:"status"`
-	Connection     string            `json:"connection"`
-	Port           string            `json:"port"`
-	AccessDuration int               `json:"access_duration"`
-	ClientMetadata map[string]string `json:"metadata"`
-	ConnectedAt    string            `json:"connected_at"`
+	ID                string            `json:"id"`
+	OrgID             string            `json:"org_id"`
+	Status            string            `json:"status"`
+	Connection        string            `json:"connection"`
+	ConnectionType    string            `json:"connection_type"`
+	ConnectionSubType string            `json:"connection_subtype"`
+	Port              string            `json:"port"`
+	AccessDuration    int               `json:"access_duration"`
+	ClientMetadata    map[string]string `json:"metadata"`
+	ConnectedAt       string            `json:"connected_at"`
 }
