@@ -15,33 +15,9 @@
                                             (reduce (fn [col-acc column]
                                                       (assoc col-acc (:name column)
                                                              {(:type column)
-                                                              {"nullable" (:nullable column)
-                                                               "is_primary_key" (:is_primary_key column)
-                                                               "is_foreign_key" (:is_foreign_key column)}}))
+                                                              {"nullable" (:nullable column)}}))
                                                     {}
                                                     (:columns table))))
-                                   {}
-                                   (:tables schema))]
-                (assoc acc schema-name tables)))
-            {}
-            schemas)))
-
-(defn- process-indexes [schema-data]
-  (let [schemas (:schemas schema-data)]
-    (reduce (fn [acc schema]
-              (let [schema-name (:name schema)
-                    tables (reduce (fn [table-acc table]
-                                     (assoc table-acc (:name table)
-                                            (reduce (fn [idx-acc index]
-                                                      (assoc idx-acc (:name index)
-                                                             (reduce (fn [col-acc column]
-                                                                       (assoc col-acc column
-                                                                              {"is_unique" (:is_unique index)
-                                                                               "is_primary" (:is_primary index)}))
-                                                                     {}
-                                                                     (:columns index))))
-                                                    {}
-                                                    (:indexes table))))
                                    {}
                                    (:tables schema))]
                 (assoc acc schema-name tables)))
@@ -148,8 +124,7 @@
 (rf/reg-event-fx
  :database-schema->set-multi-database-schema
  (fn [{:keys [db]} [_ {:keys [schema-payload database databases status database-schema-status connection]}]]
-   (let [is-mongodb? (= (:type connection) "mongodb")
-         schema {:status status
+   (let [schema {:status status
                  :data (assoc (-> db :database-schema :data)
                               (:connection-name connection)
                               {:status status
@@ -157,9 +132,6 @@
                                :type (:connection-type connection)
                                :raw schema-payload
                                :schema-tree (process-schema schema-payload)
-                             ;; only process indexes if it's not a mongodb connection
-                               :indexes-tree (when-not is-mongodb?
-                                               (process-indexes schema-payload))
                                :current-database database
                                :databases databases})}]
      {:db (assoc-in db [:database-schema] schema)})))
@@ -198,8 +170,7 @@
                                :database-schema-status database-schema-status
                                :type (:connection-type connection)
                                :raw schema-payload
-                               :schema-tree (process-schema schema-payload)
-                               :indexes-tree (process-indexes schema-payload)})}]
+                               :schema-tree (process-schema schema-payload)})}]
      {:db (assoc-in db [:database-schema] schema)})))
 
 ;; Event unified to handle schema for all databases

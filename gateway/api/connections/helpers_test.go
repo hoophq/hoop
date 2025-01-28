@@ -201,12 +201,9 @@ func TestParseMongoDBSchema(t *testing.T) {
 								Name: "users",
 								Columns: []openapi.ConnectionColumn{
 									{
-										Name:         "id",
-										Type:         "objectId",
-										Nullable:     false,
-										DefaultValue: "",
-										IsPrimaryKey: true,
-										IsForeignKey: false,
+										Name:     "id",
+										Type:     "objectId",
+										Nullable: false,
 									},
 								},
 							},
@@ -241,20 +238,9 @@ func TestParseMongoDBSchema(t *testing.T) {
 								Name: "users",
 								Columns: []openapi.ConnectionColumn{
 									{
-										Name:         "email",
-										Type:         "string",
-										Nullable:     false,
-										DefaultValue: "",
-										IsPrimaryKey: false,
-										IsForeignKey: false,
-									},
-								},
-								Indexes: []openapi.ConnectionIndex{
-									{
-										Name:      "email_idx",
-										Columns:   []string{"email"},
-										IsUnique:  true,
-										IsPrimary: false,
+										Name:     "email",
+										Type:     "string",
+										Nullable: false,
 									},
 								},
 							},
@@ -304,18 +290,14 @@ func TestParseMongoDBSchema(t *testing.T) {
 								Name: "users",
 								Columns: []openapi.ConnectionColumn{
 									{
-										Name:         "id",
-										Type:         "objectId",
-										Nullable:     false,
-										IsPrimaryKey: true,
-										IsForeignKey: false,
+										Name:     "id",
+										Type:     "objectId",
+										Nullable: false,
 									},
 									{
-										Name:         "name",
-										Type:         "string",
-										Nullable:     true,
-										IsPrimaryKey: false,
-										IsForeignKey: false,
+										Name:     "name",
+										Type:     "string",
+										Nullable: true,
 									},
 								},
 							},
@@ -323,11 +305,9 @@ func TestParseMongoDBSchema(t *testing.T) {
 								Name: "posts",
 								Columns: []openapi.ConnectionColumn{
 									{
-										Name:         "id",
-										Type:         "objectId",
-										Nullable:     false,
-										IsPrimaryKey: true,
-										IsForeignKey: false,
+										Name:     "id",
+										Type:     "objectId",
+										Nullable: false,
 									},
 								},
 							},
@@ -373,22 +353,14 @@ func TestParseMongoDBSchemaWithComplexIndexes(t *testing.T) {
 					"object_name": "users",
 					"column_name": "email",
 					"column_type": "string",
-					"not_null": true,
-					"index_name": "compound_idx",
-					"index_columns": "email,age,name",
-					"index_is_unique": true,
-					"index_is_primary": false
+					"not_null": true
 			},
 			{
 					"schema_name": "testdb",
 					"object_name": "users",
 					"column_name": "age",
 					"column_type": "int",
-					"not_null": false,
-					"index_name": "compound_idx",
-					"index_columns": "email,age,name",
-					"index_is_unique": true,
-					"index_is_primary": false
+					"not_null": false
 			}
 	]`
 
@@ -411,14 +383,6 @@ func TestParseMongoDBSchemaWithComplexIndexes(t *testing.T) {
 								Nullable: true,
 							},
 						},
-						Indexes: []openapi.ConnectionIndex{
-							{
-								Name:      "compound_idx",
-								Columns:   []string{"email", "age", "name"},
-								IsUnique:  true,
-								IsPrimary: false,
-							},
-						},
 					},
 				},
 			},
@@ -435,315 +399,292 @@ func TestParseMongoDBSchemaWithComplexIndexes(t *testing.T) {
 	}
 }
 
-// Helper functions
-func findTable(tables []openapi.ConnectionTable, name string) *openapi.ConnectionTable {
-	for i := range tables {
-		if tables[i].Name == name {
-			return &tables[i]
-		}
-	}
-	return nil
-}
-
-func findColumn(columns []openapi.ConnectionColumn, name string) *openapi.ConnectionColumn {
-	for i := range columns {
-		if columns[i].Name == name {
-			return &columns[i]
-		}
-	}
-	return nil
-}
-
 func TestParseSQLSchema(t *testing.T) {
-	testInput := `schema_name	object_type	object_name	column_name	column_type	not_null	column_default	is_primary_key	is_foreign_key	index_name	index_columns	index_is_unique	index_is_primary
-public	table	categories	category	integer	t	nextval('categories_category_seq'::regclass)	f	f	categories_pkey	{category}	t	t
-public	table	categories	categoryname	character varying(50)	t		f	f	categories_pkey	{category}	t	t
-public	table	cust_hist	customerid	integer	t		f	t	ix_cust_hist_customerid	{customerid}	f	f
-public	table	cust_hist	orderid	integer	t		f	f	ix_cust_hist_customerid	{customerid}	f	f
-public	table	customers	customerid	integer	t	nextval('customers_customerid_seq'::regclass)	f	f	customers_pkey	{customerid}	t	t
-public	table	customers	email	character varying(50)	f		f	f	ix_cust_username	{username}	t	f`
+	tests := []struct {
+		name     string
+		input    string
+		connType pb.ConnectionType
+		want     openapi.ConnectionSchemaResponse
+	}{
+		{
+			name: "postgres simple table",
+			input: `schema_name	object_type	object_name	column_name	column_type	not_null
+public	table	users	id	integer	t
+public	table	users	email	varchar	f`,
+			connType: pb.ConnectionTypePostgres,
+			want: openapi.ConnectionSchemaResponse{
+				Schemas: []openapi.ConnectionSchema{
+					{
+						Name: "public",
+						Tables: []openapi.ConnectionTable{
+							{
+								Name: "users",
+								Columns: []openapi.ConnectionColumn{
+									{Name: "id", Type: "integer", Nullable: false},
+									{Name: "email", Type: "varchar", Nullable: true},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "mysql multiple tables",
+			input: `schema_name	object_type	object_name	column_name	column_type	not_null
+app	table	users	id	int	1
+app	table	users	name	varchar	0
+app	table	products	id	int	1`,
+			connType: pb.ConnectionTypeMySQL,
+			want: openapi.ConnectionSchemaResponse{
+				Schemas: []openapi.ConnectionSchema{
+					{
+						Name: "app",
+						Tables: []openapi.ConnectionTable{
+							{
+								Name: "users",
+								Columns: []openapi.ConnectionColumn{
+									{Name: "id", Type: "int", Nullable: false},
+									{Name: "name", Type: "varchar", Nullable: true},
+								},
+							},
+							{
+								Name: "products",
+								Columns: []openapi.ConnectionColumn{
+									{Name: "id", Type: "int", Nullable: false},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "mssql with header dashes",
+			input: `schema_name	object_type	object_name	column_name	column_type	not_null
+-----------	-----------	-----------	-----------	-----------	---------
+dbo	table	customers	id	int	1
+dbo	table	customers	name	varchar	0`,
+			connType: pb.ConnectionTypeMSSQL,
+			want: openapi.ConnectionSchemaResponse{
+				Schemas: []openapi.ConnectionSchema{
+					{
+						Name: "dbo",
+						Tables: []openapi.ConnectionTable{
+							{
+								Name: "customers",
+								Columns: []openapi.ConnectionColumn{
+									{Name: "id", Type: "int", Nullable: false},
+									{Name: "name", Type: "varchar", Nullable: true},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:     "empty input",
+			input:    "",
+			connType: pb.ConnectionTypePostgres,
+			want: openapi.ConnectionSchemaResponse{
+				Schemas: []openapi.ConnectionSchema{},
+			},
+		},
+		{
+			name:     "invalid line format",
+			input:    "schema_name	object_type	object_name	column_name", // menos campos que o necessário
+			connType: pb.ConnectionTypePostgres,
+			want: openapi.ConnectionSchemaResponse{
+				Schemas: []openapi.ConnectionSchema{},
+			},
+		},
+	}
 
-	result, err := parseSQLSchema(testInput, pb.ConnectionTypePostgres)
-	assert.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseSQLSchema(tt.input, tt.connType)
+			if err != nil {
+				t.Errorf("parseSQLSchema() error = %v", err)
+				return
+			}
 
-	// Basic structure validation
-	assert.Len(t, result.Schemas, 1)
-	schema := result.Schemas[0]
-	assert.Equal(t, "public", schema.Name)
-	assert.Len(t, schema.Tables, 3)
+			// Helper para comparar os resultados de forma mais detalhada
+			compareSchemaResponses(t, got, tt.want)
+		})
+	}
+}
 
-	// Test categories table
-	categoriesTable := findTable(schema.Tables, "categories")
-	assert.NotNil(t, categoriesTable)
-	assert.Len(t, categoriesTable.Columns, 2)
-	assert.Len(t, categoriesTable.Indexes, 1)
+// Helper function para comparar as respostas e dar mensagens de erro mais detalhadas
+func compareSchemaResponses(t *testing.T, got, want openapi.ConnectionSchemaResponse) {
+	if len(got.Schemas) != len(want.Schemas) {
+		t.Errorf("schema count mismatch: got %d schemas, want %d schemas",
+			len(got.Schemas), len(want.Schemas))
+		return
+	}
 
-	// Test categories columns
-	catIdCol := findColumn(categoriesTable.Columns, "category")
-	assert.NotNil(t, catIdCol)
-	assert.Equal(t, "integer", catIdCol.Type)
-	assert.Equal(t, "nextval('categories_category_seq'::regclass)", catIdCol.DefaultValue)
-	assert.False(t, catIdCol.Nullable)
+	for i, wantSchema := range want.Schemas {
+		gotSchema := got.Schemas[i]
+		if gotSchema.Name != wantSchema.Name {
+			t.Errorf("schema[%d].Name: got %q, want %q",
+				i, gotSchema.Name, wantSchema.Name)
+			continue
+		}
 
-	catNameCol := findColumn(categoriesTable.Columns, "categoryname")
-	assert.NotNil(t, catNameCol)
-	assert.Equal(t, "character varying(50)", catNameCol.Type)
-	assert.False(t, catNameCol.Nullable)
-	assert.Empty(t, catNameCol.DefaultValue)
+		if len(gotSchema.Tables) != len(wantSchema.Tables) {
+			t.Errorf("schema[%d] (%s) table count mismatch: got %d tables, want %d tables",
+				i, wantSchema.Name, len(gotSchema.Tables), len(wantSchema.Tables))
+			continue
+		}
 
-	// Test categories indexes
-	assert.Equal(t, "categories_pkey", categoriesTable.Indexes[0].Name)
-	assert.Equal(t, []string{"{category}"}, categoriesTable.Indexes[0].Columns)
-	assert.True(t, categoriesTable.Indexes[0].IsUnique)
-	assert.True(t, categoriesTable.Indexes[0].IsPrimary)
+		for j, wantTable := range wantSchema.Tables {
+			gotTable := gotSchema.Tables[j]
+			if gotTable.Name != wantTable.Name {
+				t.Errorf("schema[%d].table[%d].Name: got %q, want %q",
+					i, j, gotTable.Name, wantTable.Name)
+				continue
+			}
 
-	// Test cust_hist table
-	custHistTable := findTable(schema.Tables, "cust_hist")
-	assert.NotNil(t, custHistTable)
-	assert.Len(t, custHistTable.Columns, 2)
+			if len(gotTable.Columns) != len(wantTable.Columns) {
+				t.Errorf("schema[%d].table[%d] (%s.%s) column count mismatch: got %d columns, want %d columns",
+					i, j, wantSchema.Name, wantTable.Name, len(gotTable.Columns), len(wantTable.Columns))
+				continue
+			}
 
-	// Test cust_hist foreign key
-	custIdCol := findColumn(custHistTable.Columns, "customerid")
-	assert.NotNil(t, custIdCol)
-	assert.True(t, custIdCol.IsForeignKey)
-	assert.False(t, custIdCol.IsPrimaryKey)
-
-	// Test customers table with nullable column
-	customersTable := findTable(schema.Tables, "customers")
-	assert.NotNil(t, customersTable)
-	emailCol := findColumn(customersTable.Columns, "email")
-	assert.NotNil(t, emailCol)
-	assert.True(t, emailCol.Nullable)
-
-	// Test edge cases
-	emptyInput := ""
-	emptyResult, err := parseSQLSchema(emptyInput, pb.ConnectionTypePostgres)
-	assert.NoError(t, err)
-	assert.Len(t, emptyResult.Schemas, 0)
-
-	invalidInput := "invalid\tformat\tdata"
-	invalidResult, err := parseSQLSchema(invalidInput, pb.ConnectionTypePostgres)
-	assert.NoError(t, err)
-	assert.Len(t, invalidResult.Schemas, 0)
+			for k, wantColumn := range wantTable.Columns {
+				gotColumn := gotTable.Columns[k]
+				if !reflect.DeepEqual(gotColumn, wantColumn) {
+					t.Errorf("schema[%d].table[%d].column[%d] (%s.%s.%s) mismatch:\ngot  = %+v\nwant = %+v",
+						i, j, k, wantSchema.Name, wantTable.Name, wantColumn.Name, gotColumn, wantColumn)
+				}
+			}
+		}
+	}
 }
 
 func TestOrganizeSchemaResponse(t *testing.T) {
-	// Test case with multiple tables, views, columns and indexes
-	input := []map[string]interface{}{
+	tests := []struct {
+		name string
+		rows []map[string]interface{}
+		want openapi.ConnectionSchemaResponse
+	}{
 		{
-			"schema_name":      "public",
-			"object_type":      "table",
-			"object_name":      "categories",
-			"column_name":      "category",
-			"column_type":      "integer",
-			"not_null":         true,
-			"column_default":   "nextval('categories_category_seq'::regclass)",
-			"is_primary_key":   true,
-			"is_foreign_key":   false,
-			"index_name":       "categories_pkey",
-			"index_columns":    []string{"category"},
-			"index_is_unique":  true,
-			"index_is_primary": true,
+			name: "single table with multiple columns",
+			rows: []map[string]interface{}{
+				{
+					"schema_name": "public",
+					"object_type": "table",
+					"object_name": "users",
+					"column_name": "id",
+					"column_type": "integer",
+					"not_null":    true,
+				},
+				{
+					"schema_name": "public",
+					"object_type": "table",
+					"object_name": "users",
+					"column_name": "email",
+					"column_type": "varchar",
+					"not_null":    false,
+				},
+			},
+			want: openapi.ConnectionSchemaResponse{
+				Schemas: []openapi.ConnectionSchema{
+					{
+						Name: "public",
+						Tables: []openapi.ConnectionTable{
+							{
+								Name: "users",
+								Columns: []openapi.ConnectionColumn{
+									{
+										Name:     "id",
+										Type:     "integer",
+										Nullable: false,
+									},
+									{
+										Name:     "email",
+										Type:     "varchar",
+										Nullable: true,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
 		},
 		{
-			"schema_name":      "public",
-			"object_type":      "table",
-			"object_name":      "categories",
-			"column_name":      "categoryname",
-			"column_type":      "character varying(50)",
-			"not_null":         true,
-			"column_default":   "",
-			"is_primary_key":   false,
-			"is_foreign_key":   false,
-			"index_name":       "categories_pkey",
-			"index_columns":    []string{"category"},
-			"index_is_unique":  true,
-			"index_is_primary": true,
+			name: "multiple schemas and tables",
+			rows: []map[string]interface{}{
+				{
+					"schema_name": "public",
+					"object_type": "table",
+					"object_name": "users",
+					"column_name": "id",
+					"column_type": "integer",
+					"not_null":    true,
+				},
+				{
+					"schema_name": "app",
+					"object_type": "table",
+					"object_name": "products",
+					"column_name": "id",
+					"column_type": "integer",
+					"not_null":    true,
+				},
+			},
+			want: openapi.ConnectionSchemaResponse{
+				Schemas: []openapi.ConnectionSchema{
+					{
+						Name: "public",
+						Tables: []openapi.ConnectionTable{
+							{
+								Name: "users",
+								Columns: []openapi.ConnectionColumn{
+									{
+										Name:     "id",
+										Type:     "integer",
+										Nullable: false,
+									},
+								},
+							},
+						},
+					},
+					{
+						Name: "app",
+						Tables: []openapi.ConnectionTable{
+							{
+								Name: "products",
+								Columns: []openapi.ConnectionColumn{
+									{
+										Name:     "id",
+										Type:     "integer",
+										Nullable: false,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
 		},
 		{
-			"schema_name":      "public",
-			"object_type":      "view",
-			"object_name":      "active_categories",
-			"column_name":      "category",
-			"column_type":      "integer",
-			"not_null":         true,
-			"column_default":   "",
-			"is_primary_key":   false,
-			"is_foreign_key":   false,
-			"index_name":       "",
-			"index_columns":    []string{},
-			"index_is_unique":  false,
-			"index_is_primary": false,
-		},
-	}
-
-	result := organizeSchemaResponse(input)
-
-	// Validate basic structure
-	assert.Len(t, result.Schemas, 1)
-	schema := result.Schemas[0]
-	assert.Equal(t, "public", schema.Name)
-	assert.Len(t, schema.Tables, 1)
-	assert.Len(t, schema.Views, 1)
-
-	// Validate table
-	table := schema.Tables[0]
-	assert.Equal(t, "categories", table.Name)
-	assert.Len(t, table.Columns, 2)
-	assert.Len(t, table.Indexes, 1)
-
-	// Validate columns
-	idCol := findColumn(table.Columns, "category")
-	assert.NotNil(t, idCol)
-	assert.Equal(t, "integer", idCol.Type)
-	assert.Equal(t, "nextval('categories_category_seq'::regclass)", idCol.DefaultValue)
-	assert.False(t, idCol.Nullable)
-	assert.True(t, idCol.IsPrimaryKey)
-
-	nameCol := findColumn(table.Columns, "categoryname")
-	assert.NotNil(t, nameCol)
-	assert.Equal(t, "character varying(50)", nameCol.Type)
-	assert.False(t, nameCol.Nullable)
-	assert.Empty(t, nameCol.DefaultValue)
-	assert.False(t, nameCol.IsPrimaryKey)
-
-	// Validate index
-	assert.Equal(t, "categories_pkey", table.Indexes[0].Name)
-	assert.Equal(t, []string{"category"}, table.Indexes[0].Columns)
-	assert.True(t, table.Indexes[0].IsUnique)
-	assert.True(t, table.Indexes[0].IsPrimary)
-
-	// Validate view
-	view := schema.Views[0]
-	assert.Equal(t, "active_categories", view.Name)
-	assert.Len(t, view.Columns, 1)
-
-	viewCol := view.Columns[0]
-	assert.Equal(t, "category", viewCol.Name)
-	assert.Equal(t, "integer", viewCol.Type)
-	assert.False(t, viewCol.Nullable)
-	assert.Empty(t, viewCol.DefaultValue)
-	assert.False(t, viewCol.IsPrimaryKey)
-
-	// Test case with multiple schemas
-	multiSchemaInput := []map[string]interface{}{
-		{
-			"schema_name":      "public",
-			"object_type":      "table",
-			"object_name":      "table1",
-			"column_name":      "id",
-			"column_type":      "integer",
-			"not_null":         true,
-			"column_default":   "",
-			"is_primary_key":   true,
-			"is_foreign_key":   false,
-			"index_name":       "",
-			"index_columns":    []string{},
-			"index_is_unique":  false,
-			"index_is_primary": false,
-		},
-		{
-			"schema_name":      "app",
-			"object_type":      "table",
-			"object_name":      "table2",
-			"column_name":      "id",
-			"column_type":      "integer",
-			"not_null":         true,
-			"column_default":   "",
-			"is_primary_key":   true,
-			"is_foreign_key":   false,
-			"index_name":       "",
-			"index_columns":    []string{},
-			"index_is_unique":  false,
-			"index_is_primary": false,
+			name: "empty input",
+			rows: []map[string]interface{}{},
+			want: openapi.ConnectionSchemaResponse{
+				Schemas: []openapi.ConnectionSchema{},
+			},
 		},
 	}
 
-	multiResult := organizeSchemaResponse(multiSchemaInput)
-	assert.Len(t, multiResult.Schemas, 2)
-	assert.ElementsMatch(t, []string{"public", "app"}, []string{
-		multiResult.Schemas[0].Name,
-		multiResult.Schemas[1].Name,
-	})
-
-	// Test case with empty input
-	emptyResult := organizeSchemaResponse([]map[string]interface{}{})
-	assert.Len(t, emptyResult.Schemas, 0)
-
-	// Test case with multiple columns in same table
-	sameTableInput := []map[string]interface{}{
-		{
-			"schema_name":      "public",
-			"object_type":      "table",
-			"object_name":      "users",
-			"column_name":      "id",
-			"column_type":      "integer",
-			"not_null":         true,
-			"column_default":   "",
-			"is_primary_key":   true,
-			"is_foreign_key":   false,
-			"index_name":       "",
-			"index_columns":    []string{},
-			"index_is_unique":  false,
-			"index_is_primary": false,
-		},
-		{
-			"schema_name":      "public",
-			"object_type":      "table",
-			"object_name":      "users",
-			"column_name":      "email",
-			"column_type":      "varchar",
-			"not_null":         true,
-			"column_default":   "",
-			"is_primary_key":   false,
-			"is_foreign_key":   false,
-			"index_name":       "",
-			"index_columns":    []string{},
-			"index_is_unique":  false,
-			"index_is_primary": false,
-		},
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := organizeSchemaResponse(tt.rows)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("organizeSchemaResponse() = %v, want %v", got, tt.want)
+			}
+		})
 	}
-
-	sameTableResult := organizeSchemaResponse(sameTableInput)
-	assert.Len(t, sameTableResult.Schemas, 1)
-	assert.Len(t, sameTableResult.Schemas[0].Tables, 1)
-	assert.Len(t, sameTableResult.Schemas[0].Tables[0].Columns, 2)
-}
-
-// Test helper function to validate the output format matches the real DB output
-func TestParseSQLSchemaWithRealOutput(t *testing.T) {
-	input := `schema_name	object_type	object_name	column_name	column_type	not_null	column_default	is_primary_key	is_foreign_key	index_name	index_columns	index_is_unique	index_is_primary
-public	table	categories	category	integer	t	nextval('categories_category_seq'::regclass)	f	f	categories_pkey	{category}	t	t
-public	table	categories	categoryname	character varying(50)	t		f	f	categories_pkey	{category}	t	t
-public	table	customers	customerid	integer	t	nextval('customers_customerid_seq'::regclass)	f	f	customers_pkey	{customerid}	t	t
-public	table	customers	firstname	character varying(50)	t		f	f	customers_pkey	{customerid}	t	t
-public	table	customers	email	character varying(50)	f		f	f	customers_pkey	{customerid}	t	t`
-
-	got, err := parseSQLSchema(input, pb.ConnectionTypePostgres)
-	assert.NoError(t, err)
-
-	// Validate basic structure
-	assert.Len(t, got.Schemas, 1)
-	assert.Equal(t, "public", got.Schemas[0].Name)
-
-	// Validate tables
-	assert.Len(t, got.Schemas[0].Tables, 2)
-
-	// Check categories table
-	categoriesTable := got.Schemas[0].Tables[0]
-	assert.Equal(t, "categories", categoriesTable.Name)
-	assert.Len(t, categoriesTable.Columns, 2)
-	assert.Equal(t, "category", categoriesTable.Columns[0].Name)
-	assert.Equal(t, "integer", categoriesTable.Columns[0].Type)
-	assert.Equal(t, "categoryname", categoriesTable.Columns[1].Name)
-
-	// Check customers table
-	customersTable := got.Schemas[0].Tables[1]
-	assert.Equal(t, "customers", customersTable.Name)
-	assert.Len(t, customersTable.Columns, 3)
-	assert.Equal(t, "customerid", customersTable.Columns[0].Name)
-	assert.Equal(t, "firstname", customersTable.Columns[1].Name)
-	assert.Equal(t, "email", customersTable.Columns[2].Name)
 }
 
 func TestValidateDatabaseName(t *testing.T) {

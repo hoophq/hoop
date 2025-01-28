@@ -62,6 +62,7 @@
                  defaultValue
                  on-change
                  on-keyDown
+                 on-blur
                  required
                  full-width?
                  pattern
@@ -111,6 +112,7 @@
           :step step
           :value value
           :defaultValue defaultValue
+          :on-blur on-blur
           :on-change on-change
           :on-keyDown on-keyDown
           :disabled (or disabled false)
