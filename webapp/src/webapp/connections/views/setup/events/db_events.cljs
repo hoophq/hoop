@@ -5,17 +5,8 @@
 (rf/reg-event-db
  :connection-setup/select-subtype
  (fn [db [_ subtype]]
+   (js/console.log "Select subtype event - Subtype:" subtype)
    (assoc-in db [:connection-setup :subtype] subtype)))
-
-(rf/reg-event-db
- :connection-setup/update-step
- (fn [db [_ step]]
-   (assoc-in db [:connection-setup :current-step] step)))
-
-(rf/reg-event-db
- :connection-setup/update-credentials
- (fn [db [_ field value]]
-   (assoc-in db [:connection-setup :credentials field] value)))
 
 ;; App type and OS selection
 (rf/reg-event-db
@@ -30,7 +21,7 @@
  (fn [db [_ os-type]]
    (-> db
        (assoc-in [:connection-setup :os-type] os-type)
-       (assoc-in [:connection-setup :current-step] :credentials))))
+       (assoc-in [:connection-setup :current-step] :additional-config))))
 
 ;; Environment variables and configuration
 (rf/reg-event-db
@@ -68,7 +59,13 @@
 (rf/reg-event-db
  :connection-setup/toggle-review
  (fn [db [_]]
-   (update-in db [:connection-setup :config :review] not)))
+   (let [new-review-state (not (get-in db [:connection-setup :config :review]))]
+     (-> db
+         (assoc-in [:connection-setup :config :review] new-review-state)
+         ;; Quando review é desabilitado, limpa os grupos
+         (assoc-in [:connection-setup :config :review-groups]
+                   (when new-review-state
+                     (get-in db [:connection-setup :config :review-groups])))))))
 
 (rf/reg-event-db
  :connection-setup/toggle-data-masking
@@ -83,18 +80,46 @@
 (rf/reg-event-db
  :connection-setup/toggle-access-mode
  (fn [db [_ mode]]
-   (update-in db [:connection-setup :config :access-modes mode] not)))
+   (let [current-value (get-in db [:connection-setup :config :access-modes mode])
+         ;; Se o valor atual for nil, considera como true (valor inicial)
+         effective-value (if (nil? current-value) true current-value)]
+     (assoc-in db [:connection-setup :config :access-modes mode] (not effective-value)))))
 
-;; Navigation and form state
+;; Basic form events
+(rf/reg-event-db
+ :connection-setup/set-name
+ (fn [db [_ name]]
+   (assoc-in db [:connection-setup :name] name)))
+
+;; Tags events
+(rf/reg-event-db
+ :connection-setup/set-tags
+ (fn [db [_ tags]]
+   (assoc-in db [:connection-setup :tags] tags)))
+
+(rf/reg-event-db
+ :connection-setup/set-tags-input
+ (fn [db [_ value]]
+   (assoc-in db [:connection-setup :tags-input] value)))
+
+;; Review and Data Masking events
+(rf/reg-event-db
+ :connection-setup/set-review-groups
+ (fn [db [_ groups]]
+   (assoc-in db [:connection-setup :config :review-groups] groups)))
+
+(rf/reg-event-db
+ :connection-setup/set-data-masking-types
+ (fn [db [_ types]]
+   (assoc-in db [:connection-setup :config :data-masking-types] types)))
+
+;; Navigation events
 (rf/reg-event-db
  :connection-setup/next-step
- (fn [db [_]]
-   (let [current-step (get-in db [:connection-setup :current-step])]
-     (assoc-in db [:connection-setup :current-step]
-               (case current-step
-                 :resource :additional-config
-                 :additional-config :resource  ;; fallback
-                 :resource)))))
+ (fn [db [_ next-step]]
+   (js/console.log "Next step event - Current:" (get-in db [:connection-setup :current-step])
+                   "Next:" next-step)
+   (assoc-in db [:connection-setup :current-step] (or next-step :resource))))
 
 (rf/reg-event-db
  :connection-setup/go-back

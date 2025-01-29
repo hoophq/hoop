@@ -7,7 +7,7 @@
   [{:id :type
     :number 1
     :title "Resource"}
-   {:id :database-credentials
+   {:id :credentials
     :number 2
     :title "Credentials"}
    {:id :additional-config
@@ -41,7 +41,6 @@
 (defn main []
   (let [current-step (rf/subscribe [:connection-setup/current-step])]
     (fn []
-      (println @current-step)
       [:> Flex {:align "center" :justify "center" :class "mb-8"}
        (doall
         (for [{:keys [id number title]} steps]

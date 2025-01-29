@@ -93,4 +93,4 @@
                                                 (not all-valid?)))
                      :on-next (if (= current-step :additional-config)
                                 #(rf/dispatch [:connection-setup/submit])
-                                #(rf/dispatch [:connection-setup/next-step]))}}]))
+                                #(rf/dispatch [:connection-setup/next-step :additional-config]))}}]))

@@ -1,11 +1,12 @@
 (ns webapp.connections.views.setup.network
   (:require
-   ["@radix-ui/themes" :refer [Box Button Flex Grid Heading RadioGroup Text]]
+   ["@radix-ui/themes" :refer [Box Button Flex Grid RadioGroup Text]]
    ["lucide-react" :refer [Network]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.forms :as forms]
    [webapp.connections.views.setup.additional-configuration :as additional-configuration]
+   [webapp.connections.views.setup.agent-selector :as agent-selector]
    [webapp.connections.views.setup.headers :as headers]
    [webapp.connections.views.setup.page-wrapper :as page-wrapper]))
 
@@ -13,57 +14,8 @@
   [{:id "tcp" :title "TCP"}
    {:id "http" :title "HTTP (soon)" :disabled true}])
 
-(defn- render-http-headers-form []
-  (let [headers (r/atom [])
-        current-key (r/atom "")
-        current-value (r/atom "")]
-    (fn []
-      [:> Box {:class "mt-4 space-y-4"}
-       [:> Text {:size "3" :weight "medium"} "HTTP headers"]
-
-       ;; Existing headers list
-       (for [{:keys [key value]} @headers]
-         ^{:key key}
-         [:> Grid {:columns "12" :gap "2" :class "items-center"}
-          [:> Box {:class "col-span-5"}
-           [:> Text {:size "2"} key]]
-          [:> Box {:class "col-span-5"}
-           [:> Text {:size "2"} value]]
-          [:> Box {:class "col-span-2"}
-           [:> Button {:size "1"
-                       :variant "soft"
-                       :color "red"
-                       :on-click #(swap! headers (fn [h] (remove
-                                                          (fn [header] (= (:key header) key)) h)))}
-            "Remove"]]])
-
-       ;; Add new header form
-       [:> Grid {:columns "12" :gap "2"}
-        [:> Box {:class "col-span-5"}
-         [forms/input
-          {:size "2"
-           :placeholder "Key"
-           :value @current-key
-           :on-change #(reset! current-key (-> % .-target .-value))}]]
-        [:> Box {:class "col-span-5"}
-         [forms/input
-          {:size "2"
-           :placeholder "Value"
-           :value @current-value
-           :on-change #(reset! current-value (-> % .-target .-value))}]]
-        [:> Box {:class "col-span-2"}
-         [:> Button
-          {:size "2"
-           :variant "soft"
-           :on-click #(when (and (not-empty @current-key) (not-empty @current-value))
-                        (swap! headers conj {:key @current-key :value @current-value})
-                        (reset! current-key "")
-                        (reset! current-value ""))}
-          "Add"]]]])))
-
-(defn- credentials-form []
-  (let [selected-type @(rf/subscribe [:connection-setup/network-type])
-        credentials @(rf/subscribe [:connection-setup/network-credentials])]
+(defn credentials-form []
+  (let [credentials @(rf/subscribe [:connection-setup/network-credentials])]
     [:> Box {:class "space-y-5"}
      [:> Text {:size "4" :weight "bold"} "Environment credentials"]
 
@@ -77,18 +29,122 @@
                                  :host
                                  (-> % .-target .-value)])}]
 
-     ;; User input
+     ;; Port input
      [forms/input
-      {:label "User"
+      {:label "Port"
        :placeholder "e.g. username"
-       :value (get credentials :user "")
+       :value (get credentials :port "")
        :on-change #(rf/dispatch [:connection-setup/update-network-credentials
-                                 :user
-                                 (-> % .-target .-value)])}]
+                                 :port
+                                 (-> % .-target .-value)])}]]))
+
+(defn environment-variables-section []
+  (let [env-vars (rf/subscribe [:connection-setup/environment-variables])
+        current-key (r/atom "")
+        current-value (r/atom "")]
+    (fn []
+      [:> Box {:class "space-y-4"}
+       [:> Text {:size "4" :weight "bold"} "Environment variables"]
+       [:> Text {:size "2" :color "gray"}
+        "Include environment variables to be used in your connection."]
+
+       [:> Grid {:columns "2" :gap "2"}
+        [forms/input
+         {:label "Key"
+          :value @current-key
+          :on-change #(reset! current-key (-> % .-target .-value))}]
+        [forms/input
+         {:label "Value"
+          :type "password"
+          :value @current-value
+          :on-change #(reset! current-value (-> % .-target .-value))}]]
+
+       [:> Button
+        {:size "2"
+         :variant "soft"
+         :on-click #(when (and @current-key @current-value)
+                      (rf/dispatch [:connection-setup/add-environment-variable
+                                    {:key @current-key :value @current-value}])
+                      (reset! current-key "")
+                      (reset! current-value ""))}
+        "Add"]])))
+
+#_(defn- render-http-headers-form []
+    (let [headers (r/atom [])
+          current-key (r/atom "")
+          current-value (r/atom "")]
+      (fn []
+        [:> Box {:class "mt-4 space-y-4"}
+         [:> Text {:size "3" :weight "medium"} "HTTP headers"]
+
+       ;; Existing headers list
+         (for [{:keys [key value]} @headers]
+           ^{:key key}
+           [:> Grid {:columns "12" :gap "2" :class "items-center"}
+            [:> Box {:class "col-span-5"}
+             [:> Text {:size "2"} key]]
+            [:> Box {:class "col-span-5"}
+             [:> Text {:size "2"} value]]
+            [:> Box {:class "col-span-2"}
+             [:> Button {:size "1"
+                         :variant "soft"
+                         :color "red"
+                         :on-click #(swap! headers (fn [h] (remove
+                                                            (fn [header] (= (:key header) key)) h)))}
+              "Remove"]]])
+
+       ;; Add new header form
+         [:> Grid {:columns "12" :gap "2"}
+          [:> Box {:class "col-span-5"}
+           [forms/input
+            {:size "2"
+             :placeholder "Key"
+             :value @current-key
+             :on-change #(reset! current-key (-> % .-target .-value))}]]
+          [:> Box {:class "col-span-5"}
+           [forms/input
+            {:size "2"
+             :placeholder "Value"
+             :value @current-value
+             :on-change #(reset! current-value (-> % .-target .-value))}]]
+          [:> Box {:class "col-span-2"}
+           [:> Button
+            {:size "2"
+             :variant "soft"
+             :on-click #(when (and (not-empty @current-key) (not-empty @current-value))
+                          (swap! headers conj {:key @current-key :value @current-value})
+                          (reset! current-key "")
+                          (reset! current-value ""))}
+            "Add"]]]])))
+
+#_(defn- credentials-form []
+    (let [selected-type @(rf/subscribe [:connection-setup/network-type])
+          credentials @(rf/subscribe [:connection-setup/network-credentials])]
+      [:> Box {:class "space-y-5"}
+       [:> Text {:size "4" :weight "bold"} "Environment credentials"]
+
+     ;; Host input
+       [forms/input
+        {:label "Host"
+         :placeholder "e.g. localhost"
+         :required true
+         :value (get credentials :host "")
+         :on-change #(rf/dispatch [:connection-setup/update-network-credentials
+                                   :host
+                                   (-> % .-target .-value)])}]
+
+     ;; User input
+       [forms/input
+        {:label "User"
+         :placeholder "e.g. username"
+         :value (get credentials :user "")
+         :on-change #(rf/dispatch [:connection-setup/update-network-credentials
+                                   :user
+                                   (-> % .-target .-value)])}]
 
      ;; HTTP Headers section (only for HTTP type)
-     (when (= selected-type "http")
-       [render-http-headers-form])]))
+       (when (= selected-type "http")
+         [render-http-headers-form])]))
 
 (defn- resource-step []
   (let [selected-type @(rf/subscribe [:connection-setup/network-type])]
@@ -108,33 +164,38 @@
            [:> Network {:size 16}]
            title]])]]
 
-     (when selected-type
-       [credentials-form])]))
+     (when (= selected-type "tcp")
+       [:<>
+        [credentials-form]
+        [agent-selector/main]
+        [environment-variables-section]])]))
 
 (defn main []
-  (let [current-step @(rf/subscribe [:connection-setup/current-step])
-        selected-type @(rf/subscribe [:connection-setup/network-type])]
+  (let [network-type @(rf/subscribe [:connection-setup/network-type])
+        current-step @(rf/subscribe [:connection-setup/current-step])
+        credentials @(rf/subscribe [:connection-setup/network-credentials])]
     [page-wrapper/main
-     {:children [:> Box {:class "min-h-screen bg-gray-1"}
-                     ;; Main content with padding to account for fixed footer
-                 [:> Box {:class "pb-24"}
-                  [:> Box {:class "max-w-[600px] mx-auto p-6 space-y-7"}
-                   [headers/setup-header]
+     {:children [:> Box {:class "max-w-[600px] mx-auto p-6 space-y-7"}
+                 [headers/setup-header]
 
-                   (case current-step
-                     :resource [resource-step]
-                     :additional-config [additional-configuration/main
-                                         {:selected-type @(rf/subscribe [:connection-setup/network-type])}]
-                     [resource-step])]]]
+                 (case current-step
+                   :resource [resource-step]
+                   :additional-config [additional-configuration/main
+                                       {:selected-type network-type}]
+                   [resource-step])]
 
                      ;; Footer
       :footer-props {:next-text (if (= current-step :additional-config)
                                   "Confirm"
                                   "Next: Configuration")
-                     :next-disabled? (or (not selected-type)
-                                         false
-                                         #_(and (= current-step :resource)
-                                                (not network-valid?)))
+                     :next-disabled? (case current-step
+                                       :resource (or
+                                                  (not network-type)
+                                                  (and (= network-type "tcp")
+                                                       (or
+                                                        (empty? (get credentials :host))
+                                                        (empty? (get credentials :port)))))
+                                       false)
                      :on-next (if (= current-step :additional-config)
                                 #(rf/dispatch [:connection-setup/submit])
-                                #(rf/dispatch [:connection-setup/next-step]))}}]))
+                                #(rf/dispatch [:connection-setup/next-step :additional-config]))}}]))
