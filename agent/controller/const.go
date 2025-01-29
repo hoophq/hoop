@@ -8,4 +8,5 @@ const (
 	msPresidioAnalyzerURLKey   string = "mspresidio_analyzer_url"
 	msPresidioAnonymizerURLKey string = "mspresidio_anonymizer_url"
 	connEnvKey                 string = "connenv"
+	internalExitCode           string = "254"
 )

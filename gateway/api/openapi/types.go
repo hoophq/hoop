@@ -400,6 +400,14 @@ var AvailableSessionOptions = []SessionOptionKey{
 	SessionOptionOffset,
 }
 
+type SessionStatusType string
+
+const (
+	SessionStatusOpen  SessionStatusType = "open"
+	SessionStatusReady SessionStatusType = "ready"
+	SessionStatusDone  SessionStatusType = "done"
+)
+
 type Session struct {
 	// The resource unique identifier
 	ID string `json:"id" format:"uuid" example:"1CBC8DB5-FBF8-4293-8E35-59A6EEA40207"`
@@ -422,6 +430,8 @@ type Session struct {
 	UserName string `json:"user_name" example:"John Wick"`
 	// The connection type of this resource
 	Type string `json:"type" example:"database"`
+	// The subtype of the connection
+	ConnectionSubtype string `json:"connection_subtype" example:"postgres"`
 	// The connection name of this resource
 	Connection string `json:"connection" example:"pgdemo"`
 	// Review of this session. In case the review doesn't exist this field will be null
@@ -434,7 +444,9 @@ type Session struct {
 	// * ready - the resource is ready to be executed, after being approved by a user
 	// * open - the session started and it's running
 	// * done - the session has finished
-	Status string `json:"status" enums:"open,ready,done"`
+	Status SessionStatusType `json:"status"`
+	// The Linux exit code if it's available
+	ExitCode *int `json:"exit_code"`
 	// The stream containing the output of the execution in the following format
 	//
 	// `[[0.268589438, "i", "ZW52"], ...]`
@@ -884,6 +896,7 @@ type JiraIssueTemplateRequest struct {
 		- session.user_id
 		- session.user_name
 		- session.type
+		- session.connection_subtype
 		- session.connection
 		- session.status
 		- session.script

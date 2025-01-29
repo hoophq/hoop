@@ -1,13 +1,7 @@
 package pgsession
 
 import (
-	"fmt"
-	"net/url"
-	"time"
-
-	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/pgrest"
-	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
 type session struct{}
@@ -20,68 +14,68 @@ func (s *session) UpdateStatus(ctx pgrest.OrgContext, sessionID, status string) 
 		Error()
 }
 
-func (s *session) Upsert(ctx pgrest.OrgContext, sess types.Session) (err error) {
-	switch sess.Status {
-	// this will be executed in distinct flows
-	case types.SessionStatusOpen:
-		// generate deterministic uuid based on the session id to avoid duplicates
-		blobInputID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf("blobinput:%s", sess.ID)))
-		defer func() {
-			if err != nil {
-				return
-			}
-			if input := sess.Script["data"]; input != "" {
-				err = pgrest.New("/blobs?on_conflict=org_id,id").Upsert(map[string]any{
-					"id":          blobInputID,
-					"org_id":      sess.OrgID,
-					"type":        "session-input",
-					"blob_stream": []any{input},
-				}).Error()
-			}
-		}()
-		err = pgrest.New("/sessions").Upsert(map[string]any{
-			"id":              sess.ID,
-			"org_id":          sess.OrgID,
-			"labels":          sess.Labels,
-			"metadata":        sess.Metadata,
-			"connection":      sess.Connection,
-			"connection_type": sess.Type,
-			"verb":            sess.Verb,
-			"user_id":         sess.UserID,
-			"user_name":       sess.UserName,
-			"user_email":      sess.UserEmail,
-			"blob_input_id":   blobInputID,
-			"status":          sess.Status,
-		}).Error()
-	case types.SessionStatusDone:
-		blobStreamID := uuid.NewString()
-		defer func() {
-			if err != nil || len(sess.NonIndexedStream["stream"]) == 0 {
-				return
-			}
-			err = pgrest.New("/blobs").Create(map[string]any{
-				"id":          blobStreamID,
-				"org_id":      sess.OrgID,
-				"type":        "session-stream",
-				"blob_stream": sess.NonIndexedStream["stream"],
-			}).Error()
-		}()
-		if sess.Metadata == nil {
-			sess.Metadata = map[string]any{}
-		}
-		err = pgrest.New("/sessions?org_id=eq.%s&id=eq.%s", sess.OrgID, sess.ID).Patch(map[string]any{
-			"labels":         sess.Labels,
-			"blob_stream_id": blobStreamID,
-			"status":         sess.Status,
-			"ended_at":       sess.EndSession.Format(time.RFC3339Nano),
-			"metadata":       sess.Metadata,
-			"metrics":        sess.Metrics,
-		}).Error()
-	default:
-		return fmt.Errorf("unknown session status %q", sess.Status)
-	}
-	return
-}
+// func (s *session) Upsert(ctx pgrest.OrgContext, sess types.Session) (err error) {
+// 	switch sess.Status {
+// 	// this will be executed in distinct flows
+// 	case types.SessionStatusOpen:
+// 		// generate deterministic uuid based on the session id to avoid duplicates
+// 		blobInputID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf("blobinput:%s", sess.ID)))
+// 		defer func() {
+// 			if err != nil {
+// 				return
+// 			}
+// 			if input := sess.Script["data"]; input != "" {
+// 				err = pgrest.New("/blobs?on_conflict=org_id,id").Upsert(map[string]any{
+// 					"id":          blobInputID,
+// 					"org_id":      sess.OrgID,
+// 					"type":        "session-input",
+// 					"blob_stream": []any{input},
+// 				}).Error()
+// 			}
+// 		}()
+// 		err = pgrest.New("/sessions").Upsert(map[string]any{
+// 			"id":              sess.ID,
+// 			"org_id":          sess.OrgID,
+// 			"labels":          sess.Labels,
+// 			"metadata":        sess.Metadata,
+// 			"connection":      sess.Connection,
+// 			"connection_type": sess.Type,
+// 			"verb":            sess.Verb,
+// 			"user_id":         sess.UserID,
+// 			"user_name":       sess.UserName,
+// 			"user_email":      sess.UserEmail,
+// 			"blob_input_id":   blobInputID,
+// 			"status":          sess.Status,
+// 		}).Error()
+// 	case types.SessionStatusDone:
+// 		blobStreamID := uuid.NewString()
+// 		defer func() {
+// 			if err != nil || len(sess.NonIndexedStream["stream"]) == 0 {
+// 				return
+// 			}
+// 			err = pgrest.New("/blobs").Create(map[string]any{
+// 				"id":          blobStreamID,
+// 				"org_id":      sess.OrgID,
+// 				"type":        "session-stream",
+// 				"blob_stream": sess.NonIndexedStream["stream"],
+// 			}).Error()
+// 		}()
+// 		if sess.Metadata == nil {
+// 			sess.Metadata = map[string]any{}
+// 		}
+// 		err = pgrest.New("/sessions?org_id=eq.%s&id=eq.%s", sess.OrgID, sess.ID).Patch(map[string]any{
+// 			"labels":         sess.Labels,
+// 			"blob_stream_id": blobStreamID,
+// 			"status":         sess.Status,
+// 			"ended_at":       sess.EndSession.Format(time.RFC3339Nano),
+// 			"metadata":       sess.Metadata,
+// 			"metrics":        sess.Metrics,
+// 		}).Error()
+// 	default:
+// 		return fmt.Errorf("unknown session status %q", sess.Status)
+// 	}
+// 	return
+// }
 
 // func (s *session) FetchAll(ctx pgrest.OrgContext, opts ...*pgrest.SessionOption) (*pgrest.SessionList, error) {
 // 	var items []pgrest.Session
@@ -104,50 +98,50 @@ func (s *session) Upsert(ctx pgrest.OrgContext, sess types.Session) (err error) 
 // 	}, nil
 // }
 
-func (s *session) FetchOne(ctx pgrest.OrgContext, sessionID string) (*types.Session, error) {
-	var sess pgrest.Session
-	err := pgrest.New("/sessions?select=*,blob_input(id,org_id,type,type,size,blob_stream),blob_stream(id,org_id,type,size,blob_stream)&org_id=eq.%s&id=eq.%s",
-		ctx.GetOrgID(), url.QueryEscape(sessionID)).
-		FetchOne().
-		DecodeInto(&sess)
-	if err != nil {
-		if err == pgrest.ErrNotFound {
-			return nil, nil
-		}
-		return nil, err
-	}
+// func (s *session) FetchOne(ctx pgrest.OrgContext, sessionID string) (*types.Session, error) {
+// 	var sess pgrest.Session
+// 	err := pgrest.New("/sessions?select=*,blob_input(id,org_id,type,type,size,blob_stream),blob_stream(id,org_id,type,size,blob_stream)&org_id=eq.%s&id=eq.%s",
+// 		ctx.GetOrgID(), url.QueryEscape(sessionID)).
+// 		FetchOne().
+// 		DecodeInto(&sess)
+// 	if err != nil {
+// 		if err == pgrest.ErrNotFound {
+// 			return nil, nil
+// 		}
+// 		return nil, err
+// 	}
 
-	blobStream, blobStreamSize := sess.GetBlobStream()
-	return &types.Session{
-		ID:               sess.ID,
-		OrgID:            sess.OrgID,
-		Script:           types.SessionScript{"data": sess.GetBlobInput()},
-		Labels:           sess.Labels,
-		Metadata:         sess.Metadata,
-		Metrics:          sess.Metrics,
-		UserEmail:        sess.UserEmail,
-		UserID:           sess.UserID,
-		UserName:         sess.UserName,
-		Type:             sess.ConnectionType,
-		Connection:       sess.Connection,
-		Verb:             sess.Verb,
-		Status:           sess.Status,
-		EventStream:      nil,
-		NonIndexedStream: types.SessionNonIndexedEventStreamList{"stream": blobStream},
-		EventSize:        blobStreamSize,
-		StartSession:     sess.GetCreatedAt(),
-		EndSession:       sess.GetEndedAt(),
-	}, nil
-}
+// 	blobStream, blobStreamSize := sess.GetBlobStream()
+// 	return &types.Session{
+// 		ID:               sess.ID,
+// 		OrgID:            sess.OrgID,
+// 		Script:           types.SessionScript{"data": sess.GetBlobInput()},
+// 		Labels:           sess.Labels,
+// 		Metadata:         sess.Metadata,
+// 		Metrics:          sess.Metrics,
+// 		UserEmail:        sess.UserEmail,
+// 		UserID:           sess.UserID,
+// 		UserName:         sess.UserName,
+// 		Type:             sess.ConnectionType,
+// 		Connection:       sess.Connection,
+// 		Verb:             sess.Verb,
+// 		Status:           sess.Status,
+// 		EventStream:      nil,
+// 		NonIndexedStream: types.SessionNonIndexedEventStreamList{"stream": blobStream},
+// 		EventSize:        blobStreamSize,
+// 		StartSession:     sess.GetCreatedAt(),
+// 		EndSession:       sess.GetEndedAt(),
+// 	}, nil
+// }
 
-func (s *session) FetchAllFromDate(fromDate time.Time) ([]*types.Session, error) {
-	var sessionList []*types.Session
-	err := pgrest.New("/sessions?select=id,org_id&created_at=gt.%s", fromDate.Format(time.RFC3339)).List().DecodeInto(&sessionList)
-	if err != nil && err != pgrest.ErrNotFound {
-		return nil, err
-	}
-	return sessionList, nil
-}
+// func (s *session) FetchAllFromDate(fromDate time.Time) ([]*types.Session, error) {
+// 	var sessionList []*types.Session
+// 	err := pgrest.New("/sessions?select=id,org_id&created_at=gt.%s", fromDate.Format(time.RFC3339)).List().DecodeInto(&sessionList)
+// 	if err != nil && err != pgrest.ErrNotFound {
+// 		return nil, err
+// 	}
+// 	return sessionList, nil
+// }
 
 // func toQueryParams(orgID string, opts ...*pgrest.SessionOption) (string, int) {
 // 	vals := url.Values{}

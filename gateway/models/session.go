@@ -7,10 +7,14 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
-const tableSessions string = "private.sessions"
+const (
+	tableSessions string = "private.sessions"
+	tableBlobs    string = "private.blobs"
+)
 
 type BlobInputType string
 
@@ -56,21 +60,45 @@ type Session struct {
 	OrgID                string            `gorm:"column:org_id"`
 	Connection           string            `gorm:"column:connection"`
 	ConnectionType       string            `gorm:"column:connection_type"`
+	ConnectionSubtype    string            `gorm:"column:connection_subtype"`
 	Verb                 string            `gorm:"column:verb"`
 	Labels               map[string]string `gorm:"column:labels;serializer:json"`
 	Metadata             map[string]any    `gorm:"column:metadata;serializer:json"`
 	IntegrationsMetadata map[string]any    `gorm:"column:integrations_metadata;serializer:json"`
 	Metrics              map[string]any    `gorm:"column:metrics;serializer:json"`
-	BlobInput            BlobInputType     `gorm:"column:blob_input"`
-	BlobStream           json.RawMessage   `gorm:"column:blob_stream"`
-	BlobStreamSize       int64             `gorm:"column:blob_stream_size"`
+	BlobInputID          sql.NullString    `gorm:"column:blob_input_id"`
+	BlobInput            BlobInputType     `gorm:"column:blob_input;->"`
+	BlobStream           json.RawMessage   `gorm:"column:blob_stream;->"`
+	BlobStreamSize       int64             `gorm:"column:blob_stream_size;->"`
 	UserID               string            `gorm:"column:user_id"`
 	UserName             string            `gorm:"column:user_name"`
 	UserEmail            string            `gorm:"column:user_email"`
 	Status               string            `gorm:"column:status"`
+	ExitCode             *int              `gorm:"column:exit_code"`
 
 	CreatedAt  time.Time  `gorm:"column:created_at"`
 	EndSession *time.Time `gorm:"column:ended_at"`
+}
+
+type SessionDone struct {
+	ID         string
+	OrgID      string
+	Metrics    map[string]any
+	BlobStream json.RawMessage
+	ExitCode   *int
+	Status     string
+	EndSession *time.Time
+}
+
+type sessionDone struct {
+	ID           string          `gorm:"column:id"`
+	OrgID        string          `gorm:"column:org_id"`
+	Metrics      map[string]any  `gorm:"column:metrics;serializer:json"`
+	BlobStreamID sql.NullString  `gorm:"column:blob_stream_id"`
+	BlobStream   json.RawMessage `gorm:"column:blob_stream"`
+	ExitCode     *int            `gorm:"column:exit_code"`
+	Status       string          `gorm:"column:status"`
+	EndSession   *time.Time      `gorm:"column:ended_at"`
 }
 
 type SessionList struct {
@@ -79,11 +107,18 @@ type SessionList struct {
 	Items       []Session
 }
 
+type Blob struct {
+	ID         string          `gorm:"column:id"`
+	OrgID      string          `gorm:"column:org_id"`
+	BlobStream json.RawMessage `gorm:"column:blob_stream"`
+	Type       string          `gorm:"column:type"`
+}
+
 func GetSessionByID(orgID, sid string) (*Session, error) {
 	var session Session
 	err := DB.Raw(`
 	SELECT
-		s.id, s.org_id, s.connection, s.connection_type, s.verb, s.labels,
+		s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.verb, s.labels, s.exit_code,
 		s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics,
 		bi.blob_stream AS blob_input, bs.blob_stream AS blob_stream, pg_column_size(bs.blob_stream::TEXT) AS blob_stream_size,
 		s.created_at, s.ended_at
@@ -130,7 +165,7 @@ func ListSessions(orgID string, opt SessionOption) (*SessionList, error) {
 
 		err = tx.Raw(`
 		SELECT
-			s.id, s.org_id, s.connection, s.connection_type, s.verb, s.labels,
+			s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.verb, s.labels, s.exit_code,
 			s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics,
 			pg_column_size(bs.blob_stream::TEXT) AS blob_stream_size,
 			s.created_at, s.ended_at
@@ -163,6 +198,98 @@ func ListSessions(orgID string, opt SessionOption) (*SessionList, error) {
 			sessionList.HasNextPage = len(sessionList.Items) == opt.Limit
 		}
 		return err
+	})
+}
+
+// UpsertSession updates or create all attributes of a session with exception of
+// session streams
+func UpsertSession(sess Session) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		// generate deterministic uuid based on the session id to avoid duplicates
+		blobInputID := sql.NullString{
+			String: uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf("blobinput:%s", sess.ID))).String(),
+			Valid:  true,
+		}
+
+		blobInput := Blob{
+			ID:         blobInputID.String,
+			OrgID:      sess.OrgID,
+			Type:       "session-input",
+			BlobStream: json.RawMessage(fmt.Sprintf("[%q]", sess.BlobInput)),
+		}
+		res := tx.Table(tableBlobs).Debug().
+			Where("org_id = ? AND id = ?", sess.OrgID, blobInputID.String).
+			Updates(blobInput)
+		if res.Error == nil && res.RowsAffected == 0 {
+			res.Error = tx.Table(tableBlobs).Debug().Create(blobInput).Error
+		}
+
+		if res.Error != nil {
+			return fmt.Errorf("failed creating session blob input, reason=%v", res.Error)
+		}
+		return tx.Table(tableSessions).Debug().Save(
+			Session{
+				ID:                   sess.ID,
+				OrgID:                sess.OrgID,
+				Labels:               sess.Labels,
+				Metadata:             sess.Metadata,
+				IntegrationsMetadata: sess.IntegrationsMetadata,
+				Metrics:              sess.Metrics,
+				Connection:           sess.Connection,
+				ConnectionType:       sess.ConnectionType,
+				ConnectionSubtype:    sess.ConnectionSubtype,
+				Verb:                 sess.Verb,
+				UserID:               sess.UserID,
+				UserName:             sess.UserName,
+				UserEmail:            sess.UserEmail,
+				BlobInputID:          blobInputID,
+				Status:               sess.Status,
+				ExitCode:             sess.ExitCode,
+				CreatedAt:            sess.CreatedAt,
+				EndSession:           sess.EndSession,
+			}).Error
+	})
+}
+
+// UpdateSessionEventStream updates a session partially
+func UpdateSessionEventStream(sess SessionDone) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		// generate deterministic uuid based on the session id to avoid duplicates
+		blobStreamID := sql.NullString{
+			String: uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf("blobstream:%s", sess.ID))).String(),
+			Valid:  true,
+		}
+
+		blobStream := Blob{
+			ID:         blobStreamID.String,
+			OrgID:      sess.OrgID,
+			BlobStream: sess.BlobStream,
+			Type:       "session-stream",
+		}
+		res := tx.Table(tableBlobs).Debug().
+			Where("org_id = ? AND id = ?", sess.OrgID, blobStreamID.String).
+			Updates(blobStream)
+		if res.Error == nil && res.RowsAffected == 0 {
+			res.Error = tx.Table(tableBlobs).Debug().Create(blobStream).Error
+		}
+
+		if res.Error != nil {
+			return fmt.Errorf("failed creating session blob stream, reason=%v", res.Error)
+		}
+
+		// update: status, labels, metrics, end_date, exit_code, event_stream
+		return tx.Table(tableSessions).Debug().
+			Where("org_id = ? AND id = ?", sess.OrgID, sess.ID).
+			Updates(sessionDone{
+				ID:           sess.ID,
+				OrgID:        sess.OrgID,
+				Metrics:      sess.Metrics,
+				BlobStreamID: blobStreamID,
+				ExitCode:     sess.ExitCode,
+				Status:       sess.Status,
+				EndSession:   sess.EndSession,
+			}).
+			Error
 	})
 }
 

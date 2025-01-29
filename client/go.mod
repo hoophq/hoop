@@ -16,7 +16,6 @@ require (
 	github.com/BurntSushi/toml v1.3.2
 	github.com/blevesearch/bleve/v2 v2.3.7
 	github.com/getsentry/sentry-go v0.18.0
-	github.com/go-co-op/gocron v1.18.1
 	github.com/google/go-cmp v0.6.0
 	github.com/google/uuid v1.6.0
 	github.com/hoophq/hoop/agent v0.0.0-00010101000000-000000000000
@@ -135,7 +134,6 @@ require (
 	github.com/pjbgf/sha1cd v0.3.0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20221212215047-62379fc7944b // indirect
 	github.com/rivo/uniseg v0.4.4 // indirect
-	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/segmentio/analytics-go/v3 v3.2.1 // indirect
 	github.com/segmentio/backo-go v1.0.0 // indirect
 	github.com/sergi/go-diff v1.1.0 // indirect

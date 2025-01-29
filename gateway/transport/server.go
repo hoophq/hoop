@@ -168,12 +168,6 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 		ClientVerb:   "",
 		ClientOrigin: "",
 
-		// TODO: deprecate it and allow the
-		// audit plugin to update these attributes
-		Script:   "",
-		Labels:   nil,
-		Metadata: nil,
-
 		ParamsData: map[string]any{},
 	}
 

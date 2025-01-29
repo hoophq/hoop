@@ -158,7 +158,7 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 			Type:    pbclient.SessionClose,
 			Payload: []byte(err.Error()),
 			Spec: map[string][]byte{
-				pb.SpecClientExitCodeKey: []byte(`1`),
+				pb.SpecClientExitCodeKey: []byte(internalExitCode),
 				pb.SpecGatewaySessionID:  sessionID,
 			},
 		})
@@ -217,7 +217,7 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 				Type:    pbclient.SessionClose,
 				Payload: []byte(err.Error()),
 				Spec: map[string][]byte{
-					pb.SpecClientExitCodeKey: []byte(`1`),
+					pb.SpecClientExitCodeKey: []byte(internalExitCode),
 					pb.SpecGatewaySessionID:  sessionID,
 				},
 			})
@@ -395,7 +395,7 @@ func (a *Agent) decodeConnectionParams(sessionID []byte, pkt *pb.Packet) *pb.Age
 			Type:    pbclient.SessionClose,
 			Payload: []byte(`internal error, failed decoding connection params`),
 			Spec: map[string][]byte{
-				pb.SpecClientExitCodeKey: []byte(`1`),
+				pb.SpecClientExitCodeKey: []byte(internalExitCode),
 				pb.SpecGatewaySessionID:  sessionID,
 			},
 		})
@@ -409,7 +409,7 @@ func (a *Agent) decodeConnectionParams(sessionID []byte, pkt *pb.Packet) *pb.Age
 			Type:    pbclient.SessionClose,
 			Payload: []byte(errMsg),
 			Spec: map[string][]byte{
-				pb.SpecClientExitCodeKey: []byte(`1`),
+				pb.SpecClientExitCodeKey: []byte(internalExitCode),
 				pb.SpecGatewaySessionID:  sessionID,
 			},
 		})
@@ -424,7 +424,7 @@ func (a *Agent) decodeConnectionParams(sessionID []byte, pkt *pb.Packet) *pb.Age
 				Type:    pbclient.SessionClose,
 				Payload: []byte(`internal error, failed decoding client env vars`),
 				Spec: map[string][]byte{
-					pb.SpecClientExitCodeKey: []byte(`1`),
+					pb.SpecClientExitCodeKey: []byte(internalExitCode),
 					pb.SpecGatewaySessionID:  sessionID,
 				},
 			})

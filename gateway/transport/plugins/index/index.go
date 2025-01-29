@@ -3,9 +3,7 @@ package index
 import (
 	"fmt"
 	"os"
-	"time"
 
-	"github.com/go-co-op/gocron"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
 	"github.com/hoophq/hoop/common/mssqltypes"
@@ -19,7 +17,7 @@ import (
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
-const defaultIndexJobStart = "23:30"
+// const defaultIndexJobStart = "23:30"
 
 type (
 	indexPlugin struct {
@@ -33,15 +31,6 @@ func New() *indexPlugin {
 		indexers:        memory.New(),
 		walSessionStore: memory.New(),
 	}
-	scheduler := gocron.NewScheduler(time.UTC).SingletonMode()
-	scheduler.Every(1).Day().At(defaultIndexJobStart).Do(func() {
-		log.Infof("job=index - starting")
-		if err := indexer.StartJobIndex(); err != nil {
-			log.Infof("job=index - failed processing, err=%v", err)
-		}
-		log.Infof("job=index - finished")
-	})
-	scheduler.StartAsync()
 	return p
 }
 

@@ -4021,7 +4021,7 @@ const docTemplate = `{
                     "default": "done"
                 },
                 "mapping_types": {
-                    "description": "The automated fields that will be sent when creating the issue.\nThere're two types\n- preset: obtain the value from a list of available fields that could be propagated\nThe list of available preset values are:\n\n\t\t- session.id\n\t\t- session.user_email\n\t\t- session.user_id\n\t\t- session.user_name\n\t\t- session.type\n\t\t- session.connection\n\t\t- session.status\n\t\t- session.script\n\t\t- session.start_date\n\n- custom: use a custom static value\n\n\t\t{\n\t\t  \"items\": [\n\t\t    {\n\t\t      \"description\": \"Hoop Connection Name\",\n\t\t      \"jira_field\": \"customfield_10050\",\n\t\t      \"type\": \"preset\",\n\t\t      \"value\": \"session.connection\"\n\t\t    }\n\t\t  ]\n\t\t}",
+                    "description": "The automated fields that will be sent when creating the issue.\nThere're two types\n- preset: obtain the value from a list of available fields that could be propagated\nThe list of available preset values are:\n\n\t\t- session.id\n\t\t- session.user_email\n\t\t- session.user_id\n\t\t- session.user_name\n\t\t- session.type\n\t\t- session.connection_subtype\n\t\t- session.connection\n\t\t- session.status\n\t\t- session.script\n\t\t- session.start_date\n\n- custom: use a custom static value\n\n\t\t{\n\t\t  \"items\": [\n\t\t    {\n\t\t      \"description\": \"Hoop Connection Name\",\n\t\t      \"jira_field\": \"customfield_10050\",\n\t\t      \"type\": \"preset\",\n\t\t      \"value\": \"session.connection\"\n\t\t    }\n\t\t  ]\n\t\t}",
                     "type": "object",
                     "additionalProperties": {}
                 },
@@ -4941,6 +4941,11 @@ const docTemplate = `{
                     "type": "string",
                     "example": "pgdemo"
                 },
+                "connection_subtype": {
+                    "description": "The subtype of the connection",
+                    "type": "string",
+                    "example": "postgres"
+                },
                 "end_date": {
                     "description": "When the execution ended. A null value indicates the session is still running",
                     "type": "string",
@@ -4957,6 +4962,10 @@ const docTemplate = `{
                     "items": {
                         "type": "integer"
                     }
+                },
+                "exit_code": {
+                    "description": "The Linux exit code if it's available",
+                    "type": "integer"
                 },
                 "id": {
                     "description": "The resource unique identifier",
@@ -5018,11 +5027,10 @@ const docTemplate = `{
                 },
                 "status": {
                     "description": "Status of the resource\n* ready - the resource is ready to be executed, after being approved by a user\n* open - the session started and it's running\n* done - the session has finished",
-                    "type": "string",
-                    "enum": [
-                        "open",
-                        "ready",
-                        "done"
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.SessionStatusType"
+                        }
                     ]
                 },
                 "type": {
@@ -5129,6 +5137,19 @@ const docTemplate = `{
             "additionalProperties": {
                 "type": "string"
             }
+        },
+        "openapi.SessionStatusType": {
+            "type": "string",
+            "enum": [
+                "open",
+                "ready",
+                "done"
+            ],
+            "x-enum-varnames": [
+                "SessionStatusOpen",
+                "SessionStatusReady",
+                "SessionStatusDone"
+            ]
         },
         "openapi.SessionUpdateMetadataRequest": {
             "type": "object"

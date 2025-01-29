@@ -5,12 +5,17 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"syscall"
 
 	"github.com/creack/pty"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
-	pbterm "github.com/hoophq/hoop/common/terminal"
 	"golang.org/x/term"
+)
+
+const (
+	termEnterKeyStrokeType = 10
+	sigWINCH               = syscall.Signal(28)
 )
 
 type (
@@ -45,13 +50,13 @@ func (t *Terminal) ConnectWithTTY() error {
 
 	go func() {
 		sw := pb.NewStreamWriter(t.client, pbagent.TerminalWriteStdin, nil)
-		_, _ = sw.Write(pbterm.TermEnterKeyStrokeType)
+		_, _ = sw.Write([]byte{termEnterKeyStrokeType})
 		_, _ = io.Copy(sw, os.Stdin)
 	}()
 
 	// Handle pty size.
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, pbterm.SIGWINCH)
+	signal.Notify(sig, sigWINCH)
 	go func() {
 		for range sig {
 			size, err := pty.GetsizeFull(os.Stdin)
@@ -62,7 +67,7 @@ func (t *Terminal) ConnectWithTTY() error {
 			}
 		}
 	}()
-	sig <- pbterm.SIGWINCH
+	sig <- sigWINCH
 
 	go func() {
 		<-t.client.StreamContext().Done()
