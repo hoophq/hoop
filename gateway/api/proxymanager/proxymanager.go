@@ -10,6 +10,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/models"
 	pgproxymanager "github.com/hoophq/hoop/gateway/pgrest/proxymanager"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/clientstate"
@@ -42,14 +43,23 @@ func Get(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "entity not found"})
 		return
 	}
+
+	conn, err := models.GetConnectionByNameOrID(ctx.GetOrgID(), obj.RequestConnectionName)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
+		return
+	}
+
 	c.JSON(http.StatusOK, &openapi.ProxyManagerResponse{
-		ID:                    obj.ID,
-		Status:                openapi.ClientStatusType(obj.Status),
-		RequestConnectionName: obj.RequestConnectionName,
-		RequestPort:           obj.RequestPort,
-		RequestAccessDuration: obj.RequestAccessDuration,
-		ClientMetadata:        obj.ClientMetadata,
-		ConnectedAt:           obj.ConnectedAt.Format(time.RFC3339),
+		ID:                       obj.ID,
+		Status:                   openapi.ClientStatusType(obj.Status),
+		RequestConnectionName:    obj.RequestConnectionName,
+		RequestConnectionType:    conn.Type,
+		RequestConnectionSubType: conn.SubType.String,
+		RequestPort:              obj.RequestPort,
+		RequestAccessDuration:    obj.RequestAccessDuration,
+		ClientMetadata:           obj.ClientMetadata,
+		ConnectedAt:              obj.ConnectedAt.Format(time.RFC3339),
 	})
 }
 
@@ -76,6 +86,12 @@ func Post(c *gin.Context) {
 	}
 	if req.ConnectionName == "" || req.Port == "" {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": `port and connection_name are required attributes`})
+		return
+	}
+
+	conn, err := models.GetConnectionByNameOrID(ctx.GetOrgID(), req.ConnectionName)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
 		return
 	}
 
@@ -123,13 +139,15 @@ func Post(c *gin.Context) {
 			_ = transport.DispatchDisconnect(obj)
 			c.Header("Location", string(pkt.Payload))
 			c.JSON(http.StatusOK, &openapi.ProxyManagerResponse{
-				ID:                    obj.ID,
-				Status:                openapi.ClientStatusType(obj.Status),
-				RequestConnectionName: obj.RequestConnectionName,
-				RequestPort:           obj.RequestPort,
-				RequestAccessDuration: obj.RequestAccessDuration,
-				ClientMetadata:        obj.ClientMetadata,
-				ConnectedAt:           obj.ConnectedAt.Format(time.RFC3339),
+				ID:                       obj.ID,
+				Status:                   openapi.ClientStatusType(obj.Status),
+				RequestConnectionName:    obj.RequestConnectionName,
+				RequestConnectionType:    conn.Type,
+				RequestConnectionSubType: conn.SubType.String,
+				RequestPort:              obj.RequestPort,
+				RequestAccessDuration:    obj.RequestAccessDuration,
+				ClientMetadata:           obj.ClientMetadata,
+				ConnectedAt:              obj.ConnectedAt.Format(time.RFC3339),
 			})
 		default:
 			errMsg := fmt.Sprintf("internal error, packet %v condition not implemented", pkt.Type)
@@ -150,13 +168,15 @@ func Post(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, &openapi.ProxyManagerResponse{
-		ID:                    obj.ID,
-		Status:                openapi.ClientStatusType(obj.Status),
-		RequestConnectionName: obj.RequestConnectionName,
-		RequestPort:           obj.RequestPort,
-		RequestAccessDuration: obj.RequestAccessDuration,
-		ClientMetadata:        obj.ClientMetadata,
-		ConnectedAt:           obj.ConnectedAt.Format(time.RFC3339),
+		ID:                       obj.ID,
+		Status:                   openapi.ClientStatusType(obj.Status),
+		RequestConnectionName:    obj.RequestConnectionName,
+		RequestConnectionType:    conn.Type,
+		RequestConnectionSubType: conn.SubType.String,
+		RequestPort:              obj.RequestPort,
+		RequestAccessDuration:    obj.RequestAccessDuration,
+		ClientMetadata:           obj.ClientMetadata,
+		ConnectedAt:              obj.ConnectedAt.Format(time.RFC3339),
 	})
 }
 
@@ -182,6 +202,7 @@ func Disconnect(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "entity not found"})
 		return
 	}
+
 	if err := transport.DispatchDisconnect(obj); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return

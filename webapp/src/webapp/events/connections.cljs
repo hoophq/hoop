@@ -100,8 +100,10 @@
 (rf/reg-event-fx
  :connections->connection-connect
  (fn
-   [{:keys [db]} [_ connection-name]]
-   (let [body {:connection_name connection-name :port "8999" :access_duration 1800000000000}]
+   [{:keys [db]} [_ connection]]
+   (let [body {:connection_name (:name connection)
+               :port "8999"
+               :access_duration 1800000000000}]
      {:db (assoc-in db [:connections->connection-connected] {:data body :status :loading})
       :fx [[:dispatch [:fetch
                        {:method "POST"
@@ -113,12 +115,12 @@
                                       (if (= (:status res) "disconnected")
                                         (do
                                           (rf/dispatch [:show-snackbar {:level :error
-                                                                        :text (str "The connection " connection-name " is not able "
+                                                                        :text (str "The connection " (:name connection) " is not able "
                                                                                    "to be connected, please contact your admin.")}])
                                           (rf/dispatch [:modal->close]))
                                         (do
                                           (rf/dispatch [:show-snackbar {:level :success
-                                                                        :text (str "The connection " connection-name " is connected!")}])
+                                                                        :text (str "The connection " (:name connection) " is connected!")}])
                                           (rf/dispatch [::connections->connection-connected-success res]))))}]]]})))
 
 (rf/reg-event-fx
@@ -227,7 +229,7 @@ ORDER BY total_amount DESC;")
 
 (rf/reg-event-fx
  :connections->start-connect
- (fn [{:keys [db]} [_ connection-name]]
+ (fn [{:keys [db]} [_ connection]]
    (let [gateway-info (-> db :gateway->info)]
      {:db (assoc-in db [:connections->connection-connected] {:data {} :status :loading})
       :fx [[:dispatch [:hoop-app->update-my-configs {:apiUrl (-> gateway-info :data :api_url)
@@ -235,7 +237,7 @@ ORDER BY total_amount DESC;")
                                                      :token (.getItem js/localStorage "jwt-token")}]]
            [:dispatch [:modal->close]]
            [:dispatch [:hoop-app->restart]]
-           [:dispatch-later {:ms 2000 :dispatch [:connections->connection-connect connection-name]}]
+           [:dispatch-later {:ms 2000 :dispatch [:connections->connection-connect connection]}]
            [:dispatch [:modal->open {:content [connection-connect/main]
                                      :maxWidth "446px"
                                      :custom-on-click-out connection-connect/minimize-modal}]]]})))

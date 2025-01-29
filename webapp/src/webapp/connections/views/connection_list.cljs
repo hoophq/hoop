@@ -58,7 +58,7 @@
             connections-tags (doall (->> (:results @connections)
                                          (map :tags)
                                          (apply concat)
-                                 (distinct)))]
+                                         (distinct)))]
         [:div {:class "flex flex-col bg-white rounded-lg h-full p-6 overflow-y-auto"}
          (when (-> @user :data :admin?)
            [:div {:class "absolute top-10 right-4 sm:right-6 lg:top-16 lg:right-20"}
@@ -84,32 +84,32 @@
             :size :small
             :icon-position "left"}]
           (when (not-empty connections-tags)
-             [:> Flex {:gap "4"
-                       :align "center"}
-              [:> Text {:size "1"
-                        :color :gray
-                        :weight "bold"}
-               "Tags"]
-              [:> Flex {:gap "2"
-                        :wrap "wrap"
-                        :justify "between"
-                        :position "relative"}
-               (doall
-                 (for [tag connections-tags]
-                   [:> Badge {:variant (if (some #{tag} (get @query :tags)) "solid" "soft")
-                              :as "div"
-                              :on-click #(do
-                                           (if (not (some #{tag} (get @query :tags)))
-                                             (reset! query
-                                                     {:tags (concat (get @query :tags)
-                                                                    [tag])})
-                                             (reset! query
-                                                     {:tags (remove #{tag} (get @query :tags))}))
-                                           (rf/dispatch [:connections->filter-connections @query]))
-                              :key tag
-                              :radius "full"
-                              :class "cursor-pointer"}
-                    tag]))]])]
+            [:> Flex {:gap "4"
+                      :align "center"}
+             [:> Text {:size "1"
+                       :color :gray
+                       :weight "bold"}
+              "Tags"]
+             [:> Flex {:gap "2"
+                       :wrap "wrap"
+                       :justify "between"
+                       :position "relative"}
+              (doall
+               (for [tag connections-tags]
+                 [:> Badge {:variant (if (some #{tag} (get @query :tags)) "solid" "soft")
+                            :as "div"
+                            :on-click #(do
+                                         (if (not (some #{tag} (get @query :tags)))
+                                           (reset! query
+                                                   {:tags (concat (get @query :tags)
+                                                                  [tag])})
+                                           (reset! query
+                                                   {:tags (remove #{tag} (get @query :tags))}))
+                                         (rf/dispatch [:connections->filter-connections @query]))
+                            :key tag
+                            :radius "full"
+                            :class "cursor-pointer"}
+                  tag]))]])]
 
          (if (and (= :loading (:status @connections)) (empty? (:results @connections)))
            [loading-list-view]
@@ -162,7 +162,7 @@
                            (and (= "application" (:type connection))
                                 (= "tcp" (:subtype connection))))
                       [:div {:class "relative cursor-pointer group"
-                             :on-click #(rf/dispatch [:connections->start-connect (:name connection)])}
+                             :on-click #(rf/dispatch [:connections->start-connect connection])}
                        [:> Tooltip {:content "Hoop Access"}
                         [:> IconButton {:size 1 :variant "ghost" :color "gray"}
                          [:> Wifi {:size 16}]]]])

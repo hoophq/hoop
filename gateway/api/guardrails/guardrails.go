@@ -173,7 +173,7 @@ func Get(c *gin.Context) {
 	}
 }
 
-// DeleteConnection
+// DeleteRule
 //
 //	@Summary		Delete a Rule
 //	@Description	Delete a Guard Rail Rule resource.

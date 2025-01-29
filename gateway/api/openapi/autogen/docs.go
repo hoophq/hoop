@@ -3626,18 +3626,6 @@ const docTemplate = `{
         "openapi.ConnectionColumn": {
             "type": "object",
             "properties": {
-                "default_value": {
-                    "description": "The default value of the column",
-                    "type": "string"
-                },
-                "is_foreign_key": {
-                    "description": "The foreign key of the column",
-                    "type": "boolean"
-                },
-                "is_primary_key": {
-                    "description": "The primary key of the column",
-                    "type": "boolean"
-                },
                 "name": {
                     "description": "The name of the column",
                     "type": "string"
@@ -3663,30 +3651,6 @@ const docTemplate = `{
                 }
             }
         },
-        "openapi.ConnectionIndex": {
-            "type": "object",
-            "properties": {
-                "columns": {
-                    "description": "The columns of the index",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "is_primary": {
-                    "description": "The primary of the index",
-                    "type": "boolean"
-                },
-                "is_unique": {
-                    "description": "The unique of the index",
-                    "type": "boolean"
-                },
-                "name": {
-                    "description": "The name of the index",
-                    "type": "string"
-                }
-            }
-        },
         "openapi.ConnectionSchema": {
             "type": "object",
             "properties": {
@@ -3698,13 +3662,6 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/openapi.ConnectionTable"
-                    }
-                },
-                "views": {
-                    "description": "The views of the schema",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/openapi.ConnectionView"
                     }
                 }
             }
@@ -3730,31 +3687,8 @@ const docTemplate = `{
                         "$ref": "#/definitions/openapi.ConnectionColumn"
                     }
                 },
-                "indexes": {
-                    "description": "The indexes of the table",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/openapi.ConnectionIndex"
-                    }
-                },
                 "name": {
                     "description": "The name of the table",
-                    "type": "string"
-                }
-            }
-        },
-        "openapi.ConnectionView": {
-            "type": "object",
-            "properties": {
-                "columns": {
-                    "description": "The columns of the view",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/openapi.ConnectionColumn"
-                    }
-                },
-                "name": {
-                    "description": "The name of the view",
                     "type": "string"
                 }
             }
@@ -4361,6 +4295,16 @@ const docTemplate = `{
                 "connection_name": {
                     "description": "The requested connection name",
                     "type": "string"
+                },
+                "connection_subtype": {
+                    "description": "The requested connection subtype",
+                    "type": "string",
+                    "readOnly": true
+                },
+                "connection_type": {
+                    "description": "The requested connection type",
+                    "type": "string",
+                    "readOnly": true
                 },
                 "id": {
                     "description": "Deterministic uuid identifier of the user",
