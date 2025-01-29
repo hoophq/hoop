@@ -163,7 +163,7 @@ func ListSessions(orgID string, opt SessionOption) (*SessionList, error) {
 			return fmt.Errorf("unable to obtain total count of sessions, reason=%v", err)
 		}
 
-		err = tx.Debug().Raw(`
+		err = tx.Raw(`
 		SELECT
 			s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.verb, s.labels, s.exit_code,
 			s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics,
