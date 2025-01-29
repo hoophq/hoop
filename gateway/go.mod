@@ -13,7 +13,6 @@ require (
 	github.com/gin-contrib/static v0.0.1
 	github.com/gin-contrib/zap v0.2.0
 	github.com/gin-gonic/gin v1.9.1
-	github.com/go-co-op/gocron v1.18.1
 	github.com/go-git/go-billy/v5 v5.5.0
 	github.com/go-git/go-git/v5 v5.11.0
 	github.com/golang-jwt/jwt/v5 v5.2.1
@@ -126,7 +125,6 @@ require (
 	github.com/pjbgf/sha1cd v0.3.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20221212215047-62379fc7944b // indirect
-	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/segmentio/backo-go v1.0.0 // indirect
 	github.com/sergi/go-diff v1.1.0 // indirect
 	github.com/sethvargo/go-envconfig v0.9.0 // indirect

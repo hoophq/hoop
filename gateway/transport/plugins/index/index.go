@@ -31,15 +31,6 @@ func New() *indexPlugin {
 		indexers:        memory.New(),
 		walSessionStore: memory.New(),
 	}
-	// scheduler := gocron.NewScheduler(time.UTC).SingletonMode()
-	// scheduler.Every(1).Day().At(defaultIndexJobStart).Do(func() {
-	// 	log.Infof("job=index - starting")
-	// 	if err := indexer.StartJobIndex(); err != nil {
-	// 		log.Infof("job=index - failed processing, err=%v", err)
-	// 	}
-	// 	log.Infof("job=index - finished")
-	// })
-	// scheduler.StartAsync()
 	return p
 }
 
