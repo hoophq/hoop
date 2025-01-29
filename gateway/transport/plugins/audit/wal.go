@@ -109,7 +109,6 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, exitCode *int, errM
 		if err != nil {
 			return err
 		}
-		metrics.EventSize += int64(len(ev.Payload))
 		if infoEnc := ev.GetMetadata(spectypes.DataMaskingInfoKey); infoEnc != nil {
 			dataMaskingInfo, err := spectypes.Decode(infoEnc)
 			if err != nil {
@@ -168,6 +167,7 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, exitCode *int, errM
 		return err
 	}
 	rawJSONBlobStream = fmt.Sprintf("[%v]", strings.TrimSuffix(rawJSONBlobStream, ","))
+	metrics.EventSize = int64(len(rawJSONBlobStream))
 	endDate := time.Now().UTC()
 	sessionMetrics, err := metrics.toMap()
 	if err != nil {

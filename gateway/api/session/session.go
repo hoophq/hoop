@@ -36,9 +36,10 @@ import (
 )
 
 var (
-	downloadTokenStore        = memory.New()
-	defaultDownloadExpireTime = time.Minute * 5
-	internalExitCode          = 254
+	downloadTokenStore         = memory.New()
+	defaultDownloadExpireTime  = time.Minute * 5
+	internalExitCode           = 254
+	defaultMaxSessionListLimit = 100
 )
 
 type SessionPostBody struct {
@@ -318,6 +319,10 @@ func List(c *gin.Context) {
 				option.Offset, _ = strconv.Atoi(queryOptVal)
 			}
 		}
+	}
+
+	if option.Limit > defaultMaxSessionListLimit {
+		option.Limit = defaultMaxSessionListLimit
 	}
 
 	// scope listing to the authenticated user
