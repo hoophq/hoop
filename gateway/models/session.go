@@ -120,7 +120,7 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 	SELECT
 		s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.verb, s.labels, s.exit_code,
 		s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics,
-		bi.blob_stream AS blob_input, bs.blob_stream AS blob_stream, pg_column_size(bs.blob_stream::TEXT) AS blob_stream_size,
+		bi.blob_stream AS blob_input, bs.blob_stream AS blob_stream, metrics->>'event_size' AS blob_stream_size,
 		s.created_at, s.ended_at
 	FROM private.sessions s
 	LEFT JOIN private.blobs AS bi ON bi.type = 'session-input' AND  bi.id = s.blob_input_id
@@ -163,14 +163,13 @@ func ListSessions(orgID string, opt SessionOption) (*SessionList, error) {
 			return fmt.Errorf("unable to obtain total count of sessions, reason=%v", err)
 		}
 
-		err = tx.Raw(`
+		err = tx.Debug().Raw(`
 		SELECT
 			s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.verb, s.labels, s.exit_code,
 			s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics,
-			pg_column_size(bs.blob_stream::TEXT) AS blob_stream_size,
+			metrics->>'event_size' AS blob_stream_size,
 			s.created_at, s.ended_at
 		FROM private.sessions s
-		LEFT JOIN private.blobs AS bs ON bs.type = 'session-stream' AND  bs.id = s.blob_stream_id
 		WHERE s.org_id = @org_id AND
 		(
 			COALESCE(s.user_id::text, '') LIKE @user_id AND
