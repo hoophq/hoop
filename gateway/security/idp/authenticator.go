@@ -324,10 +324,7 @@ func (p *Provider) userInfoEndpoint(accessToken string) (*ProviderUserInfo, erro
 		return nil, fmt.Errorf("failed verifying user info claims, err=%v", err)
 	}
 	uinfo := p.ParseUserInfo(claims, accessToken, p.GroupsClaim)
-	if err != nil {
-		return nil, err
-	}
-	uinfo.Email = user.Email
+	uinfo.Email = strings.ToLower(user.Email)
 	uinfo.Subject = user.Subject
 	uinfo.EmailVerified = &user.EmailVerified
 	if len(user.Profile) > 0 {
@@ -340,6 +337,7 @@ func (p *Provider) userInfoEndpoint(accessToken string) (*ProviderUserInfo, erro
 // In case the provider is Google, fetch the user groups from the Gsuite API
 func (p *Provider) ParseUserInfo(idTokenClaims map[string]any, accessToken, groupsClaimName string) (u ProviderUserInfo) {
 	email, _ := idTokenClaims["email"].(string)
+	email = strings.ToLower(email)
 	if profile, ok := idTokenClaims["name"].(string); ok {
 		u.Profile = profile
 	}
