@@ -160,7 +160,7 @@ func Post(c *gin.Context) {
 		return
 	}
 	obj, err := clientstate.Update(ctx, types.ClientStatusConnected,
-		clientstate.WithRequestAttributes(req.ConnectionName, req.ConnectionType, req.ConnectionSubType, req.Port, req.AccessDuration.String())...)
+		clientstate.WithRequestAttributes(req.ConnectionName, req.Port, req.AccessDuration.String())...)
 	if err != nil {
 		log.Errorf("fail to update status, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "connected but it fail to update the status"})

@@ -67,7 +67,7 @@ func Update(ctx pgrest.UserContext, status types.ClientStatusType, opts ...*opti
 }
 
 func WithOption(k, v string) *option { return &option{key: k, val: v} }
-func WithRequestAttributes(connectionName, connectionType, connectionSubtype, port, accessDuration string) []*option {
+func WithRequestAttributes(connectionName, port, accessDuration string) []*option {
 	return []*option{
 		{key: "connection", val: connectionName},
 		{key: "port", val: port},

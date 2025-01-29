@@ -639,10 +639,6 @@ type PluginConnection struct {
 type ProxyManagerRequest struct {
 	// The connection target
 	ConnectionName string `json:"connection_name" binding:"required" example:"pgdemo"`
-	// The connection type
-	ConnectionType string `json:"connection_type" binding:"required" example:"database"`
-	// The connection subtype
-	ConnectionSubType string `json:"connection_subtype" example:"postgres"`
 	// The port to listen in the client
 	Port string `json:"port" binding:"required" example:"5432"`
 	// The access duration (in nanoseconds) of a session in case the connect has a review.
