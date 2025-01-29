@@ -22,7 +22,6 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
-	pbterm "github.com/hoophq/hoop/common/terminal"
 	"github.com/hoophq/hoop/common/version"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
@@ -338,8 +337,8 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			}
 			exitCodeStr := string(pkt.Spec[pb.SpecClientExitCodeKey])
 			exitCode, err := strconv.Atoi(exitCodeStr)
-			if exitCodeStr == "" || err != nil {
-				exitCode = pbterm.InternalErrorExitCode
+			if err != nil {
+				exitCode = 1
 			}
 			os.Exit(exitCode)
 		}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
 	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
@@ -201,7 +202,7 @@ func (s *Service) Review(ctx *storagev2.Context, reviewID string, status types.R
 	}
 	switch rev.Status {
 	case types.ReviewStatusApproved:
-		if err := pgsession.New().UpdateStatus(ctx, rev.Session, types.SessionStatusReady); err != nil {
+		if err := pgsession.New().UpdateStatus(ctx, rev.Session, string(openapi.SessionStatusReady)); err != nil {
 			return nil, fmt.Errorf("save sesession as ready error: %v", err)
 		}
 		// release the connection if there's a client waiting

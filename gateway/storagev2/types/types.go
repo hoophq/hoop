@@ -194,4 +194,5 @@ type Session struct {
 	EventSize        int64                            `json:"event_size"`
 	StartSession     time.Time                        `json:"start_date"`
 	EndSession       *time.Time                       `json:"end_date"`
+	ExitCode         *int                             `json:"exit_code"`
 }

@@ -31,7 +31,6 @@ import (
 	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/models"
 	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
-	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
@@ -39,6 +38,7 @@ import (
 var (
 	downloadTokenStore        = memory.New()
 	defaultDownloadExpireTime = time.Minute * 5
+	internalExitCode          = 254
 )
 
 type SessionPostBody struct {
@@ -100,22 +100,27 @@ func Post(c *gin.Context) {
 	log := log.With("sid", sessionID, "user", ctx.UserEmail)
 	apiroutes.SetSidSpanAttr(c, sessionID)
 
-	newSession := types.Session{
-		ID:           sessionID,
-		OrgID:        ctx.OrgID,
-		Labels:       req.Labels,
-		Metadata:     req.Metadata,
-		Script:       types.SessionScript{"data": req.Script},
-		UserEmail:    ctx.UserEmail,
-		UserID:       ctx.UserID,
-		UserName:     ctx.UserName,
-		Type:         conn.Type,
-		Connection:   conn.Name,
-		Verb:         pb.ClientVerbExec,
-		Status:       types.SessionStatusOpen,
-		StartSession: time.Now().UTC(),
+	newSession := models.Session{
+		ID:                   sessionID,
+		OrgID:                ctx.OrgID,
+		Labels:               req.Labels,
+		Metadata:             req.Metadata,
+		IntegrationsMetadata: nil,
+		Metrics:              nil,
+		BlobInput:            models.BlobInputType(req.Script),
+		UserEmail:            ctx.UserEmail,
+		UserID:               ctx.UserID,
+		UserName:             ctx.UserName,
+		ConnectionType:       conn.Type,
+		ConnectionSubtype:    conn.SubType.String,
+		Connection:           conn.Name,
+		Verb:                 pb.ClientVerbExec,
+		Status:               string(openapi.SessionStatusOpen),
+		CreatedAt:            time.Now().UTC(),
+		EndSession:           nil,
 	}
-	if err := pgsession.New().Upsert(ctx, newSession); err != nil {
+	if err := models.UpsertSession(newSession); err != nil {
+		// if err := pgsession.New().Upsert(ctx, newSession); err != nil {
 		log.Errorf("failed creating session, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating session"})
 		return
@@ -132,22 +137,23 @@ func Post(c *gin.Context) {
 		err = guardrails.Validate("input", connRules.GuardRailInputRules, []byte(req.Script))
 		switch err.(type) {
 		case *guardrails.ErrRuleMatch:
-			newSession.Status = "done"
-			newSession.EndSession = func() *time.Time { t := time.Now().UTC(); return &t }()
-			newSession.NonIndexedStream = types.SessionNonIndexedEventStreamList{
-				"stream": []types.SessionEventStream{
-					{0, "e", base64.StdEncoding.EncodeToString([]byte(err.Error()))},
-				},
-			}
-			if err := pgsession.New().Upsert(ctx, newSession); err != nil {
+			encErr := base64.StdEncoding.EncodeToString([]byte(err.Error()))
+			if err := models.UpdateSessionEventStream(models.SessionDone{
+				ID:         sessionID,
+				OrgID:      ctx.OrgID,
+				EndSession: func() *time.Time { t := time.Now().UTC(); return &t }(),
+				BlobStream: []byte(fmt.Sprintf(`[[0, "e", %q]]`, encErr)),
+				ExitCode:   func() *int { v := internalExitCode; return &v }(),
+				Status:     string(openapi.SessionStatusDone),
+			}); err != nil {
 				log.Errorf("unable to update session, err=%v", err)
 			}
 			c.JSON(http.StatusOK, clientexec.Response{
 				SessionID:         sessionID,
 				Output:            err.Error(),
 				OutputStatus:      "failed",
-				ExitCode:          -1,
-				ExecutionTimeMili: 10,
+				ExitCode:          internalExitCode,
+				ExecutionTimeMili: 0,
 			})
 			return
 		case nil:
@@ -187,11 +193,11 @@ func Post(c *gin.Context) {
 				c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 				return
 			}
-			err = models.UpdateSessionIntegrationMetadata(ctx.OrgID, sessionID, map[string]any{
+			newSession.IntegrationsMetadata = map[string]any{
 				"jira_issue_key": resp.IssueKey,
 				"jira_issue_url": resp.Links.Agent,
-			})
-			if err != nil {
+			}
+			if err := models.UpsertSession(newSession); err != nil {
 				log.Errorf("failed updating session with jira issue (%s), reason=%v", resp.IssueKey, err)
 				c.JSON(http.StatusInternalServerError, gin.H{
 					"message": fmt.Sprintf("failed updating session with jira issue %s", resp.IssueKey)})

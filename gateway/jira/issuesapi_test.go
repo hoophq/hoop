@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -14,7 +13,7 @@ func TestParseIssueFields(t *testing.T) {
 		name    string
 		tmpl    *models.JiraIssueTemplate
 		input   map[string]string
-		session types.Session
+		session models.Session
 		want    CustomFields
 		err     error
 	}{
@@ -60,7 +59,7 @@ func TestParseIssueFields(t *testing.T) {
 				"customfield_10052": "my-prompt-value",
 				"customfield_10199": "cmdb-value",
 			},
-			session: types.Session{Connection: "myconnection"},
+			session: models.Session{Connection: "myconnection"},
 			want: CustomFields{
 				"customfield_10050": "myconnection",
 				"customfield_10051": "my-custom-value",

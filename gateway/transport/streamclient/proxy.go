@@ -10,7 +10,6 @@ import (
 	"github.com/hoophq/hoop/common/memory"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
-	"github.com/hoophq/hoop/gateway/models"
 	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	streamtypes "github.com/hoophq/hoop/gateway/transport/streamclient/types"
@@ -127,23 +126,6 @@ func (s *ProxyStream) String() string {
 func (s *ProxyStream) Save() (err error) {
 	if err := s.pluginCtx.Validate(); err != nil {
 		return status.Error(codes.Internal, err.Error())
-	}
-	// the client-api has additional logic when managing session
-	// this behavior should be removed and api layer must act a read only
-	// client when interacting with sessions
-	if s.pluginCtx.ClientOrigin == pb.ConnectionOriginClientAPI ||
-		s.pluginCtx.ClientOrigin == pb.ConnectionOriginClientAPIRunbooks {
-		session, err := models.GetSessionByID(s.pluginCtx.OrgID, s.pluginCtx.SID)
-		if err != nil && err != models.ErrNotFound {
-			log.With("sid", s.pluginCtx.SID, "org", s.pluginCtx.OrgID).
-				Errorf("failed obtaining existent session, reason=%v", err)
-			return status.Errorf(codes.Internal, "failed obtaining existent session")
-		}
-		if session != nil {
-			s.pluginCtx.Script = string(session.BlobInput)
-			s.pluginCtx.Labels = session.Labels
-			s.pluginCtx.Metadata = session.Metadata
-		}
 	}
 	s.runtimePlugins, err = loadRuntimePlugins(*s.pluginCtx)
 	if err != nil {

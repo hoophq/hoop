@@ -20,9 +20,9 @@ import (
 	"github.com/hoophq/hoop/gateway/api/runbooks/templates"
 	sessionapi "github.com/hoophq/hoop/gateway/api/session"
 	"github.com/hoophq/hoop/gateway/clientexec"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
-	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
@@ -142,8 +142,6 @@ func ListByConnection(c *gin.Context) {
 //	@Router			/plugins/runbooks/connections/{name}/exec [post]
 func RunExec(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	storageCtx := storagev2.ParseContext(c)
-
 	var req openapi.RunbookRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
@@ -154,7 +152,12 @@ func RunExec(c *gin.Context) {
 		return
 	}
 	connectionName := c.Param("name")
-	config, pathPrefix, err := getRunbookConfig(ctx, c, connectionName)
+	connection, err := getConnection(ctx, c, connectionName)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+	config, pathPrefix, err := getRunbookConfig(ctx, c, connection)
 	if err != nil {
 		log.Error(err)
 		return
@@ -204,24 +207,28 @@ func RunExec(c *gin.Context) {
 		return
 	}
 
-	newSession := types.Session{
-		ID:           sessionID,
-		OrgID:        ctx.GetOrgID(),
-		Labels:       sessionLabels,
-		Metadata:     req.Metadata,
-		Script:       types.SessionScript{"data": string(runbook.InputFile)},
-		UserEmail:    ctx.UserEmail,
-		UserID:       ctx.UserID,
-		Type:         proto.ConnectionTypeCommandLine.String(),
-		UserName:     ctx.UserName,
-		Connection:   connectionName,
-		Verb:         proto.ClientVerbExec,
-		Status:       types.SessionStatusOpen,
-		StartSession: time.Now().UTC(),
+	newSession := models.Session{
+		ID:                   sessionID,
+		OrgID:                ctx.GetOrgID(),
+		Connection:           connectionName,
+		ConnectionType:       string(proto.ConnectionTypeCustom),
+		ConnectionSubtype:    connection.SubType.String,
+		Verb:                 proto.ClientVerbExec,
+		Labels:               sessionLabels,
+		Metadata:             req.Metadata,
+		IntegrationsMetadata: nil,
+		Metrics:              nil,
+		BlobInput:            models.BlobInputType(runbook.InputFile),
+		UserID:               ctx.UserID,
+		UserName:             ctx.UserName,
+		UserEmail:            ctx.UserEmail,
+		Status:               string(openapi.SessionStatusOpen),
+		ExitCode:             nil,
+		CreatedAt:            time.Now().UTC(),
+		EndSession:           nil,
 	}
 
-	err = pgsession.New().Upsert(storageCtx, newSession)
-	if err != nil {
+	if err := models.UpsertSession(newSession); err != nil {
 		log.Errorf("failed persisting session, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "The session couldn't be created"})
 		return
@@ -257,25 +264,21 @@ func RunExec(c *gin.Context) {
 	}
 }
 
-func getConnectionID(ctx pgrest.Context, c *gin.Context, connectionName string) (string, error) {
+func getConnection(ctx pgrest.Context, c *gin.Context, connectionName string) (*models.Connection, error) {
 	conn, err := apiconnections.FetchByName(ctx, connectionName)
 	if err != nil {
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed retrieving connection"})
-		return "", err
+		return nil, err
 	}
 	if conn == nil {
 		c.JSON(http.StatusNotFound, gin.H{"message": "connection not found"})
-		return "", fmt.Errorf("connection not found")
+		return nil, fmt.Errorf("connection not found")
 	}
-	return conn.ID, nil
+	return conn, nil
 }
 
-func getRunbookConfig(ctx pgrest.Context, c *gin.Context, connectionName string) (*templates.RunbookConfig, string, error) {
-	connectionID, err := getConnectionID(ctx, c, connectionName)
-	if err != nil {
-		return nil, "", err
-	}
+func getRunbookConfig(ctx pgrest.Context, c *gin.Context, connection *models.Connection) (*templates.RunbookConfig, string, error) {
 	p, err := pgplugins.New().FetchOne(ctx, plugintypes.PluginRunbooksName)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed retrieving runbook plugin"})
@@ -288,7 +291,7 @@ func getRunbookConfig(ctx pgrest.Context, c *gin.Context, connectionName string)
 	var repoPrefix string
 	hasConnection := false
 	for _, conn := range p.Connections {
-		if conn.ConnectionID == connectionID {
+		if conn.ConnectionID == connection.ID {
 			if len(conn.Config) > 0 {
 				repoPrefix = conn.Config[0]
 			}

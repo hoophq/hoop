@@ -3626,18 +3626,6 @@ const docTemplate = `{
         "openapi.ConnectionColumn": {
             "type": "object",
             "properties": {
-                "default_value": {
-                    "description": "The default value of the column",
-                    "type": "string"
-                },
-                "is_foreign_key": {
-                    "description": "The foreign key of the column",
-                    "type": "boolean"
-                },
-                "is_primary_key": {
-                    "description": "The primary key of the column",
-                    "type": "boolean"
-                },
                 "name": {
                     "description": "The name of the column",
                     "type": "string"
@@ -3663,30 +3651,6 @@ const docTemplate = `{
                 }
             }
         },
-        "openapi.ConnectionIndex": {
-            "type": "object",
-            "properties": {
-                "columns": {
-                    "description": "The columns of the index",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "is_primary": {
-                    "description": "The primary of the index",
-                    "type": "boolean"
-                },
-                "is_unique": {
-                    "description": "The unique of the index",
-                    "type": "boolean"
-                },
-                "name": {
-                    "description": "The name of the index",
-                    "type": "string"
-                }
-            }
-        },
         "openapi.ConnectionSchema": {
             "type": "object",
             "properties": {
@@ -3698,13 +3662,6 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/openapi.ConnectionTable"
-                    }
-                },
-                "views": {
-                    "description": "The views of the schema",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/openapi.ConnectionView"
                     }
                 }
             }
@@ -3730,31 +3687,8 @@ const docTemplate = `{
                         "$ref": "#/definitions/openapi.ConnectionColumn"
                     }
                 },
-                "indexes": {
-                    "description": "The indexes of the table",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/openapi.ConnectionIndex"
-                    }
-                },
                 "name": {
                     "description": "The name of the table",
-                    "type": "string"
-                }
-            }
-        },
-        "openapi.ConnectionView": {
-            "type": "object",
-            "properties": {
-                "columns": {
-                    "description": "The columns of the view",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/openapi.ConnectionColumn"
-                    }
-                },
-                "name": {
-                    "description": "The name of the view",
                     "type": "string"
                 }
             }
@@ -4087,7 +4021,7 @@ const docTemplate = `{
                     "default": "done"
                 },
                 "mapping_types": {
-                    "description": "The automated fields that will be sent when creating the issue.\nThere're two types\n- preset: obtain the value from a list of available fields that could be propagated\nThe list of available preset values are:\n\n\t\t- session.id\n\t\t- session.user_email\n\t\t- session.user_id\n\t\t- session.user_name\n\t\t- session.type\n\t\t- session.connection\n\t\t- session.status\n\t\t- session.script\n\t\t- session.start_date\n\n- custom: use a custom static value\n\n\t\t{\n\t\t  \"items\": [\n\t\t    {\n\t\t      \"description\": \"Hoop Connection Name\",\n\t\t      \"jira_field\": \"customfield_10050\",\n\t\t      \"type\": \"preset\",\n\t\t      \"value\": \"session.connection\"\n\t\t    }\n\t\t  ]\n\t\t}",
+                    "description": "The automated fields that will be sent when creating the issue.\nThere're two types\n- preset: obtain the value from a list of available fields that could be propagated\nThe list of available preset values are:\n\n\t\t- session.id\n\t\t- session.user_email\n\t\t- session.user_id\n\t\t- session.user_name\n\t\t- session.type\n\t\t- session.connection_subtype\n\t\t- session.connection\n\t\t- session.status\n\t\t- session.script\n\t\t- session.start_date\n\n- custom: use a custom static value\n\n\t\t{\n\t\t  \"items\": [\n\t\t    {\n\t\t      \"description\": \"Hoop Connection Name\",\n\t\t      \"jira_field\": \"customfield_10050\",\n\t\t      \"type\": \"preset\",\n\t\t      \"value\": \"session.connection\"\n\t\t    }\n\t\t  ]\n\t\t}",
                     "type": "object",
                     "additionalProperties": {}
                 },
@@ -4997,6 +4931,11 @@ const docTemplate = `{
                     "type": "string",
                     "example": "pgdemo"
                 },
+                "connection_subtype": {
+                    "description": "The subtype of the connection",
+                    "type": "string",
+                    "example": "postgres"
+                },
                 "end_date": {
                     "description": "When the execution ended. A null value indicates the session is still running",
                     "type": "string",
@@ -5013,6 +4952,10 @@ const docTemplate = `{
                     "items": {
                         "type": "integer"
                     }
+                },
+                "exit_code": {
+                    "description": "The Linux exit code if it's available",
+                    "type": "integer"
                 },
                 "id": {
                     "description": "The resource unique identifier",
@@ -5074,11 +5017,10 @@ const docTemplate = `{
                 },
                 "status": {
                     "description": "Status of the resource\n* ready - the resource is ready to be executed, after being approved by a user\n* open - the session started and it's running\n* done - the session has finished",
-                    "type": "string",
-                    "enum": [
-                        "open",
-                        "ready",
-                        "done"
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.SessionStatusType"
+                        }
                     ]
                 },
                 "type": {
@@ -5185,6 +5127,19 @@ const docTemplate = `{
             "additionalProperties": {
                 "type": "string"
             }
+        },
+        "openapi.SessionStatusType": {
+            "type": "string",
+            "enum": [
+                "open",
+                "ready",
+                "done"
+            ],
+            "x-enum-varnames": [
+                "SessionStatusOpen",
+                "SessionStatusReady",
+                "SessionStatusDone"
+            ]
         },
         "openapi.SessionUpdateMetadataRequest": {
             "type": "object"

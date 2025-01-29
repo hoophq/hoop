@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,9 +16,9 @@ import (
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/common/proto/spectypes"
-	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
+	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/models"
 	eventlogv1 "github.com/hoophq/hoop/gateway/session/eventlog/v1"
-	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
@@ -52,32 +53,35 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 		return fmt.Errorf("failed processing audit plugin, missing org_id and session_id params")
 	}
 	startDate := time.Now().UTC()
-	pctx.ParamsData["status"] = types.SessionStatusOpen
+	pctx.ParamsData["status"] = string(openapi.SessionStatusOpen)
 	pctx.ParamsData["start_date"] = &startDate
 	if err := p.writeOnConnect(pctx); err != nil {
 		return err
 	}
-	// Persist the session in the storage
-	ctx := storagev2.NewContext(pctx.UserID, pctx.OrgID)
-	err := pgsession.New().Upsert(ctx, types.Session{
-		ID:               pctx.SID,
-		OrgID:            pctx.OrgID,
-		UserEmail:        pctx.UserEmail,
-		UserID:           pctx.UserID,
-		UserName:         pctx.UserName,
-		Type:             pctx.ConnectionType,
-		Connection:       pctx.ConnectionName,
-		Verb:             pctx.ClientVerb,
-		Status:           types.SessionStatusOpen,
-		Script:           types.SessionScript{"data": pctx.Script},
-		Labels:           pctx.Labels,
-		Metadata:         pctx.Metadata,
-		NonIndexedStream: nil,
-		StartSession:     startDate,
-		EndSession:       nil,
-	})
-	if err != nil {
-		return fmt.Errorf("failed persisting sessino to store, reason=%v", err)
+
+	// persist session for public gRPC clients
+	if !strings.HasPrefix(pctx.ClientOrigin, pb.ConnectionOriginClientAPI) {
+		err := models.UpsertSession(models.Session{
+			ID:                   pctx.SID,
+			OrgID:                pctx.OrgID,
+			UserEmail:            pctx.UserEmail,
+			UserID:               pctx.UserID,
+			UserName:             pctx.UserName,
+			Connection:           pctx.ConnectionName,
+			ConnectionType:       pctx.ConnectionType,
+			ConnectionSubtype:    pctx.ConnectionSubType,
+			Verb:                 pctx.ClientVerb,
+			Labels:               nil,
+			Metadata:             nil,
+			IntegrationsMetadata: nil,
+			Status:               string(openapi.SessionStatusOpen),
+			ExitCode:             nil,
+			CreatedAt:            startDate,
+			EndSession:           nil,
+		})
+		if err != nil {
+			return fmt.Errorf("failed persisting session to store, reason=%v", err)
+		}
 	}
 	p.mu = sync.RWMutex{}
 	memorySessionStore.Set(pctx.SID, pctx.AgentID)
@@ -148,11 +152,12 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		}
 		return nil, nil
 	case pbclient.SessionClose:
+		exitCode := parseExitCode(pkt)
 		if len(pkt.Payload) > 0 {
-			p.closeSession(pctx, fmt.Errorf(string(pkt.Payload)))
+			p.closeSession(pctx, exitCode, fmt.Errorf(string(pkt.Payload)))
 			return nil, nil
 		}
-		p.closeSession(pctx, nil)
+		p.closeSession(pctx, exitCode, nil)
 	case pbagent.ExecWriteStdin,
 		pbagent.TerminalWriteStdin,
 		pbagent.TCPConnectionWrite:
@@ -172,18 +177,18 @@ func (p *auditPlugin) OnDisconnect(pctx plugintypes.Context, errMsg error) error
 				continue
 			}
 			pctx.SID = msid
-			p.closeSession(pctx, errMsg)
+			p.closeSession(pctx, nil, errMsg)
 		}
 	default:
-		p.closeSession(pctx, errMsg)
+		p.closeSession(pctx, nil, errMsg)
 	}
 	return nil
 }
 
-func (p *auditPlugin) closeSession(pctx plugintypes.Context, errMsg error) {
+func (p *auditPlugin) closeSession(pctx plugintypes.Context, exitCode *int, errMsg error) {
 	log.With("sid", pctx.SID).Infof("closing session, reason=%v", errMsg)
 	go func() {
-		if err := p.writeOnClose(pctx, errMsg); err != nil {
+		if err := p.writeOnClose(pctx, exitCode, errMsg); err != nil {
 			log.Warnf("session=%v - failed closing session: %v", pctx.SID, err)
 			return
 		}
@@ -240,4 +245,12 @@ func parseSpecAsEventMetadata(pkt *pb.Packet) map[string][]byte {
 		return map[string][]byte{spectypes.DataMaskingInfoKey: infoEnc}
 	}
 	return nil
+}
+
+func parseExitCode(pkt *pb.Packet) (exitCode *int) {
+	exitCodeStr := string(pkt.Spec[pb.SpecClientExitCodeKey])
+	if ecode, err := strconv.Atoi(exitCodeStr); err == nil {
+		exitCode = &ecode
+	}
+	return
 }

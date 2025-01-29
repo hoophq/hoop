@@ -2,21 +2,21 @@ package audit
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/common/proto/spectypes"
-	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
+	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/models"
 	eventlogv1 "github.com/hoophq/hoop/gateway/session/eventlog/v1"
 	sessionwal "github.com/hoophq/hoop/gateway/session/wal"
-	"github.com/hoophq/hoop/gateway/storagev2"
-	sessionstorage "github.com/hoophq/hoop/gateway/storagev2/session"
-	"github.com/hoophq/hoop/gateway/storagev2/types"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
@@ -43,14 +43,6 @@ func (p *auditPlugin) writeOnConnect(pctx plugintypes.Context) error {
 		EventLogVersion: eventlogv1.Version,
 		OrgID:           pctx.OrgID,
 		SessionID:       pctx.SID,
-		UserID:          pctx.UserID,
-		UserName:        pctx.UserName,
-		UserEmail:       pctx.UserEmail,
-		ConnectionName:  pctx.ConnectionName,
-		ConnectionType:  pctx.ConnectionType,
-		Verb:            pctx.ClientVerb,
-		Script:          pctx.ParamsData.GetString("script"),
-		Labels:          pctx.ParamsData.GetString("labels"),
 		Status:          pctx.ParamsData.GetString("status"),
 		StartDate:       pctx.ParamsData.GetTime("start_date"),
 	})
@@ -86,7 +78,7 @@ func (p *auditPlugin) dropWalLog(sid string) {
 	walogm.mu.Unlock()
 }
 
-func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error {
+func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, exitCode *int, errMsg error) error {
 	walLogObj := p.walSessionStore.Pop(pctx.SID)
 	walogm, ok := walLogObj.(*walLogRWMutex)
 	if !ok {
@@ -110,9 +102,9 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error
 		return fmt.Errorf("mismatch wal header session id, session=%v, session-header=%v",
 			pctx.SID, wh.SessionID)
 	}
-	var eventStreamList []types.SessionEventStream
+	var rawJSONBlobStream string
 	metrics := newSessionMetric()
-	truncated, err := walogm.log.ReadFull(func(data []byte) error {
+	metrics.Truncated, err = walogm.log.ReadFull(func(data []byte) error {
 		ev, err := eventlogv1.Decode(data)
 		if err != nil {
 			return err
@@ -164,51 +156,31 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error
 		// truncate when event is greater than 5000 bytes for tcp type
 		// it avoids auditing blob content for TCP (files, images, etc)
 		eventStream := p.truncateTCPEventStream(ev.Payload, wh.ConnectionType)
-		eventStreamList = append(eventStreamList, types.SessionEventStream{
+		eventList := fmt.Sprintf("[%v, %q, %q],",
 			ev.EventTime.Sub(*wh.StartDate).Seconds(),
 			string(ev.EventType),
 			base64.StdEncoding.EncodeToString(eventStream),
-		})
+		)
+		rawJSONBlobStream += eventList
 		return nil
 	})
 	if err != nil {
 		return err
 	}
-
-	storageContext := storagev2.NewContext(wh.UserID, wh.OrgID)
-	session, err := sessionstorage.FindOne(storageContext, wh.SessionID)
-	if err != nil || session == nil {
-		return fmt.Errorf("fail to fetch session in the store, empty=%v, err=%v",
-			session == nil, err)
-	}
+	rawJSONBlobStream = fmt.Sprintf("[%v]", strings.TrimSuffix(rawJSONBlobStream, ","))
 	endDate := time.Now().UTC()
-	if len(session.Labels) == 0 {
-		session.Labels = map[string]string{}
-	}
-	session.Metrics, err = metrics.toMap()
+	sessionMetrics, err := metrics.toMap()
 	if err != nil {
 		log.Warnf("failed parsing session metrics to map, reason=%v", err)
 	}
-	session.Labels["processed-by"] = "plugin-audit"
-	session.Labels["truncated"] = fmt.Sprintf("%v", truncated)
-	err = pgsession.New().Upsert(storageContext, types.Session{
-		ID:               wh.SessionID,
-		OrgID:            wh.OrgID,
-		UserEmail:        wh.UserEmail,
-		UserID:           wh.UserID,
-		UserName:         wh.UserName,
-		Type:             wh.ConnectionType,
-		Connection:       wh.ConnectionName,
-		Verb:             wh.Verb,
-		Status:           types.SessionStatusDone,
-		Script:           session.Script,
-		Labels:           session.Labels,
-		Metadata:         session.Metadata,
-		Metrics:          session.Metrics,
-		NonIndexedStream: types.SessionNonIndexedEventStreamList{"stream": eventStreamList},
-		EventSize:        metrics.EventSize,
-		StartSession:     *wh.StartDate,
-		EndSession:       &endDate,
+	err = models.UpdateSessionEventStream(models.SessionDone{
+		ID:         wh.SessionID,
+		OrgID:      wh.OrgID,
+		Metrics:    sessionMetrics,
+		BlobStream: json.RawMessage(rawJSONBlobStream),
+		Status:     string(openapi.SessionStatusDone),
+		ExitCode:   exitCode,
+		EndSession: &endDate,
 	})
 
 	if err != nil {

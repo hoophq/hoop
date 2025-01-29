@@ -48,10 +48,6 @@ type Context struct {
 	ClientVerb   string
 	ClientOrigin string
 
-	Script   string
-	Labels   map[string]string
-	Metadata map[string]any
-
 	ParamsData GenericMap
 }
 
