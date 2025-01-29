@@ -19,7 +19,7 @@ const (
 	// keep it the same value for Linux MTU loopback interfaces
 	defaultBufferSize = 16 * 1024 // 16k
 
-	maxPacketSize = 1024 * 1024 * 16 // 16MB
+	maxPacketSize = 1024 * 1024 * 16 // 16 MiB
 )
 
 type MySQLServer struct {
