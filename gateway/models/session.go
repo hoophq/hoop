@@ -217,17 +217,17 @@ func UpsertSession(sess Session) error {
 			Type:       "session-input",
 			BlobStream: json.RawMessage(fmt.Sprintf("[%q]", sess.BlobInput)),
 		}
-		res := tx.Table(tableBlobs).Debug().
+		res := tx.Table(tableBlobs).
 			Where("org_id = ? AND id = ?", sess.OrgID, blobInputID.String).
 			Updates(blobInput)
 		if res.Error == nil && res.RowsAffected == 0 {
-			res.Error = tx.Table(tableBlobs).Debug().Create(blobInput).Error
+			res.Error = tx.Table(tableBlobs).Create(blobInput).Error
 		}
 
 		if res.Error != nil {
 			return fmt.Errorf("failed creating session blob input, reason=%v", res.Error)
 		}
-		return tx.Table(tableSessions).Debug().Save(
+		return tx.Table(tableSessions).Save(
 			Session{
 				ID:                   sess.ID,
 				OrgID:                sess.OrgID,
@@ -266,11 +266,11 @@ func UpdateSessionEventStream(sess SessionDone) error {
 			BlobStream: sess.BlobStream,
 			Type:       "session-stream",
 		}
-		res := tx.Table(tableBlobs).Debug().
+		res := tx.Table(tableBlobs).
 			Where("org_id = ? AND id = ?", sess.OrgID, blobStreamID.String).
 			Updates(blobStream)
 		if res.Error == nil && res.RowsAffected == 0 {
-			res.Error = tx.Table(tableBlobs).Debug().Create(blobStream).Error
+			res.Error = tx.Table(tableBlobs).Create(blobStream).Error
 		}
 
 		if res.Error != nil {
@@ -278,7 +278,7 @@ func UpdateSessionEventStream(sess SessionDone) error {
 		}
 
 		// update: status, labels, metrics, end_date, exit_code, event_stream
-		return tx.Table(tableSessions).Debug().
+		return tx.Table(tableSessions).
 			Where("org_id = ? AND id = ?", sess.OrgID, sess.ID).
 			Updates(sessionDone{
 				ID:           sess.ID,
