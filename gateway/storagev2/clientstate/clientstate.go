@@ -46,10 +46,6 @@ func Update(ctx pgrest.UserContext, status types.ClientStatusType, opts ...*opti
 			switch opt.key {
 			case "connection":
 				obj.RequestConnectionName = opt.val
-			case "connection-type":
-				obj.RequestConnectionType = opt.val
-			case "connection-subtype":
-				obj.RequestConnectionSubType = opt.val
 			case "port":
 				obj.RequestPort = opt.val
 			case "access-duration":
@@ -74,8 +70,6 @@ func WithOption(k, v string) *option { return &option{key: k, val: v} }
 func WithRequestAttributes(connectionName, connectionType, connectionSubtype, port, accessDuration string) []*option {
 	return []*option{
 		{key: "connection", val: connectionName},
-		{key: "connection-type", val: connectionType},
-		{key: "connection-subtype", val: connectionSubtype},
 		{key: "port", val: port},
 		{key: "access-duration", val: accessDuration},
 	}

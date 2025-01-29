@@ -24,30 +24,26 @@ func (p *proxyManager) FetchOne(ctx pgrest.OrgContext, id string) (*types.Client
 		return nil, err
 	}
 	return &types.Client{
-		ID:                       state.ID,
-		OrgID:                    state.OrgID,
-		Status:                   types.ClientStatusType(state.Status),
-		RequestConnectionName:    state.Connection,
-		RequestConnectionType:    state.ConnectionType,
-		RequestConnectionSubType: state.ConnectionSubType,
-		RequestPort:              state.Port,
-		RequestAccessDuration:    time.Duration(state.AccessDuration) * time.Second,
-		ClientMetadata:           state.ClientMetadata,
-		ConnectedAt:              state.GetConnectedAt(),
+		ID:                    state.ID,
+		OrgID:                 state.OrgID,
+		Status:                types.ClientStatusType(state.Status),
+		RequestConnectionName: state.Connection,
+		RequestPort:           state.Port,
+		RequestAccessDuration: time.Duration(state.AccessDuration) * time.Second,
+		ClientMetadata:        state.ClientMetadata,
+		ConnectedAt:           state.GetConnectedAt(),
 	}, nil
 }
 
 func (p *proxyManager) Update(ctx pgrest.OrgContext, c *types.Client) error {
 	return pgrest.New("/proxymanager_state").Upsert(map[string]any{
-		"id":                 c.ID,
-		"org_id":             ctx.GetOrgID(),
-		"status":             c.Status,
-		"connection":         c.RequestConnectionName,
-		"connection_type":    c.RequestConnectionType,
-		"connection_subtype": c.RequestConnectionSubType,
-		"port":               c.RequestPort,
-		"access_duration":    int(c.RequestAccessDuration.Seconds()),
-		"metadata":           c.ClientMetadata,
-		"connected_at":       c.ConnectedAt,
+		"id":              c.ID,
+		"org_id":          ctx.GetOrgID(),
+		"status":          c.Status,
+		"connection":      c.RequestConnectionName,
+		"port":            c.RequestPort,
+		"access_duration": int(c.RequestAccessDuration.Seconds()),
+		"metadata":        c.ClientMetadata,
+		"connected_at":    c.ConnectedAt,
 	}).Error()
 }

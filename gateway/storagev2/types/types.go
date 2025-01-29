@@ -66,16 +66,14 @@ type Login struct {
 }
 
 type Client struct {
-	ID                       string            `edn:"xt/id"`
-	OrgID                    string            `edn:"client/org"`
-	Status                   ClientStatusType  `edn:"client/status"`
-	RequestConnectionName    string            `edn:"client/request-connection"`
-	RequestConnectionType    string            `edn:"client/request-connection-type"`
-	RequestConnectionSubType string            `edn:"client/request-connection-subtype"`
-	RequestPort              string            `edn:"client/request-port"`
-	RequestAccessDuration    time.Duration     `edn:"client/access-duration"`
-	ClientMetadata           map[string]string `edn:"client/metadata"`
-	ConnectedAt              time.Time         `edn:"client/connected-at"`
+	ID                    string            `edn:"xt/id"`
+	OrgID                 string            `edn:"client/org"`
+	Status                ClientStatusType  `edn:"client/status"`
+	RequestConnectionName string            `edn:"client/request-connection"`
+	RequestPort           string            `edn:"client/request-port"`
+	RequestAccessDuration time.Duration     `edn:"client/access-duration"`
+	ClientMetadata        map[string]string `edn:"client/metadata"`
+	ConnectedAt           time.Time         `edn:"client/connected-at"`
 }
 
 type Connection struct {

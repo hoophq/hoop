@@ -316,7 +316,7 @@ func UpdateIssueTemplates(c *gin.Context) {
 
 }
 
-// DeleteConnection
+// DeleteIssueTemplates
 //
 //	@Summary		Delete Issue Templates
 //	@Description	Delete Issue Templates

@@ -10,6 +10,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/models"
 	pgproxymanager "github.com/hoophq/hoop/gateway/pgrest/proxymanager"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/clientstate"
@@ -42,12 +43,19 @@ func Get(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "entity not found"})
 		return
 	}
+
+	conn, err := models.GetConnectionByNameOrID(ctx.GetOrgID(), obj.RequestConnectionName)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
+		return
+	}
+
 	c.JSON(http.StatusOK, &openapi.ProxyManagerResponse{
 		ID:                       obj.ID,
 		Status:                   openapi.ClientStatusType(obj.Status),
 		RequestConnectionName:    obj.RequestConnectionName,
-		RequestConnectionType:    obj.RequestConnectionType,
-		RequestConnectionSubType: obj.RequestConnectionSubType,
+		RequestConnectionType:    conn.Type,
+		RequestConnectionSubType: conn.SubType,
 		RequestPort:              obj.RequestPort,
 		RequestAccessDuration:    obj.RequestAccessDuration,
 		ClientMetadata:           obj.ClientMetadata,
@@ -81,6 +89,12 @@ func Post(c *gin.Context) {
 		return
 	}
 
+	conn, err := models.GetConnectionByNameOrID(ctx.GetOrgID(), req.ConnectionName)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
+		return
+	}
+
 	if req.AccessDuration == 0 {
 		req.AccessDuration = time.Minute * 30
 	}
@@ -89,12 +103,10 @@ func Post(c *gin.Context) {
 	for i := 1; i <= 10; i++ {
 		log.Debugf("attempt=%v - dispatching open session", i)
 		pkt, err := transport.DispatchOpenSession(&types.Client{
-			ID:                       clientstate.DeterministicClientUUID(ctx.UserID),
-			RequestConnectionName:    req.ConnectionName,
-			RequestConnectionType:    req.ConnectionType,
-			RequestConnectionSubType: req.ConnectionSubType,
-			RequestPort:              req.Port,
-			RequestAccessDuration:    req.AccessDuration,
+			ID:                    clientstate.DeterministicClientUUID(ctx.UserID),
+			RequestConnectionName: req.ConnectionName,
+			RequestPort:           req.Port,
+			RequestAccessDuration: req.AccessDuration,
 		})
 		if status, ok := status.FromError(err); ok {
 			switch status.Code() {
@@ -130,8 +142,8 @@ func Post(c *gin.Context) {
 				ID:                       obj.ID,
 				Status:                   openapi.ClientStatusType(obj.Status),
 				RequestConnectionName:    obj.RequestConnectionName,
-				RequestConnectionType:    obj.RequestConnectionType,
-				RequestConnectionSubType: obj.RequestConnectionSubType,
+				RequestConnectionType:    conn.Type,
+				RequestConnectionSubType: conn.SubType,
 				RequestPort:              obj.RequestPort,
 				RequestAccessDuration:    obj.RequestAccessDuration,
 				ClientMetadata:           obj.ClientMetadata,
@@ -159,8 +171,8 @@ func Post(c *gin.Context) {
 		ID:                       obj.ID,
 		Status:                   openapi.ClientStatusType(obj.Status),
 		RequestConnectionName:    obj.RequestConnectionName,
-		RequestConnectionType:    obj.RequestConnectionType,
-		RequestConnectionSubType: obj.RequestConnectionSubType,
+		RequestConnectionType:    conn.Type,
+		RequestConnectionSubType: conn.SubType,
 		RequestPort:              obj.RequestPort,
 		RequestAccessDuration:    obj.RequestAccessDuration,
 		ClientMetadata:           obj.ClientMetadata,
@@ -190,6 +202,7 @@ func Disconnect(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "entity not found"})
 		return
 	}
+
 	if err := transport.DispatchDisconnect(obj); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return

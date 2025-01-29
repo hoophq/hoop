@@ -11,10 +11,11 @@
    [:header {:class "mb-2"}
     [:> Heading {:size "6" :as "h2"}
      "Hoop Access"]]
-   [:div {:class "flex flex-col items-center gap-regular justify-center h-full my-x-large"}
-    [:div {:class "flex gap-small"}
-     [:span {:class "text-gray-700"}
-      "The connection time ended. Please, try to connect again."]]]])
+   [:div {:class "flex flex-col items-center gap-small justify-center h-full my-x-large"}
+    [:div {:class "text-gray-700"}
+     "The connection time ended."]
+    [:div {:class "text-gray-700"}
+     "Please, try to connect again."]]])
 
 (defn- draggable-card-content [connection]
   [:<>

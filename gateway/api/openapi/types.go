@@ -1,6 +1,7 @@
 package openapi
 
 import (
+	"database/sql"
 	"encoding/json"
 	"time"
 )
@@ -674,7 +675,7 @@ type ProxyManagerResponse struct {
 	// The requested connection type
 	RequestConnectionType string `json:"connection_type"`
 	// The requested connection subtype
-	RequestConnectionSubType string `json:"connection_subtype"`
+	RequestConnectionSubType sql.NullString `json:"connection_subtype"`
 	// The requested client port to listen
 	RequestPort string `json:"port"`
 	// The request access duration in case of review
