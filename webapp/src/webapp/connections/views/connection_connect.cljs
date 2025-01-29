@@ -50,7 +50,7 @@
 
 (defn- close-connect-dialog []
   (let [connection @(rf/subscribe [:connections->connection-connected])
-        dialog-text (str "Are you sure you want to disconnect this connection?")
+        dialog-text "Are you sure you want to disconnect this connection?"
         open-dialog #(rf/dispatch [:dialog->open {:text dialog-text
                                                   :type :danger
                                                   :action-button? true
@@ -202,9 +202,7 @@
        " Download Desktop App"]
       [:> Button {:size "2"
                   :on-click (fn []
-                              (rf/dispatch [:connections->start-connect {:type (:connection_type connection-data)
-                                                                         :subtype (:connection_subtype connection-data)
-                                                                         :name (:connection_name connection-data)}]))}
+                              (rf/dispatch [:connections->start-connect {:name (:connection_name connection-data)}]))}
        "Try again"]]]))
 
 (defn main [connection-name]

@@ -668,9 +668,9 @@ type ProxyManagerResponse struct {
 	// The requested connection name
 	RequestConnectionName string `json:"connection_name"`
 	// The requested connection type
-	RequestConnectionType string `json:"connection_type"`
+	RequestConnectionType string `json:"connection_type" readonly:"true"`
 	// The requested connection subtype
-	RequestConnectionSubType string `json:"connection_subtype"`
+	RequestConnectionSubType string `json:"connection_subtype" readonly:"true"`
 	// The requested client port to listen
 	RequestPort string `json:"port"`
 	// The request access duration in case of review

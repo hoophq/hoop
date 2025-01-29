@@ -102,8 +102,6 @@
  (fn
    [{:keys [db]} [_ connection]]
    (let [body {:connection_name (:name connection)
-               :connection_type (:type connection)
-               :connection_subtype (:subtype connection)
                :port "8999"
                :access_duration 1800000000000}]
      {:db (assoc-in db [:connections->connection-connected] {:data body :status :loading})

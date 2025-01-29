@@ -162,7 +162,7 @@
                            (and (= "application" (:type connection))
                                 (= "tcp" (:subtype connection))))
                       [:div {:class "relative cursor-pointer group"
-                             :on-click #(rf/dispatch [:connections->start-connect  connection])}
+                             :on-click #(rf/dispatch [:connections->start-connect connection])}
                        [:> Tooltip {:content "Hoop Access"}
                         [:> IconButton {:size 1 :variant "ghost" :color "gray"}
                          [:> Wifi {:size 16}]]]])
