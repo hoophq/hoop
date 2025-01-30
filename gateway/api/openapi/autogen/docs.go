@@ -2038,6 +2038,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {

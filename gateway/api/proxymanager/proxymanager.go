@@ -9,8 +9,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
+	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
-	"github.com/hoophq/hoop/gateway/models"
 	pgproxymanager "github.com/hoophq/hoop/gateway/pgrest/proxymanager"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/clientstate"
@@ -27,8 +27,8 @@ import (
 //	@Tags			Proxy Manager
 //	@Param			type	query	string	false	"Filter by type"	Format(string)
 //	@Produce		json
-//	@Success		200		{object}	openapi.ProxyManagerResponse
-//	@Failure		400,500	{object}	openapi.HTTPError
+//	@Success		200			{object}	openapi.ProxyManagerResponse
+//	@Failure		400,404,500	{object}	openapi.HTTPError
 //	@Router			/proxymanager/status [get]
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -44,9 +44,15 @@ func Get(c *gin.Context) {
 		return
 	}
 
-	conn, err := models.GetConnectionByNameOrID(ctx.GetOrgID(), obj.RequestConnectionName)
+	conn, err := apiconnections.FetchByName(ctx, obj.RequestConnectionName)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
+		log.Errorf("failed retrieving connection %v, reason=%v", obj.RequestConnectionName, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal error, failed to obtaining connection"})
+		return
+	}
+
+	if conn == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "connection not found"})
 		return
 	}
 
@@ -89,9 +95,15 @@ func Post(c *gin.Context) {
 		return
 	}
 
-	conn, err := models.GetConnectionByNameOrID(ctx.GetOrgID(), req.ConnectionName)
+	conn, err := apiconnections.FetchByName(ctx, req.ConnectionName)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
+		log.Errorf("failed retrieving connection %v, reason=%v", req.ConnectionName, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal error, failed to obtaining connection"})
+		return
+	}
+
+	if conn == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "connection not found"})
 		return
 	}
 
