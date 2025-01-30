@@ -23,7 +23,10 @@ import (
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
-var memorySessionStore = memory.New()
+var (
+	memorySessionStore = memory.New()
+	internalExitCode   = func() *int { v := 254; return &v }()
+)
 
 type (
 	auditPlugin struct {
@@ -152,7 +155,7 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		}
 		return nil, nil
 	case pbclient.SessionClose:
-		exitCode := parseExitCode(pkt)
+		exitCode := parseExitCode(pctx.SID, pkt)
 		if len(pkt.Payload) > 0 {
 			p.closeSession(pctx, exitCode, fmt.Errorf(string(pkt.Payload)))
 			return nil, nil
@@ -177,22 +180,22 @@ func (p *auditPlugin) OnDisconnect(pctx plugintypes.Context, errMsg error) error
 				continue
 			}
 			pctx.SID = msid
-			p.closeSession(pctx, nil, errMsg)
+			p.closeSession(pctx, internalExitCode, errMsg)
 		}
 	default:
-		p.closeSession(pctx, nil, errMsg)
+		p.closeSession(pctx, internalExitCode, errMsg)
 	}
 	return nil
 }
 
 func (p *auditPlugin) closeSession(pctx plugintypes.Context, exitCode *int, errMsg error) {
-	log.With("sid", pctx.SID).Infof("closing session, reason=%v", errMsg)
+	log.With("sid", pctx.SID).Infof("closing session, exit_code=%v, reason=%v", debugExitCode(exitCode), errMsg)
 	go func() {
+		defer memorySessionStore.Del(pctx.SID)
 		if err := p.writeOnClose(pctx, exitCode, errMsg); err != nil {
-			log.Warnf("session=%v - failed closing session: %v", pctx.SID, err)
+			log.With("sid", pctx.SID).Warnf("failed closing session, reason=%v", err)
 			return
 		}
-		memorySessionStore.Del(pctx.SID)
 	}()
 }
 
@@ -247,10 +250,20 @@ func parseSpecAsEventMetadata(pkt *pb.Packet) map[string][]byte {
 	return nil
 }
 
-func parseExitCode(pkt *pb.Packet) (exitCode *int) {
-	exitCodeStr := string(pkt.Spec[pb.SpecClientExitCodeKey])
-	if ecode, err := strconv.Atoi(exitCodeStr); err == nil {
-		exitCode = &ecode
+func parseExitCode(sid string, pkt *pb.Packet) (exitCode *int) {
+	exitCodeStr, ok := pkt.Spec[pb.SpecClientExitCodeKey]
+	if ok {
+		if ecode, err := strconv.Atoi(string(exitCodeStr)); err == nil {
+			exitCode = &ecode
+		}
 	}
+	log.With("sid", sid).Debugf("raw exit code value=%q, has_exit_code_spec=%v", exitCodeStr, ok)
 	return
+}
+
+func debugExitCode(exitCode *int) string {
+	if exitCode == nil {
+		return "<nil>"
+	}
+	return fmt.Sprintf("%v", *exitCode)
 }

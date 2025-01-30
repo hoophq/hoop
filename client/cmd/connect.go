@@ -1,14 +1,17 @@
 package cmd
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/briandowns/spinner"
@@ -85,6 +88,9 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 	loader := spinner.New(spinner.CharSets[11], 70*time.Millisecond)
 	loader.Color("green")
 	loader.Start()
+	defer func() { loader.Stop() }()
+	ossig := &osInterrupt{shutdownFn: func() { loader.Stop() }}
+	ossig.handleOsInterrupt()
 	loader.Suffix = " connecting to gateway..."
 
 	c := newClientConnect(config, loader, args, pb.ClientVerbConnect)
@@ -203,6 +209,7 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				fmt.Println("------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
 			case pb.ConnectionTypeCommandLine:
+				c.loader.Stop()
 				// https://github.com/creack/pty/issues/95
 				if runtime.GOOS == "windows" {
 					fmt.Println("Your current terminal environment (Windows/DOS) is not compatible with the Linux-based connection you're trying to access. To proceed, please use one of these options: ")
@@ -212,8 +219,6 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 					fmt.Println("For more information, please visit https://hoop.dev/docs/getting-started/cli or contact us if you need further assistance.")
 					os.Exit(1)
 				}
-				// c.handleCmdInterrupt()
-				c.loader.Stop()
 				c.client.StartKeepAlive()
 				term := proxy.NewTerminal(c.client)
 				c.printHeader(string(sessionID))
@@ -222,6 +227,7 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 					sentry.CaptureException(fmt.Errorf("connect - failed initializing terminal, err=%v", err))
 					c.processGracefulExit(err)
 				}
+				ossig.shutdownFn = func() { loader.Stop(); term.Close() }
 			default:
 				errMsg := fmt.Errorf(`connection type %q not implemented`, connnectionType.String())
 				sentry.CaptureException(fmt.Errorf("connect - %v", errMsg))
@@ -449,4 +455,32 @@ func parseClientEnvVars() (map[string]string, error) {
 		return nil, fmt.Errorf("invalid client env vars, expected env=var. found=%v", invalidEnvs)
 	}
 	return envVar, nil
+}
+
+type osInterrupt struct {
+	shutdownFn context.CancelFunc
+}
+
+func (o *osInterrupt) handleOsInterrupt() {
+	sigc := make(chan os.Signal, 1)
+	signal.Notify(sigc,
+		syscall.SIGHUP,
+		syscall.SIGINT,
+		syscall.SIGTERM,
+		syscall.SIGQUIT)
+	go func() {
+		sigval := <-sigc
+		log.Debugf("received interrupt signal %v, executing shutdown ...", sigval.String())
+		o.shutdownFn()
+		switch sigval {
+		case syscall.SIGHUP:
+			os.Exit(int(syscall.SIGHUP))
+		case syscall.SIGINT:
+			os.Exit(int(syscall.SIGINT))
+		case syscall.SIGTERM:
+			os.Exit(int(syscall.SIGTERM))
+		case syscall.SIGQUIT:
+			os.Exit(int(syscall.SIGQUIT))
+		}
+	}()
 }

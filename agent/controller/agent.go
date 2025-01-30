@@ -276,25 +276,30 @@ func (a *Agent) sessionCleanup(sessionID string) {
 	}
 }
 
-func (a *Agent) sendClientSessionClose(sessionID string, errMsg string, specKeyVal ...string) {
+func (a *Agent) sendClientSessionClose(sessionID string, errMsg string) {
+	// if it doesn't contain any error message, it has ended with success
+	exitCode := "0"
+	if errMsg != "" {
+		exitCode = internalExitCode
+	}
+	a.sendClientSessionCloseWithExitCode(sessionID, errMsg, exitCode)
+}
+
+func (a *Agent) sendClientSessionCloseWithExitCode(sessionID string, errMsg, exitCode string) {
 	if sessionID == "" {
 		return
 	}
 	var errPayload []byte
-	spec := map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)}
-	for _, keyval := range specKeyVal {
-		parts := strings.Split(keyval, "=")
-		if len(parts) == 2 {
-			spec[parts[0]] = []byte(parts[1])
-		}
-	}
 	if errMsg != "" {
 		errPayload = []byte(errMsg)
 	}
 	_ = a.client.Send(&pb.Packet{
 		Type:    pbclient.SessionClose,
 		Payload: errPayload,
-		Spec:    spec,
+		Spec: map[string][]byte{
+			pb.SpecGatewaySessionID:  []byte(sessionID),
+			pb.SpecClientExitCodeKey: []byte(exitCode),
+		},
 	})
 }
 
