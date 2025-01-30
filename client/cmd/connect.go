@@ -141,7 +141,7 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				c.printHeader(string(sessionID))
 				fmt.Println()
 				fmt.Println("--------------------postgres-credentials--------------------")
-				fmt.Printf("      host=127.0.0.1 port=%s user=noop password=noop\n", srv.ListenPort())
+				fmt.Printf("      host=%s port=%s user=noop password=noop\n", srv.Host().Host, srv.Host().Port)
 				fmt.Println("------------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
 			case pb.ConnectionTypeMySQL:
@@ -156,7 +156,7 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				c.printHeader(string(sessionID))
 				fmt.Println()
 				fmt.Println("---------------------mysql-credentials----------------------")
-				fmt.Printf("      host=127.0.0.1 port=%s user=noop password=noop\n", srv.ListenPort())
+				fmt.Printf("      host=%s port=%s user=noop password=noop\n", srv.Host().Host, srv.Host().Port)
 				fmt.Println("------------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
 			case pb.ConnectionTypeMSSQL:
@@ -171,7 +171,7 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				c.printHeader(string(sessionID))
 				fmt.Println()
 				fmt.Println("---------------------mssql-credentials----------------------")
-				fmt.Printf("      host=127.0.0.1 port=%s user=noop password=noop\n", srv.ListenPort())
+				fmt.Printf("      host=%s port=%s user=noop password=noop\n", srv.Host().Host, srv.Host().Port)
 				fmt.Println("------------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
 			case pb.ConnectionTypeMongoDB:
@@ -186,15 +186,11 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				c.printHeader(string(sessionID))
 				fmt.Println()
 				fmt.Println("---------------------mongo-credentials----------------------")
-				fmt.Printf(" mongodb://noop:noop@127.0.0.1:%s/?directConnection=true\n", srv.ListenPort())
+				fmt.Printf(" mongodb://noop:noop@%s:%s/?directConnection=true\n", srv.Host().Host, srv.Host().Port)
 				fmt.Println("------------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
 			case pb.ConnectionTypeTCP:
-				proxyPort := "8999"
-				if c.proxyPort != "" {
-					proxyPort = c.proxyPort
-				}
-				tcp := proxy.NewTCPServer(proxyPort, c.client, pbagent.TCPConnectionWrite)
+				tcp := proxy.NewTCPServer(c.proxyPort, c.client, pbagent.TCPConnectionWrite)
 				if err := tcp.Serve(string(sessionID)); err != nil {
 					sentry.CaptureException(fmt.Errorf("connect - failed initializing tcp proxy, err=%v", err))
 					c.processGracefulExit(err)
@@ -205,7 +201,7 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				c.printHeader(string(sessionID))
 				fmt.Println()
 				fmt.Println("--------------------tcp-connection--------------------")
-				fmt.Printf("               host=127.0.0.1 port=%s\n", tcp.ListenPort())
+				fmt.Printf("               host=%s port=%s\n", tcp.Host().Host, tcp.Host().Port)
 				fmt.Println("------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
 			case pb.ConnectionTypeCommandLine:

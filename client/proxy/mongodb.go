@@ -6,16 +6,11 @@ import (
 	"io"
 	"net"
 	"strconv"
-	"strings"
 
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
-)
-
-const (
-	defaultMongoDBPort = "27018"
 )
 
 type MongoDBServer struct {
@@ -26,9 +21,9 @@ type MongoDBServer struct {
 }
 
 func NewMongoDBServer(proxyPort string, client pb.ClientTransport) *MongoDBServer {
-	listenAddr := fmt.Sprintf("127.0.0.1:%s", defaultMongoDBPort)
+	listenAddr := defaultListenAddr(defaultMongoDBPort)
 	if proxyPort != "" {
-		listenAddr = fmt.Sprintf("127.0.0.1:%s", proxyPort)
+		listenAddr = defaultListenAddr(proxyPort)
 	}
 	return &MongoDBServer{
 		listenAddr:      listenAddr,
@@ -112,13 +107,7 @@ func (s *MongoDBServer) getConnection(connectionID string) (io.WriteCloser, erro
 	return conn, nil
 }
 
-func (s *MongoDBServer) ListenPort() string {
-	parts := strings.Split(s.listenAddr, ":")
-	if len(parts) == 2 {
-		return parts[1]
-	}
-	return ""
-}
+func (s *MongoDBServer) Host() Host { return getListenAddr(s.listenAddr) }
 
 func copyMongoDBBuffer(dst io.Writer, src io.Reader) (err error) {
 	for {

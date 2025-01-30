@@ -6,7 +6,6 @@ import (
 	"io"
 	"net"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/hoophq/hoop/common/log"
@@ -14,11 +13,6 @@ import (
 	pgtypes "github.com/hoophq/hoop/common/pgtypes"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
-)
-
-const (
-	defaultPostgresPort      = "5433"
-	maxSimpleQueryPacketSize = 1048576 // 1MB
 )
 
 type PGServer struct {
@@ -35,9 +29,9 @@ type pgConnection struct {
 }
 
 func NewPGServer(proxyPort string, client pb.ClientTransport) *PGServer {
-	listenAddr := fmt.Sprintf("127.0.0.1:%s", defaultPostgresPort)
+	listenAddr := defaultListenAddr(defaultPostgresPort)
 	if proxyPort != "" {
-		listenAddr = fmt.Sprintf("127.0.0.1:%s", proxyPort)
+		listenAddr = defaultListenAddr(proxyPort)
 	}
 	return &PGServer{
 		listenAddr:      listenAddr,
@@ -47,10 +41,9 @@ func NewPGServer(proxyPort string, client pb.ClientTransport) *PGServer {
 }
 
 func (p *PGServer) Serve(sessionID string) error {
-	listenAddr := p.listenAddr
-	lis, err := net.Listen("tcp4", listenAddr)
+	lis, err := net.Listen("tcp4", p.listenAddr)
 	if err != nil {
-		return fmt.Errorf("failed listening to address %v, err=%v", listenAddr, err)
+		return fmt.Errorf("failed listening to address %v, err=%v", p.listenAddr, err)
 	}
 	p.listener = lis
 	go func() {
@@ -143,13 +136,7 @@ func (p *PGServer) getConnection(connectionID string) (*pgConnection, error) {
 	return conn, nil
 }
 
-func (p *PGServer) ListenPort() string {
-	parts := strings.Split(p.listenAddr, ":")
-	if len(parts) == 2 {
-		return parts[1]
-	}
-	return ""
-}
+func (p *PGServer) Host() Host { return getListenAddr(p.listenAddr) }
 
 func (p *PGServer) lookupConnectionByPid(pid uint32) *pgConnection {
 	for _, obj := range p.connectionStore.List() {

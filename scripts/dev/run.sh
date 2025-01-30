@@ -50,7 +50,7 @@ docker build -t hoopdev -f ./scripts/dev/Dockerfile .
 mkdir -p ./dist/dev/
 
 VERSION="${VERSION:-unknown}"
-CGO_ENABLED=0 GOOS=linux go build -ldflags "-s -w -X github.com/hoophq/hoop/common/version.version=${VERSION}" -o ./dist/dev/hooplinux github.com/hoophq/hoop/client
+CGO_ENABLED=0 GOOS=linux go build -ldflags "-s -w -X github.com/hoophq/hoop/common/version.version=${VERSION} -X github.com/hoophq/hoop/client/proxy.defaultListenAddrValue=0.0.0.0" -o ./dist/dev/hooplinux github.com/hoophq/hoop/client
 docker stop hoopdev &> /dev/null || true
 docker rm hoopdev &> /dev/null || true
 
