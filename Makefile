@@ -28,7 +28,7 @@ run-dev-postgres:
 	./scripts/dev/run-postgres.sh
 
 build-dev-client:
-	go build -ldflags "-s -w" -o ${HOME}/.hoop/bin/hoop github.com/hoophq/hoop/client
+	go build -ldflags "-s -w -X github.com/hoophq/hoop/client/proxy.defaultListenAddrValue=0.0.0.0" -o ${HOME}/.hoop/bin/hoop github.com/hoophq/hoop/client
 
 test: test-oss test-enterprise
 

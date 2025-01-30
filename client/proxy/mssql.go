@@ -13,34 +13,31 @@ import (
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 )
 
-const (
-	defaultMSSQLPort = "1444"
-	minPacketSize    = 512
-)
+const minPacketSize = 512
 
 type MSSQLServer struct {
-	listenPort      string
+	listenAddr      string
 	client          pb.ClientTransport
 	connectionStore memory.Store
 	listener        net.Listener
 }
 
 func NewMSSQLServer(listenPort string, client pb.ClientTransport) *MSSQLServer {
-	if listenPort == "" {
-		listenPort = defaultMSSQLPort
+	listenAddr := defaultListenAddr(defaultMSSQLPort)
+	if listenPort != "" {
+		listenAddr = defaultListenAddr(listenPort)
 	}
 	return &MSSQLServer{
-		listenPort:      listenPort,
+		listenAddr:      listenAddr,
 		client:          client,
 		connectionStore: memory.New(),
 	}
 }
 
 func (s *MSSQLServer) Serve(sessionID string) error {
-	listenAddr := fmt.Sprintf("127.0.0.1:%s", s.listenPort)
-	lis, err := net.Listen("tcp4", listenAddr)
+	lis, err := net.Listen("tcp4", s.listenAddr)
 	if err != nil {
-		return fmt.Errorf("failed listening to address %v, err=%v", listenAddr, err)
+		return fmt.Errorf("failed listening to address %v, err=%v", s.listenAddr, err)
 	}
 	s.listener = lis
 	go func() {
@@ -102,8 +99,8 @@ func (s *MSSQLServer) CloseTCPConnection(connectionID string) {
 	}
 }
 
-func (s *MSSQLServer) Close() error       { return s.listener.Close() }
-func (s *MSSQLServer) ListenPort() string { return s.listenPort }
+func (s *MSSQLServer) Close() error { return s.listener.Close() }
+func (s *MSSQLServer) Host() Host   { return getListenAddr(s.listenAddr) }
 
 func (s *MSSQLServer) getConnection(connectionID string) (io.WriteCloser, error) {
 	connWrapperObj := s.connectionStore.Get(connectionID)
