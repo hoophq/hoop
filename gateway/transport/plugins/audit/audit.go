@@ -172,6 +172,13 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 func (p *auditPlugin) OnDisconnect(pctx plugintypes.Context, errMsg error) error {
 	log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "agent", pctx.AgentName).
 		Debugf("processing disconnect")
+	// Since we lack the exit code in this state,
+	// a successful operation (0) is considered if the error is empty.
+	// The caller should always be responsible in propagating the error properly
+	exitCode := func() *int { v := 0; return &v }()
+	if errMsg != nil {
+		exitCode = internalExitCode
+	}
 	switch pctx.ClientOrigin {
 	case pb.ConnectionOriginAgent:
 		log.With("agent", pctx.AgentName).Infof("agent shutdown, graceful closing session")
@@ -180,21 +187,22 @@ func (p *auditPlugin) OnDisconnect(pctx plugintypes.Context, errMsg error) error
 				continue
 			}
 			pctx.SID = msid
-			p.closeSession(pctx, internalExitCode, errMsg)
+			p.closeSession(pctx, exitCode, errMsg)
 		}
 	default:
-		p.closeSession(pctx, internalExitCode, errMsg)
+		p.closeSession(pctx, exitCode, errMsg)
 	}
 	return nil
 }
 
 func (p *auditPlugin) closeSession(pctx plugintypes.Context, exitCode *int, errMsg error) {
-	log.With("sid", pctx.SID).Infof("closing session, exit_code=%v, reason=%v", debugExitCode(exitCode), errMsg)
+	log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
+		Infof("closing session, exit_code=%v, reason=%v", debugExitCode(exitCode), errMsg)
 	go func() {
 		defer memorySessionStore.Del(pctx.SID)
 		if err := p.writeOnClose(pctx, exitCode, errMsg); err != nil {
-			log.With("sid", pctx.SID).Warnf("failed closing session, reason=%v", err)
-			return
+			log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
+				Warnf("failed closing session, reason=%v", err)
 		}
 	}()
 }

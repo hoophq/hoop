@@ -171,7 +171,7 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, exitCode *int, errM
 	endDate := time.Now().UTC()
 	sessionMetrics, err := metrics.toMap()
 	if err != nil {
-		log.Warnf("failed parsing session metrics to map, reason=%v", err)
+		log.With("sid", pctx.SID).Warnf("failed parsing session metrics to map, reason=%v", err)
 	}
 	err = models.UpdateSessionEventStream(models.SessionDone{
 		ID:         wh.SessionID,
@@ -182,6 +182,8 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, exitCode *int, errM
 		ExitCode:   exitCode,
 		EndSession: &endDate,
 	})
+	log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
+		Infof("finished persisting session to store, exit_code=%v, reason=%v", debugExitCode(exitCode), errMsg)
 
 	if err != nil {
 		_ = walogm.log.Write(eventlogv1.NewCommitError(endDate, err.Error()))
