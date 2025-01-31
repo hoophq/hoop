@@ -2,6 +2,7 @@ package transport
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/common/log"
@@ -90,18 +91,14 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 		}
 
 		if _, err := proxyStream.PluginExecOnReceive(*pctx, pkt); err != nil {
-			log.Warnf("plugin reject packet, err=%v", err)
+			log.With("sid", pctx.SID).Warnf("plugin reject packet, err=%v", err)
 			sentry.CaptureException(err)
 			return status.Errorf(codes.Internal, "internal error, plugin reject packet")
 		}
 
 		if pb.PacketType(pkt.Type) == pbclient.SessionClose {
-			var trackErr error
-			if len(pkt.Payload) > 0 {
-				trackErr = fmt.Errorf(string(pkt.Payload))
-			}
 			// it will make sure to run the disconnect plugin phase for both clients
-			_ = proxyStream.Close(trackErr)
+			_ = proxyStream.Close(buildErrorFromPacket(pctx.SID, pkt))
 		}
 		if err = proxyStream.Send(pkt); err != nil {
 			log.With("sid", pctx.SID).Debugf("failed to send packet to proxy stream, err=%v", err)
@@ -109,19 +106,20 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 	}
 }
 
-// func (s *Server) configurationData(orgName string) []byte {
-// 	var transportConfigBytes []byte
-// 	transportConfigBytes, _ = pb.GobEncode(monitoring.TransportConfig{
-// 		Sentry: monitoring.SentryConfig{
-// 			OrgName:     orgName,
-// 			Environment: monitoring.NormalizeEnvironment(s.IDProvider.ApiURL),
-// 		},
-// 		Profiler: monitoring.ProfilerConfig{
-// 			PyroscopeServerAddress: s.PyroscopeIngestURL,
-// 			PyroscopeAuthToken:     s.PyroscopeAuthToken,
-// 			OrgName:                orgName,
-// 			Environment:            monitoring.NormalizeEnvironment(s.IDProvider.ApiURL),
-// 		},
-// 	})
-// 	return transportConfigBytes
-// }
+func buildErrorFromPacket(sid string, pkt *pb.Packet) error {
+	var exitCode *int
+	exitCodeStr := string(pkt.Spec[pb.SpecClientExitCodeKey])
+	ecode, err := strconv.Atoi(exitCodeStr)
+	exitCode = &ecode
+	if err != nil {
+		exitCode = func() *int { v := 254; return &v }() // internal error code
+	}
+
+	log.With("sid", sid).Infof("session result, exit_code=%q, payload_length=%v",
+		exitCodeStr, len(pkt.Payload))
+	if len(pkt.Payload) == 0 && (exitCode == nil || *exitCode == 0) {
+		return nil
+	}
+
+	return plugintypes.NewPacketErr(string(pkt.Payload), exitCode)
+}

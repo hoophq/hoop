@@ -26,6 +26,8 @@ const (
 	eventLogTypeName string = "_footer_error"
 )
 
+var internalExitCode = func() *int { v := 254; return &v }()
+
 type walLogRWMutex struct {
 	log        *sessionwal.WalLog
 	mu         sync.RWMutex
@@ -78,7 +80,7 @@ func (p *auditPlugin) dropWalLog(sid string) {
 	walogm.mu.Unlock()
 }
 
-func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, exitCode *int, errMsg error) error {
+func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error {
 	walLogObj := p.walSessionStore.Pop(pctx.SID)
 	walogm, ok := walLogObj.(*walLogRWMutex)
 	if !ok {
@@ -179,11 +181,11 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, exitCode *int, errM
 		Metrics:    sessionMetrics,
 		BlobStream: json.RawMessage(rawJSONBlobStream),
 		Status:     string(openapi.SessionStatusDone),
-		ExitCode:   exitCode,
+		ExitCode:   parseExitCodeFromErr(errMsg),
 		EndSession: &endDate,
 	})
 	log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
-		Infof("finished persisting session to store, exit_code=%v, reason=%v", debugExitCode(exitCode), errMsg)
+		Infof("finished persisting session to store, err=%v", errMsg)
 
 	if err != nil {
 		_ = walogm.log.Write(eventlogv1.NewCommitError(endDate, err.Error()))
@@ -200,4 +202,16 @@ func (p *auditPlugin) truncateTCPEventStream(eventStream []byte, connType string
 		return eventStream[0:5000]
 	}
 	return eventStream
+}
+
+func parseExitCodeFromErr(err error) (exitCode *int) {
+	switch v := err.(type) {
+	case *plugintypes.PacketErr:
+		exitCode = v.ExitCode()
+	case nil:
+		exitCode = func() *int { v := 0; return &v }()
+	default:
+		exitCode = internalExitCode
+	}
+	return
 }

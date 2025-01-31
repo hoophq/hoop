@@ -12,6 +12,18 @@ import (
 
 type GenericMap map[string]any
 
+type PacketErr struct {
+	exitCode *int
+	msg      string
+}
+
+func (e PacketErr) Error() string  { return e.msg }
+func (e PacketErr) ExitCode() *int { return e.exitCode }
+
+func NewPacketErr(msg string, exitCode *int) error {
+	return &PacketErr{msg: msg, exitCode: exitCode}
+}
+
 type Context struct {
 	Context context.Context
 	// Session ID
