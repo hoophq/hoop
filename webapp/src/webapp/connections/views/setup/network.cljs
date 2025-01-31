@@ -32,6 +32,7 @@
      [forms/input
       {:label "Port"
        :placeholder "e.g. username"
+       :required true
        :value (get credentials :port "")
        :on-change #(rf/dispatch [:connection-setup/update-network-port
                                  (-> % .-target .-value)])}]]))
@@ -39,33 +40,39 @@
 (defn- resource-step []
   (let [selected-type @(rf/subscribe [:connection-setup/connection-type])
         selected-subtype @(rf/subscribe [:connection-setup/connection-subtype])]
-    [:> Box {:class "space-y-5"}
-     [:> Text {:size "4" :weight "bold"} "Network access type"]
-     [:> RadioGroup.Root {:name "network-type"
-                          :value selected-subtype
-                          :on-value-change #(rf/dispatch [:connection-setup/select-connection "network" %])}
-      [:> Grid {:columns "1" :gap "3"}
-       (for [{:keys [id title disabled]} network-types]
-         ^{:key id}
-         [:> RadioGroup.Item
-          {:value id
-           :class (str "p-4 " (when disabled "opacity-50 cursor-not-allowed"))
-           :disabled disabled}
-          [:> Flex {:gap "3" :align "center"}
-           [:> Network {:size 16}]
-           title]])]]
+    [:form
+     {:id "network-credentials-form"
+      :on-submit (fn [e]
+                   (.preventDefault e)
+                   (rf/dispatch [:connection-setup/next-step :additional-config]))}
+     [:> Box {:class "space-y-5"}
+      [:> Text {:size "4" :weight "bold"} "Network access type"]
+      [:> RadioGroup.Root {:name "network-type"
+                           :value selected-subtype
+                           :on-value-change #(rf/dispatch [:connection-setup/select-connection "network" %])}
+       [:> Grid {:columns "1" :gap "3"}
+        (for [{:keys [id title disabled]} network-types]
+          ^{:key id}
+          [:> RadioGroup.Item
+           {:value id
+            :class (str "p-4 " (when disabled "opacity-50 cursor-not-allowed"))
+            :disabled disabled}
+           [:> Flex {:gap "3" :align "center"}
+            [:> Network {:size 16}]
+            title]])]]
 
-     (when (= selected-subtype "tcp")
-       [:<>
-        [credentials-form]
-        [agent-selector/main]
+      (when (= selected-subtype "tcp")
+        [:<>
+         [credentials-form]
+         [agent-selector/main]
         ;; Environment Variables Section
-        #_[configuration-inputs/environment-variables-section]])]))
+         #_[configuration-inputs/environment-variables-section]])]]))
 
 (defn main []
   (let [network-type @(rf/subscribe [:connection-setup/network-type])
         current-step @(rf/subscribe [:connection-setup/current-step])
-        credentials @(rf/subscribe [:connection-setup/network-credentials])]
+        credentials @(rf/subscribe [:connection-setup/network-credentials])
+        agent-id @(rf/subscribe [:connection-setup/agent-id])]
 
     [page-wrapper/main
      {:children [:> Box {:class "max-w-[600px] mx-auto p-6 space-y-7"}
@@ -74,7 +81,8 @@
                  (case current-step
                    :resource [resource-step]
                    :additional-config [additional-configuration/main
-                                       {:selected-type network-type}]
+                                       {:selected-type network-type
+                                        :submit-fn #(rf/dispatch [:connection-setup/submit])}]
                    [resource-step])]
 
                      ;; Footer
@@ -89,6 +97,14 @@
                                                         (empty? (get credentials :host))
                                                         (empty? (get credentials :port)))))
                                        false)
-                     :on-next (if (= current-step :additional-config)
-                                #(rf/dispatch [:connection-setup/submit])
-                                #(rf/dispatch [:connection-setup/next-step :additional-config]))}}]))
+                     :on-next (fn []
+                                (let [form (.getElementById js/document
+                                                            (if (= current-step :credentials)
+                                                              "network-credentials-form"
+                                                              "additional-config-form"))]
+                                  (when form
+                                    (if (and (.reportValidity form)
+                                             agent-id)
+                                      (let [event (js/Event. "submit" #js {:bubbles true :cancelable true})]
+                                        (.dispatchEvent form event))
+                                      (js/console.warn "Invalid form!")))))}}]))

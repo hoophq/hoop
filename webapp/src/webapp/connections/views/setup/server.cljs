@@ -1,8 +1,7 @@
 ;; server.cljs
 (ns webapp.connections.views.setup.server
   (:require
-   ["@radix-ui/themes" :refer [Avatar Box Button Card Flex Grid Heading
-                               RadioGroup Text]]
+   ["@radix-ui/themes" :refer [Avatar Box Card Flex Heading RadioGroup Text]]
    ["lucide-react" :refer [Blocks SquareTerminal]]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -11,6 +10,7 @@
    [webapp.connections.views.setup.agent-selector :as agent-selector]
    [webapp.connections.views.setup.configuration-inputs :as configuration-inputs]
    [webapp.connections.views.setup.headers :as headers]
+   [webapp.connections.views.setup.installation :as installation]
    [webapp.connections.views.setup.page-wrapper :as page-wrapper]
    [webapp.connections.views.setup.state :refer [application-types
                                                  operation-systems]]))
@@ -76,85 +76,72 @@
        ^{:key id}
        [:> RadioGroup.Item {:value id} title])]]])
 
-
-(defn installation-step []
-  [:> Box {:class "space-y-7"}
-   [headers/console-all-done-header]
-
-   [:> Box {:class "space-y-5"}
-    [:> Heading {:size "4" :weight "bold"} "Install hoop.dev CLI"]
-    [:> Box {:class "bg-gray-900 text-white p-4 rounded-md font-mono text-sm"}
-     "brew tap hoophq/brew https://github.com/hoophq/brew\nbrew install hoop"]
-
-    [:> Heading {:size "4" :weight "bold" :mt "5"} "Setup token"]
-    [:> Box {:class "bg-gray-900 text-white p-4 rounded-md font-mono text-sm"}
-     "export HOOP_KEY=$API_KEY"]
-
-    [:> Heading {:size "4" :weight "bold" :mt "5"} "Run your connection"]
-    [:> Box {:class "bg-gray-900 text-white p-4 rounded-md font-mono text-sm"}
-     "hoop run --name your-connection --command python3"]]])
-
 (defn resource-step []
   (let [connection-subtype @(rf/subscribe [:connection-setup/connection-subtype])
         app-type @(rf/subscribe [:connection-setup/app-type])
         os-type @(rf/subscribe [:connection-setup/os-type])]
-    [:> Box {:class "space-y-7"}
+    [:form
+     {:id "server-credentials-form"
+      :on-submit (fn [e]
+                   (.preventDefault e)
+                   (rf/dispatch [:connection-setup/next-step :additional-config]))}
+     [:> Box {:class "space-y-7"}
      ;; Connection Type Selection
-     [:> Box {:class "space-y-4"}
-      [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-       "Connection type"]
-      (for [[subtype {:keys [icon title subtitle]}] connections-subtypes-cards]
-        (let [is-selected (= subtype connection-subtype)]
-          ^{:key subtype}
-          [:> Card {:size "1"
-                    :variant "surface"
-                    :class (str "w-full cursor-pointer "
-                                (when is-selected "before:bg-primary-12"))
-                    :on-click #(rf/dispatch [:connection-setup/select-connection "server" subtype])}
-           [:> Flex {:align "center" :gap "3" :class (str (when is-selected "text-[--gray-1]"))}
-            [:> Avatar {:size "4"
-                        :class (when is-selected "dark")
-                        :variant "soft"
-                        :color "gray"
-                        :fallback icon}]
-            [:> Flex {:direction "column"}
-             [:> Text {:size "3" :weight "medium" :color "gray-12"} title]
-             [:> Text {:size "2" :color "gray-11"} subtitle]]]]))]
+      [:> Box {:class "space-y-4"}
+       [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+        "Connection type"]
+       (for [[subtype {:keys [icon title subtitle]}] connections-subtypes-cards]
+         (let [is-selected (= subtype connection-subtype)]
+           ^{:key subtype}
+           [:> Card {:size "1"
+                     :variant "surface"
+                     :class (str "w-full cursor-pointer "
+                                 (when is-selected "before:bg-primary-12"))
+                     :on-click #(rf/dispatch [:connection-setup/select-connection "server" subtype])}
+            [:> Flex {:align "center" :gap "3" :class (str (when is-selected "text-[--gray-1]"))}
+             [:> Avatar {:size "4"
+                         :class (when is-selected "dark")
+                         :variant "soft"
+                         :color "gray"
+                         :fallback icon}]
+             [:> Flex {:direction "column"}
+              [:> Text {:size "3" :weight "medium" :color "gray-12"} title]
+              [:> Text {:size "2" :color "gray-11"} subtitle]]]]))]
 
-     (when (= connection-subtype "ssh")
-       [credentials-step])
+      (when (= connection-subtype "ssh")
+        [credentials-step])
 
      ;; Se for Console, mostra os outros passos em sequência
-     (when (= connection-subtype "console")
-       [application-type-step])
+      (when (= connection-subtype "console")
+        [application-type-step])
 
         ;; Sistema Operacional
-     (when (and app-type (not os-type))
-       [operating-system-step])]))
+      (when (and app-type (not os-type))
+        [operating-system-step])]]))
 
 
 (defn main []
   (let [connection-subtype @(rf/subscribe [:connection-setup/connection-subtype])
         current-step @(rf/subscribe [:connection-setup/current-step])
         app-type @(rf/subscribe [:connection-setup/app-type])
-        os-type @(rf/subscribe [:connection-setup/os-type])]
-
-    (println
-     current-step
-     connection-subtype
-     app-type
-     os-type)
+        os-type @(rf/subscribe [:connection-setup/os-type])
+        agent-id @(rf/subscribe [:connection-setup/agent-id])]
 
     [page-wrapper/main
      {:children
       [:> Box {:class "max-w-[600px] mx-auto p-6 space-y-7"}
-       [headers/setup-header]
+       (if (= current-step :installation)
+         [headers/console-all-done-header]
+         [headers/setup-header])
 
        (case current-step
          :credentials [resource-step]
          :additional-config [additional-configuration/main
-                             {:selected-type connection-subtype}]
-         :installation [installation-step]
+                             {:selected-type connection-subtype
+                              :submit-fn (if (= connection-subtype "console")
+                                           #(rf/dispatch [:connection-setup/next-step :installation])
+                                           #(rf/dispatch [:connection-setup/submit]))}]
+         :installation [installation/main]
          [resource-step])]
 
       :footer-props
@@ -174,11 +161,31 @@
                                                (or (not app-type)
                                                    (not os-type))))
                          nil)
+       :on-click (fn []
+                   (let [form (.getElementById js/document
+                                               (if (= current-step :credentials)
+                                                 "server-credentials-form"
+                                                 "additional-config-form"))]
+                     (.reportValidity form)))
        :on-next (case current-step
-                       :additional-config (if (= connection-subtype "console")
-                                            #(rf/dispatch [:connection-setup/next-step :installation])
-                                            #(rf/dispatch [:connection-setup/submit]))
-                       :installation #(rf/dispatch [:connection-setup/submit])
-                       #(rf/dispatch [:connection-setup/next-step :additional-config]))}}]))
+                  :additional-config (if (= connection-subtype "console")
+                                       #(rf/dispatch [:connection-setup/next-step :installation])
+                                       (fn []
+                                         (let [form (.getElementById js/document "additional-config-form")]
+                                           (when form
+                                             (if (and (.reportValidity form)
+                                                      agent-id)
+                                               (let [event (js/Event. "submit" #js {:bubbles true :cancelable true})]
+                                                 (.dispatchEvent form event))
+                                               (js/console.warn "Invalid form!"))))))
+                  :installation #(rf/dispatch [:connection-setup/submit])
+                  (fn []
+                    (let [form (.getElementById js/document "server-credentials-form")]
+                      (when form
+                        (if (and (.reportValidity form)
+                                agent-id)
+                          (let [event (js/Event. "submit" #js {:bubbles true :cancelable true})]
+                            (.dispatchEvent form event))
+                          (js/console.warn "Invalid form!"))))))}}]))
 
 

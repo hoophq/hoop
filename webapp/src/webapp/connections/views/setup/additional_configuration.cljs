@@ -1,7 +1,7 @@
 (ns webapp.connections.views.setup.additional-configuration
   (:require
    ["@radix-ui/themes" :refer [Box Callout Flex Heading Link Switch Text]]
-   ["lucide-react" :refer [Star]]
+   ["lucide-react" :refer [Star ArrowUpRight]]
    [re-frame.core :as rf]
    [webapp.components.forms :as forms]
    [webapp.components.multiselect :as multi-select]
@@ -9,7 +9,14 @@
    [webapp.connections.helpers :as helpers]
    [webapp.connections.views.setup.tags-inputs :as tags-inputs]))
 
-(defn toggle-section [{:keys [title description checked disabled? on-change complement-component upgrade-plan-component]}]
+(defn toggle-section
+  [{:keys [title
+           description
+           checked disabled?
+           on-change
+           complement-component
+           upgrade-plan-component
+           learning-component]}]
   [:> Flex {:align "center" :gap "5"}
    [:> Switch {:checked checked
                :size "3"
@@ -23,9 +30,12 @@
       complement-component)
 
     (when upgrade-plan-component
-      upgrade-plan-component)]])
+      upgrade-plan-component)
 
-(defn main [{:keys [show-database-schema? selected-type]}]
+    (when learning-component
+      learning-component)]])
+
+(defn main [{:keys [show-database-schema? selected-type submit-fn]}]
   (let [user-groups (rf/subscribe [:user-groups])
         review? (rf/subscribe [:connection-setup/review])
         review-groups (rf/subscribe [:connection-setup/review-groups])
@@ -39,110 +49,143 @@
 
     (rf/dispatch [:users->get-user-groups])
     (fn []
-      [:> Box {:class "space-y-7"}
-       [:> Box
-        [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]" :mb "5"}
-         "Connection information"]
+      [:form
+       {:id "additional-config-form"
+        :on-submit (fn [e]
+                     (.preventDefault e)
+                     (submit-fn))}
+       [:> Box {:class "space-y-7"}
+        [:> Box
+         [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]" :mb "5"}
+          "Connection information"]
 
-        [forms/input {:placeholder (str (when selected-type
-                                          (str selected-type "-"))
-                                        (helpers/random-connection-name))
-                      :label "Name"
-                      :required true
-                      :value @connection-name
-                      :on-change #(rf/dispatch [:connection-setup/set-name
-                                                (-> % .-target .-value)])}]]
+         [forms/input {:placeholder (str (when selected-type
+                                           (str selected-type "-"))
+                                         (helpers/random-connection-name))
+                       :label "Name"
+                       :required true
+                       :value @connection-name
+                       :on-change #(rf/dispatch [:connection-setup/set-name
+                                                 (-> % .-target .-value)])}]]
 
-       [tags-inputs/main]
+        [tags-inputs/main]
 
 
-       [:> Box
-        [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]" :mb "5"}
-         "Additional Configuration"]
-        [:> Box {:class "space-y-7"}
+        [:> Box
+         [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]" :mb "5"}
+          "Additional Configuration"]
+         [:> Box {:class "space-y-7"}
                                                                  ;; Reviews
-         [:> Box {:class "space-y-2"}
-          [toggle-section
-           {:title "Reviews"
-            :description "Require approval prior to connection execution. Enable Just-in-Time access for 30-minute sessions or Command reviews for individual query approvals."
-            :checked @review?
-            :on-change #(rf/dispatch [:connection-setup/toggle-review])
-            :complement-component
-            (when @review?
-              [:> Box {:mt "4"}
-               [multi-select/main
-                {:options (helpers/array->select-options @user-groups)
-                 :id "approval-groups-input"
-                 :name "approval-groups-input"
-                 :required? @review?
-                 :default-value @review-groups
-                 :on-change #(rf/dispatch [:connection-setup/set-review-groups (js->clj %)])}]])}]]
+          [:> Box {:class "space-y-2"}
+           [toggle-section
+            {:title "Reviews"
+             :description "Require approval prior to connection execution. Enable Just-in-Time access for 30-minute sessions or Command reviews for individual query approvals."
+             :checked @review?
+             :on-change #(rf/dispatch [:connection-setup/toggle-review])
+             :complement-component
+             (when @review?
+               [:> Box {:mt "4"}
+                [multi-select/main
+                 {:options (helpers/array->select-options @user-groups)
+                  :id "approval-groups-input"
+                  :name "approval-groups-input"
+                  :required? @review?
+                  :default-value @review-groups
+                  :on-change #(rf/dispatch [:connection-setup/set-review-groups (js->clj %)])}]])
+
+             :upgrade-plan-component
+             (when true
+               [:> Callout.Root {:size "2" :mt "4" :mb "4"}
+                [:> Callout.Icon
+                 [:> Star {:size 16}]]
+                [:> Callout.Text {:class "text-gray-12"}
+                 "Enable Command reviews by "
+                 [:> Link {:href "#"
+                           :class "text-primary-10"
+                           :on-click #(rf/dispatch [:navigate :upgrade-plan])}
+                  "upgrading your plan."]]])
+
+             :learning-component [:> Link {:href "https://hoop.dev/docs/learn/jit-reviews"
+                                           :target "_blank"}
+                                  [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
+                                   [:> Callout.Icon
+                                    [:> ArrowUpRight {:size 16}]]
+                                   [:> Callout.Text
+                                    "Learn more about Reviews"]]]}]]
 
           ;; AI Data Masking
-         [:> Box {:class "space-y-2"}
-          [toggle-section
-           {:title "AI Data Masking"
-            :description "Provide an additional layer of security by ensuring sensitive data is masked in query results with AI-powered data masking."
-            :checked @data-masking?
-            :disabled? true
-            :on-change #(rf/dispatch [:connection-setup/toggle-data-masking])
+          [:> Box {:class "space-y-2"}
+           [toggle-section
+            {:title "AI Data Masking"
+             :description "Provide an additional layer of security by ensuring sensitive data is masked in query results with AI-powered data masking."
+             :checked @data-masking?
+             :disabled? true
+             :on-change #(rf/dispatch [:connection-setup/toggle-data-masking])
 
-            :complement-component
-            (when @data-masking?
-              [:> Box {:mt "4"}
-               [multi-select/main
-                {:options (helpers/array->select-options dlp-info-types/options)
-                 :id "data-masking-groups-input"
-                 :name "data-masking-groups-input"
-                 :required? @data-masking?
-                 :default-value @data-masking-types
-                 :disabled? true
-                 :on-change #(rf/dispatch [:connection-setup/set-data-masking-types (js->clj %)])}]])
+             :complement-component
+             (when @data-masking?
+               [:> Box {:mt "4"}
+                [multi-select/main
+                 {:options (helpers/array->select-options dlp-info-types/options)
+                  :id "data-masking-groups-input"
+                  :name "data-masking-groups-input"
+                  :required? @data-masking?
+                  :default-value @data-masking-types
+                  :disabled? true
+                  :on-change #(rf/dispatch [:connection-setup/set-data-masking-types (js->clj %)])}]])
 
-            :upgrade-plan-component
-            (when true
-              [:> Callout.Root {:size "2" :mt "4" :mb "4"}
-               [:> Callout.Icon
-                [:> Star {:size 16}]]
-               [:> Callout.Text {:class "text-gray-12"}
-                "Enable AI Data Masking by "
-                [:> Link {:href "#"
-                          :class "text-primary-10"
-                          :on-click #(rf/dispatch [:navigate :upgrade-plan])}
-                 "upgrading your plan."]]])}]]
+             :upgrade-plan-component
+             (when true
+               [:> Callout.Root {:size "2" :mt "4" :mb "4"}
+                [:> Callout.Icon
+                 [:> Star {:size 16}]]
+                [:> Callout.Text {:class "text-gray-12"}
+                 "Enable AI Data Masking by "
+                 [:> Link {:href "#"
+                           :class "text-primary-10"
+                           :on-click #(rf/dispatch [:navigate :upgrade-plan])}
+                  "upgrading your plan."]]])
+
+             :learning-component [:> Link {:href "https://hoop.dev/docs/learn/ai-data-masking"
+                                           :target "_blank"}
+                                  [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
+                                   [:> Callout.Icon
+                                    [:> ArrowUpRight {:size 16}]]
+                                   [:> Callout.Text
+                                    "Learn more about AI Data Masking"]]]}]]
 
                                                                  ;; Database schema (condicionalmente renderizado)
-         (when show-database-schema?
-           [:> Box {:class "space-y-2"}
-            [toggle-section
-             {:title "Database schema"
-              :description "Show database schema in the Editor section."
-              :checked @database-schema?
-              :on-change #(rf/dispatch [:connection-setup/toggle-database-schema])}]])]]
+          (when show-database-schema?
+            [:> Box {:class "space-y-2"}
+             [toggle-section
+              {:title "Database schema"
+               :description "Show database schema in the Editor section."
+               :checked @database-schema?
+               :on-change #(rf/dispatch [:connection-setup/toggle-database-schema])}]])]]
 
-       [:> Box
-        [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-         "Access modes"]
-        [:> Text {:as "p" :size "3" :class "text-[--gray-11]" :mb "5"}
-         "Setup how users interact with this connection."]
+        [:> Box
+         [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+          "Access modes"]
+         [:> Text {:as "p" :size "3" :class "text-[--gray-11]" :mb "5"}
+          "Setup how users interact with this connection."]
 
-        [:> Box {:class "space-y-7"}                                                       ;; Runbooks
-         [toggle-section
-          {:title "Runbooks"
-           :description "Create templates to automate tasks in your organization."
-           :checked (get @access-modes :runbooks true)
-           :on-change #(rf/dispatch [:connection-setup/toggle-access-mode :runbooks])}]
+         [:> Box {:class "space-y-7"}                                                       ;; Runbooks
+          [toggle-section
+           {:title "Runbooks"
+            :description "Create templates to automate tasks in your organization."
+            :checked (get @access-modes :runbooks true)
+            :on-change #(rf/dispatch [:connection-setup/toggle-access-mode :runbooks])}]
 
                                                                    ;; Native
-         [toggle-section
-          {:title "Native"
-           :description "Access from your client of preference using hoop.dev to channel connections using our Desktop App or our Command Line Interface."
-           :checked (get @access-modes :native true)
-           :on-change #(rf/dispatch [:connection-setup/toggle-access-mode :native])}]
+          [toggle-section
+           {:title "Native"
+            :description "Access from your client of preference using hoop.dev to channel connections using our Desktop App or our Command Line Interface."
+            :checked (get @access-modes :native true)
+            :on-change #(rf/dispatch [:connection-setup/toggle-access-mode :native])}]
 
                                                                    ;; Web and one-offs
-         [toggle-section
-          {:title "Web and one-offs"
-           :description "Use hoop.dev's developer portal or our CLI's One-Offs commands directly in your terminal."
-           :checked (get @access-modes :web true)
-           :on-change #(rf/dispatch [:connection-setup/toggle-access-mode :web])}]]]])))
+          [toggle-section
+           {:title "Web and one-offs"
+            :description "Use hoop.dev's developer portal or our CLI's One-Offs commands directly in your terminal."
+            :checked (get @access-modes :web true)
+            :on-change #(rf/dispatch [:connection-setup/toggle-access-mode :web])}]]]]])))

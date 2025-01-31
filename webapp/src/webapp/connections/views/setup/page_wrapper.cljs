@@ -6,7 +6,7 @@
 (defn main [{:keys [children footer-props]}]
   [:> Box {:class "min-h-screen bg-gray-1"}
    ;; Main content with padding to account for fixed footer
-   [:> Box {:mb "6"}
+   [:> Box {:class "pb-6"}
     children]
 
    ;; Footer

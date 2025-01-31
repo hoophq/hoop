@@ -52,11 +52,7 @@
      "Do not share this token with anyone outside your organization."]]])
 
 (def hoop-run-commands-dictionary
-  {"postgres" "--postgres 'postgres://<user>:<pass>@<host>:<port>/<dbname>'"
-   "mysql" "--mysql 'mysql://<user>:<pass>@<host>:<port>/<dbname>'"
-   "mssql" "--mssql 'mssql://<user>:<pass>@<host>:<port>/<dbname>'"
-   "mongodb" "--mongodb 'mongodb://<user>:<pass>@<host>:<port>/<dbname>'"
-   "nodejs" "--command node"
+  {"nodejs" "--command node"
    "ruby-on-rails" "--command 'rails console'"
    "python" "--command python3"
    "clojure" "--command clj"})
