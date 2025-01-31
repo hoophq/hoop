@@ -2,19 +2,20 @@
   (:require [re-frame.core :as rf]))
 
 ;; Basic db updates
-(rf/reg-event-db
- :connection-setup/select-subtype
- (fn [db [_ subtype]]
-   (js/console.log "Select subtype event - Subtype:" subtype)
-   (assoc-in db [:connection-setup :subtype] subtype)))
+(rf/reg-event-fx
+ :connection-setup/select-connection
+ (fn [{:keys [db]} [_ type subtype]]
+   {:db (-> db
+            (assoc-in [:connection-setup :type] type)
+            (assoc-in [:connection-setup :subtype] subtype))
+    :fx [[:dispatch [:connection-setup/next-step :credentials]]]}))
 
 ;; App type and OS selection
 (rf/reg-event-db
  :connection-setup/select-app-type
  (fn [db [_ app-type]]
    (-> db
-       (assoc-in [:connection-setup :app-type] app-type)
-       (assoc-in [:connection-setup :current-step] :os-type))))
+       (assoc-in [:connection-setup :app-type] app-type))))
 
 (rf/reg-event-db
  :connection-setup/select-os-type
@@ -23,33 +24,18 @@
        (assoc-in [:connection-setup :os-type] os-type)
        (assoc-in [:connection-setup :current-step] :additional-config))))
 
-;; Environment variables and configuration
+;; Network specific events
 (rf/reg-event-db
- :connection-setup/add-environment-variable
- (fn [db [_]]
-   (let [current-key (get-in db [:connection-setup :credentials :current-key])
-         current-value (get-in db [:connection-setup :credentials :current-value])
-         current-vars (get-in db [:connection-setup :credentials :environment-variables] [])]
-     (-> db
-         (update-in [:connection-setup :credentials :environment-variables]
-                    #(conj (or % []) {:key current-key :value current-value}))
-         (assoc-in [:connection-setup :credentials :current-key] "")
-         (assoc-in [:connection-setup :credentials :current-value] "")))))
+ :connection-setup/update-network-host
+ (fn [db [_ value]]
+   (assoc-in db [:connection-setup :network-credentials :host] value)))
 
 (rf/reg-event-db
- :connection-setup/add-configuration-file
- (fn [db [_ file]]
-   (update-in db [:connection-setup :configuration-files]
-              conj file)))
+ :connection-setup/update-network-port
+ (fn [db [_ value]]
+   (assoc-in db [:connection-setup :network-credentials :port] value)))
 
 ;; Database specific events
-(rf/reg-event-db
- :connection-setup/select-database-type
- (fn [db [_ db-type]]
-   (-> db
-       (assoc-in [:connection-setup :database-type] db-type)
-       (assoc-in [:connection-setup :current-step] :database-credentials))))
-
 (rf/reg-event-db
  :connection-setup/update-database-credentials
  (fn [db [_ field value]]
@@ -91,6 +77,11 @@
  (fn [db [_ name]]
    (assoc-in db [:connection-setup :name] name)))
 
+(rf/reg-event-db
+ :connection-setup/set-command
+ (fn [db [_ command]]
+   (assoc-in db [:connection-setup :command] command)))
+
 ;; Tags events
 (rf/reg-event-db
  :connection-setup/set-tags
@@ -113,6 +104,57 @@
  (fn [db [_ types]]
    (assoc-in db [:connection-setup :config :data-masking-types] types)))
 
+;; Environment Variables management
+(rf/reg-event-db
+ :connection-setup/add-env-row
+ (fn [db [_]]
+   (let [current-key (get-in db [:connection-setup :credentials :current-key])
+         current-value (get-in db [:connection-setup :credentials :current-value])]
+     (-> db
+         ;; Adiciona o par atual aos environment variables se ambos estiverem preenchidos
+         (update-in [:connection-setup :credentials :environment-variables]
+                    (fn [vars]
+                      (if (and (not (empty? current-key))
+                               (not (empty? current-value)))
+                        (conj (or vars []) {:key current-key :value current-value})
+                        (or vars []))))
+         ;; Limpa os inputs atuais
+         (assoc-in [:connection-setup :credentials :current-key] "")
+         (assoc-in [:connection-setup :credentials :current-value] "")))))
+
+(rf/reg-event-db
+ :connection-setup/update-env-current-key
+ (fn [db [_ value]]
+   (assoc-in db [:connection-setup :credentials :current-key] value)))
+
+(rf/reg-event-db
+ :connection-setup/update-env-current-value
+ (fn [db [_ value]]
+   (assoc-in db [:connection-setup :credentials :current-value] value)))
+
+;; Configuration Files events
+(rf/reg-event-db
+ :connection-setup/update-config-file-name
+ (fn [db [_ value]]
+   (assoc-in db [:connection-setup :credentials :current-file-name] value)))
+
+(rf/reg-event-db
+ :connection-setup/update-config-file-content
+ (fn [db [_ value]]
+   (assoc-in db [:connection-setup :credentials :current-file-content] value)))
+
+(rf/reg-event-db
+ :connection-setup/add-configuration-file
+ (fn [db [_]]
+   (let [current-name (get-in db [:connection-setup :credentials :current-file-name])
+         current-content (get-in db [:connection-setup :credentials :current-file-content])
+         current-files (get-in db [:connection-setup :credentials :configuration-files] [])]
+     (-> db
+         (update-in [:connection-setup :credentials :configuration-files]
+                    #(conj (or % []) {:key current-name :value current-content}))
+         (assoc-in [:connection-setup :credentials :current-file-name] "")
+         (assoc-in [:connection-setup :credentials :current-file-content] "")))))
+
 ;; Navigation events
 (rf/reg-event-db
  :connection-setup/next-step
@@ -124,34 +166,37 @@
 (rf/reg-event-db
  :connection-setup/go-back
  (fn [db [_]]
-   (let [current-subtype (get-in db [:connection-setup :subtype])
-         app-type (get-in db [:connection-setup :app-type])
-         os-type (get-in db [:connection-setup :os-type])]
-     (cond
-       (and (= current-subtype "console") app-type os-type)
-       (-> db
-           (assoc-in [:connection-setup :os-type] nil)
-           (assoc-in [:connection-setup :current-step] :os-type))
-
-       os-type
-       (-> db
-           (assoc-in [:connection-setup :os-type] nil)
-           (assoc-in [:connection-setup :current-step] :os-type))
-
-       app-type
-       (-> db
-           (assoc-in [:connection-setup :app-type] nil)
-           (assoc-in [:connection-setup :current-step] :app-type))
-
-       current-subtype
-       (-> db
-           (assoc-in [:connection-setup :subtype] nil)
-           (assoc-in [:connection-setup :current-step] :type))
-
-       :else
-       (assoc-in db [:connection-setup :type] nil)))))
+   (let [current-step (get-in db [:connection-setup :current-step])]
+     (case current-step
+       :additional-config (assoc-in db [:connection-setup :current-step] :credentials)
+       :credentials (-> db
+                        (assoc-in [:connection-setup :current-step] :resource)
+                        (assoc-in [:connection-setup :type] nil)
+                        (assoc-in [:connection-setup :subtype] nil))
+       :installation (-> db
+                         (assoc-in [:connection-setup :current-step] :additional-config))
+       db))))
 
 (rf/reg-event-db
  :connection-setup/set-agent-id
  (fn [db [_ agent-id]]
    (assoc-in db [:connection-setup :agent-id] agent-id)))
+
+;; Tags events
+(rf/reg-event-db
+ :connection-setup/add-tag
+ (fn [db [_ key value]]
+   (let [current-tags (get-in db [:connection-setup :tags] [])
+         ;; Checa se a key já existe
+         exists? (some #(= (:key %) key) current-tags)]
+     (if exists?
+       db
+       (update-in db [:connection-setup :tags] conj {:key key :value value})))))
+
+(rf/reg-event-db
+ :connection-setup/remove-tag
+ (fn [db [_ index]]
+   (update-in db [:connection-setup :tags]
+              #(vec (concat
+                     (subvec % 0 index)
+                     (subvec % (inc index)))))))

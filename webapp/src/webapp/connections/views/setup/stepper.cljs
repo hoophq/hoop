@@ -4,7 +4,7 @@
    [re-frame.core :as rf]))
 
 (def steps
-  [{:id :type
+  [{:id :resource
     :number 1
     :title "Resource"}
    {:id :credentials
@@ -50,14 +50,18 @@
            [:> Flex {:align "center" :gap "2"}
             [step-number {:number number
                           :active? (= id @current-step)
-                          :completed? (or (= id :resource)
+                          :completed? (or (and (= @current-step :credentials)
+                                               (= id :resource))
                                           (and (= @current-step :additional-config)
-                                               (= id :credentials)))}]
+                                               (or (= id :resource)
+                                                   (= id :credentials))))}]
             [step-title {:title title
                          :active? (= id @current-step)
-                         :completed? (or (= id :resource)
+                         :completed? (or (and (= @current-step :credentials)
+                                              (= id :resource))
                                          (and (= @current-step :additional-config)
-                                              (= id :credentials)))}]]
+                                              (or (= id :resource)
+                                                  (= id :credentials))))}]]
 
         ;; Separator (except for last item)
            (when-not (= id :additional-config)

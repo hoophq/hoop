@@ -9,6 +9,7 @@
    [webapp.components.forms :as forms]
    [webapp.connections.views.setup.additional-configuration :as additional-configuration]
    [webapp.connections.views.setup.agent-selector :as agent-selector]
+   [webapp.connections.views.setup.configuration-inputs :as configuration-inputs]
    [webapp.connections.views.setup.headers :as headers]
    [webapp.connections.views.setup.page-wrapper :as page-wrapper]
    [webapp.connections.views.setup.state :refer [application-types
@@ -22,88 +23,26 @@
               :title "Console"
               :subtitle "For Ruby on Rails, Python, Node JS and more."}})
 
-(defn environment-variables-section []
-  (let [env-vars (rf/subscribe [:connection-setup/environment-variables])
-        current-key (r/atom "")
-        current-value (r/atom "")]
-    (fn []
-    [:> Box {:class "space-y-4"}
-     [:> Heading {:size "3"} "Environment variables"]
-     [:> Text {:size "2" :color "gray"}
-      "Add variable values to use in your connection."]
-
-     ;; Lista de variáveis existentes
-     (for [{:keys [key value]} @env-vars]
-       ^{:key key}
-       [:> Flex {:gap "2" :my "2"}
-        [:> Text {:size "2"} key ": " value]])
-
-     ;; Campos para nova variável
-     [:> Grid {:columns "2" :gap "2"}
-      [forms/input
-       {:label "Key"
-        :value @current-key
-        :on-change #(reset! current-key (-> % .-target .-value))}]
-      [forms/input
-       {:label "Value"
-        :value @current-value
-        :type "password"
-        :on-change #(reset! current-value (-> % .-target .-value))}]]
-
-     [:> Button
-      {:size "2"
-       :variant "soft"
-       :on-click #(when (and @current-key @current-value)
-                    (rf/dispatch [:connection-setup/add-environment-variable
-                                  @current-key @current-value])
-                    (reset! current-key "")
-                    (reset! current-value ""))}
-      "Add"]])))
-
-(defn configuration-files-section []
-  (let [current-file (r/atom {:name "" :content ""})]
-    (fn []
-    [:> Box {:class "space-y-4"}
-     [:> Heading {:size "3"} "Configuration files"]
-
-     [forms/input
-      {:label "Name"
-       :placeholder "e.g. kube_config"
-       :value (:name @current-file)
-       :on-change #(swap! current-file assoc :name (-> % .-target .-value))}]
-
-     [forms/textarea
-      {:label "Content"
-       :placeholder "Paste your file content here"
-       :value (:content @current-file)
-       :on-change #(swap! current-file assoc :content (-> % .-target .-value))}]
-
-     [:> Button
-      {:size "2"
-       :variant "soft"
-       :on-click #(when (and (:name @current-file) (:content @current-file))
-                    (rf/dispatch [:connection-setup/add-configuration-file @current-file])
-                    (reset! current-file {:name "" :content ""}))}
-      "Add"]])))
-
 (defn credentials-step []
   [:> Box {:class "space-y-8"}
    ;; Environment Variables Section
-   [environment-variables-section]
+   [configuration-inputs/environment-variables-section]
 
    ;; Configuration Files Section
-   [configuration-files-section]
+   [configuration-inputs/configuration-files-section]
 
    ;; Additional Command Section
    [:> Box {:class "space-y-4"}
     [:> Heading {:size "3"} "Additional command"]
     [:> Text {:size "2" :color "gray"}
-     "Add an additional command that will run on your connection."]
-    #_[forms/input
+     "Add an additional command that will run on your connection."
+     [:br]
+     "Environment variables loaded above can also be used here."]
+    [forms/textarea
      {:label "Command"
-      :placeholder "$ your command"
+      :placeholder "$ bash"
       :value @(rf/subscribe [:connection-setup/command])
-      :on-change #(rf/dispatch [:connection-setup/update-command
+      :on-change #(rf/dispatch [:connection-setup/set-command
                                 (-> % .-target .-value)])}]]
 
    ;; Agent Section
@@ -155,26 +94,6 @@
     [:> Box {:class "bg-gray-900 text-white p-4 rounded-md font-mono text-sm"}
      "hoop run --name your-connection --command python3"]]])
 
-(defn get-next-step [current-step connection-subtype]
-  (js/console.log "Current Step:" current-step "Subtype:" connection-subtype)
-  (case current-step
-    :resource (do
-                (js/console.log "Inside resource case")
-                (case connection-subtype
-                  "ssh" (do
-                          (js/console.log "SSH selected - going to credentials")
-                          :credentials)
-                  "console" :app-type
-                  :resource))
-    :app-type :os-type
-    :os-type :additional-config
-    :credentials :additional-config
-    :additional-config (if (= connection-subtype "console")
-                         :installation
-                         :submit)
-    :installation :submit
-    :resource))
-
 (defn resource-step []
   (let [connection-subtype @(rf/subscribe [:connection-setup/connection-subtype])
         app-type @(rf/subscribe [:connection-setup/app-type])
@@ -191,8 +110,8 @@
                     :variant "surface"
                     :class (str "w-full cursor-pointer "
                                 (when is-selected "before:bg-primary-12"))
-                    :on-click #(rf/dispatch [:connection-setup/select-subtype subtype])}
-           [:> Flex {:align "center" :gap "3"}
+                    :on-click #(rf/dispatch [:connection-setup/select-connection "server" subtype])}
+           [:> Flex {:align "center" :gap "3" :class (str (when is-selected "text-[--gray-1]"))}
             [:> Avatar {:size "4"
                         :class (when is-selected "dark")
                         :variant "soft"
@@ -205,12 +124,12 @@
      (when (= connection-subtype "ssh")
        [credentials-step])
 
-     ;; Application Type Selection - mostrar somente se Console estiver selecionado
+     ;; Se for Console, mostra os outros passos em sequência
      (when (= connection-subtype "console")
        [application-type-step])
 
-     ;; Operating System Selection - mostrar somente se o app-type estiver selecionado
-     (when (and (= connection-subtype "console") app-type)
+        ;; Sistema Operacional
+     (when (and app-type (not os-type))
        [operating-system-step])]))
 
 
@@ -220,13 +139,19 @@
         app-type @(rf/subscribe [:connection-setup/app-type])
         os-type @(rf/subscribe [:connection-setup/os-type])]
 
+    (println
+     current-step
+     connection-subtype
+     app-type
+     os-type)
+
     [page-wrapper/main
      {:children
       [:> Box {:class "max-w-[600px] mx-auto p-6 space-y-7"}
        [headers/setup-header]
 
        (case current-step
-         :resource [resource-step]
+         :credentials [resource-step]
          :additional-config [additional-configuration/main
                              {:selected-type connection-subtype}]
          :installation [installation-step]
@@ -234,7 +159,9 @@
 
       :footer-props
       {:next-text (case current-step
-                    :resource "Next: Configuration"
+                    :credentials (if (= connection-subtype "ssh")
+                                   "Next: Configuration"
+                                   "Next")
                     :additional-config (if (= connection-subtype "console")
                                          "Next: Installation"
                                          "Confirm")
@@ -242,17 +169,16 @@
                     "Next")
        ;; Só habilitar o Next quando todos os campos necessários estiverem preenchidos
        :next-disabled? (case current-step
-                         :resource (or
-                                    (not connection-subtype)
-                                    (case connection-subtype
-                                      "console" (or (not app-type)
-                                                    (not os-type))
-                                      "ssh" false  ;; Pode ser ajustado se precisar validar campos do Linux VM
-                                      true))
-                         false)
-       :on-next #(if (= current-step :installation)
-                   (rf/dispatch [:connection-setup/submit])
-                   (rf/dispatch [:connection-setup/next-step
-                                 (get-next-step current-step connection-subtype)]))}}]))
+                         :credentials (or (not connection-subtype)
+                                          (and (= connection-subtype "console")
+                                               (or (not app-type)
+                                                   (not os-type))))
+                         nil)
+       :on-next (case current-step
+                       :additional-config (if (= connection-subtype "console")
+                                            #(rf/dispatch [:connection-setup/next-step :installation])
+                                            #(rf/dispatch [:connection-setup/submit]))
+                       :installation #(rf/dispatch [:connection-setup/submit])
+                       #(rf/dispatch [:connection-setup/next-step :additional-config]))}}]))
 
 

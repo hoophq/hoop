@@ -1,12 +1,13 @@
 (ns webapp.connections.views.setup.additional-configuration
   (:require
-   ["@radix-ui/themes" :refer [Box Callout Link Flex Heading Switch Text]]
+   ["@radix-ui/themes" :refer [Box Callout Flex Heading Link Switch Text]]
    ["lucide-react" :refer [Star]]
    [re-frame.core :as rf]
    [webapp.components.forms :as forms]
    [webapp.components.multiselect :as multi-select]
    [webapp.connections.dlp-info-types :as dlp-info-types]
-   [webapp.connections.helpers :as helpers]))
+   [webapp.connections.helpers :as helpers]
+   [webapp.connections.views.setup.tags-inputs :as tags-inputs]))
 
 (defn toggle-section [{:keys [title description checked disabled? on-change complement-component upgrade-plan-component]}]
   [:> Flex {:align "center" :gap "5"}
@@ -50,16 +51,9 @@
                       :required true
                       :value @connection-name
                       :on-change #(rf/dispatch [:connection-setup/set-name
-                                                (-> % .-target .-value)])}]
+                                                (-> % .-target .-value)])}]]
 
-        [multi-select/text-input
-         {:value @tags
-          :input-value @tags-input
-          :on-change #(rf/dispatch [:connection-setup/set-tags %])
-          :on-input-change #(rf/dispatch [:connection-setup/set-tags-input %])
-          :label "Tags"
-          :id "tags-multi-select-text-input"
-          :name "tags-multi-select-text-input"}]]
+       [tags-inputs/main]
 
 
        [:> Box

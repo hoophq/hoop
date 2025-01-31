@@ -13,7 +13,6 @@
                (println k v)
                (swap! config assoc-in [index k] v))]
     (fn []
-      (println @value-val)
       [:<>
        [forms/input {:classes "whitespace-pre overflow-x"
                      :on-change #(reset! value-val (-> % .-target .-value))

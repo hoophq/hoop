@@ -10,12 +10,13 @@
 (def connection-type-avatars
   {"database" {:icon Database
                :color "green"}
-   "container" {:icon Server
-                :color "amber"}
+   "server" {:icon Server
+             :color "amber"}
    "network" {:icon Network
               :color "sky"}})
 
 (defn connection-type-card [{:keys [id title description icon on-click selected?]}]
+  (println icon)
   (let [avatar (get connection-type-avatars icon)]
     [:> Box {:class (str "p-4 border rounded-lg mb-3 cursor-pointer transition-all hover:border-blue-500 "
                          (if selected?
@@ -32,17 +33,20 @@
        [:> Text {:size "2" :class "text-[--gray-11]"} description]]]]))
 
 (defn main []
-  (let [selected-type @(rf/subscribe [:connection-setup/connection-type])]
-    [:> Box {:class "max-w-[600px] mx-auto p-6 space-y-7"}
-     [headers/setup-header]
+  (rf/dispatch [:connection-setup/initialize-state nil])
 
-     [:> Box
-      [:> Text {:as "p" :size "2" :mb "5" :class "text-[--gray-11]"}
-       "Choose the resource of your new connection"]
+  (fn []
+    (let [selected-type @(rf/subscribe [:connection-setup/connection-type])]
+      [:> Box {:class "max-w-[600px] mx-auto p-6 space-y-7"}
+       [headers/setup-header]
 
-      (for [{:keys [id] :as type} state/connection-types]
-        ^{:key id}
-        [connection-type-card
-         (assoc type
-                :selected? (= selected-type id)
-                :on-click #(rf/dispatch [:connection-setup/select-type %]))])]]))
+       [:> Box
+        [:> Text {:as "p" :size "2" :mb "5" :class "text-[--gray-11]"}
+         "Choose the resource of your new connection"]
+
+        (for [{:keys [id] :as type} state/connection-types]
+          ^{:key id}
+          [connection-type-card
+           (assoc type
+                  :selected? (= selected-type id)
+                  :on-click #(rf/dispatch [:connection-setup/select-type %]))])]])))

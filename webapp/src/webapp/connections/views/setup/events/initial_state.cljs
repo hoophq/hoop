@@ -6,6 +6,7 @@
    :current-step :resource
    :name ""
    :tags []
+   :command ""
    :tags-input ""
    :database-type nil
    :database-credentials {}
@@ -16,6 +17,8 @@
    :network-credentials {}
    :credentials {:current-key ""
                  :current-value ""
+                 :current-file-name ""
+                 :current-file-content ""
                  :environment-variables []
                  :configuration-files []}
    :config {:review false
@@ -26,6 +29,3 @@
             :access-modes {:runbooks true
                            :native true
                            :web true}}})
-
-(defn initialize-db [db]
-  (assoc db :connection-setup initial-state))

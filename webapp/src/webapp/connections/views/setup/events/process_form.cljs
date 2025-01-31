@@ -1,28 +1,64 @@
 (ns webapp.connections.views.setup.events.process-form
   (:require [webapp.connections.helpers :as helpers]))
 
-(defn process-database-payload [db]
-  (let [connection-type (get-in db [:connection-setup :database-type])
+(defn get-api-connection-type [ui-type]
+  (case ui-type
+    "network" "application"
+    "server" "custom"
+    "database" "database"))
+
+(defn tags-array->map
+  "Converte um array de tags [{:key k :value v}] para um map {k v}"
+  [tags]
+  (reduce (fn [acc {:keys [key value]}]
+            (assoc acc key (or value "")))
+          {}
+          tags))
+
+(defn tags-map->array
+  "Converte um map de tags {k v} para um array [{:key k :value v}]"
+  [tags]
+  (mapv (fn [[k v]]
+          {:key k :value v})
+        tags))
+
+(defn process-payload [db]
+  (let [ui-type (get-in db [:connection-setup :type])
+        connection-subtype (get-in db [:connection-setup :subtype])
         connection-name (get-in db [:connection-setup :name])
         agent-id (get-in db [:connection-setup :agent-id])
-        tags (get-in db [:connection-setup :tags])
+        tags-array (get-in db [:connection-setup :tags] [])
+        tags (tags-array->map tags-array)
         config (get-in db [:connection-setup :config])
-        env-vars (get-in db [:connection-setup :environment-variables] [])
-        config-files (get-in db [:connection-setup :configuration-files] [])
+        env-vars (get-in db [:connection-setup :credentials :environment-variables] [])
+        config-files (get-in db [:connection-setup :credentials :configuration-files] [])
         review-groups (get-in config [:review-groups])
         data-masking-types (get-in config [:data-masking-types])
-        database-credentials (get-in db [:connection-setup :database-credentials])
         access-modes (get-in config [:access-modes])
 
-        ;; Processa as credenciais do banco de dados para o formato de environment variables
-        credentials-as-env-vars
-        (mapv (fn [[k v]]
-                {:key (name k)
-                 :value v})
-              (seq database-credentials))
+        ;; Mapeamento do tipo da UI para o tipo da API
+        api-type (get-api-connection-type ui-type)
 
-        ;; Combina as credenciais do banco com outras variáveis de ambiente
-        all-env-vars (concat credentials-as-env-vars env-vars)
+        ;; Processamento de credenciais baseado no tipo
+        all-env-vars (cond
+                              ;; Para bancos de dados
+                       (= api-type "database")
+                       (let [database-credentials (get-in db [:connection-setup :database-credentials])
+                             credentials-as-env-vars (mapv (fn [[k v]]
+                                                             {:key (name k)
+                                                              :value v})
+                                                           (seq database-credentials))]
+                         (concat credentials-as-env-vars env-vars))
+
+                              ;; Para TCP
+                       (= connection-subtype "tcp")
+                       (let [network-credentials (get-in db [:connection-setup :network-credentials])
+                             tcp-env-vars [{:key "HOST" :value (:host network-credentials)}
+                                           {:key "PORT" :value (:port network-credentials)}]]
+                         (concat tcp-env-vars env-vars))
+
+                              ;; Caso padrão
+                       :else env-vars)
 
         secret (clj->js
                 (merge
@@ -30,18 +66,23 @@
                  (when (seq config-files)
                    (helpers/config->json config-files "filesystem:"))))
 
+        ;; Garante valores padrão para os access modes
         default-access-modes {:runbooks true :native true :web true}
         effective-access-modes (merge default-access-modes access-modes)
 
-        payload {:type "database"
-                 :subtype connection-type
+        command-string (get-in db [:connection-setup :command])
+        payload {:type api-type
+                 :subtype connection-subtype
                  :name connection-name
                  :agent_id agent-id
-                 :tags (when (seq tags)
-                         (mapv #(get % "value") tags))
+                 :tags (when (seq tags) tags)
                  :secret secret
-                 :command []
-                 :access_schema (if (:database-schema config) "enabled" "disabled")
+                 :command (if (= api-type "database")
+                            []
+                            (when-not (empty? command-string)
+                              (or (re-seq #"'.*?'|\".*?\"|\S+|\t" command-string) [])))
+                 :access_schema (when (= api-type "database")
+                                  (if (:database-schema config) "enabled" "disabled"))
                  :access_mode_runbooks (if (:runbooks effective-access-modes) "enabled" "disabled")
                  :access_mode_exec (if (:web effective-access-modes) "enabled" "disabled")
                  :access_mode_connect (if (:native effective-access-modes) "enabled" "disabled")
@@ -51,15 +92,11 @@
                  :reviewers (when (and (:review config) (seq review-groups))
                               (mapv #(get % "value") review-groups))}]
 
-    ;; Debug output
-    (js/console.log "Submitting database connection with payload:"
-                    (clj->js payload))
+    ;; Remove o access_schema se não for database
+    (let [final-payload (if-not (= api-type "database")
+                          (dissoc payload :access_schema)
+                          payload)]
+      ;; Debug output
+      (js/console.log "Submitting connection payload:" (clj->js final-payload))
 
-    payload))
-
-(defn process-payload [db]
-  (let [connection-type (get-in db [:connection-setup :type])]
-    (case connection-type
-      "database" (process-database-payload db)
-      ;; Adicionar outros tipos conforme necessário
-      nil)))
+      final-payload)))

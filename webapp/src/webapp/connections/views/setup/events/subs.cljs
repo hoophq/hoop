@@ -18,11 +18,6 @@
    (get-in db [:connection-setup :subtype])))
 
 (rf/reg-sub
- :connection-setup/credentials
- (fn [db _]
-   (get-in db [:connection-setup :credentials])))
-
-(rf/reg-sub
  :connection-setup/name
  (fn [db]
    (get-in db [:connection-setup :name])))
@@ -38,16 +33,15 @@
  (fn [db _]
    (get-in db [:connection-setup :os-type])))
 
-;; Database specific
-(rf/reg-sub
- :connection-setup/database-type
- (fn [db _]
-   (get-in db [:connection-setup :database-type])))
-
 (rf/reg-sub
  :connection-setup/database-credentials
  (fn [db _]
    (get-in db [:connection-setup :database-credentials])))
+
+(rf/reg-sub
+ :connection-setup/command
+ (fn [db]
+   (get-in db [:connection-setup :command] false)))
 
 ;; Configuration and features
 (rf/reg-sub
@@ -79,17 +73,6 @@
  (fn [config]
    (get-in config [:access-modes] {:runbooks true, :native true, :web true})))
 
-;; Tags
-(rf/reg-sub
- :connection-setup/tags
- (fn [db]
-   (get-in db [:connection-setup :tags])))
-
-(rf/reg-sub
- :connection-setup/tags-input
- (fn [db]
-   (get-in db [:connection-setup :tags-input])))
-
 ;; Review and masking types
 (rf/reg-sub
  :connection-setup/review-groups
@@ -102,17 +85,6 @@
  :<- [:connection-setup/config]
  (fn [config]
    (get-in config [:data-masking-types] [])))
-
-;; Environment and configuration
-(rf/reg-sub
- :connection-setup/environment-variables
- (fn [db]
-   (get-in db [:connection-setup :environment-variables] [])))
-
-(rf/reg-sub
- :connection-setup/configuration-files
- (fn [db]
-   (get-in db [:connection-setup :configuration-files] [])))
 
 ;; Network specific
 (rf/reg-sub
@@ -130,3 +102,41 @@
  :connection-setup/agent-id
  (fn [db]
    (get-in db [:connection-setup :agent-id])))
+
+;; Environment Variables
+(rf/reg-sub
+ :connection-setup/env-current-key
+ (fn [db]
+   (get-in db [:connection-setup :credentials :current-key])))
+
+(rf/reg-sub
+ :connection-setup/env-current-value
+ (fn [db]
+   (get-in db [:connection-setup :credentials :current-value])))
+
+(rf/reg-sub
+ :connection-setup/environment-variables
+ (fn [db]
+   (get-in db [:connection-setup :credentials :environment-variables])))
+
+;; Configuration Files subscriptions
+(rf/reg-sub
+ :connection-setup/config-current-name
+ (fn [db]
+   (get-in db [:connection-setup :credentials :current-file-name])))
+
+(rf/reg-sub
+ :connection-setup/config-current-content
+ (fn [db]
+   (get-in db [:connection-setup :credentials :current-file-content])))
+
+(rf/reg-sub
+ :connection-setup/configuration-files
+ (fn [db]
+   (get-in db [:connection-setup :credentials :configuration-files])))
+
+;; Sub para tags
+(rf/reg-sub
+ :connection-setup/tags
+ (fn [db]
+   (get-in db [:connection-setup :tags] [])))
