@@ -23,18 +23,13 @@ import (
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
-var (
-	memorySessionStore = memory.New()
-	internalExitCode   = func() *int { v := 254; return &v }()
-)
+var memorySessionStore = memory.New()
 
-type (
-	auditPlugin struct {
-		walSessionStore memory.Store
-		started         bool
-		mu              sync.RWMutex
-	}
-)
+type auditPlugin struct {
+	walSessionStore memory.Store
+	started         bool
+	mu              sync.RWMutex
+}
 
 func New() *auditPlugin             { return &auditPlugin{walSessionStore: memory.New()} }
 func (p *auditPlugin) Name() string { return plugintypes.PluginAuditName }
@@ -154,13 +149,6 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 			log.Warnf("failed writing agent packet response, err=%v", err)
 		}
 		return nil, nil
-	case pbclient.SessionClose:
-		exitCode := parseExitCode(pctx.SID, pkt)
-		if len(pkt.Payload) > 0 {
-			p.closeSession(pctx, exitCode, fmt.Errorf(string(pkt.Payload)))
-			return nil, nil
-		}
-		p.closeSession(pctx, exitCode, nil)
 	case pbagent.ExecWriteStdin,
 		pbagent.TerminalWriteStdin,
 		pbagent.TCPConnectionWrite:
@@ -169,9 +157,10 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 	return nil, nil
 }
 
-func (p *auditPlugin) OnDisconnect(pctx plugintypes.Context, errMsg error) error {
+func (p *auditPlugin) OnDisconnect(pctx plugintypes.Context, err error) error {
 	log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "agent", pctx.AgentName).
 		Debugf("processing disconnect")
+
 	switch pctx.ClientOrigin {
 	case pb.ConnectionOriginAgent:
 		log.With("agent", pctx.AgentName).Infof("agent shutdown, graceful closing session")
@@ -180,21 +169,22 @@ func (p *auditPlugin) OnDisconnect(pctx plugintypes.Context, errMsg error) error
 				continue
 			}
 			pctx.SID = msid
-			p.closeSession(pctx, internalExitCode, errMsg)
+			p.closeSession(pctx, err)
 		}
 	default:
-		p.closeSession(pctx, internalExitCode, errMsg)
+		p.closeSession(pctx, err)
 	}
 	return nil
 }
 
-func (p *auditPlugin) closeSession(pctx plugintypes.Context, exitCode *int, errMsg error) {
-	log.With("sid", pctx.SID).Infof("closing session, exit_code=%v, reason=%v", debugExitCode(exitCode), errMsg)
+func (p *auditPlugin) closeSession(pctx plugintypes.Context, err error) {
+	log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
+		Infof("closing session, reason=%v", err)
 	go func() {
 		defer memorySessionStore.Del(pctx.SID)
-		if err := p.writeOnClose(pctx, exitCode, errMsg); err != nil {
-			log.With("sid", pctx.SID).Warnf("failed closing session, reason=%v", err)
-			return
+		if err := p.writeOnClose(pctx, err); err != nil {
+			log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
+				Warnf("failed closing session, reason=%v", err)
 		}
 	}()
 }
@@ -248,22 +238,4 @@ func parseSpecAsEventMetadata(pkt *pb.Packet) map[string][]byte {
 		return map[string][]byte{spectypes.DataMaskingInfoKey: infoEnc}
 	}
 	return nil
-}
-
-func parseExitCode(sid string, pkt *pb.Packet) (exitCode *int) {
-	exitCodeStr, ok := pkt.Spec[pb.SpecClientExitCodeKey]
-	if ok {
-		if ecode, err := strconv.Atoi(string(exitCodeStr)); err == nil {
-			exitCode = &ecode
-		}
-	}
-	log.With("sid", sid).Debugf("raw exit code value=%q, has_exit_code_spec=%v", exitCodeStr, ok)
-	return
-}
-
-func debugExitCode(exitCode *int) string {
-	if exitCode == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *exitCode)
 }
