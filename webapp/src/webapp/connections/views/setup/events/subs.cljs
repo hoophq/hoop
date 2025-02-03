@@ -103,6 +103,18 @@
  (fn [db]
    (get-in db [:connection-setup :agent-id])))
 
+;; Jira template ID
+(rf/reg-sub
+ :connection-setup/jira-template-id
+ (fn [db]
+   (get-in db [:connection-setup :config :jira-template-id])))
+
+;; Guardrails
+(rf/reg-sub
+ :connection-setup/guardrails
+ (fn [db]
+   (get-in db [:connection-setup :config :guardrails] [])))
+
 ;; Environment Variables
 (rf/reg-sub
  :connection-setup/env-current-key

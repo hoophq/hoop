@@ -33,14 +33,36 @@
 (defn main [connection-name]
   (r/with-let
     [active-tab (r/atom "credentials")
+     credentials-valid? (r/atom false)
      connection (rf/subscribe [:connections->connection-details])
-     _ (rf/dispatch [:connections->get-connection-details connection-name])]
+     guardrails-list (rf/subscribe [:guardrails->list])
+     jira-templates-list (rf/subscribe [:jira-templates->list])
+     initialized? (r/atom false)
+     _ (rf/dispatch [:connections->get-connection-details connection-name])
+     _ (rf/dispatch [:guardrails->get-all])
+     _ (rf/dispatch [:jira-templates->get-all])]
 
-    (if (:loading @connection)
-      [loading-view]
-      (when (:data @connection)
-        (let [processed-connection (helpers/process-connection-for-update (:data @connection))]
-          (rf/dispatch [:connection-setup/initialize-state processed-connection])
+    (let [handle-submit (fn [e]
+                          (.preventDefault e)
+                          (if @credentials-valid?
+                            (rf/dispatch [:connections->update-connection {:name connection-name}])
+                            (do
+                              (reset! active-tab "credentials")
+                              (when-let [form (.getElementById js/document "credentials-form")]
+                                (.reportValidity form)))))]
+
+      (if (:loading @connection)
+        [loading-view]
+        (when (:data @connection)
+
+          (when (and (not @initialized?)
+                     (:data @connection))
+            (let [processed-connection (helpers/process-connection-for-update
+                                        (:data @connection)
+                                        (:data @guardrails-list)
+                                        (:data @jira-templates-list))]
+              (rf/dispatch [:connection-setup/initialize-state processed-connection])
+              (reset! initialized? true)))
 
           [page-wrapper/main
            {:children
@@ -50,11 +72,15 @@
 
                            ;; Main content
              [:form {:id "update-connection-form"
-                     :on-submit (fn [e]
-                                  (.preventDefault e)
-                                  (rf/dispatch [:connections->update-connection {:name connection-name}]))}
+                     :on-submit handle-submit}
               [:> Tabs.Root {:value @active-tab
-                             :on-value-change #(reset! active-tab %)}
+                             :on-value-change (fn [new-tab]
+                                                                            ;; Quando sair da aba credentials, guarda o estado de validação
+                                                (when (and (= @active-tab "credentials")
+                                                           (not= new-tab "credentials"))
+                                                  (when-let [form (.getElementById js/document "credentials-form")]
+                                                    (reset! credentials-valid? (.checkValidity form))))
+                                                (reset! active-tab new-tab))}
                [:> Tabs.List {:mb "7"}
                 [:> Tabs.Trigger {:value "credentials"} "Credentials"]
                 [:> Tabs.Trigger {:value "configuration"} "Additional Configuration"]]
@@ -98,6 +124,5 @@
                                         :on-success (fn []
                                                       (rf/dispatch [:connections->delete-connection (:name (:data @connection))])
                                                       (rf/dispatch [:modal->close]))}])}}])))
-
     (finally
       (rf/dispatch [:connection-setup/initialize-state nil]))))

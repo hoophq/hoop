@@ -1,6 +1,7 @@
 (ns webapp.connections.views.setup.events.process-form
   (:require
    [clojure.string :as str]
+   [webapp.connections.constants :as constants]
    [webapp.connections.helpers :as helpers]))
 
 ;; Create a new connection
@@ -29,7 +30,6 @@
         tags))
 
 (defn process-payload [db]
-  (println db)
   (let [ui-type (get-in db [:connection-setup :type])
         connection-subtype (get-in db [:connection-setup :subtype])
         connection-name (get-in db [:connection-setup :name])
@@ -42,6 +42,8 @@
         review-groups (get-in config [:review-groups])
         data-masking-types (get-in config [:data-masking-types])
         access-modes (get-in config [:access-modes])
+        guardrails (get-in db [:connection-setup :guardrails])
+        jira-template-id (get-in db [:connection-setup :jira-template-id])
 
         ;; Mapeamento do tipo da UI para o tipo da API
         api-type (get-api-connection-type ui-type)
@@ -73,6 +75,8 @@
                  (when (seq config-files)
                    (helpers/config->json config-files "filesystem:"))))
 
+        guardrails-processed (mapv #(get % "value") guardrails)
+
         ;; Garante valores padrão para os access modes
         default-access-modes {:runbooks true :native true :web true}
         effective-access-modes (merge default-access-modes access-modes)
@@ -88,6 +92,8 @@
                             []
                             (when-not (empty? command-string)
                               (or (re-seq #"'.*?'|\".*?\"|\S+|\t" command-string) [])))
+                 :guardrail_rules guardrails-processed
+                 :jira_issue_template_id jira-template-id
                  :access_schema (or (when (= api-type "database")
                                       (if (:database-schema config) "enabled" "disabled"))
                                     "disabled")
@@ -100,9 +106,6 @@
                  :reviewers (when (and (:review config) (seq review-groups))
                               (mapv #(get % "value") review-groups))}]
 
-    ;; Remove o access_schema se não for database
-    (js/console.log "Submitting connection payload:" (clj->js payload))
-
     payload))
 
 ;; Update an existing connection
@@ -110,11 +113,6 @@
   (-> s
       js/atob
       js/decodeURIComponent))
-
-(defn encode-base64 [s]
-  (-> s
-      js/encodeURIComponent
-      js/btoa))
 
 (defn process-connection-secret
   "Processa os valores secret da conexão de base64 para string"
@@ -148,9 +146,24 @@
                []
                secret)))
 
+(defn transform-filtered-guardrails-selected [guardrails connection-guardrail-ids]
+  (->> guardrails
+       (filter #(some #{(:id %)} connection-guardrail-ids))
+       (mapv (fn [{:keys [id name]}]
+               {"value" id
+                "label" name}))))
+
+(defn transform-filtered-jira-template-selected [jira-templates jira-template-id]
+  (first
+   (->> jira-templates
+        (filter #(= (:id %) jira-template-id))
+        (mapv (fn [{:keys [id name]}]
+                {"value" id
+                 "label" name})))))
+
 (defn process-connection-for-update
   "Processa uma conexão existente para o formato usado no formulário de atualização"
-  [connection]
+  [connection guardrails-list jira-templates-list]
   (let [credentials (process-connection-secret (:secret connection) "envvar")]
     {:type (:type connection)
      :subtype (:subtype connection)
@@ -158,7 +171,9 @@
      :agent-id (:agent_id connection)
      :database-credentials (when (= (:type connection) "database") credentials)
      :network-credentials (when (= (:type connection) "application") credentials)
-     :command (:command connection)
+     :command (if (empty? (:command connection))
+                (get constants/connection-commands (:subtype connection))
+                (str/join " " (:command connection)))
      :credentials {:environment-variables (when (= (:type connection) "custom")
                                             (process-connection-envvars (:secret connection) "envvar"))
                    :configuration-files (when (= (:type connection) "custom")
@@ -171,6 +186,14 @@
               :access-modes {:runbooks (= (:access_mode_runbooks connection) "enabled")
                              :native (= (:access_mode_connect connection) "enabled")
                              :web (= (:access_mode_exec connection) "enabled")}
-              :guardrail-rules (:guardrail_rules connection)
-              :jira-template-id (:jira_issue_template_id connection)}
+              :guardrails (if (empty? (:guardrail_rules connection))
+                            []
+                            (transform-filtered-guardrails-selected
+                             guardrails-list
+                             (:guardrail_rules connection)))
+              :jira-template-id (if (:jira_issue_template_id connection)
+                                  (transform-filtered-jira-template-selected
+                                   jira-templates-list
+                                   (:jira_issue_template_id connection))
+                                  "")}
      :tags (mapv (fn [[k v]] {:key k :value v}) (:tags connection))}))

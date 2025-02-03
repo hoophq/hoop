@@ -24,29 +24,34 @@
               :subtitle "For Ruby on Rails, Python, Node JS and more."}})
 
 (defn credentials-step []
-  [:> Box {:class "space-y-8 max-w-[600px]"}
+  [:form
+   {:id "credentials-form"
+    :on-submit (fn [e]
+                 (.preventDefault e)
+                 (rf/dispatch [:connection-setup/next-step :additional-config]))}
+   [:> Box {:class "space-y-8 max-w-[600px]"}
    ;; Environment Variables Section
-   [configuration-inputs/environment-variables-section]
+    [configuration-inputs/environment-variables-section]
 
    ;; Configuration Files Section
-   [configuration-inputs/configuration-files-section]
+    [configuration-inputs/configuration-files-section]
 
    ;; Additional Command Section
-   [:> Box {:class "space-y-4"}
-    [:> Heading {:size "3"} "Additional command"]
-    [:> Text {:size "2" :color "gray"}
-     "Add an additional command that will run on your connection."
-     [:br]
-     "Environment variables loaded above can also be used here."]
-    [forms/textarea
-     {:label "Command"
-      :placeholder "$ bash"
-      :value @(rf/subscribe [:connection-setup/command])
-      :on-change #(rf/dispatch [:connection-setup/set-command
-                                (-> % .-target .-value)])}]]
+    [:> Box {:class "space-y-4"}
+     [:> Heading {:size "3"} "Additional command"]
+     [:> Text {:size "2" :color "gray"}
+      "Add an additional command that will run on your connection."
+      [:br]
+      "Environment variables loaded above can also be used here."]
+     [forms/textarea
+      {:label "Command"
+       :placeholder "$ bash"
+       :value @(rf/subscribe [:connection-setup/command])
+       :on-change #(rf/dispatch [:connection-setup/set-command
+                                 (-> % .-target .-value)])}]]
 
    ;; Agent Section
-   [agent-selector/main]])
+    [agent-selector/main]]])
 
 (defn application-type-step []
   [:> Box {:class "space-y-5"}
@@ -80,11 +85,6 @@
   (let [connection-subtype @(rf/subscribe [:connection-setup/connection-subtype])
         app-type @(rf/subscribe [:connection-setup/app-type])
         os-type @(rf/subscribe [:connection-setup/os-type])]
-    [:form
-     {:id "server-credentials-form"
-      :on-submit (fn [e]
-                   (.preventDefault e)
-                   (rf/dispatch [:connection-setup/next-step :additional-config]))}
      [:> Box {:class "space-y-7"}
      ;; Connection Type Selection
       [:> Box {:class "space-y-4"}
@@ -117,7 +117,7 @@
 
         ;; Sistema Operacional
       (when (and app-type (not os-type))
-        [operating-system-step])]]))
+        [operating-system-step])]))
 
 
 (defn main []
@@ -164,7 +164,7 @@
        :on-click (fn []
                    (let [form (.getElementById js/document
                                                (if (= current-step :credentials)
-                                                 "server-credentials-form"
+                                                 "credentials-form"
                                                  "additional-config-form"))]
                      (.reportValidity form)))
        :on-next (case current-step
@@ -180,7 +180,7 @@
                                                (js/console.warn "Invalid form!"))))))
                   :installation #(rf/dispatch [:connection-setup/submit])
                   (fn []
-                    (let [form (.getElementById js/document "server-credentials-form")]
+                    (let [form (.getElementById js/document "credentials-form")]
                       (when form
                         (if (and (.reportValidity form)
                                 agent-id)

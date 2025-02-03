@@ -42,7 +42,7 @@
 
 (defn credentials-step [selected-subtype form-type]
   [:form {:class "max-w-[600px]"
-          :id "database-credentials-form"
+          :id "credentials-form"
           :on-submit (fn [e]
                        (.preventDefault e)
                        (rf/dispatch [:connection-setup/next-step :additional-config]))}

@@ -8,7 +8,6 @@
 (rf/reg-event-db
  :connection-setup/initialize-state
  (fn [db [_ initial-data]]
-   (println initial-data)
    (if initial-data
      ;; Se houver dados iniciais, merge com o estado inicial
      (assoc db :connection-setup (merge state/initial-state initial-data))

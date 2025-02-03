@@ -200,3 +200,15 @@
               #(vec (concat
                      (subvec % 0 index)
                      (subvec % (inc index)))))))
+
+;; Guardrails events
+(rf/reg-event-db
+ :connection-setup/set-guardrails
+ (fn [db [_ values]]
+   (assoc-in db [:connection-setup :guardrails] values)))
+
+;; Jira events
+(rf/reg-event-db
+ :connection-setup/set-jira-template-id
+ (fn [db [_ jira-template-id]]
+   (assoc-in db [:connection-setup :jira-template-id] jira-template-id)))

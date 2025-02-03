@@ -1,13 +1,15 @@
 (ns webapp.connections.views.setup.additional-configuration
   (:require
    ["@radix-ui/themes" :refer [Box Callout Flex Heading Link Switch Text]]
-   ["lucide-react" :refer [Star ArrowUpRight]]
+   ["lucide-react" :refer [ArrowUpRight Star]]
    [re-frame.core :as rf]
    [webapp.components.forms :as forms]
    [webapp.components.multiselect :as multi-select]
    [webapp.connections.dlp-info-types :as dlp-info-types]
    [webapp.connections.helpers :as helpers]
-   [webapp.connections.views.setup.tags-inputs :as tags-inputs]))
+   [webapp.connections.views.setup.tags-inputs :as tags-inputs]
+   [webapp.routes :as routes]
+   [webapp.guardrails.main :as guardrails]))
 
 (defn toggle-section
   [{:keys [title
@@ -37,6 +39,8 @@
 
 (defn main [{:keys [show-database-schema? selected-type submit-fn form-type]}]
   (let [user-groups (rf/subscribe [:user-groups])
+        guardrails-list (rf/subscribe [:guardrails->list])
+        jira-templates-list (rf/subscribe [:jira-templates->list])
         review? (rf/subscribe [:connection-setup/review])
         review-groups (rf/subscribe [:connection-setup/review-groups])
         data-masking? (rf/subscribe [:connection-setup/data-masking])
@@ -44,10 +48,14 @@
         database-schema? (rf/subscribe [:connection-setup/database-schema])
         access-modes (rf/subscribe [:connection-setup/access-modes])
         connection-name (rf/subscribe [:connection-setup/name])
+        jira-template-id (rf/subscribe [:connection-setup/jira-template-id])
+        guardrails (rf/subscribe [:connection-setup/guardrails])
         tags (rf/subscribe [:connection-setup/tags])
         tags-input (rf/subscribe [:connection-setup/tags-input])]
 
     (rf/dispatch [:users->get-user-groups])
+    (rf/dispatch [:guardrails->get-all])
+    (rf/dispatch [:jira-templates->get-all])
     (fn []
       [:form
        {:id "additional-config-form"
@@ -190,4 +198,50 @@
            {:title "Web and one-offs"
             :description "Use hoop.dev's developer portal or our CLI's One-Offs commands directly in your terminal."
             :checked (get @access-modes :web true)
-            :on-change #(rf/dispatch [:connection-setup/toggle-access-mode :web])}]]]]])))
+            :on-change #(rf/dispatch [:connection-setup/toggle-access-mode :web])}]]]
+
+        (when-not (= form-type :onboarding)
+          [:<>
+           [:> Box
+            [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+             "Guardrails"]
+            [:> Text {:as "p" :size "3" :class "text-[--gray-11]" :mb "5"}
+             "Create custom rules to guide and protect usage within your connections."]
+
+            (println @guardrails)
+            [multi-select/main {:options (or (mapv #(into {} {"value" (:id %) "label" (:name %)})
+                                                   (-> @guardrails-list :data)) [])
+                                :id "guardrails-input"
+                                :name "guardrails-input"
+                                :default-value (or @guardrails [])
+                                :on-change #(rf/dispatch [:connection-setup/set-guardrails (js->clj %)])}]
+
+            [:> Link {:href (routes/url-for :guardrails)
+                      :on-click #(rf/dispatch [:modal->close])}
+             [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
+              [:> Callout.Icon
+               [:> ArrowUpRight {:size 16}]]
+              [:> Callout.Text
+               "Go to Guardrails"]]]]
+
+           [:> Box
+            [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+             "Jira Templates"]
+            [:> Text {:as "p" :size "3" :class "text-[--gray-11]" :mb "5"}
+             "Optimize and automate workflows with Jira Integration."]
+
+            [multi-select/single {:placeholder "Select one"
+                                  :options (or (mapv #(into {} {"value" (:id %) "label" (:name %)})
+                                                     (-> @jira-templates-list :data)) [])
+                                  :id "jira-template-select"
+                                  :name "jira-template-select"
+                                  :default-value (or @jira-template-id nil)
+                                  :clearable? true
+                                  :on-change #(rf/dispatch [:connection-setup/set-jira-template-id (js->clj %)])}]
+
+            [:> Link {:href (routes/url-for :jira-templates)}
+             [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
+              [:> Callout.Icon
+               [:> ArrowUpRight {:size 16}]]
+              [:> Callout.Text
+               "Go to JIRA Integration"]]]]])]])))

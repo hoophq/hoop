@@ -26,6 +26,8 @@
             :database-schema false
             :review-groups []
             :data-masking-types []
+            :jira-template-id ""
+            :guardrails []
             :access-modes {:runbooks true
                            :native true
                            :web true}}})
