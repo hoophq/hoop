@@ -15,12 +15,20 @@ func DecodeSQLBatchToRawQuery(data []byte) (string, error) {
 	if PacketType(data[0]) != PacketSQLBatchType {
 		return "", fmt.Errorf("it's not a sql batch type, found=%X", data[0])
 	}
-	// re slice after packet header
+
 	packetNo := data[6]
+
+	// re slice after packet header
 	data = data[8:]
+
+	// Stream headers MUST be present only in the first packet of requests that span more than one packet
 	if packetNo == 0x01 {
-		// skip ALL_HEADERS
 		batchHeaderLength := binary.LittleEndian.Uint32(data[:4])
+		// this check guarantees to not decode ALL_HEADERS
+		// when the number of sequence packets resets (> 255)
+		if int(batchHeaderLength) > len(data[4:]) {
+			return ucs22str(data), nil
+		}
 		return ucs22str(data[batchHeaderLength:]), nil
 	}
 	return ucs22str(data), nil
