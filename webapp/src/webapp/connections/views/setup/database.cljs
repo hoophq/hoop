@@ -40,24 +40,25 @@
         [render-field (assoc field
                              :value (get credentials (:key field) (:value field)))])]]))
 
-(defn credentials-step [selected-subtype]
-  [:form {:id "database-credentials-form"
+(defn credentials-step [selected-subtype form-type]
+  [:form {:class "max-w-[600px]"
+          :id "database-credentials-form"
           :on-submit (fn [e]
                        (.preventDefault e)
-                       (println "Olá")
                        (rf/dispatch [:connection-setup/next-step :additional-config]))}
    [:> Box {:class "space-y-7"}
-    [:> Box {:class "space-y-4"}
-     [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"} "Database type"]
-     [:> RadioGroup.Root {:name "database-type"
-                          :value selected-subtype
-                          :on-value-change #(rf/dispatch [:connection-setup/select-connection "database" %])}
-      [:> Grid {:columns "1" :gap "3"}
-       (for [{:keys [id title]} database-types]
-         ^{:key id}
-         [:> RadioGroup.Item {:value id}
-          [:> Flex {:gap "4" :align "center"}
-           title]])]]]
+    (when-not (= form-type :update)
+      [:> Box {:class "space-y-4"}
+       [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"} "Database type"]
+       [:> RadioGroup.Root {:name "database-type"
+                            :value selected-subtype
+                            :on-value-change #(rf/dispatch [:connection-setup/select-connection "database" %])}
+        [:> Grid {:columns "1" :gap "3"}
+         (for [{:keys [id title]} database-types]
+           ^{:key id}
+           [:> RadioGroup.Item {:value id}
+            [:> Flex {:gap "4" :align "center"}
+             title]])]]])
 
     (when selected-subtype
       [:<>

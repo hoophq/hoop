@@ -48,6 +48,7 @@
      [:> Button
       {:size "2"
        :variant "soft"
+       :type "button"
        :on-click #(rf/dispatch [:connection-setup/add-env-row])}
       [:> Plus {:size 16}]
       "Add"]]))
@@ -74,6 +75,7 @@
              :disabled true}]
            [forms/textarea
             {:label "Content"
+             :id (str "config-file-" key)
              :value value
              :disabled true}]])])
 
@@ -87,6 +89,7 @@
                                   (-> % .-target .-value)])}]
       [forms/textarea
        {:label "Content"
+        :id "config-file-initial"
         :placeholder "Paste your file content here"
         :value @current-content
         :on-change #(rf/dispatch [:connection-setup/update-config-file-content
@@ -95,6 +98,7 @@
      [:> Button
       {:size "2"
        :variant "soft"
+       :type "button"
        :on-click #(when (and (not (empty? @current-name))
                              (not (empty? @current-content)))
                     (rf/dispatch [:connection-setup/add-configuration-file]))}

@@ -1,8 +1,10 @@
 (ns webapp.events.connections
-  (:require [re-frame.core :as rf]
-            [clojure.edn :refer [read-string]]
-            [webapp.connections.constants :as constants]
-            [webapp.connections.views.connection-connect :as connection-connect]))
+  (:require
+   [clojure.edn :refer [read-string]]
+   [re-frame.core :as rf]
+   [webapp.connections.constants :as constants]
+   [webapp.connections.views.connection-connect :as connection-connect]
+   [webapp.connections.views.setup.events.process-form :as process-form]))
 
 (rf/reg-event-fx
  :connections->get-connection-details
@@ -66,7 +68,8 @@
  :connections->update-connection
  (fn
    [{:keys [db]} [_ connection]]
-   (let [body (apply merge (for [[k v] connection :when (not (= "" v))] {k v}))]
+   (println "update-connection" db)
+   (let [body (process-form/process-payload db)]
      {:fx [[:dispatch [:fetch
                        {:method "PUT"
                         :uri (str "/connections/" (:name connection))

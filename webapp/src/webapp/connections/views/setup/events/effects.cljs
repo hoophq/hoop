@@ -8,6 +8,7 @@
 (rf/reg-event-db
  :connection-setup/initialize-state
  (fn [db [_ initial-data]]
+   (println initial-data)
    (if initial-data
      ;; Se houver dados iniciais, merge com o estado inicial
      (assoc db :connection-setup (merge state/initial-state initial-data))
@@ -25,8 +26,9 @@
  :connection-setup/submit
  (fn [{:keys [db]} _]
    (let [payload (process-form/process-payload db)]
-    ;;  {:fx [[:dispatch [:connections->create-connection payload]]]}
-     {:db db})))
+     {:fx [[:dispatch [:connections->create-connection payload]]
+           [:dispacth [:connection-setup/initialize-state nil]]]}
+     #_{:db db})))
 
 ;; Eventos específicos para atualização
 (rf/reg-event-fx

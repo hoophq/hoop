@@ -257,7 +257,7 @@
   (let [pathname (.. js/window -location -pathname)
         current-route (bidi/match-route @routes/routes pathname)
         connection-name (:connection-name (:route-params current-route))]
-    [layout :application-hoop [:div {:class "bg-gray-1 min-h-full h-full"}
+    [layout :application-hoop [:div {:class "bg-[--gray-2] px-4 py-10 sm:px-6 lg:px-20 lg:pt-6 lg:pb-10 h-full overflow-auto"}
                                [connection-update-form/main connection-name]]]))
 
 (defmethod routes/panels :manage-plugin-panel []

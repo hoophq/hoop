@@ -6,7 +6,6 @@
    [webapp.components.forms :as forms]
    [webapp.connections.views.setup.additional-configuration :as additional-configuration]
    [webapp.connections.views.setup.agent-selector :as agent-selector]
-   [webapp.connections.views.setup.configuration-inputs :as configuration-inputs]
    [webapp.connections.views.setup.headers :as headers]
    [webapp.connections.views.setup.page-wrapper :as page-wrapper]))
 
@@ -16,30 +15,31 @@
 
 (defn credentials-form []
   (let [credentials @(rf/subscribe [:connection-setup/network-credentials])]
-    [:> Box {:class "space-y-5"}
-     [:> Text {:size "4" :weight "bold"} "Environment credentials"]
+    [:> Box {:class "max-w-[600px]"}
+     [:> Box {:class "space-y-5"}
+      [:> Text {:size "4" :weight "bold"} "Environment credentials"]
 
      ;; Host input
-     [forms/input
-      {:label "Host"
-       :placeholder "e.g. localhost"
-       :required true
-       :value (get credentials :host "")
-       :on-change #(rf/dispatch [:connection-setup/update-network-host
-                                 (-> % .-target .-value)])}]
+      [forms/input
+       {:label "Host"
+        :placeholder "e.g. localhost"
+        :required true
+        :value (get credentials :host "")
+        :on-change #(rf/dispatch [:connection-setup/update-network-host
+                                  (-> % .-target .-value)])}]
 
      ;; Port input
-     [forms/input
-      {:label "Port"
-       :placeholder "e.g. username"
-       :required true
-       :value (get credentials :port "")
-       :on-change #(rf/dispatch [:connection-setup/update-network-port
-                                 (-> % .-target .-value)])}]]))
+      [forms/input
+       {:label "Port"
+        :placeholder "e.g. username"
+        :required true
+        :value (get credentials :port "")
+        :on-change #(rf/dispatch [:connection-setup/update-network-port
+                                  (-> % .-target .-value)])}]]
+     [agent-selector/main]]))
 
-(defn- resource-step []
-  (let [selected-type @(rf/subscribe [:connection-setup/connection-type])
-        selected-subtype @(rf/subscribe [:connection-setup/connection-subtype])]
+(defn resource-step []
+  (let [selected-subtype @(rf/subscribe [:connection-setup/connection-subtype])]
     [:form
      {:id "network-credentials-form"
       :on-submit (fn [e]
@@ -64,7 +64,6 @@
       (when (= selected-subtype "tcp")
         [:<>
          [credentials-form]
-         [agent-selector/main]
         ;; Environment Variables Section
          #_[configuration-inputs/environment-variables-section]])]]))
 

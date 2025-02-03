@@ -24,7 +24,7 @@
               :subtitle "For Ruby on Rails, Python, Node JS and more."}})
 
 (defn credentials-step []
-  [:> Box {:class "space-y-8"}
+  [:> Box {:class "space-y-8 max-w-[600px]"}
    ;; Environment Variables Section
    [configuration-inputs/environment-variables-section]
 

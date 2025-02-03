@@ -35,7 +35,7 @@
     (when learning-component
       learning-component)]])
 
-(defn main [{:keys [show-database-schema? selected-type submit-fn]}]
+(defn main [{:keys [show-database-schema? selected-type submit-fn form-type]}]
   (let [user-groups (rf/subscribe [:user-groups])
         review? (rf/subscribe [:connection-setup/review])
         review-groups (rf/subscribe [:connection-setup/review-groups])
@@ -51,6 +51,7 @@
     (fn []
       [:form
        {:id "additional-config-form"
+        :class "max-w-[600px]"
         :on-submit (fn [e]
                      (.preventDefault e)
                      (submit-fn))}
@@ -64,6 +65,7 @@
                                          (helpers/random-connection-name))
                        :label "Name"
                        :required true
+                       :disabled (= form-type :update)
                        :value @connection-name
                        :on-change #(rf/dispatch [:connection-setup/set-name
                                                  (-> % .-target .-value)])}]]

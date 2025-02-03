@@ -10,7 +10,8 @@
                     on-next
                     next-text
                     next-disabled?
-                    next-hidden?]}]
+                    next-hidden?
+                    middle-button]}]
   (let [sidebar-desktop (rf/subscribe [:sidebar-desktop])]
     (when-not hide-footer?
       [:> Flex {:justify "center"
@@ -27,12 +28,21 @@
                     :on-click (or on-back #(rf/dispatch [:connection-setup/go-back]))}
          (or back-text "Back")]
 
-        (when-not next-hidden?
-          [:> Button {:size "2"
-                      :disabled next-disabled?
-                      :on-click (fn [e]
-                                  (when on-click
-                                    (on-click e))
-                                  (when on-next
-                                    (on-next e)))}
-           (or next-text "Next Configuration")])]])))
+        ;; Middle button (like Delete) when provided
+        [:> Flex {:gap "5" :align "center"}
+         (when middle-button
+           [:> Button {:size "2"
+                       :variant (:variant middle-button)
+                       :color (:color middle-button)
+                       :on-click (:on-click middle-button)}
+            (:text middle-button)])
+
+         (when-not next-hidden?
+           [:> Button {:size "2"
+                       :disabled next-disabled?
+                       :on-click (fn [e]
+                                   (when on-click
+                                     (on-click e))
+                                   (when on-next
+                                     (on-next e)))}
+            (or next-text "Next Configuration")])]]])))
