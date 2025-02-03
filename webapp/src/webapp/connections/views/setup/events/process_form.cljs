@@ -1,6 +1,9 @@
 (ns webapp.connections.views.setup.events.process-form
-  (:require [webapp.connections.helpers :as helpers]))
+  (:require
+   [clojure.string :as str]
+   [webapp.connections.helpers :as helpers]))
 
+;; Create a new connection
 (defn get-api-connection-type [ui-type]
   (case ui-type
     "network" "application"
@@ -100,3 +103,79 @@
       (js/console.log "Submitting connection payload:" (clj->js final-payload))
 
       final-payload)))
+
+;; Update an existing connection
+(defn decode-base64 [s]
+  (-> s
+      js/atob
+      js/decodeURIComponent))
+
+(defn encode-base64 [s]
+  (-> s
+      js/encodeURIComponent
+      js/btoa))
+
+(defn process-connection-secret
+  "Processa os valores secret da conexão de base64 para string"
+  [secret]
+  (reduce-kv (fn [acc k v]
+               (if (str/starts-with? (name k) "envvar:")
+                 (let [clean-key (-> (name k)
+                                     (str/replace "envvar:" "")
+                                     str/lower-case)]
+                   (assoc acc clean-key (decode-base64 v)))
+                 acc))
+             {}
+             secret))
+
+(defn process-connection-for-update
+  "Processa uma conexão existente para o formato usado no formulário de atualização"
+  [connection]
+  {:connection-type (:type connection)
+   :connection-subtype (:subtype connection)
+   :name (:name connection)
+   :agent-id (:agent_id connection)
+   :database-credentials (process-connection-secret (:secret connection))
+   :config {:review (seq (:reviewers connection))
+            :review-groups (mapv #(hash-map "value" % "label" %) (:reviewers connection))
+            :data-masking (:redact_enabled connection)
+            :data-masking-types (mapv #(hash-map "value" % "label" %) (:redact_types connection))
+            :database-schema (= (:access_schema connection) "enabled")
+            :access-modes {:runbooks (= (:access_mode_runbooks connection) "enabled")
+                           :native (= (:access_mode_connect connection) "enabled")
+                           :web (= (:access_mode_exec connection) "enabled")}
+            :guardrail-rules (:guardrail_rules connection)
+            :jira-template-id (:jira_issue_template_id connection)}
+   :tags (mapv (fn [[k v]] {:key k :value v}) (:tags connection))})
+
+(defn process-connection-for-save
+  "Processa os dados do formulário para o formato da API"
+  [form-data original-connection]
+  (let [credentials (:database-credentials form-data)
+        secret (reduce-kv (fn [acc k v]
+                            (assoc acc
+                                   (str "envvar:" (str/upper-case k))
+                                   (encode-base64 v)))
+                          {}
+                          credentials)]
+    (merge original-connection
+           {:secret secret
+            :reviewers (mapv #(get % "value") (get-in form-data [:config :review-groups]))
+            :redact_enabled (get-in form-data [:config :data-masking])
+            :redact_types (mapv #(get % "value") (get-in form-data [:config :data-masking-types]))
+            :access_schema (if (get-in form-data [:config :database-schema])
+                             "enabled"
+                             "disabled")
+            :access_mode_runbooks (if (get-in form-data [:config :access-modes :runbooks])
+                                    "enabled"
+                                    "disabled")
+            :access_mode_connect (if (get-in form-data [:config :access-modes :native])
+                                   "enabled"
+                                   "disabled")
+            :access_mode_exec (if (get-in form-data [:config :access-modes :web])
+                                "enabled"
+                                "disabled")
+            :tags (reduce (fn [acc {:keys [key value]}]
+                            (assoc acc key value))
+                          {}
+                          (:tags form-data))})))

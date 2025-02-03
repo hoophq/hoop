@@ -140,3 +140,9 @@
  :connection-setup/tags
  (fn [db]
    (get-in db [:connection-setup :tags] [])))
+
+;; Subscriptions específicos para atualização
+(rf/reg-sub
+ :connection-setup/form-data
+ (fn [db]
+   (:connection-setup db)))

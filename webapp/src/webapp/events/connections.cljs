@@ -22,23 +22,6 @@
    {:db (assoc db :connections->connection-details {:loading false :data connection})}))
 
 (rf/reg-event-fx
- ::connections->set-updating-connection
- (fn
-   [{:keys [db]} [_ connection]]
-   {:db (assoc db :connections->updating-connection {:loading false :data connection})}))
-
-(rf/reg-event-fx
- :connections->get-connection
- (fn
-   [{:keys [db]} [_ data]]
-   {:db (assoc db :connections->updating-connection {:loading true :data {}})
-    :fx [[:dispatch
-          [:fetch {:method "GET"
-                   :uri (str "/connections/" (:connection-name data))
-                   :on-success (fn [connection]
-                                 (rf/dispatch [::connections->set-updating-connection connection]))}]]]}))
-
-(rf/reg-event-fx
  :connections->get-connections
  (fn
    [{:keys [db]} [_ _]]

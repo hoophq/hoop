@@ -74,7 +74,8 @@
             [webapp.subs :as subs]
             [webapp.views.home :as home]
             [webapp.upgrade-plan.main :as upgrade-plan]
-            [webapp.webclient.panel :as webclient]))
+            [webapp.webclient.panel :as webclient]
+            [webapp.connections.views.setup.connection-update-form :as connection-update-form]))
 
 (when (= config/release-type "hoop-ui")
   (js/window.addEventListener "load" (rf/dispatch [:segment->load])))
@@ -251,6 +252,13 @@
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop [:div {:class "bg-gray-1 min-h-full h-full"}
                              [connection-setup/main :create {}]]])
+
+(defmethod routes/panels :edit-connection-panel []
+  (let [pathname (.. js/window -location -pathname)
+        current-route (bidi/match-route @routes/routes pathname)
+        connection-name (:connection-name (:route-params current-route))]
+    [layout :application-hoop [:div {:class "bg-gray-1 min-h-full h-full"}
+                               [connection-update-form/main connection-name]]]))
 
 (defmethod routes/panels :manage-plugin-panel []
   (let [pathname (.. js/window -location -pathname)

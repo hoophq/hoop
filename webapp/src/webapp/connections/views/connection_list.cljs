@@ -162,7 +162,7 @@
                            (and (= "application" (:type connection))
                                 (= "tcp" (:subtype connection))))
                       [:div {:class "relative cursor-pointer group"
-                             :on-click #(rf/dispatch [:connections->start-connect connection])}
+                             :on-click #(rf/dispatch [:connections->start-connect (:name connection)])}
                        [:> Tooltip {:content "Hoop Access"}
                         [:> IconButton {:size 1 :variant "ghost" :color "gray"}
                          [:> Wifi {:size 16}]]]])
@@ -176,8 +176,10 @@
                                  (not (= (:managed_by connection) "hoopagent")))
                         [:> DropdownMenu.Item {:on-click (fn []
                                                            (rf/dispatch [:plugins->get-my-plugins])
-                                                           (rf/dispatch [:connections->get-connection {:connection-name (:name connection)}])
-                                                           (rf/dispatch [:modal->open {:content [create-update-connection/main :update connection]}]))}
+
+                                                           (rf/dispatch [:navigate :edit-connection {} :connection-name (:name connection)])
+
+                                                           #_(rf/dispatch [:modal->open {:content [create-update-connection/main :update connection]}]))}
                          "Configure"])
                       [:> DropdownMenu.Item {:color "red"
                                              :on-click (fn []

@@ -27,3 +27,14 @@
    (let [payload (process-form/process-payload db)]
     ;;  {:fx [[:dispatch [:connections->create-connection payload]]]}
      {:db db})))
+
+;; Eventos específicos para atualização
+(rf/reg-event-fx
+ :connection-setup/initialize-update
+ (fn [{:keys [db]} [_ connection-data]]
+   {:db (assoc db :connection-setup connection-data)}))
+
+(rf/reg-event-fx
+ :connection-setup/update-config
+ (fn [{:keys [db]} [_ path value]]
+   {:db (assoc-in db (concat [:connection-setup :config] path) value)}))

@@ -24,7 +24,8 @@
      "/connections" [["" :connections]
                      ["/details" :connection-details]
                      ["/new" :create-connection]
-                     [["/connections/" :connection-type "/new"] :onboarding-create-connection]]
+                     [["/connections/" :connection-type "/new"] :onboarding-create-connection]
+                     [["/edit/" :connection-name] :edit-connection]]
      "/client" :editor-plugin
      "/dashboard" :dashboard
      "/guardrails" [["" :guardrails]
