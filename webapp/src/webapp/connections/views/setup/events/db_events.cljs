@@ -48,7 +48,6 @@
    (let [new-review-state (not (get-in db [:connection-setup :config :review]))]
      (-> db
          (assoc-in [:connection-setup :config :review] new-review-state)
-         ;; Quando review é desabilitado, limpa os grupos
          (assoc-in [:connection-setup :config :review-groups]
                    (when new-review-state
                      (get-in db [:connection-setup :config :review-groups])))))))
@@ -67,7 +66,6 @@
  :connection-setup/toggle-access-mode
  (fn [db [_ mode]]
    (let [current-value (get-in db [:connection-setup :config :access-modes mode])
-         ;; Se o valor atual for nil, considera como true (valor inicial)
          effective-value (if (nil? current-value) true current-value)]
      (assoc-in db [:connection-setup :config :access-modes mode] (not effective-value)))))
 
@@ -110,17 +108,16 @@
  (fn [db [_]]
    (let [current-key (get-in db [:connection-setup :credentials :current-key])
          current-value (get-in db [:connection-setup :credentials :current-value])]
-     (-> db
-         ;; Adiciona o par atual aos environment variables se ambos estiverem preenchidos
-         (update-in [:connection-setup :credentials :environment-variables]
-                    (fn [vars]
-                      (if (and (not (empty? current-key))
-                               (not (empty? current-value)))
-                        (conj (or vars []) {:key current-key :value current-value})
-                        (or vars []))))
-         ;; Limpa os inputs atuais
-         (assoc-in [:connection-setup :credentials :current-key] "")
-         (assoc-in [:connection-setup :credentials :current-value] "")))))
+     (if (and (not (empty? current-key))
+              (not (empty? current-value)))
+       (-> db
+           ;; Adiciona a nova variável
+           (update-in [:connection-setup :credentials :environment-variables]
+                      #(conj (or % []) {:key current-key :value current-value}))
+           ;; Limpa os inputs atuais
+           (assoc-in [:connection-setup :credentials :current-key] "")
+           (assoc-in [:connection-setup :credentials :current-value] ""))
+       db))))
 
 (rf/reg-event-db
  :connection-setup/update-env-current-key
@@ -131,6 +128,11 @@
  :connection-setup/update-env-current-value
  (fn [db [_ value]]
    (assoc-in db [:connection-setup :credentials :current-value] value)))
+
+(rf/reg-event-db
+ :connection-setup/update-env-var
+ (fn [db [_ index field value]]
+   (assoc-in db [:connection-setup :credentials :environment-variables index field] value)))
 
 ;; Configuration Files events
 (rf/reg-event-db
@@ -144,23 +146,30 @@
    (assoc-in db [:connection-setup :credentials :current-file-content] value)))
 
 (rf/reg-event-db
+ :connection-setup/update-config-file
+ (fn [db [_ index field value]]
+   (assoc-in db [:connection-setup :credentials :configuration-files index field] value)))
+
+(rf/reg-event-db
  :connection-setup/add-configuration-file
  (fn [db [_]]
    (let [current-name (get-in db [:connection-setup :credentials :current-file-name])
-         current-content (get-in db [:connection-setup :credentials :current-file-content])
-         current-files (get-in db [:connection-setup :credentials :configuration-files] [])]
-     (-> db
-         (update-in [:connection-setup :credentials :configuration-files]
-                    #(conj (or % []) {:key current-name :value current-content}))
-         (assoc-in [:connection-setup :credentials :current-file-name] "")
-         (assoc-in [:connection-setup :credentials :current-file-content] "")))))
+         current-content (get-in db [:connection-setup :credentials :current-file-content])]
+     (if (and (not (empty? current-name))
+              (not (empty? current-content)))
+       (-> db
+           ;; Adiciona o novo arquivo
+           (update-in [:connection-setup :credentials :configuration-files]
+                      #(conj (or % []) {:key current-name :value current-content}))
+           ;; Limpa os inputs atuais
+           (assoc-in [:connection-setup :credentials :current-file-name] "")
+           (assoc-in [:connection-setup :credentials :current-file-content] ""))
+       db))))
 
 ;; Navigation events
 (rf/reg-event-db
  :connection-setup/next-step
  (fn [db [_ next-step]]
-   (js/console.log "Next step event - Current:" (get-in db [:connection-setup :current-step])
-                   "Next:" next-step)
    (assoc-in db [:connection-setup :current-step] (or next-step :resource))))
 
 (rf/reg-event-db
@@ -193,14 +202,6 @@
      (if exists?
        db
        (update-in db [:connection-setup :tags] conj {:key key :value value})))))
-
-(rf/reg-event-db
- :connection-setup/remove-tag
- (fn [db [_ index]]
-   (update-in db [:connection-setup :tags]
-              #(vec (concat
-                     (subvec % 0 index)
-                     (subvec % (inc index)))))))
 
 ;; Guardrails events
 (rf/reg-event-db

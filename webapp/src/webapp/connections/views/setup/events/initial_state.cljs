@@ -23,7 +23,7 @@
                  :configuration-files []}
    :config {:review false
             :data-masking false
-            :database-schema false
+            :database-schema true
             :review-groups []
             :data-masking-types []
             :jira-template-id ""

@@ -16,7 +16,6 @@
               :color "sky"}})
 
 (defn connection-type-card [{:keys [id title description icon on-click selected?]}]
-  (println icon)
   (let [avatar (get connection-type-avatars icon)]
     [:> Box {:class (str "p-4 border rounded-lg mb-3 cursor-pointer transition-all hover:border-blue-500 "
                          (if selected?

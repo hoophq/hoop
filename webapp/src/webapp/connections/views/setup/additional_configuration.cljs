@@ -8,8 +8,7 @@
    [webapp.connections.dlp-info-types :as dlp-info-types]
    [webapp.connections.helpers :as helpers]
    [webapp.connections.views.setup.tags-inputs :as tags-inputs]
-   [webapp.routes :as routes]
-   [webapp.guardrails.main :as guardrails]))
+   [webapp.routes :as routes]))
 
 (defn toggle-section
   [{:keys [title
@@ -64,21 +63,36 @@
                      (.preventDefault e)
                      (submit-fn))}
        [:> Box {:class "space-y-7"}
-        [:> Box
-         [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]" :mb "5"}
-          "Connection information"]
+        (when-not (= form-type :update)
+          [:> Box
+           [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]" :mb "5"}
+            "Connection information"]
 
-         [forms/input {:placeholder (str (when selected-type
-                                           (str selected-type "-"))
-                                         (helpers/random-connection-name))
-                       :label "Name"
-                       :required true
-                       :disabled (= form-type :update)
-                       :value @connection-name
-                       :on-change #(rf/dispatch [:connection-setup/set-name
-                                                 (-> % .-target .-value)])}]]
+           [forms/input {:placeholder (str (when selected-type
+                                             (str selected-type "-"))
+                                           (helpers/random-connection-name))
+                         :label "Name"
+                         :required true
+                         :disabled (= form-type :update)
+                         :value @connection-name
+                         :on-change #(rf/dispatch [:connection-setup/set-name
+                                                   (-> % .-target .-value)])}]])
 
-        [tags-inputs/main]
+        [:> Box {:class "space-y-4"}
+         [:> Box
+          [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+           "Tags"]
+          [:> Text {:as "p" :size "3" :class "text-[--gray-11]"}
+           "Add custom labels to manage and track connections."]]
+         [multi-select/text-input
+          {:value @tags
+           :input-value @tags-input
+           :on-change #(rf/dispatch [:connection-setup/set-tags %])
+           :on-input-change #(rf/dispatch [:connection-setup/set-tags-input %])
+           :id "tags-multi-select-text-input"
+           :name "tags-multi-select-text-input"}]]
+
+        ;; [tags-inputs/main]
 
 
         [:> Box
@@ -208,7 +222,6 @@
             [:> Text {:as "p" :size "3" :class "text-[--gray-11]" :mb "5"}
              "Create custom rules to guide and protect usage within your connections."]
 
-            (println @guardrails)
             [multi-select/main {:options (or (mapv #(into {} {"value" (:id %) "label" (:name %)})
                                                    (-> @guardrails-list :data)) [])
                                 :id "guardrails-input"

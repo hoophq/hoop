@@ -1,7 +1,6 @@
 (ns webapp.connections.views.setup.events.effects
   (:require
    [re-frame.core :as rf]
-   [webapp.connections.views.setup.events.initial-state :as state]
    [webapp.connections.views.setup.events.process-form :as process-form]))
 
 ;; Initialize app state
@@ -10,9 +9,9 @@
  (fn [db [_ initial-data]]
    (if initial-data
      ;; Se houver dados iniciais, merge com o estado inicial
-     (assoc db :connection-setup (merge state/initial-state initial-data))
+     (assoc db :connection-setup initial-data)
      ;; Se não, usa o estado inicial puro
-     (assoc db :connection-setup state/initial-state))))
+     (assoc db :connection-setup {}))))
 
 ;; Main effects that change multiple parts of state or interact with external systems
 (rf/reg-event-fx
@@ -24,18 +23,25 @@
 (rf/reg-event-fx
  :connection-setup/submit
  (fn [{:keys [db]} _]
-   (let [payload (process-form/process-payload db)]
+   (let [current-env-key (get-in db [:connection-setup :credentials :current-key])
+         current-env-value (get-in db [:connection-setup :credentials :current-value])
+         current-file-name (get-in db [:connection-setup :credentials :current-file-name])
+         current-file-content (get-in db [:connection-setup :credentials :current-file-content])
+
+         ;; Adiciona os campos atuais se estiverem preenchidos
+         db-with-current (cond-> db
+                           (and (not (empty? current-env-key))
+                                (not (empty? current-env-value)))
+                           (update-in [:connection-setup :credentials :environment-variables]
+                                      #(conj (or % []) {:key current-env-key :value current-env-value}))
+
+                           (and (not (empty? current-file-name))
+                                (not (empty? current-file-content)))
+                           (update-in [:connection-setup :credentials :configuration-files]
+                                      #(conj (or % []) {:key current-file-name :value current-file-content})))
+
+         ;; Processa o payload com os dados atualizados
+         payload (process-form/process-payload db-with-current)]
      {:fx [[:dispatch [:connections->create-connection payload]]
-           [:dispacth [:connection-setup/initialize-state nil]]]}
-     #_{:db db})))
-
-;; Eventos específicos para atualização
-(rf/reg-event-fx
- :connection-setup/initialize-update
- (fn [{:keys [db]} [_ connection-data]]
-   {:db (assoc db :connection-setup connection-data)}))
-
-(rf/reg-event-fx
- :connection-setup/update-config
- (fn [{:keys [db]} [_ path value]]
-   {:db (assoc-in db (concat [:connection-setup :config] path) value)}))
+           [:dispatch-later {:ms 500
+                             :dispatch [:connection-setup/initialize-state nil]}]]})))

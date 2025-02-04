@@ -6,7 +6,6 @@
 
 ;; Create a new connection
 (defn get-api-connection-type [ui-type]
-  (println ui-type)
   (case ui-type
     "network" "application"
     "server" "custom"
@@ -28,6 +27,8 @@
   (mapv (fn [[k v]]
           {:key k :value v})
         tags))
+
+
 
 (defn process-payload [db]
   (let [ui-type (get-in db [:connection-setup :type])
@@ -86,7 +87,8 @@
                  :subtype connection-subtype
                  :name connection-name
                  :agent_id agent-id
-                 :tags #_(when (seq tags) tags) []
+                 :tags (when (seq tags-array)
+                         (mapv #(get % "value") tags-array))
                  :secret secret
                  :command (if (= api-type "database")
                             []
@@ -161,16 +163,25 @@
                 {"value" id
                  "label" name})))))
 
+(defn extract-network-credentials
+  "Extrai HOST e PORT dos secrets para network credentials"
+  [credentials]
+  {:host (get credentials "host")
+   :port (get credentials "port")})
+
 (defn process-connection-for-update
   "Processa uma conexão existente para o formato usado no formulário de atualização"
   [connection guardrails-list jira-templates-list]
-  (let [credentials (process-connection-secret (:secret connection) "envvar")]
+  (let [credentials (process-connection-secret (:secret connection) "envvar")
+        network-credentials (when (and (= (:type connection) "application")
+                                       (= (:subtype connection) "tcp"))
+                              (extract-network-credentials credentials))]
     {:type (:type connection)
      :subtype (:subtype connection)
      :name (:name connection)
      :agent-id (:agent_id connection)
      :database-credentials (when (= (:type connection) "database") credentials)
-     :network-credentials (when (= (:type connection) "application") credentials)
+     :network-credentials network-credentials
      :command (if (empty? (:command connection))
                 (get constants/connection-commands (:subtype connection))
                 (str/join " " (:command connection)))
@@ -196,4 +207,5 @@
                                    jira-templates-list
                                    (:jira_issue_template_id connection))
                                   "")}
-     :tags (mapv (fn [[k v]] {:key k :value v}) (:tags connection))}))
+     :tags (when (seq (:tags connection))
+             (mapv #(into {} {"value" % "label" %}) (:tags connection)))}))

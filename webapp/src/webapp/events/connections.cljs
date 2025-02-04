@@ -23,6 +23,11 @@
    [{:keys [db]} [_ connection]]
    {:db (assoc db :connections->connection-details {:loading false :data connection})}))
 
+(rf/reg-event-db
+ :connections->clear-connection-details
+ (fn [db [_]]
+   (assoc db :connections->connection-details {:loading true :data nil})))
+
 (rf/reg-event-fx
  :connections->get-connections
  (fn
@@ -68,7 +73,6 @@
  :connections->update-connection
  (fn
    [{:keys [db]} [_ connection]]
-   (println "update-connection" db)
    (let [body (process-form/process-payload db)]
      {:fx [[:dispatch [:fetch
                        {:method "PUT"

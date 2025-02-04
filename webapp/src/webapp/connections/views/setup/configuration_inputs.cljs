@@ -14,21 +14,22 @@
      [:> Text {:size "2" :color "gray"}
       "Add variable values to use in your connection."]
 
-     ;; Lista de variáveis existentes
      (when (seq env-vars)
        [:> Grid {:columns "2" :gap "2"}
-        (for [{:keys [key value]} env-vars]
-          ^{:key key}
+        (for [[idx {:keys [key value]}] (map-indexed vector env-vars)]
+          ^{:key (str "env-var-" idx)}
           [:<>
            [forms/input
             {:label "Key"
              :value key
-             :disabled true}]
+             :placeholder "API_KEY"
+             :on-change #(rf/dispatch [:connection-setup/update-env-var idx :key (-> % .-target .-value)])}]
            [forms/input
             {:label "Value"
              :value value
              :type "password"
-             :disabled true}]])])
+             :placeholder "* * * *"
+             :on-change #(rf/dispatch [:connection-setup/update-env-var idx :value (-> % .-target .-value)])}]])])
 
      ;; Inputs atuais
      [:> Grid {:columns "2" :gap "2"}
@@ -62,22 +63,22 @@
      [:> Text {:size "2" :color "gray"}
       "Add values from your configuration file and use them as an environment variable in your connection."]
 
-     ;; Lista de arquivos existentes
-     ;; Lista de arquivos existentes
+     ;; Lista de arquivos existentes com inputs editáveis
      (when (seq @config-files)
        [:> Grid {:columns "1" :gap "4"}
-        (for [{:keys [key value]} @config-files]
-          ^{:key key}
+        (for [[idx {:keys [key value]}] (map-indexed vector @config-files)]
+          ^{:key (str "config-file-" idx)}
           [:<>
            [forms/input
             {:label "Name"
              :value key
-             :disabled true}]
+             :placeholder "e.g. kubeconfig"
+             :on-change #(rf/dispatch [:connection-setup/update-config-file idx :key (-> % .-target .-value)])}]
            [forms/textarea
             {:label "Content"
-             :id (str "config-file-" key)
+             :id (str "config-file-" idx)
              :value value
-             :disabled true}]])])
+             :on-change #(rf/dispatch [:connection-setup/update-config-file idx :value (-> % .-target .-value)])}]])])
 
      ;; Campos para novo arquivo
      [:> Grid {:columns "1" :gap "4"}

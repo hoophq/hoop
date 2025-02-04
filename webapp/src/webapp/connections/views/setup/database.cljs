@@ -80,6 +80,7 @@
                    :additional-config [additional-configuration/main
                                        {:show-database-schema? true
                                         :selected-type selected-subtype
+                                        :form-type form-type
                                         :submit-fn #(rf/dispatch [:connection-setup/submit])}]
                    nil)]
 
@@ -90,7 +91,7 @@
                      :on-click (fn []
                                  (let [form (.getElementById js/document
                                                              (if (= current-step :credentials)
-                                                               "database-credentials-form"
+                                                               "credentials-form"
                                                                "additional-config-form"))]
                                    (.reportValidity form)))
                      :next-disabled? (case current-step
@@ -99,7 +100,7 @@
                      :on-next (fn []
                                 (let [form (.getElementById js/document
                                                             (if (= current-step :credentials)
-                                                              "database-credentials-form"
+                                                              "credentials-form"
                                                               "additional-config-form"))]
                                   (when form
                                     (if (and (.reportValidity form)

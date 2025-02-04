@@ -82,6 +82,7 @@
                    :resource [resource-step]
                    :additional-config [additional-configuration/main
                                        {:selected-type network-type
+                                        :form-type form-type
                                         :submit-fn #(rf/dispatch [:connection-setup/submit])}]
                    [resource-step])]
 

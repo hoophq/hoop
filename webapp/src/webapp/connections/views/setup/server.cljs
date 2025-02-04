@@ -138,6 +138,7 @@
          :credentials [resource-step]
          :additional-config [additional-configuration/main
                              {:selected-type connection-subtype
+                              :form-type form-type
                               :submit-fn (if (= connection-subtype "console")
                                            #(rf/dispatch [:connection-setup/next-step :installation])
                                            #(rf/dispatch [:connection-setup/submit]))}]

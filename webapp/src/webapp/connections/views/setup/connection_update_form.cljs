@@ -38,91 +38,110 @@
      guardrails-list (rf/subscribe [:guardrails->list])
      jira-templates-list (rf/subscribe [:jira-templates->list])
      initialized? (r/atom false)
+     check-form-validity! (fn []
+                            (when-let [form (.getElementById js/document "credentials-form")]
+                              (.reportValidity form)
+                              (reset! credentials-valid? (.checkValidity form))))
      _ (rf/dispatch [:connections->get-connection-details connection-name])
      _ (rf/dispatch [:guardrails->get-all])
      _ (rf/dispatch [:jira-templates->get-all])]
 
+    (when-let [form (.getElementById js/document "credentials-form")]
+      (reset! credentials-valid? (.checkValidity form)))
+
     (let [handle-submit (fn [e]
                           (.preventDefault e)
+                          (let [form (.getElementById js/document "credentials-form")]
+                            (when form
+                              (.reportValidity form) ; Força a validação e mostra os erros
+                              (reset! credentials-valid? (.checkValidity form))))
+
                           (if @credentials-valid?
                             (rf/dispatch [:connections->update-connection {:name connection-name}])
-                            (do
-                              (reset! active-tab "credentials")
-                              (when-let [form (.getElementById js/document "credentials-form")]
-                                (.reportValidity form)))))]
+                            (reset! active-tab "credentials")))]
 
-      (if (:loading @connection)
-        [loading-view]
-        (when (:data @connection)
+      (r/create-class
+       {:component-did-mount check-form-validity!
 
-          (when (and (not @initialized?)
-                     (:data @connection))
-            (let [processed-connection (helpers/process-connection-for-update
-                                        (:data @connection)
-                                        (:data @guardrails-list)
-                                        (:data @jira-templates-list))]
-              (rf/dispatch [:connection-setup/initialize-state processed-connection])
-              (reset! initialized? true)))
+        :component-did-update
+        (fn [this old-argv]
+          (let [[_ prev-connection-name] old-argv
+                [_ curr-connection-name] (r/argv this)]
+            (when (not= prev-connection-name curr-connection-name)
+              (check-form-validity!))))
 
-          [page-wrapper/main
-           {:children
-            [:> Box {:class "min-h-screen py-8 px-6"}
-                           ;; Header
-             [update-form-header (:data @connection)]
+        :reagent-render
+        (fn []
+          (if (:loading @connection)
+            [loading-view]
+            (when (:data @connection)
+                   ;; Faz a validação do form quando os dados são carregados
+              (when (and (not @initialized?)
+                         (:data @connection))
+                (let [processed-connection (helpers/process-connection-for-update
+                                            (:data @connection)
+                                            (:data @guardrails-list)
+                                            (:data @jira-templates-list))]
+                  (rf/dispatch [:connection-setup/initialize-state processed-connection])
+                  (reset! initialized? true)
+                  (js/setTimeout check-form-validity! 100))) ; Pequeno delay para garantir que o form está montado
 
-                           ;; Main content
-             [:form {:id "update-connection-form"
-                     :on-submit handle-submit}
-              [:> Tabs.Root {:value @active-tab
-                             :on-value-change (fn [new-tab]
-                                                                            ;; Quando sair da aba credentials, guarda o estado de validação
-                                                (when (and (= @active-tab "credentials")
-                                                           (not= new-tab "credentials"))
-                                                  (when-let [form (.getElementById js/document "credentials-form")]
-                                                    (reset! credentials-valid? (.checkValidity form))))
-                                                (reset! active-tab new-tab))}
-               [:> Tabs.List {:mb "7"}
-                [:> Tabs.Trigger {:value "credentials"} "Credentials"]
-                [:> Tabs.Trigger {:value "configuration"} "Additional Configuration"]]
+              [page-wrapper/main
+               {:children
+                [:> Box {:class "min-h-screen py-8 px-6"}
+                 [update-form-header (:data @connection)]
 
-               [:> Tabs.Content {:value "credentials"}
-                (case (:type (:data @connection))
-                  "database" [database/credentials-step
-                              (:subtype (:data @connection))
-                              :update]
-                  "custom" [server/credentials-step]
-                  "application" [network/credentials-form]
-                  nil)]
+                 [:form {:id "update-connection-form"
+                         :on-submit handle-submit}
+                  [:> Tabs.Root {:value @active-tab
+                                 :on-value-change (fn [new-tab]
+                                                    (when (and (= @active-tab "credentials")
+                                                               (not= new-tab "credentials"))
+                                                      (check-form-validity!))
+                                                    (reset! active-tab new-tab))}
+                   [:> Tabs.List {:mb "7"}
+                    [:> Tabs.Trigger {:value "credentials"} "Credentials"]
+                    [:> Tabs.Trigger {:value "configuration"} "Additional Configuration"]]
 
-               [:> Tabs.Content {:value "configuration"}
-                [additional-configuration/main
-                 {:show-database-schema? (= (:type (:data @connection)) "database")
-                  :selected-type (:subtype (:data @connection))
-                  :form-type :update}]]]]]
+                   [:> Tabs.Content {:value "credentials"}
+                    (case (:type (:data @connection))
+                      "database" [database/credentials-step
+                                  (:subtype (:data @connection))
+                                  :update]
+                      "custom" [server/credentials-step]
+                      "application" [network/credentials-form]
+                      nil)]
 
-            :footer-props
-            {:back-text "Back"
-             :next-text "Save"
-             :on-back #(js/history.back)
-             :on-next (fn []
-                        (let [form (.getElementById js/document "update-connection-form")]
-                          (when form
-                            (.dispatchEvent form (js/Event. "submit" #js{:bubbles true :cancelable true})))))
+                   [:> Tabs.Content {:value "configuration"}
+                    [additional-configuration/main
+                     {:show-database-schema? (= (:type (:data @connection)) "database")
+                      :selected-type (:subtype (:data @connection))
+                      :form-type :update}]]]]]
 
-             :on-delete #(rf/dispatch [:dialog->open
-                                       {:title "Delete connection?"
-                                        :type :danger
-                                        :text-action-button "Confirm and delete"
-                                        :action-button? true
-                                        :text [:> Box {:class "space-y-radix-4"}
-                                               [:> Text {:as "p"}
-                                                "This action will instantly remove your access to "
-                                                (:name (:data @connection))
-                                                " and can not be undone."]
-                                               [:> Text {:as "p"}
-                                                "Are you sure you want to delete this connection?"]]
-                                        :on-success (fn []
-                                                      (rf/dispatch [:connections->delete-connection (:name (:data @connection))])
-                                                      (rf/dispatch [:modal->close]))}])}}])))
+                :footer-props
+                {:back-text "Back"
+                 :next-text "Save"
+                 :on-back #(js/history.back)
+                 :on-next (fn []
+                            (let [form (.getElementById js/document "update-connection-form")]
+                              (when form
+                                (.dispatchEvent form (js/Event. "submit" #js{:bubbles true :cancelable true})))))
+
+                 :on-delete #(rf/dispatch [:dialog->open
+                                           {:title "Delete connection?"
+                                            :type :danger
+                                            :text-action-button "Confirm and delete"
+                                            :action-button? true
+                                            :text [:> Box {:class "space-y-radix-4"}
+                                                   [:> Text {:as "p"}
+                                                    "This action will instantly remove your access to "
+                                                    (:name (:data @connection))
+                                                    " and can not be undone."]
+                                                   [:> Text {:as "p"}
+                                                    "Are you sure you want to delete this connection?"]]
+                                            :on-success (fn []
+                                                          (rf/dispatch [:connections->delete-connection (:name (:data @connection))])
+                                                          (rf/dispatch [:modal->close]))}])}}])))}))
     (finally
-      (rf/dispatch [:connection-setup/initialize-state nil]))))
+      (rf/dispatch [:connection-setup/initialize-state nil])
+      (rf/dispatch [:connections->clear-connection-details]))))
