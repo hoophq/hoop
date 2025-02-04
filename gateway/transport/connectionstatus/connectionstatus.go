@@ -70,7 +70,7 @@ func getState(id streamtypes.ID) (v *stateObject) {
 func SetOnlinePreConnect(ctx pgrest.OrgContext, streamAgentID streamtypes.ID) {
 	state := getState(streamAgentID)
 	// noop if it's grpc connected, it will trigger the offline
-	// when the it disconnects
+	// when it disconnects
 	if state != nil && state.grpcConnected {
 		return
 	}

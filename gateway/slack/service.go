@@ -113,7 +113,7 @@ func (m *MessageReviewRequest) sessionTime() string {
 	return "-"
 }
 
-func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) error {
+func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) (result string) {
 	title := "Review"
 
 	header := slack.NewHeaderBlock(&slack.TextBlockObject{
@@ -216,16 +216,17 @@ func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) error {
 		slackChannels = append(slackChannels, s.slackChannel)
 	}
 
+	var errs []string
 	for _, slackChannel := range slackChannels {
 		_, _, err := s.apiClient.PostMessage(slackChannel, slack.MsgOptionBlocks(blocks...), metadata)
 		if err != nil {
-			return fmt.Errorf("failed sending message to slack channel %v, reason=%v", slackChannel, err)
+			errs = append(errs, fmt.Sprintf(`"%v - %v"`, slackChannel, err))
 		}
 
 		// Slack allows 1 post message per second. reference: https://api.slack.com/apis/rate-limits
 		time.Sleep(time.Millisecond * 1200)
 	}
-	return nil
+	return fmt.Sprintf("success sent channels %v/%v, errors=%v", len(slackChannels), len(slackChannels)-len(errs), errs)
 }
 
 func (s *SlackService) UpdateMessage(msg *MessageReviewResponse, isApproved bool) error {
@@ -320,7 +321,7 @@ func (s *SlackService) PostMessage(SlackID string, message string) error {
 		return err
 	}
 
-	log.Infof("Message successfully sent to the channel %s at %s", channelID, timestamp)
+	log.Infof("message successfully sent to the channel %s at %s", channelID, timestamp)
 	return nil
 }
 
@@ -334,6 +335,6 @@ func (s *SlackService) PostEphemeralMessage(msg *MessageReviewResponse, message 
 		return err
 	}
 
-	log.Infof("Message successfully sent to the user %s on the channel %s at %s", userID, channelID, timestamp)
+	log.Infof("message successfully sent to the user %s on the channel %s at %s", userID, channelID, timestamp)
 	return nil
 }
