@@ -31,13 +31,13 @@
        [:> Heading {:size "3" :weight "semibold" :class "text-[--gray-12]"} title]
        [:> Text {:size "2" :class "text-[--gray-11]"} description]]]]))
 
-(defn main []
+(defn main [form-type]
   (rf/dispatch [:connection-setup/initialize-state nil])
 
   (fn []
     (let [selected-type @(rf/subscribe [:connection-setup/connection-type])]
       [:> Box {:class "max-w-[600px] mx-auto p-6 space-y-7"}
-       [headers/setup-header]
+       [headers/setup-header form-type]
 
        [:> Box
         [:> Text {:as "p" :size "2" :mb "5" :class "text-[--gray-11]"}

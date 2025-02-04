@@ -22,7 +22,8 @@
 (defn toggle-section
   [{:keys [title
            description
-           checked disabled?
+           checked
+           disabled?
            on-change
            complement-component
            upgrade-plan-component
@@ -47,7 +48,7 @@
 
 (defn main [{:keys [show-database-schema? selected-type submit-fn form-type]}]
   (let [user-groups (rf/subscribe [:user-groups])
-        user (rf/subscribe [:user])
+        user (rf/subscribe [:users->current-user])
         guardrails-list (rf/subscribe [:guardrails->list])
         jira-templates-list (rf/subscribe [:jira-templates->list])
         review? (rf/subscribe [:connection-setup/review])
@@ -64,8 +65,6 @@
         tags-input (rf/subscribe [:connection-setup/tags-input])
         is-tcp? (= @connection-subtype "tcp")
         default-modes (get-access-mode-defaults @connection-subtype)]
-
-    (println @connection-subtype)
 
     (rf/dispatch [:users->get-user-groups])
     (rf/dispatch [:guardrails->get-all])
@@ -116,7 +115,6 @@
 
         ;; [tags-inputs/main]
 
-
           [:> Box
            [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]" :mb "5"}
             "Additional Configuration"]
@@ -140,7 +138,8 @@
                     :on-change #(rf/dispatch [:connection-setup/set-review-groups (js->clj %)])}]])
 
                :upgrade-plan-component
-               (when free-license?
+               (when (or free-license?
+                         (= form-type :onboarding))
                  [:> Callout.Root {:size "2" :mt "4" :mb "4"}
                   [:> Callout.Icon
                    [:> Star {:size 16}]]
@@ -170,7 +169,8 @@
               {:title "AI Data Masking"
                :description "Provide an additional layer of security by ensuring sensitive data is masked in query results with AI-powered data masking."
                :checked @data-masking?
-               :disabled? free-license?
+               :disabled? (or free-license?
+                              (= form-type :onboarding))
                :on-change #(rf/dispatch [:connection-setup/toggle-data-masking])
 
                :complement-component
@@ -182,11 +182,13 @@
                     :name "data-masking-groups-input"
                     :required? @data-masking?
                     :default-value @data-masking-types
-                    :disabled? free-license?
+                    :disabled? (or free-license?
+                                   (= form-type :onboarding))
                     :on-change #(rf/dispatch [:connection-setup/set-data-masking-types (js->clj %)])}]])
 
                :upgrade-plan-component
-               (when free-license?
+               (when (or free-license?
+                         (= form-type :onboarding))
                  [:> Callout.Root {:size "2" :mt "4" :mb "4"}
                   [:> Callout.Icon
                    [:> Star {:size 16}]]
@@ -210,13 +212,13 @@
                                      [:> Callout.Text
                                       "Learn more about AI Data Masking"]]]}]]
 
-                                                                 ;; Database schema (condicionalmente renderizado)
+           ;; Database schema
             (when show-database-schema?
               [:> Box {:class "space-y-2"}
                [toggle-section
                 {:title "Database schema"
                  :description "Show database schema in the Editor section."
-                 :checked (or @database-schema? true)
+                 :checked @database-schema?
                  :on-change #(rf/dispatch [:connection-setup/toggle-database-schema])}]])]]
 
           (when (not= @connection-subtype "console")
@@ -226,7 +228,7 @@
              [:> Text {:as "p" :size "3" :class "text-[--gray-11]" :mb "5"}
               "Setup how users interact with this connection."]
 
-             [:> Box {:class "space-y-7"}                                                       ;; Runbooks
+             [:> Box {:class "space-y-7"}
               [toggle-section
                {:title "Runbooks"
                 :description "Create templates to automate tasks in your organization."
@@ -236,7 +238,6 @@
                            (get @access-modes :runbooks true))
                 :on-change #(rf/dispatch [:connection-setup/toggle-access-mode :runbooks])}]
 
-                                                                   ;; Native
               [toggle-section
                {:title "Native"
                 :description "Access from your client of preference using hoop.dev to channel connections using our Desktop App or our Command Line Interface."
@@ -246,7 +247,6 @@
                            (get @access-modes :native true))
                 :on-change #(rf/dispatch [:connection-setup/toggle-access-mode :native])}]
 
-                                                                   ;; Web and one-offs
               [toggle-section
                {:title "Web and one-offs"
                 :description "Use hoop.dev's developer portal or our CLI's One-Offs commands directly in your terminal."

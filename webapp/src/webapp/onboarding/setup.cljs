@@ -1,6 +1,6 @@
 (ns webapp.onboarding.setup
   (:require
-   ["@radix-ui/themes" :refer [Avatar Box Card Flex Heading Text]]
+   ["@radix-ui/themes" :refer [Avatar Box Button Card Flex Heading Text]]
    ["lucide-react" :refer [Database Settings]]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -37,6 +37,13 @@
 
 (defn main []
   [:> Flex {:direction "column" :align "center" :justify "center" :class "h-screen"}
+   [:> Box {:class "absolute top-0 right-0 p-radix-5"}
+    [:> Button {:variant "ghost"
+                :size "2"
+                :color "gray"
+                :on-click #(rf/dispatch [:auth->logout])}
+     "Logout"]]
+
    [:> Box {:class "spacey-y-radix-7 w-[600px]"}
     [:> Box {:class "space-y-radix-6"}
 

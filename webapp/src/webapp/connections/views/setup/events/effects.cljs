@@ -8,9 +8,7 @@
  :connection-setup/initialize-state
  (fn [db [_ initial-data]]
    (if initial-data
-     ;; Se houver dados iniciais, merge com o estado inicial
      (assoc db :connection-setup initial-data)
-     ;; Se não, usa o estado inicial puro
      (assoc db :connection-setup {}))))
 
 ;; Main effects that change multiple parts of state or interact with external systems
@@ -28,7 +26,6 @@
          current-file-name (get-in db [:connection-setup :credentials :current-file-name])
          current-file-content (get-in db [:connection-setup :credentials :current-file-content])
 
-         ;; Adiciona os campos atuais se estiverem preenchidos
          db-with-current (cond-> db
                            (and (not (empty? current-env-key))
                                 (not (empty? current-env-value)))
@@ -40,7 +37,6 @@
                            (update-in [:connection-setup :credentials :configuration-files]
                                       #(conj (or % []) {:key current-file-name :value current-file-content})))
 
-         ;; Processa o payload com os dados atualizados
          payload (process-form/process-payload db-with-current)]
      {:fx [[:dispatch [:connections->create-connection payload]]
            [:dispatch-later {:ms 500

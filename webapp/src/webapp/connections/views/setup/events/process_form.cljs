@@ -14,7 +14,7 @@
     "application" "application"))
 
 (defn tags-array->map
-  "Converte um array de tags [{:key k :value v}] para um map {k v}"
+  "Convert an array of tags [{:key k :value v}] to a map {k v}"
   [tags]
   (reduce (fn [acc {:keys [key value]}]
             (assoc acc key (or value "")))
@@ -36,13 +36,8 @@
         access-modes (get-in config [:access-modes])
         guardrails (get-in db [:connection-setup :config :guardrails])
         jira-template-id (get-in db [:connection-setup :config :jira-template-id])
-
-        ;; Mapeamento do tipo da UI para o tipo da API
         api-type (get-api-connection-type ui-type)
-
-        ;; Processamento de credenciais baseado no tipo
         all-env-vars (cond
-                              ;; Para bancos de dados
                        (= api-type "database")
                        (let [database-credentials (get-in db [:connection-setup :database-credentials])
                              credentials-as-env-vars (mapv (fn [[k v]]
@@ -51,14 +46,12 @@
                                                            (seq database-credentials))]
                          (concat credentials-as-env-vars env-vars))
 
-                              ;; Para TCP
                        (= connection-subtype "tcp")
                        (let [network-credentials (get-in db [:connection-setup :network-credentials])
                              tcp-env-vars [{:key "HOST" :value (:host network-credentials)}
                                            {:key "PORT" :value (:port network-credentials)}]]
                          (concat tcp-env-vars env-vars))
 
-                              ;; Caso padrão
                        :else env-vars)
 
         secret (clj->js
@@ -71,7 +64,6 @@
         jira-template-id-processed (when jira-template-id
                                      (get jira-template-id "value"))
 
-        ;; Garante valores padrão para os access modes
         default-access-modes {:runbooks true :native true :web true}
         effective-access-modes (merge default-access-modes access-modes)
 
@@ -115,7 +107,7 @@
       js/decodeURIComponent))
 
 (defn process-connection-secret
-  "Processa os valores secret da conexão de base64 para string"
+  "Process the secret values of the connection from base64 to string"
   [secret secret-type]
   (let [secret-start-name (if (= secret-type "envvar")
                             "envvar:"
@@ -131,7 +123,7 @@
                secret)))
 
 (defn process-connection-envvars
-  "Processa os valores secret da conexão de base64 para string"
+  "Process the secret values of the connection from base64 to string"
   [secret secret-type]
   (let [secret-start-name (if (= secret-type "envvar")
                             "envvar:"
@@ -162,13 +154,13 @@
                  "label" name})))))
 
 (defn extract-network-credentials
-  "Extrai HOST e PORT dos secrets para network credentials"
+  "Retrieves HOST and PORT from secrets for network credentials"
   [credentials]
   {:host (get credentials "host")
    :port (get credentials "port")})
 
 (defn process-connection-for-update
-  "Processa uma conexão existente para o formato usado no formulário de atualização"
+  "Process an existing connection for the format used in the update form"
   [connection guardrails-list jira-templates-list]
   (let [credentials (process-connection-secret (:secret connection) "envvar")
         network-credentials (when (and (= (:type connection) "application")

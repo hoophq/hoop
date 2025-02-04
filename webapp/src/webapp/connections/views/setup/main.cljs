@@ -18,7 +18,7 @@
                      "database" [database/main form-type]
                      "server" [server/main form-type]
                      "network" [network/main form-type]
-                     [type-selector/main])]
+                     [type-selector/main form-type])]
         :footer-props {:form-type form-type
                        :next-hidden? true
                        :hide-footer? (boolean @connection-type)}}])))

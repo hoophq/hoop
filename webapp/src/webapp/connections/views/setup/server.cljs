@@ -111,11 +111,9 @@
       (when (= connection-subtype "ssh")
         [credentials-step])
 
-     ;; Se for Console, mostra os outros passos em sequência
       (when (= connection-subtype "console")
         [application-type-step])
 
-        ;; Sistema Operacional
       (when (and app-type (not os-type))
         [operating-system-step])]))
 
@@ -156,7 +154,6 @@
                                          "Confirm")
                     :installation "Done"
                     "Next")
-       ;; Só habilitar o Next quando todos os campos necessários estiverem preenchidos
        :next-disabled? (case current-step
                          :credentials (or (not connection-subtype)
                                           (and (= connection-subtype "console")
@@ -165,11 +162,11 @@
                          nil)
        :on-click (fn []
                    (when-not (= current-step :installation)
-                    (let [form (.getElementById js/document
-                                                (if (= current-step :credentials)
-                                                  "credentials-form"
-                                                  "additional-config-form"))]
-                      (.reportValidity form))))
+                     (let [form (.getElementById js/document
+                                                 (if (= current-step :credentials)
+                                                   "credentials-form"
+                                                   "additional-config-form"))]
+                       (.reportValidity form))))
        :on-next (case current-step
                   :additional-config (if (= connection-subtype "console")
                                        #(rf/dispatch [:connection-setup/next-step :installation])

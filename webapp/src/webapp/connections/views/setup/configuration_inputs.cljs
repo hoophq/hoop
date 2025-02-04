@@ -12,7 +12,6 @@
 (defn valid-posix? [value]
   (boolean (re-matches #"[A-Za-z][A-Za-z0-9_]*" value)))
 
-;; Para as environment variables
 (defn parse-env-key [e]
   (let [new-value (-> e .-target .-value)
         upper-value (str/upper-case new-value)
@@ -29,7 +28,6 @@
       (valid-posix? new-value)
       (rf/dispatch [:connection-setup/update-env-current-key upper-value]))))
 
-;; Para os configuration files
 (defn parse-config-file-name [e]
   (let [new-value (-> e .-target .-value)
         upper-value (str/upper-case new-value)
@@ -46,7 +44,6 @@
       (valid-posix? new-value)
       (rf/dispatch [:connection-setup/update-config-file-name upper-value]))))
 
-;; Para environment variables já adicionadas
 (defn parse-existing-env-key [e index]
   (let [new-value (-> e .-target .-value)
         upper-value (str/upper-case new-value)
@@ -64,7 +61,6 @@
       (valid-posix? new-value)
       (rf/dispatch [:connection-setup/update-env-var index :key upper-value]))))
 
-;; Para configuration files já adicionados
 (defn parse-existing-config-file-name [e index]
   (let [new-value (-> e .-target .-value)
         upper-value (str/upper-case new-value)
@@ -108,7 +104,6 @@
              :placeholder "* * * *"
              :on-change #(rf/dispatch [:connection-setup/update-env-var idx :value (-> % .-target .-value)])}]])])
 
-     ;; Inputs atuais
      [:> Grid {:columns "2" :gap "2"}
       [forms/input
        {:label "Key"
@@ -122,7 +117,6 @@
         :value current-value
         :on-change #(rf/dispatch [:connection-setup/update-env-current-value (-> % .-target .-value)])}]]
 
-     ;; Botão de adicionar
      [:> Button
       {:size "2"
        :variant "soft"
@@ -140,7 +134,6 @@
      [:> Text {:size "2" :color "gray"}
       "Add values from your configuration file and use them as an environment variable in your connection."]
 
-     ;; Lista de arquivos existentes com inputs editáveis
      (when (seq @config-files)
        [:> Grid {:columns "1" :gap "4"}
         (for [[idx {:keys [key value]}] (map-indexed vector @config-files)]
@@ -157,7 +150,6 @@
              :value value
              :on-change #(rf/dispatch [:connection-setup/update-config-file idx :value (-> % .-target .-value)])}]])])
 
-     ;; Campos para novo arquivo
      [:> Grid {:columns "1" :gap "4"}
       [forms/input
        {:label "Name"

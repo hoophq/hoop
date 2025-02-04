@@ -5,7 +5,7 @@
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.connections.constants :as connection-constants]
-   [webapp.connections.views.create-update-connection.main :as create-update-connection]))
+   [webapp.connections.views.setup.connection-update-form :as connection-update-form]))
 
 (defn- get-template-connections
   [connections template-id]
@@ -36,7 +36,7 @@
                     :on-click (fn []
                                 (rf/dispatch [:plugins->get-my-plugins])
                                 (rf/dispatch [:connections->get-connection {:connection-name (:name connection)}])
-                                (rf/dispatch [:modal->open {:content [create-update-connection/main :update connection]}]))}
+                                (rf/dispatch [:navigate :edit-connection {} :connection-name (:name connection)]))}
          "Configure"]])]]])
 
 (defn template-item [{:keys [id name description connections on-configure total-items]}]

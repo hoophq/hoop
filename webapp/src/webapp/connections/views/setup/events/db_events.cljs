@@ -60,15 +60,19 @@
 (rf/reg-event-db
  :connection-setup/toggle-database-schema
  (fn [db [_]]
-   (let [current-value (get-in db [:connection-setup :config :database-schema])]
-     (assoc-in db [:connection-setup :config :database-schema]
-               (if (nil? current-value) true (not current-value))))))
+   (let [current-value (get-in db [:connection-setup :config :database-schema])
+         effective-value (if (nil? current-value)
+                           true
+                           (not current-value))]
+     (assoc-in db [:connection-setup :config :database-schema] (not effective-value)))))
 
 (rf/reg-event-db
  :connection-setup/toggle-access-mode
  (fn [db [_ mode]]
    (let [current-value (get-in db [:connection-setup :config :access-modes mode])
-         effective-value (if (nil? current-value) true current-value)]
+         effective-value (if (nil? current-value)
+                           true
+                           current-value)]
      (assoc-in db [:connection-setup :config :access-modes mode] (not effective-value)))))
 
 ;; Basic form events
@@ -113,10 +117,8 @@
      (if (and (not (empty? current-key))
               (not (empty? current-value)))
        (-> db
-           ;; Adiciona a nova variável
            (update-in [:connection-setup :credentials :environment-variables]
                       #(conj (or % []) {:key current-key :value current-value}))
-           ;; Limpa os inputs atuais
            (assoc-in [:connection-setup :credentials :current-key] "")
            (assoc-in [:connection-setup :credentials :current-value] ""))
        db))))
@@ -160,10 +162,8 @@
      (if (and (not (empty? current-name))
               (not (empty? current-content)))
        (-> db
-           ;; Adiciona o novo arquivo
            (update-in [:connection-setup :credentials :configuration-files]
                       #(conj (or % []) {:key current-name :value current-content}))
-           ;; Limpa os inputs atuais
            (assoc-in [:connection-setup :credentials :current-file-name] "")
            (assoc-in [:connection-setup :credentials :current-file-content] ""))
        db))))
@@ -199,7 +199,6 @@
  :connection-setup/add-tag
  (fn [db [_ key value]]
    (let [current-tags (get-in db [:connection-setup :tags] [])
-         ;; Checa se a key já existe
          exists? (some #(= (:key %) key) current-tags)]
      (if exists?
        db
@@ -215,5 +214,4 @@
 (rf/reg-event-db
  :connection-setup/set-jira-template-id
  (fn [db [_ jira-template-id]]
-   (println jira-template-id)
    (assoc-in db [:connection-setup :config :jira-template-id] jira-template-id)))

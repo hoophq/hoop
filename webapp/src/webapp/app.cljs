@@ -23,7 +23,6 @@
             [webapp.components.snackbar :as snackbar]
             [webapp.config :as config]
             [webapp.connections.views.connection-list :as connections]
-            [webapp.connections.views.create-update-connection.main :as create-update-connection]
             [webapp.connections.views.setup.main :as connection-setup]
             [webapp.dashboard.main :as dashboard]
             [webapp.guardrails.main :as guardrails]
@@ -94,7 +93,7 @@
         token (.get url-params "token")
         error (.get url-params "error")
         redirect-after-auth (.getItem js/localStorage "redirect-after-auth")
-        destiny (if error :login-hoop :home)]
+        destiny (if error :login-hoop :onboarding)]
     (.removeItem js/localStorage "login_error")
     (when error (.setItem js/localStorage "login_error" error))
     (.setItem js/localStorage "jwt-token" token)

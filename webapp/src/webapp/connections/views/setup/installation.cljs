@@ -3,7 +3,6 @@
    ["@radix-ui/themes" :refer [Box Heading Text]]
    [re-frame.core :as rf]
    [webapp.components.code-snippet :as code-snippet]
-   [webapp.connections.views.setup.headers :as headers]
    [clojure.string :as cs]))
 
 (def command-dictionary
@@ -16,12 +15,18 @@
   (let [connection-name @(rf/subscribe [:connection-setup/name])
         app-type @(rf/subscribe [:connection-setup/app-type])
         config @(rf/subscribe [:connection-setup/config])
+
         review-groups (when (:review config)
                         (map #(get % "value") (:review-groups config)))
         review-command (when (seq review-groups)
-                         (str " --review " (cs/join "," review-groups)))]
+                         (str " --review " (cs/join "," review-groups)))
+        data-masking-fields (when (:data-masking config)
+                              (map #(get % "value") (:data-masking-types config)))
+        data-masking-command (when (seq data-masking-fields)
+                               (str " --data-masking " (cs/join "," data-masking-fields)))]
     (str "hoop run --name " connection-name
          (when review-command review-command)
+         (when data-masking-command data-masking-command)
          " " (get command-dictionary app-type))))
 
 (defn main []

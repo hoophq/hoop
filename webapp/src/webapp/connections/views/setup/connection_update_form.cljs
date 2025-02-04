@@ -53,7 +53,7 @@
                           (.preventDefault e)
                           (let [form (.getElementById js/document "credentials-form")]
                             (when form
-                              (.reportValidity form) ; Força a validação e mostra os erros
+                              (.reportValidity form)
                               (reset! credentials-valid? (.checkValidity form))))
 
                           (if @credentials-valid?
@@ -75,7 +75,6 @@
           (if (:loading @connection)
             [loading-view]
             (when (:data @connection)
-                   ;; Faz a validação do form quando os dados são carregados
               (when (and (not @initialized?)
                          (:data @connection))
                 (let [processed-connection (helpers/process-connection-for-update
@@ -84,7 +83,7 @@
                                             (:data @jira-templates-list))]
                   (rf/dispatch [:connection-setup/initialize-state processed-connection])
                   (reset! initialized? true)
-                  (js/setTimeout check-form-validity! 100))) ; Pequeno delay para garantir que o form está montado
+                  (js/setTimeout check-form-validity! 100)))
 
               [page-wrapper/main
                {:children

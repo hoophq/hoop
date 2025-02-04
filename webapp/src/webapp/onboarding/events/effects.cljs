@@ -6,8 +6,6 @@
  (fn [{:keys [db]} _]
    (let [user (get-in db [:users->current-user :data])
          connections (get-in db [:connections :results])]
-     (println (:admin? user))
-     (println connections)
      (cond
        ;; If not admin or has connections, redirect to home
        (or (not (:admin? user))

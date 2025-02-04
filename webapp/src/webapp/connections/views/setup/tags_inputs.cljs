@@ -34,7 +34,6 @@
                :type "password"
                :disabled true}]])])
 
-       ;; Inputs para nova tag
        [:> Grid {:columns "2" :gap "2"}
         [forms/input
          {:label "Key"
@@ -51,7 +50,6 @@
           :not-margin-bottom? true
           :on-change #(reset! current-value (-> % .-target .-value))}]]
 
-       ;; Botão de adicionar
        [:> Button {:size "2"
                    :variant "soft"
                    :type "button"

@@ -9,8 +9,7 @@
             [webapp.components.loaders :as loaders]
             [webapp.components.searchbox :as searchbox]
             [webapp.connections.constants :as connection-constants]
-            [webapp.config :as config]
-            [webapp.connections.views.create-update-connection.main :as create-update-connection]))
+            [webapp.config :as config]))
 
 (defn empty-list-view []
   [:div {:class "pt-x-large"}
@@ -174,12 +173,10 @@
                      [:> DropdownMenu.Content
                       (when (and (-> @user :data :admin?)
                                  (not (= (:managed_by connection) "hoopagent")))
-                        [:> DropdownMenu.Item {:on-click (fn []
-                                                           (rf/dispatch [:plugins->get-my-plugins])
-
-                                                           (rf/dispatch [:navigate :edit-connection {} :connection-name (:name connection)])
-
-                                                           #_(rf/dispatch [:modal->open {:content [create-update-connection/main :update connection]}]))}
+                        [:> DropdownMenu.Item {:on-click
+                                               (fn []
+                                                 (rf/dispatch [:plugins->get-my-plugins])
+                                                 (rf/dispatch [:navigate :edit-connection {} :connection-name (:name connection)]))}
                          "Configure"])
                       [:> DropdownMenu.Item {:color "red"
                                              :on-click (fn []

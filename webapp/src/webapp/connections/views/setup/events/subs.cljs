@@ -65,7 +65,7 @@
  :connection-setup/database-schema
  :<- [:connection-setup/config]
  (fn [config]
-   (:database-schema config false)))
+   (:database-schema config true)))
 
 (rf/reg-sub
  :connection-setup/access-modes
