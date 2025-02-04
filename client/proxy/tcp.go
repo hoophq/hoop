@@ -22,7 +22,7 @@ type TCPServer struct {
 
 func NewTCPServer(listenPort string, client pb.ClientTransport, packetType pb.PacketType) *TCPServer {
 	listenAddr := defaultListenAddr(defaultTCPPort)
-	if listenAddr != "" {
+	if listenPort != "" {
 		listenAddr = defaultListenAddr(listenPort)
 	}
 	return &TCPServer{

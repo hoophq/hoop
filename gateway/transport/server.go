@@ -99,9 +99,8 @@ func (s *Server) PreConnect(ctx context.Context, req *pb.PreConnectRequest) (*pb
 	orgCtx := pgrest.NewOrgContext(orgID)
 	resp := connectionrequests.AgentPreConnect(orgCtx, agentID, req)
 	if resp.Message != "" {
-		err := fmt.Errorf("failed processing pre-connect, org=%v, agent=%v, reason=%v", orgID, agentName, err)
-		log.Warn(err)
-		sentry.CaptureException(err)
+		log.Warnf("failed processing pre-connect, org=%v, agent=%v, reason=%v",
+			orgID, agentName, resp.Message)
 	}
 	connectionstatus.SetOnlinePreConnect(pgrest.NewOrgContext(orgID), streamtypes.NewStreamID(agentID, req.Name))
 	return resp, nil
