@@ -4,11 +4,12 @@
    [webapp.config :as config]
    [webapp.connections.views.setup.stepper :as stepper]))
 
-(defn setup-header []
+(defn setup-header [form-type]
   [:> Box {:class "space-y-6"}
-   [:> Box
-    [:img {:src (str config/webapp-url "/images/hoop-branding/PNG/hoop-symbol_black@4x.png")
-           :class "w-16 mx-auto py-4"}]]
+   (when (= form-type :onboarding)
+     [:> Box
+      [:img {:src (str config/webapp-url "/images/hoop-branding/PNG/hoop-symbol_black@4x.png")
+             :class "w-16 mx-auto py-4"}]])
    [:> Box
     [:> Heading {:as "h1" :align "center" :size "6" :mb "2" :weight "bold" :class "text-[--gray-12]"}
      "Setup a new connection"]
@@ -17,11 +18,12 @@
 
    [stepper/main]])
 
-(defn console-all-done-header []
+(defn console-all-done-header [form-type]
   [:> Box {:class "space-y-6"}
-   [:> Box
-    [:img {:src (str config/webapp-url "/images/hoop-branding/PNG/hoop-symbol_black@4x.png")
-           :class "w-16 mx-auto py-4"}]]
+   (when (= form-type :onboarding)
+     [:> Box
+      [:img {:src (str config/webapp-url "/images/hoop-branding/PNG/hoop-symbol_black@4x.png")
+             :class "w-16 mx-auto py-4"}]])
    [:> Box
     [:> Heading {:as "h1" :align "center" :size "6" :mb "2" :weight "bold" :class "text-[--gray-12]"}
      "All done, just one more step"]

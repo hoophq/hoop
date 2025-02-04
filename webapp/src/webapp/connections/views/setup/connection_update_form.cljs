@@ -119,7 +119,8 @@
                       :form-type :update}]]]]]
 
                 :footer-props
-                {:back-text "Back"
+                {:form-type :update
+                 :back-text "Back"
                  :next-text "Save"
                  :on-back #(js/history.back)
                  :on-next (fn []

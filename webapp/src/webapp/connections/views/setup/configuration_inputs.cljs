@@ -1,9 +1,86 @@
 (ns webapp.connections.views.setup.configuration-inputs
   (:require
-   ["@radix-ui/themes" :refer [Box Button Flex Grid Heading Text]]
+   ["@radix-ui/themes" :refer [Box Button Grid Heading Text]]
    ["lucide-react" :refer [Plus]]
+   [clojure.string :as str]
    [re-frame.core :as rf]
    [webapp.components.forms :as forms]))
+
+(defn valid-first-char? [value]
+  (boolean (re-matches #"[A-Za-z]" value)))
+
+(defn valid-posix? [value]
+  (boolean (re-matches #"[A-Za-z][A-Za-z0-9_]*" value)))
+
+;; Para as environment variables
+(defn parse-env-key [e]
+  (let [new-value (-> e .-target .-value)
+        upper-value (str/upper-case new-value)
+        current-value (get-in @(rf/subscribe [:connection-setup/form-data])
+                              [:credentials :current-key])]
+    (cond
+      (empty? new-value)
+      (rf/dispatch [:connection-setup/update-env-current-key ""])
+
+      (empty? current-value)
+      (when (valid-first-char? new-value)
+        (rf/dispatch [:connection-setup/update-env-current-key upper-value]))
+
+      (valid-posix? new-value)
+      (rf/dispatch [:connection-setup/update-env-current-key upper-value]))))
+
+;; Para os configuration files
+(defn parse-config-file-name [e]
+  (let [new-value (-> e .-target .-value)
+        upper-value (str/upper-case new-value)
+        current-value (get-in @(rf/subscribe [:connection-setup/form-data])
+                              [:credentials :current-file-name])]
+    (cond
+      (empty? new-value)
+      (rf/dispatch [:connection-setup/update-config-file-name ""])
+
+      (empty? current-value)
+      (when (valid-first-char? new-value)
+        (rf/dispatch [:connection-setup/update-config-file-name upper-value]))
+
+      (valid-posix? new-value)
+      (rf/dispatch [:connection-setup/update-config-file-name upper-value]))))
+
+;; Para environment variables já adicionadas
+(defn parse-existing-env-key [e index]
+  (let [new-value (-> e .-target .-value)
+        upper-value (str/upper-case new-value)
+        env-vars (get-in @(rf/subscribe [:connection-setup/form-data])
+                         [:credentials :environment-variables])
+        current-value (get-in env-vars [index :key])]
+    (cond
+      (empty? new-value)
+      (rf/dispatch [:connection-setup/update-env-var index :key ""])
+
+      (empty? current-value)
+      (when (valid-first-char? new-value)
+        (rf/dispatch [:connection-setup/update-env-var index :key upper-value]))
+
+      (valid-posix? new-value)
+      (rf/dispatch [:connection-setup/update-env-var index :key upper-value]))))
+
+;; Para configuration files já adicionados
+(defn parse-existing-config-file-name [e index]
+  (let [new-value (-> e .-target .-value)
+        upper-value (str/upper-case new-value)
+        config-files (get-in @(rf/subscribe [:connection-setup/form-data])
+                             [:credentials :configuration-files])
+        current-value (get-in config-files [index :key])]
+    (cond
+      (empty? new-value)
+      (rf/dispatch [:connection-setup/update-config-file index :key ""])
+
+      (empty? current-value)
+      (when (valid-first-char? new-value)
+        (rf/dispatch [:connection-setup/update-config-file index :key upper-value]))
+
+      (valid-posix? new-value)
+      (rf/dispatch [:connection-setup/update-config-file index :key upper-value]))))
 
 (defn environment-variables-section []
   (let [current-key @(rf/subscribe [:connection-setup/env-current-key])
@@ -23,7 +100,7 @@
             {:label "Key"
              :value key
              :placeholder "API_KEY"
-             :on-change #(rf/dispatch [:connection-setup/update-env-var idx :key (-> % .-target .-value)])}]
+             :on-change #(parse-existing-env-key % idx)}]
            [forms/input
             {:label "Value"
              :value value
@@ -37,7 +114,7 @@
        {:label "Key"
         :placeholder "API_KEY"
         :value current-key
-        :on-change #(rf/dispatch [:connection-setup/update-env-current-key (-> % .-target .-value)])}]
+        :on-change #(parse-env-key %)}]
       [forms/input
        {:label "Value"
         :placeholder "* * * *"
@@ -73,7 +150,7 @@
             {:label "Name"
              :value key
              :placeholder "e.g. kubeconfig"
-             :on-change #(rf/dispatch [:connection-setup/update-config-file idx :key (-> % .-target .-value)])}]
+             :on-change #(parse-existing-config-file-name % idx)}]
            [forms/textarea
             {:label "Content"
              :id (str "config-file-" idx)
@@ -86,8 +163,7 @@
        {:label "Name"
         :placeholder "e.g. kubeconfig"
         :value @current-name
-        :on-change #(rf/dispatch [:connection-setup/update-config-file-name
-                                  (-> % .-target .-value)])}]
+        :on-change #(parse-config-file-name %)}]
       [forms/textarea
        {:label "Content"
         :id "config-file-initial"

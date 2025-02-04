@@ -41,7 +41,7 @@
 (rf/reg-sub
  :connection-setup/command
  (fn [db]
-   (get-in db [:connection-setup :command] false)))
+   (get-in db [:connection-setup :command] "")))
 
 ;; Configuration and features
 (rf/reg-sub

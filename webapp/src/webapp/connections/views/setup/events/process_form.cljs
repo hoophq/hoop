@@ -21,15 +21,6 @@
           {}
           tags))
 
-(defn tags-map->array
-  "Converte um map de tags {k v} para um array [{:key k :value v}]"
-  [tags]
-  (mapv (fn [[k v]]
-          {:key k :value v})
-        tags))
-
-
-
 (defn process-payload [db]
   (let [ui-type (get-in db [:connection-setup :type])
         connection-subtype (get-in db [:connection-setup :subtype])
@@ -43,8 +34,8 @@
         review-groups (get-in config [:review-groups])
         data-masking-types (get-in config [:data-masking-types])
         access-modes (get-in config [:access-modes])
-        guardrails (get-in db [:connection-setup :guardrails])
-        jira-template-id (get-in db [:connection-setup :jira-template-id])
+        guardrails (get-in db [:connection-setup :config :guardrails])
+        jira-template-id (get-in db [:connection-setup :config :jira-template-id])
 
         ;; Mapeamento do tipo da UI para o tipo da API
         api-type (get-api-connection-type ui-type)
@@ -77,10 +68,15 @@
                    (helpers/config->json config-files "filesystem:"))))
 
         guardrails-processed (mapv #(get % "value") guardrails)
+        jira-template-id-processed (when jira-template-id
+                                     (get jira-template-id "value"))
 
         ;; Garante valores padrão para os access modes
         default-access-modes {:runbooks true :native true :web true}
         effective-access-modes (merge default-access-modes access-modes)
+
+        default-database-schema true
+        effective-database-schema (or (:database-schema config) default-database-schema)
 
         command-string (get-in db [:connection-setup :command])
         payload {:type api-type
@@ -95,9 +91,11 @@
                             (when-not (empty? command-string)
                               (or (re-seq #"'.*?'|\".*?\"|\S+|\t" command-string) [])))
                  :guardrail_rules guardrails-processed
-                 :jira_issue_template_id jira-template-id
+                 :jira_issue_template_id jira-template-id-processed
                  :access_schema (or (when (= api-type "database")
-                                      (if (:database-schema config) "enabled" "disabled"))
+                                      (if effective-database-schema
+                                        "enabled"
+                                        "disabled"))
                                     "disabled")
                  :access_mode_runbooks (if (:runbooks effective-access-modes) "enabled" "disabled")
                  :access_mode_exec (if (:web effective-access-modes) "enabled" "disabled")

@@ -73,7 +73,7 @@
 
     [page-wrapper/main
      {:children [:> Box {:class "max-w-[600px] mx-auto p-6 space-y-7"}
-                 [headers/setup-header]
+                 [headers/setup-header form-type]
 
                  (case current-step
                    :credentials [credentials-step selected-subtype]

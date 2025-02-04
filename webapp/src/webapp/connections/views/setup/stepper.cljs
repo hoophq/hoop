@@ -1,6 +1,7 @@
 (ns webapp.connections.views.setup.stepper
   (:require
    ["@radix-ui/themes" :refer [Badge Box Flex Separator Text]]
+   ["lucide-react" :refer [Check]]
    [re-frame.core :as rf]))
 
 (def steps
@@ -38,6 +39,12 @@
              :else "text-[--gray-a11] opacity-50")}
    title])
 
+(defn- step-checkmark [{:keys [completed?]}]
+  (when completed?
+    [:> Check
+     {:size 16
+      :class "text-[--gray-a11]"}]))
+
 (defn main []
   (let [current-step (rf/subscribe [:connection-setup/current-step])]
     (fn []
@@ -61,7 +68,12 @@
                                               (= id :resource))
                                          (and (= @current-step :additional-config)
                                               (or (= id :resource)
-                                                  (= id :credentials))))}]]
+                                                  (= id :credentials))))}]
+            [step-checkmark {:completed? (or (and (= @current-step :credentials)
+                                                  (= id :resource))
+                                             (and (= @current-step :additional-config)
+                                                  (or (= id :resource)
+                                                      (= id :credentials))))}]]
 
         ;; Separator (except for last item)
            (when-not (= id :additional-config)

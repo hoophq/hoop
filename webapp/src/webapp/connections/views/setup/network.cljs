@@ -11,7 +11,7 @@
 
 (def network-types
   [{:id "tcp" :title "TCP"}
-   {:id "http" :title "HTTP (soon)" :disabled true}])
+   {:id "http" :title "HTTP (Coming soon)" :disabled true}])
 
 (defn credentials-form []
   (let [credentials @(rf/subscribe [:connection-setup/network-credentials])]
@@ -29,6 +29,7 @@
         {:label "Host"
          :placeholder "e.g. localhost"
          :required true
+         :type "password"
          :value (get credentials :host "")
          :on-change #(rf/dispatch [:connection-setup/update-network-host
                                    (-> % .-target .-value)])}]
@@ -36,8 +37,9 @@
      ;; Port input
        [forms/input
         {:label "Port"
-         :placeholder "e.g. username"
+         :placeholder "e.g. 4040"
          :required true
+         :type "password"
          :value (get credentials :port "")
          :on-change #(rf/dispatch [:connection-setup/update-network-port
                                    (-> % .-target .-value)])}]
@@ -76,7 +78,7 @@
 
     [page-wrapper/main
      {:children [:> Box {:class "max-w-[600px] mx-auto p-6 space-y-7"}
-                 [headers/setup-header]
+                 [headers/setup-header form-type]
 
                  (case current-step
                    :resource [resource-step]

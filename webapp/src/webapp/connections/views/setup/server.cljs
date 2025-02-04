@@ -132,7 +132,7 @@
       [:> Box {:class "max-w-[600px] mx-auto p-6 space-y-7"}
        (if (= current-step :installation)
          [headers/console-all-done-header]
-         [headers/setup-header])
+         [headers/setup-header form-type])
 
        (case current-step
          :credentials [resource-step]
@@ -164,11 +164,12 @@
                                                    (not os-type))))
                          nil)
        :on-click (fn []
-                   (let [form (.getElementById js/document
-                                               (if (= current-step :credentials)
-                                                 "credentials-form"
-                                                 "additional-config-form"))]
-                     (.reportValidity form)))
+                   (when-not (= current-step :installation)
+                    (let [form (.getElementById js/document
+                                                (if (= current-step :credentials)
+                                                  "credentials-form"
+                                                  "additional-config-form"))]
+                      (.reportValidity form))))
        :on-next (case current-step
                   :additional-config (if (= connection-subtype "console")
                                        #(rf/dispatch [:connection-setup/next-step :installation])
@@ -180,7 +181,9 @@
                                                (let [event (js/Event. "submit" #js {:bubbles true :cancelable true})]
                                                  (.dispatchEvent form event))
                                                (js/console.warn "Invalid form!"))))))
-                  :installation #(rf/dispatch [:connection-setup/submit])
+                  :installation (fn []
+                                  (rf/dispatch [:navigate :connections])
+                                  (rf/dispatch [:connection-setup/initialize-state nil]))
                   (fn []
                     (let [form (.getElementById js/document "credentials-form")]
                       (when form

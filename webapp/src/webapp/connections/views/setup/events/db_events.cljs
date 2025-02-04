@@ -60,7 +60,9 @@
 (rf/reg-event-db
  :connection-setup/toggle-database-schema
  (fn [db [_]]
-   (update-in db [:connection-setup :config :database-schema] not)))
+   (let [current-value (get-in db [:connection-setup :config :database-schema])]
+     (assoc-in db [:connection-setup :config :database-schema]
+               (if (nil? current-value) true (not current-value))))))
 
 (rf/reg-event-db
  :connection-setup/toggle-access-mode
@@ -185,7 +187,7 @@
                         (assoc-in [:connection-setup :subtype] nil))
        :installation (-> db
                          (assoc-in [:connection-setup :current-step] :additional-config))
-       db))))
+       (.back js/history -1)))))
 
 (rf/reg-event-db
  :connection-setup/set-agent-id
@@ -207,10 +209,11 @@
 (rf/reg-event-db
  :connection-setup/set-guardrails
  (fn [db [_ values]]
-   (assoc-in db [:connection-setup :guardrails] values)))
+   (assoc-in db [:connection-setup :config :guardrails] values)))
 
 ;; Jira events
 (rf/reg-event-db
  :connection-setup/set-jira-template-id
  (fn [db [_ jira-template-id]]
-   (assoc-in db [:connection-setup :jira-template-id] jira-template-id)))
+   (println jira-template-id)
+   (assoc-in db [:connection-setup :config :jira-template-id] jira-template-id)))

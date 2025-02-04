@@ -15,7 +15,9 @@
                     middle-button]}]
   (let [sidebar-desktop (rf/subscribe [:sidebar-desktop])]
     (when-not hide-footer?
-      [:> Flex {:justify "center"
+      [:> Flex {:justify (if (= form-type :update)
+                           "start"
+                           "center")
                 :class (str "fixed bottom-0 bg-white border-t border-[--gray-a6] px-7 py-4 "
                             (if (= form-type :onboarding)
                               "w-full"
@@ -24,7 +26,9 @@
                                 "left-[72px] right-0")))}       ; When sidebar is closed
        [:> Flex {:justify "between"
                  :align "center"
-                 :class "w-[600px] px-6"}
+                 :class (if (= form-type :update)
+                          "w-full px-6"
+                          "w-[600px] px-6")}
         [:> Button {:size "2"
                     :variant "soft"
                     :color "gray"
