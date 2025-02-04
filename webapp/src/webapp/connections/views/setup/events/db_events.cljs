@@ -168,6 +168,7 @@
  (fn [db [_]]
    (let [current-step (get-in db [:connection-setup :current-step])]
      (case current-step
+       :resource (.back js/history -1)
        :additional-config (assoc-in db [:connection-setup :current-step] :credentials)
        :credentials (-> db
                         (assoc-in [:connection-setup :current-step] :resource)

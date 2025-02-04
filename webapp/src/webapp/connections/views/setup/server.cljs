@@ -120,7 +120,7 @@
         [operating-system-step])]))
 
 
-(defn main []
+(defn main [form-type]
   (let [connection-subtype @(rf/subscribe [:connection-setup/connection-subtype])
         current-step @(rf/subscribe [:connection-setup/current-step])
         app-type @(rf/subscribe [:connection-setup/app-type])
@@ -145,7 +145,8 @@
          [resource-step])]
 
       :footer-props
-      {:next-text (case current-step
+      {:form-type form-type
+       :next-text (case current-step
                     :credentials (if (= connection-subtype "ssh")
                                    "Next: Configuration"
                                    "Next")
@@ -183,7 +184,7 @@
                     (let [form (.getElementById js/document "credentials-form")]
                       (when form
                         (if (and (.reportValidity form)
-                                agent-id)
+                                 agent-id)
                           (let [event (js/Event. "submit" #js {:bubbles true :cancelable true})]
                             (.dispatchEvent form event))
                           (js/console.warn "Invalid form!"))))))}}]))

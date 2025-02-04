@@ -30,6 +30,9 @@
             [webapp.guardrails.create-update-form :as guardrail-create-update]
             [webapp.jira-templates.main :as jira-templates]
             [webapp.jira-templates.create-update-form :as jira-templates-create-update]
+            [webapp.onboarding.main :as onboarding]
+            [webapp.onboarding.setup :as onboarding-setup]
+            [webapp.onboarding.setup-resource :as onboarding-setup-resource]
             [webapp.events]
             [webapp.events.license]
             [webapp.events.agents]
@@ -62,6 +65,9 @@
             [webapp.connections.views.setup.events.effects]
             [webapp.connections.views.setup.events.db-events]
             [webapp.connections.views.setup.events.subs]
+
+            [webapp.onboarding.events.effects]
+
             [webapp.organization.users.main :as org-users]
             [webapp.plugins.views.manage-plugin :as manage-plugin]
             [webapp.plugins.views.plugins-configurations :as plugins-configurations]
@@ -172,9 +178,13 @@
   [layout :application-hoop [home/home-panel-hoop]])
 
 (defmethod routes/panels :onboarding-panel []
-  [layout :application-hoop
-   [:div {:class "bg-gray-1 p-radix-7 min-h-full h-max"}
-    [connection-setup/main :create {}]]])
+  [layout :auth [onboarding/main]])
+
+(defmethod routes/panels :onboarding-setup-panel []
+  [layout :auth [onboarding-setup/main]])
+
+(defmethod routes/panels :onboarding-setup-resource-panel []
+  [layout :auth [onboarding-setup-resource/main]])
 
 (defmethod routes/panels :upgrade-plan-panel []
   (rf/dispatch [:destroy-page-loader])

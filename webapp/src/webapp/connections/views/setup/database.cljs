@@ -66,7 +66,7 @@
 
        [agent-selector/main]])]])
 
-(defn main []
+(defn main [form-type]
   (let [selected-subtype @(rf/subscribe [:connection-setup/connection-subtype])
         current-step @(rf/subscribe [:connection-setup/current-step])
         agent-id @(rf/subscribe [:connection-setup/agent-id])]
@@ -83,7 +83,8 @@
                                         :submit-fn #(rf/dispatch [:connection-setup/submit])}]
                    nil)]
 
-      :footer-props {:next-text (if (= current-step :additional-config)
+      :footer-props {:form-type form-type
+                     :next-text (if (= current-step :additional-config)
                                   "Confirm"
                                   "Next: Configuration")
                      :on-click (fn []

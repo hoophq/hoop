@@ -43,7 +43,9 @@
                  [["/reviews/" :review-id] :reviews-plugin-details]
                  [["/manage/" :plugin-name] :manage-plugin]]
      "/organization" [["/users" :users]]
-     "/onboarding" :onboarding
+     "/onboarding" [["" :onboarding]
+                    ["/setup" :onboarding-setup]
+                    ["/setup/resource" :onboarding-setup-resource]]
      "/register" :register-hoop
      "/reviews" :reviews-plugin
      "/runbooks" [["" :runbooks-plugin]

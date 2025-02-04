@@ -68,7 +68,7 @@
         ;; Environment Variables Section
         #_[configuration-inputs/environment-variables-section]])]))
 
-(defn main []
+(defn main [form-type]
   (let [network-type @(rf/subscribe [:connection-setup/network-type])
         current-step @(rf/subscribe [:connection-setup/current-step])
         credentials @(rf/subscribe [:connection-setup/network-credentials])
@@ -86,7 +86,8 @@
                    [resource-step])]
 
                      ;; Footer
-      :footer-props {:next-text (if (= current-step :additional-config)
+      :footer-props {:form-type form-type
+                     :next-text (if (= current-step :additional-config)
                                   "Confirm"
                                   "Next: Configuration")
                      :next-disabled? (case current-step
