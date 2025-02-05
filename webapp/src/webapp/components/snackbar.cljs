@@ -16,7 +16,7 @@
                      "font-light text-gray-100 leading-5 rounded-lg shadow-lg animate-appear-right whitespace-normal")}
    [:figure {:class "flex-shrink-0 w-6 mr-regular"}
     [:img {:src (level-icon (:level state))}]]
-   [:div.flex-shrink
+   [:div.flex-shrink {:class "overflow-auto"}
     [:small {:class "whitespace-normal"}
      (:text state)]]
    [:figure.flex-shrink-0.w-6.ml-regular.cursor-pointer

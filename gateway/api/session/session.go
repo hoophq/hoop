@@ -64,6 +64,9 @@ type SessionPostBody struct {
 //	@Failure				400,422,500	{object}	openapi.HTTPError
 //	@Router					/sessions [post]
 func Post(c *gin.Context) {
+	sid := uuid.NewString()
+	apiroutes.SetSidSpanAttr(c, sid)
+
 	ctx := storagev2.ParseContext(c)
 	var req SessionPostBody
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -93,16 +96,13 @@ func Post(c *gin.Context) {
 		return
 	}
 
-	sessionID := uuid.NewString()
 	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
 	if userAgent == "webapp.core" {
 		userAgent = "webapp.editor.exec"
 	}
-	log := log.With("sid", sessionID, "user", ctx.UserEmail)
-	apiroutes.SetSidSpanAttr(c, sessionID)
-
+	log := log.With("sid", sid, "user", ctx.UserEmail)
 	newSession := models.Session{
-		ID:                   sessionID,
+		ID:                   sid,
 		OrgID:                ctx.OrgID,
 		Labels:               req.Labels,
 		Metadata:             req.Metadata,
@@ -120,16 +120,10 @@ func Post(c *gin.Context) {
 		CreatedAt:            time.Now().UTC(),
 		EndSession:           nil,
 	}
-	if err := models.UpsertSession(newSession); err != nil {
-		// if err := pgsession.New().Upsert(ctx, newSession); err != nil {
-		log.Errorf("failed creating session, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating session"})
-		return
-	}
 
 	connRules, err := models.GetConnectionGuardRailRules(ctx.OrgID, conn.Name)
 	if err != nil {
-		log.Errorf("failed obtaining guard rail rules from connection , err=%v", err)
+		log.Errorf("failed obtaining guard rail rules from connection, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining guard rail rules"})
 		return
 	}
@@ -138,9 +132,11 @@ func Post(c *gin.Context) {
 		err = guardrails.Validate("input", connRules.GuardRailInputRules, []byte(req.Script))
 		switch err.(type) {
 		case *guardrails.ErrRuleMatch:
+			// persist session to audit this attempt
+			_ = models.UpsertSession(newSession)
 			encErr := base64.StdEncoding.EncodeToString([]byte(err.Error()))
 			if err := models.UpdateSessionEventStream(models.SessionDone{
-				ID:         sessionID,
+				ID:         sid,
 				OrgID:      ctx.OrgID,
 				EndSession: func() *time.Time { t := time.Now().UTC(); return &t }(),
 				BlobStream: []byte(fmt.Sprintf(`[[0, "e", %q]]`, encErr)),
@@ -150,7 +146,7 @@ func Post(c *gin.Context) {
 				log.Errorf("unable to update session, err=%v", err)
 			}
 			c.JSON(http.StatusOK, clientexec.Response{
-				SessionID:         sessionID,
+				SessionID:         sid,
 				Output:            err.Error(),
 				OutputStatus:      "failed",
 				ExitCode:          internalExitCode,
@@ -198,19 +194,19 @@ func Post(c *gin.Context) {
 				"jira_issue_key": resp.IssueKey,
 				"jira_issue_url": resp.Links.Agent,
 			}
-			if err := models.UpsertSession(newSession); err != nil {
-				log.Errorf("failed updating session with jira issue (%s), reason=%v", resp.IssueKey, err)
-				c.JSON(http.StatusInternalServerError, gin.H{
-					"message": fmt.Sprintf("failed updating session with jira issue %s", resp.IssueKey)})
-				return
-			}
 		}
+	}
+
+	if err := models.UpsertSession(newSession); err != nil {
+		log.Errorf("failed creating session, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating session"})
+		return
 	}
 
 	// TODO: refactor to use response from openapi package
 	client, err := clientexec.New(&clientexec.Options{
 		OrgID:          ctx.GetOrgID(),
-		SessionID:      sessionID,
+		SessionID:      sid,
 		ConnectionName: conn.Name,
 		BearerToken:    getAccessToken(c),
 		UserAgent:      userAgent,
@@ -239,7 +235,7 @@ func Post(c *gin.Context) {
 	case <-timeoutCtx.Done():
 		client.Close()
 		log.Infof("runexec timeout (50s), it will return async")
-		c.JSON(http.StatusAccepted, clientexec.NewTimeoutResponse(sessionID))
+		c.JSON(http.StatusAccepted, clientexec.NewTimeoutResponse(sid))
 	}
 }
 

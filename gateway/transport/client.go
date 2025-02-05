@@ -17,6 +17,7 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
+	pluginslack "github.com/hoophq/hoop/gateway/transport/plugins/slack"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
 	"google.golang.org/grpc/codes"
@@ -272,6 +273,15 @@ func clientArgsDecode(spec map[string][]byte) []string {
 }
 
 func (s *Server) ReviewStatusChange(rev *types.Review) {
+	if rev.Status == types.ReviewStatusApproved {
+		pluginslack.SendApprovedMessage(
+			rev.OrgId,
+			rev.ReviewOwner.SlackID,
+			rev.Session,
+			s.IDProvider.ApiURL,
+		)
+	}
+
 	proxyStream := streamclient.GetProxyStream(rev.Session)
 	if proxyStream != nil {
 		payload := []byte(rev.Input)

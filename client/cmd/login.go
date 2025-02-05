@@ -150,7 +150,7 @@ func doLogin(apiURL, tlsCA string) (string, error) {
 	} else {
 		log.Debugf("trying opening browser with url=%v", loginUrl)
 		if err := openBrowser(loginUrl); err != nil {
-			fmt.Printf("Browser failed to open. \nPlease click on the link below:\n\n%s\n\n", loginUrl)
+			fmt.Printf("Browser failed to open. \nClick on the link below:\n\n%s\n\n", loginUrl)
 		}
 	}
 	defer callbackHttpServer.Shutdown(context.Background())
