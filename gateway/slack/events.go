@@ -95,7 +95,7 @@ func (s *SlackService) processSlashCommandRequest(ev socketmode.Event) {
 	log.Infof("received slash command, slackid=%v, domain=%s, command=%v",
 		cmd.UserID, cmd.TeamDomain, cmd.Command)
 
-	message := fmt.Sprintf("Please click on this link to integrate your slack user with your user hoop.\n"+
+	message := fmt.Sprintf("Visit the link to associate your Slack user with Hoop.\n"+
 		"%s/slack/user/new/%s", s.apiURL, cmd.UserID)
 
 	_, _, err := s.apiClient.PostMessage(cmd.UserID, slack.MsgOptionText(message, false))

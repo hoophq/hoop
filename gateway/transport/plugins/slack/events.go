@@ -35,7 +35,7 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 	if slackApprover == nil {
 		log.With("sid", sid).Infof("approver is not allowed")
 		_ = ev.ss.PostEphemeralMessage(ev.msg, fmt.Sprintf("You are not registered. "+
-			"Please click on this link to integrate your slack user with your user hoop.\n"+
+			"Visit the link to associate your Slack user with Hoop.\n"+
 			"%s/slack/user/new/%s", p.idpProvider.ApiURL, ev.msg.SlackID))
 		return
 	}
@@ -98,9 +98,9 @@ func (p *slackPlugin) performExecReview(ev *event, ctx *storagev2.Context, statu
 		err = ev.ss.UpdateMessage(ev.msg, isApproved)
 
 		if isApproved {
-			postErr := ev.ss.PostMessage(rev.ReviewOwner.SlackID, fmt.Sprintf("Your session is ready to be executed.\n"+
-				"Please follow this link to execute it: "+
-				"%s/sessions/%s", p.idpProvider.ApiURL, sid))
+			postErr := ev.ss.PostMessage(rev.ReviewOwner.SlackID,
+				fmt.Sprintf("Your session is ready to be executed.\n"+
+					"Follow this link to execute it: %s/sessions/%s", p.idpProvider.ApiURL, sid))
 			log.With("sid", sid).Infof("review is approved, sent message to owner, slackid=%v, success=%v, error=%v",
 				rev.ReviewOwner.SlackID, postErr == nil, postErr)
 		}
@@ -132,9 +132,9 @@ func (p *slackPlugin) performJitReview(ev *event, ctx *storagev2.Context, status
 		err = ev.ss.UpdateMessage(ev.msg, isApproved)
 
 		if isApproved {
-			ev.ss.PostMessage(j.ReviewOwner.SlackID, fmt.Sprintf("Your interactive session is ready to be executed.\n"+
-				"Please follow this link to execute it: "+
-				"%s/sessions/%s", p.idpProvider.ApiURL, ev.msg.SessionID))
+			ev.ss.PostMessage(j.ReviewOwner.SlackID,
+				fmt.Sprintf("Your interactive session is open.\n"+
+					"Follow this link to see the details: %s/sessions/%s", p.idpProvider.ApiURL, ev.msg.SessionID))
 		}
 
 		log.With("sid", sid).Infof("jit review id=%s, status=%v", ev.msg.ID, j.Status)

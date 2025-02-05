@@ -173,22 +173,14 @@ func (p *slackPlugin) OnUpdate(oldState, newState *types.Plugin) error {
 	return nil
 }
 
-// SendApprovedMessage sends a direct message to the owner of the review
-// if it's approved
-// func SendApprovedMessage(ctx *user.Context, rev *types.Review) {
-// 	if rev.Status != types.ReviewStatusApproved {
-// 		return
-// 	}
-// 	if slacksvc := getSlackServiceInstance(ctx.Org.Id); slacksvc != nil {
-// 		if rev.ReviewOwner.SlackID != "" {
-// 			log.Debugf("sending direct slack message to email=%v, slackid=%v",
-// 				rev.ReviewOwner.Email, rev.ReviewOwner.SlackID)
-// 			if err := slacksvc.SendDirectMessage(rev.Session, rev.ReviewOwner.SlackID); err != nil {
-// 				log.Warn(err)
-// 			}
-// 		}
-// 	}
-// }
+// SendApprovedMessage sends a message informing the session is ready
+func SendApprovedMessage(orgID, slackID, sid, apiURL string) {
+	if slacksvc := getSlackServiceInstance(orgID); slacksvc != nil {
+		msg := fmt.Sprintf("Your session is ready.\nFollow this link to see the details: %s/sessions/%s",
+			apiURL, sid)
+		_ = slacksvc.PostMessage(slackID, msg)
+	}
+}
 
 func (p *slackPlugin) OnConnect(pctx plugintypes.Context) error { return nil }
 func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {

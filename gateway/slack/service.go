@@ -304,24 +304,15 @@ func (s *SlackService) UpdateMessageStatus(msg *MessageReviewResponse, message s
 	return err
 }
 
-func (s *SlackService) SendDirectMessage(sessionID, slackID string) error {
-	channel, _, _, err := s.apiClient.OpenConversation(&slack.OpenConversationParameters{Users: []string{slackID}})
+// PostMessage sends a message to a channel or direct message to a user
+func (s *SlackService) PostMessage(slackOrChannelID, message string) error {
+	_, timestamp, err := s.apiClient.PostMessage(slackOrChannelID, slack.MsgOptionText(message, false))
 	if err != nil {
-		return fmt.Errorf("failed opening conversation with user %v, err=%v", slackID, err)
-	}
-	msg := fmt.Sprintf("✅ Session <%s/sessions/%s|%s> approved, visit the link to execute it.", s.apiURL, sessionID, sessionID)
-	_, _, err = s.apiClient.PostMessage(channel.ID, slack.MsgOptionText(msg, false))
-	return err
-}
-
-func (s *SlackService) PostMessage(SlackID string, message string) error {
-	channelID, timestamp, err := s.apiClient.PostMessage(SlackID, slack.MsgOptionText(message, false))
-	if err != nil {
-		log.Errorf("failed post message to the channel %s at %v, err=%v", channelID, timestamp, err)
+		log.Warnf("failed post message to %q at %v, err=%v", slackOrChannelID, timestamp, err)
 		return err
 	}
 
-	log.Infof("message successfully sent to the channel %s at %s", channelID, timestamp)
+	log.Infof("message successfully sent to %q at %s", slackOrChannelID, timestamp)
 	return nil
 }
 
