@@ -421,7 +421,6 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 
 	// Jira Integration routes
 	r.GET("/integrations/jira",
-		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apijiraintegration.Get)
 	r.POST("/integrations/jira",

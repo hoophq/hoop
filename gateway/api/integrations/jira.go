@@ -34,6 +34,13 @@ func Get(c *gin.Context) {
 		c.JSON(http.StatusOK, nil)
 		return
 	}
+
+	// Created as a temporary solution so that non-admin users can check if the integration is active
+	// TODO: Implement a more robust solution so that non-admin users can check if the integration is active
+	if !ctx.IsAdmin() {
+		dbJiraIntegration.APIToken = ""
+	}
+
 	c.JSON(http.StatusOK, openapi.JiraIntegration{
 		ID:        dbJiraIntegration.ID,
 		OrgID:     dbJiraIntegration.OrgID,
