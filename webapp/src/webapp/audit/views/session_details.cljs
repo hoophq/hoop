@@ -210,6 +210,7 @@
             connection-name (:connection session)
             start-date (:start_date session)
             end-date (:end_date session)
+            verb (:verb session)
             has-large-payload? (:has-large-payload? @session-details)
             disabled-download (-> @gateway-info :data :disable_sessions_download)
             review-groups (-> session :review :review_groups_data)
@@ -251,10 +252,11 @@
 
               (when (and in-progress? (not ready?))
                 [:div {:class "flex gap-small lg:justify-end items-center h-full lg:ml-large"}
-                 [:div {:class (str "rounded-full w-1.5 h-1.5 bg-green-500")}]
+                 [:div {:class "rounded-full w-1.5 h-1.5 bg-green-500"}]
                  [:span {:class "text-xs text-gray-500"}
                   "This session has pending items"]])
-              (when ready?
+              (when (and ready?
+                         (= (:verb session) "exec"))
                 [:div {:class "flex gap-regular justify-end items-center mx-large"}
                  [:span {:class "text-xs text-gray-500"}
                   "This session is ready to be executed"]
