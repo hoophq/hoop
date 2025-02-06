@@ -18,14 +18,26 @@ import (
 
 var (
 	isOrgMultiTenant = os.Getenv("ORG_MULTI_TENANT") == "true"
-	vinfo            = version.Get()
-	serverInfoData   = openapi.ServerInfo{
+	hasRedactCreds   = func() bool {
+		dlpProvider := os.Getenv("DLP_PROVIDER")
+		switch dlpProvider {
+		case "presidio":
+			return isEnvSet("MSPRESIDIO_ANALYZER_URL") && isEnvSet("MSPRESIDIO_ANONYMIZER_URL")
+		case "gcp":
+			return isEnvSet("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+		default:
+			return false
+		}
+	}()
+	vinfo          = version.Get()
+	serverInfoData = openapi.ServerInfo{
 		Version:                 vinfo.Version,
 		Commit:                  vinfo.GitCommit,
 		LogLevel:                os.Getenv("LOG_LEVEL"),
 		GoDebug:                 os.Getenv("GODEBUG"),
 		AdminUsername:           os.Getenv("ADMIN_USERNAME"),
-		HasRedactCredentials:    isEnvSet("GOOGLE_APPLICATION_CREDENTIALS_JSON"),
+		RedactProvider:          os.Getenv("DLP_PROVIDER"),
+		HasRedactCredentials:    hasRedactCreds,
 		HasWebhookAppKey:        isEnvSet("WEBHOOK_APPKEY"),
 		HasIDPAudience:          isEnvSet("IDP_AUDIENCE"),
 		HasIDPCustomScopes:      isEnvSet("IDP_CUSTOM_SCOPES"),
