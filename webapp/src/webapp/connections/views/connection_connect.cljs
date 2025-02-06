@@ -202,7 +202,7 @@
        " Download Desktop App"]
       [:> Button {:size "2"
                   :on-click (fn []
-                              (rf/dispatch [:connections->start-connect {:name (:connection_name connection-data)}]))}
+                              (rf/dispatch [:connections->start-connect (:connection_name connection-data)]))}
        "Try again"]]]))
 
 (defn main [connection-name]

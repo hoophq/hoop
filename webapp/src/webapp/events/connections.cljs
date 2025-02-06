@@ -91,7 +91,7 @@
  :connections->connection-connect
  (fn
    [{:keys [db]} [_ connection]]
-   (let [body {:connection_name (:name connection)
+   (let [body {:connection_name connection
                :port "8999"
                :access_duration 1800000000000}]
      {:db (assoc-in db [:connections->connection-connected] {:data body :status :loading})
@@ -105,12 +105,12 @@
                                       (if (= (:status res) "disconnected")
                                         (do
                                           (rf/dispatch [:show-snackbar {:level :error
-                                                                        :text (str "The connection " (:name connection) " is not able "
+                                                                        :text (str "The connection " connection " is not able "
                                                                                    "to be connected, please contact your admin.")}])
                                           (rf/dispatch [:modal->close]))
                                         (do
                                           (rf/dispatch [:show-snackbar {:level :success
-                                                                        :text (str "The connection " (:name connection) " is connected!")}])
+                                                                        :text (str "The connection " connection " is connected!")}])
                                           (rf/dispatch [::connections->connection-connected-success res]))))}]]]})))
 
 (rf/reg-event-fx
