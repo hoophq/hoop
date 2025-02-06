@@ -491,7 +491,7 @@ func GetUserInfo(c *gin.Context) {
 //
 //	@Summary		Patch User Slack ID
 //	@Description	Patch own user's slack id
-//	@Tags			User Management
+//	@Tags				User Management
 //	@Param			request	body	openapi.UserPatchSlackID	true	"The request body resource"
 //	@Produce		json
 //	@Success		200			{object}	openapi.User

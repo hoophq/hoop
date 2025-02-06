@@ -26,7 +26,7 @@ var (
 //
 //	@Summary		Create Org Key
 //	@Description	Create the organization key to run with `hoop run` command line.
-//	@Tags			Core
+//	@Tags			Organization Management
 //	@Produce		json
 //	@Success		201		{object}	openapi.OrgKeyResponse
 //	@Failure		409,500	{object}	openapi.HTTPError
@@ -55,7 +55,7 @@ func CreateAgentKey(c *gin.Context) {
 //
 //	@Summary		Get Org Key
 //	@Description	Get the organization key to run with `hoop run` command line
-//	@Tags			Core
+//	@Tags			Organization Management
 //	@Produce		json
 //	@Success		200		{object}	openapi.OrgKeyResponse
 //	@Failure		404,500	{object}	openapi.HTTPError
@@ -88,7 +88,7 @@ func GetAgentKey(c *gin.Context) {
 //
 //	@Summary		Revoke Org Key
 //	@Description	Remove organization key
-//	@Tags			Core
+//	@Tags			Organization Management
 //	@Produce		json
 //	@Success		204
 //	@Failure		500	{object}	openapi.HTTPError

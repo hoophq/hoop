@@ -31,7 +31,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Agents"
                 ],
                 "summary": "List Agent Keys",
                 "responses": {
@@ -61,7 +61,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Agents"
                 ],
                 "summary": "Create Agent Key",
                 "parameters": [
@@ -116,7 +116,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Agents"
                 ],
                 "summary": "Delete Agent Key",
                 "parameters": [
@@ -218,7 +218,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Connections"
                 ],
                 "summary": "List Connections",
                 "parameters": [
@@ -291,7 +291,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Connections"
                 ],
                 "summary": "Create Connection",
                 "parameters": [
@@ -346,7 +346,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Connections"
                 ],
                 "summary": "Get Connection",
                 "parameters": [
@@ -388,7 +388,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Connections"
                 ],
                 "summary": "Update Connection",
                 "parameters": [
@@ -450,7 +450,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Connections"
                 ],
                 "summary": "List Databases",
                 "parameters": [
@@ -497,7 +497,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Connections"
                 ],
                 "summary": "Get Database Schema",
                 "parameters": [
@@ -551,7 +551,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Connections"
                 ],
                 "summary": "Delete Connection",
                 "parameters": [
@@ -618,7 +618,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Guard Rails"
                 ],
                 "summary": "List Guard Rail Rules",
                 "responses": {
@@ -648,7 +648,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Guard Rails"
                 ],
                 "summary": "Create Guard Rail Rules",
                 "parameters": [
@@ -700,7 +700,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Guard Rails"
                 ],
                 "summary": "Get Guard Rail Rules",
                 "parameters": [
@@ -748,7 +748,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Guard Rails"
                 ],
                 "summary": "Update Guard Rail Rules",
                 "parameters": [
@@ -789,7 +789,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Guard Rails"
                 ],
                 "summary": "Delete a Rule",
                 "parameters": [
@@ -1363,7 +1363,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Organization Management"
                 ],
                 "summary": "Get Org Key",
                 "responses": {
@@ -1393,7 +1393,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Organization Management"
                 ],
                 "summary": "Create Org Key",
                 "responses": {
@@ -1423,7 +1423,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Organization Management"
                 ],
                 "summary": "Revoke Org Key",
                 "responses": {
@@ -1507,7 +1507,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Plugins"
                 ],
                 "summary": "List Plugins",
                 "responses": {
@@ -1537,7 +1537,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Plugins"
                 ],
                 "summary": "Create Plugin",
                 "parameters": [
@@ -1589,7 +1589,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Runbooks"
                 ],
                 "summary": "Runbook Exec",
                 "parameters": [
@@ -1657,7 +1657,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Runbooks"
                 ],
                 "summary": "List Runbooks By Connection",
                 "parameters": [
@@ -1710,7 +1710,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Runbooks"
                 ],
                 "summary": "List Runbooks",
                 "responses": {
@@ -1748,7 +1748,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Plugins"
                 ],
                 "summary": "Get Plugin",
                 "parameters": [
@@ -1790,7 +1790,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Plugins"
                 ],
                 "summary": "Update Plugin",
                 "parameters": [
@@ -1849,7 +1849,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Plugins"
                 ],
                 "summary": "Update Plugin Config",
                 "parameters": [
@@ -2086,7 +2086,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Reports"
                 ],
                 "summary": "Session Reports",
                 "parameters": [
@@ -2182,7 +2182,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Reviews"
                 ],
                 "summary": "List Reviews",
                 "responses": {
@@ -2211,7 +2211,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Reviews"
                 ],
                 "summary": "Get Review",
                 "parameters": [
@@ -2253,7 +2253,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Reviews"
                 ],
                 "summary": "Update Review Status",
                 "parameters": [
@@ -2479,7 +2479,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Sessions"
                 ],
                 "summary": "List Sessions",
                 "parameters": [
@@ -2552,7 +2552,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Sessions"
                 ],
                 "summary": "Exec",
                 "parameters": [
@@ -2607,7 +2607,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Sessions"
                 ],
                 "summary": "Get Session",
                 "parameters": [
@@ -2715,7 +2715,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Sessions"
                 ],
                 "summary": "Download Session",
                 "parameters": [
@@ -2834,7 +2834,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Sessions"
                 ],
                 "summary": "Update Session Metadata",
                 "parameters": [
@@ -2883,7 +2883,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Reviews"
                 ],
                 "summary": "Update Review Status By Sid",
                 "parameters": [
@@ -5464,6 +5464,30 @@ const docTemplate = `{
         {
             "description": "Proxy manager endpoints controls how clients connect via gRPC in the gateway. These endpoints are meant to be used when a client is initialized via ` + "`" + `hoop proxy-manager` + "`" + `.",
             "name": "Proxy Manager"
+        },
+        {
+            "name": "Connections"
+        },
+        {
+            "name": "Agents"
+        },
+        {
+            "name": "Runbooks"
+        },
+        {
+            "name": "Guard Rails"
+        },
+        {
+            "name": "Reviews"
+        },
+        {
+            "name": "Sessions"
+        },
+        {
+            "name": "Organization Management"
+        },
+        {
+            "name": "Reports"
         }
     ]
 }`

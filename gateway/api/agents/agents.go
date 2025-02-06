@@ -28,7 +28,7 @@ type AgentRequest struct {
 //	@Summary		Create Agent Key
 //	@Description	Create an agent key in a DSN format: `grpc(s)://<name>:<key>@<grpc-host>:<grpc-port>?mode=standard|embedded`.
 //	@Description	This key is used to deploy agents and expose internal resources from your infra-structure
-//	@Tags			Core
+//	@Tags			Agents
 //	@Accept			json
 //	@Produce		json
 //	@Param			request	body		openapi.AgentRequest	true	"The request body resource"
@@ -107,7 +107,7 @@ func Post(c *gin.Context) {
 //
 //	@Summary		Delete Agent Key
 //	@Description	Remove an agent key. It will invalidate a running agent
-//	@Tags			Core
+//	@Tags			Agents
 //	@Produce		json
 //	@Param			nameOrID	path	string	true	"The name or ID of the resource"
 //	@Success		204
@@ -140,7 +140,7 @@ func Delete(c *gin.Context) {
 //
 //	@Summary		List Agent Keys
 //	@Description	List all agent keys
-//	@Tags			Core
+//	@Tags			Agents
 //	@Produce		json
 //	@Success		200	{array}		openapi.AgentListResponse
 //	@Failure		500	{object}	openapi.HTTPError

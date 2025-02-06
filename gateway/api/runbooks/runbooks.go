@@ -32,7 +32,7 @@ import (
 //
 //	@Summary		List Runbooks
 //	@Description	List all Runbooks
-//	@Tags			Core
+//	@Tags			Runbooks
 //	@Produce		json
 //	@Success		200			{object}	openapi.RunbookList
 //	@Failure		404,422,500	{object}	openapi.HTTPError
@@ -74,7 +74,7 @@ func List(c *gin.Context) {
 //
 //	@Summary		List Runbooks By Connection
 //	@Description	List Runbooks templates by connection
-//	@Tags			Core
+//	@Tags			Runbooks
 //	@Produce		json
 //	@Param			name			path		string	true	"The name of the connection"
 //	@Success		200				{object}	openapi.RunbookList
@@ -131,7 +131,7 @@ func ListByConnection(c *gin.Context) {
 //
 //	@Summary		Runbook Exec
 //	@Description	Start a execution using a Runbook as input
-//	@Tags			Core
+//	@Tags			Runbooks
 //	@Accept			json
 //	@Produce		json
 //	@Param			name			path		string					true	"The name of the connection"

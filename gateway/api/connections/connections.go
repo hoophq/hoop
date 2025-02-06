@@ -35,7 +35,7 @@ type Review struct {
 //
 //	@Summary				Create Connection
 //	@description.markdown	api-connection
-//	@Tags					Core
+//	@Tags					Connections
 //	@Accept					json
 //	@Produce				json
 //	@Param					request			body		openapi.Connection	true	"The request body resource"
@@ -124,7 +124,7 @@ func Post(c *gin.Context) {
 //
 //	@Summary		Update Connection
 //	@Description	Update a connection resource.
-//	@Tags			Core
+//	@Tags			Connections
 //	@Accept			json
 //	@Produce		json
 //	@Param			nameOrID		path		string				true	"The name or ID of the resource"
@@ -226,7 +226,7 @@ func Put(c *gin.Context) {
 //
 //	@Summary		Delete Connection
 //	@Description	Delete a connection resource.
-//	@Tags			Core
+//	@Tags			Connections
 //	@Produce		json
 //	@Param			name	path	string	true	"The name of the resource"
 //	@Success		204
@@ -257,7 +257,7 @@ func Delete(c *gin.Context) {
 //
 //	@Summary		List Connections
 //	@Description	List all connections.
-//	@Tags			Core
+//	@Tags			Connections
 //	@Produce		json
 //	@Param			agent_id	query		string	false	"Filter by agent id"					Format(uuid)
 //	@Param			tags		query		string	false	"Filter by tags, separated by comma"	Format(string)
@@ -325,7 +325,7 @@ func List(c *gin.Context) {
 //
 //	@Summary		Get Connection
 //	@Description	Get resource by name or id
-//	@Tags			Core
+//	@Tags			Connections
 //	@Param			nameOrID	path	string	true	"Name or UUID of the connection"
 //	@Produce		json
 //	@Success		200		{object}	openapi.Connection
@@ -401,7 +401,7 @@ func FetchByName(ctx pgrest.Context, connectionName string) (*models.Connection,
 //
 //	@Summary		List Databases
 //	@Description	List all available databases for a database connection
-//	@Tags			Core
+//	@Tags			Connections
 //	@Produce		json
 //	@Param			nameOrID	path		string	true	"Name or UUID of the connection"
 //	@Success		200			{object}	openapi.ConnectionDatabaseListResponse
@@ -532,7 +532,7 @@ JSON.stringify(result);`
 //
 //	@Summary		Get Database Schema
 //	@Description	Get detailed schema information including tables, views, columns and indexes
-//	@Tags			Core
+//	@Tags			Connections
 //	@Produce		json
 //	@Param			nameOrID	path		string	true	"Name or UUID of the connection"
 //	@Param			database	path		string	true	"Name of the database"

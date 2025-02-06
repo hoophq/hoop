@@ -55,7 +55,7 @@ type SessionPostBody struct {
 //
 //	@Summary				Exec
 //	@Description.markdown	run-exec
-//	@Tags					Core
+//	@Tags					Sessions
 //	@Accept					json
 //	@Produce				json
 //	@Param					request		body		openapi.ExecRequest		true	"The request body resource"
@@ -258,7 +258,7 @@ func CoerceMetadataFields(metadata map[string]any) error {
 //
 //	@Summary		List Sessions
 //	@Description	List session resources
-//	@Tags			Core
+//	@Tags			Sessions
 //	@Produce		json
 //	@Param			user		query		string	false	"Filter by user's subject id"
 //	@Param			connection	query		string	false	"Filter by connection's name"
@@ -348,7 +348,7 @@ func List(c *gin.Context) {
 //
 //	@Summary				Get Session
 //	@Description.markdown	get-session-by-id
-//	@Tags					Core
+//	@Tags					Sessions
 //	@Param					extension	query	openapi.SessionGetByIDParams	false	"-"
 //	@Param					session_id	path	string							true	"The id of the resource"
 //	@Produce				json
@@ -464,7 +464,7 @@ func Get(c *gin.Context) {
 //
 //	@Summary		Download Session
 //	@Description	Download session by id
-//	@Tags			Core
+//	@Tags			Sessions
 //	@Produce		octet-stream,json
 //	@Param			session_id	path		string	true	"The id of the resource"
 //	@Success		200			{string}	string
@@ -577,7 +577,7 @@ func DownloadSession(c *gin.Context) {
 // PatchMetadata
 //
 //	@Summary	Update Session Metadata
-//	@Tags		Core
+//	@Tags		Sessions
 //	@Accept		json
 //	@Produce	json
 //	@Param		request	body	openapi.SessionUpdateMetadataRequest	true	"The request body resource"

@@ -16,7 +16,7 @@ import (
 //
 //	@Summary		Create Guard Rail Rules
 //	@Description	Create Guard Rail Rules
-//	@Tags			Core
+//	@Tags			Guard Rails
 //	@Accept			json
 //	@Produce		json
 //	@Param			request		body		openapi.GuardRailRuleRequest	true	"The request body resource"
@@ -64,7 +64,7 @@ func Post(c *gin.Context) {
 //
 //	@Summary		Update Guard Rail Rules
 //	@Description	Update Guard Rail Rules
-//	@Tags			Core
+//	@Tags			Guard Rails
 //	@Accept			json
 //	@Produce		json
 //	@Param			request	body		openapi.GuardRailRuleRequest	true	"The request body resource"
@@ -111,7 +111,7 @@ func Put(c *gin.Context) {
 //
 //	@Summary		List Guard Rail Rules
 //	@Description	List Guard Rail Rules
-//	@Tags			Core
+//	@Tags			Guard Rails
 //	@Accept			json
 //	@Produce		json
 //	@Success		200	{array}		openapi.GuardRailRuleResponse
@@ -144,7 +144,7 @@ func List(c *gin.Context) {
 //
 //	@Summary		Get Guard Rail Rules
 //	@Description	Get Guard Rail Rules
-//	@Tags			Core
+//	@Tags			Guard Rails
 //	@Accept			json
 //	@Produce		json
 //	@Param			id			path		string	true	"The unique identifier of the resource"
@@ -177,7 +177,7 @@ func Get(c *gin.Context) {
 //
 //	@Summary		Delete a Rule
 //	@Description	Delete a Guard Rail Rule resource.
-//	@Tags			Core
+//	@Tags			Guard Rails
 //	@Produce		json
 //	@Param			id	path	string	true	"The unique identifier of the resource"
 //	@Success		204
