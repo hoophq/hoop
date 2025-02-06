@@ -14,7 +14,7 @@ import (
 //	@Summary		Session Reports
 //	@Description	The report payload groups sessions by info types and by a custom field (`group_by`) provided by the client.
 //	@Description	The items returns data containing the sum of redact fields performed by a given info type aggregated by the `group_by` attribute.
-//	@Tags			Core
+//	@Tags			Reports
 //	@Produce		json
 //	@Param			params	query		openapi.SessionReportParams	false	"-"
 //	@Success		200		{object}	openapi.SessionReport

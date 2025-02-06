@@ -85,6 +85,22 @@ type Api struct {
 //	@tag.name	Proxy Manager
 //	@tag.description.markdown
 
+//  @tag.name Connections
+
+//  @tag.name Agents
+
+//  @tag.name Runbooks
+
+//  @tag.name Guard Rails
+
+//	@tag.name Reviews
+
+//  @tag.name Sessions
+
+//  @tag.name Organization Management
+
+//  @tag.name Reports
+
 // @securitydefinitions.oauth2.accessCode	OAuth2AccessCode
 // @tokenUrl								https://login.microsoftonline.com/d60ba6f0-ad5f-4917-aa19-f8d4241f8bc7/oauth2/v2.0/token
 // @authorizationUrl						https://login.microsoftonline.com/d60ba6f0-ad5f-4917-aa19-f8d4241f8bc7/oauth2/v2.0/authorize

@@ -36,7 +36,7 @@ type PluginRequest struct {
 //
 //	@Summary		Create Plugin
 //	@Description	Create Plugin resource
-//	@Tags			Core
+//	@Tags			Plugins
 //	@Accept			json
 //	@Produce		json
 //	@Param			request		body		openapi.Plugin	true	"The request body resource"
@@ -114,7 +114,7 @@ func Post(c *gin.Context) {
 //
 //	@Summary		Update Plugin
 //	@Description	Update Plugin resource. The `config` and `name` attributes are immutable for this endpoint.
-//	@Tags			Core
+//	@Tags			Plugins
 //	@Accept			json
 //	@Produce		json
 //	@Param			name		path		string			true	"The name of the resource"
@@ -170,7 +170,7 @@ func Put(c *gin.Context) {
 //
 //	@Summary		Update Plugin Config
 //	@Description	Update the Plugin resource top level configuration.
-//	@Tags			Core
+//	@Tags			Plugins
 //	@Accept			json
 //	@Produce		json
 //	@Param			name			path		string					true	"The name of the plugin"
@@ -235,7 +235,7 @@ func PutConfig(c *gin.Context) {
 //
 //	@Summary		Get Plugin
 //	@Description	Get a plugin resource by name
-//	@Tags			Core
+//	@Tags			Plugins
 //	@Produce		json
 //	@Param			name	path		string	true	"The name of the plugin"
 //	@Success		200		{object}	openapi.Plugin
@@ -263,7 +263,7 @@ func Get(c *gin.Context) {
 //
 //	@Summary		List Plugins
 //	@Description	List all Plugin resources
-//	@Tags			Core
+//	@Tags			Plugins
 //	@Produce		json
 //	@Success		200	{array}		openapi.Plugin
 //	@Failure		500	{object}	openapi.HTTPError
