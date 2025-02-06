@@ -38,7 +38,6 @@ Parameters:
     Description: '(REQUIRED) The certificate arn for the load balancer. Example: arn:aws:acm:<region>:<account-id>:certificate/<cert-id>'
     AllowedPattern: ^arn:aws:acm:.+
 
-  # Hoop Configuration
   AppPublicDNS:
     Type: String
     Description: '(REQUIRED) The public DNS of the App (HTTP and gRPC). It must match with the certificate'
@@ -48,6 +47,16 @@ Parameters:
     Type: String
     Description: |-
       (OPTIONAL) It defaults creating Cognito IDP. To use a custom, specify the configuration. Format: https://<idp-client-id>:<idp-client-secret>@<idp-host>?<options>
+
+  ImageId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Description: 'The AWS image to use, default to latest Amazon Linux (al2023)'
+    Default: '/aws/service/ami-amazon-linux-latest/al2023-ami-minimal-kernel-default-x86_64'
+
+  IngressRulesCidr:
+    Type: String
+    Description: 'The CIDR range to allow traffic to the Load Balancer (HTTP and gRPC).'
+    AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})'
 
 Mappings:
   DBInstanceTypes:
@@ -549,14 +558,13 @@ Resources:
           Arn: !GetAtt DefaultInstanceProfile.Arn
         InstanceType: !Ref AwsAppInstanceType
         SecurityGroupIds: [!GetAtt LaunchTemplateSecurityGroup.GroupId]
-        ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-minimal-kernel-default-x86_64}}'
+        ImageId: !Ref ImageId
         UserData:
           Fn::Base64: !Sub |
             #!/bin/bash
             yum update -y && yum install -y \
               aws-cfn-bootstrap \
-              amazon-ssm-agent \
-              https://github.com/microsoft/go-sqlcmd/releases/download/v1.6.0/sqlcmd-1.6.0-1.el7.x86_64.rpm
+              amazon-ssm-agent
             # force recreate
             echo "LATEST_HOOP_VERSION ${AppIDPURI} ${AppPublicDNS}" >/dev/null
             cfn-init -v --stack ${AWS::StackId} --resource LaunchTemplate --region ${AWS::Region}
@@ -756,11 +764,14 @@ Resources:
       - IpProtocol: tcp
         FromPort: 8443
         ToPort: 8443
-        CidrIp: '0.0.0.0/0'
+        CidrIp: !Ref IngressRulesCidr
       - IpProtocol: tcp
         FromPort: 443
         ToPort: 443
-        CidrIp: '0.0.0.0/0'
+        CidrIp: !Ref IngressRulesCidr
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: "-1"
       Tags:
       - Key: Name
         Value: !Sub ${AWS::StackName}-lb-sg
@@ -779,6 +790,9 @@ Resources:
         FromPort: 8010
         ToPort: 8010
         SourceSecurityGroupId: !Ref AppLBSecurityGroup
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: "-1"
       Tags:
       - Key: Name
         Value: !Sub ${AWS::StackName}-app-sg
@@ -793,6 +807,9 @@ Resources:
           FromPort: 5432
           ToPort: 5432
           SourceSecurityGroupId: !Ref LaunchTemplateSecurityGroup
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: "-1"
       Tags:
       - Key: Name
         Value: !Sub ${AWS::StackName}-appdb-sg
