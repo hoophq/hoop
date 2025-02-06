@@ -61,6 +61,7 @@
                  value
                  defaultValue
                  on-change
+                 on-blur
                  on-keyDown
                  on-blur
                  required

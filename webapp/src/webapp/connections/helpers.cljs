@@ -162,3 +162,17 @@
 
       (valid-posix? new-value)
       (reset! input-state upper-value))))
+
+(defn parse->posix-format-callback [e input-state callback]
+  (let [new-value (-> e .-target .-value)
+        upper-value (s/upper-case new-value)]
+    (cond
+      (empty? new-value)
+      (callback "")
+
+      (empty? input-state)
+      (when (valid-first-char? new-value)
+        (callback upper-value))
+
+      (valid-posix? new-value)
+      (callback upper-value))))

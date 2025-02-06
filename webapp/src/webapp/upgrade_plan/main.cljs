@@ -2,6 +2,7 @@
   (:require
    ["@radix-ui/themes" :refer [Avatar Box Button Flex Heading Text]]
    ["lucide-react" :refer [ListChecks MessagesSquare Sparkles]]
+   [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.button :as button]
    [webapp.config :as config]))
@@ -16,10 +17,11 @@
     [:> Text {:size "3" :class "text-[--gray-12]"}
      description]]])
 
-(defn main []
+(defn main [remove-back?]
   [:> Box {:class "bg-white relative overflow-hidden"}
-   [:> Box {:p "5"}
-    [button/HeaderBack]]
+   (when-not remove-back?
+     [:> Box {:p "5"}
+      [button/HeaderBack]])
 
    [:> Flex {:align "center" :justify "between" :gap "8" :p "9"}
     [:> Box {:class "w-2/3 xl:w-1/2 space-y-12 pr-0 2xl:pr-16"}
@@ -43,9 +45,11 @@
                 :description "Access priority support through Slack, Teams, or email, plus dedicated onboarding to accelerate your team experience."}]]
 
      [:> Button {:size "4"
-                 :on-click #(js/window.Intercom
-                             "showNewMessage"
-                             "I want to upgrade my current plan")}
+                 :on-click (fn []
+                             (rf/dispatch [:modal->close])
+                             (js/window.Intercom
+                              "showNewMessage"
+                              "I want to upgrade my current plan"))}
       "Request a demo"]]
 
     [:> Box {:class (str "mt-[--space-9] absolute top-1/2 -translate-y-1/2 right-0 w-1/2 h-auto "

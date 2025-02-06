@@ -24,7 +24,8 @@
      "/connections" [["" :connections]
                      ["/details" :connection-details]
                      ["/new" :create-connection]
-                     [["/connections/" :connection-type "/new"] :onboarding-create-connection]]
+                     [["/connections/" :connection-type "/new"] :onboarding-create-connection]
+                     [["/edit/" :connection-name] :edit-connection]]
      "/client" :editor-plugin
      "/dashboard" :dashboard
      "/guardrails" [["" :guardrails]
@@ -42,6 +43,9 @@
                  [["/reviews/" :review-id] :reviews-plugin-details]
                  [["/manage/" :plugin-name] :manage-plugin]]
      "/organization" [["/users" :users]]
+     "/onboarding" [["" :onboarding]
+                    ["/setup" :onboarding-setup]
+                    ["/setup/resource" :onboarding-setup-resource]]
      "/register" :register-hoop
      "/reviews" :reviews-plugin
      "/runbooks" [["" :runbooks-plugin]

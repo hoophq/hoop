@@ -62,6 +62,13 @@
          :isClearable false
          :onFocus #(scroll-to-bottom @container-ref)
          :menuPortalTarget (.-body js/document)
+         :theme (fn [theme]
+                  (clj->js
+                   (-> (js->clj theme :keywordize-keys true)
+                       (update :colors merge {:primary "#3358d4"
+                                              :primary25 "#d2deff"
+                                              :primary50 "#abbdf9"
+                                              :primary75 "#3e63dd"}))))
          :className "react-select-container"
          :classNamePrefix "react-select"
          :ref #(reset! container-ref %)
@@ -82,6 +89,13 @@
      :onChange on-change
      :options options
      :isClearable false
+     :theme (fn [theme]
+              (clj->js
+               (-> (js->clj theme :keywordize-keys true)
+                   (update :colors merge {:primary "#3358d4"
+                                          :primary25 "#d2deff"
+                                          :primary50 "#abbdf9"
+                                          :primary75 "#3e63dd"}))))
      :menuPortalTarget (.-body js/document)
      :className "react-select-container"
      :classNamePrefix "react-select"
@@ -125,7 +139,7 @@
                                     (.preventDefault event))
                             nil)
                           nil))]
-    [:div {:class "text-md"}
+    [:div {:class "text-sm"}
      [:div {:class "flex flex-col justify-center mb-1"}
       (when label
         [form-label label])
@@ -145,6 +159,13 @@
                    (on-change (js->clj value)))
        :onInputChange on-input-change
        :onKeyDown handleKeyDown
+       :theme (fn [theme]
+                (clj->js
+                 (-> (js->clj theme :keywordize-keys true)
+                     (update :colors merge {:primary "#3358d4"
+                                            :primary25 "#d2deff"
+                                            :primary50 "#abbdf9"
+                                            :primary75 "#3e63dd"}))))
        :isClearable true
        :className "react-select-container"
        :classNamePrefix "react-select"
@@ -174,6 +195,6 @@
                                             :primary75 "#3e63dd"}))))
        :isClearable clearable?
        :isSearchable searchble?
-       :className "basic-single"
-       :classNamePrefix "select"
+       :className "react-select-container"
+       :classNamePrefix "react-select"
        :styles styles}]]))

@@ -23,12 +23,15 @@
             [webapp.components.snackbar :as snackbar]
             [webapp.config :as config]
             [webapp.connections.views.connection-list :as connections]
-            [webapp.connections.views.create-update-connection.main :as create-update-connection]
+            [webapp.connections.views.setup.main :as connection-setup]
             [webapp.dashboard.main :as dashboard]
             [webapp.guardrails.main :as guardrails]
             [webapp.guardrails.create-update-form :as guardrail-create-update]
             [webapp.jira-templates.main :as jira-templates]
             [webapp.jira-templates.create-update-form :as jira-templates-create-update]
+            [webapp.onboarding.main :as onboarding]
+            [webapp.onboarding.setup :as onboarding-setup]
+            [webapp.onboarding.setup-resource :as onboarding-setup-resource]
             [webapp.events]
             [webapp.events.license]
             [webapp.events.agents]
@@ -58,6 +61,12 @@
             [webapp.events.users]
             [webapp.events.guardrails]
             [webapp.events.jira-templates]
+            [webapp.connections.views.setup.events.effects]
+            [webapp.connections.views.setup.events.db-events]
+            [webapp.connections.views.setup.events.subs]
+
+            [webapp.onboarding.events.effects]
+
             [webapp.organization.users.main :as org-users]
             [webapp.plugins.views.manage-plugin :as manage-plugin]
             [webapp.plugins.views.plugins-configurations :as plugins-configurations]
@@ -70,7 +79,8 @@
             [webapp.subs :as subs]
             [webapp.views.home :as home]
             [webapp.upgrade-plan.main :as upgrade-plan]
-            [webapp.webclient.panel :as webclient]))
+            [webapp.webclient.panel :as webclient]
+            [webapp.connections.views.setup.connection-update-form :as connection-update-form]))
 
 (when (= config/release-type "hoop-ui")
   (js/window.addEventListener "load" (rf/dispatch [:segment->load])))
@@ -83,7 +93,7 @@
         token (.get url-params "token")
         error (.get url-params "error")
         redirect-after-auth (.getItem js/localStorage "redirect-after-auth")
-        destiny (if error :login-hoop :home)]
+        destiny (if error :login-hoop :onboarding)]
     (.removeItem js/localStorage "login_error")
     (when error (.setItem js/localStorage "login_error" error))
     (.setItem js/localStorage "jwt-token" token)
@@ -166,6 +176,15 @@
 (defmethod routes/panels :home-redirect-panel []
   [layout :application-hoop [home/home-panel-hoop]])
 
+(defmethod routes/panels :onboarding-panel []
+  [layout :auth [onboarding/main]])
+
+(defmethod routes/panels :onboarding-setup-panel []
+  [layout :auth [onboarding-setup/main]])
+
+(defmethod routes/panels :onboarding-setup-resource-panel []
+  [layout :auth [onboarding-setup-resource/main]])
+
 (defmethod routes/panels :upgrade-plan-panel []
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop [:div {:class "bg-gray-1 min-h-full h-max"}
@@ -240,8 +259,15 @@
 
 (defmethod routes/panels :create-connection-panel []
   (rf/dispatch [:destroy-page-loader])
-  [layout :application-hoop [:div {:class "bg-gray-1 min-h-full h-max"}
-                             [create-update-connection/main :create]]])
+  [layout :application-hoop [:div {:class "bg-gray-1 min-h-full h-full"}
+                             [connection-setup/main :create {}]]])
+
+(defmethod routes/panels :edit-connection-panel []
+  (let [pathname (.. js/window -location -pathname)
+        current-route (bidi/match-route @routes/routes pathname)
+        connection-name (:connection-name (:route-params current-route))]
+    [layout :application-hoop [:div {:class "bg-[--gray-2] px-4 py-10 sm:px-6 lg:px-20 lg:pt-6 lg:pb-10 h-full overflow-auto"}
+                               [connection-update-form/main connection-name]]]))
 
 (defmethod routes/panels :manage-plugin-panel []
   (let [pathname (.. js/window -location -pathname)
