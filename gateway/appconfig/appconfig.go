@@ -153,7 +153,7 @@ func Load() error {
 			return isEnvSet("GOOGLE_APPLICATION_CREDENTIALS_JSON")
 		}
 
-		if dlpProvider == "presidio" {
+		if dlpProvider == "mspresidio" {
 			return isEnvSet("MSPRESIDIO_ANALYZER_URL") && isEnvSet("MSPRESIDIO_ANONYMIZER_URL")
 		}
 
