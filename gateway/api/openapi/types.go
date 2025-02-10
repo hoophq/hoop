@@ -789,7 +789,7 @@ type ServerInfo struct {
 	// Auth method used by the server
 	AuthMethod string `json:"auth_method" enums:"oidc,local" example:"local"`
 	// DLP provider used by the server
-	RedactProvider string `json:"redact_provider" enums:"gcp,presidio" example:"gcp"`
+	RedactProvider string `json:"redact_provider" enums:"gcp,mspresidio" example:"gcp"`
 	// Report if GOOGLE_APPLICATION_CREDENTIALS_JSON or MSPRESIDIO is set
 	HasRedactCredentials bool `json:"has_redact_credentials"`
 	// Report if WEBHOOK_APPKEY is set
