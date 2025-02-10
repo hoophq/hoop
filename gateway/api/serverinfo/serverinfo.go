@@ -26,7 +26,6 @@ var (
 		GoDebug:                 os.Getenv("GODEBUG"),
 		AdminUsername:           os.Getenv("ADMIN_USERNAME"),
 		RedactProvider:          os.Getenv("DLP_PROVIDER"),
-		HasRedactCredentials:    appconfig.Get().HasRedactCreds(),
 		HasWebhookAppKey:        isEnvSet("WEBHOOK_APPKEY"),
 		HasIDPAudience:          isEnvSet("IDP_AUDIENCE"),
 		HasIDPCustomScopes:      isEnvSet("IDP_CUSTOM_SCOPES"),
@@ -76,6 +75,7 @@ func (h *handler) Get(c *gin.Context) {
 	serverInfoData.GrpcURL = h.grpcURL
 	serverInfoData.ApiURL = appconfig.Get().ApiURL()
 	serverInfoData.HasAskiAICredentials = appconfig.Get().IsAskAIAvailable()
+	serverInfoData.HasRedactCredentials = appconfig.Get().HasRedactCredentials()
 	serverInfoData.LicenseInfo = &openapi.ServerLicenseInfo{
 		IsValid:      err == nil,
 		VerifyError:  licenseVerifyErr,

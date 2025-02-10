@@ -34,7 +34,7 @@ type Config struct {
 	pgCred                  *pgCredentials
 	gcpDLPJsonCredentials   string
 	dlpProvider             string
-	hasRedactCreds          bool
+	hasRedactCredentials    bool
 	msPresidioAnalyzerURL   string
 	msPresidioAnonymizerURL string
 	webhookAppKey           string
@@ -147,7 +147,7 @@ func Load() error {
 		return fmt.Errorf("failed loading env TLS_CERT, reason=%v", err)
 	}
 
-	hasRedactCreds := func() bool {
+	hasRedactCredentials := func() bool {
 		dlpProvider := os.Getenv("DLP_PROVIDER")
 		if dlpProvider == "" || dlpProvider == "gcp" {
 			return isEnvSet("GOOGLE_APPLICATION_CREDENTIALS_JSON")
@@ -178,7 +178,7 @@ func Load() error {
 		orgMultitenant:          os.Getenv("ORG_MULTI_TENANT") == "true",
 		doNotTrack:              os.Getenv("DO_NOT_TRACK") == "true",
 		dlpProvider:             os.Getenv("DLP_PROVIDER"),
-		hasRedactCreds:          hasRedactCreds,
+		hasRedactCredentials:    hasRedactCredentials,
 		msPresidioAnalyzerURL:   os.Getenv("MSPRESIDIO_ANALYZER_URL"),
 		msPresidioAnonymizerURL: os.Getenv("MSPRESIDIO_ANONYMIZER_URL"),
 		webhookAppKey:           os.Getenv("WEBHOOK_APPKEY"),
@@ -328,7 +328,7 @@ func (c Config) WebhookAppKey() string           { return c.webhookAppKey }
 func (c Config) WebhookAppURL() *url.URL         { return c.webhookAppURL }
 func (c Config) GcpDLPJsonCredentials() string   { return c.gcpDLPJsonCredentials }
 func (c Config) DlpProvider() string             { return c.dlpProvider }
-func (c Config) HasRedactCreds() bool            { return c.hasRedactCreds }
+func (c Config) HasRedactCredentials() bool      { return c.hasRedactCredentials }
 func (c Config) MSPresidioAnalyzerURL() string   { return c.msPresidioAnalyzerURL }
 func (c Config) MSPresidioAnomymizerURL() string { return c.msPresidioAnonymizerURL }
 func (c Config) PgUsername() string              { return c.pgCred.username }
