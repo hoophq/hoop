@@ -49,6 +49,7 @@
 (defn main [{:keys [show-database-schema? selected-type submit-fn form-type]}]
   (let [user-groups (rf/subscribe [:user-groups])
         user (rf/subscribe [:users->current-user])
+        gateway-info (rf/subscribe [:gateway->info])
         guardrails-list (rf/subscribe [:guardrails->list])
         jira-templates-list (rf/subscribe [:jira-templates->list])
         review? (rf/subscribe [:connection-setup/review])
@@ -75,7 +76,9 @@
         (when (not= value (get @access-modes mode))
           (rf/dispatch [:connection-setup/toggle-access-mode mode]))))
     (fn []
-      (let [free-license? (-> @user :data :free-license?)]
+      (let [free-license? (-> @user :data :free-license?)
+            has-redact-credentials? (-> @gateway-info :data :has_redact_credentials)
+            redact-provider (-> @gateway-info :data :redact_provider)]
         [:form
          {:id "additional-config-form"
           :class "max-w-[600px]"
@@ -170,20 +173,26 @@
                :description "Provide an additional layer of security by ensuring sensitive data is masked in query results with AI-powered data masking."
                :checked @data-masking?
                :disabled? (or free-license?
-                              (= form-type :onboarding))
+                              (= form-type :onboarding)
+                              (not has-redact-credentials?))
                :on-change #(rf/dispatch [:connection-setup/toggle-data-masking])
 
                :complement-component
                (when @data-masking?
                  [:> Box {:mt "4"}
                   [multi-select/main
-                   {:options (helpers/array->select-options dlp-info-types/options)
+                   {:options (helpers/array->select-options
+                              (case redact-provider
+                                "presidio" dlp-info-types/presidio-options
+                                "gcp" dlp-info-types/gcp-options
+                                dlp-info-types/gcp-options))
                     :id "data-masking-groups-input"
                     :name "data-masking-groups-input"
                     :required? @data-masking?
                     :default-value @data-masking-types
                     :disabled? (or free-license?
-                                   (= form-type :onboarding))
+                                   (= form-type :onboarding)
+                                   (not has-redact-credentials?))
                     :on-change #(rf/dispatch [:connection-setup/set-data-masking-types (js->clj %)])}]])
 
                :upgrade-plan-component

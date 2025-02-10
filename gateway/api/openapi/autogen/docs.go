@@ -4789,7 +4789,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "has_redact_credentials": {
-                    "description": "Report if GOOGLE_APPLICATION_CREDENTIALS_JSON is set",
+                    "description": "Report if GOOGLE_APPLICATION_CREDENTIALS_JSON or MSPRESIDIO is set",
                     "type": "boolean"
                 },
                 "has_webhook_app_key": {
@@ -4809,6 +4809,15 @@ const docTemplate = `{
                         "ERROR"
                     ],
                     "example": "INFO"
+                },
+                "redact_provider": {
+                    "description": "DLP provider used by the server",
+                    "type": "string",
+                    "enum": [
+                        "gcp",
+                        "presidio"
+                    ],
+                    "example": "gcp"
                 },
                 "tenancy_type": {
                     "description": "The tenancy type",

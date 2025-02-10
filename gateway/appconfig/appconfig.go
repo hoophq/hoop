@@ -34,6 +34,7 @@ type Config struct {
 	pgCred                  *pgCredentials
 	gcpDLPJsonCredentials   string
 	dlpProvider             string
+	hasRedactCredentials    bool
 	msPresidioAnalyzerURL   string
 	msPresidioAnonymizerURL string
 	webhookAppKey           string
@@ -146,6 +147,19 @@ func Load() error {
 		return fmt.Errorf("failed loading env TLS_CERT, reason=%v", err)
 	}
 
+	hasRedactCredentials := func() bool {
+		dlpProvider := os.Getenv("DLP_PROVIDER")
+		if dlpProvider == "" || dlpProvider == "gcp" {
+			return isEnvSet("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+		}
+
+		if dlpProvider == "mspresidio" {
+			return isEnvSet("MSPRESIDIO_ANALYZER_URL") && isEnvSet("MSPRESIDIO_ANONYMIZER_URL")
+		}
+
+		return false
+	}()
+
 	runtimeConfig = Config{
 		apiKey:                  os.Getenv("API_KEY"),
 		apiURL:                  fmt.Sprintf("%s://%s", apiRawURL.Scheme, apiRawURL.Host),
@@ -164,6 +178,7 @@ func Load() error {
 		orgMultitenant:          os.Getenv("ORG_MULTI_TENANT") == "true",
 		doNotTrack:              os.Getenv("DO_NOT_TRACK") == "true",
 		dlpProvider:             os.Getenv("DLP_PROVIDER"),
+		hasRedactCredentials:    hasRedactCredentials,
 		msPresidioAnalyzerURL:   os.Getenv("MSPRESIDIO_ANALYZER_URL"),
 		msPresidioAnonymizerURL: os.Getenv("MSPRESIDIO_ANONYMIZER_URL"),
 		webhookAppKey:           os.Getenv("WEBHOOK_APPKEY"),
@@ -313,6 +328,7 @@ func (c Config) WebhookAppKey() string           { return c.webhookAppKey }
 func (c Config) WebhookAppURL() *url.URL         { return c.webhookAppURL }
 func (c Config) GcpDLPJsonCredentials() string   { return c.gcpDLPJsonCredentials }
 func (c Config) DlpProvider() string             { return c.dlpProvider }
+func (c Config) HasRedactCredentials() bool      { return c.hasRedactCredentials }
 func (c Config) MSPresidioAnalyzerURL() string   { return c.msPresidioAnalyzerURL }
 func (c Config) MSPresidioAnomymizerURL() string { return c.msPresidioAnonymizerURL }
 func (c Config) PgUsername() string              { return c.pgCred.username }
@@ -340,4 +356,9 @@ func (c Config) AskAIAPIKey() (t string) {
 		t, _ = c.askAICredentials.User.Password()
 	}
 	return
+}
+
+func isEnvSet(key string) bool {
+	val, isset := os.LookupEnv(key)
+	return isset && val != ""
 }
