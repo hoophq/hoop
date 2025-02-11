@@ -40,7 +40,6 @@
 
 (rf/reg-event-fx
  :reviews-plugin->set-review-detail
- (declare db _ details)
  (fn
    [{:keys [db]} [_ details]]
    (let [cached-review (-> db :reviews-plugin->review-details :review)

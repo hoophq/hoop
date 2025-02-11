@@ -47,7 +47,8 @@
                     ["/setup" :onboarding-setup]
                     ["/setup/resource" :onboarding-setup-resource]]
      "/register" :register-hoop
-     "/reviews" :reviews-plugin
+     "/reviews" [["" :reviews-plugin]
+                 [["/" :review-id] :review-details]]
      "/runbooks" [["" :runbooks-plugin]
                   [["/" :runbooks-file] :runbooks-plugin]]
      "/slack" [[["/user" "/new/" :slack-id] :slack-new-user]
