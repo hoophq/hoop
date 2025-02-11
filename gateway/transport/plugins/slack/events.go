@@ -97,16 +97,8 @@ func (p *slackPlugin) performExecReview(ev *event, ctx *storagev2.Context, statu
 		isApproved := rev.Status == types.ReviewStatusApproved
 		err = ev.ss.UpdateMessage(ev.msg, isApproved)
 
-		if isApproved {
-			postErr := ev.ss.PostMessage(rev.ReviewOwner.SlackID,
-				fmt.Sprintf("Your session is ready to be executed.\n"+
-					"Follow this link to execute it: %s/sessions/%s", p.idpProvider.ApiURL, sid))
-			log.With("sid", sid).Infof("review is approved, sent message to owner, slackid=%v, success=%v, error=%v",
-				rev.ReviewOwner.SlackID, postErr == nil, postErr)
-		}
-
-		log.With("sid", sid).Infof("review id=%s, isapproved=%v, status=%v",
-			ev.msg.ID, isApproved, rev.Status)
+		log.With("sid", sid).Infof("review id=%s, isapproved=%v, status=%v, update-msg-err=%v",
+			ev.msg.ID, isApproved, rev.Status, err)
 	default:
 		log.With("sid", sid).Warnf("failed reviewing, id=%s, internal error=%v",
 			ev.msg.ID, err)
