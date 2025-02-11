@@ -1,27 +1,29 @@
 (ns webapp.audit.views.session-details
-  (:require ["@headlessui/react" :as ui]
-            ["@heroicons/react/20/solid" :as hero-solid-icon]
-            ["@heroicons/react/24/outline" :as hero-outline-icon]
-            ["clipboard" :as clipboardjs]
-            ["react" :as react]
-            ["@radix-ui/themes" :refer [Button Flex Text Tooltip]]
-            ["lucide-react" :refer [FileDown Download]]
-            ["is-url-http" :as is-url-http?]
-            [clojure.string :as cs]
-            [re-frame.core :as rf]
-            [reagent.core :as r]
-            [webapp.audit.views.results-container :as results-container]
-            [webapp.audit.views.session-data-raw :as session-data-raw]
-            [webapp.audit.views.session-data-video :as session-data-video]
-            [webapp.components.button :as button]
-            [webapp.components.headings :as h]
-            [webapp.components.icon :as icon]
-            [webapp.components.loaders :as loaders]
-            [webapp.components.popover :as popover]
-            [webapp.components.user-icon :as user-icon]
-            [webapp.formatters :as formatters]
-            [webapp.utilities :as utilities]
-            [webapp.routes :as routes]))
+  (:require
+   ["@headlessui/react" :as ui]
+   ["@heroicons/react/20/solid" :as hero-solid-icon]
+   ["@heroicons/react/24/outline" :as hero-outline-icon]
+   ["@radix-ui/themes" :refer [Button Flex Text Tooltip]]
+   ["clipboard" :as clipboardjs]
+   ["is-url-http" :as is-url-http?]
+   ["lucide-react" :refer [Download FileDown]]
+   ["react" :as react]
+   [clojure.string :as cs]
+   [re-frame.core :as rf]
+   [reagent.core :as r]
+   [webapp.audit.views.results-container :as results-container]
+   [webapp.audit.views.session-data-raw :as session-data-raw]
+   [webapp.audit.views.session-data-video :as session-data-video]
+   [webapp.components.button :as button]
+   [webapp.components.headings :as h]
+   [webapp.components.icon :as icon]
+   [webapp.components.loaders :as loaders]
+   [webapp.components.popover :as popover]
+   [webapp.components.tooltip :as tooltip]
+   [webapp.components.user-icon :as user-icon]
+   [webapp.formatters :as formatters]
+   [webapp.routes :as routes]
+   [webapp.utilities :as utilities]))
 
 (def ^:private export-dictionary
   {:postgres "csv"
@@ -113,15 +115,16 @@
       [:div
        {:class (str "relative flex flex-grow items-center gap-small"
                     " text-xs")}
-       [icon/regular {:size 4
-                      :icon-name "user-group"}]
-       [:span {:class "flex-grow"} (:group group)]
-       [:span
-        {:class "text-xxs italic text-gray-500 text-right"}
+       [:div
+        [icon/regular {:size 4
+                       :icon-name "user-group"}]]
+       [tooltip/truncate-tooltip {:text (:group group)}]
+       [:span {:class "text-xxs italic text-gray-500 text-right"}
         (:status group)]
-       [icon/regular {:size 4
-                      :icon-name (review-status-icon
-                                  (cs/upper-case (:status group)))}]
+       [:div
+        [icon/regular {:size 4
+                       :icon-name (review-status-icon
+                                   (cs/upper-case (:status group)))}]]
        [:span {:class "w-5"}]
        [popover/right {:open @add-review-popover-open?
                        :component [add-review-popover add-review]
