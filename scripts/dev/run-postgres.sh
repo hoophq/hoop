@@ -4,8 +4,12 @@ set -eo pipefail
 
 # clear before starting
 docker stop hoopdevpg 2&> /dev/null || true
-rm -rf $HOME/.hoop/dev/pgdata
-mkdir -p $HOME/.hoop/dev/pgdata
+docker rm hoopdevpg 2&> /dev/null || true
+rm -rf ./dist/dev/pgdata
+mkdir -p ./dist/dev/pgdata
+
+# give some time to propagate directory to the docekr vm
+sleep 2
 
 echo "--> STARTING POSTGRES DEV SERVER ..."
 
@@ -13,7 +17,7 @@ PGUSER=hoopdevuser
 PGDATABASE=hoopdevdb
 PGPASSWORD="1a2b3c4d"
 
-docker run -p 5449:5432 -d --rm --name hoopdevpg \
+docker run -p 5449:5432 -d --name hoopdevpg \
     -e POSTGRES_USER=$PGUSER \
     -e POSTGRES_DB=$PGDATABASE \
     -e POSTGRES_PASSWORD=$PGPASSWORD \
@@ -21,7 +25,7 @@ docker run -p 5449:5432 -d --rm --name hoopdevpg \
     -e PGDATABASE=$PGDATABASE \
     -e PGPASSWORD=$PGPASSWORD \
     -e PG_DATA=/var/lib/postgresql/data/pgdata \
-    -v $HOME/.hoop/dev/pgdata:/var/lib/postgresql/data/ \
+    -v ./dist/dev/pgdata:/var/lib/postgresql/data/ \
     postgres:16
 
 
