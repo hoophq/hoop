@@ -7,14 +7,12 @@ import (
 	"strings"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/dsnkeys"
 	commongrpc "github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
-	localauthapi "github.com/hoophq/hoop/gateway/api/localauth"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/pgrest"
@@ -126,12 +124,12 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 		}
 	// client proxy manager authentication (access token)
 	case pb.ConnectionOriginClientProxyManager:
-		sub, err := i.idp.VerifyAccessToken(bearerToken)
+		subject, err := i.validateAccessToken(bearerToken)
 		if err != nil {
 			log.Debugf("failed verifying access token, reason=%v", err)
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
-		userCtx, err := pguserauth.New().FetchUserContext(sub)
+		userCtx, err := pguserauth.New().FetchUserContext(subject)
 		if err != nil || userCtx.IsEmpty() {
 			log.Errorf("failed fetching user context, reason=%v", err)
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
@@ -192,31 +190,12 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 		}
 		// first we check if the auth method is local, if so, we authenticate the user
 		// using the local auth method, otherwise we use the i.idp.VerifyAccessToken
-		authMethod := appconfig.Get().AuthMethod()
-		var sub string
-		if authMethod == "local" {
-			jwtKey := appconfig.Get().JWTSecretKey()
-			claims := &localauthapi.Claims{}
-			token, err := jwt.ParseWithClaims(bearerToken, claims, func(token *jwt.Token) (interface{}, error) {
-				return jwtKey, nil
-			})
-			if err != nil || !token.Valid {
-				log.Debugf("failed verifying access token, reason=%v", err)
-				return status.Errorf(codes.Unauthenticated, "invalid authentication")
-			}
-			sub = claims.Subject
-		} else {
-			sub, err = i.idp.VerifyAccessToken(bearerToken)
-			if err != nil {
-				log.Debugf("failed verifying access token, reason=%v", err)
-				return status.Errorf(codes.Unauthenticated, "invalid authentication")
-			}
-		}
+		subject, err := i.validateAccessToken(bearerToken)
 		if err != nil {
 			log.Debugf("failed verifying access token, reason=%v", err)
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
-		userCtx, err := pguserauth.New().FetchUserContext(sub)
+		userCtx, err := pguserauth.New().FetchUserContext(subject)
 		if err != nil || userCtx.IsEmpty() {
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
@@ -242,6 +221,13 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 	}
 
 	return handler(srv, &serverStreamWrapper{ss, nil, ctxVal})
+}
+
+func (i *interceptor) validateAccessToken(bearerToken string) (subject string, err error) {
+	if i.idp.HasSecretKey() {
+		return i.idp.VerifyAccessTokenHS256Alg(bearerToken)
+	}
+	return i.idp.VerifyAccessToken(bearerToken)
 }
 
 func (i *interceptor) getConnection(name string, userCtx *pguserauth.Context) (*types.ConnectionInfo, error) {
