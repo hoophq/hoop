@@ -132,7 +132,6 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			case pb.ConnectionTypePostgres:
 				srv := proxy.NewPGServer(c.proxyPort, c.client)
 				if err := srv.Serve(string(sessionID)); err != nil {
-					sentry.CaptureException(fmt.Errorf("connect - failed initializing postgres proxy, err=%v", err))
 					c.processGracefulExit(err)
 				}
 				c.loader.Stop()
@@ -147,7 +146,6 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			case pb.ConnectionTypeMySQL:
 				srv := proxy.NewMySQLServer(c.proxyPort, c.client)
 				if err := srv.Serve(string(sessionID)); err != nil {
-					sentry.CaptureException(fmt.Errorf("connect - failed initializing mysql proxy, err=%v", err))
 					c.processGracefulExit(err)
 				}
 				c.loader.Stop()
@@ -162,7 +160,6 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			case pb.ConnectionTypeMSSQL:
 				srv := proxy.NewMSSQLServer(c.proxyPort, c.client)
 				if err := srv.Serve(string(sessionID)); err != nil {
-					sentry.CaptureException(fmt.Errorf("connect - failed initializing mssql proxy, err=%v", err))
 					c.processGracefulExit(err)
 				}
 				c.loader.Stop()
@@ -177,7 +174,6 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			case pb.ConnectionTypeMongoDB:
 				srv := proxy.NewMongoDBServer(c.proxyPort, c.client)
 				if err := srv.Serve(string(sessionID)); err != nil {
-					sentry.CaptureException(fmt.Errorf("connect - failed initializing mongo proxy, err=%v", err))
 					c.processGracefulExit(err)
 				}
 				c.loader.Stop()
@@ -192,7 +188,6 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			case pb.ConnectionTypeTCP:
 				tcp := proxy.NewTCPServer(c.proxyPort, c.client, pbagent.TCPConnectionWrite)
 				if err := tcp.Serve(string(sessionID)); err != nil {
-					sentry.CaptureException(fmt.Errorf("connect - failed initializing tcp proxy, err=%v", err))
 					c.processGracefulExit(err)
 				}
 				c.loader.Stop()
@@ -202,6 +197,24 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				fmt.Println()
 				fmt.Println("--------------------tcp-connection--------------------")
 				fmt.Printf("               host=%s port=%s\n", tcp.Host().Host, tcp.Host().Port)
+				fmt.Println("------------------------------------------------------")
+				fmt.Println("ready to accept connections!")
+			case pb.ConnectionTypeHttpProxy:
+				proxyPort := "8081"
+				if c.proxyPort != "" {
+					proxyPort = c.proxyPort
+				}
+				httpProxy := proxy.NewHttpProxy(proxyPort, c.client, pbagent.HttpProxyConnectionWrite)
+				if err := httpProxy.Serve(string(sessionID)); err != nil {
+					c.processGracefulExit(err)
+				}
+				c.loader.Stop()
+				c.client.StartKeepAlive()
+				c.connStore.Set(string(sessionID), httpProxy)
+				c.printHeader(string(sessionID))
+				fmt.Println()
+				fmt.Println("--------------------http-connection--------------------")
+				fmt.Printf("               host=127.0.0.1 port=%s\n", httpProxy.ListenPort())
 				fmt.Println("------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
 			case pb.ConnectionTypeCommandLine:
@@ -307,6 +320,16 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				sentry.CaptureException(fmt.Errorf("connect - %v - %v", pbclient.MongoDBConnectionWrite, errMsg))
 				c.processGracefulExit(errMsg)
 			}
+		case pbclient.HttpProxyConnectionWrite:
+			sessionID := pkt.Spec[pb.SpecGatewaySessionID]
+			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
+			if srv, ok := c.connStore.Get(string(sessionID)).(*proxy.HttpProxy); ok {
+				_, err := srv.PacketWriteClient(connectionID, pkt)
+				if err != nil {
+					errMsg := fmt.Errorf("failed writing to client, err=%v", err)
+					c.processGracefulExit(errMsg)
+				}
+			}
 		case pbclient.TCPConnectionWrite:
 			sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
@@ -314,7 +337,6 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				_, err := tcp.PacketWriteClient(connectionID, pkt)
 				if err != nil {
 					errMsg := fmt.Errorf("failed writing to client, err=%v", err)
-					sentry.CaptureException(fmt.Errorf("connect - %v - %v", pbclient.TCPConnectionWrite, errMsg))
 					c.processGracefulExit(errMsg)
 				}
 			}
