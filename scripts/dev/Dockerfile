@@ -70,6 +70,8 @@ RUN mkdir -p /app && \
   tini \
   jq \
   openssh-client \
+  openssh-server \
+  sudo \
   apt-utils \
   procps \
   unzip \
@@ -79,6 +81,12 @@ RUN mkdir -p /app && \
   gnupg2 \
   libaio1 \
   wget
+
+# # SSH Server configuration for testing
+RUN echo 'root:1a2b3c4d' | chpasswd && \
+  mkdir -p /run/sshd && \
+  mkdir -p /root/.ssh && \
+  ssh-keygen -A
 
 RUN echo "deb http://apt.postgresql.org/pub/repos/apt/ focal-pgdg main" | tee /etc/apt/sources.list.d/pgdg.list && \
   echo "deb [arch=amd64,arm64] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/5.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-5.0.list && \

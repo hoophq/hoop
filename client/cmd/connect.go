@@ -132,7 +132,6 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			case pb.ConnectionTypePostgres:
 				srv := proxy.NewPGServer(c.proxyPort, c.client)
 				if err := srv.Serve(string(sessionID)); err != nil {
-					sentry.CaptureException(fmt.Errorf("connect - failed initializing postgres proxy, err=%v", err))
 					c.processGracefulExit(err)
 				}
 				c.loader.Stop()
@@ -147,7 +146,6 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			case pb.ConnectionTypeMySQL:
 				srv := proxy.NewMySQLServer(c.proxyPort, c.client)
 				if err := srv.Serve(string(sessionID)); err != nil {
-					sentry.CaptureException(fmt.Errorf("connect - failed initializing mysql proxy, err=%v", err))
 					c.processGracefulExit(err)
 				}
 				c.loader.Stop()
@@ -162,7 +160,6 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			case pb.ConnectionTypeMSSQL:
 				srv := proxy.NewMSSQLServer(c.proxyPort, c.client)
 				if err := srv.Serve(string(sessionID)); err != nil {
-					sentry.CaptureException(fmt.Errorf("connect - failed initializing mssql proxy, err=%v", err))
 					c.processGracefulExit(err)
 				}
 				c.loader.Stop()
@@ -177,7 +174,6 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			case pb.ConnectionTypeMongoDB:
 				srv := proxy.NewMongoDBServer(c.proxyPort, c.client)
 				if err := srv.Serve(string(sessionID)); err != nil {
-					sentry.CaptureException(fmt.Errorf("connect - failed initializing mongo proxy, err=%v", err))
 					c.processGracefulExit(err)
 				}
 				c.loader.Stop()
@@ -192,7 +188,6 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			case pb.ConnectionTypeTCP:
 				tcp := proxy.NewTCPServer(c.proxyPort, c.client, pbagent.TCPConnectionWrite)
 				if err := tcp.Serve(string(sessionID)); err != nil {
-					sentry.CaptureException(fmt.Errorf("connect - failed initializing tcp proxy, err=%v", err))
 					c.processGracefulExit(err)
 				}
 				c.loader.Stop()
@@ -202,6 +197,21 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				fmt.Println()
 				fmt.Println("--------------------tcp-connection--------------------")
 				fmt.Printf("               host=%s port=%s\n", tcp.Host().Host, tcp.Host().Port)
+				fmt.Println("------------------------------------------------------")
+				fmt.Println("ready to accept connections!")
+			case pb.ConnectionTypeSSH:
+				c.loader.Stop()
+				srv := proxy.NewSSHServer(c.proxyPort, c.client, pbagent.SSHConnectionWrite)
+				if err := srv.Serve(string(sessionID)); err != nil {
+					c.processGracefulExit(err)
+				}
+				c.loader.Stop()
+				c.client.StartKeepAlive()
+				c.connStore.Set(string(sessionID), srv)
+				c.printHeader(string(sessionID))
+				fmt.Println()
+				fmt.Println("--------------------ssh-connection--------------------")
+				fmt.Printf("      host=%s port=%s user=noop password=noop\n", srv.Host().Host, srv.Host().Port)
 				fmt.Println("------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
 			case pb.ConnectionTypeCommandLine:
@@ -220,7 +230,6 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				c.printHeader(string(sessionID))
 				c.connStore.Set(string(sessionID), term)
 				if err := term.ConnectWithTTY(); err != nil {
-					sentry.CaptureException(fmt.Errorf("connect - failed initializing terminal, err=%v", err))
 					c.processGracefulExit(err)
 				}
 				ossig.shutdownFn = func() { loader.Stop(); term.Close() }
@@ -262,7 +271,6 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			_, err := srv.PacketWriteClient(connectionID, pkt)
 			if err != nil {
 				errMsg := fmt.Errorf("failed writing to client, err=%v", err)
-				sentry.CaptureException(fmt.Errorf("connect - %v - %v", pbclient.PGConnectionWrite, errMsg))
 				c.processGracefulExit(errMsg)
 			}
 		case pbclient.MySQLConnectionWrite:
@@ -276,7 +284,6 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			_, err := srv.PacketWriteClient(connectionID, pkt)
 			if err != nil {
 				errMsg := fmt.Errorf("failed writing to client, err=%v", err)
-				sentry.CaptureException(fmt.Errorf("connect - %v - %v", pbclient.MySQLConnectionWrite, errMsg))
 				c.processGracefulExit(errMsg)
 			}
 		case pbclient.MSSQLConnectionWrite:
@@ -290,7 +297,6 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			_, err := srv.PacketWriteClient(connectionID, pkt)
 			if err != nil {
 				errMsg := fmt.Errorf("failed writing to client, err=%v", err)
-				sentry.CaptureException(fmt.Errorf("connect - %v - %v", pbclient.MSSQLConnectionWrite, errMsg))
 				c.processGracefulExit(errMsg)
 			}
 		case pbclient.MongoDBConnectionWrite:
@@ -304,7 +310,6 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			_, err := srv.PacketWriteClient(connectionID, pkt)
 			if err != nil {
 				errMsg := fmt.Errorf("failed writing to client, err=%v", err)
-				sentry.CaptureException(fmt.Errorf("connect - %v - %v", pbclient.MongoDBConnectionWrite, errMsg))
 				c.processGracefulExit(errMsg)
 			}
 		case pbclient.TCPConnectionWrite:
@@ -314,7 +319,16 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				_, err := tcp.PacketWriteClient(connectionID, pkt)
 				if err != nil {
 					errMsg := fmt.Errorf("failed writing to client, err=%v", err)
-					sentry.CaptureException(fmt.Errorf("connect - %v - %v", pbclient.TCPConnectionWrite, errMsg))
+					c.processGracefulExit(errMsg)
+				}
+			}
+		case pbclient.SSHConnectionWrite:
+			sessionID := pkt.Spec[pb.SpecGatewaySessionID]
+			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
+			if srv, ok := c.connStore.Get(string(sessionID)).(*proxy.SSHServer); ok {
+				_, err := srv.PacketWriteClient(connectionID, pkt)
+				if err != nil {
+					errMsg := fmt.Errorf("failed writing to client, err=%v", err)
 					c.processGracefulExit(errMsg)
 				}
 			}

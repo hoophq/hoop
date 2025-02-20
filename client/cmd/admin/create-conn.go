@@ -113,6 +113,10 @@ var createConnectionCmd = &cobra.Command{
 				if envVar["envvar:CONNECTION_STRING"] == "" {
 					styles.PrintErrorAndExit("missing required CONNECTION_STRING env for %v", pb.ConnectionTypeMongoDB)
 				}
+			case pb.ConnectionTypeSSH:
+				if err := validateSSHEnvs(envVar); err != nil {
+					styles.PrintErrorAndExit(err.Error())
+				}
 			default:
 				styles.PrintErrorAndExit("invalid connection type %q", connType)
 			}
@@ -287,14 +291,21 @@ func getAgentIDByName(conf *clientconfig.Config, name string) (string, error) {
 
 func validateNativeDbEnvs(e map[string]string) error {
 	if e["envvar:HOST"] == "" || e["envvar:USER"] == "" || e["envvar:PASS"] == "" {
-		return fmt.Errorf("missing required envs [HOST,USER,PASS] for %v type", connTypeFlag)
+		return fmt.Errorf("missing required envs [HOST, USER, PASS] for %v type", connTypeFlag)
+	}
+	return nil
+}
+
+func validateSSHEnvs(e map[string]string) error {
+	if e["envvar:HOST"] == "" || e["envvar:USER"] == "" || (e["envvar:PASS"] == "" && e["envvar:AUTHORIZED_KEYS"] == "") {
+		return fmt.Errorf("missing required envs [HOST, USER, PASS or AUTHORIZED_KEYS] for %v type", connTypeFlag)
 	}
 	return nil
 }
 
 func validateTcpEnvs(e map[string]string) error {
 	if e["envvar:HOST"] == "" || e["envvar:PORT"] == "" {
-		return fmt.Errorf("missing required envs [HOST,PORT] for %v type", connTypeFlag)
+		return fmt.Errorf("missing required envs [HOST, PORT] for %v type", connTypeFlag)
 	}
 	return nil
 }

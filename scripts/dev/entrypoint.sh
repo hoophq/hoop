@@ -28,4 +28,25 @@ echo "--> STARTING AGENT ..."
 # echo -n xagt-zKQQA9PAjCVJ4O8VlE2QZScNEbfmFisg_OerkI21NEg |sha256sum
 HOOP_KEY="http://default:xagt-zKQQA9PAjCVJ4O8VlE2QZScNEbfmFisg_OerkI21NEg@127.0.0.1:8010?mode=standard" /app/bin/hooplinux start agent &
 
+echo "--> STARTING SSHD SERVER ..."
+
+# add default password for root user
+echo 'root:1a2b3c4d' | chpasswd
+
+sed -i 's|#PubkeyAuthentication yes|PubkeyAuthentication yes|g' /etc/ssh/sshd_config
+
+sed -i 's|#PermitRootLogin prohibit-password|PermitRootLogin yes|g' /etc/ssh/sshd_config
+sed -i 's|#AllowTcpForwarding yes|AllowTcpForwarding yes|g' /etc/ssh/sshd_config
+sed -i 's|#AllowAgentForwarding yes|AllowAgentForwarding yes|g' /etc/ssh/sshd_config
+sed -i 's|#PermitUserEnvironment no|PermitUserEnvironment yes|g' /etc/ssh/sshd_config
+sed -i 's|#PermitTunnel no|PermitTunnel yes|g' /etc/ssh/sshd_config
+
+# generate an ssh key if it does not exists
+if [ ! -f /root/.ssh/id_rsa ]; then
+  ssh-keygen -t rsa -b 4096 -f /root/.ssh/id_rsa -q -N ''
+  cp /root/.ssh/id_rsa.pub /root/.ssh/authorized_keys
+fi
+
+/usr/sbin/sshd -D -o ListenAddress=0.0.0.0 &
+
 sleep infinity
