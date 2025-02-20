@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -33,17 +34,18 @@ type (
 		shutdownCancelFn context.CancelCauseFunc
 	}
 	connEnv struct {
-		scheme           string
-		host             string
-		address          string
-		user             string
-		pass             string
-		port             string
-		dbname           string
-		insecure         bool
-		options          string
-		postgresSSLMode  string
-		connectionString string
+		scheme            string
+		host              string
+		address           string
+		user              string
+		pass              string
+		port              string
+		authorizedSSHKeys string
+		dbname            string
+		insecure          bool
+		options           string
+		postgresSSLMode   string
+		connectionString  string
 	}
 )
 
@@ -130,6 +132,10 @@ func (a *Agent) Run() error {
 		// raw tcp
 		case pbagent.TCPConnectionWrite:
 			a.processTCPWriteServer(pkt)
+
+		// SSH protocol
+		case pbagent.SSHConnectionWrite:
+			a.processSSHProtocol(pkt)
 
 		// terminal
 		case pbagent.TerminalWriteStdin:
@@ -502,15 +508,16 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 	}
 
 	env := &connEnv{
-		scheme:          envVarS.Getenv("SCHEME"),
-		host:            envVarS.Getenv("HOST"),
-		user:            envVarS.Getenv("USER"),
-		pass:            envVarS.Getenv("PASS"),
-		port:            envVarS.Getenv("PORT"),
-		dbname:          envVarS.Getenv("DB"),
-		insecure:        envVarS.Getenv("INSECURE") == "true",
-		postgresSSLMode: envVarS.Getenv("SSLMODE"),
-		options:         envVarS.Getenv("OPTIONS"),
+		scheme:            envVarS.Getenv("SCHEME"),
+		host:              envVarS.Getenv("HOST"),
+		user:              envVarS.Getenv("USER"),
+		pass:              envVarS.Getenv("PASS"),
+		port:              envVarS.Getenv("PORT"),
+		authorizedSSHKeys: envVarS.Getenv("AUTHORIZED_KEYS"),
+		dbname:            envVarS.Getenv("DB"),
+		insecure:          envVarS.Getenv("INSECURE") == "true",
+		postgresSSLMode:   envVarS.Getenv("SSLMODE"),
+		options:           envVarS.Getenv("OPTIONS"),
 		// this option is only used by mongodb at the momento
 		connectionString: envVarS.Getenv("CONNECTION_STRING"),
 	}
@@ -520,7 +527,7 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 			env.port = "5432"
 		}
 		if env.host == "" || env.pass == "" || env.user == "" {
-			return nil, fmt.Errorf("missing required secrets for postgres connection [HOST, USER, PASS]")
+			return nil, errors.New("missing required secrets for postgres connection [HOST, USER, PASS]")
 		}
 		mode := env.postgresSSLMode
 		if mode == "" {
@@ -535,14 +542,14 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 			env.port = "3306"
 		}
 		if env.host == "" || env.pass == "" || env.user == "" {
-			return nil, fmt.Errorf("missing required secrets for mysql connection [HOST, USER, PASS]")
+			return nil, errors.New("missing required secrets for mysql connection [HOST, USER, PASS]")
 		}
 	case pb.ConnectionTypeMSSQL:
 		if env.port == "" {
 			env.port = "1433"
 		}
 		if env.host == "" || env.pass == "" || env.user == "" {
-			return nil, fmt.Errorf("missing required secrets for mssql connection [HOST, USER, PASS]")
+			return nil, errors.New("missing required secrets for mssql connection [HOST, USER, PASS]")
 		}
 	case pb.ConnectionTypeMongoDB:
 		if env.connectionString != "" {
@@ -567,12 +574,18 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		env.host = host
 		env.port = port
 		if env.host == "" || env.pass == "" || env.user == "" {
-			return nil, fmt.Errorf("missing required secrets for mongodb connection [HOST, USER, PASS]")
+			return nil, errors.New("missing required secrets for mongodb connection [HOST, USER, PASS]")
 		}
-
+	case pb.ConnectionTypeSSH:
+		if env.port == "" {
+			env.port = "22"
+		}
+		if env.host == "" || (env.pass == "" && env.authorizedSSHKeys == "") || env.user == "" {
+			return nil, errors.New("missing required secrets for ssh connection [HOST, USER, PASS or AUTHORIZED_KEYS]")
+		}
 	case pb.ConnectionTypeTCP:
 		if env.host == "" || env.port == "" {
-			return nil, fmt.Errorf("missing required environment for connection [HOST, PORT]")
+			return nil, errors.New("missing required environment for connection [HOST, PORT]")
 		}
 	}
 	return env, nil

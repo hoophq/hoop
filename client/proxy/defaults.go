@@ -17,6 +17,7 @@ const (
 	defaultMySQLPort    = "3307"
 	defaultPostgresPort = "5433"
 	defaultTCPPort      = "8999"
+	defaultSSHPort      = "2222"
 )
 
 var defaultListenAddrValue string
