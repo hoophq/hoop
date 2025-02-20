@@ -121,14 +121,6 @@ func (p *SSHServer) serveConn(sid, connectionID string, conn net.Conn) {
 }
 
 func (p *SSHServer) handleChannel(newCh ssh.NewChannel, streamW io.Writer, connID string, channelID uint16) {
-	// direct-tcpip needs more testing
-	// port forward an ip address that doesn't resolve
-	// freezes the agent
-	if newCh.ChannelType() == "direct-tcpip" {
-		_ = newCh.Reject(ssh.ConnectionFailed, "direct-tcpip is not implemented")
-		return
-	}
-
 	log.With("ch", channelID, "conn", connID).Infof("received new channel, type=%v", newCh.ChannelType())
 	chType, chExtra := newCh.ChannelType(), newCh.ExtraData()
 	clientCh, clientRequests, err := newCh.Accept()
