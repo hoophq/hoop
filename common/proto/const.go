@@ -17,6 +17,7 @@ const (
 	SpecClientConnectionID           string = "client.connection_id"
 	SpecClientExitCodeKey            string = "client.exit_code"
 	SpecClientRequestPort            string = "client.request_port"
+	SpecClientSSHHostKey             string = "client.ssh_host_key"
 	SpecClientExecArgsKey            string = "terminal.args"
 	SpecClientExecEnvVar             string = "terminal.envvars"
 	SpecAgentConnectionParamsKey     string = "agent.connection_params"
@@ -41,6 +42,7 @@ const (
 	ConnectionTypeMongoDB     ConnectionType = "mongodb"
 	ConnectionTypeOracleDB    ConnectionType = "oracledb"
 	ConnectionTypeTCP         ConnectionType = "tcp"
+	ConnectionTypeSSH         ConnectionType = "ssh"
 
 	ConnectionOriginAgent              = "agent"
 	ConnectionOriginClient             = "client"

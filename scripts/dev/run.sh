@@ -58,11 +58,13 @@ docker stop hoopdev &> /dev/null || true
 docker rm hoopdev &> /dev/null || true
 
 docker run --rm --name hoopdev \
+  -p 2225:22 \
   -p 8009:8009 \
   -p 8010:8010 \
   --env-file=.env \
   --cap-add=NET_ADMIN \
   -v ./dist/dev/bin/:/app/bin/ \
+  -v ./dist/dev/root/.ssh:/root/.ssh \
   -v ./rootfs/app/migrations/:/app/migrations/ \
   -v ./dist/dev/resources/:/app/ui/ \
   -it hoopdev /app/bin/entrypoint.sh

@@ -157,10 +157,14 @@ func IsInList(item string, items []string) bool {
 func ToConnectionType(connectionType, subtype string) ConnectionType {
 	switch connectionType {
 	case "application":
-		if subtype == "tcp" {
+		switch subtype {
+		case "tcp":
 			return ConnectionType(ConnectionTypeTCP)
+		case "ssh":
+			return ConnectionType(ConnectionTypeSSH)
+		default:
+			return ConnectionType(ConnectionTypeCommandLine)
 		}
-		return ConnectionType(ConnectionTypeCommandLine)
 	case "custom":
 		return ConnectionType(ConnectionTypeCommandLine)
 	case "database":

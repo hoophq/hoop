@@ -58,7 +58,8 @@ func (h *handler) Get(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
 		return
 	}
-	apiHostname := appconfig.Get().ApiHostname()
+	appc := appconfig.Get()
+	apiHostname := appc.ApiHostname()
 	l, licenseVerifyErr := defaultOSSLicense(), ""
 	if org.LicenseData != nil {
 		l, err = license.Parse(*org.LicenseData, apiHostname)
@@ -70,12 +71,13 @@ func (h *handler) Get(c *gin.Context) {
 	if isOrgMultiTenant {
 		tenancyType = "multitenant"
 	}
-	serverInfoData.AuthMethod = appconfig.Get().AuthMethod()
+	serverInfoData.AuthMethod = appc.AuthMethod()
 	serverInfoData.TenancyType = tenancyType
 	serverInfoData.GrpcURL = h.grpcURL
-	serverInfoData.ApiURL = appconfig.Get().ApiURL()
-	serverInfoData.HasAskiAICredentials = appconfig.Get().IsAskAIAvailable()
-	serverInfoData.HasRedactCredentials = appconfig.Get().HasRedactCredentials()
+	serverInfoData.ApiURL = appc.ApiURL()
+	serverInfoData.HasAskiAICredentials = appc.IsAskAIAvailable()
+	serverInfoData.HasRedactCredentials = appc.HasRedactCredentials()
+	serverInfoData.HasSSHClientHostKey = appc.SSHClientHostKey() != ""
 	serverInfoData.LicenseInfo = &openapi.ServerLicenseInfo{
 		IsValid:      err == nil,
 		VerifyError:  licenseVerifyErr,

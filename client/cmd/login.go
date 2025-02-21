@@ -27,6 +27,10 @@ import (
 
 var noBrowser bool
 
+type serverInfo struct {
+	GrpcURL string `json:"grpc_url"`
+}
+
 type login struct {
 	Url     string `json:"login_url"`
 	Message string `json:"message"`
@@ -58,12 +62,12 @@ var loginCmd = &cobra.Command{
 			printErrorAndExit(err.Error())
 		}
 		if conf.GrpcURL == "" {
-			// best-effort to obtain the obtain the grpc url
-			// if it's not set
-			conf.GrpcURL, err = fetchGrpcURL(conf.ApiURL, conf.Token, conf.TlsCA())
+			// best-effort to obtain the obtain the grpc url if it's not set
+			si, err := fetchServerInfo(conf.ApiURL, conf.Token, conf.TlsCA())
 			if err != nil {
 				printErrorAndExit(err.Error())
 			}
+			conf.GrpcURL = si.GrpcURL
 			log.Debugf("obtained remote grpc url %v", conf.GrpcURL)
 		}
 		log.Debugf("saving token, length=%v", len(conf.Token))
@@ -267,37 +271,32 @@ func authenticateWithUserAndPassword(apiURL, tlsCA, username, password string) (
 	return "", fmt.Errorf("unable to obtain access token from header (empty)")
 }
 
-func fetchGrpcURL(apiURL, bearerToken, tlsCA string) (string, error) {
+func fetchServerInfo(apiURL, bearerToken, tlsCA string) (*serverInfo, error) {
 	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/api/serverinfo", apiURL), nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	req.Header.Add("authorization", fmt.Sprintf("Bearer %s", bearerToken))
 	resp, err := httpclient.NewHttpClient(tlsCA).Do(req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	log.Debugf("GET %s/api/serverinfo status=%v", apiURL, resp.StatusCode)
 	switch resp.StatusCode {
 	case http.StatusOK:
 		defer resp.Body.Close()
-		serverInfo := map[string]any{}
-		if err := json.NewDecoder(resp.Body).Decode(&serverInfo); err != nil {
-			return "", fmt.Errorf("failed decoding response body, err=%v", err)
+		var si serverInfo
+		if err := json.NewDecoder(resp.Body).Decode(&si); err != nil {
+			return nil, fmt.Errorf("failed decoding server info response body, err=%v", err)
 		}
-		obj, ok := serverInfo["grpc_url"]
-		if !ok {
-			return "", fmt.Errorf("grpc_url parameter not present")
+		if u, err := url.Parse(si.GrpcURL); err != nil || u == nil {
+			return nil, fmt.Errorf("grpc_url parameter (%#v) is not a valid url, err=%v", si.GrpcURL, err)
 		}
-		grpcURL, _ := obj.(string)
-		if u, err := url.Parse(grpcURL); err != nil || u == nil {
-			return "", fmt.Errorf("grpc_url parameter (%#v) is not a valid url, err=%v", obj, err)
-		}
-		return grpcURL, nil
+		return &si, nil
 	case http.StatusNotFound:
-		return "", fmt.Errorf("the gateway does not have the serverinfo route")
+		return nil, fmt.Errorf("the gateway does not have the serverinfo route")
 	default:
-		return "", fmt.Errorf("failed obtaining grpc url, status=%v", resp.StatusCode)
+		return nil, fmt.Errorf("failed obtaining server info, status=%v", resp.StatusCode)
 	}
 }
 

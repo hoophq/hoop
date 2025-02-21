@@ -57,6 +57,7 @@ type Config struct {
 	gatewayTLSCa            string
 	gatewayTLSKey           string
 	gatewayTLSCert          string
+	sshClientHostKey        string
 
 	isLoaded bool
 }
@@ -160,6 +161,12 @@ func Load() error {
 		return false
 	}()
 
+	sshClientHostKey := os.Getenv("SSH_CLIENT_HOST_KEY")
+	if sshClientHostKey != "" {
+		if _, err := base64.StdEncoding.DecodeString(sshClientHostKey); err != nil {
+			return fmt.Errorf("failed decoding env SSH_CLIENT_HOST_KEY, err=%v", err)
+		}
+	}
 	runtimeConfig = Config{
 		apiKey:                  os.Getenv("API_KEY"),
 		apiURL:                  fmt.Sprintf("%s://%s", apiRawURL.Scheme, apiRawURL.Host),
@@ -191,6 +198,7 @@ func Load() error {
 		gatewayTLSCa:            gatewayTLSCa,
 		gatewayTLSKey:           gatewayTLSKey,
 		gatewayTLSCert:          gatewayTLSCert,
+		sshClientHostKey:        sshClientHostKey,
 	}
 	return nil
 }
@@ -344,6 +352,7 @@ func (c Config) JWTSecretKey() []byte            { return c.jwtSecretKey }
 func (c Config) GatewayTLSCa() string            { return c.gatewayTLSCa }
 func (c Config) GatewayTLSKey() string           { return c.gatewayTLSKey }
 func (c Config) GatewayTLSCert() string          { return c.gatewayTLSCert }
+func (c Config) SSHClientHostKey() string        { return c.sshClientHostKey }
 func (c Config) AskAIApiURL() (u string) {
 	if c.IsAskAIAvailable() {
 		return fmt.Sprintf("%s://%s", c.askAICredentials.Scheme, c.askAICredentials.Host)

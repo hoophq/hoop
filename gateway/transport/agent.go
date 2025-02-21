@@ -10,6 +10,7 @@ import (
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
@@ -96,10 +97,16 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 			return status.Errorf(codes.Internal, "internal error, plugin reject packet")
 		}
 
-		if pb.PacketType(pkt.Type) == pbclient.SessionClose {
+		switch pb.PacketType(pkt.Type) {
+		case pbclient.SessionClose:
 			// it will make sure to run the disconnect plugin phase for both clients
 			_ = proxyStream.Close(buildErrorFromPacket(pctx.SID, pkt))
+		case pbclient.SessionOpenOK:
+			if proxyStream.PluginContext().ConnectionSubType == "ssh" {
+				pkt.Spec[pb.SpecClientSSHHostKey] = []byte(appconfig.Get().SSHClientHostKey())
+			}
 		}
+
 		if err = proxyStream.Send(pkt); err != nil {
 			log.With("sid", pctx.SID).Debugf("failed to send packet to proxy stream, err=%v", err)
 		}
