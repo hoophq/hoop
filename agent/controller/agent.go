@@ -513,7 +513,7 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		user:              envVarS.Getenv("USER"),
 		pass:              envVarS.Getenv("PASS"),
 		port:              envVarS.Getenv("PORT"),
-		authorizedSSHKeys: envVarS.Getenv("AUTHORIZED_KEYS"),
+		authorizedSSHKeys: envVarS.Getenv("AUTHORIZED_SERVER_KEYS"),
 		dbname:            envVarS.Getenv("DB"),
 		insecure:          envVarS.Getenv("INSECURE") == "true",
 		postgresSSLMode:   envVarS.Getenv("SSLMODE"),
@@ -581,7 +581,7 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 			env.port = "22"
 		}
 		if env.host == "" || (env.pass == "" && env.authorizedSSHKeys == "") || env.user == "" {
-			return nil, errors.New("missing required secrets for ssh connection [HOST, USER, PASS or AUTHORIZED_KEYS]")
+			return nil, errors.New("missing required secrets for ssh connection [HOST, USER, PASS or AUTHORIZED_SERVER_KEYS]")
 		}
 	case pb.ConnectionTypeTCP:
 		if env.host == "" || env.port == "" {

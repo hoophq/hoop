@@ -297,8 +297,8 @@ func validateNativeDbEnvs(e map[string]string) error {
 }
 
 func validateSSHEnvs(e map[string]string) error {
-	if e["envvar:HOST"] == "" || e["envvar:USER"] == "" || (e["envvar:PASS"] == "" && e["envvar:AUTHORIZED_KEYS"] == "") {
-		return fmt.Errorf("missing required envs [HOST, USER, PASS or AUTHORIZED_KEYS] for %v type", connTypeFlag)
+	if e["envvar:HOST"] == "" || e["envvar:USER"] == "" || (e["envvar:PASS"] == "" && e["envvar:AUTHORIZED_SERVER_KEYS"] == "") {
+		return fmt.Errorf("missing required envs [HOST, USER, PASS or AUTHORIZED_SERVER_KEYS] for %v type", connTypeFlag)
 	}
 	return nil
 }

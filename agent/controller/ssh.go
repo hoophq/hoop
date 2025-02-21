@@ -49,12 +49,12 @@ func (a *Agent) processSSHProtocol(pkt *pb.Packet) {
 		Infof("starting SSH proxy connection at %v", connenv.Address())
 
 	opts := map[string]string{
-		"hostname":        connenv.host,
-		"port":            connenv.port,
-		"username":        connenv.user,
-		"password":        connenv.pass,
-		"authorized_keys": connenv.authorizedSSHKeys,
-		"connection_id":   clientConnectionID,
+		"hostname":               connenv.host,
+		"port":                   connenv.port,
+		"username":               connenv.user,
+		"password":               connenv.pass,
+		"authorized_server_keys": connenv.authorizedSSHKeys,
+		"connection_id":          clientConnectionID,
 	}
 	serverWriter, err := libhoop.NewSSHProxy(context.Background(), streamClient, opts)
 	if err != nil {
