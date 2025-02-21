@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -15,7 +17,6 @@ import (
 	"time"
 
 	"github.com/briandowns/spinner"
-	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/client/cmd/styles"
 	clientconfig "github.com/hoophq/hoop/client/config"
 	"github.com/hoophq/hoop/client/proxy"
@@ -28,6 +29,7 @@ import (
 	"github.com/hoophq/hoop/common/version"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
+	"golang.org/x/crypto/ssh"
 )
 
 type ConnectFlags struct {
@@ -106,6 +108,7 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 		}
 	}
 
+	var sshHostKeySigner ssh.Signer
 	sendOpenSessionPktFn()
 	agentOfflineRetryCounter := 1
 	for {
@@ -126,6 +129,14 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			sessionID, ok := pkt.Spec[pb.SpecGatewaySessionID]
 			if !ok || sessionID == nil {
 				c.processGracefulExit(fmt.Errorf("internal error, session not found"))
+			}
+			sshHostKeyEnc := pkt.Spec[pb.SpecClientSSHHostKey]
+			if len(sshHostKeyEnc) > 0 {
+				sshHostKeySigner, err = parseHostKey(sshHostKeyEnc)
+			}
+			if sshHostKeySigner == nil || err != nil {
+				log.Warn("unable to parse SSH host key received from server, using random key")
+				log.Debug("parse host key error=%v", err)
 			}
 			connnectionType := pb.ConnectionType(pkt.Spec[pb.SpecConnectionType])
 			switch connnectionType {
@@ -201,7 +212,7 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				fmt.Println("ready to accept connections!")
 			case pb.ConnectionTypeSSH:
 				c.loader.Stop()
-				srv := proxy.NewSSHServer(c.proxyPort, c.client, pbagent.SSHConnectionWrite)
+				srv := proxy.NewSSHServer(c.proxyPort, c.client, sshHostKeySigner)
 				if err := srv.Serve(string(sessionID)); err != nil {
 					c.processGracefulExit(err)
 				}
@@ -235,7 +246,6 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				ossig.shutdownFn = func() { loader.Stop(); term.Close() }
 			default:
 				errMsg := fmt.Errorf(`connection type %q not implemented`, connnectionType.String())
-				sentry.CaptureException(fmt.Errorf("connect - %v", errMsg))
 				c.processGracefulExit(errMsg)
 			}
 		case pbclient.SessionOpenApproveOK:
@@ -465,6 +475,26 @@ func parseClientEnvVars() (map[string]string, error) {
 		return nil, fmt.Errorf("invalid client env vars, expected env=var. found=%v", invalidEnvs)
 	}
 	return envVar, nil
+}
+
+func parseHostKey(encHostKey []byte) (ssh.Signer, error) {
+	hostKeyBytes, err := base64.StdEncoding.DecodeString(string(encHostKey))
+	if err != nil {
+		return nil, fmt.Errorf("failed decoding base64 hosts key: %v", err)
+	}
+	block, _ := pem.Decode(hostKeyBytes)
+	if block == nil {
+		return nil, fmt.Errorf("failed decoding host key PEM block")
+	}
+	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed parsing private key to PKCS#8 format: %v", err)
+	}
+	signerKey, err := ssh.NewSignerFromKey(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed parsing private key to ssh signer: %v", err)
+	}
+	return signerKey, nil
 }
 
 type osInterrupt struct {

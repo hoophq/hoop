@@ -24,9 +24,10 @@ type SSHServer struct {
 	connectionStore memory.Store
 	listener        net.Listener
 	packetType      pb.PacketType
+	hostKey         ssh.Signer
 }
 
-func NewSSHServer(listenPort string, client pb.ClientTransport, packetType pb.PacketType) *SSHServer {
+func NewSSHServer(listenPort string, client pb.ClientTransport, hostKey ssh.Signer) *SSHServer {
 	listenAddr := defaultListenAddr(defaultSSHPort)
 	if listenPort != "" {
 		listenAddr = defaultListenAddr(listenPort)
@@ -44,24 +45,29 @@ func NewSSHServer(listenPort string, client pb.ClientTransport, packetType pb.Pa
 		client:          client,
 		serverConfig:    config,
 		connectionStore: memory.New(),
-		packetType:      packetType,
+		hostKey:         hostKey,
+		packetType:      pbagent.SSHConnectionWrite,
 	}
 }
 
 func (p *SSHServer) Serve(sid string) error {
-	noopPrivKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		return fmt.Errorf("failed to generate host key: %v", err)
+	if p.hostKey == nil {
+		randomHostKey, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			return fmt.Errorf("failed to generate host key: %v", err)
+		}
+		randomHostKeySigner, err := ssh.NewSignerFromKey(randomHostKey)
+		if err != nil {
+			return fmt.Errorf("failed to signer host key: %v", err)
+		}
+		p.hostKey = randomHostKeySigner
 	}
-	noopSigner, err := ssh.NewSignerFromKey(noopPrivKey)
-	if err != nil {
-		return fmt.Errorf("failed to signer host key: %v", err)
-	}
+
 	// It requires at least one key to host an SSH server.
 	// Generate a random key just to satisfy this requirement.
 	// In practice, the client will establish a plain SSH connection
 	// to localhost TLS secured by the gRPC gateway.
-	p.serverConfig.AddHostKey(noopSigner)
+	p.serverConfig.AddHostKey(p.hostKey)
 
 	lis, err := net.Listen("tcp4", p.listenAddr)
 	if err != nil {

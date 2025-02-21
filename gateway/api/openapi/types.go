@@ -802,6 +802,8 @@ type ServerInfo struct {
 	HasPostgresRole bool `json:"has_postgrest_role"`
 	// Report if ASK_AI_CREDENTIALS is set (openapi credentials)
 	HasAskiAICredentials bool `json:"has_ask_ai_credentials"`
+	// Report if SSH_CLIENT_HOST_KEY is set
+	HasSSHClientHostKey bool `json:"has_ssh_client_host_key"`
 	// API URL advertise to clients
 	ApiURL string `json:"api_url" example:"https://api.johnwick.org"`
 	// The GRPC_URL advertise to clients
