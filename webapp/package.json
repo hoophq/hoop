@@ -30,6 +30,7 @@
     "@sentry/browser": "8.41.0",
     "@uiw/codemirror-theme-dracula": "^4.21.21",
     "@uiw/codemirror-theme-github": "^4.21.21",
+    "@uiw/codemirror-theme-material": "^4.23.8",
     "@uiw/codemirror-theme-nord": "^4.21.21",
     "@uiw/codemirror-theme-sublime": "^4.21.21",
     "@uiw/react-codemirror": "^4.21.21",

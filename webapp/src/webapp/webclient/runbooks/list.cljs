@@ -34,12 +34,12 @@
    payload))
 
 (defn file [filename filter-template-selected]
-  [:div {:class "flex items-center gap-2 pl-6 pb-4 hover:underline cursor-pointer text-xs text-white whitespace-pre"
+  [:div {:class "flex items-center gap-2 pl-6 pb-4 hover:underline cursor-pointer text-xs text-gray-12 whitespace-pre"
          :on-click #(rf/dispatch [:runbooks-plugin->set-active-runbook
                                   (filter-template-selected filename)])}
    [:div
     [:> File {:size 14
-              :color "white"}]]
+              :class "text-[--gray-11]"}]]
    [:span {:class "block truncate"}
     filename]])
 
@@ -47,26 +47,26 @@
   (let [dropdown-status (r/atom {})]
     (fn [name items level]
       (if (empty? items)
-        [:div {:class "flex items-center gap-2 pb-4 hover:underline cursor-pointer text-xs text-white whitespace-pre"
+        [:div {:class "flex items-center gap-2 pb-4 hover:underline cursor-pointer text-xs text-gray-12 whitespace-pre"
                :on-click #(rf/dispatch [:runbooks-plugin->set-active-runbook
                                         (filter-template-selected name)])}
          [:div
           [:> File {:size 14
-                    :color "white"}]]
+                    :class "text-[--gray-11]"}]]
          [:span {:class "block truncate"}
           name]]
 
-        [:div {:class (str "text-xs text-white "
+        [:div {:class (str "text-xs text-gray-12 "
                            (when level
                              (str "pl-" (* level 2))))}
          [:div {:class "flex pb-4 items-center gap-small"}
           (if (= (get @dropdown-status name) :open)
             [:div
              [:> FolderOpen {:size 14
-                             :color "white"}]]
+                             :class "text-[--gray-11]"}]]
             [:div
              [:> FolderClosed {:size 14
-                               :color "white"}]])
+                               :class "text-[--gray-11]"}]])
           [:span {:class (str "hover:underline cursor-pointer "
                               "flex items-center")
                   :on-click #(swap! dropdown-status
@@ -85,13 +85,13 @@
             [file item filter-template-selected])]]))))
 
 (defn directory-tree [tree filter-template-selected]
-  [:div
+  [:div {:class "overflow-y-auto"}
    (for [[name items] tree]
      ^{:key name}
      [directory name items 0 filter-template-selected])])
 
 (defn- loading-list-view []
-  [:div {:class "flex gap-small items-center py-regular text-xs text-white"}
+  [:div {:class "flex gap-small items-center py-regular text-xs text-gray-12"}
    [:span {:class "italic"}
     "Loading runbooks"]
    [:figure {:class "w-3 flex-shrink-0 animate-spin opacity-60"}
@@ -99,18 +99,17 @@
 
 (defn- empty-templates-view []
   [:div {:class "text-center"}
-   [:div {:class "text-gray-400 text-xs"}
+   [:div {:class "text-gray-12 text-xs"}
     "There are no Runbooks available for this connection."]])
 
 (defn- no-integration-templates-view []
   [:div {:class "pt-large"}
    [:div {:class "flex flex-col items-center text-center"}
-    [:div {:class "text-gray-400 text-xs mb-large"}
+    [:div {:class "text-gray-12 text-xs mb-large"}
      "Configure your Git repository to enable your Runbooks."]
     [:> Button {:color "indigo"
                 :size "3"
                 :variant "ghost"
-                :class-name "dark"
                 :radius "medium"
                 :on-click #(rf/dispatch [:navigate :manage-plugin {:tab "configurations"} :plugin-name "runbooks"])}
      "Go to Configurations"]]])
@@ -124,6 +123,6 @@
         (= :loading (:status @templates)) [loading-list-view]
         (= :error (:status @templates)) [no-integration-templates-view]
         (and (empty? (:data @templates)) (= :ready (:status @templates))) [empty-templates-view]
-        (empty? @filtered-templates) [:div {:class "text-center text-xs text-gray-400 font-normal"}
+        (empty? @filtered-templates) [:div {:class "text-center text-xs text-gray-12 font-normal"}
                                       "There's no runbook matching your search."]
         :else [directory-tree transformed-payload filter-template-selected]))))

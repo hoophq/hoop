@@ -1,6 +1,7 @@
 (ns webapp.webclient.runbooks.form
   (:require ["@heroicons/react/16/solid" :as hero-micro-icon]
             ["@heroicons/react/24/solid" :as hero-solid-icon]
+            ["@radix-ui/themes" :refer [Box Text]]
             [re-frame.core :as rf]
             [reagent.core :as r]
             [webapp.components.button :as button]
@@ -26,7 +27,6 @@
    (case type
      "select" [forms/select (merge
                              {:label label
-                              :dark true
                               :full-width? true
                               :on-change on-change
                               :selected (or value "")
@@ -38,7 +38,6 @@
                                {:required true}))]
      "textarea" [forms/textarea (merge
                                  {:label label
-                                  :dark true
                                   :placeholder (or placeholder (str "Define a value for " label))
                                   :value (or value "")
                                   :on-change on-change
@@ -51,7 +50,6 @@
                                    {:required true}))]
      [forms/input (merge
                    {:label label
-                    :dark true
                     :placeholder (or placeholder (str "Define a value for " label))
                     :value (or value "")
                     :type type
@@ -71,9 +69,9 @@
 (defn- error-view [error]
   [:div {:class "pt-large flex flex-col gap-regular items-center"}
    [:div {:class "flex flex-col items-center text-center"}
-    [:div {:class "text-white text-base font-bold"}
+    [:div {:class " text-base font-bold"}
      "Error found."]
-    [:div {:class "text-white text-sm mb-large"}
+    [:div {:class " text-sm mb-large"}
      error]]])
 
 (defmulti template-view identity)
@@ -86,11 +84,10 @@
       ;; based on its own key.
       (if (nil? (:data template))
         [:div {:class "flex items-center justify-center h-full"}
-         [:span
-          {:class (str "text-gray-400 text-xl")}
+         [:span {:class "text-gray-400 text-xl"}
           "No Runbook selected"]]
 
-        [:div {:class "overflow-auto lg:overflow-hidden"}
+        [:div {:class "overflow-auto lg:overflow-hidden text-[--gray-12]"}
          [:section
           [:form
            {:on-submit (fn [e]
@@ -104,13 +101,13 @@
                                           :params @state
                                           :connection-name connection-name}])))}
            [:header {:class "mb-regular"}
-            [:div {:class "flex items-center gap-small mb-small"}
+            [:> Box {:class "flex items-center gap-small mb-small"}
              [:> hero-solid-icon/DocumentIcon
-              {:class "h-4 w-4 text-white" :aria-hidden "true"}]
-             [:span {:class "text-base font-semibold break-words text-white"}
+              {:class "h-4 w-4" :aria-hidden "true"}]
+             [:span {:class "text-base font-semibold break-words"}
               (-> template :data :name)]]
 
-            [:span {:class "text-white text-xs"}
+            [:span {:class " text-xs"}
              "Fill the params below for this Runbook"]]
            (doall (for [param (-> template :data :params)
                         :let [metadata ((keyword param) (-> template :data :metadata))]]
@@ -163,6 +160,6 @@
     [:<>
      [:div {:class "absolute right-4 top-4 transition cursor-pointer z-10"
             :on-click #(rf/dispatch [:runbooks-plugin->clear-active-runbooks])}
-      [:> hero-micro-icon/XMarkIcon {:class "h-5 w-5 text-white" :aria-hidden "true"}]]
+      [:> hero-micro-icon/XMarkIcon {:class "h-5 w-5 text-[--gray-12]" :aria-hidden "true"}]]
      [template-view (:status runbook) runbook selected-connections preselected-connection]]))
 

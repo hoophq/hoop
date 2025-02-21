@@ -4,6 +4,7 @@
             ["clipboard" :as clipboardjs]
             ["highlight.js" :as hljs]
             ["markdown-it" :as markdownit]
+            ["@radix-ui/themes" :refer [Spinner]]
             [clojure.string :as cs]
             [goog.crypt.base64 :as b64]
             [re-frame.core :as rf]
@@ -59,24 +60,22 @@
                                               (catch js/Error _ (str "")))
                                             "")))})]
     (case status
-      :success [:div {:class "relative py-large px-regular border-t border-gray-700 whitespace-pre-wrap"}
+      :success [:div {:class "relative py-large px-regular whitespace-pre-wrap"}
                 [:div {:class "font-bold text-sm mb-1"}
                  script]
                 [:div {:class "text-sm mb-1"
                        :dangerouslySetInnerHTML {:__html (.render md response)}}]
-                [:div {:class "text-gray-400 text-sm"}
+                [:div {:class "text-gra-11 text-sm"}
                  (str (formatters/current-time) " [cost " (formatters/time-elapsed execution-time) "]")]]
-      :loading [:div {:class "flex gap-regular py-large px-regular border-t border-gray-700"}
-                [:span "loading"]
-                [:figure {:class "w-4"}
-                 [:img {:class "animate-spin"
-                        :src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]]
-      :failure [:div {:class " group relative py-large px-regular border-t border-gray-700 whitespace-pre-wrap"}
+      :loading [:div {:class "flex gap-regular py-large px-regular"}
+                [:> Spinner {:loading true}]
+                [:span "loading"]]
+      :failure [:div {:class " group relative py-large px-regular whitespace-pre-wrap"}
                 [:div {:class "font-bold text-sm mb-1"}
                  script]
                 [:div {:class "text-sm mb-1"}
                  "There was an error to get the logs for this task"]
-                [:div {:class "text-red-400 text-sm"}
+                [:div {:class "text-red-11 text-sm"}
                  (str (formatters/current-time) " [cost " (formatters/time-elapsed execution-time) "]")]]
       "No response to show")))
 
@@ -84,7 +83,7 @@
   [status {:keys [logs logs-status script execution-time has-review? session-id]}]
   (case status
     :success (if has-review?
-               [:div {:class "group relative py-large px-regular border-t border-gray-700 whitespace-pre-wrap"
+               [:div {:class "group relative py-large px-regular whitespace-pre-wrap"
                       :on-click (fn []
                                   (rf/dispatch [:open-modal
                                                 [session-details/main {:id session-id :verb "exec"}]
@@ -97,33 +96,32 @@
                  script]
                 [:div {:class "text-sm mb-1"}
                  "This task need to be reviewed. Please click here to see the details."]
-                [:div {:class "text-gray-400 text-sm"}
+                [:div {:class "text-gray-11 text-sm"}
                  (str (formatters/current-time) " [cost " (formatters/time-elapsed execution-time) "]")]]
 
-               [:div {:class " group relative py-large px-regular border-t border-gray-700 whitespace-pre-wrap"}
+               [:div {:class " group relative py-large px-regular whitespace-pre-wrap"}
                 [action-buttons-container session-id]
                 [:div {:class "font-bold text-sm mb-1"}
                  script]
                 [:div {:class "text-sm mb-1"}
                  (trunc logs)]
                 [:div {:class (str (if (= logs-status "success")
-                                     "text-gray-400 text-sm"
-                                     "text-gray-400 text-sm"))}
+                                     "text-gray-11 text-sm"
+                                     "text-gray-11 text-sm"))}
                  (str (formatters/current-time) " [cost " (formatters/time-elapsed execution-time) "]")]])
-    :loading [:div {:class "flex gap-regular py-large px-regular border-t border-gray-700"}
-              [:span "loading"]
-              [:figure {:class "w-4"}
-               [:img {:class "animate-spin"
-                      :src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]]
-    :failure [:div {:class " group relative py-large px-regular border-t border-gray-700 whitespace-pre-wrap"}
+    :loading [:div {:class "flex gap-regular py-large px-regular"}
+              [:> Spinner {:loading true}]
+              [:span "loading"]]
+    :failure [:div {:class " group relative py-large px-regular whitespace-pre-wrap"}
               [action-buttons-container session-id]
               [:div {:class "font-bold text-sm mb-1"}
                script]
               [:div {:class "text-sm mb-1"}
                "There was an error to get the logs for this task"]
-              [:div {:class "text-gray-400 text-sm"}
+              [:div {:class "text-gray-11 text-sm"}
                (str (formatters/current-time) " [cost " (formatters/time-elapsed execution-time) "]")]]
-    "No logs to show"))
+    [:div {:class "flex gap-regular py-large px-regular"}
+     [:span  "No logs to show"]]))
 
 (defn main
   "config is a map with the following fields:
@@ -132,25 +130,22 @@
   :logs -> the actual string with the logs"
   [type config]
   [:section
-   {:class (str "relative bg-gray-900 font-mono h-full"
-                " whitespace-pre text-gray-200 text-sm overflow-y-auto"
-                " pt-regular h-full flex flex-col-reverse pb-12")
+   {:class (str "relative bg-gray-2 font-mono h-full"
+                " whitespace-pre text-gray-11 text-sm overflow-y-auto"
+                " h-full")
     :style {:overflow-anchor "none"}}
-   (for [data config]
-     (case type
-       :logs
-       ^{:key (str (:status data) "-" (:response-id data))}
-       [logs-area-list (:status data)
-        {:logs (:response data)
-         :logs-status (:response-status data)
-         :script (:script data)
-         :execution-time (:execution-time data)
-         :has-review? (:has-review data)
-         :session-id (:response-id data)}]
+   (case type
+     :logs
+     [logs-area-list (:status config)
+      {:logs (:response config)
+       :logs-status (:response-status config)
+       :script (:script config)
+       :execution-time (:execution-time config)
+       :has-review? (:has-review config)
+       :session-id (:response-id config)}]
 
-       :ai
-       ^{:key (str (:status data) "-" (:response-id data))}
-       [ai-response-area-list (:status data)
-        {:response (:response data)
-         :script (:script data)
-         :execution-time (:execution-time data)}]))])
+     :ai
+     [ai-response-area-list (:status config)
+      {:response (:response config)
+       :script (:script config)
+       :execution-time (:execution-time config)}])])

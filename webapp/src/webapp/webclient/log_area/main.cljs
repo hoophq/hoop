@@ -34,18 +34,18 @@
         question-responses (rf/subscribe [:ask-ai->question-responses])
         database-schema (rf/subscribe [::subs/database-schema])
         input-question (r/atom "")]
-    (fn [connection-type connection-name is-one-connection-selected? show-tabular?]
+    (fn [connection-type connection-name is-one-connection-selected? show-tabular? dark-mode?]
       (let [current-schema (get-in @database-schema [:data connection-name])
-            logs-content (mapv #(into {} {:status (:status %)
-                                          :response (:output (:data %))
-                                          :response-status (:output_status (:data %))
-                                          :script (if (= connection-type "postgres")
-                                                    (clean-postgres-script (:script (:data %)))
-                                                    (:script (:data %)))
-                                          :response-id (:session_id (:data %))
-                                          :has-review (:has_review (:data %))
-                                          :execution-time (:execution_time (:data %))
-                                          :classes "h-full"}) @script-response)
+            logs-content {:status (:status @script-response)
+                          :response (:output (:data @script-response))
+                          :response-status (:output_status (:data @script-response))
+                          :script (if (= connection-type "postgres")
+                                    (clean-postgres-script (:script (:data @script-response)))
+                                    (:script (:data @script-response)))
+                          :response-id (:session_id (:data @script-response))
+                          :has-review (:has_review (:data @script-response))
+                          :execution-time (:execution_time (:data @script-response))
+                          :classes "h-full"}
             feature-ai-ask (or (get-in @user [:data :feature_ask_ai]) "disabled")
             ai-content (map #(into {} {:status (:status %)
                                        :script (:question (:data %))
@@ -53,7 +53,7 @@
                                        :response-id (:id (:data %))
                                        :execution-time (:execution_time (:data %))
                                        :classes "h-full"}) @question-responses)
-            tabular-data (:data (first @script-response))
+            tabular-data (:data @script-response)
             tabular-status (:status (first @script-response))
             tabular-loading? (= tabular-status :loading)
             sanitize-results (when-not (nil? (:output tabular-data))
@@ -63,6 +63,9 @@
             results-body (next results-transformed)
             connection-type-database? (some (partial = connection-type)
                                             ["mysql" "postgres" "sql-server" "oracledb" "mssql" "database"])
+            _ (println connection-type-database?
+                       is-one-connection-selected?
+                       show-tabular?)
             available-tabs (merge
                             {:logs "Logs"}
                             (when (and connection-type-database?
@@ -98,20 +101,20 @@
                       :disabled false
                       :auto-complete "off"
                       :on-change #(reset! input-question (-> % .-target .-value))
-                      :class (str "block w-full py-1.5 bg-gray-900 "
+                      :class (str "block w-full py-1.5 bg-gray-2 "
                                   "pl-10 text-white border border-gray-600 border-r-0 "
                                   "placeholder:text-gray-400 sm:text-xs "
                                   "focus:ring-1 focus:ring-gray-400 focus:border-gray-400 focus:outline-none")
                       :placeholder "Ask AI anything"
                       :value @input-question}]
              [:button {:type "submit"
-                       :class (str "border border-gray-600 border-l-0 px-3 py-2 text-sm font-semibold")}
+                       :class "border border-gray-600 border-l-0 px-3 py-2 text-sm font-semibold"}
               [:> hero-solid-icon/ArrowRightCircleIcon {:class "h-5 w-5 text-white" :aria-hidden "true"}]]]])
          ;;end ask-ai ui
 
          [:div {:class (str (if (= feature-ai-ask "enabled")
-                              "h-logs-container"
-                              "h-full"))}
+                              "h-logs-container bg-gray-1 border-b border-gray-3"
+                              "h-full flex flex-col bg-gray-1 border-b border-gray-3"))}
           [tabs {:on-click (fn [_ value]
                              (.setItem js/localStorage "webclient-selected-tab" value)
                              (reset! selected-tab value))
@@ -119,6 +122,6 @@
                  :selected-tab @selected-tab}]
           (case @selected-tab
             "AI" [logs/main :ai ai-content]
-            "Tabular" [data-grid-table/main results-heads results-body true tabular-loading?]
+            "Tabular" [data-grid-table/main results-heads results-body dark-mode? tabular-loading?]
             "Logs" [logs/main :logs logs-content]
             :else [logs/main logs-content])]]))))

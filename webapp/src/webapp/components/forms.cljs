@@ -8,7 +8,7 @@
 
 (defn- form-label
   [text]
-  [:label {:class "block text-xs font-semibold text-gray-800"} text])
+  [:label {:class "block text-xs font-semibold text-[--gray-12]"} text])
 
 (defn- form-label-dark
   [text]
@@ -181,7 +181,7 @@
                         "1" "rt-r-size-1"
                         "rt-r-size-2"))}
     [:textarea
-     {:class (str "rt-reset rt-TextAreaInput"
+     {:class (str "rt-reset rt-TextAreaInput "
                   (when dark "dark"))
       :id (or id "")
       :rows (or rows 5)
@@ -241,9 +241,11 @@
                     :disabled (or disabled false)}
     [:> Select.Trigger {:placeholder (or placeholder "Select one")
                         :variant (or variant "surface")
+                        :color "indigo"
                         :class (str (when full-width? "w-full ")
                                     (when dark "dark"))}]
-    [:> Select.Content {:position "popper"}
+    [:> Select.Content {:position "popper"
+                        :color "indigo"}
      (map #(option % selected) options)]]])
 
 (defn select-editor
