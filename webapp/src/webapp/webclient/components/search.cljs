@@ -1,7 +1,7 @@
 (ns webapp.webclient.components.search
   (:require
    ["@radix-ui/themes" :refer [IconButton]]
-   ["lucide-react" :refer [Search]]
+   ["lucide-react" :refer [Search X]]
    [reagent.core :as r]
    [re-frame.core :as rf]))
 
@@ -30,11 +30,21 @@
                                (let [value (-> e .-target .-value)]
                                  (reset! has-text? (not (empty? value)))
                                  (rf/dispatch [:connections/set-filter value])))}]
-         [:> IconButton
-          {:class (str "absolute top-0 right-0 w-8 h-8 "
-                       "bg-gray-3 hover:bg-gray-4")
-           :size "2"
-           :variant "soft"
-           :color "gray"
-           :onClick #(.focus (.getElementById js/document input-id))}
-          [:> Search {:size 16}]]]))))
+         (if @has-text?
+           [:> IconButton
+            {:class (str "absolute top-0 right-0 w-8 h-8 "
+                         "bg-gray-3 hover:bg-gray-4")
+             :size "2"
+             :variant "soft"
+             :color "gray"
+             :onClick #(.clear (.getElementById js/document input-id))}
+            [:> X {:size 16}]]
+
+           [:> IconButton
+            {:class (str "absolute top-0 right-0 w-8 h-8 "
+                         "bg-gray-3 hover:bg-gray-4")
+             :size "2"
+             :variant "soft"
+             :color "gray"
+             :onClick #(.focus (.getElementById js/document input-id))}
+            [:> Search {:size 16}]])]))))
