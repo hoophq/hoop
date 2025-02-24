@@ -316,11 +316,12 @@ func (s *SlackService) PostMessage(slackOrChannelID, message string) error {
 	return nil
 }
 
-func (s *SlackService) PostEphemeralMessage(msg *MessageReviewResponse, message string) error {
+func (s *SlackService) PostEphemeralMessage(msg *MessageReviewResponse, message string, msgArgs ...any) error {
 	channelID := msg.item.Channel.ID
 	userID := msg.item.User.ID
 
-	timestamp, err := s.apiClient.PostEphemeral(channelID, userID, slack.MsgOptionText(message, false))
+	msgOption := slack.MsgOptionText(fmt.Sprintf(message, msgArgs...), false)
+	timestamp, err := s.apiClient.PostEphemeral(channelID, userID, msgOption)
 	if err != nil {
 		log.Errorf("failed post ephemeral message to the user %s on the channel %s at %v, err=%v", userID, channelID, timestamp, err)
 		return err
