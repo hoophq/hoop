@@ -63,6 +63,7 @@
    [webapp.webclient.events.multi-exec]
    [webapp.webclient.events.connection-selection]
    [webapp.webclient.events.codemirror]
+   [webapp.webclient.events.search]
    [webapp.guardrails.create-update-form :as guardrail-create-update]
    [webapp.guardrails.main :as guardrails]
    [webapp.jira-templates.create-update-form :as jira-templates-create-update]

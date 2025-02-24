@@ -44,8 +44,13 @@
     filename]])
 
 (defn directory [_ _ _ filter-template-selected]
-  (let [dropdown-status (r/atom {})]
+  (let [dropdown-status (r/atom {})
+        search-term (rf/subscribe [:search/term])]
     (fn [name items level]
+      (when (and (not (empty? @search-term))
+                 (not= (get @dropdown-status name) :open))
+        (swap! dropdown-status assoc name :open))
+
       (if (empty? items)
         [:div {:class "flex items-center gap-2 pb-4 hover:underline cursor-pointer text-xs text-gray-12 whitespace-pre"
                :on-click #(rf/dispatch [:runbooks-plugin->set-active-runbook
@@ -118,11 +123,14 @@
   (fn [templates filtered-templates]
     (let [filter-template-selected (fn [template]
                                      (first (filter #(= (:name %) template) (:data @templates))))
+          search-term (rf/subscribe [:search/term])
           transformed-payload (sort-tree (transform-payload @filtered-templates))]
       (cond
         (= :loading (:status @templates)) [loading-list-view]
         (= :error (:status @templates)) [no-integration-templates-view]
         (and (empty? (:data @templates)) (= :ready (:status @templates))) [empty-templates-view]
         (empty? @filtered-templates) [:div {:class "text-center text-xs text-gray-12 font-normal"}
-                                      "There's no runbook matching your search."]
+                                      (if (empty? @search-term)
+                                        "There are no runbooks available."
+                                        (str "No runbooks matching \"" @search-term "\"."))]
         :else [directory-tree transformed-payload filter-template-selected]))))

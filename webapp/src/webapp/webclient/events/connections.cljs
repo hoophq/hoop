@@ -45,13 +45,15 @@
  (fn [{:keys [db]} [_ connection]]
    {:db (assoc-in db [:editor :connections :selected] connection)
     :fx [[:dispatch [:editor-plugin/clear-language]]
-         [:dispatch [:connections/persist-selected]]]}))
+         [:dispatch [:connections/persist-selected]]
+         [:dispatch [:database-schema->clear-schema]]]}))
 
 (rf/reg-event-fx
  :connections/clear-selected
  (fn [{:keys [db]} _]
    {:db (assoc-in db [:editor :connections :selected] nil)
-    :fx [[:dispatch [:connections/persist-selected]]]}))
+    :fx [[:dispatch [:connections/persist-selected]]
+         [:dispatch [:database-schema->clear-schema]]]}))
 
 (rf/reg-event-fx
  :connections/persist-selected

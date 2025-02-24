@@ -2,7 +2,7 @@
 (ns webapp.webclient.components.header
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Heading IconButton]]
-   ["lucide-react" :refer [BookUp2 FastForward PackagePlus Play Sun]]
+   ["lucide-react" :refer [BookUp2 FastForward PackagePlus Play Sun Moon]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.webclient.components.search :as search]))
@@ -44,16 +44,8 @@
           [:> Heading {:as "h1" :size "6" :weight "bold" :class "text-gray-12"}
            "Terminal"]
           [:> Flex {:align "center" :gap "2"}
-           #_[:> IconButton
-              {:class (when (= @active-tool :search)
-                        "bg-gray-8 text-gray-12")
-               :size "2"
-               :color "gray"
-               :variant "soft"
-               :onClick #(reset! active-tool :search)}
-              [:> Search {:size 16}]]
 
-           [search/main]
+           [search/main active-panel]
 
            [:> IconButton
             {:class (when @dark-mode?
@@ -61,8 +53,12 @@
              :size "2"
              :color "gray"
              :variant "soft"
-             :onClick #(swap! dark-mode? not)}
-            [:> Sun {:size 16}]]
+             :onClick (fn []
+                        (swap! dark-mode? not)
+                        (.setItem js/localStorage "dark-mode" (str @dark-mode?)))}
+            (if @dark-mode?
+              [:> Sun {:size 16}]
+              [:> Moon {:size 16}])]
 
            [notification-badge
             [:> BookUp2 {:size 16}]

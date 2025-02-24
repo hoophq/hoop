@@ -1,7 +1,7 @@
 (ns webapp.webclient.runbooks.form
   (:require ["@heroicons/react/16/solid" :as hero-micro-icon]
             ["@heroicons/react/24/solid" :as hero-solid-icon]
-            ["@radix-ui/themes" :refer [Box Text]]
+            ["@radix-ui/themes" :refer [Box Button Text]]
             [re-frame.core :as rf]
             [reagent.core :as r]
             [webapp.components.button :as button]
@@ -93,6 +93,7 @@
            {:on-submit (fn [e]
                          (.preventDefault e)
 
+                         (println selected-connections)
                          (if (> (count selected-connections) 1)
                            (reset! exec-multiples-runbooks-list/atom-exec-runbooks-list-open? true)
 
@@ -126,10 +127,10 @@
 
            (if (nil? (-> template :data :error))
              [:footer {:class "flex gap-regular justify-end"}
-              [button/primary {:text "Execute runbook"
-                               :disabled (or (= (-> template :status) :loading)
-                                             (= (-> template :form-status) :loading))
-                               :type "submit"}]]
+              [:> Button {:disabled (or (= (-> template :status) :loading)
+                                        (= (-> template :form-status) :loading))
+                          :type "submit"}
+               "Execute runbook"]]
 
              [error-view (-> template :data :error)])]]
 

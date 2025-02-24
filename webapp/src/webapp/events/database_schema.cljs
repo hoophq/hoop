@@ -24,26 +24,18 @@
             {}
             schemas)))
 
-(defn- clear-selected-database [db connection-name]
-  (let [stored-db (.getItem js/localStorage "selected-database")
-        current-connection (get-in db [:database-schema :data connection-name])]
-    (when (and stored-db
-               (some #(= stored-db %) (:databases current-connection)))
-      (.removeItem js/localStorage "selected-database"))))
-
 (rf/reg-event-fx
  :database-schema->clear-selected-database
- (fn [{:keys [db]} [_ connection-name]]
-   (clear-selected-database db connection-name)
+ (fn [{:keys [db]} [_]]
+   (.removeItem js/localStorage "selected-database")
    {}))
 
 (rf/reg-event-fx
  :database-schema->clear-schema
- (fn [{:keys [db]} [_ connection-name]]
-   (clear-selected-database db connection-name)
+ (fn [{:keys [db]} [_]]
+   (.removeItem js/localStorage "selected-database")
    {:db (-> db
-            (update-in [:database-schema :data] dissoc connection-name)
-            (assoc-in [:database-schema :current-connection] nil))}))
+            (assoc-in [:database-schema :data] nil))}))
 
 (rf/reg-event-fx
  :database-schema->handle-multi-database-schema

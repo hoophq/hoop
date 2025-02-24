@@ -1,10 +1,11 @@
 (ns webapp.events.editor-plugin
   (:require
+   [cljs.core :as c]
    [clojure.edn :refer [read-string]]
    [clojure.string :as cs]
-   [webapp.webclient.log-area.main :as log-area]
    [re-frame.core :as rf]
-   [cljs.core :as c]))
+   [webapp.jira-templates.loading-jira-templates :as loading-jira-templates]
+   [webapp.jira-templates.prompt-form :as prompt-form]))
 
 (rf/reg-event-fx
  :editor-plugin->get-run-connection-list
@@ -159,7 +160,8 @@
                                            :waiting-review
                                            :completed)}
          new-connections-runbook-list (mapv (fn [runbook]
-                                              (if (= (:connection-name runbook) (:connection-name current-runbook))
+                                              (if (= (:connection-name runbook)
+                                                     (:connection-name current-runbook))
                                                 current-runbook-parsed
                                                 runbook))
                                             (:data (:editor-plugin->connections-runbook-list db)))
@@ -176,13 +178,14 @@
  ::editor-plugin->set-multiple-connections-run-runbook-failure
  (fn
    [{:keys [db]} [_ data current-runbook]]
-   (let [current-runbook-parsed {:name (:name current-runbook)
+   (let [current-runbook-parsed {:connection-name (:connection-name current-runbook)
                                  :subtype (:subtype current-runbook)
                                  :type (:type current-runbook)
                                  :session-id (:session-id data)
                                  :status :error}
          new-connections-runbook-list (mapv (fn [runbook]
-                                              (if (= (:name runbook) (:name current-runbook))
+                                              (if (= (:connection-name runbook)
+                                                     (:connection-name current-runbook))
                                                 current-runbook-parsed
                                                 runbook))
                                             (:data (:editor-plugin->connections-runbook-list db)))
@@ -382,7 +385,10 @@
          needs-template? (boolean (and primary-connection
                                        (not (cs/blank? (:jira_issue_template_id primary-connection)))))
          connection-type (discover-connection-type primary-connection)
-         jira-integration-enabled? (get-in db [:jira-integration :enabled?])
+         jira-integration-enabled? (= (-> (get-in db [:jira-integration->details])
+                                          :data
+                                          :status)
+                                      "enabled")
          change-to-tabular? (and (some (partial = connection-type)
                                        ["mysql" "postgres" "sql-server" "oracledb" "mssql" "database"])
                                  (< (count script) 1))
@@ -394,12 +400,14 @@
          metadata (conj current-metadatas {:key current-metadata-key :value current-metadata-value})
          final-script (cond
                         (and selected-db
-                             (= connection-type "postgres")) (str "\\set QUIET on\n"
-                                                                  "\\c " selected-db "\n"
-                                                                  "\\set QUIET off\n"
-                                                                  script)
+                             (= connection-type "postgres")
+                             (not multiple-connections?)) (str "\\set QUIET on\n"
+                                                               "\\c " selected-db "\n"
+                                                               "\\set QUIET off\n"
+                                                               script)
                         (and selected-db
-                             (= connection-type "mongodb")) (str "use " selected-db ";\n" script)
+                             (= connection-type "mongodb")
+                             (not multiple-connections?)) (str "use " selected-db ";\n" script)
                         :else script)]
 
      (cond
@@ -436,7 +444,7 @@
        {:fx [[:dispatch [:modal->open
                          {:maxWidth "540px"
                           :custom-on-click-out #(.preventDefault %)
-                          :content :loading-jira-templates}]]
+                          :content [loading-jira-templates/main]}]]
              [:dispatch [:jira-templates->get-submit-template
                          (:jira_issue_template_id primary-connection)]]
              [:dispatch-later
@@ -475,7 +483,7 @@
 (rf/reg-event-fx
  :editor-plugin/check-template-and-show-form
  (fn [{:keys [db]} [_ {:keys [template-id script metadata keep-metadata?]}]]
-   (let [template (get-in db [:jira-templates :submit-template])]
+   (let [template (get-in db [:jira-templates->submit-template])]
      (if (or (nil? (:data template))
              (= :loading (:status template)))
        ;; Template not ready - check again in 500ms
@@ -490,7 +498,7 @@
        ;; Template ready - show form if needed
        (if (needs-form? template)
          {:fx [[:dispatch [:modal->open
-                           {:content [:prompt-form
+                           {:content [prompt-form/main
                                       {:prompts (get-in template [:data :prompt_types :items])
                                        :cmdb-items (get-in template [:data :cmdb_types :items])
                                        :on-submit #(rf/dispatch
@@ -509,7 +517,7 @@
 (rf/reg-event-fx
  :editor-plugin/handle-template-submit
  (fn [{:keys [db]} [_ {:keys [form-data script metadata keep-metadata?]}]]
-   (let [connection (get-in db [:connections :selected])]
+   (let [connection (get-in db [:editor :connections :selected])]
      {:fx [[:dispatch [:modal->close]]
            [:dispatch [:editor-plugin->exec-script
                        (cond-> {:script script

@@ -134,7 +134,7 @@
                                                 {:connection-name connection-name}
                                                 db])
 
-                                  (rf/dispatch [:database-schema->clear-selected-database connection-name])))}
+                                  (rf/dispatch [:database-schema->clear-selected-database])))}
              [:> Text {:size "1" :weight "bold"} db]
              (if (= @open-database db)
                [:> ChevronDown {:size 12}]

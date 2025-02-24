@@ -123,7 +123,7 @@
         active-panel (r/atom nil)
         multi-run-panel? (r/atom false)
         show-runbooks? (r/atom false)
-        dark-mode? (r/atom false)
+        dark-mode? (r/atom (= (.getItem js/localStorage "dark-mode") "true"))
 
         vertical-pane-sizes (mapv js/parseInt
                                   (cs/split
@@ -282,7 +282,7 @@
                  [:section {:class "relative h-full p-3 overflow-auto"}
                   [runbooks-form/main {:runbook @selected-template
                                        :preselected-connection (:name current-connection)
-                                       :selected-connections (filter #(:selected %) @multi-selected-connections)}]]
+                                       :selected-connections (conj @multi-selected-connections current-connection)}]]
 
 
 
@@ -359,6 +359,7 @@
     (rf/dispatch [:plugins->get-my-plugins])
     (rf/dispatch [:jira-templates->get-all])
     (rf/dispatch [:jira-integration->get])
+    (rf/dispatch [:search/clear-term])
     (fn []
       (clearLocalCache)
       (rf/dispatch [:editor-plugin->get-run-connection-list])
