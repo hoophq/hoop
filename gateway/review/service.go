@@ -27,7 +27,7 @@ type (
 
 var (
 	ErrNotFound     = errors.New("review not found")
-	ErrWrongState   = errors.New("review in wrong state")
+	ErrWrongState   = errors.New("review is in wrong state")
 	ErrNotEligible  = errors.New("not eligible for review")
 	ErrSelfApproval = errors.New("unable to self approve review")
 )
@@ -148,9 +148,11 @@ func (s *Service) Review(ctx *storagev2.Context, reviewID string, status types.R
 	if rev == nil {
 		return nil, ErrNotFound
 	}
+
 	if rev.Status != types.ReviewStatusPending {
 		return rev, ErrWrongState
 	}
+
 	if rev.ReviewOwner.Id == ctx.UserID && !ctx.IsAdmin() {
 		return nil, ErrSelfApproval
 	}
@@ -168,7 +170,6 @@ func (s *Service) Review(ctx *storagev2.Context, reviewID string, status types.R
 
 	reviewsCount := len(rev.ReviewGroupsData)
 	approvedCount := 0
-	var approvedGroups []string
 
 	if status == types.ReviewStatusRejected {
 		rev.Status = status
@@ -179,17 +180,16 @@ func (s *Service) Review(ctx *storagev2.Context, reviewID string, status types.R
 			t := time.Now().UTC().Format(time.RFC3339)
 			rev.ReviewGroupsData[i].Status = status
 			rev.ReviewGroupsData[i].ReviewedBy = &types.ReviewOwner{
-				Id:    ctx.UserID,
-				Name:  ctx.UserName,
-				Email: ctx.UserEmail,
+				Id:      ctx.UserID,
+				Name:    ctx.UserName,
+				Email:   ctx.UserEmail,
+				SlackID: ctx.SlackID,
 			}
 			rev.ReviewGroupsData[i].ReviewDate = &t
 		}
 		if rev.ReviewGroupsData[i].Status == types.ReviewStatusApproved {
 			approvedCount++
 		}
-
-		approvedGroups = append(approvedGroups, rev.ReviewGroupsData[i].Group)
 	}
 
 	if reviewsCount == approvedCount {
