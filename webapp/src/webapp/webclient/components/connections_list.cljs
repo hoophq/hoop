@@ -22,7 +22,7 @@
       [:figure {:class "w-4"}
        [:img {:src (connection-constants/get-connection-icon
                     {:type type :subtype subtype}
-                    (if dark?
+                    (if @dark?
                       :light
                       :dark))
               :class "w-4"}]]]
