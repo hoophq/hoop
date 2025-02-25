@@ -4,7 +4,6 @@
    ["@radix-ui/themes" :refer [Box Button Flex Heading IconButton]]
    ["lucide-react" :refer [BookUp2 FastForward PackagePlus Play Sun Moon]]
    [re-frame.core :as rf]
-   [reagent.core :as r]
    [webapp.webclient.components.search :as search]))
 
 (defn notification-badge [icon on-click active? has-data?]
@@ -21,8 +20,7 @@
                         "rounded-full bg-red-500")}])])
 
 (defn main []
-  (let [active-tool (r/atom nil)
-        selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])
+  (let [selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])
         metadata (rf/subscribe [:editor-plugin/metadata])
         metadata-key (rf/subscribe [:editor-plugin/metadata-key])
         metadata-value (rf/subscribe [:editor-plugin/metadata-value])

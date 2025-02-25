@@ -103,7 +103,6 @@
  :<- [:connections/list]
  :<- [:connections/filter]
  (fn [[connections filter-text]]
-   (println filter-text)
    (if (empty? filter-text)
      connections
      (filter #(string/includes?

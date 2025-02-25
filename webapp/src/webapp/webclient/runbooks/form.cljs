@@ -1,10 +1,9 @@
 (ns webapp.webclient.runbooks.form
   (:require ["@heroicons/react/16/solid" :as hero-micro-icon]
             ["@heroicons/react/24/solid" :as hero-solid-icon]
-            ["@radix-ui/themes" :refer [Box Button Text]]
+            ["@radix-ui/themes" :refer [Box Button]]
             [re-frame.core :as rf]
             [reagent.core :as r]
-            [webapp.components.button :as button]
             [webapp.components.forms :as forms]
             [webapp.webclient.runbooks.exec-multiples-runbook-list :as exec-multiples-runbooks-list]
             [webapp.config :as config]))
@@ -92,8 +91,6 @@
           [:form
            {:on-submit (fn [e]
                          (.preventDefault e)
-
-                         (println selected-connections)
                          (if (> (count selected-connections) 1)
                            (reset! exec-multiples-runbooks-list/atom-exec-runbooks-list-open? true)
 
@@ -153,7 +150,7 @@
 (defmethod template-view :default []
   [:div {:class "flex items-center justify-center h-full"}
    [:span
-    {:class (str "text-gray-400 text-xl")}
+    {:class "text-gray-400 text-xl"}
     "No template selected"]])
 
 (defn main []

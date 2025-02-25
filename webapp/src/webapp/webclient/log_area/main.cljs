@@ -63,9 +63,6 @@
             results-body (next results-transformed)
             connection-type-database? (some (partial = connection-type)
                                             ["mysql" "postgres" "sql-server" "oracledb" "mssql" "database"])
-            _ (println connection-type-database?
-                       is-one-connection-selected?
-                       show-tabular?)
             available-tabs (merge
                             {:logs "Logs"}
                             (when (and connection-type-database?

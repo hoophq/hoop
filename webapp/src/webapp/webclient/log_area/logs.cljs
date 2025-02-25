@@ -10,8 +10,7 @@
             [re-frame.core :as rf]
             [reagent.dom.server :as rdom]
             [webapp.audit.views.session-details :as session-details]
-            [webapp.formatters :as formatters]
-            [webapp.config :as config]))
+            [webapp.formatters :as formatters]))
 
 (defn trunc
   [string]

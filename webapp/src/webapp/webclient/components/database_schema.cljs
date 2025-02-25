@@ -1,6 +1,6 @@
 (ns webapp.webclient.components.database-schema
-  (:require ["@radix-ui/themes" :refer [Em Text]]
-            ["lucide-react" :refer [ChevronDown ChevronRight Hash Database File FolderClosed FolderOpen Table]]
+  (:require ["@radix-ui/themes" :refer [Text]]
+            ["lucide-react" :refer [ChevronDown ChevronRight Database File FolderClosed FolderOpen Table]]
             [reagent.core :as r]
             [re-frame.core :as rf]
             [webapp.subs :as subs]

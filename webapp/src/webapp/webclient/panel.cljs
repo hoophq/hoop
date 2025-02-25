@@ -115,7 +115,6 @@
         selected-connection (rf/subscribe [:connections/selected])
         multi-selected-connections (rf/subscribe [:connection-selection/selected])
         database-schema (rf/subscribe [::subs/database-schema])
-        plugins (rf/subscribe [:plugins->my-plugins])
         selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])
         multi-exec (rf/subscribe [:multi-exec/modal])
 
@@ -138,17 +137,9 @@
     (fn [{:keys [script-output]}]
       (let [is-one-connection-selected? (= 0 (count @multi-selected-connections))
             feature-ai-ask (or (get-in @user [:data :feature_ask_ai]) "disabled")
-            get-plugin-by-name (fn [name] (first (filter #(= (:name %) name) @plugins)))
             current-connection @selected-connection
             connection-name (:name current-connection)
             connection-type (discover-connection-type current-connection)
-            current-connection-details (fn [connection]
-                                         (first (filter #(= (:name connection) (:name %))
-                                                        (:connections (get-plugin-by-name "editor")))))
-            schema-disabled? (fn [connection]
-                               (or (= (first (:config (current-connection-details connection)))
-                                      "schema=disabled")
-                                   (= (:access_schema connection) "disabled")))
             reset-metadata (fn []
                              (reset! metadata [])
                              (reset! metadata-key "")

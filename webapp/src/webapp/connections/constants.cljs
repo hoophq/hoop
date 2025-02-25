@@ -82,7 +82,6 @@
            :mongodb (str config/webapp-url "/images/connections-logos/mongodb_logo.svg")}})
 
 (defn get-connection-icon [connection & [theme]]
-  (println theme)
   (let [connection-icons (get connection-icons-name-dictionary (or theme :light))]
     (cond
       (not (cs/blank? (:subtype connection))) (get connection-icons (keyword (:subtype connection)))

@@ -8,7 +8,7 @@
    [webapp.connections.constants :as connection-constants]
    [webapp.webclient.components.database-schema :as database-schema]))
 
-(defn connection-item [{:keys [name type subtype status selected? on-select on-remove dark? admin?]}]
+(defn connection-item [{:keys [name type subtype status selected? on-select dark? admin?]}]
   [:> Box {:class (str "flex justify-between items-center px-2 py-3 "
                        "transition "
                        (if selected?

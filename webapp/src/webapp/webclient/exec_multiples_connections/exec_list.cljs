@@ -3,11 +3,8 @@
             ["@heroicons/react/24/solid" :as hero-solid-icon]
             [clojure.string :as cs]
             [re-frame.core :as rf]
-            [reagent.core :as r]
             [webapp.components.button :as button]
             [webapp.components.headings :as h]))
-
-(def atom-exec-list-open? (r/atom false))
 
 (defn ready-bar []
   [:div {:class "flex items-center w-36 justify-center gap-small rounded-md bg-gray-100 p-3 text-gray-900"}

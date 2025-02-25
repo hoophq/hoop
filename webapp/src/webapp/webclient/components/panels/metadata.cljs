@@ -4,12 +4,6 @@
    [webapp.components.forms :as forms]
    ["@radix-ui/themes" :refer [Box Button Flex Switch Text]]))
 
-(defn metadata->add-new
-  [config-map config-key config-value]
-  (if-not (or (empty? config-key) (empty? config-value))
-    (swap! config-map conj {:key config-key :value config-value})
-    nil))
-
 (defn content []
   (let [keep-metadata? (rf/subscribe [:editor-plugin/keep-metadata?])
         metadata (rf/subscribe [:editor-plugin/metadata])
