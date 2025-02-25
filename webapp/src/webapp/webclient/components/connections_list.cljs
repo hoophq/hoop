@@ -23,8 +23,8 @@
        [:img {:src (connection-constants/get-connection-icon
                     {:type type :subtype subtype}
                     (if dark?
-                      :dark
-                      :light))
+                      :light
+                      :dark))
               :class "w-4"}]]]
      [:div {:class "flex flex-col"}
       [:> Text {:size "2"} name]

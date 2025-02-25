@@ -16,8 +16,8 @@
    [:> Flex {:align "center" :gap "2"}
     [:> Box {:class "w-4"}
      [:img {:src (connection-constants/get-connection-icon connection (if dark-mode?
-                                                                        :dark
-                                                                        :light))
+                                                                        :light
+                                                                        :dark))
             :class "w-4"}]]
     [:> Text {:size "2"
               :weight "medium"}
