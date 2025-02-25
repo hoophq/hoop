@@ -8,7 +8,7 @@
    [webapp.connections.constants :as connection-constants]
    [webapp.webclient.components.database-schema :as database-schema]))
 
-(defn connection-item [{:keys [name type subtype status selected? on-select on-remove dark?]}]
+(defn connection-item [{:keys [name type subtype status selected? on-select on-remove dark? admin?]}]
   [:> Box {:class (str "flex justify-between items-center px-2 py-3 "
                        "transition "
                        (if selected?
@@ -31,7 +31,8 @@
       (when (= status "offline")
         [:> Text {:size "1" :color "gray"} "Offline"])]]
 
-    (when-not selected?
+    (when-not (or selected?
+                  (not admin?))
       [:> IconButton
        {:variant "ghost"
         :color "gray"
@@ -42,7 +43,7 @@
 
 (defn selected-connection []
   (let [show-schema? (r/atom false)]
-    (fn [connection dark-mode?]
+    (fn [connection dark-mode? admin?]
       [:> Box {:class "bg-primary-11 light"}
        [:> Flex {:justify "between" :align "center" :class "px-2 pt-2 pb-1"}
         [:> Text {:as "p" :size "1" :class "px-2 pt-2 pb-1 text-primary-5"} "Selected"]
@@ -53,20 +54,16 @@
         [connection-item
          (assoc connection
                 :selected? true
-                :dark? dark-mode?)]
+                :dark? dark-mode?
+                :admin? admin?)]
         [:> Flex {:align "center" :gap "2"}
          [:> IconButton {:onClick #(swap! show-schema? not)
                          :class (if @show-schema? "bg-[--gray-a4]" "")}
           [:> FolderTree {:size 16}]]
-         [:> IconButton
-          {:onClick #(rf/dispatch [:navigate :edit-connection {} :connection-name (:name connection)])}
-          [:> Settings2 {:size 16}]]]
-        #_[:> Button
-           {:size "1"
-            :variant "ghost"
-            :color "gray"
-            :onClick #(rf/dispatch [:connections/clear-selected])}
-           [:> X {:size 16}]]]
+         (when admin?
+           [:> IconButton
+            {:onClick #(rf/dispatch [:navigate :edit-connection {} :connection-name (:name connection)])}
+            [:> Settings2 {:size 16}]])]]
 
        (when (and @show-schema?
                   (= (:type connection) "database")
@@ -79,20 +76,21 @@
                                (not (cs/blank? (:icon_name connection))) (:icon_name connection)
                                :else (:type connection))}]])])))
 
-(defn connections-list [connections selected dark-mode?]
+(defn connections-list [connections selected dark-mode? admin?]
   (let [available-connections (if selected
                                 (remove #(= (:name %) (:name selected)) connections)
                                 connections)]
     [:> Box
      [:> Flex {:justify "between" :align "center" :class "py-3 px-2 bg-gray-1 border-b border-t border-gray-3"}
       [:> Heading {:size "3" :weight "bold" :class "text-gray-12"} "Connections"]
-      [:> Button
-       {:size "1"
-        :variant "ghost"
-        :color "gray"
-        :mr "1"
-        :onClick #(rf/dispatch [:navigate :create-connection])}
-       "Create"]]
+      (when admin?
+        [:> Button
+         {:size "1"
+          :variant "ghost"
+          :color "gray"
+          :mr "1"
+          :onClick #(rf/dispatch [:navigate :create-connection])}
+         "Create"])]
 
      ;; Lista de conexões disponíveis (excluindo a selecionada)
      (for [conn available-connections]
@@ -101,6 +99,7 @@
         (assoc conn
                :selected? false
                :dark? dark-mode?
+               :admin? admin?
                :on-select #(rf/dispatch [:connections/set-selected conn]))])]))
 
 (defn loading-state []
@@ -116,18 +115,20 @@
   (let [status (rf/subscribe [:connections/status])
         connections (rf/subscribe [:connections/filtered])
         selected (rf/subscribe [:connections/selected])
-        error (rf/subscribe [:connections/error])]
+        error (rf/subscribe [:connections/error])
+        user (rf/subscribe [:users->current-user])]
 
     (rf/dispatch [:connections/load-persisted])
     (rf/dispatch [:connections/initialize])
 
     (fn [dark-mode?]
-      [:> Box {:class "h-full flex flex-col"}
-       (case @status
-         :loading [loading-state]
-         :error [error-state @error]
-         :success [:<>
-                   (when @selected
-                     [selected-connection @selected dark-mode?])
-                   [connections-list @connections @selected dark-mode?]]
-         [loading-state])])))
+      (let [admin? (-> @user :data :is_admin)]
+        [:> Box {:class "h-full flex flex-col"}
+         (case @status
+           :loading [loading-state]
+           :error [error-state @error]
+           :success [:<>
+                     (when @selected
+                       [selected-connection @selected dark-mode? admin?])
+                     [connections-list @connections @selected dark-mode? admin?]]
+           [loading-state])]))))

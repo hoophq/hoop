@@ -12,7 +12,8 @@
    {:text "JavaScript" :value "nodejs"}
    {:text "Python" :value "python"}
    {:text "Ruby" :value "ruby-on-rails"}
-   {:text "Clojure" :value "clojure"}])
+   {:text "Clojure" :value "clojure"}
+   {:text "Elixir" :value "elixir"}])
 
 (defn main []
   (fn []

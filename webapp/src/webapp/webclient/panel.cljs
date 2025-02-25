@@ -8,6 +8,7 @@
    ["@codemirror/legacy-modes/mode/python" :as cm-python]
    ["@codemirror/legacy-modes/mode/ruby" :as cm-ruby]
    ["@codemirror/legacy-modes/mode/shell" :as cm-shell]
+   ["codemirror-lang-elixir" :as cm-elixir]
    ["@codemirror/state" :as cm-state]
    ["@codemirror/view" :as cm-view]
    ["@heroicons/react/20/solid" :as hero-solid-icon]
@@ -116,13 +117,10 @@
         database-schema (rf/subscribe [::subs/database-schema])
         plugins (rf/subscribe [:plugins->my-plugins])
         selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])
-        script-response (rf/subscribe [:editor-plugin->script])
-        selected-language (rf/subscribe [:editor-plugin->selected-language])
         multi-exec (rf/subscribe [:multi-exec/modal])
 
         active-panel (r/atom nil)
         multi-run-panel? (r/atom false)
-        show-runbooks? (r/atom false)
         dark-mode? (r/atom (= (.getItem js/localStorage "dark-mode") "true"))
 
         vertical-pane-sizes (mapv js/parseInt
@@ -134,23 +132,12 @@
         script (r/atom (get-code-from-localstorage))
         metadata (r/atom [])
         metadata-key (r/atom "")
-        metadata-value (r/atom "")
-        languages-options [{:text "Shell" :value "command-line"}
-                           {:text "MySQL" :value "mysql"}
-                           {:text "Postgres" :value "postgres"}
-                           {:text "SQL Server" :value "mssql"}
-                           {:text "MongoDB" :value "mongodb"}
-                           {:text "JavaScript" :value "nodejs"}
-                           {:text "Python" :value "python"}
-                           {:text "Ruby" :value "ruby-on-rails"}
-                           {:text "Clojure" :value "clojure"}]]
+        metadata-value (r/atom "")]
     (rf/dispatch [:runbooks-plugin->clear-active-runbooks])
 
     (fn [{:keys [script-output]}]
-      (let [is-mac? (>= (.indexOf (.toUpperCase (.-platform js/navigator)) "MAC") 0)
-            is-one-connection-selected? (= 0 (count @multi-selected-connections))
+      (let [is-one-connection-selected? (= 0 (count @multi-selected-connections))
             feature-ai-ask (or (get-in @user [:data :feature_ask_ai]) "disabled")
-            script-output-loading? (= (:status @script-output) :loading)
             get-plugin-by-name (fn [name] (first (filter #(= (:name %) name) @plugins)))
             current-connection @selected-connection
             connection-name (:name current-connection)
@@ -232,6 +219,7 @@
                                      "ruby-on-rails" [(.define cm-language/StreamLanguage cm-ruby/ruby)]
                                      "python" [(.define cm-language/StreamLanguage cm-python/python)]
                                      "clojure" [(.define cm-language/StreamLanguage cm-clojure/clojure)]
+                                     "elixir" [(cm-elixir/elixir)]
                                      "" [(.define cm-language/StreamLanguage cm-shell/shell)]
                                      [(.define cm-language/StreamLanguage cm-shell/shell)]))
             show-tree? (fn [connection]
