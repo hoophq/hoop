@@ -1,6 +1,6 @@
 {
   "name": "webapp",
-  "version": "1.36.4",
+  "version": "1.37.0",
   "scripts": {
     "ancient": "clojure -Sdeps '{:deps {com.github.liquidz/antq {:mvn/version \"RELEASE\"}}}' -m antq.core",
     "genversion": "npx genversion src/webapp/version.js",
@@ -17,7 +17,7 @@
     "@codemirror/commands": "^6.3.2",
     "@codemirror/lang-javascript": "^6.2.1",
     "@codemirror/lang-sql": "^6.5.4",
-    "@codemirror/language": "^6.9.3",
+    "@codemirror/language": "^6.10.8",
     "@codemirror/legacy-modes": "^6.3.3",
     "@codemirror/state": "^6.3.3",
     "@codemirror/view": "^6.22.1",
@@ -30,6 +30,7 @@
     "@sentry/browser": "8.41.0",
     "@uiw/codemirror-theme-dracula": "^4.21.21",
     "@uiw/codemirror-theme-github": "^4.21.21",
+    "@uiw/codemirror-theme-material": "^4.23.8",
     "@uiw/codemirror-theme-nord": "^4.21.21",
     "@uiw/codemirror-theme-sublime": "^4.21.21",
     "@uiw/react-codemirror": "^4.21.21",
@@ -39,6 +40,7 @@
     "clipboard": "^2.0.8",
     "clsx": "^2.1.1",
     "codemirror-copilot": "^0.0.7",
+    "codemirror-lang-elixir": "^4.0.0",
     "cross-env": "^7.0.3",
     "genversion": "^3.1.1",
     "gsap": "^3.11.5",

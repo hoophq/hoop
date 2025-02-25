@@ -58,6 +58,12 @@
    [webapp.events.segment]
    [webapp.events.slack-plugin]
    [webapp.events.users]
+   [webapp.webclient.events.connections]
+   [webapp.webclient.events.metadata]
+   [webapp.webclient.events.multi-exec]
+   [webapp.webclient.events.connection-selection]
+   [webapp.webclient.events.codemirror]
+   [webapp.webclient.events.search]
    [webapp.guardrails.create-update-form :as guardrail-create-update]
    [webapp.guardrails.main :as guardrails]
    [webapp.jira-templates.create-update-form :as jira-templates-create-update]
@@ -248,7 +254,7 @@
 (defmethod routes/panels :editor-plugin-panel []
   (rf/dispatch [:destroy-page-loader])
   (rf/dispatch [:plugins->get-plugin-by-name "editor"])
-  [layout :application-hoop [:div {:class "bg-gray-900 h-full"}
+  [layout :application-hoop [:div {:class "h-full"}
                              [webclient/main]]])
 
 (defmethod routes/panels :reviews-plugin-panel []

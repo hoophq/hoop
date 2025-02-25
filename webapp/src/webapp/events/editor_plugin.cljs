@@ -1,8 +1,11 @@
 (ns webapp.events.editor-plugin
   (:require
+   [cljs.core :as c]
    [clojure.edn :refer [read-string]]
    [clojure.string :as cs]
-   [re-frame.core :as rf]))
+   [re-frame.core :as rf]
+   [webapp.jira-templates.loading-jira-templates :as loading-jira-templates]
+   [webapp.jira-templates.prompt-form :as prompt-form]))
 
 (rf/reg-event-fx
  :editor-plugin->get-run-connection-list
@@ -115,8 +118,7 @@
                        [:show-snackbar {:level :success
                                         :text "Runbook was executed!"}])
                       (rf/dispatch [::editor-plugin->set-script-success res file-name]))]
-     {:db (assoc db :editor-plugin->script (into [] (cons {:status :loading :data nil}
-                                                          (:editor-plugin->script db))))
+     {:db (assoc db :editor-plugin->script {:status :loading :data nil})
       :fx [[:dispatch [:fetch {:method "POST"
                                :uri (str "/plugins/runbooks/connections/" connection-name "/exec")
                                :on-success on-success
@@ -158,7 +160,8 @@
                                            :waiting-review
                                            :completed)}
          new-connections-runbook-list (mapv (fn [runbook]
-                                              (if (= (:connection-name runbook) (:connection-name current-runbook))
+                                              (if (= (:connection-name runbook)
+                                                     (:connection-name current-runbook))
                                                 current-runbook-parsed
                                                 runbook))
                                             (:data (:editor-plugin->connections-runbook-list db)))
@@ -175,13 +178,14 @@
  ::editor-plugin->set-multiple-connections-run-runbook-failure
  (fn
    [{:keys [db]} [_ data current-runbook]]
-   (let [current-runbook-parsed {:name (:name current-runbook)
+   (let [current-runbook-parsed {:connection-name (:connection-name current-runbook)
                                  :subtype (:subtype current-runbook)
                                  :type (:type current-runbook)
                                  :session-id (:session-id data)
                                  :status :error}
          new-connections-runbook-list (mapv (fn [runbook]
-                                              (if (= (:name runbook) (:name current-runbook))
+                                              (if (= (:connection-name runbook)
+                                                     (:connection-name current-runbook))
                                                 current-runbook-parsed
                                                 runbook))
                                             (:data (:editor-plugin->connections-runbook-list db)))
@@ -216,10 +220,9 @@
                        [:show-snackbar {:level :success
                                         :text "Script was executed!"}])
                       (rf/dispatch [::editor-plugin->set-script-success res script]))]
-     {:db (assoc db :editor-plugin->script (into [] (cons {:status :loading :data nil}
-                                                          (:editor-plugin->script db))))
+     {:db (assoc db :editor-plugin->script {:status :loading :data nil})
       :fx [[:dispatch [:fetch {:method "POST"
-                               :uri (str "/sessions")
+                               :uri "/sessions"
                                :on-success on-success
                                :on-failure on-failure
                                :body payload}]]]})))
@@ -323,28 +326,213 @@
 
 (rf/reg-event-fx
  ::editor-plugin->set-script-success
- (fn
-   [{:keys [db]} [_ data script]]
-   {:db (assoc db :editor-plugin->script (take 10
-                                               (assoc (:editor-plugin->script db) 0
-                                                      {:status :success :data (merge data
-                                                                                     {:script script})})))}))
+ (fn [{:keys [db]} [_ data script]]
+   {:db (assoc-in db [:editor-plugin->script] {:status :success
+                                               :data (merge data {:script script})})}))
 
 (rf/reg-event-fx
  ::editor-plugin->set-script-failure
- (fn
-   [{:keys [db]} [_ error]]
-   {:db (assoc db :editor-plugin->script (take 10
-                                               (assoc (:editor-plugin->script db) 0
-                                                      {:status :failure :data error})))}))
+ (fn [{:keys [db]} [_ error]]
+   {:db (assoc-in db [:editor-plugin->script] {:status :failure :data error})}))
 
 (rf/reg-event-fx
  :editor-plugin->clear-script
- (fn
-   [{:keys [db]} [_ data]]
-   {:db (assoc db :editor-plugin->script [])}))
+ (fn [{:keys [db]} [_]]
+   {:db (assoc-in db [:editor-plugin->script] nil)}))
 
 (rf/reg-event-fx
  :editor-plugin->set-select-language
  (fn [{:keys [db]} [_ language]]
    {:db (assoc-in db [:editor-plugin->select-language] language)}))
+
+(rf/reg-event-db
+ :editor-plugin/toggle-keep-metadata
+ (fn [db [_]]
+   (update-in db [:editor-plugin :keep-metadata?] not)))
+
+(rf/reg-sub
+ :editor-plugin/keep-metadata?
+ (fn [db]
+   (get-in db [:editor-plugin :keep-metadata?] false)))
+
+(defn discover-connection-type [connection]
+  (cond
+    (not (cs/blank? (:subtype connection))) (:subtype connection)
+    (not (cs/blank? (:icon_name connection))) (:icon_name connection)
+    :else (:type connection)))
+
+(defn metadata->json-stringify
+  [metadata]
+  (->> metadata
+       (filter (fn [{:keys [key value]}]
+                 (not (or (cs/blank? key) (cs/blank? value)))))
+       (map (fn [{:keys [key value]}] {key value}))
+       (reduce into {})
+       (clj->js)))
+
+;; Submit task event
+(rf/reg-event-fx
+ :editor-plugin/submit-task
+ (fn [{:keys [db]} [_ {:keys [script]}]]
+   (let [additional-connections (get-in db [:editor :multi-connections :selected])
+         primary-connection (get-in db [:editor :connections :selected])
+         all-connections (when primary-connection
+                           (cons primary-connection additional-connections))
+         multiple-connections? (> (count all-connections) 1)
+
+         has-jira-template-multiple-connections? (some #(not (cs/blank? (:jira_issue_template_id %)))
+                                                       all-connections)
+         needs-template? (boolean (and primary-connection
+                                       (not (cs/blank? (:jira_issue_template_id primary-connection)))))
+         connection-type (discover-connection-type primary-connection)
+         jira-integration-enabled? (= (-> (get-in db [:jira-integration->details])
+                                          :data
+                                          :status)
+                                      "enabled")
+         change-to-tabular? (and (some (partial = connection-type)
+                                       ["mysql" "postgres" "sql-server" "oracledb" "mssql" "database"])
+                                 (< (count script) 1))
+         selected-db (.getItem js/localStorage "selected-database")
+         keep-metadata? (get-in db [:editor-plugin :keep-metadata?])
+         current-metadatas (get-in db [:editor-plugin :metadata])
+         current-metadata-key (get-in db [:editor-plugin :metadata-key])
+         current-metadata-value (get-in db [:editor-plugin :metadata-value])
+         metadata (conj current-metadatas {:key current-metadata-key :value current-metadata-value})
+         final-script (cond
+                        (and selected-db
+                             (= connection-type "postgres")
+                             (not multiple-connections?)) (str "\\set QUIET on\n"
+                                                               "\\c " selected-db "\n"
+                                                               "\\set QUIET off\n"
+                                                               script)
+                        (and selected-db
+                             (= connection-type "mongodb")
+                             (not multiple-connections?)) (str "use " selected-db ";\n" script)
+                        :else script)]
+
+     (cond
+            ;; No connection selected
+       (empty? primary-connection)
+       {:fx [[:dispatch [:show-snackbar
+                         {:level :info
+                          :text "You must choose a connection"}]]]}
+
+            ;; Multiple connections with Jira template not allowed
+       (and multiple-connections?
+            has-jira-template-multiple-connections?
+            jira-integration-enabled?)
+       {:fx [[:dispatch [:dialog->open
+                         {:title "Running in multiple connections not allowed"
+                          :action-button? false
+                          :text "For now, it's not possible to run commands in multiple connections with Jira Templates activated. Please select just one connection before running your command."}]]]}
+
+            ;; Multiple connections - show execution modal
+       multiple-connections?
+       {:fx [[:dispatch [:multi-exec/show-modal
+                         (map #(hash-map
+                                :connection-name (:name %)
+                                :script final-script
+                                :metadata (metadata->json-stringify metadata)
+                                :type (:type %)
+                                :subtype (:subtype %)
+                                :session-id nil
+                                :status :ready)
+                              all-connections)]]]}
+
+            ;; Single connection with JIRA template
+       (and needs-template? jira-integration-enabled?)
+       {:fx [[:dispatch [:modal->open
+                         {:maxWidth "540px"
+                          :custom-on-click-out #(.preventDefault %)
+                          :content [loading-jira-templates/main]}]]
+             [:dispatch [:jira-templates->get-submit-template
+                         (:jira_issue_template_id primary-connection)]]
+             [:dispatch-later
+              {:ms 1000
+               :dispatch [:editor-plugin/check-template-and-show-form
+                          {:template-id (:jira_issue_template_id primary-connection)
+                           :script final-script
+                           :metadata metadata
+                           :keep-metadata? keep-metadata?}]}]]}
+
+            ;; Single connection direct execution
+       :else
+       (merge
+        {:fx [(when change-to-tabular?
+                [:dispatch [:set-tab-tabular]])
+              [:dispatch [:editor-plugin->exec-script
+                          {:script final-script
+                           :connection-name (:name primary-connection)
+                           :metadata (metadata->json-stringify metadata)}]]]}
+        (when-not keep-metadata?
+          {:db (-> db
+                   (assoc-in [:editor-plugin :metadata] [])
+                   (assoc-in [:editor-plugin :metadata-key] "")
+                   (assoc-in [:editor-plugin :metadata-value] ""))}))))))
+
+(defn- needs-form? [template]
+  (let [has-prompts? (seq (get-in template [:data :prompt_types :items]))
+        has-cmdb? (when-let [cmdb-items (get-in template [:data :cmdb_types :items])]
+                    (some (fn [{:keys [value jira_values]}]
+                            (when (and value jira_values)
+                              (not-any? #(= value (:name %)) jira_values)))
+                          cmdb-items))]
+    (or has-prompts? has-cmdb?)))
+
+;; Helper event for template checking
+(rf/reg-event-fx
+ :editor-plugin/check-template-and-show-form
+ (fn [{:keys [db]} [_ {:keys [template-id script metadata keep-metadata?]}]]
+   (let [template (get-in db [:jira-templates->submit-template])]
+     (if (or (nil? (:data template))
+             (= :loading (:status template)))
+       ;; Template not ready - check again in 500ms
+       {:fx [[:dispatch-later
+              {:ms 500
+               :dispatch [:editor-plugin/check-template-and-show-form
+                          {:template-id template-id
+                           :script script
+                           :metadata metadata
+                           :keep-metadata? keep-metadata?}]}]]}
+
+       ;; Template ready - show form if needed
+       (if (needs-form? template)
+         {:fx [[:dispatch [:modal->open
+                           {:content [prompt-form/main
+                                      {:prompts (get-in template [:data :prompt_types :items])
+                                       :cmdb-items (get-in template [:data :cmdb_types :items])
+                                       :on-submit #(rf/dispatch
+                                                    [:editor-plugin/handle-template-submit
+                                                     {:form-data %
+                                                      :script script
+                                                      :metadata metadata
+                                                      :keep-metadata? keep-metadata?}])}]}]]]}
+         {:fx [[:dispatch [:editor-plugin/handle-template-submit
+                           {:form-data nil
+                            :script script
+                            :metadata metadata
+                            :keep-metadata? keep-metadata?}]]]})))))
+
+;; Helper event for template submission
+(rf/reg-event-fx
+ :editor-plugin/handle-template-submit
+ (fn [{:keys [db]} [_ {:keys [form-data script metadata keep-metadata?]}]]
+   (let [connection (get-in db [:editor :connections :selected])]
+     {:fx [[:dispatch [:modal->close]]
+           [:dispatch [:editor-plugin->exec-script
+                       (cond-> {:script script
+                                :connection-name (:name connection)
+                                :metadata (metadata->json-stringify metadata)}
+                         (:jira_fields form-data) (assoc :jira_fields (:jira_fields form-data))
+                         (:cmdb_fields form-data) (assoc :cmdb_fields (:cmdb_fields form-data)))]]
+           (when-not keep-metadata?
+             [:dispatch [:editor-plugin/clear-metadata]])]})))
+
+;; Helper event to clear metadata
+(rf/reg-event-db
+ :editor-plugin/clear-metadata
+ (fn [db _]
+   (-> db
+       (assoc-in [:editor-plugin :metadata] [])
+       (assoc-in [:editor-plugin :metadata-key] "")
+       (assoc-in [:editor-plugin :metadata-value] ""))))

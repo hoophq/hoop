@@ -163,7 +163,8 @@ module.exports = {
         'new-task__tree-container': 'calc(100vh - 140px)',
         'screen-90vh': '90vh',
         'logs-container': 'calc(100% - 38px)',
-        'connection-selector': 'calc(100vh - 56px)'
+        'connection-selector': 'calc(100vh - 56px)',
+        'terminal-content': 'calc(100vh - 62px)'
       },
       width: {
         'side-menu': '296px',

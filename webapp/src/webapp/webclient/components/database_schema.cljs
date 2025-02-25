@@ -1,6 +1,6 @@
-(ns webapp.webclient.aside.database-schema
-  (:require ["@radix-ui/themes" :refer [Em Text]]
-            ["lucide-react" :refer [ChevronDown ChevronRight Hash Database File FolderClosed FolderOpen Table]]
+(ns webapp.webclient.components.database-schema
+  (:require ["@radix-ui/themes" :refer [Text]]
+            ["lucide-react" :refer [ChevronDown ChevronRight Database File FolderClosed FolderOpen Table]]
             [reagent.core :as r]
             [re-frame.core :as rf]
             [webapp.subs :as subs]
@@ -134,7 +134,7 @@
                                                 {:connection-name connection-name}
                                                 db])
 
-                                  (rf/dispatch [:database-schema->clear-selected-database connection-name])))}
+                                  (rf/dispatch [:database-schema->clear-selected-database])))}
              [:> Text {:size "1" :weight "bold"} db]
              (if (= @open-database db)
                [:> ChevronDown {:size 12}]
