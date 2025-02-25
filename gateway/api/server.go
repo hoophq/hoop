@@ -121,6 +121,7 @@ func (a *Api) StartAPI(sentryInit bool) {
 	a.logger = zaplogger
 	// https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies
 	route.SetTrustedProxies(nil)
+	route.Use(SecurityHeaderMiddleware())
 	route.Use(CORSMiddleware())
 	baseURL := appconfig.Get().ApiURLPath()
 

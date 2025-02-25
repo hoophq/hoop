@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -49,12 +50,15 @@ func New(provider *idp.Provider) *handler { return &handler{idpProv: provider} }
 //	@Failure		400,409,422,500	{object}	openapi.HTTPError
 //	@Router			/login [get]
 func (h *handler) Login(c *gin.Context) {
-	redirectURL := c.Query("redirect")
-	if redirectURL == "" {
-		redirectURL = fmt.Sprintf("http://%s/callback", proto.ClientLoginCallbackAddress)
+	redirectURL, err := parseRedirectURL(c)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
 	}
+
+	// if strings.HasPrefix(appconfig.Get().ApiURL(), redirectURL)
 	stateUID := uuid.NewString()
-	err := pglogin.New().Upsert(&types.Login{
+	err = pglogin.New().Upsert(&types.Login{
 		ID:       stateUID,
 		Redirect: redirectURL,
 		Outcome:  "",
@@ -75,6 +79,20 @@ func (h *handler) Login(c *gin.Context) {
 	}
 	url := h.idpProv.AuthCodeURL(stateUID, params...)
 	c.JSON(http.StatusOK, openapi.Login{URL: url})
+}
+
+// parseRedirectURL validates the redirect query attribute to match against the API_URL env
+// or the default localhost address
+func parseRedirectURL(c *gin.Context) (string, error) {
+	redirectURL := c.Query("redirect")
+	if redirectURL != "" {
+		u, _ := url.Parse(redirectURL)
+		if u == nil || u.Hostname() != appconfig.Get().ApiHostname() {
+			return "", fmt.Errorf("redirect attribute does not match with api url")
+		}
+		return redirectURL, nil
+	}
+	return fmt.Sprintf("http://%s/callback", proto.ClientLoginCallbackAddress), nil
 }
 
 // LoginCallback
