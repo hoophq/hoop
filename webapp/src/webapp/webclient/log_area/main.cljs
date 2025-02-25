@@ -54,7 +54,7 @@
                                        :execution-time (:execution_time (:data %))
                                        :classes "h-full"}) @question-responses)
             tabular-data (:data @script-response)
-            tabular-status (:status (first @script-response))
+            tabular-status (:status @script-response)
             tabular-loading? (= tabular-status :loading)
             sanitize-results (when-not (nil? (:output tabular-data))
                                (cs/replace (:output tabular-data) #"∞" "\t"))
