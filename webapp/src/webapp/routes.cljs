@@ -115,17 +115,17 @@
   (let [is-admin? (rf/subscribe [:user/is-admin?])]
     (fn [& args]
       (if @is-admin?
-        ;; Se for admin, renderiza o componente normalmente
+        ;; If it's an admin, render the component normally
         (apply component args)
-        ;; Se não for admin, redireciona para home e mostra um loader
+        ;; If it's not an admin, redirect to home and show a loader
         (do
           (js/setTimeout #(rf/dispatch [:navigate :home]) 1200)
           [:div {:class "flex items-center justify-center h-full"}
            [:div {:class "text-center"}
             [:div {:class "mb-4 text-xl font-medium text-gray-900"}
-             "Redirecionando..."]
+             "Redirecting..."]
             [:div {:class "text-sm text-gray-500"}
-             "Você não tem permissão para acessar esta página."]]])))))
+             "You don't have permission to access this page."]]])))))
 
 ;; Function wrapper to wrap admin components
 (defn wrap-admin-only [component]
