@@ -1,6 +1,6 @@
 (ns webapp.connections.views.connection-list
   (:require ["lucide-react" :refer [Wifi Tags EllipsisVertical]]
-            ["@radix-ui/themes" :refer [IconButton DropdownMenu Tooltip
+            ["@radix-ui/themes" :refer [IconButton Box DropdownMenu Tooltip
                                         Flex Text Badge]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
@@ -180,5 +180,19 @@
                          "Configure"])
                       [:> DropdownMenu.Item {:color "red"
                                              :on-click (fn []
-                                                         (rf/dispatch [:connections->delete-connection (:name connection)]))}
+                                                         (rf/dispatch [:dialog->open
+                                                                       {:title "Delete connection?"
+                                                                        :type :danger
+                                                                        :text-action-button "Confirm and delete"
+                                                                        :action-button? true
+                                                                        :text [:> Box {:class "space-y-radix-4"}
+                                                                               [:> Text {:as "p"}
+                                                                                "This action will instantly remove your access to "
+                                                                                (:name connection)
+                                                                                " and can not be undone."]
+                                                                               [:> Text {:as "p"}
+                                                                                "Are you sure you want to delete this connection?"]]
+                                                                        :on-success (fn []
+                                                                                      (rf/dispatch [:connections->delete-connection (:name connection)])
+                                                                                      (rf/dispatch [:modal->close]))}]))}
                        "Delete"]]]]])))]])]))))
