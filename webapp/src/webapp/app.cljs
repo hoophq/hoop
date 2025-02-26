@@ -164,17 +164,20 @@
 (defmethod routes/panels :license-management-panel []
   [layout :application-hoop
    [:div {:class "bg-gray-1 p-radix-7 min-h-full h-max"}
-    [license-management/main]]])
+    [routes/wrap-admin-only
+     [license-management/main]]]])
 
 (defmethod routes/panels :agents-panel []
   [layout :application-hoop
    [:div {:class "bg-gray-1 p-radix-7 min-h-full h-max"}
-    [agents/main]]])
+    [routes/wrap-admin-only
+     [agents/main]]]])
 
 (defmethod routes/panels :new-agent-panel []
   [layout :application-hoop
    [:div {:class "bg-gray-1 p-radix-7 min-h-full h-max"}
-    [create-agent/main]]])
+    [routes/wrap-admin-only
+     [create-agent/main]]]])
 
 (defmethod routes/panels :home-panel []
   [layout :application-hoop [home/home-panel-hoop]])
@@ -198,8 +201,10 @@
 
 (defmethod routes/panels :users-panel []
   [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
-                             [h/h2 "Users" {:class "mb-6"}]
-                             [org-users/main]]])
+                             [routes/wrap-admin-only
+                              [:<>
+                               [h/h2 "Users" {:class "mb-6"}]
+                               [org-users/main]]]]])
 
 (defmethod routes/panels :connections-panel []
   [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
@@ -208,19 +213,23 @@
 
 (defmethod routes/panels :dashboard-panel []
   [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-12 lg:pt-16 lg:pb-10 h-full overflow-auto"}
-                             [h/h2 "Dashboard" {:class "mb-6"}]
-                             [dashboard/main]]])
+                             [routes/wrap-admin-only
+                              [:<>
+                               [h/h2 "Dashboard" {:class "mb-6"}]
+                               [dashboard/main]]]]])
 
 (defmethod routes/panels :guardrails-panel []
   [layout :application-hoop
    [:div {:class "bg-gray-1 p-radix-7 min-h-full h-max"}
-    [guardrails/panel]]])
+    [routes/wrap-admin-only
+     [guardrails/panel]]]])
 
 (defmethod routes/panels :create-guardrail-panel []
   (rf/dispatch [:guardrails->clear-active-guardrail])
   [layout :application-hoop
    [:div {:class "bg-gray-1 min-h-full h-max relative"}
-    [guardrail-create-update/main :create]]])
+    [routes/wrap-admin-only
+     [guardrail-create-update/main :create]]]])
 
 (defmethod routes/panels :edit-guardrail-panel []
   (let [pathname (.. js/window -location -pathname)
@@ -229,18 +238,21 @@
     (rf/dispatch [:guardrails->get-by-id guardrail-id])
     [layout :application-hoop
      [:div {:class "bg-gray-1 min-h-full h-max relative"}
-      [guardrail-create-update/main :edit]]]))
+      [routes/wrap-admin-only
+       [guardrail-create-update/main :edit]]]]))
 
 (defmethod routes/panels :jira-templates-panel []
   [layout :application-hoop
    [:div {:class "bg-gray-1 p-radix-7 min-h-full h-max"}
-    [jira-templates/panel]]])
+    [routes/wrap-admin-only
+     [jira-templates/panel]]]])
 
 (defmethod routes/panels :create-jira-template-panel []
   (rf/dispatch [:jira-templates->clear-active-template])
   [layout :application-hoop
    [:div {:class "bg-gray-1 min-h-full h-max relative"}
-    [jira-templates-create-update/main :create]]])
+    [routes/wrap-admin-only
+     [jira-templates-create-update/main :create]]]])
 
 (defmethod routes/panels :edit-jira-template-panel []
   (let [pathname (.. js/window -location -pathname)
@@ -249,7 +261,8 @@
     (rf/dispatch [:jira-templates->get-by-id guardrail-id])
     [layout :application-hoop
      [:div {:class "bg-gray-1 min-h-full h-max relative"}
-      [jira-templates-create-update/main :edit]]]))
+      [routes/wrap-admin-only
+       [jira-templates-create-update/main :edit]]]]))
 
 (defmethod routes/panels :editor-plugin-panel []
   (rf/dispatch [:destroy-page-loader])
@@ -260,8 +273,9 @@
 (defmethod routes/panels :reviews-plugin-panel []
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
-                             [h/h2 "Reviews" {:class "mb-6"}]
-                             [reviews/panel]]])
+                             [:<>
+                              [h/h2 "Reviews" {:class "mb-6"}]
+                              [reviews/panel]]]])
 
 (defmethod routes/panels :review-details-panel []
   (let [pathname (.. js/window -location -pathname)
@@ -275,14 +289,16 @@
 (defmethod routes/panels :create-connection-panel []
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop [:div {:class "bg-gray-1 min-h-full h-full"}
-                             [connection-setup/main :create {}]]])
+                             [routes/wrap-admin-only
+                              [connection-setup/main :create {}]]]])
 
 (defmethod routes/panels :edit-connection-panel []
   (let [pathname (.. js/window -location -pathname)
         current-route (bidi/match-route @routes/routes pathname)
         connection-name (:connection-name (:route-params current-route))]
     [layout :application-hoop [:div {:class "bg-[--gray-2] px-4 py-10 sm:px-6 lg:px-20 lg:pt-6 lg:pb-10 h-full overflow-auto"}
-                               [connection-update-form/main connection-name]]]))
+                               [routes/wrap-admin-only
+                                [connection-update-form/main connection-name]]]]))
 
 (defmethod routes/panels :manage-plugin-panel []
   (let [pathname (.. js/window -location -pathname)
@@ -290,19 +306,25 @@
         plugin-name (:plugin-name (:route-params current-route))]
     (rf/dispatch [:destroy-page-loader])
     (rf/dispatch [:plugins->get-plugin-by-name plugin-name])
-    [layout :application-hoop [manage-plugin/main plugin-name]]))
+    [layout :application-hoop
+     [routes/wrap-admin-only
+      [manage-plugin/main plugin-name]]]))
 
 (defmethod routes/panels :manage-ask-ai-panel []
   (rf/dispatch [:destroy-page-loader])
   (layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
-                             [h/h2 "AI Query Builder" {:class "mb-6"}]
-                             [plugins-configurations/config "ask_ai"]]))
+                             [routes/wrap-admin-only
+                              [:<>
+                               [h/h2 "AI Query Builder" {:class "mb-6"}]
+                               [plugins-configurations/config "ask_ai"]]]]))
 
 (defmethod routes/panels :manage-jira-panel []
   (rf/dispatch [:destroy-page-loader])
   (layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
-                             [h/h2 "Jira" {:class "mb-6"}]
-                             [plugins-configurations/config "jira"]]))
+                             [routes/wrap-admin-only
+                              [:<>
+                               [h/h2 "Jira" {:class "mb-6"}]
+                               [plugins-configurations/config "jira"]]]]))
 
 (defmethod routes/panels :audit-plugin-panel []
   ;; this performs a redirect while we're migrating
