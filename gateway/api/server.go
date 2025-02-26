@@ -194,7 +194,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		userapi.GetUserInfo)
 	r.GET("/users",
-		apiroutes.ReadOnlyAccessRole,
+		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		userapi.List)
 	r.GET("/users/:emailOrID",
@@ -491,9 +491,11 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		api.TrackRequest(analytics.EventUpdateGuardRailRules),
 		apiguardrails.Put)
 	r.GET("/guardrails",
+		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiguardrails.List)
 	r.GET("/guardrails/:id",
+		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiguardrails.Get)
 	r.DELETE("/guardrails/:id",
