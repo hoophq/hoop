@@ -16,8 +16,8 @@
    [:> Flex {:align "center" :gap "2"}
     [:> Box {:class "w-4"}
      [:img {:src (connection-constants/get-connection-icon connection (if @dark-mode?
-                                                                        :light
-                                                                        :dark))
+                                                                        :dark
+                                                                        :light))
             :class "w-4"}]]
     [:> Text {:size "2"
               :weight "medium"}
@@ -52,15 +52,16 @@
         primary-connection @(rf/subscribe [:connections/selected])
         selected-connections @(rf/subscribe [:connection-selection/selected])
         filtered-connections (filter-compatible-connections connections primary-connection selected-connections)
-        compatible-connections (if (seq filtered-connections)
+        compatible-connections (if primary-connection
                                  filtered-connections
                                  connections)]
     [:> Box
      ;; Conexão principal fixa
-     [connection-item
-      {:connection primary-connection
-       :selected? true
-       :disabled? true} dark-mode?]
+     (when primary-connection
+       [connection-item
+        {:connection primary-connection
+         :selected? true
+         :disabled? true} dark-mode?])
 
      ;; Outras conexões compatíveis
      (for [connection compatible-connections]

@@ -1,7 +1,7 @@
 
 (ns webapp.webclient.components.header
   (:require
-   ["@radix-ui/themes" :refer [Box Button Flex Heading IconButton]]
+   ["@radix-ui/themes" :refer [Box Button Flex Heading IconButton Tooltip]]
    ["lucide-react" :refer [BookUp2 FastForward PackagePlus Play Sun Moon]]
    [re-frame.core :as rf]
    [webapp.webclient.components.search :as search]))
@@ -43,43 +43,53 @@
            "Terminal"]
           [:> Flex {:align "center" :gap "2"}
 
-           [search/main active-panel]
+           [:> Tooltip {:content "Search"}
+            [:div
+             [search/main active-panel]]]
 
-           [:> IconButton
-            {:class (when @dark-mode?
-                      "bg-gray-8 text-gray-12")
-             :size "2"
-             :color "gray"
-             :variant "soft"
-             :onClick (fn []
-                        (swap! dark-mode? not)
-                        (.setItem js/localStorage "dark-mode" (str @dark-mode?)))}
-            (if @dark-mode?
-              [:> Sun {:size 16}]
-              [:> Moon {:size 16}])]
+           [:> Tooltip {:content "Theme"}
+            [:> IconButton
+             {:class (when @dark-mode?
+                       "bg-gray-8 text-gray-12")
+              :size "2"
+              :color "gray"
+              :variant "soft"
+              :onClick (fn []
+                         (swap! dark-mode? not)
+                         (.setItem js/localStorage "dark-mode" (str @dark-mode?)))}
+             (if @dark-mode?
+               [:> Sun {:size 16}]
+               [:> Moon {:size 16}])]]
 
-           [notification-badge
-            [:> BookUp2 {:size 16}]
-            #(on-click-icon-button :runbooks)
-            (= @active-panel :runbooks)
-            has-runbook?]
+           [:> Tooltip {:content "Runbooks"}
+            [:div
+             [notification-badge
+              [:> BookUp2 {:size 16}]
+              #(on-click-icon-button :runbooks)
+              (= @active-panel :runbooks)
+              has-runbook?]]]
 
-           [notification-badge
-            [:> PackagePlus {:size 16}]
-            #(on-click-icon-button :metadata)
-            (= @active-panel :metadata)
-            has-metadata?]
+           [:> Tooltip {:content "Metadata"}
+            [:div
+             [notification-badge
+              [:> PackagePlus {:size 16}]
+              #(on-click-icon-button :metadata)
+              (= @active-panel :metadata)
+              has-metadata?]]]
 
-           [notification-badge
-            [:> FastForward {:size 16}]
-            #(do
-               (reset! multi-run-panel? (not @multi-run-panel?))
-               (rf/dispatch [:connection-selection/clear]))
-            @multi-run-panel?
-            has-multirun?]
+           [:> Tooltip {:content "MultiRun"}
+            [:div
+             [notification-badge
+              [:> FastForward {:size 16}]
+              #(do
+                 (reset! multi-run-panel? (not @multi-run-panel?))
+                 (rf/dispatch [:connection-selection/clear]))
+              @multi-run-panel?
+              has-multirun?]]]
 
-           [:> Button
-            {:disabled false
-             :onClick #(submit)}
-            [:> Play {:size 16}]
-            "Run"]]]]))))
+           [:> Tooltip {:content "Run"}
+            [:> Button
+             {:disabled false
+              :onClick #(submit)}
+             [:> Play {:size 16}]
+             "Run"]]]]]))))

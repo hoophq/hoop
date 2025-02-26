@@ -170,6 +170,7 @@
                     {:key "Alt-ArrowDown" :run cm-commands/moveLineDown}
                     {:key "Shift-Alt-ArrowDown" :run cm-commands/copyLineDown}
                     {:key "Escape" :run cm-commands/simplifySelection}
+                    {:key "Enter" :run cm-commands/insertNewlineAndIndent}
                     {:key "Alt-l" :mac "Ctrl-l" :run cm-commands/selectLine}
                     {:key "Mod-i" :run cm-commands/selectParentSyntax :preventDefault true}
                     {:key "Mod-[" :run cm-commands/indentLess :preventDefault true}
@@ -251,8 +252,8 @@
               [:> (.-Pane Allotment) {:minSize 270}
                [:aside {:class "h-full flex flex-col gap-8 border-r-2 border-[--gray-3] overflow-auto pb-16"}
                 (if @multi-run-panel?
-                  [connections-panel/main @dark-mode?]
-                  [connections-list/main dark-mode?])]]
+                  [connections-panel/main dark-mode?]
+                  [connections-list/main dark-mode? (show-tree? current-connection)])]]
 
               [:> Allotment {:defaultSizes horizontal-pane-sizes
                              :onDragEnd #(.setItem js/localStorage "editor-horizontal-pane-sizes" (str %))
@@ -270,7 +271,7 @@
                                          :className "h-full text-sm"
                                          :theme (if @dark-mode?
                                                   materialDark
-                                                  materialLight) #_(get theme-parser-map @select-theme)
+                                                  materialLight)
                                          :basicSetup #js{:defaultKeymap false}
                                          :extensions (clj->js
                                                       (concat
@@ -294,7 +295,6 @@
                [:> Flex {:direction "column" :justify "between" :class "h-full"}
                 [log-area/main
                  connection-type
-                 connection-name
                  is-one-connection-selected?
                  (show-tree? current-connection)
                  @dark-mode?]
