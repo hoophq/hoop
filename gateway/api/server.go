@@ -86,28 +86,28 @@ type Api struct {
 //	@tag.name	Proxy Manager
 //	@tag.description.markdown
 
-//  @tag.name Connections
+//	@tag.name	Connections
 
-//  @tag.name Agents
+//	@tag.name	Agents
 
-//  @tag.name Runbooks
+//	@tag.name	Runbooks
 
-//  @tag.name Guard Rails
+//	@tag.name	Guard Rails
 
-//	@tag.name Reviews
+//	@tag.name	Reviews
 
-//  @tag.name Sessions
+//	@tag.name	Sessions
 
-//  @tag.name Organization Management
+//	@tag.name	Organization Management
 
-//  @tag.name Reports
+//	@tag.name	Reports
 
-// @securitydefinitions.oauth2.accessCode	OAuth2AccessCode
-// @tokenUrl								https://login.microsoftonline.com/d60ba6f0-ad5f-4917-aa19-f8d4241f8bc7/oauth2/v2.0/token
-// @authorizationUrl						https://login.microsoftonline.com/d60ba6f0-ad5f-4917-aa19-f8d4241f8bc7/oauth2/v2.0/authorize
-// @scope.profile
-// @scope.email
-// @scope.openid
+//	@securitydefinitions.oauth2.accessCode	OAuth2AccessCode
+//	@tokenUrl								https://login.microsoftonline.com/d60ba6f0-ad5f-4917-aa19-f8d4241f8bc7/oauth2/v2.0/token
+//	@authorizationUrl						https://login.microsoftonline.com/d60ba6f0-ad5f-4917-aa19-f8d4241f8bc7/oauth2/v2.0/authorize
+//	@scope.profile
+//	@scope.email
+//	@scope.openid
 func (a *Api) StartAPI(sentryInit bool) {
 	if os.Getenv("PORT") == "" {
 		os.Setenv("PORT", "8009")
@@ -482,23 +482,48 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	)
 
 	// AWS routes
-	r.POST("/integrations/aws/verify-permissions",
+	r.GET("/integrations/aws/iam/userinfo",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		// api.TrackRequest(analytics.EventAWSVerifyPermissions),
-		awsintegration.VerifyPermissions)
+		awsintegration.IAMGetUserInfo)
 
-	r.POST("/integrations/aws/list-rds-instances",
+	r.PUT("/integrations/aws/iam/accesskeys",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		// api.TrackRequest(analytics.EventAWSVerifyPermissions),
+		awsintegration.IAMUpdateAccessKey)
+
+	r.DELETE("/integrations/aws/iam/accesskeys",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		// api.TrackRequest(analytics.EventAWSVerifyPermissions),
+		awsintegration.IAMDeleteAccessKey)
+
+	r.GET("/integrations/aws/organizations",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		// api.TrackRequest,
+		awsintegration.ListOrganizations)
+
+	r.POST("/integrations/aws/iam/verify",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		// api.TrackRequest(analytics.EventAWSVerifyPermissions),
+		awsintegration.IAMVerifyPermissions)
+
+	r.POST("/integrations/aws/rds/describe-db-instances",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		// api.TrackRequest(analytics.EventAWSVerifyPermissions),
 		awsintegration.ListRDSInstances)
 
-	r.POST("/integrations/aws/get-caller-identity",
+	r.POST("/integrations/aws/rds/dbinstances/:dbArn/roles",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		// api.TrackRequest(analytics.EventAWSVerifyPermissions),
-		awsintegration.GetCallerIdentity)
+		awsintegration.UpdateDBInstanceRoles,
+	)
 
 	r.POST("/guardrails",
 		apiroutes.AdminOnlyAccessRole,
