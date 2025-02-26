@@ -1,9 +1,11 @@
 (ns webapp.routes
-  (:require [bidi.bidi :as bidi]
-            [pushy.core :as pushy]
-            [re-frame.core :as re-frame]
-            [webapp.events :as events]
-            [webapp.config :as config]))
+  (:require
+   [bidi.bidi :as bidi]
+   [pushy.core :as pushy]
+   [re-frame.core :as re-frame]
+   [re-frame.core :as rf]
+   [webapp.config :as config]
+   [webapp.events :as events]))
 
 (defmulti panels identity)
 (def base-route
@@ -100,3 +102,40 @@
    (navigate! {:handler (:handler config)
                :params (:params config)
                :query-params (query-params-parser (:query-params config))})))
+
+;; Subscription for checking if the user is an admin
+(rf/reg-sub
+ :user/is-admin?
+ (fn [db]
+   (get-in db [:users :current-user :data :admin?])))
+
+;; Component wrapper to check if the user is an admin
+;; If not, redirect to home and show a loader component
+(defn admin-only [component]
+  (let [is-admin? (rf/subscribe [:user/is-admin?])]
+    (fn [& args]
+      (if @is-admin?
+        ;; Se for admin, renderiza o componente normalmente
+        (apply component args)
+        ;; Se não for admin, redireciona para home e mostra um loader
+        (do
+          (js/setTimeout #(rf/dispatch [:navigate :home]) 1200)
+          [:div {:class "flex items-center justify-center h-full"}
+           [:div {:class "text-center"}
+            [:div {:class "mb-4 text-xl font-medium text-gray-900"}
+             "Redirecionando..."]
+            [:div {:class "text-sm text-gray-500"}
+             "Você não tem permissão para acessar esta página."]]])))))
+
+;; Function wrapper to wrap admin components
+(defn wrap-admin-only [component]
+  [admin-only component])
+
+;; Example of usage:
+;; Instead of:
+;; (defmethod routes/panels :users-panel []
+;;   [layout :application-hoop [...]])
+;;
+;; Use:
+;; (defmethod routes/panels :users-panel []
+;;   [layout :application-hoop [wrap-admin-only users/main]])
