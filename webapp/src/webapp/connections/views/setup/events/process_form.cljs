@@ -93,8 +93,9 @@
                  :access_mode_exec (if (:web effective-access-modes) "enabled" "disabled")
                  :access_mode_connect (if (:native effective-access-modes) "enabled" "disabled")
                  :redact_enabled (:data-masking config false)
-                 :redact_types (when (seq data-masking-types)
-                                 (mapv #(get % "value") data-masking-types))
+                 :redact_types (if (:data-masking config)
+                                 (mapv #(get % "value") data-masking-types)
+                                 [])
                  :reviewers (when (and (:review config) (seq review-groups))
                               (mapv #(get % "value") review-groups))}]
 
@@ -166,6 +167,7 @@
         network-credentials (when (and (= (:type connection) "application")
                                        (= (:subtype connection) "tcp"))
                               (extract-network-credentials credentials))]
+    (println (:redact_enabled connection))
     {:type (:type connection)
      :subtype (:subtype connection)
      :name (:name connection)
@@ -182,7 +184,9 @@
      :config {:review (seq (:reviewers connection))
               :review-groups (mapv #(hash-map "value" % "label" %) (:reviewers connection))
               :data-masking (:redact_enabled connection)
-              :data-masking-types (mapv #(hash-map "value" % "label" %) (:redact_types connection))
+              :data-masking-types (if (:redact_enabled connection)
+                                    (mapv #(hash-map "value" % "label" %) (:redact_types connection))
+                                    [])
               :database-schema (= (:access_schema connection) "enabled")
               :access-modes {:runbooks (= (:access_mode_runbooks connection) "enabled")
                              :native (= (:access_mode_connect connection) "enabled")

@@ -251,8 +251,8 @@
               [:> (.-Pane Allotment) {:minSize 270}
                [:aside {:class "h-full flex flex-col gap-8 border-r-2 border-[--gray-3] overflow-auto pb-16"}
                 (if @multi-run-panel?
-                  [connections-panel/main @dark-mode?]
-                  [connections-list/main dark-mode?])]]
+                  [connections-panel/main dark-mode?]
+                  [connections-list/main dark-mode? (show-tree? current-connection)])]]
 
               [:> Allotment {:defaultSizes horizontal-pane-sizes
                              :onDragEnd #(.setItem js/localStorage "editor-horizontal-pane-sizes" (str %))

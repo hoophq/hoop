@@ -14,7 +14,7 @@
                        (if selected?
                          "text-gray-1 bg-primary-11 hover:bg-primary-11 active:bg-primary-12"
                          "text-gray-12 hover:bg-primary-3 active:bg-primary-4")
-                       (when dark? "dark"))
+                       (when @dark? "dark"))
            :onClick (when (not= status "offline") on-select)}
    [:> Flex {:align "center" :gap "2" :justify "between" :class "w-full"}
     [:> Flex {:align "center" :gap "2"}
@@ -23,8 +23,8 @@
        [:img {:src (connection-constants/get-connection-icon
                     {:type type :subtype subtype}
                     (if @dark?
-                      :light
-                      :dark))
+                      :dark
+                      :light))
               :class "w-4"}]]]
      [:div {:class "flex flex-col"}
       [:> Text {:size "2"} name]
@@ -43,7 +43,7 @@
 
 (defn selected-connection []
   (let [show-schema? (r/atom false)]
-    (fn [connection dark-mode? admin?]
+    (fn [connection dark-mode? admin? show-tree?]
       [:> Box {:class "bg-primary-11 light"}
        [:> Flex {:justify "between" :align "center" :class "px-2 pt-2 pb-1"}
         [:> Text {:as "p" :size "1" :class "px-2 pt-2 pb-1 text-primary-5"} "Selected"]
@@ -57,9 +57,10 @@
                 :dark? dark-mode?
                 :admin? admin?)]
         [:> Flex {:align "center" :gap "2"}
-         [:> IconButton {:onClick #(swap! show-schema? not)
-                         :class (if @show-schema? "bg-[--gray-a4]" "")}
-          [:> FolderTree {:size 16}]]
+         (when show-tree?
+           [:> IconButton {:onClick #(swap! show-schema? not)
+                           :class (if @show-schema? "bg-[--gray-a4]" "")}
+            [:> FolderTree {:size 16}]])
          (when admin?
            [:> IconButton
             {:onClick #(rf/dispatch [:navigate :edit-connection {} :connection-name (:name connection)])}
@@ -121,7 +122,7 @@
     (rf/dispatch [:connections/load-persisted])
     (rf/dispatch [:connections/initialize])
 
-    (fn [dark-mode?]
+    (fn [dark-mode? show-tree?]
       (let [admin? (-> @user :data :is_admin)]
         [:> Box {:class "h-full flex flex-col"}
          (case @status
@@ -129,6 +130,6 @@
            :error [error-state @error]
            :success [:<>
                      (when @selected
-                       [selected-connection @selected dark-mode? admin?])
+                       [selected-connection @selected dark-mode? admin? show-tree?])
                      [connections-list @connections @selected dark-mode? admin?]]
            [loading-state])]))))
