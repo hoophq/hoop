@@ -107,16 +107,16 @@
 (rf/reg-sub
  :user/is-admin?
  (fn [db]
-   (get-in db [:users :current-user :data :admin?])))
+   (get-in db [:users->current-user :data :admin?])))
 
 ;; Component wrapper to check if the user is an admin
 ;; If not, redirect to home and show a loader component
 (defn admin-only [component]
   (let [is-admin? (rf/subscribe [:user/is-admin?])]
-    (fn [& args]
+    (fn []
       (if @is-admin?
         ;; If it's an admin, render the component normally
-        (apply component args)
+        component
         ;; If it's not an admin, redirect to home and show a loader
         (do
           (js/setTimeout #(rf/dispatch [:navigate :home]) 1200)
