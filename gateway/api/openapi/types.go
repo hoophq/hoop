@@ -1092,3 +1092,22 @@ type ConnectionColumn struct {
 	Type     string `json:"type"`     // The type of the column
 	Nullable bool   `json:"nullable"` // The nullable of the column
 }
+
+type IAMAccessKeyRequest struct {
+	// The AWS access Key ID
+	AccessKeyID string `json:"access_key_id" binding:"required"`
+	// The AWS Secret Access Key
+	SecretAccessKey string `json:"secret_access_key" binding:"required"`
+	// The region that this key will manage
+	Region string `json:"region" binding:"required"`
+	// The session token
+	SessionToken string `json:"session_token"`
+}
+
+type IAMUserInfo struct{}
+type IAMVerifyPermission struct{}
+type ListAWSAccounts struct{}
+type ListAWSDBInstancesRequest struct{}
+type ListAWSDBInstances struct{}
+type UpdateDBInstanceRolesRequest struct{}
+type UpdateDBInstanceRolesResponse struct{}

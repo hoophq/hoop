@@ -846,6 +846,216 @@ const docTemplate = `{
                 }
             }
         },
+        "/integrations/aws/iam/accesskeys": {
+            "put": {
+                "description": "Update IAM Access Key",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AWS"
+                ],
+                "summary": "Update IAM Access Key",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.IAMAccessKeyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Remove IAM Access Key from storage",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AWS"
+                ],
+                "summary": "Delete IAM Access Key",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/integrations/aws/iam/userinfo": {
+            "get": {
+                "description": "It obtain the aws identity of the instance role or credentials",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AWS"
+                ],
+                "summary": "Get Caller Identity",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.IAMUserInfo"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/integrations/aws/iam/verify": {
+            "post": {
+                "description": "Verify if the IAM permissions are configured properly",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AWS"
+                ],
+                "summary": "Verify IAM permissions",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.IAMVerifyPermission"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/integrations/aws/organizations": {
+            "get": {
+                "description": "It list all AWS accounts associated with the access key credentials",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AWS"
+                ],
+                "summary": "List AWS Accounts",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ListAWSAccounts"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/integrations/aws/rds/dbinstances/:dbArn/roles": {
+            "post": {
+                "description": "It update user roles in the target database",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AWS"
+                ],
+                "summary": "Update Database Instance Roles",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.UpdateDBInstanceRolesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.UpdateDBInstanceRolesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/integrations/aws/rds/describe-db-instances": {
+            "post": {
+                "description": "It list RDS Database Instances",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AWS"
+                ],
+                "summary": "List Database Instances",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ListAWSDBInstancesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ListAWSDBInstances"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/integrations/jira": {
             "get": {
                 "description": "Get Jira integration for the organization",
@@ -3897,6 +4107,38 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.IAMAccessKeyRequest": {
+            "type": "object",
+            "required": [
+                "access_key_id",
+                "region",
+                "secret_access_key"
+            ],
+            "properties": {
+                "access_key_id": {
+                    "description": "The AWS access Key ID",
+                    "type": "string"
+                },
+                "region": {
+                    "description": "The region that this key will manage",
+                    "type": "string"
+                },
+                "secret_access_key": {
+                    "description": "The AWS Secret Access Key",
+                    "type": "string"
+                },
+                "session_token": {
+                    "description": "The session token",
+                    "type": "string"
+                }
+            }
+        },
+        "openapi.IAMUserInfo": {
+            "type": "object"
+        },
+        "openapi.IAMVerifyPermission": {
+            "type": "object"
+        },
         "openapi.JiraIntegration": {
             "type": "object",
             "required": [
@@ -4115,6 +4357,15 @@ const docTemplate = `{
                     "example": "enterprise"
                 }
             }
+        },
+        "openapi.ListAWSAccounts": {
+            "type": "object"
+        },
+        "openapi.ListAWSDBInstances": {
+            "type": "object"
+        },
+        "openapi.ListAWSDBInstancesRequest": {
+            "type": "object"
         },
         "openapi.LivenessCheck": {
             "type": "object",
@@ -4792,6 +5043,10 @@ const docTemplate = `{
                     "description": "Report if GOOGLE_APPLICATION_CREDENTIALS_JSON or MSPRESIDIO is set",
                     "type": "boolean"
                 },
+                "has_ssh_client_host_key": {
+                    "description": "Report if SSH_CLIENT_HOST_KEY is set",
+                    "type": "boolean"
+                },
                 "has_webhook_app_key": {
                     "description": "Report if WEBHOOK_APPKEY is set",
                     "type": "boolean"
@@ -4815,7 +5070,7 @@ const docTemplate = `{
                     "type": "string",
                     "enum": [
                         "gcp",
-                        "presidio"
+                        "mspresidio"
                     ],
                     "example": "gcp"
                 },
@@ -5213,6 +5468,12 @@ const docTemplate = `{
                 "StatusReviewing",
                 "StatusInvited"
             ]
+        },
+        "openapi.UpdateDBInstanceRolesRequest": {
+            "type": "object"
+        },
+        "openapi.UpdateDBInstanceRolesResponse": {
+            "type": "object"
         },
         "openapi.User": {
             "type": "object",
