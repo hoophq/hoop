@@ -14,11 +14,11 @@ const (
 	EventDeleteConnection = "hoop-delete-connection"
 
 	// users
-	EventSingleTenantFirstUserCreated     = "hoop-single-tenant-first-user-created"
-	EventUpdateUser           = "hoop-update-user"
-	EventCreateInvitedUser    = "hoop-create-invited-user"
-	EventCreateServiceAccount = "hoop-create-serviceaccount"
-	EventUpdateServiceAccount = "hoop-update-serviceaccount"
+	EventSingleTenantFirstUserCreated = "hoop-single-tenant-first-user-created"
+	EventUpdateUser                   = "hoop-update-user"
+	EventCreateInvitedUser            = "hoop-create-invited-user"
+	EventCreateServiceAccount         = "hoop-create-serviceaccount"
+	EventUpdateServiceAccount         = "hoop-update-serviceaccount"
 
 	// review
 	EventUpdateReview = "hoop-update-review"
@@ -44,6 +44,9 @@ const (
 	EventCreateGuardRailRules = "hoop-create-guardrail-rules"
 	EventUpdateGuardRailRules = "hoop-update-guardrail-rules"
 	EventDeleteGuardRailRules = "hoop-delete-guardrail-rules"
+
+	// AWS
+	EventAWSVerifyPermissions = "hoop-aws-verify-permissions"
 
 	// features
 	EventOrgFeatureUpdate            = "hoop-org-feature-update"

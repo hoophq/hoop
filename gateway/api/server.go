@@ -23,6 +23,7 @@ import (
 	apiguardrails "github.com/hoophq/hoop/gateway/api/guardrails"
 	apihealthz "github.com/hoophq/hoop/gateway/api/healthz"
 	apijiraintegration "github.com/hoophq/hoop/gateway/api/integrations"
+	awsintegration "github.com/hoophq/hoop/gateway/api/integrations/aws"
 	localauthapi "github.com/hoophq/hoop/gateway/api/localauth"
 	loginapi "github.com/hoophq/hoop/gateway/api/login"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -479,6 +480,25 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apijiraintegration.DeleteIssueTemplates,
 	)
+
+	// AWS routes
+	r.POST("/integrations/aws/verify-permissions",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		// api.TrackRequest(analytics.EventAWSVerifyPermissions),
+		awsintegration.VerifyPermissions)
+
+	r.POST("/integrations/aws/list-rds-instances",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		// api.TrackRequest(analytics.EventAWSVerifyPermissions),
+		awsintegration.ListRDSInstances)
+
+	r.POST("/integrations/aws/get-caller-identity",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		// api.TrackRequest(analytics.EventAWSVerifyPermissions),
+		awsintegration.GetCallerIdentity)
 
 	r.POST("/guardrails",
 		apiroutes.AdminOnlyAccessRole,
