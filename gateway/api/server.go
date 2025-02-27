@@ -102,12 +102,12 @@ type Api struct {
 
 //	@tag.name	Reports
 
-//	@securitydefinitions.oauth2.accessCode	OAuth2AccessCode
-//	@tokenUrl								https://login.microsoftonline.com/d60ba6f0-ad5f-4917-aa19-f8d4241f8bc7/oauth2/v2.0/token
-//	@authorizationUrl						https://login.microsoftonline.com/d60ba6f0-ad5f-4917-aa19-f8d4241f8bc7/oauth2/v2.0/authorize
-//	@scope.profile
-//	@scope.email
-//	@scope.openid
+// @securitydefinitions.oauth2.accessCode	OAuth2AccessCode
+// @tokenUrl								https://login.microsoftonline.com/d60ba6f0-ad5f-4917-aa19-f8d4241f8bc7/oauth2/v2.0/token
+// @authorizationUrl						https://login.microsoftonline.com/d60ba6f0-ad5f-4917-aa19-f8d4241f8bc7/oauth2/v2.0/authorize
+// @scope.profile
+// @scope.email
+// @scope.openid
 func (a *Api) StartAPI(sentryInit bool) {
 	if os.Getenv("PORT") == "" {
 		os.Setenv("PORT", "8009")
@@ -516,7 +516,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		// api.TrackRequest(analytics.EventAWSVerifyPermissions),
-		awsintegration.ListRDSInstances)
+		awsintegration.DescribeRDSDBInstances)
 
 	r.POST("/integrations/aws/rds/dbinstances/:dbArn/roles",
 		apiroutes.AdminOnlyAccessRole,

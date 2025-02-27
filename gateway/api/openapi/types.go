@@ -3,6 +3,9 @@ package openapi
 import (
 	"encoding/json"
 	"time"
+
+	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	orgtypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
 )
 
 type HTTPError struct {
@@ -1104,10 +1107,84 @@ type IAMAccessKeyRequest struct {
 	SessionToken string `json:"session_token"`
 }
 
-type IAMUserInfo struct{}
-type IAMVerifyPermission struct{}
-type ListAWSAccounts struct{}
+type IAMUserInfo struct {
+	// AccountID is the unique identifier for the AWS account
+	AccountID string `json:"account_id" example:"123456789012"`
+	// ARN is the Amazon Resource Name that uniquely identifies the IAM user
+	ARN string `json:"arn" example:"arn:aws:iam::123456789012:user/johndoe"`
+	// UserID is the unique identifier for the IAM user
+	UserID string `json:"arn_id" example:"AIDACKCEVSQ6C2EXAMPLE"`
+	// Region is the AWS region where the IAM user is operating
+	Region string `json:"region" example:"us-west-2"`
+}
+
+type IAMEvaluationDetailStatement struct {
+	// SourcePolicyID is the unique identifier for the policy
+	SourcePolicyID string `json:"source_policy_id" example:"ANPAI3R4QMYGV2EXAMPL4"`
+	// SourcePolicyType indicates the type of policy (managed, inline, etc.)
+	SourcePolicyType string `json:"source_policy_type" example:"managed"`
+}
+
+type IAMEvaluationDetail struct {
+	// ActionName is the AWS service action being evaluated
+	ActionName string `json:"action_name" example:"ec2:DescribeInstances"`
+	// Decision indicates whether the action is allowed or denied
+	Decision iamtypes.PolicyEvaluationDecisionType `json:"decision" example:"allowed"`
+	// ResourceName is the ARN of the resource being accessed
+	ResourceName string `json:"resource_name" example:"arn:aws:ec2:us-west-2:123456789012:instance/i-0123456789abcdef0"`
+	// MatchedStatements lists the policy statements that matched during evaluation
+	MatchedStatements []IAMEvaluationDetailStatement `json:"matched_statements"`
+}
+
+type IAMVerifyPermission struct {
+	// Status indicates the overall result of the permission verification
+	Status string `json:"status" example:"allowed"`
+	// Identity contains information about the IAM user being evaluated
+	Identity IAMUserInfo `json:"identity"`
+	// EvaluationDetails contains the details of each permission evaluation
+	EvaluationDetails []IAMEvaluationDetail `json:"evaluation_details"`
+}
+
+type ListAWSAccounts struct {
+	Items []AWSAccount `json:"items"`
+}
+
+type AWSAccount struct {
+	// AccountID is the unique identifier for the AWS account
+	AccountID string `json:"account_id" example:"123456789012"`
+	// Name is the friendly name of the AWS account
+	Name string `json:"name" example:"SandBox"`
+	// Status indicates whether the account is active, suspended, etc.
+	Status orgtypes.AccountStatus `json:"status" example:"ACTIVE"`
+	// JoinedMethods indicates how the account joined the organization
+	JoinedMethods orgtypes.AccountJoinedMethod `json:"joined_methods" example:"INVITED"`
+	// Email is the email address associated with the AWS account
+	Email string `json:"email" example:"aws-prod@example.com"`
+}
+
 type ListAWSDBInstancesRequest struct{}
-type ListAWSDBInstances struct{}
+
+type ListAWSDBInstances struct {
+	Items []AWSDBInstance `json:"items"`
+}
+
+// AWSDBInstance contains information about an AWS database instance
+type AWSDBInstance struct {
+	// AccountID is the unique identifier for the AWS account that owns the database
+	AccountID string `json:"account_id" example:"123456789012"`
+	// Name is the identifier for the database instance
+	Name string `json:"name" example:"my-postgres-db"`
+	// AvailabilityZone is the AWS availability zone where the database is deployed
+	AvailabilityZone string `json:"availability_zone" example:"us-west-2a"`
+	// VpcID is the ID of the Virtual Private Cloud where the database is deployed
+	VpcID string `json:"vpc_id" example:"vpc-0123456789abcdef0"`
+	// ARN is the Amazon Resource Name that uniquely identifies the database instance
+	ARN string `json:"arn" example:"arn:aws:rds:us-west-2:123456789012:db:my-postgres-db"`
+	// Engine is the database engine type (e.g., MySQL, PostgreSQL)
+	Engine string `json:"engine" example:"postgres"`
+	// Status indicates the current state of the database instance
+	Status string `json:"status" example:"available"`
+}
+
 type UpdateDBInstanceRolesRequest struct{}
 type UpdateDBInstanceRolesResponse struct{}

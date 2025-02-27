@@ -69,17 +69,17 @@ func IAMDeleteAccessKey(c *gin.Context) {
 //	@Failure		400	{object}	openapi.HTTPError
 //	@Router			/integrations/aws/iam/userinfo [get]
 func IAMGetUserInfo(c *gin.Context) {
-	cfg, identity, err := loadAWSConfig()
+	cfg, i, err := loadAWSConfig()
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, map[string]any{
-		"account_id": identity.Account,
-		"arn":        identity.Arn,
-		"user_id":    identity.UserId,
-		"region":     cfg.Region,
+	c.JSON(http.StatusOK, openapi.IAMUserInfo{
+		AccountID: *i.Account,
+		ARN:       *i.Arn,
+		UserID:    *i.UserId,
+		Region:    cfg.Region,
 	})
 }
 
@@ -111,36 +111,39 @@ func IAMVerifyPermissions(c *gin.Context) {
 		return
 	}
 
+	// var obj openapi.IAMVerifyPermission
+
 	status := "allowed"
-	var evaluation []map[string]any
+	evaluation := []openapi.IAMEvaluationDetail{}
 	for _, r := range resp.EvaluationResults {
 		if r.EvalDecision != "allowed" {
 			status = "denied"
 		}
-		statements := []map[string]any{}
+		statements := []openapi.IAMEvaluationDetailStatement{}
 		for _, st := range r.MatchedStatements {
-			statements = append(statements, map[string]any{
-				"source_policy_id":   st.SourcePolicyId,
-				"source_policy_type": st.SourcePolicyType,
+			statements = append(statements, openapi.IAMEvaluationDetailStatement{
+				SourcePolicyID:   *st.SourcePolicyId,
+				SourcePolicyType: string(st.SourcePolicyType),
 			})
 		}
-		evaluation = append(evaluation, map[string]any{
-			"action_name":        r.EvalActionName,
-			"decision":           r.EvalDecision,
-			"decision_details":   r.EvalDecisionDetails,
-			"resource_name":      r.EvalResourceName,
-			"matched_statements": statements,
+
+		evaluation = append(evaluation, openapi.IAMEvaluationDetail{
+			ActionName:        *r.EvalActionName,
+			Decision:          r.EvalDecision,
+			ResourceName:      *r.EvalResourceName,
+			MatchedStatements: statements,
 		})
 	}
-	c.JSON(http.StatusOK, map[string]any{
-		"status": status,
-		"identity": map[string]any{
-			"account_id": identity.Account,
-			"arn":        identity.Arn,
-			"user_id":    identity.UserId,
-			"region":     cfg.Region,
+
+	c.JSON(http.StatusOK, openapi.IAMVerifyPermission{
+		Status: status,
+		Identity: openapi.IAMUserInfo{
+			AccountID: *identity.Account,
+			ARN:       *identity.Arn,
+			UserID:    *identity.UserId,
+			Region:    cfg.Region,
 		},
-		"evaluation_details": evaluation,
+		EvaluationDetails: evaluation,
 	})
 }
 
@@ -160,7 +163,7 @@ func ListOrganizations(c *gin.Context) {
 		return
 	}
 	orgClient := organizations.NewFromConfig(cfg)
-	var accounts []map[string]any
+	var accounts []openapi.AWSAccount
 	paginator := organizations.NewListAccountsPaginator(orgClient, &organizations.ListAccountsInput{})
 
 	for paginator.HasMorePages() {
@@ -172,18 +175,16 @@ func ListOrganizations(c *gin.Context) {
 		}
 
 		for _, acct := range page.Accounts {
-			accounts = append(accounts, map[string]any{
-				"account_id":    acct.Id,
-				"name":          acct.Name,
-				"status":        acct.Status,
-				"joined_method": acct.JoinedMethod,
-				"email":         acct.Email,
+			accounts = append(accounts, openapi.AWSAccount{
+				AccountID:     *acct.Id,
+				Name:          *acct.Name,
+				Status:        acct.Status,
+				JoinedMethods: acct.JoinedMethod,
+				Email:         *acct.Email,
 			})
 		}
 	}
-	c.JSON(http.StatusOK, map[string]any{
-		"items": accounts,
-	})
+	c.JSON(http.StatusOK, openapi.ListAWSAccounts{Items: accounts})
 }
 
 // DescribeDBInstances
@@ -196,7 +197,7 @@ func ListOrganizations(c *gin.Context) {
 //	@Success		200		{object}	openapi.ListAWSDBInstances
 //	@Failure		400		{object}	openapi.HTTPError
 //	@Router			/integrations/aws/rds/describe-db-instances [post]
-func ListRDSInstances(c *gin.Context) {
+func DescribeRDSDBInstances(c *gin.Context) {
 	// Load AWS config for management account
 	// 1. filter instances based on selected accounts
 	ctx := context.Background()
@@ -207,7 +208,7 @@ func ListRDSInstances(c *gin.Context) {
 	}
 
 	orgClient := organizations.NewFromConfig(cfg)
-	var instances []map[string]any
+	var instances []openapi.AWSDBInstance
 	paginator := organizations.NewListAccountsPaginator(orgClient, &organizations.ListAccountsInput{})
 
 	for paginator.HasMorePages() {
@@ -226,23 +227,20 @@ func ListRDSInstances(c *gin.Context) {
 			}
 
 			for _, inst := range items {
-
-				instances = append(instances, map[string]any{
-					"account_id": acct.Id,
-					"name":       inst.DBName,
-					"az":         inst.AvailabilityZone,
-					"vpc_id":     inst.DBSubnetGroup.VpcId,
-					"arn":        inst.DBInstanceArn,
-					"engine":     inst.Engine,
-					"status":     inst.DBInstanceStatus,
+				instances = append(instances, openapi.AWSDBInstance{
+					AccountID:        *acct.Id,
+					Name:             *inst.DBName,
+					AvailabilityZone: *inst.AvailabilityZone,
+					VpcID:            *inst.DBSubnetGroup.VpcId,
+					ARN:              *inst.DBInstanceArn,
+					Engine:           *inst.Engine,
+					Status:           *inst.DBInstanceStatus,
 				})
 			}
 		}
 	}
 
-	c.JSON(http.StatusOK, map[string]any{
-		"items": instances,
-	})
+	c.JSON(http.StatusOK, openapi.ListAWSDBInstances{Items: instances})
 }
 
 // UpdateDBInstanceRoles
