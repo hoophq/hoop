@@ -3553,6 +3553,84 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "openapi.AWSAccount": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "description": "AccountID is the unique identifier for the AWS account",
+                    "type": "string",
+                    "example": "123456789012"
+                },
+                "email": {
+                    "description": "Email is the email address associated with the AWS account",
+                    "type": "string",
+                    "example": "aws-prod@example.com"
+                },
+                "joined_methods": {
+                    "description": "JoinedMethods indicates how the account joined the organization",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.AccountJoinedMethod"
+                        }
+                    ],
+                    "example": "INVITED"
+                },
+                "name": {
+                    "description": "Name is the friendly name of the AWS account",
+                    "type": "string",
+                    "example": "SandBox"
+                },
+                "status": {
+                    "description": "Status indicates whether the account is active, suspended, etc.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.AccountStatus"
+                        }
+                    ],
+                    "example": "ACTIVE"
+                }
+            }
+        },
+        "openapi.AWSDBInstance": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "description": "AccountID is the unique identifier for the AWS account that owns the database",
+                    "type": "string",
+                    "example": "123456789012"
+                },
+                "arn": {
+                    "description": "ARN is the Amazon Resource Name that uniquely identifies the database instance",
+                    "type": "string",
+                    "example": "arn:aws:rds:us-west-2:123456789012:db:my-postgres-db"
+                },
+                "availability_zone": {
+                    "description": "AvailabilityZone is the AWS availability zone where the database is deployed",
+                    "type": "string",
+                    "example": "us-west-2a"
+                },
+                "engine": {
+                    "description": "Engine is the database engine type (e.g., MySQL, PostgreSQL)",
+                    "type": "string",
+                    "example": "postgres"
+                },
+                "name": {
+                    "description": "Name is the identifier for the database instance",
+                    "type": "string",
+                    "example": "my-postgres-db"
+                },
+                "status": {
+                    "description": "Status indicates the current state of the database instance",
+                    "type": "string",
+                    "example": "available"
+                },
+                "vpc_id": {
+                    "description": "VpcID is the ID of the Virtual Private Cloud where the database is deployed",
+                    "type": "string",
+                    "example": "vpc-0123456789abcdef0"
+                }
+            }
+        },
         "openapi.AgentCreateResponse": {
             "type": "object",
             "properties": {
@@ -4133,11 +4211,101 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.IAMEvaluationDetail": {
+            "type": "object",
+            "properties": {
+                "action_name": {
+                    "description": "ActionName is the AWS service action being evaluated",
+                    "type": "string",
+                    "example": "ec2:DescribeInstances"
+                },
+                "decision": {
+                    "description": "Decision indicates whether the action is allowed or denied",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PolicyEvaluationDecisionType"
+                        }
+                    ],
+                    "example": "allowed"
+                },
+                "matched_statements": {
+                    "description": "MatchedStatements lists the policy statements that matched during evaluation",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.IAMEvaluationDetailStatement"
+                    }
+                },
+                "resource_name": {
+                    "description": "ResourceName is the ARN of the resource being accessed",
+                    "type": "string",
+                    "example": "arn:aws:ec2:us-west-2:123456789012:instance/i-0123456789abcdef0"
+                }
+            }
+        },
+        "openapi.IAMEvaluationDetailStatement": {
+            "type": "object",
+            "properties": {
+                "source_policy_id": {
+                    "description": "SourcePolicyID is the unique identifier for the policy",
+                    "type": "string",
+                    "example": "ANPAI3R4QMYGV2EXAMPL4"
+                },
+                "source_policy_type": {
+                    "description": "SourcePolicyType indicates the type of policy (managed, inline, etc.)",
+                    "type": "string",
+                    "example": "managed"
+                }
+            }
+        },
         "openapi.IAMUserInfo": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "description": "AccountID is the unique identifier for the AWS account",
+                    "type": "string",
+                    "example": "123456789012"
+                },
+                "arn": {
+                    "description": "ARN is the Amazon Resource Name that uniquely identifies the IAM user",
+                    "type": "string",
+                    "example": "arn:aws:iam::123456789012:user/johndoe"
+                },
+                "arn_id": {
+                    "description": "UserID is the unique identifier for the IAM user",
+                    "type": "string",
+                    "example": "AIDACKCEVSQ6C2EXAMPLE"
+                },
+                "region": {
+                    "description": "Region is the AWS region where the IAM user is operating",
+                    "type": "string",
+                    "example": "us-west-2"
+                }
+            }
         },
         "openapi.IAMVerifyPermission": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+                "evaluation_details": {
+                    "description": "EvaluationDetails contains the details of each permission evaluation",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.IAMEvaluationDetail"
+                    }
+                },
+                "identity": {
+                    "description": "Identity contains information about the IAM user being evaluated",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.IAMUserInfo"
+                        }
+                    ]
+                },
+                "status": {
+                    "description": "Status indicates the overall result of the permission verification",
+                    "type": "string",
+                    "example": "allowed"
+                }
+            }
         },
         "openapi.JiraIntegration": {
             "type": "object",
@@ -4359,10 +4527,26 @@ const docTemplate = `{
             }
         },
         "openapi.ListAWSAccounts": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.AWSAccount"
+                    }
+                }
+            }
         },
         "openapi.ListAWSDBInstances": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.AWSDBInstance"
+                    }
+                }
+            }
         },
         "openapi.ListAWSDBInstancesRequest": {
             "type": "object"
@@ -5695,6 +5879,43 @@ const docTemplate = `{
                     "example": "https://app.svix.com/app_3ZT4NrDlps0Pjp6Af8L6pJMMh3/endpoints"
                 }
             }
+        },
+        "types.AccountJoinedMethod": {
+            "type": "string",
+            "enum": [
+                "INVITED",
+                "CREATED"
+            ],
+            "x-enum-varnames": [
+                "AccountJoinedMethodInvited",
+                "AccountJoinedMethodCreated"
+            ]
+        },
+        "types.AccountStatus": {
+            "type": "string",
+            "enum": [
+                "ACTIVE",
+                "SUSPENDED",
+                "PENDING_CLOSURE"
+            ],
+            "x-enum-varnames": [
+                "AccountStatusActive",
+                "AccountStatusSuspended",
+                "AccountStatusPendingClosure"
+            ]
+        },
+        "types.PolicyEvaluationDecisionType": {
+            "type": "string",
+            "enum": [
+                "allowed",
+                "explicitDeny",
+                "implicitDeny"
+            ],
+            "x-enum-varnames": [
+                "PolicyEvaluationDecisionTypeAllowed",
+                "PolicyEvaluationDecisionTypeExplicitDeny",
+                "PolicyEvaluationDecisionTypeImplicitDeny"
+            ]
         }
     },
     "securityDefinitions": {
