@@ -132,8 +132,7 @@
     (reduce-kv (fn [acc k v]
                  (if (str/starts-with? (name k) secret-start-name)
                    (let [clean-key (-> (name k)
-                                       (str/replace secret-start-name "")
-                                       str/lower-case)]
+                                       (str/replace secret-start-name ""))]
                      (conj acc {:key clean-key :value (decode-base64 v)}))
                    acc))
                []
