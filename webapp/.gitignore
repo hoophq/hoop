@@ -40,3 +40,6 @@ src/webapp/version.js
 
 # connection metadata
 /resources/public/data/connections-metadata.json
+
+# js/gen
+src/js/gen/

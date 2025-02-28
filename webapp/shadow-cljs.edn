@@ -1,6 +1,6 @@
 {:nrepl {:port 8777}
 
- :source-paths ["src" "test"]
+ :source-paths ["src" "src/gen"]
 
  :dependencies [[reagent "1.3.0"]
                 [reagent-utils "0.3.8"]
@@ -13,8 +13,7 @@
                 [re-frisk "1.7.1"]]
 
  :dev-http
- {8280 "resources/public"
-  8290 "target/browser-test"}
+ {8280 "resources/public"}
 
  :builds
  {:hoop-ui
@@ -50,13 +49,4 @@
                                  webapp.env/sentry-dsn #shadow/env ["SENTRY_DSN"
                                                                     "https://b2bf390e5cd94bfc83c0005312d796fd@o919346.ingest.sentry.io/6707471"]
                                  webapp.env/api-url #shadow/env ["API_URL"]}}
-             :build-options {}}}
-  ;; end :hoop-ui
-
-  :browser-test {:target :browser-test
-                 :ns-regexp "-test$"
-                 :runner-ns shadow.test.browser
-                 :test-dir "target/browser-test"}
-  :karma-test {:target :karma
-               :ns-regexp "-test$"
-               :output-to "target/karma-test.js"}}}
+             :build-options {}}}}}
