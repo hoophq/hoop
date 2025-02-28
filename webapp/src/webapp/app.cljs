@@ -1,5 +1,6 @@
 (ns webapp.app
   (:require
+   ["/features/upgrade-plan/UpgradePlan" :refer [UpgradePlan]]
    ["@radix-ui/themes" :refer [Theme]]
    ["@sentry/browser" :as Sentry]
    ["gsap/all" :refer [Draggable gsap]]
@@ -58,25 +59,21 @@
    [webapp.events.segment]
    [webapp.events.slack-plugin]
    [webapp.events.users]
-   [webapp.webclient.events.connections]
-   [webapp.webclient.events.metadata]
-   [webapp.webclient.events.multi-exec]
-   [webapp.webclient.events.connection-selection]
-   [webapp.webclient.events.codemirror]
-   [webapp.webclient.events.search]
    [webapp.guardrails.create-update-form :as guardrail-create-update]
    [webapp.guardrails.main :as guardrails]
    [webapp.jira-templates.create-update-form :as jira-templates-create-update]
    [webapp.jira-templates.main :as jira-templates]
+   [webapp.onboarding.aws-connect :as aws-connect]
+   [webapp.onboarding.events.aws-connect-events]
    [webapp.onboarding.events.effects]
    [webapp.onboarding.main :as onboarding]
    [webapp.onboarding.setup :as onboarding-setup]
    [webapp.onboarding.setup-resource :as onboarding-setup-resource]
+   [webapp.onboarding.subs]
    [webapp.organization.users.main :as org-users]
    [webapp.plugins.views.manage-plugin :as manage-plugin]
    [webapp.plugins.views.plugins-configurations :as plugins-configurations]
    [webapp.reviews.panel :as reviews]
-   [webapp.reviews.review-detail :as review-details]
    [webapp.reviews.review-detail :as review-detail]
    [webapp.routes :as routes]
    [webapp.settings.license.panel :as license-management]
@@ -84,8 +81,13 @@
    [webapp.slack.slack-new-organization :as slack-new-organization]
    [webapp.slack.slack-new-user :as slack-new-user]
    [webapp.subs :as subs]
-   [webapp.upgrade-plan.main :as upgrade-plan]
    [webapp.views.home :as home]
+   [webapp.webclient.events.codemirror]
+   [webapp.webclient.events.connection-selection]
+   [webapp.webclient.events.connections]
+   [webapp.webclient.events.metadata]
+   [webapp.webclient.events.multi-exec]
+   [webapp.webclient.events.search]
    [webapp.webclient.panel :as webclient]))
 
 (when (= config/release-type "hoop-ui")
@@ -154,8 +156,11 @@
   [hoop-layout panels])
 
 (defmethod layout :auth [_ panels]
-  (snackbar/snackbar)
-  panels)
+  [:<>
+   (snackbar/snackbar)
+   [modals/modal]
+   [modals/modal-radix]
+   panels])
 
 ;;;;;;;;;;;;;;;;;
 ;; HOOP PANELS ;;
@@ -188,6 +193,9 @@
 (defmethod routes/panels :onboarding-panel []
   [layout :auth [onboarding/main]])
 
+(defmethod routes/panels :onboarding-aws-connect-panel []
+  [layout :auth [aws-connect/main]])
+
 (defmethod routes/panels :onboarding-setup-panel []
   [layout :auth [onboarding-setup/main]])
 
@@ -197,7 +205,7 @@
 (defmethod routes/panels :upgrade-plan-panel []
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop [:div {:class "bg-gray-1 min-h-full h-max"}
-                             [upgrade-plan/main]]])
+                             [:> UpgradePlan]]])
 
 (defmethod routes/panels :users-panel []
   [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
@@ -364,7 +372,7 @@
         review-id (-> current-route :route-params :review-id)]
     (rf/dispatch [:reviews-plugin->get-review-by-id {:id review-id}])
     (rf/dispatch [:destroy-page-loader])
-    [layout :application-hoop [review-details/review-details-page]]))
+    [layout :application-hoop [review-detail/review-details-page]]))
 
 (defmethod routes/panels :slack-new-organization-panel []
   [layout :application-hoop [slack-new-organization/main]])
