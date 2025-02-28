@@ -92,7 +92,7 @@
                  :access_mode_runbooks (if (:runbooks effective-access-modes) "enabled" "disabled")
                  :access_mode_exec (if (:web effective-access-modes) "enabled" "disabled")
                  :access_mode_connect (if (:native effective-access-modes) "enabled" "disabled")
-                 :redact_enabled (:data-masking config false)
+                 :redact_enabled true
                  :redact_types (if (:data-masking config)
                                  (mapv #(get % "value") data-masking-types)
                                  [])
