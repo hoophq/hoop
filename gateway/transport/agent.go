@@ -10,11 +10,13 @@ import (
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
+	pbsys "github.com/hoophq/hoop/common/proto/sys"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
+	transportsys "github.com/hoophq/hoop/gateway/transport/sys"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -69,11 +71,21 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 		if pkt.Type == pbgateway.KeepAlive || pkt.Type == "KeepAlive" {
 			continue
 		}
+
 		pctx.SID = string(pkt.Spec[pb.SpecGatewaySessionID])
 		if pctx.SID == "" {
 			log.Warnf("missing session id spec, skipping packet %v", pkt.Type)
 			continue
 		}
+
+		// handle system packets
+		if pkt.Type == pbsys.ProvisionDBRolesResponse {
+			if err := transportsys.Send(pctx.SID, pkt.Payload); err != nil {
+				log.Warnf("unable to send system packet, reason=%v", err)
+			}
+			continue
+		}
+
 		proxyStream := streamclient.GetProxyStream(pctx.SID)
 		if proxyStream == nil {
 			continue

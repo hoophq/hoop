@@ -20,7 +20,6 @@ func (e *ErrNotFoundGuardRailRules) Error() string {
 
 const (
 	tableConnections               = "private.connections"
-	tableEnvVars                   = "private.env_vars"
 	tableGuardRailRulesConnections = "private.guardrail_rules_connections"
 
 	ConnectionStatusOnline  = "online"

@@ -1,5 +1,5 @@
 // agent must have all types implement by an agent
-package agent
+package pbagent
 
 const (
 	GatewayConnectOK = "AgentGatewayConnectOK"

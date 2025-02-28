@@ -518,11 +518,25 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		// api.TrackRequest(analytics.EventAWSVerifyPermissions),
 		awsintegration.DescribeRDSDBInstances)
 
-	r.POST("/integrations/aws/rds/dbinstances/:dbArn/roles",
+	r.POST("/dbroles/jobs",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		// api.TrackRequest(analytics.EventAWSVerifyPermissions),
-		awsintegration.UpdateDBInstanceRoles,
+		awsintegration.CreateDBRoleJob,
+	)
+
+	r.GET("/dbroles/jobs",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		// api.TrackRequest(analytics.EventAWSVerifyPermissions),
+		awsintegration.ListDBRoleJobs,
+	)
+
+	r.GET("/dbroles/jobs/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		// api.TrackRequest(analytics.EventAWSVerifyPermissions),
+		awsintegration.GetDBRoleJobByID,
 	)
 
 	r.POST("/guardrails",

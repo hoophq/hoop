@@ -582,6 +582,82 @@ const docTemplate = `{
                 }
             }
         },
+        "/dbroles/jobs": {
+            "get": {
+                "description": "List all db role jobs",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AWS"
+                ],
+                "summary": "List DB Role Jobs",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.DBRoleJobList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/dbroles/jobs/{id}": {
+            "get": {
+                "description": "Get DB Role job by id",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AWS"
+                ],
+                "summary": "Get DB Role Job",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The unique identifier of the resource",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.DBRoleJob"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/features/ask-ai/v1/chat/completions": {
             "post": {
                 "description": "Proxy to OpenAI chat completions ` + "`" + `/vi/chat/completions` + "`" + `",
@@ -982,16 +1058,16 @@ const docTemplate = `{
                 }
             }
         },
-        "/integrations/aws/rds/dbinstances/:dbArn/roles": {
+        "/integrations/aws/rds/dbinstances/roles": {
             "post": {
-                "description": "It update user roles in the target database",
+                "description": "It creates a job that performs the provisioning of default database roles",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "AWS"
                 ],
-                "summary": "Update Database Instance Roles",
+                "summary": "Create Database Role Job",
                 "parameters": [
                     {
                         "description": "The request body resource",
@@ -999,7 +1075,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/openapi.UpdateDBInstanceRolesRequest"
+                            "$ref": "#/definitions/openapi.CreateDBRoleJob"
                         }
                     }
                 ],
@@ -1007,7 +1083,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/openapi.UpdateDBInstanceRolesResponse"
+                            "$ref": "#/definitions/openapi.CreateDBRoleJobResponse"
+                        }
+                    },
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.CreateDBRoleJobResponse"
                         }
                     },
                     "400": {
@@ -3631,6 +3713,33 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.AWSDBRoleJobSpec": {
+            "type": "object",
+            "properties": {
+                "account_arn": {
+                    "type": "string",
+                    "example": "arn:aws:iam:123456789012"
+                },
+                "db_arn": {
+                    "type": "string",
+                    "example": "arn:aws:rds:us-west-2:123456789012:db:my-instance"
+                },
+                "db_engine": {
+                    "type": "string",
+                    "example": "postgres"
+                },
+                "db_name": {
+                    "type": "string",
+                    "example": "customers"
+                },
+                "roles": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.DBRoleJobItem"
+                    }
+                }
+            }
+        },
         "openapi.AgentCreateResponse": {
             "type": "object",
             "properties": {
@@ -3984,6 +4093,123 @@ const docTemplate = `{
                 "name": {
                     "description": "The name of the table",
                     "type": "string"
+                }
+            }
+        },
+        "openapi.CreateDBRoleJob": {
+            "type": "object",
+            "required": [
+                "agent_id"
+            ],
+            "properties": {
+                "agent_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                },
+                "aws": {
+                    "$ref": "#/definitions/openapi.CreateDBRoleJobAWSProvider"
+                }
+            }
+        },
+        "openapi.CreateDBRoleJobAWSProvider": {
+            "type": "object",
+            "required": [
+                "instance_arn"
+            ],
+            "properties": {
+                "instance_arn": {
+                    "type": "string",
+                    "example": "arn:aws:rds:us-west-2:123456789012:db:my-instance"
+                }
+            }
+        },
+        "openapi.CreateDBRoleJobResponse": {
+            "type": "object",
+            "properties": {
+                "error_message": {
+                    "type": "string",
+                    "example": "Failed to create role due to insufficient permissions"
+                },
+                "job_id": {
+                    "type": "string",
+                    "example": "job-9876543210"
+                }
+            }
+        },
+        "openapi.DBRoleJob": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string",
+                    "example": "2025-02-28T12:34:56Z"
+                },
+                "error_message": {
+                    "type": "string",
+                    "example": "Access denied by AWS IAM policy"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "67D7D053-3CAF-430E-97BA-6D4933D3FD5B"
+                },
+                "org_id": {
+                    "type": "string",
+                    "example": "37EEBC20-D8DF-416B-8AC2-01B6EB456318"
+                },
+                "spec": {
+                    "$ref": "#/definitions/openapi.AWSDBRoleJobSpec"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "completed"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2025-02-28T13:45:12Z"
+                }
+            }
+        },
+        "openapi.DBRoleJobItem": {
+            "type": "object",
+            "properties": {
+                "error_message": {
+                    "type": "string",
+                    "example": "Role creation failed: user already exists"
+                },
+                "permissions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "SELECT",
+                        "INSERT"
+                    ]
+                },
+                "secrets": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "HOST": "192.168.15.49",
+                        "USER": "hoop_ro"
+                    }
+                },
+                "user": {
+                    "type": "string",
+                    "example": "analytics_user"
+                }
+            }
+        },
+        "openapi.DBRoleJobList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.DBRoleJob"
+                    }
                 }
             }
         },
@@ -5652,12 +5878,6 @@ const docTemplate = `{
                 "StatusReviewing",
                 "StatusInvited"
             ]
-        },
-        "openapi.UpdateDBInstanceRolesRequest": {
-            "type": "object"
-        },
-        "openapi.UpdateDBInstanceRolesResponse": {
-            "type": "object"
         },
         "openapi.User": {
             "type": "object",

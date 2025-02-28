@@ -28,36 +28,37 @@ type pgCredentials struct {
 	postgrestRole string
 }
 type Config struct {
-	apiKey                  string
-	askAICredentials        *url.URL
-	authMethod              string
-	pgCred                  *pgCredentials
-	gcpDLPJsonCredentials   string
-	dlpProvider             string
-	hasRedactCredentials    bool
-	msPresidioAnalyzerURL   string
-	msPresidioAnonymizerURL string
-	webhookAppKey           string
-	webhookAppURL           *url.URL
-	licenseSigningKey       *rsa.PrivateKey
-	licenseSignerOrgID      string
-	migrationPathFiles      string
-	orgMultitenant          bool
-	doNotTrack              bool
-	apiURL                  string
-	grpcURL                 string
-	apiHostname             string
-	apiHost                 string
-	apiScheme               string
-	apiURLPath              string
-	webappUsersManagement   string
-	jwtSecretKey            []byte
-	webappStaticUIPath      string
-	disableSessionsDownload bool
-	gatewayTLSCa            string
-	gatewayTLSKey           string
-	gatewayTLSCert          string
-	sshClientHostKey        string
+	apiKey                          string
+	askAICredentials                *url.URL
+	authMethod                      string
+	pgCred                          *pgCredentials
+	gcpDLPJsonCredentials           string
+	dlpProvider                     string
+	hasRedactCredentials            bool
+	msPresidioAnalyzerURL           string
+	msPresidioAnonymizerURL         string
+	webhookAppKey                   string
+	webhookAppURL                   *url.URL
+	licenseSigningKey               *rsa.PrivateKey
+	licenseSignerOrgID              string
+	migrationPathFiles              string
+	orgMultitenant                  bool
+	doNotTrack                      bool
+	apiURL                          string
+	grpcURL                         string
+	apiHostname                     string
+	apiHost                         string
+	apiScheme                       string
+	apiURLPath                      string
+	webappUsersManagement           string
+	jwtSecretKey                    []byte
+	webappStaticUIPath              string
+	disableSessionsDownload         bool
+	gatewayTLSCa                    string
+	gatewayTLSKey                   string
+	gatewayTLSCert                  string
+	sshClientHostKey                string
+	integrationAWSInstanceRoleAllow bool
 
 	isLoaded bool
 }
@@ -167,38 +168,40 @@ func Load() error {
 			return fmt.Errorf("failed decoding env SSH_CLIENT_HOST_KEY, err=%v", err)
 		}
 	}
+
 	runtimeConfig = Config{
-		apiKey:                  os.Getenv("API_KEY"),
-		apiURL:                  fmt.Sprintf("%s://%s", apiRawURL.Scheme, apiRawURL.Host),
-		grpcURL:                 grpcURL,
-		apiHostname:             apiRawURL.Hostname(),
-		apiScheme:               apiRawURL.Scheme,
-		apiHost:                 apiRawURL.Host,
-		apiURLPath:              apiRawURL.Path,
-		authMethod:              authMethod,
-		askAICredentials:        askAICred,
-		pgCred:                  pgCred,
-		migrationPathFiles:      migrationPathFiles,
-		licenseSigningKey:       licensePrivKey,
-		licenseSignerOrgID:      allowedOrgID,
-		gcpDLPJsonCredentials:   gcpJsonCred,
-		orgMultitenant:          os.Getenv("ORG_MULTI_TENANT") == "true",
-		doNotTrack:              os.Getenv("DO_NOT_TRACK") == "true",
-		dlpProvider:             os.Getenv("DLP_PROVIDER"),
-		hasRedactCredentials:    hasRedactCredentials,
-		msPresidioAnalyzerURL:   os.Getenv("MSPRESIDIO_ANALYZER_URL"),
-		msPresidioAnonymizerURL: os.Getenv("MSPRESIDIO_ANONYMIZER_URL"),
-		webhookAppKey:           os.Getenv("WEBHOOK_APPKEY"),
-		webhookAppURL:           webhookAppURL,
-		webappUsersManagement:   webappUsersManagement,
-		jwtSecretKey:            []byte(os.Getenv("JWT_SECRET_KEY")),
-		webappStaticUIPath:      webappStaticUiPath,
-		isLoaded:                true,
-		disableSessionsDownload: os.Getenv("DISABLE_SESSIONS_DOWNLOAD") == "true",
-		gatewayTLSCa:            gatewayTLSCa,
-		gatewayTLSKey:           gatewayTLSKey,
-		gatewayTLSCert:          gatewayTLSCert,
-		sshClientHostKey:        sshClientHostKey,
+		apiKey:                          os.Getenv("API_KEY"),
+		apiURL:                          fmt.Sprintf("%s://%s", apiRawURL.Scheme, apiRawURL.Host),
+		grpcURL:                         grpcURL,
+		apiHostname:                     apiRawURL.Hostname(),
+		apiScheme:                       apiRawURL.Scheme,
+		apiHost:                         apiRawURL.Host,
+		apiURLPath:                      apiRawURL.Path,
+		authMethod:                      authMethod,
+		askAICredentials:                askAICred,
+		pgCred:                          pgCred,
+		migrationPathFiles:              migrationPathFiles,
+		licenseSigningKey:               licensePrivKey,
+		licenseSignerOrgID:              allowedOrgID,
+		gcpDLPJsonCredentials:           gcpJsonCred,
+		orgMultitenant:                  os.Getenv("ORG_MULTI_TENANT") == "true",
+		doNotTrack:                      os.Getenv("DO_NOT_TRACK") == "true",
+		dlpProvider:                     os.Getenv("DLP_PROVIDER"),
+		hasRedactCredentials:            hasRedactCredentials,
+		msPresidioAnalyzerURL:           os.Getenv("MSPRESIDIO_ANALYZER_URL"),
+		msPresidioAnonymizerURL:         os.Getenv("MSPRESIDIO_ANONYMIZER_URL"),
+		webhookAppKey:                   os.Getenv("WEBHOOK_APPKEY"),
+		webhookAppURL:                   webhookAppURL,
+		webappUsersManagement:           webappUsersManagement,
+		jwtSecretKey:                    []byte(os.Getenv("JWT_SECRET_KEY")),
+		webappStaticUIPath:              webappStaticUiPath,
+		isLoaded:                        true,
+		disableSessionsDownload:         os.Getenv("DISABLE_SESSIONS_DOWNLOAD") == "true",
+		gatewayTLSCa:                    gatewayTLSCa,
+		gatewayTLSKey:                   gatewayTLSKey,
+		gatewayTLSCert:                  gatewayTLSCert,
+		sshClientHostKey:                sshClientHostKey,
+		integrationAWSInstanceRoleAllow: os.Getenv("INTEGRATION_AWS_INSTANCE_ROLE_ALLOW") == "true",
 	}
 	return nil
 }
@@ -323,36 +326,37 @@ func (c Config) LicenseSigningKey() (string, *rsa.PrivateKey) {
 func (c Config) FullApiURL() string { return c.apiURL + c.apiURLPath }
 
 // ApiURL is the base URL without any path segment or query strings (scheme://host:port)
-func (c Config) ApiURL() string                  { return c.apiURL }
-func (c Config) GrpcURL() string                 { return c.grpcURL }
-func (c Config) WebappStaticUiPath() string      { return c.webappStaticUIPath }
-func (c Config) ApiHostname() string             { return c.apiHostname }
-func (c Config) ApiHost() string                 { return c.apiHost } // ApiHost host or host:port
-func (c Config) ApiScheme() string               { return c.apiScheme }
-func (c Config) ApiURLPath() string              { return c.apiURLPath }
-func (c Config) ApiKey() string                  { return c.apiKey }
-func (c Config) AuthMethod() string              { return c.authMethod }
-func (c Config) WebhookAppKey() string           { return c.webhookAppKey }
-func (c Config) WebhookAppURL() *url.URL         { return c.webhookAppURL }
-func (c Config) GcpDLPJsonCredentials() string   { return c.gcpDLPJsonCredentials }
-func (c Config) DlpProvider() string             { return c.dlpProvider }
-func (c Config) HasRedactCredentials() bool      { return c.hasRedactCredentials }
-func (c Config) MSPresidioAnalyzerURL() string   { return c.msPresidioAnalyzerURL }
-func (c Config) MSPresidioAnomymizerURL() string { return c.msPresidioAnonymizerURL }
-func (c Config) PgUsername() string              { return c.pgCred.username }
-func (c Config) PgURI() string                   { return c.pgCred.connectionString }
-func (c Config) PostgRESTRole() string           { return c.pgCred.postgrestRole }
-func (c Config) DoNotTrack() bool                { return c.doNotTrack }
-func (c Config) DisableSessionsDownload() bool   { return c.disableSessionsDownload }
-func (c Config) MigrationPathFiles() string      { return c.migrationPathFiles }
-func (c Config) OrgMultitenant() bool            { return c.orgMultitenant }
-func (c Config) WebappUsersManagement() string   { return c.webappUsersManagement }
-func (c Config) IsAskAIAvailable() bool          { return c.askAICredentials != nil }
-func (c Config) JWTSecretKey() []byte            { return c.jwtSecretKey }
-func (c Config) GatewayTLSCa() string            { return c.gatewayTLSCa }
-func (c Config) GatewayTLSKey() string           { return c.gatewayTLSKey }
-func (c Config) GatewayTLSCert() string          { return c.gatewayTLSCert }
-func (c Config) SSHClientHostKey() string        { return c.sshClientHostKey }
+func (c Config) ApiURL() string                        { return c.apiURL }
+func (c Config) GrpcURL() string                       { return c.grpcURL }
+func (c Config) WebappStaticUiPath() string            { return c.webappStaticUIPath }
+func (c Config) ApiHostname() string                   { return c.apiHostname }
+func (c Config) ApiHost() string                       { return c.apiHost } // ApiHost host or host:port
+func (c Config) ApiScheme() string                     { return c.apiScheme }
+func (c Config) ApiURLPath() string                    { return c.apiURLPath }
+func (c Config) ApiKey() string                        { return c.apiKey }
+func (c Config) AuthMethod() string                    { return c.authMethod }
+func (c Config) WebhookAppKey() string                 { return c.webhookAppKey }
+func (c Config) WebhookAppURL() *url.URL               { return c.webhookAppURL }
+func (c Config) GcpDLPJsonCredentials() string         { return c.gcpDLPJsonCredentials }
+func (c Config) DlpProvider() string                   { return c.dlpProvider }
+func (c Config) HasRedactCredentials() bool            { return c.hasRedactCredentials }
+func (c Config) MSPresidioAnalyzerURL() string         { return c.msPresidioAnalyzerURL }
+func (c Config) MSPresidioAnomymizerURL() string       { return c.msPresidioAnonymizerURL }
+func (c Config) PgUsername() string                    { return c.pgCred.username }
+func (c Config) PgURI() string                         { return c.pgCred.connectionString }
+func (c Config) PostgRESTRole() string                 { return c.pgCred.postgrestRole }
+func (c Config) DoNotTrack() bool                      { return c.doNotTrack }
+func (c Config) DisableSessionsDownload() bool         { return c.disableSessionsDownload }
+func (c Config) MigrationPathFiles() string            { return c.migrationPathFiles }
+func (c Config) OrgMultitenant() bool                  { return c.orgMultitenant }
+func (c Config) WebappUsersManagement() string         { return c.webappUsersManagement }
+func (c Config) IsAskAIAvailable() bool                { return c.askAICredentials != nil }
+func (c Config) JWTSecretKey() []byte                  { return c.jwtSecretKey }
+func (c Config) GatewayTLSCa() string                  { return c.gatewayTLSCa }
+func (c Config) GatewayTLSKey() string                 { return c.gatewayTLSKey }
+func (c Config) GatewayTLSCert() string                { return c.gatewayTLSCert }
+func (c Config) SSHClientHostKey() string              { return c.sshClientHostKey }
+func (c Config) IntegrationAWSInstanceRoleAllow() bool { return c.integrationAWSInstanceRoleAllow }
 func (c Config) AskAIApiURL() (u string) {
 	if c.IsAskAIAvailable() {
 		return fmt.Sprintf("%s://%s", c.askAICredentials.Scheme, c.askAICredentials.Host)
