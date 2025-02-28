@@ -10,6 +10,20 @@
    :connections {:loading true}
    :connections->connection-connected {:status :loading, :data nil}
    :connections->updating-connection {:loading true, :data []}
+   :aws-connect {:status :not-started
+                 :current-step :credentials  ; :credentials, :accounts, :resources, :review
+                 :credentials {:type nil     ; :iam-role or :iam-user
+                               :iam-role nil
+                               :iam-user {:access-key-id nil
+                                          :secret-access-key nil
+                                          :region nil
+                                          :session-token nil}}
+                 :accounts {:selected #{}
+                            :data []}
+                 :resources {:selected #{}
+                             :data []
+                             :errors #{}}
+                 :agents {:assignments {}}}
    :connection-setup {:type nil
                       :subtype nil
                       :current-step :type
