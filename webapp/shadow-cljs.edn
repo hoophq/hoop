@@ -1,6 +1,6 @@
 {:nrepl {:port 8777}
 
- :source-paths ["src" "test"]
+ :source-paths ["src" "src/gen"]
 
  :dependencies [[reagent "1.2.0"]
                 [reagent-utils "0.3.4"]
@@ -13,8 +13,7 @@
                 [re-frisk "1.6.0"]]
 
  :dev-http
- {8280 "resources/public"
-  8290 "target/browser-test"}
+ {8280 "resources/public"}
 
  :builds
  {:hoop-ui
@@ -62,13 +61,4 @@
                                                                     "http://localhost:8280"]
                                  webapp.env/api-url #shadow/env ["API_URL"
                                                                  "http://localhost:8009/api"]}}
-             :build-options {}}}
-  ;; end :hoop-ui
-
-  :browser-test {:target :browser-test
-                 :ns-regexp "-test$"
-                 :runner-ns shadow.test.browser
-                 :test-dir "target/browser-test"}
-  :karma-test {:target :karma
-               :ns-regexp "-test$"
-               :output-to "target/karma-test.js"}}}
+             :build-options {}}}}}

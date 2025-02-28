@@ -29,3 +29,6 @@ src/webapp/version.js
 
 # .env file
 .env
+
+# js/gen
+src/js/gen/
