@@ -46,6 +46,7 @@
                  [["/manage/" :plugin-name] :manage-plugin]]
      "/organization" [["/users" :users]]
      "/onboarding" [["" :onboarding]
+                    ["/aws-connect" :onboarding-aws-connect]
                     ["/setup" :onboarding-setup]
                     ["/setup/resource" :onboarding-setup-resource]]
      "/register" :register-hoop

@@ -1,7 +1,7 @@
 (ns webapp.onboarding.setup
   (:require
    ["@radix-ui/themes" :refer [Avatar Box Button Card Flex Heading Text]]
-   ["lucide-react" :refer [Database Settings]]
+   ["lucide-react" :refer [Database Settings Cloud]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.config :as config]))
@@ -18,7 +18,16 @@
            [:> Settings {:size 18}])
     :title "Setup a connection"
     :description "Add your own services or databases."
-    :action #(rf/dispatch [:navigate :onboarding-setup-resource])}])
+    :action #(rf/dispatch [:navigate :onboarding-setup-resource])}
+   {:id "aws-connect"
+    :icon (r/as-element
+           [:> Cloud {:size 18}])
+    :title "AWS Connect"
+    :description "Access AWS to retrieve and connect your resources."
+    :action #(do
+               (rf/dispatch [:aws-connect/initialize-state])
+               (rf/dispatch [:connection-setup/set-type :aws-connect])
+               (rf/dispatch [:navigate :onboarding-aws-connect]))}])
 
 (defn setup-card [{:keys [icon title description action]}]
   [:> Card {:size "1"
@@ -47,19 +56,22 @@
    [:> Box {:class "spacey-y-radix-7 w-[600px]"}
     [:> Box {:class "space-y-radix-6"}
 
-     [:> Box
-      [:img {:src (str config/webapp-url "/images/hoop-branding/PNG/hoop-symbol_black@4x.png")
-             :class "w-16 mx-auto py-4"}]]
+     [:> Box {:class "spacey-y-radix-7 w-[600px]"}
+      [:> Box {:class "space-y-radix-6"}
+       [:> Box
+        [:img {:src (str config/webapp-url "/images/hoop-branding/PNG/hoop-symbol_black@4x.png")
+               :class "w-16 mx-auto py-4"}]]
 
-    ;; Title
-     [:> Box
-      [:> Heading {:as "h1" :align "center" :size "6" :mb "2" :weight "bold" :class "text-[--gray-12]"}
-       "How do you want to get started?"]
-      [:> Text {:as "p" :size "3" :align "center" :class "text-[--gray-12]"}
-       "Choose the setup that works best for you."]]
+         ;; Title
+       [:> Box
+        [:> Heading {:as "h1" :align "center" :size "6" :mb "2" :weight "bold" :class "text-[--gray-12]"}
+         "How do you want to get started?"]
+        [:> Text {:as "p" :size "3" :align "center" :class "text-[--gray-12]"}
+         "Choose the setup that works best for you."]]
 
-    ;; Cards
-     [:> Box {:class "space-y-radix-4 max-w-[600px]"}
-      (for [option setup-options]
-        ^{:key (:id option)}
-        [setup-card option])]]]])
+         ;; Cards
+       [:> Box {:class "space-y-radix-4 max-w-[600px]"}
+        (for [option setup-options]
+          ^{:key (:id option)}
+          [setup-card option])]]]]]])
+
