@@ -1186,5 +1186,45 @@ type AWSDBInstance struct {
 	Status string `json:"status" example:"available"`
 }
 
-type UpdateDBInstanceRolesRequest struct{}
-type UpdateDBInstanceRolesResponse struct{}
+type CreateDBRoleJobAWSProvider struct {
+	InstanceArn string `json:"instance_arn" binding:"required" example:"arn:aws:rds:us-west-2:123456789012:db:my-instance"`
+}
+
+type CreateDBRoleJob struct {
+	AgentID string                      `json:"agent_id" format:"uuid" binding:"required" example:"a1b2c3d4-e5f6-7890-abcd-ef1234567890"`
+	AWS     *CreateDBRoleJobAWSProvider `json:"aws"`
+}
+
+type CreateDBRoleJobResponse struct {
+	JobID        string  `json:"job_id" example:"job-9876543210"`
+	ErrorMessage *string `json:"error_message" example:"Failed to create role due to insufficient permissions"`
+}
+
+type DBRoleJob struct {
+	OrgID     string           `json:"org_id" example:"37EEBC20-D8DF-416B-8AC2-01B6EB456318"`
+	ID        string           `json:"id" example:"67D7D053-3CAF-430E-97BA-6D4933D3FD5B"`
+	Status    string           `json:"status" example:"COMPLETED"`
+	ErrorMsg  *string          `json:"error_message" example:"Access denied by AWS IAM policy"`
+	CreatedAt time.Time        `json:"created_at" example:"2025-02-28T12:34:56Z"`
+	UpdatedAt time.Time        `json:"updated_at" example:"2025-02-28T13:45:12Z"`
+	Spec      AWSDBRoleJobSpec `json:"spec"`
+}
+
+type AWSDBRoleJobSpec struct {
+	AccountArn string          `json:"account_arn" example:"arn:aws:iam:123456789012"`
+	DBArn      string          `json:"db_arn" example:"arn:aws:rds:us-west-2:123456789012:db:my-instance"`
+	DBName     string          `json:"db_name" example:"customers"`
+	DBEngine   string          `json:"db_engine" example:"postgres"`
+	Roles      []DBRoleJobItem `json:"roles"`
+}
+
+type DBRoleJobItem struct {
+	User         string            `json:"user" example:"analytics_user"`
+	Permissions  []string          `json:"permissions" example:"SELECT,INSERT"`
+	Secrets      map[string]string `json:"secrets" example:"USER:hoop_ro,HOST:192.168.15.49"`
+	ErrorMessage *string           `json:"error_message" example:"Role creation failed: user already exists"`
+}
+
+type DBRoleJobList struct {
+	Items []DBRoleJob `json:"items"`
+}

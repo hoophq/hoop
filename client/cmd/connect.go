@@ -231,8 +231,7 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				if runtime.GOOS == "windows" {
 					fmt.Println("Your current terminal environment (Windows/DOS) is not compatible with the Linux-based connection you're trying to access. To proceed, please use one of these options: ")
 					fmt.Println("1. Windows Subsystem for Linux (WSL)")
-					fmt.Println("2. PuTTY")
-					fmt.Println("3. Any Linux-compatible terminal emulator")
+					fmt.Println("2. Any Linux-compatible terminal emulator")
 					fmt.Println("For more information, please visit https://hoop.dev/docs/getting-started/cli or contact us if you need further assistance.")
 					os.Exit(1)
 				}

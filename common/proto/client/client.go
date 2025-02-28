@@ -1,5 +1,5 @@
 // client must have all package types implemented by a client
-package client
+package pbclient
 
 const (
 	SessionOpenOK              = "ClientSessionOpenOK"

@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 	"libhoop/log"
-	"libhoop/memory"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -16,12 +17,15 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/rds/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/smithy-go/ptr"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/models"
+	pgagents "github.com/hoophq/hoop/gateway/pgrest/agents"
+	"github.com/hoophq/hoop/gateway/storagev2"
 )
-
-// TODO(san): temporary, we should store it in the database
-var staticKeyStore = memory.New()
 
 // IAMUpdateAccessKey
 //
@@ -35,13 +39,22 @@ var staticKeyStore = memory.New()
 //	@Failure		400	{object}	openapi.HTTPError
 //	@Router			/integrations/aws/iam/accesskeys [put]
 func IAMUpdateAccessKey(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
 	var req openapi.IAMAccessKeyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Errorf("failed parsing request payload, err=%v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	staticKeyStore.Set("1", &req)
+	env := &models.EnvVar{OrgID: ctx.OrgID, ID: ctx.OrgID}
+	env.SetEnv("INTEGRATION_AWS_ACCESS_KEY_ID", req.AccessKeyID)
+	env.SetEnv("INTEGRATION_AWS_SECRET_ACCESS_KEY", req.SecretAccessKey)
+	env.SetEnv("INTEGRATION_AWS_SESSION_TOKEN", req.SessionToken)
+	env.SetEnv("INTEGRATION_AWS_REGION", req.Region)
+	if err := models.UpsertEnvVar(env); err != nil {
+		log.Errorf("failed updating iam access key, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
 	c.JSON(http.StatusNoContent, nil)
 }
 
@@ -55,7 +68,14 @@ func IAMUpdateAccessKey(c *gin.Context) {
 //	@Failure		400	{object}	openapi.HTTPError
 //	@Router			/integrations/aws/iam/accesskeys [delete]
 func IAMDeleteAccessKey(c *gin.Context) {
-	staticKeyStore.Del("1")
+	// TODO: test it with
+	ctx := storagev2.ParseContext(c)
+	env := &models.EnvVar{OrgID: ctx.OrgID, ID: ctx.OrgID}
+	if err := models.UpsertEnvVar(env); err != nil {
+		log.Errorf("failed clearing iam access key, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
 	c.JSON(http.StatusNoContent, nil)
 }
 
@@ -69,16 +89,16 @@ func IAMDeleteAccessKey(c *gin.Context) {
 //	@Failure		400	{object}	openapi.HTTPError
 //	@Router			/integrations/aws/iam/userinfo [get]
 func IAMGetUserInfo(c *gin.Context) {
-	cfg, i, err := loadAWSConfig()
+	cfg, i, err := loadAWSConfig(storagev2.ParseContext(c).OrgID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, openapi.IAMUserInfo{
-		AccountID: *i.Account,
-		ARN:       *i.Arn,
-		UserID:    *i.UserId,
+		AccountID: ptr.ToString(i.Account),
+		ARN:       ptr.ToString(i.Arn),
+		UserID:    ptr.ToString(i.UserId),
 		Region:    cfg.Region,
 	})
 }
@@ -93,15 +113,14 @@ func IAMGetUserInfo(c *gin.Context) {
 //	@Failure		400	{object}	openapi.HTTPError
 //	@Router			/integrations/aws/iam/verify [post]
 func IAMVerifyPermissions(c *gin.Context) {
-	ctx := context.Background()
-	cfg, identity, err := loadAWSConfig()
+	cfg, identity, err := loadAWSConfig(storagev2.ParseContext(c).OrgID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 
 	iamClient := iam.NewFromConfig(cfg)
-	resp, err := iamClient.SimulatePrincipalPolicy(ctx, &iam.SimulatePrincipalPolicyInput{
+	resp, err := iamClient.SimulatePrincipalPolicy(context.Background(), &iam.SimulatePrincipalPolicyInput{
 		PolicySourceArn: identity.Arn,
 		ActionNames:     []string{"organizations:ListAccounts", "rds:ModifyDBInstance", "rds:DescribeDBInstances", "sts:AssumeRole"},
 		ResourceArns:    []string{"*"},
@@ -110,8 +129,6 @@ func IAMVerifyPermissions(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-
-	// var obj openapi.IAMVerifyPermission
 
 	status := "allowed"
 	evaluation := []openapi.IAMEvaluationDetail{}
@@ -122,15 +139,15 @@ func IAMVerifyPermissions(c *gin.Context) {
 		statements := []openapi.IAMEvaluationDetailStatement{}
 		for _, st := range r.MatchedStatements {
 			statements = append(statements, openapi.IAMEvaluationDetailStatement{
-				SourcePolicyID:   *st.SourcePolicyId,
+				SourcePolicyID:   ptr.ToString(st.SourcePolicyId),
 				SourcePolicyType: string(st.SourcePolicyType),
 			})
 		}
 
 		evaluation = append(evaluation, openapi.IAMEvaluationDetail{
-			ActionName:        *r.EvalActionName,
+			ActionName:        ptr.ToString(r.EvalActionName),
 			Decision:          r.EvalDecision,
-			ResourceName:      *r.EvalResourceName,
+			ResourceName:      ptr.ToString(r.EvalResourceName),
 			MatchedStatements: statements,
 		})
 	}
@@ -138,9 +155,9 @@ func IAMVerifyPermissions(c *gin.Context) {
 	c.JSON(http.StatusOK, openapi.IAMVerifyPermission{
 		Status: status,
 		Identity: openapi.IAMUserInfo{
-			AccountID: *identity.Account,
-			ARN:       *identity.Arn,
-			UserID:    *identity.UserId,
+			AccountID: ptr.ToString(identity.Account),
+			ARN:       ptr.ToString(identity.Arn),
+			UserID:    ptr.ToString(identity.UserId),
 			Region:    cfg.Region,
 		},
 		EvaluationDetails: evaluation,
@@ -157,7 +174,7 @@ func IAMVerifyPermissions(c *gin.Context) {
 //	@Failure		400	{object}	openapi.HTTPError
 //	@Router			/integrations/aws/organizations [get]
 func ListOrganizations(c *gin.Context) {
-	cfg, _, err := loadAWSConfig()
+	cfg, _, err := loadAWSConfig(storagev2.ParseContext(c).OrgID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
@@ -176,11 +193,11 @@ func ListOrganizations(c *gin.Context) {
 
 		for _, acct := range page.Accounts {
 			accounts = append(accounts, openapi.AWSAccount{
-				AccountID:     *acct.Id,
-				Name:          *acct.Name,
+				AccountID:     ptr.ToString(acct.Id),
+				Name:          ptr.ToString(acct.Name),
 				Status:        acct.Status,
 				JoinedMethods: acct.JoinedMethod,
-				Email:         *acct.Email,
+				Email:         ptr.ToString(acct.Email),
 			})
 		}
 	}
@@ -200,8 +217,7 @@ func ListOrganizations(c *gin.Context) {
 func DescribeRDSDBInstances(c *gin.Context) {
 	// Load AWS config for management account
 	// 1. filter instances based on selected accounts
-	ctx := context.Background()
-	cfg, identity, err := loadAWSConfig()
+	cfg, identity, err := loadAWSConfig(storagev2.ParseContext(c).OrgID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
@@ -211,6 +227,7 @@ func DescribeRDSDBInstances(c *gin.Context) {
 	var instances []openapi.AWSDBInstance
 	paginator := organizations.NewListAccountsPaginator(orgClient, &organizations.ListAccountsInput{})
 
+	ctx := context.Background()
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
 		if err != nil {
@@ -228,13 +245,13 @@ func DescribeRDSDBInstances(c *gin.Context) {
 
 			for _, inst := range items {
 				instances = append(instances, openapi.AWSDBInstance{
-					AccountID:        *acct.Id,
-					Name:             *inst.DBName,
-					AvailabilityZone: *inst.AvailabilityZone,
-					VpcID:            *inst.DBSubnetGroup.VpcId,
-					ARN:              *inst.DBInstanceArn,
-					Engine:           *inst.Engine,
-					Status:           *inst.DBInstanceStatus,
+					AccountID:        ptr.ToString(acct.Id),
+					Name:             ptr.ToString(inst.DBName),
+					AvailabilityZone: ptr.ToString(inst.AvailabilityZone),
+					VpcID:            ptr.ToString(inst.DBSubnetGroup.VpcId),
+					ARN:              ptr.ToString(inst.DBInstanceArn),
+					Engine:           ptr.ToString(inst.Engine),
+					Status:           ptr.ToString(inst.DBInstanceStatus),
 				})
 			}
 		}
@@ -243,29 +260,175 @@ func DescribeRDSDBInstances(c *gin.Context) {
 	c.JSON(http.StatusOK, openapi.ListAWSDBInstances{Items: instances})
 }
 
-// UpdateDBInstanceRoles
+// CreateDBRoleJob
 //
-//	@Summary		Update Database Instance Roles
-//	@Description	It update user roles in the target database
+//	@Summary		Create Database Role Job
+//	@Description	It creates a job that performs the provisioning of default database roles
 //	@Tags			AWS
 //	@Produce		json
-//	@Param			request	body		openapi.UpdateDBInstanceRolesRequest	true	"The request body resource"
-//	@Success		200		{object}	openapi.UpdateDBInstanceRolesResponse
+//	@Param			request	body		openapi.CreateDBRoleJob	true	"The request body resource"
+//	@Success		200,202	{object}	openapi.CreateDBRoleJobResponse
 //	@Failure		400		{object}	openapi.HTTPError
-//	@Router			/integrations/aws/rds/dbinstances/:dbArn/roles [post]
-func UpdateDBInstanceRoles(c *gin.Context) {
+//	@Router			/integrations/aws/rds/dbinstances/roles [post]
+func CreateDBRoleJob(c *gin.Context) {
 	// 1. change the master role username password
 	//   - check if accept rds iam auth
 	//   - check if it's managed in the aws secrets manager
 	// 2. send a stream with the agent to send the payload to provision the users
 	// 3. return with a report of the roles that were provisioned
 	// 4. create the connection with the credentials
-	c.JSON(http.StatusOK, map[string]any{
-		"message": "not implemented yet",
+	usrctx := storagev2.ParseContext(c)
+	var req openapi.CreateDBRoleJob
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	if req.AWS == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "missing request attribute 'aws'"})
+		return
+	}
+	dbArn := req.AWS.InstanceArn
+	agent, err := pgagents.New().FetchOneByNameOrID(usrctx, req.AgentID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "unable to validate agent, reason=" + err.Error()})
+		return
+	}
+	if agent == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "agent does not exists"})
+		return
+	}
+
+	ctx := context.Background()
+	cfg, identity, err := loadAWSConfig(usrctx.OrgID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	isAccountOwner := strings.Contains(dbArn, *identity.Account)
+	rdsClient, err := loadRDSClientForAccount(ctx, cfg, *identity.Account, isAccountOwner)
+	if err != nil {
+		log.Errorf("failed obtaing rds client, err=%v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
+	db, err := getDbInstance(rdsClient, dbArn)
+	if err != nil {
+		log.Errorf("failed fetching db instance, err=%v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
+	jobID := uuid.NewString()
+	err = models.CreateDBRoleJob(&models.DBRole{
+		OrgID:  usrctx.OrgID,
+		ID:     jobID,
+		Status: "RUNNING",
+		Spec: &models.AWSDBRoleSpec{
+			AccountArn:    ptr.ToString(identity.Arn),
+			AccountUserID: ptr.ToString(identity.UserId),
+			DBArn:         ptr.ToString(db.DBInstanceArn),
+			DBName:        ptr.ToString(db.DBName),
+			DBEngine:      ptr.ToString(db.Engine),
+		},
 	})
+	if err != nil {
+		log.With("sid", jobID).Errorf("unable to create db role job, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
+	prov := NewRDSProvisioner(dbArn, usrctx.OrgID, agent.ID, rdsClient)
+	// TODO: test with timeout
+	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*50)
+	defer cancelFn()
+	select {
+	case resp := <-prov.Run(jobID):
+		log.With("sid", jobID).Infof("finish provisioning database roles, success=%v, err=%v",
+			resp.ErrorMessage == nil, resp.Error())
+		c.JSON(http.StatusOK, openapi.CreateDBRoleJobResponse{
+			JobID:        jobID,
+			ErrorMessage: resp.ErrorMessage,
+		})
+	case <-timeoutCtx.Done():
+		log.With("sid", jobID).Infof("timeout provisioning rds database (50s)")
+		c.JSON(http.StatusAccepted, openapi.CreateDBRoleJobResponse{
+			JobID:        jobID,
+			ErrorMessage: ptr.String("timeout (50s) waiting to provision user roles"),
+		})
+	}
+}
+
+// GetDBRoleJobByID
+//
+//	@Summary		Get DB Role Job
+//	@Description	Get DB Role job by id
+//	@Tags			AWS
+//	@Accept			json
+//	@Produce		json
+//	@Param			id			path		string	true	"The unique identifier of the resource"
+//	@Success		200			{object}	openapi.DBRoleJob
+//	@Failure		400,404,500	{object}	openapi.HTTPError
+//	@Router			/dbroles/jobs/{id} [get]
+func GetDBRoleJobByID(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	dbRole, err := models.GetDBRoleJobByID(ctx.OrgID, c.Param("id"))
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "job not found"})
+	case nil:
+		c.JSON(http.StatusOK, toDBRoleOpenAPI(dbRole))
+	default:
+		log.Errorf("failed getting db role job by id, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+	}
+}
+
+// ListDBRolesJob
+//
+//	@Summary		List DB Role Jobs
+//	@Description	List all db role jobs
+//	@Tags			AWS
+//	@Produce		json
+//	@Success		200	{object}	openapi.DBRoleJobList
+//	@Failure		400	{object}	openapi.HTTPError
+//	@Router			/dbroles/jobs [get]
+func ListDBRoleJobs(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	dbRoleItems, err := models.ListDBRoleJobs(ctx.OrgID)
+	if err != nil {
+		log.Errorf("failed listing db role jobs, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+	var obj openapi.DBRoleJobList
+	for _, item := range dbRoleItems {
+		obj.Items = append(obj.Items, *toDBRoleOpenAPI(item))
+	}
+	c.JSON(http.StatusOK, obj)
 }
 
 func listRDSInstances(ctx context.Context, cfg aws.Config, accountID string, isAccountOwner bool) ([]types.DBInstance, error) {
+	rdsClient, err := loadRDSClientForAccount(ctx, cfg, accountID, isAccountOwner)
+	if err != nil {
+		return nil, err
+	}
+
+	// Fetch RDS instances
+	var instances []types.DBInstance
+	paginator := rds.NewDescribeDBInstancesPaginator(rdsClient, &rds.DescribeDBInstancesInput{})
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get RDS instances for account %s: %v", accountID, err)
+		}
+		instances = append(instances, page.DBInstances...)
+	}
+
+	return instances, nil
+}
+
+func loadRDSClientForAccount(ctx context.Context, cfg aws.Config, accountID string, isAccountOwner bool) (*rds.Client, error) {
 	roleArn := fmt.Sprintf("arn:aws:iam::%s:role/OrganizationAccountAccessRole", accountID)
 
 	// Create RDS client
@@ -286,37 +449,34 @@ func listRDSInstances(ctx context.Context, cfg aws.Config, accountID string, isA
 		}
 		rdsClient = rds.NewFromConfig(accountCfg)
 	}
-
-	// Fetch RDS instances
-	var instances []types.DBInstance
-	paginator := rds.NewDescribeDBInstancesPaginator(rdsClient, &rds.DescribeDBInstancesInput{})
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get RDS instances for account %s: %v", accountID, err)
-		}
-		instances = append(instances, page.DBInstances...)
-	}
-
-	return instances, nil
-
+	return rdsClient, nil
 }
 
-func loadAWSConfig() (cfg aws.Config, identity *sts.GetCallerIdentityOutput, err error) {
-	hasStaticKey := staticKeyStore.Has("1")
-	if obj := staticKeyStore.Get("1"); obj != nil {
-		staticAccessKey, _ := obj.(*openapi.IAMAccessKeyRequest)
-		log.Infof("using aws static credentials with region=%v", staticAccessKey.Region)
+func loadAWSConfig(orgID string) (cfg aws.Config, identity *sts.GetCallerIdentityOutput, err error) {
+	env, err := models.GetEnvVarByID(orgID, orgID)
+	if err != nil && err != models.ErrNotFound {
+		return cfg, nil, err
+	}
+	hasEnvVar := env != nil && env.HasKey("INTEGRATION_AWS_ACCESS_KEY_ID")
+	if hasEnvVar {
+		log.Infof("using aws static credentials with region=%v, key=%v",
+			env.GetEnv("INTEGRATION_AWS_REGION"), env.GetEnv("INTEGRATION_AWS_ACCESS_KEY_ID"),
+		)
 		staticCfg := aws.NewConfig()
 		staticCfg.Credentials = credentials.NewStaticCredentialsProvider(
-			staticAccessKey.AccessKeyID,
-			staticAccessKey.SecretAccessKey,
-			staticAccessKey.SessionToken)
-		staticCfg.Region = staticAccessKey.Region
+			env.GetEnv("INTEGRATION_AWS_ACCESS_KEY_ID"),
+			env.GetEnv("INTEGRATION_AWS_SECRET_ACCESS_KEY"),
+			env.GetEnv("INTEGRATION_AWS_SESSION_TOKEN"))
+		staticCfg.Region = env.GetEnv("INTEGRATION_AWS_REGION")
 		cfg = staticCfg.Copy()
 	}
+
 	ctx := context.Background()
-	if !hasStaticKey {
+	if !hasEnvVar {
+		if !appconfig.Get().IntegrationAWSInstanceRoleAllow() {
+			return cfg, nil, fmt.Errorf("unable to find valid AWS credentials(instance role is turned off)")
+		}
+
 		cfg, err = config.LoadDefaultConfig(ctx, config.WithRetryMaxAttempts(1))
 		if err != nil {
 			return
@@ -332,19 +492,33 @@ func loadAWSConfig() (cfg aws.Config, identity *sts.GetCallerIdentityOutput, err
 	return
 }
 
-// func changeRDSMasterPassword(cfg aws.Config, dbInstanceIdentifier, newPassword string) error {
-// 	ctx := context.TODO()
-// 	// Create an RDS client
-// 	rdsClient := rds.NewFromConfig(cfg)
-
-// 	// Modify RDS instance password
-// 	_, err := rdsClient.ModifyDBInstance(ctx, &rds.ModifyDBInstanceInput{
-// 		DBInstanceIdentifier: aws.String(dbInstanceIdentifier),
-// 		MasterUserPassword:   aws.String(newPassword),
-// 		ApplyImmediately:     aws.Bool(true), // Apply change immediately
-// 	})
-// 	if err != nil {
-// 		return fmt.Errorf("failed to modify RDS instance: %v", err)
-// 	}
-// 	return nil
-// }
+func toDBRoleOpenAPI(o *models.DBRole) *openapi.DBRoleJob {
+	var spec openapi.AWSDBRoleJobSpec
+	if o.Spec != nil {
+		var roles []openapi.DBRoleJobItem
+		for _, r := range o.Spec.Roles {
+			roles = append(roles, openapi.DBRoleJobItem{
+				User:         r.User,
+				Permissions:  r.Permissions,
+				Secrets:      r.Secrets,
+				ErrorMessage: r.Error,
+			})
+		}
+		spec = openapi.AWSDBRoleJobSpec{
+			AccountArn: o.Spec.AccountArn,
+			DBArn:      o.Spec.DBArn,
+			DBName:     o.Spec.DBName,
+			DBEngine:   o.Spec.DBEngine,
+			Roles:      roles,
+		}
+	}
+	return &openapi.DBRoleJob{
+		OrgID:     o.OrgID,
+		ID:        o.ID,
+		Status:    o.Status,
+		ErrorMsg:  o.ErrorMsg,
+		CreatedAt: o.CreatedAt,
+		UpdatedAt: o.UpdatedAt,
+		Spec:      spec,
+	}
+}
