@@ -21,6 +21,11 @@
       (empty? new-value)
       (rf/dispatch [:connection-setup/update-env-current-key ""])
 
+      ;; Handle paste operation
+      (> (count new-value) 1)
+      (when (valid-posix? new-value)
+        (rf/dispatch [:connection-setup/update-env-current-key upper-value]))
+
       (empty? current-value)
       (when (valid-first-char? new-value)
         (rf/dispatch [:connection-setup/update-env-current-key upper-value]))
@@ -36,6 +41,11 @@
     (cond
       (empty? new-value)
       (rf/dispatch [:connection-setup/update-config-file-name ""])
+
+      ;; Handle paste operation
+      (> (count new-value) 1)
+      (when (valid-posix? new-value)
+        (rf/dispatch [:connection-setup/update-config-file-name upper-value]))
 
       (empty? current-value)
       (when (valid-first-char? new-value)
@@ -54,6 +64,11 @@
       (empty? new-value)
       (rf/dispatch [:connection-setup/update-env-var index :key ""])
 
+      ;; Handle paste operation
+      (> (count new-value) 1)
+      (when (valid-posix? new-value)
+        (rf/dispatch [:connection-setup/update-env-var index :key upper-value]))
+
       (empty? current-value)
       (when (valid-first-char? new-value)
         (rf/dispatch [:connection-setup/update-env-var index :key upper-value]))
@@ -70,6 +85,11 @@
     (cond
       (empty? new-value)
       (rf/dispatch [:connection-setup/update-config-file index :key ""])
+
+      ;; Handle paste operation
+      (> (count new-value) 1)
+      (when (valid-posix? new-value)
+        (rf/dispatch [:connection-setup/update-config-file index :key upper-value]))
 
       (empty? current-value)
       (when (valid-first-char? new-value)

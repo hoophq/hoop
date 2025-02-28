@@ -102,10 +102,21 @@
     payload))
 
 ;; Update an existing connection
+(defn is-base64? [str]
+  (try
+    (boolean (re-matches #"^[A-Za-z0-9+/]*={0,2}$" str))
+    (catch js/Error _
+      false)))
+
 (defn decode-base64 [s]
-  (-> s
-      js/atob
-      js/decodeURIComponent))
+  (if (is-base64? s)
+    (try
+      (-> s
+          js/atob
+          js/decodeURIComponent)
+      (catch js/Error _
+        s))
+    s))
 
 (defn process-connection-secret
   "Process the secret values of the connection from base64 to string"
@@ -132,8 +143,7 @@
     (reduce-kv (fn [acc k v]
                  (if (str/starts-with? (name k) secret-start-name)
                    (let [clean-key (-> (name k)
-                                       (str/replace secret-start-name "")
-                                       str/lower-case)]
+                                       (str/replace secret-start-name ""))]
                      (conj acc {:key clean-key :value (decode-base64 v)}))
                    acc))
                []

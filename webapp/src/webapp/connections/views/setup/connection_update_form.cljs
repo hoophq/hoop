@@ -51,14 +51,47 @@
 
     (let [handle-submit (fn [e]
                           (.preventDefault e)
-                          (let [form (.getElementById js/document "credentials-form")]
+                          (let [form (.getElementById js/document "credentials-form")
+                                current-env-key @(rf/subscribe [:connection-setup/env-current-key])
+                                current-env-value @(rf/subscribe [:connection-setup/env-current-value])
+                                current-file-name @(rf/subscribe [:connection-setup/config-current-name])
+                                current-file-content @(rf/subscribe [:connection-setup/config-current-content])]
+
                             (when form
                               (.reportValidity form)
-                              (reset! credentials-valid? (.checkValidity form))))
+                              (reset! credentials-valid? (.checkValidity form)))
 
-                          (if @credentials-valid?
-                            (rf/dispatch [:connections->update-connection {:name connection-name}])
-                            (reset! active-tab "credentials")))]
+                            (when @credentials-valid?
+                              ;; Process current input values before submitting
+                              (when (and (not (empty? current-env-key))
+                                         (not (empty? current-env-value)))
+                                (doall
+                                 (rf/dispatch [:connection-setup/update-env-var
+                                               (count @(rf/subscribe [:connection-setup/environment-variables]))
+                                               :key
+                                               current-env-key])
+                                 (rf/dispatch [:connection-setup/update-env-var
+                                               (count @(rf/subscribe [:connection-setup/environment-variables]))
+                                               :value
+                                               current-env-value])))
+
+                              (when (and (not (empty? current-file-name))
+                                         (not (empty? current-file-content)))
+                                (doall
+                                 (rf/dispatch [:connection-setup/update-config-file
+                                               (count @(rf/subscribe [:connection-setup/configuration-files]))
+                                               :key
+                                               current-file-name])
+                                 (rf/dispatch [:connection-setup/update-config-file
+                                               (count @(rf/subscribe [:connection-setup/configuration-files]))
+                                               :value
+                                               current-file-content])))
+
+                              ;; Submit the form
+                              (rf/dispatch [:connections->update-connection {:name connection-name}]))
+
+                            (when (not @credentials-valid?)
+                              (reset! active-tab "credentials"))))]
 
       (r/create-class
        {:component-did-mount check-form-validity!
