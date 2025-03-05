@@ -1,4 +1,3 @@
-
 (ns webapp.webclient.components.header
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Heading IconButton Tooltip]]
@@ -24,6 +23,7 @@
         metadata (rf/subscribe [:editor-plugin/metadata])
         metadata-key (rf/subscribe [:editor-plugin/metadata-key])
         metadata-value (rf/subscribe [:editor-plugin/metadata-value])
+        primary-connection (rf/subscribe [:connections/selected])
         selected-connections (rf/subscribe [:connection-selection/selected])]
     (fn [active-panel multi-run-panel? dark-mode? submit]
       (let [has-runbook? (some? (:data @selected-template))
@@ -33,8 +33,15 @@
             has-multirun? (seq @selected-connections)
             on-click-icon-button (fn [type]
                                    (reset! active-panel (when-not (= @active-panel type) type))
-                                   (when (= type :connections)
-                                     (rf/dispatch [:connection-selection/clear])))]
+                                   (cond
+                                     (= type :connections)
+                                     (rf/dispatch [:connection-selection/clear])
+
+                                     (= type :runbooks)
+                                     (rf/dispatch [:runbooks-plugin->get-runbooks
+                                                   (map :name (concat
+                                                               (when @primary-connection [@primary-connection])
+                                                               @selected-connections))])))]
         [:> Box {:class "h-16 border-b-2 border-gray-3 bg-gray-1"}
          [:> Flex {:align "center"
                    :justify "between"

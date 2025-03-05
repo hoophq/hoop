@@ -99,10 +99,15 @@
                                                 [current-connection]))]
      (.setItem js/localStorage "run-connection-list-selected"
                (pr-str new-connection-list-selected))
-     {:fx [[:dispatch [:runbooks-plugin->get-runbooks (mapv #(:name %) new-connection-list-selected)]]]
-      :db (assoc db :editor-plugin->run-connection-list {:data new-connection-list :status :ready}
-                 :editor-plugin->filtered-run-connection-list new-connection-list
-                 :editor-plugin->run-connection-list-selected new-connection-list-selected)})))
+     (let [primary-connection (first (filter #(:selected %) connections))
+           selected-connections new-connection-list-selected
+           combined-connections (map :name (concat
+                                            (when primary-connection [primary-connection])
+                                            selected-connections))]
+       {:fx [[:dispatch [:runbooks-plugin->get-runbooks combined-connections]]]
+        :db (assoc db :editor-plugin->run-connection-list {:data new-connection-list :status :ready}
+                   :editor-plugin->filtered-run-connection-list new-connection-list
+                   :editor-plugin->run-connection-list-selected new-connection-list-selected)}))))
 
 (rf/reg-event-fx
  :editor-plugin->run-runbook
@@ -411,13 +416,13 @@
                         :else script)]
 
      (cond
-            ;; No connection selected
+           ;; No connection selected
        (empty? primary-connection)
        {:fx [[:dispatch [:show-snackbar
                          {:level :info
                           :text "You must choose a connection"}]]]}
 
-            ;; Multiple connections with Jira template not allowed
+           ;; Multiple connections with Jira template not allowed
        (and multiple-connections?
             has-jira-template-multiple-connections?
             jira-integration-enabled?)
@@ -426,7 +431,7 @@
                           :action-button? false
                           :text "For now, it's not possible to run commands in multiple connections with Jira Templates activated. Please select just one connection before running your command."}]]]}
 
-            ;; Multiple connections - show execution modal
+           ;; Multiple connections - show execution modal
        multiple-connections?
        {:fx [[:dispatch [:multi-exec/show-modal
                          (map #(hash-map
@@ -439,7 +444,7 @@
                                 :status :ready)
                               all-connections)]]]}
 
-            ;; Single connection with JIRA template
+           ;; Single connection with JIRA template
        (and needs-template? jira-integration-enabled?)
        {:fx [[:dispatch [:modal->open
                          {:maxWidth "540px"
@@ -455,7 +460,7 @@
                            :metadata metadata
                            :keep-metadata? keep-metadata?}]}]]}
 
-            ;; Single connection direct execution
+           ;; Single connection direct execution
        :else
        (merge
         {:fx [(when change-to-tabular?
@@ -486,7 +491,7 @@
    (let [template (get-in db [:jira-templates->submit-template])]
      (if (or (nil? (:data template))
              (= :loading (:status template)))
-       ;; Template not ready - check again in 500ms
+      ;; Template not ready - check again in 500ms
        {:fx [[:dispatch-later
               {:ms 500
                :dispatch [:editor-plugin/check-template-and-show-form
@@ -495,7 +500,7 @@
                            :metadata metadata
                            :keep-metadata? keep-metadata?}]}]]}
 
-       ;; Template ready - show form if needed
+      ;; Template ready - show form if needed
        (if (needs-form? template)
          {:fx [[:dispatch [:modal->open
                            {:content [prompt-form/main
