@@ -13,7 +13,8 @@
                               (filterv #(not= (:name %) (:name connection)) current-selections)
                               (conj current-selections connection))]
      {:db (assoc-in db [:editor :multi-connections :selected] updated-selections)
-      :fx [[:dispatch [:connection-selection/persist]]]})))
+      :fx [[:dispatch [:connection-selection/persist]]
+           [:dispatch [:connections/update-runbooks]]]})))
 
 ;; Persiste seleções no localStorage
 (rf/reg-event-fx
@@ -34,10 +35,12 @@
      {:db (assoc-in db [:editor :multi-connections :selected] (or parsed []))})))
 
 ;; Limpa todas as seleções
-(rf/reg-event-db
+(rf/reg-event-fx
  :connection-selection/clear
- (fn [db _]
-   (assoc-in db [:editor :multi-connections :selected] [])))
+ (fn [{:keys [db]} _]
+   {:db (assoc-in db [:editor :multi-connections :selected] [])
+    :fx [[:dispatch [:connection-selection/persist]]
+         [:dispatch [:connections/update-runbooks]]]}))
 
 ;; Filtra conexões
 (rf/reg-event-db

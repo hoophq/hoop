@@ -96,9 +96,14 @@
 
 (defn panel [_]
   (let [templates (rf/subscribe [:runbooks-plugin->runbooks])
-        selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])]
+        selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])
+        primary-connection (rf/subscribe [:connections/selected])
+        selected-connections (rf/subscribe [:connection-selection/selected])]
     (rf/dispatch [:audit->clear-session])
-    (rf/dispatch [:runbooks-plugin->get-runbooks])
+    (rf/dispatch [:runbooks-plugin->get-runbooks
+                  (map :name (concat
+                              (when @primary-connection [@primary-connection])
+                              @selected-connections))])
     (fn [connection]
       (let [search (.. js/window -location -search)
             url-search-params (new js/URLSearchParams search)

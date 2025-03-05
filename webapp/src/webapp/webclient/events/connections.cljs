@@ -19,7 +19,8 @@
  :connections/initialize
  (fn [{:keys [db]} _]
    {:db (assoc-in db [:editor :connections :status] :loading)
-    :fx [[:fetch-connections]]}))
+    :fx [[:fetch-connections]
+         [:dispatch-later {:ms 2000 :dispatch [:connections/update-runbooks]}]]}))
 
 (rf/reg-event-db
  :connections/set-error
@@ -46,14 +47,16 @@
    {:db (assoc-in db [:editor :connections :selected] connection)
     :fx [[:dispatch [:editor-plugin/clear-language]]
          [:dispatch [:connections/persist-selected]]
-         [:dispatch [:database-schema->clear-schema]]]}))
+         [:dispatch [:database-schema->clear-schema]]
+         [:dispatch [:connections/update-runbooks]]]}))
 
 (rf/reg-event-fx
  :connections/clear-selected
  (fn [{:keys [db]} _]
    {:db (assoc-in db [:editor :connections :selected] nil)
     :fx [[:dispatch [:connections/persist-selected]]
-         [:dispatch [:database-schema->clear-schema]]]}))
+         [:dispatch [:database-schema->clear-schema]]
+         [:dispatch [:connections/update-runbooks]]]}))
 
 (rf/reg-event-fx
  :connections/persist-selected
@@ -71,6 +74,16 @@
          parsed (when (and saved (not= saved "null"))
                   (read-string saved))]
      {:db (assoc-in db [:editor :connections :selected] parsed)})))
+
+(rf/reg-event-fx
+ :connections/update-runbooks
+ (fn [{:keys [db]} _]
+   (let [primary-connection (get-in db [:editor :connections :selected])
+         selected-connections (get-in db [:editor :multi-connections :selected] [])]
+     {:fx [[:dispatch [:runbooks-plugin->get-runbooks
+                       (map :name (concat
+                                   (when primary-connection [primary-connection])
+                                   selected-connections))]]]})))
 
 ;; Subscriptions
 (rf/reg-sub

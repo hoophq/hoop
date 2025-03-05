@@ -1,88 +1,43 @@
 (ns webapp.webclient.log-area.logs
   (:require ["@heroicons/react/20/solid" :as hero-solid-icon]
-            ["@heroicons/react/24/outline" :as hero-outline-icon]
-            ["clipboard" :as clipboardjs]
-            ["highlight.js" :as hljs]
-            ["markdown-it" :as markdownit]
-            ["@radix-ui/themes" :refer [Spinner]]
+            ["@radix-ui/themes" :refer [Box Spinner Flex Text DropdownMenu]]
+            ["lucide-react" :refer [SquareArrowOutUpRight EllipsisVertical Copy]]
             [clojure.string :as cs]
-            [goog.crypt.base64 :as b64]
             [re-frame.core :as rf]
-            [reagent.dom.server :as rdom]
             [webapp.audit.views.session-details :as session-details]
             [webapp.formatters :as formatters]))
 
-(defn trunc
-  [string]
-  (let [string-splited (cs/split string #"\n")
-        take-5 (take 5 string-splited)
-        join-5 (cs/join "\n" take-5)]
-    (subs join-5 0 (min (count string) 4000))))
-
-(defn copy-clipboard [data-clipboard-target]
-  [:div {:class (str "copy-to-clipboard absolute rounded-lg p-x-small "
-                     "top-2 right-2 cursor-pointer box-border "
-                     "opacity-0 group-hover:opacity-100 transition z-20")
-         :data-clipboard-target data-clipboard-target}
-   [:> hero-solid-icon/ClipboardDocumentIcon {:class "h-6 w-6 shrink-0 text-white"
-                                              :aria-hidden "true"}]])
-
-(defn action-buttons-container [session-id]
-  [:div {:class "absolute top-2 right-2"}
-   [:div {:class (str "rounded-lg p-x-small "
-                      "cursor-pointer box-border hover:bg-gray-50 hover:bg-opacity-20 "
-                      "opacity-0 group-hover:opacity-100 transition z-20")
-          :on-click #(rf/dispatch [:open-modal
-                                   [session-details/main {:id session-id :verb "exec"}]
-                                   :large
-                                   (fn []
-                                     (rf/dispatch [:audit->clear-session])
-                                     (rf/dispatch [:close-modal]))])}
-    [:> hero-outline-icon/ArrowTopRightOnSquareIcon {:class "h-6 w-6 shrink-0 text-white"
-                                                     :aria-hidden "true"}]]])
-
-(defn- ai-response-area-list
-  [status {:keys [response script execution-time]}]
-  (let [_ (new clipboardjs ".copy-to-clipboard")
-        md (markdownit #js{:html true
-                           :highlight (fn [string lang]
-                                        (let [container-id (b64/encodeString string 4)]
-                                          (if (and lang (hljs/getLanguage lang))
-                                            (try
-                                              (str "<pre class=\"relative group\" id=\""
-                                                   container-id
-                                                   "\">"
-                                                   (rdom/render-to-static-markup (copy-clipboard (str "#" container-id)))
-                                                   "<code class=\"hljs\">"
-                                                   (.-value (hljs/highlight string #js{:language lang}))
-                                                   "</code></pre>")
-                                              (catch js/Error _ (str "")))
-                                            "")))})]
-    (case status
-      :success [:div {:class "relative py-large px-regular whitespace-pre-wrap"}
-                [:div {:class "font-bold text-sm mb-1"}
-                 script]
-                [:div {:class "text-sm mb-1"
-                       :dangerouslySetInnerHTML {:__html (.render md response)}}]
-                [:div {:class "text-gra-11 text-sm"}
-                 (str (formatters/current-time) " [cost " (formatters/time-elapsed execution-time) "]")]]
-      :loading [:div {:class "flex gap-regular py-large px-regular"}
-                [:> Spinner {:loading true}]
-                [:span "loading"]]
-      :failure [:div {:class " group relative py-large px-regular whitespace-pre-wrap"}
-                [:div {:class "font-bold text-sm mb-1"}
-                 script]
-                [:div {:class "text-sm mb-1"}
-                 "There was an error to get the logs for this task"]
-                [:div {:class "text-red-11 text-sm"}
-                 (str (formatters/current-time) " [cost " (formatters/time-elapsed execution-time) "]")]]
-      "No response to show")))
+(defn action-buttons-container [session-id logs-content]
+  [:div {:class "sticky top-1 right-0 h-0 w-full z-30"
+         :style {:pointer-events "none"}}
+   [:div {:class "absolute top-0 -right-4"
+          :style {:pointer-events "auto"}}
+    [:> DropdownMenu.Root
+     [:> DropdownMenu.Trigger {:class (str "cursor-pointer p-1.5 rounded-full "
+                                           "bg-gray-3 hover:bg-gray-5 shadow-sm "
+                                           "opacity-100 transition border border-gray-5")}
+      [:> Box
+       [:> EllipsisVertical {:size 18 :class "text-gray-12"}]]]
+     [:> DropdownMenu.Content
+      [:> DropdownMenu.Item {:on-select #(rf/dispatch [:open-modal
+                                                       [session-details/main {:id session-id :verb "exec"}]
+                                                       :large
+                                                       (fn []
+                                                         (rf/dispatch [:audit->clear-session])
+                                                         (rf/dispatch [:close-modal]))])}
+       [:> Flex {:align "center" :gap "2"}
+        [:> SquareArrowOutUpRight {:size 16}]
+        [:> Text {:size "2"} "View session details"]]]
+      [:> DropdownMenu.Item {:on-select #(js/navigator.clipboard.writeText logs-content)}
+       [:> Flex {:align "center" :gap "2"}
+        [:> Copy {:size 16}]
+        [:> Text {:size "2"} "Copy logs content"]]]]]]])
 
 (defn- logs-area-list
-  [status {:keys [logs logs-status script execution-time has-review? session-id]}]
+  [status {:keys [logs logs-status execution-time has-review? session-id]}]
   (case status
     :success (if has-review?
-               [:div {:class "group relative py-large px-regular whitespace-pre-wrap"
+               [:div {:class "group relative py-regular pl-regular pr-large whitespace-pre-wrap"
                       :on-click (fn []
                                   (rf/dispatch [:open-modal
                                                 [session-details/main {:id session-id :verb "exec"}]
@@ -90,36 +45,30 @@
                                                 (fn []
                                                   (rf/dispatch [:audit->clear-session])
                                                   (rf/dispatch [:close-modal]))]))}
-                [action-buttons-container session-id]
-                [:div {:class "font-bold text-sm mb-1"}
-                 script]
+                [action-buttons-container session-id "This task need to be reviewed. Please click here to see the details."]
                 [:div {:class "text-sm mb-1"}
                  "This task need to be reviewed. Please click here to see the details."]
                 [:div {:class "text-gray-11 text-sm"}
                  (str (formatters/current-time) " [cost " (formatters/time-elapsed execution-time) "]")]]
 
-               [:div {:class " group relative py-large px-regular whitespace-pre-wrap"}
-                [action-buttons-container session-id]
-                [:div {:class "font-bold text-sm mb-1"}
-                 script]
+               [:div {:class " group relative py-regular pl-regular pr-large whitespace-pre-wrap"}
+                [action-buttons-container session-id logs]
                 [:div {:class "text-sm mb-1"}
-                 (trunc logs)]
+                 logs]
                 [:div {:class (str (if (= logs-status "success")
                                      "text-gray-11 text-sm"
                                      "text-gray-11 text-sm"))}
                  (str (formatters/current-time) " [cost " (formatters/time-elapsed execution-time) "]")]])
-    :loading [:div {:class "flex gap-regular py-large px-regular"}
+    :loading [:div {:class "flex gap-regular py-regular pl-regular pr-large"}
               [:> Spinner {:loading true}]
               [:span "loading"]]
-    :failure [:div {:class " group relative py-large px-regular whitespace-pre-wrap"}
-              [action-buttons-container session-id]
-              [:div {:class "font-bold text-sm mb-1"}
-               script]
+    :failure [:div {:class " group relative py-regular pl-regular pr-large whitespace-pre-wrap"}
+              [action-buttons-container session-id "There was an error to get the logs for this task"]
               [:div {:class "text-sm mb-1"}
                "There was an error to get the logs for this task"]
               [:div {:class "text-gray-11 text-sm"}
                (str (formatters/current-time) " [cost " (formatters/time-elapsed execution-time) "]")]]
-    [:div {:class "flex gap-regular py-large px-regular"}
+    [:div {:class "flex gap-regular py-regular pl-regular pr-large"}
      [:span  "No logs to show"]]))
 
 (defn main
@@ -141,10 +90,4 @@
        :script (:script config)
        :execution-time (:execution-time config)
        :has-review? (:has-review config)
-       :session-id (:response-id config)}]
-
-     :ai
-     [ai-response-area-list (:status config)
-      {:response (:response config)
-       :script (:script config)
-       :execution-time (:execution-time config)}])])
+       :session-id (:response-id config)}])])

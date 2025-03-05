@@ -73,7 +73,6 @@
                          :classes "whitespace-pre overflow-x"
                          :placeholder "git@github.com:company/repository.git"
                          :disabled @edit?
-                         :type "password"
                          :value @git-url}]
            [forms/textarea {:label "Deploy ssh key"
                             :on-change #(reset! git-ssh-key (-> % .-target .-value))
