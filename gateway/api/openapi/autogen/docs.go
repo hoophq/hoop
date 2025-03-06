@@ -1080,12 +1080,6 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.CreateDBRoleJobResponse"
-                        }
-                    },
                     "202": {
                         "description": "Accepted",
                         "schema": {
@@ -1094,6 +1088,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -3717,26 +3717,24 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "account_arn": {
+                    "description": "AWS IAM ARN with permissions to execute this role creation job",
                     "type": "string",
                     "example": "arn:aws:iam:123456789012"
                 },
                 "db_arn": {
+                    "description": "ARN of the target RDS database instance where roles will be created",
                     "type": "string",
                     "example": "arn:aws:rds:us-west-2:123456789012:db:my-instance"
                 },
                 "db_engine": {
+                    "description": "Database engine type (e.g., \"postgres\", \"mysql\") of the RDS instance",
                     "type": "string",
                     "example": "postgres"
                 },
                 "db_name": {
+                    "description": "Logical database name within the RDS instance where roles will be applied",
                     "type": "string",
                     "example": "customers"
-                },
-                "roles": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/openapi.DBRoleJobItem"
-                    }
                 }
             }
         },
@@ -4099,16 +4097,29 @@ const docTemplate = `{
         "openapi.CreateDBRoleJob": {
             "type": "object",
             "required": [
-                "agent_id"
+                "agent_id",
+                "aws",
+                "connection_prefix_name"
             ],
             "properties": {
                 "agent_id": {
+                    "description": "Unique identifier of the agent hosting the database resource",
                     "type": "string",
                     "format": "uuid",
                     "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
                 },
                 "aws": {
-                    "$ref": "#/definitions/openapi.CreateDBRoleJobAWSProvider"
+                    "description": "AWS-specific configuration for the database role creation job",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.CreateDBRoleJobAWSProvider"
+                        }
+                    ]
+                },
+                "connection_prefix_name": {
+                    "description": "Base prefix for connection names - the role name will be appended to this prefix\nwhen creating the database connection (e.g., \"prod-postgres-readonly\")",
+                    "type": "string",
+                    "example": "prod-postgres-"
                 }
             }
         },
@@ -4119,6 +4130,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "instance_arn": {
+                    "description": "Instance ARN is the identifier for the database instance",
                     "type": "string",
                     "example": "arn:aws:rds:us-west-2:123456789012:db:my-instance"
                 }
@@ -4127,78 +4139,51 @@ const docTemplate = `{
         "openapi.CreateDBRoleJobResponse": {
             "type": "object",
             "properties": {
-                "error_message": {
-                    "type": "string",
-                    "example": "Failed to create role due to insufficient permissions"
-                },
                 "job_id": {
+                    "description": "Unique identifier for the asynchronous job that will create the database role",
                     "type": "string",
-                    "example": "job-9876543210"
+                    "example": "8F680C64-DBFD-48E1-9855-6650D9CAD62C"
                 }
             }
         },
         "openapi.DBRoleJob": {
             "type": "object",
             "properties": {
+                "completed_at": {
+                    "description": "Timestamp when this job finished execution (null if still in progress)",
+                    "type": "string",
+                    "example": "2025-02-28T13:45:12Z"
+                },
                 "created_at": {
+                    "description": "Timestamp when this job was initially created",
                     "type": "string",
                     "example": "2025-02-28T12:34:56Z"
                 },
-                "error_message": {
-                    "type": "string",
-                    "example": "Access denied by AWS IAM policy"
-                },
                 "id": {
+                    "description": "Unique identifier for this database role job",
                     "type": "string",
                     "example": "67D7D053-3CAF-430E-97BA-6D4933D3FD5B"
                 },
                 "org_id": {
+                    "description": "Unique identifier of the organization that owns this job",
                     "type": "string",
                     "example": "37EEBC20-D8DF-416B-8AC2-01B6EB456318"
                 },
                 "spec": {
-                    "$ref": "#/definitions/openapi.AWSDBRoleJobSpec"
-                },
-                "status": {
-                    "type": "string",
-                    "example": "completed"
-                },
-                "updated_at": {
-                    "type": "string",
-                    "example": "2025-02-28T13:45:12Z"
-                }
-            }
-        },
-        "openapi.DBRoleJobItem": {
-            "type": "object",
-            "properties": {
-                "error_message": {
-                    "type": "string",
-                    "example": "Role creation failed: user already exists"
-                },
-                "permissions": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "SELECT",
-                        "INSERT"
+                    "description": "AWS-specific configuration details for the database role provisioning",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.AWSDBRoleJobSpec"
+                        }
                     ]
                 },
-                "secrets": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    },
-                    "example": {
-                        "HOST": "192.168.15.49",
-                        "USER": "hoop_ro"
-                    }
-                },
-                "user": {
-                    "type": "string",
-                    "example": "analytics_user"
+                "status": {
+                    "description": "Current status and results of the job execution (null if not started)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.DBRoleJobStatus"
+                        }
+                    ]
                 }
             }
         },
@@ -4210,6 +4195,63 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/openapi.DBRoleJob"
                     }
+                }
+            }
+        },
+        "openapi.DBRoleJobStatus": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "description": "Human-readable description of the overall job status or error details",
+                    "type": "string",
+                    "example": "All user roles have been successfully provisioned"
+                },
+                "phase": {
+                    "description": "Current execution phase of the job: \"running\", \"failed\", or \"completed\"",
+                    "type": "string",
+                    "enum": [
+                        "running",
+                        "failed",
+                        "completed"
+                    ],
+                    "example": "running"
+                },
+                "result": {
+                    "description": "Detailed results for each individual role that was provisioned",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.DBRoleJobStatusResult"
+                    }
+                }
+            }
+        },
+        "openapi.DBRoleJobStatusResult": {
+            "type": "object",
+            "properties": {
+                "completed_at": {
+                    "description": "Timestamp when this specific role's provisioning completed",
+                    "type": "string",
+                    "example": "2025-02-28T12:34:56Z"
+                },
+                "message": {
+                    "description": "Human-readable description of this role's provisioning status or error details",
+                    "type": "string",
+                    "example": "process already being executed, resource_id=arn:aws:rds:us-west-2:123456789012:db:my-postgres-db"
+                },
+                "status": {
+                    "description": "Status of this specific role's provisioning: \"running\", \"failed\", or \"completed\"",
+                    "type": "string",
+                    "enum": [
+                        "running",
+                        "failed",
+                        "completed"
+                    ],
+                    "example": "failed"
+                },
+                "user_role": {
+                    "description": "Name of the specific database role that was provisioned",
+                    "type": "string",
+                    "example": "hoop_ro"
                 }
             }
         },

@@ -3,6 +3,7 @@ package models
 import (
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"time"
 
 	"gorm.io/gorm"
@@ -31,14 +32,14 @@ func (e *EnvVar) GetEnv(key string) (v string) {
 	return
 }
 
-func (e *EnvVar) SetEnv(key, val string) {
+func (e *EnvVar) SetEnv(key string, val any) {
 	key = "envvar:" + key
-	val = base64.StdEncoding.EncodeToString([]byte(val))
+	v := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%v", val)))
 	if len(e.Envs) == 0 {
-		e.Envs = map[string]string{key: val}
+		e.Envs = map[string]string{key: v}
 		return
 	}
-	e.Envs[key] = val
+	e.Envs[key] = v
 }
 
 func (e *EnvVar) HasKey(key string) (v bool) {

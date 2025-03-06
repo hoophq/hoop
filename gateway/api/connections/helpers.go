@@ -51,30 +51,9 @@ func setConnectionDefaults(req *openapi.Connection) {
 	if req.Secrets == nil {
 		req.Secrets = map[string]any{}
 	}
-	var defaultCommand []string
-	defaultEnvVars := map[string]any{}
-	switch pb.ToConnectionType(req.Type, req.SubType) {
-	case pb.ConnectionTypePostgres:
-		defaultCommand = []string{"psql", "-v", "ON_ERROR_STOP=1", "-A", "-F\t", "-P", "pager=off", "-h", "$HOST", "-U", "$USER", "--port=$PORT", "$DB"}
-	case pb.ConnectionTypeMySQL:
-		defaultCommand = []string{"mysql", "-h$HOST", "-u$USER", "--port=$PORT", "-D$DB"}
-	case pb.ConnectionTypeMSSQL:
-		defaultEnvVars["envvar:INSECURE"] = base64.StdEncoding.EncodeToString([]byte(`false`))
-		defaultCommand = []string{
-			"sqlcmd", "--exit-on-error", "--trim-spaces", "-s\t", "-r",
-			"-S$HOST:$PORT", "-U$USER", "-d$DB", "-i/dev/stdin"}
-	case pb.ConnectionTypeOracleDB:
-		defaultEnvVars["envvar:LD_LIBRARY_PATH"] = base64.StdEncoding.EncodeToString([]byte(`/opt/oracle/instantclient_19_24`))
-		defaultCommand = []string{"sqlplus", "-s", "$USER/$PASS@$HOST:$PORT/$SID"}
-	case pb.ConnectionTypeMongoDB:
-		defaultEnvVars["envvar:OPTIONS"] = base64.StdEncoding.EncodeToString([]byte(`tls=true`))
-		defaultEnvVars["envvar:PORT"] = base64.StdEncoding.EncodeToString([]byte(`27017`))
-		defaultCommand = []string{"mongo", "mongodb://$USER:$PASS@$HOST:$PORT/?$OPTIONS", "--quiet"}
-		if connStr, ok := req.Secrets["envvar:CONNECTION_STRING"]; ok && connStr != nil {
-			defaultEnvVars = nil
-			defaultCommand = []string{"mongo", "$CONNECTION_STRING", "--quiet"}
-		}
-	}
+
+	hasMongoConnStr := req.Secrets["envvar:CONNECTION_STRING"] != ""
+	defaultCommand, defaultEnvVars := GetConnectionDefaults(req.Type, req.SubType, hasMongoConnStr)
 
 	if len(req.Command) == 0 {
 		req.Command = defaultCommand
@@ -85,6 +64,33 @@ func setConnectionDefaults(req *openapi.Connection) {
 			req.Secrets[key] = val
 		}
 	}
+}
+
+func GetConnectionDefaults(connType, connSubType string, useMongoConnStr bool) (cmd []string, envs map[string]any) {
+	envs = map[string]any{}
+	switch pb.ToConnectionType(connType, connSubType) {
+	case pb.ConnectionTypePostgres:
+		cmd = []string{"psql", "-v", "ON_ERROR_STOP=1", "-A", "-F\t", "-P", "pager=off", "-h", "$HOST", "-U", "$USER", "--port=$PORT", "$DB"}
+	case pb.ConnectionTypeMySQL:
+		cmd = []string{"mysql", "-h$HOST", "-u$USER", "--port=$PORT", "-D$DB"}
+	case pb.ConnectionTypeMSSQL:
+		envs["envvar:INSECURE"] = base64.StdEncoding.EncodeToString([]byte(`false`))
+		cmd = []string{
+			"sqlcmd", "--exit-on-error", "--trim-spaces", "-s\t", "-r",
+			"-S$HOST:$PORT", "-U$USER", "-d$DB", "-i/dev/stdin"}
+	case pb.ConnectionTypeOracleDB:
+		envs["envvar:LD_LIBRARY_PATH"] = base64.StdEncoding.EncodeToString([]byte(`/opt/oracle/instantclient_19_24`))
+		cmd = []string{"sqlplus", "-s", "$USER/$PASS@$HOST:$PORT/$SID"}
+	case pb.ConnectionTypeMongoDB:
+		envs["envvar:OPTIONS"] = base64.StdEncoding.EncodeToString([]byte(`tls=true`))
+		envs["envvar:PORT"] = base64.StdEncoding.EncodeToString([]byte(`27017`))
+		cmd = []string{"mongo", "mongodb://$USER:$PASS@$HOST:$PORT/?$OPTIONS", "--quiet"}
+		if useMongoConnStr {
+			envs = nil
+			cmd = []string{"mongo", "$CONNECTION_STRING", "--quiet"}
+		}
+	}
+	return
 }
 
 func coerceToMapString(src map[string]any) map[string]string {

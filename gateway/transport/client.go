@@ -12,6 +12,7 @@ import (
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
+	pbsys "github.com/hoophq/hoop/common/proto/sys"
 	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
@@ -137,13 +138,14 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 				return err
 			}
 			log.Warnf("received error from client, err=%v", err)
-			sentry.CaptureException(err)
 			return status.Errorf(codes.Internal, "internal error, failed receiving client packet")
 		}
-		// skip old/new clients
-		if pkt.Type == pbgateway.KeepAlive || pkt.Type == "KeepAlive" {
+
+		// Do not let clients send system packets
+		if pkt.Type == pbgateway.KeepAlive || pkt.Type == pbsys.ProvisionDBRolesRequest {
 			continue
 		}
+
 		if pkt.Spec == nil {
 			pkt.Spec = make(map[string][]byte)
 		}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"libhoop/memory"
+	"strings"
 	"time"
 
 	"github.com/hoophq/hoop/common/proto"
@@ -45,10 +46,8 @@ func RunDBProvisioner(agentID string, req *pbsys.DBProvisionerRequest) *pbsys.DB
 	st := streamclient.GetAgentStream(streamtypes.NewStreamID(agentID, ""))
 	if st == nil {
 		return pbsys.NewError(req.SID, "agent stream not found for %v", agentID)
-		// return nil, fmt.Errorf("agent stream not found for %v", agentID)
 	}
 
-	// TODO: change the sisze of this!!
 	dataCh := make(chan []byte)
 	store.Set(req.SID, dataCh)
 
@@ -64,7 +63,6 @@ func RunDBProvisioner(agentID string, req *pbsys.DBProvisionerRequest) *pbsys.DB
 		close(dataCh)
 		return pbsys.NewError(req.SID, "failed sending provision request packet, reason=%v", err)
 	}
-	// fmt.Printf("REQUEST ---->>>: %#v\n payload=%v\n", *req, string(payload))
 
 	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*120)
 	defer cancelFn()
@@ -74,8 +72,22 @@ func RunDBProvisioner(agentID string, req *pbsys.DBProvisionerRequest) *pbsys.DB
 		if err := json.Unmarshal(payload, &resp); err != nil {
 			return pbsys.NewError(req.SID, "unable to decode response: %v", err)
 		}
+		redactMessage(req, &resp)
 		return &resp
 	case <-timeoutCtx.Done():
 		return pbsys.NewError(req.SID, "timeout waiting for a response")
+	}
+}
+
+func redactMessage(req *pbsys.DBProvisionerRequest, resp *pbsys.DBProvisionerResponse) {
+	if strings.ContainsAny(resp.Message, req.MasterPassword) {
+		resp.Message = strings.ReplaceAll(resp.Message, req.MasterPassword, "REDACTED")
+	}
+
+	for i, r := range resp.Result {
+		if strings.ContainsAny(r.Message, req.MasterPassword) {
+			r.Message = strings.ReplaceAll(r.Message, req.MasterPassword, "REDACTED")
+			resp.Result[i] = r
+		}
 	}
 }

@@ -1187,42 +1187,69 @@ type AWSDBInstance struct {
 }
 
 type CreateDBRoleJobAWSProvider struct {
+	// Instance ARN is the identifier for the database instance
 	InstanceArn string `json:"instance_arn" binding:"required" example:"arn:aws:rds:us-west-2:123456789012:db:my-instance"`
 }
 
 type CreateDBRoleJob struct {
-	AgentID string                      `json:"agent_id" format:"uuid" binding:"required" example:"a1b2c3d4-e5f6-7890-abcd-ef1234567890"`
-	AWS     *CreateDBRoleJobAWSProvider `json:"aws"`
+	// Unique identifier of the agent hosting the database resource
+	AgentID string `json:"agent_id" format:"uuid" binding:"required" example:"a1b2c3d4-e5f6-7890-abcd-ef1234567890"`
+	// Base prefix for connection names - the role name will be appended to this prefix
+	// when creating the database connection (e.g., "prod-postgres-readonly")
+	ConnectionPrefixName string `json:"connection_prefix_name" binding:"required" example:"prod-postgres-"`
+	// AWS-specific configuration for the database role creation job
+	AWS *CreateDBRoleJobAWSProvider `json:"aws" binding:"required"`
 }
 
 type CreateDBRoleJobResponse struct {
-	JobID        string  `json:"job_id" example:"job-9876543210"`
-	ErrorMessage *string `json:"error_message" example:"Failed to create role due to insufficient permissions"`
+	// Unique identifier for the asynchronous job that will create the database role
+	JobID string `json:"job_id" example:"8F680C64-DBFD-48E1-9855-6650D9CAD62C"`
 }
 
 type DBRoleJob struct {
-	OrgID     string           `json:"org_id" example:"37EEBC20-D8DF-416B-8AC2-01B6EB456318"`
-	ID        string           `json:"id" example:"67D7D053-3CAF-430E-97BA-6D4933D3FD5B"`
-	Status    string           `json:"status" example:"COMPLETED"`
-	ErrorMsg  *string          `json:"error_message" example:"Access denied by AWS IAM policy"`
-	CreatedAt time.Time        `json:"created_at" example:"2025-02-28T12:34:56Z"`
-	UpdatedAt time.Time        `json:"updated_at" example:"2025-02-28T13:45:12Z"`
-	Spec      AWSDBRoleJobSpec `json:"spec"`
+	// Unique identifier of the organization that owns this job
+	OrgID string `json:"org_id" example:"37EEBC20-D8DF-416B-8AC2-01B6EB456318"`
+	// Unique identifier for this database role job
+	ID string `json:"id" example:"67D7D053-3CAF-430E-97BA-6D4933D3FD5B"`
+	// Timestamp when this job was initially created
+	CreatedAt time.Time `json:"created_at" example:"2025-02-28T12:34:56Z"`
+	// Timestamp when this job finished execution (null if still in progress)
+	CompletedAt *time.Time `json:"completed_at" example:"2025-02-28T13:45:12Z"`
+	// AWS-specific configuration details for the database role provisioning
+	Spec AWSDBRoleJobSpec `json:"spec"`
+	// Current status and results of the job execution (null if not started)
+	Status *DBRoleJobStatus `json:"status"`
 }
 
 type AWSDBRoleJobSpec struct {
-	AccountArn string          `json:"account_arn" example:"arn:aws:iam:123456789012"`
-	DBArn      string          `json:"db_arn" example:"arn:aws:rds:us-west-2:123456789012:db:my-instance"`
-	DBName     string          `json:"db_name" example:"customers"`
-	DBEngine   string          `json:"db_engine" example:"postgres"`
-	Roles      []DBRoleJobItem `json:"roles"`
+	// AWS IAM ARN with permissions to execute this role creation job
+	AccountArn string `json:"account_arn" example:"arn:aws:iam:123456789012"`
+	// ARN of the target RDS database instance where roles will be created
+	DBArn string `json:"db_arn" example:"arn:aws:rds:us-west-2:123456789012:db:my-instance"`
+	// Logical database name within the RDS instance where roles will be applied
+	DBName string `json:"db_name" example:"customers"`
+	// Database engine type (e.g., "postgres", "mysql") of the RDS instance
+	DBEngine string `json:"db_engine" example:"postgres"`
 }
 
-type DBRoleJobItem struct {
-	User         string            `json:"user" example:"analytics_user"`
-	Permissions  []string          `json:"permissions" example:"SELECT,INSERT"`
-	Secrets      map[string]string `json:"secrets" example:"USER:hoop_ro,HOST:192.168.15.49"`
-	ErrorMessage *string           `json:"error_message" example:"Role creation failed: user already exists"`
+type DBRoleJobStatus struct {
+	// Current execution phase of the job: "running", "failed", or "completed"
+	Phase string `json:"phase" enums:"running,failed,completed" example:"running"`
+	// Human-readable description of the overall job status or error details
+	Message string `json:"message" example:"All user roles have been successfully provisioned"`
+	// Detailed results for each individual role that was provisioned
+	Result []DBRoleJobStatusResult `json:"result"`
+}
+
+type DBRoleJobStatusResult struct {
+	// Name of the specific database role that was provisioned
+	UserRole string `json:"user_role" example:"hoop_ro"`
+	// Status of this specific role's provisioning: "running", "failed", or "completed"
+	Status string `json:"status" enums:"running,failed,completed" example:"failed"`
+	// Human-readable description of this role's provisioning status or error details
+	Message string `json:"message" example:"process already being executed, resource_id=arn:aws:rds:us-west-2:123456789012:db:my-postgres-db"`
+	// Timestamp when this specific role's provisioning completed
+	CompletedAt time.Time `json:"completed_at" example:"2025-02-28T12:34:56Z"`
 }
 
 type DBRoleJobList struct {

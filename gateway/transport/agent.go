@@ -64,7 +64,6 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 					Warnf("agent disconnected")
 				return fmt.Errorf("agent has disconnected")
 			}
-			sentry.CaptureException(err)
 			log.Errorf("received error from agent %v, err=%v", stream.AgentName(), err)
 			return err
 		}
