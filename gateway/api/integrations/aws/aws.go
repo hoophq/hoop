@@ -6,7 +6,6 @@ import (
 	"libhoop/log"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -20,6 +19,7 @@ import (
 	"github.com/aws/smithy-go/ptr"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	pbsys "github.com/hoophq/hoop/common/proto/sys"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
@@ -236,8 +236,8 @@ func DescribeRDSDBInstances(c *gin.Context) {
 		}
 
 		for _, acct := range page.Accounts {
-			isAccountOwner := *acct.Id == *identity.Account
-			items, err := listRDSInstances(ctx, cfg, *acct.Id, isAccountOwner)
+			isAccountOwner := ptr.ToString(acct.Id) == ptr.ToString(identity.Account)
+			items, err := listRDSInstances(ctx, cfg, ptr.ToString(acct.Id), isAccountOwner)
 			if err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 				return
@@ -246,7 +246,7 @@ func DescribeRDSDBInstances(c *gin.Context) {
 			for _, inst := range items {
 				instances = append(instances, openapi.AWSDBInstance{
 					AccountID:        ptr.ToString(acct.Id),
-					Name:             ptr.ToString(inst.DBName),
+					Name:             ptr.ToString(inst.DBInstanceIdentifier),
 					AvailabilityZone: ptr.ToString(inst.AvailabilityZone),
 					VpcID:            ptr.ToString(inst.DBSubnetGroup.VpcId),
 					ARN:              ptr.ToString(inst.DBInstanceArn),
@@ -267,16 +267,10 @@ func DescribeRDSDBInstances(c *gin.Context) {
 //	@Tags			AWS
 //	@Produce		json
 //	@Param			request	body		openapi.CreateDBRoleJob	true	"The request body resource"
-//	@Success		200,202	{object}	openapi.CreateDBRoleJobResponse
-//	@Failure		400		{object}	openapi.HTTPError
+//	@Success		202		{object}	openapi.CreateDBRoleJobResponse
+//	@Failure		400,500	{object}	openapi.HTTPError
 //	@Router			/integrations/aws/rds/dbinstances/roles [post]
 func CreateDBRoleJob(c *gin.Context) {
-	// 1. change the master role username password
-	//   - check if accept rds iam auth
-	//   - check if it's managed in the aws secrets manager
-	// 2. send a stream with the agent to send the payload to provision the users
-	// 3. return with a report of the roles that were provisioned
-	// 4. create the connection with the credentials
 	usrctx := storagev2.ParseContext(c)
 	var req openapi.CreateDBRoleJob
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -304,8 +298,8 @@ func CreateDBRoleJob(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	isAccountOwner := strings.Contains(dbArn, *identity.Account)
-	rdsClient, err := loadRDSClientForAccount(ctx, cfg, *identity.Account, isAccountOwner)
+	isAccountOwner := strings.Contains(dbArn, ptr.ToString(identity.Account))
+	rdsClient, err := loadRDSClientForAccount(ctx, cfg, ptr.ToString(identity.Account), isAccountOwner)
 	if err != nil {
 		log.Errorf("failed obtaing rds client, err=%v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
@@ -319,11 +313,10 @@ func CreateDBRoleJob(c *gin.Context) {
 		return
 	}
 
-	jobID := uuid.NewString()
+	sid := uuid.NewString()
 	err = models.CreateDBRoleJob(&models.DBRole{
-		OrgID:  usrctx.OrgID,
-		ID:     jobID,
-		Status: "RUNNING",
+		OrgID: usrctx.OrgID,
+		ID:    sid,
 		Spec: &models.AWSDBRoleSpec{
 			AccountArn:    ptr.ToString(identity.Arn),
 			AccountUserID: ptr.ToString(identity.UserId),
@@ -331,32 +324,21 @@ func CreateDBRoleJob(c *gin.Context) {
 			DBName:        ptr.ToString(db.DBName),
 			DBEngine:      ptr.ToString(db.Engine),
 		},
+		Status: &models.DBRoleStatus{
+			Phase:   pbsys.StatusRunningType,
+			Message: "",
+			Result:  nil,
+		},
 	})
 	if err != nil {
-		log.With("sid", jobID).Errorf("unable to create db role job, err=%v", err)
+		log.With("sid", sid).Errorf("unable to create db role job, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
 
-	prov := NewRDSProvisioner(dbArn, usrctx.OrgID, agent.ID, rdsClient)
-	// TODO: test with timeout
-	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*50)
-	defer cancelFn()
-	select {
-	case resp := <-prov.Run(jobID):
-		log.With("sid", jobID).Infof("finish provisioning database roles, success=%v, err=%v",
-			resp.ErrorMessage == nil, resp.Error())
-		c.JSON(http.StatusOK, openapi.CreateDBRoleJobResponse{
-			JobID:        jobID,
-			ErrorMessage: resp.ErrorMessage,
-		})
-	case <-timeoutCtx.Done():
-		log.With("sid", jobID).Infof("timeout provisioning rds database (50s)")
-		c.JSON(http.StatusAccepted, openapi.CreateDBRoleJobResponse{
-			JobID:        jobID,
-			ErrorMessage: ptr.String("timeout (50s) waiting to provision user roles"),
-		})
-	}
+	NewRDSProvisioner(usrctx.OrgID, req, rdsClient).
+		RunOnBackground(sid)
+	c.JSON(http.StatusAccepted, openapi.CreateDBRoleJobResponse{JobID: sid})
 }
 
 // GetDBRoleJobByID
@@ -495,30 +477,37 @@ func loadAWSConfig(orgID string) (cfg aws.Config, identity *sts.GetCallerIdentit
 func toDBRoleOpenAPI(o *models.DBRole) *openapi.DBRoleJob {
 	var spec openapi.AWSDBRoleJobSpec
 	if o.Spec != nil {
-		var roles []openapi.DBRoleJobItem
-		for _, r := range o.Spec.Roles {
-			roles = append(roles, openapi.DBRoleJobItem{
-				User:         r.User,
-				Permissions:  r.Permissions,
-				Secrets:      r.Secrets,
-				ErrorMessage: r.Error,
-			})
-		}
 		spec = openapi.AWSDBRoleJobSpec{
 			AccountArn: o.Spec.AccountArn,
 			DBArn:      o.Spec.DBArn,
 			DBName:     o.Spec.DBName,
 			DBEngine:   o.Spec.DBEngine,
-			Roles:      roles,
 		}
 	}
+	var status openapi.DBRoleJobStatus
+	if o.Status != nil {
+		var result []openapi.DBRoleJobStatusResult
+		for _, r := range o.Status.Result {
+			result = append(result, openapi.DBRoleJobStatusResult{
+				UserRole:    r.UserRole,
+				Status:      r.Status,
+				Message:     r.Message,
+				CompletedAt: r.CompletedAt,
+			})
+		}
+		status = openapi.DBRoleJobStatus{
+			Phase:   o.Status.Phase,
+			Message: o.Status.Message,
+			Result:  result,
+		}
+	}
+
 	return &openapi.DBRoleJob{
-		OrgID:     o.OrgID,
-		ID:        o.ID,
-		Status:    o.Status,
-		ErrorMsg:  o.ErrorMsg,
-		CreatedAt: o.CreatedAt,
-		UpdatedAt: o.UpdatedAt,
-		Spec:      spec,
+		OrgID:       o.OrgID,
+		ID:          o.ID,
+		Status:      &status,
+		CreatedAt:   o.CreatedAt,
+		CompletedAt: o.CompletedAt,
+		Spec:        spec,
 	}
 }

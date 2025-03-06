@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/google/uuid"
+	"github.com/hoophq/hoop/gateway/pgrest"
+	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
@@ -119,6 +122,48 @@ func UpsertConnection(c *Connection) error {
 
 		return updateGuardRailRules(tx, c)
 	})
+}
+
+// UpsertBatchConnections updates or creates multiple connections and enable
+// the default plugins for each connection
+func UpsertBatchConnections(connections []*Connection) error {
+	sess := &gorm.Session{FullSaveAssociations: true}
+	err := DB.Session(sess).Transaction(func(tx *gorm.DB) error {
+		for i, c := range connections {
+			var connID string
+			err := tx.Raw(`SELECT id FROM private.connections WHERE org_id = ? AND name = ?`, c.OrgID, c.Name).
+				First(&connID).Error
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("failed obtaining connection %v, reason=%v", c.Name, err)
+			}
+			connections[i].ID = connID
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				connections[i].ID = uuid.NewString()
+			}
+
+			err = tx.Table(tableConnections).
+				Save(c).
+				Error
+			if err != nil {
+				return fmt.Errorf("failed saving connection, reason=%v", err)
+			}
+
+			err = tx.Table(tableEnvVars).Save(EnvVars{OrgID: c.OrgID, ID: c.ID, Envs: c.Envs}).Error
+			if err != nil {
+				return fmt.Errorf("failed updating env vars from connection, reason=%v", err)
+			}
+
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	for _, c := range connections {
+		// best-effort enabling default plugins
+		pgplugins.EnableDefaultPlugins(pgrest.NewOrgContext(c.OrgID), c.ID, c.Name, pgplugins.DefaultPluginNames)
+	}
+	return nil
 }
 
 func updateGuardRailRules(tx *gorm.DB, c *Connection) error {
