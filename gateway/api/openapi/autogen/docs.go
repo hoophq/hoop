@@ -606,6 +606,47 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "post": {
+                "description": "It creates a job that performs the provisioning of default database roles",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AWS"
+                ],
+                "summary": "Create Database Role Job",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.CreateDBRoleJob"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.CreateDBRoleJobResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
             }
         },
         "/dbroles/jobs/{id}": {
@@ -1051,49 +1092,6 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    }
-                }
-            }
-        },
-        "/integrations/aws/rds/dbinstances/roles": {
-            "post": {
-                "description": "It creates a job that performs the provisioning of default database roles",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "AWS"
-                ],
-                "summary": "Create Database Role Job",
-                "parameters": [
-                    {
-                        "description": "The request body resource",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/openapi.CreateDBRoleJob"
-                        }
-                    }
-                ],
-                "responses": {
-                    "202": {
-                        "description": "Accepted",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.CreateDBRoleJobResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }

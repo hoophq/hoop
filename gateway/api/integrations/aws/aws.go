@@ -269,7 +269,7 @@ func DescribeRDSDBInstances(c *gin.Context) {
 //	@Param			request	body		openapi.CreateDBRoleJob	true	"The request body resource"
 //	@Success		202		{object}	openapi.CreateDBRoleJobResponse
 //	@Failure		400,500	{object}	openapi.HTTPError
-//	@Router			/integrations/aws/rds/dbinstances/roles [post]
+//	@Router			/dbroles/jobs [post]
 func CreateDBRoleJob(c *gin.Context) {
 	usrctx := storagev2.ParseContext(c)
 	var req openapi.CreateDBRoleJob
