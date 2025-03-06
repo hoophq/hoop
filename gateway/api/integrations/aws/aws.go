@@ -246,7 +246,7 @@ func DescribeRDSDBInstances(c *gin.Context) {
 			for _, inst := range items {
 				instances = append(instances, openapi.AWSDBInstance{
 					AccountID:        ptr.ToString(acct.Id),
-					Name:             ptr.ToString(inst.DBName),
+					Name:             ptr.ToString(inst.DBInstanceIdentifier),
 					AvailabilityZone: ptr.ToString(inst.AvailabilityZone),
 					VpcID:            ptr.ToString(inst.DBSubnetGroup.VpcId),
 					ARN:              ptr.ToString(inst.DBInstanceArn),

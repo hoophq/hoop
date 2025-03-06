@@ -118,7 +118,7 @@ func (p *provisioner) RunOnBackground(jobID string) {
 					return
 				}
 
-				log.Infof("database %v is not available (%v), backoff (%v), attempt (%v)",
+				log.Infof("database is not available, arn=%v, status=%v, backoff=%v, attempt=%v",
 					dbArn, ptr.ToString(db.DBInstanceStatus), backoff.String(), attempt)
 			}
 		}
