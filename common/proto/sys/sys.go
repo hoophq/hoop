@@ -84,13 +84,6 @@ func (r *DBProvisionerResponse) String() string {
 	return fmt.Sprintf("status=%v, message=%v", r.Status, r.Message)
 }
 
-// func (r *DBProvisionerResponse) Error() string {
-// 	if r.ErrorMessage != nil {
-// 		return *r.ErrorMessage
-// 	}
-// 	return ""
-// }
-
 func (r *DBProvisionerResponse) Encode() ([]byte, string, error) {
 	payload, err := json.Marshal(r)
 	if err != nil {
