@@ -1098,13 +1098,13 @@ type ConnectionColumn struct {
 
 type IAMAccessKeyRequest struct {
 	// The AWS access Key ID
-	AccessKeyID string `json:"access_key_id" binding:"required"`
-	// The AWS Secret Access Key
-	SecretAccessKey string `json:"secret_access_key" binding:"required"`
-	// The region that this key will manage
-	Region string `json:"region" binding:"required"`
+	AccessKeyID string `json:"access_key_id" example:"AKIAIOSFODNN7EXAMPLE"`
+	// The AWS Secret Access Key. This attribute is required if access_key_id is set
+	SecretAccessKey string `json:"secret_access_key" example:"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"`
+	// The region that is going to be used by the key or when using instance profile IAM role
+	Region string `json:"region" binding:"required" example:"us-west-2"`
 	// The session token
-	SessionToken string `json:"session_token"`
+	SessionToken string `json:"session_token" example:"AQoEXAMPLEH4aoAH0gNCAPyJxz4BlCFFxWNE1OPTgk5TthT+FvwqnKwRcOIfrRh3c/LTo6UDdyJwOOvEVPvLXCrrrUtdnniCEXAMPLE/IvU1dYUg2RVAJBanLiHb4IgRmpRV3zrkuWJOgQs8IZZaIv2BXIa2R4Olgk"`
 }
 
 type IAMUserInfo struct {

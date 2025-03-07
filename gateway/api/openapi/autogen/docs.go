@@ -965,7 +965,7 @@ const docTemplate = `{
         },
         "/integrations/aws/iam/accesskeys": {
             "put": {
-                "description": "Update IAM Access Key",
+                "description": "Update IAM Access Key or set a region when using IAM instance role",
                 "consumes": [
                     "application/json"
                 ],
@@ -993,6 +993,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -4454,26 +4460,28 @@ const docTemplate = `{
         "openapi.IAMAccessKeyRequest": {
             "type": "object",
             "required": [
-                "access_key_id",
-                "region",
-                "secret_access_key"
+                "region"
             ],
             "properties": {
                 "access_key_id": {
                     "description": "The AWS access Key ID",
-                    "type": "string"
+                    "type": "string",
+                    "example": "AKIAIOSFODNN7EXAMPLE"
                 },
                 "region": {
-                    "description": "The region that this key will manage",
-                    "type": "string"
+                    "description": "The region that is going to be used by the key or when using instance profile IAM role",
+                    "type": "string",
+                    "example": "us-west-2"
                 },
                 "secret_access_key": {
-                    "description": "The AWS Secret Access Key",
-                    "type": "string"
+                    "description": "The AWS Secret Access Key. This attribute is required if access_key_id is set",
+                    "type": "string",
+                    "example": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
                 },
                 "session_token": {
                     "description": "The session token",
-                    "type": "string"
+                    "type": "string",
+                    "example": "AQoEXAMPLEH4aoAH0gNCAPyJxz4BlCFFxWNE1OPTgk5TthT+FvwqnKwRcOIfrRh3c/LTo6UDdyJwOOvEVPvLXCrrrUtdnniCEXAMPLE/IvU1dYUg2RVAJBanLiHb4IgRmpRV3zrkuWJOgQs8IZZaIv2BXIa2R4Olgk"
                 }
             }
         },

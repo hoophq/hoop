@@ -30,13 +30,13 @@ import (
 // IAMUpdateAccessKey
 //
 //	@Summary		Update IAM Access Key
-//	@Description	Update IAM Access Key
+//	@Description	Update IAM Access Key or set a region when using IAM instance role
 //	@Tags			AWS
 //	@Accept			json
 //	@Produce		json
 //	@Param			request	body	openapi.IAMAccessKeyRequest	true	"The request body resource"
 //	@Success		204
-//	@Failure		400	{object}	openapi.HTTPError
+//	@Failure		400,422	{object}	openapi.HTTPError
 //	@Router			/integrations/aws/iam/accesskeys [put]
 func IAMUpdateAccessKey(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -46,9 +46,15 @@ func IAMUpdateAccessKey(c *gin.Context) {
 		return
 	}
 	env := &models.EnvVar{OrgID: ctx.OrgID, ID: ctx.OrgID}
-	env.SetEnv("INTEGRATION_AWS_ACCESS_KEY_ID", req.AccessKeyID)
-	env.SetEnv("INTEGRATION_AWS_SECRET_ACCESS_KEY", req.SecretAccessKey)
-	env.SetEnv("INTEGRATION_AWS_SESSION_TOKEN", req.SessionToken)
+	if req.AccessKeyID != "" {
+		if req.SecretAccessKey == "" {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "the attribute 'secret_access_key' is required when 'access_key_id' is set"})
+			return
+		}
+		env.SetEnv("INTEGRATION_AWS_ACCESS_KEY_ID", req.AccessKeyID)
+		env.SetEnv("INTEGRATION_AWS_SECRET_ACCESS_KEY", req.SecretAccessKey)
+		env.SetEnv("INTEGRATION_AWS_SESSION_TOKEN", req.SessionToken)
+	}
 	env.SetEnv("INTEGRATION_AWS_REGION", req.Region)
 	if err := models.UpsertEnvVar(env); err != nil {
 		log.Errorf("failed updating iam access key, err=%v", err)
@@ -68,7 +74,6 @@ func IAMUpdateAccessKey(c *gin.Context) {
 //	@Failure		400	{object}	openapi.HTTPError
 //	@Router			/integrations/aws/iam/accesskeys [delete]
 func IAMDeleteAccessKey(c *gin.Context) {
-	// TODO: test it with
 	ctx := storagev2.ParseContext(c)
 	env := &models.EnvVar{OrgID: ctx.OrgID, ID: ctx.OrgID}
 	if err := models.UpsertEnvVar(env); err != nil {
@@ -239,6 +244,7 @@ func DescribeRDSDBInstances(c *gin.Context) {
 			isAccountOwner := ptr.ToString(acct.Id) == ptr.ToString(identity.Account)
 			items, err := listRDSInstances(ctx, cfg, ptr.ToString(acct.Id), isAccountOwner)
 			if err != nil {
+				log.Warnf("failed listing rds instances, is-account-owner=%v, region=%v, reason=%v", isAccountOwner, cfg.Region, err)
 				c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 				return
 			}
@@ -415,7 +421,6 @@ func loadRDSClientForAccount(ctx context.Context, cfg aws.Config, accountID stri
 
 	// Create RDS client
 	rdsClient := rds.NewFromConfig(cfg)
-	log.Infof("is account owner=%v, region=%v", isAccountOwner, cfg.Region)
 	if !isAccountOwner {
 		// Assume Role in target account
 		stsClient := sts.NewFromConfig(cfg)
@@ -439,33 +444,36 @@ func loadAWSConfig(orgID string) (cfg aws.Config, identity *sts.GetCallerIdentit
 	if err != nil && err != models.ErrNotFound {
 		return cfg, nil, err
 	}
-	hasEnvVar := env != nil && env.HasKey("INTEGRATION_AWS_ACCESS_KEY_ID")
-	if hasEnvVar {
-		log.Infof("using aws static credentials with region=%v, key=%v",
-			env.GetEnv("INTEGRATION_AWS_REGION"), env.GetEnv("INTEGRATION_AWS_ACCESS_KEY_ID"),
-		)
+	awsRegion, hasAccessKey := "", false
+	if env != nil {
+		hasAccessKey, awsRegion = env.HasKey("INTEGRATION_AWS_ACCESS_KEY_ID"), env.GetEnv("INTEGRATION_AWS_REGION")
+	}
+
+	if awsRegion == "" {
+		return cfg, nil, fmt.Errorf("missing AWS Region configuration")
+	}
+
+	if hasAccessKey {
+		log.Infof("using aws static credentials with region=%v", env.GetEnv("INTEGRATION_AWS_REGION"))
 		staticCfg := aws.NewConfig()
 		staticCfg.Credentials = credentials.NewStaticCredentialsProvider(
 			env.GetEnv("INTEGRATION_AWS_ACCESS_KEY_ID"),
 			env.GetEnv("INTEGRATION_AWS_SECRET_ACCESS_KEY"),
 			env.GetEnv("INTEGRATION_AWS_SESSION_TOKEN"))
-		staticCfg.Region = env.GetEnv("INTEGRATION_AWS_REGION")
+		staticCfg.Region = awsRegion
 		cfg = staticCfg.Copy()
 	}
 
 	ctx := context.Background()
-	if !hasEnvVar {
+	if !hasAccessKey {
 		if !appconfig.Get().IntegrationAWSInstanceRoleAllow() {
 			return cfg, nil, fmt.Errorf("unable to find valid AWS credentials(instance role is turned off)")
 		}
 
-		cfg, err = config.LoadDefaultConfig(ctx, config.WithRetryMaxAttempts(1))
+		cfg, err = config.LoadDefaultConfig(ctx, config.WithRetryMaxAttempts(1), config.WithRegion(awsRegion))
 		if err != nil {
 			return
 		}
-		// the user is obligated to to pass the region manually
-		// to avoid provisioning the resources in the wrong region
-		cfg.Region = ""
 		cfg = cfg.Copy()
 	}
 
