@@ -1,8 +1,17 @@
 (ns webapp.webclient.components.panels.runbooks
   (:require
    [re-frame.core :as rf]
-   [reagent.core :as r]
    [webapp.webclient.runbooks.list :as runbooks-list]))
+
+(rf/reg-event-db
+ :runbooks/set-data-loaded
+ (fn [db [_ value]]
+   (assoc-in db [:runbooks :data-loaded] value)))
+
+(rf/reg-sub
+ :runbooks/data-loaded
+ (fn [db]
+   (get-in db [:runbooks :data-loaded] false)))
 
 (defn main []
   (let [templates (rf/subscribe [:runbooks-plugin->runbooks])
@@ -10,11 +19,11 @@
         search-term (rf/subscribe [:search/term])
         primary-connection (rf/subscribe [:connections/selected])
         selected-connections (rf/subscribe [:connection-selection/selected])
-        data-loaded? (r/atom false)]
+        data-loaded? (rf/subscribe [:runbooks/data-loaded])]
 
     (when (and (not @data-loaded?)
                (not= :ready (:status @templates)))
-      (reset! data-loaded? true)
+      (rf/dispatch [:runbooks/set-data-loaded true])
       (rf/dispatch [:runbooks-plugin->get-runbooks
                     (map :name (concat
                                 (when @primary-connection
