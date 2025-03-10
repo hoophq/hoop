@@ -3929,6 +3929,10 @@ const docTemplate = `{
                         "/bin/bash"
                     ]
                 },
+                "default_database": {
+                    "description": "Default databases returns the configured value of the attribute secrets-\u003e'DB'",
+                    "type": "string"
+                },
                 "guardrail_rules": {
                     "description": "The guard rail association id rules",
                     "type": "array",

@@ -35,7 +35,7 @@
    (let [connection-list-cached (read-string (.getItem js/localStorage "run-connection-list-selected"))
          is-cached? (fn [current-connection-name]
                       (not-empty (filter #(= (:name %) current-connection-name) connection-list-cached)))
-         connections-parsed (mapv (fn [{:keys [name type subtype status access_schema secret jira_issue_template_id]}]
+         connections-parsed (mapv (fn [{:keys [name type subtype status access_schema default_database jira_issue_template_id]}]
                                     {:name name
                                      :type type
                                      :subtype subtype
@@ -44,7 +44,7 @@
                                      :access_schema access_schema
                                      :database_name (when (and (= type "database")
                                                                (= subtype "postgres"))
-                                                      (js/atob (:envvar:DB secret)))
+                                                      default_database)
                                      :selected (if (is-cached? name)
                                                  true
                                                  false)})
@@ -59,7 +59,7 @@
    (let [connection-list-cached (read-string (.getItem js/localStorage "run-connection-list-selected"))
          is-cached? (fn [current-connection-name]
                       (not-empty (filter #(= (:name %) current-connection-name) connection-list-cached)))
-         connections-parsed (mapv (fn [{:keys [name type subtype status selected access_schema secret jira_issue_template_id]}]
+         connections-parsed (mapv (fn [{:keys [name type subtype status selected access_schema default_database jira_issue_template_id]}]
                                     {:name name
                                      :type type
                                      :subtype subtype
@@ -68,7 +68,7 @@
                                      :access_schema access_schema
                                      :database_name (when (and (= type "database")
                                                                (= subtype "postgres"))
-                                                      (js/atob (:envvar:DB secret)))
+                                                      default_database)
                                      :selected (if (is-cached? name)
                                                  true
                                                  selected)})
