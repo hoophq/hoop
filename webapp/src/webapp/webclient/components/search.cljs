@@ -14,17 +14,18 @@
 
         [:div {:class "relative w-8 h-8"}
          [:input {:class (str "absolute top-0 right-0 "
-                              "shadow-sm transition-all ease-in duration-150 "
-                              "bg-gray-3 "
-                              "text-sm h-8 "
-                              (if @has-text? "w-64" "w-8")
+                              " shadow-sm transition-all ease-in duration-150 "
+                              " bg-gray-3 "
+                              " text-sm h-8 "
+                              (if @has-text? " w-64 " " w-8 ")
                               " rounded-md "
-                              "outline-none pl-3 "
-                              "focus:outline-none "
-                              "focus:w-64 "
-                              "cursor-pointer "
-                              "focus:cursor-text "
-                              "focus:pl-3 focus:pr-8")
+                              " outline-none pl-3 "
+                              " focus:outline-none "
+                              " focus:w-64 "
+                              " cursor-pointer "
+                              " focus:cursor-text "
+                              " focus:pl-3 focus:pr-8 "
+                              " dark:text-gray-12 ")
                   :id input-id
                   :placeholder "Search connections"
                   :name "header-search"
@@ -39,8 +40,8 @@
                                    (rf/dispatch [:search/filter-runbooks value]))))}]
          (if @has-text?
            [:> IconButton
-            {:class (str "absolute top-0 right-0 w-8 h-8 "
-                         "bg-gray-3 hover:bg-gray-4")
+            {:class (str " absolute top-0 right-0 w-8 h-8 "
+                         " bg-gray-3 hover:bg-gray-4 ")
              :size "2"
              :variant "soft"
              :color "gray"
@@ -56,8 +57,8 @@
             [:> X {:size 16}]]
 
            [:> IconButton
-            {:class (str "absolute top-0 right-0 w-8 h-8 "
-                         "bg-gray-3 hover:bg-gray-4")
+            {:class (str " absolute top-0 right-0 w-8 h-8 "
+                         " bg-gray-3 hover:bg-gray-4 ")
              :size "2"
              :variant "soft"
              :color "gray"
