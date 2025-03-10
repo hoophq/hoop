@@ -277,8 +277,17 @@ module.exports = {
         }
       };
 
+      const removeRadiusFromTable = {
+        '.remove-radius-from-table': {
+          '& table': {
+            borderRadius: '0px'
+          }
+        }
+      };
+
       addUtilities(backfaceVisibility, []);
       addUtilities(rotateY, ['group-hover', 'hover']);
+      addUtilities(removeRadiusFromTable, []);
     })
   ]
 };

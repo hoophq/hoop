@@ -1,6 +1,5 @@
 (ns webapp.app
   (:require
-   ["/features/upgrade-plan/UpgradePlan" :refer [UpgradePlan]]
    ["@radix-ui/themes" :refer [Theme]]
    ["@sentry/browser" :as Sentry]
    ["gsap/all" :refer [Draggable gsap]]
@@ -81,6 +80,7 @@
    [webapp.slack.slack-new-organization :as slack-new-organization]
    [webapp.slack.slack-new-user :as slack-new-user]
    [webapp.subs :as subs]
+   [webapp.upgrade-plan.main :as upgrade-plan]
    [webapp.views.home :as home]
    [webapp.webclient.events.codemirror]
    [webapp.webclient.events.connection-selection]
@@ -205,7 +205,7 @@
 (defmethod routes/panels :upgrade-plan-panel []
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop [:div {:class "bg-gray-1 min-h-full h-max"}
-                             [:> UpgradePlan]]])
+                             [upgrade-plan/main]]])
 
 (defmethod routes/panels :users-panel []
   [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
