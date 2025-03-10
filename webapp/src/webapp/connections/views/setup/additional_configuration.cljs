@@ -8,8 +8,7 @@
    [webapp.connections.dlp-info-types :as dlp-info-types]
    [webapp.connections.helpers :as helpers]
    [webapp.routes :as routes]
-   [webapp.upgrade-plan.main :as upgrade-plan]
-   ["/features/upgrade-plan/UpgradePlan" :refer [UpgradePlan]]))
+   [webapp.upgrade-plan.main :as upgrade-plan]))
 
 (defn- get-access-mode-defaults [selected-type]
   (if (= selected-type "tcp")
@@ -155,7 +154,7 @@
                                          (if (= form-type :onboarding)
                                            (rf/dispatch [:modal->open
                                                          {:content [:div {:class "bg-gray-1 min-h-full"}
-                                                                    [:> UpgradePlan {:removeBack true}]]}])
+                                                                    [upgrade-plan/main true]]}])
                                            (rf/dispatch [:navigate :upgrade-plan])))}
                     "upgrading your plan."]]])
 

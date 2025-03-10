@@ -4,6 +4,7 @@
             [webapp.components.forms :as forms]
             ["lucide-react" :refer [Check]]
             [webapp.connections.views.setup.page-wrapper :as page-wrapper]
+            [webapp.components.data-table-advance-example :refer [data-table-advanced-examples]]
             [webapp.config :as config]))
 
 (def steps
@@ -106,33 +107,39 @@
 (defn accounts-step []
   (let [accounts @(rf/subscribe [:aws-connect/accounts])
         selected @(rf/subscribe [:aws-connect/selected-accounts])]
-    [:> Box {:mb "4"}
-     [:> Heading {:size "4"} "AWS Accounts"]
-     [:> Text {:as "p" :size "2"}
-      "Select the AWS account(s) you wish to integrate with. Your selection will determine which resources become available for later management."]
+    [:> Box {:class "space-y-7"}
+     [:> Box
+      [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+       "AWS Accounts"]
+      [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+       "Select the AWS account(s) you wish to integrate with. Your selection will determine which resources become available for later management."]]
 
      [:> Card {:variant "surface"}
-      [:> Box {:as "table" :width "100%"}
-       [:thead
-        [:tr
-         [:th ""]
-         [:th {:align "left" :p "2"} "Account ID"]
-         [:th {:align "left" :p "2"} "Alias"]
-         [:th {:align "left" :p "2"} "Status"]]]
-       [:tbody
-        (for [account accounts]
-          ^{:key (:id account)}
+      [:> Box {:class "mt-8"}
+       [:> Heading {:size "4" :mb "2"} "Exemplo com Componente Avançado"]
+       [data-table-advanced-examples]]
+
+      #_[:> Box {:as "table" :width "100%"}
+         [:thead
           [:tr
-           [:td {:p "2"}
-            [:> Checkbox
-             {:checked (contains? selected (:id account))
-              :onCheckedChange #(rf/dispatch [:aws-connect/set-selected-accounts
-                                              (if %
-                                                (conj selected (:id account))
-                                                (disj selected (:id account)))])}]]
-           [:td {:p "2"} (:id account)]
-           [:td {:p "2"} (:alias account)]
-           [:td {:p "2"} (:status account)]])]]]]))
+           [:th ""]
+           [:th {:align "left" :p "2"} "Account ID"]
+           [:th {:align "left" :p "2"} "Alias"]
+           [:th {:align "left" :p "2"} "Status"]]]
+         [:tbody
+          (for [account accounts]
+            ^{:key (:id account)}
+            [:tr
+             [:td {:p "2"}
+              [:> Checkbox
+               {:checked (contains? selected (:id account))
+                :onCheckedChange #(rf/dispatch [:aws-connect/set-selected-accounts
+                                                (if %
+                                                  (conj selected (:id account))
+                                                  (disj selected (:id account)))])}]]
+             [:td {:p "2"} (:id account)]
+             [:td {:p "2"} (:alias account)]
+             [:td {:p "2"} (:status account)]])]]]]))
 
 (defn resources-step []
   (let [resources @(rf/subscribe [:aws-connect/resources])
@@ -244,7 +251,7 @@
     [page-wrapper/main
      {:children
       [:> Box {:class "min-h-screen bg-gray-1"}
-       [:> Box {:class "max-w-[610px] mx-auto p-6 space-y-7"}
+       [:> Box {:class "mx-auto p-6 space-y-7"}
         [:> Box {:class "space-y-7"}
          ;; Header
          [aws-connect-header]
