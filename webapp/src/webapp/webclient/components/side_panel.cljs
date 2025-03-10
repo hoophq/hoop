@@ -4,7 +4,7 @@
 
 ;; Componente reutilizável para painéis laterais
 (defn side-panel [{:keys [title content]}]
-  [:> Box {:class "h-full w-80 bg-gray-1 border-l border-gray-3"}
+  [:> Box {:class "h-full w-80 bg-gray-1 border-l border-gray-3 overflow-y-auto"}
    [:> Flex {:justify "between"
              :align "center"
              :class "px-4 py-3 border-b border-gray-3"}

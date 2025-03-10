@@ -1,7 +1,7 @@
 (ns webapp.webclient.runbooks.list
   (:require ["@heroicons/react/20/solid" :as hero-solid-icon]
             ["lucide-react" :refer [FolderClosed FolderOpen File]]
-            ["@radix-ui/themes" :refer [Button]]
+            ["@radix-ui/themes" :refer [Box Button]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
@@ -90,7 +90,7 @@
             [file item filter-template-selected])]]))))
 
 (defn directory-tree [tree filter-template-selected]
-  [:div {:class "overflow-y-auto"}
+  [:> Box
    (for [[name items] tree]
      ^{:key name}
      [directory name items 0 filter-template-selected])])
