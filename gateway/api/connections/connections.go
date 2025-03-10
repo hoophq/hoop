@@ -3,6 +3,7 @@ package apiconnections
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -294,13 +295,20 @@ func List(c *gin.Context) {
 			if conn.ManagedBy.Valid {
 				managedBy = &conn.ManagedBy.String
 			}
+			defaultDB, _ := base64.StdEncoding.DecodeString(conn.Envs["envvar:DB"])
+			if len(defaultDB) == 0 {
+				defaultDB = []byte(``)
+			}
 			responseConnList = append(responseConnList, openapi.Connection{
-				ID:                  conn.ID,
-				Name:                conn.Name,
-				Command:             conn.Command,
-				Type:                conn.Type,
-				SubType:             conn.SubType.String,
-				Secrets:             coerceToAnyMap(conn.Envs),
+				ID:      conn.ID,
+				Name:    conn.Name,
+				Command: conn.Command,
+				Type:    conn.Type,
+				SubType: conn.SubType.String,
+				// it should return empty to avoid leaking sensitive content
+				// in the future we plan to know which entry is sensitive or not
+				Secrets:             nil,
+				DefaultDatabase:     string(defaultDB),
 				AgentId:             conn.AgentID.String,
 				Status:              conn.Status,
 				Reviewers:           conn.Reviewers,
@@ -357,6 +365,10 @@ func Get(c *gin.Context) {
 	if conn.ManagedBy.Valid {
 		managedBy = &conn.ManagedBy.String
 	}
+	defaultDB, _ := base64.StdEncoding.DecodeString(conn.Envs["envvar:DB"])
+	if len(defaultDB) == 0 {
+		defaultDB = []byte(``)
+	}
 	c.JSON(http.StatusOK, openapi.Connection{
 		ID:                  conn.ID,
 		Name:                conn.Name,
@@ -364,6 +376,7 @@ func Get(c *gin.Context) {
 		Type:                conn.Type,
 		SubType:             conn.SubType.String,
 		Secrets:             coerceToAnyMap(conn.Envs),
+		DefaultDatabase:     string(defaultDB),
 		AgentId:             conn.AgentID.String,
 		Status:              conn.Status,
 		Reviewers:           conn.Reviewers,

@@ -101,7 +101,7 @@ cp .env.sample .env
 **Run it**
 
 ```sh
-npm run dev:hoop-ui
+npm run dev
 ````
 
 Please be patient; it may take over 20 seconds to see any output, and over 40 seconds to complete.
