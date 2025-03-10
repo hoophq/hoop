@@ -68,7 +68,6 @@
    [webapp.onboarding.main :as onboarding]
    [webapp.onboarding.setup :as onboarding-setup]
    [webapp.onboarding.setup-resource :as onboarding-setup-resource]
-   [webapp.onboarding.subs]
    [webapp.organization.users.main :as org-users]
    [webapp.plugins.views.manage-plugin :as manage-plugin]
    [webapp.plugins.views.plugins-configurations :as plugins-configurations]

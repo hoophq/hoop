@@ -1,8 +1,11 @@
 (ns webapp.onboarding.setup-resource
   (:require
-   ["@radix-ui/themes" :refer [Box Button]]
+   ["@radix-ui/themes" :refer [Box Button Badge]]
+   ["lucide-react" :refer [AlertCircle]]
    [re-frame.core :as rf]
-   [webapp.connections.views.setup.main :as setup]))
+   [reagent.core :as r]
+   [webapp.connections.views.setup.main :as setup]
+   [webapp.components.data-table-advance :refer [data-table-advanced]]))
 
 (defn main []
   [:<>
@@ -13,3 +16,125 @@
                 :on-click #(rf/dispatch [:auth->logout])}
      "Logout"]]
    [setup/main :onboarding]])
+
+;; Status badge component
+(defn status-badge [status]
+  [:> Badge {:color (case status
+                      ;; Positive states/available
+                      "available" "green"
+
+                      ;; State processing/transition
+                      "backing-up" "blue"
+                      "configuring-enhanced-monitoring" "blue"
+                      "configuring-iam-database-auth" "blue"
+                      "configuring-log-exports" "blue"
+                      "converting-to-vpc" "blue"
+                      "creating" "blue"
+                      "maintenance" "blue"
+                      "modifying" "blue"
+                      "moving-to-vpc" "blue"
+                      "rebooting" "blue"
+                      "renaming" "blue"
+                      "resetting-master-credentials" "blue"
+                      "starting" "blue"
+                      "storage-optimization" "blue"
+                      "upgrading" "blue"
+
+                      ;; Alert states
+                      "stopped" "yellow"
+                      "stopping" "yellow"
+                      "storage-full" "orange"
+
+                      ;; Negative states/failures
+                      "deleting" "red"
+                      "failed" "red"
+                      "Inactive" "red"
+                      "inaccessible-encryption-credentials" "red"
+                      "incompatible-network" "red"
+                      "incompatible-option-group" "red"
+                      "incompatible-parameters" "red"
+                      "incompatible-restore" "red"
+                      "restore-error" "red"
+
+                      ;; Fallback for unknown status
+                      "gray")
+             :variant "soft"}
+   status])
+
+;; New implementation of AWS resources data table using proper patterns
+(defn aws-resources-data-table []
+  (let [resources @(rf/subscribe [:aws-connect/resources])
+        rf-selected @(rf/subscribe [:aws-connect/selected-resources])
+        rf-errors @(rf/subscribe [:aws-connect/resources-errors])
+        ;; Create local reagent atoms for state management
+        selected-ids (r/atom (or rf-selected #{}))
+        expanded-rows (r/atom #{})
+        update-counter (r/atom 0)  ;; Counter to force re-renders
+
+        ;; Define columns configuration
+        columns [{:id "name"
+                  :header "Resource"
+                  :accessor :name
+                  :width "25%"}
+                 {:id "subnet-cidr"
+                  :header "Subnet CIDR"
+                  :accessor :subnet-cidr
+                  :width "20%"}
+                 {:id "vpc-id"
+                  :header "VPC ID"
+                  :accessor :vpc-id
+                  :width "25%"}
+                 {:id "status"
+                  :header "Status"
+                  :width "15%"
+                  :accessor :status
+                  :render (fn [value _] [status-badge value])}]]
+
+    ;; Watch for changes to selected-ids and dispatch to re-frame
+    (add-watch selected-ids :selected-resources-sync
+               (fn [_ _ _ new-value]
+                 (rf/dispatch [:aws-connect/set-selected-resources new-value])))
+
+    ;; Function component to render
+    (fn []
+      ;; Use update-counter to force re-renders on state changes
+      @update-counter
+
+      [data-table-advanced
+       {:columns columns
+        :data resources
+        :selected-ids @selected-ids
+        :on-select-row (fn [id selected?]
+                         (swap! selected-ids
+                                (if selected? conj disj) id)
+                         (swap! update-counter inc))
+        :on-select-all (fn [select-all?]
+                         (reset! selected-ids
+                                 (if select-all?
+                                   (into #{} (map :id (filter #(not (contains? rf-errors (:id %))) resources)))
+                                   #{}))
+                         (swap! update-counter inc))
+        :selectable? (fn [row]
+                       (not (contains? rf-errors (:id row))))
+        :row-expandable? (fn [row]
+                           (contains? rf-errors (:id row)))
+        :row-expanded? (fn [row]
+                         (contains? @expanded-rows (:id row)))
+        :on-toggle-expand (fn [id]
+                            (swap! expanded-rows
+                                   (fn [current]
+                                     (if (contains? current id)
+                                       (disj current id)
+                                       (conj current id))))
+                            (swap! update-counter inc))
+        :row-error (fn [row]
+                     (when (contains? rf-errors (:id row))
+                       {:message (str "User: arn:aws:iam::1234567890123:user/TestUser is not authorized to perform: "
+                                      "rds:DescribeDBInstances on resource: arn:aws:rds:us-east-1:1234567890123:db:"
+                                      (:name row) " with an explicit deny")
+                        :code "AccessDenied"
+                        :type "Sender"}))
+        :error-indicator (fn [] [:> AlertCircle {:size 16 :class "text-red-500"}])
+        :zebra-striping true
+        :compact false
+        :sticky-header true}])))

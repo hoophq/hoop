@@ -81,11 +81,6 @@
                            (= (count (filter #(and (selectable? %) (contains? selected-ids (key-fn %))) data))
                               (count (filter selectable? data))))]
 
-    ;; Log para depuração
-    (println data)
-    (js/console.log "Rendering data-table-advanced with data count:" (count data))
-    (js/console.log "Row expandable count:" (count (filter row-expandable? data)))
-
     [:> Table.Root {:variant "surface"
                     :class (str "border rounded-lg overflow-hidden shadow-sm"
                                 (when sticky-header? " relative"))}
@@ -178,7 +173,6 @@
           (when (or (some row-expandable? data) tree-data?)
             [:> Table.Cell {:p "2" :width "40px" :class "relative"}
              [:div {:style {:paddingLeft row-indent}}
-              ;; Mostrar o chevron apenas para grupos com filhos (não para erros)
               (when (and expandable?
                          (and (= (:type row) :group)
                               (let [original-group (when (and tree-data? original-data)
@@ -218,7 +212,7 @@
                display-value)])
 
           ;; Error indicator column
-          (when (or (some row-expandable? data) tree-data?)
+          (if (or (some row-expandable? data) tree-data?)
             (if has-error?
               [:> Table.Cell {:p "2" :width "40px" :class "relative"}
                [:div {:class "flex justify-center items-center space-x-1"}
@@ -234,7 +228,9 @@
                    [:> ChevronDown {:size 16}]
                    [:> ChevronRight {:size 16}])]]]
 
-              [:> Table.Cell {:p "2" :width "40px"}]))]
+              [:> Table.Cell {:p "2" :width "40px"}])
+
+            [:> Table.Cell {:p "2" :width "40px"}])]
 
          ;; Expanded row content
          (when (and expandable? expanded?)
