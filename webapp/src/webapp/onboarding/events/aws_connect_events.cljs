@@ -170,19 +170,39 @@
               (assoc-in [:aws-connect :loading :active?] false)
               (assoc-in [:aws-connect :loading :message] nil)
               (assoc-in [:aws-connect :resources :data] formatted-resources)
-              (assoc-in [:aws-connect :resources :status] :loaded))
+              (assoc-in [:aws-connect :resources :status] :loaded)
+              (assoc-in [:aws-connect :resources :api-error] nil)) ;; Limpar qualquer erro anterior
       :dispatch [:aws-connect/set-current-step :resources]})))
 
 (rf/reg-event-fx
  :aws-connect/fetch-rds-instances-failure
  (fn [{:keys [db]} [_ response]]
-   {:db (-> db
-            (assoc-in [:aws-connect :status] nil)
-            (assoc-in [:aws-connect :loading :active?] false)
-            (assoc-in [:aws-connect :loading :message] nil)
-            (assoc-in [:aws-connect :error] (get-in response [:response :message] "Failed to fetch RDS instances")))
-    :dispatch [:show-snackbar {:level :error
-                               :text "Failed to retrieve database instances from AWS. Please check your credentials and try again."}]}))
+   (let [;; Extract error message from the API response structure
+         ;; The API returns errors in { "message": "error text" } format
+         raw-response (get-in response [:response] {})
+         error-message (or (get raw-response :message)
+                           (get-in raw-response [:body :message])
+                           (get-in raw-response [:data :message])
+                           "Failed to fetch RDS instances")
+         error-details (or (get-in raw-response [:errors])
+                           (get-in raw-response [:body :errors])
+                           (get-in raw-response [:data :errors])
+                           [])
+         ;; Store the complete raw response for debugging
+         api-error {:message error-message
+                    :details error-details
+                    :status (get response :status 500)
+                    :raw-response raw-response}]
+     {:db (-> db
+              (assoc-in [:aws-connect :status] nil)
+              (assoc-in [:aws-connect :loading :active?] false)
+              (assoc-in [:aws-connect :loading :message] nil)
+              (assoc-in [:aws-connect :error] error-message)
+              (assoc-in [:aws-connect :resources :status] :error)
+              (assoc-in [:aws-connect :resources :data] [])
+              (assoc-in [:aws-connect :resources :api-error] api-error))
+      :dispatch [:show-snackbar {:level :error
+                                 :text "Failed to retrieve database instances from AWS. Please check your credentials and try again."}]})))
 
 ;; Create connections event
 (rf/reg-event-fx
@@ -367,3 +387,15 @@
    {:db (assoc-in db [:aws-connect :agents :data] [])
     :dispatch [:show-snackbar {:level :error
                                :text "Failed to load agents. Using default options."}]}))
+
+;; Subscription para acessar erros de API de recursos
+(rf/reg-sub
+ :aws-connect/resources-api-error
+ (fn [db _]
+   (get-in db [:aws-connect :resources :api-error])))
+
+;; Subscription para verificar o status dos recursos
+(rf/reg-sub
+ :aws-connect/resources-status
+ (fn [db _]
+   (get-in db [:aws-connect :resources :status])))

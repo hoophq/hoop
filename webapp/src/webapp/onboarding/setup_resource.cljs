@@ -1,6 +1,6 @@
 (ns webapp.onboarding.setup-resource
   (:require
-   ["@radix-ui/themes" :refer [Box Button Badge]]
+   ["@radix-ui/themes" :refer [Box Button Badge Callout Text Flex Heading]]
    ["lucide-react" :refer [AlertCircle]]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -66,6 +66,8 @@
   (let [resources @(rf/subscribe [:aws-connect/resources])
         rf-selected @(rf/subscribe [:aws-connect/selected-resources])
         rf-errors @(rf/subscribe [:aws-connect/resources-errors])
+        resources-status @(rf/subscribe [:aws-connect/resources-status])
+        api-error @(rf/subscribe [:aws-connect/resources-api-error])
         ;; Create local reagent atoms for state management
         selected-ids (r/atom (or rf-selected #{}))
         expanded-rows (r/atom #{})
@@ -100,41 +102,32 @@
       ;; Use update-counter to force re-renders on state changes
       @update-counter
 
-      [data-table-advanced
-       {:columns columns
-        :data resources
-        :selected-ids @selected-ids
-        :on-select-row (fn [id selected?]
-                         (swap! selected-ids
-                                (if selected? conj disj) id)
-                         (swap! update-counter inc))
-        :on-select-all (fn [select-all?]
-                         (reset! selected-ids
-                                 (if select-all?
-                                   (into #{} (map :id (filter #(not (contains? rf-errors (:id %))) resources)))
-                                   #{}))
-                         (swap! update-counter inc))
-        :selectable? (fn [row]
-                       (not (contains? rf-errors (:id row))))
-        :row-expandable? (fn [row]
-                           (contains? rf-errors (:id row)))
-        :row-expanded? (fn [row]
-                         (contains? @expanded-rows (:id row)))
-        :on-toggle-expand (fn [id]
-                            (swap! expanded-rows
-                                   (fn [current]
-                                     (if (contains? current id)
-                                       (disj current id)
-                                       (conj current id))))
-                            (swap! update-counter inc))
-        :row-error (fn [row]
-                     (when (contains? rf-errors (:id row))
-                       {:message (str "User: arn:aws:iam::1234567890123:user/TestUser is not authorized to perform: "
-                                      "rds:DescribeDBInstances on resource: arn:aws:rds:us-east-1:1234567890123:db:"
-                                      (:name row) " with an explicit deny")
-                        :code "AccessDenied"
-                        :type "Sender"}))
-        :error-indicator (fn [] [:> AlertCircle {:size 16 :class "text-red-500"}])
-        :zebra-striping true
-        :compact false
-        :sticky-header true}])))
+      (if (= resources-status :error)
+        ;; Show error message using a simpler pattern like in connections_list.cljs
+        [:> Box {:class "p-5"}
+         [:> Callout.Root {:color "red"}
+          [:> Callout.Icon
+           [:> AlertCircle {:size 16}]]
+          [:> Callout.Text
+           (:message api-error)]]]
+
+        ;; Show resources table when API call succeeded
+        [data-table-advanced
+         {:columns columns
+          :data resources
+          :selected-ids @selected-ids
+          :on-select-row (fn [id selected?]
+                           (swap! selected-ids
+                                  (if selected? conj disj) id)
+                           (swap! update-counter inc))
+          :on-select-all (fn [select-all?]
+                           (reset! selected-ids
+                                   (if select-all?
+                                     (into #{} (map :id (filter #(not (contains? rf-errors (:id %))) resources)))
+                                     #{}))
+                           (swap! update-counter inc))
+          :selectable? (fn [row]
+                         (not (contains? rf-errors (:id row))))
+          :zebra-striping true
+          :compact false
+          :sticky-header true}]))))
