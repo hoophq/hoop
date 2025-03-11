@@ -1,51 +1,61 @@
 (ns webapp.components.keyboard-shortcuts
   (:require
-   ["lucide-react" :refer [Keyboard]]
+   ["lucide-react" :refer [Keyboard X]]
    [reagent.core :as r]
    [re-frame.core :as rf]
-   [webapp.config :as config]))
+   [webapp.config :as config]
+   ["@radix-ui/themes" :refer [Box Button Flex Text Heading Dialog Badge Code]]))
 
 (defn- shortcut-item [{:keys [shortcut description]}]
-  [:div {:class "flex justify-between items-center mb-1 text-xs"}
-   [:span {:class "font-medium text-gray-900"}
+  [:> Flex {:justify "between" :align "center" :class "mb-1"}
+   [:> Text {:size "2" :weight "medium"}
     description]
-   [:code {:class "bg-gray-100 px-2 py-1 rounded font-mono text-gray-700"}
+   [:> Code {:size "2" :variant "ghost" :color "gray"}
     shortcut]])
 
+(defn- shortcut-section [title & items]
+  [:> Box {:class "mb-4"}
+   [:> Text {:as "h4" :size "2" :weight "medium" :class "mb-2"}
+    title]
+   (for [item items]
+     ^{:key (:description item)}
+     [shortcut-item item])])
+
 (defn- shortcuts-content []
-  [:div {:class "px-6 py-4 max-w-md"}
-   [:div {:class "flex justify-between items-center mb-3"}
-    [:h3 {:class "text-lg font-medium"} "Keyboard Shortcuts"]
-    [:button {:class "text-gray-400 hover:text-gray-500"
-              :on-click #(rf/dispatch [:modal->close])}
-     "×"]]
+  [:> Box {:class "p-5"}
+   [:> Flex {:justify "between" :align "center" :class "mb-4"}
+    [:> Heading {:size "4" :weight "medium"} "Keyboard Shortcuts"]
+    [:> Button {:size "1" 
+                :variant "ghost" 
+                :color "gray" 
+                :on-click #(rf/dispatch [:modal->close])}
+     [:> X {:size 16}]]]
     
-   [:div {:class "mb-3"}
-    [:h4 {:class "font-medium text-gray-900 mb-1"} "Execution"]
-    [shortcut-item {:shortcut "⌘ + Enter" :description "Execute entire script"}]
-    [shortcut-item {:shortcut "⌘ + Shift + Enter" :description "Execute selected text"}]]
+   [shortcut-section "Execution"
+    {:shortcut "⌘ + Enter" :description "Execute entire script"}
+    {:shortcut "⌘ + Shift + Enter" :description "Execute selected text"}]
    
-   [:div {:class "mb-3"}
-    [:h4 {:class "font-medium text-gray-900 mb-1"} "Navigation"]
-    [shortcut-item {:shortcut "Alt + ←/→" :description "Move cursor to previous/next syntax boundary"}]
-    [shortcut-item {:shortcut "⌘ + Shift + \\" :description "Jump to matching bracket"}]]
+   [shortcut-section "Navigation"
+    {:shortcut "Alt + ←/→" :description "Move cursor to previous/next syntax boundary"}
+    {:shortcut "⌘ + Shift + \\" :description "Jump to matching bracket"}]
    
-   [:div {:class "mb-3"} 
-    [:h4 {:class "font-medium text-gray-900 mb-1"} "Editing"]
-    [shortcut-item {:shortcut "Alt + ↑/↓" :description "Move line up/down"}]
-    [shortcut-item {:shortcut "Shift + Alt + ↑/↓" :description "Copy line up/down"}]
-    [shortcut-item {:shortcut "Alt + L" :description "Select current line"}]
-    [shortcut-item {:shortcut "⌘ + I" :description "Select parent syntax"}]
-    [shortcut-item {:shortcut "⌘ + [/]" :description "Decrease/increase indentation"}]
-    [shortcut-item {:shortcut "⌘ + Alt + \\" :description "Indent selection"}]
-    [shortcut-item {:shortcut "⌘ + Shift + K" :description "Delete line"}]
-    [shortcut-item {:shortcut "⌘ + /" :description "Toggle comment"}]
-    [shortcut-item {:shortcut "Alt + A" :description "Toggle block comment"}]]])
+   [shortcut-section "Editing"
+    {:shortcut "Alt + ↑/↓" :description "Move line up/down"}
+    {:shortcut "Shift + Alt + ↑/↓" :description "Copy line up/down"}
+    {:shortcut "Alt + L" :description "Select current line"}
+    {:shortcut "⌘ + I" :description "Select parent syntax"}
+    {:shortcut "⌘ + [/]" :description "Decrease/increase indentation"}
+    {:shortcut "⌘ + Alt + \\" :description "Indent selection"}
+    {:shortcut "⌘ + Shift + K" :description "Delete line"}
+    {:shortcut "⌘ + /" :description "Toggle comment"}
+    {:shortcut "Alt + A" :description "Toggle block comment"}]])
 
 (defn keyboard-shortcuts-button []
-  [:div
-   [:div {:class "flex items-center gap-1 text-gray-600 cursor-pointer" 
-          :on-click #(rf/dispatch [:modal->open {:content [shortcuts-content]
-                                                :maxWidth "450px"}])}
-    [:> Keyboard {:size 16}]
-    [:span {:class "text-xs"} "Shortcuts"]]])
+  [:> Button {:size "1" 
+              :variant "ghost" 
+              :color "gray"
+              :class "flex items-center gap-1"
+              :on-click #(rf/dispatch [:modal->open {:content [shortcuts-content]
+                                                    :maxWidth "450px"}])}
+   [:> Keyboard {:size 16}]
+   [:> Text {:size "1"} "Shortcuts"]])
