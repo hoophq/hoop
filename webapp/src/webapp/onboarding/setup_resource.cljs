@@ -1,6 +1,6 @@
 (ns webapp.onboarding.setup-resource
   (:require
-   ["@radix-ui/themes" :refer [Box Button Badge Callout Text Flex Heading]]
+   ["@radix-ui/themes" :refer [Box Button Badge Callout]]
    ["lucide-react" :refer [AlertCircle]]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -70,7 +70,6 @@
         api-error @(rf/subscribe [:aws-connect/resources-api-error])
         ;; Create local reagent atoms for state management
         selected-ids (r/atom (or rf-selected #{}))
-        expanded-rows (r/atom #{})
         update-counter (r/atom 0)  ;; Counter to force re-renders
 
         ;; Define columns configuration
@@ -78,9 +77,9 @@
                   :header "Resource"
                   :accessor :name
                   :width "25%"}
-                 {:id "subnet-cidr"
-                  :header "Subnet CIDR"
-                  :accessor :subnet-cidr
+                 {:id "type"
+                  :header "Type"
+                  :accessor :engine
                   :width "20%"}
                  {:id "vpc-id"
                   :header "VPC ID"

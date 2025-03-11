@@ -6,6 +6,7 @@
             [webapp.connections.views.setup.page-wrapper :as page-wrapper]
             [webapp.onboarding.setup-resource :refer [aws-resources-data-table]]
             [webapp.components.data-table-advance :refer [data-table-advanced]]
+            [reagent.core :as r]
             [webapp.config :as config]))
 
 (def steps
@@ -142,13 +143,21 @@
   (let [resources @(rf/subscribe [:aws-connect/resources])
         selected @(rf/subscribe [:aws-connect/selected-resources])
         assignments @(rf/subscribe [:aws-connect/agent-assignments])
+        connection-names @(rf/subscribe [:aws-connect/connection-names])
         agents @(rf/subscribe [:aws-connect/agents])]
+
+    ;; Initialize connection names with defaults if not already set
+    (when (and (seq resources) (empty? connection-names))
+      (doseq [resource (filter #(contains? selected (:id %)) resources)]
+        (let [default-name (str (:name resource) "-" (:account-id resource))]
+          (rf/dispatch [:aws-connect/set-connection-name (:id resource) default-name]))))
+
     [:> Flex {:direction "column" :align "center" :gap "7" :mb "4" :class "w-full"}
      [:> Box {:class "max-w-[600px] space-y-3"}
       [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
        "Review Selected Resources"]
       [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
-       "Please review your selected AWS database resources and assign an Agent to each connection before proceeding. Agents might be already suggested depending on the environment setup and work to facilitate secure communication between our service and your AWS resources."]
+       "Please review your selected AWS database resources and assign an Agent to each connection before proceeding. You can also customize the connection names."]
 
       [:> Flex {:align "center" :gap "1" :class "text-[--accent-a11] cursor-pointer"}
        [:> Text {:as "a"
@@ -166,8 +175,19 @@
                    :width "30%"}
                   {:id :connection_name
                    :header "Connection Name"
-                   :accessor #(str (:name %) "-" (:account-id %))
-                   :width "30%"}
+                   :width "30%"
+                   :render (fn [_ row]
+                            ;; Get the current connection name or default
+                             (let [resource-id (:id row)
+                                   default-name (str (:name row) "-" (:account-id row))
+                                   current-name (get connection-names resource-id default-name)]
+                               [forms/input
+                                {:value current-name
+                                 :not-margin-bottom? true
+                                 :placeholder "Enter connection name"
+                                 :on-change #(rf/dispatch [:aws-connect/set-connection-name
+                                                           resource-id
+                                                           (-> % .-target .-value)])}]))}
                   {:id :agent
                    :header "Agent"
                    :width "40%"
@@ -259,3 +279,5 @@
                          :credentials (:active? loading)
                          :resources (empty? @(rf/subscribe [:aws-connect/selected-resources]))
                          :review (some empty? (vals @(rf/subscribe [:aws-connect/agent-assignments]))))}}]))
+
+

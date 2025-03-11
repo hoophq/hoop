@@ -14,7 +14,8 @@
                                 :resources {:data nil
                                             :selected nil
                                             :errors nil
-                                            :status nil}
+                                            :status nil
+                                            :connection-names {}}
                                 :agents {:data nil
                                          :assignments nil}})
     ;; Carregar agentes reais
@@ -211,6 +212,7 @@
    (let [selected-resources (get-in db [:aws-connect :resources :selected])
          resources (get-in db [:aws-connect :resources :data])
          agent-assignments (get-in db [:aws-connect :agents :assignments])
+         connection-names (get-in db [:aws-connect :resources :connection-names])
 
          ;; Filtrar apenas os recursos selecionados
          selected-resource-data (filter #(contains? selected-resources (:id %)) resources)]
@@ -219,22 +221,23 @@
               (assoc-in [:aws-connect :status] :creating)
               (assoc-in [:aws-connect :loading :active?] true)
               (assoc-in [:aws-connect :loading :message] "Creating AWS database connections..."))
-      :dispatch [:aws-connect/process-resources selected-resource-data agent-assignments]})))
+      :dispatch [:aws-connect/process-resources selected-resource-data agent-assignments connection-names]})))
 
 (rf/reg-event-fx
  :aws-connect/process-resources
- (fn [{:keys [db]} [_ resources agent-assignments]]
+ (fn [{:keys [db]} [_ resources agent-assignments connection-names]]
    (let [total-resources (count resources)
          dispatch-requests (for [resource resources
                                  :let [agent-id (get agent-assignments (:id resource) "default")
                                        resource-arn (:id resource)
-                                       connection-prefix (str (:name resource) "-")]]
+                                       connection-prefix (or (get connection-names (:id resource))
+                                                             (str (:name resource) "-" (:account-id resource)))]]
                              [:fetch
                               {:method "POST"
                                :uri "/dbroles/jobs"
                                :body {:agent_id agent-id
                                       :aws {:instance_arn resource-arn}
-                                      :connection_prefix_name connection-prefix}
+                                      :connection_prefix_name (str connection-prefix "-")}
                                :on-success #(rf/dispatch [:aws-connect/connection-created-success % resource])
                                :on-failure #(rf/dispatch [:aws-connect/connection-created-failure % resource])}])]
      ;; Inicializar contadores de processamento no db
@@ -399,3 +402,13 @@
  :aws-connect/resources-status
  (fn [db _]
    (get-in db [:aws-connect :resources :status])))
+
+(rf/reg-sub
+ :aws-connect/connection-names
+ (fn [db _]
+   (get-in db [:aws-connect :resources :connection-names])))
+
+(rf/reg-event-db
+ :aws-connect/set-connection-name
+ (fn [db [_ resource-id connection-name]]
+   (assoc-in db [:aws-connect :resources :connection-names resource-id] connection-name)))
