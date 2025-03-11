@@ -1,6 +1,6 @@
 (ns webapp.integrations.aws-connect
   (:require
-   ["@radix-ui/themes" :refer [Badge Box Button Card Container Flex Heading
+   ["@radix-ui/themes" :refer [Badge Box Button Card Flex Heading
                                Spinner Table Text]]
    ["lucide-react" :refer [AlertCircle Cloud RefreshCw]]
    [clojure.string :as cs]
@@ -10,12 +10,7 @@
    [webapp.events.jobs]
    [webapp.integrations.events]))
 
-;; -------------------------
-;; Formatação dos dados de jobs
-;; -------------------------
-
 (defn transform-job-data [job]
-  "Transforma um processo de descoberta da API para o formato esperado pela tabela hierárquica"
   (let [phase (get-in job [:status :phase])
         message (get-in job [:status :message])
         db-arn (get-in job [:spec :db_arn])
@@ -49,7 +44,6 @@
 
 (defn transform-jobs-to-hierarchical [jobs]
   (let [transformed (map transform-job-data jobs)
-        ;; Ordenar por created_at do mais novo para o mais antigo
         sorted (sort-by :created_at #(compare %2 %1) transformed)]
     sorted))
 
@@ -70,10 +64,6 @@
     []
     jobs)))
 
-;; -------------------------
-;; Components
-;; -------------------------
-
 (defn job-status-badge [status]
   (case status
     "running" [:> Badge {:color "orange" :size "1"} "In Progress"]
@@ -92,7 +82,6 @@
 
 (defn format-job-details [row]
   [:> Box {:class "p-4 space-y-3"}
-   ;; Cabeçalho com informações gerais do processo
    [:> Flex {:direction "column" :gap "2"}
     [:> Heading {:as "h4" :size "3"} (str (:job_type row) " - " (:id row))]
     [:> Text {:as "p" :size "2" :color "gray"}
@@ -112,7 +101,6 @@
            [:> Text {:color "gray"} (name key)]
            [:> Text (str value)]])]]])
 
-   ;; Resultados de subtarefas
    (when (seq (:result row))
      [:> Card {:size "1" :class "mt-2"}
       [:> Flex {:direction "column" :gap "1" :class "p-3"}
@@ -143,7 +131,6 @@
             flattened-jobs @(rf/subscribe [:integrations/flattened-aws-connect-jobs])
             running? @(rf/subscribe [:jobs/aws-connect-running?])]
 
-        ;; Ignorar o valor do contador, mas usar para forçar atualizações
         @update-counter
 
         [:> Box {:class "w-full"}
@@ -184,7 +171,6 @@
                                         (if (contains? current id)
                                           (disj current id)
                                           (conj current id))))
-                              ;; Incrementar o contador para forçar atualização
                                (swap! update-counter inc))
            :row-error (fn [row]
                         (when (= (:status row) "failed")
@@ -208,10 +194,6 @@
                 :on-click (fn []
                             (rf/dispatch [:navigate :integrations-aws-connect-setup]))}
      "Discover AWS Databases"]]])
-
-;; -------------------------
-;; Main component
-;; -------------------------
 
 (defn main []
   (r/create-class

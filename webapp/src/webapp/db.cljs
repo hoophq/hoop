@@ -11,8 +11,8 @@
    :connections->connection-connected {:status :loading, :data nil}
    :connections->updating-connection {:loading true, :data []}
    :aws-connect {:status :not-started
-                 :current-step :credentials  ; :credentials, :accounts, :resources, :review
-                 :credentials {:type nil     ; :iam-role or :iam-user
+                 :current-step :credentials
+                 :credentials {:type nil
                                :iam-role nil
                                :iam-user {:access-key-id nil
                                           :secret-access-key nil

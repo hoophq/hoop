@@ -1,8 +1,8 @@
 (ns webapp.onboarding.aws-connect
   (:require [re-frame.core :as rf]
-            ["@radix-ui/themes" :refer [Badge Box Card Spinner Flex Heading Separator Text Callout Button]]
+            ["@radix-ui/themes" :refer [Badge Box Card Spinner Flex Heading Separator Text Callout]]
             [webapp.components.forms :as forms]
-            ["lucide-react" :refer [Check Info ArrowUpRight X AlertCircle ExternalLink]]
+            ["lucide-react" :refer [Check Info ArrowUpRight X AlertCircle]]
             [webapp.connections.views.setup.page-wrapper :as page-wrapper]
             [webapp.onboarding.setup-resource :refer [aws-resources-data-table]]
             [webapp.components.data-table-advance :refer [data-table-advanced]]
@@ -230,12 +230,10 @@
                                :full-width? true
                                :on-change #(rf/dispatch [:aws-connect/set-agent-assignment (:id row) %])
                                :options (if (seq agents)
-                                          ;; Usar agentes reais da API
                                           (map (fn [agent]
                                                  {:value (:id agent)
                                                   :text (:name agent)})
                                                agents)
-                                          ;; Fallback para opções padrão se não houver agentes
                                           [])}])}]
         :data (filter #(contains? selected (:id %)) resources)
         :key-fn :id
@@ -243,14 +241,11 @@
         :empty-state "No resources selected yet"}]]]))
 
 (defn creation-status-step []
-  ;; Criar um componente com estado local usando reagent
   (let [expanded-rows (r/atom #{})
-        update-counter (r/atom 0)] ;; Contador para forçar atualizações de UI
+        update-counter (r/atom 0)]
 
-    ;; Componente reativo que será atualizado quando expanded-rows ou update-counter mudarem
     (fn []
       (let [creation-status @(rf/subscribe [:aws-connect/creation-status])
-            all-completed? (:all-completed? creation-status)
             connections (:connections creation-status)
             connections-data (for [[id conn] (seq connections)]
                                (let [conn-data (assoc (:resource conn)
@@ -268,7 +263,6 @@
                                              3))
                                          connections-data))]
 
-        ;; Ignorar o valor mas usar para forçar re-renderização
         @update-counter
 
         [:> Flex {:direction "column" :align "center" :gap "7" :mb "4" :class "w-full"}
@@ -314,19 +308,15 @@
             :key-fn :id
             :sticky-header? true
 
-            ;; Propriedades de expansão para erros
             :row-expandable? (fn [row]
-                               ;; Só expande se tiver erro
                                (let [has-error (boolean (:connection-error row))]
                                  has-error))
 
             :row-expanded? (fn [row]
-                             ;; Verificar se está na lista de expandidos
                              (let [is-expanded (contains? @expanded-rows (:id row))]
                                is-expanded))
 
             :on-toggle-expand (fn [id]
-                                ;; Alternar estado de expansão e forçar atualização
                                 (swap! expanded-rows (fn [s]
                                                        (if (contains? s id)
                                                          (disj s id)
@@ -334,12 +324,10 @@
                                                          (conj s id))))
                                 (swap! update-counter inc))
 
-            ;; Função que retorna o objeto de erro
             :row-error (fn [row]
                          (when-let [error (:connection-error row)]
                            {:message error}))
 
-            ;; Personalizar o indicador de erro
             :error-indicator (fn []
                                [:> AlertCircle {:size 16 :class "text-red-500"}])
 
@@ -370,13 +358,10 @@
         [:> Box {:class "min-h-screen bg-gray-1"}
          [:> Box {:class "mx-auto max-w-[800px] p-6 space-y-7"}
           [:> Box {:class "place-items-center space-y-7"}
-       ;; Header
            [aws-connect-header]
-       ;; Progress steps
            [:> Flex {:align "center" :justify "center" :mb "8" :class "w-full"}
             (for [{:keys [id number title]} (if (= current-step :creation-status)
                                               steps
-                                            ;; Only show first 3 steps normally
                                               (take 3 steps))]
               ^{:key id}
               [:> Flex {:align "center"}
@@ -404,7 +389,6 @@
              [credentials-step])]]]
         :footer-props
         (cond
-        ;; Mostrar o botão de navegação quando todas as conexões estiverem completas
           (and (= current-step :creation-status) all-completed?)
           {:form-type form-type
            :back-text nil
@@ -413,11 +397,9 @@
            :on-next #(rf/dispatch [:navigate :integrations-aws-connect])
            :next-disabled? false}
 
-        ;; Não mostrar footer durante o processo de criação
           (= current-step :creation-status)
           nil
 
-        ;; Footer normal para outros passos
           :else
           {:form-type form-type
            :back-text (case current-step

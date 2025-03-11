@@ -17,7 +17,6 @@
      "Logout"]]
    [setup/main :onboarding]])
 
-;; Status badge component
 (defn status-badge [status]
   [:> Badge {:color (case status
                       ;; Positive states/available
@@ -61,18 +60,16 @@
              :variant "soft"}
    status])
 
-;; New implementation of AWS resources data table using proper patterns
 (defn aws-resources-data-table []
   (let [resources @(rf/subscribe [:aws-connect/resources])
         rf-selected @(rf/subscribe [:aws-connect/selected-resources])
         rf-errors @(rf/subscribe [:aws-connect/resources-errors])
         resources-status @(rf/subscribe [:aws-connect/resources-status])
         api-error @(rf/subscribe [:aws-connect/resources-api-error])
-        ;; Create local reagent atoms for state management
-        selected-ids (r/atom (or rf-selected #{}))
-        update-counter (r/atom 0)  ;; Counter to force re-renders
 
-        ;; Define columns configuration
+        selected-ids (r/atom (or rf-selected #{}))
+        update-counter (r/atom 0)
+
         columns [{:id "name"
                   :header "Resource"
                   :accessor :name
@@ -91,18 +88,14 @@
                   :accessor :status
                   :render (fn [value _] [status-badge value])}]]
 
-    ;; Watch for changes to selected-ids and dispatch to re-frame
     (add-watch selected-ids :selected-resources-sync
                (fn [_ _ _ new-value]
                  (rf/dispatch [:aws-connect/set-selected-resources new-value])))
 
-    ;; Function component to render
     (fn []
-      ;; Use update-counter to force re-renders on state changes
       @update-counter
 
       (if (= resources-status :error)
-        ;; Show error message using a simpler pattern like in connections_list.cljs
         [:> Box {:class "p-5"}
          [:> Callout.Root {:color "red"}
           [:> Callout.Icon
@@ -110,7 +103,6 @@
           [:> Callout.Text
            (:message api-error)]]]
 
-        ;; Show resources table when API call succeeded
         [data-table-advanced
          {:columns columns
           :data resources

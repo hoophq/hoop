@@ -41,7 +41,6 @@
       (let [on-click-out (if (:custom-on-click-out @modal)
                            #((:custom-on-click-out @modal))
                            #(rf/dispatch [:modal->close]))]
-        (println "modal-radix" @modal)
         (if (:open? @modal)
           [:> Box {:id (:id @modal)}
            [:> Dialog.Root {:open (:open? @modal)

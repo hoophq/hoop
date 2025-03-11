@@ -183,7 +183,6 @@
                            :on-click (fn [e]
                                       ;; Prevent event propagation to avoid interference with selection
                                        (.stopPropagation e)
-                                       (js/console.log (str "Clicked expand button for: " row-id " current expanded state: " expanded?))
                                        (on-toggle-expand row-id))}
                   (if expanded?
                     [:> ChevronDown {:size 16}]
@@ -223,7 +222,6 @@
                            :on-click (fn [e]
                                       ;; Prevent event propagation to avoid interference with selection
                                        (.stopPropagation e)
-                                       (js/console.log (str "Clicked error expand button for: " row-id " current expanded state: " expanded?))
                                        (on-toggle-expand row-id))}
                   (if expanded?
                     [:> ChevronDown {:size 16}]
