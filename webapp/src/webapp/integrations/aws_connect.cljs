@@ -8,34 +8,7 @@
    [reagent.core :as r]
    [webapp.components.data-table-advance :refer [data-table-advanced]]
    [webapp.events.jobs]
-   [webapp.integrations.events]
-   [webapp.onboarding.aws-connect :as onboarding-aws-connect]))
-
-;; -------------------------
-;; Events
-;; -------------------------
-
-(rf/reg-event-fx
- :integrations/aws-connect-start
- (fn [_ _]
-   {:fx [[:dispatch [:aws-connect/initialize-state]]
-         [:dispatch [:jobs/start-aws-connect-polling]]
-         [:dispatch [:integrations/show-aws-connect-flow]]]}))
-
-(rf/reg-event-db
- :integrations/show-aws-connect-flow
- (fn [db _]
-   (assoc-in db [:integrations :aws-connect :show-flow?] true)))
-
-(rf/reg-event-db
- :integrations/hide-aws-connect-flow
- (fn [db _]
-   (assoc-in db [:integrations :aws-connect :show-flow?] false)))
-
-(rf/reg-sub
- :integrations/show-aws-connect-flow?
- (fn [db]
-   (get-in db [:integrations :aws-connect :show-flow?] false)))
+   [webapp.integrations.events]))
 
 ;; -------------------------
 ;; Formatação dos dados de jobs
@@ -233,32 +206,13 @@
      "Connect to your AWS environment to automatically discover and configure your database resources. This automated process will scan your AWS account for database instances and create connections in Hoop, saving you time and ensuring proper configuration."]
     [:> Button {:size "3"
                 :class "mt-2"
-                :on-click (fn [e]
-                            (rf/dispatch [:integrations/aws-connect-start])
-                            (.stopPropagation e)
-                            (.preventDefault e))}
+                :on-click (fn []
+                            (rf/dispatch [:navigate :integrations-aws-connect-setup]))}
      "Discover AWS Databases"]]])
 
 ;; -------------------------
 ;; Main component
 ;; -------------------------
-
-(defn main-content []
-  (let [show-aws-connect-flow? @(rf/subscribe [:integrations/show-aws-connect-flow?])]
-    (if show-aws-connect-flow?
-      ;; Quando o fluxo de AWS Connect está ativo, mostramos APENAS o componente de onboarding
-      [onboarding-aws-connect/main]
-
-      ;; Quando o fluxo não está ativo, mostramos o layout normal com botão e tabela
-      [:> Container {:size "3" :class "py-8"}
-       [:> Flex {:direction "column" :align "start" :gap "6" :width "100%"}
-        [:> Heading {:as "h1" :size "6"} "AWS Connect"]
-
-        ;; Botão de início
-        [aws-connect-button]
-
-        ;; Lista de processos de descoberta
-        [jobs-table-component]]])))
 
 (defn main []
   (r/create-class
@@ -274,13 +228,9 @@
 
     :reagent-render
     (fn []
-      [main-content])}))
+      [:> Flex {:direction "column" :align "start" :gap "6" :width "100%" :height "100%"}
+       [aws-connect-button]
+       [jobs-table-component]])}))
 
 (defn panel []
   [main])
-
-;; Adicionar um manipulador para o evento de navegação quando necessário
-(rf/reg-event-fx
- :onboarding/back
- (fn [_ _]
-   {:fx [[:dispatch [:integrations/hide-aws-connect-flow]]]}))

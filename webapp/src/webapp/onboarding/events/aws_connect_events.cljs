@@ -4,7 +4,7 @@
 ;; Initialize AWS Connect state
 (rf/reg-event-fx
  :aws-connect/initialize-state
- (fn [db _]
+ (fn [{:keys [db]} _]
    {:db (assoc db :aws-connect {:current-step :credentials
                                 :status nil
                                 :loading {:active? false

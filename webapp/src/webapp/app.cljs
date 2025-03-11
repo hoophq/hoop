@@ -15,8 +15,6 @@
    [webapp.auth.local.register :as local-auth-register]
    [webapp.auth.views.logout :as logout]
    [webapp.auth.views.signup :as signup]
-   [webapp.integrations.aws-connect :as aws-connect-page]
-   [webapp.integrations.events]
    [webapp.components.dialog :as dialog]
    [webapp.components.draggable-card :as draggable-card]
    [webapp.components.headings :as h]
@@ -62,9 +60,12 @@
    [webapp.events.users]
    [webapp.guardrails.create-update-form :as guardrail-create-update]
    [webapp.guardrails.main :as guardrails]
+   [webapp.integrations.aws-connect :as aws-connect-page]
+   [webapp.integrations.events]
    [webapp.jira-templates.create-update-form :as jira-templates-create-update]
    [webapp.jira-templates.main :as jira-templates]
    [webapp.onboarding.aws-connect :as aws-connect]
+   [webapp.onboarding.aws-connect :as onboarding-aws-connect]
    [webapp.onboarding.events.aws-connect-events]
    [webapp.onboarding.events.effects]
    [webapp.onboarding.main :as onboarding]
@@ -205,9 +206,17 @@
 
 (defmethod routes/panels :integrations-aws-connect-panel []
   [layout :application-hoop
-   [:div {:class "bg-gray-1 min-h-full h-max"}
+   [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
     [routes/wrap-admin-only
-     [aws-connect-page/panel]]]])
+     [:<>
+      [h/h2 "AWS Connect" {:class "mb-6"}]
+      [aws-connect-page/panel]]]]])
+
+(defmethod routes/panels :integrations-aws-connect-setup-panel []
+  [layout :application-hoop
+   [:div {:class "bg-gray-1 min-h-full h-full"}
+    [routes/wrap-admin-only
+     [onboarding-aws-connect/main :create]]]])
 
 (defmethod routes/panels :upgrade-plan-panel []
   (rf/dispatch [:destroy-page-loader])

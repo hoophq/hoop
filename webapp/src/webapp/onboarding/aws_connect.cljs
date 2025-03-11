@@ -370,84 +370,88 @@
      "Follow the steps to setup your AWS resources."]]])
 
 (defn main []
-  (let [current-step @(rf/subscribe [:aws-connect/current-step])
-        loading @(rf/subscribe [:aws-connect/loading])
-        creation-status @(rf/subscribe [:aws-connect/creation-status])
-        all-completed? (and creation-status (:all-completed? creation-status))]
-    [page-wrapper/main
-     {:children
-      [:> Box {:class "min-h-screen bg-gray-1"}
-       [:> Box {:class "mx-auto max-w-[800px] p-6 space-y-7"}
-        [:> Box {:class "place-items-center space-y-7"}
+  (rf/dispatch [:aws-connect/initialize-state])
+
+  (fn [form-type]
+    (let [current-step @(rf/subscribe [:aws-connect/current-step])
+          loading @(rf/subscribe [:aws-connect/loading])
+          creation-status @(rf/subscribe [:aws-connect/creation-status])
+          all-completed? (and creation-status (:all-completed? creation-status))]
+
+      [page-wrapper/main
+       {:children
+        [:> Box {:class "min-h-screen bg-gray-1"}
+         [:> Box {:class "mx-auto max-w-[800px] p-6 space-y-7"}
+          [:> Box {:class "place-items-center space-y-7"}
        ;; Header
-         [aws-connect-header]
+           [aws-connect-header]
        ;; Progress steps
-         [:> Flex {:align "center" :justify "center" :mb "8" :class "w-full"}
-          (for [{:keys [id number title]} (if (= current-step :creation-status)
-                                            steps
+           [:> Flex {:align "center" :justify "center" :mb "8" :class "w-full"}
+            (for [{:keys [id number title]} (if (= current-step :creation-status)
+                                              steps
                                             ;; Only show first 3 steps normally
-                                            (take 3 steps))]
-            ^{:key id}
-            [:> Flex {:align "center"}
-             [:> Flex {:align "center" :gap "1"}
-              [step-number {:number number
-                            :active? (= id current-step)
-                            :completed? (> (.indexOf [:credentials :resources :review :creation-status] current-step)
-                                           (.indexOf [:credentials :resources :review :creation-status] id))}]
-              [step-title {:title title
-                           :active? (= id current-step)
-                           :completed? (> (.indexOf [:credentials :resources :review :creation-status] current-step)
-                                          (.indexOf [:credentials :resources :review :creation-status] id))}]
-              (when (> (.indexOf [:credentials :resources :review :creation-status] current-step)
-                       (.indexOf [:credentials :resources :review :creation-status] id))
-                [step-checkmark])]
-             (when-not (= id (if (= current-step :creation-status) :creation-status :review))
-               [:> Box {:class "px-2"}
-                [:> Separator {:size "1" :orientation "horizontal" :class "w-4"}]])])]
+                                              (take 3 steps))]
+              ^{:key id}
+              [:> Flex {:align "center"}
+               [:> Flex {:align "center" :gap "1"}
+                [step-number {:number number
+                              :active? (= id current-step)
+                              :completed? (> (.indexOf [:credentials :resources :review :creation-status] current-step)
+                                             (.indexOf [:credentials :resources :review :creation-status] id))}]
+                [step-title {:title title
+                             :active? (= id current-step)
+                             :completed? (> (.indexOf [:credentials :resources :review :creation-status] current-step)
+                                            (.indexOf [:credentials :resources :review :creation-status] id))}]
+                (when (> (.indexOf [:credentials :resources :review :creation-status] current-step)
+                         (.indexOf [:credentials :resources :review :creation-status] id))
+                  [step-checkmark])]
+               (when-not (= id (if (= current-step :creation-status) :creation-status :review))
+                 [:> Box {:class "px-2"}
+                  [:> Separator {:size "1" :orientation "horizontal" :class "w-4"}]])])]
        ;; Current step content
-         (case current-step
-           :credentials [credentials-step]
-           :resources [resources-step]
-           :review [review-step]
-           :creation-status [creation-status-step]
-           [credentials-step])]]]
-      :footer-props
-      (cond
+           (case current-step
+             :credentials [credentials-step]
+             :resources [resources-step]
+             :review [review-step]
+             :creation-status [creation-status-step]
+             [credentials-step])]]]
+        :footer-props
+        (cond
         ;; Mostrar o botão de navegação quando todas as conexões estiverem completas
-        (and (= current-step :creation-status) all-completed?)
-        {:form-type :onboarding
-         :back-text nil
-         :next-text "Go to Processes List"
-         :on-back nil
-         :on-next #(rf/dispatch [:navigate :integrations :aws-connect])
-         :next-disabled? false}
+          (and (= current-step :creation-status) all-completed?)
+          {:form-type form-type
+           :back-text nil
+           :next-text "Go to Processes List"
+           :on-back nil
+           :on-next #(rf/dispatch [:navigate :integrations :aws-connect])
+           :next-disabled? false}
 
         ;; Não mostrar footer durante o processo de criação
-        (= current-step :creation-status)
-        nil
+          (= current-step :creation-status)
+          nil
 
         ;; Footer normal para outros passos
-        :else
-        {:form-type :onboarding
-         :back-text (case current-step
-                      :credentials "Back"
-                      :resources "Back to Credentials"
-                      :review "Back to Resources")
-         :next-text (case current-step
-                      :credentials "Next: Resources"
-                      :resources "Next: Review"
-                      :review "Confirm and Create")
-         :on-back #(case current-step
-                     :credentials (rf/dispatch [:onboarding/back])
-                     :resources (rf/dispatch [:aws-connect/set-current-step :credentials])
-                     :review (rf/dispatch [:aws-connect/set-current-step :resources]))
-         :on-next #(case current-step
-                     :credentials (rf/dispatch [:aws-connect/validate-credentials])
-                     :resources (rf/dispatch [:aws-connect/set-current-step :review])
-                     :review (rf/dispatch [:aws-connect/create-connections]))
-         :next-disabled? (case current-step
-                           :credentials (:active? loading)
-                           :resources (empty? @(rf/subscribe [:aws-connect/selected-resources]))
-                           :review (some empty? (vals @(rf/subscribe [:aws-connect/agent-assignments]))))})}]))
+          :else
+          {:form-type form-type
+           :back-text (case current-step
+                        :credentials "Back"
+                        :resources "Back to Credentials"
+                        :review "Back to Resources")
+           :next-text (case current-step
+                        :credentials "Next: Resources"
+                        :resources "Next: Review"
+                        :review "Confirm and Create")
+           :on-back #(case current-step
+                       :credentials (.back js/history)
+                       :resources (rf/dispatch [:aws-connect/set-current-step :credentials])
+                       :review (rf/dispatch [:aws-connect/set-current-step :resources]))
+           :on-next #(case current-step
+                       :credentials (rf/dispatch [:aws-connect/validate-credentials])
+                       :resources (rf/dispatch [:aws-connect/set-current-step :review])
+                       :review (rf/dispatch [:aws-connect/create-connections]))
+           :next-disabled? (case current-step
+                             :credentials (:active? loading)
+                             :resources (empty? @(rf/subscribe [:aws-connect/selected-resources]))
+                             :review (some empty? (vals @(rf/subscribe [:aws-connect/agent-assignments]))))})}])))
 
 
