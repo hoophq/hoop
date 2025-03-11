@@ -209,7 +209,7 @@
 
     :reagent-render
     (fn []
-      [:> Flex {:direction "column" :align "start" :gap "6" :width "100%" :height "100%"}
+      [:> Box {:class "space-y-7"}
        [aws-connect-button]
        [jobs-table-component]])}))
 
