@@ -1,8 +1,8 @@
 (ns webapp.onboarding.aws-connect
   (:require [re-frame.core :as rf]
-            ["@radix-ui/themes" :refer [Badge Box Card Spinner Flex Heading Separator Text Callout]]
+            ["@radix-ui/themes" :refer [Badge Box Card Spinner Flex Heading Separator Text Callout Button]]
             [webapp.components.forms :as forms]
-            ["lucide-react" :refer [Check Info ArrowUpRight]]
+            ["lucide-react" :refer [Check Info ArrowUpRight X AlertCircle ExternalLink]]
             [webapp.connections.views.setup.page-wrapper :as page-wrapper]
             [webapp.onboarding.setup-resource :refer [aws-resources-data-table]]
             [webapp.components.data-table-advance :refer [data-table-advanced]]
@@ -18,7 +18,42 @@
     :title "Resources"}
    {:id :review
     :number 3
-    :title "Review and Create"}])
+    :title "Review and Create"}
+   {:id :creation-status
+    :number 4
+    :title "Status"}])
+
+(def aws-regions
+  [{:value "us-east-1" :text "us-east-1"}
+   {:value "us-east-2" :text "us-east-2"}
+   {:value "us-west-1" :text "us-west-1"}
+   {:value "us-west-2" :text "us-west-2"}
+   {:value "af-south-1" :text "af-south-1"}
+   {:value "ap-east-1" :text "ap-east-1"}
+   {:value "ap-south-1" :text "ap-south-1"}
+   {:value "ap-northeast-1" :text "ap-northeast-1"}
+   {:value "ap-northeast-2" :text "ap-northeast-2"}
+   {:value "ap-northeast-3" :text "ap-northeast-3"}
+   {:value "ap-southeast-1" :text "ap-southeast-1"}
+   {:value "ap-southeast-2" :text "ap-southeast-2"}
+   {:value "ap-southeast-3" :text "ap-southeast-3"}
+   {:value "ap-southeast-4" :text "ap-southeast-4"}
+   {:value "ca-central-1" :text "ca-central-1"}
+   {:value "ca-west-1" :text "ca-west-1"}
+   {:value "eu-central-1" :text "eu-central-1"}
+   {:value "eu-central-2" :text "eu-central-2"}
+   {:value "eu-west-1" :text "eu-west-1"}
+   {:value "eu-west-2" :text "eu-west-2"}
+   {:value "eu-west-3" :text "eu-west-3"}
+   {:value "eu-south-1" :text "eu-south-1"}
+   {:value "eu-south-2" :text "eu-south-2"}
+   {:value "eu-north-1" :text "eu-north-1"}
+   {:value "il-central-1" :text "il-central-1"}
+   {:value "me-central-1" :text "me-central-1"}
+   {:value "me-south-1" :text "me-south-1"}
+   {:value "sa-east-1" :text "sa-east-1"}
+   {:value "us-gov-east-1" :text "us-gov-east-1"}
+   {:value "us-gov-west-1" :text "us-gov-west-1"}])
 
 (defn- step-number [{:keys [number active? completed?]}]
   [:> Badge
@@ -101,10 +136,7 @@
         :full-width? true
         :selected (or (get-in credentials [:iam-user :region]) "")
         :on-change #(rf/dispatch [:aws-connect/set-iam-user-credentials :region %])
-        :options [{:value "us-east-1" :text "US East (N. Virginia)"}
-                  {:value "us-west-2" :text "US West (Oregon)"}
-                  {:value "eu-west-1" :text "EU (Ireland)"}
-                  {:value "ap-southeast-1" :text "Asia Pacific (Singapore)"}]}]
+        :options aws-regions}]
 
       [forms/textarea
        {:label "Session Token (Optional)"
@@ -210,6 +242,122 @@
         :sticky-header? true
         :empty-state "No resources selected yet"}]]]))
 
+(defn creation-status-step []
+  ;; Criar um componente com estado local usando reagent
+  (let [expanded-rows (r/atom #{})
+        update-counter (r/atom 0)] ;; Contador para forçar atualizações de UI
+
+    ;; Componente reativo que será atualizado quando expanded-rows ou update-counter mudarem
+    (fn []
+      (let [creation-status @(rf/subscribe [:aws-connect/creation-status])
+            all-completed? (:all-completed? creation-status)
+            connections (:connections creation-status)
+            connections-data (for [[id conn] (seq connections)]
+                               (let [conn-data (assoc (:resource conn)
+                                                      :id id
+                                                      :connection-name (:name conn)
+                                                      :connection-status (:status conn)
+                                                      :connection-error (:error conn))]
+                                 (js/console.log "Connection data for" id ":" (clj->js conn-data))
+                                 conn-data))
+            sorted-connections (vec
+                                (sort-by (fn [conn]
+                                           (case (:connection-status conn)
+                                             "pending" 0
+                                             "failure" 1
+                                             "success" 2
+                                             3))
+                                         connections-data))]
+
+        ;; Ignorar o valor mas usar para forçar re-renderização
+        @update-counter
+        (js/console.log "Current expanded rows:" (clj->js @expanded-rows))
+        (js/console.log "Update counter:" @update-counter)
+
+        [:> Flex {:direction "column" :align "center" :gap "7" :mb "4" :class "w-full"}
+         [:> Box {:class "max-w-[600px] space-y-3"}
+          [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+           "Creating Connections"]
+          [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+           "Please wait while we create your AWS database connections. This process may take a few minutes."]]
+
+         [:> Box {:class "w-full"}
+          [data-table-advanced
+           {:columns [{:id "connection-name"
+                       :header "Connection Name"
+                       :accessor :connection-name
+                       :width "40%"}
+                      {:id "engine"
+                       :header "Type"
+                       :accessor :engine
+                       :width "20%"}
+                      {:id "status"
+                       :header "Status"
+                       :width "20%"
+                       :render (fn [_ row]
+                                 [:> Flex {:align "center" :gap "2"}
+                                  [:> Box {:class "w-6"}
+                                   (case (:connection-status row)
+                                     "pending" [:> Spinner {:size "1"}]
+                                     "success" [:> Check {:size 18 :class "text-green-500"}]
+                                     "failure" [:> X {:size 18 :class "text-red-500"}]
+                                     [:> AlertCircle {:size 18 :class "text-gray-500"}])]
+                                  [:> Badge {:color (case (:connection-status row)
+                                                      "pending" "blue"
+                                                      "success" "green"
+                                                      "failure" "red"
+                                                      "gray")
+                                             :variant "soft"}
+                                   (case (:connection-status row)
+                                     "pending" "Creating..."
+                                     "success" "Created"
+                                     "failure" "Failed"
+                                     (:status row))]])}]
+            :data sorted-connections
+            :key-fn :id
+            :sticky-header? true
+
+            ;; Propriedades de expansão para erros
+            :row-expandable? (fn [row]
+                               ;; Só expande se tiver erro
+                               (let [has-error (boolean (:connection-error row))]
+                                 (js/console.log "Row expandable?" (:id row) has-error (:connection-error row))
+                                 has-error))
+
+            :row-expanded? (fn [row]
+                             ;; Verificar se está na lista de expandidos
+                             (let [is-expanded (contains? @expanded-rows (:id row))]
+                               (js/console.log "Row expanded?" (:id row) is-expanded)
+                               is-expanded))
+
+            :on-toggle-expand (fn [id]
+                                ;; Alternar estado de expansão e forçar atualização
+                                (js/console.log "Toggling expansion for:" id)
+                                (swap! expanded-rows (fn [s]
+                                                       (if (contains? s id)
+                                                         (do
+                                                           (js/console.log "Removing" id "from expanded set")
+                                                           (disj s id))
+                                                         (do
+                                                           (js/console.log "Adding" id "to expanded set")
+                                                           (conj s id)))))
+                                (swap! update-counter inc)
+                                (js/console.log "Updated expanded rows:" (clj->js @expanded-rows))
+                                (js/console.log "Updated counter:" @update-counter))
+
+            ;; Função que retorna o objeto de erro
+            :row-error (fn [row]
+                         (when-let [error (:connection-error row)]
+                           (js/console.log "Row error for" (:id row) ":" (clj->js error))
+                           ;; Retornar o objeto de erro no formato que o componente espera
+                           {:message error}))
+
+            ;; Personalizar o indicador de erro
+            :error-indicator (fn []
+                               [:> AlertCircle {:size 16 :class "text-red-500"}])
+
+            :empty-state "No connections are being created"}]]]))))
+
 (defn aws-connect-header []
   [:<>
    [:> Box
@@ -223,7 +371,9 @@
 
 (defn main []
   (let [current-step @(rf/subscribe [:aws-connect/current-step])
-        loading @(rf/subscribe [:aws-connect/loading])]
+        loading @(rf/subscribe [:aws-connect/loading])
+        creation-status @(rf/subscribe [:aws-connect/creation-status])
+        all-completed? (and creation-status (:all-completed? creation-status))]
     [page-wrapper/main
      {:children
       [:> Box {:class "min-h-screen bg-gray-1"}
@@ -233,22 +383,25 @@
          [aws-connect-header]
        ;; Progress steps
          [:> Flex {:align "center" :justify "center" :mb "8" :class "w-full"}
-          (for [{:keys [id number title]} steps]
+          (for [{:keys [id number title]} (if (= current-step :creation-status)
+                                            steps
+                                            ;; Only show first 3 steps normally
+                                            (take 3 steps))]
             ^{:key id}
             [:> Flex {:align "center"}
              [:> Flex {:align "center" :gap "1"}
               [step-number {:number number
                             :active? (= id current-step)
-                            :completed? (> (.indexOf [:credentials :resources :review] current-step)
-                                           (.indexOf [:credentials :resources :review] id))}]
+                            :completed? (> (.indexOf [:credentials :resources :review :creation-status] current-step)
+                                           (.indexOf [:credentials :resources :review :creation-status] id))}]
               [step-title {:title title
                            :active? (= id current-step)
-                           :completed? (> (.indexOf [:credentials :resources :review] current-step)
-                                          (.indexOf [:credentials :resources :review] id))}]
-              (when (> (.indexOf [:credentials :resources :review] current-step)
-                       (.indexOf [:credentials :resources :review] id))
+                           :completed? (> (.indexOf [:credentials :resources :review :creation-status] current-step)
+                                          (.indexOf [:credentials :resources :review :creation-status] id))}]
+              (when (> (.indexOf [:credentials :resources :review :creation-status] current-step)
+                       (.indexOf [:credentials :resources :review :creation-status] id))
                 [step-checkmark])]
-             (when-not (= id :review)
+             (when-not (= id (if (= current-step :creation-status) :creation-status :review))
                [:> Box {:class "px-2"}
                 [:> Separator {:size "1" :orientation "horizontal" :class "w-4"}]])])]
        ;; Current step content
@@ -256,28 +409,45 @@
            :credentials [credentials-step]
            :resources [resources-step]
            :review [review-step]
+           :creation-status [creation-status-step]
            [credentials-step])]]]
       :footer-props
-      {:form-type :onboarding
-       :back-text (case current-step
-                    :credentials "Back"
-                    :resources "Back to Credentials"
-                    :review "Back to Resources")
-       :next-text (case current-step
-                    :credentials "Next: Resources"
-                    :resources "Next: Review"
-                    :review "Confirm and Create")
-       :on-back #(case current-step
-                   :credentials (rf/dispatch [:onboarding/back])
-                   :resources (rf/dispatch [:aws-connect/set-current-step :credentials])
-                   :review (rf/dispatch [:aws-connect/set-current-step :resources]))
-       :on-next #(case current-step
-                   :credentials (rf/dispatch [:aws-connect/validate-credentials])
-                   :resources (rf/dispatch [:aws-connect/set-current-step :review])
-                   :review (rf/dispatch [:aws-connect/create-connections]))
-       :next-disabled? (case current-step
-                         :credentials (:active? loading)
-                         :resources (empty? @(rf/subscribe [:aws-connect/selected-resources]))
-                         :review (some empty? (vals @(rf/subscribe [:aws-connect/agent-assignments]))))}}]))
+      (cond
+        ;; Mostrar o botão de navegação quando todas as conexões estiverem completas
+        (and (= current-step :creation-status) all-completed?)
+        {:form-type :onboarding
+         :back-text nil
+         :next-text "Go to Processes List"
+         :on-back nil
+         :on-next #(rf/dispatch [:navigate :integrations :aws-connect])
+         :next-disabled? false}
+
+        ;; Não mostrar footer durante o processo de criação
+        (= current-step :creation-status)
+        nil
+
+        ;; Footer normal para outros passos
+        :else
+        {:form-type :onboarding
+         :back-text (case current-step
+                      :credentials "Back"
+                      :resources "Back to Credentials"
+                      :review "Back to Resources")
+         :next-text (case current-step
+                      :credentials "Next: Resources"
+                      :resources "Next: Review"
+                      :review "Confirm and Create")
+         :on-back #(case current-step
+                     :credentials (rf/dispatch [:onboarding/back])
+                     :resources (rf/dispatch [:aws-connect/set-current-step :credentials])
+                     :review (rf/dispatch [:aws-connect/set-current-step :resources]))
+         :on-next #(case current-step
+                     :credentials (rf/dispatch [:aws-connect/validate-credentials])
+                     :resources (rf/dispatch [:aws-connect/set-current-step :review])
+                     :review (rf/dispatch [:aws-connect/create-connections]))
+         :next-disabled? (case current-step
+                           :credentials (:active? loading)
+                           :resources (empty? @(rf/subscribe [:aws-connect/selected-resources]))
+                           :review (some empty? (vals @(rf/subscribe [:aws-connect/agent-assignments]))))})}]))
 
 

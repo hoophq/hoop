@@ -15,6 +15,8 @@
    [webapp.auth.local.register :as local-auth-register]
    [webapp.auth.views.logout :as logout]
    [webapp.auth.views.signup :as signup]
+   [webapp.integrations.aws-connect :as aws-connect-page]
+   [webapp.integrations.events]
    [webapp.components.dialog :as dialog]
    [webapp.components.draggable-card :as draggable-card]
    [webapp.components.headings :as h]
@@ -200,6 +202,12 @@
 
 (defmethod routes/panels :onboarding-setup-resource-panel []
   [layout :auth [onboarding-setup-resource/main]])
+
+(defmethod routes/panels :integrations-aws-connect-panel []
+  [layout :application-hoop
+   [:div {:class "bg-gray-1 min-h-full h-max"}
+    [routes/wrap-admin-only
+     [aws-connect-page/panel]]]])
 
 (defmethod routes/panels :upgrade-plan-panel []
   (rf/dispatch [:destroy-page-loader])

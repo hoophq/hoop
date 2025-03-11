@@ -215,12 +215,26 @@
          connection-names (get-in db [:aws-connect :resources :connection-names])
 
          ;; Filtrar apenas os recursos selecionados
-         selected-resource-data (filter #(contains? selected-resources (:id %)) resources)]
+         selected-resource-data (filter #(contains? selected-resources (:id %)) resources)
+
+         ;; Initialize status map with all connections as "pending"
+         initial-status-map (reduce (fn [acc resource]
+                                      (assoc acc (:id resource)
+                                             {:status "pending"
+                                              :name (get connection-names (:id resource)
+                                                         (str (:name resource) "-" (:account-id resource)))
+                                              :resource resource
+                                              :error nil}))
+                                    {}
+                                    selected-resource-data)]
 
      {:db (-> db
               (assoc-in [:aws-connect :status] :creating)
-              (assoc-in [:aws-connect :loading :active?] true)
-              (assoc-in [:aws-connect :loading :message] "Creating AWS database connections..."))
+              (assoc-in [:aws-connect :loading :active?] false) ;; We'll handle loading in our own UI
+              (assoc-in [:aws-connect :creation-status]
+                        {:all-completed? false
+                         :connections initial-status-map})
+              (assoc-in [:aws-connect :current-step] :creation-status)) ;; New step for status view
       :dispatch [:aws-connect/process-resources selected-resource-data agent-assignments connection-names]})))
 
 (rf/reg-event-fx
@@ -237,85 +251,61 @@
                                :uri "/dbroles/jobs"
                                :body {:agent_id agent-id
                                       :aws {:instance_arn resource-arn}
-                                      :connection_prefix_name (str connection-prefix "-")}
+                                      :connection_prefix_name connection-prefix}
                                :on-success #(rf/dispatch [:aws-connect/connection-created-success % resource])
                                :on-failure #(rf/dispatch [:aws-connect/connection-created-failure % resource])}])]
-     ;; Inicializar contadores de processamento no db
-     {:db (-> db
-              (assoc-in [:aws-connect :resources :total-to-process] total-resources)
-              (assoc-in [:aws-connect :resources :processed] #{})
-              (assoc-in [:aws-connect :resources :failed] #{}))
+     ;; Initialize creation status tracking
+     {:db (assoc-in db [:aws-connect :resources :total-to-process] total-resources)
       :dispatch-n dispatch-requests})))
 
-;; Adicionar um novo evento específico para navegação após todas as conexões serem criadas
-(rf/reg-event-fx
- :aws-connect/redirect-to-connections
- (fn [_ _]
-   {:dispatch [:navigate :connections]}))
-
+;; Update to track individual connection statuses
 (rf/reg-event-fx
  :aws-connect/connection-created-success
  (fn [{:keys [db]} [_ response resource]]
-   ;; Verificar se todas as conexões foram criadas
-   (let [resources-total (get-in db [:aws-connect :resources :total-to-process])
-         resources-processed (get-in db [:aws-connect :resources :processed] #{})
-         resources-failed (get-in db [:aws-connect :resources :failed] #{})
-         updated-processed (conj resources-processed (:id resource))
-         all-processed? (>= (+ (count updated-processed) (count resources-failed)) resources-total)]
+   (let [resource-id (:id resource)
+         connection-name (get-in db [:aws-connect :creation-status :connections resource-id :name])
+         updated-db (-> db
+                       ;; Update this specific connection status
+                        (assoc-in [:aws-connect :creation-status :connections resource-id :status] "success")
+                       ;; Remove any error if previously set
+                        (assoc-in [:aws-connect :creation-status :connections resource-id :error] nil))
 
-     (if all-processed?
-       ;; Todas as conexões foram processadas, redirecionar
-       {:db (-> db
-                (assoc-in [:aws-connect :status] nil)
-                (assoc-in [:aws-connect :loading :active?] false)
-                (assoc-in [:aws-connect :loading :message] nil)
-                (assoc-in [:aws-connect :resources :processed] updated-processed))
-        :dispatch-n [[:show-snackbar {:level :success
-                                      :text "AWS connections created successfully!"}]
-                     [:aws-connect/redirect-to-connections]]}
+         ;; Check if all connections are now completed (success or failure)
+         all-connections (get-in updated-db [:aws-connect :creation-status :connections])
+         all-completed? (every? #(contains? #{"success" "failure"} (:status %))
+                                (vals all-connections))]
 
-       ;; Ainda faltam conexões, atualizar progresso
-       {:db (-> db
-                (assoc-in [:aws-connect :resources :processed] updated-processed)
-                (assoc-in [:aws-connect :loading :message]
-                          (str "Created " (count updated-processed) " of "
-                               resources-total " connections..."
-                               (when (seq resources-failed)
-                                 (str " (" (count resources-failed) " failed)")))))}))))
+     {:db (-> updated-db
+              ;; Update all-completed flag if everything is done
+              (assoc-in [:aws-connect :creation-status :all-completed?] all-completed?))
+      :dispatch [:show-snackbar {:level :success
+                                 :text (str "Connection " connection-name " created successfully!")}]})))
 
 (rf/reg-event-fx
  :aws-connect/connection-created-failure
  (fn [{:keys [db]} [_ response resource]]
-   (let [error-message (str "Failed to create connection for " (:name resource) ": "
-                            (get-in response [:response :message] "Unknown error"))
-         resources-total (get-in db [:aws-connect :resources :total-to-process])
-         resources-processed (get-in db [:aws-connect :resources :processed] #{})
-         resources-failed (get-in db [:aws-connect :resources :failed] #{})
-         updated-failed (conj resources-failed (:id resource))
-         all-processed? (>= (+ (count resources-processed) (count updated-failed)) resources-total)]
+   (println response)
+   (let [resource-id (:id resource)
+         connection-name (get-in db [:aws-connect :creation-status :connections resource-id :name])
+         error-message (or response
+                           "Failed to create connection")
 
-     (if all-processed?
-       ;; Todas as conexões foram processadas (com algumas falhas), redirecionar
-       {:db (-> db
-                (assoc-in [:aws-connect :status] nil)
-                (assoc-in [:aws-connect :loading :active?] false)
-                (assoc-in [:aws-connect :loading :message] nil)
-                (assoc-in [:aws-connect :resources :failed] updated-failed)
-                (assoc-in [:aws-connect :error] error-message))
-        :dispatch-n [[:show-snackbar {:level :warning
-                                      :text "Some connections could not be created. See details in error messages."}]
-                     [:aws-connect/redirect-to-connections]]}
+         updated-db (-> db
+                       ;; Update this specific connection status
+                        (assoc-in [:aws-connect :creation-status :connections resource-id :status] "failure")
+                       ;; Store the error message
+                        (assoc-in [:aws-connect :creation-status :connections resource-id :error] error-message))
 
-       ;; Ainda faltam conexões, atualizar progresso e mostrar erro
-       {:db (-> db
-                (assoc-in [:aws-connect :resources :failed] updated-failed)
-                (assoc-in [:aws-connect :error] error-message)
-                (assoc-in [:aws-connect :loading :message]
-                          (str "Created " (count resources-processed) " of "
-                               resources-total " connections... "
-                               "(" (count updated-failed) " failed)")))
-        :dispatch [:show-snackbar {:level :error
-                                   :text error-message}]}))))
+         ;; Check if all connections are now completed (success or failure)
+         all-connections (get-in updated-db [:aws-connect :creation-status :connections])
+         all-completed? (every? #(contains? #{"success" "failure"} (:status %))
+                                (vals all-connections))]
+
+     {:db (-> updated-db
+              ;; Update all-completed flag if everything is done
+              (assoc-in [:aws-connect :creation-status :all-completed?] all-completed?))
+      :dispatch [:show-snackbar {:level :error
+                                 :text (str "Failed to create connection " connection-name)}]})))
 
 ;; Subscriptions
 (rf/reg-sub
@@ -412,3 +402,9 @@
  :aws-connect/set-connection-name
  (fn [db [_ resource-id connection-name]]
    (assoc-in db [:aws-connect :resources :connection-names resource-id] connection-name)))
+
+;; Add subscription for creation status
+(rf/reg-sub
+ :aws-connect/creation-status
+ (fn [db _]
+   (get-in db [:aws-connect :creation-status])))

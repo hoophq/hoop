@@ -35,6 +35,7 @@
                     [["/edit/" :guardrail-id] :edit-guardrail]]
      "/hoop-app" :hoop-app
      "/idplogin" :idplogin-hoop
+     "/integrations" [["/aws-connect" :integrations-aws-connect]]
      "/jira-templates" [["" :jira-templates]
                         ["/new" :create-jira-template]
                         [["/edit/" :jira-template-id] :edit-jira-template]]

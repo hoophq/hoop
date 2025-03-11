@@ -139,194 +139,195 @@
           (or empty-state "No data available")]])
 
       ;; Data rows
-      (for [[idx row] (map-indexed vector data)
-            :let [row-id (key-fn row)
-                  selected? (contains? selected-ids row-id)
-                  expandable? (row-expandable? row)
-                  expanded? (and expandable? (row-expanded? row))
-                  _ (when expandable? (js/console.log "Row" row-id "expandable:" expandable? "expanded:" expanded?))
-                  error-data (row-error row)
-                  has-error? (boolean error-data)
-                  is-child? (and tree-data? (get row parent-id-field))
-                  row-indent (if (and tree-data? is-child?)
-                               0
-                               0)]]
-        ^{:key row-id}
-        [:<>
-         [:> Table.Row {:align "center"
-                        :class (str
-                                (when selected? "bg-blue-50 ")
-                                (when has-error? "bg-red-50 ")
-                                "hover:bg-[--gray-3] transition-colors ")}
+      (doall
+       (for [[idx row] (map-indexed vector data)
+             :let [row-id (key-fn row)
+                   selected? (contains? selected-ids row-id)
+                   expandable? (row-expandable? row)
+                   expanded? (and expandable? (row-expanded? row))
+                   _ (when expandable? (js/console.log "Row" row-id "expandable:" expandable? "expanded:" expanded?))
+                   error-data (row-error row)
+                   has-error? (boolean error-data)
+                   is-child? (and tree-data? (get row parent-id-field))
+                   row-indent (if (and tree-data? is-child?)
+                                0
+                                0)]]
+         ^{:key row-id}
+         [:<>
+          [:> Table.Row {:align "center"
+                         :class (str
+                                 (when selected? "bg-blue-50 ")
+                                 (when has-error? "bg-red-50 ")
+                                 "hover:bg-[--gray-3] transition-colors ")}
 
           ;; Selection checkbox
-          (when on-select-row
-            [:> Table.Cell {:p "2" :align "center" :width "40px" :justify "center"}
-             (when (selectable? row)
-               [:> Checkbox {:checked selected?
-                             :onCheckedChange #(on-select-row row-id (not selected?))
-                             :size "1"
-                             :variant "surface"
-                             :color "indigo"}])])
+           (when on-select-row
+             [:> Table.Cell {:p "2" :align "center" :width "40px" :justify "center"}
+              (when (selectable? row)
+                [:> Checkbox {:checked selected?
+                              :onCheckedChange #(on-select-row row-id (not selected?))
+                              :size "1"
+                              :variant "surface"
+                              :color "indigo"}])])
 
           ;; Expansion control
-          (when (or (some row-expandable? data) tree-data?)
-            [:> Table.Cell {:p "2" :width "40px" :class "relative"}
-             [:div {:style {:paddingLeft row-indent}}
-              (when (and expandable?
-                         (and (= (:type row) :group)
-                              (let [original-group (when (and tree-data? original-data)
-                                                     (first (filter #(= (:id %) (:id row)) original-data)))]
-                                (seq (:children original-group)))))
-                [:button {:class "focus:outline-none text-[--gray-9] hover:text-[--gray-12] transition-colors"
-                          :on-click (fn [e]
+           (when (or (some row-expandable? data) tree-data?)
+             [:> Table.Cell {:p "2" :width "40px" :class "relative"}
+              [:div {:style {:paddingLeft row-indent}}
+               (when (and expandable?
+                          (and (= (:type row) :group)
+                               (let [original-group (when (and tree-data? original-data)
+                                                      (first (filter #(= (:id %) (:id row)) original-data)))]
+                                 (seq (:children original-group)))))
+                 [:button {:class "focus:outline-none text-[--gray-9] hover:text-[--gray-12] transition-colors"
+                           :on-click (fn [e]
                                       ;; Prevent event propagation to avoid interference with selection
-                                      (.stopPropagation e)
-                                      (js/console.log (str "Clicked expand button for: " row-id " current expanded state: " expanded?))
-                                      (on-toggle-expand row-id))}
-                 (if expanded?
-                   [:> ChevronDown {:size 16}]
-                   [:> ChevronRight {:size 16}])])]])
+                                       (.stopPropagation e)
+                                       (js/console.log (str "Clicked expand button for: " row-id " current expanded state: " expanded?))
+                                       (on-toggle-expand row-id))}
+                  (if expanded?
+                    [:> ChevronDown {:size 16}]
+                    [:> ChevronRight {:size 16}])])]])
 
           ;; Data cells
-          (for [{:keys [id accessor render align hidden? class]} columns
-                :when (not hidden?)
-                :let [value (if accessor
-                              (accessor row)
-                              (get row id))
-                      display-value (if render
-                                      (render value row)
-                                      value)
-                      is-first-col (= id (:id (first (remove :hidden? columns))))]]
-            ^{:key id}
-            [:> Table.Cell {:p "2"
-                            :style {:textAlign align}
-                            :class (str "text-[--gray-12] " class
-                                        (when (and is-first-col is-child? tree-data?)
-                                          " pl-0"))}
+           (for [{:keys [id accessor render align hidden? class]} columns
+                 :when (not hidden?)
+                 :let [value (if accessor
+                               (accessor row)
+                               (get row id))
+                       display-value (if render
+                                       (render value row)
+                                       value)
+                       is-first-col (= id (:id (first (remove :hidden? columns))))]]
+             ^{:key id}
+             [:> Table.Cell {:p "2"
+                             :style {:textAlign align}
+                             :class (str "text-[--gray-12] " class
+                                         (when (and is-first-col is-child? tree-data?)
+                                           " pl-0"))}
 
              ;; Special handling for first column in tree view
-             (if (and is-first-col tree-data? is-child?)
-               [:div {:style {:paddingLeft row-indent}}
-                display-value]
-               display-value)])
+              (if (and is-first-col tree-data? is-child?)
+                [:div {:style {:paddingLeft row-indent}}
+                 display-value]
+                display-value)])
 
           ;; Error indicator column
-          (if (or (some row-expandable? data) tree-data?)
-            (if has-error?
-              [:> Table.Cell {:p "2" :width "40px" :class "relative"}
-               [:div {:class "flex justify-center items-center space-x-1"}
-                [error-indicator]
+           (if (or (some row-expandable? data) tree-data?)
+             (if has-error?
+               [:> Table.Cell {:p "2" :width "40px" :class "relative"}
+                [:div {:class "flex justify-center items-center space-x-1"}
+                 [error-indicator]
                 ;; Adicionar chevron para erros
-                [:button {:class "focus:outline-none text-[--gray-9] hover:text-[--gray-12] transition-colors"
-                          :on-click (fn [e]
+                 [:button {:class "focus:outline-none text-[--gray-9] hover:text-[--gray-12] transition-colors"
+                           :on-click (fn [e]
                                       ;; Prevent event propagation to avoid interference with selection
-                                      (.stopPropagation e)
-                                      (js/console.log (str "Clicked error expand button for: " row-id " current expanded state: " expanded?))
-                                      (on-toggle-expand row-id))}
-                 (if expanded?
-                   [:> ChevronDown {:size 16}]
-                   [:> ChevronRight {:size 16}])]]]
+                                       (.stopPropagation e)
+                                       (js/console.log (str "Clicked error expand button for: " row-id " current expanded state: " expanded?))
+                                       (on-toggle-expand row-id))}
+                  (if expanded?
+                    [:> ChevronDown {:size 16}]
+                    [:> ChevronRight {:size 16}])]]]
 
-              [:> Table.Cell {:p "2" :width "40px"}])
+               [:> Table.Cell {:p "2" :width "40px"}])
 
-            [:> Table.Cell {:p "2" :width "40px"}])]
+             [:> Table.Cell {:p "2" :width "40px"}])]
 
          ;; Expanded row content
-         (when (and expandable? expanded?)
-           [:tr
-            [:td {:colSpan (+ (count (remove :hidden? columns))
-                              (if on-select-row 1 0)
-                              (if (or (some row-expandable? data) tree-data?) 2 0))
-                  :class (str "p-0 " (when has-error? "bg-gray-900"))}
+          (when (and expandable? expanded?)
+            [:tr
+             [:td {:colSpan (+ (count (remove :hidden? columns))
+                               (if on-select-row 1 0)
+                               (if (or (some row-expandable? data) tree-data?) 2 0))
+                   :class (str "p-0 " (when has-error? "bg-gray-900"))}
 
              ;; Internal rendering of expanded content
-             (cond
+              (cond
                ;; Render error display if there's error data
-               error-data
-               [:div {:class "p-4 text-white"}
-                [:pre {:class "whitespace-pre-wrap"}
-                 (js/JSON.stringify (clj->js error-data) nil 2)]]
+                error-data
+                [:div {:class "p-4 text-white"}
+                 [:pre {:class "whitespace-pre-wrap"}
+                  (js/JSON.stringify (clj->js error-data) nil 2)]]
 
                ;; Render nested resources if this is a group with children
-               (and (= (:type row) :group) tree-data? original-data)
-               (let [original-group (first (filter #(= (:id %) (:id row)) original-data))
-                     children (:children original-group)]
-                 (when (seq children)
-                   [:> (.-Root Table) {:variant "ghost"
-                                       :className "remove-radius-from-table"}
-                    [:> Table.Body
-                     (for [child children
-                           :let [child-id (key-fn child)
-                                 child-selected? (contains? selected-ids child-id)
-                                 child-error (row-error child)
-                                 has-child-error? (boolean child-error)
-                                 child-expanded? (and has-child-error? (row-expanded? child))]]
-                       ^{:key child-id}
-                       [:<>
-                        [:> Table.Row {:align "center"
-                                       :class (str "border-t last:border-b "
-                                                   (when child-selected? "bg-blue-50 ")
-                                                   (when has-child-error? "bg-red-50 ")
-                                                   "hover:bg-[--gray-3] transition-colors")}
+                (and (= (:type row) :group) tree-data? original-data)
+                (let [original-group (first (filter #(= (:id %) (:id row)) original-data))
+                      children (:children original-group)]
+                  (when (seq children)
+                    [:> (.-Root Table) {:variant "ghost"
+                                        :className "remove-radius-from-table"}
+                     [:> Table.Body
+                      (for [child children
+                            :let [child-id (key-fn child)
+                                  child-selected? (contains? selected-ids child-id)
+                                  child-error (row-error child)
+                                  has-child-error? (boolean child-error)
+                                  child-expanded? (and has-child-error? (row-expanded? child))]]
+                        ^{:key child-id}
+                        [:<>
+                         [:> Table.Row {:align "center"
+                                        :class (str "border-t last:border-b "
+                                                    (when child-selected? "bg-blue-50 ")
+                                                    (when has-child-error? "bg-red-50 ")
+                                                    "hover:bg-[--gray-3] transition-colors")}
 
                          ;; Selection checkbox
-                         (when on-select-row
-                           [:> Table.Cell {:p "2" :align "center" :width "40px"}
-                            (when (selectable? child)
-                              [:> Checkbox {:checked child-selected?
-                                            :onCheckedChange #(on-select-row child-id (not child-selected?))
-                                            :size "1"
-                                            :variant "surface"
-                                            :color "indigo"}])])
+                          (when on-select-row
+                            [:> Table.Cell {:p "2" :align "center" :width "40px"}
+                             (when (selectable? child)
+                               [:> Checkbox {:checked child-selected?
+                                             :onCheckedChange #(on-select-row child-id (not child-selected?))
+                                             :size "1"
+                                             :variant "surface"
+                                             :color "indigo"}])])
 
                          ;; Placeholder for tree expansion column (empty)
-                         [:> Table.Cell {:p "2" :width "40px"}
-                          [:> Box {:width "16px" :height "16px" :background "transparent"}]]
+                          [:> Table.Cell {:p "2" :width "40px"}
+                           [:> Box {:width "16px" :height "16px" :background "transparent"}]]
 
                          ;; Map through all visible columns
-                         (for [{:keys [id accessor width render align hidden? class]} columns
-                               :when (not hidden?)
-                               :let [value (if accessor
-                                             (accessor child)
-                                             (get child id))
-                                     display-value (if render
-                                                     (render value child)
-                                                     value)
-                                     is-first-col (= id (:id (first (remove :hidden? columns))))]]
-                           ^{:key id}
-                           [:> Table.Cell {:p "2"
-                                           :pl (when is-first-col "6")
-                                           :style {:textAlign align}
-                                           :width width
-                                           :class (str "text-[--gray-12] " class)}
-                            display-value])
+                          (for [{:keys [id accessor width render align hidden? class]} columns
+                                :when (not hidden?)
+                                :let [value (if accessor
+                                              (accessor child)
+                                              (get child id))
+                                      display-value (if render
+                                                      (render value child)
+                                                      value)
+                                      is-first-col (= id (:id (first (remove :hidden? columns))))]]
+                            ^{:key id}
+                            [:> Table.Cell {:p "2"
+                                            :pl (when is-first-col "6")
+                                            :style {:textAlign align}
+                                            :width width
+                                            :class (str "text-[--gray-12] " class)}
+                             display-value])
 
                          ;; Error indicator and expand button
-                         (if has-child-error?
-                           [:> Table.Cell {:p "2" :width "40px"}
-                            [:div {:class "flex justify-center items-center space-x-1"}
-                             [error-indicator]
-                             [:button {:class "focus:outline-none text-[--gray-9] hover:text-[--gray-12] transition-colors"
-                                       :on-click (fn [e]
-                                                   (.stopPropagation e)
-                                                   (on-toggle-expand child-id))}
-                              (if child-expanded?
-                                [:> ChevronDown {:size 16}]
-                                [:> ChevronRight {:size 16}])]]]
-                           [:> Table.Cell {:p "2" :width "40px"}
-                            [:> Box {:width "36px" :height "36px" :background "transparent"}]])]
+                          (if has-child-error?
+                            [:> Table.Cell {:p "2" :width "40px"}
+                             [:div {:class "flex justify-center items-center space-x-1"}
+                              [error-indicator]
+                              [:button {:class "focus:outline-none text-[--gray-9] hover:text-[--gray-12] transition-colors"
+                                        :on-click (fn [e]
+                                                    (.stopPropagation e)
+                                                    (on-toggle-expand child-id))}
+                               (if child-expanded?
+                                 [:> ChevronDown {:size 16}]
+                                 [:> ChevronRight {:size 16}])]]]
+                            [:> Table.Cell {:p "2" :width "40px"}
+                             [:> Box {:width "36px" :height "36px" :background "transparent"}]])]
 
                         ;; Child's expanded error content if needed
-                        (when (and has-child-error? child-expanded?)
-                          [:tr
-                           [:td {:colSpan (+ (count (remove :hidden? columns))
-                                             (if on-select-row 1 0)
-                                             (if (or (some row-expandable? data) tree-data?) 2 0))
-                                 :class "p-0 bg-gray-900"}
-                            [:div {:class "p-4 text-white"}
-                             [:pre {:class "whitespace-pre-wrap"}
-                              (js/JSON.stringify (clj->js child-error) nil 2)]]]])])]]))
+                         (when (and has-child-error? child-expanded?)
+                           [:tr
+                            [:td {:colSpan (+ (count (remove :hidden? columns))
+                                              (if on-select-row 1 0)
+                                              (if (or (some row-expandable? data) tree-data?) 2 0))
+                                  :class "p-0 bg-gray-900"}
+                             [:div {:class "p-4 text-white"}
+                              [:pre {:class "whitespace-pre-wrap"}
+                               (js/JSON.stringify (clj->js child-error) nil 2)]]]])])]]))
 
                ;; Default case (fallback)
-               :else nil)]])])]]))
+                :else nil)]])]))]]))
