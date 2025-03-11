@@ -28,31 +28,31 @@ func getPostgresSchemaQuery(dbName string) string {
     \set QUIET on
     \c %s
     \set QUIET off
-SELECT 
+SELECT
     c.table_schema as schema_name,
     'table' as object_type,
     c.table_name as object_name,
     c.column_name,
-    CASE 
-        WHEN c.data_type = 'character varying' THEN 
+    CASE
+        WHEN c.data_type = 'character varying' THEN
             c.data_type || '(' || c.character_maximum_length || ')'
         WHEN c.data_type = 'numeric' AND c.numeric_precision IS NOT NULL THEN
-            CASE 
-                WHEN c.numeric_scale = 0 THEN 
+            CASE
+                WHEN c.numeric_scale = 0 THEN
                     'numeric(' || c.numeric_precision || ')'
-                ELSE 
+                ELSE
                     'numeric(' || c.numeric_precision || ',' || c.numeric_scale || ')'
             END
         ELSE c.data_type
     END as column_type,
     c.is_nullable = 'NO' as not_null
 FROM information_schema.columns c
-JOIN information_schema.tables t 
-    ON c.table_schema = t.table_schema 
+JOIN information_schema.tables t
+    ON c.table_schema = t.table_schema
     AND c.table_name = t.table_name
 WHERE t.table_type = 'BASE TABLE'
 AND c.table_schema NOT IN ('pg_catalog', 'information_schema')
-ORDER BY 
+ORDER BY
     c.table_schema,
     c.table_name,
     c.ordinal_position;`, dbName)
@@ -61,13 +61,13 @@ ORDER BY
 func getMSSQLSchemaQuery() string {
 	return `
 SET NOCOUNT ON;
-SELECT 
+SELECT
     s.name as schema_name,
     'table' as object_type,
     o.name as object_name,
     c.name as column_name,
-    CASE 
-        WHEN t.name = 'varchar' AND c.max_length != -1 THEN 
+    CASE
+        WHEN t.name = 'varchar' AND c.max_length != -1 THEN
             t.name + '(' + CAST(c.max_length AS VARCHAR) + ')'
         WHEN t.name = 'decimal' AND c.precision != 0 THEN
             t.name + '(' + CAST(c.precision AS VARCHAR) + ',' + CAST(c.scale AS VARCHAR) + ')'
@@ -79,7 +79,7 @@ JOIN sys.objects o ON o.schema_id = s.schema_id
 JOIN sys.columns c ON o.object_id = c.object_id
 JOIN sys.types t ON c.user_type_id = t.user_type_id
 WHERE o.type = 'U'  -- U for user-defined tables only
-ORDER BY 
+ORDER BY
     s.name,
     o.name,
     c.column_id;`
@@ -87,13 +87,13 @@ ORDER BY
 
 func getMySQLSchemaQuery() string {
 	return `
-SELECT 
+SELECT
     c.TABLE_SCHEMA as schema_name,
     'table' as object_type,
     c.TABLE_NAME as object_name,
     c.COLUMN_NAME as column_name,
-    CASE 
-        WHEN c.DATA_TYPE = 'varchar' THEN 
+    CASE
+        WHEN c.DATA_TYPE = 'varchar' THEN
             CONCAT(c.DATA_TYPE, '(', c.CHARACTER_MAXIMUM_LENGTH, ')')
         WHEN c.DATA_TYPE = 'decimal' AND c.NUMERIC_PRECISION IS NOT NULL THEN
             CONCAT(c.DATA_TYPE, '(', c.NUMERIC_PRECISION, ',', c.NUMERIC_SCALE, ')')
@@ -101,12 +101,12 @@ SELECT
     END as column_type,
     c.IS_NULLABLE = 'NO' as not_null
 FROM INFORMATION_SCHEMA.COLUMNS c
-JOIN INFORMATION_SCHEMA.TABLES t 
-    ON c.TABLE_SCHEMA = t.TABLE_SCHEMA 
+JOIN INFORMATION_SCHEMA.TABLES t
+    ON c.TABLE_SCHEMA = t.TABLE_SCHEMA
     AND c.TABLE_NAME = t.TABLE_NAME
 WHERE c.TABLE_SCHEMA NOT IN ('information_schema', 'performance_schema', 'mysql', 'pg_catalog', 'sys')
 AND t.TABLE_TYPE = 'BASE TABLE'
-ORDER BY 
+ORDER BY
     c.TABLE_SCHEMA,
     c.TABLE_NAME,
     c.ORDINAL_POSITION;`
@@ -114,7 +114,7 @@ ORDER BY
 
 func getOracleDBSchemaQuery() string {
 	return `
-SELECT     
+SELECT
     t.owner as schema_name,
     'table' as object_type,
     t.table_name as object_name,
@@ -124,16 +124,16 @@ CASE WHEN c.nullable = 'Y' THEN '0' ELSE '1' END as not_null FROM all_tables t
 JOIN all_tab_columns c
 ON t.table_name = c.table_name AND t.owner = c.owner WHERE t.owner NOT IN (
     'SYS', 'SYSTEM', 'SYSMAN', 'MGMT_VIEW', 'OJVMSYS',
-    'OUTLN', 'DBSNMP', 'APPQOSSYS', 'APEX_030200', 'APEX_040000', 
+    'OUTLN', 'DBSNMP', 'APPQOSSYS', 'APEX_030200', 'APEX_040000',
     'APEX_PUBLIC_USER', 'APEX_REST_PUBLIC_USER', 'CTXSYS', 'ANONYMOUS',
     'FLOWS_FILES', 'MDSYS', 'OLAPSYS', 'ORDDATA', 'ORDSYS', 'SI_INFORMTN_SCHEMA',
     'WMSYS', 'XDB', 'EXFSYS', 'ORDPLUGINS', 'OWBSYS', 'OWBSYS_AUDIT',
     'ORACLE_OCM', 'SPATIAL_CSW_ADMIN_USR', 'SPATIAL_WFS_ADMIN_USR', 'DVSYS',
     'AUDSYS', 'GSMADMIN_INTERNAL', 'LBACSYS', 'REMOTE_SCHEDULER_AGENT',
     'SYSBACKUP', 'SYSDG', 'SYSKM', 'GSMUSER', 'SYSRAC'
-) 
-ORDER BY      
-    t.table_name,     
+)
+ORDER BY
+    t.table_name,
     c.column_name;`
 }
 
@@ -149,13 +149,13 @@ var dbName = '%s';
 db.getSiblingDB(dbName).getCollectionNames().forEach(function(collName) {
     var coll = db.getSiblingDB(dbName).getCollection(collName);
     var sample = coll.findOne();
-    
+
     function getSchemaFromDoc(doc, prefix = '') {
         var schema = {};
         Object.keys(doc || {}).forEach(function(key) {
             var fullKey = prefix ? prefix + '.' + key : key;
             var value = doc[key];
-            
+
             if (value === null) {
                 schema[fullKey] = {
                     type: 'null',
@@ -179,9 +179,8 @@ db.getSiblingDB(dbName).getCollectionNames().forEach(function(collName) {
         });
         return schema;
     }
-    
+
     var collSchema = getSchemaFromDoc(sample);
-    
     Object.keys(collSchema).forEach(function(field) {
         result.push({
             schema_name: dbName,

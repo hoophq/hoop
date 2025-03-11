@@ -3,6 +3,8 @@ package admin
 import (
 	"encoding/base64"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -39,7 +41,7 @@ func init() {
 	createConnectionCmd.Flags().StringSliceVar(&connRedactTypesFlag, "redact-types", nil, "The redact types for this connection")
 	createConnectionCmd.Flags().BoolVar(&connOverwriteFlag, "overwrite", false, "It will create or update it if a connection already exists")
 	createConnectionCmd.Flags().BoolVar(&skipStrictValidation, "skip-validation", false, "It will skip any strict validation")
-	createConnectionCmd.Flags().StringSliceVarP(&connSecretFlag, "env", "e", nil, "The environment variables of the connection")
+	createConnectionCmd.Flags().StringSliceVarP(&connSecretFlag, "env", "e", nil, "The environment variables of the connection, as KEY=VAL. Values could be raw values, base64://<b64-content> or file:///path/to/file ")
 	createConnectionCmd.Flags().StringSliceVar(&connTagsFlag, "tags", nil, "Tags to identify connections in a key=value format")
 	createConnectionCmd.Flags().StringSliceVar(&connAccessModesFlag, "access-modes", defaultAccessModes, "Access modes enabled for this connection. Accepted values: [runbooks, exec, connect]")
 	createConnectionCmd.Flags().StringVar(&connSchemaFlag, "schema", "", "Enable or disable the schema for this connection on the WebClient. Accepted values: [disabled, enabled]")
@@ -221,8 +223,8 @@ func verifySchemaStatus(schema string, connType string) string {
 	return ""
 }
 
-func parseEnvPerType() (map[string]string, error) {
-	envVar := map[string]string{}
+func parseEnvPerType() (envVar map[string]string, err error) {
+	envVar = map[string]string{}
 	var invalidEnvs []string
 	for _, envvarStr := range connSecretFlag {
 		key, val, found := strings.Cut(envvarStr, "=")
@@ -236,17 +238,15 @@ func parseEnvPerType() (map[string]string, error) {
 		} else {
 			envType = "envvar"
 		}
-		if envType != "envvar" && envType != "filesystem" &&
-			envType != "b64-envvar" && envType != "b64-filesystem" {
-			return nil, fmt.Errorf("wrong environment type, acecpt one off: ([b64-]envvar, [b64-]filesystem)")
+		if envType != "envvar" && envType != "filesystem" {
+			return nil, fmt.Errorf("wrong environment type, acecpt one off: (envvar, filesystem)")
 		}
-		isBase64Env := strings.HasPrefix(envType, "b64-")
-		envType = strings.TrimPrefix(envType, "b64-")
+		val, err = getEnvValue(val)
+		if err != nil {
+			return nil, fmt.Errorf("unable to get value: %v", err)
+		}
 		key = fmt.Sprintf("%v:%v", envType, key)
-		envVar[key] = val
-		if !isBase64Env {
-			envVar[key] = base64.StdEncoding.EncodeToString([]byte(val))
-		}
+		envVar[key] = base64.StdEncoding.EncodeToString([]byte(val))
 	}
 	if len(invalidEnvs) > 0 {
 		return nil, fmt.Errorf("invalid env vars, expected env=var. found=%v", invalidEnvs)
@@ -361,4 +361,43 @@ func parseConnectionPlugins(conf *clientconfig.Config, connectionName, connectio
 		pluginList = append(pluginList, pl)
 	}
 	return pluginList, nil
+}
+
+const (
+	base64UriType string = "base64://"
+	fileUriType   string = "file://"
+)
+
+// getEnvValue loads a raw inline value, a base64 inline value or a value from a file
+//
+// base64://<base64-enc-val> - decodes the base64 value using base64.StdEncoding
+//
+// file://<path/to/file> - loads based on the relative or absolute path
+//
+// If none of the above prefixes are found it returns the value as it is
+func getEnvValue(val string) (string, error) {
+	switch {
+	case strings.HasPrefix(val, base64UriType):
+		data, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(val, base64UriType))
+		if err != nil {
+			return "", err
+		}
+		return string(data), nil
+	case strings.HasPrefix(val, fileUriType):
+		filePath := strings.TrimPrefix(val, fileUriType)
+		isAbs := strings.HasPrefix(filePath, "/")
+		if !isAbs {
+			pwdDir, err := os.Getwd()
+			if err != nil {
+				return "", err
+			}
+			filePath = filepath.Join(pwdDir, filePath)
+		}
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return "", err
+		}
+		return string(data), nil
+	}
+	return val, nil
 }

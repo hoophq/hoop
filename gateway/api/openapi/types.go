@@ -252,7 +252,7 @@ type Connection struct {
 
 type ExecRequest struct {
 	// The input of the execution
-	Script string `json:"script" example:"echo"`
+	Script string `json:"script" example:"echo 'hello from hoop'"`
 	// The target connection
 	Connection string `json:"connection" example:"bash"`
 	// DEPRECATED in flavor of metadata
@@ -260,7 +260,7 @@ type ExecRequest struct {
 	// Metadata contains attributes that is going to be available in the Session resource
 	Metadata map[string]any `json:"metadata"`
 	// Additional arguments that will be joined when construction the command to be executed
-	ClientArgs []string `json:"client_args" example:"hello world"`
+	ClientArgs []string `json:"client_args" example:"--verbose"`
 }
 
 type ExecResponse struct {
