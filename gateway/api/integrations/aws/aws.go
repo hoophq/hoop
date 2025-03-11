@@ -492,7 +492,7 @@ func toDBRoleOpenAPI(o *models.DBRole) *openapi.DBRoleJob {
 			DBEngine:   o.Spec.DBEngine,
 		}
 	}
-	var status openapi.DBRoleJobStatus
+	var status *openapi.DBRoleJobStatus
 	if o.Status != nil {
 		var result []openapi.DBRoleJobStatusResult
 		for _, r := range o.Status.Result {
@@ -503,7 +503,7 @@ func toDBRoleOpenAPI(o *models.DBRole) *openapi.DBRoleJob {
 				CompletedAt: r.CompletedAt,
 			})
 		}
-		status = openapi.DBRoleJobStatus{
+		status = &openapi.DBRoleJobStatus{
 			Phase:   o.Status.Phase,
 			Message: o.Status.Message,
 			Result:  result,
@@ -513,7 +513,7 @@ func toDBRoleOpenAPI(o *models.DBRole) *openapi.DBRoleJob {
 	return &openapi.DBRoleJob{
 		OrgID:       o.OrgID,
 		ID:          o.ID,
-		Status:      &status,
+		Status:      status,
 		CreatedAt:   o.CreatedAt,
 		CompletedAt: o.CompletedAt,
 		Spec:        spec,
