@@ -10,7 +10,7 @@
             [webapp.shared-ui.sidebar.constants :as sidebar-constants]))
 
 (def link-styles
-  {:enabled (str "flex justify-between items-center group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")
+  {:enabled "flex justify-between items-center group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"
    :disabled (str "flex justify-between items-center text-gray-300 cursor-not-allowed text-opacity-30 "
                   "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")})
 
@@ -228,7 +228,13 @@
                     (:label plugin)
                     (when (and free-license? (not (:free-feature? plugin)))
                       [:div {:class "text-xs text-gray-200 py-1 px-2 border border-gray-200 rounded-md"}
-                       "Upgrade"])]])]])]
+                       "Upgrade"])]])
+                [:li
+                 [:a
+                  {:href (routes/url-for :integrations-aws-connect)
+                   :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-gray-800 "
+                               "block rounded-md py-2 pr-2 pl-9 text-sm leading-6")}
+                  "AWS Connect"]]]])]
 
            [:li {:class "mt-auto mb-3"}
             [:> ui/Disclosure {:as "div"

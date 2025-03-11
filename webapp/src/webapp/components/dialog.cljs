@@ -1,8 +1,5 @@
 (ns webapp.components.dialog
-  (:require ["react" :as react]
-            ["@headlessui/react" :as ui]
-            ["@heroicons/react/20/solid" :as hero-solid-icon]
-            ["@radix-ui/themes" :refer [AlertDialog Flex Button]]
+  (:require ["@radix-ui/themes" :refer [AlertDialog Flex Button]]
             [re-frame.core :as rf]
             [webapp.components.button :as button]
             [webapp.components.divider :as divider]))

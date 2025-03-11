@@ -29,11 +29,3 @@ src/webapp/version.js
 
 # .env file
 .env
-
-# Cursor
-.cursor/
-**/.cursor/
-
-# generated files
-/src/gen/
-**/gen/

@@ -1,7 +1,7 @@
 (ns webapp.connections.views.connection-list
-  (:require ["lucide-react" :refer [Wifi Tags EllipsisVertical]]
+  (:require ["lucide-react" :refer [Wifi Tags EllipsisVertical InfoIcon]]
             ["@radix-ui/themes" :refer [IconButton Box DropdownMenu Tooltip
-                                        Flex Text Badge]]
+                                        Flex Text Badge Callout]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
@@ -29,6 +29,16 @@
    [:div {:class "flex items-center justify-center h-full"}
     [loaders/simple-loader]]])
 
+(defn aws-connect-sync-callout []
+  (let [aws-jobs-running? @(rf/subscribe [:jobs/aws-connect-running?])]
+    (when aws-jobs-running?
+      [:> Callout.Root {:class "my-4"}
+       [:> Callout.Icon
+        [:> InfoIcon {:size 16}]]
+       [:> Callout.Text
+        [:> Text {:weight "bold" :as "span"} "AWS Connect Sync in Progress"]
+        [:> Text {:as "span"} " There is an automated process for your connections happening in your hoop.dev environment. Check it later in order to verify."]]])))
+
 (defn panel [_]
   (let [search-string (.. js/window -location -search)
         url-params (new js/URLSearchParams search-string)
@@ -46,6 +56,7 @@
     (rf/dispatch [:connections->get-connections])
     (rf/dispatch [:users->get-user])
     (rf/dispatch [:guardrails->get-all])
+    (rf/dispatch [:jobs/start-aws-connect-polling])
     (fn []
       (let [connections-search-results (cond->> (if (empty? @searched-connections)
                                                   (:results @connections)
@@ -82,6 +93,9 @@
             :loading? (= @connections-search-status :loading)
             :size :small
             :icon-position "left"}]
+
+          [aws-connect-sync-callout]
+
           (when (not-empty connections-tags)
             [:> Flex {:gap "4"
                       :align "center"}

@@ -35,6 +35,8 @@
                     [["/edit/" :guardrail-id] :edit-guardrail]]
      "/hoop-app" :hoop-app
      "/idplogin" :idplogin-hoop
+     "/integrations" [["/aws-connect" :integrations-aws-connect]
+                      ["/aws-connect/setup" :integrations-aws-connect-setup]]
      "/jira-templates" [["" :jira-templates]
                         ["/new" :create-jira-template]
                         [["/edit/" :jira-template-id] :edit-jira-template]]
@@ -46,6 +48,7 @@
                  [["/manage/" :plugin-name] :manage-plugin]]
      "/organization" [["/users" :users]]
      "/onboarding" [["" :onboarding]
+                    ["/aws-connect" :onboarding-aws-connect]
                     ["/setup" :onboarding-setup]
                     ["/setup/resource" :onboarding-setup-resource]]
      "/register" :register-hoop
@@ -111,9 +114,9 @@
 
 ;; Component wrapper to check if the user is an admin
 ;; If not, redirect to home and show a loader component
-(defn admin-only [component]
+(defn admin-only []
   (let [is-admin? (rf/subscribe [:user/is-admin?])]
-    (fn []
+    (fn [component]
       (if @is-admin?
         ;; If it's an admin, render the component normally
         component

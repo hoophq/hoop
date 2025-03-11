@@ -130,7 +130,7 @@ func ListDBRoleJobs(orgID string) ([]*DBRole, error) {
 		}
 
 		statusData, _ := json.Marshal(j.StatusMap)
-		if err := json.Unmarshal(statusData, &j.Spec); err != nil {
+		if err := json.Unmarshal(statusData, &j.Status); err != nil {
 			return nil, fmt.Errorf("failed decoding status data: %v", err)
 		}
 	}
