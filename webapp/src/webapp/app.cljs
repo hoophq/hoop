@@ -206,7 +206,7 @@
 
 (defmethod routes/panels :integrations-aws-connect-panel []
   [layout :application-hoop
-   [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
+   [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 overflow-auto h-full"}
     [routes/wrap-admin-only
      [:<>
       [h/h2 "AWS Connect" {:class "mb-6"}]
