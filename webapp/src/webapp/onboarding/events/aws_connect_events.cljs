@@ -251,7 +251,7 @@
                                :uri "/dbroles/jobs"
                                :body {:agent_id agent-id
                                       :aws {:instance_arn resource-arn}
-                                      :connection_prefix_name connection-prefix}
+                                      :connection_prefix_name (str connection-prefix "-")}
                                :on-success #(rf/dispatch [:aws-connect/connection-created-success % resource])
                                :on-failure #(rf/dispatch [:aws-connect/connection-created-failure % resource])}])]
      ;; Initialize creation status tracking

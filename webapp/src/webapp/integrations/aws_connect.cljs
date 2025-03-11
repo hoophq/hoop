@@ -101,7 +101,6 @@
             (str " | Completed: " (format-date (:completed_at row)))))]
     [:> Text {:as "p" :size "2"} (:message row)]]
 
-   ;; Detalhes da especificação
    (when (:spec row)
      [:> Card {:size "1" :class "mt-2"}
       [:> Flex {:direction "column" :gap "1" :class "p-3"}
@@ -138,7 +137,7 @@
 
 (defn jobs-table-component []
   (let [expanded-rows (r/atom #{})
-        update-counter (r/atom 0)] ;; Contador para forçar atualizações
+        update-counter (r/atom 0)]
     (fn []
       (let [jobs @(rf/subscribe [:integrations/formatted-aws-connect-jobs])
             flattened-jobs @(rf/subscribe [:integrations/flattened-aws-connect-jobs])
@@ -152,9 +151,9 @@
           [:> Heading {:as "h3" :size "4"} "Connection Creation Processes"]
           [:> Flex {:align "center" :gap "2"}
            (when running?
-             [:> Flex {:align "center" :gap "1"}
+             [:> Flex {:align "center" :gap "1" :class "text-primary-11"}
               [:> Spinner {:size "1"}]
-              [:> Text {:size "2" :color "orange"} "Connection creation in progress"]])
+              [:> Text {:size "2"} "Connection creation in progress"]])
            [:> Button {:size "1"
                        :variant "soft"
                        :on-click #(rf/dispatch [:jobs/fetch-aws-connect-jobs])}

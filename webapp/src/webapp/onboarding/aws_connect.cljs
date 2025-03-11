@@ -258,7 +258,6 @@
                                                       :connection-name (:name conn)
                                                       :connection-status (:status conn)
                                                       :connection-error (:error conn))]
-                                 (js/console.log "Connection data for" id ":" (clj->js conn-data))
                                  conn-data))
             sorted-connections (vec
                                 (sort-by (fn [conn]
@@ -271,8 +270,6 @@
 
         ;; Ignorar o valor mas usar para forçar re-renderização
         @update-counter
-        (js/console.log "Current expanded rows:" (clj->js @expanded-rows))
-        (js/console.log "Update counter:" @update-counter)
 
         [:> Flex {:direction "column" :align "center" :gap "7" :mb "4" :class "w-full"}
          [:> Box {:class "max-w-[600px] space-y-3"}
@@ -321,35 +318,25 @@
             :row-expandable? (fn [row]
                                ;; Só expande se tiver erro
                                (let [has-error (boolean (:connection-error row))]
-                                 (js/console.log "Row expandable?" (:id row) has-error (:connection-error row))
                                  has-error))
 
             :row-expanded? (fn [row]
                              ;; Verificar se está na lista de expandidos
                              (let [is-expanded (contains? @expanded-rows (:id row))]
-                               (js/console.log "Row expanded?" (:id row) is-expanded)
                                is-expanded))
 
             :on-toggle-expand (fn [id]
                                 ;; Alternar estado de expansão e forçar atualização
-                                (js/console.log "Toggling expansion for:" id)
                                 (swap! expanded-rows (fn [s]
                                                        (if (contains? s id)
-                                                         (do
-                                                           (js/console.log "Removing" id "from expanded set")
-                                                           (disj s id))
-                                                         (do
-                                                           (js/console.log "Adding" id "to expanded set")
-                                                           (conj s id)))))
-                                (swap! update-counter inc)
-                                (js/console.log "Updated expanded rows:" (clj->js @expanded-rows))
-                                (js/console.log "Updated counter:" @update-counter))
+                                                         (disj s id)
+
+                                                         (conj s id))))
+                                (swap! update-counter inc))
 
             ;; Função que retorna o objeto de erro
             :row-error (fn [row]
                          (when-let [error (:connection-error row)]
-                           (js/console.log "Row error for" (:id row) ":" (clj->js error))
-                           ;; Retornar o objeto de erro no formato que o componente espera
                            {:message error}))
 
             ;; Personalizar o indicador de erro
@@ -421,9 +408,9 @@
           (and (= current-step :creation-status) all-completed?)
           {:form-type form-type
            :back-text nil
-           :next-text "Go to Processes List"
+           :next-text "Go to AWS Connect"
            :on-back nil
-           :on-next #(rf/dispatch [:navigate :integrations :aws-connect])
+           :on-next #(rf/dispatch [:navigate :integrations-aws-connect])
            :next-disabled? false}
 
         ;; Não mostrar footer durante o processo de criação
