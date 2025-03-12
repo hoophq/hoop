@@ -1,6 +1,6 @@
 (ns webapp.onboarding.aws-connect
   (:require [re-frame.core :as rf]
-            ["@radix-ui/themes" :refer [Badge Box Card Spinner Flex Heading Separator Text Callout]]
+            ["@radix-ui/themes" :refer [Badge Box Card Spinner Link Flex Heading Separator Text Callout]]
             [webapp.components.forms :as forms]
             ["lucide-react" :refer [Check Info ArrowUpRight X AlertCircle]]
             [webapp.connections.views.setup.page-wrapper :as page-wrapper]
@@ -192,11 +192,13 @@
        "Please review your selected AWS database resources and assign an Agent to each connection before proceeding. You can also customize the connection names."]
 
       [:> Flex {:align "center" :gap "1" :class "text-[--accent-a11] cursor-pointer"}
-       [:> Text {:as "a"
-                 :size "2"
-                 :onClick #(rf/dispatch [:modal/show-agent-info])}
-        "Learn more about Agents"]
-       [:> ArrowUpRight {:size 16}]]]
+       [:> Link {:href "https://hoop.dev/docs/concepts/agent"
+                 :target "_blank"}
+        [:> Flex {:gap "2" :align "center"}
+         [:> Text {:as "a"
+                   :size "2"}
+          "Learn more about Agents"]
+         [:> ArrowUpRight {:size 16}]]]]]
 
      ;; Using data-table-advanced component
      [:> Box {:class "w-full"}
@@ -395,7 +397,8 @@
            :next-text "Go to AWS Connect"
            :on-back nil
            :on-next #(rf/dispatch [:navigate :integrations-aws-connect])
-           :next-disabled? false}
+           :next-disabled? false
+           :back-hidden? true}
 
           (= current-step :creation-status)
           nil
