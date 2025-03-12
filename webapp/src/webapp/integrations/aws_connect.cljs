@@ -159,12 +159,19 @@
            :data flattened-jobs
            :original-data jobs
            :key-fn :id
+
            :row-expandable? (fn [row]
-                              (let [original-group (first (filter #(= (:id %) (:id row)) jobs))]
-                                (and (= (:type row) :group)
-                                     (seq (:children original-group)))))
+                              (or
+                               ;; Caso 1: É um grupo com filhos
+                               (let [original-group (first (filter #(= (:id %) (:id row)) jobs))]
+                                 (and (= (:type row) :group)
+                                      (seq (:children original-group))))
+                               ;; Caso 2: Tem status falhou
+                               (= (:status row) "failed")))
+
            :row-expanded? (fn [row]
                             (contains? @expanded-rows (:id row)))
+
            :on-toggle-expand (fn [id]
                                (swap! expanded-rows
                                       (fn [current]
@@ -172,10 +179,11 @@
                                           (disj current id)
                                           (conj current id))))
                                (swap! update-counter inc))
+
            :row-error (fn [row]
                         (when (= (:status row) "failed")
-                          {:message (str "Discovery failed: " (or (:message row) "Unknown error"))
-                           :details [format-job-details row]}))
+                          {:message (or (:message row) "Unknown error")}))
+
            :error-indicator (fn [] [:> AlertCircle {:size 16 :class "text-red-500"}])
            :empty-state "No database discovery processes found. Start a new AWS connection to automatically discover and configure your database resources."
            :tree-data? true
