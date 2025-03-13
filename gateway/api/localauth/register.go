@@ -7,9 +7,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
-	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/analytics"
+	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/models"
 	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"golang.org/x/crypto/bcrypt"
@@ -84,14 +85,14 @@ func Register(c *gin.Context) {
 	}
 	trackClient := analytics.New()
 	trackClient.Identify(&types.APIContext{
-		OrgID: org.ID,
-		OrgName: org.Name,
-		UserName: user.Name,
-		UserID: user.Email,
+		OrgID:           org.ID,
+		OrgName:         org.Name,
+		UserName:        user.Name,
+		UserID:          user.Email,
 		UserAnonSubject: org.ID,
-		UserEmail: user.Email,
-		UserGroups: []string{adminGroupName},
-		ApiURL: appconfig.Get().ApiURL(),
+		UserEmail:       user.Email,
+		UserGroups:      []string{adminGroupName},
+		ApiURL:          appconfig.Get().ApiURL(),
 	})
 	trackClient.Track(user.Email, analytics.EventSingleTenantFirstUserCreated, nil)
 
@@ -108,6 +109,9 @@ func Register(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed generating token"})
 		return
 	}
+
+	// add default system tags
+	_ = models.UpsertBatchConnectionTags(apiconnections.DefaultConnectionTags(org.ID))
 
 	c.Header("Access-Control-Expose-Headers", "Token")
 	c.Header("Token", tokenString)

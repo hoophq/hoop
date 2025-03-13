@@ -2,8 +2,10 @@ package models
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/pgrest"
@@ -30,31 +32,32 @@ const (
 )
 
 type Connection struct {
-	OrgID               string            `gorm:"column:org_id"`
-	ID                  string            `gorm:"column:id"`
-	AgentID             sql.NullString    `gorm:"column:agent_id"`
-	Name                string            `gorm:"column:name"`
-	Command             pq.StringArray    `gorm:"column:command;type:text[]"`
-	Type                string            `gorm:"column:type"`
-	SubType             sql.NullString    `gorm:"column:subtype"`
-	Status              string            `gorm:"column:status"`
-	ManagedBy           sql.NullString    `gorm:"column:managed_by"`
-	Tags                pq.StringArray    `gorm:"column:_tags;type:text[]"`
-	AccessModeRunbooks  string            `gorm:"column:access_mode_runbooks"`
-	AccessModeExec      string            `gorm:"column:access_mode_exec"`
-	AccessModeConnect   string            `gorm:"column:access_mode_connect"`
-	AccessSchema        string            `gorm:"column:access_schema"`
-	Envs                map[string]string `gorm:"column:envs;serializer:json;->"`
-	GuardRailRules      pq.StringArray    `gorm:"column:guardrail_rules;type:text[];->"`
-	JiraIssueTemplateID sql.NullString    `gorm:"column:jira_issue_template_id"`
+	OrgID               string         `gorm:"column:org_id"`
+	ID                  string         `gorm:"column:id"`
+	AgentID             sql.NullString `gorm:"column:agent_id"`
+	Name                string         `gorm:"column:name"`
+	Command             pq.StringArray `gorm:"column:command;type:text[]"`
+	Type                string         `gorm:"column:type"`
+	SubType             sql.NullString `gorm:"column:subtype"`
+	Status              string         `gorm:"column:status"`
+	ManagedBy           sql.NullString `gorm:"column:managed_by"`
+	Tags                pq.StringArray `gorm:"column:_tags;type:text[]"`
+	AccessModeRunbooks  string         `gorm:"column:access_mode_runbooks"`
+	AccessModeExec      string         `gorm:"column:access_mode_exec"`
+	AccessModeConnect   string         `gorm:"column:access_mode_connect"`
+	AccessSchema        string         `gorm:"column:access_schema"`
+	JiraIssueTemplateID sql.NullString `gorm:"column:jira_issue_template_id"`
 
 	// Read Only fields
-	RedactEnabled             bool           `gorm:"column:redact_enabled;->"`
-	Reviewers                 pq.StringArray `gorm:"column:reviewers;type:text[];->"`
-	RedactTypes               pq.StringArray `gorm:"column:redact_types;type:text[];->"`
-	AgentMode                 string         `gorm:"column:agent_mode;->"`
-	AgentName                 string         `gorm:"column:agent_name;->"`
-	JiraTransitionNameOnClose sql.NullString `gorm:"column:issue_transition_name_on_close;->"`
+	RedactEnabled             bool              `gorm:"column:redact_enabled;->"`
+	Reviewers                 pq.StringArray    `gorm:"column:reviewers;type:text[];->"`
+	RedactTypes               pq.StringArray    `gorm:"column:redact_types;type:text[];->"`
+	AgentMode                 string            `gorm:"column:agent_mode;->"`
+	AgentName                 string            `gorm:"column:agent_name;->"`
+	JiraTransitionNameOnClose sql.NullString    `gorm:"column:issue_transition_name_on_close;->"`
+	Envs                      map[string]string `gorm:"column:envs;serializer:json;->"`
+	GuardRailRules            pq.StringArray    `gorm:"column:guardrail_rules;type:text[];->"`
+	ConnectionTags            map[string]string `gorm:"column:connection_tags;serializer:json;->"`
 }
 
 func (c Connection) AsSecrets() map[string]any {
@@ -120,7 +123,10 @@ func UpsertConnection(c *Connection) error {
 			return fmt.Errorf("failed updating env vars from connection, reason=%v", err)
 		}
 
-		return updateGuardRailRules(tx, c)
+		if err := updateGuardRailRules(tx, c); err != nil {
+			return err
+		}
+		return updateBatchConnectionTags(tx, c.OrgID, c.ID, c.ConnectionTags)
 	})
 }
 
@@ -153,6 +159,9 @@ func UpsertBatchConnections(connections []*Connection) error {
 				return fmt.Errorf("failed updating env vars from connection, reason=%v", err)
 			}
 
+			if err := updateBatchConnectionTags(tx, c.OrgID, c.ID, c.ConnectionTags); err != nil {
+				return fmt.Errorf("failed updating connection tags, reason=%v", err)
+			}
 		}
 		return nil
 	})
@@ -237,6 +246,11 @@ func GetConnectionByNameOrID(orgID, nameOrID string) (*Connection, error) {
 		c.agent_id, a.name AS agent_name, a.mode AS agent_mode,
 		c.jira_issue_template_id, it.issue_transition_name_on_close,
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
+		( SELECT JSONB_OBJECT_AGG(ct.key, ct.value)
+		 FROM private.connection_tags_association cta
+		 INNER JOIN private.connection_tags ct ON ct.id = cta.tag_id
+		 WHERE cta.connection_id = c.id
+		 GROUP BY cta.connection_id ) AS connection_tags,
 		( SELECT envs FROM public.env_vars WHERE id = c.id ) AS envs,
 		COALESCE(dlpc.config, ARRAY[]::TEXT[]) AS redact_types,
 		COALESCE(reviewc.config, ARRAY[]::TEXT[]) AS reviewers,
@@ -269,11 +283,12 @@ func GetConnectionByNameOrID(orgID, nameOrID string) (*Connection, error) {
 
 // ConnectionOption each attribute set applies an AND operator logic
 type ConnectionFilterOption struct {
-	Type      string
-	SubType   string
-	ManagedBy string
-	AgentID   string
-	Tags      []string
+	Type        string
+	SubType     string
+	ManagedBy   string
+	AgentID     string
+	Tags        []string
+	TagSelector string
 }
 
 func (o ConnectionFilterOption) GetTagsAsArray() any {
@@ -287,15 +302,67 @@ func (o ConnectionFilterOption) GetTagsAsArray() any {
 	return v
 }
 
+func (o ConnectionFilterOption) ParseTagSelectorQuery() (selectorJsonData string, err error) {
+	if o.TagSelector == "" {
+		return "[]", nil
+	}
+	tagSelector := map[string]map[string]string{}
+	for _, keyVal := range strings.Split(o.TagSelector, ",") {
+		condition, key, val := map[string]string{}, "", ""
+		switch {
+		case strings.Contains(keyVal, "!="):
+			key, val, _ = strings.Cut(keyVal, "!=")
+			condition["op"] = "!="
+		case strings.Contains(keyVal, "="):
+			condition["op"] = "="
+			key, val, _ = strings.Cut(keyVal, "=")
+		default:
+			return "", fmt.Errorf("could not find any valid operator, accepted values are '=', '!='")
+		}
+		key, val = strings.TrimSpace(key), strings.TrimSpace(val)
+		condition["key"] = key
+		condition["val"] = val
+		tagSelector[key] = condition
+	}
+
+	var result []map[string]string
+	for _, conditionMap := range tagSelector {
+		result = append(result, conditionMap)
+	}
+
+	jsonData, err := json.Marshal(&result)
+	if err != nil {
+		return "", fmt.Errorf("unable to encode tag selector, reason=%v", err)
+	}
+	if len(tagSelector) == 0 {
+		return "[]", nil
+	}
+	return string(jsonData), nil
+}
+
 func ListConnections(orgID string, opts ConnectionFilterOption) ([]Connection, error) {
 	setConnectionOptionDefaults(&opts)
+	tagSelectorJsonData, err := opts.ParseTagSelectorQuery()
+	if err != nil {
+		return nil, err
+	}
+	tagsAsArray := opts.GetTagsAsArray()
 	var items []Connection
-	err := DB.Raw(`
+	err = DB.Raw(`
+	WITH tag_selector_keys(key, op, val) AS (
+		SELECT * FROM json_to_recordset(?::JSON) AS x(key TEXT, op TEXT, val TEXT)
+	)
 	SELECT
 		c.id, c.org_id, c.agent_id, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
 		c.jira_issue_template_id,
+		-- legacy tags
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
+		( SELECT JSONB_OBJECT_AGG(ct.key, ct.value)
+		 FROM private.connection_tags_association cta
+		 INNER JOIN private.connection_tags ct ON ct.id = cta.tag_id
+		 WHERE cta.connection_id = c.id
+		 GROUP BY cta.connection_id ) AS connection_tags,
 		( SELECT envs FROM public.env_vars WHERE id = c.id ) AS envs,
 		COALESCE(dlpc.config, ARRAY[]::TEXT[]) AS redact_types,
 		COALESCE(reviewc.config, ARRAY[]::TEXT[]) AS reviewers,
@@ -305,29 +372,51 @@ func ListConnections(orgID string, opts ConnectionFilterOption) ([]Connection, e
 			WHERE private.guardrail_rules_connections.connection_id = c.id
 		), ARRAY[]::TEXT[]) AS guardrail_rules
 	FROM private.connections c
-	LEFT JOIN private.plugins review ON review.name = 'review' AND review.org_id = @org_id
+	LEFT JOIN private.plugins review ON review.name = 'review' AND review.org_id = ?
 	LEFT JOIN private.plugin_connections reviewc ON reviewc.connection_id = c.id AND reviewc.plugin_id = review.id
-	LEFT JOIN private.plugins dlp ON dlp.name = 'dlp' AND dlp.org_id = @org_id
+	LEFT JOIN private.plugins dlp ON dlp.name = 'dlp' AND dlp.org_id = ?
 	LEFT JOIN private.plugin_connections dlpc ON dlpc.connection_id = c.id AND dlpc.plugin_id = dlp.id
-	WHERE c.org_id = @org_id AND
+	WHERE c.org_id = ? AND
 	(
-		COALESCE(c.type::text, '') LIKE @type AND
-		COALESCE(c.subtype, '') LIKE @subtype AND
-		COALESCE(c.agent_id::text, '') LIKE @agent_id AND
-		COALESCE(c.managed_by, '') LIKE @managed_by AND
-		CASE WHEN (@tags)::text[] IS NOT NULL
-			THEN c._tags @> (@tags)::text[]
+		COALESCE(c.type::text, '') LIKE ? AND
+		COALESCE(c.subtype, '') LIKE ? AND
+		COALESCE(c.agent_id::text, '') LIKE ? AND
+		COALESCE(c.managed_by, '') LIKE ? AND
+		-- legacy tags
+		CASE WHEN (?)::text[] IS NOT NULL
+			THEN c._tags @> (?)::text[]
 			ELSE true
-		END
+		END AND
+		(
+			-- return all results if no tag selectors provided
+			(SELECT COUNT(*) FROM tag_selector_keys) = 0
+			OR
+			-- AND logic: each tag selector criterion must be satisfied
+			NOT EXISTS (
+				-- Find any tag selector that is NOT satisfied by this connection
+				SELECT 1 FROM tag_selector_keys tsk
+				WHERE NOT EXISTS (
+				SELECT 1
+				FROM private.connection_tags_association cta
+				JOIN private.connection_tags ct ON ct.id = cta.tag_id
+				WHERE cta.connection_id = c.id
+				AND ct.key = tsk.key
+				AND CASE
+					WHEN tsk.op = '=' THEN ct.value = tsk.val
+					WHEN tsk.op = '!=' THEN ct.value != tsk.val
+					ELSE false
+				END
+				)
+			)
+		)
 	) ORDER BY c.name ASC`,
-		map[string]any{
-			"org_id":     orgID,
-			"type":       opts.Type,
-			"subtype":    opts.SubType,
-			"agent_id":   opts.AgentID,
-			"managed_by": opts.ManagedBy,
-			"tags":       opts.GetTagsAsArray(),
-		},
+		tagSelectorJsonData,
+		orgID, orgID, orgID,
+		opts.Type,
+		opts.SubType,
+		opts.AgentID,
+		opts.ManagedBy,
+		tagsAsArray, tagsAsArray,
 	).Find(&items).Error
 	if err != nil {
 		return nil, err

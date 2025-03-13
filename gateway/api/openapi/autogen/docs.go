@@ -232,8 +232,15 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "format": "string",
-                        "description": "Filter by tags, separated by comma",
+                        "description": "DEPRECATED: Filter by tags, separated by comma",
                         "name": "tags",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "format": "string",
+                        "description": "Selector tags to fo filter on, supports '=' and '!=' (e.g. key1=value1,key2=value2)",
+                        "name": "tagSelector",
                         "in": "query"
                     },
                     {
@@ -283,7 +290,7 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "The connection resource allows exposing internal services from your internal infra structure to users.\n\n### Types of Connections\n\nThe definition of this resource represent how clients will be able to interact with internal resources.\n\nEach type/subtype may represent a distinct implementation:\n\n- ` + "`" + `application/\u003csubtype\u003e` + "`" + ` - An alias to map distinct types of shell applications (e.g.: python, ruby, etc)\n- ` + "`" + `application/tcp` + "`" + ` - Forward TCP connections\n\n    This type requires the following environment variables:\n    - ` + "`" + `HOST` + "`" + `: ip or dns of the internal service\n    - ` + "`" + `PORT` + "`" + `: the port of the internal service\n\n- ` + "`" + `custom` + "`" + ` - Any custom shell application\n- ` + "`" + `database/\u003csubtype\u003e` + "`" + ` - Allow connecting to databases through multiple clients (Webapp, cli, IDE's)\n\nEach ` + "`" + `\u003csubtype\u003e` + "`" + ` has distinct environment variables that are allowed to be configured, refer to our [documentation](https://hoop.dev/docs) for more information.\n",
+                "description": "The connection resource allows exposing internal services from your internal infra structure to users.\n\n### Types of Connections\n\nThe definition of this resource represent how clients will be able to interact with internal resources.\n\nEach type/subtype may represent a distinct implementation:\n\n- ` + "`" + `application/\u003csubtype\u003e` + "`" + ` - An alias to map distinct types of shell applications (e.g.: python, ruby, etc)\n- ` + "`" + `application/tcp` + "`" + ` - Forward TCP connections\n\n    This type requires the following environment variables:\n    - ` + "`" + `HOST` + "`" + `: ip or dns of the internal service\n    - ` + "`" + `PORT` + "`" + `: the port of the internal service\n\n- ` + "`" + `custom` + "`" + ` - Any custom shell application\n- ` + "`" + `database/\u003csubtype\u003e` + "`" + ` - Allow connecting to databases through multiple clients (Webapp, cli, IDE's)\n\nEach ` + "`" + `\u003csubtype\u003e` + "`" + ` has distinct environment variables that are allowed to be configured, refer to our [documentation](https://hoop.dev/docs) for more information.\n\n### Tags\n\nTags are key/value pairs that are attached to objects such as Connections. Tags are intended to be used to specify identifying attributes of objects that are meaningful and relevant to users, but do not directly imply semantics to the core system.\n\n` + "`" + `` + "`" + `` + "`" + `json\n{\n    \"connection_tags\": {\n        \"environment\": \"production\",\n        \"component\": \"backend\"\n    }\n}\n` + "`" + `` + "`" + `` + "`" + `\n\nEquality- or inequality-based requirements allow filtering by tags keys and values. Matching objects must satisfy all of the specified tag constraints, though they may have additional tags as well. Three kinds of operators are admitted ` + "`" + `=` + "`" + `,` + "`" + `!=` + "`" + `. The first represent equality, while the last represents inequality. For example:\n\n` + "`" + `` + "`" + `` + "`" + `\nenvironment = production\ntier != frontend\n` + "`" + `` + "`" + `` + "`" + `\n\nThe former selects all resources with key equal to ` + "`" + `environment` + "`" + ` and value equal to ` + "`" + `production` + "`" + `. The latter selects all resources with key equal to ` + "`" + `tier` + "`" + ` and value distinct from ` + "`" + `frontend` + "`" + `. One could filter for resources in production excluding frontend using the comma operator: environment=production,tier!=frontend\n",
                 "consumes": [
                     "application/json"
                 ],
@@ -328,6 +335,35 @@ const docTemplate = `{
                         "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/connections-tags": {
+            "get": {
+                "description": "List all Connection Tags.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "List Connection Tags",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.ConnectionTag"
+                            }
                         }
                     },
                     "500": {
@@ -3929,6 +3965,17 @@ const docTemplate = `{
                         "/bin/bash"
                     ]
                 },
+                "connection_tags": {
+                    "description": "Tags to identify the connection\n* keys must contain between 1 and 64 alphanumeric characters, it may include (-), (_), (/), or (.) characters and it must not end with (-), (/) or (-).\n* values must contain between 1 and 256 alphanumeric characters, it may include space, (-), (_), (/), (+), (@), (:), (=) or (.) characters.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "environment": "prod",
+                        "tier": "frontend"
+                    }
+                },
                 "default_database": {
                     "description": "Default databases returns the configured value of the attribute secrets-\u003e'DB'",
                     "type": "string"
@@ -4011,7 +4058,7 @@ const docTemplate = `{
                     "example": "postgres"
                 },
                 "tags": {
-                    "description": "Tags to classify the connection",
+                    "description": "DEPRECATED: Tags to classify the connection",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -4099,6 +4146,36 @@ const docTemplate = `{
                 "name": {
                     "description": "The name of the table",
                     "type": "string"
+                }
+            }
+        },
+        "openapi.ConnectionTag": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "description": "CreatedAt is the timestamp when this tag was created",
+                    "type": "string",
+                    "example": "2023-08-15T14:30:45Z"
+                },
+                "id": {
+                    "description": "ID is the unique identifier for this specific tag",
+                    "type": "string",
+                    "example": "tag_01H7ZD5SJRZ7RPGQRMT4Y9HF"
+                },
+                "key": {
+                    "description": "Key is the identifier for the tag category (e.g., \"environment\", \"department\")",
+                    "type": "string",
+                    "example": "environment"
+                },
+                "updated_at": {
+                    "description": "UpdatedAt is the timestamp when this tag was last updated",
+                    "type": "string",
+                    "example": "2023-08-15T14:30:45Z"
+                },
+                "value": {
+                    "description": "Value is the specific tag value associated with the key (e.g., \"production\", \"finance\")",
+                    "type": "string",
+                    "example": "production"
                 }
             }
         },
@@ -4273,7 +4350,7 @@ const docTemplate = `{
                         "type": "string"
                     },
                     "example": [
-                        "hello world"
+                        "--verbose"
                     ]
                 },
                 "connection": {
@@ -4296,7 +4373,7 @@ const docTemplate = `{
                 "script": {
                     "description": "The input of the execution",
                     "type": "string",
-                    "example": "echo"
+                    "example": "echo 'hello from hoop'"
                 }
             }
         },

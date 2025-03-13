@@ -21,12 +21,13 @@ import (
 )
 
 type apiResource struct {
-	resourceType   string
-	name           string
-	method         string
-	decodeTo       string
-	suffixEndpoint string
-	conf           *clientconfig.Config
+	resourceType    string
+	name            string
+	method          string
+	decodeTo        string
+	suffixEndpoint  string
+	queryAttributes url.Values
+	conf            *clientconfig.Config
 
 	resourceList   bool
 	resourceGet    bool
@@ -48,12 +49,13 @@ func parseResourceOrDie(args []string, method, outputFlag string) *apiResource {
 	}
 
 	apir := &apiResource{
-		resourceType: resourceType,
-		name:         resourceName,
-		conf:         conf,
-		method:       method,
-		resourceGet:  true,
-		resourceList: true,
+		resourceType:    resourceType,
+		name:            resourceName,
+		conf:            conf,
+		method:          method,
+		resourceGet:     true,
+		resourceList:    true,
+		queryAttributes: url.Values{},
 	}
 
 	switch apir.resourceType {
@@ -212,7 +214,15 @@ func parseResourceOrDie(args []string, method, outputFlag string) *apiResource {
 }
 
 func (r *apiResource) Endpoint() (string, error) {
-	return url.JoinPath(r.conf.ApiURL, r.suffixEndpoint)
+	u, err := url.Parse(r.conf.ApiURL)
+	if err != nil {
+		return "", err
+	}
+
+	if len(r.queryAttributes) > 0 {
+		u.RawQuery = r.queryAttributes.Encode()
+	}
+	return u.JoinPath(r.suffixEndpoint).String(), nil
 }
 
 func httpRequest(apir *apiResource) (any, http.Header, error) {
@@ -225,6 +235,7 @@ func httpRequest(apir *apiResource) (any, http.Header, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed creating http request, err=%v", err)
 	}
+
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", apir.conf.Token))
 	if apir.conf.IsApiKey() {

@@ -226,8 +226,12 @@ type Connection struct {
 	// Managed By is a read only field that indicates who is managing this resource.
 	// When this attribute is set, this resource is considered immutable
 	ManagedBy *string `json:"managed_by" readonly:"true" example:""`
-	// Tags to classify the connection
+	// DEPRECATED: Tags to classify the connection
 	Tags []string `json:"tags" example:"prod"`
+	// Tags to identify the connection
+	// * keys must contain between 1 and 64 alphanumeric characters, it may include (-), (_), (/), or (.) characters and it must not end with (-), (/) or (-).
+	// * values must contain between 1 and 256 alphanumeric characters, it may include space, (-), (_), (/), (+), (@), (:), (=) or (.) characters.
+	ConnectionTags map[string]string `json:"connection_tags" example:"environment:prod,tier:frontend"`
 	// Toggle Ad Hoc Runbooks Executions
 	// * enabled - Enable to run runbooks for this connection
 	// * disabled - Disable runbooks execution for this connection
@@ -250,9 +254,38 @@ type Connection struct {
 	JiraIssueTemplateID string `json:"jira_issue_template_id" example:"B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
 }
 
+type ConnectionTagCreateRequest struct {
+	// Key is the identifier for the tag category (e.g., "environment", "department")
+	Key string `json:"key" binding:"required" example:"environment"`
+	// Value is the specific tag value associated with the key (e.g., "production", "finance")
+	Value string `json:"value" binding:"required" example:"production"`
+}
+
+type ConnectionTagUpdateRequest struct {
+	// Value is the new tag value to be assigned to the existing key
+	Value string `json:"value" binding:"required" example:"staging"`
+}
+
+type ConnectionTagList struct {
+	Items []ConnectionTag `json:"items"`
+}
+
+type ConnectionTag struct {
+	// ID is the unique identifier for this specific tag
+	ID string `json:"id" example:"tag_01H7ZD5SJRZ7RPGQRMT4Y9HF"`
+	// Key is the identifier for the tag category (e.g., "environment", "department")
+	Key string `json:"key" example:"environment"`
+	// Value is the specific tag value associated with the key (e.g., "production", "finance")
+	Value string `json:"value" example:"production"`
+	// UpdatedAt is the timestamp when this tag was last updated
+	UpdatedAt time.Time `json:"updated_at" example:"2023-08-15T14:30:45Z"`
+	// CreatedAt is the timestamp when this tag was created
+	CreatedAt time.Time `json:"created_at" example:"2023-08-15T14:30:45Z"`
+}
+
 type ExecRequest struct {
 	// The input of the execution
-	Script string `json:"script" example:"echo"`
+	Script string `json:"script" example:"echo 'hello from hoop'"`
 	// The target connection
 	Connection string `json:"connection" example:"bash"`
 	// DEPRECATED in flavor of metadata
@@ -260,7 +293,7 @@ type ExecRequest struct {
 	// Metadata contains attributes that is going to be available in the Session resource
 	Metadata map[string]any `json:"metadata"`
 	// Additional arguments that will be joined when construction the command to be executed
-	ClientArgs []string `json:"client_args" example:"hello world"`
+	ClientArgs []string `json:"client_args" example:"--verbose"`
 }
 
 type ExecResponse struct {
