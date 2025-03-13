@@ -3966,7 +3966,7 @@ const docTemplate = `{
                     ]
                 },
                 "connection_tags": {
-                    "description": "Tgas to classify the connection",
+                    "description": "Tags to identify the connection\n* keys must contain between 1 and 64 alphanumeric characters, it may include (-), (_), (/), or (.) characters and it must not end with (-), (/) or (-).\n* values must contain between 1 and 256 alphanumeric characters, it may include space, (-), (_), (/), (+), (@), (:), (=) or (.) characters.",
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
