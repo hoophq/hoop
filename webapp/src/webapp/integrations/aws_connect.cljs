@@ -122,7 +122,6 @@
                       :render (fn [value _] (format-date value))}]
            :data jobs
            :key-fn :id
-           :loading? running?
            :empty-state "No database discovery processes found. Start a new AWS connection to automatically discover and configure your database resources."
            :sticky-header? true}]]))))
 

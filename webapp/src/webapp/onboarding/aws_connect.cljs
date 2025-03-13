@@ -357,13 +357,9 @@
      "Follow the steps to setup your AWS resources."]]])
 
 (defn main []
-  (rf/dispatch [:aws-connect/initialize-state])
-
   (fn [form-type]
     (let [current-step @(rf/subscribe [:aws-connect/current-step])
-          loading @(rf/subscribe [:aws-connect/loading])
-          creation-status @(rf/subscribe [:aws-connect/creation-status])
-          all-completed? (and creation-status (:all-completed? creation-status))]
+          loading @(rf/subscribe [:aws-connect/loading])]
 
       [page-wrapper/main
        {:children
@@ -400,40 +396,36 @@
              :creation-status [creation-status-step]
              [credentials-step])]]]
         :footer-props
-        (cond
-          (and (= current-step :creation-status) all-completed?)
-          {:form-type form-type
-           :back-text nil
-           :next-text "Go to AWS Connect"
-           :on-back nil
-           :on-next #(rf/dispatch [:navigate :integrations-aws-connect])
-           :next-disabled? false
-           :back-hidden? true}
-
-          (= current-step :creation-status)
-          nil
-
-          :else
-          {:form-type form-type
-           :back-text (case current-step
-                        :credentials "Back"
-                        :resources "Back to Credentials"
-                        :review "Back to Resources")
-           :next-text (case current-step
-                        :credentials "Next: Resources"
-                        :resources "Next: Review"
-                        :review "Confirm and Create")
-           :on-back #(case current-step
-                       :credentials (.back js/history)
-                       :resources (rf/dispatch [:aws-connect/set-current-step :credentials])
-                       :review (rf/dispatch [:aws-connect/set-current-step :resources]))
-           :on-next #(case current-step
-                       :credentials (rf/dispatch [:aws-connect/validate-credentials])
-                       :resources (rf/dispatch [:aws-connect/set-current-step :review])
-                       :review (rf/dispatch [:aws-connect/create-connections]))
-           :next-disabled? (case current-step
-                             :credentials (:active? loading)
-                             :resources (empty? @(rf/subscribe [:aws-connect/selected-resources]))
-                             :review (some empty? (vals @(rf/subscribe [:aws-connect/agent-assignments]))))})}])))
+        {:form-type form-type
+         :back-text (case current-step
+                      :credentials "Back"
+                      :resources "Back to Credentials"
+                      :review "Back to Resources"
+                      :creation-status nil)
+         :next-text (case current-step
+                      :credentials "Next: Resources"
+                      :resources "Next: Review"
+                      :review "Confirm and Create"
+                      :creation-status "Go to AWS Connect")
+         :on-back #(case current-step
+                     :credentials (.back js/history)
+                     :resources (rf/dispatch [:aws-connect/set-current-step :credentials])
+                     :review (rf/dispatch [:aws-connect/set-current-step :resources])
+                     :creation-status nil)
+         :on-next #(case current-step
+                     :credentials (rf/dispatch [:aws-connect/validate-credentials])
+                     :resources (rf/dispatch [:aws-connect/set-current-step :review])
+                     :review (rf/dispatch [:aws-connect/create-connections])
+                     :creation-status (rf/dispatch [:navigate :integrations-aws-connect]))
+         :back-hidden? (case current-step
+                         :credentials false
+                         :resources false
+                         :review false
+                         :creation-status true)
+         :next-disabled? (case current-step
+                           :credentials (:active? loading)
+                           :resources (empty? @(rf/subscribe [:aws-connect/selected-resources]))
+                           :review (some empty? (vals @(rf/subscribe [:aws-connect/agent-assignments])))
+                           :creation-status false)}}])))
 
 

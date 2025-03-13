@@ -65,7 +65,6 @@
    [webapp.jira-templates.create-update-form :as jira-templates-create-update]
    [webapp.jira-templates.main :as jira-templates]
    [webapp.onboarding.aws-connect :as aws-connect]
-   [webapp.onboarding.aws-connect :as onboarding-aws-connect]
    [webapp.onboarding.events.aws-connect-events]
    [webapp.onboarding.events.effects]
    [webapp.onboarding.main :as onboarding]
@@ -196,7 +195,7 @@
   [layout :auth [onboarding/main]])
 
 (defmethod routes/panels :onboarding-aws-connect-panel []
-  [layout :auth [aws-connect/main]])
+  [layout :auth [aws-connect/main :onboarding]])
 
 (defmethod routes/panels :onboarding-setup-panel []
   [layout :auth [onboarding-setup/main]])
@@ -213,10 +212,13 @@
       [aws-connect-page/panel]]]]])
 
 (defmethod routes/panels :integrations-aws-connect-setup-panel []
+  (rf/dispatch [:aws-connect/initialize-state])
+  (rf/dispatch [:connection-setup/set-type :aws-connect])
+
   [layout :application-hoop
    [:div {:class "bg-gray-1 min-h-full h-full"}
     [routes/wrap-admin-only
-     [onboarding-aws-connect/main :create]]]])
+     [aws-connect/main :create]]]])
 
 (defmethod routes/panels :upgrade-plan-panel []
   (rf/dispatch [:destroy-page-loader])

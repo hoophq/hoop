@@ -9,19 +9,19 @@
 (def setup-options
   [{:id "demo"
     :icon (r/as-element
-           [:> Database {:size 18}])
+           [:> Database {:size 18 :class "group-hover:text-[--gray-1]"}])
     :title "Explore with a demo database"
     :description "Access a preloaded database to it in action."
     :action #(rf/dispatch [:connections->quickstart-create-postgres-demo])}
    {:id "setup"
     :icon (r/as-element
-           [:> Settings {:size 18}])
+           [:> Settings {:size 18 :class "group-hover:text-[--gray-1]"}])
     :title "Setup a connection"
     :description "Add your own services or databases."
     :action #(rf/dispatch [:navigate :onboarding-setup-resource])}
    {:id "aws-connect"
     :icon (r/as-element
-           [:> Cloud {:size 18}])
+           [:> Cloud {:size 18 :class "group-hover:text-[--gray-1]"}])
     :title "AWS Connect"
     :description "Access AWS to retrieve and connect your resources."
     :action #(do
@@ -36,7 +36,7 @@
             :on-click action}
    [:> Flex {:align "center" :gap "3" :class "group-hover:text-[--gray-1]"}
     [:> Avatar {:size "4"
-                :class "group-hover:dark"
+                :class "group-hover:bg-[--white-a3]"
                 :variant "soft"
                 :color "gray"
                 :fallback icon}]
