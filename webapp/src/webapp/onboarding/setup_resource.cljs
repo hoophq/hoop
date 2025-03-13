@@ -1,11 +1,12 @@
 (ns webapp.onboarding.setup-resource
   (:require
-   ["@radix-ui/themes" :refer [Box Button Badge Callout]]
+   ["@radix-ui/themes" :refer [Badge Box Button Callout]]
    ["lucide-react" :refer [AlertCircle]]
+   [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
-   [webapp.connections.views.setup.main :as setup]
-   [webapp.components.data-table-simple :refer [data-table-simple]]))
+   [webapp.components.data-table-simple :refer [data-table-simple]]
+   [webapp.connections.views.setup.main :as setup]))
 
 (defn main []
   [:<>
@@ -60,7 +61,7 @@
                       ;; Fallback for unknown status
                       "gray")
              :variant "soft"}
-   status])
+   (cs/lower-case status)])
 
 (defn aws-resources-data-table []
   (let [resources @(rf/subscribe [:aws-connect/resources])
