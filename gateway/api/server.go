@@ -275,6 +275,28 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apiconnections.GetDatabaseSchemas)
 
+	// TODO(san): needs more testing, will add these endpoints later on
+	// r.POST("/connection-tags",
+	// 	r.AuthMiddleware,
+	// 	// api.TrackRequest(analytics.EventApiExecConnection),
+	// 	apiconnections.CreateTag,
+	// )
+	// r.PUT("/connection-tags/:id",
+	// 	r.AuthMiddleware,
+	// 	// api.TrackRequest(analytics.EventApiExecConnection),
+	// 	apiconnections.UpdateTagByID,
+	// )
+	// r.GET("/connection-tags/:id",
+	// 	r.AuthMiddleware,
+	// 	// api.TrackRequest(analytics.EventApiExecConnection),
+	// 	apiconnections.GetTagByID,
+	// )
+	r.GET("/connection-tags",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiconnections.ListTags,
+	)
+
 	r.POST("/proxymanager/connect",
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventApiProxymanagerConnect),

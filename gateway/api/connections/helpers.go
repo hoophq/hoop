@@ -142,6 +142,8 @@ func validateListOptions(urlValues url.Values) (o models.ConnectionFilterOption,
 			o.SubType = values[0]
 		case "managed_by":
 			o.ManagedBy = values[0]
+		case "tagSelector":
+			o.TagSelector = values[0]
 		case "tags":
 			if len(values[0]) > 0 {
 				for _, tagVal := range strings.Split(values[0], ",") {
@@ -155,7 +157,7 @@ func validateListOptions(urlValues url.Values) (o models.ConnectionFilterOption,
 		default:
 			continue
 		}
-		if !reSanitize.MatchString(values[0]) {
+		if key != "tagSelector" && !reSanitize.MatchString(values[0]) {
 			return o, errInvalidOptionVal
 		}
 	}

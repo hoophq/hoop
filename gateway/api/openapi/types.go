@@ -226,8 +226,10 @@ type Connection struct {
 	// Managed By is a read only field that indicates who is managing this resource.
 	// When this attribute is set, this resource is considered immutable
 	ManagedBy *string `json:"managed_by" readonly:"true" example:""`
-	// Tags to classify the connection
+	// DEPRECATED: Tags to classify the connection
 	Tags []string `json:"tags" example:"prod"`
+	// Tgas to classify the connection
+	ConnectionTags map[string]string `json:"connection_tags" example:"foo:bar,zika:virus"`
 	// Toggle Ad Hoc Runbooks Executions
 	// * enabled - Enable to run runbooks for this connection
 	// * disabled - Disable runbooks execution for this connection
@@ -248,6 +250,35 @@ type Connection struct {
 	GuardRailRules []string `json:"guardrail_rules" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54,B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
 	// The jira issue templates ids associated to the connection
 	JiraIssueTemplateID string `json:"jira_issue_template_id" example:"B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
+}
+
+type ConnectionTagCreateRequest struct {
+	// Key is the identifier for the tag category (e.g., "environment", "department")
+	Key string `json:"key" binding:"required" example:"environment"`
+	// Value is the specific tag value associated with the key (e.g., "production", "finance")
+	Value string `json:"value" binding:"required" example:"production"`
+}
+
+type ConnectionTagUpdateRequest struct {
+	// Value is the new tag value to be assigned to the existing key
+	Value string `json:"value" binding:"required" example:"staging"`
+}
+
+type ConnectionTagList struct {
+	Items []ConnectionTag `json:"items"`
+}
+
+type ConnectionTag struct {
+	// ID is the unique identifier for this specific tag
+	ID string `json:"id" example:"tag_01H7ZD5SJRZ7RPGQRMT4Y9HF"`
+	// Key is the identifier for the tag category (e.g., "environment", "department")
+	Key string `json:"key" example:"environment"`
+	// Value is the specific tag value associated with the key (e.g., "production", "finance")
+	Value string `json:"value" example:"production"`
+	// UpdatedAt is the timestamp when this tag was last updated
+	UpdatedAt time.Time `json:"updated_at" example:"2023-08-15T14:30:45Z"`
+	// CreatedAt is the timestamp when this tag was created
+	CreatedAt time.Time `json:"created_at" example:"2023-08-15T14:30:45Z"`
 }
 
 type ExecRequest struct {

@@ -136,6 +136,15 @@ var createConnectionCmd = &cobra.Command{
 			redactEnabled = true
 		}
 
+		connectionTags := map[string]string{}
+		for _, keyValTag := range connTagsFlag {
+			key, val, found := strings.Cut(keyValTag, "=")
+			if !found {
+				continue
+			}
+			connectionTags[key] = val
+		}
+
 		connectionBody := map[string]any{
 			"name":                   apir.name,
 			"type":                   connType,
@@ -146,7 +155,7 @@ var createConnectionCmd = &cobra.Command{
 			"reviewers":              reviewersFlag,
 			"redact_enabled":         redactEnabled,
 			"redact_types":           connRedactTypesFlag,
-			"tags":                   connTagsFlag,
+			"connection_tags":        connectionTags,
 			"guardrail_rules":        connGuardRailRules,
 			"jira_issue_template_id": connJiraIssueTemplateID,
 			"access_mode_runbooks":   verifyAccessModeStatus("runbooks"),
