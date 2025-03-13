@@ -10,6 +10,9 @@
                                           :message nil}
                                 :error nil
                                 :credentials nil
+                                :accounts {:data nil
+                                           :status nil
+                                           :api-error nil}
                                 :resources {:data nil
                                             :selected nil
                                             :errors nil
@@ -101,8 +104,8 @@
  (fn [{:keys [db]} [_ response]]
    (let [status (get response :status)]
      (if (= status "allowed")
-       {:db (assoc-in db [:aws-connect :loading :message] "Retrieving AWS access information in your environment...")
-        :dispatch [:aws-connect/fetch-rds-instances]}
+       {:db (assoc-in db [:aws-connect :loading :message] "Retrieving AWS organization accounts...")
+        :dispatch [:aws-connect/fetch-accounts]}
        {:db (-> db
                 (assoc-in [:aws-connect :status] :credentials-invalid)
                 (assoc-in [:aws-connect :loading :active?] false)
@@ -136,16 +139,41 @@
  :aws-connect/fetch-rds-instances-success
  (fn [{:keys [db]} [_ response]]
    (let [rds-instances (get response :items [])
-         formatted-resources (mapv (fn [instance]
-                                     {:id (:arn instance)
-                                      :name (:name instance)
-                                      :subnet-cidr ""  ;; Não temos esse dado diretamente da API
-                                      :vpc-id (:vpc_id instance)
-                                      :status (:status instance)
-                                      :security-group-enabled? false
-                                      :engine (:engine instance)
-                                      :account-id (:account_id instance)})
-                                   rds-instances)]
+         accounts (get-in db [:aws-connect :accounts :data] [])
+
+         ;; Group resources by account_id for hierarchical structure
+         resources-by-account (reduce (fn [acc instance]
+                                        (let [account-id (:account_id instance)]
+                                          (update acc account-id (fnil conj []) instance)))
+                                      {}
+                                      rds-instances)
+
+         ;; Format resources
+         formatted-resources (mapv (fn [account]
+                                     (let [account-id (:account_id account)
+                                           account-resources (get resources-by-account account-id [])
+
+                                           ;; Format child resources
+                                           formatted-children (mapv (fn [instance]
+                                                                      {:id (:arn instance)
+                                                                       :name (:name instance)
+                                                                       :subnet-cidr ""
+                                                                       :vpc-id (:vpc_id instance)
+                                                                       :status (:status instance)
+                                                                       :security-group-enabled? false
+                                                                       :engine (:engine instance)
+                                                                       :account-id account-id})
+                                                                    account-resources)]
+
+                                       ;; Format parent account
+                                       {:id account-id
+                                        :name (:name account)
+                                        :status (:status account)
+                                        :email (:email account)
+                                        :account-type "AWS Account"
+                                        :children formatted-children}))
+                                   accounts)]
+
      {:db (-> db
               (assoc-in [:aws-connect :status] :credentials-valid)
               (assoc-in [:aws-connect :loading :active?] false)
@@ -190,8 +218,19 @@
          agent-assignments (get-in db [:aws-connect :agents :assignments])
          connection-names (get-in db [:aws-connect :resources :connection-names])
 
-         selected-resource-data (filter #(contains? selected-resources (:id %)) resources)
+         ;; Flatten the hierarchy to get all selected resource data
+         selected-resource-data (reduce (fn [acc account]
+                                          ;; Get all selected children resources
+                                          (let [account-id (:id account)
+                                                children (:children account)
+                                                selected-children (filter #(contains? selected-resources (:id %)) children)]
 
+                                            ;; Add selected children resources to accumulator
+                                            (concat acc selected-children)))
+                                        []
+                                        resources)
+
+         ;; Create initial status map
          initial-status-map (reduce (fn [acc resource]
                                       (assoc acc (:id resource)
                                              {:status "pending"
@@ -369,3 +408,58 @@
  :aws-connect/creation-status
  (fn [db _]
    (get-in db [:aws-connect :creation-status])))
+
+;; New events for fetching AWS accounts
+(rf/reg-event-fx
+ :aws-connect/fetch-accounts
+ (fn [{:keys [db]} _]
+   {:dispatch [:fetch
+               {:method "GET"
+                :uri "/integrations/aws/organizations"
+                :on-success #(rf/dispatch [:aws-connect/fetch-accounts-success %])
+                :on-failure #(rf/dispatch [:aws-connect/fetch-accounts-failure %])}]}))
+
+(rf/reg-event-fx
+ :aws-connect/fetch-accounts-success
+ (fn [{:keys [db]} [_ response]]
+   (let [accounts (get response :items [])]
+     {:db (-> db
+              (assoc-in [:aws-connect :accounts :data] accounts)
+              (assoc-in [:aws-connect :accounts :status] :loaded)
+              (assoc-in [:aws-connect :accounts :api-error] nil)
+              (assoc-in [:aws-connect :loading :message] "Retrieving AWS resources in your environment..."))
+      :dispatch [:aws-connect/fetch-rds-instances]})))
+
+(rf/reg-event-fx
+ :aws-connect/fetch-accounts-failure
+ (fn [{:keys [db]} [_ response]]
+   (let [error-message (or (get-in response [:response :message])
+                           "Failed to fetch AWS organization accounts")
+         api-error {:message error-message
+                    :status (get response :status 500)
+                    :raw-response (get response :response)}]
+     {:db (-> db
+              (assoc-in [:aws-connect :accounts :status] :error)
+              (assoc-in [:aws-connect :accounts :api-error] api-error)
+              (assoc-in [:aws-connect :loading :active?] false)
+              (assoc-in [:aws-connect :loading :message] nil))
+      :dispatch [:show-snackbar {:level :error
+                                 :text "Failed to retrieve AWS accounts. Proceeding to fetch resources."}]
+      ;; Continue with resources anyway
+      :dispatch-later [{:ms 500 :dispatch [:aws-connect/fetch-rds-instances]}]})))
+
+;; New subscriptions for accounts
+(rf/reg-sub
+ :aws-connect/accounts
+ (fn [db _]
+   (get-in db [:aws-connect :accounts :data])))
+
+(rf/reg-sub
+ :aws-connect/accounts-status
+ (fn [db _]
+   (get-in db [:aws-connect :accounts :status])))
+
+(rf/reg-sub
+ :aws-connect/accounts-api-error
+ (fn [db _]
+   (get-in db [:aws-connect :accounts :api-error])))

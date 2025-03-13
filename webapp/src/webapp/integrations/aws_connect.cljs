@@ -1,12 +1,11 @@
 (ns webapp.integrations.aws-connect
   (:require
-   ["@radix-ui/themes" :refer [Badge Box Button Card Flex Heading
-                               Spinner Table Text]]
-   ["lucide-react" :refer [AlertCircle Cloud RefreshCw]]
+   ["@radix-ui/themes" :refer [Badge Box Button Card Flex Heading Spinner Text]]
+   ["lucide-react" :refer [Cloud RefreshCw]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
-   [webapp.components.data-table-advance :refer [data-table-advanced]]
+   [webapp.components.data-table-simple :refer [data-table-simple]]
    [webapp.events.jobs]
    [webapp.integrations.events]))
 
@@ -22,25 +21,39 @@
         ;; Transformar os resultados em filhos
         children (when (seq result)
                    (map-indexed (fn [idx item]
-                                  {:id (str (:id job) "-" (or (:user_role item) idx))
-                                   :type :resource
-                                   :parent-id (:id job)
-                                   :display_name (str display-name "-" (last (cs/split (:user_role item) "_")))
-                                   :role (or (:user_role item) "unknown")
-                                   :status (:status item)
-                                   :message (or (:message item) "")
-                                   :completed_at (:completed_at item)})
+                                  (let [item-status (:status item)
+                                        item-message (or (:message item) "")
+                                        has-error? (= item-status "failed")]
+                                    {:id (str (:id job) "-" (or (:user_role item) idx))
+                                     :type :resource
+                                     :parent-id (:id job)
+                                     :display_name (str display-name "-" (last (cs/split (:user_role item) "_")))
+                                     :role (or (:user_role item) "unknown")
+                                     :status item-status
+                                     :message item-message
+                                     :completed_at (:completed_at item)
+                                     :error (when has-error?
+                                              {:message item-message
+                                               :code "Error"
+                                               :type "Failed"})}))
                                 result))]
-    {:id (:id job)
-     :type :group
-     :display_name display-name
-     :job_type db-engine
-     :status phase
-     :created_at (:created_at job)
-     :completed_at (:completed_at job)
-     :message (str (when db-name (str db-name ": ")) message)
-     :spec (:spec job)
-     :children children}))
+    (let [has-error? (= phase "failed")
+          job-data {:id (:id job)
+                    :type :group
+                    :display_name display-name
+                    :job_type db-engine
+                    :status phase
+                    :created_at (:created_at job)
+                    :completed_at (:completed_at job)
+                    :message (str (when db-name (str db-name ": ")) message)
+                    :spec (:spec job)
+                    :children children}]
+      ;; Adicionar erro se o status for failed
+      (if has-error?
+        (assoc job-data :error {:message message
+                                :code "Error"
+                                :type "Failed"})
+        job-data))))
 
 (defn transform-jobs-to-hierarchical [jobs]
   (let [transformed (map transform-job-data jobs)
@@ -52,17 +65,6 @@
  :<- [:jobs/aws-connect-jobs]
  (fn [jobs _]
    (transform-jobs-to-hierarchical jobs)))
-
-(rf/reg-sub
- :integrations/flattened-aws-connect-jobs
- :<- [:integrations/formatted-aws-connect-jobs]
- (fn [jobs _]
-   (reduce
-    (fn [acc group]
-      (let [group-item (dissoc group :children)]
-        (conj acc group-item)))
-    []
-    jobs)))
 
 (defn job-status-badge [status]
   (case status
@@ -80,58 +82,13 @@
       (catch :default _
         date-str))))
 
-(defn format-job-details [row]
-  [:> Box {:class "p-4 space-y-3"}
-   [:> Flex {:direction "column" :gap "2"}
-    [:> Heading {:as "h4" :size "3"} (str (:job_type row) " - " (:id row))]
-    [:> Text {:as "p" :size "2" :color "gray"}
-     (str "Started: " (format-date (:created_at row))
-          (when (:completed_at row)
-            (str " | Completed: " (format-date (:completed_at row)))))]
-    [:> Text {:as "p" :size "2"} (:message row)]]
-
-   (when (:spec row)
-     [:> Card {:size "1" :class "mt-2"}
-      [:> Flex {:direction "column" :gap "1" :class "p-3"}
-       [:> Heading {:as "h5" :size "2"} "Discovery Configuration"]
-       [:> Box {:class "text-xs space-y-1"}
-        (for [[key value] (:spec row)]
-          ^{:key (str "spec-" key)}
-          [:> Flex {:justify "between" :class "border-b border-gray-100 py-1 last:border-0"}
-           [:> Text {:color "gray"} (name key)]
-           [:> Text (str value)]])]]])
-
-   (when (seq (:result row))
-     [:> Card {:size "1" :class "mt-2"}
-      [:> Flex {:direction "column" :gap "1" :class "p-3"}
-       [:> Heading {:as "h5" :size "2"} "Connection Results"]
-       [:> Table
-        [:thead
-         [:tr
-          [:th {:style {:width "30%"}} [:> Text {:size "1" :weight "medium"} "Database Role"]]
-          [:th {:style {:width "20%"}} [:> Text {:size "1" :weight "medium"} "Status"]]
-          [:th {:style {:width "50%"}} [:> Text {:size "1" :weight "medium"} "Details"]]]]
-        [:tbody
-         (for [item (:result row)]
-           ^{:key (str "result-" (or (:user_role item) (:id item)))}
-           [:tr
-            [:td [:> Text {:size "1"} (or (:user_role item) "—")]]
-            [:td [job-status-badge (or (:status item) "unknown")]]
-            [:td [:> Text {:size "1"}
-                  (or (:message item)
-                      (when (:completed_at item)
-                        (str "Completed at " (format-date (:completed_at item))))
-                      "No details")]]])]]]])])
-
 (defn jobs-table-component []
-  (let [expanded-rows (r/atom #{})
-        update-counter (r/atom 0)]
+  (let [update-counter (r/atom 0)]
     (fn []
       (let [jobs @(rf/subscribe [:integrations/formatted-aws-connect-jobs])
-            flattened-jobs @(rf/subscribe [:integrations/flattened-aws-connect-jobs])
             running? @(rf/subscribe [:jobs/aws-connect-running?])]
 
-        @update-counter
+        (swap! update-counter inc)
 
         [:> Box {:class "w-full"}
          [:> Flex {:justify "between" :align "center" :width "100%" :class "px-1 mb-2"}
@@ -147,39 +104,26 @@
             [:> RefreshCw {:size 14}]
             "Refresh"]]]
 
-         [data-table-advanced
-          {:columns [{:id :id, :header "Resource", :width "35%",
-                      :accessor (fn [row] (or (:display_name row) (:id row)))}
-                     {:id :status, :header "Status", :width "15%",
+         [data-table-simple
+          {:columns [{:id :display_name
+                      :header "Resource"
+                      :width "35%"}
+                     {:id :status
+                      :header "Status"
+                      :width "15%"
                       :render (fn [value _] [job-status-badge value])}
-                     {:id :created_at, :header "Created At", :width "25%"
+                     {:id :created_at
+                      :header "Created At"
+                      :width "25%"
                       :render (fn [value _] (format-date value))}
-                     {:id :completed_at, :header "Completed At", :width "25%",
+                     {:id :completed_at
+                      :header "Completed At"
+                      :width "25%"
                       :render (fn [value _] (format-date value))}]
-           :data flattened-jobs
-           :original-data jobs
+           :data jobs
            :key-fn :id
-           :row-expandable? (fn [row]
-                              (let [original-group (first (filter #(= (:id %) (:id row)) jobs))]
-                                (and (= (:type row) :group)
-                                     (seq (:children original-group)))))
-           :row-expanded? (fn [row]
-                            (contains? @expanded-rows (:id row)))
-           :on-toggle-expand (fn [id]
-                               (swap! expanded-rows
-                                      (fn [current]
-                                        (if (contains? current id)
-                                          (disj current id)
-                                          (conj current id))))
-                               (swap! update-counter inc))
-           :row-error (fn [row]
-                        (when (= (:status row) "failed")
-                          {:message (str "Discovery failed: " (or (:message row) "Unknown error"))
-                           :details [format-job-details row]}))
-           :error-indicator (fn [] [:> AlertCircle {:size 16 :class "text-red-500"}])
            :empty-state "No database discovery processes found. Start a new AWS connection to automatically discover and configure your database resources."
-           :tree-data? true
-           :parent-id-field "parent-id"}]]))))
+           :sticky-header? true}]]))))
 
 (defn aws-connect-button []
   [:> Card {:size "2" :class "w-full mb-6"}
@@ -199,12 +143,10 @@
   (r/create-class
    {:component-did-mount
     (fn []
-      ;; Iniciar o polling de jobs quando o componente é montado
       (rf/dispatch [:jobs/fetch-aws-connect-jobs]))
 
     :component-will-unmount
     (fn []
-      ;; Parar o polling quando sair da página
       (rf/dispatch [:jobs/stop-aws-connect-polling]))
 
     :reagent-render

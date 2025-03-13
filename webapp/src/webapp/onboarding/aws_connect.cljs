@@ -1,13 +1,13 @@
 (ns webapp.onboarding.aws-connect
   (:require [re-frame.core :as rf]
-            ["@radix-ui/themes" :refer [Badge Box Card Spinner Flex Heading Separator Text Callout]]
+            ["@radix-ui/themes" :refer [Badge Box Button Card Spinner Link Flex Heading Separator Text Callout]]
             [webapp.components.forms :as forms]
-            ["lucide-react" :refer [Check Info ArrowUpRight X AlertCircle]]
+            ["lucide-react" :refer [Check Info ArrowUpRight X]]
             [webapp.connections.views.setup.page-wrapper :as page-wrapper]
             [webapp.onboarding.setup-resource :refer [aws-resources-data-table]]
-            [webapp.components.data-table-advance :refer [data-table-advanced]]
-            [reagent.core :as r]
-            [webapp.config :as config]))
+            [webapp.components.data-table-simple :refer [data-table-simple]]
+            [webapp.config :as config]
+            [reagent.core :as r]))
 
 (def steps
   [{:id :credentials
@@ -159,7 +159,6 @@
        [:> Callout.Text
         "During this Beta release, our service currently supports database resources only."]]]
 
-     ;; Using our custom AWS resources data table component
      [:> Box {:class "w-full"}
       [aws-resources-data-table]]
 
@@ -176,13 +175,32 @@
         selected @(rf/subscribe [:aws-connect/selected-resources])
         assignments @(rf/subscribe [:aws-connect/agent-assignments])
         connection-names @(rf/subscribe [:aws-connect/connection-names])
-        agents @(rf/subscribe [:aws-connect/agents])]
+        agents @(rf/subscribe [:aws-connect/agents])
 
-    ;; Initialize connection names with defaults if not already set
+        selected-resources (reduce (fn [acc account]
+                                     (let [children (:children account)
+                                           selected-children (filter #(contains? selected (:id %)) children)]
+                                       (if (seq selected-children)
+                                         (conj acc (assoc account :children selected-children))
+                                         acc)))
+                                   []
+                                   resources)
+
+        apply-agent-to-account (fn [account-id agent-id]
+                                 (let [account (first (filter #(= (:id %) account-id) selected-resources))
+                                       child-resources (:children account)]
+                                   (doseq [resource child-resources]
+                                     (rf/dispatch [:aws-connect/set-agent-assignment (:id resource) agent-id]))))]
+
     (when (and (seq resources) (empty? connection-names))
-      (doseq [resource (filter #(contains? selected (:id %)) resources)]
-        (let [default-name (str (:name resource) "-" (:account-id resource))]
-          (rf/dispatch [:aws-connect/set-connection-name (:id resource) default-name]))))
+      (doseq [resource-id selected
+              :let [resource-data
+                    (some (fn [account]
+                            (some #(when (= (:id %) resource-id) %) (:children account)))
+                          resources)]
+              :when resource-data]
+        (let [default-name (str (:name resource-data) "-" (:account-id resource-data))]
+          (rf/dispatch [:aws-connect/set-connection-name resource-id default-name]))))
 
     [:> Flex {:direction "column" :align "center" :gap "7" :mb "4" :class "w-full"}
      [:> Box {:class "max-w-[600px] space-y-3"}
@@ -192,146 +210,140 @@
        "Please review your selected AWS database resources and assign an Agent to each connection before proceeding. You can also customize the connection names."]
 
       [:> Flex {:align "center" :gap "1" :class "text-[--accent-a11] cursor-pointer"}
-       [:> Text {:as "a"
-                 :size "2"
-                 :onClick #(rf/dispatch [:modal/show-agent-info])}
-        "Learn more about Agents"]
-       [:> ArrowUpRight {:size 16}]]]
+       [:> Link {:href "https://hoop.dev/docs/concepts/agent"
+                 :target "_blank"}
+        [:> Flex {:gap "2" :align "center"}
+         [:> Text {:as "a"
+                   :size "2"}
+          "Learn more about Agents"]
+         [:> ArrowUpRight {:size 16}]]]]]
 
-     ;; Using data-table-advanced component
      [:> Box {:class "w-full"}
-      [data-table-advanced
+      [data-table-simple
        {:columns [{:id :name
-                   :header "Resource"
-                   :accessor #(:name %)
-                   :width "30%"}
+                   :header "Resources"
+                   :width "25%"}
+                  {:id :id
+                   :header "Account ID"
+                   :width "15%"
+                   :render (fn [_ row]
+                             (if (:account-type row)
+                               (:id row)
+                               ""))}
                   {:id :connection_name
                    :header "Connection Name"
                    :width "30%"
                    :render (fn [_ row]
-                            ;; Get the current connection name or default
-                             (let [resource-id (:id row)
-                                   default-name (str (:name row) "-" (:account-id row))
-                                   current-name (get connection-names resource-id default-name)]
-                               [forms/input
-                                {:value current-name
-                                 :not-margin-bottom? true
-                                 :placeholder "Enter connection name"
-                                 :on-change #(rf/dispatch [:aws-connect/set-connection-name
-                                                           resource-id
-                                                           (-> % .-target .-value)])}]))}
+                             (if (:account-type row)
+                               ""
+                               (let [resource-id (:id row)
+                                     default-name (str (:name row) "-" (:account-id row))
+                                     current-name (get connection-names resource-id default-name)]
+                                 [forms/input
+                                  {:value current-name
+                                   :not-margin-bottom? true
+                                   :placeholder "Enter connection name"
+                                   :on-change #(rf/dispatch [:aws-connect/set-connection-name
+                                                             resource-id
+                                                             (-> % .-target .-value)])}])))}
                   {:id :agent
                    :header "Agent"
-                   :width "40%"
+                   :width "30%"
                    :render (fn [_ row]
-                             [forms/select
-                              {:selected (get assignments (:id row) "")
-                               :not-margin-bottom? true
-                               :full-width? true
-                               :on-change #(rf/dispatch [:aws-connect/set-agent-assignment (:id row) %])
-                               :options (if (seq agents)
-                                          (map (fn [agent]
-                                                 {:value (:id agent)
-                                                  :text (:name agent)})
-                                               agents)
-                                          [])}])}]
-        :data (filter #(contains? selected (:id %)) resources)
+                             (if (:account-type row)
+                               ""
+
+                               (let [resource-id (:id row)
+                                     account-id (:account-id row)
+                                     current-agent-id (get assignments resource-id "")
+                                     agent-id (r/atom current-agent-id)]
+                                 [:> Flex {:align "center" :gap "2"}
+                                  [forms/select
+                                   {:selected @agent-id
+                                    :not-margin-bottom? true
+                                    :style {:width "120px"}
+                                    :on-change #(do (reset! agent-id %)
+                                                    (rf/dispatch [:aws-connect/set-agent-assignment resource-id %]))
+                                    :options (if (seq agents)
+                                               (map (fn [agent]
+                                                      {:value (:id agent)
+                                                       :text (:name agent)})
+                                                    agents)
+                                               [])}]
+                                  [:> Button {:size "1"
+                                              :variant "soft"
+                                              :disabled (empty? @agent-id)
+                                              :on-click #(apply-agent-to-account account-id @agent-id)}
+                                   "Apply to all"]])))}]
+        :data selected-resources
         :key-fn :id
         :sticky-header? true
         :empty-state "No resources selected yet"}]]]))
 
 (defn creation-status-step []
-  (let [expanded-rows (r/atom #{})
-        update-counter (r/atom 0)]
+  (let [creation-status @(rf/subscribe [:aws-connect/creation-status])
+        connections (:connections creation-status)
+        connections-data (for [[id conn] (seq connections)]
+                           (let [conn-data (assoc (:resource conn)
+                                                  :id id
+                                                  :connection-name (:name conn)
+                                                  :connection-status (:status conn)
+                                                  :connection-error (:error conn))]
+                               ;; Formatação de erros para uso com data-table-simple
+                             (if (:connection-error conn-data)
+                               (assoc conn-data :error {:message (:connection-error conn-data)
+                                                        :code "Error"
+                                                        :type "Failed"})
+                               conn-data)))
+        sorted-connections (vec
+                            (sort-by (fn [conn]
+                                       (case (:connection-status conn)
+                                         "pending" 0
+                                         "failure" 1
+                                         "success" 2
+                                         3))
+                                     connections-data))]
+    [:> Flex {:direction "column" :align "center" :gap "7" :mb "4" :class "w-full"}
+     [:> Box {:class "max-w-[600px] space-y-3"}
+      [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+       "Creating Connections"]
+      [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+       "Please wait while we create your AWS database connections. This process may take a few minutes."]]
 
-    (fn []
-      (let [creation-status @(rf/subscribe [:aws-connect/creation-status])
-            connections (:connections creation-status)
-            connections-data (for [[id conn] (seq connections)]
-                               (let [conn-data (assoc (:resource conn)
-                                                      :id id
-                                                      :connection-name (:name conn)
-                                                      :connection-status (:status conn)
-                                                      :connection-error (:error conn))]
-                                 conn-data))
-            sorted-connections (vec
-                                (sort-by (fn [conn]
-                                           (case (:connection-status conn)
-                                             "pending" 0
-                                             "failure" 1
-                                             "success" 2
-                                             3))
-                                         connections-data))]
-
-        @update-counter
-
-        [:> Flex {:direction "column" :align "center" :gap "7" :mb "4" :class "w-full"}
-         [:> Box {:class "max-w-[600px] space-y-3"}
-          [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-           "Creating Connections"]
-          [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
-           "Please wait while we create your AWS database connections. This process may take a few minutes."]]
-
-         [:> Box {:class "w-full"}
-          [data-table-advanced
-           {:columns [{:id "connection-name"
-                       :header "Connection Name"
-                       :accessor :connection-name
-                       :width "40%"}
-                      {:id "engine"
-                       :header "Type"
-                       :accessor :engine
-                       :width "20%"}
-                      {:id "status"
-                       :header "Status"
-                       :width "20%"
-                       :render (fn [_ row]
-                                 [:> Flex {:align "center" :gap "2"}
-                                  [:> Box {:class "w-6"}
-                                   (case (:connection-status row)
-                                     "pending" [:> Spinner {:size "1"}]
-                                     "success" [:> Check {:size 18 :class "text-green-500"}]
-                                     "failure" [:> X {:size 18 :class "text-red-500"}]
-                                     [:> AlertCircle {:size 18 :class "text-gray-500"}])]
-                                  [:> Badge {:color (case (:connection-status row)
-                                                      "pending" "blue"
-                                                      "success" "green"
-                                                      "failure" "red"
-                                                      "gray")
-                                             :variant "soft"}
-                                   (case (:connection-status row)
-                                     "pending" "Creating..."
-                                     "success" "Created"
-                                     "failure" "Failed"
-                                     (:status row))]])}]
-            :data sorted-connections
-            :key-fn :id
-            :sticky-header? true
-
-            :row-expandable? (fn [row]
-                               (let [has-error (boolean (:connection-error row))]
-                                 has-error))
-
-            :row-expanded? (fn [row]
-                             (let [is-expanded (contains? @expanded-rows (:id row))]
-                               is-expanded))
-
-            :on-toggle-expand (fn [id]
-                                (swap! expanded-rows (fn [s]
-                                                       (if (contains? s id)
-                                                         (disj s id)
-
-                                                         (conj s id))))
-                                (swap! update-counter inc))
-
-            :row-error (fn [row]
-                         (when-let [error (:connection-error row)]
-                           {:message error}))
-
-            :error-indicator (fn []
-                               [:> AlertCircle {:size 16 :class "text-red-500"}])
-
-            :empty-state "No connections are being created"}]]]))))
+     [:> Box {:class "w-full"}
+      [data-table-simple
+       {:columns [{:id :connection-name
+                   :header "Connection Name"
+                   :width "40%"}
+                  {:id :engine
+                   :header "Type"
+                   :width "20%"}
+                  {:id :status
+                   :header "Status"
+                   :width "20%"
+                   :render (fn [_ row]
+                             [:> Flex {:align "center" :gap "2"}
+                              [:> Box {:class "w-6"}
+                               (case (:connection-status row)
+                                 "pending" [:> Spinner {:size "1"}]
+                                 "success" [:> Check {:size 18 :class "text-green-500"}]
+                                 "failure" [:> X {:size 18 :class "text-red-500"}]
+                                 [:> Box])]
+                              [:> Badge {:color (case (:connection-status row)
+                                                  "pending" "blue"
+                                                  "success" "green"
+                                                  "failure" "red"
+                                                  "gray")
+                                         :variant "soft"}
+                               (case (:connection-status row)
+                                 "pending" "Creating..."
+                                 "success" "Created"
+                                 "failure" "Failed"
+                                 (:status row))]])}]
+        :data sorted-connections
+        :key-fn :id
+        :sticky-header? true
+        :empty-state "No connections are being created"}]]]))
 
 (defn aws-connect-header []
   [:<>
@@ -345,18 +357,14 @@
      "Follow the steps to setup your AWS resources."]]])
 
 (defn main []
-  (rf/dispatch [:aws-connect/initialize-state])
-
   (fn [form-type]
     (let [current-step @(rf/subscribe [:aws-connect/current-step])
-          loading @(rf/subscribe [:aws-connect/loading])
-          creation-status @(rf/subscribe [:aws-connect/creation-status])
-          all-completed? (and creation-status (:all-completed? creation-status))]
+          loading @(rf/subscribe [:aws-connect/loading])]
 
       [page-wrapper/main
        {:children
         [:> Box {:class "min-h-screen bg-gray-1"}
-         [:> Box {:class "mx-auto max-w-[800px] p-6 space-y-7"}
+         [:> Box {:class "mx-auto max-w-[1000px] p-6 space-y-7"}
           [:> Box {:class "place-items-center space-y-7"}
            [aws-connect-header]
            [:> Flex {:align "center" :justify "center" :mb "8" :class "w-full"}
@@ -380,7 +388,7 @@
                (when-not (= id (if (= current-step :creation-status) :creation-status :review))
                  [:> Box {:class "px-2"}
                   [:> Separator {:size "1" :orientation "horizontal" :class "w-4"}]])])]
-       ;; Current step content
+      ;; Current step content
            (case current-step
              :credentials [credentials-step]
              :resources [resources-step]
@@ -388,39 +396,36 @@
              :creation-status [creation-status-step]
              [credentials-step])]]]
         :footer-props
-        (cond
-          (and (= current-step :creation-status) all-completed?)
-          {:form-type form-type
-           :back-text nil
-           :next-text "Go to AWS Connect"
-           :on-back nil
-           :on-next #(rf/dispatch [:navigate :integrations-aws-connect])
-           :next-disabled? false}
-
-          (= current-step :creation-status)
-          nil
-
-          :else
-          {:form-type form-type
-           :back-text (case current-step
-                        :credentials "Back"
-                        :resources "Back to Credentials"
-                        :review "Back to Resources")
-           :next-text (case current-step
-                        :credentials "Next: Resources"
-                        :resources "Next: Review"
-                        :review "Confirm and Create")
-           :on-back #(case current-step
-                       :credentials (.back js/history)
-                       :resources (rf/dispatch [:aws-connect/set-current-step :credentials])
-                       :review (rf/dispatch [:aws-connect/set-current-step :resources]))
-           :on-next #(case current-step
-                       :credentials (rf/dispatch [:aws-connect/validate-credentials])
-                       :resources (rf/dispatch [:aws-connect/set-current-step :review])
-                       :review (rf/dispatch [:aws-connect/create-connections]))
-           :next-disabled? (case current-step
-                             :credentials (:active? loading)
-                             :resources (empty? @(rf/subscribe [:aws-connect/selected-resources]))
-                             :review (some empty? (vals @(rf/subscribe [:aws-connect/agent-assignments]))))})}])))
+        {:form-type form-type
+         :back-text (case current-step
+                      :credentials "Back"
+                      :resources "Back to Credentials"
+                      :review "Back to Resources"
+                      :creation-status nil)
+         :next-text (case current-step
+                      :credentials "Next: Resources"
+                      :resources "Next: Review"
+                      :review "Confirm and Create"
+                      :creation-status "Go to AWS Connect")
+         :on-back #(case current-step
+                     :credentials (.back js/history)
+                     :resources (rf/dispatch [:aws-connect/set-current-step :credentials])
+                     :review (rf/dispatch [:aws-connect/set-current-step :resources])
+                     :creation-status nil)
+         :on-next #(case current-step
+                     :credentials (rf/dispatch [:aws-connect/validate-credentials])
+                     :resources (rf/dispatch [:aws-connect/set-current-step :review])
+                     :review (rf/dispatch [:aws-connect/create-connections])
+                     :creation-status (rf/dispatch [:navigate :integrations-aws-connect]))
+         :back-hidden? (case current-step
+                         :credentials false
+                         :resources false
+                         :review false
+                         :creation-status true)
+         :next-disabled? (case current-step
+                           :credentials (:active? loading)
+                           :resources (empty? @(rf/subscribe [:aws-connect/selected-resources]))
+                           :review (some empty? (vals @(rf/subscribe [:aws-connect/agent-assignments])))
+                           :creation-status false)}}])))
 
 
