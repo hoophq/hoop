@@ -13,6 +13,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/agentcontroller"
 	"github.com/hoophq/hoop/gateway/analytics"
+	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
@@ -111,6 +112,8 @@ func Post(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating user group"})
 			return
 		}
+		// add default system tags
+		_ = models.UpsertBatchConnectionTags(apiconnections.DefaultConnectionTags(orgID))
 
 		log.With("org_name", req.OrgName, "org_id", orgID).Infof("user signup up with success")
 		identifySignup(user, req.OrgName, c.GetHeader("user-agent"), ctx.ApiURL)

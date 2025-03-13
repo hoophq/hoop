@@ -3972,8 +3972,8 @@ const docTemplate = `{
                         "type": "string"
                     },
                     "example": {
-                        "foo": "bar",
-                        "zika": "virus"
+                        "environment": "prod",
+                        "tier": "frontend"
                     }
                 },
                 "default_database": {

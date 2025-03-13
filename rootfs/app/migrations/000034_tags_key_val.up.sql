@@ -19,7 +19,6 @@ CREATE TABLE connection_tags_association(
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
     org_id UUID NULL REFERENCES orgs (id),
 
-    -- test it cascade
     tag_id UUID NOT NULL REFERENCES connection_tags (id) ON DELETE CASCADE,
     connection_id UUID NOT NULL REFERENCES connections (id) ON DELETE CASCADE,
 

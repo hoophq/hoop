@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const tableConnectionTags = "private.connection_tags"
@@ -62,6 +63,23 @@ func ListConnectionTags(orgID string) ([]ConnectionTag, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+// UpsertBatchConnectionTags create connection tags in batch
+func UpsertBatchConnectionTags(items []ConnectionTag) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		for _, item := range items {
+			err := tx.Table(tableConnectionTags).
+				Model(ConnectionTag{}).
+				Clauses(clause.OnConflict{DoNothing: true}).
+				Create(item).
+				Error
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func updateBatchConnectionTags(tx *gorm.DB, orgID, connID string, tags map[string]string) error {

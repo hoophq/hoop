@@ -12,6 +12,7 @@ import (
 	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/agentcontroller"
 	"github.com/hoophq/hoop/gateway/api"
+	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/indexer"
@@ -77,6 +78,11 @@ func Run() {
 		_, _, err = apiorgs.ProvisionOrgAgentKey(ctx, grpcURL)
 		if err != nil && err != apiorgs.ErrAlreadyExists {
 			log.Errorf("failed provisioning org agent key, reason=%v", err)
+		}
+
+		err = models.UpsertBatchConnectionTags(apiconnections.DefaultConnectionTags(ctx.GetOrgID()))
+		if err != nil {
+			log.Warnf("failed provisioning default system tags, reason=%v", err)
 		}
 	}
 

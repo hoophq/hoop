@@ -228,8 +228,10 @@ type Connection struct {
 	ManagedBy *string `json:"managed_by" readonly:"true" example:""`
 	// DEPRECATED: Tags to classify the connection
 	Tags []string `json:"tags" example:"prod"`
-	// Tgas to classify the connection
-	ConnectionTags map[string]string `json:"connection_tags" example:"foo:bar,zika:virus"`
+	// Tags to identify the connection
+	// * keys must contain between 1 and 64 alphanumeric characters, it may include (-), (_), (/), or (.) characters and it must not end with (-), (/) or (-).
+	// * values must contain between 1 and 256 alphanumeric characters, it may include space, (-), (_), (/), (+), (@), (:), (=) or (.) characters.
+	ConnectionTags map[string]string `json:"connection_tags" example:"environment:prod,tier:frontend"`
 	// Toggle Ad Hoc Runbooks Executions
 	// * enabled - Enable to run runbooks for this connection
 	// * disabled - Disable runbooks execution for this connection
