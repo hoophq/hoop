@@ -14,11 +14,16 @@ INSERT INTO agents (id, org_id, name, mode, key_hash, status)
 COMMIT;
 EOF
 
-SCHEME=grpcs
-if [ -z $TLS_KEY ]; then
-    SCHEME=grpc
+if [ -z $SCHEME ]; then
+    SCHEME=grpcs
+    if [ -z $TLS_KEY ]; then
+        SCHEME=grpc
+    fi
 fi
-export GRPC_URL=gateway:8010
+
+if [ -z $GRPC_URL ]; then
+    export GRPC_URL=gateway:8010
+fi
 
 export HOOP_KEY=${SCHEME}://system:$(printenv SECRET_KEY | tr -d '\n')@${GRPC_URL}?mode=standard
 hoop start agent
