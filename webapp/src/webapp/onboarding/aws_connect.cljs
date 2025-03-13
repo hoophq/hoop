@@ -1,12 +1,13 @@
 (ns webapp.onboarding.aws-connect
   (:require [re-frame.core :as rf]
-            ["@radix-ui/themes" :refer [Badge Box Card Spinner Link Flex Heading Separator Text Callout]]
+            ["@radix-ui/themes" :refer [Badge Box Button Card Spinner Link Flex Heading Separator Text Callout]]
             [webapp.components.forms :as forms]
             ["lucide-react" :refer [Check Info ArrowUpRight X]]
             [webapp.connections.views.setup.page-wrapper :as page-wrapper]
             [webapp.onboarding.setup-resource :refer [aws-resources-data-table]]
             [webapp.components.data-table-simple :refer [data-table-simple]]
-            [webapp.config :as config]))
+            [webapp.config :as config]
+            [reagent.core :as r]))
 
 (def steps
   [{:id :credentials
@@ -158,7 +159,6 @@
        [:> Callout.Text
         "During this Beta release, our service currently supports database resources only."]]]
 
-     ;; Using our custom AWS resources data table component
      [:> Box {:class "w-full"}
       [aws-resources-data-table]]
 
@@ -177,19 +177,21 @@
         connection-names @(rf/subscribe [:aws-connect/connection-names])
         agents @(rf/subscribe [:aws-connect/agents])
 
-         ;; Flatten the resources to find all selected child resources
         selected-resources (reduce (fn [acc account]
                                      (let [children (:children account)
                                            selected-children (filter #(contains? selected (:id %)) children)]
                                        (if (seq selected-children)
-                                          ;; Add account as parent with only selected children
                                          (conj acc (assoc account :children selected-children))
-                                          ;; Skip accounts with no selected children
                                          acc)))
                                    []
-                                   resources)]
+                                   resources)
 
-    ;; Initialize connection names with defaults if not already set
+        apply-agent-to-account (fn [account-id agent-id]
+                                 (let [account (first (filter #(= (:id %) account-id) selected-resources))
+                                       child-resources (:children account)]
+                                   (doseq [resource child-resources]
+                                     (rf/dispatch [:aws-connect/set-agent-assignment (:id resource) agent-id]))))]
+
     (when (and (seq resources) (empty? connection-names))
       (doseq [resource-id selected
               :let [resource-data
@@ -216,12 +218,11 @@
           "Learn more about Agents"]
          [:> ArrowUpRight {:size 16}]]]]]
 
-     ;; Using data-table-simple component
      [:> Box {:class "w-full"}
       [data-table-simple
        {:columns [{:id :name
                    :header "Resources"
-                   :width "30%"}
+                   :width "25%"}
                   {:id :id
                    :header "Account ID"
                    :width "15%"
@@ -233,11 +234,8 @@
                    :header "Connection Name"
                    :width "30%"
                    :render (fn [_ row]
-                            ;; Only show input for resources (not accounts)
                              (if (:account-type row)
-                               ;; For accounts, show nothing
-                               "AWS Account"
-                               ;; For resources, show the input
+                               ""
                                (let [resource-id (:id row)
                                      default-name (str (:name row) "-" (:account-id row))
                                      current-name (get connection-names resource-id default-name)]
@@ -250,24 +248,33 @@
                                                              (-> % .-target .-value)])}])))}
                   {:id :agent
                    :header "Agent"
-                   :width "25%"
+                   :width "30%"
                    :render (fn [_ row]
-                             ;; Only show select for resources (not accounts)
                              (if (:account-type row)
-                               ;; For accounts, show nothing
                                ""
-                               ;; For resources, show the agent select
-                               [forms/select
-                                {:selected (get assignments (:id row) "")
-                                 :not-margin-bottom? true
-                                 :full-width? true
-                                 :on-change #(rf/dispatch [:aws-connect/set-agent-assignment (:id row) %])
-                                 :options (if (seq agents)
-                                            (map (fn [agent]
-                                                   {:value (:id agent)
-                                                    :text (:name agent)})
-                                                 agents)
-                                            [])}]))}]
+
+                               (let [resource-id (:id row)
+                                     account-id (:account-id row)
+                                     current-agent-id (get assignments resource-id "")
+                                     agent-id (r/atom current-agent-id)]
+                                 [:> Flex {:align "center" :gap "2"}
+                                  [forms/select
+                                   {:selected @agent-id
+                                    :not-margin-bottom? true
+                                    :style {:width "120px"}
+                                    :on-change #(do (reset! agent-id %)
+                                                    (rf/dispatch [:aws-connect/set-agent-assignment resource-id %]))
+                                    :options (if (seq agents)
+                                               (map (fn [agent]
+                                                      {:value (:id agent)
+                                                       :text (:name agent)})
+                                                    agents)
+                                               [])}]
+                                  [:> Button {:size "1"
+                                              :variant "soft"
+                                              :disabled (empty? @agent-id)
+                                              :on-click #(apply-agent-to-account account-id @agent-id)}
+                                   "Apply to all"]])))}]
         :data selected-resources
         :key-fn :id
         :sticky-header? true
@@ -282,7 +289,7 @@
                                                   :connection-name (:name conn)
                                                   :connection-status (:status conn)
                                                   :connection-error (:error conn))]
-                                 ;; Formatação de erros para uso com data-table-simple
+                               ;; Formatação de erros para uso com data-table-simple
                              (if (:connection-error conn-data)
                                (assoc conn-data :error {:message (:connection-error conn-data)
                                                         :code "Error"
@@ -361,7 +368,7 @@
       [page-wrapper/main
        {:children
         [:> Box {:class "min-h-screen bg-gray-1"}
-         [:> Box {:class "mx-auto max-w-[800px] p-6 space-y-7"}
+         [:> Box {:class "mx-auto max-w-[1000px] p-6 space-y-7"}
           [:> Box {:class "place-items-center space-y-7"}
            [aws-connect-header]
            [:> Flex {:align "center" :justify "center" :mb "8" :class "w-full"}
@@ -385,7 +392,7 @@
                (when-not (= id (if (= current-step :creation-status) :creation-status :review))
                  [:> Box {:class "px-2"}
                   [:> Separator {:size "1" :orientation "horizontal" :class "w-4"}]])])]
-       ;; Current step content
+      ;; Current step content
            (case current-step
              :credentials [credentials-step]
              :resources [resources-step]
