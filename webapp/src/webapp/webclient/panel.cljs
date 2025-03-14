@@ -22,6 +22,7 @@
    [reagent.core :as r]
    [webapp.formatters :as formatters]
    [webapp.subs :as subs]
+   [webapp.components.keyboard-shortcuts :as keyboard-shortcuts]
    [webapp.webclient.codemirror.extensions :as extensions]
    [webapp.webclient.components.connections-list :as connections-list]
    [webapp.webclient.components.header :as header]
@@ -309,7 +310,9 @@
                                                      :aria-hidden "true"}]
                       [:span {:class "text-xs text-gray-11"}
                        (str "Last execution time " (formatters/time-elapsed (:execution_time (:data @script-output))))]])]
-                  [:div {:class "flex-end items-center gap-regular pr-4"}
+                  [:div {:class "flex-end items-center gap-regular pr-4 flex"}
+                   [:div {:class "mr-3"} 
+                    [keyboard-shortcuts/keyboard-shortcuts-button]]
                    [language-select/main current-connection]]]]]]]]
             panel-content]
 
