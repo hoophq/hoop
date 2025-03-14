@@ -21,23 +21,49 @@
 (rf/reg-event-fx
  :connection-setup/submit
  (fn [{:keys [db]} _]
-   (let [current-env-key (get-in db [:connection-setup :credentials :current-key])
+   (let [;; Valores atuais de credenciais
+         current-env-key (get-in db [:connection-setup :credentials :current-key])
          current-env-value (get-in db [:connection-setup :credentials :current-value])
          current-file-name (get-in db [:connection-setup :credentials :current-file-name])
          current-file-content (get-in db [:connection-setup :credentials :current-file-content])
 
-         db-with-current (cond-> db
-                           (and (not (empty? current-env-key))
-                                (not (empty? current-env-value)))
-                           (update-in [:connection-setup :credentials :environment-variables]
-                                      #(conj (or % []) {:key current-env-key :value current-env-value}))
+         ;; Valores atuais de tags
+         current-tag-key (get-in db [:connection-setup :tags :current-key])
+         current-tag-value (get-in db [:connection-setup :tags :current-value])
 
-                           (and (not (empty? current-file-name))
-                                (not (empty? current-file-content)))
-                           (update-in [:connection-setup :credentials :configuration-files]
-                                      #(conj (or % []) {:key current-file-name :value current-file-content})))
+         ;; Primeiro processa as credenciais atuais
+         db-with-current-creds (cond-> db
+                                 ;; Incluir credenciais de ambiente atuais
+                                 (and (not (empty? current-env-key))
+                                      (not (empty? current-env-value)))
+                                 (update-in [:connection-setup :credentials :environment-variables]
+                                            #(conj (or % []) {:key current-env-key :value current-env-value}))
 
-         payload (process-form/process-payload db-with-current)]
+                                 ;; Incluir credenciais de arquivo atuais
+                                 (and (not (empty? current-file-name))
+                                      (not (empty? current-file-content)))
+                                 (update-in [:connection-setup :credentials :configuration-files]
+                                            #(conj (or % []) {:key current-file-name :value current-file-content})))
+
+         ;; Depois processa a tag atual (se existir e ainda não tiver sido adicionada)
+         db-with-current-tag (cond-> db-with-current-creds
+                               ;; Incluir tag atual - armazenando apenas os valores, não objetos
+                               (and current-tag-key (.-value current-tag-key))
+                               (update-in [:connection-setup :tags :data]
+                                          #(conj (or % [])
+                                                 {:key (.-value current-tag-key)
+                                                  :value (if current-tag-value
+                                                           (.-value current-tag-value)
+                                                           "")})))
+
+         ;; Processo especial para o payload: mover as tags de :data para o nível superior
+         tags-data (get-in db-with-current-tag [:connection-setup :tags :data] [])
+         db-with-processed-tags (assoc-in db-with-current-tag [:connection-setup :tags] tags-data)
+
+         ;; Gerar o payload
+         payload (process-form/process-payload db-with-processed-tags)]
+
+     ;; Despachar para criar a conexão e reinicializar o estado
      {:fx [[:dispatch [:connections->create-connection payload]]
            [:dispatch-later {:ms 500
                              :dispatch [:connection-setup/initialize-state nil]}]]})))

@@ -7,6 +7,7 @@
    [webapp.components.multiselect :as multi-select]
    [webapp.connections.dlp-info-types :as dlp-info-types]
    [webapp.connections.helpers :as helpers]
+   [webapp.connections.views.setup.tags-inputs :as tags-inputs]
    [webapp.routes :as routes]
    [webapp.upgrade-plan.main :as upgrade-plan]))
 
@@ -102,21 +103,27 @@
                                                      (-> % .-target .-value)])}]])
 
           (when (not= @connection-subtype "console")
-            [:> Box {:class "space-y-4"}
-             [:> Box
-              [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-               "Tags"]
-              [:> Text {:as "p" :size "3" :class "text-[--gray-11]"}
-               "Add custom labels to manage and track connections."]]
-             [multi-select/text-input
-              {:value @tags
-               :input-value @tags-input
-               :on-change #(rf/dispatch [:connection-setup/set-tags %])
-               :on-input-change #(rf/dispatch [:connection-setup/set-tags-input %])
-               :id "tags-multi-select-text-input"
-               :name "tags-multi-select-text-input"}]])
+            #_[:> Box {:class "space-y-4"}
+               [:> Box
+                [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+                 "Tags"]
+                [:> Text {:as "p" :size "3" :class "text-[--gray-11]"}
+                 "Add custom labels to manage and track connections."]]
+               [multi-select/text-input
+                {:value @tags
+                 :input-value @tags-input
+                 :on-change #(rf/dispatch [:connection-setup/set-tags %])
+                 :on-input-change #(rf/dispatch [:connection-setup/set-tags-input %])
+                 :id "tags-multi-select-text-input"
+                 :name "tags-multi-select-text-input"}]]
 
-        ;; [tags-inputs/main]
+            [tags-inputs/main])
+
+          ;; [tag-select-example/main]
+
+
+          ;; (println (tags-utils/format-keys-for-select tags-utils/mock-tags-data))
+          ;; (println (tags-utils/get-values-for-key tags-utils/mock-tags-data "environment"))
 
           [:> Box
            [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]" :mb "5"}

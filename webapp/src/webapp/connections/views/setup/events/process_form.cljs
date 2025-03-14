@@ -26,7 +26,8 @@
         connection-subtype (get-in db [:connection-setup :subtype])
         connection-name (get-in db [:connection-setup :name])
         agent-id (get-in db [:connection-setup :agent-id])
-        tags-array (get-in db [:connection-setup :tags] [])
+        tags-array (get-in db [:connection-setup :tags :data] [])
+        _ (println tags-array)
         tags (tags-array->map tags-array)
         config (get-in db [:connection-setup :config])
         env-vars (get-in db [:connection-setup :credentials :environment-variables] [])
@@ -75,8 +76,7 @@
                  :subtype connection-subtype
                  :name connection-name
                  :agent_id agent-id
-                 :tags (when (seq tags-array)
-                         (mapv #(get % "value") tags-array))
+                 :connection_tags tags
                  :secret secret
                  :command (if (= api-type "database")
                             []
@@ -176,8 +176,25 @@
   (let [credentials (process-connection-secret (:secret connection) "envvar")
         network-credentials (when (and (= (:type connection) "application")
                                        (= (:subtype connection) "tcp"))
-                              (extract-network-credentials credentials))]
-    (println (:redact_enabled connection))
+                              (extract-network-credentials credentials))
+        ;; Extrair tags no formato correto
+        connection-tags (when-let [tags (:connection_tags connection)]
+                          (cond
+                            ;; Se for um mapa, converte para array de {:key k :value v}
+                            (map? tags)
+                            (mapv (fn [[k v]] {:key k :value v}) tags)
+
+                            ;; Se for array simples, converte cada item para {:key item :value ""}
+                            (sequential? tags)
+                            (mapv (fn [tag]
+                                    (if (map? tag)
+                                      ;; Se já for no formato {:key k :value v}, usa diretamente
+                                      tag
+                                      ;; Senão, é um valor simples que vira chave
+                                      {:key tag :value ""}))
+                                  tags)
+
+                            :else []))]
     {:type (:type connection)
      :subtype (:subtype connection)
      :name (:name connection)
@@ -191,6 +208,7 @@
                                             (process-connection-envvars (:secret connection) "envvar"))
                    :configuration-files (when (= (:type connection) "custom")
                                           (process-connection-envvars (:secret connection) "filesystem"))}
+
      :config {:review (seq (:reviewers connection))
               :review-groups (mapv #(hash-map "value" % "label" %) (:reviewers connection))
               :data-masking (:redact_enabled connection)
@@ -211,5 +229,4 @@
                                    jira-templates-list
                                    (:jira_issue_template_id connection))
                                   "")}
-     :tags (when (seq (:tags connection))
-             (mapv #(into {} {"value" % "label" %}) (:tags connection)))}))
+     :tags {:data connection-tags}}))
