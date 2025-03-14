@@ -304,14 +304,21 @@ func CreateDBRoleJob(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	isAccountOwner := strings.Contains(dbArn, ptr.ToString(identity.Account))
-	rdsClient, err := loadRDSClientForAccount(ctx, cfg, ptr.ToString(identity.Account), isAccountOwner)
+	dbAWSAccountID := parseDatabaseArnAccountID(dbArn)
+	if dbAWSAccountID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Errorf("unable to parse database arn %q", dbArn)})
+		return
+	}
+
+	isAccountOwner := dbAWSAccountID == ptr.ToString(identity.Account)
+	rdsClient, assumed, err := loadRDSClientForAccount(ctx, cfg, dbAWSAccountID, isAccountOwner)
 	if err != nil {
 		log.Errorf("failed obtaing rds client, err=%v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 
+	log.Infof("rds client obtained with success, is-assumed-role=%v, region=%v", assumed, cfg.Region)
 	db, err := getDbInstance(rdsClient, dbArn)
 	if err != nil {
 		log.Errorf("failed fetching db instance, err=%v", err)
@@ -397,7 +404,7 @@ func ListDBRoleJobs(c *gin.Context) {
 }
 
 func listRDSInstances(ctx context.Context, cfg aws.Config, accountID string, isAccountOwner bool) ([]types.DBInstance, error) {
-	rdsClient, err := loadRDSClientForAccount(ctx, cfg, accountID, isAccountOwner)
+	rdsClient, _, err := loadRDSClientForAccount(ctx, cfg, accountID, isAccountOwner)
 	if err != nil {
 		return nil, err
 	}
@@ -416,11 +423,11 @@ func listRDSInstances(ctx context.Context, cfg aws.Config, accountID string, isA
 	return instances, nil
 }
 
-func loadRDSClientForAccount(ctx context.Context, cfg aws.Config, accountID string, isAccountOwner bool) (*rds.Client, error) {
+func loadRDSClientForAccount(ctx context.Context, cfg aws.Config, accountID string, isAccountOwner bool) (rdsClient *rds.Client, assumed bool, err error) {
 	roleArn := fmt.Sprintf("arn:aws:iam::%s:role/OrganizationAccountAccessRole", accountID)
 
 	// Create RDS client
-	rdsClient := rds.NewFromConfig(cfg)
+	rdsClient = rds.NewFromConfig(cfg)
 	if !isAccountOwner {
 		// Assume Role in target account
 		stsClient := sts.NewFromConfig(cfg)
@@ -432,11 +439,12 @@ func loadRDSClientForAccount(ctx context.Context, cfg aws.Config, accountID stri
 			config.WithRegion(cfg.Region),
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to assume role for account %s: %v", accountID, err)
+			return nil, false, fmt.Errorf("failed to assume role for account %s: %v", accountID, err)
 		}
 		rdsClient = rds.NewFromConfig(accountCfg)
+		assumed = true
 	}
-	return rdsClient, nil
+	return
 }
 
 func loadAWSConfig(orgID string) (cfg aws.Config, identity *sts.GetCallerIdentityOutput, err error) {
@@ -480,6 +488,15 @@ func loadAWSConfig(orgID string) (cfg aws.Config, identity *sts.GetCallerIdentit
 	stsClient := sts.NewFromConfig(cfg)
 	identity, err = stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	return
+}
+
+func parseDatabaseArnAccountID(dbArn string) string {
+	// arn:aws:rds:us-west-2:<account-id>:db:<db-identifier>
+	parts := strings.Split(dbArn, ":")
+	if len(parts) != 7 {
+		return ""
+	}
+	return parts[4]
 }
 
 func toDBRoleOpenAPI(o *models.DBRole) *openapi.DBRoleJob {
