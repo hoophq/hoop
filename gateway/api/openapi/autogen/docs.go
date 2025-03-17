@@ -4214,10 +4214,37 @@ const docTemplate = `{
                 "instance_arn"
             ],
             "properties": {
+                "default_security_group": {
+                    "description": "The default security group that will be used to grant access for the agent to access.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.CreateDBRoleJobAWSProviderSG"
+                        }
+                    ]
+                },
                 "instance_arn": {
                     "description": "Instance ARN is the identifier for the database instance",
                     "type": "string",
                     "example": "arn:aws:rds:us-west-2:123456789012:db:my-instance"
+                }
+            }
+        },
+        "openapi.CreateDBRoleJobAWSProviderSG": {
+            "type": "object",
+            "required": [
+                "ingress_cidr",
+                "target_port"
+            ],
+            "properties": {
+                "ingress_cidr": {
+                    "description": "The ingress inbound CIDR rule to allow traffic to",
+                    "type": "string",
+                    "example": "192.168.1.0/24"
+                },
+                "target_port": {
+                    "description": "The target port to be configured for the security group",
+                    "type": "integer",
+                    "example": 5432
                 }
             }
         },

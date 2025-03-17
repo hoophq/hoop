@@ -1221,9 +1221,18 @@ type AWSDBInstance struct {
 	Status string `json:"status" example:"available"`
 }
 
+type CreateDBRoleJobAWSProviderSG struct {
+	// The target port to be configured for the security group
+	TargetPort int32 `json:"target_port" example:"5432" binding:"required"`
+	// The ingress inbound CIDR rule to allow traffic to
+	IngressCIDR string `json:"ingress_cidr" example:"192.168.1.0/24" binding:"required"`
+}
+
 type CreateDBRoleJobAWSProvider struct {
 	// Instance ARN is the identifier for the database instance
 	InstanceArn string `json:"instance_arn" binding:"required" example:"arn:aws:rds:us-west-2:123456789012:db:my-instance"`
+	// The default security group that will be used to grant access for the agent to access.
+	DefaultSecurityGroup *CreateDBRoleJobAWSProviderSG `json:"default_security_group"`
 }
 
 type CreateDBRoleJob struct {
