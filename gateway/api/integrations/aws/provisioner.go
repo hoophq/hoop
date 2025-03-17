@@ -91,7 +91,6 @@ func (p *provisioner) Run(jobID string) error {
 	go func() {
 		defaultSg, securityGroupID := p.apiRequest.AWS.DefaultSecurityGroup, ""
 		if defaultSg != nil {
-			// TODO: change sgname
 			sgName := "hoop-aws-connect-sg-" + ptr.ToString(db.DBInstanceIdentifier)
 			log.With("sid", jobID).Infof("synchronizing security group, sgname=%v, vpc_id=%v, ingress_cidr=%v, port=%v",
 				sgName, ptr.ToString(db.DBSubnetGroup.VpcId), defaultSg.IngressCIDR, defaultSg.TargetPort)
@@ -327,27 +326,20 @@ func (p *provisioner) getDbInstance(dbArn string) (*rdstypes.DBInstance, error) 
 }
 
 func (p *provisioner) getSGByName(vpcID, sgName string) (*ec2types.SecurityGroup, error) {
-	// Create the filter for security group name
-	filters := []ec2types.Filter{
-		{
-			Name:   aws.String("group-name"),
-			Values: []string{sgName},
+	// Create the describe security groups input
+	input := &ec2.DescribeSecurityGroupsInput{
+		Filters: []ec2types.Filter{
+			{
+				Name:   aws.String("group-name"),
+				Values: []string{sgName},
+			},
+			{
+				Name:   aws.String("vpc-id"),
+				Values: []string{vpcID},
+			},
 		},
 	}
 
-	// Add VPC filter if provided
-	vpcFilter := ec2types.Filter{
-		Name:   aws.String("vpc-id"),
-		Values: []string{vpcID},
-	}
-	filters = append(filters, vpcFilter)
-
-	// Create the describe security groups input
-	input := &ec2.DescribeSecurityGroupsInput{
-		Filters: filters,
-	}
-
-	// Call the API
 	output, err := p.ec2Client.DescribeSecurityGroups(context.TODO(), input)
 	if err != nil {
 		return nil, err
