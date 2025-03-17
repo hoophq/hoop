@@ -119,12 +119,6 @@
 
             [tags-inputs/main])
 
-          ;; [tag-select-example/main]
-
-
-          ;; (println (tags-utils/format-keys-for-select tags-utils/mock-tags-data))
-          ;; (println (tags-utils/get-values-for-key tags-utils/mock-tags-data "environment"))
-
           [:> Box
            [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]" :mb "5"}
             "Additional Configuration"]

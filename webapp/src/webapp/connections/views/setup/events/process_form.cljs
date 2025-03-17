@@ -2,7 +2,8 @@
   (:require
    [clojure.string :as str]
    [webapp.connections.constants :as constants]
-   [webapp.connections.helpers :as helpers]))
+   [webapp.connections.helpers :as helpers]
+   [webapp.connections.views.setup.tags-utils :as tags-utils]))
 
 ;; Create a new connection
 (defn get-api-connection-type [ui-type]
@@ -14,12 +15,28 @@
     "application" "application"))
 
 (defn tags-array->map
-  "Convert an array of tags [{:key k :value v}] to a map {k v}"
+  "Convert an array of tags [{:key k :value v}] to a map {k v}
+   Ignores tags with empty keys or values"
   [tags]
   (reduce (fn [acc {:keys [key value]}]
-            (assoc acc key (or value "")))
+            (if (and key
+                     (not (str/blank? (if (string? key) key (str key))))
+                     value
+                     (not (str/blank? (if (string? value) value (str value)))))
+              (assoc acc key (or value ""))
+              acc))
           {}
           tags))
+
+(defn filter-valid-tags
+  "Remove tags que possuem key ou value vazios"
+  [tags]
+  (filterv (fn [{:keys [key value label]}]
+             (and key
+                  (not (str/blank? (if (string? key) key (str key))))
+                  value
+                  (not (str/blank? (if (string? value) value (str value))))))
+           tags))
 
 (defn process-payload [db]
   (let [ui-type (get-in db [:connection-setup :type])
@@ -28,7 +45,8 @@
         agent-id (get-in db [:connection-setup :agent-id])
         tags-array (get-in db [:connection-setup :tags :data] [])
         _ (println tags-array)
-        tags (tags-array->map tags-array)
+        filtered-tags (filter-valid-tags tags-array)
+        tags (tags-array->map filtered-tags)
         config (get-in db [:connection-setup :config])
         env-vars (get-in db [:connection-setup :credentials :environment-variables] [])
         config-files (get-in db [:connection-setup :credentials :configuration-files] [])
@@ -182,7 +200,13 @@
                           (cond
                             ;; Se for um mapa, converte para array de {:key k :value v}
                             (map? tags)
-                            (mapv (fn [[k v]] {:key k :value v}) tags)
+                            (mapv (fn [[k v]]
+                                    (let [key (str (namespace k) "/" (name k))
+                                          custom-key? (not (tags-utils/verify-tag-key key))
+                                          parsed-key (if custom-key?
+                                                       (name k)
+                                                       key)]
+                                      {:key parsed-key :value v :label (tags-utils/extract-label parsed-key)})) tags)
 
                             ;; Se for array simples, converte cada item para {:key item :value ""}
                             (sequential? tags)
@@ -194,7 +218,11 @@
                                       {:key tag :value ""}))
                                   tags)
 
-                            :else []))]
+                            :else []))
+
+        ;; Filtrar tags inválidas
+        valid-tags (filter-valid-tags connection-tags)]
+
     {:type (:type connection)
      :subtype (:subtype connection)
      :name (:name connection)
@@ -208,6 +236,7 @@
                                             (process-connection-envvars (:secret connection) "envvar"))
                    :configuration-files (when (= (:type connection) "custom")
                                           (process-connection-envvars (:secret connection) "filesystem"))}
+     :tags {:data valid-tags}
 
      :config {:review (seq (:reviewers connection))
               :review-groups (mapv #(hash-map "value" % "label" %) (:reviewers connection))
@@ -228,5 +257,4 @@
                                   (transform-filtered-jira-template-selected
                                    jira-templates-list
                                    (:jira_issue_template_id connection))
-                                  "")}
-     :tags {:data connection-tags}}))
+                                  "")}}))

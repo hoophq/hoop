@@ -27,7 +27,8 @@
    :connection-setup {:type nil
                       :subtype nil
                       :current-step :type
-                      :credentials {}}
+                      :credentials {}
+                      :tags {}}
    :database-schema {:status :loading, :schema-tree nil, :indexes-tree nil}
    :dialog {:status :closed
             :type :info

@@ -219,7 +219,7 @@
            on-change on-create-option options
            label id name placeholder
            format-create-label]}]
-  [:div {:class "mb-regular text-sm"}
+  [:div {:class "text-sm"}
    [:div {:class "flex items-center gap-2"}
     (when label
       [form-label label])]
