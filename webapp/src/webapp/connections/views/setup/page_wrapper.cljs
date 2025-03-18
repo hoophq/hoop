@@ -6,7 +6,7 @@
 (defn main [{:keys [children footer-props]}]
   [:> Box {:class "min-h-screen"}
    ;; Main content with padding to account for fixed footer
-   [:> Box {:class "pb-8"}
+   [:> Box {:class "pb-16"}
     children]
 
    ;; Footer with Delete button when in update mode

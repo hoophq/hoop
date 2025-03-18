@@ -1,6 +1,6 @@
 (ns webapp.onboarding.aws-connect
   (:require [re-frame.core :as rf]
-            ["@radix-ui/themes" :refer [Badge Box Button Card Spinner Link Flex Heading Separator Text Callout]]
+            ["@radix-ui/themes" :refer [Badge Box Button Card Spinner Link Flex Heading Separator Text Callout Switch]]
             [webapp.components.forms :as forms]
             ["lucide-react" :refer [Check Info ArrowUpRight X]]
             [webapp.connections.views.setup.page-wrapper :as page-wrapper]
@@ -110,12 +110,6 @@
        [:> Text {:as "p" :size "2" :class "text-[--gray-11]" :mb "5"}
         "These keys provide secure programmatic access to your AWS environment and will be used only for discovering and managing your selected resources."]]]
 
-     ;; Error message (if any)
-     (when error
-       [:> Card {:variant "surface" :color "red" :mb "4"}
-        [:> Flex {:gap "2" :align "center"}
-         [:> Text {:size "2" :color "red"} error]]])
-
      ;; IAM User Credentials
      [:> Box {:class "space-y-5"}
       [forms/input
@@ -142,7 +136,13 @@
        {:label "Session Token (Optional)"
         :placeholder "e.g. FOoGZXlvYXdzE0z/EaDFQNA2EY59z3tKrAdJB"
         :value (get-in credentials [:iam-user :session-token])
-        :on-change #(rf/dispatch [:aws-connect/set-iam-user-credentials :session-token (-> % .-target .-value)])}]]]))
+        :on-change #(rf/dispatch [:aws-connect/set-iam-user-credentials :session-token (-> % .-target .-value)])}]]
+
+          ;; Error message (if any)
+     (when error
+       [:> Card {:variant "surface" :color "red" :mb "4"}
+        [:> Flex {:gap "2" :align "center"}
+         [:> Text {:size "2" :color "red"} error]]])]))
 
 (defn resources-step []
   (let [errors @(rf/subscribe [:aws-connect/resources-errors])]
@@ -169,6 +169,21 @@
           (str "There was one or more access errors for certain AWS resources. "
                "Please deselect these resources or verify the error details. All selected resources must be properly "
                "connected before proceeding to create connections.")]]])]))
+
+(defn create-connection-config []
+  (let [create-connection @(rf/subscribe [:aws-connect/create-connection])]
+    [:> Box {:class "w-full max-w-[600px] space-y-3"}
+     [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+      "Additional Configuration"]
+
+     [:> Flex {:align "center" :gap "4" :class "text-[--accent-a11] cursor-pointer"}
+      [:> Switch {:checked create-connection
+                  :on-checked-change #(rf/dispatch [:aws-connect/toggle-create-connection %])}]
+      [:> Box
+       [:> Text {:as "p" :size "3" :weight "medium" :class "text-[--gray-12]"}
+        "Create Connection"]
+       [:> Text {:as "p" :size "2" :class "text-[--gray-12]"}
+        "When enabled, connections will be automatically created after configuring the resources."]]]]))
 
 (defn review-step []
   (let [resources @(rf/subscribe [:aws-connect/resources])
@@ -217,6 +232,8 @@
                    :size "2"}
           "Learn more about Agents"]
          [:> ArrowUpRight {:size 16}]]]]]
+
+     [create-connection-config]
 
      [:> Box {:class "w-full"}
       [data-table-simple
