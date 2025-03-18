@@ -4,5 +4,6 @@ const (
 	eventSessionOpenType         = "session.open"
 	eventSessionCloseType        = "session.close"
 	eventMSTeamsReviewCreateType = "microsoftteams.review.create"
+	EventDBRoleJobFinishedType   = "dbroles.job.finished"
 	maxInputSize                 = 10 * 1000 // 10KB
 )

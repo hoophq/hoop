@@ -144,6 +144,7 @@ func (a *Api) StartAPI(sentryInit bool) {
 	}
 	router := apiroutes.New(rg, a.IDProvider, appconfig.Get().GrpcURL(), appconfig.Get().ApiKey())
 	a.buildRoutes(router)
+	openapi.RegisterGinValidators()
 
 	if a.TLSConfig != nil {
 		server := http.Server{

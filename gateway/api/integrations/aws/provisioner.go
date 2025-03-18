@@ -5,7 +5,9 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -23,6 +25,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/transport/plugins/webhooks"
 	transportsys "github.com/hoophq/hoop/gateway/transport/sys"
 )
 
@@ -61,6 +64,10 @@ func (p *provisioner) getDBIdentifier() string {
 	return parts[len(parts)-1]
 }
 
+func (p *provisioner) hasStep(stepType openapi.DBRoleJobStepType) bool {
+	return slices.Contains(p.apiRequest.JobSteps, stepType)
+}
+
 func (p *provisioner) Run(jobID string) error {
 	dbArn := p.apiRequest.AWS.InstanceArn
 	db, err := p.getDbInstance(dbArn)
@@ -76,6 +83,7 @@ func (p *provisioner) Run(jobID string) error {
 			DBArn:         ptr.ToString(db.DBInstanceArn),
 			DBName:        ptr.ToString(db.DBName),
 			DBEngine:      ptr.ToString(db.Engine),
+			Tags:          parseAWSTags(db),
 		},
 		Status: &models.DBRoleStatus{
 			Phase:   pbsys.StatusRunningType,
@@ -169,20 +177,27 @@ func (p *provisioner) Run(jobID string) error {
 			MasterUsername:   env.GetEnv("MASTER_USERNAME"),
 			MasterPassword:   env.GetEnv("MASTER_PASSWORD"),
 			DatabaseType:     env.GetEnv("DATABASE_TYPE"),
+			StoreInVault:     p.hasStep(openapi.DBRoleJobStepStoreInVault),
 		}
 
 		resp := transportsys.RunDBProvisioner(p.apiRequest.AgentID, &request)
-		if resp.Status == pbsys.StatusCompletedType {
+		if resp.Status == pbsys.StatusCompletedType && p.hasStep(openapi.DBRoleJobStepCreateConnections) {
 			if err := p.handleConnectionProvision(request.DatabaseType, resp); err != nil {
 				log.With("sid", jobID).Errorf("failed provisioning connections: %v", err)
 				resp.Status = pbsys.StatusFailedType
 				resp.Message = fmt.Sprintf("Failed provisioning connections: %v", err)
 			}
 		}
+		if res := p.updateJob(resp); res != nil && p.hasStep(openapi.DBRoleJobStepSendWebhook) {
+			if err := p.sendWebhook(res); err != nil {
+				log.With("sid", jobID).Warnf("failed sending webhook, reason=%v", err)
+			}
+		}
+
 		log.With("sid", jobID).Infof("database provisioner finished, name=%v, engine=%v, status=%v, with-security-group=%v, duration=%v, message=%v",
 			ptr.ToString(db.DBInstanceIdentifier), ptr.ToString(db.Engine), resp.Status, defaultSg != nil,
 			time.Now().UTC().Sub(startedAt).String(), resp.Message)
-		p.updateJob(resp)
+
 	}()
 	return nil
 }
@@ -224,14 +239,17 @@ func (p *provisioner) modifyRDSInstance(jobID string, input *rds.ModifyDBInstanc
 	}
 }
 
-func (p *provisioner) updateJob(resp *pbsys.DBProvisionerResponse) {
+func (p *provisioner) updateJob(resp *pbsys.DBProvisionerResponse) *models.DBRole {
 	if resp.Status == pbsys.StatusFailedType {
 		log.With("sid", resp.SID).Warnf(resp.String())
 	}
 	completedAt := time.Now().UTC()
-	if err := models.UpdateDBRoleJob(p.orgID, &completedAt, resp); err != nil {
+	job, err := models.UpdateDBRoleJob(p.orgID, &completedAt, resp)
+	if err != nil {
 		log.With("sid", resp.SID).Warnf("unable to update job: %v", err)
+		return nil
 	}
+	return job
 }
 
 func (p *provisioner) handleConnectionProvision(databaseType string, resp *pbsys.DBProvisionerResponse) error {
@@ -426,4 +444,28 @@ func (p *provisioner) syncSecurityGroup(sgName, vpcID string, ipPermission *open
 		}
 	}
 	return ptr.ToString(sg.GroupId), nil
+}
+
+func (p *provisioner) sendWebhook(obj *models.DBRole) error {
+	apiObj := toDBRoleOpenAPI(obj)
+	jsonData, err := json.Marshal(apiObj)
+	if err != nil {
+		return fmt.Errorf("failed encoding to json: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(jsonData, &payload); err != nil {
+		return fmt.Errorf("failed decoding json to map: %v", err)
+	}
+	return webhooks.SendMessage(p.orgID, webhooks.EventDBRoleJobFinishedType, map[string]any{
+		"event_type":    webhooks.EventDBRoleJobFinishedType,
+		"event_payload": payload,
+	})
+}
+
+func parseAWSTags(obj *rdstypes.DBInstance) []map[string]any {
+	v := []map[string]any{}
+	for _, t := range obj.TagList {
+		v = append(v, map[string]any{ptr.ToString(t.Key): ptr.ToString(t.Value)})
+	}
+	return v
 }

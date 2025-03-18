@@ -503,11 +503,19 @@ func parseDatabaseArnAccountID(dbArn string) string {
 func toDBRoleOpenAPI(o *models.DBRole) *openapi.DBRoleJob {
 	var spec openapi.AWSDBRoleJobSpec
 	if o.Spec != nil {
+		var dbTags []openapi.DBTag
+		for _, tag := range o.Spec.Tags {
+			for key, val := range tag {
+				dbTags = append(dbTags, openapi.DBTag{Key: key, Value: fmt.Sprintf("%v", val)})
+				break // it should contain only one record
+			}
+		}
 		spec = openapi.AWSDBRoleJobSpec{
 			AccountArn: o.Spec.AccountArn,
 			DBArn:      o.Spec.DBArn,
 			DBName:     o.Spec.DBName,
 			DBEngine:   o.Spec.DBEngine,
+			DBTags:     dbTags,
 		}
 	}
 	var status *openapi.DBRoleJobStatus
