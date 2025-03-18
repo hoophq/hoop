@@ -198,3 +198,56 @@
        :className "react-select-container"
        :classNamePrefix "react-select"
        :styles styles}]]))
+
+(defn single-creatable-grouped
+  "A single-select component that allows creating new options and supports grouped options.
+
+   Props:
+   - default-value: The currently selected value
+   - disabled?: Whether the select is disabled
+   - required?: Whether the select is required
+   - on-change: Function called when selection changes
+   - on-create-option: Function called when a new option is created
+   - options: The options for the select, with grouping structure:
+     [{label: 'Group1', options: [{value: 'val1', label: 'Label1'}, ...], ...}]
+   - label: Label text to display above the select
+   - id: HTML id attribute
+   - name: HTML name attribute
+   - placeholder: Placeholder text
+   - format-create-label: (Optional) Function to format the 'Create option' text"
+  [{:keys [default-value disabled? required?
+           on-change on-create-option options
+           label id name placeholder
+           format-create-label]}]
+  [:div {:class "text-sm"}
+   [:div {:class "flex items-center gap-2"}
+    (when label
+      [form-label label])]
+   [:> CreatableSelect
+    {:value default-value
+     :id id
+     :name name
+     :isMulti false
+     :isDisabled disabled?
+     :required required?
+     :onChange (fn [value]
+                 (on-change value))
+     :onCreateOption (fn [input-value]
+                       (when on-create-option
+                         (on-create-option input-value)))
+     :options options
+     :placeholder (or placeholder "Select or create...")
+     :formatCreateLabel (or format-create-label #(str "Create \"" % "\""))
+     :menuPortalTarget (.-body js/document)
+     :theme (fn [theme]
+              (clj->js
+               (-> (js->clj theme :keywordize-keys true)
+                   (update :colors merge {:primary "#3358d4"
+                                          :primary25 "#d2deff"
+                                          :primary50 "#abbdf9"
+                                          :primary75 "#3e63dd"}))))
+     :isClearable true
+     :isSearchable true
+     :className "react-select-container"
+     :classNamePrefix "react-select"
+     :styles styles}]])

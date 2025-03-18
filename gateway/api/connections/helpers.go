@@ -133,10 +133,10 @@ func validateConnectionRequest(req openapi.Connection) error {
 	}
 
 	for key, val := range req.ConnectionTags {
-		if strings.HasPrefix(key, "hoop.dev/") {
-			errors = append(errors, "connection_tags: keys must not use the reserverd prefix hoop.dev/")
-			continue
-		}
+		// if strings.HasPrefix(key, "hoop.dev/") {
+		// 	errors = append(errors, "connection_tags: keys must not use the reserverd prefix hoop.dev/")
+		// 	continue
+		// }
 
 		if (len(key) < 1 || len(key) > 64) || !connectionTagsKeyRe.MatchString(key) {
 			errors = append(errors,

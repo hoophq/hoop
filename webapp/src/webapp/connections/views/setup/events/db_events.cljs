@@ -1,5 +1,8 @@
 (ns webapp.connections.views.setup.events.db-events
-  (:require [re-frame.core :as rf]))
+  (:require
+   [clojure.string :as str]
+   [re-frame.core :as rf]
+   [webapp.connections.views.setup.tags-utils :as tags-utils]))
 
 ;; Basic db updates
 (rf/reg-event-fx
@@ -196,13 +199,54 @@
 
 ;; Tags events
 (rf/reg-event-db
+ :connection-tags/set
+ (fn [db [_ tags-data]]
+   (-> db
+       (assoc-in [:connection-tags :data] tags-data)
+       (assoc-in [:connection-tags :loading?] false))))
+
+(rf/reg-event-db
+ :connection-setup/set-key-validation-error
+ (fn [db [_ error-message]]
+   (assoc-in db [:connection-setup :tags :key-validation-error] error-message)))
+
+(rf/reg-event-db
+ :connection-setup/set-current-value
+ (fn [db [_ current-value]]
+   (assoc-in db [:connection-setup :tags :current-value] current-value)))
+
+(rf/reg-event-db
+ :connection-setup/clear-current-tag
+ (fn [db _]
+   (-> db
+       (assoc-in [:connection-setup :tags :current-key] nil)
+       (assoc-in [:connection-setup :tags :current-full-key] nil)
+       (assoc-in [:connection-setup :tags :current-label] nil)
+       (assoc-in [:connection-setup :tags :current-value] nil))))
+
+(rf/reg-event-db
  :connection-setup/add-tag
- (fn [db [_ key value]]
-   (let [current-tags (get-in db [:connection-setup :tags] [])
-         exists? (some #(= (:key %) key) current-tags)]
-     (if exists?
-       db
-       (update-in db [:connection-setup :tags] conj {:key key :value value})))))
+ (fn [db [_ full-key value]]
+   (let [_ (println "full-key" full-key)
+         label (tags-utils/extract-label full-key)
+         _ (println "label" label)]
+     (if (and full-key
+              (not (str/blank? full-key))
+              value
+              (not (str/blank? value)))
+       (update-in db [:connection-setup :tags :data]
+                  #(conj (or % []) {:key full-key
+                                    :label label
+                                    :value value}))
+       db))))
+
+(rf/reg-event-db
+ :connection-setup/update-tag-value
+ (fn [db [_ index selected-option]]
+   (let [value (when selected-option (.-value selected-option))]
+     (if (and value (not (str/blank? value)))
+       (assoc-in db [:connection-setup :tags :data index :value] value)
+       db))))
 
 ;; Guardrails events
 (rf/reg-event-db
