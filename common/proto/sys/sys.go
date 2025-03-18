@@ -27,6 +27,7 @@ type DBProvisionerRequest struct {
 	MasterUsername   string `json:"master_user"`
 	MasterPassword   string `json:"master_password"`
 	DatabaseType     string `json:"database_type"`
+	StoreInVault     bool   `json:"store_in_vault"`
 }
 
 type DBCredentials struct {

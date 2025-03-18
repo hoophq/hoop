@@ -8,17 +8,19 @@ import (
 
 	pbsys "github.com/hoophq/hoop/common/proto/sys"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const tableDBRoleJobs = "private.dbrole_jobs"
 
 type AWSDBRoleSpec struct {
-	AccountArn    string `json:"account_arn"`
-	AccountUserID string `json:"account_user_id"`
-	Region        string `json:"region"`
-	DBArn         string `json:"db_arn"`
-	DBName        string `json:"db_name"`
-	DBEngine      string `json:"db_engine"`
+	AccountArn    string           `json:"account_arn"`
+	AccountUserID string           `json:"account_user_id"`
+	Region        string           `json:"region"`
+	DBArn         string           `json:"db_arn"`
+	DBName        string           `json:"db_name"`
+	DBEngine      string           `json:"db_engine"`
+	Tags          []map[string]any `json:"db_tags"`
 }
 
 type DBRoleStatus struct {
@@ -63,16 +65,16 @@ func CreateDBRoleJob(obj *DBRole) error {
 	return err
 }
 
-func UpdateDBRoleJob(orgID string, completedAt *time.Time, resp *pbsys.DBProvisionerResponse) error {
+func UpdateDBRoleJob(orgID string, completedAt *time.Time, resp *pbsys.DBProvisionerResponse) (*DBRole, error) {
 	job, err := GetDBRoleJobByID(orgID, resp.SID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// TODO: fix me
 	specData, _ := json.Marshal(job.SpecMap)
 	if err := json.Unmarshal(specData, &job.Spec); err != nil {
-		return fmt.Errorf("failed decoding spec data: %v", err)
+		return nil, fmt.Errorf("failed decoding spec data: %v", err)
 	}
 
 	var result []DBRoleStatusResult
@@ -99,11 +101,12 @@ func UpdateDBRoleJob(orgID string, completedAt *time.Time, resp *pbsys.DBProvisi
 	var statusMap map[string]any
 	statusData, _ := json.Marshal(status)
 	if err := json.Unmarshal(statusData, &statusMap); err != nil {
-		return fmt.Errorf("failed decoding status data: %v", err)
+		return nil, fmt.Errorf("failed decoding status data: %v", err)
 	}
 
 	err = DB.Table(tableDBRoleJobs).
 		Model(job).
+		Clauses(clause.Returning{}).
 		Updates(DBRole{
 			StatusMap:   statusMap,
 			SpecMap:     dbRoleSpecToMap(job.Spec),
@@ -111,9 +114,11 @@ func UpdateDBRoleJob(orgID string, completedAt *time.Time, resp *pbsys.DBProvisi
 		}).Where("org_id = ? AND id = ?", orgID, resp.SID).
 		Error
 	if err == gorm.ErrDuplicatedKey {
-		return ErrAlreadyExists
+		return nil, ErrAlreadyExists
 	}
-	return nil
+
+	job.Status = status
+	return job, nil
 }
 
 func ListDBRoleJobs(orgID string) ([]*DBRole, error) {
@@ -169,6 +174,7 @@ func dbRoleSpecToMap(spec *AWSDBRoleSpec) map[string]any {
 		"db_arn":      spec.DBArn,
 		"db_name":     spec.DBName,
 		"db_engine":   spec.DBEngine,
+		"db_tags":     spec.Tags,
 	}
 }
 

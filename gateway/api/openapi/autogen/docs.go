@@ -3775,6 +3775,13 @@ const docTemplate = `{
                     "description": "Logical database name within the RDS instance where roles will be applied",
                     "type": "string",
                     "example": "customers"
+                },
+                "db_tags": {
+                    "description": "Database Instance tags",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.DBTag"
+                    }
                 }
             }
         },
@@ -4184,7 +4191,8 @@ const docTemplate = `{
             "required": [
                 "agent_id",
                 "aws",
-                "connection_prefix_name"
+                "connection_prefix_name",
+                "job_steps"
             ],
             "properties": {
                 "agent_id": {
@@ -4202,9 +4210,20 @@ const docTemplate = `{
                     ]
                 },
                 "connection_prefix_name": {
-                    "description": "Base prefix for connection names - the role name will be appended to this prefix\nwhen creating the database connection (e.g., \"prod-postgres-readonly\")",
+                    "description": "Base prefix for connection names - the role name will be appended to this prefix\nwhen creating the database connection (e.g., \"prod-postgres-ro\")",
                     "type": "string",
                     "example": "prod-postgres-"
+                },
+                "job_steps": {
+                    "description": "The additional steps to execute",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.DBRoleJobStepType"
+                    },
+                    "example": [
+                        "create-connections",
+                        "send-webhook"
+                    ]
                 }
             }
         },
@@ -4364,6 +4383,32 @@ const docTemplate = `{
                     "description": "Name of the specific database role that was provisioned",
                     "type": "string",
                     "example": "hoop_ro"
+                }
+            }
+        },
+        "openapi.DBRoleJobStepType": {
+            "type": "string",
+            "enum": [
+                "create-connections",
+                "send-webhook",
+                "store-in-vault"
+            ],
+            "x-enum-varnames": [
+                "DBRoleJobStepCreateConnections",
+                "DBRoleJobStepSendWebhook",
+                "DBRoleJobStepStoreInVault"
+            ]
+        },
+        "openapi.DBTag": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string",
+                    "example": "squad"
+                },
+                "value": {
+                    "type": "string",
+                    "example": "banking"
                 }
             }
         },
@@ -5988,7 +6033,19 @@ const docTemplate = `{
             ]
         },
         "openapi.SessionUpdateMetadataRequest": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+                "metadata": {
+                    "description": "The metadata field",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "reason": "fix-issue"
+                    }
+                }
+            }
         },
         "openapi.SignupRequest": {
             "type": "object",

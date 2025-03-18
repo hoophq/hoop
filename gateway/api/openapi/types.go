@@ -503,7 +503,7 @@ type Session struct {
 
 type SessionUpdateMetadataRequest struct {
 	// The metadata field
-	Metadata map[string]any `json:"metadata" example:"reason:fix-issue"`
+	Metadata map[string]any `json:"metadata" swaggertype:"object,string" example:"reason:fix-issue"`
 }
 
 type SessionReportParams struct {
@@ -1235,12 +1235,22 @@ type CreateDBRoleJobAWSProvider struct {
 	DefaultSecurityGroup *CreateDBRoleJobAWSProviderSG `json:"default_security_group"`
 }
 
+type DBRoleJobStepType string
+
+const (
+	DBRoleJobStepCreateConnections DBRoleJobStepType = "create-connections"
+	DBRoleJobStepSendWebhook       DBRoleJobStepType = "send-webhook"
+	DBRoleJobStepStoreInVault      DBRoleJobStepType = "store-in-vault"
+)
+
 type CreateDBRoleJob struct {
 	// Unique identifier of the agent hosting the database resource
 	AgentID string `json:"agent_id" format:"uuid" binding:"required" example:"a1b2c3d4-e5f6-7890-abcd-ef1234567890"`
 	// Base prefix for connection names - the role name will be appended to this prefix
-	// when creating the database connection (e.g., "prod-postgres-readonly")
+	// when creating the database connection (e.g., "prod-postgres-ro")
 	ConnectionPrefixName string `json:"connection_prefix_name" binding:"required" example:"prod-postgres-"`
+	// The additional steps to execute
+	JobSteps []DBRoleJobStepType `json:"job_steps" binding:"required,dive,db_role_job_step" example:"create-connections,send-webhook"`
 	// AWS-specific configuration for the database role creation job
 	AWS *CreateDBRoleJobAWSProvider `json:"aws" binding:"required"`
 }
@@ -1265,6 +1275,11 @@ type DBRoleJob struct {
 	Status *DBRoleJobStatus `json:"status"`
 }
 
+type DBTag struct {
+	Key   string `json:"key" example:"squad"`
+	Value string `json:"value" example:"banking"`
+}
+
 type AWSDBRoleJobSpec struct {
 	// AWS IAM ARN with permissions to execute this role creation job
 	AccountArn string `json:"account_arn" example:"arn:aws:iam:123456789012"`
@@ -1274,6 +1289,8 @@ type AWSDBRoleJobSpec struct {
 	DBName string `json:"db_name" example:"customers"`
 	// Database engine type (e.g., "postgres", "mysql") of the RDS instance
 	DBEngine string `json:"db_engine" example:"postgres"`
+	// Database Instance tags
+	DBTags []DBTag `json:"db_tags"`
 }
 
 type DBRoleJobStatus struct {
