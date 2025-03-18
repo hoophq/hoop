@@ -43,6 +43,7 @@
         connection-subtype (get-in db [:connection-setup :subtype])
         connection-name (get-in db [:connection-setup :name])
         agent-id (get-in db [:connection-setup :agent-id])
+        old-tags (get-in db [:connection-setup :old-tags] [])
         tags-array (get-in db [:connection-setup :tags :data] [])
         _ (println tags-array)
         filtered-tags (filter-valid-tags tags-array)
@@ -95,6 +96,7 @@
                  :name connection-name
                  :agent_id agent-id
                  :connection_tags tags
+                 :tags old-tags
                  :secret secret
                  :command (if (= api-type "database")
                             []
@@ -237,6 +239,7 @@
                    :configuration-files (when (= (:type connection) "custom")
                                           (process-connection-envvars (:secret connection) "filesystem"))}
      :tags {:data valid-tags}
+     :old-tags (:tags connection)
 
      :config {:review (seq (:reviewers connection))
               :review-groups (mapv #(hash-map "value" % "label" %) (:reviewers connection))
