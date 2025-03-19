@@ -1240,8 +1240,12 @@ type DBRoleJobStepType string
 const (
 	DBRoleJobStepCreateConnections DBRoleJobStepType = "create-connections"
 	DBRoleJobStepSendWebhook       DBRoleJobStepType = "send-webhook"
-	DBRoleJobStepStoreInVault      DBRoleJobStepType = "store-in-vault"
 )
+
+type DBRoleJobVaultProvider struct {
+	// The path to store the credentials in Vault
+	SecretID string `json:"secret_id" example:"dbsecrets/data" binding:"required"`
+}
 
 type CreateDBRoleJob struct {
 	// Unique identifier of the agent hosting the database resource
@@ -1251,6 +1255,9 @@ type CreateDBRoleJob struct {
 	ConnectionPrefixName string `json:"connection_prefix_name" binding:"required" example:"prod-postgres-"`
 	// The additional steps to execute
 	JobSteps []DBRoleJobStepType `json:"job_steps" binding:"required,dive,db_role_job_step" example:"create-connections,send-webhook"`
+	// Vault Provider uses HashiCorp Vault to store the provisioned credentials.
+	// The target agent must be configured with the Vault Credentials in order for this operation to work
+	VaultProvider *DBRoleJobVaultProvider `json:"vault_provider"`
 	// AWS-specific configuration for the database role creation job
 	AWS *CreateDBRoleJobAWSProvider `json:"aws" binding:"required"`
 }
@@ -1302,6 +1309,24 @@ type DBRoleJobStatus struct {
 	Result []DBRoleJobStatusResult `json:"result"`
 }
 
+type SecretsManagerProviderType string
+
+const (
+	SecretsManagerProviderDatabase SecretsManagerProviderType = "database"
+	SecretsManagerProviderVault    SecretsManagerProviderType = "vault"
+)
+
+type DBRoleJobStatusResultCredentialsInfo struct {
+	// The secrets manager provider that was used to store the credentials
+	SecretsManagerProvider SecretsManagerProviderType `json:"secrets_manager_provider" example:"database"`
+	// The secret identifier that contains the secret data.
+	// This value is always empty for the database type.
+	SecretID string `json:"secret_id" example:"dbsecrets/data"`
+	// The keys that were saved in the secrets manager.
+	// This value is always empty for the database type.
+	SecretKeys []string `json:"secret_keys" example:"HOST,PORT,USER,PASSWORD,DB"`
+}
+
 type DBRoleJobStatusResult struct {
 	// Name of the specific database role that was provisioned
 	UserRole string `json:"user_role" example:"hoop_ro"`
@@ -1309,6 +1334,8 @@ type DBRoleJobStatusResult struct {
 	Status string `json:"status" enums:"running,failed,completed" example:"failed"`
 	// Human-readable description of this role's provisioning status or error details
 	Message string `json:"message" example:"process already being executed, resource_id=arn:aws:rds:us-west-2:123456789012:db:my-postgres-db"`
+	// Credentials information about the stored secrets
+	CredentialsInfo DBRoleJobStatusResultCredentialsInfo `json:"credentials_info"`
 	// Timestamp when this specific role's provisioning completed
 	CompletedAt time.Time `json:"completed_at" example:"2025-02-28T12:34:56Z"`
 }

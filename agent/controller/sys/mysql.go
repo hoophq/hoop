@@ -61,7 +61,7 @@ func provisionMySQLRoles(r pbsys.DBProvisionerRequest) *pbsys.DBProvisionerRespo
 	res := pbsys.NewDbProvisionerResponse(r.SID, "", "")
 	for _, roleName := range roleNames {
 		result := provisionMySQLRole(db, r, roleName)
-		res.Result = append(res.Result, *result)
+		res.Result = append(res.Result, result)
 	}
 	return res
 }
@@ -89,11 +89,13 @@ func provisionMySQLRole(db *sql.DB, r pbsys.DBProvisionerRequest, roleName roleN
 		Message:        "",
 		CompletedAt:    time.Now().UTC(),
 		Credentials: &pbsys.DBCredentials{
-			Host:     r.DatabaseHostname,
-			Port:     r.Port(),
-			User:     userRole,
-			Password: randomPasswd,
-			Options:  map[string]string{},
+			SecretsManagerProvider: pbsys.SecretsManagerProviderDatabase,
+			Host:                   r.DatabaseHostname,
+			Port:                   r.Port(),
+			User:                   userRole,
+			Password:               randomPasswd,
+			DefaultDatabase:        "mysql",
+			Options:                map[string]string{},
 		},
 	}
 }

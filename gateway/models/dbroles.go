@@ -29,18 +29,18 @@ type DBRoleStatus struct {
 	Result  []DBRoleStatusResult `json:"result"`
 }
 
-type DBRoleStatusResult struct {
-	UserRole    string    `json:"user_role"`
-	Status      string    `json:"phase"`
-	Message     string    `json:"message"`
-	CompletedAt time.Time `json:"completed_at"`
+type DBRoleStatusResultCredentialsInfo struct {
+	SecretsManagerProvider string   `json:"secrets_manager_provider"`
+	SecretID               string   `json:"secret_id"`
+	SecretKeys             []string `json:"secret_keys"`
 }
 
-type DBRoleItem struct {
-	User        string            `json:"user"`
-	Permissions []string          `json:"permissions"`
-	Secrets     map[string]string `json:"secrets"`
-	Error       *string           `json:"error"`
+type DBRoleStatusResult struct {
+	UserRole        string                            `json:"user_role"`
+	CredentialsInfo DBRoleStatusResultCredentialsInfo `json:"credentials_info"`
+	Status          string                            `json:"phase"`
+	Message         string                            `json:"message"`
+	CompletedAt     time.Time                         `json:"completed_at"`
 }
 
 type DBRole struct {
@@ -79,12 +79,17 @@ func UpdateDBRoleJob(orgID string, completedAt *time.Time, resp *pbsys.DBProvisi
 
 	var result []DBRoleStatusResult
 	for _, r := range resp.Result {
-		var userRole string
+		var cred pbsys.DBCredentials
 		if r.Credentials != nil {
-			userRole = r.Credentials.User
+			cred = *r.Credentials
 		}
 		result = append(result, DBRoleStatusResult{
-			UserRole:    userRole,
+			UserRole: cred.User,
+			CredentialsInfo: DBRoleStatusResultCredentialsInfo{
+				SecretsManagerProvider: string(cred.SecretsManagerProvider),
+				SecretID:               cred.SecretID,
+				SecretKeys:             cred.SecretKeys,
+			},
 			Status:      r.Status,
 			Message:     r.Message,
 			CompletedAt: r.CompletedAt,
