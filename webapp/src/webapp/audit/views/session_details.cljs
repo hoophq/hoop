@@ -3,7 +3,7 @@
    ["@headlessui/react" :as ui]
    ["@heroicons/react/20/solid" :as hero-solid-icon]
    ["@heroicons/react/24/outline" :as hero-outline-icon]
-   ["@radix-ui/themes" :refer [Button Flex Text Tooltip]]
+   ["@radix-ui/themes" :refer [Button Box Flex Text Tooltip]]
    ["clipboard" :as clipboardjs]
    ["is-url-http" :as is-url-http?]
    ["lucide-react" :refer [Download FileDown]]
@@ -112,20 +112,22 @@
                                    (:group group)])
                      (reset! add-review-popover-open? false))]
     (fn [group _]
-      [:div
-       {:class (str "relative flex flex-grow items-center gap-small"
-                    " text-xs")}
-       [:div
+      [:> Box {:class "flex w-full relative items-center gap-small text-xs"}
+       [:> Box
         [icon/regular {:size 4
                        :icon-name "user-group"}]]
        [tooltip/truncate-tooltip {:text (:group group)}]
-       [:span {:class "text-xxs italic text-gray-500 text-right"}
-        (:status group)]
-       [:div
+       [:> Box
+        [:span {:class "text-xxs italic text-gray-500 text-right"}
+         (:status group)]
+        (when (or (= (:status group) "APPROVED")
+                  (= (:status group) "REJECTED"))
+          [:> Box {:class "text-xxs italic text-gray-500 text-right max-w-[100px]"}
+           [tooltip/truncate-tooltip {:text (-> group :reviewed_by :email)}]])]
+       [:> Box
         [icon/regular {:size 4
                        :icon-name (review-status-icon
                                    (cs/upper-case (:status group)))}]]
-       [:span {:class "w-5"}]
        [popover/right {:open @add-review-popover-open?
                        :component [add-review-popover add-review]
                        :on-click-outside #(reset! add-review-popover-open? false)}]])))
@@ -349,8 +351,7 @@
                [:div
                 {:class "py-small text-xs italic text-gray-500 text-left"}
                 "No review info"])
-             [:div {:class (str "rounded-lg "
-                                "flex flex-col")}
+             [:div {:class "rounded-lg w-full flex flex-col gap-2"}
               (doall
                (for [group review-groups]
                  ^{:key (:id group)}
