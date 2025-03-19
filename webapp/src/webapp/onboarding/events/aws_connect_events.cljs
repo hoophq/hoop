@@ -17,9 +17,12 @@
                                             :selected nil
                                             :errors nil
                                             :status nil
-                                            :connection-names {}}
+                                            :connection-names {}
+                                            :security-groups {}
+                                            :ports {}}
                                 :agents {:data nil
-                                         :assignments nil}})
+                                         :assignments nil}
+                                :create-connection true})
     :dispatch [:aws-connect/fetch-agents]}))
 
 (rf/reg-event-db
@@ -86,7 +89,7 @@
             (assoc-in [:aws-connect :status] :credentials-invalid)
             (assoc-in [:aws-connect :loading :active?] false)
             (assoc-in [:aws-connect :loading :message] nil)
-            (assoc-in [:aws-connect :error] (get-in response [:response :message] "Failed to save AWS credentials")))
+            (assoc-in [:aws-connect :error] (or response "Failed to save AWS credentials")))
     :dispatch [:show-snackbar {:level :error
                                :text "Failed to save AWS credentials. Please check your inputs and try again."}]}))
 
@@ -117,11 +120,12 @@
 (rf/reg-event-fx
  :aws-connect/verify-credentials-failure
  (fn [{:keys [db]} [_ response]]
+   (println response)
    {:db (-> db
             (assoc-in [:aws-connect :status] :credentials-invalid)
             (assoc-in [:aws-connect :loading :active?] false)
             (assoc-in [:aws-connect :loading :message] nil)
-            (assoc-in [:aws-connect :error] (get-in response [:response :message] "Failed to verify AWS credentials")))
+            (assoc-in [:aws-connect :error] (or response "Failed to verify AWS credentials")))
     :dispatch [:show-snackbar {:level :error
                                :text "Failed to verify AWS credentials. Please check your inputs and try again."}]}))
 
@@ -186,19 +190,9 @@
 (rf/reg-event-fx
  :aws-connect/fetch-rds-instances-failure
  (fn [{:keys [db]} [_ response]]
-   (let [raw-response (get-in response [:response] {})
-         error-message (or (get raw-response :message)
-                           (get-in raw-response [:body :message])
-                           (get-in raw-response [:data :message])
-                           "Failed to fetch RDS instances")
-         error-details (or (get-in raw-response [:errors])
-                           (get-in raw-response [:body :errors])
-                           (get-in raw-response [:data :errors])
-                           [])
+   (let [error-message (or response "Failed to fetch RDS instances")
          api-error {:message error-message
-                    :details error-details
-                    :status (get response :status 500)
-                    :raw-response raw-response}]
+                    :status (get response :status 500)}]
      {:db (-> db
               (assoc-in [:aws-connect :status] nil)
               (assoc-in [:aws-connect :loading :active?] false)
@@ -217,6 +211,8 @@
          resources (get-in db [:aws-connect :resources :data])
          agent-assignments (get-in db [:aws-connect :agents :assignments])
          connection-names (get-in db [:aws-connect :resources :connection-names])
+         security-groups (get-in db [:aws-connect :resources :security-groups])
+         ports (get-in db [:aws-connect :resources :ports])
 
          ;; Flatten the hierarchy to get all selected resource data
          selected-resource-data (reduce (fn [acc account]
@@ -248,23 +244,39 @@
                         {:all-completed? false
                          :connections initial-status-map})
               (assoc-in [:aws-connect :current-step] :creation-status))
-      :dispatch [:aws-connect/process-resources selected-resource-data agent-assignments connection-names]})))
+      :dispatch [:aws-connect/process-resources selected-resource-data agent-assignments connection-names security-groups ports]})))
 
 (rf/reg-event-fx
  :aws-connect/process-resources
- (fn [{:keys [db]} [_ resources agent-assignments connection-names]]
+ (fn [{:keys [db]} [_ resources agent-assignments connection-names security-groups ports]]
    (let [total-resources (count resources)
+         default-ports {"mysql" 3306
+                        "postgres" 5432
+                        "postgresql" 5432
+                        "sqlserver-ex" 1433
+                        "sqlserver" 1433}
+         create-connection (get-in db [:aws-connect :create-connection] true)
+         job-steps (if create-connection ["create-connections"] [])
          dispatch-requests (for [resource resources
                                  :let [agent-id (get agent-assignments (:id resource) "default")
                                        resource-arn (:id resource)
+                                       security-group (get security-groups (:id resource) "")
+                                       port (get ports (:id resource) "")
                                        connection-prefix (or (get connection-names (:id resource))
                                                              (str (:name resource) "-" (:account-id resource)))]]
                              [:fetch
                               {:method "POST"
                                :uri "/dbroles/jobs"
                                :body {:agent_id agent-id
-                                      :aws {:instance_arn resource-arn}
-                                      :connection_prefix_name (str connection-prefix "-")}
+                                      :aws {:instance_arn resource-arn
+                                            :default_security_group (if (empty? security-group)
+                                                                      nil
+                                                                      {:ingress_cidr security-group
+                                                                       :target_port (if (empty? port)
+                                                                                      (get default-ports (:engine resource))
+                                                                                      (js/parseInt port))})}
+                                      :connection_prefix_name (str connection-prefix "-")
+                                      :job_steps job-steps}
                                :on-success #(rf/dispatch [:aws-connect/connection-created-success % resource])
                                :on-failure #(rf/dispatch [:aws-connect/connection-created-failure % resource])}])]
      {:db (assoc-in db [:aws-connect :resources :total-to-process] total-resources)
@@ -291,7 +303,6 @@
 (rf/reg-event-fx
  :aws-connect/connection-created-failure
  (fn [{:keys [db]} [_ response resource]]
-   (println response)
    (let [resource-id (:id resource)
          connection-name (get-in db [:aws-connect :creation-status :connections resource-id :name])
          error-message (or response
@@ -310,16 +321,50 @@
       :dispatch [:show-snackbar {:level :error
                                  :text (str "Failed to create connection " connection-name)}]})))
 
+;; New events for fetching AWS accounts
+(rf/reg-event-fx
+ :aws-connect/fetch-accounts
+ (fn [{:keys [db]} _]
+   {:dispatch [:fetch
+               {:method "GET"
+                :uri "/integrations/aws/organizations"
+                :on-success #(rf/dispatch [:aws-connect/fetch-accounts-success %])
+                :on-failure #(rf/dispatch [:aws-connect/fetch-accounts-failure %])}]}))
+
+(rf/reg-event-fx
+ :aws-connect/fetch-accounts-success
+ (fn [{:keys [db]} [_ response]]
+   (let [accounts (get response :items [])]
+     {:db (-> db
+              (assoc-in [:aws-connect :accounts :data] accounts)
+              (assoc-in [:aws-connect :accounts :status] :loaded)
+              (assoc-in [:aws-connect :accounts :api-error] nil)
+              (assoc-in [:aws-connect :loading :message] "Retrieving AWS resources in your environment..."))
+      :dispatch [:aws-connect/fetch-rds-instances]})))
+
+(rf/reg-event-fx
+ :aws-connect/fetch-accounts-failure
+ (fn [{:keys [db]} [_ response]]
+   (let [error-message (or response
+                           "Failed to fetch AWS organization accounts")
+         api-error {:message error-message
+                    :status (get response :status 500)
+                    :raw-response (get response :response)}]
+     {:db (-> db
+              (assoc-in [:aws-connect :accounts :status] :error)
+              (assoc-in [:aws-connect :accounts :api-error] api-error)
+              (assoc-in [:aws-connect :loading :active?] false)
+              (assoc-in [:aws-connect :loading :message] nil))
+      :dispatch [:show-snackbar {:level :error
+                                 :text "Failed to retrieve AWS accounts. Proceeding to fetch resources."}]
+      ;; Continue with resources anyway
+      :dispatch-later [{:ms 500 :dispatch [:aws-connect/fetch-rds-instances]}]})))
+
 ;; Subscriptions
 (rf/reg-sub
  :aws-connect/current-step
  (fn [db _]
    (get-in db [:aws-connect :current-step])))
-
-(rf/reg-sub
- :aws-connect/status
- (fn [db _]
-   (get-in db [:aws-connect :status])))
 
 (rf/reg-sub
  :aws-connect/error
@@ -404,62 +449,37 @@
  (fn [db [_ resource-id connection-name]]
    (assoc-in db [:aws-connect :resources :connection-names resource-id] connection-name)))
 
+(rf/reg-event-db
+ :aws-connect/set-security-group
+ (fn [db [_ resource-id security-group]]
+   (assoc-in db [:aws-connect :resources :security-groups resource-id] security-group)))
+
+(rf/reg-event-db
+ :aws-connect/set-port
+ (fn [db [_ resource-id port]]
+   (assoc-in db [:aws-connect :resources :ports resource-id] port)))
+
+(rf/reg-sub
+ :aws-connect/security-groups
+ (fn [db _]
+   (get-in db [:aws-connect :resources :security-groups] {})))
+
+(rf/reg-sub
+ :aws-connect/ports
+ (fn [db _]
+   (get-in db [:aws-connect :resources :ports] {})))
+
 (rf/reg-sub
  :aws-connect/creation-status
  (fn [db _]
    (get-in db [:aws-connect :creation-status])))
 
-;; New events for fetching AWS accounts
-(rf/reg-event-fx
- :aws-connect/fetch-accounts
- (fn [{:keys [db]} _]
-   {:dispatch [:fetch
-               {:method "GET"
-                :uri "/integrations/aws/organizations"
-                :on-success #(rf/dispatch [:aws-connect/fetch-accounts-success %])
-                :on-failure #(rf/dispatch [:aws-connect/fetch-accounts-failure %])}]}))
-
-(rf/reg-event-fx
- :aws-connect/fetch-accounts-success
- (fn [{:keys [db]} [_ response]]
-   (let [accounts (get response :items [])]
-     {:db (-> db
-              (assoc-in [:aws-connect :accounts :data] accounts)
-              (assoc-in [:aws-connect :accounts :status] :loaded)
-              (assoc-in [:aws-connect :accounts :api-error] nil)
-              (assoc-in [:aws-connect :loading :message] "Retrieving AWS resources in your environment..."))
-      :dispatch [:aws-connect/fetch-rds-instances]})))
-
-(rf/reg-event-fx
- :aws-connect/fetch-accounts-failure
- (fn [{:keys [db]} [_ response]]
-   (let [error-message (or (get-in response [:response :message])
-                           "Failed to fetch AWS organization accounts")
-         api-error {:message error-message
-                    :status (get response :status 500)
-                    :raw-response (get response :response)}]
-     {:db (-> db
-              (assoc-in [:aws-connect :accounts :status] :error)
-              (assoc-in [:aws-connect :accounts :api-error] api-error)
-              (assoc-in [:aws-connect :loading :active?] false)
-              (assoc-in [:aws-connect :loading :message] nil))
-      :dispatch [:show-snackbar {:level :error
-                                 :text "Failed to retrieve AWS accounts. Proceeding to fetch resources."}]
-      ;; Continue with resources anyway
-      :dispatch-later [{:ms 500 :dispatch [:aws-connect/fetch-rds-instances]}]})))
-
-;; New subscriptions for accounts
-(rf/reg-sub
- :aws-connect/accounts
- (fn [db _]
-   (get-in db [:aws-connect :accounts :data])))
+(rf/reg-event-db
+ :aws-connect/toggle-create-connection
+ (fn [db [_ value]]
+   (assoc-in db [:aws-connect :create-connection] value)))
 
 (rf/reg-sub
- :aws-connect/accounts-status
+ :aws-connect/create-connection
  (fn [db _]
-   (get-in db [:aws-connect :accounts :status])))
-
-(rf/reg-sub
- :aws-connect/accounts-api-error
- (fn [db _]
-   (get-in db [:aws-connect :accounts :api-error])))
+   (get-in db [:aws-connect :create-connection] true)))
