@@ -132,6 +132,7 @@ func IAMVerifyPermissions(c *gin.Context) {
 		ActionNames: []string{
 			"organizations:ListAccounts",
 			"rds:ModifyDBInstance",
+			"rds:ModifyDBCluster", // aurora
 			"rds:DescribeDBInstances",
 			"ec2:DescribeSecurityGroups",
 			"ec2:AuthorizeSecurityGroupIngress",

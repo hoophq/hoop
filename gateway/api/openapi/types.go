@@ -1249,7 +1249,7 @@ type DBRoleJobVaultProvider struct {
 
 type CreateDBRoleJob struct {
 	// Unique identifier of the agent hosting the database resource
-	AgentID string `json:"agent_id" format:"uuid" binding:"required" example:"a1b2c3d4-e5f6-7890-abcd-ef1234567890"`
+	AgentID string `json:"agent_id" format:"uuid" binding:"required,min=36" example:"a1b2c3d4-e5f6-7890-abcd-ef1234567890"`
 	// Base prefix for connection names - the role name will be appended to this prefix
 	// when creating the database connection (e.g., "prod-postgres-ro")
 	ConnectionPrefixName string `json:"connection_prefix_name" binding:"required" example:"prod-postgres-"`

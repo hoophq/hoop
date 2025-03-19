@@ -42,6 +42,14 @@ type provisioner struct {
 	environment string
 }
 
+type modifyInstanceInput struct {
+	instanceIdentifier       string
+	instanceCusterIdentifier string
+	vpcSecurityGroupIds      []string
+	masterUserPassword       *string
+	isAurora                 bool
+}
+
 func NewRDSProvisioner(orgID string, sts *sts.GetCallerIdentityOutput, apiRequest openapi.CreateDBRoleJob, rdsClient *rds.Client, ec2Client *ec2.Client) *provisioner {
 	ctx, cancelFn := context.WithCancel(context.Background())
 	return &provisioner{
@@ -116,17 +124,21 @@ func (p *provisioner) Run(jobID string) error {
 			return
 		}
 
-		dbInstInput := &rds.ModifyDBInstanceInput{
-			DBInstanceIdentifier: aws.String(p.getDBIdentifier()),
-			ApplyImmediately:     aws.Bool(true),
+		instInput := &modifyInstanceInput{
+			instanceIdentifier:       ptr.ToString(db.DBInstanceIdentifier),
+			instanceCusterIdentifier: ptr.ToString(db.DBClusterIdentifier),
+			isAurora:                 strings.HasPrefix(ptr.ToString(db.Engine), "aurora"),
+			vpcSecurityGroupIds:      nil,
+			masterUserPassword:       nil,
 		}
+
 		if securityGroupID != "" {
 			var securityGroupIDs []string
 			for _, sg := range db.VpcSecurityGroups {
 				securityGroupIDs = append(securityGroupIDs, *sg.VpcSecurityGroupId)
 			}
 			securityGroupIDs = append(securityGroupIDs, securityGroupID)
-			dbInstInput.VpcSecurityGroupIds = securityGroupIDs
+			instInput.vpcSecurityGroupIds = securityGroupIDs
 		}
 
 		switch err {
@@ -137,8 +149,8 @@ func (p *provisioner) Run(jobID string) error {
 				p.updateJob(pbsys.NewError(jobID, "failed generating master user password: %v", err))
 				return
 			}
-			dbInstInput.MasterUserPassword = aws.String(randomPasswd)
-			err = p.modifyRDSInstance(jobID, dbInstInput, func() error {
+			instInput.masterUserPassword = &randomPasswd
+			err = p.modifyRDSInstance(jobID, instInput, func() error {
 				env = &models.EnvVar{
 					OrgID:     p.orgID,
 					ID:        dbEnvID,
@@ -159,7 +171,7 @@ func (p *provisioner) Run(jobID string) error {
 				return
 			}
 		case nil:
-			if err := p.modifyRDSInstance(jobID, dbInstInput, func() error { return nil }); err != nil {
+			if err := p.modifyRDSInstance(jobID, instInput, func() error { return nil }); err != nil {
 				p.updateJob(pbsys.NewError(jobID, "failed modifying db instance: %v", err))
 				return
 			}
@@ -208,9 +220,23 @@ func (p *provisioner) Run(jobID string) error {
 	return nil
 }
 
-func (p *provisioner) modifyRDSInstance(jobID string, input *rds.ModifyDBInstanceInput, instanceAvailableCallback func() error) error {
-	// TODO: add context cancel here
-	_, err := p.rdsClient.ModifyDBInstance(context.Background(), input)
+func (p *provisioner) modifyRDSInstance(jobID string, input *modifyInstanceInput, instanceAvailableCallback func() error) error {
+	var err error
+	if input.isAurora {
+		_, err = p.rdsClient.ModifyDBCluster(context.Background(), &rds.ModifyDBClusterInput{
+			DBClusterIdentifier: &input.instanceCusterIdentifier,
+			ApplyImmediately:    aws.Bool(true),
+			VpcSecurityGroupIds: input.vpcSecurityGroupIds,
+			MasterUserPassword:  input.masterUserPassword,
+		})
+	} else {
+		_, err = p.rdsClient.ModifyDBInstance(context.Background(), &rds.ModifyDBInstanceInput{
+			DBInstanceIdentifier: &input.instanceIdentifier,
+			ApplyImmediately:     aws.Bool(true),
+			VpcSecurityGroupIds:  input.vpcSecurityGroupIds,
+			MasterUserPassword:   input.masterUserPassword,
+		})
+	}
 	if err != nil {
 		return fmt.Errorf("failed modifying db instance: %v", err)
 	}
@@ -287,6 +313,10 @@ func coerceToSubtype(databaseType string) string {
 	switch databaseType {
 	case "postgres", "mysql":
 		return databaseType
+	case "aurora-postgresql":
+		return "postgres"
+	case "aurora-mysql":
+		return "mysql"
 	case "sqlserver-ee", "sqlserver-se", "sqlserver-ex", "sqlserver-web":
 		return "mssql"
 	}
