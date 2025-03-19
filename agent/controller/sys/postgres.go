@@ -143,6 +143,8 @@ func provisionPostgresRole(r pbsys.DBProvisionerRequest, dbNames []string, roleN
 		CompletedAt:    time.Now().UTC(),
 		Credentials: &pbsys.DBCredentials{
 			SecretsManagerProvider: pbsys.SecretsManagerProviderDatabase,
+			SecretID:               "",
+			SecretKeys:             []string{},
 			Host:                   r.DatabaseHostname,
 			Port:                   r.Port(),
 			User:                   userRole,
