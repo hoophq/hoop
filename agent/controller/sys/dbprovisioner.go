@@ -43,9 +43,9 @@ func ProcessDBProvisionerRequest(client pb.ClientTransport, pkt *pb.Packet) {
 
 	var res *pbsys.DBProvisionerResponse
 	switch req.DatabaseType {
-	case "postgres":
+	case "postgres", "aurora-postgresql":
 		res = provisionPostgresRoles(req)
-	case "mysql":
+	case "mysql", "aurora-mysql":
 		res = provisionMySQLRoles(req)
 	case "sqlserver-ee", "sqlserver-se", "sqlserver-ex", "sqlserver-web":
 		res = provisionMSSQLRoles(req)

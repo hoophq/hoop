@@ -4199,6 +4199,7 @@ const docTemplate = `{
                     "description": "Unique identifier of the agent hosting the database resource",
                     "type": "string",
                     "format": "uuid",
+                    "minLength": 36,
                     "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
                 },
                 "aws": {
