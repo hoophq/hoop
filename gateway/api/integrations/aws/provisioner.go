@@ -177,7 +177,13 @@ func (p *provisioner) Run(jobID string) error {
 			MasterUsername:   env.GetEnv("MASTER_USERNAME"),
 			MasterPassword:   env.GetEnv("MASTER_PASSWORD"),
 			DatabaseType:     env.GetEnv("DATABASE_TYPE"),
-			StoreInVault:     p.hasStep(openapi.DBRoleJobStepStoreInVault),
+		}
+
+		// set vault provider if it's set
+		if p.apiRequest.VaultProvider != nil {
+			request.Vault = &pbsys.VaultProvider{
+				SecretID: p.apiRequest.VaultProvider.SecretID,
+			}
 		}
 
 		resp := transportsys.RunDBProvisioner(p.apiRequest.AgentID, &request)
@@ -269,7 +275,7 @@ func (p *provisioner) handleConnectionProvision(databaseType string, resp *pbsys
 			AccessModeExec:     "enabled",
 			AccessModeConnect:  "enabled",
 			AccessSchema:       "enabled",
-			Envs:               parseEnvVars(databaseType, result.Credentials),
+			Envs:               parseEnvVars(result.Credentials),
 		})
 	}
 	return models.UpsertBatchConnections(connections)
@@ -287,21 +293,26 @@ func coerceToSubtype(databaseType string) string {
 	return databaseType
 }
 
-func parseEnvVars(databaseType string, cred *pbsys.DBCredentials) map[string]string {
-	var dbName string
-	switch databaseType {
-	case "postgres", "mysql":
-		dbName = databaseType
-	case "sqlserver-ee", "sqlserver-se", "sqlserver-ex", "sqlserver-web":
-		dbName = "master"
+func parseEnvVars(cred *pbsys.DBCredentials) map[string]string {
+	switch cred.SecretsManagerProvider {
+	case pbsys.SecretsManagerProviderDatabase:
+		return map[string]string{
+			"envvar:HOST": b64enc(cred.Host),
+			"envvar:PORT": b64enc(cred.Port),
+			"envvar:USER": b64enc(cred.User),
+			"envvar:PASS": b64enc(cred.Password),
+			"envvar:DB":   b64enc(cred.DefaultDatabase),
+		}
+	case pbsys.SecretsManagerProviderVault:
+		return map[string]string{
+			"envvar:HOST": b64enc("_vaultkv2:%s:HOST", cred.SecretID),
+			"envvar:PORT": b64enc("_vaultkv2:%s:PORT", cred.SecretID),
+			"envvar:USER": b64enc("_vaultkv2:%s:USER", cred.SecretID),
+			"envvar:PASS": b64enc("_vaultkv2:%s:PASSWORD", cred.SecretID),
+			"envvar:DB":   b64enc("_vaultkv2:%s:DB", cred.SecretID),
+		}
 	}
-	return map[string]string{
-		"envvar:HOST": base64.StdEncoding.EncodeToString([]byte(cred.Host)),
-		"envvar:PORT": base64.StdEncoding.EncodeToString([]byte(cred.Port)),
-		"envvar:USER": base64.StdEncoding.EncodeToString([]byte(cred.User)),
-		"envvar:PASS": base64.StdEncoding.EncodeToString([]byte(cred.Password)),
-		"envvar:DB":   base64.StdEncoding.EncodeToString([]byte(dbName)),
-	}
+	return nil
 }
 
 func generateRandomPassword() (string, error) {
@@ -468,4 +479,8 @@ func parseAWSTags(obj *rdstypes.DBInstance) []map[string]any {
 		v = append(v, map[string]any{ptr.ToString(t.Key): ptr.ToString(t.Value)})
 	}
 	return v
+}
+
+func b64enc(format string, v ...any) string {
+	return base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf(format, v...)))
 }

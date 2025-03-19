@@ -67,6 +67,10 @@ type KVGetter interface {
 	GetData() map[string]string
 }
 
+func NewVaultProvider() (*vaultProvider, error) {
+	return newVaultKeyValProvider(secretProviderVaultKv2Type, nil)
+}
+
 func newVaultKeyValProvider(kvType secretProviderType, httpClient httpclient.HttpClient) (*vaultProvider, error) {
 	config, err := loadDefaultVaultConfig()
 	if err != nil {
@@ -119,6 +123,39 @@ func loadDefaultVaultConfig() (*vaultConfig, error) {
 	}
 	config.vaultToken = token
 	return config, nil
+}
+
+func (p *vaultProvider) SetValue(secretID string, secretsPayload map[string]string) error {
+	apiURL := urlPathForProvider("", p.config.serverAddr, secretID)
+	log.With("secretid", secretID).Debugf("creating or updating secret at %v", apiURL)
+	ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancelFn()
+
+	secretsJsonData, err := json.Marshal(map[string]any{"data": secretsPayload})
+	if err != nil {
+		return fmt.Errorf("failed encoding secrets payload, reason=%v", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(secretsJsonData))
+	if err != nil {
+		return fmt.Errorf("failed creating http request, err=%v", err)
+	}
+	vaultToken, err := p.GetVaultToken()
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-Vault-Token", vaultToken)
+	req.Header.Set("X-Vault-Request", "true")
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if err := decodeVaultHttpErrorResponseBody(resp); err != nil {
+		return err
+	}
+	log.With("secretid", secretID).Debugf("secret saved with success, status=%v", resp.StatusCode)
+	return nil
 }
 
 func (p *vaultProvider) GetKey(secretID, secretKey string) (string, error) {

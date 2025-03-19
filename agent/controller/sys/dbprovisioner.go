@@ -3,7 +3,9 @@ package controllersys
 import (
 	"crypto/rand"
 	"encoding/json"
+	"fmt"
 
+	"github.com/hoophq/hoop/agent/secretsmanager"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
 	pb "github.com/hoophq/hoop/common/proto"
@@ -29,8 +31,15 @@ func ProcessDBProvisionerRequest(client pb.ClientTransport, pkt *pb.Packet) {
 	memoryStore.Set(lockResourceID, nil)
 	defer memoryStore.Del(lockResourceID)
 
-	log.With("sid", sid).Infof("received provisoning request, type=%v, address=%v, masteruser=%v",
-		req.DatabaseType, req.Address(), req.MasterUsername)
+	vault, err := secretsmanager.NewVaultProvider()
+	hasVaultProvider := req.Vault != nil
+	if hasVaultProvider && err != nil {
+		sendResponse(client, pbsys.NewError(sid, err.Error()))
+		return
+	}
+
+	log.With("sid", sid).Infof("received provisoning request, type=%v, address=%v, masteruser=%v, vault-provider=%v",
+		req.DatabaseType, req.Address(), req.MasterUsername, hasVaultProvider)
 
 	var res *pbsys.DBProvisionerResponse
 	switch req.DatabaseType {
@@ -58,6 +67,30 @@ func ProcessDBProvisionerRequest(client pb.ClientTransport, pkt *pb.Packet) {
 			res.Status = pbsys.StatusFailedType
 			break
 		}
+	}
+
+	if hasVaultProvider && res.Status == pbsys.StatusCompletedType {
+		for _, item := range res.Result {
+			item.Credentials.SecretsManagerProvider = pbsys.SecretsManagerProviderVault
+			item.Credentials.SecretKeys = []string{"HOST", "PORT", "USER", "PASSWORD", "DB"}
+			item.Credentials.SecretID = req.Vault.SecretID
+			err := vault.SetValue(req.Vault.SecretID, map[string]string{
+				"HOST":     item.Credentials.Host,
+				"PORT":     item.Credentials.Port,
+				"USER":     item.Credentials.User,
+				"PASSWORD": item.Credentials.Password,
+				"DB":       item.Credentials.DefaultDatabase,
+			})
+
+			// avoid password from being sent by the network when Vault is set
+			item.Credentials.Password = ""
+			if err != nil {
+				item.Message = fmt.Sprintf("Unable to create or update secret in Vault, reason=%v", err)
+				res.Message = pbsys.MessageVaultSaveError
+				res.Status = pbsys.StatusFailedType
+			}
+		}
+
 	}
 
 	sendResponse(client, res)

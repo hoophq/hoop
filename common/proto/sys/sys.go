@@ -16,7 +16,12 @@ const (
 
 	MessageCompleted            string = "All user roles have been successfully provisioned"
 	MessageOneOrMoreRolesFailed string = "One or more user roles failed to be provisioned"
+	MessageVaultSaveError       string = "One or more user roles could not be saved to the Vault key-value store"
 )
+
+type VaultProvider struct {
+	SecretID string `json:"secret_id"`
+}
 
 type DBProvisionerRequest struct {
 	OrgID            string `json:"org_id"`
@@ -27,15 +32,27 @@ type DBProvisionerRequest struct {
 	MasterUsername   string `json:"master_user"`
 	MasterPassword   string `json:"master_password"`
 	DatabaseType     string `json:"database_type"`
-	StoreInVault     bool   `json:"store_in_vault"`
+
+	Vault *VaultProvider `json:"vault_provider"`
 }
 
+type SecretsManagerProviderType string
+
+const (
+	SecretsManagerProviderDatabase SecretsManagerProviderType = "database"
+	SecretsManagerProviderVault    SecretsManagerProviderType = "vault"
+)
+
 type DBCredentials struct {
-	Host     string            `json:"host"`
-	Port     string            `json:"port"`
-	User     string            `json:"user"`
-	Password string            `json:"password"`
-	Options  map[string]string `json:"options"`
+	Host                   string                     `json:"host"`
+	Port                   string                     `json:"port"`
+	User                   string                     `json:"user"`
+	Password               string                     `json:"password"`
+	DefaultDatabase        string                     `json:"default_database"`
+	Options                map[string]string          `json:"options"`
+	SecretsManagerProvider SecretsManagerProviderType `json:"secrets_manager_provider"`
+	SecretID               string                     `json:"secret_id"`
+	SecretKeys             []string                   `json:"secret_keys"`
 }
 
 type Result struct {
@@ -54,10 +71,10 @@ type DBProvisionerStatus struct {
 }
 
 type DBProvisionerResponse struct {
-	SID     string   `json:"sid"`
-	Status  string   `json:"status"`
-	Message string   `json:"message"`
-	Result  []Result `json:"result"`
+	SID     string    `json:"sid"`
+	Status  string    `json:"status"`
+	Message string    `json:"message"`
+	Result  []*Result `json:"result"`
 }
 
 func (r *DBProvisionerRequest) Address() string {
@@ -107,7 +124,7 @@ func NewDbProvisionerResponse(sid, status, message string) *DBProvisionerRespons
 		SID:     sid,
 		Status:  status,
 		Message: message,
-		Result:  []Result{},
+		Result:  []*Result{},
 	}
 }
 

@@ -104,7 +104,8 @@ func provisionMSSQLRoles(r pbsys.DBProvisionerRequest) *pbsys.DBProvisionerRespo
 	res := pbsys.NewDbProvisionerResponse(r.SID, "", "")
 	for _, roleName := range roleNames {
 		result := provisionMSSQLRole(db, r, roleName)
-		res.Result = append(res.Result, *result)
+
+		res.Result = append(res.Result, result)
 	}
 	return res
 }
@@ -132,11 +133,15 @@ func provisionMSSQLRole(db *sql.DB, r pbsys.DBProvisionerRequest, roleName roleN
 		Message:        "",
 		CompletedAt:    time.Now().UTC(),
 		Credentials: &pbsys.DBCredentials{
-			Host:     r.DatabaseHostname,
-			Port:     r.Port(),
-			User:     userRole,
-			Password: randomPasswd,
-			Options:  map[string]string{},
+			SecretsManagerProvider: pbsys.SecretsManagerProviderDatabase,
+			SecretID:               "",
+			SecretKeys:             []string{},
+			Host:                   r.DatabaseHostname,
+			Port:                   r.Port(),
+			User:                   userRole,
+			Password:               randomPasswd,
+			DefaultDatabase:        "master",
+			Options:                map[string]string{},
 		},
 	}
 }

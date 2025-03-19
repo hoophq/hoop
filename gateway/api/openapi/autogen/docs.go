@@ -4224,6 +4224,14 @@ const docTemplate = `{
                         "create-connections",
                         "send-webhook"
                     ]
+                },
+                "vault_provider": {
+                    "description": "Vault Provider uses HashiCorp Vault to store the provisioned credentials.\nThe target agent must be configured with the Vault Credentials in order for this operation to work",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.DBRoleJobVaultProvider"
+                        }
+                    ]
                 }
             }
         },
@@ -4364,6 +4372,14 @@ const docTemplate = `{
                     "type": "string",
                     "example": "2025-02-28T12:34:56Z"
                 },
+                "credentials_info": {
+                    "description": "Credentials information about the stored secrets",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.DBRoleJobStatusResultCredentialsInfo"
+                        }
+                    ]
+                },
                 "message": {
                     "description": "Human-readable description of this role's provisioning status or error details",
                     "type": "string",
@@ -4386,18 +4402,62 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.DBRoleJobStatusResultCredentialsInfo": {
+            "type": "object",
+            "properties": {
+                "secret_id": {
+                    "description": "The secret identifier that contains the secret data.\nThis value is always empty for the database type.",
+                    "type": "string",
+                    "example": "dbsecrets/data"
+                },
+                "secret_keys": {
+                    "description": "The keys that were saved in the secrets manager.\nThis value is always empty for the database type.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "HOST",
+                        "PORT",
+                        "USER",
+                        "PASSWORD",
+                        "DB"
+                    ]
+                },
+                "secrets_manager_provider": {
+                    "description": "The secrets manager provider that was used to store the credentials",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.SecretsManagerProviderType"
+                        }
+                    ],
+                    "example": "database"
+                }
+            }
+        },
         "openapi.DBRoleJobStepType": {
             "type": "string",
             "enum": [
                 "create-connections",
-                "send-webhook",
-                "store-in-vault"
+                "send-webhook"
             ],
             "x-enum-varnames": [
                 "DBRoleJobStepCreateConnections",
-                "DBRoleJobStepSendWebhook",
-                "DBRoleJobStepStoreInVault"
+                "DBRoleJobStepSendWebhook"
             ]
+        },
+        "openapi.DBRoleJobVaultProvider": {
+            "type": "object",
+            "required": [
+                "secret_id"
+            ],
+            "properties": {
+                "secret_id": {
+                    "description": "The path to store the credentials in Vault",
+                    "type": "string",
+                    "example": "dbsecrets/data"
+                }
+            }
         },
         "openapi.DBTag": {
             "type": "object",
@@ -5592,6 +5652,17 @@ const docTemplate = `{
                     "example": "20320ebbf9fc612256b67dc9e899bbd6e4745c77"
                 }
             }
+        },
+        "openapi.SecretsManagerProviderType": {
+            "type": "string",
+            "enum": [
+                "database",
+                "vault"
+            ],
+            "x-enum-varnames": [
+                "SecretsManagerProviderDatabase",
+                "SecretsManagerProviderVault"
+            ]
         },
         "openapi.ServerInfo": {
             "type": "object",

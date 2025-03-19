@@ -97,7 +97,7 @@ func provisionPostgresRoles(r pbsys.DBProvisionerRequest) *pbsys.DBProvisionerRe
 	res := pbsys.NewDbProvisionerResponse(r.SID, "", "")
 	for _, roleName := range roleNames {
 		result := provisionPostgresRole(r, dbNames, roleName)
-		res.Result = append(res.Result, *result)
+		res.Result = append(res.Result, result)
 	}
 
 	return res
@@ -142,11 +142,15 @@ func provisionPostgresRole(r pbsys.DBProvisionerRequest, dbNames []string, roleN
 		Message:        "",
 		CompletedAt:    time.Now().UTC(),
 		Credentials: &pbsys.DBCredentials{
-			Host:     r.DatabaseHostname,
-			Port:     r.Port(),
-			User:     userRole,
-			Password: randomPasswd,
-			Options:  map[string]string{},
+			SecretsManagerProvider: pbsys.SecretsManagerProviderDatabase,
+			SecretID:               "",
+			SecretKeys:             []string{},
+			Host:                   r.DatabaseHostname,
+			Port:                   r.Port(),
+			User:                   userRole,
+			Password:               randomPasswd,
+			DefaultDatabase:        "postgres",
+			Options:                map[string]string{},
 		},
 	}
 }

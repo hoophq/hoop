@@ -18,7 +18,7 @@ func validateDBRoleJobStep(fl validator.FieldLevel) bool {
 		return false
 	}
 	switch stepType {
-	case DBRoleJobStepCreateConnections, DBRoleJobStepSendWebhook, DBRoleJobStepStoreInVault:
+	case DBRoleJobStepCreateConnections, DBRoleJobStepSendWebhook:
 		return true
 	}
 	return false

@@ -523,9 +523,14 @@ func toDBRoleOpenAPI(o *models.DBRole) *openapi.DBRoleJob {
 		var result []openapi.DBRoleJobStatusResult
 		for _, r := range o.Status.Result {
 			result = append(result, openapi.DBRoleJobStatusResult{
-				UserRole:    r.UserRole,
-				Status:      r.Status,
-				Message:     r.Message,
+				UserRole: r.UserRole,
+				Status:   r.Status,
+				Message:  r.Message,
+				CredentialsInfo: openapi.DBRoleJobStatusResultCredentialsInfo{
+					SecretsManagerProvider: openapi.SecretsManagerProviderType(r.CredentialsInfo.SecretsManagerProvider),
+					SecretID:               r.CredentialsInfo.SecretID,
+					SecretKeys:             r.CredentialsInfo.SecretKeys,
+				},
 				CompletedAt: r.CompletedAt,
 			})
 		}
