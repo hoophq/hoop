@@ -3,7 +3,6 @@ package awsintegration
 import (
 	"context"
 	"fmt"
-	"libhoop/log"
 	"net/http"
 	"strings"
 
@@ -20,6 +19,7 @@ import (
 	"github.com/aws/smithy-go/ptr"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
