@@ -1,14 +1,9 @@
 name: Hoop Release
 
-# on:
-#   push:
-#     tags:
-#       - "*.*.*"
-
 on:
   push:
-    branches:
-      - ghoci-registry
+    tags:
+      - "*.*.*"
 
 jobs:
   test:
@@ -560,22 +555,22 @@ jobs:
           GITHUB_USERNAME: ${{ github.actor }}
         run: make build-helm-chart
 
-      # - name: Publish Release
-      #   env:
-      #     GIT_TAG: ${{ env.GIT_TAG }}
-      #     GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-      #     AWS_REGION: us-east-1
-      #     AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      #     AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      #   run: make release
+      - name: Publish Release
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: make release
 
-      # - name: Publish Brew Recipe
-      #   run: gh workflow run release.yml -f version=$GIT_TAG --repo hoophq/brew
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-      #     GIT_TAG: ${{ env.GIT_TAG }}
+      - name: Publish Brew Recipe
+        run: gh workflow run release.yml -f version=$GIT_TAG --repo hoophq/brew
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GIT_TAG: ${{ env.GIT_TAG }}
 
-      # - name: Publish Sentry Sourcemaps
-      #   run: make publish-sentry-sourcemaps
-      #   env:
-      #     SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      - name: Publish Sentry Sourcemaps
+        run: make publish-sentry-sourcemaps
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
