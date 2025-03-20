@@ -556,7 +556,7 @@ jobs:
       - name: Build Helm Chart
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GITHUB_CONTAINER_REGISTRY_TOKEN: ${{ secrets.GHCR_TOKEN }}
           GITHUB_USERNAME: ${{ github.actor }}
         run: make build-helm-chart
 
