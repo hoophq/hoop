@@ -35,7 +35,7 @@ test: test-oss test-enterprise
 test-oss:
 	rm libhoop || true
 	ln -s _libhoop libhoop
-	env CGO_ENABLED=0 go test -v github.com/hoophq/hoop/...
+	env CGO_ENABLED=0 go test -json -v github.com/hoophq/hoop/...
 
 test-enterprise:
 	rm libhoop || true
