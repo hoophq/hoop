@@ -35,12 +35,12 @@ test: test-oss test-enterprise
 test-oss:
 	rm libhoop || true
 	ln -s _libhoop libhoop
-	env CGO_ENABLED=0 go test -v github.com/hoophq/hoop/...
+	env CGO_ENABLED=0 go test -json -v github.com/hoophq/hoop/...
 
 test-enterprise:
 	rm libhoop || true
 	ln -s ../libhoop libhoop
-	env CGO_ENABLED=0 go test -v github.com/hoophq/hoop/...
+	env CGO_ENABLED=0 go test -json -v github.com/hoophq/hoop/...
 
 generate-openapi-docs:
 	cd ./gateway/ && go run github.com/swaggo/swag/cmd/swag@v1.16.3 init -g api/server.go -o api/openapi/autogen --outputTypes go --markdownFiles api/openapi/docs/ --parseDependency
