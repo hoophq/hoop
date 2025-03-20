@@ -73,6 +73,9 @@ build-helm-chart:
 	mkdir -p ${DIST_FOLDER}
 	helm package ./deploy/helm-chart/chart/agent/ --app-version ${VERSION} --destination ${DIST_FOLDER}/ --version ${VERSION}
 	helm package ./deploy/helm-chart/chart/gateway/ --app-version ${VERSION} --destination ${DIST_FOLDER}/ --version ${VERSION}
+	helm registry login ghcr.io --username ${GITHUB_USERNAME} --password ${GITHUB_CONTAINER_REGISTRY_TOKEN}
+	helm push ${DIST_FOLDER}/hoop-chart-${VERSION}.tgz oci://ghcr.io/hoophq/helm-charts/
+	helm push ${DIST_FOLDER}/hoopagent-chart-${VERSION}.tgz oci://ghcr.io/hoophq/helm-charts/
 
 build-gateway-bundle:
 	rm -rf ${DIST_FOLDER}/hoopgateway
