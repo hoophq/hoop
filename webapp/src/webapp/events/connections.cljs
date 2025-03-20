@@ -238,7 +238,7 @@ ORDER BY total_amount DESC;")
 
 (rf/reg-event-fx
  :connections->start-connect-with-settings
- (fn [{:keys [db]} [_ {:keys [connection-name port access-duration]}]]
+ (fn [{:keys [db]} [_ {:keys [connection-name port access-duration]} connecting-status]]
    (let [gateway-info (-> db :gateway->info)]
      {:db (assoc-in db [:connections->connection-connected] {:data {} :status :loading})
       :fx [[:dispatch [:hoop-app->update-my-configs {:apiUrl (-> gateway-info :data :api_url)
@@ -248,12 +248,13 @@ ORDER BY total_amount DESC;")
            [:dispatch-later {:ms 2000 :dispatch [:connections->connection-connect-with-settings
                                                  {:connection_name connection-name
                                                   :port port
-                                                  :access_duration access-duration}]}]]})))
+                                                  :access-duration access-duration}
+                                                 connecting-status]}]]})))
 
 (rf/reg-event-fx
  :connections->connection-connect-with-settings
  (fn
-   [{:keys [db]} [_ connection]]
+   [{:keys [db]} [_ connection connecting-status]]
    {:db (assoc-in db [:connections->connection-connected] {:data connection :status :loading})
     :fx [[:dispatch [:fetch
                      {:method "POST"
@@ -262,10 +263,14 @@ ORDER BY total_amount DESC;")
                       :on-failure (fn [err]
                                     (rf/dispatch [::connections->connection-connected-error (merge connection {:error-message err})])
                                     (rf/dispatch [:show-snackbar {:level :error
-                                                                  :text err}]))
+                                                                  :text err}])
+                                    (when connecting-status
+                                      (rf/dispatch [:reset-connecting-status connecting-status])))
                       :on-success (fn [res]
+                                    (when connecting-status
+                                      (rf/dispatch [:reset-connecting-status connecting-status]))
                                     (cond
-                                      ;; Case 1: Review required
+                                     ;; Case 1: Review required
                                       (and (= (:status res) "disconnected")
                                            (:has_review res))
                                       (do
@@ -274,13 +279,13 @@ ORDER BY total_amount DESC;")
                                         (rf/dispatch [:modal->open {:content [connection-review-modal/main res]
                                                                     :maxWidth "446px"}]))
 
-                                      ;; Case 2: Connection failure
+                                     ;; Case 2: Connection failure
                                       (= (:status res) "disconnected")
                                       (rf/dispatch [:show-snackbar {:level :error
                                                                     :text (str "The connection " (:connection_name connection) " is not able "
                                                                                "to be connected, please contact your admin.")}])
 
-                                      ;; Case 3: Connection success
+                                     ;; Case 3: Connection success
                                       :else
                                       (do
                                         (rf/dispatch [:show-snackbar {:level :success

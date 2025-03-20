@@ -204,6 +204,7 @@
         session-report (rf/subscribe [:reports->session])
         gateway-info (rf/subscribe [:gateway->info])
         executing-status (r/atom :ready)
+        connecting-status (r/atom :ready)
         add-review-popover-open? (r/atom false)
         clipboard-url (new clipboardjs ".copy-to-clipboard-url")]
     (rf/dispatch [:gateway->get-info])
@@ -224,6 +225,10 @@
             has-review? (boolean (seq (-> session :review)))
             has-session-report? (seq (-> @session-report :data :items))
             ready? (= (:status session) "ready")
+            revoke-at (when (get-in session [:review :revoke_at])
+                        (js/Date. (get-in session [:review :revoke_at])))
+            not-revoked? (when revoke-at (> (.getTime revoke-at) (.getTime (js/Date.))))
+            can-connect? (and ready? (= verb "connect") not-revoked?)
             can-review? (and
                          (some #(= "PENDING" (:status %))
                                review-groups)
@@ -270,6 +275,16 @@
                                   :on-click (fn []
                                               (reset! executing-status :loading)
                                               (rf/dispatch [:audit->execute-session session]))
+                                  :variant :small}]])
+              (when can-connect?
+                [:div {:class "flex gap-regular justify-end items-center mx-large"}
+                 [:span {:class "text-xs text-gray-500"}
+                  "This session is ready to be connected"]
+                 [button/primary {:text "Connect"
+                                  :status @connecting-status
+                                  :on-click (fn []
+                                              (reset! connecting-status :loading)
+                                              (rf/dispatch [:audit->connect-session session connecting-status]))
                                   :variant :small}]])]
 
              [:div {:class "relative flex gap-2.5 items-start pr-3"}
@@ -330,7 +345,15 @@
                  {:class "flex-grow text-gray-500"}
                  "end:"]
                 [:span
-                 (formatters/time-parsed->full-date end-date)]])]
+                 (formatters/time-parsed->full-date end-date)]])
+             (when (and (= verb "connect") (get-in session [:review :revoke_at]))
+               [:div
+                {:class "flex items-center justify-end gap-regular text-xs"}
+                [:span
+                 {:class "flex-grow text-gray-500"}
+                 "access until:"]
+                [:span
+                 (formatters/time-parsed->full-date (get-in session [:review :revoke_at]))]])]
             [:div {:id "session-reviews" :class "self-center"}
              [:header {:class "relative flex text-xs text-gray-800 mb-small"}
               [:span {:class "flex-grow font-bold"} "Reviewers"]

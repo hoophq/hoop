@@ -326,3 +326,32 @@
                                          extension)
                                :on-success success
                                :on-failure failure}]]]})))
+
+(rf/reg-event-fx
+ :audit->connect-session
+ (fn
+   [{:keys [db]} [_ session connecting-status]]
+   (let [connection-name (:connection session)
+         revoke-at (when (get-in session [:review :revoke_at])
+                     (js/Date. (get-in session [:review :revoke_at])))
+         not-revoked? (when revoke-at (> (.getTime revoke-at) (.getTime (js/Date.))))
+         access-duration (get-in session [:review :access_duration])]
+
+     (if not-revoked?
+       ;; If not revoked, connect
+       {:fx [[:dispatch [:connections->start-connect-with-settings
+                         {:connection-name connection-name
+                          :port "8999"
+                          :access-duration access-duration}
+                         connecting-status]]]}
+
+       ;; If revoked, show error message
+       {:fx [[:dispatch [:show-snackbar {:level :error
+                                         :text "This connection approval has expired."}]]
+             [:dispatch [:reset-connecting-status connecting-status]]]}))))
+
+(rf/reg-fx
+ :reset-connecting-status
+ (fn [connecting-status]
+   (when (and connecting-status (satisfies? IAtom connecting-status))
+     (reset! connecting-status :ready))))
