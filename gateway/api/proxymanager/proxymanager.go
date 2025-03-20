@@ -3,6 +3,7 @@ package apiproxymanager
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -12,6 +13,7 @@ import (
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	pgproxymanager "github.com/hoophq/hoop/gateway/pgrest/proxymanager"
+	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/clientstate"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
@@ -139,6 +141,23 @@ func Post(c *gin.Context) {
 			break
 		}
 
+		hasReview := false
+		var reviewID string
+		var sessionID string
+
+		if pkt.Payload != nil {
+			hasReview = true
+			reviewID = extractIDFromURL(string(pkt.Payload))
+
+			// Fetch the complete review to get the session ID
+			review, err := pgreview.New().FetchOneByID(ctx, reviewID)
+			if err == nil && review != nil {
+				sessionID = review.Session
+			} else {
+				log.Warnf("Failed to fetch review details: %v", err)
+			}
+		}
+
 		switch pkt.Type {
 		case pbclient.SessionOpenWaitingApproval:
 			obj, err := clientstate.Update(ctx, types.ClientStatusDisconnected)
@@ -157,6 +176,9 @@ func Post(c *gin.Context) {
 				RequestConnectionType:    conn.Type,
 				RequestConnectionSubType: conn.SubType.String,
 				RequestPort:              obj.RequestPort,
+				HasReview:                hasReview,
+				ReviewId:                 reviewID,
+				SessionId:                sessionID,
 				RequestAccessDuration:    obj.RequestAccessDuration,
 				ClientMetadata:           obj.ClientMetadata,
 				ConnectedAt:              obj.ConnectedAt.Format(time.RFC3339),
@@ -234,4 +256,18 @@ func Disconnect(c *gin.Context) {
 		ClientMetadata:        obj.ClientMetadata,
 		ConnectedAt:           obj.ConnectedAt.Format(time.RFC3339),
 	})
+}
+
+// extractIDFromURL extracts the ID part from the URL (the part after the last slash)
+func extractIDFromURL(url string) string {
+	if url == "" {
+		return ""
+	}
+
+	parts := strings.Split(url, "/")
+	if len(parts) == 0 {
+		return url
+	}
+
+	return parts[len(parts)-1]
 }
