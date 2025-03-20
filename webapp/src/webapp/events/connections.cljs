@@ -218,16 +218,47 @@ ORDER BY total_amount DESC;")
                                    (rf/dispatch [:navigate :connections])))}]]]}))
 
 (rf/reg-event-fx
- :connections->start-connect
- (fn [{:keys [db]} [_ connection]]
+ :connections->start-connect-with-settings
+ (fn [{:keys [db]} [_ {:keys [connection-name port access-duration]}]]
    (let [gateway-info (-> db :gateway->info)]
      {:db (assoc-in db [:connections->connection-connected] {:data {} :status :loading})
       :fx [[:dispatch [:hoop-app->update-my-configs {:apiUrl (-> gateway-info :data :api_url)
                                                      :grpcUrl (-> gateway-info :data :grpc_url)
                                                      :token (.getItem js/localStorage "jwt-token")}]]
-           [:dispatch [:modal->close]]
            [:dispatch [:hoop-app->restart]]
-           [:dispatch-later {:ms 2000 :dispatch [:connections->connection-connect connection]}]
-           [:dispatch [:modal->open {:content [connection-connect/main]
-                                     :maxWidth "446px"
-                                     :custom-on-click-out connection-connect/minimize-modal}]]]})))
+           [:dispatch-later {:ms 2000 :dispatch [:connections->connection-connect-with-settings
+                                                 {:connection_name connection-name
+                                                  :port port
+                                                  :access_duration access-duration}]}]]})))
+
+(rf/reg-event-fx
+ :connections->connection-connect-with-settings
+ (fn
+   [{:keys [db]} [_ connection]]
+   {:db (assoc-in db [:connections->connection-connected] {:data connection :status :loading})
+    :fx [[:dispatch [:fetch
+                     {:method "POST"
+                      :uri "/proxymanager/connect"
+                      :body connection
+                      :on-failure (fn [err]
+                                    (rf/dispatch [::connections->connection-connected-error (merge connection {:error-message err})]))
+                      :on-success (fn [res]
+                                    (if (= (:status res) "disconnected")
+                                      (do
+                                        (rf/dispatch [:show-snackbar {:level :error
+                                                                      :text (str "The connection " (:connection_name connection) " is not able "
+                                                                                 "to be connected, please contact your admin.")}]))
+                                      (do
+                                        (rf/dispatch [:show-snackbar {:level :success
+                                                                      :text (str "The connection " (:connection_name connection) " is connected!")}])
+                                        (rf/dispatch [::connections->connection-connected-success res])
+                                        (rf/dispatch [:modal->open {:content [connection-connect/main (:connection_name connection)]
+                                                                    :maxWidth "446px"
+                                                                    :custom-on-click-out connection-connect/minimize-modal}]))))}]]]}))
+
+(rf/reg-event-fx
+ :connections->start-connect
+ (fn [{:keys [db]} [_ connection]]
+   {:fx [[:dispatch [:modal->open {:content [connection-connect/main connection]
+                                   :maxWidth "446px"
+                                   :custom-on-click-out connection-connect/minimize-modal}]]]}))

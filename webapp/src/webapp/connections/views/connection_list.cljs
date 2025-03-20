@@ -9,6 +9,7 @@
             [webapp.components.loaders :as loaders]
             [webapp.components.searchbox :as searchbox]
             [webapp.connections.constants :as connection-constants]
+            [webapp.connections.views.connection-settings-modal :as connection-settings-modal]
             [webapp.config :as config]))
 
 (defn empty-list-view []
@@ -122,7 +123,8 @@
                            (and (= "application" (:type connection))
                                 (= "tcp" (:subtype connection))))
                       [:div {:class "relative cursor-pointer group"
-                             :on-click #(rf/dispatch [:connections->start-connect (:name connection)])}
+                             :on-click #(rf/dispatch [:modal->open {:content [connection-settings-modal/main (:name connection)]
+                                                                    :maxWidth "446px"}])}
                        [:> Tooltip {:content "Hoop Access"}
                         [:> IconButton {:size 1 :variant "ghost" :color "gray"}
                          [:> Wifi {:size 16}]]]])
