@@ -284,6 +284,7 @@
                                   :status @connecting-status
                                   :on-click (fn []
                                               (reset! connecting-status :loading)
+                                              (rf/dispatch [:close-modal])
                                               (rf/dispatch [:audit->connect-session session connecting-status]))
                                   :variant :small}]])]
 
@@ -338,7 +339,9 @@
                "start:"]
               [:span
                (formatters/time-parsed->full-date start-date)]]
-             (when-not in-progress?
+             (when-not (and
+                        (= verb "exec")
+                        in-progress?)
                [:div
                 {:class "flex items-center justify-end gap-regular text-xs"}
                 [:span
@@ -346,7 +349,8 @@
                  "end:"]
                 [:span
                  (formatters/time-parsed->full-date end-date)]])
-             (when (and (= verb "connect") (get-in session [:review :revoke_at]))
+             (when (and (= verb "connect")
+                        (get-in session [:review :revoke_at]))
                [:div
                 {:class "flex items-center justify-end gap-regular text-xs"}
                 [:span

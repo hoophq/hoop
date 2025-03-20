@@ -10,6 +10,7 @@
 
 ;; Duration in minutes to nanoseconds conversion
 (defn minutes-to-ns [minutes]
+  (println "minutes" (type minutes))
   (* minutes 60 1000 1000 1000))
 
 (defn main [connection-name]
@@ -29,23 +30,16 @@
           connection-name]]
 
         [:div
-         [forms/input {:label "Port"
-                       :placeholder "Port for connection"
-                       :value @port
-                       :on-change #(reset! port (.. % -target -value))
-                       :size "2"}]]
-
-        [:div
          [forms/input {:label "Duration (minutes)"
                        :placeholder "Enter minutes (e.g. 30)"
                        :value @duration
                        :type "number"
-                       :min "5"
-                       :max "1440" ;; 24 hours
+                       :min "1"
+                       :max "2880" ;; 48 hours
                        :on-change #(reset! duration (.. % -target -value))
                        :size "2"}]
          [:div {:class "text-xs text-gray-500 mt-1"}
-          "Minimum: 5 minutes, Maximum: 24 hours (1440 minutes)"]]]
+          "Minimum: 1 minutes, Maximum: 48 hours (2880 minutes)"]]]
 
        [:footer {:class "mt-6 flex justify-end gap-3"}
         [button/secondary {:text "Cancel"
