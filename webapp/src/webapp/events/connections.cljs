@@ -4,6 +4,7 @@
    [re-frame.core :as rf]
    [webapp.connections.constants :as constants]
    [webapp.connections.views.connection-connect :as connection-connect]
+   [webapp.connections.views.connection-review-modal :as connection-review-modal]
    [webapp.connections.views.setup.events.process-form :as process-form]))
 
 (rf/reg-event-fx
@@ -100,14 +101,32 @@
                         :uri "/proxymanager/connect"
                         :body body
                         :on-failure (fn [err]
-                                      (rf/dispatch [::connections->connection-connected-error (merge body {:error-message err})]))
+                                      (println :failure :connections->connection-connect err)
+                                      (rf/dispatch [::connections->connection-connected-error (merge body {:error-message err})])
+                                      (rf/dispatch [:show-snackbar {:level :error
+                                                                    :text err}]))
                         :on-success (fn [res]
-                                      (if (= (:status res) "disconnected")
+                                      (println :success :connections->connection-connect res)
+                                      (cond
+                                        ;; Case 1: Review required
+                                        (and (= (:status res) "disconnected")
+                                             (:has_review res))
+                                        (do
+                                          (rf/dispatch [:show-snackbar {:level :info
+                                                                        :text (str "The connection " connection " requires review.")}])
+                                          (rf/dispatch [:modal->open {:content [connection-review-modal/main res]
+                                                                      :maxWidth "446px"}]))
+
+                                        ;; Case 2: Connection failure
+                                        (= (:status res) "disconnected")
                                         (do
                                           (rf/dispatch [:show-snackbar {:level :error
                                                                         :text (str "The connection " connection " is not able "
                                                                                    "to be connected, please contact your admin.")}])
                                           (rf/dispatch [:modal->close]))
+
+                                        ;; Case 3: Connection success
+                                        :else
                                         (do
                                           (rf/dispatch [:show-snackbar {:level :success
                                                                         :text (str "The connection " connection " is connected!")}])
@@ -241,13 +260,28 @@ ORDER BY total_amount DESC;")
                       :uri "/proxymanager/connect"
                       :body connection
                       :on-failure (fn [err]
-                                    (rf/dispatch [::connections->connection-connected-error (merge connection {:error-message err})]))
+                                    (rf/dispatch [::connections->connection-connected-error (merge connection {:error-message err})])
+                                    (rf/dispatch [:show-snackbar {:level :error
+                                                                  :text err}]))
                       :on-success (fn [res]
-                                    (if (= (:status res) "disconnected")
+                                    (cond
+                                      ;; Case 1: Review required
+                                      (and (= (:status res) "disconnected")
+                                           (:has_review res))
                                       (do
-                                        (rf/dispatch [:show-snackbar {:level :error
-                                                                      :text (str "The connection " (:connection_name connection) " is not able "
-                                                                                 "to be connected, please contact your admin.")}]))
+                                        (rf/dispatch [:show-snackbar {:level :info
+                                                                      :text (str "The connection " (:connection_name connection) " requires review.")}])
+                                        (rf/dispatch [:modal->open {:content [connection-review-modal/main res]
+                                                                    :maxWidth "446px"}]))
+
+                                      ;; Case 2: Connection failure
+                                      (= (:status res) "disconnected")
+                                      (rf/dispatch [:show-snackbar {:level :error
+                                                                    :text (str "The connection " (:connection_name connection) " is not able "
+                                                                               "to be connected, please contact your admin.")}])
+
+                                      ;; Case 3: Connection success
+                                      :else
                                       (do
                                         (rf/dispatch [:show-snackbar {:level :success
                                                                       :text (str "The connection " (:connection_name connection) " is connected!")}])

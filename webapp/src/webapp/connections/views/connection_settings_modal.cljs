@@ -1,7 +1,8 @@
 (ns webapp.connections.views.connection-settings-modal
-  (:require ["@radix-ui/themes" :refer [Box Button Heading Text]]
+  (:require ["@radix-ui/themes" :refer [Box Heading Text]]
             [re-frame.core :as rf]
             [reagent.core :as r]
+            [webapp.components.button :as button]
             [webapp.components.forms :as forms]))
 
 (def default-port "8999")
@@ -47,14 +48,13 @@
           "Minimum: 5 minutes, Maximum: 24 hours (1440 minutes)"]]]
 
        [:footer {:class "mt-6 flex justify-end gap-3"}
-        [:> Button {:variant "outline"
-                    :color "red"
-                    :on-click #(rf/dispatch [:modal->close])}
-         "Cancel"]
-        [:> Button {:on-click #(do
-                                 (rf/dispatch [:modal->close])
-                                 (rf/dispatch [:connections->start-connect-with-settings
-                                               {:connection-name connection-name
-                                                :port @port
-                                                :access-duration (minutes-to-ns (js/parseInt @duration))}]))}
-         "Connect"]]])))
+        [button/secondary {:text "Cancel"
+                           :outlined true
+                           :on-click #(rf/dispatch [:modal->close])}]
+        [button/primary {:text "Connect"
+                         :on-click #(do
+                                      (rf/dispatch [:modal->close])
+                                      (rf/dispatch [:connections->start-connect-with-settings
+                                                    {:connection-name connection-name
+                                                     :port @port
+                                                     :access-duration (minutes-to-ns (js/parseInt @duration))}]))}]]])))
