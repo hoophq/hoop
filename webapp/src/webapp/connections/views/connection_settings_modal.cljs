@@ -42,6 +42,7 @@
 
        [:footer {:class "mt-6 flex justify-end gap-3"}
         [:> Button {:variant "outline"
+                    :color "red"
                     :on-click #(rf/dispatch [:modal->close])}
          "Cancel"]
         [:> Button {:on-click #(do
