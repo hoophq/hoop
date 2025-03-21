@@ -13,7 +13,6 @@ import (
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	pgproxymanager "github.com/hoophq/hoop/gateway/pgrest/proxymanager"
-	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/clientstate"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
@@ -142,20 +141,9 @@ func Post(c *gin.Context) {
 		}
 
 		hasReview := false
-		var reviewID string
-		var sessionID string
 
 		if pkt.Payload != nil {
 			hasReview = true
-			reviewID = extractIDFromURL(string(pkt.Payload))
-
-			// Fetch the complete review to get the session ID
-			review, err := pgreview.New().FetchOneByID(ctx, reviewID)
-			if err == nil && review != nil {
-				sessionID = review.Session
-			} else {
-				log.Warnf("Failed to fetch review details: %v", err)
-			}
 		}
 
 		switch pkt.Type {
@@ -177,8 +165,6 @@ func Post(c *gin.Context) {
 				RequestConnectionSubType: conn.SubType.String,
 				RequestPort:              obj.RequestPort,
 				HasReview:                hasReview,
-				ReviewId:                 reviewID,
-				SessionId:                sessionID,
 				RequestAccessDuration:    obj.RequestAccessDuration,
 				ClientMetadata:           obj.ClientMetadata,
 				ConnectedAt:              obj.ConnectedAt.Format(time.RFC3339),
