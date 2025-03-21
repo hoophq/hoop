@@ -45,11 +45,6 @@
    {:db (assoc db :connections {:results connections :loading false})}))
 
 (rf/reg-event-fx
- :connections->filter-connections
- (fn [_ [_ query-params]]
-   {:fx [[:dispatch [:navigate :connections query-params]]]}))
-
-(rf/reg-event-fx
  :connections->create-connection
  (fn
    [{:keys [db]} [_ connection]]
@@ -114,7 +109,6 @@
                                         (do
                                           (rf/dispatch [:show-snackbar {:level :info
                                                                         :text (str "The connection " connection " requires review.")}])
-                                          ;; Apenas abrir o modal se não existir um draggable card aberto
                                           (when (not (get-in db [:draggable-card :open?]))
                                             (rf/dispatch [:modal->open {:content [connection-review-modal/main res]
                                                                         :maxWidth "446px"}])))
@@ -157,7 +151,6 @@
                       :uri "/proxymanager/status"
                       :on-success (fn [res]
                                     (rf/dispatch [::connections->connection-connected-success res])
-                                    ;; Apenas abrir o modal se houver uma conexão ativa e não existir um draggable card aberto
                                     (when (and (= (:status res) "connected")
                                                (not (= (get-in db [:draggable-card :status]) :open)))
                                       (rf/dispatch [:modal->open {:content  [connection-connect/main]
@@ -295,18 +288,7 @@ ORDER BY total_amount DESC;")
                                         (rf/dispatch [:show-snackbar {:level :success
                                                                       :text (str "The connection " (:connection_name connection) " is connected!")}])
                                         (rf/dispatch [::connections->connection-connected-success res])
-                                        ;; Apenas abrir o modal se não existir um draggable card aberto
                                         (when (not (get-in db [:draggable-card :open?]))
                                           (rf/dispatch [:modal->open {:content [connection-connect/main (:connection_name connection)]
                                                                       :maxWidth "446px"
                                                                       :custom-on-click-out connection-connect/minimize-modal}])))))}]]]}))
-
-(rf/reg-event-fx
- :connections->start-connect
- (fn [{:keys [db]} [_ connection]]
-   ;; Apenas abrir o modal se não existir um draggable card aberto
-   (if (get-in db [:draggable-card :open?])
-     {}  ;; Se o card já estiver minimizado, não fazer nada
-     {:fx [[:dispatch [:modal->open {:content [connection-connect/main connection]
-                                     :maxWidth "446px"
-                                     :custom-on-click-out connection-connect/minimize-modal}]]]})))
