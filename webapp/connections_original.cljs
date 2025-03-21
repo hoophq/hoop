@@ -45,6 +45,11 @@
    {:db (assoc db :connections {:results connections :loading false})}))
 
 (rf/reg-event-fx
+ :connections->filter-connections
+ (fn [_ [_ query-params]]
+   {:fx [[:dispatch [:navigate :connections query-params]]]}))
+
+(rf/reg-event-fx
  :connections->create-connection
  (fn
    [{:keys [db]} [_ connection]]
@@ -109,9 +114,8 @@
                                         (do
                                           (rf/dispatch [:show-snackbar {:level :info
                                                                         :text (str "The connection " connection " requires review.")}])
-                                          (when (not (get-in db [:draggable-card :open?]))
-                                            (rf/dispatch [:modal->open {:content [connection-review-modal/main res]
-                                                                        :maxWidth "446px"}])))
+                                          (rf/dispatch [:modal->open {:content [connection-review-modal/main res]
+                                                                      :maxWidth "446px"}]))
 
                                         ;; Case 2: Connection failure
                                         (= (:status res) "disconnected")
@@ -123,10 +127,26 @@
 
                                         ;; Case 3: Connection success
                                         :else
-                                        (do
+                                        (let [session-id (get-in res [:metadata "session-id"])]
                                           (rf/dispatch [:show-snackbar {:level :success
                                                                         :text (str "The connection " connection " is connected!")}])
-                                          (rf/dispatch [::connections->connection-connected-success res]))))}]]]})))
+
+                                          (if session-id
+                                            ;; Se tem session-id, buscar dados da sessão para verificar review
+                                            (rf/dispatch [:fetch {:method "GET"
+                                                                  :uri (str "/sessions/" session-id "?event_stream=base64")
+                                                                  :on-success (fn [session]
+                                                                                (let [review-data (:review session)
+                                                                                      revoke-at (when review-data (:revoke_at review-data))
+                                                                                      connection-with-review (if revoke-at
+                                                                                                               (assoc res :revoke_at revoke-at)
+                                                                                                               res)]
+                                                                                  (rf/dispatch [::connections->connection-connected-success connection-with-review])))
+                                                                  :on-failure (fn [_]
+                                                                                ;; Em caso de falha, continua com a conexão sem o revoke_at
+                                                                                (rf/dispatch [::connections->connection-connected-success res]))}])
+                                            ;; Se não tem session-id, continua normalmente
+                                            (rf/dispatch [::connections->connection-connected-success res])))))}]]]})))
 
 (rf/reg-event-fx
  :connections->connection-disconnect
@@ -151,8 +171,7 @@
                       :uri "/proxymanager/status"
                       :on-success (fn [res]
                                     (rf/dispatch [::connections->connection-connected-success res])
-                                    (when (and (= (:status res) "connected")
-                                               (not (= (get-in db [:draggable-card :status]) :open)))
+                                    (when (= (:status res) "connected")
                                       (rf/dispatch [:modal->open {:content  [connection-connect/main]
                                                                   :maxWidth "446px"
                                                                   :custom-on-click-out connection-connect/minimize-modal}])))
@@ -250,8 +269,7 @@ ORDER BY total_amount DESC;")
 
 (rf/reg-event-fx
  :connections->connection-connect-with-settings
- (fn
-   [{:keys [db]} [_ connection connecting-status]]
+ (fn [{:keys [db]} [_ connection connecting-status]]
    {:db (assoc-in db [:connections->connection-connected] {:data connection :status :loading})
     :fx [[:dispatch [:fetch
                      {:method "POST"
@@ -267,7 +285,7 @@ ORDER BY total_amount DESC;")
                                     (when connecting-status
                                       (rf/dispatch [:reset-connecting-status connecting-status]))
                                     (cond
-                                     ;; Case 1: Review required
+                                      ;; Case 1: Review required
                                       (and (= (:status res) "disconnected")
                                            (:has_review res))
                                       (do
@@ -276,19 +294,47 @@ ORDER BY total_amount DESC;")
                                         (rf/dispatch [:modal->open {:content [connection-review-modal/main res]
                                                                     :maxWidth "446px"}]))
 
-                                     ;; Case 2: Connection failure
+                                      ;; Case 2: Connection failure
                                       (= (:status res) "disconnected")
                                       (rf/dispatch [:show-snackbar {:level :error
                                                                     :text (str "The connection " (:connection_name connection) " is not able "
                                                                                "to be connected, please contact your admin.")}])
 
-                                     ;; Case 3: Connection success
+                                      ;; Case 3: Connection success
                                       :else
-                                      (do
+                                      (let [session-id (get-in res [:metadata "session-id"])]
                                         (rf/dispatch [:show-snackbar {:level :success
                                                                       :text (str "The connection " (:connection_name connection) " is connected!")}])
-                                        (rf/dispatch [::connections->connection-connected-success res])
-                                        (when (not (get-in db [:draggable-card :open?]))
-                                          (rf/dispatch [:modal->open {:content [connection-connect/main (:connection_name connection)]
-                                                                      :maxWidth "446px"
-                                                                      :custom-on-click-out connection-connect/minimize-modal}])))))}]]]}))
+                                        (if session-id
+                                          ;; Se tem session-id, buscar dados da sessão para verificar review
+                                          (rf/dispatch [:fetch {:method "GET"
+                                                                :uri (str "/sessions/" session-id "?event_stream=base64")
+                                                                :on-success (fn [session]
+                                                                              (let [review-data (:review session)
+                                                                                    revoke-at (when review-data (:revoke_at review-data))
+                                                                                    connection-with-review (if revoke-at
+                                                                                                             (assoc res :revoke_at revoke-at)
+                                                                                                             res)]
+                                                                                (rf/dispatch [::connections->connection-connected-success connection-with-review])
+                                                                                (rf/dispatch [:modal->open {:content [connection-connect/main (:connection_name connection)]
+                                                                                                            :maxWidth "446px"
+                                                                                                            :custom-on-click-out connection-connect/minimize-modal}])))
+                                                                :on-failure (fn [_]
+                                                                             ;; Em caso de falha, continua com a conexão sem o revoke_at
+                                                                              (rf/dispatch [::connections->connection-connected-success res])
+                                                                              (rf/dispatch [:modal->open {:content [connection-connect/main (:connection_name connection)]
+                                                                                                          :maxWidth "446px"
+                                                                                                          :custom-on-click-out connection-connect/minimize-modal}]))}])
+                                          ;; Se não tem session-id, continua normalmente
+                                          (do
+                                            (rf/dispatch [::connections->connection-connected-success res])
+                                            (rf/dispatch [:modal->open {:content [connection-connect/main (:connection_name connection)]
+                                                                        :maxWidth "446px"
+                                                                        :custom-on-click-out connection-connect/minimize-modal}]))))))}]]]}))
+
+(rf/reg-event-fx
+ :connections->start-connect
+ (fn [{:keys [db]} [_ connection]]
+   {:fx [[:dispatch [:modal->open {:content [connection-connect/main connection]
+                                   :maxWidth "446px"
+                                   :custom-on-click-out connection-connect/minimize-modal}]]]}))

@@ -721,6 +721,8 @@ type ProxyManagerResponse struct {
 	RequestConnectionType string `json:"connection_type" readonly:"true"`
 	// The requested connection subtype
 	RequestConnectionSubType string `json:"connection_subtype" readonly:"true"`
+	// Report if the connection has a review
+	HasReview bool `json:"has_review" readonly:"true"`
 	// The requested client port to listen
 	RequestPort string `json:"port"`
 	// The request access duration in case of review

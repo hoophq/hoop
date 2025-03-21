@@ -157,6 +157,7 @@ func Post(c *gin.Context) {
 				RequestConnectionType:    conn.Type,
 				RequestConnectionSubType: conn.SubType.String,
 				RequestPort:              obj.RequestPort,
+				HasReview:                true,
 				RequestAccessDuration:    obj.RequestAccessDuration,
 				ClientMetadata:           obj.ClientMetadata,
 				ConnectedAt:              obj.ConnectedAt.Format(time.RFC3339),
