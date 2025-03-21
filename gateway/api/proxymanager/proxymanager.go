@@ -3,7 +3,6 @@ package apiproxymanager
 import (
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -140,12 +139,6 @@ func Post(c *gin.Context) {
 			break
 		}
 
-		hasReview := false
-
-		if pkt.Payload != nil {
-			hasReview = true
-		}
-
 		switch pkt.Type {
 		case pbclient.SessionOpenWaitingApproval:
 			obj, err := clientstate.Update(ctx, types.ClientStatusDisconnected)
@@ -164,7 +157,7 @@ func Post(c *gin.Context) {
 				RequestConnectionType:    conn.Type,
 				RequestConnectionSubType: conn.SubType.String,
 				RequestPort:              obj.RequestPort,
-				HasReview:                hasReview,
+				HasReview:                true,
 				RequestAccessDuration:    obj.RequestAccessDuration,
 				ClientMetadata:           obj.ClientMetadata,
 				ConnectedAt:              obj.ConnectedAt.Format(time.RFC3339),
@@ -242,18 +235,4 @@ func Disconnect(c *gin.Context) {
 		ClientMetadata:        obj.ClientMetadata,
 		ConnectedAt:           obj.ConnectedAt.Format(time.RFC3339),
 	})
-}
-
-// extractIDFromURL extracts the ID part from the URL (the part after the last slash)
-func extractIDFromURL(url string) string {
-	if url == "" {
-		return ""
-	}
-
-	parts := strings.Split(url, "/")
-	if len(parts) == 0 {
-		return url
-	}
-
-	return parts[len(parts)-1]
 }
