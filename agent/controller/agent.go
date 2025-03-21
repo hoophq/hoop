@@ -14,7 +14,7 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/agent/config"
-	controllersys "github.com/hoophq/hoop/agent/controller/sys"
+	"github.com/hoophq/hoop/agent/controller/system/dbprovisioner"
 	"github.com/hoophq/hoop/agent/secretsmanager"
 	term "github.com/hoophq/hoop/agent/terminal"
 	"github.com/hoophq/hoop/common/log"
@@ -22,7 +22,7 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
-	pbsys "github.com/hoophq/hoop/common/proto/sys"
+	pbsystem "github.com/hoophq/hoop/common/proto/system"
 	"go.mongodb.org/mongo-driver/x/mongo/driver/connstring"
 )
 
@@ -151,9 +151,9 @@ func (a *Agent) Run() error {
 		case pbagent.TCPConnectionClose:
 			a.processTCPCloseConnection(pkt)
 
-		// system packets
-		case pbsys.ProvisionDBRolesRequest:
-			go controllersys.ProcessDBProvisionerRequest(a.client, pkt)
+		// system
+		case pbsystem.ProvisionDBRolesRequest:
+			dbprovisioner.ProcessDBProvisionerRequest(a.client, pkt)
 		}
 	}
 }

@@ -20,13 +20,13 @@ import (
 	"github.com/aws/smithy-go/ptr"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
-	pbsys "github.com/hoophq/hoop/common/proto/sys"
+	pbsystem "github.com/hoophq/hoop/common/proto/system"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/transport/plugins/webhooks"
-	transportsys "github.com/hoophq/hoop/gateway/transport/sys"
+	transportsystem "github.com/hoophq/hoop/gateway/transport/system"
 )
 
 const defaultSecurityGroupDescription = "Database ingress rule for connectivity with Hoop Agent"
@@ -64,14 +64,6 @@ func NewRDSProvisioner(orgID string, sts *sts.GetCallerIdentityOutput, apiReques
 	}
 }
 
-func (p *provisioner) getDBIdentifier() string {
-	parts := strings.Split(p.apiRequest.AWS.InstanceArn, ":")
-	if len(parts) == 0 {
-		return ""
-	}
-	return parts[len(parts)-1]
-}
-
 func (p *provisioner) hasStep(stepType openapi.DBRoleJobStepType) bool {
 	return slices.Contains(p.apiRequest.JobSteps, stepType)
 }
@@ -94,7 +86,7 @@ func (p *provisioner) Run(jobID string) error {
 			Tags:          parseAWSTags(db),
 		},
 		Status: &models.DBRoleStatus{
-			Phase:   pbsys.StatusRunningType,
+			Phase:   pbsystem.StatusRunningType,
 			Message: "",
 			Result:  nil,
 		},
@@ -112,7 +104,7 @@ func (p *provisioner) Run(jobID string) error {
 				sgName, ptr.ToString(db.DBSubnetGroup.VpcId), defaultSg.IngressCIDR, defaultSg.TargetPort)
 			securityGroupID, err = p.syncSecurityGroup(sgName, ptr.ToString(db.DBSubnetGroup.VpcId), defaultSg)
 			if err != nil {
-				p.updateJob(pbsys.NewError(jobID, err.Error()))
+				p.updateJob(pbsystem.NewError(jobID, err.Error()))
 				return
 			}
 		}
@@ -120,7 +112,7 @@ func (p *provisioner) Run(jobID string) error {
 		dbEnvID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf("%s:%s", p.orgID, dbArn))).String()
 		env, err := models.GetEnvVarByID(p.orgID, dbEnvID)
 		if err != nil && err != models.ErrNotFound {
-			p.updateJob(pbsys.NewError(jobID, "failed obtaining master user password: %v", err))
+			p.updateJob(pbsystem.NewError(jobID, "failed obtaining master user password: %v", err))
 			return
 		}
 
@@ -146,7 +138,7 @@ func (p *provisioner) Run(jobID string) error {
 			log.With("sid", jobID).Infof("master user password not found, modifying the instance %v", dbArn)
 			randomPasswd, err := generateRandomPassword()
 			if err != nil {
-				p.updateJob(pbsys.NewError(jobID, "failed generating master user password: %v", err))
+				p.updateJob(pbsystem.NewError(jobID, "failed generating master user password: %v", err))
 				return
 			}
 			instInput.masterUserPassword = &randomPasswd
@@ -167,20 +159,20 @@ func (p *provisioner) Run(jobID string) error {
 				return nil
 			})
 			if err != nil {
-				p.updateJob(pbsys.NewError(jobID, "failed modifying db instance: %v", err))
+				p.updateJob(pbsystem.NewError(jobID, "failed modifying db instance: %v", err))
 				return
 			}
 		case nil:
 			if err := p.modifyRDSInstance(jobID, instInput, func() error { return nil }); err != nil {
-				p.updateJob(pbsys.NewError(jobID, "failed modifying db instance: %v", err))
+				p.updateJob(pbsystem.NewError(jobID, "failed modifying db instance: %v", err))
 				return
 			}
 		default:
-			p.updateJob(pbsys.NewError(jobID, "failed obtaining master user password: %v", err))
+			p.updateJob(pbsystem.NewError(jobID, "failed obtaining master user password: %v", err))
 			return
 		}
 		log.With("sid", jobID).Infof("database is available, ready to provision roles for %v", dbArn)
-		request := pbsys.DBProvisionerRequest{
+		request := pbsystem.DBProvisionerRequest{
 			OrgID:            env.OrgID,
 			ResourceID:       dbArn,
 			SID:              jobID,
@@ -193,16 +185,16 @@ func (p *provisioner) Run(jobID string) error {
 
 		// set vault provider if it's set
 		if p.apiRequest.VaultProvider != nil {
-			request.Vault = &pbsys.VaultProvider{
+			request.Vault = &pbsystem.VaultProvider{
 				SecretID: p.apiRequest.VaultProvider.SecretID,
 			}
 		}
 
-		resp := transportsys.RunDBProvisioner(p.apiRequest.AgentID, &request)
-		if resp.Status == pbsys.StatusCompletedType && p.hasStep(openapi.DBRoleJobStepCreateConnections) {
+		resp := transportsystem.RunDBProvisioner(p.apiRequest.AgentID, &request)
+		if resp.Status == pbsystem.StatusCompletedType && p.hasStep(openapi.DBRoleJobStepCreateConnections) {
 			if err := p.handleConnectionProvision(request.DatabaseType, resp); err != nil {
 				log.With("sid", jobID).Errorf("failed provisioning connections: %v", err)
-				resp.Status = pbsys.StatusFailedType
+				resp.Status = pbsystem.StatusFailedType
 				resp.Message = fmt.Sprintf("Failed provisioning connections: %v", err)
 			}
 		}
@@ -271,8 +263,8 @@ func (p *provisioner) modifyRDSInstance(jobID string, input *modifyInstanceInput
 	}
 }
 
-func (p *provisioner) updateJob(resp *pbsys.DBProvisionerResponse) *models.DBRole {
-	if resp.Status == pbsys.StatusFailedType {
+func (p *provisioner) updateJob(resp *pbsystem.DBProvisionerResponse) *models.DBRole {
+	if resp.Status == pbsystem.StatusFailedType {
 		log.With("sid", resp.SID).Warnf(resp.String())
 	}
 	completedAt := time.Now().UTC()
@@ -284,7 +276,7 @@ func (p *provisioner) updateJob(resp *pbsys.DBProvisionerResponse) *models.DBRol
 	return job
 }
 
-func (p *provisioner) handleConnectionProvision(databaseType string, resp *pbsys.DBProvisionerResponse) error {
+func (p *provisioner) handleConnectionProvision(databaseType string, resp *pbsystem.DBProvisionerResponse) error {
 	var connections []*models.Connection
 	for _, result := range resp.Result {
 		connSubtype := coerceToSubtype(databaseType)
@@ -323,9 +315,9 @@ func coerceToSubtype(databaseType string) string {
 	return databaseType
 }
 
-func parseEnvVars(cred *pbsys.DBCredentials) map[string]string {
+func parseEnvVars(cred *pbsystem.DBCredentials) map[string]string {
 	switch cred.SecretsManagerProvider {
-	case pbsys.SecretsManagerProviderDatabase:
+	case pbsystem.SecretsManagerProviderDatabase:
 		return map[string]string{
 			"envvar:HOST": b64enc(cred.Host),
 			"envvar:PORT": b64enc(cred.Port),
@@ -333,7 +325,7 @@ func parseEnvVars(cred *pbsys.DBCredentials) map[string]string {
 			"envvar:PASS": b64enc(cred.Password),
 			"envvar:DB":   b64enc(cred.DefaultDatabase),
 		}
-	case pbsys.SecretsManagerProviderVault:
+	case pbsystem.SecretsManagerProviderVault:
 		return map[string]string{
 			"envvar:HOST": b64enc("_vaultkv2:%s:HOST", cred.SecretID),
 			"envvar:PORT": b64enc("_vaultkv2:%s:PORT", cred.SecretID),

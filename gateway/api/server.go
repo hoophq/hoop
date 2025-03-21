@@ -410,6 +410,9 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		sessionapi.Get)
 	r.GET("/sessions/:session_id/download", sessionapi.DownloadSession)
+	r.POST("/sessions/:session_id/kill",
+		r.AuthMiddleware,
+		sessionapi.Kill)
 	r.PUT("/sessions/:session_id/review",
 		r.AuthMiddleware,
 		reviewHandler.ReviewBySession)
@@ -508,19 +511,16 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.GET("/integrations/aws/iam/userinfo",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
-		// api.TrackRequest(analytics.EventAWSVerifyPermissions),
 		awsintegration.IAMGetUserInfo)
 
 	r.PUT("/integrations/aws/iam/accesskeys",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
-		// api.TrackRequest(analytics.EventAWSVerifyPermissions),
 		awsintegration.IAMUpdateAccessKey)
 
 	r.DELETE("/integrations/aws/iam/accesskeys",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
-		// api.TrackRequest(analytics.EventAWSVerifyPermissions),
 		awsintegration.IAMDeleteAccessKey)
 
 	r.GET("/integrations/aws/organizations",
@@ -532,33 +532,28 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.POST("/integrations/aws/iam/verify",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
-		// api.TrackRequest(analytics.EventAWSVerifyPermissions),
 		awsintegration.IAMVerifyPermissions)
 
 	r.POST("/integrations/aws/rds/describe-db-instances",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
-		// api.TrackRequest(analytics.EventAWSVerifyPermissions),
 		awsintegration.DescribeRDSDBInstances)
 
 	r.POST("/dbroles/jobs",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
-		// api.TrackRequest(analytics.EventAWSVerifyPermissions),
 		awsintegration.CreateDBRoleJob,
 	)
 
 	r.GET("/dbroles/jobs",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
-		// api.TrackRequest(analytics.EventAWSVerifyPermissions),
 		awsintegration.ListDBRoleJobs,
 	)
 
 	r.GET("/dbroles/jobs/:id",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
-		// api.TrackRequest(analytics.EventAWSVerifyPermissions),
 		awsintegration.GetDBRoleJobByID,
 	)
 

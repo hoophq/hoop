@@ -190,7 +190,7 @@ func auditApiChanges(c *gin.Context, ctx *pguserauth.Context) {
 		return
 	}
 	log.With(
-		"subject", ctx.UserSubject,
+		"email", ctx.UserEmail,
 		"org", ctx.OrgName,
 		"method", c.Request.Method,
 		"path", c.Request.URL.Path,

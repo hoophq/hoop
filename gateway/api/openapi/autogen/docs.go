@@ -3157,6 +3157,46 @@ const docTemplate = `{
                 }
             }
         },
+        "/sessions/{session_id}/kill": {
+            "post": {
+                "tags": [
+                    "Sessions"
+                ],
+                "summary": "Kill Session",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The id of the resource",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/sessions/{session_id}/metadata": {
             "patch": {
                 "consumes": [

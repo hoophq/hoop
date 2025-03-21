@@ -1,4 +1,4 @@
-package controllersys
+package dbprovisioner
 
 import (
 	"crypto/rand"
@@ -9,23 +9,27 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
 	pb "github.com/hoophq/hoop/common/proto"
-	pbsys "github.com/hoophq/hoop/common/proto/sys"
+	pbsystem "github.com/hoophq/hoop/common/proto/system"
 )
 
 var memoryStore = memory.New()
 
 func ProcessDBProvisionerRequest(client pb.ClientTransport, pkt *pb.Packet) {
+	go processDBProvisionerRequest(client, pkt)
+}
+
+func processDBProvisionerRequest(client pb.ClientTransport, pkt *pb.Packet) {
 	sid := string(pkt.Spec[pb.SpecGatewaySessionID])
-	var req pbsys.DBProvisionerRequest
+	var req pbsystem.DBProvisionerRequest
 	if err := json.Unmarshal(pkt.Payload, &req); err != nil {
-		sendResponse(client, pbsys.NewError(sid, "unable to decode payload: %v", err))
+		sendResponse(client, pbsystem.NewError(sid, "unable to decode payload: %v", err))
 		return
 	}
 
 	// use a lock mechanism to avoid initializing multiple process to the same instance
 	lockResourceID := req.OrgID + ":" + req.ResourceID
 	if memoryStore.Has(lockResourceID) {
-		sendResponse(client, pbsys.NewError(sid, "process already being executed, resource_id=%v", req.ResourceID))
+		sendResponse(client, pbsystem.NewError(sid, "process already being executed, resource_id=%v", req.ResourceID))
 		return
 	}
 	memoryStore.Set(lockResourceID, nil)
@@ -34,14 +38,14 @@ func ProcessDBProvisionerRequest(client pb.ClientTransport, pkt *pb.Packet) {
 	vault, err := secretsmanager.NewVaultProvider()
 	hasVaultProvider := req.Vault != nil
 	if hasVaultProvider && err != nil {
-		sendResponse(client, pbsys.NewError(sid, err.Error()))
+		sendResponse(client, pbsystem.NewError(sid, err.Error()))
 		return
 	}
 
 	log.With("sid", sid).Infof("received provisoning request, type=%v, address=%v, masteruser=%v, vault-provider=%v",
 		req.DatabaseType, req.Address(), req.MasterUsername, hasVaultProvider)
 
-	var res *pbsys.DBProvisionerResponse
+	var res *pbsystem.DBProvisionerResponse
 	switch req.DatabaseType {
 	case "postgres", "aurora-postgresql":
 		res = provisionPostgresRoles(req)
@@ -50,28 +54,28 @@ func ProcessDBProvisionerRequest(client pb.ClientTransport, pkt *pb.Packet) {
 	case "sqlserver-ee", "sqlserver-se", "sqlserver-ex", "sqlserver-web":
 		res = provisionMSSQLRoles(req)
 	default:
-		sendResponse(client, pbsys.NewError(sid, "database provisioner not implemented for type %q", req.DatabaseType))
+		sendResponse(client, pbsystem.NewError(sid, "database provisioner not implemented for type %q", req.DatabaseType))
 		return
 	}
 
 	// if the provisioner doesn't set a status, set it to completed
 	if res.Status == "" {
-		res.Status = pbsys.StatusCompletedType
-		res.Message = pbsys.MessageCompleted
+		res.Status = pbsystem.StatusCompletedType
+		res.Message = pbsystem.MessageCompleted
 	}
 
 	// in case of any user provisioning error, set the main status as failed
 	for _, item := range res.Result {
-		if item.Status != pbsys.StatusCompletedType {
-			res.Message = pbsys.MessageOneOrMoreRolesFailed
-			res.Status = pbsys.StatusFailedType
+		if item.Status != pbsystem.StatusCompletedType {
+			res.Message = pbsystem.MessageOneOrMoreRolesFailed
+			res.Status = pbsystem.StatusFailedType
 			break
 		}
 	}
 
-	if hasVaultProvider && res.Status == pbsys.StatusCompletedType {
+	if hasVaultProvider && res.Status == pbsystem.StatusCompletedType {
 		for _, item := range res.Result {
-			item.Credentials.SecretsManagerProvider = pbsys.SecretsManagerProviderVault
+			item.Credentials.SecretsManagerProvider = pbsystem.SecretsManagerProviderVault
 			item.Credentials.SecretKeys = []string{"HOST", "PORT", "USER", "PASSWORD", "DB"}
 			item.Credentials.SecretID = req.Vault.SecretID
 			err := vault.SetValue(req.Vault.SecretID, map[string]string{
@@ -86,8 +90,8 @@ func ProcessDBProvisionerRequest(client pb.ClientTransport, pkt *pb.Packet) {
 			item.Credentials.Password = ""
 			if err != nil {
 				item.Message = fmt.Sprintf("Unable to create or update secret in Vault, reason=%v", err)
-				res.Message = pbsys.MessageVaultSaveError
-				res.Status = pbsys.StatusFailedType
+				res.Message = pbsystem.MessageVaultSaveError
+				res.Status = pbsystem.StatusFailedType
 			}
 		}
 
@@ -96,7 +100,7 @@ func ProcessDBProvisionerRequest(client pb.ClientTransport, pkt *pb.Packet) {
 	sendResponse(client, res)
 }
 
-func sendResponse(client pb.ClientTransport, response *pbsys.DBProvisionerResponse) {
+func sendResponse(client pb.ClientTransport, response *pbsystem.DBProvisionerResponse) {
 	payload, pbtype, _ := response.Encode()
 	_ = client.Send(&pb.Packet{
 		Type:    pbtype,
