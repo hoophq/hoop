@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	pbsys "github.com/hoophq/hoop/common/proto/sys"
+	pbsystem "github.com/hoophq/hoop/common/proto/system"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -65,7 +65,7 @@ func CreateDBRoleJob(obj *DBRole) error {
 	return err
 }
 
-func UpdateDBRoleJob(orgID string, completedAt *time.Time, resp *pbsys.DBProvisionerResponse) (*DBRole, error) {
+func UpdateDBRoleJob(orgID string, completedAt *time.Time, resp *pbsystem.DBProvisionerResponse) (*DBRole, error) {
 	job, err := GetDBRoleJobByID(orgID, resp.SID)
 	if err != nil {
 		return nil, err
@@ -79,7 +79,7 @@ func UpdateDBRoleJob(orgID string, completedAt *time.Time, resp *pbsys.DBProvisi
 
 	var result []DBRoleStatusResult
 	for _, r := range resp.Result {
-		var cred pbsys.DBCredentials
+		var cred pbsystem.DBCredentials
 		if r.Credentials != nil {
 			cred = *r.Credentials
 		}

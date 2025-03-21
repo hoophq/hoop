@@ -1,4 +1,4 @@
-package controllersys
+package dbprovisioner
 
 import (
 	"bytes"
@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/hoophq/hoop/common/log"
-	pbsys "github.com/hoophq/hoop/common/proto/sys"
+	pbsystem "github.com/hoophq/hoop/common/proto/system"
 	_ "github.com/lib/pq"
 )
 
@@ -57,11 +57,11 @@ var postgresPrivileges = map[roleNameType]string{
 	adminRoleName:     "SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER",
 }
 
-func provisionPostgresRoles(r pbsys.DBProvisionerRequest) *pbsys.DBProvisionerResponse {
+func provisionPostgresRoles(r pbsystem.DBProvisionerRequest) *pbsystem.DBProvisionerResponse {
 	db, err := sql.Open("postgres", fmt.Sprintf("postgres://%s:%s@%s/postgres?connect_timeout=5",
 		r.MasterUsername, r.MasterPassword, r.Address()))
 	if err != nil {
-		return pbsys.NewError(r.SID, "failed to create database connection: %s", err)
+		return pbsystem.NewError(r.SID, "failed to create database connection: %s", err)
 	}
 	defer db.Close()
 
@@ -71,30 +71,30 @@ func provisionPostgresRoles(r pbsys.DBProvisionerRequest) *pbsys.DBProvisionerRe
 	// Ping actually tests the connection
 	err = db.PingContext(ctx)
 	if err != nil {
-		return pbsys.NewError(r.SID, "failed to connect to engine %v: %v", r.DatabaseType, err)
+		return pbsystem.NewError(r.SID, "failed to connect to engine %v: %v", r.DatabaseType, err)
 	}
 	rows, err := db.QueryContext(
 		ctx,
 		`SELECT datname as dbname FROM pg_database WHERE datname NOT IN ('template0', 'template1', 'rdsadmin')`)
 
 	if err != nil {
-		return pbsys.NewError(r.SID, "failed listing databases: %v", err)
+		return pbsystem.NewError(r.SID, "failed listing databases: %v", err)
 	}
 	var dbNames []string
 	for rows.Next() {
 		var dbName string
 		if err := rows.Scan(&dbName); err != nil {
-			return pbsys.NewError(r.SID, "failed reading column name: %v", err)
+			return pbsystem.NewError(r.SID, "failed reading column name: %v", err)
 		}
 		dbNames = append(dbNames, dbName)
 	}
 
 	if len(dbNames) == 0 {
-		return pbsys.NewError(r.SID, "cannot find any databases to provision roles")
+		return pbsystem.NewError(r.SID, "cannot find any databases to provision roles")
 	}
 
 	log.With("sid", r.SID, "engine", r.DatabaseType).Infof("starting provisioning roles for the following databases: %v", dbNames)
-	res := pbsys.NewDbProvisionerResponse(r.SID, "", "")
+	res := pbsystem.NewDbProvisionerResponse(r.SID, "", "")
 	for _, roleName := range roleNames {
 		result := provisionPostgresRole(r, dbNames, roleName)
 		res.Result = append(res.Result, result)
@@ -103,19 +103,19 @@ func provisionPostgresRoles(r pbsys.DBProvisionerRequest) *pbsys.DBProvisionerRe
 	return res
 }
 
-func provisionPostgresRole(r pbsys.DBProvisionerRequest, dbNames []string, roleName roleNameType) *pbsys.Result {
+func provisionPostgresRole(r pbsystem.DBProvisionerRequest, dbNames []string, roleName roleNameType) *pbsystem.Result {
 	userRole := fmt.Sprintf("%s_%s", rolePrefixName, roleName)
 	randomPasswd, err := generateRandomPassword()
 	if err != nil {
-		return pbsys.NewResultError("failed generating password for user role %v: %v", userRole, err)
+		return pbsystem.NewResultError("failed generating password for user role %v: %v", userRole, err)
 	}
 
 	for _, dbName := range dbNames {
-		res := func() *pbsys.Result {
+		res := func() *pbsystem.Result {
 			db, err := sql.Open("postgres", fmt.Sprintf("postgres://%s:%s@%s/%s?connect_timeout=5",
 				r.MasterUsername, r.MasterPassword, r.Address(), dbName))
 			if err != nil {
-				return pbsys.NewResultError("failed to create database connection: %v", err)
+				return pbsystem.NewResultError("failed to create database connection: %v", err)
 			}
 			defer db.Close()
 
@@ -124,10 +124,10 @@ func provisionPostgresRole(r pbsys.DBProvisionerRequest, dbNames []string, roleN
 
 			statement, err := postgresRoleStatement(userRole, randomPasswd, postgresPrivileges[roleName])
 			if err != nil {
-				return pbsys.NewResultError("failed generating SQL statement for user role %v: %v", userRole, err)
+				return pbsystem.NewResultError("failed generating SQL statement for user role %v: %v", userRole, err)
 			}
 			if _, err := db.ExecContext(ctx, statement); err != nil {
-				return pbsys.NewResultError(err.Error())
+				return pbsystem.NewResultError(err.Error())
 			}
 			return nil
 		}()
@@ -136,13 +136,13 @@ func provisionPostgresRole(r pbsys.DBProvisionerRequest, dbNames []string, roleN
 		}
 	}
 
-	return &pbsys.Result{
+	return &pbsystem.Result{
 		RoleSuffixName: string(roleName),
-		Status:         pbsys.StatusCompletedType,
+		Status:         pbsystem.StatusCompletedType,
 		Message:        "",
 		CompletedAt:    time.Now().UTC(),
-		Credentials: &pbsys.DBCredentials{
-			SecretsManagerProvider: pbsys.SecretsManagerProviderDatabase,
+		Credentials: &pbsystem.DBCredentials{
+			SecretsManagerProvider: pbsystem.SecretsManagerProviderDatabase,
 			SecretID:               "",
 			SecretKeys:             []string{},
 			Host:                   r.DatabaseHostname,

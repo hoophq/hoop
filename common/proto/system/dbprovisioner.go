@@ -1,4 +1,4 @@
-package pbsys
+package pbsystem
 
 import (
 	"encoding/json"
