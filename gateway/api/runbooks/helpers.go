@@ -72,10 +72,22 @@ func listRunbookFiles(pluginConnectionList []*types.PluginConnection, config *te
 		if !templates.IsRunbookFile(f.Name) {
 			return nil
 		}
+		var connectionList []string
+		for _, conn := range pluginConnectionList {
+			if len(conn.Config) == 0 {
+				connectionList = append(connectionList, conn.Name)
+				continue
+			}
+			pathPrefix := conn.Config[0]
+			if pathPrefix != "" && strings.HasPrefix(f.Name, pathPrefix) {
+				connectionList = append(connectionList, conn.Name)
+			}
+		}
+
 		runbook := &openapi.Runbook{
 			Name:           f.Name,
 			Metadata:       map[string]any{},
-			ConnectionList: []string{},
+			ConnectionList: connectionList,
 			Error:          nil,
 		}
 		blobData, err := templates.ReadBlob(f)
@@ -95,19 +107,6 @@ func listRunbookFiles(pluginConnectionList []*types.PluginConnection, config *te
 			runbookList.Items = append(runbookList.Items, runbook)
 			return nil
 		}
-
-		var connectionList []string
-		for _, conn := range pluginConnectionList {
-			if len(conn.Config) == 0 {
-				connectionList = append(connectionList, conn.Name)
-				continue
-			}
-			pathPrefix := conn.Config[0]
-			if pathPrefix != "" && strings.HasPrefix(f.Name, pathPrefix) {
-				connectionList = append(connectionList, conn.Name)
-			}
-		}
-		runbook.ConnectionList = connectionList
 		runbook.Metadata = t.Attributes()
 		runbookList.Items = append(runbookList.Items, runbook)
 		return nil
