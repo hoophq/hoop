@@ -225,7 +225,7 @@
        "Please review your selected AWS database resources and assign an Agent to each connection before proceeding. You can also customize the connection names."]
 
       [:> Flex {:align "center" :gap "1" :class "text-[--accent-a11] cursor-pointer"}
-       [:> Link {:href "https://hoop.dev/docs/concepts/agent"
+       [:> Link {:href (get-in config/docs-url [:concepts :agents])
                  :target "_blank"}
         [:> Flex {:gap "2" :align "center"}
          [:> Text {:as "a"

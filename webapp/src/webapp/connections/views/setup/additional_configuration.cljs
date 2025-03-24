@@ -5,6 +5,7 @@
    [re-frame.core :as rf]
    [webapp.components.forms :as forms]
    [webapp.components.multiselect :as multi-select]
+   [webapp.config :as config]
    [webapp.connections.dlp-info-types :as dlp-info-types]
    [webapp.connections.helpers :as helpers]
    [webapp.connections.views.setup.tags-inputs :as tags-inputs]
@@ -159,7 +160,7 @@
                                            (rf/dispatch [:navigate :upgrade-plan])))}
                     "upgrading your plan."]]])
 
-               :learning-component [:> Link {:href "https://hoop.dev/docs/learn/jit-reviews"
+               :learning-component [:> Link {:href (get-in config/docs-url [:features :jit-reviews])
                                              :target "_blank"}
                                     [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
                                      [:> Callout.Icon
@@ -214,7 +215,7 @@
                                            (rf/dispatch [:navigate :upgrade-plan])))}
                     "upgrading your plan."]]])
 
-               :learning-component [:> Link {:href "https://hoop.dev/docs/learn/ai-data-masking"
+               :learning-component [:> Link {:href (get-in config/docs-url [:features :ai-datamasking])
                                              :target "_blank"}
                                     [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
                                      [:> Callout.Icon

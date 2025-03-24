@@ -2,7 +2,6 @@
   (:require
    [bidi.bidi :as bidi]
    [pushy.core :as pushy]
-   [re-frame.core :as re-frame]
    [re-frame.core :as rf]
    [webapp.config :as config]
    [webapp.events :as events]))
@@ -84,7 +83,7 @@
 (defn dispatch
   [route]
   (let [panel (keyword (str (name (:handler route)) "-panel"))]
-    (re-frame/dispatch [::events/set-active-panel panel])))
+    (rf/dispatch [::events/set-active-panel panel])))
 
 (defonce history
   (pushy/pushy dispatch parse))
@@ -99,7 +98,7 @@
   []
   (pushy/start! history))
 
-(re-frame/reg-fx
+(rf/reg-fx
  :navigate
  (fn [config]
    (navigate! {:handler (:handler config)
