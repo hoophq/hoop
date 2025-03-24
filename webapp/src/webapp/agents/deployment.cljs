@@ -1,12 +1,12 @@
 (ns webapp.agents.deployment
   (:require
-    [re-frame.core :as rf]
-    ["@radix-ui/themes" :refer [Grid Flex Box Text
-                                Table Heading Link]]
-    ["lucide-react" :refer [Copy]]
-    [webapp.config :as config]
-    [webapp.components.button :as button]
-    [webapp.components.code-snippet :as code-snippet]))
+   [re-frame.core :as rf]
+   ["@radix-ui/themes" :refer [Grid Flex Box Text
+                               Table Heading Link]]
+   ["lucide-react" :refer [Copy]]
+   [webapp.config :as config]
+   [webapp.components.button :as button]
+   [webapp.components.code-snippet :as code-snippet]))
 
 (defn values-yml [hoop-key]
   (str "config:\n"
@@ -17,33 +17,33 @@
 
 (defn installing-helm [hoop-key]
   (str "VERSION=$(curl -s https://releases.hoop.dev/release/latest.txt)\n"
-"helm template hoopagent \\\n"
-  "https://releases.hoop.dev/release/$VERSION/hoopagent-chart-$VERSION.tgz \\\n"
-  "--set 'config.HOOP_KEY=" hoop-key "' \\\n"
-  "--set 'image.tag=1.25.2' \\\n"
-  "--set 'extraSecret=AWS_REGION=us-east-1' \\\n"))
+       "helm template hoopagent \\\n"
+       "https://releases.hoop.dev/release/$VERSION/hoopagent-chart-$VERSION.tgz \\\n"
+       "--set 'config.HOOP_KEY=" hoop-key "' \\\n"
+       "--set 'image.tag=1.25.2' \\\n"
+       "--set 'extraSecret=AWS_REGION=us-east-1' \\\n"))
 
 (defn deployment-yml [hoop-key]
   (str "apiVersion: apps/v1\n"
-"kind: Deployment\n"
-"metadata:\n"
-"  name: hoopagent\n"
-"spec:\n"
-"  replicas: 1\n"
-"  selector:\n"
-"    matchLabels:\n"
-"      app: hoopagent\n"
-"  template:\n"
-"    metadata:\n"
-"      labels:\n"
-"        app: hoopagent\n"
-"    spec:\n"
-"      containers:\n"
-"      - name: hoopagent\n"
-"        image: hoophq/hoopdev\n"
-"        env:\n"
-"        - name: HOOP_KEY\n"
-"          value: '" hoop-key "'\n"))
+       "kind: Deployment\n"
+       "metadata:\n"
+       "  name: hoopagent\n"
+       "spec:\n"
+       "  replicas: 1\n"
+       "  selector:\n"
+       "    matchLabels:\n"
+       "      app: hoopagent\n"
+       "  template:\n"
+       "    metadata:\n"
+       "      labels:\n"
+       "        app: hoopagent\n"
+       "    spec:\n"
+       "      containers:\n"
+       "      - name: hoopagent\n"
+       "        image: hoophq/hoopdev\n"
+       "        env:\n"
+       "        - name: HOOP_KEY\n"
+       "          value: '" hoop-key "'\n"))
 
 (defmulti installation identity)
 (defmethod installation "Kubernetes" [_ hoop-key]
@@ -60,8 +60,7 @@
       [:> Text {:size "2" :weight "bold"}
        "values.yml"]
       [code-snippet/main
-       {:code (values-yml hoop-key)}]
-      ]]]
+       {:code (values-yml hoop-key)}]]]]
    [:> Flex {:direction "column" :gap "5"}
     [:> Text {:size "2" :weight "bold"}
      "Standalone deployment"]
@@ -108,8 +107,7 @@
       [:> Table.Header
        [:> Table.Row
         [:> Table.ColumnHeaderCell "env-var"]
-        [:> Table.ColumnHeaderCell "value"]
-        ]]
+        [:> Table.ColumnHeaderCell "value"]]]
       [:> Table.Body
        [:> Table.Row
         [:> Table.RowHeaderCell
@@ -160,7 +158,7 @@
        "Setup your Agent in your infrastructure."]]
      [button/DocsBtnCallOut
       {:text "Learn more about Agents"
-       :href "https://hoop.dev/docs/concepts/agent"}]]
+       :href (get-in config/docs-url [:concepts :agents])}]]
     [:> Box {:class "space-y-radix-7"
              :mb "8"
              :gridColumn "span 5 / span 5"}
