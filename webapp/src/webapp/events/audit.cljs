@@ -350,6 +350,26 @@
                                          :text "This connection approval has expired."}]]
              [:dispatch [:reset-connecting-status connecting-status]]]}))))
 
+(rf/reg-event-fx
+ :audit->kill-session
+ (fn
+   [{:keys [db]} [_ session killing-status]]
+   {:fx [[:dispatch [:fetch {:method "POST"
+                             :uri (str "/sessions/" (:id session) "/kill")
+                             :on-success (fn [_]
+                                           (when killing-status
+                                             (reset! killing-status :ready))
+                                           (rf/dispatch [:show-snackbar
+                                                         {:level :success
+                                                          :text "Session killed successfully"}])
+                                           (rf/dispatch [:audit->get-session-by-id session]))
+                             :on-failure (fn [error]
+                                           (when killing-status
+                                             (reset! killing-status :ready))
+                                           (rf/dispatch [:show-snackbar
+                                                         {:level :error
+                                                          :text (or (:message error) "Failed to kill session")}]))}]]]}))
+
 (rf/reg-fx
  :reset-connecting-status
  (fn [connecting-status]
