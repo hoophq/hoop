@@ -14,7 +14,7 @@
          [h/h2 (->> (string/split (str plugin-name) #"_")
                     (map string/capitalize)
                     (string/join " ")) {:class "mb-6"}]
-         [:> Box {:p "5" :minHeight "800px" :class "bg-white rounded-md border border-gray-100"}
+         [:> Box {:p "5" :minHeight "800px" :class "bg-white rounded-md border border-gray-100 overflow-y-auto"}
           [plugins-configurations/config (if installed?
                                            plugin-name
                                            (str plugin-name "-not-installed"))]]]))))

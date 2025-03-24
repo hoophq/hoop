@@ -87,7 +87,7 @@
     (fn []
       [:div
        (if (-> @integration-details :loading)
-         [:> Box {:p "5" :minHeight "800px" :class "bg-white rounded-md border border-gray-100"}
+         [:> Box {:p "5" :minHeight "800px" :class "bg-white rounded-md border border-gray-100 overflow-y-auto"}
           [:> Flex {:justify "center" :align "center" :gap "3"}
            [loaders/simple-loader]]]
          [configurations-view @integration-details])])))
