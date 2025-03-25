@@ -205,6 +205,7 @@
         gateway-info (rf/subscribe [:gateway->info])
         executing-status (r/atom :ready)
         connecting-status (r/atom :ready)
+        killing-status (r/atom :ready)
         add-review-popover-open? (r/atom false)
         clipboard-url (new clipboardjs ".copy-to-clipboard-url")]
     (rf/dispatch [:gateway->get-info])
@@ -217,12 +218,18 @@
             start-date (:start_date session)
             end-date (:end_date session)
             verb (:verb session)
+            session-status (:status session)
             has-large-payload? (:has-large-payload? @session-details)
             disabled-download (-> @gateway-info :data :disable_sessions_download)
             review-groups (-> session :review :review_groups_data)
             in-progress? (or (= end-date nil)
                              (= end-date ""))
             has-review? (boolean (seq (-> session :review)))
+            review-status (when has-review?
+                            (some #(when (= (:status %) "APPROVED") "APPROVED") review-groups))
+            can-kill-session? (and (= session-status "open")
+                                   (or (not has-review?)
+                                       (= review-status "APPROVED")))
             has-session-report? (seq (-> @session-report :data :items))
             ready? (= (:status session) "ready")
             revoke-at (when (get-in session [:review :revoke_at])
@@ -246,6 +253,9 @@
             runbook-params (js->clj
                             (js/JSON.parse (-> session :labels :runbookParameters))
                             :keywordize-keys true)
+            kill-session (fn []
+                           (reset! killing-status :loading)
+                           (rf/dispatch [:audit->kill-session session killing-status]))
             _ (.on clipboard-url "success" #(rf/dispatch [:show-snackbar {:level :success :text "URL copied to clipboard"}]))]
         (r/with-let []
           [:div
@@ -289,11 +299,21 @@
                                   :variant :small}]])]
 
              [:div {:class "relative flex gap-2.5 items-start pr-3"}
-              [:div {:class "relative group"}
-               [:> Tooltip {:content "Re-run session"}
-                [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer"
-                       :on-click #(re-run-session session)}
-                 [:> hero-outline-icon/PlayIcon {:class "h-5 w-5 text-gray-600"}]]]]
+              (when can-kill-session?
+                [:div {:class "relative group"}
+                 [:> Tooltip {:content "Kill Session"}
+                  [:div {:class "rounded-full p-2 bg-red-100 hover:bg-red-200 transition cursor-pointer"
+                         :on-click kill-session}
+                   (if (= @killing-status :loading)
+                     [loaders/simple-loader {:size 2}]
+                     [:> hero-outline-icon/StopIcon {:class "h-5 w-5 text-red-600"}])]]])
+
+              (when (= (:verb session) "exec")
+                [:div {:class "relative group"}
+                 [:> Tooltip {:content "Re-run session"}
+                  [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer"
+                         :on-click #(re-run-session session)}
+                   [:> hero-outline-icon/PlayIcon {:class "h-5 w-5 text-gray-600"}]]]])
 
               [:div {:class "relative group"}
                [:> Tooltip {:content "Copy link"}
