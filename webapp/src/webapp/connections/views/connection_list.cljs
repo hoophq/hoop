@@ -57,7 +57,7 @@
                                          @searched-connections)]
         [:div {:class "flex flex-col h-full overflow-y-auto"}
          (when (-> @user :data :admin?)
-           [:div {:class "absolute top-10 right-4 sm:right-6 lg:top-16 lg:right-20"}
+           [:div {:class "absolute top-10 right-4 sm:right-6 lg:top-12 lg:right-10"}
             [:> Button {:on-click (fn [] (rf/dispatch [:navigate :create-connection]))}
              "Add Connection"]])
          [:> Flex {:as "header"
@@ -100,7 +100,7 @@
                 (for [connection connections-search-results]
                   ^{:key (:id connection)}
                   [:> Box {:class (str "bg-white border border-[--gray-3] first:rounded-t-lg last:rounded-b-lg last:border-t-0 first:border-b-0  "
-                                       " hover:bg-gray-50 text-[--gray-12]"
+                                       " text-[--gray-12]"
                                        " p-regular text-xs flex gap-8 justify-between items-center")}
                    [:div {:class "flex truncate items-center gap-regular"}
                     [:div
@@ -119,16 +119,24 @@
 
                    [:div {:id "connection-info"
                           :class "flex gap-6 items-center"}
-                    (when (or
-                           (= "database" (:type connection))
-                           (and (= "application" (:type connection))
-                                (= "tcp" (:subtype connection))))
-                      [:div {:class "relative cursor-pointer group"
-                             :on-click #(rf/dispatch [:modal->open {:content [connection-settings-modal/main (:name connection)]
-                                                                    :maxWidth "446px"}])}
-                       [:> Tooltip {:content "Hoop Access"}
-                        [:> IconButton {:size 1 :variant "ghost" :color "gray"}
-                         [:> Wifi {:size 16}]]]])
+
+                    [:> DropdownMenu.Root {:dir "rtl"}
+                     [:> DropdownMenu.Trigger
+                      [:> Button {:size 2 :variant "soft"}
+                       "Connect"
+                       [:> DropdownMenu.TriggerIcon]]]
+                     [:> DropdownMenu.Content
+                      [:> DropdownMenu.Item {:on-click
+                                             (fn []
+                                               false)}
+                       "Open in Web Terminal"]
+                      (when (or
+                             (= "database" (:type connection))
+                             (and (= "application" (:type connection))
+                                  (= "tcp" (:subtype connection))))
+                        [:> DropdownMenu.Item {:on-click #(rf/dispatch [:modal->open {:content [connection-settings-modal/main (:name connection)]
+                                                                                      :maxWidth "446px"}])}
+                         "Open in Native Client"])]]
 
                     [:> DropdownMenu.Root {:dir "rtl"}
                      [:> DropdownMenu.Trigger
