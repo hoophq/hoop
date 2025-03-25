@@ -1,7 +1,7 @@
 (ns webapp.connections.views.connection-list
-  (:require ["lucide-react" :refer [Wifi EllipsisVertical InfoIcon]]
+  (:require ["lucide-react" :refer [Wifi EllipsisVertical InfoIcon Tag Server Database Network]]
             ["@radix-ui/themes" :refer [IconButton Box Button DropdownMenu Tooltip
-                                        Flex Text Callout]]
+                                        Flex Text Callout Popover]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
@@ -10,7 +10,8 @@
             [webapp.components.searchbox :as searchbox]
             [webapp.connections.constants :as connection-constants]
             [webapp.connections.views.connection-settings-modal :as connection-settings-modal]
-            [webapp.config :as config]))
+            [webapp.config :as config]
+            [webapp.events.connections-filters]))
 
 (defn empty-list-view []
   [:div {:class "pt-x-large"}
@@ -40,14 +41,166 @@
         [:> Text {:weight "bold" :as "span"} "AWS Connect Sync in Progress"]
         [:> Text {:as "span"} " There is an automated process for your connections happening in your hoop.dev environment. Check it later in order to verify."]]])))
 
+(def connection-types
+  [{:id "database" :value "database" :label "Database"}
+   {:id "server" :value "server" :label "Linux VM or Container"}
+   {:id "application" :value "application" :label "Application"}
+   {:id "network" :value "network" :label "Network"}])
+
+(def connection-subtypes
+  {:database [{:id "postgres" :value "postgres" :label "PostgreSQL"}
+              {:id "mysql" :value "mysql" :label "MySQL"}
+              {:id "mongodb" :value "mongodb" :label "MongoDB"}
+              {:id "mssql" :value "mssql" :label "MSSQL"}
+              {:id "oracledb" :value "oracledb" :label "OracleDB"}]
+   :server [{:id "ssh" :value "ssh" :label "SSH"}]
+   :application [{:id "tcp" :value "tcp" :label "TCP"}
+                 {:id "ruby-on-rails" :value "ruby-on-rails" :label "Ruby on Rails"}
+                 {:id "python" :value "python" :label "Python"}
+                 {:id "nodejs" :value "nodejs" :label "Node.js"}
+                 {:id "clojure" :value "clojure" :label "Clojure"}]
+   :network [{:id "vpn" :value "vpn" :label "VPN"}]})
+
+(defn tag-selector-component [selected-tag on-change]
+  [:> Popover.Root
+   [:> Popover.Trigger {:asChild true}
+    [:> Button {:size "2"
+                :variant (if selected-tag "soft" "surface")
+                :color (if selected-tag "gray" "gray")}
+     [:> Flex {:gap "2" :align "center"}
+      [:> Tag {:size 16}]
+      "Tags"
+      (when selected-tag
+        [:div {:class "flex items-center justify-center rounded-full h-4 w-4 bg-gray-800 ml-1"}
+         [:span {:class "text-white text-xs font-bold"}
+          "1"]])]]]
+
+   [:> Popover.Content {:size "2" :style {:width "280px"}}
+    [:> Box {:class "p-2"}
+     [searchbox/main
+      {:options []
+       :display-key :text
+       :variant :small
+       :searchable-keys [:text]
+       :hide-results-list true
+       :placeholder "Search tags"
+       :name "tags-search"
+       :size :small}]]
+
+    [:> Box {:class "max-h-64 overflow-y-auto p-1"}
+     [:> Flex {:direction "column" :gap "1"}
+      (for [tag ["KeyA=Value" "BValue=Value" "CKey=Value" "DKey=Value" "EValue=Value"]]
+        ^{:key tag}
+        [:> Button
+         {:size "1"
+          :variant (if (= selected-tag tag) "soft" "ghost")
+          :class "justify-between"
+          :onClick #(on-change (if (= selected-tag tag) nil tag))}
+         [:span tag]
+         (when (= selected-tag tag)
+           [:svg {:class "h-4 w-4" :viewBox "0 0 20 20" :fill "currentColor"}
+            [:path {:fill-rule "evenodd"
+                    :d "M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                    :clip-rule "evenodd"}]])])]]]])
+
+(defn resource-type-component [selected-type on-change]
+  [:> Popover.Root
+   [:> Popover.Trigger {:asChild true}
+    [:> Button {:size "2"
+                :variant (if selected-type "soft" "surface")
+                :color (if selected-type "gray" "gray")}
+     [:> Flex {:gap "2" :align "center"}
+      [:> Database {:size 16}]
+      "Resource Type"
+      (when selected-type
+        [:div {:class "flex items-center justify-center rounded-full h-4 w-4 bg-gray-800 ml-1"}
+         [:span {:class "text-white text-xs font-bold"}
+          "1"]])]]]
+
+   [:> Popover.Content {:size "2" :style {:width "280px"}}
+    [:> Box {:class "p-2"}
+     [searchbox/main
+      {:options []
+       :display-key :text
+       :variant :small
+       :searchable-keys [:text]
+       :hide-results-list true
+       :placeholder "Search types"
+       :name "type-search"
+       :size :small}]]
+
+    [:> Box {:class "max-h-64 overflow-y-auto p-1"}
+     [:> Flex {:direction "column" :gap "1"}
+      (for [{:keys [id value label]} connection-types]
+        ^{:key id}
+        [:> Button
+         {:size "1"
+          :variant (if (= selected-type value) "soft" "ghost")
+          :class "justify-between"
+          :onClick #(on-change (if (= selected-type value) nil value))}
+         [:span label]
+         (when (= selected-type value)
+           [:svg {:class "h-4 w-4" :viewBox "0 0 20 20" :fill "currentColor"}
+            [:path {:fill-rule "evenodd"
+                    :d "M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                    :clip-rule "evenodd"}]])])]]]])
+
+(defn resource-subtype-component [selected-type selected-subtype on-change]
+  (let [subtypes (get connection-subtypes (keyword selected-type) [])]
+    [:> Popover.Root
+     [:> Popover.Trigger {:asChild true}
+      [:> Button {:size "2"
+                  :variant (if selected-subtype "soft" "surface")
+                  :color (if selected-subtype "gray" "gray")
+                  :disabled (empty? subtypes)}
+       [:> Flex {:gap "2" :align "center"}
+        [:> Server {:size 16}]
+        "Resource Subtype"
+        (when selected-subtype
+          [:div {:class "flex items-center justify-center rounded-full h-4 w-4 bg-gray-800 ml-1"}
+           [:span {:class "text-white text-xs font-bold"}
+            "1"]])]]]
+
+     [:> Popover.Content {:size "2" :style {:width "280px"}}
+      [:> Box {:class "p-2"}
+       [searchbox/main
+        {:options []
+         :display-key :text
+         :variant :small
+         :searchable-keys [:text]
+         :hide-results-list true
+         :placeholder "Search subtypes"
+         :name "subtype-search"
+         :size :small}]]
+
+      [:> Box {:class "max-h-64 overflow-y-auto p-1"}
+       [:> Flex {:direction "column" :gap "1"}
+        (for [{:keys [id value label]} subtypes]
+          ^{:key id}
+          [:> Button
+           {:size "1"
+            :variant (if (= selected-subtype value) "soft" "ghost")
+            :class "justify-between"
+            :onClick #(on-change (if (= selected-subtype value) nil value))}
+           [:span label]
+           (when (= selected-subtype value)
+             [:svg {:class "h-4 w-4" :viewBox "0 0 20 20" :fill "currentColor"}
+              [:path {:fill-rule "evenodd"
+                      :d "M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                      :clip-rule "evenodd"}]])])]]]]))
+
 (defn panel [_]
   (let [connections (rf/subscribe [:connections])
         user (rf/subscribe [:users->current-user])
         search-focused (r/atom false)
         searched-connections (r/atom nil)
         searched-criteria-connections (r/atom "")
-        connections-search-status (r/atom nil)]
-    (rf/dispatch [:connections->get-connections])
+        connections-search-status (r/atom nil)
+        selected-tag (r/atom nil)
+        selected-type (r/atom nil)
+        selected-subtype (r/atom nil)]
+    ;; Initial load with no filters
+    (rf/dispatch [:connections->get-connections nil])
     (rf/dispatch [:users->get-user])
     (rf/dispatch [:guardrails->get-all])
     (rf/dispatch [:jobs/start-aws-connect-polling])
@@ -64,20 +217,50 @@
                    :direction "column"
                    :gap "3"
                    :class "mb-4"}
-          [searchbox/main
-           {:options (:results @connections)
-            :display-key :name
-            :searchable-keys [:name :type :subtype :connection_tags :status]
-            :on-change-results-cb #(reset! searched-connections %)
-            :hide-results-list true
-            :placeholder "Search by connection name, type, status, tags or anything"
-            :on-focus #(reset! search-focused true)
-            :on-blur #(reset! search-focused false)
-            :name "connection-search"
-            :on-change #(reset! searched-criteria-connections %)
-            :loading? (= @connections-search-status :loading)
-            :size :small
-            :icon-position "left"}]
+
+
+          [:> Flex {:gap "2" :class "mb-2 self-end"}
+           [searchbox/main
+            {:options (:results @connections)
+             :display-key :name
+             :searchable-keys [:name :type :subtype :connection_tags :status]
+             :on-change-results-cb #(reset! searched-connections %)
+             :hide-results-list true
+             :placeholder "Search"
+             :on-focus #(reset! search-focused true)
+             :on-blur #(reset! search-focused false)
+             :name "connection-search"
+             :on-change #(reset! searched-criteria-connections %)
+             :loading? (= @connections-search-status :loading)
+             :size :small
+             :icon-position "left"}]
+
+           [tag-selector-component @selected-tag
+            (fn [tag]
+              (reset! selected-tag tag)
+              (rf/dispatch [:connections->filter-connections
+                            (cond-> {}
+                              tag (assoc :tagSelector tag)
+                              @selected-type (assoc :type @selected-type)
+                              @selected-subtype (assoc :subtype @selected-subtype))]))]
+
+           [resource-type-component @selected-type
+            (fn [type]
+              (reset! selected-type type)
+              (reset! selected-subtype nil)
+              (rf/dispatch [:connections->filter-connections
+                            (cond-> {}
+                              @selected-tag (assoc :tagSelector @selected-tag)
+                              type (assoc :type type))]))]
+
+           [resource-subtype-component @selected-type @selected-subtype
+            (fn [subtype]
+              (reset! selected-subtype subtype)
+              (rf/dispatch [:connections->filter-connections
+                            (cond-> {}
+                              @selected-tag (assoc :tagSelector @selected-tag)
+                              @selected-type (assoc :type @selected-type)
+                              subtype (assoc :subtype subtype))]))]]
 
           [aws-connect-sync-callout]]
 
