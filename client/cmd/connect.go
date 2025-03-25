@@ -230,17 +230,17 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				if c.proxyPort != "" {
 					proxyPort = c.proxyPort
 				}
-				httpProxy := proxy.NewHttpProxy(proxyPort, c.client, pbagent.HttpProxyConnectionWrite)
-				if err := httpProxy.Serve(string(sessionID)); err != nil {
+				srv := proxy.NewHttpProxy(proxyPort, c.client, pbagent.HttpProxyConnectionWrite)
+				if err := srv.Serve(string(sessionID)); err != nil {
 					c.processGracefulExit(err)
 				}
 				c.loader.Stop()
 				c.client.StartKeepAlive()
-				c.connStore.Set(string(sessionID), httpProxy)
+				c.connStore.Set(string(sessionID), srv)
 				c.printHeader(string(sessionID))
 				fmt.Println()
-				fmt.Println("--------------------http-connection--------------------")
-				fmt.Printf("               host=127.0.0.1 port=%s\n", httpProxy.ListenPort())
+				fmt.Println("--------------------http-connection-------------------")
+				fmt.Printf("               host=%s port=%s\n", srv.Host().Host, srv.Host().Port)
 				fmt.Println("------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
 			case pb.ConnectionTypeCommandLine:

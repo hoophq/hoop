@@ -141,7 +141,7 @@ func (a *Agent) Run() error {
 		case pbagent.HttpProxyConnectionWrite:
 			a.processHttpProxyWriteServer(pkt)
 
-			// SSH protocol
+		// SSH protocol
 		case pbagent.SSHConnectionWrite:
 			a.processSSHProtocol(pkt)
 

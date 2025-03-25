@@ -12,7 +12,7 @@ import (
 )
 
 type HttpProxy struct {
-	listenPort      string
+	listenAddr      string
 	client          pb.ClientTransport
 	connectionStore memory.Store
 	listener        net.Listener
@@ -20,8 +20,12 @@ type HttpProxy struct {
 }
 
 func NewHttpProxy(listenPort string, client pb.ClientTransport, packetType pb.PacketType) *HttpProxy {
+	listenAddr := defaultListenAddr(defaultHttpProxyPort)
+	if listenPort != "" {
+		listenAddr = defaultListenAddr(listenPort)
+	}
 	return &HttpProxy{
-		listenPort:      listenPort,
+		listenAddr:      listenAddr,
 		client:          client,
 		connectionStore: memory.New(),
 		packetType:      packetType,
@@ -29,10 +33,9 @@ func NewHttpProxy(listenPort string, client pb.ClientTransport, packetType pb.Pa
 }
 
 func (p *HttpProxy) Serve(sessionID string) error {
-	listenAddr := fmt.Sprintf("127.0.0.1:%s", p.listenPort)
-	lis, err := net.Listen("tcp4", listenAddr)
+	lis, err := net.Listen("tcp4", p.listenAddr)
 	if err != nil {
-		return fmt.Errorf("failed listening to address %v, err=%v", listenAddr, err)
+		return fmt.Errorf("failed listening to address %v, err=%v", p.listenAddr, err)
 	}
 	p.listener = lis
 	go func() {
@@ -57,8 +60,7 @@ func (p *HttpProxy) serveConn(sessionID, connectionID string, tcpClient net.Conn
 			sessionID, connectionID, tcpClient.RemoteAddr())
 		p.connectionStore.Del(connectionID)
 		if err := tcpClient.Close(); err != nil {
-			// TODO: log warn
-			log.Printf("failed closing client connection, err=%v", err)
+			log.Warnf("failed closing client connection, err=%v", err)
 		}
 	}()
 	connWrapper := pb.NewConnectionWrapper(tcpClient, make(chan struct{}))
@@ -102,6 +104,4 @@ func (p *HttpProxy) getConnection(connectionID string) (io.WriteCloser, error) {
 	return conn, nil
 }
 
-func (p *HttpProxy) ListenPort() string {
-	return p.listenPort
-}
+func (s *HttpProxy) Host() Host { return getListenAddr(s.listenAddr) }

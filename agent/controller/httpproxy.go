@@ -14,7 +14,7 @@ import (
 func (a *Agent) processHttpProxyWriteServer(pkt *pb.Packet) {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 	clientConnectionID := string(pkt.Spec[pb.SpecClientConnectionID])
-	log := log.With("sid", sessionID)
+	log := log.With("sid", sessionID, "conn", clientConnectionID)
 	if clientConnectionID == "" {
 		log.Info("connection not found in packet specfication")
 		a.sendClientSessionClose(sessionID, "http proxy connection id not found")
@@ -43,8 +43,7 @@ func (a *Agent) processHttpProxyWriteServer(pkt *pb.Packet) {
 		return
 	}
 
-	log.With("sid", sessionID, "conn", clientConnectionID).
-		Infof("starting http proxy connection at %v", connenv.httpProxyRemoteURL)
+	log.Infof("starting http proxy connection at %v", connenv.httpProxyRemoteURL)
 
 	connenv.httpProxyHeaders["remote_url"] = connenv.httpProxyRemoteURL
 	connenv.httpProxyHeaders["connection_id"] = clientConnectionID
