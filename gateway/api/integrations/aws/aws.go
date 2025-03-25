@@ -27,7 +27,7 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
-const staticCrossAccountRoleArn = "arn:aws:iam::%s:role/OrganizationAccountAccessRole"
+const staticCrossAccountRoleArn = "arn:aws:iam::%s:role/HoopOrganizationAccountAccessRole"
 
 // IAMUpdateAccessKey
 //
