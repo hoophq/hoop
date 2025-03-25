@@ -46,13 +46,9 @@ func (a *Agent) processHttpProxyWriteServer(pkt *pb.Packet) {
 	log.With("sid", sessionID, "conn", clientConnectionID).
 		Infof("starting http proxy connection at %v", connenv.httpProxyRemoteURL)
 
-	opts := map[string]string{
-		"remote_url":    connenv.httpProxyRemoteURL,
-		"connection_id": clientConnectionID,
-		// TODO: add headers
-	}
-
-	httpProxy, err := libhoop.NewHttpProxy(context.Background(), httpStreamClient, opts)
+	connenv.httpProxyHeaders["remote_url"] = connenv.httpProxyRemoteURL
+	connenv.httpProxyHeaders["connection_id"] = clientConnectionID
+	httpProxy, err := libhoop.NewHttpProxy(context.Background(), httpStreamClient, connenv.httpProxyHeaders)
 	if err != nil {
 		log.Infof("failed connecting to %v, err=%v", sessionID, connenv.host, err)
 		a.sendClientSessionClose(sessionID, fmt.Sprintf("failed connecting to internal service, reason=%v", err))

@@ -49,6 +49,7 @@ type (
 		postgresSSLMode    string
 		connectionString   string
 		httpProxyRemoteURL string
+		httpProxyHeaders   map[string]string
 	}
 )
 
@@ -518,6 +519,7 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		return nil, err
 	}
 
+	httpProxyHeaders := envVarS.Search(func(key string) bool { return strings.HasPrefix(strings.ToLower(key), "header_") })
 	env := &connEnv{
 		scheme:            envVarS.Getenv("SCHEME"),
 		host:              envVarS.Getenv("HOST"),
@@ -532,6 +534,7 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		// this option is only used by mongodb at the momento
 		connectionString:   envVarS.Getenv("CONNECTION_STRING"),
 		httpProxyRemoteURL: envVarS.Getenv("REMOTE_URL"),
+		httpProxyHeaders:   httpProxyHeaders,
 	}
 	switch connType {
 	case pb.ConnectionTypePostgres:
