@@ -35,7 +35,7 @@ var (
 
 func init() {
 	createConnectionCmd.Flags().StringVarP(&connAgentFlag, "agent", "a", "", "Name of the agent")
-	createConnectionCmd.Flags().StringVarP(&connTypeFlag, "type", "t", "custom", "Type of the connection. One off: (application,custom,database,application/tcp,database/mssql,database/mysql,database/postgres,database/mongodb)")
+	createConnectionCmd.Flags().StringVarP(&connTypeFlag, "type", "t", "custom", "Type of the connection. One off: (custom, application/[httpproxy|ssh|tcp], database/[mssql|mongodb|mysql|postgres])")
 	createConnectionCmd.Flags().StringSliceVarP(&connPuginFlag, "plugin", "p", nil, "Plugins that will be enabled for this connection in the form of: <plugin>:<config01>;<config02>,...")
 	createConnectionCmd.Flags().StringSliceVar(&reviewersFlag, "reviewers", nil, "The approval groups for this connection")
 	createConnectionCmd.Flags().StringSliceVar(&connRedactTypesFlag, "redact-types", nil, "The redact types for this connection")
@@ -114,6 +114,10 @@ var createConnectionCmd = &cobra.Command{
 			case pb.ConnectionTypeMongoDB:
 				if envVar["envvar:CONNECTION_STRING"] == "" {
 					styles.PrintErrorAndExit("missing required CONNECTION_STRING env for %v", pb.ConnectionTypeMongoDB)
+				}
+			case pb.ConnectionTypeHttpProxy:
+				if envVar["envvar:REMOTE_URL"] == "" {
+					styles.PrintErrorAndExit("missing required REMOTE_URL env for %v", pb.ConnectionTypeHttpProxy)
 				}
 			case pb.ConnectionTypeSSH:
 				if err := validateSSHEnvs(envVar); err != nil {

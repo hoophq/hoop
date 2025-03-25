@@ -225,6 +225,24 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				fmt.Printf("      host=%s port=%s user=noop password=noop\n", srv.Host().Host, srv.Host().Port)
 				fmt.Println("------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
+			case pb.ConnectionTypeHttpProxy:
+				proxyPort := "8081"
+				if c.proxyPort != "" {
+					proxyPort = c.proxyPort
+				}
+				srv := proxy.NewHttpProxy(proxyPort, c.client, pbagent.HttpProxyConnectionWrite)
+				if err := srv.Serve(string(sessionID)); err != nil {
+					c.processGracefulExit(err)
+				}
+				c.loader.Stop()
+				c.client.StartKeepAlive()
+				c.connStore.Set(string(sessionID), srv)
+				c.printHeader(string(sessionID))
+				fmt.Println()
+				fmt.Println("--------------------http-connection-------------------")
+				fmt.Printf("               host=%s port=%s\n", srv.Host().Host, srv.Host().Port)
+				fmt.Println("------------------------------------------------------")
+				fmt.Println("ready to accept connections!")
 			case pb.ConnectionTypeCommandLine:
 				c.loader.Stop()
 				// https://github.com/creack/pty/issues/95
@@ -320,6 +338,16 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			if err != nil {
 				errMsg := fmt.Errorf("failed writing to client, err=%v", err)
 				c.processGracefulExit(errMsg)
+			}
+		case pbclient.HttpProxyConnectionWrite:
+			sessionID := pkt.Spec[pb.SpecGatewaySessionID]
+			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
+			if srv, ok := c.connStore.Get(string(sessionID)).(*proxy.HttpProxy); ok {
+				_, err := srv.PacketWriteClient(connectionID, pkt)
+				if err != nil {
+					errMsg := fmt.Errorf("failed writing to client, err=%v", err)
+					c.processGracefulExit(errMsg)
+				}
 			}
 		case pbclient.TCPConnectionWrite:
 			sessionID := pkt.Spec[pb.SpecGatewaySessionID]

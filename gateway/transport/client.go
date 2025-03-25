@@ -65,10 +65,8 @@ func (s *Server) subscribeClient(stream *streamclient.ProxyStream) (err error) {
 		return err
 	}
 
-	connType := pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType)
-	if connType == pb.ConnectionTypeTCP && clientVerb == pb.ClientVerbExec {
-		return status.Errorf(codes.InvalidArgument,
-			fmt.Sprintf("exec is not allowed for tcp type connections. Use 'hoop connect %s' instead", pctx.ConnectionName))
+	if err := validateConnectionType(clientVerb, pctx); err != nil {
+		return err
 	}
 
 	if err := stream.Save(); err != nil {
@@ -309,4 +307,16 @@ func (s *Server) ReviewStatusChange(rev *types.Review) {
 	}
 	log.With("sid", rev.Session, "connection", rev.Connection.Name, "has-stream", proxyStream != nil).
 		Infof("review status change")
+}
+
+func validateConnectionType(clientVerb string, pctx plugintypes.Context) error {
+	if clientVerb == pb.ClientVerbExec {
+		connType := pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType)
+		switch connType {
+		case pb.ConnectionTypeTCP, pb.ConnectionTypeHttpProxy, pb.ConnectionTypeSSH:
+			return status.Errorf(codes.InvalidArgument,
+				fmt.Sprintf("exec is not allowed for %v type connections. Use 'hoop connect %s' instead", connType, pctx.ConnectionName))
+		}
+	}
+	return nil
 }
