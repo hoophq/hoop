@@ -96,10 +96,12 @@
                         :uri "/proxymanager/connect"
                         :body body
                         :on-failure (fn [err]
-                                      (println :failure :connections->connection-connect err)
                                       (rf/dispatch [::connections->connection-connected-error (merge body {:error-message err})])
                                       (rf/dispatch [:show-snackbar {:level :error
-                                                                    :text err}]))
+                                                                    :text err}])
+                                      (rf/dispatch [:modal->open {:content  [connection-connect/main]
+                                                                  :maxWidth "446px"
+                                                                  :custom-on-click-out connection-connect/minimize-modal}]))
                         :on-success (fn [res]
                                       (println :success :connections->connection-connect res)
                                       (cond
@@ -261,6 +263,9 @@ ORDER BY total_amount DESC;")
                                     (rf/dispatch [::connections->connection-connected-error (merge connection {:error-message err})])
                                     (rf/dispatch [:show-snackbar {:level :error
                                                                   :text err}])
+                                    (rf/dispatch [:modal->open {:content  [connection-connect/main]
+                                                                :maxWidth "446px"
+                                                                :custom-on-click-out connection-connect/minimize-modal}])
                                     (when connecting-status
                                       (rf/dispatch [:reset-connecting-status connecting-status])))
                       :on-success (fn [res]
