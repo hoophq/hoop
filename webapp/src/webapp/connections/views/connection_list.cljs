@@ -55,7 +55,7 @@
       (let [connections-search-results (if (empty? @searched-connections)
                                          (:results @connections)
                                          @searched-connections)]
-        [:div {:class "flex flex-col bg-white rounded-lg h-full p-6 overflow-y-auto"}
+        [:div {:class "flex flex-col h-full overflow-y-auto"}
          (when (-> @user :data :admin?)
            [:div {:class "absolute top-10 right-4 sm:right-6 lg:top-16 lg:right-20"}
             [:> Button {:on-click (fn [] (rf/dispatch [:navigate :create-connection]))}
@@ -84,7 +84,7 @@
          (if (and (= :loading (:status @connections)) (empty? (:results @connections)))
            [loading-list-view]
 
-           [:div {:class "rounded-lg border bg-white h-full overflow-y-auto"}
+           [:div {:class " h-full overflow-y-auto"}
             [:div {:class "relative h-full overflow-y-auto"}
                 ;;  (when (and (= status :loading) (empty? (:data sessions)))
                 ;;    [loading-list-view])
@@ -99,25 +99,26 @@
                (doall
                 (for [connection connections-search-results]
                   ^{:key (:id connection)}
-                  [:div {:class (str "border-b last:border-0 hover:bg-gray-50 text-gray-700 "
-                                     " p-regular text-xs flex gap-8 justify-between items-center")}
+                  [:> Box {:class (str "bg-white border border-[--gray-3] first:rounded-t-lg last:rounded-b-lg last:border-t-0 first:border-b-0  "
+                                       " hover:bg-gray-50 text-[--gray-12]"
+                                       " p-regular text-xs flex gap-8 justify-between items-center")}
                    [:div {:class "flex truncate items-center gap-regular"}
                     [:div
-                     [:figure {:class "w-5"}
+                     [:figure {:class "w-6"}
                       [:img {:src  (connection-constants/get-connection-icon connection)
                              :class "w-9"}]]]
-                    [:span {:class "block truncate"}
-                     (:name connection)]]
+                    [:div
+                     [:> Text {:as "p" :size "3" :weight "medium" :class "text-gray-12"}
+                      (:name connection)]
+                     [:> Text {:size "1" :class "flex items-center gap-1 text-gray-11"}
+                      [:div {:class (str "rounded-full h-[6px] w-[6px] "
+                                         (if (= (:status connection) "online")
+                                           "bg-green-500"
+                                           "bg-red-500"))}]
+                      (cs/capitalize (:status connection))]]]
+
                    [:div {:id "connection-info"
                           :class "flex gap-6 items-center"}
-
-                    [:div {:class "flex items-center gap-1 text-xs text-gray-700"}
-                     [:div {:class (str "rounded-full h-[6px] w-[6px] "
-                                        (if (= (:status connection) "online")
-                                          "bg-green-500"
-                                          "bg-red-500"))}]
-                     (cs/capitalize (:status connection))]
-
                     (when (or
                            (= "database" (:type connection))
                            (and (= "application" (:type connection))

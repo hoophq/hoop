@@ -1,6 +1,6 @@
 (ns webapp.app
   (:require
-   ["@radix-ui/themes" :refer [Theme]]
+   ["@radix-ui/themes" :refer [Theme Box Heading]]
    ["@sentry/browser" :as Sentry]
    ["gsap/all" :refer [Draggable gsap]]
    [bidi.bidi :as bidi]
@@ -226,19 +226,20 @@
                              [upgrade-plan/main]]])
 
 (defmethod routes/panels :users-panel []
-  [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
+  [layout :application-hoop [:div {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
                              [routes/wrap-admin-only
                               [:<>
                                [h/h2 "Users" {:class "mb-6"}]
                                [org-users/main]]]]])
 
 (defmethod routes/panels :connections-panel []
-  [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
-                             [h/h2 "Connections" {:class "mb-6"}]
+  [layout :application-hoop [:> Box {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:p-10 h-full space-y-radix-7"}
+                             [:> Heading {:as "h1" :size "8" :weight "bold" :class "text-gray-12"}
+                              "Connections"]
                              [connections/panel]]])
 
 (defmethod routes/panels :dashboard-panel []
-  [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-12 lg:pt-16 lg:pb-10 h-full overflow-auto"}
+  [layout :application-hoop [:div {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:px-12 lg:pt-16 lg:pb-10 h-full overflow-auto"}
                              [routes/wrap-admin-only
                               [:<>
                                [h/h2 "Dashboard" {:class "mb-6"}]
@@ -298,7 +299,7 @@
 
 (defmethod routes/panels :reviews-plugin-panel []
   (rf/dispatch [:destroy-page-loader])
-  [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
+  [layout :application-hoop [:div {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
                              [:<>
                               [h/h2 "Reviews" {:class "mb-6"}]
                               [reviews/panel]]]])
@@ -338,7 +339,7 @@
 
 (defmethod routes/panels :manage-ask-ai-panel []
   (rf/dispatch [:destroy-page-loader])
-  (layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
+  (layout :application-hoop [:div {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
                              [routes/wrap-admin-only
                               [:<>
                                [h/h2 "AI Query Builder" {:class "mb-6"}]
@@ -346,7 +347,7 @@
 
 (defmethod routes/panels :manage-jira-panel []
   (rf/dispatch [:destroy-page-loader])
-  (layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
+  (layout :application-hoop [:div {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
                              [routes/wrap-admin-only
                               [:<>
                                [h/h2 "Jira" {:class "mb-6"}]
@@ -359,7 +360,7 @@
 
 (defmethod routes/panels :sessions-panel []
   (rf/dispatch [:destroy-page-loader])
-  [layout :application-hoop [:div {:class "flex flex-col bg-gray-100 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full overflow-auto"}
+  [layout :application-hoop [:div {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full overflow-auto"}
                              [h/h2 "Sessions" {:class "mb-6"}]
                              [audit/panel]]])
 
