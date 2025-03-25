@@ -211,7 +211,6 @@
 
 (defn main [connection-name]
   (let [connection @(rf/subscribe [:connections->connection-connected])]
-    (println connection)
     (case (:status connection)
       :ready [connect-informations (:data connection)]
       :loading [loading]
