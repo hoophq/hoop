@@ -10,7 +10,7 @@
             [webapp.shared-ui.sidebar.constants :as sidebar-constants]))
 
 (def link-styles
-  {:enabled (str "flex justify-between items-center group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")
+  {:enabled "flex justify-between items-center group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"
    :disabled (str "flex justify-between items-center text-gray-300 cursor-not-allowed text-opacity-30 "
                   "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")})
 
@@ -53,9 +53,7 @@
                              (:uri route))
                      :on-click (fn []
                                  (when (and free-license? (not (:free-feature? route)))
-                                   (js/window.Intercom
-                                    "showNewMessage"
-                                    "I want to upgrade my current plan")))
+                                   (rf/dispatch [:navigate :upgrade-plan])))
                      :class (str (hover-side-menu-link? (:uri route) current-route)
                                  (:enabled link-styles)
                                  (when (and free-license? (not (:free-feature? route)))
@@ -78,9 +76,7 @@
                              (:uri plugin))
                      :on-click (fn []
                                  (when (and free-license? (not (:free-feature? plugin)))
-                                   (js/window.Intercom
-                                    "showNewMessage"
-                                    "I want to upgrade my current plan")))
+                                   (rf/dispatch [:navigate :upgrade-plan])))
                      :class (str (hover-side-menu-link? (:uri plugin) current-route)
                                  (:enabled link-styles)
                                  (when (and free-license? (not (:free-feature? plugin)))
@@ -110,33 +106,46 @@
                "Connections"]]]
 
             (when admin?
-              [:li
-               [:a {:href "#"
-                    :on-click #(rf/dispatch [:navigate :users])
-                    :class (str (hover-side-menu-link? "/organization/users" current-route)
-                                (:enabled link-styles))}
-                [:div {:class "flex gap-3 items-center"}
-                 [:> hero-outline-icon/UserGroupIcon {:class (str "h-6 w-6 shrink-0 text-white")
-                                                      :aria-hidden "true"}]
-                 "Users"]]])
+              [:<>
+               [:li
+                [:a {:href "#"
+                     :on-click #(rf/dispatch [:navigate :users])
+                     :class (str (hover-side-menu-link? "/organization/users" current-route)
+                                 (:enabled link-styles))}
+                 [:div {:class "flex gap-3 items-center"}
+                  [:> hero-outline-icon/UserGroupIcon {:class (str "h-6 w-6 shrink-0 text-white")
+                                                       :aria-hidden "true"}]
+                  "Users"]]]
 
-            [:li
-             [:a {:href "#"
-                  :on-click #(rf/dispatch [:navigate :guardrails])
-                  :class (str (hover-side-menu-link? "/guardrails" current-route)
-                              (:enabled link-styles))}
-              [:div {:class "flex gap-3 items-center"}
-               [:> hero-outline-icon/ShieldCheckIcon {:class (str "h-6 w-6 shrink-0 text-white")
-                                                    :aria-hidden "true"}]
-               "Guardrails"]]]
-            [:li
-             [:a {:href (routes/url-for :agents)
-                  :class (str (hover-side-menu-link? "/agents" current-route)
-                              (:enabled link-styles))}
-              [:div {:class "flex gap-3 items-center"}
-               [:> hero-outline-icon/ServerStackIcon {:class (str "h-6 w-6 shrink-0 text-white")
-                                                      :aria-hidden "true"}]
-               "Agents"]]]
+               [:li
+                [:a {:href "#"
+                     :on-click #(rf/dispatch [:navigate :guardrails])
+                     :class (str (hover-side-menu-link? "/guardrails" current-route)
+                                 (:enabled link-styles))}
+                 [:div {:class "flex gap-3 items-center"}
+                  [:> hero-outline-icon/ShieldCheckIcon {:class (str "h-6 w-6 shrink-0 text-white")
+                                                         :aria-hidden "true"}]
+                  "Guardrails"]]]
+               [:li
+                [:a {:href (routes/url-for :agents)
+                     :class (str (hover-side-menu-link? "/agents" current-route)
+                                 (:enabled link-styles))}
+                 [:div {:class "flex gap-3 items-center"}
+                  [:> hero-outline-icon/ServerStackIcon {:class (str "h-6 w-6 shrink-0 text-white")
+                                                         :aria-hidden "true"}]
+                  "Agents"]]]
+
+               [:li
+                [:a {:href "#"
+                     :on-click #(rf/dispatch [:navigate :jira-templates])
+                     :class (str (hover-side-menu-link? "/jira-templates" current-route)
+                                 (:enabled link-styles))}
+                 [:div {:class "flex gap-3 items-center"}
+                  [:div
+                   [:figure {:class "flex-shrink-0 w-6"}
+                    [:img {:src (str config/webapp-url "/icons/icon-jira.svg")}]]]
+                  "Jira Templates"]]]])
+
             (when admin?
               [:> ui/Disclosure {:as "li"
                                  :class "text-xs font-semibold leading-6 text-gray-400"}
@@ -153,9 +162,7 @@
                  [:a
                   {:on-click (fn []
                                (if free-license?
-                                 (js/window.Intercom
-                                  "showNewMessage"
-                                  "I want to upgrade my current plan")
+                                 (rf/dispatch [:navigate :upgrade-plan])
 
                                  (rf/dispatch [:navigate :manage-ask-ai])))
                    :href "#"
@@ -171,16 +178,13 @@
                 (for [plugin sidebar-constants/plugins-management]
                   ^{:key (:name plugin)}
                   [:li
-                   [:> (.-Button ui/Disclosure)
-                    {:as "a"
-                     :onClick (fn []
-                                (if (and free-license? (not (:free-feature? plugin)))
-                                  (js/window.Intercom
-                                   "showNewMessage"
-                                   "I want to upgrade my current plan")
+                   [:a
+                    {:on-click (fn []
+                                 (if (and free-license? (not (:free-feature? plugin)))
+                                   (rf/dispatch [:navigate :upgrade-plan])
 
-                                  (rf/dispatch [:plugins->navigate->manage-plugin (:name plugin)])))
-                     :href "#"
+                                   (rf/dispatch [:plugins->navigate->manage-plugin (:name plugin)])))
+                     :href  "#" #_(routes/url-for :manage-plugin {:plugin-name (:name plugin)})
                      :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-gray-800 "
                                  "block rounded-md py-2 pr-2 pl-9 text-sm leading-6"
                                  (when (and free-license? (not (:free-feature? plugin)))
@@ -188,7 +192,13 @@
                     (:label plugin)
                     (when (and free-license? (not (:free-feature? plugin)))
                       [:div {:class "text-xs text-gray-200 py-1 px-2 border border-gray-200 rounded-md"}
-                       "Upgrade"])]])]])
+                       "Upgrade"])]])
+                [:li
+                 [:a
+                  {:href (routes/url-for :license-management)
+                   :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-gray-800 "
+                               "block rounded-md py-2 pr-2 pl-9 text-sm leading-6")}
+                  "License"]]]])
 
             (when admin?
               [:> ui/Disclosure {:as "li"
@@ -205,24 +215,26 @@
                 (for [plugin sidebar-constants/integrations-management]
                   ^{:key (:name plugin)}
                   [:li
-                   [:> (.-Button ui/Disclosure)
-                    {:as "a"
-                     :onClick (fn []
-                                (if (and free-license? (not (:free-feature? plugin)))
-                                  (js/window.Intercom
-                                   "showNewMessage"
-                                   "I want to upgrade my current plan")
+                   [:a {:on-click (fn []
+                                    (if (and free-license? (not (:free-feature? plugin)))
+                                      (rf/dispatch [:navigate :upgrade-plan])
 
-                                  (rf/dispatch [:plugins->navigate->manage-plugin (:name plugin)])))
-                     :href "#"
-                     :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-gray-800 "
-                                 "block rounded-md py-2 pr-2 pl-9 text-sm leading-6"
-                                 (when (and free-license? (not (:free-feature? plugin)))
-                                   " text-opacity-30"))}
+                                      (rf/dispatch [:plugins->navigate->manage-plugin (:name plugin)])))
+                        :href "#"
+                        :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-gray-800 "
+                                    "block rounded-md py-2 pr-2 pl-9 text-sm leading-6"
+                                    (when (and free-license? (not (:free-feature? plugin)))
+                                      " text-opacity-30"))}
                     (:label plugin)
                     (when (and free-license? (not (:free-feature? plugin)))
                       [:div {:class "text-xs text-gray-200 py-1 px-2 border border-gray-200 rounded-md"}
-                       "Upgrade"])]])]])]
+                       "Upgrade"])]])
+                [:li
+                 [:a
+                  {:href (routes/url-for :integrations-aws-connect)
+                   :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-gray-800 "
+                               "block rounded-md py-2 pr-2 pl-9 text-sm leading-6")}
+                  "AWS Connect"]]]])]
 
            [:li {:class "mt-auto mb-3"}
             [:> ui/Disclosure {:as "div"
@@ -237,26 +249,23 @@
              [:> (.-Panel ui/Disclosure) {:as "ul"
                                           :class "mt-1 px-2"}
               [:li
-               [:> (.-Button ui/Disclosure) {:as "a"
-                                             :target "_blank"
-                                             :href "https://hoop.canny.io/"
-                                             :class "group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-gray-800 hover:text-white"}
+               [:a {:target "_blank"
+                    :href "https://hoop.canny.io/"
+                    :class "group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-gray-800 hover:text-white"}
                 [:> hero-outline-icon/SparklesIcon {:class "h-6 w-6 shrink-0 text-white"
                                                     :aria-hidden "true"}]
                 "Feature request"]]
               [:li
-               [:> (.-Button ui/Disclosure) {:as "a"
-                                             :target "_blank"
-                                             :href "https://help.hoop.dev"
-                                             :class "group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-gray-800 hover:text-white"}
+               [:a {:target "_blank"
+                    :href "https://help.hoop.dev"
+                    :class "group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-gray-800 hover:text-white"}
                 [:> hero-outline-icon/ChatBubbleLeftEllipsisIcon {:class "h-6 w-6 shrink-0 text-white"
                                                                   :aria-hidden "true"}]
                 "Contact support"]]
               [:li
-               [:> (.-Button ui/Disclosure) {:as "a"
-                                             :onClick #(rf/dispatch [:auth->logout {:idp? (= auth-method "idp")}])
-                                             :href "#"
-                                             :class "group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-gray-800 hover:text-white"}
+               [:a {:onClick #(rf/dispatch [:auth->logout {:idp? (= auth-method "idp")}])
+                    :href "#"
+                    :class "group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-gray-800 hover:text-white"}
                 [:> hero-outline-icon/ArrowLeftOnRectangleIcon {:class "h-6 w-6 shrink-0 text-white"
                                                                 :aria-hidden "true"}]
                 "Log out"]]

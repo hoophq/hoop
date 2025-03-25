@@ -162,6 +162,8 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 			return ConnectionType(ConnectionTypeTCP)
 		case "httpproxy":
 			return ConnectionType(ConnectionTypeHttpProxy)
+		case "ssh":
+			return ConnectionType(ConnectionTypeSSH)
 		default:
 			return ConnectionType(ConnectionTypeCommandLine)
 		}

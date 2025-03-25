@@ -35,3 +35,7 @@ func NewAdHocExec(rawEnvVarList map[string]any, args []string, payload []byte, s
 func NewConsole(rawEnvVarList map[string]any, args []string, stdout io.WriteCloser, opts map[string]string) (Proxy, error) {
 	return &noopProxy{connectionType: "terminal-console"}, nil
 }
+
+func NewSSHProxy(ctx context.Context, clientW io.Writer, opts map[string]string) (Proxy, error) {
+	return &noopProxy{connectionType: "ssh"}, nil
+}

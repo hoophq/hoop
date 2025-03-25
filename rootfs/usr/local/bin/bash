@@ -1,0 +1,14 @@
+#!/bin/bash
+
+if [[ -z $PRE_EXEC ]]; then
+    /bin/bash $@
+    exit $?
+fi
+
+if [ ! -f $PRE_EXEC ]; then
+    echo "pre exec script not found, file=$PRE_EXEC"
+    exit 1
+fi
+
+source $PRE_EXEC
+/bin/bash $@

@@ -2,6 +2,8 @@ package transport
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/common/log"
@@ -9,10 +11,12 @@ import (
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
+	transportsystem "github.com/hoophq/hoop/gateway/transport/system"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -60,27 +64,33 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 					Warnf("agent disconnected")
 				return fmt.Errorf("agent has disconnected")
 			}
-			sentry.CaptureException(err)
 			log.Errorf("received error from agent %v, err=%v", stream.AgentName(), err)
 			return err
 		}
 		if pkt.Type == pbgateway.KeepAlive || pkt.Type == "KeepAlive" {
 			continue
 		}
+
 		pctx.SID = string(pkt.Spec[pb.SpecGatewaySessionID])
 		if pctx.SID == "" {
 			log.Warnf("missing session id spec, skipping packet %v", pkt.Type)
 			continue
 		}
+
+		if handled := handleSystemPacketResponses(pctx, pkt); handled {
+			continue
+		}
+
 		proxyStream := streamclient.GetProxyStream(pctx.SID)
 		if proxyStream == nil {
 			continue
 		}
 		extContext := transportext.Context{
-			OrgID:          pctx.OrgID,
-			SID:            pctx.SID,
-			ConnectionName: proxyStream.PluginContext().ConnectionName,
-			Verb:           proxyStream.PluginContext().ClientVerb,
+			OrgID:                               pctx.OrgID,
+			SID:                                 pctx.SID,
+			ConnectionName:                      proxyStream.PluginContext().ConnectionName,
+			ConnectionJiraTransitionNameOnClose: proxyStream.PluginContext().ConnectionJiraTransitionNameOnClose,
+			Verb:                                proxyStream.PluginContext().ClientVerb,
 		}
 
 		if err := transportext.OnReceive(extContext, pkt); err != nil {
@@ -89,38 +99,51 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 		}
 
 		if _, err := proxyStream.PluginExecOnReceive(*pctx, pkt); err != nil {
-			log.Warnf("plugin reject packet, err=%v", err)
+			log.With("sid", pctx.SID).Warnf("plugin reject packet, err=%v", err)
 			sentry.CaptureException(err)
 			return status.Errorf(codes.Internal, "internal error, plugin reject packet")
 		}
 
-		if pb.PacketType(pkt.Type) == pbclient.SessionClose {
-			var trackErr error
-			if len(pkt.Payload) > 0 {
-				trackErr = fmt.Errorf(string(pkt.Payload))
-			}
+		switch pb.PacketType(pkt.Type) {
+		case pbclient.SessionClose:
 			// it will make sure to run the disconnect plugin phase for both clients
-			_ = proxyStream.Close(trackErr)
+			_ = proxyStream.Close(buildErrorFromPacket(pctx.SID, pkt))
+		case pbclient.SessionOpenOK:
+			if proxyStream.PluginContext().ConnectionSubType == "ssh" {
+				pkt.Spec[pb.SpecClientSSHHostKey] = []byte(appconfig.Get().SSHClientHostKey())
+			}
 		}
+
 		if err = proxyStream.Send(pkt); err != nil {
 			log.With("sid", pctx.SID).Debugf("failed to send packet to proxy stream, err=%v", err)
 		}
 	}
 }
 
-// func (s *Server) configurationData(orgName string) []byte {
-// 	var transportConfigBytes []byte
-// 	transportConfigBytes, _ = pb.GobEncode(monitoring.TransportConfig{
-// 		Sentry: monitoring.SentryConfig{
-// 			OrgName:     orgName,
-// 			Environment: monitoring.NormalizeEnvironment(s.IDProvider.ApiURL),
-// 		},
-// 		Profiler: monitoring.ProfilerConfig{
-// 			PyroscopeServerAddress: s.PyroscopeIngestURL,
-// 			PyroscopeAuthToken:     s.PyroscopeAuthToken,
-// 			OrgName:                orgName,
-// 			Environment:            monitoring.NormalizeEnvironment(s.IDProvider.ApiURL),
-// 		},
-// 	})
-// 	return transportConfigBytes
-// }
+func handleSystemPacketResponses(pctx *plugintypes.Context, pkt *pb.Packet) (handled bool) {
+	if strings.HasPrefix(pkt.Type, "Sys") {
+		if err := transportsystem.Send(pkt.Type, pctx.SID, pkt.Payload); err != nil {
+			log.Warnf("unable to send system packet, reason=%v", err)
+		}
+		return true
+	}
+	return
+}
+
+func buildErrorFromPacket(sid string, pkt *pb.Packet) error {
+	var exitCode *int
+	exitCodeStr := string(pkt.Spec[pb.SpecClientExitCodeKey])
+	ecode, err := strconv.Atoi(exitCodeStr)
+	exitCode = &ecode
+	if err != nil {
+		exitCode = func() *int { v := 254; return &v }() // internal error code
+	}
+
+	log.With("sid", sid).Infof("session result, exit_code=%q, payload_length=%v",
+		exitCodeStr, len(pkt.Payload))
+	if len(pkt.Payload) == 0 && (exitCode == nil || *exitCode == 0) {
+		return nil
+	}
+
+	return plugintypes.NewPacketErr(string(pkt.Payload), exitCode)
+}

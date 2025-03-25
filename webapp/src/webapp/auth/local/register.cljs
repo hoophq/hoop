@@ -1,12 +1,12 @@
 (ns webapp.auth.local.register
   (:require
-    ["@radix-ui/themes" :refer [Flex Card Heading
-                                Link Box Text Button]]
-    [webapp.components.forms :as forms]
-    [reagent.core :as r]
-    [re-frame.core :as re-frame]
-    [webapp.config :as config]
-    [webapp.routes :as routes]))
+   ["@radix-ui/themes" :refer [Flex Card Heading
+                               Link Box Text Button]]
+   [webapp.components.forms :as forms]
+   [reagent.core :as r]
+   [re-frame.core :as re-frame]
+   [webapp.config :as config]
+   [webapp.routes :as routes]))
 
 (defn- form []
   (let [email (r/atom "")

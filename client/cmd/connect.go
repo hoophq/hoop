@@ -1,18 +1,22 @@
 package cmd
 
 import (
+	"context"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/briandowns/spinner"
-	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/client/cmd/styles"
 	clientconfig "github.com/hoophq/hoop/client/config"
 	"github.com/hoophq/hoop/client/proxy"
@@ -22,10 +26,10 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
-	pbterm "github.com/hoophq/hoop/common/terminal"
 	"github.com/hoophq/hoop/common/version"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
+	"golang.org/x/crypto/ssh"
 )
 
 type ConnectFlags struct {
@@ -86,6 +90,9 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 	loader := spinner.New(spinner.CharSets[11], 70*time.Millisecond)
 	loader.Color("green")
 	loader.Start()
+	defer func() { loader.Stop() }()
+	ossig := &osInterrupt{shutdownFn: func() { loader.Stop() }}
+	ossig.handleOsInterrupt()
 	loader.Suffix = " connecting to gateway..."
 
 	c := newClientConnect(config, loader, args, pb.ClientVerbConnect)
@@ -101,6 +108,7 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 		}
 	}
 
+	var sshHostKeySigner ssh.Signer
 	sendOpenSessionPktFn()
 	agentOfflineRetryCounter := 1
 	for {
@@ -122,6 +130,14 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			if !ok || sessionID == nil {
 				c.processGracefulExit(fmt.Errorf("internal error, session not found"))
 			}
+			sshHostKeyEnc := pkt.Spec[pb.SpecClientSSHHostKey]
+			if len(sshHostKeyEnc) > 0 {
+				sshHostKeySigner, err = parseHostKey(sshHostKeyEnc)
+			}
+			if sshHostKeySigner == nil || err != nil {
+				log.Debug("unable to parse SSH host key received from server, using random key")
+				log.Debug("parse host key error=%v", err)
+			}
 			connnectionType := pb.ConnectionType(pkt.Spec[pb.SpecConnectionType])
 			switch connnectionType {
 			case pb.ConnectionTypePostgres:
@@ -135,7 +151,7 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				c.printHeader(string(sessionID))
 				fmt.Println()
 				fmt.Println("--------------------postgres-credentials--------------------")
-				fmt.Printf("      host=127.0.0.1 port=%s user=noop password=noop\n", srv.ListenPort())
+				fmt.Printf("      host=%s port=%s user=noop password=noop\n", srv.Host().Host, srv.Host().Port)
 				fmt.Println("------------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
 			case pb.ConnectionTypeMySQL:
@@ -149,7 +165,7 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				c.printHeader(string(sessionID))
 				fmt.Println()
 				fmt.Println("---------------------mysql-credentials----------------------")
-				fmt.Printf("      host=127.0.0.1 port=%s user=noop password=noop\n", srv.ListenPort())
+				fmt.Printf("      host=%s port=%s user=noop password=noop\n", srv.Host().Host, srv.Host().Port)
 				fmt.Println("------------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
 			case pb.ConnectionTypeMSSQL:
@@ -163,7 +179,7 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				c.printHeader(string(sessionID))
 				fmt.Println()
 				fmt.Println("---------------------mssql-credentials----------------------")
-				fmt.Printf("      host=127.0.0.1 port=%s user=noop password=noop\n", srv.ListenPort())
+				fmt.Printf("      host=%s port=%s user=noop password=noop\n", srv.Host().Host, srv.Host().Port)
 				fmt.Println("------------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
 			case pb.ConnectionTypeMongoDB:
@@ -177,15 +193,11 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				c.printHeader(string(sessionID))
 				fmt.Println()
 				fmt.Println("---------------------mongo-credentials----------------------")
-				fmt.Printf(" mongodb://noop:noop@127.0.0.1:%s/?directConnection=true\n", srv.ListenPort())
+				fmt.Printf(" mongodb://noop:noop@%s:%s/?directConnection=true\n", srv.Host().Host, srv.Host().Port)
 				fmt.Println("------------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
 			case pb.ConnectionTypeTCP:
-				proxyPort := "8999"
-				if c.proxyPort != "" {
-					proxyPort = c.proxyPort
-				}
-				tcp := proxy.NewTCPServer(proxyPort, c.client, pbagent.TCPConnectionWrite)
+				tcp := proxy.NewTCPServer(c.proxyPort, c.client, pbagent.TCPConnectionWrite)
 				if err := tcp.Serve(string(sessionID)); err != nil {
 					c.processGracefulExit(err)
 				}
@@ -195,7 +207,22 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				c.printHeader(string(sessionID))
 				fmt.Println()
 				fmt.Println("--------------------tcp-connection--------------------")
-				fmt.Printf("               host=127.0.0.1 port=%s\n", tcp.ListenPort())
+				fmt.Printf("               host=%s port=%s\n", tcp.Host().Host, tcp.Host().Port)
+				fmt.Println("------------------------------------------------------")
+				fmt.Println("ready to accept connections!")
+			case pb.ConnectionTypeSSH:
+				c.loader.Stop()
+				srv := proxy.NewSSHServer(c.proxyPort, c.client, sshHostKeySigner)
+				if err := srv.Serve(string(sessionID)); err != nil {
+					c.processGracefulExit(err)
+				}
+				c.loader.Stop()
+				c.client.StartKeepAlive()
+				c.connStore.Set(string(sessionID), srv)
+				c.printHeader(string(sessionID))
+				fmt.Println()
+				fmt.Println("--------------------ssh-connection--------------------")
+				fmt.Printf("      host=%s port=%s user=noop password=noop\n", srv.Host().Host, srv.Host().Port)
 				fmt.Println("------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
 			case pb.ConnectionTypeHttpProxy:
@@ -217,24 +244,25 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				fmt.Println("------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
 			case pb.ConnectionTypeCommandLine:
+				c.loader.Stop()
 				// https://github.com/creack/pty/issues/95
 				if runtime.GOOS == "windows" {
-					fmt.Println("command line is not supported on Windows")
+					fmt.Println("Your current terminal environment (Windows/DOS) is not compatible with the Linux-based connection you're trying to access. To proceed, please use one of these options: ")
+					fmt.Println("1. Windows Subsystem for Linux (WSL)")
+					fmt.Println("2. Any Linux-compatible terminal emulator")
+					fmt.Println("For more information, please visit https://hoop.dev/docs/getting-started/cli or contact us if you need further assistance.")
 					os.Exit(1)
 				}
-				// c.handleCmdInterrupt()
-				c.loader.Stop()
 				c.client.StartKeepAlive()
 				term := proxy.NewTerminal(c.client)
 				c.printHeader(string(sessionID))
 				c.connStore.Set(string(sessionID), term)
 				if err := term.ConnectWithTTY(); err != nil {
-					sentry.CaptureException(fmt.Errorf("connect - failed initializing terminal, err=%v", err))
 					c.processGracefulExit(err)
 				}
+				ossig.shutdownFn = func() { loader.Stop(); term.Close() }
 			default:
 				errMsg := fmt.Errorf(`connection type %q not implemented`, connnectionType.String())
-				sentry.CaptureException(fmt.Errorf("connect - %v", errMsg))
 				c.processGracefulExit(errMsg)
 			}
 		case pbclient.SessionOpenApproveOK:
@@ -270,7 +298,6 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			_, err := srv.PacketWriteClient(connectionID, pkt)
 			if err != nil {
 				errMsg := fmt.Errorf("failed writing to client, err=%v", err)
-				sentry.CaptureException(fmt.Errorf("connect - %v - %v", pbclient.PGConnectionWrite, errMsg))
 				c.processGracefulExit(errMsg)
 			}
 		case pbclient.MySQLConnectionWrite:
@@ -284,7 +311,6 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			_, err := srv.PacketWriteClient(connectionID, pkt)
 			if err != nil {
 				errMsg := fmt.Errorf("failed writing to client, err=%v", err)
-				sentry.CaptureException(fmt.Errorf("connect - %v - %v", pbclient.MySQLConnectionWrite, errMsg))
 				c.processGracefulExit(errMsg)
 			}
 		case pbclient.MSSQLConnectionWrite:
@@ -298,7 +324,6 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			_, err := srv.PacketWriteClient(connectionID, pkt)
 			if err != nil {
 				errMsg := fmt.Errorf("failed writing to client, err=%v", err)
-				sentry.CaptureException(fmt.Errorf("connect - %v - %v", pbclient.MSSQLConnectionWrite, errMsg))
 				c.processGracefulExit(errMsg)
 			}
 		case pbclient.MongoDBConnectionWrite:
@@ -312,7 +337,6 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			_, err := srv.PacketWriteClient(connectionID, pkt)
 			if err != nil {
 				errMsg := fmt.Errorf("failed writing to client, err=%v", err)
-				sentry.CaptureException(fmt.Errorf("connect - %v - %v", pbclient.MongoDBConnectionWrite, errMsg))
 				c.processGracefulExit(errMsg)
 			}
 		case pbclient.HttpProxyConnectionWrite:
@@ -330,6 +354,16 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
 			if tcp, ok := c.connStore.Get(string(sessionID)).(*proxy.TCPServer); ok {
 				_, err := tcp.PacketWriteClient(connectionID, pkt)
+				if err != nil {
+					errMsg := fmt.Errorf("failed writing to client, err=%v", err)
+					c.processGracefulExit(errMsg)
+				}
+			}
+		case pbclient.SSHConnectionWrite:
+			sessionID := pkt.Spec[pb.SpecGatewaySessionID]
+			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
+			if srv, ok := c.connStore.Get(string(sessionID)).(*proxy.SSHServer); ok {
+				_, err := srv.PacketWriteClient(connectionID, pkt)
 				if err != nil {
 					errMsg := fmt.Errorf("failed writing to client, err=%v", err)
 					c.processGracefulExit(errMsg)
@@ -356,8 +390,8 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			}
 			exitCodeStr := string(pkt.Spec[pb.SpecClientExitCodeKey])
 			exitCode, err := strconv.Atoi(exitCodeStr)
-			if exitCodeStr == "" || err != nil {
-				exitCode = pbterm.InternalErrorExitCode
+			if err != nil {
+				exitCode = 1
 			}
 			os.Exit(exitCode)
 		}
@@ -468,4 +502,52 @@ func parseClientEnvVars() (map[string]string, error) {
 		return nil, fmt.Errorf("invalid client env vars, expected env=var. found=%v", invalidEnvs)
 	}
 	return envVar, nil
+}
+
+func parseHostKey(encHostKey []byte) (ssh.Signer, error) {
+	hostKeyBytes, err := base64.StdEncoding.DecodeString(string(encHostKey))
+	if err != nil {
+		return nil, fmt.Errorf("failed decoding base64 hosts key: %v", err)
+	}
+	block, _ := pem.Decode(hostKeyBytes)
+	if block == nil {
+		return nil, fmt.Errorf("failed decoding host key PEM block")
+	}
+	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed parsing private key to PKCS#8 format: %v", err)
+	}
+	signerKey, err := ssh.NewSignerFromKey(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed parsing private key to ssh signer: %v", err)
+	}
+	return signerKey, nil
+}
+
+type osInterrupt struct {
+	shutdownFn context.CancelFunc
+}
+
+func (o *osInterrupt) handleOsInterrupt() {
+	sigc := make(chan os.Signal, 1)
+	signal.Notify(sigc,
+		syscall.SIGHUP,
+		syscall.SIGINT,
+		syscall.SIGTERM,
+		syscall.SIGQUIT)
+	go func() {
+		sigval := <-sigc
+		log.Debugf("received interrupt signal %v, executing shutdown ...", sigval.String())
+		o.shutdownFn()
+		switch sigval {
+		case syscall.SIGHUP:
+			os.Exit(int(syscall.SIGHUP))
+		case syscall.SIGINT:
+			os.Exit(int(syscall.SIGINT))
+		case syscall.SIGTERM:
+			os.Exit(int(syscall.SIGTERM))
+		case syscall.SIGQUIT:
+			os.Exit(int(syscall.SIGQUIT))
+		}
+	}()
 }

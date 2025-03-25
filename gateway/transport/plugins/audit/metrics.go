@@ -12,6 +12,7 @@ type DataMaskingMetric struct {
 type SessionMetric struct {
 	DataMasking *DataMaskingMetric `json:"data_masking"`
 	EventSize   int64              `json:"event_size"`
+	Truncated   bool               `json:"truncated"`
 }
 
 func (s *SessionMetric) addInfoType(key string, size int64) {

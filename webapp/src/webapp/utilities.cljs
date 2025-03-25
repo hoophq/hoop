@@ -56,3 +56,8 @@
 
 (defn cn [& inputs]
   (twMerge (apply clsx inputs)))
+
+(defn decode-b64 [data]
+  (try
+    (string/replace (js/decodeURIComponent (js/escape (js/atob data))) #"∞" "\t")
+    (catch js/Error _ (str ""))))

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -49,12 +50,15 @@ func New(provider *idp.Provider) *handler { return &handler{idpProv: provider} }
 //	@Failure		400,409,422,500	{object}	openapi.HTTPError
 //	@Router			/login [get]
 func (h *handler) Login(c *gin.Context) {
-	redirectURL := c.Query("redirect")
-	if redirectURL == "" {
-		redirectURL = fmt.Sprintf("http://%s/callback", proto.ClientLoginCallbackAddress)
+	redirectURL, err := parseRedirectURL(c)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
 	}
+
+	// if strings.HasPrefix(appconfig.Get().ApiURL(), redirectURL)
 	stateUID := uuid.NewString()
-	err := pglogin.New().Upsert(&types.Login{
+	err = pglogin.New().Upsert(&types.Login{
 		ID:       stateUID,
 		Redirect: redirectURL,
 		Outcome:  "",
@@ -75,6 +79,20 @@ func (h *handler) Login(c *gin.Context) {
 	}
 	url := h.idpProv.AuthCodeURL(stateUID, params...)
 	c.JSON(http.StatusOK, openapi.Login{URL: url})
+}
+
+// parseRedirectURL validates the redirect query attribute to match against the API_URL env
+// or the default localhost address
+func parseRedirectURL(c *gin.Context) (string, error) {
+	redirectURL := c.Query("redirect")
+	if redirectURL != "" {
+		u, _ := url.Parse(redirectURL)
+		if u == nil || u.Hostname() != appconfig.Get().ApiHostname() {
+			return "", fmt.Errorf("redirect attribute does not match with api url")
+		}
+		return redirectURL, nil
+	}
+	return fmt.Sprintf("http://%s/callback", proto.ClientLoginCallbackAddress), nil
 }
 
 // LoginCallback
@@ -356,6 +374,21 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 	// first user is admin
 	if totalUsers == 0 {
 		userGroups = append(userGroups, types.GroupAdmin)
+		trackClient := analytics.New()
+		// When the first user is created, there's already an
+		// anonymous event tracked with his org id. We need to
+		// merge this anonymous event with the identified user
+		trackClient.Identify(&types.APIContext{
+			OrgID:           org.ID,
+			OrgName:         org.Name,
+			UserName:        uinfo.Profile,
+			UserID:          uinfo.Email,
+			UserAnonSubject: org.ID,
+			UserEmail:       uinfo.Email,
+			UserGroups:      userGroups,
+			ApiURL:          appconfig.Get().ApiURL(),
+		})
+		trackClient.Track(uinfo.Email, analytics.EventSingleTenantFirstUserCreated, nil)
 	}
 
 	iuser, err := models.GetInvitedUserByEmail(uinfo.Email)

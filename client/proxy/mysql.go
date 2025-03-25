@@ -14,36 +14,36 @@ import (
 )
 
 const (
-	defaultMySQLPort  = "3307"
-	defaultBufferSize = 32 * 1024
 
-	// it must not exceed 3 bytes which is the max size for a single packet
-	maxPacketSize = 1000 * 1000 * 16 // 16MB
+	// keep it the same value for Linux MTU loopback interfaces
+	defaultBufferSize = 16 * 1024 // 16k
+
+	maxPacketSize = 1024 * 1024 * 16 // 16 MiB
 )
 
 type MySQLServer struct {
-	listenPort      string
+	listenAddr      string
 	client          pb.ClientTransport
 	connectionStore memory.Store
 	listener        net.Listener
 }
 
 func NewMySQLServer(listenPort string, client pb.ClientTransport) *MySQLServer {
-	if listenPort == "" {
-		listenPort = defaultMySQLPort
+	listenAddr := defaultListenAddr(defaultMySQLPort)
+	if listenPort != "" {
+		listenAddr = defaultListenAddr(listenPort)
 	}
 	return &MySQLServer{
-		listenPort:      listenPort,
+		listenAddr:      listenAddr,
 		client:          client,
 		connectionStore: memory.New(),
 	}
 }
 
 func (s *MySQLServer) Serve(sessionID string) error {
-	listenAddr := fmt.Sprintf("127.0.0.1:%s", s.listenPort)
-	lis, err := net.Listen("tcp4", listenAddr)
+	lis, err := net.Listen("tcp4", s.listenAddr)
 	if err != nil {
-		return fmt.Errorf("failed listening to address %v, err=%v", listenAddr, err)
+		return fmt.Errorf("failed listening to address %v, err=%v", s.listenAddr, err)
 	}
 	s.listener = lis
 	go func() {
@@ -118,9 +118,7 @@ func (s *MySQLServer) getConnection(connectionID string) (io.WriteCloser, error)
 	return conn, nil
 }
 
-func (s *MySQLServer) ListenPort() string {
-	return s.listenPort
-}
+func (s *MySQLServer) Host() Host { return getListenAddr(s.listenAddr) }
 
 func copyMySQLLBuffer(dst io.Writer, src io.Reader) (err error) {
 	for {

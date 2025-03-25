@@ -101,10 +101,12 @@
 
 (defn- search-options [options pattern searchable-keys]
   (filter #(string/includes?
-            (string/replace (string/join " " (vals
-                                              (select-keys % searchable-keys)))
-                            #"-|_" "")
-            (string/replace pattern #" |-|_" "")) options))
+            (string/lower-case
+             (string/replace (string/join " " (vals
+                                               (select-keys % searchable-keys)))
+                             #"-|_" ""))
+            (string/lower-case
+             (string/replace pattern #" |-|_" ""))) options))
 
 (defn- search-in-multiple-options [options pattern searchable-keys]
   (reduce (fn [acc [list-key list-value]]

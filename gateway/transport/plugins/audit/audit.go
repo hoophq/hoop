@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,23 +16,20 @@ import (
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/common/proto/spectypes"
-	"github.com/hoophq/hoop/gateway/jira"
-	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
+	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/models"
 	eventlogv1 "github.com/hoophq/hoop/gateway/session/eventlog/v1"
-	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
 var memorySessionStore = memory.New()
 
-type (
-	auditPlugin struct {
-		walSessionStore memory.Store
-		started         bool
-		mu              sync.RWMutex
-	}
-)
+type auditPlugin struct {
+	walSessionStore memory.Store
+	started         bool
+	mu              sync.RWMutex
+}
 
 func New() *auditPlugin             { return &auditPlugin{walSessionStore: memory.New()} }
 func (p *auditPlugin) Name() string { return plugintypes.PluginAuditName }
@@ -53,32 +51,35 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 		return fmt.Errorf("failed processing audit plugin, missing org_id and session_id params")
 	}
 	startDate := time.Now().UTC()
-	pctx.ParamsData["status"] = types.SessionStatusOpen
+	pctx.ParamsData["status"] = string(openapi.SessionStatusOpen)
 	pctx.ParamsData["start_date"] = &startDate
 	if err := p.writeOnConnect(pctx); err != nil {
 		return err
 	}
-	// Persist the session in the storage
-	ctx := storagev2.NewContext(pctx.UserID, pctx.OrgID)
-	err := pgsession.New().Upsert(ctx, types.Session{
-		ID:               pctx.SID,
-		OrgID:            pctx.OrgID,
-		UserEmail:        pctx.UserEmail,
-		UserID:           pctx.UserID,
-		UserName:         pctx.UserName,
-		Type:             pctx.ConnectionType,
-		Connection:       pctx.ConnectionName,
-		Verb:             pctx.ClientVerb,
-		Status:           types.SessionStatusOpen,
-		Script:           types.SessionScript{"data": pctx.Script},
-		Labels:           pctx.Labels,
-		Metadata:         pctx.Metadata,
-		NonIndexedStream: nil,
-		StartSession:     startDate,
-		EndSession:       nil,
-	})
-	if err != nil {
-		return fmt.Errorf("failed persisting sessino to store, reason=%v", err)
+
+	// persist session for public gRPC clients
+	if !strings.HasPrefix(pctx.ClientOrigin, pb.ConnectionOriginClientAPI) {
+		err := models.UpsertSession(models.Session{
+			ID:                   pctx.SID,
+			OrgID:                pctx.OrgID,
+			UserEmail:            pctx.UserEmail,
+			UserID:               pctx.UserID,
+			UserName:             pctx.UserName,
+			Connection:           pctx.ConnectionName,
+			ConnectionType:       pctx.ConnectionType,
+			ConnectionSubtype:    pctx.ConnectionSubType,
+			Verb:                 pctx.ClientVerb,
+			Labels:               nil,
+			Metadata:             nil,
+			IntegrationsMetadata: nil,
+			Status:               string(openapi.SessionStatusOpen),
+			ExitCode:             nil,
+			CreatedAt:            startDate,
+			EndSession:           nil,
+		})
+		if err != nil {
+			return fmt.Errorf("failed persisting session to store, reason=%v", err)
+		}
 	}
 	p.mu = sync.RWMutex{}
 	memorySessionStore.Set(pctx.SID, pctx.AgentID)
@@ -148,12 +149,6 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 			log.Warnf("failed writing agent packet response, err=%v", err)
 		}
 		return nil, nil
-	case pbclient.SessionClose:
-		if len(pkt.Payload) > 0 {
-			p.closeSession(pctx, fmt.Errorf(string(pkt.Payload)))
-			return nil, nil
-		}
-		p.closeSession(pctx, nil)
 	case pbagent.ExecWriteStdin,
 		pbagent.TerminalWriteStdin,
 		pbagent.TCPConnectionWrite:
@@ -162,9 +157,10 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 	return nil, nil
 }
 
-func (p *auditPlugin) OnDisconnect(pctx plugintypes.Context, errMsg error) error {
+func (p *auditPlugin) OnDisconnect(pctx plugintypes.Context, err error) error {
 	log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "agent", pctx.AgentName).
 		Debugf("processing disconnect")
+
 	switch pctx.ClientOrigin {
 	case pb.ConnectionOriginAgent:
 		log.With("agent", pctx.AgentName).Infof("agent shutdown, graceful closing session")
@@ -173,28 +169,23 @@ func (p *auditPlugin) OnDisconnect(pctx plugintypes.Context, errMsg error) error
 				continue
 			}
 			pctx.SID = msid
-			p.closeSession(pctx, errMsg)
+			p.closeSession(pctx, err)
 		}
 	default:
-		p.closeSession(pctx, errMsg)
+		p.closeSession(pctx, err)
 	}
 	return nil
 }
 
-func (p *auditPlugin) closeSession(pctx plugintypes.Context, errMsg error) {
-	log.With("sid", pctx.SID).Infof("closing session, reason=%v", errMsg)
+func (p *auditPlugin) closeSession(pctx plugintypes.Context, err error) {
+	log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
+		Infof("closing session, reason=%v", err)
 	go func() {
-		if err := p.writeOnClose(pctx, errMsg); err != nil {
-			log.Warnf("session=%v - failed closing session: %v", pctx.SID, err)
-			return
+		defer memorySessionStore.Del(pctx.SID)
+		if err := p.writeOnClose(pctx, err); err != nil {
+			log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
+				Warnf("failed closing session, reason=%v", err)
 		}
-
-		err := jira.UpdateJiraIssueContent("add-session-executed", pctx.OrgID, pctx.SID)
-		if err != nil {
-			log.Warnf("fail to update jira issue content, reason: %v", err)
-		}
-
-		memorySessionStore.Del(pctx.SID)
 	}()
 }
 

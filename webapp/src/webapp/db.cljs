@@ -10,18 +10,39 @@
    :connections {:loading true}
    :connections->connection-connected {:status :loading, :data nil}
    :connections->updating-connection {:loading true, :data []}
+   :aws-connect {:status :not-started
+                 :current-step :credentials
+                 :credentials {:type nil
+                               :iam-role nil
+                               :iam-user {:access-key-id nil
+                                          :secret-access-key nil
+                                          :region nil
+                                          :session-token nil}}
+                 :accounts {:selected #{}
+                            :data []}
+                 :resources {:selected #{}
+                             :data []
+                             :errors #{}}
+                 :agents {:assignments {}}}
+   :connection-setup {:type nil
+                      :subtype nil
+                      :current-step :type
+                      :credentials {}
+                      :tags {}}
    :database-schema {:status :loading, :schema-tree nil, :indexes-tree nil}
    :dialog {:status :closed
             :type :info
             :on-success nil
             :text ""
             :text-action-button ""
+            :action-button? true
             :title ""}
    :dialog-on-success nil
    :dialog-status :closed
    :dialog-text ""
    :dialog-title ""
    :draggable-card {:status :closed, :component nil, :on-click-close nil, :on-click-expand nil}
+   :editor {}
    :editor-plugin->connections-exec-list {:status :ready :data nil}
    :editor-plugin->connections-runbook-list {:status :ready :data nil}
    :editor-plugin->current-connection {:status :loading :data nil}

@@ -23,6 +23,7 @@ import (
 	apiguardrails "github.com/hoophq/hoop/gateway/api/guardrails"
 	apihealthz "github.com/hoophq/hoop/gateway/api/healthz"
 	apijiraintegration "github.com/hoophq/hoop/gateway/api/integrations"
+	awsintegration "github.com/hoophq/hoop/gateway/api/integrations/aws"
 	localauthapi "github.com/hoophq/hoop/gateway/api/localauth"
 	loginapi "github.com/hoophq/hoop/gateway/api/login"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -85,6 +86,22 @@ type Api struct {
 //	@tag.name	Proxy Manager
 //	@tag.description.markdown
 
+//	@tag.name	Connections
+
+//	@tag.name	Agents
+
+//	@tag.name	Runbooks
+
+//	@tag.name	Guard Rails
+
+//	@tag.name	Reviews
+
+//	@tag.name	Sessions
+
+//	@tag.name	Organization Management
+
+//	@tag.name	Reports
+
 // @securitydefinitions.oauth2.accessCode	OAuth2AccessCode
 // @tokenUrl								https://login.microsoftonline.com/d60ba6f0-ad5f-4917-aa19-f8d4241f8bc7/oauth2/v2.0/token
 // @authorizationUrl						https://login.microsoftonline.com/d60ba6f0-ad5f-4917-aa19-f8d4241f8bc7/oauth2/v2.0/authorize
@@ -105,6 +122,7 @@ func (a *Api) StartAPI(sentryInit bool) {
 	a.logger = zaplogger
 	// https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies
 	route.SetTrustedProxies(nil)
+	route.Use(SecurityHeaderMiddleware())
 	route.Use(CORSMiddleware())
 	baseURL := appconfig.Get().ApiURLPath()
 
@@ -126,6 +144,7 @@ func (a *Api) StartAPI(sentryInit bool) {
 	}
 	router := apiroutes.New(rg, a.IDProvider, appconfig.Get().GrpcURL(), appconfig.Get().ApiKey())
 	a.buildRoutes(router)
+	openapi.RegisterGinValidators()
 
 	if a.TLSConfig != nil {
 		server := http.Server{
@@ -177,7 +196,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		userapi.GetUserInfo)
 	r.GET("/users",
-		apiroutes.ReadOnlyAccessRole,
+		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		userapi.List)
 	r.GET("/users/:emailOrID",
@@ -256,6 +275,28 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		apiconnections.GetDatabaseSchemas)
+
+	// TODO(san): needs more testing, will add these endpoints later on
+	// r.POST("/connection-tags",
+	// 	r.AuthMiddleware,
+	// 	// api.TrackRequest(analytics.EventApiExecConnection),
+	// 	apiconnections.CreateTag,
+	// )
+	// r.PUT("/connection-tags/:id",
+	// 	r.AuthMiddleware,
+	// 	// api.TrackRequest(analytics.EventApiExecConnection),
+	// 	apiconnections.UpdateTagByID,
+	// )
+	// r.GET("/connection-tags/:id",
+	// 	r.AuthMiddleware,
+	// 	// api.TrackRequest(analytics.EventApiExecConnection),
+	// 	apiconnections.GetTagByID,
+	// )
+	r.GET("/connection-tags",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiconnections.ListTags,
+	)
 
 	r.POST("/proxymanager/connect",
 		r.AuthMiddleware,
@@ -369,6 +410,15 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		sessionapi.Get)
 	r.GET("/sessions/:session_id/download", sessionapi.DownloadSession)
+	r.POST("/sessions/:session_id/kill",
+		r.AuthMiddleware,
+		sessionapi.Kill)
+	r.PUT("/sessions/:session_id/review",
+		r.AuthMiddleware,
+		reviewHandler.ReviewBySession)
+	r.PATCH("/sessions/:session_id/metadata",
+		r.AuthMiddleware,
+		sessionapi.PatchMetadata)
 	r.GET("/sessions",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
@@ -385,7 +435,6 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.GET("/reports/sessions",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
-		api.TrackRequest(analytics.EventApiExecReview),
 		apireports.SessionReport)
 
 	r.POST("/plugins/indexer/sessions/search",
@@ -416,7 +465,6 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 
 	// Jira Integration routes
 	r.GET("/integrations/jira",
-		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apijiraintegration.Get)
 	r.POST("/integrations/jira",
@@ -430,6 +478,85 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		api.TrackRequest(analytics.EventUpdateJiraIntegration),
 		apijiraintegration.Put)
 
+	// Jira Integration Issue Templates routes
+	r.POST("/integrations/jira/issuetemplates",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apijiraintegration.CreateIssueTemplates,
+	)
+	r.PUT("/integrations/jira/issuetemplates/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apijiraintegration.UpdateIssueTemplates,
+	)
+	r.GET("/integrations/jira/issuetemplates",
+		r.AuthMiddleware,
+		apijiraintegration.ListIssueTemplates,
+	)
+	r.GET("/integrations/jira/issuetemplates/:id",
+		r.AuthMiddleware,
+		apijiraintegration.GetIssueTemplatesByID,
+	)
+	r.GET("/integrations/jira/issuetemplates/:id/objecttype-values",
+		r.AuthMiddleware,
+		apijiraintegration.GetIssueTemplateObjectTypeValues)
+
+	r.DELETE("/integrations/jira/issuetemplates/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apijiraintegration.DeleteIssueTemplates,
+	)
+
+	// AWS routes
+	r.GET("/integrations/aws/iam/userinfo",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		awsintegration.IAMGetUserInfo)
+
+	r.PUT("/integrations/aws/iam/accesskeys",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		awsintegration.IAMUpdateAccessKey)
+
+	r.DELETE("/integrations/aws/iam/accesskeys",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		awsintegration.IAMDeleteAccessKey)
+
+	r.GET("/integrations/aws/organizations",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		// api.TrackRequest,
+		awsintegration.ListOrganizations)
+
+	r.POST("/integrations/aws/iam/verify",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		awsintegration.IAMVerifyPermissions)
+
+	r.POST("/integrations/aws/rds/describe-db-instances",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		awsintegration.DescribeRDSDBInstances)
+
+	r.POST("/dbroles/jobs",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		awsintegration.CreateDBRoleJob,
+	)
+
+	r.GET("/dbroles/jobs",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		awsintegration.ListDBRoleJobs,
+	)
+
+	r.GET("/dbroles/jobs/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		awsintegration.GetDBRoleJobByID,
+	)
+
 	r.POST("/guardrails",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
@@ -441,9 +568,11 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		api.TrackRequest(analytics.EventUpdateGuardRailRules),
 		apiguardrails.Put)
 	r.GET("/guardrails",
+		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiguardrails.List)
 	r.GET("/guardrails/:id",
+		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiguardrails.Get)
 	r.DELETE("/guardrails/:id",

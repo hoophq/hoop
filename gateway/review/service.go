@@ -3,13 +3,11 @@ package review
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
-	"github.com/hoophq/hoop/gateway/jira"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
 	pgsession "github.com/hoophq/hoop/gateway/pgrest/session"
@@ -29,7 +27,7 @@ type (
 
 var (
 	ErrNotFound     = errors.New("review not found")
-	ErrWrongState   = errors.New("review in wrong state")
+	ErrWrongState   = errors.New("review is in wrong state")
 	ErrNotEligible  = errors.New("not eligible for review")
 	ErrSelfApproval = errors.New("unable to self approve review")
 )
@@ -44,7 +42,7 @@ func (s *Service) FindOne(ctx pgrest.OrgContext, id string) (*types.Review, erro
 }
 
 // FindOneTimeReview returns an one time review by session id
-func (s *Service) FindBySessionID(ctx pgrest.Context, sessionID string) (*types.Review, error) {
+func (s *Service) FindBySessionID(ctx pgrest.OrgContext, sessionID string) (*types.Review, error) {
 	return pgreview.New().FetchOneBySid(ctx, sessionID)
 }
 
@@ -85,6 +83,28 @@ func (s *Service) Persist(ctx pgrest.OrgContext, review *types.Review) error {
 	return nil
 }
 
+func (s *Service) RevokeBySid(ctx pgrest.OrgContext, sid string) (*types.Review, error) {
+	rev, err := s.FindBySessionID(ctx, sid)
+	if err != nil {
+		return nil, err
+	}
+	// non-jit type reviews cannot be revoked
+	if rev == nil || rev.Type != ReviewTypeJit {
+		return nil, ErrNotFound
+	}
+	// only approved reviews could be revoked
+	if rev.Status != types.ReviewStatusApproved {
+		return nil, ErrWrongState
+	}
+	rev.Status = types.ReviewStatusRevoked
+
+	if err := s.Persist(ctx, rev); err != nil {
+		return nil, fmt.Errorf("saving review error: %v", err)
+	}
+
+	return rev, nil
+}
+
 func (s *Service) Revoke(ctx pgrest.OrgContext, reviewID string) (*types.Review, error) {
 	rev, err := s.FindOne(ctx, reviewID)
 	if err != nil {
@@ -104,13 +124,19 @@ func (s *Service) Revoke(ctx pgrest.OrgContext, reviewID string) (*types.Review,
 		return nil, fmt.Errorf("saving review error: %v", err)
 	}
 
-	// Update JIRA issue description
-	err = jira.UpdateJiraIssueContent("add-review-revoked", ctx.GetOrgID(), rev.Session)
-	if err != nil {
-		log.Warnf("fail to update jira issue content, reason: %v", err)
-	}
-
 	return rev, nil
+}
+
+// ReviewBySid perform review using the session id
+func (s *Service) ReviewBySid(ctx *storagev2.Context, sid string, status types.ReviewStatus) (*types.Review, error) {
+	rev, err := s.FindBySessionID(ctx, sid)
+	if err != nil {
+		return nil, fmt.Errorf("fetch review error: %v", err)
+	}
+	if rev == nil {
+		return nil, ErrNotFound
+	}
+	return s.Review(ctx, rev.Id, status)
 }
 
 // called by slack plugin and webapp
@@ -122,9 +148,11 @@ func (s *Service) Review(ctx *storagev2.Context, reviewID string, status types.R
 	if rev == nil {
 		return nil, ErrNotFound
 	}
+
 	if rev.Status != types.ReviewStatusPending {
 		return rev, ErrWrongState
 	}
+
 	if rev.ReviewOwner.Id == ctx.UserID && !ctx.IsAdmin() {
 		return nil, ErrSelfApproval
 	}
@@ -142,7 +170,6 @@ func (s *Service) Review(ctx *storagev2.Context, reviewID string, status types.R
 
 	reviewsCount := len(rev.ReviewGroupsData)
 	approvedCount := 0
-	var approvedGroups []string
 
 	if status == types.ReviewStatusRejected {
 		rev.Status = status
@@ -153,17 +180,16 @@ func (s *Service) Review(ctx *storagev2.Context, reviewID string, status types.R
 			t := time.Now().UTC().Format(time.RFC3339)
 			rev.ReviewGroupsData[i].Status = status
 			rev.ReviewGroupsData[i].ReviewedBy = &types.ReviewOwner{
-				Id:    ctx.UserID,
-				Name:  ctx.UserName,
-				Email: ctx.UserEmail,
+				Id:      ctx.UserID,
+				Name:    ctx.UserName,
+				Email:   ctx.UserEmail,
+				SlackID: ctx.SlackID,
 			}
 			rev.ReviewGroupsData[i].ReviewDate = &t
 		}
 		if rev.ReviewGroupsData[i].Status == types.ReviewStatusApproved {
 			approvedCount++
 		}
-
-		approvedGroups = append(approvedGroups, rev.ReviewGroupsData[i].Group)
 	}
 
 	if reviewsCount == approvedCount {
@@ -174,39 +200,16 @@ func (s *Service) Review(ctx *storagev2.Context, reviewID string, status types.R
 	if err := s.Persist(ctx, rev); err != nil {
 		return nil, fmt.Errorf("saving review error: %v", err)
 	}
-
-	issueInfos := jira.AddNewReviewByUserIssueTemplate{
-		ReviewerName:         rev.ReviewOwner.Name,
-		ReviewApprovedGroups: strings.Join(approvedGroups, ", "),
-		ReviewStatus:         string(rev.Status),
-	}
-
-	err = jira.UpdateJiraIssueContent("add-review-status", ctx.OrgID, rev.Session, issueInfos)
-	if err != nil {
-		log.Warnf("fail to update jira issue content, reason: %v", err)
-	}
-
 	switch rev.Status {
 	case types.ReviewStatusApproved:
-		if err := pgsession.New().UpdateStatus(ctx, rev.Session, types.SessionStatusReady); err != nil {
+		if err := pgsession.New().UpdateStatus(ctx, rev.Session, string(openapi.SessionStatusReady)); err != nil {
 			return nil, fmt.Errorf("save sesession as ready error: %v", err)
 		}
 		// release the connection if there's a client waiting
 		s.TransportService.ReviewStatusChange(rev)
-
-		err = jira.UpdateJiraIssueContent("add-review-ready", ctx.OrgID, rev.Session)
-		if err != nil {
-			log.Warnf("fail to update jira issue content, reason: %v", err)
-		}
 	case types.ReviewStatusRejected:
 		// release the connection if there's a client waiting
 		s.TransportService.ReviewStatusChange(rev)
-
-		// Update JIRA issue description
-		err := jira.UpdateJiraIssueContent("add-review-rejected", ctx.OrgID, rev.Session)
-		if err != nil {
-			log.Warnf("fail to update jira issue content, reason: %v", err)
-		}
 	}
 
 	return rev, nil

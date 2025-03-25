@@ -3,6 +3,7 @@ package apiconnections
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,7 +14,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
-	"github.com/hoophq/hoop/common/proto"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/clientexec"
@@ -36,7 +36,7 @@ type Review struct {
 //
 //	@Summary				Create Connection
 //	@description.markdown	api-connection
-//	@Tags					Core
+//	@Tags					Connections
 //	@Accept					json
 //	@Produce				json
 //	@Param					request			body		openapi.Connection	true	"The request body resource"
@@ -75,22 +75,24 @@ func Post(c *gin.Context) {
 	}
 
 	err = models.UpsertConnection(&models.Connection{
-		ID:                 req.ID,
-		OrgID:              ctx.OrgID,
-		AgentID:            sql.NullString{String: req.AgentId, Valid: true},
-		Name:               req.Name,
-		Command:            req.Command,
-		Type:               string(req.Type),
-		SubType:            sql.NullString{String: req.SubType, Valid: true},
-		Envs:               coerceToMapString(req.Secrets),
-		Status:             req.Status,
-		ManagedBy:          sql.NullString{},
-		Tags:               req.Tags,
-		AccessModeRunbooks: req.AccessModeRunbooks,
-		AccessModeExec:     req.AccessModeExec,
-		AccessModeConnect:  req.AccessModeConnect,
-		AccessSchema:       req.AccessSchema,
-		GuardRailRules:     req.GuardRailRules,
+		ID:                  req.ID,
+		OrgID:               ctx.OrgID,
+		AgentID:             sql.NullString{String: req.AgentId, Valid: true},
+		Name:                req.Name,
+		Command:             req.Command,
+		Type:                string(req.Type),
+		SubType:             sql.NullString{String: req.SubType, Valid: true},
+		Envs:                coerceToMapString(req.Secrets),
+		Status:              req.Status,
+		ManagedBy:           sql.NullString{},
+		Tags:                req.Tags,
+		AccessModeRunbooks:  req.AccessModeRunbooks,
+		AccessModeExec:      req.AccessModeExec,
+		AccessModeConnect:   req.AccessModeConnect,
+		AccessSchema:        req.AccessSchema,
+		GuardRailRules:      req.GuardRailRules,
+		JiraIssueTemplateID: sql.NullString{String: req.JiraIssueTemplateID, Valid: true},
+		ConnectionTags:      req.ConnectionTags,
 	})
 	if err != nil {
 		log.Errorf("failed creating connection, err=%v", err)
@@ -124,7 +126,7 @@ func Post(c *gin.Context) {
 //
 //	@Summary		Update Connection
 //	@Description	Update a connection resource.
-//	@Tags			Core
+//	@Tags			Connections
 //	@Accept			json
 //	@Produce		json
 //	@Param			nameOrID		path		string				true	"The name or ID of the resource"
@@ -171,22 +173,24 @@ func Put(c *gin.Context) {
 		req.Status = pgrest.ConnectionStatusOnline
 	}
 	err = models.UpsertConnection(&models.Connection{
-		ID:                 conn.ID,
-		OrgID:              conn.OrgID,
-		AgentID:            sql.NullString{String: req.AgentId, Valid: true},
-		Name:               conn.Name,
-		Command:            req.Command,
-		Type:               req.Type,
-		SubType:            sql.NullString{String: req.SubType, Valid: true},
-		Envs:               coerceToMapString(req.Secrets),
-		Status:             req.Status,
-		ManagedBy:          sql.NullString{},
-		Tags:               req.Tags,
-		AccessModeRunbooks: req.AccessModeRunbooks,
-		AccessModeExec:     req.AccessModeExec,
-		AccessModeConnect:  req.AccessModeConnect,
-		AccessSchema:       req.AccessSchema,
-		GuardRailRules:     req.GuardRailRules,
+		ID:                  conn.ID,
+		OrgID:               conn.OrgID,
+		AgentID:             sql.NullString{String: req.AgentId, Valid: true},
+		Name:                conn.Name,
+		Command:             req.Command,
+		Type:                req.Type,
+		SubType:             sql.NullString{String: req.SubType, Valid: true},
+		Envs:                coerceToMapString(req.Secrets),
+		Status:              req.Status,
+		ManagedBy:           sql.NullString{},
+		Tags:                req.Tags,
+		AccessModeRunbooks:  req.AccessModeRunbooks,
+		AccessModeExec:      req.AccessModeExec,
+		AccessModeConnect:   req.AccessModeConnect,
+		AccessSchema:        req.AccessSchema,
+		GuardRailRules:      req.GuardRailRules,
+		JiraIssueTemplateID: sql.NullString{String: req.JiraIssueTemplateID, Valid: true},
+		ConnectionTags:      req.ConnectionTags,
 	})
 	if err != nil {
 		switch err.(type) {
@@ -225,7 +229,7 @@ func Put(c *gin.Context) {
 //
 //	@Summary		Delete Connection
 //	@Description	Delete a connection resource.
-//	@Tags			Core
+//	@Tags			Connections
 //	@Produce		json
 //	@Param			name	path	string	true	"The name of the resource"
 //	@Success		204
@@ -256,13 +260,14 @@ func Delete(c *gin.Context) {
 //
 //	@Summary		List Connections
 //	@Description	List all connections.
-//	@Tags			Core
+//	@Tags			Connections
 //	@Produce		json
-//	@Param			agent_id	query		string	false	"Filter by agent id"					Format(uuid)
-//	@Param			tags		query		string	false	"Filter by tags, separated by comma"	Format(string)
-//	@Param			type		query		string	false	"Filter by type"						Format(string)
-//	@Param			subtype		query		string	false	"Filter by subtype"						Format(string)
-//	@Param			managed_by	query		string	false	"Filter by managed by"					Format(string)
+//	@Param			agent_id	query		string	false	"Filter by agent id"																	Format(uuid)
+//	@Param			tags		query		string	false	"DEPRECATED: Filter by tags, separated by comma"										Format(string)
+//	@Param			tagSelector	query		string	false	"Selector tags to fo filter on, supports '=' and '!=' (e.g. key1=value1,key2=value2)"	Format(string)
+//	@Param			type		query		string	false	"Filter by type"																		Format(string)
+//	@Param			subtype		query		string	false	"Filter by subtype"																		Format(string)
+//	@Param			managed_by	query		string	false	"Filter by managed by"																	Format(string)
 //	@Success		200			{array}		openapi.Connection
 //	@Failure		422,500		{object}	openapi.HTTPError
 //	@Router			/connections [get]
@@ -293,25 +298,34 @@ func List(c *gin.Context) {
 			if conn.ManagedBy.Valid {
 				managedBy = &conn.ManagedBy.String
 			}
+			defaultDB, _ := base64.StdEncoding.DecodeString(conn.Envs["envvar:DB"])
+			if len(defaultDB) == 0 {
+				defaultDB = []byte(``)
+			}
 			responseConnList = append(responseConnList, openapi.Connection{
-				ID:                 conn.ID,
-				Name:               conn.Name,
-				Command:            conn.Command,
-				Type:               conn.Type,
-				SubType:            conn.SubType.String,
-				Secrets:            coerceToAnyMap(conn.Envs),
-				AgentId:            conn.AgentID.String,
-				Status:             conn.Status,
-				Reviewers:          conn.Reviewers,
-				RedactEnabled:      conn.RedactEnabled,
-				RedactTypes:        conn.RedactTypes,
-				ManagedBy:          managedBy,
-				Tags:               conn.Tags,
-				AccessModeRunbooks: conn.AccessModeRunbooks,
-				AccessModeExec:     conn.AccessModeExec,
-				AccessModeConnect:  conn.AccessModeConnect,
-				AccessSchema:       conn.AccessSchema,
-				GuardRailRules:     conn.GuardRailRules,
+				ID:      conn.ID,
+				Name:    conn.Name,
+				Command: conn.Command,
+				Type:    conn.Type,
+				SubType: conn.SubType.String,
+				// it should return empty to avoid leaking sensitive content
+				// in the future we plan to know which entry is sensitive or not
+				Secrets:             nil,
+				DefaultDatabase:     string(defaultDB),
+				AgentId:             conn.AgentID.String,
+				Status:              conn.Status,
+				Reviewers:           conn.Reviewers,
+				RedactEnabled:       conn.RedactEnabled,
+				RedactTypes:         conn.RedactTypes,
+				ManagedBy:           managedBy,
+				Tags:                conn.Tags,
+				ConnectionTags:      conn.ConnectionTags,
+				AccessModeRunbooks:  conn.AccessModeRunbooks,
+				AccessModeExec:      conn.AccessModeExec,
+				AccessModeConnect:   conn.AccessModeConnect,
+				AccessSchema:        conn.AccessSchema,
+				GuardRailRules:      conn.GuardRailRules,
+				JiraIssueTemplateID: conn.JiraIssueTemplateID.String,
 			})
 		}
 
@@ -323,7 +337,7 @@ func List(c *gin.Context) {
 //
 //	@Summary		Get Connection
 //	@Description	Get resource by name or id
-//	@Tags			Core
+//	@Tags			Connections
 //	@Param			nameOrID	path	string	true	"Name or UUID of the connection"
 //	@Produce		json
 //	@Success		200		{object}	openapi.Connection
@@ -332,7 +346,6 @@ func List(c *gin.Context) {
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	conn, err := models.GetConnectionByNameOrID(ctx.OrgID, c.Param("nameOrID"))
-	// conn, err := pgconnections.New().FetchOneByNameOrID(ctx, c.Param("nameOrID"))
 	if err != nil {
 		log.Errorf("failed fetching connection, err=%v", err)
 		sentry.CaptureException(err)
@@ -355,31 +368,37 @@ func Get(c *gin.Context) {
 	if conn.ManagedBy.Valid {
 		managedBy = &conn.ManagedBy.String
 	}
+	defaultDB, _ := base64.StdEncoding.DecodeString(conn.Envs["envvar:DB"])
+	if len(defaultDB) == 0 {
+		defaultDB = []byte(``)
+	}
 	c.JSON(http.StatusOK, openapi.Connection{
-		ID:                 conn.ID,
-		Name:               conn.Name,
-		Command:            conn.Command,
-		Type:               conn.Type,
-		SubType:            conn.SubType.String,
-		Secrets:            coerceToAnyMap(conn.Envs),
-		AgentId:            conn.AgentID.String,
-		Status:             conn.Status,
-		Reviewers:          conn.Reviewers,
-		RedactEnabled:      conn.RedactEnabled,
-		RedactTypes:        conn.RedactTypes,
-		ManagedBy:          managedBy,
-		Tags:               conn.Tags,
-		AccessModeRunbooks: conn.AccessModeRunbooks,
-		AccessModeExec:     conn.AccessModeExec,
-		AccessModeConnect:  conn.AccessModeConnect,
-		AccessSchema:       conn.AccessSchema,
-		GuardRailRules:     conn.GuardRailRules,
+		ID:                  conn.ID,
+		Name:                conn.Name,
+		Command:             conn.Command,
+		Type:                conn.Type,
+		SubType:             conn.SubType.String,
+		Secrets:             coerceToAnyMap(conn.Envs),
+		DefaultDatabase:     string(defaultDB),
+		AgentId:             conn.AgentID.String,
+		Status:              conn.Status,
+		Reviewers:           conn.Reviewers,
+		RedactEnabled:       conn.RedactEnabled,
+		RedactTypes:         conn.RedactTypes,
+		ManagedBy:           managedBy,
+		Tags:                conn.Tags,
+		ConnectionTags:      conn.ConnectionTags,
+		AccessModeRunbooks:  conn.AccessModeRunbooks,
+		AccessModeExec:      conn.AccessModeExec,
+		AccessModeConnect:   conn.AccessModeConnect,
+		AccessSchema:        conn.AccessSchema,
+		GuardRailRules:      conn.GuardRailRules,
+		JiraIssueTemplateID: conn.JiraIssueTemplateID.String,
 	})
 }
 
 // FetchByName fetches a connection based in access control rules
 func FetchByName(ctx pgrest.Context, connectionName string) (*models.Connection, error) {
-	// conn, err := pgconnections.New().FetchOneByNameOrID(ctx, connectionName)
 	conn, err := models.GetConnectionByNameOrID(ctx.GetOrgID(), connectionName)
 	if err != nil {
 		return nil, err
@@ -398,9 +417,9 @@ func FetchByName(ctx pgrest.Context, connectionName string) (*models.Connection,
 //
 //	@Summary		List Databases
 //	@Description	List all available databases for a database connection
-//	@Tags			Core
+//	@Tags			Connections
 //	@Produce		json
-//	@Param			nameOrID	path	string	true	"Name or UUID of the connection"
+//	@Param			nameOrID	path		string	true	"Name or UUID of the connection"
 //	@Success		200			{object}	openapi.ConnectionDatabaseListResponse
 //	@Failure		400,404,500	{object}	openapi.HTTPError
 //	@Router			/connections/{nameOrID}/databases [get]
@@ -438,18 +457,20 @@ ORDER BY datname;`
 
 	case pb.ConnectionTypeMongoDB:
 		script = `
+// if (typeof noVerbose === 'function') noVerbose();
+// if (typeof config !== 'undefined') config.verbosity = 0;
+
 var dbs = db.adminCommand('listDatabases');
 var result = [];
 dbs.databases.forEach(function(database) {
-	if (!['admin', 'local', 'config'].includes(database.name)) {
-			result.push({
+	result.push({
 					"database_name": database.name
-			});
-	}
+	});
 });
-printjson(result);`
+JSON.stringify(result);`
 
 	default:
+		log.Warnf("unsupported database type: %v", currentConnectionType)
 		c.JSON(http.StatusBadRequest, gin.H{"message": "unsupported database type"})
 		return
 	}
@@ -461,7 +482,7 @@ printjson(result);`
 		BearerToken:    getAccessToken(c),
 		UserAgent:      userAgent,
 		// it sets the execution to perform plain executions
-		Verb: proto.ClientVerbPlainExec,
+		Verb: pb.ClientVerbPlainExec,
 	})
 	if err != nil {
 		log.Error(err)
@@ -483,6 +504,7 @@ printjson(result);`
 	select {
 	case outcome := <-respCh:
 		if outcome.ExitCode != 0 {
+			log.Errorf("failed issuing plain exec: %s, output=%v", outcome.String(), outcome.Output)
 			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("command failed: %s", outcome.Output)})
 			return
 		}
@@ -492,7 +514,9 @@ printjson(result);`
 
 		if currentConnectionType == pb.ConnectionTypeMongoDB {
 			var result []map[string]interface{}
-			if err := json.Unmarshal([]byte(outcome.Output), &result); err != nil {
+			output := cleanMongoOutput(outcome.Output)
+			if err := json.Unmarshal([]byte(output), &result); err != nil {
+				log.Errorf("failed parsing mongo response: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse MongoDB response: %v", err)})
 				return
 			}
@@ -504,6 +528,7 @@ printjson(result);`
 		} else {
 			databases, err = parseDatabaseCommandOutput(outcome.Output)
 			if err != nil {
+				log.Errorf("failed parsing command output response: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse response: %v", err)})
 				return
 			}
@@ -523,17 +548,17 @@ printjson(result);`
 //
 //	@Summary		Get Database Schema
 //	@Description	Get detailed schema information including tables, views, columns and indexes
-//	@Tags			Core
+//	@Tags			Connections
 //	@Produce		json
-//	@Param			nameOrID	path	string	true	"Name or UUID of the connection"
-//	@Param			database	path	string	true	"Name of the database"
+//	@Param			nameOrID	path		string	true	"Name or UUID of the connection"
+//	@Param			database	path		string	true	"Name of the database"
 //	@Success		200			{object}	openapi.ConnectionSchemaResponse
 //	@Failure		400,404,500	{object}	openapi.HTTPError
 //	@Router			/connections/{nameOrID}/schemas [get]
 func GetDatabaseSchemas(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	connNameOrID := c.Param("nameOrID")
-	dbName := c.Query("database") // Criar uma regex para validar o nome do banco de dados e remover sql injectionn 422
+	dbName := c.Query("database")
 
 	// Validate database name to prevent SQL injection
 	if dbName != "" {
@@ -617,6 +642,7 @@ func GetDatabaseSchemas(c *gin.Context) {
 	select {
 	case outcome := <-respCh:
 		if outcome.ExitCode != 0 {
+			log.Errorf("failed issuing plain exec: %s, output=%v", outcome.String(), outcome.Output)
 			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to get schema: %s", outcome.Output)})
 			return
 		}
@@ -625,16 +651,26 @@ func GetDatabaseSchemas(c *gin.Context) {
 		var err error
 
 		if currentConnectionType == pb.ConnectionTypeMongoDB {
-			schema, err = parseMongoDBSchema(outcome.Output)
+			output := cleanMongoOutput(outcome.Output)
+			schema, err = parseMongoDBSchema(output)
 		} else {
 			schema, err = parseSQLSchema(outcome.Output, currentConnectionType)
 		}
 
 		if err != nil {
+			log.Errorf("failed parsing schema response: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse schema: %v", err)})
 			return
 		}
 
+		if c.Request.Method == "HEAD" {
+			contentLength := -1
+			if jsonBody, err := json.Marshal(schema); err == nil {
+				contentLength = len(jsonBody)
+			}
+			c.Writer.Header().Set("Content-Length", fmt.Sprintf("%v", contentLength))
+			return
+		}
 		c.JSON(http.StatusOK, schema)
 
 	case <-timeoutCtx.Done():

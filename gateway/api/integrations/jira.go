@@ -34,16 +34,22 @@ func Get(c *gin.Context) {
 		c.JSON(http.StatusOK, nil)
 		return
 	}
+
+	// Created as a temporary solution so that non-admin users can check if the integration is active
+	// TODO: Implement a more robust solution so that non-admin users can check if the integration is active
+	if !ctx.IsAdmin() {
+		dbJiraIntegration.APIToken = ""
+	}
+
 	c.JSON(http.StatusOK, openapi.JiraIntegration{
-		ID:         dbJiraIntegration.ID,
-		OrgID:      dbJiraIntegration.OrgID,
-		URL:        dbJiraIntegration.URL,
-		User:       dbJiraIntegration.User,
-		ProjectKey: dbJiraIntegration.ProjectKey,
-		APIToken:   dbJiraIntegration.APIToken,
-		Status:     openapi.JiraIntegrationStatus(dbJiraIntegration.Status),
-		CreatedAt:  dbJiraIntegration.CreatedAt,
-		UpdatedAt:  dbJiraIntegration.UpdatedAt,
+		ID:        dbJiraIntegration.ID,
+		OrgID:     dbJiraIntegration.OrgID,
+		URL:       dbJiraIntegration.URL,
+		User:      dbJiraIntegration.User,
+		APIToken:  dbJiraIntegration.APIToken,
+		Status:    openapi.JiraIntegrationStatus(dbJiraIntegration.Status),
+		CreatedAt: dbJiraIntegration.CreatedAt,
+		UpdatedAt: dbJiraIntegration.UpdatedAt,
 	})
 }
 
@@ -79,13 +85,12 @@ func Post(c *gin.Context) {
 	}
 
 	newIntegration := models.JiraIntegration{
-		ID:         uuid.NewString(),
-		OrgID:      ctx.GetOrgID(),
-		URL:        req.URL,
-		User:       req.User,
-		APIToken:   req.APIToken,
-		ProjectKey: req.ProjectKey,
-		Status:     models.JiraIntegrationStatus(req.Status),
+		ID:       uuid.NewString(),
+		OrgID:    ctx.GetOrgID(),
+		URL:      req.URL,
+		User:     req.User,
+		APIToken: req.APIToken,
+		Status:   models.JiraIntegrationStatus(req.Status),
 	}
 
 	createdIntegration, err := models.CreateJiraIntegration(ctx.OrgID, &newIntegration)
@@ -131,11 +136,10 @@ func Put(c *gin.Context) {
 	}
 
 	updatedIntegration, err := models.UpdateJiraIntegration(ctx.OrgID, &models.JiraIntegration{
-		URL:        req.URL,
-		User:       req.User,
-		APIToken:   req.APIToken,
-		ProjectKey: req.ProjectKey,
-		Status:     models.JiraIntegrationStatus(req.Status),
+		URL:      req.URL,
+		User:     req.User,
+		APIToken: req.APIToken,
+		Status:   models.JiraIntegrationStatus(req.Status),
 	})
 	if err != nil {
 		log.Errorf("failed updating Jira integration, err=%v", err)
@@ -150,14 +154,13 @@ func Put(c *gin.Context) {
 // Helper function to convert jiraintegration.JiraIntegration to openapi.JiraIntegration
 func toOpenAPIJiraIntegration(integration *models.JiraIntegration) openapi.JiraIntegration {
 	return openapi.JiraIntegration{
-		ID:         integration.ID,
-		OrgID:      integration.OrgID,
-		URL:        integration.URL,
-		User:       integration.User,
-		ProjectKey: integration.ProjectKey,
-		APIToken:   integration.APIToken,
-		Status:     openapi.JiraIntegrationStatus(integration.Status),
-		CreatedAt:  integration.CreatedAt,
-		UpdatedAt:  integration.UpdatedAt,
+		ID:        integration.ID,
+		OrgID:     integration.OrgID,
+		URL:       integration.URL,
+		User:      integration.User,
+		APIToken:  integration.APIToken,
+		Status:    openapi.JiraIntegrationStatus(integration.Status),
+		CreatedAt: integration.CreatedAt,
+		UpdatedAt: integration.UpdatedAt,
 	}
 }

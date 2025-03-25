@@ -17,7 +17,7 @@
                             (rf/dispatch [:connections->set-connections connections])
 
                             (rf/dispatch [:fetch {:method "GET"
-                                                  :uri (str "/plugins/runbooks/templates")
+                                                  :uri "/plugins/runbooks/templates"
                                                   :on-success (fn [runbooks]
                                                                 (let [runbooks-filtered-by-connections
                                                                       (filterv
@@ -26,19 +26,31 @@
                                                                        (:items runbooks))]
 
                                                                   (rf/dispatch [:runbooks-plugin->set-runbooks runbooks-filtered-by-connections])
-                                                                  (rf/dispatch [:runbooks-plugin->set-filtered-runbooks
-                                                                                (map #(into {} {:name (:name %)})
-                                                                                     runbooks-filtered-by-connections)])))
+
+                                                                  (let [search-term (get-in db [:search :term] "")]
+                                                                    (if (empty? search-term)
+                                                                      (rf/dispatch [:runbooks-plugin->set-filtered-runbooks
+                                                                                    (map #(into {} {:name (:name %)})
+                                                                                         runbooks-filtered-by-connections)])
+                                                                      (rf/dispatch [:search/filter-runbooks search-term])))))
                                                   :on-failure (fn []
                                                                 (rf/dispatch [:runbooks-plugin->error-runbooks]))}])))}]]]
     :db (assoc db :runbooks-plugin->runbooks {:status :loading :data nil})}))
 
-(rf/reg-event-db
+(rf/reg-event-fx
  :runbooks-plugin->set-runbooks
  (fn
-   [db [_ runbooks]]
-   (assoc db :runbooks-plugin->runbooks {:status :ready
-                                         :data runbooks})))
+   [{:keys [db]} [_ runbooks]]
+   (let [search-term (get-in db [:search :term] "")]
+     {:db (assoc db :runbooks-plugin->runbooks {:status :ready
+                                                :data runbooks})
+      ;; Aplicar o filtro atual aos novos runbooks carregados
+      :fx [(when (seq search-term)
+             [:dispatch [:search/filter-runbooks search-term]])
+           ;; Caso contrário, definir todos os runbooks como filtrados
+           (when (empty? search-term)
+             [:dispatch [:runbooks-plugin->set-filtered-runbooks
+                         (map #(into {} {:name (:name %)}) runbooks)]])]})))
 
 (rf/reg-event-fx
  :runbooks-plugin->get-runbooks-by-connection

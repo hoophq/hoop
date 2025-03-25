@@ -11,7 +11,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/api/apiroutes"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/clientexec"
+	"github.com/hoophq/hoop/gateway/models"
 	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
 	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -46,6 +49,7 @@ func RunReviewedExec(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
 	sessionId := c.Param("session_id")
+	apiroutes.SetSidSpanAttr(c, sessionId)
 	review, err := pgreview.New().FetchOneBySid(ctx, sessionId)
 	if err != nil {
 		log.Errorf("failed retrieving review, err=%v", err)
@@ -71,21 +75,23 @@ func RunReviewedExec(c *gin.Context) {
 	lockExec(sessionId)
 	defer unlockExec(sessionId)
 
-	if review.Type != ReviewTypeOneTime {
+	if review.Type != string(openapi.ReviewTypeOneTime) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "session not found"})
 		return
 	}
 
-	session, err := sessionstorage.FindOne(ctx, sessionId)
-	if err != nil {
+	session, err := models.GetSessionByID(ctx.OrgID, sessionId)
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "session not found"})
+		return
+	case nil:
+	default:
 		log.Errorf("failed fetching session, reason=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching sessions"})
 		return
 	}
-	if session == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "session not found"})
-		return
-	}
+
 	if session.UserEmail != ctx.UserEmail {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "only the creator can trigger this action"})
 		return
@@ -143,7 +149,7 @@ func RunReviewedExec(c *gin.Context) {
 	go func() {
 		defer func() { close(respCh); client.Close() }()
 		select {
-		case respCh <- client.Run([]byte(session.Script["data"]), review.InputEnvVars, review.InputClientArgs...):
+		case respCh <- client.Run([]byte(session.BlobInput), review.InputEnvVars, review.InputClientArgs...):
 		default:
 		}
 	}()

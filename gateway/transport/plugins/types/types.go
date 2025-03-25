@@ -12,6 +12,18 @@ import (
 
 type GenericMap map[string]any
 
+type PacketErr struct {
+	exitCode *int
+	msg      string
+}
+
+func (e PacketErr) Error() string  { return e.msg }
+func (e PacketErr) ExitCode() *int { return e.exitCode }
+
+func NewPacketErr(msg string, exitCode *int) error {
+	return &PacketErr{msg: msg, exitCode: exitCode}
+}
+
 type Context struct {
 	Context context.Context
 	// Session ID
@@ -28,12 +40,13 @@ type Context struct {
 	UserGroups     []string
 
 	// Connection attributes
-	ConnectionID      string
-	ConnectionName    string
-	ConnectionType    string
-	ConnectionSubType string
-	ConnectionCommand []string
-	ConnectionSecret  map[string]any
+	ConnectionID                        string
+	ConnectionName                      string
+	ConnectionType                      string
+	ConnectionSubType                   string
+	ConnectionCommand                   []string
+	ConnectionSecret                    map[string]any
+	ConnectionJiraTransitionNameOnClose string
 
 	// Agent attributes
 	AgentID   string
@@ -46,10 +59,6 @@ type Context struct {
 	// Gateway client attributes
 	ClientVerb   string
 	ClientOrigin string
-
-	Script   string
-	Labels   map[string]string
-	Metadata map[string]any
 
 	ParamsData GenericMap
 }

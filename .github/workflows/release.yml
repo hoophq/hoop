@@ -25,7 +25,6 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: ">=1.22.4"
-          cache-dependency-path: "**/go.sum"
       - name: Test
         run: make test
 
@@ -60,9 +59,9 @@ jobs:
           GIT_TAG: ${{ env.GIT_TAG }}
         run: GOOS=darwin GOARCH=amd64 make build
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
-          name: dist-artifacts
+          name: dist-artifacts-${{ github.job }}
           path: dist/
 
   darwin-arm64:
@@ -96,9 +95,9 @@ jobs:
           GIT_TAG: ${{ env.GIT_TAG }}
         run: GOOS=darwin GOARCH=arm64 make build
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
-          name: dist-artifacts
+          name: dist-artifacts-${{ github.job }}
           path: dist/
 
   windows-amd64:
@@ -132,9 +131,9 @@ jobs:
           GIT_TAG: ${{ env.GIT_TAG }}
         run: GOOS=windows GOARCH=amd64 make build
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
-          name: dist-artifacts
+          name: dist-artifacts-${{ github.job }}
           path: dist/
 
   windows-arm64:
@@ -168,9 +167,9 @@ jobs:
           GIT_TAG: ${{ env.GIT_TAG }}
         run: GOOS=windows GOARCH=arm64 make build
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
-          name: dist-artifacts
+          name: dist-artifacts-${{ github.job }}
           path: dist/
 
   linux-amd64:
@@ -208,9 +207,9 @@ jobs:
           INTERCOM_HMAC_KEY: ${{ secrets.INTERCOM_HMAC_KEY }}
         run: GOOS=linux GOARCH=amd64 make build
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
-          name: dist-artifacts
+          name: dist-artifacts-${{ github.job }}
           path: dist/
 
   linux-arm64:
@@ -248,9 +247,9 @@ jobs:
           INTERCOM_HMAC_KEY: ${{ secrets.INTERCOM_HMAC_KEY }}
         run: GOOS=linux GOARCH=arm64 make build
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
-          name: dist-artifacts
+          name: dist-artifacts-${{ github.job }}
           path: dist/
 
   build-webapp:
@@ -278,9 +277,9 @@ jobs:
           cache-dependency-path: webapp/package-lock.json
       - name: Build
         run: make build-webapp
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
-          name: dist-artifacts
+          name: dist-artifacts-${{ github.job }}
           path: dist/
 
   docker-publish:
@@ -310,9 +309,10 @@ jobs:
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
-          name: "dist-artifacts"
+          pattern: dist-artifacts-*
+          merge-multiple: true
           path: dist/
       - name: Extract Webapp
         run: make extract-webapp
@@ -352,9 +352,10 @@ jobs:
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
-          name: "dist-artifacts"
+          pattern: dist-artifacts-*
+          merge-multiple: true
           path: dist/
       - name: Build and Push
         uses: docker/build-push-action@v4
@@ -393,9 +394,10 @@ jobs:
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
-          name: "dist-artifacts"
+          pattern: dist-artifacts-*
+          merge-multiple: true
           path: dist/
       - name: Extract Webapp
         run: make extract-webapp
@@ -445,9 +447,10 @@ jobs:
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
-          name: "dist-artifacts"
+          pattern: dist-artifacts-*
+          merge-multiple: true
           path: dist/
       - name: Extract Webapp
         run: make extract-webapp
@@ -520,10 +523,11 @@ jobs:
       - name: Checkout Hoop
         uses: actions/checkout@v3
 
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         id: download
         with:
-          name: "dist-artifacts"
+          pattern: dist-artifacts-*
+          merge-multiple: true
           path: dist/
 
       - uses: matbour/setup-sentry-cli@v2
@@ -547,6 +551,8 @@ jobs:
       - name: Build Helm Chart
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
+          GITHUB_CONTAINER_REGISTRY_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          GITHUB_USERNAME: ${{ github.actor }}
         run: make build-helm-chart
 
       - name: Publish Release

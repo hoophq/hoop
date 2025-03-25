@@ -56,7 +56,9 @@ const (
 	OptionConnectionInfo OptionKey = "connection-info"
 	LocalhostAddr                  = "127.0.0.1:8010"
 
-	MaxRecvMsgSize int = 1024 * 1024 * 16
+	// MaxRecvMsgSize defines the maximum message size in bytes that can be received.
+	// Set to allow protocols to transmit larger data chunks in a single packet.
+	MaxRecvMsgSize int = 1024 * 1024 * 17 // 17 MiB
 )
 
 func WithOption(optKey OptionKey, val string) *ClientOptions {

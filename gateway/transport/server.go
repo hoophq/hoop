@@ -99,9 +99,8 @@ func (s *Server) PreConnect(ctx context.Context, req *pb.PreConnectRequest) (*pb
 	orgCtx := pgrest.NewOrgContext(orgID)
 	resp := connectionrequests.AgentPreConnect(orgCtx, agentID, req)
 	if resp.Message != "" {
-		err := fmt.Errorf("failed processing pre-connect, org=%v, agent=%v, reason=%v", orgID, agentName, err)
-		log.Warn(err)
-		sentry.CaptureException(err)
+		log.Warnf("failed processing pre-connect, org=%v, agent=%v, reason=%v",
+			orgID, agentName, resp.Message)
 	}
 	connectionstatus.SetOnlinePreConnect(pgrest.NewOrgContext(orgID), streamtypes.NewStreamID(agentID, req.Name))
 	return resp, nil
@@ -152,12 +151,13 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 		UserSlackID:    gwctx.UserContext.SlackID,
 		UserGroups:     gwctx.UserContext.UserGroups,
 
-		ConnectionID:      gwctx.Connection.ID,
-		ConnectionName:    gwctx.Connection.Name,
-		ConnectionType:    gwctx.Connection.Type,
-		ConnectionSubType: gwctx.Connection.SubType,
-		ConnectionCommand: gwctx.Connection.CmdEntrypoint,
-		ConnectionSecret:  gwctx.Connection.Secrets,
+		ConnectionID:                        gwctx.Connection.ID,
+		ConnectionName:                      gwctx.Connection.Name,
+		ConnectionType:                      gwctx.Connection.Type,
+		ConnectionSubType:                   gwctx.Connection.SubType,
+		ConnectionCommand:                   gwctx.Connection.CmdEntrypoint,
+		ConnectionSecret:                    gwctx.Connection.Secrets,
+		ConnectionJiraTransitionNameOnClose: gwctx.Connection.JiraTransitionNameOnSessionClose,
 
 		AgentID:   gwctx.Connection.AgentID,
 		AgentName: gwctx.Connection.AgentName,
@@ -166,12 +166,6 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 		// added when initializing the streamclient proxy
 		ClientVerb:   "",
 		ClientOrigin: "",
-
-		// TODO: deprecate it and allow the
-		// audit plugin to update these attributes
-		Script:   "",
-		Labels:   nil,
-		Metadata: nil,
 
 		ParamsData: map[string]any{},
 	}

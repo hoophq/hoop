@@ -3,6 +3,7 @@ package transport
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/common/apiutils"
@@ -17,6 +18,7 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
+	pluginslack "github.com/hoophq/hoop/gateway/transport/plugins/slack"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
 	"google.golang.org/grpc/codes"
@@ -136,13 +138,14 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 				return err
 			}
 			log.Warnf("received error from client, err=%v", err)
-			sentry.CaptureException(err)
 			return status.Errorf(codes.Internal, "internal error, failed receiving client packet")
 		}
-		// skip old/new clients
-		if pkt.Type == pbgateway.KeepAlive || pkt.Type == "KeepAlive" {
+
+		// do not process any system packets issued by the user
+		if handled := handleSystemPacketRequests(pkt.Type); handled {
 			continue
 		}
+
 		if pkt.Spec == nil {
 			pkt.Spec = make(map[string][]byte)
 		}
@@ -181,10 +184,11 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 
 func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.Packet, pctx plugintypes.Context) error {
 	extContext := transportext.Context{
-		OrgID:          pctx.OrgID,
-		SID:            pctx.SID,
-		ConnectionName: pctx.ConnectionName,
-		Verb:           pctx.ClientVerb,
+		OrgID:                               pctx.OrgID,
+		SID:                                 pctx.SID,
+		ConnectionName:                      pctx.ConnectionName,
+		ConnectionJiraTransitionNameOnClose: pctx.ConnectionJiraTransitionNameOnClose,
+		Verb:                                pctx.ClientVerb,
 	}
 
 	if err := transportext.OnReceive(extContext, pkt); err != nil {
@@ -270,7 +274,23 @@ func clientArgsDecode(spec map[string][]byte) []string {
 	return clientArgs
 }
 
+func handleSystemPacketRequests(pktType string) (handled bool) {
+	if pktType == pbgateway.KeepAlive || strings.HasPrefix(pktType, "Sys") {
+		handled = true
+	}
+	return
+}
+
 func (s *Server) ReviewStatusChange(rev *types.Review) {
+	if rev.Status == types.ReviewStatusApproved {
+		pluginslack.SendApprovedMessage(
+			rev.OrgId,
+			rev.ReviewOwner.SlackID,
+			rev.Session,
+			s.IDProvider.ApiURL,
+		)
+	}
+
 	proxyStream := streamclient.GetProxyStream(rev.Session)
 	if proxyStream != nil {
 		payload := []byte(rev.Input)

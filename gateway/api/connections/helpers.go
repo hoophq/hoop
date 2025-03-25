@@ -21,7 +21,11 @@ import (
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
-var tagsValRe, _ = regexp.Compile(`^[a-zA-Z0-9_]+(?:[-\.]?[a-zA-Z0-9_]+){0,128}$`)
+var (
+	tagsValRe, _           = regexp.Compile(`^[a-zA-Z0-9_]+(?:[-\.]?[a-zA-Z0-9_]+){0,128}$`)
+	connectionTagsKeyRe, _ = regexp.Compile(`^[a-zA-Z0-9_]+(?:[-\./]?[a-zA-Z0-9_]+){0,}$`)
+	connectionTagsValRe, _ = regexp.Compile(`^[a-zA-Z0-9-_\+=@\/:\s]+$`)
+)
 
 func accessControlAllowed(ctx pgrest.Context) (func(connName string) bool, error) {
 	p, err := pgplugins.New().FetchOne(ctx, plugintypes.PluginAccessControlName)
@@ -51,30 +55,9 @@ func setConnectionDefaults(req *openapi.Connection) {
 	if req.Secrets == nil {
 		req.Secrets = map[string]any{}
 	}
-	var defaultCommand []string
-	defaultEnvVars := map[string]any{}
-	switch pb.ToConnectionType(req.Type, req.SubType) {
-	case pb.ConnectionTypePostgres:
-		defaultCommand = []string{"psql", "-v", "ON_ERROR_STOP=1", "-A", "-F\t", "-P", "pager=off", "-h", "$HOST", "-U", "$USER", "--port=$PORT", "$DB"}
-	case pb.ConnectionTypeMySQL:
-		defaultCommand = []string{"mysql", "-h$HOST", "-u$USER", "--port=$PORT", "-D$DB"}
-	case pb.ConnectionTypeMSSQL:
-		defaultEnvVars["envvar:INSECURE"] = base64.StdEncoding.EncodeToString([]byte(`false`))
-		defaultCommand = []string{
-			"sqlcmd", "--exit-on-error", "--trim-spaces", "-s\t", "-r",
-			"-S$HOST:$PORT", "-U$USER", "-d$DB", "-i/dev/stdin"}
-	case pb.ConnectionTypeOracleDB:
-		defaultEnvVars["envvar:LD_LIBRARY_PATH"] = base64.StdEncoding.EncodeToString([]byte(`/opt/oracle/instantclient_19_24`))
-		defaultCommand = []string{"sqlplus", "-s", "$USER/$PASS@$HOST:$PORT/$SID"}
-	case pb.ConnectionTypeMongoDB:
-		defaultEnvVars["envvar:OPTIONS"] = base64.StdEncoding.EncodeToString([]byte(`tls=true`))
-		defaultEnvVars["envvar:PORT"] = base64.StdEncoding.EncodeToString([]byte(`27017`))
-		defaultCommand = []string{"mongo", "--quiet", "mongodb://$USER:$PASS@$HOST:$PORT/?$OPTIONS"}
-		if connStr, ok := req.Secrets["envvar:CONNECTION_STRING"]; ok && connStr != nil {
-			defaultEnvVars = nil
-			defaultCommand = []string{"mongo", "--quiet", "$CONNECTION_STRING"}
-		}
-	}
+
+	hasMongoConnStr := req.Secrets["envvar:CONNECTION_STRING"] != ""
+	defaultCommand, defaultEnvVars := GetConnectionDefaults(req.Type, req.SubType, hasMongoConnStr)
 
 	if len(req.Command) == 0 {
 		req.Command = defaultCommand
@@ -85,6 +68,33 @@ func setConnectionDefaults(req *openapi.Connection) {
 			req.Secrets[key] = val
 		}
 	}
+}
+
+func GetConnectionDefaults(connType, connSubType string, useMongoConnStr bool) (cmd []string, envs map[string]any) {
+	envs = map[string]any{}
+	switch pb.ToConnectionType(connType, connSubType) {
+	case pb.ConnectionTypePostgres:
+		cmd = []string{"psql", "-v", "ON_ERROR_STOP=1", "-A", "-F\t", "-P", "pager=off", "-h", "$HOST", "-U", "$USER", "--port=$PORT", "$DB"}
+	case pb.ConnectionTypeMySQL:
+		cmd = []string{"mysql", "-h$HOST", "-u$USER", "--port=$PORT", "-D$DB"}
+	case pb.ConnectionTypeMSSQL:
+		envs["envvar:INSECURE"] = base64.StdEncoding.EncodeToString([]byte(`false`))
+		cmd = []string{
+			"sqlcmd", "--exit-on-error", "--trim-spaces", "-s\t", "-r",
+			"-S$HOST:$PORT", "-U$USER", "-d$DB", "-i/dev/stdin"}
+	case pb.ConnectionTypeOracleDB:
+		envs["envvar:LD_LIBRARY_PATH"] = base64.StdEncoding.EncodeToString([]byte(`/opt/oracle/instantclient_19_24`))
+		cmd = []string{"sqlplus", "-s", "$USER/$PASS@$HOST:$PORT/$SID"}
+	case pb.ConnectionTypeMongoDB:
+		envs["envvar:OPTIONS"] = base64.StdEncoding.EncodeToString([]byte(`tls=true`))
+		envs["envvar:PORT"] = base64.StdEncoding.EncodeToString([]byte(`27017`))
+		cmd = []string{"mongo", "mongodb://$USER:$PASS@$HOST:$PORT/?$OPTIONS", "--quiet"}
+		if useMongoConnStr {
+			envs = nil
+			cmd = []string{"mongo", "$CONNECTION_STRING", "--quiet"}
+		}
+	}
+	return
 }
 
 func coerceToMapString(src map[string]any) map[string]string {
@@ -108,9 +118,34 @@ func validateConnectionRequest(req openapi.Connection) error {
 	if err := apivalidation.ValidateResourceName(req.Name); err != nil {
 		errors = append(errors, err.Error())
 	}
+	// TODO: deprecated
 	for _, val := range req.Tags {
 		if !tagsValRe.MatchString(val) {
 			errors = append(errors, "tags: values must contain between 1 and 128 alphanumeric characters, it may include (-), (_) or (.) characters")
+		}
+	}
+	if len(errors) > 0 {
+		return fmt.Errorf(strings.Join(errors, "; "))
+	}
+
+	if len(req.ConnectionTags) > 10 {
+		return fmt.Errorf("max tag association reached (10)")
+	}
+
+	for key, val := range req.ConnectionTags {
+		// if strings.HasPrefix(key, "hoop.dev/") {
+		// 	errors = append(errors, "connection_tags: keys must not use the reserverd prefix hoop.dev/")
+		// 	continue
+		// }
+
+		if (len(key) < 1 || len(key) > 64) || !connectionTagsKeyRe.MatchString(key) {
+			errors = append(errors,
+				fmt.Sprintf("connection_tags (%v), keys must contain between 1 and 64 alphanumeric characters, ", key)+
+					"it may include (-), (_), (/), or (.) characters and it must not end with (-), (/) or (-)")
+		}
+		if (len(val) < 1 || len(val) > 256) || !connectionTagsValRe.MatchString(val) {
+			errors = append(errors, fmt.Sprintf("connection_tags (%v), values must contain between 1 and 256 alphanumeric characters, ", key)+
+				"it may include space, (-), (_), (/), (+), (@), (:), (=) or (.) characters")
 		}
 	}
 	if len(errors) > 0 {
@@ -136,6 +171,8 @@ func validateListOptions(urlValues url.Values) (o models.ConnectionFilterOption,
 			o.SubType = values[0]
 		case "managed_by":
 			o.ManagedBy = values[0]
+		case "tagSelector":
+			o.TagSelector = values[0]
 		case "tags":
 			if len(values[0]) > 0 {
 				for _, tagVal := range strings.Split(values[0], ",") {
@@ -149,7 +186,7 @@ func validateListOptions(urlValues url.Values) (o models.ConnectionFilterOption,
 		default:
 			continue
 		}
-		if !reSanitize.MatchString(values[0]) {
+		if key != "tagSelector" && !reSanitize.MatchString(values[0]) {
 			return o, errInvalidOptionVal
 		}
 	}
@@ -291,36 +328,11 @@ func parseMongoDBSchema(output string) (openapi.ConnectionSchemaResponse, error)
 
 		// Add column
 		column := openapi.ConnectionColumn{
-			Name:         getString(row, "column_name"),
-			Type:         getString(row, "column_type"),
-			Nullable:     !getBool(row, "not_null"),
-			DefaultValue: getString(row, "column_default"),
-			IsPrimaryKey: getBool(row, "is_primary_key"),
-			IsForeignKey: getBool(row, "is_foreign_key"),
+			Name:     getString(row, "column_name"),
+			Type:     getString(row, "column_type"),
+			Nullable: !getBool(row, "not_null"),
 		}
 		table.Columns = append(table.Columns, column)
-
-		// Add index if present
-		if indexName := getString(row, "index_name"); indexName != "" {
-			found := false
-			for _, idx := range table.Indexes {
-				if idx.Name == indexName {
-					found = true
-					break
-				}
-			}
-			if !found {
-				index := openapi.ConnectionIndex{
-					Name:      indexName,
-					IsUnique:  getBool(row, "index_is_unique"),
-					IsPrimary: getBool(row, "index_is_primary"),
-				}
-				if cols := getString(row, "index_columns"); cols != "" {
-					index.Columns = strings.Split(cols, ",")
-				}
-				table.Indexes = append(table.Indexes, index)
-			}
-		}
 	}
 
 	// Convert map to slice
@@ -337,10 +349,16 @@ func parseSQLSchema(output string, connType pb.ConnectionType) (openapi.Connecti
 	lines := strings.Split(output, "\n")
 	var result []map[string]interface{}
 
-	// MSSQL has a different output format
+	// MSSQL has a different output format with header and dashes
 	startLine := 0
 	if connType == pb.ConnectionTypeMSSQL {
-		startLine = 2 // Skip header and dashes for MSSQL
+		for i, line := range lines {
+			// Skip until we find the line with dashes
+			if strings.Contains(line, "----") {
+				startLine = i // Start at the next line after dashes
+				break
+			}
+		}
 	}
 
 	for i, line := range lines {
@@ -350,27 +368,23 @@ func parseSQLSchema(output string, connType pb.ConnectionType) (openapi.Connecti
 		}
 
 		fields := strings.Split(line, "\t")
-		if len(fields) < 12 {
+		if len(fields) < 6 {
 			continue
 		}
 
-		row := map[string]interface{}{
-			"schema_name":    fields[0],
-			"object_type":    fields[1],
-			"object_name":    fields[2],
-			"column_name":    fields[3],
-			"column_type":    fields[4],
-			"not_null":       fields[5] == "t" || fields[5] == "1",
-			"column_default": fields[6],
-			"is_primary_key": fields[7] == "t" || fields[7] == "1",
-			"is_foreign_key": fields[8] == "t" || fields[8] == "1",
+		// MSSQL uses 1/0 for boolean values
+		notNull := fields[5] == "t" || fields[5] == "1"
+		if connType == pb.ConnectionTypeMSSQL {
+			notNull = fields[5] == "1"
 		}
 
-		if len(fields) > 9 && fields[9] != "" {
-			row["index_name"] = fields[9]
-			row["index_columns"] = strings.Split(fields[10], ",")
-			row["index_is_unique"] = fields[11] == "t" || fields[11] == "1"
-			row["index_is_primary"] = len(fields) > 12 && (fields[12] == "t" || fields[12] == "1")
+		row := map[string]interface{}{
+			"schema_name": fields[0],
+			"object_type": fields[1],
+			"object_name": fields[2],
+			"column_name": fields[3],
+			"column_type": fields[4],
+			"not_null":    notNull,
 		}
 
 		result = append(result, row)
@@ -386,7 +400,6 @@ func organizeSchemaResponse(rows []map[string]interface{}) openapi.ConnectionSch
 
 	for _, row := range rows {
 		schemaName := row["schema_name"].(string)
-		objectType := row["object_type"].(string)
 		objectName := row["object_name"].(string)
 
 		// Get or create schema
@@ -397,65 +410,25 @@ func organizeSchemaResponse(rows []map[string]interface{}) openapi.ConnectionSch
 		}
 
 		column := openapi.ConnectionColumn{
-			Name:         row["column_name"].(string),
-			Type:         row["column_type"].(string),
-			Nullable:     !row["not_null"].(bool),
-			DefaultValue: getString(row, "column_default"),
-			IsPrimaryKey: row["is_primary_key"].(bool),
-			IsForeignKey: row["is_foreign_key"].(bool),
+			Name:     row["column_name"].(string),
+			Type:     row["column_type"].(string),
+			Nullable: !row["not_null"].(bool),
 		}
 
-		if objectType == "table" {
-			// Find or create table
-			var table *openapi.ConnectionTable
-			for i := range schema.Tables {
-				if schema.Tables[i].Name == objectName {
-					table = &schema.Tables[i]
-					break
-				}
+		// Find or create table
+		var table *openapi.ConnectionTable
+		for i := range schema.Tables {
+			if schema.Tables[i].Name == objectName {
+				table = &schema.Tables[i]
+				break
 			}
-			if table == nil {
-				schema.Tables = append(schema.Tables, openapi.ConnectionTable{Name: objectName})
-				table = &schema.Tables[len(schema.Tables)-1]
-			}
-
-			// Add column
-			table.Columns = append(table.Columns, column)
-
-			// Add index if present
-			if indexName, ok := row["index_name"].(string); ok && indexName != "" {
-				found := false
-				for _, idx := range table.Indexes {
-					if idx.Name == indexName {
-						found = true
-						break
-					}
-				}
-				if !found {
-					table.Indexes = append(table.Indexes, openapi.ConnectionIndex{
-						Name:      indexName,
-						Columns:   row["index_columns"].([]string),
-						IsUnique:  row["index_is_unique"].(bool),
-						IsPrimary: row["index_is_primary"].(bool),
-					})
-				}
-			}
-		} else {
-			// Find or create view
-			var view *openapi.ConnectionView
-			for i := range schema.Views {
-				if schema.Views[i].Name == objectName {
-					view = &schema.Views[i]
-					break
-				}
-			}
-			if view == nil {
-				schema.Views = append(schema.Views, openapi.ConnectionView{Name: objectName})
-				view = &schema.Views[len(schema.Views)-1]
-			}
-
-			view.Columns = append(view.Columns, column)
 		}
+		if table == nil {
+			schema.Tables = append(schema.Tables, openapi.ConnectionTable{Name: objectName})
+			table = &schema.Tables[len(schema.Tables)-1]
+		}
+
+		table.Columns = append(table.Columns, column)
 	}
 
 	// Convert map to slice
@@ -501,4 +474,38 @@ func validateDatabaseName(dbName string) error {
 	}
 
 	return nil
+}
+
+func cleanMongoOutput(output string) string {
+	// If the string is empty,
+	if len(output) == 0 {
+		return ""
+	}
+
+	output = strings.TrimSpace(output)
+	startJSON := -1
+
+	// Addicional protection after TrimSpace
+	if len(output) == 0 {
+		return ""
+	}
+
+	for i, char := range output {
+		if char == '[' || char == '{' {
+			startJSON = i
+			break
+		}
+	}
+
+	// If don't find the start of JSON, return empty string
+	if startJSON < 0 {
+		return ""
+	}
+
+	// Ensure we don't have a panic with the slice
+	if startJSON >= len(output) {
+		return ""
+	}
+
+	return output[startJSON:]
 }

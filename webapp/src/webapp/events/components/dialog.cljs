@@ -10,6 +10,7 @@
                                 :type :info
                                 :text ""
                                 :text-action-button ""
+                                :action-button? true
                                 :title ""})}))
 
 (rf/reg-event-fx
@@ -32,5 +33,6 @@
                                 :type (:type data)
                                 :on-success (:on-success data)
                                 :text (:text data)
+                                :action-button? (:action-button? data)
                                 :text-action-button (:text-action-button data)
                                 :title (:title data)})}))

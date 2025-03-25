@@ -47,21 +47,24 @@ if [[ $WEBAPP_BUILD == "1" ]]; then
 fi
 
 docker build -t hoopdev -f ./scripts/dev/Dockerfile .
-mkdir -p ./dist/dev/
+mkdir -p ./dist/dev/bin
+cp ./scripts/dev/entrypoint.sh ./dist/dev/bin/entrypoint.sh
 
 VERSION="${VERSION:-unknown}"
-CGO_ENABLED=0 GOOS=linux go build -ldflags "-s -w -X github.com/hoophq/hoop/common/version.version=${VERSION}" -o ./dist/dev/hooplinux github.com/hoophq/hoop/client
+CGO_ENABLED=0 GOOS=linux go build \
+  -ldflags "-s -w -X github.com/hoophq/hoop/common/version.version=${VERSION} -X github.com/hoophq/hoop/client/proxy.defaultListenAddrValue=0.0.0.0" \
+  -o ./dist/dev/bin/hooplinux github.com/hoophq/hoop/client
 docker stop hoopdev &> /dev/null || true
 docker rm hoopdev &> /dev/null || true
 
 docker run --rm --name hoopdev \
-  -p 8008:8008 \
+  -p 2225:22 \
   -p 8009:8009 \
   -p 8010:8010 \
   --env-file=.env \
   --cap-add=NET_ADMIN \
-  -v ./scripts/dev/entrypoint.sh:/app/entrypoint.sh \
-  -v ./dist/dev/hooplinux:/app/hooplinux \
+  -v ./dist/dev/bin/:/app/bin/ \
+  -v ./dist/dev/root/.ssh:/root/.ssh \
   -v ./rootfs/app/migrations/:/app/migrations/ \
   -v ./dist/dev/resources/:/app/ui/ \
-  -it hoopdev /app/entrypoint.sh
+  -it hoopdev /app/bin/entrypoint.sh

@@ -113,7 +113,7 @@ func (m *MessageReviewRequest) sessionTime() string {
 	return "-"
 }
 
-func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) error {
+func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) (result string) {
 	title := "Review"
 
 	header := slack.NewHeaderBlock(&slack.TextBlockObject{
@@ -216,16 +216,17 @@ func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) error {
 		slackChannels = append(slackChannels, s.slackChannel)
 	}
 
+	var errs []string
 	for _, slackChannel := range slackChannels {
 		_, _, err := s.apiClient.PostMessage(slackChannel, slack.MsgOptionBlocks(blocks...), metadata)
 		if err != nil {
-			return fmt.Errorf("failed sending message to slack channel %v, reason=%v", slackChannel, err)
+			errs = append(errs, fmt.Sprintf(`"%v - %v"`, slackChannel, err))
 		}
 
 		// Slack allows 1 post message per second. reference: https://api.slack.com/apis/rate-limits
 		time.Sleep(time.Millisecond * 1200)
 	}
-	return nil
+	return fmt.Sprintf("success sent channels %v/%v, errors=%v", len(slackChannels), len(slackChannels)-len(errs), errs)
 }
 
 func (s *SlackService) UpdateMessage(msg *MessageReviewResponse, isApproved bool) error {
@@ -303,37 +304,29 @@ func (s *SlackService) UpdateMessageStatus(msg *MessageReviewResponse, message s
 	return err
 }
 
-func (s *SlackService) SendDirectMessage(sessionID, slackID string) error {
-	channel, _, _, err := s.apiClient.OpenConversation(&slack.OpenConversationParameters{Users: []string{slackID}})
+// PostMessage sends a message to a channel or direct message to a user
+func (s *SlackService) PostMessage(slackOrChannelID, message string) error {
+	_, timestamp, err := s.apiClient.PostMessage(slackOrChannelID, slack.MsgOptionText(message, false))
 	if err != nil {
-		return fmt.Errorf("failed opening conversation with user %v, err=%v", slackID, err)
-	}
-	msg := fmt.Sprintf("✅ Session <%s/sessions/%s|%s> approved, visit the link to execute it.", s.apiURL, sessionID, sessionID)
-	_, _, err = s.apiClient.PostMessage(channel.ID, slack.MsgOptionText(msg, false))
-	return err
-}
-
-func (s *SlackService) PostMessage(SlackID string, message string) error {
-	channelID, timestamp, err := s.apiClient.PostMessage(SlackID, slack.MsgOptionText(message, false))
-	if err != nil {
-		log.Errorf("failed post message to the channel %s at %v, err=%v", channelID, timestamp, err)
+		log.Warnf("failed post message to %q at %v, err=%v", slackOrChannelID, timestamp, err)
 		return err
 	}
 
-	log.Infof("Message successfully sent to the channel %s at %s", channelID, timestamp)
+	log.Infof("message successfully sent to %q at %s", slackOrChannelID, timestamp)
 	return nil
 }
 
-func (s *SlackService) PostEphemeralMessage(msg *MessageReviewResponse, message string) error {
+func (s *SlackService) PostEphemeralMessage(msg *MessageReviewResponse, message string, msgArgs ...any) error {
 	channelID := msg.item.Channel.ID
 	userID := msg.item.User.ID
 
-	timestamp, err := s.apiClient.PostEphemeral(channelID, userID, slack.MsgOptionText(message, false))
+	msgOption := slack.MsgOptionText(fmt.Sprintf(message, msgArgs...), false)
+	timestamp, err := s.apiClient.PostEphemeral(channelID, userID, msgOption)
 	if err != nil {
 		log.Errorf("failed post ephemeral message to the user %s on the channel %s at %v, err=%v", userID, channelID, timestamp, err)
 		return err
 	}
 
-	log.Infof("Message successfully sent to the user %s on the channel %s at %s", userID, channelID, timestamp)
+	log.Infof("message successfully sent to the user %s on the channel %s at %s", userID, channelID, timestamp)
 	return nil
 }

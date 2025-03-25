@@ -101,7 +101,7 @@ cp .env.sample .env
 **Run it**
 
 ```sh
-npm run dev:hoop-ui
+npm run dev
 ````
 
 Please be patient; it may take over 20 seconds to see any output, and over 40 seconds to complete.
@@ -170,6 +170,8 @@ Run a shadow-cljs action on this project's build id (without the colon, just `ap
 ```sh
 npx shadow-cljs <action> app
 ```
+
+> Make sure to bump the `package.json` version when making new Pull Requests running `VERSION=x.x.x make bump-version`
 
 ## Production
 

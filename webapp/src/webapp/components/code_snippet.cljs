@@ -14,14 +14,14 @@
     (when title [h/h3 title {:class "mb-regular"}])
     [:section
      {:class (str "relative font-mono overflow-hidden "
-                  " whitespace-pre text-sm rounded-xl"
+                  " text-sm rounded-xl"
                   " p-regular group")
       :style {:backgroundColor "var(--gray-1)"
               :color "var(--gray-12)"}}
      [:> ScrollArea {:scrollbars "horizontal"
                      :size "2"}
       [:div {:class (str "absolute p-x-small "
-                         "top-1 right-2 cursor-pointer box-border "
+                         "top-0 right-2 cursor-pointer box-border "
                          "opacity-0 group-hover:opacity-100 transition z-20")
              :on-click #(do
                           (js/navigator.clipboard.writeText (:code config))

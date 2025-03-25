@@ -1,5 +1,5 @@
 // agent must have all types implement by an agent
-package agent
+package pbagent
 
 const (
 	GatewayConnectOK = "AgentGatewayConnectOK"
@@ -12,11 +12,12 @@ const (
 	TerminalResizeTTY  = "AgentTerminalResizeTTY"
 	TerminalClose      = "AgentTerminalClose"
 
-	HttpProxyConnectionWrite = "AgentHttpProxyConnectionWrite"
 	TCPConnectionClose       = "AgentCloseTCPConnection"
 	TCPConnectionWrite       = "AgentTCPConnectionWrite"
 	PGConnectionWrite        = "AgentPGConnectionWrite"
 	MySQLConnectionWrite     = "AgentMySQLConnectionWrite"
 	MSSQLConnectionWrite     = "AgentMSSQLConnectionWrite"
 	MongoDBConnectionWrite   = "AgentMongoDBConnectionWrite"
+	SSHConnectionWrite       = "AgentSSHConnectionWrite"
+	HttpProxyConnectionWrite = "AgentHttpProxyConnectionWrite"
 )

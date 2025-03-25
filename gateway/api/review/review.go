@@ -22,7 +22,7 @@ func NewHandler(legacyHandler *review.Handler) *handler { return &handler{legacy
 //
 //	@Summary		Get Review
 //	@Description	Get review resource by id
-//	@Tags			Core
+//	@Tags			Reviews
 //	@Param			id	path	string	true	"Resource identifier of the review"
 //	@Produce		json
 //	@Success		200		{object}	openapi.Review
@@ -54,7 +54,7 @@ func (h *handler) Get(c *gin.Context) {
 //
 //	@Summary		List Reviews
 //	@Description	List review resources
-//	@Tags			Core
+//	@Tags			Reviews
 //	@Produce		json
 //	@Success		200	{array}		openapi.Review
 //	@Failure		500	{object}	openapi.HTTPError
@@ -65,7 +65,7 @@ func (h *handler) List(c *gin.Context) { h.legacy.FindAll(c) }
 //
 //	@Summary		Update Review Status
 //	@Description	Update the status of a review resource
-//	@Tags			Core
+//	@Tags			Reviews
 //	@Param			id	path	string	true	"Resource identifier of the review"
 //	@Accept			json
 //	@Produce		json
@@ -74,3 +74,17 @@ func (h *handler) List(c *gin.Context) { h.legacy.FindAll(c) }
 //	@Failure		404,500	{object}	openapi.HTTPError
 //	@Router			/reviews/{id} [put]
 func (h *handler) Put(c *gin.Context) { h.legacy.Put(c) }
+
+// UpdateReviewBySid
+//
+//	@Summary		Update Review Status By Sid
+//	@Description	Update the status of a review resource by the session id
+//	@Tags			Reviews
+//	@Param			session_id	path	string	true	"Resource identifier of the session"
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		openapi.ReviewRequest	true	"The request body resource"
+//	@Success		200		{object}	openapi.Review
+//	@Failure		404,500	{object}	openapi.HTTPError
+//	@Router			/sessions/{session_id}/review [put]
+func (h *handler) ReviewBySession(c *gin.Context) { h.legacy.Put(c) }

@@ -93,19 +93,20 @@ type Connection struct {
 }
 
 type ConnectionInfo struct {
-	ID                 string
-	Name               string
-	Type               string
-	SubType            string
-	CmdEntrypoint      []string
-	Secrets            map[string]any
-	AgentID            string
-	AgentName          string
-	AgentMode          string
-	AccessModeRunbooks string
-	AccessModeExec     string
-	AccessModeConnect  string
-	AccessSchema       string
+	ID                               string
+	Name                             string
+	Type                             string
+	SubType                          string
+	CmdEntrypoint                    []string
+	Secrets                          map[string]any
+	AgentID                          string
+	AgentName                        string
+	AgentMode                        string
+	AccessModeRunbooks               string
+	AccessModeExec                   string
+	AccessModeConnect                string
+	AccessSchema                     string
+	JiraTransitionNameOnSessionClose string
 }
 
 type ReviewOwner struct {
@@ -172,25 +173,26 @@ type SessionScript map[edn.Keyword]string
 type SessionLabels map[string]string
 
 type Session struct {
-	ID          string             `json:"id"`
-	OrgID       string             `json:"org_id"`
-	Script      SessionScript      `json:"script"`
-	Labels      SessionLabels      `json:"labels"`
-	Metadata    map[string]any     `json:"metadata"`
-	Metrics     map[string]any     `json:"metrics"`
-	UserEmail   string             `json:"user"`
-	UserID      string             `json:"user_id"`
-	UserName    string             `json:"user_name"`
-	Type        string             `json:"type"`
-	Connection  string             `json:"connection"`
-	Review      *ReviewJSON        `json:"review"`
-	JiraIssue   string             `json:"jira_issue"`
-	Verb        string             `json:"verb"`
-	Status      string             `json:"status"`
-	EventStream SessionEventStream `json:"event_stream"`
+	ID                   string             `json:"id"`
+	OrgID                string             `json:"org_id"`
+	Script               SessionScript      `json:"script"`
+	Labels               SessionLabels      `json:"labels"`
+	IntegrationsMetadata map[string]any     `json:"integrations_metadata"`
+	Metadata             map[string]any     `json:"metadata"`
+	Metrics              map[string]any     `json:"metrics"`
+	UserEmail            string             `json:"user"`
+	UserID               string             `json:"user_id"`
+	UserName             string             `json:"user_name"`
+	Type                 string             `json:"type"`
+	Connection           string             `json:"connection"`
+	Review               *ReviewJSON        `json:"review"`
+	Verb                 string             `json:"verb"`
+	Status               string             `json:"status"`
+	EventStream          SessionEventStream `json:"event_stream"`
 	// Must NOT index streams (all top keys are indexed in xtdb)
 	NonIndexedStream SessionNonIndexedEventStreamList `json:"-"`
 	EventSize        int64                            `json:"event_size"`
 	StartSession     time.Time                        `json:"start_date"`
 	EndSession       *time.Time                       `json:"end_date"`
+	ExitCode         *int                             `json:"exit_code"`
 }

@@ -10,7 +10,7 @@
                    :component-did-mount #(.create Draggable ".draggable")
                    :reagent-render (fn [status {:keys [component on-click-close on-click-expand]}]
                                      (if (= status :open)
-                                       [:div {:class "draggable bg-white shadow-lg absolute bottom-10 left-10 z-50 rounded-lg border border-gray-200 overflow-auto pt-small pb-regular"}
+                                       [:div {:class "draggable bg-white shadow-lg absolute bottom-10 left-10 z-50 rounded-lg border border-gray-200 overflow-auto py-small"}
                                         [:div {:class "flex items-center gap-small px-small pb-3"}
                                          (when on-click-expand
                                            [:div {:class (str "rounded-full bg-gray-100"

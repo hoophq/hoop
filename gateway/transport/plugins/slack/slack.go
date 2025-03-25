@@ -173,22 +173,14 @@ func (p *slackPlugin) OnUpdate(oldState, newState *types.Plugin) error {
 	return nil
 }
 
-// SendApprovedMessage sends a direct message to the owner of the review
-// if it's approved
-// func SendApprovedMessage(ctx *user.Context, rev *types.Review) {
-// 	if rev.Status != types.ReviewStatusApproved {
-// 		return
-// 	}
-// 	if slacksvc := getSlackServiceInstance(ctx.Org.Id); slacksvc != nil {
-// 		if rev.ReviewOwner.SlackID != "" {
-// 			log.Debugf("sending direct slack message to email=%v, slackid=%v",
-// 				rev.ReviewOwner.Email, rev.ReviewOwner.SlackID)
-// 			if err := slacksvc.SendDirectMessage(rev.Session, rev.ReviewOwner.SlackID); err != nil {
-// 				log.Warn(err)
-// 			}
-// 		}
-// 	}
-// }
+// SendApprovedMessage sends a message informing the session is ready
+func SendApprovedMessage(orgID, slackID, sid, apiURL string) {
+	if slacksvc := getSlackServiceInstance(orgID); slacksvc != nil {
+		msg := fmt.Sprintf("Your session is ready.\nFollow this link to see the details: %s/sessions/%s",
+			apiURL, sid)
+		_ = slacksvc.PostMessage(slackID, msg)
+	}
+}
 
 func (p *slackPlugin) OnConnect(pctx plugintypes.Context) error { return nil }
 func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {
@@ -196,7 +188,7 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		return nil, nil
 	}
 	slackSvc := getSlackServiceInstance(pctx.OrgID)
-	log.Infof("executing slack on-receive, hasinstance=%v", slackSvc != nil)
+	log.With("sid", pctx.SID).Infof("executing slack on-receive, hasinstance=%v", slackSvc != nil)
 	if slackSvc == nil {
 		return nil, nil
 	}
@@ -220,7 +212,7 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 			return nil, nil
 		}
 		sreq.ID = rev.Id
-		sreq.WebappURL = fmt.Sprintf("%s/sessions/%s", p.idpProvider.ApiURL, pctx.SID)
+		sreq.WebappURL = fmt.Sprintf("%s/reviews/%s", p.idpProvider.ApiURL, rev.Id)
 		sreq.ApprovalGroups = parseGroups(rev.ReviewGroupsData)
 		if rev.AccessDuration > 0 {
 			sreq.SessionTime = &rev.AccessDuration
@@ -229,14 +221,13 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 	}
 
 	if sreq.WebappURL == "" || len(sreq.ApprovalGroups) == 0 || len(sreq.ApprovalGroups) >= slackMaxButtons {
-		log.With("session", pctx.SID).Infof("no review message to process, has-webapp-url=%v, approval-groups=%v/%v",
+		log.With("sid", pctx.SID).Infof("no review message to process, has-webapp-url=%v, approval-groups=%v/%v",
 			sreq.WebappURL != "", len(sreq.ApprovalGroups), slackMaxButtons)
 		return nil, nil
 	}
-	log.With("session", pctx.SID).Infof("sending slack review message, conn=%v, jit=%v", sreq.Connection, sreq.SessionTime != nil)
-	if err := slackSvc.SendMessageReview(sreq); err != nil {
-		log.With("session", pctx.SID).Errorf("failed sending slack review message, reason=%v", err)
-	}
+	log.With("sid", pctx.SID).Infof("sending slack review message, conn=%v, jit=%v", sreq.Connection, sreq.SessionTime != nil)
+	result := slackSvc.SendMessageReview(sreq)
+	log.With("sid", pctx.SID).Infof("review slack message sent, %v", result)
 	return nil, nil
 }
 

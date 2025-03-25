@@ -35,8 +35,7 @@
          [:> Text {:as "div" :size "2" :color "gray-500"}
           "Don't have an account?"
           [:> Link {:href (routes/url-for :register-hoop) :class "text-blue-500 ml-1"}
-           "Create one"]]
-         ]]])))
+           "Create one"]]]]])))
 
 (defn panel []
   (fn []

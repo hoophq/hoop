@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/agent/config"
+	"github.com/hoophq/hoop/agent/controller/system/dbprovisioner"
 	"github.com/hoophq/hoop/agent/secretsmanager"
 	term "github.com/hoophq/hoop/agent/terminal"
 	"github.com/hoophq/hoop/common/log"
@@ -20,6 +22,7 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
+	pbsystem "github.com/hoophq/hoop/common/proto/system"
 	"go.mongodb.org/mongo-driver/x/mongo/driver/connstring"
 )
 
@@ -39,6 +42,7 @@ type (
 		user               string
 		pass               string
 		port               string
+		authorizedSSHKeys  string
 		dbname             string
 		insecure           bool
 		options            string
@@ -136,6 +140,10 @@ func (a *Agent) Run() error {
 		case pbagent.HttpProxyConnectionWrite:
 			a.processHttpProxyWriteServer(pkt)
 
+			// SSH protocol
+		case pbagent.SSHConnectionWrite:
+			a.processSSHProtocol(pkt)
+
 		// terminal
 		case pbagent.TerminalWriteStdin:
 			a.doTerminalWriteAgentStdin(pkt)
@@ -147,6 +155,10 @@ func (a *Agent) Run() error {
 
 		case pbagent.TCPConnectionClose:
 			a.processTCPCloseConnection(pkt)
+
+		// system
+		case pbsystem.ProvisionDBRolesRequest:
+			dbprovisioner.ProcessDBProvisionerRequest(a.client, pkt)
 		}
 	}
 }
@@ -163,7 +175,7 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 			Type:    pbclient.SessionClose,
 			Payload: []byte(err.Error()),
 			Spec: map[string][]byte{
-				pb.SpecClientExitCodeKey: []byte(`1`),
+				pb.SpecClientExitCodeKey: []byte(internalExitCode),
 				pb.SpecGatewaySessionID:  sessionID,
 			},
 		})
@@ -222,7 +234,7 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 				Type:    pbclient.SessionClose,
 				Payload: []byte(err.Error()),
 				Spec: map[string][]byte{
-					pb.SpecClientExitCodeKey: []byte(`1`),
+					pb.SpecClientExitCodeKey: []byte(internalExitCode),
 					pb.SpecGatewaySessionID:  sessionID,
 				},
 			})
@@ -281,25 +293,30 @@ func (a *Agent) sessionCleanup(sessionID string) {
 	}
 }
 
-func (a *Agent) sendClientSessionClose(sessionID string, errMsg string, specKeyVal ...string) {
+func (a *Agent) sendClientSessionClose(sessionID string, errMsg string) {
+	// if it doesn't contain any error message, it has ended with success
+	exitCode := "0"
+	if errMsg != "" {
+		exitCode = internalExitCode
+	}
+	a.sendClientSessionCloseWithExitCode(sessionID, errMsg, exitCode)
+}
+
+func (a *Agent) sendClientSessionCloseWithExitCode(sessionID string, errMsg, exitCode string) {
 	if sessionID == "" {
 		return
 	}
 	var errPayload []byte
-	spec := map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)}
-	for _, keyval := range specKeyVal {
-		parts := strings.Split(keyval, "=")
-		if len(parts) == 2 {
-			spec[parts[0]] = []byte(parts[1])
-		}
-	}
 	if errMsg != "" {
 		errPayload = []byte(errMsg)
 	}
 	_ = a.client.Send(&pb.Packet{
 		Type:    pbclient.SessionClose,
 		Payload: errPayload,
-		Spec:    spec,
+		Spec: map[string][]byte{
+			pb.SpecGatewaySessionID:  []byte(sessionID),
+			pb.SpecClientExitCodeKey: []byte(exitCode),
+		},
 	})
 }
 
@@ -400,7 +417,7 @@ func (a *Agent) decodeConnectionParams(sessionID []byte, pkt *pb.Packet) *pb.Age
 			Type:    pbclient.SessionClose,
 			Payload: []byte(`internal error, failed decoding connection params`),
 			Spec: map[string][]byte{
-				pb.SpecClientExitCodeKey: []byte(`1`),
+				pb.SpecClientExitCodeKey: []byte(internalExitCode),
 				pb.SpecGatewaySessionID:  sessionID,
 			},
 		})
@@ -414,7 +431,7 @@ func (a *Agent) decodeConnectionParams(sessionID []byte, pkt *pb.Packet) *pb.Age
 			Type:    pbclient.SessionClose,
 			Payload: []byte(errMsg),
 			Spec: map[string][]byte{
-				pb.SpecClientExitCodeKey: []byte(`1`),
+				pb.SpecClientExitCodeKey: []byte(internalExitCode),
 				pb.SpecGatewaySessionID:  sessionID,
 			},
 		})
@@ -429,7 +446,7 @@ func (a *Agent) decodeConnectionParams(sessionID []byte, pkt *pb.Packet) *pb.Age
 				Type:    pbclient.SessionClose,
 				Payload: []byte(`internal error, failed decoding client env vars`),
 				Spec: map[string][]byte{
-					pb.SpecClientExitCodeKey: []byte(`1`),
+					pb.SpecClientExitCodeKey: []byte(internalExitCode),
 					pb.SpecGatewaySessionID:  sessionID,
 				},
 			})
@@ -502,16 +519,17 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 	}
 
 	env := &connEnv{
-		scheme:          envVarS.Getenv("SCHEME"),
-		host:            envVarS.Getenv("HOST"),
-		user:            envVarS.Getenv("USER"),
-		pass:            envVarS.Getenv("PASS"),
-		port:            envVarS.Getenv("PORT"),
-		dbname:          envVarS.Getenv("DB"),
-		insecure:        envVarS.Getenv("INSECURE") == "true",
-		postgresSSLMode: envVarS.Getenv("SSLMODE"),
-		options:         envVarS.Getenv("OPTIONS"),
-		// this option is only used by mongodb at the moment
+		scheme:            envVarS.Getenv("SCHEME"),
+		host:              envVarS.Getenv("HOST"),
+		user:              envVarS.Getenv("USER"),
+		pass:              envVarS.Getenv("PASS"),
+		port:              envVarS.Getenv("PORT"),
+		authorizedSSHKeys: envVarS.Getenv("AUTHORIZED_SERVER_KEYS"),
+		dbname:            envVarS.Getenv("DB"),
+		insecure:          envVarS.Getenv("INSECURE") == "true",
+		postgresSSLMode:   envVarS.Getenv("SSLMODE"),
+		options:           envVarS.Getenv("OPTIONS"),
+		// this option is only used by mongodb at the momento
 		connectionString:   envVarS.Getenv("CONNECTION_STRING"),
 		httpProxyRemoteURL: envVarS.Getenv("REMOTE_URL"),
 	}
@@ -521,7 +539,7 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 			env.port = "5432"
 		}
 		if env.host == "" || env.pass == "" || env.user == "" {
-			return nil, fmt.Errorf("missing required secrets for postgres connection [HOST, USER, PASS]")
+			return nil, errors.New("missing required secrets for postgres connection [HOST, USER, PASS]")
 		}
 		mode := env.postgresSSLMode
 		if mode == "" {
@@ -536,14 +554,14 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 			env.port = "3306"
 		}
 		if env.host == "" || env.pass == "" || env.user == "" {
-			return nil, fmt.Errorf("missing required secrets for mysql connection [HOST, USER, PASS]")
+			return nil, errors.New("missing required secrets for mysql connection [HOST, USER, PASS]")
 		}
 	case pb.ConnectionTypeMSSQL:
 		if env.port == "" {
 			env.port = "1433"
 		}
 		if env.host == "" || env.pass == "" || env.user == "" {
-			return nil, fmt.Errorf("missing required secrets for mssql connection [HOST, USER, PASS]")
+			return nil, errors.New("missing required secrets for mssql connection [HOST, USER, PASS]")
 		}
 	case pb.ConnectionTypeMongoDB:
 		if env.connectionString != "" {
@@ -568,12 +586,18 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		env.host = host
 		env.port = port
 		if env.host == "" || env.pass == "" || env.user == "" {
-			return nil, fmt.Errorf("missing required secrets for mongodb connection [HOST, USER, PASS]")
+			return nil, errors.New("missing required secrets for mongodb connection [HOST, USER, PASS]")
 		}
-
+	case pb.ConnectionTypeSSH:
+		if env.port == "" {
+			env.port = "22"
+		}
+		if env.host == "" || (env.pass == "" && env.authorizedSSHKeys == "") || env.user == "" {
+			return nil, errors.New("missing required secrets for ssh connection [HOST, USER, PASS or AUTHORIZED_SERVER_KEYS]")
+		}
 	case pb.ConnectionTypeTCP:
 		if env.host == "" || env.port == "" {
-			return nil, fmt.Errorf("missing required environment for connection [HOST, PORT]")
+			return nil, errors.New("missing required environment for connection [HOST, PORT]")
 		}
 	case pb.ConnectionTypeHttpProxy:
 		if env.httpProxyRemoteURL == "" {

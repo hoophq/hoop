@@ -22,8 +22,8 @@
     [:div {:class "text-gray-700 text-sm font-bold mb-small"}
      "No runbooks available in your repository!"]
     [:div {:class "text-gray-500 text-xs"}
-     (str "Trouble creating a runbook file? ")
-     [:a {:href "https://hoop.dev/docs/learn/runbooks/configuration"
+     "Trouble creating a runbook file? "
+     [:a {:href (get-in config/docs-url [:features :runbooks])
           :target "_blank"
           :class "underline text-blue-500"}
       "Get to know how to use our runbooks plugin."]]]])
@@ -96,9 +96,14 @@
 
 (defn panel [_]
   (let [templates (rf/subscribe [:runbooks-plugin->runbooks])
-        selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])]
+        selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])
+        primary-connection (rf/subscribe [:connections/selected])
+        selected-connections (rf/subscribe [:connection-selection/selected])]
     (rf/dispatch [:audit->clear-session])
-    (rf/dispatch [:runbooks-plugin->get-runbooks])
+    (rf/dispatch [:runbooks-plugin->get-runbooks
+                  (map :name (concat
+                              (when @primary-connection [@primary-connection])
+                              @selected-connections))])
     (fn [connection]
       (let [search (.. js/window -location -search)
             url-search-params (new js/URLSearchParams search)

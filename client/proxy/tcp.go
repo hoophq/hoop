@@ -13,7 +13,7 @@ import (
 )
 
 type TCPServer struct {
-	listenPort      string
+	listenAddr      string
 	client          pb.ClientTransport
 	connectionStore memory.Store
 	listener        net.Listener
@@ -21,8 +21,12 @@ type TCPServer struct {
 }
 
 func NewTCPServer(listenPort string, client pb.ClientTransport, packetType pb.PacketType) *TCPServer {
+	listenAddr := defaultListenAddr(defaultTCPPort)
+	if listenPort != "" {
+		listenAddr = defaultListenAddr(listenPort)
+	}
 	return &TCPServer{
-		listenPort:      listenPort,
+		listenAddr:      listenAddr,
 		client:          client,
 		connectionStore: memory.New(),
 		packetType:      packetType,
@@ -30,10 +34,9 @@ func NewTCPServer(listenPort string, client pb.ClientTransport, packetType pb.Pa
 }
 
 func (p *TCPServer) Serve(sessionID string) error {
-	listenAddr := fmt.Sprintf("127.0.0.1:%s", p.listenPort)
-	lis, err := net.Listen("tcp4", listenAddr)
+	lis, err := net.Listen("tcp4", p.listenAddr)
 	if err != nil {
-		return fmt.Errorf("failed listening to address %v, err=%v", listenAddr, err)
+		return fmt.Errorf("failed listening to address %v, err=%v", p.listenAddr, err)
 	}
 	p.listener = lis
 	go func() {
@@ -127,6 +130,4 @@ func (p *TCPServer) connectTCP(sessionID, connectionID string) error {
 	})
 }
 
-func (p *TCPServer) ListenPort() string {
-	return p.listenPort
-}
+func (p *TCPServer) Host() Host { return getListenAddr(p.listenAddr) }

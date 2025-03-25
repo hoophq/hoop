@@ -28,8 +28,13 @@
       :reagent-render (fn []
                         (when (<= @remaining-time 0)
                           (on-timer-end))
-                        [:div {:class (when (<= @remaining-time 60000) "text-red-700")}
-                         [:span
+                        [:<>
+                         [:small {:class (if (<= @remaining-time 60000)
+                                           "text-red-700"
+                                           "text-gray-700")}
                           "Time left: "]
-                         [:span {:class "font-bold"}
+                         [:small {:class (str "font-bold "
+                                              (if (<= @remaining-time 60000)
+                                                "text-red-700"
+                                                "text-gray-700"))}
                           (format-time @remaining-time)]])})))

@@ -1,7 +1,11 @@
 package openapi
 
 import (
+	"encoding/json"
 	"time"
+
+	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	orgtypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
 )
 
 type HTTPError struct {
@@ -204,6 +208,8 @@ type Connection struct {
 	// * { envvar:[env-key]: _aws:[secret-name]:[secret-key] } - Obtain the value dynamically in the AWS secrets manager and expose as environment variable
 	// * { envvar:[env-key]: _envjson:[json-env-name]:[json-env-key] } - Obtain the value dynamically from a JSON env in the agent runtime. Example: MYENV={"KEY": "val"}
 	Secrets map[string]any `json:"secret"`
+	// Default databases returns the configured value of the attribute secrets->'DB'
+	DefaultDatabase string `json:"default_database"`
 	// The agent associated with this connection
 	AgentId string `json:"agent_id" binding:"required" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
 	// Status is a read only field that informs if the connection is available for interaction
@@ -220,8 +226,12 @@ type Connection struct {
 	// Managed By is a read only field that indicates who is managing this resource.
 	// When this attribute is set, this resource is considered immutable
 	ManagedBy *string `json:"managed_by" readonly:"true" example:""`
-	// Tags to classify the connection
+	// DEPRECATED: Tags to classify the connection
 	Tags []string `json:"tags" example:"prod"`
+	// Tags to identify the connection
+	// * keys must contain between 1 and 64 alphanumeric characters, it may include (-), (_), (/), or (.) characters and it must not end with (-), (/) or (-).
+	// * values must contain between 1 and 256 alphanumeric characters, it may include space, (-), (_), (/), (+), (@), (:), (=) or (.) characters.
+	ConnectionTags map[string]string `json:"connection_tags" example:"environment:prod,tier:frontend"`
 	// Toggle Ad Hoc Runbooks Executions
 	// * enabled - Enable to run runbooks for this connection
 	// * disabled - Disable runbooks execution for this connection
@@ -240,11 +250,42 @@ type Connection struct {
 	AccessSchema string `json:"access_schema" binding:"required" enums:"enabled,disabled"`
 	// The guard rail association id rules
 	GuardRailRules []string `json:"guardrail_rules" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54,B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
+	// The jira issue templates ids associated to the connection
+	JiraIssueTemplateID string `json:"jira_issue_template_id" example:"B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
+}
+
+type ConnectionTagCreateRequest struct {
+	// Key is the identifier for the tag category (e.g., "environment", "department")
+	Key string `json:"key" binding:"required" example:"environment"`
+	// Value is the specific tag value associated with the key (e.g., "production", "finance")
+	Value string `json:"value" binding:"required" example:"production"`
+}
+
+type ConnectionTagUpdateRequest struct {
+	// Value is the new tag value to be assigned to the existing key
+	Value string `json:"value" binding:"required" example:"staging"`
+}
+
+type ConnectionTagList struct {
+	Items []ConnectionTag `json:"items"`
+}
+
+type ConnectionTag struct {
+	// ID is the unique identifier for this specific tag
+	ID string `json:"id" example:"tag_01H7ZD5SJRZ7RPGQRMT4Y9HF"`
+	// Key is the identifier for the tag category (e.g., "environment", "department")
+	Key string `json:"key" example:"environment"`
+	// Value is the specific tag value associated with the key (e.g., "production", "finance")
+	Value string `json:"value" example:"production"`
+	// UpdatedAt is the timestamp when this tag was last updated
+	UpdatedAt time.Time `json:"updated_at" example:"2023-08-15T14:30:45Z"`
+	// CreatedAt is the timestamp when this tag was created
+	CreatedAt time.Time `json:"created_at" example:"2023-08-15T14:30:45Z"`
 }
 
 type ExecRequest struct {
 	// The input of the execution
-	Script string `json:"script" example:"echo"`
+	Script string `json:"script" example:"echo 'hello from hoop'"`
 	// The target connection
 	Connection string `json:"connection" example:"bash"`
 	// DEPRECATED in flavor of metadata
@@ -252,7 +293,7 @@ type ExecRequest struct {
 	// Metadata contains attributes that is going to be available in the Session resource
 	Metadata map[string]any `json:"metadata"`
 	// Additional arguments that will be joined when construction the command to be executed
-	ClientArgs []string `json:"client_args" example:"hello world"`
+	ClientArgs []string `json:"client_args" example:"--verbose"`
 }
 
 type ExecResponse struct {
@@ -367,7 +408,9 @@ type SessionGetByIDParams struct {
 	// Construct the file content adding the event time as prefix when parsing each event
 	EventTime string `json:"event-time" enums:"0,1" example:"1" default:"0"`
 	// This option will parse the session output (o) and error (e) events as an utf-8 content in the session payload
-	EventStream string `json:"event_stream" enums:"utf8" default:""`
+	EventStream string `json:"event_stream" enums:"utf8,base64" default:""`
+	// Expand the given attributes
+	Expand string `json:"expand" enums:"event_stream" example:"event_stream" default:""`
 }
 
 type SessionOption struct {
@@ -395,6 +438,14 @@ var AvailableSessionOptions = []SessionOptionKey{
 	SessionOptionOffset,
 }
 
+type SessionStatusType string
+
+const (
+	SessionStatusOpen  SessionStatusType = "open"
+	SessionStatusReady SessionStatusType = "ready"
+	SessionStatusDone  SessionStatusType = "done"
+)
+
 type Session struct {
 	// The resource unique identifier
 	ID string `json:"id" format:"uuid" example:"1CBC8DB5-FBF8-4293-8E35-59A6EEA40207"`
@@ -403,8 +454,10 @@ type Session struct {
 	// The input of the session. This value is only set for the verb `exec`
 	Script SessionScriptType `json:"script" example:"data:SELECT NOW()"`
 	// DEPRECATED in flavor of metrics and metadata
-	Labels   SessionLabelsType `json:"labels"`
-	Metadata map[string]any    `json:"metadata"`
+	Labels SessionLabelsType `json:"labels"`
+	// Metadata attributes related to integrations with third party services
+	IntegrationsMetadata map[string]any `json:"integrations_metadata"`
+	Metadata             map[string]any `json:"metadata"`
 	// Refactor to use a struct
 	Metrics map[string]any `json:"metrics"`
 	// The user email of the resource
@@ -415,6 +468,8 @@ type Session struct {
 	UserName string `json:"user_name" example:"John Wick"`
 	// The connection type of this resource
 	Type string `json:"type" example:"database"`
+	// The subtype of the connection
+	ConnectionSubtype string `json:"connection_subtype" example:"postgres"`
 	// The connection name of this resource
 	Connection string `json:"connection" example:"pgdemo"`
 	// Review of this session. In case the review doesn't exist this field will be null
@@ -427,10 +482,9 @@ type Session struct {
 	// * ready - the resource is ready to be executed, after being approved by a user
 	// * open - the session started and it's running
 	// * done - the session has finished
-	Status string `json:"status" enums:"open,ready,done"`
-
-	JiraIssue string `json:"jira_issue"`
-
+	Status SessionStatusType `json:"status"`
+	// The Linux exit code if it's available
+	ExitCode *int `json:"exit_code"`
 	// The stream containing the output of the execution in the following format
 	//
 	// `[[0.268589438, "i", "ZW52"], ...]`
@@ -438,14 +492,18 @@ type Session struct {
 	// * `<event-time>` - relative time in miliseconds to start_date
 	// * `<event-type>` - the event type as string (i: input, o: output e: output-error)
 	// * `<base64-content>` - the content of the session encoded as base64 string
-	EventStream      SessionEventStream                   `json:"event_stream"`
-	NonIndexedStream SessionNonIndexedEventStreamListType `json:"-"`
+	EventStream json.RawMessage `json:"event_stream,omitempty" swagger:"type:string"`
 	// The stored resource size in bytes
 	EventSize int64 `json:"event_size" example:"569"`
 	// When the execution started
 	StartSession time.Time `json:"start_date" example:"2024-07-25T15:56:35.317601Z"`
 	// When the execution ended. A null value indicates the session is still running
 	EndSession *time.Time `json:"end_date" example:"2024-07-25T15:56:35.361101Z"`
+}
+
+type SessionUpdateMetadataRequest struct {
+	// The metadata field
+	Metadata map[string]any `json:"metadata" swaggertype:"object,string" example:"reason:fix-issue"`
 }
 
 type SessionReportParams struct {
@@ -487,6 +545,7 @@ type SessionReportItem struct {
 type (
 	ReviewStatusType        string
 	ReviewRequestStatusType string
+	ReviewType              string
 )
 
 const (
@@ -501,6 +560,9 @@ const (
 	ReviewStatusRequestApprovedType ReviewRequestStatusType = ReviewRequestStatusType(ReviewStatusApproved)
 	ReviewStatusRequestRejectedType ReviewRequestStatusType = ReviewRequestStatusType(ReviewStatusRejected)
 	ReviewStatusRequestRevokedType  ReviewRequestStatusType = ReviewRequestStatusType(ReviewStatusRevoked)
+
+	ReviewTypeJit     ReviewType = "jit"
+	ReviewTypeOneTime ReviewType = "onetime"
 )
 
 type ReviewRequest struct {
@@ -521,7 +583,7 @@ type Review struct {
 	// The type of this review
 	// * onetime - Represents a one time execution
 	// * jit - Represents a time based review
-	Type string `json:"type" enums:"onetime,jit" readonly:"true"`
+	Type ReviewType `json:"type" enums:"onetime,jit" readonly:"true"`
 	// The id of session
 	Session string `json:"session" format:"uuid" readonly:"true" example:"35DB0A2F-E5CE-4AD8-A308-55C3108956E5"`
 	// The input that was issued when the resource was created
@@ -655,6 +717,12 @@ type ProxyManagerResponse struct {
 	Status ClientStatusType `json:"status"`
 	// The requested connection name
 	RequestConnectionName string `json:"connection_name"`
+	// The requested connection type
+	RequestConnectionType string `json:"connection_type" readonly:"true"`
+	// The requested connection subtype
+	RequestConnectionSubType string `json:"connection_subtype" readonly:"true"`
+	// Report if the connection has a review
+	HasReview bool `json:"has_review" readonly:"true"`
 	// The requested client port to listen
 	RequestPort string `json:"port"`
 	// The request access duration in case of review
@@ -760,7 +828,9 @@ type ServerInfo struct {
 	AdminUsername string `json:"admin_username" example:"admin"`
 	// Auth method used by the server
 	AuthMethod string `json:"auth_method" enums:"oidc,local" example:"local"`
-	// Report if GOOGLE_APPLICATION_CREDENTIALS_JSON is set
+	// DLP provider used by the server
+	RedactProvider string `json:"redact_provider" enums:"gcp,mspresidio" example:"gcp"`
+	// Report if GOOGLE_APPLICATION_CREDENTIALS_JSON or MSPRESIDIO is set
 	HasRedactCredentials bool `json:"has_redact_credentials"`
 	// Report if WEBHOOK_APPKEY is set
 	HasWebhookAppKey bool `json:"has_webhook_app_key"`
@@ -772,6 +842,8 @@ type ServerInfo struct {
 	HasPostgresRole bool `json:"has_postgrest_role"`
 	// Report if ASK_AI_CREDENTIALS is set (openapi credentials)
 	HasAskiAICredentials bool `json:"has_ask_ai_credentials"`
+	// Report if SSH_CLIENT_HOST_KEY is set
+	HasSSHClientHostKey bool `json:"has_ssh_client_host_key"`
 	// API URL advertise to clients
 	ApiURL string `json:"api_url" example:"https://api.johnwick.org"`
 	// The GRPC_URL advertise to clients
@@ -813,9 +885,7 @@ type JiraIntegration struct {
 	// The API token for Jira authentication
 	APIToken string `json:"api_token" binding:"required"`
 
-	// The default Jira project key
-	ProjectKey string `json:"project_key" binding:"required"`
-
+	// Report if the integration is enabled or disabled
 	Status JiraIntegrationStatus `json:"status"`
 
 	// The creation date and time of the integration
@@ -823,6 +893,103 @@ type JiraIntegration struct {
 
 	// The last update date and time of the integration
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
+}
+
+type JiraIssueTemplate struct {
+	// The unique identifier of the integration
+	ID string `json:"id"`
+	// The name of the template
+	Name string `json:"name"`
+	// The description of the template
+	Description string `json:"description"`
+	// The project key which is the shortand version of the project's name
+	ProjectKey string `json:"project_key"`
+	// The name of the issue transition to change the state of the issue
+	// when the session closes
+	IssueTransitionNameOnClose string `json:"issue_transition_name_on_close" example:"done"`
+	// The request type id that will be associated to the issue
+	RequestTypeID string         `json:"request_type_id"`
+	MappingTypes  map[string]any `json:"mapping_types"`
+	PromptTypes   map[string]any `json:"prompt_types"`
+	CmdbTypes     map[string]any `json:"cmdb_types"`
+	// The time when the template was created
+	CreatedAt time.Time `json:"created_at"`
+	// The time when the template was updated
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type JiraIssueTemplateRequest struct {
+	// The name of the template
+	Name string `json:"name" binding:"required"`
+	// The description of the template
+	Description string `json:"description"`
+	// The project key which is the shortand version of the project's name
+	ProjectKey string `json:"project_key" binding:"required"`
+	// The request type that will be associated to the issue
+	RequestTypeID string `json:"request_type_id" binding:"required"`
+	// The name of the issue transition to change the state of the issue
+	// when the session closes
+	IssueTransitionNameOnClose string `json:"issue_transition_name_on_close" default:"done"`
+	// The automated fields that will be sent when creating the issue.
+	// There're two types
+	// - preset: obtain the value from a list of available fields that could be propagated
+	// The list of available preset values are:
+	/*
+		- session.id
+		- session.user_email
+		- session.user_id
+		- session.user_name
+		- session.type
+		- session.connection_subtype
+		- session.connection
+		- session.status
+		- session.script
+		- session.start_date
+	*/
+	// - custom: use a custom static value
+	/*
+		{
+		  "items": [
+		    {
+		      "description": "Hoop Connection Name",
+		      "jira_field": "customfield_10050",
+		      "type": "preset",
+		      "value": "session.connection"
+		    }
+		  ]
+		}
+	*/
+	MappingTypes map[string]any `json:"mapping_types"`
+	// The prompt fields that will be show to user before executing a session
+	/*
+		{
+		  "items": [
+		    {
+		      "description": "Squad Name",
+		      "jira_field": "customfield_10052",
+			  "field_type": "text|select|datetime-local",
+		      "label": "Squad Name",
+		      "required": true
+		    }
+		  ]
+		}
+	*/
+	PromptTypes map[string]any `json:"prompt_types"`
+	// Cmdb Types are custom fields integrated with the Jira Assets API
+	/*
+		{
+		  "items": [
+		    {
+		      "description": "Service Field",
+		      "jira_field": "customfield_10110",
+		      "jira_object_type": "Service",
+		      "required": true,
+		      "value": "mydb-prod"
+		    }
+		  ]
+		}
+	*/
+	CmdbTypes map[string]any `json:"cmdb_types"`
 }
 
 type GuardRailRuleRequest struct {
@@ -937,18 +1104,7 @@ type ConnectionSchemaResponse struct {
 									"name": "id",
 									"type": "integer",
 									"nullable": false,
-									"default_value": "",
-									"is_primary_key": true,
-									"is_foreign_key": false
 								},
-							],
-							"indexes": [
-								{
-									"name": "users_pkey",
-									"columns": ["id"],
-									"is_unique": true,
-									"is_primary": true
-								}
 							],
 	          }
 	        ]
@@ -964,32 +1120,228 @@ type ConnectionDatabaseListResponse struct {
 type ConnectionSchema struct {
 	Name   string            `json:"name"`
 	Tables []ConnectionTable `json:"tables"` // The tables of the schema
-	Views  []ConnectionView  `json:"views"`  // The views of the schema
 }
 
 type ConnectionTable struct {
 	Name    string             `json:"name"`    // The name of the table
 	Columns []ConnectionColumn `json:"columns"` // The columns of the table
-	Indexes []ConnectionIndex  `json:"indexes"` // The indexes of the table
-}
-
-type ConnectionView struct {
-	Name    string             `json:"name"`    // The name of the view
-	Columns []ConnectionColumn `json:"columns"` // The columns of the view
 }
 
 type ConnectionColumn struct {
-	Name         string `json:"name"`                    // The name of the column
-	Type         string `json:"type"`                    // The type of the column
-	Nullable     bool   `json:"nullable"`                // The nullable of the column
-	DefaultValue string `json:"default_value,omitempty"` // The default value of the column
-	IsPrimaryKey bool   `json:"is_primary_key"`          // The primary key of the column
-	IsForeignKey bool   `json:"is_foreign_key"`          // The foreign key of the column
+	Name     string `json:"name"`     // The name of the column
+	Type     string `json:"type"`     // The type of the column
+	Nullable bool   `json:"nullable"` // The nullable of the column
 }
 
-type ConnectionIndex struct {
-	Name      string   `json:"name"`       // The name of the index
-	Columns   []string `json:"columns"`    // The columns of the index
-	IsUnique  bool     `json:"is_unique"`  // The unique of the index
-	IsPrimary bool     `json:"is_primary"` // The primary of the index
+type IAMAccessKeyRequest struct {
+	// The AWS access Key ID
+	AccessKeyID string `json:"access_key_id" example:"AKIAIOSFODNN7EXAMPLE"`
+	// The AWS Secret Access Key. This attribute is required if access_key_id is set
+	SecretAccessKey string `json:"secret_access_key" example:"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"`
+	// The region that is going to be used by the key or when using instance profile IAM role
+	Region string `json:"region" binding:"required" example:"us-west-2"`
+	// The session token
+	SessionToken string `json:"session_token" example:"AQoEXAMPLEH4aoAH0gNCAPyJxz4BlCFFxWNE1OPTgk5TthT+FvwqnKwRcOIfrRh3c/LTo6UDdyJwOOvEVPvLXCrrrUtdnniCEXAMPLE/IvU1dYUg2RVAJBanLiHb4IgRmpRV3zrkuWJOgQs8IZZaIv2BXIa2R4Olgk"`
+}
+
+type IAMUserInfo struct {
+	// AccountID is the unique identifier for the AWS account
+	AccountID string `json:"account_id" example:"123456789012"`
+	// ARN is the Amazon Resource Name that uniquely identifies the IAM user
+	ARN string `json:"arn" example:"arn:aws:iam::123456789012:user/johndoe"`
+	// UserID is the unique identifier for the IAM user
+	UserID string `json:"arn_id" example:"AIDACKCEVSQ6C2EXAMPLE"`
+	// Region is the AWS region where the IAM user is operating
+	Region string `json:"region" example:"us-west-2"`
+}
+
+type IAMEvaluationDetailStatement struct {
+	// SourcePolicyID is the unique identifier for the policy
+	SourcePolicyID string `json:"source_policy_id" example:"ANPAI3R4QMYGV2EXAMPL4"`
+	// SourcePolicyType indicates the type of policy (managed, inline, etc.)
+	SourcePolicyType string `json:"source_policy_type" example:"managed"`
+}
+
+type IAMEvaluationDetail struct {
+	// ActionName is the AWS service action being evaluated
+	ActionName string `json:"action_name" example:"ec2:DescribeInstances"`
+	// Decision indicates whether the action is allowed or denied
+	Decision iamtypes.PolicyEvaluationDecisionType `json:"decision" example:"allowed"`
+	// ResourceName is the ARN of the resource being accessed
+	ResourceName string `json:"resource_name" example:"arn:aws:ec2:us-west-2:123456789012:instance/i-0123456789abcdef0"`
+	// MatchedStatements lists the policy statements that matched during evaluation
+	MatchedStatements []IAMEvaluationDetailStatement `json:"matched_statements"`
+}
+
+type IAMVerifyPermission struct {
+	// Status indicates the overall result of the permission verification
+	Status string `json:"status" example:"allowed"`
+	// Identity contains information about the IAM user being evaluated
+	Identity IAMUserInfo `json:"identity"`
+	// EvaluationDetails contains the details of each permission evaluation
+	EvaluationDetails []IAMEvaluationDetail `json:"evaluation_details"`
+}
+
+type ListAWSAccounts struct {
+	Items []AWSAccount `json:"items"`
+}
+
+type AWSAccount struct {
+	// AccountID is the unique identifier for the AWS account
+	AccountID string `json:"account_id" example:"123456789012"`
+	// Name is the friendly name of the AWS account
+	Name string `json:"name" example:"SandBox"`
+	// Status indicates whether the account is active, suspended, etc.
+	Status orgtypes.AccountStatus `json:"status" example:"ACTIVE"`
+	// JoinedMethods indicates how the account joined the organization
+	JoinedMethods orgtypes.AccountJoinedMethod `json:"joined_methods" example:"INVITED"`
+	// Email is the email address associated with the AWS account
+	Email string `json:"email" example:"aws-prod@example.com"`
+}
+
+type ListAWSDBInstancesRequest struct{}
+
+type ListAWSDBInstances struct {
+	Items []AWSDBInstance `json:"items"`
+}
+
+// AWSDBInstance contains information about an AWS database instance
+type AWSDBInstance struct {
+	// AccountID is the unique identifier for the AWS account that owns the database
+	AccountID string `json:"account_id" example:"123456789012"`
+	// Name is the identifier for the database instance
+	Name string `json:"name" example:"my-postgres-db"`
+	// AvailabilityZone is the AWS availability zone where the database is deployed
+	AvailabilityZone string `json:"availability_zone" example:"us-west-2a"`
+	// VpcID is the ID of the Virtual Private Cloud where the database is deployed
+	VpcID string `json:"vpc_id" example:"vpc-0123456789abcdef0"`
+	// ARN is the Amazon Resource Name that uniquely identifies the database instance
+	ARN string `json:"arn" example:"arn:aws:rds:us-west-2:123456789012:db:my-postgres-db"`
+	// Engine is the database engine type (e.g., MySQL, PostgreSQL)
+	Engine string `json:"engine" example:"postgres"`
+	// Status indicates the current state of the database instance
+	Status string `json:"status" example:"available"`
+}
+
+type CreateDBRoleJobAWSProviderSG struct {
+	// The target port to be configured for the security group
+	TargetPort int32 `json:"target_port" example:"5432" binding:"required"`
+	// The ingress inbound CIDR rule to allow traffic to
+	IngressCIDR string `json:"ingress_cidr" example:"192.168.1.0/24" binding:"required"`
+}
+
+type CreateDBRoleJobAWSProvider struct {
+	// Instance ARN is the identifier for the database instance
+	InstanceArn string `json:"instance_arn" binding:"required" example:"arn:aws:rds:us-west-2:123456789012:db:my-instance"`
+	// The default security group that will be used to grant access for the agent to access.
+	DefaultSecurityGroup *CreateDBRoleJobAWSProviderSG `json:"default_security_group"`
+}
+
+type DBRoleJobStepType string
+
+const (
+	DBRoleJobStepCreateConnections DBRoleJobStepType = "create-connections"
+	DBRoleJobStepSendWebhook       DBRoleJobStepType = "send-webhook"
+)
+
+type DBRoleJobVaultProvider struct {
+	// The path to store the credentials in Vault
+	SecretID string `json:"secret_id" example:"dbsecrets/data" binding:"required"`
+}
+
+type CreateDBRoleJob struct {
+	// Unique identifier of the agent hosting the database resource
+	AgentID string `json:"agent_id" format:"uuid" binding:"required,min=36" example:"a1b2c3d4-e5f6-7890-abcd-ef1234567890"`
+	// Base prefix for connection names - the role name will be appended to this prefix
+	// when creating the database connection (e.g., "prod-postgres-ro")
+	ConnectionPrefixName string `json:"connection_prefix_name" binding:"required" example:"prod-postgres-"`
+	// The additional steps to execute
+	JobSteps []DBRoleJobStepType `json:"job_steps" binding:"required,dive,db_role_job_step" example:"create-connections,send-webhook"`
+	// Vault Provider uses HashiCorp Vault to store the provisioned credentials.
+	// The target agent must be configured with the Vault Credentials in order for this operation to work
+	VaultProvider *DBRoleJobVaultProvider `json:"vault_provider"`
+	// AWS-specific configuration for the database role creation job
+	AWS *CreateDBRoleJobAWSProvider `json:"aws" binding:"required"`
+}
+
+type CreateDBRoleJobResponse struct {
+	// Unique identifier for the asynchronous job that will create the database role
+	JobID string `json:"job_id" example:"8F680C64-DBFD-48E1-9855-6650D9CAD62C"`
+}
+
+type DBRoleJob struct {
+	// Unique identifier of the organization that owns this job
+	OrgID string `json:"org_id" example:"37EEBC20-D8DF-416B-8AC2-01B6EB456318"`
+	// Unique identifier for this database role job
+	ID string `json:"id" example:"67D7D053-3CAF-430E-97BA-6D4933D3FD5B"`
+	// Timestamp when this job was initially created
+	CreatedAt time.Time `json:"created_at" example:"2025-02-28T12:34:56Z"`
+	// Timestamp when this job finished execution (null if still in progress)
+	CompletedAt *time.Time `json:"completed_at" example:"2025-02-28T13:45:12Z"`
+	// AWS-specific configuration details for the database role provisioning
+	Spec AWSDBRoleJobSpec `json:"spec"`
+	// Current status and results of the job execution (null if not started)
+	Status *DBRoleJobStatus `json:"status"`
+}
+
+type DBTag struct {
+	Key   string `json:"key" example:"squad"`
+	Value string `json:"value" example:"banking"`
+}
+
+type AWSDBRoleJobSpec struct {
+	// AWS IAM ARN with permissions to execute this role creation job
+	AccountArn string `json:"account_arn" example:"arn:aws:iam:123456789012"`
+	// ARN of the target RDS database instance where roles will be created
+	DBArn string `json:"db_arn" example:"arn:aws:rds:us-west-2:123456789012:db:my-instance"`
+	// Logical database name within the RDS instance where roles will be applied
+	DBName string `json:"db_name" example:"customers"`
+	// Database engine type (e.g., "postgres", "mysql") of the RDS instance
+	DBEngine string `json:"db_engine" example:"postgres"`
+	// Database Instance tags
+	DBTags []DBTag `json:"db_tags"`
+}
+
+type DBRoleJobStatus struct {
+	// Current execution phase of the job: "running", "failed", or "completed"
+	Phase string `json:"phase" enums:"running,failed,completed" example:"running"`
+	// Human-readable description of the overall job status or error details
+	Message string `json:"message" example:"All user roles have been successfully provisioned"`
+	// Detailed results for each individual role that was provisioned
+	Result []DBRoleJobStatusResult `json:"result"`
+}
+
+type SecretsManagerProviderType string
+
+const (
+	SecretsManagerProviderDatabase SecretsManagerProviderType = "database"
+	SecretsManagerProviderVault    SecretsManagerProviderType = "vault"
+)
+
+type DBRoleJobStatusResultCredentialsInfo struct {
+	// The secrets manager provider that was used to store the credentials
+	SecretsManagerProvider SecretsManagerProviderType `json:"secrets_manager_provider" example:"database"`
+	// The secret identifier that contains the secret data.
+	// This value is always empty for the database type.
+	SecretID string `json:"secret_id" example:"dbsecrets/data"`
+	// The keys that were saved in the secrets manager.
+	// This value is always empty for the database type.
+	SecretKeys []string `json:"secret_keys" example:"HOST,PORT,USER,PASSWORD,DB"`
+}
+
+type DBRoleJobStatusResult struct {
+	// Name of the specific database role that was provisioned
+	UserRole string `json:"user_role" example:"hoop_ro"`
+	// Status of this specific role's provisioning: "running", "failed", or "completed"
+	Status string `json:"status" enums:"running,failed,completed" example:"failed"`
+	// Human-readable description of this role's provisioning status or error details
+	Message string `json:"message" example:"process already being executed, resource_id=arn:aws:rds:us-west-2:123456789012:db:my-postgres-db"`
+	// Credentials information about the stored secrets
+	CredentialsInfo DBRoleJobStatusResultCredentialsInfo `json:"credentials_info"`
+	// Timestamp when this specific role's provisioning completed
+	CompletedAt time.Time `json:"completed_at" example:"2025-02-28T12:34:56Z"`
+}
+
+type DBRoleJobList struct {
+	Items []DBRoleJob `json:"items"`
 }

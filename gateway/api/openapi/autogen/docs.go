@@ -31,7 +31,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Agents"
                 ],
                 "summary": "List Agent Keys",
                 "responses": {
@@ -61,7 +61,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Agents"
                 ],
                 "summary": "Create Agent Key",
                 "parameters": [
@@ -116,7 +116,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Agents"
                 ],
                 "summary": "Delete Agent Key",
                 "parameters": [
@@ -218,7 +218,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Connections"
                 ],
                 "summary": "List Connections",
                 "parameters": [
@@ -232,8 +232,15 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "format": "string",
-                        "description": "Filter by tags, separated by comma",
+                        "description": "DEPRECATED: Filter by tags, separated by comma",
                         "name": "tags",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "format": "string",
+                        "description": "Selector tags to fo filter on, supports '=' and '!=' (e.g. key1=value1,key2=value2)",
+                        "name": "tagSelector",
                         "in": "query"
                     },
                     {
@@ -283,7 +290,7 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "The connection resource allows exposing internal services from your internal infra structure to users.\n\n### Types of Connections\n\nThe definition of this resource represent how clients will be able to interact with internal resources.\n\nEach type/subtype may represent a distinct implementation:\n\n- ` + "`" + `application/\u003csubtype\u003e` + "`" + ` - An alias to map distinct types of shell applications (e.g.: python, ruby, etc)\n- ` + "`" + `application/tcp` + "`" + ` - Forward TCP connections\n\n    This type requires the following environment variables:\n    - ` + "`" + `HOST` + "`" + `: ip or dns of the internal service\n    - ` + "`" + `PORT` + "`" + `: the port of the internal service\n\n- ` + "`" + `custom` + "`" + ` - Any custom shell application\n- ` + "`" + `database/\u003csubtype\u003e` + "`" + ` - Allow connecting to databases through multiple clients (Webapp, cli, IDE's)\n\nEach ` + "`" + `\u003csubtype\u003e` + "`" + ` has distinct environment variables that are allowed to be configured, refer to our [documentation](https://hoop.dev/docs) for more information.\n",
+                "description": "The connection resource allows exposing internal services from your internal infra structure to users.\n\n### Types of Connections\n\nThe definition of this resource represent how clients will be able to interact with internal resources.\n\nEach type/subtype may represent a distinct implementation:\n\n- ` + "`" + `application/\u003csubtype\u003e` + "`" + ` - An alias to map distinct types of shell applications (e.g.: python, ruby, etc)\n- ` + "`" + `application/tcp` + "`" + ` - Forward TCP connections\n\n    This type requires the following environment variables:\n    - ` + "`" + `HOST` + "`" + `: ip or dns of the internal service\n    - ` + "`" + `PORT` + "`" + `: the port of the internal service\n\n- ` + "`" + `custom` + "`" + ` - Any custom shell application\n- ` + "`" + `database/\u003csubtype\u003e` + "`" + ` - Allow connecting to databases through multiple clients (Webapp, cli, IDE's)\n\nEach ` + "`" + `\u003csubtype\u003e` + "`" + ` has distinct environment variables that are allowed to be configured, refer to our [documentation](https://hoop.dev/docs) for more information.\n\n### Tags\n\nTags are key/value pairs that are attached to objects such as Connections. Tags are intended to be used to specify identifying attributes of objects that are meaningful and relevant to users, but do not directly imply semantics to the core system.\n\n` + "`" + `` + "`" + `` + "`" + `json\n{\n    \"connection_tags\": {\n        \"environment\": \"production\",\n        \"component\": \"backend\"\n    }\n}\n` + "`" + `` + "`" + `` + "`" + `\n\nEquality- or inequality-based requirements allow filtering by tags keys and values. Matching objects must satisfy all of the specified tag constraints, though they may have additional tags as well. Three kinds of operators are admitted ` + "`" + `=` + "`" + `,` + "`" + `!=` + "`" + `. The first represent equality, while the last represents inequality. For example:\n\n` + "`" + `` + "`" + `` + "`" + `\nenvironment = production\ntier != frontend\n` + "`" + `` + "`" + `` + "`" + `\n\nThe former selects all resources with key equal to ` + "`" + `environment` + "`" + ` and value equal to ` + "`" + `production` + "`" + `. The latter selects all resources with key equal to ` + "`" + `tier` + "`" + ` and value distinct from ` + "`" + `frontend` + "`" + `. One could filter for resources in production excluding frontend using the comma operator: environment=production,tier!=frontend\n",
                 "consumes": [
                     "application/json"
                 ],
@@ -291,7 +298,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Connections"
                 ],
                 "summary": "Create Connection",
                 "parameters": [
@@ -339,6 +346,35 @@ const docTemplate = `{
                 }
             }
         },
+        "/connections-tags": {
+            "get": {
+                "description": "List all Connection Tags.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "List Connection Tags",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.ConnectionTag"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/connections/{nameOrID}": {
             "get": {
                 "description": "Get resource by name or id",
@@ -346,7 +382,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Connections"
                 ],
                 "summary": "Get Connection",
                 "parameters": [
@@ -388,7 +424,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Connections"
                 ],
                 "summary": "Update Connection",
                 "parameters": [
@@ -450,7 +486,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Connections"
                 ],
                 "summary": "List Databases",
                 "parameters": [
@@ -497,7 +533,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Connections"
                 ],
                 "summary": "Get Database Schema",
                 "parameters": [
@@ -551,7 +587,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Connections"
                 ],
                 "summary": "Delete Connection",
                 "parameters": [
@@ -566,6 +602,123 @@ const docTemplate = `{
                 "responses": {
                     "204": {
                         "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/dbroles/jobs": {
+            "get": {
+                "description": "List all db role jobs",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AWS"
+                ],
+                "summary": "List DB Role Jobs",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.DBRoleJobList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "It creates a job that performs the provisioning of default database roles",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AWS"
+                ],
+                "summary": "Create Database Role Job",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.CreateDBRoleJob"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.CreateDBRoleJobResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/dbroles/jobs/{id}": {
+            "get": {
+                "description": "Get DB Role job by id",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AWS"
+                ],
+                "summary": "Get DB Role Job",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The unique identifier of the resource",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.DBRoleJob"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
                     },
                     "404": {
                         "description": "Not Found",
@@ -618,7 +771,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Guard Rails"
                 ],
                 "summary": "List Guard Rail Rules",
                 "responses": {
@@ -648,7 +801,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Guard Rails"
                 ],
                 "summary": "Create Guard Rail Rules",
                 "parameters": [
@@ -700,7 +853,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Guard Rails"
                 ],
                 "summary": "Get Guard Rail Rules",
                 "parameters": [
@@ -748,7 +901,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Guard Rails"
                 ],
                 "summary": "Update Guard Rail Rules",
                 "parameters": [
@@ -789,7 +942,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Guard Rails"
                 ],
                 "summary": "Delete a Rule",
                 "parameters": [
@@ -841,6 +994,185 @@ const docTemplate = `{
                         "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/openapi.LivenessCheck"
+                        }
+                    }
+                }
+            }
+        },
+        "/integrations/aws/iam/accesskeys": {
+            "put": {
+                "description": "Update IAM Access Key or set a region when using IAM instance role",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AWS"
+                ],
+                "summary": "Update IAM Access Key",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.IAMAccessKeyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Remove IAM Access Key from storage",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AWS"
+                ],
+                "summary": "Delete IAM Access Key",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/integrations/aws/iam/userinfo": {
+            "get": {
+                "description": "It obtain the aws identity of the instance role or credentials",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AWS"
+                ],
+                "summary": "Get Caller Identity",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.IAMUserInfo"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/integrations/aws/iam/verify": {
+            "post": {
+                "description": "Verify if the IAM permissions are configured properly",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AWS"
+                ],
+                "summary": "Verify IAM permissions",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.IAMVerifyPermission"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/integrations/aws/organizations": {
+            "get": {
+                "description": "It list all AWS accounts associated with the access key credentials",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AWS"
+                ],
+                "summary": "List AWS Accounts",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ListAWSAccounts"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/integrations/aws/rds/describe-db-instances": {
+            "post": {
+                "description": "It list RDS Database Instances",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AWS"
+                ],
+                "summary": "List Database Instances",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ListAWSDBInstancesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ListAWSDBInstances"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
                         }
                     }
                 }
@@ -978,6 +1310,280 @@ const docTemplate = `{
                 }
             }
         },
+        "/integrations/jira/issuetemplates": {
+            "get": {
+                "description": "List Issue Templates",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Jira"
+                ],
+                "summary": "List Issue Templates",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.JiraIssueTemplate"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create Issue Templates",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Jira"
+                ],
+                "summary": "Create Issue Templates",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.JiraIssueTemplateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.JiraIssueTemplate"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/integrations/jira/issuetemplates/{id}": {
+            "get": {
+                "description": "Get Issue Templates",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Jira"
+                ],
+                "summary": "Get Issue Templates",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The id of the resource",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.JiraIssueTemplate"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update Issue Templates",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Jira"
+                ],
+                "summary": "Update Issue Templates",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The id of the resource",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.JiraIssueTemplateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.JiraIssueTemplate"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete Issue Templates",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Jira"
+                ],
+                "summary": "Delete Issue Templates",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The id of the resource",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/integrations/jira/issuetemplates/{id}/objects": {
+            "get": {
+                "description": "Get values for a specific Jira object type in an Issue Template",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Jira"
+                ],
+                "summary": "Get Object Type Values for Issue Template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The id of the template",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "The Jira object type to fetch values for",
+                        "name": "object_type",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/login": {
             "get": {
                 "description": "Returns the login url to perform the signin on the identity provider",
@@ -1089,7 +1695,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Organization Management"
                 ],
                 "summary": "Get Org Key",
                 "responses": {
@@ -1119,7 +1725,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Organization Management"
                 ],
                 "summary": "Create Org Key",
                 "responses": {
@@ -1149,7 +1755,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Organization Management"
                 ],
                 "summary": "Revoke Org Key",
                 "responses": {
@@ -1233,7 +1839,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Plugins"
                 ],
                 "summary": "List Plugins",
                 "responses": {
@@ -1263,7 +1869,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Plugins"
                 ],
                 "summary": "Create Plugin",
                 "parameters": [
@@ -1315,7 +1921,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Runbooks"
                 ],
                 "summary": "Runbook Exec",
                 "parameters": [
@@ -1383,7 +1989,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Runbooks"
                 ],
                 "summary": "List Runbooks By Connection",
                 "parameters": [
@@ -1436,7 +2042,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Runbooks"
                 ],
                 "summary": "List Runbooks",
                 "responses": {
@@ -1474,7 +2080,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Plugins"
                 ],
                 "summary": "Get Plugin",
                 "parameters": [
@@ -1516,7 +2122,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Plugins"
                 ],
                 "summary": "Update Plugin",
                 "parameters": [
@@ -1575,7 +2181,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Plugins"
                 ],
                 "summary": "Update Plugin Config",
                 "parameters": [
@@ -1764,6 +2370,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -1806,7 +2418,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Reports"
                 ],
                 "summary": "Session Reports",
                 "parameters": [
@@ -1902,7 +2514,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Reviews"
                 ],
                 "summary": "List Reviews",
                 "responses": {
@@ -1931,7 +2543,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Reviews"
                 ],
                 "summary": "Get Review",
                 "parameters": [
@@ -1973,7 +2585,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Reviews"
                 ],
                 "summary": "Update Review Status",
                 "parameters": [
@@ -2199,7 +2811,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Sessions"
                 ],
                 "summary": "List Sessions",
                 "parameters": [
@@ -2272,7 +2884,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Sessions"
                 ],
                 "summary": "Exec",
                 "parameters": [
@@ -2327,7 +2939,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Sessions"
                 ],
                 "summary": "Get Session",
                 "parameters": [
@@ -2345,7 +2957,8 @@ const docTemplate = `{
                     },
                     {
                         "enum": [
-                            "utf8"
+                            "utf8",
+                            "base64"
                         ],
                         "type": "string",
                         "description": "This option will parse the session output (o) and error (e) events as an utf-8 content in the session payload",
@@ -2365,6 +2978,16 @@ const docTemplate = `{
                         ],
                         "description": "Choose the type of events to include\n* ` + "`" + `i` + "`" + ` - Input (stdin)\n* ` + "`" + `o` + "`" + ` - Output (stdout)\n* ` + "`" + `e` + "`" + ` - Error (stderr)",
                         "name": "events",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "event_stream"
+                        ],
+                        "type": "string",
+                        "example": "event_stream",
+                        "description": "Expand the given attributes",
+                        "name": "expand",
                         "in": "query"
                     },
                     {
@@ -2424,7 +3047,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Sessions"
                 ],
                 "summary": "Download Session",
                 "parameters": [
@@ -2521,6 +3144,147 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sessions/{session_id}/kill": {
+            "post": {
+                "tags": [
+                    "Sessions"
+                ],
+                "summary": "Kill Session",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The id of the resource",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sessions/{session_id}/metadata": {
+            "patch": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sessions"
+                ],
+                "summary": "Update Session Metadata",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SessionUpdateMetadataRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sessions/{session_id}/review": {
+            "put": {
+                "description": "Update the status of a review resource by the session id",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Reviews"
+                ],
+                "summary": "Update Review Status By Sid",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Resource identifier of the session",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ReviewRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.Review"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -2951,6 +3715,116 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "openapi.AWSAccount": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "description": "AccountID is the unique identifier for the AWS account",
+                    "type": "string",
+                    "example": "123456789012"
+                },
+                "email": {
+                    "description": "Email is the email address associated with the AWS account",
+                    "type": "string",
+                    "example": "aws-prod@example.com"
+                },
+                "joined_methods": {
+                    "description": "JoinedMethods indicates how the account joined the organization",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.AccountJoinedMethod"
+                        }
+                    ],
+                    "example": "INVITED"
+                },
+                "name": {
+                    "description": "Name is the friendly name of the AWS account",
+                    "type": "string",
+                    "example": "SandBox"
+                },
+                "status": {
+                    "description": "Status indicates whether the account is active, suspended, etc.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.AccountStatus"
+                        }
+                    ],
+                    "example": "ACTIVE"
+                }
+            }
+        },
+        "openapi.AWSDBInstance": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "description": "AccountID is the unique identifier for the AWS account that owns the database",
+                    "type": "string",
+                    "example": "123456789012"
+                },
+                "arn": {
+                    "description": "ARN is the Amazon Resource Name that uniquely identifies the database instance",
+                    "type": "string",
+                    "example": "arn:aws:rds:us-west-2:123456789012:db:my-postgres-db"
+                },
+                "availability_zone": {
+                    "description": "AvailabilityZone is the AWS availability zone where the database is deployed",
+                    "type": "string",
+                    "example": "us-west-2a"
+                },
+                "engine": {
+                    "description": "Engine is the database engine type (e.g., MySQL, PostgreSQL)",
+                    "type": "string",
+                    "example": "postgres"
+                },
+                "name": {
+                    "description": "Name is the identifier for the database instance",
+                    "type": "string",
+                    "example": "my-postgres-db"
+                },
+                "status": {
+                    "description": "Status indicates the current state of the database instance",
+                    "type": "string",
+                    "example": "available"
+                },
+                "vpc_id": {
+                    "description": "VpcID is the ID of the Virtual Private Cloud where the database is deployed",
+                    "type": "string",
+                    "example": "vpc-0123456789abcdef0"
+                }
+            }
+        },
+        "openapi.AWSDBRoleJobSpec": {
+            "type": "object",
+            "properties": {
+                "account_arn": {
+                    "description": "AWS IAM ARN with permissions to execute this role creation job",
+                    "type": "string",
+                    "example": "arn:aws:iam:123456789012"
+                },
+                "db_arn": {
+                    "description": "ARN of the target RDS database instance where roles will be created",
+                    "type": "string",
+                    "example": "arn:aws:rds:us-west-2:123456789012:db:my-instance"
+                },
+                "db_engine": {
+                    "description": "Database engine type (e.g., \"postgres\", \"mysql\") of the RDS instance",
+                    "type": "string",
+                    "example": "postgres"
+                },
+                "db_name": {
+                    "description": "Logical database name within the RDS instance where roles will be applied",
+                    "type": "string",
+                    "example": "customers"
+                },
+                "db_tags": {
+                    "description": "Database Instance tags",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.DBTag"
+                    }
+                }
+            }
+        },
         "openapi.AgentCreateResponse": {
             "type": "object",
             "properties": {
@@ -3138,6 +4012,21 @@ const docTemplate = `{
                         "/bin/bash"
                     ]
                 },
+                "connection_tags": {
+                    "description": "Tags to identify the connection\n* keys must contain between 1 and 64 alphanumeric characters, it may include (-), (_), (/), or (.) characters and it must not end with (-), (/) or (-).\n* values must contain between 1 and 256 alphanumeric characters, it may include space, (-), (_), (/), (+), (@), (:), (=) or (.) characters.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "environment": "prod",
+                        "tier": "frontend"
+                    }
+                },
+                "default_database": {
+                    "description": "Default databases returns the configured value of the attribute secrets-\u003e'DB'",
+                    "type": "string"
+                },
                 "guardrail_rules": {
                     "description": "The guard rail association id rules",
                     "type": "array",
@@ -3155,6 +4044,11 @@ const docTemplate = `{
                     "format": "uuid",
                     "readOnly": true,
                     "example": "5364ec99-653b-41ba-8165-67236e894990"
+                },
+                "jira_issue_template_id": {
+                    "description": "The jira issue templates ids associated to the connection",
+                    "type": "string",
+                    "example": "B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"
                 },
                 "managed_by": {
                     "description": "Managed By is a read only field that indicates who is managing this resource.\nWhen this attribute is set, this resource is considered immutable",
@@ -3211,7 +4105,7 @@ const docTemplate = `{
                     "example": "postgres"
                 },
                 "tags": {
-                    "description": "Tags to classify the connection",
+                    "description": "DEPRECATED: Tags to classify the connection",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -3235,18 +4129,6 @@ const docTemplate = `{
         "openapi.ConnectionColumn": {
             "type": "object",
             "properties": {
-                "default_value": {
-                    "description": "The default value of the column",
-                    "type": "string"
-                },
-                "is_foreign_key": {
-                    "description": "The foreign key of the column",
-                    "type": "boolean"
-                },
-                "is_primary_key": {
-                    "description": "The primary key of the column",
-                    "type": "boolean"
-                },
                 "name": {
                     "description": "The name of the column",
                     "type": "string"
@@ -3272,30 +4154,6 @@ const docTemplate = `{
                 }
             }
         },
-        "openapi.ConnectionIndex": {
-            "type": "object",
-            "properties": {
-                "columns": {
-                    "description": "The columns of the index",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "is_primary": {
-                    "description": "The primary of the index",
-                    "type": "boolean"
-                },
-                "is_unique": {
-                    "description": "The unique of the index",
-                    "type": "boolean"
-                },
-                "name": {
-                    "description": "The name of the index",
-                    "type": "string"
-                }
-            }
-        },
         "openapi.ConnectionSchema": {
             "type": "object",
             "properties": {
@@ -3307,13 +4165,6 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/openapi.ConnectionTable"
-                    }
-                },
-                "views": {
-                    "description": "The views of the schema",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/openapi.ConnectionView"
                     }
                 }
             }
@@ -3339,32 +4190,326 @@ const docTemplate = `{
                         "$ref": "#/definitions/openapi.ConnectionColumn"
                     }
                 },
-                "indexes": {
-                    "description": "The indexes of the table",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/openapi.ConnectionIndex"
-                    }
-                },
                 "name": {
                     "description": "The name of the table",
                     "type": "string"
                 }
             }
         },
-        "openapi.ConnectionView": {
+        "openapi.ConnectionTag": {
             "type": "object",
             "properties": {
-                "columns": {
-                    "description": "The columns of the view",
+                "created_at": {
+                    "description": "CreatedAt is the timestamp when this tag was created",
+                    "type": "string",
+                    "example": "2023-08-15T14:30:45Z"
+                },
+                "id": {
+                    "description": "ID is the unique identifier for this specific tag",
+                    "type": "string",
+                    "example": "tag_01H7ZD5SJRZ7RPGQRMT4Y9HF"
+                },
+                "key": {
+                    "description": "Key is the identifier for the tag category (e.g., \"environment\", \"department\")",
+                    "type": "string",
+                    "example": "environment"
+                },
+                "updated_at": {
+                    "description": "UpdatedAt is the timestamp when this tag was last updated",
+                    "type": "string",
+                    "example": "2023-08-15T14:30:45Z"
+                },
+                "value": {
+                    "description": "Value is the specific tag value associated with the key (e.g., \"production\", \"finance\")",
+                    "type": "string",
+                    "example": "production"
+                }
+            }
+        },
+        "openapi.CreateDBRoleJob": {
+            "type": "object",
+            "required": [
+                "agent_id",
+                "aws",
+                "connection_prefix_name",
+                "job_steps"
+            ],
+            "properties": {
+                "agent_id": {
+                    "description": "Unique identifier of the agent hosting the database resource",
+                    "type": "string",
+                    "format": "uuid",
+                    "minLength": 36,
+                    "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                },
+                "aws": {
+                    "description": "AWS-specific configuration for the database role creation job",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.CreateDBRoleJobAWSProvider"
+                        }
+                    ]
+                },
+                "connection_prefix_name": {
+                    "description": "Base prefix for connection names - the role name will be appended to this prefix\nwhen creating the database connection (e.g., \"prod-postgres-ro\")",
+                    "type": "string",
+                    "example": "prod-postgres-"
+                },
+                "job_steps": {
+                    "description": "The additional steps to execute",
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/openapi.ConnectionColumn"
-                    }
+                        "$ref": "#/definitions/openapi.DBRoleJobStepType"
+                    },
+                    "example": [
+                        "create-connections",
+                        "send-webhook"
+                    ]
                 },
-                "name": {
-                    "description": "The name of the view",
-                    "type": "string"
+                "vault_provider": {
+                    "description": "Vault Provider uses HashiCorp Vault to store the provisioned credentials.\nThe target agent must be configured with the Vault Credentials in order for this operation to work",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.DBRoleJobVaultProvider"
+                        }
+                    ]
+                }
+            }
+        },
+        "openapi.CreateDBRoleJobAWSProvider": {
+            "type": "object",
+            "required": [
+                "instance_arn"
+            ],
+            "properties": {
+                "default_security_group": {
+                    "description": "The default security group that will be used to grant access for the agent to access.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.CreateDBRoleJobAWSProviderSG"
+                        }
+                    ]
+                },
+                "instance_arn": {
+                    "description": "Instance ARN is the identifier for the database instance",
+                    "type": "string",
+                    "example": "arn:aws:rds:us-west-2:123456789012:db:my-instance"
+                }
+            }
+        },
+        "openapi.CreateDBRoleJobAWSProviderSG": {
+            "type": "object",
+            "required": [
+                "ingress_cidr",
+                "target_port"
+            ],
+            "properties": {
+                "ingress_cidr": {
+                    "description": "The ingress inbound CIDR rule to allow traffic to",
+                    "type": "string",
+                    "example": "192.168.1.0/24"
+                },
+                "target_port": {
+                    "description": "The target port to be configured for the security group",
+                    "type": "integer",
+                    "example": 5432
+                }
+            }
+        },
+        "openapi.CreateDBRoleJobResponse": {
+            "type": "object",
+            "properties": {
+                "job_id": {
+                    "description": "Unique identifier for the asynchronous job that will create the database role",
+                    "type": "string",
+                    "example": "8F680C64-DBFD-48E1-9855-6650D9CAD62C"
+                }
+            }
+        },
+        "openapi.DBRoleJob": {
+            "type": "object",
+            "properties": {
+                "completed_at": {
+                    "description": "Timestamp when this job finished execution (null if still in progress)",
+                    "type": "string",
+                    "example": "2025-02-28T13:45:12Z"
+                },
+                "created_at": {
+                    "description": "Timestamp when this job was initially created",
+                    "type": "string",
+                    "example": "2025-02-28T12:34:56Z"
+                },
+                "id": {
+                    "description": "Unique identifier for this database role job",
+                    "type": "string",
+                    "example": "67D7D053-3CAF-430E-97BA-6D4933D3FD5B"
+                },
+                "org_id": {
+                    "description": "Unique identifier of the organization that owns this job",
+                    "type": "string",
+                    "example": "37EEBC20-D8DF-416B-8AC2-01B6EB456318"
+                },
+                "spec": {
+                    "description": "AWS-specific configuration details for the database role provisioning",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.AWSDBRoleJobSpec"
+                        }
+                    ]
+                },
+                "status": {
+                    "description": "Current status and results of the job execution (null if not started)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.DBRoleJobStatus"
+                        }
+                    ]
+                }
+            }
+        },
+        "openapi.DBRoleJobList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.DBRoleJob"
+                    }
+                }
+            }
+        },
+        "openapi.DBRoleJobStatus": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "description": "Human-readable description of the overall job status or error details",
+                    "type": "string",
+                    "example": "All user roles have been successfully provisioned"
+                },
+                "phase": {
+                    "description": "Current execution phase of the job: \"running\", \"failed\", or \"completed\"",
+                    "type": "string",
+                    "enum": [
+                        "running",
+                        "failed",
+                        "completed"
+                    ],
+                    "example": "running"
+                },
+                "result": {
+                    "description": "Detailed results for each individual role that was provisioned",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.DBRoleJobStatusResult"
+                    }
+                }
+            }
+        },
+        "openapi.DBRoleJobStatusResult": {
+            "type": "object",
+            "properties": {
+                "completed_at": {
+                    "description": "Timestamp when this specific role's provisioning completed",
+                    "type": "string",
+                    "example": "2025-02-28T12:34:56Z"
+                },
+                "credentials_info": {
+                    "description": "Credentials information about the stored secrets",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.DBRoleJobStatusResultCredentialsInfo"
+                        }
+                    ]
+                },
+                "message": {
+                    "description": "Human-readable description of this role's provisioning status or error details",
+                    "type": "string",
+                    "example": "process already being executed, resource_id=arn:aws:rds:us-west-2:123456789012:db:my-postgres-db"
+                },
+                "status": {
+                    "description": "Status of this specific role's provisioning: \"running\", \"failed\", or \"completed\"",
+                    "type": "string",
+                    "enum": [
+                        "running",
+                        "failed",
+                        "completed"
+                    ],
+                    "example": "failed"
+                },
+                "user_role": {
+                    "description": "Name of the specific database role that was provisioned",
+                    "type": "string",
+                    "example": "hoop_ro"
+                }
+            }
+        },
+        "openapi.DBRoleJobStatusResultCredentialsInfo": {
+            "type": "object",
+            "properties": {
+                "secret_id": {
+                    "description": "The secret identifier that contains the secret data.\nThis value is always empty for the database type.",
+                    "type": "string",
+                    "example": "dbsecrets/data"
+                },
+                "secret_keys": {
+                    "description": "The keys that were saved in the secrets manager.\nThis value is always empty for the database type.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "HOST",
+                        "PORT",
+                        "USER",
+                        "PASSWORD",
+                        "DB"
+                    ]
+                },
+                "secrets_manager_provider": {
+                    "description": "The secrets manager provider that was used to store the credentials",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.SecretsManagerProviderType"
+                        }
+                    ],
+                    "example": "database"
+                }
+            }
+        },
+        "openapi.DBRoleJobStepType": {
+            "type": "string",
+            "enum": [
+                "create-connections",
+                "send-webhook"
+            ],
+            "x-enum-varnames": [
+                "DBRoleJobStepCreateConnections",
+                "DBRoleJobStepSendWebhook"
+            ]
+        },
+        "openapi.DBRoleJobVaultProvider": {
+            "type": "object",
+            "required": [
+                "secret_id"
+            ],
+            "properties": {
+                "secret_id": {
+                    "description": "The path to store the credentials in Vault",
+                    "type": "string",
+                    "example": "dbsecrets/data"
+                }
+            }
+        },
+        "openapi.DBTag": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string",
+                    "example": "squad"
+                },
+                "value": {
+                    "type": "string",
+                    "example": "banking"
                 }
             }
         },
@@ -3378,7 +4523,7 @@ const docTemplate = `{
                         "type": "string"
                     },
                     "example": [
-                        "hello world"
+                        "--verbose"
                     ]
                 },
                 "connection": {
@@ -3401,7 +4546,7 @@ const docTemplate = `{
                 "script": {
                     "description": "The input of the execution",
                     "type": "string",
-                    "example": "echo"
+                    "example": "echo 'hello from hoop'"
                 }
             }
         },
@@ -3566,11 +4711,134 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.IAMAccessKeyRequest": {
+            "type": "object",
+            "required": [
+                "region"
+            ],
+            "properties": {
+                "access_key_id": {
+                    "description": "The AWS access Key ID",
+                    "type": "string",
+                    "example": "AKIAIOSFODNN7EXAMPLE"
+                },
+                "region": {
+                    "description": "The region that is going to be used by the key or when using instance profile IAM role",
+                    "type": "string",
+                    "example": "us-west-2"
+                },
+                "secret_access_key": {
+                    "description": "The AWS Secret Access Key. This attribute is required if access_key_id is set",
+                    "type": "string",
+                    "example": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+                },
+                "session_token": {
+                    "description": "The session token",
+                    "type": "string",
+                    "example": "AQoEXAMPLEH4aoAH0gNCAPyJxz4BlCFFxWNE1OPTgk5TthT+FvwqnKwRcOIfrRh3c/LTo6UDdyJwOOvEVPvLXCrrrUtdnniCEXAMPLE/IvU1dYUg2RVAJBanLiHb4IgRmpRV3zrkuWJOgQs8IZZaIv2BXIa2R4Olgk"
+                }
+            }
+        },
+        "openapi.IAMEvaluationDetail": {
+            "type": "object",
+            "properties": {
+                "action_name": {
+                    "description": "ActionName is the AWS service action being evaluated",
+                    "type": "string",
+                    "example": "ec2:DescribeInstances"
+                },
+                "decision": {
+                    "description": "Decision indicates whether the action is allowed or denied",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PolicyEvaluationDecisionType"
+                        }
+                    ],
+                    "example": "allowed"
+                },
+                "matched_statements": {
+                    "description": "MatchedStatements lists the policy statements that matched during evaluation",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.IAMEvaluationDetailStatement"
+                    }
+                },
+                "resource_name": {
+                    "description": "ResourceName is the ARN of the resource being accessed",
+                    "type": "string",
+                    "example": "arn:aws:ec2:us-west-2:123456789012:instance/i-0123456789abcdef0"
+                }
+            }
+        },
+        "openapi.IAMEvaluationDetailStatement": {
+            "type": "object",
+            "properties": {
+                "source_policy_id": {
+                    "description": "SourcePolicyID is the unique identifier for the policy",
+                    "type": "string",
+                    "example": "ANPAI3R4QMYGV2EXAMPL4"
+                },
+                "source_policy_type": {
+                    "description": "SourcePolicyType indicates the type of policy (managed, inline, etc.)",
+                    "type": "string",
+                    "example": "managed"
+                }
+            }
+        },
+        "openapi.IAMUserInfo": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "description": "AccountID is the unique identifier for the AWS account",
+                    "type": "string",
+                    "example": "123456789012"
+                },
+                "arn": {
+                    "description": "ARN is the Amazon Resource Name that uniquely identifies the IAM user",
+                    "type": "string",
+                    "example": "arn:aws:iam::123456789012:user/johndoe"
+                },
+                "arn_id": {
+                    "description": "UserID is the unique identifier for the IAM user",
+                    "type": "string",
+                    "example": "AIDACKCEVSQ6C2EXAMPLE"
+                },
+                "region": {
+                    "description": "Region is the AWS region where the IAM user is operating",
+                    "type": "string",
+                    "example": "us-west-2"
+                }
+            }
+        },
+        "openapi.IAMVerifyPermission": {
+            "type": "object",
+            "properties": {
+                "evaluation_details": {
+                    "description": "EvaluationDetails contains the details of each permission evaluation",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.IAMEvaluationDetail"
+                    }
+                },
+                "identity": {
+                    "description": "Identity contains information about the IAM user being evaluated",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.IAMUserInfo"
+                        }
+                    ]
+                },
+                "status": {
+                    "description": "Status indicates the overall result of the permission verification",
+                    "type": "string",
+                    "example": "allowed"
+                }
+            }
+        },
         "openapi.JiraIntegration": {
             "type": "object",
             "required": [
                 "api_token",
-                "project_key",
                 "url",
                 "user"
             ],
@@ -3591,12 +4859,13 @@ const docTemplate = `{
                     "description": "The organization identifier",
                     "type": "string"
                 },
-                "project_key": {
-                    "description": "The default Jira project key",
-                    "type": "string"
-                },
                 "status": {
-                    "$ref": "#/definitions/openapi.JiraIntegrationStatus"
+                    "description": "Report if the integration is enabled or disabled",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.JiraIntegrationStatus"
+                        }
+                    ]
                 },
                 "updated_at": {
                     "description": "The last update date and time of the integration",
@@ -3622,6 +4891,102 @@ const docTemplate = `{
                 "JiraIntegrationStatusActive",
                 "JiraIntegrationStatusInactive"
             ]
+        },
+        "openapi.JiraIssueTemplate": {
+            "type": "object",
+            "properties": {
+                "cmdb_types": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "created_at": {
+                    "description": "The time when the template was created",
+                    "type": "string"
+                },
+                "description": {
+                    "description": "The description of the template",
+                    "type": "string"
+                },
+                "id": {
+                    "description": "The unique identifier of the integration",
+                    "type": "string"
+                },
+                "issue_transition_name_on_close": {
+                    "description": "The name of the issue transition to change the state of the issue\nwhen the session closes",
+                    "type": "string",
+                    "example": "done"
+                },
+                "mapping_types": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "name": {
+                    "description": "The name of the template",
+                    "type": "string"
+                },
+                "project_key": {
+                    "description": "The project key which is the shortand version of the project's name",
+                    "type": "string"
+                },
+                "prompt_types": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "request_type_id": {
+                    "description": "The request type id that will be associated to the issue",
+                    "type": "string"
+                },
+                "updated_at": {
+                    "description": "The time when the template was updated",
+                    "type": "string"
+                }
+            }
+        },
+        "openapi.JiraIssueTemplateRequest": {
+            "type": "object",
+            "required": [
+                "name",
+                "project_key",
+                "request_type_id"
+            ],
+            "properties": {
+                "cmdb_types": {
+                    "description": "Cmdb Types are custom fields integrated with the Jira Assets API\n\n\t\t{\n\t\t  \"items\": [\n\t\t    {\n\t\t      \"description\": \"Service Field\",\n\t\t      \"jira_field\": \"customfield_10110\",\n\t\t      \"jira_object_type\": \"Service\",\n\t\t      \"required\": true,\n\t\t      \"value\": \"mydb-prod\"\n\t\t    }\n\t\t  ]\n\t\t}",
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "description": {
+                    "description": "The description of the template",
+                    "type": "string"
+                },
+                "issue_transition_name_on_close": {
+                    "description": "The name of the issue transition to change the state of the issue\nwhen the session closes",
+                    "type": "string",
+                    "default": "done"
+                },
+                "mapping_types": {
+                    "description": "The automated fields that will be sent when creating the issue.\nThere're two types\n- preset: obtain the value from a list of available fields that could be propagated\nThe list of available preset values are:\n\n\t\t- session.id\n\t\t- session.user_email\n\t\t- session.user_id\n\t\t- session.user_name\n\t\t- session.type\n\t\t- session.connection_subtype\n\t\t- session.connection\n\t\t- session.status\n\t\t- session.script\n\t\t- session.start_date\n\n- custom: use a custom static value\n\n\t\t{\n\t\t  \"items\": [\n\t\t    {\n\t\t      \"description\": \"Hoop Connection Name\",\n\t\t      \"jira_field\": \"customfield_10050\",\n\t\t      \"type\": \"preset\",\n\t\t      \"value\": \"session.connection\"\n\t\t    }\n\t\t  ]\n\t\t}",
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "name": {
+                    "description": "The name of the template",
+                    "type": "string"
+                },
+                "project_key": {
+                    "description": "The project key which is the shortand version of the project's name",
+                    "type": "string"
+                },
+                "prompt_types": {
+                    "description": "The prompt fields that will be show to user before executing a session\n\n\t\t{\n\t\t  \"items\": [\n\t\t    {\n\t\t      \"description\": \"Squad Name\",\n\t\t      \"jira_field\": \"customfield_10052\",\n\t\t\t  \"field_type\": \"text|select|datetime-local\",\n\t\t      \"label\": \"Squad Name\",\n\t\t      \"required\": true\n\t\t    }\n\t\t  ]\n\t\t}",
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "request_type_id": {
+                    "description": "The request type that will be associated to the issue",
+                    "type": "string"
+                }
+            }
         },
         "openapi.License": {
             "type": "object",
@@ -3688,6 +5053,31 @@ const docTemplate = `{
                     "example": "enterprise"
                 }
             }
+        },
+        "openapi.ListAWSAccounts": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.AWSAccount"
+                    }
+                }
+            }
+        },
+        "openapi.ListAWSDBInstances": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.AWSDBInstance"
+                    }
+                }
+            }
+        },
+        "openapi.ListAWSDBInstancesRequest": {
+            "type": "object"
         },
         "openapi.LivenessCheck": {
             "type": "object",
@@ -3875,6 +5265,16 @@ const docTemplate = `{
                     "description": "The requested connection name",
                     "type": "string"
                 },
+                "connection_subtype": {
+                    "description": "The requested connection subtype",
+                    "type": "string",
+                    "readOnly": true
+                },
+                "connection_type": {
+                    "description": "The requested connection type",
+                    "type": "string",
+                    "readOnly": true
+                },
                 "id": {
                     "description": "Deterministic uuid identifier of the user",
                     "type": "string",
@@ -4019,10 +5419,14 @@ const docTemplate = `{
                 },
                 "type": {
                     "description": "The type of this review\n* onetime - Represents a one time execution\n* jit - Represents a time based review",
-                    "type": "string",
                     "enum": [
                         "onetime",
                         "jit"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ReviewType"
+                        }
                     ],
                     "readOnly": true
                 }
@@ -4168,6 +5572,17 @@ const docTemplate = `{
                 "ReviewStatusUnknown"
             ]
         },
+        "openapi.ReviewType": {
+            "type": "string",
+            "enum": [
+                "jit",
+                "onetime"
+            ],
+            "x-enum-varnames": [
+                "ReviewTypeJit",
+                "ReviewTypeOneTime"
+            ]
+        },
         "openapi.Runbook": {
             "type": "object",
             "properties": {
@@ -4279,6 +5694,17 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.SecretsManagerProviderType": {
+            "type": "string",
+            "enum": [
+                "database",
+                "vault"
+            ],
+            "x-enum-varnames": [
+                "SecretsManagerProviderDatabase",
+                "SecretsManagerProviderVault"
+            ]
+        },
         "openapi.ServerInfo": {
             "type": "object",
             "properties": {
@@ -4337,7 +5763,11 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "has_redact_credentials": {
-                    "description": "Report if GOOGLE_APPLICATION_CREDENTIALS_JSON is set",
+                    "description": "Report if GOOGLE_APPLICATION_CREDENTIALS_JSON or MSPRESIDIO is set",
+                    "type": "boolean"
+                },
+                "has_ssh_client_host_key": {
+                    "description": "Report if SSH_CLIENT_HOST_KEY is set",
                     "type": "boolean"
                 },
                 "has_webhook_app_key": {
@@ -4357,6 +5787,15 @@ const docTemplate = `{
                         "ERROR"
                     ],
                     "example": "INFO"
+                },
+                "redact_provider": {
+                    "description": "DLP provider used by the server",
+                    "type": "string",
+                    "enum": [
+                        "gcp",
+                        "mspresidio"
+                    ],
+                    "example": "gcp"
                 },
                 "tenancy_type": {
                     "description": "The tenancy type",
@@ -4495,6 +5934,11 @@ const docTemplate = `{
                     "type": "string",
                     "example": "pgdemo"
                 },
+                "connection_subtype": {
+                    "description": "The subtype of the connection",
+                    "type": "string",
+                    "example": "postgres"
+                },
                 "end_date": {
                     "description": "When the execution ended. A null value indicates the session is still running",
                     "type": "string",
@@ -4508,7 +5952,13 @@ const docTemplate = `{
                 "event_stream": {
                     "description": "The stream containing the output of the execution in the following format\n\n` + "`" + `[[0.268589438, \"i\", \"ZW52\"], ...]` + "`" + `\n\n* ` + "`" + `\u003cevent-time\u003e` + "`" + ` - relative time in miliseconds to start_date\n* ` + "`" + `\u003cevent-type\u003e` + "`" + ` - the event type as string (i: input, o: output e: output-error)\n* ` + "`" + `\u003cbase64-content\u003e` + "`" + ` - the content of the session encoded as base64 string",
                     "type": "array",
-                    "items": {}
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "exit_code": {
+                    "description": "The Linux exit code if it's available",
+                    "type": "integer"
                 },
                 "id": {
                     "description": "The resource unique identifier",
@@ -4516,8 +5966,10 @@ const docTemplate = `{
                     "format": "uuid",
                     "example": "1CBC8DB5-FBF8-4293-8E35-59A6EEA40207"
                 },
-                "jira_issue": {
-                    "type": "string"
+                "integrations_metadata": {
+                    "description": "Metadata attributes related to integrations with third party services",
+                    "type": "object",
+                    "additionalProperties": {}
                 },
                 "labels": {
                     "description": "DEPRECATED in flavor of metrics and metadata",
@@ -4568,11 +6020,10 @@ const docTemplate = `{
                 },
                 "status": {
                     "description": "Status of the resource\n* ready - the resource is ready to be executed, after being approved by a user\n* open - the session started and it's running\n* done - the session has finished",
-                    "type": "string",
-                    "enum": [
-                        "open",
-                        "ready",
-                        "done"
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.SessionStatusType"
+                        }
                     ]
                 },
                 "type": {
@@ -4678,6 +6129,34 @@ const docTemplate = `{
             "type": "object",
             "additionalProperties": {
                 "type": "string"
+            }
+        },
+        "openapi.SessionStatusType": {
+            "type": "string",
+            "enum": [
+                "open",
+                "ready",
+                "done"
+            ],
+            "x-enum-varnames": [
+                "SessionStatusOpen",
+                "SessionStatusReady",
+                "SessionStatusDone"
+            ]
+        },
+        "openapi.SessionUpdateMetadataRequest": {
+            "type": "object",
+            "properties": {
+                "metadata": {
+                    "description": "The metadata field",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "reason": "fix-issue"
+                    }
+                }
             }
         },
         "openapi.SignupRequest": {
@@ -4945,6 +6424,43 @@ const docTemplate = `{
                     "example": "https://app.svix.com/app_3ZT4NrDlps0Pjp6Af8L6pJMMh3/endpoints"
                 }
             }
+        },
+        "types.AccountJoinedMethod": {
+            "type": "string",
+            "enum": [
+                "INVITED",
+                "CREATED"
+            ],
+            "x-enum-varnames": [
+                "AccountJoinedMethodInvited",
+                "AccountJoinedMethodCreated"
+            ]
+        },
+        "types.AccountStatus": {
+            "type": "string",
+            "enum": [
+                "ACTIVE",
+                "SUSPENDED",
+                "PENDING_CLOSURE"
+            ],
+            "x-enum-varnames": [
+                "AccountStatusActive",
+                "AccountStatusSuspended",
+                "AccountStatusPendingClosure"
+            ]
+        },
+        "types.PolicyEvaluationDecisionType": {
+            "type": "string",
+            "enum": [
+                "allowed",
+                "explicitDeny",
+                "implicitDeny"
+            ],
+            "x-enum-varnames": [
+                "PolicyEvaluationDecisionTypeAllowed",
+                "PolicyEvaluationDecisionTypeExplicitDeny",
+                "PolicyEvaluationDecisionTypeImplicitDeny"
+            ]
         }
     },
     "securityDefinitions": {
@@ -4984,6 +6500,30 @@ const docTemplate = `{
         {
             "description": "Proxy manager endpoints controls how clients connect via gRPC in the gateway. These endpoints are meant to be used when a client is initialized via ` + "`" + `hoop proxy-manager` + "`" + `.",
             "name": "Proxy Manager"
+        },
+        {
+            "name": "Connections"
+        },
+        {
+            "name": "Agents"
+        },
+        {
+            "name": "Runbooks"
+        },
+        {
+            "name": "Guard Rails"
+        },
+        {
+            "name": "Reviews"
+        },
+        {
+            "name": "Sessions"
+        },
+        {
+            "name": "Organization Management"
+        },
+        {
+            "name": "Reports"
         }
     ]
 }`

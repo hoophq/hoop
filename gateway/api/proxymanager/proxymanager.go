@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
+	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	pgproxymanager "github.com/hoophq/hoop/gateway/pgrest/proxymanager"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -26,8 +27,8 @@ import (
 //	@Tags			Proxy Manager
 //	@Param			type	query	string	false	"Filter by type"	Format(string)
 //	@Produce		json
-//	@Success		200		{object}	openapi.ProxyManagerResponse
-//	@Failure		400,500	{object}	openapi.HTTPError
+//	@Success		200			{object}	openapi.ProxyManagerResponse
+//	@Failure		400,404,500	{object}	openapi.HTTPError
 //	@Router			/proxymanager/status [get]
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -42,14 +43,29 @@ func Get(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "entity not found"})
 		return
 	}
+
+	conn, err := apiconnections.FetchByName(ctx, obj.RequestConnectionName)
+	if err != nil {
+		log.Errorf("failed retrieving connection %v, reason=%v", obj.RequestConnectionName, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal error, failed to obtaining connection"})
+		return
+	}
+
+	if conn == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "connection not found"})
+		return
+	}
+
 	c.JSON(http.StatusOK, &openapi.ProxyManagerResponse{
-		ID:                    obj.ID,
-		Status:                openapi.ClientStatusType(obj.Status),
-		RequestConnectionName: obj.RequestConnectionName,
-		RequestPort:           obj.RequestPort,
-		RequestAccessDuration: obj.RequestAccessDuration,
-		ClientMetadata:        obj.ClientMetadata,
-		ConnectedAt:           obj.ConnectedAt.Format(time.RFC3339),
+		ID:                       obj.ID,
+		Status:                   openapi.ClientStatusType(obj.Status),
+		RequestConnectionName:    obj.RequestConnectionName,
+		RequestConnectionType:    conn.Type,
+		RequestConnectionSubType: conn.SubType.String,
+		RequestPort:              obj.RequestPort,
+		RequestAccessDuration:    obj.RequestAccessDuration,
+		ClientMetadata:           obj.ClientMetadata,
+		ConnectedAt:              obj.ConnectedAt.Format(time.RFC3339),
 	})
 }
 
@@ -76,6 +92,18 @@ func Post(c *gin.Context) {
 	}
 	if req.ConnectionName == "" || req.Port == "" {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": `port and connection_name are required attributes`})
+		return
+	}
+
+	conn, err := apiconnections.FetchByName(ctx, req.ConnectionName)
+	if err != nil {
+		log.Errorf("failed retrieving connection %v, reason=%v", req.ConnectionName, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal error, failed to obtaining connection"})
+		return
+	}
+
+	if conn == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "connection not found"})
 		return
 	}
 
@@ -123,13 +151,16 @@ func Post(c *gin.Context) {
 			_ = transport.DispatchDisconnect(obj)
 			c.Header("Location", string(pkt.Payload))
 			c.JSON(http.StatusOK, &openapi.ProxyManagerResponse{
-				ID:                    obj.ID,
-				Status:                openapi.ClientStatusType(obj.Status),
-				RequestConnectionName: obj.RequestConnectionName,
-				RequestPort:           obj.RequestPort,
-				RequestAccessDuration: obj.RequestAccessDuration,
-				ClientMetadata:        obj.ClientMetadata,
-				ConnectedAt:           obj.ConnectedAt.Format(time.RFC3339),
+				ID:                       obj.ID,
+				Status:                   openapi.ClientStatusType(obj.Status),
+				RequestConnectionName:    obj.RequestConnectionName,
+				RequestConnectionType:    conn.Type,
+				RequestConnectionSubType: conn.SubType.String,
+				RequestPort:              obj.RequestPort,
+				HasReview:                true,
+				RequestAccessDuration:    obj.RequestAccessDuration,
+				ClientMetadata:           obj.ClientMetadata,
+				ConnectedAt:              obj.ConnectedAt.Format(time.RFC3339),
 			})
 		default:
 			errMsg := fmt.Sprintf("internal error, packet %v condition not implemented", pkt.Type)
@@ -150,13 +181,15 @@ func Post(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, &openapi.ProxyManagerResponse{
-		ID:                    obj.ID,
-		Status:                openapi.ClientStatusType(obj.Status),
-		RequestConnectionName: obj.RequestConnectionName,
-		RequestPort:           obj.RequestPort,
-		RequestAccessDuration: obj.RequestAccessDuration,
-		ClientMetadata:        obj.ClientMetadata,
-		ConnectedAt:           obj.ConnectedAt.Format(time.RFC3339),
+		ID:                       obj.ID,
+		Status:                   openapi.ClientStatusType(obj.Status),
+		RequestConnectionName:    obj.RequestConnectionName,
+		RequestConnectionType:    conn.Type,
+		RequestConnectionSubType: conn.SubType.String,
+		RequestPort:              obj.RequestPort,
+		RequestAccessDuration:    obj.RequestAccessDuration,
+		ClientMetadata:           obj.ClientMetadata,
+		ConnectedAt:              obj.ConnectedAt.Format(time.RFC3339),
 	})
 }
 
@@ -182,6 +215,7 @@ func Disconnect(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "entity not found"})
 		return
 	}
+
 	if err := transport.DispatchDisconnect(obj); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return

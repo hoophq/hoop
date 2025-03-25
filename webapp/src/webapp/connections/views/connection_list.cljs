@@ -1,5 +1,7 @@
 (ns webapp.connections.views.connection-list
-  (:require ["@heroicons/react/16/solid" :as hero-micro-icon]
+  (:require ["lucide-react" :refer [Wifi EllipsisVertical InfoIcon]]
+            ["@radix-ui/themes" :refer [IconButton Box Button DropdownMenu Tooltip
+                                        Flex Text Callout]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
@@ -7,8 +9,8 @@
             [webapp.components.loaders :as loaders]
             [webapp.components.searchbox :as searchbox]
             [webapp.connections.constants :as connection-constants]
-            [webapp.config :as config]
-            [webapp.connections.views.create-update-connection.main :as create-update-connection]))
+            [webapp.connections.views.connection-settings-modal :as connection-settings-modal]
+            [webapp.config :as config]))
 
 (defn empty-list-view []
   [:div {:class "pt-x-large"}
@@ -28,19 +30,15 @@
    [:div {:class "flex items-center justify-center h-full"}
     [loaders/simple-loader]]])
 
-(defn- tooltip [text position]
-  [:div {:class (str "absolute -bottom-10 flex-col hidden mt-6 w-max "
-                     "group-hover:flex items-center -translate-x-1/2 z-50 "
-                     (if (= position "left")
-                       "-left-4"
-                       "left-1/2"))}
-   [:div {:class (str "relative w-3 h-3 -mb-2 bg-gray-900 transform rotate-45 z-50 "
-                      (if (= position "left")
-                        "left-[30px]"
-                        ""))}]
-   [:span {:class (str "relative bg-gray-900 rounded-md z-50 "
-                       "py-1.5 px-3.5 text-xs text-white leading-none whitespace-no-wrap shadow-lg")}
-    text]])
+(defn aws-connect-sync-callout []
+  (let [aws-jobs-running? @(rf/subscribe [:jobs/aws-connect-running?])]
+    (when aws-jobs-running?
+      [:> Callout.Root {:class "my-4"}
+       [:> Callout.Icon
+        [:> InfoIcon {:size 16}]]
+       [:> Callout.Text
+        [:> Text {:weight "bold" :as "span"} "AWS Connect Sync in Progress"]
+        [:> Text {:as "span"} " There is an automated process for your connections happening in your hoop.dev environment. Check it later in order to verify."]]])))
 
 (defn panel [_]
   (let [connections (rf/subscribe [:connections])
@@ -52,6 +50,7 @@
     (rf/dispatch [:connections->get-connections])
     (rf/dispatch [:users->get-user])
     (rf/dispatch [:guardrails->get-all])
+    (rf/dispatch [:jobs/start-aws-connect-polling])
     (fn []
       (let [connections-search-results (if (empty? @searched-connections)
                                          (:results @connections)
@@ -59,25 +58,28 @@
         [:div {:class "flex flex-col bg-white rounded-lg h-full p-6 overflow-y-auto"}
          (when (-> @user :data :admin?)
            [:div {:class "absolute top-10 right-4 sm:right-6 lg:top-16 lg:right-20"}
-            [button/tailwind-primary {:text "Add connection"
-                                      :on-click (fn []
-                                                  (rf/dispatch [:navigate :create-connection]))}]])
-         [:header
-          [:div {:class "mb-6"}
-           [searchbox/main
-            {:options (:results @connections)
-             :display-key :name
-             :searchable-keys [:name :type :subtype :tags :status]
-             :on-change-results-cb #(reset! searched-connections %)
-             :hide-results-list true
-             :placeholder "Search by connection name, type, status or anything"
-             :on-focus #(reset! search-focused true)
-             :on-blur #(reset! search-focused false)
-             :name "connection-search"
-             :on-change #(reset! searched-criteria-connections %)
-             :loading? (= @connections-search-status :loading)
-             :size :small
-             :icon-position "left"}]]]
+            [:> Button {:on-click (fn [] (rf/dispatch [:navigate :create-connection]))}
+             "Add Connection"]])
+         [:> Flex {:as "header"
+                   :direction "column"
+                   :gap "3"
+                   :class "mb-4"}
+          [searchbox/main
+           {:options (:results @connections)
+            :display-key :name
+            :searchable-keys [:name :type :subtype :connection_tags :status]
+            :on-change-results-cb #(reset! searched-connections %)
+            :hide-results-list true
+            :placeholder "Search by connection name, type, status, tags or anything"
+            :on-focus #(reset! search-focused true)
+            :on-blur #(reset! search-focused false)
+            :name "connection-search"
+            :on-change #(reset! searched-criteria-connections %)
+            :loading? (= @connections-search-status :loading)
+            :size :small
+            :icon-position "left"}]
+
+          [aws-connect-sync-callout]]
 
          (if (and (= :loading (:status @connections)) (empty? (:results @connections)))
            [loading-list-view]
@@ -109,15 +111,6 @@
                    [:div {:id "connection-info"
                           :class "flex gap-6 items-center"}
 
-                    (when (seq (:tags connection))
-                      [:div {:class "relative group flex items-center gap-2 text-xs text-gray-700"}
-                       [:div
-                        [:> hero-micro-icon/TagIcon {:class "w-4 h-4"}]]
-                       [:span {:class "text-nowrap font-semibold"}
-                        (str (first (:tags connection))
-                             (when (> (count (:tags connection)) 1)
-                               (str " + " (- (count (:tags connection)) 1) " more")))]])
-
                     [:div {:class "flex items-center gap-1 text-xs text-gray-700"}
                      [:div {:class (str "rounded-full h-[6px] w-[6px] "
                                         (if (= (:status connection) "online")
@@ -130,17 +123,39 @@
                            (and (= "application" (:type connection))
                                 (= "tcp" (:subtype connection))))
                       [:div {:class "relative cursor-pointer group"
-                             :on-click #(rf/dispatch [:connections->start-connect (:name connection)])}
-                       [tooltip "Hoop Access" (when (not (-> @user :data :admin?))
-                                                "left")]
-                       [:> hero-micro-icon/SignalIcon {:class "w-6 h-6 text-gray-700"}]])
+                             :on-click #(rf/dispatch [:modal->open {:content [connection-settings-modal/main (:name connection)]
+                                                                    :maxWidth "446px"}])}
+                       [:> Tooltip {:content "Hoop Access"}
+                        [:> IconButton {:size 1 :variant "ghost" :color "gray"}
+                         [:> Wifi {:size 16}]]]])
 
-                    (when (and (-> @user :data :admin?)
-                               (not (= (:managed_by connection) "hoopagent")))
-                      [:div {:class "relative cursor-pointer group"
-                             :on-click (fn []
-                                         (rf/dispatch [:plugins->get-my-plugins])
-                                         (rf/dispatch [:connections->get-connection {:connection-name (:name connection)}])
-                                         (rf/dispatch [:modal->open {:content [create-update-connection/main :update connection]}]))}
-                       [tooltip "Configure" "left"]
-                       [:> hero-micro-icon/AdjustmentsHorizontalIcon {:class "w-6 h-6 text-gray-700"}]])]])))]])]))))
+                    [:> DropdownMenu.Root {:dir "rtl"}
+                     [:> DropdownMenu.Trigger
+                      [:> IconButton {:size 1 :variant "ghost" :color "gray"}
+                       [:> EllipsisVertical {:size 16}]]]
+                     [:> DropdownMenu.Content
+                      (when (and (-> @user :data :admin?)
+                                 (not (= (:managed_by connection) "hoopagent")))
+                        [:> DropdownMenu.Item {:on-click
+                                               (fn []
+                                                 (rf/dispatch [:plugins->get-my-plugins])
+                                                 (rf/dispatch [:navigate :edit-connection {} :connection-name (:name connection)]))}
+                         "Configure"])
+                      [:> DropdownMenu.Item {:color "red"
+                                             :on-click (fn []
+                                                         (rf/dispatch [:dialog->open
+                                                                       {:title "Delete connection?"
+                                                                        :type :danger
+                                                                        :text-action-button "Confirm and delete"
+                                                                        :action-button? true
+                                                                        :text [:> Box {:class "space-y-radix-4"}
+                                                                               [:> Text {:as "p"}
+                                                                                "This action will instantly remove your access to "
+                                                                                (:name connection)
+                                                                                " and can not be undone."]
+                                                                               [:> Text {:as "p"}
+                                                                                "Are you sure you want to delete this connection?"]]
+                                                                        :on-success (fn []
+                                                                                      (rf/dispatch [:connections->delete-connection (:name connection)])
+                                                                                      (rf/dispatch [:modal->close]))}]))}
+                       "Delete"]]]]])))]])]))))

@@ -22,9 +22,7 @@ type Header struct {
 }
 
 func (h *Header) Validate() error {
-	if h.OrgID == "" || h.SessionID == "" ||
-		h.ConnectionType == "" || h.ConnectionName == "" ||
-		h.StartDate == nil {
+	if h.OrgID == "" || h.SessionID == "" {
 		return fmt.Errorf(`missing required values for wal session`)
 	}
 	return nil

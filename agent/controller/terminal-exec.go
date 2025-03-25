@@ -12,17 +12,17 @@ import (
 )
 
 func (a *Agent) doExec(pkt *pb.Packet) {
-	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
-	log.Printf("session=%v - received execution request", string(sessionID))
+	sid := string(pkt.Spec[pb.SpecGatewaySessionID])
+	log.With("sid", sid).Infof("received execution request")
 
-	connParams := a.connectionParams(sessionID)
+	connParams := a.connectionParams(sid)
 	if connParams == nil {
-		log.Printf("session=%s - connection params not found", sessionID)
-		a.sendClientSessionClose(sessionID, "internal error, connection params not found")
+		log.With("sid", sid).Infof("connection params not found")
+		a.sendClientSessionClose(sid, "internal error, connection params not found")
 		return
 	}
 
-	spec := map[string][]byte{pb.SpecGatewaySessionID: []byte(sessionID)}
+	spec := map[string][]byte{pb.SpecGatewaySessionID: []byte(sid)}
 	stdoutw := pb.NewStreamWriter(a.client, pbclient.WriteStdout, spec)
 	stderrw := pb.NewStreamWriter(a.client, pbclient.WriteStderr, spec)
 	opts := map[string]string{
@@ -36,30 +36,20 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 	cmd, err := libhoop.NewAdHocExec(connParams.EnvVars, args, pkt.Payload, stdoutw, stderrw, opts)
 	if err != nil {
 		errMsg := fmt.Sprintf("failed configuring command, reason=%v", err)
-		log.Printf("session=%s - %s", sessionID, errMsg)
-		a.sendClientSessionClose(sessionID, errMsg)
+		log.With("sid", sid).Infof(errMsg)
+		a.sendClientSessionClose(sid, errMsg)
 		return
 	}
-	log.Printf("session=%v, tty=false, stdinsize=%v - executing command:%v",
-		string(sessionID), len(pkt.Payload), args)
-	sessionIDKey := fmt.Sprintf(execStoreKey, sessionID)
+	log.With("sid", sid).Infof("tty=false, stdinsize=%v - executing command:%v", len(pkt.Payload), args)
+	sessionIDKey := fmt.Sprintf(execStoreKey, sid)
 	a.connStore.Set(sessionIDKey, cmd)
 
 	cmd.Run(func(exitCode int, errMsg string) {
 		if err := cmd.Close(); err != nil {
-			log.Warnf("session=%v - failed closing command, err=%v", string(sessionID), err)
+			log.With("sid", sid).Warnf("failed closing command, err=%v", err)
 		}
 		a.connStore.Del(sessionIDKey)
-		if errMsg != "" {
-			log.Infof("session=%v, exitcode=%v - err=%v", string(sessionID), exitCode, errMsg)
-		}
-		_, _ = pb.NewStreamWriter(
-			a.client,
-			pbclient.SessionClose,
-			map[string][]byte{
-				pb.SpecGatewaySessionID:  []byte(sessionID),
-				pb.SpecClientExitCodeKey: []byte(strconv.Itoa(exitCode)),
-			},
-		).Write([]byte(errMsg))
+		log.With("sid", sid).Infof("exitcode=%v - err=%v", exitCode, errMsg)
+		a.sendClientSessionCloseWithExitCode(sid, errMsg, strconv.Itoa(exitCode))
 	})
 }

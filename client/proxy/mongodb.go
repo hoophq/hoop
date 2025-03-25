@@ -1,20 +1,16 @@
 package proxy
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
 	"strconv"
-	"strings"
 
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
-)
-
-const (
-	defaultMongoDBPort = "27018"
 )
 
 type MongoDBServer struct {
@@ -25,9 +21,9 @@ type MongoDBServer struct {
 }
 
 func NewMongoDBServer(proxyPort string, client pb.ClientTransport) *MongoDBServer {
-	listenAddr := fmt.Sprintf("127.0.0.1:%s", defaultMongoDBPort)
+	listenAddr := defaultListenAddr(defaultMongoDBPort)
 	if proxyPort != "" {
-		listenAddr = fmt.Sprintf("127.0.0.1:%s", proxyPort)
+		listenAddr = defaultListenAddr(proxyPort)
 	}
 	return &MongoDBServer{
 		listenAddr:      listenAddr,
@@ -80,8 +76,8 @@ func (s *MongoDBServer) serveConn(sessionID, connectionID string, conn net.Conn)
 		string(pb.SpecClientConnectionID): []byte(connectionID),
 		string(pb.SpecGatewaySessionID):   []byte(sessionID),
 	})
-	if written, err := io.Copy(stream, conn); err != nil {
-		log.Warnf("failed copying buffer, written=%v, err=%v", written, err)
+	if err := copyMongoDBBuffer(stream, conn); err != nil && err != io.EOF {
+		log.Warnf("failed copying buffer, err=%v", err)
 	}
 }
 
@@ -111,10 +107,51 @@ func (s *MongoDBServer) getConnection(connectionID string) (io.WriteCloser, erro
 	return conn, nil
 }
 
-func (s *MongoDBServer) ListenPort() string {
-	parts := strings.Split(s.listenAddr, ":")
-	if len(parts) == 2 {
-		return parts[1]
+func (s *MongoDBServer) Host() Host { return getListenAddr(s.listenAddr) }
+
+func copyMongoDBBuffer(dst io.Writer, src io.Reader) (err error) {
+	for {
+		var header [16]byte
+		_, err = io.ReadFull(src, header[:])
+		if err != nil {
+			return err
+		}
+		pktLen := int(binary.LittleEndian.Uint32(header[0:4])) - binary.Size(header)
+		if pktLen > maxPacketSize {
+			return fmt.Errorf("max packet size reached (max:%v, pkt:%v)", maxPacketSize, pktLen)
+		}
+		frame := make([]byte, pktLen)
+		opCode := binary.LittleEndian.Uint32(header[12:16])
+		log.Debugf("pktlen=%v, opcode=%v, header=% X", pktLen, opCode, header[:])
+		copied := 0
+
+		for i := 0; ; i++ {
+			buf := make([]byte, defaultBufferSize)
+			nr, er := src.Read(buf)
+			if er != nil {
+				return
+			}
+
+			copied += copy(frame[copied:], buf[0:nr])
+			log.Debugf("pktlen=%v, opcode=%v, connread=%v, copied=%v",
+				pktLen, opCode, nr, copied)
+			if pktLen > nr {
+				pktLen -= nr
+				continue
+			}
+			encPkt := encodeMongoDbPacket(header, frame)
+			_, err = dst.Write(encPkt)
+			if err != nil {
+				return
+			}
+			break
+		}
 	}
-	return ""
+}
+
+func encodeMongoDbPacket(header [16]byte, frame []byte) []byte {
+	pktBytes := make([]byte, len(frame)+16)
+	_ = copy(pktBytes[:16], header[:])
+	_ = copy(pktBytes[16:], frame)
+	return pktBytes
 }

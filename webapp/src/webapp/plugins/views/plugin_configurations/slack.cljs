@@ -1,12 +1,14 @@
 (ns webapp.plugins.views.plugin-configurations.slack
-  (:require [clojure.string :as str]
-            [re-frame.core :as rf]
-            [reagent.core :as r]
-            [webapp.components.button :as button]
-            [webapp.components.forms :as forms]
-            [webapp.components.headings :as h]
-            [webapp.components.tabs :as tabs]
-            [webapp.plugins.views.plugin-configurations.container :as plugin-configuration-container]))
+  (:require
+   [clojure.string :as str]
+   [re-frame.core :as rf]
+   [reagent.core :as r]
+   [webapp.components.button :as button]
+   [webapp.components.forms :as forms]
+   [webapp.components.headings :as h]
+   [webapp.components.tabs :as tabs]
+   [webapp.config :as config]
+   [webapp.plugins.views.plugin-configurations.container :as plugin-configuration-container]))
 
 (defn configuration-modal [{:keys [connection plugin]}]
   (let [current-connection-config (first (filter #(= (:id connection)
@@ -58,7 +60,7 @@
          [h/h3 "Slack App Configurations" {:class "text-gray-800"}]
          [:span {:class "text-sm text-gray-600"}
           "Here you will integrate with your Slack App. Please visit our doc to "]
-         [:a {:href "https://hoop.dev/docs/integrations/slack"
+         [:a {:href (get-in config/docs-url [:integrations :slack])
               :target "_blank"
               :class "font-semibold text-sm text-gray-700 underline"}
           [:span "learn how to create a Slack App."]]]

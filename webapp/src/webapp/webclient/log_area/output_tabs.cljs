@@ -4,8 +4,8 @@
   [:a
    {:key key
     :on-click #(on-click key value)
-    :class (str (when (= value selected-tab) "border-b border-white ")
-                "uppercase cursor-pointer text-white"
+    :class (str (when (= value selected-tab) "border-b border-[--gray-a6] ")
+                "uppercase cursor-pointer text-[--gray-a11]"
                 " whitespace-nowrap font-medium text-xxs"
                 " py-small px-small text-center")
     :role "tab"

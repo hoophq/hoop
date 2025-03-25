@@ -17,6 +17,7 @@ const (
 	SpecClientConnectionID           string = "client.connection_id"
 	SpecClientExitCodeKey            string = "client.exit_code"
 	SpecClientRequestPort            string = "client.request_port"
+	SpecClientSSHHostKey             string = "client.ssh_host_key"
 	SpecClientExecArgsKey            string = "terminal.args"
 	SpecClientExecEnvVar             string = "terminal.envvars"
 	SpecAgentConnectionParamsKey     string = "agent.connection_params"
@@ -34,6 +35,7 @@ const (
 	DefaultKeepAlive time.Duration = 10 * time.Second
 
 	ConnectionTypeCommandLine ConnectionType = "command-line"
+	ConnectionTypeCustom      ConnectionType = "custom"
 	ConnectionTypePostgres    ConnectionType = "postgres"
 	ConnectionTypeMySQL       ConnectionType = "mysql"
 	ConnectionTypeMSSQL       ConnectionType = "mssql"
@@ -41,6 +43,7 @@ const (
 	ConnectionTypeOracleDB    ConnectionType = "oracledb"
 	ConnectionTypeTCP         ConnectionType = "tcp"
 	ConnectionTypeHttpProxy   ConnectionType = "httpproxy"
+	ConnectionTypeSSH         ConnectionType = "ssh"
 
 	ConnectionOriginAgent              = "agent"
 	ConnectionOriginClient             = "client"

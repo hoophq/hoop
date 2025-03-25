@@ -109,7 +109,7 @@ func CORSMiddleware() gin.HandlerFunc {
 		c.Writer.Header().Set("Server", fmt.Sprintf("hoopgateway/%s", vs.Version))
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, accept, origin, x-backend-api, user-client")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, accept, origin, user-client")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
 
 		if c.Request.Method == "OPTIONS" {
@@ -117,6 +117,31 @@ func CORSMiddleware() gin.HandlerFunc {
 			return
 		}
 
+		c.Next()
+	}
+}
+
+func SecurityHeaderMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+
+		c.Header("Content-Security-Policy",
+			"default-src self; "+ // Allow everything from any domain
+				"script-src * 'unsafe-inline' 'unsafe-eval'; "+ // Allow all scripts, including inline & eval()
+				"script-src-elem * 'unsafe-inline'; "+ // Allow all script elements
+				"style-src * 'unsafe-inline'; "+ // Allow all styles, including inline
+				"font-src *; "+ // Allow fonts from any domain
+				"connect-src *; "+ // Allow all API requests
+				"img-src * data: blob:; "+ // Allow all images, including base64 & blobs
+				"frame-src *; "+ // Allow embedding any frames
+				"object-src *; "+ // Allow all objects (e.g., Flash, embeds)
+				"worker-src *; ")
+
+		c.Header("X-Frame-Options", "DENY")
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("Referrer-Policy", "strict-origin")
+		c.Header("Permissions-Policy", "geolocation=(),midi=(),sync-xhr=(),microphone=(),camera=(),magnetometer=(),gyroscope=(),fullscreen=(self),payment=()")
+		c.Header("X-XSS-Protection", "1; mode=block")
 		c.Next()
 	}
 }

@@ -1,5 +1,5 @@
 // client must have all package types implemented by a client
-package client
+package pbclient
 
 const (
 	SessionOpenOK              = "ClientSessionOpenOK"
@@ -11,13 +11,14 @@ const (
 
 	ProxyManagerConnectOK = "ClientProxyManagerConnectOK"
 
-	HttpProxyConnectionWrite = "ClientHttpProxyConnectionWrite"
 	TCPConnectionClose       = "ClientTCPConnectionClose"
 	TCPConnectionWrite       = "ClientTCPConnectionWrite"
 	PGConnectionWrite        = "ClientPGConnectionWrite"
 	MySQLConnectionWrite     = "ClientMySQLConnectionWrite"
 	MSSQLConnectionWrite     = "ClientMSSQLConnectionWrite"
 	MongoDBConnectionWrite   = "ClientMongoDBConnectionWrite"
+	SSHConnectionWrite       = "ClientSSHConnectionWrite"
 	WriteStdout              = "ClientWriteStdout"
 	WriteStderr              = "ClientWriteStderr"
+	HttpProxyConnectionWrite = "ClientHttpProxyConnectionWrite"
 )

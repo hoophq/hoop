@@ -52,9 +52,3 @@ const (
 	ReviewStatusExecuted   ReviewStatus = "EXECUTED"
 	ReviewStatusUnknown    ReviewStatus = "UNKNOWN"
 )
-
-const (
-	SessionStatusOpen  = "open"
-	SessionStatusReady = "ready"
-	SessionStatusDone  = "done"
-)

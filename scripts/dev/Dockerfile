@@ -1,7 +1,7 @@
 FROM ubuntu:focal-20230605
 
-ENV DEBIAN_FRONTEND=noninteractive
-ENV ACCEPT_EULA=y
+ENV DEBIAN_FRONTEND noninteractive
+ENV ACCEPT_EULA y
 ENV NODE_VERSION 18.17.0
 ENV POSTGREST_VERSION 11.2.2
 
@@ -70,6 +70,8 @@ RUN mkdir -p /app && \
   tini \
   jq \
   openssh-client \
+  openssh-server \
+  sudo \
   apt-utils \
   procps \
   unzip \
@@ -79,6 +81,12 @@ RUN mkdir -p /app && \
   gnupg2 \
   libaio1 \
   wget
+
+# # SSH Server configuration for testing
+RUN echo 'root:1a2b3c4d' | chpasswd && \
+  mkdir -p /run/sshd && \
+  mkdir -p /root/.ssh && \
+  ssh-keygen -A
 
 RUN echo "deb http://apt.postgresql.org/pub/repos/apt/ focal-pgdg main" | tee /etc/apt/sources.list.d/pgdg.list && \
   echo "deb [arch=amd64,arm64] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/5.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-5.0.list && \
@@ -122,8 +130,8 @@ RUN URL_ORACLE_BASIC= && URL_ORACLE_SQLPLUS= && dpkgArch="$(dpkg --print-archite
   cd /
 
 # Configure environment variables
-ENV PATH="/opt/oracle/instantclient_19_24:$PATH"
-ENV LD_LIBRARY_PATH="/opt/oracle/instantclient_19_24:$LD_LIBRARY_PATH"
+ENV PATH "/opt/oracle/instantclient_19_24:$PATH"
+ENV LD_LIBRARY_PATH "/opt/oracle/instantclient_19_24:$LD_LIBRARY_PATH"
 
 RUN curl -sL "https://dl.k8s.io/release/v1.22.1/bin/linux/amd64/kubectl" -o kubectl && \
   echo '78178a8337fc6c76780f60541fca7199f0f1a2e9c41806bded280a4a5ef665c9  kubectl' | sha256sum -c --ignore-missing --strict - && \
@@ -148,6 +156,6 @@ ENV LANG en_US.UTF-8
 ENV LANGUAGE en_US:en
 ENV LC_ALL en_US.UTF-8
 
-ENV PATH="/app:${PATH}"
+ENV PATH "/app:${PATH}"
 
 ENTRYPOINT ["tini", "--"]
