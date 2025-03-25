@@ -43,11 +43,12 @@
 (defn minimize-modal []
   (let [connection @(rf/subscribe [:connections->connection-connected])]
     (rf/dispatch [:modal->close])
-    (rf/dispatch [:draggable-card->open
-                  {:component [draggable-card-content (:data connection)]
-                   :on-click-expand (fn []
-                                      (rf/dispatch [:draggable-card->close])
-                                      (rf/dispatch [:modal->re-open]))}])))
+    (when (= (:status connection) :ready)
+      (rf/dispatch [:draggable-card->open
+                    {:component [draggable-card-content (:data connection)]
+                     :on-click-expand (fn []
+                                        (rf/dispatch [:draggable-card->close])
+                                        (rf/dispatch [:modal->re-open]))}]))))
 
 (defn- close-connect-dialog []
   (let [connection @(rf/subscribe [:connections->connection-connected])
