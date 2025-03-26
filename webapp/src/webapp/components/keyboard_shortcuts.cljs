@@ -1,10 +1,9 @@
 (ns webapp.components.keyboard-shortcuts
   (:require
+   ["@radix-ui/themes" :refer [Box Button Code Flex Heading Text]]
    ["lucide-react" :refer [Keyboard X]]
-   [reagent.core :as r]
-   [re-frame.core :as rf]
-   [webapp.config :as config]
-   ["@radix-ui/themes" :refer [Box Button Flex Text Heading Dialog Badge Code]]))
+   [clojure.string :as cs]
+   [re-frame.core :as rf]))
 
 (defn- detect-os []
   (let [user-agent (.. js/window -navigator -userAgent)]
@@ -19,13 +18,13 @@
     (case os
       :mac key-combo
       :windows (-> key-combo
-                  (clojure.string/replace "⌘" "Ctrl")
-                  (clojure.string/replace "⌥" "Alt")
-                  (clojure.string/replace "⇧" "Shift"))
+                   (cs/replace "⌘" "Ctrl")
+                   (cs/replace "⌥" "Alt")
+                   (cs/replace "⇧" "Shift"))
       :linux (-> key-combo
-                (clojure.string/replace "⌘" "Ctrl")
-                (clojure.string/replace "⌥" "Alt")
-                (clojure.string/replace "⇧" "Shift"))
+                 (cs/replace "⌘" "Ctrl")
+                 (cs/replace "⌥" "Alt")
+                 (cs/replace "⇧" "Shift"))
       key-combo)))
 
 (defn- shortcut-item [{:keys [shortcut description]}]
@@ -44,23 +43,23 @@
      [shortcut-item item])])
 
 (defn- shortcuts-content []
-  [:> Box {:class "p-5"}
+  [:<>
    [:> Flex {:justify "between" :align "center" :class "mb-4"}
     [:> Heading {:size "4" :weight "medium"} "Keyboard Shortcuts"]
-    [:> Button {:size "1" 
-                :variant "ghost" 
-                :color "gray" 
+    [:> Button {:size "1"
+                :variant "ghost"
+                :color "gray"
                 :on-click #(rf/dispatch [:modal->close])}
      [:> X {:size 16}]]]
-    
+
    [shortcut-section "Execution"
     {:shortcut "⌘ + Enter" :description "Execute entire script"}
     {:shortcut "⌘ + Shift + Enter" :description "Execute selected text"}]
-   
+
    [shortcut-section "Navigation"
     {:shortcut "Alt + ←/→" :description "Move cursor to previous/next syntax boundary"}
     {:shortcut "⌘ + Shift + \\" :description "Jump to matching bracket"}]
-   
+
    [shortcut-section "Editing"
     {:shortcut "Alt + ↑/↓" :description "Move line up/down"}
     {:shortcut "Shift + Alt + ↑/↓" :description "Copy line up/down"}
@@ -73,11 +72,11 @@
     {:shortcut "Alt + A" :description "Toggle block comment"}]])
 
 (defn keyboard-shortcuts-button []
-  [:> Button {:size "1" 
-              :variant "ghost" 
+  [:> Button {:size "1"
+              :variant "ghost"
               :color "gray"
               :class "flex items-center gap-1"
               :on-click #(rf/dispatch [:modal->open {:content [shortcuts-content]
-                                                    :maxWidth "450px"}])}
+                                                     :maxWidth "450px"}])}
    [:> Keyboard {:size 16}]
    [:> Text {:size "1"} "Shortcuts"]])
