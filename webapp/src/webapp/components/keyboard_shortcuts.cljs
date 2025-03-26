@@ -6,12 +6,34 @@
    [webapp.config :as config]
    ["@radix-ui/themes" :refer [Box Button Flex Text Heading Dialog Badge Code]]))
 
+(defn- detect-os []
+  (let [user-agent (.. js/window -navigator -userAgent)]
+    (cond
+      (re-find #"Mac" user-agent) :mac
+      (re-find #"Windows" user-agent) :windows
+      (re-find #"Linux" user-agent) :linux
+      :else :unknown)))
+
+(defn- get-key-symbol [key-combo]
+  (let [os (detect-os)]
+    (case os
+      :mac key-combo
+      :windows (-> key-combo
+                  (clojure.string/replace "⌘" "Ctrl")
+                  (clojure.string/replace "⌥" "Alt")
+                  (clojure.string/replace "⇧" "Shift"))
+      :linux (-> key-combo
+                (clojure.string/replace "⌘" "Ctrl")
+                (clojure.string/replace "⌥" "Alt")
+                (clojure.string/replace "⇧" "Shift"))
+      key-combo)))
+
 (defn- shortcut-item [{:keys [shortcut description]}]
   [:> Flex {:justify "between" :align "center" :class "mb-1"}
    [:> Text {:size "2" :weight "medium"}
     description]
    [:> Code {:size "2" :variant "ghost" :color "gray"}
-    shortcut]])
+    (get-key-symbol shortcut)]])
 
 (defn- shortcut-section [title & items]
   [:> Box {:class "mb-4"}
