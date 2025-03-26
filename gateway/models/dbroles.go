@@ -6,19 +6,21 @@ import (
 	"fmt"
 	"time"
 
-	pbsys "github.com/hoophq/hoop/common/proto/sys"
+	pbsystem "github.com/hoophq/hoop/common/proto/system"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const tableDBRoleJobs = "private.dbrole_jobs"
 
 type AWSDBRoleSpec struct {
-	AccountArn    string `json:"account_arn"`
-	AccountUserID string `json:"account_user_id"`
-	Region        string `json:"region"`
-	DBArn         string `json:"db_arn"`
-	DBName        string `json:"db_name"`
-	DBEngine      string `json:"db_engine"`
+	AccountArn    string           `json:"account_arn"`
+	AccountUserID string           `json:"account_user_id"`
+	Region        string           `json:"region"`
+	DBArn         string           `json:"db_arn"`
+	DBName        string           `json:"db_name"`
+	DBEngine      string           `json:"db_engine"`
+	Tags          []map[string]any `json:"db_tags"`
 }
 
 type DBRoleStatus struct {
@@ -27,18 +29,18 @@ type DBRoleStatus struct {
 	Result  []DBRoleStatusResult `json:"result"`
 }
 
-type DBRoleStatusResult struct {
-	UserRole    string    `json:"user_role"`
-	Status      string    `json:"phase"`
-	Message     string    `json:"message"`
-	CompletedAt time.Time `json:"completed_at"`
+type DBRoleStatusResultCredentialsInfo struct {
+	SecretsManagerProvider string   `json:"secrets_manager_provider"`
+	SecretID               string   `json:"secret_id"`
+	SecretKeys             []string `json:"secret_keys"`
 }
 
-type DBRoleItem struct {
-	User        string            `json:"user"`
-	Permissions []string          `json:"permissions"`
-	Secrets     map[string]string `json:"secrets"`
-	Error       *string           `json:"error"`
+type DBRoleStatusResult struct {
+	UserRole        string                            `json:"user_role"`
+	CredentialsInfo DBRoleStatusResultCredentialsInfo `json:"credentials_info"`
+	Status          string                            `json:"phase"`
+	Message         string                            `json:"message"`
+	CompletedAt     time.Time                         `json:"completed_at"`
 }
 
 type DBRole struct {
@@ -63,26 +65,31 @@ func CreateDBRoleJob(obj *DBRole) error {
 	return err
 }
 
-func UpdateDBRoleJob(orgID string, completedAt *time.Time, resp *pbsys.DBProvisionerResponse) error {
+func UpdateDBRoleJob(orgID string, completedAt *time.Time, resp *pbsystem.DBProvisionerResponse) (*DBRole, error) {
 	job, err := GetDBRoleJobByID(orgID, resp.SID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// TODO: fix me
 	specData, _ := json.Marshal(job.SpecMap)
 	if err := json.Unmarshal(specData, &job.Spec); err != nil {
-		return fmt.Errorf("failed decoding spec data: %v", err)
+		return nil, fmt.Errorf("failed decoding spec data: %v", err)
 	}
 
 	var result []DBRoleStatusResult
 	for _, r := range resp.Result {
-		var userRole string
+		var cred pbsystem.DBCredentials
 		if r.Credentials != nil {
-			userRole = r.Credentials.User
+			cred = *r.Credentials
 		}
 		result = append(result, DBRoleStatusResult{
-			UserRole:    userRole,
+			UserRole: cred.User,
+			CredentialsInfo: DBRoleStatusResultCredentialsInfo{
+				SecretsManagerProvider: string(cred.SecretsManagerProvider),
+				SecretID:               cred.SecretID,
+				SecretKeys:             cred.SecretKeys,
+			},
 			Status:      r.Status,
 			Message:     r.Message,
 			CompletedAt: r.CompletedAt,
@@ -99,11 +106,12 @@ func UpdateDBRoleJob(orgID string, completedAt *time.Time, resp *pbsys.DBProvisi
 	var statusMap map[string]any
 	statusData, _ := json.Marshal(status)
 	if err := json.Unmarshal(statusData, &statusMap); err != nil {
-		return fmt.Errorf("failed decoding status data: %v", err)
+		return nil, fmt.Errorf("failed decoding status data: %v", err)
 	}
 
 	err = DB.Table(tableDBRoleJobs).
 		Model(job).
+		Clauses(clause.Returning{}).
 		Updates(DBRole{
 			StatusMap:   statusMap,
 			SpecMap:     dbRoleSpecToMap(job.Spec),
@@ -111,9 +119,11 @@ func UpdateDBRoleJob(orgID string, completedAt *time.Time, resp *pbsys.DBProvisi
 		}).Where("org_id = ? AND id = ?", orgID, resp.SID).
 		Error
 	if err == gorm.ErrDuplicatedKey {
-		return ErrAlreadyExists
+		return nil, ErrAlreadyExists
 	}
-	return nil
+
+	job.Status = status
+	return job, nil
 }
 
 func ListDBRoleJobs(orgID string) ([]*DBRole, error) {
@@ -130,7 +140,7 @@ func ListDBRoleJobs(orgID string) ([]*DBRole, error) {
 		}
 
 		statusData, _ := json.Marshal(j.StatusMap)
-		if err := json.Unmarshal(statusData, &j.Spec); err != nil {
+		if err := json.Unmarshal(statusData, &j.Status); err != nil {
 			return nil, fmt.Errorf("failed decoding status data: %v", err)
 		}
 	}
@@ -169,6 +179,7 @@ func dbRoleSpecToMap(spec *AWSDBRoleSpec) map[string]any {
 		"db_arn":      spec.DBArn,
 		"db_name":     spec.DBName,
 		"db_engine":   spec.DBEngine,
+		"db_tags":     spec.Tags,
 	}
 }
 

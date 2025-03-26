@@ -3,7 +3,6 @@ package awsintegration
 import (
 	"context"
 	"fmt"
-	"libhoop/log"
 	"net/http"
 	"strings"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
@@ -19,13 +19,15 @@ import (
 	"github.com/aws/smithy-go/ptr"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	pbsys "github.com/hoophq/hoop/common/proto/sys"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	pgagents "github.com/hoophq/hoop/gateway/pgrest/agents"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
+
+const staticCrossAccountRoleArn = "arn:aws:iam::%s:role/HoopOrganizationAccountAccessRole"
 
 // IAMUpdateAccessKey
 //
@@ -127,8 +129,18 @@ func IAMVerifyPermissions(c *gin.Context) {
 	iamClient := iam.NewFromConfig(cfg)
 	resp, err := iamClient.SimulatePrincipalPolicy(context.Background(), &iam.SimulatePrincipalPolicyInput{
 		PolicySourceArn: identity.Arn,
-		ActionNames:     []string{"organizations:ListAccounts", "rds:ModifyDBInstance", "rds:DescribeDBInstances", "sts:AssumeRole"},
-		ResourceArns:    []string{"*"},
+		ActionNames: []string{
+			"organizations:ListAccounts",
+			"rds:ModifyDBInstance",
+			"rds:ModifyDBCluster", // aurora
+			"rds:DescribeDBInstances",
+			"ec2:DescribeSecurityGroups",
+			"ec2:AuthorizeSecurityGroupIngress",
+			"ec2:CreateSecurityGroup",
+			"ec2:CreateTags",
+			"sts:AssumeRole",
+		},
+		ResourceArns: []string{"*"},
 	})
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
@@ -298,52 +310,44 @@ func CreateDBRoleJob(c *gin.Context) {
 		return
 	}
 
+	resourceAWSAccountID := parseDatabaseArnAccountID(dbArn)
+	if resourceAWSAccountID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Errorf("unable to parse database arn %q", dbArn)})
+		return
+	}
+
 	ctx := context.Background()
 	cfg, identity, err := loadAWSConfig(usrctx.OrgID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	isAccountOwner := strings.Contains(dbArn, ptr.ToString(identity.Account))
-	rdsClient, err := loadRDSClientForAccount(ctx, cfg, ptr.ToString(identity.Account), isAccountOwner)
-	if err != nil {
-		log.Errorf("failed obtaing rds client, err=%v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+
+	dbAWSAccountID := parseDatabaseArnAccountID(dbArn)
+	if dbAWSAccountID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Errorf("unable to parse database arn %q", dbArn)})
 		return
 	}
 
-	db, err := getDbInstance(rdsClient, dbArn)
-	if err != nil {
-		log.Errorf("failed fetching db instance, err=%v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
-		return
+	isAccountOwner := dbAWSAccountID == ptr.ToString(identity.Account)
+	if !isAccountOwner {
+		newConfig, err := assumeRole(ctx, cfg, dbAWSAccountID)
+		if err != nil {
+			log.Errorf("failed assuming role, reason=%v", err)
+			c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+			return
+		}
+		cfg = *newConfig
 	}
 
 	sid := uuid.NewString()
-	err = models.CreateDBRoleJob(&models.DBRole{
-		OrgID: usrctx.OrgID,
-		ID:    sid,
-		Spec: &models.AWSDBRoleSpec{
-			AccountArn:    ptr.ToString(identity.Arn),
-			AccountUserID: ptr.ToString(identity.UserId),
-			DBArn:         ptr.ToString(db.DBInstanceArn),
-			DBName:        ptr.ToString(db.DBName),
-			DBEngine:      ptr.ToString(db.Engine),
-		},
-		Status: &models.DBRoleStatus{
-			Phase:   pbsys.StatusRunningType,
-			Message: "",
-			Result:  nil,
-		},
-	})
-	if err != nil {
-		log.With("sid", sid).Errorf("unable to create db role job, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+	rdsClient, ec2Client := rds.NewFromConfig(cfg), ec2.NewFromConfig(cfg)
+	log.With("sid", sid).Infof("obtained client configuration with success, account-owner=%v, region=%v", isAccountOwner, cfg.Region)
+	if err := NewRDSProvisioner(usrctx.OrgID, identity, req, rdsClient, ec2Client).Run(sid); err != nil {
+		log.With("sid", sid).Error(err)
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-
-	NewRDSProvisioner(usrctx.OrgID, req, rdsClient).
-		RunOnBackground(sid)
 	c.JSON(http.StatusAccepted, openapi.CreateDBRoleJobResponse{JobID: sid})
 }
 
@@ -397,7 +401,7 @@ func ListDBRoleJobs(c *gin.Context) {
 }
 
 func listRDSInstances(ctx context.Context, cfg aws.Config, accountID string, isAccountOwner bool) ([]types.DBInstance, error) {
-	rdsClient, err := loadRDSClientForAccount(ctx, cfg, accountID, isAccountOwner)
+	rdsClient, _, err := loadRDSClientForAccount(ctx, cfg, accountID, isAccountOwner)
 	if err != nil {
 		return nil, err
 	}
@@ -416,27 +420,33 @@ func listRDSInstances(ctx context.Context, cfg aws.Config, accountID string, isA
 	return instances, nil
 }
 
-func loadRDSClientForAccount(ctx context.Context, cfg aws.Config, accountID string, isAccountOwner bool) (*rds.Client, error) {
-	roleArn := fmt.Sprintf("arn:aws:iam::%s:role/OrganizationAccountAccessRole", accountID)
+func assumeRole(ctx context.Context, cfg aws.Config, awsAccountID string) (*aws.Config, error) {
+	roleArn := fmt.Sprintf(staticCrossAccountRoleArn, awsAccountID)
 
+	// Assume Role in target account
+	stsClient := sts.NewFromConfig(cfg)
+	creds := stscreds.NewAssumeRoleProvider(stsClient, roleArn)
+
+	// Create AWS Config with assumed role credentials
+	accountCfg, err := config.LoadDefaultConfig(ctx,
+		config.WithCredentialsProvider(creds),
+		config.WithRegion(cfg.Region),
+	)
+	return &accountCfg, err
+}
+
+func loadRDSClientForAccount(ctx context.Context, cfg aws.Config, accountID string, isAccountOwner bool) (rdsClient *rds.Client, assumed bool, err error) {
 	// Create RDS client
-	rdsClient := rds.NewFromConfig(cfg)
+	rdsClient = rds.NewFromConfig(cfg)
 	if !isAccountOwner {
-		// Assume Role in target account
-		stsClient := sts.NewFromConfig(cfg)
-		creds := stscreds.NewAssumeRoleProvider(stsClient, roleArn)
-
-		// Create AWS Config with assumed role credentials
-		accountCfg, err := config.LoadDefaultConfig(ctx,
-			config.WithCredentialsProvider(creds),
-			config.WithRegion(cfg.Region),
-		)
+		accountCfg, err := assumeRole(ctx, cfg, accountID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to assume role for account %s: %v", accountID, err)
+			return nil, false, fmt.Errorf("failed assuming role (rds) for account %s: %v", accountID, err)
 		}
-		rdsClient = rds.NewFromConfig(accountCfg)
+		rdsClient = rds.NewFromConfig(*accountCfg)
+		assumed = true
 	}
-	return rdsClient, nil
+	return
 }
 
 func loadAWSConfig(orgID string) (cfg aws.Config, identity *sts.GetCallerIdentityOutput, err error) {
@@ -454,7 +464,7 @@ func loadAWSConfig(orgID string) (cfg aws.Config, identity *sts.GetCallerIdentit
 	}
 
 	if hasAccessKey {
-		log.Infof("using aws static credentials with region=%v", env.GetEnv("INTEGRATION_AWS_REGION"))
+		log.Debugf("using aws static credentials with region=%v", env.GetEnv("INTEGRATION_AWS_REGION"))
 		staticCfg := aws.NewConfig()
 		staticCfg.Credentials = credentials.NewStaticCredentialsProvider(
 			env.GetEnv("INTEGRATION_AWS_ACCESS_KEY_ID"),
@@ -482,28 +492,50 @@ func loadAWSConfig(orgID string) (cfg aws.Config, identity *sts.GetCallerIdentit
 	return
 }
 
+func parseDatabaseArnAccountID(dbArn string) string {
+	// arn:aws:rds:us-west-2:<account-id>:db:<db-identifier>
+	parts := strings.Split(dbArn, ":")
+	if len(parts) != 7 {
+		return ""
+	}
+	return parts[4]
+}
+
 func toDBRoleOpenAPI(o *models.DBRole) *openapi.DBRoleJob {
 	var spec openapi.AWSDBRoleJobSpec
 	if o.Spec != nil {
+		var dbTags []openapi.DBTag
+		for _, tag := range o.Spec.Tags {
+			for key, val := range tag {
+				dbTags = append(dbTags, openapi.DBTag{Key: key, Value: fmt.Sprintf("%v", val)})
+				break // it should contain only one record
+			}
+		}
 		spec = openapi.AWSDBRoleJobSpec{
 			AccountArn: o.Spec.AccountArn,
 			DBArn:      o.Spec.DBArn,
 			DBName:     o.Spec.DBName,
 			DBEngine:   o.Spec.DBEngine,
+			DBTags:     dbTags,
 		}
 	}
-	var status openapi.DBRoleJobStatus
+	var status *openapi.DBRoleJobStatus
 	if o.Status != nil {
 		var result []openapi.DBRoleJobStatusResult
 		for _, r := range o.Status.Result {
 			result = append(result, openapi.DBRoleJobStatusResult{
-				UserRole:    r.UserRole,
-				Status:      r.Status,
-				Message:     r.Message,
+				UserRole: r.UserRole,
+				Status:   r.Status,
+				Message:  r.Message,
+				CredentialsInfo: openapi.DBRoleJobStatusResultCredentialsInfo{
+					SecretsManagerProvider: openapi.SecretsManagerProviderType(r.CredentialsInfo.SecretsManagerProvider),
+					SecretID:               r.CredentialsInfo.SecretID,
+					SecretKeys:             r.CredentialsInfo.SecretKeys,
+				},
 				CompletedAt: r.CompletedAt,
 			})
 		}
-		status = openapi.DBRoleJobStatus{
+		status = &openapi.DBRoleJobStatus{
 			Phase:   o.Status.Phase,
 			Message: o.Status.Message,
 			Result:  result,
@@ -513,7 +545,7 @@ func toDBRoleOpenAPI(o *models.DBRole) *openapi.DBRoleJob {
 	return &openapi.DBRoleJob{
 		OrgID:       o.OrgID,
 		ID:          o.ID,
-		Status:      &status,
+		Status:      status,
 		CreatedAt:   o.CreatedAt,
 		CompletedAt: o.CompletedAt,
 		Spec:        spec,

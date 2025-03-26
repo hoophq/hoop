@@ -3,7 +3,8 @@
    ["@radix-ui/themes" :refer [Box Link Text]]
    [re-frame.core :as rf]
    [reagent.core :as r]
-   [webapp.components.forms :as forms]))
+   [webapp.components.forms :as forms]
+   [webapp.config :as config]))
 
 (defn main []
   (let [previous-value (r/atom nil)]
@@ -35,7 +36,7 @@
 
            [:> Text {:as "p" :size "2" :color "gray"}
             "Agents provide a secure interaction with your connection. "
-            [:> Link {:href "https://hoop.dev/docs/concepts/agent"
+            [:> Link {:href (get-in config/docs-url [:concepts :agents])
                       :target "_blank"
                       :size "2"}
              "Read more about Agents."]]]))})))

@@ -2,12 +2,10 @@ package admin
 
 import (
 	"fmt"
-	"math"
 	"os"
 	"sort"
 	"strings"
 	"text/tabwriter"
-	"time"
 
 	"github.com/hoophq/hoop/client/cmd/styles"
 	clientconfig "github.com/hoophq/hoop/client/config"
@@ -15,8 +13,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	getShowTagsFlag bool
+	tagSelectorFlag string
+)
+
 func init() {
 	getCmd.Flags().StringVarP(&outputFlag, "output", "o", "", "Output format. One off: (json)")
+	getCmd.Flags().BoolVar(&getShowTagsFlag, "show-tags", false, "display the tags column (connections only)")
+	getCmd.Flags().StringVarP(&tagSelectorFlag, "selector", "s", "", "selector (tags query) to filter on, supports '=' and '!='.(e.g. -s key1=value1,key2=value2)")
 }
 
 var getLongDesc = `Display one or many resources. Available ones:
@@ -50,6 +55,12 @@ var getCmd = &cobra.Command{
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		apir := parseResourceOrDie(args, "GET", outputFlag)
+		if err := validateTagSelector(); err != nil {
+			styles.PrintErrorAndExit(err.Error())
+		}
+		if tagSelectorFlag != "" {
+			apir.queryAttributes.Set("tagSelector", tagSelectorFlag)
+		}
 		obj, _, err := httpRequest(apir)
 		if err != nil {
 			styles.PrintErrorAndExit(err.Error())
@@ -80,7 +91,11 @@ var getCmd = &cobra.Command{
 		case "conn", "connection", "connections":
 			agentHandlerFn := agentConnectedHandler(apir.conf)
 			plugingHandlerFn := pluginHandler(apir)
-			fmt.Fprintln(w, "NAME\tCOMMAND\tTYPE\tAGENT\tSTATUS\tSECRETS\tPLUGINS\t")
+			if getShowTagsFlag {
+				fmt.Fprintln(w, "NAME\tCOMMAND\tTYPE\tAGENT\tSTATUS\tSECRETS\tPLUGINS\tTAGS\t")
+			} else {
+				fmt.Fprintln(w, "NAME\tCOMMAND\tTYPE\tAGENT\tSTATUS\tSECRETS\tPLUGINS\t")
+			}
 			switch contents := obj.(type) {
 			case map[string]any:
 				m := contents
@@ -93,22 +108,28 @@ var getCmd = &cobra.Command{
 				}
 				cmdList, _ := m["command"].([]any)
 				cmd := joinCmd(cmdList, false)
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%v\t%s\t",
-					m["name"], cmd, m["type"], agentName, m["status"], len(secrets), enabledPlugins)
+				if getShowTagsFlag {
+					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%v\t%s\t%v\t",
+						m["name"], cmd, m["type"], agentName, m["status"], "-", enabledPlugins, joinMap(m["connection_tags"]))
+				} else {
+					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%v\t%s\t",
+						m["name"], cmd, m["type"], agentName, m["status"], len(secrets), enabledPlugins)
+				}
 				fmt.Fprintln(w)
 			case []map[string]any:
 				for _, m := range contents {
 					enabledPlugins := plugingHandlerFn(fmt.Sprintf("%v", m["name"]), true)
 					agentID := fmt.Sprintf("%v", m["agent_id"])
 					agentName := agentHandlerFn("name", agentID)
-					secrets, _ := m["secret"].(map[string]any)
-					if secrets == nil {
-						secrets, _ = m["secrets"].(map[string]any)
-					}
 					cmdList, _ := m["command"].([]any)
 					cmd := joinCmd(cmdList, true)
-					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%v\t%s\t",
-						m["name"], cmd, m["type"], agentName, m["status"], len(secrets), enabledPlugins)
+					if getShowTagsFlag {
+						fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%v\t%s\t%v\t",
+							m["name"], cmd, m["type"], agentName, m["status"], "-", enabledPlugins, joinMap(m["connection_tags"]))
+					} else {
+						fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%v\t%s\t",
+							m["name"], cmd, m["type"], agentName, m["status"], "-", enabledPlugins)
+					}
 					fmt.Fprintln(w)
 				}
 			}
@@ -366,38 +387,30 @@ func joinItems(items []any) string {
 	return strings.Join(list, ", ")
 }
 
-func joinList(v any, trunc bool) string {
-	itemList, ok := v.([]any)
+func joinMap(v any) (res string) {
+	m, ok := v.(map[string]any)
 	if !ok {
 		return "-"
 	}
-	var list []string
-	for _, c := range itemList {
-		list = append(list, fmt.Sprintf("%q", c))
+
+	for k, v := range m {
+		res += k + "=" + fmt.Sprintf("%v,", v)
 	}
-	cmd := strings.Join(list, " ")
-	if len(cmd) > 30 && trunc {
-		cmd = cmd[0:30] + "..."
+	if res == "" {
+		return
 	}
-	return fmt.Sprintf("[ %s ]", cmd)
+	return res[:len(res)-1]
 }
 
-// absTime given v as a time string, parse to absolute time
-func absTime(v any) string {
-	t1, err := time.Parse(time.RFC3339Nano, v.(string))
-	if err != nil {
-		return "-"
+func validateTagSelector() error {
+	if tagSelectorFlag == "" {
+		return nil
 	}
-	t2 := time.Now().UTC().Sub(t1)
-	switch {
-	case t2.Seconds() <= 60:
-		return fmt.Sprintf("%.0fs ago", t2.Seconds())
-	case t2.Minutes() < 60: // minutes
-		return fmt.Sprintf("%.0fm ago", t2.Minutes())
-	case t2.Hours() < 24: // hours
-		return fmt.Sprintf("%.0fh ago", t2.Hours())
-	case t2.Hours() > 24: // days
-		return fmt.Sprintf("%vd ago", math.Round(t2.Hours()/30))
+	for _, keyVal := range strings.Split(tagSelectorFlag, ",") {
+		keyVal = strings.TrimSpace(keyVal)
+		if !strings.Contains(keyVal, "=") && !strings.Contains(keyVal, "!=") {
+			return fmt.Errorf("missing operator '=' or '!=' for selector key %v", keyVal)
+		}
 	}
-	return "-"
+	return nil
 }

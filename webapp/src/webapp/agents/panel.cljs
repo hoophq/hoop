@@ -1,11 +1,11 @@
 (ns webapp.agents.panel
   (:require
-    [re-frame.core :as rf]
-    [webapp.components.headings :as h]
-    [webapp.components.button :as button]
-    ["lucide-react" :refer [CircleDashed Zap]]
-    ["@radix-ui/themes" :refer [Flex Box Text Button
-                                Badge Card Link]]))
+   ["@radix-ui/themes" :refer [Badge Box Button Card Flex Link Text]]
+   ["lucide-react" :refer [CircleDashed Zap]]
+   [re-frame.core :as rf]
+   [webapp.components.button :as button]
+   [webapp.components.headings :as h]
+   [webapp.config :as config]))
 
 (defn- agent-item [item]
   (let [connected? (= (:status item) "CONNECTED")]
@@ -47,7 +47,7 @@
      [:> Text {:size "1"
                :color "gray"}
       "Need more information? Check out our "
-      [:> Link {:href "https://hoop.dev/docs/concepts/agent"
+      [:> Link {:href (get-in config/docs-url [:concepts :agents])
                 :color "blue"
                 :target "_blank"}
        "Agents documentation"]]]]])
@@ -67,21 +67,21 @@
     (rf/dispatch [:agents->get-agents])
     (fn []
       (let [agents? (or (seq (:data @agents))
-                         (not= (:status @agents) :loading))
+                        (not= (:status @agents) :loading))
             admin? (-> @user :data :is_admin)]
-      [:div
-       [:> Flex {:class "mb-10", :as "header"}
-        [:> Box {:flexGrow "1"}
-         [h/PageHeader {:text "Agents"}]
-         [:> Text {:size "5" :class "text-[--gray-11]"}
-          "View and manage your Agents for your connections"]
+        [:div
+         [:> Flex {:class "mb-10", :as "header"}
+          [:> Box {:flexGrow "1"}
+           [h/PageHeader {:text "Agents"}]
+           [:> Text {:size "5" :class "text-[--gray-11]"}
+            "View and manage your Agents for your connections"]
            [button/DocsBtnCallOut
             {:text "Learn more about Agents"
-             :href "https://hoop.dev/docs/concepts/agent"}]]
-        [:> Flex {:justify "end"
-                  :flexGrow "1"}
-         (when (and agents? admin?)
-           [:> Button {:size "3"
-                       :on-click #(rf/dispatch [:navigate :new-agent])}
-            "Setup new Agent"])]]
-       [agents-list @agents agents?]]))))
+             :href (get-in config/docs-url [:concepts :agents])}]]
+          [:> Flex {:justify "end"
+                    :flexGrow "1"}
+           (when (and agents? admin?)
+             [:> Button {:size "3"
+                         :on-click #(rf/dispatch [:navigate :new-agent])}
+              "Setup new Agent"])]]
+         [agents-list @agents agents?]]))))

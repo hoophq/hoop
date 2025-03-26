@@ -38,6 +38,17 @@ func (s *EnvVarStore) Add(env *EnvVar) {
 	s.store[env.Key] = env
 }
 
+func (s *EnvVarStore) Search(lookupFn func(key string) bool) map[string]string {
+	result := map[string]string{}
+	for key, env := range s.store {
+		if !lookupFn(key) {
+			continue
+		}
+		result[key] = string(env.Val)
+	}
+	return result
+}
+
 func NewEnvVarStore(rawEnvVarList map[string]any) (*EnvVarStore, error) {
 	store := &EnvVarStore{store: make(map[string]*EnvVar)}
 	for key, objVal := range rawEnvVarList {

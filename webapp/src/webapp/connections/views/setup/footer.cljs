@@ -12,6 +12,7 @@
                     next-text
                     next-disabled?
                     next-hidden?
+                    back-hidden?
                     middle-button]}]
   (let [sidebar-desktop (rf/subscribe [:sidebar-desktop])]
     (when-not hide-footer?
@@ -29,11 +30,12 @@
                  :class (if (= form-type :update)
                           "w-full px-6"
                           "w-[600px] px-6")}
-        [:> Button {:size "2"
-                    :variant "soft"
-                    :color "gray"
-                    :on-click (or on-back #(rf/dispatch [:connection-setup/go-back]))}
-         (or back-text "Back")]
+        (when-not back-hidden?
+          [:> Button {:size "2"
+                      :variant "soft"
+                      :color "gray"
+                      :on-click (or on-back #(rf/dispatch [:connection-setup/go-back]))}
+           (or back-text "Back")])
 
         ;; Middle button (like Delete) when provided
         [:> Flex {:gap "5" :align "center"}

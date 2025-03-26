@@ -21,7 +21,11 @@ import (
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
-var tagsValRe, _ = regexp.Compile(`^[a-zA-Z0-9_]+(?:[-\.]?[a-zA-Z0-9_]+){0,128}$`)
+var (
+	tagsValRe, _           = regexp.Compile(`^[a-zA-Z0-9_]+(?:[-\.]?[a-zA-Z0-9_]+){0,128}$`)
+	connectionTagsKeyRe, _ = regexp.Compile(`^[a-zA-Z0-9_]+(?:[-\./]?[a-zA-Z0-9_]+){0,}$`)
+	connectionTagsValRe, _ = regexp.Compile(`^[a-zA-Z0-9-_\+=@\/:\s]+$`)
+)
 
 func accessControlAllowed(ctx pgrest.Context) (func(connName string) bool, error) {
 	p, err := pgplugins.New().FetchOne(ctx, plugintypes.PluginAccessControlName)
@@ -114,9 +118,34 @@ func validateConnectionRequest(req openapi.Connection) error {
 	if err := apivalidation.ValidateResourceName(req.Name); err != nil {
 		errors = append(errors, err.Error())
 	}
+	// TODO: deprecated
 	for _, val := range req.Tags {
 		if !tagsValRe.MatchString(val) {
 			errors = append(errors, "tags: values must contain between 1 and 128 alphanumeric characters, it may include (-), (_) or (.) characters")
+		}
+	}
+	if len(errors) > 0 {
+		return fmt.Errorf(strings.Join(errors, "; "))
+	}
+
+	if len(req.ConnectionTags) > 10 {
+		return fmt.Errorf("max tag association reached (10)")
+	}
+
+	for key, val := range req.ConnectionTags {
+		// if strings.HasPrefix(key, "hoop.dev/") {
+		// 	errors = append(errors, "connection_tags: keys must not use the reserverd prefix hoop.dev/")
+		// 	continue
+		// }
+
+		if (len(key) < 1 || len(key) > 64) || !connectionTagsKeyRe.MatchString(key) {
+			errors = append(errors,
+				fmt.Sprintf("connection_tags (%v), keys must contain between 1 and 64 alphanumeric characters, ", key)+
+					"it may include (-), (_), (/), or (.) characters and it must not end with (-), (/) or (-)")
+		}
+		if (len(val) < 1 || len(val) > 256) || !connectionTagsValRe.MatchString(val) {
+			errors = append(errors, fmt.Sprintf("connection_tags (%v), values must contain between 1 and 256 alphanumeric characters, ", key)+
+				"it may include space, (-), (_), (/), (+), (@), (:), (=) or (.) characters")
 		}
 	}
 	if len(errors) > 0 {
@@ -142,6 +171,8 @@ func validateListOptions(urlValues url.Values) (o models.ConnectionFilterOption,
 			o.SubType = values[0]
 		case "managed_by":
 			o.ManagedBy = values[0]
+		case "tagSelector":
+			o.TagSelector = values[0]
 		case "tags":
 			if len(values[0]) > 0 {
 				for _, tagVal := range strings.Split(values[0], ",") {
@@ -155,7 +186,7 @@ func validateListOptions(urlValues url.Values) (o models.ConnectionFilterOption,
 		default:
 			continue
 		}
-		if !reSanitize.MatchString(values[0]) {
+		if key != "tagSelector" && !reSanitize.MatchString(values[0]) {
 			return o, errInvalidOptionVal
 		}
 	}

@@ -3,6 +3,7 @@ package apiconnections
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -91,6 +92,7 @@ func Post(c *gin.Context) {
 		AccessSchema:        req.AccessSchema,
 		GuardRailRules:      req.GuardRailRules,
 		JiraIssueTemplateID: sql.NullString{String: req.JiraIssueTemplateID, Valid: true},
+		ConnectionTags:      req.ConnectionTags,
 	})
 	if err != nil {
 		log.Errorf("failed creating connection, err=%v", err)
@@ -188,6 +190,7 @@ func Put(c *gin.Context) {
 		AccessSchema:        req.AccessSchema,
 		GuardRailRules:      req.GuardRailRules,
 		JiraIssueTemplateID: sql.NullString{String: req.JiraIssueTemplateID, Valid: true},
+		ConnectionTags:      req.ConnectionTags,
 	})
 	if err != nil {
 		switch err.(type) {
@@ -259,11 +262,12 @@ func Delete(c *gin.Context) {
 //	@Description	List all connections.
 //	@Tags			Connections
 //	@Produce		json
-//	@Param			agent_id	query		string	false	"Filter by agent id"					Format(uuid)
-//	@Param			tags		query		string	false	"Filter by tags, separated by comma"	Format(string)
-//	@Param			type		query		string	false	"Filter by type"						Format(string)
-//	@Param			subtype		query		string	false	"Filter by subtype"						Format(string)
-//	@Param			managed_by	query		string	false	"Filter by managed by"					Format(string)
+//	@Param			agent_id	query		string	false	"Filter by agent id"																	Format(uuid)
+//	@Param			tags		query		string	false	"DEPRECATED: Filter by tags, separated by comma"										Format(string)
+//	@Param			tagSelector	query		string	false	"Selector tags to fo filter on, supports '=' and '!=' (e.g. key1=value1,key2=value2)"	Format(string)
+//	@Param			type		query		string	false	"Filter by type"																		Format(string)
+//	@Param			subtype		query		string	false	"Filter by subtype"																		Format(string)
+//	@Param			managed_by	query		string	false	"Filter by managed by"																	Format(string)
 //	@Success		200			{array}		openapi.Connection
 //	@Failure		422,500		{object}	openapi.HTTPError
 //	@Router			/connections [get]
@@ -294,13 +298,20 @@ func List(c *gin.Context) {
 			if conn.ManagedBy.Valid {
 				managedBy = &conn.ManagedBy.String
 			}
+			defaultDB, _ := base64.StdEncoding.DecodeString(conn.Envs["envvar:DB"])
+			if len(defaultDB) == 0 {
+				defaultDB = []byte(``)
+			}
 			responseConnList = append(responseConnList, openapi.Connection{
-				ID:                  conn.ID,
-				Name:                conn.Name,
-				Command:             conn.Command,
-				Type:                conn.Type,
-				SubType:             conn.SubType.String,
-				Secrets:             coerceToAnyMap(conn.Envs),
+				ID:      conn.ID,
+				Name:    conn.Name,
+				Command: conn.Command,
+				Type:    conn.Type,
+				SubType: conn.SubType.String,
+				// it should return empty to avoid leaking sensitive content
+				// in the future we plan to know which entry is sensitive or not
+				Secrets:             nil,
+				DefaultDatabase:     string(defaultDB),
 				AgentId:             conn.AgentID.String,
 				Status:              conn.Status,
 				Reviewers:           conn.Reviewers,
@@ -308,6 +319,7 @@ func List(c *gin.Context) {
 				RedactTypes:         conn.RedactTypes,
 				ManagedBy:           managedBy,
 				Tags:                conn.Tags,
+				ConnectionTags:      conn.ConnectionTags,
 				AccessModeRunbooks:  conn.AccessModeRunbooks,
 				AccessModeExec:      conn.AccessModeExec,
 				AccessModeConnect:   conn.AccessModeConnect,
@@ -334,7 +346,6 @@ func List(c *gin.Context) {
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	conn, err := models.GetConnectionByNameOrID(ctx.OrgID, c.Param("nameOrID"))
-	// conn, err := pgconnections.New().FetchOneByNameOrID(ctx, c.Param("nameOrID"))
 	if err != nil {
 		log.Errorf("failed fetching connection, err=%v", err)
 		sentry.CaptureException(err)
@@ -357,6 +368,10 @@ func Get(c *gin.Context) {
 	if conn.ManagedBy.Valid {
 		managedBy = &conn.ManagedBy.String
 	}
+	defaultDB, _ := base64.StdEncoding.DecodeString(conn.Envs["envvar:DB"])
+	if len(defaultDB) == 0 {
+		defaultDB = []byte(``)
+	}
 	c.JSON(http.StatusOK, openapi.Connection{
 		ID:                  conn.ID,
 		Name:                conn.Name,
@@ -364,6 +379,7 @@ func Get(c *gin.Context) {
 		Type:                conn.Type,
 		SubType:             conn.SubType.String,
 		Secrets:             coerceToAnyMap(conn.Envs),
+		DefaultDatabase:     string(defaultDB),
 		AgentId:             conn.AgentID.String,
 		Status:              conn.Status,
 		Reviewers:           conn.Reviewers,
@@ -371,6 +387,7 @@ func Get(c *gin.Context) {
 		RedactTypes:         conn.RedactTypes,
 		ManagedBy:           managedBy,
 		Tags:                conn.Tags,
+		ConnectionTags:      conn.ConnectionTags,
 		AccessModeRunbooks:  conn.AccessModeRunbooks,
 		AccessModeExec:      conn.AccessModeExec,
 		AccessModeConnect:   conn.AccessModeConnect,
@@ -382,7 +399,6 @@ func Get(c *gin.Context) {
 
 // FetchByName fetches a connection based in access control rules
 func FetchByName(ctx pgrest.Context, connectionName string) (*models.Connection, error) {
-	// conn, err := pgconnections.New().FetchOneByNameOrID(ctx, connectionName)
 	conn, err := models.GetConnectionByNameOrID(ctx.GetOrgID(), connectionName)
 	if err != nil {
 		return nil, err

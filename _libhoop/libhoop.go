@@ -39,3 +39,7 @@ func NewConsole(rawEnvVarList map[string]any, args []string, stdout io.WriteClos
 func NewSSHProxy(ctx context.Context, clientW io.Writer, opts map[string]string) (Proxy, error) {
 	return &noopProxy{connectionType: "ssh"}, nil
 }
+
+func NewHttpProxy(ctx context.Context, clientW io.Writer, opts map[string]string) (Proxy, error) {
+	return &noopProxy{connectionType: "httpproxy"}, nil
+}

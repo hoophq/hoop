@@ -12,12 +12,13 @@ type Closer interface {
 }
 
 const (
-	defaultMongoDBPort  = "27018"
-	defaultMSSQLPort    = "1444"
-	defaultMySQLPort    = "3307"
-	defaultPostgresPort = "5433"
-	defaultTCPPort      = "8999"
-	defaultSSHPort      = "2222"
+	defaultMongoDBPort   = "27018"
+	defaultMSSQLPort     = "1444"
+	defaultMySQLPort     = "3307"
+	defaultPostgresPort  = "5433"
+	defaultTCPPort       = "8999"
+	defaultSSHPort       = "2222"
+	defaultHttpProxyPort = "8081"
 )
 
 var defaultListenAddrValue string

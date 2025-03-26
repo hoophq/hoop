@@ -3,7 +3,7 @@
    ["@headlessui/react" :as ui]
    ["@heroicons/react/20/solid" :as hero-solid-icon]
    ["@heroicons/react/24/outline" :as hero-outline-icon]
-   ["@radix-ui/themes" :refer [Button Flex Text Tooltip]]
+   ["@radix-ui/themes" :refer [Button Box Flex Text Tooltip]]
    ["clipboard" :as clipboardjs]
    ["is-url-http" :as is-url-http?]
    ["lucide-react" :refer [Download FileDown]]
@@ -112,20 +112,22 @@
                                    (:group group)])
                      (reset! add-review-popover-open? false))]
     (fn [group _]
-      [:div
-       {:class (str "relative flex flex-grow items-center gap-small"
-                    " text-xs")}
-       [:div
+      [:> Box {:class "flex w-full relative items-center gap-small text-xs"}
+       [:> Box
         [icon/regular {:size 4
                        :icon-name "user-group"}]]
        [tooltip/truncate-tooltip {:text (:group group)}]
-       [:span {:class "text-xxs italic text-gray-500 text-right"}
-        (:status group)]
-       [:div
+       [:> Box
+        [:span {:class "text-xxs italic text-gray-500 text-right"}
+         (:status group)]
+        (when (or (= (:status group) "APPROVED")
+                  (= (:status group) "REJECTED"))
+          [:> Box {:class "text-xxs italic text-gray-500 text-right max-w-[100px]"}
+           [tooltip/truncate-tooltip {:text (-> group :reviewed_by :email)}]])]
+       [:> Box
         [icon/regular {:size 4
                        :icon-name (review-status-icon
                                    (cs/upper-case (:status group)))}]]
-       [:span {:class "w-5"}]
        [popover/right {:open @add-review-popover-open?
                        :component [add-review-popover add-review]
                        :on-click-outside #(reset! add-review-popover-open? false)}]])))
@@ -202,6 +204,8 @@
         session-report (rf/subscribe [:reports->session])
         gateway-info (rf/subscribe [:gateway->info])
         executing-status (r/atom :ready)
+        connecting-status (r/atom :ready)
+        killing-status (r/atom :ready)
         add-review-popover-open? (r/atom false)
         clipboard-url (new clipboardjs ".copy-to-clipboard-url")]
     (rf/dispatch [:gateway->get-info])
@@ -214,14 +218,24 @@
             start-date (:start_date session)
             end-date (:end_date session)
             verb (:verb session)
+            session-status (:status session)
             has-large-payload? (:has-large-payload? @session-details)
             disabled-download (-> @gateway-info :data :disable_sessions_download)
             review-groups (-> session :review :review_groups_data)
             in-progress? (or (= end-date nil)
                              (= end-date ""))
             has-review? (boolean (seq (-> session :review)))
+            review-status (when has-review?
+                            (some #(when (= (:status %) "APPROVED") "APPROVED") review-groups))
+            can-kill-session? (and (= session-status "open")
+                                   (or (not has-review?)
+                                       (= review-status "APPROVED")))
             has-session-report? (seq (-> @session-report :data :items))
             ready? (= (:status session) "ready")
+            revoke-at (when (get-in session [:review :revoke_at])
+                        (js/Date. (get-in session [:review :revoke_at])))
+            not-revoked? (when revoke-at (> (.getTime revoke-at) (.getTime (js/Date.))))
+            can-connect? (and ready? (= verb "connect") not-revoked?)
             can-review? (and
                          (some #(= "PENDING" (:status %))
                                review-groups)
@@ -239,6 +253,9 @@
             runbook-params (js->clj
                             (js/JSON.parse (-> session :labels :runbookParameters))
                             :keywordize-keys true)
+            kill-session (fn []
+                           (reset! killing-status :loading)
+                           (rf/dispatch [:audit->kill-session session killing-status]))
             _ (.on clipboard-url "success" #(rf/dispatch [:show-snackbar {:level :success :text "URL copied to clipboard"}]))]
         (r/with-let []
           [:div
@@ -268,14 +285,35 @@
                                   :on-click (fn []
                                               (reset! executing-status :loading)
                                               (rf/dispatch [:audit->execute-session session]))
+                                  :variant :small}]])
+              (when can-connect?
+                [:div {:class "flex gap-regular justify-end items-center mx-large"}
+                 [:span {:class "text-xs text-gray-500"}
+                  "This session is ready to be connected"]
+                 [button/primary {:text "Connect"
+                                  :status @connecting-status
+                                  :on-click (fn []
+                                              (reset! connecting-status :loading)
+                                              (rf/dispatch [:close-modal])
+                                              (rf/dispatch [:audit->connect-session session connecting-status]))
                                   :variant :small}]])]
 
              [:div {:class "relative flex gap-2.5 items-start pr-3"}
-              [:div {:class "relative group"}
-               [:> Tooltip {:content "Re-run session"}
-                [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer"
-                       :on-click #(re-run-session session)}
-                 [:> hero-outline-icon/PlayIcon {:class "h-5 w-5 text-gray-600"}]]]]
+              (when can-kill-session?
+                [:div {:class "relative group"}
+                 [:> Tooltip {:content "Kill Session"}
+                  [:div {:class "rounded-full p-2 bg-red-100 hover:bg-red-200 transition cursor-pointer"
+                         :on-click kill-session}
+                   (if (= @killing-status :loading)
+                     [loaders/simple-loader {:size 2}]
+                     [:> hero-outline-icon/StopIcon {:class "h-5 w-5 text-red-600"}])]]])
+
+              (when (= (:verb session) "exec")
+                [:div {:class "relative group"}
+                 [:> Tooltip {:content "Re-run session"}
+                  [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer"
+                         :on-click #(re-run-session session)}
+                   [:> hero-outline-icon/PlayIcon {:class "h-5 w-5 text-gray-600"}]]]])
 
               [:div {:class "relative group"}
                [:> Tooltip {:content "Copy link"}
@@ -321,14 +359,25 @@
                "start:"]
               [:span
                (formatters/time-parsed->full-date start-date)]]
-             (when-not in-progress?
+             (when-not (and
+                        (= verb "exec")
+                        in-progress?)
                [:div
                 {:class "flex items-center justify-end gap-regular text-xs"}
                 [:span
                  {:class "flex-grow text-gray-500"}
                  "end:"]
                 [:span
-                 (formatters/time-parsed->full-date end-date)]])]
+                 (formatters/time-parsed->full-date end-date)]])
+             (when (and (= verb "connect")
+                        (get-in session [:review :revoke_at]))
+               [:div
+                {:class "flex items-center justify-end gap-regular text-xs"}
+                [:span
+                 {:class "flex-grow text-gray-500"}
+                 "access until:"]
+                [:span
+                 (formatters/time-parsed->full-date (get-in session [:review :revoke_at]))]])]
             [:div {:id "session-reviews" :class "self-center"}
              [:header {:class "relative flex text-xs text-gray-800 mb-small"}
               [:span {:class "flex-grow font-bold"} "Reviewers"]
@@ -349,8 +398,7 @@
                [:div
                 {:class "py-small text-xs italic text-gray-500 text-left"}
                 "No review info"])
-             [:div {:class (str "rounded-lg "
-                                "flex flex-col")}
+             [:div {:class "rounded-lg w-full flex flex-col gap-2"}
               (doall
                (for [group review-groups]
                  ^{:key (:id group)}

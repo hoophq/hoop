@@ -3,6 +3,7 @@ package transport
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/common/log"
@@ -10,13 +11,12 @@ import (
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
-	pbsys "github.com/hoophq/hoop/common/proto/sys"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
-	transportsys "github.com/hoophq/hoop/gateway/transport/sys"
+	transportsystem "github.com/hoophq/hoop/gateway/transport/system"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -77,11 +77,7 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 			continue
 		}
 
-		// handle system packets
-		if pkt.Type == pbsys.ProvisionDBRolesResponse {
-			if err := transportsys.Send(pctx.SID, pkt.Payload); err != nil {
-				log.Warnf("unable to send system packet, reason=%v", err)
-			}
+		if handled := handleSystemPacketResponses(pctx, pkt); handled {
 			continue
 		}
 
@@ -122,6 +118,16 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 			log.With("sid", pctx.SID).Debugf("failed to send packet to proxy stream, err=%v", err)
 		}
 	}
+}
+
+func handleSystemPacketResponses(pctx *plugintypes.Context, pkt *pb.Packet) (handled bool) {
+	if strings.HasPrefix(pkt.Type, "Sys") {
+		if err := transportsystem.Send(pkt.Type, pctx.SID, pkt.Payload); err != nil {
+			log.Warnf("unable to send system packet, reason=%v", err)
+		}
+		return true
+	}
+	return
 }
 
 func buildErrorFromPacket(sid string, pkt *pb.Packet) error {

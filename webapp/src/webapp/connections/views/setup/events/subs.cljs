@@ -1,5 +1,7 @@
 (ns webapp.connections.views.setup.events.subs
-  (:require [re-frame.core :as rf]))
+  (:require
+   [re-frame.core :as rf]
+   [webapp.connections.views.setup.tags-utils :as tags-utils]))
 
 ;; Basic form state
 (rf/reg-sub
@@ -147,18 +149,59 @@
  (fn [db]
    (get-in db [:connection-setup :credentials :configuration-files])))
 
-;; Sub para tags
+;; Tags subs
 (rf/reg-sub
- :connection-setup/tags
+ :connection-setup/key-validation-error
  (fn [db]
-   (get-in db [:connection-setup :tags] [])))
+   (get-in db [:connection-setup :tags :key-validation-error])))
+
+(rf/reg-sub
+ :connection-tags/data
+ (fn [db]
+   (get-in db [:connection-tags :data])))
+
+(rf/reg-sub
+ :connection-tags/loading?
+ (fn [db]
+   (get-in db [:connection-tags :loading?] true)))
+
+(rf/reg-sub
+ :connection-tags/key-options
+ :<- [:connection-tags/data]
+ (fn [tags-data]
+   (when tags-data
+     (:grouped-options (tags-utils/format-keys-for-select tags-data)))))
 
 (rf/reg-sub
  :connection-setup/tags-input
  (fn [db]
    (get-in db [:connection-setup :tags-input] [])))
 
-;; Subscriptions específicos para atualização
+(rf/reg-sub
+ :connection-setup/current-key
+ (fn [db]
+   (get-in db [:connection-setup :tags :current-key])))
+
+(rf/reg-sub
+ :connection-setup/current-value
+ (fn [db]
+   (get-in db [:connection-setup :tags :current-value])))
+
+(rf/reg-sub
+ :connection-setup/available-values
+ (fn [db]
+   (get-in db [:connection-setup :tags :available-values] [])))
+
+(rf/reg-sub
+ :connection-setup/tags
+ (fn [db]
+   (get-in db [:connection-setup :tags :data] [])))
+
+(rf/reg-sub
+ :connection-setup/available-values-for-index
+ (fn [db [_ index]]
+   (get-in db [:connection-setup :tags :available-values-for-index index] [])))
+
 (rf/reg-sub
  :connection-setup/form-data
  (fn [db]

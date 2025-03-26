@@ -42,6 +42,7 @@ const (
 	ConnectionTypeMongoDB     ConnectionType = "mongodb"
 	ConnectionTypeOracleDB    ConnectionType = "oracledb"
 	ConnectionTypeTCP         ConnectionType = "tcp"
+	ConnectionTypeHttpProxy   ConnectionType = "httpproxy"
 	ConnectionTypeSSH         ConnectionType = "ssh"
 
 	ConnectionOriginAgent              = "agent"

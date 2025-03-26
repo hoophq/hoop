@@ -2,7 +2,6 @@
   (:require
    [bidi.bidi :as bidi]
    [pushy.core :as pushy]
-   [re-frame.core :as re-frame]
    [re-frame.core :as rf]
    [webapp.config :as config]
    [webapp.events :as events]))
@@ -35,6 +34,8 @@
                     [["/edit/" :guardrail-id] :edit-guardrail]]
      "/hoop-app" :hoop-app
      "/idplogin" :idplogin-hoop
+     "/integrations" [["/aws-connect" :integrations-aws-connect]
+                      ["/aws-connect/setup" :integrations-aws-connect-setup]]
      "/jira-templates" [["" :jira-templates]
                         ["/new" :create-jira-template]
                         [["/edit/" :jira-template-id] :edit-jira-template]]
@@ -46,6 +47,7 @@
                  [["/manage/" :plugin-name] :manage-plugin]]
      "/organization" [["/users" :users]]
      "/onboarding" [["" :onboarding]
+                    ["/aws-connect" :onboarding-aws-connect]
                     ["/setup" :onboarding-setup]
                     ["/setup/resource" :onboarding-setup-resource]]
      "/register" :register-hoop
@@ -81,7 +83,7 @@
 (defn dispatch
   [route]
   (let [panel (keyword (str (name (:handler route)) "-panel"))]
-    (re-frame/dispatch [::events/set-active-panel panel])))
+    (rf/dispatch [::events/set-active-panel panel])))
 
 (defonce history
   (pushy/pushy dispatch parse))
@@ -96,7 +98,7 @@
   []
   (pushy/start! history))
 
-(re-frame/reg-fx
+(rf/reg-fx
  :navigate
  (fn [config]
    (navigate! {:handler (:handler config)
@@ -111,9 +113,9 @@
 
 ;; Component wrapper to check if the user is an admin
 ;; If not, redirect to home and show a loader component
-(defn admin-only [component]
+(defn admin-only []
   (let [is-admin? (rf/subscribe [:user/is-admin?])]
-    (fn []
+    (fn [component]
       (if @is-admin?
         ;; If it's an admin, render the component normally
         component

@@ -3,6 +3,7 @@ package transport
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/common/apiutils"
@@ -12,7 +13,6 @@ import (
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
-	pbsys "github.com/hoophq/hoop/common/proto/sys"
 	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
@@ -65,10 +65,8 @@ func (s *Server) subscribeClient(stream *streamclient.ProxyStream) (err error) {
 		return err
 	}
 
-	connType := pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType)
-	if connType == pb.ConnectionTypeTCP && clientVerb == pb.ClientVerbExec {
-		return status.Errorf(codes.InvalidArgument,
-			fmt.Sprintf("exec is not allowed for tcp type connections. Use 'hoop connect %s' instead", pctx.ConnectionName))
+	if err := validateConnectionType(clientVerb, pctx); err != nil {
+		return err
 	}
 
 	if err := stream.Save(); err != nil {
@@ -141,8 +139,8 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 			return status.Errorf(codes.Internal, "internal error, failed receiving client packet")
 		}
 
-		// Do not let clients send system packets
-		if pkt.Type == pbgateway.KeepAlive || pkt.Type == pbsys.ProvisionDBRolesRequest {
+		// do not process any system packets issued by the user
+		if handled := handleSystemPacketRequests(pkt.Type); handled {
 			continue
 		}
 
@@ -274,6 +272,13 @@ func clientArgsDecode(spec map[string][]byte) []string {
 	return clientArgs
 }
 
+func handleSystemPacketRequests(pktType string) (handled bool) {
+	if pktType == pbgateway.KeepAlive || strings.HasPrefix(pktType, "Sys") {
+		handled = true
+	}
+	return
+}
+
 func (s *Server) ReviewStatusChange(rev *types.Review) {
 	if rev.Status == types.ReviewStatusApproved {
 		pluginslack.SendApprovedMessage(
@@ -302,4 +307,16 @@ func (s *Server) ReviewStatusChange(rev *types.Review) {
 	}
 	log.With("sid", rev.Session, "connection", rev.Connection.Name, "has-stream", proxyStream != nil).
 		Infof("review status change")
+}
+
+func validateConnectionType(clientVerb string, pctx plugintypes.Context) error {
+	if clientVerb == pb.ClientVerbExec {
+		connType := pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType)
+		switch connType {
+		case pb.ConnectionTypeTCP, pb.ConnectionTypeHttpProxy, pb.ConnectionTypeSSH:
+			return status.Errorf(codes.InvalidArgument,
+				fmt.Sprintf("exec is not allowed for %v type connections. Use 'hoop connect %s' instead", connType, pctx.ConnectionName))
+		}
+	}
+	return nil
 }

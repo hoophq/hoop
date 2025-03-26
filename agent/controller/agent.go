@@ -14,7 +14,7 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/agent/config"
-	controllersys "github.com/hoophq/hoop/agent/controller/sys"
+	"github.com/hoophq/hoop/agent/controller/system/dbprovisioner"
 	"github.com/hoophq/hoop/agent/secretsmanager"
 	term "github.com/hoophq/hoop/agent/terminal"
 	"github.com/hoophq/hoop/common/log"
@@ -22,7 +22,7 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
-	pbsys "github.com/hoophq/hoop/common/proto/sys"
+	pbsystem "github.com/hoophq/hoop/common/proto/system"
 	"go.mongodb.org/mongo-driver/x/mongo/driver/connstring"
 )
 
@@ -36,18 +36,20 @@ type (
 		shutdownCancelFn context.CancelCauseFunc
 	}
 	connEnv struct {
-		scheme            string
-		host              string
-		address           string
-		user              string
-		pass              string
-		port              string
-		authorizedSSHKeys string
-		dbname            string
-		insecure          bool
-		options           string
-		postgresSSLMode   string
-		connectionString  string
+		scheme             string
+		host               string
+		address            string
+		user               string
+		pass               string
+		port               string
+		authorizedSSHKeys  string
+		dbname             string
+		insecure           bool
+		options            string
+		postgresSSLMode    string
+		connectionString   string
+		httpProxyRemoteURL string
+		httpProxyHeaders   map[string]string
 	}
 )
 
@@ -135,6 +137,10 @@ func (a *Agent) Run() error {
 		case pbagent.TCPConnectionWrite:
 			a.processTCPWriteServer(pkt)
 
+		// http proxy
+		case pbagent.HttpProxyConnectionWrite:
+			a.processHttpProxyWriteServer(pkt)
+
 		// SSH protocol
 		case pbagent.SSHConnectionWrite:
 			a.processSSHProtocol(pkt)
@@ -151,9 +157,9 @@ func (a *Agent) Run() error {
 		case pbagent.TCPConnectionClose:
 			a.processTCPCloseConnection(pkt)
 
-		// system packets
-		case pbsys.ProvisionDBRolesRequest:
-			go controllersys.ProcessDBProvisionerRequest(a.client, pkt)
+		// system
+		case pbsystem.ProvisionDBRolesRequest:
+			dbprovisioner.ProcessDBProvisionerRequest(a.client, pkt)
 		}
 	}
 }
@@ -513,6 +519,7 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		return nil, err
 	}
 
+	httpProxyHeaders := envVarS.Search(func(key string) bool { return strings.HasPrefix(strings.ToLower(key), "header_") })
 	env := &connEnv{
 		scheme:            envVarS.Getenv("SCHEME"),
 		host:              envVarS.Getenv("HOST"),
@@ -525,7 +532,9 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		postgresSSLMode:   envVarS.Getenv("SSLMODE"),
 		options:           envVarS.Getenv("OPTIONS"),
 		// this option is only used by mongodb at the momento
-		connectionString: envVarS.Getenv("CONNECTION_STRING"),
+		connectionString:   envVarS.Getenv("CONNECTION_STRING"),
+		httpProxyRemoteURL: envVarS.Getenv("REMOTE_URL"),
+		httpProxyHeaders:   httpProxyHeaders,
 	}
 	switch connType {
 	case pb.ConnectionTypePostgres:
@@ -592,6 +601,13 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 	case pb.ConnectionTypeTCP:
 		if env.host == "" || env.port == "" {
 			return nil, errors.New("missing required environment for connection [HOST, PORT]")
+		}
+	case pb.ConnectionTypeHttpProxy:
+		if env.httpProxyRemoteURL == "" {
+			return nil, fmt.Errorf("missing required environment for connection [REMOTE_URL]")
+		}
+		if _, err := url.Parse(env.httpProxyRemoteURL); err != nil {
+			return nil, fmt.Errorf("failed parsing REMOTE_URL env, reason=%v", err)
 		}
 	}
 	return env, nil

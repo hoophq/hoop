@@ -1,7 +1,7 @@
 (ns webapp.connections.views.connection-list
-  (:require ["lucide-react" :refer [Wifi Tags EllipsisVertical]]
-            ["@radix-ui/themes" :refer [IconButton Box DropdownMenu Tooltip
-                                        Flex Text Badge]]
+  (:require ["lucide-react" :refer [Wifi EllipsisVertical InfoIcon]]
+            ["@radix-ui/themes" :refer [IconButton Box Button DropdownMenu Tooltip
+                                        Flex Text Callout]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
@@ -9,6 +9,7 @@
             [webapp.components.loaders :as loaders]
             [webapp.components.searchbox :as searchbox]
             [webapp.connections.constants :as connection-constants]
+            [webapp.connections.views.connection-settings-modal :as connection-settings-modal]
             [webapp.config :as config]))
 
 (defn empty-list-view []
@@ -29,16 +30,19 @@
    [:div {:class "flex items-center justify-center h-full"}
     [loaders/simple-loader]]])
 
+(defn aws-connect-sync-callout []
+  (let [aws-jobs-running? @(rf/subscribe [:jobs/aws-connect-running?])]
+    (when aws-jobs-running?
+      [:> Callout.Root {:class "my-4"}
+       [:> Callout.Icon
+        [:> InfoIcon {:size 16}]]
+       [:> Callout.Text
+        [:> Text {:weight "bold" :as "span"} "AWS Connect Sync in Progress"]
+        [:> Text {:as "span"} " There is an automated process for your connections happening in your hoop.dev environment. Check it later in order to verify."]]])))
+
 (defn panel [_]
-  (let [search-string (.. js/window -location -search)
-        url-params (new js/URLSearchParams search-string)
-        tags (.get url-params "tags")
-        connections (rf/subscribe [:connections])
+  (let [connections (rf/subscribe [:connections])
         user (rf/subscribe [:users->current-user])
-        query (r/atom {:tags (if (and tags
-                                      (not (cs/blank? tags)))
-                               (cs/split tags #",")
-                               [])})
         search-focused (r/atom false)
         searched-connections (r/atom nil)
         searched-criteria-connections (r/atom "")
@@ -46,24 +50,16 @@
     (rf/dispatch [:connections->get-connections])
     (rf/dispatch [:users->get-user])
     (rf/dispatch [:guardrails->get-all])
+    (rf/dispatch [:jobs/start-aws-connect-polling])
     (fn []
-      (let [connections-search-results (cond->> (if (empty? @searched-connections)
-                                                  (:results @connections)
-                                                  @searched-connections)
-                                         (seq (:tags @query))
-                                         (filter (fn [connection]
-                                                   (some (set (:tags @query))
-                                                         (:tags connection)))))
-            connections-tags (doall (->> (:results @connections)
-                                         (map :tags)
-                                         (apply concat)
-                                         (distinct)))]
+      (let [connections-search-results (if (empty? @searched-connections)
+                                         (:results @connections)
+                                         @searched-connections)]
         [:div {:class "flex flex-col bg-white rounded-lg h-full p-6 overflow-y-auto"}
          (when (-> @user :data :admin?)
            [:div {:class "absolute top-10 right-4 sm:right-6 lg:top-16 lg:right-20"}
-            [button/tailwind-primary {:text "Add connection"
-                                      :on-click (fn []
-                                                  (rf/dispatch [:navigate :create-connection]))}]])
+            [:> Button {:on-click (fn [] (rf/dispatch [:navigate :create-connection]))}
+             "Add Connection"]])
          [:> Flex {:as "header"
                    :direction "column"
                    :gap "3"
@@ -71,10 +67,10 @@
           [searchbox/main
            {:options (:results @connections)
             :display-key :name
-            :searchable-keys [:name :type :subtype :tags :status]
+            :searchable-keys [:name :type :subtype :connection_tags :status]
             :on-change-results-cb #(reset! searched-connections %)
             :hide-results-list true
-            :placeholder "Search by connection name, type, status or anything"
+            :placeholder "Search by connection name, type, status, tags or anything"
             :on-focus #(reset! search-focused true)
             :on-blur #(reset! search-focused false)
             :name "connection-search"
@@ -82,33 +78,8 @@
             :loading? (= @connections-search-status :loading)
             :size :small
             :icon-position "left"}]
-          (when (not-empty connections-tags)
-            [:> Flex {:gap "4"
-                      :align "center"}
-             [:> Text {:size "1"
-                       :color :gray
-                       :weight "bold"}
-              "Tags"]
-             [:> Flex {:gap "2"
-                       :wrap "wrap"
-                       :justify "between"
-                       :position "relative"}
-              (doall
-               (for [tag connections-tags]
-                 [:> Badge {:variant (if (some #{tag} (get @query :tags)) "solid" "soft")
-                            :as "div"
-                            :on-click #(do
-                                         (if (not (some #{tag} (get @query :tags)))
-                                           (reset! query
-                                                   {:tags (concat (get @query :tags)
-                                                                  [tag])})
-                                           (reset! query
-                                                   {:tags (remove #{tag} (get @query :tags))}))
-                                         (rf/dispatch [:connections->filter-connections @query]))
-                            :key tag
-                            :radius "full"
-                            :class "cursor-pointer"}
-                  tag]))]])]
+
+          [aws-connect-sync-callout]]
 
          (if (and (= :loading (:status @connections)) (empty? (:results @connections)))
            [loading-list-view]
@@ -140,15 +111,6 @@
                    [:div {:id "connection-info"
                           :class "flex gap-6 items-center"}
 
-                    (when (seq (:tags connection))
-                      [:div {:class "relative group flex items-center gap-2 text-xs text-gray-700"}
-                       [:div
-                        [:> Tags {:size 16}]]
-                       [:span {:class "text-nowrap font-semibold"}
-                        (str (first (:tags connection))
-                             (when (> (count (:tags connection)) 1)
-                               (str " + " (- (count (:tags connection)) 1) " more")))]])
-
                     [:div {:class "flex items-center gap-1 text-xs text-gray-700"}
                      [:div {:class (str "rounded-full h-[6px] w-[6px] "
                                         (if (= (:status connection) "online")
@@ -161,7 +123,8 @@
                            (and (= "application" (:type connection))
                                 (= "tcp" (:subtype connection))))
                       [:div {:class "relative cursor-pointer group"
-                             :on-click #(rf/dispatch [:connections->start-connect (:name connection)])}
+                             :on-click #(rf/dispatch [:modal->open {:content [connection-settings-modal/main (:name connection)]
+                                                                    :maxWidth "446px"}])}
                        [:> Tooltip {:content "Hoop Access"}
                         [:> IconButton {:size 1 :variant "ghost" :color "gray"}
                          [:> Wifi {:size 16}]]]])

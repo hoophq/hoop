@@ -1,4 +1,4 @@
-package controllersys
+package dbprovisioner
 
 import (
 	"bytes"
@@ -10,7 +10,7 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/hoophq/hoop/common/log"
-	pbsys "github.com/hoophq/hoop/common/proto/sys"
+	pbsystem "github.com/hoophq/hoop/common/proto/system"
 )
 
 func mysqlRoleStatement(user, password, privileges string) (string, error) {
@@ -40,11 +40,11 @@ var mysqlPrivileges = map[roleNameType]string{
 	adminRoleName:     "SELECT, INSERT, UPDATE, DELETE, ALTER, CREATE, DROP",
 }
 
-func provisionMySQLRoles(r pbsys.DBProvisionerRequest) *pbsys.DBProvisionerResponse {
+func provisionMySQLRoles(r pbsystem.DBProvisionerRequest) *pbsystem.DBProvisionerResponse {
 	db, err := sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s)/mysql?multiStatements=true",
 		r.MasterUsername, r.MasterPassword, r.Address()))
 	if err != nil {
-		return pbsys.NewError(r.SID, "failed to create database connection: %s", err)
+		return pbsystem.NewError(r.SID, "failed to create database connection: %s", err)
 	}
 	defer db.Close()
 
@@ -54,46 +54,50 @@ func provisionMySQLRoles(r pbsys.DBProvisionerRequest) *pbsys.DBProvisionerRespo
 	// Ping actually tests the connection
 	err = db.PingContext(ctx)
 	if err != nil {
-		return pbsys.NewError(r.SID, "failed to connect to engine %v: %v", r.DatabaseType, err)
+		return pbsystem.NewError(r.SID, "failed to connect to engine %v: %v", r.DatabaseType, err)
 	}
 
 	log.With("sid", r.SID, "engine", r.DatabaseType).Infof("starting provisioning roles")
-	res := pbsys.NewDbProvisionerResponse(r.SID, "", "")
+	res := pbsystem.NewDbProvisionerResponse(r.SID, "", "")
 	for _, roleName := range roleNames {
 		result := provisionMySQLRole(db, r, roleName)
-		res.Result = append(res.Result, *result)
+		res.Result = append(res.Result, result)
 	}
 	return res
 }
 
-func provisionMySQLRole(db *sql.DB, r pbsys.DBProvisionerRequest, roleName roleNameType) *pbsys.Result {
+func provisionMySQLRole(db *sql.DB, r pbsystem.DBProvisionerRequest, roleName roleNameType) *pbsystem.Result {
 	userRole := fmt.Sprintf("%s_%s", rolePrefixName, roleName)
 	randomPasswd, err := generateRandomPassword()
 	if err != nil {
-		return pbsys.NewResultError("failed generating password for user role %v: %v", userRole, err)
+		return pbsystem.NewResultError("failed generating password for user role %v: %v", userRole, err)
 	}
 
 	statement, err := mysqlRoleStatement(userRole, randomPasswd, mysqlPrivileges[roleName])
 	if err != nil {
-		return pbsys.NewResultError("failed generating SQL statement for user role %v: %v", userRole, err)
+		return pbsystem.NewResultError("failed generating SQL statement for user role %v: %v", userRole, err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if _, err := db.ExecContext(ctx, statement); err != nil {
-		return pbsys.NewResultError(err.Error())
+		return pbsystem.NewResultError(err.Error())
 	}
-	return &pbsys.Result{
+	return &pbsystem.Result{
 		RoleSuffixName: string(roleName),
-		Status:         pbsys.StatusCompletedType,
+		Status:         pbsystem.StatusCompletedType,
 		Message:        "",
 		CompletedAt:    time.Now().UTC(),
-		Credentials: &pbsys.DBCredentials{
-			Host:     r.DatabaseHostname,
-			Port:     r.Port(),
-			User:     userRole,
-			Password: randomPasswd,
-			Options:  map[string]string{},
+		Credentials: &pbsystem.DBCredentials{
+			SecretsManagerProvider: pbsystem.SecretsManagerProviderDatabase,
+			SecretID:               "",
+			SecretKeys:             []string{},
+			Host:                   r.DatabaseHostname,
+			Port:                   r.Port(),
+			User:                   userRole,
+			Password:               randomPasswd,
+			DefaultDatabase:        "mysql",
+			Options:                map[string]string{},
 		},
 	}
 }

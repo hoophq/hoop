@@ -33,6 +33,7 @@ import (
 	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
+	transportsystem "github.com/hoophq/hoop/gateway/transport/system"
 )
 
 var (
@@ -605,4 +606,43 @@ func PatchMetadata(c *gin.Context) {
 		return
 	}
 	c.Writer.WriteHeader(http.StatusNoContent)
+}
+
+// KillSession
+//
+//	@Summary	Kill Session
+//	@Tags		Sessions
+//	@Param		session_id	path	string	true	"The id of the resource"
+//	@Success	204
+//	@Failure	400,404,500	{object}	openapi.HTTPError
+//	@Router		/sessions/{session_id}/kill [post]
+func Kill(c *gin.Context) {
+	ctx, sid := storagev2.ParseContext(c), c.Param("session_id")
+	apiroutes.SetSidSpanAttr(c, sid)
+
+	sess, err := models.GetSessionByID(ctx.OrgID, sid)
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "session not found"})
+		return
+	case nil:
+		// if user is not admin and session is not owned by user, return 404
+		if sess.UserID != ctx.UserID && !ctx.IsAdmin() {
+			c.JSON(http.StatusNotFound, gin.H{"message": "session not found"})
+			return
+		}
+	default:
+		log.Errorf("failed fetching session, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching session"})
+		return
+	}
+
+	log.With("user", ctx.UserEmail, "sid", sid).Infof("user initiated a kill process")
+	if err := transportsystem.KillSession(sid); err != nil {
+		log.With("sid", sid).Warnf("failed killing session, reason=%v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusNoContent, nil)
 }

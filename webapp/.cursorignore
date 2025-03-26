@@ -1,0 +1,31 @@
+/out/
+/resources/public/js
+/resources/public/css
+/target/
+/*-init.clj
+/*.log
+
+# Leiningen
+/.lein-*
+/.nrepl-port
+.DS_Store
+*/.DS_Store
+
+# Node.js dependencies
+/node_modules/
+
+# shadow-cljs cache, port files
+/.shadow-cljs/
+
+# generate configurations in vscode
+/.clj-kondo/
+/.lsp/
+
+# deps.edn
+/.cpcache
+
+# genversion generated file
+src/webapp/version.js
+
+# .env file
+.env

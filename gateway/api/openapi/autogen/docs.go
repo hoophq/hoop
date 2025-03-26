@@ -232,8 +232,15 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "format": "string",
-                        "description": "Filter by tags, separated by comma",
+                        "description": "DEPRECATED: Filter by tags, separated by comma",
                         "name": "tags",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "format": "string",
+                        "description": "Selector tags to fo filter on, supports '=' and '!=' (e.g. key1=value1,key2=value2)",
+                        "name": "tagSelector",
                         "in": "query"
                     },
                     {
@@ -283,7 +290,7 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "The connection resource allows exposing internal services from your internal infra structure to users.\n\n### Types of Connections\n\nThe definition of this resource represent how clients will be able to interact with internal resources.\n\nEach type/subtype may represent a distinct implementation:\n\n- ` + "`" + `application/\u003csubtype\u003e` + "`" + ` - An alias to map distinct types of shell applications (e.g.: python, ruby, etc)\n- ` + "`" + `application/tcp` + "`" + ` - Forward TCP connections\n\n    This type requires the following environment variables:\n    - ` + "`" + `HOST` + "`" + `: ip or dns of the internal service\n    - ` + "`" + `PORT` + "`" + `: the port of the internal service\n\n- ` + "`" + `custom` + "`" + ` - Any custom shell application\n- ` + "`" + `database/\u003csubtype\u003e` + "`" + ` - Allow connecting to databases through multiple clients (Webapp, cli, IDE's)\n\nEach ` + "`" + `\u003csubtype\u003e` + "`" + ` has distinct environment variables that are allowed to be configured, refer to our [documentation](https://hoop.dev/docs) for more information.\n",
+                "description": "The connection resource allows exposing internal services from your internal infra structure to users.\n\n### Types of Connections\n\nThe definition of this resource represent how clients will be able to interact with internal resources.\n\nEach type/subtype may represent a distinct implementation:\n\n- ` + "`" + `application/\u003csubtype\u003e` + "`" + ` - An alias to map distinct types of shell applications (e.g.: python, ruby, etc)\n- ` + "`" + `application/tcp` + "`" + ` - Forward TCP connections\n\n    This type requires the following environment variables:\n    - ` + "`" + `HOST` + "`" + `: ip or dns of the internal service\n    - ` + "`" + `PORT` + "`" + `: the port of the internal service\n\n- ` + "`" + `custom` + "`" + ` - Any custom shell application\n- ` + "`" + `database/\u003csubtype\u003e` + "`" + ` - Allow connecting to databases through multiple clients (Webapp, cli, IDE's)\n\nEach ` + "`" + `\u003csubtype\u003e` + "`" + ` has distinct environment variables that are allowed to be configured, refer to our [documentation](https://hoop.dev/docs) for more information.\n\n### Tags\n\nTags are key/value pairs that are attached to objects such as Connections. Tags are intended to be used to specify identifying attributes of objects that are meaningful and relevant to users, but do not directly imply semantics to the core system.\n\n` + "`" + `` + "`" + `` + "`" + `json\n{\n    \"connection_tags\": {\n        \"environment\": \"production\",\n        \"component\": \"backend\"\n    }\n}\n` + "`" + `` + "`" + `` + "`" + `\n\nEquality- or inequality-based requirements allow filtering by tags keys and values. Matching objects must satisfy all of the specified tag constraints, though they may have additional tags as well. Three kinds of operators are admitted ` + "`" + `=` + "`" + `,` + "`" + `!=` + "`" + `. The first represent equality, while the last represents inequality. For example:\n\n` + "`" + `` + "`" + `` + "`" + `\nenvironment = production\ntier != frontend\n` + "`" + `` + "`" + `` + "`" + `\n\nThe former selects all resources with key equal to ` + "`" + `environment` + "`" + ` and value equal to ` + "`" + `production` + "`" + `. The latter selects all resources with key equal to ` + "`" + `tier` + "`" + ` and value distinct from ` + "`" + `frontend` + "`" + `. One could filter for resources in production excluding frontend using the comma operator: environment=production,tier!=frontend\n",
                 "consumes": [
                     "application/json"
                 ],
@@ -328,6 +335,35 @@ const docTemplate = `{
                         "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/connections-tags": {
+            "get": {
+                "description": "List all Connection Tags.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "List Connection Tags",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.ConnectionTag"
+                            }
                         }
                     },
                     "500": {
@@ -3121,6 +3157,46 @@ const docTemplate = `{
                 }
             }
         },
+        "/sessions/{session_id}/kill": {
+            "post": {
+                "tags": [
+                    "Sessions"
+                ],
+                "summary": "Kill Session",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The id of the resource",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/sessions/{session_id}/metadata": {
             "patch": {
                 "consumes": [
@@ -3739,6 +3815,13 @@ const docTemplate = `{
                     "description": "Logical database name within the RDS instance where roles will be applied",
                     "type": "string",
                     "example": "customers"
+                },
+                "db_tags": {
+                    "description": "Database Instance tags",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.DBTag"
+                    }
                 }
             }
         },
@@ -3929,6 +4012,21 @@ const docTemplate = `{
                         "/bin/bash"
                     ]
                 },
+                "connection_tags": {
+                    "description": "Tags to identify the connection\n* keys must contain between 1 and 64 alphanumeric characters, it may include (-), (_), (/), or (.) characters and it must not end with (-), (/) or (-).\n* values must contain between 1 and 256 alphanumeric characters, it may include space, (-), (_), (/), (+), (@), (:), (=) or (.) characters.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "environment": "prod",
+                        "tier": "frontend"
+                    }
+                },
+                "default_database": {
+                    "description": "Default databases returns the configured value of the attribute secrets-\u003e'DB'",
+                    "type": "string"
+                },
                 "guardrail_rules": {
                     "description": "The guard rail association id rules",
                     "type": "array",
@@ -4007,7 +4105,7 @@ const docTemplate = `{
                     "example": "postgres"
                 },
                 "tags": {
-                    "description": "Tags to classify the connection",
+                    "description": "DEPRECATED: Tags to classify the connection",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -4098,18 +4196,50 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.ConnectionTag": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "description": "CreatedAt is the timestamp when this tag was created",
+                    "type": "string",
+                    "example": "2023-08-15T14:30:45Z"
+                },
+                "id": {
+                    "description": "ID is the unique identifier for this specific tag",
+                    "type": "string",
+                    "example": "tag_01H7ZD5SJRZ7RPGQRMT4Y9HF"
+                },
+                "key": {
+                    "description": "Key is the identifier for the tag category (e.g., \"environment\", \"department\")",
+                    "type": "string",
+                    "example": "environment"
+                },
+                "updated_at": {
+                    "description": "UpdatedAt is the timestamp when this tag was last updated",
+                    "type": "string",
+                    "example": "2023-08-15T14:30:45Z"
+                },
+                "value": {
+                    "description": "Value is the specific tag value associated with the key (e.g., \"production\", \"finance\")",
+                    "type": "string",
+                    "example": "production"
+                }
+            }
+        },
         "openapi.CreateDBRoleJob": {
             "type": "object",
             "required": [
                 "agent_id",
                 "aws",
-                "connection_prefix_name"
+                "connection_prefix_name",
+                "job_steps"
             ],
             "properties": {
                 "agent_id": {
                     "description": "Unique identifier of the agent hosting the database resource",
                     "type": "string",
                     "format": "uuid",
+                    "minLength": 36,
                     "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
                 },
                 "aws": {
@@ -4121,9 +4251,28 @@ const docTemplate = `{
                     ]
                 },
                 "connection_prefix_name": {
-                    "description": "Base prefix for connection names - the role name will be appended to this prefix\nwhen creating the database connection (e.g., \"prod-postgres-readonly\")",
+                    "description": "Base prefix for connection names - the role name will be appended to this prefix\nwhen creating the database connection (e.g., \"prod-postgres-ro\")",
                     "type": "string",
                     "example": "prod-postgres-"
+                },
+                "job_steps": {
+                    "description": "The additional steps to execute",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.DBRoleJobStepType"
+                    },
+                    "example": [
+                        "create-connections",
+                        "send-webhook"
+                    ]
+                },
+                "vault_provider": {
+                    "description": "Vault Provider uses HashiCorp Vault to store the provisioned credentials.\nThe target agent must be configured with the Vault Credentials in order for this operation to work",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.DBRoleJobVaultProvider"
+                        }
+                    ]
                 }
             }
         },
@@ -4133,10 +4282,37 @@ const docTemplate = `{
                 "instance_arn"
             ],
             "properties": {
+                "default_security_group": {
+                    "description": "The default security group that will be used to grant access for the agent to access.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.CreateDBRoleJobAWSProviderSG"
+                        }
+                    ]
+                },
                 "instance_arn": {
                     "description": "Instance ARN is the identifier for the database instance",
                     "type": "string",
                     "example": "arn:aws:rds:us-west-2:123456789012:db:my-instance"
+                }
+            }
+        },
+        "openapi.CreateDBRoleJobAWSProviderSG": {
+            "type": "object",
+            "required": [
+                "ingress_cidr",
+                "target_port"
+            ],
+            "properties": {
+                "ingress_cidr": {
+                    "description": "The ingress inbound CIDR rule to allow traffic to",
+                    "type": "string",
+                    "example": "192.168.1.0/24"
+                },
+                "target_port": {
+                    "description": "The target port to be configured for the security group",
+                    "type": "integer",
+                    "example": 5432
                 }
             }
         },
@@ -4237,6 +4413,14 @@ const docTemplate = `{
                     "type": "string",
                     "example": "2025-02-28T12:34:56Z"
                 },
+                "credentials_info": {
+                    "description": "Credentials information about the stored secrets",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.DBRoleJobStatusResultCredentialsInfo"
+                        }
+                    ]
+                },
                 "message": {
                     "description": "Human-readable description of this role's provisioning status or error details",
                     "type": "string",
@@ -4259,6 +4443,76 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.DBRoleJobStatusResultCredentialsInfo": {
+            "type": "object",
+            "properties": {
+                "secret_id": {
+                    "description": "The secret identifier that contains the secret data.\nThis value is always empty for the database type.",
+                    "type": "string",
+                    "example": "dbsecrets/data"
+                },
+                "secret_keys": {
+                    "description": "The keys that were saved in the secrets manager.\nThis value is always empty for the database type.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "HOST",
+                        "PORT",
+                        "USER",
+                        "PASSWORD",
+                        "DB"
+                    ]
+                },
+                "secrets_manager_provider": {
+                    "description": "The secrets manager provider that was used to store the credentials",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.SecretsManagerProviderType"
+                        }
+                    ],
+                    "example": "database"
+                }
+            }
+        },
+        "openapi.DBRoleJobStepType": {
+            "type": "string",
+            "enum": [
+                "create-connections",
+                "send-webhook"
+            ],
+            "x-enum-varnames": [
+                "DBRoleJobStepCreateConnections",
+                "DBRoleJobStepSendWebhook"
+            ]
+        },
+        "openapi.DBRoleJobVaultProvider": {
+            "type": "object",
+            "required": [
+                "secret_id"
+            ],
+            "properties": {
+                "secret_id": {
+                    "description": "The path to store the credentials in Vault",
+                    "type": "string",
+                    "example": "dbsecrets/data"
+                }
+            }
+        },
+        "openapi.DBTag": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string",
+                    "example": "squad"
+                },
+                "value": {
+                    "type": "string",
+                    "example": "banking"
+                }
+            }
+        },
         "openapi.ExecRequest": {
             "type": "object",
             "properties": {
@@ -4269,7 +4523,7 @@ const docTemplate = `{
                         "type": "string"
                     },
                     "example": [
-                        "hello world"
+                        "--verbose"
                     ]
                 },
                 "connection": {
@@ -4292,7 +4546,7 @@ const docTemplate = `{
                 "script": {
                     "description": "The input of the execution",
                     "type": "string",
-                    "example": "echo"
+                    "example": "echo 'hello from hoop'"
                 }
             }
         },
@@ -5440,6 +5694,17 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.SecretsManagerProviderType": {
+            "type": "string",
+            "enum": [
+                "database",
+                "vault"
+            ],
+            "x-enum-varnames": [
+                "SecretsManagerProviderDatabase",
+                "SecretsManagerProviderVault"
+            ]
+        },
         "openapi.ServerInfo": {
             "type": "object",
             "properties": {
@@ -5880,7 +6145,19 @@ const docTemplate = `{
             ]
         },
         "openapi.SessionUpdateMetadataRequest": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+                "metadata": {
+                    "description": "The metadata field",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "reason": "fix-issue"
+                    }
+                }
+            }
         },
         "openapi.SignupRequest": {
             "type": "object",

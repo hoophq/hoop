@@ -5,7 +5,8 @@
    [webapp.events :as events]
    [webapp.routes :as routes]
    [webapp.app :as views]
-   [webapp.config :as config]))
+   [webapp.config :as config]
+   [webapp.events.jobs]))
 
 (defn dev-setup []
   (when config/debug?

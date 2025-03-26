@@ -55,7 +55,9 @@
                                 current-env-key @(rf/subscribe [:connection-setup/env-current-key])
                                 current-env-value @(rf/subscribe [:connection-setup/env-current-value])
                                 current-file-name @(rf/subscribe [:connection-setup/config-current-name])
-                                current-file-content @(rf/subscribe [:connection-setup/config-current-content])]
+                                current-file-content @(rf/subscribe [:connection-setup/config-current-content])
+                                current-tag-key @(rf/subscribe [:connection-setup/current-key])
+                                current-tag-value @(rf/subscribe [:connection-setup/current-value])]
 
                             (when form
                               (.reportValidity form)
@@ -86,6 +88,14 @@
                                                (count @(rf/subscribe [:connection-setup/configuration-files]))
                                                :value
                                                current-file-content])))
+
+                              ;; Process current tag values before submitting
+                              (when (and current-tag-key (.-value current-tag-key))
+                                (rf/dispatch [:connection-setup/add-tag
+                                              (.-value current-tag-key)
+                                              (if current-tag-value
+                                                (.-value current-tag-value)
+                                                "")]))
 
                               ;; Submit the form
                               (rf/dispatch [:connections->update-connection {:name connection-name}]))

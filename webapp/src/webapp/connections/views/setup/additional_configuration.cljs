@@ -5,8 +5,10 @@
    [re-frame.core :as rf]
    [webapp.components.forms :as forms]
    [webapp.components.multiselect :as multi-select]
+   [webapp.config :as config]
    [webapp.connections.dlp-info-types :as dlp-info-types]
    [webapp.connections.helpers :as helpers]
+   [webapp.connections.views.setup.tags-inputs :as tags-inputs]
    [webapp.routes :as routes]
    [webapp.upgrade-plan.main :as upgrade-plan]))
 
@@ -102,21 +104,21 @@
                                                      (-> % .-target .-value)])}]])
 
           (when (not= @connection-subtype "console")
-            [:> Box {:class "space-y-4"}
-             [:> Box
-              [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-               "Tags"]
-              [:> Text {:as "p" :size "3" :class "text-[--gray-11]"}
-               "Add custom labels to manage and track connections."]]
-             [multi-select/text-input
-              {:value @tags
-               :input-value @tags-input
-               :on-change #(rf/dispatch [:connection-setup/set-tags %])
-               :on-input-change #(rf/dispatch [:connection-setup/set-tags-input %])
-               :id "tags-multi-select-text-input"
-               :name "tags-multi-select-text-input"}]])
+            #_[:> Box {:class "space-y-4"}
+               [:> Box
+                [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+                 "Tags"]
+                [:> Text {:as "p" :size "3" :class "text-[--gray-11]"}
+                 "Add custom labels to manage and track connections."]]
+               [multi-select/text-input
+                {:value @tags
+                 :input-value @tags-input
+                 :on-change #(rf/dispatch [:connection-setup/set-tags %])
+                 :on-input-change #(rf/dispatch [:connection-setup/set-tags-input %])
+                 :id "tags-multi-select-text-input"
+                 :name "tags-multi-select-text-input"}]]
 
-        ;; [tags-inputs/main]
+            [tags-inputs/main])
 
           [:> Box
            [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]" :mb "5"}
@@ -158,7 +160,7 @@
                                            (rf/dispatch [:navigate :upgrade-plan])))}
                     "upgrading your plan."]]])
 
-               :learning-component [:> Link {:href "https://hoop.dev/docs/learn/jit-reviews"
+               :learning-component [:> Link {:href (get-in config/docs-url [:features :jit-reviews])
                                              :target "_blank"}
                                     [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
                                      [:> Callout.Icon
@@ -213,7 +215,7 @@
                                            (rf/dispatch [:navigate :upgrade-plan])))}
                     "upgrading your plan."]]])
 
-               :learning-component [:> Link {:href "https://hoop.dev/docs/learn/ai-data-masking"
+               :learning-component [:> Link {:href (get-in config/docs-url [:features :ai-datamasking])
                                              :target "_blank"}
                                     [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
                                      [:> Callout.Icon

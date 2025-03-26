@@ -208,6 +208,8 @@ type Connection struct {
 	// * { envvar:[env-key]: _aws:[secret-name]:[secret-key] } - Obtain the value dynamically in the AWS secrets manager and expose as environment variable
 	// * { envvar:[env-key]: _envjson:[json-env-name]:[json-env-key] } - Obtain the value dynamically from a JSON env in the agent runtime. Example: MYENV={"KEY": "val"}
 	Secrets map[string]any `json:"secret"`
+	// Default databases returns the configured value of the attribute secrets->'DB'
+	DefaultDatabase string `json:"default_database"`
 	// The agent associated with this connection
 	AgentId string `json:"agent_id" binding:"required" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
 	// Status is a read only field that informs if the connection is available for interaction
@@ -224,8 +226,12 @@ type Connection struct {
 	// Managed By is a read only field that indicates who is managing this resource.
 	// When this attribute is set, this resource is considered immutable
 	ManagedBy *string `json:"managed_by" readonly:"true" example:""`
-	// Tags to classify the connection
+	// DEPRECATED: Tags to classify the connection
 	Tags []string `json:"tags" example:"prod"`
+	// Tags to identify the connection
+	// * keys must contain between 1 and 64 alphanumeric characters, it may include (-), (_), (/), or (.) characters and it must not end with (-), (/) or (-).
+	// * values must contain between 1 and 256 alphanumeric characters, it may include space, (-), (_), (/), (+), (@), (:), (=) or (.) characters.
+	ConnectionTags map[string]string `json:"connection_tags" example:"environment:prod,tier:frontend"`
 	// Toggle Ad Hoc Runbooks Executions
 	// * enabled - Enable to run runbooks for this connection
 	// * disabled - Disable runbooks execution for this connection
@@ -248,9 +254,38 @@ type Connection struct {
 	JiraIssueTemplateID string `json:"jira_issue_template_id" example:"B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
 }
 
+type ConnectionTagCreateRequest struct {
+	// Key is the identifier for the tag category (e.g., "environment", "department")
+	Key string `json:"key" binding:"required" example:"environment"`
+	// Value is the specific tag value associated with the key (e.g., "production", "finance")
+	Value string `json:"value" binding:"required" example:"production"`
+}
+
+type ConnectionTagUpdateRequest struct {
+	// Value is the new tag value to be assigned to the existing key
+	Value string `json:"value" binding:"required" example:"staging"`
+}
+
+type ConnectionTagList struct {
+	Items []ConnectionTag `json:"items"`
+}
+
+type ConnectionTag struct {
+	// ID is the unique identifier for this specific tag
+	ID string `json:"id" example:"tag_01H7ZD5SJRZ7RPGQRMT4Y9HF"`
+	// Key is the identifier for the tag category (e.g., "environment", "department")
+	Key string `json:"key" example:"environment"`
+	// Value is the specific tag value associated with the key (e.g., "production", "finance")
+	Value string `json:"value" example:"production"`
+	// UpdatedAt is the timestamp when this tag was last updated
+	UpdatedAt time.Time `json:"updated_at" example:"2023-08-15T14:30:45Z"`
+	// CreatedAt is the timestamp when this tag was created
+	CreatedAt time.Time `json:"created_at" example:"2023-08-15T14:30:45Z"`
+}
+
 type ExecRequest struct {
 	// The input of the execution
-	Script string `json:"script" example:"echo"`
+	Script string `json:"script" example:"echo 'hello from hoop'"`
 	// The target connection
 	Connection string `json:"connection" example:"bash"`
 	// DEPRECATED in flavor of metadata
@@ -258,7 +293,7 @@ type ExecRequest struct {
 	// Metadata contains attributes that is going to be available in the Session resource
 	Metadata map[string]any `json:"metadata"`
 	// Additional arguments that will be joined when construction the command to be executed
-	ClientArgs []string `json:"client_args" example:"hello world"`
+	ClientArgs []string `json:"client_args" example:"--verbose"`
 }
 
 type ExecResponse struct {
@@ -468,7 +503,7 @@ type Session struct {
 
 type SessionUpdateMetadataRequest struct {
 	// The metadata field
-	Metadata map[string]any `json:"metadata" example:"reason:fix-issue"`
+	Metadata map[string]any `json:"metadata" swaggertype:"object,string" example:"reason:fix-issue"`
 }
 
 type SessionReportParams struct {
@@ -686,6 +721,8 @@ type ProxyManagerResponse struct {
 	RequestConnectionType string `json:"connection_type" readonly:"true"`
 	// The requested connection subtype
 	RequestConnectionSubType string `json:"connection_subtype" readonly:"true"`
+	// Report if the connection has a review
+	HasReview bool `json:"has_review" readonly:"true"`
 	// The requested client port to listen
 	RequestPort string `json:"port"`
 	// The request access duration in case of review
@@ -1186,17 +1223,43 @@ type AWSDBInstance struct {
 	Status string `json:"status" example:"available"`
 }
 
+type CreateDBRoleJobAWSProviderSG struct {
+	// The target port to be configured for the security group
+	TargetPort int32 `json:"target_port" example:"5432" binding:"required"`
+	// The ingress inbound CIDR rule to allow traffic to
+	IngressCIDR string `json:"ingress_cidr" example:"192.168.1.0/24" binding:"required"`
+}
+
 type CreateDBRoleJobAWSProvider struct {
 	// Instance ARN is the identifier for the database instance
 	InstanceArn string `json:"instance_arn" binding:"required" example:"arn:aws:rds:us-west-2:123456789012:db:my-instance"`
+	// The default security group that will be used to grant access for the agent to access.
+	DefaultSecurityGroup *CreateDBRoleJobAWSProviderSG `json:"default_security_group"`
+}
+
+type DBRoleJobStepType string
+
+const (
+	DBRoleJobStepCreateConnections DBRoleJobStepType = "create-connections"
+	DBRoleJobStepSendWebhook       DBRoleJobStepType = "send-webhook"
+)
+
+type DBRoleJobVaultProvider struct {
+	// The path to store the credentials in Vault
+	SecretID string `json:"secret_id" example:"dbsecrets/data" binding:"required"`
 }
 
 type CreateDBRoleJob struct {
 	// Unique identifier of the agent hosting the database resource
-	AgentID string `json:"agent_id" format:"uuid" binding:"required" example:"a1b2c3d4-e5f6-7890-abcd-ef1234567890"`
+	AgentID string `json:"agent_id" format:"uuid" binding:"required,min=36" example:"a1b2c3d4-e5f6-7890-abcd-ef1234567890"`
 	// Base prefix for connection names - the role name will be appended to this prefix
-	// when creating the database connection (e.g., "prod-postgres-readonly")
+	// when creating the database connection (e.g., "prod-postgres-ro")
 	ConnectionPrefixName string `json:"connection_prefix_name" binding:"required" example:"prod-postgres-"`
+	// The additional steps to execute
+	JobSteps []DBRoleJobStepType `json:"job_steps" binding:"required,dive,db_role_job_step" example:"create-connections,send-webhook"`
+	// Vault Provider uses HashiCorp Vault to store the provisioned credentials.
+	// The target agent must be configured with the Vault Credentials in order for this operation to work
+	VaultProvider *DBRoleJobVaultProvider `json:"vault_provider"`
 	// AWS-specific configuration for the database role creation job
 	AWS *CreateDBRoleJobAWSProvider `json:"aws" binding:"required"`
 }
@@ -1221,6 +1284,11 @@ type DBRoleJob struct {
 	Status *DBRoleJobStatus `json:"status"`
 }
 
+type DBTag struct {
+	Key   string `json:"key" example:"squad"`
+	Value string `json:"value" example:"banking"`
+}
+
 type AWSDBRoleJobSpec struct {
 	// AWS IAM ARN with permissions to execute this role creation job
 	AccountArn string `json:"account_arn" example:"arn:aws:iam:123456789012"`
@@ -1230,6 +1298,8 @@ type AWSDBRoleJobSpec struct {
 	DBName string `json:"db_name" example:"customers"`
 	// Database engine type (e.g., "postgres", "mysql") of the RDS instance
 	DBEngine string `json:"db_engine" example:"postgres"`
+	// Database Instance tags
+	DBTags []DBTag `json:"db_tags"`
 }
 
 type DBRoleJobStatus struct {
@@ -1241,6 +1311,24 @@ type DBRoleJobStatus struct {
 	Result []DBRoleJobStatusResult `json:"result"`
 }
 
+type SecretsManagerProviderType string
+
+const (
+	SecretsManagerProviderDatabase SecretsManagerProviderType = "database"
+	SecretsManagerProviderVault    SecretsManagerProviderType = "vault"
+)
+
+type DBRoleJobStatusResultCredentialsInfo struct {
+	// The secrets manager provider that was used to store the credentials
+	SecretsManagerProvider SecretsManagerProviderType `json:"secrets_manager_provider" example:"database"`
+	// The secret identifier that contains the secret data.
+	// This value is always empty for the database type.
+	SecretID string `json:"secret_id" example:"dbsecrets/data"`
+	// The keys that were saved in the secrets manager.
+	// This value is always empty for the database type.
+	SecretKeys []string `json:"secret_keys" example:"HOST,PORT,USER,PASSWORD,DB"`
+}
+
 type DBRoleJobStatusResult struct {
 	// Name of the specific database role that was provisioned
 	UserRole string `json:"user_role" example:"hoop_ro"`
@@ -1248,6 +1336,8 @@ type DBRoleJobStatusResult struct {
 	Status string `json:"status" enums:"running,failed,completed" example:"failed"`
 	// Human-readable description of this role's provisioning status or error details
 	Message string `json:"message" example:"process already being executed, resource_id=arn:aws:rds:us-west-2:123456789012:db:my-postgres-db"`
+	// Credentials information about the stored secrets
+	CredentialsInfo DBRoleJobStatusResultCredentialsInfo `json:"credentials_info"`
 	// Timestamp when this specific role's provisioning completed
 	CompletedAt time.Time `json:"completed_at" example:"2025-02-28T12:34:56Z"`
 }

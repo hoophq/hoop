@@ -35,12 +35,12 @@ test: test-oss test-enterprise
 test-oss:
 	rm libhoop || true
 	ln -s _libhoop libhoop
-	env CGO_ENABLED=0 go test -v github.com/hoophq/hoop/...
+	env CGO_ENABLED=0 go test -json -v github.com/hoophq/hoop/...
 
 test-enterprise:
 	rm libhoop || true
 	ln -s ../libhoop libhoop
-	env CGO_ENABLED=0 go test -v github.com/hoophq/hoop/...
+	env CGO_ENABLED=0 go test -json -v github.com/hoophq/hoop/...
 
 generate-openapi-docs:
 	cd ./gateway/ && go run github.com/swaggo/swag/cmd/swag@v1.16.3 init -g api/server.go -o api/openapi/autogen --outputTypes go --markdownFiles api/openapi/docs/ --parseDependency
@@ -73,6 +73,9 @@ build-helm-chart:
 	mkdir -p ${DIST_FOLDER}
 	helm package ./deploy/helm-chart/chart/agent/ --app-version ${VERSION} --destination ${DIST_FOLDER}/ --version ${VERSION}
 	helm package ./deploy/helm-chart/chart/gateway/ --app-version ${VERSION} --destination ${DIST_FOLDER}/ --version ${VERSION}
+	helm registry login ghcr.io --username ${GITHUB_USERNAME} --password ${GITHUB_CONTAINER_REGISTRY_TOKEN}
+	helm push ${DIST_FOLDER}/hoop-chart-${VERSION}.tgz oci://ghcr.io/hoophq/helm-charts/
+	helm push ${DIST_FOLDER}/hoopagent-chart-${VERSION}.tgz oci://ghcr.io/hoophq/helm-charts/
 
 build-gateway-bundle:
 	rm -rf ${DIST_FOLDER}/hoopgateway

@@ -4,7 +4,8 @@
             [re-frame.core :as rf]
             [webapp.components.button :as button]
             [webapp.components.logs-container :as logs]
-            [webapp.components.timer :as timer]))
+            [webapp.components.timer :as timer]
+            [webapp.connections.views.connection-settings-modal :as connection-settings-modal]))
 
 (defn- disconnect-end-time []
   [:section
@@ -42,11 +43,12 @@
 (defn minimize-modal []
   (let [connection @(rf/subscribe [:connections->connection-connected])]
     (rf/dispatch [:modal->close])
-    (rf/dispatch [:draggable-card->open
-                  {:component [draggable-card-content (:data connection)]
-                   :on-click-expand (fn []
-                                      (rf/dispatch [:draggable-card->close])
-                                      (rf/dispatch [:modal->re-open]))}])))
+    (when (= (:status connection) :ready)
+      (rf/dispatch [:draggable-card->open
+                    {:component [draggable-card-content (:data connection)]
+                     :on-click-expand (fn []
+                                        (rf/dispatch [:draggable-card->close])
+                                        (rf/dispatch [:modal->re-open]))}]))))
 
 (defn- close-connect-dialog []
   (let [connection @(rf/subscribe [:connections->connection-connected])
@@ -182,7 +184,7 @@
     [:> Skeleton {:height "60px"}]
     [:> Skeleton {:height "60px"}]]])
 
-(defn- failure [connection]
+(defn- failure [connection connection-name]
   (let [connection-data (-> connection :data)]
     [:main
      [:header {:class "mb-2"}
@@ -202,7 +204,9 @@
        " Download Desktop App"]
       [:> Button {:size "2"
                   :on-click (fn []
-                              (rf/dispatch [:connections->start-connect (:connection_name connection-data)]))}
+                              (rf/dispatch [:modal->close])
+                              (rf/dispatch [:modal->open {:content [connection-settings-modal/main (or (:connection_name connection-data) connection-name)]
+                                                          :maxWidth "446px"}]))}
        "Try again"]]]))
 
 (defn main [connection-name]

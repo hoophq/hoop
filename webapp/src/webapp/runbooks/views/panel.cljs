@@ -22,8 +22,8 @@
     [:div {:class "text-gray-700 text-sm font-bold mb-small"}
      "No runbooks available in your repository!"]
     [:div {:class "text-gray-500 text-xs"}
-     (str "Trouble creating a runbook file? ")
-     [:a {:href "https://hoop.dev/docs/learn/runbooks/configuration"
+     "Trouble creating a runbook file? "
+     [:a {:href (get-in config/docs-url [:features :runbooks])
           :target "_blank"
           :class "underline text-blue-500"}
       "Get to know how to use our runbooks plugin."]]]])
