@@ -18,8 +18,19 @@
     (rdom/unmount-component-at-node root-el)
     (rdom/render [views/main-panel] root-el)))
 
+(defn add-global-keyboard-shortcuts []
+  (.addEventListener js/document "keydown" 
+    (fn [e]
+      (when (and (or (.-metaKey e) (.-ctrlKey e)) 
+                 (= (.-key e) "k"))
+        (.preventDefault e)
+        (let [search-input (.getElementById js/document "header-search")]
+          (when search-input
+            (.focus search-input)))))))
+
 (defn init []
   (routes/start!)
   (re-frame/dispatch-sync [::events/initialize-db])
   (dev-setup)
+  (add-global-keyboard-shortcuts)
   (mount-root))

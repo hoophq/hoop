@@ -157,6 +157,12 @@
                                             {:script
                                              (.sliceString ^cm-state/Text (.-doc (.-state config)) from to)}])))
                      :preventDefault true}
+                    {:key "Mod-k"
+                     :run (fn [_]
+                            (let [search-input (.getElementById js/document "header-search")]
+                              (when search-input
+                                (.focus search-input))))
+                     :preventDefault true}
                     {:key "Alt-ArrowLeft"
                      :mac "Ctrl-ArrowLeft"
                      :run cm-commands/cursorSyntaxLeft
