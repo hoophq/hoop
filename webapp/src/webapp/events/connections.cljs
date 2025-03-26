@@ -201,19 +201,22 @@ ORDER BY total_amount DESC;")
 (rf/reg-event-fx
  :connections->quickstart-create-postgres-demo
  (fn [{:keys [db]} [_]]
-   {:fx [[:dispatch [:fetch
-                     {:method "GET"
-                      :uri "/agents"
-                      :on-success (fn [agents]
-                                    (let [agent (first agents)
-                                          connection (merge constants/connection-postgres-demo
-                                                            {:agent_id (:id agent)})
-                                          code-tmp-db {:date (.now js/Date)
-                                                       :code quickstart-query}
-                                          code-tmp-db-json (.stringify js/JSON (clj->js code-tmp-db))]
+   (let [agents (get-in db [:agents :data])
+         agent (first agents)]
+     (if agent
+       ;; If agent exists in app state, use it directly
+       (let [connection (merge constants/connection-postgres-demo
+                               {:agent_id (:id agent)})
+             code-tmp-db {:date (.now js/Date)
+                          :code quickstart-query}
+             code-tmp-db-json (.stringify js/JSON (clj->js code-tmp-db))]
+         (.setItem js/localStorage :code-tmp-db code-tmp-db-json)
+         {:fx [[:dispatch [::connections->quickstart-create-connection connection]]]})
 
-                                      (.setItem js/localStorage :code-tmp-db code-tmp-db-json)
-                                      (rf/dispatch [::connections->quickstart-create-connection connection])))}]]]}))
+       ;; If no agent in app state, navigate back to setup to start agent check
+       {:fx [[:dispatch [:navigate :onboarding]]
+             [:dispatch [:show-snackbar {:level :info
+                                         :text "Setting up agents before creating demo database..."}]]]}))))
 
 (rf/reg-event-fx
  :connections->delete-connection
