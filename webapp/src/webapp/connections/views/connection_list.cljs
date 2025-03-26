@@ -198,7 +198,20 @@
         connections-search-status (r/atom nil)
         selected-tag (r/atom nil)
         selected-type (r/atom nil)
-        selected-subtype (r/atom nil)]
+        selected-subtype (r/atom nil)
+        apply-filter (fn [filter-update]
+                      ;; Clear search results when applying filters
+                       (reset! searched-connections nil)
+                       (reset! searched-criteria-connections "")
+                      ;; Apply the filter
+                       (rf/dispatch [:connections->filter-connections filter-update]))
+        clear-all-filters (fn []
+                            (reset! selected-tag nil)
+                            (reset! selected-type nil)
+                            (reset! selected-subtype nil)
+                            (reset! searched-connections nil)
+                            (reset! searched-criteria-connections "")
+                            (rf/dispatch [:connections->get-connections nil]))]
     ;; Initial load with no filters
     (rf/dispatch [:connections->get-connections nil])
     (rf/dispatch [:users->get-user])
@@ -207,10 +220,17 @@
     (fn []
       (let [connections-search-results (if (empty? @searched-connections)
                                          (:results @connections)
-                                         @searched-connections)]
+                                         @searched-connections)
+            any-filters? (or @selected-tag @selected-type @selected-subtype)]
         [:div {:class "flex flex-col h-full overflow-y-auto"}
          (when (-> @user :data :admin?)
-           [:div {:class "absolute top-10 right-4 sm:right-6 lg:top-12 lg:right-10"}
+           [:div {:class "absolute top-10 right-4 sm:right-6 lg:top-12 lg:right-10 flex gap-2"}
+            (when any-filters?
+              [:> Button {:size "2"
+                          :variant "soft"
+                          :color "gray"
+                          :on-click clear-all-filters}
+               "Clear Filters"])
             [:> Button {:on-click (fn [] (rf/dispatch [:navigate :create-connection]))}
              "Add Connection"]])
          [:> Flex {:as "header"
@@ -226,11 +246,20 @@
              :searchable-keys [:name :type :subtype :connection_tags :status]
              :on-change-results-cb #(reset! searched-connections %)
              :hide-results-list true
-             :placeholder "Search"
+             :placeholder "Search by connection name, type, status, tags or anything"
              :on-focus #(reset! search-focused true)
              :on-blur #(reset! search-focused false)
              :name "connection-search"
-             :on-change #(reset! searched-criteria-connections %)
+             :on-change (fn [value]
+                          (reset! searched-criteria-connections value)
+                          (when (empty? value)
+                            ;; When search is cleared, reapply the current filters
+                            (let [filters (cond-> {}
+                                            @selected-tag (assoc :tagSelector @selected-tag)
+                                            @selected-type (assoc :type @selected-type)
+                                            @selected-subtype (assoc :subtype @selected-subtype))]
+                              (when (not-empty filters)
+                                (rf/dispatch [:connections->filter-connections filters])))))
              :loading? (= @connections-search-status :loading)
              :size :small
              :icon-position "left"}]
@@ -238,29 +267,26 @@
            [tag-selector-component @selected-tag
             (fn [tag]
               (reset! selected-tag tag)
-              (rf/dispatch [:connections->filter-connections
-                            (cond-> {}
+              (apply-filter (cond-> {}
                               tag (assoc :tagSelector tag)
                               @selected-type (assoc :type @selected-type)
-                              @selected-subtype (assoc :subtype @selected-subtype))]))]
+                              @selected-subtype (assoc :subtype @selected-subtype))))]
 
            [resource-type-component @selected-type
             (fn [type]
               (reset! selected-type type)
               (reset! selected-subtype nil)
-              (rf/dispatch [:connections->filter-connections
-                            (cond-> {}
+              (apply-filter (cond-> {}
                               @selected-tag (assoc :tagSelector @selected-tag)
-                              type (assoc :type type))]))]
+                              type (assoc :type type))))]
 
            [resource-subtype-component @selected-type @selected-subtype
             (fn [subtype]
               (reset! selected-subtype subtype)
-              (rf/dispatch [:connections->filter-connections
-                            (cond-> {}
+              (apply-filter (cond-> {}
                               @selected-tag (assoc :tagSelector @selected-tag)
                               @selected-type (assoc :type @selected-type)
-                              subtype (assoc :subtype subtype))]))]]
+                              subtype (assoc :subtype subtype))))]]
 
           [aws-connect-sync-callout]]
 
