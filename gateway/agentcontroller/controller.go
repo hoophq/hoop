@@ -2,12 +2,8 @@ package agentcontroller
 
 import (
 	"fmt"
-	"hash/crc32"
-	"regexp"
-	"strings"
 	"sync"
 	"time"
-	"unicode"
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/agentcontroller"
@@ -18,14 +14,9 @@ import (
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgagents "github.com/hoophq/hoop/gateway/pgrest/agents"
 	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
-	"golang.org/x/text/transform"
-	"golang.org/x/text/unicode/norm"
 )
 
-const (
-	defaultPrefixAgentName = "demo"
-	defaultTickTime        = time.Minute * 5
-)
+const defaultTickTime = time.Minute * 5
 
 var (
 	tickerCh chan bool
@@ -63,7 +54,7 @@ func Run(gatewayGrpcURL string) error {
 			}
 			for _, org := range orgList {
 				// it will ensure that deployments are unique per organization
-				deployName := newHashName(org.ID, normalizeOrgName(org.Name))
+				deployName := org.ID
 				if shouldConciliate(deploymentItems, deployName) {
 					conciliationItems = append(conciliationItems, &agentcontroller.AgentRequest{
 						ID:       org.ID,
@@ -183,28 +174,4 @@ func generateDsnKey(gatewayGrpcURL, agentName string) (dsnKey, secretKeyHash str
 	}
 	dsnKey, err = dsnkeys.NewString(gatewayGrpcURL, agentName, secretKey, proto.AgentModeStandardType)
 	return dsnKey, secretKeyHash, err
-}
-
-var reSpecialChars, _ = regexp.Compile(`[^\w]`)
-
-func normalizeOrgName(orgName string) string {
-	t := transform.Chain(norm.NFD, transform.RemoveFunc(func(r rune) bool {
-		return unicode.Is(unicode.Mn, r)
-	}), norm.NFC)
-	orgName = strings.ReplaceAll(orgName, " ", "")
-	orgName = strings.ToLower(orgName)
-	// TODO: return error here
-	orgName, _, _ = transform.String(t, orgName)
-	if len(orgName) > 36 {
-		orgName = orgName[:36]
-	}
-	orgName = reSpecialChars.ReplaceAllString(orgName, "")
-	return fmt.Sprintf("%s-%s", defaultPrefixAgentName, orgName)
-}
-
-// newHashName generates a deterministic name based on the prefix of the name
-// taking the crc32 checksum of the id (e.g.: name-crc32has)
-func newHashName(id, name string) string {
-	t := crc32.MakeTable(crc32.IEEE)
-	return fmt.Sprintf("%s-%08x", name, crc32.Checksum([]byte(id), t))
 }
