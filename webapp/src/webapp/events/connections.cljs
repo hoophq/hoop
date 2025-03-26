@@ -35,7 +35,7 @@
    [{:keys [db]} [_ filters]]
    (if filters
      ;; If filters are provided, delegate to filter-connections
-     (rf/dispatch [:connections->filter-connections filters])
+     {:fx [[:dispatch [:connections->filter-connections filters]]]}
      ;; Otherwise use the simple original implementation
      {:db (assoc-in db [:connections :loading] true)
       :fx [[:dispatch [:fetch {:method "GET"
