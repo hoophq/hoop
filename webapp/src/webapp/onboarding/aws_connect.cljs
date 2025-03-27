@@ -162,7 +162,7 @@
                               (sync-selection new-value)))]
 
     (let [_ @update-counter]
-      [:> Flex {:direction "column" :align "center" :gap "7" :mb "4" :class "w-full"}
+      [:> Flex {:direction "column" :align "center" :gap "7" :mb "4" :class "w-full relative"}
        [loading-screen]
 
        [:> Box {:class "max-w-[600px] space-y-3"}
