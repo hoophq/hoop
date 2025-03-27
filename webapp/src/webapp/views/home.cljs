@@ -3,4 +3,4 @@
 
 (defn home-panel-hoop [_]
   (fn []
-    (rf/dispatch [:navigate :editor-plugin])))
+    (rf/dispatch [:navigate :onboarding])))
