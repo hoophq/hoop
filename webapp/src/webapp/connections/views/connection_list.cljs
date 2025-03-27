@@ -41,25 +41,19 @@
         [:> Text {:weight "bold" :as "span"} "AWS Connect Sync in Progress"]
         [:> Text {:as "span"} " There is an automated process for your connections happening in your hoop.dev environment. Check it later in order to verify."]]])))
 
-(def connection-types
-  [{:id "database" :value "database" :label "Database"}
-   {:id "server" :value "server" :label "Linux VM or Container"}
-   {:id "application" :value "application" :label "Application"}
-   {:id "network" :value "network" :label "Network"}])
-
-(def connection-subtypes
-  {:database [{:id "postgres" :value "postgres" :label "PostgreSQL"}
-              {:id "mysql" :value "mysql" :label "MySQL"}
-              {:id "mongodb" :value "mongodb" :label "MongoDB"}
-              {:id "mssql" :value "mssql" :label "MSSQL"}
-              {:id "oracledb" :value "oracledb" :label "OracleDB"}]
-   :server [{:id "ssh" :value "ssh" :label "SSH"}]
-   :application [{:id "tcp" :value "tcp" :label "TCP"}
-                 {:id "ruby-on-rails" :value "ruby-on-rails" :label "Ruby on Rails"}
-                 {:id "python" :value "python" :label "Python"}
-                 {:id "nodejs" :value "nodejs" :label "Node.js"}
-                 {:id "clojure" :value "clojure" :label "Clojure"}]
-   :network [{:id "vpn" :value "vpn" :label "VPN"}]})
+(def resource-types
+  [{:id "postgres" :value "postgres" :label "PostgreSQL"}
+   {:id "mysql" :value "mysql" :label "MySQL"}
+   {:id "mongodb" :value "mongodb" :label "MongoDB"}
+   {:id "mssql" :value "mssql" :label "MSSQL"}
+   {:id "oracledb" :value "oracledb" :label "OracleDB"}
+   {:id "ssh" :value "ssh" :label "SSH"}
+   {:id "tcp" :value "tcp" :label "TCP"}
+   {:id "ruby-on-rails" :value "ruby-on-rails" :label "Ruby on Rails"}
+   {:id "python" :value "python" :label "Python"}
+   {:id "nodejs" :value "nodejs" :label "Node.js"}
+   {:id "clojure" :value "clojure" :label "Clojure"}
+   {:id "vpn" :value "vpn" :label "VPN"}])
 
 (defn tag-selector-component [selected-tag on-change]
   [:> Popover.Root
@@ -103,16 +97,16 @@
                     :d "M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
                     :clip-rule "evenodd"}]])])]]]])
 
-(defn resource-type-component [selected-type on-change]
+(defn resource-component [selected-resource on-change]
   [:> Popover.Root
    [:> Popover.Trigger {:asChild true}
     [:> Button {:size "2"
-                :variant (if selected-type "soft" "surface")
-                :color (if selected-type "gray" "gray")}
+                :variant (if selected-resource "soft" "surface")
+                :color (if selected-resource "gray" "gray")}
      [:> Flex {:gap "2" :align "center"}
-      [:> Database {:size 16}]
-      "Resource Type"
-      (when selected-type
+      [:> Server {:size 16}]
+      "Resource"
+      (when selected-resource
         [:div {:class "flex items-center justify-center rounded-full h-4 w-4 bg-gray-800 ml-1"}
          [:span {:class "text-white text-xs font-bold"}
           "1"]])]]]
@@ -125,69 +119,25 @@
        :variant :small
        :searchable-keys [:text]
        :hide-results-list true
-       :placeholder "Search types"
-       :name "type-search"
+       :placeholder "Search resources"
+       :name "resource-search"
        :size :small}]]
 
     [:> Box {:class "max-h-64 overflow-y-auto p-1"}
      [:> Flex {:direction "column" :gap "1"}
-      (for [{:keys [id value label]} connection-types]
+      (for [{:keys [id value label]} resource-types]
         ^{:key id}
         [:> Button
          {:size "1"
-          :variant (if (= selected-type value) "soft" "ghost")
+          :variant (if (= selected-resource value) "soft" "ghost")
           :class "justify-between"
-          :onClick #(on-change (if (= selected-type value) nil value))}
+          :onClick #(on-change (if (= selected-resource value) nil value))}
          [:span label]
-         (when (= selected-type value)
+         (when (= selected-resource value)
            [:svg {:class "h-4 w-4" :viewBox "0 0 20 20" :fill "currentColor"}
             [:path {:fill-rule "evenodd"
                     :d "M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
                     :clip-rule "evenodd"}]])])]]]])
-
-(defn resource-subtype-component [selected-type selected-subtype on-change]
-  (let [subtypes (get connection-subtypes (keyword selected-type) [])]
-    [:> Popover.Root
-     [:> Popover.Trigger {:asChild true}
-      [:> Button {:size "2"
-                  :variant (if selected-subtype "soft" "surface")
-                  :color (if selected-subtype "gray" "gray")
-                  :disabled (empty? subtypes)}
-       [:> Flex {:gap "2" :align "center"}
-        [:> Server {:size 16}]
-        "Resource Subtype"
-        (when selected-subtype
-          [:div {:class "flex items-center justify-center rounded-full h-4 w-4 bg-gray-800 ml-1"}
-           [:span {:class "text-white text-xs font-bold"}
-            "1"]])]]]
-
-     [:> Popover.Content {:size "2" :style {:width "280px"}}
-      [:> Box {:class "p-2"}
-       [searchbox/main
-        {:options []
-         :display-key :text
-         :variant :small
-         :searchable-keys [:text]
-         :hide-results-list true
-         :placeholder "Search subtypes"
-         :name "subtype-search"
-         :size :small}]]
-
-      [:> Box {:class "max-h-64 overflow-y-auto p-1"}
-       [:> Flex {:direction "column" :gap "1"}
-        (for [{:keys [id value label]} subtypes]
-          ^{:key id}
-          [:> Button
-           {:size "1"
-            :variant (if (= selected-subtype value) "soft" "ghost")
-            :class "justify-between"
-            :onClick #(on-change (if (= selected-subtype value) nil value))}
-           [:span label]
-           (when (= selected-subtype value)
-             [:svg {:class "h-4 w-4" :viewBox "0 0 20 20" :fill "currentColor"}
-              [:path {:fill-rule "evenodd"
-                      :d "M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                      :clip-rule "evenodd"}]])])]]]]))
 
 (defn panel [_]
   (let [connections (rf/subscribe [:connections])
@@ -197,8 +147,7 @@
         searched-criteria-connections (r/atom "")
         connections-search-status (r/atom nil)
         selected-tag (r/atom nil)
-        selected-type (r/atom nil)
-        selected-subtype (r/atom nil)
+        selected-resource (r/atom nil)
         apply-filter (fn [filter-update]
                       ;; Clear search results when applying filters
                        (reset! searched-connections nil)
@@ -207,8 +156,7 @@
                        (rf/dispatch [:connections->filter-connections filter-update]))
         clear-all-filters (fn []
                             (reset! selected-tag nil)
-                            (reset! selected-type nil)
-                            (reset! selected-subtype nil)
+                            (reset! selected-resource nil)
                             (reset! searched-connections nil)
                             (reset! searched-criteria-connections "")
                             (rf/dispatch [:connections->get-connections nil]))]
@@ -221,7 +169,7 @@
       (let [connections-search-results (if (empty? @searched-connections)
                                          (:results @connections)
                                          @searched-connections)
-            any-filters? (or @selected-tag @selected-type @selected-subtype)]
+            any-filters? (or @selected-tag @selected-resource)]
         [:div {:class "flex flex-col h-full overflow-y-auto"}
          (when (-> @user :data :admin?)
            [:div {:class "absolute top-10 right-4 sm:right-6 lg:top-12 lg:right-10 flex gap-2"}
@@ -246,7 +194,7 @@
              :searchable-keys [:name :type :subtype :connection_tags :status]
              :on-change-results-cb #(reset! searched-connections %)
              :hide-results-list true
-             :placeholder "Search by connection name, type, status, tags or anything"
+             :placeholder "Search"
              :on-focus #(reset! search-focused true)
              :on-blur #(reset! search-focused false)
              :name "connection-search"
@@ -256,8 +204,7 @@
                             ;; When search is cleared, reapply the current filters
                             (let [filters (cond-> {}
                                             @selected-tag (assoc :tagSelector @selected-tag)
-                                            @selected-type (assoc :type @selected-type)
-                                            @selected-subtype (assoc :subtype @selected-subtype))]
+                                            @selected-resource (assoc :subtype @selected-resource))]
                               (when (not-empty filters)
                                 (rf/dispatch [:connections->filter-connections filters])))))
              :loading? (= @connections-search-status :loading)
@@ -269,24 +216,14 @@
               (reset! selected-tag tag)
               (apply-filter (cond-> {}
                               tag (assoc :tagSelector tag)
-                              @selected-type (assoc :type @selected-type)
-                              @selected-subtype (assoc :subtype @selected-subtype))))]
+                              @selected-resource (assoc :subtype @selected-resource))))]
 
-           [resource-type-component @selected-type
-            (fn [type]
-              (reset! selected-type type)
-              (reset! selected-subtype nil)
+           [resource-component @selected-resource
+            (fn [resource]
+              (reset! selected-resource resource)
               (apply-filter (cond-> {}
                               @selected-tag (assoc :tagSelector @selected-tag)
-                              type (assoc :type type))))]
-
-           [resource-subtype-component @selected-type @selected-subtype
-            (fn [subtype]
-              (reset! selected-subtype subtype)
-              (apply-filter (cond-> {}
-                              @selected-tag (assoc :tagSelector @selected-tag)
-                              @selected-type (assoc :type @selected-type)
-                              subtype (assoc :subtype subtype))))]]
+                              resource (assoc :subtype resource))))]]
 
           [aws-connect-sync-callout]]
 
