@@ -46,7 +46,9 @@
  :connections->set-connections
  (fn
    [{:keys [db]} [_ connections]]
-   {:db (assoc db :connections {:results connections :loading false})}))
+   {:db (-> db
+            (assoc-in [:connections :results] connections)
+            (assoc-in [:connections :loading] false))}))
 
 (rf/reg-event-fx
  :connections->create-connection
