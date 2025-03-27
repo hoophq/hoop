@@ -6,42 +6,28 @@
    [reagent.core :as r]
    [webapp.config :as config]))
 
-(defn check-agent-before-action [original-action]
-  (fn []
-    (let [agents @(rf/subscribe [:agents])
-          agents-data (get-in agents [:data])
-          agents-loaded? (= (:status agents) :ready)
-          agents-available? (and agents-loaded? (seq agents-data))]
-      (if agents-available?
-        (original-action)
-        (do
-          ;; Refresh agent data and stay on current page
-          (rf/dispatch [:agents->get-agents])
-          (rf/dispatch [:show-snackbar {:level :info
-                                        :text "Setting up agents before proceeding..."}]))))))
-
 (def setup-options
   [{:id "demo"
     :icon (r/as-element
            [:> Database {:size 18 :class "group-hover:text-[--gray-1]"}])
     :title "Explore with a demo database"
     :description "Access a preloaded database to it in action."
-    :action (check-agent-before-action #(rf/dispatch [:connections->quickstart-create-postgres-demo]))}
+    :action #(rf/dispatch [:connections->quickstart-create-postgres-demo])}
    {:id "setup"
     :icon (r/as-element
            [:> Settings {:size 18 :class "group-hover:text-[--gray-1]"}])
     :title "Setup a connection"
     :description "Add your own services or databases."
-    :action (check-agent-before-action #(rf/dispatch [:navigate :onboarding-setup-resource]))}
+    :action #(rf/dispatch [:navigate :onboarding-setup-resource])}
    {:id "aws-connect"
     :icon (r/as-element
            [:> Cloud {:size 18 :class "group-hover:text-[--gray-1]"}])
     :title "AWS Connect"
     :description "Access AWS to retrieve and connect your resources."
-    :action (check-agent-before-action #(do
-                                          (rf/dispatch [:aws-connect/initialize-state])
-                                          (rf/dispatch [:connection-setup/set-type :aws-connect])
-                                          (rf/dispatch [:navigate :onboarding-aws-connect])))}])
+    :action #(do
+               (rf/dispatch [:aws-connect/initialize-state])
+               (rf/dispatch [:connection-setup/set-type :aws-connect])
+               (rf/dispatch [:navigate :onboarding-aws-connect]))}])
 
 (defn setup-card [{:keys [icon title description action]}]
   [:> Card {:size "1"
@@ -108,10 +94,22 @@
 
 (defn main []
   (let [agents (rf/subscribe [:agents])
-        transition-state (r/atom :loading)]
+        transition-state (r/atom :loading)
+        polling-interval (r/atom nil)]
     ;; Dispatch agent loading if not loaded
     (when (not= (:status @agents) :ready)
-      (rf/dispatch [:agents->get-agents]))
+      ;; Set up polling
+      (reset! polling-interval
+              (js/setInterval
+               #(let [current-agents @agents
+                      agents-ready? (= (:status current-agents) :ready)
+                      agents-available? (seq (:data current-agents))]
+                  (if (and agents-ready? agents-available?)
+                   ;; Stop polling when agents are available
+                    (js/clearInterval @polling-interval)
+                   ;; Continue polling
+                    (rf/dispatch [:agents->get-agents])))
+               5000)))
 
     (fn []
       (let [agents-status (:status @agents)
