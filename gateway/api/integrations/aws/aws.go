@@ -232,8 +232,19 @@ func ListOrganizations(c *gin.Context) {
 //	@Failure		400		{object}	openapi.HTTPError
 //	@Router			/integrations/aws/rds/describe-db-instances [post]
 func DescribeRDSDBInstances(c *gin.Context) {
-	// Load AWS config for management account
-	// 1. filter instances based on selected accounts
+	var req openapi.ListAWSDBInstancesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	requestAccountIDs := map[string]any{}
+	for _, acct := range req.AccountIDs {
+		if acct == "" {
+			continue
+		}
+		requestAccountIDs[acct] = nil
+	}
+
 	cfg, identity, err := loadAWSConfig(storagev2.ParseContext(c).OrgID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
@@ -241,7 +252,7 @@ func DescribeRDSDBInstances(c *gin.Context) {
 	}
 
 	orgClient := organizations.NewFromConfig(cfg)
-	var instances []openapi.AWSDBInstance
+	instances := []openapi.AWSDBInstance{}
 	paginator := organizations.NewListAccountsPaginator(orgClient, &organizations.ListAccountsInput{})
 
 	ctx := context.Background()
@@ -253,12 +264,19 @@ func DescribeRDSDBInstances(c *gin.Context) {
 		}
 
 		for _, acct := range page.Accounts {
+			// skip accounts that are not requested
+			if _, ok := requestAccountIDs[ptr.ToString(acct.Id)]; !ok {
+				continue
+			}
 			isAccountOwner := ptr.ToString(acct.Id) == ptr.ToString(identity.Account)
 			items, err := listRDSInstances(ctx, cfg, ptr.ToString(acct.Id), isAccountOwner)
 			if err != nil {
-				log.Warnf("failed listing rds instances, is-account-owner=%v, region=%v, reason=%v", isAccountOwner, cfg.Region, err)
-				c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
-				return
+				log.Debugf("failed listing rds instances, is-account-owner=%v, region=%v, reason=%v", isAccountOwner, cfg.Region, err)
+				instances = append(instances, openapi.AWSDBInstance{
+					AccountID: ptr.ToString(acct.Id),
+					Error:     ptr.String(err.Error()),
+				})
+				continue
 			}
 
 			for _, inst := range items {
@@ -412,7 +430,7 @@ func listRDSInstances(ctx context.Context, cfg aws.Config, accountID string, isA
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get RDS instances for account %s: %v", accountID, err)
+			return nil, err
 		}
 		instances = append(instances, page.DBInstances...)
 	}
