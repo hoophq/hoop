@@ -1199,7 +1199,10 @@ type AWSAccount struct {
 	Email string `json:"email" example:"aws-prod@example.com"`
 }
 
-type ListAWSDBInstancesRequest struct{}
+type ListAWSDBInstancesRequest struct {
+	// List of account IDs to scope resources in
+	AccountIDs []string `json:"account_ids"`
+}
 
 type ListAWSDBInstances struct {
 	Items []AWSDBInstance `json:"items"`
@@ -1221,6 +1224,8 @@ type AWSDBInstance struct {
 	Engine string `json:"engine" example:"postgres"`
 	// Status indicates the current state of the database instance
 	Status string `json:"status" example:"available"`
+	// Contains an error in case it was not able to list the db instances from the account id
+	Error *string `json:"error" example:"IAM account does not have permission to list db instances in this account"`
 }
 
 type CreateDBRoleJobAWSProviderSG struct {
