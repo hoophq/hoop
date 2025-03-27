@@ -80,8 +80,10 @@
 (rf/reg-event-fx
  :aws-connect/save-credentials-success
  (fn [{:keys [db]} _]
-   {:db (assoc-in db [:aws-connect :loading :message] "Verifying AWS credentials...")
-    :dispatch [:aws-connect/verify-credentials]}))
+   {:db (-> db
+            (assoc-in [:aws-connect :status] :credentials-valid)
+            (assoc-in [:aws-connect :loading :message] "Retrieving AWS organization accounts..."))
+    :dispatch [:aws-connect/fetch-accounts]}))
 
 (rf/reg-event-fx
  :aws-connect/save-credentials-failure
@@ -94,41 +96,6 @@
     :dispatch [:show-snackbar {:level :error
                                :text "Failed to save AWS credentials. Please check your inputs and try again."}]}))
 
-(rf/reg-event-fx
- :aws-connect/verify-credentials
- (fn [{:keys [db]} _]
-   {:dispatch [:fetch
-               {:method "POST"
-                :uri "/integrations/aws/iam/verify"
-                :on-success #(rf/dispatch [:aws-connect/verify-credentials-success %])
-                :on-failure #(rf/dispatch [:aws-connect/verify-credentials-failure %])}]}))
-
-(rf/reg-event-fx
- :aws-connect/verify-credentials-success
- (fn [{:keys [db]} [_ response]]
-   (let [status (get response :status)]
-     (if (= status "allowed")
-       {:db (assoc-in db [:aws-connect :loading :message] "Retrieving AWS organization accounts...")
-        :dispatch [:aws-connect/fetch-accounts]}
-       {:db (-> db
-                (assoc-in [:aws-connect :status] :credentials-invalid)
-                (assoc-in [:aws-connect :loading :active?] false)
-                (assoc-in [:aws-connect :loading :message] nil)
-                (assoc-in [:aws-connect :error] "Insufficient permissions to access AWS resources"))
-        :dispatch [:show-snackbar {:level :error
-                                   :text "Your AWS credentials don't have sufficient permissions."}]}))))
-
-(rf/reg-event-fx
- :aws-connect/verify-credentials-failure
- (fn [{:keys [db]} [_ response]]
-   (println response)
-   {:db (-> db
-            (assoc-in [:aws-connect :status] :credentials-invalid)
-            (assoc-in [:aws-connect :loading :active?] false)
-            (assoc-in [:aws-connect :loading :message] nil)
-            (assoc-in [:aws-connect :error] (or response "Failed to verify AWS credentials")))
-    :dispatch [:show-snackbar {:level :error
-                               :text "Failed to verify AWS credentials. Please check your inputs and try again."}]}))
 
 (rf/reg-event-fx
  :aws-connect/fetch-rds-instances
