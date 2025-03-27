@@ -11,9 +11,9 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgagents "github.com/hoophq/hoop/gateway/pgrest/agents"
-	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
 )
 
 const defaultTickTime = time.Minute * 5
@@ -47,12 +47,20 @@ func Run(gatewayGrpcURL string) error {
 				log.Warnf("failed listing deployments, reason=%v", err)
 				continue
 			}
-			orgList, err := pgorgs.New().FetchAllOrgs()
+			orgList, err := models.ListAllOrganizations()
 			if err != nil {
 				log.Warnf("failed listing organizations, reason=%v", err)
 				continue
 			}
 			for _, org := range orgList {
+				t30days := time.Now().UTC().AddDate(0, 0, 45)
+				if org.CreatedAt.After(t30days) {
+					log.Infof("removing agent deployment %v", org.ID)
+					if err := client.Remove(org.ID, "noop"); err != nil {
+						log.Warnf("failed removing agent deployment, reason=%v", err)
+					}
+					continue
+				}
 				// it will ensure that deployments are unique per organization
 				deployName := org.ID
 				if shouldConciliate(deploymentItems, deployName) {
