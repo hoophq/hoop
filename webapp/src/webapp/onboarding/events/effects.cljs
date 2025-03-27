@@ -10,7 +10,7 @@
        ;; If not admin or has connections, redirect to home
        (or (not (:admin? user))
            (seq connections))
-       {:fx [[:dispatch [:navigate :home]]]}
+       {:fx [[:dispatch [:navigate :editor-plugin]]]}
 
        ;; Otherwise redirect to setup
        :else
