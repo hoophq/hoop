@@ -12,6 +12,7 @@
                                 :credentials nil
                                 :accounts {:data nil
                                            :status nil
+                                           :selected #{}
                                            :api-error nil}
                                 :resources {:data nil
                                             :selected nil
@@ -79,8 +80,10 @@
 (rf/reg-event-fx
  :aws-connect/save-credentials-success
  (fn [{:keys [db]} _]
-   {:db (assoc-in db [:aws-connect :loading :message] "Verifying AWS credentials...")
-    :dispatch [:aws-connect/verify-credentials]}))
+   {:db (-> db
+            (assoc-in [:aws-connect :status] :credentials-valid)
+            (assoc-in [:aws-connect :loading :message] "Retrieving AWS organization accounts..."))
+    :dispatch [:aws-connect/fetch-accounts]}))
 
 (rf/reg-event-fx
  :aws-connect/save-credentials-failure
@@ -93,51 +96,20 @@
     :dispatch [:show-snackbar {:level :error
                                :text "Failed to save AWS credentials. Please check your inputs and try again."}]}))
 
-(rf/reg-event-fx
- :aws-connect/verify-credentials
- (fn [{:keys [db]} _]
-   {:dispatch [:fetch
-               {:method "POST"
-                :uri "/integrations/aws/iam/verify"
-                :on-success #(rf/dispatch [:aws-connect/verify-credentials-success %])
-                :on-failure #(rf/dispatch [:aws-connect/verify-credentials-failure %])}]}))
-
-(rf/reg-event-fx
- :aws-connect/verify-credentials-success
- (fn [{:keys [db]} [_ response]]
-   (let [status (get response :status)]
-     (if (= status "allowed")
-       {:db (assoc-in db [:aws-connect :loading :message] "Retrieving AWS organization accounts...")
-        :dispatch [:aws-connect/fetch-accounts]}
-       {:db (-> db
-                (assoc-in [:aws-connect :status] :credentials-invalid)
-                (assoc-in [:aws-connect :loading :active?] false)
-                (assoc-in [:aws-connect :loading :message] nil)
-                (assoc-in [:aws-connect :error] "Insufficient permissions to access AWS resources"))
-        :dispatch [:show-snackbar {:level :error
-                                   :text "Your AWS credentials don't have sufficient permissions."}]}))))
-
-(rf/reg-event-fx
- :aws-connect/verify-credentials-failure
- (fn [{:keys [db]} [_ response]]
-   (println response)
-   {:db (-> db
-            (assoc-in [:aws-connect :status] :credentials-invalid)
-            (assoc-in [:aws-connect :loading :active?] false)
-            (assoc-in [:aws-connect :loading :message] nil)
-            (assoc-in [:aws-connect :error] (or response "Failed to verify AWS credentials")))
-    :dispatch [:show-snackbar {:level :error
-                               :text "Failed to verify AWS credentials. Please check your inputs and try again."}]}))
 
 (rf/reg-event-fx
  :aws-connect/fetch-rds-instances
  (fn [{:keys [db]} _]
-   {:dispatch [:fetch
-               {:method "POST"
-                :uri "/integrations/aws/rds/describe-db-instances"
-                :body {}
-                :on-success #(rf/dispatch [:aws-connect/fetch-rds-instances-success %])
-                :on-failure #(rf/dispatch [:aws-connect/fetch-rds-instances-failure %])}]}))
+   (let [selected-accounts (get-in db [:aws-connect :accounts :selected])]
+     {:db (-> db
+              (assoc-in [:aws-connect :loading :active?] true)
+              (assoc-in [:aws-connect :loading :message] "Retrieving AWS resources in your environment..."))
+      :dispatch [:fetch
+                 {:method "POST"
+                  :uri "/integrations/aws/rds/describe-db-instances"
+                  :body {:account_ids (vec selected-accounts)}
+                  :on-success #(rf/dispatch [:aws-connect/fetch-rds-instances-success %])
+                  :on-failure #(rf/dispatch [:aws-connect/fetch-rds-instances-failure %])}]})))
 
 (rf/reg-event-fx
  :aws-connect/fetch-rds-instances-success
@@ -156,6 +128,11 @@
          formatted-resources (mapv (fn [account]
                                      (let [account-id (:account_id account)
                                            account-resources (get resources-by-account account-id [])
+                                           error (when (and (= (count account-resources) 1)
+                                                            (:error (first account-resources)))
+                                                   {:message (:error (first account-resources))
+                                                    :code "Error"
+                                                    :type "Failed"})
 
                                            ;; Format child resources
                                            formatted-children (mapv (fn [instance]
@@ -175,7 +152,9 @@
                                         :status (:status account)
                                         :email (:email account)
                                         :account-type "AWS Account"
-                                        :children formatted-children}))
+                                        :error error
+                                        :children (when-not error
+                                                    formatted-children)}))
                                    accounts)]
 
      {:db (-> db
@@ -339,8 +318,9 @@
               (assoc-in [:aws-connect :accounts :data] accounts)
               (assoc-in [:aws-connect :accounts :status] :loaded)
               (assoc-in [:aws-connect :accounts :api-error] nil)
-              (assoc-in [:aws-connect :loading :message] "Retrieving AWS resources in your environment..."))
-      :dispatch [:aws-connect/fetch-rds-instances]})))
+              (assoc-in [:aws-connect :loading :active?] false)
+              (assoc-in [:aws-connect :loading :message] nil))
+      :dispatch [:aws-connect/set-current-step :accounts]})))
 
 (rf/reg-event-fx
  :aws-connect/fetch-accounts-failure
@@ -356,9 +336,13 @@
               (assoc-in [:aws-connect :loading :active?] false)
               (assoc-in [:aws-connect :loading :message] nil))
       :dispatch [:show-snackbar {:level :error
-                                 :text "Failed to retrieve AWS accounts. Proceeding to fetch resources."}]
-      ;; Continue with resources anyway
-      :dispatch-later [{:ms 500 :dispatch [:aws-connect/fetch-rds-instances]}]})))
+                                 :text "Failed to retrieve AWS accounts. Please check your credentials and try again."}]})))
+
+;; Set the selected accounts
+(rf/reg-event-db
+ :aws-connect/set-selected-accounts
+ (fn [db [_ selected]]
+   (assoc-in db [:aws-connect :accounts :selected] selected)))
 
 ;; Subscriptions
 (rf/reg-sub
@@ -483,3 +467,19 @@
  :aws-connect/create-connection
  (fn [db _]
    (get-in db [:aws-connect :create-connection] true)))
+
+;; New subscriptions for accounts step
+(rf/reg-sub
+ :aws-connect/accounts
+ (fn [db _]
+   (get-in db [:aws-connect :accounts :data])))
+
+(rf/reg-sub
+ :aws-connect/selected-accounts
+ (fn [db _]
+   (get-in db [:aws-connect :accounts :selected])))
+
+(rf/reg-sub
+ :aws-connect/accounts-error
+ (fn [db _]
+   (get-in db [:aws-connect :accounts :api-error :message])))
