@@ -53,7 +53,7 @@ func Run(gatewayGrpcURL string) error {
 				continue
 			}
 			for _, org := range orgList {
-				t30days := time.Now().UTC().AddDate(0, 0, 30)
+				t30days := time.Now().UTC().AddDate(0, 0, 45)
 				if org.CreatedAt.After(t30days) {
 					log.Infof("removing agent deployment %v", org.ID)
 					if err := client.Remove(org.ID, "noop"); err != nil {
