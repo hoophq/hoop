@@ -161,6 +161,11 @@
          formatted-resources (mapv (fn [account]
                                      (let [account-id (:account_id account)
                                            account-resources (get resources-by-account account-id [])
+                                           error (when (and (= (count account-resources) 1)
+                                                            (:error (first account-resources)))
+                                                   {:message (:error (first account-resources))
+                                                    :code "Error"
+                                                    :type "Failed"})
 
                                            ;; Format child resources
                                            formatted-children (mapv (fn [instance]
@@ -180,7 +185,9 @@
                                         :status (:status account)
                                         :email (:email account)
                                         :account-type "AWS Account"
-                                        :children formatted-children}))
+                                        :error error
+                                        :children (when-not error
+                                                    formatted-children)}))
                                    accounts)]
 
      {:db (-> db
@@ -363,25 +370,6 @@
               (assoc-in [:aws-connect :loading :message] nil))
       :dispatch [:show-snackbar {:level :error
                                  :text "Failed to retrieve AWS accounts. Please check your credentials and try again."}]})))
-
-;; Toggle selection of an account
-(rf/reg-event-db
- :aws-connect/toggle-account-selection
- (fn [db [_ account-id selected?]]
-   (if selected?
-     (update-in db [:aws-connect :accounts :selected] conj account-id)
-     (update-in db [:aws-connect :accounts :selected] disj account-id))))
-
-;; Select or deselect all accounts
-(rf/reg-event-db
- :aws-connect/select-all-accounts
- (fn [db [_ selected?]]
-   (let [accounts (get-in db [:aws-connect :accounts :data] [])
-         all-account-ids (map :account_id accounts)]
-     (assoc-in db [:aws-connect :accounts :selected]
-               (if selected?
-                 (set all-account-ids)
-                 #{})))))
 
 ;; Set the selected accounts
 (rf/reg-event-db

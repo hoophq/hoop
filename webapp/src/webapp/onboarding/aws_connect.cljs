@@ -442,6 +442,8 @@
      "Follow the steps to setup your AWS resources."]]])
 
 (defn main []
+  (rf/dispatch [:aws-connect/fetch-agents])
+
   (fn [form-type]
     (let [current-step @(rf/subscribe [:aws-connect/current-step])
           loading @(rf/subscribe [:aws-connect/loading])]

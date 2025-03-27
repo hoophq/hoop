@@ -79,18 +79,10 @@
         security-groups-atom (r/atom @security-groups)
         ports-atom (r/atom @ports)
 
-        resources-with-errors
-        (map (fn [account]
-               (let [children-with-errors
-                     (map (fn [resource]
-                            (if (contains? rf-errors (:id resource))
-                              (assoc resource :error {:message (get rf-errors (:id resource))
-                                                      :code "Error"
-                                                      :type "Access"})
-                              resource))
-                          (:children account))]
-                 (assoc account :children children-with-errors)))
-             resources)
+        formatted-api-error (when (and (= resources-status :error) api-error)
+                              {:message (or (:message api-error) "Unknown error occurred")
+                               :code (or (:code api-error) "Error")
+                               :type (or (:type api-error) "Failed")})
 
         columns [{:id :name
                   :header "Name"
@@ -164,11 +156,9 @@
     (fn []
       @update-counter
 
-      ;; Sincronizar security-groups-atom com os valores do re-frame
       (when (not= @security-groups-atom @security-groups)
         (reset! security-groups-atom @security-groups))
 
-      ;; Sincronizar ports-atom com os valores do re-frame
       (when (not= @ports-atom @ports)
         (reset! ports-atom @ports))
 
@@ -178,11 +168,13 @@
           [:> Callout.Icon
            [:> AlertCircle {:size 16}]]
           [:> Callout.Text
-           (:message api-error)]]]
+           (if formatted-api-error
+             (:message formatted-api-error)
+             "Failed to load AWS resources. Please check your credentials and try again.")]]]
 
         [data-table-simple
          {:columns columns
-          :data resources-with-errors
+          :data resources
           :selected-ids @selected-ids
           :expanded-rows @expanded-rows
           :on-toggle-expand (fn [id]
@@ -225,6 +217,6 @@
                            (swap! update-counter inc))
           :selectable? (fn [row]
                          (and (not (contains? rf-errors (:id row)))
-                              true))
+                              (not (:error row))))
           :sticky-header? true
           :empty-state "No AWS resources found"}]))))
