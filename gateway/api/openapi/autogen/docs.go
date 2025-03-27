@@ -3776,6 +3776,11 @@ const docTemplate = `{
                     "type": "string",
                     "example": "postgres"
                 },
+                "error": {
+                    "description": "Contains an error in case it was not able to list the db instances from the account id",
+                    "type": "string",
+                    "example": "IAM account does not have permission to list db instances in this account"
+                },
                 "name": {
                     "description": "Name is the identifier for the database instance",
                     "type": "string",
@@ -5077,7 +5082,16 @@ const docTemplate = `{
             }
         },
         "openapi.ListAWSDBInstancesRequest": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+                "account_ids": {
+                    "description": "List of account IDs to scope resources in",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
         },
         "openapi.LivenessCheck": {
             "type": "object",
@@ -5273,6 +5287,11 @@ const docTemplate = `{
                 "connection_type": {
                     "description": "The requested connection type",
                     "type": "string",
+                    "readOnly": true
+                },
+                "has_review": {
+                    "description": "Report if the connection has a review",
+                    "type": "boolean",
                     "readOnly": true
                 },
                 "id": {
