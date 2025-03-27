@@ -165,73 +165,72 @@
                                                values))))
                                     (keys grouped-tags)))]
 
-        [:<>
-         [:div {:class "flex flex-col h-full overflow-y-auto"}
-          (when (-> @user :data :admin?)
-            [:div {:class "absolute top-10 right-4 sm:right-6 lg:top-12 lg:right-10 flex gap-2"}
-             (when any-filters?
-               [:> Button {:size "2"
-                           :variant "soft"
-                           :color "gray"
-                           :on-click clear-all-filters}
-                "Clear Filters"])
-             [:> Button {:on-click (fn [] (rf/dispatch [:navigate :create-connection]))}
-              "Add Connection"]])
-          [:> Flex {:as "header"
-                    :direction "column"
-                    :gap "3"
-                    :class "mb-4"}
+        [:div {:class "flex flex-col h-full overflow-y-auto"}
+         (when (-> @user :data :admin?)
+           [:div {:class "absolute top-10 right-4 sm:right-6 lg:top-12 lg:right-10 flex gap-2"}
+            (when any-filters?
+              [:> Button {:size "2"
+                          :variant "soft"
+                          :color "gray"
+                          :on-click clear-all-filters}
+               "Clear Filters"])
+            [:> Button {:on-click (fn [] (rf/dispatch [:navigate :create-connection]))}
+             "Add Connection"]])
+         [:> Flex {:as "header"
+                   :direction "column"
+                   :gap "3"
+                   :class "mb-4"}
 
 
-           [:> Flex {:gap "2" :class "mb-2 self-end"}
-            [searchbox/main
-             {:options (:results @connections)
-              :display-key :name
-              :searchable-keys [:name :type :subtype :connection_tags :status]
-              :on-change-results-cb #(reset! searched-connections %)
-              :hide-results-list true
-              :placeholder "Search"
-              :on-focus #(reset! search-focused true)
-              :on-blur #(reset! search-focused false)
-              :name "connection-search"
-              :on-change (fn [value]
-                           (reset! searched-criteria-connections value)
-                           (when (empty? value)
+          [:> Flex {:gap "2" :class "mb-2 self-end"}
+           [searchbox/main
+            {:options (:results @connections)
+             :display-key :name
+             :searchable-keys [:name :type :subtype :connection_tags :status]
+             :on-change-results-cb #(reset! searched-connections %)
+             :hide-results-list true
+             :placeholder "Search"
+             :on-focus #(reset! search-focused true)
+             :on-blur #(reset! search-focused false)
+             :name "connection-search"
+             :on-change (fn [value]
+                          (reset! searched-criteria-connections value)
+                          (when (empty? value)
                             ;; When search is cleared, reapply the current filters
-                             (let [filters (cond-> {}
-                                             (not-empty @selected-tag-values) (assoc :tagSelector (tag-selector/tags-to-query-string @selected-tag-values))
-                                             @selected-resource (assoc :subtype @selected-resource))]
-                               (when (not-empty filters)
-                                 (rf/dispatch [:connections->filter-connections filters])))))
-              :loading? (= @connections-search-status :loading)
-              :size :small
-              :icon-position "left"}]
+                            (let [filters (cond-> {}
+                                            (not-empty @selected-tag-values) (assoc :tagSelector (tag-selector/tags-to-query-string @selected-tag-values))
+                                            @selected-resource (assoc :subtype @selected-resource))]
+                              (when (not-empty filters)
+                                (rf/dispatch [:connections->filter-connections filters])))))
+             :loading? (= @connections-search-status :loading)
+             :size :small
+             :icon-position "left"}]
 
            ;; Tag selector com popover simples
-            [:> Popover.Root {:open @tags-popover-open?
-                              :onOpenChange #(reset! tags-popover-open? %)}
-             [:> Popover.Trigger {:asChild true}
-              [:> Button {:size "2"
-                          :variant (if (not-empty @selected-tag-values) "soft" "surface")
-                          :color "gray"
-                          :onClick #(reset! tags-popover-open? true)}
-               [:> Flex {:gap "2" :align "center"}
-                [:> Tag {:size 16}]
-                "Tags"
-                (when (not-empty @selected-tag-values)
-                  (let [tag-count (apply + (map count (vals @selected-tag-values)))]
-                    [:div {:class "flex items-center justify-center rounded-full h-4 w-4 bg-gray-800 ml-1"}
-                     [:span {:class "text-white text-xs font-bold"}
-                      tag-count]]))]]]
+           [:> Popover.Root {:open @tags-popover-open?
+                             :onOpenChange #(reset! tags-popover-open? %)}
+            [:> Popover.Trigger {:asChild true}
+             [:> Button {:size "2"
+                         :variant (if (not-empty @selected-tag-values) "soft" "surface")
+                         :color "gray"
+                         :onClick #(reset! tags-popover-open? true)}
+              [:> Flex {:gap "2" :align "center"}
+               [:> Tag {:size 16}]
+               "Tags"
+               (when (not-empty @selected-tag-values)
+                 (let [tag-count (apply + (map count (vals @selected-tag-values)))]
+                   [:div {:class "flex items-center justify-center rounded-full h-4 w-4 bg-gray-800 ml-1"}
+                    [:span {:class "text-white text-xs font-bold"}
+                     tag-count]]))]]]
 
-             [:> Popover.Content {:size "2" :align "start" :style {:width "300px"}}
-              [tag-selector/tag-selector
-               @selected-tag-values
-               (fn [new-selected]
-                 (reset! selected-tag-values new-selected)
-                 (apply-filter (cond-> {}
-                                 (not-empty new-selected) (assoc :tagSelector (tag-selector/tags-to-query-string new-selected))
-                                 @selected-resource (assoc :subtype @selected-resource))))]]]]
+            [:> Popover.Content {:size "2" :align "start" :style {:width "300px"}}
+             [tag-selector/tag-selector
+              @selected-tag-values
+              (fn [new-selected]
+                (reset! selected-tag-values new-selected)
+                (apply-filter (cond-> {}
+                                (not-empty new-selected) (assoc :tagSelector (tag-selector/tags-to-query-string new-selected))
+                                @selected-resource (assoc :subtype @selected-resource))))]]]
 
            [resource-component @selected-resource
             (fn [resource]
