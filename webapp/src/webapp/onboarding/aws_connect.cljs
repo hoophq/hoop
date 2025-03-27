@@ -13,14 +13,17 @@
   [{:id :credentials
     :number 1
     :title "Credentials"}
-   {:id :resources
+   {:id :accounts
     :number 2
+    :title "Accounts"}
+   {:id :resources
+    :number 3
     :title "Resources"}
    {:id :review
-    :number 3
+    :number 4
     :title "Review and Create"}
    {:id :creation-status
-    :number 4
+    :number 5
     :title "Status"}])
 
 (def aws-regions
@@ -143,6 +146,71 @@
        [:> Card {:variant "surface" :color "red" :mb "4"}
         [:> Flex {:gap "2" :align "center"}
          [:> Text {:size "2" :color "red"} error]]])]))
+
+(defn accounts-step []
+  (r/with-let [accounts (rf/subscribe [:aws-connect/accounts])
+               rf-selected (rf/subscribe [:aws-connect/selected-accounts])
+               error (rf/subscribe [:aws-connect/accounts-error])
+               selected-ids (r/atom (or @rf-selected #{}))
+               update-counter (r/atom 0)
+
+               sync-selection (fn [selected-set]
+                                (rf/dispatch [:aws-connect/set-selected-accounts selected-set]))
+
+               _ (add-watch selected-ids :selected-accounts-sync
+                            (fn [_ _ _ new-value]
+                              (sync-selection new-value)))]
+
+    (let [_ @update-counter]
+      [:> Flex {:direction "column" :align "center" :gap "7" :mb "4" :class "w-full"}
+       [loading-screen]
+
+       [:> Box {:class "max-w-[600px] space-y-3"}
+        [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+         "AWS Accounts"]
+        [:> Text {:as "p" :size "2" :class "text-[--gray-11]" :mb "5"}
+         "Select the AWS accounts you want to scan for database resources. Only accounts with database resources will be displayed in the next step."]]
+
+       [:> Box {:class "w-full"}
+        [data-table-simple
+         {:columns [{:id :name
+                     :header "Account Name"
+                     :width "40%"}
+                    {:id :account_id
+                     :header "Account ID"
+                     :width "30%"}
+                    {:id :status
+                     :header "Status"
+                     :width "30%"
+                     :render (fn [value _]
+                               [:> Badge {:color (cond
+                                                   (= value "ACTIVE") "green"
+                                                   (= value "SUSPENDED") "red"
+                                                   :else "gray")
+                                          :variant "soft"}
+                                value])}]
+          :data @accounts
+          :key-fn :account_id
+          :selected-ids @selected-ids
+          :on-select-row (fn [id selected?]
+                           (if selected?
+                             (swap! selected-ids conj id)
+                             (swap! selected-ids disj id))
+                           (swap! update-counter inc))
+          :on-select-all (fn [select-all?]
+                           (if select-all?
+                             (let [all-account-ids (map :account_id @accounts)]
+                               (reset! selected-ids (into #{} all-account-ids)))
+                             (reset! selected-ids #{}))
+                           (swap! update-counter inc))
+          :sticky-header? true
+          :empty-state "No AWS accounts found. Please check your credentials and try again."}]]
+
+       ;; Error message (if any)
+       (when @error
+         [:> Card {:variant "surface" :color "red" :mt "4" :class "max-w-[600px]"}
+          [:> Flex {:gap "2" :align "center"}
+           [:> Text {:size "2" :color "red"} @error]]])])))
 
 (defn resources-step []
   (let [errors @(rf/subscribe [:aws-connect/resources-errors])]
@@ -306,7 +374,7 @@
                                                   :connection-name (:name conn)
                                                   :connection-status (:status conn)
                                                   :connection-error (:error conn))]
-                               ;; Formatação de erros para uso com data-table-simple
+                             ;; Formatação de erros para uso com data-table-simple
                              (if (:connection-error conn-data)
                                (assoc conn-data :error {:message (:connection-error conn-data)
                                                         :code "Error"
@@ -393,14 +461,14 @@
                [:> Flex {:align "center" :gap "1"}
                 [step-number {:number number
                               :active? (= id current-step)
-                              :completed? (> (.indexOf [:credentials :resources :review :creation-status] current-step)
-                                             (.indexOf [:credentials :resources :review :creation-status] id))}]
+                              :completed? (> (.indexOf [:credentials :accounts :resources :review :creation-status] current-step)
+                                             (.indexOf [:credentials :accounts :resources :review :creation-status] id))}]
                 [step-title {:title title
                              :active? (= id current-step)
-                             :completed? (> (.indexOf [:credentials :resources :review :creation-status] current-step)
-                                            (.indexOf [:credentials :resources :review :creation-status] id))}]
-                (when (> (.indexOf [:credentials :resources :review :creation-status] current-step)
-                         (.indexOf [:credentials :resources :review :creation-status] id))
+                             :completed? (> (.indexOf [:credentials :accounts :resources :review :creation-status] current-step)
+                                            (.indexOf [:credentials :accounts :resources :review :creation-status] id))}]
+                (when (> (.indexOf [:credentials :accounts :resources :review :creation-status] current-step)
+                         (.indexOf [:credentials :accounts :resources :review :creation-status] id))
                   [step-checkmark])]
                (when-not (= id (if (= current-step :creation-status) :creation-status :review))
                  [:> Box {:class "px-2"}
@@ -408,6 +476,7 @@
       ;; Current step content
            (case current-step
              :credentials [credentials-step]
+             :accounts [accounts-step]
              :resources [resources-step]
              :review [review-step]
              :creation-status [creation-status-step]
@@ -416,31 +485,37 @@
         {:form-type form-type
          :back-text (case current-step
                       :credentials "Back"
-                      :resources "Back to Credentials"
+                      :accounts "Back to Credentials"
+                      :resources "Back to Accounts"
                       :review "Back to Resources"
                       :creation-status nil)
          :next-text (case current-step
-                      :credentials "Next: Resources"
+                      :credentials "Next: Accounts"
+                      :accounts "Next: Resources"
                       :resources "Next: Review"
                       :review "Confirm and Create"
                       :creation-status "Go to AWS Connect")
          :on-back #(case current-step
                      :credentials (.back js/history)
-                     :resources (rf/dispatch [:aws-connect/set-current-step :credentials])
+                     :accounts (rf/dispatch [:aws-connect/set-current-step :credentials])
+                     :resources (rf/dispatch [:aws-connect/set-current-step :accounts])
                      :review (rf/dispatch [:aws-connect/set-current-step :resources])
                      :creation-status nil)
          :on-next #(case current-step
                      :credentials (rf/dispatch [:aws-connect/validate-credentials])
+                     :accounts (rf/dispatch [:aws-connect/fetch-rds-instances])
                      :resources (rf/dispatch [:aws-connect/set-current-step :review])
                      :review (rf/dispatch [:aws-connect/create-connections])
                      :creation-status (rf/dispatch [:navigate :integrations-aws-connect]))
          :back-hidden? (case current-step
                          :credentials false
+                         :accounts false
                          :resources false
                          :review false
                          :creation-status true)
          :next-disabled? (case current-step
                            :credentials (:active? loading)
+                           :accounts (empty? @(rf/subscribe [:aws-connect/selected-accounts]))
                            :resources (empty? @(rf/subscribe [:aws-connect/selected-resources]))
                            :review (some empty? (vals @(rf/subscribe [:aws-connect/agent-assignments])))
                            :creation-status false)}}])))
