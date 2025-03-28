@@ -1,6 +1,6 @@
 (ns webapp.connections.views.tag-selector
-  (:require ["lucide-react" :refer [Tag Check ChevronRight ArrowLeft]]
-            ["@radix-ui/themes" :refer [Box Button Flex Text Popover Badge]]
+  (:require ["lucide-react" :refer [Tag Check ChevronRight ChevronLeft]]
+            ["@radix-ui/themes" :refer [Box Button Flex Text Separator]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
@@ -58,37 +58,45 @@
                  value values]
              (str key "=" value))))
 
+(defn get-display-key [key]
+  (let [display-keys (cs/split (get-key-name key) ".")
+        display-key (if (= (count display-keys) 1)
+                      (first display-keys)
+                      (second display-keys))]
+    display-key))
+
 ;; Componente de visualização da tela de valores
 (defn values-view [key values display-key selected-values on-change on-back]
   [:div {:class "w-full"}
    ;; Cabeçalho com back e clear
-   [:> Flex {:justify "between" :align "center" :class "mb-4"}
-    [:> Button {:variant "ghost" :onClick on-back}
-     [:> Flex {:align "center" :gap "1"}
-      [:> ArrowLeft {:size 16}]
+   [:> Flex {:justify "between" :align "center" :class "mb-3"}
+    [:> Button {:variant "ghost" :color "gray" :onClick on-back}
+     [:> ChevronLeft {:size 16}]
+     [:> Text {:size "1" :class "text-gray-11"}
       "Back"]]
-    [:> Button {:variant "ghost" :onClick #(on-change (dissoc selected-values key))}
-     "Clear"]]
+    [:> Button {:variant "ghost" :color "gray" :onClick #(on-change (dissoc selected-values key))}
+     [:> Text {:size "1" :class "text-gray-11"}
+      "Clear"]]]
 
-   ;; Opções Select all e None
-   [:div {:class "mb-4"}
-    [:> Button {:variant "ghost"
-                :class "w-full text-left mb-1"
-                :onClick #(on-change (assoc selected-values key values))}
-     "Select all"]
+   [:> Separator {:class "w-full"}]
 
-    [:> Button {:variant "ghost"
-                :class "w-full text-left"
-                :onClick #(on-change (dissoc selected-values key))}
-     "None"]]
-
+   [:> Text {:as "p" :size "1" :mt "3" :class "text-gray-11"}
+    (get-display-key display-key)]
    ;; Lista de valores
-   [:div {:class "space-y-1"}
+   [:div {:class "space-y-1 px-2 pt-3"}
+    [:> Button {:variant "ghost"
+                :color "gray"
+                :class "w-full justify-between"
+                :onClick #(on-change (assoc selected-values key values))}
+     [:> Text {:size "2" :class "text-gray-12"}
+      "Select all"]]
+
     (for [value values
           :let [is-selected (some #(= % value) (get selected-values key []))]]
       ^{:key (str key "-" value)}
       [:> Button {:variant "ghost"
-                  :class "w-full text-left justify-between"
+                  :color "gray"
+                  :class "w-full justify-between"
                   :onClick (fn [_]
                              (let [new-values (if is-selected
                                                 (remove (fn [v] (= v value)) (get selected-values key []))
@@ -97,7 +105,8 @@
                                                   (dissoc selected-values key)
                                                   (assoc selected-values key new-values))]
                                (on-change new-selected)))}
-       value
+       [:> Text {:size "2" :class "text-gray-12"}
+        value]
        (when is-selected
          [:> Check {:size 16}])])]])
 
@@ -121,24 +130,25 @@
                                              (cs/lower-case search-term))
                                            values))))
                                 (keys grouped-tags)))]
-    [:div {:class "w-full"}
      ;; Lista de chaves
-     [:div {:class "max-h-64 overflow-y-auto"}
-      [:> Box {:class "space-y-1"}
-       (for [key filtered-keys
-             :let [display-key (get-key-name key)
-                   values (get grouped-tags key)
-                   selected-count (count (get selected-values key []))]]
-         ^{:key key}
-         [:> Button {:variant "ghost"
-                     :class "flex justify-between w-full text-left py-2 px-3"
-                     :onClick #(on-select-key key)}
-          [:span display-key]
-          [:> Flex {:align "center" :gap "2"}
-           (when (pos? selected-count)
-             [:div {:class "flex items-center justify-center rounded-full h-5 w-5 bg-gray-800 text-white text-xs font-bold"}
-              selected-count])
-           [:> ChevronRight {:size 16}]]])]]]))
+    [:div {:class "w-full max-h-64 overflow-y-auto"}
+     [:> Box {:class "space-y-1 p-2"}
+      (for [key filtered-keys
+            :let [display-key (get-key-name key)
+                  selected-count (count (get selected-values key []))]]
+        ^{:key key}
+        [:> Button {:variant "ghost"
+                    :color "gray"
+                    :onClick #(on-select-key key)
+                    :class "w-full justify-between gap-3"}
+         [:> Text {:size "2" :class "truncate text-gray-12"}
+          (get-display-key display-key)]
+         [:> Flex {:align "center" :gap "2"}
+          (when (pos? selected-count)
+            [:> Box {:class "flex items-center justify-center rounded-full h-5 w-5 bg-gray-11"}
+             [:> Text {:size "1" :weight "bold" :class "text-white"}
+              selected-count]])
+          [:> ChevronRight {:size 16}]]])]]))
 
 ;; Componente para exibir resultados de busca
 (defn search-results-view [grouped-tags search-term selected-values on-change on-select-key]
@@ -153,19 +163,19 @@
                          {:key key
                           :value value
                           :display-key display-key})]
-    [:div {:class "w-full"}
      ;; Resultados da busca
-     [:div {:class "max-h-64 overflow-y-auto"}
-      [:> Box {:class "space-y-1"}
-       (for [{:keys [key value display-key]} search-results]
-         ^{:key (str key "-" value)}
-         [:> Button {:variant "ghost"
-                     :class "flex justify-between w-full text-left py-2 px-3"
-                     :onClick #(on-select-key key)}
-          [:> Flex {:direction "column" :align "start"}
-           [:span value]
-           [:span {:class "text-xs text-gray-500"} (str "Value | " display-key)]]
-          [:> ChevronRight {:size 16}]])]]]))
+    [:> Box {:class "w-full max-h-64 overflow-y-auto"}
+     [:> Box {:class "space-y-1 p-2"}
+      (for [{:keys [key value display-key]} search-results]
+        ^{:key (str key "-" value)}
+        [:> Button {:variant "ghost"
+                    :color "gray"
+                    :class "w-full justify-between gap-2"
+                    :onClick #(on-select-key key)}
+         [:> Flex {:direction "column" :align "start"}
+          [:> Text {:size "2" :class "text-gray-12"} value]
+          [:> Text {:size "1" :class "text-gray-11"} (str "Value | " display-key)]]
+         [:> ChevronRight {:size 16}]])]]))
 
 ;; Componente principal do seletor de tags
 (defn tag-selector [selected-tags on-change]
@@ -181,33 +191,40 @@
             has-search-results? (and (not-empty @search-term)
                                      (not= @current-view :values))]
 
-        [:div {:class "w-full p-2"}
+        [:> Box
          ;; Input de busca
-         [:div {:class "mb-4"}
-          [searchbox/main
-           {:value @search-term
-            :on-change (fn [new-term]
-                         (reset! search-term new-term)
-                         (when (not-empty new-term)
-                           (reset! current-view :search)
-                           (reset! current-key nil)))
-            :placeholder "Search Tags"
-            :display-key :text
-            :searchable-keys [:text]
-            :hide-results-list true
-            :size :small
-            :variant :small}]]
+         (when (or (= @current-view :keys)
+                   (= @current-view :search))
+           [:div {:class "mb-3"}
+            [searchbox/main
+             {:value @search-term
+              :on-change (fn [new-term]
+                           (reset! search-term new-term)
+                           (when (not-empty new-term)
+                             (reset! current-view :search)
+                             (reset! current-key nil)))
+              :placeholder "Search Tags"
+              :display-key :text
+              :searchable-keys [:text]
+              :hide-results-list true
+              :size :small
+              :variant :small}]])
 
          ;; Conteúdo principal - muda dependendo da visualização atual
          (cond
            ;; Visualização de um valor específico
            (= @current-view :values)
-           [values-view @current-key (get grouped-tags @current-key)
-            (get-key-name @current-key) @selected-values
+           [values-view
+            @current-key
+            (get grouped-tags @current-key)
+            (get-key-name @current-key)
+            @selected-values
             (fn [new-values]
               (reset! selected-values new-values)
               (on-change new-values))
-            #(reset! current-view :keys)]
+            (fn []
+              (reset! current-view :keys)
+              (reset! search-term ""))]
 
            ;; Resultados de busca
            has-search-results?
@@ -224,18 +241,14 @@
            (do
              (when (not= @current-view :keys)
                (reset! current-view :keys))
-             [:div
-              ;; Título da lista
-              [:div {:class "mb-2"}
-               [:> Text {:size "2" :weight "medium"} "Initial / Keys"]]
 
               ;; Lista de chaves
-              (if @loading?
-                [:div {:class "text-center p-4"} "Loading tags..."]
-                [keys-view grouped-tags @search-term @selected-values
-                 (fn [new-values]
-                   (reset! selected-values new-values)
-                   (on-change new-values))
-                 (fn [key]
-                   (reset! current-key key)
-                   (reset! current-view :values))])]))]))))
+             (if @loading?
+               [:div {:class "text-center"} "Loading tags..."]
+               [keys-view grouped-tags @search-term @selected-values
+                (fn [new-values]
+                  (reset! selected-values new-values)
+                  (on-change new-values))
+                (fn [key]
+                  (reset! current-key key)
+                  (reset! current-view :values))])))]))))
