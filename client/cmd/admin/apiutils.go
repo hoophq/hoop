@@ -97,7 +97,12 @@ func parseResourceOrDie(args []string, method, outputFlag string) *apiResource {
 		}()
 		apir.name = "_"
 	case "sessions":
-		apir.resourceList = false
+		defer func() {
+			if outputFlag == "" {
+				apir.decodeTo = "object"
+			}
+		}()
+		apir.resourceList = true
 		apir.suffixEndpoint = path.Join("/api/sessions", apir.name)
 	case "users":
 		apir.resourceUpdate = true

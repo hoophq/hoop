@@ -240,7 +240,7 @@ const docTemplate = `{
                         "type": "string",
                         "format": "string",
                         "description": "Selector tags to fo filter on, supports '=' and '!=' (e.g. key1=value1,key2=value2)",
-                        "name": "tagSelector",
+                        "name": "tag_selector",
                         "in": "query"
                     },
                     {
@@ -2831,6 +2831,18 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Filter by connection's type",
                         "name": "type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by the approver's email of a review",
+                        "name": "review.approver",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by the review status",
+                        "name": "review.status",
                         "in": "query"
                     },
                     {
@@ -6017,7 +6029,7 @@ const docTemplate = `{
                     "description": "Review of this session. In case the review doesn't exist this field will be null",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/openapi.Review"
+                            "$ref": "#/definitions/openapi.SessionReview"
                         }
                     ]
                 },
@@ -6141,6 +6153,66 @@ const docTemplate = `{
                     "description": "The total transformed bytes performed by this info type",
                     "type": "integer",
                     "example": 30012
+                }
+            }
+        },
+        "openapi.SessionReview": {
+            "type": "object",
+            "properties": {
+                "access_duration": {
+                    "description": "The amount of time (nanoseconds) to allow access to the connection. It's valid only for ` + "`" + `jit` + "`" + ` type reviews` + "`" + `",
+                    "type": "integer",
+                    "default": 1800000000000,
+                    "readOnly": true,
+                    "example": 0
+                },
+                "created_at": {
+                    "description": "The time the resource was created",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "id": {
+                    "description": "Reousrce identifier",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "9F9745B4-C77B-4D52-84D3-E24F67E3623C"
+                },
+                "review_groups_data": {
+                    "description": "Contains the groups that requires to approve this review",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ReviewGroup"
+                    },
+                    "readOnly": true
+                },
+                "revoke_at": {
+                    "description": "The time when this review was revoked",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": ""
+                },
+                "status": {
+                    "description": "The status of the review\n* PENDING - The resource is waiting to be reviewed\n* APPROVED - The resource is fully approved\n* REJECTED - The resource is fully rejected\n* REVOKED - The resource was revoked after being approved\n* PROCESSING - The review is being executed\n* EXECUTED - The review was executed\n* UNKNOWN - Unable to know the status of the review",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ReviewStatusType"
+                        }
+                    ]
+                },
+                "type": {
+                    "description": "The type of this review\n* onetime - Represents a one time execution\n* jit - Represents a time based review",
+                    "enum": [
+                        "onetime",
+                        "jit"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ReviewType"
+                        }
+                    ],
+                    "readOnly": true
                 }
             }
         },
