@@ -48,12 +48,7 @@
    {:id "mssql" :value "mssql" :label "MSSQL"}
    {:id "oracledb" :value "oracledb" :label "OracleDB"}
    {:id "ssh" :value "ssh" :label "SSH"}
-   {:id "tcp" :value "tcp" :label "TCP"}
-   {:id "ruby-on-rails" :value "ruby-on-rails" :label "Ruby on Rails"}
-   {:id "python" :value "python" :label "Python"}
-   {:id "nodejs" :value "nodejs" :label "Node.js"}
-   {:id "clojure" :value "clojure" :label "Clojure"}
-   {:id "vpn" :value "vpn" :label "VPN"}])
+   {:id "tcp" :value "tcp" :label "TCP"}])
 
 (defn resource-component [selected-resource on-change]
   [:> Popover.Root
@@ -62,27 +57,16 @@
                 :variant (if selected-resource "soft" "surface")
                 :color (if selected-resource "gray" "gray")}
      [:> Flex {:gap "2" :align "center"}
+      [:> Shapes {:size 16}]
+      "Resource"
       (when selected-resource
         [:div {:class "flex items-center justify-center rounded-full h-5 w-5 bg-gray-11"}
          [:> Text {:size "1" :weight "bold" :class "text-white"}
-          "1"]])
-      "Resource"
-      [:> Shapes {:size 16}]]]]
+          "1"]])]]]
 
    [:> Popover.Content {:size "2" :style {:width "280px"}}
-    [:> Box {:class "p-2"}
-     [searchbox/main
-      {:options []
-       :display-key :text
-       :variant :small
-       :searchable-keys [:text]
-       :hide-results-list true
-       :placeholder "Search resources"
-       :name "resource-search"
-       :size :small}]]
-
     [:> Box {:class "w-full max-h-64 overflow-y-auto"}
-     [:> Box {:class "space-y-1 p-2"}
+     [:> Box {:class "space-y-1 px-2 pt-2"}
       (for [{:keys [id value label]} resource-types]
         ^{:key id}
         [:> Button
@@ -98,8 +82,6 @@
 (defn panel [_]
   (let [connections (rf/subscribe [:connections])
         user (rf/subscribe [:users->current-user])
-        all-tags (rf/subscribe [:connections->tags])
-        tags-loading? (rf/subscribe [:connections->tags-loading?])
         search-focused (r/atom false)
         searched-connections (r/atom nil)
         searched-criteria-connections (r/atom "")
@@ -136,12 +118,6 @@
         [:div {:class "flex flex-col h-full overflow-y-auto"}
          (when (-> @user :data :admin?)
            [:div {:class "absolute top-10 right-4 sm:right-6 lg:top-12 lg:right-10 flex gap-2"}
-            (when any-filters?
-              [:> Button {:size "2"
-                          :variant "soft"
-                          :color "gray"
-                          :on-click clear-all-filters}
-               "Clear Filters"])
             [:> Button {:on-click (fn [] (rf/dispatch [:navigate :create-connection]))}
              "Add Connection"]])
          [:> Flex {:as "header"
@@ -151,6 +127,12 @@
 
 
           [:> Flex {:gap "2" :class "mb-2 self-end"}
+           (when any-filters?
+             [:> Button {:size "2"
+                         :variant "soft"
+                         :color "gray"
+                         :on-click clear-all-filters}
+              "Clear Filters"])
            [searchbox/main
             {:options (:results @connections)
              :display-key :name
@@ -183,13 +165,13 @@
                          :color "gray"
                          :onClick #(reset! tags-popover-open? true)}
               [:> Flex {:gap "2" :align "center"}
+               [:> Tag {:size 16}]
+               "Tags"
                (when (not-empty @selected-tag-values)
                  (let [tag-count (apply + (map count (vals @selected-tag-values)))]
                    [:div {:class "flex items-center justify-center rounded-full h-5 w-5 bg-gray-11"}
                     [:> Text {:size "1" :weight "bold" :class "text-white"}
-                     tag-count]]))
-               "Tags"
-               [:> Tag {:size 16}]]]]
+                     tag-count]]))]]]
 
             [:> Popover.Content {:size "2" :align "start" :style {:width "300px"}}
              [tag-selector/tag-selector
@@ -225,9 +207,11 @@
                (doall
                 (for [connection connections-search-results]
                   ^{:key (:id connection)}
-                  [:> Box {:class (str "bg-white border border-[--gray-3] first:rounded-t-lg last:rounded-b-lg last:border-t-0 first:border-b-0  "
-                                       " text-[--gray-12]"
-                                       " p-regular text-xs flex gap-8 justify-between items-center")}
+                  [:> Box {:class (str "bg-white border border-[--gray-3] "
+                                       "first:rounded-t-lg last:rounded-b-lg "
+                                       "first:border-t last:border-b "
+                                       "text-[--gray-12] "
+                                       "p-regular text-xs flex gap-8 justify-between items-center")}
                    [:div {:class "flex truncate items-center gap-regular"}
                     [:div
                      [:figure {:class "w-6"}
