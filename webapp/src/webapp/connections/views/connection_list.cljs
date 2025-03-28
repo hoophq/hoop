@@ -1,11 +1,10 @@
 (ns webapp.connections.views.connection-list
-  (:require ["lucide-react" :refer [Wifi EllipsisVertical InfoIcon Tag Server Database Network Check]]
-            ["@radix-ui/themes" :refer [IconButton Box Button DropdownMenu Tooltip
-                                        Flex Text Callout Popover Badge]]
+  (:require ["lucide-react" :refer [EllipsisVertical InfoIcon Tag Shapes Check]]
+            ["@radix-ui/themes" :refer [IconButton Box Button DropdownMenu
+                                        Flex Text Callout Popover]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
-            [webapp.components.button :as button]
             [webapp.components.loaders :as loaders]
             [webapp.components.searchbox :as searchbox]
             [webapp.connections.constants :as connection-constants]
@@ -63,12 +62,12 @@
                 :variant (if selected-resource "soft" "surface")
                 :color (if selected-resource "gray" "gray")}
      [:> Flex {:gap "2" :align "center"}
-      [:> Server {:size 16}]
-      "Resource"
       (when selected-resource
-        [:div {:class "flex items-center justify-center rounded-full h-4 w-4 bg-gray-800 ml-1"}
-         [:span {:class "text-white text-xs font-bold"}
-          "1"]])]]]
+        [:div {:class "flex items-center justify-center rounded-full h-5 w-5 bg-gray-11"}
+         [:> Text {:size "1" :weight "bold" :class "text-white"}
+          "1"]])
+      "Resource"
+      [:> Shapes {:size 16}]]]]
 
    [:> Popover.Content {:size "2" :style {:width "280px"}}
     [:> Box {:class "p-2"}
@@ -82,21 +81,19 @@
        :name "resource-search"
        :size :small}]]
 
-    [:> Box {:class "max-h-64 overflow-y-auto p-1"}
-     [:> Flex {:direction "column" :gap "1"}
+    [:> Box {:class "w-full max-h-64 overflow-y-auto"}
+     [:> Box {:class "space-y-1 p-2"}
       (for [{:keys [id value label]} resource-types]
         ^{:key id}
         [:> Button
-         {:size "1"
-          :variant (if (= selected-resource value) "soft" "ghost")
-          :class "justify-between"
+         {:variant "ghost"
+          :color "gray"
+          :class "w-full justify-between gap-2"
           :onClick #(on-change (if (= selected-resource value) nil value))}
-         [:span label]
+         [:> Text {:size "2" :class "text-gray-12"}
+          label]
          (when (= selected-resource value)
-           [:svg {:class "h-4 w-4" :viewBox "0 0 20 20" :fill "currentColor"}
-            [:path {:fill-rule "evenodd"
-                    :d "M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                    :clip-rule "evenodd"}]])])]]]])
+           [:> Check {:size 16}])])]]]])
 
 (defn panel [_]
   (let [connections (rf/subscribe [:connections])
@@ -109,7 +106,6 @@
         connections-search-status (r/atom nil)
         selected-tag-values (r/atom {})
         tags-popover-open? (r/atom false)
-        tags-search-term (r/atom "")
         selected-resource (r/atom nil)
         apply-filter (fn [filter-update]
                       ;; Clear search results when applying filters
@@ -122,6 +118,7 @@
                             (reset! selected-resource nil)
                             (reset! searched-connections nil)
                             (reset! searched-criteria-connections "")
+                            (set! (.-value (js/document.getElementById "connection-search")) "")
                             (rf/dispatch [:connections->get-connections nil]))]
     ;; Initial load with no filters
     (rf/dispatch [:connections->get-connections nil])
@@ -130,40 +127,11 @@
     (rf/dispatch [:jobs/start-aws-connect-polling])
     (rf/dispatch [:connections->get-connection-tags])
 
-    ;; Log para debug
-    (js/console.log "Inicializando panel com tags")
-
     (fn []
-      ;; Logs para debugar
-      (js/console.log "Renderizando panel com tags:" (count @all-tags))
-      (js/console.log "Tags loading:" @tags-loading?)
-
       (let [connections-search-results (if (empty? @searched-connections)
                                          (:results @connections)
                                          @searched-connections)
-            any-filters? (or (not-empty @selected-tag-values) @selected-resource)
-            grouped-tags (tag-selector/group-tags-by-key @all-tags)
-            tag-count (if (empty? @selected-tag-values)
-                        0
-                        (apply + (map count (vals @selected-tag-values))))
-
-            filtered-keys (if (empty? @tags-search-term)
-                            ;; Sem filtro - mostrar todas as chaves
-                            (keys grouped-tags)
-                            ;; Com filtro - filtrar por chave ou valor
-                            (filter (fn [key]
-                                      (let [display-key (tag-selector/get-key-name key)
-                                            values (get grouped-tags key)]
-                                        (or
-                                         ;; Match na chave
-                                         (cs/includes? (cs/lower-case display-key)
-                                                       (cs/lower-case @tags-search-term))
-                                         ;; Match em algum valor
-                                         (some #(cs/includes?
-                                                 (cs/lower-case %)
-                                                 (cs/lower-case @tags-search-term))
-                                               values))))
-                                    (keys grouped-tags)))]
+            any-filters? (or (not-empty @selected-tag-values) @selected-resource)]
 
         [:div {:class "flex flex-col h-full overflow-y-auto"}
          (when (-> @user :data :admin?)
@@ -215,13 +183,13 @@
                          :color "gray"
                          :onClick #(reset! tags-popover-open? true)}
               [:> Flex {:gap "2" :align "center"}
-               [:> Tag {:size 16}]
-               "Tags"
                (when (not-empty @selected-tag-values)
                  (let [tag-count (apply + (map count (vals @selected-tag-values)))]
-                   [:div {:class "flex items-center justify-center rounded-full h-4 w-4 bg-gray-800 ml-1"}
-                    [:span {:class "text-white text-xs font-bold"}
-                     tag-count]]))]]]
+                   [:div {:class "flex items-center justify-center rounded-full h-5 w-5 bg-gray-11"}
+                    [:> Text {:size "1" :weight "bold" :class "text-white"}
+                     tag-count]]))
+               "Tags"
+               [:> Tag {:size 16}]]]]
 
             [:> Popover.Content {:size "2" :align "start" :style {:width "300px"}}
              [tag-selector/tag-selector
@@ -246,8 +214,6 @@
 
            [:div {:class " h-full overflow-y-auto"}
             [:div {:class "relative h-full overflow-y-auto"}
-                ;;  (when (and (= status :loading) (empty? (:data sessions)))
-                ;;    [loading-list-view])
              (when (and (empty? (:results  @connections)) (not= (:status @connections) :loading))
                [empty-list-view])
 
@@ -328,33 +294,3 @@
                                                                                       (rf/dispatch [:connections->delete-connection (:name connection)])
                                                                                       (rf/dispatch [:modal->close]))}]))}
                        "Delete"]]]]])))]])]))))
-
-;; Event para obter tags disponíveis
-(rf/reg-event-fx
- :connections->get-connection-tags
- (fn [{:keys [db]} [_]]
-   {:db (assoc-in db [:connections :tags-loading] true)
-    :fx [[:dispatch [:fetch {:method "GET"
-                             :uri "/connection-tags"
-                             :on-success (fn [response]
-                                           (rf/dispatch [:connections->set-connection-tags (:items response)]))}]]]}))
-
-;; Event para armazenar as tags
-(rf/reg-event-db
- :connections->set-connection-tags
- (fn [db [_ tags]]
-   (-> db
-       (assoc-in [:connections :tags] tags)
-       (assoc-in [:connections :tags-loading] false))))
-
-;; Subscription para obter as tags
-(rf/reg-sub
- :connections->tags
- (fn [db]
-   (get-in db [:connections :tags])))
-
-;; Subscription para o status de carregamento das tags
-(rf/reg-sub
- :connections->tags-loading?
- (fn [db]
-   (get-in db [:connections :tags-loading])))

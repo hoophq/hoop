@@ -80,9 +80,8 @@
 
 (defn input-style [icon-position]
   (str "w-full rounded-md border shadow-sm "
-       "border-gray-300 bg-white "
-       "focus:border-indigo-500 focus:outline-none "
-       "focus:ring-1 focus:ring-indigo-500 "
+       "border-gray-300 bg-white focus:outline-primary-9 "
+       "focus:ring-1 focus:ring-primary-9 "
        "sm:text-sm "
        (if (= icon-position "right")
          "pl-3 pr-12"
