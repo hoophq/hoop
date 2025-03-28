@@ -254,7 +254,8 @@
                      [:> DropdownMenu.Content
                       [:> DropdownMenu.Item {:on-click
                                              (fn []
-                                               false)}
+                                               (js/localStorage.setItem "selected-connection" connection)
+                                               (rf/dispatch [:navigate :editor-plugin-panel]))}
                        "Open in Web Terminal"]
                       (when (or
                              (= "database" (:type connection))
