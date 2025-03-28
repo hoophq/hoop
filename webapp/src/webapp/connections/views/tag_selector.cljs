@@ -1,12 +1,11 @@
 (ns webapp.connections.views.tag-selector
-  (:require ["lucide-react" :refer [Tag Check ChevronRight ChevronLeft]]
+  (:require ["lucide-react" :refer [Check ChevronRight ChevronLeft]]
             ["@radix-ui/themes" :refer [Box Button Flex Text Separator]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
             [webapp.components.searchbox :as searchbox]))
 
-;; Event para buscar as tags disponíveis
 (rf/reg-event-fx
  :connections->get-connection-tags
  (fn [{:keys [db]} [_]]
@@ -16,7 +15,6 @@
                              :on-success (fn [response]
                                            (rf/dispatch [:connections->set-connection-tags (:items response)]))}]]]}))
 
-;; Event para armazenar as tags no app-db
 (rf/reg-event-db
  :connections->set-connection-tags
  (fn [db [_ tags]]
@@ -24,24 +22,20 @@
        (assoc-in [:connections :tags] tags)
        (assoc-in [:connections :tags-loading] false))))
 
-;; Subscription para obter as tags
 (rf/reg-sub
  :connections->tags
  (fn [db]
    (get-in db [:connections :tags])))
 
-;; Subscription para o status de carregamento das tags
 (rf/reg-sub
  :connections->tags-loading?
  (fn [db]
    (get-in db [:connections :tags-loading])))
 
-;; Função para extrair o nome da chave (última parte após a última barra)
 (defn get-key-name [key]
   (let [parts (cs/split key #"/")]
     (last parts)))
 
-;; Função auxiliar para agrupar tags por chave
 (defn group-tags-by-key [tags]
   (reduce
    (fn [result tag]
@@ -51,7 +45,6 @@
    {}
    tags))
 
-;; Função para converter as tags selecionadas em string para query params
 (defn tags-to-query-string [selected-tags]
   (cs/join ","
            (for [[key values] selected-tags
@@ -65,10 +58,8 @@
                       (second display-keys))]
     display-key))
 
-;; Componente de visualização da tela de valores
 (defn values-view [key values display-key selected-values on-change on-back]
   [:div {:class "w-full"}
-   ;; Cabeçalho com back e clear
    [:> Flex {:justify "between" :align "center" :class "mb-3"}
     [:> Button {:variant "ghost" :color "gray" :onClick on-back}
      [:> ChevronLeft {:size 16}]
@@ -82,7 +73,7 @@
 
    [:> Text {:as "p" :size "1" :mt "3" :class "text-gray-11"}
     (get-display-key display-key)]
-   ;; Lista de valores
+
    [:div {:class "space-y-1 px-2 pt-3"}
     [:> Button {:variant "ghost"
                 :color "gray"
@@ -110,27 +101,23 @@
        (when is-selected
          [:> Check {:size 16}])])]])
 
-;; Componente para a exibição da lista de chaves
 (defn keys-view [grouped-tags search-term selected-values on-change on-select-key]
-  (let [;; Função para filtrar chaves e valores com base no termo de busca
-        filtered-keys (if (empty? search-term)
-                        ;; Sem filtro - mostrar todas as chaves
+  (let [filtered-keys (if (empty? search-term)
                         (keys grouped-tags)
-                        ;; Com filtro - filtrar por chave ou valor
+
                         (filter (fn [key]
                                   (let [display-key (get-key-name key)
                                         values (get grouped-tags key)]
                                     (or
-                                     ;; Match na chave
                                      (cs/includes? (cs/lower-case display-key)
                                                    (cs/lower-case search-term))
-                                     ;; Match em algum valor
+
                                      (some #(cs/includes?
                                              (cs/lower-case %)
                                              (cs/lower-case search-term))
                                            values))))
                                 (keys grouped-tags)))]
-     ;; Lista de chaves
+
     [:div {:class "w-full max-h-64 overflow-y-auto"}
      [:> Box {:class "space-y-1 p-2"}
       (for [key filtered-keys
@@ -150,7 +137,6 @@
               selected-count]])
           [:> ChevronRight {:size 16}]]])]]))
 
-;; Componente para exibir resultados de busca
 (defn search-results-view [grouped-tags search-term selected-values on-change on-select-key]
   (let [search-results (for [[key values] grouped-tags
                              value values
@@ -163,7 +149,7 @@
                          {:key key
                           :value value
                           :display-key display-key})]
-     ;; Resultados da busca
+
     [:> Box {:class "w-full max-h-64 overflow-y-auto"}
      [:> Box {:class "space-y-1 p-2"}
       (for [{:keys [key value display-key]} search-results]
@@ -174,10 +160,9 @@
                     :onClick #(on-select-key key)}
          [:> Flex {:direction "column" :align "start"}
           [:> Text {:size "2" :class "text-gray-12"} value]
-          [:> Text {:size "1" :class "text-gray-11"} (str "Value | " display-key)]]
+          [:> Text {:size "1" :class "text-gray-11"} (str "Value | " (get-display-key display-key))]]
          [:> ChevronRight {:size 16}]])]]))
 
-;; Componente principal do seletor de tags
 (defn tag-selector [selected-tags on-change]
   (let [all-tags (rf/subscribe [:connections->tags])
         loading? (rf/subscribe [:connections->tags-loading?])
@@ -192,7 +177,6 @@
                                      (not= @current-view :values))]
 
         [:> Box
-         ;; Input de busca
          (when (or (= @current-view :keys)
                    (= @current-view :search))
            [:div {:class "mb-3"}
@@ -210,9 +194,7 @@
               :size :small
               :variant :small}]])
 
-         ;; Conteúdo principal - muda dependendo da visualização atual
          (cond
-           ;; Visualização de um valor específico
            (= @current-view :values)
            [values-view
             @current-key
@@ -226,7 +208,6 @@
               (reset! current-view :keys)
               (reset! search-term ""))]
 
-           ;; Resultados de busca
            has-search-results?
            [search-results-view grouped-tags @search-term @selected-values
             (fn [new-values]
@@ -236,13 +217,11 @@
               (reset! current-key key)
               (reset! current-view :values))]
 
-           ;; Visualização padrão - lista de chaves
            :else
            (do
              (when (not= @current-view :keys)
                (reset! current-view :keys))
 
-              ;; Lista de chaves
              (if @loading?
                [:div {:class "text-center"} "Loading tags..."]
                [keys-view grouped-tags @search-term @selected-values
