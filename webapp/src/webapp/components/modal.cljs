@@ -42,9 +42,9 @@
                            #((:custom-on-click-out @modal))
                            #(rf/dispatch [:modal->close]))]
         (if (:open? @modal)
+          ;; Let the app-level Theme provider handle the appearance
           [:> Box {:id (:id @modal)}
            [:> Dialog.Root {:open (:open? @modal)
-
                             :on-open-change #(rf/dispatch [:modal->set-status %])}
             [:> Dialog.Content {:maxWidth (or (:maxWidth @modal) "916px")
                                 :maxHeight "calc(100vh - 96px)"
