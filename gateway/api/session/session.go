@@ -30,7 +30,6 @@ import (
 	"github.com/hoophq/hoop/gateway/guardrails"
 	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/models"
-	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	transportsystem "github.com/hoophq/hoop/gateway/transport/system"
@@ -140,7 +139,7 @@ func Post(c *gin.Context) {
 				ID:         sid,
 				OrgID:      ctx.OrgID,
 				EndSession: func() *time.Time { t := time.Now().UTC(); return &t }(),
-				BlobStream: []byte(fmt.Sprintf(`[[0, "e", %q]]`, encErr)),
+				BlobStream: fmt.Appendf(nil, `[[0, "e", %q]]`, encErr),
 				ExitCode:   func() *int { v := internalExitCode; return &v }(),
 				Status:     string(openapi.SessionStatusDone),
 			}); err != nil {
@@ -261,15 +260,17 @@ func CoerceMetadataFields(metadata map[string]any) error {
 //	@Description	List session resources
 //	@Tags			Sessions
 //	@Produce		json
-//	@Param			user		query		string	false	"Filter by user's subject id"
-//	@Param			connection	query		string	false	"Filter by connection's name"
-//	@Param			type		query		string	false	"Filter by connection's type"
-//	@Param			start_date	query		string	false	"Filter starting on this date"	Format(RFC3339)
-//	@Param			end_date	query		string	false	"Filter ending on this date"	Format(RFC3339)
-//	@Param			limit		query		int		false	"Limit the amount of records to return (max: 100)"
-//	@Param			offset		query		int		false	"Offset to paginate through resources"
-//	@Success		200			{object}	openapi.SessionList
-//	@Failure		500			{object}	openapi.HTTPError
+//	@Param			user			query		string	false	"Filter by user's subject id"
+//	@Param			connection		query		string	false	"Filter by connection's name"
+//	@Param			type			query		string	false	"Filter by connection's type"
+//	@Param			review.approver	query		string	false	"Filter by the approver's email of a review"
+//	@Param			review.status	query		string	false	"Filter by the review status"
+//	@Param			start_date		query		string	false	"Filter starting on this date"	Format(RFC3339)
+//	@Param			end_date		query		string	false	"Filter ending on this date"	Format(RFC3339)
+//	@Param			limit			query		int		false	"Limit the amount of records to return (max: 100)"
+//	@Param			offset			query		int		false	"Offset to paginate through resources"
+//	@Success		200				{object}	openapi.SessionList
+//	@Failure		500				{object}	openapi.HTTPError
 //	@Router			/sessions [get]
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -286,6 +287,10 @@ func List(c *gin.Context) {
 				option.ConnectionName = queryOptVal
 			case openapi.SessionOptionType:
 				option.ConnectionType = queryOptVal
+			case openapi.SessionOptionReviewStatus:
+				option.ReviewStatus = queryOptVal
+			case openapi.SessionOptionReviewApproverEmail:
+				option.ReviewApproverEmail = &queryOptVal
 			case openapi.SessionOptionStartDate:
 				optTimeVal, err := time.Parse(time.RFC3339, queryOptVal)
 				if err != nil {
@@ -320,11 +325,6 @@ func List(c *gin.Context) {
 
 	if option.Limit > defaultMaxSessionListLimit {
 		option.Limit = defaultMaxSessionListLimit
-	}
-
-	// scope listing to the authenticated user
-	if !ctx.IsAuditorOrAdminUser() {
-		option.User = ctx.UserID
 	}
 
 	if option.StartDate.Valid && !option.EndDate.Valid {
@@ -374,18 +374,14 @@ func Get(c *gin.Context) {
 		return
 	}
 
-	// if user is not admin or auditor and session is not owned by user, return 404
-	if session.UserID != ctx.UserID && !ctx.IsAuditorOrAdminUser() {
-		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
-		return
-	}
-
+	// display or allow download the session stream only for the owner, admin or auditor roles
+	isAllowed := session.UserID == ctx.UserID || ctx.IsAuditorOrAdminUser()
 	fileExt := c.Query("extension")
 	if fileExt != "" {
-		if appconfig.Get().DisableSessionsDownload() {
+		if appconfig.Get().DisableSessionsDownload() || !isAllowed {
 			c.JSON(http.StatusForbidden, gin.H{
 				"status":  http.StatusForbidden,
-				"message": "session download is not allowed."})
+				"message": "user is not allowed to download this session"})
 			return
 		}
 
@@ -417,13 +413,14 @@ func Get(c *gin.Context) {
 		return
 	}
 
-	// TODO: refactor to perform a left join query to obtain the review
-	review, err := pgreview.New().FetchOneBySid(ctx, sessionID)
-	if err != nil {
-		log.Errorf("failed fetching review, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining review"})
-		return
+	if isAllowed {
+		blobStream, err := session.GetBlobStream()
+		if err != nil {
+			log.Errorf("failed fetching blob stream from session, err=%v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching blob stream from session"})
+			return
+		}
+		session.BlobStream = blobStream.BlobStream
 	}
 
 	if option := c.Query("event_stream"); option != "" {
@@ -445,8 +442,6 @@ func Get(c *gin.Context) {
 	}
 
 	obj := toOpenApiSession(session)
-	obj.Review = toOpenApiReview(review)
-
 	expandedFieldParts := strings.Split(c.Query("expand"), ",")
 	if !slices.Contains(expandedFieldParts, "event_stream") {
 		obj.EventStream = nil
@@ -543,7 +538,6 @@ func DownloadSession(c *gin.Context) {
 		return
 	}
 	session, err := models.GetSessionByID(ctx.OrgID, sid)
-	// session, err := sessionstorage.FindOne(ctx, sid)
 	if err != nil || session == nil {
 		log.Errorf("failed fetching session, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -551,8 +545,13 @@ func DownloadSession(c *gin.Context) {
 			"message": "failed fetching session"})
 		return
 	}
-
-	// opts := sessionParseOption{withLineBreak, withEventTime, jsonFmt, csvFmt, eventTypes}
+	blob, err := session.GetBlobStream()
+	if err != nil {
+		log.Errorf("failed fetching blob stream from session, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching blob stream from session"})
+		return
+	}
+	session.BlobStream = blob.BlobStream
 	output, err := parseBlobStream(session, sessionParseOption{
 		withLineBreak: withLineBreak,
 		withEventTime: withEventTime,

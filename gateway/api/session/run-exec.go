@@ -92,10 +92,11 @@ func RunReviewedExec(c *gin.Context) {
 		return
 	}
 
-	if session.UserEmail != ctx.UserEmail {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "only the creator can trigger this action"})
+	if session.UserEmail != ctx.UserEmail || !ctx.IsAuditorOrAdminUser() {
+		c.JSON(http.StatusForbidden, gin.H{"message": "unable to execute session"})
 		return
 	}
+
 	if review.Status != types.ReviewStatusApproved {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "review not approved or already executed"})
 		return

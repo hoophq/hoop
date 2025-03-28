@@ -8,9 +8,9 @@ import (
 	"slices"
 	"time"
 
+	"github.com/aws/smithy-go/ptr"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
 type sessionParseOption struct {
@@ -36,7 +36,7 @@ func toOpenApiSession(s *models.Session) *openapi.Session {
 		Type:                 s.ConnectionType,
 		ConnectionSubtype:    s.ConnectionSubtype,
 		Connection:           s.Connection,
-		Review:               nil,
+		Review:               topOpenApiReview(s.Review),
 		Verb:                 s.Verb,
 		Status:               openapi.SessionStatusType(s.Status),
 		ExitCode:             s.ExitCode,
@@ -60,55 +60,40 @@ func toOpenApiSessionList(s *models.SessionList) *openapi.SessionList {
 	return newObj
 }
 
-func toOpenApiReview(r *types.Review) (newObj *openapi.Review) {
+func topOpenApiReview(r *models.Review) *openapi.SessionReview {
 	if r == nil {
-		return
+		return nil
 	}
 	itemGroups := []openapi.ReviewGroup{}
-	for _, g := range r.ReviewGroupsData {
+	for _, rg := range r.ReviewGroups {
 		var reviewOwner *openapi.ReviewOwner
-		if g.ReviewedBy != nil {
+		if rg.OwnerID != nil {
 			reviewOwner = &openapi.ReviewOwner{
-				ID:      g.ReviewedBy.Id,
-				Name:    g.ReviewedBy.Name,
-				Email:   g.ReviewedBy.Email,
-				SlackID: g.ReviewedBy.SlackID,
+				ID:      ptr.ToString(rg.OwnerID),
+				Name:    ptr.ToString(rg.OwnerName),
+				Email:   ptr.ToString(rg.OwnerEmail),
+				SlackID: ptr.ToString(rg.OwnerSlackID),
 			}
 		}
 		itemGroups = append(itemGroups, openapi.ReviewGroup{
-			ID:         g.Id,
-			Group:      g.Group,
-			Status:     openapi.ReviewRequestStatusType(g.Status),
+			ID:         rg.ID,
+			Group:      rg.GroupName,
+			Status:     openapi.ReviewRequestStatusType(rg.Status),
 			ReviewedBy: reviewOwner,
-			ReviewDate: g.ReviewDate,
+			ReviewDate: rg.ReviewedAt,
 		})
 	}
-	newObj = &openapi.Review{
-		ID:        r.Id,
-		OrgId:     r.OrgId,
-		CreatedAt: r.CreatedAt,
-		Type:      openapi.ReviewType(r.Type),
-		Session:   r.Session,
-		Input:     r.Input,
-		// Redacted for now
-		// InputEnvVars:     review.InputEnvVars,
-		InputClientArgs: r.InputClientArgs,
-		AccessDuration:  r.AccessDuration,
-		Status:          openapi.ReviewStatusType(r.Status),
-		RevokeAt:        r.RevokeAt,
-		ReviewOwner: openapi.ReviewOwner{
-			ID:      r.ReviewOwner.Id,
-			Name:    r.ReviewOwner.Name,
-			Email:   r.ReviewOwner.Email,
-			SlackID: r.ReviewOwner.SlackID,
-		},
-		Connection: openapi.ReviewConnection{
-			ID:   r.Connection.Id,
-			Name: r.Connection.Name,
-		},
+	return &openapi.SessionReview{
+		ID:   r.ID,
+		Type: openapi.ReviewType(r.Type),
+		// this attribute is saved as seconds
+		// but we keep compatibility with clients to show as nano seconds
+		AccessDuration:   time.Duration(r.AccessDurationSec) * time.Second,
+		Status:           openapi.ReviewStatusType(r.Status),
+		CreatedAt:        r.CreatedAt,
+		RevokeAt:         r.RevokedAt,
 		ReviewGroupsData: itemGroups,
 	}
-	return
 }
 
 func parseBlobStream(s *models.Session, opts sessionParseOption) (output []byte, err error) {

@@ -2,26 +2,29 @@ package admin
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"sort"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/hoophq/hoop/client/cmd/styles"
 	clientconfig "github.com/hoophq/hoop/client/config"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/proto"
 	"github.com/spf13/cobra"
 )
 
 var (
 	getShowTagsFlag bool
-	tagSelectorFlag string
+	queryFlag       []string
 )
 
 func init() {
 	getCmd.Flags().StringVarP(&outputFlag, "output", "o", "", "Output format. One off: (json)")
-	getCmd.Flags().BoolVar(&getShowTagsFlag, "show-tags", false, "display the tags column (connections only)")
-	getCmd.Flags().StringVarP(&tagSelectorFlag, "selector", "s", "", "selector (tags query) to filter on, supports '=' and '!='.(e.g. -s key1=value1,key2=value2)")
+	getCmd.Flags().BoolVar(&getShowTagsFlag, "show-tags", false, "Display the tags column (connections only)")
+	getCmd.Flags().StringSliceVarP(&queryFlag, "query", "q", []string{}, "The query attributes to append in the http request")
 }
 
 var getLongDesc = `Display one or many resources. Available ones:
@@ -31,9 +34,9 @@ var getLongDesc = `Display one or many resources. Available ones:
 * orgkeys (tabview)
 * plugins (tabview)
 * reviews
-* runbooks
+* runbooks (tabview)
 * serviceaccounts (tabview)
-* sessions
+* sessions (tabview)
 * users (tabview)
 `
 
@@ -55,11 +58,14 @@ var getCmd = &cobra.Command{
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		apir := parseResourceOrDie(args, "GET", outputFlag)
-		if err := validateTagSelector(); err != nil {
-			styles.PrintErrorAndExit(err.Error())
-		}
-		if tagSelectorFlag != "" {
-			apir.queryAttributes.Set("tagSelector", tagSelectorFlag)
+		if len(queryFlag) > 0 {
+			for _, query := range queryFlag {
+				key, val, found := strings.Cut(query, "=")
+				if !found {
+					continue
+				}
+				apir.queryAttributes.Set(key, val)
+			}
 		}
 		obj, _, err := httpRequest(apir)
 		if err != nil {
@@ -87,6 +93,33 @@ var getCmd = &cobra.Command{
 						m["id"], m["name"], m["mode"], toStr(m["version"]), toStr(m["hostname"]), toStr(m["platform"]), normalizeStatus(m["status"]))
 					fmt.Fprintln(w)
 				}
+			}
+		case "sessions":
+			fmt.Fprintln(w, "UID\tUSER\tCONNECTION\tTYPE\tVERB\tSIZE\tAPPROVERS\tSTATUS\tAGE\t")
+			switch contents := obj.(type) {
+			case map[string]any:
+				items, ok := contents["data"].([]any)
+				if ok {
+					for _, item := range items {
+						m, ok := item.(map[string]any)
+						if !ok {
+							m = map[string]any{}
+						}
+						connectionType := proto.ToConnectionType(toStr(m["type"]), toStr(m["connection_subtype"]))
+						fmt.Fprintf(w, "%s\t%v\t%s\t%v\t%v\t%v\t%s\t%s\t%s\t",
+							m["id"], m["user"], toStr(m["connection"]), connectionType, toStr(m["verb"]), formatSize(m["event_size"]),
+							parseApprovers(m["review"]), fmt.Sprintf("%s (%v)", m["status"], toStr(m["exit_code"])), absTime(m["start_date"]))
+						fmt.Fprintln(w)
+					}
+					return
+				}
+
+				m := contents
+				connectionType := proto.ToConnectionType(toStr(m["type"]), toStr(m["connection_subtype"]))
+				fmt.Fprintf(w, "%s\t%v\t%s\t%v\t%v\t%v\t%s\t%s\t%s\t",
+					m["id"], m["user"], toStr(m["connection"]), connectionType, toStr(m["verb"]), formatSize(m["event_size"]),
+					parseApprovers(m["review"]), fmt.Sprintf("%s (%v)", m["status"], toStr(m["exit_code"])), absTime(m["start_date"]))
+				fmt.Fprintln(w)
 			}
 		case "conn", "connection", "connections":
 			agentHandlerFn := agentConnectedHandler(apir.conf)
@@ -280,7 +313,7 @@ func normalizeStatus(status any) string {
 
 func toStr(v any) string {
 	s := fmt.Sprintf("%v", v)
-	if s == "" {
+	if s == "" || v == nil {
 		return "-"
 	}
 	return s
@@ -402,15 +435,73 @@ func joinMap(v any) (res string) {
 	return res[:len(res)-1]
 }
 
-func validateTagSelector() error {
-	if tagSelectorFlag == "" {
-		return nil
+// absTime given v as a time string, parse to absolute time
+func absTime(v any) string {
+	t1, err := time.Parse(time.RFC3339Nano, fmt.Sprintf("%v", v))
+	if err != nil {
+		return "-"
 	}
-	for _, keyVal := range strings.Split(tagSelectorFlag, ",") {
-		keyVal = strings.TrimSpace(keyVal)
-		if !strings.Contains(keyVal, "=") && !strings.Contains(keyVal, "!=") {
-			return fmt.Errorf("missing operator '=' or '!=' for selector key %v", keyVal)
+	t2 := time.Now().UTC().Sub(t1)
+	switch {
+	case t2.Seconds() <= 60:
+		return fmt.Sprintf("%.0fs ago", t2.Seconds())
+	case t2.Minutes() < 60: // minutes
+		return fmt.Sprintf("%.0fm ago", t2.Minutes())
+	case t2.Hours() < 24: // hours
+		return fmt.Sprintf("%.0fh ago", t2.Hours())
+	case t2.Hours() > 24: // days
+		return fmt.Sprintf("%vd ago", math.Round(t2.Hours()/30))
+	}
+	return "-"
+}
+
+func formatSize(v any) string {
+	val := 0
+	switch t := v.(type) {
+	case float64:
+		val = int(t)
+	case int:
+		val = t
+	default:
+		return "-"
+	}
+	if val == 0 {
+		return "0"
+	}
+	units := []string{"B", "KB", "MB", "GB"}
+	size := val
+	unitIndex := 0
+
+	// Using 1000 as the threshold (decimal)
+	threshold := 1000.0
+	for size >= int(threshold) && unitIndex < len(units)-1 {
+		size /= int(threshold)
+		unitIndex++
+	}
+	// Format with 2 decimal places
+	return fmt.Sprintf("%v%s", size, units[unitIndex])
+}
+
+func parseApprovers(sessionReview any) string {
+	review, ok := sessionReview.(map[string]any)
+	if !ok {
+		return "-"
+	}
+	approvers, ok := review["review_groups_data"].([]any)
+	if !ok {
+		return "-"
+	}
+
+	approved := 0
+	for _, obj := range approvers {
+		approver, ok := obj.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		if fmt.Sprintf("%v", approver["status"]) == "APPROVED" {
+			approved++
 		}
 	}
-	return nil
+	return fmt.Sprintf("%v/%v", approved, len(approvers))
 }

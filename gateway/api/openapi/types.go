@@ -419,19 +419,23 @@ type SessionOption struct {
 }
 
 const (
-	SessionOptionUser       SessionOptionKey = "user"
-	SessionOptionType       SessionOptionKey = "type"
-	SessionOptionConnection SessionOptionKey = "connection"
-	SessionOptionStartDate  SessionOptionKey = "start_date"
-	SessionOptionEndDate    SessionOptionKey = "end_date"
-	SessionOptionOffset     SessionOptionKey = "offset"
-	SessionOptionLimit      SessionOptionKey = "limit"
+	SessionOptionUser                SessionOptionKey = "user"
+	SessionOptionType                SessionOptionKey = "type"
+	SessionOptionConnection          SessionOptionKey = "connection"
+	SessionOptionReviewStatus        SessionOptionKey = "review.status"
+	SessionOptionReviewApproverEmail SessionOptionKey = "review.approver"
+	SessionOptionStartDate           SessionOptionKey = "start_date"
+	SessionOptionEndDate             SessionOptionKey = "end_date"
+	SessionOptionOffset              SessionOptionKey = "offset"
+	SessionOptionLimit               SessionOptionKey = "limit"
 )
 
 var AvailableSessionOptions = []SessionOptionKey{
 	SessionOptionUser,
 	SessionOptionType,
 	SessionOptionConnection,
+	SessionOptionReviewStatus,
+	SessionOptionReviewApproverEmail,
 	SessionOptionStartDate,
 	SessionOptionEndDate,
 	SessionOptionLimit,
@@ -473,7 +477,7 @@ type Session struct {
 	// The connection name of this resource
 	Connection string `json:"connection" example:"pgdemo"`
 	// Review of this session. In case the review doesn't exist this field will be null
-	Review *Review `json:"review"`
+	Review *SessionReview `json:"review"`
 	// Verb is how the client has interacted with this resource
 	// * exec - Is an ad-hoc shell execution
 	// * connect - Interactive execution, protocol port forwarding or interactive shell session
@@ -573,14 +577,40 @@ type ReviewRequest struct {
 	Status ReviewRequestStatusType `json:"status" binding:"required" example:"APPROVED"`
 }
 
+type SessionReview struct {
+	// Resource identifier
+	ID string `json:"id" format:"uuid" readonly:"true" example:"9F9745B4-C77B-4D52-84D3-E24F67E3623C"`
+	// The type of the review
+	// * onetime - Represents a one time execution
+	// * jit - Represents a time based review
+	Type ReviewType `json:"type" enums:"onetime,jit" readonly:"true"`
+	// The amount of time (nanoseconds) to allow access to the connection. It's valid only for `jit` type reviews
+	AccessDuration time.Duration `json:"access_duration" swaggertype:"integer" readonly:"true" default:"1800000000000" example:"0"`
+	// The status of the review
+	// * PENDING - The resource is waiting to be reviewed
+	// * APPROVED - The resource is fully approved
+	// * REJECTED - The resource is fully rejected
+	// * REVOKED - The resource was revoked after being approved
+	// * PROCESSING - The review is being executed
+	// * EXECUTED - The review was executed
+	// * UNKNOWN - Unable to know the status of the review
+	Status ReviewStatusType `json:"status"`
+	// The time when this review was revoked
+	RevokeAt *time.Time `json:"revoke_at" readonly:"true" example:""`
+	// The time the resource was created
+	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	// Contains the groups that requires to approve this review
+	ReviewGroupsData []ReviewGroup `json:"review_groups_data" readonly:"true"`
+}
+
 type Review struct {
-	// Reousrce identifier
+	// Resource identifier
 	ID string `json:"id" format:"uuid" readonly:"true" example:"9F9745B4-C77B-4D52-84D3-E24F67E3623C"`
 	// Organization identifier
 	OrgId string `json:"org" format:"uuid" readonly:"true" example:"A72CF2A0-12D0-4E0D-A732-E34FFA3D9417"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
-	// The type of this review
+	// The type of the review
 	// * onetime - Represents a one time execution
 	// * jit - Represents a time based review
 	Type ReviewType `json:"type" enums:"onetime,jit" readonly:"true"`
@@ -590,7 +620,7 @@ type Review struct {
 	Input string `json:"input" readonly:"true" example:"SELECT NOW()"`
 	// The client arguments when the resource was created
 	InputClientArgs []string `json:"input_clientargs" readonly:"true" example:"-x"`
-	// The amount of time (nanoseconds) to allow access to the connection. It's valid only for `jit` type reviews`
+	// The amount of time (nanoseconds) to allow access to the connection. It's valid only for `jit` type reviews
 	AccessDuration time.Duration `json:"access_duration" swaggertype:"integer" readonly:"true" default:"1800000000000" example:"0"`
 	// The status of the review
 	// * PENDING - The resource is waiting to be reviewed
@@ -642,7 +672,7 @@ type ReviewGroup struct {
 	// The review owner
 	ReviewedBy *ReviewOwner `json:"reviewed_by" readonly:"true"`
 	// The date which this review was performed
-	ReviewDate *string `json:"review_date" readonly:"true" example:"2024-07-25T19:36:41Z"`
+	ReviewDate *time.Time `json:"review_date" readonly:"true" example:"2024-07-25T19:36:41Z"`
 }
 
 type Plugin struct {
