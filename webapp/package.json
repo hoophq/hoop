@@ -1,6 +1,6 @@
 {
   "name": "webapp",
-  "version": "1.39.0",
+  "version": "1.39.1",
   "scripts": {
     "ancient": "clojure -Sdeps '{:deps {com.github.liquidz/antq {:mvn/version \"RELEASE\"}}}' -m antq.core",
     "genversion": "npx genversion src/webapp/version.js",

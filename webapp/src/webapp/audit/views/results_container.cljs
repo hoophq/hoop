@@ -18,33 +18,40 @@
       (get (js->clj (papa/parse res (clj->js {"delimiter" "\t"}))) "data"))))
 
 (defn tab-container
-  [{:keys [results-heads results-body exceed-limit-rows?]} {:keys [status results]}]
+  [{:keys [results-heads results-body exceed-limit-rows? not-clipboard?]} {:keys [status results]}]
   [:div {:class "flex flex-col h-96"}
    [tabs/tabs {:on-change #(reset! log-view %)
                :tabs (if exceed-limit-rows?
                        ["Plain text"]
                        ["Table" "Plain text"])}]
    (case @log-view
-     "Plain text" [logs/new-container {:status status :logs results}]
-     "Table" [data-grid-table/main results-heads results-body])])
+     "Plain text" [logs/new-container {:status status :logs results :not-clipboard? not-clipboard?}]
+     "Table" [data-grid-table/main results-heads results-body (not not-clipboard?)])])
 
 (defmulti results-view identity)
 (defmethod results-view :sql
-  [_ {:keys [results-heads results-body results status exceed-limit-rows? fixed-height? classes]}]
+  [_ {:keys [results-heads results-body results status exceed-limit-rows? fixed-height? classes not-clipboard?]}]
   [tab-container
-   {:results-heads results-heads :results-body results-body :exceed-limit-rows? exceed-limit-rows?}
+   {:results-heads results-heads
+    :results-body results-body
+    :exceed-limit-rows? exceed-limit-rows?
+    :not-clipboard? not-clipboard?}
    {:status status :results results :fixed-height? fixed-height? :classes classes}])
 
 (defmethod results-view :not-sql
-  [_ {:keys [results status fixed-height? classes]}]
+  [_ {:keys [results status fixed-height? classes not-clipboard?]}]
   [:div {:class "h-96"}
-   [logs/new-container {:status status :fixed-height? fixed-height? :logs results :classes classes}]])
+   [logs/new-container {:status status
+                        :fixed-height? fixed-height?
+                        :logs results
+                        :classes classes
+                        :not-clipboard? not-clipboard?}]])
 
 (defn main [connection-name]
   (let [connection (rf/subscribe [:connections->connection-details])]
     (rf/dispatch [:connections->get-connection-details connection-name])
 
-    (fn [_ {:keys [results results-status fixed-height? classes]}]
+    (fn [_ {:keys [results results-status fixed-height? classes not-clipboard?]}]
       (let [current-connection (:data @connection)
             connection-type (cond
                               (not (string/blank? (:subtype current-connection))) (:subtype current-connection)
@@ -63,7 +70,8 @@
                             :status results-status
                             :results sanitize-results
                             :classes classes
-                            :exceed-limit-rows? exceed-limit-rows?}]
+                            :exceed-limit-rows? exceed-limit-rows?
+                            :not-clipboard? not-clipboard?}]
         (reset! log-view (if exceed-limit-rows? "Plain text" "Table"))
         (if (= results-status :success)
           (case connection-type

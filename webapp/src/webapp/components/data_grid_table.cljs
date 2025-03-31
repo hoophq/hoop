@@ -95,7 +95,7 @@
 (defn- data-grid
   "head -> is an array of strings where each string corresponds to each table title.
   body -> is an array matrix where each array corresponds to one line of the table"
-  [head body dark-theme?]
+  [head body dark-theme? allow-copy?]
   (let [!ref (atom {:current nil})
         head-formatted (map-indexed (fn [idx value] {:title value :source idx}) head)]
     (fn
@@ -112,6 +112,7 @@
                                                                                                      {}))
                                                                                    :allowEditCells false
                                                                                    :instantActivate false
+                                                                                   :allowCopy allow-copy?
                                                                                    :bottomBar []}))))
         :reagent-render
         (fn []
@@ -119,9 +120,9 @@
                  :ref (fn [el]
                         (swap! !ref assoc :current el))}])}))))
 
-(defn main [head body dark-theme? loading?]
+(defn main [head body dark-theme? loading? allow-copy?]
   (if loading?
     [:div {:class "flex justify-center items-center h-full"}
      [:figure.w-4
       [:img.animate-spin {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]]
-    [data-grid head body dark-theme?]))
+    [data-grid head body dark-theme? allow-copy?]))
