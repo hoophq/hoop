@@ -92,7 +92,8 @@ func RunReviewedExec(c *gin.Context) {
 		return
 	}
 
-	if session.UserEmail != ctx.UserEmail || !ctx.IsAuditorOrAdminUser() {
+	isAllowed := session.UserEmail == ctx.UserEmail || ctx.IsAuditorOrAdminUser()
+	if !isAllowed {
 		c.JSON(http.StatusForbidden, gin.H{"message": "unable to execute session"})
 		return
 	}

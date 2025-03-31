@@ -133,7 +133,7 @@ var getCmd = &cobra.Command{
 			case map[string]any:
 				m := contents
 				enabledPlugins := plugingHandlerFn(fmt.Sprintf("%v", m["name"]), false)
-				agentID := fmt.Sprintf("%v", m["name"])
+				agentID := fmt.Sprintf("%v", m["agent_id"])
 				agentName := agentHandlerFn("name", agentID)
 				secrets, _ := m["secret"].(map[string]any)
 				if secrets == nil {
