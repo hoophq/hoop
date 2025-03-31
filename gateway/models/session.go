@@ -192,7 +192,7 @@ func (s *Session) GetBlobStream() (*Blob, error) {
 
 func GetSessionByID(orgID, sid string) (*Session, error) {
 	session := &Session{}
-	err := DB.Debug().Raw(`
+	err := DB.Raw(`
 	SELECT
 		s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.verb, s.labels, s.exit_code,
 		s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics,
