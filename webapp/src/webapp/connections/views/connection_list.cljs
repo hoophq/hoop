@@ -148,7 +148,7 @@
                           (when (empty? value)
                             ;; When search is cleared, reapply the current filters
                             (let [filters (cond-> {}
-                                            (not-empty @selected-tag-values) (assoc :tagSelector (tag-selector/tags-to-query-string @selected-tag-values))
+                                            (not-empty @selected-tag-values) (assoc :tag_selector (tag-selector/tags-to-query-string @selected-tag-values))
                                             @selected-resource (assoc :subtype @selected-resource))]
                               (when (not-empty filters)
                                 (rf/dispatch [:connections->filter-connections filters])))))
@@ -179,14 +179,14 @@
               (fn [new-selected]
                 (reset! selected-tag-values new-selected)
                 (apply-filter (cond-> {}
-                                (not-empty new-selected) (assoc :tagSelector (tag-selector/tags-to-query-string new-selected))
+                                (not-empty new-selected) (assoc :tag_selector (tag-selector/tags-to-query-string new-selected))
                                 @selected-resource (assoc :subtype @selected-resource))))]]]
 
            [resource-component @selected-resource
             (fn [resource]
               (reset! selected-resource resource)
               (apply-filter (cond-> {}
-                              (not-empty @selected-tag-values) (assoc :tagSelector (tag-selector/tags-to-query-string @selected-tag-values))
+                              (not-empty @selected-tag-values) (assoc :tag_selector (tag-selector/tags-to-query-string @selected-tag-values))
                               resource (assoc :subtype resource))))]]
 
           [aws-connect-sync-callout]]

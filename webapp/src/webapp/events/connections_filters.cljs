@@ -8,7 +8,7 @@
  (fn
    [{:keys [db]} [_ filters]]
    (let [query-params (cond-> {}
-                        (:tagSelector filters) (assoc :tagSelector (:tagSelector filters))
+                        (:tag_selector filters) (assoc :tag_selector (:tag_selector filters))
                         (:type filters) (assoc :type (:type filters))
                         (:subtype filters) (assoc :subtype (:subtype filters)))
          uri (if (empty? query-params)
