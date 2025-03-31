@@ -413,7 +413,9 @@ func Get(c *gin.Context) {
 		return
 	}
 
-	if isAllowed {
+	// it will only load the blob stream if it's allowed and the client requested to expand the attribute
+	expandEventStream := slices.Contains(strings.Split(c.Query("expand"), ","), "event_stream")
+	if isAllowed && expandEventStream {
 		blobStream, err := session.GetBlobStream()
 		if err != nil {
 			log.Errorf("failed fetching blob stream from session, err=%v", err)
@@ -423,7 +425,7 @@ func Get(c *gin.Context) {
 		session.BlobStream = blobStream.BlobStream
 	}
 
-	if option := c.Query("event_stream"); option != "" {
+	if option := c.Query("event_stream"); option != "" && expandEventStream {
 		output, err := parseBlobStream(session, sessionParseOption{events: []string{"o", "e"}})
 		if err != nil {
 			log.With("sid", sessionID).Error(err)
@@ -440,12 +442,8 @@ func Get(c *gin.Context) {
 			session.BlobStreamSize = int64(len(encOutput))
 		}
 	}
-
 	obj := toOpenApiSession(session)
-	expandedFieldParts := strings.Split(c.Query("expand"), ",")
-	if !slices.Contains(expandedFieldParts, "event_stream") {
-		obj.EventStream = nil
-	}
+
 	// encode the object manually to obtain any encoding errors.
 	c.Writer.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(c.Writer).Encode(obj); err != nil {
