@@ -67,11 +67,20 @@
      [:section
       {:class (str "relative bg-gray-900 font-mono overflow-auto h-full"
                    " whitespace-pre text-gray-200 text-sm"
-                   " px-regular pt-regular group")}
-      (when-not (:not-clipboard? config) (copy-clipboard (str "#" container-id)))
+                   " px-regular pt-regular group")
+       :on-copy (when (:not-clipboard? config)
+                  (fn [e] (.preventDefault e)))}
+      (when-not (:not-clipboard? config)
+        (copy-clipboard (str "#" container-id)))
       [:div
        {:id container-id
         :class (str (when (:classes config) (:classes config))
                     " overflow-auto whitespace-pre h-full"
-                    (when-not (:fixed-height? config) " max-h-80"))}
+                    (when-not (:fixed-height? config) " max-h-80")
+                    (when (:not-clipboard? config) " select-none"))
+        :style (when (:not-clipboard? config)
+                 #js {:WebkitUserSelect "none"
+                      :MozUserSelect "none"
+                      :msUserSelect "none"
+                      :userSelect "none"})}
        (logs-area (:status config) (:logs config))]]]))

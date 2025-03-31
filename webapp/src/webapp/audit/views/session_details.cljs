@@ -487,7 +487,8 @@
                      {:results (utilities/decode-b64 (or (first (:event_stream session)) ""))
                       :results-status (:status @session-details)
                       :fixed-height? true
-                      :results-id (:id session)}]
+                      :results-id (:id session)
+                      :not-clipboard? disabled-download}]
                     [session-event-stream (:type session) session])])])]]
 
           (finally
