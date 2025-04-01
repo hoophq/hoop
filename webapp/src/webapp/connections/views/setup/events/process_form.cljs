@@ -81,7 +81,7 @@
                                            {:key "PORT" :value (:port network-credentials)}]]
                          (concat tcp-env-vars env-vars))
 
-                       (= connection-subtype "http")
+                       (= connection-subtype "httpproxy")
                        (let [network-credentials (get-in db [:connection-setup :network-credentials])
                              http-env-vars [{:key "REMOTE_URL" :value (:remote_url network-credentials)}]
                              headers (get-in db [:connection-setup :credentials :environment-variables] [])
@@ -239,7 +239,7 @@
                                        (= (:subtype connection) "tcp"))
                               (extract-network-credentials credentials))
         http-credentials (when (and (= (:type connection) "application")
-                                    (= (:subtype connection) "http"))
+                                    (= (:subtype connection) "httpproxy"))
                            (extract-http-credentials credentials))
         ssh-credentials (when (and (= (:type connection) "application")
                                    (= (:subtype connection) "ssh"))
@@ -270,7 +270,22 @@
                             :else []))
 
         ;; Filtrar tags inválidas
-        valid-tags (filter-valid-tags connection-tags)]
+        valid-tags (filter-valid-tags connection-tags)
+
+        ;; Processar environment variables para HTTP
+        http-env-vars (when (and (= (:type connection) "application")
+                                 (= (:subtype connection) "httpproxy"))
+                        (let [headers (process-connection-envvars (:secret connection) "envvar")
+                              _ (println "headers" headers)
+                              remote-url? #(= (:key %) "REMOTE_URL")
+                              header? #(str/starts-with? % "HEADER_")
+                              processed-headers (map (fn [{:keys [key value]}]
+                                                       {:key (if (header? key)
+                                                               (str/replace key "HEADER_" "")
+                                                               key)
+                                                        :value value})
+                                                     (remove remote-url? headers))]
+                          processed-headers))]
 
     {:type (:type connection)
      :subtype (:subtype connection)
@@ -287,17 +302,8 @@
                                             (process-connection-envvars (:secret connection) "envvar")
 
                                             (and (= (:type connection) "application")
-                                                 (= (:subtype connection) "http"))
-                                            (let [headers (process-connection-envvars (:secret connection) "envvar")
-                                                  remote-url? #(= (:key %) "REMOTE_URL")
-                                                  header? #(str/starts-with? (:key %) "HEADER_")
-                                                  processed-headers (map (fn [{:keys [key value]}]
-                                                                           {:key (if (header? key)
-                                                                                   (str/replace key "HEADER_" "")
-                                                                                   key)
-                                                                            :value value})
-                                                                         (remove remote-url? headers))]
-                                              processed-headers)
+                                                 (= (:subtype connection) "httpproxy"))
+                                            http-env-vars
 
                                             :else [])
                    :configuration-files (when (= (:type connection) "custom")
