@@ -227,7 +227,7 @@
  (fn [{:keys [db]} [_ resources agent-assignments connection-names security-groups]]
    (let [total-resources (count resources)
          create-connection (get-in db [:aws-connect :create-connection] true)
-         job-steps (if create-connection ["create-connections"] [])
+         job-steps (if create-connection ["create-connections" "send-webhook"] ["send-webhook"])
          dispatch-requests (for [resource resources
                                  :let [agent-id (get agent-assignments (:id resource) "default")
                                        resource-arn (:id resource)
