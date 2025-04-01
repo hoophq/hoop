@@ -21,7 +21,7 @@ spec:
         app: hoopagent
     spec:
       {{- if .Values.serviceAccount.create }}
-      serviceAccountName: hoopgateway
+      serviceAccountName: hoopagent
       {{- end }}
       containers:
       - image: '{{ .Values.image.repository |default "hoophq/hoopdev" }}:{{ .Values.image.tag |default "latest" }}'
