@@ -83,7 +83,6 @@
                                :type (or (:type api-error) "Failed")})
 
         apply-sg-to-resource (fn [resource-id current-sg]
-                               (println resources)
                                (let [account (first (filter #(= (:id %) resource-id) resources))
                                      child-resources (:children account)]
                                  (doseq [resource child-resources]
