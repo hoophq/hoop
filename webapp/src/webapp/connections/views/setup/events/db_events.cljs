@@ -248,3 +248,14 @@
  :connection-setup/set-jira-template-id
  (fn [db [_ jira-template-id]]
    (assoc-in db [:connection-setup :config :jira-template-id] jira-template-id)))
+
+;; SSH specific events
+(rf/reg-event-db
+ :connection-setup/update-ssh-credentials
+ (fn [db [_ field value]]
+   (assoc-in db [:connection-setup :ssh-credentials field] value)))
+
+(rf/reg-event-db
+ :connection-setup/clear-ssh-credentials
+ (fn [db _]
+   (assoc-in db [:connection-setup :ssh-credentials] {})))
