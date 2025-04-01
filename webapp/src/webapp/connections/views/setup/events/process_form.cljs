@@ -5,6 +5,14 @@
    [webapp.connections.helpers :as helpers]
    [webapp.connections.views.setup.tags-utils :as tags-utils]))
 
+(defn process-http-headers
+  "Process HTTP headers by adding HEADER_ prefix to each key"
+  [headers]
+  (mapv (fn [{:keys [key value]}]
+          {:key (str "HEADER_" key)
+           :value value})
+        headers))
+
 ;; Create a new connection
 (defn get-api-connection-type [ui-type subtype]
   (cond
@@ -76,8 +84,9 @@
                        (= connection-subtype "http")
                        (let [network-credentials (get-in db [:connection-setup :network-credentials])
                              http-env-vars [{:key "REMOTE_URL" :value (:remote_url network-credentials)}]
-                             headers (get-in db [:connection-setup :credentials :environment-variables] [])]
-                         (concat http-env-vars headers))
+                             headers (get-in db [:connection-setup :credentials :environment-variables] [])
+                             processed-headers (process-http-headers headers)]
+                         (concat http-env-vars processed-headers))
 
                        (= connection-subtype "ssh")
                        (let [ssh-credentials (get-in db [:connection-setup :ssh-credentials])
@@ -279,7 +288,16 @@
 
                                             (and (= (:type connection) "application")
                                                  (= (:subtype connection) "http"))
-                                            (process-connection-envvars (:secret connection) "envvar")
+                                            (let [headers (process-connection-envvars (:secret connection) "envvar")
+                                                  remote-url? #(= (:key %) "REMOTE_URL")
+                                                  header? #(str/starts-with? (:key %) "HEADER_")
+                                                  processed-headers (map (fn [{:keys [key value]}]
+                                                                           {:key (if (header? key)
+                                                                                   (str/replace key "HEADER_" "")
+                                                                                   key)
+                                                                            :value value})
+                                                                         (remove remote-url? headers))]
+                                              processed-headers)
 
                                             :else [])
                    :configuration-files (when (= (:type connection) "custom")
