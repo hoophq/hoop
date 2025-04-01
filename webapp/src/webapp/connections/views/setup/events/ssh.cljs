@@ -7,11 +7,6 @@
  (fn [db [_ key value]]
    (assoc-in db [:connection-setup :ssh-credentials key] value)))
 
-(rf/reg-event-db
- :connection-setup/clear-ssh-credentials
- (fn [db _]
-   (assoc-in db [:connection-setup :ssh-credentials] {})))
-
 ;; Subscriptions
 (rf/reg-sub
  :connection-setup/ssh-credentials

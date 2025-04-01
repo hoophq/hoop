@@ -85,7 +85,7 @@
        ^{:key id}
        [:> RadioGroup.Item {:value id} title])]]])
 
-(defn render-ssh-field [{:keys [key label value required hidden placeholder]}]
+(defn render-ssh-field [{:keys [key label value required hidden placeholder type]}]
   (let [base-props {:label label
                     :placeholder (or placeholder (str "e.g. " key))
                     :value value
@@ -95,7 +95,9 @@
                     :on-change #(rf/dispatch [:connection-setup/update-ssh-credentials
                                               key
                                               (-> % .-target .-value)])}]
-     [forms/input base-props]))
+     (if (= type "textarea")
+       [forms/textarea base-props]
+       [forms/input base-props])))
 
 (defn ssh-credentials []
   (let [configs (get connection-configs-required :ssh)

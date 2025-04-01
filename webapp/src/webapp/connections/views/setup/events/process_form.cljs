@@ -6,13 +6,15 @@
    [webapp.connections.views.setup.tags-utils :as tags-utils]))
 
 ;; Create a new connection
-(defn get-api-connection-type [ui-type]
-  (case ui-type
-    "network" "application"
-    "server" "custom"
-    "database" "database"
-    "custom" "custom"
-    "application" "application"))
+(defn get-api-connection-type [ui-type subtype]
+  (cond
+    (= subtype "ssh") "application"
+    :else (case ui-type
+            "network" "application"
+            "server" "custom"
+            "database" "database"
+            "custom" "custom"
+            "application" "application")))
 
 (defn tags-array->map
   "Convert an array of tags [{:key k :value v}] to a map {k v}
@@ -41,11 +43,11 @@
 (defn process-payload [db]
   (let [ui-type (get-in db [:connection-setup :type])
         connection-subtype (get-in db [:connection-setup :subtype])
+        api-type (get-api-connection-type ui-type connection-subtype)
         connection-name (get-in db [:connection-setup :name])
         agent-id (get-in db [:connection-setup :agent-id])
         old-tags (get-in db [:connection-setup :old-tags] [])
         tags-array (get-in db [:connection-setup :tags :data] [])
-        _ (println tags-array)
         filtered-tags (filter-valid-tags tags-array)
         tags (tags-array->map filtered-tags)
         config (get-in db [:connection-setup :config])
@@ -56,7 +58,6 @@
         access-modes (get-in config [:access-modes])
         guardrails (get-in db [:connection-setup :config :guardrails])
         jira-template-id (get-in db [:connection-setup :config :jira-template-id])
-        api-type (get-api-connection-type ui-type)
         all-env-vars (cond
                        (= api-type "database")
                        (let [database-credentials (get-in db [:connection-setup :database-credentials])

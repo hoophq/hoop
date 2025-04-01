@@ -39,7 +39,12 @@
          {:key "port" :label "Port" :value "" :required false}
          {:key "user" :label "User" :value "" :required true}
          {:key "pass" :label "Pass" :value "" :required false}
-         {:key "authorized_server_keys" :label "Private Key" :value "" :required false}]})
+         {:key "authorized_server_keys"
+          :label "Private Key"
+          :value ""
+          :required false
+          :placeholder "Enter your private key"
+          :type "textarea"}]})
 
 
 (def connection-icons-rounded-dictionary
