@@ -77,9 +77,14 @@ func (c *clientExec) GetOrgID() string {
 	return c.orgID
 }
 
-func (r *Response) String() string {
-	return fmt.Sprintf("exit_code=%v, truncated=%v, has_review=%v, output_length=%v, execution_time_sec=%v",
+func (r *Response) String() (s string) {
+	s = fmt.Sprintf("exit_code=%v, truncated=%v, has_review=%v, output_length=%v, execution_time_sec=%v",
 		fmt.Sprintf("%v", r.ExitCode), r.Truncated, r.HasReview, len(r.Output), r.ExecutionTimeMili/1000)
+	// log system errors output
+	if r.ExitCode == nilExitCode {
+		s = fmt.Sprintf("%s, output=%v", s, r.Output)
+	}
+	return
 }
 
 func (r *Response) setExitCode(code int) *Response {

@@ -52,10 +52,11 @@ func Run(gatewayGrpcURL string) error {
 				log.Warnf("failed listing organizations, reason=%v", err)
 				continue
 			}
+			removedDeployments := 0
 			for _, org := range orgList {
 				createdAtPlus45Days := org.CreatedAt.AddDate(0, 0, 45)
 				if time.Now().UTC().After(createdAtPlus45Days) {
-					log.Infof("removing agent deployment %v", org.ID)
+					removedDeployments++
 					if err := client.Remove(org.ID, "noop"); err != nil {
 						log.Warnf("failed removing agent deployment, reason=%v", err)
 					}
@@ -77,8 +78,8 @@ func Run(gatewayGrpcURL string) error {
 				errReport = conciliateDeployments(gatewayGrpcURL, conciliationItems, client)
 			}
 			successSyncItems := len(conciliationItems) - len(errReport)
-			log.Infof("finish deployment concialtion, sync=%v, success=%v/%v",
-				len(conciliationItems) > 0, len(conciliationItems), successSyncItems)
+			log.Infof("finish deployment concialtion, sync=%v, removed=%v, success=%v/%v",
+				len(conciliationItems) > 0, removedDeployments, len(conciliationItems), successSyncItems)
 			for _, err := range errReport {
 				log.Warn(err)
 			}
