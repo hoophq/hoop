@@ -4317,19 +4317,13 @@ const docTemplate = `{
         "openapi.CreateDBRoleJobAWSProviderSG": {
             "type": "object",
             "required": [
-                "ingress_cidr",
-                "target_port"
+                "ingress_cidr"
             ],
             "properties": {
                 "ingress_cidr": {
                     "description": "The ingress inbound CIDR rule to allow traffic to",
                     "type": "string",
                     "example": "192.168.1.0/24"
-                },
-                "target_port": {
-                    "description": "The target port to be configured for the security group",
-                    "type": "integer",
-                    "example": 5432
                 }
             }
         },
@@ -4466,7 +4460,7 @@ const docTemplate = `{
                 "secret_id": {
                     "description": "The secret identifier that contains the secret data.\nThis value is always empty for the database type.",
                     "type": "string",
-                    "example": "dbsecrets/data"
+                    "example": "dbsecrets/data/pgprod"
                 },
                 "secret_keys": {
                     "description": "The keys that were saved in the secrets manager.\nThis value is always empty for the database type.",
@@ -5358,7 +5352,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "access_duration": {
-                    "description": "The amount of time (nanoseconds) to allow access to the connection. It's valid only for ` + "`" + `jit` + "`" + ` type reviews` + "`" + `",
+                    "description": "The amount of time (nanoseconds) to allow access to the connection. It's valid only for ` + "`" + `jit` + "`" + ` type reviews",
                     "type": "integer",
                     "default": 1800000000000,
                     "readOnly": true,
@@ -5371,7 +5365,7 @@ const docTemplate = `{
                     "example": "2024-07-25T15:56:35.317601Z"
                 },
                 "id": {
-                    "description": "Reousrce identifier",
+                    "description": "Resource identifier",
                     "type": "string",
                     "format": "uuid",
                     "readOnly": true,
@@ -5449,7 +5443,7 @@ const docTemplate = `{
                     ]
                 },
                 "type": {
-                    "description": "The type of this review\n* onetime - Represents a one time execution\n* jit - Represents a time based review",
+                    "description": "The type of the review\n* onetime - Represents a one time execution\n* jit - Represents a time based review",
                     "enum": [
                         "onetime",
                         "jit"
@@ -6160,7 +6154,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "access_duration": {
-                    "description": "The amount of time (nanoseconds) to allow access to the connection. It's valid only for ` + "`" + `jit` + "`" + ` type reviews` + "`" + `",
+                    "description": "The amount of time (nanoseconds) to allow access to the connection. It's valid only for ` + "`" + `jit` + "`" + ` type reviews",
                     "type": "integer",
                     "default": 1800000000000,
                     "readOnly": true,
@@ -6173,7 +6167,7 @@ const docTemplate = `{
                     "example": "2024-07-25T15:56:35.317601Z"
                 },
                 "id": {
-                    "description": "Reousrce identifier",
+                    "description": "Resource identifier",
                     "type": "string",
                     "format": "uuid",
                     "readOnly": true,
@@ -6202,7 +6196,7 @@ const docTemplate = `{
                     ]
                 },
                 "type": {
-                    "description": "The type of this review\n* onetime - Represents a one time execution\n* jit - Represents a time based review",
+                    "description": "The type of the review\n* onetime - Represents a one time execution\n* jit - Represents a time based review",
                     "enum": [
                         "onetime",
                         "jit"
