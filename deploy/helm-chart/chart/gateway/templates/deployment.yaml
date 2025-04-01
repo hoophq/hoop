@@ -13,9 +13,15 @@ spec:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/secret-configs.yaml") . | sha256sum }}
+      {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       labels:
         app: hoopgateway
     spec:
+      {{- if .Values.serviceAccount.create }}
+      serviceAccountName: hoopgateway
+      {{- end }}
       containers:
       - image: '{{ .Values.image.gw.repository | default "hoophq/hoop" }}:{{ .Values.image.gw.tag | default "latest" }}'
         name: hoopgateway
