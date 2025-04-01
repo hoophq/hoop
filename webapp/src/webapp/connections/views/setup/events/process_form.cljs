@@ -73,6 +73,13 @@
                                            {:key "PORT" :value (:port network-credentials)}]]
                          (concat tcp-env-vars env-vars))
 
+                       (= connection-subtype "http")
+                       (let [network-credentials (get-in db [:connection-setup :network-credentials])
+                             http-env-vars [{:key "HOST" :value (:host network-credentials)}
+                                            {:key "USER" :value (:user network-credentials)}]
+                             headers (get-in db [:connection-setup :credentials :environment-variables] [])]
+                         (concat http-env-vars headers))
+
                        (= connection-subtype "ssh")
                        (let [ssh-credentials (get-in db [:connection-setup :ssh-credentials])
                              ssh-env-vars (filterv #(not (str/blank? (:value %)))
@@ -211,6 +218,12 @@
    "pass" (get credentials "pass")
    "authorized_server_keys" (get credentials "authorized_server_keys")})
 
+(defn extract-http-credentials
+  "Retrieves HOST and USER from secrets for http credentials"
+  [credentials]
+  {:host (get credentials "host")
+   :user (get credentials "user")})
+
 (defn process-connection-for-update
   "Process an existing connection for the format used in the update form"
   [connection guardrails-list jira-templates-list]
@@ -218,6 +231,9 @@
         network-credentials (when (and (= (:type connection) "application")
                                        (= (:subtype connection) "tcp"))
                               (extract-network-credentials credentials))
+        http-credentials (when (and (= (:type connection) "application")
+                                    (= (:subtype connection) "http"))
+                           (extract-http-credentials credentials))
         ssh-credentials (when (and (= (:type connection) "application")
                                    (= (:subtype connection) "ssh"))
                           (extract-ssh-credentials credentials))
@@ -254,13 +270,20 @@
      :name (:name connection)
      :agent-id (:agent_id connection)
      :database-credentials (when (= (:type connection) "database") credentials)
-     :network-credentials network-credentials
+     :network-credentials (or network-credentials http-credentials)
      :ssh-credentials ssh-credentials
      :command (if (empty? (:command connection))
                 (get constants/connection-commands (:subtype connection))
                 (str/join " " (:command connection)))
-     :credentials {:environment-variables (when (= (:type connection) "custom")
-                                            (process-connection-envvars (:secret connection) "envvar"))
+     :credentials {:environment-variables (cond
+                                            (= (:type connection) "custom")
+                                            (process-connection-envvars (:secret connection) "envvar")
+
+                                            (and (= (:type connection) "application")
+                                                 (= (:subtype connection) "http"))
+                                            (process-connection-envvars (:secret connection) "envvar")
+
+                                            :else [])
                    :configuration-files (when (= (:type connection) "custom")
                                           (process-connection-envvars (:secret connection) "filesystem"))}
      :tags {:data valid-tags}

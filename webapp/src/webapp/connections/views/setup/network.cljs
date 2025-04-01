@@ -1,19 +1,52 @@
 (ns webapp.connections.views.setup.network
   (:require
-   ["@radix-ui/themes" :refer [Box Flex Grid RadioGroup Text]]
+   ["@radix-ui/themes" :refer [Box Flex Grid RadioGroup Text Heading]]
    ["lucide-react" :refer [Network]]
    [re-frame.core :as rf]
    [webapp.components.forms :as forms]
    [webapp.connections.views.setup.additional-configuration :as additional-configuration]
    [webapp.connections.views.setup.agent-selector :as agent-selector]
+   [webapp.connections.views.setup.configuration-inputs :as configuration-inputs]
    [webapp.connections.views.setup.headers :as headers]
    [webapp.connections.views.setup.page-wrapper :as page-wrapper]))
 
 (def network-types
   [{:id "tcp" :title "TCP"}
-   {:id "http" :title "HTTP (Coming soon)" :disabled true}])
+   {:id "http" :title "HTTP"}])
 
-(defn credentials-form []
+(defn http-credentials-form []
+  (let [credentials @(rf/subscribe [:connection-setup/network-credentials])]
+    [:form
+     {:id "credentials-form"
+      :on-submit (fn [e]
+                   (.preventDefault e)
+                   (rf/dispatch [:connection-setup/next-step :additional-config]))}
+     [:> Box {:class "max-w-[600px]"}
+      [:> Box {:class "space-y-5"}
+       [:> Text {:size "4" :weight "bold"} "Environment credential"]
+
+       ;; Host input
+       [forms/input
+        {:label "Remote URL"
+         :placeholder "e.g. https://example.com"
+         :required true
+         :value (get credentials :host "")
+         :on-change #(rf/dispatch [:connection-setup/update-network-host
+                                   (-> % .-target .-value)])}]
+
+       ;; HTTP Headers Section
+       [:> Box {:class "space-y-4"}
+        [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+         "HTTP headers"]
+        [configuration-inputs/environment-variables-section
+         {:key-label "Key"
+          :value-label "Value"
+          :key-placeholder "e.g. Authorization"
+          :value-placeholder "e.g. Bearer token"}]]
+
+       [agent-selector/main]]]]))
+
+(defn tcp-credentials-form []
   (let [credentials @(rf/subscribe [:connection-setup/network-credentials])]
     [:form
      {:id "credentials-form"
@@ -24,7 +57,7 @@
       [:> Box {:class "space-y-5"}
        [:> Text {:size "4" :weight "bold"} "Environment credentials"]
 
-     ;; Host input
+       ;; Host input
        [forms/input
         {:label "Host"
          :placeholder "e.g. localhost"
@@ -34,7 +67,7 @@
          :on-change #(rf/dispatch [:connection-setup/update-network-host
                                    (-> % .-target .-value)])}]
 
-     ;; Port input
+       ;; Port input
        [forms/input
         {:label "Port"
          :placeholder "e.g. 4040"
@@ -45,6 +78,13 @@
                                    (-> % .-target .-value)])}]
 
        [agent-selector/main]]]]))
+
+(defn credentials-form []
+  (let [selected-subtype @(rf/subscribe [:connection-setup/connection-subtype])]
+    (case selected-subtype
+      "tcp" [tcp-credentials-form]
+      "http" [http-credentials-form]
+      nil)))
 
 (defn resource-step []
   (let [selected-subtype @(rf/subscribe [:connection-setup/connection-subtype])]
@@ -64,11 +104,8 @@
            [:> Network {:size 16}]
            title]])]]
 
-     (when (= selected-subtype "tcp")
-       [:<>
-        [credentials-form]
-        ;; Environment Variables Section
-        #_[configuration-inputs/environment-variables-section]])]))
+     (when selected-subtype
+       [credentials-form])]))
 
 (defn main [form-type]
   (let [network-type @(rf/subscribe [:connection-setup/network-type])
@@ -88,7 +125,6 @@
                                         :submit-fn #(rf/dispatch [:connection-setup/submit])}]
                    [resource-step])]
 
-                     ;; Footer
       :footer-props {:form-type form-type
                      :next-text (if (= current-step :additional-config)
                                   "Confirm"
@@ -99,7 +135,11 @@
                                                   (and (= network-type "tcp")
                                                        (or
                                                         (empty? (get credentials :host))
-                                                        (empty? (get credentials :port)))))
+                                                        (empty? (get credentials :port))))
+                                                  (and (= network-type "http")
+                                                       (or
+                                                        (empty? (get credentials :host))
+                                                        (empty? (get credentials :user)))))
                                        false)
                      :on-next (fn []
                                 (let [form (.getElementById js/document
