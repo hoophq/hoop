@@ -92,7 +92,8 @@
 
         command-string (get-in db [:connection-setup :command])
         payload {:type api-type
-                 :subtype connection-subtype
+                 :subtype (when-not (= api-type "custom")
+                            connection-subtype)
                  :name connection-name
                  :agent_id agent-id
                  :connection_tags tags

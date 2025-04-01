@@ -35,7 +35,11 @@
               :value ""
               :required true
               :placeholder "mongodb+srv://root:<password>@devcluster.mwb5sun.mongodb.net/"}]
-   :ssh [{:key "ssh_uri" :label "SSH URI" :value "" :required true :placeholder "ssh://uri"}]})
+   :ssh [{:key "host" :label "Host" :value "" :required true}
+         {:key "port" :label "Port" :value "" :required false}
+         {:key "user" :label "User" :value "" :required true}
+         {:key "pass" :label "Pass" :value "" :required false}
+         {:key "authorized_server_keys" :label "Private Key" :value "" :required false}]})
 
 
 (def connection-icons-rounded-dictionary
@@ -122,12 +126,11 @@
 
 (defn get-connection-icon [connection & [icon-style]]
   (let [icon-key (cond
-                   (not (cs/blank? (:subtype connection))) (keyword (:subtype connection))
-                   (not (cs/blank? (:icon_name connection))) (keyword (:icon_name connection))
                    (and (= "custom" (:type connection)) (not (cs/blank? (:command connection))))
                    (let [command-first-term (first (:command connection))]
-                     (println command-first-term)
                      (get command-to-icon-key command-first-term :custom))
+                   (not (cs/blank? (:subtype connection))) (keyword (:subtype connection))
+                   (not (cs/blank? (:icon_name connection))) (keyword (:icon_name connection))
                    (not (cs/blank? (:type connection))) (keyword (:type connection))
                    :else :custom)]
     (cond

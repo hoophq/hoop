@@ -16,7 +16,7 @@
                                                  operation-systems]]))
 
 (def connections-subtypes-cards
-  {"ssh" {:icon (r/as-element [:> SquareTerminal {:size 18}])
+  {"custom" {:icon (r/as-element [:> SquareTerminal {:size 18}])
           :title "Linux VM or Container"
           :subtitle "Secure shell protocol (SSH) for remote access."}
    "console" {:icon (r/as-element [:> Blocks {:size 18}])
@@ -108,7 +108,7 @@
               [:> Text {:size "3" :weight "medium" :color "gray-12"} title]
               [:> Text {:size "2" :color "gray-11"} subtitle]]]]))]
 
-      (when (= connection-subtype "ssh")
+      (when (= connection-subtype "custom")
         [credentials-step])
 
       (when (= connection-subtype "console")
@@ -146,7 +146,7 @@
       :footer-props
       {:form-type form-type
        :next-text (case current-step
-                    :credentials (if (= connection-subtype "ssh")
+                    :credentials (if (= connection-subtype "custom")
                                    "Next: Configuration"
                                    "Next")
                     :additional-config (if (= connection-subtype "console")
