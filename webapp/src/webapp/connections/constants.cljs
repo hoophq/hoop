@@ -35,58 +35,108 @@
               :value ""
               :required true
               :placeholder "mongodb+srv://root:<password>@devcluster.mwb5sun.mongodb.net/"}]
-   :ssh [{:key "ssh_uri" :label "SSH URI" :value "" :required true :placeholder "ssh://uri"}]})
+   :ssh [{:key "host" :label "Host" :value "" :required true}
+         {:key "port" :label "Port" :value "" :required false}
+         {:key "user" :label "User" :value "" :required true}
+         {:key "pass" :label "Pass" :value "" :required false}
+         {:key "authorized_server_keys" :label "Private Key" :value "" :required false}]})
 
-(def connection-icons-name-dictionary
-  {:dark {:postgres (str config/webapp-url "/images/connections-logos/postgres_logo.svg")
-          :postgres-csv (str config/webapp-url "/images/connections-logos/postgres_logo.svg")
-          :command-line (str config/webapp-url "/images/connections-logos/dark/custom_dark.svg")
-          :ssh (str config/webapp-url "/images/connections-logos/dark/custom_dark.svg")
-          :custom (str config/webapp-url "/images/connections-logos/dark/custom_dark.svg")
-          :tcp (str config/webapp-url "/images/connections-logos/dark/tcp_dark.svg")
-          :mysql (str config/webapp-url "/images/connections-logos/dark/mysql_dark.png")
-          :mysql-csv (str config/webapp-url "/images/connections-logos/dark/mysql_dark.png")
-          :aws (str config/webapp-url "/images/connections-logos/aws_logo.svg")
-          :bastion (str config/webapp-url "/images/connections-logos/bastion_logo.svg")
-          :heroku (str config/webapp-url "/images/connections-logos/heroku_logo.svg")
-          :nodejs (str config/webapp-url "/images/connections-logos/node_logo.svg")
-          :python (str config/webapp-url "/images/connections-logos/python_logo.svg")
-          :ruby-on-rails (str config/webapp-url "/images/connections-logos/dark/rails_dark.svg")
-          :clojure (str config/webapp-url "/images/connections-logos/clojure_logo.svg")
-          :kubernetes (str config/webapp-url "/images/connections-logos/k8s_logo.svg")
-          :sql-server-csv (str config/webapp-url "/images/connections-logos/sql-server_logo.svg")
-          :sql-server (str config/webapp-url "/images/connections-logos/sql-server_logo.svg")
-          :oracledb (str config/webapp-url "/images/connections-logos/oracle_logo.svg")
-          :mssql (str config/webapp-url "/images/connections-logos/sql-server_logo.svg")
-          :mongodb (str config/webapp-url "/images/connections-logos/mongodb_logo.svg")}
-   :light {:postgres (str config/webapp-url "/images/connections-logos/postgres_logo.svg")
-           :postgres-csv (str config/webapp-url "/images/connections-logos/postgres_logo.svg")
-           :command-line (str config/webapp-url "/images/connections-logos/command-line.svg")
-           :ssh (str config/webapp-url "/images/connections-logos/command-line.svg")
-           :custom (str config/webapp-url "/images/connections-logos/command-line.svg")
-           :tcp (str config/webapp-url "/images/connections-logos/tcp_logo.svg")
-           :mysql (str config/webapp-url "/images/connections-logos/mysql_logo.png")
-           :mysql-csv (str config/webapp-url "/images/connections-logos/mysql_logo.png")
-           :aws (str config/webapp-url "/images/connections-logos/aws_logo.svg")
-           :bastion (str config/webapp-url "/images/connections-logos/bastion_logo.svg")
-           :heroku (str config/webapp-url "/images/connections-logos/heroku_logo.svg")
-           :nodejs (str config/webapp-url "/images/connections-logos/node_logo.svg")
-           :python (str config/webapp-url "/images/connections-logos/python_logo.svg")
-           :ruby-on-rails (str config/webapp-url "/images/connections-logos/rails_logo.svg")
-           :clojure (str config/webapp-url "/images/connections-logos/clojure_logo.svg")
-           :kubernetes (str config/webapp-url "/images/connections-logos/k8s_logo.svg")
-           :sql-server-csv (str config/webapp-url "/images/connections-logos/sql-server_logo.svg")
-           :sql-server (str config/webapp-url "/images/connections-logos/sql-server_logo.svg")
-           :oracledb (str config/webapp-url "/images/connections-logos/oracle_logo.svg")
-           :mssql (str config/webapp-url "/images/connections-logos/sql-server_logo.svg")
-           :mongodb (str config/webapp-url "/images/connections-logos/mongodb_logo.svg")}})
 
-(defn get-connection-icon [connection & [theme]]
-  (let [connection-icons (get connection-icons-name-dictionary (or theme :light))]
+(def connection-icons-rounded-dictionary
+  {:postgres (str config/webapp-url "/icons/connections/postgres-rounded.svg")
+   :postgres-csv (str config/webapp-url "/icons/connections/postgres-rounded.svg")
+   :command-line (str config/webapp-url "/icons/connections/custom-ssh.svg")
+   :ssh (str config/webapp-url "/icons/connections/custom-ssh.svg")
+   :custom (str config/webapp-url "/icons/connections/custom-ssh.svg")
+   :tcp (str config/webapp-url "/icons/connections/custom-tcp-http.svg")
+   :mysql (str config/webapp-url "/icons/connections/mysql-rounded.svg")
+   :mysql-csv (str config/webapp-url "/icons/connections/mysql-rounded.svg")
+   :aws (str config/webapp-url "/icons/connections/aws-rounded.svg")
+   :awscli (str config/webapp-url "/icons/connections/awscli-rounded.svg")
+   :nodejs (str config/webapp-url "/icons/connections/node-rounded.svg")
+   :python (str config/webapp-url "/icons/connections/python-rounded.svg")
+   :ruby-on-rails (str config/webapp-url "/icons/connections/rails-rounded.svg")
+   :clojure (str config/webapp-url "/icons/connections/clojure-rounded.svg")
+   :kubernetes (str config/webapp-url "/icons/connections/kubernetes-rounded.svg")
+   :sql-server-csv (str config/webapp-url "/icons/connections/mssql-rounded.svg")
+   :sql-server (str config/webapp-url "/icons/connections/mssql-rounded.svg")
+   :oracledb (str config/webapp-url "/icons/connections/oracle-rounded.svg")
+   :mssql (str config/webapp-url "/icons/connections/mssql-rounded.svg")
+   :mongodb (str config/webapp-url "/icons/connections/mongodb-rounded.svg")
+   :npm (str config/webapp-url "/icons/connections/npm-rounded.svg")
+   :yarn (str config/webapp-url "/icons/connections/yarn-rounded.svg")
+   :docker (str config/webapp-url "/icons/connections/docker-rounded.svg")
+   :googlecloud (str config/webapp-url "/icons/connections/googlecloud-rounded.svg")
+   :helm (str config/webapp-url "/icons/connections/helm-rounded.svg")
+   :git (str config/webapp-url "/icons/connections/git-rounded.svg")
+   :sentry (str config/webapp-url "/icons/connections/sentry-rounded.svg")})
+
+(def connection-icons-default-dictionary
+  {:postgres (str config/webapp-url "/icons/connections/postgres-default.svg")
+   :postgres-csv (str config/webapp-url "/icons/connections/postgres-default.svg")
+   :command-line (str config/webapp-url "/icons/connections/custom-ssh.svg")
+   :ssh (str config/webapp-url "/icons/connections/custom-ssh.svg")
+   :custom (str config/webapp-url "/icons/connections/custom-ssh.svg")
+   :tcp (str config/webapp-url "/icons/connections/custom-tcp-http.svg")
+   :mysql (str config/webapp-url "/icons/connections/mysql-default.svg")
+   :mysql-csv (str config/webapp-url "/icons/connections/mysql-default.svg")
+   :aws (str config/webapp-url "/icons/connections/aws-default.svg")
+   :awscli (str config/webapp-url "/icons/connections/awscli-default.svg")
+   :nodejs (str config/webapp-url "/icons/connections/node-default.svg")
+   :python (str config/webapp-url "/icons/connections/python-default.svg")
+   :ruby-on-rails (str config/webapp-url "/icons/connections/rails-default.svg")
+   :clojure (str config/webapp-url "/icons/connections/clojure-default.svg")
+   :kubernetes (str config/webapp-url "/icons/connections/kubernetes-default.svg")
+   :sql-server-csv (str config/webapp-url "/icons/connections/mssql-default.svg")
+   :sql-server (str config/webapp-url "/icons/connections/mssql-default.svg")
+   :oracledb (str config/webapp-url "/icons/connections/oracle-default.svg")
+   :mssql (str config/webapp-url "/icons/connections/mssql-default.svg")
+   :mongodb (str config/webapp-url "/icons/connections/mongodb-default.svg")
+   :npm (str config/webapp-url "/icons/connections/npm-default.svg")
+   :yarn (str config/webapp-url "/icons/connections/yarn-default.svg")
+   :docker (str config/webapp-url "/icons/connections/docker-default.svg")
+   :googlecloud (str config/webapp-url "/icons/connections/googlecloud-default.svg")
+   :helm (str config/webapp-url "/icons/connections/helm-default.svg")
+   :git (str config/webapp-url "/icons/connections/git-default.svg")
+   :sentry (str config/webapp-url "/icons/connections/sentry-default.svg")})
+
+(def command-to-icon-key
+  {"aws" :aws
+   "clj" :clojure
+   "docker" :docker
+   "docker-compose" :docker
+   "gcloud" :googlecloud
+   "git" :git
+   "helm" :helm
+   "kubectl" :kubernetes
+   "mongosh" :mongodb
+   "mssql" :mssql
+   "mysql" :mysql
+   "node" :nodejs
+   "npm" :npm
+   "oci" :oracledb
+   "psql" :postgres
+   "python" :python
+   "python3" :python
+   "rails" :ruby-on-rails
+   "sentry-cli" :sentry
+   "yarn" :yarn
+   "ssh" :ssh
+   "bash" :custom})
+
+(defn get-connection-icon [connection & [icon-style]]
+  (let [icon-key (cond
+                   (and (= "custom" (:type connection)) (not (cs/blank? (:command connection))))
+                   (let [command-first-term (first (:command connection))]
+                     (get command-to-icon-key command-first-term :custom))
+                   (not (cs/blank? (:subtype connection))) (keyword (:subtype connection))
+                   (not (cs/blank? (:icon_name connection))) (keyword (:icon_name connection))
+                   (not (cs/blank? (:type connection))) (keyword (:type connection))
+                   :else :custom)]
     (cond
-      (not (cs/blank? (:subtype connection))) (get connection-icons (keyword (:subtype connection)))
-      (not (cs/blank? (:icon_name connection))) (get connection-icons (keyword (:icon_name connection)))
-      :else (get connection-icons (keyword (:type connection))))))
+      (= icon-style "rounded") (get connection-icons-rounded-dictionary icon-key)
+      (= icon-style "default") (get connection-icons-default-dictionary icon-key)
+      :else (get connection-icons-default-dictionary icon-key))))
 
 (def connection-commands
   {"nodejs" "node"

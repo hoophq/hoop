@@ -89,17 +89,6 @@
  (fn [db [_ command]]
    (assoc-in db [:connection-setup :command] command)))
 
-;; Tags events
-(rf/reg-event-db
- :connection-setup/set-tags
- (fn [db [_ tags]]
-   (assoc-in db [:connection-setup :tags] tags)))
-
-(rf/reg-event-db
- :connection-setup/set-tags-input
- (fn [db [_ value]]
-   (assoc-in db [:connection-setup :tags-input] value)))
-
 ;; Review and Data Masking events
 (rf/reg-event-db
  :connection-setup/set-review-groups

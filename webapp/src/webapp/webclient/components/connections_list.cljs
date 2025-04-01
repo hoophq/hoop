@@ -8,12 +8,12 @@
    [webapp.connections.constants :as connection-constants]
    [webapp.webclient.components.database-schema :as database-schema]))
 
-(defn connection-item [{:keys [name type subtype status selected? on-select dark? admin?]}]
-  [:> Box {:class (str "flex justify-between items-center px-2 py-3 "
+(defn connection-item [{:keys [name command type subtype status selected? on-select dark? admin?]}]
+  [:> Box {:class (str "flex justify-between items-center py-3 "
                        "transition "
                        (if selected?
-                         "text-gray-1 bg-primary-11 hover:bg-primary-11 active:bg-primary-12"
-                         "text-gray-12 hover:bg-primary-3 active:bg-primary-4")
+                         "text-gray-1 px-2 bg-primary-11 hover:bg-primary-11 active:bg-primary-12"
+                         "text-gray-12 px-4 hover:bg-primary-3 active:bg-primary-4 ")
                        (when @dark? "dark"))
            :onClick (when (not= status "offline") on-select)}
    [:> Flex {:align "center" :gap "2" :justify "between" :class "w-full"}
@@ -21,10 +21,8 @@
      [:> Box
       [:figure {:class "w-4"}
        [:img {:src (connection-constants/get-connection-icon
-                    {:type type :subtype subtype}
-                    (if @dark?
-                      :dark
-                      :light))
+                    {:type type :subtype subtype :command command}
+                    "rounded")
               :class "w-4"}]]]
      [:div {:class "flex flex-col"}
       [:> Text {:size "2"} name]
