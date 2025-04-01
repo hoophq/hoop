@@ -73,6 +73,16 @@
                                            {:key "PORT" :value (:port network-credentials)}]]
                          (concat tcp-env-vars env-vars))
 
+                       (= connection-subtype "ssh")
+                       (let [ssh-credentials (get-in db [:connection-setup :ssh-credentials])
+                             ssh-env-vars (filterv #(not (str/blank? (:value %)))
+                                                   [{:key "HOST" :value (get ssh-credentials "host")}
+                                                    {:key "PORT" :value (get ssh-credentials "port")}
+                                                    {:key "USER" :value (get ssh-credentials "user")}
+                                                    {:key "PASS" :value (get ssh-credentials "pass")}
+                                                    {:key "AUTHORIZED_SERVER_KEYS" :value (get ssh-credentials "authorized_server_keys")}])]
+                         (concat ssh-env-vars env-vars))
+
                        :else env-vars)
 
         secret (clj->js
