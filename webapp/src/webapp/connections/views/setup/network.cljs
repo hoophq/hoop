@@ -23,26 +23,31 @@
                    (rf/dispatch [:connection-setup/next-step :additional-config]))}
      [:> Box {:class "max-w-[600px]"}
       [:> Box {:class "space-y-5"}
-       [:> Text {:size "4" :weight "bold"} "Environment credential"]
+       [:> Text {:size "4" :weight "bold"} "Environment credentials"]
 
-       ;; Host input
+       ;; Remote URL input
        [forms/input
         {:label "Remote URL"
          :placeholder "e.g. https://example.com"
          :required true
-         :value (get credentials :host "")
-         :on-change #(rf/dispatch [:connection-setup/update-network-host
+         :value (get credentials :remote_url "")
+         :on-change #(rf/dispatch [:connection-setup/update-network-remote-url
                                    (-> % .-target .-value)])}]
 
        ;; HTTP Headers Section
        [:> Box {:class "space-y-4"}
         [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
          "HTTP headers"]
+        [:> Text {:as "p" :size "3" :class "text-[--gray-11]" :mb "5"}
+         "Add HTTP headers that will be used in your requests."]
         [configuration-inputs/environment-variables-section
          {:key-label "Key"
           :value-label "Value"
           :key-placeholder "e.g. Authorization"
-          :value-placeholder "e.g. Bearer token"}]]
+          :value-placeholder "e.g. Bearer token"
+          :title "HTTP headers"
+          :subtitle "Add HTTP headers that will be used in your requests."
+          :hide-default-title true}]]
 
        [agent-selector/main]]]]))
 
@@ -137,9 +142,7 @@
                                                         (empty? (get credentials :host))
                                                         (empty? (get credentials :port))))
                                                   (and (= network-type "http")
-                                                       (or
-                                                        (empty? (get credentials :host))
-                                                        (empty? (get credentials :user)))))
+                                                       (empty? (get credentials :remote_url))))
                                        false)
                      :on-next (fn []
                                 (let [form (.getElementById js/document

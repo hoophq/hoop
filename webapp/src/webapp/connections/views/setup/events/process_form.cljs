@@ -75,8 +75,7 @@
 
                        (= connection-subtype "http")
                        (let [network-credentials (get-in db [:connection-setup :network-credentials])
-                             http-env-vars [{:key "HOST" :value (:host network-credentials)}
-                                            {:key "USER" :value (:user network-credentials)}]
+                             http-env-vars [{:key "REMOTE_URL" :value (:remote_url network-credentials)}]
                              headers (get-in db [:connection-setup :credentials :environment-variables] [])]
                          (concat http-env-vars headers))
 
@@ -219,10 +218,9 @@
    "authorized_server_keys" (get credentials "authorized_server_keys")})
 
 (defn extract-http-credentials
-  "Retrieves HOST and USER from secrets for http credentials"
+  "Retrieves remote_url from secrets for http credentials"
   [credentials]
-  {:host (get credentials "host")
-   :user (get credentials "user")})
+  {:remote_url (get credentials "remote_url")})
 
 (defn process-connection-for-update
   "Process an existing connection for the format used in the update form"

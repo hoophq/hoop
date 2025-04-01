@@ -39,9 +39,9 @@
    (assoc-in db [:connection-setup :network-credentials :port] value)))
 
 (rf/reg-event-db
- :connection-setup/update-network-user
+ :connection-setup/update-network-remote-url
  (fn [db [_ value]]
-   (assoc-in db [:connection-setup :network-credentials :user] value)))
+   (assoc-in db [:connection-setup :network-credentials :remote_url] value)))
 
 ;; Database specific events
 (rf/reg-event-db
