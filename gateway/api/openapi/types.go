@@ -1259,8 +1259,6 @@ type AWSDBInstance struct {
 }
 
 type CreateDBRoleJobAWSProviderSG struct {
-	// The target port to be configured for the security group
-	TargetPort int32 `json:"target_port" example:"5432" binding:"required"`
 	// The ingress inbound CIDR rule to allow traffic to
 	IngressCIDR string `json:"ingress_cidr" example:"192.168.1.0/24" binding:"required"`
 }
@@ -1358,7 +1356,7 @@ type DBRoleJobStatusResultCredentialsInfo struct {
 	SecretsManagerProvider SecretsManagerProviderType `json:"secrets_manager_provider" example:"database"`
 	// The secret identifier that contains the secret data.
 	// This value is always empty for the database type.
-	SecretID string `json:"secret_id" example:"dbsecrets/data"`
+	SecretID string `json:"secret_id" example:"dbsecrets/data/pgprod"`
 	// The keys that were saved in the secrets manager.
 	// This value is always empty for the database type.
 	SecretKeys []string `json:"secret_keys" example:"HOST,PORT,USER,PASSWORD,DB"`

@@ -101,8 +101,13 @@ func (p *provisioner) Run(jobID string) error {
 		if defaultSg != nil {
 			sgName := "hoop-aws-connect-sg-" + ptr.ToString(db.DBInstanceIdentifier)
 			log.With("sid", jobID).Infof("synchronizing security group, sgname=%v, vpc_id=%v, ingress_cidr=%v, port=%v",
-				sgName, ptr.ToString(db.DBSubnetGroup.VpcId), defaultSg.IngressCIDR, defaultSg.TargetPort)
-			securityGroupID, err = p.syncSecurityGroup(sgName, ptr.ToString(db.DBSubnetGroup.VpcId), defaultSg)
+				sgName, ptr.ToString(db.DBSubnetGroup.VpcId), defaultSg.IngressCIDR, ptr.ToInt32(db.Endpoint.Port))
+			securityGroupID, err = p.syncSecurityGroup(
+				sgName,
+				ptr.ToString(db.DBSubnetGroup.VpcId),
+				defaultSg.IngressCIDR,
+				ptr.ToInt32(db.Endpoint.Port),
+			)
 			if err != nil {
 				p.updateJob(pbsystem.NewError(jobID, err.Error()))
 				return
@@ -198,15 +203,19 @@ func (p *provisioner) Run(jobID string) error {
 				resp.Message = fmt.Sprintf("Failed provisioning connections: %v", err)
 			}
 		}
+
+		var webhookSent bool
 		if res := p.updateJob(resp); res != nil && p.hasStep(openapi.DBRoleJobStepSendWebhook) {
-			if err := p.sendWebhook(res); err != nil {
+			err = p.sendWebhook(res)
+			if err != nil {
 				log.With("sid", jobID).Warnf("failed sending webhook, reason=%v", err)
 			}
+			webhookSent = err == nil
 		}
 
-		log.With("sid", jobID).Infof("database provisioner finished, name=%v, engine=%v, status=%v, with-security-group=%v, duration=%v, message=%v",
+		log.With("sid", jobID).Infof("database provisioner finished, name=%v, engine=%v, status=%v, with-security-group=%v, webhook-sent=%v, duration=%v, message=%v",
 			ptr.ToString(db.DBInstanceIdentifier), ptr.ToString(db.Engine), resp.Status, defaultSg != nil,
-			time.Now().UTC().Sub(startedAt).String(), resp.Message)
+			webhookSent, time.Now().UTC().Sub(startedAt).String(), resp.Message)
 
 	}()
 	return nil
@@ -401,7 +410,7 @@ func (p *provisioner) getSGByName(vpcID, sgName string) (*ec2types.SecurityGroup
 	return nil, nil
 }
 
-func (p *provisioner) syncSecurityGroup(sgName, vpcID string, ipPermission *openapi.CreateDBRoleJobAWSProviderSG) (groupID string, err error) {
+func (p *provisioner) syncSecurityGroup(sgName, vpcID, ingressCIDR string, dbPort int32) (groupID string, err error) {
 	sg, err := p.getSGByName(vpcID, sgName)
 	if err != nil {
 		return "", err
@@ -439,10 +448,10 @@ func (p *provisioner) syncSecurityGroup(sgName, vpcID string, ipPermission *open
 	// check if the rule being set is already present in the security group
 	var isAuthorized bool
 	for _, perm := range sg.IpPermissions {
-		if ptr.ToInt32(perm.FromPort) == ipPermission.TargetPort &&
-			ptr.ToInt32(perm.ToPort) == ipPermission.TargetPort {
+		if ptr.ToInt32(perm.FromPort) == dbPort &&
+			ptr.ToInt32(perm.ToPort) == dbPort {
 			for _, iprange := range perm.IpRanges {
-				if ptr.ToString(iprange.CidrIp) == ipPermission.IngressCIDR {
+				if ptr.ToString(iprange.CidrIp) == ingressCIDR {
 					isAuthorized = true
 					break
 				}
@@ -459,11 +468,11 @@ func (p *provisioner) syncSecurityGroup(sgName, vpcID string, ipPermission *open
 			IpPermissions: []ec2types.IpPermission{
 				{
 					IpProtocol: aws.String("tcp"),
-					FromPort:   aws.Int32(ipPermission.TargetPort),
-					ToPort:     aws.Int32(ipPermission.TargetPort),
+					FromPort:   aws.Int32(dbPort),
+					ToPort:     aws.Int32(dbPort),
 					IpRanges: []ec2types.IpRange{
 						{
-							CidrIp:      aws.String(ipPermission.IngressCIDR),
+							CidrIp:      aws.String(ingressCIDR),
 							Description: aws.String(defaultSecurityGroupDescription),
 						},
 					},
@@ -489,10 +498,41 @@ func (p *provisioner) sendWebhook(obj *models.DBRole) error {
 	if err := json.Unmarshal(jsonData, &payload); err != nil {
 		return fmt.Errorf("failed decoding json to map: %v", err)
 	}
+
+	if err := p.sendWebhookCustom(*apiObj); err != nil {
+		return err
+	}
 	return webhooks.SendMessage(p.orgID, webhooks.EventDBRoleJobFinishedType, map[string]any{
 		"event_type":    webhooks.EventDBRoleJobFinishedType,
 		"event_payload": payload,
 	})
+}
+
+func (p *provisioner) sendWebhookCustom(job openapi.DBRoleJob) error {
+	payload := map[string]any{
+		"engine":                job.Spec.DBEngine,
+		"tags":                  job.Spec.DBTags,
+		"usr_dbre_namespace_ro": map[string]any{},
+		"usr_dbre_namespace":    map[string]any{},
+	}
+	vaultKeys := map[string]any{}
+	if job.Status != nil && job.Status.Phase == "completed" {
+		for _, res := range job.Status.Result {
+			if res.CredentialsInfo.SecretsManagerProvider == openapi.SecretsManagerProviderVault {
+				vaultKeys[res.UserRole] = map[string]any{
+					"envs":      res.CredentialsInfo.SecretKeys,
+					"namespace": res.CredentialsInfo.SecretID,
+				}
+			}
+		}
+	}
+
+	payload["vault_keys"] = vaultKeys
+	return webhooks.SendMessage(p.orgID, webhooks.EventDBRoleJobCustomFinishedType, map[string]any{
+		"event_type":    webhooks.EventDBRoleJobCustomFinishedType,
+		"event_payload": payload,
+	})
+
 }
 
 func parseAWSTags(obj *rdstypes.DBInstance) []map[string]any {
