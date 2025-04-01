@@ -202,6 +202,15 @@
   {:host (get credentials "host")
    :port (get credentials "port")})
 
+(defn extract-ssh-credentials
+  "Retrieves HOST, PORT, USER, PASS and AUTHORIZED_SERVER_KEYS from secrets for ssh credentials"
+  [credentials]
+  {"host" (get credentials "host")
+   "port" (get credentials "port")
+   "user" (get credentials "user")
+   "pass" (get credentials "pass")
+   "authorized_server_keys" (get credentials "authorized_server_keys")})
+
 (defn process-connection-for-update
   "Process an existing connection for the format used in the update form"
   [connection guardrails-list jira-templates-list]
@@ -209,10 +218,13 @@
         network-credentials (when (and (= (:type connection) "application")
                                        (= (:subtype connection) "tcp"))
                               (extract-network-credentials credentials))
+        ssh-credentials (when (and (= (:type connection) "application")
+                                   (= (:subtype connection) "ssh"))
+                          (extract-ssh-credentials credentials))
         ;; Extrair tags no formato correto
         connection-tags (when-let [tags (:connection_tags connection)]
                           (cond
-                            ;; Se for um mapa, converte para array de {:key k :value v}
+                           ;; Se for um mapa, converte para array de {:key k :value v}
                             (map? tags)
                             (mapv (fn [[k v]]
                                     (let [key (str (namespace k) "/" (name k))
@@ -222,13 +234,13 @@
                                                        key)]
                                       {:key parsed-key :value v :label (tags-utils/extract-label parsed-key)})) tags)
 
-                            ;; Se for array simples, converte cada item para {:key item :value ""}
+                           ;; Se for array simples, converte cada item para {:key item :value ""}
                             (sequential? tags)
                             (mapv (fn [tag]
                                     (if (map? tag)
-                                      ;; Se já for no formato {:key k :value v}, usa diretamente
+                                    ;; Se já for no formato {:key k :value v}, usa diretamente
                                       tag
-                                      ;; Senão, é um valor simples que vira chave
+                                    ;; Senão, é um valor simples que vira chave
                                       {:key tag :value ""}))
                                   tags)
 
@@ -243,6 +255,7 @@
      :agent-id (:agent_id connection)
      :database-credentials (when (= (:type connection) "database") credentials)
      :network-credentials network-credentials
+     :ssh-credentials ssh-credentials
      :command (if (empty? (:command connection))
                 (get constants/connection-commands (:subtype connection))
                 (str/join " " (:command connection)))

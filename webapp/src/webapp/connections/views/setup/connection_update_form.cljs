@@ -151,7 +151,9 @@
                                   (:subtype (:data @connection))
                                   :update]
                       "custom" [server/credentials-step]
-                      "application" [network/credentials-form]
+                      "application" (if (= (:subtype (:data @connection)) "ssh")
+                                      [server/ssh-credentials]
+                                      [network/credentials-form])
                       nil)]
 
                    [:> Tabs.Content {:value "configuration"}
