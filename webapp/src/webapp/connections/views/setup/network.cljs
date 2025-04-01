@@ -12,7 +12,7 @@
 
 (def network-types
   [{:id "tcp" :title "TCP"}
-   {:id "http" :title "HTTP"}])
+   {:id "httpproxy" :title "HTTP Proxy"}])
 
 (defn http-credentials-form []
   (let [credentials @(rf/subscribe [:connection-setup/network-credentials])]
@@ -22,32 +22,24 @@
                    (.preventDefault e)
                    (rf/dispatch [:connection-setup/next-step :additional-config]))}
      [:> Box {:class "max-w-[600px]"}
-      [:> Box {:class "space-y-5"}
-       [:> Text {:size "4" :weight "bold"} "Environment credentials"]
+      [:> Box {:class "space-y-7"}
+       [:> Box {:class "space-y-4"}
+        [:> Text {:size "4" :weight "bold"} "Environment credentials"]
 
        ;; Remote URL input
-       [forms/input
-        {:label "Remote URL"
-         :placeholder "e.g. https://example.com"
-         :required true
-         :value (get credentials :remote_url "")
-         :on-change #(rf/dispatch [:connection-setup/update-network-remote-url
-                                   (-> % .-target .-value)])}]
+        [forms/input
+         {:label "Remote URL"
+          :placeholder "e.g. https://example.com"
+          :required true
+          :value (get credentials :remote_url "")
+          :on-change #(rf/dispatch [:connection-setup/update-network-remote-url
+                                    (-> % .-target .-value)])}]]
 
        ;; HTTP Headers Section
-       [:> Box {:class "space-y-4"}
-        [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-         "HTTP headers"]
-        [:> Text {:as "p" :size "3" :class "text-[--gray-11]" :mb "5"}
-         "Add HTTP headers that will be used in your requests."]
-        [configuration-inputs/environment-variables-section
-         {:key-label "Key"
-          :value-label "Value"
-          :key-placeholder "e.g. Authorization"
-          :value-placeholder "e.g. Bearer token"
-          :title "HTTP headers"
-          :subtitle "Add HTTP headers that will be used in your requests."
-          :hide-default-title true}]]
+       [configuration-inputs/environment-variables-section
+        {:title "HTTP headers"
+         :subtitle "Add HTTP headers that will be used in your requests."
+         :hide-default-title true}]
 
        [agent-selector/main]]]]))
 
@@ -88,7 +80,7 @@
   (let [selected-subtype @(rf/subscribe [:connection-setup/connection-subtype])]
     (case selected-subtype
       "tcp" [tcp-credentials-form]
-      "http" [http-credentials-form]
+      "httpproxy" [http-credentials-form]
       nil)))
 
 (defn resource-step []
@@ -141,7 +133,7 @@
                                                        (or
                                                         (empty? (get credentials :host))
                                                         (empty? (get credentials :port))))
-                                                  (and (= network-type "http")
+                                                  (and (= network-type "httpproxy")
                                                        (empty? (get credentials :remote_url))))
                                        false)
                      :on-next (fn []
