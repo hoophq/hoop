@@ -99,9 +99,28 @@
        [forms/textarea base-props]
        [forms/input base-props])))
 
+;; Registrar um evento para controlar o método de autenticação
+(rf/reg-event-db
+ :connection-setup/set-ssh-auth-method
+ (fn [db [_ method]]
+   (assoc-in db [:connection-setup :ssh-auth-method] method)))
+
+;; Registrar um subscription para acessar o método de autenticação
+(rf/reg-sub
+ :connection-setup/ssh-auth-method
+ (fn [db]
+   (get-in db [:connection-setup :ssh-auth-method] "password"))) ;; "password" ou "key"
+
 (defn ssh-credentials []
   (let [configs (get connection-configs-required :ssh)
-        credentials @(rf/subscribe [:connection-setup/ssh-credentials])]
+        credentials @(rf/subscribe [:connection-setup/ssh-credentials])
+        auth-method @(rf/subscribe [:connection-setup/ssh-auth-method])
+        filtered-fields (filter (fn [field]
+                                 (case auth-method
+                                   "password" (not= (:key field) "authorized_server_keys")
+                                   "key" (not= (:key field) "pass")
+                                   true))
+                               configs)]
     [:form
      {:id "ssh-credentials-form"
       :on-submit (fn [e]
@@ -115,8 +134,18 @@
         [:> Text {:as "p" :size "3" :class "text-[--gray-11]" :mb "5"}
          "Provide SSH information to setup your connection."]]
 
+       [:> Box {:class "space-y-4 mb-6"}
+        [:> Heading {:as "h4" :size "3" :weight "medium"}
+         "Authentication Method"]
+        [:> RadioGroup.Root
+         {:value auth-method
+          :on-value-change #(rf/dispatch [:connection-setup/set-ssh-auth-method %])}
+         [:> Flex {:direction "column" :gap "2"}
+          [:> RadioGroup.Item {:value "password"} "Username & Password"]
+          [:> RadioGroup.Item {:value "key"} "Private Key Authentication"]]]]
+
        [:> Grid {:columns "1" :gap "4"}
-        (for [field configs]
+        (for [field filtered-fields]
           ^{:key (:key field)}
           [render-ssh-field (assoc field
                                   :value (get credentials (:key field) (:value field)))])

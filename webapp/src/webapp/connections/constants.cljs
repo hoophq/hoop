@@ -38,11 +38,11 @@
    :ssh [{:key "host" :label "Host" :value "" :required true}
          {:key "port" :label "Port" :value "" :required false}
          {:key "user" :label "User" :value "" :required true}
-         {:key "pass" :label "Pass" :value "" :required false}
+         {:key "pass" :label "Pass" :value "" :required true}
          {:key "authorized_server_keys"
           :label "Private Key"
           :value ""
-          :required false
+          :required true
           :placeholder "Enter your private key"
           :type "textarea"}]})
 
