@@ -206,3 +206,9 @@
  :connection-setup/form-data
  (fn [db]
    (:connection-setup db)))
+
+;; SSH subscriptions
+(rf/reg-sub
+ :connection-setup/ssh-credentials
+ (fn [db]
+   (get-in db [:connection-setup :ssh-credentials] {})))

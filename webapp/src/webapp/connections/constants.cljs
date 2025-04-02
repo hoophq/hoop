@@ -38,8 +38,13 @@
    :ssh [{:key "host" :label "Host" :value "" :required true}
          {:key "port" :label "Port" :value "" :required false}
          {:key "user" :label "User" :value "" :required true}
-         {:key "pass" :label "Pass" :value "" :required false}
-         {:key "authorized_server_keys" :label "Private Key" :value "" :required false}]})
+         {:key "pass" :label "Pass" :value "" :required true}
+         {:key "authorized_server_keys"
+          :label "Private Key"
+          :value ""
+          :required true
+          :placeholder "Enter your private key"
+          :type "textarea"}]})
 
 
 (def connection-icons-rounded-dictionary
@@ -49,6 +54,7 @@
    :ssh (str config/webapp-url "/icons/connections/custom-ssh.svg")
    :custom (str config/webapp-url "/icons/connections/custom-ssh.svg")
    :tcp (str config/webapp-url "/icons/connections/custom-tcp-http.svg")
+   :httpproxy (str config/webapp-url "/icons/connections/custom-tcp-http.svg")
    :mysql (str config/webapp-url "/icons/connections/mysql-rounded.svg")
    :mysql-csv (str config/webapp-url "/icons/connections/mysql-rounded.svg")
    :aws (str config/webapp-url "/icons/connections/aws-rounded.svg")
@@ -78,6 +84,7 @@
    :ssh (str config/webapp-url "/icons/connections/custom-ssh.svg")
    :custom (str config/webapp-url "/icons/connections/custom-ssh.svg")
    :tcp (str config/webapp-url "/icons/connections/custom-tcp-http.svg")
+   :httpproxy (str config/webapp-url "/icons/connections/custom-tcp-http.svg")
    :mysql (str config/webapp-url "/icons/connections/mysql-default.svg")
    :mysql-csv (str config/webapp-url "/icons/connections/mysql-default.svg")
    :aws (str config/webapp-url "/icons/connections/aws-default.svg")
