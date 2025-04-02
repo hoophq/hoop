@@ -19,8 +19,7 @@
                                             :errors nil
                                             :status nil
                                             :connection-names {}
-                                            :security-groups {}
-                                            :ports {}}
+                                            :security-groups {}}
                                 :agents {:data nil
                                          :assignments nil}
                                 :create-connection true})
@@ -191,13 +190,11 @@
          agent-assignments (get-in db [:aws-connect :agents :assignments])
          connection-names (get-in db [:aws-connect :resources :connection-names])
          security-groups (get-in db [:aws-connect :resources :security-groups])
-         ports (get-in db [:aws-connect :resources :ports])
 
          ;; Flatten the hierarchy to get all selected resource data
          selected-resource-data (reduce (fn [acc account]
                                           ;; Get all selected children resources
-                                          (let [account-id (:id account)
-                                                children (:children account)
+                                          (let [children (:children account)
                                                 selected-children (filter #(contains? selected-resources (:id %)) children)]
 
                                             ;; Add selected children resources to accumulator
@@ -223,24 +220,18 @@
                         {:all-completed? false
                          :connections initial-status-map})
               (assoc-in [:aws-connect :current-step] :creation-status))
-      :dispatch [:aws-connect/process-resources selected-resource-data agent-assignments connection-names security-groups ports]})))
+      :dispatch [:aws-connect/process-resources selected-resource-data agent-assignments connection-names security-groups]})))
 
 (rf/reg-event-fx
  :aws-connect/process-resources
- (fn [{:keys [db]} [_ resources agent-assignments connection-names security-groups ports]]
+ (fn [{:keys [db]} [_ resources agent-assignments connection-names security-groups]]
    (let [total-resources (count resources)
-         default-ports {"mysql" 3306
-                        "postgres" 5432
-                        "postgresql" 5432
-                        "sqlserver-ex" 1433
-                        "sqlserver" 1433}
          create-connection (get-in db [:aws-connect :create-connection] true)
-         job-steps (if create-connection ["create-connections"] [])
+         job-steps (if create-connection ["create-connections" "send-webhook"] ["send-webhook"])
          dispatch-requests (for [resource resources
                                  :let [agent-id (get agent-assignments (:id resource) "default")
                                        resource-arn (:id resource)
                                        security-group (get security-groups (:id resource) "")
-                                       port (get ports (:id resource) "")
                                        connection-prefix (or (get connection-names (:id resource))
                                                              (str (:name resource) "-" (:account-id resource)))]]
                              [:fetch
@@ -250,10 +241,7 @@
                                       :aws {:instance_arn resource-arn
                                             :default_security_group (if (empty? security-group)
                                                                       nil
-                                                                      {:ingress_cidr security-group
-                                                                       :target_port (if (empty? port)
-                                                                                      (get default-ports (:engine resource))
-                                                                                      (js/parseInt port))})}
+                                                                      {:ingress_cidr security-group})}
                                       :connection_prefix_name (str connection-prefix "-")
                                       :job_steps job-steps}
                                :on-success #(rf/dispatch [:aws-connect/connection-created-success % resource])
@@ -438,20 +426,10 @@
  (fn [db [_ resource-id security-group]]
    (assoc-in db [:aws-connect :resources :security-groups resource-id] security-group)))
 
-(rf/reg-event-db
- :aws-connect/set-port
- (fn [db [_ resource-id port]]
-   (assoc-in db [:aws-connect :resources :ports resource-id] port)))
-
 (rf/reg-sub
  :aws-connect/security-groups
  (fn [db _]
    (get-in db [:aws-connect :resources :security-groups] {})))
-
-(rf/reg-sub
- :aws-connect/ports
- (fn [db _]
-   (get-in db [:aws-connect :resources :ports] {})))
 
 (rf/reg-sub
  :aws-connect/creation-status

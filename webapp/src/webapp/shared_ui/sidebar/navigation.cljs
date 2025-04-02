@@ -16,8 +16,8 @@
 
 (defn hover-side-menu-link? [uri-item current-route]
   (if (= uri-item current-route)
-    "bg-gray-800 text-white "
-    "hover:bg-gray-800 hover:text-white text-gray-300 "))
+    "bg-white/5 text-white "
+    "hover:bg-white/5 hover:text-white text-gray-300 "))
 
 (defn main [_ _]
   (let [open-profile-disclosure? (r/atom false)
@@ -149,7 +149,7 @@
             (when admin?
               [:> ui/Disclosure {:as "li"
                                  :class "text-xs font-semibold leading-6 text-gray-400"}
-               [:> (.-Button ui/Disclosure) {:class "w-full group flex items-center justify-between rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-gray-800 hover:text-white"}
+               [:> (.-Button ui/Disclosure) {:class "w-full group flex items-center justify-between rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-white/5 hover:text-white"}
                 [:div {:class "flex gap-3 justify-start items-center"}
                  [:> hero-outline-icon/Cog8ToothIcon {:class "h-6 w-6 shrink-0 text-white"
                                                       :aria-hidden "true"}]
@@ -166,7 +166,7 @@
 
                                  (rf/dispatch [:navigate :manage-ask-ai])))
                    :href "#"
-                   :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-gray-800 "
+                   :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "
                                "block rounded-md py-2 pr-2 pl-9 text-sm leading-6"
                                (when free-license?
                                  " text-opacity-30"))}
@@ -185,7 +185,7 @@
 
                                    (rf/dispatch [:plugins->navigate->manage-plugin (:name plugin)])))
                      :href  "#" #_(routes/url-for :manage-plugin {:plugin-name (:name plugin)})
-                     :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-gray-800 "
+                     :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "
                                  "block rounded-md py-2 pr-2 pl-9 text-sm leading-6"
                                  (when (and free-license? (not (:free-feature? plugin)))
                                    " text-opacity-30"))}
@@ -196,14 +196,14 @@
                 [:li
                  [:a
                   {:href (routes/url-for :license-management)
-                   :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-gray-800 "
+                   :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "
                                "block rounded-md py-2 pr-2 pl-9 text-sm leading-6")}
                   "License"]]]])
 
             (when admin?
               [:> ui/Disclosure {:as "li"
                                  :class "text-xs font-semibold leading-6 text-gray-400"}
-               [:> (.-Button ui/Disclosure) {:class "w-full group flex items-center justify-between rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-gray-800 hover:text-white"}
+               [:> (.-Button ui/Disclosure) {:class "w-full group flex items-center justify-between rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-white/5 hover:text-white"}
                 [:div {:class "flex gap-3 justify-start items-center"}
                  [:> hero-outline-icon/PuzzlePieceIcon {:class "h-6 w-6 shrink-0 text-white"
                                                         :aria-hidden "true"}]
@@ -221,7 +221,7 @@
 
                                       (rf/dispatch [:plugins->navigate->manage-plugin (:name plugin)])))
                         :href "#"
-                        :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-gray-800 "
+                        :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "
                                     "block rounded-md py-2 pr-2 pl-9 text-sm leading-6"
                                     (when (and free-license? (not (:free-feature? plugin)))
                                       " text-opacity-30"))}
@@ -232,14 +232,14 @@
                 [:li
                  [:a
                   {:href (routes/url-for :integrations-aws-connect)
-                   :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-gray-800 "
+                   :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "
                                "block rounded-md py-2 pr-2 pl-9 text-sm leading-6")}
                   "AWS Connect"]]]])]
 
            [:li {:class "mt-auto mb-3"}
             [:> ui/Disclosure {:as "div"
                                :class "text-xs font-semibold leading-6 text-gray-400"}
-             [:> (.-Button ui/Disclosure) {:class "w-full group flex justify-between items-center rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-gray-800 hover:text-white"
+             [:> (.-Button ui/Disclosure) {:class "w-full group flex justify-between items-center rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-white/5 hover:text-white"
                                            :onClick #(reset! open-profile-disclosure? (not @open-profile-disclosure?))}
               [:div {:class "flex gap-3 justify-start items-center"}
                [user-icon/initials-white (:name user-data)]
@@ -251,21 +251,21 @@
               [:li
                [:a {:target "_blank"
                     :href "https://hoop.canny.io/"
-                    :class "group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-gray-800 hover:text-white"}
+                    :class "group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-white/5 hover:text-white"}
                 [:> hero-outline-icon/SparklesIcon {:class "h-6 w-6 shrink-0 text-white"
                                                     :aria-hidden "true"}]
                 "Feature request"]]
               [:li
                [:a {:target "_blank"
                     :href "https://help.hoop.dev"
-                    :class "group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-gray-800 hover:text-white"}
+                    :class "group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-white/5 hover:text-white"}
                 [:> hero-outline-icon/ChatBubbleLeftEllipsisIcon {:class "h-6 w-6 shrink-0 text-white"
                                                                   :aria-hidden "true"}]
                 "Contact support"]]
               [:li
                [:a {:onClick #(rf/dispatch [:auth->logout {:idp? (= auth-method "idp")}])
                     :href "#"
-                    :class "group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-gray-800 hover:text-white"}
+                    :class "group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-white/5 hover:text-white"}
                 [:> hero-outline-icon/ArrowLeftOnRectangleIcon {:class "h-6 w-6 shrink-0 text-white"
                                                                 :aria-hidden "true"}]
                 "Log out"]]
