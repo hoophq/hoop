@@ -2,6 +2,7 @@
   (:require [clojure.string :as string]
             [re-frame.core :as rf]
             [reagent.core :as r]
+            ["react-tailwindcss-datepicker" :as Datepicker]
             [webapp.components.loaders :as loaders]
             [webapp.components.forms :as forms]
             [webapp.reviews.review-item :as review-item]
@@ -47,11 +48,25 @@
 (defn panel []
   (let [review-status (r/atom "PENDING")
         review-connection (r/atom "")
+        date (r/atom #js{"startDate" "" "endDate" ""})
         reviews (rf/subscribe [:reviews-plugin->reviews])
         connections (rf/subscribe [:connections])
         review-status-options [{:text "Pending" :value "PENDING"}
                                {:text "Approved" :value "APPROVED"}
-                               {:text "Rejected" :value "REJECTED"}]]
+                               {:text "Rejected" :value "REJECTED"}]
+        dispatch-date (fn [date-obj]
+                        (let [iso-date (fn [filter-key date]
+                                         (when (not (string/blank? date))
+                                           (.toISOString
+                                            (new js/Date
+                                                 (if (= filter-key "start_date")
+                                                   (str date " 00:00:00.000Z")
+                                                   (str date " 23:59:59.000Z"))))))]
+                          (rf/dispatch [:reviews-plugin->get-reviews
+                                        {:status @review-status
+                                         :connection @review-connection
+                                         :start_date (iso-date "start_date" (.-startDate date-obj))
+                                         :end_date (iso-date "end_date" (.-endDate date-obj))}])))]
     (rf/dispatch [:reviews-plugin->get-reviews {:status @review-status}])
     (rf/dispatch [:connections->get-connections])
     (fn []
@@ -67,7 +82,9 @@
                         (reset! review-status %)
                         (rf/dispatch [:reviews-plugin->get-reviews
                                       {:status %
-                                       :connection @review-connection}]))}]
+                                       :connection @review-connection
+                                       :start_date (.-startDate @date)
+                                       :end_date (.-endDate @date)}]))}]
 
         [forms/select
          {:options (map (fn [conn] {:text (:name conn) :value (:name conn)})
@@ -80,7 +97,34 @@
                         (reset! review-connection %)
                         (rf/dispatch [:reviews-plugin->get-reviews
                                       {:status @review-status
-                                       :connection %}]))}]]
+                                       :connection %
+                                       :start_date (.-startDate @date)
+                                       :end_date (.-endDate @date)}]))}]
+
+        [:> Datepicker {:value @date
+                        :placeholder "Period"
+                        :separator "-"
+                        :displayFormat "DD/MM/YYYY"
+                        :containerClassName "relative w-64 text-gray-700"
+                        :toggleClassName (str "absolute rounded-l-lg "
+                                              "text-gray-500 "
+                                              "left-0 h-full px-3 "
+                                              "focus:outline-none disabled:opacity-40 "
+                                              "disabled:cursor-not-allowed")
+                        :inputClassName (str (if (or (.-startDate @date) (.-endDate @date))
+                                               " border-gray-300 "
+                                               " border-gray-400 ")
+                                             "pl-10 py-2 w-full rounded-md text-gray-600 "
+                                             "font-semibold text-sm focus:ring-0 "
+                                             "border "
+                                             "placeholder:text-gray-500 "
+                                             "hover:bg-gray-50 hover:text-gray-600 hover:border-gray-400 "
+                                             "focus:bg-gray-50 focus:text-gray-600 focus:border-gray-400")
+                        :useRange false
+                        :showShortcuts true
+                        :onChange (fn [v]
+                                    (reset! date v)
+                                    (dispatch-date v))}]]
 
        (if (= :loading (-> @reviews :status))
          [loading-list-view]

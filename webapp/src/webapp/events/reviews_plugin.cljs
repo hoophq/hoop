@@ -11,13 +11,21 @@
          limit (or (:limit params) 20)
          status (:status params)
          connection (:connection params)
+         start-date (:start_date params)
+         end-date (:end_date params)
          base-uri (str "/sessions?review.approver=" (:email user) "&limit=" limit)
          uri-with-status (if (and status (not= status ""))
                            (str base-uri "&review.status=" status)
                            base-uri)
-         uri (if (and connection (not= connection ""))
-               (str uri-with-status "&connection=" connection)
-               uri-with-status)]
+         uri-with-connection (if (and connection (not= connection ""))
+                               (str uri-with-status "&connection=" connection)
+                               uri-with-status)
+         uri-with-start-date (if (and start-date (not= start-date ""))
+                               (str uri-with-connection "&start_date=" start-date)
+                               uri-with-connection)
+         uri (if (and end-date (not= end-date ""))
+               (str uri-with-start-date "&end_date=" end-date)
+               uri-with-start-date)]
      {:fx [[:dispatch [:fetch {:method "GET"
                                :uri uri
                                :on-success #(rf/dispatch [:reviews-plugin->set-reviews % params])}]]
@@ -30,10 +38,14 @@
    (let [current-limit (or (-> db :reviews-plugin->reviews :params-limit) 20)
          current-status (or (-> db :reviews-plugin->reviews :params-status) "")
          current-connection (or (-> db :reviews-plugin->reviews :params-connection) "")
+         current-start-date (or (-> db :reviews-plugin->reviews :params-start_date) "")
+         current-end-date (or (-> db :reviews-plugin->reviews :params-end_date) "")
          new-limit (+ current-limit 20)
          params {:limit new-limit
                  :status current-status
-                 :connection current-connection}]
+                 :connection current-connection
+                 :start_date current-start-date
+                 :end_date current-end-date}]
      {:fx [[:dispatch [:reviews-plugin->get-reviews params]]]})))
 
 (rf/reg-event-fx
@@ -42,7 +54,9 @@
    [{:keys [db]} [_ sessions params]]
    (let [limit (or (:limit params) 20)
          status (or (:status params) "")
-         connection (or (:connection params) "")]
+         connection (or (:connection params) "")
+         start-date (or (:start_date params) "")
+         end-date (or (:end_date params) "")]
      {:fx [[:dispatch [:reviews-plugin->set-reviews-status :success]]]
       :db (-> db
               (assoc-in [:reviews-plugin->reviews :results] (:data sessions))
@@ -50,7 +64,9 @@
               (assoc-in [:reviews-plugin->reviews :total] (:total sessions))
               (assoc-in [:reviews-plugin->reviews :params-limit] limit)
               (assoc-in [:reviews-plugin->reviews :params-status] status)
-              (assoc-in [:reviews-plugin->reviews :params-connection] connection))})))
+              (assoc-in [:reviews-plugin->reviews :params-connection] connection)
+              (assoc-in [:reviews-plugin->reviews :params-start_date] start-date)
+              (assoc-in [:reviews-plugin->reviews :params-end_date] end-date))})))
 
 (rf/reg-event-fx
  :reviews-plugin->set-reviews-status
@@ -90,7 +106,9 @@
    (let [review (:review session)
          current-status (get-in db [:reviews-plugin->reviews :params-status] "")
          current-limit (get-in db [:reviews-plugin->reviews :params-limit] 20)
-         current-connection (get-in db [:reviews-plugin->reviews :params-connection] "")]
+         current-connection (get-in db [:reviews-plugin->reviews :params-connection] "")
+         current-start-date (get-in db [:reviews-plugin->reviews :params-start_date] "")
+         current-end-date (get-in db [:reviews-plugin->reviews :params-end_date] "")]
      {:fx [[:dispatch
             [:fetch {:method "PUT"
                      :uri (str "/reviews/" (:id review))
@@ -104,12 +122,16 @@
                         (fn []
                           (rf/dispatch [:reviews-plugin->get-reviews {:status current-status
                                                                       :limit current-limit
-                                                                      :connection current-connection}])
+                                                                      :connection current-connection
+                                                                      :start_date current-start-date
+                                                                      :end_date current-end-date}])
                           (rf/dispatch [:reviews-plugin->get-review-by-id session]))
                         500))}]]
            [:dispatch [:reviews-plugin->get-reviews {:status current-status
                                                      :limit current-limit
-                                                     :connection current-connection}]]]})))
+                                                     :connection current-connection
+                                                     :start_date current-start-date
+                                                     :end_date current-end-date}]]]})))
 
 (rf/reg-event-fx
  :reviews-plugin->get-session-details
@@ -151,7 +173,9 @@
    [{:keys [db]} [_ session killing-status]]
    (let [current-status (get-in db [:reviews-plugin->reviews :params-status] "")
          current-limit (get-in db [:reviews-plugin->reviews :params-limit] 20)
-         current-connection (get-in db [:reviews-plugin->reviews :params-connection] "")]
+         current-connection (get-in db [:reviews-plugin->reviews :params-connection] "")
+         current-start-date (get-in db [:reviews-plugin->reviews :params-start_date] "")
+         current-end-date (get-in db [:reviews-plugin->reviews :params-end_date] "")]
      {:fx [[:dispatch [:fetch {:method "POST"
                                :uri (str "/sessions/" (:id session) "/kill")
                                :on-success (fn [_]
@@ -163,7 +187,9 @@
                                              (rf/dispatch [:reviews-plugin->get-reviews
                                                            {:status current-status
                                                             :limit current-limit
-                                                            :connection current-connection}])
+                                                            :connection current-connection
+                                                            :start_date current-start-date
+                                                            :end_date current-end-date}])
                                              (rf/dispatch [:modal->close]))
                                :on-failure (fn [error]
                                              (when killing-status
