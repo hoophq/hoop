@@ -17,8 +17,7 @@
       :class (str "overflow-hidden border-b cursor-pointer hover:bg-gray-50"
                   " p-regular text-sm grid grid-col-3 lg:grid-cols-5 gap-regular lg:gap-large"
                   (when (= status :selected) " bg-gray-100"))
-      :on-click #(rf/dispatch [:open-modal
-                               [review-detail/review-details-page session] :large])}
+      :on-click #(rf/dispatch [:reviews-plugin->get-session-details (:id session)])}
 
      [:div {:id "user-info"
             :class "flex items-center"}

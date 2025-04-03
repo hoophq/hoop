@@ -378,6 +378,7 @@
                  "access until:"]
                 [:span
                  (formatters/time-parsed->full-date (get-in session [:review :revoke_at]))]])]
+
             [:div {:id "session-reviews" :class "self-center"}
              [:header {:class "relative flex text-xs text-gray-800 mb-small"}
               [:span {:class "flex-grow font-bold"} "Reviewers"]

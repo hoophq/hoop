@@ -1,6 +1,7 @@
 (ns webapp.events.reviews-plugin
   (:require
-   [re-frame.core :as rf]))
+   [re-frame.core :as rf]
+   [webapp.reviews.review-detail :as review-detail]))
 
 (rf/reg-event-fx
  :reviews-plugin->get-reviews
@@ -29,8 +30,7 @@
  :reviews-plugin->get-review-by-id
  (fn
    [{:keys [db]} [_ session]]
-   (let [review (:review session)
-         state {:status :loading
+   (let [state {:status :loading
                 :review session
                 :review-logs {:status :loading}}]
      {:db (assoc db :reviews-plugin->review-details state)
@@ -71,4 +71,42 @@
                           (rf/dispatch [:reviews-plugin->get-review-by-id session]))
                         500))}]]
            [:dispatch [:reviews-plugin->get-reviews]]]})))
+
+(rf/reg-event-fx
+ :reviews-plugin->get-session-details
+ (fn
+   [{:keys [db]} [_ session-id]]
+   {:fx [[:dispatch [:fetch {:method "GET"
+                             :uri (str "/sessions/" session-id)
+                             :on-success #(rf/dispatch [:reviews-plugin->open-session-details %])}]]
+         [:dispatch [:modal->set-modal-loading true]]]}))
+
+(rf/reg-event-fx
+ :reviews-plugin->open-session-details
+ (fn
+   [{:keys [db]} [_ session]]
+   {:fx [[:dispatch [:modal->set-modal-loading false]]
+         [:dispatch [:open-modal
+                     [review-detail/review-details-page session] :large]]]}))
+
+(rf/reg-event-fx
+ :reviews-plugin->kill-session
+ (fn
+   [{:keys [db]} [_ session killing-status]]
+   {:fx [[:dispatch [:fetch {:method "POST"
+                             :uri (str "/sessions/" (:id session) "/kill")
+                             :on-success (fn [_]
+                                           (when killing-status
+                                             (reset! killing-status :ready))
+                                           (rf/dispatch [:show-snackbar
+                                                         {:level :success
+                                                          :text "Session killed successfully"}])
+                                           (rf/dispatch [:reviews-plugin->get-reviews])
+                                           (rf/dispatch [:modal->close]))
+                             :on-failure (fn [error]
+                                           (when killing-status
+                                             (reset! killing-status :ready))
+                                           (rf/dispatch [:show-snackbar
+                                                         {:level :error
+                                                          :text (or (:message error) "Failed to kill session")}]))}]]]}))
 
