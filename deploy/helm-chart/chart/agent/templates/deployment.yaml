@@ -14,9 +14,15 @@ spec:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/secret-config.yaml") . | sha256sum }}
         checksum/extra-config: {{ include (print $.Template.BasePath "/extra-agent-config.yaml") . | sha256sum }}
+      {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       labels:
         app: hoopagent
     spec:
+      {{- if .Values.serviceAccount.create }}
+      serviceAccountName: hoopagent
+      {{- end }}
       containers:
       - image: '{{ .Values.image.repository |default "hoophq/hoopdev" }}:{{ .Values.image.tag |default "latest" }}'
         name: agent

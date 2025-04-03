@@ -18,6 +18,10 @@ defaultAgent:
   imageTag: latest
   imagePullPolicy: Always
 
+## Set pod annotations
+##
+podAnnotations: {}
+
 # hoop gateway configuration. Please refer to https://hoop.dev/docs/self-hosting
 config:
   POSTGRES_DB_URI: ''
@@ -104,3 +108,9 @@ resources:
     requests:
       cpu: 512m
       memory: 1Gi
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: false
+  # Annotations to add to the service account
+  annotations: {}
