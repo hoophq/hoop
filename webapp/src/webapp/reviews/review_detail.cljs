@@ -60,19 +60,22 @@
 
 (defn review-details-page [session]
   (let [user (rf/subscribe [:users->current-user])
+        session-details (rf/subscribe [:reviews-plugin->review-details])
         add-review-popover-open? (r/atom false)
         clipboard-url (new clipboardjs ".copy-to-clipboard-url")]
-    (fn []
-      (let [user-name (:user_name session)
-            connection-name (:connection session)
-            review (:review session)
+    (when session
+      (rf/dispatch [:reviews-plugin->get-review-by-id session]))
+    (fn [_]
+      (let [current-session (:review @session-details)
+            user-name (:user_name current-session)
+            connection-name (:connection current-session)
+            review (:review current-session)
             review-groups-data (:review_groups_data review)
-            session-type (:type session)
-            start-date (:start_date session)
-            end-date (:end_date session)
-            verb (:verb session)
+            session-type (:type current-session)
+            start-date (:start_date current-session)
+            end-date (:end_date current-session)
+            verb (:verb current-session)
 
-            killing-status (r/atom :ready)
             can-review? (and
                          (some #(= "PENDING" (:status %))
                                review-groups-data)
@@ -82,16 +85,11 @@
                                review-groups-data))
             add-review-cb (fn [status]
                             (rf/dispatch [:reviews-plugin->add-review
-                                          session
+                                          current-session
                                           status])
                             (reset! add-review-popover-open? false))
             in-progress? (or (= end-date nil)
                              (= end-date ""))
-            can-kill-session? (and (= (:status session) "open")
-                                   (= (-> review :status) "APPROVED"))
-            kill-session (fn []
-                           (reset! killing-status :loading)
-                           (rf/dispatch [:reviews-plugin->kill-session session killing-status]))
             _ (.on clipboard-url "success" #(rf/dispatch [:show-snackbar {:level :success :text "URL copied to clipboard"}]))]
         [:div
      ;; Header
@@ -107,21 +105,12 @@
                session-type]]]]
 
            [:div {:class "relative flex gap-2.5 items-start pr-3"}
-            (when can-kill-session?
-              [:div {:class "relative group"}
-               [:> Tooltip {:content "Kill Session"}
-                [:div {:class "rounded-full p-2 bg-red-100 hover:bg-red-200 transition cursor-pointer"
-                       :on-click kill-session}
-                 (if (= @killing-status :loading)
-                   [loaders/simple-loader {:size 2}]
-                   [:> hero-outline-icon/StopIcon {:class "h-5 w-5 text-red-600"}])]]])
-
             [:div {:class "relative group"}
              [:> Tooltip {:content "Copy link"}
               [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer copy-to-clipboard-url"
                      :data-clipboard-text (str (-> js/document .-location .-origin)
                                                (routes/url-for :reviews-plugin)
-                                               "/" (-> session :review :id))}
+                                               "/" (-> current-session :review :id))}
                [:> hero-outline-icon/ClipboardDocumentIcon {:class "h-5 w-5 text-gray-600"}]]]]]]]
 
      ;; Information Grid
@@ -170,7 +159,6 @@
                 [icon/regular {:size 5
                                :icon-name "cheveron-down-blue"}]])
 
-             (println @add-review-popover-open?)
              [popover/right {:open @add-review-popover-open?
                              :component [add-review-popover add-review-cb]
                              :on-click-outside #(reset! add-review-popover-open? false)}]]]
@@ -183,16 +171,16 @@
             (doall
              (for [group review-groups-data]
                ^{:key (:id group)}
-               [review-group-item group session @user]))]]]
+               [review-group-item group current-session @user]))]]]
 
      ;; Script section
-         (when (not (cs/blank? (-> session :script :data)))
+         (when (not (cs/blank? (-> current-session :script :data)))
            [:section {:id "session-script"}
             [:div
              {:class (str "w-full max-h-40 overflow-auto p-regular whitespace-pre "
                           "rounded-lg bg-gray-100 "
                           "text-xs text-gray-800 font-mono")}
-             [:article (-> session :script :data)]]])]))))
+             [:article (-> current-session :script :data)]]])]))))
 
 (defmulti item-view identity)
 (defmethod item-view :opened [_ review-details]
