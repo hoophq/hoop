@@ -10,10 +10,14 @@
    (let [user (-> db :users->current-user :data)
          limit (or (:limit params) 20)
          status (:status params)
+         connection (:connection params)
          base-uri (str "/sessions?review.approver=" (:email user) "&limit=" limit)
-         uri (if (and status (not= status ""))
-               (str base-uri "&review.status=" status)
-               base-uri)]
+         uri-with-status (if (and status (not= status ""))
+                           (str base-uri "&review.status=" status)
+                           base-uri)
+         uri (if (and connection (not= connection ""))
+               (str uri-with-status "&connection=" connection)
+               uri-with-status)]
      {:fx [[:dispatch [:fetch {:method "GET"
                                :uri uri
                                :on-success #(rf/dispatch [:reviews-plugin->set-reviews % params])}]]
@@ -25,9 +29,11 @@
    [{:keys [db]} _]
    (let [current-limit (or (-> db :reviews-plugin->reviews :params-limit) 20)
          current-status (or (-> db :reviews-plugin->reviews :params-status) "")
+         current-connection (or (-> db :reviews-plugin->reviews :params-connection) "")
          new-limit (+ current-limit 20)
          params {:limit new-limit
-                 :status current-status}]
+                 :status current-status
+                 :connection current-connection}]
      {:fx [[:dispatch [:reviews-plugin->get-reviews params]]]})))
 
 (rf/reg-event-fx
@@ -35,14 +41,16 @@
  (fn
    [{:keys [db]} [_ sessions params]]
    (let [limit (or (:limit params) 20)
-         status (or (:status params) "")]
+         status (or (:status params) "")
+         connection (or (:connection params) "")]
      {:fx [[:dispatch [:reviews-plugin->set-reviews-status :success]]]
       :db (-> db
               (assoc-in [:reviews-plugin->reviews :results] (:data sessions))
               (assoc-in [:reviews-plugin->reviews :has_next_page] (:has_next_page sessions))
               (assoc-in [:reviews-plugin->reviews :total] (:total sessions))
               (assoc-in [:reviews-plugin->reviews :params-limit] limit)
-              (assoc-in [:reviews-plugin->reviews :params-status] status))})))
+              (assoc-in [:reviews-plugin->reviews :params-status] status)
+              (assoc-in [:reviews-plugin->reviews :params-connection] connection))})))
 
 (rf/reg-event-fx
  :reviews-plugin->set-reviews-status
@@ -81,7 +89,8 @@
    [{:keys [db]} [_ session status]]
    (let [review (:review session)
          current-status (get-in db [:reviews-plugin->reviews :params-status] "")
-         current-limit (get-in db [:reviews-plugin->reviews :params-limit] 20)]
+         current-limit (get-in db [:reviews-plugin->reviews :params-limit] 20)
+         current-connection (get-in db [:reviews-plugin->reviews :params-connection] "")]
      {:fx [[:dispatch
             [:fetch {:method "PUT"
                      :uri (str "/reviews/" (:id review))
@@ -93,9 +102,14 @@
                                       :text "Your review was added"}])
                        (js/setTimeout
                         (fn []
-                          (rf/dispatch [:reviews-plugin->get-reviews {:status current-status :limit current-limit}])
+                          (rf/dispatch [:reviews-plugin->get-reviews {:status current-status
+                                                                      :limit current-limit
+                                                                      :connection current-connection}])
                           (rf/dispatch [:reviews-plugin->get-review-by-id session]))
-                        500))}]]]})))
+                        500))}]]
+           [:dispatch [:reviews-plugin->get-reviews {:status current-status
+                                                     :limit current-limit
+                                                     :connection current-connection}]]]})))
 
 (rf/reg-event-fx
  :reviews-plugin->get-session-details
@@ -130,4 +144,31 @@
      {:fx [[:dispatch [:fetch {:method "GET"
                                :uri (str "/sessions/" session-id)
                                :on-success #(rf/dispatch [:reviews-plugin->set-review-detail %])}]]]})))
+
+(rf/reg-event-fx
+ :reviews-plugin->kill-session
+ (fn
+   [{:keys [db]} [_ session killing-status]]
+   (let [current-status (get-in db [:reviews-plugin->reviews :params-status] "")
+         current-limit (get-in db [:reviews-plugin->reviews :params-limit] 20)
+         current-connection (get-in db [:reviews-plugin->reviews :params-connection] "")]
+     {:fx [[:dispatch [:fetch {:method "POST"
+                               :uri (str "/sessions/" (:id session) "/kill")
+                               :on-success (fn [_]
+                                             (when killing-status
+                                               (reset! killing-status :ready))
+                                             (rf/dispatch [:show-snackbar
+                                                           {:level :success
+                                                            :text "Session killed successfully"}])
+                                             (rf/dispatch [:reviews-plugin->get-reviews
+                                                           {:status current-status
+                                                            :limit current-limit
+                                                            :connection current-connection}])
+                                             (rf/dispatch [:modal->close]))
+                               :on-failure (fn [error]
+                                             (when killing-status
+                                               (reset! killing-status :ready))
+                                             (rf/dispatch [:show-snackbar
+                                                           {:level :error
+                                                            :text (or (:message error) "Failed to kill session")}]))}]]]})))
 

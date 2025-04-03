@@ -5,6 +5,7 @@
             [webapp.components.loaders :as loaders]
             [webapp.components.forms :as forms]
             [webapp.reviews.review-item :as review-item]
+            [webapp.connections.constants :as connection-constants]
             [webapp.config :as config]))
 
 (defn- list-item [session]
@@ -45,14 +46,17 @@
 
 (defn panel []
   (let [review-status (r/atom "PENDING")
+        review-connection (r/atom "")
         reviews (rf/subscribe [:reviews-plugin->reviews])
+        connections (rf/subscribe [:connections])
         review-status-options [{:text "Pending" :value "PENDING"}
                                {:text "Approved" :value "APPROVED"}
                                {:text "Rejected" :value "REJECTED"}]]
     (rf/dispatch [:reviews-plugin->get-reviews {:status @review-status}])
+    (rf/dispatch [:connections->get-connections])
     (fn []
       [:div {:class "flex flex-col bg-white rounded-lg h-full p-6 overflow-y-auto"}
-       [:div {:class "mb-regular"}
+       [:div {:class "mb-regular flex flex-wrap gap-regular"}
         [forms/select
          {:options review-status-options
           :label "Status"
@@ -61,7 +65,22 @@
           :size "2"
           :on-change #(do
                         (reset! review-status %)
-                        (rf/dispatch [:reviews-plugin->get-reviews {:status %}]))}]]
+                        (rf/dispatch [:reviews-plugin->get-reviews
+                                      {:status %
+                                       :connection @review-connection}]))}]
+
+        [forms/select
+         {:options (map (fn [conn] {:text (:name conn) :value (:name conn)})
+                        (get @connections :results []))
+          :label "Connection"
+          :placeholder "All connections"
+          :selected @review-connection
+          :size "2"
+          :on-change #(do
+                        (reset! review-connection %)
+                        (rf/dispatch [:reviews-plugin->get-reviews
+                                      {:status @review-status
+                                       :connection %}]))}]]
 
        (if (= :loading (-> @reviews :status))
          [loading-list-view]
