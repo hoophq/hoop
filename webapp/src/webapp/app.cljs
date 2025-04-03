@@ -308,8 +308,9 @@
   (let [pathname (.. js/window -location -pathname)
         current-route (bidi/match-route @routes/routes pathname)
         review-id (-> current-route :route-params :review-id)]
+    (println "review-id" review-id)
     (rf/dispatch [:destroy-page-loader])
-    (rf/dispatch [:reviews-plugin->get-review-by-id {:id review-id}])
+    (rf/dispatch [:reviews-plugin->get-review-details review-id])
     [layout :application-hoop [:div {:class "bg-white p-large h-full"}
                                [review-detail/review-detail]]]))
 
