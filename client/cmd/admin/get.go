@@ -95,7 +95,7 @@ var getCmd = &cobra.Command{
 				}
 			}
 		case "sessions":
-			fmt.Fprintln(w, "UID\tUSER\tCONNECTION\tTYPE\tVERB\tSIZE\tAPPROVERS\tSTATUS\tAGE\t")
+			fmt.Fprintln(w, "UID\tUSER\tCONNECTION\tTYPE\tVERB\tSIZE\tAPPROVERS\tREDACTED\tSTATUS\tAGE\t")
 			switch contents := obj.(type) {
 			case map[string]any:
 				items, ok := contents["data"].([]any)
@@ -106,9 +106,9 @@ var getCmd = &cobra.Command{
 							m = map[string]any{}
 						}
 						connectionType := proto.ToConnectionType(toStr(m["type"]), toStr(m["connection_subtype"]))
-						fmt.Fprintf(w, "%s\t%v\t%s\t%v\t%v\t%v\t%s\t%s\t%s\t",
+						fmt.Fprintf(w, "%s\t%v\t%s\t%v\t%v\t%v\t%s\t%s\t%s\t%s\t",
 							m["id"], m["user"], toStr(m["connection"]), connectionType, toStr(m["verb"]), formatSize(m["event_size"]),
-							parseApprovers(m["review"]), fmt.Sprintf("%s (%v)", m["status"], toStr(m["exit_code"])), absTime(m["start_date"]))
+							parseApprovers(m["review"]), redactedMetrics(m["metrics"]), fmt.Sprintf("%s (%v)", m["status"], toStr(m["exit_code"])), absTime(m["start_date"]))
 						fmt.Fprintln(w)
 					}
 					return
@@ -116,9 +116,9 @@ var getCmd = &cobra.Command{
 
 				m := contents
 				connectionType := proto.ToConnectionType(toStr(m["type"]), toStr(m["connection_subtype"]))
-				fmt.Fprintf(w, "%s\t%v\t%s\t%v\t%v\t%v\t%s\t%s\t%s\t",
+				fmt.Fprintf(w, "%s\t%v\t%s\t%v\t%v\t%v\t%s\t%s\t%s\t%s\t",
 					m["id"], m["user"], toStr(m["connection"]), connectionType, toStr(m["verb"]), formatSize(m["event_size"]),
-					parseApprovers(m["review"]), fmt.Sprintf("%s (%v)", m["status"], toStr(m["exit_code"])), absTime(m["start_date"]))
+					parseApprovers(m["review"]), redactedMetrics(m["metrics"]), fmt.Sprintf("%s (%v)", m["status"], toStr(m["exit_code"])), absTime(m["start_date"]))
 				fmt.Fprintln(w)
 			}
 		case "conn", "connection", "connections":
@@ -433,6 +433,18 @@ func joinMap(v any) (res string) {
 		return
 	}
 	return res[:len(res)-1]
+}
+
+func redactedMetrics(v any) string {
+	metrics, ok := v.(map[string]any)
+	if !ok {
+		return "-"
+	}
+	dataMasking, ok := metrics["data_masking"].(map[string]any)
+	if !ok {
+		return "-"
+	}
+	return fmt.Sprintf("%v", dataMasking["total_redact_count"])
 }
 
 // absTime given v as a time string, parse to absolute time
