@@ -3,10 +3,8 @@
             [re-frame.core :as rf]
             [reagent.core :as r]
             ["@heroicons/react/24/outline" :as hero-outline-icon]
-            ["@heroicons/react/20/solid" :as hero-solid-icon]
             ["@radix-ui/themes" :refer [Button Box Flex Text Tooltip]]
             ["clipboard" :as clipboardjs]
-            ["lucide-react" :refer [Download FileDown]]
             [webapp.components.button :as button]
             [webapp.components.headings :as h]
             [webapp.components.icon :as icon]
@@ -15,8 +13,7 @@
             [webapp.components.tooltip :as tooltip]
             [webapp.components.user-icon :as user-icon]
             [webapp.formatters :as formatters]
-            [webapp.routes :as routes]
-            [webapp.utilities :as utilities]))
+            [webapp.routes :as routes]))
 
 (defn- add-review-popover [add-review-cb]
   [:div
@@ -60,79 +57,6 @@
      [popover/right {:open @add-review-popover-open?
                      :component [add-review-popover add-review]
                      :on-click-outside #(reset! add-review-popover-open? false)}]]))
-
-(defn- loading-player []
-  [:div {:class "flex gap-small items-center justify-center py-large"}
-   [:span {:class "italic text-xs text-gray-600"}
-    "Loading data for this session"]
-   [loaders/simple-loader {:size 4}]])
-
-(defn- large-payload-warning [{:keys [session]}]
-  [:> Flex {:height "400px"
-            :direction "column"
-            :gap "5"
-            :class "p-[--space-5] bg-[--gray-2] rounded-[9px]"
-            :align "center"
-            :justify "center"}
-   [:> FileDown {:size 48 :color "gray"}]
-   [:> Text {:size "3" :class "text-[--gray-11]"}
-    "This result is not currently supported to view in browser."]
-   [:> Button {:size "3"
-               :variant "solid"
-               :on-click #(rf/dispatch [:audit->session-file-generate
-                                        (:id session)
-                                        "txt"])}
-    "Download file"
-    [:> Download {:size 18}]]])
-
-(defn- event-stream-content [session]
-  (let [has-large-payload? false
-        verb (:verb session)
-        review (:review session)]
-    (if has-large-payload?
-      [large-payload-warning {:session session}]
-
-      [:div {:class "h-full px-small"}
-       (if (= verb "exec")
-         ;; Mostramos apenas informações sobre o pedido de execução,
-         ;; não o resultado, pois está pendente de aprovação
-         [:div {:class "flex flex-col items-center justify-center h-64 text-center"}
-          [:> hero-outline-icon/DocumentTextIcon {:class "h-12 w-12 text-gray-400 mb-4"}]
-          [:div {:class "text-gray-500 text-sm font-medium"}
-           "Execution request awaiting approval"]
-          [:div {:class "text-gray-400 text-xs mt-2"}
-           "This command will be executed upon approval"]
-          [:div {:class "mt-4 flex items-center gap-2 text-xs"}
-           [:span {:class "text-gray-500"}
-            "Review status:"]
-           [:span
-            {:class (str "text-xxs rounded-full px-2 py-1 "
-                         (case (-> review :status)
-                           "PENDING" "bg-yellow-100 text-yellow-800"
-                           "APPROVED" "bg-green-100 text-green-800"
-                           "REJECTED" "bg-red-100 text-red-800"
-                           "bg-gray-100 text-gray-800"))}
-            (-> review :status)]]]
-
-         ;; Caso não seja exec, mostramos uma mensagem de sessão ativa
-         [:div {:class "flex flex-col items-center justify-center h-64 text-center"}
-          [:> hero-outline-icon/ComputerDesktopIcon {:class "h-12 w-12 text-gray-400 mb-4"}]
-          [:div {:class "text-gray-500 text-sm font-medium"}
-           "Connection request awaiting approval"]
-          [:div {:class "text-gray-400 text-xs mt-2"}
-           "User is requesting access to this resource"]
-          (when review
-            [:div {:class "mt-4 flex items-center gap-2 text-xs"}
-             [:span {:class "text-gray-500"}
-              "Review status:"]
-             [:span
-              {:class (str "text-xxs rounded-full px-2 py-1 "
-                           (case (-> review :status)
-                             "PENDING" "bg-yellow-100 text-yellow-800"
-                             "APPROVED" "bg-green-100 text-green-800"
-                             "REJECTED" "bg-red-100 text-red-800"
-                             "bg-gray-100 text-gray-800"))}
-              (-> review :status)]])])])))
 
 (defn review-details-page [session]
   (let [user (rf/subscribe [:users->current-user])
@@ -180,13 +104,7 @@
               [:span {:class "text-gray-500"}
                "type:"]
               [:span {:class "font-bold"}
-               session-type]]]
-
-            (when in-progress?
-              [:div {:class "flex gap-small lg:justify-end items-center h-full lg:ml-large"}
-               [:div {:class "rounded-full w-1.5 h-1.5 bg-green-500"}]
-               [:span {:class "text-xs text-gray-500"}
-                "This session has pending items"]])]
+               session-type]]]]
 
            [:div {:class "relative flex gap-2.5 items-start pr-3"}
             (when can-kill-session?
@@ -202,8 +120,8 @@
              [:> Tooltip {:content "Copy link"}
               [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer copy-to-clipboard-url"
                      :data-clipboard-text (str (-> js/document .-location .-origin)
-                                               (routes/url-for :sessions)
-                                               "/" (:id session))}
+                                               (routes/url-for :reviews-plugin)
+                                               "/" (-> session :review :id))}
                [:> hero-outline-icon/ClipboardDocumentIcon {:class "h-5 w-5 text-gray-600"}]]]]]]]
 
      ;; Information Grid
@@ -274,12 +192,7 @@
              {:class (str "w-full max-h-40 overflow-auto p-regular whitespace-pre "
                           "rounded-lg bg-gray-100 "
                           "text-xs text-gray-800 font-mono")}
-             [:article (-> session :script :data)]]])
-
-     ;; Event Stream section
-         [:section {:id "session-event-stream"
-                    :class "pt-regular"}
-          [event-stream-content session]]]))))
+             [:article (-> session :script :data)]]])]))))
 
 (defmulti item-view identity)
 (defmethod item-view :opened [_ review-details]
@@ -298,4 +211,3 @@
       [item-view
        (:status @active-review)
        @active-review])))
-
