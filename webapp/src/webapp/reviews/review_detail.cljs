@@ -24,20 +24,22 @@
 (defmethod ^:private review-status-icon "APPROVED" [] "check-black")
 (defmethod ^:private review-status-icon "REJECTED" [] "close-red")
 
-(defn- review-groups [review]
+(defn- review-groups [session]
   (let [user (rf/subscribe [:users->current-user])
-        popover-open? (r/atom false)]
+        popover-open? (r/atom false)
+        review (:review session)]
     (fn []
-      (let [can-review? (and
+      (let [review-groups-data (:review_groups_data review)
+            can-review? (and
                          (some #(= "PENDING" (:status %))
-                               (:review_groups_data review))
+                               review-groups-data)
                          (some (fn [review-group]
                                  (some #(= (:group review-group) %)
                                        (-> @user :data :groups)))
-                               (:review_groups_data review)))
+                               review-groups-data))
             add-review-cb (fn [status]
                             (rf/dispatch [:reviews-plugin->add-review
-                                          review
+                                          session
                                           status])
                             (reset! popover-open? false))]
         [:section
@@ -61,7 +63,7 @@
           {:class (str "flex flex-col gap-small justify-center"
                        " rounded-lg bg-gray-50 p-regular border")}
           (doall
-           (for [group (:review_groups_data review)]
+           (for [group review-groups-data]
              ^{:key (:id group)}
              [:div
               {:class (str "flex items-center gap-small"
@@ -75,11 +77,14 @@
               [icon/regular {:size 4
                              :icon-name (review-status-icon (:status group))}]]))]]))))
 
-(defn review-details-page [review]
-  (let [user-name (-> review :review_owner :name)]
+(defn review-details-page [session]
+  (let [user-name (:user_name session)
+        connection-name (:connection session)
+        review (:review session)
+        session-type (:type session)]
     [:div {:class "p-large bg-white rounded-lg"}
      [:header {:class "mb-large border-b pb-regular"}
-      [h/h2 {:class "text-gray-800"} (-> review :review_connection :name)]]
+      [h/h2 {:class "text-gray-800"} connection-name]]
 
      [:section
       {:id "review-info"
@@ -94,18 +99,23 @@
       [:div {:class "text-sm col-span-1 flex flex-col gap-small"}
        [:div {:class "flex items-center gap-small"}
         [:span {:class "text-gray-500"}
-         "created:"]
+         "started:"]
         [:span {:class "font-bold"}
-         (formatters/time-parsed->full-date (:created_at review))]]
-       (when (> (:access_duration review) 0)
+         (formatters/time-parsed->full-date (:start_date session))]]
+       (when (> (or (:access_duration review) 0) 0)
          [:div {:class "flex items-center gap-small"}
           [:span {:class "text-gray-500"}
            "session time:"]
           [:span {:class "font-bold"}
-           (formatters/time-elapsed (/ (:access_duration review) 1000000))]])]
-      [review-groups review]]
+           (formatters/time-elapsed (/ (:access_duration review) 1000000))]])
+       [:div {:class "flex items-center gap-small"}
+        [:span {:class "text-gray-500"}
+         "type:"]
+        [:span {:class "font-bold"}
+         session-type]]]
+      [review-groups session]]
 
-     (when (not (cs/blank? (:input review)))
+     (when (not (cs/blank? (-> session :script :data)))
        [:section
         {:id "review-command-area"
          :class "pt-large"}
@@ -123,7 +133,7 @@
            {:class "text-white font-bold"}
            "$ "]
           [:span
-           (:input review)]]]])]))
+           (-> session :script :data)]]]])]))
 
 ;; Mantendo o código legado para compatibilidade, podemos remover mais tarde
 (defmulti item-view identity)

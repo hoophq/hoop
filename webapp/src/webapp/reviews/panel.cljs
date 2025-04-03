@@ -7,8 +7,8 @@
             [webapp.reviews.review-item :as review-item]
             [webapp.config :as config]))
 
-(defn- list-item [review]
-  [review-item/review-item nil review])
+(defn- list-item [session]
+  [review-item/review-item nil session])
 
 (defn- empty-list-view []
   [:div {:class "pt-x-large"}
@@ -26,16 +26,16 @@
   [:div {:class "flex items-center justify-center h-full"}
    [loaders/simple-loader]])
 
-(defn- reviews-list [reviews]
+(defn- reviews-list [sessions]
   [:div {:class "relative h-full overflow-y-auto"}
-   (when (empty? reviews)
+   (when (empty? sessions)
      [empty-list-view])
    (doall
-    (for [review reviews]
-      ^{:key (str (:id review) (:group review))}
-      [:div {:class (when (= :loading (:status reviews)) "opacity-50 pointer-events-none")}
-       [list-item review]]))
-   (when (and (not-empty reviews) (> (count reviews) 10))
+    (for [session sessions]
+      ^{:key (str (:id session) (-> session :review :id))}
+      [:div {:class (when (= :loading (:status sessions)) "opacity-50 pointer-events-none")}
+       [list-item session]]))
+   (when (and (not-empty sessions) (> (count sessions) 10))
      [:div {:class "py-regular text-center"}
       [:a
        {:href "#"
@@ -49,10 +49,10 @@
         review-status-options [{:text "Pending" :value "PENDING"}
                                {:text "Approved" :value "APPROVED"}
                                {:text "Rejected" :value "REJECTED"}]
-        filtering (fn [reviews status]
+        filtering (fn [sessions status]
                     (if (string/blank? status)
-                      reviews
-                      (filter #(= status (:status %)) reviews)))]
+                      sessions
+                      (filter #(= status (-> % :review :status)) sessions)))]
     (rf/dispatch [:reviews-plugin->get-reviews])
     (fn []
       [:div {:class "flex flex-col bg-white rounded-lg h-full p-6 overflow-y-auto"}
