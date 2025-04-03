@@ -7,18 +7,32 @@
  :reviews-plugin->get-reviews
  (fn
    [{:keys [db]} [_ limit]]
-   (let [user (-> db :users->current-user :data)]
+   (let [user (-> db :users->current-user :data)
+         limit (or limit 20)]
      {:fx [[:dispatch [:fetch {:method "GET"
-                               :uri (str "/sessions?review.approver=" (:email user))
+                               :uri (str "/sessions?review.approver=" (:email user) "&limit=" limit)
                                :on-success #(rf/dispatch [:reviews-plugin->set-reviews %])}]]
            [:dispatch [:reviews-plugin->set-reviews-status :loading]]]})))
+
+(rf/reg-event-fx
+ :reviews-plugin->load-more-reviews
+ (fn
+   [{:keys [db]} _]
+   (let [current-limit (or (-> db :reviews-plugin->reviews :limit) 20)
+         new-limit (+ current-limit 20)]
+     {:fx [[:dispatch [:reviews-plugin->get-reviews new-limit]]]})))
 
 (rf/reg-event-fx
  :reviews-plugin->set-reviews
  (fn
    [{:keys [db]} [_ sessions]]
-   {:fx [[:dispatch [:reviews-plugin->set-reviews-status :success]]]
-    :db (assoc-in db [:reviews-plugin->reviews :results] (:data sessions))}))
+   (let [current-limit (or (get-in db [:reviews-plugin->reviews :limit]) 20)]
+     {:fx [[:dispatch [:reviews-plugin->set-reviews-status :success]]]
+      :db (-> db
+              (assoc-in [:reviews-plugin->reviews :results] (:data sessions))
+              (assoc-in [:reviews-plugin->reviews :has_next_page] (:has_next_page sessions))
+              (assoc-in [:reviews-plugin->reviews :total] (:total sessions))
+              (assoc-in [:reviews-plugin->reviews :limit] current-limit))})))
 
 (rf/reg-event-fx
  :reviews-plugin->set-reviews-status
