@@ -48,12 +48,8 @@
         reviews (rf/subscribe [:reviews-plugin->reviews])
         review-status-options [{:text "Pending" :value "PENDING"}
                                {:text "Approved" :value "APPROVED"}
-                               {:text "Rejected" :value "REJECTED"}]
-        filtering (fn [sessions status]
-                    (if (string/blank? status)
-                      sessions
-                      (filter #(= status (-> % :review :status)) sessions)))]
-    (rf/dispatch [:reviews-plugin->get-reviews])
+                               {:text "Rejected" :value "REJECTED"}]]
+    (rf/dispatch [:reviews-plugin->get-reviews {:status @review-status}])
     (fn []
       [:div {:class "flex flex-col bg-white rounded-lg h-full p-6 overflow-y-auto"}
        [:div {:class "mb-regular"}
@@ -65,10 +61,10 @@
           :size "2"
           :on-change #(do
                         (reset! review-status %)
-                        (rf/dispatch [:reviews-plugin->get-reviews]))}]]
+                        (rf/dispatch [:reviews-plugin->get-reviews {:status %}]))}]]
 
        (if (= :loading (-> @reviews :status))
          [loading-list-view]
 
          [:div {:class "rounded-lg border bg-white h-full overflow-y-auto"}
-          [reviews-list (filtering (:results @reviews) @review-status) @reviews]])])))
+          [reviews-list (:results @reviews) @reviews]])])))
