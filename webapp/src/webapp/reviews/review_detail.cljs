@@ -24,10 +24,10 @@
 (defmethod ^:private review-status-icon "APPROVED" [] "check-black")
 (defmethod ^:private review-status-icon "REJECTED" [] "close-red")
 
-(defn- review-groups []
+(defn- review-groups [review]
   (let [user (rf/subscribe [:users->current-user])
         popover-open? (r/atom false)]
-    (fn [review]
+    (fn []
       (let [can-review? (and
                          (some #(= "PENDING" (:status %))
                                (:review_groups_data review))
@@ -45,10 +45,10 @@
          (when can-review?
            [:div
             {:id "add-your-review-container"
-             :class "relative flex justify-end"}
+             :class "relative flex justify-end mb-small"}
             [button/secondary {:outlined true
                                :text [:span
-                                      {:class "flex items-center"}
+                                      {:class "flex items-center gap-small"}
                                       [:span "Add your review"]
                                       [icon/regular {:size 4
                                                      :icon-name "cheveron-down"}]]
@@ -59,7 +59,7 @@
                             :on-click-outside #(reset! popover-open? false)}]])
          [:div
           {:class (str "flex flex-col gap-small justify-center"
-                       " rounded-lg bg-gray-100 p-regular")}
+                       " rounded-lg bg-gray-50 p-regular border")}
           (doall
            (for [group (:review_groups_data review)]
              ^{:key (:id group)}
@@ -75,17 +75,15 @@
               [icon/regular {:size 4
                              :icon-name (review-status-icon (:status group))}]]))]]))))
 
-(defmulti item-view identity)
-(defmethod item-view :opened [_ review-details]
-  (let [review (:review review-details)
-        user-name (-> review :review_owner :name)]
-    [:div
-     [:header
-      [h/h2 (-> review :review_connection :name)]]
+(defn review-details-page [review]
+  (let [user-name (-> review :review_owner :name)]
+    [:div {:class "p-large bg-white rounded-lg"}
+     [:header {:class "mb-large border-b pb-regular"}
+      [h/h2 {:class "text-gray-800"} (-> review :review_connection :name)]]
 
      [:section
       {:id "review-info"
-       :class "grid grid-cols-1 lg:grid-cols-3 gap-regular items-center"}
+       :class "grid grid-cols-1 lg:grid-cols-3 gap-large items-center mb-large"}
       [:div {:class "col-span-1 flex gap-large items-center"}
        [:div {:class "flex flex-grow gap-regular items-center"}
         [user-icon/initials-black user-name]
@@ -94,7 +92,6 @@
          user-name]]]
 
       [:div {:class "text-sm col-span-1 flex flex-col gap-small"}
-       ;; TODO: Change to type (when (= (:type review) "jit")) when it was more secure to do.
        [:div {:class "flex items-center gap-small"}
         [:span {:class "text-gray-500"}
          "created:"]
@@ -107,7 +104,7 @@
           [:span {:class "font-bold"}
            (formatters/time-elapsed (/ (:access_duration review) 1000000))]])]
       [review-groups review]]
-     ;; TODO: Change to type (when (= (:type review) "onetime")) when it was more secure to do.
+
      (when (not (cs/blank? (:input review)))
        [:section
         {:id "review-command-area"
@@ -115,12 +112,23 @@
         [:div
          {:class (str "rounded-lg p-regular bg-gray-800 text-white"
                       " whitespace-pre font-mono overflow-auto"
-                      " text-sm text-gray-50")}
-         [:span
-          {:class "text-white font-bold"}
-          "$ "]
-         [:span
-          (:input review)]]])]))
+                      " text-sm text-gray-50 border border-gray-700")}
+         [:div {:class "flex items-center gap-small mb-small"}
+          [icon/regular {:icon-name "terminal"
+                         :size 4
+                         :class "text-gray-400"}]
+          [:span {:class "text-gray-400"} "Command Input"]]
+         [:div
+          [:span
+           {:class "text-white font-bold"}
+           "$ "]
+          [:span
+           (:input review)]]]])]))
+
+;; Mantendo o código legado para compatibilidade, podemos remover mais tarde
+(defmulti item-view identity)
+(defmethod item-view :opened [_ review-details]
+  (review-details-page (:review review-details)))
 
 (defmethod item-view :default [_]
   [:div.flex.justify-center.items-center.h-full
@@ -135,9 +143,4 @@
       [item-view
        (:status @active-review)
        @active-review])))
-
-(defn review-details-page []
-  [:div
-   {:class (str "bg-white p-large rounded-lg h-full")}
-   [review-detail]])
 
