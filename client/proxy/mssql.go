@@ -61,9 +61,7 @@ func (s *MSSQLServer) serveConn(sessionID, connectionID string, mssqlClient net.
 		log.Infof("session=%v | conn=%s | remote=%s - closing tcp connection",
 			sessionID, connectionID, mssqlClient.RemoteAddr())
 		s.connectionStore.Del(connectionID)
-		if err := mssqlClient.Close(); err != nil {
-			log.Warnf("failed closing client connection, err=%v", err)
-		}
+		_ = mssqlClient.Close()
 		_ = s.client.Send(&pb.Packet{
 			Type: pbagent.TCPConnectionClose,
 			Spec: map[string][]byte{
@@ -88,7 +86,9 @@ func (s *MSSQLServer) serveConn(sessionID, connectionID string, mssqlClient net.
 func (s *MSSQLServer) PacketWriteClient(connectionID string, pkt *pb.Packet) (int, error) {
 	conn, err := s.getConnection(connectionID)
 	if err != nil {
-		return 0, err
+		sid := string(pkt.Spec[pb.SpecGatewaySessionID])
+		log.Warnf("session=%v | conn=%v | discarding packet, reason=%v", sid, connectionID, err)
+		return 0, nil
 	}
 	return conn.Write(pkt.Payload)
 }

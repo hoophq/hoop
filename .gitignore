@@ -42,6 +42,10 @@ libhoop
 *.srl
 *.key
 
+# misc dev code
+client/cmd/auth
+client/cmd/auth.go
+
 deploy/docker-compose/hoopdata/terraform/outputs/
 deploy/docker-compose/hoopdata/sessions
 deploy/docker-compose/hoopdata/zitadel-admin-sa.json
