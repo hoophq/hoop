@@ -260,9 +260,9 @@ func ListSessions(orgID string, opt SessionOption) (*SessionList, error) {
 			CASE WHEN (@review_approver_email)::TEXT IS NOT NULL
 				THEN
 					EXISTS (
-						SELECT 1 FROM private.review_groups rg
-						INNER JOIN private.users u ON u.email = s.user_email
-						INNER JOIN private.user_groups ug ON ug.user_id = u.id AND ug.name = rg.group_name
+						SELECT 1 FROM private.users u
+						INNER JOIN private.user_groups ug ON ug.user_id = u.id
+						INNER JOIN private.review_groups rg ON rg.group_name = ug.name
 						WHERE rg.review_id = rv.id AND u.email = @review_approver_email
 					)
 				ELSE true
@@ -329,9 +329,9 @@ func ListSessions(orgID string, opt SessionOption) (*SessionList, error) {
 			CASE WHEN (@review_approver_email)::TEXT IS NOT NULL
 				THEN
 					EXISTS (
-						SELECT 1 FROM private.review_groups rg
-						INNER JOIN private.users u ON u.email = s.user_email
-						INNER JOIN private.user_groups ug ON ug.user_id = u.id AND ug.name = rg.group_name
+						SELECT 1 FROM private.users u
+						INNER JOIN private.user_groups ug ON ug.user_id = u.id
+						INNER JOIN private.review_groups rg ON rg.group_name = ug.name
 						WHERE rg.review_id = rv.id AND u.email = @review_approver_email
 					)
 				ELSE true

@@ -1,13 +1,20 @@
 (ns webapp.reviews.review-detail
-  (:require [clojure.string :as cs]
-            [re-frame.core :as rf]
-            [reagent.core :as r]
-            [webapp.components.button :as button]
-            [webapp.components.headings :as h]
-            [webapp.components.icon :as icon]
-            [webapp.components.popover :as popover]
-            [webapp.components.user-icon :as user-icon]
-            [webapp.formatters :as formatters]))
+  (:require
+   ["@heroicons/react/24/outline" :as hero-outline-icon]
+   ["@radix-ui/themes" :refer [Box Tooltip]]
+   ["clipboard" :as clipboardjs]
+   [clojure.string :as cs]
+   [re-frame.core :as rf]
+   [reagent.core :as r]
+   [webapp.components.button :as button]
+   [webapp.components.headings :as h]
+   [webapp.components.icon :as icon]
+   [webapp.components.popover :as popover]
+   [webapp.components.tooltip :as tooltip]
+   [webapp.components.user-icon :as user-icon]
+   [webapp.config :as config]
+   [webapp.formatters :as formatters]
+   [webapp.routes :as routes]))
 
 (defn- add-review-popover [add-review-cb]
   [:div
@@ -24,103 +31,172 @@
 (defmethod ^:private review-status-icon "APPROVED" [] "check-black")
 (defmethod ^:private review-status-icon "REJECTED" [] "close-red")
 
-(defn- review-groups []
+(defn- review-group-item [group session user]
+  (let [add-review-popover-open? (r/atom false)
+        add-review (fn [status]
+                     (rf/dispatch [:reviews-plugin->add-review
+                                   session
+                                   status
+                                   (:group group)])
+                     (reset! add-review-popover-open? false))]
+    [:> Box {:class "flex w-full relative items-center gap-small text-xs"}
+     [:> Box
+      [icon/regular {:size 4
+                     :icon-name "user-group"}]]
+     [tooltip/truncate-tooltip {:text (:group group)}]
+     [:> Box
+      [:span {:class "text-xxs italic text-gray-500 text-right"}
+       (:status group)]
+      (when (or (= (:status group) "APPROVED")
+                (= (:status group) "REJECTED"))
+        [:> Box {:class "text-xxs italic text-gray-500 text-right max-w-[100px]"}
+         [tooltip/truncate-tooltip {:text (-> group :reviewed_by :email)}]])]
+     [:> Box
+      [icon/regular {:size 4
+                     :icon-name (review-status-icon
+                                 (cs/upper-case (:status group)))}]]
+     [popover/right {:open @add-review-popover-open?
+                     :component [add-review-popover add-review]
+                     :on-click-outside #(reset! add-review-popover-open? false)}]]))
+
+(defn review-details-page [session]
   (let [user (rf/subscribe [:users->current-user])
-        popover-open? (r/atom false)]
-    (fn [review]
-      (let [can-review? (and
+        session-details (rf/subscribe [:reviews-plugin->review-details])
+        add-review-popover-open? (r/atom false)
+        clipboard-url (new clipboardjs ".copy-to-clipboard-url")]
+    (when session
+      (rf/dispatch [:reviews-plugin->get-review-by-id session]))
+    (fn [_]
+      (let [current-session (:review @session-details)
+            user-name (:user_name current-session)
+            connection-name (:connection current-session)
+            review (:review current-session)
+            review-groups-data (:review_groups_data review)
+            session-type (:type current-session)
+            start-date (:start_date current-session)
+            end-date (:end_date current-session)
+            verb (:verb current-session)
+
+            can-review? (and
                          (some #(= "PENDING" (:status %))
-                               (:review_groups_data review))
+                               review-groups-data)
                          (some (fn [review-group]
                                  (some #(= (:group review-group) %)
                                        (-> @user :data :groups)))
-                               (:review_groups_data review)))
+                               review-groups-data))
             add-review-cb (fn [status]
                             (rf/dispatch [:reviews-plugin->add-review
-                                          review
+                                          current-session
                                           status])
-                            (reset! popover-open? false))]
-        [:section
-         {:class "flex flex-col gap-small"}
-         (when can-review?
+                            (reset! add-review-popover-open? false))
+            in-progress? (or (= end-date nil)
+                             (= end-date ""))
+            _ (.on clipboard-url "success" #(rf/dispatch [:show-snackbar {:level :success :text "URL copied to clipboard"}]))]
+        [:div
+     ;; Header
+         [:header {:class "mb-regular mr-large"}
+          [:div {:class "flex"}
+           [:div {:class "flex flex-col lg:flex-row flex-grow gap-small lg:items-baseline"}
+            [:div {:class "flex flex-col"}
+             [h/h2 connection-name]
+             [:div {:class "text-sm flex flex-grow gap-regular"}
+              [:span {:class "text-gray-500"}
+               "type:"]
+              [:span {:class "font-bold"}
+               session-type]]]]
+
+           [:div {:class "relative flex gap-2.5 items-start pr-3"}
+            (when (-> session :integrations_metadata :jira_issue_url)
+              [:div {:class "relative group"}
+               [:> Tooltip {:content "Open in Jira"}
+                [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer"
+                       :on-click (fn []
+                                   (js/open (-> session :integrations_metadata :jira_issue_url) "_blank"))}
+                 [:div
+                  [:figure {:class "flex-shrink-0 w-[20px]"
+                            :style {:color "currentColor"}}
+                   [:img {:src (str config/webapp-url "/icons/icon-jira-current-color.svg")}]]]]]])
+
+            [:div {:class "relative group"}
+             [:> Tooltip {:content "Copy link"}
+              [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer copy-to-clipboard-url"
+                     :data-clipboard-text (str (-> js/document .-location .-origin)
+                                               (routes/url-for :reviews-plugin)
+                                               "/" (-> current-session :review :id))}
+               [:> hero-outline-icon/ClipboardDocumentIcon {:class "h-5 w-5 text-gray-600"}]]]]]]]
+
+     ;; Information Grid
+         [:section {:class "grid grid-cols-1 gap-regular pb-regular lg:grid-cols-3"}
+          [:div {:class "col-span-1 flex gap-large items-center"}
+           [:div {:class "flex flex-grow gap-regular items-center"}
+            [user-icon/initials-black user-name]
+            [:span
+             {:class "text-gray-800 text-sm"}
+             user-name]]]
+
+          [:div {:class (str "flex flex-col gap-small self-center justify-center"
+                             " rounded-lg bg-gray-100 p-3")}
            [:div
-            {:id "add-your-review-container"
-             :class "relative flex justify-end"}
-            [button/secondary {:outlined true
-                               :text [:span
-                                      {:class "flex items-center"}
-                                      [:span "Add your review"]
-                                      [icon/regular {:size 4
-                                                     :icon-name "cheveron-down"}]]
-                               :on-click #(reset! popover-open? (not @popover-open?))
-                               :variant :small}]
-            [popover/right {:open @popover-open?
-                            :component [add-review-popover add-review-cb]
-                            :on-click-outside #(reset! popover-open? false)}]])
-         [:div
-          {:class (str "flex flex-col gap-small justify-center"
-                       " rounded-lg bg-gray-100 p-regular")}
-          (doall
-           (for [group (:review_groups_data review)]
-             ^{:key (:id group)}
+            {:class "flex items-center gap-regular text-xs"}
+            [:span
+             {:class "flex-grow text-gray-500"}
+             "start:"]
+            [:span
+             (formatters/time-parsed->full-date start-date)]]
+           (when-not (and (= verb "exec") in-progress?)
              [:div
-              {:class (str "flex items-center gap-small"
-                           " text-sm")}
-              [icon/regular {:size 4
-                             :icon-name "user-group"}]
-              [:span (:group group)]
+              {:class "flex items-center justify-end gap-regular text-xs"}
               [:span
-               {:class "flex-grow text-xs italic text-gray-500 text-right"}
-               (:status group)]
-              [icon/regular {:size 4
-                             :icon-name (review-status-icon (:status group))}]]))]]))))
+               {:class "flex-grow text-gray-500"}
+               "end:"]
+              [:span
+               (formatters/time-parsed->full-date end-date)]])
+           (when (> (or (:access_duration review) 0) 0)
+             [:div {:class "flex items-center gap-small"}
+              [:span {:class "text-gray-500"}
+               "session time:"]
+              [:span {:class "font-bold"}
+               (formatters/time-elapsed (/ (:access_duration review) 1000000))]])]
+
+      ;; Reviewers section
+          [:div {:id "session-reviews" :class "self-center"}
+           [:header {:class "relative flex text-xs text-gray-800 mb-small"}
+            [:span {:class "flex-grow font-bold"} "Reviewers"]
+            [:<>
+             (when can-review?
+               [:span {:class (str "flex items-center cursor-pointer "
+                                   "text-xxs text-blue-500 font-semibold")
+                       :on-click #(reset! add-review-popover-open? true)}
+                [:span "Add your review"]
+                [icon/regular {:size 5
+                               :icon-name "cheveron-down-blue"}]])
+
+             [popover/right {:open @add-review-popover-open?
+                             :component [add-review-popover add-review-cb]
+                             :on-click-outside #(reset! add-review-popover-open? false)}]]]
+
+           (when (empty? review-groups-data)
+             [:div
+              {:class "py-small text-xs italic text-gray-500 text-left"}
+              "No review info"])
+           [:div {:class "rounded-lg w-full flex flex-col gap-2"}
+            (doall
+             (for [group review-groups-data]
+               ^{:key (:id group)}
+               [review-group-item group current-session @user]))]]]
+
+     ;; Script section
+         (when (not (cs/blank? (-> current-session :script :data)))
+           [:section {:id "session-script"}
+            [:div
+             {:class (str "w-full max-h-40 overflow-auto p-regular whitespace-pre "
+                          "rounded-lg bg-gray-100 "
+                          "text-xs text-gray-800 font-mono")}
+             [:article (-> current-session :script :data)]]])]))))
 
 (defmulti item-view identity)
 (defmethod item-view :opened [_ review-details]
-  (let [review (:review review-details)
-        user-name (-> review :review_owner :name)]
-    [:div
-     [:header
-      [h/h2 (-> review :review_connection :name)]]
-
-     [:section
-      {:id "review-info"
-       :class "grid grid-cols-1 lg:grid-cols-3 gap-regular items-center"}
-      [:div {:class "col-span-1 flex gap-large items-center"}
-       [:div {:class "flex flex-grow gap-regular items-center"}
-        [user-icon/initials-black user-name]
-        [:span
-         {:class "text-gray-800 text-sm"}
-         user-name]]]
-
-      [:div {:class "text-sm col-span-1 flex flex-col gap-small"}
-       ;; TODO: Change to type (when (= (:type review) "jit")) when it was more secure to do.
-       [:div {:class "flex items-center gap-small"}
-        [:span {:class "text-gray-500"}
-         "created:"]
-        [:span {:class "font-bold"}
-         (formatters/time-parsed->full-date (:created_at review))]]
-       (when (> (:access_duration review) 0)
-         [:div {:class "flex items-center gap-small"}
-          [:span {:class "text-gray-500"}
-           "session time:"]
-          [:span {:class "font-bold"}
-           (formatters/time-elapsed (/ (:access_duration review) 1000000))]])]
-      [review-groups review]]
-     ;; TODO: Change to type (when (= (:type review) "onetime")) when it was more secure to do.
-     (when (not (cs/blank? (:input review)))
-       [:section
-        {:id "review-command-area"
-         :class "pt-large"}
-        [:div
-         {:class (str "rounded-lg p-regular bg-gray-800 text-white"
-                      " whitespace-pre font-mono overflow-auto"
-                      " text-sm text-gray-50")}
-         [:span
-          {:class "text-white font-bold"}
-          "$ "]
-         [:span
-          (:input review)]]])]))
+  (review-details-page (:review review-details)))
 
 (defmethod item-view :default [_]
   [:div.flex.justify-center.items-center.h-full
@@ -135,9 +211,3 @@
       [item-view
        (:status @active-review)
        @active-review])))
-
-(defn review-details-page []
-  [:div
-   {:class (str "bg-white p-large rounded-lg h-full")}
-   [review-detail]])
-
