@@ -166,35 +166,3 @@
      {:fx [[:dispatch [:fetch {:method "GET"
                                :uri (str "/sessions/" session-id)
                                :on-success #(rf/dispatch [:reviews-plugin->set-review-detail %])}]]]})))
-
-(rf/reg-event-fx
- :reviews-plugin->kill-session
- (fn
-   [{:keys [db]} [_ session killing-status]]
-   (let [current-status (get-in db [:reviews-plugin->reviews :params-status] "")
-         current-limit (get-in db [:reviews-plugin->reviews :params-limit] 20)
-         current-connection (get-in db [:reviews-plugin->reviews :params-connection] "")
-         current-start-date (get-in db [:reviews-plugin->reviews :params-start_date] "")
-         current-end-date (get-in db [:reviews-plugin->reviews :params-end_date] "")]
-     {:fx [[:dispatch [:fetch {:method "POST"
-                               :uri (str "/sessions/" (:id session) "/kill")
-                               :on-success (fn [_]
-                                             (when killing-status
-                                               (reset! killing-status :ready))
-                                             (rf/dispatch [:show-snackbar
-                                                           {:level :success
-                                                            :text "Session killed successfully"}])
-                                             (rf/dispatch [:reviews-plugin->get-reviews
-                                                           {:status current-status
-                                                            :limit current-limit
-                                                            :connection current-connection
-                                                            :start_date current-start-date
-                                                            :end_date current-end-date}])
-                                             (rf/dispatch [:modal->close]))
-                               :on-failure (fn [error]
-                                             (when killing-status
-                                               (reset! killing-status :ready))
-                                             (rf/dispatch [:show-snackbar
-                                                           {:level :error
-                                                            :text (or (:message error) "Failed to kill session")}]))}]]]})))
-

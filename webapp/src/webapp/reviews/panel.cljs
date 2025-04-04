@@ -62,20 +62,20 @@
                                {:text "Approved" :value "APPROVED"}
                                {:text "Rejected" :value "REJECTED"}]
 
+        iso-date (fn [filter-key date]
+                   (when (not (string/blank? date))
+                     (.toISOString
+                      (new js/Date
+                           (if (= filter-key "start_date")
+                             (str date " 00:00:00.000Z")
+                             (str date " 23:59:59.000Z"))))))
 
         dispatch-date (fn [date-obj]
-                        (let [iso-date (fn [filter-key date]
-                                         (when (not (string/blank? date))
-                                           (.toISOString
-                                            (new js/Date
-                                                 (if (= filter-key "start_date")
-                                                   (str date " 00:00:00.000Z")
-                                                   (str date " 23:59:59.000Z"))))))]
-                          (rf/dispatch [:reviews-plugin->get-reviews
-                                        {:status @review-status
-                                         :connection @review-connection
-                                         :start_date (iso-date "start_date" (.-startDate date-obj))
-                                         :end_date (iso-date "end_date" (.-endDate date-obj))}])))]
+                        (rf/dispatch [:reviews-plugin->get-reviews
+                                      {:status @review-status
+                                       :connection @review-connection
+                                       :start_date (iso-date "start_date" (.-startDate date-obj))
+                                       :end_date (iso-date "end_date" (.-endDate date-obj))}]))]
     (rf/dispatch [:reviews-plugin->get-reviews {:status @review-status}])
     (rf/dispatch [:connections->get-connections])
     (fn []
@@ -122,8 +122,8 @@
                                         (rf/dispatch [:reviews-plugin->get-reviews
                                                       {:status (:value status)
                                                        :connection @review-connection
-                                                       :start_date (.-startDate @date)
-                                                       :end_date (.-endDate @date)}])
+                                                       :start_date (iso-date "start_date" (.-startDate @date))
+                                                       :end_date (iso-date "end_date" (.-endDate @date))}])
                                         (.close params))}
                        [:div {:class "w-full flex justify-between items-center gap-regular"}
                         [:div {:class "flex items-center gap-small"}
@@ -189,8 +189,8 @@
                                           (rf/dispatch [:reviews-plugin->get-reviews
                                                         {:status @review-status
                                                          :connection (:name connection)
-                                                         :start_date (.-startDate @date)
-                                                         :end_date (.-endDate @date)}])
+                                                         :start_date (iso-date "start_date" (.-startDate @date))
+                                                         :end_date (iso-date "end_date" (.-endDate @date))}])
                                           (.close params))}
                          [:div {:class "w-full flex justify-between items-center gap-regular"}
                           [:div {:class "flex items-center gap-small"}
