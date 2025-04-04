@@ -112,24 +112,25 @@
                 [:div
                  [:div {:class "relative"}
                   [:ul
-                   (for [status review-status-options]
-                     ^{:key (:text status)}
-                     [:li {:class (str "flex justify-between cursor-pointer items-center gap-small "
-                                       "text-sm text-gray-700 hover:bg-gray-200 rounded-md px-3 py-2")
-                           :on-click (fn []
-                                       (reset! review-status (:value status))
-                                       (rf/dispatch [:reviews-plugin->get-reviews
-                                                     {:status (:value status)
-                                                      :connection @review-connection
-                                                      :start_date (.-startDate @date)
-                                                      :end_date (.-endDate @date)}])
-                                       (.close params))}
-                      [:div {:class "w-full flex justify-between items-center gap-regular"}
-                       [:div {:class "flex items-center gap-small"}
-                        [:span {:class "block truncate"}
-                         (:text status)]]
-                       (when (= (:value status) @review-status)
-                         [:> Check {:size 16}])]])]]]]]))]
+                   (doall
+                    (for [status review-status-options]
+                      ^{:key (:text status)}
+                      [:li {:class (str "flex justify-between cursor-pointer items-center gap-small "
+                                        "text-sm text-gray-700 hover:bg-gray-200 rounded-md px-3 py-2")
+                            :on-click (fn []
+                                        (reset! review-status (:value status))
+                                        (rf/dispatch [:reviews-plugin->get-reviews
+                                                      {:status (:value status)
+                                                       :connection @review-connection
+                                                       :start_date (.-startDate @date)
+                                                       :end_date (.-endDate @date)}])
+                                        (.close params))}
+                       [:div {:class "w-full flex justify-between items-center gap-regular"}
+                        [:div {:class "flex items-center gap-small"}
+                         [:span {:class "block truncate"}
+                          (:text status)]]
+                        (when (= (:value status) @review-status)
+                          [:> Check {:size 16}])]]))]]]]]))]
 
         ;; Connection Filter
           [:> ui/Popover {:class "relative"}
@@ -178,27 +179,28 @@
 
                    [:div {:class "relative"}
                     [:ul
-                     (for [connection connections-search-results]
-                       ^{:key (:name connection)}
-                       [:li {:class (str "flex justify-between cursor-pointer items-center gap-small "
-                                         "text-sm text-gray-700 hover:bg-gray-200 rounded-md px-3 py-2")
-                             :on-click (fn []
-                                         (reset! review-connection (:name connection))
-                                         (rf/dispatch [:reviews-plugin->get-reviews
-                                                       {:status @review-status
-                                                        :connection (:name connection)
-                                                        :start_date (.-startDate @date)
-                                                        :end_date (.-endDate @date)}])
-                                         (.close params))}
-                        [:div {:class "w-full flex justify-between items-center gap-regular"}
-                         [:div {:class "flex items-center gap-small"}
-                          [:figure {:class "w-5"}
-                           [:img {:src  (connection-constants/get-connection-icon connection)
-                                  :class "w-9"}]]
-                          [:span {:class "block truncate"}
-                           (:name connection)]]
-                         (when (= (:name connection) @review-connection)
-                           [:> Check {:size 16}])]])]])]]]))]
+                     (doall
+                      (for [connection connections-search-results]
+                        ^{:key (:name connection)}
+                        [:li {:class (str "flex justify-between cursor-pointer items-center gap-small "
+                                          "text-sm text-gray-700 hover:bg-gray-200 rounded-md px-3 py-2")
+                              :on-click (fn []
+                                          (reset! review-connection (:name connection))
+                                          (rf/dispatch [:reviews-plugin->get-reviews
+                                                        {:status @review-status
+                                                         :connection (:name connection)
+                                                         :start_date (.-startDate @date)
+                                                         :end_date (.-endDate @date)}])
+                                          (.close params))}
+                         [:div {:class "w-full flex justify-between items-center gap-regular"}
+                          [:div {:class "flex items-center gap-small"}
+                           [:figure {:class "w-5"}
+                            [:img {:src  (connection-constants/get-connection-icon connection)
+                                   :class "w-9"}]]
+                           [:span {:class "block truncate"}
+                            (:name connection)]]
+                          (when (= (:name connection) @review-connection)
+                            [:> Check {:size 16}])]]))]])]]]))]
 
         ;; Date Filter
           [:div

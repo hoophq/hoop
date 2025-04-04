@@ -1,19 +1,20 @@
 (ns webapp.reviews.review-detail
-  (:require [clojure.string :as cs]
-            [re-frame.core :as rf]
-            [reagent.core :as r]
-            ["@heroicons/react/24/outline" :as hero-outline-icon]
-            ["@radix-ui/themes" :refer [Button Box Flex Text Tooltip]]
-            ["clipboard" :as clipboardjs]
-            [webapp.components.button :as button]
-            [webapp.components.headings :as h]
-            [webapp.components.icon :as icon]
-            [webapp.components.loaders :as loaders]
-            [webapp.components.popover :as popover]
-            [webapp.components.tooltip :as tooltip]
-            [webapp.components.user-icon :as user-icon]
-            [webapp.formatters :as formatters]
-            [webapp.routes :as routes]))
+  (:require
+   ["@heroicons/react/24/outline" :as hero-outline-icon]
+   ["@radix-ui/themes" :refer [Box Tooltip]]
+   ["clipboard" :as clipboardjs]
+   [clojure.string :as cs]
+   [re-frame.core :as rf]
+   [reagent.core :as r]
+   [webapp.components.button :as button]
+   [webapp.components.headings :as h]
+   [webapp.components.icon :as icon]
+   [webapp.components.popover :as popover]
+   [webapp.components.tooltip :as tooltip]
+   [webapp.components.user-icon :as user-icon]
+   [webapp.config :as config]
+   [webapp.formatters :as formatters]
+   [webapp.routes :as routes]))
 
 (defn- add-review-popover [add-review-cb]
   [:div
@@ -105,6 +106,17 @@
                session-type]]]]
 
            [:div {:class "relative flex gap-2.5 items-start pr-3"}
+            (when (-> session :integrations_metadata :jira_issue_url)
+              [:div {:class "relative group"}
+               [:> Tooltip {:content "Open in Jira"}
+                [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer"
+                       :on-click (fn []
+                                   (js/open (-> session :integrations_metadata :jira_issue_url) "_blank"))}
+                 [:div
+                  [:figure {:class "flex-shrink-0 w-[20px]"
+                            :style {:color "currentColor"}}
+                   [:img {:src (str config/webapp-url "/icons/icon-jira-current-color.svg")}]]]]]])
+
             [:div {:class "relative group"}
              [:> Tooltip {:content "Copy link"}
               [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer copy-to-clipboard-url"
