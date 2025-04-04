@@ -150,6 +150,7 @@ RUN URL= && dpkgArch="$(dpkg --print-architecture)" \
   chmod 0755 /usr/local/bin/postgrest && \
   postgrest --version
 
+COPY rootfs/usr/local/bin/mongosh /usr/local/bin/mongosh
 RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
   locale-gen
 ENV LANG en_US.UTF-8

@@ -1,0 +1,22 @@
+#!/bin/bash
+set -eo pipefail
+
+: "${HOOP_SESSION_ID:?Required environment variable}"
+[[ "$CONNECTION_DEBUG" == "1" ]] && set -x
+
+# stdin or pipe redirect
+if [[ ! -t 0 && ! -p /dev/stdin ]] || [[ -p /dev/stdin ]]; then
+    JS_FILE=/tmp/$HOOP_SESSION_ID.js
+    function cleanup() {
+        rm -f $JS_FILE || true
+    }
+    trap cleanup EXIT
+
+    cat > $JS_FILE
+    chmod 0400 $JS_FILE
+    /usr/bin/mongosh --file $JS_FILE $@
+    exit $?
+fi
+
+# normal execution
+/usr/bin/mongosh $@

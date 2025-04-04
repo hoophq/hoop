@@ -467,7 +467,7 @@ dbs.databases.forEach(function(database) {
 					"database_name": database.name
 	});
 });
-JSON.stringify(result);`
+print(JSON.stringify(result));`
 
 	default:
 		log.Warnf("unsupported database type: %v", currentConnectionType)
@@ -513,12 +513,13 @@ JSON.stringify(result);`
 		var err error
 
 		if currentConnectionType == pb.ConnectionTypeMongoDB {
-			var result []map[string]interface{}
-			output := cleanMongoOutput(outcome.Output)
-			if err := json.Unmarshal([]byte(output), &result); err != nil {
-				log.Errorf("failed parsing mongo response: %v", err)
-				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse MongoDB response: %v", err)})
-				return
+			var result []map[string]any
+			if output := cleanMongoOutput(outcome.Output); output != "" {
+				if err := json.Unmarshal([]byte(output), &result); err != nil {
+					log.Errorf("failed parsing mongo response: %v", err)
+					c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse MongoDB response: %v", err)})
+					return
+				}
 			}
 			for _, db := range result {
 				if dbName, ok := db["database_name"].(string); ok {
