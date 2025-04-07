@@ -15,21 +15,23 @@ var (
 	debugFlag     bool
 )
 
+var rootPreRunFn = func(_ *cobra.Command, _ []string) {
+	// run with the env GODEBUG=http2debug=2 to log http2 frames.
+	if debugGrpcFlag {
+		log.SetGrpcLogger()
+	}
+	if debugFlag {
+		log.SetDefaultLoggerLevel(log.LevelDebug)
+	}
+}
+
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:               "hoop",
 	CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
 	Long: `Connect to private infra-structure without the need of a VPN.
 https://hoop.dev/docs`,
-	PersistentPreRun: func(_ *cobra.Command, _ []string) {
-		// run with the env GODEBUG=http2debug=2 to log http2 frames.
-		if debugGrpcFlag {
-			log.SetGrpcLogger()
-		}
-		if debugFlag {
-			log.SetDefaultLoggerLevel(log.LevelDebug)
-		}
-	},
+	PersistentPreRun: rootPreRunFn,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.

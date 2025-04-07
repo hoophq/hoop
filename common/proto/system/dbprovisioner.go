@@ -99,7 +99,13 @@ func (r *DBProvisionerRequest) Port() (v string) {
 }
 
 func (r *DBProvisionerResponse) String() string {
-	return fmt.Sprintf("status=%v, message=%v", r.Status, r.Message)
+	var rolesResultErr []string
+	for _, r := range r.Result {
+		if r.Message != "" {
+			rolesResultErr = append(rolesResultErr, r.Message)
+		}
+	}
+	return fmt.Sprintf("status=%v, message=%v, roles-message=%v", r.Status, r.Message, rolesResultErr)
 }
 
 func (r *DBProvisionerResponse) Encode() ([]byte, string, error) {
