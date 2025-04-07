@@ -140,12 +140,16 @@ func ParseIssueFields(tmpl *models.JiraIssueTemplate, input map[string]string, s
 	for jiraField, mappingType := range mappingTypes {
 		switch mappingType.Type {
 		case "preset":
-			presetVal, ok := presetFields[mappingType.Value]
-			if !ok {
-				invalidPresetFields = append(invalidPresetFields, fmt.Sprintf("%q", mappingType.Value))
+			presetVal, exists := presetFields[mappingType.Value]
+			if exists {
+				output[jiraField] = presetVal
 				continue
 			}
-			output[jiraField] = presetVal
+			// this attribute is applied a best effort and must not return in case the mapping is not available
+			isConnTagsAttr := strings.HasPrefix(mappingType.Value, "session.connection_tags")
+			if !isConnTagsAttr {
+				invalidPresetFields = append(invalidPresetFields, fmt.Sprintf("%q", mappingType.Value))
+			}
 		case "custom":
 			output[jiraField] = mappingType.Value
 		default:
@@ -179,7 +183,7 @@ func loadDefaultPresetFields(s models.Session) map[string]string {
 	if len(script) > 5000 {
 		script = script[0:5000] + fmt.Sprintf(" ...[TRUNCATED %v]", len(script[5000:]))
 	}
-	return map[string]string{
+	presetFields := map[string]string{
 		"session.id":          s.ID,
 		"session.user_email":  s.UserEmail,
 		"session.user_id":     s.UserID,
@@ -192,4 +196,9 @@ func loadDefaultPresetFields(s models.Session) map[string]string {
 		"session.start_date":  s.CreatedAt.Format(time.RFC3339),
 		"session.webapp_link": appconfig.Get().ApiURL() + "/sessions/" + s.ID,
 	}
+	for key, val := range s.ConnectionTags {
+		presetKey := "session.connection_tags." + key
+		presetFields[presetKey] = val
+	}
+	return presetFields
 }

@@ -67,11 +67,29 @@ var createCmd = &cobra.Command{
 }
 
 var viewCmd = &cobra.Command{
-	Use:          "view",
+	Use:          "view [ATTRIBUTE]",
 	Short:        "Show the current configuration",
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
 		c := clientconfig.GetClientConfigOrDie()
+		if len(args) > 0 {
+			var value string
+			switch args[0] {
+			case "api_url":
+				value = c.ApiURL
+			case "grpc_url":
+				value = c.GrpcURL
+			case "token":
+				value = c.Token
+			case "tls_ca":
+				value = c.TlsCAB64Enc
+			default:
+				styles.PrintErrorAndExit("attribute not supported, accept only: api_url, grpc_url, token, tls_ca")
+			}
+			fmt.Println(value)
+			return
+		}
+
 		fmt.Printf("api_url=%s\n", c.ApiURL)
 		fmt.Printf("grpc_url=%s\n", c.GrpcURL)
 		if viewRawFlag {

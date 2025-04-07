@@ -68,6 +68,7 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 			Connection:           pctx.ConnectionName,
 			ConnectionType:       pctx.ConnectionType,
 			ConnectionSubtype:    pctx.ConnectionSubType,
+			ConnectionTags:       pctx.ConnectionTags,
 			Verb:                 pctx.ClientVerb,
 			Labels:               nil,
 			Metadata:             nil,

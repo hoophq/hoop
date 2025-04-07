@@ -476,6 +476,8 @@ type Session struct {
 	ConnectionSubtype string `json:"connection_subtype" example:"postgres"`
 	// The connection name of this resource
 	Connection string `json:"connection" example:"pgdemo"`
+	// The tags of the connection resource
+	ConnectionTags map[string]string `json:"connection_tags" example:"team:banking;environment:prod"`
 	// Review of this session. In case the review doesn't exist this field will be null
 	Review *SessionReview `json:"review"`
 	// Verb is how the client has interacted with this resource
@@ -972,6 +974,8 @@ type JiraIssueTemplateRequest struct {
 		- session.type
 		- session.connection_subtype
 		- session.connection
+		- session.connection_tags.[key1]
+		- session.connection_tags.[key2]
 		- session.status
 		- session.script
 		- session.start_date

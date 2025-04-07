@@ -115,6 +115,7 @@ func Post(c *gin.Context) {
 		ConnectionType:       conn.Type,
 		ConnectionSubtype:    conn.SubType.String,
 		Connection:           conn.Name,
+		ConnectionTags:       conn.ConnectionTags,
 		Verb:                 pb.ClientVerbExec,
 		Status:               string(openapi.SessionStatusOpen),
 		CreatedAt:            time.Now().UTC(),
