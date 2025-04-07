@@ -239,8 +239,10 @@
                "connected before proceeding to create connections.")]]])]))
 
 (defn create-connection-config []
-  (let [create-connection @(rf/subscribe [:aws-connect/create-connection])]
-    [:> Box {:class "w-full max-w-[600px] space-y-3"}
+  (let [create-connection @(rf/subscribe [:aws-connect/create-connection])
+        enable-secrets-manager @(rf/subscribe [:aws-connect/enable-secrets-manager])
+        secrets-path @(rf/subscribe [:aws-connect/secrets-path])]
+    [:> Box {:class "w-full max-w-[600px] space-y-6"}
      [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
       "Additional Configuration"]
 
@@ -251,7 +253,33 @@
        [:> Text {:as "p" :size "3" :weight "medium" :class "text-[--gray-12]"}
         "Create Connection"]
        [:> Text {:as "p" :size "2" :class "text-[--gray-12]"}
-        "When enabled, connections will be automatically created after configuring the resources."]]]]))
+        "When enabled, connections will be automatically created after configuring the resources."]]]
+
+     [:> Flex {:align "center" :gap "4" :class "text-[--accent-a11] cursor-pointer" :mt "4"}
+      [:> Switch {:checked enable-secrets-manager
+                  :on-checked-change #(rf/dispatch [:aws-connect/toggle-secrets-manager %])}]
+      [:> Box
+       [:> Text {:as "p" :size "3" :weight "medium" :class "text-[--gray-12]"}
+        "Enable Secrets Manager Provider"]
+       [:> Text {:as "p" :size "2" :class "text-[--gray-12]"}
+        "Integrate with a configured secrets manager, allowing the connection environment variable to be dynamically expanded"]
+
+       [:> Box {:my "2"}
+        [:> Link {:href (get-in config/docs-url [:setup :configuration :secrets-manager])
+                  :target "_blank"}
+         [:> Flex {:gap "2" :align "center"}
+          [:> Text {:as "a"
+                    :size "2"}
+           "Learn more about Secrets Manager Configuration"]
+          [:> ArrowUpRight {:size 16}]]]]
+
+       (when enable-secrets-manager
+         [:> Box {:mt "3"}
+          [forms/input
+           {:placeholder "e.g. vaultkv1:/k/v/pgprod:dbhost"
+            :label "Secrets Path"
+            :value secrets-path
+            :on-change #(rf/dispatch [:aws-connect/set-secrets-path (-> % .-target .-value)])}]])]]]))
 
 (defn review-step []
   (let [resources @(rf/subscribe [:aws-connect/resources])

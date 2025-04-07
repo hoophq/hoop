@@ -22,7 +22,9 @@
                                             :security-groups {}}
                                 :agents {:data nil
                                          :assignments nil}
-                                :create-connection true})
+                                :create-connection true
+                                :enable-secrets-manager false
+                                :secrets-path ""})
     :dispatch [:aws-connect/fetch-agents]}))
 
 (rf/reg-event-db
@@ -228,22 +230,30 @@
    (let [total-resources (count resources)
          create-connection (get-in db [:aws-connect :create-connection] true)
          job-steps (if create-connection ["create-connections" "send-webhook"] ["send-webhook"])
+         enable-secrets-manager (get-in db [:aws-connect :enable-secrets-manager] false)
+         secrets-path (get-in db [:aws-connect :secrets-path] "")
+
          dispatch-requests (for [resource resources
                                  :let [agent-id (get agent-assignments (:id resource) "default")
                                        resource-arn (:id resource)
                                        security-group (get security-groups (:id resource) "")
                                        connection-prefix (or (get connection-names (:id resource))
-                                                             (str (:name resource) "-" (:account-id resource)))]]
+                                                             (str (:name resource) "-" (:account-id resource)))
+                                       payload {:agent_id agent-id
+                                                :aws {:instance_arn resource-arn
+                                                      :default_security_group (if (empty? security-group)
+                                                                                nil
+                                                                                {:ingress_cidr security-group})}
+                                                :connection_prefix_name (str connection-prefix "-")
+                                                :job_steps job-steps}
+                                       ;; Add vault provider to payload if enabled
+                                       final-payload (if (and enable-secrets-manager (not (empty? secrets-path)))
+                                                       (assoc payload :vault_provider {:secret_id secrets-path})
+                                                       payload)]]
                              [:fetch
                               {:method "POST"
                                :uri "/dbroles/jobs"
-                               :body {:agent_id agent-id
-                                      :aws {:instance_arn resource-arn
-                                            :default_security_group (if (empty? security-group)
-                                                                      nil
-                                                                      {:ingress_cidr security-group})}
-                                      :connection_prefix_name (str connection-prefix "-")
-                                      :job_steps job-steps}
+                               :body final-payload
                                :on-success #(rf/dispatch [:aws-connect/connection-created-success % resource])
                                :on-failure #(rf/dispatch [:aws-connect/connection-created-failure % resource])}])]
      {:db (assoc-in db [:aws-connect :resources :total-to-process] total-resources)
@@ -461,3 +471,24 @@
  :aws-connect/accounts-error
  (fn [db _]
    (get-in db [:aws-connect :accounts :api-error :message])))
+
+;; New events and subscriptions for Secrets Manager
+(rf/reg-event-db
+ :aws-connect/toggle-secrets-manager
+ (fn [db [_ value]]
+   (assoc-in db [:aws-connect :enable-secrets-manager] value)))
+
+(rf/reg-event-db
+ :aws-connect/set-secrets-path
+ (fn [db [_ path]]
+   (assoc-in db [:aws-connect :secrets-path] path)))
+
+(rf/reg-sub
+ :aws-connect/enable-secrets-manager
+ (fn [db _]
+   (get-in db [:aws-connect :enable-secrets-manager] false)))
+
+(rf/reg-sub
+ :aws-connect/secrets-path
+ (fn [db _]
+   (get-in db [:aws-connect :secrets-path] "")))
