@@ -260,9 +260,9 @@
                   :on-checked-change #(rf/dispatch [:aws-connect/toggle-secrets-manager %])}]
       [:> Box
        [:> Text {:as "p" :size "3" :weight "medium" :class "text-[--gray-12]"}
-        "Enable Secrets Manager Provider"]
+        "Enable Vault Secrets Provider"]
        [:> Text {:as "p" :size "2" :class "text-[--gray-12]"}
-        "Integrate with a configured secrets manager, allowing the connection environment variable to be dynamically expanded"]
+        "Integrate with HashiCorp Vault to dynamically expand environment variables in your connections. Currently, only Vault is supported."]
 
        [:> Box {:my "2"}
         [:> Link {:href (get-in config/docs-url [:setup :configuration :secrets-manager])
@@ -277,7 +277,7 @@
          [:> Box {:mt "3"}
           [forms/input
            {:placeholder "e.g. vaultkv1:/k/v/pgprod:dbhost"
-            :label "Secrets Path"
+            :label "Vault Path"
             :value secrets-path
             :on-change #(rf/dispatch [:aws-connect/set-secrets-path (-> % .-target .-value)])}]])]]]))
 
