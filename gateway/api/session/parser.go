@@ -36,6 +36,7 @@ func toOpenApiSession(s *models.Session) *openapi.Session {
 		Type:                 s.ConnectionType,
 		ConnectionSubtype:    s.ConnectionSubtype,
 		Connection:           s.Connection,
+		ConnectionTags:       s.ConnectionTags,
 		Review:               topOpenApiReview(s.Review),
 		Verb:                 s.Verb,
 		Status:               openapi.SessionStatusType(s.Status),
