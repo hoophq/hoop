@@ -4507,7 +4507,7 @@ const docTemplate = `{
                 "secret_id": {
                     "description": "The path to store the credentials in Vault",
                     "type": "string",
-                    "example": "dbsecrets/data"
+                    "example": "dbsecrets/data/"
                 }
             }
         },

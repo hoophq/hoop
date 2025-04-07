@@ -77,8 +77,11 @@ func processDBProvisionerRequest(client pb.ClientTransport, pkt *pb.Packet) {
 		for _, item := range res.Result {
 			item.Credentials.SecretsManagerProvider = pbsystem.SecretsManagerProviderVault
 			item.Credentials.SecretKeys = []string{"HOST", "PORT", "USER", "PASSWORD", "DB"}
-			item.Credentials.SecretID = req.Vault.SecretID
-			err := vault.SetValue(req.Vault.SecretID, map[string]string{
+
+			// e.g.: dbsecrets/data/hoop_ro_127.0.0.1
+			vaultPath := fmt.Sprintf("%s%s_%s", req.Vault.SecretID, item.Credentials.User, item.Credentials.Host)
+			item.Credentials.SecretID = vaultPath
+			err := vault.SetValue(vaultPath, map[string]string{
 				"HOST":     item.Credentials.Host,
 				"PORT":     item.Credentials.Port,
 				"USER":     item.Credentials.User,

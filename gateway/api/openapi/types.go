@@ -1279,7 +1279,7 @@ const (
 
 type DBRoleJobVaultProvider struct {
 	// The path to store the credentials in Vault
-	SecretID string `json:"secret_id" example:"dbsecrets/data" binding:"required"`
+	SecretID string `json:"secret_id" example:"dbsecrets/data/" binding:"required"`
 }
 
 type CreateDBRoleJob struct {
