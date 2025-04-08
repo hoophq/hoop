@@ -91,8 +91,12 @@
                             (reset! add-review-popover-open? false))
             in-progress? (or (= end-date nil)
                              (= end-date ""))
-            _ (.on clipboard-url "success" #(rf/dispatch [:show-snackbar {:level :success :text "URL copied to clipboard"}]))]
-        [:div {:class "flex flex-col gap-regular h-full"}
+            _ (.on clipboard-url "success" #(rf/dispatch [:show-snackbar {:level :success :text "URL copied to clipboard"}]))
+            current-path (.-pathname (.-location js/window))
+            is-review-page? (= current-path "/reviews")]
+        [:div {:class (str "flex flex-col gap-regular h-full "
+                           (when is-review-page? "max-h-[800px]")
+                           (when (not is-review-page?) "max-h-[9S00px]"))}
      ;; Header
          [:header {:class "mb-regular mr-large"}
           [:div {:class "flex"}
