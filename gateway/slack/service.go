@@ -114,7 +114,7 @@ func (m *MessageReviewRequest) sessionTime() string {
 }
 
 func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) (result string) {
-	title := "Review"
+	title := "Hoop Review"
 
 	header := slack.NewHeaderBlock(&slack.TextBlockObject{
 		Type: slack.PlainTextType,
@@ -127,54 +127,31 @@ func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) (result stri
 	}
 	// name and groups metadata
 	metaSection1 := slack.NewSectionBlock(nil, []*slack.TextBlockObject{
-		{Type: slack.MarkdownType, Text: fmt.Sprintf("name\n*%s*", msg.Name)},
-		{Type: slack.MarkdownType, Text: fmt.Sprintf("groups\n*%s*", groupList)},
-	}, nil)
-
-	// email, session time metadata
-	metaSection2 := slack.NewSectionBlock(nil, []*slack.TextBlockObject{
-		{Type: slack.MarkdownType, Text: fmt.Sprintf("email\n*%s*", msg.Email)},
-		{Type: slack.MarkdownType, Text: fmt.Sprintf("session time\n*%s*", msg.sessionTime())},
-	}, nil)
-
-	// connection metadata
-	metaSection3 := slack.NewSectionBlock(nil, []*slack.TextBlockObject{
-		{Type: slack.MarkdownType, Text: fmt.Sprintf("connection\n*%s*", msg.Connection)},
-		{Type: slack.MarkdownType, Text: fmt.Sprintf("type\n*%s*", msg.ConnectionType)},
+		{Type: slack.MarkdownType, Text: fmt.Sprintf("*Name:* %s", msg.Name)},
+		{Type: slack.MarkdownType, Text: fmt.Sprintf("*Groups:* %s", groupList)},
+		{Type: slack.MarkdownType, Text: fmt.Sprintf("*Email:* %s", msg.Email)},
+		{Type: slack.MarkdownType, Text: fmt.Sprintf("*Session time:* %s", msg.sessionTime())},
+		{Type: slack.MarkdownType, Text: fmt.Sprintf("*Connection:* %s", msg.Connection)},
+		{Type: slack.MarkdownType, Text: fmt.Sprintf("*Type:* %s", msg.ConnectionType)},
+		{Type: slack.MarkdownType, Text: fmt.Sprintf("*<%s|More details>*", msg.WebappURL)},
 	}, nil)
 
 	script := msg.Script
 	if len(script) > maxLabelSize {
 		script = script[:maxLabelSize] + " ..."
 	}
-	// script at the maximum slack allowed size
-	scriptBlock := slack.NewSectionBlock(&slack.TextBlockObject{
-		Type: slack.MarkdownType,
-		Text: fmt.Sprintf("_script_\n```%s```", script),
-	}, nil, nil)
-	if msg.SessionTime != nil {
-		scriptBlock = slack.NewSectionBlock(&slack.TextBlockObject{Type: slack.PlainTextType, Text: "-"}, nil, nil)
-	}
-
-	// URI to the review at portal
-	reviewLocation := slack.NewSectionBlock(&slack.TextBlockObject{
-		Type: slack.MarkdownType,
-		Text: fmt.Sprintf("More details: %s", msg.WebappURL),
-	}, nil, nil)
 
 	blocks := []slack.Block{
 		header,
-
 		metaSection1,
-		metaSection2,
-		metaSection3,
-
-		scriptBlock,
-
-		slack.NewDividerBlock(),
-
-		reviewLocation,
-		slack.NewDividerBlock(),
+	}
+	// script at the maximum slack allowed size
+	if script != "" {
+		scriptBlock := slack.NewSectionBlock(&slack.TextBlockObject{
+			Type: slack.MarkdownType,
+			Text: fmt.Sprintf("_script_\n```%s```", script),
+		}, nil, nil)
+		blocks = append(blocks, scriptBlock)
 	}
 
 	// add groups button
@@ -185,7 +162,7 @@ func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) (result stri
 		blocks = append(blocks,
 			slack.NewSectionBlock(&slack.TextBlockObject{
 				Type: slack.MarkdownType,
-				Text: fmt.Sprintf("group *%s*", groupName),
+				Text: fmt.Sprintf("*Approver groups:* %s", groupName),
 			}, nil, nil),
 			slack.NewActionBlock(
 				blockID,
