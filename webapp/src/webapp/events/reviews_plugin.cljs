@@ -147,15 +147,13 @@
    [{:keys [db]} [_ session-id]]
    {:fx [[:dispatch [:fetch {:method "GET"
                              :uri (str "/sessions/" session-id)
-                             :on-success #(rf/dispatch [:reviews-plugin->open-session-details %])}]]
-         [:dispatch [:modal->set-modal-loading true]]]}))
+                             :on-success #(rf/dispatch [:reviews-plugin->open-session-details %])}]]]}))
 
 (rf/reg-event-fx
  :reviews-plugin->open-session-details
  (fn
    [{:keys [db]} [_ session]]
-   {:fx [[:dispatch [:modal->set-modal-loading false]]
-         [:dispatch [:open-modal
+   {:fx [[:dispatch [:open-modal
                      [review-detail/review-details-page session] :large]]]}))
 
 (rf/reg-event-fx

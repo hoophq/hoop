@@ -92,7 +92,7 @@
             in-progress? (or (= end-date nil)
                              (= end-date ""))
             _ (.on clipboard-url "success" #(rf/dispatch [:show-snackbar {:level :success :text "URL copied to clipboard"}]))]
-        [:div
+        [:div {:class "flex flex-col gap-regular h-full"}
      ;; Header
          [:header {:class "mb-regular mr-large"}
           [:div {:class "flex"}
@@ -187,12 +187,11 @@
 
      ;; Script section
          (when (not (cs/blank? (-> current-session :script :data)))
-           [:section {:id "session-script"}
-            [:div
-             {:class (str "w-full max-h-40 overflow-auto p-regular whitespace-pre "
-                          "rounded-lg bg-gray-100 "
-                          "text-xs text-gray-800 font-mono")}
-             [:article (-> current-session :script :data)]]])]))))
+           [:div
+            {:class (str "w-full overflow-auto p-regular whitespace-pre "
+                         "rounded-lg bg-gray-100 "
+                         "text-xs text-gray-800 font-mono")}
+            [:article (-> current-session :script :data)]])]))))
 
 (defmulti item-view identity)
 (defmethod item-view :opened [_ review-details]

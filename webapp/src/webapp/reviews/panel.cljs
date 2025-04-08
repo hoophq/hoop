@@ -147,24 +147,25 @@
 
                    [:div {:class "relative"}
                     [:ul
-                     (for [user users-search-results]
-                       ^{:key (:text user)}
-                       [:li {:class (str "flex justify-between cursor-pointer items-center gap-small "
-                                         "text-sm text-gray-700 hover:bg-gray-200 rounded-md px-3 py-2")
-                             :on-click (fn []
-                                         (reset! review-user (:value user))
-                                         (rf/dispatch [:reviews-plugin->get-reviews
-                                                       {:status @review-status
-                                                        :user (:value user)
-                                                        :connection @review-connection
-                                                        :start_date (iso-date "start_date" (.-startDate @date))
-                                                        :end_date (iso-date "end_date" (.-endDate @date))}])
-                                         (.close params))}
-                        [:div {:class "w-full flex justify-between items-center gap-regular"}
-                         [:span {:class "block truncate"}
-                          (:text user)]
-                         (when (= (:value user) @review-user)
-                           [:> hero-micro-icon/CheckIcon {:class "w-4 h-4 text-black"}])]])]])]]]))]
+                     (doall
+                      (for [user users-search-results]
+                        ^{:key (:text user)}
+                        [:li {:class (str "flex justify-between cursor-pointer items-center gap-small "
+                                          "text-sm text-gray-700 hover:bg-gray-200 rounded-md px-3 py-2")
+                              :on-click (fn []
+                                          (reset! review-user (:value user))
+                                          (rf/dispatch [:reviews-plugin->get-reviews
+                                                        {:status @review-status
+                                                         :user (:value user)
+                                                         :connection @review-connection
+                                                         :start_date (iso-date "start_date" (.-startDate @date))
+                                                         :end_date (iso-date "end_date" (.-endDate @date))}])
+                                          (.close params))}
+                         [:div {:class "w-full flex justify-between items-center gap-regular"}
+                          [:span {:class "block truncate"}
+                           (:text user)]
+                          (when (= (:value user) @review-user)
+                            [:> hero-micro-icon/CheckIcon {:class "w-4 h-4 text-black"}])]]))]])]]]))]
 
         ;; Status Filter
           [:> ui/Popover {:class "relative"}
