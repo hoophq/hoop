@@ -7,13 +7,14 @@
  :reviews-plugin->get-reviews
  (fn
    [{:keys [db]} [_ params]]
-   (let [user (-> db :users->current-user :data)
+   (let [current-user (-> db :users->current-user :data :email)
          limit (or (:limit params) 20)
          status (:status params)
          connection (:connection params)
+         user (:user params)
          start-date (:start_date params)
          end-date (:end_date params)
-         base-uri (str "/sessions?review.approver=" (:email user) "&limit=" limit)
+         base-uri (str "/sessions?review.approver=" (or user current-user) "&limit=" limit)
          uri-with-status (if (and status (not= status ""))
                            (str base-uri "&review.status=" status)
                            base-uri)
@@ -37,12 +38,14 @@
    [{:keys [db]} _]
    (let [current-limit (or (-> db :reviews-plugin->reviews :params-limit) 20)
          current-status (or (-> db :reviews-plugin->reviews :params-status) "")
+         current-user (or (-> db :reviews-plugin->reviews :params-user) "")
          current-connection (or (-> db :reviews-plugin->reviews :params-connection) "")
          current-start-date (or (-> db :reviews-plugin->reviews :params-start_date) "")
          current-end-date (or (-> db :reviews-plugin->reviews :params-end_date) "")
          new-limit (+ current-limit 20)
          params {:limit new-limit
                  :status current-status
+                 :user current-user
                  :connection current-connection
                  :start_date current-start-date
                  :end_date current-end-date}]
@@ -54,6 +57,7 @@
    [{:keys [db]} [_ sessions params]]
    (let [limit (or (:limit params) 20)
          status (or (:status params) "")
+         user (or (:user params) "")
          connection (or (:connection params) "")
          start-date (or (:start_date params) "")
          end-date (or (:end_date params) "")]
@@ -65,6 +69,7 @@
               (assoc-in [:reviews-plugin->reviews :params-limit] limit)
               (assoc-in [:reviews-plugin->reviews :params-status] status)
               (assoc-in [:reviews-plugin->reviews :params-connection] connection)
+              (assoc-in [:reviews-plugin->reviews :params-user] user)
               (assoc-in [:reviews-plugin->reviews :params-start_date] start-date)
               (assoc-in [:reviews-plugin->reviews :params-end_date] end-date))})))
 
@@ -106,6 +111,7 @@
    (let [review (:review session)
          current-status (get-in db [:reviews-plugin->reviews :params-status] "")
          current-limit (get-in db [:reviews-plugin->reviews :params-limit] 20)
+         current-user (get-in db [:reviews-plugin->reviews :params-user] "")
          current-connection (get-in db [:reviews-plugin->reviews :params-connection] "")
          current-start-date (get-in db [:reviews-plugin->reviews :params-start_date] "")
          current-end-date (get-in db [:reviews-plugin->reviews :params-end_date] "")]
@@ -121,6 +127,7 @@
                        (js/setTimeout
                         (fn []
                           (rf/dispatch [:reviews-plugin->get-reviews {:status current-status
+                                                                      :user current-user
                                                                       :limit current-limit
                                                                       :connection current-connection
                                                                       :start_date current-start-date
@@ -128,6 +135,7 @@
                           (rf/dispatch [:reviews-plugin->get-review-by-id session]))
                         500))}]]
            [:dispatch [:reviews-plugin->get-reviews {:status current-status
+                                                     :user current-user
                                                      :limit current-limit
                                                      :connection current-connection
                                                      :start_date current-start-date
