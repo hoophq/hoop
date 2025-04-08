@@ -114,7 +114,7 @@ func (m *MessageReviewRequest) sessionTime() string {
 }
 
 func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) (result string) {
-	title := "HOOP Review"
+	title := "Hoop Review"
 
 	header := slack.NewHeaderBlock(&slack.TextBlockObject{
 		Type: slack.PlainTextType,
