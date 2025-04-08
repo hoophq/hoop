@@ -276,7 +276,7 @@
        (when enable-secrets-manager
          [:> Box {:mt "3"}
           [forms/input
-           {:placeholder "e.g. vaultkv1:/k/v/pgprod:dbhost"
+           {:placeholder "e.g. dbsecrets/data/"
             :label "Vault Path"
             :value secrets-path
             :on-change #(rf/dispatch [:aws-connect/set-secrets-path (-> % .-target .-value)])}]])]]]))
