@@ -280,9 +280,6 @@ func List(c *gin.Context) {
 		if queryOptVal, ok := c.GetQuery(string(optKey)); ok {
 			switch optKey {
 			case openapi.SessionOptionUser:
-				if !ctx.IsAuditorOrAdminUser() {
-					continue
-				}
 				option.User = queryOptVal
 			case openapi.SessionOptionConnection:
 				option.ConnectionName = queryOptVal
