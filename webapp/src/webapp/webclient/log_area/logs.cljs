@@ -45,7 +45,7 @@
                                                 (fn []
                                                   (rf/dispatch [:audit->clear-session])
                                                   (rf/dispatch [:close-modal]))]))}
-                [action-buttons-container session-id "This task need to be reviewed. Please click here to see the details."]
+                [action-buttons-container session-id "This task needs to be reviewed. Please click here to see the details."]
                 [:div {:class "text-sm mb-1"}
                  "This task needs to be reviewed. Please click here to see the details."]
                 [:div {:class "text-gray-11 text-sm"}
