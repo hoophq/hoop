@@ -4507,7 +4507,7 @@ const docTemplate = `{
                 "secret_id": {
                     "description": "The path to store the credentials in Vault",
                     "type": "string",
-                    "example": "dbsecrets/data"
+                    "example": "dbsecrets/data/"
                 }
             }
         },
@@ -4976,7 +4976,7 @@ const docTemplate = `{
                     "default": "done"
                 },
                 "mapping_types": {
-                    "description": "The automated fields that will be sent when creating the issue.\nThere're two types\n- preset: obtain the value from a list of available fields that could be propagated\nThe list of available preset values are:\n\n\t\t- session.id\n\t\t- session.user_email\n\t\t- session.user_id\n\t\t- session.user_name\n\t\t- session.type\n\t\t- session.connection_subtype\n\t\t- session.connection\n\t\t- session.status\n\t\t- session.script\n\t\t- session.start_date\n\n- custom: use a custom static value\n\n\t\t{\n\t\t  \"items\": [\n\t\t    {\n\t\t      \"description\": \"Hoop Connection Name\",\n\t\t      \"jira_field\": \"customfield_10050\",\n\t\t      \"type\": \"preset\",\n\t\t      \"value\": \"session.connection\"\n\t\t    }\n\t\t  ]\n\t\t}",
+                    "description": "The automated fields that will be sent when creating the issue.\nThere're two types\n- preset: obtain the value from a list of available fields that could be propagated\nThe list of available preset values are:\n\n\t\t- session.id\n\t\t- session.user_email\n\t\t- session.user_id\n\t\t- session.user_name\n\t\t- session.type\n\t\t- session.connection_subtype\n\t\t- session.connection\n\t\t- session.connection_tags.[key1]\n\t\t- session.connection_tags.[key2]\n\t\t- session.status\n\t\t- session.script\n\t\t- session.start_date\n\n- custom: use a custom static value\n\n\t\t{\n\t\t  \"items\": [\n\t\t    {\n\t\t      \"description\": \"Hoop Connection Name\",\n\t\t      \"jira_field\": \"customfield_10050\",\n\t\t      \"type\": \"preset\",\n\t\t      \"value\": \"session.connection\"\n\t\t    }\n\t\t  ]\n\t\t}",
                     "type": "object",
                     "additionalProperties": {}
                 },
@@ -5963,6 +5963,16 @@ const docTemplate = `{
                     "description": "The subtype of the connection",
                     "type": "string",
                     "example": "postgres"
+                },
+                "connection_tags": {
+                    "description": "The tags of the connection resource",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "team": "banking;environment:prod"
+                    }
                 },
                 "end_date": {
                     "description": "When the execution ended. A null value indicates the session is still running",

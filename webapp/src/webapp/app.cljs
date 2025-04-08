@@ -51,6 +51,7 @@
    [webapp.events.localauth]
    [webapp.events.organization]
    [webapp.events.plugins]
+   [webapp.events.profitwell]
    [webapp.events.reports]
    [webapp.events.reviews-plugin]
    [webapp.events.routes]
@@ -139,6 +140,7 @@
     (fn [panels]
       (rf/dispatch [:routes->get-route])
       (rf/dispatch [:clarity->verify-environment (:data @user)])
+      (rf/dispatch [:profitwell->start (:data @user)])
       (rf/dispatch [:connections->connection-get-status])
       (if (empty? (:data @user))
         [loaders/over-page-loader]
@@ -309,7 +311,7 @@
         current-route (bidi/match-route @routes/routes pathname)
         review-id (-> current-route :route-params :review-id)]
     (rf/dispatch [:destroy-page-loader])
-    (rf/dispatch [:reviews-plugin->get-review-by-id {:id review-id}])
+    (rf/dispatch [:reviews-plugin->get-review-details review-id])
     [layout :application-hoop [:div {:class "bg-white p-large h-full"}
                                [review-detail/review-detail]]]))
 

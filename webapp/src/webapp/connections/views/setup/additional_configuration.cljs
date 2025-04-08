@@ -171,7 +171,7 @@
                   [multi-select/main
                    {:options (helpers/array->select-options
                               (case redact-provider
-                                "presidio" dlp-info-types/presidio-options
+                                "mspresidio" dlp-info-types/presidio-options
                                 "gcp" dlp-info-types/gcp-options
                                 dlp-info-types/gcp-options))
                     :id "data-masking-groups-input"

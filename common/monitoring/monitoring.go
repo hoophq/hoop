@@ -36,13 +36,6 @@ func NormalizeEnvironment(apiURL string) string {
 	return strings.TrimPrefix(environment, "https://")
 }
 
-func isLocalEnvironment(environment string) bool {
-	return environment == "localhost" ||
-		environment == "127.0.0.1" ||
-		strings.HasPrefix(environment, "http://localhost") ||
-		strings.HasPrefix(environment, "http://127.0.0.1")
-}
-
 // sentryTransport defines which transport to start, sync or async.
 // a nil value defaults initalizing a sync sentry transport.
 func StartSentry() (bool, error) {
@@ -66,9 +59,6 @@ func StartSentry() (bool, error) {
 type ShutdownFn func()
 
 func NewOpenTracing(apiURL string) (ShutdownFn, error) {
-	if isLocalEnvironment(apiURL) {
-		return func() {}, nil
-	}
 	// Enable multi-span attributes
 	bsp := honeycomb.NewBaggageSpanProcessor()
 
