@@ -196,7 +196,6 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		userapi.GetUserInfo)
 	r.GET("/users",
-		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		userapi.List)
 	r.GET("/users/:emailOrID",

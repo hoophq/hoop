@@ -72,9 +72,9 @@ type User struct {
 	// The profile picture url to display
 	Picture string `json:"picture" example:""`
 	// Groups registered for this user
-	Groups []string `json:"groups" example:"sre"`
+	Groups []string `json:"groups" example:"sre,dba"`
 	// Local auth cases have a password
-	Password string `json:"password" example:"password"`
+	Password string `json:"password,omitempty" example:"mysecurepassword"`
 }
 
 type UserPatchSlackID struct {

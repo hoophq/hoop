@@ -6317,7 +6317,8 @@ const docTemplate = `{
                         "type": "string"
                     },
                     "example": [
-                        "sre"
+                        "sre",
+                        "dba"
                     ]
                 },
                 "id": {
@@ -6334,7 +6335,7 @@ const docTemplate = `{
                 "password": {
                     "description": "Local auth cases have a password",
                     "type": "string",
-                    "example": "password"
+                    "example": "mysecurepassword"
                 },
                 "picture": {
                     "description": "The profile picture url to display",
@@ -6400,7 +6401,8 @@ const docTemplate = `{
                         "type": "string"
                     },
                     "example": [
-                        "sre"
+                        "sre",
+                        "dba"
                     ]
                 },
                 "id": {
@@ -6443,7 +6445,7 @@ const docTemplate = `{
                 "password": {
                     "description": "Local auth cases have a password",
                     "type": "string",
-                    "example": "password"
+                    "example": "mysecurepassword"
                 },
                 "picture": {
                     "description": "The profile picture url to display",
