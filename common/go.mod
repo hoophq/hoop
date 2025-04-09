@@ -1,6 +1,6 @@
 module github.com/hoophq/hoop/common
 
-go 1.22.4
+go 1.23.8
 
 require (
 	github.com/getsentry/sentry-go v0.18.0

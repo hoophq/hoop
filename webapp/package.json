@@ -36,7 +36,6 @@
     "@uiw/codemirror-theme-sublime": "^4.21.21",
     "@uiw/react-codemirror": "^4.21.21",
     "allotment": "^1.19.3",
-    "auth0-lock": "^12.0.0",
     "class-variance-authority": "^0.7.0",
     "clipboard": "^2.0.8",
     "clsx": "^2.1.1",
