@@ -44,3 +44,13 @@ tolerations: []
 
 # -- Affinity settings for pod assignment
 affinity: {}
+
+## Set pod annotations
+##
+podAnnotations: {}
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: false
+  # Annotations to add to the service account
+  annotations: {}
