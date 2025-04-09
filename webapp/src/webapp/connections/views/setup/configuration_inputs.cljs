@@ -98,14 +98,14 @@
       (valid-posix? new-value)
       (rf/dispatch [:connection-setup/update-config-file index :key upper-value]))))
 
-(defn environment-variables-section []
+(defn environment-variables-section [{:keys [title subtitle]}]
   (let [current-key @(rf/subscribe [:connection-setup/env-current-key])
         current-value @(rf/subscribe [:connection-setup/env-current-value])
         env-vars @(rf/subscribe [:connection-setup/environment-variables])]
     [:> Box {:class "space-y-4"}
-     [:> Heading {:size "3"} "Environment variables"]
+     [:> Heading {:size "3"} (if title title "Environment variables")]
      [:> Text {:size "2" :color "gray"}
-      "Add variable values to use in your connection."]
+      (if subtitle subtitle "Add variable values to use in your connection.")]
 
      (when (seq env-vars)
        [:> Grid {:columns "2" :gap "2"}

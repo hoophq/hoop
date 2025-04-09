@@ -36,6 +36,11 @@ func TestParseIssueFields(t *testing.T) {
 							"value":      "session.connection",
 						},
 						map[string]any{
+							"jira_field": "customfield_10053",
+							"type":       "preset",
+							"value":      "session.connection_tags.env",
+						},
+						map[string]any{
 							"jira_field": "customfield_10051",
 							"type":       "custom",
 							"value":      "my-custom-value",
@@ -59,11 +64,16 @@ func TestParseIssueFields(t *testing.T) {
 				"customfield_10052": "my-prompt-value",
 				"customfield_10199": "cmdb-value",
 			},
-			session: models.Session{Connection: "myconnection"},
+			session: models.Session{
+				Connection: "myconnection",
+				ConnectionTags: map[string]string{
+					"env": "prod",
+				}},
 			want: CustomFields{
 				"customfield_10050": "myconnection",
 				"customfield_10051": "my-custom-value",
 				"customfield_10052": "my-prompt-value",
+				"customfield_10053": "prod",
 				"customfield_10199": []map[string]string{{"id": "cmdb-value"}},
 			},
 			err: nil,
@@ -116,6 +126,31 @@ func TestParseIssueFields(t *testing.T) {
 			tmpl: &models.JiraIssueTemplate{},
 			err:  nil,
 			want: CustomFields{},
+		},
+		{
+			name: "it must parse session.connection_tags preset as a best effort without returning error",
+			tmpl: &models.JiraIssueTemplate{
+				MappingTypes: map[string]any{
+					"items": []any{
+						map[string]any{
+							"jira_field": "customfield_10050",
+							"type":       "preset",
+							"value":      "session.connection_tags.env",
+						},
+						map[string]any{
+							"jira_field": "customfield_10051",
+							"type":       "preset",
+							"value":      "session.connection_tags.team",
+						},
+					},
+				},
+			},
+			input: map[string]string{
+				"customfield_10051": "dba",
+			},
+			session: models.Session{Connection: "myconnection", ConnectionTags: map[string]string{"team": "dba"}},
+			want:    CustomFields{"customfield_10051": "dba"},
+			err:     nil,
 		},
 	}
 

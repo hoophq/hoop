@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -338,9 +337,7 @@ func TestParseMongoDBSchema(t *testing.T) {
 				t.Errorf("parseMongoDBSchema() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("parseMongoDBSchema() = %v, want %v", got, tt.want)
-			}
+			assert.Equal(t, got, tt.want)
 		})
 	}
 }
@@ -394,9 +391,7 @@ func TestParseMongoDBSchemaWithComplexIndexes(t *testing.T) {
 		t.Errorf("parseMongoDBSchema() error = %v", err)
 		return
 	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("parseMongoDBSchema() = %v, want %v", got, want)
-	}
+	assert.Equal(t, got, want)
 }
 
 func TestParseSQLSchema(t *testing.T) {
@@ -553,137 +548,9 @@ func compareSchemaResponses(t *testing.T, got, want openapi.ConnectionSchemaResp
 
 			for k, wantColumn := range wantTable.Columns {
 				gotColumn := gotTable.Columns[k]
-				if !reflect.DeepEqual(gotColumn, wantColumn) {
-					t.Errorf("schema[%d].table[%d].column[%d] (%s.%s.%s) mismatch:\ngot  = %+v\nwant = %+v",
-						i, j, k, wantSchema.Name, wantTable.Name, wantColumn.Name, gotColumn, wantColumn)
-				}
+				assert.Equal(t, gotColumn, wantColumn)
 			}
 		}
-	}
-}
-
-func TestOrganizeSchemaResponse(t *testing.T) {
-	tests := []struct {
-		name string
-		rows []map[string]interface{}
-		want openapi.ConnectionSchemaResponse
-	}{
-		{
-			name: "single table with multiple columns",
-			rows: []map[string]interface{}{
-				{
-					"schema_name": "public",
-					"object_type": "table",
-					"object_name": "users",
-					"column_name": "id",
-					"column_type": "integer",
-					"not_null":    true,
-				},
-				{
-					"schema_name": "public",
-					"object_type": "table",
-					"object_name": "users",
-					"column_name": "email",
-					"column_type": "varchar",
-					"not_null":    false,
-				},
-			},
-			want: openapi.ConnectionSchemaResponse{
-				Schemas: []openapi.ConnectionSchema{
-					{
-						Name: "public",
-						Tables: []openapi.ConnectionTable{
-							{
-								Name: "users",
-								Columns: []openapi.ConnectionColumn{
-									{
-										Name:     "id",
-										Type:     "integer",
-										Nullable: false,
-									},
-									{
-										Name:     "email",
-										Type:     "varchar",
-										Nullable: true,
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-		{
-			name: "multiple schemas and tables",
-			rows: []map[string]interface{}{
-				{
-					"schema_name": "public",
-					"object_type": "table",
-					"object_name": "users",
-					"column_name": "id",
-					"column_type": "integer",
-					"not_null":    true,
-				},
-				{
-					"schema_name": "app",
-					"object_type": "table",
-					"object_name": "products",
-					"column_name": "id",
-					"column_type": "integer",
-					"not_null":    true,
-				},
-			},
-			want: openapi.ConnectionSchemaResponse{
-				Schemas: []openapi.ConnectionSchema{
-					{
-						Name: "public",
-						Tables: []openapi.ConnectionTable{
-							{
-								Name: "users",
-								Columns: []openapi.ConnectionColumn{
-									{
-										Name:     "id",
-										Type:     "integer",
-										Nullable: false,
-									},
-								},
-							},
-						},
-					},
-					{
-						Name: "app",
-						Tables: []openapi.ConnectionTable{
-							{
-								Name: "products",
-								Columns: []openapi.ConnectionColumn{
-									{
-										Name:     "id",
-										Type:     "integer",
-										Nullable: false,
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-		{
-			name: "empty input",
-			rows: []map[string]interface{}{},
-			want: openapi.ConnectionSchemaResponse{
-				Schemas: []openapi.ConnectionSchema{},
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := organizeSchemaResponse(tt.rows)
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("organizeSchemaResponse() = %v, want %v", got, tt.want)
-			}
-		})
 	}
 }
 

@@ -1,0 +1,1 @@
+ALTER TABLE private.sessions ADD COLUMN connection_tags JSONB NULL;

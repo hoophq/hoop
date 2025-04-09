@@ -115,6 +115,7 @@ func Post(c *gin.Context) {
 		ConnectionType:       conn.Type,
 		ConnectionSubtype:    conn.SubType.String,
 		Connection:           conn.Name,
+		ConnectionTags:       conn.ConnectionTags,
 		Verb:                 pb.ClientVerbExec,
 		Status:               string(openapi.SessionStatusOpen),
 		CreatedAt:            time.Now().UTC(),
@@ -279,9 +280,6 @@ func List(c *gin.Context) {
 		if queryOptVal, ok := c.GetQuery(string(optKey)); ok {
 			switch optKey {
 			case openapi.SessionOptionUser:
-				if !ctx.IsAuditorOrAdminUser() {
-					continue
-				}
 				option.User = queryOptVal
 			case openapi.SessionOptionConnection:
 				option.ConnectionName = queryOptVal

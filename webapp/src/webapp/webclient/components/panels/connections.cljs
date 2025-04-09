@@ -15,9 +15,7 @@
                         (when selected? "bg-primary-11 light text-gray-1"))}
    [:> Flex {:align "center" :gap "2"}
     [:> Box {:class "w-4"}
-     [:img {:src (connection-constants/get-connection-icon connection (if @dark-mode?
-                                                                        :dark
-                                                                        :light))
+     [:img {:src (connection-constants/get-connection-icon connection "rounded")
             :class "w-4"}]]
     [:> Text {:size "2"
               :weight "medium"}
@@ -29,13 +27,13 @@
                        :variant "ghost"
                        :color "gray"
                        :on-click on-select
-                       :class (when dark-mode? "dark")}
+                       :class (when @dark-mode? "dark")}
         [:> Minus {:size 16}]]
        [:> IconButton {:size "1"
                        :variant "ghost"
                        :color "gray"
                        :on-click on-select
-                       :class (when dark-mode? "dark")}
+                       :class (when @dark-mode? "dark")}
         [:> Plus {:size 16}]]))])
 
 (defn filter-compatible-connections [connections main-connection selected-connections]

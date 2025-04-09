@@ -4317,19 +4317,13 @@ const docTemplate = `{
         "openapi.CreateDBRoleJobAWSProviderSG": {
             "type": "object",
             "required": [
-                "ingress_cidr",
-                "target_port"
+                "ingress_cidr"
             ],
             "properties": {
                 "ingress_cidr": {
                     "description": "The ingress inbound CIDR rule to allow traffic to",
                     "type": "string",
                     "example": "192.168.1.0/24"
-                },
-                "target_port": {
-                    "description": "The target port to be configured for the security group",
-                    "type": "integer",
-                    "example": 5432
                 }
             }
         },
@@ -4466,7 +4460,7 @@ const docTemplate = `{
                 "secret_id": {
                     "description": "The secret identifier that contains the secret data.\nThis value is always empty for the database type.",
                     "type": "string",
-                    "example": "dbsecrets/data"
+                    "example": "dbsecrets/data/pgprod"
                 },
                 "secret_keys": {
                     "description": "The keys that were saved in the secrets manager.\nThis value is always empty for the database type.",
@@ -4513,7 +4507,7 @@ const docTemplate = `{
                 "secret_id": {
                     "description": "The path to store the credentials in Vault",
                     "type": "string",
-                    "example": "dbsecrets/data"
+                    "example": "dbsecrets/data/"
                 }
             }
         },
@@ -4982,7 +4976,7 @@ const docTemplate = `{
                     "default": "done"
                 },
                 "mapping_types": {
-                    "description": "The automated fields that will be sent when creating the issue.\nThere're two types\n- preset: obtain the value from a list of available fields that could be propagated\nThe list of available preset values are:\n\n\t\t- session.id\n\t\t- session.user_email\n\t\t- session.user_id\n\t\t- session.user_name\n\t\t- session.type\n\t\t- session.connection_subtype\n\t\t- session.connection\n\t\t- session.status\n\t\t- session.script\n\t\t- session.start_date\n\n- custom: use a custom static value\n\n\t\t{\n\t\t  \"items\": [\n\t\t    {\n\t\t      \"description\": \"Hoop Connection Name\",\n\t\t      \"jira_field\": \"customfield_10050\",\n\t\t      \"type\": \"preset\",\n\t\t      \"value\": \"session.connection\"\n\t\t    }\n\t\t  ]\n\t\t}",
+                    "description": "The automated fields that will be sent when creating the issue.\nThere're two types\n- preset: obtain the value from a list of available fields that could be propagated\nThe list of available preset values are:\n\n\t\t- session.id\n\t\t- session.user_email\n\t\t- session.user_id\n\t\t- session.user_name\n\t\t- session.type\n\t\t- session.connection_subtype\n\t\t- session.connection\n\t\t- session.connection_tags.[key1]\n\t\t- session.connection_tags.[key2]\n\t\t- session.status\n\t\t- session.script\n\t\t- session.start_date\n\n- custom: use a custom static value\n\n\t\t{\n\t\t  \"items\": [\n\t\t    {\n\t\t      \"description\": \"Hoop Connection Name\",\n\t\t      \"jira_field\": \"customfield_10050\",\n\t\t      \"type\": \"preset\",\n\t\t      \"value\": \"session.connection\"\n\t\t    }\n\t\t  ]\n\t\t}",
                     "type": "object",
                     "additionalProperties": {}
                 },
@@ -5358,7 +5352,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "access_duration": {
-                    "description": "The amount of time (nanoseconds) to allow access to the connection. It's valid only for ` + "`" + `jit` + "`" + ` type reviews` + "`" + `",
+                    "description": "The amount of time (nanoseconds) to allow access to the connection. It's valid only for ` + "`" + `jit` + "`" + ` type reviews",
                     "type": "integer",
                     "default": 1800000000000,
                     "readOnly": true,
@@ -5371,7 +5365,7 @@ const docTemplate = `{
                     "example": "2024-07-25T15:56:35.317601Z"
                 },
                 "id": {
-                    "description": "Reousrce identifier",
+                    "description": "Resource identifier",
                     "type": "string",
                     "format": "uuid",
                     "readOnly": true,
@@ -5449,7 +5443,7 @@ const docTemplate = `{
                     ]
                 },
                 "type": {
-                    "description": "The type of this review\n* onetime - Represents a one time execution\n* jit - Represents a time based review",
+                    "description": "The type of the review\n* onetime - Represents a one time execution\n* jit - Represents a time based review",
                     "enum": [
                         "onetime",
                         "jit"
@@ -5970,6 +5964,16 @@ const docTemplate = `{
                     "type": "string",
                     "example": "postgres"
                 },
+                "connection_tags": {
+                    "description": "The tags of the connection resource",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "team": "banking;environment:prod"
+                    }
+                },
                 "end_date": {
                     "description": "When the execution ended. A null value indicates the session is still running",
                     "type": "string",
@@ -6160,7 +6164,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "access_duration": {
-                    "description": "The amount of time (nanoseconds) to allow access to the connection. It's valid only for ` + "`" + `jit` + "`" + ` type reviews` + "`" + `",
+                    "description": "The amount of time (nanoseconds) to allow access to the connection. It's valid only for ` + "`" + `jit` + "`" + ` type reviews",
                     "type": "integer",
                     "default": 1800000000000,
                     "readOnly": true,
@@ -6173,7 +6177,7 @@ const docTemplate = `{
                     "example": "2024-07-25T15:56:35.317601Z"
                 },
                 "id": {
-                    "description": "Reousrce identifier",
+                    "description": "Resource identifier",
                     "type": "string",
                     "format": "uuid",
                     "readOnly": true,
@@ -6202,7 +6206,7 @@ const docTemplate = `{
                     ]
                 },
                 "type": {
-                    "description": "The type of this review\n* onetime - Represents a one time execution\n* jit - Represents a time based review",
+                    "description": "The type of the review\n* onetime - Represents a one time execution\n* jit - Represents a time based review",
                     "enum": [
                         "onetime",
                         "jit"
@@ -6313,7 +6317,8 @@ const docTemplate = `{
                         "type": "string"
                     },
                     "example": [
-                        "sre"
+                        "sre",
+                        "dba"
                     ]
                 },
                 "id": {
@@ -6330,7 +6335,7 @@ const docTemplate = `{
                 "password": {
                     "description": "Local auth cases have a password",
                     "type": "string",
-                    "example": "password"
+                    "example": "mysecurepassword"
                 },
                 "picture": {
                     "description": "The profile picture url to display",
@@ -6396,7 +6401,8 @@ const docTemplate = `{
                         "type": "string"
                     },
                     "example": [
-                        "sre"
+                        "sre",
+                        "dba"
                     ]
                 },
                 "id": {
@@ -6439,7 +6445,7 @@ const docTemplate = `{
                 "password": {
                     "description": "Local auth cases have a password",
                     "type": "string",
-                    "example": "password"
+                    "example": "mysecurepassword"
                 },
                 "picture": {
                     "description": "The profile picture url to display",

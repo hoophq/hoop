@@ -1,6 +1,6 @@
 (ns webapp.onboarding.setup-resource
   (:require
-   ["@radix-ui/themes" :refer [Badge Box Button Callout]]
+   ["@radix-ui/themes" :refer [Badge Box Button Flex Callout]]
    ["lucide-react" :refer [AlertCircle]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
@@ -71,18 +71,22 @@
         resources-status @(rf/subscribe [:aws-connect/resources-status])
         api-error @(rf/subscribe [:aws-connect/resources-api-error])
         security-groups (rf/subscribe [:aws-connect/security-groups])
-        ports (rf/subscribe [:aws-connect/ports])
 
         selected-ids (r/atom (or rf-selected #{}))
         expanded-rows (r/atom #{})
         update-counter (r/atom 0)
         security-groups-atom (r/atom @security-groups)
-        ports-atom (r/atom @ports)
 
         formatted-api-error (when (and (= resources-status :error) api-error)
                               {:message (or (:message api-error) "Unknown error occurred")
                                :code (or (:code api-error) "Error")
                                :type (or (:type api-error) "Failed")})
+
+        apply-sg-to-resource (fn [resource-id current-sg]
+                               (let [account (first (filter #(= (:id %) resource-id) resources))
+                                     child-resources (:children account)]
+                                 (doseq [resource child-resources]
+                                   (rf/dispatch [:aws-connect/set-security-group (:id resource) current-sg]))))
 
         columns [{:id :name
                   :header "Name"
@@ -107,35 +111,23 @@
                               ""
                               ;; Child row - show the input
                               (let [resource-id (:id row)
+                                    account-id (:account-id row)
                                     current-sg (get @security-groups resource-id "")]
-                                [forms/input
-                                 {:placeholder "e.g. 10.10.10.10/32"
-                                  :value current-sg
-                                  :not-margin-bottom? true
-                                  :on-change #(do
-                                                (swap! security-groups-atom assoc resource-id (-> % .-target .-value))
-                                                (rf/dispatch [:aws-connect/set-security-group
-                                                              resource-id
-                                                              (-> % .-target .-value)]))}])))}
-                 {:id :port
-                  :header "Port"
-                  :width "20%"
-                  :render (fn [_ row]
-                            (if (:account-type row)
-                              ;; Parent row - don't show input
-                              ""
-                              ;; Child row - show the input
-                              (let [resource-id (:id row)
-                                    current-port (get @ports resource-id "")]
-                                [forms/input
-                                 {:placeholder "e.g. 3306"
-                                  :value current-port
-                                  :not-margin-bottom? true
-                                  :on-change #(do
-                                                (swap! ports-atom assoc resource-id (-> % .-target .-value))
-                                                (rf/dispatch [:aws-connect/set-port
-                                                              resource-id
-                                                              (-> % .-target .-value)]))}])))}]
+                                [:> Flex {:align "center" :gap "2"}
+                                 [forms/input
+                                  {:placeholder "e.g. 10.10.10.10/32"
+                                   :value current-sg
+                                   :not-margin-bottom? true
+                                   :on-change #(do
+                                                 (swap! security-groups-atom assoc resource-id (-> % .-target .-value))
+                                                 (rf/dispatch [:aws-connect/set-security-group
+                                                               resource-id
+                                                               (-> % .-target .-value)]))}]
+                                 [:> Button {:size "1"
+                                             :variant "soft"
+                                             :disabled (empty? current-sg)
+                                             :on-click #(apply-sg-to-resource account-id current-sg)}
+                                  "Apply to all"]])))}]
 
         sync-child-ids-only
         (fn [selected-set]
@@ -158,9 +150,6 @@
 
       (when (not= @security-groups-atom @security-groups)
         (reset! security-groups-atom @security-groups))
-
-      (when (not= @ports-atom @ports)
-        (reset! ports-atom @ports))
 
       (if (= resources-status :error)
         [:> Box {:class "p-5"}

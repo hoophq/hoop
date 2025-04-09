@@ -38,6 +38,11 @@
  (fn [db [_ value]]
    (assoc-in db [:connection-setup :network-credentials :port] value)))
 
+(rf/reg-event-db
+ :connection-setup/update-network-remote-url
+ (fn [db [_ value]]
+   (assoc-in db [:connection-setup :network-credentials :remote_url] value)))
+
 ;; Database specific events
 (rf/reg-event-db
  :connection-setup/update-database-credentials
@@ -88,17 +93,6 @@
  :connection-setup/set-command
  (fn [db [_ command]]
    (assoc-in db [:connection-setup :command] command)))
-
-;; Tags events
-(rf/reg-event-db
- :connection-setup/set-tags
- (fn [db [_ tags]]
-   (assoc-in db [:connection-setup :tags] tags)))
-
-(rf/reg-event-db
- :connection-setup/set-tags-input
- (fn [db [_ value]]
-   (assoc-in db [:connection-setup :tags-input] value)))
 
 ;; Review and Data Masking events
 (rf/reg-event-db
@@ -259,3 +253,14 @@
  :connection-setup/set-jira-template-id
  (fn [db [_ jira-template-id]]
    (assoc-in db [:connection-setup :config :jira-template-id] jira-template-id)))
+
+;; SSH specific events
+(rf/reg-event-db
+ :connection-setup/update-ssh-credentials
+ (fn [db [_ field value]]
+   (assoc-in db [:connection-setup :ssh-credentials field] value)))
+
+(rf/reg-event-db
+ :connection-setup/clear-ssh-credentials
+ (fn [db _]
+   (assoc-in db [:connection-setup :ssh-credentials] {})))

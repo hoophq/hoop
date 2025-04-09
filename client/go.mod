@@ -13,7 +13,7 @@ require (
 )
 
 require (
-	github.com/BurntSushi/toml v1.3.2
+	github.com/BurntSushi/toml v1.5.0
 	github.com/blevesearch/bleve/v2 v2.3.7
 	github.com/getsentry/sentry-go v0.18.0
 	github.com/google/go-cmp v0.6.0

@@ -3,7 +3,7 @@
    ["@headlessui/react" :as ui]
    ["@heroicons/react/20/solid" :as hero-solid-icon]
    ["@heroicons/react/24/outline" :as hero-outline-icon]
-   ["@radix-ui/themes" :refer [Button Box Flex Text Tooltip]]
+   ["@radix-ui/themes" :refer [Box Button Flex Text Tooltip]]
    ["clipboard" :as clipboardjs]
    ["is-url-http" :as is-url-http?]
    ["lucide-react" :refer [Download FileDown]]
@@ -21,6 +21,7 @@
    [webapp.components.popover :as popover]
    [webapp.components.tooltip :as tooltip]
    [webapp.components.user-icon :as user-icon]
+   [webapp.config :as config]
    [webapp.formatters :as formatters]
    [webapp.routes :as routes]
    [webapp.utilities :as utilities]))
@@ -199,7 +200,7 @@
                    (if (<= total-redact 1) "item" "items"))]]]]]]))]))
 
 (defn main [session]
-  (let [user (rf/subscribe [:users->current-user])
+  (let [user-details (rf/subscribe [:users->current-user])
         session-details (rf/subscribe [:audit->session-details])
         session-report (rf/subscribe [:reports->session])
         gateway-info (rf/subscribe [:gateway->info])
@@ -213,7 +214,10 @@
       (rf/dispatch [:audit->get-session-by-id session]))
     (fn []
       (let [session (:session @session-details)
-            user-name (:user_name session)
+            user (:data @user-details)
+            session-user-name (:user_name session)
+            session-user-id (:user_id session)
+            current-user-id (:id user)
             connection-name (:connection session)
             start-date (:start_date session)
             end-date (:end_date session)
@@ -241,8 +245,9 @@
                                review-groups)
                          (some (fn [review-group]
                                  (some #(= (:group review-group) %)
-                                       (-> @user :data :groups)))
+                                       (-> user :data :groups)))
                                review-groups))
+            is-session-owner? (= session-user-id current-user-id)
             add-review-cb (fn [status]
                             (rf/dispatch [:audit->add-review
                                           session
@@ -275,8 +280,10 @@
                  [:div {:class "rounded-full w-1.5 h-1.5 bg-green-500"}]
                  [:span {:class "text-xs text-gray-500"}
                   "This session has pending items"]])
+
               (when (and ready?
-                         (= (:verb session) "exec"))
+                         (= (:verb session) "exec")
+                         is-session-owner?)
                 [:div {:class "flex gap-regular justify-end items-center mx-large"}
                  [:span {:class "text-xs text-gray-500"}
                   "This session is ready to be executed"]
@@ -315,6 +322,17 @@
                          :on-click #(re-run-session session)}
                    [:> hero-outline-icon/PlayIcon {:class "h-5 w-5 text-gray-600"}]]]])
 
+              (when (-> session :integrations_metadata :jira_issue_url)
+                [:div {:class "relative group"}
+                 [:> Tooltip {:content "Open in Jira"}
+                  [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer"
+                         :on-click (fn []
+                                     (js/open (-> session :integrations_metadata :jira_issue_url) "_blank"))}
+                   [:div
+                    [:figure {:class "flex-shrink-0 w-[20px]"
+                              :style {:color "currentColor"}}
+                     [:img {:src (str config/webapp-url "/icons/icon-jira-current-color.svg")}]]]]]])
+
               [:div {:class "relative group"}
                [:> Tooltip {:content "Copy link"}
                 [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer copy-to-clipboard-url"
@@ -340,16 +358,13 @@
               [:div {:class "text-xs text-gray-500"}
                "Runbook: " (-> session :labels :runbookFile)])]
 
-           [:section {:class (str "grid grid-cols-1 gap-regular pb-regular "
-                                  (if (-> session :integrations_metadata :jira_issue_url)
-                                    "lg:grid-cols-4"
-                                    "lg:grid-cols-3"))}
+           [:section {:class "grid grid-cols-1 gap-regular pb-regular lg:grid-cols-3"}
             [:div {:class "col-span-1 flex gap-large items-center"}
              [:div {:class "flex flex-grow gap-regular items-center"}
-              [user-icon/initials-black user-name]
+              [user-icon/initials-black session-user-name]
               [:span
                {:class "text-gray-800 text-sm"}
-               user-name]]]
+               session-user-name]]]
             [:div {:class (str "flex flex-col gap-small self-center justify-center"
                                " rounded-lg bg-gray-100 p-3")}
              [:div
@@ -378,6 +393,7 @@
                  "access until:"]
                 [:span
                  (formatters/time-parsed->full-date (get-in session [:review :revoke_at]))]])]
+
             [:div {:id "session-reviews" :class "self-center"}
              [:header {:class "relative flex text-xs text-gray-800 mb-small"}
               [:span {:class "flex-grow font-bold"} "Reviewers"]
@@ -402,18 +418,7 @@
               (doall
                (for [group review-groups]
                  ^{:key (:id group)}
-                 [review-group-item group session @user]))]]
-
-            (when (-> session :integrations_metadata :jira_issue_url)
-              [:div {:class "self-center"}
-               [:header {:class "relative flex text-xs text-gray-800 mb-small"}
-                [:span {:class "flex-grow font-bold"} "Integrations"]]
-               [:a {:class "text-xs underline text-blue-600 flex items-center py-small"
-                    :href (-> session :integrations_metadata :jira_issue_url)
-                    :target "_blank"}
-                "Open in Jira "
-                [:> hero-solid-icon/ArrowUpRightIcon {:class "h-4 w-4 shrink-0"
-                                                      :aria-hidden "true"}]]])]
+                 [review-group-item group session user]))]]]
 
          ;; runbook params
            (when (and runbook-params

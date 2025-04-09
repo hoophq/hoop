@@ -31,7 +31,7 @@
                                         :leave "transition-opacity ease-linear duration-500"
                                         :leaveFrom "opacity-100"
                                         :leaveTo "opacity-0"}
-            [:div {:class "fixed inset-0 bg-[#060E1D] bg-opacity-80"}]]
+            [:div {:class "fixed inset-0 bg-[#182449] bg-opacity-80"}]]
 
            [:div {:class "fixed inset-0 flex"}
             [:> (.-Child ui/Transition) {:as react/Fragment
@@ -56,12 +56,12 @@
                  [:span.sr-only "Close sidebar"]
                  [:> hero-outline-icon/XMarkIcon {:class "h-6 w-6 shrink-0 text-white"
                                                   :aria-hidden "true"}]]]]
-              [:div {:class "flex grow flex-col gap-y-5 overflow-y-auto bg-[#060E1D] px-6 pb-4 ring-1 ring-white ring-opacity-10"}
+              [:div {:class "flex grow flex-col gap-y-5 overflow-y-auto bg-[#182449] px-6 pb-4 ring-1 ring-white ring-opacity-10"}
                [navigation/main user my-plugins]]]]]]]
    ;; end sidebar opened
 
    ;; sidebar closed
-         [:div {:class "sticky top-0 z-30 flex items-center justify-between gap-x-6 bg-[#060E1D] px-4 py-3 shadow-sm sm:px-6 lg:hidden"}
+         [:div {:class "sticky top-0 z-30 flex items-center justify-between gap-x-6 bg-[#182449] px-4 py-3 shadow-sm sm:px-6 lg:hidden"}
           [:button {:type "button"
                     :class "-m-2.5 p-2.5 text-gray-700 lg:hidden"
                     :onClick #(rf/dispatch [:sidebar-mobile->open])}
@@ -73,8 +73,8 @@
 
 (defn hover-side-menu-link? [uri-item current-route]
   (if (= uri-item current-route)
-    "bg-gray-800 text-white "
-    "hover:bg-gray-800 hover:text-white text-gray-300 "))
+    "bg-white/5 text-white "
+    "hover:bg-white/5 hover:text-white text-gray-300 "))
 
 (defn desktop-sidebar [_ _]
   (let [sidebar-desktop (rf/subscribe [:sidebar-desktop])
@@ -99,22 +99,22 @@
                             :leave "transition-opacity duration-400 ease-in-out transform"
                             :leaveFrom "opacity-100"
                             :leaveTo "opacity-0"}
-          [:div {:class "hidden lg:fixed lg:inset-y-0 lg:z-40 lg:flex lg:w-side-menu lg:flex-col lg:bg-[#060E1D]"}
-           [:div {:class "border-t border-gray-800 w-full py-2 px-2 absolute bottom-0 bg-[#060E1D] hover:bg-gray-800 hover:text-white cursor-pointer flex justify-end"
+          [:div {:class "hidden lg:fixed lg:inset-y-0 lg:z-40 lg:flex lg:w-side-menu lg:flex-col lg:bg-[#182449]"}
+           [:div {:class "border-t border-gray-800 w-full py-2 px-2 absolute bottom-0 bg-[#182449] hover:bg-white/5 hover:text-white cursor-pointer flex justify-end"
                   :onClick #(rf/dispatch [:sidebar-desktop->close])}
             [:> hero-outline-icon/ChevronDoubleLeftIcon {:class "h-6 w-6 shrink-0 text-white"
                                                          :aria-hidden "true"}]]
-           [:div {:class "h-full flex grow flex-col gap-y-2 overflow-y-auto bg-[#060E1D] px-4 pb-10"}
+           [:div {:class "h-full flex grow flex-col gap-y-2 overflow-y-auto bg-[#182449] px-4 pb-10"}
             [navigation/main user my-plugins]]]]
        ;; end sidebar opened
 
        ;; sidebar closed
-         [:div {:class "hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:block lg:w-[72px] lg:overflow-y-auto lg:bg-[#060E1D]"}
-          [:div {:class "border-t bg-[#060E1D] border-gray-800 w-full py-2 px-2 absolute bottom-0 bg-[#060E1D] hover:bg-gray-800 hover:text-white cursor-pointer flex justify-center"
+         [:div {:class "hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:block lg:w-[72px] lg:overflow-y-auto lg:bg-[#182449]"}
+          [:div {:class "border-t bg-[#182449] border-gray-800 w-full py-2 px-2 absolute bottom-0 bg-[#182449] hover:bg-white/5 hover:text-white cursor-pointer flex justify-center"
                  :onClick #(rf/dispatch [:sidebar-desktop->open])}
            [:> hero-outline-icon/ChevronDoubleRightIcon {:class "h-6 w-6 shrink-0 text-white"
                                                          :aria-hidden "true"}]]
-          [:div {:class "h-full flex grow flex-col gap-y-2 overflow-y-auto bg-[#060E1D] px-4 pb-10"}
+          [:div {:class "h-full flex grow flex-col gap-y-2 overflow-y-auto bg-[#182449] px-4 pb-10"}
            [:div {:class "flex my-8 shrink-0 items-center justify-center"}
             [:figure {:class "cursor-pointer"}
              [:img {:src (str config/webapp-url
@@ -151,8 +151,8 @@
                  ^{:key (:name plugin)}
                  [:li
                   [:a {:href (:uri plugin)
-                       :class "text-gray-400 hover:text-white hover:bg-gray-800 group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
-                   [(:icon plugin) {:class (str "h-6 w-6 shrink-0 text-white")
+                       :class "text-gray-400 hover:text-white hover:bg-white/5 group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
+                   [(:icon plugin) {:class "h-6 w-6 shrink-0 text-white"
                                     :aria-hidden "true"}]
                    [:span {:class "sr-only"}
                     (:label plugin)]]])]]
@@ -211,7 +211,7 @@
                  [:li
                   [:a {:href "#"
                        :on-click #(rf/dispatch [:sidebar-desktop->open])
-                       :class "text-gray-400 hover:text-white hover:bg-gray-800 group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
+                       :class "text-gray-400 hover:text-white hover:bg-white/5 group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
                    [:> hero-outline-icon/Cog8ToothIcon {:class "h-6 w-6 shrink-0 text-white"
                                                         :aria-hidden "true"}]
                    [:span {:class "sr-only"}
@@ -220,7 +220,7 @@
                  [:li
                   [:a {:href "#"
                        :on-click #(rf/dispatch [:sidebar-desktop->open])
-                       :class "text-gray-400 hover:text-white hover:bg-gray-800 group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
+                       :class "text-gray-400 hover:text-white hover:bg-white/5 group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
                    [:> hero-outline-icon/PuzzlePieceIcon {:class "h-6 w-6 shrink-0 text-white"
                                                           :aria-hidden "true"}]
                    [:span {:class "sr-only"}
@@ -229,7 +229,7 @@
              [:li {:class "mt-auto mb-3"}
               [:a {:href "#"
                    :onClick #(rf/dispatch [:sidebar-desktop->open])
-                   :class "text-gray-400 hover:text-white hover:bg-gray-800 group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
+                   :class "text-gray-400 hover:text-white hover:bg-white/5 group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
                [user-icon/initials-white (:name user-data)]]]]]]]
        ;; end sidebar closed
          ]))))
@@ -258,6 +258,6 @@
       [:div
        [container]
        [:main {:class (if (= :opened (:status @sidebar-desktop))
-                        "h-screen bg-[#060E1D] w-full absolute lg:pl-side-menu-width"
-                        "h-screen bg-[#060E1D] w-full absolute lg:pl-[72px]")}
+                        "h-screen bg-[#182449] w-full absolute lg:pl-side-menu-width"
+                        "h-screen bg-[#182449] w-full absolute lg:pl-[72px]")}
         panels]])))

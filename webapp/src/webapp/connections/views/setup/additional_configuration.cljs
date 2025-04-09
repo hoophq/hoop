@@ -104,20 +104,6 @@
                                                      (-> % .-target .-value)])}]])
 
           (when (not= @connection-subtype "console")
-            #_[:> Box {:class "space-y-4"}
-               [:> Box
-                [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-                 "Tags"]
-                [:> Text {:as "p" :size "3" :class "text-[--gray-11]"}
-                 "Add custom labels to manage and track connections."]]
-               [multi-select/text-input
-                {:value @tags
-                 :input-value @tags-input
-                 :on-change #(rf/dispatch [:connection-setup/set-tags %])
-                 :on-input-change #(rf/dispatch [:connection-setup/set-tags-input %])
-                 :id "tags-multi-select-text-input"
-                 :name "tags-multi-select-text-input"}]]
-
             [tags-inputs/main])
 
           [:> Box
@@ -185,7 +171,7 @@
                   [multi-select/main
                    {:options (helpers/array->select-options
                               (case redact-provider
-                                "presidio" dlp-info-types/presidio-options
+                                "mspresidio" dlp-info-types/presidio-options
                                 "gcp" dlp-info-types/gcp-options
                                 dlp-info-types/gcp-options))
                     :id "data-masking-groups-input"

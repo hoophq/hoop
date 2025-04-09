@@ -72,9 +72,9 @@ type User struct {
 	// The profile picture url to display
 	Picture string `json:"picture" example:""`
 	// Groups registered for this user
-	Groups []string `json:"groups" example:"sre"`
+	Groups []string `json:"groups" example:"sre,dba"`
 	// Local auth cases have a password
-	Password string `json:"password" example:"password"`
+	Password string `json:"password,omitempty" example:"mysecurepassword"`
 }
 
 type UserPatchSlackID struct {
@@ -476,6 +476,8 @@ type Session struct {
 	ConnectionSubtype string `json:"connection_subtype" example:"postgres"`
 	// The connection name of this resource
 	Connection string `json:"connection" example:"pgdemo"`
+	// The tags of the connection resource
+	ConnectionTags map[string]string `json:"connection_tags" example:"team:banking;environment:prod"`
 	// Review of this session. In case the review doesn't exist this field will be null
 	Review *SessionReview `json:"review"`
 	// Verb is how the client has interacted with this resource
@@ -972,6 +974,8 @@ type JiraIssueTemplateRequest struct {
 		- session.type
 		- session.connection_subtype
 		- session.connection
+		- session.connection_tags.[key1]
+		- session.connection_tags.[key2]
 		- session.status
 		- session.script
 		- session.start_date
@@ -1259,8 +1263,6 @@ type AWSDBInstance struct {
 }
 
 type CreateDBRoleJobAWSProviderSG struct {
-	// The target port to be configured for the security group
-	TargetPort int32 `json:"target_port" example:"5432" binding:"required"`
 	// The ingress inbound CIDR rule to allow traffic to
 	IngressCIDR string `json:"ingress_cidr" example:"192.168.1.0/24" binding:"required"`
 }
@@ -1281,7 +1283,7 @@ const (
 
 type DBRoleJobVaultProvider struct {
 	// The path to store the credentials in Vault
-	SecretID string `json:"secret_id" example:"dbsecrets/data" binding:"required"`
+	SecretID string `json:"secret_id" example:"dbsecrets/data/" binding:"required"`
 }
 
 type CreateDBRoleJob struct {
@@ -1358,7 +1360,7 @@ type DBRoleJobStatusResultCredentialsInfo struct {
 	SecretsManagerProvider SecretsManagerProviderType `json:"secrets_manager_provider" example:"database"`
 	// The secret identifier that contains the secret data.
 	// This value is always empty for the database type.
-	SecretID string `json:"secret_id" example:"dbsecrets/data"`
+	SecretID string `json:"secret_id" example:"dbsecrets/data/pgprod"`
 	// The keys that were saved in the secrets manager.
 	// This value is always empty for the database type.
 	SecretKeys []string `json:"secret_keys" example:"HOST,PORT,USER,PASSWORD,DB"`

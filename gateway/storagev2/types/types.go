@@ -99,6 +99,7 @@ type ConnectionInfo struct {
 	SubType                          string
 	CmdEntrypoint                    []string
 	Secrets                          map[string]any
+	Tags                             map[string]string
 	AgentID                          string
 	AgentName                        string
 	AgentMode                        string

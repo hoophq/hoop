@@ -249,33 +249,33 @@
                                                                                       :maxWidth "446px"}])}
                          "Open in Native Client"])]]
 
-                    [:> DropdownMenu.Root {:dir "rtl"}
-                     [:> DropdownMenu.Trigger
-                      [:> IconButton {:size 1 :variant "ghost" :color "gray"}
-                       [:> EllipsisVertical {:size 16}]]]
-                     [:> DropdownMenu.Content
-                      (when (and (-> @user :data :admin?)
-                                 (not (= (:managed_by connection) "hoopagent")))
-                        [:> DropdownMenu.Item {:on-click
-                                               (fn []
-                                                 (rf/dispatch [:plugins->get-my-plugins])
-                                                 (rf/dispatch [:navigate :edit-connection {} :connection-name (:name connection)]))}
-                         "Configure"])
-                      [:> DropdownMenu.Item {:color "red"
-                                             :on-click (fn []
-                                                         (rf/dispatch [:dialog->open
-                                                                       {:title "Delete connection?"
-                                                                        :type :danger
-                                                                        :text-action-button "Confirm and delete"
-                                                                        :action-button? true
-                                                                        :text [:> Box {:class "space-y-radix-4"}
-                                                                               [:> Text {:as "p"}
-                                                                                "This action will instantly remove your access to "
-                                                                                (:name connection)
-                                                                                " and can not be undone."]
-                                                                               [:> Text {:as "p"}
-                                                                                "Are you sure you want to delete this connection?"]]
-                                                                        :on-success (fn []
-                                                                                      (rf/dispatch [:connections->delete-connection (:name connection)])
-                                                                                      (rf/dispatch [:modal->close]))}]))}
-                       "Delete"]]]]])))]])]))))
+                    (when (-> @user :data :admin?)
+                      [:> DropdownMenu.Root {:dir "rtl"}
+                       [:> DropdownMenu.Trigger
+                        [:> IconButton {:size 1 :variant "ghost" :color "gray"}
+                         [:> EllipsisVertical {:size 16}]]]
+                       [:> DropdownMenu.Content
+                        (when (not (= (:managed_by connection) "hoopagent"))
+                          [:> DropdownMenu.Item {:on-click
+                                                 (fn []
+                                                   (rf/dispatch [:plugins->get-my-plugins])
+                                                   (rf/dispatch [:navigate :edit-connection {} :connection-name (:name connection)]))}
+                           "Configure"])
+                        [:> DropdownMenu.Item {:color "red"
+                                               :on-click (fn []
+                                                           (rf/dispatch [:dialog->open
+                                                                         {:title "Delete connection?"
+                                                                          :type :danger
+                                                                          :text-action-button "Confirm and delete"
+                                                                          :action-button? true
+                                                                          :text [:> Box {:class "space-y-radix-4"}
+                                                                                 [:> Text {:as "p"}
+                                                                                  "This action will instantly remove your access to "
+                                                                                  (:name connection)
+                                                                                  " and can not be undone."]
+                                                                                 [:> Text {:as "p"}
+                                                                                  "Are you sure you want to delete this connection?"]]
+                                                                          :on-success (fn []
+                                                                                        (rf/dispatch [:connections->delete-connection (:name connection)])
+                                                                                        (rf/dispatch [:modal->close]))}]))}
+                         "Delete"]]])]])))]])]))))

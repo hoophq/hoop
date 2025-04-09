@@ -47,6 +47,7 @@
                            :environment-variables "https://hoop.dev/docs/setup/configuration/environment-variables"
                            :reverse-proxy "https://hoop.dev/docs/setup/configuration/reverse-proxy"
                            :identity-providers "https://hoop.dev/docs/setup/configuration/identity-providers"
+                           :secrets-manager "https://hoop.dev/docs/setup/configuration/secrets-manager-configuration"
                            :ai-data-masking "https://hoop.dev/docs/setup/configuration/ai-data-masking"}
            :apis "https://hoop.dev/docs/setup/apis"
            :license-management "https://hoop.dev/docs/setup/license-management"}

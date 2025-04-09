@@ -64,6 +64,7 @@ type Session struct {
 	Connection           string            `gorm:"column:connection"`
 	ConnectionType       string            `gorm:"column:connection_type"`
 	ConnectionSubtype    string            `gorm:"column:connection_subtype"`
+	ConnectionTags       map[string]string `gorm:"column:connection_tags;serializer:json"`
 	Verb                 string            `gorm:"column:verb"`
 	Labels               map[string]string `gorm:"column:labels;serializer:json"`
 	Metadata             map[string]any    `gorm:"column:metadata;serializer:json"`
@@ -194,7 +195,7 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 	session := &Session{}
 	err := DB.Raw(`
 	SELECT
-		s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.verb, s.labels, s.exit_code,
+		s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.connection_tags, s.verb, s.labels, s.exit_code,
 		s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics,
 		metrics->>'event_size' AS blob_stream_size, s.blob_input_id,
 		CASE
@@ -260,9 +261,9 @@ func ListSessions(orgID string, opt SessionOption) (*SessionList, error) {
 			CASE WHEN (@review_approver_email)::TEXT IS NOT NULL
 				THEN
 					EXISTS (
-						SELECT 1 FROM private.review_groups rg
-						INNER JOIN private.users u ON u.email = s.user_email
-						INNER JOIN private.user_groups ug ON ug.user_id = u.id AND ug.name = rg.group_name
+						SELECT 1 FROM private.users u
+						INNER JOIN private.user_groups ug ON ug.user_id = u.id
+						INNER JOIN private.review_groups rg ON rg.group_name = ug.name
 						WHERE rg.review_id = rv.id AND u.email = @review_approver_email
 					)
 				ELSE true
@@ -287,7 +288,7 @@ func ListSessions(orgID string, opt SessionOption) (*SessionList, error) {
 
 		err = tx.Raw(`
 		SELECT
-			s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.verb, s.labels, s.exit_code,
+			s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.connection_tags, s.verb, s.labels, s.exit_code,
 			s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics,
 			metrics->>'event_size' AS blob_stream_size, s.blob_input_id, s.blob_stream_id,
 			CASE
@@ -329,9 +330,9 @@ func ListSessions(orgID string, opt SessionOption) (*SessionList, error) {
 			CASE WHEN (@review_approver_email)::TEXT IS NOT NULL
 				THEN
 					EXISTS (
-						SELECT 1 FROM private.review_groups rg
-						INNER JOIN private.users u ON u.email = s.user_email
-						INNER JOIN private.user_groups ug ON ug.user_id = u.id AND ug.name = rg.group_name
+						SELECT 1 FROM private.users u
+						INNER JOIN private.user_groups ug ON ug.user_id = u.id
+						INNER JOIN private.review_groups rg ON rg.group_name = ug.name
 						WHERE rg.review_id = rv.id AND u.email = @review_approver_email
 					)
 				ELSE true
@@ -400,6 +401,7 @@ func UpsertSession(sess Session) error {
 				Connection:           sess.Connection,
 				ConnectionType:       sess.ConnectionType,
 				ConnectionSubtype:    sess.ConnectionSubtype,
+				ConnectionTags:       sess.ConnectionTags,
 				Verb:                 sess.Verb,
 				UserID:               sess.UserID,
 				UserName:             sess.UserName,
