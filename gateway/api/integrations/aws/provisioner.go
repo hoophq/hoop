@@ -348,7 +348,7 @@ func parseEnvVars(cred *pbsystem.DBCredentials) map[string]string {
 
 func generateRandomPassword() (string, error) {
 	// Character set for passwords (lowercase, uppercase, numbers, special chars)
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789$*_"
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789*_"
 	passwordLength := 25
 
 	// Create a byte slice to store the password

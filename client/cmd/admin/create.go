@@ -11,6 +11,9 @@ func init() {
 	createCmd.AddCommand(createPluginCmd)
 	createCmd.AddCommand(createUserCmd)
 	createCmd.AddCommand(createSvcAccountCmd)
+	createCmd.AddCommand(createSvixEventTypeCmd)
+	createCmd.AddCommand(createSvixEndppointCmd)
+	createCmd.AddCommand(createSvixMessageCmd)
 	createCmd.PersistentFlags().StringVarP(&outputFlag, "output", "o", "", "Output format. One off: (json)")
 }
 

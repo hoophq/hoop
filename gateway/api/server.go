@@ -460,7 +460,78 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventOpenWebhooksDashboard),
-		webhooksapi.Get)
+		webhooksapi.GetDashboardURL)
+
+	// svix experimental routes (endpoints)
+	r.GET("/webhooks/endpoints",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		webhooksapi.ListSvixEndpoints,
+	)
+	r.GET("/webhooks/endpoints/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		webhooksapi.GetSvixEndpointByID,
+	)
+	r.POST("/webhooks/endpoints",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		webhooksapi.CreateSvixEndpoint,
+	)
+	r.PUT("/webhooks/endpoints/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		webhooksapi.UpdateSvixEndpoint,
+	)
+	r.DELETE("/webhooks/endpoints/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		webhooksapi.DeleteSvixEndpointByID,
+	)
+
+	// svix experimental routes (event types)
+	r.POST("/webhooks/eventtypes",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		webhooksapi.CreateSvixEventType,
+	)
+	r.PUT("/webhooks/eventtypes/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		webhooksapi.UpdateSvixEventType,
+	)
+	r.GET("/webhooks/eventtypes",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		webhooksapi.ListSvixEventTypes,
+	)
+	r.GET("/webhooks/eventtypes/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		webhooksapi.GetSvixEventTypeByName,
+	)
+	r.DELETE("/webhooks/eventtypes/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		webhooksapi.DeleteSvixEventType,
+	)
+
+	// svix experimental routes (messages)
+	r.POST("/webhooks/messages",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		webhooksapi.CreateSvixMessage,
+	)
+	r.GET("/webhooks/messages",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		webhooksapi.ListSvixMessages,
+	)
+	r.GET("/webhooks/messages/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		webhooksapi.GetSvixMessageByID,
+	)
 
 	// Jira Integration routes
 	r.GET("/integrations/jira",

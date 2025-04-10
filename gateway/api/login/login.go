@@ -66,6 +66,7 @@ func (h *handler) Login(c *gin.Context) {
 	})
 	if err != nil {
 		sentry.CaptureException(err)
+		log.Errorf("internal error storing the login, reason=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal error storing the login"})
 		return
 	}
