@@ -22,7 +22,7 @@ var (
 )
 
 func init() {
-	getCmd.Flags().StringVarP(&outputFlag, "output", "o", "", "Output format. One off: (json)")
+	getCmd.Flags().StringVarP(&outputFlag, "output", "o", "", "Output format. One off: (json,wide)")
 	getCmd.Flags().BoolVar(&getShowTagsFlag, "show-tags", false, "Display the tags column (connections only)")
 	getCmd.Flags().StringSliceVarP(&queryFlag, "query", "q", []string{}, "The query attributes to append in the http request")
 }
@@ -281,6 +281,113 @@ var getCmd = &cobra.Command{
 					fmt.Fprintln(w)
 				}
 
+			}
+		case "svixet", "svixeventtype", "svixeventtypes":
+			switch contents := obj.(type) {
+			case map[string]any:
+				items, ok := contents["data"].([]any)
+				if ok {
+					fmt.Fprintln(w, "NAME\tDESCRIPTION\tARCHIVED\tUPDATED\tAGE\t")
+					for _, item := range items {
+						m, ok := item.(map[string]any)
+						if !ok {
+							m = map[string]any{}
+						}
+
+						fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t",
+							m["name"], m["description"], m["archived"], absTime(m["updatedAt"]), absTime(m["createdAt"]))
+						fmt.Fprintln(w)
+					}
+					return
+				}
+				fmt.Fprintln(w, "NAME\tDESCRIPTION\tARCHIVED\tSCHEMA\tUPDATED\tAGE\t")
+				m := contents
+				_, hasSchemas := m["schemas"].(map[string]any)
+				fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t%v\t",
+					m["name"], m["description"], m["archived"], hasSchemas, absTime(m["updatedAt"]), absTime(m["createdAt"]))
+				fmt.Fprintln(w)
+			}
+
+		case "svixep", "svixendpoint", "svixendpoints":
+			switch contents := obj.(type) {
+			case map[string]any:
+				items, ok := contents["data"].([]any)
+				if ok {
+					fmt.Fprintln(w, "ID\tDESCRIPTION\tDISABLED\tVERSION\tFAIL\tPENDING\tSENDING\tSUCCESS\tFILTERS\tAGE\t")
+					for _, item := range items {
+						m, ok := item.(map[string]any)
+						if !ok {
+							m = map[string]any{}
+						}
+
+						filters := ""
+						filterTypes, ok := m["filterTypes"].([]any)
+						if ok && len(filterTypes) > 0 {
+							for _, key := range filterTypes {
+								filters += fmt.Sprintf("%v, ", key)
+							}
+							filters = strings.TrimSuffix(filters, ", ")
+						}
+
+						stats, ok := m["stats"].(map[string]any)
+						if !ok {
+							stats = map[string]any{}
+						}
+						fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t%v\t%v\t%v\t%v\t%v\t",
+							m["id"], m["description"], m["disabled"], m["version"],
+							stats["fail"], stats["pending"], stats["sending"], stats["success"], filters, absTime(m["createdAt"]))
+						fmt.Fprintln(w)
+					}
+					return
+				}
+			}
+		case "svixmsg", "svixmessage", "svixmessages":
+			switch contents := obj.(type) {
+			case map[string]any:
+				items, ok := contents["data"].([]any)
+				if ok {
+					fmt.Fprintln(w, "ID\tATTEMPTID\tTRIGGER\tSTATUS\tSTATUSCODE\tAGE\t")
+					for _, item := range items {
+						m, ok := item.(map[string]any)
+						if !ok {
+							m = map[string]any{}
+						}
+						var trigger string
+						switch fmt.Sprintf("%v", m["triggerType"]) {
+						case "0":
+							trigger = "scheduled"
+						case "1":
+							trigger = "manual"
+						default:
+							trigger = fmt.Sprintf("unknown (%v)", m["triggerType"])
+						}
+						if fmt.Sprintf("%v", m["triggerType"]) == "1" {
+							trigger = "manual"
+						}
+						var status string
+						switch fmt.Sprintf("%v", m["status"]) {
+						case "0":
+							status = "success"
+						case "1":
+							status = "pending"
+						case "2":
+							status = "fail"
+						case "3":
+							status = "sending"
+						default:
+							status = fmt.Sprintf("unknown (%v)", m["status"])
+						}
+						fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t%v\t",
+							m["msgId"], m["id"], trigger, status, m["responseStatusCode"], absTime(m["timestamp"]))
+						fmt.Fprintln(w)
+					}
+					return
+				}
+				fmt.Fprintln(w, "ID\tEVENT_TYPE\tPAYLOAD_SIZE\tAGE\t")
+				m := contents
+				fmt.Fprintf(w, "%v\t%v\t%v\t%v\t",
+					m["id"], m["eventType"], len(fmt.Sprintf("%v", m["payload"])), absTime(m["timestamp"]))
+				fmt.Fprintln(w)
 			}
 		default:
 			styles.PrintErrorAndExit("tab view not implemented for resource type %q, try repeating the command with the -o json option.", apir.resourceType)

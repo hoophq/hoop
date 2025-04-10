@@ -162,6 +162,44 @@ func parseResourceOrDie(args []string, method, outputFlag string) *apiResource {
 
 		apir.resourceList = false
 		apir.suffixEndpoint = "/api/plugins/runbooks/templates"
+	case "svixendpoint", "svixendpoints", "svixep":
+		defer func() {
+			if outputFlag == "" {
+				apir.decodeTo = "object"
+			}
+		}()
+		apir.resourceGet = false
+		apir.resourceDelete = true
+		apir.resourceCreate = true
+		apir.resourceUpdate = true
+		apir.suffixEndpoint = path.Join("/api/webhooks/endpoints", apir.name)
+		if method == "POST" {
+			apir.suffixEndpoint = "/api/webhooks/endpoints"
+		}
+	case "svixmessage", "svixmessages", "svixmsg":
+		defer func() {
+			if outputFlag == "" {
+				apir.decodeTo = "object"
+			}
+		}()
+		apir.resourceCreate = true
+		apir.suffixEndpoint = path.Join("/api/webhooks/messages", apir.name)
+		if method == "POST" {
+			apir.suffixEndpoint = "/api/webhooks/messages"
+		}
+	case "svixeventtype", "svixeventtypes", "svixet":
+		defer func() {
+			if outputFlag == "" {
+				apir.decodeTo = "object"
+			}
+		}()
+		apir.resourceDelete = true
+		apir.resourceCreate = true
+		apir.resourceUpdate = true
+		apir.suffixEndpoint = path.Join("/api/webhooks/eventtypes", apir.name)
+		if method == "POST" {
+			apir.suffixEndpoint = "/api/webhooks/eventtypes"
+		}
 	default:
 		styles.PrintErrorAndExit("resource type %q not supported", apir.resourceType)
 	}
