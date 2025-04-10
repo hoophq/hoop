@@ -122,12 +122,22 @@
    :on-toggle-cmdb-select (fn [select-state-atom]
                             (reset! select-state-atom (not @select-state-atom)))
 
-   :on-toggle-all-mapping (fn [rules-atom]
-                            (let [all-selected? (every? :selected @rules-atom)]
-                              (swap! rules-atom #(mapv
-                                                  (fn [rule]
-                                                    (assoc rule :selected (not all-selected?)))
-                                                  %))))
+   :on-toggle-all-mapping (fn
+                            ([rules-atom]
+                             (let [all-selected? (every? :selected @rules-atom)]
+                               (swap! rules-atom #(mapv
+                                                   (fn [rule]
+                                                     (assoc rule :selected (not all-selected?)))
+                                                   %))))
+                            ([rules-atom filter-fn]
+                             (let [filtered-rules (filter filter-fn @rules-atom)
+                                   all-selected? (every? :selected filtered-rules)]
+                               (swap! rules-atom #(mapv
+                                                   (fn [rule]
+                                                     (if (filter-fn rule)
+                                                       (assoc rule :selected (not all-selected?))
+                                                       rule))
+                                                   %)))))
 
    :on-toggle-all-prompts (fn [prompts-atom]
                             (let [all-selected? (every? :selected @prompts-atom)]
@@ -143,12 +153,20 @@
                                                  (assoc cmdb :selected (not all-selected?)))
                                                %))))
 
-   :on-mapping-delete (fn [rules-atom]
-                        (let [filtered-rules (vec (remove :selected @rules-atom))]
-                          (reset! rules-atom
-                                  (if (empty? filtered-rules)
-                                    [(create-empty-mapping-rule)]
-                                    filtered-rules))))
+   :on-mapping-delete (fn
+                        ([rules-atom]
+                         (let [filtered-rules (vec (remove :selected @rules-atom))]
+                           (reset! rules-atom
+                                   (if (empty? filtered-rules)
+                                     [(create-empty-mapping-rule)]
+                                     filtered-rules))))
+                        ([rules-atom filter-fn]
+                         (let [to-remove? (fn [rule] (and (filter-fn rule) (:selected rule)))
+                               filtered-rules (vec (remove to-remove? @rules-atom))]
+                           (reset! rules-atom
+                                   (if (and (empty? filtered-rules) (empty? @rules-atom))
+                                     [(create-empty-mapping-rule)]
+                                     filtered-rules)))))
 
    :on-prompt-delete (fn [prompts-atom]
                        (let [filtered-prompts (vec (remove :selected @prompts-atom))]
@@ -164,8 +182,11 @@
                                  [(create-empty-cmdb)]
                                  filtered-cmdbs))))
 
-   :on-mapping-add (fn [rules-atom]
-                     (swap! rules-atom conj (create-empty-mapping-rule)))
+   :on-mapping-add (fn
+                     ([rules-atom]
+                      (swap! rules-atom conj (create-empty-mapping-rule)))
+                     ([rules-atom transform-fn]
+                      (swap! rules-atom conj (transform-fn (create-empty-mapping-rule)))))
 
    :on-prompt-add (fn [prompts-atom]
                     (swap! prompts-atom conj (create-empty-prompt)))

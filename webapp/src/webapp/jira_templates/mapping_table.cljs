@@ -2,7 +2,8 @@
   (:require
    ["@radix-ui/themes" :refer [Box Table Text Strong]]
    [webapp.components.forms :as forms]
-   [webapp.jira-templates.rule-buttons :as rule-buttons]))
+   [webapp.jira-templates.rule-buttons :as rule-buttons]
+   [clojure.string :as str]))
 
 (def type-options
   [{:value "preset" :text "Preset"}
@@ -19,6 +20,13 @@
    {:value "session.start_date" :text "Session start date"}
    {:value "session.verb" :text "Session type"}
    {:value "session.script" :text "Session Script"}])
+
+(defn- is-connection-tag? [rule]
+  (and (:value rule)
+       (str/starts-with? (:value rule) "session.connection_tags.")))
+
+(defn- is-not-connection-tag? [rule]
+  (not (is-connection-tag? rule)))
 
 (defn- value-field [rule state idx on-rule-field-change]
   (when-not (empty? (:type rule))
@@ -65,65 +73,70 @@
                     on-toggle-all-mapping
                     on-mapping-delete
                     on-mapping-add]}]
-  [:> Box {:class "space-y-radix-5"}
-   [:> Box
-    [:> Table.Root {:size "2" :variant "surface"}
-     [:> Table.Header
-      [:> Table.Row {:align "center"}
-       (when @select-state
-         [:> Table.ColumnHeaderCell ""])
-       [:> Table.ColumnHeaderCell "Type"]
-       [:> Table.ColumnHeaderCell "Jira Field"]
-       [:> Table.ColumnHeaderCell "Value"]
-       [:> Table.ColumnHeaderCell "Description (Optional)"]]]
+  (let [toggle-all-non-tag-rules (fn []
+                                   (on-toggle-all-mapping state is-not-connection-tag?))
+        delete-non-tag-rules (fn []
+                               (on-mapping-delete state is-not-connection-tag?))]
+    [:> Box {:class "space-y-radix-5"}
+     [:> Box
+      [:> Table.Root {:size "2" :variant "surface"}
+       [:> Table.Header
+        [:> Table.Row {:align "center"}
+         (when @select-state
+           [:> Table.ColumnHeaderCell ""])
+         [:> Table.ColumnHeaderCell "Type"]
+         [:> Table.ColumnHeaderCell "Jira Field"]
+         [:> Table.ColumnHeaderCell "Value"]
+         [:> Table.ColumnHeaderCell "Description (Optional)"]]]
 
-     [:> Table.Body
-      (doall
-       (for [[idx rule] (map-indexed vector @state)]
-         ^{:key idx}
-         [:> Table.Row {:align "center"}
-          (when @select-state
-            [:> Table.RowHeaderCell {:p "2" :width "20px"}
-             [:input {:type "checkbox"
-                      :checked (:selected rule)
-                      :on-change #(on-mapping-select state idx)}]])
+       [:> Table.Body
+        (doall
+         (for [[idx rule] (map-indexed vector @state)
+               :when (is-not-connection-tag? rule)]
+           ^{:key idx}
+           [:> Table.Row {:align "center"}
+            (when @select-state
+              [:> Table.RowHeaderCell {:p "2" :width "20px"}
+               [:input {:type "checkbox"
+                        :checked (:selected rule)
+                        :on-change #(on-mapping-select state idx)}]])
 
-          [:> Table.RowHeaderCell {:p "4" :width "160px"}
-           [forms/select
-            {:size "2"
-             :name "type"
-             :variant "ghost"
-             :not-margin-bottom? true
-             :on-change (fn [value]
-                          (on-mapping-field-change state idx :type value)
-                          (on-mapping-field-change state idx :value "")
-                          (on-mapping-field-change state idx :jira_field "")
-                          (on-mapping-field-change state idx :description ""))
-             :selected (:type rule)
-             :full-width? true
-             :options type-options}]]
+            [:> Table.RowHeaderCell {:p "4" :width "160px"}
+             [forms/select
+              {:size "2"
+               :name "type"
+               :variant "ghost"
+               :not-margin-bottom? true
+               :on-change (fn [value]
+                            (on-mapping-field-change state idx :type value)
+                            (on-mapping-field-change state idx :value "")
+                            (on-mapping-field-change state idx :jira_field "")
+                            (on-mapping-field-change state idx :description ""))
+               :selected (:type rule)
+               :full-width? true
+               :options type-options}]]
 
-          [:> Table.Cell {:p "4"}
-           [jira-field-input rule state idx on-mapping-field-change]]
+            [:> Table.Cell {:p "4"}
+             [jira-field-input rule state idx on-mapping-field-change]]
 
-          [:> Table.Cell {:p "4"}
-           [value-field rule state idx on-mapping-field-change]]
+            [:> Table.Cell {:p "4"}
+             [value-field rule state idx on-mapping-field-change]]
 
-          [:> Table.Cell {:p "4"}
-           [details-input rule state idx on-mapping-field-change]]]))]]
+            [:> Table.Cell {:p "4"}
+             [details-input rule state idx on-mapping-field-change]]]))]]
 
-    [:> Text {:as "p" :size "2" :mt "1" :class "text-[--gray-10]"}
-     [:> Strong
-      "Preset: "]
-     "Relates hoop.dev fields with Jira fields. "
-     [:> Strong
-      "Custom: "]
-     "Appends a custom key-value relation to Jira cards."]]
+      [:> Text {:as "p" :size "2" :mt "1" :class "text-[--gray-10]"}
+       [:> Strong
+        "Preset: "]
+       "Relates hoop.dev fields with Jira fields. "
+       [:> Strong
+        "Custom: "]
+       "Appends a custom key-value relation to Jira cards."]]
 
-   [rule-buttons/main
-    {:on-rule-add #(on-mapping-add state)
-     :on-toggle-select #(on-toggle-mapping-select select-state)
-     :select-state select-state
-     :selected? (every? :selected @state)
-     :on-toggle-all #(on-toggle-all-mapping state)
-     :on-rules-delete #(on-mapping-delete state)}]])
+     [rule-buttons/main
+      {:on-rule-add #(on-mapping-add state)
+       :on-toggle-select #(on-toggle-mapping-select select-state)
+       :select-state select-state
+       :selected? (every? :selected (filter is-not-connection-tag? @state))
+       :on-toggle-all toggle-all-non-tag-rules
+       :on-rules-delete delete-non-tag-rules}]]))

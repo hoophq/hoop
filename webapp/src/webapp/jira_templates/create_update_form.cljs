@@ -9,6 +9,7 @@
    [webapp.jira-templates.form-header :as form-header]
    [webapp.jira-templates.helpers :as helpers]
    [webapp.jira-templates.mapping-table :as mapping-table]
+   [webapp.jira-templates.preset-mapping-table :as preset-mapping-table]
    [webapp.jira-templates.prompts-table :as prompts-table]
    [webapp.jira-templates.workflow-info :as workflow-info]))
 
@@ -68,6 +69,26 @@
                            :on-mapping-delete
                            :on-mapping-add]))]]]
 
+         [:> Flex {:direction "column" :gap "5"}
+          [:> Box
+           [:> Flex {:align "center" :gap "2"}
+            [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+             "Configure connection tags mapping"]]
+           [:> Text {:size "3" :class "text-[--gray-11]"}
+            "Map connection tags to Jira fields for automatic field population."]]
+
+          [:> Box {:class "space-y-radix-7"}
+           [preset-mapping-table/main
+            (merge
+             {:state (:mapping state)
+              :select-state (:mapping-select-state state)}
+             (select-keys handlers
+                          [:on-mapping-field-change
+                           :on-mapping-select
+                           :on-toggle-mapping-select
+                           :on-toggle-all-mapping
+                           :on-mapping-delete
+                           :on-mapping-add]))]]]
 
          [:> Flex {:direction "column" :gap "5"}
           [:> Box
