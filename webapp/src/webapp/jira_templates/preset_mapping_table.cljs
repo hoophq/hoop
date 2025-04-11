@@ -88,18 +88,10 @@
     :not-margin-bottom? true
     :on-change #(on-rule-field-change state idx :description (-> % .-target .-value))}])
 
-(defn main [{:keys [state
-                    select-state
-                    on-mapping-field-change
-                    on-mapping-select
-                    on-toggle-mapping-select
-                    on-toggle-all-mapping
-                    on-mapping-delete
-                    on-mapping-add]}]
+(defn main []
   (r/create-class
    {:component-did-mount
     (fn []
-      ;; Iniciar carregamento das tags quando o componente for montado
       (rf/dispatch [:jira-templates/get-connection-tags]))
 
     :reagent-render
@@ -150,10 +142,7 @@
                  [jira-field-input rule state idx on-mapping-field-change]]
 
                 [:> Table.Cell {:p "4"}
-                 [details-input rule state idx on-mapping-field-change]]]))]]
-
-          [:> Text {:as "p" :size "2" :mt "1" :class "text-[--gray-10]"}
-           "Relate connection tags with Jira fields for automated mapping."]]
+                 [details-input rule state idx on-mapping-field-change]]]))]]]
 
          [rule-buttons/main
           {:on-rule-add add-preset-rule

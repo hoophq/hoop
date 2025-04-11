@@ -52,12 +52,12 @@
           [:> Box
            [:> Flex {:align "center" :gap "2"}
             [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-             "Configure automated mapping"]]
+             "Configure connection tags mapping"]]
            [:> Text {:size "3" :class "text-[--gray-11]"}
-            "Append additional information to your Jira cards when executing a command in your connections."]]
+            "Match key-value information in Jira fields with your connection tags."]]
 
           [:> Box {:class "space-y-radix-7"}
-           [mapping-table/main
+           [preset-mapping-table/main
             (merge
              {:state (:mapping state)
               :select-state (:mapping-select-state state)}
@@ -73,12 +73,12 @@
           [:> Box
            [:> Flex {:align "center" :gap "2"}
             [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-             "Configure connection tags mapping"]]
+             "Configure automated mapping"]]
            [:> Text {:size "3" :class "text-[--gray-11]"}
-            "Map connection tags to Jira fields for automatic field population."]]
+            "Append additional information to your Jira cards when executing a command in your connections."]]
 
           [:> Box {:class "space-y-radix-7"}
-           [preset-mapping-table/main
+           [mapping-table/main
             (merge
              {:state (:mapping state)
               :select-state (:mapping-select-state state)}
