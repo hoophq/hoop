@@ -102,7 +102,8 @@
 
 (defn credentials-step []
   (let [credentials @(rf/subscribe [:aws-connect/credentials])
-        error @(rf/subscribe [:aws-connect/error])]
+        error @(rf/subscribe [:aws-connect/error])
+        account-error @(rf/subscribe [:aws-connect/accounts-error])]
     [:> Box {:class "space-y-7 max-w-[600px] relative"}
      [loading-screen]
 
@@ -142,10 +143,11 @@
         :on-change #(rf/dispatch [:aws-connect/set-iam-user-credentials :session-token (-> % .-target .-value)])}]]
 
           ;; Error message (if any)
-     (when error
+     (when (or error account-error)
        [:> Card {:variant "surface" :color "red" :mb "4"}
         [:> Flex {:gap "2" :align "center"}
-         [:> Text {:size "2" :color "red"} error]]])]))
+         [:> Text {:size "2" :color "red"}
+          (or error account-error)]]])]))
 
 (defn accounts-step []
   (r/with-let [accounts (rf/subscribe [:aws-connect/accounts])
