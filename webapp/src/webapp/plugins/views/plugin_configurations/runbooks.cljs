@@ -20,7 +20,9 @@
         {:on-submit (fn [e]
                       (.preventDefault e)
                       (let [connection  (merge current-connection-config
-                                               {:config [@repository-path-value]})
+                                               {:config (if (empty? @repository-path-value)
+                                                          nil
+                                                          [@repository-path-value])})
                             dissoced-connections (filter #(not= (:id %)
                                                                 (:id connection))
                                                          (:connections plugin))
