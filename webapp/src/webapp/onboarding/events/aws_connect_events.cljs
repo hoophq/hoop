@@ -332,9 +332,7 @@
               (assoc-in [:aws-connect :accounts :status] :error)
               (assoc-in [:aws-connect :accounts :api-error] api-error)
               (assoc-in [:aws-connect :loading :active?] false)
-              (assoc-in [:aws-connect :loading :message] nil))
-      :dispatch [:show-snackbar {:level :error
-                                 :text "Failed to retrieve AWS accounts. Please check your credentials and try again."}]})))
+              (assoc-in [:aws-connect :loading :message] nil))})))
 
 ;; Set the selected accounts
 (rf/reg-event-db
