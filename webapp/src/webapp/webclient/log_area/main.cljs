@@ -27,7 +27,7 @@
 
 (defn main [_]
   (let [script-response (rf/subscribe [:editor-plugin->script])]
-    (fn [connection-type is-one-connection-selected? show-tabular? dark-mode?]
+    (fn [connection-type is-one-connection-selected? show-tabular? dark-mode? allow-copy?]
       (let [logs-content {:status (:status @script-response)
                           :response (:output (:data @script-response))
                           :response-status (:output_status (:data @script-response))
@@ -67,6 +67,6 @@
                  :tabs available-tabs
                  :selected-tab @selected-tab}]
           (case @selected-tab
-            "Tabular" [data-grid-table/main results-heads results-body dark-mode? tabular-loading?]
+            "Tabular" [data-grid-table/main results-heads results-body dark-mode? tabular-loading? allow-copy?]
             "Logs" [logs/main :logs logs-content]
             :else [logs/main logs-content])]]))))
