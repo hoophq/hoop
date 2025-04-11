@@ -112,6 +112,7 @@
 
 (defn- editor []
   (let [user (rf/subscribe [:users->current-user])
+        gateway-info (rf/subscribe [:gateway->info])
         db-connections (rf/subscribe [:connections])
         selected-connection (rf/subscribe [:connections/selected])
         multi-selected-connections (rf/subscribe [:connection-selection/selected])
@@ -134,6 +135,7 @@
         metadata-key (r/atom "")
         metadata-value (r/atom "")]
     (rf/dispatch [:runbooks-plugin->clear-active-runbooks])
+    (rf/dispatch [:gateway->get-info])
 
     (fn [{:keys [script-output]}]
       (let [is-one-connection-selected? (= 0 (count @multi-selected-connections))
@@ -141,6 +143,7 @@
             current-connection @selected-connection
             connection-name (:name current-connection)
             connection-type (discover-connection-type current-connection)
+            disabled-download (-> @gateway-info :data :disable_sessions_download)
             reset-metadata (fn []
                              (reset! metadata [])
                              (reset! metadata-key "")
@@ -298,7 +301,8 @@
                  connection-type
                  is-one-connection-selected?
                  (show-tree? current-connection)
-                 @dark-mode?]
+                 @dark-mode?
+                 (not disabled-download)]
 
                 [:div {:class "bg-gray-1"}
                  [:footer {:class "flex justify-between items-center p-2 gap-small"}
@@ -311,7 +315,7 @@
                       [:span {:class "text-xs text-gray-11"}
                        (str "Last execution time " (formatters/time-elapsed (:execution_time (:data @script-output))))]])]
                   [:div {:class "flex-end items-center gap-regular pr-4 flex"}
-                   [:div {:class "mr-3"} 
+                   [:div {:class "mr-3"}
                     [keyboard-shortcuts/keyboard-shortcuts-button]]
                    [language-select/main current-connection]]]]]]]]
             panel-content]

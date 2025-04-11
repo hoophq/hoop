@@ -26,7 +26,7 @@
                        ["Table" "Plain text"])}]
    (case @log-view
      "Plain text" [logs/new-container {:status status :logs results :not-clipboard? not-clipboard?}]
-     "Table" [data-grid-table/main results-heads results-body (not not-clipboard?)])])
+     "Table" [data-grid-table/main results-heads results-body false false (not not-clipboard?)])])
 
 (defmulti results-view identity)
 (defmethod results-view :sql
