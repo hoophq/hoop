@@ -65,13 +65,14 @@ func provisionPostgresRoles(r pbsystem.DBProvisionerRequest) *pbsystem.DBProvisi
 	}
 	defer db.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), connectionTimeoutDuration)
 	defer cancel()
 
 	// Ping actually tests the connection
 	err = db.PingContext(ctx)
 	if err != nil {
-		return pbsystem.NewError(r.SID, "failed to connect to engine %v: %v", r.DatabaseType, err)
+		return pbsystem.NewError(r.SID, "failed to connect to engine %v, host=%v, user=%v, reason=%v",
+			r.DatabaseType, r.DatabaseHostname, r.MasterUsername, err)
 	}
 	rows, err := db.QueryContext(
 		ctx,
@@ -119,7 +120,7 @@ func provisionPostgresRole(r pbsystem.DBProvisionerRequest, dbNames []string, ro
 			}
 			defer db.Close()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), connectionTimeoutDuration)
 			defer cancel()
 
 			statement, err := postgresRoleStatement(userRole, randomPasswd, postgresPrivileges[roleName])
