@@ -7,7 +7,6 @@
    [reagent.core :as r]
    [clojure.string :as str]))
 
-;; Event para carregar as tags
 (rf/reg-event-fx
  :jira-templates/get-connection-tags
  (fn [{:keys [db]} [_]]
@@ -17,7 +16,6 @@
                              :on-success (fn [response]
                                            (rf/dispatch [:jira-templates/set-connection-tags (:items response)]))}]]]}))
 
-;; Event para armazenar as tags carregadas
 (rf/reg-event-db
  :jira-templates/set-connection-tags
  (fn [db [_ tags]]
@@ -25,26 +23,17 @@
        (assoc-in [:jira-templates :tags] tags)
        (assoc-in [:jira-templates :tags-loading] false))))
 
-;; Subscription para acessar as tags
 (rf/reg-sub
  :jira-templates/tags
  (fn [db]
    (get-in db [:jira-templates :tags])))
 
-;; Subscription para verificar o estado de carregamento
-(rf/reg-sub
- :jira-templates/tags-loading?
- (fn [db]
-   (get-in db [:jira-templates :tags-loading])))
-
-;; Função para extrair o nome simples de uma tag
 (defn extract-tag-name [key]
   (let [parts (str/split key #"\.")]
     (if (empty? parts)
       key
       (last parts))))
 
-;; Função para transformar as tags em opções de select
 (defn tags-to-select-options [tags]
   (reduce (fn [options tag]
             (let [key (:key tag)]
@@ -68,8 +57,7 @@
     :on-change #(on-rule-field-change state idx :jira_field (-> % .-target .-value))}])
 
 (defn- value-field [rule state idx on-rule-field-change]
-  (let [tags-loading? @(rf/subscribe [:jira-templates/tags-loading?])
-        tags @(rf/subscribe [:jira-templates/tags])
+  (let [tags @(rf/subscribe [:jira-templates/tags])
         tag-options (tags-to-select-options tags)]
     [forms/select
      {:size "2"
