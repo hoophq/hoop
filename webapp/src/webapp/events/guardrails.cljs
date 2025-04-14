@@ -106,16 +106,18 @@
  (fn
    [{:keys [db]} [_ rule]]
    (let [{:keys [id name description
+                 connection_ids
                  input output]} rule
          rule-builder (fn [rule]
-                        {:_id (or (:_id rule) random-uuid) ;; internal use
+                        {:_id (or (:_id rule) (random-uuid)) ;; internal use
                          :type (:type rule) ; :deny_words_list or :pattern
                          :words (:words rule)
                          :pattern_regex (:pattern_regex rule)})
          rule-schema (merge
                       {:id (or id "")
                        :name (or name "")
-                       :description (or description "")}
+                       :description (or description "")
+                       :connection_ids (or connection_ids [])}
                       (if (seq (:rules input))
                         {:input (mapv rule-builder (:rules input))}
                         {:input [{:type "" :rule "" :details ""}]})
@@ -135,8 +137,29 @@
           [:guardrails->set-active-guardrail {:id ""
                                               :name ""
                                               :description ""
+                                              :connection_ids []
                                               :input [{:type "" :rule "" :details ""}]
                                               :output [{:type "" :rule "" :details ""}]}]]]}))
+
+;; Get connections for guardrails
+(rf/reg-event-fx
+ :guardrails->get-connections
+ (fn [{:keys [db]} _]
+   {:db (assoc db :guardrails->connections-list {:status :loading :data []})
+    :fx [[:dispatch [:fetch {:method "GET"
+                             :uri "/connections"
+                             :on-success #(rf/dispatch [:guardrails->set-connections %])
+                             :on-failure #(rf/dispatch [:guardrails->set-connections-error %])}]]]}))
+
+(rf/reg-event-db
+ :guardrails->set-connections
+ (fn [db [_ connections]]
+   (assoc db :guardrails->connections-list {:status :ready :data connections})))
+
+(rf/reg-event-db
+ :guardrails->set-connections-error
+ (fn [db [_ error]]
+   (assoc db :guardrails->connections-list {:status :error :error error :data []})))
 
 ;; SUBSCRIPTIONS
 (rf/reg-sub
@@ -149,4 +172,7 @@
  (fn [db _]
    (get-in db [:guardrails->active-guardrail])))
 
-
+(rf/reg-sub
+ :guardrails->connections-list
+ (fn [db _]
+   (get-in db [:guardrails->connections-list])))

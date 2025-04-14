@@ -69,6 +69,7 @@
     {:id (r/atom (or (:id initial-data) ""))
      :name (r/atom (or (:name initial-data) ""))
      :description (r/atom (or (:description initial-data) ""))
+     :connection-ids (r/atom (or (:connection_ids initial-data) []))
      :input (r/atom input-rules)
      :output (r/atom output-rules)
      :input-pattern (r/atom (create-pattern-state input-rules))
@@ -102,4 +103,6 @@
                                   [(create-empty-rule)]
                                   filtered-rules))))
    :on-rule-add (fn [rules-atom]
-                  (swap! rules-atom conj (create-empty-rule)))})
+                  (swap! rules-atom conj (create-empty-rule)))
+   :on-connections-change (fn [connections-atom connections]
+                            (reset! connections-atom connections))})

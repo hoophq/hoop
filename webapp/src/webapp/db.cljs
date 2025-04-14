@@ -59,6 +59,7 @@
                                   :description ""
                                   :input [{:type "" :rule "" :details ""}]
                                   :output [{:type "" :rule "" :details ""}]}
+   :guardrails->connections-list {:status :loading :data []}
    :jira-integration->details {:loading true, :data {}}
    :modal-radix {:open? false, :content nil}
    :modal-status :closed

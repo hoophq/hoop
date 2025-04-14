@@ -7,6 +7,7 @@
    [webapp.guardrails.helpers :as helpers]
    [webapp.guardrails.form-header :as form-header]
    [webapp.guardrails.basic-info :as basic-info]
+   [webapp.guardrails.connections-section :as connections-section]
    [webapp.guardrails.rules-table :as rules-table]))
 
 (defn guardrail-form [form-type guardrails scroll-pos]
@@ -20,6 +21,7 @@
                             (let [data {:id @(:id state)
                                         :name @(:name state)
                                         :description @(:description state)
+                                        :connection_ids @(:connection-ids state)
                                         :input @(:input state)
                                         :output @(:output state)}]
                               (if (= :edit form-type)
@@ -36,6 +38,11 @@
            :description (:description state)
            :on-name-change #(reset! (:name state) %)
            :on-description-change #(reset! (:description state) %)}]
+
+         ;; Connections section
+         [connections-section/main
+          {:connection-ids (:connection-ids state)
+           :on-connections-change (:on-connections-change handlers)}]
 
         ;; Rules section
          [:> Grid {:columns "7" :gap "7"}
@@ -76,6 +83,8 @@
 (defn main [form-type]
   (let [guardrails->active-guardrail (rf/subscribe [:guardrails->active-guardrail])
         scroll-pos (r/atom 0)]
+
+    (rf/dispatch [:guardrails->get-connections])
     (fn []
       (r/with-let [handle-scroll #(reset! scroll-pos (.-scrollY js/window))]
         (.addEventListener js/window "scroll" handle-scroll)
