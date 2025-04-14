@@ -40,22 +40,55 @@ func Post(c *gin.Context) {
 		CreatedAt:   time.Now().UTC(),
 		UpdatedAt:   time.Now().UTC(),
 	}
+
 	err := models.CreateGuardRailRules(rule)
 	switch err {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
+		return
 	case nil:
-		c.JSON(http.StatusOK, &openapi.GuardRailRuleResponse{
-			ID:          rule.ID,
-			Name:        rule.Name,
-			Description: rule.Description,
-			Input:       rule.Input,
-			Output:      rule.Output,
-			CreatedAt:   rule.CreatedAt,
-			UpdatedAt:   rule.UpdatedAt,
+		// If we have connection IDs, sync them
+		if len(req.ConnectionIDs) > 0 {
+			log.Infof("Creating guardrail %s with %d connections: %v",
+				rule.ID, len(req.ConnectionIDs), req.ConnectionIDs)
+
+			// Filter out empty connection IDs
+			validIDs := make([]string, 0, len(req.ConnectionIDs))
+			for _, id := range req.ConnectionIDs {
+				if id != "" {
+					validIDs = append(validIDs, id)
+				}
+			}
+
+			if len(validIDs) > 0 {
+				if err := models.SyncGuardRailConnections(ctx.GetOrgID(), rule.ID, validIDs); err != nil {
+					log.Errorf("Failed to sync connections for guardrail %s: %v", rule.ID, err)
+					// Continue but we'll warn in the response
+				}
+			}
+		}
+
+		// Get connection IDs - this should now work properly
+		connectionIDs, err := models.GetConnectionIDsForGuardRail(ctx.GetOrgID(), rule.ID)
+		if err != nil {
+			log.Errorf("Error fetching connection IDs for guardrail %s: %v", rule.ID, err)
+		}
+
+		log.Infof("Guardrail %s created successfully with %d connection IDs: %v",
+			rule.ID, len(connectionIDs), connectionIDs)
+
+		c.JSON(http.StatusCreated, &openapi.GuardRailRuleResponse{
+			ID:            rule.ID,
+			Name:          rule.Name,
+			Description:   rule.Description,
+			Input:         rule.Input,
+			Output:        rule.Output,
+			ConnectionIDs: connectionIDs,
+			CreatedAt:     rule.CreatedAt,
+			UpdatedAt:     rule.UpdatedAt,
 		})
 	default:
-		log.Errorf("failed creting guard rail rule, reason=%v, err=%T", err, err)
+		log.Errorf("failed creating guard rail rule, reason=%v, err=%T", err, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 	}
 }
@@ -77,6 +110,7 @@ func Put(c *gin.Context) {
 	if req == nil {
 		return
 	}
+
 	rule := &models.GuardRailRules{
 		OrgID:       ctx.GetOrgID(),
 		ID:          c.Param("id"),
@@ -86,20 +120,52 @@ func Put(c *gin.Context) {
 		Output:      req.Output,
 		UpdatedAt:   time.Now().UTC(),
 	}
+
 	err := models.UpdateGuardRailRules(rule)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
 		return
 	case nil:
+		// Sync connections
+		if len(req.ConnectionIDs) > 0 {
+			log.Infof("Updating guardrail %s with %d connections: %v",
+				rule.ID, len(req.ConnectionIDs), req.ConnectionIDs)
+
+			// Filter out empty connection IDs
+			validIDs := make([]string, 0, len(req.ConnectionIDs))
+			for _, id := range req.ConnectionIDs {
+				if id != "" {
+					validIDs = append(validIDs, id)
+				}
+			}
+
+			if len(validIDs) > 0 {
+				if err := models.SyncGuardRailConnections(ctx.GetOrgID(), rule.ID, validIDs); err != nil {
+					log.Errorf("Failed to sync connections for guardrail %s: %v", rule.ID, err)
+					// Continue but we'll warn in the response
+				}
+			}
+		}
+
+		// Get connection IDs - this should now work properly
+		connectionIDs, err := models.GetConnectionIDsForGuardRail(ctx.GetOrgID(), rule.ID)
+		if err != nil {
+			log.Errorf("Error fetching connection IDs for guardrail %s: %v", rule.ID, err)
+		}
+
+		log.Infof("Guardrail %s updated successfully with %d connection IDs: %v",
+			rule.ID, len(connectionIDs), connectionIDs)
+
 		c.JSON(http.StatusOK, &openapi.GuardRailRuleResponse{
-			ID:          rule.ID,
-			Name:        rule.Name,
-			Description: rule.Description,
-			Input:       rule.Input,
-			Output:      rule.Output,
-			CreatedAt:   rule.CreatedAt,
-			UpdatedAt:   rule.UpdatedAt,
+			ID:            rule.ID,
+			Name:          rule.Name,
+			Description:   rule.Description,
+			Input:         rule.Input,
+			Output:        rule.Output,
+			ConnectionIDs: connectionIDs,
+			CreatedAt:     rule.CreatedAt,
+			UpdatedAt:     rule.UpdatedAt,
 		})
 	default:
 		log.Errorf("failed updating guard rail rule, reason=%v", err)
@@ -125,16 +191,21 @@ func List(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
+
 	rules := []openapi.GuardRailRuleResponse{}
 	for _, rule := range ruleList {
+		// Get connections for each rule
+		connectionIDs, _ := models.GetConnectionIDsForGuardRail(ctx.GetOrgID(), rule.ID)
+
 		rules = append(rules, openapi.GuardRailRuleResponse{
-			ID:          rule.ID,
-			Name:        rule.Name,
-			Description: rule.Description,
-			Input:       rule.Input,
-			Output:      rule.Output,
-			CreatedAt:   rule.CreatedAt,
-			UpdatedAt:   rule.UpdatedAt,
+			ID:            rule.ID,
+			Name:          rule.Name,
+			Description:   rule.Description,
+			Input:         rule.Input,
+			Output:        rule.Output,
+			ConnectionIDs: connectionIDs,
+			CreatedAt:     rule.CreatedAt,
+			UpdatedAt:     rule.UpdatedAt,
 		})
 	}
 	c.JSON(http.StatusOK, rules)
@@ -158,14 +229,18 @@ func Get(c *gin.Context) {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
 	case nil:
+		// Get connections for this rule
+		connectionIDs, _ := models.GetConnectionIDsForGuardRail(ctx.GetOrgID(), rule.ID)
+
 		c.JSON(http.StatusOK, &openapi.GuardRailRuleResponse{
-			ID:          rule.ID,
-			Name:        rule.Name,
-			Description: rule.Description,
-			Input:       rule.Input,
-			Output:      rule.Output,
-			CreatedAt:   rule.CreatedAt,
-			UpdatedAt:   rule.UpdatedAt,
+			ID:            rule.ID,
+			Name:          rule.Name,
+			Description:   rule.Description,
+			Input:         rule.Input,
+			Output:        rule.Output,
+			ConnectionIDs: connectionIDs,
+			CreatedAt:     rule.CreatedAt,
+			UpdatedAt:     rule.UpdatedAt,
 		})
 	default:
 		log.Errorf("failed listing guard rail rules, reason=%v", err)
