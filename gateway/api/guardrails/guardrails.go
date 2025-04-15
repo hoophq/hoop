@@ -43,7 +43,7 @@ func Post(c *gin.Context) {
 		CreatedAt:   time.Now().UTC(),
 		UpdatedAt:   time.Now().UTC(),
 	}
-	
+
 	// Create guardrail and associate connections in a single transaction
 	err := models.UpsertGuardRailRuleWithConnections(rule, validConnectionIDs, true)
 
@@ -109,8 +109,7 @@ func Put(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
 		return
 	case nil:
-		log.Infof("Guardrail %s updated successfully with %d connection IDs",
-			rule.ID, len(rule.ConnectionIDs))
+		rule.ID, len(rule.ConnectionIDs))
 
 		c.JSON(http.StatusOK, &openapi.GuardRailRuleResponse{
 			ID:            rule.ID,
