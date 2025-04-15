@@ -195,7 +195,12 @@ func List(c *gin.Context) {
 	rules := []openapi.GuardRailRuleResponse{}
 	for _, rule := range ruleList {
 		// Get connections for each rule
-		connectionIDs, _ := models.GetConnectionIDsForGuardRail(ctx.GetOrgID(), rule.ID)
+		connectionIDs, err := models.GetConnectionIDsForGuardRail(ctx.GetOrgID(), rule.ID)
+		if err != nil {
+			log.Errorf("Error fetching connection IDs for guardrail %s: %v", rule.ID, err)
+			// Continue with empty connection IDs
+			connectionIDs = []string{}
+		}
 
 		rules = append(rules, openapi.GuardRailRuleResponse{
 			ID:            rule.ID,
@@ -230,7 +235,12 @@ func Get(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
 	case nil:
 		// Get connections for this rule
-		connectionIDs, _ := models.GetConnectionIDsForGuardRail(ctx.GetOrgID(), rule.ID)
+		connectionIDs, err := models.GetConnectionIDsForGuardRail(ctx.GetOrgID(), rule.ID)
+		if err != nil {
+			log.Errorf("Error fetching connection IDs for guardrail %s: %v", rule.ID, err)
+			// Continue with empty connection IDs
+			connectionIDs = []string{}
+		}
 
 		c.JSON(http.StatusOK, &openapi.GuardRailRuleResponse{
 			ID:            rule.ID,
