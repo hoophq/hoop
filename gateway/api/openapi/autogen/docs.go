@@ -4648,7 +4648,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "connection_ids": {
-                    "description": "List of connection IDs or names that this guardrail applies to",
+                    "description": "List of connection IDs that this guardrail applies to",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -4684,7 +4684,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "connection_ids": {
-                    "description": "List of connection IDs or names that this guardrail applies to",
+                    "description": "List of connection IDs that this guardrail applies to",
                     "type": "array",
                     "items": {
                         "type": "string"
