@@ -948,6 +948,8 @@ type JiraIssueTemplate struct {
 	CreatedAt time.Time `json:"created_at"`
 	// The time when the template was updated
 	UpdatedAt time.Time `json:"updated_at"`
+	// The connection IDs associated with this template
+	ConnectionIDs []string `json:"connection_ids,omitempty"`
 }
 
 type JiraIssueTemplateRequest struct {
@@ -1024,6 +1026,8 @@ type JiraIssueTemplateRequest struct {
 		}
 	*/
 	CmdbTypes map[string]any `json:"cmdb_types"`
+	// The connection IDs to associate with this template
+	ConnectionIDs []string `json:"connection_ids"`
 }
 
 type GuardRailRuleRequest struct {
