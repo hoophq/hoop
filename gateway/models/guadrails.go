@@ -187,6 +187,7 @@ func UpsertGuardRailRuleWithConnections(rule *GuardRailRules, connectionIDs []st
 		}
 
 		// 3. Add new connections
+		var validConnectionIDs []string
 		for _, connID := range connectionIDs {
 			// Find the connection
 			var conn Connection
@@ -214,27 +215,13 @@ func UpsertGuardRailRuleWithConnections(rule *GuardRailRules, connectionIDs []st
 			if err := tx.Table(tableGuardRailsConnections).Create(&newConnection).Error; err != nil {
 				return err
 			}
+
+			// Track successfully added connection ID
+			validConnectionIDs = append(validConnectionIDs, conn.ID)
 		}
 
-		// 4. Fetch connection IDs for the response
-		var connections []struct {
-			ConnectionID string
-		}
-
-		err = tx.Table(tableGuardRailsConnections).
-			Select("connection_id").
-			Where("org_id = ? AND rule_id = ?", rule.OrgID, rule.ID).
-			Scan(&connections).Error
-
-		if err != nil {
-			return err
-		}
-
-		// Populate ConnectionIDs
-		rule.ConnectionIDs = make([]string, len(connections))
-		for i, conn := range connections {
-			rule.ConnectionIDs[i] = conn.ConnectionID
-		}
+		// Set the valid connection IDs directly
+		rule.ConnectionIDs = validConnectionIDs
 
 		return nil
 	})
