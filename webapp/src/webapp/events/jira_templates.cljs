@@ -67,7 +67,7 @@
                               :uri (str "/integrations/jira/issuetemplates/" id)
                               :on-success (fn [template]
                                             (rf/dispatch [:jira-templates->set-submit-template template])
-                                         ;; Dispara requests para cada item CMDB
+                                            ;; Dispara requests para cada item CMDB
                                             (doseq [cmdb-item (get-in template [:cmdb_types :items])]
                                               (rf/dispatch [:jira-templates->get-cmdb-values id cmdb-item])))
                               :on-failure #(rf/dispatch [:jira-templates->set-submit-template nil])}]}]]}))
@@ -83,7 +83,7 @@
                               :uri (str "/integrations/jira/issuetemplates/" id)
                               :on-success (fn [template]
                                             (rf/dispatch [:jira-templates->set-submit-template-re-run template])
-                                         ;; Dispara requests para cada item CMDB
+                                            ;; Dispara requests para cada item CMDB
                                             (doseq [cmdb-item (get-in template [:cmdb_types :items])]
                                               (rf/dispatch [:jira-templates->get-cmdb-values id cmdb-item])))
                               :on-failure #(rf/dispatch [:jira-templates->set-submit-template-re-run nil])}]}]]}))
@@ -193,6 +193,26 @@
  (fn [db [_ value]]
    (assoc-in db [:jira-templates :submitting?] value)))
 
+;; Connections
+(rf/reg-event-fx
+ :jira-templates->get-connections
+ (fn [{:keys [db]} _]
+   {:db (assoc db :jira-templates->connections-list {:status :loading :data []})
+    :fx [[:dispatch [:fetch {:method "GET"
+                             :uri "/connections"
+                             :on-success #(rf/dispatch [:jira-templates->set-connections %])
+                             :on-failure #(rf/dispatch [:jira-templates->set-connections-error %])}]]]}))
+
+(rf/reg-event-db
+ :jira-templates->set-connections
+ (fn [db [_ connections]]
+   (assoc db :jira-templates->connections-list {:status :ready :data connections})))
+
+(rf/reg-event-db
+ :jira-templates->set-connections-error
+ (fn [db [_ error]]
+   (assoc db :jira-templates->connections-list {:status :error :error error :data []})))
+
 ;; Subs
 (rf/reg-sub
  :jira-templates->list
@@ -213,3 +233,8 @@
  :jira-templates->submitting?
  (fn [db]
    (get-in db [:jira-templates :submitting?])))
+
+(rf/reg-sub
+ :jira-templates->connections-list
+ (fn [db _]
+   (:jira-templates->connections-list db)))

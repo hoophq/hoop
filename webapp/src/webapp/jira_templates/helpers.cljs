@@ -87,6 +87,7 @@
    :project_key (r/atom (or (:project_key initial-data) ""))
    :request_type_id (r/atom (or (:request_type_id initial-data) ""))
    :issue_transition_name_on_close (r/atom (or (:issue_transition_name_on_close initial-data) ""))
+   :connection_ids (r/atom (or (:connection_ids initial-data) []))
    :mapping (r/atom (format-mapping-rules (get-in initial-data [:mapping_types :items])))
    :prompts (r/atom (format-prompts (get-in initial-data [:prompt_types :items])))
    :cmdb (r/atom (format-cmdbs (get-in initial-data [:cmdb_types :items])))
@@ -192,7 +193,10 @@
                     (swap! prompts-atom conj (create-empty-prompt)))
 
    :on-cmdb-add (fn [cmdbs-atom]
-                  (swap! cmdbs-atom conj (create-empty-cmdb)))})
+                  (swap! cmdbs-atom conj (create-empty-cmdb)))
+
+   :on-connections-change (fn [connections]
+                            (reset! (:connection_ids state) connections))})
 
 (defn remove-empty-mapping [mappings]
   (remove (fn [rule]
@@ -228,6 +232,7 @@
    :project_key @(:project_key state)
    :request_type_id @(:request_type_id state)
    :issue_transition_name_on_close @(:issue_transition_name_on_close state)
+   :connection_ids @(:connection_ids state)
    :mapping_types {:items (vec (remove-empty-mapping @(:mapping state)))}
    :prompt_types {:items (vec (remove-empty-prompts @(:prompts state)))}
    :cmdb_types {:items (vec (remove-empty-cmdb @(:cmdb state)))}})

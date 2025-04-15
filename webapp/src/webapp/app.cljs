@@ -284,8 +284,8 @@
 (defmethod routes/panels :edit-jira-template-panel []
   (let [pathname (.. js/window -location -pathname)
         current-route (bidi/match-route @routes/routes pathname)
-        guardrail-id (:jira-template-id (:route-params current-route))]
-    (rf/dispatch [:jira-templates->get-by-id guardrail-id])
+        jira-template-id (:jira-template-id (:route-params current-route))]
+    (rf/dispatch [:jira-templates->get-by-id jira-template-id])
     [layout :application-hoop
      [:div {:class "bg-gray-1 min-h-full h-max relative"}
       [routes/wrap-admin-only
