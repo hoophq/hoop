@@ -30,6 +30,9 @@ func Post(c *gin.Context) {
 		return
 	}
 
+	// Filter out empty connection IDs
+	validConnectionIDs := filterEmptyIDs(req.ConnectionIDs)
+
 	rule := &models.GuardRailRules{
 		ID:          uuid.NewString(),
 		OrgID:       ctx.GetOrgID(),
@@ -41,10 +44,10 @@ func Post(c *gin.Context) {
 		UpdatedAt:   time.Now().UTC(),
 	}
 
-	log.Infof("Creating guardrail %s with connections: %v", rule.Name, req.ConnectionIDs)
+	log.Infof("Creating guardrail %s with connections: %v", rule.Name, validConnectionIDs)
 
 	// Create guardrail and associate connections in a single transaction
-	err := models.UpsertGuardRailRuleWithConnections(rule, req.ConnectionIDs, true)
+	err := models.UpsertGuardRailRuleWithConnections(rule, validConnectionIDs, true)
 
 	switch err {
 	case models.ErrAlreadyExists:
@@ -88,6 +91,9 @@ func Put(c *gin.Context) {
 		return
 	}
 
+	// Filter out empty connection IDs
+	validConnectionIDs := filterEmptyIDs(req.ConnectionIDs)
+
 	rule := &models.GuardRailRules{
 		OrgID:       ctx.GetOrgID(),
 		ID:          c.Param("id"),
@@ -98,10 +104,10 @@ func Put(c *gin.Context) {
 		UpdatedAt:   time.Now().UTC(),
 	}
 
-	log.Infof("Updating guardrail %s with connections: %v", rule.ID, req.ConnectionIDs)
+	log.Infof("Updating guardrail %s with connections: %v", rule.ID, validConnectionIDs)
 
 	// Update guardrail and associate connections in a single transaction
-	err := models.UpsertGuardRailRuleWithConnections(rule, req.ConnectionIDs, false)
+	err := models.UpsertGuardRailRuleWithConnections(rule, validConnectionIDs, false)
 
 	switch err {
 	case models.ErrNotFound:
@@ -228,4 +234,15 @@ func parseRequestPayload(c *gin.Context) *openapi.GuardRailRuleRequest {
 		return nil
 	}
 	return &req
+}
+
+// Helper to filter out empty connection IDs
+func filterEmptyIDs(ids []string) []string {
+	result := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id != "" {
+			result = append(result, id)
+		}
+	}
+	return result
 }

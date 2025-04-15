@@ -148,14 +148,6 @@ func DeleteGuardRailRules(orgID, ruleID string) error {
 
 // UpsertGuardRailRuleWithConnections creates or updates a guardrail rule and its connections in a single transaction
 func UpsertGuardRailRuleWithConnections(rule *GuardRailRules, connectionIDs []string, isNew bool) error {
-	// Clean empty connection IDs
-	var validConnectionIDs []string
-	for _, id := range connectionIDs {
-		if id != "" {
-			validConnectionIDs = append(validConnectionIDs, id)
-		}
-	}
-
 	return DB.Transaction(func(tx *gorm.DB) error {
 		// 1. Create or update the guardrail rule
 		var err error
@@ -196,7 +188,7 @@ func UpsertGuardRailRuleWithConnections(rule *GuardRailRules, connectionIDs []st
 		}
 
 		// 3. Add new connections
-		for _, connNameOrID := range validConnectionIDs {
+		for _, connNameOrID := range connectionIDs {
 			// Find the connection
 			var conn Connection
 			err := tx.Table("private.connections").
