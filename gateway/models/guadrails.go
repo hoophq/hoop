@@ -108,41 +108,6 @@ func getGuardrailIDs(rules []*GuardRailRules) []string {
 	return ids
 }
 
-// SyncGuardRailConnectionAssociations updates the connections associated with a guardrail
-func SyncGuardRailConnectionAssociations(orgID, ruleID string, connectionIDs []string) error {
-	if len(connectionIDs) == 0 {
-		return nil
-	}
-
-	return DB.Transaction(func(tx *gorm.DB) error {
-		// Delete existing connections
-		if err := tx.Exec(`DELETE FROM private.guardrail_rules_connections 
-			WHERE org_id = ? AND rule_id = ?`, orgID, ruleID).Error; err != nil {
-			return err
-		}
-
-		// Add new connections that exist
-		for _, connNameOrID := range connectionIDs {
-			conn, err := GetConnectionByNameOrID(orgID, connNameOrID)
-			if err != nil || conn == nil {
-				continue // Skip invalid connections
-			}
-
-			// Add the association
-			err = tx.Exec(`
-				INSERT INTO private.guardrail_rules_connections (id, org_id, rule_id, connection_id, created_at)
-				VALUES (?, ?, ?, ?, ?)
-			`, uuid.NewString(), orgID, ruleID, conn.ID, time.Now().UTC()).Error
-
-			if err != nil {
-				return err
-			}
-		}
-
-		return nil
-	})
-}
-
 func CreateGuardRailRules(rule *GuardRailRules) error {
 	err := DB.Table(tableGuardRails).Model(rule).Create(rule).Error
 	if err == gorm.ErrDuplicatedKey {
@@ -179,4 +144,105 @@ func DeleteGuardRailRules(orgID, ruleID string) error {
 	return DB.Table(tableGuardRails).
 		Where(`org_id = ? and id = ?`, orgID, ruleID).
 		Delete(&GuardRailRules{}).Error
+}
+
+// UpsertGuardRailRuleWithConnections creates or updates a guardrail rule and its connections in a single transaction
+func UpsertGuardRailRuleWithConnections(rule *GuardRailRules, connectionIDs []string, isNew bool) error {
+	// Clean empty connection IDs
+	var validConnectionIDs []string
+	for _, id := range connectionIDs {
+		if id != "" {
+			validConnectionIDs = append(validConnectionIDs, id)
+		}
+	}
+
+	return DB.Transaction(func(tx *gorm.DB) error {
+		// 1. Create or update the guardrail rule
+		var err error
+		if isNew {
+			// Create new guardrail rule
+			err = tx.Table(tableGuardRails).Model(rule).Create(rule).Error
+			if err == gorm.ErrDuplicatedKey {
+				return ErrAlreadyExists
+			} else if err != nil {
+				return err
+			}
+		} else {
+			// Update existing guardrail rule
+			res := tx.Table(tableGuardRails).
+				Model(rule).
+				Clauses(clause.Returning{}).
+				Updates(GuardRailRules{
+					Name:        rule.Name,
+					Description: rule.Description,
+					Input:       rule.Input,
+					Output:      rule.Output,
+					UpdatedAt:   rule.UpdatedAt,
+				}).
+				Where("org_id = ? AND id = ?", rule.OrgID, rule.ID)
+
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected == 0 {
+				return ErrNotFound
+			}
+		}
+
+		// 2. Delete existing connections
+		if err := tx.Exec("DELETE FROM "+tableGuardRailsConnections+" WHERE org_id = ? AND rule_id = ?",
+			rule.OrgID, rule.ID).Error; err != nil {
+			return err
+		}
+
+		// 3. Add new connections
+		for _, connNameOrID := range validConnectionIDs {
+			// Find the connection
+			var conn Connection
+			err := tx.Table("private.connections").
+				Where("org_id = ? AND (name = ? OR id = ?)", rule.OrgID, connNameOrID, connNameOrID).
+				First(&conn).Error
+
+			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					// Skip non-existent connections
+					continue
+				}
+				return err
+			}
+
+			// Add the association
+			err = tx.Exec(`
+				INSERT INTO `+tableGuardRailsConnections+` (id, org_id, rule_id, connection_id, created_at)
+				VALUES (?, ?, ?, ?, ?)
+			`, uuid.NewString(), rule.OrgID, rule.ID, conn.ID, time.Now().UTC()).Error
+
+			if err != nil {
+				return err
+			}
+		}
+
+		// 4. Fetch connection IDs for the response
+		var connections []struct {
+			ConnectionID string
+		}
+
+		err = tx.Raw(`
+			SELECT connection_id 
+			FROM `+tableGuardRailsConnections+` 
+			WHERE org_id = ? AND rule_id = ?
+		`, rule.OrgID, rule.ID).Scan(&connections).Error
+
+		if err != nil {
+			return err
+		}
+
+		// Populate ConnectionIDs
+		rule.ConnectionIDs = make([]string, len(connections))
+		for i, conn := range connections {
+			rule.ConnectionIDs[i] = conn.ConnectionID
+		}
+
+		return nil
+	})
 }

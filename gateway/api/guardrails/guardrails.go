@@ -41,44 +41,16 @@ func Post(c *gin.Context) {
 		UpdatedAt:   time.Now().UTC(),
 	}
 
-	err := models.CreateGuardRailRules(rule)
+	log.Infof("Creating guardrail %s with connections: %v", rule.Name, req.ConnectionIDs)
+
+	// Create guardrail and associate connections in a single transaction
+	err := models.UpsertGuardRailRuleWithConnections(rule, req.ConnectionIDs, true)
+
 	switch err {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
 		return
 	case nil:
-		// If we have connection IDs, sync them
-		if len(req.ConnectionIDs) > 0 {
-			log.Infof("Creating guardrail %s with %d connections: %v",
-				rule.ID, len(req.ConnectionIDs), req.ConnectionIDs)
-
-			// Filter out empty connection IDs
-			validIDs := make([]string, 0, len(req.ConnectionIDs))
-			for _, id := range req.ConnectionIDs {
-				if id != "" {
-					validIDs = append(validIDs, id)
-				}
-			}
-
-			if len(validIDs) > 0 {
-				log.Infof("Valid connection IDs to sync: %v", validIDs)
-
-				if err := models.SyncGuardRailConnectionAssociations(ctx.GetOrgID(), rule.ID, validIDs); err != nil {
-					log.Errorf("Failed to sync connections for guardrail %s: %v", rule.ID, err)
-				}
-			}
-		}
-
-		// Get the updated rule with connection IDs
-		updatedRule, err := models.GetGuardRailRules(ctx.GetOrgID(), rule.ID)
-		if err != nil {
-			log.Errorf("Error fetching updated guardrail %s: %v", rule.ID, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to retrieve updated guardrail"})
-			return
-		}
-
-		rule = updatedRule // Use the updated rule with connection IDs
-
 		log.Infof("Guardrail %s created successfully with %d connection IDs",
 			rule.ID, len(rule.ConnectionIDs))
 
@@ -93,7 +65,7 @@ func Post(c *gin.Context) {
 			UpdatedAt:     rule.UpdatedAt,
 		})
 	default:
-		log.Errorf("failed creating guard rail rule, reason=%v, err=%T", err, err)
+		log.Errorf("Failed creating guard rail rule: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 	}
 }
@@ -126,57 +98,31 @@ func Put(c *gin.Context) {
 		UpdatedAt:   time.Now().UTC(),
 	}
 
-	err := models.UpdateGuardRailRules(rule)
+	log.Infof("Updating guardrail %s with connections: %v", rule.ID, req.ConnectionIDs)
+
+	// Update guardrail and associate connections in a single transaction
+	err := models.UpsertGuardRailRuleWithConnections(rule, req.ConnectionIDs, false)
+
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
 		return
 	case nil:
-		// Sync connections
-		if len(req.ConnectionIDs) > 0 {
-			log.Infof("Updating guardrail %s with %d connections: %v",
-				rule.ID, len(req.ConnectionIDs), req.ConnectionIDs)
-
-			// Filter out empty connection IDs
-			validIDs := make([]string, 0, len(req.ConnectionIDs))
-			for _, id := range req.ConnectionIDs {
-				if id != "" {
-					validIDs = append(validIDs, id)
-				}
-			}
-
-			if len(validIDs) > 0 {
-				log.Infof("Valid connection IDs to sync: %v", validIDs)
-
-				if err := models.SyncGuardRailConnectionAssociations(ctx.GetOrgID(), rule.ID, validIDs); err != nil {
-					log.Errorf("Failed to sync connections for guardrail %s: %v", rule.ID, err)
-				}
-			}
-		}
-
-		// Get the updated rule with connection IDs
-		updatedRule, err := models.GetGuardRailRules(ctx.GetOrgID(), rule.ID)
-		if err != nil {
-			log.Errorf("Error fetching updated guardrail %s: %v", rule.ID, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to retrieve updated guardrail"})
-			return
-		}
-
 		log.Infof("Guardrail %s updated successfully with %d connection IDs",
-			updatedRule.ID, len(updatedRule.ConnectionIDs))
+			rule.ID, len(rule.ConnectionIDs))
 
 		c.JSON(http.StatusOK, &openapi.GuardRailRuleResponse{
-			ID:            updatedRule.ID,
-			Name:          updatedRule.Name,
-			Description:   updatedRule.Description,
-			Input:         updatedRule.Input,
-			Output:        updatedRule.Output,
-			ConnectionIDs: updatedRule.ConnectionIDs,
-			CreatedAt:     updatedRule.CreatedAt,
-			UpdatedAt:     updatedRule.UpdatedAt,
+			ID:            rule.ID,
+			Name:          rule.Name,
+			Description:   rule.Description,
+			Input:         rule.Input,
+			Output:        rule.Output,
+			ConnectionIDs: rule.ConnectionIDs,
+			CreatedAt:     rule.CreatedAt,
+			UpdatedAt:     rule.UpdatedAt,
 		})
 	default:
-		log.Errorf("failed updating guard rail rule, reason=%v", err)
+		log.Errorf("Failed updating guard rail rule: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 	}
 }
