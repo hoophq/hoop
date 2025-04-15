@@ -52,8 +52,6 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
 		return
 	case nil:
-		rule.ID, len(rule.ConnectionIDs))
-
 		c.JSON(http.StatusCreated, &openapi.GuardRailRuleResponse{
 			ID:            rule.ID,
 			Name:          rule.Name,
@@ -109,8 +107,6 @@ func Put(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
 		return
 	case nil:
-		rule.ID, len(rule.ConnectionIDs))
-
 		c.JSON(http.StatusOK, &openapi.GuardRailRuleResponse{
 			ID:            rule.ID,
 			Name:          rule.Name,
