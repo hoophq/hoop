@@ -49,11 +49,10 @@ func ListGuardRailRules(orgID string) ([]*GuardRailRules, error) {
 		ConnectionID string
 	}
 
-	err = DB.Raw(`
-		SELECT grc.rule_id, grc.connection_id
-		FROM private.guardrail_rules_connections grc
-		WHERE grc.org_id = ? AND grc.rule_id IN (?)
-	`, orgID, getGuardrailIDs(rules)).Scan(&connections).Error
+	err = DB.Table(tableGuardRailsConnections).
+		Select("rule_id, connection_id").
+		Where("org_id = ? AND rule_id IN (?)", orgID, getGuardrailIDs(rules)).
+		Scan(&connections).Error
 
 	if err != nil {
 		return nil, err
@@ -85,11 +84,10 @@ func GetGuardRailRules(orgID, ruleID string) (*GuardRailRules, error) {
 
 	// Load connection IDs for this rule
 	var connectionIDs []string
-	err := DB.Raw(`
-		SELECT grc.connection_id
-		FROM private.guardrail_rules_connections grc
-		WHERE grc.org_id = ? AND grc.rule_id = ?
-	`, orgID, ruleID).Pluck("connection_id", &connectionIDs).Error
+	err := DB.Table(tableGuardRailsConnections).
+		Select("connection_id").
+		Where("org_id = ? AND rule_id = ?", orgID, ruleID).
+		Pluck("connection_id", &connectionIDs).Error
 
 	if err != nil {
 		return nil, err
@@ -182,8 +180,9 @@ func UpsertGuardRailRuleWithConnections(rule *GuardRailRules, connectionIDs []st
 		}
 
 		// 2. Delete existing connections
-		if err := tx.Exec("DELETE FROM "+tableGuardRailsConnections+" WHERE org_id = ? AND rule_id = ?",
-			rule.OrgID, rule.ID).Error; err != nil {
+		if err := tx.Table(tableGuardRailsConnections).
+			Where("org_id = ? AND rule_id = ?", rule.OrgID, rule.ID).
+			Delete(&GuardRailConnection{}).Error; err != nil {
 			return err
 		}
 
@@ -204,12 +203,15 @@ func UpsertGuardRailRuleWithConnections(rule *GuardRailRules, connectionIDs []st
 			}
 
 			// Add the association
-			err = tx.Exec(`
-				INSERT INTO `+tableGuardRailsConnections+` (id, org_id, rule_id, connection_id, created_at)
-				VALUES (?, ?, ?, ?, ?)
-			`, uuid.NewString(), rule.OrgID, rule.ID, conn.ID, time.Now().UTC()).Error
+			newConnection := GuardRailConnection{
+				ID:           uuid.NewString(),
+				OrgID:        rule.OrgID,
+				RuleID:       rule.ID,
+				ConnectionID: conn.ID,
+				CreatedAt:    time.Now().UTC(),
+			}
 
-			if err != nil {
+			if err := tx.Table(tableGuardRailsConnections).Create(&newConnection).Error; err != nil {
 				return err
 			}
 		}
@@ -219,11 +221,10 @@ func UpsertGuardRailRuleWithConnections(rule *GuardRailRules, connectionIDs []st
 			ConnectionID string
 		}
 
-		err = tx.Raw(`
-			SELECT connection_id 
-			FROM `+tableGuardRailsConnections+` 
-			WHERE org_id = ? AND rule_id = ?
-		`, rule.OrgID, rule.ID).Scan(&connections).Error
+		err = tx.Table(tableGuardRailsConnections).
+			Select("connection_id").
+			Where("org_id = ? AND rule_id = ?", rule.OrgID, rule.ID).
+			Scan(&connections).Error
 
 		if err != nil {
 			return err
