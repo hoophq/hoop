@@ -61,7 +61,7 @@ func Post(c *gin.Context) {
 			}
 
 			if len(validIDs) > 0 {
-				if err := models.SyncGuardRailConnections(ctx.GetOrgID(), rule.ID, validIDs); err != nil {
+				if err := models.SyncGuardRailConnectionAssociations(ctx.GetOrgID(), rule.ID, validIDs); err != nil {
 					log.Errorf("Failed to sync connections for guardrail %s: %v", rule.ID, err)
 					// Continue but we'll warn in the response
 				}
@@ -141,7 +141,7 @@ func Put(c *gin.Context) {
 			}
 
 			if len(validIDs) > 0 {
-				if err := models.SyncGuardRailConnections(ctx.GetOrgID(), rule.ID, validIDs); err != nil {
+				if err := models.SyncGuardRailConnectionAssociations(ctx.GetOrgID(), rule.ID, validIDs); err != nil {
 					log.Errorf("Failed to sync connections for guardrail %s: %v", rule.ID, err)
 					// Continue but we'll warn in the response
 				}

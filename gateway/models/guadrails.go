@@ -2,7 +2,6 @@ package models
 
 import (
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -72,74 +71,39 @@ func GetConnectionIDsForGuardRail(orgID, ruleID string) ([]string, error) {
 	return connectionIDs, nil
 }
 
-// SyncGuardRailConnections updates the connections associated with a guardrail
-func SyncGuardRailConnections(orgID, ruleID string, connectionIDs []string) error {
+// SyncGuardRailConnectionAssociations updates the connections associated with a guardrail
+func SyncGuardRailConnectionAssociations(orgID, ruleID string, connectionIDs []string) error {
 	if len(connectionIDs) == 0 {
-		return nil // Nothing to do
+		return nil
 	}
 
-	// Start a transaction
-	tx := DB.Begin()
-	if tx.Error != nil {
-		return tx.Error
-	}
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
-		}
-	}()
-
-	// Delete existing connections
-	if err := tx.Exec("DELETE FROM "+tableGuardRailsConnections+" WHERE org_id = ? AND rule_id = ?",
-		orgID, ruleID).Error; err != nil {
-		tx.Rollback()
-		return err
-	}
-
-	// Keep track of successful associations
-	var successCount int
-
-	// Try to find connections by ID or name and add associations
-	for _, connNameOrID := range connectionIDs {
-		// Try to get the connection directly if it's a UUID
-		var conn *Connection
-		var err error
-
-		// Try to find the connection
-		conn, err = GetConnectionByNameOrID(orgID, connNameOrID)
-		if err != nil || conn == nil {
-			log.Warnf("Connection not found by ID/name '%s': %v", connNameOrID, err)
-			continue
+	return DB.Transaction(func(tx *gorm.DB) error {
+		// Delete existing connections
+		if err := tx.Exec(`DELETE FROM private.guardrail_rules_connections 
+			WHERE org_id = ? AND rule_id = ?`, orgID, ruleID).Error; err != nil {
+			return err
 		}
 
-		// Add the association
-		newID := uuid.NewString()
-		result := tx.Exec(`
-			INSERT INTO `+tableGuardRailsConnections+` (id, org_id, rule_id, connection_id, created_at)
-			VALUES (?, ?, ?, ?, ?)
-		`, newID, orgID, ruleID, conn.ID, time.Now().UTC())
+		// Add new connections that exist
+		for _, connNameOrID := range connectionIDs {
+			conn, err := GetConnectionByNameOrID(orgID, connNameOrID)
+			if err != nil || conn == nil {
+				continue // Skip invalid connections
+			}
 
-		if result.Error != nil {
-			log.Errorf("Error associating connection %s with guardrail: %v", conn.Name, result.Error)
-			continue
+			// Add the association
+			err = tx.Exec(`
+				INSERT INTO private.guardrail_rules_connections (id, org_id, rule_id, connection_id, created_at)
+				VALUES (?, ?, ?, ?, ?)
+			`, uuid.NewString(), orgID, ruleID, conn.ID, time.Now().UTC()).Error
+
+			if err != nil {
+				return err
+			}
 		}
 
-		if result.RowsAffected == 0 {
-			log.Warnf("No rows affected when associating connection %s with guardrail", conn.Name)
-			continue
-		}
-
-		successCount++
-	}
-
-	// If no connections were added but some were specified, return an error
-	if successCount == 0 && len(connectionIDs) > 0 {
-		log.Errorf("Failed to add any connections to guardrail %s", ruleID)
-		tx.Rollback()
-		return fmt.Errorf("could not add any connections to guardrail")
-	}
-
-	return tx.Commit().Error
+		return nil
+	})
 }
 
 func CreateGuardRailRules(rule *GuardRailRules) error {
