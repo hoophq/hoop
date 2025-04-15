@@ -13,14 +13,15 @@ const tableGuardRails = "private.guardrail_rules"
 const tableGuardRailsConnections = "private.guardrail_rules_connections"
 
 type GuardRailRules struct {
-	OrgID       string         `gorm:"column:org_id"`
-	ID          string         `gorm:"column:id"`
-	Name        string         `gorm:"column:name"`
-	Description string         `gorm:"column:description"`
-	Input       map[string]any `gorm:"column:input;serializer:json"`
-	Output      map[string]any `gorm:"column:output;serializer:json"`
-	CreatedAt   time.Time      `gorm:"column:created_at"`
-	UpdatedAt   time.Time      `gorm:"column:updated_at"`
+	OrgID         string         `gorm:"column:org_id"`
+	ID            string         `gorm:"column:id"`
+	Name          string         `gorm:"column:name"`
+	Description   string         `gorm:"column:description"`
+	Input         map[string]any `gorm:"column:input;serializer:json"`
+	Output        map[string]any `gorm:"column:output;serializer:json"`
+	CreatedAt     time.Time      `gorm:"column:created_at"`
+	UpdatedAt     time.Time      `gorm:"column:updated_at"`
+	ConnectionIDs []string       `gorm:"-"` // Not stored in DB, populated from join query
 }
 
 type GuardRailConnection struct {
@@ -33,9 +34,43 @@ type GuardRailConnection struct {
 
 func ListGuardRailRules(orgID string) ([]*GuardRailRules, error) {
 	var rules []*GuardRailRules
-	return rules,
-		DB.Table(tableGuardRails).
-			Where("org_id = ?", orgID).Order("name DESC").Find(&rules).Error
+	err := DB.Table(tableGuardRails).
+		Where("org_id = ?", orgID).
+		Order("name DESC").
+		Find(&rules).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Load connection IDs for all rules in a single query
+	var connections []struct {
+		RuleID       string
+		ConnectionID string
+	}
+
+	err = DB.Raw(`
+		SELECT grc.rule_id, grc.connection_id
+		FROM private.guardrail_rules_connections grc
+		WHERE grc.org_id = ? AND grc.rule_id IN (?)
+	`, orgID, getGuardrailIDs(rules)).Scan(&connections).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Map connections to rules
+	connectionMap := make(map[string][]string)
+	for _, conn := range connections {
+		connectionMap[conn.RuleID] = append(connectionMap[conn.RuleID], conn.ConnectionID)
+	}
+
+	// Populate ConnectionIDs field
+	for _, rule := range rules {
+		rule.ConnectionIDs = connectionMap[rule.ID]
+	}
+
+	return rules, nil
 }
 
 func GetGuardRailRules(orgID, ruleID string) (*GuardRailRules, error) {
@@ -47,24 +82,30 @@ func GetGuardRailRules(orgID, ruleID string) (*GuardRailRules, error) {
 		}
 		return nil, err
 	}
-	return &rule, nil
-}
 
-// GetConnectionIDsForGuardRail returns all connection IDs associated with a guardrail
-func GetConnectionIDsForGuardRail(orgID, ruleID string) ([]string, error) {
+	// Load connection IDs for this rule
 	var connectionIDs []string
 	err := DB.Raw(`
-		SELECT c.id 
-		FROM private.connections c
-		JOIN private.guardrail_rules_connections grc ON grc.connection_id = c.id
+		SELECT grc.connection_id
+		FROM private.guardrail_rules_connections grc
 		WHERE grc.org_id = ? AND grc.rule_id = ?
-	`, orgID, ruleID).Pluck("id", &connectionIDs).Error
+	`, orgID, ruleID).Pluck("connection_id", &connectionIDs).Error
 
 	if err != nil {
 		return nil, err
 	}
 
-	return connectionIDs, nil
+	rule.ConnectionIDs = connectionIDs
+	return &rule, nil
+}
+
+// Helper to extract rule IDs from a slice of rules
+func getGuardrailIDs(rules []*GuardRailRules) []string {
+	ids := make([]string, len(rules))
+	for i, rule := range rules {
+		ids[i] = rule.ID
+	}
+	return ids
 }
 
 // SyncGuardRailConnectionAssociations updates the connections associated with a guardrail
