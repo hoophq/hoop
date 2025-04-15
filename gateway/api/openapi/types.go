@@ -1070,7 +1070,7 @@ type GuardRailRuleRequest struct {
 	Output map[string]any `json:"output"`
 
 	// List of connection IDs or names that this guardrail applies to
-	ConnectionIDs []string `json:"connection_ids" example:"pgdemo,redis-prod"`
+	ConnectionIDs []string `json:"connection_ids" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7,15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D8"`
 }
 
 type GuardRailRuleResponse struct {
@@ -1119,7 +1119,7 @@ type GuardRailRuleResponse struct {
 	Output map[string]any `json:"output"`
 
 	// List of connection IDs or names that this guardrail applies to
-	ConnectionIDs []string `json:"connection_ids" example:"pgdemo,redis-prod"`
+	ConnectionIDs []string `json:"connection_ids" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7,15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D8"`
 
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
