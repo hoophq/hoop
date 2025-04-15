@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hoophq/hoop/common/log"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -53,8 +52,6 @@ func GetGuardRailRules(orgID, ruleID string) (*GuardRailRules, error) {
 
 // GetConnectionIDsForGuardRail returns all connection IDs associated with a guardrail
 func GetConnectionIDsForGuardRail(orgID, ruleID string) ([]string, error) {
-
-	// Return connection IDs as expected by the function name and API contract
 	var connectionIDs []string
 	err := DB.Raw(`
 		SELECT c.id 
@@ -64,7 +61,6 @@ func GetConnectionIDsForGuardRail(orgID, ruleID string) ([]string, error) {
 	`, orgID, ruleID).Pluck("id", &connectionIDs).Error
 
 	if err != nil {
-		log.Errorf("Error retrieving connection IDs for guardrail %s: %v", ruleID, err)
 		return nil, err
 	}
 
