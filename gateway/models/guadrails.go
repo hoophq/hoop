@@ -187,11 +187,11 @@ func UpsertGuardRailRuleWithConnections(rule *GuardRailRules, connectionIDs []st
 		}
 
 		// 3. Add new connections
-		for _, connNameOrID := range connectionIDs {
+		for _, connID := range connectionIDs {
 			// Find the connection
 			var conn Connection
 			err := tx.Table("private.connections").
-				Where("org_id = ? AND (name = ? OR id = ?)", rule.OrgID, connNameOrID, connNameOrID).
+				Where("org_id = ? AND id = ?", rule.OrgID, connID).
 				First(&conn).Error
 
 			if err != nil {
