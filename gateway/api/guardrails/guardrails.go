@@ -30,6 +30,9 @@ func Post(c *gin.Context) {
 		return
 	}
 
+	// Filter out empty connection IDs
+	validConnectionIDs := filterEmptyIDs(req.ConnectionIDs)
+
 	rule := &models.GuardRailRules{
 		ID:          uuid.NewString(),
 		OrgID:       ctx.GetOrgID(),
@@ -40,22 +43,27 @@ func Post(c *gin.Context) {
 		CreatedAt:   time.Now().UTC(),
 		UpdatedAt:   time.Now().UTC(),
 	}
-	err := models.CreateGuardRailRules(rule)
+
+	// Create guardrail and associate connections in a single transaction
+	err := models.UpsertGuardRailRuleWithConnections(rule, validConnectionIDs, true)
+
 	switch err {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
+		return
 	case nil:
-		c.JSON(http.StatusOK, &openapi.GuardRailRuleResponse{
-			ID:          rule.ID,
-			Name:        rule.Name,
-			Description: rule.Description,
-			Input:       rule.Input,
-			Output:      rule.Output,
-			CreatedAt:   rule.CreatedAt,
-			UpdatedAt:   rule.UpdatedAt,
+		c.JSON(http.StatusCreated, &openapi.GuardRailRuleResponse{
+			ID:            rule.ID,
+			Name:          rule.Name,
+			Description:   rule.Description,
+			Input:         rule.Input,
+			Output:        rule.Output,
+			ConnectionIDs: rule.ConnectionIDs,
+			CreatedAt:     rule.CreatedAt,
+			UpdatedAt:     rule.UpdatedAt,
 		})
 	default:
-		log.Errorf("failed creting guard rail rule, reason=%v, err=%T", err, err)
+		log.Errorf("Failed creating guard rail rule: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 	}
 }
@@ -77,6 +85,10 @@ func Put(c *gin.Context) {
 	if req == nil {
 		return
 	}
+
+	// Filter out empty connection IDs
+	validConnectionIDs := filterEmptyIDs(req.ConnectionIDs)
+
 	rule := &models.GuardRailRules{
 		OrgID:       ctx.GetOrgID(),
 		ID:          c.Param("id"),
@@ -86,23 +98,27 @@ func Put(c *gin.Context) {
 		Output:      req.Output,
 		UpdatedAt:   time.Now().UTC(),
 	}
-	err := models.UpdateGuardRailRules(rule)
+
+	// Update guardrail and associate connections in a single transaction
+	err := models.UpsertGuardRailRuleWithConnections(rule, validConnectionIDs, false)
+
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
 		return
 	case nil:
 		c.JSON(http.StatusOK, &openapi.GuardRailRuleResponse{
-			ID:          rule.ID,
-			Name:        rule.Name,
-			Description: rule.Description,
-			Input:       rule.Input,
-			Output:      rule.Output,
-			CreatedAt:   rule.CreatedAt,
-			UpdatedAt:   rule.UpdatedAt,
+			ID:            rule.ID,
+			Name:          rule.Name,
+			Description:   rule.Description,
+			Input:         rule.Input,
+			Output:        rule.Output,
+			ConnectionIDs: rule.ConnectionIDs,
+			CreatedAt:     rule.CreatedAt,
+			UpdatedAt:     rule.UpdatedAt,
 		})
 	default:
-		log.Errorf("failed updating guard rail rule, reason=%v", err)
+		log.Errorf("Failed updating guard rail rule: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 	}
 }
@@ -125,16 +141,18 @@ func List(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
+
 	rules := []openapi.GuardRailRuleResponse{}
 	for _, rule := range ruleList {
 		rules = append(rules, openapi.GuardRailRuleResponse{
-			ID:          rule.ID,
-			Name:        rule.Name,
-			Description: rule.Description,
-			Input:       rule.Input,
-			Output:      rule.Output,
-			CreatedAt:   rule.CreatedAt,
-			UpdatedAt:   rule.UpdatedAt,
+			ID:            rule.ID,
+			Name:          rule.Name,
+			Description:   rule.Description,
+			Input:         rule.Input,
+			Output:        rule.Output,
+			ConnectionIDs: rule.ConnectionIDs,
+			CreatedAt:     rule.CreatedAt,
+			UpdatedAt:     rule.UpdatedAt,
 		})
 	}
 	c.JSON(http.StatusOK, rules)
@@ -159,13 +177,14 @@ func Get(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
 	case nil:
 		c.JSON(http.StatusOK, &openapi.GuardRailRuleResponse{
-			ID:          rule.ID,
-			Name:        rule.Name,
-			Description: rule.Description,
-			Input:       rule.Input,
-			Output:      rule.Output,
-			CreatedAt:   rule.CreatedAt,
-			UpdatedAt:   rule.UpdatedAt,
+			ID:            rule.ID,
+			Name:          rule.Name,
+			Description:   rule.Description,
+			Input:         rule.Input,
+			Output:        rule.Output,
+			ConnectionIDs: rule.ConnectionIDs,
+			CreatedAt:     rule.CreatedAt,
+			UpdatedAt:     rule.UpdatedAt,
 		})
 	default:
 		log.Errorf("failed listing guard rail rules, reason=%v", err)
@@ -205,4 +224,15 @@ func parseRequestPayload(c *gin.Context) *openapi.GuardRailRuleRequest {
 		return nil
 	}
 	return &req
+}
+
+// Helper to filter out empty connection IDs
+func filterEmptyIDs(ids []string) []string {
+	result := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id != "" {
+			result = append(result, id)
+		}
+	}
+	return result
 }

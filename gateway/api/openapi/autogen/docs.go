@@ -4647,6 +4647,17 @@ const docTemplate = `{
                 "name"
             ],
             "properties": {
+                "connection_ids": {
+                    "description": "List of connection IDs that this guardrail applies to",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7",
+                        "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D8"
+                    ]
+                },
                 "description": {
                     "description": "The rule description",
                     "type": "string",
@@ -4672,6 +4683,17 @@ const docTemplate = `{
         "openapi.GuardRailRuleResponse": {
             "type": "object",
             "properties": {
+                "connection_ids": {
+                    "description": "List of connection IDs that this guardrail applies to",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7",
+                        "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D8"
+                    ]
+                },
                 "created_at": {
                     "description": "The time the resource was created",
                     "type": "string",
