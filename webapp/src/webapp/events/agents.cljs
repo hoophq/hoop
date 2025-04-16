@@ -61,6 +61,22 @@
    {:db (assoc db :agents->agent-key {:status status
                                       :data agent})}))
 
+(rf/reg-event-fx
+ :agents->delete-agent
+ (fn [{:keys [db]} [_ agent-id]]
+   {:fx [[:dispatch
+          [:fetch
+           {:method "DELETE"
+            :uri (str "/agents/" agent-id)
+            :on-success (fn []
+                          (rf/dispatch [:show-snackbar {:level :success
+                                                        :text "Agent deleted successfully!"}])
+                          (rf/dispatch [:agents->get-agents]))
+            :on-failure (fn [error]
+                          (rf/dispatch [:show-snackbar {:level :error
+                                                        :text (str "Failed to delete agent: "
+                                                                   (or (:message error) "Unknown error"))}]))}]]]}))
+
 (rf/reg-sub
  :agents->agent-key
  (fn [db _]
