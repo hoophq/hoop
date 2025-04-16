@@ -1,7 +1,7 @@
 (ns webapp.agents.panel
   (:require
    ["@radix-ui/themes" :refer [Badge Box Button Card Flex Link Text]]
-   ["lucide-react" :refer [CircleDashed Zap]]
+   ["lucide-react" :refer [CircleDashed Zap Trash2]]
    [re-frame.core :as rf]
    [webapp.components.button :as button]
    [webapp.components.headings :as h]
@@ -19,11 +19,36 @@
        [:> Text {:size "1"
                  :as "div"
                  :class "text-[--gray-11]"}
-        (str "Version: " (:version item))]]
-      [:> Box
+        (str "Version: " (:version item))]
+       [:> Text {:size "1"
+                 :as "div"
+                 :class "text-[--gray-11]"}
+        (str "ID: " (:id item))]]
+      [:> Flex {:align "center" :gap "3"}
        [:> Badge {:color (if connected? "green" "tomato")}
         [:> CircleDashed {:size 10}]
-        (if connected? "Online" "Offline")]]]]))
+        (if connected? "Online" "Offline")]
+       [:> Button {:size "1"
+                   :variant "soft"
+                   :color "red"
+                   :on-click #(rf/dispatch [:dialog->open
+                                            {:title "Delete agent?"
+                                             :type :danger
+                                             :text-action-button "Confirm and delete"
+                                             :action-button? true
+                                             :text [:> Box {:class "space-y-radix-4"}
+                                                    [:> Text {:as "p"}
+                                                     "This action will instantly remove the agent "
+                                                     [:strong (:name item)]
+                                                     " and cannot be undone."]
+                                                    [:> Text {:as "p"}
+                                                     "Are you sure you want to delete this agent?"]]
+                                             :on-success (fn []
+                                                           (rf/dispatch [:agents->delete-agent (:id item)])
+                                                           (rf/dispatch [:dialog->close]))}])}
+        [:> Flex {:align "center" :gap "1"}
+         [:> Trash2 {:size 14}]
+         "Delete"]]]]]))
 
 (defn- empty-state []
   [:> Box {:p "8"}
