@@ -74,8 +74,10 @@
      error]]])
 
 (defmulti template-view identity)
+
 (defmethod template-view :ready [_ _ _]
   (let [state (r/atom {})
+        previous-template-name (r/atom nil)
         update-state #(swap! state assoc %1 %2)]
     (rf/dispatch [:connections->get-connections])
     (fn [_ template selected-connections connection-name]
@@ -86,60 +88,73 @@
          [:span {:class "text-gray-400 text-xl"}
           "No Runbook selected"]]
 
-        [:div {:class "overflow-auto lg:overflow-hidden text-[--gray-12]"}
-         [:section
-          [:form
-           {:on-submit (fn [e]
-                         (.preventDefault e)
-                         (if (> (count selected-connections) 1)
-                           (reset! exec-multiples-runbooks-list/atom-exec-runbooks-list-open? true)
+        (do
+          ;; Reset state when template changes
+          (when (and (-> template :data :name)
+                     (not= (-> template :data :name) @previous-template-name))
+            (reset! state {})
+            (reset! previous-template-name (-> template :data :name)))
 
-                           (rf/dispatch [:editor-plugin->run-runbook
-                                         {:file-name (-> template :data :name)
-                                          :params @state
-                                          :connection-name connection-name}])))}
-           [:header {:class "mb-regular"}
-            [:> Box {:class "flex items-center gap-small mb-small"}
-             [:> hero-solid-icon/DocumentIcon
-              {:class "h-4 w-4" :aria-hidden "true"}]
-             [:span {:class "text-base font-semibold break-words"}
-              (-> template :data :name)]]
+          ;; Initialize all params with empty strings
+          (when (-> template :data :params)
+            (doseq [param (-> template :data :params)]
+              (when (nil? (get @state param))
+                (swap! state assoc param ""))))
 
-            [:span {:class " text-xs"}
-             "Fill the params below for this Runbook"]]
-           (doall (for [param (-> template :data :params)
-                        :let [metadata ((keyword param) (-> template :data :metadata))]]
-                    ^{:key param}
-                    [dynamic-form
-                     (:type metadata) {:label param
-                                       :placeholder (:placeholder metadata)
-                                       :value (get @state param)
-                                       :type (:type metadata)
-                                       :required (:required metadata)
-                                       :on-change (if (= "select" (:type metadata))
-                                                    #(update-state param %)
-                                                    #(update-state param (-> % .-target .-value)))
-                                       :helper-text (:description metadata)
-                                       :options (:options metadata)}]))
+          [:div {:class "overflow-auto lg:overflow-hidden text-[--gray-12]"}
+           [:section
+            [:form
+             {:on-submit (fn [e]
+                           (.preventDefault e)
+                           (if (> (count selected-connections) 1)
+                             (reset! exec-multiples-runbooks-list/atom-exec-runbooks-list-open? true)
 
-           (if (nil? (-> template :data :error))
-             [:footer {:class "flex gap-regular justify-end"}
-              [:> Button {:disabled (or (= (-> template :status) :loading)
-                                        (= (-> template :form-status) :loading))
-                          :type "submit"}
-               "Execute runbook"]]
+                             (rf/dispatch [:editor-plugin->run-runbook
+                                           {:file-name (-> template :data :name)
+                                            :params @state
+                                            :connection-name connection-name}])))}
+             [:header {:class "mb-regular"}
+              [:> Box {:class "flex items-center gap-small mb-small"}
+               [:> hero-solid-icon/DocumentIcon
+                {:class "h-4 w-4" :aria-hidden "true"}]
+               [:span {:class "text-base font-semibold break-words"}
+                (-> template :data :name)]]
 
-             [error-view (-> template :data :error)])]]
+              [:span {:class " text-xs"}
+               "Fill the params below for this Runbook"]]
+             (doall (for [param (-> template :data :params)
+                          :let [metadata ((keyword param) (-> template :data :metadata))]]
+                      ^{:key param}
+                      [dynamic-form
+                       (:type metadata) {:label param
+                                         :placeholder (:placeholder metadata)
+                                         :value (get @state param "")
+                                         :type (:type metadata)
+                                         :required (:required metadata)
+                                         :on-change (if (= "select" (:type metadata))
+                                                      #(update-state param %)
+                                                      #(update-state param (-> % .-target .-value)))
+                                         :helper-text (:description metadata)
+                                         :options (:options metadata)}]))
 
-         (when @exec-multiples-runbooks-list/atom-exec-runbooks-list-open?
-           [exec-multiples-runbooks-list/main (map #(into {} {:connection-name (:name %)
-                                                              :file_name (-> template :data :name)
-                                                              :parameters @state
-                                                              :type (:type %)
-                                                              :subtype (:subtype %)
-                                                              :session-id nil
-                                                              :status :ready})
-                                                   selected-connections)])]))))
+             (if (nil? (-> template :data :error))
+               [:footer {:class "flex gap-regular justify-end"}
+                [:> Button {:disabled (or (= (-> template :status) :loading)
+                                          (= (-> template :form-status) :loading))
+                            :type "submit"}
+                 "Execute runbook"]]
+
+               [error-view (-> template :data :error)])]]
+
+           (when @exec-multiples-runbooks-list/atom-exec-runbooks-list-open?
+             [exec-multiples-runbooks-list/main (map #(into {} {:connection-name (:name %)
+                                                                :file_name (-> template :data :name)
+                                                                :parameters @state
+                                                                :type (:type %)
+                                                                :subtype (:subtype %)
+                                                                :session-id nil
+                                                                :status :ready})
+                                                     selected-connections)])])))))
 
 (defmethod template-view :loading []
   [:div {:class "flex items-center justify-center h-full"}
