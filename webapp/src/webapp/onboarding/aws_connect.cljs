@@ -1,6 +1,6 @@
 (ns webapp.onboarding.aws-connect
   (:require [re-frame.core :as rf]
-            ["@radix-ui/themes" :refer [Badge Box Button Card Spinner Link Flex Heading Separator Text Callout Switch]]
+            ["@radix-ui/themes" :refer [Badge Box Button Card Spinner Link Flex Heading Separator Text Callout Switch AlertDialog]]
             [webapp.components.forms :as forms]
             ["lucide-react" :refer [Check Info ArrowUpRight X]]
             [webapp.connections.views.setup.page-wrapper :as page-wrapper]
@@ -142,7 +142,7 @@
         :value (get-in credentials [:iam-user :session-token])
         :on-change #(rf/dispatch [:aws-connect/set-iam-user-credentials :session-token (-> % .-target .-value)])}]]
 
-          ;; Error message (if any)
+     ;; Error message (if any)
      (when (or error account-error)
        [:> Card {:variant "surface" :color "red" :mb "4"}
         [:> Flex {:gap "2" :align "center"}
@@ -460,6 +460,31 @@
         :sticky-header? true
         :empty-state "No connections are being created"}]]]))
 
+(defn confirmation-dialog [{:keys [open? on-confirm on-cancel]}]
+  [:> AlertDialog.Root
+   {:open open?
+    :on-open-change on-cancel}
+
+   [:> AlertDialog.Content
+    {:class "max-w-[600px]"}
+
+    [:> Heading {:as "h2" :size "5" :mb "3" :weight "bold" :class "text-[--gray-12]"}
+     "Confirm finishing setup?"]
+
+    [:> Text {:as "p" :size "2" :mb "4" :class "text-[--gray-11]"}
+     "Completing this setup will automatically reset the root passwords for your selected database resources. These new credentials will be securely stored and accessible only through Hoop.dev."]
+
+    [:> Text {:as "p" :size "2" :mb "5" :class "text-[--gray-11]"}
+     "Do you want to proceed and confirm finishing this setup?"]
+
+    [:> Flex {:justify "end" :gap "3" :mt "4"}
+     [:> AlertDialog.Cancel {:asChild true}
+      [:> Button {:variant "soft" :color "gray" :on-click on-cancel}
+       "Cancel"]]
+     [:> AlertDialog.Action {:asChild true}
+      [:> Button {:variant "solid" :color "red" :on-click on-confirm}
+       "Confirm and Finish"]]]]])
+
 (defn aws-connect-header []
   [:<>
    [:> Box
@@ -474,82 +499,91 @@
 (defn main []
   (rf/dispatch [:aws-connect/fetch-agents])
 
-  (fn [form-type]
-    (let [current-step @(rf/subscribe [:aws-connect/current-step])
-          loading @(rf/subscribe [:aws-connect/loading])]
+  (r/with-let [show-confirm-dialog (r/atom false)]
+    (fn [form-type]
+      (let [current-step @(rf/subscribe [:aws-connect/current-step])
+            loading @(rf/subscribe [:aws-connect/loading])]
 
-      [page-wrapper/main
-       {:children
-        [:> Box {:class "min-h-screen bg-gray-1"}
-         [:> Box {:class "mx-auto max-w-[1000px] p-6 space-y-7"}
-          [:> Box {:class "place-items-center space-y-7"}
-           [aws-connect-header]
-           [:> Flex {:align "center" :justify "center" :mb "8" :class "w-full"}
-            (for [{:keys [id number title]} (if (= current-step :creation-status)
-                                              steps
-                                              (take 3 steps))]
-              ^{:key id}
-              [:> Flex {:align "center"}
-               [:> Flex {:align "center" :gap "1"}
-                [step-number {:number number
-                              :active? (= id current-step)
-                              :completed? (> (.indexOf [:credentials :accounts :resources :review :creation-status] current-step)
-                                             (.indexOf [:credentials :accounts :resources :review :creation-status] id))}]
-                [step-title {:title title
-                             :active? (= id current-step)
-                             :completed? (> (.indexOf [:credentials :accounts :resources :review :creation-status] current-step)
-                                            (.indexOf [:credentials :accounts :resources :review :creation-status] id))}]
-                (when (> (.indexOf [:credentials :accounts :resources :review :creation-status] current-step)
-                         (.indexOf [:credentials :accounts :resources :review :creation-status] id))
-                  [step-checkmark])]
-               (when-not (= id (if (= current-step :creation-status) :creation-status :review))
-                 [:> Box {:class "px-2"}
-                  [:> Separator {:size "1" :orientation "horizontal" :class "w-4"}]])])]
-      ;; Current step content
-           (case current-step
-             :credentials [credentials-step]
-             :accounts [accounts-step]
-             :resources [resources-step]
-             :review [review-step]
-             :creation-status [creation-status-step]
-             [credentials-step])]]]
-        :footer-props
-        {:form-type form-type
-         :back-text (case current-step
-                      :credentials "Back"
-                      :accounts "Back to Credentials"
-                      :resources "Back to Accounts"
-                      :review "Back to Resources"
-                      :creation-status nil)
-         :next-text (case current-step
-                      :credentials "Next: Accounts"
-                      :accounts "Next: Resources"
-                      :resources "Next: Review"
-                      :review "Confirm and Create"
-                      :creation-status "Go to AWS Connect")
-         :on-back #(case current-step
-                     :credentials (.back js/history)
-                     :accounts (rf/dispatch [:aws-connect/set-current-step :credentials])
-                     :resources (rf/dispatch [:aws-connect/set-current-step :accounts])
-                     :review (rf/dispatch [:aws-connect/set-current-step :resources])
-                     :creation-status nil)
-         :on-next #(case current-step
-                     :credentials (rf/dispatch [:aws-connect/validate-credentials])
-                     :accounts (rf/dispatch [:aws-connect/fetch-rds-instances])
-                     :resources (rf/dispatch [:aws-connect/set-current-step :review])
-                     :review (rf/dispatch [:aws-connect/create-connections])
-                     :creation-status (rf/dispatch [:navigate :integrations-aws-connect]))
-         :back-hidden? (case current-step
-                         :credentials false
-                         :accounts false
-                         :resources false
-                         :review false
-                         :creation-status true)
-         :next-disabled? (case current-step
-                           :credentials (:active? loading)
-                           :accounts (empty? @(rf/subscribe [:aws-connect/selected-accounts]))
-                           :resources (empty? @(rf/subscribe [:aws-connect/selected-resources]))
-                           :review (some empty? (vals @(rf/subscribe [:aws-connect/agent-assignments])))
-                           :creation-status false)}}])))
+        [page-wrapper/main
+         {:children
+          [:> Box {:class "min-h-screen bg-gray-1"}
+
+           [confirmation-dialog
+            {:open? @show-confirm-dialog
+             :on-confirm #(do
+                            (reset! show-confirm-dialog false)
+                            (rf/dispatch [:aws-connect/create-connections]))
+             :on-cancel #(reset! show-confirm-dialog false)}]
+
+           [:> Box {:class "mx-auto max-w-[1000px] p-6 space-y-7"}
+            [:> Box {:class "place-items-center space-y-7"}
+             [aws-connect-header]
+             [:> Flex {:align "center" :justify "center" :mb "8" :class "w-full"}
+              (for [{:keys [id number title]} (if (= current-step :creation-status)
+                                                steps
+                                                (take 3 steps))]
+                ^{:key id}
+                [:> Flex {:align "center"}
+                 [:> Flex {:align "center" :gap "1"}
+                  [step-number {:number number
+                                :active? (= id current-step)
+                                :completed? (> (.indexOf [:credentials :accounts :resources :review :creation-status] current-step)
+                                               (.indexOf [:credentials :accounts :resources :review :creation-status] id))}]
+                  [step-title {:title title
+                               :active? (= id current-step)
+                               :completed? (> (.indexOf [:credentials :accounts :resources :review :creation-status] current-step)
+                                              (.indexOf [:credentials :accounts :resources :review :creation-status] id))}]
+                  (when (> (.indexOf [:credentials :accounts :resources :review :creation-status] current-step)
+                           (.indexOf [:credentials :accounts :resources :review :creation-status] id))
+                    [step-checkmark])]
+                 (when-not (= id (if (= current-step :creation-status) :creation-status :review))
+                   [:> Box {:class "px-2"}
+                    [:> Separator {:size "1" :orientation "horizontal" :class "w-4"}]])])]
+             ;; Current step content
+             (case current-step
+               :credentials [credentials-step]
+               :accounts [accounts-step]
+               :resources [resources-step]
+               :review [review-step]
+               :creation-status [creation-status-step]
+               [credentials-step])]]]
+          :footer-props
+          {:form-type form-type
+           :back-text (case current-step
+                        :credentials "Back"
+                        :accounts "Back to Credentials"
+                        :resources "Back to Accounts"
+                        :review "Back to Resources"
+                        :creation-status nil)
+           :next-text (case current-step
+                        :credentials "Next: Accounts"
+                        :accounts "Next: Resources"
+                        :resources "Next: Review"
+                        :review "Confirm and Create"
+                        :creation-status "Go to AWS Connect")
+           :on-back #(case current-step
+                       :credentials (.back js/history)
+                       :accounts (rf/dispatch [:aws-connect/set-current-step :credentials])
+                       :resources (rf/dispatch [:aws-connect/set-current-step :accounts])
+                       :review (rf/dispatch [:aws-connect/set-current-step :resources])
+                       :creation-status nil)
+           :on-next #(case current-step
+                       :credentials (rf/dispatch [:aws-connect/validate-credentials])
+                       :accounts (rf/dispatch [:aws-connect/fetch-rds-instances])
+                       :resources (rf/dispatch [:aws-connect/set-current-step :review])
+                       :review (reset! show-confirm-dialog true)
+                       :creation-status (rf/dispatch [:navigate :integrations-aws-connect]))
+           :back-hidden? (case current-step
+                           :credentials false
+                           :accounts false
+                           :resources false
+                           :review false
+                           :creation-status true)
+           :next-disabled? (case current-step
+                             :credentials (:active? loading)
+                             :accounts (empty? @(rf/subscribe [:aws-connect/selected-accounts]))
+                             :resources (empty? @(rf/subscribe [:aws-connect/selected-resources]))
+                             :review (some empty? (vals @(rf/subscribe [:aws-connect/agent-assignments])))
+                             :creation-status false)}}]))))
 
 
