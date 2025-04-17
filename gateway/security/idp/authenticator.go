@@ -158,7 +158,10 @@ func setProviderConfFromEnvs(p *Provider) error {
 	p.ClientSecret = os.Getenv("IDP_CLIENT_SECRET")
 	p.Audience = os.Getenv("IDP_AUDIENCE")
 	p.CustomScopes = os.Getenv("IDP_CUSTOM_SCOPES")
-	p.GroupsClaim = proto.CustomClaimGroups
+	p.GroupsClaim = os.Getenv("IDP_GROUPS_CLAIM")
+	if p.GroupsClaim == "" {
+		p.GroupsClaim = proto.CustomClaimGroups
+	}
 
 	issuerURL, err := url.Parse(p.Issuer)
 	if err != nil {

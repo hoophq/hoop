@@ -5756,12 +5756,12 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "admin_username": {
-                    "description": "The role name of the admin group",
+                    "description": "The group name that has administrator permissions",
                     "type": "string",
                     "example": "admin"
                 },
                 "api_url": {
-                    "description": "API URL advertise to clients",
+                    "description": "API_URL advertise to clients",
                     "type": "string",
                     "example": "https://api.johnwick.org"
                 },
@@ -5806,7 +5806,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "has_postgrest_role": {
-                    "description": "Report if IDP_CUSTOM_SCOPES env is set",
+                    "description": "Report if PGREST_ROLE env is set",
                     "type": "boolean"
                 },
                 "has_redact_credentials": {
@@ -5836,7 +5836,7 @@ const docTemplate = `{
                     "example": "INFO"
                 },
                 "redact_provider": {
-                    "description": "DLP provider used by the server",
+                    "description": "Redact Provider used by the server",
                     "type": "string",
                     "enum": [
                         "gcp",
@@ -5855,7 +5855,7 @@ const docTemplate = `{
                 "version": {
                     "description": "Version of the server",
                     "type": "string",
-                    "example": "1.23.15"
+                    "example": "1.35.0"
                 }
             }
         },

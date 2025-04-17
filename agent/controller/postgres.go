@@ -49,14 +49,17 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 
 	log.Infof("session=%v - starting postgres connection at %v:%v", sessionID, connenv.host, connenv.port)
 	opts := map[string]string{
-		"hostname":              connenv.host,
-		"port":                  connenv.port,
-		"username":              connenv.user,
-		"password":              connenv.pass,
-		"sslmode":               connenv.postgresSSLMode,
-		"dlp_gcp_credentials":   a.getGCPCredentials(),
-		"dlp_info_types":        strings.Join(connParams.DLPInfoTypes, ","),
-		"dlp_masking_character": "#",
+		"hostname":                  connenv.host,
+		"port":                      connenv.port,
+		"username":                  connenv.user,
+		"password":                  connenv.pass,
+		"sslmode":                   connenv.postgresSSLMode,
+		"dlp_provider":              a.getDlpProvider(),
+		"mspresidio_analyzer_url":   a.getMSPresidioAnalyzerURL(),
+		"mspresidio_anonymizer_url": a.getMSPresidioAnonymizerURL(),
+		"dlp_gcp_credentials":       a.getGCPCredentials(),
+		"dlp_info_types":            strings.Join(connParams.DLPInfoTypes, ","),
+		"dlp_masking_character":     "#",
 	}
 	serverWriter, err := libhoop.NewDBCore(context.Background(), streamClient, opts).Postgres()
 	if err != nil {

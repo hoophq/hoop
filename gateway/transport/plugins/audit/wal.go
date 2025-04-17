@@ -140,7 +140,7 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error
 						}
 					}
 					if ts.InfoType == "" {
-						// ignore it, this should only happened
+						// ignore it, this should only happens
 						// for legacy transformation summary records
 						continue
 					}
