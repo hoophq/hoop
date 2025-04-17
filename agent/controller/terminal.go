@@ -37,8 +37,11 @@ func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {
 	spec := map[string][]byte{pb.SpecGatewaySessionID: []byte(sid)}
 	stdoutWriter := pb.NewStreamWriter(a.client, pbclient.WriteStdout, spec)
 	opts := map[string]string{
-		"dlp_gcp_credentials": a.getGCPCredentials(),
-		"dlp_info_types":      strings.Join(connParams.DLPInfoTypes, ","),
+		"dlp_provider":              a.getDlpProvider(),
+		"mspresidio_analyzer_url":   a.getMSPresidioAnalyzerURL(),
+		"mspresidio_anonymizer_url": a.getMSPresidioAnonymizerURL(),
+		"dlp_gcp_credentials":       a.getGCPCredentials(),
+		"dlp_info_types":            strings.Join(connParams.DLPInfoTypes, ","),
 	}
 	args := append(connParams.CmdList, connParams.ClientArgs...)
 	cmd, err := libhoop.NewConsole(connParams.EnvVars, args, stdoutWriter, opts)

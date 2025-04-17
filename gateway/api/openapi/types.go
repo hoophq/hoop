@@ -849,18 +849,18 @@ type PublicServerInfo struct {
 
 type ServerInfo struct {
 	// Version of the server
-	Version string `json:"version" example:"1.23.15"`
+	Version string `json:"version" example:"1.35.0"`
 	// Commit SHA of the version
 	Commit string `json:"commit_sha" example:"e6b94e86352e934b66d9c7ab2821a267dc18dfee"`
 	// Log level of the server
 	LogLevel string `json:"log_level" enums:"INFO,WARN,DEBUG,ERROR" example:"INFO"`
 	// Expose `GODEBUG` flags enabled
 	GoDebug string `json:"go_debug" example:"http2debug=2"`
-	// The role name of the admin group
+	// The group name that has administrator permissions
 	AdminUsername string `json:"admin_username" example:"admin"`
 	// Auth method used by the server
 	AuthMethod string `json:"auth_method" enums:"oidc,local" example:"local"`
-	// DLP provider used by the server
+	// Redact Provider used by the server
 	RedactProvider string `json:"redact_provider" enums:"gcp,mspresidio" example:"gcp"`
 	// Report if GOOGLE_APPLICATION_CREDENTIALS_JSON or MSPRESIDIO is set
 	HasRedactCredentials bool `json:"has_redact_credentials"`
@@ -870,13 +870,13 @@ type ServerInfo struct {
 	HasIDPAudience bool `json:"has_idp_audience"`
 	// Report if IDP_CUSTOM_SCOPES env is set
 	HasIDPCustomScopes bool `json:"has_idp_custom_scopes"`
-	// Report if IDP_CUSTOM_SCOPES env is set
+	// Report if PGREST_ROLE env is set
 	HasPostgresRole bool `json:"has_postgrest_role"`
 	// Report if ASK_AI_CREDENTIALS is set (openapi credentials)
 	HasAskiAICredentials bool `json:"has_ask_ai_credentials"`
 	// Report if SSH_CLIENT_HOST_KEY is set
 	HasSSHClientHostKey bool `json:"has_ssh_client_host_key"`
-	// API URL advertise to clients
+	// API_URL advertise to clients
 	ApiURL string `json:"api_url" example:"https://api.johnwick.org"`
 	// The GRPC_URL advertise to clients
 	GrpcURL string `json:"grpc_url" example:"127.0.0.1:8009"`
