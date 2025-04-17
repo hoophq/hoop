@@ -949,7 +949,7 @@ type JiraIssueTemplate struct {
 	// The time when the template was updated
 	UpdatedAt time.Time `json:"updated_at"`
 	// The connection IDs associated with this template
-	ConnectionIDs []string `json:"connection_ids,omitempty"`
+	ConnectionIDs []string `json:"connection_ids"`
 }
 
 type JiraIssueTemplateRequest struct {

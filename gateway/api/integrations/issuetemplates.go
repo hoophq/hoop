@@ -34,14 +34,6 @@ func ListIssueTemplates(c *gin.Context) {
 
 	issues := []openapi.JiraIssueTemplate{}
 	for _, issue := range issueList {
-		// Get associated connections
-		connectionIDs, err := getConnectionIDs(ctx.OrgID, issue.ID)
-		if err != nil {
-			log.Errorf("failed getting associated connections for template %s: %v", issue.ID, err)
-			// Continue with empty list if this fails
-			connectionIDs = []string{}
-		}
-
 		issues = append(issues, openapi.JiraIssueTemplate{
 			ID:                         issue.ID,
 			Name:                       issue.Name,
@@ -52,9 +44,9 @@ func ListIssueTemplates(c *gin.Context) {
 			MappingTypes:               issue.MappingTypes,
 			PromptTypes:                issue.PromptTypes,
 			CmdbTypes:                  issue.CmdbTypes,
+			ConnectionIDs:              issue.ConnectionIDs,
 			CreatedAt:                  issue.CreatedAt,
 			UpdatedAt:                  issue.UpdatedAt,
-			ConnectionIDs:              connectionIDs,
 		})
 	}
 	c.JSON(http.StatusOK, issues)
@@ -83,15 +75,6 @@ func GetIssueTemplatesByID(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed listing objects from Jira assets api"})
 			return
 		}
-
-		// Get associated connections
-		connectionIDs, err := getConnectionIDs(ctx.GetOrgID(), issue.ID)
-		if err != nil {
-			log.Errorf("failed getting associated connections, reason=%v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed getting associated connections"})
-			return
-		}
-
 		c.JSON(http.StatusOK, &openapi.JiraIssueTemplate{
 			ID:                         issue.ID,
 			Name:                       issue.Name,
@@ -102,9 +85,9 @@ func GetIssueTemplatesByID(c *gin.Context) {
 			MappingTypes:               issue.MappingTypes,
 			PromptTypes:                issue.PromptTypes,
 			CmdbTypes:                  cmdbTypes,
+			ConnectionIDs:              issue.ConnectionIDs,
 			CreatedAt:                  issue.CreatedAt,
 			UpdatedAt:                  issue.UpdatedAt,
-			ConnectionIDs:              connectionIDs,
 		})
 	default:
 		log.Errorf("failed listing issue templates, reason=%v", err)
@@ -248,6 +231,7 @@ func CreateIssueTemplates(c *gin.Context) {
 		MappingTypes:               req.MappingTypes,
 		PromptTypes:                req.PromptTypes,
 		CmdbTypes:                  req.CmdbTypes,
+		ConnectionIDs:              req.ConnectionIDs,
 		CreatedAt:                  time.Now().UTC(),
 		UpdatedAt:                  time.Now().UTC(),
 	}
@@ -255,27 +239,10 @@ func CreateIssueTemplates(c *gin.Context) {
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusBadRequest, gin.H{"message": "jira integration is not enabled"})
-		return
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
 		return
 	case nil:
-		// Update connection associations if provided
-		if req.ConnectionIDs != nil {
-			if err := updateConnectionAssociations(ctx.GetOrgID(), issue.ID, req.ConnectionIDs); err != nil {
-				log.Errorf("failed updating connection associations: %v", err)
-				// Don't fail the whole operation if connections update fails
-			}
-		}
-
-		// Get associated connections for response
-		connectionIDs, err := getConnectionIDs(ctx.GetOrgID(), issue.ID)
-		if err != nil {
-			log.Errorf("failed getting associated connections: %v", err)
-			// Continue with empty list if this fails
-			connectionIDs = []string{}
-		}
-
 		c.JSON(http.StatusOK, &openapi.JiraIssueTemplate{
 			ID:                         issue.ID,
 			Name:                       issue.Name,
@@ -288,7 +255,7 @@ func CreateIssueTemplates(c *gin.Context) {
 			CmdbTypes:                  req.CmdbTypes,
 			CreatedAt:                  issue.CreatedAt,
 			UpdatedAt:                  issue.UpdatedAt,
-			ConnectionIDs:              connectionIDs,
+			ConnectionIDs:              issue.ConnectionIDs,
 		})
 	default:
 		log.Errorf("failed creting issue templates, reason=%v, err=%T", err, err)
@@ -325,31 +292,14 @@ func UpdateIssueTemplates(c *gin.Context) {
 		MappingTypes:               req.MappingTypes,
 		PromptTypes:                req.PromptTypes,
 		CmdbTypes:                  req.CmdbTypes,
+		ConnectionIDs:              req.ConnectionIDs,
 		UpdatedAt:                  time.Now().UTC(),
 	}
 	err := models.UpdateJiraIssueTemplates(issue)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
-		return
 	case nil:
-		// Update connection associations
-		// If the field is present in the request (even if empty), update the associations
-		if req.ConnectionIDs != nil {
-			if err := updateConnectionAssociations(ctx.GetOrgID(), issue.ID, req.ConnectionIDs); err != nil {
-				log.Errorf("failed updating connection associations: %v", err)
-				// Don't fail the whole operation if connections update fails
-			}
-		}
-
-		// Get associated connections for response
-		connectionIDs, err := getConnectionIDs(ctx.GetOrgID(), issue.ID)
-		if err != nil {
-			log.Errorf("failed getting associated connections: %v", err)
-			// Continue with empty list if this fails
-			connectionIDs = []string{}
-		}
-
 		c.JSON(http.StatusOK, &openapi.JiraIssueTemplate{
 			ID:                         issue.ID,
 			Name:                       issue.Name,
@@ -362,7 +312,7 @@ func UpdateIssueTemplates(c *gin.Context) {
 			CmdbTypes:                  issue.CmdbTypes,
 			CreatedAt:                  issue.CreatedAt,
 			UpdatedAt:                  issue.UpdatedAt,
-			ConnectionIDs:              connectionIDs,
+			ConnectionIDs:              issue.ConnectionIDs,
 		})
 	default:
 		log.Errorf("failed updating jira issue templates, reason=%v", err)
@@ -383,15 +333,7 @@ func UpdateIssueTemplates(c *gin.Context) {
 func DeleteIssueTemplates(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	templateID := c.Param("id")
-
-	// First, clear any connection associations
-	err := updateConnectionAssociations(ctx.GetOrgID(), templateID, []string{})
-	if err != nil {
-		log.Errorf("failed clearing connection associations: %v", err)
-		// Continue with deletion even if this fails
-	}
-
-	err = models.DeleteJiraIssueTemplates(ctx.GetOrgID(), templateID)
+	err := models.DeleteJiraIssueTemplates(ctx.GetOrgID(), templateID)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
@@ -463,58 +405,4 @@ func cmdbTypesWithExternalObjects(ctx *gin.Context, config *models.JiraIntegrati
 		item["jira_values"] = jiraValues
 	}
 	return cmdbTypes, nil
-}
-
-// getConnectionIDs fetches connections associated with a template
-func getConnectionIDs(orgID, templateID string) ([]string, error) {
-	connections, err := models.ListConnections(orgID, models.ConnectionFilterOption{})
-	if err != nil {
-		return nil, fmt.Errorf("failed fetching connections: %v", err)
-	}
-
-	var connectionIDs []string
-	for _, conn := range connections {
-		if conn.JiraIssueTemplateID.Valid && conn.JiraIssueTemplateID.String == templateID {
-			connectionIDs = append(connectionIDs, conn.ID)
-		}
-	}
-	return connectionIDs, nil
-}
-
-// updateConnectionAssociations updates the connections associated with a template
-func updateConnectionAssociations(orgID, templateID string, connectionIDs []string) error {
-	// Get all connections
-	connections, err := models.ListConnections(orgID, models.ConnectionFilterOption{})
-	if err != nil {
-		return fmt.Errorf("failed fetching connections: %v", err)
-	}
-
-	// Create a map for faster lookups
-	connIDMap := make(map[string]bool)
-	for _, id := range connectionIDs {
-		connIDMap[id] = true
-	}
-
-	// Update each connection
-	for _, conn := range connections {
-		shouldBeAssociated := connIDMap[conn.ID]
-		isCurrentlyAssociated := conn.JiraIssueTemplateID.Valid && conn.JiraIssueTemplateID.String == templateID
-
-		if shouldBeAssociated && !isCurrentlyAssociated {
-			// Associate this connection with the template
-			conn.JiraIssueTemplateID.String = templateID
-			conn.JiraIssueTemplateID.Valid = true
-			if err := models.UpsertConnection(&conn); err != nil {
-				return fmt.Errorf("failed updating connection %s: %v", conn.ID, err)
-			}
-		} else if !shouldBeAssociated && isCurrentlyAssociated {
-			// Remove association
-			conn.JiraIssueTemplateID.Valid = false
-			conn.JiraIssueTemplateID.String = ""
-			if err := models.UpsertConnection(&conn); err != nil {
-				return fmt.Errorf("failed updating connection %s: %v", conn.ID, err)
-			}
-		}
-	}
-	return nil
 }
