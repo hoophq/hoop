@@ -19,15 +19,15 @@
     </script>
     <!-- End Google tag (gtag.js) -->
 
-    <!-- Profitwell integration -->
-    <script id="profitwell-js" data-pw-auth="59503429546b0f2f47c2e678d6e18e53">
-        (function (i, s, o, g, r, a, m) {
-            i[o] = i[o] || function () { (i[o].q = i[o].q || []).push(arguments) };
-            a = s.createElement(g); m = s.getElementsByTagName(g)[0]; a.async = 1; a.src = r + '?auth=' +
-                s.getElementById(o + '-js').getAttribute('data-pw-auth'); m.parentNode.insertBefore(a, m);
-        })(window, document, 'profitwell', 'script', 'https://public.profitwell.com/js/profitwell.js');
+    <!-- Profitwell/Paddle integration -->
+    <script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script>
+    <script type="text/javascript">
+        Paddle.Initialize({
+            token: 'live_fb0003b8e4345ffca9e35f0e34b',
+            pwCustomer: {}
+        });
     </script>
-    <!-- End Profitwell integration -->
+    <!-- End Profitwell/Paddle integration -->
 
     <!-- Clarity integration -->
     <script type="text/javascript">
@@ -37,6 +37,7 @@
             y = l.getElementsByTagName(r)[0]; y.parentNode.insertBefore(t, y);
         })(window, document, "clarity", "script", "h9osgp95be");
     </script>
+
     <!-- End clarity intregration -->
     <script type="text/javascript">
         const {
