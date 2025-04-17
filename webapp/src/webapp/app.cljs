@@ -51,7 +51,6 @@
    [webapp.events.localauth]
    [webapp.events.organization]
    [webapp.events.plugins]
-   [webapp.events.profitwell]
    [webapp.events.reports]
    [webapp.events.reviews-plugin]
    [webapp.events.routes]
@@ -140,7 +139,6 @@
     (fn [panels]
       (rf/dispatch [:routes->get-route])
       (rf/dispatch [:clarity->verify-environment (:data @user)])
-      (rf/dispatch [:profitwell->start (:data @user)])
       (rf/dispatch [:connections->connection-get-status])
       (if (empty? (:data @user))
         [loaders/over-page-loader]
