@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -23,6 +24,7 @@ type JiraIssueTemplate struct {
 	MappingTypes               map[string]any `gorm:"column:mapping_types;serializer:json"`
 	PromptTypes                map[string]any `gorm:"column:prompt_types;serializer:json"`
 	CmdbTypes                  map[string]any `gorm:"column:cmdb_types;serializer:json"`
+	ConnectionIDs              pq.StringArray `gorm:"column:connection_ids;type:text[];->"`
 	CreatedAt                  time.Time      `gorm:"column:created_at"`
 	UpdatedAt                  time.Time      `gorm:"column:updated_at"`
 }
@@ -131,32 +133,45 @@ func CreateJiraIssueTemplates(issue *JiraIssueTemplate) error {
 		return ErrNotFound
 	}
 	issue.JiraIntegrationID = integration.ID
-	err = DB.Table(tableJiraIssueTemplates).Create(issue).Error
-	if err == gorm.ErrDuplicatedKey {
-		return ErrAlreadyExists
-	}
-	return err
+	sess := &gorm.Session{FullSaveAssociations: true}
+	return DB.Session(sess).Transaction(func(tx *gorm.DB) error {
+		err := tx.Table(tableJiraIssueTemplates).Create(issue).Error
+		if err != nil {
+			if err == gorm.ErrDuplicatedKey {
+				return ErrAlreadyExists
+			}
+			return err
+		}
+
+		return updateConnectionJiraIssueTemplateID(tx, issue)
+	})
 }
 
 func UpdateJiraIssueTemplates(issue *JiraIssueTemplate) error {
-	res := DB.Table(tableJiraIssueTemplates).
-		Model(issue).
-		Clauses(clause.Returning{}).
-		Updates(JiraIssueTemplate{
-			Description:                issue.Description,
-			ProjectKey:                 issue.ProjectKey,
-			RequestTypeID:              issue.RequestTypeID,
-			IssueTransitionNameOnClose: issue.IssueTransitionNameOnClose,
-			MappingTypes:               issue.MappingTypes,
-			PromptTypes:                issue.PromptTypes,
-			CmdbTypes:                  issue.CmdbTypes,
-			UpdatedAt:                  issue.UpdatedAt,
-		}).
-		Where("org_id = ? AND id = ?", issue.OrgID, issue.ID)
-	if res.Error == nil && res.RowsAffected == 0 {
-		return ErrNotFound
-	}
-	return res.Error
+	sess := &gorm.Session{FullSaveAssociations: true}
+	return DB.Session(sess).Transaction(func(tx *gorm.DB) error {
+		res := tx.Table(tableJiraIssueTemplates).
+			Model(issue).
+			Clauses(clause.Returning{}).
+			Updates(JiraIssueTemplate{
+				Description:                issue.Description,
+				ProjectKey:                 issue.ProjectKey,
+				RequestTypeID:              issue.RequestTypeID,
+				IssueTransitionNameOnClose: issue.IssueTransitionNameOnClose,
+				MappingTypes:               issue.MappingTypes,
+				PromptTypes:                issue.PromptTypes,
+				CmdbTypes:                  issue.CmdbTypes,
+				UpdatedAt:                  issue.UpdatedAt,
+			}).
+			Where("org_id = ? AND id = ?", issue.OrgID, issue.ID)
+		if res.Error == nil && res.RowsAffected == 0 {
+			return ErrNotFound
+		}
+		if res.Error != nil {
+			return res.Error
+		}
+		return updateConnectionJiraIssueTemplateID(tx, issue)
+	})
 }
 
 func GetJiraIssueTemplatesByID(orgID, id string) (*JiraIssueTemplate, *JiraIntegration, error) {
@@ -165,8 +180,20 @@ func GetJiraIssueTemplatesByID(orgID, id string) (*JiraIssueTemplate, *JiraInteg
 		return nil, nil, fmt.Errorf("unable to verify jira integration: %v", err)
 	}
 	var issue JiraIssueTemplate
-	if err := DB.Table(tableJiraIssueTemplates).Where("org_id = ? AND id = ?", orgID, id).
-		First(&issue).Error; err != nil {
+	err = DB.Raw(`
+		SELECT
+			i.id, i.org_id, i.jira_integration_id, i.name, i.description, i.project_key, i.request_type_id,
+			i.issue_transition_name_on_close, i.mapping_types, i.prompt_types, i.cmdb_types, i.updated_at, i.created_at,
+			COALESCE((
+				SELECT array_agg(id::TEXT) FROM private.connections
+				WHERE private.connections.jira_issue_template_id = i.id
+			), ARRAY[]::TEXT[]) AS connection_ids
+		FROM private.jira_issue_templates i
+		WHERE i.org_id = ? AND i.id = ?
+		ORDER BY i.name DESC
+	`, orgID, id).
+		First(&issue).Error
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, config, ErrNotFound
 		}
@@ -177,10 +204,18 @@ func GetJiraIssueTemplatesByID(orgID, id string) (*JiraIssueTemplate, *JiraInteg
 
 func ListJiraIssueTemplates(orgID string) ([]*JiraIssueTemplate, error) {
 	var issues []*JiraIssueTemplate
-	return issues,
-		DB.Table(tableJiraIssueTemplates).
-			Where("org_id = ?", orgID).Order("name DESC").Find(&issues).Error
-
+	return issues, DB.Raw(`
+		SELECT
+			i.id, i.org_id, i.jira_integration_id, i.name, i.description, i.project_key, i.request_type_id,
+			i.issue_transition_name_on_close, i.mapping_types, i.prompt_types, i.cmdb_types, i.updated_at, i.created_at,
+			COALESCE((
+				SELECT array_agg(id::TEXT) FROM private.connections
+				WHERE private.connections.jira_issue_template_id = i.id
+			), ARRAY[]::TEXT[]) AS connection_ids
+		FROM private.jira_issue_templates i
+		WHERE i.org_id = ?
+		ORDER BY i.name DESC`, orgID).
+		Find(&issues).Error
 }
 
 func DeleteJiraIssueTemplates(orgID, id string) error {
@@ -190,4 +225,34 @@ func DeleteJiraIssueTemplates(orgID, id string) error {
 	return DB.Table(tableJiraIssueTemplates).
 		Where(`org_id = ? and id = ?`, orgID, id).
 		Delete(&JiraIssueTemplate{}).Error
+}
+
+func updateConnectionJiraIssueTemplateID(tx *gorm.DB, issue *JiraIssueTemplate) error {
+	// remove all associations
+	err := tx.Exec(`
+		UPDATE private.connections SET jira_issue_template_id = NULL
+		WHERE org_id = ? AND jira_issue_template_id = ?`, issue.OrgID, issue.ID).
+		Error
+	if err != nil {
+		return fmt.Errorf("failed removing jira issue template association, reason=%v", err)
+	}
+
+	var notFoundConnections []string
+	for _, connID := range issue.ConnectionIDs {
+		res := tx.Exec(`
+			UPDATE private.connections SET jira_issue_template_id = ?
+			WHERE org_id = ? AND id = ?`, issue.ID, issue.OrgID, connID)
+
+		if res.Error != nil {
+			return fmt.Errorf("failed creating jira issue template associations, reason=%v", res.Error)
+		}
+		if res.RowsAffected == 0 {
+			notFoundConnections = append(notFoundConnections, connID)
+		}
+	}
+	if len(notFoundConnections) > 0 {
+		return fmt.Errorf("unable to update issue template associations, the following connections were not found: %v",
+			notFoundConnections)
+	}
+	return nil
 }

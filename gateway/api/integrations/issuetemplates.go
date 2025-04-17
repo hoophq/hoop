@@ -44,6 +44,7 @@ func ListIssueTemplates(c *gin.Context) {
 			MappingTypes:               issue.MappingTypes,
 			PromptTypes:                issue.PromptTypes,
 			CmdbTypes:                  issue.CmdbTypes,
+			ConnectionIDs:              issue.ConnectionIDs,
 			CreatedAt:                  issue.CreatedAt,
 			UpdatedAt:                  issue.UpdatedAt,
 		})
@@ -84,6 +85,7 @@ func GetIssueTemplatesByID(c *gin.Context) {
 			MappingTypes:               issue.MappingTypes,
 			PromptTypes:                issue.PromptTypes,
 			CmdbTypes:                  cmdbTypes,
+			ConnectionIDs:              issue.ConnectionIDs,
 			CreatedAt:                  issue.CreatedAt,
 			UpdatedAt:                  issue.UpdatedAt,
 		})
@@ -229,6 +231,7 @@ func CreateIssueTemplates(c *gin.Context) {
 		MappingTypes:               req.MappingTypes,
 		PromptTypes:                req.PromptTypes,
 		CmdbTypes:                  req.CmdbTypes,
+		ConnectionIDs:              req.ConnectionIDs,
 		CreatedAt:                  time.Now().UTC(),
 		UpdatedAt:                  time.Now().UTC(),
 	}
@@ -238,6 +241,7 @@ func CreateIssueTemplates(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "jira integration is not enabled"})
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
+		return
 	case nil:
 		c.JSON(http.StatusOK, &openapi.JiraIssueTemplate{
 			ID:                         issue.ID,
@@ -251,12 +255,12 @@ func CreateIssueTemplates(c *gin.Context) {
 			CmdbTypes:                  req.CmdbTypes,
 			CreatedAt:                  issue.CreatedAt,
 			UpdatedAt:                  issue.UpdatedAt,
+			ConnectionIDs:              issue.ConnectionIDs,
 		})
 	default:
 		log.Errorf("failed creting issue templates, reason=%v, err=%T", err, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 	}
-
 }
 
 // UpdateIssueTemplates
@@ -288,13 +292,13 @@ func UpdateIssueTemplates(c *gin.Context) {
 		MappingTypes:               req.MappingTypes,
 		PromptTypes:                req.PromptTypes,
 		CmdbTypes:                  req.CmdbTypes,
+		ConnectionIDs:              req.ConnectionIDs,
 		UpdatedAt:                  time.Now().UTC(),
 	}
 	err := models.UpdateJiraIssueTemplates(issue)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
-		return
 	case nil:
 		c.JSON(http.StatusOK, &openapi.JiraIssueTemplate{
 			ID:                         issue.ID,
@@ -308,12 +312,12 @@ func UpdateIssueTemplates(c *gin.Context) {
 			CmdbTypes:                  issue.CmdbTypes,
 			CreatedAt:                  issue.CreatedAt,
 			UpdatedAt:                  issue.UpdatedAt,
+			ConnectionIDs:              issue.ConnectionIDs,
 		})
 	default:
 		log.Errorf("failed updating jira issue templates, reason=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 	}
-
 }
 
 // DeleteIssueTemplates
@@ -328,7 +332,8 @@ func UpdateIssueTemplates(c *gin.Context) {
 //	@Router			/integrations/jira/issuetemplates/{id} [delete]
 func DeleteIssueTemplates(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	err := models.DeleteJiraIssueTemplates(ctx.GetOrgID(), c.Param("id"))
+	templateID := c.Param("id")
+	err := models.DeleteJiraIssueTemplates(ctx.GetOrgID(), templateID)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})

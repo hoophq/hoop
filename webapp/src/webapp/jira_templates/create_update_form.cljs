@@ -6,6 +6,7 @@
    [webapp.components.loaders :as loaders]
    [webapp.jira-templates.basic-info :as basic-info]
    [webapp.jira-templates.cmdb-table :as cmdb-table]
+   [webapp.jira-templates.connections-section :as connections-section]
    [webapp.jira-templates.form-header :as form-header]
    [webapp.jira-templates.helpers :as helpers]
    [webapp.jira-templates.mapping-table :as mapping-table]
@@ -47,6 +48,12 @@
          [workflow-info/main
           {:status (:issue_transition_name_on_close state)
            :on-status-change #(reset! (:issue_transition_name_on_close state) %)}]
+
+         (println "connection_ids" (:connection_ids state))
+         ;; Connections section
+         [connections-section/main
+          {:connection-ids (:connection_ids state)
+           :on-connections-change (:on-connections-change handlers)}]
 
          [:> Flex {:direction "column" :gap "5"}
           [:> Box
@@ -139,6 +146,8 @@
 (defn main [form-type]
   (let [jira-template (rf/subscribe [:jira-templates->active-template])
         scroll-pos (r/atom 0)]
+
+    (rf/dispatch [:jira-templates->get-connections])
     (fn []
       (r/with-let [handle-scroll #(reset! scroll-pos (.-scrollY js/window))]
         (.addEventListener js/window "scroll" handle-scroll)
