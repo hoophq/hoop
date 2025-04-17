@@ -67,7 +67,6 @@
                               :uri (str "/integrations/jira/issuetemplates/" id)
                               :on-success (fn [template]
                                             (rf/dispatch [:jira-templates->set-submit-template template])
-                                            ;; Dispara requests para cada item CMDB
                                             (doseq [cmdb-item (get-in template [:cmdb_types :items])]
                                               (rf/dispatch [:jira-templates->get-cmdb-values id cmdb-item])))
                               :on-failure #(rf/dispatch [:jira-templates->set-submit-template nil])}]}]]}))
@@ -83,7 +82,6 @@
                               :uri (str "/integrations/jira/issuetemplates/" id)
                               :on-success (fn [template]
                                             (rf/dispatch [:jira-templates->set-submit-template-re-run template])
-                                            ;; Dispara requests para cada item CMDB
                                             (doseq [cmdb-item (get-in template [:cmdb_types :items])]
                                               (rf/dispatch [:jira-templates->get-cmdb-values id cmdb-item])))
                               :on-failure #(rf/dispatch [:jira-templates->set-submit-template-re-run nil])}]}]]}))
