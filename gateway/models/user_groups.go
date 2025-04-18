@@ -4,6 +4,7 @@ import (
 	"database/sql"
 
 	"github.com/hoophq/hoop/common/log"
+	"gorm.io/gorm"
 )
 
 type UserGroup struct {
@@ -14,36 +15,41 @@ type UserGroup struct {
 }
 
 func GetUserGroupsByOrgID(orgID string) ([]UserGroup, error) {
-	log.Debugf("listing user groups for org=%s", orgID)
 	var userGroups []UserGroup
 	if err := DB.Where("org_id = ?", orgID).Find(&userGroups).Error; err != nil {
 		log.Errorf("failed to list user groups, reason=%v", err)
 		return nil, err
 	}
-
 	return userGroups, nil
 }
 
 func GetUserGroupsByUserID(userID string) ([]UserGroup, error) {
-	log.Debugf("listing user groups for org=%s, user=%s", userID)
 	var userGroups []UserGroup
 	if err := DB.Where("user_id = ?", userID).Find(&userGroups).Error; err != nil {
 		return nil, err
 	}
-
 	return userGroups, nil
 }
 
 func InsertUserGroups(userGroups []UserGroup) error {
-	log.Debugf("inserting user groups")
 	if len(userGroups) == 0 {
 		return nil
 	}
-
-	return DB.Create(&userGroups).Error
+	return DB.Transaction(func(tx *gorm.DB) error {
+		for _, ug := range userGroups {
+			err := tx.Exec(`
+				INSERT INTO private.user_groups (org_id, user_id, name)
+				VALUES (?, ?, ?) ON CONFLICT DO NOTHING`,
+				ug.OrgID, ug.UserID, ug.Name,
+			).Error
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func DeleteUserGroupsByUserID(userID string) error {
-	log.Debugf("deleting user groups for user=%s", userID)
 	return DB.Where("user_id = ?", userID).Delete(&UserGroup{}).Error
 }

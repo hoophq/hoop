@@ -21,7 +21,6 @@ type User struct {
 }
 
 func ListUsers(orgID string) ([]User, error) {
-	log.Debugf("listing users for org=%s", orgID)
 	var users []User
 	if err := DB.Where("org_id = ?", orgID).Order("email desc").Find(&users).Error; err != nil {
 		log.Errorf("failed to list users, reason=%v", err)
@@ -32,7 +31,6 @@ func ListUsers(orgID string) ([]User, error) {
 }
 
 func GetInvitedUserByEmail(email string) (*User, error) {
-	log.Debugf("getting invited user=%s", email)
 	var user *User
 	if err := DB.Where("email = ? AND status = ?", email, "invited").First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -45,7 +43,6 @@ func GetInvitedUserByEmail(email string) (*User, error) {
 }
 
 func GetUserByOrgIDAndSlackID(orgID, slackID string) (*User, error) {
-	log.Debugf("getting user=%s for org=%s", slackID, orgID)
 	var user *User
 	if err := DB.Where("org_id = ? AND slack_id = ?", orgID, slackID).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -58,7 +55,6 @@ func GetUserByOrgIDAndSlackID(orgID, slackID string) (*User, error) {
 }
 
 func GetUserBySubjectAndOrg(subject, orgID string) (*User, error) {
-	log.Debugf("getting user=%s for org=%s", subject, orgID)
 	var user *User
 	if err := DB.Where("org_id = ? AND subject = ?", orgID, subject).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -71,7 +67,6 @@ func GetUserBySubjectAndOrg(subject, orgID string) (*User, error) {
 }
 
 func GetUserByEmailAndOrg(email, orgID string) (*User, error) {
-	log.Debugf("getting user=%s for org=%s", email, orgID)
 	var user *User
 	if err := DB.Where("org_id = ? AND email = ?", orgID, email).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -84,7 +79,6 @@ func GetUserByEmailAndOrg(email, orgID string) (*User, error) {
 }
 
 func GetUserByEmail(email string) (*User, error) {
-	log.Debugf("getting user=%s", email)
 	var user *User
 	if err := DB.Where("email = ?", email).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -97,7 +91,6 @@ func GetUserByEmail(email string) (*User, error) {
 }
 
 func CreateUser(user User) error {
-	log.Debugf("creating user=%s for org=%s", user.ID, user.OrgID)
 	if err := DB.Create(&user).Error; err != nil {
 		log.Errorf("failed to create user, reason=%v", err)
 		return err
@@ -107,7 +100,6 @@ func CreateUser(user User) error {
 }
 
 func UpdateUser(user *User) error {
-	log.Debugf("updating user=%s for org=%s", user.ID, user.OrgID)
 	if err := DB.Save(&user).Error; err != nil {
 		log.Errorf("failed to update user, reason=%v", err)
 		return err
@@ -117,7 +109,6 @@ func UpdateUser(user *User) error {
 }
 
 func DeleteUser(orgID, subject string) error {
-	log.Debugf("deleting user=%s for org=%s", subject, orgID)
 	if err := DB.Where("org_id = ? AND subject = ?", orgID, subject).Delete(&User{}).Error; err != nil {
 		log.Errorf("failed to delete user, reason=%v", err)
 		return err
@@ -127,7 +118,6 @@ func DeleteUser(orgID, subject string) error {
 }
 
 func UpdateUserAndUserGroups(user *User, userGroups []UserGroup) error {
-	log.Debugf("updating user=%s for org=%s", user.ID, user.OrgID)
 	tx := DB.Begin()
 	if err := tx.Save(&user).Error; err != nil {
 		tx.Rollback()

@@ -21,7 +21,7 @@ import (
 
 const (
 	googleIssuerURL   = "https://accounts.google.com"
-	gsuiteGroupsScope = "https://www.googleapis.com/auth/admin.directory.group.readonly"
+	gsuiteGroupsScope = "https://www.googleapis.com/auth/cloud-identity.groups.readonly"
 )
 
 type (
@@ -235,7 +235,7 @@ func (p *Provider) VerifyAccessTokenHS256Alg(accessToken string) (string, error)
 	if p.SecretKey == "" {
 		return "", fmt.Errorf("jwt secret token is not set")
 	}
-	token, err := jwt.Parse(accessToken, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.Parse(accessToken, func(token *jwt.Token) (any, error) {
 		return []byte(p.SecretKey), nil
 	})
 	if err != nil {
@@ -265,7 +265,8 @@ func (p *Provider) VerifyAccessTokenHS256Alg(accessToken string) (string, error)
 // Such claim is not part of any specification and it's present when using Auth0.
 // In cases of access tokens obtained through grants where no resource owner is involved, such as the client credentials grant,
 func (p *Provider) VerifyAccessToken(accessToken string) (string, error) {
-	if len(strings.Split(accessToken, ".")) != 3 || p.authWithUserInfo {
+	isBearerToken := len(strings.Split(accessToken, ".")) != 3
+	if isBearerToken || p.authWithUserInfo {
 		uinfo, err := p.userInfoEndpoint(accessToken)
 		if err != nil {
 			return "", err
@@ -337,7 +338,6 @@ func (p *Provider) userInfoEndpoint(accessToken string) (*ProviderUserInfo, erro
 }
 
 // FetchGroups parses user information from the provided token claims.
-// In case the provider is Google, fetch the user groups from the Gsuite API
 func (p *Provider) ParseUserInfo(idTokenClaims map[string]any, accessToken, groupsClaimName string) (u ProviderUserInfo) {
 	email, _ := idTokenClaims["email"].(string)
 	email = strings.ToLower(email)
@@ -350,18 +350,6 @@ func (p *Provider) ParseUserInfo(idTokenClaims map[string]any, accessToken, grou
 	}
 	u.Picture = profilePicture
 	u.Email = email
-
-	if p.mustFetchGsuiteGroups {
-		// It's a best effort to sync groups, in case it fails print the error
-		groups, err := p.fetchGsuiteGroups(accessToken, email)
-		if err != nil {
-			log.Error(err)
-			return
-		}
-		u.MustSyncGroups = true
-		u.Groups = groups
-		return
-	}
 	switch groupsClaim := idTokenClaims[groupsClaimName].(type) {
 	case string:
 		u.MustSyncGroups = true
