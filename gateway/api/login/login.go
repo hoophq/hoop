@@ -136,10 +136,10 @@ func (h *handler) LoginCallback(c *gin.Context) {
 
 	// update the login state when this method returns
 	defer updateLoginState(login)
-	log.With("state", stateUUID).Debugf("login record found")
+	log.With("state", stateUUID).Debugf("login record found, verifying ID Token")
 	token, uinfo, err := h.verifyIDToken(code)
 	if err != nil {
-		login.Outcome = fmt.Sprintf("failed verifying id token, reason=%v", err)
+		login.Outcome = fmt.Sprintf("failed verifying ID Token, reason=%v", err)
 		log.Error(login.Outcome)
 		c.Redirect(http.StatusTemporaryRedirect, redirectErrorURL)
 		return
@@ -466,7 +466,6 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 }
 
 func (h *handler) verifyIDToken(code string) (token *oauth2.Token, uinfo idp.ProviderUserInfo, err error) {
-	log.Debugf("verifying access token")
 	token, err = h.idpProv.Exchange(h.idpProv.Context, code)
 	if err != nil {
 		return nil, uinfo, fmt.Errorf("failed exchange authorization code, reason=%v", err)
@@ -485,7 +484,22 @@ func (h *handler) verifyIDToken(code string) (token *oauth2.Token, uinfo idp.Pro
 	}
 	debugClaims(idToken.Subject, idTokenClaims, token)
 	uinfo = h.idpProv.ParseUserInfo(idTokenClaims, token.AccessToken, h.idpProv.GroupsClaim)
-	return
+	groups, syncGsuiteGroups, err := h.idpProv.FetchGsuiteGroups(token.AccessToken, uinfo.Email)
+
+	// overwrite the groups and indicate it should sync groups
+	if syncGsuiteGroups {
+		uinfo.Groups = groups
+		uinfo.MustSyncGroups = true
+	}
+
+	log.With("issuer", idToken.Issuer, "email", uinfo.Email).
+		Infof("obtained user information, sync-groups=%v, sync-gsuite=%v, groups=%v, fetch-gsuite-err=%v",
+			uinfo.MustSyncGroups, syncGsuiteGroups, len(uinfo.Groups), err != nil)
+	// It's a best effort to sync groups, in case it fails just print the error
+	if err != nil {
+		log.Errorf("unable to synchronize groups from Google: %v", err)
+	}
+	return token, uinfo, nil
 }
 
 func updateLoginState(l *pgrest.Login) {
