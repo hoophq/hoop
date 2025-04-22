@@ -30,11 +30,8 @@
 
 (defn- fields-tree [fields]
   (let [dropdown-status (r/atom {})
-        dropdown-columns-status (r/atom :closed)
-        ;; Usado para controlar renderizações
-        render-count (r/atom 0)]
+        dropdown-columns-status (r/atom :closed)]
     (fn []
-      ;; Only forces re-render when the state changes, not on every frame
       (let [current-status @dropdown-status
             current-columns-status @dropdown-columns-status]
         [:div {:class "pl-small"}
@@ -54,7 +51,7 @@
               [:> ChevronRight {:size 12}])]]]
          [:div {:class (str "pl-small" (when (not= current-columns-status :open)
                                          " h-0 overflow-hidden"))}
-          (when (= current-columns-status :open)  ;; Apenas renderiza quando aberto
+          (when (= current-columns-status :open)
             (doall
              (for [[field field-type] fields]
                ^{:key field}
@@ -72,7 +69,7 @@
                     [:> ChevronRight {:size 12}])]]
                 [:div {:class (when (not= (get current-status field) :open)
                                 "h-0 overflow-hidden")}
-                 (when (= (get current-status field) :open)  ;; Only renders when open
+                 (when (= (get current-status field) :open)
                    [field-type-tree (first (map key field-type))])]])))]]))))
 
 (defn- tables-tree []
@@ -97,7 +94,7 @@
                  [:> ChevronRight {:size 12}])]]
              [:div {:class (when (not= (get current-status table) :open)
                              "h-0 overflow-hidden")}
-              (when (= (get current-status table) :open)  ;; Only renders when open
+              (when (= (get current-status table) :open)
                 [fields-tree (into (sorted-map) fields)])]]))]))))
 
 (defn- sql-databases-tree [_]
@@ -106,7 +103,6 @@
       [:div {:class (when has-database?
                       "pl-small")}
        (cond
-         ;; Caso de erro com mensagem específica
          (and (= :error database-schema-status) (:error current-schema))
          [:> Text {:as "p" :size "1" :mb "2" :ml "2"}
           (:error current-schema)]
@@ -270,7 +266,6 @@
       :reagent-render
       (fn [{:keys [connection-type connection-name]}]
         (let [current-schema (get-in @database-schema [:data connection-name])]
-          ;; Atualiza o estado local quando muda
           (when (and (= (:status current-schema) :success)
                      (not= @local-schema-state current-schema))
             (reset! local-schema-state current-schema))

@@ -60,7 +60,7 @@
          (when show-tree?
            [:> IconButton {:onClick #(do
                                        (swap! show-schema? not)
-                                       ;; Carregar o schema somente quando necessário
+                                       ;; Load the schema only when needed
                                        (when (and @show-schema? (not @schema-loaded?))
                                          (reset! schema-loaded? true)))
                            :class (if @show-schema? "bg-[--gray-a4]" "")}
