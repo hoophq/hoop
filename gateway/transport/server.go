@@ -183,6 +183,10 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 	}
 }
 
+func (s *Server) HealthCheck(ctx context.Context, req *pb.HealthCheckRequest) (*pb.HealthCheckResponse, error) {
+	return &pb.HealthCheckResponse{Status: "OK"}, nil
+}
+
 func validateConnectionAccessMode(clientVerb, clientOrigin string, connInfo types.ConnectionInfo) error {
 	var currentAccessMode string
 	switch {

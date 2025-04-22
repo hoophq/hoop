@@ -16,7 +16,7 @@ metadata:
     app: hoopgateway-web
   name: hoopgateway-web
 spec:
-  ingressClassName: {{ required "ingressApi.ingressClassName is required" .Values.ingressApi.ingressClassName | quote }}
+  ingressClassName: {{ .Values.ingressApi.ingressClassName | default "" }}
   rules:
   - host: {{ .Values.ingressApi.host | quote }}
     http:
