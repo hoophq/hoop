@@ -40,7 +40,9 @@
        [:> EllipsisVertical {:size 16}]])]])
 
 (defn selected-connection []
-  (let [show-schema? (r/atom false)]
+  (let [show-schema? (r/atom false)
+        ;; State to avoid premature loading of the heavy component
+        schema-loaded? (r/atom false)]
     (fn [connection dark-mode? admin? show-tree?]
       [:> Box {:class "bg-primary-11 light"}
        [:> Flex {:justify "between" :align "center" :class "px-2 pt-2 pb-1"}
@@ -56,7 +58,11 @@
                 :admin? admin?)]
         [:> Flex {:align "center" :gap "2"}
          (when show-tree?
-           [:> IconButton {:onClick #(swap! show-schema? not)
+           [:> IconButton {:onClick #(do
+                                       (swap! show-schema? not)
+                                       ;; Carregar o schema somente quando necessário
+                                       (when (and @show-schema? (not @schema-loaded?))
+                                         (reset! schema-loaded? true)))
                            :class (if @show-schema? "bg-[--gray-a4]" "")}
             [:> FolderTree {:size 16}]])
          (when admin?
@@ -64,16 +70,22 @@
             {:onClick #(rf/dispatch [:navigate :edit-connection {} :connection-name (:name connection)])}
             [:> Settings2 {:size 16}]])]]
 
+       ;; Tree view of database schema with lazy loading
        (when (and @show-schema?
                   (= (:type connection) "database")
                   (not= (:access_schema connection) "disabled"))
          [:> Box {:class "bg-[--gray-a4] px-2 py-3"}
-          [database-schema/main
-           {:connection-name (:name connection)
-            :connection-type (cond
-                               (not (cs/blank? (:subtype connection))) (:subtype connection)
-                               (not (cs/blank? (:icon_name connection))) (:icon_name connection)
-                               :else (:type connection))}]])])))
+          ;; Lazy loading of the schema component
+          (if @schema-loaded?
+            [database-schema/main
+             {:connection-name (:name connection)
+              :connection-type (cond
+                                 (not (cs/blank? (:subtype connection))) (:subtype connection)
+                                 (not (cs/blank? (:icon_name connection))) (:icon_name connection)
+                                 :else (:type connection))}]
+            ;; Placeholder while we load the real component
+            [:div {:class "flex items-center justify-center p-4 text-sm text-gray-400"}
+             "Loading database schema..."])])])))
 
 (defn connections-list [connections selected dark-mode? admin?]
   (let [available-connections (if selected

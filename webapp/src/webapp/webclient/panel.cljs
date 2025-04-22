@@ -110,7 +110,7 @@
       (<= (count schema-keys) 1) (process-schema tree (first schema-keys) false)
       :else #js{})))
 
-(defn- editor []
+(defn editor []
   (let [user (rf/subscribe [:users->current-user])
         gateway-info (rf/subscribe [:gateway->info])
         db-connections (rf/subscribe [:connections])
@@ -268,8 +268,6 @@
                                        :preselected-connection (:name current-connection)
                                        :selected-connections (conj @multi-selected-connections current-connection)}]]
 
-
-
                  [:> CodeMirror/default {:value @script
                                          :height "100%"
                                          :className "h-full text-sm"
@@ -295,7 +293,6 @@
                                                           (.of (.-readOnly cm-state/EditorState) true)])))
                                          :onUpdate #(auto-save % script)}])
 
-
                [:> Flex {:direction "column" :justify "between" :class "h-full"}
                 [log-area/main
                  connection-type
@@ -319,8 +316,6 @@
                     [keyboard-shortcuts/keyboard-shortcuts-button]]
                    [language-select/main current-connection]]]]]]]]
             panel-content]
-
-
 
            (when (seq (:data @multi-exec))
              [multiple-connections-exec-list-component/main
