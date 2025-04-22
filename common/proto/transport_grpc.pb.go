@@ -24,6 +24,7 @@ const _ = grpc.SupportPackageIsVersion7
 type TransportClient interface {
 	PreConnect(ctx context.Context, in *PreConnectRequest, opts ...grpc.CallOption) (*PreConnectResponse, error)
 	Connect(ctx context.Context, opts ...grpc.CallOption) (Transport_ConnectClient, error)
+	HealthCheck(ctx context.Context, in *HealthCheckRequest, opts ...grpc.CallOption) (*HealthCheckResponse, error)
 }
 
 type transportClient struct {
@@ -74,12 +75,22 @@ func (x *transportConnectClient) Recv() (*Packet, error) {
 	return m, nil
 }
 
+func (c *transportClient) HealthCheck(ctx context.Context, in *HealthCheckRequest, opts ...grpc.CallOption) (*HealthCheckResponse, error) {
+	out := new(HealthCheckResponse)
+	err := c.cc.Invoke(ctx, "/protobuf.Transport/HealthCheck", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // TransportServer is the server API for Transport service.
 // All implementations must embed UnimplementedTransportServer
 // for forward compatibility
 type TransportServer interface {
 	PreConnect(context.Context, *PreConnectRequest) (*PreConnectResponse, error)
 	Connect(Transport_ConnectServer) error
+	HealthCheck(context.Context, *HealthCheckRequest) (*HealthCheckResponse, error)
 	mustEmbedUnimplementedTransportServer()
 }
 
@@ -92,6 +103,9 @@ func (UnimplementedTransportServer) PreConnect(context.Context, *PreConnectReque
 }
 func (UnimplementedTransportServer) Connect(Transport_ConnectServer) error {
 	return status.Errorf(codes.Unimplemented, "method Connect not implemented")
+}
+func (UnimplementedTransportServer) HealthCheck(context.Context, *HealthCheckRequest) (*HealthCheckResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method HealthCheck not implemented")
 }
 func (UnimplementedTransportServer) mustEmbedUnimplementedTransportServer() {}
 
@@ -150,6 +164,24 @@ func (x *transportConnectServer) Recv() (*Packet, error) {
 	return m, nil
 }
 
+func _Transport_HealthCheck_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HealthCheckRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TransportServer).HealthCheck(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/protobuf.Transport/HealthCheck",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TransportServer).HealthCheck(ctx, req.(*HealthCheckRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Transport_ServiceDesc is the grpc.ServiceDesc for Transport service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -160,6 +192,10 @@ var Transport_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PreConnect",
 			Handler:    _Transport_PreConnect_Handler,
+		},
+		{
+			MethodName: "HealthCheck",
+			Handler:    _Transport_HealthCheck_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

@@ -7,6 +7,7 @@ option go_package="github.com/hoophq/hoop/common;proto";
 service Transport {
   rpc PreConnect (PreConnectRequest) returns (PreConnectResponse);
   rpc Connect (stream Packet) returns (stream Packet);
+  rpc HealthCheck (HealthCheckRequest) returns (HealthCheckResponse);
 }
 
 message PreConnectRequest {
@@ -31,4 +32,9 @@ message Packet {
 
   map<string, bytes> spec = 3;
   bytes payload = 4 [packed=false];
+}
+
+message HealthCheckRequest {}
+message HealthCheckResponse {
+  string status = 1;
 }

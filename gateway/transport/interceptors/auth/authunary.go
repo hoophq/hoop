@@ -15,11 +15,17 @@ func WithUnaryValidator(idpProvider *idp.Provider) grpc.ServerOption {
 	return grpc.UnaryInterceptor(i.UnaryValidator)
 }
 
-func (i *interceptor) UnaryValidator(ctx context.Context, srv any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+func (i *interceptor) UnaryValidator(ctx context.Context, srv any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return nil, status.Error(codes.InvalidArgument, "missing context metadata")
 	}
+
+	// bypass handling auth for health check service
+	if info.FullMethod == "/protobuf.Transport/HealthCheck" {
+		return handler(ctx, srv)
+	}
+
 	bearerToken, err := parseBearerToken(md)
 	if err != nil {
 		return nil, err

@@ -16,7 +16,7 @@ metadata:
     app: hoopgateway-grpc
   name: hoopgateway-grpc
 spec:
-  ingressClassName: {{ required "ingressGrpc.ingressClassName is required" .Values.ingressGrpc.ingressClassName | quote }}
+  ingressClassName: {{ .Values.ingressGrpc.ingressClassName | default "" }}
   rules:
   - host: {{ .Values.ingressGrpc.host | quote }}
     http:
