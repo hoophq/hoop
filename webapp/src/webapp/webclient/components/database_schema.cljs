@@ -18,72 +18,84 @@
 (defmethod get-database-schema "mongodb" [_ connection]
   (rf/dispatch [:database-schema->handle-multi-database-schema connection]))
 
+;; Adding memoization for components that are rendered frequently
+(def memoized-field-type-tree
+  (memoize
+   (fn [type]
+     [:div {:class "text-xs pl-regular italic"}
+      (str "(" type ")")])))
+
 (defn- field-type-tree [type]
-  [:div {:class "text-xs pl-regular italic"}
-   (str "(" type ")")])
+  (memoized-field-type-tree type))
 
 (defn- fields-tree [fields]
   (let [dropdown-status (r/atom {})
         dropdown-columns-status (r/atom :closed)]
     (fn []
-      [:div {:class "pl-small"}
-       [:div
-        [:div {:class "flex items-center gap-small mb-2"}
-         (if (= @dropdown-columns-status :closed)
-           [:> FolderClosed {:size 12}]
-           [:> FolderOpen {:size 12}])
-         [:> Text {:size "1"
-                   :class (str "hover:underline cursor-pointer "
-                               "flex items-center")
-                   :on-click #(reset! dropdown-columns-status
-                                      (if (= @dropdown-columns-status :open) :closed :open))}
-          "Columns"
-          (if (= @dropdown-columns-status :open)
-            [:> ChevronDown {:size 12}]
-            [:> ChevronRight {:size 12}])]]]
-       [:div {:class (str "pl-small" (when (not= @dropdown-columns-status :open)
-                                       " h-0 overflow-hidden"))}
-        (doall
-         (for [[field field-type] fields]
-           ^{:key field}
-           [:div
-            [:div {:class "flex items-center gap-small mb-2"}
-             [:> File {:size 12}]
-             [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
+      (let [current-status @dropdown-status
+            current-columns-status @dropdown-columns-status]
+        [:div {:class "pl-small"}
+         [:div
+          [:div {:class "flex items-center gap-small mb-2"}
+           (if (= current-columns-status :closed)
+             [:> FolderClosed {:size 12}]
+             [:> FolderOpen {:size 12}])
+           [:> Text {:size "1"
+                     :class (str "hover:underline cursor-pointer "
                                  "flex items-center")
-                     :on-click #(swap! dropdown-status
-                                       assoc-in [field]
-                                       (if (= (get @dropdown-status field) :open) :closed :open))}
-              [:> Text {:size "1"} field]
-              (if (= (get @dropdown-status field) :open)
-                [:> ChevronDown {:size 12}]
-                [:> ChevronRight {:size 12}])]]
-            [:div {:class (when (not= (get @dropdown-status field) :open)
-                            "h-0 overflow-hidden")}
-             [field-type-tree (first (map key field-type))]]]))]])))
+                     :on-click #(reset! dropdown-columns-status
+                                        (if (= current-columns-status :open) :closed :open))}
+            "Columns"
+            (if (= current-columns-status :open)
+              [:> ChevronDown {:size 12}]
+              [:> ChevronRight {:size 12}])]]]
+         [:div {:class (str "pl-small" (when (not= current-columns-status :open)
+                                         " h-0 overflow-hidden"))}
+          (when (= current-columns-status :open)
+            (doall
+             (for [[field field-type] fields]
+               ^{:key field}
+               [:div
+                [:div {:class "flex items-center gap-small mb-2"}
+                 [:> File {:size 12}]
+                 [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
+                                     "flex items-center")
+                         :on-click #(swap! dropdown-status
+                                           assoc-in [field]
+                                           (if (= (get current-status field) :open) :closed :open))}
+                  [:> Text {:size "1"} field]
+                  (if (= (get current-status field) :open)
+                    [:> ChevronDown {:size 12}]
+                    [:> ChevronRight {:size 12}])]]
+                [:div {:class (when (not= (get current-status field) :open)
+                                "h-0 overflow-hidden")}
+                 (when (= (get current-status field) :open)
+                   [field-type-tree (first (map key field-type))])]])))]]))))
 
 (defn- tables-tree []
   (let [dropdown-status (r/atom {})]
     (fn [tables]
-      [:div {:class "pl-small"}
-       (doall
-        (for [[table fields] tables]
-          ^{:key table}
-          [:div
-           [:div {:class "flex items-center gap-small mb-2"}
-            [:> Table {:size 12}]
-            [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
-                                "flex items-center")
-                    :on-click #(swap! dropdown-status
-                                      assoc-in [table]
-                                      (if (= (get @dropdown-status table) :open) :closed :open))}
-             [:> Text {:size "1"} table]
-             (if (= (get @dropdown-status table) :open)
-               [:> ChevronDown {:size 12}]
-               [:> ChevronRight {:size 12}])]]
-           [:div {:class (when (not= (get @dropdown-status table) :open)
-                           "h-0 overflow-hidden")}
-            [fields-tree (into (sorted-map) fields)]]]))])))
+      (let [current-status @dropdown-status]
+        [:div {:class "pl-small"}
+         (doall
+          (for [[table fields] tables]
+            ^{:key table}
+            [:div
+             [:div {:class "flex items-center gap-small mb-2"}
+              [:> Table {:size 12}]
+              [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
+                                  "flex items-center")
+                      :on-click #(swap! dropdown-status
+                                        assoc-in [table]
+                                        (if (= (get current-status table) :open) :closed :open))}
+               [:> Text {:size "1"} table]
+               (if (= (get current-status table) :open)
+                 [:> ChevronDown {:size 12}]
+                 [:> ChevronRight {:size 12}])]]
+             [:div {:class (when (not= (get current-status table) :open)
+                             "h-0 overflow-hidden")}
+              (when (= (get current-status table) :open)
+                [fields-tree (into (sorted-map) fields)])]]))]))))
 
 (defn- sql-databases-tree [_]
   (let [dropdown-status (r/atom {})]
@@ -91,7 +103,6 @@
       [:div {:class (when has-database?
                       "pl-small")}
        (cond
-          ;; Caso de erro com mensagem específica
          (and (= :error database-schema-status) (:error current-schema))
          [:> Text {:as "p" :size "1" :mb "2" :ml "2"}
           (:error current-schema)]
@@ -216,24 +227,54 @@
 
 (defn main [connection]
   (let [database-schema (rf/subscribe [::subs/database-schema])
-        local-connection (r/atom (:connection-name connection))]
+        local-connection (r/atom (:connection-name connection))
+        ;; Store the schema state locally to avoid re-renders
+        ;; when there are no actual changes
+        local-schema-state (r/atom nil)]
 
     (when (and connection (:connection-name connection))
       (get-database-schema (:connection-type connection) connection))
 
-    (fn [{:keys [connection-type connection-name]}]
-      (when (not= @local-connection connection-name)
-        (reset! local-connection connection-name)
-        (get-database-schema connection-type {:connection-type connection-type
-                                              :connection-name connection-name}))
+    ;; Using memoization for the main component
+    (r/create-class
+     {:component-did-mount
+      (fn []
+        (when-let [schema (get-in @database-schema [:data @local-connection])]
+          (reset! local-schema-state schema)))
 
-      (let [current-schema (get-in @database-schema [:data connection-name])]
+      :component-did-update
+      (fn [this old-argv]
+        (let [[_ old-conn] old-argv
+              [_ new-conn] (r/argv this)]
+          (when (not= (:connection-name old-conn) (:connection-name new-conn))
+            (reset! local-connection (:connection-name new-conn))
+            (get-database-schema (:connection-type new-conn) new-conn))))
 
-        [:div {:class "text-gray-200"}
-         [tree-view-status
-          {:status (:status current-schema)
-           :databases (:databases current-schema)
-           :schema (:schema-tree current-schema)
-           :connection connection
-           :database-schema-status (:database-schema-status current-schema)
-           :current-schema current-schema}]]))))
+      :should-component-update
+      (fn [this old-argv]
+        (let [[_ old-conn] old-argv
+              [_ new-conn] (r/argv this)
+              old-schema (get-in @database-schema [:data (:connection-name old-conn)])
+              new-schema (get-in @database-schema [:data (:connection-name new-conn)])]
+          ;; Only updates when the connection or the schema actually change
+          (or (not= (:connection-name old-conn) (:connection-name new-conn))
+              (not= (:status old-schema) (:status new-schema))
+              (not= (:database-schema-status old-schema) (:database-schema-status new-schema))
+              (and (= (:status new-schema) :success)
+                   (not= @local-schema-state new-schema)))))
+
+      :reagent-render
+      (fn [{:keys [connection-type connection-name]}]
+        (let [current-schema (get-in @database-schema [:data connection-name])]
+          (when (and (= (:status current-schema) :success)
+                     (not= @local-schema-state current-schema))
+            (reset! local-schema-state current-schema))
+
+          [:div {:class "text-gray-200"}
+           [tree-view-status
+            {:status (:status current-schema)
+             :databases (:databases current-schema)
+             :schema (:schema-tree current-schema)
+             :connection connection
+             :database-schema-status (:database-schema-status current-schema)
+             :current-schema current-schema}]]))})))

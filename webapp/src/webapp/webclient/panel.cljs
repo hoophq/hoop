@@ -56,7 +56,31 @@
         object (js->clj (.parse js/JSON item))]
     (or (get object "code") "")))
 
+(defn process-schema [tree schema-key prefix]
+  (reduce
+   (fn [acc table-key]
+     (let [qualified-key (if prefix
+                           (str schema-key "." table-key)
+                           table-key)]
+       (assoc acc qualified-key (keys (get (get (:schema-tree tree) schema-key) table-key)))))
+   {}
+   (keys (get (:schema-tree tree) schema-key))))
+
+(def memoized-convert-tree
+  (memoize
+   (fn [tree]
+     (let [schema-keys (keys (:schema-tree tree))]
+       (cond
+         (> (count schema-keys) 1) (reduce
+                                    (fn [acc schema-key]
+                                      (merge acc (process-schema tree schema-key true)))
+                                    {}
+                                    schema-keys)
+         (<= (count schema-keys) 1) (process-schema tree (first schema-keys) false)
+         :else #js{})))))
+
 (def ^:private timer (r/atom nil))
+(def ^:private typing-intensity (r/atom 0))  ;; Track typing intensity
 (def ^:private code-saved-status (r/atom :saved)) ; :edited | :saved
 
 (defn- save-code-to-localstorage [code-string]
@@ -69,9 +93,29 @@
 (defn- auto-save [^cm-view/ViewUpdate view-update script]
   (when (.-docChanged view-update)
     (reset! code-saved-status :edited)
-    (let [code-string (.toString (.-doc (.-state (.-view view-update))))]
+    (let [code-string (.toString (.-doc (.-state (.-view view-update))))
+          changes-count (count (.-changes view-update))]
+      ;; Increase typing intensity based on changes
+      (swap! typing-intensity #(min 10 (+ % changes-count)))
+
+      ;; Clear any previous timer
       (when @timer (js/clearTimeout @timer))
-      (reset! timer (js/setTimeout #(save-code-to-localstorage code-string) 1000))
+
+      ;; Calculate delay based on typing intensity
+      (let [delay (cond
+                    (> @typing-intensity 8) 1500  ;; Very intense typing
+                    (> @typing-intensity 5) 1000  ;; Moderate typing
+                    :else 500)]               ;; Slow typing
+
+        ;; Configure timer to save the code
+        (reset! timer
+                (js/setTimeout
+                 (fn []
+                   (save-code-to-localstorage code-string)
+                   ;; Gradually reduce typing intensity
+                   (swap! typing-intensity #(max 0 (- % 2))))
+                 delay)))
+
       (reset! script code-string))))
 
 (defmulti ^:private saved-status-el identity)
@@ -89,16 +133,6 @@
     [:span {:class "text-xs italic"}
      "Edited"]]])
 
-(defn process-schema [tree schema-key prefix]
-  (reduce
-   (fn [acc table-key]
-     (let [qualified-key (if prefix
-                           (str schema-key "." table-key)
-                           table-key)]
-       (assoc acc qualified-key (keys (get (get (:schema-tree tree) schema-key) table-key)))))
-   {}
-   (keys (get (:schema-tree tree) schema-key))))
-
 (defn convert-tree [tree]
   (let [schema-keys (keys (:schema-tree tree))]
     (cond
@@ -110,7 +144,7 @@
       (<= (count schema-keys) 1) (process-schema tree (first schema-keys) false)
       :else #js{})))
 
-(defn- editor []
+(defn editor []
   (let [user (rf/subscribe [:users->current-user])
         gateway-info (rf/subscribe [:gateway->info])
         db-connections (rf/subscribe [:connections])
@@ -193,7 +227,7 @@
                                                                   {:status :failure :raw "" :schema-tree []})
                                        schema (if (and is-one-connection-selected?
                                                        (= subtype (:type current-schema)))
-                                                #js{:schema (clj->js (convert-tree databse-schema-sanitized))}
+                                                #js{:schema (clj->js (memoized-convert-tree databse-schema-sanitized))}
                                                 #js{})]
                                    (case current-language
                                      "postgres" [(sql
@@ -268,8 +302,6 @@
                                        :preselected-connection (:name current-connection)
                                        :selected-connections (conj @multi-selected-connections current-connection)}]]
 
-
-
                  [:> CodeMirror/default {:value @script
                                          :height "100%"
                                          :className "h-full text-sm"
@@ -295,7 +327,6 @@
                                                           (.of (.-readOnly cm-state/EditorState) true)])))
                                          :onUpdate #(auto-save % script)}])
 
-
                [:> Flex {:direction "column" :justify "between" :class "h-full"}
                 [log-area/main
                  connection-type
@@ -319,8 +350,6 @@
                     [keyboard-shortcuts/keyboard-shortcuts-button]]
                    [language-select/main current-connection]]]]]]]]
             panel-content]
-
-
 
            (when (seq (:data @multi-exec))
              [multiple-connections-exec-list-component/main
