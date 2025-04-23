@@ -58,7 +58,9 @@
    [webapp.events.segment]
    [webapp.events.slack-plugin]
    [webapp.events.users]
+   [webapp.features.access-control.events]
    [webapp.features.access-control.main :as access-control]
+   [webapp.features.access-control.views.group-form :as group-form]
    [webapp.guardrails.create-update-form :as guardrail-create-update]
    [webapp.guardrails.main :as guardrails]
    [webapp.integrations.aws-connect :as aws-connect-page]
@@ -439,8 +441,8 @@
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop
    [routes/wrap-admin-only
-    [:div {:class "bg-gray-1 min-h-full h-max relative"}
-     [:div "Group creation form will be implemented in the next iteration"]]]])
+    [:div {:class "bg-gray-1 min-h-full h-max relative px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10"}
+     [group-form/main :create]]]])
 
 (defmethod routes/panels :access-control-edit-panel []
   (let [pathname (.. js/window -location -pathname)
@@ -449,8 +451,8 @@
     (rf/dispatch [:destroy-page-loader])
     [layout :application-hoop
      [routes/wrap-admin-only
-      [:div {:class "bg-gray-1 min-h-full h-max relative"}
-       [:div (str "Group edit form for " group-id " will be implemented in the next iteration")]]]]))
+      [:div {:class "bg-gray-1 min-h-full h-max relative px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10"}
+       [group-form/main :edit {:group-id group-id}]]]]))
 
 ;;;;;;;;;;;;;;;;;;;;;
 ;; END HOOP PANELS ;;

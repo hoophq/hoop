@@ -64,3 +64,79 @@
      {:fx [[:dispatch [:plugins->update-plugin new-plugin-data]]
            [:dispatch [:show-snackbar {:level :success
                                        :text "Group permissions updated successfully!"}]]]})))
+
+(rf/reg-event-fx
+ :access-control/create-group
+ (fn [{:keys [db]} [_ group-name]]
+   {:fx [[:dispatch [:fetch {:method "POST"
+                             :uri "/users/groups"
+                             :body {:name group-name}
+                             :on-success (fn []
+                                           (rf/dispatch [:show-snackbar {:level :success
+                                                                         :text (str "Group '" group-name "' created successfully!")}])
+                                           (rf/dispatch [:users->get-user-groups])
+                                           (rf/dispatch [:navigate :access-control]))
+                             :on-failure (fn [error]
+                                           (rf/dispatch [:show-snackbar {:level :error
+                                                                         :text (str "Failed to create group: "
+                                                                                    (or (get-in error [:response :message])
+                                                                                        "Unknown error"))}]))}]]]}))
+
+(rf/reg-event-fx
+ :access-control/delete-group
+ (fn [{:keys [db]} [_ group-name]]
+   {:fx [[:dispatch [:fetch {:method "DELETE"
+                             :uri (str "/users/groups/" group-name)
+                             :on-success (fn []
+                                           (rf/dispatch [:show-snackbar {:level :success
+                                                                         :text (str "Group '" group-name "' deleted successfully!")}])
+                                           (rf/dispatch [:users->get-user-groups]))
+                             :on-failure (fn [error]
+                                           (rf/dispatch [:show-snackbar {:level :error
+                                                                         :text (str "Failed to delete group: "
+                                                                                    (or (get-in error [:response :message])
+                                                                                        "Unknown error"))}]))}]]]}))
+
+(rf/reg-event-fx
+ :access-control/create-group-with-permissions
+ (fn [{:keys [db]} [_ {:keys [name description connections]}]]
+   {:fx [[:dispatch [:fetch {:method "POST"
+                             :uri "/users/groups"
+                             :body {:name name
+                                    :description description}
+                             :on-success (fn [response]
+                                           ;; Após criar o grupo, configurar permissões
+                                           (rf/dispatch [:show-snackbar {:level :success
+                                                                         :text (str "Group '" name "' created successfully!")}])
+                                           (rf/dispatch [:users->get-user-groups])
+
+                                           ;; Se houver conexões selecionadas, configurar permissões
+                                           (when (seq connections)
+                                             (rf/dispatch [:plugins->get-plugin-by-name-with-callback "access_control"
+                                                           {:on-success (fn [plugin]
+                                                                          (rf/dispatch [:access-control/add-group-permissions
+                                                                                        {:group-id name
+                                                                                         :connections connections
+                                                                                         :plugin plugin}]))}]))
+
+                                           ;; Redirecionar para a lista
+                                           (js/setTimeout #(rf/dispatch [:navigate :access-control]) 1000))
+                             :on-failure (fn [error]
+                                           (rf/dispatch [:show-snackbar {:level :error
+                                                                         :text (str "Failed to create group: "
+                                                                                    (or (get-in error [:response :message])
+                                                                                        "Unknown error"))}]))}]]]}))
+
+(rf/reg-event-fx
+ :plugins->get-plugin-by-name-with-callback
+ (fn [{:keys [db]} [_ plugin-name {:keys [on-success]}]]
+   {:fx [[:dispatch [:fetch {:method "GET"
+                             :uri (str "/plugins/" plugin-name)
+                             :on-success (fn [response]
+                                           (let [plugin (merge response {:installed? true})]
+                                             (rf/dispatch [:plugins->set-plugin plugin])
+                                             (when on-success
+                                               (on-success plugin))))
+                             :on-failure #(rf/dispatch [:plugins->set-plugin {:name plugin-name
+                                                                              :installed? false}])}]]]
+    :db (assoc-in db [:plugins->plugin-details :status] :loading)}))
