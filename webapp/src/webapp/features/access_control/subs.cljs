@@ -28,6 +28,7 @@
  :access-control/groups-with-permissions
  :<- [:access-control/connections]
  (fn [connections]
+   (println "connections" connections)
    (when connections
      (reduce (fn [acc conn]
                (let [group-configs (or (:config conn) [])]

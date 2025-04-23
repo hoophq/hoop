@@ -1,9 +1,10 @@
 (ns webapp.features.access-control.views.group-list
   (:require
-   ["@radix-ui/themes" :refer [Box Button Flex Text Grid Heading]]
+   ["@radix-ui/themes" :refer [Box Button Flex Grid Heading Text]]
    ["lucide-react" :refer [ChevronDown ChevronUp]]
    [re-frame.core :as rf]
    [reagent.core :as r]
+   [webapp.config :as config]
    [webapp.connections.constants :as connection-constants]))
 
 (defn- get-group-connections [group-name groups-with-permissions]
@@ -81,23 +82,17 @@
     (fn []
       (let [all-groups (or @user-groups [])
             group-permissions @groups-with-permissions
-            processed-groups (->> all-groups
+            filtered-groups (filter #(not= "admin" %) all-groups)
+            processed-groups (->> filtered-groups
                                   (map (fn [group-name]
                                          (let [group-connections (get-group-connections group-name group-permissions)]
                                            {:name group-name
                                             :active? (contains? group-permissions group-name)
                                             :connections group-connections})))
                                   (sort-by :name))]
-        [:> Box {:class "w-full"}
-         ;; Se não há grupos, mostrar uma mensagem
-         (if (empty? processed-groups)
-           [:> Box {:class "text-center py-16 bg-white rounded-lg shadow-sm"}
-            [:> Text {:size "3" :class "text-gray-11"}
-             "No user groups found. Create a group to manage connection permissions."]]
-
-           ;; Lista de grupos
-           [:> Box
-            (doall
-             (for [group processed-groups]
-               ^{:key (:name group)}
-               [group-item (assoc group :total-items (count processed-groups))]))])]))))
+        [:> Box {:class "w-full h-full"}
+         [:> Box
+          (doall
+           (for [group processed-groups]
+             ^{:key (:name group)}
+             [group-item (assoc group :total-items (count processed-groups))]))]]))))

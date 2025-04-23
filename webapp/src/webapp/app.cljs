@@ -59,6 +59,7 @@
    [webapp.events.slack-plugin]
    [webapp.events.users]
    [webapp.features.access-control.events]
+   [webapp.features.access-control.subs]
    [webapp.features.access-control.main :as access-control]
    [webapp.features.access-control.views.group-form :as group-form]
    [webapp.guardrails.create-update-form :as guardrail-create-update]

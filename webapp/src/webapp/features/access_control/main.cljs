@@ -16,7 +16,8 @@
     (fn []
       (let [plugin (:plugin @plugin-details)
             installed? (or (:installed? plugin) false)
-            has-user-groups? (and @user-groups (seq @user-groups))]
+            filtered-user-groups (filter #(not= "admin" %) @user-groups)
+            has-user-groups? (and filtered-user-groups (seq filtered-user-groups))]
 
         [:> Box {:class "flex flex-col bg-white px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
          [:> Flex {:direction "column" :gap "6" :class "h-full"}
@@ -28,7 +29,7 @@
              "Manage which user groups have access to specific connections."]
             [:> Text {:as "p" :size "3" :class "text-gray-500"}
              "Control permissions and enhance security for your organization."]]
-           (when installed?
+           (when (and installed? has-user-groups?)
              [:> Button {:size "3"
                          :onClick #(rf/dispatch [:navigate :access-control-new])}
               "Create Group"])]

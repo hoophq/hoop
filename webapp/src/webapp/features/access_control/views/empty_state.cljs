@@ -11,16 +11,18 @@
     [:> Box {:class "mb-8"}
      [:img {:src "/images/illustrations/empty-state.png"
             :alt "Empty state illustration"
-            :class "w-64"}]]
+            :class "w-96"}]]
 
     [:> Flex {:direction "column" :align "center" :gap "3" :class "mb-8 text-center"}
      [:> Text {:size "3" :class "text-gray-11 max-w-md text-center"}
-      "Activate to enable an additional security layer. When activated, users are not allowed to access connections by default unless permission is given for each one."]]
+      (if installed?
+        "No Access Control Groups available to manage yet"
+        "Activate to enable an additional security layer. When activated, users are not allowed to access connections by default unless permission is given for each one.")]]
 
     (if installed?
       [:> Button {:size "3"
                   :onClick #(rf/dispatch [:navigate :access-control-new])}
-       "Configure Access Control"]
+       "Create Group"]
 
       [:> Button
        {:size "3"
