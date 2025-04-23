@@ -627,16 +627,16 @@ func CreateGroup(c *gin.Context) {
 //	@Param			name	path	string	true	"The name of the group to delete"
 //	@Success		204		"No Content"
 //	@Failure		404		{object}	openapi.HTTPError	"{"message": "group not found"}"
-//	@Failure		422		{object}	openapi.HTTPError	"{"message": "cannot delete built-in group"}"
+//	@Failure		422		{object}	openapi.HTTPError	"{"message": "cannot delete admin group"}"
 //	@Failure		500		{object}	openapi.HTTPError	"{"message": "server error"}"
 //	@Router			/users/groups/{name} [delete]
 func DeleteGroup(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	name := c.Param("name")
 
-	// Prevent deletion of built-in groups
-	if name == types.GroupAdmin || name == types.GroupAuditor {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("cannot delete built-in group %s", name)})
+	// Prevent deletion of admin group only
+	if name == types.GroupAdmin {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("cannot delete admin group %s", name)})
 		return
 	}
 

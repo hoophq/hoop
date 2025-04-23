@@ -3559,69 +3559,6 @@ const docTemplate = `{
             }
         },
         "/users/groups/{name}": {
-            "put": {
-                "description": "Update an existing user group name",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "User Management"
-                ],
-                "summary": "Update User Group",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "The name of the group to update",
-                        "name": "name",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Group object with new name",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/openapi.UserGroup"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "{\"name\": \"string\"}",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.UserGroup"
-                        }
-                    },
-                    "400": {
-                        "description": "{\"message\": \"error message\"}",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "404": {
-                        "description": "{\"message\": \"group not found\"}",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "409": {
-                        "description": "{\"message\": \"group already exists\"}",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "500": {
-                        "description": "{\"message\": \"server error\"}",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    }
-                }
-            },
             "delete": {
                 "description": "Delete a user group",
                 "produces": [
@@ -3651,7 +3588,7 @@ const docTemplate = `{
                         }
                     },
                     "422": {
-                        "description": "{\"message\": \"cannot delete built-in group\"}",
+                        "description": "{\"message\": \"cannot delete admin group\"}",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
