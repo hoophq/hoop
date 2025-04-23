@@ -90,33 +90,6 @@
     (.setItem js/localStorage :code-tmp-db code-tmp-db-json)
     (reset! code-saved-status :saved)))
 
-(defn- auto-save [^cm-view/ViewUpdate view-update script]
-  (when (.-docChanged view-update)
-    (reset! code-saved-status :edited)
-    (let [code-string (.toString (.-doc (.-state (.-view view-update))))
-          changes-count (count (.-changes view-update))]
-      ;; Increase typing intensity based on changes
-      (swap! typing-intensity #(min 10 (+ % changes-count)))
-
-      ;; Clear any previous timer
-      (when @timer (js/clearTimeout @timer))
-
-      ;; Calculate delay based on typing intensity
-      (let [delay (cond
-                    (> @typing-intensity 8) 1500  ;; Very intense typing
-                    (> @typing-intensity 5) 1000  ;; Moderate typing
-                    :else 500)]               ;; Slow typing
-
-        ;; Configure timer to save the code
-        (reset! timer
-                (js/setTimeout
-                 (fn []
-                   (save-code-to-localstorage code-string)
-                   ;; Gradually reduce typing intensity
-                   (swap! typing-intensity #(max 0 (- % 2))))
-                 delay)))
-
-      (reset! script code-string))))
 
 (defmulti ^:private saved-status-el identity)
 (defmethod ^:private saved-status-el :saved [_]
@@ -302,30 +275,38 @@
                                        :preselected-connection (:name current-connection)
                                        :selected-connections (conj @multi-selected-connections current-connection)}]]
 
-                 [:> CodeMirror/default {:value @script
-                                         :height "100%"
-                                         :className "h-full text-sm"
-                                         :theme (if @dark-mode?
-                                                  materialDark
-                                                  materialLight)
-                                         :basicSetup #js{:defaultKeymap false}
-                                         :extensions (clj->js
-                                                      (concat
-                                                       (when (and (= feature-ai-ask "enabled")
-                                                                  is-one-connection-selected?)
-                                                         [(inlineCopilot
-                                                           (fn [prefix suffix]
-                                                             (extensions/fetch-autocomplete
-                                                              (:subtype current-connection)
-                                                              prefix
-                                                              suffix
-                                                              (:raw current-schema))))])
-                                                       [(.of cm-view/keymap (clj->js keymap))]
-                                                       language-parser-case
-                                                       (when (= (:status @selected-template) :ready)
-                                                         [(.of (.-editable cm-view/EditorView) false)
-                                                          (.of (.-readOnly cm-state/EditorState) true)])))
-                                         :onUpdate #(auto-save % script)}])
+                 [:> CodeMirror/default
+                  {:value @script
+                   :height "100%"
+                   :className "h-full text-sm"
+                   :theme (if @dark-mode?
+                            materialDark
+                            materialLight)
+                   :basicSetup #js{:defaultKeymap false}
+
+                   :onChange (fn [value _]
+                               (reset! script value)
+                               (reset! code-saved-status :edited)
+                               (when @timer (js/clearTimeout @timer))
+                               (reset! timer
+                                       (js/setTimeout #(save-code-to-localstorage value) 500)))
+
+                   :extensions (clj->js
+                                (concat
+                                 (when (and (= feature-ai-ask "enabled")
+                                            is-one-connection-selected?)
+                                   [(inlineCopilot
+                                     (fn [prefix suffix]
+                                       (extensions/fetch-autocomplete
+                                        (:subtype current-connection)
+                                        prefix
+                                        suffix
+                                        (:raw current-schema))))])
+                                 [(.of cm-view/keymap (clj->js keymap))]
+                                 language-parser-case
+                                 (when (= (:status @selected-template) :ready)
+                                   [(.of (.-editable cm-view/EditorView) false)
+                                    (.of (.-readOnly cm-state/EditorState) true)])))}])
 
                [:> Flex {:direction "column" :justify "between" :class "h-full"}
                 [log-area/main
