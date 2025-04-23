@@ -22,43 +22,33 @@
 (rf/reg-event-fx
  :access-control/add-group-permissions
  (fn [{:keys [db]} [_ {:keys [group-id connections plugin]}]]
-   (let [connection-configs (map (fn [conn]
-                                   {:id (:id conn)
-                                    :config [group-id]})
-                                 connections)
-         current-connections (:connections plugin)
+   (let [;; Obter o plugin inteiro
+         plugin-connections (:connections plugin)
 
-         ;; Filtrar conexões que já têm este grupo configurado
-         existing-connections (filter #(some? (first (filter (fn [conn]
-                                                               (= (:id conn) (:id %)))
-                                                             current-connections)))
-                                      connection-configs)
+         ;; Lista de IDs das conexões selecionadas
+         selected-connection-ids (set (map :id connections))
 
-         ;; Atualizar conexões existentes para incluir o novo grupo
-         updated-connections (map (fn [conn]
-                                    (let [existing (first (filter #(= (:id %) (:id conn)) current-connections))
-                                          updated-config (if existing
-                                                           (distinct (concat (:config existing) (:config conn)))
-                                                           (:config conn))]
-                                      (assoc conn :config updated-config)))
-                                  existing-connections)
+         ;; Primeiro, remover o grupo atual de todas as conexões
+         connections-with-group-removed
+         (map (fn [conn]
+                (if (some #(= % group-id) (:config conn))
+                  ;; Se a conexão contém o grupo, remove-o
+                  (update conn :config (fn [config] (filter #(not= % group-id) config)))
+                  ;; Caso contrário, mantém a conexão como está
+                  conn))
+              plugin-connections)
 
-         ;; Conexões que não existem ainda no plugin
-         new-connections (filter #(not (some? (first (filter (fn [conn]
-                                                               (= (:id conn) (:id %)))
-                                                             current-connections))))
-                                 connection-configs)
+         ;; Agora, adicionar o grupo às conexões selecionadas
+         final-connections
+         (map (fn [conn]
+                (if (contains? selected-connection-ids (:id conn))
+                  ;; Se a conexão foi selecionada, adiciona o grupo a ela
+                  (update conn :config (fn [config] (distinct (conj (or config []) group-id))))
+                  ;; Caso contrário, mantém a conexão como está
+                  conn))
+              connections-with-group-removed)
 
-         ;; Mesclar conexões atualizadas e novas com as que não foram afetadas
-         final-connections (concat
-                            (filter #(not (some? (first (filter (fn [conn]
-                                                                  (= (:id conn) (:id %)))
-                                                                existing-connections))))
-                                    current-connections)
-                            updated-connections
-                            new-connections)
-
-         ;; Atualizar plugin com as novas configurações
+         ;; Atualizar o plugin com as novas conexões
          new-plugin-data (assoc plugin :connections final-connections)]
 
      {:fx [[:dispatch [:plugins->update-plugin new-plugin-data]]

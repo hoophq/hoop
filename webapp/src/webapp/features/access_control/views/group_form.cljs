@@ -121,11 +121,14 @@
     (rf/dispatch [:connections->get-connections])
 
     (fn [group-id]
-      (when (and (nil? @selected-connections) @connections @group-connections)
+      ;; Quando temos conexões e o plugin carregado, inicializamos as conexões selecionadas
+      (when (and (nil? @selected-connections)
+                 @connections
+                 (seq @group-connections)
+                 (not= (:status @plugin-details) :loading))
+        (println @group-connections)
         (reset! selected-connections
-                (->> @connections
-                     :results
-                     (filter #(some #{(:id %)} @group-connections))
+                (->> @group-connections
                      (map #(hash-map "value" (:id %) "label" (:name %)))
                      vec)))
 
@@ -168,7 +171,7 @@
           [:> Text {:size "2" :class "text-gray-500 mb-4 block"}
            "Select which connections this group can access."]
 
-          [multi-select/creatable-select
+          [multi-select/main
            {:id "connections-input"
             :name "connections-input"
             :options (mapv #(hash-map "value" (:id %) "label" (:name %))
