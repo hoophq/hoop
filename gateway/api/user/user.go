@@ -604,23 +604,11 @@ func CreateGroup(c *gin.Context) {
 		return
 	}
 
-	// Check if group already exists
-	userGroups, err := models.GetUserGroupsByOrgID(ctx.OrgID)
-	if err != nil {
-		log.Errorf("failed getting org groups, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed getting org groups"})
-		return
-	}
-
-	for _, ug := range userGroups {
-		if ug.Name == req.Name {
+	if err := models.CreateUserGroupWithoutUser(ctx.OrgID, req.Name); err != nil {
+		if errors.Is(err, models.ErrAlreadyExists) {
 			c.JSON(http.StatusConflict, gin.H{"message": fmt.Sprintf("group %s already exists", req.Name)})
 			return
 		}
-	}
-
-	if err := models.CreateUserGroupWithoutUser(ctx.OrgID, req.Name); err != nil {
 		log.Errorf("failed creating group, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating group"})
@@ -628,73 +616,6 @@ func CreateGroup(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, req)
-}
-
-// UpdateGroup
-//
-//	@Summary		Update User Group
-//	@Description	Update an existing user group name
-//	@Tags			User Management
-//	@Accept			json
-//	@Produce		json
-//	@Param			name	path	string	true	"The name of the group to update"
-//	@Param			request	body	openapi.UserGroup	true	"Group object with new name"
-//	@Success		200		{object}	openapi.UserGroup	"{"name": "string"}"
-//	@Failure		400		{object}	openapi.HTTPError	"{"message": "error message"}"
-//	@Failure		404		{object}	openapi.HTTPError	"{"message": "group not found"}"
-//	@Failure		409		{object}	openapi.HTTPError	"{"message": "group already exists"}"
-//	@Failure		500		{object}	openapi.HTTPError	"{"message": "server error"}"
-//	@Router			/users/groups/{name} [put]
-func UpdateGroup(c *gin.Context) {
-	ctx := storagev2.ParseContext(c)
-	oldName := c.Param("name")
-
-	var req openapi.UserGroup
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
-		return
-	}
-
-	// Check if group exists
-	userGroups, err := models.GetUserGroupsByOrgID(ctx.OrgID)
-	if err != nil {
-		log.Errorf("failed getting org groups, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed getting org groups"})
-		return
-	}
-
-	groupExists := false
-	newNameExists := false
-	for _, ug := range userGroups {
-		if ug.Name == oldName {
-			groupExists = true
-		}
-		if ug.Name == req.Name && oldName != req.Name {
-			newNameExists = true
-		}
-	}
-
-	if !groupExists {
-		c.JSON(http.StatusNotFound, gin.H{"message": fmt.Sprintf("group %s not found", oldName)})
-		return
-	}
-
-	if newNameExists {
-		c.JSON(http.StatusConflict, gin.H{"message": fmt.Sprintf("group %s already exists", req.Name)})
-		return
-	}
-
-	// Update all instances of this group
-	if err := models.UpdateUserGroupName(ctx.OrgID, oldName, req.Name); err != nil {
-		log.Errorf("failed updating group, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating group"})
-		return
-	}
-
-	c.JSON(http.StatusOK, req)
 }
 
 // DeleteGroup

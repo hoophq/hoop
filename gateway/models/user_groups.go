@@ -50,19 +50,6 @@ func InsertUserGroups(userGroups []UserGroup) error {
 	})
 }
 
-func DeleteUserGroupsByUserID(userID string) error {
-	return DB.Where("user_id = ?", userID).Delete(&UserGroup{}).Error
-}
-
-// UpdateUserGroupName updates all instances of a group name in an organization
-func UpdateUserGroupName(orgID string, oldName string, newName string) error {
-	return DB.Exec(`
-		UPDATE private.user_groups
-		SET name = ?
-		WHERE org_id = ? AND name = ?
-	`, newName, orgID, oldName).Error
-}
-
 // DeleteUserGroup deletes all instances of a group from an organization
 func DeleteUserGroup(orgID string, name string) error {
 	return DB.Where("org_id = ? AND name = ?", orgID, name).Delete(&UserGroup{}).Error
@@ -70,9 +57,24 @@ func DeleteUserGroup(orgID string, name string) error {
 
 // CreateUserGroupWithoutUser creates a group entry without binding it to any user
 func CreateUserGroupWithoutUser(orgID string, name string) error {
+	// Check if a group with the same name already exists in this org
+	var count int64
+	err := DB.Table("private.user_groups").
+		Where("org_id = ? AND name = ?", orgID, name).
+		Count(&count).Error
+
+	if err != nil {
+		return err
+	}
+
+	if count > 0 {
+		return ErrAlreadyExists
+	}
+
+	// Create the group if it doesn't exist
 	return DB.Exec(`
 		INSERT INTO private.user_groups (org_id, name)
-		VALUES (?, ?) ON CONFLICT DO NOTHING`,
+		VALUES (?, ?)`,
 		orgID, name,
 	).Error
 }
