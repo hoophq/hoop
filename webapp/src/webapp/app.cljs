@@ -441,7 +441,7 @@
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop
    [routes/wrap-admin-only
-    [:div {:class "bg-gray-1 min-h-full h-max relative px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10"}
+    [:div {:class "bg-gray-1 min-h-full h-max relative"}
      [group-form/main :create]]]])
 
 (defmethod routes/panels :access-control-edit-panel []
@@ -451,7 +451,7 @@
     (rf/dispatch [:destroy-page-loader])
     [layout :application-hoop
      [routes/wrap-admin-only
-      [:div {:class "bg-gray-1 min-h-full h-max relative px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10"}
+      [:div {:class "bg-gray-1 min-h-full h-max relative"}
        [group-form/main :edit {:group-id group-id}]]]]))
 
 ;;;;;;;;;;;;;;;;;;;;;

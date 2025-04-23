@@ -1,11 +1,10 @@
 (ns webapp.features.access-control.views.group-form
   (:require
-   ["@radix-ui/themes" :refer [Box Flex Text Button Heading TextArea]]
+   ["@radix-ui/themes" :refer [Box Flex Text Button Heading Grid]]
    ["@heroicons/react/24/outline" :as hero-outline]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [clojure.string :as str]
-   [webapp.components.button :as button]
    [webapp.components.forms :as forms]
    [webapp.components.multiselect :as multi-select]))
 
@@ -20,18 +19,14 @@
         description (r/atom "")
         selected-connections (r/atom [])
         all-connections (rf/subscribe [:connections])
-        is-submitting (r/atom false)]
+        is-submitting (r/atom false)
+        scroll-pos (r/atom 0)]
 
     ;; Carregar conexões disponíveis
     (rf/dispatch [:connections->get-connections])
 
     (fn []
-      [:> Box {:class "w-full max-w-3xl mx-auto"}
-       [back-button]
-
-       [:> Heading {:size "6" :weight "bold" :class "mb-6"}
-        "Create new access control group"]
-
+      [:> Box {:class "min-h-screen bg-gray-1"}
        [:form {:on-submit (fn [e]
                             (.preventDefault e)
                             (reset! is-submitting true)
@@ -42,79 +37,69 @@
                                              :description @description
                                              :connections selected-conns}])))}
 
-        [:> Box {:class "bg-white rounded-lg shadow-sm p-8 mb-6"}
-         [:> Heading {:size "4" :weight "medium" :class "mb-4"}
-          "Set group information"]
-         [:> Text {:size "2" :class "text-gray-500 mb-6 block"}
-          "Used to identify your access control group."]
-
-         ;; Group name field
-         [:> Box {:class "mb-6"}
-          [:> Text {:as "label" :size "2" :weight "medium" :class "block mb-2"}
-           "Name"]
-          [forms/input
-           {:placeholder "e.g. engineering-team"
-            :value @group-name
-            :required true
-            :class "w-full"
-            :autoFocus true
-            :disabled @is-submitting
-            :on-change #(reset! group-name (-> % .-target .-value))}]]
-
-         ;; Description field (optional)
-         [:> Box {:class "mb-6"}
-          [:> Flex {:align "baseline" :justify "between" :class "mb-2"}
-           [:> Text {:as "label" :size "2" :weight "medium"}
-            "Description"]
-           [:> Text {:size "1" :class "text-gray-500"}
-            "(Optional)"]]
-          [:> TextArea {:placeholder "Describe how this group will be used"
-                        :value @description
+        [:<>
+         [:> Flex {:p "5" :gap "2"}
+          [back-button]]
+         [:> Box {:class (str "sticky top-0 z-50 bg-gray-1 px-7 py-7 "
+                              (when (>= @scroll-pos 30)
+                                "border-b border-[--gray-a6]"))}
+          [:> Flex {:justify "between"
+                    :align "center"}
+           [:> Heading {:as "h2" :size "8"}
+            "Create new access control group"]
+           [:> Flex {:gap "5" :align "center"}
+            [:> Button {:size "3"
+                        :loading @is-submitting
                         :disabled @is-submitting
-                        :on-change #(reset! description (-> % .-target .-value))}]]]
+                        :type "submit"}
+             "Save"]]]]]
 
-        ;; Conexões
-        [:> Box {:class "bg-white rounded-lg shadow-sm p-8 mb-6"}
-         [:> Heading {:size "4" :weight "medium" :class "mb-4"}
-          "Connection permissions"]
-         [:> Text {:size "2" :class "text-gray-500 mb-6 block"}
-          "Select which connections this group should have access to."]
+        [:> Box {:p "7" :class "space-y-radix-9"}
+         [:> Grid {:columns "7" :gap "7"}
+          [:> Box {:grid-column "span 2 / span 2"}
+           [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+            "Set group information"]
+           [:> Text {:size "3" :class "text-[--gray-11]"}
+            "Used to identify your access control group."]]
 
-         [:> Box {:class "mb-6"}
-          [:> Text {:as "label" :size "2" :weight "medium" :class "block mb-2"}
-           "Connections"]
-          [:> Text {:size "2" :class "text-gray-500 mb-4 block"}
-           "Select which connections this group can access."]
+          ;; Group name field
+          [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
+           [forms/input
+            {:placeholder "e.g. engineering-team"
+             :label "Name"
+             :value @group-name
+             :required true
+             :class "w-full"
+             :autoFocus true
+             :disabled @is-submitting
+             :on-change #(reset! group-name (-> % .-target .-value))}]]]
 
-          [multi-select/main
-           {:id "connections-input"
-            :name "connections-input"
-            :options (mapv #(hash-map "value" (:id %) "label" (:name %))
-                           (:results @all-connections))
-            :default-value @selected-connections
-            :placeholder "Select connections..."
-            :on-change #(reset! selected-connections (js->clj %))}]]]
+         ;; Conexões
+         [:> Grid {:columns "7" :gap "7"}
+          [:> Box {:grid-column "span 2 / span 2"}
+           [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+            "Connection configuration"]
+           [:> Text {:size "3" :class "text-[--gray-11]"}
+            "Select which connections this group should have access to."]]
 
-        ;; Action buttons
-        [:> Flex {:justify "end" :gap "3"}
-         [:> Button {:variant "soft"
-                     :type "button"
-                     :disabled @is-submitting
-                     :onClick #(rf/dispatch [:navigate :access-control])}
-          "Cancel"]
-         [:> Button {:type "submit"
-                     :disabled (or @is-submitting (str/blank? @group-name))
-                     :class "bg-blue-600 hover:bg-blue-700"}
-          (if @is-submitting
-            "Creating..."
-            "Create Group")]]]])))
+          [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
+           [multi-select/main
+            {:id "connections-input"
+             :name "connections-input"
+             :label "Connections"
+             :options (mapv #(hash-map "value" (:id %) "label" (:name %))
+                            (:results @all-connections))
+             :default-value @selected-connections
+             :placeholder "Select connections..."
+             :on-change #(reset! selected-connections (js->clj %))}]]]]]])))
 
 (defn edit-form [group-id]
   (let [connections (rf/subscribe [:connections])
         plugin-details (rf/subscribe [:plugins->plugin-details])
         group-connections (rf/subscribe [:access-control/group-permissions group-id])
         selected-connections (r/atom nil)
-        is-submitting (r/atom false)]
+        is-submitting (r/atom false)
+        scroll-pos (r/atom 0)]
 
     ;; Initialize selected connections when component mounts
     (rf/dispatch [:plugins->get-plugin-by-name "access_control"])
@@ -126,18 +111,12 @@
                  @connections
                  (seq @group-connections)
                  (not= (:status @plugin-details) :loading))
-        (println @group-connections)
         (reset! selected-connections
                 (->> @group-connections
                      (map #(hash-map "value" (:id %) "label" (:name %)))
                      vec)))
 
-      [:> Box {:class "w-full max-w-3xl mx-auto"}
-       [back-button]
-
-       [:> Heading {:size "6" :weight "bold" :class "mb-6"}
-        (str "Edit group: " group-id)]
-
+      [:> Box {:class "min-h-screen bg-gray-1"}
        [:form {:on-submit (fn [e]
                             (.preventDefault e)
                             (reset! is-submitting true)
@@ -149,50 +128,64 @@
                                              :plugin (:plugin @plugin-details)}])
                               (js/setTimeout #(rf/dispatch [:navigate :access-control]) 1000)))}
 
-        [:> Box {:class "bg-white rounded-lg shadow-sm p-8 mb-6"}
-         [:> Heading {:size "4" :weight "medium" :class "mb-4"}
-          "Group configuration"]
-         [:> Text {:size "2" :class "text-gray-500 mb-6 block"}
-          "Select which connections this group should have access to."]
+        [:<>
+         [:> Flex {:p "5" :gap "2"}
+          [back-button]]
+         [:> Box {:class (str "sticky top-0 z-50 bg-gray-1 px-7 py-7 "
+                              (when (>= @scroll-pos 30)
+                                "border-b border-[--gray-a6]"))}
+          [:> Flex {:justify "between"
+                    :align "center"}
+           [:> Heading {:as "h2" :size "8"}
+            (str "Edit group: " group-id)]
+           [:> Flex {:gap "5" :align "center"}
+            [:> Button {:size "4"
+                        :variant "ghost"
+                        :color "red"
+                        :disabled @is-submitting
+                        :type "button"
+                        :on-click #(rf/dispatch [:access-control/delete-group-permissions group-id])}
+             "Delete"]
+            [:> Button {:size "3"
+                        :loading @is-submitting
+                        :disabled @is-submitting
+                        :type "submit"}
+             "Save"]]]]]
 
-         ;; Group name field (disabled)
-         [:> Box {:class "mb-6"}
-          [:> Text {:as "label" :size "2" :weight "medium" :class "block mb-2"}
-           "Group name"]
-          [forms/input
-           {:value group-id
-            :disabled true
-            :class "w-full bg-gray-50"}]]
+        [:> Box {:p "7" :class "space-y-radix-9"}
+         [:> Grid {:columns "7" :gap "7"}
+          [:> Box {:grid-column "span 2 / span 2"}
+           [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+            "Set group information"]
+           [:> Text {:size "3" :class "text-[--gray-11]"}
+            "Used to identify your access control group."]]
+
+          [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
+           [forms/input
+            {:placeholder "e.g. engineering-team"
+             :label "Name"
+             :value group-id
+             :disabled true
+             :class "w-full"}]]]
 
          ;; Connections selection
-         [:> Box {:class "mb-6"}
-          [:> Text {:as "label" :size "2" :weight "medium" :class "block mb-2"}
-           "Connections"]
-          [:> Text {:size "2" :class "text-gray-500 mb-4 block"}
-           "Select which connections this group can access."]
+         [:> Grid {:columns "7" :gap "7"}
+          [:> Box {:grid-column "span 2 / span 2"}
+           [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+            "Connection configuration"]
+           [:> Text {:size "3" :class "text-[--gray-11]"}
+            "Select which connections this group should have access to."]]
 
-          [multi-select/main
-           {:id "connections-input"
-            :name "connections-input"
-            :options (mapv #(hash-map "value" (:id %) "label" (:name %))
-                           (:results @connections))
-            :default-value @selected-connections
-            :placeholder "Select connections..."
-            :on-change #(reset! selected-connections (js->clj %))}]]]
-
-        ;; Action buttons
-        [:> Flex {:justify "end" :gap "3"}
-         [:> Button {:variant "soft"
-                     :type "button"
-                     :disabled @is-submitting
-                     :onClick #(rf/dispatch [:navigate :access-control])}
-          "Cancel"]
-         [:> Button {:type "submit"
-                     :disabled @is-submitting
-                     :class "bg-blue-600 hover:bg-blue-700"}
-          (if @is-submitting
-            "Saving..."
-            "Save Changes")]]]])))
+          [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
+           [multi-select/main
+            {:id "connections-input"
+             :name "connections-input"
+             :label "Connections"
+             :options (mapv #(hash-map "value" (:id %) "label" (:name %))
+                            (:results @connections))
+             :default-value @selected-connections
+             :placeholder "Select connections..."
+             :on-change #(reset! selected-connections (js->clj %))}]]]]]])))
 
 (defn main [mode & [params]]
   (case mode
