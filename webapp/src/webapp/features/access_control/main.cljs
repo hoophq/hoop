@@ -18,7 +18,7 @@
             installed? (or (:installed? plugin) false)
             has-user-groups? (and @user-groups (seq @user-groups))]
 
-        [:> Box {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
+        [:> Box {:class "flex flex-col bg-white px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
          [:> Flex {:direction "column" :gap "6" :class "h-full"}
 
           [:> Flex {:justify "between" :align "center" :class "mb-6"}
@@ -28,9 +28,10 @@
              "Manage which user groups have access to specific connections."]
             [:> Text {:as "p" :size "3" :class "text-gray-500"}
              "Control permissions and enhance security for your organization."]]
-           [:> Button {:size "3"
-                       :onClick #(rf/dispatch [:navigate :access-control-new])}
-            "Create Group"]]
+           (when installed?
+             [:> Button {:size "3"
+                         :onClick #(rf/dispatch [:navigate :access-control-new])}
+              "Create Group"])]
 
           [:> Box {:class "flex-grow"}
            (if (not installed?)

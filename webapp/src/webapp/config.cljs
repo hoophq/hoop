@@ -28,8 +28,9 @@
               :connections "https://hoop.dev/docs/concepts/connections"}
    :features {:runbooks "https://hoop.dev/docs/learn/features/runbooks"
               :ai-datamasking "https://hoop.dev/docs/learn/features/ai-data-masking"
+              :access-control "https://hoop.dev/docs/learn/features/access-control"
               :jit-reviews "https://hoop.dev/docs/learn/features/reviews/jit-reviews"
-              :command-reviewa "https://hoop.dev/docs/learn/features/reviews/command-reviews"
+              :command-reviews "https://hoop.dev/docs/learn/features/reviews/command-reviews"
               :guardrails "https://hoop.dev/docs/learn/features/guardrails"}
    :introduction {:getting-started "https://hoop.dev/docs/introduction/getting-started"}
    :quickstart {:databases "https://hoop.dev/docs/quickstart/databases"

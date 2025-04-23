@@ -144,7 +144,16 @@
                         :color "red"
                         :disabled @is-submitting
                         :type "button"
-                        :on-click #(rf/dispatch [:access-control/delete-group-permissions group-id])}
+                        :on-click #(rf/dispatch [:dialog->open
+                                                 {:title "Delete Group"
+                                                  :text (str "Are you sure you want to delete the group '" group-id "'? This action cannot be undone.")
+                                                  :text-action-button "Delete"
+                                                  :action-button? true
+                                                  :type :danger
+                                                  :on-success (fn []
+                                                                (rf/dispatch [:access-control/delete-group group-id])
+                                                                (let [redirect-fn (fn [] (rf/dispatch [:navigate :access-control]))]
+                                                                  (js/setTimeout redirect-fn 500)))}])}
              "Delete"]
             [:> Button {:size "3"
                         :loading @is-submitting
