@@ -169,14 +169,13 @@
            "Select which connections this group can access."]
 
           [multi-select/creatable-select
-           {:options (mapv #(hash-map "value" (:id %) "label" (:name %))
+           {:id "connections-input"
+            :name "connections-input"
+            :options (mapv #(hash-map "value" (:id %) "label" (:name %))
                            (:results @connections))
-            :value @selected-connections
-            :isMulti true
-            :isDisabled @is-submitting
+            :default-value @selected-connections
             :placeholder "Select connections..."
-            :noOptionsMessage (fn [] "No connections available")
-            :onChange #(reset! selected-connections (js->clj %))}]]]
+            :on-change #(reset! selected-connections (js->clj %))}]]]
 
         ;; Action buttons
         [:> Flex {:justify "end" :gap "3"}

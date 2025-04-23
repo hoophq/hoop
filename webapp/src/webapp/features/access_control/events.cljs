@@ -140,3 +140,18 @@
                              :on-failure #(rf/dispatch [:plugins->set-plugin {:name plugin-name
                                                                               :installed? false}])}]]]
     :db (assoc-in db [:plugins->plugin-details :status] :loading)}))
+
+(rf/reg-event-fx
+ :plugins->delete-plugin
+ (fn [{:keys [db]} [_ plugin-name]]
+   {:fx [[:dispatch [:fetch {:method "DELETE"
+                             :uri (str "/plugins/" plugin-name)
+                             :on-success (fn []
+                                           (rf/dispatch [:show-snackbar {:level :success
+                                                                         :text "Access control disabled successfully!"}])
+                                           (rf/dispatch [:plugins->get-plugin-by-name plugin-name]))
+                             :on-failure (fn [error]
+                                           (rf/dispatch [:show-snackbar {:level :error
+                                                                         :text (str "Failed to disable access control: "
+                                                                                    (or (get-in error [:response :message])
+                                                                                        "Unknown error"))}]))}]]]}))

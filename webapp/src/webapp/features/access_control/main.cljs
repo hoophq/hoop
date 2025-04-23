@@ -5,7 +5,8 @@
    [reagent.core :as r]
    [webapp.components.headings :as h]
    [webapp.features.access-control.views.empty-state :as empty-state]
-   [webapp.features.access-control.views.group-list :as group-list]))
+   [webapp.features.access-control.views.group-list :as group-list]
+   [webapp.features.access-control.views.configuration :as configuration]))
 
 (defn main []
   (let [active-tab (r/atom "list")
@@ -23,22 +24,27 @@
 
         [:> Box {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
          [:> Flex {:direction "column" :gap "6"}
-          [h/h2 "Access Control" {:class "mb-6"}]
+          [h/h2 "Access Control" {:class "mb-2"}]
 
-          ;; If the plugin is not installed or no groups exist, show empty state
-          (if (and installed? has-user-groups?)
+          ;; If the plugin is not installed, show empty state
+          (if (not installed?)
+            [empty-state/main installed?]
+
+            ;; Otherwise show tabs and content
             [:> Box
              ;; Tabs for navigation between list and configuration
-             [:> Tabs.Root {:default-value "list" :on-value-change #(reset! active-tab %)}
+             [:> Tabs.Root {:default-value "list"
+                            :value @active-tab
+                            :on-value-change #(reset! active-tab %)}
               [:> Tabs.List {:class "mb-8"}
                [:> Tabs.Trigger {:value "list"} "List"]
                [:> Tabs.Trigger {:value "configuration"} "Configuration"]]
 
               [:> Tabs.Content {:value "list"}
-               [group-list/main]]
+               ;; If there are no groups but plugin is installed, show empty state for groups
+               (if (not has-user-groups?)
+                 [empty-state/main installed?]
+                 [group-list/main])]
 
               [:> Tabs.Content {:value "configuration"}
-               [:div "Configuration content will be implemented later"]]]]
-
-            ;; Empty state
-            [empty-state/main installed?])]]))))
+               [configuration/main]]]])]]))))

@@ -29,11 +29,17 @@
  :<- [:access-control/connections]
  (fn [connections]
    (when connections
-     (->> connections
-          (mapcat (fn [conn] (map #(vector % (:id conn)) (:config conn))))
-          (reduce (fn [acc [group conn-id]]
-                    (update acc group (fn [conns] (conj (or conns []) conn-id))))
-                  {})))))
+     (reduce (fn [acc conn]
+               (let [group-configs (or (:config conn) [])]
+                 (reduce (fn [group-acc group-name]
+                           (update group-acc group-name
+                                   (fn [existing-conns]
+                                     (conj (or existing-conns [])
+                                           (select-keys conn [:id :name])))))
+                         acc
+                         group-configs)))
+             {}
+             connections))))
 
 (rf/reg-sub
  :access-control/group-permissions
