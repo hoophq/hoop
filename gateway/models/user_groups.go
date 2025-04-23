@@ -52,7 +52,16 @@ func InsertUserGroups(userGroups []UserGroup) error {
 
 // DeleteUserGroup deletes all instances of a group from an organization
 func DeleteUserGroup(orgID string, name string) error {
-	return DB.Where("org_id = ? AND name = ?", orgID, name).Delete(&UserGroup{}).Error
+	result := DB.Where("org_id = ? AND name = ?", orgID, name).Delete(&UserGroup{})
+	if result.Error != nil {
+		return result.Error
+	}
+
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+
+	return nil
 }
 
 // CreateUserGroupWithoutUser creates a group entry without binding it to any user

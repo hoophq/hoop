@@ -640,30 +640,12 @@ func DeleteGroup(c *gin.Context) {
 		return
 	}
 
-	// Check if group exists
-	userGroups, err := models.GetUserGroupsByOrgID(ctx.OrgID)
-	if err != nil {
-		log.Errorf("failed getting org groups, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed getting org groups"})
-		return
-	}
-
-	groupExists := false
-	for _, ug := range userGroups {
-		if ug.Name == name {
-			groupExists = true
-			break
-		}
-	}
-
-	if !groupExists {
-		c.JSON(http.StatusNotFound, gin.H{"message": fmt.Sprintf("group %s not found", name)})
-		return
-	}
-
 	// Delete all instances of this group
 	if err := models.DeleteUserGroup(ctx.OrgID, name); err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"message": fmt.Sprintf("group %s not found", name)})
+			return
+		}
 		log.Errorf("failed deleting group, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed deleting group"})
