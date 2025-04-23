@@ -1,14 +1,10 @@
 (ns webapp.features.access-control.views.group-list
   (:require
-   ["@radix-ui/themes" :refer [Box Button Flex Card Text Badge IconButton Separator Grid Heading]]
-   ["@heroicons/react/24/outline" :as hero-outline]
+   ["@radix-ui/themes" :refer [Box Button Flex Text Grid Heading]]
    ["lucide-react" :refer [ChevronDown ChevronUp]]
-   ["@radix-ui/react-dropdown-menu" :as dropdown-menu]
    [re-frame.core :as rf]
    [reagent.core :as r]
-   [webapp.components.headings :as h]
-   [webapp.connections.constants :as connection-constants]
-   [webapp.features.access-control.subs :as subs]))
+   [webapp.connections.constants :as connection-constants]))
 
 (defn- get-group-connections [group-name groups-with-permissions]
   (get groups-with-permissions group-name []))
@@ -46,7 +42,7 @@
                                   (rf/dispatch [:navigate :edit-connection {} :connection-name (:name connection)]))}
            "Configure"]]))]]])
 
-(defn group-item [{:keys [name description active? connections total-items]}]
+(defn group-item [{:keys [name connections total-items]}]
   (let [show-connections? (r/atom false)]
     (fn []
       [:> Box {:class (str "first:rounded-t-6 last:rounded-b-6 data-[state=open]:bg-[--accent-2] "
@@ -93,13 +89,6 @@
                                             :connections group-connections})))
                                   (sort-by :name))]
         [:> Box {:class "w-full"}
-         [:> Flex {:justify "between" :align "center" :class "mb-6"}
-          [:> Text {:size "5" :weight "bold"} "User Groups"]
-          [:> Button {:size "3"
-                      :class "bg-blue-600 hover:bg-blue-700"
-                      :onClick #(rf/dispatch [:navigate :access-control-new])}
-           "Create Group"]]
-
          ;; Se não há grupos, mostrar uma mensagem
          (if (empty? processed-groups)
            [:> Box {:class "text-center py-16 bg-white rounded-lg shadow-sm"}
