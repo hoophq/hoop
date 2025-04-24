@@ -11,4 +11,5 @@ RUN tar -xf /tmp/hoop_*_$(uname -s)_$(uname -m).tar.gz -C /app/ && \
     rm -rf /tmp/* && \
     rm -rf /var/cache/apt/archives /var/lib/apt/lists/*
 
+ENTRYPOINT ["tini", "--"]
 CMD ["hoop", "start", "agent"]
